@@ -4,18 +4,22 @@ use std::sync::Arc;
 
 #[cfg(test)]
 use crate::IdSpaceExhausted;
+use serde::{Deserialize, Serialize};
+
+use crate::json::DocumentWire;
 use crate::{Dpi, Page, PageId};
 
 /// A whole document: a version, one id counter, a DPI and ordered pages.
 ///
 /// Fields are private; pages are shared by `Arc` so cloning copies no page
 /// or node. Reading never hands out `&mut` access.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(from = "DocumentWire")]
 pub struct Document {
-    schema_version: u32,
-    next_id: u64,
-    dpi: Dpi,
-    pages: Vec<Arc<Page>>,
+    pub(crate) schema_version: u32,
+    pub(crate) next_id: u64,
+    pub(crate) dpi: Dpi,
+    pub(crate) pages: Vec<Arc<Page>>,
 }
 
 impl Document {
