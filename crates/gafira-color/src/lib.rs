@@ -5,9 +5,11 @@
 
 #![forbid(unsafe_code)]
 
+mod color;
 mod math;
 mod rgb;
 mod space;
 
+pub use color::Color;
 pub use rgb::{DisplayP3Rgba, LinearRgba, Rgba};
 pub use space::ColorSpaceId;
