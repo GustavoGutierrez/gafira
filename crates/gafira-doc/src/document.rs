@@ -116,6 +116,16 @@ mod tests {
     }
 
     #[test]
+    fn document_is_clone_debug_and_partial_eq() {
+        fn assert_traits<T: Clone + std::fmt::Debug + PartialEq>() {}
+        assert_traits::<Document>();
+        let d = test_document(3, Dpi::new(300), vec![page(1, &[2])]);
+        assert_eq!(d, d.clone());
+        assert_ne!(d, Document::default());
+        assert!(format!("{d:?}").starts_with("Document"));
+    }
+
+    #[test]
     fn dpi_is_read_back_from_the_document() {
         let d = test_document(1, Dpi::new(300), Vec::new());
         assert_eq!(d.dpi().get(), 300);

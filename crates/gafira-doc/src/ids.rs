@@ -118,7 +118,14 @@ mod tests {
     fn exhaustion_error_displays_and_is_an_error() {
         let e: &dyn std::error::Error = &IdSpaceExhausted;
         assert_eq!(e.to_string(), "the document id space is exhausted");
-        let copy = IdSpaceExhausted;
-        assert_eq!(copy, IdSpaceExhausted);
+    }
+
+    #[test]
+    fn exhaustion_error_is_copy_and_eq() {
+        fn assert_traits<T: Copy + Eq + std::fmt::Debug>() {}
+        assert_traits::<IdSpaceExhausted>();
+        let e = IdSpaceExhausted;
+        let copied = e;
+        assert_eq!(e, copied);
     }
 }
