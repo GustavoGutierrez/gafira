@@ -7,6 +7,8 @@
 
 mod dpi;
 mod ids;
+mod page_size;
 
 pub use dpi::Dpi;
 pub use ids::{NodeId, PageId};
+pub use page_size::{Axis, PageSize, PageSizeError};
