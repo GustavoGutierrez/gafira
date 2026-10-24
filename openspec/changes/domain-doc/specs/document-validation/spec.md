@@ -42,11 +42,11 @@ Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn"
 - WHEN `validate()` runs twice
 - THEN both results are equal
 
-### Requirement: Pass order, first error wins (D4a; P4 D4b)
+### Requirement: Pass order, first error wins (D4a; order rows and P4 D4b)
 
 Passes MUST run in this order, pages in `pages` order and nodes in ascending id order: P1 header (schema version, DPI); P2 ids (uniqueness, arena key, `next_id`); P3 pages (page size, roots exist, no root listed twice); P4 nodes (finiteness, ranges, extension `type_id`, then extension payload depth (`ExtensionTooDeep`), then children only on groups, children exist in the same arena). Variant positions follow the design in pass order: 1 `UnsupportedSchemaVersion`, 2 `InvalidDpi` (P1); 3 `DuplicateId`, 4 `ArenaKeyMismatch`, 5 `NextIdNotAboveMax` (P2); 6 `PageSize`, 7 `DanglingRoot`, 8 `DuplicateRoot` (P3); 9 `NonFinite`, 10 `OutOfRange`, 11 `EmptyExtensionTypeId`, 12 `ExtensionTooDeep`, 13 `ChildrenOnLeaf`, 14 `DanglingChild` (P4); 15 `MultipleParents`, 16 `RootHasParent`, 17 `Orphan` (P5); 18 `Cycle` (P6). Delivery: the 18 variants and P1 to P3 land in D4a, P4 in D4b; P5 and P6 land in D5, so after D4a `validate()` runs P1 to P3 only and between D4b and D5 it runs P1 to P4 only and still accepts cycles and multiple parents; P5 parents (parent edge counts); P6 reachability (iterative depth-first search from the roots). When a document has several defects, `validate()` MUST report the one from the earliest pass, and within a pass the first in the stated order. P4 is ordered node by node: nodes in ascending id and, for each node, its checks in the listed order (9 to 14) before the next node is examined, so a defect of a lower-id node wins over any defect of a higher-id node, and for one node `NonFinite` wins over `OutOfRange`, and so on down the list.
 
-#### Scenario: Earlier pass wins (D4a for the first two cases, D4b for the third, unit, table)
+#### Scenario: Earlier pass wins (D4b, unit, table)
 - GIVEN a document with `schema_version = 2` and a duplicate id, one with a duplicate id and a page size out of range, and one with an out-of-range opacity and a dangling child in a node with a higher id (both are P4 defects; the lower id is reported first)
 - WHEN validated
 - THEN the results are `UnsupportedSchemaVersion`, `DuplicateId` and `OutOfRange` (opacity) respectively
