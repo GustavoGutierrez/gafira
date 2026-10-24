@@ -126,3 +126,42 @@ Commits on top (range `feat/domain-doc-2a..feat/domain-doc-2b`, after the five a
 - S1: blank line before `mod tests` in `document.rs`, `page.rs` and `node.rs`.
 - Docs: stale hashes and branches replaced by subjects and branch ranges in both files; the `verify-report.md` D1 note now says seven non-code files differ and nothing under `crates/`, `Cargo.*` or `.github/`.
 - Size: `git diff --shortstat feat/domain-doc-2a..HEAD -- . ':!openspec'`: 5 files changed, 522 insertions(+), 1 deletion(-) (includes the five original code commits; the follow-up tests alone are 4 files, 55 insertions(+), 5 deletions(-)).
+
+## D3 (branch `feat/domain-doc-3`, base `feat/domain-doc-2b`)
+
+Status: partial, stopped at a clean commit boundary on the size rule. Four code commits are done; the last planned commit ("test(doc): add canonical goldens and hostile inputs") is NOT done. Each done commit was run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green; `cargo deny check` and V5/V11/V12 not run during apply).
+
+| # | Commit | Content |
+|---|---|---|
+| 1 | `feat(doc): define the document wire format` | serde derives and defaults on `Flip`, `Placement`, `ElementBase`, `GroupNode`, `ShapeGeometry`, `ShapeNode`, `ExtensionNode`, `NodeKind` (tag `type`, snake_case), `Node` |
+| 2 | `feat(doc): serialize arenas as sorted arrays` | `arena.rs` (array on the wire, duplicate id rejected), serde on `Page` |
+| 3 | `feat(doc): add from_json and to_json` | `json.rs` (`LoadError`, private `DocumentWire`, `from = "DocumentWire"` unchecked), `Document` serde, `from_json`, `to_json` |
+| 4 | `test(doc): show Document equality depends on dpi and page contents` | carry-forward from D2b re-verify WARNING 1 |
+
+### Scenarios covered -> tests (all in-crate)
+
+- Wire shape: "Exact minimal document" `json::tests::minimal_document_has_exact_bytes`; "Arena order is ascending id" `page::tests::arena_is_written_as_an_ascending_array`; "Node shapes per kind" `node::tests::kinds_have_their_wire_shapes`; "None is written as null" `element::tests::wire_form_writes_every_field_with_null_name`; placement/page exact forms `placement::tests::wire_form_is_flat_with_every_field`, `page::tests::page_wire_form_writes_every_field`.
+- Deterministic round trip: "Bit identity" `placement::tests::numbers_keep_their_bits`, `element::tests::subnormal_opacity_keeps_its_bits`, `json::tests::numbers_keep_their_bits_through_a_document`; "Same bytes from a different build order" and idempotence `json::tests::round_trip_is_idempotent_and_independent_of_build_order`. The "arena order mutation" scenario cannot be mutated: the arena is a `BTreeMap`, so insertion order never exists; the ascending test pins the output instead.
+- Defaults and forward compatibility: "Defaults applied" `json::tests::defaults_are_applied_and_rewritten_explicitly`, `element::tests::omitted_fields_take_their_defaults`, `placement::tests::optional_fields_default_and_integers_are_accepted`, `page::tests::page_defaults_required_fields_and_unknown_fields`; "Unknown fields ignored" (element, kind, page tests); "Nodes out of order accepted" `page::tests::unordered_nodes_load_and_duplicates_fail`; "Missing required field" and "Unknown vocabulary" for placement, base, kind, geometry, blend, space (partial, see Remaining).
+- Animatable compatibility: "Keyed object rejected" and bare `0.5` `placement::tests::required_fields_and_keyed_objects`.
+- Extension survival (unit part): "Extension fields kept" `json::tests::extension_fields_survive_and_stay_separate_from_the_document_version`; "f64 field in an internally tagged node" `node::tests::extension_payload_null_and_f64_extremes_survive`.
+- Non-finite: `json::tests::non_finite_numbers_serialize_as_null_and_do_not_load` (NaN opacity, +inf x, -inf rotation, NaN channel, NaN page width).
+- Hostile (part): empty, every prefix, trailing `x`, invalid UTF-8, BOM, lone surrogate -> `LoadError::Json` with source: `json::tests::unreadable_bytes_are_json_errors_with_a_source`; "Duplicate node id inside one page" in `page::tests::unordered_nodes_load_and_duplicates_fail`; duplicate `geometry` key in a shape kind errors (confirmed, `node::tests::kind_defaults_required_fields_and_vocabulary`).
+- Carry-forward: `document::tests::equality_compares_dpi_and_page_contents_not_pointers`.
+
+### RED evidence
+
+- Commits 1, 2 and 3: tests written first; `cargo test -p gafira-doc` failed to compile (E0277 missing `Serialize`/`Deserialize` for `Placement`, `ElementBase`, `Node`, `Page`; E0599 missing `from_json`/`to_json`, E0432 `LoadError`). In commit 3 one test then failed on a test-side bug (roots order in the helper), fixed in the test.
+- Commit 4 passes on existing code (equality is derived), so RED by mutation: a hand-written `PartialEq` ignoring `dpi` fails it (`left != right` failed); a hand-written `PartialEq` using `Arc::ptr_eq` fails it (`left == right` failed). Both restored.
+
+### Deviations
+
+- Doc fields of `Document` became `pub(crate)` so `json.rs` can build it from `DocumentWire`.
+- Tests of commits 1-3 are denser than forecast (every type got its wire tests in its own module); this is where the overrun comes from.
+- `Flip.x`/`Flip.y` default to false on read (not in the required list).
+
+### Size and remaining work
+
+`git diff --shortstat feat/domain-doc-2b..HEAD -- . ':!openspec'` after commit 4: 8 files changed, 611 insertions(+), 15 deletions(-) (forecast whole D3 ~690). The remaining commit would add ~250-290 lines (forecast `tests/serde.rs` 209, `tests/golden.rs` 76, goldens 5) and pass ~700, so work stopped here. Remaining, for a follow-up delivery (D3b):
+- `test(doc): add canonical goldens and hostile inputs`: `tests/golden/{minimal,full,extension,extension_noncanonical}.json` (compact, no trailing newline), `tests/golden/.gitattributes` (`*.json -text`), `tests/golden.rs` (round-trip goldens via `include_str!`, `full` equals the in-crate built document, golden shape check, noncanonical normalizes), `tests/serde.rs` (payload number spelling, integer beyond u64, duplicate payload keys, `1e400`, wrong types, bad numbers, duplicate struct fields, missing-field table, 127/128 nesting, 121/122 payload depth, feature guards via `cargo tree` as a command check, `git check-attr` check).
+- Normalization-on-save and non-canonical payload scenarios are only covered for payload key order in unit tests so far.
