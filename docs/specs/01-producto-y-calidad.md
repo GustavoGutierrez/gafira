@@ -5,7 +5,7 @@
 | Documento | Especificación 01 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-08 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
 | Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
@@ -79,6 +79,7 @@ Las fases siguen el PRD (§6) y la hoja de ruta técnica de 02 (§11.2). Cuando 
 
 | Área | MVP (diseño + video básico) | Fase 2 (control profesional) | Fase 3 (diferenciación) |
 |---|---|---|---|
+| Arranque | Pantalla de arranque (D-09, RF-67): ilustración incrustada y reemplazable, logo y eslogan sobre panel claro, barra de carga real; visible al menos 1,2 s | — | — |
 | Proyecto | `.gafira`, autoguardado, recuperación, Versiones, Historial | Relocalización de medios (RF-55) | — |
 | Lienzo | Tamaños, unidades, páginas, Reglas, Guías, Generador de guías, Imán, Cuadrícula, Zona de seguridad, Sangrado, Zoom 5–3200 % | Distribuir con reglas avanzadas | — |
 | Plantillas y Piezas | Plantillas locales, Piezas (formas, líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones), Dibujo, Biblioteca | Plantillas de video y componentes reutilizables | Biblioteca avanzada con búsqueda semántica local (opcional) |
@@ -241,6 +242,12 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-65 | **Idioma por defecto según el sistema**, con la regla exacta de D-08: cualquier variante de español (`es`, `es-MX`, `es-CO`, `es-ES`…) → español; inglés (`en`, `en-US`, `en-GB`…) → inglés; **cualquier otro idioma, o ningún dato del SO → inglés**. Se detecta en Windows, macOS y Linux (variables de locale) y el primer arranque no pregunta el idioma. | — | MVP | `SystemLocaleSource` (`gafira-platform`), `D08LocaleResolver`, ARQ-100 | 02 §14.3, §14.4; 03 §16.2, DIS-74 |
 | RF-66 | **Selector manual** en Ajustes → General con las opciones `Sistema` (por defecto), `Español` y `English`; la elección se guarda en los ajustes, sobrevive a reiniciar y se aplica al momento, sin reiniciar ni cerrar el proyecto. | — | MVP | `LanguagePreference`, `LocaleChanged`, ARQ-101 | 03 §16.1, DIS-73, DIS-75 |
 
+### 7.12 Arranque (D-09)
+
+| ID | Requisito | PRD | Fase | ARQ | Detalle |
+|---|---|---|---|---|---|
+| RF-67 | **Pantalla de arranque.** Al iniciar, Gafira muestra brevemente una pantalla con la ilustración `assets/splash_screen.jpg` de fondo (recorte «cubrir») y, sobre un panel inferior de blanco cálido, el logo horizontal, el eslogan («Haz visibles tus ideas.» / «Bring your ideas to life.», según el idioma de D-08), la versión y una barra de carga coral que refleja el progreso real. Se cierra al terminar la carga necesaria para Inicio, con un mínimo de 1,2 s; avisa si la carga supera 5 s (PROPUESTA) y ofrece «Reintentar» si el arranque falla. Respeta reducir movimiento y no roba el foco. **La imagen es reemplazable**: se sustituye el archivo (mismo nombre, JPEG o PNG) y se recompila, sin tocar código; va incrustada en el binario y no depende de rutas del usuario. | — (decisión del titular; sin RF en el PRD) | MVP | ARQ-65..ARQ-69, ADR-10 | 03 §7.10, DIS-80..DIS-87 |
+
 ---
 
 ## 8. Requisitos no funcionales
@@ -248,7 +255,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | ID | Requisito | PRD | ARQ | Criterios de calidad |
 |---|---|---|---|---|
 | RNF-01 | **Plataforma.** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Pantallas HiDPI, modo oscuro y teclado completo. Sin web ni otras plataformas. Varios monitores: la ventana principal es única; paneles flotantes en un segundo monitor son PROPUESTA de Fase 2. | RNF-01 | ARQ-03, ARQ-80 | — |
-| RNF-02 | **Rendimiento.** Se cumplen las cifras de la §9; el hilo de UI nunca bloquea más de 16 ms por trabajo del engine; la GPU es opcional y existe siempre alternativa en CPU con estimación de tiempo visible. | RNF-02 | ARQ-40..44, ARQ-22 | CAL-01..CAL-16 |
+| RNF-02 | **Rendimiento.** Se cumplen las cifras de la §9; el hilo de UI nunca bloquea más de 16 ms por trabajo del engine; la GPU es opcional y existe siempre alternativa en CPU con estimación de tiempo visible. | RNF-02 | ARQ-40..44, ARQ-22, ARQ-65, ARQ-68 | CAL-01..CAL-16, CAL-38, CAL-39 |
 | RNF-03 | **Confiabilidad.** Autoguardado con recuperación del 100 %, guardado atómico, copia `.bak` de una generación, ninguna operación destructiva sin Deshacer, verificación de integridad en exportaciones. | RNF-03 | ARQ-50..57 | CAL-17, CAL-18 |
 | RNF-04 | **Seguridad y privacidad.** Procesamiento 100 % local; la única conexión de red es la de la licencia, que envía solo los datos que declara `PRIVACY.md` (identificador de dispositivo incluido; D-01); sin cuentas, nube ni telemetría automática; el registro de actividad es local y auditable; permisos mínimos del SO; los modelos de IA, si existen, se instalan aparte y se desactivan por defecto. | RNF-04 | ARQ-04, ARQ-24, ARQ-76, ARQ-91 | CAL-21 |
 | RNF-05 | **Usabilidad.** Primera pieza publicable en < 10 min; toda función accesible por Paleta de comandos o atajo; paneles redimensionables y plegables; toda acción destructiva es reversible o pide confirmación. | RNF-05 | ARQ-63, ARQ-64 | CAL-20, CAL-33 |
@@ -295,7 +302,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-05 | Interacciones locales | < 100 ms (p99) | spec técnica | Gama media | `bench_interactions` | RF-13, DIS-62 |
 | CAL-06 | Aislar sujeto de una imagen de 4000 px en CPU | < 5 s | PRD y spec técnica | Gama media | `bench_segment_4000` | RF-22 |
 | CAL-07 | Aislar sujeto de 4000 px con GPU | < 2 s (VERIFICAR viabilidad con la técnica clásica) | spec técnica | GPU | `bench_segment_4000` | RF-22, R-04 de 02 |
-| CAL-08 | Arranque hasta el primer frame interactivo | < 5 s (objetivo interno < 2 s, FIJADA) | PRD | Gama media | `gafira --bench-startup` | RNF-02 |
+| CAL-08 | Arranque hasta el primer frame interactivo de Inicio, incluida la Pantalla de arranque | < 5 s (objetivo interno < 2 s, FIJADA) | PRD | Gama media | `gafira --bench-startup` | RNF-02, RF-67 |
 | CAL-09 | Abrir un proyecto de 20 páginas | < 3 s hasta la primera página interactiva | PRD | Gama media | `bench_open_20_pages` | RF-01 |
 | CAL-10 | Abrir un documento de 100 capas | < 500 ms | spec técnica | Gama media | `bench_open_100_layers` | RF-02 |
 | CAL-11 | Exportar PNG de 1080p | < 2 s | spec técnica | Gama media | `bench_export_png_1080` | RF-31 |
@@ -325,6 +332,8 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-35 | Estabilidad del hilo de UI | 0 trabajos > 16 ms fuera de diálogos del SO | 02 | Gama media | ARQ-41 | RNF-02 |
 | CAL-36 | Cambio de idioma con un proyecto abierto | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo, sin reiniciar | D-08 (cifra PROPUESTA, igual que el cambio de modo, DIS-64) | Gama media | `bench_locale_switch` (ARQ-101, DIS-75) | RF-66, RNF-13 |
 | CAL-37 | Cobertura de traducción | 100 % de claves en `es` y `en`; 0 truncados sin tooltip en las 8 pantallas en `es`, `en` y seudo-localización | D-08 | Todos | `xtask check-i18n` (ARQ-98), capturas de DIS-76 (ARQ-103) | RF-64, RNF-12 |
+| CAL-38 | Primer frame de la Pantalla de arranque desde que se lanza el proceso | < 300 ms | D-09 (cifra PROPUESTA) | Gama media y macOS de referencia | `gafira --bench-startup` (`splash_first_frame_ms`, ARQ-65) | RF-67, RNF-02 |
+| CAL-39 | Duración visible de la Pantalla de arranque | ≥ 1,2 s (D-09) y ≤ el mayor entre 1,2 s y el fin de la carga necesaria para Inicio, más 1 frame; aviso de carga lenta a los 5 s (PROPUESTA) | D-09 | Gama media | `gafira --bench-startup` (`splash_visible_ms`) y pruebas con arranque simulado (03 DIS-82, ARQ-68) | RF-67 |
 
 - **CAL-A**: ninguna cifra de la tabla se relaja sin un cambio documentado de esta spec y una nueva decisión del titular (D-03). *Aceptación*: `perf-budgets.toml` contiene una entrada por cada CAL medible y un revisor del repositorio lo valida en cada cambio de umbral.
 
@@ -486,6 +495,7 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-19 | **Funciones esenciales sin retener tras un plan de pago** (principio del PRD). | PRD vs D-01 | D-01 lo sustituye: todo de pago con prueba gratuita y una sola licencia (§11). |
 | C-20 | **Idioma del producto.** El manual fija español e inglés como idiomas prioritarios y da el eslogan inglés; el PRD no define idioma de interfaz; 03 decía «la traducción al inglés (si se hace)» y 05 FV-30 limita el instalador al español «según Q-14». | Manual vs PRD vs 03/05 | D-08: español e inglés, por defecto según el sistema y cualquier otro idioma → inglés (§7.11). 03 ya está alineada; 05 FV-30 queda pendiente de actualizar (Q-26). |
 | C-21 | **Plantillas por idioma.** El PRD pide una biblioteca «local y remota» filtrable por idioma. | PRD vs §6 | Solo plantillas locales (§6); cada plantilla empaquetada declara su idioma y la pestaña Plantillas filtra por él (nota de §7.3). |
+| C-22 | **Logo del splash.** El manual cita el «símbolo aislado» como uso correcto en un splash (§7.9, uso 3) y prohíbe el logo sobre una fotografía agitada sin superficie de contraste (§7.10); 03 §5.1 preveía un logo apilado sobre `bg` sin imagen. | Manual vs D-09 vs 03 | D-09: logo horizontal `gafira-logo-primary.svg` sobre un panel `#FAFAF7` (uso correcto 1 y 6 del manual), nunca sobre la ilustración; 03 §5.1 y §7.10 ya están alineadas (RF-67). |
 
 ---
 
@@ -506,3 +516,4 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | RNF-01..RNF-06 | RNF-01..RNF-06 (misma numeración) y RNF-07..RNF-11 (nuevos) |
 | Distribución, avisos y licencia (decisiones D-01, D-05, D-06) | RF-56..RF-59 (RF-59 cancelado), RF-62, RF-63 |
 | Idioma (decisión D-08; sin RF en el PRD) | RF-64..RF-66, RNF-12, RNF-13, CAL-36, CAL-37 → 02 ARQ-97..ARQ-107, ADR-09 → 03 DIS-01, DIS-71..DIS-79 |
+| Pantalla de arranque (decisión D-09; sin RF en el PRD) | RF-67, CAL-08 (incluye la Pantalla de arranque), CAL-38, CAL-39 → 02 ARQ-65..ARQ-69, ADR-10 → 03 §7.10, DIS-80..DIS-87. La imagen es reemplazable sin tocar código (03 §7.10.10) |

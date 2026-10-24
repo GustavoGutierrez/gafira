@@ -5,9 +5,9 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-08 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-16..ARQ-19, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49, ARQ-65..ARQ-69 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-16..ARQ-19, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -21,7 +21,7 @@ Gafira es un editor de escritorio local para diseño gráfico, imagen y video. S
 |---|---|---|
 | Extensibilidad | Los formatos, efectos, herramientas, códecs, segmentadores, proveedores de recursos y backends de render nuevos se añaden registrando una implementación de un trait. No se edita `match` alguno del núcleo. | ARQ-10, ARQ-20..ARQ-31 |
 | Adaptabilidad | La misma aplicación se adapta al hardware: GPU o CPU, códecs del sistema o libres de regalías, proxies según la RAM, límites configurables de memoria y VRAM. | ARQ-40..ARQ-47 |
-| Rendimiento | Cumple las cifras del PRD y de la spec técnica (tabla en §6.7). Ninguna operación pesada corre en el hilo de UI. | ARQ-40..ARQ-47 |
+| Rendimiento | Cumple las cifras del PRD y de la spec técnica (tabla en §6.7). Ninguna operación pesada corre en el hilo de UI. La Pantalla de arranque se pinta pronto y no bloquea la carga (D-09). | ARQ-40..ARQ-47, ARQ-65, ARQ-68 |
 | Robustez | Pérdida máxima por fallo de 15 s, recuperación del 100 %, guardado atómico, degradación elegante ante fallos de GPU, códec o plugin. | ARQ-50..ARQ-57 |
 | Portabilidad | **Solo** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64. Sin web/wasm, sin macOS x86_64, sin Windows arm64, sin Linux en otras arquitecturas, sin móvil (D-05). | ARQ-03, ARQ-80, ARQ-84 |
 | Vendibilidad | Todas las dependencias y assets distribuidos tienen licencias permisivas. No hay GPL, LGPL, AGPL ni licencias no comerciales. El instalador no incluye binarios externos (FFmpeg incluido). Gafira es software propietario de pago con prueba gratuita y una única licencia (D-01). | ARQ-70..ARQ-79, ARQ-90..ARQ-96 |
@@ -116,7 +116,7 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 4 Adaptadores | `gafira-i18n` | Idioma de la interfaz (§14): catálogos de mensajes español e inglés embebidos, resolución del idioma según D-08 (`D08LocaleResolver`), traducción por clave con parámetros y plurales (`CatalogTranslator`), formato de números, fechas, tiempos relativos y unidades por idioma (ICU4X), cadena de respaldo y seudo-localización para pruebas. Implementa `Translator` y `LocaleResolver`. | Depender de egui, `gafira-engine` o `gafira-ui`. Leer catálogos del disco en release. Detectar el idioma del SO (eso es `gafira-platform`). Guardar estado global mutable. | MVP |
 | 4 Adaptadores | `gafira-theme` | Carga y validación de tokens de diseño desde datos (`gafira.tokens.json`, cuyo contenido normativo está en 03 §3) y tipografías embebidas (Inter, Manrope). | Depender de egui (expone tipos neutros). Definir valores de tokens en código. | MVP |
 | 4 Adaptadores | `gafira-license` | Licencia y activación (§13). Núcleo puro: verificación sin conexión del token Ed25519 con clave pública fija en el ejecutable y máquina de estados. Feature `online`: cliente de activación, validación y desactivación. Feature `credentials`: almacén del secreto del dispositivo en el llavero del SO. Implementa `LicenseVerifier`. | Descargar la clave pública. Enviar datos distintos de los de licencia. Contener código del servidor. | MVP |
-| 4 Adaptadores | `gafira-ui` | Interfaz egui/eframe: shell, paneles, lienzo, timeline, herramientas (`Tool`), widgets accesibles y traducción de eventos. Todo texto visible sale de `Translator` por clave (ARQ-97). | Mutar el documento sin `Command`, o hacer I/O directo. Contener texto literal visible. | MVP |
+| 4 Adaptadores | `gafira-ui` | Interfaz egui/eframe: shell, paneles, lienzo, timeline, herramientas (`Tool`), widgets accesibles y traducción de eventos. Pantalla de arranque con sus recursos incrustados (§8.4, D-09). Todo texto visible sale de `Translator` por clave (ARQ-97). | Mutar el documento sin `Command`, o hacer I/O directo. Contener texto literal visible. | MVP |
 | 4 Adaptadores | `gafira-captions` | Lectura y escritura de SRT y WebVTT, estilos de subtítulo. | — | Fase 2 |
 | 4 Adaptadores | `gafira-plugin` | `PluginHost` con wasmi (sandbox, combustible, capacidades), manifiesto de extensión. | Dar acceso a red o disco no concedido. | Fase 3 |
 | Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
@@ -783,8 +783,12 @@ pub enum EngineEvent {
     BackendChanged(BackendKind), MemoryPressure(Level), RecoveryAvailable(Vec<RecoveryEntry>),
     LicenseChanged(LicenseStatus), LinksMissing(Vec<AssetRef>),   // §13 y medios vinculados ausentes (§7.1)
     LocaleChanged { preference: LanguagePreference, resolved: ResolvedLocale }, // §14: Ajustes → General → Idioma
+    StartupProgress { step: StartupStep, fraction: f32 },  // §8.4: barra de la Pantalla de arranque (D-09)
+    StartupFinished(Result<(), Message>),                  // §8.4: cierra la Pantalla de arranque o muestra el error
 }
 ```
+
+`StartupProgress` y `StartupFinished` los publica la secuencia de arranque (§8.4). El *composition root* crea el canal **antes** que el engine, entrega el receptor a la Pantalla de arranque y pasa el emisor a la secuencia, que corre fuera del hilo principal; así la barra recibe eventos desde el primer paso.
 
 `LocaleChanged` lo publica `SettingsService` al arrancar (primera resolución) y cada vez que la persona cambia el idioma. La UI lo drena como cualquier otro evento, cambia su `Locale` activo y pide un repintado; no reinicia nada (ARQ-101).
 
@@ -929,7 +933,9 @@ Otras cifras (FIJADAS, D-03):
 | Filtro < 300 ms (spec) | Efecto sobre el mip del viewport (vista previa) en GPU o rayon; resolución completa en segundo plano | `bench_filter_4000px_preview` < 300 ms |
 | Interacciones locales < 100 ms (spec) | Todo comando del núcleo es O(nodos tocados); trabajo pesado asíncrono | Suite `bench_interactions`: cada acción < 100 ms p99 |
 | Aislar sujeto 4000 px < 5 s CPU, < 2 s GPU (spec/PRD) | Segmentación en 1024 px y escalado guiado; SLIC y GMM paralelos; variante GPU del *guided filter* | `bench_segment_4000` en la máquina de referencia: CPU < 5 s; GPU < 2 s (VERIFICAR viabilidad de la vía GPU con la técnica clásica, R-04) |
-| Arranque < 5 s gama media (PRD) | Inicialización perezosa de la GPU y de los registros pesados; fuentes embebidas sin escanear el sistema al arrancar (escaneo en segundo plano); LTO | `gafira --bench-startup` hasta el primer frame interactivo < 5 s (objetivo interno < 2 s, FIJADA) |
+| Arranque < 5 s gama media (PRD) | Inicialización perezosa de la GPU y de los registros pesados; fuentes embebidas sin escanear el sistema al arrancar (escaneo en segundo plano); LTO; la Pantalla de arranque solo espera los pasos bloqueantes y los diferibles siguen tras cerrarla (§8.4) | `gafira --bench-startup` hasta el primer frame interactivo de Inicio < 5 s (objetivo interno < 2 s, FIJADA), incluida la Pantalla de arranque |
+| Primer frame de la Pantalla de arranque < 300 ms (PROPUESTA, D-09) | Ventana y primer frame antes de cualquier otro paso; logo pequeño incrustado; decodificación y reescalado de la imagen en un hilo propio (ARQ-65) | `gafira --bench-startup` informa de `splash_first_frame_ms` < 300 ms en gama media |
+| Pantalla de arranque visible ≥ 1,2 s (D-09) y aviso de carga lenta a los 5 s (PROPUESTA) | Temporizador de la Pantalla de arranque sobre el reloj inyectado (`Clock`); cierre con `StartupFinished` | `splash_visible_ms` ≥ 1200 y ≤ `max(1200, pasos bloqueantes) + 1 frame`; pruebas con arranque simulado (03 DIS-82) |
 | Abrir proyecto de 20 páginas < 3 s (PRD) | Manifiesto y JSON por página; render de la página visible primero; miniaturas guardadas en el archivo; recursos bajo demanda | `bench_open_20_pages` < 3 s hasta la primera página interactiva |
 | Abrir documento de 100 capas < 500 ms (spec) | Deserialización serde directa, sin pasos intermedios; textos maquetados de forma perezosa | `bench_open_100_layers` < 500 ms |
 | Exportar PNG 1080p < 2 s (spec) | Render CPU en tiles paralelos; codificador PNG con compresión rápida por defecto | `bench_export_png_1080` < 2 s |
@@ -1111,7 +1117,55 @@ pub enum FormatError {
 | ARQ-62 | Las fuentes de egui por defecto no se incluyen. | `cargo tree -e features -p gafira` no muestra `default_fonts`. Una inspección del binario no encuentra los nombres de esas fuentes. |
 | ARQ-63 | Todo el flujo Elegir → Personalizar → Compartir es operable solo con teclado. | La prueba E2E de teclado (egui_kittest, VERIFICAR licencia) completa plantilla → editar texto → exportar PNG. |
 | ARQ-64 | Se respeta la reducción de movimiento. | Con la preferencia activa, la duración medida de las transiciones de la UI es 0. |
-| ARQ-65..ARQ-69 | Reservados. | — |
+
+### 8.4 Pantalla de arranque (D-09)
+
+El diseño visible está en 03 §7.10. Aquí se fija dónde vive, cómo se incrustan y decodifican sus recursos y cómo informa del progreso.
+
+- **Dónde vive**: módulo `splash` de `gafira-ui`, dibujado con egui como cualquier otra vista. `apps/gafira` solo lo compone: crea el canal de eventos, abre la Pantalla de arranque y lanza la secuencia de arranque en otro hilo. `gafira-ui` no lee el disco para ella: todos sus recursos están en el binario.
+- **Ventana**: una ventana propia sin decoraciones (*viewport* de egui de 800×450 px lógicos, 03 §7.10.2) y la ventana principal se crea oculta y se muestra al cerrar la Pantalla de arranque. Que eframe 0.36 permita crear la ventana raíz oculta y una ventana secundaria sin decoraciones, sin activarla, en las tres plataformas es **VERIFICAR** (en Wayland la posición la decide el compositor). Respaldo: dibujar la Pantalla de arranque dentro de la ventana principal, a su tamaño, con las reglas de recorte de 03 §7.10.3.
+- **Recursos incrustados** (ADR-10): un `build.rs` de `gafira-ui` busca `assets/splash_screen.jpg` y `assets/splash_screen.png` en la raíz del workspace, exige que exista exactamente uno, lo valida (cabecera, dimensiones, proporción, tamaño y decodificación completa) y lo copia a `OUT_DIR` con su formato anotado; el crate lo incluye con `include_bytes!` desde `OUT_DIR`. El `build.rs` declara las dos rutas candidatas con `cargo:rerun-if-changed`, así que sustituir el archivo basta para que la siguiente compilación lo recoja. El logo `gafira-logo-primary.svg` se rasteriza en build con `xtask gen-brand` (como los demás logos, §8.2) a 200 px de ancho visible en 1×, 1,5×, 2×, 2,5× y 3× (PNG) y se incrusta igual; a la vista se dibuja la versión más cercana igual o mayor que el factor de escala del monitor.
+- **Decodificación sin bloquear el hilo principal**: el hilo de la imagen arranca al empezar `main`, antes de crear la ventana; decodifica el JPEG o el PNG y lo reescala a los px físicos exactos de su zona (filtro Catmull-Rom o Lanczos3 de `image::imageops`). El primer frame se pinta sin esperarlo: si la imagen aún no está, su zona se pinta con `splash.panel` y la imagen se sube como textura en el frame en que llega. El logo (PNG de pocos KB) se decodifica en el hilo principal antes del primer frame (< 5 ms medido en CI; si supera 16 ms, ARQ-41 falla). Si la imagen no decodifica en ejecución (no debería ocurrir tras ARQ-69), la Pantalla de arranque se muestra sin imagen y se registra el error; el arranque no falla por ello.
+- **Secuencia de arranque y pasos**: `StartupStep` enumera los pasos con un peso fijo; `fraction` es la suma de pesos completados más la fracción del paso en curso, sobre el total, y nunca decrece.
+
+| Paso (`StartupStep`) | Tipo | Peso (PROPUESTA) |
+|---|---|---|
+| `Settings`: leer ajustes, preferencia de idioma y de movimiento | Bloqueante, antes del primer frame (la Pantalla de arranque los necesita) | 5 |
+| `Locale`: resolver el idioma (D-08) y cargar el catálogo | Bloqueante, antes del primer frame | 5 |
+| `Theme`: tokens embebidos y fuentes Inter y Manrope | Bloqueante, antes del primer frame | 10 |
+| `License`: leer y verificar el token guardado, sin red (§13) | Bloqueante | 5 |
+| `Registries`: formatos, efectos, herramientas, códecs | Bloqueante | 25 |
+| `Engine`: crear la Facade y los servicios | Bloqueante | 20 |
+| `Recovery`: buscar trabajo sin guardar (§7.2) | Bloqueante | 10 |
+| `MainWindow`: primer frame de Inicio preparado | Bloqueante | 20 |
+| `Templates`, `RecentThumbnails`, `SystemFonts`, `GpuCanvas` | Diferible: corre tras cerrar la Pantalla de arranque | 0 (no cuenta en la barra) |
+
+- **Reloj y tiempos**: los tiempos de 03 §7.10.5 (mínimo 1,2 s, carga lenta a los 5 s, error tras 20 s sin progreso) se miden con el puerto `Clock`, para probarlos con un reloj simulado. Son constantes de `gafira-ui` (`SplashTimings`); solo el mínimo de 1,2 s es decisión del titular (D-09).
+- **Presupuesto de arranque**: primer frame de la Pantalla de arranque < 300 ms (PROPUESTA) y primer frame interactivo de Inicio < 5 s (FIJADA; objetivo interno < 2 s), contando los 1,2 s mínimos. Riesgo: la creación del dispositivo `wgpu` de eframe ocurre antes del primer frame y puede tardar más de 300 ms en algunos equipos (R-19).
+- **Presupuesto de tamaño**: el JPEG actual ocupa 296 847 bytes (0,28 MiB), el 0,74 % de los 40 MB del binario (FIJADA, D-03); los PNG del logo suman unas decenas de KB (estimación; se mide con `cargo bloat`). **No hace falta recomprimirlo**: ahorrar 100–150 KB bajando la calidad es un 0,3 % del presupuesto y degradaría las texturas finas de la ilustración, y un JPEG ya comprimido no se reduce más dentro del instalador. Memoria: la decodificación usa 6,0 MiB temporales (1672×941×4 bytes) más la textura a tamaño físico (1,4 MiB al 100 %, 5,5 MiB al 200 %); todo se libera al cerrar la Pantalla de arranque y no cuenta para los ≤ 300 MB en reposo.
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-65 | **La Pantalla de arranque vive en `gafira-ui` y no bloquea el hilo principal.** Se dibuja con egui; la ventana y su primer frame van antes de cualquier paso diferible; la decodificación y el reescalado de la imagen corren en un hilo propio; la carga sigue en segundo plano mientras se muestra. | `gafira --bench-startup` informa `splash_first_frame_ms` < 300 ms (PROPUESTA) en gama media; `tracing` no registra spans > 16 ms en el hilo principal durante el arranque (ARQ-41); una búsqueda en CI encuentra el `include_bytes!` del recurso solo en `gafira-ui`; con la ventana secundaria deshabilitada por configuración de prueba, el respaldo dentro de la ventana principal pasa las capturas de 03 DIS-81. |
+| ARQ-66 | **Decodificación con crates permisivos ya admitidos.** La imagen se decodifica con `image` (MIT/Apache-2.0, VERIFICADA) con solo las features `jpeg` y `png`; el JPEG lo decodifica `zune-jpeg` (MIT/Apache-2.0/Zlib, VERIFICADA), que `image` usa por debajo en sus versiones recientes (VERIFICAR la versión elegida y que decodifica JPEG progresivo, como el actual). Es la misma versión de `image` que `gafira-io-image`. | `cargo deny check` en verde; `cargo tree -d` no muestra dos versiones de `image` ni de `zune-jpeg`; una prueba decodifica el JPEG progresivo actual y un PNG de prueba. |
+| ARQ-67 | **Recursos incrustados en el binario por la build** (ADR-10). Exactamente uno de `assets/splash_screen.jpg` o `assets/splash_screen.png`; el `build.rs` falla si no hay ninguno, si hay los dos, si la cabecera o la decodificación fallan o si se incumplen los límites de 03 §7.10.10; sustituir el archivo se recoge en la siguiente compilación. | Prueba de build en CI con cinco *fixtures* (JPEG válido, PNG válido, ausente, duplicado, truncado): solo los válidos compilan; en release, `strings` o una búsqueda de la firma JPEG/PNG en el binario encuentran el recurso y ningún acceso a `assets/` en tiempo de ejecución (prueba con `assets/` renombrada). |
+| ARQ-68 | **Evento `StartupProgress` real.** La barra se alimenta solo de `StartupProgress` y `StartupFinished` (§5.2); `fraction` es monótona en [0, 1] y llega a 1 antes de `StartupFinished(Ok)`; los pasos diferibles no retrasan el cierre. | Prueba de la secuencia de arranque con un `Clock` simulado y puertos falsos: las fracciones publicadas no decrecen, terminan en 1,0 y cubren todos los pasos bloqueantes; un paso diferible bloqueado 10 s no retrasa `StartupFinished`; un fallo en un paso bloqueante publica `StartupFinished(Err)` con un `Message` sin rutas ni códigos (03 DIS-41). |
+| ARQ-69 | **Prueba del recurso y presupuesto de tamaño.** Una prueba de `gafira-ui` decodifica el recurso incrustado y comprueba dimensiones (de 1600×900 a 2880×1620 px), proporción (1,5–2,1:1) y tamaño (≤ 2 MB, PROPUESTA); el binario sigue ≤ 40 MB. | `cargo test -p gafira-ui splash_asset` en verde; falla con un recurso corrupto o fuera de límites; `xtask size` (ARQ-83) atribuye a la Pantalla de arranque ≤ 2,2 MB incluido el logo y el binario `dist` no supera 40 MB. |
+
+**ADR-10: recursos de la Pantalla de arranque incrustados por la build.**
+
+**Decisión**: un `build.rs` en `gafira-ui` localiza, valida y copia a `OUT_DIR` la imagen `assets/splash_screen.{jpg,png}`, y el crate la incluye con `include_bytes!`. El mismo mecanismo `include_bytes!` ya se usa para los tokens (§8.2).
+
+*Motivos*: D-09 exige que la imagen vaya en el binario y que se cambie sustituyendo el archivo, sin tocar código. Un `include_bytes!` con ruta fija no admitiría las dos extensiones ni podría validar el archivo antes de compilar; el `build.rs` hace las dos cosas, falla con un mensaje claro y avisa a Cargo de que vuelva a compilar si el archivo cambia. No añade dependencias en tiempo de ejecución; en build usa la misma `image` (como `build-dependency`).
+
+*Descartadas*:
+
+| Alternativa | Motivo |
+|---|---|
+| Leer la imagen de disco junto al ejecutable | Depende de la ruta de instalación y del paquete de cada plataforma; D-09 lo prohíbe. |
+| Crate de incrustación de directorios (p. ej. `include_dir`) | Dependencia nueva para un solo archivo; tampoco valida la imagen. |
+| Guardar la imagen ya decodificada (RGBA) | 6,0 MiB frente a 0,28 MiB en el binario; no compensa los pocos ms de decodificación, que además van en otro hilo. |
+| Generar código Rust con `xtask` | Paso manual adicional al cambiar la imagen; contradice «sustituir y recompilar». |
 
 ---
 
@@ -1158,7 +1212,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | tiny-skia | última | BSD-3-Clause | VERIFICADA | Rasterización CPU | vello_cpu |
 | usvg / resvg | última | Apache-2.0/MIT | VERIFICADA | Importar SVG, iconos en build | — |
 | moxcms | última | BSD-3/Apache-2.0 | VERIFICADA | ICC y CMYK | lcms2 (MIT, C) |
-| image, png, gif, tiff, image-webp | última | MIT/Apache-2.0 | VERIFICADA | Códecs raster | — |
+| image, png, gif, tiff, image-webp | última | MIT/Apache-2.0 | VERIFICADA | Códecs raster; también decodificar la imagen de la Pantalla de arranque en `gafira-ui` (solo features `jpeg` y `png`) y validarla en su `build.rs` (§8.4, ADR-10) | — |
 | zune-jpeg | última | MIT/Apache/Zlib | VERIFICADA | Decodificar JPEG | jpeg-decoder |
 | fax, weezl | última | MIT/Apache | VERIFICADA | TIFF y LZW | — |
 | egui, eframe | 0.36 | MIT/Apache-2.0 | VERIFICADA | UI | iced |
@@ -1345,7 +1399,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 | Fase | Crates entregados | Traits activos | Formatos de importación | Formatos de exportación |
 |---|---|---|---|---|
-| **MVP** (diseño + video básico) | geom, color, time, anim, doc, edit, pathops, text, layout, raster, audio, segment (clásico), ports, render, media, engine, format, assets, io-image, io-svg, io-pdf, mux, codec-free, codec-os, render-cpu, render-gpu, platform, theme, i18n (español e inglés, D-08), license, ui, testkit, apps | `NodeVisitor`, `Tool`, `Command`, `Effect`, `Transition`, `Importer`, `Exporter`, `RenderBackend`, `Segmenter`, `Container`, `Codec`, `Decoder`, `Encoder`, `AudioProcessor` (ganancia, fundidos, EQ de 3 bandas, nivelación), `ColorTransform` (sRGB, P3), `AssetProvider`, `ProjectRepository`, `LicenseVerifier`, `Translator`, `LocaleResolver`, `SystemLocaleSource` | `.gafira` (con `versions/`); PNG, JPEG, WebP, GIF, TIFF, BMP, QOI (`gafira-io-image`); SVG (`gafira-io-svg`); MP4/MOV y WebM/MKV (`gafira-mux`) con H.264/AAC vía API del sistema (`gafira-codec-os`) y AV1/Opus/Vorbis/FLAC (`gafira-codec-free`); WAV, FLAC, Ogg y MP3 (**solo importación**, decodificador permisivo VERIFICAR) | `.gafira`; PNG (transparencia, escala), JPEG, WebP, GIF animado (`gafira-io-image`); SVG (`gafira-io-svg`); PDF RGB Digital/Impresión con sangrado y marcas de corte (`gafira-io-pdf`); **WebM y MP4 AV1 + Opus por defecto** (`gafira-codec-free`); MP4 H.264/AAC 480p–4K solo si la API del sistema está disponible (`gafira-codec-os` + `gafira-mux`); secuencia PNG; WAV; **extracción de fotograma (PNG) y de audio (WAV)** |
+| **MVP** (diseño + video básico) | geom, color, time, anim, doc, edit, pathops, text, layout, raster, audio, segment (clásico), ports, render, media, engine, format, assets, io-image, io-svg, io-pdf, mux, codec-free, codec-os, render-cpu, render-gpu, platform, theme, i18n (español e inglés, D-08), license, ui (con la Pantalla de arranque, D-09), testkit, apps | `NodeVisitor`, `Tool`, `Command`, `Effect`, `Transition`, `Importer`, `Exporter`, `RenderBackend`, `Segmenter`, `Container`, `Codec`, `Decoder`, `Encoder`, `AudioProcessor` (ganancia, fundidos, EQ de 3 bandas, nivelación), `ColorTransform` (sRGB, P3), `AssetProvider`, `ProjectRepository`, `LicenseVerifier`, `Translator`, `LocaleResolver`, `SystemLocaleSource` | `.gafira` (con `versions/`); PNG, JPEG, WebP, GIF, TIFF, BMP, QOI (`gafira-io-image`); SVG (`gafira-io-svg`); MP4/MOV y WebM/MKV (`gafira-mux`) con H.264/AAC vía API del sistema (`gafira-codec-os`) y AV1/Opus/Vorbis/FLAC (`gafira-codec-free`); WAV, FLAC, Ogg y MP3 (**solo importación**, decodificador permisivo VERIFICAR) | `.gafira`; PNG (transparencia, escala), JPEG, WebP, GIF animado (`gafira-io-image`); SVG (`gafira-io-svg`); PDF RGB Digital/Impresión con sangrado y marcas de corte (`gafira-io-pdf`); **WebM y MP4 AV1 + Opus por defecto** (`gafira-codec-free`); MP4 H.264/AAC 480p–4K solo si la API del sistema está disponible (`gafira-codec-os` + `gafira-mux`); secuencia PNG; WAV; **extracción de fotograma (PNG) y de audio (WAV)** |
 | **Fase 2** (control profesional) | captions, io-pptx, `scopes` en raster, `heic-os` (según Q-17), VP9 en codec-free, CMYK en io-pdf, AVI de solo lectura en mux | Keyframes con curvas en la UI, máscaras de video, *chroma key*, LUT (`LutTransform`), curvas y ruedas de color, puerta de ruido, compresor, limitador, reducción de ruido, *time-stretch*, cola de render avanzada, control de códec, bitrate y fps, medios vinculados y Relocalizar medios | + AVI con MJPEG, sin comprimir o PCM (D-07); HEIC (SO, solo lectura, según Q-17); PDF (hayro, VERIFICAR); SRT y VTT (`gafira-captions`); LUT `.cube` | + PDF CMYK (moxcms); SRT y VTT; WebM VP9; extracción de fotograma en JPEG y de audio en FLAC u Opus; **PPTX** con una imagen de alta resolución por diapositiva y sin objetos editables (`gafira-io-pptx`, D-07) |
 | **Fase 3** (plugins, lotes) | plugin, `onnx` en segment, lotes extendidos en cli | `PluginHost`, `NodeExtension` por plugin, `OnnxSegmenter`, `TextAssistant` (opcional, local, desactivable) | Formatos de plugins | Formatos de plugins; exportación por lotes con plantillas de datos (CSV). El render distribuido en la red local del usuario queda **en suspenso**: abriría una conexión de red distinta de la de licencia, prohibida por D-01 (Q-18) |
 
@@ -1375,6 +1429,8 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | R-16 | Los datos de ICU4X o una dependencia transitiva añaden una licencia no permitida o inflan el binario por encima de 40 MB. | Licencia / distribución | Datos compilados solo para `es` y `en`; `cargo deny` y `cargo bloat` en CI; presupuesto propio de `gafira-i18n` (ARQ-106); alternativa: formateadores propios para los dos idiomas (ADR-09). |
 | R-17 | Un nombre inglés del glosario coincide con el nombre exclusivo de otro producto o con una marca registrada. | Marca | Los nombres ingleses son PROPUESTA (03 §2.8) hasta la aprobación del titular; revisión de DIS-03 y DIS-72 y búsqueda de marca antes de publicar (Q-25). |
 | R-18 | Un mensaje sin traducir llega a una versión publicada (por ejemplo, la clave de un plugin o de un error raro). | Calidad | Cobertura del 100 % como condición de merge (ARQ-98); en release el respaldo nunca muestra una clave (ARQ-99). |
+| R-19 | La creación del dispositivo `wgpu` y de la ventana de eframe, previa al primer frame, supera los 300 ms de la Pantalla de arranque en algunos equipos o drivers; o eframe no permite la ventana secundaria sin decoraciones ni la ventana principal oculta (D-09, §8.4). | Rendimiento / UI | Medir `splash_first_frame_ms` en los tres perfiles de referencia (VERIFICAR); respaldo `glow` o software de eframe (ADR-06) y respaldo de dibujo dentro de la ventana principal (ARQ-65); la cifra de 300 ms es PROPUESTA y se ajusta tras medir. |
+| R-20 | El origen o la licencia de la ilustración `assets/splash_screen.jpg` no permiten distribuirla en un producto de pago. | Licencia / marca | Registro en `assets/LICENSES.toml` antes de publicar (ARQ-75, pendiente 6 de 00-decisiones); si no se puede acreditar, sustituirla siguiendo 03 §7.10.10. |
 
 ### 12.2 Preguntas cerradas
 
@@ -1706,3 +1762,4 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | ADR-07 | Códecs por clase legal: AV1 + Opus por defecto; H.264/AAC solo vía API del sistema; sin encoders propios con patentes; sin salida HEVC ni MP3; `encumbered-sw` sin código |
 | ADR-08 | Licencia por token Ed25519 verificable sin conexión; activación contra el `license-hub` externo; única conexión de red |
 | ADR-09 | Idioma (D-08): catálogos TOML propios validados y compilados en build + ICU4X (Unicode-3.0) para etiquetas, plurales, números y fechas; Fluent como plan B; sin gettext |
+| ADR-10 | Pantalla de arranque (D-09): imagen `assets/splash_screen.{jpg,png}` validada por `build.rs` e incrustada con `include_bytes!` en `gafira-ui`; sin lectura de disco en ejecución |
