@@ -71,6 +71,19 @@ jobs:
             grep -Eq '^#!\[forbid\(unsafe_code\)\]' "$f" || { echo "missing forbid(unsafe_code): $f" >&2; status=1; }
           done
           exit "$status"
+      - name: gafira-geom is a leaf crate (V5)
+        run: |
+          if cargo tree -p gafira-geom -e normal,build --target all --prefix none -f '{p}' \
+            | grep -E '^gafira-|egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq' \
+            | grep -v '^gafira-geom '; then
+            echo "gafira-geom must not depend on other gafira crates, UI, engine or I/O crates" >&2
+            exit 1
+          fi
+      - name: Domain clippy.toml copies are in sync (V12)
+        run: |
+          for c in crates/*/clippy.toml; do
+            [ "$c" = crates/gafira-geom/clippy.toml ] || diff -q crates/gafira-geom/clippy.toml "$c"
+          done
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
