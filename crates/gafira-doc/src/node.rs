@@ -50,6 +50,13 @@ pub struct ExtensionNode {
     pub payload: serde_json::Value,
 }
 
+/// Deepest allowed nesting of an extension payload: a scalar is 0, `[]` and
+/// `{}` are 1, `[[1]]` is 2.
+///
+/// A saved document must reopen, and `serde_json` cannot parse a whole
+/// document whose payload reaches about 122 levels.
+pub const MAX_EXTENSION_DEPTH: usize = 64;
+
 /// What a node is. Closed on purpose: adding a kind makes the compiler flag
 /// every `match`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
