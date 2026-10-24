@@ -133,3 +133,42 @@ fn saving_normalizes_numbers_node_order_and_payload() {
     assert!(out.contains(r#""payload":{"a":{"y":1,"z":0},"b":1}"#));
     assert!(out.contains(r#""roots":[7,2,9]"#));
 }
+
+const EXTENSION: &str = include_str!("golden/extension.json");
+
+/// Loads the extension golden with its payload text replaced, re-saved.
+fn resave_payload(payload: &str) -> Result<String, LoadError> {
+    let start = EXTENSION.find(r#""payload":"#).unwrap() + r#""payload":"#.len();
+    let end = EXTENSION.rfind(r#"},"children""#).unwrap();
+    let text = format!("{}{payload}{}", &EXTENSION[..start], &EXTENSION[end..]);
+    let out = Document::from_json(text.as_bytes())?.to_json().unwrap();
+    Ok(out[start..out.len() - (EXTENSION.len() - end)].to_string())
+}
+
+#[test]
+fn payload_numbers_and_keys_get_one_canonical_spelling() {
+    let rows = [
+        (
+            r#"{"b":1,"a":{"z":0,"y":1}}"#,
+            r#"{"a":{"y":1,"z":0},"b":1}"#,
+        ),
+        ("1.10", "1.1"),
+        ("1", "1"),
+        ("1.0", "1.0"),
+        ("10E-1", "1.0"),
+        ("18446744073709551615", "18446744073709551615"),
+        ("18446744073709551616", "1.8446744073709552e+19"),
+        (r#"{"a":1,"a":2}"#, r#"{"a":2}"#),
+    ];
+    for (input, want) in rows {
+        let got = resave_payload(input).unwrap();
+        assert_eq!(got, want, "{input}");
+        assert_eq!(resave_payload(&got).unwrap(), got, "{input} is not stable");
+    }
+}
+
+#[test]
+fn unrepresentable_payload_number_is_a_json_error() {
+    assert!(matches!(resave_payload("1e400"), Err(LoadError::Json(_))));
+    assert!(matches!(resave_payload("-1e400"), Err(LoadError::Json(_))));
+}
