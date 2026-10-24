@@ -162,6 +162,15 @@ mod tests {
             a.placement.rotation_deg.to_bits(),
             b.placement.rotation_deg.to_bits()
         );
+        let fill = |d: &Document| match &d.pages()[0].nodes[&NodeId::new(3)].kind {
+            NodeKind::Shape(ShapeNode {
+                fill: Some(Color::Srgb(c)),
+                ..
+            }) => [c.r, c.g, c.b, c.a].map(f32::to_bits),
+            _ => panic!("not an sRGB shape"),
+        };
+        assert_eq!(fill(&back), fill(&d));
+        assert!(f32::from_bits(fill(&back)[2]).is_sign_negative());
         assert_eq!(back, d);
     }
 
