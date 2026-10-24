@@ -3,7 +3,7 @@ name: archive
 description: >
   Close a change after a PASS verdict: merge delta specs into openspec/specs
   (ADDED/MODIFIED/REMOVED) and move the change folder to the archive.
-model: sonnet
+model: haiku
 tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 
