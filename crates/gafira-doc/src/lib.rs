@@ -9,8 +9,10 @@ mod blend;
 mod dpi;
 mod ids;
 mod page_size;
+mod placement;
 
 pub use blend::BlendMode;
 pub use dpi::Dpi;
 pub use ids::{NodeId, PageId};
 pub use page_size::{Axis, PageSize, PageSizeError};
+pub use placement::{Flip, Placement};
