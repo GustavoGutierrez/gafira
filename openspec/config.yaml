@@ -7,7 +7,7 @@ context: |
   Architecture: multi-crate workspace (greenfield; no code yet; docs/ and assets/ exist).
   Platforms: Windows (MSI), Linux x86_64, macOS 12+ aarch64.
   Constraints: permissive licenses only; fully local; no external binaries.
-  Testing: cargo test (built-in). Not installed: cargo-nextest, cargo-deny, cargo-llvm-cov.
+  Testing: cargo test (built-in). Installed: cargo-deny 0.20.2. Not installed: cargo-nextest, cargo-llvm-cov.
   Style: rustfmt 1.8.0, clippy 0.1.93.
   Language conventions: conversation in neutral Spanish; product documents in Spanish; code, comments, identifiers and commits in English; conventional commits; never Co-Authored-By or AI attribution.
 
