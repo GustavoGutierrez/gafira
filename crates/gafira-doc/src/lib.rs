@@ -17,6 +17,7 @@ mod node;
 mod page;
 mod page_size;
 mod placement;
+mod validate;
 
 pub use blend::BlendMode;
 pub use document::Document;
