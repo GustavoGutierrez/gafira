@@ -431,3 +431,77 @@ Verified 2026-10-24 on rustc 1.93.1, cargo-deny 0.20.2, git 2.34.1. Each commit 
 
 - Verdict: **FAIL** for D2b (3 CRITICAL, 3 WARNING, 3 SUGGESTION). All gates pass on every commit, every D2b scenario has a passing test, and the D4 deferral of "Accessors and page order" is allowed by its tag. The failure comes from 7 surviving mutants on D2b MUST clauses: the `dpi` accessor and helper argument, the required traits of `IdSpaceExhausted` and `Document`, and `Page::node` ignoring its id.
 - Next: **tdd-apply D2b** to fix CRITICAL 1-3 (test-only changes, RED shown by the listed mutants) and preferably WARNING 2-3. Then re-verify D2b. Archive waits for D3 to D6.
+
+## D2b re-verify (the 6 fix commits from `style(doc): add blank line before test modules` to `docs(sdd): record domain-doc D2b verify fixes and use subjects instead of hashes`; delivery `feat/domain-doc-2a..feat/domain-doc-2b`)
+
+**Verdict: PASS** (D2b). CRITICAL 0, WARNING 1, SUGGESTION 2. The change is not complete (D3 to D6 remain), so `next` = tdd-apply for D3.
+
+Verified 2026-10-24 on rustc 1.93.1, cargo-deny 0.20.2, git 2.34.1. Each of the 6 commits was extracted with `git archive` into `/tmp/gafira-reverify-d2b-<sha>`, each with its own `CARGO_TARGET_DIR`. V5, V11 ("Domain crates forbid unsafe code") and V12 were extracted with a YAML parser from each commit's own `.github/workflows/ci.yml` (no change to `.github`, `Cargo.*` or `deny.toml` in `feat/domain-doc-2a..feat/domain-doc-2b`) and run under `bash --noprofile --norc -eo pipefail`. Mutations ran on a separate copy of the `docs(sdd): record domain-doc D2b verify fixes and use subjects instead of hashes` commit, restored after each mutant (`diff -r` clean at the end). The repository tree was not modified.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | `cargo deny check` | V5 | V11 | V12 | gafira-doc lib tests |
+|---|---|---|---|---|---|---|---|---|
+| `style(doc): add blank line before test modules` | 0 | 0 | 0 (205) | 0 | 0 | 0 | 0 | 50 |
+| `test(doc): cover Document dpi accessor and test_document dpi argument` | 0 | 0 | 0 (206) | 0 | 0 | 0 | 0 | 51 |
+| `test(doc): assert required traits of IdSpaceExhausted and Document at compile time` | 0 | 0 | 0 (208) | 0 | 0 | 0 | 0 | 53 |
+| `test(doc): look up a non-first node by id in Page::node` | 0 | 0 | 0 (208) | 0 | 0 | 0 | 0 | 53 |
+| `test(doc): show structural violations are representable in a page` | 0 | 0 | 0 (209) | 0 | 0 | 0 | 0 | 54 |
+| `docs(sdd): record domain-doc D2b verify fixes and use subjects instead of hashes` | 0 | 0 | 0 (209) | 0 | 0 | 0 | 0 | 54 |
+
+`cargo deny check`: advisories, bans, licenses and sources ok on all six. Each clippy log shows `Checking gafira-doc` (no stale cache). The five original D2b commits were green in the first D2b run and their production code is unchanged (section 4).
+
+### 2. Previous items
+
+| Item | Fix | Evidence | Status |
+|---|---|---|---|
+| CRITICAL 1: `dpi()` and `test_document` dpi | `dpi_is_read_back_from_the_document` (`document.rs:129-134`), `test_document(1, Dpi::new(300), ..)` | M01 (`dpi()` returns `Dpi::default()`) and M02 (`test_document` stores `Dpi::default()`) both fail this test | closed |
+| CRITICAL 2: `IdSpaceExhausted` `Copy`/`Eq` | `exhaustion_error_is_copy_and_eq` (`ids.rs:124-130`): `assert_traits::<IdSpaceExhausted>()` with `Copy + Eq + Debug`, plus a real copy (`let copied = e; assert_eq!(e, copied)`) | M16 (no `Copy`) and M17 (no `Eq`) fail to build with E0277 at `ids.rs:126`, the assertion call. `Display`/`Error` stay in `exhaustion_error_displays_and_is_an_error` (`ids.rs:118`): removing the `Error` impl fails to build (E0277), and changing the message fails the test | closed |
+| CRITICAL 2: `Document` `Debug`/`PartialEq` | `document_is_clone_debug_and_partial_eq` (`document.rs:119-127`): `assert_traits::<Document>()` with `Clone + Debug + PartialEq`, `assert_eq!(d, d.clone())`, `assert_ne!(d, Document::default())`, `format!("{d:?}")` | M18 (no `PartialEq`) fails to build (E0277 at `document.rs:121`, E0369 at 123-124). M19 (no `Debug`) fails to build (E0277 at `document.rs:121,123-125`). Removing `Clone` fails to build (E0277/E0599). A hand-written `PartialEq` that always returns `true` fails `assert_ne!`. See WARNING 1 for weaker hand-written impls | closed |
+| CRITICAL 3: `Page::node` ignores `id` | `lookup_stays_inside_the_page` (`page.rs:97-109`): nodes 4, 9, 12 in the second page, each looked up by id, and missing id 5 returns `None` | M22 (first node) fails it and `structural_violations_are_representable`. New mutants also fail it: last node, ceiling lookup `range(id..)`, floor lookup `range(..=id)` | closed |
+| WARNING 1: commit not test first | Each fix has a mutant table in `apply-progress.md` (D2b follow-ups) | Every listed mutant re-run here is killed by the named test | closed |
+| WARNING 2: stale hashes | Rule stated at the top of both files (`apply-progress.md:3`, `verify-report.md:3`): commits are cited by subject and branch range. Current references (headings, gate tables, size tables, scope lines) use subjects or ranges | Every quoted subject in both files (25 distinct) matches a commit in `chore/lite-sdd-methodology..feat/domain-doc-2b`. `apply-progress.md` contains no hash. Hashes left in `verify-report.md` (lines 229, 295, 297, 400, 410-422) are inside findings of earlier runs, which `verify-report.md:3` marks as history. Branch `feat/domain-doc-1` is gone from current text; the only mention is the quoted finding at line 420 | closed |
+| WARNING 3: D1 rebase note | `verify-report.md:8` says seven non-code files differ and nothing under `crates/`, `Cargo.*` or `.github/` | matches the list measured in the first D2b run | closed |
+| SUGGESTION 1: blank line before `mod tests` | `style(doc)` commit: `document.rs:81`, `page.rs:50`, `node.rs:85` | only blank lines added | closed |
+| SUGGESTION 2: structural violations | `structural_violations_are_representable` (`page.rs:112-126`): root id 99 missing and listed twice, node 3 lists itself as child | passes on unchanged code, as `apply-progress.md` declares (no RED expected) | closed |
+| SUGGESTION 3: subjects in apply-progress | D2b table rows carry subjects, follow-ups listed by subject | read back | closed |
+
+### 3. Mutation summary (copy of the `docs(sdd): record domain-doc D2b verify fixes and use subjects instead of hashes` commit, `cargo test -p gafira-doc --locked`, baseline 54 passed)
+
+23 mutants: 18 killed, 5 survived.
+
+- The 7 previous survivors (M01, M02, M16, M17, M18, M19, M22) are all killed: M01, M02 and M22 by tests, and M16 to M19 at build time by the trait assertions (`ids.rs:126`, `document.rs:121`).
+- New killed mutants: `Page::node` returning the last node, the ceiling or the floor entry; `Document` `PartialEq` always `true`; `IdSpaceExhausted` `PartialEq` always `false`; no `Debug`, no `Error` impl or a changed message on `IdSpaceExhausted`; `Document` without `Clone`; `test_document` ignoring `next_id`.
+- Survivors: `Page::node` scanning values by `base.id` (equivalent on a well-formed arena, SUGGESTION 1); hand-written `Document` `PartialEq` that ignores `dpi`, compares only `pages`, or compares pages by `Arc::ptr_eq` (WARNING 1); hand-written opaque `Debug` printing only `Document` (Debug content is not specified, so no finding).
+- No `proptest-regressions` file was created in the mutation copy or the extracted trees, and none is tracked.
+
+### 4. Regression check and code rules
+
+- `git diff a1de16a..HEAD -- crates` (a1de16a = `docs(sdd): record domain-doc D2b apply progress`) changes production code only by three blank lines (`document.rs:81`, `page.rs:50`, `node.rs:85`). Everything else is inside `mod tests`. Every clause marked covered in the first D2b run still holds, and all 54 lib tests pass on every commit.
+- Added lines in `crates/` contain no `#[allow]`, `unsafe`, `HashMap`, `HashSet` or `expect`, and they are ASCII English. `unwrap` appears only in tests.
+- The six subjects are conventional (`style(doc)`, `test(doc)` x4, `docs(sdd)`). No message has a `Co-Authored-By` or AI attribution line.
+- The size claims in `apply-progress.md` (D2b follow-ups) match: 5 files, 522 insertions(+), 1 deletion(-) without `openspec`; the fix commits add 4 files, 55 insertions(+), 5 deletions(-).
+
+### 5. Size
+
+`git diff --shortstat feat/domain-doc-2a..HEAD` gives 7 files changed, 750 insertions(+), 41 deletions(-). Without `openspec`: 5 files, 522 insertions(+), 1 deletion(-) (`document.rs` +173, `node.rs` +166, `page.rs` +149, `ids.rs` +27, `lib.rs` +8/-1). About 240 of those lines are production code and about 280 are tests.
+
+The code-only figure is what counts. Every earlier delivery in this change was measured that way (`apply-progress.md` D1, D2a and D2b, and this report's D1 and D2a size sections), and the design re-cut rule (`design.md:395-399`) compares against the forecasts, which cover code and tests only (`design.md:353-355`). The other 228 lines are this report and `apply-progress.md`, which a reviewer of the code PR does not need to read line by line. 522 is under ~700 and under the 800 hard limit. The ratio against the ~465 forecast is 1.12, under the x1.3 recompute trigger. No split is needed.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **`Document` equality is proven to exist, but not to cover every field or to follow IEEE.** `document_is_clone_debug_and_partial_eq` (`document.rs:119-127`) compares a document with its clone and with `Document::default()`, which differs in every field. A hand-written `PartialEq` that ignores `dpi`, compares only `pages`, or compares pages by `Arc::ptr_eq` survives the suite. The last one also breaks "PartialEq on model types MUST be IEEE" (`spec.md:297`) at document level, because a document holding a NaN node would equal its clone. Today the derive (`document.rs:13`) makes all three impossible, so this is not blocking. Each mutant needs a hand-written impl, which is a much larger change than the one-line mutants that were CRITICAL before. Fix: add `assert_ne!` for two documents that differ only in `dpi` and only in `next_id`, and for a document holding a NaN-placement node and its clone.
+
+### SUGGESTION
+
+1. `Page::node` scanning `nodes.values()` for a matching `base.id` gives the same result as the keyed lookup whenever each key equals its node's `base.id`. A test node stored under a key that differs from its `base.id` would pin "lookup by arena key". That arrangement is also a structural violation the model must be able to represent.
+2. The historical "Doc fixes" finding of the first D2b run (`verify-report.md:400`) says the D1 section "now cites 7f2a523, ...". The subject rewrite has since replaced those hashes. `verify-report.md:3` already marks old findings as history, but adding "(superseded by the subject rewrite)" there would stop a reader from looking for them.
+
+### Result
+
+- Verdict: **PASS** for D2b (0 CRITICAL, 1 WARNING, 2 SUGGESTION). All gates pass on every commit. All 7 previous survivors are killed, 4 of them at build time by the trait assertions. Production code is unchanged apart from blank lines. Every D2b requirement and scenario is covered.
+- Next: the owner decides on pushing and the PR for `feat/domain-doc-2b`, then **tdd-apply D3**. D3 verify must confirm serde on the D2 types. The D4 verify must see "Accessors and page order" through `from_parts`. Archive waits for D3 to D6.
