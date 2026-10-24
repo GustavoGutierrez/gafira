@@ -97,10 +97,15 @@ mod tests {
     fn lookup_stays_inside_the_page() {
         let first = Page::new(PageId::new(1), String::new(), size());
         let mut second = Page::new(PageId::new(2), String::new(), size());
-        second.nodes.insert(NodeId::new(9), node(9));
+        for id in [4, 9, 12] {
+            second.nodes.insert(NodeId::new(id), node(id));
+        }
         assert!(first.node(NodeId::new(9)).is_none());
-        let found = second.node(NodeId::new(9)).unwrap();
-        assert_eq!(found.base.id, NodeId::new(9));
+        for id in [4, 9, 12] {
+            let found = second.node(NodeId::new(id)).unwrap();
+            assert_eq!(found.base.id, NodeId::new(id));
+        }
+        assert!(second.node(NodeId::new(5)).is_none());
     }
 
     #[test]
