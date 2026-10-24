@@ -235,3 +235,65 @@ No requirement is tagged D2a.
 
 - Verdict: **FAIL** for D2a (1 CRITICAL, 3 WARNING, 3 SUGGESTION). All gates pass on every commit, and every D2a scenario has a passing test. The failure is the requirement-level composition-order clause, which no test proves, while the design-mandated mutation survives.
 - Next: **tdd-apply D2a** to fix CRITICAL 1 (one combined reference test, RED shown by the swap mutants), and preferably WARNING 2 and 3 in the same pass. Then re-verify D2a, then D2b. Archive waits for D2b to D6.
+
+## D2a re-verify (range `4bac4df..284bdc4`, 4 fix commits; delivery `feat/domain-doc-1b` (9905723)..284bdc4)
+
+**Verdict: PASS** (D2a). CRITICAL 0, WARNING 0, SUGGESTION 3. The change is not complete (D2b to D6 remain), so `next` = tdd-apply for D2b.
+
+Verified 2026-10-24 on rustc 1.93.1 and cargo-deny 0.20.2. Each commit was extracted with `git archive` into `/tmp/gafira-reverify-d2a-<sha>`, each with its own `CARGO_TARGET_DIR`. V5, V11 ("Domain crates forbid unsafe code") and V12 were extracted from each commit's own `.github/workflows/ci.yml` (unchanged since 9905723) and run under `bash --noprofile --norc -eo pipefail`. Mutations ran on a separate copy of 284bdc4. The repository tree was not modified.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `-D warnings` | test `--locked` | `cargo deny check` | V5 | V11 | V12 | placement/element tests |
+|---|---|---|---|---|---|---|---|---|
+| ad5a36a `test(doc): cover combined rotation, skew and flip order` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| 645a284 `test(doc): assert non-finite coefficients and compare NaN by bits` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| ce2d018 `test(doc): widen the skew property to the open interval` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| 284bdc4 `docs(sdd): record domain-doc D2a verify fixes` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+
+`cargo deny check` reports advisories, bans, licenses and sources ok on all four. The earlier prefixes adcb117, 38139cd and 4bac4df were green in the first D2a run, and no file they touched changed outside the test modules and docs.
+
+### 2. Previous items
+
+| Item | Fix | Evidence | Status |
+|---|---|---|---|
+| CRITICAL 1: composition order | `combined_rotation_skew_and_flip` (`placement.rs:127-134`), rotation 90, skew 45, flip.x, local (2,2) to (0,1) | Hand check matches `spec.md:178`: centered (1,1), mirror (-1,1), shear (0,1), rotate (-1,0), translate (0,1). Mutant "swap shear/mirror" fails this test only (34 pass, 1 fail). Mutant "swap rotate/shear" fails this test only. Design T2.1 mutation now fails a reference. | closed |
+| WARNING 1: serde clause | Sentence appended to "Purity and dependencies" (`specs/document-model/spec.md:24`): serde for `Placement`, `Flip`, `ElementBase` and the other D2 types lands in D3 | Matches the design commit plan (`design.md:388`, D3 "define the document wire format"). D3 verify must still confirm the derives. | closed (D3 carry) |
+| WARNING 2: non-finite coefficients | `non_finite_gives_non_finite_coefficients` (`placement.rs:137-143`) replaces `non_finite_does_not_panic` and asserts `any(!is_finite)` for NaN `x` and `+inf` rotation | Mutant "return `Affine::IDENTITY` when any field is non-finite" fails this test only. The test still calls `to_transform()` on both inputs, so the "does not panic" scenario (`spec.md:205`) stays covered. | closed |
+| WARNING 3: stale hashes | `apply-progress.md:5` now cites `d380fd8..f064203`. A note at `verify-report.md:5` says the D1 hashes predate the rebase. | `git diff d8d0908 f064203` and `git diff 6e6e013 0fa1185` each show only `.agents/agents/archive.md` (1 line), so the note's "code trees unchanged" claim holds. | closed (SUGGESTION 1) |
+| SUGGESTION 1: NaN by bits | `element.rs:63` compares `to_bits()` with `f64::NAN.to_bits()`. `element.rs:71-72` adds an is-NaN check and a bits-equal check for the clone. | matches `spec.md:301` "bit-identical" | closed |
+| SUGGESTION 2: skew interval | `skew in (-90.0f64).next_up()..90.0` (`placement.rs:168`) | That range is exactly the open interval (-90, 90) of `spec.md:201`: the start is the next f64 above -90, and the end is excluded. `f64::next_up` is stable on 1.93.1, and clippy is clean. It passes with `PROPTEST_CASES=20000`. | closed |
+| SUGGESTION 3: apply-progress D2a header | Base hash, a Status line, the per-commit gates statement and the deny/V5/V11/V12 note added (`apply-progress.md:44-46`) | read back | closed |
+
+### 3. Regression check, other D2a requirements
+
+All 13 `placement`/`element` tests pass on every commit. The non-test code in `placement.rs:1-68` and `element.rs:1-40` is byte-identical to 4bac4df (the diff `4bac4df..284bdc4 -- crates` touches only `mod tests`), so every clause marked covered in the first D2a run still holds. Carried obligations are unchanged: the NaN self-inequality on `Node` must be checked in D2b (`spec.md:304`), and the serde derives on the D2 types in D3.
+
+### 4. Code rules
+
+- Added lines in `crates/` contain no `#[allow]`, `unsafe`, `HashMap`, `HashSet`, `unwrap` or `expect`, and they are ASCII English.
+- No `proptest-regressions` file is tracked, left in the tree or created in the mutation copy.
+- The four subjects are conventional (`test(doc)` x3, `docs(sdd)`), and no message has a `Co-Authored-By` or AI attribution line.
+
+### 5. Size
+
+`git diff --shortstat feat/domain-doc-1b..HEAD` gives 6 files changed, 392 insertions(+), 2 deletions(-), which matches the reported figure. Without `openspec` it is 3 files, 260 insertions: `placement.rs` +182, `element.rs` +74, `lib.rs` +4. That is under the ~335 forecast and far below ~700.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+None.
+
+### SUGGESTION
+
+1. The note at `verify-report.md:5` maps only the PR 1a range. The other pre-rebase hashes in the D1 section (`verify-report.md:19,117,128,141`: cb125d9, 4e2377e, 1989f90, 0238e25, 6e6e013) have no mapping. They map to cbdf8cd, bcddca2, 0b33754, c0469c7 and 0fa1185, which could be listed in the note.
+2. `apply-progress.md:67` still reports the pre-fix size (3 files, 248 insertions). It is now 260 without `openspec` (392 total).
+3. The D2a commit table in `apply-progress.md` lists only the two feature commits. The fix commits ad5a36a, 645a284, ce2d018 and 284bdc4 appear under "follow-ups" by test name, without hashes.
+
+### Result
+
+- Verdict: **PASS** for D2a (0 CRITICAL, 0 WARNING, 3 SUGGESTION). All gates pass on every commit, and all three previous mutants are now killed by the intended tests. Every D2a requirement and scenario is covered.
+- Next: **tdd-apply D2b**, which must cover the `Node` part of "IEEE equality". D3 verify must confirm serde on `Placement`, `Flip` and `ElementBase`. Archive waits for D2b to D6.
