@@ -174,4 +174,15 @@ mod tests {
             assert!(Arc::ptr_eq(n, &first_clone.nodes[id]));
         }
     }
+
+    #[test]
+    fn equality_compares_dpi_and_page_contents_not_pointers() {
+        let a = test_document(3, Dpi::new(96), vec![page(1, &[2])]);
+        let rebuilt = test_document(3, Dpi::new(96), vec![page(1, &[2])]);
+        assert!(!Arc::ptr_eq(&a.pages()[0], &rebuilt.pages()[0]));
+        assert_eq!(a, rebuilt);
+        assert_ne!(a, test_document(3, Dpi::new(300), vec![page(1, &[2])]));
+        assert_ne!(a, test_document(3, Dpi::new(96), vec![page(1, &[4])]));
+        assert_ne!(a, test_document(4, Dpi::new(96), vec![page(1, &[2])]));
+    }
 }
