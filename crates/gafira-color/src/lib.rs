@@ -5,7 +5,6 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
 mod math;
 mod rgb;
 mod space;
