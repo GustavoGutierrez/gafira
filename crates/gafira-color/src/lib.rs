@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+mod math;
 mod rgb;
 mod space;
 
