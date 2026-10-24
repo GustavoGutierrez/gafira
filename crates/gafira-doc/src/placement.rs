@@ -165,7 +165,7 @@ mod tests {
         fn center_is_a_fixed_point(
             x in -1e4f64..1e4, y in -1e4f64..1e4,
             w in 0.0f64..1e4, h in 0.0f64..1e4,
-            rot in -1e4f64..1e4, skew in -89.0f64..89.0,
+            rot in -1e4f64..1e4, skew in (-90.0f64).next_up()..90.0,
             fx: bool, fy: bool,
         ) {
             let mut p = Placement::new(x, y, w, h);
