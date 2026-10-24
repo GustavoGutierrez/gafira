@@ -8,6 +8,7 @@ mod length;
 mod size;
 mod transform;
 
+pub use kurbo::{Affine, Point, Rect, Vec2};
 pub use length::{ConversionError, Length, Unit};
 pub use size::Size;
 pub use transform::{SingularTransform, Transform2D};
