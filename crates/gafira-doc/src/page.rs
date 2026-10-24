@@ -109,6 +109,23 @@ mod tests {
     }
 
     #[test]
+    fn structural_violations_are_representable() {
+        let mut p = Page::new(PageId::new(1), String::new(), size());
+        let mut looped = Node::new(
+            ElementBase::new(NodeId::new(3), Placement::new(0.0, 0.0, 1.0, 1.0)),
+            NodeKind::Group(GroupNode {}),
+        );
+        looped.children.push(NodeId::new(3));
+        p.nodes.insert(NodeId::new(3), Arc::new(looped));
+        p.roots.push(NodeId::new(99));
+        p.roots.push(NodeId::new(99));
+        assert!(p.node(p.roots[0]).is_none());
+        assert_eq!(p.roots.len(), 2);
+        let n = p.node(NodeId::new(3)).unwrap();
+        assert_eq!(n.children, [NodeId::new(3)]);
+    }
+
+    #[test]
     fn page_flags_do_not_cascade() {
         let mut p = Page::new(PageId::new(1), String::new(), size());
         p.nodes.insert(NodeId::new(4), node(4));
