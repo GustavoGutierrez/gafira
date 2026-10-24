@@ -4,3 +4,7 @@
 //! `gafira-color`; geometry types are always imported through `gafira_geom`.
 
 #![forbid(unsafe_code)]
+
+mod ids;
+
+pub use ids::{NodeId, PageId};
