@@ -115,3 +115,10 @@ Tests: 31 unit + 7 api + 11 property = 49 in gafira-geom (60 in workspace with t
 ## Remaining
 - B7.1 tail: push, open the single PR (`size:exception`), first CI run (three `test` jobs + `policy` with V5 and V12), A3.4/D16c checklist ticked in the PR body, A4.2.
 - Holder: P0.5 (`sha_pinning_required: true`, V7a), P0.6 optional.
+
+## Post-merge addendum (2026-10-24)
+
+- Commit `d64532b` (`ci: fail layer checks when cargo tree itself fails`) fixed the pipeline weakness listed in deviation 7: the V5 and ARQ-07 steps now capture the `cargo tree` output before `grep`. The final gates were re-run on `d64532b` and pass locally and in CI run 40130488603.
+- Clippy path count: `crates/gafira-geom/clippy.toml` has 35 paths (28 methods + 7 types), not 34.
+- Merged as PR #1 (`size:exception`, merge `2e3d456`): +1739/-24 over 19 files as GitHub counts it; 1308 lines excluding `Cargo.lock` and `openspec/`.
+- Verified follow-ups (not blocking): add near-zero samples to the conversion round-trip property; make V12 fail when a domain crate has no `clippy.toml`; merge the type-only `api.rs` check into the parity tests; add DPI tests for `-0.0` and a subnormal DPI.
