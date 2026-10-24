@@ -8,7 +8,7 @@ Conventions: Strict TDD (RED -> GREEN -> REFACTOR). A RED step is never committe
 - [x] P0.2 Confirm network to crates.io (`cargo search kurbo --limit 1`) and GitHub (`git ls-remote https://github.com/actions/checkout HEAD`). Done when both succeed; otherwise stop (kurbo, serde, proptest, PIN-SHA need it).
 - [x] P0.3 First commit on `main` with the existing `.gitignore` only (`chore: initial commit`), then `git push -u origin main` (remote is private and empty). Done when `git ls-remote origin main` shows the commit.
 - [x] P0.4 Create branch `feat/workspace-scaffold-a` from `main`. (Done as the single branch `feat/workspace-scaffold`, per the one-PR size:exception decision.)
-- [ ] P0.5 HOLDER: enable "Require actions to be pinned to a full-length commit SHA" on `GustavoGutierrez/gafira` before the first push of slice A. Done when `gh api repos/GustavoGutierrez/gafira/actions/permissions` reports `"sha_pinning_required": true` (V7a; today it is `false`).
+- [x] P0.5 HOLDER: enable "Require actions to be pinned to a full-length commit SHA" on `GustavoGutierrez/gafira` before the first push of slice A. Done when `gh api repos/GustavoGutierrez/gafira/actions/permissions` reports `"sha_pinning_required": true` (V7a; today it is `false`).
 - [ ] P0.6 HOLDER, optional: add a branch-protection rule on `main` requiring the CI jobs (ARQ-80). It can only select the checks after the first CI run exists. May be deferred.
 
 ## Slice A: tooling, CLI, CI (~282 lines)
@@ -36,7 +36,7 @@ Conventions: Strict TDD (RED -> GREEN -> REFACTOR). A RED step is never committe
 ### A4: Slice A close-out
 
 - [x] A4.1 Run V1, V2, V3, V4, V6, V11 and V10 (`git add --intent-to-add .` then `git diff --stat -- . ':!Cargo.lock'`; expected ~282, must be <= 800). Commit `Cargo.lock`: `build: add Cargo.lock`.
-- [ ] A4.2 Push `feat/workspace-scaffold-a`, open PR 1. Done when the first real CI run shows three `test` jobs (Windows x86_64, Linux x86_64, macOS aarch64) plus `policy`, all green (V7b, V9; also covers the "four gates" scenario) and `sha_pinning_required` is true (V7a).
+- [x] A4.2 Push `feat/workspace-scaffold-a`, open PR 1. Done when the first real CI run shows three `test` jobs (Windows x86_64, Linux x86_64, macOS aarch64) plus `policy`, all green (V7b, V9; also covers the "four gates" scenario) and `sha_pinning_required` is true (V7a).
 
 ## Slice B: `gafira-geom` (~629 lines), starts after PR 1 is merged (or per chain strategy)
 
@@ -69,7 +69,7 @@ Conventions: Strict TDD (RED -> GREEN -> REFACTOR). A RED step is never committe
 
 ### B7: Slice B close-out
 
-- [ ] B7.1 Run V1-V6, V10 (`git diff --stat <base>...HEAD -- . ':!Cargo.lock'`, ~629), V11, V12. Commit the `Cargo.lock` update, push, open PR 2. Done when CI is green on the three systems plus `policy` (with V5 and V12).
+- [x] B7.1 Run V1-V6, V10 (`git diff --stat <base>...HEAD -- . ':!Cargo.lock'`, ~629), V11, V12. Commit the `Cargo.lock` update, push, open PR 2. Done when CI is green on the three systems plus `policy` (with V5 and V12).
 
 ## Suggested Work Units
 
@@ -99,3 +99,10 @@ Notes:
 - Cut A then B. After PR 1, CI must pass: three `test` jobs (clippy and tests on windows-2022, ubuntu-24.04, macos-14) and `policy` (fmt, V6, V11, cargo-deny), with `sha_pinning_required: true`. After PR 2, the same jobs plus `gafira-geom` tests and clippy, and the V5 and V12 steps.
 - Branches (proposed stacked-to-main): `feat/workspace-scaffold-a` -> `main`; after merge, `feat/workspace-scaffold-b` from updated `main` -> `main`. If the holder picks feature-branch-chain: draft tracker `feat/workspace-scaffold`; PR 1 base = tracker, PR 2 base = `feat/workspace-scaffold-a`.
 - The holder must choose the chain strategy before apply.
+
+## Reconciliation after sdd-verify (2026-10-24)
+
+Evidence for the ticks above: `gh api repos/GustavoGutierrez/gafira/actions/permissions` returns `sha_pinning_required: true` (P0.5); the single PR #1 (`size:exception`, merge `2e3d456`) was opened and its CI run 40130488603 passed `policy` and the three `test` jobs on commit `d64532b` (A4.2, B7.1).
+
+- **A3.4 stays open.** PR #1 was merged with the D16c checklist unticked. The static review of items 1-4 was done by the verifier after the merge and is recorded in the verify report (`gentle-ai sdd-verify` result of 2026-10-24); the checklist cannot be retroactively ticked in the PR. Decision recorded here instead of ticking: the checklist for future PRs is the one in `.github/pull_request_template.md` (to be added in a later change).
+- **P0.6 is DEFERRED, not done.** Branch protection on `main` returns HTTP 403 on the current GitHub plan ("Upgrade to GitHub Pro or make this repository public"). ARQ-80 merge gating remains an open item.

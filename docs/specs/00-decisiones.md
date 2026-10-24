@@ -70,15 +70,33 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
   - La documentación de las specs sigue en español.
 - Aplicado a la spec 02 (nuevo crate y requisito), 03 (glosario inglés, Ajustes) y 01 (cierra Q-14) cuando se actualicen las specs.
 
+## D-09 Pantalla de arranque (splash)
+
+Fecha: 24 de octubre de 2026.
+
+- **Qué es**: una pantalla breve que aparece al iniciar la aplicación, con la marca y un indicador de carga. Su nombre de interfaz es **«Pantalla de arranque»** (PROPUESTA de 03 §2.1, para no chocar con «Inicio», que es otra pantalla).
+- **Imagen**: `assets/splash_screen.jpg` (JPEG de 1672×941 px, 296 847 bytes; ilustración de un guacamayo, montañas y mar en coral, grafito y dorado). Va **incrustada en el binario** y no depende de rutas del usuario.
+- **Imagen reemplazable**: se cambia sustituyendo ese archivo por otro con el mismo nombre base (`splash_screen.jpg` o `splash_screen.png`) y recompilando, sin tocar código. La build valida el archivo y falla si falta, si hay dos o si está corrupto (02 ARQ-67, ARQ-69).
+- **Diseño**: la imagen cubre la ventana de fondo (recorte «cubrir», regla en 03 §7.10). El **logo horizontal `gafira-logo-primary.svg`** (logotipo con el isotipo y el texto «Gafira», `docs/manuals/marca/assets/`) y el eslogan **«Haz visibles tus ideas.»** (en inglés **«Bring your ideas to life.»**, según el idioma resuelto por D-08) van sobre un **panel de blanco cálido `#FAFAF7`** en la parte inferior. Una **barra de carga fina** usa el coral `#FF6B57` y refleja el progreso real del arranque.
+- **Comportamiento**: se cierra cuando la app termina de cargar lo necesario para mostrar Inicio, con una **duración mínima de 1,2 s**. Máximo: 5 s (PROPUESTA de 03 §7.10); si la carga se alarga, la pantalla avisa de que sigue cargando y, si el arranque se detiene, muestra un error con «Reintentar». Respeta **reducir movimiento**: sin animaciones ni fundidos si está activo; si no, fundido de salida de 160 ms (escala de movimiento 120/160/220 ms).
+- **Motivo**: el manual de marca prohíbe superponer el logo «sobre una fotografía agitada sin una superficie de contraste» (§7.10) y pide colocarlo «dentro de una zona lisa de contraste adecuado y con espacio de protección» (§7.9, uso 6). La ilustración es muy recargada, así que el logo nunca va sobre ella: va sobre el panel claro, que es el uso correcto 1 del manual (horizontal principal sobre blanco cálido).
+- **Consecuencias**:
+  - El manual cita el «símbolo aislado» para el splash (§7.9, uso 3). D-09 elige el logo horizontal sobre el panel claro; las dos formas son usos correctos y prevalece D-09 (01 §13, C-22).
+  - El panel de la Pantalla de arranque usa siempre los tokens del modo claro, también con la app en modo oscuro, porque el logo principal es grafito y no puede ir sobre fondo oscuro.
+  - La barra coral va sobre una pista grafito: el coral sobre blanco cálido solo da 2,68:1 y no llega al 3:1 que exige un componente gráfico (03 §4).
+  - La imagen se registra en `assets/LICENSES.toml` (ARQ-75) como cualquier asset; su origen y licencia son VERIFICAR.
+  - El instalador MSI y la imagen del DMG **no** usan esta ilustración (05 sin cambios): siguen con el logo sobre `#FAFAF7`.
+- Aplicado a 01 (RF-67, CAL-38, CAL-39), 02 (ARQ-65..ARQ-69, ADR-10, evento `StartupProgress`) y 03 (§7.10, DIS-80..DIS-87, glosario, tokens y contraste).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
 |---|---|
-| 01 | Quitar el principio de no retener funciones esenciales; reflejar D-01, D-03, D-07; cerrar Q-01, Q-02, Q-03, Q-04, Q-05, Q-06, Q-07, Q-08, Q-09, Q-11, Q-12, Q-13, Q-16 |
-| 02 | D-01 (conexión de licencia), D-02, D-05, D-06 (quitar `update-check`), D-07; corregir las incoherencias listadas en el informe de redacción |
-| 03 | Pantalla de activación y prueba, estados de licencia; sin pantalla de actualizaciones; modo de licencia en Ajustes |
-| 04 | PPTX en Fase 2 como imágenes |
-| 05 | Linux x86_64 con `.deb`, `.rpm`, `.tar.gz`; sin AppImage ni aarch64; sin actualizador; códecs según D-02; MP3 y AVI según D-07; aviso de marca (D-04) |
+| 01 | Quitar el principio de no retener funciones esenciales; reflejar D-01, D-03, D-07; cerrar Q-01, Q-02, Q-03, Q-04, Q-05, Q-06, Q-07, Q-08, Q-09, Q-11, Q-12, Q-13, Q-16. D-09: RF-67 (Pantalla de arranque), fila de alcance del MVP, CAL-38 y CAL-39, contradicción C-22 y trazabilidad |
+| 02 | D-01 (conexión de licencia), D-02, D-05, D-06 (quitar `update-check`), D-07; corregir las incoherencias listadas en el informe de redacción. D-09: §8.4, ARQ-65..ARQ-69 (antes reservados), ADR-10, eventos de arranque en §5.2, filas en §6.7 y §11.2 |
+| 03 | Pantalla de activación y prueba, estados de licencia; sin pantalla de actualizaciones; modo de licencia en Ajustes. D-09: §7.10 Pantalla de arranque, DIS-80..DIS-87, fila del glosario (§2.1 y §2.8.1), tokens `splash` (§3), pares de contraste (§4), logo en §5.1, microcopy (§12) y PD-15..PD-17 |
+| 04 | PPTX en Fase 2 como imágenes. D-09: sin cambios |
+| 05 | Linux x86_64 con `.deb`, `.rpm`, `.tar.gz`; sin AppImage ni aarch64; sin actualizador; códecs según D-02; MP3 y AVI según D-07; aviso de marca (D-04). D-09: sin cambios en el instalador; al actualizar 05, la frase «el primer arranque muestra Inicio» (Parte C) debe decir que antes aparece la Pantalla de arranque |
 
 ## Pendientes del titular
 
@@ -87,3 +105,5 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
 3. Completar la lista de seguridad del `license-hub` y desplegarlo.
 4. Hacer la búsqueda de marca de D-04.
 5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
+6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09); si la ilustración se generó con una herramienta, comprobar que sus condiciones permiten el uso comercial (VERIFICAR).
+7. Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras PROPUESTA de D-09 (máximo de 5 s, primer frame < 300 ms, ventana de 800×450).

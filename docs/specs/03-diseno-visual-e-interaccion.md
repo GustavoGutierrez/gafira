@@ -4,10 +4,10 @@
 |---|---|
 | Documento | Especificación 03 de 05 |
 | Estado | Borrador para revisión |
-| Alcance | Sistema de diseño (tokens, contraste, modo oscuro), uso del logo en la app, navegación y pantallas (incluidas la activación y los estados de licencia), componentes, interacción, accesibilidad, movimiento, microcopy, iconografía, **glosario de interfaz** en español e inglés e **idioma** (§16, D-08) |
-| Depende de | `00-decisiones.md` (D-01 a D-08, prevalecen), `02-arquitectura-software.md` (ADR-06, §8: `gafira-theme`, `gafira-ui`, ARQ-60..64; §4.14 y §13: licencia, ARQ-90..96; §4.16 y §14: idioma, `gafira-i18n`, ADR-09, ARQ-97..107) |
+| Alcance | Sistema de diseño (tokens, contraste, modo oscuro), uso del logo en la app, navegación y pantallas (incluidas la activación y los estados de licencia, y la **Pantalla de arranque**, §7.10, D-09), componentes, interacción, accesibilidad, movimiento, microcopy, iconografía, **glosario de interfaz** en español e inglés e **idioma** (§16, D-08) |
+| Depende de | `00-decisiones.md` (D-01 a D-09, prevalecen), `02-arquitectura-software.md` (ADR-06, §8: `gafira-theme`, `gafira-ui`, ARQ-60..64; §8.4: Pantalla de arranque, ARQ-65..69, ADR-10; §4.14 y §13: licencia, ARQ-90..96; §4.16 y §14: idioma, `gafira-i18n`, ADR-09, ARQ-97..107) |
 | Lo usan | `01-producto-y-calidad.md`, `04-funcionalidad-diseno-imagen-exportacion.md`, `05-funcionalidad-video-y-distribucion.md` (todos usan los nombres del §2 de forma idéntica) |
-| Convenciones | `DIS-xx` = requisito de diseño con criterio de aceptación. **PROPUESTA** = decisión no presente en el manual de marca. **VERIFICAR** = dato por confirmar. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). Las decisiones del titular se citan como D-01..D-08 de `00-decisiones.md`; las propuestas de esta spec llevan el prefijo `PD-` (§15) para no confundirse con ellas |
+| Convenciones | `DIS-xx` = requisito de diseño con criterio de aceptación. **PROPUESTA** = decisión no presente en el manual de marca. **VERIFICAR** = dato por confirmar. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). Las decisiones del titular se citan como D-01..D-09 de `00-decisiones.md`; las propuestas de esta spec llevan el prefijo `PD-` (§15) para no confundirse con ellas |
 
 Gafira es un editor de escritorio local: trabaja sin conexión y su única conexión de red es la de la licencia (D-01). Su principio rector es que el contenido del usuario es el protagonista; su principio de producto, que «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar». El diseño de la interfaz se limita a lo necesario para que el lienzo y la línea de tiempo respiren: superficies claras, un solo color de acción, iconos de trazo simple y movimiento breve. Gafira es de pago con prueba gratuita y una sola licencia (D-01): la interfaz no tiene funciones bloqueadas por módulo. Licencia y activación: ver spec 06 (pendiente, se redacta al final).
 
@@ -38,6 +38,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Nombre en Gafira | Tipo | Equivalente genérico |
 |---|---|---|
 | Inicio | Pantalla | Pantalla de bienvenida / proyectos recientes |
+| Pantalla de arranque | Pantalla transitoria al iniciar la app, sin controles salvo en caso de error (nombre PROPUESTA, D-09; §7.10) | Splash screen |
 | Editor de diseño | Pantalla | Editor de lienzo |
 | Editor de video | Pantalla | Editor con timeline |
 | Exportar | Diálogo y pantalla | Exportación |
@@ -171,7 +172,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 - **DIS-01**: en **cada idioma publicado (español e inglés)**, ningún texto de interfaz, documentación o microcopy usa un nombre distinto del glosario de ese idioma para la misma función, y nunca se mezclan los dos idiomas en una misma pantalla. *Aceptación*: una prueba de `gafira-ui` extrae las etiquetas i18n de `es.toml` y `en.toml` y las compara con las columnas `es` y `en` de `assets/i18n/glosario.toml`; `cargo xtask check-glossary` falla ante una etiqueta no registrada o duplicada en cualquiera de los dos idiomas.
 - **DIS-02**: los términos genéricos ampliamente difundidos (Capas, Exportar, Deshacer, Guías, Reglas, Zoom, Plantillas, Opacidad, Recortar, Duplicar, Alinear, Agrupar) se usan sin reinterpretarlos.
 - **DIS-03**: ningún nombre del glosario coincide con un nombre propio de otro producto. *Aceptación*: revisión de los nombres antes de cada versión y registro de la revisión en el repositorio; la consulta de marcas es un punto de la lista previa a la venta (spec 05, Parte C).
-- **DIS-71** (glosario inglés 1:1): cada fila de §2.1–§2.6 tiene exactamente una fila en §2.8 con su nombre inglés, y un nombre inglés solo se repite donde el español repite el mismo nombre para el mismo concepto (por ejemplo, Texto/Text como pestaña, pestaña del Inspector y herramienta). *Aceptación*: `assets/i18n/glosario.toml` tiene, por cada `id`, los campos `es` y `en` no vacíos; `xtask check-glossary` falla si falta uno, si dos `id` con `es` distinto comparten el mismo `en` o si el número de entradas difiere del número de filas de §2.1–§2.6 (101 en esta versión).
+- **DIS-71** (glosario inglés 1:1): cada fila de §2.1–§2.6 tiene exactamente una fila en §2.8 con su nombre inglés, y un nombre inglés solo se repite donde el español repite el mismo nombre para el mismo concepto (por ejemplo, Texto/Text como pestaña, pestaña del Inspector y herramienta). *Aceptación*: `assets/i18n/glosario.toml` tiene, por cada `id`, los campos `es` y `en` no vacíos; `xtask check-glossary` falla si falta uno, si dos `id` con `es` distinto comparten el mismo `en` o si el número de entradas difiere del número de filas de §2.1–§2.6 (102 en esta versión, con «Pantalla de arranque», D-09).
 - **DIS-72** (nombres ingleses propios o genéricos): DIS-03 se aplica también a los nombres ingleses. Son términos genéricos ampliamente usados por muchos programas (*Layers*, *Export*, *Crop*, *Timeline*) o nombres propios de Gafira traducidos de forma literal (*Pieces*, *Magnet*, *Lock type*, *Light copies*); nunca el nombre exclusivo de una función de otro producto. *Aceptación*: la revisión de DIS-03 cubre las dos columnas y queda registrada; hasta que el titular apruebe §2.8 (Q-25) los nombres ingleses se marcan PROPUESTA en `glosario.toml` (`status = "proposed"`).
 
 ### 2.8 Versión inglesa del glosario (PROPUESTA, D-08)
@@ -183,6 +184,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Nombre en Gafira (es, aprobado) | Nombre en inglés (PROPUESTA) |
 |---|---|
 | Inicio | Home |
+| Pantalla de arranque | Startup screen |
 | Editor de diseño | Design editor |
 | Editor de video | Video editor |
 | Exportar | Export |
@@ -360,6 +362,14 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
       "canvas.guide": "#3FBFA9", "canvas.bleed": "#FFB4AB", "canvas.safe": "#3FBFA9"
     }
   },
+  "splash": {
+    "mode": "light",
+    "panel": "{modes.light.bg}",
+    "progress.track": "{brand.ink}",
+    "progress.fill": "{brand.coral}",
+    "window": [800, 450], "panel.height": 128, "panel.padding": 32, "logo.width": 200,
+    "progress.height": 4, "image.min_visible_height": 96
+  },
   "contrast": {
     "min": { "text": 4.5, "ui": 3.0, "exempt": 0 },
     "pairs": {
@@ -448,6 +458,10 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
         ["border.strong", "surface.raised", "ui"],
         ["focus.ring", "surface.raised", "ui"],
         ["link", "surface.raised", "text"]
+      ],
+      "splash": [
+        ["progress.fill", "progress.track", "ui"],
+        ["progress.track", "panel", "ui"]
       ]
     },
     "rejected": [
@@ -497,6 +511,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 Notas de uso:
 
 - **`surface.raised`** existe en los dos modos y lo usan Diálogo, Popover y menús; en modo claro coincide con `surface`, por lo que se distingue por borde y sombra y no por color. Sus pares de contraste están en las tablas del §4.
+- **`splash`** (D-09, §7.10) agrupa los tokens de la Pantalla de arranque. No depende del modo de la app: `"mode": "light"` indica que su panel y sus textos usan siempre los tokens de `modes.light` (texto `text`, versión `text.muted`, error `error.fg`, botones `primary.*` y `secondary.*`, anillo `focus.ring`), porque el logo principal es grafito y no puede ir sobre un fondo oscuro. `progress.track` y `progress.fill` son la pista grafito y el relleno coral de la barra de carga. Las medidas (`window`, `panel.height`, `logo.width`…) están en px lógicos. Sus pares de contraste propios están en `contrast.pairs.splash` y los demás se reutilizan de `contrast.pairs.light` (§4).
 - Las sombras del modo oscuro usan `rgba(0,0,0,0.45)` en lugar de las anteriores y se acompañan de un borde `border` de 1 px, porque la sombra es poco visible sobre fondos oscuros.
 - `gafira-theme` resuelve referencias del tipo `{brand.ink}` (02, §8.2) y rechaza el archivo si falta un token obligatorio o si un par declarado en `contrast.pairs` (sección del JSON de arriba, con los mínimos de `contrast.min`) incumple el mínimo (DIS-10). Los pares de `contrast.rejected` no deben aparecer en `pairs`.
 - Los controles miden 32 px por defecto (28 compacto, 40 en diálogos y Inicio). El área de clic mínima es 24×24 px (WCAG 2.2, criterio 2.5.8). Los iconos de 20 px llevan una zona de clic de 32 px.
@@ -512,7 +527,7 @@ Notas de uso:
 
 **Validación de referencia.** El script reproduce los ratios del manual: grafito/blanco cálido 14,83:1; blanco/grafito 15,51:1; grafito/coral 5,53:1; blanco/coral 2,80:1; grafito/verde agua 6,82:1. Esto confirma que el cálculo coincide con el de la marca.
 
-**Resultado.** Los 82 pares declarados (41 en modo claro y 41 en oscuro) se listan en las tablas siguientes y coinciden con `contrast.pairs` del JSON del §3: los 80 con mínimo cumplen y los 2 restantes (texto deshabilitado, exento por WCAG 1.4.3) son informativos. Los pares de `surface.raised` son los únicos añadidos respecto de la versión anterior. El modo oscuro se **deriva** de la paleta: el fondo `bg` es el grafito oscurecido, `surface` es el propio grafito (`#18243B`), `surface.raised` es el grafito aclarado (en modo claro vale `#FFFFFF`, igual que `surface`, y la elevación la dan el borde `border` y la sombra 2), el texto principal es el blanco cálido, y el coral y el verde agua se mantienen sin cambio de matiz. Los colores semánticos (error, éxito, aviso, enlace) no existen en la paleta del manual: se derivan y se marcan como **PROPUESTA**.
+**Resultado.** Los 84 pares declarados (41 en modo claro, 41 en oscuro y 2 de la Pantalla de arranque) se listan en las tablas siguientes y coinciden con `contrast.pairs` del JSON del §3: los 82 con mínimo cumplen y los 2 restantes (texto deshabilitado, exento por WCAG 1.4.3) son informativos. Los pares de `surface.raised` y los 2 de `splash` (D-09) son los únicos añadidos respecto de la versión anterior. El modo oscuro se **deriva** de la paleta: el fondo `bg` es el grafito oscurecido, `surface` es el propio grafito (`#18243B`), `surface.raised` es el grafito aclarado (en modo claro vale `#FFFFFF`, igual que `surface`, y la elevación la dan el borde `border` y la sombra 2), el texto principal es el blanco cálido, y el coral y el verde agua se mantienen sin cambio de matiz. Los colores semánticos (error, éxito, aviso, enlace) no existen en la paleta del manual: se derivan y se marcan como **PROPUESTA**.
 
 #### Modo claro
 
@@ -606,6 +621,22 @@ Notas de uso:
 | 40 | Superficie elevada: anillo de foco | `focus.ring` #3FBFA9 | `surface.raised` #223250 | 5.63:1 | 3.0:1 | Cumple |
 | 41 | Superficie elevada: enlace | `link` #8FB4FF | `surface.raised` #223250 | 6.18:1 | 4.5:1 | Cumple |
 
+#### Pantalla de arranque (D-09, §7.10)
+
+El panel de la Pantalla de arranque usa los tokens del modo claro en cualquier modo de la app. Sus textos y controles reutilizan pares ya declarados en `contrast.pairs.light`; solo la barra de carga añade pares (`contrast.pairs.splash`). Cálculo con el mismo script de Python de este apartado (24 de octubre de 2026).
+
+| # | Par | Primer plano | Fondo | Ratio | Mínimo | Resultado |
+|---|---|---|---|---|---|---|
+| S1 | Barra de carga: relleno sobre pista (gráfico) | `progress.fill` #FF6B57 | `progress.track` #18243B | 5.53:1 | 3.0:1 | Cumple |
+| S2 | Barra de carga: pista sobre panel (gráfico) | `progress.track` #18243B | `panel` #FAFAF7 | 14.83:1 | 3.0:1 | Cumple |
+| — | Eslogan (`h3`, texto grande) | `text` #18243B | `panel` = `bg` #FAFAF7 | 14.83:1 | 3.0:1 (se exige 4.5:1) | Cumple (= par claro 1) |
+| — | Versión y mensaje de carga lenta (`caption`, `body-sm`) | `text.muted` #5A667E / `text.secondary` #46526B | `panel` #FAFAF7 | 5.52:1 / 7.49:1 | 4.5:1 | Cumple (= pares claros 6 y 4) |
+| — | Mensaje de error | `error.fg` #B3261E | `panel` #FAFAF7 | 6.25:1 | 4.5:1 | Cumple (= par claro 21) |
+| — | Botón «Reintentar» | `primary.fg` #18243B | `primary.bg` #FF6B57 | 5.53:1 | 4.5:1 | Cumple (= par claro 9) |
+| — | Anillo de foco en el estado de error | `focus.ring` #18243B | `panel` #FAFAF7 | 14.83:1 | 3.0:1 | Cumple (= par claro 16) |
+
+*Combinaciones descartadas al diseñar la barra*: coral sobre `bg` #FAFAF7 (2.68:1), sobre `secondary.bg` #E7EAF2 (2.33:1) o sobre `border` #C3CADB (1.71:1) no llegan a 3:1, por eso la pista es grafito. Con la app en modo oscuro tampoco valen sus tokens sobre el panel claro: `focus.ring` oscuro #3FBFA9 da 2.17:1 y `error.fg` oscuro #FFB4AB da 1.62:1; por eso el panel fija `modes.light`. El borde superior e inferior del relleno coral toca el panel (2.68:1), pero no transmite información: el progreso se lee en el límite entre relleno y pista (S1).
+
 #### Pares rechazados (no se usan)
 
 | Par rechazado | Ratio | Regla derivada |
@@ -617,7 +648,7 @@ Notas de uso:
 | Coral como único indicador (borde o icono) sobre blanco | 2,80:1 | El estado activo en superficies claras usa grafito más un subrayado o relleno; el coral solo indica «acción principal» o «activo en la barra superior grafito» (5,53:1). |
 | Grafito `#18243B` sobre `#0F1828` | 1,15:1 | Regla del manual: no se usa grafito sobre fondos oscuros. |
 
-- **DIS-10**: cada par texto/fondo de los tokens cumple su mínimo. *Aceptación*: la prueba `gafira-theme::contrast` calcula todos los pares de la sección `contrast.pairs` del JSON del §3 (82 pares, los mismos de las tablas anteriores), 0 fallos, y comprueba que los pares de `contrast.rejected` no superan el mínimo de su uso (ARQ-61).
+- **DIS-10**: cada par texto/fondo de los tokens cumple su mínimo. *Aceptación*: la prueba `gafira-theme::contrast` calcula todos los pares de la sección `contrast.pairs` del JSON del §3 (84 pares: 41 claros, 41 oscuros y 2 de `splash`; los mismos de las tablas anteriores), 0 fallos, y comprueba que los pares de `contrast.rejected` no superan el mínimo de su uso (ARQ-61).
 - **DIS-11**: el anillo de foco tiene ≥ 3:1 contra el fondo adyacente en ambos modos (14,83:1 claro; 7,82:1 oscuro).
 - **DIS-12**: los colores de estado de los objetos del lienzo (selección, guías, sangrado) se dibujan con doble trazo (color + halo del fondo) para ser visibles sobre cualquier contenido del usuario.
 
@@ -636,7 +667,7 @@ Se respetan las reglas del manual: isotipo de tres piezas (base grafito, panel c
 | Acerca de | Apilado `gafira-logo-stacked.svg` | ≥ 120 px de ancho (recomendado 160) | `surface`. Muestra versión, licencias de terceros y OFL de las fuentes. |
 | Instalador MSI (WiX) | Horizontal sobre `canvas`; banner de 493×58 px y fondo de diálogo de 493×312 px | Logo ≥ 160 px | `#FAFAF7`, sin degradados. |
 | Imagen de DMG | Apilado ≥ 120 px sobre `canvas` | Ventana 660×400 pt | `#FAFAF7`. |
-| Pantalla de arranque | Apilado centrado; sin barra de progreso falsa | 160 px | `bg` del modo del sistema. |
+| Pantalla de arranque (D-09, §7.10) | Horizontal `gafira-logo-primary.svg` (isotipo y texto «Gafira»), siempre sobre el panel, **nunca sobre la imagen de fondo**; barra de carga real, sin progreso falso | 200 px de ancho visible del arte (mínimo 160) | Panel `splash.panel` (`bg` del modo claro, `#FAFAF7`) en cualquier modo, sobre la ilustración `assets/splash_screen.jpg`. |
 | Exportaciones | **Nunca** se inserta el logo de Gafira ni marca de agua | — | — |
 
 ### 5.2 Variantes que faltan (el manual las cita, el repositorio no las contiene)
@@ -683,6 +714,7 @@ Composición: baldosa de esquinas redondeadas `#FAFAF7` con el símbolo centrado
         Ajustes ◄─ Archivo ─► Versiones           Paleta de comandos (Ctrl/Cmd+K, desde cualquier pantalla)
 ```
 
+- **Arranque.** Toda ejecución empieza en la **Pantalla de arranque** (§7.10, D-09). Cuando se cierra aparece Inicio y, si hay trabajo que recuperar, Recuperación tras fallo sobre Inicio. La Pantalla de arranque no tiene navegación propia.
 - **Un documento, dos editores.** El Editor de diseño y el Editor de video comparten el mismo `Project` (02, §3.1). Pasar de uno a otro cambia la región inferior (Barra inferior de páginas ↔ Línea de tiempo) y el Inspector; no cambia el archivo.
 - **Identidad visual** se abre como pantalla completa desde la pestaña Identidad o desde Archivo → Ajustes; es el único modo con navegación propia a media pantalla.
 - **Atrás** siempre existe: `Esc` cierra la superposición activa; el botón Inicio vuelve a Inicio preguntando «¿Guardar los cambios?» solo si hay cambios sin guardar.
@@ -746,7 +778,7 @@ Reglas de adaptación: por debajo de 1440 px el Inspector se pliega a pestañas 
 
 - El eslogan usa `h1` Manrope (en la interfaz inglesa, «Bring your ideas to life.», §12); el logo horizontal va en la esquina o centrado (≥ 160 px, §5.1).
 - Las miniaturas salen de `thumbs/<page_id>.webp` (02, §7.1), sin abrir el proyecto. Abrir un proyecto de 20 páginas tarda < 3 s (cifra del PRD).
-- **Arranque**: Inicio es interactivo en < 5 s en el hardware de referencia de 02 §6.6 (cifra del PRD; objetivo interno < 2 s, FIJADA, D-03). El scrubbing de video mantiene ≥ 24 actualizaciones por segundo (FIJADA).
+- **Arranque**: Inicio es interactivo en < 5 s en el hardware de referencia de 02 §6.6 (cifra del PRD; objetivo interno < 2 s, FIJADA, D-03), contando la Pantalla de arranque que lo precede (§7.10: primer frame < 300 ms, visible al menos 1,2 s). El scrubbing de video mantiene ≥ 24 actualizaciones por segundo (FIJADA).
 
 ### 7.3 Editor de diseño
 
@@ -875,7 +907,141 @@ Secciones (lista a la izquierda, contenido a la derecha): **General** (Idioma: S
 - Se muestra al arrancar solo si hay recuperación (02, §7.2). Con varios proyectos, lista con miniatura y hora. El primer botón (coral) es **Recuperar**. Descartar pide confirmación.
 - **DIS-17**: la recuperación muestra el resultado en < 3 s para un proyecto de 20 páginas.
 
-- **DIS-18** (pantallas): las ocho pantallas existen con los nombres del §2 y navegación por teclado completa. *Aceptación*: prueba E2E de teclado que recorre cada una (ARQ-63).
+- **DIS-18** (pantallas): las ocho pantallas existen con los nombres del §2 y navegación por teclado completa. *Aceptación*: prueba E2E de teclado que recorre cada una (ARQ-63). La Pantalla de arranque (§7.10) no cuenta entre las ocho porque no tiene controles salvo en el estado de error; sus pruebas son DIS-80..DIS-87.
+
+### 7.10 Pantalla de arranque (D-09)
+
+Pantalla breve que aparece al iniciar Gafira, antes de Inicio. Muestra la marca y el progreso real de la carga. Su nombre de interfaz es «Pantalla de arranque» / «Startup screen» (PROPUESTA, §2.1 y §2.8.1; no se llama «Inicio» porque Inicio es otra pantalla). La arquitectura está en 02 §8.4 (ARQ-65..ARQ-69, ADR-10).
+
+#### 7.10.1 Wireframe (tamaño por defecto, 800×450 px lógicos)
+
+```text
+ ◄─────────────────────────── 800 px lógicos ───────────────────────────►
+┌────────────────────────────────────────────────────────────────────────┐ ▲
+│                                                                        │ │
+│   Imagen de fondo a sangre (assets/splash_screen.jpg)                  │ │
+│   recorte «cubrir»; el centro de la imagen va al centro de esta zona   │ │ 322 px
+│   nada de logo, texto ni controles sobre la imagen                     │ │ de imagen
+│                                                                        │ │ visible
+│                                                                        │ ▼
+├────────────────────────────────────────────────────────────────────────┤ ▲
+│  ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐                                              │ │
+│  ┊ X  [◧ Gafira] 200 px ┊                     Haz visibles tus ideas.  │ │ 128 px
+│  └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘                                              │ │ panel
+│  ━━━━━━━━━━━━━━━━━━━━━━──────────────────────────────    Versión 1.0.0 │ │
+│                                                                        │ ▼
+└────────────────────────────────────────────────────────────────────────┘
+   ┄ área de protección X del logo     ━ relleno coral     ─ pista grafito
+```
+
+#### 7.10.2 Ventana, dimensiones y HiDPI
+
+- **Ventana propia** sin decoraciones ni bordes, no redimensionable, de **800×450 px lógicos** (16:9, token `splash.window`, PROPUESTA), centrada en el monitor donde se abrirá la ventana principal (el último usado según los ajustes o, si no hay dato, el principal). Aparece en la barra de tareas o en el Dock con el icono y el nombre «Gafira», para que la persona sepa que la app está arrancando. No está siempre encima de otras ventanas.
+- **Tamaño de interfaz**: el tamaño lógico se multiplica por el tamaño de interfaz de Ajustes → Accesibilidad (100–200 %, DIS-35). Si el resultado supera el 80 % del área de trabajo del monitor, se reduce con la misma proporción hasta caber, con un mínimo de 480×270 px lógicos.
+- **HiDPI**: todas las medidas son px lógicos; los px físicos son las medidas por el factor de escala del monitor. La imagen se reescala una sola vez, en segundo plano, a los px físicos exactos del área que cubre (filtro de calidad, 02 ARQ-65) y se dibuja 1:1, sin reescalado en la GPU. Si la ventana pasa a un monitor con otro factor, se reescala de nuevo en segundo plano y mientras tanto se dibuja la versión anterior.
+- **Cobertura de la imagen actual** (1672×941 px) a 800×450 lógicos: al 100 % se reduce al 48 %; al 150 %, al 72 %; al 200 % (1600×900 px físicos), al 96 %; al 250 % se amplía un 20 % y al 300 % un 43 %, con pérdida de nitidez visible. Por eso la resolución recomendada para una imagen nueva es mayor (§7.10.10).
+- **Sin ventana propia**: si la plataforma no permite una ventana sin decoraciones o centrada (en Wayland la posición la decide el compositor, VERIFICAR), o si falla su creación, la Pantalla de arranque se dibuja dentro de la ventana principal, a su tamaño, con las mismas reglas de recorte y composición. 02 ARQ-65 fija este respaldo.
+
+#### 7.10.3 Regla de recorte y ajuste («cubrir»)
+
+Con la ventana de `W×H` px físicos, el panel de `P` px físicos y la imagen de `w×h` px:
+
+1. **Escala**: `k = max(W / w, H / h)`. La imagen siempre cubre toda la ventana, sin bandas vacías y sin deformarse.
+2. **Horizontal**: el centro de la imagen coincide con el centro de la ventana; se recorta lo mismo a izquierda y derecha: `x = (W − w·k) / 2`.
+3. **Vertical**: el centro de la imagen se coloca en el centro de la **zona visible** sobre el panel (`Hv = H − P`), sin dejar huecos: `y = clamp(Hv / 2 − h·k / 2, H − h·k, 0)`. Así el motivo central de la ilustración queda a la vista y no tapado por el panel.
+4. **Punto focal fijo**: el centro geométrico de la imagen. No hay archivo de configuración del punto focal; quien cambie la imagen debe centrar en ella lo importante (§7.10.10).
+5. **Ventana muy ancha** (proporción > 16:9): la escala la fija el ancho y se recorta arriba y abajo; con la regla 3 queda a la vista la franja central de la imagen.
+6. **Ventana muy estrecha** (proporción < 16:9, por ejemplo con el respaldo dentro de la ventana principal): la escala la fija el alto y se recortan los laterales por igual; en la imagen actual el guacamayo (a la izquierda) puede quedar fuera y se mantienen las montañas del centro.
+7. **Zona visible insuficiente**: si `Hv` es menor que `splash.image.min_visible_height` (96 px lógicos) o el ancho es menor que 360 px lógicos, la imagen no se dibuja y el panel ocupa toda la ventana con su contenido centrado.
+8. **Composición del panel según el ancho**: a partir de 640 px lógicos, logo a la izquierda y eslogan a la derecha (wireframe). Por debajo de 640 px, o si el eslogan no cabe en dos líneas junto al logo (por ejemplo en seudo-localización), el eslogan pasa debajo del logo, alineado a la izquierda, y el panel crece a 168 px.
+
+#### 7.10.4 Composición del panel
+
+| Elemento | Especificación | Tokens |
+|---|---|---|
+| Panel | Banda inferior de ancho completo y `splash.panel.height` (128 px); sin borde, sombra ni radio; margen interior `splash.panel.padding` (32 px) a los lados, 20 px arriba y abajo | Fondo `splash.panel` (`bg` del modo claro) |
+| Logo | Horizontal principal `gafira-logo-primary.svg` (isotipo y texto «Gafira», `docs/manuals/marca/assets/`), sin recolorear ni deformar. Ancho visible del arte `splash.logo.width` = 200 px (mínimo del manual: 160 px), unos 61 px de alto; arriba a la izquierda del panel | — (arte de marca, no se tiñe) |
+| Área de protección | X = 1/5 del ancho visible del isotipo. El isotipo ocupa el 27,9 % del arte medido en el SVG (357 de 1280 unidades), es decir 55,8 px a 200 px de ancho: X = 11,2 px, que se redondea a **12 px** por cada lado. Ningún texto, borde, barra ni píxel de la imagen entra en esa zona | — |
+| Eslogan | «Haz visibles tus ideas.» / «Bring your ideas to life.» en Manrope, estilo `h3` (24/32 px, peso 650), alineado a la derecha y centrado en vertical con el logo; hasta dos líneas | `text` |
+| Barra de carga | Fina, de `splash.progress.height` (4 px) y radio `pill`; va de 32 px desde la izquierda hasta 16 px antes de la versión; su borde inferior queda a 20 px del borde del panel | Pista `splash.progress.track`, relleno `splash.progress.fill` |
+| Versión | «Versión {versión}» / «Version {version}» en `caption` (12/18 px), alineada a la derecha y centrada con la barra | `text.muted` |
+| Mensaje de carga lenta | Sustituye a la versión (§7.10.5) | `text.secondary`, `body-sm` |
+| Estado de error | Icono de error de 20 px y mensaje en lugar de la barra; botones «Reintentar» (primario) y «Cerrar» (secundario) de 32 px a la derecha (§7.10.5) | `error.fg`, `primary.*`, `secondary.*`, `focus.ring` |
+
+- Todos los colores son tokens de §3 y se resuelven en `theme.rs` (DIS-04): `splash.*` y, para textos y botones, los de `modes.light`, también con la app en modo oscuro.
+- Ningún elemento usa coral salvo la barra y, solo en el estado de error, el botón «Reintentar». La barra es un indicador de estado, no una acción, por lo que el estado de carga tiene **cero** botones coral; DIS-15 se cumple en el estado de error con uno.
+- Sin degradados, sombras, contornos ni texturas sobre el logo; sin velos sobre la imagen; el logo nunca se coloca sobre la imagen (manual §7.10).
+
+#### 7.10.5 Estados y tiempos
+
+| Estado | Cuándo | Qué se ve |
+|---|---|---|
+| **Cargando** | Desde el primer frame (< 300 ms tras lanzar el proceso, PROPUESTA) | Imagen, panel, logo, eslogan, barra con el progreso real y versión. Si la imagen aún no está decodificada, su zona se pinta con `splash.panel` y la imagen aparece en cuanto está lista |
+| **Lista, en espera mínima** | El arranque termina antes de 1,2 s desde el primer frame | La barra llega al 100 % y se mantiene hasta cumplir **1,2 s** (D-09) |
+| **Cierre** | El arranque terminó y pasaron al menos 1,2 s | Se muestra la ventana principal (Inicio y, si procede, Recuperación tras fallo) y la Pantalla de arranque se funde y se destruye (§7.10.6) |
+| **Carga lenta** | A los **5 s** desde el primer frame (PROPUESTA) sin haber terminado los pasos necesarios para mostrar Inicio | Igual que «Cargando», con el mensaje «Esto está tardando más de lo normal. Seguimos cargando.» en lugar de la versión, y un único anuncio cortés para lectores de pantalla |
+| **Error de arranque** | El arranque informa de un fallo, o pasan 20 s (PROPUESTA) sin ningún evento de progreso | Icono y mensaje «No pudimos abrir Gafira. Inténtalo de nuevo.»; botones «Reintentar» (repite el arranque desde el principio) y «Cerrar» (sale). El detalle técnico va al registro local (02 §7.3), nunca a la pantalla (DIS-41) |
+
+- **Qué espera y qué no**: la Pantalla de arranque solo espera los pasos **bloqueantes**, los imprescindibles para pintar Inicio (ajustes, idioma, tokens y fuentes, estado de la licencia leído sin red, registros, ventana principal). Los pasos **diferibles** (índice de plantillas, miniaturas de recientes, escaneo de fuentes del sistema, preparación del render GPU del lienzo) siguen en segundo plano tras cerrarla, e Inicio muestra sus marcadores de carga. Así la duración en el caso normal es `max(1,2 s, pasos bloqueantes)`, dentro del < 5 s de CAL-08. La clasificación de pasos está en 02 §8.4.
+- **Progreso real**: la barra solo avanza con los eventos `StartupProgress` del arranque (02 ARQ-68); nunca avanza por tiempo, nunca retrocede y no tiene modo indeterminado animado. Antes del primer evento está en 0 %.
+- **Cierre de la persona**: cerrar con el atajo del SO (Alt+F4, Cmd+Q) cancela el arranque y sale sin dejar archivos a medias.
+
+#### 7.10.6 Movimiento y reducción de movimiento
+
+| Animación | Sin reducción de movimiento | Con reducción de movimiento (§11) |
+|---|---|---|
+| Aparición de la ventana | Inmediata, sin fundido (no se retrasa la primera imagen de la marca) | Inmediata |
+| Aparición de la imagen si llega después del primer frame | Fundido de opacidad `motion.fast` (120 ms), curva `enter` | Inmediata |
+| Avance de la barra hasta el nuevo valor | Interpolación `motion.fast` (120 ms), curva `standard` | Salto directo al valor |
+| Paso a carga lenta o a error | Cambio de opacidad `motion.base` (160 ms) | Inmediato |
+| Cierre | Fundido de salida de la ventana `motion.base` (160 ms), curva `exit`, si la plataforma admite opacidad de ventana (VERIFICAR por plataforma); si no, cierre inmediato | Cierre inmediato, sin fundido |
+
+- No hay zoom lento, desplazamiento ni paralaje sobre la imagen, ni nada que parpadee. Ninguna transición supera 220 ms (DIS-40).
+- La preferencia se lee antes del primer frame: `gafira-platform::prefers_reduced_motion()` y, si existe, la opción de Ajustes → Accesibilidad (02 §8.3).
+
+#### 7.10.7 Accesibilidad
+
+- **Foco**: en los estados de carga la Pantalla de arranque no tiene elementos enfocables, no pide el foco del sistema al crearse (la ventana se crea sin activarse, VERIFICAR por plataforma) y no lo quita a otra app si la persona cambió de ventana mientras carga: en ese caso la ventana principal se abre sin robar el foco y pide atención en la barra de tareas o el Dock. Solo el estado de error toma el foco, porque exige una decisión: el foco va a «Reintentar» y `Tab` alterna con «Cerrar».
+- **Árbol de AccessKit**: ventana con nombre «Gafira»; logo con rol de imagen y nombre accesible «Gafira»; eslogan como texto; barra con rol de indicador de progreso, nombre «Cargando Gafira» / «Loading Gafira» y valor de 0 a 100; versión como texto. El nodo raíz declara el idioma resuelto (DIS-78).
+- **Texto alternativo de la imagen de fondo**: es **decorativa** y se excluye del árbol accesible (sin nombre), porque no aporta información y cambia cuando se sustituye el archivo. Por eso cambiar la imagen no exige cambiar ningún texto. El texto alternativo que transmite la marca es el del logo («Gafira»).
+- **Anuncios** (región en vivo): «Cargando Gafira.» una vez al aparecer (cortés); el mensaje de carga lenta una vez (cortés); el mensaje de error una vez (asertivo). Los porcentajes de la barra no se anuncian. Al cerrar no se anuncia nada: Inicio anuncia su propio título.
+- **Contraste**: todos los pares cumplen AA (§4, tabla «Pantalla de arranque»). El color nunca es la única señal: el error lleva icono y texto (DIS-33).
+
+#### 7.10.8 Idioma
+
+- El eslogan, el nombre accesible de la barra, la versión y los mensajes salen del catálogo de `gafira-i18n` (02 ARQ-97) en el idioma **resuelto antes del primer frame** con la regla de D-08 (§16.2): la preferencia guardada o, con «Sistema», español para cualquier variante de español e inglés en los demás casos.
+- Textos: «Haz visibles tus ideas.» / «Bring your ideas to life.» (manual §6.1, sin cambios) y los mensajes de §12. Nunca se mezclan los dos idiomas (DIS-01). Solo se traduce la palabra «Versión» / «Version»; el número de versión no se localiza.
+
+#### 7.10.9 Microcopy de marca
+
+Tono del §12: frases breves, sin exclamaciones ni superlativos. El eslogan es el principal del manual; no se usa «Tus ideas toman forma.», reservado a la carga del proyecto (§12). Las filas nuevas (Pantalla de arranque) están en la tabla del §12 con su versión inglesa.
+
+#### 7.10.10 Cómo cambiar la imagen
+
+1. **Archivo**: sustituir `assets/splash_screen.jpg` por la imagen nueva con el **mismo nombre base**: `assets/splash_screen.jpg` o `assets/splash_screen.png`. Debe existir **exactamente uno** de los dos; si hay dos o ninguno, la compilación falla con un mensaje que lo explica (02 ARQ-67).
+2. **Formatos**: JPEG (base o progresivo, 8 bits, RGB o YCbCr; no CMYK) o PNG (8 bits por canal, RGB o RGBA; la transparencia se compone sobre `splash.panel`). La imagen se trata como sRGB: convertirla a sRGB antes de guardarla, porque los perfiles ICC incrustados se ignoran.
+3. **Proporción**: **16:9** recomendada (la actual es 1672×941, 1,777:1). La compilación avisa si la proporción está fuera de 1,7–1,85:1 (más recorte del previsto) y falla si está fuera de 1,5–2,1:1.
+4. **Resolución**: mínimo **1600×900 px** (cubre 800×450 al 200 % sin ampliar); recomendada **2000×1125 px** o más (cubre el 250 %); máximo **2880×1620 px** (su decodificación ocupa unos 17,8 MiB de memoria temporal, que se libera al cerrar la pantalla).
+5. **Tamaño del archivo**: hasta **1 MB** recomendado y **2 MB** como límite que hace fallar la compilación (PROPUESTA, 02 ARQ-69). Un JPEG de calidad 85–90 a 2000×1125 suele quedar por debajo de 1 MB.
+6. **Composición y legibilidad**:
+   - La franja inferior (128 de 450 px, el 28 %) queda tapada por el panel: no poner allí nada importante.
+   - Centrar el motivo principal en la zona visible: el punto focal es el centro de la imagen y los laterales pueden recortarse en ventanas estrechas.
+   - **El logo nunca va sobre la imagen**: no hace falta dejar hueco para él, pero tampoco se debe incluir en la ilustración ningún logo, texto ni marca de agua (el logo ya está en el panel).
+   - Sin texto dentro de la imagen: no se traduciría y no se leería en todos los tamaños.
+   - Sin destellos ni patrones de alto contraste que parpadeen al reescalar.
+7. **Licencia**: actualizar la entrada de la imagen en `assets/LICENSES.toml` (origen, autoría, licencia y hash; ARQ-75). Sin entrada válida, `xtask` falla y el archivo no se empaqueta.
+8. **Comprobación**: recompilar (`cargo build`), ejecutar las pruebas de la Pantalla de arranque y aprobar las nuevas capturas golden (DIS-81, DIS-67). No se toca código ni el catálogo de textos.
+
+#### 7.10.11 Requisitos
+
+- **DIS-80** (composición y marca): la Pantalla de arranque muestra el logo `gafira-logo-primary.svg` con 200 px de ancho visible, su área de protección de 12 px sin invadir, el eslogan en `h3` Manrope, la barra y la versión sobre el panel `splash.panel`, con el layout de §7.10.4; ningún píxel del logo ni de su área de protección se dibuja sobre la imagen; todos los colores salen de tokens; en el estado de carga hay 0 botones coral. *Aceptación*: capturas golden en claro y oscuro del sistema (deben ser idénticas) a 100, 150 y 200 %; una prueba geométrica comprueba que el rectángulo del logo más X queda dentro del panel y que ningún otro elemento lo cruza; DIS-04 da 0 colores literales.
+- **DIS-81** (recorte y HiDPI): la imagen cubre siempre toda la ventana sin deformarse, con la regla de §7.10.3. *Aceptación*: prueba unitaria de la función de recorte con ventanas de 800×450, 1280×400, 480×600, 2000×1125 y 300×200 px (este último, sin imagen) y factores de 1, 1,5, 2 y 2,5; resultado: 0 bandas vacías, desviación de proporción < 0,5 %, centro según la regla 3; capturas golden en 800×450 a 100 y 200 % y en el respaldo dentro de la ventana principal a 1280×720.
+- **DIS-82** (tiempos): primer frame < 300 ms desde el lanzamiento (PROPUESTA) en gama media; visible al menos 1,2 s desde el primer frame (D-09); se cierra en ≤ 1 frame tras cumplir las dos condiciones de cierre; carga lenta a los 5 s y error tras 20 s sin progreso (PROPUESTA). *Aceptación*: `gafira --bench-startup` informa de `splash_first_frame_ms` y `splash_visible_ms` (CAL-38, CAL-39); pruebas con un `StartupProgress` simulado: arranque de 100 ms → visible 1,2 s ± 1 frame; arranque de 3 s → visible 3 s ± 1 frame; arranque bloqueado a 6 s → mensaje de carga lenta a los 5 s; sin eventos durante 20 s → estado de error.
+- **DIS-83** (barra de carga real): la barra solo refleja `StartupProgress`, es monótona, empieza en 0 % y llega al 100 % antes de cerrarse; no hay animación indeterminada ni avance por tiempo. Contraste: S1 ≥ 3:1 y S2 ≥ 3:1 (§4). *Aceptación*: prueba con una secuencia de eventos desordenada (0,2; 0,5; 0,4; 1,0): la barra muestra 0,2; 0,5; 0,5; 1,0; con eventos congelados, el valor dibujado no cambia en 3 s; DIS-10 cubre los pares S1 y S2.
+- **DIS-84** (movimiento): las animaciones son las de §7.10.6 y ninguna supera 220 ms; con reducción de movimiento todas duran 0 ms y no hay fundidos. *Aceptación*: la prueba de DIS-40 registra las transiciones de la Pantalla de arranque con y sin la preferencia (ARQ-64).
+- **DIS-85** (accesibilidad): en los estados de carga la Pantalla de arranque no tiene nodos enfocables ni pide el foco; la imagen de fondo no está en el árbol accesible; el logo se llama «Gafira»; la barra tiene rol de progreso y valor; se emiten exactamente los anuncios de §7.10.7; en el estado de error el foco está en «Reintentar». *Aceptación*: prueba con inspector de accesibilidad en los cuatro estados; una prueba E2E abre otra ventana durante el arranque y comprueba que, al terminar, Gafira no le quita el foco (VERIFICAR la posibilidad por plataforma).
+- **DIS-86** (idioma): el eslogan y los textos de la Pantalla de arranque están en el idioma resuelto por D-08 desde el primer frame. *Aceptación*: prueba con perfil vacío y SO en `es-MX`, `en-GB` y `fr-FR`: el primer frame muestra «Haz visibles tus ideas.», «Bring your ideas to life.» y «Bring your ideas to life.»; con la preferencia guardada `es` y SO en `en-US`, español; 0 claves visibles; capturas en seudo-localización sin truncados (DIS-76).
+- **DIS-87** (imagen reemplazable): cambiar la imagen solo requiere sustituir el archivo, actualizar su entrada en `assets/LICENSES.toml` y recompilar; la compilación falla si el archivo falta, está duplicado (`.jpg` y `.png`), está corrupto o incumple los límites de §7.10.10. *Aceptación*: pruebas de la build de 02 ARQ-67 y ARQ-69 con cinco archivos de prueba (válido JPEG, válido PNG, ausente, duplicado, truncado): solo los dos válidos compilan; ningún archivo de código cambia entre las dos compilaciones válidas.
 
 ---
 
@@ -1009,6 +1175,7 @@ Clic derecho o tecla de menú sobre un objeto: Copiar, Pegar, Duplicar, Eliminar
 - **Escala**: 120 ms (`fast`: hover, foco, casillas), 160 ms (`base`: paneles, popovers, toasts), 220 ms (`slow`: diálogos, cambio de pantalla). Curvas `standard` (0,2; 0; 0; 1), `enter` y `exit` (tokens `motion.easing`).
 - **Qué se anima**: opacidad y desplazamiento ≤ 8 px. No se anima el contenido del usuario ni el lienzo (el zoom es inmediato con refinamiento progresivo, 02 §6.2).
 - **Reducción de movimiento**: si `gafira-platform::prefers_reduced_motion()` es verdadero, o Ajustes → Accesibilidad lo fuerza, todas las duraciones pasan a 0 ms (`motion.reduced`) y los desplazamientos se sustituyen por un cambio inmediato de opacidad. Las animaciones del *contenido* del usuario no se alteran (02 §8.3).
+- **Pantalla de arranque** (D-09): sus animaciones (aparición de la imagen, avance de la barra y fundido de salida de 160 ms) y su comportamiento con reducción de movimiento están en §7.10.6 (DIS-84).
 - **DIS-40**: ninguna transición supera 220 ms. *Aceptación*: la prueba de `gafira-ui` mide la duración de cada transición registrada (≤ 220 ms; 0 con reducción de movimiento, ARQ-64).
 
 ---
@@ -1047,6 +1214,12 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 | Privacidad (Ajustes) | «Tus diseños y archivos no salen de tu equipo. La única conexión de Gafira es la de tu licencia.» | «Your designs and files never leave your computer. Gafira only connects to check your license.» |
 | Ayuda del selector de idioma (§16.1) | «Con Sistema, Gafira usa español si tu equipo está en cualquier variante de español, e inglés en los demás casos. El cambio se aplica al momento.» | «With System, Gafira uses Spanish if your computer is set to any variant of Spanish, and English otherwise. The change applies right away.» |
 | Idioma cambiado (lector de pantalla) | «Idioma: Español.» | «Language: English.» |
+| Pantalla de arranque: eslogan (§7.10) | «Haz visibles tus ideas.» | «Bring your ideas to life.» (texto del manual, no PROPUESTA) |
+| Pantalla de arranque: barra (nombre accesible) y anuncio al aparecer | «Cargando Gafira» · «Cargando Gafira.» | «Loading Gafira» · «Loading Gafira.» |
+| Pantalla de arranque: versión | «Versión {versión}» | «Version {version}» |
+| Pantalla de arranque: carga lenta | «Esto está tardando más de lo normal. Seguimos cargando.» | «This is taking longer than usual. We’re still loading.» |
+| Pantalla de arranque: error | «No pudimos abrir Gafira. Inténtalo de nuevo.» + «Reintentar» · «Cerrar» | «We couldn’t open Gafira. Try again.» + «Try again» · «Close» |
+| Pantalla de arranque: logo (nombre accesible) | «Gafira» | «Gafira» |
 
 **Mensajes complementarios del manual** (manual §6.3; el texto inglés es el del manual y no es PROPUESTA; la ubicación sí lo es):
 
@@ -1096,14 +1269,14 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 | DIS-62 | Interacciones locales (abrir menú, cambiar pestaña, abrir Paleta de comandos, aplicar color) | < 100 ms (p99) | `bench_interactions` |
 | DIS-63 | Cambio de color | < 50 ms | `bench_recolor` |
 | DIS-64 | Cambio de modo claro/oscuro sin reiniciar | < 100 ms | Medición del primer frame tras el cambio |
+| — | Pantalla de arranque: primer frame y duración visible | Primer frame < 300 ms (PROPUESTA); visible ≥ 1,2 s (D-09); carga lenta a los 5 s (PROPUESTA) | DIS-82 (§7.10.11), `gafira --bench-startup` (CAL-38, CAL-39) |
 | DIS-75 | Cambio de idioma (Español ↔ English) sin reiniciar, con el proyecto abierto, sin perder selección ni historial | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo | `bench_locale_switch` (02 ARQ-101) |
 | DIS-65 | Ningún trabajo del hilo de UI > 16 ms fuera de diálogos del SO | 0 spans | `tracing` en la suite E2E (ARQ-41) |
 | DIS-66 | Cancelación de arrastre, exportación o segmentación | ≤ 100 ms | ARQ-43 |
 | DIS-67 | Capturas golden por pantalla y componente en ambos modos | Diferencia ≤ 1/255 en el 99,9 % de los píxeles entre ejecuciones de la misma plataforma | `gafira-testkit::golden` |
 | DIS-68 | Tokens y contraste | 0 fallos | DIS-10 |
 | DIS-69 | Colores literales en código | 0 coincidencias | DIS-04 |
-| DIS-70 | Uso del logo | Mínimos y áreas de protección respetados; sin variantes alteradas | DIS-13, DIS-14 |
-
+| DIS-70 | Uso del logo | Mínimos y áreas de protección respetados; sin variantes alteradas; en la Pantalla de arranque, nunca sobre la imagen | DIS-13, DIS-14, DIS-80 |
 ---
 
 ## 15. Propuestas y preguntas abiertas de esta especificación
@@ -1124,6 +1297,9 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 | PD-12 | Microcopy inglés que no sale del manual (§12) y ubicación de los mensajes complementarios | PROPUESTA (Q-25) |
 | PD-13 | Selector de idioma con opciones de radio, sin pregunta de idioma en el primer arranque, y propiedad de idioma opcional en el texto de la persona para AccessKit | PROPUESTA |
 | PD-14 | Factores de expansión de la seudo-localización (+100 % a +30 %) | PROPUESTA (02 §14.6) |
+| PD-15 | Nombre «Pantalla de arranque» / «Startup screen» (§2.1, §2.8.1) | PROPUESTA (D-09); requiere aprobación del titular |
+| PD-16 | Pantalla de arranque: ventana propia de 800×450, panel de 128 px, logo de 200 px, pista grafito para la barra coral, panel siempre en modo claro, imagen decorativa sin texto alternativo | PROPUESTA (D-09) |
+| PD-17 | Pantalla de arranque: primer frame < 300 ms, carga lenta a los 5 s, error tras 20 s sin progreso, límites de la imagen (1600×900 a 2880×1620 px; 1 MB recomendado, 2 MB máximo) | PROPUESTA (D-09); la duración mínima de 1,2 s es decisión del titular |
 
 ---
 
@@ -1214,3 +1390,4 @@ El español suele ocupar más que el inglés (a menudo un 15–30 % más en etiq
 | §16.1 | DIS-73 | Selector de idioma |
 | §16.2 | DIS-74 | Primer arranque sin pregunta |
 | §16.4 | DIS-76 | Expansión de texto |
+| §7.10.11 | DIS-86 | Eslogan y textos de la Pantalla de arranque en el idioma resuelto desde el primer frame (D-09) |
