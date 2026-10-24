@@ -82,6 +82,7 @@ impl Node {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use gafira_color::{Color, Rgba};

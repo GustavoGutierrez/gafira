@@ -78,6 +78,7 @@ pub(crate) fn test_document(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Do
         pages,
     }
 }
+
 #[cfg(test)]
 mod tests {
     use gafira_geom::{Length, Unit};

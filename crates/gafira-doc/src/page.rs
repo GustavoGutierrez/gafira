@@ -47,6 +47,7 @@ impl Page {
         self.nodes.get(&id).map(Arc::as_ref)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
