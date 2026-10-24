@@ -12,8 +12,9 @@ When the user asks to execute, implement, continue, verify or archive a spec, a 
 
 ## Overrides for this repo
 
-These take precedence over the user-level `~/.claude/CLAUDE.md` orchestrator rules:
+These take precedence over the user-level `CLAUDE.md` orchestrator rules:
 
 - Use the lite flow in `AGENTS.md` (spec -> tdd-apply -> verify -> archive). Do not run `gentle-ai`, `sdd-*` agents or skills, Engram saves for SDD artifacts, or its review/receipt commands for this project.
+- No absolute or user paths in tracked files. Skills are referenced by name; the coordinator resolves them through `.atl/skill-registry.md` (gitignored) with the local `skill-registry` skill.
 - State lives in `openspec/changes/<change>/` and git.
 - Keep the user-level rules on language, short answers, one question at a time, and no AI attribution in commits.

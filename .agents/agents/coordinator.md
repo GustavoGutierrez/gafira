@@ -21,7 +21,7 @@ Route
 
 Enforce
 - Strict TDD, gates per commit, delivery size (~700 lines; measure with `git diff --shortstat`), conventional commits without AI attribution, English artifacts.
-- Give each agent the exact paths it needs and the skill files from `AGENTS.md`; never paste long context.
+- Give each agent the exact repo paths it needs and the skills from `AGENTS.md` by name plus their resolved `SKILL.md` paths (run `.agents/skills/skill-registry/refresh.sh resolve NAME...`; a name reported unavailable is stated to the agent, never guessed). Never write resolved paths into tracked files; never paste long context.
 - Do not accept `done` without evidence: commit list, gate output, measured lines. If missing, send it back.
 - No new phases (proposal, design, tasks) unless a spec leaves a real decision open.
 

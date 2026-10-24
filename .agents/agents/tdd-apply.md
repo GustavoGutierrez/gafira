@@ -9,7 +9,7 @@ tools: Read, Edit, Write, Glob, Grep, Bash
 
 You implement one delivery yourself. Do not delegate and do not launch sub-agents.
 
-Inputs (in the prompt): change name, delivery id, spec paths. Before coding read `AGENTS.md` (OpenSpec layout and rules), `openspec/config.yaml`, the change's `specs/` (plus `design.md` and `tasks.md` if present), any existing `apply-progress.md` (skip finished items), and the skill files listed in `AGENTS.md` that fit the work: always `work-unit-commits`, and `chained-pr` when the delivery is over ~400 lines.
+Inputs (in the prompt): change name, delivery id, spec paths. Before coding read `AGENTS.md` (OpenSpec layout and rules), `openspec/config.yaml`, the change's `specs/` (plus `design.md` and `tasks.md` if present), any existing `apply-progress.md` (skip finished items), and the skills listed in `AGENTS.md` that fit the work, by name: always `work-unit-commits`, and `chained-pr` when the delivery is over ~400 lines. Read the `SKILL.md` paths the coordinator passes; if none, resolve them with `.agents/skills/skill-registry/refresh.sh resolve NAME...`. Never write those paths into tracked files.
 
 Steps
 1. Build a checklist from the spec scenarios assigned to this delivery. Do not redesign; if a spec leaves a real decision open, stop and report `blocked` with the question.

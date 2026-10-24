@@ -78,15 +78,20 @@ Archive merge (the only step that edits main specs):
 
 ## Skills
 
-Skills are read, not invoked: subagents cannot call the Skill tool, so each agent reads the `SKILL.md` it needs before working (paths come from `.atl/skill-registry.md`, which is gitignored and generated locally; if it is missing, use the paths below).
+Rule: no absolute or user paths in tracked files. Skills are referenced by NAME only; global skills are registered and resolved through `.atl/skill-registry.md` (gitignored), created and read with the local `skill-registry` skill (`.agents/skills/skill-registry/`; `.claude/skills` is a symlink to `.agents/skills`).
 
-| When | Skill file |
+Registry structure: header, "Sources scanned" (project `.claude/skills`, `.agents/skills`, then user skill dirs under `$HOME`), "Contract", "Skills" table (`Skill | Trigger / description | Scope | Path`; project wins on duplicate names) and "Loading protocol". Create or refresh it with `.agents/skills/skill-registry/refresh.sh`; a missing name is reported as unavailable, never guessed.
+
+Skills are read, not invoked: subagents cannot call the Skill tool. The coordinator resolves the names below to paths with `refresh.sh resolve NAME...` before delegating and passes those paths in the prompt; each agent reads the `SKILL.md` before working.
+
+| When | Skill |
 |---|---|
-| UI code, theme tokens, colors, fonts, logo/icon, microcopy, splash, any visual rule | `.agents/skills/gafira-brand/SKILL.md` (`.claude/skills` is a symlink) |
-| Splitting work into commits, tests and docs with code | `/home/meridian/.agents/skills/work-unit-commits/SKILL.md` |
-| Delivery over ~400 lines, stacked PRs, review slices | `/home/meridian/.agents/skills/chained-pr/SKILL.md` |
-| Preparing a PR (owner opens it) | `/home/meridian/.agents/skills/branch-pr/SKILL.md` |
-| Writing specs, guides, README, review-facing docs | `/home/meridian/.agents/skills/cognitive-doc-design/SKILL.md` |
-| PR and issue comments | `/home/meridian/.agents/skills/comment-writer/SKILL.md` |
+| UI code, theme tokens, colors, fonts, logo/icon, microcopy, splash, any visual rule | `gafira-brand` |
+| Splitting work into commits, tests and docs with code | `work-unit-commits` |
+| Delivery over ~400 lines, stacked PRs, review slices | `chained-pr` |
+| Preparing a PR (owner opens it) | `branch-pr` |
+| Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
+| PR and issue comments | `comment-writer` |
+| Creating, refreshing or reading the skill registry | `skill-registry` |
 
-No Rust-specific skill is installed; the Rust rules are the ones above and in `openspec/config.yaml`. The user-level `~/.claude/CLAUDE.md` still applies to the main conversation (language, no AI attribution in commits).
+No Rust-specific skill is installed; the Rust rules are the ones above and in `openspec/config.yaml`. The user-level `CLAUDE.md` still applies to the main conversation (language, no AI attribution in commits).
