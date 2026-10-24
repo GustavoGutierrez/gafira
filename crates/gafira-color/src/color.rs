@@ -139,18 +139,16 @@ mod tests {
 
     #[test]
     fn from_impls_pick_the_matching_variant() {
-        assert_eq!(
-            Color::from(Rgba::new(0.1, 0.2, 0.3, 0.4)),
-            Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 0.4))
-        );
-        assert_eq!(
-            Color::from(LinearRgba::new(0.1, 0.2, 0.3, 0.4)),
-            Color::LinearSrgb(LinearRgba::new(0.1, 0.2, 0.3, 0.4))
-        );
-        assert_eq!(
-            Color::from(DisplayP3Rgba::new(0.1, 0.2, 0.3, 0.4)),
-            Color::DisplayP3(DisplayP3Rgba::new(0.1, 0.2, 0.3, 0.4))
-        );
+        let c = [0.1, 0.2, 0.3, 0.4];
+        let srgb = Color::from(Rgba::new(c[0], c[1], c[2], c[3]));
+        assert!(matches!(srgb, Color::Srgb(_)));
+        assert_eq!(bits(srgb), c.map(f32::to_bits));
+        let linear = Color::from(LinearRgba::new(c[0], c[1], c[2], c[3]));
+        assert!(matches!(linear, Color::LinearSrgb(_)));
+        assert_eq!(bits(linear), c.map(f32::to_bits));
+        let p3 = Color::from(DisplayP3Rgba::new(c[0], c[1], c[2], c[3]));
+        assert!(matches!(p3, Color::DisplayP3(_)));
+        assert_eq!(bits(p3), c.map(f32::to_bits));
     }
 
     #[test]
@@ -284,13 +282,25 @@ mod tests {
 
     #[test]
     fn to_linear_srgb_agrees_with_the_typed_conversions() {
+        fn linear_bits(v: LinearRgba) -> [u32; 4] {
+            [v.r, v.g, v.b, v.a].map(f32::to_bits)
+        }
         let c = [0.3, 0.6, 0.9, 0.5];
         let srgb = Rgba::new(c[0], c[1], c[2], c[3]);
-        assert_eq!(Color::from(srgb).to_linear_srgb(), srgb.to_linear());
+        assert_eq!(
+            linear_bits(Color::from(srgb).to_linear_srgb()),
+            linear_bits(srgb.to_linear())
+        );
         let linear = LinearRgba::new(c[0], c[1], c[2], c[3]);
-        assert_eq!(Color::from(linear).to_linear_srgb(), linear);
+        assert_eq!(
+            linear_bits(Color::from(linear).to_linear_srgb()),
+            linear_bits(linear)
+        );
         let p3 = DisplayP3Rgba::new(c[0], c[1], c[2], c[3]);
-        assert_eq!(Color::from(p3).to_linear_srgb(), p3.to_linear_srgb());
+        assert_eq!(
+            linear_bits(Color::from(p3).to_linear_srgb()),
+            linear_bits(p3.to_linear_srgb())
+        );
     }
 
     #[test]
