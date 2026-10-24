@@ -66,6 +66,15 @@ name = "gafira-cli"
 version = "0.1.0"
 
 [[package]]
+name = "gafira-color"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gafira-geom"
 version = "0.1.0"
 dependencies = [

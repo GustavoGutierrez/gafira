@@ -72,14 +72,32 @@ jobs:
             grep -Eq '^#!\[forbid\(unsafe_code\)\]' "$f" || { echo "missing forbid(unsafe_code): $f" >&2; status=1; }
           done
           exit "$status"
-      - name: gafira-geom is a leaf crate (V5)
+      - name: Domain crates respect the layer table (V5)
         run: |
-          tree=$(cargo tree -p gafira-geom -e normal,build --target all --prefix none -f '{p}')
-          if grep -E '^gafira-|egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq' <<<"$tree" \
-            | grep -v '^gafira-geom '; then
-            echo "gafira-geom must not depend on other gafira crates, UI, engine or I/O crates" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          # crate  allowed-internal-deps ("-" = none). Add a row per domain crate; keep the step unchanged.
+          table='
+          gafira-geom  -
+          gafira-color -
+          '
+          forbidden='egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq'
+          status=0
+          listed=$(awk 'NF{print $1}' <<<"$table")
+          for c in crates/*/clippy.toml; do # domain crates are the crates with a clippy.toml copy (V12)
+            name=$(basename "$(dirname "$c")")
+            grep -qx "$name" <<<"$listed" || { echo "::error::$name has clippy.toml but no V5 row" >&2; status=1; }
+          done
+          while read -r crate allowed; do
+            [ -n "$crate" ] || continue
+            tree=$(cargo tree -p "$crate" -e normal,build --target all --prefix none -f '{p}' </dev/null)
+            grep -q "^$crate v" <<<"$tree" || { echo "::error::empty cargo tree for $crate" >&2; status=1; continue; }
+            for dep in $(grep -Eo '^gafira-[a-z0-9-]+' <<<"$tree" | sort -u); do
+              [ "$dep" = "$crate" ] && continue
+              case " $allowed " in *" $dep "*) ;; *) echo "::error::$crate must not depend on $dep" >&2; status=1;; esac
+            done
+            if bad=$(grep -E "^($forbidden)" <<<"$tree"); then echo "::error::$crate: forbidden $bad" >&2; status=1; fi
+          done <<<"$table"
+          exit "$status"
       - name: Domain clippy.toml copies are in sync (V12)
         run: |
           for c in crates/*/clippy.toml; do
