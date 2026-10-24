@@ -124,6 +124,16 @@ mod tests {
     }
 
     #[test]
+    fn combined_rotation_skew_and_flip() {
+        let mut p = Placement::new(0.0, 0.0, 2.0, 2.0);
+        p.rotation_deg = 90.0;
+        p.skew = 45.0;
+        p.flip.x = true;
+        // centered (1,1) -> mirror (-1,1) -> shear (0,1) -> rotate (-1,0) -> center (0,1)
+        assert_near(apply(&p, 2.0, 2.0), 0.0, 1.0);
+    }
+
+    #[test]
     fn non_finite_does_not_panic() {
         let mut a = Placement::new(f64::NAN, 0.0, 1.0, 1.0);
         let _ = a.to_transform();
