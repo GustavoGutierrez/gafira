@@ -50,6 +50,8 @@ Status: done after the verify fixes below. Each commit was run alone through `ca
 | 1 | `feat(doc): add Placement and its affine transform` | `placement.rs` (`Placement`, `Flip`, `to_transform`), exports in `lib.rs` |
 | 2 | `feat(doc): add ElementBase` | `element.rs`, export in `lib.rs` |
 
+Verify-fix commits on top (current hashes): `2521198` combined rotation, skew and flip order test; `618a83e` non-finite coefficients and NaN by bits; `036bbca` skew property over the open interval; `547e6ba` docs, verify fixes. The re-verify record is `a5c16fe`.
+
 ### Requirements and scenarios covered
 
 Placement and to_transform (D2a), all in `placement::tests`: "Plain placement" `plain_placement`; "Quarter turn clockwise" `quarter_turn_clockwise`; "Flip" `flip`; "Skew 45 degrees" `skew_45_degrees`; "Center is a fixed point" property `center_is_a_fixed_point`; "Non-finite does not panic" `non_finite_does_not_panic`; "Values retained" `values_are_retained`; constructor defaults `new_sets_defaults`. Value policy "IEEE equality" (zeros part): `ieee_equality`.
@@ -64,7 +66,7 @@ RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, fli
 - The "node with a NaN placement" part of "IEEE equality" is exercised on `ElementBase` (no `Node` until D2b); D2b should re-check it on `Node`.
 - Composition uses `Affine::scale_non_uniform` for flip and `Affine::new` for the x shear (`c = tan(skew)`).
 - The proptest run created a `proptest-regressions/placement.txt` during RED; it was a stub-induced failure and was deleted, not committed.
-- Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 248 insertions(+) (forecast ~335; under).
+- Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 260 insertions(+) (forecast ~335; under).
 
 ### D2a follow-ups (from verify-report)
 

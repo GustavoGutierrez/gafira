@@ -1,8 +1,8 @@
 # Verify report: domain-doc
 
-## D1 (branch `feat/domain-doc-1`, range `369e3d5..6e6e013`, 7 commits)
+## D1 (branch `feat/domain-doc-1`, range `369e3d5..dc7f7a9`, 7 commits)
 
-Note: the hashes in this D1 section predate the rebase onto the `chore` commit. Mapping: fb679a5..d8d0908 is now d380fd8..f064203 (PR 1a); code trees are unchanged, only `.agents/agents/archive.md` differs.
+Note: the hashes in this D1 section predate the rebase onto the `chore` commit and were rewritten on 2026-10-24 to the current ones (matched by subject; code trees are unchanged, only `.agents/agents/archive.md` differs). Mapping: fb679a5 -> 7f2a523, cb125d9 -> 7e7cd1f, 4e2377e -> 9c42c69, d8d0908 -> 2686a87, 1989f90 -> 44679cd, 0238e25 -> dac2b1f, 6e6e013 -> dc7f7a9 (PR 1a = 7f2a523..2686a87).
 
 **Verdict: PASS** (D1 only). CRITICAL 0, WARNING 3, SUGGESTION 3. The change is not complete (D2a to D6 remain), so `next` = tdd-apply for D2a.
 
@@ -12,15 +12,15 @@ Verified 2026-10-24 on toolchain 1.93.1, clippy 0.1.93, cargo-deny 0.20.2, git 2
 
 | Commit | Subject | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | V5 | V11 | V12 | ARQ-07 | `cargo deny --locked check` |
 |---|---|---|---|---|---|---|---|---|---|
-| fb679a5 | build(lint): ban HashMap and HashSet in domain clippy policy | 0 | 0 | 0 (154) | 0 | 0 | 0 (old body) | 0 | 0 |
-| cb125d9 | feat(doc): add gafira-doc crate skeleton | 0 | 0 | 0 (154) | 0 | 0 | 0 (hardened, 3 copies) | 0 | 0 |
-| 4e2377e | feat(doc): add NodeId and PageId | 0 | 0 | 0 (158) | 0 | 0 | 0 | 0 | 0 |
-| d8d0908 | feat(doc): add Dpi | 0 | 0 | 0 (162) | 0 | 0 | 0 | 0 | 0 |
-| 1989f90 | feat(doc): add PageSize with pixel limits | 0 | 0 | 0 (173) | 0 | 0 | 0 | 0 | 0 |
-| 0238e25 | feat(doc): add BlendMode | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
-| 6e6e013 | docs(sdd): record domain-doc D1 apply progress | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
+| 7f2a523 | build(lint): ban HashMap and HashSet in domain clippy policy | 0 | 0 | 0 (154) | 0 | 0 | 0 (old body) | 0 | 0 |
+| 7e7cd1f | feat(doc): add gafira-doc crate skeleton | 0 | 0 | 0 (154) | 0 | 0 | 0 (hardened, 3 copies) | 0 | 0 |
+| 9c42c69 | feat(doc): add NodeId and PageId | 0 | 0 | 0 (158) | 0 | 0 | 0 | 0 | 0 |
+| 2686a87 | feat(doc): add Dpi | 0 | 0 | 0 (162) | 0 | 0 | 0 | 0 | 0 |
+| 44679cd | feat(doc): add PageSize with pixel limits | 0 | 0 | 0 (173) | 0 | 0 | 0 | 0 | 0 |
+| dac2b1f | feat(doc): add BlendMode | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
+| dc7f7a9 | docs(sdd): record domain-doc D1 apply progress | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
 
-The CI steps were extracted from each commit's own `.github/workflows/ci.yml` with a YAML parser and run under `bash --noprofile --norc -eo pipefail`. The clippy logs show `Checking gafira-doc` from cb125d9 on, so no stale cache was involved. Total passed includes the `compile_fail` doctest. "Hardened V12 timing" holds: fb679a5 runs the old 3-line body (no `gafira-doc` V5 row yet), and cb125d9 runs the hardened body with the V5 row.
+The CI steps were extracted from each commit's own `.github/workflows/ci.yml` with a YAML parser and run under `bash --noprofile --norc -eo pipefail`. The clippy logs show `Checking gafira-doc` from 7e7cd1f on, so no stale cache was involved. Total passed includes the `compile_fail` doctest. "Hardened V12 timing" holds: 7f2a523 runs the old 3-line body (no `gafira-doc` V5 row yet), and 7e7cd1f runs the hardened body with the V5 row.
 
 ### 2. Requirements and scenarios
 
@@ -40,10 +40,10 @@ The CI steps were extracted from each commit's own `.github/workflows/ci.yml` wi
 | D-N2 forced edge to gafira-cli | warning "ignoring invalid dependency `gafira-cli` which is missing a lib target", rc 1 "gafira-doc must not depend on gafira-cli" | covered |
 | V12 Copies identical | `diff -q` geom/color rc 0, geom/doc rc 0 | covered |
 | H-N2 drifted copy | extra line in doc copy: rc 1 "...gafira-doc/clippy.toml son distintos"; in color copy: rc 1 | covered |
-| H-N3 ban removed everywhere | rc 1 "lacks the std::collections::HashMap ban under disallowed-types"; old V12 (fb679a5 body) rc 0 on the same tree (RED) | covered |
+| H-N3 ban removed everywhere | rc 1 "lacks the std::collections::HashMap ban under disallowed-types"; old V12 (7f2a523 body) rc 0 on the same tree (RED) | covered |
 | H-N5 commented ban | rc 1 same message; old V12 rc 0 | covered |
 | H-N6 ban under `disallowed-methods` | both entries moved into `disallowed-methods` in all copies: rc 1 same message; old V12 rc 0 | covered |
-| Hardened V12 timing | see section 1 (fb679a5 old body rc 0, cb125d9 hardened rc 0) | covered |
+| Hardened V12 timing | see section 1 (7f2a523 old body rc 0, 7e7cd1f hardened rc 0) | covered |
 | H-N4 too few copies | doc and color copies removed: rc 1 "expected >= 3 domain clippy.toml copies, found 1" | covered |
 | V11 missing forbid | removed from `gafira-doc/src/lib.rs`: rc 1 "missing forbid(unsafe_code): crates/gafira-doc/src/lib.rs"; same for `gafira-color` | covered |
 | Workspace membership | `cargo metadata --no-deps`: gafira-color and gafira-doc are members, edition 2024, rust-version 1.93, publish `[]`; root `Cargo.toml` declares `gafira-doc = { path = "crates/gafira-doc" }` | covered |
@@ -110,12 +110,12 @@ No requirement is tagged D1 (all are D3, D4 or D6). The D1 wire forms are covere
 
 | Prefix ending at | Measured (excl. lock/openspec) |
 |---|---|
-| fb679a5 | 4 |
-| cb125d9 | 92 |
-| 4e2377e | 200 |
-| d8d0908 | 292 |
-| 1989f90 | 620 |
-| 0238e25 / 6e6e013 | 767 |
+| 7f2a523 | 4 |
+| 7e7cd1f | 92 |
+| 9c42c69 | 200 |
+| 2686a87 | 292 |
+| 44679cd | 620 |
+| dac2b1f / dc7f7a9 | 767 |
 
 Every prefix passes all gates (section 1).
 
@@ -125,7 +125,7 @@ None.
 
 ### WARNING
 
-1. **Size over the ~700 guideline.** 766 (813 with lock and openspec) is above the AGENTS.md "split when it exceeds ~700" rule and the design's ≤ ~700 planning target. It is below the design's 800 hard limit (`design.md`, "Measurement and re-cut rule" item 2), and the ratio 1.29 is just under the ×1.3 recompute trigger, so the design does not force a split. Owner decision. If the owner wants a split, the cut is **after 1989f90**: PR1 = fb679a5..1989f90 (620), PR2 = 0238e25 + 6e6e013 (147 + progress note). The alternative cut after d8d0908 gives 292 / 475. Both prefixes pass the gates. `page_size.rs` alone is +326 against a forecast of 171 (×1.9), which drives the overrun.
+1. **Size over the ~700 guideline.** 766 (813 with lock and openspec) is above the AGENTS.md "split when it exceeds ~700" rule and the design's ≤ ~700 planning target. It is below the design's 800 hard limit (`design.md`, "Measurement and re-cut rule" item 2), and the ratio 1.29 is just under the ×1.3 recompute trigger, so the design does not force a split. Owner decision. If the owner wants a split, the cut is **after 44679cd**: PR1 = 7f2a523..44679cd (620), PR2 = dac2b1f + dc7f7a9 (147 + progress note). The alternative cut after 2686a87 gives 292 / 475. Both prefixes pass the gates. `page_size.rs` alone is +326 against a forecast of 171 (×1.9), which drives the overrun.
 2. **Spec vs design on serde for error types.** `document-model/spec.md:24` says every public value type MUST implement `Serialize` and `Deserialize`. `Axis` (`page_size.rs:23`) and `PageSizeError` (`page_size.rs:42`) are public and implement neither. The code follows `design.md:211-213` (`Axis`: Copy, Eq; `PageSizeError`: Display + Error). `ConversionError` from geom would also need serde before `PageSizeError` could have it. Recommended fix: make the spec text exclude error types ("every public value type other than error types and `Document`"). Alternatively, add serde before D4 embeds `PageSizeError` in `ValidationError`.
 3. **Stale tooling claims.** `openspec/config.yaml` (testing context) and `apply-progress.md` both say `cargo deny check` is not available. `cargo-deny 0.20.2` is installed, and `cargo deny --locked check` passes on all 7 commits (section 1). Update both files so later deliveries run the check.
 
@@ -138,7 +138,7 @@ None.
 ### Result
 
 - Verdict: **PASS** for D1 (0 CRITICAL, 3 WARNING, 3 SUGGESTION).
-- Next: owner decides on WARNING 1 (keep one PR or cut after 1989f90). Then **tdd-apply D2a**. Archive waits for D2a to D6.
+- Next: owner decides on WARNING 1 (keep one PR or cut after 44679cd). Then **tdd-apply D2a**. Archive waits for D2a to D6.
 
 ## D2a (branch `feat/domain-doc-2a`, range `feat/domain-doc-1b` (9905723)..4bac4df, 3 commits)
 
