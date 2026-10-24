@@ -5,5 +5,9 @@
 #![forbid(unsafe_code)]
 
 mod length;
+mod size;
+mod transform;
 
 pub use length::{ConversionError, Length, Unit};
+pub use size::Size;
+pub use transform::{SingularTransform, Transform2D};
