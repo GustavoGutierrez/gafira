@@ -2,7 +2,7 @@
 
 ## D1 (branch `feat/domain-doc-1`, base `chore/lite-sdd-methodology` 369e3d5)
 
-Status: done. Seven commits (split into PR 1a, fb679a5..d8d0908, and PR 1b, the rest), each run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green).
+Status: done. Seven commits (split into PR 1a, d380fd8..f064203, and PR 1b, the rest), each run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green).
 
 | # | Commit | Content |
 |---|---|---|
@@ -41,7 +41,9 @@ Document model
 - W3: `openspec/config.yaml` and this file corrected (cargo-deny 0.20.2 is installed; seven commits; PR 1a/1b split).
 - Test hardening (RED shown by mutating each new expected value, one at a time, each failing its test): A4 now asserts height (fractional px and unit preserved); A0 asserts px at 300 DPI (9933 x 14043) and 350 DPI (11589 x 16384).
 
-## D2a (branch `feat/domain-doc-2a`, from `feat/domain-doc-1b`)
+## D2a (branch `feat/domain-doc-2a`, base `feat/domain-doc-1b` 9905723)
+
+Status: done after the verify fixes below. Each commit was run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green). `cargo deny check` and V5/V11/V12 were not run during apply (verify ran them, all green).
 
 | # | Commit | Content |
 |---|---|---|
@@ -63,3 +65,10 @@ RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, fli
 - Composition uses `Affine::scale_non_uniform` for flip and `Affine::new` for the x shear (`c = tan(skew)`).
 - The proptest run created a `proptest-regressions/placement.txt` during RED; it was a stub-induced failure and was deleted, not committed.
 - Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 248 insertions(+) (forecast ~335; under).
+
+### D2a follow-ups (from verify-report)
+
+- CRITICAL 1: test `combined_rotation_skew_and_flip` (rotation 90, skew 45, flip.x, local (2,2) -> (0,1), derived by hand from `spec.md` order). Mutations: swapping shear and mirror fails it; swapping rotate and shear fails it (each restored).
+- W2: `non_finite_gives_non_finite_coefficients` asserts non-finite coefficients; returning identity for non-finite input fails it.
+- Suggestions: NaN compared by bits in `element::tests`; skew property widened to the open interval (-90, 90) and still holds (20000 cases run).
+- W1: `document-model` spec notes that serde for D2 types lands in D3.

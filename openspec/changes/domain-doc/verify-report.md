@@ -2,6 +2,8 @@
 
 ## D1 (branch `feat/domain-doc-1`, range `369e3d5..6e6e013`, 7 commits)
 
+Note: the hashes in this D1 section predate the rebase onto the `chore` commit. Mapping: fb679a5..d8d0908 is now d380fd8..f064203 (PR 1a); code trees are unchanged, only `.agents/agents/archive.md` differs.
+
 **Verdict: PASS** (D1 only). CRITICAL 0, WARNING 3, SUGGESTION 3. The change is not complete (D2a to D6 remain), so `next` = tdd-apply for D2a.
 
 Verified 2026-10-24 on toolchain 1.93.1, clippy 0.1.93, cargo-deny 0.20.2, git 2.34.1. Each commit was checked out with `git worktree add --detach` under `/tmp`; negative runs used a scratch worktree of HEAD, removed afterwards. The repository tree was not modified.
@@ -137,3 +139,99 @@ None.
 
 - Verdict: **PASS** for D1 (0 CRITICAL, 3 WARNING, 3 SUGGESTION).
 - Next: owner decides on WARNING 1 (keep one PR or cut after 1989f90). Then **tdd-apply D2a**. Archive waits for D2a to D6.
+
+## D2a (branch `feat/domain-doc-2a`, range `feat/domain-doc-1b` (9905723)..4bac4df, 3 commits)
+
+Scope: `document-model` requirements "Placement and to_transform (D2a)", "ElementBase (D2a)" and the D2a part of "Value policy and equality (D2a, D2b)". No `document-serde` requirement is tagged D2a. Design rows: file map `design.md:95`, size `design.md:351`, commit plan `design.md:386`, test plan T2.1/T2.2 `design.md:411-412`.
+
+### 1. Gates per commit
+
+Each commit was extracted with `git archive` into its own directory `/tmp/gafira-verify-d2a-<sha>` and built with its own `CARGO_TARGET_DIR`. The first run shared one target dir, and cargo reused stale artifacts because `git archive` sets file mtimes to the commit time. That run was discarded. CI steps V5, V11 ("Domain crates forbid unsafe code") and V12 were taken from each commit's own `.github/workflows/ci.yml` (the file did not change in the range) and run under `bash --noprofile --norc -eo pipefail`.
+
+| Commit | fmt | clippy `-D warnings` | test `--locked` | `cargo deny check` | V5 | V11 | V12 | gafira-doc lib tests |
+|---|---|---|---|---|---|---|---|---|
+| adcb117 `feat(doc): add Placement and its affine transform` | 0 | 0 | 0 (186 ok) | 0 | 0 | 0 | 0 | placement 9 |
+| 38139cd `feat(doc): add ElementBase` | 0 | 0 | 0 (189 ok) | 0 | 0 | 0 | 0 | placement 9, element 3 |
+| 4bac4df `docs(sdd): record domain-doc D2a apply progress` | 0 | 0 | 0 (189 ok) | 0 | 0 | 0 | 0 | placement 9, element 3 |
+
+`cargo deny check`: advisories, bans, licenses and sources ok on all three. All gates pass on every prefix.
+
+### 2. Requirements and scenarios
+
+#### document-model: Placement and to_transform (D2a) (`spec.md:176`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| Public fields `x,y,w,h,rotation_deg,skew: f64`, `flip: Flip {x,y}` | `placement.rs:7-34` | covered |
+| `new` defaults (rotation 0, skew 0, flip false) | `new_sets_defaults` (`placement.rs:88`, compares bits); mutants rotation 1.0, skew -0.0 and flip.x true are killed | covered |
+| Plain placement (`spec.md:180`) | `plain_placement` (`placement.rs:97`) | covered |
+| Quarter turn clockwise (`spec.md:185`) | `quarter_turn_clockwise` (`placement.rs:104`); mutant `rotate(-θ)` killed | covered |
+| Flip (`spec.md:190`) | `flip` (`placement.rs:111`); mutants "axes swapped" and "flip.y ignored" killed | covered |
+| Skew 45 degrees (`spec.md:195`) | `skew_45_degrees` (`placement.rs:120`); mutants "no to_radians", "negated tan" and "y shear" killed | covered |
+| Center is a fixed point (`spec.md:200`) | property `center_is_a_fixed_point` (`placement.rs:155`), skew drawn in `-89..89` | covered (see SUGGESTION 2) |
+| Non-finite does not panic (`spec.md:205`) | `non_finite_does_not_panic` (`placement.rs:127`) | covered for "no panic"; the "non-finite coefficients" clause has no test (WARNING 2) |
+| Values retained (`spec.md:210`) | `values_are_retained` (`placement.rs:136`, `to_bits`) | covered |
+| `w`/`h` size the box and do not scale it | mutant adding `scale_non_uniform(w, 1)` killed by 4 tests | covered |
+| Pivot on the box center | mutants "translate to (x,y)" and "drop translate(-hw,-hh)" killed by 5 tests | covered |
+| **Composition order, right to left: translate(-half), mirror, shear, rotate, translate(center)** | Code is correct (`placement.rs:57-66`). The mutants **swap shear/mirror** and **swap rotate/shear** both SURVIVE: every reference test exercises one feature at a time | **missing** (CRITICAL 1) |
+| Uses only `gafira_geom::Affine` | `placement.rs:3` | covered |
+
+#### document-model: ElementBase (D2a) (`spec.md:215`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| Fields `id, name: Option<String>, placement, opacity: f32, blend, visible, locked`, all bare | `element.rs:9-25` | covered |
+| Defaults (`spec.md:219`) | `defaults` (`element.rs:47`, opacity compared by bits). Mutants on opacity (0.9999999), blend, visible, locked, name and placement are all killed | covered |
+| Colors are `gafira_color::Color` bare values | no color field in D2a (first use `ShapeNode.fill`, D2b) | n/a in D2a |
+
+#### document-model: Value policy and equality (D2a, D2b) (`spec.md:295`)
+
+| Scenario | Evidence | Status |
+|---|---|---|
+| Out-of-range values are representable (`spec.md:299`) | `out_of_range_values_are_representable` (`element.rs:59`): opacity 1.5 by bits, `Dpi::new(0).get() == 0`, NaN `x` checked only with `is_nan()` | covered (SUGGESTION 1) |
+| IEEE equality: zeros (`spec.md:304`) | `ieee_equality` (`placement.rs:144`): `==` holds and bits differ | covered |
+| IEEE equality: "NaN node is not equal to itself" | `ieee_equality` (`Placement`) and `nan_node_is_not_equal_to_itself` (`element.rs:68`, on `ElementBase`) | partial by design: `Node` is D2b. See "Deviations" |
+| Constructors infallible, no clamp or normalize | `Placement::new` is `const fn` (`placement.rs:38`), `ElementBase::new` (`element.rs:29`); neither returns `Result` | covered |
+
+#### document-serde
+
+No requirement is tagged D2a.
+
+#### Deviations claimed in apply-progress
+
+- **No serde derives on `Placement`, `Flip` or `ElementBase` until D3.** The wire requirements in `document-serde` are all tagged D3, and the design budgets "serde attributes across modules" in D3 (`design.md:356`, commit plan `design.md:388`). That timing is allowed. The D1 requirement "Purity and dependencies" (`spec.md:24`), however, says without condition that every public value type MUST implement `Serialize` and `Deserialize`. That clause is false at every D2a prefix (WARNING 1). No functionality is missing: nothing in D2a consumes serde for these types.
+- **NaN-equality scenario tested on `ElementBase`.** The requirement is tagged (D2a, D2b) and `Node` only exists in D2b, so the D2a part is satisfied. The `Node` part stays open and must be re-checked in D2b. This is a carried obligation, not a gap.
+
+### 3. Code rules
+
+- `#![forbid(unsafe_code)]` is still present (`lib.rs`), and V11 passes.
+- No `#[allow]`, `unsafe`, `HashMap`, `HashSet`, `unwrap` or `expect` in the added lines.
+- Added code and comments are ASCII-only English.
+- Commit subjects are conventional (`feat(doc)`, `feat(doc)`, `docs(sdd)`), and no message has an AI attribution or `Co-Authored-By` line.
+- No `proptest-regressions` file is tracked or left in the tree.
+- New modules are exported from `lib.rs` in the commit that adds them, per the design's commit rule (`design.md:393`).
+
+### 4. Size
+
+`git diff --shortstat feat/domain-doc-1b..HEAD` gives 4 files changed, 271 insertions(+), which matches the reported figure. Without `openspec` it is 3 files, 248 insertions: `placement.rs` +172, `element.rs` +72, `lib.rs` +4. The forecast was ~335 (`design.md:351-352`), so the delivery is under it and far below ~700.
+
+### CRITICAL
+
+1. **The composition order of `to_transform` has no test.** `spec.md:178` requires the transform to MUST equal, right to left, translate(center) · rotate · shear · mirror · translate(-half). Design T2.1 (`design.md:411`) requires the mutation "swap scale and skew" to fail a reference. Two mutants of `placement.rs:62-66` survive the whole suite: swapping `shear` and `mirror`, and swapping `rotate` and `shear`. The scenarios at `spec.md:185-198` each set one feature, and the property at `placement.rs:155` only checks the center, which every ordering fixes. Fix: add one combined reference test. A scratch test checked in the /tmp copy (not committed) kills both mutants: `x=0, y=0, w=2, h=2, rotation_deg=90, skew=45, flip.x=true`, local `(2,2)` maps to `(0,1)` within `1e-12`.
+
+### WARNING
+
+1. **The D1 serde clause is unconditional while D2a types lack serde.** `spec.md:24` says every public value type except `Axis`, `PageSizeError` and `Document` MUST implement `Serialize`/`Deserialize`. `Placement`/`Flip` (`placement.rs:6,18`) and `ElementBase` (`element.rs:9`) implement neither until D3. The design schedules the attributes for D3 (`design.md:356,388`), so this is planned, but the spec text does not say so. Either add "(serde derives land in D3 for D2a/D2b types)" to the requirement, or treat it as a D3 verify item. D3 verify must confirm all three derive serde.
+2. **"Non-finite fields give non-finite coefficients" has no test.** `spec.md:178` says so, and the doc comment at `placement.rs:53-54` says so too, but `non_finite_does_not_panic` (`placement.rs:127-133`) discards the result. A mutant that returned a finite fallback, such as identity on non-finite input, would survive. Assert `!a.to_transform().as_coeffs().iter().all(|c| c.is_finite())` (or the geom accessor equivalent) for both cases.
+3. **Stale hashes in documents (doc only).** `apply-progress.md:5` cites PR 1a as `fb679a5..d8d0908`, but after the rebase it is `d380fd8..f064203`. The D1 section of this report (section 4 table and WARNING 1) also cites pre-rebase hashes (fb679a5, cb125d9, 4e2377e, d8d0908, 1989f90, 0238e25, 6e6e013), none of which is reachable from the current branches. Update `apply-progress.md:5`, and add a note under the D1 report that those hashes predate the rebase onto the `chore` commit.
+
+### SUGGESTION
+
+1. In `out_of_range_values_are_representable` (`element.rs:59-65`), the scenario says the values "read back bit-identical", but the NaN `x` is checked with `is_nan()`. Compare `e.placement.x.to_bits()` with `f64::NAN.to_bits()`.
+2. `center_is_a_fixed_point` (`placement.rs:158`) draws skew in `-89..89`, while the scenario says `(-90, 90)`. Widen it to about `-89.999..89.999`, or note the bound. The relative tolerance with `max(1.0)` is fine.
+3. The D2a section of `apply-progress.md` does not record the base hash, a "Status" line or a statement that each commit passed the gates alone (the D1 section has all three). It also does not mention that `cargo deny check` and V5/V11/V12 were not run (verify ran them, all green).
+
+### Result
+
+- Verdict: **FAIL** for D2a (1 CRITICAL, 3 WARNING, 3 SUGGESTION). All gates pass on every commit, and every D2a scenario has a passing test. The failure is the requirement-level composition-order clause, which no test proves, while the design-mandated mutation survives.
+- Next: **tdd-apply D2a** to fix CRITICAL 1 (one combined reference test, RED shown by the swap mutants), and preferably WARNING 2 and 3 in the same pass. Then re-verify D2a, then D2b. Archive waits for D2b to D6.
