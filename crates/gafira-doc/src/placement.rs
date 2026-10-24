@@ -134,12 +134,12 @@ mod tests {
     }
 
     #[test]
-    fn non_finite_does_not_panic() {
-        let mut a = Placement::new(f64::NAN, 0.0, 1.0, 1.0);
-        let _ = a.to_transform();
-        a = Placement::new(0.0, 0.0, 1.0, 1.0);
-        a.rotation_deg = f64::INFINITY;
-        let _ = a.to_transform();
+    fn non_finite_gives_non_finite_coefficients() {
+        let a = Placement::new(f64::NAN, 0.0, 1.0, 1.0);
+        assert!(a.to_transform().as_coeffs().iter().any(|c| !c.is_finite()));
+        let mut b = Placement::new(0.0, 0.0, 1.0, 1.0);
+        b.rotation_deg = f64::INFINITY;
+        assert!(b.to_transform().as_coeffs().iter().any(|c| !c.is_finite()));
     }
 
     #[test]

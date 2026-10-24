@@ -60,7 +60,7 @@ mod tests {
         let mut e = ElementBase::new(NodeId::new(1), Placement::new(f64::NAN, 0.0, 1.0, 1.0));
         e.opacity = 1.5;
         assert_eq!(e.opacity.to_bits(), 1.5f32.to_bits());
-        assert!(e.placement.x.is_nan());
+        assert_eq!(e.placement.x.to_bits(), f64::NAN.to_bits());
         assert_eq!(crate::Dpi::new(0).get(), 0);
     }
 
@@ -68,5 +68,7 @@ mod tests {
     fn nan_node_is_not_equal_to_itself() {
         let e = ElementBase::new(NodeId::new(1), Placement::new(f64::NAN, 0.0, 1.0, 1.0));
         assert_ne!(e, e.clone());
+        assert!(e.placement.x.is_nan());
+        assert_eq!(e.placement.x.to_bits(), e.clone().placement.x.to_bits());
     }
 }
