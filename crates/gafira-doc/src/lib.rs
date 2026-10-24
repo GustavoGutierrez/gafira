@@ -9,6 +9,7 @@ mod blend;
 mod dpi;
 mod element;
 mod ids;
+mod node;
 mod page_size;
 mod placement;
 
@@ -16,5 +17,6 @@ pub use blend::BlendMode;
 pub use dpi::Dpi;
 pub use element::ElementBase;
 pub use ids::{NodeId, PageId};
+pub use node::{ExtensionNode, GroupNode, Node, NodeKind, ShapeGeometry, ShapeNode};
 pub use page_size::{Axis, PageSize, PageSizeError};
 pub use placement::{Flip, Placement};
