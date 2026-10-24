@@ -219,6 +219,7 @@ Status: done. Base branch `feat/domain-doc-3a`; work on `feat/domain-doc-3b` (ra
 | Every prefix of a small golden | `serde::every_prefix_of_the_minimal_golden_is_a_json_error` |
 | Finite out-of-range survives serde | `serde::finite_out_of_range_values_survive_serde_by_bits` (the `from_json` half is D4) |
 | Fill channel `-0.0` by sign (suggestion) | `json::tests::numbers_keep_their_bits_through_a_document` |
+| f64 field in an internally tagged node | closed by the goldens and the `serde` tests failing under `arbitrary_precision` (mutation table below, row `arbitrary_precision`), plus `node::tests::floats_inside_the_tagged_kind_survive` (`node.rs:264`) |
 
 ### RED / mutation evidence
 
@@ -250,6 +251,7 @@ Process note: one intermediate commit state left an unused `const` (clippy dead 
 - "Golden shape" is a byte test over `include_str!` instead of a shell check.
 - Recursion limits 127/128 and payload depth 121/122 stay with D4 (T4.2), as listed in the D3a section.
 - Re-cut forecasts (D3a WARNING 6): D3a measured 696 against 399 (ratio 1.74, over the x1.3 trigger). At that ratio D4 (640) is about 1115, D5 (465) about 810 and D6 (645) about 1120; all three need a re-cut before they start. D3b itself measured 379 code-only lines (384 with goldens) against the ~290 forecast (ratio 1.31).
+- Split points chosen from those forecasts (owner-approved re-cut, recorded in `design.md` "Delivery Cut"): D4 -> D4a (`ValidationError`, P1-P3, parse-side depth boundaries, ~507) and D4b (P4, `try_from`, `from_parts`, ~387); D6 -> D6a (generator, corruption generators, deterministic guards, ~540) and D6b (Q1-Q5, mutation runs, CI runtime, ~365); D5 stays whole (~633) with a fallback cut after its first commit if D4a plus D4b measure above x1.5.
 
 ### Gates
 

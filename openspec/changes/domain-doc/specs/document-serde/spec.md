@@ -4,7 +4,7 @@
 
 The JSON wire form of the `gafira-doc` model: deterministic bytes (ARQ-10), forward compatibility (02 §3.5), `Extension` payload survival (ARQ-11, reformulated), a load path that can never yield an invalid `Document` (ARQ-13) and safe handling of hostile or corrupt input. New capability; no existing spec. Container layout, files, compression and I/O belong to `gafira-format` and are out of scope; this spec covers bytes or strings to value and back only. Model types are in `document-model`, invariants in `document-validation`.
 
-Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table. D3 lands the wire format with an unchecked `from = "DocumentWire"` conversion; D4 switches it to `try_from` with `validate()`. Requirements marked (D4) depend on that switch. There are seven deliveries (D1, D2a, D2b, D3, D4, D5, D6). In D3 no public way to build a `Document` exists yet (`from_parts` is D4, `DocMut` is D5), so every D3 scenario that needs a document value (exact bytes, arena order, node shapes, `None` as `null`, bit identity, build-order independence, non-finite values, "built in code") is a UNIT test inside the crate using the `#[cfg(test)]` helper `test_document` (added in D2b with its first test) that fills the private fields. The integration tests under `tests/` in D3 use JSON fixtures and goldens loaded WITHOUT validation (through the unchecked D3 conversion). The idempotent round-trip property over generated documents is D6. **Fixture rule**: every JSON fixture in D3 MUST be a valid document, so it keeps passing after D4 (`try_from`) and D5 (P5 and P6): every node in a fixture's `nodes` array is listed in `roots` or in exactly one group's `children`, and no fixture has a cycle or a second parent. Fixtures that omit defaultable fields still list their nodes in `roots`.
+Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table. D3 lands the wire format with an unchecked `from = "DocumentWire"` conversion; D4b switches it to `try_from` with `validate()`. Requirements marked (D4b) depend on that switch. There are ten sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5, D6a, D6b; D1 also shipped as PR 1a and 1b). In D3 no public way to build a `Document` exists yet (`from_parts` is D4b, `DocMut` is D5), so every D3 scenario that needs a document value (exact bytes, arena order, node shapes, `None` as `null`, bit identity, build-order independence, non-finite values, "built in code") is a UNIT test inside the crate using the `#[cfg(test)]` helper `test_document` (added in D2b with its first test) that fills the private fields. The integration tests under `tests/` in D3 use JSON fixtures and goldens loaded WITHOUT validation (through the unchecked D3 conversion). The idempotent round-trip property over generated documents is D6b. **Fixture rule**: every JSON fixture in D3 MUST be a valid document, so it keeps passing after D4b (`try_from`) and D5 (P5 and P6): every node in a fixture's `nodes` array is listed in `roots` or in exactly one group's `children`, and no fixture has a cycle or a second parent. Fixtures that omit defaultable fields still list their nodes in `roots`.
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -43,7 +43,7 @@ Serialization MUST write keys in declaration order and MUST write every field, u
 - WHEN serialized
 - THEN `base` contains `"name":null`
 
-### Requirement: Deterministic round trip (ARQ-10) (D3, D6)
+### Requirement: Deterministic round trip (ARQ-10) (D3, D6b)
 
 Equal documents MUST serialize to identical bytes on every platform. `to_json(from_json(to_json(d)))` MUST equal `to_json(d)` byte for byte. For valid documents, `from_json(to_json(d))` MUST equal `d` field by field with every float compared by `to_bits()`, including `-0.0`, subnormals, `f32::MAX` and `f64::MAX`. The workspace `serde_json` MUST keep `float_roundtrip`.
 
@@ -117,7 +117,7 @@ Required on read: `schema_version`, `next_id`, `pages` (document); `id`, `size` 
 
 ### Requirement: Extension payload survival (ARQ-11 reformulated) (D3)
 
-An `Extension` node MUST keep `type_id`, `schema_version` and `payload` through load and save; every extension is "unknown" in this change (no registry exists). The payload is a `serde_json::Value`. A canonical payload is exactly the output of `serde_json::to_string(&Value)` (sorted keys, no whitespace, shortest round-trip numbers, serde_json escaping). A canonical payload MUST come back byte for byte inside the document; any other payload MUST load as the same value and be written in canonical form, after which a second round trip changes nothing. The `preserve_order` and `arbitrary_precision` features of `serde_json` MUST NOT be enabled anywhere in the workspace. Goldens MUST be written in canonical form. From D4 a payload nested deeper than 64 levels is rejected by validation (`ExtensionTooDeep`), because `serde_json` serializes without a limit but cannot reload a document whose payload reaches about 122 levels.
+An `Extension` node MUST keep `type_id`, `schema_version` and `payload` through load and save; every extension is "unknown" in this change (no registry exists). The payload is a `serde_json::Value`. A canonical payload is exactly the output of `serde_json::to_string(&Value)` (sorted keys, no whitespace, shortest round-trip numbers, serde_json escaping). A canonical payload MUST come back byte for byte inside the document; any other payload MUST load as the same value and be written in canonical form, after which a second round trip changes nothing. The `preserve_order` and `arbitrary_precision` features of `serde_json` MUST NOT be enabled anywhere in the workspace. Goldens MUST be written in canonical form. From D4b a payload nested deeper than 64 levels is rejected by validation (`ExtensionTooDeep`), because `serde_json` serializes without a limit but cannot reload a document whose payload reaches about 122 levels.
 
 #### Scenario: Canonical golden survives (integration)
 - GIVEN the golden `extension.json` with a canonical payload (nested objects, arrays, integers, floats, strings, booleans, `null`)
@@ -166,7 +166,7 @@ An `Extension` node MUST keep `type_id`, `schema_version` and `payload` through 
 
 ### Requirement: Canonical goldens survive every checkout (D3)
 
-Golden files MUST be single-line compact JSON with no trailing newline and no byte-order mark, read with `include_str!` (no `std::fs`, banned in tests too). `crates/gafira-doc/tests/golden/.gitattributes` MUST mark them `*.json -text` so that a Windows checkout cannot convert LF to CRLF and change the bytes. The goldens MUST be `minimal`, `full`, `extension` and `extension_noncanonical`.
+Golden files MUST be single-line JSON with no trailing newline and no byte-order mark; `minimal`, `full` and `extension` MUST be compact canonical JSON, while `extension_noncanonical` is intentionally not compact (whitespace, a tab, unsorted keys, `1E2`) because it exists to prove normalization, read with `include_str!` (no `std::fs`, banned in tests too). `crates/gafira-doc/tests/golden/.gitattributes` MUST mark them `*.json -text` so that a Windows checkout cannot convert LF to CRLF and change the bytes. The goldens MUST be `minimal`, `full`, `extension` and `extension_noncanonical`.
 
 #### Scenario: Round-trip goldens (integration)
 - GIVEN `minimal`, `full` and `extension`
@@ -183,9 +183,9 @@ Golden files MUST be single-line compact JSON with no trailing newline and no by
 - WHEN checked for newline and BOM bytes
 - THEN it contains no `\n`, no `\r` and no byte-order mark
 
-### Requirement: Non-finite and out-of-range numbers (D3, D4)
+### Requirement: Non-finite and out-of-range numbers (D3, D4b)
 
-Serialization MUST NOT panic for NaN or infinite numbers; `serde_json` writes them as `null`, and a document containing such a `null` in a number field MUST fail to load. Finite out-of-range values (for example `opacity = 1.5`) MUST serialize unchanged by serde alone; from D4 they are rejected by the validating load. Tests that claim identity MUST use `to_bits()`.
+Serialization MUST NOT panic for NaN or infinite numbers; `serde_json` writes them as `null`, and a document containing such a `null` in a number field MUST fail to load. Finite out-of-range values (for example `opacity = 1.5`) MUST serialize unchanged by serde alone; from D4b they are rejected by the validating load. Tests that claim identity MUST use `to_bits()`.
 
 #### Scenario: Non-finite not persistable (D3, unit, in-crate helper)
 - GIVEN documents built with NaN `opacity`, `+inf` `x`, `-inf` `rotation_deg`, a NaN color channel and a NaN page width
@@ -195,11 +195,11 @@ Serialization MUST NOT panic for NaN or infinite numbers; `serde_json` writes th
 #### Scenario: Finite out-of-range survives serde, not load (unit)
 - GIVEN a document with `opacity = 1.5` built without validation
 - WHEN its nodes are serialized and deserialized as plain `Node` values
-- THEN the value is bit-identical, and a full-document `from_json` (D4) fails with `LoadError::Invalid`
+- THEN the value is bit-identical, and a full-document `from_json` (D4b) fails with `LoadError::Invalid`
 
-### Requirement: Validating load path (D4)
+### Requirement: Validating load path (D4b)
 
-`Document` MUST implement `Deserialize` through `#[serde(try_from = "DocumentWire")]`, and the conversion MUST run `validate()`, so no invalid `Document` can come out of any deserialization, including `serde_json::from_str::<Document>`. `Document::from_json(&[u8]) -> Result<Document, LoadError>` MUST return `LoadError::Json(serde_json::Error)` for syntax, shape and encoding errors, and `LoadError::Invalid(ValidationError)` carrying the same variant `validate()` returns for a validation failure. `LoadError` MUST be `#[non_exhaustive]`, implement `Display` and `Error` with `source()`. `Document::to_json(&self) -> Result<String, serde_json::Error>` MUST write the compact canonical form. `DocumentWire` MUST NOT be public. Before D4 (D3), the unchecked conversion applies and tests of validation through load are not yet required.
+`Document` MUST implement `Deserialize` through `#[serde(try_from = "DocumentWire")]`, and the conversion MUST run `validate()`, so no invalid `Document` can come out of any deserialization, including `serde_json::from_str::<Document>`. `Document::from_json(&[u8]) -> Result<Document, LoadError>` MUST return `LoadError::Json(serde_json::Error)` for syntax, shape and encoding errors, and `LoadError::Invalid(ValidationError)` carrying the same variant `validate()` returns for a validation failure. `LoadError` MUST be `#[non_exhaustive]`, implement `Display` and `Error` with `source()`. `Document::to_json(&self) -> Result<String, serde_json::Error>` MUST write the compact canonical form. `DocumentWire` MUST NOT be public. Before D4b, the unchecked conversion applies and tests of validation through load are not yet required.
 
 #### Scenario: Plain serde cannot build an invalid document (unit)
 - GIVEN valid JSON whose `next_id` is 1 while a node has id 5
@@ -221,9 +221,9 @@ Serialization MUST NOT panic for NaN or infinite numbers; `serde_json` writes th
 - WHEN the first scenario runs
 - THEN it fails (recorded as a mutation)
 
-### Requirement: Hostile and corrupt input (D3, D4, D6)
+### Requirement: Hostile and corrupt input (D3, D4a, D4b, D6b)
 
-Loading MUST return an error, never panic, never overflow the stack and (from D4) never return an invalid document, for every input below. Each row is a table-driven test.
+Loading MUST return an error, never panic, never overflow the stack and (from D4b) never return an invalid document, for every input below. Each row is a table-driven test.
 
 #### Scenario: Empty, truncated, trailing and encoding (unit, table)
 - GIVEN the empty input, every prefix of a small golden, a valid document followed by `x`, invalid UTF-8 bytes, a leading byte-order mark and a lone surrogate escape `\ud800` in a string
@@ -252,7 +252,7 @@ Loading MUST return an error, never panic, never overflow the stack and (from D4
 
 #### Scenario: Duplicate id across pages and against a page id (integration)
 - GIVEN two pages whose arrays both contain id 9, and separately a node id equal to a page id
-- WHEN loaded (D4)
+- WHEN loaded (D4b)
 - THEN both fail with `LoadError::Invalid(DuplicateId { .. })`
 
 #### Scenario: Nodes out of order are accepted (unit)
@@ -260,17 +260,17 @@ Loading MUST return an error, never panic, never overflow the stack and (from D4
 - WHEN loaded
 - THEN it succeeds and the saved array is 2 then 7
 
-#### Scenario: Pure JSON recursion limit (unit)
+#### Scenario: Pure JSON recursion limit (D4a, unit)
 - GIVEN a JSON value of 127 nested arrays and another of 128, and one of 10 000
 - WHEN parsed with plain `serde_json` as a `Value`
 - THEN 127 parses, and 128 and 10 000 fail with a recursion-limit error, not a stack overflow
 
-#### Scenario: Payload depth inside a full document (unit)
+#### Scenario: Payload depth inside a full document (parse side D4a, validation side D4b, unit)
 - GIVEN a full document whose extension payload nests 121 levels, and another with 122
 - WHEN loaded with `from_json`
-- THEN 122 fails with `LoadError::Json` (recursion limit); 121 parses, and then (D4) fails validation as in the next scenario because 121 exceeds 64
+- THEN 122 fails with `LoadError::Json` (recursion limit); 121 parses (D4a), and then (D4b) fails validation as in the next scenario because 121 exceeds 64
 
-#### Scenario: Deep payload rejected by validation and by load (D4, integration)
+#### Scenario: Deep payload rejected by validation and by load (D4b, integration)
 - GIVEN a document with an extension payload nested 65 levels, built through the in-crate helper or loaded from JSON
 - WHEN `validate()` runs, and the document is serialized and loaded with `from_json`
 - THEN validation fails with `ExtensionTooDeep`, and `from_json` fails with `LoadError::Invalid(ExtensionTooDeep { .. })`; a payload of 64 levels passes both and reloads bit-identical (a document that saves must always reopen)
@@ -283,9 +283,9 @@ Loading MUST return an error, never panic, never overflow the stack and (from D4
 #### Scenario: Hostile values (unit)
 - GIVEN `"dpi":0` and `"dpi":10001` (well-formed JSON), `"schema_version":0`, and a fill color with an unknown `space`
 - WHEN loaded
-- THEN the first three fail with `LoadError::Invalid` (D4) and the last with `LoadError::Json`
+- THEN the first three fail with `LoadError::Invalid` (D4b) and the last with `LoadError::Json`
 
-#### Scenario: Corruption never panics (D6, property Q5)
+#### Scenario: Corruption never panics (D6b, property Q5)
 - GIVEN a golden document with a random single-byte mutation
 - WHEN loaded with `from_json`
 - THEN the result is `Err`, or an `Ok` document that passes `validate()`, and nothing panics
