@@ -4,3 +4,9 @@
 //! conversions widen to `f64`, compute, and narrow once.
 
 #![forbid(unsafe_code)]
+
+mod rgb;
+mod space;
+
+pub use rgb::{DisplayP3Rgba, LinearRgba, Rgba};
+pub use space::ColorSpaceId;
