@@ -173,21 +173,30 @@ mod tests {
             doc_with(vec![Arc::new(n)])
         };
         let mut docs = vec![
-            with(&|n| n.base.opacity = f32::NAN),
-            with(&|n| n.base.placement.x = f64::INFINITY),
-            with(&|n| n.base.placement.rotation_deg = f64::NEG_INFINITY),
-            with(&|n| {
-                let mut s = ShapeNode::new(ShapeGeometry::Rect);
-                s.fill = Some(Color::Srgb(Rgba::new(f32::NAN, 0.0, 0.0, 1.0)));
-                n.kind = NodeKind::Shape(s);
-            }),
+            (with(&|n| n.base.opacity = f32::NAN), r#""opacity":null"#),
+            (with(&|n| n.base.placement.x = f64::INFINITY), r#""x":null"#),
+            (
+                with(&|n| n.base.placement.rotation_deg = f64::NEG_INFINITY),
+                r#""rotation_deg":null"#,
+            ),
+            (
+                with(&|n| {
+                    let mut s = ShapeNode::new(ShapeGeometry::Rect);
+                    s.fill = Some(Color::Srgb(Rgba::new(f32::NAN, 0.0, 0.0, 1.0)));
+                    n.kind = NodeKind::Shape(s);
+                }),
+                r#""space":"srgb","r":null,"g":0.0"#,
+            ),
         ];
         let mut page = Page::new(PageId::new(1), String::new(), px(f64::NAN, 1.0));
         page.roots.clear();
-        docs.push(test_document(2, Dpi::default(), vec![Arc::new(page)]));
-        for d in docs {
+        docs.push((
+            test_document(2, Dpi::default(), vec![Arc::new(page)]),
+            r#""width":{"value":null,"unit":"px"}"#,
+        ));
+        for (d, field) in docs {
             let json = d.to_json().unwrap();
-            assert!(json.contains("null"), "{json}");
+            assert!(json.contains(field), "{field} not in {json}");
             assert!(matches!(
                 Document::from_json(json.as_bytes()),
                 Err(LoadError::Json(_))

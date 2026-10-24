@@ -259,4 +259,51 @@ mod tests {
         assert_eq!(back, n);
         assert!(back.base.placement.y.is_sign_negative());
     }
+
+    #[test]
+    fn floats_inside_the_tagged_kind_survive() {
+        let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+        shape.fill = Some(Color::Srgb(Rgba::new(f32::MAX, 1e-45, -0.0, 1.0)));
+        let n = Node::new(base(1), NodeKind::Shape(shape));
+        let back: Node = serde_json::from_str(&node_json(&n)).unwrap();
+        let NodeKind::Shape(ShapeNode {
+            fill: Some(Color::Srgb(c)),
+            ..
+        }) = &back.kind
+        else {
+            panic!("not an sRGB shape")
+        };
+        assert_eq!(c.r.to_bits(), f32::MAX.to_bits());
+        assert_eq!(c.g.to_bits(), 1e-45f32.to_bits());
+        assert!(c.b.is_sign_negative());
+        assert_eq!(back, n);
+    }
+
+    #[test]
+    fn f64_payload_inside_the_tagged_kind_survives() {
+        let ext = ExtensionNode {
+            type_id: "x".to_string(),
+            schema_version: 1,
+            payload: serde_json::json!({"max": f64::MAX, "tiny": 5e-324, "neg": -0.0}),
+        };
+        let n = Node::new(base(1), NodeKind::Extension(ext));
+        let json = node_json(&n);
+        assert!(
+            json.contains(r#""payload":{"max":1.7976931348623157e+308,"neg":-0.0,"tiny":5e-324}"#)
+        );
+        let back: Node = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, n);
+        let NodeKind::Extension(e) = &back.kind else {
+            panic!("not an extension")
+        };
+        assert_eq!(
+            e.payload["max"].as_f64().unwrap().to_bits(),
+            f64::MAX.to_bits()
+        );
+        assert_eq!(
+            e.payload["tiny"].as_f64().unwrap().to_bits(),
+            5e-324f64.to_bits()
+        );
+        assert!(e.payload["neg"].as_f64().unwrap().is_sign_negative());
+    }
 }
