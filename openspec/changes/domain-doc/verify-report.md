@@ -664,3 +664,79 @@ Serde derives now exist on `Flip`, `Placement`, `ElementBase`, `GroupNode`, `Sha
 
 - Verdict: **FAIL** for D3a (2 CRITICAL, 6 WARNING, 2 SUGGESTION). All gates, including `cargo deny check`, ARQ-07, V5, V11 and V12, pass on every commit. 23 of 34 mutants are killed. The in-scope failures are the unpinned `dpi`/`schema_version` conversion (M22, M23) and the untested `Flip` sub-field defaults (M12, M13).
 - Next: **tdd-apply D3a** for CRITICAL 1 and 2 (and preferably WARNING 1, 2 and 5 in the docs), then re-verify D3a, then **tdd-apply D3b** with the list above and the re-cut forecasts of WARNING 6. Archive waits for D3b to D6.
+
+## D3a re-verify (the 3 fix commits from `test(doc): pin dpi, schema version and partial flip on load` to `docs(sdd): fix domain-doc D3a verify findings`; delivery `feat/domain-doc-2b..feat/domain-doc-3a`)
+
+**Verdict: PASS** (D3a). CRITICAL 0, WARNING 3, SUGGESTION 2. `next` = tdd-apply D3b (with the WARNING items below folded in). Archive waits for D3b to D6.
+
+Verified 2026-10-24 with the same method as the D3a run: each commit extracted with `git archive` into its own directory under `/tmp/d3a-verify`, its own `CARGO_TARGET_DIR`, and the ARQ-07, V11, V5 and V12 step bodies parsed from that commit's own `.github/workflows/ci.yml` (no `.github`, manifest, `Cargo.lock` or `deny.toml` change in the fix commits). Mutations ran on a fresh scratch git copy of `docs(sdd): fix domain-doc D3a verify findings` (`cargo test -p gafira-doc --locked`, baseline 82 lib tests). The repository tree was not modified apart from this section.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | `cargo deny check` | ARQ-07 | V11 | V5 | V12 | gafira-doc lib tests |
+|---|---|---|---|---|---|---|---|---|---|
+| `test(doc): pin dpi, schema version and partial flip on load` | 0 | 0 | 0 (235) | 0 | 0 | 0 | 0 | 0 | 80 |
+| `test(doc): put floats inside the tagged kind and assert the null field` | 0 | 0 | 0 (237) | 0 | 0 | 0 | 0 | 0 | 82 |
+| `docs(sdd): fix domain-doc D3a verify findings` | 0 | 0 | 0 (237) | 0 | 0 | 0 | 0 | 0 | 82 |
+
+`cargo deny check`: advisories, bans, licenses and sources ok on all three. Each clippy log shows `Checking gafira-doc`.
+
+### 2. Previous items
+
+| Item | Evidence | Status |
+|---|---|---|
+| CRITICAL 1 (`dpi`, `schema_version` not pinned) | `json::tests::dpi_survives_the_wire_conversion` (`json.rs:254`, DPI 300 written as `"dpi":300`, read back, whole document equal) kills M22; `json::tests::schema_version_is_read_as_written_by_the_wire_conversion` (`json.rs:264`, version 2 read and re-written byte-exact) kills M23 | fixed |
+| CRITICAL 2 (partial `flip`) | `placement::tests::partial_flip_defaults_missing_axes_to_false` (`placement.rs:211`: `{}`, `{"x":true}`, `{"y":true}`) kills M12 and M13 | fixed |
+| WARNING 1 (tagged-kind guard) | `node::tests::floats_inside_the_tagged_kind_survive` (`node.rs:264`, `f32::MAX`, `1e-45` by bits, `-0.0` sign) fails with `arbitrary_precision` on (`node.rs:268`, as does `json.rs:152`). `node::tests::f64_payload_inside_the_tagged_kind_survives` (`node.rs:283`) still passes with the feature on; see WARNING 1 below. The scenario stays open for D3b (feature-guard command) | fixed for the shape half |
+| WARNING 2 (vacuous null check) | `json.rs:199` asserts the exact field per case. Mutation-checked below | fixed |
+| WARNING 3 (arena mutant wording) | `spec.md:67` and the T3.1 row (`design.md:414`) now say reverse output order. `design.md:453` (D6 property mutations) still says "insertion order"; see WARNING 2 below | fixed for D3 |
+| WARNING 4 (defaults rule) | `spec.md:72` now limits defaults to the listed fields, adds `flip.x`/`flip.y`, and says every other field (`Length` `value`/`unit`, color channels) must be present. Matches every `#[serde(default)]` in the crate: `json.rs:39`; `element.rs:16,21,24,27,30`; `page.rs:20,25,28,31,34`; `placement.rs:10,13,35,38,41`; `node.rs:28,76` | fixed |
+| WARNING 5 (D3b list) | `apply-progress.md:169-177` lists every D3a gap, names M25-M30 with the row that must kill each, records M15 as equivalent and gives the recursion rows to D4 (T4.2) | fixed (one stale line, WARNING 2) |
+| WARNING 6 (re-cut forecasts) | not recorded; see WARNING 3 below | open |
+| SUGGESTION 1 | skipped with a reason (`apply-progress.md:188`); accepted | — |
+| SUGGESTION 2 | D3b | — |
+
+### 3. Mutation summary (`cargo test -p gafira-doc --locked`)
+
+All 32 source mutants re-run, M24 as `next_id + 1`: 25 killed, 7 survive.
+
+- Previously surviving, now killed: M12, M13 (`placement.rs:211`), M22 (`json.rs:254`), M23 (`json.rs:264`). M24 is killed by six `json::tests`, including both new ones.
+- M15 (`fill` default removed) survives and is equivalent: `node.rs:222` loads a shape with no `fill` and asserts `None`, and it passes with the attribute removed (serde derive reads a missing `Option` field as `None`).
+- M25, M26, M27, M28, M29, M30 survive. Each is named, with its D3b row, at `apply-progress.md:171` and `apply-progress.md:176`. Not a D3a finding.
+- No previous kill regressed.
+
+W2 assertions (test-side mutations on `json.rs:169`, each run alone): 9 of 9 fail at the field assertion `json.rs:199` ("<field> not in ..."). Five make the targeted value finite (opacity, `x`, `rotation_deg`, channel `r`, page width). Four keep the document unloadable but move the non-finite value to another field (`rotation_deg` instead of `x`, `a` instead of `r`, page height instead of width, `x` instead of opacity). The old `contains("null")` check plus the load failure would have passed these four, so the new assertions add real coverage.
+
+Feature mutant `arbitrary_precision` (scratch `Cargo.toml` edit): fails `node::tests::floats_inside_the_tagged_kind_survive` and `json::tests::numbers_keep_their_bits_through_a_document`. `node::tests::f64_payload_inside_the_tagged_kind_survives` passes.
+
+No `proptest-regressions` file was created in any copy, and none is tracked.
+
+### 4. Regression check and code rules
+
+- `git diff 'docs(sdd): record domain-doc D3 progress'..HEAD -- crates` touches only `json.rs`, `node.rs` and `placement.rs`, and every hunk is inside `mod tests` (`json.rs:68`, `node.rs:92`, `placement.rs:80`). Production code is unchanged.
+- No `#[allow]`, `unsafe`, `HashMap`, `HashSet`, `deny_unknown_fields` or `skip_serializing_if` added. No non-ASCII characters added.
+- Subjects are conventional (`test(doc)` x2, `docs(sdd)`). No message has a `Co-Authored-By` or AI attribution line.
+
+### 5. Size
+
+`git diff --shortstat feat/domain-doc-2b..HEAD -- . ':!openspec'` gives 8 files changed, 696 insertions(+), 15 deletions(-). The fix commits add 96 insertions and 11 deletions. 696 is under ~700 and under the 800 hard limit, but `apply-progress.md:165` still gives 611 (WARNING 3).
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **`apply-progress.md:147` says both new node tests fail with `arbitrary_precision`. Only one does.** `floats_inside_the_tagged_kind_survive` (`node.rs:264`) fails. `f64_payload_inside_the_tagged_kind_survives` (`node.rs:283`) passes, because under that feature a `serde_json::Value` stores the number text, so the bits survive anyway. The progress file also misspells the second name (`_survive`). Correct the claim. The extension half of `spec.md:152` can only be guarded by the D3b `cargo tree` feature-guard command.
+2. **Two stale lines after the doc fixes.** `apply-progress.md:166` still puts "127/128 nesting, 121/122 payload depth" in D3b's `tests/serde.rs`, which contradicts `apply-progress.md:177` (D4 owns them). `design.md:453` (D6 property mutations) still says "serialize the arena in insertion order". That mutant cannot exist with a `BTreeMap` (WARNING 3 of the D3a run).
+3. **The re-cut forecasts (D3a WARNING 6) are still not recorded, and the size line is stale.** D3a now measures 696 against its 399 forecast share, a ratio of 1.74, which is over the x1.3 trigger (`design.md:398`). At that ratio D3b (~290) is about 505, but D4 (640) is about 1115, D5 (465) about 810 and D6 (645) about 1120. All three need a re-cut before they start. Record the ratio, the new forecasts and the planned splits in `apply-progress.md`, and change the size line at `apply-progress.md:165` from 611 to 696. Do this in D3b's first docs commit at the latest.
+
+### SUGGESTION
+
+1. In D3b, check `-0.0` on the fill channel by sign in `json.rs:141`. It is still compared with IEEE `==`, but `node.rs:264` now covers the same value by sign.
+2. Correction to the D3a run above: the workspace `serde_json` line with `float_roundtrip` is `Cargo.toml:18`, not `Cargo.toml:37`.
+
+### Result
+
+- Verdict: **PASS** for D3a (0 CRITICAL, 3 WARNING, 2 SUGGESTION). All gates, including `cargo deny check`, ARQ-07, V5, V11 and V12, pass on each of the three fix commits. Both CRITICAL items are fixed, and M12, M13, M22 and M23 are killed. M15 is confirmed equivalent. M25-M30 are assigned to named D3b rows. Production code is unchanged. Size is 696.
+- Next: the owner decides on pushing and the PR for `feat/domain-doc-3a`. Then **tdd-apply D3b**, using the list at `apply-progress.md:169-177` plus WARNING 1-3. Archive waits for D3b to D6.
