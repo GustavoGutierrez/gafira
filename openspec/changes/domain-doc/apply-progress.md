@@ -74,3 +74,32 @@ RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, fli
 - W2: `non_finite_gives_non_finite_coefficients` asserts non-finite coefficients; returning identity for non-finite input fails it.
 - Suggestions: NaN compared by bits in `element::tests`; skew property widened to the open interval (-90, 90) and still holds (20000 cases run).
 - W1: `document-model` spec notes that serde for D2 types lands in D3.
+
+## D2b (branch `feat/domain-doc-2b`, base `feat/domain-doc-2a` a5c16fe)
+
+Status: done. Each code commit was run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green). `cargo deny check` and V5/V11/V12 were not run during apply.
+
+| # | Commit | Content |
+|---|---|---|
+| 1 | `feat(doc): add node kinds` | `node.rs` (`GroupNode`, `ShapeGeometry`, `ShapeNode`, `ExtensionNode`, `NodeKind`, `Node`), exports |
+| 2 | `feat(doc): add Page and node arena` | `page.rs` (`Page`, `Page::new`, `Page::node`), export |
+| 3 | `feat(doc): add Document root` | `document.rs` (`Document`, accessors, `Default`, `#[cfg(test)]` `alloc_id` and `test_document`), `IdSpaceExhausted` in `ids.rs`, exports |
+| 4 | `docs(sdd): fix D2a size, fix-commit hashes and D1 report hashes` | verify-report carry-over (b) |
+
+### Requirements and scenarios covered
+
+- NodeKind (D2b), `node::tests`: "Variant sets" `variant_sets_are_exhaustive` (no wildcard arms); "Shape without fill" `shape_without_fill`; `new_node_has_no_children`; `extension_keeps_its_own_version_and_payload`.
+- Value policy "IEEE equality" (NaN node part, carry-over (a)): `node::tests::nan_placement_node_is_not_equal_to_itself` (the zeros part stays in `placement::tests::ieee_equality`).
+- Node, Page and the arena (D2b), `page::tests`: "Page defaults" `page_defaults`; "Deterministic iteration" `iteration_is_in_ascending_id_order`; "Lookup stays inside the page" `lookup_stays_inside_the_page`; "Page flags do not cascade" `page_flags_do_not_cascade`; `cloning_a_page_shares_its_nodes`.
+- The single id counter (D2b), `document::tests` and `ids::tests`: "Private allocator before DocMut" `allocator_increments_then_exhausts`; "Default document" `default_document`; `IdSpaceExhausted` `exhaustion_error_displays_and_is_an_error`.
+- Document root accessors (D2b part): `page_lookup_and_order` (built with `test_document`; the `from_parts` version is D4).
+- Structural sharing (D2b): "Clone shares everything" `clone_shares_everything` (2 pages, 3 nodes in the first, `Arc::ptr_eq`).
+
+RED: commits 1 and 2 were written test first and failed to compile (missing types) before the implementation. Commit 3 wrote tests and code together; RED was shown afterwards by mutation: replacing the checked increment with `wrapping_add` failed `allocator_increments_then_exhausts`, then restored.
+
+### Deviations and notes
+
+- Value-policy scenario "Out-of-range values" has no Node-level repeat; it stays on `ElementBase` (nothing node-specific).
+- `GroupNode` is `GroupNode {}` (as the design sketch), derives `Default`.
+- No serde derives on the D2b types: wire attributes belong to D3.
+- Size: `git diff --shortstat feat/domain-doc-2a..HEAD -- . ':!openspec'`: 5 files changed, 472 insertions(+), 1 deletion(-) (forecast ~465; on target).
