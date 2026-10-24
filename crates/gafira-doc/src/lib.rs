@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+mod dpi;
 mod ids;
 
+pub use dpi::Dpi;
 pub use ids::{NodeId, PageId};
