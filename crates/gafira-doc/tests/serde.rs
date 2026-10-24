@@ -172,3 +172,101 @@ fn unrepresentable_payload_number_is_a_json_error() {
     assert!(matches!(resave_payload("1e400"), Err(LoadError::Json(_))));
     assert!(matches!(resave_payload("-1e400"), Err(LoadError::Json(_))));
 }
+
+const MINIMAL: &str = include_str!("golden/minimal.json");
+
+fn is_json_error(bytes: &[u8]) -> bool {
+    matches!(Document::from_json(bytes), Err(LoadError::Json(_)))
+}
+
+#[test]
+fn every_prefix_of_the_minimal_golden_is_a_json_error() {
+    assert!(Document::from_json(MINIMAL.as_bytes()).is_ok());
+    for n in 0..MINIMAL.len() {
+        assert!(is_json_error(&MINIMAL.as_bytes()[..n]), "prefix {n}");
+    }
+}
+
+#[test]
+fn wrong_types_are_json_errors() {
+    for text in ["null", "[]", r#""x""#, "7", "true"] {
+        assert!(is_json_error(text.as_bytes()), "{text}");
+    }
+    let rows = [
+        ("/next_id", r#""7""#),
+        ("/pages", "{}"),
+        ("/pages/0/locked", r#""yes""#),
+        ("/pages/0/nodes/0/base/name", "5"),
+        ("/pages/0/nodes/0/base/opacity", "null"),
+        ("/pages/0/nodes/0/children", "{}"),
+    ];
+    for (pointer, wrong) in rows {
+        let mut v = full();
+        *v.pointer_mut(pointer).unwrap() = serde_json::from_str(wrong).unwrap();
+        assert!(matches!(load(&v), Err(LoadError::Json(_))), "{pointer}");
+    }
+}
+
+#[test]
+fn bad_numbers_are_json_errors() {
+    let bad = ["-1", "1.5", "1e3", "null", "18446744073709551616"];
+    let fields = [
+        r#""next_id":20"#,
+        r#""dpi":300"#,
+        r#""id":10,"#,
+        r#""id":5,"#,
+        r#""roots":[2,3,4]"#,
+    ];
+    for field in fields {
+        let (key, old) = field.split_once(':').unwrap();
+        for b in bad {
+            let new = if field.starts_with(r#""roots""#) {
+                format!("{key}:[{b},3,4]")
+            } else {
+                format!("{key}:{b}{}", if old.ends_with(',') { "," } else { "" })
+            };
+            let text = FULL.replacen(field, &new, 1);
+            assert_ne!(text, FULL, "{field}");
+            assert!(is_json_error(text.as_bytes()), "{new}");
+        }
+    }
+    let dpi_overflow = FULL.replacen(r#""dpi":300"#, r#""dpi":4294967296"#, 1);
+    assert!(is_json_error(dpi_overflow.as_bytes()));
+    let float_overflow = FULL.replacen(r#""value":21.0"#, r#""value":1e400"#, 1);
+    assert_ne!(float_overflow, FULL);
+    assert!(is_json_error(float_overflow.as_bytes()));
+}
+
+#[test]
+fn duplicate_struct_fields_are_json_errors() {
+    let rows = [
+        (r#""next_id":20,"#, r#""next_id":20,"next_id":21,"#),
+        (r#""opacity":0.5,"#, r#""opacity":0.5,"opacity":0.25,"#),
+        (
+            r#""geometry":"ellipse","#,
+            r#""geometry":"ellipse","geometry":"rect","#,
+        ),
+    ];
+    for (from, to) in rows {
+        let text = FULL.replacen(from, to, 1);
+        assert_ne!(text, FULL, "{from}");
+        assert!(is_json_error(text.as_bytes()), "{to}");
+    }
+}
+
+#[test]
+fn finite_out_of_range_values_survive_serde_by_bits() {
+    use gafira_doc::{ElementBase, GroupNode, Node, NodeId, NodeKind, Placement};
+    let mut base = ElementBase::new(NodeId::new(5), Placement::new(0.0, 0.0, 1.0, 1.0));
+    base.opacity = 1.5;
+    base.placement.rotation_deg = 1e300;
+    let node = Node::new(base, NodeKind::Group(GroupNode {}));
+    let json = serde_json::to_string(&node).unwrap();
+    let back: Node = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.base.opacity.to_bits(), 1.5f32.to_bits());
+    assert_eq!(
+        back.base.placement.rotation_deg.to_bits(),
+        1e300f64.to_bits()
+    );
+    assert_eq!(back, node);
+}
