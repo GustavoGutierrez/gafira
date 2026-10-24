@@ -217,6 +217,8 @@ mod tests {
         assert_eq!(size.height().round(), 3508.0);
         assert_ne!(size.width(), size.width().round());
         assert_eq!(a4.width, Length::new(210.0, Unit::Mm));
+        assert_ne!(size.height(), size.height().round());
+        assert_eq!(a4.height, Length::new(297.0, Unit::Mm));
         assert_eq!(a4.check(Dpi::new(300)), Ok(()));
     }
 
@@ -228,6 +230,12 @@ mod tests {
         };
         assert_eq!(a0.check(Dpi::new(300)), Ok(()));
         assert_eq!(a0.check(Dpi::new(350)), Ok(()));
+        let at_300 = a0.to_px(Dpi::new(300)).unwrap();
+        assert_eq!(at_300.width().round(), 9933.0);
+        assert_eq!(at_300.height().round(), 14043.0);
+        let at_350 = a0.to_px(Dpi::new(350)).unwrap();
+        assert_eq!(at_350.width().round(), 11589.0);
+        assert_eq!(at_350.height().round(), 16384.0);
         match a0.check(Dpi::new(351)) {
             Err(PageSizeError::OutOfRange {
                 axis: Axis::Height,
