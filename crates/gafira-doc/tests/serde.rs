@@ -270,3 +270,33 @@ fn finite_out_of_range_values_survive_serde_by_bits() {
     );
     assert_eq!(back, node);
 }
+
+/// An array nested `n` levels deep (`[]` is 1).
+fn nested(n: usize) -> Value {
+    (1..n).fold(Value::Array(Vec::new()), |inner, _| {
+        Value::Array(vec![inner])
+    })
+}
+
+#[test]
+fn a_bare_value_parses_to_127_levels_and_not_beyond() {
+    for (n, parses) in [(127, true), (128, false), (10_000, false)] {
+        let text = format!("{}{}", "[".repeat(n), "]".repeat(n));
+        let err = serde_json::from_str::<Value>(&text);
+        assert_eq!(err.is_ok(), parses, "{n} levels");
+        if !parses {
+            assert!(err.unwrap_err().to_string().contains("recursion limit"));
+        }
+    }
+}
+
+#[test]
+fn a_document_payload_parses_to_121_levels_and_not_beyond() {
+    let with_depth = |n: usize| {
+        let mut v = full();
+        *v.pointer_mut("/pages/0/nodes/2/kind/payload").unwrap() = nested(n);
+        load(&v)
+    };
+    assert!(with_depth(121).is_ok());
+    assert!(matches!(with_depth(122), Err(LoadError::Json(_))));
+}
