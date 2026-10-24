@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  test:
+    name: test (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-apple-darwin
+            os: macos-14
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Check host matches matrix target
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          test "$host" = "${{ matrix.target }}"
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+
+  policy:
+    name: policy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Format
+        run: cargo fmt --check
+      - name: CLI has no UI dependencies (ARQ-07)
+        run: |
+          tree=$(cargo tree -p gafira-cli --no-default-features -e normal,build --target all)
+          if grep -Eq 'gafira-ui|eframe|winit|wgpu' <<<"$tree"; then
+            echo "gafira-cli must not depend on UI crates" >&2
+            exit 1
+          fi
+      - name: Domain crates forbid unsafe code
+        run: |
+          status=0
+          for f in crates/*/src/lib.rs apps/*/src/main.rs; do
+            [ -e "$f" ] || continue
+            grep -Eq '^#!\[forbid\(unsafe_code\)\]' "$f" || { echo "missing forbid(unsafe_code): $f" >&2; status=1; }
+          done
+          exit "$status"
+      - name: gafira-geom is a leaf crate (V5)
+        run: |
+          tree=$(cargo tree -p gafira-geom -e normal,build --target all --prefix none -f '{p}')
+          if grep -E '^gafira-|egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq' <<<"$tree" \
+            | grep -v '^gafira-geom '; then
+            echo "gafira-geom must not depend on other gafira crates, UI, engine or I/O crates" >&2
+            exit 1
+          fi
+      - name: Domain clippy.toml copies are in sync (V12)
+        run: |
+          for c in crates/*/clippy.toml; do
+            [ "$c" = crates/gafira-geom/clippy.toml ] || diff -q crates/gafira-geom/clippy.toml "$c"
+          done
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
