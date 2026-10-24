@@ -208,6 +208,17 @@ mod tests {
     }
 
     #[test]
+    fn partial_flip_defaults_missing_axes_to_false() {
+        let load = |flip: &str| -> Flip {
+            let json = format!(r#"{{"x":0,"y":0,"w":1,"h":1,"flip":{flip}}}"#);
+            serde_json::from_str::<Placement>(&json).unwrap().flip
+        };
+        assert_eq!(load("{}"), Flip { x: false, y: false });
+        assert_eq!(load(r#"{"x":true}"#), Flip { x: true, y: false });
+        assert_eq!(load(r#"{"y":true}"#), Flip { x: false, y: true });
+    }
+
+    #[test]
     fn required_fields_and_keyed_objects() {
         for bad in [
             r#"{"y":0,"w":1,"h":1}"#,

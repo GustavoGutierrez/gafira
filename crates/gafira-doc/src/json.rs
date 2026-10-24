@@ -240,4 +240,22 @@ mod tests {
         assert!(out.contains(r#""name":null"#) && out.contains(r#""children":[]"#));
         assert_eq!(Document::from_json(out.as_bytes()).unwrap(), d);
     }
+
+    #[test]
+    fn dpi_survives_the_wire_conversion() {
+        let d = test_document(3, Dpi::new(300), Vec::new());
+        let json = d.to_json().unwrap();
+        assert!(json.contains(r#""dpi":300"#), "{json}");
+        let back = Document::from_json(json.as_bytes()).unwrap();
+        assert_eq!(back.dpi().get(), 300);
+        assert_eq!(back, d);
+    }
+
+    #[test]
+    fn schema_version_is_read_as_written_by_the_wire_conversion() {
+        let json = r#"{"schema_version":2,"next_id":3,"dpi":96,"pages":[]}"#;
+        let d = Document::from_json(json.as_bytes()).unwrap();
+        assert_eq!(d.schema_version(), 2);
+        assert_eq!(d.to_json().unwrap(), json);
+    }
 }
