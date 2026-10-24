@@ -40,3 +40,26 @@ Document model
 - W2: `document-model` spec now excludes error/helper types (`Axis`, `PageSizeError`) from the Serialize/Deserialize requirement, as in `design.md`.
 - W3: `openspec/config.yaml` and this file corrected (cargo-deny 0.20.2 is installed; seven commits; PR 1a/1b split).
 - Test hardening (RED shown by mutating each new expected value, one at a time, each failing its test): A4 now asserts height (fractional px and unit preserved); A0 asserts px at 300 DPI (9933 x 14043) and 350 DPI (11589 x 16384).
+
+## D2a (branch `feat/domain-doc-2a`, from `feat/domain-doc-1b`)
+
+| # | Commit | Content |
+|---|---|---|
+| 1 | `feat(doc): add Placement and its affine transform` | `placement.rs` (`Placement`, `Flip`, `to_transform`), exports in `lib.rs` |
+| 2 | `feat(doc): add ElementBase` | `element.rs`, export in `lib.rs` |
+
+### Requirements and scenarios covered
+
+Placement and to_transform (D2a), all in `placement::tests`: "Plain placement" `plain_placement`; "Quarter turn clockwise" `quarter_turn_clockwise`; "Flip" `flip`; "Skew 45 degrees" `skew_45_degrees`; "Center is a fixed point" property `center_is_a_fixed_point`; "Non-finite does not panic" `non_finite_does_not_panic`; "Values retained" `values_are_retained`; constructor defaults `new_sets_defaults`. Value policy "IEEE equality" (zeros part): `ieee_equality`.
+
+ElementBase (D2a), in `element::tests`: "Defaults" `defaults`. Value policy (D2a part): "Out-of-range values are representable" `out_of_range_values_are_representable` (opacity 1.5, NaN `x`, `Dpi::new(0)`); NaN self-inequality `nan_node_is_not_equal_to_itself`.
+
+RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, flip, skew, center property); `ElementBase::new` stubbed with wrong defaults failed `defaults`. Each then went GREEN with the real implementation.
+
+### Deviations and notes
+
+- No serde derives on `Placement`, `Flip` or `ElementBase`: the wire attributes belong to D3.
+- The "node with a NaN placement" part of "IEEE equality" is exercised on `ElementBase` (no `Node` until D2b); D2b should re-check it on `Node`.
+- Composition uses `Affine::scale_non_uniform` for flip and `Affine::new` for the x shear (`c = tan(skew)`).
+- The proptest run created a `proptest-regressions/placement.txt` during RED; it was a stub-induced failure and was deleted, not committed.
+- Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 248 insertions(+) (forecast ~335; under).
