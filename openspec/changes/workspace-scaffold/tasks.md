@@ -42,30 +42,30 @@ Conventions: Strict TDD (RED -> GREEN -> REFACTOR). A RED step is never committe
 
 ### B1: Crate skeleton ~41 lines
 
-- [ ] B1.1 Create the branch per chain strategy. Modify root `Cargo.toml` (+6: `gafira-geom`, `kurbo`, `serde`, `serde_json`, `proptest`); resolve `kurbo` 0.13 or newest compatible (`serde` feature, `rust-version` <= 1.93). Create `crates/gafira-geom/Cargo.toml` (15) and `src/lib.rs` (20, `#![forbid(unsafe_code)]`, empty modules). Done when `cargo check --workspace --all-targets` passes and `cargo tree -p gafira-geom -e dev` shows no `rusty-fork`/`tempfile`.
+- [x] B1.1 Create the branch per chain strategy. Modify root `Cargo.toml` (+6: `gafira-geom`, `kurbo`, `serde`, `serde_json`, `proptest`); resolve `kurbo` 0.13 or newest compatible (`serde` feature, `rust-version` <= 1.93). Create `crates/gafira-geom/Cargo.toml` (15) and `src/lib.rs` (20, `#![forbid(unsafe_code)]`, empty modules). Done when `cargo check --workspace --all-targets` passes and `cargo tree -p gafira-geom -e dev` shows no `rusty-fork`/`tempfile`.
 
 ### B2: `Unit` / `Length` (T3) ~190 lines
 
-- [ ] B2.1 RED: tests in `crates/gafira-geom/src/length.rs` (unit set, 25.4 mm = 1 in within 1e-12 relative, invalid DPI x4, NaN/+-inf, same-unit bit-exact via `to_bits()`, A4@300 DPI = 2480x3508 after `round()`, NaN `Length` serializes to `null` and decoding fails). Done when `cargo test -p gafira-geom` fails.
-- [ ] B2.2 GREEN + REFACTOR: implement `Unit`, `Length`, `ConversionError` (hand-written `Display`/`Error`), the 5-step conversion algorithm. Commit: `feat(geom): add Length and Unit with DPI conversion`.
+- [x] B2.1 RED: tests in `crates/gafira-geom/src/length.rs` (unit set, 25.4 mm = 1 in within 1e-12 relative, invalid DPI x4, NaN/+-inf, same-unit bit-exact via `to_bits()`, A4@300 DPI = 2480x3508 after `round()`, NaN `Length` serializes to `null` and decoding fails). Done when `cargo test -p gafira-geom` fails.
+- [x] B2.2 GREEN + REFACTOR: implement `Unit`, `Length`, `ConversionError` (hand-written `Display`/`Error`), the 5-step conversion algorithm. Commit: `feat(geom): add Length and Unit with DPI conversion`.
 
 ### B3: `Size` / `Transform2D` (T4) ~185 lines
 
-- [ ] B3.1 RED: tests in `size.rs` (35) and `transform.rs` (150): `translate(2,3).then(scale(2))` maps (1,1) to (6,8), identity, `scale(0).inverse()` is `Err`, Affine -> `Transform2D` -> Affine and `[f64;6]` round trips compared with `to_bits()`. Done when they fail.
-- [ ] B3.2 GREEN + REFACTOR: implement `Size`, `Transform2D`, `SingularTransform`, the four `From` impls. Commit: `feat(geom): add Size and Transform2D`.
+- [x] B3.1 RED: tests in `size.rs` (35) and `transform.rs` (150): `translate(2,3).then(scale(2))` maps (1,1) to (6,8), identity, `scale(0).inverse()` is `Err`, Affine -> `Transform2D` -> Affine and `[f64;6]` round trips compared with `to_bits()`. Done when they fail.
+- [x] B3.2 GREEN + REFACTOR: implement `Size`, `Transform2D`, `SingularTransform`, the four `From` impls. Commit: `feat(geom): add Size and Transform2D`.
 
 ### B4: API surface (T5) ~40 lines
 
-- [ ] B4.1 RED: `crates/gafira-geom/tests/api.rs` (kurbo parity of the four re-exports, `"in"` accepted, `"km"` rejected). GREEN: re-exports in `lib.rs`, serde attributes. Commit: `feat(geom): re-export kurbo primitives and fix serde wire names`.
+- [x] B4.1 RED: `crates/gafira-geom/tests/api.rs` (kurbo parity of the four re-exports, `"in"` accepted, `"km"` rejected). GREEN: re-exports in `lib.rs`, serde attributes. Commit: `feat(geom): re-export kurbo primitives and fix serde wire names`.
 
 ### B5: Property tests (T6) ~120 lines
 
-- [ ] B5.1 `crates/gafira-geom/tests/properties.rs`: conversion round trip ([-1e9, 1e9], DPI [1, 1e4]); inverse of composed transforms (|s| in [0.1, 10]); JSON round trip of `Length`, `Unit`, `Size`, `Transform2D`, `Point`, `Vec2`, `Rect`, `Affine` with `to_bits()`. RED shown by temporarily breaking a factor or a serde attribute, then reverting. Done when `cargo test -p gafira-geom` passes; commit any `proptest-regressions/`. Commit: `test(geom): add property tests for conversions and serde round trips`.
+- [x] B5.1 `crates/gafira-geom/tests/properties.rs`: conversion round trip ([-1e9, 1e9], DPI [1, 1e4]); inverse of composed transforms (|s| in [0.1, 10]); JSON round trip of `Length`, `Unit`, `Size`, `Transform2D`, `Point`, `Vec2`, `Rect`, `Affine` with `to_bits()`. RED shown by temporarily breaking a factor or a serde attribute, then reverting. Done when `cargo test -p gafira-geom` passes; commit any `proptest-regressions/`. Commit: `test(geom): add property tests for conversions and serde round trips`.
 
 ### B6: Layer purity (T7 geom part) ~53 lines
 
-- [ ] B6.1 RED: scratch `std::fs::read` passes clippy before `clippy.toml`; scratch `unsafe {}` fails `cargo check -p gafira-geom`. GREEN: create `crates/gafira-geom/clippy.toml` (45, ARQ-02 lists, `reason = "ARQ-02"`); the scratch call now fails with `disallowed_methods`; no "does not refer to an existing" warnings. Revert scratch code. Run V5, V11, V12 (trivial in C1).
-- [ ] B6.2 Modify `.github/workflows/ci.yml` (+8: V5 and V12 steps in `policy`), keeping pins as 40-hex SHAs. Tick checklist D16c again. Commit: `ci: enforce geom layer purity and clippy policy sync`.
+- [x] B6.1 RED: scratch `std::fs::read` passes clippy before `clippy.toml`; scratch `unsafe {}` fails `cargo check -p gafira-geom`. GREEN: create `crates/gafira-geom/clippy.toml` (45, ARQ-02 lists, `reason = "ARQ-02"`); the scratch call now fails with `disallowed_methods`; no "does not refer to an existing" warnings. Revert scratch code. Run V5, V11, V12 (trivial in C1).
+- [x] B6.2 Modify `.github/workflows/ci.yml` (+8: V5 and V12 steps in `policy`), keeping pins as 40-hex SHAs. Tick checklist D16c again. Commit: `ci: enforce geom layer purity and clippy policy sync`.
 
 ### B7: Slice B close-out
 
