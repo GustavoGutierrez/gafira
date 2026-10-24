@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/gafira-cli"]
+members = ["crates/*", "apps/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +10,11 @@ license = "LicenseRef-Gafira-Proprietary"
 publish = false
 
 [workspace.dependencies]
+gafira-geom = { path = "crates/gafira-geom" }
+kurbo = { version = "0.13", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
