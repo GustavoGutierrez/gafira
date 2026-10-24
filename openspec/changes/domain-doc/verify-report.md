@@ -1,8 +1,11 @@
 # Verify report: domain-doc
 
-## D1 (branch `feat/domain-doc-1`, range `369e3d5..dc7f7a9`, 7 commits)
+**Commit references.** Commits are cited by subject and branch range (for example `feat/domain-doc-1b..feat/domain-doc-2a`, "feat(doc): add ElementBase") instead of hashes, because a rebase changes hashes. Hashes that remain in the findings text quote what an earlier verify run saw and are history, not current references.
 
-Note: the hashes in this D1 section predate the rebase onto the `chore` commit and were rewritten on 2026-10-24 to the current ones (matched by subject; code trees are unchanged, only `.agents/agents/archive.md` differs). Mapping: fb679a5 -> 7f2a523, cb125d9 -> 7e7cd1f, 4e2377e -> 9c42c69, d8d0908 -> 2686a87, 1989f90 -> 44679cd, 0238e25 -> dac2b1f, 6e6e013 -> dc7f7a9 (PR 1a = 7f2a523..2686a87).
+
+## D1 (branches `feat/domain-doc-1a` and `feat/domain-doc-1b`, range `chore/lite-sdd-methodology..feat/domain-doc-1b`, 7 commits)
+
+Note: the D1 commits were rebased onto the `chore` commit. Commits are cited by subject and branch range (PR 1a = `chore/lite-sdd-methodology..feat/domain-doc-1a`, PR 1b = `feat/domain-doc-1a..feat/domain-doc-1b`). The old and new D1 commits have identical code trees: seven non-code files differ (`.agents/agents/{archive,coordinator,tdd-apply}.md`, `.agents/skills/skill-registry/{SKILL.md,refresh.sh}`, `AGENTS.md`, `CLAUDE.md`), and nothing under `crates/`, `Cargo.*` or `.github/`.
 
 **Verdict: PASS** (D1 only). CRITICAL 0, WARNING 3, SUGGESTION 3. The change is not complete (D2a to D6 remain), so `next` = tdd-apply for D2a.
 
@@ -10,17 +13,17 @@ Verified 2026-10-24 on toolchain 1.93.1, clippy 0.1.93, cargo-deny 0.20.2, git 2
 
 ### 1. Gates per commit
 
-| Commit | Subject | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | V5 | V11 | V12 | ARQ-07 | `cargo deny --locked check` |
-|---|---|---|---|---|---|---|---|---|---|
-| 7f2a523 | build(lint): ban HashMap and HashSet in domain clippy policy | 0 | 0 | 0 (154) | 0 | 0 | 0 (old body) | 0 | 0 |
-| 7e7cd1f | feat(doc): add gafira-doc crate skeleton | 0 | 0 | 0 (154) | 0 | 0 | 0 (hardened, 3 copies) | 0 | 0 |
-| 9c42c69 | feat(doc): add NodeId and PageId | 0 | 0 | 0 (158) | 0 | 0 | 0 | 0 | 0 |
-| 2686a87 | feat(doc): add Dpi | 0 | 0 | 0 (162) | 0 | 0 | 0 | 0 | 0 |
-| 44679cd | feat(doc): add PageSize with pixel limits | 0 | 0 | 0 (173) | 0 | 0 | 0 | 0 | 0 |
-| dac2b1f | feat(doc): add BlendMode | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
-| dc7f7a9 | docs(sdd): record domain-doc D1 apply progress | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
+| Subject | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | V5 | V11 | V12 | ARQ-07 | `cargo deny --locked check` |
+|---|---|---|---|---|---|---|---|---|
+| build(lint): ban HashMap and HashSet in domain clippy policy | 0 | 0 | 0 (154) | 0 | 0 | 0 (old body) | 0 | 0 |
+| feat(doc): add gafira-doc crate skeleton | 0 | 0 | 0 (154) | 0 | 0 | 0 (hardened, 3 copies) | 0 | 0 |
+| feat(doc): add NodeId and PageId | 0 | 0 | 0 (158) | 0 | 0 | 0 | 0 | 0 |
+| feat(doc): add Dpi | 0 | 0 | 0 (162) | 0 | 0 | 0 | 0 | 0 |
+| feat(doc): add PageSize with pixel limits | 0 | 0 | 0 (173) | 0 | 0 | 0 | 0 | 0 |
+| feat(doc): add BlendMode | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
+| docs(sdd): record domain-doc D1 apply progress | 0 | 0 | 0 (177) | 0 | 0 | 0 | 0 | 0 |
 
-The CI steps were extracted from each commit's own `.github/workflows/ci.yml` with a YAML parser and run under `bash --noprofile --norc -eo pipefail`. The clippy logs show `Checking gafira-doc` from 7e7cd1f on, so no stale cache was involved. Total passed includes the `compile_fail` doctest. "Hardened V12 timing" holds: 7f2a523 runs the old 3-line body (no `gafira-doc` V5 row yet), and 7e7cd1f runs the hardened body with the V5 row.
+The CI steps were extracted from each commit's own `.github/workflows/ci.yml` with a YAML parser and run under `bash --noprofile --norc -eo pipefail`. The clippy logs show `Checking gafira-doc` from `feat(doc): add gafira-doc crate skeleton` on, so no stale cache was involved. Total passed includes the `compile_fail` doctest. "Hardened V12 timing" holds: the `build(lint)` commit runs the old 3-line body (no `gafira-doc` V5 row yet), and the crate skeleton commit runs the hardened body with the V5 row.
 
 ### 2. Requirements and scenarios
 
@@ -40,10 +43,10 @@ The CI steps were extracted from each commit's own `.github/workflows/ci.yml` wi
 | D-N2 forced edge to gafira-cli | warning "ignoring invalid dependency `gafira-cli` which is missing a lib target", rc 1 "gafira-doc must not depend on gafira-cli" | covered |
 | V12 Copies identical | `diff -q` geom/color rc 0, geom/doc rc 0 | covered |
 | H-N2 drifted copy | extra line in doc copy: rc 1 "...gafira-doc/clippy.toml son distintos"; in color copy: rc 1 | covered |
-| H-N3 ban removed everywhere | rc 1 "lacks the std::collections::HashMap ban under disallowed-types"; old V12 (7f2a523 body) rc 0 on the same tree (RED) | covered |
+| H-N3 ban removed everywhere | rc 1 "lacks the std::collections::HashMap ban under disallowed-types"; old V12 (body of the `build(lint)` commit) rc 0 on the same tree (RED) | covered |
 | H-N5 commented ban | rc 1 same message; old V12 rc 0 | covered |
 | H-N6 ban under `disallowed-methods` | both entries moved into `disallowed-methods` in all copies: rc 1 same message; old V12 rc 0 | covered |
-| Hardened V12 timing | see section 1 (7f2a523 old body rc 0, 7e7cd1f hardened rc 0) | covered |
+| Hardened V12 timing | see section 1 (`build(lint)` commit old body rc 0, crate skeleton commit hardened rc 0) | covered |
 | H-N4 too few copies | doc and color copies removed: rc 1 "expected >= 3 domain clippy.toml copies, found 1" | covered |
 | V11 missing forbid | removed from `gafira-doc/src/lib.rs`: rc 1 "missing forbid(unsafe_code): crates/gafira-doc/src/lib.rs"; same for `gafira-color` | covered |
 | Workspace membership | `cargo metadata --no-deps`: gafira-color and gafira-doc are members, edition 2024, rust-version 1.93, publish `[]`; root `Cargo.toml` declares `gafira-doc = { path = "crates/gafira-doc" }` | covered |
@@ -64,7 +67,7 @@ V13 (D5) is out of scope for D1.
 | Purity: manifest | `crates/gafira-doc/Cargo.toml:9-16` (geom, color, serde `rc`, serde_json; dev proptest) | covered |
 | Normal dependency tree | `gafira-*` set {doc, geom, color}; 4 direct deps; 0 lines matching UI/engine/IO prefixes | covered |
 | Dev tree bounded | dev additions = proptest v1.12.0 and its transitive crates (rand, rand_core, rand_xorshift, chacha20, getrandom, libc, bitflags, num-traits, regex-syntax, unarray, ...); `rusty-fork`/`tempfile` count 0 | covered |
-| No kurbo, no new package | `grep -r kurbo crates/gafira-doc` empty; `git diff 369e3d5..HEAD -- Cargo.lock` adds only `name = "gafira-doc"` | covered |
+| No kurbo, no new package | `grep -r kurbo crates/gafira-doc` empty; `git diff chore/lite-sdd-methodology..HEAD -- Cargo.lock` adds only `name = "gafira-doc"` | covered |
 | I/O and unsafe rejected | scratch `std::fs::read` in doc: `disallowed_methods`; scratch `unsafe {}`: `cargo check` error "usage of an `unsafe` block" | covered |
 | Public value types are Serialize + Deserialize | NodeId, PageId, Dpi, PageSize, BlendMode derive both; `Axis` and `PageSizeError` do not (see W2) | covered for value types, see W2 |
 | NodeId/PageId distinct types | compile_fail doctest `ids.rs:42-48`; sanity mutation (call with `NodeId`) makes the doctest fail with "Test compiled successfully, but it's marked `compile_fail`", so the doctest is meaningful | covered |
@@ -110,12 +113,12 @@ No requirement is tagged D1 (all are D3, D4 or D6). The D1 wire forms are covere
 
 | Prefix ending at | Measured (excl. lock/openspec) |
 |---|---|
-| 7f2a523 | 4 |
-| 7e7cd1f | 92 |
-| 9c42c69 | 200 |
-| 2686a87 | 292 |
-| 44679cd | 620 |
-| dac2b1f / dc7f7a9 | 767 |
+| `build(lint): ban HashMap and HashSet in domain clippy policy` | 4 |
+| `feat(doc): add gafira-doc crate skeleton` | 92 |
+| `feat(doc): add NodeId and PageId` | 200 |
+| `feat(doc): add Dpi` | 292 |
+| `feat(doc): add PageSize with pixel limits` | 620 |
+| `feat(doc): add BlendMode` / `docs(sdd): record domain-doc D1 apply progress` | 767 |
 
 Every prefix passes all gates (section 1).
 
@@ -125,7 +128,7 @@ None.
 
 ### WARNING
 
-1. **Size over the ~700 guideline.** 766 (813 with lock and openspec) is above the AGENTS.md "split when it exceeds ~700" rule and the design's ≤ ~700 planning target. It is below the design's 800 hard limit (`design.md`, "Measurement and re-cut rule" item 2), and the ratio 1.29 is just under the ×1.3 recompute trigger, so the design does not force a split. Owner decision. If the owner wants a split, the cut is **after 44679cd**: PR1 = 7f2a523..44679cd (620), PR2 = dac2b1f + dc7f7a9 (147 + progress note). The alternative cut after 2686a87 gives 292 / 475. Both prefixes pass the gates. `page_size.rs` alone is +326 against a forecast of 171 (×1.9), which drives the overrun.
+1. **Size over the ~700 guideline.** 766 (813 with lock and openspec) is above the AGENTS.md "split when it exceeds ~700" rule and the design's ≤ ~700 planning target. It is below the design's 800 hard limit (`design.md`, "Measurement and re-cut rule" item 2), and the ratio 1.29 is just under the ×1.3 recompute trigger, so the design does not force a split. Owner decision. If the owner wants a split, the cut is **after `feat(doc): add PageSize with pixel limits`**: PR1 = up to that commit (620), PR2 = `feat(doc): add BlendMode` + the progress note (147 + progress note). The alternative cut after `feat(doc): add Dpi` gives 292 / 475. Both prefixes pass the gates. `page_size.rs` alone is +326 against a forecast of 171 (×1.9), which drives the overrun.
 2. **Spec vs design on serde for error types.** `document-model/spec.md:24` says every public value type MUST implement `Serialize` and `Deserialize`. `Axis` (`page_size.rs:23`) and `PageSizeError` (`page_size.rs:42`) are public and implement neither. The code follows `design.md:211-213` (`Axis`: Copy, Eq; `PageSizeError`: Display + Error). `ConversionError` from geom would also need serde before `PageSizeError` could have it. Recommended fix: make the spec text exclude error types ("every public value type other than error types and `Document`"). Alternatively, add serde before D4 embeds `PageSizeError` in `ValidationError`.
 3. **Stale tooling claims.** `openspec/config.yaml` (testing context) and `apply-progress.md` both say `cargo deny check` is not available. `cargo-deny 0.20.2` is installed, and `cargo deny --locked check` passes on all 7 commits (section 1). Update both files so later deliveries run the check.
 
@@ -138,9 +141,9 @@ None.
 ### Result
 
 - Verdict: **PASS** for D1 (0 CRITICAL, 3 WARNING, 3 SUGGESTION).
-- Next: owner decides on WARNING 1 (keep one PR or cut after 44679cd). Then **tdd-apply D2a**. Archive waits for D2a to D6.
+- Next: owner decides on WARNING 1 (keep one PR or cut after `feat(doc): add PageSize with pixel limits`). Then **tdd-apply D2a**. Archive waits for D2a to D6.
 
-## D2a (branch `feat/domain-doc-2a`, range `feat/domain-doc-1b` (9905723)..4bac4df, 3 commits)
+## D2a (branch `feat/domain-doc-2a`, range `feat/domain-doc-1b..feat/domain-doc-2a`, first 3 commits up to `docs(sdd): record domain-doc D2a apply progress`)
 
 Scope: `document-model` requirements "Placement and to_transform (D2a)", "ElementBase (D2a)" and the D2a part of "Value policy and equality (D2a, D2b)". No `document-serde` requirement is tagged D2a. Design rows: file map `design.md:95`, size `design.md:351`, commit plan `design.md:386`, test plan T2.1/T2.2 `design.md:411-412`.
 
@@ -150,9 +153,9 @@ Each commit was extracted with `git archive` into its own directory `/tmp/gafira
 
 | Commit | fmt | clippy `-D warnings` | test `--locked` | `cargo deny check` | V5 | V11 | V12 | gafira-doc lib tests |
 |---|---|---|---|---|---|---|---|---|
-| adcb117 `feat(doc): add Placement and its affine transform` | 0 | 0 | 0 (186 ok) | 0 | 0 | 0 | 0 | placement 9 |
-| 38139cd `feat(doc): add ElementBase` | 0 | 0 | 0 (189 ok) | 0 | 0 | 0 | 0 | placement 9, element 3 |
-| 4bac4df `docs(sdd): record domain-doc D2a apply progress` | 0 | 0 | 0 (189 ok) | 0 | 0 | 0 | 0 | placement 9, element 3 |
+| `feat(doc): add Placement and its affine transform` | 0 | 0 | 0 (186 ok) | 0 | 0 | 0 | 0 | placement 9 |
+| `feat(doc): add ElementBase` | 0 | 0 | 0 (189 ok) | 0 | 0 | 0 | 0 | placement 9, element 3 |
+| `docs(sdd): record domain-doc D2a apply progress` | 0 | 0 | 0 (189 ok) | 0 | 0 | 0 | 0 | placement 9, element 3 |
 
 `cargo deny check`: advisories, bans, licenses and sources ok on all three. All gates pass on every prefix.
 
@@ -236,22 +239,22 @@ No requirement is tagged D2a.
 - Verdict: **FAIL** for D2a (1 CRITICAL, 3 WARNING, 3 SUGGESTION). All gates pass on every commit, and every D2a scenario has a passing test. The failure is the requirement-level composition-order clause, which no test proves, while the design-mandated mutation survives.
 - Next: **tdd-apply D2a** to fix CRITICAL 1 (one combined reference test, RED shown by the swap mutants), and preferably WARNING 2 and 3 in the same pass. Then re-verify D2a, then D2b. Archive waits for D2b to D6.
 
-## D2a re-verify (range `4bac4df..284bdc4`, 4 fix commits; delivery `feat/domain-doc-1b` (9905723)..284bdc4)
+## D2a re-verify (the 4 fix commits from `test(doc): cover combined rotation, skew and flip order` to `docs(sdd): record domain-doc D2a verify fixes`; delivery `feat/domain-doc-1b..feat/domain-doc-2a`)
 
 **Verdict: PASS** (D2a). CRITICAL 0, WARNING 0, SUGGESTION 3. The change is not complete (D2b to D6 remain), so `next` = tdd-apply for D2b.
 
-Verified 2026-10-24 on rustc 1.93.1 and cargo-deny 0.20.2. Each commit was extracted with `git archive` into `/tmp/gafira-reverify-d2a-<sha>`, each with its own `CARGO_TARGET_DIR`. V5, V11 ("Domain crates forbid unsafe code") and V12 were extracted from each commit's own `.github/workflows/ci.yml` (unchanged since 9905723) and run under `bash --noprofile --norc -eo pipefail`. Mutations ran on a separate copy of 284bdc4. The repository tree was not modified.
+Verified 2026-10-24 on rustc 1.93.1 and cargo-deny 0.20.2. Each commit was extracted with `git archive` into `/tmp/gafira-reverify-d2a-<sha>`, each with its own `CARGO_TARGET_DIR`. V5, V11 ("Domain crates forbid unsafe code") and V12 were extracted from each commit's own `.github/workflows/ci.yml` (unchanged since the tip of `feat/domain-doc-1b`) and run under `bash --noprofile --norc -eo pipefail`. Mutations ran on a separate copy of the `docs(sdd): record domain-doc D2a verify fixes` commit. The repository tree was not modified.
 
 ### 1. Gates per commit
 
 | Commit | fmt | clippy `-D warnings` | test `--locked` | `cargo deny check` | V5 | V11 | V12 | placement/element tests |
 |---|---|---|---|---|---|---|---|---|
-| ad5a36a `test(doc): cover combined rotation, skew and flip order` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
-| 645a284 `test(doc): assert non-finite coefficients and compare NaN by bits` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
-| ce2d018 `test(doc): widen the skew property to the open interval` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
-| 284bdc4 `docs(sdd): record domain-doc D2a verify fixes` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| `test(doc): cover combined rotation, skew and flip order` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| `test(doc): assert non-finite coefficients and compare NaN by bits` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| `test(doc): widen the skew property to the open interval` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
+| `docs(sdd): record domain-doc D2a verify fixes` | 0 | 0 | 0 (190 ok) | 0 | 0 | 0 | 0 | 13 |
 
-`cargo deny check` reports advisories, bans, licenses and sources ok on all four. The earlier prefixes adcb117, 38139cd and 4bac4df were green in the first D2a run, and no file they touched changed outside the test modules and docs.
+`cargo deny check` reports advisories, bans, licenses and sources ok on all four. The earlier prefixes (`feat(doc): add Placement and its affine transform`, `feat(doc): add ElementBase` and `docs(sdd): record domain-doc D2a apply progress`) were green in the first D2a run, and no file they touched changed outside the test modules and docs.
 
 ### 2. Previous items
 
@@ -260,14 +263,14 @@ Verified 2026-10-24 on rustc 1.93.1 and cargo-deny 0.20.2. Each commit was extra
 | CRITICAL 1: composition order | `combined_rotation_skew_and_flip` (`placement.rs:127-134`), rotation 90, skew 45, flip.x, local (2,2) to (0,1) | Hand check matches `spec.md:178`: centered (1,1), mirror (-1,1), shear (0,1), rotate (-1,0), translate (0,1). Mutant "swap shear/mirror" fails this test only (34 pass, 1 fail). Mutant "swap rotate/shear" fails this test only. Design T2.1 mutation now fails a reference. | closed |
 | WARNING 1: serde clause | Sentence appended to "Purity and dependencies" (`specs/document-model/spec.md:24`): serde for `Placement`, `Flip`, `ElementBase` and the other D2 types lands in D3 | Matches the design commit plan (`design.md:388`, D3 "define the document wire format"). D3 verify must still confirm the derives. | closed (D3 carry) |
 | WARNING 2: non-finite coefficients | `non_finite_gives_non_finite_coefficients` (`placement.rs:137-143`) replaces `non_finite_does_not_panic` and asserts `any(!is_finite)` for NaN `x` and `+inf` rotation | Mutant "return `Affine::IDENTITY` when any field is non-finite" fails this test only. The test still calls `to_transform()` on both inputs, so the "does not panic" scenario (`spec.md:205`) stays covered. | closed |
-| WARNING 3: stale hashes | `apply-progress.md:5` now cites `d380fd8..f064203`. A note at `verify-report.md:5` says the D1 hashes predate the rebase. | `git diff d8d0908 f064203` and `git diff 6e6e013 0fa1185` each show only `.agents/agents/archive.md` (1 line), so the note's "code trees unchanged" claim holds. | closed (SUGGESTION 1) |
+| WARNING 3: stale hashes | `apply-progress.md` now cites PR 1a by branch range. A note at `verify-report.md:5` says the D1 hashes predate the rebase. | each old/new D1 commit pair differs only in non-code files (see the corrected note at line 5), so the "code trees unchanged" claim holds. | closed (SUGGESTION 1) |
 | SUGGESTION 1: NaN by bits | `element.rs:63` compares `to_bits()` with `f64::NAN.to_bits()`. `element.rs:71-72` adds an is-NaN check and a bits-equal check for the clone. | matches `spec.md:301` "bit-identical" | closed |
 | SUGGESTION 2: skew interval | `skew in (-90.0f64).next_up()..90.0` (`placement.rs:168`) | That range is exactly the open interval (-90, 90) of `spec.md:201`: the start is the next f64 above -90, and the end is excluded. `f64::next_up` is stable on 1.93.1, and clippy is clean. It passes with `PROPTEST_CASES=20000`. | closed |
 | SUGGESTION 3: apply-progress D2a header | Base hash, a Status line, the per-commit gates statement and the deny/V5/V11/V12 note added (`apply-progress.md:44-46`) | read back | closed |
 
 ### 3. Regression check, other D2a requirements
 
-All 13 `placement`/`element` tests pass on every commit. The non-test code in `placement.rs:1-68` and `element.rs:1-40` is byte-identical to 4bac4df (the diff `4bac4df..284bdc4 -- crates` touches only `mod tests`), so every clause marked covered in the first D2a run still holds. Carried obligations are unchanged: the NaN self-inequality on `Node` must be checked in D2b (`spec.md:304`), and the serde derives on the D2 types in D3.
+All 13 `placement`/`element` tests pass on every commit. The non-test code in `placement.rs:1-68` and `element.rs:1-40` is byte-identical to the `docs(sdd): record domain-doc D2a apply progress` commit (the diff from it to the `docs(sdd): record domain-doc D2a verify fixes` commit, `-- crates` touches only `mod tests`), so every clause marked covered in the first D2a run still holds. Carried obligations are unchanged: the NaN self-inequality on `Node` must be checked in D2b (`spec.md:304`), and the serde derives on the D2 types in D3.
 
 ### 4. Code rules
 
@@ -297,3 +300,134 @@ None.
 
 - Verdict: **PASS** for D2a (0 CRITICAL, 0 WARNING, 3 SUGGESTION). All gates pass on every commit, and all three previous mutants are now killed by the intended tests. Every D2a requirement and scenario is covered.
 - Next: **tdd-apply D2b**, which must cover the `Node` part of "IEEE equality". D3 verify must confirm serde on `Placement`, `Flip` and `ElementBase`. Archive waits for D2b to D6.
+
+## D2b (branch `feat/domain-doc-2b`, range `feat/domain-doc-2a..feat/domain-doc-2b`, 5 commits up to `docs(sdd): record domain-doc D2b apply progress`)
+
+**Verdict: FAIL** (D2b). CRITICAL 3, WARNING 3, SUGGESTION 3. `next` = tdd-apply for D2b (fix the CRITICAL items), then re-verify D2b.
+
+Scope: `document-model` requirements "The single id counter (D2b)", "NodeKind (D2b)", "Node, Page and the arena (D2b)", "Document root (D2b; `from_parts` D4)", "Structural sharing (D2b; the edit scenario D5)" and the D2b part of "Value policy and equality (D2a, D2b)". No `document-serde` requirement is tagged D2b; that spec only names the D2b helper `test_document` (`specs/document-serde/spec.md:7`). Design rows: gate table `design.md:66-71`, file map `design.md:96`, signatures `design.md:197,263-265`, size `design.md:353-355`, commit plan `design.md:387`, test plan T2.3-2.5 `design.md:413`.
+
+Verified 2026-10-24 on rustc 1.93.1, cargo-deny 0.20.2, git 2.34.1. Each commit was extracted with `git archive` into its own directory under `/tmp`, each with its own `CARGO_TARGET_DIR`. V5, V11 ("Domain crates forbid unsafe code") and V12 were extracted with a YAML parser from each commit's own `.github/workflows/ci.yml` (unchanged in the range) and run under `bash --noprofile --norc -eo pipefail`. Mutations ran on a separate copy of the `docs(sdd): record domain-doc D2b apply progress` commit. The repository tree was not modified.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | `cargo deny check` | V5 | V11 | V12 | gafira-doc lib tests |
+|---|---|---|---|---|---|---|---|---|
+| `feat(doc): add node kinds` | 0 | 0 | 0 (195) | 0 | 0 | 0 | 0 | 40 |
+| `feat(doc): add Page and node arena` | 0 | 0 | 0 (200) | 0 | 0 | 0 | 0 | 45 |
+| `feat(doc): add Document root` | 0 | 0 | 0 (205) | 0 | 0 | 0 | 0 | 50 |
+| `docs(sdd): fix D2a size, fix-commit hashes and D1 report hashes` | 0 | 0 | 0 (205) | 0 | 0 | 0 | 0 | 50 |
+| `docs(sdd): record domain-doc D2b apply progress` | 0 | 0 | 0 (205) | 0 | 0 | 0 | 0 | 50 |
+
+`cargo deny check`: advisories, bans, licenses and sources ok on all five. Each clippy log shows `Checking gafira-doc` (no stale cache). Every prefix passes every gate.
+
+### 2. Requirements and scenarios
+
+#### The single id counter (D2b) (`specs/document-model/spec.md:65`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| One `next_id: u64` shared by nodes and pages | `document.rs:16`; read by `next_id()` `document.rs:31` | covered |
+| `Default`: schema 1, next_id 1, dpi 96, no pages / "Default document" | `Default` `document.rs:60-69`; `default_document` `document.rs:108`. Mutants on each default (next_id 0, dpi 72, schema 2, `SCHEMA_VERSION = 2`) killed | covered |
+| Ids not derived from content | no id derivation exists in the code | covered (by review) |
+| `IdSpaceExhausted` public, `Copy`, `Eq`, `Display`, `Error` | `ids.rs:55-64`, export `lib.rs:22`; `exhaustion_error_displays_and_is_an_error` `ids.rs:118` checks `Display` and `Error` (removing the `Error` impl fails to compile). Removing `Copy` or `Eq` from the derive survives | **failing** (CRITICAL 2) |
+| `#[cfg(test)]` allocator / "Private allocator before DocMut" | `alloc_id` `document.rs:52-58`, gated `#[cfg(test)] pub(crate)` as in `design.md:66,263`; `allocator_increments_then_exhausts` `document.rs:118`. Mutants killed: `saturating_add`, `checked_add(2)`, return the incremented value, `wrapping_add` with reset to 0 on overflow, `next_id()` returning `min(6)`, `test_document` ignoring `next_id` | covered |
+
+#### NodeKind (D2b) (`spec.md:224`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| Closed enum `Group`, `Shape`, `Extension`; `GroupNode` without data; `ShapeGeometry` `Rect`/`Ellipse`; `ExtensionNode { type_id, schema_version: u32, payload: serde_json::Value }` | `node.rs:8-58`, exports `lib.rs:23` | covered |
+| "Variant sets" | `variant_sets_are_exhaustive` `node.rs:97` matches both enums without wildcard arms | covered |
+| "Shape without fill" | `shape_without_fill` `node.rs:123`; `ShapeNode::new` `node.rs:31` (mutant `fill: Some(..)` fails it) | covered |
+| Extension version independent of the document | `extension_keeps_its_own_version_and_payload` `node.rs:142` | covered |
+
+#### Node, Page and the arena (D2b) (`spec.md:238`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| `Node { base, kind, children }` public; `Page` public fields; `nodes: BTreeMap<NodeId, Arc<Node>>` | `node.rs:65-73`, `page.rs:13-29` | covered |
+| "Page defaults" | `page_defaults` `page.rs:74` (mutant `hidden: true` killed) | covered |
+| "Deterministic iteration" | `iteration_is_in_ascending_id_order` `page.rs:86` | covered |
+| "Lookup stays inside the page"; `Page::node(id)` MUST return the node of that page | `lookup_stays_inside_the_page` `page.rs:96`. Every test page holds at most one node, so `Page::node` ignoring `id` and returning the first node of the arena survives the whole suite | **failing** (CRITICAL 3) |
+| "Page flags do not cascade" | `page_flags_do_not_cascade` `page.rs:106` | covered |
+| Structural violations representable | all `Page`/`Node` fields public and unchecked (`page.rs:14-29`) | covered (by review; see SUGGESTION 2) |
+
+#### Document root (D2b; `from_parts` D4) (`spec.md:262`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| Private fields, `SCHEMA_VERSION = 1` | `document.rs:14-23` | covered |
+| `Clone`, `Debug`, `PartialEq` | `document.rs:13`. Removing `Clone` (manual deep or lossy clone) is killed by `clone_shares_everything`. Removing `PartialEq` or `Debug` from the derive survives | **failing** (CRITICAL 2) |
+| `schema_version()`, `next_id()` | `document.rs:26,31`; killed mutants above | covered |
+| `dpi()` | `document.rs:36`. Only the default DPI is ever read: `dpi()` returning `Dpi::default()`, and `test_document` ignoring its `dpi` argument, both survive | **failing** (CRITICAL 1) |
+| `pages()`, `page(PageId)` | `document.rs:41,46`; `page_lookup_and_order` `document.rs:128` (built with `test_document`). Mutants killed: `!=` in the predicate, `first()`, always `None`, `test_document` dropping or reversing pages | covered |
+| No `&mut` reachable from `&Document` | every accessor returns `&`/`Copy`; `Page::node` returns `&Node` | covered (by review) |
+| "Accessors and page order" | tagged `(D4, unit)` in its title (`spec.md:266`); the purpose line (`spec.md:7`) says scenarios that need `from_parts` carry the later delivery. The deferral is allowed by the tags. `page_lookup_and_order` already checks order 3, 1, 2, lookup and unknown id with `test_document`; D4 verify must see the `from_parts` version | deferred (D4), allowed |
+| "from_parts validates" (D4), "Clone is independent" (D5) | later deliveries | n/a in D2b |
+
+#### Structural sharing (D2b) (`spec.md:281`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| "Clone shares everything" (2 pages, 3 nodes in the first, `Arc::ptr_eq`) | `clone_shares_everything` `document.rs:141`; manual deep page clone and lossy clone mutants killed. `cloning_a_page_shares_its_nodes` `page.rs:117` for the `Page` clause | covered |
+| "Edit touches one path" | D5 | n/a in D2b |
+
+#### Value policy and equality, D2b part (`spec.md:295`)
+
+| Clause / scenario | Evidence | Status |
+|---|---|---|
+| "IEEE equality": NaN node not equal to itself (carried from D2a) | `nan_placement_node_is_not_equal_to_itself` `node.rs:154`: `assert_ne!(n, n.clone())` plus bit equality of `x`. Removing `PartialEq` from `Node` fails to compile; a bitwise equality would fail the `assert_ne!` | covered (carry closed) |
+| Constructors infallible, no clamping | `Node::new`, `ShapeNode::new`, `Page::new` (`node.rs:77`, `node.rs:31`, `page.rs:33`) store their arguments unchanged | covered |
+
+#### Design checks
+
+- `#[cfg(test)]` gating: `alloc_id` `#[cfg(test)] pub(crate)` (`document.rs:52-53`), `test_document` `#[cfg(test)] pub(crate)` (`document.rs:72-73`), and the `IdSpaceExhausted` import is gated as well (`document.rs:5`). Both land in `feat(doc): add Document root` together with "Clone shares everything", as `design.md:67,387` require. Clippy `--all-targets -D warnings` is clean on every prefix, so neither item is dead code.
+- Commit order matches `design.md:387`.
+
+#### Mutation summary (copy of the `docs(sdd): record domain-doc D2b apply progress` commit, `cargo test -p gafira-doc --locked`)
+
+27 mutants: 20 killed, 7 survived. The survivors are `dpi()` returning `Dpi::default()` (M01), `test_document` ignoring `dpi` (M02), `IdSpaceExhausted` without `Copy` (M16) or without `Eq` (M17), `Document` without `PartialEq` (M18) or without `Debug` (M19), and `Page::node` ignoring `id` (M22). Each survivor ran all 50 lib tests green.
+
+### 3. Code rules
+
+- Added lines in `crates/` contain no `#[allow]`, `unsafe`, `HashMap` or `HashSet`; the arena is a `BTreeMap` (`page.rs:3,28`). `#![forbid(unsafe_code)]` stays at `lib.rs:6`.
+- Code, comments and commit messages are in English and ASCII. No `proptest-regressions` file is tracked or left in the tree or the mutation copy.
+- The five subjects are conventional (`feat(doc)` x3, `docs(sdd)` x2), with no `Co-Authored-By` or AI attribution line.
+
+### 4. Doc fixes in `docs(sdd): fix D2a size, fix-commit hashes and D1 report hashes`
+
+- Correct: the D1 section of this report (`verify-report.md:3,5,15-21,113-118,128,141`) now cites 7f2a523, 7e7cd1f, 9c42c69, 2686a87, 44679cd, dac2b1f, dc7f7a9, all on `feat/domain-doc-1b` and matched by subject. `apply-progress.md:53` cites 2521198, 618a83e, 036bbca, 547e6ba and a5c16fe, all on `feat/domain-doc-2a`. The D2a size `apply-progress.md:69` (3 files, 260 insertions) matches `git diff --shortstat feat/domain-doc-1b..feat/domain-doc-2a -- . ':!openspec'`.
+- Not current: see WARNING 2.
+
+### 5. Size
+
+`git diff --shortstat feat/domain-doc-2a..HEAD` gives 7 files changed, 524 insertions(+), 22 deletions(-). Without `openspec`: 5 files, 472 insertions(+), 1 deletion(-). Both match the reported figures. That is ratio 1.02 against the ~465 forecast, under ~700.
+
+### CRITICAL
+
+1. **`Document::dpi()` and the `dpi` argument of `test_document` are untested.** Every test builds with `Dpi::default()` and only `default_document` reads `dpi()` (`document.rs:108`). Mutants `dpi()` -> `Dpi::default()` (`document.rs:36-38`) and `test_document` storing `Dpi::default()` instead of its argument (`document.rs:73-79`) both survive. `test_document` is a permanent helper that D3 relies on for exact bytes, so a dropped field would hide later failures. Fix: build one document with `test_document(_, Dpi::new(300), _)` and assert `dpi().get() == 300`.
+2. **Trait clauses of the D2b requirements are unproven.** `spec.md:67` requires `IdSpaceExhausted` to be `Copy` and `Eq`, and `spec.md:264` requires `Document` to be `Debug` and `PartialEq`. Removing `Copy` or `Eq` from `ids.rs:55`, or `PartialEq` or `Debug` from `document.rs:13`, compiles and passes every test. In `exhaustion_error_displays_and_is_an_error` (`ids.rs:118-124`), `let copy = IdSpaceExhausted;` builds a second value and does not copy anything. Fix: one static assertion, for example `fn assert_traits<T: Copy + Eq + std::fmt::Display + std::error::Error>() {}` called for `IdSpaceExhausted`, and a similar `Clone + Debug + PartialEq` check (or a real `assert_eq!`/`format!("{:?}")` on documents) for `Document`. This applies to 025aeb0, which was not written test first.
+3. **`Page::node` ignoring its `id` survives.** `spec.md:240` says `Page::node(id)` MUST return the node of that page, but every test page holds at most one node (`page.rs:96-114`, `document.rs:88-105` never calls `node`). Replacing `page.rs:47` with "first node of the arena" passes all tests. The scenario at `spec.md:252` is covered as written, but the clause is not. This is in c14f347, outside the commit that skipped test-first, and is still a surviving mutant on a MUST clause. Fix: insert two or more nodes into the second page in `lookup_stays_inside_the_page` and assert the returned id, plus a `None` for an id missing from a non-empty page.
+
+### WARNING
+
+1. **025aeb0 was not test first (declared).** `apply-progress.md` says the tests and code were written together and RED was shown afterwards with a `wrapping_add` mutant. That mutant is killed here, but CRITICAL 1 and 2 are the gaps that test-first would have exposed. The tdd-apply fix should show RED for each new assertion with the surviving mutants listed above.
+2. **Stale hashes left after 931d94b.** These cite pre-rebase commits that are not reachable from any current branch:
+   - `apply-progress.md:5` gives PR 1a as `d380fd8..f064203`. It is now `7f2a523..2686a87` (`feat/domain-doc-1a`), as `verify-report.md:5` already says.
+   - `apply-progress.md:44` and `verify-report.md:143,239,243` give the D2a base as `feat/domain-doc-1b` 9905723. The branch is now at 9957190.
+   - The D2a sections of this report (`verify-report.md:153-155,249-254,263,270`) cite adcb117, 38139cd, 4bac4df, ad5a36a, 645a284, ce2d018, 284bdc4, d380fd8, f064203 and 0fa1185. They are now 67d7dcc, b8cc071, 2e043a9, 2521198, 618a83e, 036bbca, 547e6ba and, for D1, 7f2a523, 2686a87, dc7f7a9. The D2a sections have no mapping note like the one at `verify-report.md:5`.
+   - The D1 heading (`verify-report.md:3`) and `apply-progress.md:3` name branch `feat/domain-doc-1`, which no longer exists (`feat/domain-doc-1a` and `-1b` do).
+   Fix: rewrite them, or add a mapping note at the top of each D2a section.
+3. **The new note at `verify-report.md:5` is inaccurate.** It says "only `.agents/agents/archive.md` differs" between the old and new D1 commits. `git diff` of each old/new pair (for example `6e6e013 dc7f7a9`) now shows 7 files: `.agents/agents/{archive,coordinator,tdd-apply}.md`, `.agents/skills/skill-registry/{SKILL.md,refresh.sh}`, `AGENTS.md` and `CLAUDE.md`. "Code trees unchanged" still holds, since no file under `crates/`, `Cargo.*` or `.github/` differs. Fix: say "only agent, skill and top-level guide files differ".
+
+### SUGGESTION
+
+1. Add a blank line between the last item and `#[cfg(test)] mod tests` in `document.rs:79-81`, `page.rs:48-50` and `node.rs:83-85`. rustfmt accepts the current form, but the other modules use the blank line.
+2. "The model MUST allow representing structural violations" (`spec.md:240`) is shown only by public fields. A short test that builds a page whose `roots` names a missing node and a node that lists itself as a child would document it and protect it from a future checked constructor.
+3. `apply-progress.md` (D2b) could list the commit subjects next to the table rows, as the D2a section now does.
+
+### Result
+
+- Verdict: **FAIL** for D2b (3 CRITICAL, 3 WARNING, 3 SUGGESTION). All gates pass on every commit, every D2b scenario has a passing test, and the D4 deferral of "Accessors and page order" is allowed by its tag. The failure comes from 7 surviving mutants on D2b MUST clauses: the `dpi` accessor and helper argument, the required traits of `IdSpaceExhausted` and `Document`, and `Page::node` ignoring its id.
+- Next: **tdd-apply D2b** to fix CRITICAL 1-3 (test-only changes, RED shown by the listed mutants) and preferably WARNING 2-3. Then re-verify D2b. Archive waits for D3 to D6.
