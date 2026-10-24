@@ -1,0 +1,2 @@
+weasyprint==68.0
+mistune>=3.1,<4
