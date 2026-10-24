@@ -1,0 +1,59 @@
+# openspec/config.yaml - gafira
+schema: spec-driven
+
+context: |
+  Project: gafira
+  Tech stack: Rust 1.93.1 (stable) cargo workspace. Planned crates `gafira-*`; binaries `gafira` (GUI: egui/eframe/wgpu) and `gafira-cli`.
+  Architecture: multi-crate workspace (greenfield; no code yet; docs/ and assets/ exist).
+  Platforms: Windows (MSI), Linux x86_64, macOS 12+ aarch64.
+  Constraints: permissive licenses only; fully local; no external binaries.
+  Testing: cargo test (built-in). Not installed: cargo-nextest, cargo-deny, cargo-llvm-cov.
+  Style: rustfmt 1.8.0, clippy 0.1.93.
+  Language conventions: conversation in neutral Spanish; product documents in Spanish; code, comments, identifiers and commits in English; conventional commits; never Co-Authored-By or AI attribution.
+
+strict_tdd: true
+
+testing:
+  strict_tdd: true
+  runner: cargo test
+  layers:
+    unit: true
+    integration: true        # cargo test integration tests in crates' tests/ dirs
+    e2e: false
+  coverage:
+    available: false         # cargo-llvm-cov not installed
+  linter: "cargo clippy --workspace --all-targets -- -D warnings"
+  type_checker: "cargo check --workspace --all-targets"
+  formatter: "cargo fmt --check"
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Respect permissive-license-only, local-only, no-external-binaries constraints
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Product-facing documents are written in Spanish
+  design:
+    - Document architecture decisions with rationale
+    - Account for Windows, Linux x86_64 and macOS 12+ aarch64
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Review budget 800 changed lines; delivery_strategy ask-on-risk
+  apply:
+    guidelines:
+      - Code, comments, identifiers and commit messages in English
+      - Conventional commits; never Co-Authored-By or AI attribution
+    tdd: true
+    test_command: "cargo test --workspace"
+    lint_command: "cargo clippy --workspace --all-targets -- -D warnings"
+    format_command: "cargo fmt --check"
+  verify:
+    test_command: "cargo test --workspace"
+    build_command: "cargo check --workspace --all-targets"
+    lint_command: "cargo clippy --workspace --all-targets -- -D warnings"
+    format_command: "cargo fmt --check"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
