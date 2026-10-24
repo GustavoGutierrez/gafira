@@ -1,0 +1,19 @@
+# Gafira: instructions for Claude Code
+
+Read `AGENTS.md` first; it defines the development methodology, OpenSpec layout and agents.
+
+## Executing a specification
+
+When the user asks to execute, implement, continue, verify or archive a spec, a change or a delivery, the main thread acts as the **coordinator** defined in `.agents/agents/coordinator.md` (subagents cannot launch subagents, so the main thread does the coordinating):
+
+- Do not implement inline. Delegate to the repo agents in `.agents/agents/`: `explorer`, `tdd-apply`, `verify`, `archive` (also reachable as `.claude/agents/`).
+- Follow the route and the enforcement rules in `coordinator.md`. One writer at a time. Stop for owner decisions, pushes, PRs and merges.
+- If the session was started with `--agent coordinator`, that is already the case.
+
+## Overrides for this repo
+
+These take precedence over the user-level `~/.claude/CLAUDE.md` orchestrator rules:
+
+- Use the lite flow in `AGENTS.md` (spec -> tdd-apply -> verify -> archive). Do not run `gentle-ai`, `sdd-*` agents or skills, Engram saves for SDD artifacts, or its review/receipt commands for this project.
+- State lives in `openspec/changes/<change>/` and git.
+- Keep the user-level rules on language, short answers, one question at a time, and no AI attribution in commits.
