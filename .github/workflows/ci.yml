@@ -59,7 +59,8 @@ jobs:
         run: cargo fmt --check
       - name: CLI has no UI dependencies (ARQ-07)
         run: |
-          if cargo tree -p gafira-cli --no-default-features -e normal,build --target all | grep -E 'gafira-ui|eframe|winit|wgpu'; then
+          tree=$(cargo tree -p gafira-cli --no-default-features -e normal,build --target all)
+          if grep -Eq 'gafira-ui|eframe|winit|wgpu' <<<"$tree"; then
             echo "gafira-cli must not depend on UI crates" >&2
             exit 1
           fi
@@ -73,8 +74,8 @@ jobs:
           exit "$status"
       - name: gafira-geom is a leaf crate (V5)
         run: |
-          if cargo tree -p gafira-geom -e normal,build --target all --prefix none -f '{p}' \
-            | grep -E '^gafira-|egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq' \
+          tree=$(cargo tree -p gafira-geom -e normal,build --target all --prefix none -f '{p}')
+          if grep -E '^gafira-|egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq' <<<"$tree" \
             | grep -v '^gafira-geom '; then
             echo "gafira-geom must not depend on other gafira crates, UI, engine or I/O crates" >&2
             exit 1
