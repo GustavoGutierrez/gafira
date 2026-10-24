@@ -3,3 +3,7 @@
 //! Pure domain code: no I/O, no `unsafe`, `f64` everywhere.
 
 #![forbid(unsafe_code)]
+
+mod length;
+
+pub use length::{ConversionError, Length, Unit};
