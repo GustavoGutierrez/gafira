@@ -116,6 +116,14 @@ mod tests {
     }
 
     #[test]
+    fn dpi_is_read_back_from_the_document() {
+        let d = test_document(1, Dpi::new(300), Vec::new());
+        assert_eq!(d.dpi().get(), 300);
+        assert_eq!(d.dpi(), Dpi::new(300));
+        assert_ne!(d.dpi(), Dpi::default());
+    }
+
+    #[test]
     fn allocator_increments_then_exhausts() {
         let mut d = test_document(5, Dpi::default(), Vec::new());
         assert_eq!(d.alloc_id(), Ok(5));
