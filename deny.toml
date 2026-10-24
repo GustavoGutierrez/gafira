@@ -1,0 +1,66 @@
+# cargo-deny policy (ARQ-70, ARQ-71). Allowlist amendments for transitive
+# dependencies must use a per-crate [[licenses.exceptions]] entry with a written rationale.
+
+[graph]
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+# Needs network (advisory database); runs in CI, may be skipped locally.
+yanked = "deny"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "BSL-1.0",
+    "CC0-1.0",
+    "MIT-0",
+    "0BSD",
+]
+confidence-threshold = 0.93
+# The allowlist is policy for future dependencies; unused entries are not an error.
+unused-allowed-license = "allow"
+
+[licenses.private]
+# Workspace crates use LicenseRef-Gafira-Proprietary and are never published.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Private path dependencies carry no version requirement.
+allow-wildcard-paths = true
+deny = [
+    { name = "ffmpeg-sidecar" },
+    { name = "ffmpeg-next" },
+    { name = "ffmpeg-sys-next" },
+    { name = "symphonia" },
+    { name = "imbl" },
+    { name = "im" },
+    { name = "rpds" },
+    { name = "gstreamer" },
+    { name = "openssl-sys" },
+    # Encoders with patents or LGPL (crate names to be verified when adopted).
+    { name = "openh264" },
+    { name = "x264" },
+    { name = "mp3lame-encoder" },
+    # GNU gettext (LGPL/GPL) and its wrapper are not used for localization.
+    { name = "gettext-rs" },
+    { name = "gettext-sys" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []
