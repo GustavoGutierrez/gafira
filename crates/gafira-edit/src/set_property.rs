@@ -4,13 +4,18 @@ use std::any::Any;
 
 use gafira_color::Color;
 use gafira_doc::msg::{CommandLabel, MessageKey};
-use gafira_doc::{BlendMode, DocMut, Node, NodeId, NodeKind, PageId, Placement, ShapeGeometry};
+use gafira_doc::{
+    BlendMode, DocMut, Document, Dpi, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement,
+    ShapeGeometry, ValidationError,
+};
 
 use crate::{Applied, Command, CommandError, DirtySet, GestureId, MergeKey};
 
 /// A property value of a node, tagged with the property it belongs to.
 ///
-/// `Fill` and `Geometry` only apply to `Shape` nodes.
+/// `Fill` and `Geometry` only apply to `Shape` nodes. The `Page` variants
+/// target a page and `Dpi` the document; build those commands with
+/// [`SetProperty::page`] and [`SetProperty::document`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Property {
     Name(Option<String>),
@@ -21,6 +26,11 @@ pub enum Property {
     Locked(bool),
     Fill(Option<Color>),
     Geometry(ShapeGeometry),
+    PageName(String),
+    PageSize(PageSize),
+    PageLocked(bool),
+    PageHidden(bool),
+    Dpi(Dpi),
 }
 
 impl Property {
@@ -35,6 +45,11 @@ impl Property {
             Self::Locked(_) => "set_property.locked",
             Self::Fill(_) => "set_property.fill",
             Self::Geometry(_) => "set_property.geometry",
+            Self::PageName(_) => "set_property.page_name",
+            Self::PageSize(_) => "set_property.page_size",
+            Self::PageLocked(_) => "set_property.page_locked",
+            Self::PageHidden(_) => "set_property.page_hidden",
+            Self::Dpi(_) => "set_property.dpi",
         }
     }
 
@@ -76,7 +91,7 @@ impl Property {
             (Self::Locked(_), _) => Self::Locked(base.locked),
             (Self::Fill(_), NodeKind::Shape(s)) => Self::Fill(s.fill),
             (Self::Geometry(_), NodeKind::Shape(s)) => Self::Geometry(s.geometry),
-            (Self::Fill(_) | Self::Geometry(_), _) => return None,
+            _ => return None,
         })
     }
 
@@ -92,13 +107,68 @@ impl Property {
             (Self::Locked(v), _) => base.locked = *v,
             (Self::Fill(v), NodeKind::Shape(s)) => s.fill = *v,
             (Self::Geometry(v), NodeKind::Shape(s)) => s.geometry = *v,
-            (Self::Fill(_) | Self::Geometry(_), _) => {}
+            _ => {}
         }
     }
 }
 
+/// What a property is set on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scope {
+    Nodes,
+    Page,
+    Document,
+}
+
+impl Property {
+    fn scope(&self) -> Scope {
+        match self {
+            Self::PageName(_) | Self::PageSize(_) | Self::PageLocked(_) | Self::PageHidden(_) => {
+                Scope::Page
+            }
+            Self::Dpi(_) => Scope::Document,
+            _ => Scope::Nodes,
+        }
+    }
+
+    /// What `page` holds for this page property.
+    fn read_page(&self, page: &Page) -> Option<Property> {
+        Some(match self {
+            Self::PageName(_) => Self::PageName(page.name.clone()),
+            Self::PageSize(_) => Self::PageSize(page.size),
+            Self::PageLocked(_) => Self::PageLocked(page.locked),
+            Self::PageHidden(_) => Self::PageHidden(page.hidden),
+            _ => return None,
+        })
+    }
+
+    /// Stores this value in `page`.
+    fn write_page(&self, page: &mut Page) {
+        match self {
+            Self::PageName(v) => page.name.clone_from(v),
+            Self::PageSize(v) => page.size = *v,
+            Self::PageLocked(v) => page.locked = *v,
+            Self::PageHidden(v) => page.hidden = *v,
+            _ => {}
+        }
+    }
+}
+
+/// The page-size error `validate()` would raise for `size` at `dpi`.
+fn check_size(page: PageId, size: PageSize, dpi: Dpi) -> Result<(), CommandError> {
+    size.check(dpi)
+        .map_err(|error| CommandError::InvalidDocument(ValidationError::PageSize { page, error }))
+}
+
+/// Checks that every page of `doc` fits the pixel limits at `dpi`.
+fn check_pages(doc: &Document, dpi: Dpi) -> Result<(), CommandError> {
+    doc.pages()
+        .iter()
+        .try_for_each(|page| check_size(page.id, page.size, dpi))
+}
+
 /// Sets one property on one or more nodes of one page (an empty list of
-/// targets is refused).
+/// targets is refused), or one field of a page, or the document DPI.
 ///
 /// The previous values are captured by every successful `apply`, so a
 /// command stays reusable after a failed one. Commands do not check
@@ -131,27 +201,18 @@ impl SetProperty {
         }
     }
 
-    fn write_all(
-        &self,
-        doc: &mut DocMut<'_>,
-        values: impl Iterator<Item = (NodeId, Property)>,
-    ) -> Result<(), CommandError> {
-        for (id, value) in values {
-            let node = doc
-                .node_mut(self.page, id)
-                .ok_or(CommandError::MissingNode(id))?;
-            value.write(node);
-        }
-        Ok(())
-    }
-}
-
-impl Command for SetProperty {
-    fn label(&self) -> CommandLabel {
-        MessageKey("edit.set_property")
+    /// A command that sets a page field (`PageName`, `PageSize`, `PageLocked`
+    /// or `PageHidden`) of `page`.
+    pub fn page(page: PageId, value: Property, gesture: Option<GestureId>) -> Self {
+        Self::new(page, Vec::new(), value, gesture)
     }
 
-    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+    /// A command that sets the document `Dpi`.
+    pub fn document(value: Property, gesture: Option<GestureId>) -> Self {
+        Self::new(PageId::new(0), Vec::new(), value, gesture)
+    }
+
+    fn apply_nodes(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
         if self.nodes.is_empty() {
             return Err(CommandError::InvalidValue("an empty list of target nodes"));
         }
@@ -178,11 +239,11 @@ impl Command for SetProperty {
         Ok(Applied::Changed)
     }
 
-    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
-        let old = self.previous.clone().ok_or(CommandError::NotApplied)?;
-        if old.is_empty() {
-            return Ok(());
-        }
+    fn revert_nodes(
+        &mut self,
+        doc: &mut DocMut<'_>,
+        old: Vec<Property>,
+    ) -> Result<(), CommandError> {
         let page = doc
             .as_doc()
             .page(self.page)
@@ -195,10 +256,132 @@ impl Command for SetProperty {
         self.write_all(doc, pairs)
     }
 
+    fn apply_page(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        let view = doc.as_doc();
+        let page = view
+            .page(self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        if let Property::PageSize(size) = &self.value {
+            check_size(self.page, *size, view.dpi())?;
+        }
+        let held = self
+            .value
+            .read_page(page)
+            .ok_or(CommandError::InvalidValue("a node property on a page"))?;
+        if held == self.value {
+            self.previous = Some(Vec::new());
+            return Ok(Applied::Unchanged);
+        }
+        let target = doc
+            .page_mut(self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        self.value.write_page(target);
+        self.previous = Some(vec![held]);
+        Ok(Applied::Changed)
+    }
+
+    fn revert_page(
+        &mut self,
+        doc: &mut DocMut<'_>,
+        old: Vec<Property>,
+    ) -> Result<(), CommandError> {
+        let view = doc.as_doc();
+        view.page(self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        for value in &old {
+            if let Property::PageSize(size) = value {
+                check_size(self.page, *size, view.dpi())?;
+            }
+        }
+        let target = doc
+            .page_mut(self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        for value in &old {
+            value.write_page(target);
+        }
+        Ok(())
+    }
+
+    fn apply_dpi(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        let Property::Dpi(dpi) = self.value else {
+            return Err(CommandError::InvalidValue(
+                "a node property on the document",
+            ));
+        };
+        if !dpi.is_valid() {
+            return Err(CommandError::InvalidValue("dpi"));
+        }
+        let held = doc.as_doc().dpi();
+        check_pages(doc.as_doc(), dpi)?;
+        if held == dpi {
+            self.previous = Some(Vec::new());
+            return Ok(Applied::Unchanged);
+        }
+        doc.set_dpi(dpi);
+        self.previous = Some(vec![Property::Dpi(held)]);
+        Ok(Applied::Changed)
+    }
+
+    fn revert_dpi(&mut self, doc: &mut DocMut<'_>, old: Vec<Property>) -> Result<(), CommandError> {
+        for value in &old {
+            if let Property::Dpi(dpi) = value {
+                check_pages(doc.as_doc(), *dpi)?;
+                doc.set_dpi(*dpi);
+            }
+        }
+        Ok(())
+    }
+
+    fn write_all(
+        &self,
+        doc: &mut DocMut<'_>,
+        values: impl Iterator<Item = (NodeId, Property)>,
+    ) -> Result<(), CommandError> {
+        for (id, value) in values {
+            let node = doc
+                .node_mut(self.page, id)
+                .ok_or(CommandError::MissingNode(id))?;
+            value.write(node);
+        }
+        Ok(())
+    }
+}
+
+impl Command for SetProperty {
+    fn label(&self) -> CommandLabel {
+        MessageKey("edit.set_property")
+    }
+
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        let scope = self.value.scope();
+        if scope != Scope::Nodes && !self.nodes.is_empty() {
+            return Err(CommandError::InvalidValue(
+                "node targets on a page or document property",
+            ));
+        }
+        match scope {
+            Scope::Nodes => self.apply_nodes(doc),
+            Scope::Page => self.apply_page(doc),
+            Scope::Document => self.apply_dpi(doc),
+        }
+    }
+
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+        let old = self.previous.clone().ok_or(CommandError::NotApplied)?;
+        if old.is_empty() {
+            return Ok(());
+        }
+        match self.value.scope() {
+            Scope::Nodes => self.revert_nodes(doc, old),
+            Scope::Page => self.revert_page(doc, old),
+            Scope::Document => self.revert_dpi(doc, old),
+        }
+    }
+
     fn merge_key(&self) -> Option<MergeKey> {
         Some(MergeKey {
             kind: self.value.kind(),
-            page: Some(self.page),
+            page: (self.value.scope() != Scope::Document).then_some(self.page),
             nodes: self.nodes.clone(),
             gesture: self.gesture,
         })
@@ -220,10 +403,14 @@ impl Command for SetProperty {
     }
 
     fn touches(&self) -> DirtySet {
-        DirtySet {
+        let mut dirty = DirtySet {
             pages: Default::default(),
             nodes: self.nodes.iter().copied().collect(),
+        };
+        if self.value.scope() == Scope::Page {
+            dirty.pages.insert(self.page);
         }
+        dirty
     }
 }
 

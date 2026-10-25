@@ -2,11 +2,13 @@
 
 use gafira_color::{Color, Rgba};
 use gafira_doc::{
-    BlendMode, Document, GroupNode, NodeId, NodeKind, PageId, Placement, ShapeGeometry, ShapeNode,
+    BlendMode, Document, Dpi, GroupNode, NodeId, NodeKind, PageId, PageSize, Placement,
+    ShapeGeometry, ShapeNode,
 };
 use gafira_edit::{
     GestureId, InsertNodes, NodeSpec, Property, RemoveNodes, Reorder, Reparent, SetProperty,
 };
+use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
 use proptest::prelude::*;
 
@@ -259,4 +261,57 @@ fn reparent(doc: &Document) -> BoxedStrategy<Reparent> {
 #[test]
 fn reparent_obeys_the_command_laws() {
     prop_command(reparent);
+}
+
+/// A page size in any unit, mostly inside the pixel limits and sometimes not.
+fn page_size() -> impl Strategy<Value = PageSize> {
+    let unit = prop_oneof![
+        Just(Unit::Px),
+        Just(Unit::Mm),
+        Just(Unit::Cm),
+        Just(Unit::In),
+        Just(Unit::Pt)
+    ];
+    let side = (
+        prop_oneof![9 => 1.0..2_000.0_f64, 1 => 0.0..40_000.0_f64],
+        unit,
+    )
+        .prop_map(|(v, u)| Length::new(v, u));
+    (side.clone(), side).prop_map(|(width, height)| PageSize { width, height })
+}
+
+/// A page field or the DPI. DPI values reach past both ends of the valid
+/// range, and the pages the generator builds make some of them overflow.
+fn page_property() -> impl Strategy<Value = Property> {
+    prop_oneof![
+        "[a-z]{0,6}".prop_map(Property::PageName),
+        page_size().prop_map(Property::PageSize),
+        any::<bool>().prop_map(Property::PageLocked),
+        any::<bool>().prop_map(Property::PageHidden),
+        prop_oneof![
+            8 => 1..=10_000_u32,
+            1 => Just(0_u32),
+            1 => Just(10_001_u32),
+        ]
+        .prop_map(|dpi| Property::Dpi(Dpi::new(dpi))),
+    ]
+}
+
+/// A page of `doc` (sometimes a missing one), a page property and a gesture
+/// out of two, so equal keys, and law 6, come up.
+fn set_page_property(doc: &Document) -> BoxedStrategy<SetProperty> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    pages.push(PageId::new(u64::MAX));
+    let gesture = prop_oneof![Just(None), (0..2_u64).prop_map(|g| Some(GestureId(g)))];
+    (prop::sample::select(pages), page_property(), gesture)
+        .prop_map(|(page, value, gesture)| match value {
+            Property::Dpi(_) => SetProperty::document(value, gesture),
+            _ => SetProperty::page(page, value, gesture),
+        })
+        .boxed()
+}
+
+#[test]
+fn set_property_on_pages_and_dpi_obeys_the_command_laws() {
+    prop_command(set_page_property);
 }
