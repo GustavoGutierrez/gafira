@@ -1405,3 +1405,115 @@ None.
 **PASS for D9.** 0 CRITICAL, 2 WARNING (implementation 1, claim 1), 2 SUGGESTION. The gates are green at HEAD and on each new commit. The mutation evidence is valid: no missed critical mutant, and all 10 hand mutants are killed. Every D9 requirement and scenario is covered. The change is not ready to archive, because D10 remains.
 
 next: tdd-apply (D10). The coordinator may push `feat/edit-history-9` and open its PR against `main`. W2 is a one-line docs correction that can ride along.
+
+## D10a: page and DPI targets of `SetProperty`
+
+Verified at `3cd1a46` on `feat/edit-history-10` (`main` e95e56d, plus `f9b9b07` and `3cd1a46`). Mode full, tier T3. The `Flow:` line ("full (inherited)") names no verify depth, so this round runs at **V3**. All work ran on clean `git archive` exports outside the repo, each with its own `CARGO_TARGET_DIR`.
+
+### Gates
+
+| Commit | fmt | clippy `-D warnings` | test (passed) | deny | ARQ-07 | forbid unsafe (V11) | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| `f9b9b07` feat(edit) | 0 | 0 | 0 (490) | 0 | 0 | 0 | 0 | 0 | 0 |
+| `3cd1a46` docs(edit-history) | 0 | 0 | 0 (490) | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- I extracted the CI steps from `ci.yml` and ran them under `bash --noprofile --norc -eo pipefail`. V14 does not exist on this branch; it belongs to D10b.
+- The first `cargo deny` run returned 1 on both exports. Cause: the two parallel runs fought over the advisory-database lock ("failed to acquire advisory database lock"). Run again one after the other, both returned 0 (advisories, bans, licenses, sources ok).
+- Negative runs, on scratch exports: dropping `#![forbid(unsafe_code)]` from `gafira-edit` fails V11 (rc 1). Changing `gafira-edit/clippy.toml` fails V12 (rc 1). An `EditToken` call in `gafira-geom` fails V13 (rc 1). I did not run a negative V5, because D10a changes no manifest.
+
+### Independent probes (before reading the implementer's tests)
+
+I wrote 9 probe tests (`vprobe.rs`, scratch export only) from the delta spec. All pass:
+- A0 at 300 DPI: DPI 351 fails with `PageSize { page 1, OutOfRange Height }`, and the DPI stays 300 with the page pointer-equal. DPI 350 applies, touches nothing, and reverts to the original.
+- DPI 0, 10 001 and `u32::MAX` fail with `InvalidValue` and change nothing, even on an A0 page. DPI 1 and 10 000 apply.
+- A DPI change checks every page, and the first failing page is named. A tiny mm page that drops under 1 px at a lower DPI is refused on the width axis.
+- A page size is checked at the document DPI: A0 is refused at 351 DPI and accepted at 300. The pixel edges 16 384 and 1 are accepted; 16 385, 0.5 and 0 are refused.
+- All four page fields round-trip: apply, revert, apply, revert. `touches` is exactly `{page}`, and the other pages stay pointer-equal. Setting the same value is `Unchanged`, pointer-equal after apply and after revert. The same DPI is `Unchanged`.
+- Merge keys: the five kinds are distinct. A page key carries `Some(page)`; the DPI key carries `None`. Keys differ across pages and across fields. A merged DPI drag and a merged size drag revert to the origin and redo to the last value.
+- Scope mismatches fail with `InvalidValue` and change nothing: a page property with nodes, the DPI with nodes, a node property through `page()` or `document()`.
+- A locked page can still be renamed and resized (Q12). A missing page gives `MissingPage`, even with an oversized size.
+- Revert preconditions: a DPI revert onto a page that no longer fits is refused with no change. So is a size revert after the DPI went up. A revert after the page is gone gives `MissingPage`, and a revert before any apply gives `NotApplied`. A command stays reusable after a failed apply and keeps the record of its last good apply.
+
+When I compared these with `tests/page_commands.rs` (21 tests) and the new property, every probe has a matching test or a stronger one. No criterion rests on a weak test.
+
+### Requirement and scenario coverage (D10a scope)
+
+| # | Criterion (delta spec) | Proof | Status |
+|---|---|---|---|
+| 1 | `SetProperty` targets page `name`, `size`, `locked`, `hidden` | `every_page_field_is_set_and_restored`, `a_page_field_takes_the_value_given` | covered |
+| 2 | `SetProperty` targets the document DPI | `a_dpi_that_pushes_a_page_over_the_limit_is_refused`, `the_dpi_range_edges` | covered |
+| 3 | A size or DPI change that leaves any page outside its pixel limits fails with `InvalidDocument(PageSize)` and no change | `a_page_size_outside_the_pixel_limits_is_refused` (also NaN gives `Conversion`), `a_dpi_is_checked_against_every_page`, `refused_size` (checks pointer equality) | covered |
+| 4 | Scenario "DPI pushes a page over the limit" | `a_dpi_that_pushes_a_page_over_the_limit_is_refused`, probe P1 | covered |
+| 5 | Values inside the ranges `validate()` enforces (ARQ-13): DPI `1..=10 000` | `the_dpi_range_edges` (0, 10 001, `u32::MAX` refused with `InvalidValue("dpi")`) | covered |
+| 6 | `Unchanged` when the target already holds the value | `the_same_page_value_is_unchanged_and_shares_the_page`, `the_same_dpi_is_unchanged` | covered |
+| 7 | `merge_key` always `Some`; merge keeps the first old value and the last new value | `the_merge_key_names_the_page_field_or_the_document`, `a_merged_resize_drag_keeps_the_origin_and_the_last_value` | covered |
+| 8 | `touches`: a page field reports its page; the DPI reports nothing (see W1) | `a_dpi_change_touches_no_page_and_a_page_change_touches_its_page`, `every_page_field_is_set_and_restored` | covered |
+| 9 | Reusable after a failed apply; `NotApplied`; validate-before-mutate in revert (D1 W4 carry-over) | `a_page_command_is_reusable_after_a_failed_apply`, `a_dpi_command_is_reusable_after_a_failed_apply`, `reverting_a_page_command_that_never_applied_fails`, `a_page_revert_without_its_page_fails_and_changes_nothing`, `a_size_revert_...`, `a_dpi_revert_...` | covered |
+| 10 | Commands do not check `locked` (Q12) | `a_locked_page_is_still_editable` | covered |
+| 11 | Laws 1 to 6, 1 000 cases (scenario "Every core command passes the laws", for this command) | `set_property_on_pages_and_dpi_obeys_the_command_laws` (default 1 000 cases from `gafira-testkit`; DPI values past both ends of the range, sizes in every unit, a missing page, gestures for law 6) | covered |
+
+The checks are plain `Result` code, not `debug_assert!`, so they also run in release builds (Q15). Out of scope for D10a and left to D10b: `InsertPage`, `RemovePage`, the scenario "Remove and restore a page", and V14.
+
+The delta specs were not changed by any D10a commit. `git diff main..HEAD` touches `crates/gafira-edit` and `apply-progress.md` only.
+
+### Recorded deviations
+
+1. **Revert preconditions beyond the spec text.** The page-size and DPI reverts check the old value against the current DPI and pages before they write. This is consistent with ARQ-13 and with the D1 W4 carry-over: a revert on a foreign state cannot leave an invalid document. It adds behavior and contradicts nothing. Accepted; see S1.
+2. **A DPI change has an empty `touches`.** This holds against the text:
+   - Law 4 counts `Arc`s that are no longer pointer-equal, and `set_dpi` replaces no page or node `Arc`. My probe P1 confirms the page stays pointer-equal.
+   - The `DirtySet` contract reports a page only when "its own fields or its `roots` change", and the DPI is a document field.
+
+   The cost is real, though. A DPI change rescales the pixel size of every page not sized in `px`. A renderer or thumbnail cache driven only by `touches` would miss it. No consumer of `DirtySet` is specified in this change, so nothing breaks today. It is a spec gap, not an implementation defect; see W1.
+
+### Strict TDD
+
+- `red1.txt` in the implementer's scratchpad shows the stub run: 19 of 21 tests in `page_commands.rs` failed on assertions. The two that passed (`reverting_a_page_command_that_never_applied_fails`, `only_a_page_property_works_without_nodes`) are refusals that the node path already produced. This is acknowledged in `apply-progress.md`, and it is credible.
+- The property passed on its first run. Its RED comes from two hand breakages (page `touches` without the page gives law 4; a DPI revert without `set_dpi` gives law 1).
+- None of my 5 hand mutants was caught by the property; the unit tests caught all of them. That fits the design: the property covers the laws, and the unit tests cover rule order and error kinds.
+
+### Mutation
+
+- The coordinator gave no report path. The only run is the one in `apply-progress.md`, at `scratchpad/d10/mut-out/mutants.out`: T3 `--file` on `set_property.rs` and `pages.rs` together, on an export of the D10b tree. 102 mutants in 4 min: 87 caught, 15 unviable, 0 missed, 0 timeout. For `set_property.rs` alone: 84 found, 73 caught, 11 unviable, 0 missed, 0 timeout.
+- Is that evidence valid for D10a? Three checks:
+  - The export's `set_property.rs` is byte-identical to `3cd1a46`.
+  - The D10a tests are unchanged in that export: the diff removes only import lines and adds D10b tests.
+  - Each of the 73 failing mutant logs names at least one failing test that exists in the D10a tree, so no kill depends on a D10b test.
+
+  So: **0 critical missed**. `.cargo/mutants.toml` is unchanged by this delivery.
+- Hand mutants: 5, on separate scratch exports with separate target dirs, `cargo test -p gafira-edit --locked`. Each log shows `Compiling gafira-edit` on the mutated tree.
+
+| # | Rule (order or kind, not expressible by cargo-mutants) | Mutation | Result |
+|---|---|---|---|
+| M1 | DPI range checked before the pages | `check_pages` before `is_valid` | killed: `the_dpi_range_edges` (DPI 0 gives `PageSize { Conversion InvalidDpi(0.0) }` instead of `InvalidValue("dpi")`) |
+| M2 | Page size validated before any write | write the size, then check | killed: `a_page_size_outside_the_pixel_limits_is_refused` (document changed) |
+| M3 | Merge key carries the page for page fields | `page` only for node scope | killed: `the_merge_key_names_the_page_field_or_the_document` |
+| M4 | DPI change checks pages at the new DPI, not the held one | `check_pages(doc, held)` | killed: 3 tests (`a_dpi_that_pushes_...`, `a_dpi_is_checked_against_every_page`, `a_dpi_command_is_reusable_...`) |
+| M5 | Size revert checks the old value against the current DPI | drop the check | killed: `a_size_revert_that_would_leave_the_page_invalid_fails_and_changes_nothing` |
+
+The rule "Unchanged when every target holds the value" has a single target for page and DPI commands. Its comparison operators are mutated by cargo-mutants and caught, so it needed no hand mutant. The DPI revert check is covered by `a_dpi_revert_...` and by cargo-mutants on `check_pages`.
+
+### Size and commits
+
+- `git diff --shortstat main..HEAD -- crates`: 733 insertions, 30 deletions, of which about 480 are tests. That is just over the ~700 line. The owner split D10 in two and has approved larger single PRs before (see D9), so it is not a finding.
+- Commits: `feat(edit): ...` (code and tests) and `docs(edit-history): ...` (only `apply-progress.md`). Both are conventional, with the correct types. Neither has a Co-Authored-By line, a Claude line or any other AI attribution line.
+- Each commit passes the gates alone (table above).
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **The spec does not say how a DPI change reaches consumers of `DirtySet`.** `touches` is empty for a DPI change. That is correct under law 4 and the `DirtySet` text, and the owner confirmed it. But a DPI change rescales every non-`px` page, so a renderer driven only by `touches` would miss it. Fix in `specifier`, before any `DirtySet` consumer is specified (and at the latest at archive). Either add a document-level flag to `DirtySet` (for example `document: bool`), or state in `edit-commands` that consumers must compare `Document::dpi`. Also record that the `touches` of a DPI change is empty. No D10a code change is needed now. class: ambiguity
+
+### SUGGESTION
+
+1. Archive: record in `edit-commands` "Page and document commands" what `apply-progress.md` lists as pending spec edits. That means the revert preconditions (the old size or DPI is checked against the current state, `MissingPage`) and the error precedence (a DPI outside the range is `InvalidValue("dpi")` before any page check; M1 pins it).
+2. Process: give `verify` the `mutants` report path. This round had to establish that the combined D10a+D10b run transfers to D10a.
+3. `apply_dpi`'s `let ... else` is unreachable (the `Document` scope implies `Property::Dpi`). It is harmless defensive code; keep it or turn it into an `unreachable!`, whichever reads better.
+
+### Result
+
+**PASS for D10a.** 0 CRITICAL, 1 WARNING (ambiguity 1), 3 SUGGESTION. The gates are green on each commit, the mutation evidence is valid with no missed critical mutant, all 5 hand mutants are killed, and all 11 D10a criteria are covered. The change is not ready to archive: D10b remains.
+
+next: tdd-apply (D10b, already implemented on `feat/edit-history-10b`: route it to mutants + verify). The coordinator may push `feat/edit-history-10` and open its PR against `main`. W1 goes to `specifier` as a spec edit, not as a blocker.
