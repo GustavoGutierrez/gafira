@@ -783,7 +783,8 @@ mod tests {
                 .insert(NodeId::new(8), node(8, NodeKind::Group(GroupNode {})));
             first(d).roots.push(NodeId::new(8));
         };
-        let rows: [(EditRef, String); 3] = [
+        let too_deep = || extension("x", nested(65, false));
+        let rows: [(EditRef, String); 7] = [
             (
                 &|d| {
                     with_eight(d);
@@ -807,6 +808,41 @@ mod tests {
                     });
                 },
                 non_finite(2, "X"),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = extension("", json!(null));
+                        n.base.opacity = 2.0;
+                    });
+                },
+                range(2, "Opacity", 2.0),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = extension("", nested(65, false));
+                    });
+                },
+                "Err(EmptyExtensionTypeId { node: NodeId(2) })".to_string(),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = too_deep();
+                        n.children = vec![NodeId::new(3)];
+                    });
+                },
+                "Err(ExtensionTooDeep { node: NodeId(2), depth: 65 })".to_string(),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect));
+                        n.children = vec![NodeId::new(99)];
+                    });
+                },
+                "Err(ChildrenOnLeaf { node: NodeId(2) })".to_string(),
             ),
         ];
         for (i, (edit, want)) in rows.iter().enumerate() {
