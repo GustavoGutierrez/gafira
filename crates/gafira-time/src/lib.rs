@@ -4,3 +4,9 @@
 //! reads no clock, performs no I/O and depends on no other `gafira-*` crate.
 
 #![forbid(unsafe_code)]
+
+mod error;
+mod flicks;
+
+pub use error::TimeError;
+pub use flicks::{FLICKS_PER_MILLISECOND, FLICKS_PER_SECOND, Flicks};
