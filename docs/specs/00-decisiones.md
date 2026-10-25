@@ -162,7 +162,7 @@ Fecha: 24 de octubre de 2026.
 2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
 3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
 4. Marca (D-04): el coordinador hace una búsqueda preliminar (en curso); un abogado debe confirmarla antes del lanzamiento.
-5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3): se está comprobando ahora.
+5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: pasan 72 de 76; `zip`, `ureq`, `directories` y `ort` se corrigen con features o cambiando de crate, ver 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09). La ilustración se generó con IA; faltan el nombre de la herramienta (lo da el titular) y comprobar que sus condiciones permiten el uso comercial (VERIFICAR). D-10 cubre solo el audio de `assets/musics/`.
 7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
 8. D-10: ~~revisar las 9 pistas con voz detectada y volver a comprobar `underscore-05`, `-06` y `-10`~~ (**hecho**: las 9 regeneradas y comprobadas, 40/40 sin voz); queda al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.
