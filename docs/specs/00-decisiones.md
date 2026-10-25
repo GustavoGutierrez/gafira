@@ -38,6 +38,15 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
 
 - El glosario de la spec 03 (sección 2) queda **aprobado** sin cambios.
 - **Tarea del titular (sin abogado)**: buscar «Gafira» (y «Gefira», por parecido) en USPTO, TMview (UE) y WIPO Global Brand Database, y registrar el resultado antes de publicar. Una búsqueda web general encontró una empresa suiza de TI llamada «Gefira», con otra ortografía.
+- **Búsqueda preliminar (24 de octubre de 2026)** (no es asesoría legal): fuentes consultadas: USPTO, TMview (incluidos SIC, IMPI, INPI AR, OEPM, Chile, Brasil y Portugal), WIPO Global Brand Database y comprobaciones web, de tiendas de apps, de GitHub y de dominios.
+  - **Resultado**: no hay una marca vigente idéntica o casi idéntica a «Gafira» o «Gefira» en las clases 9, 41 y 42. Riesgo **bajo-medio**, por lo siguiente:
+    - GAFIRA idéntica registrada en el Benelux (BOIP 1539112, clases 8 y 11, herramientas para el cabello, 2025-12-16).
+    - AFIRA en EE. UU. (serie 99570447, pendiente, clases 9 y 42, software de cumplimiento comercial) y afira en Brasil (INPI 942171330, pendiente, clase 9): una letra de diferencia.
+    - GAIRA en Colombia (SIC, clases 9, 41 y 42, registrada).
+    - «Gefira» sin registro: empresas de TI en Suiza y EE. UU.
+    - gafira.com se registró el 2026-10-24 mediante Cloudflare (titular desconocido); gafira.app, .io, .co y .dev parecían libres.
+    - Connotación: en árabe, غافرة significa «la que perdona» (connotación religiosa).
+  - **Siguiente paso**: elegir el primer país de registro y encargar a un abogado una búsqueda de disponibilidad que incluya AFIRA, afira y GAIRA.
 
 ## D-05 Linux (Q-04, Q-05)
 
@@ -162,7 +171,7 @@ Fecha: 24 de octubre de 2026.
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y fijar el precio final (tentativo 99 USD, PROPUESTA).
 2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
 3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
-4. Marca (D-04): el coordinador hace una búsqueda preliminar (en curso); un abogado debe confirmarla antes del lanzamiento.
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y la decisión del titular sobre el dominio (gafira.com ya está registrado por un tercero desconocido).
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: pasan 72 de 76; `zip`, `ureq`, `directories` y `ort` se corrigen con features o cambiando de crate, ver 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. ~~Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09)~~ (**resuelto** el 24 de octubre de 2026: generada con ChatGPT Plus; los Términos de uso de OpenAI ceden al titular los derechos sobre el *Output* y permiten el uso comercial sin atribución ni regalías; se muestra como «generada con IA (OpenAI)» en Acerca de / créditos; sin garantía de unicidad ni de no infracción y probablemente sin derechos de autor exclusivos; ver D-09). D-10 cubre solo el audio de `assets/musics/`. Quedan como VERIFICAR para el titular: (a) búsqueda inversa de imagen (Google Lens, TinEye) y revisión visual de logos, textos o firmas; (b) conservar fuera del repositorio la descarga original con C2PA como prueba de procedencia; (c) anotar la fecha exacta de generación, hoy desconocida; (d) crear la entrada en `assets/LICENSES.toml` al introducir ese archivo (ARQ-75).
 7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
