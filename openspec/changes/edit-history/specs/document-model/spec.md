@@ -6,7 +6,7 @@ Adds the minimal `msg` module to `gafira-doc` so that `Command::label` returns t
 
 ## ADDED Requirements
 
-### Requirement: Message key for command labels (ARQ-107) (D1, pending Q11)
+### Requirement: Message key for command labels (ARQ-107) (D1, Q11)
 
 `gafira-doc` MUST expose a public module `msg` with `#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)] pub struct MessageKey(pub &'static str)` and `pub type CommandLabel = MessageKey`, exactly as 02 §14.2 writes them. The module MUST NOT contain text in any language, a `Locale`, or literals other than keys (ARQ-107). Keys follow the 02 §14.2 convention (ASCII `snake_case` segments joined by dots); this change does not validate keys at runtime (the catalog check is `xtask check-i18n`, later). `MessageKey` MUST NOT be serialized into the document.
 

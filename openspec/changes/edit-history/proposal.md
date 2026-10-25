@@ -4,7 +4,7 @@
 
 `gafira-doc` (C2b) gives a validated document and one way to mutate it (`EditToken` -> `DocMut`), but nothing that turns an edit into an undoable step. This change adds `gafira-edit` (layer 1 domain, 02 §2.1): the `Command` trait (02 §4.3), the core commands that today's model can support, `Transaction` (Composite) and `History` (Command + Memento, ADR-03) with a memory budget and gesture merging. It also turns ARQ-30 from a textual CI check into a compile test (`trybuild`), and runs `debug_assert!(doc.validate().is_ok())` after every command (ARQ-13).
 
-Product IDs: ARQ-13 (after each command), ARQ-30 (compile test part), ARQ-32 (structural part), ARQ-33, ARQ-81, ADR-03, and ARQ-01/ARQ-02 for the new crate (V5, `clippy.toml`). Open decisions are in `design.md` (Q1 to Q15); the specs follow its recommendations and name the question where one applies.
+Product IDs: ARQ-13 (after each command), ARQ-30 (compile test part), ARQ-32 (structural part), ARQ-33, ARQ-81, ADR-03, and ARQ-01/ARQ-02 for the new crate (V5, `clippy.toml`). The decisions are closed in `design.md` (Q1 to Q15, see "Decisions" below); the specs implement them and name the question where one applies.
 
 ## Change Chain
 
@@ -29,7 +29,7 @@ Product IDs: ARQ-13 (after each command), ARQ-30 (compile test part), ARQ-32 (st
   - `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent` (inside one page).
   - (Q4) `InsertPage`, `RemovePage`.
 - `Transaction` (Composite): many commands, one history entry, all or nothing.
-- `History`: owns the session `Arc<Document>` (Q2); `execute`, `undo`, `redo`, `preview`; snapshot per entry (Memento); redo cleared by a new change; gesture merge with explicit gestures and a 500 ms window on caller-supplied time (Q3); memory budget, default 512 MiB (Q7), with compaction to commands only and `revert` for compacted entries.
+- `History`: owns the session `Arc<Document>` (Q2); `execute`, `undo`, `redo`, `preview`; snapshot per entry (Memento); redo cleared by a new change; gesture merge with explicit gestures and a 500 ms window on caller-supplied time (Q3); memory budget, default 512 MiB = 536 870 912 bytes (Q7), with compaction to commands only and `revert` for compacted entries.
 - `debug_assert!(doc.validate().is_ok())` after every applied command and every undo or redo (ARQ-13); commands check their own inputs in all builds (Q15).
 - `gafira-testkit` (support crate, dev-dependency only): the document generator moved from `crates/gafira-doc/tests/common` with `git mv`, and the `prop_command` harness with the 02 §10 laws (Q10).
 - A property test for every core command (ARQ-81) and CI step V14 that checks it (Q9).
@@ -64,10 +64,10 @@ Strict TDD, one reviewable work unit per commit, every commit passes `cargo fmt 
 - **New third-party dependency**: `trybuild` (dev-only, `gafira-edit`). Its tree must pass `deny.toml` unchanged (R1, R2). `proptest` is already in the workspace.
 - **Token**: `gafira-edit` keeps one private `static TOKEN: EditToken` and never exposes it (V13).
 - **Atomic execute**: `History` applies a command to its own copy of the current document (`Arc::make_mut` copies only the touched path). On `Err` the copy is dropped and the session document is untouched.
-- **Amendments to `docs/specs/02` (PROPOSAL, applied by the holder in their own commit, not here)**:
+- **Amendments to `docs/specs/02` (applied to `docs/specs/02` in one commit each, after the questions were closed)**:
   1. §4.3: `apply`/`revert` take `&mut DocMut<'_>` instead of `&mut Document`; `Command` gains the `Any` supertrait so `merge` can downcast `next` (R11).
   2. §4.3: core command list for C3 = `SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, plus `InsertPage` and `RemovePage` (Q4); the rest wait for their data.
-  3. ARQ-30: "pasa por `History::execute` de `gafira-edit` (envuelto después por `EditService::execute`)"; enforcement is the `EditToken` capability plus V13 and `trybuild` (Q13). Restates C2b amendment 3, still pending.
+  3. ARQ-30: "pasa por `History::execute` de `gafira-edit` (envuelto después por `EditService::execute`)"; enforcement is the `EditToken` capability plus V13 and `trybuild` (Q13). Restates C2b amendment 3, not yet applied to 02.
   4. ARQ-32: the timed criterion is measured with the ARQ-40 benchmarks; C3 gives the structural proof (Q8).
   5. ARQ-81: V14 enforces it until `xtask` exists (Q9).
   6. §9.2: add `trybuild` (dev, MIT/Apache, VERIFICAR with `cargo deny`).
@@ -124,7 +124,7 @@ Each claim needs a real experiment in a scratch project under `/tmp` before the 
 | `trybuild` tree fails `deny.toml` | Low | R2 first; any exception is justified in writing (workspace-tooling) |
 | Merge downcast impossible as specified in 02 | Low | R11 (confirmed in part: probe by reference before the by-value downcast); `Any` supertrait is amendment 1 |
 | Budget estimate far from real memory | Med | R9; the budget is configurable; FIJADA figure kept as the default |
-| Owner picks other options for Q4, Q5, Q7, Q12 | Med | Q4 work is isolated in D10; the others change single requirements |
+| An owner decision (Q4, Q5, Q7, Q12) is reopened | Low | Closed on 2026-10-24; Q4 work is isolated in D10; the others change single requirements |
 | V13 trips on fixtures | Med | R4; fixtures never use `pub use`/`pub type` of the token or public globs |
 
 ## Rollback Plan
@@ -142,6 +142,15 @@ Revert per delivery, newest first. In full: delete `crates/gafira-edit/` and `cr
 - [ ] With a small budget, the oldest snapshots are compacted and undo through `revert` reaches the same states (ADR-03).
 - [ ] `trybuild` fixtures: no-token mutations fail to compile with the recorded errors; an outside `Command` passes (ARQ-30).
 
-## Proposal question round
+## Decisions
 
-The executor cannot ask interactively. The holder answers Q1 to Q15 in `design.md` (owner-level: Q4, Q5, Q7 unit, Q12). Until then the specs follow the recommendations.
+All 15 questions of `design.md` are closed (2026-10-24).
+
+| Owner (2026-10-24) | Decision |
+|---|---|
+| Q4 | Add `InsertPage`, `RemovePage` and the page and DPI targets of `SetProperty` (delivery D10) |
+| Q5 | Defer `Selection` to the change that adds hit testing or `EditService` |
+| Q7 | Estimate by `Arc` identity; budget unit 512 MiB = 536 870 912 bytes |
+| Q12 | Commands ignore `locked`; tools decide |
+
+The coordinator closed the technical questions with the recommendation in `design.md`, adjusted by the spike: Q1 `&mut DocMut<'_>`, with `merge` probing by reference before upcasting (R11); Q2 `History` owns `Arc<Document>`; Q3 caller-supplied monotonic `Duration`; Q6 ids may be reissued after undo; Q8 structural proof now, timed benchmark with ARQ-40; Q9 CI step V14, and V5 does not enforce dev-only (R13); Q10 `gafira-testkit`, `#[cfg(test)]` on `mod guards` (R8); Q11 minimal `gafira-doc::msg`; Q13 `trybuild` fixtures act as an outside crate, cross-OS `.stderr` equality unverified until D5 (R3); Q14 no-ops not recorded; Q15 `debug_assert!` plus command-level input checks.

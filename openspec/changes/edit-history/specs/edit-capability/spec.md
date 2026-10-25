@@ -6,7 +6,7 @@ C3 adds `gafira-edit`, the only crate that holds an `EditToken`, and the `trybui
 
 ## ADDED Requirements
 
-### Requirement: trybuild evidence for ARQ-30 (ARQ-30, ARQ-20) (D5, pending Q13)
+### Requirement: trybuild evidence for ARQ-30 (ARQ-30, ARQ-20) (D5, Q13)
 
 `gafira-edit` MUST have a test that runs `trybuild` on fixtures under `crates/gafira-edit/tests/ui/`, each a `.rs` file with a committed `.stderr` for compile-fail cases. The fixtures act as an outside crate that depends on `gafira-doc` and `gafira-edit` (02 ARQ-30 names `gafira-ui`, which does not exist yet). Compile-fail fixtures MUST cover at least:
 1. getting `&mut Document` from `History` (no such method, and `document()` is `&Arc<Document>`);

@@ -4,7 +4,7 @@
 
 The `Command` contract of `gafira-edit` (02 §4.3), its supporting types, `Transaction` (Composite) and the core commands that today's document model supports (`Document`, `Page`, `Group`, `Shape`, `Extension`). History, undo, merging and the budget live in `edit-history`; the edit capability (`EditToken`, `DocMut`, ARQ-30 evidence) lives in `edit-capability`. Commands for frames, masks, templates, clips, keyframes and swatches are out of scope until their data exists.
 
-Open decisions are in `design.md`; a requirement that depends on one names it ("pending Qn"). Scenario types: unit, property, integration, command, manual.
+Decisions are closed in `design.md`; a requirement that depends on one names it ("Qn"). Scenario types: unit, property, integration, command, manual.
 
 ## ADDED Requirements
 
@@ -26,12 +26,12 @@ Open decisions are in `design.md`; a requirement that depends on one names it ("
 
 `gafira-edit` MUST define `pub trait Command: Any + Send + Sync + Debug` with:
 - `label(&self) -> CommandLabel` (`gafira_doc::msg::CommandLabel`, a `MessageKey`);
-- `apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError>` and `revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError>` (pending Q1; 02 §4.3 writes `&mut Document`, amendment 1);
+- `apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError>` and `revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError>` (Q1; 02 §4.3 writes `&mut Document`, amendment 1);
 - `merge_key(&self) -> Option<MergeKey>`, default `None`;
 - `merge(&mut self, next: Box<dyn Command>) -> Result<(), Box<dyn Command>>`, default `Err(next)` unchanged;
 - `touches(&self) -> DirtySet`.
 
-`Applied` MUST have exactly the variants `Changed` and `Unchanged` (pending Q14). `DirtySet` MUST hold a `BTreeSet<PageId>` and a `BTreeSet<NodeId>`, MUST support union, and MUST report a page when its own fields or its `roots` change and a node when the node record or its `children` change. `MergeKey` MUST be `Clone + Eq + Debug` and carry a command kind, the targets and an optional `GestureId`. `CommandError` MUST be `#[non_exhaustive]`, `Clone`, `PartialEq`, `Display` and `Error`, and MUST distinguish at least: missing page, missing node, not a container, index out of range, would create a cycle, invalid value, invalid document after the change (carrying the `ValidationError`), id space exhausted, and revert without a prior apply.
+`Applied` MUST have exactly the variants `Changed` and `Unchanged` (Q14). `DirtySet` MUST hold a `BTreeSet<PageId>` and a `BTreeSet<NodeId>`, MUST support union, and MUST report a page when its own fields or its `roots` change and a node when the node record or its `children` change. `MergeKey` MUST be `Clone + Eq + Debug` and carry a command kind, the targets and an optional `GestureId`. `CommandError` MUST be `#[non_exhaustive]`, `Clone`, `PartialEq`, `Display` and `Error`, and MUST distinguish at least: missing page, missing node, not a container, index out of range, would create a cycle, invalid value, invalid document after the change (carrying the `ValidationError`), id space exhausted, and revert without a prior apply.
 
 #### Scenario: Object safety and bounds (D1, unit)
 - GIVEN a test-only command type
@@ -55,7 +55,7 @@ Open decisions are in `design.md`; a requirement that depends on one names it ("
 
 ### Requirement: Failed commands change nothing (ARQ-13) (D1, D3, D8, D9, D10)
 
-Every core command MUST check its inputs before it mutates: the target page and nodes exist, a parent is a `Group`, indices are in range, values are finite and inside the ranges `validate()` enforces, no cycle is created, and a page size stays inside its pixel limits at the document DPI. On failure, `apply` MUST return `Err(CommandError)` and leave the document equal to its prior state; the command MUST stay reusable (a later `apply` on a valid document behaves as if the failed call never happened). These checks MUST run in release builds too (pending Q15). Commands MUST NOT check `locked` flags (pending Q12).
+Every core command MUST check its inputs before it mutates: the target page and nodes exist, a parent is a `Group`, indices are in range, values are finite and inside the ranges `validate()` enforces, no cycle is created, and a page size stays inside its pixel limits at the document DPI. On failure, `apply` MUST return `Err(CommandError)` and leave the document equal to its prior state; the command MUST stay reusable (a later `apply` on a valid document behaves as if the failed call never happened). These checks MUST run in release builds too (Q15). Commands MUST NOT check `locked` flags (Q12).
 
 #### Scenario: Insert under a shape fails cleanly (D8, unit)
 - GIVEN a page with a `Shape` root and a clone of the document
@@ -67,7 +67,7 @@ Every core command MUST check its inputs before it mutates: the target page and 
 - WHEN `SetProperty` sets its opacity to NaN, and separately to 1.5
 - THEN both return `Err(InvalidValue)` and the node is unchanged
 
-#### Scenario: Locked node is still editable (D3, unit, pending Q12)
+#### Scenario: Locked node is still editable (D3, unit, Q12)
 - GIVEN a node with `locked = true`
 - WHEN `SetProperty` changes its name
 - THEN it returns `Ok(Applied::Changed)`
@@ -148,7 +148,7 @@ Every core command MUST check its inputs before it mutates: the target page and 
 - WHEN `Reparent` moves `g` under `h`
 - THEN it returns `Err(WouldCreateCycle)` and nothing changes
 
-### Requirement: Page and document commands (ARQ-81) (D10, pending Q4)
+### Requirement: Page and document commands (ARQ-81) (D10, Q4)
 
 `SetProperty` MUST also target page fields (`name`, `size`, `locked`, `hidden`) and the document DPI. A size or DPI change that would leave any page outside its pixel limits MUST fail with `InvalidDocument(ValidationError::PageSize { .. })` and no change (C2b constraint 5). `InsertPage` MUST insert one empty page at an index of the page list, allocating its id on first apply and reusing it on redo. `RemovePage` MUST remove one page with its whole arena and restore it at the same index on `revert`. Removing the last page MUST be allowed (an empty document is valid).
 
