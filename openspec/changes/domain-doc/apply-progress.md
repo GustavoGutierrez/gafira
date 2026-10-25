@@ -144,7 +144,7 @@ Status: partial, stopped at a clean commit boundary on the size rule. Four code 
 - Deterministic round trip: "Bit identity" `placement::tests::numbers_keep_their_bits`, `element::tests::subnormal_opacity_keeps_its_bits`, `json::tests::numbers_keep_their_bits_through_a_document`; "Same bytes from a different build order" and idempotence `json::tests::round_trip_is_idempotent_and_independent_of_build_order`. The "arena order mutation" scenario cannot be mutated: the arena is a `BTreeMap`, so insertion order never exists; the ascending test pins the output instead.
 - Defaults and forward compatibility: "Defaults applied" `json::tests::defaults_are_applied_and_rewritten_explicitly`, `element::tests::omitted_fields_take_their_defaults`, `placement::tests::optional_fields_default_and_integers_are_accepted`, `page::tests::page_defaults_required_fields_and_unknown_fields`; "Unknown fields ignored" (base, kind and page levels only; document and placement levels are D3b); "Nodes out of order accepted" `page::tests::unordered_nodes_load_and_duplicates_fail`; "Missing required field" for placement, base, page, kind fields and extension fields (not document `schema_version`/`next_id`/`pages`, node `kind`, color `space`) and "Unknown vocabulary" for type, geometry, blend, space (not `unit`); partial, see Remaining.
 - Animatable compatibility: "Keyed object rejected" and bare `0.5` `placement::tests::required_fields_and_keyed_objects`.
-- Extension survival (unit part): "Extension fields kept" `json::tests::extension_fields_survive_and_stay_separate_from_the_document_version`. The earlier claim for "f64 field in an internally tagged node" on `node::tests::extension_payload_null_and_f64_extremes_survive` was wrong (it exercises `base.placement`, outside the tagged `kind`); the follow-up `node::tests::floats_inside_the_tagged_kind_survive` and `node::tests::f64_payload_inside_the_tagged_kind_survive` now cover it by bits (fail with `arbitrary_precision` on; the scenario still needs the D3b golden/feature-guard parts).
+- Extension survival (unit part): "Extension fields kept" `json::tests::extension_fields_survive_and_stay_separate_from_the_document_version`. The earlier claim for "f64 field in an internally tagged node" on `node::tests::extension_payload_null_and_f64_extremes_survive` was wrong (it exercises `base.placement`, outside the tagged `kind`); the follow-up `node::tests::floats_inside_the_tagged_kind_survive` (shape fill channels, by bits) fails with `arbitrary_precision` on, while `node::tests::f64_payload_inside_the_tagged_kind_survives` still passes with it on (a `serde_json::Value` keeps the number text, so the bits survive anyway); the extension-payload half of the scenario is guarded by the D3b `cargo tree` feature check and the goldens.
 - Non-finite: `json::tests::non_finite_numbers_serialize_as_null_and_do_not_load` (NaN opacity, +inf x, -inf rotation, NaN channel, NaN page width), each asserting its own null field.
 - Hostile (part): empty, every prefix, trailing `x`, invalid UTF-8, BOM, lone surrogate -> `LoadError::Json` with source: `json::tests::unreadable_bytes_are_json_errors_with_a_source`; "Duplicate node id inside one page" in `page::tests::unordered_nodes_load_and_duplicates_fail`; duplicate `geometry` key in a shape kind errors (confirmed, `node::tests::kind_defaults_required_fields_and_vocabulary`).
 - Carry-forward: `document::tests::equality_compares_dpi_and_page_contents_not_pointers`.
@@ -162,8 +162,8 @@ Status: partial, stopped at a clean commit boundary on the size rule. Four code 
 
 ### Size and remaining work
 
-`git diff --shortstat feat/domain-doc-2b..HEAD -- . ':!openspec'` after commit 4: 8 files changed, 611 insertions(+), 15 deletions(-) (forecast whole D3 ~690). The remaining commit would add ~250-290 lines (forecast `tests/serde.rs` 209, `tests/golden.rs` 76, goldens 5) and pass ~700, so work stopped here. Remaining, for a follow-up delivery (D3b):
-- `test(doc): add canonical goldens and hostile inputs`: `tests/golden/{minimal,full,extension,extension_noncanonical}.json` (compact, no trailing newline), `tests/golden/.gitattributes` (`*.json -text`), `tests/golden.rs` (round-trip goldens via `include_str!`, `full` equals the in-crate built document, golden shape check, noncanonical normalizes), `tests/serde.rs` (payload number spelling, integer beyond u64, duplicate payload keys, `1e400`, wrong types, bad numbers, duplicate struct fields, missing-field table, 127/128 nesting, 121/122 payload depth, feature guards via `cargo tree` as a command check, `git check-attr` check).
+`git diff --shortstat feat/domain-doc-2b..HEAD -- . ':!openspec'` after commit 4: 8 files changed, 696 insertions(+), 15 deletions(-) (forecast whole D3 ~690). The remaining commit would add ~250-290 lines (forecast `tests/serde.rs` 209, `tests/golden.rs` 76, goldens 5) and pass ~700, so work stopped here. Remaining, for a follow-up delivery (D3b):
+- `test(doc): add canonical goldens and hostile inputs`: `tests/golden/{minimal,full,extension,extension_noncanonical}.json` (compact, no trailing newline), `tests/golden/.gitattributes` (`*.json -text`), `tests/golden.rs` (round-trip goldens via `include_str!`, `full` equals the in-crate built document, golden shape check, noncanonical normalizes), `tests/serde.rs` (payload number spelling, integer beyond u64, duplicate payload keys, `1e400`, wrong types, bad numbers, duplicate struct fields, missing-field table, feature guards via `cargo tree` as a command check, `git check-attr` check).
 - Normalization-on-save and non-canonical payload scenarios are only covered for payload key order in unit tests so far.
 
 ### D3 scenarios left for D3b
@@ -186,3 +186,71 @@ Status: partial, stopped at a clean commit boundary on the size rule. Four code 
 | `arbitrary_precision` enabled temporarily (not committed) | `node::tests::floats_inside_the_tagged_kind_survive` | fails with the feature on |
 
 - W2: the non-finite test asserts the exact null field per case. W3/W4: `document-serde/spec.md` and the T3.1 row of `design.md` now use "reverse output order"; the defaults rule covers only fields with a documented default. S1 (private `Document` fields) skipped: it grows the diff and belongs with D4's constructor.
+
+## D3b (tdd-apply)
+
+Status: done. Base branch `feat/domain-doc-3a`; work on `feat/domain-doc-3b` (range `feat/domain-doc-3a..feat/domain-doc-3b`). Production code is unchanged; D3b adds tests, goldens and docs only.
+
+### Commits
+
+1. `test(doc): add canonical goldens and round-trip tests`: the four goldens, `tests/golden/.gitattributes`, `tests/golden.rs`, and the in-crate `json::tests::full_golden_equals_the_built_document`.
+2. `test(doc): cover required fields, vocabulary and unknown fields on load`: `tests/serde.rs`.
+3. `test(doc): pin extension payload spelling and survival`.
+4. `test(doc): reject hostile and corrupt input on load`.
+5. `test(doc): compare fill channels by bits through a document`: `json::tests::numbers_keep_their_bits_through_a_document` now compares the fill channels by `to_bits()` and checks the sign of `-0.0`.
+6. `docs(sdd): fix domain-doc D3a re-verify warnings`: `apply-progress.md` (tagged-kind claim and test name, size 611 -> 696, recursion rows removed from the D3b list) and `design.md` ("reverse output order").
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Round-trip goldens; `full` equals the built document | `golden::canonical_goldens_round_trip_byte_for_byte`; `json::tests::full_golden_equals_the_built_document` |
+| Canonical golden survives; non-canonical golden normalizes | `golden::canonical_goldens_round_trip_byte_for_byte`, `golden::noncanonical_golden_normalizes_to_the_canonical_one` |
+| Golden shape (command) | `golden::goldens_have_no_newline_carriage_return_or_bom` (bytes) |
+| Text conversion is off (command) | `git check-attr text -- crates/gafira-doc/tests/golden/*.json` prints `text: unset` for the four goldens |
+| Feature guards (command) | `cargo tree -p gafira-doc -e features -i serde_json --locked`: only `default`, `float_roundtrip`, `std`; no `preserve_order`, no `arbitrary_precision`. `cargo tree -p gafira-doc -e features -i serde --locked` shows `serde feature "rc"` |
+| Missing required field | `serde::missing_required_fields_are_errors` (22 rows) |
+| Unknown vocabulary (incl. `"unit":"parsec"`, hostile unknown `space` through `from_json`) | `serde::unknown_vocabulary_is_an_error` |
+| Unknown fields ignored and dropped | `serde::unknown_fields_are_ignored_and_dropped` (ten levels, output equals the `full` golden) |
+| Normalization on save | `serde::saving_normalizes_numbers_node_order_and_payload` |
+| Key order and number spelling; integer beyond u64; duplicate payload keys | `serde::payload_numbers_and_keys_get_one_canonical_spelling` (`18446744073709551616` is written `1.8446744073709552e+19`, measured) |
+| Unrepresentable payload number | `serde::unrepresentable_payload_number_is_a_json_error` |
+| Wrong types; bad numbers; duplicate struct field | `serde::wrong_types_are_json_errors`, `serde::bad_numbers_are_json_errors`, `serde::duplicate_struct_fields_are_json_errors` |
+| Every prefix of a small golden | `serde::every_prefix_of_the_minimal_golden_is_a_json_error` |
+| Finite out-of-range survives serde | `serde::finite_out_of_range_values_survive_serde_by_bits` (the `from_json` half is D4) |
+| Fill channel `-0.0` by sign (suggestion) | `json::tests::numbers_keep_their_bits_through_a_document` |
+
+### RED / mutation evidence
+
+Most tests pass on existing code, so each was proven non-vacuous by mutation (applied, RED, restored).
+
+| Mutant | Killing test | Result |
+|---|---|---|
+| M25 `#[serde(default)]` on `pages` | `serde::missing_required_fields_are_errors` | FAILED |
+| M26 default on `next_id` | same | FAILED |
+| M27 default on `schema_version` | same | FAILED |
+| M28 node `kind` defaultable | same | FAILED |
+| M29 `deny_unknown_fields` on `DocumentWire` | `serde::unknown_fields_are_ignored_and_dropped` | FAILED |
+| M30 `deny_unknown_fields` on `Placement` | same | FAILED |
+| `NodeKind` rename `PascalCase` | `golden::canonical_goldens_round_trip_byte_for_byte`, `golden::noncanonical_golden_normalizes_to_the_canonical_one` | FAILED (a `kebab-case` rename is equivalent: single-word tags) |
+| golden gets a trailing newline | `golden::goldens_have_no_newline_carriage_return_or_bom`, round trip | FAILED |
+| workspace `serde_json` + `preserve_order` | `golden::noncanonical_...`, `serde::payload_numbers_...`, `serde::saving_normalizes_...` | FAILED |
+| workspace `serde_json` + `arbitrary_precision` | both golden round trips and four `serde` tests | FAILED |
+| `from_json` returns a default document on error | prefix, wrong types, bad numbers, duplicates, vocabulary, missing, `1e400` | 7 FAILED |
+| `next_id` read as `f64` | `serde::bad_numbers_are_json_errors` | FAILED |
+| duplicate keys resolved last-wins (through `Value`) | `serde::duplicate_struct_fields_are_json_errors` | FAILED |
+| opacity clamped on read | `serde::finite_out_of_range_values_survive_serde_by_bits` | FAILED |
+| `to_json` writes fill `b` `-0.0` as `0.0` | `json::tests::numbers_keep_their_bits_through_a_document` | FAILED (IEEE `==` alone passed) |
+
+Process note: one intermediate commit state left an unused `const` (clippy dead code); it was fixed with `git commit --amend` before the next commit, so the final history passes per commit.
+
+### Deviations
+
+- The `Text conversion is off` and `Feature guards` command scenarios are run by hand and recorded above; no test shells out (`std::process::Command` is disallowed by the crate `clippy.toml`). A CI step for them is not part of D3b.
+- "Golden shape" is a byte test over `include_str!` instead of a shell check.
+- Recursion limits 127/128 and payload depth 121/122 stay with D4 (T4.2), as listed in the D3a section.
+- Re-cut forecasts (D3a WARNING 6): D3a measured 696 against 399 (ratio 1.74, over the x1.3 trigger). At that ratio D4 (640) is about 1115, D5 (465) about 810 and D6 (645) about 1120; all three need a re-cut before they start. D3b itself measured 379 code-only lines (384 with goldens) against the ~290 forecast (ratio 1.31).
+
+### Gates
+
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run and passed on each of the six commits (each commit was checked out alone for the final confirmation).

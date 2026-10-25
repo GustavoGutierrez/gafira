@@ -162,6 +162,15 @@ mod tests {
             a.placement.rotation_deg.to_bits(),
             b.placement.rotation_deg.to_bits()
         );
+        let fill = |d: &Document| match &d.pages()[0].nodes[&NodeId::new(3)].kind {
+            NodeKind::Shape(ShapeNode {
+                fill: Some(Color::Srgb(c)),
+                ..
+            }) => [c.r, c.g, c.b, c.a].map(f32::to_bits),
+            _ => panic!("not an sRGB shape"),
+        };
+        assert_eq!(fill(&back), fill(&d));
+        assert!(f32::from_bits(fill(&back)[2]).is_sign_negative());
         assert_eq!(back, d);
     }
 
@@ -248,6 +257,51 @@ mod tests {
         );
         assert!(out.contains(r#""name":null"#) && out.contains(r#""children":[]"#));
         assert_eq!(Document::from_json(out.as_bytes()).unwrap(), d);
+    }
+
+    #[test]
+    fn full_golden_equals_the_built_document() {
+        let mut group = Node::new(
+            ElementBase::new(NodeId::new(2), Placement::new(1.0, 2.0, 30.0, 40.0)),
+            NodeKind::Group(GroupNode {}),
+        );
+        group.children.push(NodeId::new(5));
+        group.base.name = Some("Group".to_string());
+        let mut ellipse = ShapeNode::new(ShapeGeometry::Ellipse);
+        ellipse.fill = Some(Color::Srgb(Rgba::new(1.0, 0.5, 0.25, 1.0)));
+        let mut shaded = Node::new(
+            ElementBase::new(NodeId::new(3), Placement::new(-0.0, 0.0, 5.5, 6.5)),
+            NodeKind::Shape(ellipse),
+        );
+        shaded.base.opacity = 0.5;
+        shaded.base.visible = false;
+        shaded.base.placement.rotation_deg = 45.0;
+        let ext = ExtensionNode {
+            type_id: "com.example.sticker".to_string(),
+            schema_version: 2,
+            payload: serde_json::json!({"b": [1, 2.5, null], "a": "é"}),
+        };
+        let mut page = Page::new(PageId::new(1), "Cover".to_string(), px(100.0, 200.0));
+        let nodes = [
+            Arc::new(group),
+            Arc::new(shaded),
+            node(4, NodeKind::Extension(ext)),
+            node(5, NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect))),
+        ];
+        page.roots = vec![NodeId::new(2), NodeId::new(3), NodeId::new(4)];
+        for n in nodes {
+            page.nodes.insert(n.base.id, n);
+        }
+        let a4 = PageSize {
+            width: Length::new(21.0, Unit::Cm),
+            height: Length::new(29.7, Unit::Cm),
+        };
+        let mut second = Page::new(PageId::new(10), String::new(), a4);
+        second.hidden = true;
+        let d = test_document(20, Dpi::new(300), vec![Arc::new(page), Arc::new(second)]);
+        let golden = include_str!("../tests/golden/full.json");
+        assert_eq!(d.to_json().unwrap(), golden);
+        assert_eq!(Document::from_json(golden.as_bytes()).unwrap(), d);
     }
 
     #[test]

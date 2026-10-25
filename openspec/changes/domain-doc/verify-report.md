@@ -740,3 +740,152 @@ None.
 
 - Verdict: **PASS** for D3a (0 CRITICAL, 3 WARNING, 2 SUGGESTION). All gates, including `cargo deny check`, ARQ-07, V5, V11 and V12, pass on each of the three fix commits. Both CRITICAL items are fixed, and M12, M13, M22 and M23 are killed. M15 is confirmed equivalent. M25-M30 are assigned to named D3b rows. Production code is unchanged. Size is 696.
 - Next: the owner decides on pushing and the PR for `feat/domain-doc-3a`. Then **tdd-apply D3b**, using the list at `apply-progress.md:169-177` plus WARNING 1-3. Archive waits for D3b to D6.
+
+## D3b (branch `feat/domain-doc-3b`, range `feat/domain-doc-3a..feat/domain-doc-3b`, 7 commits from `test(doc): add canonical goldens and round-trip tests` to `docs(sdd): record domain-doc D3b progress`)
+
+**Verdict: PASS** (D3b). CRITICAL 0, WARNING 2, SUGGESTION 4. **D3 complete: PASS.** D3a and D3b together cover every D3-tagged requirement and scenario in `specs/document-serde/spec.md`, plus the serde note at `specs/document-model/spec.md:24`. Only the parts the spec gives to D4, D5 and D6 remain open. `next` = the owner decides on the push and PR for `feat/domain-doc-3b`. Then record the D4 split (WARNING 2), then **tdd-apply D4**. Archive waits for D4 to D6.
+
+Verified 2026-10-24 with the same method as the D3a runs:
+- Each commit was extracted with `git archive` into its own directory, with its own `CARGO_TARGET_DIR`.
+- The ARQ-07, V11, V5 and V12 step bodies were parsed from that commit's own `.github/workflows/ci.yml`.
+- D3b changes no `.github`, `Cargo.toml`, `Cargo.lock`, crate manifest or `deny.toml` file.
+- Mutations ran on a scratch git copy of `docs(sdd): record domain-doc D3b progress` with `cargo test -p gafira-doc --locked`. The baseline is 83 lib tests, 3 `golden` tests and 11 `serde` tests.
+
+The only repository change is this section.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | `cargo deny check` | ARQ-07 | V11 | V5 | V12 |
+|---|---|---|---|---|---|---|---|---|
+| `test(doc): add canonical goldens and round-trip tests` | 0 | 0 | 0 (241) | 0 | 0 | 0 | 0 | 0 |
+| `test(doc): cover required fields, vocabulary and unknown fields on load` | 0 | 0 | 0 (245) | 0 | 0 | 0 | 0 | 0 |
+| `test(doc): pin extension payload spelling and survival` | 0 | 0 | 0 (247) | 0 | 0 | 0 | 0 | 0 |
+| `test(doc): reject hostile and corrupt input on load` | 0 | 0 | 0 (252) | 0 | 0 | 0 | 0 | 0 |
+| `test(doc): compare fill channels by bits through a document` | 0 | 0 | 0 (252) | 0 | 0 | 0 | 0 | 0 |
+| `docs(sdd): fix domain-doc D3a re-verify warnings` | 0 | 0 | 0 (252) | 0 | 0 | 0 | 0 | 0 |
+| `docs(sdd): record domain-doc D3b progress` | 0 | 0 | 0 (252) | 0 | 0 | 0 | 0 | 0 |
+
+`cargo deny check` reports advisories, bans, licenses and sources ok on all seven. Each clippy log shows `Checking gafira-doc`. The unused `const` that apply-progress says was amended away does not appear in any commit.
+
+Manual command checks, re-run on HEAD:
+- `git check-attr text -- crates/gafira-doc/tests/golden/*.json` prints `text: unset` for all four goldens.
+- `git ls-files --eol` shows `i/none w/none attr/-text` for each golden.
+- `cargo tree -p gafira-doc -e features -i serde_json --locked` shows only `default`, `float_roundtrip` and `std`. There is no `preserve_order` and no `arbitrary_precision`.
+- `cargo tree -p gafira-doc -e features -i serde --locked` shows `serde feature "rc"`.
+- The normal tree has exactly four direct dependencies: `gafira-color`, `gafira-geom`, `serde` and `serde_json`.
+- The dev tree adds only `proptest` and its transitive crates. There is no `rusty-fork` and no `tempfile`.
+
+### 2. Requirements and scenarios: the "left for D3b" list
+
+| Item (from the D3a "Left for D3b" list and `apply-progress.md:169-177`) | Test | Status |
+|---|---|---|
+| Unknown fields ignored and dropped (document and placement levels, dropped on save) | `serde::unknown_fields_are_ignored_and_dropped` (`tests/serde.rs:84`): extras at 10 levels (document, page, size, node, base, placement, flip, shape kind, fill, extension kind); the loaded document equals the plain one; the output has no `zz_extra` and equals `full.json` byte for byte. Kills M29, M30, N04, N05, N06 | covered |
+| Normalization on save | `serde::saving_normalizes_numbers_node_order_and_payload` (`tests/serde.rs:111`): `"x":3` is written as `3.0`, nodes 7 then 2 are written 2 then 7 with `roots` `[7,2,9]` kept, and an unsorted payload is written canonically. The fixture is valid: every node is a root | covered |
+| Missing required field (document `schema_version`, `next_id`, `pages`; node `kind`; color `space`) | `serde::missing_required_fields_are_errors` (`tests/serde.rs:27`): 22 rows covering all 18 fields of the required list at `spec.md:72`, plus `Length` `value`/`unit` and channel `r`. Each row is `LoadError::Json`, and a missing pointer fails the test. Kills M25, M26, M27, M28 | covered |
+| Unknown vocabulary (`"unit":"parsec"`) and Hostile values (unknown `space` through `from_json`) | `serde::unknown_vocabulary_is_an_error` (`tests/serde.rs:61`): `text`, `Group`, `star`, `Multiply`, `parsec` and `rec2020`, each `LoadError::Json` through `Document::from_json` | covered (the D4 rows of "Hostile values" stay with D4) |
+| Canonical golden survives | `golden::canonical_goldens_round_trip_byte_for_byte` (`tests/golden.rs:18`), over the `extension.json` payload: nested objects, arrays, integers, floats, strings, booleans and `null` | covered |
+| Non-canonical golden normalizes | `golden::noncanonical_golden_normalizes_to_the_canonical_one` (`tests/golden.rs:29`): unsorted keys, spaces and a tab, `1E2` and `é`; the output equals `extension.json`, a second round trip is identical, and the loaded values are equal | covered |
+| Key order and number spelling; Integer beyond u64; Duplicate keys in a payload | `serde::payload_numbers_and_keys_get_one_canonical_spelling` (`tests/serde.rs:149`): rows at `:152-161`, each checked stable on a second pass. `18446744073709551616` becomes `1.8446744073709552e+19`, while `18446744073709551615` stays an integer, and `{"a":1,"a":2}` becomes `{"a":2}` | covered |
+| Unrepresentable payload number | `serde::unrepresentable_payload_number_is_a_json_error` (`tests/serde.rs:171`): `1e400` and `-1e400` | covered |
+| f64 field in an internally tagged node | Shape half: `node::tests::floats_inside_the_tagged_kind_survive` (`node.rs:264`). Extension half: with `arbitrary_precision` on, `golden::canonical_goldens_round_trip_byte_for_byte`, `golden::noncanonical_...` and four `serde` tests fail (see F02 below), so the black-box tests now guard the feature. `node.rs:283` still cannot detect the feature (a `Value` keeps the number text) | covered (see WARNING 1) |
+| Feature guards (command) | Manual `cargo tree`, above. It is also guarded by tests: F01, F02 and F03 are killed below | covered (deviation accepted) |
+| Round-trip goldens, including `full` equal to the `test_document` build | `tests/golden.rs:18` (minimal, full, extension); `json::tests::full_golden_equals_the_built_document` (`json.rs:263`): the built document serializes to exactly `full.json` and `full.json` loads back equal. The test also kills golden mutants G01, G07, G08, G09 and G12 | covered |
+| Text conversion is off (command) | Manual `git check-attr`, above; `crates/gafira-doc/tests/golden/.gitattributes` holds `*.json -text` | covered (deviation accepted) |
+| Golden shape (command) | `golden::goldens_have_no_newline_carriage_return_or_bom` (`tests/golden.rs:41`). Also checked here by bytes: each file is one line, starts with `{`, ends with `}` with no trailing newline (`tail -c` / `od`), and has no `\r` and no BOM bytes. Sizes: minimal 205, full 1512, extension 623, extension_noncanonical 644 bytes | covered (deviation accepted) |
+| Finite out-of-range survives serde (serde half) | `serde::finite_out_of_range_values_survive_serde_by_bits` (`tests/serde.rs:258`): opacity `1.5` and rotation `1e300` by `to_bits()` through plain `Node`. Uses a standalone `Node` because D3 has no public document constructor. Kills N18 (clamp on read) | covered (the `from_json` half is D4) |
+| Wrong types | `serde::wrong_types_are_json_errors` (`tests/serde.rs:191`): `null`, `[]`, `"x"`, `7`, `true`, `"next_id":"7"`, `"pages":{}`, `"locked":"yes"`, `"name":5`, `opacity: null`, `children: {}` | covered |
+| Bad numbers | `serde::bad_numbers_are_json_errors` (`tests/serde.rs:211`): `-1`, `1.5`, `1e3`, `null` and `2^64` for `next_id`, `dpi`, page id, node id and a `roots` id; `dpi` `4294967296`; a float `1e400`. Kills N17, N22, N23 | covered |
+| Duplicate struct field | `serde::duplicate_struct_fields_are_json_errors` (`tests/serde.rs:241`): two `next_id`, two `opacity` and two `geometry` (inside the tagged kind). Kills N16 (load through `Value`, last wins) | covered |
+| Every prefix of a small golden (D3a SUGGESTION 2) | `serde::every_prefix_of_the_minimal_golden_is_a_json_error` (`tests/serde.rs:183`) | covered |
+| Fill `-0.0` by sign (D3a re-verify SUGGESTION 1) | `json.rs:165-173` compares the fill channels by `to_bits()` and asserts the sign of channel `b` | covered |
+| Recursion 127/128 and payload depth 121/122 | Owned by D4 (T4.2, `design.md:415`), as recorded at `apply-progress.md:177,251` | out of scope |
+
+D3a re-verify WARNINGs 1-3 are fixed in `docs(sdd): fix domain-doc D3a re-verify warnings`:
+- `apply-progress.md:147` now says only `node.rs:264` fails under `arbitrary_precision`, and spells `node.rs:283` correctly.
+- The D3b list no longer holds the recursion rows.
+- `design.md:453` says "reverse output order".
+- The size line reads 696, and the re-cut ratio and forecasts are recorded at `apply-progress.md:252`. The split plan is still missing; see WARNING 2.
+
+#### Declared deviations
+
+| Deviation | Judgement |
+|---|---|
+| `git check-attr` and `cargo tree` are run by hand (the crate `clippy.toml` bans `std::process::Command`) | Accepted. Both scenarios are typed (command) in the spec, so a recorded manual run satisfies them, and this run reproduced the expected output. The features they guard are also caught by tests: `preserve_order` (F01) and `arbitrary_precision` (F02) fail lib, `golden` and `serde` tests, and removing `rc` (F03) breaks the build. The goldens contain no LF, so a CRLF checkout could not change their bytes even without the attribute (G11 is equivalent). The attribute is defense in depth, and the manual check confirms it |
+| Golden shape is a byte test over `include_str!` instead of a shell check | Accepted, and stronger: it runs on all three CI targets (Windows, Linux, macOS) against the checked-out bytes. G02, G03 and G04 are killed. See SUGGESTION 1 for the BOM position |
+
+#### Mutation summary (72 mutants)
+
+- **M01-M32, re-run on HEAD**: 31 killed, and M15 survives as before (equivalent: a missing `Option` field reads as `None`). **M25, M26, M27 and M28** are killed by `serde::missing_required_fields_are_errors` (`tests/serde.rs:27`). **M29 and M30** are killed by `serde::unknown_fields_are_ignored_and_dropped` (`tests/serde.rs:84`). M01 is now also killed by `json.rs:263`, and M22 by `json.rs:263`. No earlier kill regressed.
+- **N01-N23, new mutants on D3 production code**: all 23 killed.
+  - Trailing newline in `to_json`.
+  - `deny_unknown_fields` on `Page`, `ElementBase`, `Flip`, `ShapeNode`, `ExtensionNode` and `Node`.
+  - `type_id` renamed; `Extension` tag renamed.
+  - `skip_serializing_if` on `children` and on `fill`.
+  - Arena writes only the first 3 nodes.
+  - Defaults removed on page `name` and `roots`; extension `schema_version` and `payload` made defaultable.
+  - Load through `Value`.
+  - `next_id` read as `f64`, `dpi` read as truncated `u64`, page id read as `f64`.
+  - Opacity clamped on read.
+  - `rotation_deg` and `skew` swapped; `fill` written before `geometry`.
+- **G01-G14, golden mutants**: 12 killed. The killed ones:
+  - full: `-0.0` changed to `0.0`, dpi 300 to 96, second page dropped, an inner LF added, fill `b` changed.
+  - minimal: trailing LF, leading BOM.
+  - extension: trailing CR, `100.0` changed to `100`, big u64 changed by 1, BOM inside a string.
+  - extension_noncanonical: replaced by the canonical file.
+
+  Two survive, neither of which changes behavior:
+  - G10 (`1E2` in the non-canonical golden replaced by `100.0`) weakens the fixture only. Exponent normalization stays pinned by the `10E-1` row (`tests/serde.rs:158`); see SUGGESTION 3.
+  - G11 (`.gitattributes` emptied) cannot be seen by any test, because the goldens contain no LF. It is covered by the manual `git check-attr` command scenario.
+- **F01-F03, feature mutants**: all 3 killed. With `--no-fail-fast`, F01 `preserve_order` fails `golden::noncanonical_...`, `serde::payload_numbers_...` and `serde::saving_normalizes_...`. F02 `arbitrary_precision` fails both golden round trips and `serde::missing_required_...`, `payload_numbers_...`, `unrepresentable_...` and `unknown_fields_...`. This matches the evidence in `apply-progress.md:223-245`. F03 (no `rc`) fails to compile.
+
+No surviving mutant is in scope. No `proptest-regressions` directory exists or is tracked.
+
+#### D3 complete (D3a + D3b)
+
+| Requirement (D3 part) | Scenarios and tests | Status |
+|---|---|---|
+| Wire shape and key order | Exact minimal `json.rs:107`; arena ascending `page.rs:187`; node shapes `node.rs:177`; `None` as null `element.rs:95`; whole-document key order `json.rs:263` | covered |
+| Deterministic round trip (D3 part) | Bit identity `json.rs:141`, `placement.rs:239`, `element.rs:139`; same bytes from a different build order `json.rs:121`; arena-order mutant M01 killed (`page.rs:187`, `json.rs:263`). The 10 000-case property is D6 | covered |
+| Defaults, normalization and forward compatibility | Defaults `json.rs:249`, `element.rs:111`, `placement.rs:205,211`, `page.rs:220`, `node.rs:219`; unknown fields `tests/serde.rs:84`; normalization `tests/serde.rs:111`; missing fields `tests/serde.rs:27`; vocabulary `tests/serde.rs:61` | covered |
+| Animatable compatibility | Keyed object and bare `0.5` `placement.rs:222`; bare values `element.rs:95`, `node.rs:177`; M14 killed | covered |
+| Extension payload survival | `tests/golden.rs:18,29`; `tests/serde.rs:149,171`; `json.rs:217`; `node.rs:264` + F02; feature guards (manual + F01/F02/F03) | covered |
+| Canonical goldens survive every checkout | `tests/golden.rs:18,41`; `json.rs:263`; `git check-attr` (manual) | covered |
+| Non-finite and out-of-range (D3 part) | `json.rs:178` (each null field asserted); `tests/serde.rs:258` (serde half) | covered (load half D4) |
+| Validating load path (D3 sentence) | Unchecked `from = "DocumentWire"` (`document.rs:17`, `json.rs:44`); `DocumentWire` is `pub(crate)` | covered (rest D4) |
+| Hostile and corrupt input (D3 part) | Empty/truncated/trailing/UTF-8/BOM/surrogate `json.rs:232`; golden prefixes `tests/serde.rs:183`; wrong types `:191`; bad numbers `:211`; duplicate struct fields `:241`; duplicate node id and out-of-order nodes `page.rs:205`; unknown `space` `:61` | covered (recursion rows and D4 rows to D4; deep tree D5; Q5 D6) |
+| `document-model/spec.md:24` serde note | Serde derives on the D2 types (from D3a); `rc` only in `crates/gafira-doc/Cargo.toml:12`; dependency trees unchanged (above) | covered |
+
+### 3. Code rules and production code
+
+- `git diff feat/domain-doc-3a..HEAD -- crates/gafira-doc/src` touches only `json.rs`, in two hunks (`@@ -162` and `@@ -250`). Both are inside `mod tests` (`json.rs:67-68`). Production code is unchanged.
+- The other changes are `tests/golden.rs`, `tests/serde.rs`, the four goldens and `.gitattributes`.
+- The added lines contain no `#[allow]`, `unsafe`, `HashMap`, `HashSet`, `std::fs`, `process`, `deny_unknown_fields` or `skip_serializing_if`. Goldens are read with `include_str!`.
+- The only non-ASCII characters are the `é` test data (`json.rs:282` and the extension goldens).
+- The seven subjects are conventional (`test(doc)` x5, `docs(sdd)` x2). No message has a `Co-Authored-By` or AI attribution line.
+- No `proptest-regressions`.
+
+### 4. Size
+
+`git diff --shortstat feat/domain-doc-3a..HEAD -- . ':!openspec'` gives 8 files changed, 384 insertions(+), 0 deletions. This matches `apply-progress.md:252`: 379 lines of code plus 5 lines for the goldens and `.gitattributes`. The breakdown is `tests/serde.rs` 272, `json.rs` 54, `tests/golden.rs` 53 and 5 one-line files. That is under ~700. Against the ~290 forecast the ratio is 1.32. D3 as a whole is 696 + 384 = 1080, split across two stacked branches, each under ~700.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **The D3b scenario table in `apply-progress.md:203-221` omits "f64 field in an internally tagged node".** The D3a list handed this scenario to D3b, and D3b does close it: F02 (`arbitrary_precision`) now fails `tests/golden.rs:18,29` and four `tests/serde.rs` tests, and `node.rs:264` covers the shape half. The progress file never says so, though, and its only mention (`apply-progress.md:147`) still points to "the D3b `cargo tree` feature check and the goldens" without naming tests. Add a row naming the killing tests.
+2. **The re-cut is recorded but not planned.** `apply-progress.md:252` gives the ratio of 1.74 and the new forecasts (D4 about 1115, D5 about 810, D6 about 1120), and says all three need a re-cut before they start. `design.md:398` (rule 3) requires the re-cut before a delivery starts, and the D3a re-verify WARNING 3 asked for "the planned splits", but no split points are named. The design names none for D4. Before tdd-apply D4, record the D4 split (for example P1-P3 with `ValidationError` against P4 with `try_from`) and the D5 and D6 splits.
+
+### SUGGESTION
+
+1. `tests/golden.rs:50` checks only for a leading BOM (`starts_with('\u{feff}')`), while the spec says "no byte-order mark" anywhere. G14 (a BOM inside a string) was killed, but only incidentally, by the normalization test. `!golden.contains('\u{feff}')` matches the spec wording.
+2. `spec.md:169` says every golden MUST be "single-line compact JSON", but `extension_noncanonical.json` must contain whitespace by `spec.md:132`; it has spaces and a tab. Limit "compact" to the three canonical goldens in the spec text.
+3. G10 survives: a cleanup of the non-canonical golden would not be noticed. Consider asserting in `tests/golden.rs` that `NONCANONICAL` contains `1E2`, contains whitespace and is not key-sorted. Note that the unescaped `é` is already serde_json's canonical form: it tests survival, not normalization.
+4. `design.md:357` (forecast table) still labels a test "insertion order". A CI step for the two command scenarios could be considered with D5's V13 work; it is not required by D3.
+
+### Result
+
+- Verdict: **PASS** for D3b (0 CRITICAL, 2 WARNING, 4 SUGGESTION). All gates pass on each of the seven commits: fmt, clippy, test, `cargo deny check`, ARQ-07, V11, V5 and V12. M25-M30 are killed. 69 of 72 mutants are killed, and the 3 survivors (M15, G10, G11) are equivalent or do not change behavior. Production code is unchanged. Size is 384.
+- **D3 complete: PASS.** Every D3-tagged requirement and scenario is covered by D3a + D3b. The D4, D5 and D6 parts stay open as the spec assigns them.
+- Next: the owner decides on pushing and the PR for `feat/domain-doc-3b`. Then fix WARNING 1 and 2 in docs (record the D4/D5/D6 splits) and run **tdd-apply** for the first D4 slice. Archive waits for D4 to D6.
