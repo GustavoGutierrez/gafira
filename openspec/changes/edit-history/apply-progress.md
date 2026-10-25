@@ -95,7 +95,7 @@ Size (`git diff --shortstat e1e4963..HEAD -- crates .github`): 526 insertions, 1
 
 - W5: `it_has_its_own_label_and_never_merges` is now `a_transaction_never_merges` (the `label()` accessor assertion is gone); `an_error_is_cloneable_comparable_and_an_error` keeps only the compile-time bound; `a_boxed_command_is_send_and_sync` no longer asserts `merge_key()`.
 - S3: `mod transaction;` grouped with the other `mod` declarations.
-- W4 (reusability after a failed apply) is covered by the harness: laws 2 and 5 run on every command.
+- W4 (reusability after a failed apply) is NOT covered. Law 5 checks the state after `Err`; law 2 re-applies only after a successful apply and revert. No law re-applies a command after a failed apply, and the six laws do not include it. Still open for D3, D8, D9, D10 (per-command tests or an extra harness check) and for a `Transaction` test.
 
 ### Deviations and notes
 
@@ -107,3 +107,15 @@ Size (`git diff --shortstat e1e4963..HEAD -- crates .github`): 526 insertions, 1
 - `gafira-edit` does not yet dev-depend on `gafira-testkit`; D3 adds it with `prop_commands.rs`. `gafira-testkit` has normal dependencies on `gafira-doc` and `gafira-edit` (V5 row `gafira-geom gafira-color gafira-doc gafira-edit`).
 - V12 count left at `>= 3` (verify S1 is a spec edit, not part of D2).
 - Untracked `.claude/worktrees/` in the checkout is not mine and was not committed.
+
+### D2 fix round (verify FAIL: C1 and cheap warnings)
+
+- C1: `SoundRejects` (returns `Err` before touching the document) is in `sound_commands_pass_every_law`. With `same_document` forced to `false`, or `==` turned into `!=`, that test now fails.
+- W2: `it_runs_a_thousand_cases_by_default` counts strategy builds (2 per case = 2 000); with `cases` deleted it fails. Skipped when `PROPTEST_CASES` is set.
+- W3: `SoundUnchanged` passes, `UnchangedBadRevert` (revert changes the page after `Unchanged`) gives law 1, so laws 1 and 2 run on `Unchanged`; `merge_is_not_compared_when_the_sequence_cannot_apply` fails when the skip rule is removed.
+- W4: the claim above is corrected.
+
+### Pending spec edits (not code)
+
+- W1: `edit-commands`, "Command property laws" item 4: a page is required when its own fields or `roots` differ or it exists on one side only; a node when its `Arc` is not pointer-equal or it exists on one side only. Record the known limits: listed items are only checked for existence (W5), and a copy-on-write `Arc` change without a value change counts as a change (S3).
+- W6 / S1: `workspace-tooling`, V12 item 3: the copy count is still `>= 3` with four copies; make it exact or derive it from the V5 table, and fix the "V12 count" wording in `proposal.md` D1 row.

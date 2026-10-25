@@ -121,3 +121,105 @@ None.
 - Commits: conventional subjects, author Gustavo Gutierrez, no `Co-Authored-By` or AI attribution lines.
 - No `proptest-regressions` files are tracked or present.
 - The `mutants` report was read. Its numbers match its `mutants.out` lists.
+
+## D2: `gafira-testkit`, `prop_command`, V5 row, D1 test cleanup
+
+Branch `feat/edit-history-2`, base `main` e1e4963, range `e1e4963..c91cee1`. Verified on 2026-10-25. HEAD was checked in the main checkout; intermediate commits were checked from `git archive` exports under the session scratchpad, with a shared scratch `CARGO_TARGET_DIR`. CI steps were pulled from each commit's own `ci.yml` (PyYAML) and run under `bash --noprofile --norc -eo pipefail`. V13 needs a git index, so in the exports it ran inside a throwaway `git init`. Hand mutations ran on a scratch export only. The source was not edited.
+
+**Delivery verdict: FAIL** (1 CRITICAL, 6 WARNING, 3 SUGGESTION). **Change verdict: not final.** `next`: `tdd-apply` to fix C1 on D2 (a small test-only fix), then D3.
+
+### Gates per commit
+
+| Commit | fmt | clippy `-D warnings --locked` | tests passed | `cargo deny check` | ARQ-07 | V11 | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| e4c5d20 test cleanup | 0 | 0 | 324 (0 failed) | ok | 0 | 0 | 0 | 0 | 0 |
+| 224b6b6 generator move + V5 row | 0 | 0 | 324 | ok | 0 | 0 | 0 | 0 | 0 |
+| 32c1108 `prop_command` | same tree as HEAD for code (`git diff 32c1108 HEAD` touches only `apply-progress.md`) | | | | | | | | |
+| c91cee1 HEAD (docs) | 0 | 0 | 327 (21 result lines, 0 failed) | ok | 0 | 0 | 0 | 0 | 0 |
+
+The test totals match `apply-progress.md`. Size: `git diff --shortstat e1e4963..HEAD -- crates .github` gives 526 insertions and 14 deletions (589 with docs). That is under the ~700-line limit and x1.17 over the ~450 forecast. Rename detection holds: `crates/gafira-doc/tests/common/mod.rs => crates/gafira-testkit/src/lib.rs`, similarity 98%. Commits use conventional subjects with no `Co-Authored-By`, Claude or AI lines (grep on the bodies finds 0). No `proptest-regressions` files exist.
+
+### Negative and command runs
+
+| Run | Result |
+|---|---|
+| V5 clean with xtrace | rc 0; the trace shows `cargo tree -p gafira-testkit` |
+| V5 with `gafira-edit` cut from the `gafira-testkit` row | rc 1, `gafira-testkit must not depend on gafira-edit` |
+| V11 with forbid removed from `crates/gafira-testkit/src/lib.rs` (scratch) | rc 1, `missing forbid(unsafe_code): crates/gafira-testkit/src/lib.rs` |
+| Workspace membership | `gafira-testkit 2024 1.93 []`; root `Cargo.toml:17` declares it by path |
+| Dev-dependency is not a layer edge (`gafira-doc` dev-depends on `gafira-testkit`) | V5 `gafira-doc` row passes, so `gafira-testkit` is absent from its normal/build tree |
+| Generator guards still run | `cargo test -p gafira-testkit` runs `guards::generated_documents_reach_every_feature_within_the_bounds` and `guards::every_corruption_is_produced_and_breaks_its_own_rule` (6.09 s) |
+
+### Requirement and scenario coverage (D2)
+
+| Requirement / scenario | Status | Evidence |
+|---|---|---|
+| `gafira-testkit` provides `prop_command` | covered | `crates/gafira-testkit/src/harness.rs:62`, re-exported at `lib.rs:11` |
+| Law 1: `apply; revert` equals the original | covered | `harness.rs:138-144` |
+| Law 2: `apply; revert; apply` equals the first apply | covered | `harness.rs:145-153` |
+| Law 3: `validate()` passes after a successful apply | covered | `harness.rs:133-135` |
+| Law 4: exact `touches` | covered, with a deviation on pages (W1) | `harness.rs:136, 209-252` |
+| Law 5: on `Err`, pointer-equal | covered for detection; the "no false positive" side is untested (C1) | `harness.rs:124-131, 184-192` |
+| Law 6: merged equals the sequence | covered for detection; the skip rule is untested (W3) | `harness.rs:157-182` |
+| Scenario: Harness catches a wrong revert (D2, unit) | covered | `tests/harness.rs:222-240` (`ForgetsRevert` gives law 1, counterexample names `Probe`); `tests/harness.rs:242-246` covers the panic path |
+| Scenario: Harness catches an inexact touches (D2, unit) | covered | same table: `SilentNode` (node changed, empty set) gives law 4; `GhostTouch` (listed node does not exist) gives law 4 |
+| 1 000 cases by default, `PROPTEST_CASES` overrides | implemented, not tested (W2) | `harness.rs:32, 77-85` |
+| V5 row for `gafira-testkit` lands with the crate (C3 D2) | covered | `git show --stat 224b6b6` adds the row, the crate and the manifest together; `ci.yml:84` |
+| `gafira-testkit` has no `clippy.toml`; V11 covers it | covered | `ls crates/gafira-testkit` shows only `Cargo.toml src tests`; V11 negative run above |
+| Root `[workspace.dependencies]` declares `gafira-testkit` | covered | `Cargo.toml:17` |
+| Q10 / spike R8: generator moved with `git mv`, `mod guards` gets `#[cfg(test)]` | covered | rename detected; `lib.rs:732` |
+| `gafira-doc` property tests switched to the testkit | covered | `crates/gafira-doc/tests/properties.rs:4`; `Cargo.toml` dev-dependency |
+| Spike R7: the harness is used only from `tests/` (one copy of each type) | covered | the harness tests live in `crates/gafira-testkit/tests/harness.rs` |
+| D1 W5 and S3 handled | covered | diffs in `transaction.rs:247`, `error.rs:62`, `command.rs:132`, `lib.rs:9-12` |
+| D1 W4 (reusability after a failed apply) | not covered, although `apply-progress.md` says it is (W4) | see W4 |
+
+### Recorded deviations, judged
+
+1. **Law 4 and pages: acceptable, but the spec text must be amended.** The requirement text says "every page or node whose `Arc` is not pointer-equal". The same spec also says that `DirtySet` reports a page when its own fields or `roots` change, and a node when its record or `children` change (`edit-commands`, line 34). The D9 Move scenario says `touches` names the two nodes "and not the page" (line 101). A literal page `Arc` check contradicts both, because `node_mut` copies the page on write. Hand mutation M1, a literal page `Arc::ptr_eq`, makes `sound_commands_pass_every_law` fail with `law 4 broken: page 1 changed but is not in touches`. The harness follows the binding `DirtySet` rule. See W1 for the spec edit.
+2. **Law 5 as value equality plus page `Arc` identity: acceptable.** `Document` is not an `Arc`, and its pages are. M2 drops the pointer half, and `FailsAfterCopying` kills it.
+3. **Law 6 only when `merge` returns `Ok` and both commands of the sequence apply: acceptable.** If the sequence cannot be applied, there is nothing to compare. This rule is not tested (W3).
+4. **Laws 1 and 2 also run on `Unchanged`: acceptable and required.** The spec gives no exemption. `Transaction::revert` reverts every child, including children that returned `Unchanged`, so a revert after `Unchanged` must be correct. This rule is not tested (W3).
+
+### Mutation
+
+`mutants` report: `scratchpad/mutants-D2/mutants.out` (cargo-mutants 27.1.0, finished 13:05:55Z). The coordinator gave no path; the directory's timestamp and its mutant list, all in `harness.rs`, match this delivery. 30 mutants: 23 caught, 4 missed, 0 timeout, 3 unviable.
+- Missed `harness.rs:186:5`, `same_document -> false`, and `harness.rs:186:14`, `== -> !=`. Law 5 is a spec rule with an invariant, so this is critical code. See C1.
+- Missed `harness.rs:83:9`, `cases` field deleted (falls back to proptest's 256), and `harness.rs:84:9`, `failure_persistence` field deleted (would write regression files). See W2.
+- Unviable (no `Default`): `applied`, `skeleton`, `nodes_of`.
+
+Hand mutations (scratch export, `cargo test -p gafira-testkit --test harness`):
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | Law 4 pages use a literal `Arc::ptr_eq` (the spec wording) | KILLED by `sound_commands_pass_every_law` (law 4 on page 1), which supports deviation 1 |
+| M2 | Law 5 without page pointer equality (`&&` to `\|\|`) | KILLED by `each_broken_law_is_named_with_a_counterexample` (`FailsAfterCopying` not caught) |
+| M3 | Laws 1 and 2 skipped when `apply` returns `Unchanged` | SURVIVED (W3) |
+| M4 | Law 6 compares even when the sequence fails to apply (skip rule removed) | SURVIVED (W3) |
+| M5 | Law 4 existence check on listed nodes dropped | KILLED by `GhostTouch` |
+
+Every surviving mutant makes the harness stricter than the spec, so it would reject sound commands. No surviving mutant lets a broken command pass.
+
+### CRITICAL
+
+1. **Law 5 has no test for its accepting side** (`crates/gafira-testkit/src/harness.rs:128-135, 184-192`). The two missed mutants turn `same_document` into "always different", so every command that returns `Err` would be reported as breaking law 5. The suite still passes because every `Err`-returning probe (`FailsAfterMutating`, `FailsAfterCopying`) is supposed to fail law 5, and no sound probe returns `Err`. D3 and later commands return `Err` on purpose ("Failed commands change nothing"; `SetProperty` NaN and 1.5), so the harness rule they depend on is not proven. Fix (test-only): add a sound probe that rejects its input before mutating and returns `Err`, for example on a missing target or an invalid value, to `sound_commands_pass_every_law`. Check that both 186 mutants then fail.
+
+### WARNING
+
+1. **Law 4 wording contradicts the `DirtySet` rule.** Amend `edit-commands` "Command property laws" item 4 before archive. A page is required when its own fields or `roots` differ, or when it exists on one side only. A node is required when its `Arc` is not pointer-equal or it exists on one side only. The implementation already does this (deviation 1). This is a spec edit, not a code defect.
+2. **The 1 000-case default is not tested** (`harness.rs:83-84`). Deleting `cases` silently drops to 256 cases. A probe that counts `apply` calls in a static `AtomicU32` (with `PROPTEST_CASES` unset) would pin it. `failure_persistence: None` has no spec-visible effect beyond regression files, so it is near-equivalent. These lines are configuration, and the 1 000-case figure is bound by the D3+ scenario "Every core command passes the laws". So this is a warning, but cheap to close together with C1.
+3. **The rules from deviations 3 and 4 are untested** (hand mutants M3 and M4 survived). Add a sound probe that returns `Unchanged` and then reverts, on a document with pages, and a merging probe whose second command fails on the result of the first. Both fit the C1 fix.
+4. **`apply-progress.md` overstates D1 W4.** It says "W4 ... is covered by the harness: laws 2 and 5 run on every command". Law 5 checks state after `Err`. Law 2 re-applies only after a successful apply and revert. Neither re-applies a command after a failed apply, which is what "the command MUST stay reusable" in "Failed commands change nothing" requires. The six laws do not include this, so it is not a D2 requirement. It is still open for D3, D8, D9 and D10 (per-command tests, or an optional extra harness check) and for the `Transaction` test from D1 W4. Correct the claim in `apply-progress.md`.
+5. **Law 4 checks that listed items exist, not that they changed.** This matches the spec text ("every listed item exists in the original or in the result"). A command that lists a page it never touches passes, so "exact" is one-sided. This is accepted by the spec. Record it as a known limit when the spec is amended (W1).
+6. **The V12 count is still `>= 3`.** D1 W6 and S1 are unchanged. Still a spec gap, now with four copies. Not a D2 defect.
+
+### SUGGESTION
+
+1. `ForgetsRevert` skips the whole revert, while the scenario says "forgets one field". Law 1 compares the whole document, so detection is the same. A probe that restores `locked` but not `name` would match the scenario wording more closely.
+2. The test checks that the counterexample names `Probe`, not that it is minimized. Minimization comes from proptest's `TestError::Fail` (shrunk input). That is acceptable; an assertion on a small document (for example `pages.len() == 1`) would make it visible.
+3. A node `Arc` that changes without a value change (copy on write with no edit) is required in `touches`. That is stricter than "the node record changes", but harmless while commands return `Unchanged` without touching `node_mut`. Mention it in the W1 spec edit.
+
+### Other checks
+
+- Code rules: no `#[allow]`, no `unsafe`, no clock and no `Hash*` in `gafira-testkit`. It uses `EditToken::__new_for_gafira_edit_only()`, which is allowed in `gafira-testkit` by V13 (rc 0). English throughout.
+- `gafira-testkit` normal dependencies are `gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`, `proptest` and `serde_json`. They match the V5 row and Q10, and `Cargo.lock` changes only by the new crate and the `gafira-doc` dev edge.
+- The main checkout's untracked `.claude/worktrees/` is unrelated and was not touched.
