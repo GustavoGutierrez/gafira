@@ -139,7 +139,7 @@ Revert per delivery, newest first. In full: delete `crates/gafira-edit/` and `cr
 - [ ] Every core command satisfies `apply; revert` = previous state, `apply; revert; apply` = `apply`, and exact `touches`, in 1 000 generated cases (ARQ-81).
 - [ ] `execute` that fails leaves the document pointer-equal to before; every successful command leaves `validate()` passing (ARQ-13).
 - [ ] 300 move events inside one gesture raise `History::len()` by exactly 1 (ARQ-33).
-- [ ] Undo and redo of a snapshot entry call no command method and restore the stored `Arc` (ARQ-32, structural).
+- [ ] Undo and redo of a snapshot entry call neither `apply` nor `revert` (only `label()`) and restore the stored `Arc` (ARQ-32, structural).
 - [ ] With a small budget, the oldest snapshots are compacted and undo through `revert` reaches the same states (ADR-03).
 - [ ] `trybuild` fixtures: no-token mutations fail to compile with the recorded errors; an outside `Command` passes (ARQ-30).
 

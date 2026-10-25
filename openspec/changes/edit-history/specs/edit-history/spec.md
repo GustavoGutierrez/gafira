@@ -53,14 +53,14 @@ Decisions are closed in `design.md`; a requirement that depends on one names it 
 
 ### Requirement: Undo and redo by snapshot (ADR-03, ARQ-32) (D4, D7)
 
-Each entry MUST hold the command, the snapshot before it (`Arc<Document>`) and, while the entry is the newest or the next one still holds its snapshot, the state after it. `undo()` MUST restore the before-snapshot of the newest undone-able entry and `redo()` MUST restore its after-state, both by installing a stored `Arc`, without calling any `Command` method, for every entry that still holds its snapshots. Both MUST have the signature `fn(&mut self) -> Result<Option<CommandLabel>, CommandError>`: `Ok(Some(label))` with the entry's label, `Ok(None)` when there is nothing to undo or redo (with no change), and `Err` only on the compacted path of "Memory budget and compaction" (an entry that holds its snapshots never fails). `len()` MUST count the entries that can be undone; `can_undo()` and `can_redo()` MUST report the stacks. The structural proof stands in for ARQ-32's timed criterion, which is deferred to the ARQ-40 benchmarks (Q8).
+Each entry MUST hold the command, the snapshot before it (`Arc<Document>`) and, while the entry is the newest or the next one still holds its snapshot, the state after it. `undo()` MUST restore the before-snapshot of the newest undone-able entry and `redo()` MUST restore its after-state, both by installing a stored `Arc`, calling neither `apply` nor `revert`, for every entry that still holds its snapshots (they call only `label()`, to return the entry's label). Both MUST have the signature `fn(&mut self) -> Result<Option<CommandLabel>, CommandError>`: `Ok(Some(label))` with the entry's label, `Ok(None)` when there is nothing to undo or redo (with no change), and `Err` only on the compacted path of "Memory budget and compaction" (an entry that holds its snapshots never fails). `len()` MUST count the entries that can be undone; `can_undo()` and `can_redo()` MUST report the stacks. The structural proof stands in for ARQ-32's timed criterion, which is deferred to the ARQ-40 benchmarks (Q8).
 
 #### Scenario: Undo restores the exact Arc (D4, unit)
 - GIVEN `let s0 = history.document().clone()` and one executed command
 - WHEN `undo()` runs
 - THEN `Arc::ptr_eq(&s0, history.document())` holds and it returned `Ok(Some(label))` with the command's label
 
-#### Scenario: Undo calls no command method (D4, unit)
+#### Scenario: Undo calls neither apply nor revert (D4, unit)
 - GIVEN a test command that counts calls to `apply` and `revert`, executed once
 - WHEN `undo()` and `redo()` run 1 000 times alternately
 - THEN the counters still read one `apply` and zero `revert`
@@ -68,7 +68,7 @@ Each entry MUST hold the command, the snapshot before it (`Arc<Document>`) and, 
 #### Scenario: Cost does not grow with the document (D4, property)
 - GIVEN generated documents from 1 to the generator's maximum number of nodes, one command each
 - WHEN `undo()` and `redo()` run
-- THEN each installs a stored `Arc` (pointer-equal to the recorded snapshot) and calls no command method, whatever the size
+- THEN each installs a stored `Arc` (pointer-equal to the recorded snapshot) and calls neither `apply` nor `revert`, whatever the size
 
 #### Scenario: Nothing to undo (D4, unit)
 - GIVEN a fresh history

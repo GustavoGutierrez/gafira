@@ -688,3 +688,24 @@ GREEN (new step):
 - gafira-color row removed from V5 table: V5 exit 1 "gafira-color has clippy.toml but no V5 row".
 
 Gates: fmt, clippy -D warnings, `cargo test --workspace --locked` (508 passed, 0 failed), `cargo deny check` ok; ARQ-07, forbid unsafe, V5, V12, V13, V14 extracted from ci.yml all exit 0. Deviations: none.
+
+### Whole-change verify fixes (spec text, after the FAIL)
+
+- C1: `edit-commands` "Crate purity and dependencies" now allows the direct `serde_json` edge (D7, memory estimate of extension payloads; already in `gafira-doc`'s normal tree) and says how the checks treat it: V5 constrains only `gafira-*` edges and the forbidden prefixes, so third-party crates fall to the purity requirement, `cargo deny` and review. The `workspace-tooling` V5 requirement says the same; `ci.yml` is unchanged.
+- C2: the `workspace-tooling` delta now describes `ci.yml` as it is: six V5 rows (`gafira-time -` from `domain-time` included) and five `clippy.toml` copies (geom, color, time, doc, edit; testkit exempt). `domain-time` gets its own `specs/workspace-tooling/spec.md` with one ADDED requirement ("gafira-time domain crate wiring (V5 row, clippy.toml copy)") and no MODIFIED, so the two deltas share no requirement.
+- W3: snapshot undo and redo call neither `apply` nor `revert` (they call `label()`): reworded in `edit-history` "Undo and redo by snapshot" and in the proposal's success criterion.
+- Verify W1 (V12 parser stops at a whitespace-only line) is code for `tdd-apply`; its RED is the new D11 scenario "A whitespace-only line does not hide table rows".
+
+## Archive notes
+
+For the `archive` agent (from the whole-change verify and the spec fixes above):
+
+1. Order: archive `edit-history` first (it merged first; D11 is on this branch), then `domain-time`. Either order gives the same main `workspace-tooling` spec, because `domain-time`'s delta only ADDs "gafira-time domain crate wiring (V5 row, clippy.toml copy)" and `edit-history`'s MODIFIED V5 table already contains the `gafira-time` row. Do not drop that row; `domain-time`'s new delta still needs its own verify before its archive.
+2. Destructive MODIFIED: `workspace-tooling` "Policy checks cover every domain crate (V11, V12)" drops the main scenario "Too few copies fails V12 (H-N4, manual negative test)" (owner decision 2026-10-25, D11). Warn before merging.
+3. Not a loss: the main scenario "Hardened V12 timing (command)" comes back as "Hardened V12 timing (C2b history, command)" (a rename).
+4. `edit-commands` and `edit-history` are new capabilities: copy them with `cp`, then rename `## ADDED Requirements` to `## Requirements` in `openspec/specs/edit-commands/spec.md` and `openspec/specs/edit-history/spec.md`, as earlier archives did.
+5. `edit-capability`: MODIFIED "Id allocation (D5b)" carries the D8 clarification of "ids never reused" into the main spec (3 scenarios kept, 1 added).
+6. Product document `docs/specs/02-arquitectura-software.md`, in its own docs commit (not part of the delta merge; proposed text, owner-facing Spanish):
+   - ARQ-32, criterion: replace "deshacer y rehacer de una entrada con instantánea no llaman a ningún método de `Command` y solo instalan el `Arc` guardado" with "deshacer y rehacer de una entrada con instantánea no llaman ni a `apply` ni a `revert` (solo a `label()`, para devolver la etiqueta) y solo instalan el `Arc` guardado".
+   - §4.3 "Implementan": replace "en `gafira-edit::cmd`: `SetProperty<T>` (campos de nodo y de forma, y los de página y el DPI del documento)" with "en la raíz de `gafira-edit`: `SetProperty` (un enum `Property` con los campos de nodo y de forma, los de página y el DPI del documento)".
+   - §4.3 "Cómo añadir un comando", step 2: replace "`touches` exacto." with "`touches` cubre todo cambio: una página cuando cambian sus campos o sus `roots`, un nodo cuando cambia su registro o sus `children`; un cambio del DPI no lista nada y quien dependa del DPI compara `Document::dpi`."

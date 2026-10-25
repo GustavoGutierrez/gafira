@@ -8,14 +8,14 @@ Decisions are closed in `design.md`; a requirement that depends on one names it 
 
 ## ADDED Requirements
 
-### Requirement: Crate purity and dependencies (ARQ-01, ARQ-02) (D1)
+### Requirement: Crate purity and dependencies (ARQ-01, ARQ-02) (D1, D7)
 
-`gafira-edit` MUST be a layer 1 domain crate: `#![forbid(unsafe_code)]`, a byte-identical copy of the canonical domain `clippy.toml`, and normal dependencies limited to `gafira-geom`, `gafira-color`, `gafira-doc` and the standard library. It MUST NOT read clocks, the environment, files, the network or spawn threads (ARQ-02), and MUST NOT use `HashMap` or `HashSet` (ARQ-10 ban). It MUST NOT contain mutable global state (ARQ-31); the one allowed `static` is the private, immutable `EditToken` (see `edit-capability`).
+`gafira-edit` MUST be a layer 1 domain crate: `#![forbid(unsafe_code)]`, a byte-identical copy of the canonical domain `clippy.toml`, and direct normal dependencies limited to `gafira-geom`, `gafira-color`, `gafira-doc`, `serde_json` and the standard library. `serde_json` is allowed for the memory estimate of `edit-history` (D7), which sizes extension payloads (`serde_json::Value`) without allocating; it is already in the normal tree of `gafira-doc`, so the edge adds no package. How the checks treat it: V5 constrains only `gafira-*` edges and the forbidden UI, async and network prefixes (`workspace-tooling`, "Per-crate allowed-dependency table (V5)"), so the `serde_json` edge passes V5 by design and is not a V5 row entry; third-party crates are governed by this requirement, `cargo deny check` and review. Adding any other direct normal dependency MUST be an explicit edit of this requirement. It MUST NOT read clocks, the environment, files, the network or spawn threads (ARQ-02), and MUST NOT use `HashMap` or `HashSet` (ARQ-10 ban). It MUST NOT contain mutable global state (ARQ-31); the one allowed `static` is the private, immutable `EditToken` (see `edit-capability`).
 
-#### Scenario: Dependency set (D1, command)
-- GIVEN the tree after D1
-- WHEN `cargo tree -p gafira-edit -e normal,build --target all --prefix none -f '{p}'` is filtered for `gafira-*`
-- THEN the set is exactly `gafira-edit`, `gafira-doc`, `gafira-geom`, `gafira-color`, and V5 exits 0
+#### Scenario: Dependency set (D1, D7, command)
+- GIVEN the final tree
+- WHEN `cargo tree -p gafira-edit -e normal,build --target all --prefix none -f '{p}'` is filtered for `gafira-*`, and `cargo tree -p gafira-edit -e normal --depth 1 --prefix none -f '{p}'` lists the direct dependencies
+- THEN the `gafira-*` set is exactly `gafira-edit`, `gafira-doc`, `gafira-geom`, `gafira-color`; the direct dependencies are exactly `gafira-color`, `gafira-doc`, `gafira-geom` and `serde_json`; and V5 and `cargo deny check` exit 0
 
 #### Scenario: Clock call rejected (D1, integration)
 - GIVEN a scratch `std::time::Instant::now()` call in a `gafira-edit` test
