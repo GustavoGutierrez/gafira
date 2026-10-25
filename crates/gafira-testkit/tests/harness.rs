@@ -1,5 +1,8 @@
 //! The harness itself: it accepts sound commands and names the broken law.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{DocMut, Document, Dpi, NodeId, PageId};
 use gafira_edit::{Applied, Command, CommandError, DirtySet};
@@ -9,6 +12,12 @@ use proptest::prelude::*;
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Flaw {
     Sound,
+    /// Rejects its input with `Err` before changing anything.
+    SoundRejects,
+    /// Changes nothing and reports `Unchanged`.
+    SoundUnchanged,
+    /// Reports `Unchanged`, but its revert changes the page.
+    UnchangedBadRevert,
     /// Sets a node opacity and lists the node.
     SoundNode,
     ForgetsRevert,
@@ -65,6 +74,11 @@ impl Command for Probe {
         let Some(page_id) = self.page else {
             return Ok(Applied::Unchanged);
         };
+        match self.flaw {
+            Flaw::SoundRejects => return Err(CommandError::InvalidValue("probe")),
+            Flaw::SoundUnchanged | Flaw::UnchangedBadRevert => return Ok(Applied::Unchanged),
+            _ => {}
+        }
         if self.changes_node() {
             if let Some(id) = self.node {
                 let node = doc.node_mut(page_id, id).expect("generated target exists");
@@ -98,6 +112,11 @@ impl Command for Probe {
         let Some(page_id) = self.page else {
             return Ok(());
         };
+        if self.flaw == Flaw::UnchangedBadRevert {
+            let page = doc.page_mut(page_id).expect("target exists");
+            page.locked = !page.locked;
+            return Ok(());
+        }
         if self.flaw == Flaw::ForgetsRevert {
             return Ok(());
         }
@@ -143,6 +162,8 @@ struct Dial {
     value: u32,
     page: Option<PageId>,
     adds_on_merge: bool,
+    /// Fails on a page that an earlier dial already named.
+    rejects_dialed_page: bool,
     old: Option<String>,
 }
 
@@ -155,6 +176,14 @@ impl Command for Dial {
         let Some(id) = self.page else {
             return Ok(Applied::Unchanged);
         };
+        if self.rejects_dialed_page
+            && doc
+                .as_doc()
+                .page(id)
+                .is_some_and(|page| page.name.starts_with("dial "))
+        {
+            return Err(CommandError::InvalidValue("dialed"));
+        }
         let page = doc.page_mut(id).expect("generated target exists");
         self.old = Some(std::mem::replace(
             &mut page.name,
@@ -197,7 +226,10 @@ fn probe(flaw: Flaw) -> impl Fn(&Document) -> Just<Probe> {
     move |doc| Just(Probe::new(flaw, doc))
 }
 
-fn dial(adds_on_merge: bool) -> impl Fn(&Document) -> BoxedStrategy<Dial> {
+fn dial(
+    adds_on_merge: bool,
+    rejects_dialed_page: bool,
+) -> impl Fn(&Document) -> BoxedStrategy<Dial> {
     move |doc| {
         let page = doc.pages().first().map(|page| page.id);
         (1..=100_u32)
@@ -205,6 +237,7 @@ fn dial(adds_on_merge: bool) -> impl Fn(&Document) -> BoxedStrategy<Dial> {
                 value,
                 page,
                 adds_on_merge,
+                rejects_dialed_page,
                 old: None,
             })
             .boxed()
@@ -215,7 +248,9 @@ fn dial(adds_on_merge: bool) -> impl Fn(&Document) -> BoxedStrategy<Dial> {
 fn sound_commands_pass_every_law() {
     prop_command(probe(Flaw::Sound));
     prop_command(probe(Flaw::SoundNode));
-    prop_command(dial(false));
+    prop_command(dial(false, false));
+    prop_command(probe(Flaw::SoundRejects));
+    prop_command(probe(Flaw::SoundUnchanged));
 }
 
 #[test]
@@ -228,13 +263,14 @@ fn each_broken_law_is_named_with_a_counterexample() {
         (Flaw::GhostTouch, 4),
         (Flaw::FailsAfterMutating, 5),
         (Flaw::FailsAfterCopying, 5),
+        (Flaw::UnchangedBadRevert, 1),
     ];
     for (flaw, law) in rows {
         let violation = try_prop_command(probe(flaw)).expect_err("the flaw is caught");
         assert_eq!(violation.law, law, "{flaw:?}: {violation}");
         assert!(violation.counterexample.contains("Probe"), "{violation}");
     }
-    let violation = try_prop_command(dial(true)).expect_err("the broken merge is caught");
+    let violation = try_prop_command(dial(true, false)).expect_err("the broken merge is caught");
     assert_eq!(violation.law, 6, "{violation}");
 }
 
@@ -242,4 +278,26 @@ fn each_broken_law_is_named_with_a_counterexample() {
 #[should_panic(expected = "law 1 broken")]
 fn prop_command_panics_on_a_broken_law() {
     prop_command(probe(Flaw::ForgetsRevert));
+}
+
+#[test]
+fn merge_is_not_compared_when_the_sequence_cannot_apply() {
+    // The second dial fails on the page the first one named, so there is no
+    // sequence to compare the (broken) merge with.
+    assert_eq!(try_prop_command(dial(true, true)), Ok(()));
+}
+
+#[test]
+fn it_runs_a_thousand_cases_by_default() {
+    if std::env::var_os("PROPTEST_CASES").is_some() {
+        return; // the override is in effect
+    }
+    let calls = Arc::new(AtomicU32::new(0));
+    let counter = Arc::clone(&calls);
+    prop_command(move |doc| {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Just(Probe::new(Flaw::Sound, doc))
+    });
+    // The strategy is built twice per case: the command and the next one.
+    assert_eq!(calls.load(Ordering::Relaxed), 2_000);
 }
