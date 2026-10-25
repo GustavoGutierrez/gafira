@@ -105,5 +105,6 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
 | PR and issue comments | `comment-writer` |
 | Creating, refreshing or reading the skill registry | `skill-registry` |
+| Updating, finding a chapter in, or building the PDFs of the technical manual | `technical-manual` |
 
 No Rust-specific skill is installed; the Rust rules are the ones above and in `openspec/config.yaml`. The user-level `CLAUDE.md` still applies to the main conversation (language, no AI attribution in commits).
