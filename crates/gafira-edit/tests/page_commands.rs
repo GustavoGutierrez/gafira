@@ -2,11 +2,17 @@
 //! their public contract (Q4).
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use gafira_doc::msg::MessageKey;
 use gafira_doc::{
-    Axis, Document, Dpi, EditToken, NodeId, Page, PageId, PageSize, PageSizeError, ValidationError,
+    Axis, Document, Dpi, EditToken, NodeId, NodeKind, Page, PageId, PageSize, PageSizeError,
+    Placement, ShapeGeometry, ShapeNode, ValidationError,
 };
-use gafira_edit::{Applied, Command, CommandError, GestureId, MergeKey, Property, SetProperty};
+use gafira_edit::{
+    Applied, Command, CommandError, GestureId, History, InsertNodes, InsertPage, MergeKey,
+    NodeSpec, Property, RemovePage, SetProperty, Transaction,
+};
 use gafira_geom::{Length, Unit};
 
 const P1: PageId = PageId::new(1);
@@ -458,4 +464,262 @@ fn a_dpi_command_is_reusable_after_a_failed_apply() {
     assert_eq!(apply(&mut command, &mut doc), Ok(Applied::Changed));
     revert(&mut command, &mut doc).unwrap();
     assert_eq!(doc, original);
+}
+
+fn new_page(index: usize, name: &str) -> InsertPage {
+    InsertPage::new(index, name.into(), px(100.0, 50.0))
+}
+
+fn ids(doc: &Document) -> Vec<PageId> {
+    doc.pages().iter().map(|p| p.id).collect()
+}
+
+#[test]
+fn insert_a_page_then_redo_reuses_its_id() {
+    let original = two_pages(96);
+    let mut doc = original.clone();
+    let mut insert = new_page(1, "mid");
+    assert_eq!(apply(&mut insert, &mut doc), Ok(Applied::Changed));
+    assert_eq!(ids(&doc), [P1, PageId::new(3), P2]);
+    assert_eq!(doc.next_id(), 4);
+    let made = doc.page(PageId::new(3)).unwrap();
+    assert_eq!((made.name.as_str(), made.size), ("mid", px(100.0, 50.0)));
+    assert!(made.roots.is_empty() && made.nodes.is_empty() && !made.locked && !made.hidden);
+    assert_eq!(doc.validate(), Ok(()));
+    let touched = insert.touches();
+    assert_eq!(touched.pages, [PageId::new(3)].into_iter().collect());
+    assert!(touched.nodes.is_empty());
+
+    let first = doc.clone();
+    revert(&mut insert, &mut doc).unwrap();
+    assert_eq!(doc, original);
+    assert_eq!(apply(&mut insert, &mut doc), Ok(Applied::Changed));
+    assert_eq!(doc, first);
+}
+
+#[test]
+fn a_page_goes_in_at_any_index_up_to_the_length() {
+    for (index, expected) in [(0, [3, 1, 2]), (2, [1, 2, 3])] {
+        let mut doc = two_pages(96);
+        apply(&mut new_page(index, "n"), &mut doc).unwrap();
+        let got: Vec<u64> = ids(&doc).iter().map(|p| p.get()).collect();
+        assert_eq!(got, expected);
+    }
+    let original = two_pages(96);
+    let error = CommandError::IndexOutOfRange { index: 3, len: 2 };
+    refused(new_page(3, "n"), &original, error);
+}
+
+#[test]
+fn a_page_outside_the_pixel_limits_is_not_inserted() {
+    let original = two_pages(96);
+    let huge = InsertPage::new(0, "n".into(), px(20_000.0, 10.0));
+    refused_size(huge, &original, PageId::new(3), Axis::Width);
+    // Millimetres count at the document DPI.
+    let at = |dpi| {
+        let one = page(P1, "p", px(10.0, 10.0));
+        Document::from_parts(2, Dpi::new(dpi), vec![one]).expect("valid")
+    };
+    let a0 = InsertPage::new(0, "a0".into(), a0());
+    refused_size(a0.clone(), &at(351), PageId::new(2), Axis::Height);
+    let mut doc = at(300);
+    assert_eq!(apply(&mut { a0 }, &mut doc), Ok(Applied::Changed));
+}
+
+#[test]
+fn an_exhausted_page_id_space_changes_nothing() {
+    let full = Document::from_parts(u64::MAX, Dpi::new(96), vec![page(P1, "p", px(10.0, 10.0))])
+        .expect("valid");
+    refused(new_page(0, "n"), &full, CommandError::IdSpaceExhausted);
+}
+
+#[test]
+fn an_insert_is_reusable_after_a_failed_apply() {
+    let mut insert = new_page(1, "n");
+    let mut empty = Document::default();
+    assert!(apply(&mut insert, &mut empty).is_err());
+    assert_eq!(
+        revert(&mut insert, &mut empty),
+        Err(CommandError::NotApplied)
+    );
+
+    let original = two_pages(96);
+    let mut fresh = original.clone();
+    apply(&mut new_page(1, "n"), &mut fresh).unwrap();
+    let mut doc = original.clone();
+    assert_eq!(apply(&mut insert, &mut doc), Ok(Applied::Changed));
+    assert_eq!(doc, fresh);
+    // A failed call after a good one keeps the record of the good one.
+    assert!(apply(&mut insert, &mut Document::default()).is_err());
+    revert(&mut insert, &mut doc).unwrap();
+    assert_eq!(doc, original);
+}
+
+#[test]
+fn an_insert_revert_checks_before_it_removes() {
+    let mut doc = two_pages(96);
+    let mut insert = new_page(0, "n");
+    apply(&mut insert, &mut doc).unwrap();
+    let made = PageId::new(3);
+
+    // The page was edited since: reverting would lose that edit.
+    let mut edited = doc.clone();
+    edited.edit(&token()).page_mut(made).unwrap().name = "other".into();
+    let before = edited.clone();
+    assert_eq!(
+        revert(&mut insert, &mut edited),
+        Err(CommandError::InvalidValue("the inserted page was changed"))
+    );
+    assert_eq!(edited, before);
+
+    let mut gone = doc.clone();
+    gone.edit(&token()).pages_mut().remove(0);
+    let before = gone.clone();
+    assert_eq!(
+        revert(&mut insert, &mut gone),
+        Err(CommandError::MissingPage(made))
+    );
+    assert_eq!(gone, before);
+}
+
+#[test]
+fn an_id_is_reissued_to_a_page_after_an_undo() {
+    let mut history = History::new(two_pages(96)).expect("valid");
+    let made = PageId::new(3);
+    assert_eq!(
+        history.execute(Box::new(new_page(0, "first")), Duration::ZERO),
+        Ok(Applied::Changed)
+    );
+    assert!(history.undo().unwrap().is_some());
+    assert_eq!(history.document().next_id(), 3);
+    assert_eq!(
+        history.execute(Box::new(new_page(2, "second")), Duration::ZERO),
+        Ok(Applied::Changed)
+    );
+    let doc = history.document();
+    assert_eq!(ids(doc), [P1, P2, made]);
+    assert_eq!(doc.page(made).unwrap().name, "second");
+    assert_eq!(doc.validate(), Ok(()));
+}
+
+#[test]
+fn a_failed_transaction_gives_the_page_id_back() {
+    let original = two_pages(96);
+    let mut doc = original.clone();
+    let steps: Vec<Box<dyn Command>> =
+        vec![Box::new(new_page(0, "ok")), Box::new(new_page(9, "bad"))];
+    let mut tx = Transaction::new(MessageKey("test.tx"), steps);
+    assert!(apply(&mut tx, &mut doc).is_err());
+    assert_eq!(doc, original);
+}
+
+/// Pages 1 to 3, page 2 holding a group-less shape (id 4); counter at 5.
+fn with_nodes() -> Document {
+    let base = Document::from_parts(
+        4,
+        Dpi::new(96),
+        vec![
+            page(P1, "one", px(800.0, 600.0)),
+            page(P2, "two", px(800.0, 600.0)),
+            page(PageId::new(3), "three", px(800.0, 600.0)),
+        ],
+    )
+    .expect("valid");
+    let shape = NodeSpec::new(
+        NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect)),
+        Placement::new(0.0, 0.0, 10.0, 10.0),
+    );
+    let mut doc = base;
+    apply(&mut InsertNodes::new(P2, None, 0, vec![shape]), &mut doc).unwrap();
+    doc
+}
+
+#[test]
+fn remove_a_page_and_restore_it_at_its_index() {
+    let original = with_nodes();
+    let mut doc = original.clone();
+    let mut remove = RemovePage::new(P2);
+    assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+    assert_eq!(ids(&doc), [P1, PageId::new(3)]);
+    assert_eq!(doc.validate(), Ok(()));
+    let touched = remove.touches();
+    assert_eq!(touched.pages, [P2].into_iter().collect());
+    assert_eq!(touched.nodes, [NodeId::new(4)].into_iter().collect());
+    revert(&mut remove, &mut doc).unwrap();
+    assert_eq!(doc, original);
+    assert!(Arc::ptr_eq(&doc.pages()[1], &original.pages()[1]));
+    // Redo removes it again.
+    assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+    assert_eq!(ids(&doc), [P1, PageId::new(3)]);
+}
+
+#[test]
+fn the_last_page_can_go() {
+    let original =
+        Document::from_parts(2, Dpi::new(96), vec![page(P1, "p", px(10.0, 10.0))]).expect("valid");
+    let mut doc = original.clone();
+    let mut remove = RemovePage::new(P1);
+    assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+    assert!(doc.pages().is_empty());
+    assert_eq!(doc.validate(), Ok(()));
+    revert(&mut remove, &mut doc).unwrap();
+    assert_eq!(doc, original);
+}
+
+#[test]
+fn a_missing_page_is_not_removed() {
+    let ghost = PageId::new(9);
+    refused(
+        RemovePage::new(ghost),
+        &two_pages(96),
+        CommandError::MissingPage(ghost),
+    );
+}
+
+#[test]
+fn a_remove_is_reusable_after_a_failed_apply() {
+    let mut remove = RemovePage::new(P2);
+    let mut empty = Document::default();
+    assert!(apply(&mut remove, &mut empty).is_err());
+    assert_eq!(
+        revert(&mut remove, &mut empty),
+        Err(CommandError::NotApplied)
+    );
+
+    let original = with_nodes();
+    let mut doc = original.clone();
+    assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+    assert!(apply(&mut remove, &mut empty).is_err());
+    revert(&mut remove, &mut doc).unwrap();
+    assert_eq!(doc, original);
+}
+
+#[test]
+fn a_remove_revert_checks_before_it_inserts() {
+    let mut doc = with_nodes();
+    let mut remove = RemovePage::new(PageId::new(3));
+    apply(&mut remove, &mut doc).unwrap();
+
+    // The page is already back (its id is in the list).
+    let mut back = doc.clone();
+    let mut again = remove.clone();
+    revert(&mut again, &mut back).unwrap();
+    let before = back.clone();
+    assert_eq!(
+        revert(&mut remove, &mut back),
+        Err(CommandError::InvalidValue(
+            "the removed page is already back"
+        ))
+    );
+    assert_eq!(back, before);
+
+    // Its index no longer exists: the list shrank below it.
+    let mut short = doc.clone();
+    short.edit(&token()).pages_mut().clear();
+    let before = short.clone();
+    assert_eq!(
+        revert(&mut remove, &mut short),
+        Err(CommandError::IndexOutOfRange { index: 2, len: 0 })
+    );
+    assert_eq!(short, before);
 }

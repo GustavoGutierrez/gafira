@@ -6,7 +6,8 @@ use gafira_doc::{
     ShapeGeometry, ShapeNode,
 };
 use gafira_edit::{
-    GestureId, InsertNodes, NodeSpec, Property, RemoveNodes, Reorder, Reparent, SetProperty,
+    GestureId, InsertNodes, InsertPage, NodeSpec, Property, RemoveNodes, RemovePage, Reorder,
+    Reparent, SetProperty,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -314,4 +315,32 @@ fn set_page_property(doc: &Document) -> BoxedStrategy<SetProperty> {
 #[test]
 fn set_property_on_pages_and_dpi_obeys_the_command_laws() {
     prop_command(set_page_property);
+}
+
+/// An index that is mostly inside `0..=len` and sometimes past it, a name and
+/// a size that is sometimes outside the pixel limits.
+fn insert_page(doc: &Document) -> BoxedStrategy<InsertPage> {
+    let len = doc.pages().len();
+    (0..=len + 1, "[a-z]{0,6}", page_size())
+        .prop_map(|(index, name, size)| InsertPage::new(index, name, size))
+        .boxed()
+}
+
+#[test]
+fn insert_page_obeys_the_command_laws() {
+    prop_command(insert_page);
+}
+
+/// A page of `doc`, or a missing one now and then.
+fn remove_page(doc: &Document) -> BoxedStrategy<RemovePage> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    pages.push(PageId::new(u64::MAX));
+    prop::sample::select(pages)
+        .prop_map(RemovePage::new)
+        .boxed()
+}
+
+#[test]
+fn remove_page_obeys_the_command_laws() {
+    prop_command(remove_page);
 }
