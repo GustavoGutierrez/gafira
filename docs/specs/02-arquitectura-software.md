@@ -1265,6 +1265,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | wasmi | última | MIT/Apache | VERIFICAR | Plugins (Fase 3) | — |
 | ort + ONNX Runtime | — | MIT/Apache (runtime MIT) | VERIFICAR | Segmentador ML opcional (Fase 3, paquete aparte) | candle (VERIFICAR) |
 | proptest, criterion, insta | dev | MIT/Apache | VERIFICAR | Pruebas | — |
+| trybuild | dev | MIT/Apache | VERIFICAR (`cargo deny`) | Pruebas de compilación de ARQ-30 en `gafira-edit` | — |
 | **Evitadas** | | | | | |
 | symphonia | — | MPL-2.0 | EVITAR | — | claxon, lewton, hound, códecs del SO |
 | im / imbl / rpds | — | MPL-2.0 | EVITAR | — | `Arc` + `make_mut` propio (ADR-03) |
