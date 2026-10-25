@@ -177,3 +177,63 @@ Totals after the fix: 348 tests in the workspace (D2 S2 closed for D3).
 ### Note for D4
 
 A merged drag that ends where it started (a to b to a) has `value == previous`; applying it again (redo) returns `Unchanged`. `History` must decide whether such an entry is dropped or kept (Q14).
+
+## D4: `History` (execute, preview, undo, redo)
+
+Base: `main` b70a4a5. Branch `feat/edit-history-4`.
+
+### Commits and gates
+
+| Commit | Content | Tests in workspace |
+|---|---|---|
+| fix(edit): report a failed rollback instead of ignoring it in Transaction | `CommandError::RollbackFailed`, W6 and D1 W4 for `Transaction` | 350 |
+| feat(edit): add History with atomic execute, preview, undo and redo | `history.rs`, 16 unit tests | 366 |
+| test(edit): prove undo and redo install stored snapshots at any document size | `tests/history.rs`, one property (256 cases) | 367 |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0).
+
+Size (`git diff --shortstat main..HEAD -- crates`): 674 insertions, 12 deletions (forecast ~630, ceiling ~700). About 330 lines are `history.rs` tests.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Readers share the snapshot | `readers_keep_their_snapshot_when_a_command_runs` |
+| Send and Sync | `a_history_is_send_and_sync` (an `Rc` field breaks the build) |
+| Failure leaves the Arc untouched | `a_failed_command_leaves_the_session_untouched_and_usable` (also: the history works afterwards) |
+| New change clears redo | `a_new_change_clears_redo` |
+| Unchanged is not recorded, redo kept (Q14) | `an_unchanged_command_is_not_recorded`, `unchanged_and_failed_commands_keep_redo` |
+| Buggy command trips the assert | `a_command_that_breaks_the_document_trips_the_debug_assert` (`#[cfg(debug_assertions)]`, orphan node) |
+| Undo restores the exact Arc | `undo_restores_the_exact_snapshot`, `redo_reinstalls_the_exact_state_the_command_produced` |
+| Undo calls no command method | `undo_and_redo_call_no_command_method` (1 000 rounds: 1 apply, 0 revert) |
+| Cost does not grow (property) | `tests/history.rs::undo_and_redo_install_the_recorded_snapshots_whatever_the_size` |
+| Nothing to undo | `with_nothing_to_undo_or_redo_both_return_none` |
+| Preview | `preview_returns_the_result_without_installing_it`, `a_failed_preview_returns_the_error` |
+| Invalid start document | `it_refuses_an_invalid_document` |
+
+### RED evidence
+
+Tests were written before the code each time.
+
+- `Transaction` rollback: `RollbackFailed` was added as a variant only; `a_failed_rollback_is_reported_after_trying_every_earlier_child` failed with `left: InvalidValue("c")`, `right: RollbackFailed { .. }`. Mutant `break` after the first failed revert: the log assertion fails (`revert a` missing).
+- `History` execute: against a stub (`execute` returned `Unchanged`, `len` 0, `preview` returned the current document) 7 tests failed on assertions (`left: Ok(Unchanged) right: Ok(Changed)`, `left: 0 right: 1`, `left: Dpi(96) right: Dpi(600)`, a should_panic that did not panic, `History::new` accepting dpi 0).
+- Undo and redo: against a stub returning `Ok(None)`, 6 tests failed on assertions, and `undo_and_redo_call_no_command_method` was strengthened (it passed on the stub) until it failed.
+- Mutants on the finished code, each caught: no `redo.clear()`, recording `Unchanged`, redo installing `before`, `apply_to_copy` returning the old document. The property was caught by `undo` installing a deep clone (`Arc::ptr_eq` fails). The property test itself passed at once on the finished code (the unit tests had driven the implementation), so its RED is the mutant only.
+- `a_transaction_is_reusable_after_a_failed_apply` (D1 W4) passed at once: it characterizes existing behavior (the test command's fail-once switch is what makes it meaningful).
+
+### Carry-overs
+
+- D3 note (a merged drag that ends where it started): decision is to keep the entry. `History` never asks `apply` again on redo, it installs the stored `after` snapshot, so an `Unchanged` re-apply cannot lose the entry (`redo_does_not_depend_on_what_a_reapply_would_report`). D7 must treat `Unchanged` from `apply` on a compacted redo as success, because the document then already equals the after-state. D6 keeps a merged entry even if its before and after are equal.
+- D1 W6: `Transaction::apply` now tries every earlier revert and returns `RollbackFailed { apply, revert }` (first revert error) when one fails; with all reverts fine it still returns the failing child's error, as the spec says. `History` drops the copy either way. `Transaction::revert` still stops at the first error (spec: revert all in reverse order); a failed revert there leaves a partial copy that `History` (D7 compacted undo) discards.
+- D1 W4: covered for `Transaction` and for `History` (it keeps working after a failed command). `History` takes the command by value, so a failed command is dropped, not re-applied.
+- Law 4 limits (D2 W5/S3), recorded for the pending W1 spec edit: the harness only checks that listed items exist (over-listing passes) and counts a copy-on-write `Arc` change without a value change as a change. `History` does not use `touches` yet.
+- D3 W3 (wide `set_property` strategy mostly takes the error path, law 6 rarely runs): not touched; it belongs to D6, where the merge property leans on the `drag` strategy.
+
+### Deviations and notes
+
+- `undo` and `redo` return `Result<Option<CommandLabel>, CommandError>`, not `Option`. D7 needs the error (revert/apply on a compacted entry), so the signature is fixed now to avoid changing D5/D6 code. No error is possible in D4.
+- `History::new(doc: Document) -> Result<Self, ValidationError>` validates the document ("built from a validated document").
+- `execute` takes `_at` and ignores it; D6 uses it. Entries hold `command`, `before` and `after`; the `at` field and the gesture state are D6's.
+- `is_empty` exists only because clippy (`len_without_is_empty`) requires it; no test.
+- The debug assertion also runs after undo and redo (`debug_check`); it cannot fail there because every installed snapshot was validated when installed, so it has no test.
+- To keep D6/D7 and D8 apart: D6 and D7 edit `history.rs` (same chain); D8 needs only new files and `tests/` (its Q6 scenario can live in `tests/`).
