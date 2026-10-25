@@ -42,6 +42,27 @@ impl NonFiniteValue {
     }
 }
 
+/// Why a tolerance or a stroke width is not usable.
+///
+/// A number that is finite but not above zero is its own cause and keeps its
+/// value: calling it NaN would mislead.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum InvalidNumber {
+    /// The number is finite and zero or negative. It carries the number.
+    NotPositive(f64),
+    /// The number is not finite. It carries the kind of non-finite value.
+    NonFinite(NonFiniteValue),
+}
+
+impl fmt::Display for InvalidNumber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotPositive(value) => write!(f, "not positive: {value}"),
+            Self::NonFinite(kind) => write!(f, "not finite: {kind}"),
+        }
+    }
+}
+
 /// The reason a path operation failed.
 ///
 /// The crate checks its own inputs before it computes, so the error names the
@@ -64,13 +85,13 @@ pub enum PathOpError {
     },
     /// The stroke width is not a finite positive number.
     InvalidStrokeWidth {
-        /// Which kind of bad number the width holds.
-        value: NonFiniteValue,
+        /// Why the width is not usable.
+        cause: InvalidNumber,
     },
     /// The tolerance is not a finite positive number.
     InvalidTolerance {
-        /// Which kind of bad number the tolerance holds.
-        value: NonFiniteValue,
+        /// Why the tolerance is not usable.
+        cause: InvalidNumber,
     },
     /// The tolerance is below the smallest one the operands allow.
     ///
@@ -94,12 +115,8 @@ impl fmt::Display for PathOpError {
             Self::OpenSubpath { subpath } => {
                 write!(f, "subpath {subpath} of the path is not closed")
             }
-            Self::InvalidStrokeWidth { value } => {
-                write!(f, "stroke width is not a finite positive number: {value}")
-            }
-            Self::InvalidTolerance { value } => {
-                write!(f, "tolerance is not a finite positive number: {value}")
-            }
+            Self::InvalidStrokeWidth { cause } => write!(f, "stroke width is {cause}"),
+            Self::InvalidTolerance { cause } => write!(f, "tolerance is {cause}"),
             Self::ToleranceTooFine { minimum } => {
                 write!(
                     f,
@@ -135,13 +152,13 @@ mod tests {
             (PathOpError::OpenSubpath { subpath: 2 }, "subpath 2"),
             (
                 PathOpError::InvalidStrokeWidth {
-                    value: NonFiniteValue::Nan,
+                    cause: InvalidNumber::NotPositive(-1.5),
                 },
                 "stroke width",
             ),
             (
                 PathOpError::InvalidTolerance {
-                    value: NonFiniteValue::Infinity,
+                    cause: InvalidNumber::NonFinite(NonFiniteValue::Infinity),
                 },
                 "tolerance",
             ),

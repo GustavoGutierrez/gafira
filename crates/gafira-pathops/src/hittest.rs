@@ -5,7 +5,7 @@
 
 use kurbo::{ParamCurve, ParamCurveNearest, Point, Shape};
 
-use crate::{FillRule, NonFiniteValue, Path, PathOpError};
+use crate::{FillRule, Path, PathOpError, validate};
 
 /// Where a point sits relative to a path.
 ///
@@ -28,7 +28,7 @@ impl Path {
     /// [`Containment::OnBoundary`], so a caller can tell an edge hit from a
     /// fill hit.
     pub fn contains(&self, point: Point, tolerance: f64) -> Result<Containment, PathOpError> {
-        validate_tolerance(tolerance)?;
+        validate::tolerance(tolerance)?;
         self.validate_finite()?;
         self.validate_closed()?;
 
@@ -59,7 +59,7 @@ impl Path {
     /// away, in either direction. A caller that hit tests a stroke uses it to
     /// decide whether the point is within the stroke's width.
     pub fn distance_to_perimeter(&self, point: Point, tolerance: f64) -> Result<f64, PathOpError> {
-        validate_tolerance(tolerance)?;
+        validate::tolerance(tolerance)?;
         self.validate_finite()?;
 
         let mut closest = f64::INFINITY;
@@ -74,36 +74,10 @@ impl Path {
     }
 }
 
-/// Checks that the tolerance is a finite positive number.
-fn validate_tolerance(tolerance: f64) -> Result<(), PathOpError> {
-    if tolerance.is_finite() && tolerance > 0.0 {
-        Ok(())
-    } else if let Some(value) = NonFiniteValue::classify(tolerance) {
-        Err(PathOpError::InvalidTolerance { value })
-    } else {
-        Err(PathOpError::InvalidTolerance {
-            value: NonFiniteValue::Nan,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use kurbo::{Circle, Rect};
-
-    #[test]
-    fn a_valid_tolerance_passes_the_check() {
-        assert_eq!(validate_tolerance(1e-3), Ok(()));
-    }
-
-    #[test]
-    fn an_invalid_tolerance_is_rejected() {
-        assert!(matches!(
-            validate_tolerance(0.0),
-            Err(PathOpError::InvalidTolerance { .. })
-        ));
-    }
 
     #[test]
     fn the_winding_number_of_a_square_is_one_inside() {

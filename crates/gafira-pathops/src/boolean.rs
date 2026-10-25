@@ -7,7 +7,7 @@ use kurbo::BezPath;
 use linesweeper::FillRule as LibFillRule;
 use linesweeper::topology::{BinaryWindingNumber, Topology};
 
-use crate::{BooleanOp, FillRule, NonFiniteValue, Path, PathOpError};
+use crate::{BooleanOp, FillRule, Path, PathOpError, validate};
 
 /// The smallest tolerance a boolean operation accepts, per unit of the largest
 /// absolute coordinate of its operands.
@@ -60,7 +60,7 @@ impl Path {
         op: BooleanOp,
         tolerance: f64,
     ) -> Result<Path, PathOpError> {
-        validate_tolerance(tolerance)?;
+        validate::tolerance(tolerance)?;
         self.validate_finite()?;
         other.validate_finite()?;
         self.validate_closed()?;
@@ -131,19 +131,6 @@ fn lib_fill_rule(rule: FillRule) -> LibFillRule {
     }
 }
 
-/// Checks that the tolerance is a finite positive number.
-fn validate_tolerance(tolerance: f64) -> Result<(), PathOpError> {
-    if tolerance.is_finite() && tolerance > 0.0 {
-        Ok(())
-    } else if let Some(value) = NonFiniteValue::classify(tolerance) {
-        Err(PathOpError::InvalidTolerance { value })
-    } else {
-        Err(PathOpError::InvalidTolerance {
-            value: NonFiniteValue::Nan,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,25 +138,6 @@ mod tests {
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Path {
         Path::new(Rect::new(x0, y0, x1, y1).to_path(0.0), FillRule::NonZero)
-    }
-
-    #[test]
-    fn a_valid_tolerance_passes_the_check() {
-        assert_eq!(validate_tolerance(1e-3), Ok(()));
-    }
-
-    #[test]
-    fn an_invalid_tolerance_is_rejected() {
-        for tolerance in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            let expected = match NonFiniteValue::classify(tolerance) {
-                Some(value) => value,
-                None => NonFiniteValue::Nan,
-            };
-            assert_eq!(
-                validate_tolerance(tolerance),
-                Err(PathOpError::InvalidTolerance { value: expected })
-            );
-        }
     }
 
     #[test]

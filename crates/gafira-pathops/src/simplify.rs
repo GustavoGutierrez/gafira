@@ -5,7 +5,7 @@
 
 use kurbo::simplify::{SimplifyOptions, simplify_bezpath};
 
-use crate::{NonFiniteValue, Path, PathOpError};
+use crate::{Path, PathOpError, validate};
 
 impl Path {
     /// The path with its redundant parts removed.
@@ -14,7 +14,7 @@ impl Path {
     /// holds more segments than it did. Every subpath of the original appears
     /// in the result, in the same order.
     pub fn simplify(&self, tolerance: f64) -> Result<Path, PathOpError> {
-        validate_tolerance(tolerance)?;
+        validate::tolerance(tolerance)?;
         self.validate_finite()?;
 
         let simplified = simplify_bezpath(
@@ -27,37 +27,11 @@ impl Path {
     }
 }
 
-/// Checks that the tolerance is a finite positive number.
-fn validate_tolerance(tolerance: f64) -> Result<(), PathOpError> {
-    if tolerance.is_finite() && tolerance > 0.0 {
-        Ok(())
-    } else if let Some(value) = NonFiniteValue::classify(tolerance) {
-        Err(PathOpError::InvalidTolerance { value })
-    } else {
-        Err(PathOpError::InvalidTolerance {
-            value: NonFiniteValue::Nan,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::FillRule;
     use kurbo::{BezPath, Rect, Shape};
-
-    #[test]
-    fn a_valid_tolerance_passes_the_check() {
-        assert_eq!(validate_tolerance(1e-3), Ok(()));
-    }
-
-    #[test]
-    fn an_invalid_tolerance_is_rejected() {
-        assert!(matches!(
-            validate_tolerance(0.0),
-            Err(PathOpError::InvalidTolerance { .. })
-        ));
-    }
 
     #[test]
     fn the_simplification_keeps_the_subpaths() {

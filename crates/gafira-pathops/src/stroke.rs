@@ -5,7 +5,7 @@
 
 use kurbo::{BezPath, Cap, Join, Stroke, StrokeOpts};
 
-use crate::{FillRule, NonFiniteValue, Path, PathOpError};
+use crate::{FillRule, Path, PathOpError, validate};
 
 /// The visual style of a stroke.
 ///
@@ -30,8 +30,8 @@ impl Path {
     /// stroked path is open. The tolerance bounds the deviation between the
     /// outline and the exact stroke.
     pub fn stroke_outline(&self, style: &StrokeStyle, tolerance: f64) -> Result<Path, PathOpError> {
-        validate_tolerance(tolerance)?;
-        validate_width(style.width)?;
+        validate::tolerance(tolerance)?;
+        validate::stroke_width(style.width)?;
         self.validate_finite()?;
 
         let kurbo_style = Stroke::new(style.width)
@@ -78,53 +78,10 @@ fn close_all(bez: BezPath) -> BezPath {
     closed
 }
 
-/// Checks that the tolerance is a finite positive number.
-fn validate_tolerance(tolerance: f64) -> Result<(), PathOpError> {
-    if tolerance.is_finite() && tolerance > 0.0 {
-        Ok(())
-    } else if let Some(value) = NonFiniteValue::classify(tolerance) {
-        Err(PathOpError::InvalidTolerance { value })
-    } else {
-        Err(PathOpError::InvalidTolerance {
-            value: NonFiniteValue::Nan,
-        })
-    }
-}
-
-/// Checks that the stroke width is a finite positive number.
-fn validate_width(width: f64) -> Result<(), PathOpError> {
-    if width.is_finite() && width > 0.0 {
-        Ok(())
-    } else if let Some(value) = NonFiniteValue::classify(width) {
-        Err(PathOpError::InvalidStrokeWidth { value })
-    } else {
-        Err(PathOpError::InvalidStrokeWidth {
-            value: NonFiniteValue::Nan,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use kurbo::{Rect, Shape};
-
-    #[test]
-    fn a_valid_width_passes_the_check() {
-        assert_eq!(validate_width(4.0), Ok(()));
-    }
-
-    #[test]
-    fn an_invalid_width_is_rejected() {
-        assert!(matches!(
-            validate_width(0.0),
-            Err(PathOpError::InvalidStrokeWidth { .. })
-        ));
-        assert!(matches!(
-            validate_width(-1.0),
-            Err(PathOpError::InvalidStrokeWidth { .. })
-        ));
-    }
 
     #[test]
     fn the_outline_of_an_open_line_is_closed() {

@@ -12,8 +12,9 @@ mod hittest;
 mod path;
 mod simplify;
 mod stroke;
+mod validate;
 
-pub use error::{NonFiniteValue, PathOpError};
+pub use error::{InvalidNumber, NonFiniteValue, PathOpError};
 pub use hittest::Containment;
 pub use path::Path;
 pub use stroke::StrokeStyle;

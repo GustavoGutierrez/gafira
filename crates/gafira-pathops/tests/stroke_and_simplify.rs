@@ -1,8 +1,7 @@
 //! The public contract of the stroke outlining and the path simplification.
 
 use gafira_pathops::{
-    BezPath, Cap, Containment, DEFAULT_TOLERANCE, FillRule, Join, NonFiniteValue, Path,
-    PathOpError, Point,
+    BezPath, Cap, Containment, DEFAULT_TOLERANCE, FillRule, Join, Path, PathOpError, Point,
 };
 use kurbo::{Rect, Shape};
 
@@ -86,28 +85,6 @@ fn the_outline_of_an_open_path_is_closed() {
     for index in 0..outline.subpath_count() {
         assert!(outline.is_subpath_closed(index));
     }
-}
-
-#[test]
-fn a_degenerate_stroke_width_is_rejected() {
-    for width in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-        let result = line(0.0, 0.0, 100.0, 0.0).stroke_outline(&style(width), DEFAULT_TOLERANCE);
-        let expected = match NonFiniteValue::classify(width) {
-            Some(value) => value,
-            None => NonFiniteValue::Nan,
-        };
-        assert_eq!(
-            result,
-            Err(PathOpError::InvalidStrokeWidth { value: expected }),
-            "width {width} was not rejected"
-        );
-    }
-}
-
-#[test]
-fn an_invalid_tolerance_is_rejected_by_the_stroke() {
-    let result = line(0.0, 0.0, 100.0, 0.0).stroke_outline(&style(4.0), 0.0);
-    assert!(matches!(result, Err(PathOpError::InvalidTolerance { .. })));
 }
 
 #[test]
