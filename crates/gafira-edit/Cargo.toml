@@ -12,6 +12,7 @@ gafira-color.workspace = true
 gafira-doc.workspace = true
 
 [dev-dependencies]
+gafira-testkit.workspace = true
 proptest.workspace = true
 
 [lints]
