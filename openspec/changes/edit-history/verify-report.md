@@ -223,3 +223,71 @@ Every surviving mutant makes the harness stricter than the spec, so it would rej
 - Code rules: no `#[allow]`, no `unsafe`, no clock and no `Hash*` in `gafira-testkit`. It uses `EditToken::__new_for_gafira_edit_only()`, which is allowed in `gafira-testkit` by V13 (rc 0). English throughout.
 - `gafira-testkit` normal dependencies are `gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`, `proptest` and `serde_json`. They match the V5 row and Q10, and `Cargo.lock` changes only by the new crate and the `gafira-doc` dev edge.
 - The main checkout's untracked `.claude/worktrees/` is unrelated and was not touched.
+
+## D2 re-verify (after the fix round)
+
+Branch `feat/edit-history-2`, base `main` e1e4963, HEAD 6ff02a6. The fixes are in b37b7d1 (`crates/gafira-testkit/tests/harness.rs` only, +61/-3) and 6ff02a6 (docs). `git diff c91cee1 HEAD` touches no file under `crates/*/src`, so the harness code is unchanged. The re-verify ran on 2026-10-25. Gates ran in the main checkout. Hand mutations ran on a `git archive` export in the session scratchpad. The source was not edited, and `git status` is clean afterwards.
+
+**Delivery verdict: PASS** (0 CRITICAL, 5 WARNING, 4 SUGGESTION). **Change verdict: not final, because D3 and later deliveries remain.** `next`: `tdd-apply` for D3.
+
+### Gates at HEAD 6ff02a6
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 329 passed, 0 failed (327 before, plus the 2 new tests) |
+| `cargo deny check` | advisories, bans, licenses and sources ok |
+| `ci.yml` policy steps ARQ-07, V11, V5, V12 and V13 (taken from HEAD's `ci.yml` and run with `bash --noprofile --norc -eo pipefail`) | all rc 0 |
+| `PROPTEST_CASES=10 cargo test -p gafira-testkit --test harness` | 5 passed. The override path works, and `it_runs_a_thousand_cases_by_default` returns early |
+| `it_runs_a_thousand_cases_by_default`, 5 runs in a row with `PROPTEST_CASES` unset | 5 out of 5 passed (no flakiness seen) |
+
+Size: `git diff --shortstat e1e4963..HEAD -- crates .github` gives 584 insertions and 14 deletions, which is under the ~700 limit. The commit bodies contain no `Co-Authored-By`, Claude or AI lines (0 matches). There are no `proptest-regressions` files.
+
+### Mutation (re-run)
+
+`cargo mutants -p gafira-testkit --file crates/gafira-testkit/src/harness.rs --jobs 4`, with `PROPTEST_CASES` unset. The output is in `scratchpad/rv2/mutants/mutants.out`. All 30 mutants were tested: 26 caught, 1 missed, 0 timeout, 3 unviable. The 3 unviable mutants are the same as before.
+
+- `harness.rs:186:5` `same_document -> false`: **CAUGHT** (missed before).
+- `harness.rs:186:14` `== -> !=` in `same_document`: **CAUGHT** (missed before).
+- `harness.rs:83:9` delete the `cases` field: **CAUGHT** (missed before), by `it_runs_a_thousand_cases_by_default`.
+- `harness.rs:84:9` delete the `failure_persistence` field: still MISSED. This is configuration, not critical code. Its only effect is that proptest regression files would be written. See W2'.
+
+Hand mutations, using `cargo test -p gafira-testkit --test harness` on the scratch export. Every mutation was reverted, and the export was byte-checked against the original:
+
+| # | Mutation | Result |
+|---|---|---|
+| H1 | `same_document` always `false` (C1) | KILLED by `sound_commands_pass_every_law`: `law 5 broken: a failed apply changed the document` (`SoundRejects`) |
+| H2 | `original == other` becomes `!=` in `same_document` (C1) | KILLED by `sound_commands_pass_every_law`, with the same law 5 message |
+| H3 | Laws 1 and 2 skipped when `apply` returns `Unchanged` (old M3) | KILLED by `each_broken_law_is_named_with_a_counterexample` (`UnchangedBadRevert` is no longer caught) |
+| H4 | Law 6 skip rule removed, so the merge is compared even when the sequence fails (old M4) | KILLED by `merge_is_not_compared_when_the_sequence_cannot_apply` |
+
+### Disposition of the D2 findings
+
+| Item | Status | Evidence |
+|---|---|---|
+| C1 Law 5 accepting side untested | **CLOSED** | `SoundRejects` was added to `sound_commands_pass_every_law` (`tests/harness.rs:252`). Both mutants at line 186 are caught (cargo-mutants, H1 and H2) |
+| W1 Law 4 wording vs the `DirtySet` rule | open (spec edit before archive) | recorded under "Pending spec edits" in `apply-progress.md` |
+| W2 1 000-case default untested | partly closed | `cases` is now pinned (mutant `83:9` caught). `failure_persistence` (`84:9`) is still missed but near-equivalent. See W2' |
+| W3 Skip rules from deviations 3 and 4 untested | **CLOSED** | H3 and H4 are killed. `SoundUnchanged` and `UnchangedBadRevert` were added, and so was `merge_is_not_compared_when_the_sequence_cannot_apply` |
+| W4 `apply-progress.md` overstated D1 W4 | **CLOSED** (the claim was corrected). The reusability check itself is still open for D3, D8, D9, D10 and the `Transaction` test | `apply-progress.md` line 98 |
+| W5 Law 4 checks only that listed items exist | open (known limit, to record in the W1 spec edit) | unchanged |
+| W6 V12 count `>= 3` | open (spec gap, not a D2 defect) | unchanged |
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. W1 (unchanged): amend `edit-commands` "Command property laws" item 4 before archive.
+2. W2': the cargo-mutants miss at `harness.rs:84:9` (`failure_persistence: None` deleted). Deleting it makes proptest write `proptest-regressions/` files on failure. It has no spec-visible effect on the laws. Non-critical configuration, so this is a warning, not a FAIL. An optional `.cargo/mutants.toml` exclusion with a reason would document it.
+3. W4 remainder: a test that re-applies a command after a failed apply ("the command MUST stay reusable") is still owed in D3, D8, D9 and D10, and for `Transaction`.
+4. W5 (unchanged): law 4 is one-sided for listed items. Record this when the spec is amended.
+5. W6 (unchanged): the V12 copy count is `>= 3` with four copies.
+
+### SUGGESTION
+
+1. S1 to S3 from the D2 section are unchanged.
+2. The "D2 fix round" in `apply-progress.md` does not record the new test total (329). Add it with the D3 progress update.
+3. `it_runs_a_thousand_cases_by_default` relies on proptest calling the `prop_flat_map` closure exactly once per accepted case (2 strategy builds). It passed 5 runs in a row. If a later `document()` change adds `prop_filter` after the flat map, or the proptest version changes, update the assertion. A `>= 2_000` bound with a matching comment would be less brittle without losing the kill on mutant `83:9` (256 cases gives 512).
