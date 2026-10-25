@@ -534,3 +534,45 @@ The misses were `+` to `-` and `+` to `*` in `.take(at.len() + 1)`, the ancestor
 
 - The `take(at.len())` refactor is behavior-preserving only on documents that pass `validate()`. The line "the spare step was unreachable slack" above holds for valid pages only. Verify found a counterexample on an invalid page: a top group unreachable from the roots (it breaks P5). Before the refactor `Reparent` returned `Err(WouldCreateCycle)`; after it, `Ok(Applied::Unchanged)`. Neither writes anything, so ARQ-13 holds either way. The command laws (`prop_command`) generate valid documents only, so they do not cover this case.
 - The 2 pre-apply `touches` survivors stay accepted (W1 of the re-verify; W3 of the first verify): the spec defines `touches` only after a successful `apply`.
+
+## D10a: page and DPI targets of `SetProperty`
+
+Flow: full (inherited)
+
+Base: `main` e95e56d. Branch `feat/edit-history-10`. The owner split D10 in two PRs: D10a (this one) and D10b (`InsertPage`, `RemovePage`, the `Transaction` property and V14, branch `feat/edit-history-10b`).
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| f9b9b07 feat(edit): SetProperty targets page fields and the document DPI | `Property::{PageName, PageSize, PageLocked, PageHidden, Dpi}`, `SetProperty::page` and `SetProperty::document`, 21 tests in `tests/page_commands.rs`, one property in `tests/prop_commands.rs` |
+
+Gates: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI steps ARQ-07, forbid unsafe (V11), V5, V12, V13 (extracted from `ci.yml`, run under `bash --noprofile --norc -eo pipefail`), all rc 0. V14 does not exist on this branch.
+
+### Scenarios to tests
+
+- DPI pushes a page over the limit: `a_dpi_that_pushes_a_page_over_the_limit_is_refused` (A0 at 300, DPI 351 gives `InvalidDocument(PageSize { page: 2, OutOfRange { Height } })`; 350 fits).
+- Page fields, size limits, DPI edges (0, 1, 10 000, 10 001, `u32::MAX`), every page checked, unchanged cases, merge keys and merged drag, locked page still editable (Q12): `tests/page_commands.rs`.
+- Carry-overs: re-apply after a failed apply (D1 W4) for the page and DPI commands; validate-before-mutate in `revert`, each precondition tested with the document left equal: `NotApplied` (page, DPI), page gone, old size no longer fits, old DPI no longer fits a page.
+- Law: `set_property_on_pages_and_dpi_obeys_the_command_laws` (1 000 cases).
+
+### RED evidence
+
+- Tests written against a stub (new variants and constructors that fell into the node path): 19 of 21 failed on assertions (`left: Err(InvalidValue("an empty list of target nodes")) right: Ok(Changed)`, `... right: Err(MissingPage(PageId(9)))`, merge key `page: Some(PageId(0))` vs `None`); the 2 that passed (`reverting_a_page_command_that_never_applied_fails`, `only_a_page_property_works_without_nodes`) hold on the final code as well.
+- The property passed at once on the finished code (unit tests drove it); RED by hand mutant, file restored after each: page `touches` without the page gives law 4 (`page 1 changed but is not in touches`); DPI revert without `set_dpi` gives law 1.
+
+### Mutants (T3, `set_property.rs`)
+
+Own export of the working tree outside the repo, default per-job target dirs, run together with `pages.rs` (D10b): 84 mutants in `set_property.rs`, 73 caught, 0 missed, 0 timeout, 11 unviable. Every log shows `Compiling gafira-edit` on the mutated tree. The code of D10a is unchanged by the split.
+
+### Decisions and notes
+
+- Page and DPI properties are variants of `Property`; the command picks its scope from the variant. A page property with node targets, or a node property through `SetProperty::page`, is `InvalidValue`. `SetProperty::document` ignores the page (merge key `page: None`).
+- A size or DPI change is validated before any write: `PageSize::check` at the document DPI (`InvalidDocument(PageSize { page, error })`, as `validate()`); a DPI outside `Dpi::MIN..=Dpi::MAX` is `InvalidValue("dpi")`; a DPI change checks every page.
+- `touches` (owner confirmed): a page field lists the page; a DPI change lists nothing, because no page or node `Arc` changes (law 4 counts `Arc`s). A renderer cannot learn about a DPI change from `touches`.
+- Revert preconditions beyond the spec text: the page-size and DPI reverts re-check the old value against the current DPI or pages. Linear history never meets these states; they keep a revert on a foreign state from writing.
+- Pending spec edits (not code, spec untouched): the main `edit-commands` "Page and document commands" should state the `touches` of a DPI change (empty) and the revert preconditions above.
+
+### Size
+
+`git diff --shortstat main..HEAD -- crates`: 733 insertions, 30 deletions (forecast for all of D10 ~600, ceiling ~700; about 480 lines are tests).

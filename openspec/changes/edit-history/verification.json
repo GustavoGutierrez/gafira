@@ -1,0 +1,13 @@
+{ "schema": 1, "change": "edit-history", "delivery": "D10a", "rounds": [ {
+  "round": 1, "commit": "3cd1a46", "mode": "full", "tier": "T3", "depth": "V3",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 1, "suggestion": 3},
+  "findings": [ {"id": "W1", "severity": "WARNING", "class": "ambiguity",
+                 "ref": "specs/edit-commands: Page and document commands; DirtySet",
+                 "summary": "DPI change has empty touches (correct per law 4 and DirtySet text) but the spec gives consumers no signal for a DPI change; add a document flag or state that consumers compare dpi"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": {"tier": "T3", "found": 84, "caught": 73, "missed": 0, "timeout": 0,
+               "unviable": 11, "critical_missed": 0, "wall_s": 240},
+  "hand_mutants": {"run": 5, "killed": 5},
+  "criteria": {"total": 11, "covered": 11},
+  "size": {"lines": 733, "forecast": 600}, "report": "verify-report.md" } ] }
