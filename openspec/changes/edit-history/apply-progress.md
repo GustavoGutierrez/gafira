@@ -649,3 +649,87 @@ Flow: full (inherited)
 3. Mutants (T3, own `git archive` export of the commit under test, default per-job target dirs): `cargo mutants -p gafira-edit --file crates/gafira-edit/src/pages.rs --file crates/gafira-edit/src/insert_nodes.rs --jobs 4`: 45 mutants, 35 caught, 0 missed, 0 timeout, 10 unviable (`pages.rs` 15 caught, 4 unviable; `insert_nodes.rs` 20 caught, 6 unviable). All 46 logs show `Compiling gafira-edit` on the mutated tree. `ci.yml` has no mutants.
 4. Gates on each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, V14, all rc 0.
 5. Pending spec edits stay pending and untouched: W2 (V14 text: what is excluded and the limit list, now also the new limits above), W3 (law 5 against `Transaction` rollback), W4 (`InsertPage` revert precondition, counter restore and `touches` of the page commands; add the exact-counter precondition of both insert reverts to it). Suggestions from the verify report (S1 and others) were not part of this round.
+
+## Spec consolidation before archive
+
+Branch `docs/edit-history-spec-edits`. The pending spec edits of D1 to D10 (this file and the verify report's ambiguity warnings) are written into the delta specs, matching the merged code; no code or test changed.
+
+### Owner decision: `touches` of a DPI change (2026-10-25)
+
+Question (D10a verify W1, class ambiguity): a DPI change lists nothing in `touches`, so a consumer driven only by `DirtySet` would miss it. Options: (A) a document-level flag in `DirtySet`, (B) state that consumers compare the DPI, (C) list every page. The owner chose **B**: a DPI change lists nothing in `touches`, `DirtySet` is unchanged, no code changes, and consumers that depend on the document DPI MUST compare `Document::dpi` themselves. Written into `specs/edit-commands/spec.md` ("Page and document commands", with the scenario "A DPI change touches nothing", and the law 4 limits paragraph of "Command property laws").
+
+Still open for the owner: whether V12 should check an exact copy count (or derive it from the V5 table) instead of the `>= 3` floor. The limit is recorded in `specs/workspace-tooling/spec.md`.
+
+### Owner decision: V12 copies derived from the V5 table (2026-10-25)
+
+Question (D1 W6 / S1, D2 W6): with four `clippy.toml` copies and a `>= 3` floor, deleting one copy (for example `crates/gafira-edit/clippy.toml`) passed V12 and V5, and the crate lost its ARQ-02 and ARQ-10 bans with CI green. The owner chose **A**: V12 derives the set of required copies from the V5 table; every crate in the table except `gafira-testkit` (named exception, `design.md` Q10) must have a `clippy.toml` byte-identical to the canonical copy `crates/gafira-geom/clippy.toml`; the reverse check (a crate with a `clippy.toml` but no V5 row fails V5) stays; the `>= 3` floor is removed. Written into `specs/workspace-tooling/spec.md` ("Policy checks cover every domain crate (V11, V12)", scenarios tagged D11; the H-N4 "Too few copies" scenario is dropped, so archive must warn about it as a destructive MODIFIED).
+
+## D11: V12 derived from V5 (next implementation step)
+
+Flow: spec first, then `tdd-apply`. Status: not started. Scope: the V12 step in `.github/workflows/ci.yml` only (no Rust code). RED first: the scenarios "A deleted copy fails V12" and "A V5 crate without a copy fails V12" exit 0 on the current step and must fail before the step changes. Then make the other D11 scenarios hold ("Clean tree passes the derived V12", "An edited copy fails V12" naming the crate, "gafira-testkit is the named exception", and V5's unchanged reverse check), with every existing V12 negative (H-N2, H-N3, H-N5, H-N6) still failing.
+
+### D11 result (tdd-apply)
+
+Done. Commit `ci: derive the V12 clippy.toml copies from the V5 table`; only the V12 step in `.github/workflows/ci.yml` changed (+14/-5). V12 reads the rows of the V5 `table='...'` block from `.github/workflows/ci.yml` (no second crate list, no `>= 3` floor), requires `crates/<crate>/clippy.toml` byte-identical (`cmp -s`) to `crates/gafira-geom/clippy.toml` for every row except `gafira-testkit` (printed as exempt), and names the crate on every failure. V5 unchanged. AGENTS.md does not mention the old rule, so it is unchanged.
+
+Method: scripts under the session scratchpad extract each step from ci.yml and run it with `bash --noprofile --norc -eo pipefail` on a temp copy of the tree.
+
+RED (old step, exit 0 = the hole):
+- Delete `crates/gafira-edit/clippy.toml`: exit 0.
+- Scratch crate `gafira-scratch` with V5 row `gafira-scratch -` and no copy: exit 0.
+
+GREEN (new step):
+- Delete gafira-edit copy: exit 1, "gafira-edit is in the V5 table but has no crates/gafira-edit/clippy.toml".
+- Scratch crate with V5 row, no copy: exit 1 naming gafira-scratch.
+- Clean tree: exit 0, "gafira-testkit: exempt ...".
+- Line appended to gafira-edit copy: exit 1 naming gafira-edit (also gafira-doc, gafira-color: H-N2 exit 1).
+- Exemption removed in a scratch copy: exit 1 naming gafira-testkit.
+- H-N3, H-N5, H-N6: exit 1 "lacks the std::collections::HashMap ban".
+- gafira-color row removed from V5 table: V5 exit 1 "gafira-color has clippy.toml but no V5 row".
+
+Gates: fmt, clippy -D warnings, `cargo test --workspace --locked` (508 passed, 0 failed), `cargo deny check` ok; ARQ-07, forbid unsafe, V5, V12, V13, V14 extracted from ci.yml all exit 0. Deviations: none.
+
+### Whole-change verify fixes (spec text, after the FAIL)
+
+- C1: `edit-commands` "Crate purity and dependencies" now allows the direct `serde_json` edge (D7, memory estimate of extension payloads; already in `gafira-doc`'s normal tree) and says how the checks treat it: V5 constrains only `gafira-*` edges and the forbidden prefixes, so third-party crates fall to the purity requirement, `cargo deny` and review. The `workspace-tooling` V5 requirement says the same; `ci.yml` is unchanged.
+- C2: the `workspace-tooling` delta now describes `ci.yml` as it is: six V5 rows (`gafira-time -` from `domain-time` included) and five `clippy.toml` copies (geom, color, time, doc, edit; testkit exempt). `domain-time` gets its own `specs/workspace-tooling/spec.md` with one ADDED requirement ("gafira-time domain crate wiring (V5 row, clippy.toml copy)") and no MODIFIED, so the two deltas share no requirement.
+- W3: snapshot undo and redo call neither `apply` nor `revert` (they call `label()`): reworded in `edit-history` "Undo and redo by snapshot" and in the proposal's success criterion.
+- Verify W1 (V12 parser stops at a whitespace-only line) is code for `tdd-apply`; its RED is the new D11 scenario "A whitespace-only line does not hide table rows".
+
+### Owner acceptance: cross-platform CI (2026-10-25)
+
+Finding: whole-change verify W2 (class claim). Since D5, every GitHub Actions run has failed to start ("recent account payments have failed"). So the `trybuild` `.stderr` snapshots on Windows and macOS (spike R3; `edit-capability` "trybuild evidence for ARQ-30") and the gates of D5 to D11 on Windows and macOS were never observed; they are proven on Linux only. The owner chose **option B**: accept the risk now. `edit-history` may be archived on the Linux evidence.
+
+Follow-up condition (binding): once CI works again, the first thing to run is the full Windows, Linux and macOS CI matrix on `main`. If any `.stderr` snapshot differs on a platform, `tests/ui.rs` is restricted to Linux with `#[cfg(target_os = "linux")]`, as the `edit-capability` requirement already provides, and the restriction and the difference are recorded in a follow-up change (or fix delivery) and its verify report. Any other gate failure on Windows or macOS goes through the normal flow.
+
+## Archive notes
+
+For the `archive` agent (from the whole-change verify and the spec fixes above):
+
+1. Order: archive `edit-history` first (it merged first; D11 is on this branch), then `domain-time`. Either order gives the same main `workspace-tooling` spec, because `domain-time`'s delta only ADDs "gafira-time domain crate wiring (V5 row, clippy.toml copy)" and `edit-history`'s MODIFIED V5 table already contains the `gafira-time` row. Do not drop that row; `domain-time`'s new delta still needs its own verify before its archive.
+2. Destructive MODIFIED: `workspace-tooling` "Policy checks cover every domain crate (V11, V12)" drops the main scenario "Too few copies fails V12 (H-N4, manual negative test)" (owner decision 2026-10-25, D11). Warn before merging.
+3. Not a loss: the main scenario "Hardened V12 timing (command)" comes back as "Hardened V12 timing (C2b history, command)" (a rename).
+4. `edit-commands` and `edit-history` are new capabilities: copy them with `cp`, then rename `## ADDED Requirements` to `## Requirements` in `openspec/specs/edit-commands/spec.md` and `openspec/specs/edit-history/spec.md`, as earlier archives did.
+5. `edit-capability`: MODIFIED "Id allocation (D5b)" carries the D8 clarification of "ids never reused" into the main spec (3 scenarios kept, 1 added).
+6. Product document `docs/specs/02-arquitectura-software.md`, in its own docs commit (not part of the delta merge; proposed text, owner-facing Spanish):
+   - ARQ-32, criterion: replace "deshacer y rehacer de una entrada con instantánea no llaman a ningún método de `Command` y solo instalan el `Arc` guardado" with "deshacer y rehacer de una entrada con instantánea no llaman ni a `apply` ni a `revert` (solo a `label()`, para devolver la etiqueta) y solo instalan el `Arc` guardado".
+   - §4.3 "Implementan": replace "en `gafira-edit::cmd`: `SetProperty<T>` (campos de nodo y de forma, y los de página y el DPI del documento)" with "en la raíz de `gafira-edit`: `SetProperty` (un enum `Property` con los campos de nodo y de forma, los de página y el DPI del documento)".
+   - §4.3 "Cómo añadir un comando", step 2: replace "`touches` exacto." with "`touches` cubre todo cambio: una página cuando cambian sus campos o sus `roots`, un nodo cuando cambia su registro o sus `children`; un cambio del DPI no lista nada y quien dependa del DPI compara `Document::dpi`."
+
+### W1 result (tdd-apply, verify finding in the D11 V12 step)
+
+Done. The V12 step read the V5 table up to the first line matching `/^ *.$/`, which also matches a whitespace-only line, so rows after it (for example `gafira-edit`) were never required. It now ends the table only at the real terminator, a line holding just the closing single quote (awk `-v q="'"`, `$0 ~ "^ *" q "$"`; portable to mawk and gawk), and the start line is matched the same way. V5 is unaffected: it iterates its own `table` variable, not this parser.
+
+RED (V12 before the fix): a spaces-only line before the `gafira-edit` row and `crates/gafira-edit/clippy.toml` deleted: exit 0.
+GREEN: same tree: exit 1, "gafira-edit is in the V5 table but has no crates/gafira-edit/clippy.toml". Also exit 1 naming the crate for an empty line, a tab/trailing-space row, a comment row (`#` named), a deleted or edited `gafira-time` copy, a run from the wrong directory (fails closed, awk exit 2), trailing spaces after `table='` (fails closed, "no V5 table rows found"), and the exemption removed (names `gafira-testkit`). Clean tree exit 0 with five copies required (geom, color, time, doc, edit; testkit exempt). red.sh, green.sh, the verifier's neg.sh and the new w1.sh were re-run.
+
+Gates: fmt, clippy -D warnings, test (608 passed, 0 failed), deny ok; ARQ-07, forbid unsafe, V5, V12, V13, V14 extracted from ci.yml exit 0.
+
+### T4 follow-up (6 missed mutants in gafira-edit)
+
+- `CommandError` Display and `History::is_empty`: tests added. RED: Display body replaced by `return Ok(())` fails `error::tests::each_variant_displays_a_message_naming_its_data`; `is_empty` hand-broken to `true` / `false` fails `a_history_is_empty_while_no_entry_can_be_undone` (assertions at tests/history.rs after the execute and at the start). `is_empty` means "no entry can be undone" (`undo` empty), so it is true again after undoing the only entry.
+- `History::debug_check`: justified `exclude_re` in `.cargo/mutants.toml` (debug-only ARQ-13 check; every installed snapshot is validated, so it cannot fire through the public API).
+- `Reorder::touches` / `Reparent::touches` pre-apply fallback (`delete field nodes`): DEVIATION from the plan to exclude them. cargo-mutants applies `exclude_re` (config and `--exclude-re '^'`) to every mutant except the StructField ones (`--list` still shows both with `--exclude-re '^'`), so no regex can exclude them. The fallback is now built in place (`let mut set = DirtySet::default(); set.nodes.insert/extend(..)`), same value, so there is no struct expression to mutate; the post-apply `touches` mutants (`replace ... touches -> DirtySet with Default::default()`) stay listed and caught.
+- T3 re-run on error.rs, history.rs, reorder.rs, reparent.rs (export under the scratchpad, default per-job target dirs): 54 mutants, 43 caught, 11 unviable, 0 missed, 0 timeout.
+- Gates: fmt, clippy -D warnings, test (610 passed), deny, ARQ-07, forbid unsafe, V5, V12, V13, V14 pass.
+7. Owner acceptance (2026-10-25, whole-change verify W2): archive proceeds on Linux evidence only; Windows and macOS have not been observed since D5. Carry it into the archived change as is, and do not mark R3 as verified. Follow-up: the full CI matrix on `main` runs first once CI works; a `.stderr` difference restricts `tests/ui.rs` to Linux (`#[cfg(target_os = "linux")]`) and is recorded in a follow-up. See "Owner acceptance: cross-platform CI" above.

@@ -73,4 +73,61 @@ mod tests {
     fn an_error_is_cloneable_comparable_and_an_error() {
         assert_contract::<CommandError>();
     }
+
+    #[test]
+    fn each_variant_displays_a_message_naming_its_data() {
+        let page = PageId::new(3);
+        let node = NodeId::new(7);
+        let invalid = ValidationError::InvalidDpi { dpi: 1 };
+        let cases = [
+            (
+                CommandError::MissingPage(page),
+                format!("page {page} does not exist"),
+            ),
+            (
+                CommandError::MissingNode(node),
+                format!("node {node} does not exist"),
+            ),
+            (
+                CommandError::NotAContainer(node),
+                format!("node {node} is not a group"),
+            ),
+            (
+                CommandError::IndexOutOfRange { index: 5, len: 2 },
+                "index 5 is out of range for length 2".to_owned(),
+            ),
+            (
+                CommandError::WouldCreateCycle(node),
+                format!("moving node {node} would create a cycle"),
+            ),
+            (
+                CommandError::InvalidValue("width"),
+                "invalid value for width".to_owned(),
+            ),
+            (
+                CommandError::InvalidDocument(invalid.clone()),
+                format!("the change leaves the document invalid: {invalid}"),
+            ),
+            (
+                CommandError::IdSpaceExhausted,
+                "the document id space is exhausted".to_owned(),
+            ),
+            (
+                CommandError::NotApplied,
+                "the command was reverted without being applied".to_owned(),
+            ),
+            (
+                CommandError::RollbackFailed {
+                    apply: Box::new(CommandError::NotApplied),
+                    revert: Box::new(CommandError::IdSpaceExhausted),
+                },
+                "the command was reverted without being applied; rolling back failed too: \
+                 the document id space is exhausted"
+                    .to_owned(),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected);
+        }
+    }
 }

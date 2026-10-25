@@ -68,10 +68,13 @@ impl Command for Reorder {
     fn touches(&self) -> DirtySet {
         match &self.record {
             Some(record) => record.touches(self.page),
-            None => DirtySet {
-                nodes: [self.node].into_iter().collect(),
-                ..DirtySet::default()
-            },
+            None => {
+                // Unspecified before a successful apply (edit-commands: touches is defined after it); filled in place,
+                // not built with a struct expression, so cargo-mutants has no field to delete in this fallback.
+                let mut set = DirtySet::default();
+                set.nodes.insert(self.node);
+                set
+            }
         }
     }
 }
