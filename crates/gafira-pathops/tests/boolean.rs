@@ -196,11 +196,11 @@ fn a_zero_length_segment_is_accepted() {
 
 #[test]
 fn an_invalid_tolerance_is_rejected() {
-    let a = rect(0.0, 0.0, 10.0, 10.0);
-    let b = rect(5.0, 0.0, 15.0, 10.0);
-
     for tolerance in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-        let result = a.union(&b, tolerance);
+        // The rejection happens before any geometry runs, so the empty paths
+        // are enough to observe it.
+        let result = Path::new(BezPath::new(), FillRule::NonZero)
+            .union(&Path::new(BezPath::new(), FillRule::NonZero), tolerance);
         let expected = match NonFiniteValue::classify(tolerance) {
             Some(value) => value,
             None => NonFiniteValue::Nan,
@@ -211,6 +211,22 @@ fn an_invalid_tolerance_is_rejected() {
             "tolerance {tolerance} was not rejected"
         );
     }
+}
+
+#[test]
+fn an_invalid_tolerance_is_rejected_before_the_geometry_runs() {
+    let a = rect(0.0, 0.0, 10.0, 10.0);
+    let b = rect(5.0, 0.0, 15.0, 10.0);
+    let _ = (&a, &b);
+
+    let result = a.union(&b, 0.0);
+
+    assert_eq!(
+        result,
+        Err(PathOpError::InvalidTolerance {
+            value: NonFiniteValue::Nan,
+        })
+    );
 }
 
 #[test]

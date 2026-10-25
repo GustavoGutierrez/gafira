@@ -65,6 +65,47 @@ fn closing_an_already_closed_path_changes_nothing() {
 }
 
 #[test]
+fn closing_does_not_add_elements_to_a_closed_subpath() {
+    let path = Path::new(two_subpaths(), FillRule::EvenOdd);
+
+    let closed = path.close_subpaths();
+
+    // The closed square keeps its five elements (a move, three lines and a
+    // close) and the open triangle gets exactly one close, so the result has
+    // nine elements and no two closes in a row. Closing adds nothing to a
+    // subpath that is already closed.
+    let elements = closed.as_bez_path().elements();
+    assert_eq!(
+        elements.len(),
+        9,
+        "the closed path has {} elements",
+        elements.len()
+    );
+    assert!(
+        !elements
+            .windows(2)
+            .any(|pair| matches!(pair, [kurbo::PathEl::ClosePath, kurbo::PathEl::ClosePath])),
+        "closing added a redundant close"
+    );
+}
+
+#[test]
+fn closing_a_path_with_two_open_subpaths_closes_both() {
+    let mut bez = open_triangle();
+    bez.extend(open_triangle().elements().iter().copied());
+    let path = Path::new(bez, FillRule::EvenOdd);
+    assert_eq!(path.subpath_count(), 2);
+    assert!(!path.is_subpath_closed(0));
+    assert!(!path.is_subpath_closed(1));
+
+    let closed = path.close_subpaths();
+
+    assert_eq!(closed.subpath_count(), 2);
+    assert!(closed.is_subpath_closed(0));
+    assert!(closed.is_subpath_closed(1));
+}
+
+#[test]
 fn a_non_finite_coordinate_is_rejected() {
     let mut bez = BezPath::new();
     bez.move_to((0.0, 0.0));

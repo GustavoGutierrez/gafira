@@ -35,12 +35,16 @@ proptest! {
 
         let difference = pa.difference(&pb, DEFAULT_TOLERANCE).unwrap();
 
-        let (ax0, ay0, ax1, ay1) = bounds(&pa);
-        let (dx0, dy0, dx1, dy1) = bounds(&difference);
-        prop_assert!(dx0 >= ax0 - 1e-6, "min_x {dx0} < {ax0}");
-        prop_assert!(dy0 >= ay0 - 1e-6, "min_y {dy0} < {ay0}");
-        prop_assert!(dx1 <= ax1 + 1e-6, "max_x {dx1} > {ax1}");
-        prop_assert!(dy1 <= ay1 + 1e-6, "max_y {dy1} > {ay1}");
+        // An empty difference covers no point, so it has no meaningful
+        // bounding box to compare: an empty path reports the origin box.
+        if !difference.is_empty() {
+            let (ax0, ay0, ax1, ay1) = bounds(&pa);
+            let (dx0, dy0, dx1, dy1) = bounds(&difference);
+            prop_assert!(dx0 >= ax0 - 1e-6, "min_x {dx0} < {ax0}");
+            prop_assert!(dy0 >= ay0 - 1e-6, "min_y {dy0} < {ay0}");
+            prop_assert!(dx1 <= ax1 + 1e-6, "max_x {dx1} > {ax1}");
+            prop_assert!(dy1 <= ay1 + 1e-6, "max_y {dy1} > {ay1}");
+        }
     }
 
     /// The bounding box of the exclusive-or equals the bounding box of the

@@ -140,4 +140,28 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn each_non_finite_value_names_itself() {
+        let cases = [
+            (NonFiniteValue::Nan, "NaN"),
+            (NonFiniteValue::Infinity, "infinity"),
+            (NonFiniteValue::NegativeInfinity, "negative infinity"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(value.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn the_error_names_the_kind_of_non_finite_value() {
+        let error = PathOpError::NonFiniteCoordinate {
+            value: NonFiniteValue::NegativeInfinity,
+        };
+        let text = error.to_string();
+        assert!(
+            text.contains("negative infinity"),
+            "error {text:?} does not name the value"
+        );
+    }
 }
