@@ -3,7 +3,7 @@
 use gafira_pathops::{
     BezPath, Cap, Containment, DEFAULT_TOLERANCE, FillRule, Join, Path, PathOpError, Point,
 };
-use kurbo::{Rect, Shape};
+use kurbo::{ParamCurve, Rect, Shape};
 
 fn line(x0: f64, y0: f64, x1: f64, y1: f64) -> Path {
     let mut bez = BezPath::new();
@@ -134,50 +134,104 @@ fn an_already_minimal_path_is_unchanged_by_the_simplification() {
     assert_eq!(simplified, path);
 }
 
+/// The distance from a point to the closest point of a path.
+fn distance_to(path: &Path, point: Point) -> f64 {
+    path.distance_to_perimeter(point, 1e-9).unwrap()
+}
+
 #[test]
-fn the_simplification_keeps_the_path_within_the_tolerance() {
+fn a_simplified_polyline_with_a_corner_stays_within_the_tolerance() {
+    let polyline = open_polyline();
+    let tolerance = 1e-3;
+
+    let simplified = polyline.simplify(tolerance).unwrap();
+
+    // Every point sampled along the original, whatever the segment count of
+    // the result.
+    for segment in polyline.as_bez_path().segments() {
+        for step in 0..=10 {
+            let point = segment.eval(f64::from(step) / 10.0);
+            let distance = distance_to(&simplified, point);
+            assert!(
+                distance <= tolerance,
+                "{point:?} moved {distance} away from the simplified path"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_removed_vertex_stays_within_the_tolerance_of_the_output() {
     let mut bez = BezPath::new();
     bez.move_to((0.0, 0.0));
     bez.line_to((10.0, 0.0));
-    bez.line_to((20.0, 0.5));
-    bez.line_to((30.0, 0.0));
-    bez.line_to((30.0, 10.0));
+    bez.line_to((20.0, 0.0));
+    bez.line_to((20.0, 10.0));
     bez.line_to((0.0, 10.0));
     bez.close_path();
     let path = Path::new(bez, FillRule::NonZero);
-    let tolerance = 1.0;
 
-    let simplified = path.simplify(tolerance).unwrap();
+    let simplified = path.simplify(1e-3).unwrap();
 
-    // Every corner of the original must stay within the tolerance of the
-    // simplified outline.
-    for corner in [
+    for vertex in [
         (0.0, 0.0),
         (10.0, 0.0),
-        (20.0, 0.5),
-        (30.0, 0.0),
-        (30.0, 10.0),
+        (20.0, 0.0),
+        (20.0, 10.0),
+        (0.0, 10.0),
     ] {
-        let (_, _, _, _) = bounds(&simplified);
-        let (_, _, _, _) = bounds(&path);
-        let simplified_box = simplified.as_bez_path().bounding_box();
-        let original_box = path.as_bez_path().bounding_box();
-        // The corner must remain inside the original box grown by the
-        // tolerance and inside the simplified box grown by the tolerance.
+        let distance = distance_to(&simplified, Point::new(vertex.0, vertex.1));
+        assert!(distance <= 1e-3, "{vertex:?} is {distance} from the output");
+    }
+}
+
+#[test]
+fn the_outline_of_a_line_is_half_the_stroke_width_away() {
+    let outline = line(0.0, 0.0, 100.0, 0.0)
+        .stroke_outline(&style(10.0), 1e-3)
+        .unwrap();
+
+    let distance = distance_to(&outline, Point::new(50.0, 0.0));
+
+    assert!(
+        (distance - 5.0).abs() <= 1e-3,
+        "the distance was {distance}"
+    );
+}
+
+#[test]
+fn the_outline_of_a_capsule_spans_the_line_and_the_caps() {
+    let outline = line(0.0, 0.0, 100.0, 0.0)
+        .stroke_outline(&style(10.0), 1e-3)
+        .unwrap();
+
+    let (x0, y0, x1, y1) = bounds(&outline);
+    for (value, expected) in [(x0, -5.0), (y0, -5.0), (x1, 105.0), (y1, 5.0)] {
         assert!(
-            corner.0 >= original_box.min_x() - tolerance
-                && corner.0 <= original_box.max_x() + tolerance
-                && corner.1 >= original_box.min_y() - tolerance
-                && corner.1 <= original_box.max_y() + tolerance,
-            "the corner {corner:?} left the original box"
+            (value - expected).abs() <= 1e-3,
+            "{value} is not {expected}"
         );
-        assert!(
-            corner.0 >= simplified_box.min_x() - tolerance
-                && corner.0 <= simplified_box.max_x() + tolerance
-                && corner.1 >= simplified_box.min_y() - tolerance
-                && corner.1 <= simplified_box.max_y() + tolerance,
-            "the corner {corner:?} left the simplified box"
-        );
+    }
+}
+
+#[test]
+fn every_operation_takes_the_tolerance_as_an_argument() {
+    let rect = square();
+    let circle = Path::new(
+        kurbo::Circle::new((5.0, 5.0), 4.0).to_path(1e-6),
+        FillRule::NonZero,
+    );
+    let point = Point::new(5.0, 5.0);
+
+    for tolerance in [0.5, DEFAULT_TOLERANCE] {
+        assert!(rect.union(&circle, tolerance).is_ok());
+        assert!(rect.intersection(&circle, tolerance).is_ok());
+        assert!(rect.difference(&circle, tolerance).is_ok());
+        assert!(rect.xor(&circle, tolerance).is_ok());
+        assert!(circle.stroke_outline(&style(2.0), tolerance).is_ok());
+        assert!(circle.simplify(tolerance).is_ok());
+        assert!(circle.contains(point, tolerance).is_ok());
+        assert!(circle.distance_to_perimeter(point, tolerance).is_ok());
     }
 }
 

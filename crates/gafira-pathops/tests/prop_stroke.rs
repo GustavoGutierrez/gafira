@@ -29,6 +29,19 @@ fn distance_to_path(path: &Path, point: Point) -> f64 {
     best
 }
 
+/// The largest distance from a point sampled along a segment of `original` to
+/// `simplified`.
+fn worst_deviation(original: &Path, simplified: &Path) -> f64 {
+    let mut worst = 0.0_f64;
+    for segment in original.as_bez_path().segments() {
+        for step in 0..=8 {
+            let point = segment.eval(f64::from(step) / 8.0);
+            worst = worst.max(distance_to_path(simplified, point));
+        }
+    }
+    worst
+}
+
 /// The points a polyline visits.
 fn polyline_strategy() -> impl Strategy<Value = Vec<(f64, f64)>> {
     prop::collection::vec((0.0..200.0, 0.0..200.0), 2..12)
@@ -48,8 +61,8 @@ proptest! {
         prop_assert_eq!(simplified.subpath_count(), path.subpath_count());
     }
 
-    /// Every point of the original path stays within the tolerance of the
-    /// simplified path.
+    /// Every point sampled along every segment of the original path stays
+    /// within the tolerance of the simplified path, not only its vertices.
     #[test]
     fn the_simplification_stays_within_the_tolerance(
         points in polyline_strategy(),
@@ -59,13 +72,37 @@ proptest! {
 
         let simplified = path.simplify(tolerance).unwrap();
 
-        for (x, y) in &points {
-            let distance = distance_to_path(&simplified, Point::new(*x, *y));
-            prop_assert!(
-                distance <= tolerance + 1e-6,
-                "a point moved {distance} away, over the tolerance {tolerance}"
-            );
+        let worst = worst_deviation(&path, &simplified);
+        prop_assert!(
+            worst <= tolerance + 1e-6,
+            "a point moved {worst} away, over the tolerance {tolerance}"
+        );
+    }
+
+    /// The same guarantee holds for a path made of cubic curves.
+    #[test]
+    fn a_curved_path_stays_within_the_tolerance(
+        start in (0.0..100.0, 0.0..100.0),
+        cubics in prop::collection::vec(
+            ((0.0..100.0, 0.0..100.0), (0.0..100.0, 0.0..100.0), (0.0..100.0, 0.0..100.0)),
+            1..5,
+        ),
+        tolerance in 1e-1..1.0,
+    ) {
+        let mut bez = BezPath::new();
+        bez.move_to(start);
+        for (c1, c2, end) in cubics {
+            bez.curve_to(c1, c2, end);
         }
+        let path = Path::new(bez, FillRule::NonZero);
+
+        let simplified = path.simplify(tolerance).unwrap();
+
+        let worst = worst_deviation(&path, &simplified);
+        prop_assert!(
+            worst <= tolerance + 1e-6,
+            "a point moved {worst} away, over the tolerance {tolerance}"
+        );
     }
 
     /// The stroke outline covers the path: the outline reaches half the stroke

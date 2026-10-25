@@ -100,48 +100,35 @@ proptest! {
         }
     }
 
-    /// The bounding box of `A \ B` is contained in the bounding box of `A`.
+    /// The bounding boxes of the results are contained where the definition
+    /// says: `A \ B` in `A`, `A ∩ B` in both operands, `A Δ B` in `A ∪ B`.
     #[test]
-    fn the_difference_is_contained_in_its_first_operand(
-        a in rect_strategy(),
-        b in rect_strategy(),
+    fn the_boxes_of_the_results_are_contained(
+        a in rects_strategy(),
+        b in rects_strategy(),
+        rule_a in rule_strategy(),
+        rule_b in rule_strategy(),
     ) {
-        let pa = path_from_rects(&[a]);
-        let pb = path_from_rects(&[b]);
+        let pa = ruled_path(&a, rule_a);
+        let pb = ruled_path(&b, rule_b);
 
         let difference = pa.difference(&pb, DEFAULT_TOLERANCE).unwrap();
-
-        // An empty difference covers no point, so it has no meaningful
-        // bounding box to compare: an empty path reports the origin box.
-        if !difference.is_empty() {
-            let (ax0, ay0, ax1, ay1) = bounds(&pa);
-            let (dx0, dy0, dx1, dy1) = bounds(&difference);
-            prop_assert!(dx0 >= ax0 - 1e-6, "min_x {dx0} < {ax0}");
-            prop_assert!(dy0 >= ay0 - 1e-6, "min_y {dy0} < {ay0}");
-            prop_assert!(dx1 <= ax1 + 1e-6, "max_x {dx1} > {ax1}");
-            prop_assert!(dy1 <= ay1 + 1e-6, "max_y {dy1} > {ay1}");
-        }
-    }
-
-    /// The bounding box of the exclusive-or equals the bounding box of the
-    /// union.
-    #[test]
-    fn the_exclusive_or_spans_the_same_box_as_the_union(
-        a in rect_strategy(),
-        b in rect_strategy(),
-    ) {
-        let pa = path_from_rects(&[a]);
-        let pb = path_from_rects(&[b]);
-
+        let intersection = pa.intersection(&pb, DEFAULT_TOLERANCE).unwrap();
         let xor = pa.xor(&pb, DEFAULT_TOLERANCE).unwrap();
         let union = pa.union(&pb, DEFAULT_TOLERANCE).unwrap();
 
-        let (xo0, yo0, xo1, yo1) = bounds(&xor);
-        let (uo0, uo0y, uo1, uo1y) = bounds(&union);
-        prop_assert!((xo0 - uo0).abs() < 1e-6);
-        prop_assert!((yo0 - uo0y).abs() < 1e-6);
-        prop_assert!((xo1 - uo1).abs() < 1e-6);
-        prop_assert!((yo1 - uo1y).abs() < 1e-6);
+        // An empty result covers no point, so it has no box to compare: an
+        // empty path reports the origin box.
+        if !difference.is_empty() {
+            prop_assert!(contains_box(bounds(&pa), bounds(&difference)), "A \\ B left A");
+        }
+        if !intersection.is_empty() {
+            prop_assert!(contains_box(bounds(&pa), bounds(&intersection)), "A ∩ B left A");
+            prop_assert!(contains_box(bounds(&pb), bounds(&intersection)), "A ∩ B left B");
+        }
+        if !xor.is_empty() {
+            prop_assert!(contains_box(bounds(&union), bounds(&xor)), "A Δ B left A ∪ B");
+        }
     }
 
     /// The exclusive-or is symmetric.
@@ -224,6 +211,15 @@ proptest! {
             .count();
         prop_assert!(cubics >= 1, "the union lost every cubic segment");
     }
+}
+
+/// Whether `outer` contains `inner`, within the tolerance.
+fn contains_box(outer: (f64, f64, f64, f64), inner: (f64, f64, f64, f64)) -> bool {
+    let margin = DEFAULT_TOLERANCE;
+    inner.0 >= outer.0 - margin
+        && inner.1 >= outer.1 - margin
+        && inner.2 <= outer.2 + margin
+        && inner.3 <= outer.3 + margin
 }
 
 /// The bounding box of a path.
