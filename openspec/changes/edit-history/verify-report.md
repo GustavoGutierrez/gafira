@@ -656,3 +656,59 @@ The unit tests have RED evidence: they were written against a stub, 6 failed on 
 - No `#[allow]`, `unsafe`, clock reads, `HashMap` or threads in the diff. Comments and identifiers are in English.
 - The V13 grep is clean. `GestureId` is still a public tuple (`GestureId(g)` in `prop_commands.rs`), so callers can build ids `begin_gesture` never issued. Such a key never merges under the current rule.
 - Result: FAIL. 1 CRITICAL, 3 WARNING, 3 SUGGESTION. `next`: tdd-apply (D6 fix round: CRITICAL 1, plus WARNING 2 if cheap), then re-verify D6.
+
+## D6 re-verify (after the fix round)
+
+Branch `feat/edit-history-6`, base `main` 714a29a, HEAD 1615bdc. Fixes: 6f90ef8 (test only, inside `history.rs` `mod tests`) and 1615bdc (docs). Verdict: **PASS** (0 CRITICAL).
+
+### Gates at HEAD 1615bdc
+
+| Check | Result |
+|---|---|
+| `cargo fmt --check` | ok |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ok |
+| `cargo test --workspace --locked` | ok, 0 failed (gafira-edit: 58 lib, was 57; 2 `gesture`, 1 `history`, 2 `prop_commands`) |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, V13 (steps taken from `ci.yml` and run as written) | rc 0 each |
+
+Size: `git diff --shortstat main..HEAD -- crates` gives 445 insertions and 8 deletions (history.rs +335/-3, `tests/gesture.rs` +92, `prop_commands.rs` +18/-5). The fix round added 23 net test lines; production code is unchanged since the first verify. Still under the ~525 forecast.
+
+Commits: `feat(edit)`, `test(edit)` x3, `docs(edit-history)` x2. The types fit the content (6f90ef8 touches only tests, 1615bdc only `openspec/`). No AI attribution or Co-Authored-By lines.
+
+### Disposition of the D6 findings
+
+| Finding | Fix | State |
+|---|---|---|
+| CRITICAL 1 (M5): closed gesture while another is open | `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open`: begin g1, execute g1, begin g2 with no `end_gesture` between, execute with key g1, `len() == 2` | **closed**; M5 killed |
+| WARNING 1: pending spec edit (gesture precedence, undo/redo end the run) | recorded in apply-progress "D6 fix round" | open, see WARNING 1 below |
+| WARNING 2 (M1): undo ends the run, unproved | `an_undo_between_commands_stops_the_merge_into_older_entries` now runs inside one open gesture with commands 10 ms apart (lane 1, lane 2, undo, lane 1), so only the undo rule keeps them apart | **closed**; M1 killed |
+| WARNING 3 (M4 equivalent) | none needed | documented only |
+| SUGGESTIONS 1-3 | not taken | still open, optional |
+
+### Mutation (re-run)
+
+The fix is test-only, so the `cargo-mutants` run on the D6 diff (`scratchpad/mutants-d6/mutants.out`: 13 caught in `caught.txt`, 0 missed, 0 timeout, 4 unviable) still covers the production code; it was not re-run. The hand mutants were re-applied one at a time on a `git archive` export of HEAD with its own target dir, running `cargo test -p gafira-edit --locked`. The file was restored after each one and `cmp` matched the original:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | `undo` no longer clears `mergeable` | **KILLED** by `an_undo_between_commands_stops_the_merge_into_older_entries` |
+| M2 | time beats gesture (`open == Some(g) \|\| within 500 ms`) | KILLED by `a_key_with_a_gesture_never_merges_once_the_gesture_closed` and the new closed-gesture test |
+| M3 | `entry.at` not updated | KILLED by `equal_keys_less_than_500_ms_apart_merge_and_500_ms_do_not` |
+| M4 | `redo` no longer clears `mergeable` | survived; equivalent (unchanged, deviation 2) |
+| M5 | `Some(_) => open.is_some()` | **KILLED** by `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open` |
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Pending spec edit (carried over):** the "Gesture merge" precedence and the undo/redo end-of-run rule are written in apply-progress under "D6 fix round", but not in the consolidated "Pending spec edits (not code)" list. Archive must pick them up from there (or move them into that list) before closing the change.
+2. M4 is an equivalent mutant (the redundant `mergeable = false` in `redo`). Documented only.
+
+### SUGGESTION
+
+1. The D6 first-verify suggestions still apply: a single `undo()` with `len() == 1` in the property, `Arc::ptr_eq` of untouched nodes after the 300-move drag (R12, useful for D7), and the spec's exact 1 000 / 1 499 / 2 000 arrow-key numbers.
+
+### Result
+
+PASS. 0 CRITICAL, 2 WARNING, 1 SUGGESTION. D6 is done; `next`: tdd-apply for the next delivery of `edit-history` (archive only after all deliveries pass).
