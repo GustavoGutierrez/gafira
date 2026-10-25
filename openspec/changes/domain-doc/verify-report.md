@@ -1338,3 +1338,76 @@ Correct and justified. `doc_with` (`json.rs:101-109`) builds a page from the giv
 - Gates are green on all three commits: fmt, clippy, test (270 / 274 / 274), `cargo deny check`, ARQ-07, V11, V5 and V12.
 - Mutants: cargo-mutants 42/47 caught, 0 missed, 0 timeout, 5 unviable. Hand mutations: 4/6 killed, and H2 and H3 survive (CRITICAL 1).
 - Next: **tdd-apply D4b**, one test commit with the four P4 order rows (CRITICAL 1), ideally with WARNING 1 and 2. Then re-verify D4b.
+
+## D4b re-verify (the 4 fix commits from `test(doc): pin the per-node check order of P4` to `docs(sdd): record domain-doc D4b verify fixes`; delivery `feat/domain-doc-4a..feat/domain-doc-4b`)
+
+**Verdict: PASS** (D4b). CRITICAL 0, WARNING 1, SUGGESTION 1. The stack was rebased onto a methodology commit that touches only `.agents/agents/mutants.md` and `AGENTS.md`. `next` = **tdd-apply D5**, after the owner decides on the D5a/D5b cut (WARNING 1).
+
+Method: each commit was checked out as a detached worktree in the scratchpad, with its own `CARGO_TARGET_DIR`. The ARQ-07, V11, V5 and V12 steps were parsed from that commit's `ci.yml` and run. Hand mutations were applied as `patch` files to a scratch worktree of HEAD and reverted after each run. The worktree diffed clean afterwards.
+
+### Gates per commit
+
+| # | Commit | fmt | clippy `-D warnings` | test `--workspace --locked` | `cargo deny check` | ARQ-07 | V11 | V5 | V12 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `test(doc): pin the per-node check order of P4` | ok | ok | ok, **274** (doc lib 99, serde 16, golden 3, doctests 2) | ok | ok | ok | ok | ok |
+| 2 | `test(doc): assert the duplicate-id variant on load and compare reopened bytes` | ok | ok | ok, **275** (serde 17) | ok | ok | ok | ok | ok |
+| 3 | `test(doc): drop display-prefix and redundant validation rows` | ok | ok | ok, 275 | ok | ok | ok | ok | ok |
+| 4 | `docs(sdd): record domain-doc D4b verify fixes` | ok | ok | ok, 275 | ok | ok | ok | ok | ok |
+
+The other crates are unchanged: cli 5+6, color 63+10+21, geom 31+7+11. The totals match `apply-progress.md` (274, 275, 275).
+
+### Previous items
+
+| Item | Fix | Status |
+|---|---|---|
+| CRITICAL 1 (P4 check order) | Rows 3 to 6 of `nodes_are_checked_in_ascending_id_and_check_order` (`validate.rs:806-840`). Re-applied as hand mutations (table below); each one fails exactly its row | **closed** |
+| WARNING 1 (load duplicate id) | `tests/serde.rs:368-391` `duplicate_ids_are_invalid_on_load` asserts `Invalid(DuplicateId { id })` with the exact id for three rows: two pages with id 1; node 5 renamed to 10, which equals page id 10; and node 5 (`/pages/0/nodes/3`) also pushed into page 10's `nodes`, so the id is in two arenas. This matches `specs/document-serde/spec.md:253-256` (id 5 instead of 9; P2 fires before any P4 issue of the copy). The two `Invalid(_)` rows were removed from `well_formed_documents_that_break_a_rule_are_invalid_not_json`, with no loss of coverage | **closed** |
+| WARNING 2 (display prefix) | `json.rs:334-340`: non-empty text, plus `source()` downcasts to `UnsupportedSchemaVersion { found: 2 }` | **closed** |
+| WARNING 3 (redundant rows) | `json!([[[[0]]]])` and the `f32::MAX` blue row were removed. Each rule they touched is still covered elsewhere: the 64-level pass, the mixed object/array pass, the scalar and `[]` rows (`extension_rows`, `validate.rs:697`), and extended RGB passes (`validate.rs:661`, `-0.5`/`1.75`). H5 (64/65 boundary) is still killed by `extension_rows`, per cargo-mutants (0 missed) | **closed** |
+| WARNING 4 (D5 split trigger) | Measured below. The ratio is now clearly above 1.5 | open, owner decision (WARNING 1 below) |
+| SUGGESTION 1 (bytes on reopen) | `tests/serde.rs:318-321` also compares `to_json()` before and after the reload | done |
+| SUGGESTION 2 (progress gates) | `apply-progress.md` records 270/274 and the fix-commit totals, plus the hand-mutation table | done |
+| SUGGESTION 3 (`--locked` flag) | `AGENTS.md` "Testing and mutation policy" now says not to pass `--locked` again (methodology commit in the base) | done |
+
+### Mutants
+
+- cargo-mutants (`mutants` agent report `mutants-D4b-r2`, `--in-diff`, gafira-doc): 47 found, 42 caught, **0 missed, 0 timeout**, 5 unviable. Wall time about 2 min. These are the same 47 as the first run; the fix commits change only tests.
+- Hand mutations (4, all spec ordering rules that cargo-mutants cannot express; `cargo test -p gafira-doc --locked`):
+
+| Id | Rule | Mutation | Result |
+|---|---|---|---|
+| R1 | 10 `OutOfRange` before 11 `EmptyExtensionTypeId` | empty `type_id` check moved above the range check | killed (row 3): left `EmptyExtensionTypeId`, right `OutOfRange { Opacity, 2.0 }` |
+| H3 | 11 before 12 `ExtensionTooDeep` | depth check above the empty `type_id` check | killed (row 4): left `ExtensionTooDeep { depth: 65 }`, right `EmptyExtensionTypeId` |
+| R2 | 12 before 13 `ChildrenOnLeaf` | leaf check moved above the extension block | killed (row 5): left `ChildrenOnLeaf`, right `ExtensionTooDeep { depth: 65 }` |
+| H2 | 13 before 14 `DanglingChild` | dangling-child check inserted above the leaf check | killed (row 6): left `DanglingChild { child: 99 }`, right `ChildrenOnLeaf` |
+
+Together with H1 and H4 from the first D4b verify, every adjacent pair in the P4 order (9 to 14) and the ascending node order is now pinned.
+
+### Production code and code rules
+
+- `git diff 2a03826..079cc95 -- . ':!openspec'` touches only `json.rs` from line 331 (`mod tests` starts at `:77`), `validate.rs` from line 676 (`mod tests` starts at `:207`) and `tests/serde.rs`. Production code is unchanged.
+- No `#[allow]`, `HashMap`/`HashSet` or `unsafe` added. No AI attribution in any of the 7 commit messages of `feat/domain-doc-4a..HEAD`. No tracked `proptest-regressions`.
+
+### Size
+
+- Code only, `git diff --shortstat feat/domain-doc-4a..HEAD -- . ':!openspec'`: 5 files, 611 insertions, 23 deletions, so **634** changed lines (ratio 1.64 to ~387). This matches `apply-progress.md` and is under ~700.
+- D4a plus D4b, summed per delivery: 766 + 634 = 1400 against 894, a ratio of **1.566**, which confirms the reported figure. The cumulative diff `feat/domain-doc-3b..HEAD` is 1372/20 = 1392 (1.557).
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **D5 fallback trigger fires** (`design.md:367`). The ratio is 1.566 (summed) or 1.557 (cumulative), both above 1.5. Plan the D5a/D5b cut. The owner decides.
+
+### SUGGESTION
+
+1. `tests/serde.rs:383` `assert_ne!(text, FULL)` cannot fail for the `shared_node.to_string()` row, because re-serialized compact JSON with an extra node always differs from the golden. The real guard is the exact `DuplicateId { id: 5 }` match. Harmless; no change needed.
+
+### Result
+
+- Verdict: **PASS** for D4b (0 CRITICAL, 1 WARNING, 1 SUGGESTION).
+- Gates are green on all four fix commits: fmt, clippy, test (274 / 275 / 275 / 275), `cargo deny check`, ARQ-07, V11, V5 and V12.
+- Mutants: cargo-mutants 42/47 caught, 0 missed, 0 timeout, 5 unviable. Hand mutations: 4/4 killed (R1, H3, R2, H2).
+- Next: the owner decides the D5 split and opens the D4b PR. Then **tdd-apply D5** (D5a first if cut).
