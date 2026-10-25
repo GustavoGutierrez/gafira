@@ -246,7 +246,7 @@ fn label_from_real(real: i64, rate: FrameRate) -> i64 {
         minute * nominal * 60 + (after_first_minute % frames_per_minute) + drop
     };
     let label = block * nominal * 600 + local;
-    if real < 0 {
+    if real.is_negative() {
         -(label as i64)
     } else {
         label as i64
@@ -263,7 +263,7 @@ fn real_from_label(label: i64, rate: FrameRate) -> i64 {
     let total_minutes = magnitude / (nominal * 60);
     let skipped = u64::from(drop) * (total_minutes - total_minutes / 10);
     let real = magnitude - skipped;
-    if label < 0 {
+    if label.is_negative() {
         -(real as i64)
     } else {
         real as i64
