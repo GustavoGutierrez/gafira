@@ -48,6 +48,7 @@ cargo test --workspace --locked
 - Stacked PRs cut at commit boundaries; each prefix passes the gates alone.
 - Conventional commits, no AI attribution lines.
 - The coordinator may push branches and open PRs after verify PASS; merges stay with the owner. Each new delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.
+- Integration: trunk-based, short-lived branches. After each delivery's verify PASS the coordinator pushes that branch and opens its PR against `main` (or the previous unmerged delivery branch) right away, instead of accumulating many stacked PRs. The owner merges promptly, in order, bottom-up, with merge commits. Never merge a PR whose base is another delivery branch after that base has been merged: retarget it to `main` first.
 - State lives in the change folder and git, not in an external memory tool.
 
 ## Code rules
@@ -97,6 +98,7 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 |---|---|
 | UI code, theme tokens, colors, fonts, logo/icon, microcopy, splash, any visual rule | `gafira-brand` |
 | Splitting work into commits, tests and docs with code | `work-unit-commits` |
+| Committing, branching, pushing, PRs, releases | `git-workflow-and-versioning` |
 | Delivery over ~400 lines, stacked PRs, review slices | `chained-pr` |
 | Preparing a PR (owner opens it) | `branch-pr` |
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |

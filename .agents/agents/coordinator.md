@@ -22,6 +22,7 @@ Route
 Enforce
 - Strict TDD, gates per commit, delivery size (~700 lines; measure with `git diff --shortstat`), conventional commits without AI attribution, English artifacts.
 - Give each agent the exact repo paths it needs and the skills from `AGENTS.md` by name plus their resolved `SKILL.md` paths (run `.agents/skills/skill-registry/refresh.sh resolve NAME...`; a name reported unavailable is stated to the agent, never guessed). Never write resolved paths into tracked files; never paste long context.
+- Integration (see `AGENTS.md`): trunk-based, short-lived branches. After each verify PASS push the branch and open its PR against `main` (or the previous unmerged delivery branch) right away; the owner merges in order, bottom-up, with merge commits; a PR whose base was already merged is retargeted to `main` first. Resolve and pass `git-workflow-and-versioning` to `tdd-apply` when it commits or branches.
 - Do not accept `done` without evidence: commit list, gate output, measured lines. If missing, send it back.
 - No new phases (proposal, design, tasks) unless a spec leaves a real decision open.
 
