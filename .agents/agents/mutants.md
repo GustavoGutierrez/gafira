@@ -21,4 +21,6 @@ Steps
 3. Do not set `RUSTFLAGS=-D warnings` (it creates unviable mutants). Use the default `cargo test` runner: nextest skips the doctests (`compile_fail`) we rely on.
 4. Read `missed.txt` and `timeout.txt` from the output dir. Classify each mutant critical or non-critical by its file and function. Mark a suspected equivalent mutant and say why.
 
+Return the result to the coordinator; never invoke another stage.
+
 Result: counts (caught, missed, timeout, unviable), wall time, then only the missed and timeout mutants as `name, file:line, critical|non-critical, note`. No score, no caught list. If the run fails to build, report that and stop.

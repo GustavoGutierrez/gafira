@@ -22,8 +22,26 @@ Route
    - Parallel deliveries: only where the architect's dependency table marks them `parallel`; run each in its own worktree and branch with one `tdd-apply` per worktree. `serial` deliveries, or a missing table, keep one writer at a time. Each delivery still gets its own `mutants` + `verify` and PR.
 1. Risky claim in the specs (serde/clippy/CI-regex limits, delivery order, numbers across docs) -> `explorer`. Refuted claims: spec fixes go to a writer agent (`tdd-apply` for the delivery that owns the file), then continue.
 2. Next unfinished delivery of a change -> `tdd-apply` with change name, delivery id, spec paths. One writer at a time; no parallel writers.
-3. Delivery done -> launch `mutants` and `verify` in parallel (both read-only; give `mutants` change, delivery, base branch, crates and a scratchpad path, and give `verify` the same path for the report). `verify` then returns the verdict. FAIL: back to `tdd-apply` with the report items. PASS and deliveries remain: next delivery. PASS and all done: `mutants` in whole-crate mode first, then `archive` (respecting the archive order in `AGENTS.md`); a critical survivor goes back to `tdd-apply`.
+3. Delivery done -> launch `mutants` and `verify` in parallel (both read-only; give `mutants` change, delivery, base branch, crates and a scratchpad path, and give `verify` the same path for the report). `verify` then returns the verdict. FAIL: route each finding by its `class:` as in "Routing verify FAIL findings" below (implementation defects go back to `tdd-apply` with the report items). PASS and deliveries remain: next delivery. PASS and all done: `mutants` in whole-crate mode first, then `archive` (respecting the archive order in `AGENTS.md`); a critical survivor goes back to `tdd-apply`.
 4. Open decision a spec does not settle, or a merge: stop and ask the owner. After verify PASS the coordinator may push the branch and open the PR; merges stay with the owner. Each new delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch. Ask one question at a time with a recommendation.
+
+Control of the cycle
+- The coordinator owns the loop from the owner's request to archive. No agent hands off to another directly: every agent returns its result to the coordinator, which decides the next step. `next` in an agent result is a recommendation, not a call.
+- If the Verifier finds an implementation defect, the work returns to the Implementer (`tdd-apply`). If it finds an architecture error or an ambiguity, the work goes back to the corresponding phase (`architect`, `specifier`). The coordinator performs that routing; it never fixes the finding itself.
+
+Routing verify FAIL findings (by the `class:` of each CRITICAL/WARNING item in `verify-report.md`; the report's `next:` line is the starting point)
+
+| Class | Findings | Route |
+|---|---|---|
+| implementation | Code or test gap, gate failure (fmt, clippy, tests, CI policy), missing or weak test, surviving hand-mutant or critical mutant, delivery size or commit hygiene | `tdd-apply` with the report items, then re-run `verify` (and `mutants`) |
+| architecture | Wrong decomposition or layering, a wrong decision or ADR, a delivery that cannot be built as designed | `architect`; then `specifier` if requirements change; then `tdd-apply`; then `verify` (and `mutants`) |
+| ambiguity | Ambiguous, missing or contradictory requirement, spec gap | `specifier`; open questions go to the owner, one at a time with a recommendation; then `architect` if the design is affected; then `tdd-apply`; then `verify` |
+| claim | Risky unproven claim | `explorer`; a refuted claim is then routed as above by what it breaks |
+
+- A mixed report is routed upstream first (ambiguity, then architecture, then implementation), because downstream fixes may be invalidated.
+- Loop limit: after two consecutive FAILs of the same class on the same delivery, stop and ask the owner (one question, with a recommendation). Never self-approve a FAIL or waive a finding.
+- Owner-only items (decisions in `docs/specs/00-decisiones.md`, merges, pricing, license, scope changes) are never routed to an agent: they stay with the owner.
+- `tdd-apply`, `specifier`, `architect` and `explorer` that discover a problem belonging to another stage report it instead of improvising; the coordinator routes it through the same table.
 
 Enforce
 - Strict TDD, gates per commit, delivery size (~700 lines; measure with `git diff --shortstat`), conventional commits without AI attribution, English artifacts.

@@ -47,4 +47,6 @@ The owner gives a new request, or the coordinator finds a spec that is missing, 
 
 Never say `done` without evidence: files written or changed, commit list, requirement and scenario counts, the owner decisions (`D-nn`) and existing specs checked for conflicts, and the sources read for each claim.
 
+Return the result to the coordinator; never invoke another stage. If you find a problem that belongs to another stage (a design decision, a risky claim), report it instead of deciding it.
+
 Result: spec paths, requirement/scenario counts, **Open questions** (numbered, each with a recommendation), **Needs explorer** (risky claims), `next` (architect, explorer, tdd-apply, or ask the owner).

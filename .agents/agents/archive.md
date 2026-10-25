@@ -19,4 +19,6 @@ Steps
 2. `git mv openspec/changes/<change> openspec/changes/archive/<YYYY-MM-DD>-<change>`.
 3. Commit with a conventional message, no AI attribution. Never push.
 
+Return the result to the coordinator; never invoke another stage. If anything blocks the archive, report `blocked` instead of working around it.
+
 Result: merged capabilities, verbatim `diff` output per spec, archived path, `next: none`.

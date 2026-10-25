@@ -12,6 +12,19 @@ Specs already say what to build, so there is no separate proposal, design or tas
 
 Stages in parentheses are skipped when the spec is already clear and complete.
 
+Feedback loop: the coordinator keeps control of the whole cycle; every agent returns to it and none calls another. `verify` classifies each finding, and the coordinator routes it back to the matching stage:
+
+```
+specify -> architect -> explorer -> tdd-apply -> mutants + verify -> archive
+   ^          ^            ^           ^               |
+   |          |            |           +-- implementation (code/test gap, gate, mutant, size)
+   |          |            +-------------- claim (risky unproven claim)
+   |          +--------------------------- architecture (design/ADR error, undeliverable as designed)
+   +-------------------------------------- ambiguity (missing/contradictory requirement, spec gap)
+```
+
+After two consecutive FAILs of the same class on one delivery the coordinator stops and asks the owner.
+
 | Step | Agent (`.agents/agents/`) | Output |
 |---|---|---|
 | Turn an owner request into specs (scope, requirements, Given/When/Then scenarios, acceptance criteria, edge cases, non-goals, open questions); defines WHAT, never HOW | `specifier` (Opus) | delta specs in `openspec/changes/<change>/specs/`, or product specs in `docs/specs/` when the owner asks |
@@ -23,7 +36,7 @@ Stages in parentheses are skipped when the spec is already clear and complete.
 | Close the change (PASS and all deliveries done) | `archive` (Haiku) | delta specs merged into `openspec/specs/`, change moved to `openspec/changes/archive/` |
 | Update, extend or regenerate the technical manual (`docs/manuals/tecnico/`), English first with a Spanish mirror | `manual-writer` (Sonnet) | edited chapters in both languages, `manual.py check` and `build` evidence, `docs(manual)` commits |
 
-On FAIL, or when deliveries remain, go back to `tdd-apply`.
+When deliveries remain, go back to `tdd-apply`. On FAIL, the coordinator routes each finding by its `class:` (see the feedback loop above and `.agents/agents/coordinator.md`).
 
 `coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions and merges. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants` on changed lines in parallel with `verify`. `manual-writer` (Sonnet) sits outside the spec flow: the coordinator delegates to it whenever the owner asks to change the technical manual; it needs the `technical-manual` and `skill-registry` skills and stops if `technical-manual` is unavailable. `.claude/agents` is a symlink to `.agents/agents`.
 

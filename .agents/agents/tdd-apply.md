@@ -20,4 +20,6 @@ Steps
 6. Append progress to `openspec/changes/<change>/apply-progress.md` (done items, deviations, measured lines via `git diff --shortstat`).
 7. Never push, open PRs or merge.
 
+Return the result to the coordinator; never invoke another stage. If you find a spec ambiguity, a missing requirement or an architecture problem, stop and report it as `blocked` (with the question and its class) instead of improvising.
+
 Result: `status` (done|blocked|partial), summary, commits, measured lines, deviations, `next` (verify or tdd-apply).
