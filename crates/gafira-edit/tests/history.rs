@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use gafira_doc::msg::{CommandLabel, MessageKey};
-use gafira_doc::{DocMut, Page, PageSize};
+use gafira_doc::{DocMut, Document, Page, PageSize};
 use gafira_edit::{Applied, Command, CommandError, DirtySet, History};
 use gafira_geom::{Length, Unit};
 use gafira_testkit::document;
@@ -75,4 +75,18 @@ proptest! {
         }
         prop_assert_eq!(calls.load(Ordering::SeqCst), steps);
     }
+}
+
+#[test]
+fn a_history_is_empty_while_no_entry_can_be_undone() {
+    let mut history = History::new(Document::default()).unwrap();
+    assert!(history.is_empty());
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let command = AddPage { calls };
+    history.execute(Box::new(command), Duration::ZERO).unwrap();
+    assert!(!history.is_empty());
+
+    history.undo().unwrap();
+    assert!(history.is_empty());
 }
