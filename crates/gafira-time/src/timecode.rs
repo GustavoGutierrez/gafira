@@ -126,10 +126,10 @@ impl Timecode {
         if fields.next().is_some() {
             return Err(TimeError::MalformedTimecode);
         }
-        if hours_text.len() < 2
+        if !is_canonical_width(hours_text)
             || minutes_text.len() != 2
             || seconds_text.len() != 2
-            || frames_part.len() < 2
+            || !is_canonical_width(frames_part)
         {
             return Err(TimeError::MalformedTimecode);
         }
@@ -152,6 +152,9 @@ impl Timecode {
             .ok_or(TimeError::Overflow)?;
         let label = i64::try_from(label).map_err(|_| TimeError::Overflow)?;
         let label = if negative {
+            if label == 0 {
+                return Err(TimeError::MalformedTimecode);
+            }
             label.checked_neg().ok_or(TimeError::Overflow)?
         } else {
             label
@@ -268,6 +271,12 @@ fn real_from_label(label: i64, rate: FrameRate) -> i64 {
     } else {
         real as i64
     }
+}
+
+/// Whether a hours or frames field has at least two digits and no zero padding
+/// beyond that minimum.
+fn is_canonical_width(text: &str) -> bool {
+    text.len() == 2 || (text.len() > 2 && !text.starts_with('0'))
 }
 
 /// Parses a non-empty run of ASCII digits.

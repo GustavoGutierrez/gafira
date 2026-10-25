@@ -20,6 +20,55 @@ fn tc(label: i64, format: TimecodeFormat) -> Timecode {
     Timecode::new(label, format).unwrap()
 }
 
+const CANONICAL_FORMATS: usize = 6;
+
+fn canonical_format(index: usize) -> TimecodeFormat {
+    match index {
+        0 => ndf(FrameRate::FPS_24),
+        1 => ndf(FrameRate::FPS_120),
+        2 => ndf(FrameRate::FPS_29_97),
+        3 => ndf(FrameRate::FPS_25),
+        4 => df(FrameRate::FPS_29_97),
+        _ => df(FrameRate::FPS_59_94),
+    }
+}
+
+/// Applies one edit: 0 extra leading zeros in a field, 1 toggle `-`, 2 insert,
+/// 3 delete or 4 replace one character.
+fn derive(text: &str, edit: usize, position: usize, zeros: usize, symbol: char) -> String {
+    let mut chars: Vec<char> = text.chars().collect();
+    match edit {
+        0 => {
+            let mut starts = vec![usize::from(chars[0] == '-')];
+            for (index, c) in chars.iter().enumerate() {
+                if matches!(c, ':' | ';') {
+                    starts.push(index + 1);
+                }
+            }
+            let at = starts[position % starts.len()];
+            for _ in 0..zeros {
+                chars.insert(at, '0');
+            }
+        }
+        1 => {
+            if chars[0] == '-' {
+                chars.remove(0);
+            } else {
+                chars.insert(0, '-');
+            }
+        }
+        2 => chars.insert(position % (chars.len() + 1), symbol),
+        3 => {
+            chars.remove(position % chars.len());
+        }
+        _ => {
+            let at = position % chars.len();
+            chars[at] = symbol;
+        }
+    }
+    chars.into_iter().collect()
+}
+
 #[test]
 fn non_drop_formatting_uses_hh_mm_ss_ff() {
     assert_eq!(tc(90_000, ndf(FrameRate::FPS_25)).format(), "01:00:00:00");
@@ -371,6 +420,67 @@ fn nominal_rates_round_trip_in_non_drop_mode() {
     }
 }
 
+#[test]
+fn frames_field_width_at_120_fps() {
+    let format = ndf(FrameRate::FPS_120);
+    for (label, text) in [
+        (5, "00:00:00:05"),
+        (99, "00:00:00:99"),
+        (100, "00:00:00:100"),
+        (119, "00:00:00:119"),
+    ] {
+        assert_eq!(tc(label, format).format(), text);
+        assert_eq!(
+            Timecode::parse(text, format).unwrap().label_frames(),
+            label,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn hours_of_one_hundred_or_more_have_no_padding() {
+    let format = ndf(FrameRate::FPS_24);
+    let label = 100 * 3_600 * 24;
+    assert_eq!(tc(label, format).format(), "100:00:00:00");
+    assert_eq!(
+        Timecode::parse("100:00:00:00", format)
+            .unwrap()
+            .label_frames(),
+        label
+    );
+}
+
+#[test]
+fn extra_leading_zeros_are_rejected() {
+    let cases = [
+        ("00:00:00:005", ndf(FrameRate::FPS_120)),
+        ("00:00:00:005", ndf(FrameRate::FPS_24)),
+        ("00:00:00:0023", ndf(FrameRate::FPS_24)),
+        ("000:00:00:00", ndf(FrameRate::FPS_24)),
+        ("001:00:00:00", ndf(FrameRate::FPS_24)),
+        ("00:00:00;005", df(FrameRate::FPS_29_97)),
+        ("0:00:00:00", ndf(FrameRate::FPS_24)),
+        ("00:0:00:00", ndf(FrameRate::FPS_24)),
+        ("00:00:000:00", ndf(FrameRate::FPS_24)),
+    ];
+    for (text, format) in cases {
+        assert!(Timecode::parse(text, format).is_err(), "accepted {text:?}");
+    }
+}
+
+#[test]
+fn negative_zero_is_rejected() {
+    assert!(Timecode::parse("-00:00:00:00", ndf(FrameRate::FPS_24)).is_err());
+    assert!(Timecode::parse("-00:00:00;00", df(FrameRate::FPS_29_97)).is_err());
+    assert_eq!(
+        Timecode::parse("-00:00:00:01", ndf(FrameRate::FPS_24))
+            .unwrap()
+            .label_frames(),
+        -1
+    );
+}
+
 proptest! {
     #[test]
     fn non_drop_parse_round_trip(label in -1_000_000_000i64..=1_000_000_000) {
@@ -404,5 +514,39 @@ proptest! {
         let tc = Timecode::from_flicks(Flicks::from_ticks(ticks), format);
         prop_assert_eq!(tc.to_flicks().unwrap().ticks(), ticks);
         prop_assert_eq!(Timecode::parse(&tc.format(), format).unwrap(), tc);
+    }
+
+    #[test]
+    fn accepted_text_is_canonical(
+        real in -2_000_000_000i64..=2_000_000_000,
+        format_index in 0usize..CANONICAL_FORMATS,
+        edit in 0usize..5,
+        position in any::<usize>(),
+        zeros in 1usize..4,
+        symbol in prop::sample::select(vec!['0', '1', '5', '9', ':', ';', '-']),
+    ) {
+        let format = canonical_format(format_index);
+        // A real frame always has a valid label, even in drop-frame mode.
+        let original = Timecode::from_flicks(
+            Flicks::from_frames(real, format.rate()).unwrap(),
+            format,
+        );
+        let text = original.format();
+        let derived = derive(&text, edit, position, zeros, symbol);
+        match Timecode::parse(&derived, format) {
+            Err(_) => {}
+            Ok(parsed) => {
+                prop_assert_eq!(parsed.format(), derived.clone());
+            }
+        }
+        if edit == 0 {
+            prop_assert!(
+                Timecode::parse(&derived, format).is_err(),
+                "extra zeros accepted: {derived:?}"
+            );
+        }
+        if edit == 1 && original.label_frames() == 0 {
+            prop_assert!(Timecode::parse(&derived, format).is_err());
+        }
     }
 }
