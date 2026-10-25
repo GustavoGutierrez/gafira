@@ -1,25 +1,38 @@
 //! `History`: the owner of the session document and its undo stack (ADR-03).
 
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
 use gafira_doc::msg::CommandLabel;
-use gafira_doc::{Document, EditToken, ValidationError};
+use gafira_doc::{DocMut, Document, EditToken, ValidationError};
 
-use crate::{Applied, Command, CommandError, GestureId};
+use crate::{Applied, Command, CommandError, GestureId, budget};
 
-/// One undo step: the command and the document before and after it.
+/// The documents on both sides of an entry's command.
+#[derive(Debug)]
+struct Snapshots {
+    before: Arc<Document>,
+    after: Arc<Document>,
+}
+
+/// One undo step: the command, its snapshots while it still holds them, and
+/// the estimate of what they hold alone (Q7). A compacted entry has no
+/// snapshots and counts nothing.
 #[derive(Debug)]
 struct Entry {
     command: Box<dyn Command>,
-    before: Arc<Document>,
-    after: Arc<Document>,
+    snaps: Option<Snapshots>,
+    bytes: usize,
     /// When the entry's newest command ran (the caller's clock).
     at: Duration,
 }
 
 /// Commands with equal keys merge when they are less than this apart.
 const MERGE_WINDOW: Duration = Duration::from_millis(500);
+
+/// The default memory budget: 512 MiB (ADR-03).
+pub const DEFAULT_BUDGET: usize = 512 * 1024 * 1024;
 
 /// The session document and the commands that produced it.
 ///
@@ -31,6 +44,9 @@ pub struct History {
     doc: Arc<Document>,
     undo: Vec<Entry>,
     redo: Vec<Entry>,
+    /// The most the entries' snapshots may estimate to before the oldest are
+    /// compacted.
+    budget: usize,
     /// The gesture between `begin_gesture` and `end_gesture`.
     open_gesture: Option<GestureId>,
     next_gesture: u64,
@@ -42,11 +58,17 @@ pub struct History {
 impl History {
     /// A history that starts from `doc`, which must be valid.
     pub fn new(doc: Document) -> Result<Self, ValidationError> {
+        Self::with_budget(doc, DEFAULT_BUDGET)
+    }
+
+    /// A history that keeps about `budget` estimated bytes of snapshots.
+    pub fn with_budget(doc: Document, budget: usize) -> Result<Self, ValidationError> {
         doc.validate()?;
         Ok(Self {
             doc: Arc::new(doc),
             undo: Vec::new(),
             redo: Vec::new(),
+            budget,
             open_gesture: None,
             next_gesture: 0,
             mergeable: false,
@@ -66,6 +88,9 @@ impl History {
     /// merge key as the newest entry is absorbed into it when both belong to
     /// the open gesture, or when no gesture is involved and `at` is less
     /// than 500 ms after that entry's last command.
+    ///
+    /// When the snapshots' estimate then exceeds the budget, the oldest
+    /// entries drop their snapshots and keep their commands.
     pub fn execute(
         &mut self,
         mut cmd: Box<dyn Command>,
@@ -75,19 +100,35 @@ impl History {
         if applied == Applied::Changed {
             self.redo.clear();
             let before = std::mem::replace(&mut self.doc, Arc::clone(&after));
-            let cmd = match self.merge_into_newest(cmd, &after, at) {
-                Ok(()) => return Ok(applied),
-                Err(cmd) => cmd,
-            };
-            self.undo.push(Entry {
-                command: cmd,
-                before,
-                after,
-                at,
-            });
-            self.mergeable = true;
+            if let Err(cmd) = self.merge_into_newest(cmd, &after, at) {
+                let bytes = budget::unshared_bytes(&before, &after);
+                self.undo.push(Entry {
+                    command: cmd,
+                    snaps: Some(Snapshots { before, after }),
+                    bytes,
+                    at,
+                });
+                self.mergeable = true;
+            }
+            self.compact();
         }
         Ok(applied)
+    }
+
+    /// Drops the snapshots of the oldest entries until the estimate fits the
+    /// budget; the newest entry always keeps its own.
+    fn compact(&mut self) {
+        let mut total = self.estimated_bytes();
+        let older = self.undo.len().saturating_sub(1);
+        for entry in self.undo.iter_mut().take(older) {
+            if total <= self.budget {
+                break;
+            }
+            if entry.snaps.take().is_some() {
+                total -= entry.bytes;
+                entry.bytes = 0;
+            }
+        }
     }
 
     /// Hands `cmd` to the newest entry when the merge rules allow it; gives
@@ -114,8 +155,13 @@ impl History {
         if !allowed {
             return Err(cmd);
         }
+        // The newest entry is never compacted, so this holds.
+        let Some(snaps) = entry.snaps.as_mut() else {
+            return Err(cmd);
+        };
         entry.command.merge(cmd)?;
-        entry.after = Arc::clone(after);
+        snaps.after = Arc::clone(after);
+        entry.bytes = budget::unshared_bytes(&snaps.before, after);
         entry.at = at;
         Ok(())
     }
@@ -137,6 +183,11 @@ impl History {
     /// Closes the open gesture.
     pub fn end_gesture(&mut self) {
         self.open_gesture = None;
+    }
+
+    /// The estimated bytes the entries' snapshots hold alone (Q7).
+    pub fn estimated_bytes(&self) -> usize {
+        self.undo.iter().chain(&self.redo).map(|e| e.bytes).sum()
     }
 
     /// How many entries can be undone.
@@ -161,13 +212,28 @@ impl History {
 
     /// Restores the document from before the newest entry and returns its label.
     ///
-    /// Installs the stored snapshot and calls no command method; `None` when
-    /// there is nothing to undo.
+    /// An entry that still holds its snapshots installs the stored one and
+    /// calls no command method. A compacted entry reverts its command on a
+    /// copy of the current document, and on `Err` nothing changes. `None`
+    /// when there is nothing to undo.
     pub fn undo(&mut self) -> Result<Option<CommandLabel>, CommandError> {
-        let Some(entry) = self.undo.pop() else {
+        let Some(mut entry) = self.undo.pop() else {
             return Ok(None);
         };
-        self.doc = Arc::clone(&entry.before);
+        let restored = match &entry.snaps {
+            Some(snaps) => Ok(Arc::clone(&snaps.before)),
+            None => on_copy(&self.doc, |doc| entry.command.revert(doc)).map(|(copy, ())| {
+                debug_valid(&copy, &entry.command);
+                copy
+            }),
+        };
+        match restored {
+            Ok(doc) => self.doc = doc,
+            Err(error) => {
+                self.undo.push(entry);
+                return Err(error);
+            }
+        }
         self.mergeable = false;
         self.debug_check();
         let label = entry.command.label();
@@ -177,13 +243,29 @@ impl History {
 
     /// Reinstalls the document the last undone entry produced.
     ///
-    /// Installs the stored snapshot and calls no command method; `None` when
-    /// there is nothing to redo.
+    /// An entry that still holds its snapshots installs the stored one and
+    /// calls no command method. A compacted entry applies its command again
+    /// to a copy of the current document; `Unchanged` counts as success
+    /// because the document then already holds the result. On `Err` nothing
+    /// changes. `None` when there is nothing to redo.
     pub fn redo(&mut self) -> Result<Option<CommandLabel>, CommandError> {
-        let Some(entry) = self.redo.pop() else {
+        let Some(mut entry) = self.redo.pop() else {
             return Ok(None);
         };
-        self.doc = Arc::clone(&entry.after);
+        let restored = match &entry.snaps {
+            Some(snaps) => Ok(Arc::clone(&snaps.after)),
+            None => on_copy(&self.doc, |doc| entry.command.apply(doc)).map(|(copy, _)| {
+                debug_valid(&copy, &entry.command);
+                copy
+            }),
+        };
+        match restored {
+            Ok(doc) => self.doc = doc,
+            Err(error) => {
+                self.redo.push(entry);
+                return Err(error);
+            }
+        }
         self.mergeable = false;
         self.debug_check();
         let label = entry.command.label();
@@ -196,14 +278,8 @@ impl History {
         &self,
         cmd: &mut dyn Command,
     ) -> Result<(Arc<Document>, Applied), CommandError> {
-        let token = EditToken::__new_for_gafira_edit_only();
-        let mut copy = Arc::clone(&self.doc);
-        let applied = cmd.apply(&mut Arc::make_mut(&mut copy).edit(&token))?;
-        debug_assert!(
-            copy.validate().is_ok(),
-            "{cmd:?} left the document invalid: {:?}",
-            copy.validate()
-        );
+        let (copy, applied) = on_copy(&self.doc, |doc| cmd.apply(doc))?;
+        debug_valid(&copy, cmd);
         Ok((copy, applied))
     }
 
@@ -216,6 +292,31 @@ impl History {
         );
     }
 }
+
+/// Runs `run` on a copy of `doc` that shares every page and node it does not
+/// touch; the copy is dropped by the caller on `Err`.
+fn on_copy<T>(
+    doc: &Arc<Document>,
+    run: impl FnOnce(&mut DocMut<'_>) -> Result<T, CommandError>,
+) -> Result<(Arc<Document>, T), CommandError> {
+    let token = EditToken::__new_for_gafira_edit_only();
+    let mut copy = Arc::clone(doc);
+    let out = run(&mut Arc::make_mut(&mut copy).edit(&token))?;
+    Ok((copy, out))
+}
+
+/// ARQ-13: a command must leave a valid document (debug builds only).
+fn debug_valid(doc: &Document, cmd: &dyn Debug) {
+    debug_assert!(
+        doc.validate().is_ok(),
+        "{cmd:?} left the document invalid: {:?}",
+        doc.validate()
+    );
+}
+
+#[cfg(test)]
+#[path = "history_budget_tests.rs"]
+mod budget_tests;
 
 #[cfg(test)]
 mod tests {

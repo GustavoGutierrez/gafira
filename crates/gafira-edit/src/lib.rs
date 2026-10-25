@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod budget;
 mod command;
 mod dirty;
 mod error;
@@ -18,7 +19,7 @@ mod transaction;
 pub use command::{Applied, Command, GestureId, MergeKey};
 pub use dirty::DirtySet;
 pub use error::CommandError;
-pub use history::History;
+pub use history::{DEFAULT_BUDGET, History};
 pub use insert_nodes::{InsertNodes, NodeSpec};
 pub use remove_nodes::RemoveNodes;
 pub use set_property::{Property, SetProperty};

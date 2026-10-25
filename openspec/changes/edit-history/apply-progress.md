@@ -381,3 +381,77 @@ Size (`git diff --shortstat main..HEAD -- . ':!Cargo.lock' ':!openspec'`): 20 fi
 - `fail_edit_without_token.stderr` quotes the `Document::edit` signature of `gafira-doc` (`$WORKSPACE/crates/gafira-doc/src/edit.rs`); a change of that line needs `TRYBUILD=overwrite`.
 - Fixture 1 shows "no such method" (`document_mut`); the `&Arc<Document>` side is `fail_assign_through_history`.
 - The shared scratchpad was overwritten by a sibling delivery's `gates.sh` once; D5 scripts live in a `d5/` subdirectory.
+
+## D7: memory budget and compaction
+
+Base: `main` 1518560. Branch `feat/edit-history-7`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| feat(edit): estimate the bytes each history entry holds alone | `budget.rs` (size model), `Entry::bytes`, `History::estimated_bytes` |
+| feat(edit): compact the oldest snapshots over a memory budget | `DEFAULT_BUDGET`, `History::with_budget`, compaction, revert/apply undo and redo |
+| test(edit): prove undo and redo through revert reach the recorded states | `tests/budget.rs`, one property (256 cases) |
+| test(edit): pin that a 300-move drag copies only the dragged node | `tests/gesture.rs`, one property (`Arc::ptr_eq` per untouched node) |
+
+Each commit: `cargo fmt --check`, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the `ci.yml` policy steps ARQ-07, forbid unsafe (V11), V12, V13, V5 under `bash --noprofile --norc -eo pipefail` (all rc 0). 402 tests in the workspace after the last code commit.
+
+Size (`git diff --shortstat main..HEAD -- crates`, before this file): 891 insertions, 34 deletions (forecast ~630, ceiling ~700). About 560 of them are tests (`history_budget_tests.rs` 457, `budget.rs` unit tests about 110, `tests/budget.rs` 72, `tests/gesture.rs` 20); production code is about 230. Over the ceiling. The cut points are commit boundaries: commits 1 and 2 are 799 insertions and stand alone; commits 3 and 4 (92 lines of property tests) can go to a follow-up PR if the owner wants the delivery split.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Small budget compacts the oldest | `a_small_budget_compacts_the_oldest_entries_first` (ten entries, budget 2.5 entries: first eight compacted, last two held; after three entries only the oldest is gone), `a_sum_equal_to_the_budget_fits`, `the_newest_entry_keeps_its_snapshots_even_over_the_budget` |
+| Undo through revert reaches the same states (property) | `tests/budget.rs::undo_and_redo_through_revert_reach_the_same_states` (real `SetProperty`, budget 0 against `usize::MAX`) and the unit `undo_of_a_compacted_entry_reverts_and_redo_applies` (counts: 2 reverts, 3 + 2 applies) |
+| Failed revert changes nothing | `a_failed_revert_changes_nothing`, `a_transaction_that_fails_midway_through_revert_leaves_no_partial_change` |
+| Failed apply on a compacted redo changes nothing | `a_failed_apply_on_a_compacted_redo_changes_nothing` |
+| Shared data is not double counted | `shared_data_is_not_double_counted` (100 nodes, ten single-node commands, under twice a whole-document entry) and the `budget.rs` unit tests (one changed node does not count its siblings, a page missing from the newer state counts in full, strings and payloads count their length) |
+| Default budget 512 MiB | `the_default_budget_is_512_mib` (536 870 912) |
+| Compaction after a merge | `an_entry_that_grows_by_merging_can_push_older_ones_out` |
+| Estimate follows the entry through merge, undo and redo | `a_merged_entry_is_estimated_from_its_first_before_to_its_last_after`, `undone_entries_keep_their_estimate`, `an_entry_counts_the_snapshot_it_replaces_not_what_the_command_added` |
+| 300-move drag copies no untouched node (carry-over) | `tests/gesture.rs::a_drag_copies_only_the_dragged_node` |
+
+### RED evidence
+
+- Estimate: stub `unshared_bytes` returning 0: `strings_and_payloads_count_their_heap_length` (`left: 0, right: 1000`), `a_state_that_shares_every_page_counts_only_its_own_record` (`record > 0`) and `one_changed_node_does_not_count_its_siblings` (`one > shared`) failed on assertions. At the History level, stub `estimated_bytes` returning 0: `shared_data_is_not_double_counted` (`ten.estimated_bytes() > 0`) and `undone_entries_keep_their_estimate` (`held > 0`) failed.
+- Compaction and revert path: with `compact()` a no-op and undo/redo handling only entries with snapshots, 8 tests failed on assertions (`left: 0, right: 536870912`; `[false, false, false]` vs `[true, true, false]`; `Ok(Some(..))` vs `Err(InvalidValue("revert"))`; `estimated_bytes() <= budget`). The merge test was written after finding that the merge path returned before `compact()`: `[false, false]` vs `[true, false]`, then fixed.
+- Hand mutants on the finished code (a selection, not the full set; the cargo-mutants run below is the full one): no early `break` in `compact`; compacting the newest entry; not zeroing `bytes`; `<` for `<=` (survived until `a_sum_equal_to_the_budget_fits`); no push-back after a failed undo or redo; swapped `unshared_bytes` arguments. These were caught by the tests at that point.
+- The property in `tests/budget.rs` and the drag test passed at once (the unit tests drove the code); RED is by mutant: undo using `apply` instead of `revert`, no compaction (the `estimated_bytes` comparison fails), redo using `revert`, and a `SetProperty` that copies every node of the page (drag test fails).
+
+### Carry-overs
+
+- D4/D6: `Unchanged` from `apply` on a compacted redo is success (`redo_of_a_compacted_entry_succeeds_when_apply_reports_unchanged`: a drag that ends where it started, compacted, undone through revert and redone through an `Unchanged` apply). The entry moves back to the undo stack and stays compacted.
+- D4 W2, `Transaction::revert` stops at its first error: kept. `History` runs a compacted undo on a copy and drops it on `Err`, so the partial reverts never reach the session (test above, second child reverted on the copy, first fails, document pointer-equal). The spec line "revert all in reverse order" is read as "all, unless one fails".
+- `undo`/`redo` already returned `Result<Option<_>>`; no signature change.
+- Merge into a compacted entry is refused (`merge_into_newest` returns the command when the entry has no snapshots). It cannot happen today because the newest entry is never compacted and `mergeable` is cleared by undo and redo; the guard replaces an `unreachable!`.
+
+### Note for D8 (`next_id`)
+
+Undo of an entry that holds its snapshots installs the snapshot, so `next_id` goes back (Q6). A compacted undo goes through `Command::revert` and D7 adds no `DocMut` operation, so for `SetProperty` (no allocation) both paths give equal documents, which is what the property checks. The owner approved D8 option A (`DocMut::restore_next_id`, called by `InsertNodes::revert`), so a compacted undo of an insert returns the counter and the compacted redo through `apply` reuses the same ids. The revert property in `tests/budget.rs` covers `SetProperty` only; extend it to `InsertNodes` and `RemoveNodes` after D8 merges (D9/D10 or the integration delivery).
+
+### Deviations and notes
+
+- The estimate adds a fixed document record per entry (`size_of::<Document>()` plus the page handle list), so every snapshot costs something even when a command changes only the DPI, and budget 0 compacts every entry but the newest. The spec lists pages and nodes only; this is a lower bound as before.
+- The estimate is cached per entry (`bytes`), computed when the entry is pushed and again when a merge replaces its after-state, so `estimated_bytes()` is O(entries), not O(nodes). It depends only on the entry's own before and after, so compacting a neighbor never changes it.
+- Compaction runs after an `execute` that records or merges a `Changed` command; undo, redo and `Unchanged` or failed commands never grow the estimate, so they do not compact.
+- Compaction walks entries oldest first and never touches the newest of the undo stack. It runs only when the redo stack is empty (every `Changed` execute clears it).
+- API: `History::with_budget(doc, budget)`, `History::new` uses `DEFAULT_BUDGET` (`pub const`, exported). The spec says "take a budget at construction"; the two constructors are the choice. A budget of `usize::MAX` never compacts.
+- `gafira-edit` gains `serde_json` as a normal dependency (to size extension payloads without allocating). V5 only constrains `gafira-*` edges; `cargo deny` passes. `Cargo.lock` gains the edge.
+- The compaction state is read in tests through the private `Entry::snaps` (the test module lives in `src/history_budget_tests.rs`, declared with `#[path]` under `history.rs`); no public accessor was added. The spec's `estimated_bytes()` is public.
+- Not asserted: the 1.2x to 2.5x factor against real heap (spike R9); it is a property of the size model, not of the code.
+- Untracked `.claude/worktrees/` is not part of this delivery and was not staged.
+
+### D7 fix round (verify FAIL: C1, C2, W2, W3, W4), test first
+
+Each test was written against the finished code and passed at once; RED is by cargo-mutants mutant, applied one at a time with the test run restored after each (script outside the repo).
+
+- C1: `one_execute_drops_as_many_snapshots_as_it_takes_to_fit` (budget 3 small entries; then a medium move that must drop two, and a 57-node move that must drop three). `history.rs:128:23` `-=` to `/=` fails it (`[true, false, false, false]`); `-=` to `+=` fails it and `a_small_budget_compacts_the_oldest_entries_first`.
+- C2: exact-estimate tests in `budget.rs`: `the_document_record_counts_one_handle_per_page` (7 pages), `a_page_counts_its_record_name_roots_and_arena_slots`, `a_node_counts_its_record_name_and_children` (30 children), `an_extension_counts_its_type_id_and_payload_exactly` (type id +9, string payload 500, object keys, nested array and object). All 13 surviving mutants (`16:40` x2, `35:28` x2, `36:28` x2, `36:51`, `52:55`, `57:9`, `57:31` x2, `64:9`, `67:67`) now fail at least one of them. The two overflow cases verify found (7 pages, 30 children) are in these tests; the generator caps pages at 3, so they are hand-built, not generated.
+- W2: `main` (3d92768) merged into the branch. `Cargo.lock` keeps `serde_json` and `trybuild`; this file and `verify-report.md` keep both sides (D5 first, then D7).
+- W3: the revert-versus-snapshot property covers `SetProperty` only (see the D8 note above): extend it to `InsertNodes` and `RemoveNodes` after D8 merges. Note for D9/D10.
+- W4: the "each caught" claim above is corrected to "a selection". The cargo-mutants run had 64 mutants, 44 caught, 14 missed (all in C1 and C2), 6 unviable.
+- S2: the `next_id` note is updated (option A decided).
+
+Size of the fix round: 140 lines of tests (`git diff --shortstat c3259a8..HEAD -- crates` before the merge: `budget.rs` 104, `history_budget_tests.rs` 36). Total for the delivery, `git diff --shortstat main..HEAD -- crates`: 1030 insertions, 34 deletions.
