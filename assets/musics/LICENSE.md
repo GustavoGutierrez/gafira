@@ -36,9 +36,11 @@ El audio puramente generado por IA puede no ser protegible por copyright en algu
 
 ## Pistas con voz detectada (revisar antes de publicar)
 
-`bgm-04`, `underscore-02`, `underscore-04`, `underscore-05`, `underscore-06`, `underscore-10`, `soundtrack-08`, `ambient-06`, `ambient-10`.
+La primera tanda marcó palabras en 9 pistas: `bgm-04`, `underscore-02`, `underscore-04`, `underscore-05`, `underscore-06`, `underscore-10`, `soundtrack-08`, `ambient-06`, `ambient-10`.
 
-`underscore-05`, `-06` y `-10` se regeneraron después y no se volvieron a comprobar.
+**Revisadas y resueltas.** Las 9 se regeneraron con otra semilla y se vuelto a comprobar. La verificación ahora transcribe cada pista con tres pistas de idioma distintas (en, zh, es) y exige que las tres devuelvan el mismo texto: el ASR alucina frases sobre una cama instrumental, y esa alucinación cambia según el idioma pedido. Un texto idéntico en los tres significa que los fonemas están de verdad en el audio.
+
+Estado final: **40/40 sin voz**, confirmado con tres rondas independientes de la comprobación por pista. Silero VAD coincidió en todos los casos.
 
 ## Siguiente paso
 
