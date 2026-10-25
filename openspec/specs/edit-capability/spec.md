@@ -93,7 +93,11 @@ Scenario type tags: (unit), (integration), (command), (manual). All requirements
 
 ### Requirement: Id allocation (D5b)
 
+C3 delivery: D8, D10. Scenarios without a delivery tag below belong to C2b D5b.
+
 `DocMut::alloc_node_id` and `alloc_page_id` MUST return the current `next_id` as a `NodeId` or `PageId` and then increment it; ids MUST never be reused within a document. When `next_id == u64::MAX` the call MUST return `Err(IdSpaceExhausted)` and leave `next_id` unchanged (no wrap). `IdSpaceExhausted` MUST be `Copy`, `Eq`, `Display` and `Error`. Allocation outside `DocMut` MUST NOT be public. The counter is shared by nodes and pages.
+
+"Never reused" applies to allocation: inside every valid document state ids are unique and `next_id` lies above every id (`validate()`), so allocation never returns an id that a node or page of that state holds. It does not forbid returning to an earlier state. From C3 on, `DocMut` MUST also offer `restore_next_id(value: u64)`, which lowers `next_id` to `value` and MUST ignore a `value` at or above `next_id`, so it never raises the counter. A revert that gives back the ids its apply allocated, like a snapshot undo, returns the counter to a value it held before, so a redo after a revert, or a new command after an undo, MAY be issued the same ids again (`edit-history` "Ids after undo", Q6). A caller MUST NOT lower the counter under an id that a later allocation handed out; the `gafira-edit` insert commands check this before they restore it (`edit-commands` "Restoring the id counter").
 
 #### Scenario: Shared counter (unit)
 - GIVEN `next_id = 5`
@@ -110,6 +114,11 @@ Scenario type tags: (unit), (integration), (command), (manual). All requirements
 - WHEN an id is allocated
 - THEN it returns `Err(IdSpaceExhausted)` and `next_id` is still `u64::MAX`
 
+#### Scenario: Restore lowers, never raises (D8, unit)
+- GIVEN `next_id = 1` and two allocated ids
+- WHEN `restore_next_id(1)` runs, then `restore_next_id` with a value above `next_id`
+- THEN `next_id` is 1 after the first call, the next allocation returns 1 again, and the second call changes nothing
+
 ### Requirement: Readers hold Arc<Document> (D5b)
 
 Consumers outside `gafira-edit` MUST read a document through `&Document` or `Arc<Document>` and the accessors of `document-model`. Cloning an `Arc<Node>` or `Arc<Page>` out of a document MUST NOT make the document mutable.
@@ -121,11 +130,13 @@ Consumers outside `gafira-edit` MUST read a document through `&Document` or `Arc
 
 ### Requirement: V13 CI step (D5b)
 
+C3 delivery: D1, D5. Scenarios without a delivery tag below belong to it.
+
 The `policy` job MUST contain a step V13, run under `set -euo pipefail`, that searches the repository with `git grep --untracked -nE 'EditToken|__new_for_gafira_edit_only' -- '*.rs'` and fails when a hit lies outside `^crates/(gafira-doc|gafira-edit|gafira-testkit)/`. The step MUST: capture every `grep` exit code explicitly and treat only exit 1 (no match) as clean, so that any exit above 1 fails the step (`git grep` exits 128 for a broken pattern or no repository; the filter `grep` exits 2 for a broken pattern); run a positive control that fails the step unless the search finds `pub struct EditToken {` in a file under `crates/gafira-doc/src/` (so a wrong working directory, a renamed definition or an empty search cannot pass); print the offending hits; and also fail when any Rust file under `crates/gafira-edit/` (listed with `git ls-files --cached --others --exclude-standard -- crates/gafira-edit | grep '\.rs$' || true`: a plain directory pathspec, so untracked files count and a missing directory prints nothing; `|| true` is required because `grep` exits 1 on no match under `pipefail`) publicly re-exports the token. The re-export check MUST split each file into records at `;` so that a multi-line brace group is one record, and MUST fail on a record that has a `pub use` or `pub type` item naming `EditToken`, and on every public glob re-export (`pub use ...::*`), even if it does not name the token (stricter than needed, accepted). `pub(crate)` re-exports are deliberately allowed. Only `*.rs` files are searched, so `openspec/` and `ci.yml` never match. V13 does NOT prove ARQ-30: the limits are in the table above.
 
-While `crates/gafira-edit/` does not exist (the state of this change), the re-export check MUST pass silently: listing files with a plain directory pathspec prints nothing for a missing directory (verified on git 2.34.1). A glob pathspec such as `'crates/gafira-edit/*.rs'` is NOT silent (it prints `warning: could not open directory` to stderr, exit 0), so the step MUST NOT use one. Even if git printed a warning, it MUST NOT break the positive control or change the exit-code mapping.
+From C3 on, `crates/gafira-edit/` exists. The re-export check MUST scan every Rust file under it, the `trybuild` fixtures under `crates/gafira-edit/tests/ui/` included; fixtures MUST therefore never contain a `pub use` or `pub type` naming the token nor a public glob re-export. The check MUST still pass silently on a tree without the directory (for example a scratch copy used in negative runs): listing files with a plain directory pathspec prints nothing for a missing directory (verified on git 2.34.1). A glob pathspec such as `'crates/gafira-edit/*.rs'` is NOT silent (it prints `warning: could not open directory` to stderr, exit 0), so the step MUST NOT use one. Even if git printed a warning, it MUST NOT break the positive control or change the exit-code mapping.
 
-Known limits of V13 (recorded in the verify report as not met; review and `trybuild` in C3 cover them): (1) a two-step alias, `use gafira_doc::EditToken as T;` followed by `pub use self::T;`, whose public line does not name the token; (2) a public function, field or wrapper type in `gafira-edit` that hands out `EditToken` or `&EditToken` (an allowed mention, not a re-export); (3) a re-export generated by a macro; (4) a `;` inside a comment or string literal splits a record and can hide a match; (5) type inference in a consumer that never names the token; (6) a re-export of the whole crate or of the module holding the token that never names it (`pub use gafira_doc as d;`, `pub use gafira_doc::edit;`). Matching `EditTokenX` as well is stricter than necessary and accepted. The step is textual and does not replace `trybuild` (C3).
+Known limits of V13 (recorded in the verify report as not met; review covers them, and C3's `trybuild` fixtures cover only the no-token mutation paths, see "trybuild evidence for ARQ-30"): (1) a two-step alias, `use gafira_doc::EditToken as T;` followed by `pub use self::T;`, whose public line does not name the token; (2) a public function, field or wrapper type in `gafira-edit` that hands out `EditToken` or `&EditToken` (an allowed mention, not a re-export); (3) a re-export generated by a macro; (4) a `;` inside a comment or string literal splits a record and can hide a match, and the reverse is a false positive: a fixture comment such as `// pub use x::*;` trips the re-export check (spike R4); (5) type inference in a consumer that never names the token; (6) a re-export of the whole crate or of the module holding the token that never names it (`pub use gafira_doc as d;`, `pub use gafira_doc::edit;`). Matching `EditTokenX` as well is stricter than necessary and accepted. The step is textual; `trybuild` complements it and does not replace it, because the hidden constructor is callable from any crate.
 
 #### Scenario: Clean tree passes (E0, command)
 - GIVEN the final tree
@@ -163,7 +174,7 @@ Known limits of V13 (recorded in the verify report as not met; review and `trybu
 - THEN it exits 1 with the re-export message
 
 #### Scenario: Missing gafira-edit directory (E10, command)
-- GIVEN the final tree, where `crates/gafira-edit/` does not exist
+- GIVEN a scratch copy of the final tree with `crates/gafira-edit/` removed
 - WHEN V13 runs with standard error captured
 - THEN it exits 0, the positive control found the definition, and the re-export check printed nothing (a git warning, if any, does not change the result)
 
@@ -180,23 +191,50 @@ Known limits of V13 (recorded in the verify report as not met; review and `trybu
 #### Scenario: Known limits are not detected (E11 alias, E13 lend, E15 crate or module re-export; known limitation, manual)
 - GIVEN an untracked `crates/gafira-edit/src/lib.rs` with `use gafira_doc::EditToken as T;` followed by `pub use self::T;` (E11); separately `pub fn lend(t: &gafira_doc::EditToken) -> &gafira_doc::EditToken { t }` (E13); and separately `pub use gafira_doc as d;` and `pub use gafira_doc::edit;` (E15)
 - WHEN V13 runs on each
-- THEN it exits 0 on each (limits 1, 2 and 6 above, recorded in the verify report as not met and left to review and C3 `trybuild`)
+- THEN it exits 0 on each (limits 1, 2 and 6 above, recorded in the verify report as not met and left to review)
 
 #### Scenario: Allowed crates pass (E14, manual negative test)
 - GIVEN `EditToken` mentioned in `crates/gafira-doc/tests/edit.rs`, and in a scratch `crates/gafira-testkit/src/lib.rs` and `crates/gafira-edit/src/lib.rs` without re-export
 - WHEN V13 runs
 - THEN it exits 0
 
-### Requirement: trybuild is deferred (D5b)
+#### Scenario: trybuild fixtures pass V13 (E16, command)
+- GIVEN the final tree with `crates/gafira-edit/src/` and the fixtures under `crates/gafira-edit/tests/ui/`
+- WHEN V13 runs
+- THEN it exits 0, the positive control found the definition, and the re-export check listed the fixture files
 
-This change MUST NOT add `trybuild` or any other new third-party package. The ARQ-30 compile-failure test from `gafira-ui` is deferred to C3 and MUST be recorded as deferred in the verify report.
+#### Scenario: A fixture that re-exports the token fails (E17, manual negative test)
+- GIVEN an untracked `crates/gafira-edit/tests/ui/scratch.rs` containing `pub use gafira_doc::EditToken;`
+- WHEN V13 runs
+- THEN it exits 1 with the re-export message; removed afterwards
 
-#### Scenario: Lock unchanged except gafira-doc (command)
-- GIVEN the final `Cargo.lock`
-- WHEN compared with the pre-change lock
-- THEN the only package added is `gafira-doc`
+### Requirement: trybuild evidence for ARQ-30 (ARQ-30, ARQ-20) (D5, Q13)
 
-#### Scenario: Deferral recorded (manual)
-- GIVEN the verify report
-- WHEN its coverage notes are read
-- THEN the `trybuild` test is listed as deferred to C3
+`gafira-edit` MUST have a test that runs `trybuild` on fixtures under `crates/gafira-edit/tests/ui/`, each a `.rs` file with a committed `.stderr` for compile-fail cases. The fixtures act as an outside crate that depends on `gafira-doc` and `gafira-edit` (02 ARQ-30 names `gafira-ui`, which does not exist yet). Compile-fail fixtures MUST cover at least:
+1. getting `&mut Document` from `History` (no such method, and `document()` is `&Arc<Document>`);
+2. assigning to `*history.document()` or through `&Document`;
+3. calling `Document::edit` without a token, and on a `&Document`;
+4. writing a private `Document` field;
+5. getting `&mut Page` or `&mut Node` from `&Document` (`page()`, `Page::node()`).
+
+Each compile-fail fixture MUST fail with exactly the error code recorded in its `.stderr` (`trybuild` compares the full output). A pass fixture MUST show an outside type implementing `Command` and executing through `History::execute`, undo and redo (the legitimate path; ARQ-20). The hidden constructor `__new_for_gafira_edit_only` is callable from any crate, so no fixture MAY claim otherwise; V13 and review keep covering it. Fixtures MUST NOT contain `pub use` or `pub type` naming `EditToken` nor public globs (V13). Identical `.stderr` output on Windows, Linux and macOS is UNVERIFIED locally (only Linux stable was checked; a CI throwaway run in D5 is needed, spike R3). A `.stderr` that quotes another crate's source line goes stale when that line changes. If the D5 run shows that `.stderr` output differs per platform (R3), the test MUST run on Linux only (`#[cfg(target_os = "linux")]`) and the verify report MUST say so.
+
+#### Scenario: No mutable access from outside (D5, integration)
+- GIVEN the compile-fail fixtures 1 to 5
+- WHEN `cargo test -p gafira-edit --test ui --locked` runs
+- THEN every fixture fails to compile and its output matches the committed `.stderr` (expected codes recorded in each file, for example `E0599`, `E0594`, `E0061`, `E0596`, `E0616`)
+
+#### Scenario: Outside command takes the legitimate path (D5, integration)
+- GIVEN the pass fixture with an outside `Command` implementation
+- WHEN the `trybuild` test runs
+- THEN it compiles and its `main` asserts the change, the undo and the redo
+
+#### Scenario: A wrong error code fails the test (D5, manual negative test)
+- GIVEN one fixture's `.stderr` edited to another error code
+- WHEN the `trybuild` test runs
+- THEN it fails showing the mismatch (unlike `compile_fail` doctests, ED3); reverted afterwards
+
+#### Scenario: Deny gate still passes (D5, command)
+- GIVEN the lock after adding `trybuild`
+- WHEN `cargo deny check licenses bans sources` runs
+- THEN it exits 0 with no change to `deny.toml`'s allowlist (or with a written, per-crate exception, see `workspace-tooling`)
