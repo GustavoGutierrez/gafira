@@ -1,8 +1,8 @@
-# Apply Progress: domain-color (PR1, T1-T6)
+# Apply Progress: domain-color (PR1 T1-T6, PR2 T7)
 
 Mode: Strict TDD (runner `cargo test`). Backend: hybrid (Engram not available to the executor; the orchestrator persists it). Branch: `feat/domain-color` from `main` (d02bb6f). Not pushed; no PR opened.
 
-Status: tasks 0.1, 0.2, 1.1-6.3 done. Pending: 0.3 (holder decision), 6.4 (push and PR, orchestrator), all of PR2 (7.x, 8.x) not started.
+Status: tasks 0.1, 0.2, 1.1-6.3, 7.1-7.4, 8.1 done (8.2 by the coordinator). Pending: 0.3 `Result` deviation confirmation.
 
 **DECISION REQUIRED BEFORE PUSH: PR1 measures 1718 lines (limit 800). See "Size checkpoint".**
 
@@ -131,3 +131,62 @@ The overrun is tests (about 1230 lines, versus ~190 forecast for the same files)
 - Holder: decide PR1 size (1718 vs 800): `size:exception`, or split differently (the design's fallback is insufficient). Task 0.3 (chain strategy, 02 4.10 `Result` deviation) still open.
 - Push and PR1 (task 6.4), CI green on the three `test` jobs and `policy`: orchestrator.
 - PR2 (T7, `ColorTransform`, P6) not started. Pending items carried: ΔE2000 (deferred), `Result` deviation confirmation, N5 limitation (not met), ARQ-80 (403), spec wording of P3 (item 5).
+
+## PR1 delivery note
+
+PR1 (measured 1718 lines against the 800 forecast cut) was merged as three PRs (#3-#5) instead of one; chain strategy was stacked-to-main, so the feature-branch-chain tracker of task 0.3 was never needed. The `Result` deviation from 02 §4.10 is still pending owner confirmation.
+
+## PR2 (T7, tasks 7.1-7.4, 8.1)
+
+Branch `feat/domain-color-transform` from `origin/main` (0bb420b), in a separate worktree. Not pushed by the executor (8.2 is the coordinator's).
+
+Origin: the pre-archive verify found `ColorTransform` (PR2) was never built, so it was implemented now.
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Channel counts | `transform::tests::layouts_report_their_channel_counts` |
+| Object safety and thread bounds | `boxed_transform_is_object_safe_send_and_sync` |
+| All nine pairs, Rgba slice | `all_nine_pairs_match_color_convert_on_rgba` |
+| Rgb slice | `rgb_layout_converts_triples_without_an_alpha_channel` |
+| Wrong length | `wrong_length_is_an_error_and_leaves_the_buffer_untouched` |
+| Empty buffer | `empty_buffer_succeeds_for_both_layouts` |
+| Error rendering | `error_names_length_and_channels_and_is_a_std_error` |
+| Identity transform | `identity_transform_keeps_every_bit` |
+| Agreement with the typed API (P6) | `tests/properties.rs::apply_f32_agrees_with_the_typed_api` |
+
+Not covered as a separate test: "Slice round trip (property)"; it follows from P6 plus the typed P-round-trip properties (P6 proves bit identity with the typed API, whose round trip is covered by P2).
+
+### RED
+
+Stub `apply_f32` returning `Ok(())` without touching the buffer: 4 unit tests failed on assertions (nine pairs, Rgb, wrong length, object safety value check) and P6 failed with a minimal failing input. The `Err`-path tests failing proves the length check is not vacuous. Empty buffer, identity and error-rendering pass against the stub by construction (the stub is a no-op that returns `Ok`).
+
+### GREEN and mutation
+
+Implementation: `PixelLayout`, `ColorTransform`, `AnalyticTransform` (`const fn new`, `chunks_exact_mut`, shared `convert_rgb`), `PixelBufferError`, re-exports. Mutation (scaling a channel after `convert_rgb`, equivalent to bypassing the shared pipeline): 4 unit tests and P6 failed; reverted. Generated `proptest-regressions` files were deleted, not committed.
+
+### Deviations
+
+1. The spec scenario "Object safety and thread bounds" says the transform is moved to another thread. `clippy.toml` (ARQ-02) disallows `std::thread::spawn`, and `#[allow]` is forbidden, so the test proves `Send + Sync` at compile time through a generic bound on `Box<dyn ColorTransform>` and calls it through the trait object.
+2. `Slice round trip` has no dedicated test (see above).
+3. Clippy `manual_is_multiple_of` required `usize::is_multiple_of`.
+4. P3 spec wording amended (see below).
+
+### Gates (commit `feat(color): add ColorTransform with analytic implementation`)
+
+`cargo fmt --check` ok; `cargo clippy --workspace --all-targets --locked -- -D warnings` ok; `cargo test --workspace --locked` 312 passed, 0 failed; `cargo deny check` ok (advisories, bans, licenses, sources).
+
+### Size
+
+`git diff --shortstat origin/main..HEAD -- crates .github` = 3 files changed, 272 insertions(+), 1 deletion(-) = 273 changed lines (forecast ~175; the whole of the overrun is tests).
+
+### Pre-archive fixes
+
+- Spec "Monotonic" scenario amended: encode is asserted `encode(x) <= encode(y) + 5e-8` (the published constants step down by 2.85e-8), matching `tests/properties.rs`; decode stays strict. Behavior unchanged. This resolves deviation 5 of PR1.
+- C1-era note: `specs/workspace-tooling/spec.md:3` and `proposal.md:41,67` say C1 (`workspace-scaffold`) is merged but not archived. `openspec/specs/` and `changes/archive/` are still empty, so the note is accurate and was left as is. `workspace-scaffold` untouched.
+- Archive order stays C1, then `domain-color`, then `domain-doc`.
+
+### Open items
+
+Holder: confirm the `Result` deviation. Coordinator: push and open PR2 (8.2). Carried: ΔE2000 (deferred), N5 limitation (not met), ARQ-80 (403).

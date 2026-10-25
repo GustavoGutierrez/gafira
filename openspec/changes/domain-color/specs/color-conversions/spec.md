@@ -43,7 +43,7 @@ The sRGB transfer curve (IEC 61966-2-1) MUST be used for sRGB and, unchanged, fo
 #### Scenario: Monotonic (property)
 - GIVEN `x <= y` in `[-4, 4]`
 - WHEN both are decoded (and, separately, encoded)
-- THEN `f(x) <= f(y)`
+- THEN decode satisfies `decode(x) <= decode(y)` strictly, and encode satisfies `encode(x) <= encode(y) + 5e-8` (the encode formula with the published constants has a genuine downward step of about 2.85e-8 just above 0.0031308, which survives `f32` narrowing; the tolerance matches `tests/properties.rs`)
 
 #### Scenario: Odd symmetry (property)
 - GIVEN any finite `x`

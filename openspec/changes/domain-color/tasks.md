@@ -37,7 +37,7 @@ Cut and CI:
 
 - [x] 0.1 Confirm `main` is at d02bb6f (`git rev-parse main`) and the tree is clean (`assets/splash_screen.jpg` stays untracked, never committed). Create `feat/domain-color` from `main` (`git switch -c feat/domain-color main`). Done when `git branch --show-current` prints it.
 - [x] 0.2 Record `cargo deny --version` (0.20.2) and `rustc --version` (1.93.1); `gh api repos/GustavoGutierrez/gafira/actions/permissions` shows `sha_pinning_required: true`. Holder: P0.6/ARQ-80 stays deferred (403). Done when recorded in apply-progress.
-- [ ] 0.3 Holder decision: chain strategy (stacked-to-main proposed) or `size:exception`; also confirm the 02 §4.10 deviation (`Result` return), kept as PROPOSAL.
+- [ ] 0.3 Holder decision: chain strategy (stacked-to-main proposed) or `size:exception`; also confirm the 02 §4.10 deviation (`Result` return), kept as PROPOSAL. Chain strategy is moot: stacked-to-main was used (PR1 merged as PRs #3-#5, PR2 from updated `main`). The `Result` deviation is still pending owner confirmation.
 
 ## PR1 (T1-T6, ~720 lines)
 
@@ -84,12 +84,12 @@ Cut and CI:
 
 ### Phase 7: `ColorTransform` (T7, D9-D11, P6) ~175 lines
 
-- [ ] 7.1 Create the branch per chain strategy (stacked-to-main: `feat/domain-color-transform` from updated `main`).
-- [ ] 7.2 RED: tests in `src/transform.rs` (~150 with code) and P6 in `tests/properties.rs` (~25): `PixelLayout::channels` (Rgb 3, Rgba 4); `Box<dyn ColorTransform>` moved to another thread, `Send + Sync`; `src`/`dst`; all nine pairs; `Rgb` and `Rgba` slices; wrong length (10 with `Rgba`, 7 with `Rgb`) returns `Err` and leaves the buffer bit-identical; empty slice ok; identity transform bit-identical; `Display` of `LengthNotMultiple` names `len` and `channels`; usable as `&dyn std::error::Error`; P6 `apply_f32` bit-identical to the per-pixel typed API. Done when they fail.
-- [ ] 7.3 GREEN: implement `PixelLayout`, `ColorTransform` (no `bake_lut3d`, no `Lut3d`), `AnalyticTransform` (`const fn new`, `chunks_exact`, shared `convert_rgb`), `PixelBufferError` (`#[non_exhaustive]`, hand-written `Display`/`Error`), re-exports. Done when tests pass; the P6 mutation (bypassing `convert_rgb`) fails; revert.
-- [ ] 7.4 Commit: `feat(color): add ColorTransform with analytic implementation`.
+- [x] 7.1 Create the branch per chain strategy (stacked-to-main: `feat/domain-color-transform` from updated `main`).
+- [x] 7.2 RED: tests in `src/transform.rs` (~150 with code) and P6 in `tests/properties.rs` (~25): `PixelLayout::channels` (Rgb 3, Rgba 4); `Box<dyn ColorTransform>` moved to another thread, `Send + Sync`; `src`/`dst`; all nine pairs; `Rgb` and `Rgba` slices; wrong length (10 with `Rgba`, 7 with `Rgb`) returns `Err` and leaves the buffer bit-identical; empty slice ok; identity transform bit-identical; `Display` of `LengthNotMultiple` names `len` and `channels`; usable as `&dyn std::error::Error`; P6 `apply_f32` bit-identical to the per-pixel typed API. Done when they fail.
+- [x] 7.3 GREEN: implement `PixelLayout`, `ColorTransform` (no `bake_lut3d`, no `Lut3d`), `AnalyticTransform` (`const fn new`, `chunks_exact`, shared `convert_rgb`), `PixelBufferError` (`#[non_exhaustive]`, hand-written `Display`/`Error`), re-exports. Done when tests pass; the P6 mutation (bypassing `convert_rgb`) fails; revert.
+- [x] 7.4 Commit: `feat(color): add ColorTransform with analytic implementation`.
 
 ### Phase 8: Final verification (T8)
 
-- [ ] 8.1 Run `cargo fmt --check`, clippy with `-D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V3, V5 (N0), V6, V11, V12; record the measured size of PR2 and of the whole change. Done when green locally.
-- [ ] 8.2 Push, open PR2, wait for the three `test` jobs and `policy` green. Pending items stay recorded: ΔE2000 (deferred), holder confirmation of the `Result` deviation, N5 limitation (not met), ARQ-80 (403).
+- [x] 8.1 Run `cargo fmt --check`, clippy with `-D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V3, V5 (N0), V6, V11, V12; record the measured size of PR2 and of the whole change. Done when green locally.
+- [x] 8.2 (push and PR done by the coordinator) Push, open PR2, wait for the three `test` jobs and `policy` green. Pending items stay recorded: ΔE2000 (deferred), holder confirmation of the `Result` deviation, N5 limitation (not met), ARQ-80 (403).
