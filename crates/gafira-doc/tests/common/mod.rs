@@ -85,7 +85,7 @@ fn text() -> impl Strategy<Value = String> {
 }
 
 /// Payloads nest at most 3 containers deep, with at most 4 entries each.
-fn json_value() -> impl Strategy<Value = Value> {
+pub fn json_value() -> impl Strategy<Value = Value> {
     let number = prop_oneof![Just(-0.0_f64), finite()]
         .prop_map(|f| Value::Number(Number::from_f64(f).expect("finite")));
     let leaf = prop_oneof![
