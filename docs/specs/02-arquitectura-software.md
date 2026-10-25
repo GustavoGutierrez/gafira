@@ -593,10 +593,12 @@ pub trait AudioProcessor: Describe + Send {
 pub trait ColorTransform: Send + Sync {
     fn src(&self) -> ColorSpaceId;
     fn dst(&self) -> ColorSpaceId;
-    fn apply_f32(&self, px: &mut [f32], layout: PixelLayout);
+    fn apply_f32(&self, px: &mut [f32], layout: PixelLayout) -> Result<(), PixelBufferError>;
     fn bake_lut3d(&self, size: u32) -> Option<Lut3d> { None }   // para GPU
 }
 ```
+
+- **Errores** (D-11): `apply_f32` devuelve `Err(PixelBufferError::LengthNotMultiple { len, channels })` si `px.len()` no es múltiplo de los canales de `layout`, y deja el búfer sin modificar.
 
 - **Patrón**: Strategy. Implementan: matrices y TRC analíticas (sRGB↔lineal↔P3), `IccTransform` (moxcms; RGB→CMYK para PDF de impresión en Fase 2) y `LutTransform` (LUT `.cube`, Fase 2).
 - **Cómo añadir una transformación**:

@@ -37,7 +37,7 @@ Cut and CI:
 
 - [x] 0.1 Confirm `main` is at d02bb6f (`git rev-parse main`) and the tree is clean (`assets/splash_screen.jpg` stays untracked, never committed). Create `feat/domain-color` from `main` (`git switch -c feat/domain-color main`). Done when `git branch --show-current` prints it.
 - [x] 0.2 Record `cargo deny --version` (0.20.2) and `rustc --version` (1.93.1); `gh api repos/GustavoGutierrez/gafira/actions/permissions` shows `sha_pinning_required: true`. Holder: P0.6/ARQ-80 stays deferred (403). Done when recorded in apply-progress.
-- [ ] 0.3 Holder decision: chain strategy (stacked-to-main proposed) or `size:exception`; also confirm the 02 §4.10 deviation (`Result` return), kept as PROPOSAL. Chain strategy is moot: stacked-to-main was used (PR1 merged as PRs #3-#5, PR2 from updated `main`). The `Result` deviation is still pending owner confirmation.
+- [x] 0.3 Holder decision: chain strategy (stacked-to-main proposed) or `size:exception`; also confirm the 02 §4.10 deviation (`Result` return). Chain strategy is moot: stacked-to-main was used (PR1 merged as PRs #3-#5, PR2 from updated `main`). The owner confirmed the `Result` deviation (D-11).
 
 ## PR1 (T1-T6, ~720 lines)
 
