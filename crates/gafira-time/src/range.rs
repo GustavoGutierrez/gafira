@@ -108,9 +108,8 @@ impl TimeRange {
 
     /// The common part, or `None` when there is none.
     pub fn intersection(self, other: Self) -> Option<Self> {
-        if self.is_empty() || other.is_empty() {
-            return None;
-        }
+        // An empty range has start == end, and the bounds below then make
+        // start >= end, so it never reaches the constructed value.
         let start = self.start.max(other.start);
         let end = self.end.min(other.end);
         if start >= end {
