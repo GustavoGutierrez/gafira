@@ -455,3 +455,55 @@ Each test was written against the finished code and passed at once; RED is by ca
 - S2: the `next_id` note is updated (option A decided).
 
 Size of the fix round: 140 lines of tests (`git diff --shortstat c3259a8..HEAD -- crates` before the merge: `budget.rs` 104, `history_budget_tests.rs` 36). Total for the delivery, `git diff --shortstat main..HEAD -- crates`: 1030 insertions, 34 deletions.
+
+## D9: `Reorder` and `Reparent`
+
+Base: `main` dd35a14. Branch `feat/edit-history-9`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| test(edit): cover InsertNodes and RemoveNodes in the undo-through-revert property | D7 W3 carry-over: `tests/budget.rs` steps are now `SetProperty`, root `InsertNodes` and `RemoveNodes` |
+| feat(edit): add Reorder and Reparent with cycle and container checks | `moves.rs` (shared plan, write, checked revert), `reorder.rs`, `reparent.rs`, 27 tests in `tests/move_commands.rs` |
+| test(edit): run the command laws over Reorder and Reparent | two properties (1 000 cases) in `tests/prop_commands.rs` (held for the owner's go-ahead on size, see below) |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0). V11 has no step of that name in `ci.yml`.
+
+Size (`git diff --shortstat main..HEAD -- crates`): 888 insertions, 24 deletions after commit 2; 940 insertions with the properties (forecast ~630, ceiling ~700). About 560 lines are tests.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Bring to front | `bring_to_front_and_back` |
+| Group two nodes | `group_two_nodes` (roots `[g]`, children `[a, b]`, `validate()` passes) |
+| Cycle rejected | `a_group_cannot_move_under_itself_or_a_descendant` (descendant, itself, one culprit among several nodes) |
+| Non-`Group` target | `a_shape_is_not_a_parent` |
+| Index range | `a_reorder_index_must_be_below_the_sibling_count`, `the_index_counts_the_target_list_without_the_moved_nodes` |
+| Failed commands change nothing, D1 W4 (reuse after a failed apply) | `refused` (pointer-equal page) in every refusal test; `a_reorder_is_reusable_after_a_failed_apply`, `a_reparent_is_reusable_after_a_failed_apply` |
+| Law 4 touches | `reordering_inside_a_group_touches_the_group_and_not_the_page`, `reordering_a_root_touches_the_page`, `a_reparent_touches_both_parents_and_the_moved_nodes` |
+| Validate-before-mutate in revert | `a_reorder_revert_over_a_changed_list_fails_and_changes_nothing`, `a_reorder_revert_whose_group_is_gone_...`, `a_revert_whose_page_is_gone_...`, `a_reparent_revert_over_a_changed_list_...`, `a_reparent_revert_whose_old_parent_is_gone_...`, `reverting_a_move_that_changed_nothing_is_a_no_op_...` (each asserts the document equals the pre-revert clone) |
+| Rollback in a transaction | `a_failed_transaction_undoes_a_reparent` |
+| Laws 1 to 5 | `reorder_obeys_the_command_laws`, `reparent_obeys_the_command_laws` |
+
+### RED evidence
+
+- Commit 1 passed at once on the finished code (D8 already restores the counter); RED by mutant: `InsertNodes::revert` without `restore_next_id` fails the property (`next_id` 26 vs 25); `RemoveNodes::revert` pushing roots at the end instead of the recorded index fails it (roots `[8, 2, 5]` vs `[2, 5, 8]`).
+- Commands: tests were written against a stub (`apply` returned `Unchanged`, `revert` `Ok`): 24 of 26 failed on assertions (for example `left: Ok(Unchanged), right: Err(IndexOutOfRange { index: 4, len: 4 })`, `left: Ok(Unchanged), right: Err(WouldCreateCycle(NodeId(3)))`, roots still `[2, 3, 7, 8]` vs `[2, 7, 8]`); the 2 that passed are the `Unchanged` cases, guarded by the others.
+- Hand mutants on the finished code, applied one at a time: revert state check removed, `MissingNode`/`MissingPage` in revert replaced, index bound off by one, container check removed, ancestor dedupe removed, cycle check removed, document order reversed, `touches` without moved nodes or without the page, revert writing the after-lists, empty-list check, missing-node check: all caught by `tests/move_commands.rs`. One survivor, "an unchanged move reverts as a no-op even if the page is gone", led to `reverting_a_move_that_changed_nothing_is_a_no_op_...`, now caught.
+- The properties passed at once (unit tests drove the code); RED by mutant: no cycle check and no container check give law 3, `touches` without the page gives law 4, revert writing the after-lists gives law 1. Not caught by laws, caught by unit tests: moved nodes missing from `touches` (law 4 only requires a superset), moved order reversed (apply and revert agree).
+
+### Decisions and notes
+
+- Index of `Reparent`: counts the target list once the moved nodes are out of it (`0..=len`); a larger value gives `IndexOutOfRange { index, len }` with that len. `Reorder`: final index, `0..siblings`; `index == siblings` gives `IndexOutOfRange { index, len: siblings }`. Same position gives `Unchanged` and no write.
+- Moved nodes keep their document order (parents before children, siblings in list order), whatever the order of the list given. A node listed with one of its ancestors moves once, with the ancestor (as in `RemoveNodes`).
+- Check order in `Reparent::apply`: empty list, page, listed nodes, parent exists, parent is a `Group` (`NotAContainer`), cycle (`WouldCreateCycle(top)` names the moved node that holds the target), index. A shape moved under itself therefore reports `NotAContainer`.
+- Revert (validate-before-mutate): `revert` compares every list it will rewrite with the list `apply` left (page present, owner nodes present, equal contents) and fails with `MissingPage`, `MissingNode` or `InvalidValue("the lists changed since apply")` before writing; it restores whole old lists. A stricter rule than `RemoveNodes::revert`: a revert over any other state of those lists is refused, not guessed. `History` and `Transaction` only revert in LIFO order, so they always meet the left state. An `Unchanged` apply stores an empty record; its revert is `Ok` and writes nothing.
+- Law 4: a root list change lists the page; a children list change lists the owner node and not the page; the moved nodes are listed too (the spec says "the node"), a superset the law allows. Before `apply`, `touches` lists the target nodes only (as `RemoveNodes`).
+- These commands allocate no ids, so `restore_next_id` is not used.
+- `places` moved from `remove_nodes.rs` to `moves.rs` and is shared; no behavior change.
+- Two error branches in `moves::write` (page or owner missing) are unreachable: `plan` and the revert check prove both exist before the first write.
+- Neither command has a `merge_key` (spec: only `SetProperty` merges).
+- Not extended: the budget property (`tests/budget.rs`) does not run `Reorder` or `Reparent`; their revert path is covered by the unit tests and laws 1 and 2. Adding them is about 15 lines if the owner wants it.
+- Untracked `.claude/worktrees/` is not part of this delivery and was not staged.
