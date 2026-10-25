@@ -43,7 +43,7 @@ A flicks value MUST be constructible exactly from whole seconds and from whole m
 #### Scenario: Seconds and milliseconds are exact (unit)
 - GIVEN 1 s, 0 s, −1 s, 1 ms and 1,234 ms
 - WHEN each is converted to flicks
-- THEN the results are 705,600,000; 0; −705,600,000; 705,600; and 870,854,400 flicks
+- THEN the results are 705,600,000; 0; −705,600,000; 705,600; and 870,710,400 flicks
 
 #### Scenario: Overflow on construction (unit)
 - GIVEN a seconds count whose product by 705,600,000 exceeds the signed 64-bit range
