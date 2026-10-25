@@ -1,23 +1,43 @@
-{ "schema": 1, "change": "domain-time", "delivery": "D0-D4", "rounds": [ {
-  "round": 1, "commit": "3b4e58f", "mode": "full", "tier": "T3", "depth": "V3",
-  "verdict": "FAIL", "next": "specifier",
-  "next_also": ["tdd-apply"],
-  "counts": {"critical": 2, "warning": 2, "suggestion": 4},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "ambiguity", "ref": "3d5ace9 specs/time-model/spec.md",
-     "summary": "Implementer amended the delta spec (1,234 ms -> 870,710,400) after the first implementation commit 9a060bf; value is correct, needs specifier ratification"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "25afa83, f80d182 tests/rates.rs",
-     "summary": "False property the_tick_divides_every_accepted_frame_duration: D2 commit test gate rc 101 (350/3), fails 9/20 runs; D3 commit flaky; fixed in 2a57705"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "tests/rates.rs, tests/timecode.rs",
-     "summary": "Round-trip properties pinned to one rate; nominal-field rejection only at 24 fps; HM07 killed only by random properties"},
-    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "timecode spec Non-drop; src/timecode.rs:129",
-     "summary": "Spec does not fix FF width or non-canonical forms; parse accepts 00:00:00:005, 000:00:00:00, -00:00:00:00"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0,
-            "per_commit_failures": {"25afa83": {"test": 101}}},
-  "mutation": {"tier": "T3", "found": 229, "caught": 211, "missed": 0, "timeout": 0,
-               "unviable": 18, "critical_missed": 0, "wall_s": 780,
-               "source": "implementer claim; counts reproduced via --list only; independent mutants report pending"},
-  "hand_mutants": {"run": 11, "killed": 11},
-  "criteria": {"total": 57, "covered": 57},
-  "size": {"lines": 3209, "forecast": 2060}, "report": "verify-report.md" } ] }
+{ "schema": 1, "change": "domain-time", "delivery": "D0-D4", "rounds": [
+  {
+   "round": 1,
+   "commit": "3b4e58f",
+   "mode": "full",
+   "tier": "T3",
+   "depth": "V3",
+   "verdict": "FAIL",
+   "next": "specifier",
+   "next_also": ["tdd-apply"],
+   "counts": {"critical": 2, "warning": 2, "suggestion": 4},
+   "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "ambiguity", "ref": "3d5ace9 specs/time-model/spec.md", "summary": "Implementer amended the delta spec (1,234 ms -> 870,710,400) after the first implementation commit 9a060bf; value is correct, needs specifier ratification"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "25afa83, f80d182 tests/rates.rs", "summary": "False property the_tick_divides_every_accepted_frame_duration: D2 commit test gate rc 101 (350/3), fails 9/20 runs; D3 commit flaky; fixed in 2a57705"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "tests/rates.rs, tests/timecode.rs", "summary": "Round-trip properties pinned to one rate; nominal-field rejection only at 24 fps; HM07 killed only by random properties"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "timecode spec Non-drop; src/timecode.rs:129", "summary": "Spec does not fix FF width or non-canonical forms; parse accepts 00:00:00:005, 000:00:00:00, -00:00:00:00"}],
+   "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0, "per_commit_failures": {"25afa83": {"test": 101}}},
+   "mutation": {"tier": "T3", "found": 229, "caught": 211, "missed": 0, "timeout": 0, "unviable": 18, "critical_missed": 0, "wall_s": 780, "source": "implementer claim; counts reproduced via --list only; independent mutants report pending"},
+   "hand_mutants": {"run": 11, "killed": 11},
+   "criteria": {"total": 57, "covered": 57},
+   "size": {"lines": 3209, "forecast": 2060},
+   "report": "verify-report.md"
+  },
+  {
+   "round": 2,
+   "commit": "dbcd799",
+   "mode": "full",
+   "tier": "T3",
+   "depth": "V3",
+   "verdict": "PASS",
+   "next": "archive",
+   "counts": {"critical": 0, "warning": 2, "suggestion": 3},
+   "findings": [
+    {"id": "R2-W1", "severity": "WARNING", "class": "implementation", "ref": "25afa83, f80d182", "summary": "C2 waived by owner: D2/D3 commits still fail the test gate alone; no stacked PR may end before 2a57705"},
+    {"id": "R2-W2", "severity": "WARNING", "class": "claim", "ref": "flicks.rs, range.rs, rate.rs", "summary": "T3 0-missed for unchanged files still the implementer's claim; reproduce in the independent T4 run at archive"}],
+   "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+   "mutation": {"tier": "T3", "found": 143, "caught": 137, "missed": 0, "timeout": 0, "unviable": 6, "critical_missed": 0, "wall_s": 173, "source": "verifier reproduction, timecode.rs only, --jobs 1, clean export of dbcd799"},
+   "hand_mutants": {"run": 5, "killed": 5},
+   "criteria": {"total": 62, "covered": 62},
+   "size": {"lines": 2489, "forecast": 2060},
+   "report": "verify-report.md"
+  }
+] }

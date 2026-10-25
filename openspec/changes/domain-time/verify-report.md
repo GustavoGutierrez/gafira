@@ -120,3 +120,151 @@ Corrections reported by the implementer:
 Tier T3 (per changed source file, `--jobs 1`, separate target directories), as claimed in `apply-progress.md`: 229 found, 211 caught, 0 missed, 0 timeout, 18 unviable, about 13 minutes. Only the mutant counts were reproduced (S4). No critical missed mutant is known, but this is not independently confirmed.
 
 next: specifier (C1 ambiguity: ratify the 1,234 ms amendment; W2 parse shape), then tdd-apply (C2 implementation: fold `2a57705` into `25afa83` or get an owner waiver; W1 tests)
+
+---
+
+# Round 2: verify fix round 1 (C1, C2, W1, W2)
+
+Branch `feat/domain-time-1`, HEAD `dbcd799` (round 1 was `3b4e58f`; history is linear). Flow: full | tier T3 | verify V3. Independent verifier, working only on `git archive` exports, each with its own `CARGO_TARGET_DIR` and `CARGO_INCREMENTAL=0`. No build folder was shared between exports. Every test log shows `Compiling gafira-time` on its own tree.
+
+Verdict: **PASS** (0 CRITICAL, 2 WARNING, 3 SUGGESTION). All deliveries D0-D4 are done.
+
+## Commits in this round
+
+| Commit | Type | Files | Role |
+|---|---|---|---|
+| `dfbf8ae` | docs | `apply-progress.md` | specifier ratification of the 1,234 ms value (C1); owner waiver of C2 |
+| `b260baa` | docs | `verify-report.md`, `verification.json` | round 1 report |
+| `17dc719` | docs | `specs/timecode/spec.md`, `apply-progress.md` | specifier: new requirement "Timecode text is canonical" (owner Q1-A, Q2-A) answering W2 |
+| `67ed2a6` | fix | `src/timecode.rs`, `tests/timecode.rs` | canonical widths for hours and frames; no negative zero |
+| `0508a59` | test | `tests/rates.rs`, `tests/timecode.rs` | fixed-case tests answering W1 |
+| `589b797` | refactor | `src/timecode.rs` | `is_canonical_width` restated; removes the equivalent mutant |
+| `dbcd799` | docs | `apply-progress.md` | fix round record |
+
+The delta-spec change in `17dc719` is the specifier route that round 1 asked for (`next: specifier`). It is not an implementer amendment. No implementer commit (`67ed2a6`, `0508a59`, `589b797`) touches `specs/`. Commits are conventional, with no AI attribution.
+
+## Gates (fresh export and fresh target per commit)
+
+| Commit | fmt | clippy | test | deny | policy |
+|---|---|---|---|---|---|
+| `17dc719` | 0 | 0 | 0 (525) | 0 | 0 |
+| `67ed2a6` | 0 | 0 | 0 (530) | 0 | 0 |
+| `0508a59` | 0 | 0 | 0 (536) | 0 | 0 |
+| `589b797` | 0 | 0 | 0 (536) | 0 | 0 |
+| `dbcd799` (HEAD) | 0 | 0 | 0 (536) | 0 | 0 |
+
+Policy is the `ci.yml` `policy` job replayed step by step: Format, ARQ-07, forbid unsafe, V5, V12, V13. `dfbf8ae` and `b260baa` only touch documents and have the same crate tree as `3b4e58f`, which passed in round 1. `17dc719` was run anyway because it changes a spec: its tree still has the round 1 code, and every gate passes. `.cargo/mutants.toml`, `.github/`, `Cargo.lock` and `deny.toml` are unchanged.
+
+## Independent probes (`zz_probe2.rs`, 7 tests, written from the specs before reading the new tests)
+
+The probes ran on exports with the implementer's tests removed:
+
+| Export | Result |
+|---|---|
+| HEAD `dbcd799` | 7/7 pass |
+| control `3b4e58f` (before the fix) | 4 pass, 3 fail: `q02` accepts `00:00:00:005`; `q04` accepts `-00:00:00:00`; `q05` accepts `000:00:00:00` |
+
+So the probes do tell the old behaviour from the new one.
+
+- `q01` checks the 120 fps frames width: 5, 99, 100 and 119, plus 120 rejected.
+- `q02` checks 20 non-canonical texts in both modes, including `0100:00:00:00`, `00:00:00:5`, `-000:00:00:01` and `00:00:00;059` at 59.94.
+- `q03` checks 100 hours in both signs, 10 and 99 hours, and 100 hours in drop-frame.
+- `q04` checks negative zero at 24, 120, 29.97 DF and 59.94 DF. `-1` and `-2` frames are accepted and keep their exact flicks, and `--` is rejected.
+- `q05` is the exhaustive form of the property scenario. For 13 formats (including 49/2, 240, 1,000, 705,600,000 and 1 fps, and both drop-frame rates) and 53 labels per format, it applies every one-character insert, delete and replace over `0-9 : ; -` and every 1-3 zero padding of each field: more than 100,000 derived texts. Each is either rejected or formats back to itself. Every padding is rejected.
+- `q06` pins the nominal bound at 8 rates and modes.
+- `q07` checks fixed frame and sample round trips, including floors at ±1 tick.
+
+## Comparison with the implementer's tests
+
+- **W2 (canonical text):** covered by the deterministic tests `frames_field_width_at_120_fps`, `extra_leading_zeros_are_rejected` (every case of the spec scenario), `hours_of_one_hundred_or_more_have_no_padding` and `negative_zero_is_rejected`, and by the property `accepted_text_is_canonical`. All match the new scenarios one to one.
+- **W1 (weak tests):** now fixed.
+  - `frames_round_trip_at_every_rate` covers 8 rates and `samples_round_trip_at_every_standard_rate` covers 3.
+  - `non_drop_labels_round_trip_at_every_rate` covers 8 rates, both signs, and checks the expected text.
+  - `a_frames_field_equal_to_the_nominal_rate_is_rejected` covers 23.976, 24, 29.97 ND and DF, 59.94 ND and DF, 24.5 and 120.
+  - `the_nominal_rate_bounds_the_last_label_of_a_minute` pins HM07 deterministically.
+- The implementer notes that `Timecode::new` takes a label count, so "a frames field equal to it is rejected" only applies to parsing. That reading is correct: the scenario talks about a frames field, and `new(nominal)` formats as the next second, which `the_label_after_the_last_frame_rolls_into_the_next_second` checks.
+
+## Hand mutants (5, on the new canonical-text rules; each on its own export and target)
+
+| ID | Rule mutated | Implementer tests that kill it | Probes that kill it |
+|---|---|---|---|
+| HM12 | negative-zero check removed (`if false`) | `negative_zero_is_rejected` | q04, q05 |
+| HM13 | hours width back to `len < 2` (padding allowed) | `extra_leading_zeros_are_rejected`, `accepted_text_is_canonical` | q02, q05 |
+| HM14 | frames width back to `len < 2` | `extra_leading_zeros_are_rejected`, `accepted_text_is_canonical` | q02, q05 |
+| HM15 | minimum width dropped from `is_canonical_width` (the bound touched by `589b797`) | `malformed_and_out_of_range_fields_are_rejected`, `accepted_text_is_canonical` | q02, q05 |
+| HM16 | negative zero tested on the frames field instead of the label (rejects `-01:00:00:00`) | `non_drop_labels_round_trip_at_every_rate`, `non_drop_parse_round_trip` | q03, q05 |
+
+All 5 are killed, and each one by at least one deterministic implementer test.
+
+## Mutation (T3 on the changed source file, reproduced)
+
+`cargo mutants --package gafira-time --file crates/gafira-time/src/timecode.rs --jobs 1` ran on a clean export of `dbcd799`, with cargo-mutants 27.1.0 and `CARGO_INCREMENTAL=0`.
+
+| Found | Caught | Missed | Timeout | Unviable | Wall time |
+|---|---|---|---|---|---|
+| 143 | 137 | 0 | 0 | 6 | 173 s |
+
+All 144 logs (the baseline plus 143 mutants) show `Compiling gafira-time`. This matches the implementer's second run exactly.
+
+The 6 unviable mutants are `Default::default()` returns for types without `Default`. All 7 `is_canonical_width` mutants are caught, so the equivalent `>` to `>=` mutant from the first run at `0508a59` is gone after `589b797`, which preserves behaviour: HM15 and the gates agree. No critical mutant was missed.
+
+## Round 1 findings, now
+
+| Round 1 finding | Status |
+|---|---|
+| C1 | **Resolved.** The specifier ratified the value in `dfbf8ae`, a commit that touches only `apply-progress.md`. The value 870,710,400 was rechecked in round 1 (`p02`). |
+| C2 | **Waived by the owner** in `dfbf8ae`. History is not rewritten. The condition that no PR is cut at `25afa83` or `f80d182` still applies (see R2-W1). |
+| W1 | **Resolved** (see above). |
+| W2 | **Resolved.** The specifier decided in `17dc719`, the code changed in `67ed2a6` and was refined in `589b797`, and the tests and probes are green. |
+| S1-S3 | Still open as suggestions (see below). |
+| S4 | Partly resolved: `timecode.rs` is now reproduced independently (R2-W2). |
+
+## Requirement and scenario matrix (delta)
+
+16 requirements and 62 scenarios: 15 and 57 from round 1, plus "Timecode text is canonical" with 5 scenarios. The amended "Non-drop timecode" text, which now points to the canonical widths and allows `-` only for negative time, is covered by the same tests plus the new ones.
+
+| Scenario (TC "Timecode text is canonical") | Implementer test | Probe | Status |
+|---|---|---|---|
+| Frames field width at 120 fps | `frames_field_width_at_120_fps` | q01 | covered |
+| Extra leading zeros rejected | `extra_leading_zeros_are_rejected` | q02 | covered |
+| Hours of 100 or more have no padding | `hours_of_one_hundred_or_more_have_no_padding` | q03 | covered |
+| Negative zero rejected | `negative_zero_is_rejected` | q04 | covered |
+| Accepted text is canonical (property) | `accepted_text_is_canonical` | q05 (exhaustive) | covered (R2-S1) |
+| TC Non-drop "Nominal frame rate", now including rejection at every listed rate | `a_frames_field_equal_to_the_nominal_rate_is_rejected` | q06 | covered (W1 closed) |
+| TM frame and sample round trips at more than one rate | `frames_round_trip_at_every_rate`, `samples_round_trip_at_every_standard_rate` | q07 | covered (W1 closed) |
+
+62 of 62 scenarios are covered at HEAD. None is missing or failing.
+
+## Findings
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+**R2-W1. D2 and D3 commits still fail the test gate alone (C2, waived).**
+class: implementation
+ref: `25afa83`, `f80d182`; waiver in `apply-progress.md` (`dfbf8ae`)
+The owner waived it, so it is not blocking. It is kept visible so that the coordinator does not cut a stacked PR at either commit. Any PR must end at `2a57705` or later.
+
+**R2-W2. T3 mutation for `flicks.rs`, `range.rs` and `rate.rs` is still only the implementer's claim.**
+class: claim
+ref: `apply-progress.md` T3 round, verify round 1 S4
+These files are unchanged since `3b4e58f`. Their "0 missed" result (part of 229 found, 211 caught, 18 unviable) was not reproduced, because only `timecode.rs` was in scope this round. The T4 whole-crate run planned at archive covers it, and it should be run independently there.
+
+### SUGGESTION
+
+- **R2-S1.** `accepted_text_is_canonical` draws real frames from ±2·10^9, so its branch "adding `-` to a zero label is always rejected" almost never runs. It also uses 6 formats, while the scenario says "any accepted rate". The fixed test `negative_zero_is_rejected` and probe `q05` (13 formats) cover both points. Biasing `real` towards 0, or adding 240 fps or 1 fps, would make the property carry its own weight.
+- **R2-S2.** Round 1 S1 (a `trybuild` compile-fail test for "not serialized") and S2 (associativity and commutativity) are still open. They are optional.
+- **R2-S3.** Round 1 S3 is still open: `design.md` D-10 still mentions the removed non-empty check. Also record the canonical-text rule (`is_canonical_width`, no negative zero) in the design at archive.
+
+## Size
+
+| Scope | Lines |
+|---|---|
+| This round (`17dc719..dbcd799`, crates only) | 280 insertions, 2 deletions (src 9) |
+| Whole round (`3b4e58f..dbcd799`) | 508 insertions, 3 deletions |
+| Change (`26a2928..dbcd799`, crates only) | 2,489 insertions, against a forecast of 2,060 |
+
+next: archive
