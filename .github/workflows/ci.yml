@@ -80,6 +80,7 @@ jobs:
           gafira-geom  -
           gafira-color -
           gafira-doc   gafira-geom gafira-color
+          gafira-edit  gafira-geom gafira-color gafira-doc
           '
           forbidden='egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq'
           status=0
