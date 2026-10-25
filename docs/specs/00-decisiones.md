@@ -113,12 +113,21 @@ Fecha: 24 de octubre de 2026.
 - **Condición de caducidad**: si MiniMax cambia la licencia o el anexo de modo que impida distribuir los resultados, esta excepción **deja de valer** y se retira el audio.
 - Aplicado a 05 (pestaña Sonidos, FV-09) cuando se implemente; sin cambios en las demás specs.
 
+## D-11 `ColorTransform::apply_f32` devuelve `Result`
+
+Fecha: 24 de octubre de 2026.
+
+- **Decisión**: `ColorTransform::apply_f32` devuelve `Result<(), PixelBufferError>` en lugar de `()` (02 §4.10). Si la longitud del búfer no es múltiplo de los canales del `PixelLayout`, devuelve `Err(PixelBufferError::LengthNotMultiple { len, channels })` y deja el búfer **sin modificar**. Un búfer vacío es válido y devuelve `Ok(())`.
+- **Motivo**: un error explícito evita el fallo silencioso (omitir el resto del búfer lo corrompe sin avisar) y evita un `panic`, que choca con la política futura de no entrar en pánico. Al devolver el error antes de tocar nada, el búfer del llamante queda intacto.
+- **Efecto sobre 02 §4.10**: cambia la firma de `apply_f32`. `bake_lut3d` y `Lut3d` quedan fuera del trait hasta que exista su consumidor de GPU; se podrá añadir después un `bake_lut3d` con implementación por defecto sin romper a los implementadores.
+- Aplicado a 02 (§4.10).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
 |---|---|
 | 01 | Quitar el principio de no retener funciones esenciales; reflejar D-01, D-03, D-07; cerrar Q-01, Q-02, Q-03, Q-04, Q-05, Q-06, Q-07, Q-08, Q-09, Q-11, Q-12, Q-13, Q-16. D-09: RF-67 (Pantalla de arranque), fila de alcance del MVP, CAL-38 y CAL-39, contradicción C-22 y trazabilidad |
-| 02 | D-01 (conexión de licencia), D-02, D-05, D-06 (quitar `update-check`), D-07; corregir las incoherencias listadas en el informe de redacción. D-09: §8.4, ARQ-65..ARQ-69 (antes reservados), ADR-10, eventos de arranque en §5.2, filas en §6.7 y §11.2 |
+| 02 | D-11: §4.10, `apply_f32` devuelve `Result<(), PixelBufferError>`. D-01 (conexión de licencia), D-02, D-05, D-06 (quitar `update-check`), D-07; corregir las incoherencias listadas en el informe de redacción. D-09: §8.4, ARQ-65..ARQ-69 (antes reservados), ADR-10, eventos de arranque en §5.2, filas en §6.7 y §11.2 |
 | 03 | Pantalla de activación y prueba, estados de licencia; sin pantalla de actualizaciones; modo de licencia en Ajustes. D-09: §7.10 Pantalla de arranque, DIS-80..DIS-87, fila del glosario (§2.1 y §2.8.1), tokens `splash` (§3), pares de contraste (§4), logo en §5.1, microcopy (§12) y PD-15..PD-17 |
 | 04 | PPTX en Fase 2 como imágenes. D-09: sin cambios |
 | 05 | Linux x86_64 con `.deb`, `.rpm`, `.tar.gz`; sin AppImage ni aarch64; sin actualizador; códecs según D-02; MP3 y AVI según D-07; aviso de marca (D-04). D-09: sin cambios en el instalador; al actualizar 05, la frase «el primer arranque muestra Inicio» (Parte C) debe decir que antes aparece la Pantalla de arranque |

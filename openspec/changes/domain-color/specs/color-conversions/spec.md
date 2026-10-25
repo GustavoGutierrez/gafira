@@ -150,7 +150,7 @@ Reference data (each checked within 1e-4): sRGB red, green, blue in encoded Disp
 
 ### Requirement: ColorTransform trait
 
-`ColorTransform` MUST be `Send + Sync`, object-safe (usable as `Box<dyn ColorTransform>`), and expose `src() -> ColorSpaceId`, `dst() -> ColorSpaceId` and `apply_f32(&self, px: &mut [f32], layout: PixelLayout) -> Result<(), PixelBufferError>`. This is a documented deviation from 02 §4.10 (which returns `()`). `apply_f32` converts interleaved pixels in place from `src` to `dst`; for `Rgba` layouts alpha MUST be untouched. If `px.len()` is not a multiple of `layout.channels()` it MUST return `Err(PixelBufferError::LengthNotMultiple { len, channels })` and MUST leave the buffer completely unmodified; it MUST NOT panic and MUST NOT silently skip a remainder. An empty buffer MUST succeed and stay empty. `PixelBufferError` MUST be `#[non_exhaustive]`, `Clone, Copy, Debug, PartialEq, Eq`, and implement `Display` and `std::error::Error`. `apply_f32` MUST NOT perform I/O. `bake_lut3d` and any `Lut3d` type are omitted entirely, with no placeholder; a provided (defaulted) `bake_lut3d` MAY be added later without breaking implementors or callers.
+`ColorTransform` MUST be `Send + Sync`, object-safe (usable as `Box<dyn ColorTransform>`), and expose `src() -> ColorSpaceId`, `dst() -> ColorSpaceId` and `apply_f32(&self, px: &mut [f32], layout: PixelLayout) -> Result<(), PixelBufferError>`. This deviation from 02 §4.10 (which returned `()`) is confirmed by the owner (D-11). `apply_f32` converts interleaved pixels in place from `src` to `dst`; for `Rgba` layouts alpha MUST be untouched. If `px.len()` is not a multiple of `layout.channels()` it MUST return `Err(PixelBufferError::LengthNotMultiple { len, channels })` and MUST leave the buffer completely unmodified; it MUST NOT panic and MUST NOT silently skip a remainder. An empty buffer MUST succeed and stay empty. `PixelBufferError` MUST be `#[non_exhaustive]`, `Clone, Copy, Debug, PartialEq, Eq`, and implement `Display` and `std::error::Error`. `apply_f32` MUST NOT perform I/O. `bake_lut3d` and any `Lut3d` type are omitted entirely, with no placeholder; a provided (defaulted) `bake_lut3d` MAY be added later without breaking implementors or callers.
 
 #### Scenario: Object safety and thread bounds (unit)
 - GIVEN a `Box<dyn ColorTransform>` built from `AnalyticTransform`
@@ -158,7 +158,7 @@ Reference data (each checked within 1e-4): sRGB red, green, blue in encoded Disp
 - THEN it compiles and `apply_f32` is callable through the trait object
 
 #### Scenario: Rgba slice (unit)
-- GIVEN 3 sRGB RGBA pixels and an sRGB -> linear transform
+- GIVEN 4 sRGB RGBA pixels and an sRGB -> linear transform
 - WHEN `apply_f32` runs with `PixelLayout::Rgba`
 - THEN it returns `Ok(())`, each pixel equals the typed conversion, and every alpha is bit-identical
 

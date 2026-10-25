@@ -156,7 +156,7 @@ Origin: the pre-archive verify found `ColorTransform` (PR2) was never built, so 
 | Identity transform | `identity_transform_keeps_every_bit` |
 | Agreement with the typed API (P6) | `tests/properties.rs::apply_f32_agrees_with_the_typed_api` |
 
-Not covered as a separate test: "Slice round trip (property)"; it follows from P6 (`apply_f32_agrees_with_the_typed_api`, bit identity with the typed API) plus the typed round trips: sRGB<->linear (P4, `srgb_linear_srgb_round_trip_*`) and sRGB<->P3 (`display_p3_round_trip_*`, `tests/properties.rs:199`).
+Not covered as a separate test: "Slice round trip (property)"; it follows from P6 (`apply_f32_agrees_with_the_typed_api`, `tests/properties.rs:156-169`, bit identity with the typed API) plus the typed round trips: `display_p3_round_trip_in_unit_range` (`tests/properties.rs:199`) and P4 `alpha_survives_every_conversion` (`tests/properties.rs:171-173`) for alpha.
 
 ### RED
 
