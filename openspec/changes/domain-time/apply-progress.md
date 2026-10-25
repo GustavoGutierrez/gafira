@@ -88,4 +88,31 @@ Measured size: 4 files, 618 insertions under `crates/` (including the proptest r
 
 Deviation: none. The two proptest regression seeds committed with this delivery record the cases the stubs rejected; they pass now and stay as regression guards.
 
+## D3 - TimeRange
+
+Status: done.
+
+RED evidence (`cargo test -p gafira-time --test ranges` against compile-clean stubs that returned a zero range; no compile errors):
+
+- `construction_exposes_start_duration_and_end` and `from_bounds_computes_the_duration` -> all three accessors returned 0.
+- `an_empty_range_contains_nothing_and_never_intersects` -> `is_empty()` was false for every range, including zero duration.
+- `inverted_bounds_are_rejected` -> `from_bounds(1 s, 0 s)` returned `Ok`.
+- `a_negative_duration_is_rejected` -> `new(0, -1)` returned `Ok`.
+- `an_overflowing_end_is_rejected` -> both extremes returned `Ok`.
+- `a_negative_start_is_allowed`, `containment_is_half_open`, `intersection_covers_overlap_containment_and_disjoint_cases` -> zero start and false/absent intersections.
+- `serde_uses_start_and_duration` -> serialized `{"start":0,"duration":0}`.
+- `serde_rejects_invalid_ranges` -> accepted a negative duration and an overflowing end.
+- Proptest `construction_invariants` and `from_bounds_matches_new` failed with minimal inputs (`start = 0, end = 1`).
+- Result of the RED run: `13 failed; 3 passed` (the three that passed were precisely the cases where "always false / always absent" matches the expected answer: adjacency, symmetry of a missing intersection, and a zero-range serde round trip).
+
+GREEN evidence:
+
+- `cargo test -p gafira-time --test ranges` -> `16 passed; 0 failed` (unit tests plus 4 proptest properties).
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check` -> all exit 0; local CI policy replay -> `policy status=0`.
+
+Measured size: 4 files, 346 insertions under `crates/`.
+
+Deviation: none.
+
+
 
