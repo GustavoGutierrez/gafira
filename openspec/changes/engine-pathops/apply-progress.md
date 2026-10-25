@@ -140,6 +140,17 @@ Status: done. Commits: `754099b` (spec amendment), `f198f6a` (implementation).
   three-element polyline came back as five elements (measured). The requirement
   now states the guarantee the crate can give, that the result stays within the
   tolerance and that an already minimal path comes back unchanged.
+- **Ratified by specifier** (after verify round 1, finding C1). The amendment in
+  `754099b` is confirmed: the simplification MAY replace straight segments with
+  fitted curves and MAY return more segments than it received; the guarantee is
+  about shape (every point of the original within the tolerance of the result),
+  not about the segment count. The verifier's probes agree (an open polyline
+  gains elements, a circle goes from 17 elements to 6). The specifier also
+  defined "already minimal", which the amendment left open: a path of straight
+  segments only, every subpath closed, every vertex farther than the tolerance
+  from the line through its neighbours. Such a path comes back equal in value;
+  open polylines and curved paths carry only the tolerance guarantee. See
+  `specs/path-operations/spec.md`, "Path simplification".
 - A path with no segment strokes to an empty outline (measured with kurbo
   0.13.1): there is nothing to stroke, so there is no area to cover. The
   property test skips that case.
