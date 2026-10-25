@@ -423,3 +423,7 @@ D4a plus D4b: 766 + 576 = 1342 changed lines against 507 + 387 = 894 forecast, r
 - SUGGESTION 1: the 64-level reopen test also compares `to_json` bytes before and after the reload.
 - Gate totals per commit: D4b commit 1 (`feat(doc): validate node fields and extension depth`) 270 passed, commit 2 (`feat(doc): validate on every deserialization`) 274; fix commits 274, 275, 275. `cargo deny`, V5, V11 and V12 were checked by verify (all ok).
 - Size: code-only `git diff --shortstat feat/domain-doc-4a..HEAD -- . ':!openspec'` is 611 insertions, 23 deletions (634 changed lines, ratio 1.64 to ~387). D4a plus D4b is 766 + 634 = 1400 against 894, ratio 1.566, above the D5 split trigger (> 1.5, `design.md:367`); the owner decides on the D5a/D5b cut.
+
+## D5 cut into D5a and D5b (docs commit `docs(sdd): cut domain-doc D5 into D5a and D5b`)
+
+Trigger measured at the end of D4b: D4a plus D4b is 766 + 634 = 1400 changed lines against 894 forecast, ratio 1.566, above the 1.5 threshold of `design.md` (D5 total row). The owner approved the fallback cut. D5a = commit 1 of the old D5 (P5 parents, P6 reachability, the 10 000-deep chain), forecast ~215. D5b = old commits 2 and 3 (`EditToken`/`DocMut`, V13), forecast ~420. Design (size table, commit plan, file map, passes, T5.x), the delta specs and the proposal delivery count (eleven) were relabeled.

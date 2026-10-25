@@ -4,7 +4,7 @@
 
 The compile-visible edit capability of `gafira-doc`: only `gafira-edit` (C3) mutates a `Document` in place, as the interim enforcement of ARQ-30 until `trybuild` arrives in C3. This change defines `EditToken`, `Document::edit`, `DocMut` and id allocation; it MUST NOT define `Command`, `History` or `EditService` (C3). New capability; no existing spec.
 
-Scenario type tags: (unit), (integration), (command), (manual). All requirements here belong to D5 of the design, except where noted.
+Scenario type tags: (unit), (integration), (command), (manual). All requirements here belong to D5b of the design, except where noted.
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -28,7 +28,7 @@ Scenario type tags: (unit), (integration), (command), (manual). All requirements
 
 ## Requirements
 
-### Requirement: EditToken is a capability (D5)
+### Requirement: EditToken is a capability (D5b)
 
 `EditToken` MUST NOT implement `Clone`, `Copy`, `Default` or `Debug`, MUST have a private field, and MUST have no constructor other than the `#[doc(hidden)]` one named in ED2. No other public function MAY return an `EditToken` by value. Only `gafira-doc` (its own tests included), `gafira-edit` and `gafira-testkit` MAY name the token or the constructor.
 
@@ -52,7 +52,7 @@ Scenario type tags: (unit), (integration), (command), (manual). All requirements
 - WHEN every file under `target/doc` outside the `src/` directories (the HTML pages and the search index) is searched for `__new_for_gafira_edit_only`
 - THEN it is absent
 
-### Requirement: Document::edit and DocMut (D5)
+### Requirement: Document::edit and DocMut (D5b)
 
 `Document::edit(&mut self, token: &EditToken) -> DocMut<'_>` MUST be the only way to obtain `&mut` access to anything inside a `Document`. `DocMut` MUST borrow the document exclusively for its lifetime. `Document` fields MUST be private, and no public API reachable from `&Document` or `Arc<Document>` MAY return `&mut` to its contents. One token MUST serve any number of calls. `DocMut` MUST offer at least: `alloc_node_id`, `alloc_page_id`, `set_dpi(Dpi)`, `pages_mut() -> &mut Vec<Arc<Page>>`, `page_mut(PageId) -> Option<&mut Page>`, `node_mut(PageId, NodeId) -> Option<&mut Node>` and `as_doc() -> &Document`. `page_mut` and `node_mut` MUST use copy on write (`Arc::make_mut`) along the edited path only. `DocMut` MUST NOT validate implicitly: after any sequence of operations the document MAY be invalid and `validate()` is the check.
 
@@ -91,7 +91,7 @@ Scenario type tags: (unit), (integration), (command), (manual). All requirements
 - WHEN reviewed
 - THEN it states that `*doc = other` is possible and is owned by `EditService` in C3
 
-### Requirement: Id allocation (D5)
+### Requirement: Id allocation (D5b)
 
 `DocMut::alloc_node_id` and `alloc_page_id` MUST return the current `next_id` as a `NodeId` or `PageId` and then increment it; ids MUST never be reused within a document. When `next_id == u64::MAX` the call MUST return `Err(IdSpaceExhausted)` and leave `next_id` unchanged (no wrap). `IdSpaceExhausted` MUST be `Copy`, `Eq`, `Display` and `Error`. Allocation outside `DocMut` MUST NOT be public. The counter is shared by nodes and pages.
 
@@ -110,7 +110,7 @@ Scenario type tags: (unit), (integration), (command), (manual). All requirements
 - WHEN an id is allocated
 - THEN it returns `Err(IdSpaceExhausted)` and `next_id` is still `u64::MAX`
 
-### Requirement: Readers hold Arc<Document> (D5)
+### Requirement: Readers hold Arc<Document> (D5b)
 
 Consumers outside `gafira-edit` MUST read a document through `&Document` or `Arc<Document>` and the accessors of `document-model`. Cloning an `Arc<Node>` or `Arc<Page>` out of a document MUST NOT make the document mutable.
 
@@ -119,7 +119,7 @@ Consumers outside `gafira-edit` MUST read a document through `&Document` or `Arc
 - WHEN the document is read again
 - THEN its node is unchanged and the two `Arc`s are no longer pointer-equal
 
-### Requirement: V13 CI step (D5)
+### Requirement: V13 CI step (D5b)
 
 The `policy` job MUST contain a step V13, run under `set -euo pipefail`, that searches the repository with `git grep --untracked -nE 'EditToken|__new_for_gafira_edit_only' -- '*.rs'` and fails when a hit lies outside `^crates/(gafira-doc|gafira-edit|gafira-testkit)/`. The step MUST: capture every `grep` exit code explicitly and treat only exit 1 (no match) as clean, so that any exit above 1 fails the step (`git grep` exits 128 for a broken pattern or no repository; the filter `grep` exits 2 for a broken pattern); run a positive control that fails the step unless the search finds `pub struct EditToken {` in a file under `crates/gafira-doc/src/` (so a wrong working directory, a renamed definition or an empty search cannot pass); print the offending hits; and also fail when any Rust file under `crates/gafira-edit/` (listed with `git ls-files --cached --others --exclude-standard -- crates/gafira-edit | grep '\.rs$' || true`: a plain directory pathspec, so untracked files count and a missing directory prints nothing; `|| true` is required because `grep` exits 1 on no match under `pipefail`) publicly re-exports the token. The re-export check MUST split each file into records at `;` so that a multi-line brace group is one record, and MUST fail on a record that has a `pub use` or `pub type` item naming `EditToken`, and on every public glob re-export (`pub use ...::*`), even if it does not name the token (stricter than needed, accepted). `pub(crate)` re-exports are deliberately allowed. Only `*.rs` files are searched, so `openspec/` and `ci.yml` never match. V13 does NOT prove ARQ-30: the limits are in the table above.
 
@@ -187,7 +187,7 @@ Known limits of V13 (recorded in the verify report as not met; review and `trybu
 - WHEN V13 runs
 - THEN it exits 0
 
-### Requirement: trybuild is deferred (D5)
+### Requirement: trybuild is deferred (D5b)
 
 This change MUST NOT add `trybuild` or any other new third-party package. The ARQ-30 compile-failure test from `gafira-ui` is deferred to C3 and MUST be recorded as deferred in the verify report.
 

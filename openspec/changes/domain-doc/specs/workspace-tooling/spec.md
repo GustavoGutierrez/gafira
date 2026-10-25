@@ -6,11 +6,11 @@
 >
 > Requirement blocks not named here are unchanged. The complete specs of both changes remain in their change folders until archived.
 
-Scenario type tags: (unit), (integration), (command), (manual). "Dn": delivery per the design table (D1 for V5, V12 and the `clippy.toml` ban; D5 for V13).
+Scenario type tags: (unit), (integration), (command), (manual). "Dn": delivery per the design table (D1 for V5, V12 and the `clippy.toml` ban; D5b for V13).
 
 ## ADDED Requirements
 
-### Requirement: V13 EditToken step (D5)
+### Requirement: V13 EditToken step (D5b)
 
 The `policy` job MUST contain step V13, which fails when `EditToken` or the hidden constructor's identifier appears in Rust sources outside `gafira-doc`, `gafira-edit` and `gafira-testkit`, with a positive control, `set -euo pipefail`, explicit `grep` exit-code handling and a re-export check for `gafira-edit`. The full rule, what Rust does and does not guarantee, the known textual limits (two-step alias, public function or wrapper handing out the token, macro-generated re-export, `;` inside comments or strings, type inference, crate or module re-export such as `pub use gafira_doc as d;`) and the negative runs E0 to E15 (including the multi-line, `pub type` and glob re-export cases, which V13 does catch) are specified in `edit-capability` (requirement "V13 CI step") and are not repeated here; this requirement makes the step part of the tooling contract. V13 is evidence for ARQ-30 only together with the guarantees table and review; `trybuild` arrives in C3, whose fixtures that name `EditToken` must live under an allowed path or extend the allowlist.
 
@@ -20,7 +20,7 @@ The `policy` job MUST contain step V13, which fails when `EditToken` or the hidd
 - THEN V13 exists, exits 0, and its positive control found the definition
 
 #### Scenario: Each commit stays green (command)
-- GIVEN every commit of D5
+- GIVEN every commit of D5b
 - WHEN `cargo fmt --check`, clippy `-D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V5, V6, V11, V12 and V13 run
 - THEN all pass on each commit
 
