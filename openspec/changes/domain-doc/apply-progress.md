@@ -271,6 +271,9 @@ Status: done. Base branch `feat/domain-doc-3b`; work on `feat/domain-doc-4a` (ra
 6. `test(doc): pin page naming, pass order and empty-document rows`: verify fixes for CRITICAL 1 and 2, the order rows of CRITICAL 3, and the W3 spec alignment (`validate.rs`).
 7. `test(doc): guard non_exhaustive on ValidationError with a compile_fail doctest` (`error.rs`, W2).
 8. `docs(sdd): restore the D4a order rows and tag determinism D6b`: spec, design and this file (CRITICAL 3, W4, W5, suggestions).
+9. `test(doc): pin duplicate id before arena key and dangling before repeated root` (`validate.rs`, second verify fix).
+10. `docs(sdd): record the D4a second verify fix and mirror the check-major rule`: this file and `design.md`.
+11. `docs(sdd): record domain-doc D4a third verify`: this file.
 
 ### Scenario -> test
 
@@ -309,7 +312,7 @@ Status: done. Base branch `feat/domain-doc-3b`; work on `feat/domain-doc-4a` (ra
 
 ### Gates
 
-`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run on each code commit checked out alone (commits 2, 3 and 4) and on the re-cut docs commit: all green. `cargo deny check`, V5, V11 and V12 were not run during apply.
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run on each code and test commit checked out alone (commits 2, 3, 4, 6, 7 and 9) and on the re-cut docs commit: all green. Commits 5, 8, 10 and 11 change docs only. `cargo deny check`, V5, V11 and V12 were not run during apply.
 
 ### Verify fixes (D4a re-verify, commits 6 to 8)
 
@@ -348,4 +351,57 @@ Commit `test(doc): pin duplicate id before arena key and dangling before repeate
 
 Docs: `design.md` pass-order sentence now states the check-major rule; the "Ascending node order within a pass" scenario is tagged D4b; `rekey` carries a comment that key 5 must not collide with an existing id.
 
-Size: see the final report line from `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'`: 5 files changed, 765 insertions(+), 1 deletion(-) after the test commit.
+Size: final code-only size of D4a is 765 insertions and 1 deletion (766 changed lines, ratio 1.51 against ~507), measured with `git diff --shortstat feat/domain-doc-3b..feat/domain-doc-4a -- . ':!openspec'`.
+
+## D4b (tdd-apply)
+
+Status: done. Base branch `feat/domain-doc-4a`; work on `feat/domain-doc-4b` (range `feat/domain-doc-4a..feat/domain-doc-4b`).
+
+### Commits
+
+1. `feat(doc): validate node fields and extension depth`: P4 in `validate.rs` (checks 9 to 14, node by node in ascending id, iterative depth walk) and its tests.
+2. `feat(doc): validate on every deserialization`: `try_from = "DocumentWire"`, `LoadError::Invalid`, `Document::from_parts`, load-path tests, the 121-level assertion now expects `Invalid(ExtensionTooDeep)`.
+3. `docs(sdd): record domain-doc D4b progress`: this file and the D4a nits (commit list, gate runs, size wording, `design.md` capital after "order):").
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Opacity edges and out of range; placement values and accepted values; fill values (sRGB and linear) | `validate::tests::node_value_rows` (one table, 30 rows) |
+| Not clamped | `validate::tests::validation_does_not_clamp` |
+| Extension `type_id`; payload depth at the limit (64, 65 arrays, 65 objects, scalar, `[]`); 1 000 levels built in code | `validate::tests::extension_rows` |
+| Children on a leaf; dangling child; child only in another page | `validate::tests::child_rows` |
+| Ascending node order within a pass; a node's check 14 before the next node's check 9; `NonFinite` before `OutOfRange` | `validate::tests::nodes_are_checked_in_ascending_id_and_check_order` |
+| Earlier pass wins, third case (P4: lower id wins) | `validate::tests::earlier_rules_win` (new row) |
+| D4b build accepts cycles | `validate::tests::a_self_parenting_group_still_passes_until_d5` |
+| Plain serde cannot build an invalid document | `serde::plain_serde_cannot_build_an_invalid_document` |
+| Shape versus validation; error contract for `Invalid` and `Json` | `json::tests::load_errors_name_their_cause_and_expose_the_inner_error` |
+| Hostile values (dpi 0 and 10001, schema 0); finite out-of-range fails the full load; duplicate id against a page id and across pages; unknown `space` stays `Json` | `serde::well_formed_documents_that_break_a_rule_are_invalid_not_json` |
+| Payload depth inside a full document (121 now `Invalid(ExtensionTooDeep)`, 122 `Json`) | `serde::a_document_payload_parses_to_121_levels_and_not_beyond` |
+| Deep payload rejected by validation and by load; 64 levels reopen identical | `validate::tests::extension_rows` and `serde::a_payload_of_64_levels_saves_and_reopens_and_65_is_refused` |
+| `from_parts` accessors and page order; `from_parts` validates | `document::tests::from_parts_keeps_page_order_and_looks_pages_up`, `document::tests::from_parts_validates` |
+| D3 fixtures still load after `try_from` | the unchanged D3 tests in `golden.rs` and `serde.rs`; in `json.rs` only the `doc_with` helper changed (`next_id` 3 to 20, the fixture it builds was not valid) |
+
+### RED evidence
+
+- P4 tests (commit 1) were written first against the D4a `validate`, which returns `Ok(())` for every P4 defect: `node_value_rows` (row 4 left `Ok(())`, wanted `OutOfRange` on `Opacity`), `extension_rows` (row 1), `child_rows`, `nodes_are_checked_in_ascending_id_and_check_order` (row 0), `validation_does_not_clamp` and the new `earlier_rules_win` row failed as assertions: 6 failed, 6 passed.
+- Load-path tests (commit 2) were written against a scaffold with the `Invalid` variant and `from_parts` returning `Ok` unchecked: `from_parts_validates` and `load_errors_name_their_cause_...` failed (`unwrap_err` on `Ok`), and four `serde` tests failed (`plain_serde_cannot_build_...`, the 121-level test, `well_formed_documents_...`, `a_payload_of_64_levels_...`).
+- Passed immediately, noted: `a_self_parenting_group_still_passes_until_d5` (P1 to P4 never look at parents; the D5 commit inverts it), and the D3 fixture tests.
+
+### Deviations
+
+- `from_json` deserializes `DocumentWire` and calls `Document::try_from` itself, so the typed `ValidationError` reaches `LoadError::Invalid`; `serde_json::from_str::<Document>` goes through the same `try_from` and only carries the text of the error.
+- The scaffold step above was needed to get assertion failures instead of compile errors for the load-path tests.
+- The depth walk reports the full depth of the payload (not the first level above 64), so `ExtensionTooDeep { depth }` is stable.
+- Test scope follows the owner direction: tables per rule, no tests for accessors, derives or `Display` text beyond the spec (the one `Display` assertion is the `LoadError::Invalid` contract scenario). `Invalid` display prefix is `invalid document: `.
+- No mutation run was made in this delivery.
+
+### Size
+
+`git diff --shortstat feat/domain-doc-4a..HEAD -- . ':!openspec'` after commit 2 (code-only): 5 files changed, 553 insertions(+), 23 deletions(-), 576 changed lines against a ~387 forecast (ratio 1.49). Commit 1 alone: 423 insertions, 3 deletions.
+
+D4a plus D4b: 766 + 576 = 1342 changed lines against 507 + 387 = 894 forecast, ratio 1.501 (insertions only: 765 + 553 = 1318, ratio 1.47). This is at the D5 split trigger (> 1.5) by a margin of 0.001; the owner decides whether the D5 fallback cut after its first commit applies.
+
+### Gates
+
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run and passed on each of commits 1 and 2 (274 tests passed after commit 2). Commit 3 changes docs only. `cargo deny check`, V5, V11 and V12 were not run during apply.
