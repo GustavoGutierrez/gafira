@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{Node, NodeId, PageId, PageSize};
 
 /// One page: its size, flags, root order and the arena that owns its nodes.
@@ -10,21 +12,26 @@ use crate::{Node, NodeId, PageId, PageSize};
 /// Ids in `roots` and in node `children` resolve only inside this page's own
 /// `nodes`. Structural violations are representable; `Document::validate`
 /// rejects them. The page flags never change a node's own `locked`/`visible`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Page {
     /// The page id, unique in the document.
     pub id: PageId,
     /// Display name.
+    #[serde(default)]
     pub name: String,
     /// Dimensions in any unit.
     pub size: PageSize,
     /// Whether the whole page is protected from edits.
+    #[serde(default)]
     pub locked: bool,
     /// Whether the whole page is hidden.
+    #[serde(default)]
     pub hidden: bool,
     /// Top-level node ids, back to front.
+    #[serde(default)]
     pub roots: Vec<NodeId>,
     /// The arena, iterating in ascending [`NodeId`] order.
+    #[serde(default, with = "crate::arena")]
     pub nodes: BTreeMap<NodeId, Arc<Node>>,
 }
 
@@ -145,5 +152,77 @@ mod tests {
             &p.nodes[&NodeId::new(4)],
             &c.nodes[&NodeId::new(4)]
         ));
+    }
+
+    fn page_json(extra: &str) -> String {
+        let size = r#""size":{"width":{"value":1,"unit":"px"},"height":{"value":2,"unit":"px"}}"#;
+        format!(r#"{{"id":1,{size}{extra}}}"#)
+    }
+
+    fn node_json(id: u64) -> String {
+        let b = format!(r#"{{"id":{id},"placement":{{"x":0,"y":0,"w":1,"h":1}}}}"#);
+        format!(r#"{{"base":{b},"kind":{{"type":"group"}}}}"#)
+    }
+
+    fn ids(p: &Page) -> Vec<u64> {
+        p.nodes.keys().map(|k| k.get()).collect()
+    }
+
+    #[test]
+    fn page_wire_form_writes_every_field() {
+        let p = Page::new(PageId::new(1), "P".to_string(), size());
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"id":1,"name":"P","size":{"width":{"value":100.0,"unit":"px"},"#,
+                r#""height":{"value":50.0,"unit":"px"}},"locked":false,"hidden":false,"#,
+                r#""roots":[],"nodes":[]}"#
+            )
+        );
+        assert_eq!(serde_json::from_str::<Page>(&json).unwrap(), p);
+    }
+
+    #[test]
+    fn arena_is_written_as_an_ascending_array() {
+        let mut p = Page::new(PageId::new(1), String::new(), size());
+        for id in [10, 2, 7] {
+            p.nodes.insert(NodeId::new(id), node(id));
+        }
+        let v = serde_json::to_value(&p).unwrap();
+        let written: Vec<u64> = v["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["base"]["id"].as_u64().unwrap())
+            .collect();
+        assert_eq!(written, [2, 7, 10]);
+        let back: Page = serde_json::from_value(v).unwrap();
+        assert_eq!(back, p);
+    }
+
+    #[test]
+    fn unordered_nodes_load_and_duplicates_fail() {
+        let nodes = format!(
+            r#","roots":[7,2],"nodes":[{},{}]"#,
+            node_json(7),
+            node_json(2)
+        );
+        let p: Page = serde_json::from_str(&page_json(&nodes)).unwrap();
+        assert_eq!(ids(&p), [2, 7]);
+        assert_eq!(p.roots, [NodeId::new(7), NodeId::new(2)]);
+        let dup = format!(r#","nodes":[{},{}]"#, node_json(5), node_json(5));
+        let err = serde_json::from_str::<Page>(&page_json(&dup)).unwrap_err();
+        assert!(err.to_string().contains("duplicate node id 5"), "{err}");
+    }
+
+    #[test]
+    fn page_defaults_required_fields_and_unknown_fields() {
+        let p: Page = serde_json::from_str(&page_json(r#","extra":{}"#)).unwrap();
+        assert_eq!(p, Page::new(PageId::new(1), String::new(), p.size));
+        assert!(serde_json::from_str::<Page>(r#"{"id":1}"#).is_err());
+        assert!(serde_json::from_str::<Page>(&page_json("").replace(r#""id":1,"#, "")).is_err());
+        assert!(serde_json::from_str::<Page>(&page_json(r#","nodes":{}"#)).is_err());
+        assert!(serde_json::from_str::<Page>(&page_json(r#","locked":"yes""#)).is_err());
     }
 }

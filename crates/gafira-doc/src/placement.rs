@@ -1,13 +1,16 @@
 //! Position, size and orientation of an element in page space.
 
 use gafira_geom::Affine;
+use serde::{Deserialize, Serialize};
 
 /// Mirroring of the local box about its center.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Flip {
     /// Mirror left to right.
+    #[serde(default)]
     pub x: bool,
     /// Mirror top to bottom.
+    #[serde(default)]
     pub y: bool,
 }
 
@@ -15,7 +18,10 @@ pub struct Flip {
 ///
 /// The local box is `[0,w] x [0,h]`; `w` and `h` size the box and never scale
 /// it. Values are stored unchanged: nothing is clamped or normalized.
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// `x`, `y`, `w` and `h` are required on the wire and there is no
+/// container-level `#[serde(default)]`, so a keyed animation object fails.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Placement {
     /// Page-space x of the box's top-left corner.
     pub x: f64,
@@ -26,10 +32,13 @@ pub struct Placement {
     /// Box height.
     pub h: f64,
     /// Clockwise rotation in degrees (on a y-down page).
+    #[serde(default)]
     pub rotation_deg: f64,
     /// X shear angle in degrees.
+    #[serde(default)]
     pub skew: f64,
     /// Mirroring about the box center.
+    #[serde(default)]
     pub flip: Flip,
 }
 
@@ -177,6 +186,68 @@ mod tests {
             let tol = |want: f64| 1e-9 * want.abs().max(1.0);
             prop_assert!((got.x - wx).abs() <= tol(wx));
             prop_assert!((got.y - wy).abs() <= tol(wy));
+        }
+    }
+
+    #[test]
+    fn wire_form_is_flat_with_every_field() {
+        let mut p = Placement::new(1.0, 2.0, 3.0, 4.0);
+        p.flip.y = true;
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(
+            json,
+            r#"{"x":1.0,"y":2.0,"w":3.0,"h":4.0,"rotation_deg":0.0,"skew":0.0,"flip":{"x":false,"y":true}}"#
+        );
+        assert_eq!(serde_json::from_str::<Placement>(&json).unwrap(), p);
+    }
+
+    #[test]
+    fn optional_fields_default_and_integers_are_accepted() {
+        let p: Placement = serde_json::from_str(r#"{"x":3,"y":0,"w":1,"h":1}"#).unwrap();
+        assert_eq!(p, Placement::new(3.0, 0.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn partial_flip_defaults_missing_axes_to_false() {
+        let load = |flip: &str| -> Flip {
+            let json = format!(r#"{{"x":0,"y":0,"w":1,"h":1,"flip":{flip}}}"#);
+            serde_json::from_str::<Placement>(&json).unwrap().flip
+        };
+        assert_eq!(load("{}"), Flip { x: false, y: false });
+        assert_eq!(load(r#"{"x":true}"#), Flip { x: true, y: false });
+        assert_eq!(load(r#"{"y":true}"#), Flip { x: false, y: true });
+    }
+
+    #[test]
+    fn required_fields_and_keyed_objects() {
+        for bad in [
+            r#"{"y":0,"w":1,"h":1}"#,
+            r#"{"x":0,"w":1,"h":1}"#,
+            r#"{"x":0,"y":0,"h":1}"#,
+            r#"{"x":0,"y":0,"w":1}"#,
+            r#"{"keys":[]}"#,
+            "{}",
+        ] {
+            assert!(serde_json::from_str::<Placement>(bad).is_err(), "{bad}");
+        }
+        assert!(serde_json::from_str::<gafira_color::Color>(r#"{"keys":[]}"#).is_err());
+        assert!(serde_json::from_str::<f32>(r#"{"keys":[]}"#).is_err());
+        assert_eq!(serde_json::from_str::<f32>("0.5").unwrap(), 0.5);
+    }
+
+    #[test]
+    fn numbers_keep_their_bits() {
+        let mut p = Placement::new(-0.0, 0.0, f64::MAX, 5e-324);
+        p.rotation_deg = 5e-324;
+        let back: Placement = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert!(back.x.is_sign_negative());
+        for (a, b) in [
+            (p.x, back.x),
+            (p.w, back.w),
+            (p.h, back.h),
+            (p.rotation_deg, back.rotation_deg),
+        ] {
+            assert_eq!(a.to_bits(), b.to_bits());
         }
     }
 }

@@ -505,3 +505,238 @@ None.
 
 - Verdict: **PASS** for D2b (0 CRITICAL, 1 WARNING, 2 SUGGESTION). All gates pass on every commit. All 7 previous survivors are killed, 4 of them at build time by the trait assertions. Production code is unchanged apart from blank lines. Every D2b requirement and scenario is covered.
 - Next: the owner decides on pushing and the PR for `feat/domain-doc-2b`, then **tdd-apply D3**. D3 verify must confirm serde on the D2 types. The D4 verify must see "Accessors and page order" through `from_parts`. Archive waits for D3 to D6.
+
+## D3a (branch `feat/domain-doc-3a`, range `feat/domain-doc-2b..feat/domain-doc-3a`, 5 commits from `feat(doc): define the document wire format` to `docs(sdd): record domain-doc D3 progress`)
+
+**Verdict: FAIL** (D3a). CRITICAL 2, WARNING 6, SUGGESTION 2. `next` = tdd-apply for D3a (fix the CRITICAL items), then re-verify D3a, then tdd-apply D3b.
+
+Scope: the D3 requirements of `specs/document-serde/spec.md` ("Wire shape and key order", "Deterministic round trip" D3 part, "Defaults, normalization and forward compatibility", "Animatable compatibility of bare values", "Extension payload survival", "Canonical goldens survive every checkout", "Non-finite and out-of-range numbers" D3 part, the D3 sentence of "Validating load path", "Hostile and corrupt input" D3 part) and the serde note of `specs/document-model/spec.md:24`. D3 was split for size. D3a holds the first three planned commits and a carry-forward test. D3b ("test(doc): add canonical goldens and hostile inputs": goldens, `.gitattributes`, `tests/golden.rs`, `tests/serde.rs`, the `cargo tree` and `git check-attr` commands) is not in this range. Scenarios it owns are listed under "Left for D3b" and are not findings here. Design rows: A13 `design.md:43`, file map `design.md:97-100`, wire format `design.md:314-340`, commit plan `design.md:388`, T3.1-T3.7 `design.md:414-420`.
+
+Verified 2026-10-24 on rustc 1.93.1, cargo-deny 0.20.2, git 2.34.1. Each commit was extracted with `git archive` into its own directory under `/tmp/d3a-verify`, each with its own `CARGO_TARGET_DIR`. The ARQ-07, V11 ("Domain crates forbid unsafe code"), V5 and V12 step bodies were extracted with a YAML parser from each commit's own `.github/workflows/ci.yml` (unchanged in the range) and run under `bash --noprofile --norc -eo pipefail`. Mutations ran on a separate scratch git copy of the `docs(sdd): record domain-doc D3 progress` commit (`cargo test -p gafira-doc --locked`, baseline 77 lib tests passed). The repository tree was not modified apart from this section.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | `cargo deny check` | ARQ-07 | V11 | V5 | V12 | gafira-doc lib tests |
+|---|---|---|---|---|---|---|---|---|---|
+| `feat(doc): define the document wire format` | 0 | 0 | 0 (220) | 0 | 0 | 0 | 0 | 0 | 65 |
+| `feat(doc): serialize arenas as sorted arrays` | 0 | 0 | 0 (224) | 0 | 0 | 0 | 0 | 0 | 69 |
+| `feat(doc): add from_json and to_json` | 0 | 0 | 0 (231) | 0 | 0 | 0 | 0 | 0 | 76 |
+| `test(doc): show Document equality depends on dpi and page contents` | 0 | 0 | 0 (232) | 0 | 0 | 0 | 0 | 0 | 77 |
+| `docs(sdd): record domain-doc D3 progress` | 0 | 0 | 0 (232) | 0 | 0 | 0 | 0 | 0 | 77 |
+
+`cargo deny check`: advisories, bans, licenses and sources ok on all five. Each clippy log shows `Checking gafira-doc` (no stale cache). Every prefix passes every gate. The range changes no manifest, no `Cargo.lock` and no `.github` file.
+
+### 2. Requirements and scenarios
+
+#### Wire shape and key order (D3) (`document-serde/spec.md:22`)
+
+| Scenario / clause | Evidence | Status |
+|---|---|---|
+| Exact minimal document | `json::tests::minimal_document_has_exact_bytes` (`json.rs:107`), exact string from `spec.md:29`. Killed: M04 (page `locked`/`hidden` swapped), M09 (`to_string_pretty`), M21 (document `schema_version`/`next_id` swapped), M32 (`dpi` skipped) | covered |
+| Arena order is ascending id | `page::tests::arena_is_written_as_an_ascending_array` (`page.rs:187`), ids inserted 10, 2, 7, written 2, 7, 10. Killed: M01 (serializer emits `values().rev()`) | covered |
+| Node shapes per kind | `node::tests::kinds_have_their_wire_shapes` (`node.rs:177`): group, ellipse with sRGB fill (`space` first), extension, `"fill":null`, each node ends with `"children":[...]`. Killed: M05 (PascalCase tags), M06 (tag key `kind`), M31 (PascalCase geometry) | covered |
+| None is written as null | `element::tests::wire_form_writes_every_field_with_null_name` (`element.rs:95`). Killed: M03 (`skip_serializing_if` on `name`) | covered |
+| Kebab-case names, bare ids and DPI, `Arc` as bare value | `blend.rs` D1 tests `wire_names` and `unknown_or_miscased_names_are_rejected` kill M07 (snake_case blend); `"blend":"normal"` in `element.rs:95`; bare `"id":1`, `"dpi":96` and bare pages and nodes in `json.rs:107`, `page.rs:172` | covered |
+
+#### Deterministic round trip (ARQ-10) (D3, D6) (`spec.md:46`)
+
+| Scenario / clause | Evidence | Status |
+|---|---|---|
+| Round trip idempotent (property) | D6 | out of scope |
+| Bit identity of numbers | `placement::tests::numbers_keep_their_bits` (`placement.rs:228`), `element::tests::subnormal_opacity_keeps_its_bits` (`element.rs:139`), `json::tests::numbers_keep_their_bits_through_a_document` (`json.rs:141`): opacity `1e-45`, `x = -0.0` with `is_sign_negative`, `w = f64::MAX`, `rotation_deg = 5e-324`, all by `to_bits()` | covered |
+| Same bytes from a different build order | `json::tests::round_trip_is_idempotent_and_independent_of_build_order` (`json.rs:121`) | covered |
+| Arena order mutation is caught | Deviation: a `BTreeMap` has no insertion order, so the literal mutant cannot be written. The equivalent mutant M01 (reverse emission) is killed by `page.rs:187`. See WARNING 3 | covered (deviation accepted) |
+| `from_json(to_json(d))` equals `d` field by field | Only documents with DPI 96 and schema version 1 are round-tripped. M22 (`From<DocumentWire>` drops `dpi`) and M23 (constant `schema_version` 1) survive. See CRITICAL 1 | **failing** |
+| `float_roundtrip` kept | root `Cargo.toml:37`; `cargo tree -e features -i serde_json` shows `default`, `float_roundtrip`, `std` only | covered |
+
+#### Defaults, normalization and forward compatibility (D3) (`spec.md:70`)
+
+| Scenario / clause | Evidence | Status |
+|---|---|---|
+| Defaults applied | `json::tests::defaults_are_applied_and_rewritten_explicitly` (`json.rs:231`), `element::tests::omitted_fields_take_their_defaults` (`element.rs:111`), `placement::tests::optional_fields_default_and_integers_are_accepted` (`placement.rs:205`), `page::tests::page_defaults_required_fields_and_unknown_fields` (`page.rs:220`), `node::tests::kind_defaults_required_fields_and_vocabulary` (`node.rs:219`). Killed: M08 (`dpi` default), M16 (`children`), M17 (`hidden`), M18 (opacity default 0.5), M19 (visible default false), M20 (`rotation_deg`). M15 (`fill` default removed) survives but is equivalent: serde derive already reads a missing `Option` field as `None` | covered |
+| `Flip.x`/`Flip.y` default (declared deviation) | Not a spec violation: the required-on-read list at `spec.md:72` is closed and "everything else MUST default", and the design's rejected list (`design.md:332`) does not name them either. A probe confirms `"flip":{}` reads as `Flip { x: false, y: false }`. But no test reads a partial `flip`: M12 and M13 survive. See CRITICAL 2 | **failing** |
+| Unknown fields ignored and dropped | page, node, base and kind levels (`page.rs:220`, `node.rs:219`, `element.rs:119`). Document and placement levels are untested (M29, M30 `deny_unknown_fields` survive), and "the output contains none of the extras" is not asserted | partial, rest D3b |
+| Normalization on save | `"x":3` loads as `3.0` (`placement.rs:205`), but `"x":3.0` is not asserted on the output; nodes 7 then 2 load and save as 2, 7 (`page.rs:205` plus `page.rs:187`). Loading an unsorted payload from text is untested | partial, rest D3b |
+| Missing required field (table) | placement `x`, `y`, `w`, `h` (`placement.rs:211`); base `id`, `placement` (`element.rs:119`); page `id`, `size` (`page.rs:220`); node `base`, kind `type`, `geometry`, `type_id`, extension `schema_version`, `payload` (`node.rs:219`). Missing: document `schema_version`, `next_id`, `pages`, node `kind`, color `space` (M25, M26, M27, M28 survive) | partial, rest D3b |
+| Unknown vocabulary (table) | `"type":"text"`, `"Group"`, `"geometry":"star"`, `"space":"rec2020"` (`node.rs:219`), `"blend":"Multiply"` (`element.rs:119`). `"unit":"parsec"` is not tested in this range | partial, rest D3b |
+
+#### Animatable compatibility of bare values (D3) (`spec.md:99`)
+
+| Scenario | Evidence | Status |
+|---|---|---|
+| Keyed object rejected | `placement::tests::required_fields_and_keyed_objects` (`placement.rs:211`): `{"keys":[]}` fails as `Placement`, `Color` and `f32`; bare `0.5` is an `f32` | covered |
+| Bare values | `element.rs:95` (`"opacity":0.5`, flat placement), `node.rs:177` (flat fill, no wrapper, no `keys`) | covered |
+| Container default mutation is caught | M14 (`#[derive(Default)]` plus container `#[serde(default)]` on `Placement`) is killed by `placement.rs:211` | covered |
+
+#### Extension payload survival (D3) (`spec.md:118`)
+
+| Scenario | Evidence | Status |
+|---|---|---|
+| Extension fields kept | `json::tests::extension_fields_survive_and_stay_separate_from_the_document_version` (`json.rs:199`) | covered |
+| f64 field in an internally tagged node | `node::tests::extension_payload_null_and_f64_extremes_survive` (`node.rs:249`) puts the extremes in `base.placement`, which is outside the `type`-tagged `kind`. With `arbitrary_precision` switched on in a scratch copy, this test still passes. See WARNING 1 | open, D3b |
+| Canonical golden, non-canonical golden, key order and number spelling, integer beyond u64, duplicate payload keys, `1e400`, feature guards (command) | not in this range | D3b |
+
+Feature mutants (scratch `Cargo.toml` edit): `preserve_order` fails `kinds_have_their_wire_shapes` and `extension_fields_survive_and_stay_separate_from_the_document_version`. `arbitrary_precision` fails only `numbers_keep_their_bits_through_a_document` (`json.rs:152`: "invalid type: map, expected f32", from the fill channel `f32::MAX` at `json.rs:149`). Both guards exist today, the second only by accident.
+
+#### Canonical goldens survive every checkout (D3) (`spec.md:167`)
+
+All three scenarios (round-trip goldens, text conversion off, golden shape) are D3b. No golden or `.gitattributes` exists in this range.
+
+#### Non-finite and out-of-range numbers (D3, D4) (`spec.md:186`)
+
+| Scenario | Evidence | Status |
+|---|---|---|
+| Non-finite not persistable | `json::tests::non_finite_numbers_serialize_as_null_and_do_not_load` (`json.rs:169`): NaN opacity, `+inf` x, `-inf` rotation, NaN channel, NaN page width; serialization does not panic and loading is `LoadError::Json`. The "field is null" check is weak, see WARNING 2 | covered |
+| Finite out-of-range survives serde, not load | The serde half (opacity `1.5` through plain `Node` values, by bits) is not in this range; the load half is D4 | D3b / D4 |
+
+#### Validating load path, D3 sentence (`spec.md:202`)
+
+`Document` derives `Deserialize` through `#[serde(from = "DocumentWire")]` (`document.rs:17`), the unchecked D3 form; `try_from` with `validate()` is D4, so the "validation on load" mutant does not apply yet. `DocumentWire` is `pub(crate)` (`json.rs:36`). `from_json` and `to_json` (`json.rs:57`, `json.rs:62`) have the designed signatures. `LoadError` is `#[non_exhaustive]` with only `Json` (the `Invalid` variant is D4), implements `Display` and `Error` with `source()` (`json.rs:10-31`). Killed: M10 (BOM stripped before parsing), M11 (`source()` returns `None`) by `unreadable_bytes_are_json_errors_with_a_source` (`json.rs:214`).
+
+#### Hostile and corrupt input, D3 part (`spec.md:224`)
+
+| Scenario | Evidence | Status |
+|---|---|---|
+| Empty, truncated, trailing and encoding | `json.rs:214`: empty input, every prefix, trailing `x`, invalid UTF-8, BOM, `\ud800`, each `LoadError::Json` with a source. Prefixes come from a built document, not a golden | covered |
+| Duplicate node id inside one page | `page::tests::unordered_nodes_load_and_duplicates_fail` (`page.rs:205`), "duplicate node id 5". Killed: M02 (duplicate check disabled) | covered |
+| Nodes out of order are accepted | `page.rs:205` and `page.rs:187` | covered |
+| Duplicate struct field | shape `kind` with two `geometry` keys errors (`node.rs:219`), which answers the design's open question. Two `next_id` keys and two `opacity` keys are untested here; a probe shows both error | partial, rest D3b |
+| Wrong types | `"nodes":{}`, `"locked":"yes"` (`page.rs:220`), `"visible":"yes"`, `"opacity":null` (`element.rs:119`). `null`, `[]`, `"x"`, `"next_id":"7"`, `"pages":{}`, `"name":5` untested | partial, rest D3b |
+| Bad numbers; hostile values (unknown `space` through `from_json`) | not in this range | D3b |
+| Recursion limit 127/128; payload depth 121/122 | not in this range (the design puts the boundaries in T4.2, D4) | D3b or D4 |
+| Duplicate id across pages, deep payload, deep tree, corruption property | D4, D4, D5, D6 | out of scope |
+
+#### document-model serde note (`document-model/spec.md:24`)
+
+Serde derives now exist on `Flip`, `Placement`, `ElementBase`, `GroupNode`, `ShapeGeometry`, `ShapeNode`, `ExtensionNode`, `NodeKind`, `Node`, `Page` and `Document` (validating `Deserialize` from D4). Error and helper types have none. No dependency changed: `serde` with `rc` stays in the crate manifest only (`crates/gafira-doc/Cargo.toml:12`, A3), `cargo tree -e features -i serde` shows `rc`, and the normal tree adds no new package. Covered.
+
+#### Declared deviations
+
+| Deviation | Judgement |
+|---|---|
+| `Document` fields `pub(crate)` (`document.rs:19-22`) so `json.rs` can build a `Document` | Accepted. Other crates still cannot see or write the fields, which is what A11 and ARQ-30 need. It widens write access inside the crate; see SUGGESTION 1 |
+| "Arena order mutation" replaced by an output-order test | Accepted. M01 is the closest mutant and it is killed. The spec text still describes a mutant that cannot exist; see WARNING 3 |
+| `Flip.x`/`Flip.y` default to false on read | Accepted, and required by the spec: `spec.md:72` lists the required fields exhaustively, and "a missing required field MUST be an error" applies only to that list. The behavior has no test; see CRITICAL 2 |
+
+#### Mutation summary
+
+34 mutants (32 source edits and the 2 feature mutants above): 23 killed, 11 survived. M24 as first written (`next_id.max(3)`) was equivalent on the fixtures, which all use `next_id` 3. It was re-run as `next_id + 1` and was killed by four `json::tests`. Survivors: M12, M13 (CRITICAL 2); M22, M23 (CRITICAL 1); M15 (equivalent); M25 to M30 (required fields at document and node level, unknown fields at document and placement level, handed to D3b in WARNING 5). No `proptest-regressions` file was created in any copy, and none is tracked.
+
+### 3. Code rules
+
+- `#![forbid(unsafe_code)]` stays at `lib.rs:6`. The range adds no `#[allow]`, no `unsafe`, no `HashMap` or `HashSet`, no `deny_unknown_fields` and no `skip_serializing_if`.
+- Code, comments and identifiers are English. The only non-ASCII characters are the `é` test data at `json.rs:203,207`.
+- The five subjects are conventional (`feat(doc)` x3, `test(doc)`, `docs(sdd)`), and no message body has a `Co-Authored-By` or AI attribution line.
+- `serde_json` features match the design: the workspace declares `float_roundtrip` only, with no `preserve_order` and no `arbitrary_precision`.
+
+### 4. Size
+
+`git diff --shortstat feat/domain-doc-2b..HEAD -- . ':!openspec'` gives 8 files changed, 611 insertions(+), 15 deletions(-), which matches `apply-progress.md`. That is under ~700 and under the 800 hard limit. The D3a part of the D3 forecast is 399 (serde attributes 76, `arena.rs` 76, `json.rs` 114, in-crate tests 133, `design.md:356-357`), so the observed ratio is 1.53. See WARNING 6.
+
+### CRITICAL
+
+1. **The wire-to-document conversion is not pinned for `dpi` or `schema_version`.** `From<DocumentWire> for Document` (`json.rs:44-52`) may drop `dpi` (M22: `dpi: Dpi::default()`) or force `schema_version` to 1 (M23), and the whole suite still passes, because every round-tripped or loaded document uses DPI 96 and schema version 1. This breaks "`from_json(to_json(d))` MUST equal `d` field by field" (`spec.md:48`) without any test noticing. M23 also matters for D4: if the read version is replaced by 1, `UnsupportedSchemaVersion` can never fire. Fix (test first): round-trip a `test_document` with `Dpi::new(300)` and assert `dpi()`. Then add an in-crate test that converts a parsed `DocumentWire` with `schema_version` 2 and reads back 2. D4 will replace that second test with the `UnsupportedSchemaVersion { found: 2 }` scenario.
+2. **The `Flip` sub-field defaults have no test.** `#[serde(default)]` on `Flip.x` and `Flip.y` (`placement.rs:10,13`) is a declared deviation, and the spec requires the behavior (`spec.md:72`, "everything else MUST default"). But removing either attribute (M12, M13) passes the suite, because every test either omits `flip` entirely or writes both keys. Fix: load `{"x":0,"y":0,"w":1,"h":1,"flip":{}}` and expect `Flip::default()`, and load `"flip":{"y":true}` and expect `x == false`.
+
+### WARNING
+
+1. **The claimed guard for "f64 field in an internally tagged node" does not test that path.** `node::tests::extension_payload_null_and_f64_extremes_survive` (`node.rs:249`) puts the extreme values in `base.placement`, which serde reads directly. Only `kind` goes through the buffered internally tagged path. With `arbitrary_precision` on, the test still passes. Today the only test that catches that feature is `json.rs:141`, through the fill channel `f32::MAX` (`json.rs:149`), and that test compares the fill with IEEE `==`, not by bits (the `-0.0` channel is unchecked). D3b must close the scenario (`spec.md:152`): extreme `f64` values inside the extension payload and extreme `f32` channels inside a shape fill, compared by `to_bits()`. `apply-progress.md` should stop listing this scenario as covered.
+2. **The "field is null" check in the non-finite test is vacuous for node cases.** `json.rs:190` asserts `json.contains("null")`, but every node already writes `"name":null`. The load failure is the real evidence. Fix: assert the field itself, for example `"opacity":null`, `"x":null`, `"rotation_deg":null`, `"r":null`, `"value":null`.
+3. **The spec still describes the arena mutant that cannot exist.** `spec.md:65-68` and the T3.1 mutation column (`design.md:414`) say "serializer mutated to emit insertion order". With a `BTreeMap` there is no insertion order to emit. Amend the spec so the mutant is "the arena serializer emits any order other than ascending, for example reversed", which is what M01 checks.
+4. **The required-on-read list does not name fields owned by other crates.** `spec.md:72` makes "everything else" defaultable, but the code (correctly, per `design.md:332` and the owning crates) rejects a `Length` without `unit` and a color without `a` (probe). A literal reading of the spec would require defaults for `size.width`, `size.height`, `value`, `unit` and the channels `r`, `g`, `b`, `a`. Fix the spec text: list them as required, or limit "everything else" to the types this crate owns. No code change is needed.
+5. **`apply-progress.md` overstates D3a coverage, and six surviving mutants pass to D3b.** "Unknown fields ignored" is tested at four of six levels (M29 and M30, `deny_unknown_fields` on `DocumentWire` and on `Placement`, survive). "Missing required field" lacks the document fields and node `kind` (M25, M26, M27 and M28, `#[serde(default)]` on `pages`, `next_id`, `schema_version` and `kind`, survive). Neither the dropped-on-save check nor the `"x":3.0` output check exists. These belong to the D3b `tests/serde.rs` table, but the D3b list in `apply-progress.md` does not name them. Each D3b row should kill its mutant.
+6. **The re-cut rule asks for new forecasts, and none were recorded.** D3a measures 611 against its 399 share of the forecast, a ratio of 1.53, which is over the x1.3 trigger (`design.md:398`, rule 3). With that ratio, D3b comes to about 445 (fine), but D4 (640) becomes about 980, D5 (465) about 710 and D6 (645) about 985. The rule says to re-cut any delivery whose new forecast exceeds ~700 before it starts. Record the recomputation in `apply-progress.md` and plan the D4 and D6 splits (the design names D6 generator/properties as the natural cut; D4 has none named yet).
+
+### SUGGESTION
+
+1. Keep `Document` fields private and add one `pub(crate)` constructor in `document.rs` that `json.rs` (and later `from_parts`/`try_from`) calls. In-crate writes then have a single entry point, which D4 needs for validation.
+2. The hostile-prefix test (`json.rs:214`) cuts a built document. D3b can repeat it over `minimal.json` so the scenario text ("every prefix of a small golden") matches exactly.
+
+### Left for D3b (D3 scenarios not closed by D3a)
+
+- Defaults, normalization and forward compatibility: "Unknown fields ignored and dropped" (document and placement levels, and the dropped-on-save output check); "Normalization on save" (`"x":3.0` in the output, an unsorted payload read from text written canonically); "Missing required field" (document `schema_version`, `next_id`, `pages`; node `kind`; color `space`); "Unknown vocabulary" (`"unit":"parsec"`).
+- Extension payload survival: "Canonical golden survives", "Non-canonical golden normalizes", "Key order and number spelling", "Integer beyond u64", "Duplicate keys in a payload", "Unrepresentable payload number", "f64 field in an internally tagged node" (WARNING 1), "Feature guards" (command; this run already shows no `preserve_order`, no `arbitrary_precision`, and `rc` present).
+- Canonical goldens survive every checkout: "Round-trip goldens" (including the in-crate test that `full` equals the document built with `test_document`), "Text conversion is off" (command), "Golden shape" (command).
+- Non-finite and out-of-range numbers: "Finite out-of-range survives serde, not load", serde half.
+- Hostile and corrupt input: "Wrong types" (`null`, `[]`, `"x"`, `"next_id":"7"`, `"pages":{}`, `"name":5`); "Bad numbers" (all rows); "Duplicate struct field" (two `next_id`, two `opacity`); "Hostile values" (unknown `space` through `from_json` gives `LoadError::Json`). "Pure JSON recursion limit" and "Payload depth inside a full document" are untagged in the spec, but the design places them in T4.2 (D4). D3b should either take them or record that D4 owns them.
+
+### Result
+
+- Verdict: **FAIL** for D3a (2 CRITICAL, 6 WARNING, 2 SUGGESTION). All gates, including `cargo deny check`, ARQ-07, V5, V11 and V12, pass on every commit. 23 of 34 mutants are killed. The in-scope failures are the unpinned `dpi`/`schema_version` conversion (M22, M23) and the untested `Flip` sub-field defaults (M12, M13).
+- Next: **tdd-apply D3a** for CRITICAL 1 and 2 (and preferably WARNING 1, 2 and 5 in the docs), then re-verify D3a, then **tdd-apply D3b** with the list above and the re-cut forecasts of WARNING 6. Archive waits for D3b to D6.
+
+## D3a re-verify (the 3 fix commits from `test(doc): pin dpi, schema version and partial flip on load` to `docs(sdd): fix domain-doc D3a verify findings`; delivery `feat/domain-doc-2b..feat/domain-doc-3a`)
+
+**Verdict: PASS** (D3a). CRITICAL 0, WARNING 3, SUGGESTION 2. `next` = tdd-apply D3b (with the WARNING items below folded in). Archive waits for D3b to D6.
+
+Verified 2026-10-24 with the same method as the D3a run: each commit extracted with `git archive` into its own directory under `/tmp/d3a-verify`, its own `CARGO_TARGET_DIR`, and the ARQ-07, V11, V5 and V12 step bodies parsed from that commit's own `.github/workflows/ci.yml` (no `.github`, manifest, `Cargo.lock` or `deny.toml` change in the fix commits). Mutations ran on a fresh scratch git copy of `docs(sdd): fix domain-doc D3a verify findings` (`cargo test -p gafira-doc --locked`, baseline 82 lib tests). The repository tree was not modified apart from this section.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy `--workspace --all-targets --locked -D warnings` | test `--workspace --locked` (passed) | `cargo deny check` | ARQ-07 | V11 | V5 | V12 | gafira-doc lib tests |
+|---|---|---|---|---|---|---|---|---|---|
+| `test(doc): pin dpi, schema version and partial flip on load` | 0 | 0 | 0 (235) | 0 | 0 | 0 | 0 | 0 | 80 |
+| `test(doc): put floats inside the tagged kind and assert the null field` | 0 | 0 | 0 (237) | 0 | 0 | 0 | 0 | 0 | 82 |
+| `docs(sdd): fix domain-doc D3a verify findings` | 0 | 0 | 0 (237) | 0 | 0 | 0 | 0 | 0 | 82 |
+
+`cargo deny check`: advisories, bans, licenses and sources ok on all three. Each clippy log shows `Checking gafira-doc`.
+
+### 2. Previous items
+
+| Item | Evidence | Status |
+|---|---|---|
+| CRITICAL 1 (`dpi`, `schema_version` not pinned) | `json::tests::dpi_survives_the_wire_conversion` (`json.rs:254`, DPI 300 written as `"dpi":300`, read back, whole document equal) kills M22; `json::tests::schema_version_is_read_as_written_by_the_wire_conversion` (`json.rs:264`, version 2 read and re-written byte-exact) kills M23 | fixed |
+| CRITICAL 2 (partial `flip`) | `placement::tests::partial_flip_defaults_missing_axes_to_false` (`placement.rs:211`: `{}`, `{"x":true}`, `{"y":true}`) kills M12 and M13 | fixed |
+| WARNING 1 (tagged-kind guard) | `node::tests::floats_inside_the_tagged_kind_survive` (`node.rs:264`, `f32::MAX`, `1e-45` by bits, `-0.0` sign) fails with `arbitrary_precision` on (`node.rs:268`, as does `json.rs:152`). `node::tests::f64_payload_inside_the_tagged_kind_survives` (`node.rs:283`) still passes with the feature on; see WARNING 1 below. The scenario stays open for D3b (feature-guard command) | fixed for the shape half |
+| WARNING 2 (vacuous null check) | `json.rs:199` asserts the exact field per case. Mutation-checked below | fixed |
+| WARNING 3 (arena mutant wording) | `spec.md:67` and the T3.1 row (`design.md:414`) now say reverse output order. `design.md:453` (D6 property mutations) still says "insertion order"; see WARNING 2 below | fixed for D3 |
+| WARNING 4 (defaults rule) | `spec.md:72` now limits defaults to the listed fields, adds `flip.x`/`flip.y`, and says every other field (`Length` `value`/`unit`, color channels) must be present. Matches every `#[serde(default)]` in the crate: `json.rs:39`; `element.rs:16,21,24,27,30`; `page.rs:20,25,28,31,34`; `placement.rs:10,13,35,38,41`; `node.rs:28,76` | fixed |
+| WARNING 5 (D3b list) | `apply-progress.md:169-177` lists every D3a gap, names M25-M30 with the row that must kill each, records M15 as equivalent and gives the recursion rows to D4 (T4.2) | fixed (one stale line, WARNING 2) |
+| WARNING 6 (re-cut forecasts) | not recorded; see WARNING 3 below | open |
+| SUGGESTION 1 | skipped with a reason (`apply-progress.md:188`); accepted | — |
+| SUGGESTION 2 | D3b | — |
+
+### 3. Mutation summary (`cargo test -p gafira-doc --locked`)
+
+All 32 source mutants re-run, M24 as `next_id + 1`: 25 killed, 7 survive.
+
+- Previously surviving, now killed: M12, M13 (`placement.rs:211`), M22 (`json.rs:254`), M23 (`json.rs:264`). M24 is killed by six `json::tests`, including both new ones.
+- M15 (`fill` default removed) survives and is equivalent: `node.rs:222` loads a shape with no `fill` and asserts `None`, and it passes with the attribute removed (serde derive reads a missing `Option` field as `None`).
+- M25, M26, M27, M28, M29, M30 survive. Each is named, with its D3b row, at `apply-progress.md:171` and `apply-progress.md:176`. Not a D3a finding.
+- No previous kill regressed.
+
+W2 assertions (test-side mutations on `json.rs:169`, each run alone): 9 of 9 fail at the field assertion `json.rs:199` ("<field> not in ..."). Five make the targeted value finite (opacity, `x`, `rotation_deg`, channel `r`, page width). Four keep the document unloadable but move the non-finite value to another field (`rotation_deg` instead of `x`, `a` instead of `r`, page height instead of width, `x` instead of opacity). The old `contains("null")` check plus the load failure would have passed these four, so the new assertions add real coverage.
+
+Feature mutant `arbitrary_precision` (scratch `Cargo.toml` edit): fails `node::tests::floats_inside_the_tagged_kind_survive` and `json::tests::numbers_keep_their_bits_through_a_document`. `node::tests::f64_payload_inside_the_tagged_kind_survives` passes.
+
+No `proptest-regressions` file was created in any copy, and none is tracked.
+
+### 4. Regression check and code rules
+
+- `git diff 'docs(sdd): record domain-doc D3 progress'..HEAD -- crates` touches only `json.rs`, `node.rs` and `placement.rs`, and every hunk is inside `mod tests` (`json.rs:68`, `node.rs:92`, `placement.rs:80`). Production code is unchanged.
+- No `#[allow]`, `unsafe`, `HashMap`, `HashSet`, `deny_unknown_fields` or `skip_serializing_if` added. No non-ASCII characters added.
+- Subjects are conventional (`test(doc)` x2, `docs(sdd)`). No message has a `Co-Authored-By` or AI attribution line.
+
+### 5. Size
+
+`git diff --shortstat feat/domain-doc-2b..HEAD -- . ':!openspec'` gives 8 files changed, 696 insertions(+), 15 deletions(-). The fix commits add 96 insertions and 11 deletions. 696 is under ~700 and under the 800 hard limit, but `apply-progress.md:165` still gives 611 (WARNING 3).
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **`apply-progress.md:147` says both new node tests fail with `arbitrary_precision`. Only one does.** `floats_inside_the_tagged_kind_survive` (`node.rs:264`) fails. `f64_payload_inside_the_tagged_kind_survives` (`node.rs:283`) passes, because under that feature a `serde_json::Value` stores the number text, so the bits survive anyway. The progress file also misspells the second name (`_survive`). Correct the claim. The extension half of `spec.md:152` can only be guarded by the D3b `cargo tree` feature-guard command.
+2. **Two stale lines after the doc fixes.** `apply-progress.md:166` still puts "127/128 nesting, 121/122 payload depth" in D3b's `tests/serde.rs`, which contradicts `apply-progress.md:177` (D4 owns them). `design.md:453` (D6 property mutations) still says "serialize the arena in insertion order". That mutant cannot exist with a `BTreeMap` (WARNING 3 of the D3a run).
+3. **The re-cut forecasts (D3a WARNING 6) are still not recorded, and the size line is stale.** D3a now measures 696 against its 399 forecast share, a ratio of 1.74, which is over the x1.3 trigger (`design.md:398`). At that ratio D3b (~290) is about 505, but D4 (640) is about 1115, D5 (465) about 810 and D6 (645) about 1120. All three need a re-cut before they start. Record the ratio, the new forecasts and the planned splits in `apply-progress.md`, and change the size line at `apply-progress.md:165` from 611 to 696. Do this in D3b's first docs commit at the latest.
+
+### SUGGESTION
+
+1. In D3b, check `-0.0` on the fill channel by sign in `json.rs:141`. It is still compared with IEEE `==`, but `node.rs:264` now covers the same value by sign.
+2. Correction to the D3a run above: the workspace `serde_json` line with `float_roundtrip` is `Cargo.toml:18`, not `Cargo.toml:37`.
+
+### Result
+
+- Verdict: **PASS** for D3a (0 CRITICAL, 3 WARNING, 2 SUGGESTION). All gates, including `cargo deny check`, ARQ-07, V5, V11 and V12, pass on each of the three fix commits. Both CRITICAL items are fixed, and M12, M13, M22 and M23 are killed. M15 is confirmed equivalent. M25-M30 are assigned to named D3b rows. Production code is unchanged. Size is 696.
+- Next: the owner decides on pushing and the PR for `feat/domain-doc-3a`. Then **tdd-apply D3b**, using the list at `apply-progress.md:169-177` plus WARNING 1-3. Archive waits for D3b to D6.

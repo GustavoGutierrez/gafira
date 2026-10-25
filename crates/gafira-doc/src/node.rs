@@ -1,15 +1,17 @@
 //! Node kinds and the node record stored in a page arena.
 
 use gafira_color::Color;
+use serde::{Deserialize, Serialize};
 
 use crate::{ElementBase, NodeId};
 
 /// A group: it only arranges its children and carries no data of its own.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GroupNode {}
 
 /// The outline of a shape, drawn inside the placement box.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ShapeGeometry {
     /// A rectangle filling the box.
     Rect,
@@ -18,11 +20,12 @@ pub enum ShapeGeometry {
 }
 
 /// A filled geometric shape (no stroke yet).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShapeNode {
     /// The outline.
     pub geometry: ShapeGeometry,
     /// The fill color; `None` draws nothing.
+    #[serde(default)]
     pub fill: Option<Color>,
 }
 
@@ -37,7 +40,7 @@ impl ShapeNode {
 }
 
 /// A node owned by a plugin or a future feature, kept as opaque data.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExtensionNode {
     /// Identifies the extension that owns the payload.
     pub type_id: String,
@@ -49,7 +52,8 @@ pub struct ExtensionNode {
 
 /// What a node is. Closed on purpose: adding a kind makes the compiler flag
 /// every `match`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum NodeKind {
     /// A container of other nodes.
     Group(GroupNode),
@@ -62,13 +66,14 @@ pub enum NodeKind {
 /// One element of a page: shared header, kind and ordered children.
 ///
 /// Nothing is validated here; tree rules are checked by `Document::validate`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     /// The shared element header.
     pub base: ElementBase,
     /// What the node is.
     pub kind: NodeKind,
     /// Child ids, back to front, resolved inside the page's own arena.
+    #[serde(default)]
     pub children: Vec<NodeId>,
 }
 
@@ -162,5 +167,143 @@ mod tests {
             n.base.placement.x.to_bits(),
             copy.base.placement.x.to_bits()
         );
+    }
+
+    fn node_json(node: &Node) -> String {
+        serde_json::to_string(node).unwrap()
+    }
+
+    #[test]
+    fn kinds_have_their_wire_shapes() {
+        let kind = |n: &Node| serde_json::to_value(n).unwrap()["kind"].to_string();
+        let group = Node::new(base(1), NodeKind::Group(GroupNode {}));
+        assert_eq!(kind(&group), r#"{"type":"group"}"#);
+        assert!(node_json(&group).ends_with(r#""kind":{"type":"group"},"children":[]}"#));
+        let bare = Node::new(
+            base(2),
+            NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect)),
+        );
+        assert_eq!(
+            kind(&bare),
+            r#"{"fill":null,"geometry":"rect","type":"shape"}"#
+        );
+        assert!(
+            node_json(&bare).contains(r#""kind":{"type":"shape","geometry":"rect","fill":null}"#)
+        );
+        let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+        shape.fill = Some(Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0)));
+        let s = node_json(&Node::new(base(3), NodeKind::Shape(shape)));
+        assert!(s.contains(
+            r#""kind":{"type":"shape","geometry":"ellipse","fill":{"space":"srgb","r":1.0,"g":0.0,"b":0.0,"a":1.0}}"#
+        ));
+        let ext = ExtensionNode {
+            type_id: "com.example.sticker".to_string(),
+            schema_version: 2,
+            payload: serde_json::json!({"b": 1, "a": null}),
+        };
+        let e = Node::new(base(4), NodeKind::Extension(ext));
+        assert!(node_json(&e).contains(
+            r#""kind":{"type":"extension","type_id":"com.example.sticker","schema_version":2,"payload":{"a":null,"b":1}},"children":[]}"#
+        ));
+        for n in [group, bare, e] {
+            assert_eq!(serde_json::from_str::<Node>(&node_json(&n)).unwrap(), n);
+        }
+    }
+
+    fn parse_kind(kind: &str) -> Result<Node, serde_json::Error> {
+        let b = r#"{"id":1,"placement":{"x":0,"y":0,"w":1,"h":1}}"#;
+        serde_json::from_str(&format!(r#"{{"base":{b},"kind":{kind},"extra":1}}"#))
+    }
+
+    #[test]
+    fn kind_defaults_required_fields_and_vocabulary() {
+        let n = parse_kind(r#"{"type":"group","extra":1}"#).unwrap();
+        assert_eq!(n, Node::new(base_for(1), NodeKind::Group(GroupNode {})));
+        let s = parse_kind(r#"{"type":"shape","geometry":"rect"}"#).unwrap();
+        assert!(matches!(
+            s.kind,
+            NodeKind::Shape(ShapeNode { fill: None, .. })
+        ));
+        for bad in [
+            r#"{"type":"text"}"#,
+            r#"{"type":"Group"}"#,
+            r#"{}"#,
+            r#"{"type":"shape"}"#,
+            r#"{"type":"shape","geometry":"star"}"#,
+            r#"{"type":"shape","geometry":"rect","geometry":"ellipse"}"#,
+            r#"{"type":"shape","geometry":"rect","fill":{"space":"rec2020"}}"#,
+            r#"{"type":"extension","schema_version":1,"payload":null}"#,
+            r#"{"type":"extension","type_id":"x","payload":null}"#,
+            r#"{"type":"extension","type_id":"x","schema_version":1}"#,
+        ] {
+            assert!(parse_kind(bad).is_err(), "{bad}");
+        }
+        assert!(serde_json::from_str::<Node>(r#"{"kind":{"type":"group"}}"#).is_err());
+    }
+
+    fn base_for(id: u64) -> ElementBase {
+        ElementBase::new(NodeId::new(id), Placement::new(0.0, 0.0, 1.0, 1.0))
+    }
+
+    #[test]
+    fn extension_payload_null_and_f64_extremes_survive() {
+        let ext = ExtensionNode {
+            type_id: "x".to_string(),
+            schema_version: 3,
+            payload: serde_json::Value::Null,
+        };
+        let mut b = base(1);
+        b.placement = Placement::new(f64::MAX, -0.0, 5e-324, f64::MIN_POSITIVE);
+        let n = Node::new(b, NodeKind::Extension(ext));
+        let back: Node = serde_json::from_str(&node_json(&n)).unwrap();
+        assert_eq!(back, n);
+        assert!(back.base.placement.y.is_sign_negative());
+    }
+
+    #[test]
+    fn floats_inside_the_tagged_kind_survive() {
+        let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+        shape.fill = Some(Color::Srgb(Rgba::new(f32::MAX, 1e-45, -0.0, 1.0)));
+        let n = Node::new(base(1), NodeKind::Shape(shape));
+        let back: Node = serde_json::from_str(&node_json(&n)).unwrap();
+        let NodeKind::Shape(ShapeNode {
+            fill: Some(Color::Srgb(c)),
+            ..
+        }) = &back.kind
+        else {
+            panic!("not an sRGB shape")
+        };
+        assert_eq!(c.r.to_bits(), f32::MAX.to_bits());
+        assert_eq!(c.g.to_bits(), 1e-45f32.to_bits());
+        assert!(c.b.is_sign_negative());
+        assert_eq!(back, n);
+    }
+
+    #[test]
+    fn f64_payload_inside_the_tagged_kind_survives() {
+        let ext = ExtensionNode {
+            type_id: "x".to_string(),
+            schema_version: 1,
+            payload: serde_json::json!({"max": f64::MAX, "tiny": 5e-324, "neg": -0.0}),
+        };
+        let n = Node::new(base(1), NodeKind::Extension(ext));
+        let json = node_json(&n);
+        assert!(
+            json.contains(r#""payload":{"max":1.7976931348623157e+308,"neg":-0.0,"tiny":5e-324}"#)
+        );
+        let back: Node = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, n);
+        let NodeKind::Extension(e) = &back.kind else {
+            panic!("not an extension")
+        };
+        assert_eq!(
+            e.payload["max"].as_f64().unwrap().to_bits(),
+            f64::MAX.to_bits()
+        );
+        assert_eq!(
+            e.payload["tiny"].as_f64().unwrap().to_bits(),
+            5e-324f64.to_bits()
+        );
+        assert!(e.payload["neg"].as_f64().unwrap().is_sign_negative());
     }
 }

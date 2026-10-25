@@ -4,18 +4,22 @@ use std::sync::Arc;
 
 #[cfg(test)]
 use crate::IdSpaceExhausted;
+use serde::{Deserialize, Serialize};
+
+use crate::json::DocumentWire;
 use crate::{Dpi, Page, PageId};
 
 /// A whole document: a version, one id counter, a DPI and ordered pages.
 ///
 /// Fields are private; pages are shared by `Arc` so cloning copies no page
 /// or node. Reading never hands out `&mut` access.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(from = "DocumentWire")]
 pub struct Document {
-    schema_version: u32,
-    next_id: u64,
-    dpi: Dpi,
-    pages: Vec<Arc<Page>>,
+    pub(crate) schema_version: u32,
+    pub(crate) next_id: u64,
+    pub(crate) dpi: Dpi,
+    pub(crate) pages: Vec<Arc<Page>>,
 }
 
 impl Document {
@@ -169,5 +173,16 @@ mod tests {
         for (id, n) in &first.nodes {
             assert!(Arc::ptr_eq(n, &first_clone.nodes[id]));
         }
+    }
+
+    #[test]
+    fn equality_compares_dpi_and_page_contents_not_pointers() {
+        let a = test_document(3, Dpi::new(96), vec![page(1, &[2])]);
+        let rebuilt = test_document(3, Dpi::new(96), vec![page(1, &[2])]);
+        assert!(!Arc::ptr_eq(&a.pages()[0], &rebuilt.pages()[0]));
+        assert_eq!(a, rebuilt);
+        assert_ne!(a, test_document(3, Dpi::new(300), vec![page(1, &[2])]));
+        assert_ne!(a, test_document(3, Dpi::new(96), vec![page(1, &[4])]));
+        assert_ne!(a, test_document(4, Dpi::new(96), vec![page(1, &[2])]));
     }
 }
