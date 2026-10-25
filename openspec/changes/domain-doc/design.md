@@ -463,9 +463,9 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 
 **Guards** (`TestRunner::deterministic()`, 20 000 draws, copied from geom): they prove that the generators reach `-0.0`, subnormals, px exactly 1.0 and 16 384.0, opacity 0.0/1.0/−0.0, depth ≥ 3, an extension node, a group with children, several pages, an empty page, and every corruption variant. Without them the bit-identity and coverage claims would be vacuous. Every bit identity is compared with `to_bits()` and never with `==`.
 
-**Property mutations** (applied one by one and reverted): serialize the arena in reverse output order (a `BTreeMap` has no insertion order to mutate; Q1 must fail on a shuffled build); drop `float_roundtrip` from the workspace `serde_json` (Q1 must fail); remove the cycle pass (Q3); count parents per page instead of per arena (Q3); clamp opacity on read (Q1 on bits or Q3). An undetected mutation is recorded with the reason, as in C2a.
+**Property mutations** (hand mutations applied one by one and reverted, plus `cargo-mutants` on the diff as `AGENTS.md` "Testing and mutation policy" defines; the D6b diff touches only `tests/`, so `cargo-mutants` finds no mutants): drop `float_roundtrip` from the workspace `serde_json` (Q1 must fail); remove the cycle pass (Q3); clamp opacity on read (Q3 wire clause). Two planned mutations are recorded as not detected by the properties, with the reason: serializing the arena in reverse output order keeps Q1 green, because a reload sorts the nodes and the second save reverses them again, so the bytes are stable (the unit tests on the ascending array catch it); counting parents across pages instead of per page changes nothing observable, because P2 rejects the only input that can tell them apart (an id used on two pages) before P5 runs.
 
-**Runtime**: D6b records the wall time of `cargo test -p gafira-doc --test properties` on each CI runner. If it exceeds 60 s on the slowest runner, reduce the bounds (nodes, payload depth), never the 10 000 cases of Q1.
+**Runtime**: D6b records the wall time of `cargo test -p gafira-doc --test properties` (locally in D6b; on each CI runner after the first push, in the PR). If it exceeds 60 s on the slowest runner, reduce the bounds (nodes, payload depth), never the 10 000 cases of Q1.
 
 ## Verification Plan
 
