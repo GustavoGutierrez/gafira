@@ -712,3 +712,110 @@ None.
 ### Result
 
 PASS. 0 CRITICAL, 2 WARNING, 1 SUGGESTION. D6 is done; `next`: tdd-apply for the next delivery of `edit-history` (archive only after all deliveries pass).
+
+## D8: `InsertNodes` and `RemoveNodes`
+
+Branch `feat/edit-history-8`, base `main` 1518560, HEAD a9c8ce2. Verdict: **FAIL** (1 CRITICAL).
+
+### Gates
+
+| Check | 1cdee73 | 593d8d0 | fde5be4 | HEAD (covers ba2d261) |
+|---|---|---|---|---|
+| `cargo fmt --check` | ok | ok | ok | ok |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ok | ok | ok | ok |
+| `cargo test --workspace --locked` | 384 passed, 0 failed | 396, 0 | 405, 0 | 407, 0 (gafira-edit: 58 lib, 21 `node_commands`, 4 `prop_commands`) |
+| CI policy steps from `ci.yml`, run as written: ARQ-07, forbid unsafe (V11), V5, V12, V13 | | | | rc 0 each |
+| `cargo deny check` | | | | advisories, bans, licenses, sources ok |
+
+The intermediate commits were checked on `git archive` exports. Note on method: a first run shared one target dir across the exports and failed with `unresolved import InsertNodes`. `git archive` sets file mtimes to the commit time, so cargo took the older sources as fresh. A rerun with one target dir per export passed, as the table shows. This was a verifier artifact, not a defect in the commits.
+
+Commits: `feat(doc)`, `feat(edit)` x2, `test(edit)`, `docs(edit-history)`. The types fit the content. No AI attribution or Co-Authored-By lines.
+
+### Size
+
+`git diff --shortstat main..HEAD -- crates` gives 1037 insertions and 2 deletions. That is about 1.5 times the ~700 split line and the ~675 forecast. Per commit: 33 + 526 + 382 + 97 (about 550 of them are tests). Each commit prefix passes the gates on its own (table above), so the owner can cut the delivery into stacked PRs at a commit boundary:
+
+- PR 1: commits 1-2 (`restore_next_id` + `InsertNodes`), ~560 lines;
+- PR 2: commits 3-4 (`RemoveNodes` + the two properties), ~480 lines.
+
+The owner decides whether to split or to accept one PR (WARNING 1).
+
+### Requirement and scenario coverage (D8)
+
+| Rule / scenario | Evidence | State |
+|---|---|---|
+| Insert then redo reuses ids (10, 11, 12; redo equals the first result) | `insert_then_redo_reuses_ids`; law 2 in `insert_nodes_obeys_the_command_laws` | covered |
+| Remove a subtree and restore order (`[a, g, b]`, remove `g` and `d`) | `remove_a_subtree_and_restore_the_order`, `siblings_return_to_their_exact_positions`, `positions_follow_the_list_not_the_id_order` | covered |
+| Index out of range (len 2, index 3) and `0..=len` | `an_index_above_the_length_is_refused` (pointer-equal), `the_end_of_the_list_is_a_valid_index` | covered |
+| Insert under a shape fails cleanly | `a_shape_cannot_be_a_parent` (`NotAContainer`, value and `Arc::ptr_eq`) | covered |
+| A node plus its descendant equals the ancestor alone | `listing_a_node_and_its_descendant_is_listing_the_ancestor` (both orders, duplicates; result and `touches`) | covered |
+| Exhausted id space, no change | `an_exhausted_id_space_changes_nothing` (2 ids at `MAX - 1` refused, 1 accepted) | covered |
+| Missing id, page or parent fails with no change | `a_missing_node_page_or_list_is_refused`, `a_missing_page_or_parent_is_refused` | covered |
+| `touches` lists nodes, not pages, for nested edits; the page only for root edits | `insert_into_a_group_keeps_sibling_order_and_touches_the_parent`, `insert_as_a_root_touches_the_page_and_the_new_nodes`, `removal_touches_the_parent_and_the_removed_nodes`; law 4 in both properties | covered |
+| Laws 1-5 over the testkit harness, 1 000 cases by default | `insert_nodes_obeys_the_command_laws`, `remove_nodes_obeys_the_command_laws` (law 6 does not apply: no `merge_key`) | covered |
+| D1 W4: reusable after a failed apply | `a_command_is_reusable_after_a_failed_apply`, `a_remove_command_is_reusable_after_a_failed_apply` (each compared with a fresh twin) | covered |
+| Counter restored, never raised (`restore_next_id`) | `restore_next_id_lowers_the_counter_to_a_recorded_value`, `restore_next_id_never_raises_the_counter` (above and equal values) | covered |
+| A command that allocated records the counter and `revert` restores it | `insert_then_redo_reuses_ids` (`doc == original` after revert), `a_failed_transaction_gives_the_ids_back`; hand mutant H4 | covered |
+| **`edit-history` "Ids after undo (D8, Q6)", scenario "Reissued id after undo (D8, unit)"**: through `History`, InsertNodes uses 10, undo, another InsertNodes receives 10 and `validate()` passes | No test. `apply-progress.md` maps "Q6" to `a_failed_transaction_gives_the_ids_back`. That test is a `Transaction` rollback with no `History`, no undo and no second command. A probe in the verifier's export (not committed) passes on the current code | **missing** (CRITICAL 1) |
+| `revert` without an apply | `reverting_a_command_that_never_applied_fails`, `reverting_a_remove_that_never_applied_fails` | covered |
+| V13 not affected by `restore_next_id` | V13 rc 0. The step does not list `DocMut` methods, and `ci.yml` is unchanged | covered |
+
+### Recorded deviations, judged
+
+1. **`apply` always allocates from the counter and records the ids** (spec: allocate on first apply, reuse on a later apply). Accepted. After a `revert` the counter is back at the recorded value, so a redo gets the same ids (law 2 and `insert_then_redo_reuses_ids` prove it). Applying again on a document whose counter moved yields fresh ids. Literal reuse in that case could collide with ids issued since, so the deviation is safer than the letter. `History` never re-applies on redo. Pending spec edit: reword to "a redo after `revert` produces the same ids".
+2. **New nodes are validated on a scratch one-page document before the real one is touched.** Accepted. `ValidationError` has no tree-depth or node-count limit. Every per-node rule (finite values, ranges, extension depth, children on a leaf) holds for the new nodes alone. The new ids are `>= next_id`, so they cannot duplicate existing ids, and the scratch `next_id` is above them. Hand mutant H5 (validate after allocation) is killed.
+3. **`RemoveNodes` scans the whole page once for parents and indices (O(page nodes)).** Accepted for now. ARQ-32 bounds the cost of undo and redo, which install snapshots, not the cost of `apply`. Worth revisiting with the ARQ-40 benchmark (SUGGESTION 2).
+4. **No `merge_key`** (default `None`). Correct: the spec gives merging only to `SetProperty`.
+5. **An empty node list gives `InvalidValue`**, as `SetProperty` does. Accepted ("one or more").
+
+### Strict TDD
+
+- `restore_next_id`: RED against a no-op stub (`left: 3, right: 1`), and the "never raises" test catches `next_id = value`. Acceptable.
+- Unit tests were written against stubs: 12 of 12 insert tests and 6 of 7 remove tests failed on assertions. The remaining one passed vacuously on the stub. That is most likely the descendant test, because an unchanged document equals an unchanged document. Its rule is still guarded: H2 (no dedupe) is killed by `remove_a_subtree_and_restore_the_order` and by the property. Acceptable.
+- Both properties passed on the first run against finished code. Their RED comes from mutants (no counter restore -> law 1; no parent or page in `touches` -> law 4; no dedupe or no sort -> law 1). H1, H2, H4 and H5 below confirm that the properties kill rule-order mutants too. This is the same accepted pattern as D4 and D6.
+- One commit was first made while clippy was red, because the pipeline hid the exit code. It was amended before anything was built on it, and every commit is green now (table above).
+
+### Mutation
+
+`cargo-mutants` 27.1.0 on the D8 diff (`scratchpad/md8/out/mutants.out`, read only): 49 mutants, **34 caught, 0 missed, 0 timeout**, 15 unviable. The unviable ones are mostly `Default` returns for types without `Default`. One unviable mutant matters: `remove_nodes.rs:146 && -> ||` sits in the missing-parent check of `RemoveNodes::revert`, so cargo-mutants never tested that check (see H3).
+
+Hand mutants were applied one at a time to a `git archive` export of HEAD with its own target dir, using `cargo test -p gafira-edit --locked --no-fail-fast`. Each file was restored afterwards and checked with `cmp`:
+
+| # | Mutation (rule order / validation before mutation / counter) | Result |
+|---|---|---|
+| H1 | delete `places.sort_by_key(\|p\| (p.parent, p.index))` (revert inserts in id order) | KILLED by `positions_follow_the_list_not_the_id_order` and `remove_nodes_obeys_the_command_laws` |
+| H2 | no descendant dedupe (`filter(\|_\| true)`) | KILLED by `remove_a_subtree_and_restore_the_order` and `remove_nodes_obeys_the_command_laws` |
+| H3 | `RemoveNodes::revert` skips the missing-parent pre-check | **SURVIVED**. Without the check, a revert whose parent group was removed meanwhile puts the nodes back into the arena and only then fails on `node_mut(parent)`, leaving orphans behind an `Err` |
+| H4 | `InsertNodes::revert` does not call `restore_next_id` | KILLED by `insert_then_redo_reuses_ids`, `a_failed_transaction_gives_the_ids_back`, `insert_into_a_group_...`, `insert_nodes_obeys_the_command_laws` |
+| H5 | `validate_new` moved after the id allocation (mutation before validation) | KILLED by `bad_specs_are_refused_without_a_change`, `an_exhausted_id_space_changes_nothing`, `insert_nodes_obeys_the_command_laws` |
+| H6 | `RemoveNodes::revert` skips the "a removed node is already back" pre-check | **SURVIVED**. Without it, revert overwrites the arena entry and inserts a duplicate root or child, then returns `Ok` with an invalid document |
+
+H3 and H6 are pre-checks in `revert`, a path that `History` never takes (it installs snapshots), and the spec states no revert-atomicity rule for these commands. That matches the D3 W2 precedent, so they are WARNINGs, not CRITICALs. `InsertNodes::revert`'s equivalent checks are killed by cargo-mutants (`delete !` at lines 228 and 234).
+
+### CRITICAL
+
+1. **Scenario "Reissued id after undo (D8, unit)" (`specs/edit-history/spec.md`, "Ids after undo (D8, Q6)") has no test.** This is a D8 scenario about id allocation, which is critical code under AGENTS.md ("ids and arena"). `apply-progress.md` cites `a_failed_transaction_gives_the_ids_back` as evidence, but that test exercises no `History`, no undo and no second command. The behavior does hold: a probe passed on HEAD in the verifier's scratch export (`History::new` on `next_id = 10`, execute InsertNodes -> roots `[10]`, `undo`, execute a second InsertNodes -> roots `[10]`, `validate()` Ok). Fix (test only, about 15 lines, for example in `tests/node_commands.rs` or `tests/history.rs`): add exactly that test, then fix the Q6 row in `apply-progress.md`.
+
+### WARNING
+
+1. **Size: 1037 insertions against the ~700 split line** (forecast ~675). The owner decides: split into PR 1 = commits 1-2 (~560) and PR 2 = commits 3-4 (~480), both verified green on their own, or accept one PR.
+2. **H3: the missing-parent pre-check in `RemoveNodes::revert` is unpinned, and cargo-mutants could not express it (unviable).** Add a test: remove `c` (child of `g`), then remove `g` with a separate command, then revert the first one. Expect `Err(MissingNode(g))` and a document equal to before.
+3. **H6: the "already back" pre-check in `RemoveNodes::revert` is unpinned.** Add a test: apply a remove, re-insert the same subtree (or apply the same remove's `revert` twice), then revert again. Expect `Err` and no change.
+4. **Pending spec edits** (add to the "Pending spec edits" list before archive):
+   - `edit-commands` "InsertNodes and RemoveNodes": "on a later apply (redo after revert) it MUST reuse the same ids" should read as an outcome: a redo after `revert` produces the same ids. Allocation on every apply is the implementation (deviation 1).
+   - The main `edit-capability` "Id allocation" clarification stays in this delta. Archive must merge it there.
+
+### SUGGESTION
+
+1. `InsertNodes::revert` lowers the counter unconditionally. If a caller reverted it out of LIFO order (after a later command had allocated more ids), the counter would drop below live ids, and the next allocation would collide (`NextIdNotAboveMax` on validate). `History` and `Transaction` always revert in LIFO order, so this cannot happen today. A cheap guard is to restore only when `next_id == counter + ids.len()`.
+2. `RemoveNodes::apply` builds a parent map of the whole page on every call. If ARQ-40 shows this on large pages, walking only the listed nodes' parents is enough.
+3. No test reads `label()` for either command (the cargo-mutants label mutants are unviable). This is non-critical (an accessor). Only add a test if a spec fixes the keys.
+
+### Other checks
+
+- No `#[allow]`, `unsafe`, clock reads, `HashMap`/`HashSet` or threads in the diff. Comments and identifiers are in English. `restore_next_id` has a doc comment that states the "never raises" rule.
+- `insert_nodes.rs` `build` uses checked arithmetic and `id < u64::MAX`, which matches `alloc_id` (it fails at `u64::MAX`). The allocation loop therefore cannot fail halfway after the pre-check.
+
+### Result
+
+FAIL. 1 CRITICAL, 4 WARNING, 3 SUGGESTION. `next`: tdd-apply (D8 fix round: CRITICAL 1, plus WARNING 2 and 3 if cheap; the owner decides WARNING 1), then re-verify D8.

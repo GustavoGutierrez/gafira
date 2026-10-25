@@ -322,7 +322,8 @@ Size (`git diff --shortstat main..HEAD -- crates`): 1037 insertions, 2 deletions
 | Node plus descendant equals the ancestor | `listing_a_node_and_its_descendant_is_listing_the_ancestor` |
 | Exhausted id space | `an_exhausted_id_space_changes_nothing` |
 | D1 W4 (reuse after a failed apply) | `a_command_is_reusable_after_a_failed_apply`, `a_remove_command_is_reusable_after_a_failed_apply` |
-| Q6 / counter restore in a rollback | `a_failed_transaction_gives_the_ids_back` |
+| Reissued id after undo (Q6, through a real `History`) | `an_id_is_reissued_after_an_undo` |
+| Counter restored in a rollback | `a_failed_transaction_gives_the_ids_back` |
 | Laws 1 to 5 | `insert_nodes_obeys_the_command_laws`, `remove_nodes_obeys_the_command_laws` |
 
 ### RED evidence
@@ -341,3 +342,13 @@ Size (`git diff --shortstat main..HEAD -- crates`): 1037 insertions, 2 deletions
 - `RemoveNodes` keeps the removed `Arc<Node>`s, so revert restores the identical nodes; it scans the page once for parents and indices (O(page nodes), not O(touched)).
 - Neither command has a `merge_key` (spec: only `SetProperty` merges).
 - Law 4: root inserts and removals list the page; inserts and removals inside a group list the parent node and not the page.
+
+### D8 fix round (verify FAIL: C1, W2, W3, W4), test first
+
+- C1: `an_id_is_reissued_after_an_undo` (real `History`: InsertNodes takes id 10, undo, a second InsertNodes takes 10 again, `validate()` passes). The behavior already held, so RED is by mutant: with `undo` not installing the `before` snapshot (temporary, reverted) it fails with `left: 11, right: 10`. The Q6 evidence row above was wrong (a `Transaction` rollback test) and is corrected.
+- W2/H3: `a_revert_whose_parent_is_gone_fails_and_changes_nothing` fails with the missing-parent check removed.
+- W3/H6: `a_revert_of_nodes_that_are_already_back_fails_and_changes_nothing` fails with the "already back" check removed.
+- W4 (pending spec edits, for the coordinator before archive):
+  1. `edit-commands` "InsertNodes and RemoveNodes": reword "on a later apply (redo after revert) it MUST reuse the same ids" as "a redo after `revert` produces the same ids".
+  2. Archive carries the "Restoring the id counter" clarification of "ids never reused" into the main `edit-capability` "Id allocation" requirement.
+- Not done: SUGGESTION 1 (guard `restore_next_id` in `InsertNodes::revert` against non-LIFO reverts) and the size decision (WARNING 1).
