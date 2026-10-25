@@ -126,8 +126,8 @@ Size (`git diff --shortstat e1e4963..HEAD -- crates .github`): 526 insertions, 1
 
 | Commit | Content |
 |---|---|
-| feat(edit): add SetProperty for node and shape fields | `Property`, `SetProperty`, 14 unit tests |
-| test(edit): run the command laws over SetProperty | `gafira-testkit` dev-dependency, `tests/prop_commands.rs` (2 properties, 1 000 cases each) |
+| feat(edit): add SetProperty for node and shape fields | `Property`, `SetProperty`, 15 unit tests (344 tests in the workspace) |
+| test(edit): run the command laws over SetProperty | `gafira-testkit` dev-dependency, `tests/prop_commands.rs` (2 properties, 1 000 cases each); 346 tests in the workspace |
 | docs(edit-history): record D3 progress | this section |
 
 Each commit: fmt, clippy `-D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (ARQ-07, forbid unsafe, V5, V12, V13) all rc 0. V5 needed no change: it reads `-e normal,build`, so the dev-dependency is not seen.
@@ -162,3 +162,18 @@ The command was drafted before the tests, so the first test run was green. RED w
 - Law 4 only checks that listed items exist, so over-listing (the page in `touches`) is not caught by the harness; the unit test asserts `touches.pages` is empty.
 - `Property::Name` carries `Option<String>` (the node field is optional). No `Display` or accessor tests.
 - `Cargo.lock` gains the `gafira-testkit` edge under `gafira-edit`.
+
+### D3 fix round (verify FAIL: C1, W2, suggestions), test first
+
+RED evidence (tests written first, run against the defect):
+
+- C1: `it_is_unchanged_only_when_every_target_holds_the_value` (A already hidden, set `visible = false` on `[A, B]` and `[B, A]`: Changed, both hidden, revert restores). Fails against H3 (`all` to `any`) and H5 (first target only); both demonstrated.
+- W2: `reverting_with_any_target_missing_fails_and_changes_nothing` (removes A, then B). Fails with the `revert` existence pre-check deleted (A missing leaves B written).
+- S1: `an_empty_target_list_is_refused` was RED on the old code (empty list returned `Unchanged`); now `InvalidValue`, matching "one or more nodes". The wide property strategy draws 1 to 2 targets; the `drag` fallback for a document without nodes now returns `Err` (law 5), which is still sound.
+- S4: the merge-refusal test now checks the returned box is the same box (`addr_eq`).
+
+Totals after the fix: 348 tests in the workspace (D2 S2 closed for D3).
+
+### Note for D4
+
+A merged drag that ends where it started (a to b to a) has `value == previous`; applying it again (redo) returns `Unchanged`. `History` must decide whether such an entry is dropped or kept (Q14).
