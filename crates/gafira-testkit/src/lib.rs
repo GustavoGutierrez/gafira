@@ -6,6 +6,10 @@
 
 #![forbid(unsafe_code)]
 
+mod harness;
+
+pub use harness::{LawViolation, prop_command, try_prop_command};
+
 use std::sync::Arc;
 
 use gafira_color::{Color, DisplayP3Rgba, LinearRgba, Rgba};
