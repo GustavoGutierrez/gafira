@@ -315,10 +315,10 @@ fn a_payload_of_64_levels_saves_and_reopens_and_65_is_refused() {
         load(&v)
     };
     let ok = with_depth(64).unwrap();
-    assert_eq!(
-        Document::from_json(ok.to_json().unwrap().as_bytes()).unwrap(),
-        ok
-    );
+    let saved = ok.to_json().unwrap();
+    let reopened = Document::from_json(saved.as_bytes()).unwrap();
+    assert_eq!(reopened, ok);
+    assert_eq!(reopened.to_json().unwrap(), saved);
     assert!(matches!(
         with_depth(65),
         Err(LoadError::Invalid(ValidationError::ExtensionTooDeep {
@@ -348,8 +348,6 @@ fn well_formed_documents_that_break_a_rule_are_invalid_not_json() {
         (r#""dpi":300"#, r#""dpi":10001"#),
         (r#""schema_version":1"#, r#""schema_version":0"#),
         (r#""opacity":0.5"#, r#""opacity":1.5"#),
-        (r#""id":10,"#, r#""id":1,"#),
-        (r#""id":5,"#, r#""id":10,"#),
     ];
     for (from, to) in rows {
         let text = FULL.replacen(from, to, 1);
@@ -364,4 +362,31 @@ fn well_formed_documents_that_break_a_rule_are_invalid_not_json() {
     }
     let space = FULL.replacen(r#""space":"srgb""#, r#""space":"lab""#, 1);
     assert!(is_json_error(space.as_bytes()));
+}
+
+#[test]
+fn duplicate_ids_are_invalid_on_load() {
+    let mut shared_node = full();
+    let node = shared_node.pointer("/pages/0/nodes/3").unwrap().clone();
+    shared_node
+        .pointer_mut("/pages/1/nodes")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .push(node);
+    let rows = [
+        (FULL.replacen(r#""id":10,"#, r#""id":1,"#, 1), 1),
+        (FULL.replacen(r#""id":5,"#, r#""id":10,"#, 1), 10),
+        (shared_node.to_string(), 5),
+    ];
+    for (i, (text, id)) in rows.iter().enumerate() {
+        assert_ne!(text, FULL, "row {i}");
+        assert!(
+            matches!(
+                Document::from_json(text.as_bytes()),
+                Err(LoadError::Invalid(ValidationError::DuplicateId { id: got })) if got == *id
+            ),
+            "row {i}"
+        );
+    }
 }
