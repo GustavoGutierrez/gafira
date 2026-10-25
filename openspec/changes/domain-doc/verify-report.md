@@ -1148,3 +1148,72 @@ Doctest check (ED3: stable rustdoc does not check the error code, so the doctest
 - Mutants: 65 of 68 killed, 1 equivalent (F01), 2 in-scope survivors (V38, V39).
 - Production code is unchanged apart from doc comments. The specs match the owner-approved plan.
 - Next: **tdd-apply D4a**, one test commit with the two rows from CRITICAL 1. Then re-verify D4a. The owner decides the split (WARNING 1) before the PR.
+
+## D4a third verify
+
+Range `feat/domain-doc-3b..feat/domain-doc-4a` after the rebase onto `chore/lite-sdd-methodology` (README plus one `AGENTS.md` line; code trees unchanged). New commits: `876bc6f test(doc): pin duplicate id before arena key and dangling before repeated root`, `c592f63 docs(sdd): record the D4a second verify fix and mirror the check-major rule`. The rebase changed every SHA, so every commit in the range was gated again.
+
+### Gates
+
+Each commit was extracted alone (`git archive`) with its own `CARGO_TARGET_DIR`. Steps: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, plus ARQ-07, V11 (forbid unsafe), V5 and V12 run from that commit's own `ci.yml`. All 8 steps returned rc=0 on every commit; no test failed.
+
+| # | Commit | Tests passed |
+|---|---|---|
+| 1 | `453cebb` docs(sdd): re-cut D4 and D6 | 252 |
+| 2 | `ab1e753` feat(doc): add ValidationError | 255 |
+| 3 | `3e2911f` feat(doc): validate header, ids and pages | 260 |
+| 4 | `b1e0813` test(doc): parse-side depth limits | 262 |
+| 5 | `30ba40a` docs(sdd): D4a progress | 262 |
+| 6 | `9fbe53e` test(doc): page naming, pass order, empty document | 263 |
+| 7 | `07cd4b4` test(doc): non_exhaustive compile_fail doctest | 264 |
+| 8 | `2f29db7` docs(sdd): restore order rows, tag D6b | 264 |
+| 9 | `876bc6f` test(doc): duplicate before key, dangling before repeated | 264 (2 new rows in the existing `earlier_rules_win` table) |
+| 10 | `c592f63` docs(sdd): second verify fix | 264 |
+
+`cargo deny check`: advisories ok, bans ok, licenses ok, sources ok on every commit.
+
+### Mutants
+
+All 68 mutants (the original 61 plus V34-V40) ran on HEAD: 67 killed, 1 survived. The survivor is F01 (`unbounded_depth`), which is equivalent. No pattern was missing.
+- V38 (repeated-root loop before dangling-root loop) and V39 (arena-key loop before duplicate-id check) now fail `validate::tests::earlier_rules_win`. Both were killed by a failing test, not a build error.
+- V34, V36 and V40 fail `id_rows`. V35 and V37 fail `earlier_rules_win`.
+- E01 fails the `compile_fail` doctest. E02 (derive `Eq`) is killed by a build error, as in the earlier verifies.
+
+### Docs and code
+
+- `876bc6f` changes only `validate.rs` lines 155 and 382-394, both inside `mod tests` (which starts at `validate.rs:93`). Production code (`validate.rs:1-91`) is unchanged.
+- `design.md:300` states the check-major rule (all duplicate ids, then key mismatches, then `next_id`; all page sizes, then dangling roots, then repeated roots; only P4 node by node). This matches `spec.md:47`, `apply-progress.md:300` and the code order at `validate.rs:43-87`.
+- `spec.md:69`: "Ascending node order within a pass" is tagged `(D4b, unit)`.
+- `apply-progress.md:340-351` lists V38 and V39 with the correct killing rows and reports size 765. Both match this run.
+- All three suggestions from the second verify are done, including the `rekey` comment at `validate.rs:155`.
+
+### Size and split
+
+- Code only, `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'`: 5 files changed, 765 insertions(+), 1 deletion(-). This matches `apply-progress.md:351`.
+- Split after `feat(doc): add ValidationError`:
+  - PR A is `453cebb..ab1e753`: 312 code lines added, 1 deleted (`error.rs` 300, `lib.rs` 6, `node.rs` 7). Including openspec it is 9 files, +410/-87.
+  - PR B is `ab1e753..HEAD`: 453 code lines added, 0 deleted (`validate.rs` 405, `serde.rs` 30, `error.rs` 17, `lib.rs` 1). Including openspec it is 8 files, +816/-6.
+- Every prefix of both PRs (commits 1-10) is gate-green; see the table above.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Size 765 is over the ~700 guideline (`AGENTS.md:38`)** by about 9%. The split above is clean: A is 313 code lines, B is 453, and every prefix is green. Keeping one PR is still defensible because the overrun is test rows. The owner decides.
+2. **D5 fallback trigger (`design.md:367`).** D4a alone measures 765 against a forecast of ~507, a ratio of 1.51. That is already above x1.5 before D4b, so the D4a plus D4b check will probably fire the D5a/D5b cut. Record the combined ratio after D4b.
+
+### SUGGESTION
+
+1. The "Commits" list in `apply-progress.md:264-273` stops at commit 8, and "Gates" (`apply-progress.md:310-312`) does not record runs for commits 6-10. Add commits 9 and 10 and the per-commit gate results from this verify.
+2. `apply-progress.md:351`, "Size: see the final report line from ...", reads awkwardly. Stating the number directly is enough.
+3. `design.md:300` puts a capitalized sentence after "order):". Folding it into the parenthetical, or starting a new sentence, would read better. This is cosmetic.
+
+### Result
+
+- Verdict: **PASS** for D4a (0 CRITICAL, 2 WARNING, 3 SUGGESTION).
+- Gates are green on all 10 commits of the range, including the two new ones.
+- Mutants: 67 of 68 killed, 1 equivalent (F01), 0 in-scope survivors.
+- Production code is unchanged apart from comments.
+- Next: the owner decides the split (WARNING 1) and opens the PR or PRs. Then **tdd-apply D4b**.
