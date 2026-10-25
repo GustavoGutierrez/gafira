@@ -290,6 +290,46 @@ Size (`git diff --shortstat main..HEAD -- crates`, before this file): 422 insert
 - W2 (M1): `an_undo_between_commands_stops_the_merge_into_older_entries` now uses one open gesture and commands 10 ms apart, so the window cannot hide the rule. With `undo` no longer clearing `mergeable` it fails (`len` 1 vs 2). The rule is kept; it is stricter than the spec and recorded as such.
 - W1 (pending spec edit, not code): `edit-history` "Gesture merge" should state that a key with a gesture merges only while that gesture is open (no time limit), that the 500 ms window applies only to keys without a gesture, and that an undo or redo ends the merge run.
 
+## D5: trybuild, ARQ-30 fixtures
+
+Base: `main` 1518560. Branch `feat/edit-history-5`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| test(edit): run an outside Command through History with trybuild (ARQ-30) | `trybuild = "1"` in `[workspace.dependencies]` (locked 1.0.122, 18 days old), dev-dependency of `gafira-edit`, `tests/ui.rs`, pass fixture `pass_outside_command.rs` (outside `Command`: execute, undo, redo) |
+| test(edit): prove with compile-fail fixtures that a Document cannot be mutated from outside (ARQ-30) | 8 compile-fail fixtures with `.stderr` |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check` (advisories, bans, licenses, sources ok), and the CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0).
+
+Size (`git diff --shortstat main..HEAD -- . ':!Cargo.lock' ':!openspec'`): 20 files, 204 insertions (forecast ~380). `Cargo.lock` adds 137 lines.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Fixtures 1 to 5 fail to compile with the recorded code | E0599 `fail_history_document_mut`; E0594 `fail_assign_through_history` (`**history.document() =`), `fail_assign_through_ref`; E0061 `fail_edit_without_token`; E0596 `fail_edit_on_shared_ref`, `fail_mut_page_from_shared_doc`, `fail_mut_node_from_shared_page`; E0616 `fail_write_private_field` |
+| Outside command takes the legitimate path | `pass_outside_command.rs` asserts the change, the undo and the redo |
+| Wrong error code fails | `fail_write_private_field.stderr` changed E0616 to E0599: `mismatch`, test FAILED; reverted, ok |
+| Deny passes unchanged | `cargo deny check` all ok; `git diff main -- deny.toml` empty |
+| Dev-only | `cargo tree -e normal,build -i trybuild --workspace` prints `warning: nothing to print.` |
+| Lock delta bounded | new names: equivalent glob hashbrown indexmap serde_spanned target-tuple termcolor toml toml_datetime toml_parser toml_writer trybuild winapi-util windows-link windows-sys winnow; all in the `cargo metadata` closure of `trybuild`; no `git+` source in the lock |
+| V13 E16, E17 | clean tree rc 0; untracked `tests/ui/scratch.rs` with `pub use gafira_doc::EditToken;`, a glob, and a multi-line group: rc 1 each with the re-export message; removed |
+
+### RED evidence
+
+- Pass fixture: first version asserted one page after undo; trybuild reported `Test case failed at runtime` (`left: 0, right: 1`); fixed to the real value.
+- Compile-fail: `fail_history_document_mut.rs` first read `history.document()` as `&Document`, which compiles: `Expected test case to fail to compile, but it succeeded.` Changed to `document_mut()`. `fail_assign_through_history.rs` first used `*history.document() =`, which gave E0308 (assigns the `Arc`), not the intended E0594; changed to `**`. With the other fixtures and no `.stderr` the test failed with `wip` for each (snapshots written, then accepted with `TRYBUILD=overwrite` and read by hand).
+
+### Deviations and notes
+
+- V13 needed no change: the D1 body already scans every `.rs` under `crates/gafira-edit`, fixtures included (E16, E17 verified above). No CI step for "trybuild is dev-only" (owner decision pending, spike R13); the check is the `cargo tree` command above.
+- R3 stays UNVERIFIED: `.stderr` equality on Windows and macOS needs a CI run, and nothing was pushed. The Linux-only fallback (`#[cfg(target_os = "linux")]`) is not applied; if CI shows a mismatch, add it and say so in the verify report.
+- `fail_edit_without_token.stderr` quotes the `Document::edit` signature of `gafira-doc` (`$WORKSPACE/crates/gafira-doc/src/edit.rs`); a change of that line needs `TRYBUILD=overwrite`.
+- Fixture 1 shows "no such method" (`document_mut`); the `&Arc<Document>` side is `fail_assign_through_history`.
+- The shared scratchpad was overwritten by a sibling delivery's `gates.sh` once; D5 scripts live in a `d5/` subdirectory.
+
 ## D7: memory budget and compaction
 
 Base: `main` 1518560. Branch `feat/edit-history-7`.
