@@ -465,3 +465,108 @@ None.
 2. At archive, add one sentence to the `SetProperty` requirement: an empty target list fails with `InvalidValue` and changes nothing.
 3. The `drag` doc comment ("law 6 runs on almost every case") does not mention that a document without nodes now gives an all-`Err` run. A one-line note would help.
 4. D2 S3 (the brittle `it_runs_a_thousand_cases_by_default` bound) is unchanged.
+
+## D4: `History` (execute, preview, undo, redo)
+
+Branch `feat/edit-history-4`, base `main` b70a4a5, HEAD e2c06f1 (commits 9e39e5d, 7aec6b6, a76a699, e2c06f1). Verified on 2026-10-25. Gates ran in the main checkout. Per-commit runs, the release run and the hand mutations ran on `git archive` exports in the session scratchpad (`scratchpad/vd4`, one target dir per export). The source was not edited, and `git status` is clean apart from this report.
+
+**Delivery verdict: PASS** (0 CRITICAL, 4 WARNING, 4 SUGGESTION). **Change verdict: not final** (D5 to D10 remain). `next`: `tdd-apply` for the next delivery (D5, or the D6/D8 chain heads, all based on D4).
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 367 passed, 0 failed |
+| Each commit alone (fmt, clippy, test) | 9e39e5d: rc 0, 0, 350 passed. 7aec6b6: rc 0, 0, 366 passed. a76a699: rc 0, 0, 367 passed. e2c06f1 is docs only. The counts match `apply-progress.md` |
+| `cargo test -p gafira-edit --release --locked` | rc 0; 44 unit tests (the `debug_assertions`-gated should_panic test is compiled out, as intended) |
+| `cargo deny check` | advisories, bans, licenses and sources ok |
+| `ci.yml` policy steps ARQ-07, forbid unsafe, V5, V12, V13 (HEAD's `ci.yml`, `bash --noprofile --norc -eo pipefail`) | all rc 0. `ci.yml` is unchanged by D4 |
+
+Size: `git diff --shortstat main..HEAD -- crates` gives 674 insertions and 12 deletions (`history.rs` 486, of which about 150 production lines and the rest the `#[cfg(test)]` module; `transaction.rs` +97/-12; `tests/history.rs` 78; `error.rs` 11; `lib.rs` 2). With `apply-progress.md` the total is 734. Under the ~700 guide for code. Accepted.
+
+Commits: conventional subjects whose types match the content (`fix` for the `Transaction` rollback behaviour change, `feat` for `History`, `test` for the property, `docs` for progress), author Gustavo Gutierrez, 0 matches for `Co-Authored-By`, Claude, Anthropic, "generated" or AI. No `proptest-regressions` files.
+
+### Requirement and scenario coverage (D4)
+
+| Requirement / scenario | Status | Evidence |
+|---|---|---|
+| History owns the session document (ARQ-30, Q2) | covered | `History { doc: Arc<Document>, .. }`, `document() -> &Arc<Document>`. The public API of `gafira-edit` (all `pub fn`/`pub use` grepped) returns no `&mut Document`, `DocMut` or `EditToken` |
+| Readers share the snapshot | covered | `readers_keep_their_snapshot_when_a_command_runs` (old `Arc` keeps dpi 96, not pointer-equal). See S2 |
+| Send and Sync | covered | `a_history_is_send_and_sync` |
+| Atomic execute, copy via `Arc::make_mut` on a clone, private token | covered | `apply_to_copy` (`history.rs:127-140`) |
+| Failure leaves the Arc untouched | covered | `a_failed_command_leaves_the_session_untouched_and_usable` (the probe touches the copy before failing, so a leak would show; also proves the history stays usable) |
+| New change clears redo | covered | `a_new_change_clears_redo`; hand mutant M1 |
+| Unchanged is not recorded, redo kept (Q14) | covered | `an_unchanged_command_is_not_recorded` (len, pointer-equal) + `unchanged_and_failed_commands_keep_redo` (after an undo); hand mutant M2 |
+| Buggy command trips the assert in debug | covered | `a_command_that_breaks_the_document_trips_the_debug_assert` (`#[cfg(debug_assertions)]`, orphan node, `should_panic(expected = "left the document invalid")`) |
+| `debug_assert` after undo and redo | covered by code, untestable | `debug_check` (`history.rs:143-149`). It cannot fire: every installed snapshot was validated by `new` or `apply_to_copy`. Equivalent mutant, see W3 |
+| `History` reads no clock (Q3) | covered | `at` is a parameter; no `Instant`/`SystemTime` in the diff; the domain clippy ban holds |
+| Undo restores the exact Arc | covered | `undo_restores_the_exact_snapshot`, `redo_reinstalls_the_exact_state_the_command_produced`, `entries_undo_newest_first_and_redo_oldest_first`; hand mutant M3 |
+| Undo calls no command method | covered | `undo_and_redo_call_no_command_method` (1 000 rounds, counts `(1, 0)`) |
+| Cost does not grow with the document (property) | covered | `tests/history.rs::undo_and_redo_install_the_recorded_snapshots_whatever_the_size` (testkit `document()`, from the default document up to the generator's maximum, 1 to 3 commands, pointer-equal at every step, no extra command call) |
+| Nothing to undo | covered | `with_nothing_to_undo_or_redo_both_return_none` |
+| `len` / `can_undo` / `can_redo` | covered | tuples asserted in the undo/redo tests; all accessor mutants caught |
+| Preview leaves the session alone | covered | `preview_returns_the_result_without_installing_it`, `a_failed_preview_returns_the_error` |
+
+Carry-overs:
+
+| Item | Status | Evidence |
+|---|---|---|
+| D1 W3: `Transaction::apply` swallowed rollback errors | closed for `apply` | `roll_back` tries every earlier revert, newest first, and returns `RollbackFailed { apply, revert }` with the first revert error; with clean reverts it still returns child *i*'s error. `a_failed_rollback_is_reported_after_trying_every_earlier_child`; hand mutants M4, M5. `Transaction::revert` still stops at the first error (see W2) |
+| D1 W4: reusability after a failed apply | closed for `Transaction` and `History` | `a_transaction_is_reusable_after_a_failed_apply` (fail-once child, then a clean apply and revert); `History` drops a failed command and keeps working. Still owed by D8, D9, D10 |
+| D3 note: a merged drag that ends where it started | decided: kept | Redo installs the stored `after` and never re-applies, so an `Unchanged` re-apply cannot lose the entry: `redo_does_not_depend_on_what_a_reapply_would_report`. The D7 consequence (treat `Unchanged` on a compacted redo as success) is recorded in `apply-progress.md`. Sound |
+
+### Recorded deviations, judged
+
+1. **`undo`/`redo` return `Result<Option<CommandLabel>, CommandError>`.** Accepted. The D7 requirement already says a compacted undo/redo "MUST ... return the error", so the D4 text ("return the entry's `CommandLabel` (or `None`)") cannot stand once D7 lands; fixing the signature now avoids churn in D5 to D7. Amend the D4 requirement text at archive (W1).
+2. **`History::new(doc) -> Result<Self, ValidationError>`.** Accepted. It is the most direct reading of "built from a validated document", and `it_refuses_an_invalid_document` pins it.
+3. **`_at` ignored.** Accepted. D4 has no merge; Q3 only forbids reading a clock. D6 must use it.
+4. **`is_empty` untested.** Accepted as a trivial accessor demanded by `clippy::len_without_is_empty`; two missed mutants (W3). See S3 for a one-line fix.
+
+### Strict TDD
+
+Judged as met. `apply-progress.md` gives concrete RED evidence per unit: the `Transaction` test failed against a variant-only stub with a quoted assertion (`left: InvalidValue("c")`, `right: RollbackFailed { .. }`); `History` execute tests failed against a stub (7 failures, quoted assertions, including the should_panic that did not panic and `new` accepting dpi 0); undo/redo failed against an `Ok(None)` stub (6 failures), and the one test that passed on the stub was strengthened until it failed. Two tests passed at once and say so honestly: the `Transaction` reuse test (a characterization of existing behaviour) and the ARQ-32 property (its RED is a mutant, `undo` installing a deep clone). Both are acceptable: neither drove new code. RED cannot be replayed from git because each test lands with its code in one commit, which is the accepted commit-per-work-unit rule.
+
+### Mutation
+
+`cargo-mutants` 27.1.0 on the D4 diff (`scratchpad/mutants-D4/mutants.out`, read only): 23 mutants, 13 caught, 4 missed, 0 timeout, 6 unviable. No coordinator-written summary existed; the numbers above are from the raw lists.
+
+| Missed mutant | Class | Disposition |
+|---|---|---|
+| `error.rs:43` `Display::fmt` -> `Ok(Default::default())` | non-critical (text not fixed by spec; D1 W1 precedent) | WARNING |
+| `history.rs:83` `is_empty` -> `true` / `false` | non-critical (trivial accessor) | WARNING |
+| `history.rs:144` `debug_check` -> `()` | equivalent (installed snapshots are always valid) | WARNING |
+
+`roll_back` produced only unviable mutants, so its rule order was hand-mutated. Hand mutations (5, on an export, all restored and diffed clean):
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | `redo.clear()` moved before the apply (clears on `Err` and `Unchanged`) | KILLED by `unchanged_and_failed_commands_keep_redo` |
+| M2 | copy installed before the `Changed` check | KILLED by `an_unchanged_command_is_not_recorded` |
+| M3 | `redo` takes the oldest undone entry (FIFO) | KILLED by `entries_undo_newest_first_and_redo_oldest_first` |
+| M4 | rollback reverts oldest first (no `.rev()`) | KILLED by `a_failed_rollback_is_reported_after_trying_every_earlier_child` and `a_failing_child_rolls_back_the_earlier_ones` |
+| M5 | rollback reports the last revert error instead of the first | KILLED by `a_failed_rollback_is_reported_after_trying_every_earlier_child` |
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Spec text lags two accepted deviations.** `edit-history` "Undo and redo by snapshot" still says undo/redo return `CommandLabel` or `None` (code: `Result<Option<_>, CommandError>`), and `edit-commands` "Transaction" says apply returns "the error of command *i*" with no case for a failing revert (code: `RollbackFailed`). Neither is under "Pending spec edits" in `apply-progress.md`. Add both before archive; the `CommandError` list in `edit-commands` line 34 should name "rollback failed" too.
+2. **`Transaction::revert` still stops at the first error** (the second half of D1 W3). The spec says revert all in reverse order. `History` never calls `revert` in D4, and D7 discards a failed copy, so there is no live damage, but D7 must decide whether a compacted `Transaction` undo should try every child, as `roll_back` now does.
+3. **Missed mutants** (non-critical or equivalent): `Display` text, `is_empty` x2, `debug_check`. Documented above; not a FAIL.
+4. **Open carry-overs:** D3 W3 (wide `set_property` strategy mostly errors) goes to D6; D1 W4 remainder to D8, D9, D10; D2 W1, W2', W5, W6 unchanged. D7 must implement the "after-state only while newest or next holds its snapshot" rule (D4 keeps `after` on every entry, which the D4 text allows).
+
+### SUGGESTION
+
+1. Every `Probe` returns the label `test.probe`, so the label assertions cannot tell which entry's label came back (a mutant returning the next entry's label would survive). Give the probe a label per instance in one test.
+2. "Readers share the snapshot" asks that `a` still equals the old state; the test checks only the DPI. Compare `*a` with a clone taken before `execute`.
+3. One `assert!(history.is_empty())` in `with_nothing_to_undo_or_redo_both_return_none` would close two missed mutants for free.
+4. Running `ci.yml`'s "Install toolchain" step locally triggers a `rustup` self-update. Harmless for the repo; future verify runs can skip that step and run only the policy bodies.
+
+### Other checks
+
+- Code rules: no `#[allow]`, `unsafe`, clock, `HashMap` or threads in the diff. Comments and identifiers in English. `CommandError` stays `#[non_exhaustive]`, so the new variant is not a breaking change.
+- The test-only token use (`EditToken::__new_for_gafira_edit_only`) stays inside `gafira-edit`; V13 passes.
