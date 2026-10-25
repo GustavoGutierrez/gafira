@@ -115,6 +115,13 @@ impl DocMut<'_> {
         self.doc.alloc_id().map(PageId::new)
     }
 
+    /// Lowers the id counter back to `value`, a counter value read before the
+    /// allocations being undone. A `value` at or above the counter is ignored,
+    /// so the counter never moves up and ids stay unique in every state.
+    pub fn restore_next_id(&mut self, value: u64) {
+        self.doc.next_id = self.doc.next_id.min(value);
+    }
+
     /// Sets the document resolution (not validated here).
     pub fn set_dpi(&mut self, dpi: Dpi) {
         self.doc.dpi = dpi;

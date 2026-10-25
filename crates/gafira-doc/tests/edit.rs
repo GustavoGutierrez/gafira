@@ -183,3 +183,29 @@ fn a_cloned_node_handle_does_not_make_the_document_mutable() {
     assert!(!doc.pages()[0].node(id).unwrap().base.locked);
     assert!(!Arc::ptr_eq(&handle, &doc.pages()[0].nodes[&id]));
 }
+
+#[test]
+fn restore_next_id_lowers_the_counter_to_a_recorded_value() {
+    let t = token();
+    let mut doc = Document::default();
+    let mut edit = doc.edit(&t);
+    let recorded = edit.as_doc().next_id();
+    let first = edit.alloc_node_id().unwrap();
+    edit.alloc_node_id().unwrap();
+    edit.restore_next_id(recorded);
+    assert_eq!(edit.as_doc().next_id(), recorded);
+    assert_eq!(edit.alloc_node_id().unwrap(), first);
+}
+
+#[test]
+fn restore_next_id_never_raises_the_counter() {
+    let t = token();
+    let mut doc = Document::default();
+    let mut edit = doc.edit(&t);
+    edit.alloc_node_id().unwrap();
+    let now = edit.as_doc().next_id();
+    edit.restore_next_id(now + 5);
+    assert_eq!(edit.as_doc().next_id(), now);
+    edit.restore_next_id(now);
+    assert_eq!(edit.as_doc().next_id(), now);
+}
