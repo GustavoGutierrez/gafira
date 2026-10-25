@@ -1,6 +1,6 @@
-//! Black-box serde tests on JSON fixtures, loaded without validation in D3.
+//! Black-box serde tests on JSON fixtures.
 
-use gafira_doc::{Document, LoadError};
+use gafira_doc::{Document, LoadError, ValidationError};
 use serde_json::Value;
 
 const FULL: &str = include_str!("golden/full.json");
@@ -297,6 +297,96 @@ fn a_document_payload_parses_to_121_levels_and_not_beyond() {
         *v.pointer_mut("/pages/0/nodes/2/kind/payload").unwrap() = nested(n);
         load(&v)
     };
-    assert!(with_depth(121).is_ok());
+    assert!(matches!(
+        with_depth(121),
+        Err(LoadError::Invalid(ValidationError::ExtensionTooDeep {
+            depth: 121,
+            ..
+        }))
+    ));
     assert!(matches!(with_depth(122), Err(LoadError::Json(_))));
+}
+
+#[test]
+fn a_payload_of_64_levels_saves_and_reopens_and_65_is_refused() {
+    let with_depth = |n: usize| {
+        let mut v = full();
+        *v.pointer_mut("/pages/0/nodes/2/kind/payload").unwrap() = nested(n);
+        load(&v)
+    };
+    let ok = with_depth(64).unwrap();
+    let saved = ok.to_json().unwrap();
+    let reopened = Document::from_json(saved.as_bytes()).unwrap();
+    assert_eq!(reopened, ok);
+    assert_eq!(reopened.to_json().unwrap(), saved);
+    assert!(matches!(
+        with_depth(65),
+        Err(LoadError::Invalid(ValidationError::ExtensionTooDeep {
+            depth: 65,
+            ..
+        }))
+    ));
+}
+
+#[test]
+fn plain_serde_cannot_build_an_invalid_document() {
+    let text = FULL.replacen(r#""next_id":20"#, r#""next_id":1"#, 1);
+    assert_ne!(text, FULL);
+    assert!(serde_json::from_str::<Document>(&text).is_err());
+    assert!(matches!(
+        Document::from_json(text.as_bytes()),
+        Err(LoadError::Invalid(
+            ValidationError::NextIdNotAboveMax { .. }
+        ))
+    ));
+}
+
+#[test]
+fn well_formed_documents_that_break_a_rule_are_invalid_not_json() {
+    let rows = [
+        (r#""dpi":300"#, r#""dpi":0"#),
+        (r#""dpi":300"#, r#""dpi":10001"#),
+        (r#""schema_version":1"#, r#""schema_version":0"#),
+        (r#""opacity":0.5"#, r#""opacity":1.5"#),
+    ];
+    for (from, to) in rows {
+        let text = FULL.replacen(from, to, 1);
+        assert_ne!(text, FULL, "{to}");
+        assert!(
+            matches!(
+                Document::from_json(text.as_bytes()),
+                Err(LoadError::Invalid(_))
+            ),
+            "{to}"
+        );
+    }
+    let space = FULL.replacen(r#""space":"srgb""#, r#""space":"lab""#, 1);
+    assert!(is_json_error(space.as_bytes()));
+}
+
+#[test]
+fn duplicate_ids_are_invalid_on_load() {
+    let mut shared_node = full();
+    let node = shared_node.pointer("/pages/0/nodes/3").unwrap().clone();
+    shared_node
+        .pointer_mut("/pages/1/nodes")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .push(node);
+    let rows = [
+        (FULL.replacen(r#""id":10,"#, r#""id":1,"#, 1), 1),
+        (FULL.replacen(r#""id":5,"#, r#""id":10,"#, 1), 10),
+        (shared_node.to_string(), 5),
+    ];
+    for (i, (text, id)) in rows.iter().enumerate() {
+        assert_ne!(text, FULL, "row {i}");
+        assert!(
+            matches!(
+                Document::from_json(text.as_bytes()),
+                Err(LoadError::Invalid(ValidationError::DuplicateId { id: got })) if got == *id
+            ),
+            "row {i}"
+        );
+    }
 }

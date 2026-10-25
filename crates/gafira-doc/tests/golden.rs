@@ -1,4 +1,4 @@
-//! Canonical goldens: loaded without validation in D3, re-saved byte for byte.
+//! Canonical goldens: loaded through the validating path, re-saved byte for byte.
 
 use gafira_doc::Document;
 

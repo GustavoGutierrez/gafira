@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::{Document, Dpi, Page};
+use crate::{Document, Dpi, Page, ValidationError};
 
 /// Why a document could not be read.
 #[derive(Debug)]
@@ -13,12 +13,15 @@ use crate::{Document, Dpi, Page};
 pub enum LoadError {
     /// Syntax, shape or encoding error.
     Json(serde_json::Error),
+    /// Well-formed JSON that breaks a document rule.
+    Invalid(ValidationError),
 }
 
 impl fmt::Display for LoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LoadError::Json(e) => write!(f, "invalid document JSON: {e}"),
+            LoadError::Invalid(e) => write!(f, "invalid document: {e}"),
         }
     }
 }
@@ -27,6 +30,7 @@ impl std::error::Error for LoadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             LoadError::Json(e) => Some(e),
+            LoadError::Invalid(e) => Some(e),
         }
     }
 }
@@ -41,21 +45,26 @@ pub(crate) struct DocumentWire {
     pages: Vec<Arc<Page>>,
 }
 
-impl From<DocumentWire> for Document {
-    fn from(w: DocumentWire) -> Self {
-        Document {
+impl TryFrom<DocumentWire> for Document {
+    type Error = ValidationError;
+
+    fn try_from(w: DocumentWire) -> Result<Self, Self::Error> {
+        let doc = Document {
             schema_version: w.schema_version,
             next_id: w.next_id,
             dpi: w.dpi,
             pages: w.pages,
-        }
+        };
+        doc.validate()?;
+        Ok(doc)
     }
 }
 
 impl Document {
     /// Reads a document from UTF-8 JSON bytes.
     pub fn from_json(bytes: &[u8]) -> Result<Document, LoadError> {
-        serde_json::from_slice(bytes).map_err(LoadError::Json)
+        let wire: DocumentWire = serde_json::from_slice(bytes).map_err(LoadError::Json)?;
+        Document::try_from(wire).map_err(LoadError::Invalid)
     }
 
     /// Writes the compact canonical JSON form (no trailing newline).
@@ -74,7 +83,7 @@ mod tests {
     use crate::document::test_document;
     use crate::{
         Document, Dpi, ElementBase, ExtensionNode, GroupNode, LoadError, Node, NodeId, NodeKind,
-        Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
+        Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode, ValidationError,
     };
 
     fn px(w: f64, h: f64) -> PageSize {
@@ -96,7 +105,7 @@ mod tests {
             p.nodes.insert(n.base.id, n);
         }
         p.roots.sort();
-        test_document(3, Dpi::default(), vec![Arc::new(p)])
+        test_document(20, Dpi::default(), vec![Arc::new(p)])
     }
 
     fn group(id: u64) -> Arc<Node> {
@@ -315,10 +324,20 @@ mod tests {
     }
 
     #[test]
-    fn schema_version_is_read_as_written_by_the_wire_conversion() {
+    fn load_errors_name_their_cause_and_expose_the_inner_error() {
         let json = r#"{"schema_version":2,"next_id":3,"dpi":96,"pages":[]}"#;
-        let d = Document::from_json(json.as_bytes()).unwrap();
-        assert_eq!(d.schema_version(), 2);
-        assert_eq!(d.to_json().unwrap(), json);
+        let err = Document::from_json(json.as_bytes()).unwrap_err();
+        assert!(matches!(
+            err,
+            LoadError::Invalid(ValidationError::UnsupportedSchemaVersion { found: 2 })
+        ));
+        assert!(!err.to_string().is_empty());
+        let inner = std::error::Error::source(&err).unwrap();
+        assert_eq!(
+            inner.downcast_ref::<ValidationError>(),
+            Some(&ValidationError::UnsupportedSchemaVersion { found: 2 })
+        );
+        let truncated = Document::from_json(&json.as_bytes()[..10]).unwrap_err();
+        assert!(matches!(truncated, LoadError::Json(_)));
     }
 }

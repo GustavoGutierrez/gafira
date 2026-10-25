@@ -2,7 +2,11 @@
 
 use std::collections::BTreeSet;
 
-use crate::{Document, ValidationError};
+use gafira_color::Color;
+use serde_json::Value;
+
+use crate::node::MAX_EXTENSION_DEPTH;
+use crate::{Document, Node, NodeField, NodeKind, Page, ValidationError};
 
 impl Document {
     /// Returns the first rule the document breaks, or `Ok(())`.
@@ -14,7 +18,8 @@ impl Document {
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.check_header()?;
         self.check_ids()?;
-        self.check_pages()
+        self.check_pages()?;
+        self.check_nodes()
     }
 
     /// P1: schema version, then DPI.
@@ -87,14 +92,124 @@ impl Document {
         }
         Ok(())
     }
+
+    /// P4: node by node (ascending id), each node's checks in order.
+    fn check_nodes(&self) -> Result<(), ValidationError> {
+        for page in &self.pages {
+            for node in page.nodes.values() {
+                check_node(page, node)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+type Rule = fn(f64) -> bool;
+
+fn any(_: f64) -> bool {
+    true
+}
+
+fn non_negative(v: f64) -> bool {
+    v >= 0.0
+}
+
+fn below_quarter_turn(v: f64) -> bool {
+    v > -90.0 && v < 90.0
+}
+
+fn unit_interval(v: f64) -> bool {
+    (0.0..=1.0).contains(&v)
+}
+
+/// The numeric fields of a node, in reporting order, with their range rule.
+fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
+    let p = &node.base.placement;
+    let mut out: Vec<(NodeField, f64, Rule)> = vec![
+        (NodeField::X, p.x, any),
+        (NodeField::Y, p.y, any),
+        (NodeField::W, p.w, non_negative),
+        (NodeField::H, p.h, non_negative),
+        (NodeField::RotationDeg, p.rotation_deg, any),
+        (NodeField::Skew, p.skew, below_quarter_turn),
+        (
+            NodeField::Opacity,
+            f64::from(node.base.opacity),
+            unit_interval,
+        ),
+    ];
+    if let NodeKind::Shape(shape) = &node.kind
+        && let Some(fill) = shape.fill
+    {
+        let [r, g, b, a] = match fill {
+            Color::Srgb(c) => [c.r, c.g, c.b, c.a],
+            Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
+            Color::DisplayP3(c) => [c.r, c.g, c.b, c.a],
+        };
+        for channel in [r, g, b] {
+            out.push((NodeField::FillChannel, f64::from(channel), any));
+        }
+        out.push((NodeField::FillAlpha, f64::from(a), unit_interval));
+    }
+    out
+}
+
+/// The checks 9 to 14 of one node; the first failure wins.
+fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
+    let id = node.base.id;
+    let numbers = numbers(node);
+    if let Some(&(field, _, _)) = numbers.iter().find(|(_, v, _)| !v.is_finite()) {
+        return Err(ValidationError::NonFinite { node: id, field });
+    }
+    if let Some(&(field, value, _)) = numbers.iter().find(|(_, v, ok)| !ok(*v)) {
+        return Err(ValidationError::OutOfRange {
+            node: id,
+            field,
+            value,
+        });
+    }
+    if let NodeKind::Extension(ext) = &node.kind {
+        if ext.type_id.is_empty() {
+            return Err(ValidationError::EmptyExtensionTypeId { node: id });
+        }
+        let depth = depth(&ext.payload);
+        if depth > MAX_EXTENSION_DEPTH {
+            return Err(ValidationError::ExtensionTooDeep { node: id, depth });
+        }
+    }
+    if !matches!(node.kind, NodeKind::Group(_)) && !node.children.is_empty() {
+        return Err(ValidationError::ChildrenOnLeaf { node: id });
+    }
+    match node.children.iter().find(|c| !page.nodes.contains_key(c)) {
+        Some(&child) => Err(ValidationError::DanglingChild { parent: id, child }),
+        None => Ok(()),
+    }
+}
+
+/// Nesting depth of a JSON value: a scalar is 0, `[]` and `{}` are 1.
+/// Iterative, so a hostile payload cannot overflow the stack.
+fn depth(root: &Value) -> usize {
+    let mut deepest = 0;
+    let mut stack = vec![(root, 0usize)];
+    while let Some((value, level)) = stack.pop() {
+        let children: Vec<&Value> = match value {
+            Value::Array(items) => items.iter().collect(),
+            Value::Object(map) => map.values().collect(),
+            _ => continue,
+        };
+        deepest = deepest.max(level + 1);
+        stack.extend(children.into_iter().map(|c| (c, level + 1)));
+    }
+    deepest
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use gafira_color::{Color, LinearRgba, Rgba};
     use gafira_geom::{Length, Unit};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use crate::ValidationError;
     use crate::document::test_document;
@@ -104,6 +219,7 @@ mod tests {
     };
 
     type Edit = fn(&mut Document);
+    type EditRef<'a> = &'a dyn Fn(&mut Document);
 
     fn px(w: f64, h: f64) -> PageSize {
         let side = |v| Length::new(v, Unit::Px);
@@ -363,6 +479,14 @@ mod tests {
                 },
                 "Err(DuplicateId { id: 1 })",
             ),
+            // P4 inside the pass: a lower id wins over a higher id's earlier-listed check.
+            (
+                |d| {
+                    node_mut(d, 2, |n| n.base.opacity = 2.0);
+                    node_mut(d, 3, |n| n.children = vec![NodeId::new(99)]);
+                },
+                &range(2, "Opacity", 2.0),
+            ),
             // Inside P1: schema before DPI.
             (
                 |d| {
@@ -401,5 +525,331 @@ mod tests {
                 &out(7, "Width", 0.0),
             ),
         ]);
+    }
+
+    fn node_mut(d: &mut Document, id: u64, edit: impl FnOnce(&mut Node)) {
+        let node = first(d).nodes.get_mut(&NodeId::new(id)).unwrap();
+        edit(Arc::make_mut(node));
+    }
+
+    fn non_finite(node: u64, field: &str) -> String {
+        format!("Err(NonFinite {{ node: NodeId({node}), field: {field} }})")
+    }
+
+    fn range(node: u64, field: &str, value: f64) -> String {
+        let (node, field) = (format!("NodeId({node})"), field);
+        format!("Err(OutOfRange {{ node: {node}, field: {field}, value: {value:?} }})")
+    }
+
+    fn extension(type_id: &str, payload: Value) -> NodeKind {
+        NodeKind::Extension(ExtensionNode {
+            type_id: type_id.to_string(),
+            schema_version: 1,
+            payload,
+        })
+    }
+
+    /// Nested `levels` deep: `[]` is 1, `[[]]` is 2.
+    fn nested(levels: usize, object: bool) -> Value {
+        (1..levels).fold(if object { json!({}) } else { json!([]) }, |inner, _| {
+            if object {
+                json!({ "a": inner })
+            } else {
+                Value::Array(vec![inner])
+            }
+        })
+    }
+
+    fn shape_with(fill: Color) -> NodeKind {
+        let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+        shape.fill = Some(fill);
+        NodeKind::Shape(shape)
+    }
+
+    #[test]
+    fn node_value_rows() {
+        type Set = fn(&mut Node, f64);
+        let nan = f64::NAN;
+        let rows: Vec<(Set, f64, String)> = vec![
+            (|n, v| n.base.opacity = v as f32, 0.0, "Ok(())".into()),
+            (|n, v| n.base.opacity = v as f32, -0.0, "Ok(())".into()),
+            (|n, v| n.base.opacity = v as f32, 1.0, "Ok(())".into()),
+            (|n, v| n.base.opacity = v as f32, 1e-45, "Ok(())".into()),
+            (
+                |n, v| n.base.opacity = v as f32,
+                -0.0000001,
+                range(2, "Opacity", f64::from(-0.0000001f32)),
+            ),
+            (
+                |n, v| n.base.opacity = v as f32,
+                1.0000001,
+                range(2, "Opacity", f64::from(1.0000001f32)),
+            ),
+            (
+                |n, v| n.base.opacity = v as f32,
+                2.0,
+                range(2, "Opacity", 2.0),
+            ),
+            (
+                |n, v| n.base.opacity = v as f32,
+                nan,
+                non_finite(2, "Opacity"),
+            ),
+            (
+                |n, v| n.base.opacity = v as f32,
+                f64::INFINITY,
+                non_finite(2, "Opacity"),
+            ),
+            (
+                |n, v| n.base.opacity = v as f32,
+                f64::NEG_INFINITY,
+                non_finite(2, "Opacity"),
+            ),
+            (|n, v| n.base.placement.x = v, nan, non_finite(2, "X")),
+            (
+                |n, v| n.base.placement.y = v,
+                f64::INFINITY,
+                non_finite(2, "Y"),
+            ),
+            (
+                |n, v| n.base.placement.rotation_deg = v,
+                f64::NEG_INFINITY,
+                non_finite(2, "RotationDeg"),
+            ),
+            (|n, v| n.base.placement.skew = v, nan, non_finite(2, "Skew")),
+            (|n, v| n.base.placement.w = v, -1.0, range(2, "W", -1.0)),
+            (
+                |n, v| n.base.placement.h = v,
+                -1e-300,
+                range(2, "H", -1e-300),
+            ),
+            (
+                |n, v| n.base.placement.skew = v,
+                90.0,
+                range(2, "Skew", 90.0),
+            ),
+            (
+                |n, v| n.base.placement.skew = v,
+                -90.0,
+                range(2, "Skew", -90.0),
+            ),
+            (|n, v| n.base.placement.w = v, -0.0, "Ok(())".into()),
+            (|n, v| n.base.placement.w = v, 0.0, "Ok(())".into()),
+            (
+                |n, v| n.base.placement.rotation_deg = v,
+                720.0,
+                "Ok(())".into(),
+            ),
+            (|n, v| n.base.placement.skew = v, 89.999, "Ok(())".into()),
+            (|n, v| n.base.placement.skew = v, -89.999, "Ok(())".into()),
+            (
+                |n, v| n.kind = shape_with(Color::Srgb(Rgba::new(v as f32, 0.0, 0.0, 1.0))),
+                nan,
+                non_finite(2, "FillChannel"),
+            ),
+            (
+                |n, v| n.kind = shape_with(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, v as f32))),
+                nan,
+                non_finite(2, "FillAlpha"),
+            ),
+            (
+                |n, v| n.kind = shape_with(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, v as f32))),
+                1.5,
+                range(2, "FillAlpha", 1.5),
+            ),
+            (
+                |n, v| n.kind = shape_with(Color::Srgb(Rgba::new(v as f32, 1.75, 0.0, 0.5))),
+                -0.5,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| {
+                    n.kind = shape_with(Color::LinearSrgb(LinearRgba::new(0.0, v as f32, 0.0, 1.0)))
+                },
+                nan,
+                non_finite(2, "FillChannel"),
+            ),
+            (
+                |n, v| {
+                    n.kind = shape_with(Color::LinearSrgb(LinearRgba::new(0.0, 0.0, 0.0, v as f32)))
+                },
+                1.5,
+                range(2, "FillAlpha", 1.5),
+            ),
+        ];
+        for (i, (set, value, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            node_mut(&mut d, 2, |n| set(n, *value));
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+    }
+
+    #[test]
+    fn validation_does_not_clamp() {
+        let mut d = base();
+        node_mut(&mut d, 2, |n| n.base.opacity = 1.5);
+        assert!(d.validate().is_err());
+        let node = first(&mut d).nodes[&NodeId::new(2)].clone();
+        assert_eq!(node.base.opacity.to_bits(), 1.5f32.to_bits());
+    }
+
+    #[test]
+    fn extension_rows() {
+        fn ext(d: &mut Document, type_id: &str, payload: Value) {
+            node_mut(d, 2, |n| n.kind = extension(type_id, payload));
+        }
+        let deep =
+            |depth: usize| format!("Err(ExtensionTooDeep {{ node: NodeId(2), depth: {depth} }})");
+        let rows: [(Value, String); 7] = [
+            (nested(64, false), "Ok(())".into()),
+            (nested(65, false), deep(65)),
+            (nested(65, true), deep(65)),
+            (json!(7), "Ok(())".into()),
+            (json!([]), "Ok(())".into()),
+            (nested(1_000, false), deep(1_000)),
+            (json!({"a": [1, {"b": null}]}), "Ok(())".into()),
+        ];
+        for (i, (payload, want)) in rows.into_iter().enumerate() {
+            let mut d = base();
+            ext(&mut d, "x", payload);
+            assert_eq!(format!("{:?}", d.validate()), want, "row {i}");
+        }
+        let mut d = base();
+        ext(&mut d, "", json!(null));
+        assert_eq!(
+            format!("{:?}", d.validate()),
+            "Err(EmptyExtensionTypeId { node: NodeId(2) })"
+        );
+    }
+
+    #[test]
+    fn child_rows() {
+        let leaf = |kind: NodeKind| {
+            move |d: &mut Document| {
+                node_mut(d, 2, |n| {
+                    n.kind = kind.clone();
+                    n.children = vec![NodeId::new(3)];
+                });
+            }
+        };
+        let dangling = |d: &mut Document| {
+            node_mut(d, 2, |n| n.children = vec![NodeId::new(3), NodeId::new(99)]);
+        };
+        let elsewhere = |d: &mut Document| {
+            push(d, 7, &[8]);
+            node_mut(d, 2, |n| n.children = vec![NodeId::new(8)]);
+        };
+        let shape = NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect));
+        let rows: [(EditRef, &str); 5] = [
+            (&leaf(shape), "Err(ChildrenOnLeaf { node: NodeId(2) })"),
+            (
+                &leaf(extension("x", json!(null))),
+                "Err(ChildrenOnLeaf { node: NodeId(2) })",
+            ),
+            (
+                &dangling,
+                "Err(DanglingChild { parent: NodeId(2), child: NodeId(99) })",
+            ),
+            (
+                &elsewhere,
+                "Err(DanglingChild { parent: NodeId(2), child: NodeId(8) })",
+            ),
+            (
+                &|d| node_mut(d, 2, |n| n.children = vec![NodeId::new(3)]),
+                "Ok(())",
+            ),
+        ];
+        for (i, (edit, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            edit(&mut d);
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+    }
+
+    #[test]
+    fn nodes_are_checked_in_ascending_id_and_check_order() {
+        fn nan_x(n: &mut Node) {
+            n.base.placement.x = f64::NAN;
+        }
+        let with_eight = |d: &mut Document| {
+            first(d)
+                .nodes
+                .insert(NodeId::new(8), node(8, NodeKind::Group(GroupNode {})));
+            first(d).roots.push(NodeId::new(8));
+        };
+        let too_deep = || extension("x", nested(65, false));
+        let rows: [(EditRef, String); 7] = [
+            (
+                &|d| {
+                    with_eight(d);
+                    node_mut(d, 8, nan_x);
+                    node_mut(d, 3, nan_x);
+                },
+                non_finite(3, "X"),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| n.children = vec![NodeId::new(99)]);
+                    node_mut(d, 3, nan_x);
+                },
+                "Err(DanglingChild { parent: NodeId(2), child: NodeId(99) })".to_string(),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.base.opacity = 2.0;
+                        nan_x(n);
+                    });
+                },
+                non_finite(2, "X"),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = extension("", json!(null));
+                        n.base.opacity = 2.0;
+                    });
+                },
+                range(2, "Opacity", 2.0),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = extension("", nested(65, false));
+                    });
+                },
+                "Err(EmptyExtensionTypeId { node: NodeId(2) })".to_string(),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = too_deep();
+                        n.children = vec![NodeId::new(3)];
+                    });
+                },
+                "Err(ExtensionTooDeep { node: NodeId(2), depth: 65 })".to_string(),
+            ),
+            (
+                &|d| {
+                    node_mut(d, 2, |n| {
+                        n.kind = NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect));
+                        n.children = vec![NodeId::new(99)];
+                    });
+                },
+                "Err(ChildrenOnLeaf { node: NodeId(2) })".to_string(),
+            ),
+        ];
+        for (i, (edit, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            edit(&mut d);
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+    }
+
+    #[test]
+    fn a_self_parenting_group_still_passes_until_d5() {
+        let mut d = base();
+        node_mut(&mut d, 2, |n| n.children = vec![NodeId::new(2)]);
+        assert_eq!(d.validate(), Ok(()));
     }
 }
