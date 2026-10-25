@@ -5,3 +5,11 @@
 //! `gafira-geom`, `gafira-color` and `gafira-doc`.
 
 #![forbid(unsafe_code)]
+
+mod command;
+mod dirty;
+mod error;
+
+pub use command::{Applied, Command, GestureId, MergeKey};
+pub use dirty::DirtySet;
+pub use error::CommandError;
