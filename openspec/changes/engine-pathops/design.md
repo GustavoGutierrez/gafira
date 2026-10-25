@@ -5,15 +5,15 @@ This note covers only the decisions that `docs/specs/02-arquitectura-software.md
 Everything else follows 02 §2.1 (crate table), §2.2 (layer graph), ARQ-01, ARQ-02,
 ARQ-03, ARQ-10 and §9 (dependency and license policy).
 
-Status: Q1 (the boolean-operations library) needs the owner's approval because it
-adds a dependency; the rest are closed by the coordinator with the recommendation
-recorded in each question. The measured facts behind Q1 are in `spike.md`.
+Status: every question is CLOSED. The owner approved `linesweeper 0.5` and the
+default tolerance of 1e-3 px on 2026-10-26. The measured facts behind Q1 are in
+`spike.md`.
 
 ## Summary
 
 | # | Question | Decision | Closed by |
 |---|---|---|---|
-| Q1 | Which library performs the boolean operations | `linesweeper 0.5` (Bézier-native), pending owner approval | OPEN: owner |
+| Q1 | Which library performs the boolean operations | `linesweeper 0.5` (Bézier-native) | CLOSED: owner, 2026-10-26 (option A) |
 | Q2 | How the crate names non-finite coordinates | its own error type, checked before the library call | CLOSED: coordinator, 2026-10-26 |
 | Q3 | What happens to an open subpath in a boolean operation | rejected with a named error; a separate explicit `close_subpaths` operation | CLOSED: coordinator, 2026-10-26 |
 | Q4 | The default tolerance | one crate-wide default constant, overridable per call | CLOSED: coordinator, 2026-10-26 (value in "Tolerance policy") |
@@ -25,9 +25,9 @@ recorded in each question. The measured facts behind Q1 are in `spike.md`.
 
 ### Q1. Which library performs the boolean operations
 
-**OPEN: owner.** This is the only question in this change that needs the owner,
-because it adds a dependency to the workspace and §9 of 02 makes new dependencies
-an approval point.
+**CLOSED** by owner, 2026-10-26 (option A). This was the only question that needed
+the owner, because it adds a dependency to the workspace and §9 of 02 makes new
+dependencies an approval point.
 
 Measured in `spike.md` (experiments in a scratch project under the session scratch
 directory, never in the repository):
@@ -44,7 +44,7 @@ directory, never in the repository):
 | B. `i_overlay 9.1` | Far more used and actively maintained, but polygon-only: every boolean call would flatten the input first, so a curved input becomes a polyline within a tolerance. The spec's "curves stay curves" requirement would have to be relaxed to "curves MAY be flattened within the tolerance". |
 | C. Own implementation | No new dependency and full control, but a correct sweep-line boolean algorithm on Bézier curves with self-intersection handling is the hard part of this crate. It does not fit the delivery budget of this change and would be owned by us forever. |
 
-**Recommendation: A (`linesweeper 0.5`).**
+Decision: **A (`linesweeper 0.5`)**, approved by the owner on 2026-10-26.
 
 The reasoning that decided it: `gafira-geom` already speaks kurbo, and the product
 is a design tool where a shape outline stays a shape outline after a boolean
@@ -54,8 +54,10 @@ measured cost is 171.66 µs per union over 100-vertex polygons, which is far bel
 the interactive budget of a design tool.
 
 The cost of A is stated plainly: the crate is much less used than `i_overlay` and
-declares itself beta. If the owner prefers that risk profile over curve fidelity,
-B is the fallback and the spec's curve requirement must be amended first.
+declares itself beta. The owner accepted that risk profile in exchange for curve
+fidelity. B remains the documented fallback if the crate's API ever breaks in a
+way that blocks the product; adopting it would require amending the spec's curve
+requirement first.
 
 Note on the size of the dependency: `linesweeper` pulls `arrayvec`, `polycool`,
 `rustc-hash`, `smallvec` and `kurbo`; `kurbo` is already in the workspace through
@@ -94,8 +96,8 @@ Decision: **A**. The spec's "Open subpath rejected" scenario covers it.
 
 ### Q4. The default tolerance
 
-**CLOSED** by coordinator, 2026-10-26 (the value still needs the owner's sanity
-check, since it depends on the product's working unit).
+**CLOSED** by owner, 2026-10-26 (the value was confirmed by the owner; the
+coordinator proposed it).
 
 | Option | Effect |
 |---|---|
@@ -255,9 +257,9 @@ Names verified against the vendored source of kurbo 0.13.1
 
 | Module | Contents | Delivery |
 |---|---|---|
-| `lib.rs` | crate root, re-exports, `Path`, `FillRule`, `BooleanOp`, `Containment`, `StrokeStyle`, `PathOpError`, `DEFAULT_TOLERANCE` | D1 |
+| `lib.rs` | crate root, re-exports, `FillRule`, `BooleanOp`, `DEFAULT_TOLERANCE` | D1 |
 | `error.rs` | `PathOpError` and its `Display` | D1 |
-| `path.rs` | `Path`, subpath inspection, `close_subpaths`, finiteness validation | D1 |
+| `path.rs` | `Path`, subpath inspection, `close_subpaths`, finiteness and open-subpath validation | D1 |
 | `boolean.rs` | the four set operations and the library mapping | D2 |
 | `stroke.rs` | `StrokeStyle` and `stroke_outline` | D3 |
 | `simplify.rs` | `simplify` | D3 |
@@ -290,11 +292,11 @@ archive step, which this run does not reach.
 
 | # | Claim | How it is checked | Status |
 |---|---|---|---|
-| R1 | `linesweeper` keeps curves exact through a boolean operation | measured in `spike.md` C2.1; pinned by the spec scenario "Curves stay curves" | confirmed, pending Q1 |
-| R2 | `linesweeper` is deterministic | measured in `spike.md` C2.2 (1 unique hash over 5 runs); pinned by the spec scenario "Repeated runs agree" | confirmed, pending Q1 |
-| R3 | `linesweeper` rejects open subpaths and non-finite coordinates | measured in `spike.md` C2.3; pinned by the spec scenarios "Open subpath rejected" and "Non-finite coordinate rejected" | confirmed, pending Q1 |
-| R4 | The dependency passes the repository license policy | measured in `spike.md` C2.7 (`cargo deny check licenses bans sources` with the repo `deny.toml`: all ok) | confirmed, pending Q1 |
-| R5 | A boolean operation over 100-vertex polygons costs about 170 µs | measured in `spike.md` C2.5 | confirmed, pending Q1 |
+| R1 | `linesweeper` keeps curves exact through a boolean operation | measured in `spike.md` C2.1; pinned by the spec scenario "Curves stay curves" | confirmed |
+| R2 | `linesweeper` is deterministic | measured in `spike.md` C2.2 (1 unique hash over 5 runs); pinned by the spec scenario "Repeated runs agree" | confirmed |
+| R3 | `linesweeper` rejects open subpaths and non-finite coordinates | measured in `spike.md` C2.3; pinned by the spec scenarios "Open subpath rejected" and "Non-finite coordinate rejected" | confirmed |
+| R4 | The dependency passes the repository license policy | measured in `spike.md` C2.7 (`cargo deny check licenses bans sources` with the repo `deny.toml`: all ok) | confirmed |
+| R5 | A boolean operation over 100-vertex polygons costs about 170 µs | measured in `spike.md` C2.5 | confirmed |
 | R6 | `kurbo::stroke`, `kurbo::simplify::simplify_bezpath`, `kurbo::expand_path` and `Shape::path_segments` cover stroke, simplify, offset and hit testing | measured in `spike.md` C1; pinned by the D3 and D4 scenarios | confirmed |
 | R7 | A NaN coordinate surfaces as `NonClosedPath`, not as `NaN` | measured in `spike.md` C2.3 | confirmed; the crate pre-checks finiteness (Q2) |
 | R8 | `linesweeper` behaves the same on Windows and macOS | not measured: the spike ran on Linux x86_64 only | **not verified** |
