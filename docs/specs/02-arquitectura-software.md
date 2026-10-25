@@ -423,7 +423,7 @@ pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
 
 - **Capacidad de mutación**: `apply` y `revert` reciben `&mut DocMut<'_>`, la vista mutable de `gafira-doc` que solo se obtiene con el `EditToken`; `History` es quien lo usa. Todo comando, del núcleo o de una extensión, muta el documento por esta vía. `Any` permite que `merge` recupere el tipo concreto de `next`: primero comprueba por referencia que es de su propio tipo y solo entonces convierte la caja; si no lo es, devuelve `Err(next)`.
 - **Patrón**: Command, con apply, revert y merge. `Transaction` (Composite) agrupa varios comandos en una sola entrada de historial.
-- **Implementan** los comandos del núcleo en `gafira-edit::cmd`: `SetProperty<T>`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Las extensiones aportan los suyos.
+- **Implementan** los comandos del núcleo en `gafira-edit::cmd`: `SetProperty<T>` (campos de nodo y de forma, y los de página y el DPI del documento), `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Los que dependen de datos que aún no existen (desde `SetFrameContent` hasta `SetSwatch`) llegan con esos datos. Los comandos no comprueban `locked`: lo deciden las herramientas. Las extensiones aportan los suyos.
 - **Cómo añadir un comando**:
   1. Struct con los datos mínimos para aplicar y revertir.
   2. `touches` exacto.
