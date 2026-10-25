@@ -286,6 +286,20 @@ rates of 9/40 and 6/40, and a failed gate run at `754099b`); the fix landed only
 History is not rewritten. The owner has not yet ruled on a waiver for C8; the
 coordinator will ask. This round does not claim the finding closed.
 
+### Owner decision on C8 (2026-10-25): waived
+
+The owner waived finding C8, following the `gafira-time` C2 precedent:
+
+- History is not rewritten. The commits `9a760e0`, `754099b`, `f198f6a` and
+  `15f4b30` keep the flaky property; the fix stays in `a8d2c0a`.
+- The final tree is correct: the property passed 30 consecutive runs without a
+  failure after `a8d2c0a`.
+- Consequence: no stacked PR may be cut at a commit boundary before `a8d2c0a`.
+  The change is delivered as ONE PR.
+
+The correction above stays as written; this decision closes C8 as waived, not as
+fixed.
+
 ## Verify fix round 1
 
 Base: `origin/main` merged first (`ec97f7b`: `gafira-time`, edit-history D1-D10 and
@@ -450,3 +464,13 @@ this docs commit): 16 files changed, 1262 insertions, 385 deletions (net +877; 8
 source files: 255 insertions, 213 deletions). This is past the 700-line ceiling and
 past the roughly 1 000 changed lines the task named: the tests rewritten for the new
 error shape and the new generators account for most of it. The coordinator decides.
+
+## Open items for the archive notes
+
+- Add the exclusion of the equivalent mutant `hittest.rs:69:25` (`<` to `<=` in
+  `Path::distance_to_perimeter`) to `.cargo/mutants.toml`, with its
+  justification: `Point::distance` never returns `-0.0`, so equal distances are
+  bit-identical and assigning an equal value changes nothing; a NaN fails both
+  comparisons; an infinite distance with an infinite running minimum stores the
+  same value. No input distinguishes the two versions (proof in
+  `verify-report.md`, round 1, "Mutation").
