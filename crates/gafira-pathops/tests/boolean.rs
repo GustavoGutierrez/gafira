@@ -1,7 +1,8 @@
 //! The public contract of the path boolean operations.
 
 use gafira_pathops::{
-    BezPath, Containment, DEFAULT_TOLERANCE, FillRule, NonFiniteValue, Path, PathOpError, Point,
+    BezPath, BooleanOp, Containment, DEFAULT_TOLERANCE, FillRule, NonFiniteValue, Path,
+    PathOpError, Point,
 };
 use kurbo::{Circle, Rect, Shape};
 
@@ -378,12 +379,116 @@ fn the_same_inputs_give_the_same_result_every_time() {
     }
 }
 
+/// The nested squares (0,0)-(10,10) and (3,3)-(7,7), wound the same way, read
+/// with the given rule.
+fn nested(rule: FillRule) -> Path {
+    Path::new(ring().as_bez_path().clone(), rule)
+}
+
+fn with_rule(path: &Path, rule: FillRule) -> Path {
+    Path::new(path.as_bez_path().clone(), rule)
+}
+
+/// Which of the points the path covers.
+fn covered(path: &Path, points: &[(f64, f64)]) -> Vec<bool> {
+    points
+        .iter()
+        .map(|&(x, y)| {
+            path.contains(Point::new(x, y), DEFAULT_TOLERANCE).unwrap() == Containment::Inside
+        })
+        .collect()
+}
+
 #[test]
-fn the_fill_rule_is_carried_into_the_result() {
-    let a = rect(0.0, 0.0, 10.0, 10.0);
-    let b = rect(5.0, 0.0, 15.0, 10.0);
+fn mixed_rules_never_cover_a_point_neither_operand_covers() {
+    let a = rect(20.0, 0.0, 30.0, 10.0);
+    let b = nested(FillRule::EvenOdd);
+    let points = [(5.0, 5.0), (1.0, 1.0), (25.0, 5.0)];
 
-    let union = a.union(&b, DEFAULT_TOLERANCE).unwrap();
+    for union in [
+        a.union(&b, DEFAULT_TOLERANCE).unwrap(),
+        b.union(&a, DEFAULT_TOLERANCE).unwrap(),
+    ] {
+        assert_eq!(covered(&union, &points), [false, true, true]);
+        assert_eq!(union.fill_rule(), FillRule::NonZero);
+    }
+}
 
-    assert_eq!(union.fill_rule(), FillRule::NonZero);
+#[test]
+fn intersection_difference_and_xor_read_each_operand_with_its_own_rule() {
+    // A covers (2,2)-(8,8). B covers its outer square except the hole.
+    let a = rect(2.0, 2.0, 8.0, 8.0);
+    let b = nested(FillRule::EvenOdd);
+    let points = [(5.0, 5.0), (2.5, 2.5), (1.0, 1.0)];
+
+    let cases = [
+        (a.intersection(&b, DEFAULT_TOLERANCE), [false, true, false]),
+        (a.difference(&b, DEFAULT_TOLERANCE), [true, false, false]),
+        (b.difference(&a, DEFAULT_TOLERANCE), [false, false, true]),
+        (a.xor(&b, DEFAULT_TOLERANCE), [true, false, true]),
+    ];
+    for (result, expected) in cases {
+        let result = result.unwrap();
+        assert_eq!(covered(&result, &points), expected);
+        assert_eq!(result.fill_rule(), FillRule::NonZero);
+    }
+}
+
+#[test]
+fn the_rule_of_each_operand_is_used_in_both_directions() {
+    let a = nested(FillRule::NonZero);
+    let mut bez = Rect::new(2.0, 0.0, 12.0, 10.0).to_path(0.0);
+    bez.extend(
+        Rect::new(5.0, 3.0, 9.0, 7.0)
+            .to_path(0.0)
+            .elements()
+            .iter()
+            .copied(),
+    );
+    let b = Path::new(bez, FillRule::EvenOdd);
+    // A covers both points; B covers (4,5) and not (6,5), in its hole.
+    let points = [(6.0, 5.0), (4.0, 5.0)];
+
+    assert_eq!(
+        covered(&a.intersection(&b, DEFAULT_TOLERANCE).unwrap(), &points),
+        [false, true]
+    );
+    assert_eq!(
+        covered(&b.intersection(&a, DEFAULT_TOLERANCE).unwrap(), &points),
+        [false, true]
+    );
+    assert_eq!(
+        covered(&a.difference(&b, DEFAULT_TOLERANCE).unwrap(), &points),
+        [true, false]
+    );
+}
+
+#[test]
+fn the_result_of_non_empty_operands_carries_non_zero() {
+    let rules = [
+        (FillRule::EvenOdd, FillRule::EvenOdd),
+        (FillRule::EvenOdd, FillRule::NonZero),
+        (FillRule::NonZero, FillRule::EvenOdd),
+    ];
+    for (rule_a, rule_b) in rules {
+        let a = with_rule(&rect(0.0, 0.0, 10.0, 10.0), rule_a);
+        let b = with_rule(&rect(5.0, 0.0, 15.0, 10.0), rule_b);
+        for (x, y) in [(&a, &b), (&b, &a)] {
+            for op in [
+                BooleanOp::Union,
+                BooleanOp::Intersection,
+                BooleanOp::Difference,
+                BooleanOp::Xor,
+            ] {
+                let result = x.boolean_op(y, op, DEFAULT_TOLERANCE).unwrap();
+                assert_eq!(result.fill_rule(), FillRule::NonZero, "{op:?}");
+            }
+        }
+    }
+
+    let far = with_rule(&rect(100.0, 0.0, 110.0, 10.0), FillRule::EvenOdd);
+    let near = with_rule(&rect(0.0, 0.0, 10.0, 10.0), FillRule::EvenOdd);
+    let disjoint = near.intersection(&far, DEFAULT_TOLERANCE).unwrap();
+    assert!(disjoint.is_empty());
+    assert_eq!(disjoint.fill_rule(), FillRule::NonZero);
 }

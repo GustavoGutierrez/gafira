@@ -4,7 +4,8 @@
 //! curved input stays curved through the operation.
 
 use kurbo::BezPath;
-use linesweeper::{BinaryOp, FillRule as LibFillRule};
+use linesweeper::FillRule as LibFillRule;
+use linesweeper::topology::{BinaryWindingNumber, Topology};
 
 use crate::{BooleanOp, FillRule, NonFiniteValue, Path, PathOpError};
 
@@ -43,7 +44,8 @@ impl Path {
 
     /// Computes a set operation over the two paths.
     ///
-    /// The operation uses the fill rule of the first path.
+    /// Each path is read with its own fill rule. The result carries the
+    /// `NonZero` fill rule.
     pub fn boolean_op(
         &self,
         other: &Path,
@@ -60,31 +62,31 @@ impl Path {
             return Ok(result);
         }
 
-        let lib_op = match op {
-            BooleanOp::Union => BinaryOp::Union,
-            BooleanOp::Intersection => BinaryOp::Intersection,
-            BooleanOp::Difference => BinaryOp::Difference,
-            BooleanOp::Xor => BinaryOp::Xor,
-        };
-        let lib_fill = match self.fill_rule() {
-            FillRule::EvenOdd => LibFillRule::EvenOdd,
-            FillRule::NonZero => LibFillRule::NonZero,
-        };
+        let rule_a = lib_fill_rule(self.fill_rule());
+        let rule_b = lib_fill_rule(other.fill_rule());
 
-        let contours = linesweeper::binary_op_with_eps(
+        let topology = Topology::<BinaryWindingNumber>::from_paths_binary(
             self.as_bez_path(),
             other.as_bez_path(),
-            lib_fill,
-            lib_op,
             tolerance,
         )
         .map_err(|error| PathOpError::Geometry(error.to_string()))?;
+        let contours = topology.contours(|winding| {
+            let in_a = rule_a.is_inside(winding.shape_a);
+            let in_b = rule_b.is_inside(winding.shape_b);
+            match op {
+                BooleanOp::Union => in_a || in_b,
+                BooleanOp::Intersection => in_a && in_b,
+                BooleanOp::Difference => in_a && !in_b,
+                BooleanOp::Xor => in_a != in_b,
+            }
+        });
 
         let mut bez = BezPath::new();
         for contour in contours.contours() {
             bez.extend(contour.path.elements().iter().copied());
         }
-        Ok(Path::new(bez, self.fill_rule()))
+        Ok(Path::new(bez, FillRule::NonZero))
     }
 }
 
@@ -104,6 +106,14 @@ impl Path {
             (true, false, BooleanOp::Union | BooleanOp::Xor) => Some(other.clone()),
             (false, true, _) => Some(self.clone()),
         }
+    }
+}
+
+/// The library's name for a fill rule.
+fn lib_fill_rule(rule: FillRule) -> LibFillRule {
+    match rule {
+        FillRule::EvenOdd => LibFillRule::EvenOdd,
+        FillRule::NonZero => LibFillRule::NonZero,
     }
 }
 

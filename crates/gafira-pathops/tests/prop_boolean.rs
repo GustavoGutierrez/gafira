@@ -3,7 +3,7 @@
 //! The properties are the algebraic identities of set difference, checked on
 //! generated paths rather than on fixed examples.
 
-use gafira_pathops::{DEFAULT_TOLERANCE, FillRule, Path};
+use gafira_pathops::{Containment, DEFAULT_TOLERANCE, FillRule, Path, Point};
 use kurbo::{BezPath as KurbBezPath, Rect, Shape};
 use proptest::prelude::*;
 
@@ -17,6 +17,43 @@ fn path_from_rects(rects: &[(f64, f64, f64, f64)]) -> Path {
     Path::new(bez, FillRule::NonZero)
 }
 
+/// Builds a path from rectangles read with the given rule.
+fn ruled_path(rects: &[(f64, f64, f64, f64)], rule: FillRule) -> Path {
+    Path::new(path_from_rects(rects).as_bez_path().clone(), rule)
+}
+
+fn rule_strategy() -> impl Strategy<Value = FillRule> {
+    prop::sample::select(vec![FillRule::EvenOdd, FillRule::NonZero])
+}
+
+/// One to three rectangles, which may overlap.
+fn rects_strategy() -> impl Strategy<Value = Vec<(f64, f64, f64, f64)>> {
+    prop::collection::vec(rect_strategy(), 1..=3)
+}
+
+/// Whether the oracle says the rectangles cover the point under the rule.
+fn oracle_covers(rects: &[(f64, f64, f64, f64)], rule: FillRule, x: f64, y: f64) -> bool {
+    let count = rects
+        .iter()
+        .filter(|(x0, y0, x1, y1)| *x0 < x && x < *x1 && *y0 < y && y < *y1)
+        .count();
+    match rule {
+        FillRule::EvenOdd => count % 2 == 1,
+        FillRule::NonZero => count > 0,
+    }
+}
+
+/// Whether the point is farther than `margin` from every rectangle edge.
+fn clear_of_edges(rects: &[(f64, f64, f64, f64)], x: f64, y: f64, margin: f64) -> bool {
+    rects.iter().all(|(x0, y0, x1, y1)| {
+        let near_x = (x - x0).abs() <= margin || (x - x1).abs() <= margin;
+        let near_y = (y - y0).abs() <= margin || (y - y1).abs() <= margin;
+        let in_x = *x0 - margin <= x && x <= *x1 + margin;
+        let in_y = *y0 - margin <= y && y <= *y1 + margin;
+        !((near_x && in_y) || (near_y && in_x))
+    })
+}
+
 /// A rectangle well away from the origin, so a difference is never empty by
 /// accident.
 fn rect_strategy() -> impl Strategy<Value = (f64, f64, f64, f64)> {
@@ -24,6 +61,45 @@ fn rect_strategy() -> impl Strategy<Value = (f64, f64, f64, f64)> {
 }
 
 proptest! {
+    /// Each operation covers a point exactly when the definition says, from
+    /// the answers of the two operands, each read with its own fill rule.
+    #[test]
+    fn the_point_by_point_definition_holds_for_rectangles(
+        a in rects_strategy(),
+        b in rects_strategy(),
+        rule_a in rule_strategy(),
+        rule_b in rule_strategy(),
+        x in 0.0..600.0,
+        y in 0.0..600.0,
+    ) {
+        prop_assume!(clear_of_edges(&a, x, y, 2.0 * DEFAULT_TOLERANCE));
+        prop_assume!(clear_of_edges(&b, x, y, 2.0 * DEFAULT_TOLERANCE));
+        let pa = ruled_path(&a, rule_a);
+        let pb = ruled_path(&b, rule_b);
+        let in_a = oracle_covers(&a, rule_a, x, y);
+        let in_b = oracle_covers(&b, rule_b, x, y);
+        let point = Point::new(x, y);
+        let covers = |path: &Path| {
+            path.contains(point, DEFAULT_TOLERANCE).unwrap() == Containment::Inside
+        };
+
+        let union = pa.union(&pb, DEFAULT_TOLERANCE).unwrap();
+        let intersection = pa.intersection(&pb, DEFAULT_TOLERANCE).unwrap();
+        let difference = pa.difference(&pb, DEFAULT_TOLERANCE).unwrap();
+        let reverse = pb.difference(&pa, DEFAULT_TOLERANCE).unwrap();
+        let xor = pa.xor(&pb, DEFAULT_TOLERANCE).unwrap();
+
+        prop_assert_eq!(covers(&union), in_a || in_b);
+        prop_assert_eq!(covers(&intersection), in_a && in_b);
+        prop_assert_eq!(covers(&difference), in_a && !in_b);
+        prop_assert_eq!(covers(&reverse), in_b && !in_a);
+        prop_assert_eq!(covers(&xor), in_a != in_b);
+        prop_assert!(!(covers(&difference) && covers(&reverse)));
+        for result in [&union, &intersection, &difference, &reverse, &xor] {
+            prop_assert_eq!(result.fill_rule(), FillRule::NonZero);
+        }
+    }
+
     /// The bounding box of `A \ B` is contained in the bounding box of `A`.
     #[test]
     fn the_difference_is_contained_in_its_first_operand(
