@@ -1,7 +1,8 @@
 //! The public contract of the stroke outlining and the path simplification.
 
 use gafira_pathops::{
-    BezPath, Cap, DEFAULT_TOLERANCE, FillRule, Join, NonFiniteValue, Path, PathOpError,
+    BezPath, Cap, Containment, DEFAULT_TOLERANCE, FillRule, Join, NonFiniteValue, Path,
+    PathOpError, Point,
 };
 use kurbo::{Rect, Shape};
 
@@ -207,4 +208,57 @@ fn the_simplification_keeps_the_path_within_the_tolerance() {
 fn an_invalid_tolerance_is_rejected_by_the_simplification() {
     let result = square().simplify(0.0);
     assert!(matches!(result, Err(PathOpError::InvalidTolerance { .. })));
+}
+
+fn with_rule(path: Path, rule: FillRule) -> Path {
+    Path::new(path.as_bez_path().clone(), rule)
+}
+
+#[test]
+fn the_outline_carries_non_zero_whatever_the_input_rule() {
+    let line = with_rule(line(0.0, 0.0, 100.0, 0.0), FillRule::EvenOdd);
+
+    let outline = line
+        .stroke_outline(&style(10.0), DEFAULT_TOLERANCE)
+        .unwrap();
+
+    assert_eq!(outline.fill_rule(), FillRule::NonZero);
+}
+
+#[test]
+fn crossing_strokes_stay_solid() {
+    let mut bez = BezPath::new();
+    bez.move_to((0.0, 0.0));
+    bez.line_to((10.0, 10.0));
+    bez.move_to((0.0, 10.0));
+    bez.line_to((10.0, 0.0));
+    let cross = Path::new(bez, FillRule::EvenOdd);
+
+    let outline = cross
+        .stroke_outline(&style(2.0), DEFAULT_TOLERANCE)
+        .unwrap();
+
+    assert_eq!(
+        outline.contains(Point::new(5.0, 5.0), DEFAULT_TOLERANCE),
+        Ok(Containment::Inside)
+    );
+}
+
+#[test]
+fn a_self_crossing_polyline_stays_solid() {
+    let mut bez = BezPath::new();
+    bez.move_to((0.0, 0.0));
+    bez.line_to((10.0, 10.0));
+    bez.line_to((10.0, 0.0));
+    bez.line_to((0.0, 10.0));
+    let zigzag = Path::new(bez, FillRule::EvenOdd);
+
+    let outline = zigzag
+        .stroke_outline(&style(2.0), DEFAULT_TOLERANCE)
+        .unwrap();
+
+    assert_eq!(
+        outline.contains(Point::new(5.0, 5.0), DEFAULT_TOLERANCE),
+        Ok(Containment::Inside)
+    );
 }

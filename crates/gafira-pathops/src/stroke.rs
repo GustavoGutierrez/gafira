@@ -45,7 +45,7 @@ impl Path {
             tolerance,
         );
 
-        Ok(Path::new(close_all(outline), self.fill_rule()))
+        Ok(Path::new(close_all(outline), FillRule::NonZero))
     }
 }
 
@@ -103,9 +103,6 @@ fn validate_width(width: f64) -> Result<(), PathOpError> {
         })
     }
 }
-
-/// The fill rule a stroked outline carries.
-const _: FillRule = FillRule::NonZero;
 
 #[cfg(test)]
 mod tests {
