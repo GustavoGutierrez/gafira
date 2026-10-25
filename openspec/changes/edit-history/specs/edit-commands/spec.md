@@ -227,7 +227,7 @@ A move that leaves every list as it was MUST return `Unchanged` and write nothin
 
 ### Requirement: Page and document commands (ARQ-81) (D10, Q4)
 
-`SetProperty` MUST also target page fields (`name`, `size`, `locked`, `hidden`) and the document DPI. A size or DPI change that would leave any page outside its pixel limits MUST fail with `InvalidDocument(ValidationError::PageSize { .. })` and no change (C2b constraint 5); a DPI change MUST check every page. A DPI outside the range `validate()` accepts MUST fail with `InvalidValue` before any page is checked. A page or DPI property given node targets MUST fail with `InvalidValue`. The merge key of a page field names the page and no nodes; the merge key of the DPI names no page and no nodes. After a successful apply, `touches` of a page field MUST list that page. Before it writes, `revert` MUST check that the page still exists (`MissingPage`), and that the old size still fits its pixel limits at the current DPI, or the old DPI still fits every current page (`InvalidDocument(PageSize)` otherwise).
+`SetProperty` MUST also target page fields (`name`, `size`, `locked`, `hidden`) and the document DPI. A size or DPI change that would leave any page outside its pixel limits MUST fail with `InvalidDocument(ValidationError::PageSize { .. })` and no change (C2b constraint 5); a DPI change MUST check every page. A DPI outside the range `validate()` accepts MUST fail with `InvalidValue` before any page is checked. A page or DPI property given node targets MUST fail with `InvalidValue`. The merge key of a page field names the page and no nodes; the merge key of the DPI names no page and no nodes. After a successful apply, `touches` of a page field MUST list that page. `touches` of a DPI change MUST be empty: the DPI is a document field, and no page or node `Arc` changes (owner decision, 2026-10-25). `DirtySet` therefore carries no DPI signal, and a consumer that depends on the document DPI (for example a renderer or a thumbnail cache of pages not sized in `px`) MUST compare `Document::dpi` before and after a command itself. Before it writes, `revert` MUST check that the page still exists (`MissingPage`), and that the old size still fits its pixel limits at the current DPI, or the old DPI still fits every current page (`InvalidDocument(PageSize)` otherwise).
 
 `InsertPage` MUST insert one empty page at an index of the page list (`0..=len`; a larger index MUST fail with `IndexOutOfRange`). Its size MUST fit the pixel limits at the document DPI, or it MUST fail with `InvalidDocument(PageSize)` naming the id the page would get. It MUST allocate its id from the counter, and a redo after `revert` MUST produce the same id; an exhausted id space MUST fail with `IdSpaceExhausted` and no change. Before it writes, `InsertPage::revert` MUST check that the inserted page is still in the list (`MissingPage`), that it still equals the page it inserted (`InvalidValue`: the page was edited since, and removing it would lose that edit), and that the id counter stands exactly one above the counter it recorded (`InvalidValue` otherwise); it then removes the page and restores the counter. After a successful apply, `touches` MUST list the new page.
 
@@ -237,6 +237,11 @@ A move that leaves every list as it was MUST return `Unchanged` and write nothin
 - GIVEN an A0 page at 300 DPI
 - WHEN `SetProperty` sets the DPI to 351
 - THEN it returns the page-size error and the DPI is still 300
+
+#### Scenario: A DPI change touches nothing (D10, unit)
+- GIVEN a document at 96 DPI with two pages
+- WHEN `SetProperty` sets the DPI to 100, and separately a page name of the second page
+- THEN both return `Ok(Applied::Changed)`, the DPI command's `touches` has no page and no node, and the rename's `touches` lists exactly the second page
 
 #### Scenario: Page revert checks the size at the current DPI (D10, unit)
 - GIVEN a page resized by `SetProperty`, then the DPI raised so that the old size no longer fits
@@ -275,7 +280,7 @@ A move that leaves every list as it was MUST return `Unchanged` and write nothin
 
 Laws 1 and 2 MUST also run when `apply` returns `Unchanged`. The laws cover generated valid documents only.
 
-Known limits of law 4, accepted: a listed item is only checked to exist, so a command that lists something it did not change passes (the law is one-sided); and a node whose `Arc` changes by copy on write without a change in value counts as changed.
+Known limits of law 4, accepted: a listed item is only checked to exist, so a command that lists something it did not change passes (the law is one-sided); and a node whose `Arc` changes by copy on write without a change in value counts as changed. A document field such as the DPI is outside the law: a DPI change replaces no page or node `Arc`, so its empty `touches` passes law 4, and consumers that depend on the DPI compare `Document::dpi` themselves ("Page and document commands").
 
 Law 5 and `Transaction`: a transaction whose child fails restores an equal document, not the original page `Arc`s ("Transaction"), so law 5 cannot hold for a failing transaction. The `Transaction` property MUST therefore generate only children that cannot fail on any document the transaction can start from; the rollback is covered by the `Transaction` unit tests, which check value equality.
 

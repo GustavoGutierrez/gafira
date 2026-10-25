@@ -649,3 +649,13 @@ Flow: full (inherited)
 3. Mutants (T3, own `git archive` export of the commit under test, default per-job target dirs): `cargo mutants -p gafira-edit --file crates/gafira-edit/src/pages.rs --file crates/gafira-edit/src/insert_nodes.rs --jobs 4`: 45 mutants, 35 caught, 0 missed, 0 timeout, 10 unviable (`pages.rs` 15 caught, 4 unviable; `insert_nodes.rs` 20 caught, 6 unviable). All 46 logs show `Compiling gafira-edit` on the mutated tree. `ci.yml` has no mutants.
 4. Gates on each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, V14, all rc 0.
 5. Pending spec edits stay pending and untouched: W2 (V14 text: what is excluded and the limit list, now also the new limits above), W3 (law 5 against `Transaction` rollback), W4 (`InsertPage` revert precondition, counter restore and `touches` of the page commands; add the exact-counter precondition of both insert reverts to it). Suggestions from the verify report (S1 and others) were not part of this round.
+
+## Spec consolidation before archive
+
+Branch `docs/edit-history-spec-edits`. The pending spec edits of D1 to D10 (this file and the verify report's ambiguity warnings) are written into the delta specs, matching the merged code; no code or test changed.
+
+### Owner decision: `touches` of a DPI change (2026-10-25)
+
+Question (D10a verify W1, class ambiguity): a DPI change lists nothing in `touches`, so a consumer driven only by `DirtySet` would miss it. Options: (A) a document-level flag in `DirtySet`, (B) state that consumers compare the DPI, (C) list every page. The owner chose **B**: a DPI change lists nothing in `touches`, `DirtySet` is unchanged, no code changes, and consumers that depend on the document DPI MUST compare `Document::dpi` themselves. Written into `specs/edit-commands/spec.md` ("Page and document commands", with the scenario "A DPI change touches nothing", and the law 4 limits paragraph of "Command property laws").
+
+Still open for the owner: whether V12 should check an exact copy count (or derive it from the V5 table) instead of the `>= 3` floor. The limit is recorded in `specs/workspace-tooling/spec.md`.
