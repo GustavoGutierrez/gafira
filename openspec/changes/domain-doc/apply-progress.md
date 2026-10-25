@@ -2,7 +2,7 @@
 
 ## D1 (branch `feat/domain-doc-1`, base `chore/lite-sdd-methodology` 369e3d5)
 
-Status: done. Seven commits (split into PR 1a, fb679a5..d8d0908, and PR 1b, the rest), each run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green).
+Status: done. Seven commits (split into PR 1a, d380fd8..f064203, and PR 1b, the rest), each run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green).
 
 | # | Commit | Content |
 |---|---|---|
@@ -40,3 +40,35 @@ Document model
 - W2: `document-model` spec now excludes error/helper types (`Axis`, `PageSizeError`) from the Serialize/Deserialize requirement, as in `design.md`.
 - W3: `openspec/config.yaml` and this file corrected (cargo-deny 0.20.2 is installed; seven commits; PR 1a/1b split).
 - Test hardening (RED shown by mutating each new expected value, one at a time, each failing its test): A4 now asserts height (fractional px and unit preserved); A0 asserts px at 300 DPI (9933 x 14043) and 350 DPI (11589 x 16384).
+
+## D2a (branch `feat/domain-doc-2a`, base `feat/domain-doc-1b` 9905723)
+
+Status: done after the verify fixes below. Each commit was run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green). `cargo deny check` and V5/V11/V12 were not run during apply (verify ran them, all green).
+
+| # | Commit | Content |
+|---|---|---|
+| 1 | `feat(doc): add Placement and its affine transform` | `placement.rs` (`Placement`, `Flip`, `to_transform`), exports in `lib.rs` |
+| 2 | `feat(doc): add ElementBase` | `element.rs`, export in `lib.rs` |
+
+### Requirements and scenarios covered
+
+Placement and to_transform (D2a), all in `placement::tests`: "Plain placement" `plain_placement`; "Quarter turn clockwise" `quarter_turn_clockwise`; "Flip" `flip`; "Skew 45 degrees" `skew_45_degrees`; "Center is a fixed point" property `center_is_a_fixed_point`; "Non-finite does not panic" `non_finite_does_not_panic`; "Values retained" `values_are_retained`; constructor defaults `new_sets_defaults`. Value policy "IEEE equality" (zeros part): `ieee_equality`.
+
+ElementBase (D2a), in `element::tests`: "Defaults" `defaults`. Value policy (D2a part): "Out-of-range values are representable" `out_of_range_values_are_representable` (opacity 1.5, NaN `x`, `Dpi::new(0)`); NaN self-inequality `nan_node_is_not_equal_to_itself`.
+
+RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, flip, skew, center property); `ElementBase::new` stubbed with wrong defaults failed `defaults`. Each then went GREEN with the real implementation.
+
+### Deviations and notes
+
+- No serde derives on `Placement`, `Flip` or `ElementBase`: the wire attributes belong to D3.
+- The "node with a NaN placement" part of "IEEE equality" is exercised on `ElementBase` (no `Node` until D2b); D2b should re-check it on `Node`.
+- Composition uses `Affine::scale_non_uniform` for flip and `Affine::new` for the x shear (`c = tan(skew)`).
+- The proptest run created a `proptest-regressions/placement.txt` during RED; it was a stub-induced failure and was deleted, not committed.
+- Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 248 insertions(+) (forecast ~335; under).
+
+### D2a follow-ups (from verify-report)
+
+- CRITICAL 1: test `combined_rotation_skew_and_flip` (rotation 90, skew 45, flip.x, local (2,2) -> (0,1), derived by hand from `spec.md` order). Mutations: swapping shear and mirror fails it; swapping rotate and shear fails it (each restored).
+- W2: `non_finite_gives_non_finite_coefficients` asserts non-finite coefficients; returning identity for non-finite input fails it.
+- Suggestions: NaN compared by bits in `element::tests`; skew property widened to the open interval (-90, 90) and still holds (20000 cases run).
+- W1: `document-model` spec notes that serde for D2 types lands in D3.
