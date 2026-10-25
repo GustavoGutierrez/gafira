@@ -1503,3 +1503,131 @@ None.
 - Gates are green on all three commits: fmt, clippy, test (275 / 278 / 278), `cargo deny check`, ARQ-07, V11, V5 and V12.
 - Mutants: cargo-mutants 14/17 caught, 0 missed, 0 timeout, 3 unviable. Hand mutations: 5/6 killed. M6 (recursive DFS) survived, which is WARNING 1.
 - Next: the owner confirms the P5 order (WARNING 2) and opens the D5a PR. Then **tdd-apply D5b**. WARNINGs 3 and 4 can ride along with D5b's docs.
+
+## D5b (branch `feat/domain-doc-5b`, range `main..feat/domain-doc-5b`, base `main` at 777231d)
+
+Commits checked: "chore: let the coordinator push branches", "docs(sdd): settle P5 order and fix D5a verify items", "test(doc): prove the reachability walk is not recursive", "feat(doc): add EditToken and DocMut", "ci: restrict EditToken to the edit crates", "docs(sdd): record domain-doc D5b progress", "chore: add git-workflow-and-versioning and the integration rule". During this verify the owner added "chore(skills): vendor git-workflow-and-versioning as a project skill" (`.agents/skills/git-workflow-and-versioning/SKILL.md`, `skills-lock.json`; no code). It was checked for paths and rule conflicts only. The owner then added "docs: show the logo and splash screen in the README" (`README.md` only; both image paths exist, relative, no attribution). Gates do not depend on it.
+
+### Gates per commit
+
+Each commit was checked out alone in its own worktree with its own target directory. Every CI step body was extracted from that commit's `ci.yml` and run under `bash --noprofile --norc -eo pipefail`.
+
+| Commit | fmt | clippy `-D warnings` | test (passed / failed) | `cargo deny check` | ARQ-07 | V11 (forbid unsafe) | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| test(doc): prove the reachability walk is not recursive | ok | ok | 278 / 0 | ok | ok | ok | ok | ok | absent |
+| feat(doc): add EditToken and DocMut | ok | ok | 295 / 0 | ok | ok | ok | ok | ok | absent |
+| ci: restrict EditToken to the edit crates | ok | ok | 295 / 0 | ok | ok | ok | ok | ok | rc 0 |
+| chore: add git-workflow-and-versioning and the integration rule (tip) | ok | ok | 295 / 0 | ok | ok | ok | ok | ok | rc 0 |
+
+295 = 278 - 1 removed unit test + 10 in `tests/edit.rs` + 8 `compile_fail` doctests. This matches `apply-progress.md`. The docs-only commits change no code. Note: a first run that shared one target directory across worktrees failed clippy on stale fingerprints (all worktrees were created at the same moment, so the sources looked older than the artifacts). That was a harness artifact; the per-commit target re-run above is the result.
+
+### V13 (re-run by verify)
+
+The `ci.yml` body is byte-identical to the design block (`design.md:150-173`, 24 lines, `diff` empty). It was run from a clone of the branch, git 2.34.1. Untracked scratch files were used and reverted.
+
+| Case | Result | Spec |
+|---|---|---|
+| E0 clean tree | rc 0 | ok |
+| E10 no `crates/gafira-edit/` | rc 0, stdout and stderr empty | ok |
+| E1 `// EditToken` in `apps/gafira-cli/src/main.rs` | rc 1, names the file | ok |
+| E2 constructor name in a `gafira-color` test | rc 1 | ok |
+| E3 `pub struct EditTok {` | rc 1, positive-control message | ok |
+| E4a pattern `EditToken(` | rc 1, `git grep failed (rc=128)` | ok |
+| E4b `allowed='^crates/(gafira-doc'` | rc 1, `filter grep failed (rc=2)` | ok |
+| E5 run from `crates/`; non-repository copy | rc 1 (positive control); rc 1 (`rc=128`) | ok |
+| E6 `pub use gafira_doc::EditToken as Cap;` | rc 1, re-export message | ok |
+| E7a one-line group, E7b multi-line group, E8 `pub type`, E9 glob | rc 1 on each, re-export message | ok |
+| E12 `pub(crate) use` | rc 0 | ok |
+| E14 mention in `gafira-edit` without re-export, and in `gafira-testkit` (`crates/gafira-doc/tests/edit.rs` is in the real tree) | rc 0 | ok |
+| E11 two-step alias, E13 `lend`, E15a `pub use gafira_doc as d;`, E15b `pub use gafira_doc::edit;` | rc 0 on each | known limits 1, 2 and 6, as specified |
+
+**Known limits of V13, recorded as NOT met** (`edit-capability/spec.md`, "V13 CI step"): (1) two-step alias; (2) a public function, field or wrapper handing out `EditToken`/`&EditToken`; (3) macro-generated re-export; (4) `;` in a comment or string splitting a record; (5) inference in a consumer that never names the token; (6) crate or module re-export. Review covers them until `trybuild` arrives in C3.
+
+**Deferred to C3:** the `trybuild` ARQ-30 compile-failure test from `gafira-ui`. No third-party package was added: `Cargo.lock` gains only `gafira-doc` against the pre-change lock (parent of "feat(doc): add gafira-doc crate skeleton"), and `main..HEAD` does not touch `Cargo.lock` or any manifest.
+
+### Requirements and scenarios (edit-capability, D5b)
+
+| Requirement / scenario | Evidence | Status |
+|---|---|---|
+| EditToken: no `Clone`/`Copy`/`Default`/`Debug`, private field, only the hidden constructor, no other public fn returns it | `edit.rs:39-48`. The only `-> EditToken` is `edit.rs:45`. No `derive` on the struct. | covered |
+| Only the allowed crates name it | V13 E0. `grep` finds no `EditToken` outside `crates/gafira-doc` | covered |
+| Not Clone / Not Copy / No struct literal (compile-fail doctests) | `edit.rs:18`, `:25`, `:34` pass as `compile_fail`. Compiled by hand in a scratch crate: **E0599**, **E0382**, **E0451**, one error each (the intended reason). A positive control (`edit(&t).alloc_node_id()`) compiles. | covered (regression aids, ED3) |
+| Hidden from the docs | `cargo doc -p gafira-doc --no-deps --locked`. `__new_for_gafira_edit_only` is absent from every file under `target/doc` outside `src/`; it is present only in `src/gafira_doc/edit.rs.html`, as expected. | covered |
+| `Document::edit`/`DocMut` API (`alloc_*`, `set_dpi`, `pages_mut`, `page_mut`, `node_mut`, `as_doc`); exclusive borrow; no implicit validation | `edit.rs:94-146` | covered |
+| Edit through the capability | `tests/edit.rs:57` `edit_builds_a_valid_document`. See WARNING 1 | covered |
+| One token, many edits | `tests/edit.rs:71` | covered |
+| No write without a token (`doc.dpi =`, `pages_mut`, `edit()`) | doctests `edit.rs:58`, `:65`, `:72`. By hand: **E0616**, **E0599**, **E0061** | covered (regression aids) |
+| Shared `Arc` cannot be mutated | doctests `edit.rs:79`, `:87`. By hand: **E0616** (privacy, not mutability) and **E0308**. See SUGGESTION 2 | covered (regression aids) |
+| Invalid state allowed until validated | `tests/edit.rs:82` (`Orphan`) | covered |
+| Copy on write keeps sharing | `tests/edit.rs:148` (edited page and node differ; sibling node and the other page are `ptr_eq`). Hand mutations H2 and H3 are killed. | covered |
+| Whole-value replacement documented | rustdoc `document.rs:13-16` and `edit.rs:52-56` (`*doc = other`, `EditService` in C3) | covered (manual) |
+| Shared counter 5, 6, 7 then 8 | `tests/edit.rs:96` | covered |
+| Last issuable id | `tests/edit.rs:107` | covered |
+| Exhaustion, no wrap (node and page) | `tests/edit.rs:115`. Hand mutation H4 is killed. | covered |
+| `IdSpaceExhausted` `Copy`/`Eq`/`Display`/`Error` | `ids.rs:118`, `ids.rs:124` (D2b) | covered |
+| Allocation outside `DocMut` not public | `document.rs:73` `pub(crate) fn alloc_id`, ungated | covered |
+| Readers hold `Arc<Document>`: copy-on-write handle | `tests/edit.rs:172` | covered |
+| Changing the DPI (design file map) | `tests/edit.rs:135` | covered |
+| V13 CI step (edit-capability and `workspace-tooling/spec.md:13`) | `ci.yml` V13 step, E-table above | covered (known limits not met, as specified) |
+| `trybuild` deferred; lock unchanged except `gafira-doc` | see above | covered / deferred to C3 |
+
+### D5a follow-ups and owner decisions
+
+- D5a WARNING 1 (deep chain): `validate.rs:1049` now uses 100 000 groups. Hand mutation H1 (P6 replaced by a recursive `visit`) **aborts the test binary with a stack overflow in both debug and release** (`cargo test` rc 101, SIGABRT). The test takes 0.46 s in debug and 0.07 s in release. The deviation is accepted: `std::thread::Builder` is banned in domain crates (ARQ-02) and `#[allow]` is forbidden, so a deeper chain is the only lever. The failure is an abort, not a `FAILED` line, but CI still goes red.
+- D5a WARNING 2 (P5 order): `document-validation/spec.md:47` now says P5 is check-major over all pages, and the design's P5 row (`design.md:308`) states the same. Applied.
+- D5a WARNINGs 3 and 4: "Eleven" is at `proposal.md:110`, and 4 519 is at `design.md:373`, `:582` and `proposal.md:68`. Applied. D5a SUGGESTION 2 (misquote) is applied at `apply-progress.md:452`. SUGGESTIONS 1 and 3 were not taken (harmless).
+- Push rule: `AGENTS.md:50-51`, `CLAUDE.md:10`, `coordinator.md:20` and `:25`, and `README.md:57` agree (the coordinator pushes and opens the PR after verify PASS; the owner merges, bottom-up, with merge commits, and a PR is retargeted to `main` after its base merges). `.claude/settings.json` has no `git push` deny. See WARNING 2 for one stale line.
+- Paths: `git grep -n '/home/\|~/'` hits two binary assets and `openspec/changes/workspace-scaffold/design.md:333` (`~/.cargo/registry/...`). That line predates this branch and is a generic Cargo-home path, not a user path (SUGGESTION 4). The vendored skill and `skills-lock.json` contain no such paths.
+
+### Declared deviations
+
+1. Deep chain at 100 000 instead of a small-stack thread: accepted (see above, H1).
+2. `Document::edit` in `edit.rs`, and `alloc_id` stays `pub(crate)` with the gate removed: accepted. This matches the design's dead-code table (`design.md:66`). The design sketch at `design.md:264` still shows `#[cfg(test)]` with the note "gate removed in D5b", which is consistent.
+3. `allocator_increments_then_exhausts` removed: accepted. Its three assertions (value, increment, exhaustion without change) are covered by `tests/edit.rs:96`, `:107` and `:115` through the public API, and H4 proves the exhaustion path.
+4. `node_mut` on a missing node in an existing page copies the page on write: accepted. It changes no value, and the spec's sharing rule is about the edited path. A caller that probes for missing nodes un-shares one page; that is a performance note, not a contract breach.
+
+### Mutants
+
+- cargo-mutants (`mutants-D5b`, `--in-diff`, gafira-doc): 13 mutants, 6 caught, **0 missed, 0 timeout**, 7 unviable (wall time 36 s). Caught: `set_dpi` -> `()`, `pages_mut` -> leaked empty vec, `page_mut` -> `None`, `==` -> `!=` in `page_mut`, `node_mut` -> `None`, `as_doc` -> leaked default. Unviable: `Default` on `EditToken`/`DocMut`/`NodeId`/`PageId`/`Page`/`Node` (no such impls).
+- `alloc_id`'s body is not a changed line (only its `#[cfg(test)]` gate was removed), so `--in-diff` did not mutate it. It is covered by the three allocation tests and by H4. The archive whole-crate run will mutate it.
+- Hand mutations (4; only rules cargo-mutants cannot express):
+
+| Id | Rule | Mutation | Result |
+|---|---|---|---|
+| H1 | P6 "without recursion" (D5a W1) | iterative DFS replaced by a recursive `visit` | killed (stack overflow abort, debug and release) |
+| H2 | copy on write along the edited path only | `page_mut` first calls `Arc::make_mut` on every page | killed (`an_edit_copies_only_its_path`) |
+| H3 | same, at node level | `node_mut` un-shares every node of the page | killed (same test) |
+| H4 | exhaustion leaves `next_id` unchanged | counter wraps, then returns `Err` | killed (`an_exhausted_counter_fails_and_does_not_wrap`) |
+
+### Code rules and test scope
+
+- No `#[allow]`, `HashMap`/`HashSet`, `unsafe`, `expect`, `panic!` or `todo!` in production code (the `unwrap`/`todo!` lines are inside `compile_fail` doctests). The only crate-root change is `mod edit;` plus the re-export (`lib.rs:12`, `:26`). No `proptest-regressions`. No AI attribution in any commit message.
+- Test scope: no accessor, derive or `Display` tests were added. `a_missing_page_or_node_is_none` tests the `None` contract and kills the `page_mut` `==` -> `!=` mutant. `a_cloned_node_handle_does_not_make_the_document_mutable` mostly exercises `std::sync::Arc`, but the spec requires the scenario, so it is kept. `sample()` carries `assert_ne!(first, second)` (`tests/edit.rs:51`), which is redundant with `ids_come_from_one_counter` (SUGGESTION 3).
+
+### Size
+
+Code only, `git diff --shortstat main..HEAD -- crates .github`: 6 files, 362 insertions, 16 deletions, so **378** changed lines. Per commit: 4, 348 and 26. This matches `apply-progress.md` (ratio 0.9 to ~420), and it is under ~700.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **"Edit through the capability" test does not follow the scenario's WHEN** (`tests/edit.rs:57`; spec "inserts a group as a root through `page_mut`"). `edit_builds_a_valid_document` builds the page with its root first and pushes it through `pages_mut` (`add_page`, `tests/edit.rs:30-38`). It never calls `page_mut`. Inserting a root through `page_mut` and then validating `Ok` is covered elsewhere: `sample()` at `:48-50`, plus `assert_eq!(doc.validate(), Ok(()))` at `:138`. So the behavior is proven, but the scenario maps to two tests. Add one `page_mut` root insertion to `edit_builds_a_valid_document` with D6a, or note the mapping.
+2. **Stale skills row** `AGENTS.md:103`: "Preparing a PR (owner opens it) | `branch-pr`" contradicts the new rule at `AGENTS.md:50-51` (the coordinator opens PRs after verify PASS). Reword it to "Preparing a PR (coordinator opens it after verify PASS)".
+
+### SUGGESTION
+
+1. `design.md:365` and `:434` (T5.1) still say "10 000-deep chain" for the unit test, which is now 100 000 (`validate.rs:1049`). The spec's 10 000 (`document-validation/spec.md:222`) is still met. Align the design text with D6a's docs.
+2. The `compile_fail` doctest at `edit.rs:79` fails on field privacy (E0616), not on the shared `Arc`: `Arc::get_mut` on a unique `Arc` would succeed. It is a regression aid (ED3), so this is acceptable. A clearer snippet clones the `Arc` and tries `doc.edit(..)` through `&*arc` (E0596).
+3. Drop the redundant `assert_ne!(first, second)` in the `sample()` helper (`tests/edit.rs:51`).
+4. `openspec/changes/workspace-scaffold/design.md:333` uses `~/.cargo/registry`. It is generic and predates this branch; `$CARGO_HOME/registry` would satisfy the no-user-paths rule literally.
+5. The vendored `git-workflow-and-versioning` skill (owner commit) records source and hash in `skills-lock.json` but not its license. Note the upstream license next to the lock entry, to keep the permissive-only rule auditable.
+
+### Result
+
+- Verdict: **PASS** for D5b (0 CRITICAL, 2 WARNING, 5 SUGGESTION). D6a and D6b remain, so the change is not complete.
+- Gates are green on every code commit and on the tip: fmt, clippy, tests 278 / 295 / 295 / 295, `cargo deny`, ARQ-07, V11, V5, V12, and V13 (once present). V13 E0 to E15 behave as specified, and limits 1 to 6 are recorded as not met. `trybuild` is deferred to C3.
+- Mutants: cargo-mutants 6/13 caught, 0 missed, 0 timeout, 7 unviable. Hand mutations: 4/4 killed.
+- Next: the coordinator pushes `feat/domain-doc-5b` and opens its PR against `main`. Then **tdd-apply D6a**. WARNINGs 1 and 2 and SUGGESTION 1 can ride along with D6a.
