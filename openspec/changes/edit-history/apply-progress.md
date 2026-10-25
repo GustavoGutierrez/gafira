@@ -119,3 +119,46 @@ Size (`git diff --shortstat e1e4963..HEAD -- crates .github`): 526 insertions, 1
 
 - W1: `edit-commands`, "Command property laws" item 4: a page is required when its own fields or `roots` differ or it exists on one side only; a node when its `Arc` is not pointer-equal or it exists on one side only. Record the known limits: listed items are only checked for existence (W5), and a copy-on-write `Arc` change without a value change counts as a change (S3).
 - W6 / S1: `workspace-tooling`, V12 item 3: the copy count is still `>= 3` with four copies; make it exact or derive it from the V5 table, and fix the "V12 count" wording in `proposal.md` D1 row.
+
+## D3: `SetProperty` (node and shape fields)
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| feat(edit): add SetProperty for node and shape fields | `Property`, `SetProperty`, 14 unit tests |
+| test(edit): run the command laws over SetProperty | `gafira-testkit` dev-dependency, `tests/prop_commands.rs` (2 properties, 1 000 cases each) |
+| docs(edit-history): record D3 progress | this section |
+
+Each commit: fmt, clippy `-D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (ARQ-07, forbid unsafe, V5, V12, V13) all rc 0. V5 needed no change: it reads `-e normal,build`, so the dev-dependency is not seen.
+
+Size (`git diff --shortstat a34cdb7..HEAD`): 684 insertions in code and tests before this file (forecast ~600); about 300 of them are the command and 380 tests.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Move several nodes | `it_moves_several_nodes_and_reverts` (touches = the two nodes, no page) |
+| Same value is Unchanged | `the_same_value_is_unchanged_and_shares_the_page` (page `Arc` shared, also after revert) |
+| Merged drag keeps the origin | `a_merged_drag_applies_the_last_value_and_reverts_to_the_origin` |
+| Non-finite value rejected | `invalid_values_fail_and_change_nothing` (NaN, 1.5, negative sizes, skew bounds, fill channels and alpha) and `range_edges_are_accepted` |
+| Locked node is still editable | `a_locked_node_is_still_editable` |
+| Shape property on a non-shape | `a_shape_property_on_another_node_fails_without_a_partial_change` |
+| MergeKey.kind carries the property (carry-over) | `the_merge_key_names_the_property_page_nodes_and_gesture` (8 kinds), `merge_needs_an_equal_key_and_a_set_property` |
+| D1 W4: re-apply after a failed apply | `a_command_is_reusable_after_a_failed_apply`, `a_failed_apply_keeps_the_record_of_the_last_good_one` |
+| Laws 1 to 6 | `set_property_obeys_the_command_laws` (wide space, invalid values included) and `merged_set_property_drags_obey_the_command_laws` (same page, node and gesture so law 6 runs on almost every case) |
+
+### RED evidence
+
+The command was drafted before the tests, so the first test run was green. RED was shown afterwards by mutating the finished code; each mutant makes an assertion fail:
+
+- Unit: revert without `.rev()` (duplicate targets), dropping `w >= 0`, skew bound `>` to `>=`, `Unchanged` without recording, `merge` that does not take the new value, `merge` that ignores the key, never `Unchanged`, empty-revert shortcut, not storing `previous`.
+- Property: `touches` empty (law 4), revert as no-op (law 1), `merge` that drops the new value (law 6; this survived the first property until `drag` was added).
+
+### Deviations and notes
+
+- `previous` is captured by every successful `apply`, not only the first (spec: "on first apply"). Observable behavior is the same (the recorded value is the one before that apply) and a failed or repeated apply stays correct; `merge` keeps the first command's record as the spec asks.
+- `Unchanged` records an empty `previous`, so `revert` after it is a no-op that does not copy on write.
+- Law 4 only checks that listed items exist, so over-listing (the page in `touches`) is not caught by the harness; the unit test asserts `touches.pages` is empty.
+- `Property::Name` carries `Option<String>` (the node field is optional). No `Display` or accessor tests.
+- `Cargo.lock` gains the `gafira-testkit` edge under `gafira-edit`.
