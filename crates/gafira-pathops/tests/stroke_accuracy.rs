@@ -6,7 +6,7 @@
 //! outline and measures that distance.
 
 use gafira_pathops::{BezPath, Cap, FillRule, Join, Path, Point, StrokeStyle};
-use kurbo::{ParamCurve, Shape};
+use kurbo::{CubicBez, ParamCurve, ParamCurveNearest, Shape};
 
 const WIDTHS: [f64; 5] = [0.1, 1.0, 10.0, 100.0, 1000.0];
 const TOLERANCES: [f64; 5] = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5];
@@ -75,19 +75,22 @@ fn round_style(width: f64) -> StrokeStyle {
 fn a_round_cap_lies_within_the_tolerance_of_the_exact_cap() {
     for width in WIDTHS {
         for tolerance in TOLERANCES {
-            let mut bez = BezPath::new();
-            bez.move_to((0.0, 0.0));
-            bez.line_to((100.0, 0.0));
-            let line = Path::new(bez, FillRule::NonZero);
             let centreline = [(Point::new(0.0, 0.0), Point::new(100.0, 0.0))];
+            // The same line drawn in both directions.
+            for (from, to) in [(0.0, 100.0), (100.0, 0.0)] {
+                let mut bez = BezPath::new();
+                bez.move_to((from, 0.0));
+                bez.line_to((to, 0.0));
+                let line = Path::new(bez, FillRule::NonZero);
 
-            let outline = line.stroke_outline(&round_style(width), tolerance).unwrap();
+                let outline = line.stroke_outline(&round_style(width), tolerance).unwrap();
 
-            let worst = worst_deviation(&outline, &centreline, width);
-            assert!(
-                worst <= tolerance + 1e-10,
-                "width {width}, tolerance {tolerance}: the cap deviates by {worst}"
-            );
+                let worst = worst_deviation(&outline, &centreline, width);
+                assert!(
+                    worst <= tolerance + 1e-10,
+                    "width {width}, tolerance {tolerance}, from {from}: the cap deviates by {worst}"
+                );
+            }
         }
     }
 }
@@ -115,9 +118,12 @@ fn a_round_join_lies_within_the_tolerance_of_the_exact_join() {
             // outline is the exact offset of the polygon. The square turns by
             // 90 degrees at each corner, the triangle by about 120.
             let side = 3.0 * width;
+            // Each is drawn in both directions.
             let shapes = [
                 polygon(&[(0.0, 0.0), (side, 0.0), (side, side), (0.0, side)]),
+                polygon(&[(0.0, side), (side, side), (side, 0.0), (0.0, 0.0)]),
                 polygon(&[(0.0, 0.0), (side, 0.0), (side / 2.0, side)]),
+                polygon(&[(0.0, 0.0), (side / 2.0, side), (side, 0.0)]),
             ];
             for (shape, centreline) in shapes {
                 let outline = shape
@@ -132,4 +138,76 @@ fn a_round_join_lies_within_the_tolerance_of_the_exact_join() {
             }
         }
     }
+}
+
+/// Whether the point lies on the butt cap at `end`: the line through `end`
+/// perpendicular to the tangent, of length `width`.
+fn on_cap_line(p: Point, end: Point, tangent: kurbo::Vec2, width: f64) -> bool {
+    let offset = p - end;
+    let along = offset.dot(tangent) / tangent.hypot();
+    along.abs() <= 1e-7 && offset.hypot() <= width / 2.0 + 1e-7
+}
+
+/// Checks the outline of a stroked curve against the exact stroke: every sampled point of the outline is at half the width from the curve, or
+/// on a cap line at one of its two ends.
+fn assert_offset_of_curve(curve: CubicBez, width: f64, tolerance: f64) {
+    let mut bez = BezPath::new();
+    bez.move_to(curve.p0);
+    bez.curve_to(curve.p1, curve.p2, curve.p3);
+    let style = StrokeStyle {
+        width,
+        cap: Cap::Butt,
+        join: Join::Round,
+    };
+
+    let outline = Path::new(bez, FillRule::NonZero)
+        .stroke_outline(&style, tolerance)
+        .unwrap();
+
+    for segment in outline.as_bez_path().segments() {
+        for k in 0..=SAMPLES_PER_SEGMENT {
+            let p = segment.eval(k as f64 / SAMPLES_PER_SEGMENT as f64);
+            let near = curve.nearest(p, 1e-9);
+            let on_the_offset = (near.distance_sq.sqrt() - width / 2.0).abs() <= tolerance;
+            let on_a_cap = on_cap_line(p, curve.p0, curve.p1 - curve.p0, width)
+                || on_cap_line(p, curve.p3, curve.p3 - curve.p2, width);
+            assert!(
+                on_the_offset || on_a_cap,
+                "the point {p:?} is off the exact stroke"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_offset_of_a_curved_centreline_is_left_untouched() {
+    // A quarter-circle-like cubic.
+    assert_offset_of_curve(
+        CubicBez::new((50.0, 0.0), (50.0, 27.0), (27.0, 50.0), (0.0, 50.0)),
+        10.0,
+        1e-3,
+    );
+}
+
+#[test]
+fn the_offset_of_a_closed_loop_curve_is_left_untouched() {
+    // Both ends of the curve are the same point, so both ends of its offset lie
+    // at half the width from that vertex, without being an arc around it.
+    assert_offset_of_curve(
+        CubicBez::new((0.0, 0.0), (50.0, 50.0), (-50.0, 50.0), (0.0, 0.0)),
+        1.0,
+        1e-3,
+    );
+}
+
+#[test]
+fn the_offset_of_a_short_curve_is_left_untouched() {
+    // The curve is short against the half width, so the middle point of its
+    // offset lies at about half the width from the start vertex, like the
+    // middle point of an arc around that vertex, while its end does not.
+    assert_offset_of_curve(
+        CubicBez::new((0.0, 0.0), (0.1, 0.0), (0.2, 0.0), (0.35, 0.0)),
+        10.0,
+        1e-3,
+    );
 }
