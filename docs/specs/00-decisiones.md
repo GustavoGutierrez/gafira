@@ -74,11 +74,12 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
 
 Fecha: 24 de octubre de 2026.
 
-- **Qué es**: una pantalla breve que aparece al iniciar la aplicación, con la marca y un indicador de carga. Su nombre de interfaz es **«Pantalla de arranque»** (PROPUESTA de 03 §2.1, para no chocar con «Inicio», que es otra pantalla).
+- **Qué es**: una pantalla breve que aparece al iniciar la aplicación, con la marca y un indicador de carga. Su nombre de interfaz es **«Pantalla de arranque»** (**FIJADA**, aprobada por el titular el 24 de octubre de 2026; evita chocar con «Inicio», que es otra pantalla).
 - **Imagen**: `assets/splash_screen.jpg` (JPEG de 1672×941 px, 296 847 bytes; ilustración de un guacamayo, montañas y mar en coral, grafito y dorado). Va **incrustada en el binario** y no depende de rutas del usuario.
 - **Imagen reemplazable**: se cambia sustituyendo ese archivo por otro con el mismo nombre base (`splash_screen.jpg` o `splash_screen.png`) y recompilando, sin tocar código. La build valida el archivo y falla si falta, si hay dos o si está corrupto (02 ARQ-67, ARQ-69).
+- **Cifras**: **FIJADAS** por el titular el 24 de octubre de 2026: máximo de 5 s, primer frame en menos de 300 ms y ventana de 800×450.
 - **Diseño**: la imagen cubre la ventana de fondo (recorte «cubrir», regla en 03 §7.10). El **logo horizontal `gafira-logo-primary.svg`** (logotipo con el isotipo y el texto «Gafira», `docs/manuals/marca/assets/`) y el eslogan **«Haz visibles tus ideas.»** (en inglés **«Bring your ideas to life.»**, según el idioma resuelto por D-08) van sobre un **panel de blanco cálido `#FAFAF7`** en la parte inferior. Una **barra de carga fina** usa el coral `#FF6B57` y refleja el progreso real del arranque.
-- **Comportamiento**: se cierra cuando la app termina de cargar lo necesario para mostrar Inicio, con una **duración mínima de 1,2 s**. Máximo: 5 s (PROPUESTA de 03 §7.10); si la carga se alarga, la pantalla avisa de que sigue cargando y, si el arranque se detiene, muestra un error con «Reintentar». Respeta **reducir movimiento**: sin animaciones ni fundidos si está activo; si no, fundido de salida de 160 ms (escala de movimiento 120/160/220 ms).
+- **Comportamiento**: se cierra cuando la app termina de cargar lo necesario para mostrar Inicio, con una **duración mínima de 1,2 s**. Máximo: 5 s (**FIJADA**); si la carga se alarga, la pantalla avisa de que sigue cargando y, si el arranque se detiene, muestra un error con «Reintentar». Respeta **reducir movimiento**: sin animaciones ni fundidos si está activo; si no, fundido de salida de 160 ms (escala de movimiento 120/160/220 ms).
 - **Motivo**: el manual de marca prohíbe superponer el logo «sobre una fotografía agitada sin una superficie de contraste» (§7.10) y pide colocarlo «dentro de una zona lisa de contraste adecuado y con espacio de protección» (§7.9, uso 6). La ilustración es muy recargada, así que el logo nunca va sobre ella: va sobre el panel claro, que es el uso correcto 1 del manual (horizontal principal sobre blanco cálido).
 - **Consecuencias**:
   - El manual cita el «símbolo aislado» para el splash (§7.9, uso 3). D-09 elige el logo horizontal sobre el panel claro; las dos formas son usos correctos y prevalece D-09 (01 §13, C-22).
@@ -136,6 +137,14 @@ Fecha: 24 de octubre de 2026.
   - La interfaz debe indicar qué funciones están bloqueadas y cómo activar la licencia.
 - Aplicado a 01, 03 y 06 (ver «Efecto sobre las especificaciones») cuando se promuevan.
 
+## D-13 `gafira-cli validate` pasa a `gafira-format`
+
+Fecha: 24 de octubre de 2026.
+
+- **Decisión**: el subcomando `gafira-cli validate` se implementa en el change `gafira-format`, no antes. Confirma la pregunta 5 de la propuesta archivada de C2b (`domain-doc`): sin lector de archivos `.gafira` no hay nada que validar desde la línea de comandos.
+- **Archivos archivados**: no se editan; esta decisión es el registro de la confirmación.
+- Aplicado al change `gafira-format` cuando se cree.
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
@@ -150,10 +159,10 @@ Fecha: 24 de octubre de 2026.
 ## Pendientes del titular
 
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y fijar el precio final (tentativo 99 USD, PROPUESTA).
-2. Adaptar `LICENSE` y `LICENCIA.md` y escribir el `PRIVACY.md` de Gafira.
-3. Completar la lista de seguridad del `license-hub` y desplegarlo.
-4. Hacer la búsqueda de marca de D-04.
-5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
-6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09); si la ilustración se generó con una herramienta, comprobar que sus condiciones permiten el uso comercial (VERIFICAR). D-10 cubre solo el audio de `assets/musics/`; la ilustración sigue pendiente.
-7. Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras PROPUESTA de D-09 (máximo de 5 s, primer frame < 300 ms, ventana de 800×450).
+2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
+3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
+4. Marca (D-04): el coordinador hace una búsqueda preliminar (en curso); un abogado debe confirmarla antes del lanzamiento.
+5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3): se está comprobando ahora.
+6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09). La ilustración se generó con IA; faltan el nombre de la herramienta (lo da el titular) y comprobar que sus condiciones permiten el uso comercial (VERIFICAR). D-10 cubre solo el audio de `assets/musics/`.
+7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
 8. D-10: ~~revisar las 9 pistas con voz detectada y volver a comprobar `underscore-05`, `-06` y `-10`~~ (**hecho**: las 9 regeneradas y comprobadas, 40/40 sin voz); queda al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.

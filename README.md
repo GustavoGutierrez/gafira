@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/gafira-logo-symbol.svg" alt="Gafira" width="96">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/manuals/marca/assets/gafira-logo-dark-background.svg">
+    <img src="docs/manuals/marca/assets/gafira-logo-primary.svg" alt="Gafira" width="240">
+  </picture>
 </p>
 
 # Gafira
@@ -41,7 +44,7 @@ cargo test --workspace --locked
 | `apps/` | Binaries (`gafira-cli`; the GUI app comes later) |
 | `docs/specs/` | Product specs in progress (in Spanish) plus `00-decisiones.md` (owner decisions); completed ones go to `docs/specs/archive/`, the rest waits in `docs/specs/backlog/`, see `docs/specs/README.md` |
 | `openspec/` | Specs and changes that drive development (`config.yaml`, `specs/`, `changes/`) |
-| `assets/` | Logo, splash screen and other design assets |
+| `assets/` | Splash screen and other design assets (logos live in `docs/manuals/marca/assets/`) |
 | `.agents/` | Agents and skills for Claude Code; `.claude/agents` and `.claude/skills` are symlinks to it |
 
 ## Development workflow
@@ -80,4 +83,4 @@ Audio under `assets/musics/` is kept out of git (owner decision D-10 in `docs/sp
 
 ## License
 
-Proprietary; see `docs/specs/backlog/06-licencia-y-activacion.md`. Third-party crates must use permissive licenses only (`deny.toml`).
+Proprietary; see `LICENSE`. The full license agreement and privacy policy are written in the final licensing phase (`docs/specs/backlog/06-licencia-y-activacion.md`). Third-party crates must use permissive licenses only (`deny.toml`).
