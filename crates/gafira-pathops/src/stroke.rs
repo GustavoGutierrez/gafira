@@ -87,7 +87,7 @@ fn refine_round_arcs(
                 .iter()
                 .copied()
                 .filter(|c| on_circle(*c, current) && on_circle(*c, end) && on_circle(*c, mid))
-                .find_map(|c| arc_sweep(c, current, mid, end).map(|sweep| (c, sweep)));
+                .find_map(|c| arc_sweep(c, current, mid).map(|sweep| (c, sweep)));
             if let Some((centre, sweep)) = replaced {
                 let start_angle = (current - centre).atan2();
                 let arc = Arc::new(centre, (radius, radius), start_angle, sweep, 0.0);
@@ -104,33 +104,24 @@ fn refine_round_arcs(
             }
         }
         refined.push(*el);
-        match el {
-            PathEl::ClosePath => {}
-            other => {
-                if let Some(p) = other.end_point() {
-                    current = p;
-                }
-            }
+        if let Some(p) = el.end_point() {
+            current = p;
         }
     }
     refined
 }
 
-/// The signed angle swept from `start` to `end` around `centre`, in the
-/// direction that passes through `mid`.
-fn arc_sweep(centre: Point, start: Point, mid: Point, end: Point) -> Option<f64> {
-    use std::f64::consts::{PI, TAU};
-    let a0 = (start - centre).atan2();
-    let am = (mid - centre).atan2();
-    let a1 = (end - centre).atan2();
-    let towards_mid = (am - a0 + PI).rem_euclid(TAU) - PI;
-    if towards_mid == 0.0 {
-        None
-    } else if towards_mid > 0.0 {
-        Some((a1 - a0).rem_euclid(TAU))
-    } else {
-        Some(-(a0 - a1).rem_euclid(TAU))
-    }
+/// The signed angle an arc sweeps around `centre`, from `start` through `mid`.
+///
+/// The stroker draws each arc as a symmetric cubic, so its middle point sits at
+/// the middle angle and the sweep is twice the angle from the start to the
+/// middle point. That angle also tells the direction, which `start` and `end`
+/// alone cannot (a round cap sweeps half a turn either way).
+fn arc_sweep(centre: Point, start: Point, mid: Point) -> Option<f64> {
+    let from = start - centre;
+    let to = mid - centre;
+    let half = from.cross(to).atan2(from.dot(to));
+    (half != 0.0).then_some(2.0 * half)
 }
 
 /// Closes every subpath of the outline.
