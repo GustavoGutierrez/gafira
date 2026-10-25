@@ -10,7 +10,7 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
   1. Nombre del producto: Gafira.
   2. Cláusula «Sus resultados»: el usuario es titular de los diseños, imágenes y videos que cree, no solo de archivos vectoriales.
   3. Cláusula nueva: permiso para usar las plantillas, fuentes y recursos incluidos dentro de las creaciones del usuario.
-- **Modelo**: todo de pago, con prueba gratuita (igual que Tracewright). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago». La duración y los límites de la prueba están por definir.
+- **Modelo**: todo de pago, ~~con prueba gratuita (igual que Tracewright)~~ (**sustituido en parte por D-12**: no hay prueba gratuita; se usa el modo sin licencia). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago». ~~La duración y los límites de la prueba están por definir.~~ (Ya no aplica: ver D-12.)
 - **Activación**: se reutilizan la crate `tracer-license` y el servicio `license-hub` (Cloudflare Workers + D1, proveedor Gumroad o clave propia, de 1 a 10 dispositivos por licencia, token Ed25519 verificable sin conexión con clave pública fija en el ejecutable).
 - **Actualización del 24-oct-2026 (titular)**: el `license-hub` **ya está desplegado** y se reutiliza tal cual; no se construye otro servidor de licencias. Su README está desactualizado y lo corregirá el titular fuera de estas specs. El diseño detallado de licencia y activación **se escribe en una spec 06 al final** y queda fuera de las primeras fases de desarrollo.
 - **Consecuencias**:
@@ -38,6 +38,15 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
 
 - El glosario de la spec 03 (sección 2) queda **aprobado** sin cambios.
 - **Tarea del titular (sin abogado)**: buscar «Gafira» (y «Gefira», por parecido) en USPTO, TMview (UE) y WIPO Global Brand Database, y registrar el resultado antes de publicar. Una búsqueda web general encontró una empresa suiza de TI llamada «Gefira», con otra ortografía.
+- **Búsqueda preliminar (24 de octubre de 2026)** (no es asesoría legal): fuentes consultadas: USPTO, TMview (incluidos SIC, IMPI, INPI AR, OEPM, Chile, Brasil y Portugal), WIPO Global Brand Database y comprobaciones web, de tiendas de apps, de GitHub y de dominios.
+  - **Resultado**: no hay una marca vigente idéntica o casi idéntica a «Gafira» o «Gefira» en las clases 9, 41 y 42. Riesgo **bajo-medio**, por lo siguiente:
+    - GAFIRA idéntica registrada en el Benelux (BOIP 1539112, clases 8 y 11, herramientas para el cabello, 2025-12-16).
+    - AFIRA en EE. UU. (serie 99570447, pendiente, clases 9 y 42, software de cumplimiento comercial) y afira en Brasil (INPI 942171330, pendiente, clase 9): una letra de diferencia.
+    - GAIRA en Colombia (SIC, clases 9, 41 y 42, registrada).
+    - «Gefira» sin registro: empresas de TI en Suiza y EE. UU.
+    - gafira.com se registró el 2026-10-24 mediante Cloudflare (titular desconocido); gafira.app, .io, .co y .dev parecían libres.
+    - Connotación: en árabe, غافرة significa «la que perdona» (connotación religiosa).
+  - **Siguiente paso**: elegir el primer país de registro y encargar a un abogado una búsqueda de disponibilidad que incluya AFIRA, afira y GAIRA.
 
 ## D-05 Linux (Q-04, Q-05)
 
@@ -74,18 +83,20 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
 
 Fecha: 24 de octubre de 2026.
 
-- **Qué es**: una pantalla breve que aparece al iniciar la aplicación, con la marca y un indicador de carga. Su nombre de interfaz es **«Pantalla de arranque»** (PROPUESTA de 03 §2.1, para no chocar con «Inicio», que es otra pantalla).
+- **Qué es**: una pantalla breve que aparece al iniciar la aplicación, con la marca y un indicador de carga. Su nombre de interfaz es **«Pantalla de arranque»** (**FIJADA**, aprobada por el titular el 24 de octubre de 2026; evita chocar con «Inicio», que es otra pantalla).
 - **Imagen**: `assets/splash_screen.jpg` (JPEG de 1672×941 px, 296 847 bytes; ilustración de un guacamayo, montañas y mar en coral, grafito y dorado). Va **incrustada en el binario** y no depende de rutas del usuario.
 - **Imagen reemplazable**: se cambia sustituyendo ese archivo por otro con el mismo nombre base (`splash_screen.jpg` o `splash_screen.png`) y recompilando, sin tocar código. La build valida el archivo y falla si falta, si hay dos o si está corrupto (02 ARQ-67, ARQ-69).
+- **Cifras**: **FIJADAS** por el titular el 24 de octubre de 2026: máximo de 5 s, primer frame en menos de 300 ms y ventana de 800×450.
 - **Diseño**: la imagen cubre la ventana de fondo (recorte «cubrir», regla en 03 §7.10). El **logo horizontal `gafira-logo-primary.svg`** (logotipo con el isotipo y el texto «Gafira», `docs/manuals/marca/assets/`) y el eslogan **«Haz visibles tus ideas.»** (en inglés **«Bring your ideas to life.»**, según el idioma resuelto por D-08) van sobre un **panel de blanco cálido `#FAFAF7`** en la parte inferior. Una **barra de carga fina** usa el coral `#FF6B57` y refleja el progreso real del arranque.
-- **Comportamiento**: se cierra cuando la app termina de cargar lo necesario para mostrar Inicio, con una **duración mínima de 1,2 s**. Máximo: 5 s (PROPUESTA de 03 §7.10); si la carga se alarga, la pantalla avisa de que sigue cargando y, si el arranque se detiene, muestra un error con «Reintentar». Respeta **reducir movimiento**: sin animaciones ni fundidos si está activo; si no, fundido de salida de 160 ms (escala de movimiento 120/160/220 ms).
+- **Comportamiento**: se cierra cuando la app termina de cargar lo necesario para mostrar Inicio, con una **duración mínima de 1,2 s**. Máximo: 5 s (**FIJADA**); si la carga se alarga, la pantalla avisa de que sigue cargando y, si el arranque se detiene, muestra un error con «Reintentar». Respeta **reducir movimiento**: sin animaciones ni fundidos si está activo; si no, fundido de salida de 160 ms (escala de movimiento 120/160/220 ms).
 - **Motivo**: el manual de marca prohíbe superponer el logo «sobre una fotografía agitada sin una superficie de contraste» (§7.10) y pide colocarlo «dentro de una zona lisa de contraste adecuado y con espacio de protección» (§7.9, uso 6). La ilustración es muy recargada, así que el logo nunca va sobre ella: va sobre el panel claro, que es el uso correcto 1 del manual (horizontal principal sobre blanco cálido).
 - **Consecuencias**:
   - El manual cita el «símbolo aislado» para el splash (§7.9, uso 3). D-09 elige el logo horizontal sobre el panel claro; las dos formas son usos correctos y prevalece D-09 (01 §13, C-22).
   - El panel de la Pantalla de arranque usa siempre los tokens del modo claro, también con la app en modo oscuro, porque el logo principal es grafito y no puede ir sobre fondo oscuro.
   - La barra coral va sobre una pista grafito: el coral sobre blanco cálido solo da 2,68:1 y no llega al 3:1 que exige un componente gráfico (03 §4).
-  - La imagen se registra en `assets/LICENSES.toml` (ARQ-75) como cualquier asset; su origen y licencia son VERIFICAR.
+  - La imagen se registra en `assets/LICENSES.toml` (ARQ-75) como cualquier asset. Su origen está resuelto (ver «Procedencia de la imagen»); la comprobación de similitud sigue pendiente (VERIFICAR).
   - El instalador MSI y la imagen del DMG **no** usan esta ilustración (05 sin cambios): siguen con el logo sobre `#FAFAF7`.
+- **Procedencia de la imagen** (lectura técnica del 24 de octubre de 2026, no es asesoría legal): el titular generó `assets/splash_screen.jpg` con ChatGPT Plus (generación de imágenes de OpenAI). Fecha de generación: la noche del 23 de octubre de 2026. Base legal: Términos de uso de OpenAI (vigentes desde el 1 de enero de 2026, https://openai.com/policies/row-terms-of-use/), apartado «Ownership of content», que cede al usuario todos los derechos sobre el *Output* y permite el uso comercial sin atribución ni regalías. Condiciones: no presentarla como obra humana, así que **Acerca de / créditos** la muestran como «generada con IA (OpenAI)»; sin garantía de unicidad ni de no infracción; probablemente no sea protegible por derechos de autor (U.S. Copyright Office, 2025), por lo que no da exclusividad. La copia del repositorio no lleva metadatos C2PA. Cuando se introduzca `assets/LICENSES.toml` (ARQ-75) se registrará su entrada con los campos: origen, herramienta, base de licencia, aviso de IA, nota de derechos de autor, procedencia y comprobación de similitud.
 - Aplicado a 01 (RF-67, CAL-38, CAL-39), 02 (ARQ-65..ARQ-69, ADR-10, evento `StartupProgress`) y 03 (§7.10, DIS-80..DIS-87, glosario, tokens y contraste).
 
 ## D-10 Excepción de licencia para el audio generado localmente
@@ -122,23 +133,46 @@ Fecha: 24 de octubre de 2026.
 - **Efecto sobre 02 §4.10**: cambia la firma de `apply_f32`. `bake_lut3d` y `Lut3d` quedan fuera del trait hasta que exista su consumidor de GPU; se podrá añadir después un `bake_lut3d` con implementación por defecto sin romper a los implementadores.
 - Aplicado a 02 (§4.10).
 
+## D-12 Modelo de licencia sin prueba gratuita
+
+Fecha: 24 de octubre de 2026.
+
+- **Decisión**: **no hay prueba gratuita**. Gafira se puede usar sin licencia, pero en **modo sin licencia** la exportación está bloqueada y algunas funciones están desactivadas (ejemplo del titular: «quitar fondo», es decir, Aislar sujeto). Con una licencia activada se desbloquea todo.
+- **Lista de funciones bloqueadas**: **pendiente**. Se define en la fase final de licencia y activación (spec 06). Hasta entonces, solo está fijado que la exportación está bloqueada sin licencia.
+- **Precio**: se define **cuando el software esté terminado**. Cifra tentativa: **99 USD** (PROPUESTA, no fijada).
+- **Qué sustituye de D-01**: la parte «con prueba gratuita (igual que Tracewright)» del **Modelo** y la frase «La duración y los límites de la prueba están por definir». Siguen vigentes de D-01: licencia propietaria, «todo de pago» (una única licencia), la activación con `tracer-license` y `license-hub`, y la sustitución del principio del PRD «sin funciones esenciales retenidas tras un plan de pago».
+- **Consecuencias**:
+  - No existen duración, límites ni estado de «prueba». Los estados de licencia son, como mínimo, sin licencia y con licencia activada.
+  - El modo sin licencia no exige conexión: la app sigue trabajando sin red (D-01). La conexión sigue siendo solo para activar, validar o desactivar.
+  - La interfaz debe indicar qué funciones están bloqueadas y cómo activar la licencia.
+- Aplicado a 01, 03 y 06 (ver «Efecto sobre las especificaciones») cuando se promuevan.
+
+## D-13 `gafira-cli validate` pasa a `gafira-format`
+
+Fecha: 24 de octubre de 2026.
+
+- **Decisión**: el subcomando `gafira-cli validate` se implementa en el change `gafira-format`, no antes. Confirma la pregunta 5 de la propuesta archivada de C2b (`domain-doc`): sin lector de archivos `.gafira` no hay nada que validar desde la línea de comandos.
+- **Archivos archivados**: no se editan; esta decisión es el registro de la confirmación.
+- Aplicado al change `gafira-format` cuando se cree.
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
 |---|---|
-| 01 | Quitar el principio de no retener funciones esenciales; reflejar D-01, D-03, D-07; cerrar Q-01, Q-02, Q-03, Q-04, Q-05, Q-06, Q-07, Q-08, Q-09, Q-11, Q-12, Q-13, Q-16. D-09: RF-67 (Pantalla de arranque), fila de alcance del MVP, CAL-38 y CAL-39, contradicción C-22 y trazabilidad |
+| 01 | Quitar el principio de no retener funciones esenciales; reflejar D-01, D-03, D-07; D-12: sustituir cualquier mención de prueba gratuita por el modo sin licencia (exportación bloqueada y funciones desactivadas), precio tentativo PROPUESTA; cerrar Q-01, Q-02, Q-03, Q-04, Q-05, Q-06, Q-07, Q-08, Q-09, Q-11, Q-12, Q-13, Q-16. D-09: RF-67 (Pantalla de arranque), fila de alcance del MVP, CAL-38 y CAL-39, contradicción C-22 y trazabilidad |
 | 02 | D-11: §4.10, `apply_f32` devuelve `Result<(), PixelBufferError>`. D-01 (conexión de licencia), D-02, D-05, D-06 (quitar `update-check`), D-07; corregir las incoherencias listadas en el informe de redacción. D-09: §8.4, ARQ-65..ARQ-69 (antes reservados), ADR-10, eventos de arranque en §5.2, filas en §6.7 y §11.2 |
-| 03 | Pantalla de activación y prueba, estados de licencia; sin pantalla de actualizaciones; modo de licencia en Ajustes. D-09: §7.10 Pantalla de arranque, DIS-80..DIS-87, fila del glosario (§2.1 y §2.8.1), tokens `splash` (§3), pares de contraste (§4), logo en §5.1, microcopy (§12) y PD-15..PD-17 |
+| 03 | Pantalla de activación (sin «prueba»; D-12: modo sin licencia con exportación y funciones bloqueadas, avisos de qué está bloqueado), estados de licencia; sin pantalla de actualizaciones; modo de licencia en Ajustes. D-09: §7.10 Pantalla de arranque, DIS-80..DIS-87, fila del glosario (§2.1 y §2.8.1), tokens `splash` (§3), pares de contraste (§4), logo en §5.1, microcopy (§12) y PD-15..PD-17 |
 | 04 | PPTX en Fase 2 como imágenes. D-09: sin cambios |
 | 05 | Linux x86_64 con `.deb`, `.rpm`, `.tar.gz`; sin AppImage ni aarch64; sin actualizador; códecs según D-02; MP3 y AVI según D-07; aviso de marca (D-04). D-09: sin cambios en el instalador; al actualizar 05, la frase «el primer arranque muestra Inicio» (Parte C) debe decir que antes aparece la Pantalla de arranque |
+| 06 | D-12 (al promoverla): la licencia y activación se diseñan sin prueba gratuita ni su duración o límites; definen el modo sin licencia (exportación bloqueada), la lista final de funciones bloqueadas y los estados de licencia |
 
 ## Pendientes del titular
 
-1. Definir duración y límites de la prueba gratuita, y el precio.
-2. Adaptar `LICENSE` y `LICENCIA.md` y escribir el `PRIVACY.md` de Gafira.
-3. Completar la lista de seguridad del `license-hub` y desplegarlo.
-4. Hacer la búsqueda de marca de D-04.
-5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
-6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09); si la ilustración se generó con una herramienta, comprobar que sus condiciones permiten el uso comercial (VERIFICAR). D-10 cubre solo el audio de `assets/musics/`; la ilustración sigue pendiente.
-7. Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras PROPUESTA de D-09 (máximo de 5 s, primer frame < 300 ms, ventana de 800×450).
+1. Definir la lista de funciones bloqueadas sin licencia (D-12) y fijar el precio final (tentativo 99 USD, PROPUESTA).
+2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
+3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y la decisión del titular sobre el dominio (gafira.com ya está registrado por un tercero desconocido).
+5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: pasan 72 de 76; `zip`, `ureq`, `directories` y `ort` se corrigen con features o cambiando de crate, ver 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
+6. ~~Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09)~~ (**resuelto** el 24 de octubre de 2026: generada con ChatGPT Plus; los Términos de uso de OpenAI ceden al titular los derechos sobre el *Output* y permiten el uso comercial sin atribución ni regalías; se muestra como «generada con IA (OpenAI)» en Acerca de / créditos; sin garantía de unicidad ni de no infracción y probablemente sin derechos de autor exclusivos; ver D-09). D-10 cubre solo el audio de `assets/musics/`. Quedan como VERIFICAR para el titular: (a) búsqueda inversa de imagen (Google Lens, TinEye) y revisión visual de logos, textos o firmas; (b) conservar fuera del repositorio la descarga original con C2PA como prueba de procedencia; (c) ~~anotar la fecha de generación~~ (**resuelto**: la noche del 23 de octubre de 2026); (d) crear la entrada en `assets/LICENSES.toml` al introducir ese archivo (ARQ-75).
+7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
 8. D-10: ~~revisar las 9 pistas con voz detectada y volver a comprobar `underscore-05`, `-06` y `-10`~~ (**hecho**: las 9 regeneradas y comprobadas, 40/40 sin voz); queda al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.

@@ -106,9 +106,9 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 4 Adaptadores | `gafira-io-image` | `Importer`/`Exporter` raster: PNG, JPEG, WebP, GIF (incluido el animado), TIFF, BMP, QOI. | Contener lógica de documento. | MVP |
 | 4 Adaptadores | `gafira-io-svg` | Importación SVG (usvg) y exportación SVG propia (texto como contornos o como `<text>`). | — | MVP |
 | 4 Adaptadores | `gafira-io-pdf` | Exportación PDF (krilla), preajustes Digital e Impresión, sangrado y marcas de corte. CMYK en Fase 2. | Importar PDF en el MVP. | MVP |
-| 4 Adaptadores | `gafira-io-pptx` | `Exporter` PPTX: una diapositiva por página con una imagen de alta resolución, sin objetos editables (D-07). Escribe el paquete OOXML con `zip` y un escritor XML permisivo (VERIFICAR licencias). | Depender de otras bibliotecas externas. Importar PPTX. | Fase 2 |
+| 4 Adaptadores | `gafira-io-pptx` | `Exporter` PPTX: una diapositiva por página con una imagen de alta resolución, sin objetos editables (D-07). Escribe el paquete OOXML con `zip` (solo la feature `deflate`) y un escritor XML permisivo (`quick-xml`, MIT; §9.2). | Depender de otras bibliotecas externas. Importar PPTX. | Fase 2 |
 | 4 Adaptadores | `gafira-mux` | Contenedores en Rust propio: MP4/ISO-BMFF, WebM/Matroska, Ogg, WAV y MP3 elemental (solo lectura). AVI solo lectura en Fase 2 (D-07). Implementa `Container`. | Codificar o decodificar elementales. Escribir MP3 o AVI. | MVP |
-| 4 Adaptadores | `gafira-codec-free` | Códecs libres de regalías: AV1 (codificación y decodificación), Opus (codificación y decodificación), FLAC, Vorbis (decodificación), MP3 (**solo decodificación**, decodificador permisivo VERIFICAR), PCM, MJPEG intra para proxies y para AVI (Fase 2), VP9 (Fase 2). | Incluir encoders H.264, HEVC o AAC; codificar MP3; incluir decodificadores con patentes activas. | MVP |
+| 4 Adaptadores | `gafira-codec-free` | Códecs libres de regalías: AV1 (codificación y decodificación), Opus (codificación y decodificación), FLAC, Vorbis (decodificación), MP3 (**solo decodificación**, con `nanomp3`, MIT OR Apache-2.0; §9.2), PCM, MJPEG intra para proxies y para AVI (Fase 2), VP9 (Fase 2). | Incluir encoders H.264, HEVC o AAC; codificar MP3; incluir decodificadores con patentes activas. | MVP |
 | 4 Adaptadores | `gafira-codec-os` | Códecs del sistema operativo por FFI: Media Foundation (Windows), VideoToolbox/AudioToolbox (macOS), VA-API (Linux, cargado con `libloading` cuando el equipo la tenga): **H.264 y AAC** (D-02). | Incluirse sin la feature `os-codecs`. Contener implementaciones propias de códecs. Exportar HEVC. | MVP |
 | 4 Adaptadores | `gafira-render-cpu` | `RenderBackend` CPU de referencia (tiny-skia y compositor f32 propio). Es el oráculo de las pruebas golden. | Usar la GPU. | MVP |
 | 4 Adaptadores | `gafira-render-gpu` | `RenderBackend` GPU (wgpu: compositor y efectos en WGSL; rutas vectoriales con vello). | Ser obligatorio: siempre existe la alternativa CPU. | MVP |
@@ -636,7 +636,7 @@ pub trait PluginHost: Send {
 ```
 
 - **Patrón**: Adapter + Proxy. Cada contribución del plugin se envuelve en un adaptador que implementa el trait nativo (`Effect`, `Importer`, etc.) y delega en el host.
-- **Implementación**: wasmi (VERIFICAR licencia) con límite de combustible y memoria. Las capacidades se declaran en el manifiesto y no hay acceso a red. Al disco solo accede por *handles* que concede el usuario.
+- **Implementación**: wasmi (MIT/Apache-2.0) con límite de combustible y memoria. Las capacidades se declaran en el manifiesto y no hay acceso a red. Al disco solo accede por *handles* que concede el usuario.
 - **Cómo añadir un tipo de contribución**:
   1. Definir la ABI en `gafira-plugin::abi` (versión semántica).
   2. Escribir el adaptador hacia el trait nativo.
@@ -930,7 +930,7 @@ Otras cifras (FIJADAS, D-03):
 
 | Cifra (fuente) | Técnica que la logra | Prueba que la verifica (falla CI si se supera) |
 |---|---|---|
-| Selección < 16 ms (spec) | Índice espacial R-tree por página (`rstar`, VERIFICAR licencia) y bounds cacheados; selección = cambio de `Selection` sin re-render de tiles | `bench_select_hit` con 1 000 nodos, p99 < 16 ms |
+| Selección < 16 ms (spec) | Índice espacial R-tree por página (`rstar`, MIT OR Apache-2.0) y bounds cacheados; selección = cambio de `Selection` sin re-render de tiles | `bench_select_hit` con 1 000 nodos, p99 < 16 ms |
 | Arrastre a 60 fps (spec) | Elementos arrastrados como capa compuesta cacheada; solo se recompone; overlay en egui | `bench_drag_100_layers`: 300 frames, p95 ≤ 16,7 ms |
 | Cambio de color < 50 ms (spec) | Invalidación por `touches` y re-rasterización solo de los tiles del nodo | `bench_recolor`, p99 < 50 ms |
 | Filtro < 300 ms (spec) | Efecto sobre el mip del viewport (vista previa) en GPU o rayon; resolución completa en segundo plano | `bench_filter_4000px_preview` < 300 ms |
@@ -985,7 +985,7 @@ proyecto.gafira (ZIP)
 ├─ sequences/<seq_id>.json
 ├─ assets/<blake3-hex>.<ext>        recursos embebidos, STORE si ya están comprimidos (JPEG/PNG/MP4), DEFLATE si no
 │                                   (los medios vinculados NO tienen entrada aquí)
-├─ masks/<blake3-hex>.tiles         máscaras pintadas: tiles con zstd (VERIFICAR licencia del crate)
+├─ masks/<blake3-hex>.tiles         máscaras pintadas: tiles con zstd (crate BSD-3-Clause; la `libzstd` en C, §9.2)
 ├─ thumbs/<page_id>.webp            miniaturas de 512 px (apertura rápida y vista del explorador)
 ├─ versions/index.json              [{ id, name, kind: "named"|"auto", created, app, schema }]
 ├─ versions/<version_id>/           una versión: document.json, pages/*.json y sequences/*.json de ese momento;
@@ -1015,7 +1015,7 @@ proyecto.gafira (ZIP)
 - **Guardado incremental**: los recursos ya presentes con el mismo hash se copian del ZIP anterior sin recomprimirlos. Solo se reescriben los JSON de páginas sucias.
 - **Autoguardado rotativo**: cada N s con N configurable entre 5 y 15 (por defecto 10, FIJADA), solo si hay cambios. Se escribe en `datos_app/recovery/<project_id>/slot-{0,1,2}.gafira-journal` en rotación. El journal guarda solo JSON (documento y páginas sucias) más referencias a recursos ya volcados en el `ContentStore` local, de modo que cada autoguardado dura menos de 200 ms en el documento de 20 páginas (FIJADA). Se ejecuta en el hilo de E/S sobre una instantánea `Arc`, sin bloquear.
 - **Recuperación**: al arrancar, se buscan journals cuyo bloqueo pertenece a un PID que ya no existe y se emite `RecoveryAvailable`. La UI ofrece «Recuperar», «Abrir el último guardado» o «Descartar». Un journal se valida con checksum BLAKE3 y, si está corrupto, se usa el slot anterior.
-- **Bloqueos de archivo**: un archivo auxiliar `nombre.gafira.lock` con `{pid, host, usuario, inicio}` más un bloqueo consultivo del SO (`fs4`, VERIFICAR licencia). Si el proyecto ya está abierto en otra instancia o equipo, se ofrece abrir en solo lectura o una copia.
+- **Bloqueos de archivo**: un archivo auxiliar `nombre.gafira.lock` con `{pid, host, usuario, inicio}` más un bloqueo consultivo del SO (`fs4`, MIT OR Apache-2.0). Si el proyecto ya está abierto en otra instancia o equipo, se ofrece abrir en solo lectura o una copia.
 - **Unidades de red y almacenamiento en la nube local**: se detectan cuando es posible y se recomienda trabajar sobre una copia local.
 
 ### 7.3 Errores y degradación
@@ -1118,7 +1118,7 @@ pub enum FormatError {
 | ARQ-60 | Ningún color literal en `gafira-ui`. | Un lint de CI (búsqueda de `Color32::from_rgb` fuera de `theme.rs`) da 0 coincidencias. |
 | ARQ-61 | Los tokens se validan con contraste AA para el texto. | La prueba de `gafira-theme` falla si un par texto/fondo declarado tiene < 4,5:1 (< 3:1 en texto grande). |
 | ARQ-62 | Las fuentes de egui por defecto no se incluyen. | `cargo tree -e features -p gafira` no muestra `default_fonts`. Una inspección del binario no encuentra los nombres de esas fuentes. |
-| ARQ-63 | Todo el flujo Elegir → Personalizar → Compartir es operable solo con teclado. | La prueba E2E de teclado (egui_kittest, VERIFICAR licencia) completa plantilla → editar texto → exportar PNG. |
+| ARQ-63 | Todo el flujo Elegir → Personalizar → Compartir es operable solo con teclado. | La prueba E2E de teclado (egui_kittest, licencia sin medir: VERIFICAR) completa plantilla → editar texto → exportar PNG. |
 | ARQ-64 | Se respeta la reducción de movimiento. | Con la preferencia activa, la duración medida de las transiciones de la UI es 0. |
 
 ### 8.4 Pantalla de arranque (D-09)
@@ -1182,7 +1182,7 @@ El diseño visible está en 03 §7.10. Aquí se fija dónde vive, cómo se incru
 - Sin dependencias git: nada de `storytold/craft-libs` ni forks sin publicar. Solo crates.io.
 - Sin binarios externos en el instalador: ni FFmpeg, ni `ffmpeg-sidecar`, ni ejecutables de terceros. Las librerías C con licencia permisiva compiladas estáticamente (por ejemplo libdav1d, BSD-2) se aceptan con VERIFICAR.
 - **Bibliotecas del sistema con licencia LGPL**: solo se aceptan si son parte del SO del usuario, se enlazan de forma **dinámica** y **nunca se empaquetan** en el instalador. Caso conocido: `cpal` en Linux enlaza `libasound` (ALSA, LGPL-2.1) del sistema. Es un riesgo **VERIFICAR** con asesoría legal (R-06). Mitigación propuesta: enlace dinámico a la `libasound.so.2` del sistema (dependencia del paquete `.deb`/`.rpm`, no un archivo incluido), `xtask audit-bundle` falla si una `.so` LGPL aparece en el paquete y, como alternativa si el dictamen lo exige, un backend de audio propio por PipeWire/PulseAudio.
-- Toda dependencia nueva pasa `cargo deny check licenses bans sources advisories` en CI y se registra en `THIRD_PARTY_NOTICES.md` (generado con `cargo about`, VERIFICAR licencia de la herramienta, que solo se usa en build). Es el **único nombre** del archivo de avisos de terceros en todas las specs y en el instalador.
+- Toda dependencia nueva pasa `cargo deny check licenses bans sources advisories` en CI y se registra en `THIRD_PARTY_NOTICES.md` (generado con `cargo about`, licencia de la herramienta sin medir: VERIFICAR, que solo se usa en build). Es el **único nombre** del archivo de avisos de terceros en todas las specs y en el instalador.
 
 ```toml
 # deny.toml (extracto)
@@ -1207,7 +1207,7 @@ allow-git = []
 
 ### 9.2 Tabla de dependencias propuestas
 
-Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implementar. «VERIFICADA» significa verificada localmente según el handoff. Aun así, todas pasan `cargo-deny`.
+Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implementar. «VERIFICADA» significa verificada localmente según el handoff; «VERIFICADA (`cargo-deny`)» significa medida con `cargo-deny` 0.20.2 y el `deny.toml` del repositorio (proyectos de prueba, 24 de octubre de 2026): 72 de los 76 crates marcados antes VERIFICAR pasan con sus features por defecto; `zip`, `ureq`, `directories` y `ort` no, y se corrigen en la tabla con features o con otro crate. Quedan VERIFICAR las licencias de las bibliotecas en C, que `cargo-deny` no lee.
 
 | Crate | Versión orient. | Licencia | Estado | Uso | Alternativa permisiva |
 |---|---|---|---|---|---|
@@ -1224,54 +1224,62 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | libloading | última | ISC | VERIFICADA | Cargar VA-API y códecs del SO | — |
 | zbus | última | MIT | VERIFICADA | D-Bus (preferencias y notificaciones en Linux) | — |
 | icu_segmenter | última | Unicode-3.0 | VERIFICADA | Saltos de línea y palabra | unicode-linebreak |
-| icu_locale_core, icu_plurals, icu_decimal, icu_datetime (ICU4X 2.x, con `icu_provider` y datos compilados solo para `es` y `en`) | 2.x | Unicode-3.0 (VERIFICAR la de cada crate y la de sus dependencias transitivas, p. ej. `zerovec`, `yoke`, `writeable`, `tinystr`, con `cargo deny check licenses`) | VERIFICAR | `gafira-i18n`: análisis de etiquetas de idioma, categorías de plural CLDR, formato de números, fechas y tiempos relativos (ADR-09) | Formateadores propios para `es` y `en` |
-| toml | última | MIT/Apache-2.0 (VERIFICAR) | VERIFICAR | **Solo en build** (`xtask gen-i18n`): lee `assets/i18n/*.toml` y genera las tablas embebidas; no entra en el binario | serde_json (catálogos JSON) |
-| fluent-bundle + fluent-syntax + intl_pluralrules + unic-langid | última | Apache-2.0/MIT (VERIFICAR); la dependencia `self_cell` declara `Apache-2.0 OR GPL-2.0-only` y se usa bajo Apache-2.0 (VERIFICAR que `cargo-deny` lo acepta) | VERIFICAR | **No se usa**: alternativa de ADR-09 si la gramática de idiomas futuros lo exige | — |
-| sys-locale | última | MIT/Apache-2.0 (VERIFICAR) | VERIFICAR | **No se usa**: alternativa a la detección propia de `gafira-platform` (§14.3) | `windows` / `objc2` / variables de entorno |
-| vello | compatible con wgpu | Apache-2.0/MIT | VERIFICAR | Vectores en GPU | rasterizar en CPU y subir |
-| vello_cpu | última | Apache-2.0/MIT | VERIFICAR | Alternativa CPU | tiny-skia |
-| parley + skrifa + harfrust | última | Apache-2.0/MIT | VERIFICAR | Maquetación y shaping de texto | cosmic-text (MIT/Apache) |
-| linesweeper | última | MIT/Apache | VERIFICAR | Booleanas de rutas | implementación propia |
-| krilla | última | MIT/Apache | VERIFICAR | Exportar PDF | pdf-writer (MIT/Apache) |
-| hayro | última | VERIFICAR | VERIFICAR | Importar PDF (Fase 2) | — |
-| serde, serde_json | 1.x | MIT/Apache | VERIFICAR | Serialización | — |
-| zip | última | MIT | VERIFICAR | Contenedor `.gafira` | rawzip / propio |
-| miniz_oxide / flate2 | última | MIT/Apache/Zlib | VERIFICAR | DEFLATE | — |
-| zstd | última | MIT/Apache (libzstd BSD) | VERIFICAR | Tiles de máscara | lz4_flex (MIT) |
-| blake3 | 1.x | CC0/Apache-2.0 | VERIFICAR | Hash de contenido | — |
-| thiserror | 2.x | MIT/Apache | VERIFICAR | Errores | — |
-| tracing, tracing-subscriber | última | MIT | VERIFICAR | Logs y spans locales | log |
-| crossbeam-channel | última | MIT/Apache | VERIFICAR | Canales | std::sync::mpsc |
-| rayon | última | MIT/Apache | VERIFICAR | Paralelismo de datos | — |
-| rtrb | última | MIT/Apache | VERIFICAR | Ring buffer de audio | propio |
-| rstar | última | MIT/Apache | VERIFICAR | Índice espacial | propio |
-| cpal | última | Apache-2.0 | VERIFICAR. **Riesgo**: en Linux enlaza `libasound` (LGPL-2.1) del sistema; solo enlace dinámico, nunca empaquetada (§9.1, R-06, ARQ-79) | Salida de audio | backend PipeWire/PulseAudio propio |
-| rav1e | última | BSD-2-Clause | VERIFICAR | Codificar AV1 | — |
-| rav1d / dav1d | última | BSD-2-Clause | VERIFICAR | Decodificar AV1 | — |
-| Opus (crate a elegir sobre libopus) | — | BSD-3 (libopus) | VERIFICAR | Codificar y decodificar Opus | — |
-| claxon / flacenc | última | Apache-2.0 | VERIFICAR | FLAC | — |
-| lewton | última | MIT/Apache | VERIFICAR | Decodificar Vorbis | — |
-| hound | última | Apache-2.0 | VERIFICAR | WAV | propio |
-| Decodificador MP3 (a elegir: p. ej. un decodificador en Rust puro o `minimp3`) | — | VERIFICAR (debe ser permisiva; nunca LGPL) | VERIFICAR | **Solo** importar MP3 (patentes centrales caducadas: UE 2012, EE. UU. abril de 2017, D-07). Sin codificador MP3 | códec del SO |
-| Escritor XML (p. ej. `quick-xml`) | última | MIT (VERIFICAR) | VERIFICAR | `gafira-io-pptx` (Fase 2) | plantillas de texto propias |
-| ed25519-dalek | 2.x/3.x | BSD-3-Clause (VERIFICAR) | VERIFICAR | Verificar el token de licencia | — |
-| base64, serde_json, uuid, getrandom | última | MIT/Apache | VERIFICAR | Token, identificador y secreto del dispositivo | — |
-| Cliente HTTP con TLS (p. ej. `reqwest` con `rustls` y raíces del SO, o `ureq`) | última | MIT/Apache; `ring` Apache-2.0 AND ISC (VERIFICAR); evitar raíces empaquetadas con licencia no permitida | VERIFICAR | Solo `gafira-license` con la feature `online` | `ureq` (VERIFICADA según el handoff) |
-| keyring | última | MIT/Apache (VERIFICAR) | VERIFICAR | Secreto del dispositivo en el llavero del SO (feature `credentials`) | archivo cifrado propio |
-| windows / objc2 | última | MIT/Apache | VERIFICAR | FFI de Media Foundation y VideoToolbox | — |
-| fs4 | última | MIT/Apache | VERIFICAR | Bloqueos de archivo | fd-lock |
-| directories | última | MIT/Apache | VERIFICAR | Rutas de datos | — |
-| rusqlite (bundled) | última | MIT (SQLite de dominio público) | VERIFICAR | Índice de biblioteca local | redb (MIT/Apache) |
-| wasmi | última | MIT/Apache | VERIFICAR | Plugins (Fase 3) | — |
-| ort + ONNX Runtime | — | MIT/Apache (runtime MIT) | VERIFICAR | Segmentador ML opcional (Fase 3, paquete aparte) | candle (VERIFICAR) |
-| proptest, criterion, insta | dev | MIT/Apache | VERIFICAR | Pruebas | — |
-| trybuild | dev | MIT/Apache | VERIFICAR (`cargo deny`) | Pruebas de compilación de ARQ-30 en `gafira-edit` | — |
+| icu_locale_core, icu_plurals, icu_decimal, icu_datetime (ICU4X 2.x, con `icu_provider` y datos compilados solo para `es` y `en`) | 2.x | Unicode-3.0 (también en sus dependencias transitivas, p. ej. `zerovec`, `yoke`, `writeable`, `tinystr`) | VERIFICADA (`cargo-deny`) | `gafira-i18n`: análisis de etiquetas de idioma, categorías de plural CLDR, formato de números, fechas y tiempos relativos (ADR-09) | Formateadores propios para `es` y `en` |
+| toml | última | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | **Solo en build** (`xtask gen-i18n`): lee `assets/i18n/*.toml` y genera las tablas embebidas; no entra en el binario | serde_json (catálogos JSON) |
+| fluent-bundle + fluent-syntax + intl_pluralrules + unic-langid | última | Apache-2.0/MIT; la dependencia `self_cell` declara `Apache-2.0 OR GPL-2.0-only` y se usa bajo Apache-2.0 | VERIFICADA (`cargo-deny`) | **No se usa**: alternativa de ADR-09 si la gramática de idiomas futuros lo exige | — |
+| sys-locale | última | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | **No se usa**: alternativa a la detección propia de `gafira-platform` (§14.3) | `windows` / `objc2` / variables de entorno |
+| vello | compatible con wgpu | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Vectores en GPU | rasterizar en CPU y subir |
+| vello_cpu | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Alternativa CPU | tiny-skia |
+| parley + skrifa + harfrust | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Maquetación y shaping de texto | cosmic-text (MIT/Apache) |
+| linesweeper | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Booleanas de rutas | implementación propia |
+| krilla | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Exportar PDF | pdf-writer (MIT/Apache) |
+| hayro | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Importar PDF (Fase 2) | — |
+| serde, serde_json | 1.x | MIT/Apache | VERIFICADA (`cargo-deny`) | Serialización | — |
+| zip | última | MIT | VERIFICADA (`cargo-deny`). Con `default-features = false, features = ["deflate"]`: las features por defecto traen `libbz2-rs-sys` (`bzip2-1.0.6`) | Contenedor `.gafira` | rawzip / propio |
+| miniz_oxide / flate2 | última | MIT/Apache/Zlib | VERIFICADA (`cargo-deny`) | DEFLATE | — |
+| zstd | última | BSD-3-Clause (crate `zstd`); la `libzstd` en C que compila `zstd-sys` no la lee `cargo-deny`: VERIFICAR | VERIFICAR (solo la parte C) | Tiles de máscara | lz4_flex (MIT) |
+| blake3 | 1.x | CC0/Apache-2.0 | VERIFICADA (`cargo-deny`) | Hash de contenido | — |
+| thiserror | 2.x | MIT/Apache | VERIFICADA (`cargo-deny`) | Errores | — |
+| tracing, tracing-subscriber | última | MIT | VERIFICADA (`cargo-deny`) | Logs y spans locales | log |
+| crossbeam-channel | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Canales | std::sync::mpsc |
+| rayon | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Paralelismo de datos | — |
+| rtrb | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Ring buffer de audio | propio |
+| rstar | última | MIT OR Apache-2.0 | VERIFICADA (`cargo-deny`) | Índice espacial | propio |
+| cpal | última | Apache-2.0 | VERIFICADA (`cargo-deny`) para los crates. **Riesgo**: en Linux enlaza `libasound` (LGPL-2.1) del sistema; solo enlace dinámico, nunca empaquetada (§9.1, R-06, ARQ-79) | Salida de audio | backend PipeWire/PulseAudio propio |
+| rav1e | última | BSD-2-Clause | VERIFICADA (`cargo-deny`) | Codificar AV1 | — |
+| rav1d / dav1d | última | BSD-2-Clause | VERIFICADA (`cargo-deny`) para el crate Rust; `dav1d` espera una `libdav1d` del sistema y su licencia en C no la lee `cargo-deny`: VERIFICAR | Decodificar AV1 | — |
+| Opus (crate a elegir sobre libopus) | — | BSD-3 (libopus) | VERIFICAR: el crate compila C y `cargo-deny` no lee la licencia de `libopus` | Codificar y decodificar Opus | — |
+| claxon / flacenc | última | Apache-2.0 | VERIFICADA (`cargo-deny`) | FLAC | — |
+| lewton | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Decodificar Vorbis | — |
+| hound | última | Apache-2.0 | VERIFICADA (`cargo-deny`) | WAV | propio |
+| Decodificador MP3: `nanomp3` (elegido); `minimp3` (respaldo) | última | `nanomp3`: MIT OR Apache-2.0, Rust puro, `forbid(unsafe_code)`. `minimp3`: MIT, C incluido en el crate (CC0) | VERIFICADA (`cargo-deny`) para los crates. Patentes de MP3: VERIFICAR (no comprobadas) | **Solo** importar MP3 (patentes centrales caducadas: UE 2012, EE. UU. abril de 2017, D-07). Sin codificador MP3 | códec del SO |
+| Escritor XML (p. ej. `quick-xml`) | última | MIT | VERIFICADA (`cargo-deny`) | `gafira-io-pptx` (Fase 2) | plantillas de texto propias |
+| ed25519-dalek | 2.x/3.x | BSD-3-Clause | VERIFICADA (`cargo-deny`) | Verificar el token de licencia | — |
+| base64, serde_json, uuid, getrandom | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Token, identificador y secreto del dispositivo | — |
+| Cliente HTTP con TLS: `ureq` con `default-features = false, features = ["rustls-no-provider"]` (alternativa: `reqwest` con `rustls`) | última | MIT/Apache; `ring` Apache-2.0 AND ISC. Las features por defecto o `rustls` traen `webpki-roots` (CDLA-Permissive-2.0, fuera de la allowlist): usar las raíces del SO | VERIFICADA (`cargo-deny`) con esas features | Solo `gafira-license` con la feature `online` | `reqwest` |
+| keyring | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Secreto del dispositivo en el llavero del SO (feature `credentials`) | archivo cifrado propio |
+| windows / objc2 | última | MIT/Apache | VERIFICADA (`cargo-deny`) | FFI de Media Foundation y VideoToolbox | — |
+| fs4 | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Bloqueos de archivo | fd-lock |
+| etcetera (en lugar de `directories`) | última | MIT OR Apache-2.0 | VERIFICADA (`cargo-deny`). `directories` y `dirs` traen `option-ext` (MPL-2.0); alternativa `app_dirs2` | Rutas de datos | — |
+| rusqlite (bundled) | última | MIT (SQLite de dominio público) | VERIFICADA (`cargo-deny`) para el crate. Compila SQLite en C; `cargo-deny` no lee esa licencia: VERIFICAR | Índice de biblioteca local | redb (MIT/Apache) |
+| wasmi | última | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | Plugins (Fase 3) | — |
+| ort + ONNX Runtime | — | MIT/Apache (runtime MIT) | VERIFICADA (`cargo-deny`) solo con `default-features = false, features = ["load-dynamic","std"]` (las features por defecto traen `openssl-sys`, prohibido, y descargan binarios nativos). `ort` es una versión candidata (*release candidate*) y la biblioteca ONNX Runtime se entrega aparte (modelo opcional, fuera del instalador base) | Segmentador ML opcional (Fase 3, paquete aparte) | candle (VERIFICAR) |
+| proptest, criterion, insta | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas | — |
+| trybuild | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas de compilación de ARQ-30 en `gafira-edit` | — |
 | **Evitadas** | | | | | |
 | symphonia | — | MPL-2.0 | EVITAR | — | claxon, lewton, hound, códecs del SO |
 | im / imbl / rpds | — | MPL-2.0 | EVITAR | — | `Arc` + `make_mut` propio (ADR-03) |
 | ffmpeg-sidecar / ffmpeg-next | — | Exige FFmpeg (GPL/LGPL) | PROHIBIDA | — | `gafira-mux` + `gafira-codec-*` |
 | LAME y cualquier codificador MP3 | — | LGPL | PROHIBIDA | Gafira no exporta MP3 (D-07) | Opus, FLAC, WAV |
 | GNU gettext, `gettext-rs`, `gettext-sys` y las herramientas `msgfmt`/`xgettext` | — | LGPL (biblioteca) y GPL (herramientas) | PROHIBIDA | No se usan ni en build ni en el binario (D-08, ADR-09) | Catálogos TOML propios + ICU4X |
+
+Notas de la medición de licencias (`cargo-deny` solo lee los metadatos de los crates, no las licencias de las bibliotecas en C que estos compilan):
+
+- `zstd` (`zstd-sys`), Opus y `rusqlite` con `bundled` compilan código C; sus licencias (BSD-3-Clause, BSD-3-Clause y dominio público) siguen en VERIFICAR hasta leerlas en las fuentes.
+- `dav1d` espera una `libdav1d` del sistema. Eso choca con «sin binarios externos» (§9.1) salvo que se compile de forma estática.
+- `cpal` en Linux enlaza `libasound` (LGPL-2.1) de forma dinámica (ya recogido en R-06 y ARQ-79).
+- `ort` es una versión candidata (*release candidate*) y se usa con `load-dynamic`: la biblioteca ONNX Runtime se entrega aparte con el modelo opcional, coherente con «no entra en el instalador base».
+- No se añade CDLA-Permissive-2.0 a la allowlist: se mantiene la regla de licencias solo permisivas.
 | rust-i18n | — | MIT (VERIFICAR) | EVITAR | Fija el idioma en estado global (`set_locale`), contrario a ARQ-31 | `gafira-i18n` |
 | Encoders H.264/HEVC/AAC propios o de terceros (p. ej. openh264, x264, x265, fdk-aac) | — | Patentes y, en varios casos, GPL | PROHIBIDA | H.264/AAC solo vía SO (D-02) | AV1 + Opus |
 
@@ -1281,7 +1289,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 
 - **Exportación por defecto**: WebM y MP4 con **AV1 + Opus**, libres de regalías (`gafira-codec-free`, siempre incluido). AV1 es libre de regalías para las patentes de los miembros de AOMedia. Existe un pool de Sisvel orientado a dispositivos de consumo y una demanda de Dolby contra Snap (marzo de 2026): el riesgo es bajo pero no nulo (VERIFICAR con asesoría legal).
 - **Libres de regalías** (`gafira-codec-free`): AV1, VP9 (Fase 2), Opus, FLAC, Vorbis (decodificación), PCM y MJPEG. Contenedores WebM/MKV, MP4 (ISO-BMFF admite AV1 y Opus; la compatibilidad con plataformas de publicación es VERIFICAR, R-11), Ogg y WAV.
-- **MP3**: **solo importación**, con un decodificador de licencia permisiva (VERIFICAR). Sus patentes centrales caducaron (UE en 2012; EE. UU. en abril de 2017). **Sin salida MP3**: el codificador habitual (LAME) es LGPL.
+- **MP3**: **solo importación**, con un decodificador de licencia permisiva (`nanomp3`, §9.2). Sus patentes centrales caducaron (UE en 2012; EE. UU. en abril de 2017). **Sin salida MP3**: el codificador habitual (LAME) es LGPL.
 - **AVI**: **solo importación en Fase 2** y solo con códecs libres (MJPEG, sin comprimir, PCM). Sin exportación.
 - **H.264/AAC (MP4)**: **solo mediante las API del sistema** (`gafira-codec-os`, feature `os-codecs`): Media Foundation en Windows, VideoToolbox/AudioToolbox en macOS y VA-API en Linux cuando el equipo la tenga. Gafira no incluye ningún encoder ni decoder propio de H.264, HEVC o AAC. Motivo (fuentes públicas): el pool de H.264 cubre productos que incorporan encoders o decoders, y una app que llama al sistema operativo no distribuye ninguno. Si eso basta en cada mercado sigue siendo **VERIFICAR con asesoría legal** (R-01). La última patente de H.264 en EE. UU. caduca el 29 de noviembre de 2027 según fuentes secundarias (VERIFICAR), fecha en la que conviene revisar esta decisión.
   - Si la API del sistema no está disponible (por ejemplo, Linux sin VA-API), Gafira avisa y propone AV1 + Opus. No hay alternativa de software para H.264.
@@ -1419,7 +1427,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | R-02 | Linux sin VA-API no puede importar ni exportar H.264, que es el formato habitual de los móviles. | Patentes / funcional | Decidido en D-02: no hay alternativa de software. Mensaje claro, propuesta de AV1 + Opus para exportar y guía para transcodificar fuera de la app. |
 | R-03 | La codificación AV1 por software puede no alcanzar ≥ 10 fps a 1080p en gama media. | Rendimiento | Preset rápido de rav1e, *tiles* paralelos; benchmark temprano (*spike* en la semana 1). Si no se alcanza, la cifra del Reel solo se garantiza con el códec del SO. Como AV1 es la salida por defecto (D-02), este riesgo sube de prioridad. |
 | R-04 | Aislar sujeto en < 2 s en GPU con técnica clásica puede no ser viable. | Rendimiento | La cifra de CPU (< 5 s) es la obligatoria en el MVP; la de GPU se valida con un *spike*. |
-| R-05 | Las licencias marcadas VERIFICAR (vello, parley, krilla, linesweeper, cpal, rav1e, decodificador MP3, cliente HTTP y `ring`…) pueden cambiar o incluir dependencias transitivas no permitidas. | Licencia | `cargo-deny` en CI y alternativas listadas en §9.2. |
+| R-05 | Las licencias de crates (vello, parley, krilla, linesweeper, cpal, rav1e, `nanomp3`, cliente HTTP y `ring`…) ya pasan `cargo-deny` (72 de 76 con features por defecto; los otros 4 se corrigen en §9.2), pero pueden cambiar o traer dependencias transitivas no permitidas en versiones futuras; las bibliotecas en C quedan VERIFICAR. | Licencia | `cargo-deny` en CI y alternativas listadas en §9.2. |
 | R-06 | `cpal` en Linux enlaza `libasound` (LGPL-2.1), biblioteca del sistema. | Licencia | **VERIFICAR** con asesoría legal. Mitigación propuesta: enlace dinámico a la biblioteca del sistema, nunca empaquetarla (ARQ-79, §9.1). Alternativa si el dictamen lo exige: backend propio por PipeWire/PulseAudio. |
 | R-07 | Las diferencias de render GPU entre drivers rompen los golden. | Calidad | Tolerancias, lista de bloqueo de drivers y CPU como referencia de exportación. |
 | R-08 | Las tipografías, plantillas e iconos incluidos sin licencia clara invalidan la venta. | Licencia | ARQ-75. |
@@ -1450,7 +1458,7 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-06 | Actualizaciones firmadas. | D-06: la app no comprueba versiones; sin `update-check`. |
 | Q-07 | Hardware de referencia y cifras. | D-03: fijados (§6.6). |
 | Q-08 | PPTX. | D-07: Fase 2, una imagen por diapositiva (`gafira-io-pptx`). |
-| Q-09 | MP3 como importación. | D-07: solo importación con decodificador permisivo (VERIFICAR licencia). |
+| Q-09 | MP3 como importación. | D-07: solo importación con decodificador permisivo (`nanomp3`, §9.2; patentes VERIFICAR). |
 | Q-11 | Reparto núcleo/avanzado (01). | D-01: no hay módulos de pago separados. |
 | Q-12 | Activación de los módulos avanzados (01). | D-01: activación con `gafira-license` y `license-hub` (§13). |
 | Q-13 | Importación de AVI y de AAC/M4A más allá del SO (01). | D-07: AVI en Fase 2 solo con códecs libres; D-02: AAC solo vía SO. |
