@@ -359,11 +359,14 @@ proptest! {
     }
 
     #[test]
-    fn the_tick_divides_every_accepted_frame_duration(num in 1u32..100_000, den in 1u32..1_000) {
+    fn accepted_frame_rates_have_exact_frame_durations(num in 1u32..100_000, den in 1u32..1_000) {
         if let Ok(rate) = FrameRate::new(num, den) {
             let duration = rate.flicks_per_frame().ticks();
             prop_assert!(duration > 0);
-            prop_assert_eq!(FLICKS_PER_SECOND % duration, 0);
+            prop_assert_eq!(
+                i128::from(duration) * i128::from(rate.num()),
+                i128::from(FLICKS_PER_SECOND) * i128::from(rate.den())
+            );
         }
     }
 }
