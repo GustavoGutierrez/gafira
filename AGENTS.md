@@ -19,7 +19,7 @@ spec  ->  (explorer, only when a claim is risky)  ->  tdd-apply  ->  verify  -> 
 
 On FAIL, or when deliveries remain, go back to `tdd-apply`.
 
-`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions, pushes and PRs. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator`. Not verified in this environment; if the flag is missing, ask the main session to follow `.agents/agents/coordinator.md`. `.claude/agents` is a symlink to `.agents/agents`.
+`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions, pushes and PRs. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `.claude/agents` is a symlink to `.agents/agents`.
 
 A short design note is written only when a spec leaves a real decision open, and only for that decision. If a test or CI claim is risky, `explorer` settles it with a real experiment before specs or code rely on it; refuted claims are fixed in the specs first.
 
