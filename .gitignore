@@ -25,3 +25,7 @@ Thumbs.db
 .env.*
 *.pem
 *.key
+
+# cargo-mutants output (use -o <scratchpad> instead)
+/mutants.out/
+/mutants.out.old/

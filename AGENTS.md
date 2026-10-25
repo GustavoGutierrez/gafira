@@ -7,19 +7,20 @@ Gafira is a local-first design, image and video editor written in Rust (Cargo wo
 Specs already say what to build, so there is no separate proposal, design or tasks phase.
 
 ```
-spec  ->  (explorer, only when a claim is risky)  ->  tdd-apply  ->  verify  ->  archive
+spec  ->  (explorer, only when a claim is risky)  ->  tdd-apply  ->  mutants + verify  ->  archive
 ```
 
 | Step | Agent (`.agents/agents/`) | Output |
 |---|---|---|
 | Measure risky claims in `/tmp` (serde limits, clippy per commit, CI regexes, delivery prefixes) and cross-check numbers across docs | `explorer` (Sonnet) | `openspec/changes/<change>/spike.md` with command, output, verdict |
 | Build one delivery with strict TDD | `tdd-apply` (Sonnet) | commits + `openspec/changes/<change>/apply-progress.md` |
+| Mutation-test the changed lines; report surviving mutants (read-only) | `mutants` (Sonnet) | report in the session scratchpad, outside the repo |
 | Check gates and every requirement/scenario | `verify` (Opus) | `openspec/changes/<change>/verify-report.md`, PASS or FAIL |
 | Close the change (PASS and all deliveries done) | `archive` (Haiku) | delta specs merged into `openspec/specs/`, change moved to `openspec/changes/archive/` |
 
 On FAIL, or when deliveries remain, go back to `tdd-apply`.
 
-`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions, pushes and PRs. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `.claude/agents` is a symlink to `.agents/agents`.
+`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions, pushes and PRs. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants` on changed lines in parallel with `verify`. `.claude/agents` is a symlink to `.agents/agents`.
 
 A short design note is written only when a spec leaves a real decision open, and only for that decision. If a test or CI claim is risky, `explorer` settles it with a real experiment before specs or code rely on it; refuted claims are fixed in the specs first.
 
@@ -32,6 +33,14 @@ cargo fmt --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
+
+## Testing and mutation policy
+
+- Tests cover behavior of the public contract, not implementation (see `tdd-apply`).
+- Critical code: validation, JSON load/save, ids and arena, transforms, size/DPI limits, any spec rule with an invariant. Non-critical: `Display`/`Error` text unless the spec fixes it, trivial accessors, test helpers.
+- `mutants` runs `cargo-mutants` on the delivery diff; `verify` fails on a missed or timeout mutant in critical code and documents the rest. No score target. Archive first requests a whole-crate run.
+- Flags: `cargo mutants -p <crates> --in-diff <diff> --jobs 4 --cargo-arg=--locked -o <scratchpad dir>`. Default `cargo test` runner (nextest skips doctests), no `RUSTFLAGS=-D warnings`. `#[mutants::skip]` is forbidden (it needs a dependency); exclude through `.cargo/mutants.toml` with a reason.
+- `cargo-mutants` is an optional dev tool, like `cargo-deny`; it is not a CI gate.
 
 ## Delivery rules
 

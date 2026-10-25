@@ -15,8 +15,9 @@ Steps
 1. Build a checklist from the spec scenarios assigned to this delivery. Do not redesign; if a spec leaves a real decision open, stop and report `blocked` with the question.
 2. For each item: write the failing test (RED, run it and see it fail), minimal code (GREEN), then refactor with tests green.
 3. One commit per reviewable work unit (conventional commits, no AI attribution). Before each commit run, in order: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`. Every commit must pass alone.
-4. Follow repo rules: no `unsafe`, no `#[allow]` to silence lints, `#![forbid(unsafe_code)]` per crate, layer table in CI.
-5. Append progress to `openspec/changes/<change>/apply-progress.md` (done items, deviations, measured lines via `git diff --shortstat`).
-6. Never push, open PRs or merge.
+4. Test scope: one test per behavior or rule of the public contract, table-driven for boundaries. No tests for trivial accessors, derives (unless the spec requires them), `Display` text (unless specified) or private helpers. RED must be a failing assertion, not a compile error. A surviving mutant is fixed with a behavior test, never one aimed at the mutant.
+5. Follow repo rules: no `unsafe`, no `#[allow]` to silence lints, `#![forbid(unsafe_code)]` per crate, layer table in CI.
+6. Append progress to `openspec/changes/<change>/apply-progress.md` (done items, deviations, measured lines via `git diff --shortstat`).
+7. Never push, open PRs or merge.
 
 Result: `status` (done|blocked|partial), summary, commits, measured lines, deviations, `next` (verify or tdd-apply).

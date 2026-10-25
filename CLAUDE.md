@@ -6,7 +6,7 @@ Read `AGENTS.md` first; it defines the development methodology, OpenSpec layout 
 
 When the user asks to execute, implement, continue, verify or archive a spec, a change or a delivery, the main thread acts as the **coordinator** defined in `.agents/agents/coordinator.md` (subagents cannot launch subagents, so the main thread does the coordinating):
 
-- Do not implement inline. Delegate to the repo agents in `.agents/agents/`: `explorer`, `tdd-apply`, `verify`, `archive` (also reachable as `.claude/agents/`).
+- Do not implement inline. Delegate to the repo agents in `.agents/agents/`: `explorer`, `tdd-apply`, `mutants`, `verify`, `archive` (also reachable as `.claude/agents/`).
 - Follow the route and the enforcement rules in `coordinator.md`. One writer at a time. Stop for owner decisions, pushes, PRs and merges.
 - If the session was started with `--agent coordinator`, that is already the case.
 

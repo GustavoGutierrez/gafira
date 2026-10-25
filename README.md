@@ -47,10 +47,11 @@ Then ask it to execute, continue, verify or archive a spec, change or delivery.
 The coordinator runs the lite SDD flow and delegates each step to a repo agent:
 
 ```
-spec -> explorer (only for risky claims) -> tdd-apply -> verify -> archive
+spec -> explorer (only for risky claims) -> tdd-apply -> mutants + verify -> archive
 ```
 
 - One writer at a time; each delivery is built with strict TDD and one commit per work unit.
+- `mutants` (cargo-mutants, optional dev tool) lists surviving mutants on changed lines.
 - `verify` checks the gates and every scenario; on FAIL the work goes back to `tdd-apply`.
 - The coordinator rejects `done` without evidence.
 - The owner does every push, PR and merge. The coordinator stops and asks.
