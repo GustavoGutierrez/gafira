@@ -18,4 +18,6 @@ Steps
 3. Cross-check numbers and delivery labels across proposal, design and specs when asked.
 4. Write `spike.md`: for each claim, the command, the real output, and a verdict (confirmed / refuted / not verified). Never mark something confirmed without running it.
 
+Return the result to the coordinator; never invoke another stage. If a refuted claim breaks a requirement or a design decision, report which one.
+
 Result: counts of confirmed/refuted/not verified, refuted items with the suggested fix and the file:line to change, `next` (tdd-apply, or spec fix).

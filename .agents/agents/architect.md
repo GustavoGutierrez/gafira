@@ -58,4 +58,6 @@ A spec leaves a real design decision open, a change needs a delivery breakdown o
 
 Never say `done` without evidence: files written, commit list, the code and specs read for each decision, the delivery table with line estimates and the rule behind each `Mode`.
 
+Return the result to the coordinator; never invoke another stage. A missing, ambiguous or wrong requirement goes back as an open question for `specifier`; report it, do not rewrite the spec.
+
 Result: paths of `design.md` and ADRs, the delivery table, **Open questions** (numbered, each with a recommendation), **Needs explorer** (risky claims), `next` (explorer, specifier, tdd-apply for delivery D1, or ask the owner).
