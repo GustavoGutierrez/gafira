@@ -819,3 +819,69 @@ H3 and H6 are pre-checks in `revert`, a path that `History` never takes (it inst
 ### Result
 
 FAIL. 1 CRITICAL, 4 WARNING, 3 SUGGESTION. `next`: tdd-apply (D8 fix round: CRITICAL 1, plus WARNING 2 and 3 if cheap; the owner decides WARNING 1), then re-verify D8.
+
+## D8 re-verify (after the fix round)
+
+Branch `feat/edit-history-8`, base `main` 1518560, HEAD 326ac9b. The fix commits are `509943d` (tests only: `crates/gafira-edit/tests/node_commands.rs`, +50 -1) and `326ac9b` (docs only). Verdict: **PASS** (0 CRITICAL).
+
+### Gates at HEAD 326ac9b
+
+HEAD and 509943d have the same code, because 326ac9b only touches docs.
+
+| Check | Result |
+|---|---|
+| `cargo fmt --check` | ok |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ok |
+| `cargo test --workspace --locked` | 410 passed, 0 failed (407 + the 3 new tests; `node_commands` 24) |
+| CI policy steps, taken from `ci.yml` and run as written: ARQ-07, forbid unsafe (V11), V5, V12, V13 | rc 0 each (`ci.yml` unchanged since 1518560) |
+| `cargo deny check` | advisories, bans, licenses, sources ok |
+
+Commits: `test(edit)` (tests only) and `docs(edit-history)` (change folder only). The types fit the content. No commit on the branch has an AI attribution or Co-Authored-By line.
+
+### Size
+
+`git diff --shortstat 1518560..HEAD -- crates` gives 1086 insertions and 2 deletions. The owner approved a single PR, so WARNING 1 of the D8 verify is settled.
+
+### Disposition of the D8 findings
+
+| Finding | Fix | Evidence | State |
+|---|---|---|---|
+| CRITICAL 1: no test for the scenario "Reissued id after undo (D8, unit)" | `an_id_is_reissued_after_an_undo`: a real `History` on `next_id = 10`; InsertNodes gives roots `[10]`; undo brings `next_id` back to 10; a second InsertNodes gives roots `[10]`; `validate()` is `Ok` | Matches the GIVEN/WHEN/THEN line by line. The C1 mutant below kills it. The Q6 row in `apply-progress.md` now names this test | resolved |
+| WARNING 1: size | owner approved one PR | | resolved |
+| WARNING 2 / H3: missing-parent pre-check in `RemoveNodes::revert` | `a_revert_whose_parent_is_gone_fails_and_changes_nothing` (remove 4, remove its parent 3, revert the first: `Err(MissingNode(3))` and the document is unchanged) | H3 is now killed | resolved |
+| WARNING 3 / H6: "already back" pre-check | `a_revert_of_nodes_that_are_already_back_fails_and_changes_nothing` (apply, revert, revert again: `Err(InvalidValue(..))`, the document is unchanged and `validate()` is `Ok`) | H6 is now killed | resolved |
+| WARNING 4: pending spec edits | listed in `apply-progress.md` "D8 fix round" for the coordinator before archive | | open (carry to archive) |
+
+### Mutation (re-run)
+
+The cargo-mutants run from the D8 verify (`scratchpad/md8/out`: 34 caught, 0 missed, 0 timeout, 15 unviable) still applies. The fix round adds tests only, and those can only kill more mutants.
+
+The hand mutants were applied one at a time to a `git archive` export of HEAD (`scratchpad/vd8r/src`) with its own target dir, using `cargo test -p gafira-edit --locked --no-fail-fast`. After each run the file was restored and checked against the worktree with `cmp` (all three files match).
+
+| # | Mutation | Result |
+|---|---|---|
+| H1 | delete the `(parent, index)` sort in `RemoveNodes::apply` | KILLED by `positions_follow_the_list_not_the_id_order`, `remove_nodes_obeys_the_command_laws` |
+| H2 | no descendant dedupe | KILLED by `remove_a_subtree_and_restore_the_order`, `remove_nodes_obeys_the_command_laws` |
+| H3 | `RemoveNodes::revert` skips the missing-parent pre-check | **KILLED** by `a_revert_whose_parent_is_gone_fails_and_changes_nothing` (without the check, node 4 is left as an orphan in the arena) |
+| H4 | `InsertNodes::revert` does not call `restore_next_id` | KILLED by `insert_then_redo_reuses_ids`, `a_failed_transaction_gives_the_ids_back`, `insert_into_a_group_...`, `insert_nodes_obeys_the_command_laws` |
+| H5 | `validate_new` moved after the id allocation | KILLED by `bad_specs_are_refused_without_a_change`, `an_exhausted_id_space_changes_nothing`, `insert_nodes_obeys_the_command_laws` |
+| H6 | `RemoveNodes::revert` skips the "already back" pre-check | **KILLED** by `a_revert_of_nodes_that_are_already_back_fails_and_changes_nothing` (without the check, the second revert returns `Ok(())`) |
+| C1 | `History::undo` does not install `entry.before` | KILLED by `an_id_is_reissued_after_an_undo` (`left: 11, right: 10` on `next_id`), and also by 7 `history::tests`, `merging_equals_applying_the_sequence_one_by_one` and `undo_and_redo_install_the_recorded_snapshots_whatever_the_size` |
+
+That makes 7 hand mutants: the 6 from the D8 verify, re-run, plus C1.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Pending spec edits** (D8 WARNING 4, still open, to apply before archive): reword "on a later apply (redo after revert) it MUST reuse the same ids" in `edit-commands` "InsertNodes and RemoveNodes" as an outcome. Also merge the id-counter clarification into the main `edit-capability` "Id allocation" requirement.
+
+### SUGGESTION
+
+D8 SUGGESTIONs 1 to 3 are unchanged and still open: the non-LIFO guard on `restore_next_id` in `InsertNodes::revert`, the page-wide parent map in `RemoveNodes::apply`, and no test reads `label()`.
+
+### Result
+
+PASS for D8. 0 CRITICAL, 1 WARNING, 3 SUGGESTION. The change is not complete: D7 (being verified separately), D9 and D10 remain. `next`: push `feat/edit-history-8` and open its PR against `main`, then tdd-apply for the next delivery.
