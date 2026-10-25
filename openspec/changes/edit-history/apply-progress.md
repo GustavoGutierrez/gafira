@@ -667,3 +667,24 @@ Question (D1 W6 / S1, D2 W6): with four `clippy.toml` copies and a `>= 3` floor,
 ## D11: V12 derived from V5 (next implementation step)
 
 Flow: spec first, then `tdd-apply`. Status: not started. Scope: the V12 step in `.github/workflows/ci.yml` only (no Rust code). RED first: the scenarios "A deleted copy fails V12" and "A V5 crate without a copy fails V12" exit 0 on the current step and must fail before the step changes. Then make the other D11 scenarios hold ("Clean tree passes the derived V12", "An edited copy fails V12" naming the crate, "gafira-testkit is the named exception", and V5's unchanged reverse check), with every existing V12 negative (H-N2, H-N3, H-N5, H-N6) still failing.
+
+### D11 result (tdd-apply)
+
+Done. Commit `ci: derive the V12 clippy.toml copies from the V5 table`; only the V12 step in `.github/workflows/ci.yml` changed (+14/-5). V12 reads the rows of the V5 `table='...'` block from `.github/workflows/ci.yml` (no second crate list, no `>= 3` floor), requires `crates/<crate>/clippy.toml` byte-identical (`cmp -s`) to `crates/gafira-geom/clippy.toml` for every row except `gafira-testkit` (printed as exempt), and names the crate on every failure. V5 unchanged. AGENTS.md does not mention the old rule, so it is unchanged.
+
+Method: scripts under the session scratchpad extract each step from ci.yml and run it with `bash --noprofile --norc -eo pipefail` on a temp copy of the tree.
+
+RED (old step, exit 0 = the hole):
+- Delete `crates/gafira-edit/clippy.toml`: exit 0.
+- Scratch crate `gafira-scratch` with V5 row `gafira-scratch -` and no copy: exit 0.
+
+GREEN (new step):
+- Delete gafira-edit copy: exit 1, "gafira-edit is in the V5 table but has no crates/gafira-edit/clippy.toml".
+- Scratch crate with V5 row, no copy: exit 1 naming gafira-scratch.
+- Clean tree: exit 0, "gafira-testkit: exempt ...".
+- Line appended to gafira-edit copy: exit 1 naming gafira-edit (also gafira-doc, gafira-color: H-N2 exit 1).
+- Exemption removed in a scratch copy: exit 1 naming gafira-testkit.
+- H-N3, H-N5, H-N6: exit 1 "lacks the std::collections::HashMap ban".
+- gafira-color row removed from V5 table: V5 exit 1 "gafira-color has clippy.toml but no V5 row".
+
+Gates: fmt, clippy -D warnings, `cargo test --workspace --locked` (508 passed, 0 failed), `cargo deny check` ok; ARQ-07, forbid unsafe, V5, V12, V13, V14 extracted from ci.yml all exit 0. Deviations: none.
