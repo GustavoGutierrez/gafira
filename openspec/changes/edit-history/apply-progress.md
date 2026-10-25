@@ -696,6 +696,12 @@ Gates: fmt, clippy -D warnings, `cargo test --workspace --locked` (508 passed, 0
 - W3: snapshot undo and redo call neither `apply` nor `revert` (they call `label()`): reworded in `edit-history` "Undo and redo by snapshot" and in the proposal's success criterion.
 - Verify W1 (V12 parser stops at a whitespace-only line) is code for `tdd-apply`; its RED is the new D11 scenario "A whitespace-only line does not hide table rows".
 
+### Owner acceptance: cross-platform CI (2026-10-25)
+
+Finding: whole-change verify W2 (class claim). Since D5, every GitHub Actions run has failed to start ("recent account payments have failed"). So the `trybuild` `.stderr` snapshots on Windows and macOS (spike R3; `edit-capability` "trybuild evidence for ARQ-30") and the gates of D5 to D11 on Windows and macOS were never observed; they are proven on Linux only. The owner chose **option B**: accept the risk now. `edit-history` may be archived on the Linux evidence.
+
+Follow-up condition (binding): once CI works again, the first thing to run is the full Windows, Linux and macOS CI matrix on `main`. If any `.stderr` snapshot differs on a platform, `tests/ui.rs` is restricted to Linux with `#[cfg(target_os = "linux")]`, as the `edit-capability` requirement already provides, and the restriction and the difference are recorded in a follow-up change (or fix delivery) and its verify report. Any other gate failure on Windows or macOS goes through the normal flow.
+
 ## Archive notes
 
 For the `archive` agent (from the whole-change verify and the spec fixes above):
@@ -726,3 +732,4 @@ Gates: fmt, clippy -D warnings, test (608 passed, 0 failed), deny ok; ARQ-07, fo
 - `Reorder::touches` / `Reparent::touches` pre-apply fallback (`delete field nodes`): DEVIATION from the plan to exclude them. cargo-mutants applies `exclude_re` (config and `--exclude-re '^'`) to every mutant except the StructField ones (`--list` still shows both with `--exclude-re '^'`), so no regex can exclude them. The fallback is now built in place (`let mut set = DirtySet::default(); set.nodes.insert/extend(..)`), same value, so there is no struct expression to mutate; the post-apply `touches` mutants (`replace ... touches -> DirtySet with Default::default()`) stay listed and caught.
 - T3 re-run on error.rs, history.rs, reorder.rs, reparent.rs (export under the scratchpad, default per-job target dirs): 54 mutants, 43 caught, 11 unviable, 0 missed, 0 timeout.
 - Gates: fmt, clippy -D warnings, test (610 passed), deny, ARQ-07, forbid unsafe, V5, V12, V13, V14 pass.
+7. Owner acceptance (2026-10-25, whole-change verify W2): archive proceeds on Linux evidence only; Windows and macOS have not been observed since D5. Carry it into the archived change as is, and do not mark R3 as verified. Follow-up: the full CI matrix on `main` runs first once CI works; a `.stderr` difference restricts `tests/ui.rs` to Linux (`#[cfg(target_os = "linux")]`) and is recorded in a follow-up. See "Owner acceptance: cross-platform CI" above.
