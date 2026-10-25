@@ -65,7 +65,7 @@ C2b MUST NOT decide `Command`/`History` APIs. It only provides `Document::edit(&
 Strict TDD. New dependencies: none from third parties. Normal dependencies are `serde` (+`rc`), `serde_json`, `gafira-geom` and `gafira-color`; `proptest` is dev-only. `Color` stays a bare value, so that a future untagged `Animatable::Static` stays compatible.
 
 ### Delivery plan
-With the real size factor of about ×1.9, the forecast is about 4 519 measured lines (re-cut during apply). The work is a stacked chain of eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b; D1 also shipped as PR 1a and 1b), and every commit passes the gates on its own.
+With the real size factor of about ×1.9, the forecast is about 4 519 measured lines (re-cut during apply). The work is a stacked chain of twelve sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a1, D6a2, D6b; D1 also shipped as PR 1a and 1b), and every commit passes the gates on its own.
 
 | # | Delivery | Forecast | Depends on |
 |---|---|---|---|
@@ -77,8 +77,9 @@ With the real size factor of about ×1.9, the forecast is about 4 519 measured l
 | D4b | pass P4 and `ExtensionTooDeep`, validating load (`try_from`, `LoadError::Invalid`), `from_parts` | ~387 | D4a |
 | D5a | `validate()` passes P5–P6 (parents, reachability), the 10 000-deep chain | ~215 | D4b |
 | D5b | `EditToken`, `edit`/`DocMut` (removes the `alloc_id` gate), the `EditToken` CI step + negative runs | ~420 | D5a |
-| D6a | Bounded generator, corruption generators, deterministic guards | ~540 | D5b |
-| D6b | ARQ-10/13 properties (Q1–Q5), mutation runs, CI runtime record | ~365 | D6a |
+| D6a1 | Bounded generator and its feature/bounds guard | ~540 total for D6a (measured 874) | D5b |
+| D6a2 | Corruption generators and their guard | (see D6a1) | D6a1 |
+| D6b | ARQ-10/13 properties (Q1–Q5), mutation runs, CI runtime record | ~365 | D6a2 |
 
 Measure with `git diff --shortstat` after D2a. If the ratio is above ×1.3 of the forecast, re-cut the remaining deliveries before you continue.
 

@@ -100,8 +100,8 @@ The helper is never added in a commit before the test that calls it: an uncalled
 | `tests/golden/.gitattributes` | D3 | Create | `*.json -text` (no CRLF conversion on Windows checkouts) |
 | `src/error.rs`, `src/validate.rs` | D4a (P1–P3), D4b (P4), D5a (P5–P6) | Create / Modify | `ValidationError` (all 18 variants in D4a), `NodeField`; passes + table-driven tests. `json.rs` switches to `try_from` in D4b; `from_parts` lands in D4b. |
 | `src/edit.rs`, `tests/edit.rs` | D5b | Create | `EditToken`, `DocMut` (removes the `alloc_id` gate); tests for "Changing the DPI" and "Edit touches one path" |
-| `tests/common/mod.rs` and its guard tests | D6a | Create | Bounded generator, corruption generators, deterministic guards (the guards ship with the generator so no helper is dead code) |
-| `tests/properties.rs` | D6b | Create | Properties Q1–Q5 |
+| `tests/common/mod.rs` and its guard tests | D6a1 (generator, feature guard), D6a2 (corruptions, corruption guard) | Create, then extend | The guards ship with the code they cover so no helper is dead code |
+| `tests/properties.rs` | D6a1 creates it (`mod common;`), D6b edits it | Create, then edit | Properties Q1–Q5 |
 | `crates/gafira-doc/proptest-regressions/` | D6b | Create if produced | Committed |
 
 ### `clippy.toml` (all three copies, byte-identical)
@@ -362,12 +362,13 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | | **D4a total** | | **~507** |
 | D4b | `validate.rs` P4 with the depth check (64/65, `ExtensionTooDeep`) / `try_from` switch, `LoadError::Invalid`, `from_parts` / table-driven tests (P4 rows, validating-load rows, accessors and page order, "D4b build accepts cycles"); edits the D4a 121-level assertion to expect `Invalid(ExtensionTooDeep)` | owner-approved re-cut | |
 | | **D4b total** | | **~387** |
-| D5a | `validate.rs` P5–P6 / their table rows + 10 000-deep chain (owner-approved fallback cut of D5: D4a plus D4b measured 1 400 against 894, ratio 1.566 > 1.5) | 50 / 30 | 95 / 57 |
+| D5a | `validate.rs` P5–P6 / their table rows + 100 000-deep chain (owner-approved fallback cut of D5: D4a plus D4b measured 1 400 against 894, ratio 1.566 > 1.5) | 50 / 30 | 95 / 57 |
 | | **D5a total** | | **~215** (including the pass-order rows and the `Deep tree` load test) |
 | D5b | `edit.rs` (removes the allocator gate) / `tests/edit.rs` (including "Changing the DPI" and "Edit touches one path") / `ci.yml` V13 | 70 / 70 / exact | 133 / 133 / 45 |
 | | **D5b total** | | **~420** (D5a plus D5b is ~635, the former D5 figure) |
-| D6a | `tests/common/mod.rs`: bounded generator, corruption generators, deterministic guards (the guards ship in this commit so no helper is dead code) | owner-approved re-cut of the old D6 (~645) | |
-| | **D6a total** | | **~540** |
+| D6a1 | `tests/properties.rs` (`mod common;`) / `tests/common/mod.rs` generator and feature/bounds guard | owner-approved re-cut of the old D6 (~645); D6a measured 874 against ~540, so split by the 700 rule | 495 measured |
+| D6a2 | `tests/common/mod.rs`: 24 `Corruption` kinds, `observed()`, corruption guard | | 379 measured |
+| | **D6a total** | | **~540 forecast, 874 measured** |
 | D6b | `tests/properties.rs` (Q1–Q5), mutation runs, CI runtime record | owner-approved re-cut | |
 | | **D6b total** | | **~365** |
 | | **Change total** | | **~4 519** (595 + 335 + 465 + 690 + 507 + 387 + 215 + 420 + 540 + 365; the older figure was ~3 835 (595 + 335 + 465 + 690 + 640 + 465 + 645); the earlier six-delivery figure was ~3 578, and the proposal said 2 600–2 900. The increase comes from the V12/V13 hardening, `ExtensionTooDeep`, the unit-test helper and the Q5 property.) |
@@ -381,7 +382,7 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 **Dependencies**:
 - D1 starts from `main`.
 - D2b (`ShapeNode.fill`) needs `Color`, which is already on `main` (C2a, PR #5 merged, `main` 75f7e78): D1, D2a and D2b all branch from the same chain with no wait.
-- The chain is linear: D1 ← D2a ← D2b ← D3a ← D3b ← D4a ← D4b ← D5a ← D5b ← D6a ← D6b (eleven sub-deliveries; D1 also shipped as PR 1a and 1b, and D3, D4, D5 and D6 were cut during apply).
+- The chain is linear: D1 ← D2a ← D2b ← D3a ← D3b ← D4a ← D4b ← D5a ← D5b ← D6a1 ← D6a2 ← D6b (twelve sub-deliveries; D1 also shipped as PR 1a and 1b, and D3, D4, D5 and D6 were cut during apply).
 - Branches: `feat/domain-doc-1a`, `-1b`, `-2a`, `-2b`, `-3a`, `-3b`, `-4a`, `-4b`, `-5a`, `-5b`, `-6a`, `-6b`, each based on the previous one.
 
 **Commit order** (each commit passes `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V5, V6, V11, V12 and, from D5b, V13):
@@ -396,7 +397,8 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | D4b | `feat(doc): validate node fields and extension depth` (P4) → `feat(doc): validate on every deserialization` (`try_from`, `LoadError::Invalid`, `from_parts`) |
 | D5a | `feat(doc): validate parents and reachability` (P5–P6) |
 | D5b | `feat(doc): add EditToken and DocMut` (**removes the `#[cfg(test)]` gate on `alloc_id`**; adds `set_dpi`/`edit`) → `ci: restrict EditToken to the edit crates` (V13) |
-| D6a | `test(doc): add bounded document generator` (with the corruption generators and the deterministic guards) |
+| D6a1 | `test(doc): add bounded document generator and its coverage guard` |
+| D6a2 | `test(doc): add corruption generators and their guard` |
 | D6b | `test(doc): add ARQ-10 and ARQ-13 properties` |
 
 **Each prefix passes on its own.** A new module is exported from `lib.rs` in the commit that adds it, so public items are never dead code. Crate-private items with no non-test consumer yet follow the gate table in "Dead code before its consumer"; `#[allow]` is never used. V12 hardening and the third copy land together, and the V5 row lands with the `clippy.toml` that requires it. Every D3 fixture is a valid document (every node is a root or a child, see the fixture rule), so D3's tests keep passing after the D4b `try_from` switch and after the D5a passes.
@@ -431,10 +433,11 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | T4.2a (D4a) | Passes P1–P3 and parse-side depth | Table test fails | One row per P1–P3 variant (8 rows), each a minimal fixture built in-crate; order rows for P1–P3. Parse side with `serde_json::Value` and the unchecked `from_json`: a bare `Value` of 127 levels parses and 128 fails; a full document whose payload has 121 levels parses, and 122 fails to parse | Mutation: `>=` for `next_id` |
 | T4.2b (D4b) | Pass P4 | Table test fails | One row per P4 variant (6 rows) and the P4 order rows. Depth: a payload of depth 64 passes and 65 → `ExtensionTooDeep`. The D4a 121-level assertion changes to `Invalid(ExtensionTooDeep)` | Mutation: `> 65` for the depth limit |
 | T4.3 (D4b) | Validated deserialization + `from_parts` | `serde_json::from_str::<Document>` accepts an invalid document | `try_from`; `from_json` and `from_parts` return the same variant as `validate`, including `ExtensionTooDeep`; the D3 fixtures still pass | Mutation: revert to `from` → test fails |
-| T5.1 (D5a) | Passes P5–P6 | Table rows fail | 4 rows (`MultipleParents`, `RootHasParent`, `Orphan`, `Cycle`, all distinct; together with T4.2a and T4.2b these are 18 rows and cover the proposal's seven success criteria); a 10 000-deep chain validates without stack overflow | Mutations: drop P6 → the cycle row fails; count parents per page → the cross-page row fails |
+| T5.1 (D5a) | Passes P5–P6 | Table rows fail | 4 rows (`MultipleParents`, `RootHasParent`, `Orphan`, `Cycle`, all distinct; together with T4.2a and T4.2b these are 18 rows and cover the proposal's seven success criteria); a 100 000-deep chain validates without stack overflow | Mutations: drop P6 → the cycle row fails; count parents per page → the cross-page row fails |
 | T5.2 (D5b) | `EditToken`/`DocMut` | `tests/edit.rs` fails | Allocation is monotonic and shared by pages and nodes; `u64::MAX` → `IdSpaceExhausted`, with `next_id` unchanged; **"Changing the DPI"** (`set_dpi` to a value that pushes a page over 16 384 px → `validate` returns `PageSize`); **"Edit touches one path"** (`node_mut` leaves untouched nodes and pages shared: `Arc::ptr_eq` after cloning the document). The `alloc_id` gate is removed in this commit. | — |
 | T5.3 (D5b) | V13 | E1 (below) passes with no step | Step body; E0–E15 as expected | — |
-| T6.1 (D6a) | Generator | Guard tests fail | Generator, corruption generators and guards | — |
+| T6.1a (D6a1) | Generator | Guard test fails | Generator and the feature/bounds guard | — |
+| T6.1b (D6a2) | Corruption generators | Guard test fails | 24 corruption kinds and the corruption guard | — |
 | T6.2 (D6b) | Properties | RED by mutation (below) | Q1–Q5 | Mutations reverted; `git status` clean |
 
 **Bounded generator** (`tests/common/mod.rs`, built through `DocMut` with the token, which is allowed inside `crates/gafira-doc/`):
@@ -560,7 +563,7 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 ## Spec Alignment
 
 The specs in `specs/*/spec.md` and this design are aligned on the same orchestrator decisions:
-- eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b);
+- twelve sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a1, D6a2, D6b);
 - 18 `ValidationError` variants including `ExtensionTooDeep`;
 - in-page duplicate ids rejected at parse time;
 - the V12/V13 hardening and its known limits;
@@ -579,4 +582,4 @@ No migration: there is no persisted user data yet. Roll back per delivery, newes
 - [ ] Q3: ARQ-11 as "byte for byte for canonical payloads, by value otherwise" (`Value`, amendment 2). Confirm.
 - [ ] Q4: `Document` as the root name (amendment 4); no lock cascade in the data. Confirm.
 - [ ] Q5: `gafira-cli validate` deferred to `gafira-format` (A15), with the C1/C2a chain tables out of date. Confirm, or add D7 (~250 lines).
-- [ ] The forecast is ~4 519 lines across eleven sub-deliveries, every one at or under ~700. Accept the stacked chain.
+- [ ] The forecast is ~4 519 lines across twelve sub-deliveries, every one at or under ~700. Accept the stacked chain.

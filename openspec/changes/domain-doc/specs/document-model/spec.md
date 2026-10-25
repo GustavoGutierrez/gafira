@@ -4,7 +4,7 @@
 
 `gafira-doc` (domain layer): the pure, in-memory `Document -> Page -> Node` model of 02 §3.1 and §3.2, first product slice. New capability; no existing spec. The wire format is in `document-serde`, invariants in `document-validation`, the mutation capability and id allocation in `edit-capability`. Out of scope: sequences, tracks, clips, assets, styles, identities, masks, effects, `timing`, `Animatable`, text/image/frame nodes, `Path`, stroke, `grid`, `notes`, `bleed`, guides, `gafira-cli validate` (deferred to the `gafira-format` change, design A15, holder confirmation pending).
 
-Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn" after a requirement names the delivery per the design's table: D1 skeleton, ids, `Dpi`, `PageSize`, `BlendMode`; D2a `Placement` and `ElementBase`; D2b `NodeKind`, `Node`, `Page`, arena and `Document` (eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b; D1 also shipped as PR 1a and 1b) in all). `Document::from_parts` arrives in D4b and `DocMut` in D5b, so D2b tests that need a `Document` build it with a `#[cfg(test)]` helper inside the crate (private fields are visible there); scenarios that need `from_parts` or `DocMut` carry the later delivery in their title.
+Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn" after a requirement names the delivery per the design's table: D1 skeleton, ids, `Dpi`, `PageSize`, `BlendMode`; D2a `Placement` and `ElementBase`; D2b `NodeKind`, `Node`, `Page`, arena and `Document` (twelve sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a1, D6a2, D6b; D1 also shipped as PR 1a and 1b) in all). `Document::from_parts` arrives in D4b and `DocMut` in D5b, so D2b tests that need a `Document` build it with a `#[cfg(test)]` helper inside the crate (private fields are visible there); scenarios that need `from_parts` or `DocMut` carry the later delivery in their title.
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -306,7 +306,7 @@ Constructors MUST be infallible, MUST NOT clamp, normalize or validate, and `Dpi
 - WHEN compared with `==` and by `to_bits()`
 - THEN the zeros compare equal while their bits differ, and the NaN node is not equal to itself
 
-### Requirement: Generator and model properties (D6a generator and guards; D6b properties)
+### Requirement: Generator and model properties (D6a1 generator and coverage guard; D6a2 corruption guard; D6b properties)
 
 A bounded proptest generator of whole documents MUST exist as dev-only test code in `crates/gafira-doc/tests/common`, built through `DocMut` with an `EditToken`. Bounds: 1 to 3 pages (plus a dedicated empty-document case), 0 to 12 nodes per page, tree depth at most 4, only groups with children, ids allocated from the counter in shuffled order with an extra `next_id` gap of 0 to 3, extension payloads of depth at most 3 with at most 4 entries per container and strings of at most 8 characters including non-ASCII, quote, backslash and control characters. It MUST generate valid documents only. Guards using a deterministic runner (20 000 draws) MUST show that it reaches: `-0.0`, subnormals, px exactly 1.0 and 16384.0, opacity 0.0, `-0.0` and 1.0, depth at least 3, an `Extension` node, a group with children, several pages, an empty page, and every corruption variant of `document-validation`.
 

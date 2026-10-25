@@ -4,7 +4,7 @@
 
 `Document::validate()` and `ValidationError`: the structural part of ARQ-13 for `gafira-doc`. It runs on every deserialization (see `document-serde`, validating load) and in `Document::from_parts`, and is the check that C3 runs in `debug_assert` after each command. New capability; no existing spec. Not covered: ordered keyframes and `TimeRange` (no such types yet), the ARQ-13 fuzzer in `gafira-format`, and `gafira-cli validate` (deferred to the `gafira-format` change, design A15, holder confirmation pending).
 
-Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table (D4a header, ids, pages and the error type; D4b node values and validating load; D5a parents and reachability; D6a generator; D6b properties).
+Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table (D4a header, ids, pages and the error type; D4b node values and validating load; D5a parents and reachability; D6a1 generator; D6a2 corruptions; D6b properties).
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -223,7 +223,7 @@ A ring reachable from a root is not a separate row: its entry node would have tw
 - WHEN validated
 - THEN it passes and the call does not overflow the stack
 
-### Requirement: Validation properties (D6a corruption generators and guards; D6b properties)
+### Requirement: Validation properties (D6a2 corruption generators and guard; D6b properties)
 
 Generated valid documents MUST validate. A corruption step MUST exist for each of: duplicate id, key mismatch, `next_id <= max id`, page size below or above the limit, dangling root, duplicate root, non-finite field, out-of-range opacity, fill alpha, skew, `w` or `h`, empty `type_id`, extension payload deeper than 64, children on a leaf, dangling child, multiple parents, root with a parent, orphan, cycle, bad DPI, `schema_version = 2`. Applying one to a generated document MUST make `validate()` return exactly the matching variant. For every corruption except `ArenaKeyMismatch` and `NonFinite` (the wire-visible corruptions: `to_json` writes the corrupted value and a reader reads the same value back), `from_json(to_json(d))` MUST return `Err(LoadError::Invalid(same variant))`. `ArenaKeyMismatch` is excluded because the arena is written as the node array only, so the key is not on the wire and a reload derives it from `base.id` and succeeds. `NonFinite` is excluded because `to_json` writes `null` and the reload fails with `LoadError::Json`, never `Invalid(NonFinite)`. Both keep the `validate()` clause. A duplicate id is generated across two pages (or as a page id equal to a node id), because an in-page duplicate cannot exist in a `BTreeMap`. These are properties Q3 (corruptions) and Q2 (valid documents) of the design, named Q so they do not clash with passes P1 to P6.
 

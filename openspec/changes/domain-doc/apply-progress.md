@@ -528,3 +528,40 @@ Code-only `git diff --shortstat main..HEAD -- crates .github`: 6 files changed, 
 ### Gates
 
 `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` pass on each code commit: commit 3 278 passed (unchanged count); commit 4 295 passed (278 - 1 removed unit test + 10 integration tests + 8 doctests); commit 5 295. `cargo deny`, V5, V11, V12 not run during apply.
+
+## D6a (generator, corruptions and guards)
+
+Status: done, cut into D6a1 and D6a2 by the 700-line rule (the single delivery measured 874 code lines against ~540 forecast, ratio 1.6). Base: D6a1 on `feat/domain-doc-5b`; D6a2 on `feat/domain-doc-6a`. Commits (subjects, branch ranges):
+
+- `docs: apply D5b verify follow-ups` (`feat/domain-doc-5b..feat/domain-doc-6a`)
+- D6a1: `test(doc): add bounded document generator and its coverage guard` (`feat/domain-doc-6a`)
+- D6a2: `test(doc): add corruption generators and their guard` (`feat/domain-doc-6a..feat/domain-doc-6a2`)
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Generator coverage guard (unit) | `generated_documents_reach_every_feature_within_the_bounds` (20 000 deterministic draws: `-0.0`, subnormal, px 1.0 and 16 384.0, opacity 0.0/-0.0/1.0, depth 3, extension, group with children, several pages, empty page, empty document; also bounds: pages, nodes, depth 4, leaves without children, payload depth 3, 4 entries, 8 chars, `next_id` gap 3) |
+| Generated documents are valid | asserted inside the same guard on every draw; the 256-case property Q2 is D6b |
+| Coverage guards, every corruption variant (unit) | `every_corruption_is_produced_and_breaks_its_own_rule` (20 000 draws, all 24 kinds reached, each makes `validate()` return its matching variant) |
+| Corruption detected exactly / survives the wire (property) | D6b (Q3) |
+
+### RED evidence
+
+- D6a1: with `build` stubbed to return `Document::default()`, the guard fails: `never reached: ["-0.0", "subnormal", "px 1.0", "px 16384.0", "opacity 0.0", "opacity -0.0", "opacity 1.0", "depth 3", "extension", "group with children", "several pages", "empty page"]`. Real `build` restored, guard green.
+- D6a2: with `corrupt` returning the document unchanged for every kind except `Orphan`, the guard fails on `a corruption is detected`. Real code restored, guard green.
+
+### Deviations
+
+1. `tests/properties.rs` is created in D6a1 holding only `mod common;`; the guards live in `common/mod.rs`. Without a test target that includes it the guards would not run and the helpers would be dead code. D6b edits the file instead of creating it.
+2. `UnsupportedSchema` is wire-only: `schema_version` has no setter and `Deserialize` validates, so no integration test can hold a `Document` with schema 2. `Corrupted.doc` stays valid, `json` is patched to `"schema_version":2` and `observed()` reads the error from `from_json`. The `validate()` clause cannot be shown for this kind.
+3. Out-of-range opacity, alpha, skew, w, h and page size below/above, and the two duplicate-id forms, are separate `Corruption` kinds (24 in all) so the guard reaches each.
+4. Shuffled ids are produced by sorting slots by random keys (shrinks cleanly). The corruption guard also checks that each kind yields its own variant, which overlaps with Q3 on purpose (it proves the labels).
+
+### Size
+
+Code-only `git diff --shortstat`: D6a1 against `feat/domain-doc-5b`: 3 files changed, 492 insertions(+), 3 deletions(-) (495; includes 4 lines of the docs-commit `edit.rs` change). D6a2 against `feat/domain-doc-6a`: 1 file changed, 385 insertions(+), 3 deletions(-) (388). Both together: 874 insertions, 3 deletions.
+
+### Gates
+
+`cargo fmt --check` and `cargo clippy --workspace --all-targets --locked -- -D warnings` pass on each commit. `cargo test --workspace --locked`: docs commit 295 passed; D6a1 296 passed; D6a2 297 passed. The guards take about 3 s each.
