@@ -9,10 +9,9 @@
 mod command;
 mod dirty;
 mod error;
+mod transaction;
 
 pub use command::{Applied, Command, GestureId, MergeKey};
 pub use dirty::DirtySet;
 pub use error::CommandError;
-mod transaction;
-
 pub use transaction::Transaction;

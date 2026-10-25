@@ -80,6 +80,7 @@ version = "0.1.0-beta.1"
 dependencies = [
  "gafira-color",
  "gafira-geom",
+ "gafira-testkit",
  "proptest",
  "serde",
  "serde_json",
@@ -102,6 +103,18 @@ dependencies = [
  "kurbo",
  "proptest",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gafira-testkit"
+version = "0.1.0-beta.1"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "gafira-edit",
+ "gafira-geom",
+ "proptest",
  "serde_json",
 ]
 

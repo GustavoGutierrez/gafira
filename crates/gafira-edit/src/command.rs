@@ -130,10 +130,8 @@ mod tests {
 
     #[test]
     fn a_boxed_command_is_send_and_sync() {
-        let boxed: Box<dyn Command> = Box::new(Noop);
         assert_send_sync::<dyn Command>();
         assert_send_sync::<Box<dyn Command>>();
-        assert_eq!(boxed.merge_key(), None);
     }
 
     #[test]

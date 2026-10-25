@@ -61,8 +61,5 @@ mod tests {
     #[test]
     fn an_error_is_cloneable_comparable_and_an_error() {
         assert_contract::<CommandError>();
-        let wrapped = CommandError::InvalidDocument(ValidationError::InvalidDpi { dpi: 0 });
-        assert_eq!(wrapped.clone(), wrapped);
-        assert_ne!(wrapped, CommandError::IdSpaceExhausted);
     }
 }

@@ -1,9 +1,7 @@
 //! Property tests over generated documents (Q1 to Q5).
 
-mod common;
-
-use common::{Corruption, corrupted, document, json_value};
 use gafira_doc::{Document, LoadError, Node, NodeKind};
+use gafira_testkit::{Corruption, corrupted, document, json_value};
 use proptest::prelude::*;
 use serde_json::Value;
 
