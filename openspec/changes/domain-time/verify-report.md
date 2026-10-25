@@ -268,3 +268,84 @@ These files are unchanged since `3b4e58f`. Their "0 missed" result (part of 229 
 | Change (`26a2928..dbcd799`, crates only) | 2,489 insertions, against a forecast of 2,060 |
 
 next: archive
+
+# Pre-archive check (round 3, depth V1, 2026-10-25)
+
+Scope: what changed since the round-2 PASS (`dbcd799`). Verified commit `1c869e0` (branch `docs/domain-time-delta-fix`, on `main` `70b94dc`, which has `gafira-time` and the archived `edit-history`). New commits: `f897be4` (specifier fix of the `workspace-tooling` delta, `edit-history` re-verify W1) and `1c869e0` (archive notes in `apply-progress.md`). `crates/gafira-time` is byte-identical to `dbcd799` (`git diff dbcd799 HEAD -- crates/gafira-time` is empty). The only `.cargo/mutants.toml` change since `dbcd799` is the `History::debug_check` exclusion from `edit-history`, which has a reason. `domain-time` adds no exclusion.
+
+## Gates (clean `git archive` export of `1c869e0`, fresh target, `CARGO_INCREMENTAL=0`)
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` (whole workspace) | 0 |
+| ARQ-07, V11, V5, V12, V13, V14 (each step body taken from `ci.yml`, run under `bash --noprofile --norc -eo pipefail`) | 0 each |
+| `cargo deny check` | 0 |
+
+V12 prints the `gafira-testkit` exemption and checks the five copies (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`).
+
+## Delta `workspace-tooling` against `ci.yml` and the crate
+
+| Statement or scenario | Evidence | Status |
+|---|---|---|
+| V5 row with only the fields `gafira-time` and `-`, written `gafira-time  -` | `ci.yml` V5 table: the line `gafira-time  -` | covered |
+| `clippy.toml` byte-identical to `crates/gafira-geom/clippy.toml` | `diff -q`: exit 0. V12: exit 0 | covered |
+| A line of `lib.rs` starts with `#![forbid(unsafe_code)]`, and `//!` docs may come first | line 6 of `crates/gafira-time/src/lib.rs`. Lines 1 to 4 are `//!`. The V11 regex `^#!\[forbid\(unsafe_code\)\]` and the `crates/*/src/lib.rs` wildcard match the spec text | covered |
+| Forbidden prefixes are UI, async and network | V5 `forbidden='egui\|eframe\|winit\|wgpu\|tokio\|mio\|socket2\|reqwest\|ureq'` | covered |
+| Row and copy present (command) | V5, V11, V12 exit 0 | covered |
+| No internal edge (command), using V5's own filter | `cargo tree -p gafira-time -e normal,build --target all --prefix none -f '{p}' \| grep -Eo '^gafira-[a-z0-9-]+' \| sort -u` prints only `gafira-time` | covered |
+| Missing forbid fails V11 (negative) | scratch copy with the line removed: V11 exits 1, `missing forbid(unsafe_code): crates/gafira-time/src/lib.rs` | covered |
+| Copy without a row fails V5 (negative) | scratch copy with the row removed: V5 exits 1, `::error::gafira-time has clippy.toml but no V5 row` | covered |
+| Forbidden edge fails V5 (negative) | scratch copy with `gafira-geom.workspace = true` added: V5 exits 1, `::error::gafira-time must not depend on gafira-geom` | covered |
+| V14 not applicable | `gafira-time` has no `Command` impl. V14 reads only `crates/gafira-edit/src` | consistent |
+| No requirement in common with the main spec | the main `workspace-tooling` spec already lists the `gafira-time` row (V5 table), the copy (Formatting and V12 requirements) and V11 coverage. The ADDED requirement name is new | consistent |
+
+Criteria: 6 (1 requirement and 5 scenarios), all 6 covered. `f897be4` changes the delta after the implementation commits. It is the specifier's routed fix of `edit-history` re-verify W1, recorded in `apply-progress.md` archive note 1, and it touches only that delta file. It is not an implementer amendment.
+
+## Archive merge simulation (scratch copy of the current `openspec/specs/`)
+
+- `time-model` and `timecode` become new capability folders. The only change is renaming `## ADDED Requirements` to `## Requirements` (11 and 5 requirements).
+- In `workspace-tooling`, the one ADDED requirement is appended after "V14 command property coverage", which ends the main spec. The result has 12 requirements and no requirement-name collision.
+- All 13 resulting specs have exactly one `## Requirements` and no leftover `ADDED/MODIFIED/REMOVED/RENAMED` header. Every requirement has at least one scenario. The only duplicate requirement name across capabilities is `Serde round trip` (`geometry-primitives` and `color-model`). It predates this change and the two are separate capabilities, so it is not a collision.
+
+## Mutation (independent T3 per file, cited, not re-run)
+
+Source: `scratchpad/mdt/` of the coordinator session (`summary.txt`, `run.sh`, `out-<file>/mutants.out/outcomes.json` and `caught/missed/timeout/unviable.txt`). It used cargo-mutants 27.1.0, `-p gafira-time --file crates/gafira-time/src/<file>.rs --jobs 2`, before the fix round. The files exist, and their counts match the relayed numbers:
+
+| File | Found | Caught | Missed | Timeout | Unviable | Wall (s) |
+|---|---|---|---|---|---|---|
+| error.rs | 1 | 1 | 0 | 0 | 0 | 22 |
+| flicks.rs | 18 | 17 | 0 | 0 | 1 | 27 |
+| range.rs | 24 | 19 | 0 | 0 | 5 | 20 |
+| rate.rs | 47 | 43 | 0 | 0 | 4 | 32 |
+| timecode.rs (pre-fix) | 139 | 134 | 0 | 0 | 5 | 290 |
+| Total | 229 | 214 | 0 | 0 | 15 | 391 |
+
+`error.rs`, `flicks.rs`, `range.rs`, `rate.rs` and `lib.rs` in that run's tree are byte-identical to HEAD. Since then the tests have only gained cases (`tests/rates.rs` and `tests/timecode.rs` have additions only), so those results still hold. `timecode.rs` changed in the fix round. Its rerun was 143 found, 137 caught, 0 missed, 6 unviable (the implementer's rerun, reproduced by verify round 2 on `dbcd799`, which matches HEAD for the crate). `cargo mutants --list` at HEAD gives 233 mutants for the crate: 0 in `lib.rs`, 143 in `timecode.rs`, and 1 + 18 + 24 + 47 in the other four files.
+
+T4 equivalence: the per-file T3 runs cover every source file in `ls crates/gafira-time/src` (`error.rs`, `flicks.rs`, `lib.rs`, `range.rs`, `rate.rs`, `timecode.rs`; `lib.rs` has no mutants), so together they amount to the whole-crate T4 for this change. At HEAD that is 233 found, 217 caught, 0 missed, 0 timeout, 16 unviable, 0 critical missed. R2-W2 is closed.
+
+## Owner decisions recorded in `apply-progress.md`
+
+C2 waiver (lines 195 and 248), C1 ratification of 1,234 ms = 870,710,400 flicks (193 and 249), Q1 = A and Q2 = A (197-202 and 250), and the cross-platform accepted risk (252, which defers to the same acceptance as `edit-history`): all recorded.
+
+## Findings
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+- **R3-W1** (class: implementation, carried from R2-W1, owner waiver). `25afa83` and `f80d182` fail the test gate on their own. No PR may be cut at either commit.
+- **R3-W2** (class: claim, owner-accepted risk). Windows and macOS were not observed, so ARQ-03 rests on Linux evidence only. Do not mark the three-target criterion as verified.
+
+### SUGGESTION
+
+- **R3-S1.** Archive note 6 in `apply-progress.md` cites 229 found and 214 caught, which includes the pre-fix `timecode.rs`. The figure for the archived tree is 233 found, 217 caught, 16 unviable (see above). The archive agent should cite that figure.
+- **R3-S2.** Archive notes 8 to 10 (the `design.md` D-10 and canonical-text follow-up, optional tests, the `docs/specs/README.md` status row) are still for the archive stage to handle.
+
+Verdict: PASS. Counts: 0 CRITICAL, 2 WARNING (implementation 1, claim 1), 2 SUGGESTION.
+
+next: archive
