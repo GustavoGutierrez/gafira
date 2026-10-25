@@ -80,4 +80,4 @@ Audio under `assets/musics/` is kept out of git (owner decision D-10 in `docs/sp
 
 ## License
 
-Proprietary; see `docs/specs/backlog/06-licencia-y-activacion.md`. Third-party crates must use permissive licenses only (`deny.toml`).
+Proprietary; see `LICENSE`. The full license agreement and privacy policy are written in the final licensing phase (`docs/specs/backlog/06-licencia-y-activacion.md`). Third-party crates must use permissive licenses only (`deny.toml`).
