@@ -49,7 +49,13 @@ pub enum BooleanOp {
 
 /// The default tolerance, in the unit of the paths (pixels).
 ///
-/// It bounds the deviation between a result and the exact geometric answer. Every
-/// operation takes the tolerance explicitly or uses this constant; the crate
-/// never mixes tolerances inside a single call.
+/// Every operation takes the tolerance explicitly or uses this constant; the
+/// crate never mixes tolerances inside a single call. For the stroke outline
+/// and the simplification it is the distance the result may move from the exact
+/// answer. For the boolean operations it is the accuracy of the sweep, not a
+/// bound on the distance to the exact result: measured, and not proven, the
+/// result matches the exact boundary far below the tolerance for straight edges,
+/// and for a curve that runs parallel to the sweep direction at a crossing the
+/// deviation grows as the square root of the tolerance (see
+/// [`Path::boolean_op`]).
 pub const DEFAULT_TOLERANCE: f64 = 1e-3;

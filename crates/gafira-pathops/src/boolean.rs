@@ -18,34 +18,38 @@ use crate::{BooleanOp, FillRule, Path, PathOpError, validate};
 const MINIMUM_TOLERANCE_PER_UNIT: f64 = 1e-12;
 
 impl Path {
-    /// The set of points covered by both paths.
+    /// The set of points covered by either path, or by both.
     ///
-    /// The tolerance bounds the deviation between the result and the exact
-    /// geometric answer.
+    /// The tolerance is the accuracy of the sweep, not a bound on the distance
+    /// between the result and the exact answer. See [`Path::boolean_op`] for
+    /// what was measured, and for the errors.
     pub fn union(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Union, tolerance)
     }
 
     /// The set of points covered by both paths.
     ///
-    /// The tolerance bounds the deviation between the result and the exact
-    /// geometric answer.
+    /// The tolerance is the accuracy of the sweep, not a bound on the distance
+    /// between the result and the exact answer. See [`Path::boolean_op`] for
+    /// what was measured, and for the errors.
     pub fn intersection(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Intersection, tolerance)
     }
 
     /// The set of points covered by the first path and not by the second.
     ///
-    /// The tolerance bounds the deviation between the result and the exact
-    /// geometric answer.
+    /// The tolerance is the accuracy of the sweep, not a bound on the distance
+    /// between the result and the exact answer. See [`Path::boolean_op`] for
+    /// what was measured, and for the errors.
     pub fn difference(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Difference, tolerance)
     }
 
     /// The set of points covered by exactly one of the two paths.
     ///
-    /// The tolerance bounds the deviation between the result and the exact
-    /// geometric answer.
+    /// The tolerance is the accuracy of the sweep, not a bound on the distance
+    /// between the result and the exact answer. See [`Path::boolean_op`] for
+    /// what was measured, and for the errors.
     pub fn xor(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Xor, tolerance)
     }
@@ -53,7 +57,37 @@ impl Path {
     /// Computes a set operation over the two paths.
     ///
     /// Each path is read with its own fill rule. The result carries the
-    /// `NonZero` fill rule.
+    /// `NonZero` fill rule. When an operand is empty (no segment, so a moves-only
+    /// path too) the result is not computed: it is a clone of the surviving
+    /// operand, with that operand's own fill rule, or an empty path.
+    ///
+    /// # Tolerance
+    ///
+    /// The tolerance is the accuracy of the sweep that computes the result: a
+    /// comparison tolerance along the sweep direction, not a distance in the
+    /// plane. The result is not guaranteed to lie within the tolerance of the
+    /// exact answer. What was measured, empirically and not proven:
+    ///
+    /// - for straight-edged operands, and for curves that meet the other boundary
+    ///   at an angle, the result matched the exact boundary to about `1e-11`, far
+    ///   below the tolerance;
+    /// - the worst case is a crossing where a curve runs parallel to the sweep
+    ///   direction: there the deviation grew as the square root of the tolerance
+    ///   and stayed below `sqrt(2 * R * tolerance)`, where `R` is the largest
+    ///   radius of curvature of the operands at a crossing;
+    /// - the tolerance with which a curved input was itself produced (for
+    ///   example the accuracy of a circle's approximation by cubics) adds to that
+    ///   deviation;
+    /// - the tolerance is meaningful only well below the thinnest feature of the
+    ///   operands.
+    ///
+    /// # Errors
+    ///
+    /// In this order, the first match wins: an invalid tolerance, a non-finite
+    /// coordinate (first operand, then second), an open subpath (first operand,
+    /// then second), and a tolerance below `1e-12` times the largest absolute
+    /// coordinate of both operands ([`PathOpError::ToleranceTooFine`]). All the
+    /// checks run before the empty-operand rule.
     pub fn boolean_op(
         &self,
         other: &Path,

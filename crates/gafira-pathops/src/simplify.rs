@@ -10,9 +10,13 @@ use crate::{Path, PathOpError, validate};
 impl Path {
     /// The path with its redundant parts removed.
     ///
-    /// The simplified path stays within `tolerance` of the original and never
-    /// holds more segments than it did. Every subpath of the original appears
-    /// in the result, in the same order.
+    /// The simplified path stays within `tolerance` of the original. The
+    /// guarantee is about shape, not about the segment count: straight segments
+    /// may be replaced by fitted curves, and the result may hold more segments
+    /// than the original. Every subpath of the original appears in the result,
+    /// in the same order, with the same fill rule. A closed path of straight
+    /// segments whose every vertex lies farther than `tolerance` from the line
+    /// through its neighbours comes back equal in value.
     pub fn simplify(&self, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;

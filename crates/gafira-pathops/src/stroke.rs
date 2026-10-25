@@ -27,8 +27,10 @@ impl Path {
     /// The outline of the area this path covers when stroked.
     ///
     /// The outline is always closed: a stroke encloses an area, even when the
-    /// stroked path is open. The tolerance bounds the deviation between the
-    /// outline and the exact stroke.
+    /// stroked path is open. The outline carries the `NonZero` fill rule,
+    /// whatever rule the input carries, so a region the stroke covers more than
+    /// once is covered by the outline and never a hole. The tolerance bounds the
+    /// deviation between the outline and the exact stroke.
     pub fn stroke_outline(&self, style: &StrokeStyle, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         validate::stroke_width(style.width)?;
