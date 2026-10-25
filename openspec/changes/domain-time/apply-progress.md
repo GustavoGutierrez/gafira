@@ -202,3 +202,39 @@ Owner decisions of 2026-10-25, relayed by the coordinator. They are recorded in 
 - Q2 = A, no negative zero. `-00:00:00:00` and `-00:00:00;00` are rejected; a `-` is allowed only before a non-zero label. Rejected option: accept it as zero.
 
 The current parser accepts both non-canonical forms, so tdd-apply has new RED scenarios to cover.
+
+## Verify fix round 1 (W2 and W1)
+
+Scope: verify W2 (canonical timecode text, owner answers Q1-A and Q2-A) and W1 (weak tests). History is not rewritten (C2 waived).
+
+### W2: canonical text (commit `67ed2a6`)
+
+RED evidence (failing assertions, before the parser change):
+
+- `extra_leading_zeros_are_rejected`: `accepted "00:00:00:005"` (the 120 fps case; the loop stops at the first accepted text, and the same table holds `00:00:00:0023`, `000:00:00:00`, `001:00:00:00`, `00:00:00;005`, `0:00:00:00`, `00:0:00:00`, `00:00:000:00`).
+- `negative_zero_is_rejected`: `assertion failed: Timecode::parse("-00:00:00:00", ndf(FrameRate::FPS_24)).is_err()` (the drop-frame `-00:00:00;00` case and the accepted `-00:00:00:01` are in the same test).
+- `accepted_text_is_canonical` (property: one edit on a real formatted label, over six formats including 120 fps and both drop-frame rates): `left: "00:00:00:00", right: "00:00:00:000"`, minimal input `real = 0, format_index = 0, edit = 0 (extra zeros), zeros = 1`.
+
+GREEN: `parse` requires hours and frames to be exactly two digits or longer without a leading zero (`is_canonical_width`), and rejects a `-` before a zero label with `MalformedTimecode`. `format()` is unchanged.
+
+Passing from the start (not RED evidence): `frames_field_width_at_120_fps` (5, 99, 100, 119 format and round-trip) and `hours_of_one_hundred_or_more_have_no_padding` (`100:00:00:00`).
+
+### W1: fixed tests (commit `0508a59`), all passing from the start
+
+- `rates.rs`: `frames_round_trip_at_every_rate` (frame -> flicks -> frame, fixed counts including negatives, at 24000/1001, 24, 25, 30000/1001, 30, 60000/1001, 120, 245/3), `samples_round_trip_at_every_standard_rate` (44,100, 48,000, 96,000 Hz).
+- `timecode.rs`: `non_drop_labels_round_trip_at_every_rate` (0, last frame of a second, last label of a minute, 1 hour, 25 hours, both signs, expected text checked, 8 rates), `a_frames_field_equal_to_the_nominal_rate_is_rejected` (23.976, 24, 29.97 non-drop and drop, 59.94 non-drop and drop, 24.5, 120: last valid accepted, nominal rejected with `InvalidTimecodeField`), `the_label_after_the_last_frame_rolls_into_the_next_second`, `the_nominal_rate_bounds_the_last_label_of_a_minute` (the HM07 pin: 24.5 fps `:24` accepted and `:25` rejected, 30000/1001 `:29` and `;29` accepted, 60000/1001 `00:00:59;59` accepted).
+- Deviation: `Timecode::new` takes a label frame count, not a frames field, so "frames field equal to the nominal rate rejected in `new`" has no meaning there. The equivalent is covered: label `nominal` formats as `00:00:01:00` (rollover), never as a frames field equal to the nominal rate.
+- Hand mutants against the new tests (all killed, then reverted): parse bound `frames > nominal` (killed by `a_frames_field_equal_to_the_nominal_rate_is_rejected` and `malformed_and_out_of_range_fields_are_rejected`); parse bound `num / den` (HM07; killed by `a_frames_field_equal_to_the_nominal_rate_is_rejected` and `non_drop_labels_round_trip_at_every_rate`, besides the old properties).
+
+### Mutation T3 (changed source file `timecode.rs`, `--jobs 1`, own export, default target dir)
+
+- First run at `0508a59`: 145 tested, 138 caught, 6 unviable, 1 missed: `timecode.rs:279 replace > with >= in is_canonical_width`. It is an equivalent mutant (the `len == 2` branch already accepts length 2), not a test gap. Fixed by simplification in `refactor(time)` (commit after `0508a59`): `len >= 2 && (len == 2 || !starts_with('0'))`.
+- Second run at HEAD: 143 tested, 137 caught, 6 unviable, 0 missed, 0 timeout (the six unviable are the same ones as before). Every mutant log shows `Compiling gafira-time` on the mutated tree. Only `timecode.rs` changed in `src/`; the other source files are unchanged since the T3 round that closed 0 missed.
+
+### Gates
+
+On each commit: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` (gafira-time: 33 timecode and 30 rates tests), `cargo deny check` (ok), CI `policy` steps (Format, ARQ-07, forbid unsafe, V5, V12, V13) all exit 0.
+
+### Size
+
+`git diff --shortstat 17dc719..HEAD` before this section: 3 files, 280 insertions, 2 deletions (src 9 lines, tests the rest).
