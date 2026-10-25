@@ -474,3 +474,105 @@ error shape and the new generators account for most of it. The coordinator decid
   comparisons; an infinite distance with an infinite running minimum stores the
   same value. No input distinguishes the two versions (proof in
   `verify-report.md`, round 1, "Mutation").
+
+## Verify fix round 2 (owner-authorized 2026-10-25)
+
+Scope: verify round 2 findings C1, C2, W2. W1 (huge coordinates) waits for a spec
+decision and was not implemented; W4 (`.cargo/mutants.toml`) stays for archive.
+`origin/main` was merged first (`ea1b17f`); no conflict.
+
+Commits:
+
+- `aecd57d` fix(pathops): fit the arcs of round caps and joins at the stroke tolerance (C1)
+- `b7e00ca` fix(pathops): treat drawing after a close as an open subpath (C2)
+- `b711725` test(pathops): cover both stroke directions and untouched curve offsets
+- `baa1a0f` refactor(pathops): derive the sweep of a round arc from its middle point
+
+### C1 round caps and joins exceed the tolerance
+
+RED (`tests/stroke_accuracy.rs`, samples the outline and compares each point with
+the exact boundary at half the width; widths 0.1..1000, tolerances 1e-1..1e-5):
+
+- `a_round_cap_lies_within_the_tolerance_of_the_exact_cap`: "width 0.1, tolerance
+  0.00001: the cap deviates by 0.000013341929513722983".
+- `a_round_join_lies_within_the_tolerance_of_the_exact_join`: same message for the
+  join (closed square and triangle, both directions; only the outer contour is
+  compared, because kurbo's inner join cuts across the interior of the stroke and is
+  not a boundary of the covered area).
+
+Deviation: the suggested fix (pass `tolerance x min(1, 2/width)` to kurbo) does not
+work. kurbo 0.13.1 hardcodes an internal tolerance of `1e-3` on the unit circle for
+round caps and joins (`stroke.rs` `finish` and `do_join`, marked `TODO: scale`), so
+the tolerance argument never reaches the arcs (verified: the output element count
+stayed at 8 for every tolerance). The fix post-processes the outline: each cubic
+whose end points and middle point lie at half the width from a vertex of the input
+path is replaced by an arc of the same circle and sweep, fitted by
+`kurbo::Arc::to_cubic_beziers` at the caller's tolerance. Offset curves of curved
+segments are untouched (tests with a curved and a looped centreline).
+
+Measured worst deviation / tolerance after the fix (line with round caps, widths
+0.1..1000, tolerances 1e-1..1e-7): at most 0.87 (before: up to 1.36e6). Cost, in
+outline elements for the capsule (was 8 everywhere): 8 at tolerance 1e-1..1e-3 for
+widths up to 10, 12 for width 1000 at 1e-1, 16 at width 10 and 1e-5, 24 at width
+1000 and 1e-5, and 48 at width 1000 and 1e-7. `DEFAULT_TOLERANCE` and
+`stroke_outline` docs now say the arcs are fitted at the tolerance.
+
+### C2 drawing after a close without a move
+
+RED (`tests/validation.rs`):
+
+- `drawing_after_a_close_without_a_move_is_an_open_subpath`: `left: Ok(())`, `right:
+  Err(OpenSubpath { subpath: 1 })` on `validate_closed`.
+- `closing_the_subpaths_closes_the_tail_drawn_after_a_close`: `left: 1`, `right: 2`
+  (`subpath_count`).
+
+The segments after a `ClosePath` now start a new subpath (SVG and kurbo convention),
+so `validate_closed`, `contains` and the four boolean operations return
+`OpenSubpath { subpath: 1 }` for the example. The spec text covers `contains` ("an
+operation that depends on the path's interior (the four boolean operations and the
+containment test) MUST reject an open subpath"), so nothing was decided. The index
+`1` follows the specifier suggestion S1 of the verify report; the spec text does not
+pin it, so the specifier should confirm it. The stroke, the simplification and the
+distance accept such a path (test).
+
+### W2 release evidence for the too-fine tolerance
+
+`a_tolerance_below_the_minimum_is_rejected_and_never_aborts` (tests/boolean.rs) is
+profile independent. Commands (run from the workspace root):
+
+- `cargo test -p gafira-pathops --release --locked --test boolean a_tolerance_below_the_minimum`
+  passes with the validation in place (1 passed).
+- With the check disabled by hand (`if false && tolerance < minimum`, reverted
+  afterwards), the same command in release aborts: "thread ... has overflowed its
+  stack / fatal runtime error: stack overflow, aborting ... (signal: 6, SIGABRT)";
+  in debug it fails on `linesweeper curve/mod.rs:1301` `assertion failed`.
+- `cargo test -p gafira-pathops --release --locked` (whole crate) passes.
+
+Recommended gate note: run the release command above next to `cargo test
+--workspace --locked`.
+
+### Gates and mutation
+
+Each commit: `cargo fmt --check`, clippy `-D warnings`, `cargo test --workspace
+--locked`, `cargo deny check` (bans, licenses, sources; advisories) and the CI policy
+steps (ARQ-07, forbid-unsafe, V5, V12, V13, V14) all returned 0.
+
+Flaky-prone properties (`prop_boolean`, `prop_hittest`, `prop_stroke`): 30 runs in a
+row, 0 failures, before and after the last commit.
+
+Mutation T3 (`--file`, `--jobs 4`, default per-job target dirs, `Compiling
+gafira-pathops` confirmed on every mutated tree):
+
+- `stroke.rs`: first run 39 mutants, 9 missed (the negative sweep branch, the
+  middle-point checks). Closed test-first with reversed shapes, a curved centreline,
+  a looped curve and a short curve; one equivalent mutant (`+ PI` / `- PI` inside a
+  `rem_euclid(TAU)`) was removed by rewriting the angle as `atan2(cross, dot)`.
+  Final: 25 mutants, 18 caught, 7 unviable, 0 missed.
+- `path.rs`: 32 mutants, 29 caught, 3 unviable, 0 missed.
+- `lib.rs` changed only in a doc comment.
+
+### Measured size
+
+`git diff --shortstat ea1b17f..HEAD` before this docs commit: 5 files changed, 356
+insertions, 9 deletions (source: `stroke.rs` +85 / -4, `path.rs` +14 / -5, `lib.rs`
++3 / -1; tests: `stroke_accuracy.rs` new, `validation.rs` +55).
