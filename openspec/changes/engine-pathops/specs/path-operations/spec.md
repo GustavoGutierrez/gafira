@@ -13,8 +13,9 @@ or any adapter.
 Scope: the WHAT. The HOW (API shape, tolerance policy, error types, library
 choice) lives in `design.md`. Decisions Q1-Q7 are closed there (see "Closed
 decisions" below); a requirement that depends on one names it ("Q1", "Q2"...).
-The owner closed the two questions this spec raised (OQ1, OQ2) on 2026-10-25;
-they are recorded under "Owner decisions" at the end. Scenario types: unit, property,
+The owner closed the two questions this spec raised (OQ1, OQ2) on 2026-10-25,
+and the coordinate-magnitude question of verify round 2 (W1) the same day; they are
+recorded under "Owner decisions" at the end. Scenario types: unit, property,
 integration, command, manual.
 
 Terms used below:
@@ -262,7 +263,8 @@ rejected even when the other operand is empty.
 The crate MUST define the behaviour of an operation over inputs that are not well
 formed. The cases are: a path with an open subpath; a path with a subpath that
 crosses itself; a path with a zero-length segment; a path with a non-finite
-coordinate; a tolerance or stroke width that is not a finite positive number.
+coordinate; a path with a coordinate whose absolute value exceeds the coordinate
+limit; a tolerance or stroke width that is not a finite positive number.
 
 Every operation (the four boolean operations, the stroke outline, the
 simplification, the containment test and the distance to the perimeter) MUST
@@ -271,12 +273,39 @@ non-finite value (NaN, positive infinity or negative infinity), before any
 geometric computation (Q2). The operation MUST return that error; it MUST NOT loop,
 abort the process or return a result.
 
+Coordinate limit (owner decision W1, 2026-10-25). Every operation (the same eight)
+MUST reject a path in which the absolute value of any x or y coordinate of any
+point (move points, end points and control points) is greater than `1e9`, with a
+named error that carries the offending coordinate value and the limit `1e9`,
+before any geometric computation. The error contents (value and limit) are
+mandatory; its name is a suggestion (`CoordinateOutOfRange { value, limit }`).
+When several coordinates exceed the limit, the value carried is that of the first
+one in path order, x before y within a point. A coordinate of exactly `1e9` or
+`-1e9` is accepted. The operation MUST return that error; it MUST NOT loop, abort
+the process or return a result. The limit applies to the input paths only: a
+result MAY hold coordinates beyond it (for example the stroke outline of a path
+that lies at the limit). The public documentation of each of the eight
+operations MUST state the limit `1e9` and the error returned above it.
+
+Motivation (measured, verify round 2 W1): above about `1.34e154` (the square root
+of the largest finite f64) the squared length of a segment overflows; the
+distance to the perimeter becomes wrong (41% off at `1e154`) and then infinite
+(from `1e155`), and the simplification never returns or returns garbage. The
+limit `1e9` is set by precision, not by overflow: with the too-fine rule below,
+the minimum tolerance of any accepted path is at most `1e-12 × 1e9`, which equals
+the default tolerance `1e-3` in f64, so the default tolerance is accepted for every
+path within the limit. A page is at most 16 384 px per side (`document-model`),
+so the limit is about 61 000 page widths.
+
 An operation that depends on the path's interior (the four boolean operations and
 the containment test) MUST reject an open subpath with an error that names the
 index of the open subpath, counted from zero in path order. A subpath is open when
 it holds at least one segment and does not end with a close; a subpath that holds
 no segment (a lone move) is not open, and a path made only of such subpaths is
-empty (OQ2). Such an operation MUST
+empty (OQ2). A segment drawn after a close with no new move starts a new subpath
+(the SVG convention: it begins at the start point of the subpath just closed);
+that subpath takes the next index in order of appearance, and it is open until a
+close ends it. Such an operation MUST
 NOT close the subpath itself; a caller closes open subpaths explicitly with a
 separate operation first (Q3). The stroke outline, the simplification and the
 distance to the perimeter MUST accept open subpaths.
@@ -297,23 +326,37 @@ first match wins:
 1. an invalid tolerance;
 2. an invalid stroke width (stroke outline only);
 3. a non-finite coordinate in the first operand, then in the second operand;
-4. an open subpath in the first operand, then in the second operand (interior
+4. a coordinate beyond the coordinate limit in the first operand, then in the
+   second operand;
+5. an open subpath in the first operand, then in the second operand (interior
    operations only; a moves-only subpath is never open, so a moves-only operand
    never reaches this step's error);
-5. a tolerance too fine for the operands (boolean operations only, see below).
+6. a tolerance too fine for the operands (boolean operations and the
+   simplification, see below).
 
-All five checks run before any geometric computation, and before the
-empty-operand rule of "Boolean operations". A moves-only operand still goes
-through steps 3 and 5: a non-finite move coordinate is rejected, and its move
-points count in `m`.
+For an operation over one path (the stroke outline, the simplification, the
+containment test and the distance to the perimeter) that path is the first
+operand and there is no second. A non-finite value is never reported as beyond
+the limit, because step 3 comes first. All six checks run before any geometric
+computation, and before the empty-operand rule of "Boolean operations". A
+moves-only operand still goes through steps 3, 4 and 6: a non-finite move
+coordinate is rejected, a move coordinate beyond the limit is rejected, and its
+move points count in `m`.
 
 A boolean operation MUST reject a tolerance below `1e-12 × m`, where `m` is the
-largest absolute value of any x or y coordinate over all the points (end points
-and control points) of both operands, with a named error that carries that
-minimum (for example `ToleranceTooFine { minimum }`). A tolerance equal to the
-minimum is accepted. The rule applies to every boolean operation whatever the
+largest absolute value of any x or y coordinate over all the points (move points,
+end points and control points) of both operands, with a named error that carries
+that minimum (for example `ToleranceTooFine { minimum }`). A tolerance equal to
+the minimum is accepted. The rule applies to every boolean operation whatever the
 shape of the operands (straight or curved). When both operands are empty, `m`
 is 0 and every finite positive tolerance is accepted.
+
+The simplification MUST apply the same rule to its one path (owner decision W1,
+2026-10-25): it MUST reject a tolerance below `1e-12 × m`, where `m` is the
+largest absolute value of any x or y coordinate over all the points of the path,
+with the same too-fine-tolerance error carrying that minimum. A tolerance equal to
+the minimum is accepted. For an empty path, or a path whose every coordinate is
+0, `m` is 0 and every finite positive tolerance is accepted.
 
 Motivation (measured, `design.md` "Tolerance policy"): below about this bound the
 boolean library recurses without limit on curved inputs. In a release build the
@@ -321,7 +364,14 @@ process overflows its stack and aborts (an abort that cannot be caught); in a de
 build a library assertion panics earlier. A larger stack does not help. The bound
 `1e-12 × m` is empirical: no failure was observed at or above it in debug or
 release over grid and random runs, and it sits ten times above the last observed
-debug failure.
+debug failure. For the simplification (measured, verify round 2 W1 follow-up, on
+straight polylines in a release build): the call never returned for tolerances of
+about `1e-16 × m` and `3e-16 × m` (60 and 43 of 105 cases) and always returned
+from `1e-15 × m` up (0 of 105 per level). Examples of hangs: the default
+tolerance on a path near `1e13`, and tolerance `1e-9` on a path near `1e7`. The
+second path is inside the coordinate limit, so the limit alone does not prevent
+the hang. The bound `1e-12 × m` sits a thousand times above the last observed
+hang.
 
 An error MUST leave no partial result: the operation returns either a complete
 result or an error, never a truncated path, and the inputs are unchanged.
@@ -345,6 +395,11 @@ result or an error, never a truncated path, and the inputs are unchanged.
 - GIVEN a path whose only subpath is not closed
 - WHEN its union with a rectangle is computed, in either operand position
 - THEN it returns the open-subpath error naming subpath 0
+
+#### Scenario: Drawing after a close without a move is the next subpath (D2, D4, unit)
+- GIVEN the path `MoveTo(0,0)`, `LineTo(10,0)`, `LineTo(10,10)`, `ClosePath`, `LineTo(5,20)`, `LineTo(0,20)` (a closed triangle, then a tail drawn with no new move and no close)
+- WHEN its union with a valid rectangle is computed in either operand position, as are its intersection, difference and xor, and its containment of the point (1,1) is tested
+- THEN every call returns the open-subpath error naming subpath 1 (the triangle is subpath 0, the tail is subpath 1)
 
 #### Scenario: Non-finite reported before open subpath (D2, unit)
 - GIVEN a path whose only subpath is open and holds a NaN coordinate
@@ -390,6 +445,51 @@ result or an error, never a truncated path, and the inputs are unchanged.
 - GIVEN the same circle and an open path with finite coordinates
 - WHEN their union is computed with tolerance 1e-13
 - THEN the error is the open-subpath error
+
+#### Scenario: The coordinate limit is inclusive (D2, D3, D4, unit)
+- GIVEN the closed rectangle path with corners (-1e9,-1e9) and (1e9,1e9), the valid rectangle path (0,0)-(10,10) and a valid stroke style of width 10
+- WHEN the four boolean operations are computed with the large rectangle in either operand position, and the large rectangle is passed to the stroke outline, the simplification, the containment test of the point (0,0) and the distance from the point (0,0) to the perimeter, every call with the crate's default tolerance
+- THEN every call succeeds (the minimum tolerance `1e-12 × 1e9` equals the default tolerance and is accepted)
+
+#### Scenario: A coordinate beyond the limit is rejected by every operation (D2, D3, D4, unit)
+- GIVEN closed paths that are valid except for one coordinate of `next_up(1e9)` or of `-next_up(1e9)`, placed once in an end point, once in a curve control point and once in a move, and the valid rectangle path (0,0)-(10,10)
+- WHEN each path is passed, in either operand position, to union, intersection, difference and xor, and alone to the stroke outline, the simplification, the containment test and the distance to the perimeter, with the default tolerance
+- THEN every call returns the coordinate-out-of-range error carrying the offending value (reading it back gives the same bits) and the limit `1e9`, and no result
+
+#### Scenario: The overflow cases return an error instead of hanging (D3, D4, unit)
+- GIVEN the open polyline (0,0), (1e154,1e154), (2e154,0) and the open line from (0,0) to (1e155,1e155)
+- WHEN the polyline is simplified with tolerance 1e-3, and the distance from the point (1,0) to the line's perimeter is computed with tolerance 1e-3
+- THEN both calls return the coordinate-out-of-range error, carrying `1e154` and `1e155` respectively; the simplification returns (it does not loop) and the distance is not infinite
+
+#### Scenario: Non-finite is reported before out of range (D2, D3, unit)
+- GIVEN an open polyline holding a coordinate of `1e10` followed by a NaN coordinate, and separately a closed first operand holding a coordinate of `1e10` and a closed second operand holding a positive infinite coordinate
+- WHEN the polyline is simplified, and the union of the two operands is computed
+- THEN the first call returns the non-finite-coordinate error naming NaN and the second the non-finite-coordinate error naming positive infinity, not the coordinate-out-of-range error
+
+#### Scenario: Out of range is reported before open subpath (D2, unit)
+- GIVEN an open path with finite coordinates, one of them `1e10`, and the valid rectangle path (0,0)-(10,10)
+- WHEN their union is computed
+- THEN the error is the coordinate-out-of-range error carrying `1e10`, not the open-subpath error
+
+#### Scenario: A moves-only operand beyond the limit is rejected (D2, unit)
+- GIVEN the moves-only path holding `MoveTo(2e9,0)` and the valid rectangle path (0,0)-(10,10)
+- WHEN their union is computed, in either operand position
+- THEN the error is the coordinate-out-of-range error carrying `2e9`, not a clone of the rectangle
+
+#### Scenario: Too fine a simplification tolerance is rejected, never hangs (D3, unit)
+- GIVEN the open polyline (1e7,1e7), (1e7+1,1e7+1), (1e7+2,1e7+2), so m = 1e7+2 and the minimum is `1e-12 × (1e7+2)` as computed in f64
+- WHEN it is simplified with tolerance 1e-9, with `next_down(minimum)` and with the minimum
+- THEN the first two calls return the too-fine-tolerance error carrying the minimum, and the third succeeds and every vertex of the input lies within the minimum of the result; no call loops
+
+#### Scenario: Too fine comes after out of range in the simplification (D3, unit)
+- GIVEN an open polyline with finite coordinates, one of them `2e9`
+- WHEN it is simplified with tolerance 1e-15
+- THEN the error is the coordinate-out-of-range error carrying `2e9`, not the too-fine-tolerance error
+
+#### Scenario: Public docs state the coordinate limit (D2, D3, D4, manual)
+- GIVEN the public documentation of union, intersection, difference, xor, the stroke outline, the simplification, the containment test and the distance to the perimeter
+- WHEN a reviewer reads it
+- THEN each states the coordinate limit `1e9` and names the error returned above it, and the simplification's documentation also states its minimum tolerance `1e-12 × m`
 
 #### Scenario: Self-intersecting path accepted (D2, unit)
 - GIVEN a path shaped as a bowtie, whose subpath crosses itself
@@ -468,6 +568,14 @@ original path MUST lie within the tolerance of the simplified path. Simplificati
 MUST preserve the path's subpath structure: every subpath of the input MUST appear
 in the output, in the same order, and the fill rule MUST be kept.
 
+This includes a subpath whose every segment has zero length (verify round 2,
+follow-up of W1). Such a subpath is not moves-only, so it is not empty (OQ2), and
+it MUST NOT disappear from the result or become moves-only: its output subpath MUST
+start with a move to the input's start point and MUST hold at least one segment,
+and every end point and control point of that output subpath MUST equal that
+start point. Both the input subpath unchanged and a move followed by one
+zero-length line satisfy this.
+
 The simplification MAY replace straight segments with fitted curves, and the
 simplified path MAY hold more segments than the original. The guarantee is about
 shape, not about the count of segments.
@@ -487,6 +595,11 @@ definition (open polylines, curved paths) carry only the tolerance guarantee.
 - GIVEN a path with two subpaths
 - WHEN it is simplified
 - THEN the result still has two subpaths, in the same order, with the input's fill rule
+
+#### Scenario: A subpath of zero-length segments is kept (D3, unit)
+- GIVEN the path `MoveTo(5,5)`, `LineTo(5,5)`, `LineTo(5,5)` with the `EvenOdd` fill rule, and the path made of the closed square (0,0)-(10,10) followed by that same subpath
+- WHEN each is simplified with tolerance 1e-3
+- THEN the first result is not empty (it does not come back with 0 elements): it holds exactly one subpath, whose first element is `MoveTo(5,5)`, which holds at least one segment, and every end point and control point of it is (5,5), with the `EvenOdd` fill rule; the second result holds two subpaths, the square first and then a subpath meeting the same conditions
 
 #### Scenario: Already minimal path is unchanged (D3, unit)
 - GIVEN a closed square path and a closed triangle path, and tolerance 1e-3
@@ -669,8 +782,8 @@ merge this section into the main spec as requirements. The full record is in
 
 ## Owner decisions
 
-Closed by the owner on 2026-10-25, after verify round 1 (findings C3 and W5); also
-recorded in `apply-progress.md`. Like "Closed decisions", this section is not a
+Closed by the owner on 2026-10-25, after verify round 1 (findings C3 and W5) and
+verify round 2 (finding W1); also recorded in `apply-progress.md`. Like "Closed decisions", this section is not a
 requirement and archive MUST NOT merge it as one.
 
 | # | Question | Decision | Where it constrains this spec |
@@ -678,3 +791,4 @@ requirement and archive MUST NOT merge it as one.
 | OQ1 | Which fill rule applies when the two operands of a boolean operation carry different ones | A: each operand is read with its own fill rule (the explorer measured an exact, same-cost way to do it with the approved library) | "Boolean operations", "Geometric hit testing" |
 | OQ1 follow-up | Which fill rule a result between non-empty operands carries | `NonZero` always, independent of operand order (the same rule as stroke outlines) | "Boolean operations" |
 | OQ2 | Is a path holding only moves empty | A: yes; it holds no segment and covers no area, so it takes the empty-operand rule and is never an open subpath | Terms, "Boolean operations", "Degenerate and invalid inputs", "Geometric hit testing" |
+| W1 (verify round 2) | How to bound coordinate magnitude, given that the simplification hangs and the distance overflows on large finite coordinates | A: every operation rejects a path with a coordinate whose absolute value exceeds `1e9`, with a named error carrying the value and the limit; and the simplification also rejects a tolerance below `1e-12 × m` with the too-fine-tolerance error | "Degenerate and invalid inputs" |

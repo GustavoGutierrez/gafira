@@ -576,3 +576,18 @@ gafira-pathops` confirmed on every mutated tree):
 `git diff --shortstat ea1b17f..HEAD` before this docs commit: 5 files changed, 356
 insertions, 9 deletions (source: `stroke.rs` +76 / -3, `path.rs` +14 / -5, `lib.rs`
 +2 / -1; tests: `stroke_accuracy.rs` new, 213 lines, `validation.rs` +51).
+
+## Owner decision after verify round 2 (2026-10-25)
+
+Recorded by the specifier; the delta spec carries it in "Owner decisions" and in
+"Degenerate and invalid inputs".
+
+| # | Question | Owner decision |
+|---|---|---|
+| W1 | How to bound coordinate magnitude: the simplification never returned for finite coordinates of `1e154` or more, and the distance to the perimeter returned infinity from `1e155` | **A**: every operation rejects a path with a coordinate whose absolute value exceeds `1e9`, with a named error carrying the value and the limit (suggested name `CoordinateOutOfRange { value, limit }`); and the simplification also rejects a tolerance below `1e-12 × m` with the existing too-fine-tolerance error, because it also hung at ordinary magnitudes (tolerance `1e-9` on a path near `1e7`). The error order now has six steps: tolerance, stroke width, non-finite, beyond the limit, open subpath, too fine. |
+
+The same spec commit also states two clarifications from the verify rounds: a
+segment drawn after a close with no new move starts the next subpath in order of
+appearance (round 2 S1; the implementation already reports index 1), and the
+simplification keeps a subpath made only of zero-length segments (it came back
+with 0 elements).
