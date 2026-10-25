@@ -4,7 +4,7 @@
 
 `gafira-doc` (domain layer): the pure, in-memory `Document -> Page -> Node` model of 02 §3.1 and §3.2, first product slice. New capability; no existing spec. The wire format is in `document-serde`, invariants in `document-validation`, the mutation capability and id allocation in `edit-capability`. Out of scope: sequences, tracks, clips, assets, styles, identities, masks, effects, `timing`, `Animatable`, text/image/frame nodes, `Path`, stroke, `grid`, `notes`, `bleed`, guides, `gafira-cli validate` (deferred to the `gafira-format` change, design A15, holder confirmation pending).
 
-Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn" after a requirement names the delivery per the design's table: D1 skeleton, ids, `Dpi`, `PageSize`, `BlendMode`; D2a `Placement` and `ElementBase`; D2b `NodeKind`, `Node`, `Page`, arena and `Document` (ten sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5, D6a, D6b; D1 also shipped as PR 1a and 1b) in all). `Document::from_parts` arrives in D4b and `DocMut` in D5, so D2b tests that need a `Document` build it with a `#[cfg(test)]` helper inside the crate (private fields are visible there); scenarios that need `from_parts` or `DocMut` carry the later delivery in their title.
+Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn" after a requirement names the delivery per the design's table: D1 skeleton, ids, `Dpi`, `PageSize`, `BlendMode`; D2a `Placement` and `ElementBase`; D2b `NodeKind`, `Node`, `Page`, arena and `Document` (eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b; D1 also shipped as PR 1a and 1b) in all). `Document::from_parts` arrives in D4b and `DocMut` in D5b, so D2b tests that need a `Document` build it with a `#[cfg(test)]` helper inside the crate (private fields are visible there); scenarios that need `from_parts` or `DocMut` carry the later delivery in their title.
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -64,7 +64,7 @@ Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn"
 
 ### Requirement: The single id counter (D2b)
 
-A `Document` MUST hold one `next_id: u64` shared by nodes and pages. `Document::default()` MUST have `schema_version = 1`, `next_id = 1`, `dpi = 96` and no pages. Ids MUST NOT be derived from content. The allocation rules (return `next_id`, then increment; fail at `u64::MAX`) belong to `DocMut` and are specified in `edit-capability`. `IdSpaceExhausted` (`Copy`, `Eq`, `Display`, `Error`) is public from D2b; until D5 the allocator behind `DocMut` is a crate-private helper gated `#[cfg(test)]`, and D2b unit tests use it to check the increment and the exhaustion rule.
+A `Document` MUST hold one `next_id: u64` shared by nodes and pages. `Document::default()` MUST have `schema_version = 1`, `next_id = 1`, `dpi = 96` and no pages. Ids MUST NOT be derived from content. The allocation rules (return `next_id`, then increment; fail at `u64::MAX`) belong to `DocMut` and are specified in `edit-capability`. `IdSpaceExhausted` (`Copy`, `Eq`, `Display`, `Error`) is public from D2b; until D5b the allocator behind `DocMut` is a crate-private helper gated `#[cfg(test)]`, and D2b unit tests use it to check the increment and the exhaustion rule.
 
 #### Scenario: Private allocator before DocMut (D2b, unit)
 - GIVEN the `#[cfg(test)]` allocator with `next_id = 5`, and then with `next_id = u64::MAX`
@@ -273,12 +273,12 @@ A `Document` MUST hold one `next_id: u64` shared by nodes and pages. `Document::
 - WHEN `from_parts` runs
 - THEN it returns `Err(ValidationError::NextIdNotAboveMax { .. })`
 
-#### Scenario: Clone is independent (D5, unit)
+#### Scenario: Clone is independent (D5b, unit)
 - GIVEN a document and its clone
 - WHEN the original is edited through the capability to add a page
 - THEN the clone still has its previous page count
 
-### Requirement: Structural sharing (D2b; the edit scenario D5)
+### Requirement: Structural sharing (D2b; the edit scenario D5b)
 
 Pages MUST be shared by `Arc<Page>` and nodes by `Arc<Node>`. Cloning a `Document` MUST NOT copy any `Page` or `Node`; cloning a `Page` MUST NOT copy any `Node`. After an edit that changes one node, every other node and every other page MUST stay pointer-identical (`Arc::ptr_eq`) to the same item in a prior clone.
 
@@ -287,7 +287,7 @@ Pages MUST be shared by `Arc<Page>` and nodes by `Arc<Node>`. Cloning a `Documen
 - WHEN pages and nodes are compared with `Arc::ptr_eq`
 - THEN all are pointer-equal
 
-#### Scenario: Edit touches one path (D5, unit)
+#### Scenario: Edit touches one path (D5b, unit)
 - GIVEN a document, its clone, and one node changed through `DocMut::node_mut`
 - WHEN compared with `Arc::ptr_eq`
 - THEN the edited node and its page differ, while the untouched nodes of that page and the other page are still pointer-equal

@@ -1411,3 +1411,95 @@ None.
 - Gates are green on all four fix commits: fmt, clippy, test (274 / 275 / 275 / 275), `cargo deny check`, ARQ-07, V11, V5 and V12.
 - Mutants: cargo-mutants 42/47 caught, 0 missed, 0 timeout, 5 unviable. Hand mutations: 4/4 killed (R1, H3, R2, H2).
 - Next: the owner decides the D5 split and opens the D4b PR. Then **tdd-apply D5** (D5a first if cut).
+
+## D5a (branch `feat/domain-doc-5a`, range `feat/domain-doc-4b..feat/domain-doc-5a`, 3 commits from `docs(sdd): cut domain-doc D5 into D5a and D5b` to `docs(sdd): record domain-doc D5a progress`)
+
+**Verdict: PASS** (D5a). CRITICAL 0, WARNING 4, SUGGESTION 3. The change is not complete (D5b, D6a, D6b remain), so `next` = **tdd-apply D5b**.
+
+Method: each commit was checked out as a detached worktree in the scratchpad, with its own `CARGO_TARGET_DIR`. The ARQ-07, V11, V5 and V12 steps were parsed from that commit's `ci.yml` and run. Hand mutations were applied to a scratch worktree of HEAD and reverted after each run. All worktrees were removed afterwards.
+
+### Gates per commit
+
+| # | Commit | fmt | clippy `-D warnings` | test `--workspace --locked` | `cargo deny check` | ARQ-07 | V11 | V5 | V12 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `docs(sdd): cut domain-doc D5 into D5a and D5b` | ok | ok | ok, **275** (no code change) | ok | ok | ok | ok | ok |
+| 2 | `feat(doc): validate parents and reachability` | ok | ok | ok, **278** (doc lib 101, serde 18) | ok | ok | ok | ok | ok |
+| 3 | `docs(sdd): record domain-doc D5a progress` | ok | ok | ok, 278 | ok | ok | ok | ok | ok |
+
+The totals match `apply-progress.md`. The slowest suite is `tests/serde.rs` at 0.22 s (debug), which includes the 10 000-group load. The 10 000-group unit test runs inside the 0.04 s doc lib suite.
+
+### D5 cut (docs commit)
+
+The commit applies the owner-approved cut. D5a is P5 (15 to 17) plus P6 (18) plus the 10 000-deep chain, and D5b is `EditToken`/`DocMut` (which removes the `alloc_id` gate) plus V13. The change now has eleven sub-deliveries, and the labels agree across `design.md` (A5, gate table, file map, P5/P6 rows, size table, chain, branches, commit plan, T5.1 to T5.3, Spec Alignment, Q list), `proposal.md:68` and the delivery table, and all five delta specs. No untagged `D5` is left. Stale items: WARNING 3 and SUGGESTION 1.
+
+### Requirements and scenarios
+
+| Requirement / scenario | Evidence | Status |
+|---|---|---|
+| Parents and reachability (`document-validation/spec.md:195`): P5 counts edges per page, 15/16/17 and their payloads | `validate.rs:110-139` (`check_parents`), `:162-168` (`parent_edges`) | covered |
+| P6 is an iterative DFS that names the lowest unreached id, with no recursion in either pass | `validate.rs:142-158`: an explicit `Vec` stack and a `BTreeSet`, and `keys().find` returns the lowest id. No call in either pass recurses (checked by reading the code). See WARNING 1 | covered |
+| Second parent (two groups; one group twice) `:199` | `parent_and_reachability_rows` (`validate.rs:937`) rows 2 and 3 | covered |
+| Root with a parent `:204` | same test, row 4 (`RootHasParent{3,2}`) and row 5 (a root that lists itself) | covered |
+| Orphan `:209` | rows 6 and 7 (the second on page 2) | covered |
+| Cycles (non-root self-parent, ring, subtree below a ring) `:214` | rows 8 to 10. Row 10 expects `Cycle(2)`, a node off the ring | covered |
+| Each rule has its own variant, rows 15 to 18 `:30` | the four distinct variants in the same table | covered |
+| Earlier pass wins over parents and cycles `:59` | `parent_checks_and_passes_run_in_order` (`validate.rs:985`) rows 4, 6 and 7 (`OutOfRange`, `Orphan`, `MultipleParents`) | covered |
+| Pass order inside P5 (15 before 16 before 17) and across pages | the same test, rows 0 to 3. See WARNING 2 | covered |
+| D4b build accepts cycles, now inverted `:64` | The D4b test was removed. Its document (a root that lists itself) is row 5 (`RootHasParent`), and the non-root self-parent is row 8 (`Cycle`) | covered |
+| Deep chain without overflow `:221` | `a_deep_chain_validates_without_overflow` (`validate.rs:1046`) | covered (see WARNING 1) |
+| Deep tree, integration (`document-serde/spec.md:278`) | `tests/serde.rs:395` loads the chain, then loads it again without roots and expects `Invalid(Orphan)`, which shows the load ran P5 | covered |
+| Fixture rule (every D3 fixture is valid under P5/P6) | the full suite passes on commit 2 (golden 3, serde 18) | covered |
+
+### Declared deviations
+
+1. **Self-parenting scenario text** (`spec.md:64-67`, changed in the docs commit). This fixes an inconsistent spec. It does not change behavior. The D4b fixture's group is a root. The normative text already decides the result: a root inside any `children` list gives `RootHasParent` (`:197`), P5 runs before P6 (`:47`), and the Cycles scenario already says "not a root, so it is its own only parent" (`:215`). No owner decision is needed. Note: the old line said "removed or inverted", not `Cycle`, so `apply-progress.md` misquotes it (SUGGESTION 2).
+2. **P5 inner order (check-major)**. The order is not settled explicitly. `spec.md:47` says "within a pass the first in the stated order" and then spells out check-major for P1 to P3 and node-by-node for P4. P5 gets no such sentence. The design's P5 row (`design.md:308`) only lists 15, 16, 17 and, unlike P4 (`:307`), does not say "node by node". The natural reading of "first in the stated order" plus the P1 to P3 precedent supports the writer's choice. Rows 0 to 3 pin it. WARNING 2: the owner should confirm it.
+3. **`child_rows` fixture** (`validate.rs:820`). The old "Ok" row made node 3 both a root and a child, which is `RootHasParent` under P5. The new tree (root 2, child 3) keeps the row's purpose: a group with a child in the same arena passes. Correct.
+4. **10 000-chain unit test was not RED**. This is acceptable as a guard. Strict TDD RED is shown by the other three tests (recorded in `apply-progress.md`). P1 to P4 never recurse, so this test could not fail before the change. However, see WARNING 1: it also cannot fail under a recursive DFS.
+
+### Mutants
+
+- cargo-mutants (`mutants` agent report `mutants-D5a`, `--in-diff`, gafira-doc): 17 found, 14 caught, **0 missed, 0 timeout**, 3 unviable, wall time 43 s. The caught mutants cover `validate`/`check_parents`/`check_reachability` replaced by `Ok(())`, `>` to `>=`/`==`/`<`, `&&` to `||`, deleted `!`, `parent_edges` stubs and `+=` to `*=`/`-=`.
+- Hand mutations (6; `cargo test -p gafira-doc --locked`):
+
+| Id | Rule | Mutation | Result |
+|---|---|---|---|
+| M1 | 15 before 16 | the `RootHasParent` loop moved above the `MultipleParents` loop | killed (`parent_checks_and_passes_run_in_order`) |
+| M2 | 16 before 17 | the `Orphan` loop moved above the `RootHasParent` loop | killed (same test) |
+| M3 | P5 before P6 | `check_reachability` called before `check_parents` | killed (`parent_and_reachability_rows`, `parent_checks_...`) |
+| M4 | P4 before P5 | `check_parents` called before `check_nodes` | killed (`child_rows`, `nodes_are_checked_...`, `parent_checks_...`) |
+| M5 | lowest unreached id | `keys().rev().find` (highest unreached id) | killed (`parent_and_reachability_rows`, `parent_checks_...`) |
+| M6 | "both passes MUST work without recursion" | the DFS replaced by a recursive `visit` | **survived**: both 10 000-chain tests pass in debug and release (WARNING 1) |
+
+### Production code and code rules
+
+- No `#[allow]`, `HashMap`/`HashSet`, `unsafe`, `expect`, `panic!` or `todo!` added. `BTreeMap`/`BTreeSet` are used. No AI attribution in the 3 commit messages. No `proptest-regressions` added.
+- Test scope: no accessor or `Display` tests were added. The second `Ok` row of `parent_and_reachability_rows` (roots 2 and 3, edge 2 to 4) overlaps the first `Ok` row and `child_rows:820` (SUGGESTION 3). The `Orphan` assertion in `tests/serde.rs` is not redundant: without it, the load test would also pass on D4b.
+
+### Size
+
+Code only, `git diff --shortstat feat/domain-doc-4b..HEAD -- . ':!openspec'`: 2 files, 257 insertions, 9 deletions, so **266** changed lines (ratio 1.24 to ~215). This matches `apply-progress.md` and is under ~700.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **The 10 000-chain tests do not prove "without recursion"** (`spec.md:197`, `:221`; `validate.rs:1046`; `tests/serde.rs:395`). A recursive DFS (M6) passes both tests, because 10 000 frames fit in the 2 MiB test-thread stack. The current code is iterative (checked by reading it), and the scenarios are met as written: the spec chose 10 000 as the evidence. Not FAIL. Suggestion for the owner or D6: run the unit chain inside `std::thread::Builder::new().stack_size(64 * 1024)`, or raise the depth, so that a recursive regression fails.
+2. **P5 inner order is chosen, not specified** (`spec.md:47`, `design.md:308`). The code is check-major (all `MultipleParents` over all pages, then `RootHasParent`, then `Orphan`), and rows 0 to 3 pin it. The owner should confirm. Then add one sentence, like the P1 to P3 one, to `spec.md:47` (before archive).
+3. **Stale count in `proposal.md:110`**: the risk table still says "Ten sub-deliveries". The docs commit missed it. Make it "Eleven".
+4. **Change total arithmetic** (`design.md:373`, `proposal.md:68`, `design.md:582`): the new sum 595 + 335 + 465 + 690 + 507 + 387 + 215 + 420 + 540 + 365 is **4 519**, not 4 517 (D5a plus D5b is 635, not the former 633, as `design.md:368` itself says). Docs only.
+
+### SUGGESTION
+
+1. The docs commit also changed the meaning of the self-parent scenario (deviation 1), not only its labels. That is correct, but the cut entry in `apply-progress.md` lists only relabeling. Mention the scenario fix there next time.
+2. `apply-progress.md` (D5a, Deviations) says the old scenario said "then fails with `Cycle`". It said "removed or inverted". Reword it.
+3. Drop or merge the second `Ok` row of `parent_and_reachability_rows` (overlaps row 0 and `child_rows:820`). Harmless.
+
+### Result
+
+- Verdict: **PASS** for D5a (0 CRITICAL, 4 WARNING, 3 SUGGESTION).
+- Gates are green on all three commits: fmt, clippy, test (275 / 278 / 278), `cargo deny check`, ARQ-07, V11, V5 and V12.
+- Mutants: cargo-mutants 14/17 caught, 0 missed, 0 timeout, 3 unviable. Hand mutations: 5/6 killed. M6 (recursive DFS) survived, which is WARNING 1.
+- Next: the owner confirms the P5 order (WARNING 2) and opens the D5a PR. Then **tdd-apply D5b**. WARNINGs 3 and 4 can ride along with D5b's docs.

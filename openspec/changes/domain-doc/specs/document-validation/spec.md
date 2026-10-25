@@ -4,7 +4,7 @@
 
 `Document::validate()` and `ValidationError`: the structural part of ARQ-13 for `gafira-doc`. It runs on every deserialization (see `document-serde`, validating load) and in `Document::from_parts`, and is the check that C3 runs in `debug_assert` after each command. New capability; no existing spec. Not covered: ordered keyframes and `TimeRange` (no such types yet), the ARQ-13 fuzzer in `gafira-format`, and `gafira-cli validate` (deferred to the `gafira-format` change, design A15, holder confirmation pending).
 
-Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table (D4a header, ids, pages and the error type; D4b node values and validating load; D5 parents and reachability; D6a generator; D6b properties).
+Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table (D4a header, ids, pages and the error type; D4b node values and validating load; D5a parents and reachability; D6a generator; D6b properties).
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -28,7 +28,7 @@ Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn"
 - THEN both return `Ok(())`
 
 #### Scenario: Each rule has its own variant (unit, table)
-- GIVEN one minimal in-crate fixture per variant above (18 rows; rows 1 to 8 in D4a, rows 9 to 14 in D4b, rows 15 to 18 added in D5)
+- GIVEN one minimal in-crate fixture per variant above (18 rows; rows 1 to 8 in D4a, rows 9 to 14 in D4b, rows 15 to 18 added in D5a)
 - WHEN `validate()` runs on each
 - THEN each returns `Err` with its own variant, and no two rows give the same variant
 
@@ -44,7 +44,7 @@ Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn"
 
 ### Requirement: Pass order, first error wins (D4a; P4 D4b)
 
-Passes MUST run in this order, pages in `pages` order and nodes in ascending id order: P1 header (schema version, DPI); P2 ids (uniqueness, arena key, `next_id`); P3 pages (page size, roots exist, no root listed twice); P4 nodes (finiteness, ranges, extension `type_id`, then extension payload depth (`ExtensionTooDeep`), then children only on groups, children exist in the same arena). Variant positions follow the design in pass order: 1 `UnsupportedSchemaVersion`, 2 `InvalidDpi` (P1); 3 `DuplicateId`, 4 `ArenaKeyMismatch`, 5 `NextIdNotAboveMax` (P2); 6 `PageSize`, 7 `DanglingRoot`, 8 `DuplicateRoot` (P3); 9 `NonFinite`, 10 `OutOfRange`, 11 `EmptyExtensionTypeId`, 12 `ExtensionTooDeep`, 13 `ChildrenOnLeaf`, 14 `DanglingChild` (P4); 15 `MultipleParents`, 16 `RootHasParent`, 17 `Orphan` (P5); 18 `Cycle` (P6). Delivery: the 18 variants and P1 to P3 land in D4a, P4 in D4b; P5 and P6 land in D5, so after D4a `validate()` runs P1 to P3 only and between D4b and D5 it runs P1 to P4 only and still accepts cycles and multiple parents; P5 parents (parent edge counts); P6 reachability (iterative depth-first search from the roots). When a document has several defects, `validate()` MUST report the one from the earliest pass, and within a pass the first in the stated order. In P1 to P3 each check runs over all pages before the next check (all duplicate ids, then all key mismatches, then `next_id`; all page sizes, then all dangling roots, then all repeated roots), so a later check on page 1 never hides an earlier check on page 2. P4 is ordered node by node: nodes in ascending id and, for each node, its checks in the listed order (9 to 14) before the next node is examined, so a defect of a lower-id node wins over any defect of a higher-id node, and for one node `NonFinite` wins over `OutOfRange`, and so on down the list.
+Passes MUST run in this order, pages in `pages` order and nodes in ascending id order: P1 header (schema version, DPI); P2 ids (uniqueness, arena key, `next_id`); P3 pages (page size, roots exist, no root listed twice); P4 nodes (finiteness, ranges, extension `type_id`, then extension payload depth (`ExtensionTooDeep`), then children only on groups, children exist in the same arena). Variant positions follow the design in pass order: 1 `UnsupportedSchemaVersion`, 2 `InvalidDpi` (P1); 3 `DuplicateId`, 4 `ArenaKeyMismatch`, 5 `NextIdNotAboveMax` (P2); 6 `PageSize`, 7 `DanglingRoot`, 8 `DuplicateRoot` (P3); 9 `NonFinite`, 10 `OutOfRange`, 11 `EmptyExtensionTypeId`, 12 `ExtensionTooDeep`, 13 `ChildrenOnLeaf`, 14 `DanglingChild` (P4); 15 `MultipleParents`, 16 `RootHasParent`, 17 `Orphan` (P5); 18 `Cycle` (P6). Delivery: the 18 variants and P1 to P3 land in D4a, P4 in D4b; P5 and P6 land in D5a, so after D4a `validate()` runs P1 to P3 only and between D4b and D5a it runs P1 to P4 only and still accepts cycles and multiple parents; P5 parents (parent edge counts); P6 reachability (iterative depth-first search from the roots). When a document has several defects, `validate()` MUST report the one from the earliest pass, and within a pass the first in the stated order. In P1 to P3 each check runs over all pages before the next check (all duplicate ids, then all key mismatches, then `next_id`; all page sizes, then all dangling roots, then all repeated roots), so a later check on page 1 never hides an earlier check on page 2. P4 is ordered node by node: nodes in ascending id and, for each node, its checks in the listed order (9 to 14) before the next node is examined, so a defect of a lower-id node wins over any defect of a higher-id node, and for one node `NonFinite` wins over `OutOfRange`, and so on down the list.
 
 #### Scenario: Earlier pass wins (D4a for the first two cases, D4b for the third, unit, table)
 - GIVEN a document with `schema_version = 2` and a duplicate id, one with a duplicate id and a page size out of range, and one with an out-of-range opacity and a dangling child in a node with a higher id (both are P4 defects; the lower id is reported first)
@@ -56,7 +56,7 @@ Passes MUST run in this order, pages in `pages` order and nodes in ascending id 
 - WHEN validated
 - THEN the results are `UnsupportedSchemaVersion`, `DuplicateId` and `PageSize` on page 2 respectively
 
-#### Scenario: Earlier pass wins over parents and cycles (D5, unit, table)
+#### Scenario: Earlier pass wins over parents and cycles (D5a, unit, table)
 - GIVEN a document with an out-of-range opacity and an orphan, one with an orphan and a cycle elsewhere, and one with a multiple-parent node and a cycle
 - WHEN validated
 - THEN the results are `OutOfRange`, `Orphan` and `MultipleParents` respectively
@@ -64,7 +64,7 @@ Passes MUST run in this order, pages in `pages` order and nodes in ascending id 
 #### Scenario: D4b build accepts cycles (D4b, unit)
 - GIVEN the state after D4b (P1 to P4 only) and a document with a self-parenting group
 - WHEN validated
-- THEN it still passes; the D5 tests close this gap and the scenario is removed or inverted when P5 and P6 land
+- THEN it still passes; the D5a tests close this gap and the scenario is inverted when P5 and P6 land: a self-parenting group that is not a root then fails with `Cycle` (as a root it would fail with `RootHasParent`)
 
 #### Scenario: Ascending node order within a pass (D4b, unit)
 - GIVEN nodes 3 and 8 each with a NaN `x`
@@ -123,7 +123,7 @@ P3 MUST call `PageSize::check(dpi)` for each page (`PageSize { page, error }` ca
 - WHEN validated at DPI 300, 350 and 351
 - THEN 300 and 350 pass and 351 fails with `PageSize` on `Height`
 
-#### Scenario: Changing the DPI can invalidate a page (D5, unit)
+#### Scenario: Changing the DPI can invalidate a page (D5b, unit)
 - GIVEN a valid document with an A0 page at DPI 300, then `set_dpi(351)` through the capability
 - WHEN validated
 - THEN it fails with `PageSize`
@@ -192,7 +192,7 @@ P4 MUST reject, per node and with the node and field named (`NodeField`: `X`, `Y
 - WHEN validated and then read
 - THEN it failed and `opacity` is still bit-identical to `1.5`
 
-### Requirement: Parents and reachability (D5)
+### Requirement: Parents and reachability (D5a)
 
 P5 MUST count parent edges over all `children` lists of a page, where a root counts as having none: more than one edge to a node (including the same group listing it twice) fails with `MultipleParents { node }`; a root that appears in any `children` fails with `RootHasParent { node, parent }`; a node that is not a root and has no parent fails with `Orphan { node }`. P6 MUST run an iterative depth-first search from the roots and report any node not reached as `Cycle { node }`, naming the lowest-id such node. After P5 every unreached node has exactly one parent, so it lies in or below a cycle: on the ring itself (including a self-parent) or in a subtree hanging off a ring that no root reaches; `Cycle { node }` MAY therefore name a node outside the ring. Both passes MUST work without recursion.
 
@@ -218,7 +218,7 @@ P5 MUST count parent edges over all `children` lists of a page, where a root cou
 
 A ring reachable from a root is not a separate row: its entry node would have two parents (`MultipleParents`) or be a root with a parent (`RootHasParent`), so P5 reports it before P6 runs.
 
-#### Scenario: Deep chain without overflow (D5, unit)
+#### Scenario: Deep chain without overflow (D5a, unit)
 - GIVEN a valid chain of 10 000 nested groups
 - WHEN validated
 - THEN it passes and the call does not overflow the stack

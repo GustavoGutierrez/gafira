@@ -4,7 +4,7 @@
 
 The JSON wire form of the `gafira-doc` model: deterministic bytes (ARQ-10), forward compatibility (02 §3.5), `Extension` payload survival (ARQ-11, reformulated), a load path that can never yield an invalid `Document` (ARQ-13) and safe handling of hostile or corrupt input. New capability; no existing spec. Container layout, files, compression and I/O belong to `gafira-format` and are out of scope; this spec covers bytes or strings to value and back only. Model types are in `document-model`, invariants in `document-validation`.
 
-Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table. D3 lands the wire format with an unchecked `from = "DocumentWire"` conversion; D4b switches it to `try_from` with `validate()`. Requirements marked (D4b) depend on that switch. There are ten sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5, D6a, D6b; D1 also shipped as PR 1a and 1b). In D3 no public way to build a `Document` exists yet (`from_parts` is D4b, `DocMut` is D5), so every D3 scenario that needs a document value (exact bytes, arena order, node shapes, `None` as `null`, bit identity, build-order independence, non-finite values, "built in code") is a UNIT test inside the crate using the `#[cfg(test)]` helper `test_document` (added in D2b with its first test) that fills the private fields. The integration tests under `tests/` in D3 use JSON fixtures and goldens loaded WITHOUT validation (through the unchecked D3 conversion). The idempotent round-trip property over generated documents is D6b. **Fixture rule**: every JSON fixture in D3 MUST be a valid document, so it keeps passing after D4b (`try_from`) and D5 (P5 and P6): every node in a fixture's `nodes` array is listed in `roots` or in exactly one group's `children`, and no fixture has a cycle or a second parent. Fixtures that omit defaultable fields still list their nodes in `roots`.
+Scenario type tags: (unit), (property), (integration), (command), (manual). "Dn": delivery per the design table. D3 lands the wire format with an unchecked `from = "DocumentWire"` conversion; D4b switches it to `try_from` with `validate()`. Requirements marked (D4b) depend on that switch. There are eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b; D1 also shipped as PR 1a and 1b). In D3 no public way to build a `Document` exists yet (`from_parts` is D4b, `DocMut` is D5b), so every D3 scenario that needs a document value (exact bytes, arena order, node shapes, `None` as `null`, bit identity, build-order independence, non-finite values, "built in code") is a UNIT test inside the crate using the `#[cfg(test)]` helper `test_document` (added in D2b with its first test) that fills the private fields. The integration tests under `tests/` in D3 use JSON fixtures and goldens loaded WITHOUT validation (through the unchecked D3 conversion). The idempotent round-trip property over generated documents is D6b. **Fixture rule**: every JSON fixture in D3 MUST be a valid document, so it keeps passing after D4b (`try_from`) and D5a (P5 and P6): every node in a fixture's `nodes` array is listed in `roots` or in exactly one group's `children`, and no fixture has a cycle or a second parent. Fixtures that omit defaultable fields still list their nodes in `roots`.
 
 ## Decisions followed from the design (still open for the holder)
 
@@ -72,7 +72,7 @@ Equal documents MUST serialize to identical bytes on every platform. `to_json(fr
 Required on read: `schema_version`, `next_id`, `pages` (document); `id`, `size` (page); `base`, `kind` (node); `id`, `placement` (base); `x`, `y`, `w`, `h` (placement); `type` (kind); `type_id`, `schema_version`, `payload` (extension); `geometry` (shape); `space` (color). Only the fields listed next have a default, and they MUST default on read: `dpi` 96, `name` empty or `None`, `locked`, `hidden` false, `roots`, `nodes`, `children` empty, `opacity` 1.0, `blend` `normal`, `visible` true, `rotation_deg` 0, `skew` 0, `flip` false (and each of `flip.x`, `flip.y` false when missing), `fill` `None`; a re-save MUST write them explicitly. Any other field of any type, such as `Length` `value` and `unit` or the color channels, has no default and MUST be present. `deny_unknown_fields` MUST NOT be used at any level; unknown fields are ignored and dropped on save. An integer for an `f64` field (`"x":3`), nodes out of id order and non-canonical payloads MUST be accepted and normalized on save (`3.0`, ascending ids, canonical payload). A missing required field MUST be an error. An unknown `type`, `geometry`, `blend`, `unit` or `space`, or a wrong letter case (`"Group"`), MUST be an error.
 
 #### Scenario: Defaults applied (unit)
-- GIVEN a node JSON containing only `base.id`, `base.placement{x,y,w,h}` and `kind.type = "group"`, inside a page and document with only their required fields, where the page's `roots` is `[<that node id>]` (otherwise the node would be an orphan, which D5 rejects; `roots` is defaultable, so it is given explicitly here)
+- GIVEN a node JSON containing only `base.id`, `base.placement{x,y,w,h}` and `kind.type = "group"`, inside a page and document with only their required fields, where the page's `roots` is `[<that node id>]` (otherwise the node would be an orphan, which D5a rejects; `roots` is defaultable, so it is given explicitly here)
 - WHEN loaded
 - THEN the defaults above are applied exactly and re-saving writes them all
 
@@ -82,7 +82,7 @@ Required on read: `schema_version`, `next_id`, `pages` (document); `id`, `size` 
 - THEN loading succeeds, equals the document without extras, and the output contains none of the extras
 
 #### Scenario: Normalization on save (unit)
-- GIVEN `"x":3`, nodes listed 7 then 2 with `roots` `[7,2]` (both are roots, so the fixture stays valid in D5), and an unsorted payload
+- GIVEN `"x":3`, nodes listed 7 then 2 with `roots` `[7,2]` (both are roots, so the fixture stays valid in D5a), and an unsorted payload
 - WHEN loaded and re-saved
 - THEN the output has `"x":3.0`, nodes 2 then 7 and a canonical payload
 
@@ -275,9 +275,9 @@ Loading MUST return an error, never panic, never overflow the stack and (from D4
 - WHEN `validate()` runs, and the document is serialized and loaded with `from_json`
 - THEN validation fails with `ExtensionTooDeep`, and `from_json` fails with `LoadError::Invalid(ExtensionTooDeep { .. })`; a payload of 64 levels passes both and reloads bit-identical (a document that saves must always reopen)
 
-#### Scenario: Deep tree (D5, integration)
+#### Scenario: Deep tree (D5a, integration)
 - GIVEN a valid chain of 10 000 nested groups (flat arena)
-- WHEN loaded with the full validation (P1 to P6, D5)
+- WHEN loaded with the full validation (P1 to P6, D5a)
 - THEN it succeeds without stack overflow
 
 #### Scenario: Hostile values (unit)

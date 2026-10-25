@@ -1,12 +1,12 @@
 //! `Document::validate`: the structural rules, one pass at a time.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gafira_color::Color;
 use serde_json::Value;
 
 use crate::node::MAX_EXTENSION_DEPTH;
-use crate::{Document, Node, NodeField, NodeKind, Page, ValidationError};
+use crate::{Document, Node, NodeField, NodeId, NodeKind, Page, ValidationError};
 
 impl Document {
     /// Returns the first rule the document breaks, or `Ok(())`.
@@ -19,7 +19,9 @@ impl Document {
         self.check_header()?;
         self.check_ids()?;
         self.check_pages()?;
-        self.check_nodes()
+        self.check_nodes()?;
+        self.check_parents()?;
+        self.check_reachability()
     }
 
     /// P1: schema version, then DPI.
@@ -102,6 +104,67 @@ impl Document {
         }
         Ok(())
     }
+
+    /// P5: more than one parent edge, then a root with a parent, then an orphan.
+    /// Each check runs over all pages before the next one.
+    fn check_parents(&self) -> Result<(), ValidationError> {
+        let counts: Vec<BTreeMap<NodeId, usize>> =
+            self.pages.iter().map(|p| parent_edges(p)).collect();
+        for count in &counts {
+            if let Some((&node, _)) = count.iter().find(|(_, n)| **n > 1) {
+                return Err(ValidationError::MultipleParents { node });
+            }
+        }
+        for (page, count) in self.pages.iter().zip(&counts) {
+            let child = page
+                .nodes
+                .keys()
+                .find(|id| page.roots.contains(id) && count.contains_key(id));
+            if let Some(&node) = child {
+                let parent = page.nodes.values().find(|n| n.children.contains(&node));
+                if let Some(parent) = parent {
+                    let parent = parent.base.id;
+                    return Err(ValidationError::RootHasParent { node, parent });
+                }
+            }
+        }
+        for (page, count) in self.pages.iter().zip(&counts) {
+            let alone = |id: &&NodeId| !page.roots.contains(id) && !count.contains_key(id);
+            if let Some(&node) = page.nodes.keys().find(alone) {
+                return Err(ValidationError::Orphan { node });
+            }
+        }
+        Ok(())
+    }
+
+    /// P6: depth-first search from the roots; the lowest unreached id is a cycle.
+    /// Iterative, so a deep tree cannot overflow the stack.
+    fn check_reachability(&self) -> Result<(), ValidationError> {
+        for page in &self.pages {
+            let mut reached: BTreeSet<NodeId> = BTreeSet::new();
+            let mut stack: Vec<NodeId> = page.roots.clone();
+            while let Some(id) = stack.pop() {
+                if reached.insert(id)
+                    && let Some(node) = page.nodes.get(&id)
+                {
+                    stack.extend(&node.children);
+                }
+            }
+            if let Some(&node) = page.nodes.keys().find(|id| !reached.contains(id)) {
+                return Err(ValidationError::Cycle { node });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// How many `children` lists of the page name each node.
+fn parent_edges(page: &Page) -> BTreeMap<NodeId, usize> {
+    let mut count = BTreeMap::new();
+    for child in page.nodes.values().flat_map(|n| &n.children) {
+        *count.entry(*child).or_insert(0) += 1;
+    }
+    count
 }
 
 type Rule = fn(f64) -> bool;
@@ -754,10 +817,7 @@ mod tests {
                 &elsewhere,
                 "Err(DanglingChild { parent: NodeId(2), child: NodeId(8) })",
             ),
-            (
-                &|d| node_mut(d, 2, |n| n.children = vec![NodeId::new(3)]),
-                "Ok(())",
-            ),
+            (&|d| set(d, &[2, 3], &[2], &[(2, &[3])]), "Ok(())"),
         ];
         for (i, (edit, want)) in rows.iter().enumerate() {
             let mut d = base();
@@ -846,10 +906,160 @@ mod tests {
         }
     }
 
+    /// Replaces page 1 with groups `nodes`, the given `top` roots and `(parent, children)` edges.
+    fn set(d: &mut Document, nodes: &[u64], top: &[u64], edges: &[(u64, &[u64])]) {
+        let mut p = page(1, nodes);
+        roots(&mut p, top);
+        for &(parent, kids) in edges {
+            let node = p.nodes.get_mut(&NodeId::new(parent)).unwrap();
+            Arc::make_mut(node).children = kids.iter().map(|&k| NodeId::new(k)).collect();
+        }
+        d.pages[0] = Arc::new(p);
+    }
+
+    fn multiple(node: u64) -> String {
+        format!("Err(MultipleParents {{ node: NodeId({node}) }})")
+    }
+
+    fn root_parent(node: u64, parent: u64) -> String {
+        format!("Err(RootHasParent {{ node: NodeId({node}), parent: NodeId({parent}) }})")
+    }
+
+    fn orphan(node: u64) -> String {
+        format!("Err(Orphan {{ node: NodeId({node}) }})")
+    }
+
+    fn cycle(node: u64) -> String {
+        format!("Err(Cycle {{ node: NodeId({node}) }})")
+    }
+
     #[test]
-    fn a_self_parenting_group_still_passes_until_d5() {
+    fn parent_and_reachability_rows() {
+        let rows: Vec<(EditRef, String)> = vec![
+            // Valid trees, including a chain that needs more than one hop.
+            (
+                &|d| set(d, &[2, 3, 4], &[2], &[(2, &[3]), (3, &[4])]),
+                "Ok(())".into(),
+            ),
+            (
+                &|d| set(d, &[2, 3, 4], &[2, 3], &[(2, &[4])]),
+                "Ok(())".into(),
+            ),
+            // P5: two groups list the same child; one group lists it twice.
+            (
+                &|d| set(d, &[2, 3, 4], &[2, 3], &[(2, &[4]), (3, &[4])]),
+                multiple(4),
+            ),
+            (&|d| set(d, &[2, 4], &[2], &[(2, &[4, 4])]), multiple(4)),
+            // P5: a root listed as a child, also of itself.
+            (
+                &|d| set(d, &[2, 3], &[2, 3], &[(2, &[3])]),
+                root_parent(3, 2),
+            ),
+            (&|d| set(d, &[2], &[2], &[(2, &[2])]), root_parent(2, 2)),
+            // P5: neither root nor child; on the second page too.
+            (&|d| set(d, &[2, 3], &[2], &[]), orphan(3)),
+            (&|d| two(d, |p| p.roots.truncate(1)), orphan(9)),
+            // P6: a self-parent, a ring, and a subtree below a ring (the lowest unreached id is not on the ring).
+            (&|d| set(d, &[2, 3], &[2], &[(3, &[3])]), cycle(3)),
+            (
+                &|d| set(d, &[2, 3, 4, 5], &[2], &[(3, &[4]), (4, &[5]), (5, &[3])]),
+                cycle(3),
+            ),
+            (
+                &|d| {
+                    let edges: &[(u64, &[u64])] = &[(3, &[4]), (4, &[5]), (5, &[3, 2])];
+                    set(d, &[2, 3, 4, 5, 6], &[6], edges);
+                },
+                cycle(2),
+            ),
+        ];
+        for (i, (edit, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            edit(&mut d);
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+    }
+
+    #[test]
+    fn parent_checks_and_passes_run_in_order() {
+        let rows: Vec<(EditRef, String)> = vec![
+            // 15 before 16 although the root with a parent has the lower id.
+            (
+                &|d| set(d, &[2, 3, 4], &[2, 3], &[(2, &[4]), (3, &[2, 4])]),
+                multiple(4),
+            ),
+            // 16 before 17 although the orphan has the lower id.
+            (
+                &|d| set(d, &[2, 3, 4], &[3, 4], &[(3, &[4])]),
+                root_parent(4, 3),
+            ),
+            // 15 before 17 although the orphan has the lower id.
+            (
+                &|d| set(d, &[2, 3, 4, 5], &[3, 4], &[(3, &[5]), (4, &[5])]),
+                multiple(5),
+            ),
+            // Each check runs over all pages before the next one.
+            (
+                &|d| {
+                    set(d, &[2, 3], &[2], &[]);
+                    two(d, |p| {
+                        let node = p.nodes.get_mut(&NodeId::new(8)).unwrap();
+                        Arc::make_mut(node).children = vec![NodeId::new(9)];
+                    });
+                },
+                root_parent(9, 8),
+            ),
+            // P4 before P5.
+            (
+                &|d| {
+                    set(d, &[2, 3], &[3], &[]);
+                    node_mut(d, 3, |n| n.base.opacity = 2.0);
+                },
+                range(3, "Opacity", 2.0),
+            ),
+            // P5 before P6, whatever the ids.
+            (
+                &|d| set(d, &[2, 3, 4], &[2], &[(3, &[4]), (4, &[3])]),
+                cycle(3),
+            ),
+            (
+                &|d| set(d, &[2, 3, 4, 5], &[2], &[(3, &[4]), (4, &[3])]),
+                orphan(5),
+            ),
+            (
+                &|d| {
+                    let edges: &[(u64, &[u64])] = &[(3, &[4]), (4, &[3]), (2, &[5]), (6, &[5])];
+                    set(d, &[2, 3, 4, 5, 6], &[2, 6], edges);
+                },
+                multiple(5),
+            ),
+        ];
+        for (i, (edit, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            edit(&mut d);
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+    }
+
+    #[test]
+    fn a_deep_chain_validates_without_overflow() {
+        const DEPTH: u64 = 10_000;
         let mut d = base();
-        node_mut(&mut d, 2, |n| n.children = vec![NodeId::new(2)]);
+        let mut p = page(1, &[]);
+        roots(&mut p, &[2]);
+        for id in 2..2 + DEPTH {
+            let mut n = Node::new(
+                ElementBase::new(NodeId::new(id), Placement::new(0.0, 0.0, 1.0, 1.0)),
+                NodeKind::Group(GroupNode {}),
+            );
+            if id + 1 < 2 + DEPTH {
+                n.children = vec![NodeId::new(id + 1)];
+            }
+            p.nodes.insert(NodeId::new(id), Arc::new(n));
+        }
+        d.pages[0] = Arc::new(p);
+        d.next_id = 2 + DEPTH;
         assert_eq!(d.validate(), Ok(()));
     }
 }
