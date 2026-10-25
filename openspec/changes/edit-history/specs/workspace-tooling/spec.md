@@ -131,7 +131,9 @@ Known limitation: a crate under `crates/` without a `clippy.toml` is not recogni
 
 C3 delivery: D1, D2. Scenarios without a delivery tag below belong to it.
 
-V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-color`, `gafira-doc`, `gafira-edit` and `gafira-testkit` through its existing `crates/*` wildcard without per-crate edits. V12 MUST run under `set -euo pipefail` and MUST: (1) fail unless the canonical copy `crates/gafira-geom/clippy.toml` contains, inside the `disallowed-types` array, an uncommented entry anchored with `^[[:space:]]*\{ path = "std::collections::HashMap"` and the same for `HashSet` (a positive control, so removing the ban consistently from every copy, commenting it out, or moving it under `disallowed-methods` cannot pass); (2) fail when any `crates/*/clippy.toml` differs from the canonical copy; (3) count the copies and fail when fewer than three exist (so an empty or shrunken glob cannot pass). The hardened V12 (all three checks) becomes active in the commit that adds the `gafira-doc` copy of `clippy.toml`, not before: with only two copies the count check would fail the earlier commits. The commit that adds the ban to the `gafira-geom` and `gafira-color` copies comes first and keeps the previous V12 body. `crates/gafira-color/clippy.toml`, `crates/gafira-doc/clippy.toml` and `crates/gafira-edit/clippy.toml` MUST be byte-identical to the canonical copy and MUST never be edited by hand (they are produced with `cp`).
+V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-color`, `gafira-doc`, `gafira-edit` and `gafira-testkit` through its existing `crates/*` wildcard without per-crate edits. V12 MUST run under `set -euo pipefail` and MUST: (1) fail unless the canonical copy `crates/gafira-geom/clippy.toml` contains, inside the `disallowed-types` array, an uncommented entry anchored with `^[[:space:]]*\{ path = "std::collections::HashMap"` and the same for `HashSet` (a positive control, so removing the ban consistently from every copy, commenting it out, or moving it under `disallowed-methods` cannot pass); (2) fail when any `crates/*/clippy.toml` differs from the canonical copy; (3) count the copies and fail when fewer than three exist (so an empty or shrunken glob cannot pass). From C3 the tree has four copies (`gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`) and the floor stays at three (`>= 3`). The hardened V12 (all three checks) becomes active in the commit that adds the `gafira-doc` copy of `clippy.toml`, not before: with only two copies the count check would fail the earlier commits. The commit that adds the ban to the `gafira-geom` and `gafira-color` copies comes first and keeps the previous V12 body. `crates/gafira-color/clippy.toml`, `crates/gafira-doc/clippy.toml` and `crates/gafira-edit/clippy.toml` MUST be byte-identical to the canonical copy and MUST never be edited by hand (they are produced with `cp`).
+
+Known limitation, recorded in the verify report as not met: with four copies and a floor of three, deleting one non-canonical copy (for example `crates/gafira-edit/clippy.toml`) passes V12, and V5 as well, because V5's coverage loop iterates the `clippy.toml` copies, not the table rows. The crate then loses its ARQ-02 and ARQ-10 bans with CI green (measured in the D1 verify).
 
 #### Scenario: Copies identical (command)
 - GIVEN the final tree
@@ -167,6 +169,11 @@ V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-colo
 - GIVEN the `gafira-doc` and `gafira-color` copies removed (only the canonical one left)
 - WHEN V12 runs
 - THEN it exits 1 with "expected >= 3"
+
+#### Scenario: Removing one of four copies is not detected (known limitation, manual)
+- GIVEN a scratch copy of the final tree with `crates/gafira-edit/clippy.toml` removed
+- WHEN V12 and V5 run
+- THEN both exit 0; this documents the limitation above
 
 #### Scenario: Missing forbid fails V11 (manual negative test)
 - GIVEN `#![forbid(unsafe_code)]` temporarily removed from `crates/gafira-doc/src/lib.rs`, and separately from `crates/gafira-color/src/lib.rs`
@@ -222,17 +229,47 @@ The `policy` job MUST contain step V13, which fails when `EditToken` or the hidd
 
 ### Requirement: V14 command property coverage (ARQ-81) (D10, Q9)
 
-The `policy` job MUST contain step V14, run under `set -euo pipefail`, that lists every type named in `impl Command for <Type>` (optionally with generics) under `crates/gafira-edit/src` and fails when a listed type does not appear in `crates/gafira-edit/tests/prop_commands.rs`. It MUST capture every `grep` exit code explicitly and treat only exit 1 as "no match"; it MUST run a positive control that fails unless at least one implementation is found (so a wrong working directory or a renamed trait cannot pass); and it MUST print the missing types. Test-only commands (`#[cfg(test)]` modules, `tests/`) are not core commands and are outside the search. Known limits, recorded in the verify report: implementations generated by macros, blanket implementations, and a type name that appears in `prop_commands.rs` only in a comment. V14 stands in for the `xtask` check of ARQ-81 until `xtask` exists.
+The `policy` job MUST contain step V14, run under `set -euo pipefail`, that lists the core commands and fails when one of them does not appear in `crates/gafira-edit/tests/prop_commands.rs`. A core command is the type named in an `impl` of `Command` in a Rust file under `crates/gafira-edit/src` (tracked or untracked, listed with a plain directory pathspec as in V13). The step MUST:
+- read impl headers as text with line breaks folded, so that a header split over several lines, generic parameters with nested bounds (`impl<T: Into<Vec<u8>>> Command for G<T>`), a path before the trait (`impl crate::Command for Q`) and a trailing `where` clause are all recognized;
+- leave out every item under a `#[cfg(test)]` attribute (a module, an impl or any other item), finding its end by counting braces, and leave out lines whose first non-blank characters are `//`;
+- leave out the files that a `#[cfg(test)]` item declares (`#[path = "..."] mod x;` names the file, `mod x;` names `x.rs`), matched by file name; a file is not left out because of its name alone (a `*_tests.rs` file that no `#[cfg(test)]` item declares is searched);
+- require the named type to be a plain identifier, optionally with generics, for which a `struct`, `enum` or `union` of that name appears in a searched file under `src` (a textual check); any other target (`Box<T>`, `&X`, `crate::X`, a blanket `T`) MUST fail the step with a message naming it;
+- count a type as covered when its name appears as a whole word in `prop_commands.rs`, and fail when the property file is missing;
+- never treat a failure of `git ls-files`, `awk`, the impl search, the definition search or the coverage search as a clean result: their exit codes are captured, and only exit 1 of `grep` means "no match";
+- run a positive control that fails unless at least one implementation is found (so a wrong working directory or a renamed trait cannot pass);
+- print the missing types.
+
+Known limits, recorded in the verify report: braces inside strings or comments confuse the `#[cfg(test)]` skip; implementations generated by macros are invisible; the trait imported under an alias (`use crate::Command as Cmd;` then `impl Cmd for X`) hides the impl; a type name that appears in `prop_commands.rs` only in a comment counts as covered; a file whose name equals that of a file a `#[cfg(test)]` item declares elsewhere under `src` is skipped; an impl inside a block comment or a string literal is read as an impl (this fails closed). V14 stands in for the `xtask` check of ARQ-81 until `xtask` exists.
 
 #### Scenario: Clean tree passes (D10, command)
 - GIVEN the final tree
 - WHEN V14 runs from a scratch copy under `bash --noprofile --norc -eo pipefail`
-- THEN it exits 0 and the positive control found the implementations
+- THEN it exits 0, and the positive control found the implementations `InsertNodes`, `InsertPage`, `RemoveNodes`, `RemovePage`, `Reorder`, `Reparent`, `SetProperty` and `Transaction`
 
 #### Scenario: Command without a property fails (D10, manual negative test)
 - GIVEN a scratch `pub struct Noop; impl Command for Noop { .. }` in `crates/gafira-edit/src`
 - WHEN V14 runs
 - THEN it exits 1 naming `Noop`; removed afterwards
+
+#### Scenario: Header forms are recognized (D10, manual negative test)
+- GIVEN, in turn, a scratch file in `crates/gafira-edit/src` with a struct and an `impl Command` for it written with nested generic bounds, with `crate::Command`, with the header split over three lines, with a `where` clause on its own lines, inside a non-test inline module (indented), and in a file named `fake_tests.rs` that no `#[cfg(test)]` item declares
+- WHEN V14 runs on each
+- THEN it exits 1 naming the type each time; each file removed afterwards
+
+#### Scenario: A target that is not a local type fails (D10, manual negative test)
+- GIVEN a scratch `impl<T: Send> Command for Box<T>` in `crates/gafira-edit/src`
+- WHEN V14 runs
+- THEN it exits 1 with a message that the type is not defined under `src`; removed afterwards
+
+#### Scenario: Test-only commands are outside the search (D10, manual negative test)
+- GIVEN a scratch `#[cfg(test)] mod tests { struct T1; impl Command for T1 { .. } }` in a file under `crates/gafira-edit/src`
+- WHEN V14 runs
+- THEN it exits 0; removed afterwards
+
+#### Scenario: Every core type is checked (D10, manual negative test)
+- GIVEN every core type name changed in `prop_commands.rs`
+- WHEN V14 runs
+- THEN it exits 1 and the message lists all eight core types; restored afterwards
 
 #### Scenario: Positive control (D10, manual negative test)
 - GIVEN V14 run from `crates/`

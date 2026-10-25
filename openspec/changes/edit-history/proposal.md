@@ -79,7 +79,7 @@ Measured size has run ×1.4 to ×1.9 over raw forecasts (mostly tests); C2b's de
 
 | # | Delivery | Forecast | Depends on |
 |---|---|---|---|
-| D1 | Crate skeleton (`Cargo.toml`, `clippy.toml` copy, `lib.rs`), V5 row, V12 count; `gafira-doc::msg` (`MessageKey`, `CommandLabel`); `Command` trait, `Applied`, `CommandError`, `DirtySet`, `MergeKey`, `GestureId`; `Transaction` with a test-only command | ~570 | `main` (f198790) |
+| D1 | Crate skeleton (`Cargo.toml`, `clippy.toml` copy, `lib.rs`), V5 row, V12 coverage of the fourth copy (count floor unchanged at `>= 3`); `gafira-doc::msg` (`MessageKey`, `CommandLabel`); `Command` trait, `Applied`, `CommandError`, `DirtySet`, `MergeKey`, `GestureId`; `Transaction` with a test-only command | ~570 | `main` (f198790) |
 | D2 | `gafira-testkit`: generator moved by `git mv` (rename-detected), `prop_command` harness (the 02 §10 laws), V5 row; `mod guards` of the moved generator gets `#[cfg(test)]` (else clippy dead-code errors in the library; its two guard tests then run in a separate binary, ~6 s on Linux); `gafira-doc` property tests switched to it | ~450 | D1 |
 | D3 | `SetProperty` (node and shape fields) with its unit and property tests | ~600 | D2 |
 | D4 | `History`: owned `Arc<Document>`, atomic `execute`, `debug_assert`, undo and redo by snapshot, redo cleared, `len`/`can_undo`/`can_redo`, `preview`, `Send + Sync` static checks, ARQ-32 structural tests | ~630 | D3 |
