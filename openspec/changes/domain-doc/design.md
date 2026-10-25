@@ -297,7 +297,7 @@ pub enum ValidationError {
 pub enum NodeField { X, Y, W, H, RotationDeg, Skew, Opacity, FillChannel, FillAlpha }
 ```
 
-**Validation passes** (the first error wins; pages in `pages` order, nodes in ascending id order):
+**Validation passes** (the first error wins; pages in `pages` order, nodes in ascending id order): In P1 to P3 each check runs over all pages before the next check (all duplicate ids, then all key mismatches, then `next_id`; all page sizes, then all dangling roots, then all repeated roots); only P4 is ordered node by node.
 
 | Pass | Delivery | Checks, with variant positions 1–18 |
 |---|---|---|

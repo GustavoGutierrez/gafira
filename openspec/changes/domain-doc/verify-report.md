@@ -1025,3 +1025,126 @@ Surviving:
 - Mutants: 47 of 61 killed, 1 equivalent (F01), 13 surviving. All `ValidationError` messages, `source()`, the 18-variant count, no-`Eq` and the parse-side depth tests are proven.
 - Size 653 (ratio 1.29).
 - Next: **tdd-apply D4a** with fix commits for CRITICAL 1-3 (rows on a second page, the empty document with `next_id` 0, and the order rows, or an owner ratification of the retag). WARNING 3 and 4 can go in the same commits. Then re-verify D4a. D4b waits.
+
+## D4a re-verify (the 3 fix commits from `test(doc): pin page naming, pass order and empty-document rows` to `docs(sdd): restore the D4a order rows and tag determinism D6b`; delivery `feat/domain-doc-3b..feat/domain-doc-4a`)
+
+**Verdict: FAIL** (D4a). CRITICAL 1, WARNING 2, SUGGESTION 3. All three previous CRITICAL items are closed, and so are WARNING 2-5 and the four suggestions. All gates pass on each new commit. Two new within-pass order mutants survive (CRITICAL 1); two rows fix them. `next` = **tdd-apply D4a** (one test commit), then re-verify D4a.
+
+Method, same as the D4a verify:
+- Each commit was extracted with `git archive` into its own directory, with its own `CARGO_TARGET_DIR`. ARQ-07, V11, V5 and V12 were parsed from that commit's `ci.yml`.
+- The range changes no `.github`, `Cargo.toml`, `Cargo.lock`, `clippy.toml` or `deny.toml` file.
+- Mutants ran on a scratch copy of HEAD with `cargo test -p gafira-doc --locked`, which includes doctests. Each mutant was restored after its run.
+
+### 1. Gates per commit
+
+| Commit | fmt | clippy | test (passed) | `cargo deny check` | ARQ-07 | V11 | V5 | V12 |
+|---|---|---|---|---|---|---|---|---|
+| `test(doc): pin page naming, pass order and empty-document rows` | 0 | 0 | 0 (263) | 0 | 0 | 0 | 0 | 0 |
+| `test(doc): guard non_exhaustive on ValidationError with a compile_fail doctest` | 0 | 0 | 0 (264) | 0 | 0 | 0 | 0 | 0 |
+| `docs(sdd): restore the D4a order rows and tag determinism D6b` | 0 | 0 | 0 (264) | 0 | 0 | 0 | 0 | 0 |
+
+- `cargo deny check` reports advisories, bans, licenses and sources ok on all three.
+- The new doctest `error::ValidationError (line 55) - compile fail ... ok` appears from the second commit on.
+
+### 2. Previous items
+
+| Item | Status | Evidence |
+|---|---|---|
+| CRITICAL 1 (second page) | closed | These rows put the defect on page 7, and each expects `PageId(7)`: `two(d, rekey)` (`validate.rs:262`), size (`:307`), dangling root (`:332`) and repeated root (`:337`). V24-V31 are killed. |
+| CRITICAL 2 (empty document, `next_id` 0) | closed | `validate.rs:267-273` clears the pages, sets `next_id` 0 and expects `Ok(())`. V14 is killed. |
+| CRITICAL 3 (order rows) | closed | `earlier_rules_win` (`validate.rs:348-391`) has the two D4a "Earlier pass wins" cases plus the three within-pass rows. V20, V22 and V23 are killed. The tags at `spec.md:45,49` and `design.md:429-430` are byte-identical to the owner-approved re-cut `docs(sdd): re-cut domain-doc D4 and D6 into sub-deliveries`. |
+| W1 (no assertion-level RED) | accepted | The fix rows were proven by mutation (`apply-progress.md:316-334`) and are reproduced below. |
+| W2 (`#[non_exhaustive]` not guarded) | closed | See the doctest check below. |
+| W3 (rows differ from the spec) | closed | `next_id` rows use max 10 with 11, 10, 5 and 0 (`validate.rs:263-266`). Node `u64::MAX` is tested at `:275`, page `u64::MAX` at `:274`. The `-5.0` width is at `:303`. NaN and `+inf` widths go through `validate()` (`:309-319`). |
+| W4 (determinism untagged) | closed | Tagged at `spec.md:40` "Determinism (D6b, property)". |
+| W5 (pass-order reading) | closed | The check-major sentence is at `spec.md:47`, the doc comment is at `validate.rs:10-13`, and the P3 row is at `validate.rs:382-388`. |
+| S1-S4 | closed | S1: value helpers `next`, `root`, `key` and `out` (`validate.rs:182-198`); `Debug` comparison is kept, which is acceptable. S2: `design.md:243` now says D4a. S3: the doc comment already names P4 node by node. S4: `design.md:432` now says T4.2a and T4.2b. |
+
+Doctest check (ED3: stable rustdoc does not check the error code, so the doctest must fail for the right reason):
+- The doctest body, compiled as an example against HEAD, fails with only `error[E0004]: non-exhaustive patterns: '_' not covered`.
+- With `#[non_exhaustive]` removed it compiles with no error or warning.
+- The test therefore fails only because of the attribute, and mutant E01 is killed by `error.rs - error::ValidationError (line 55)`.
+
+### 3. Mutation summary (68 mutants)
+
+- The original 61: 60 killed. F01 (`unbounded_depth`) is equivalent, as before. The 13 previous survivors are all killed: E01, V14, V20, V22, V23 and V24-V31.
+- New mutants:
+
+| Id | Mutant | Result |
+|---|---|---|
+| V34 | `next_id` max over page ids only | killed (`id_rows`, node `u64::MAX` row) |
+| V35 | P3 page-major (all three checks per page) | killed (`earlier_rules_win`) |
+| V36 | `next_id` max over node ids only | killed (`id_rows`, page `u64::MAX` row) |
+| V37 | P3 dangling-root loop before page size | killed (`earlier_rules_win`) |
+| V38 | P3 repeated-root loop before dangling-root loop | **survived** |
+| V39 | P2 arena-key loop before duplicate-id check | **survived** |
+| V40 | key check skips the last page | killed (`id_rows`) |
+
+### 4. Spec and design consistency
+
+- The order rows match the owner-approved plan. "Earlier pass wins" covers its first two cases in D4a and the third in D4b (`spec.md:49`). T4.2a has the P1-P3 order rows and T4.2b only the P4 order rows (`design.md:429-430`).
+- Determinism is D6b (`spec.md:40`).
+- The pass-order sentence is at `spec.md:47`.
+- The new scenario "Earlier rule wins inside a pass (D4a)" (`spec.md:54-57`) is consistent with `apply-progress.md:285,299-300` and with the code.
+- `design.md:300` still says only "pages in `pages` order" (SUGGESTION 1).
+
+### 5. Code rules and production code
+
+- In `src/` outside `#[cfg(test)]`, the fix commits change only doc comments: `validate.rs:10-13` and `error.rs:51-67`. `check_header`, `check_ids` and `check_pages` are byte-identical to `docs(sdd): record domain-doc D4a progress`.
+- The added lines have no `#[allow]`, `unsafe`, `HashMap`, `HashSet`, `todo!` or `dbg!`. `unwrap` and `panic!` appear only in tests.
+- Subjects are conventional. No message has a `Co-Authored-By` or AI attribution line. There are no `proptest-regressions`.
+- The docs commit also commits the previous D4a verify section, as intended.
+
+### 6. Size and split
+
+- `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'` gives 5 files changed, 752 insertions(+), 1 deletion(-). That matches `apply-progress.md:338`.
+- Code-only size by prefix:
+
+| Prefix ending at | Code-only size |
+|---|---|
+| `feat(doc): add ValidationError` | 312 |
+| `feat(doc): validate header, ids and pages` | 623 |
+| `test(doc): pin the parse-side depth limits for payloads` | 653 |
+| `test(doc): pin page naming, pass order and empty-document rows` | 735 |
+| `test(doc): guard non_exhaustive on ValidationError with a compile_fail doctest` | 752 |
+
+- The ratio to the ~507 forecast is 1.48, or about 1.50 after the CRITICAL 1 rows.
+- See WARNING 1 for the split decision.
+
+### CRITICAL
+
+1. **Two within-pass orders of a D4a MUST are unproven (V38 and V39 survive).** The rule at `spec.md:47` says: "within a pass the first in the stated order", with P2 ordered uniqueness, arena key, `next_id`, and P3 ordered page size, roots exist, no root listed twice. The tests pin schema before DPI, duplicate id before `next_id`, and page size before dangling root. They do not pin:
+   - the position of the arena-key check after duplicate ids, so swapping them passes;
+   - the repeated-root check after the dangling-root check, so swapping them passes.
+
+   I missed these two in my earlier fix list.
+
+   Fix: add two rows to `earlier_rules_win`:
+   - `push(d, 1, &[]); rekey(first(d))` expects `Err(DuplicateId { id: 1 })` (kills V39);
+   - `roots(first(d), &[42, 42])` expects `DanglingRoot` on page 1, node 42 (kills V38).
+
+   Optionally list both cases in `spec.md:55-57`. The rows add about 10 lines.
+
+### WARNING
+
+1. **Size 752 is over the ~700 guideline.** By the letter of the rule, a split is warranted, but only marginally: 7% over, and about 9% after CRITICAL 1. The only sensible boundary is after `feat(doc): add ValidationError`:
+   - PR A is `docs(sdd): re-cut ...` plus `feat(doc): add ValidationError`, with 312 code lines. Every prefix is gate-green, verified on that commit in the D4a verify.
+   - PR B is the rest, from `feat(doc): validate header, ids and pages` to HEAD, with about 440 code lines plus the CRITICAL 1 rows.
+   - Cutting after `feat(doc): validate header, ids and pages` (623 / 129) would ship `validate.rs` without the tests that kill V14 and V20-V31.
+
+   Keeping one PR is defensible, because the overrun is test rows. Splitting or not is the owner's decision.
+2. **D5 fallback trigger.** D4a alone is at a ratio of about 1.48-1.50. The D5 fallback cut fires if D4a plus D4b exceed 1.5x (`design.md:367`), so it is likely. Record the combined ratio after D4b.
+
+### SUGGESTION
+
+1. Mirror the check-major sentence in `design.md:300` ("Validation passes" heading line), which still says only "pages in `pages` order".
+2. Tag "Ascending node order within a pass" (`spec.md:69`) as D4b. It is a P4 scenario (NaN `x`) under a requirement tagged "D4a; P4 D4b".
+3. The `rekey` doc comment (`validate.rs:155`) says "the highest node". The second-page row depends on that: node 9 under key 5. A short note that key 5 must not collide with an existing id would help future rows.
+
+### Result
+
+- Verdict: **FAIL** for D4a (1 CRITICAL, 2 WARNING, 3 SUGGESTION).
+- Gates pass on each of the three fix commits: fmt, clippy, test, `cargo deny check`, ARQ-07, V11, V5 and V12.
+- Mutants: 65 of 68 killed, 1 equivalent (F01), 2 in-scope survivors (V38, V39).
+- Production code is unchanged apart from doc comments. The specs match the owner-approved plan.
+- Next: **tdd-apply D4a**, one test commit with the two rows from CRITICAL 1. Then re-verify D4a. The owner decides the split (WARNING 1) before the PR.

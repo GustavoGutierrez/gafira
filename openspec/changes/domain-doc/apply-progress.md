@@ -336,3 +336,16 @@ V21 (P3 before P2) is now also killed by `earlier_rules_win`. An extra mutant (m
 Other changes: `next_id` rows use max 10 (11 passes; 10, 5 and 0 fail), the width rows follow the spec (`-5.0` on the width, `+inf` next to NaN as a `Conversion` error), "Determinism (property)" is tagged D6b, the `MAX_EXTENSION_DEPTH` comment in `design.md` says D4a, and T4.2 in the T5.1 row is T4.2a and T4.2b. Value-based helpers (`next`, `root`, `key`) build the expected text for the rows whose literal would not fit on one line; other rows keep `Debug` strings.
 
 Size after commit 7: `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'` is 5 files changed, 752 insertions(+), 1 deletion(-).
+
+### Second verify fix (D4a re-verify 2)
+
+Commit `test(doc): pin duplicate id before arena key and dangling before repeated root` adds two rows to `earlier_rules_win`. Each was proven as a mutant on the final tests: RED with the mutant, restored, GREEN.
+
+| Mutant | Killing row |
+|---|---|
+| V38 P3 repeated-root loop before dangling-root loop | `roots(first(d), &[42, 42])` expects `DanglingRoot` (page 1, node 42); the mutant returns `DuplicateRoot` (row 5) |
+| V39 P2 arena-key loop before duplicate-id check | `push(d, 1, &[]); rekey(first(d))` expects `DuplicateId { id: 1 }`; the mutant returns `ArenaKeyMismatch` (row 4) |
+
+Docs: `design.md` pass-order sentence now states the check-major rule; the "Ascending node order within a pass" scenario is tagged D4b; `rekey` carries a comment that key 5 must not collide with an existing id.
+
+Size: see the final report line from `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'`: 5 files changed, 765 insertions(+), 1 deletion(-) after the test commit.

@@ -66,7 +66,7 @@ Passes MUST run in this order, pages in `pages` order and nodes in ascending id 
 - WHEN validated
 - THEN it still passes; the D5 tests close this gap and the scenario is removed or inverted when P5 and P6 land
 
-#### Scenario: Ascending node order within a pass (unit)
+#### Scenario: Ascending node order within a pass (D4b, unit)
 - GIVEN nodes 3 and 8 each with a NaN `x`
 - WHEN validated
 - THEN the error names node 3
