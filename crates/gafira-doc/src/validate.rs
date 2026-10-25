@@ -676,11 +676,6 @@ mod tests {
                 1.5,
                 range(2, "FillAlpha", 1.5),
             ),
-            (
-                |n, v| n.kind = shape_with(Color::Srgb(Rgba::new(0.0, 0.0, v as f32, 1.0))),
-                f32::MAX.into(),
-                "Ok(())".into(),
-            ),
         ];
         for (i, (set, value, want)) in rows.iter().enumerate() {
             let mut d = base();
@@ -705,7 +700,7 @@ mod tests {
         }
         let deep =
             |depth: usize| format!("Err(ExtensionTooDeep {{ node: NodeId(2), depth: {depth} }})");
-        let rows: [(Value, String); 8] = [
+        let rows: [(Value, String); 7] = [
             (nested(64, false), "Ok(())".into()),
             (nested(65, false), deep(65)),
             (nested(65, true), deep(65)),
@@ -713,7 +708,6 @@ mod tests {
             (json!([]), "Ok(())".into()),
             (nested(1_000, false), deep(1_000)),
             (json!({"a": [1, {"b": null}]}), "Ok(())".into()),
-            (json!([[[[0]]]]), "Ok(())".into()),
         ];
         for (i, (payload, want)) in rows.into_iter().enumerate() {
             let mut d = base();

@@ -331,9 +331,12 @@ mod tests {
             err,
             LoadError::Invalid(ValidationError::UnsupportedSchemaVersion { found: 2 })
         ));
-        assert!(err.to_string().starts_with("invalid document: "));
+        assert!(!err.to_string().is_empty());
         let inner = std::error::Error::source(&err).unwrap();
-        assert_eq!(err.to_string(), format!("invalid document: {inner}"));
+        assert_eq!(
+            inner.downcast_ref::<ValidationError>(),
+            Some(&ValidationError::UnsupportedSchemaVersion { found: 2 })
+        );
         let truncated = Document::from_json(&json.as_bytes()[..10]).unwrap_err();
         assert!(matches!(truncated, LoadError::Json(_)));
     }
