@@ -1,11 +1,12 @@
-//! Bounded document generator and its deterministic coverage guard.
+//! Bounded document generator, corruption generators and their deterministic guards.
 
 use std::sync::Arc;
 
 use gafira_color::{Color, DisplayP3Rgba, LinearRgba, Rgba};
 use gafira_doc::{
-    BlendMode, Document, Dpi, EditToken, ElementBase, ExtensionNode, Flip, GroupNode, Node, NodeId,
-    NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
+    BlendMode, DocMut, Document, Dpi, EditToken, ElementBase, ExtensionNode, Flip, GroupNode,
+    LoadError, Node, NodeField, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry,
+    ShapeNode, ValidationError,
 };
 use gafira_geom::{Length, Unit};
 use proptest::collection::vec;
@@ -337,6 +338,372 @@ pub fn document() -> impl Strategy<Value = Document> {
     ]
 }
 
+/// One way to break a valid document, named after the rule it breaks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Corruption {
+    DuplicateIdAcrossPages,
+    DuplicateIdPageAndNode,
+    ArenaKeyMismatch,
+    NextIdNotAboveMax,
+    PageSizeBelow,
+    PageSizeAbove,
+    DanglingRoot,
+    DuplicateRoot,
+    NonFinite,
+    OpacityRange,
+    AlphaRange,
+    SkewRange,
+    WidthRange,
+    HeightRange,
+    EmptyTypeId,
+    ExtensionTooDeep,
+    ChildrenOnLeaf,
+    DanglingChild,
+    MultipleParents,
+    RootHasParent,
+    Orphan,
+    Cycle,
+    InvalidDpi,
+    UnsupportedSchema,
+}
+
+impl Corruption {
+    pub const ALL: [Corruption; 24] = [
+        Self::DuplicateIdAcrossPages,
+        Self::DuplicateIdPageAndNode,
+        Self::ArenaKeyMismatch,
+        Self::NextIdNotAboveMax,
+        Self::PageSizeBelow,
+        Self::PageSizeAbove,
+        Self::DanglingRoot,
+        Self::DuplicateRoot,
+        Self::NonFinite,
+        Self::OpacityRange,
+        Self::AlphaRange,
+        Self::SkewRange,
+        Self::WidthRange,
+        Self::HeightRange,
+        Self::EmptyTypeId,
+        Self::ExtensionTooDeep,
+        Self::ChildrenOnLeaf,
+        Self::DanglingChild,
+        Self::MultipleParents,
+        Self::RootHasParent,
+        Self::Orphan,
+        Self::Cycle,
+        Self::InvalidDpi,
+        Self::UnsupportedSchema,
+    ];
+
+    /// Whether `error` is the variant this corruption must produce.
+    pub fn matches(self, error: &ValidationError) -> bool {
+        use ValidationError as E;
+        let range =
+            |want: NodeField| matches!(error, E::OutOfRange { field, .. } if *field == want);
+        match self {
+            Self::DuplicateIdAcrossPages | Self::DuplicateIdPageAndNode => {
+                matches!(error, E::DuplicateId { .. })
+            }
+            Self::ArenaKeyMismatch => matches!(error, E::ArenaKeyMismatch { .. }),
+            Self::NextIdNotAboveMax => matches!(error, E::NextIdNotAboveMax { .. }),
+            Self::PageSizeBelow | Self::PageSizeAbove => matches!(error, E::PageSize { .. }),
+            Self::DanglingRoot => matches!(error, E::DanglingRoot { .. }),
+            Self::DuplicateRoot => matches!(error, E::DuplicateRoot { .. }),
+            Self::NonFinite => matches!(error, E::NonFinite { .. }),
+            Self::OpacityRange => range(NodeField::Opacity),
+            Self::AlphaRange => range(NodeField::FillAlpha),
+            Self::SkewRange => range(NodeField::Skew),
+            Self::WidthRange => range(NodeField::W),
+            Self::HeightRange => range(NodeField::H),
+            Self::EmptyTypeId => matches!(error, E::EmptyExtensionTypeId { .. }),
+            Self::ExtensionTooDeep => matches!(error, E::ExtensionTooDeep { .. }),
+            Self::ChildrenOnLeaf => matches!(error, E::ChildrenOnLeaf { .. }),
+            Self::DanglingChild => matches!(error, E::DanglingChild { .. }),
+            Self::MultipleParents => matches!(error, E::MultipleParents { .. }),
+            Self::RootHasParent => matches!(error, E::RootHasParent { .. }),
+            Self::Orphan => matches!(error, E::Orphan { .. }),
+            Self::Cycle => matches!(error, E::Cycle { .. }),
+            Self::InvalidDpi => matches!(error, E::InvalidDpi { .. }),
+            Self::UnsupportedSchema => matches!(error, E::UnsupportedSchemaVersion { .. }),
+        }
+    }
+}
+
+/// A corrupted document and its wire form.
+///
+/// `UnsupportedSchema` cannot be built in memory (`schema_version` has no
+/// setter), so its `doc` stays valid and only `json` carries the corruption.
+#[derive(Debug)]
+pub struct Corrupted {
+    pub kind: Corruption,
+    pub doc: Document,
+    pub json: String,
+}
+
+impl Corrupted {
+    /// The rule broken: `validate()` on the document, or the load error of
+    /// the patched JSON for the wire-only corruption.
+    pub fn observed(&self) -> Option<ValidationError> {
+        if self.kind == Corruption::UnsupportedSchema {
+            match Document::from_json(self.json.as_bytes()) {
+                Err(LoadError::Invalid(e)) => Some(e),
+                _ => None,
+            }
+        } else {
+            self.doc.validate().err()
+        }
+    }
+}
+
+fn px_size(w: f64, h: f64) -> PageSize {
+    PageSize {
+        width: Length::new(w, Unit::Px),
+        height: Length::new(h, Unit::Px),
+    }
+}
+
+fn push_page(edit: &mut DocMut<'_>, size: PageSize) -> PageId {
+    let id = edit.alloc_page_id().expect("id");
+    edit.pages_mut()
+        .push(Arc::new(Page::new(id, String::new(), size)));
+    id
+}
+
+/// The first page, created if the document has none.
+fn first_page(edit: &mut DocMut<'_>) -> PageId {
+    match edit.as_doc().pages().first() {
+        Some(p) => p.id,
+        None => push_page(edit, px_size(100.0, 100.0)),
+    }
+}
+
+/// A node with a fresh id and a unit box.
+fn fresh(edit: &mut DocMut<'_>, kind: NodeKind) -> Node {
+    let id = edit.alloc_node_id().expect("id");
+    Node::new(
+        ElementBase::new(id, Placement::new(0.0, 0.0, 1.0, 1.0)),
+        kind,
+    )
+}
+
+fn group() -> NodeKind {
+    NodeKind::Group(GroupNode {})
+}
+
+fn extension(type_id: &str, payload: Value) -> NodeKind {
+    NodeKind::Extension(ExtensionNode {
+        type_id: type_id.to_string(),
+        schema_version: 1,
+        payload,
+    })
+}
+
+/// Stores `node` in the page's arena without listing it anywhere.
+fn insert(edit: &mut DocMut<'_>, page: PageId, node: Node) {
+    edit.page_mut(page)
+        .expect("page")
+        .nodes
+        .insert(node.base.id, Arc::new(node));
+}
+
+fn add_root(edit: &mut DocMut<'_>, page: PageId, node: Node) {
+    edit.page_mut(page).expect("page").roots.push(node.base.id);
+    insert(edit, page, node);
+}
+
+fn nested(depth: usize) -> Value {
+    (0..depth).fold(Value::Null, |v, _| Value::Array(vec![v]))
+}
+
+/// Breaks `doc` in exactly one way; `pick` chooses the sub-case.
+/// Fresh material is injected, so every corruption applies to every document.
+pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
+    let token = token();
+    let mut schema_two = false;
+    {
+        let mut edit = doc.edit(&token);
+        let page = first_page(&mut edit);
+        match kind {
+            Corruption::DuplicateIdAcrossPages => {
+                let node = fresh(&mut edit, group());
+                add_root(&mut edit, page, node.clone());
+                let other = push_page(&mut edit, px_size(100.0, 100.0));
+                add_root(&mut edit, other, node);
+            }
+            Corruption::DuplicateIdPageAndNode => {
+                let node = fresh(&mut edit, group());
+                let same = PageId::new(node.base.id.get());
+                add_root(&mut edit, page, node);
+                edit.pages_mut().push(Arc::new(Page::new(
+                    same,
+                    String::new(),
+                    px_size(100.0, 100.0),
+                )));
+            }
+            Corruption::ArenaKeyMismatch => {
+                let node = fresh(&mut edit, group());
+                let key = edit.alloc_node_id().expect("id");
+                edit.page_mut(page)
+                    .expect("page")
+                    .nodes
+                    .insert(key, Arc::new(node));
+            }
+            Corruption::NextIdNotAboveMax => {
+                let id = NodeId::new(edit.as_doc().next_id() + (pick % 3) as u64);
+                let node = Node::new(
+                    ElementBase::new(id, Placement::new(0.0, 0.0, 1.0, 1.0)),
+                    group(),
+                );
+                add_root(&mut edit, page, node);
+            }
+            Corruption::PageSizeBelow | Corruption::PageSizeAbove => {
+                let bad = if kind == Corruption::PageSizeBelow {
+                    [0.5, 0.0, 0.999][pick % 3]
+                } else {
+                    [16_384.5, 20_000.0, 1e9][pick % 3]
+                };
+                let size = if (pick / 3).is_multiple_of(2) {
+                    px_size(bad, 100.0)
+                } else {
+                    px_size(100.0, bad)
+                };
+                push_page(&mut edit, size);
+            }
+            Corruption::DanglingRoot => {
+                let id = edit.alloc_node_id().expect("id");
+                edit.page_mut(page).expect("page").roots.push(id);
+            }
+            Corruption::DuplicateRoot => {
+                let node = fresh(&mut edit, group());
+                let id = node.base.id;
+                add_root(&mut edit, page, node);
+                edit.page_mut(page).expect("page").roots.push(id);
+            }
+            Corruption::NonFinite => {
+                let mut node = fresh(&mut edit, group());
+                let bad = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY][(pick / 7) % 3];
+                let p = &mut node.base.placement;
+                match pick % 7 {
+                    0 => p.x = bad,
+                    1 => p.y = bad,
+                    2 => p.w = bad,
+                    3 => p.h = bad,
+                    4 => p.rotation_deg = bad,
+                    5 => p.skew = bad,
+                    _ => node.base.opacity = bad as f32,
+                }
+                add_root(&mut edit, page, node);
+            }
+            Corruption::OpacityRange => {
+                let mut node = fresh(&mut edit, group());
+                node.base.opacity = [1.0001, -0.0001, 2.0, -1.0, f32::MAX][pick % 5];
+                add_root(&mut edit, page, node);
+            }
+            Corruption::AlphaRange => {
+                let alpha = [1.0001, -0.0001, 2.0, -1.0, f32::MAX][pick % 5];
+                let fill = Color::Srgb(Rgba::new(0.0, 0.0, 0.0, alpha));
+                let kind = NodeKind::Shape(ShapeNode {
+                    geometry: ShapeGeometry::Rect,
+                    fill: Some(fill),
+                });
+                let node = fresh(&mut edit, kind);
+                add_root(&mut edit, page, node);
+            }
+            Corruption::SkewRange => {
+                let mut node = fresh(&mut edit, group());
+                node.base.placement.skew = [90.0, -90.0, 91.0, 1e3, -1e3][pick % 5];
+                add_root(&mut edit, page, node);
+            }
+            Corruption::WidthRange | Corruption::HeightRange => {
+                let mut node = fresh(&mut edit, group());
+                let bad = [-0.001, -1.0, -1e9, f64::MIN][pick % 4];
+                if kind == Corruption::WidthRange {
+                    node.base.placement.w = bad;
+                } else {
+                    node.base.placement.h = bad;
+                }
+                add_root(&mut edit, page, node);
+            }
+            Corruption::EmptyTypeId => {
+                let node = fresh(&mut edit, extension("", Value::Null));
+                add_root(&mut edit, page, node);
+            }
+            Corruption::ExtensionTooDeep => {
+                let node = fresh(&mut edit, extension("deep", nested(65 + pick % 3)));
+                add_root(&mut edit, page, node);
+            }
+            Corruption::ChildrenOnLeaf => {
+                let leaf = if pick.is_multiple_of(2) {
+                    NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect))
+                } else {
+                    extension("leaf", Value::Null)
+                };
+                let child = fresh(&mut edit, group());
+                let mut node = fresh(&mut edit, leaf);
+                node.children.push(child.base.id);
+                insert(&mut edit, page, child);
+                add_root(&mut edit, page, node);
+            }
+            Corruption::DanglingChild => {
+                let missing = edit.alloc_node_id().expect("id");
+                let mut node = fresh(&mut edit, group());
+                node.children.push(missing);
+                add_root(&mut edit, page, node);
+            }
+            Corruption::MultipleParents => {
+                let child = fresh(&mut edit, group());
+                let mut first = fresh(&mut edit, group());
+                let mut second = fresh(&mut edit, group());
+                first.children.push(child.base.id);
+                second.children.push(child.base.id);
+                insert(&mut edit, page, child);
+                add_root(&mut edit, page, first);
+                add_root(&mut edit, page, second);
+            }
+            Corruption::RootHasParent => {
+                let child = fresh(&mut edit, group());
+                let mut parent = fresh(&mut edit, group());
+                parent.children.push(child.base.id);
+                add_root(&mut edit, page, child);
+                add_root(&mut edit, page, parent);
+            }
+            Corruption::Orphan => {
+                let node = fresh(&mut edit, group());
+                insert(&mut edit, page, node);
+            }
+            Corruption::Cycle => {
+                let mut a = fresh(&mut edit, group());
+                let mut b = fresh(&mut edit, group());
+                if pick.is_multiple_of(2) {
+                    a.children.push(b.base.id);
+                    b.children.push(a.base.id);
+                    insert(&mut edit, page, b);
+                } else {
+                    a.children.push(a.base.id);
+                }
+                insert(&mut edit, page, a);
+            }
+            Corruption::InvalidDpi => edit.set_dpi(Dpi::new([0, 10_001, u32::MAX][pick % 3])),
+            Corruption::UnsupportedSchema => schema_two = true,
+        }
+    }
+    let mut json = doc.to_json().expect("serializes");
+    if schema_two {
+        json = json.replacen("\"schema_version\":1", "\"schema_version\":2", 1);
+    }
+    Corrupted { kind, doc, json }
+}
+
+/// A valid generated document with one corruption applied.
+pub fn corrupted() -> impl Strategy<Value = Corrupted> {
+    (
+        document(),
+        proptest::sample::select(Corruption::ALL.to_vec()),
+        0..1000_usize,
+    )
+        .prop_map(|(doc, kind, pick)| corrupt(doc, kind, pick))
+}
+
 #[cfg(test)]
 mod guards {
     use std::collections::BTreeSet;
@@ -477,5 +844,20 @@ mod guards {
         ];
         let missing: Vec<_> = wanted.iter().filter(|f| !seen.contains(*f)).collect();
         assert!(missing.is_empty(), "never reached: {missing:?}");
+    }
+
+    #[test]
+    fn every_corruption_is_produced_and_breaks_its_own_rule() {
+        let mut seen = BTreeSet::new();
+        for c in draws(corrupted()) {
+            let error = c.observed().expect("a corruption is detected");
+            assert!(c.kind.matches(&error), "{:?} produced {error:?}", c.kind);
+            seen.insert(c.kind);
+        }
+        let missing: Vec<_> = Corruption::ALL
+            .iter()
+            .filter(|k| !seen.contains(k))
+            .collect();
+        assert!(missing.is_empty(), "never produced: {missing:?}");
     }
 }
