@@ -507,3 +507,14 @@ Size (`git diff --shortstat main..HEAD -- crates`): 888 insertions, 24 deletions
 - Neither command has a `merge_key` (spec: only `SetProperty` merges).
 - Not extended: the budget property (`tests/budget.rs`) does not run `Reorder` or `Reparent`; their revert path is covered by the unit tests and laws 1 and 2. Adding them is about 15 lines if the owner wants it.
 - Untracked `.claude/worktrees/` is not part of this delivery and was not staged.
+
+### D9 fix round (verify: W1, W2, W3, S1), test first
+
+The tests passed at once on the finished code; RED is by hand mutant, applied one at a time with the file restored after each (script outside the repo), then GREEN on the real code.
+
+- W1 / M1: `a_shape_moved_under_itself_is_not_a_container` (`refused(...)`, `Reparent` of shape `a` under `a`). With the cycle check moved before the container check it fails (`left: Err(WouldCreateCycle(NodeId(2)))`, `right: Err(NotAContainer(NodeId(2)))`). The order is now pinned.
+- W2 / M5: `a_reparent_revert_checks_every_list_before_it_writes_one` (a reparent into `e`, then a `Reorder` inside `e`, so the roots still match and only `e`'s children differ; `revert` must fail with `InvalidValue` and leave the document equal and page pointer-equal). With a revert that checks and writes one list at a time (roots first) it fails: the document differs from the clone taken before the revert.
+- W3: not a test. The spec defines `touches` only after a successful `apply`; its value before `apply` (the listed target nodes, as `RemoveNodes`) is a known non-requirement, not pinned. The two pre-apply mutants (`reorder.rs`, `reparent.rs`) are accepted as surviving.
+- S1 (pending spec edit, for the coordinator before archive): `edit-commands` "Reorder and Reparent" must state the index semantics. `Reorder`: the index is the final position, `0..siblings` (`index == siblings` gives `IndexOutOfRange`). `Reparent`: the index counts the target list once the moved nodes are out of it, `0..=len`. It should also state that moved nodes keep document order and that a node listed with its ancestor moves with the ancestor.
+
+Size of the round: 28 lines of tests. Gates on the test commit: fmt, clippy, `cargo test --workspace --locked` (467 passed), `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, all rc 0.

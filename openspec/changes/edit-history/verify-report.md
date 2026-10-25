@@ -1175,3 +1175,121 @@ None.
 ### Result
 
 PASS. 0 CRITICAL, 1 WARNING, 4 SUGGESTION. `next`: the coordinator pushes `feat/edit-history-7` and opens its PR against `main`. Then `tdd-apply` continues with the next pending delivery. The change is not ready to archive.
+
+## D9: `Reorder` and `Reparent`
+
+Branch `feat/edit-history-9`, HEAD `642575f`, base `main` `dd35a14`. `origin/main` has since gained docs only (`.agents/`, `AGENTS.md`, `CLAUDE.md`). `git merge-tree` shows no conflict.
+
+### Gates
+
+The gates ran in the repository with `CARGO_TARGET_DIR` in the scratchpad (`scratchpad/vd9/`). The six run steps of the `policy` job were taken from `ci.yml` with a YAML parser and run with `bash -eo pipefail`.
+
+| Gate | HEAD `642575f` |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 465 passed, 0 failed |
+| `cargo deny check` | rc 0 |
+| Format, ARQ-07, forbid unsafe, V5, V12, V13 | rc 0 each |
+
+`ci.yml` has no step named V11, which matches what `apply-progress.md` says.
+
+Each commit was also checked alone, from a `git archive` export with its own target dir. A first attempt shared one target dir. Archive mtimes then made cargo reuse a stale `gafira-edit` and give a false E0432, so it was discarded.
+
+| Commit | fmt | clippy | test |
+|---|---|---|---|
+| `fab0cc4` test: InsertNodes/RemoveNodes in the undo-through-revert property | 0 | 0 | 0 (436) |
+| `725a29e` feat: Reorder and Reparent | 0 | 0 | 0 (463) |
+| `570bb70` test: command laws over Reorder and Reparent | 0 | 0 | 0 (465) |
+
+The default case count is 1 000 (`DEFAULT_CASES`, `harness.rs:31`). No commit message has an AI attribution line.
+
+### Requirement and scenario coverage
+
+| Requirement / scenario | Status | Evidence |
+|---|---|---|
+| Bring to front (D9, unit) | covered | `bring_to_front_and_back`: 4 roots, index 3 = last. This is the same rule as the spec's 3 roots with index 2. Revert gives the original back |
+| Group two nodes (D9, unit) | covered | `group_two_nodes`: roots `[g, e]`, `e` children `[a, b]`, `validate()` Ok, revert gives the original |
+| Cycle rejected (D9, unit) | covered | `a_group_cannot_move_under_itself_or_a_descendant` (under a descendant, under itself, one culprit among two nodes), pointer-equal page |
+| Non-`Group` target gives `NotAContainer` | covered | `a_shape_is_not_a_parent` |
+| Reorder final index `0..siblings` | covered | `a_reorder_index_must_be_below_the_sibling_count` (roots and children), `the_same_index_is_unchanged` |
+| Reparent index over the target list after removing the moved nodes (`0..=len`) | covered | `the_index_counts_the_target_list_without_the_moved_nodes` (2 accepted, 3 gives `IndexOutOfRange { 3, 2 }`) |
+| Ancestor dedupe | covered | `a_node_listed_with_its_descendant_moves_once_as_the_ancestor` |
+| Document order of moved nodes | covered | `moved_nodes_keep_their_document_order_whatever_the_list_order` |
+| Restore every old parent and index | covered | `nodes_leave_every_old_parent_and_come_back_to_it`, `group_two_nodes`, laws 1 and 2 |
+| Law 4 touches (old and new parent, page for roots, moved nodes) | covered | `reordering_inside_a_group_touches_the_group_and_not_the_page`, `reordering_a_root_touches_the_page`, `a_reparent_touches_both_parents_and_the_moved_nodes` |
+| Failed commands change nothing (ARQ-13) | covered | `refused` (equal and pointer-equal page) in every refusal test, plus missing page, node, parent and empty list. Law 5 |
+| D1 W4: the command stays reusable after a failed apply | covered (closed for D9) | `a_reorder_is_reusable_after_a_failed_apply`, `a_reparent_is_reusable_after_a_failed_apply`. Still owed by D10 |
+| Validate-before-mutate in revert, each precondition | covered for each single precondition; partial for "check all before any write" (W2) | changed list (Reorder and Reparent), group gone, old parent gone, page gone, `Unchanged` no-op, `NotApplied` |
+| Rollback in a transaction | covered | `a_failed_transaction_undoes_a_reparent` |
+| Every core command passes the laws (property, 1 000 cases) | covered | `reorder_obeys_the_command_laws`, `reparent_obeys_the_command_laws`. The generators include missing pages and nodes, index one past the end, shapes and nested groups as parents |
+| D7 W3 carry-over: undo-through-revert property over core commands | covered for `SetProperty`, root `InsertNodes` and `RemoveNodes` | `tests/budget.rs` `Step`. Reorder and Reparent are not in it (recorded, see S2) |
+| `places` moved to `moves.rs` with no behavior change | covered | The function body is identical to the removed one in `remove_nodes.rs` (only `pub(crate)` added). The `RemoveNodes` tests and property pass |
+| No `merge_key` (only `SetProperty` merges) | covered | default `merge_key` |
+
+### Recorded deviations
+
+1. **Index semantics: acceptable.** For `Reorder` the index is the final index (`0..siblings`). The spec scenario (a to 2 gives `[b, c, a]`) only works under this reading. For `Reparent` the index counts the target list without the moved nodes (`0..=len`). This is the only reading under which "Group two nodes" at index 0 is well defined when the moved nodes come from the target list itself. Both are documented on `new`. Archive should put one sentence in the spec (S1).
+2. **A shape moved under itself reports `NotAContainer`: acceptable, but nothing pins it (W1).** The spec has two MUSTs that both apply here (cycle, and non-`Group` target), and it fixes no order between them. Either error satisfies ARQ-13. Hand mutant M1 (cycle check before container check) survives because no test moves a shape under itself.
+3. **Revert is stricter than `RemoveNodes::revert`: acceptable.** It compares every list it rewrites with the list `apply` left, then restores whole old lists. `History` and `Transaction` revert in LIFO order, so they always meet that state. A refused revert is safer than a guessed one. The D8 precedent (revert pre-checks are not a spec rule) applies.
+
+### Strict TDD
+
+- Commit 1 (budget property) passed at once on the finished code. Its RED comes from two mutants of D8 code (no `restore_next_id`, root pushed at the end), with concrete counterexamples recorded. This is credible: both are behaviors the extended property now exercises.
+- Commands: tests were written against a stub. 24 of 26 failed on assertions, and the quoted messages match the tests. The 2 `Unchanged` cases passed on the stub and are guarded by the others. RED is credible.
+- Properties: they passed at once (the unit tests drove the code). The RED by mutant (no cycle or container check gives law 3, `touches` without the page gives law 4, revert writing the after-lists gives law 1) is plausible, and it is the same accepted pattern as D4, D6 and D8.
+
+### Mutation
+
+**The `cargo-mutants` run for D9 (`scratchpad/mutants-9/mutants.out`) is not valid evidence.** It reports 38 mutants: 22 caught, 6 missed, 0 timeout, 10 unviable. Its logs show `Fresh gafira-edit` in the test build of mutated trees, for example `moves.rs_line_78_col_12.log` lines 123 and 183 and `reparent.rs_line_59_col_9.log` lines 75 and 134. So cargo tested a binary that was not the mutant: every job used `CARGO_TARGET_DIR=scratchpad/md9-target`. I replayed the six "missed" mutants by hand on an export of HEAD with its own target dir:
+
+| Reported missed | Hand replay |
+|---|---|
+| `moves.rs:78:12` delete `!` (container check) | KILLED, 11 tests (`a_shape_is_not_a_parent`, `group_two_nodes`, ...) |
+| `moves.rs:70:5` `plan` returns `Ok(Some(Default))` | KILLED, 21 tests |
+| `reparent.rs:59:9` `revert` returns `Ok(())` | KILLED (`group_two_nodes`, `nodes_leave_every_old_parent_...`, `a_failed_transaction_undoes_a_reparent`, ...) |
+| `reparent.rs:64:9` `touches` returns `Default` | KILLED (`a_reparent_touches_both_parents_and_the_moved_nodes`) |
+| `reorder.rs:72:17` pre-apply `touches` without nodes | SURVIVED (genuine, W3) |
+| `reparent.rs:67:17` pre-apply `touches` without nodes | SURVIVED (genuine, W3) |
+
+The 22 "caught" results may also be false, because a stale binary from another mutant can fail a test too. They therefore prove nothing.
+
+Hand mutants (rule order and validation before mutation). Each was applied one at a time to `scratchpad/vd9/src` with its own target, using `cargo test -p gafira-edit --locked --tests`, and the file was restored afterwards:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | cycle check before container check | **SURVIVED** (W1) |
+| M2 | cycle check removed | KILLED (`a_group_cannot_move_under_itself_or_a_descendant`) |
+| M3 | ancestor dedupe removed | KILLED (`a_node_listed_with_its_descendant_moves_once_as_the_ancestor`) |
+| M4 | `Reparent` index bound `>` to `>=` | KILLED (6+ tests) |
+| M5 | revert checks and writes one list at a time (no "check all, then write") | **SURVIVED** (W2) |
+| M6 | `MissingNode` in revert becomes `InvalidValue` | KILLED (`a_reorder_revert_whose_group_is_gone_...`, `a_reparent_revert_whose_old_parent_is_gone_...`) |
+| M7 | `MissingPage` in revert becomes `InvalidValue` | KILLED (`a_revert_whose_page_is_gone_...`) |
+| M8 | `Unchanged` revert no-op guard removed | KILLED (`reverting_a_move_that_changed_nothing_is_a_no_op_...`) |
+| M9 | container check removed | KILLED (`a_shape_is_not_a_parent`) |
+
+That is 9 rule mutants and 6 replays, more than the usual ~5. The coordinator asked for the rule list, and the replays were needed because the mutants report is invalid.
+
+### Size
+
+`git diff --shortstat dd35a14..HEAD -- crates`: 940 insertions, 25 deletions (forecast ~630, about 560 of the lines are tests). This is over the ~700 split line. The owner has approved single larger PRs, so this is not a finding. The commits can be split cleanly at `725a29e` if wanted.
+
+### CRITICAL
+
+1. **No valid mutation run for D9.** The `mutants` report shows four misses in critical code (the container check, `plan`, `Reparent::revert` and `Reparent::touches`). My replay shows they are false, and that the run tested stale binaries, so its caught list is not proof either. AGENTS.md requires a cargo-mutants run on the delivery diff before verify can rule on missed critical mutants. Fix (no code change expected): re-run `mutants` on `dd35a14..HEAD` with no shared `CARGO_TARGET_DIR` (let cargo-mutants use its per-job build dirs), and check that the logs show `Compiling gafira-edit` and not `Fresh` for mutated trees. Then re-verify the mutation section only. If the re-run shows a missed critical mutant, the fix goes to `tdd-apply`.
+
+### WARNING
+
+1. **M1: the check order for a shape moved under itself is unpinned.** Add `refused(Reparent::new(PAGE, vec![n(A)], Some(n(A)), 0), &doc, NotAContainer(n(A)))`. Archive should record the order in the spec (container before cycle).
+2. **M5: "fails before a single write" in `Record::revert` is unpinned.** In every revert-failure test, the failing list is the first one checked (the roots key sorts first, or there is only one list). Add a test where the first list matches and a later one does not, for example: Reparent `[a]` from the roots into `e`, then insert a node into `e`, then revert. Expect `Err(InvalidValue(..))` and the roots unchanged. As in D8 H3/H6, revert atomicity is not a spec rule, but the code comment and `apply-progress.md` claim it.
+3. **The pre-apply `touches` of both commands is untested** (genuine cargo-mutants survivors `reorder.rs:72:17` and `reparent.rs:67:17`). This is not critical: the spec defines `touches` after apply (law 4), and the pre-apply set is a convention shared with `RemoveNodes`. One assertion per command would pin it.
+
+### SUGGESTION
+
+1. Archive: write the index semantics into `edit-commands` "Reorder and Reparent" (final index for `Reorder`, index after removal for `Reparent`), together with the check order from W1.
+2. Extend `tests/budget.rs` `Step` with `Reorder` and `Reparent` (about 15 lines, as `apply-progress.md` offers). The spec says "a generated sequence of core commands". D10 or the integration delivery can do it.
+3. `moves::write` has two error branches that cannot be reached, as `apply-progress.md` notes. If cargo-mutants reports them as missed in the valid re-run, they are equivalent. Record them as such; do not add tests for them.
+
+### Result
+
+FAIL. 1 CRITICAL, 3 WARNING, 3 SUGGESTION. The code, tests and gates are sound. The only blocker is that the mutation evidence is invalid. `next`: re-run `mutants` for D9 with isolated build dirs, then re-verify D9's mutation section. W1 and W2 are cheap test-only fixes that `tdd-apply` can add in the same round. The change is not ready to archive (D10 remains).
