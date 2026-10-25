@@ -2,7 +2,7 @@
 
 ## Purpose
 
-C3 adds `gafira-edit`, the only crate that holds an `EditToken`, and the `trybuild` compile test for ARQ-30 that C2b deferred (ED3, ED5). This delta replaces the deferral with the real test, and updates V13 now that `crates/gafira-edit/` exists. The other `edit-capability` requirements are unchanged. Open decisions: `design.md` Q13. The requirement name "V13 CI step (D5b)" keeps its C2b delivery tag so that the merge matches it; C3 changes it in its own delivery D5.
+C3 adds `gafira-edit`, the only crate that holds an `EditToken`, and the `trybuild` compile test for ARQ-30 that C2b deferred (ED3, ED5). This delta replaces the deferral with the real test, updates V13 now that `crates/gafira-edit/` exists, and clarifies "Id allocation" for the counter restore that undo and revert need (D8, Decision A). The other `edit-capability` requirements are unchanged. Open decisions: `design.md` Q13. The requirement name "V13 CI step (D5b)" keeps its C2b delivery tag so that the merge matches it; C3 changes it in its own delivery D5.
 
 ## ADDED Requirements
 
@@ -38,6 +38,34 @@ Each compile-fail fixture MUST fail with exactly the error code recorded in its 
 - THEN it exits 0 with no change to `deny.toml`'s allowlist (or with a written, per-crate exception, see `workspace-tooling`)
 
 ## MODIFIED Requirements
+
+### Requirement: Id allocation (D5b)
+
+C3 delivery: D8, D10. Scenarios without a delivery tag below belong to C2b D5b.
+
+`DocMut::alloc_node_id` and `alloc_page_id` MUST return the current `next_id` as a `NodeId` or `PageId` and then increment it; ids MUST never be reused within a document. When `next_id == u64::MAX` the call MUST return `Err(IdSpaceExhausted)` and leave `next_id` unchanged (no wrap). `IdSpaceExhausted` MUST be `Copy`, `Eq`, `Display` and `Error`. Allocation outside `DocMut` MUST NOT be public. The counter is shared by nodes and pages.
+
+"Never reused" applies to allocation: inside every valid document state ids are unique and `next_id` lies above every id (`validate()`), so allocation never returns an id that a node or page of that state holds. It does not forbid returning to an earlier state. From C3 on, `DocMut` MUST also offer `restore_next_id(value: u64)`, which lowers `next_id` to `value` and MUST ignore a `value` at or above `next_id`, so it never raises the counter. A revert that gives back the ids its apply allocated, like a snapshot undo, returns the counter to a value it held before, so a redo after a revert, or a new command after an undo, MAY be issued the same ids again (`edit-history` "Ids after undo", Q6). A caller MUST NOT lower the counter under an id that a later allocation handed out; the `gafira-edit` insert commands check this before they restore it (`edit-commands` "Restoring the id counter").
+
+#### Scenario: Shared counter (unit)
+- GIVEN `next_id = 5`
+- WHEN a page id, a node id and a node id are allocated
+- THEN the values are 5, 6, 7 and `next_id()` is 8
+
+#### Scenario: Last issuable id (unit)
+- GIVEN `next_id = u64::MAX - 1`
+- WHEN an id is allocated
+- THEN it returns `u64::MAX - 1` and `next_id` becomes `u64::MAX`
+
+#### Scenario: Exhaustion (unit)
+- GIVEN `next_id = u64::MAX`
+- WHEN an id is allocated
+- THEN it returns `Err(IdSpaceExhausted)` and `next_id` is still `u64::MAX`
+
+#### Scenario: Restore lowers, never raises (D8, unit)
+- GIVEN `next_id = 1` and two allocated ids
+- WHEN `restore_next_id(1)` runs, then `restore_next_id` with a value above `next_id`
+- THEN `next_id` is 1 after the first call, the next allocation returns 1 again, and the second call changes nothing
 
 ### Requirement: V13 CI step (D5b)
 
