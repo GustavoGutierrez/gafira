@@ -8,11 +8,13 @@
 
 mod boolean;
 mod error;
+mod hittest;
 mod path;
 mod simplify;
 mod stroke;
 
 pub use error::{NonFiniteValue, PathOpError};
+pub use hittest::Containment;
 pub use path::Path;
 pub use stroke::StrokeStyle;
 
