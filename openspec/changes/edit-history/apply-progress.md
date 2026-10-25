@@ -237,3 +237,55 @@ Tests were written before the code each time.
 - `is_empty` exists only because clippy (`len_without_is_empty`) requires it; no test.
 - The debug assertion also runs after undo and redo (`debug_check`); it cannot fail there because every installed snapshot was validated when installed, so it has no test.
 - To keep D6/D7 and D8 apart: D6 and D7 edit `history.rs` (same chain); D8 needs only new files and `tests/` (its Q6 scenario can live in `tests/`).
+
+## D6: gesture merge
+
+Base: `main` 714a29a. Branch `feat/edit-history-6`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| feat(edit): merge commands into one history entry within a gesture or 500 ms | `begin_gesture`, `end_gesture`, `Entry::at`, merge in `execute` (`at` is now used), 12 unit tests |
+| test(edit): prove a 300-move drag is one entry and merging equals the sequence | `tests/gesture.rs`, 2 properties with the real `SetProperty` |
+| test(edit): let the SetProperty laws reach the success path more often | D3 W3 |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0).
+
+Size (`git diff --shortstat main..HEAD -- crates`, before this file): 422 insertions, 8 deletions (forecast ~525).
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| 300-event drag is one entry | `a_300_move_drag_is_one_entry_that_undoes_to_the_origin` (real `SetProperty`, 1 s apart so only the gesture merges) and the unit `a_gesture_of_many_commands_is_one_entry_that_undoes_to_the_start` |
+| Arrow keys within 500 ms | `equal_keys_less_than_500_ms_apart_merge_and_500_ms_do_not` (499 ms merges, exactly 500 ms does not, window from the last command) |
+| Different keys never merge / None keys | `different_keys_never_merge`, `commands_without_a_key_never_merge` |
+| No merge after undo | `no_merge_into_an_undone_entry_or_after_an_undo`, `an_undo_between_commands_stops_the_merge_into_older_entries` |
+| Closed gesture | `a_key_with_a_gesture_never_merges_once_the_gesture_closed`, `a_gesture_from_a_previous_begin_does_not_merge_into_a_new_one` |
+| Merge refused becomes a new entry | `a_command_that_does_not_merge_becomes_a_new_entry` |
+| Merged entry keeps before, takes after | `a_merged_entry_keeps_its_before_and_takes_the_new_after` |
+| Merging equals the sequence (property) | `merging_equals_applying_the_sequence_one_by_one` |
+
+### RED evidence
+
+- Unit tests were written against a stub (`begin_gesture` returned `GestureId(0)`, no merge): 6 failed on assertions (`len` 301 vs 2, `GestureId(0) != GestureId(0)`, `Dpi(100)` vs `Dpi(96)` after one undo, `2 vs 1`). The window test then failed once on my own arithmetic (1499 to 1999 is 500 ms), fixed in the test.
+- The integration properties passed at once on the finished code; RED is by mutant: merge disabled fails both (`300` vs `1`); `entry.after` not updated survived until the redo `Arc::ptr_eq` check was added to the 300-move test, then fails; "any gesture merges while closed" fails the closed-gesture unit test.
+
+### Carry-overs
+
+- D4 note: a merged entry whose before and after are equal is kept (`a_merged_command_that_ends_where_it_started_is_kept`). `execute` uses `at` now.
+- D3 W3: the page index and node pick of the wide `set_property` strategy are weighted 9:1 toward existing targets. Measured over 300 deterministic samples, `apply` succeeded 83 times before and 133 after (28% to 44%); the rest are invalid values, shape properties on non-shapes and documents without nodes. Not asserted by a test (test-infrastructure tuning).
+
+### Deviations and notes
+
+- Merge rule: the key's `gesture` decides. A key with `Some(g)` merges only while `g` is the open gesture (no time limit); a key with `None` merges inside 500 ms. A gesture id that is closed never merges, even inside 500 ms. This reads (a) and (b) of the spec with "across a closed gesture" taking precedence.
+- `undo` and `redo` end the run (`mergeable = false`), so a command after either never merges, even into an older entry still on the undo stack.
+- The window uses `saturating_sub`, so an `at` earlier than the entry's counts as zero apart (merges). Callers pass a monotonic time.
+- No `touches` use; the compaction state is D7's.
+
+### D6 fix round (verify FAIL: C1, W1, W2), test first
+
+- C1 (M5): `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open` (begin g1, execute g1, begin g2, execute g1 again: `len` 2). With `Some(_) => open.is_some()` it fails (`len` 1 vs 2).
+- W2 (M1): `an_undo_between_commands_stops_the_merge_into_older_entries` now uses one open gesture and commands 10 ms apart, so the window cannot hide the rule. With `undo` no longer clearing `mergeable` it fails (`len` 1 vs 2). The rule is kept; it is stricter than the spec and recorded as such.
+- W1 (pending spec edit, not code): `edit-history` "Gesture merge" should state that a key with a gesture merges only while that gesture is open (no time limit), that the 500 ms window applies only to keys without a gesture, and that an undo or redo ends the merge run.

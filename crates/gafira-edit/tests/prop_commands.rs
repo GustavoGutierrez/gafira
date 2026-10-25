@@ -55,12 +55,25 @@ fn set_property(doc: &Document) -> BoxedStrategy<SetProperty> {
         .iter()
         .map(|p| p.nodes.keys().copied().collect())
         .collect();
-    let target = (0..=pages.len()).prop_flat_map(move |i| {
+    let page_index = prop_oneof![
+        9 => 0..pages.len().max(1),
+        1 => Just(pages.len()),
+    ];
+    let target = page_index.prop_flat_map(move |i| {
         let page = pages.get(i).copied().unwrap_or(PageId::new(u64::MAX));
-        let mut pool = ids.get(i).cloned().unwrap_or_default();
-        pool.push(NodeId::new(u64::MAX));
-        let nodes = prop::collection::vec(prop::sample::select(pool), 1..=2);
-        (Just(page), nodes)
+        let present = ids.get(i).cloned().unwrap_or_default();
+        // A missing node is the rare case, so most commands reach the
+        // success path and law 6 gets to run.
+        let node = if present.is_empty() {
+            Just(NodeId::new(u64::MAX)).boxed()
+        } else {
+            prop_oneof![
+                9 => prop::sample::select(present),
+                1 => Just(NodeId::new(u64::MAX)),
+            ]
+            .boxed()
+        };
+        (Just(page), prop::collection::vec(node, 1..=2))
     });
     let gesture = prop_oneof![Just(None), (0..2_u64).prop_map(|g| Some(GestureId(g)))];
     (target, property(), gesture)

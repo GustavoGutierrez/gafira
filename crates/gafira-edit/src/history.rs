@@ -6,7 +6,7 @@ use std::time::Duration;
 use gafira_doc::msg::CommandLabel;
 use gafira_doc::{Document, EditToken, ValidationError};
 
-use crate::{Applied, Command, CommandError};
+use crate::{Applied, Command, CommandError, GestureId};
 
 /// One undo step: the command and the document before and after it.
 #[derive(Debug)]
@@ -14,7 +14,12 @@ struct Entry {
     command: Box<dyn Command>,
     before: Arc<Document>,
     after: Arc<Document>,
+    /// When the entry's newest command ran (the caller's clock).
+    at: Duration,
 }
+
+/// Commands with equal keys merge when they are less than this apart.
+const MERGE_WINDOW: Duration = Duration::from_millis(500);
 
 /// The session document and the commands that produced it.
 ///
@@ -26,6 +31,12 @@ pub struct History {
     doc: Arc<Document>,
     undo: Vec<Entry>,
     redo: Vec<Entry>,
+    /// The gesture between `begin_gesture` and `end_gesture`.
+    open_gesture: Option<GestureId>,
+    next_gesture: u64,
+    /// Whether the newest entry may absorb the next command; an undo or
+    /// redo ends the run.
+    mergeable: bool,
 }
 
 impl History {
@@ -36,6 +47,9 @@ impl History {
             doc: Arc::new(doc),
             undo: Vec::new(),
             redo: Vec::new(),
+            open_gesture: None,
+            next_gesture: 0,
+            mergeable: false,
         })
     }
 
@@ -48,29 +62,81 @@ impl History {
     /// becomes the current document and `cmd` an undo step; on `Unchanged`
     /// nothing is recorded; on `Err` the document is as it was.
     ///
-    /// `at` is the caller's monotonic time, used by gesture merging.
+    /// `at` is the caller's monotonic time. A changed command with the same
+    /// merge key as the newest entry is absorbed into it when both belong to
+    /// the open gesture, or when no gesture is involved and `at` is less
+    /// than 500 ms after that entry's last command.
     pub fn execute(
         &mut self,
         mut cmd: Box<dyn Command>,
-        _at: Duration,
+        at: Duration,
     ) -> Result<Applied, CommandError> {
         let (after, applied) = self.apply_to_copy(&mut *cmd)?;
         if applied == Applied::Changed {
             self.redo.clear();
             let before = std::mem::replace(&mut self.doc, Arc::clone(&after));
+            let cmd = match self.merge_into_newest(cmd, &after, at) {
+                Ok(()) => return Ok(applied),
+                Err(cmd) => cmd,
+            };
             self.undo.push(Entry {
                 command: cmd,
                 before,
                 after,
+                at,
             });
+            self.mergeable = true;
         }
         Ok(applied)
+    }
+
+    /// Hands `cmd` to the newest entry when the merge rules allow it; gives
+    /// it back otherwise.
+    fn merge_into_newest(
+        &mut self,
+        cmd: Box<dyn Command>,
+        after: &Arc<Document>,
+        at: Duration,
+    ) -> Result<(), Box<dyn Command>> {
+        let open = self.open_gesture;
+        let mergeable = self.mergeable;
+        let Some(entry) = self.undo.last_mut().filter(|_| mergeable) else {
+            return Err(cmd);
+        };
+        let (Some(old), Some(new)) = (entry.command.merge_key(), cmd.merge_key()) else {
+            return Err(cmd);
+        };
+        let allowed = old == new
+            && match old.gesture {
+                Some(gesture) => open == Some(gesture),
+                None => at.saturating_sub(entry.at) < MERGE_WINDOW,
+            };
+        if !allowed {
+            return Err(cmd);
+        }
+        entry.command.merge(cmd)?;
+        entry.after = Arc::clone(after);
+        entry.at = at;
+        Ok(())
     }
 
     /// The document `cmd` would produce, without installing it or touching
     /// the undo stack.
     pub fn preview(&self, mut cmd: Box<dyn Command>) -> Result<Arc<Document>, CommandError> {
         self.apply_to_copy(&mut *cmd).map(|(doc, _)| doc)
+    }
+
+    /// Opens a gesture and returns its id.
+    pub fn begin_gesture(&mut self) -> GestureId {
+        let id = GestureId(self.next_gesture);
+        self.next_gesture += 1;
+        self.open_gesture = Some(id);
+        id
+    }
+
+    /// Closes the open gesture.
+    pub fn end_gesture(&mut self) {
+        self.open_gesture = None;
     }
 
     /// How many entries can be undone.
@@ -102,6 +168,7 @@ impl History {
             return Ok(None);
         };
         self.doc = Arc::clone(&entry.before);
+        self.mergeable = false;
         self.debug_check();
         let label = entry.command.label();
         self.redo.push(entry);
@@ -117,6 +184,7 @@ impl History {
             return Ok(None);
         };
         self.doc = Arc::clone(&entry.after);
+        self.mergeable = false;
         self.debug_check();
         let label = entry.command.label();
         self.undo.push(entry);
@@ -475,6 +543,270 @@ mod tests {
         assert_eq!(history.redo(), Ok(label()));
         assert!(Arc::ptr_eq(&s1, history.document()));
         assert_eq!(history.len(), 1);
+    }
+
+    /// Sets the DPI and merges with any other `Nudge` of the same lane.
+    #[derive(Debug)]
+    struct Nudge {
+        to: u32,
+        lane: u64,
+        gesture: Option<GestureId>,
+        previous: Option<Dpi>,
+    }
+
+    impl Nudge {
+        fn boxed(to: u32, lane: u64, gesture: Option<GestureId>) -> Box<dyn Command> {
+            Box::new(Self {
+                to,
+                lane,
+                gesture,
+                previous: None,
+            })
+        }
+    }
+
+    impl Command for Nudge {
+        fn label(&self) -> CommandLabel {
+            MessageKey("test.nudge")
+        }
+
+        fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+            let old = doc.as_doc().dpi();
+            self.previous = Some(old);
+            doc.set_dpi(Dpi::new(self.to));
+            Ok(if old.get() == self.to {
+                Applied::Unchanged
+            } else {
+                Applied::Changed
+            })
+        }
+
+        fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+            if let Some(old) = self.previous {
+                doc.set_dpi(old);
+            }
+            Ok(())
+        }
+
+        fn merge_key(&self) -> Option<crate::MergeKey> {
+            Some(crate::MergeKey {
+                kind: "test.nudge",
+                page: None,
+                nodes: vec![gafira_doc::NodeId::new(self.lane)],
+                gesture: self.gesture,
+            })
+        }
+
+        fn merge(&mut self, next: Box<dyn Command>) -> Result<(), Box<dyn Command>> {
+            if !(&*next as &dyn std::any::Any).is::<Nudge>() {
+                return Err(next);
+            }
+            let any: Box<dyn std::any::Any + Send + Sync> = next;
+            match any.downcast::<Nudge>() {
+                Ok(other) if other.merge_key() == self.merge_key() => {
+                    self.to = other.to;
+                    Ok(())
+                }
+                Ok(other) => Err(other),
+                Err(_) => unreachable!("probed above"),
+            }
+        }
+
+        fn touches(&self) -> DirtySet {
+            DirtySet::default()
+        }
+    }
+
+    fn nudge(history: &mut History, to: u32, ms: u64) {
+        history
+            .execute(Nudge::boxed(to, 1, None), at(ms))
+            .expect("a nudge applies");
+    }
+
+    #[test]
+    fn a_gesture_of_many_commands_is_one_entry_that_undoes_to_the_start() {
+        let mut history = history();
+        set_dpi(&mut history, 50).unwrap();
+        let start = Arc::clone(history.document());
+        let gesture = history.begin_gesture();
+        for step in 0..300_u32 {
+            let command = Nudge::boxed(100 + step, 1, Some(gesture));
+            // Far apart in time: only the gesture can merge them.
+            history
+                .execute(command, at(u64::from(step) * 10_000))
+                .unwrap();
+        }
+        history.end_gesture();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history.document().dpi(), Dpi::new(399));
+        assert_eq!(history.undo(), Ok(Some(MessageKey("test.nudge"))));
+        assert!(Arc::ptr_eq(&start, history.document()));
+        history.redo().unwrap();
+        assert_eq!(history.document().dpi(), Dpi::new(399));
+    }
+
+    #[test]
+    fn each_gesture_gets_a_fresh_id() {
+        let mut history = history();
+        let first = history.begin_gesture();
+        history.end_gesture();
+        assert_ne!(first, history.begin_gesture());
+    }
+
+    #[test]
+    fn equal_keys_less_than_500_ms_apart_merge_and_500_ms_do_not() {
+        let mut history = history();
+        nudge(&mut history, 100, 1_000);
+        nudge(&mut history, 200, 1_499);
+        assert_eq!(history.len(), 1);
+        nudge(&mut history, 300, 1_998);
+        assert_eq!(history.len(), 1, "the window runs from the last command");
+        nudge(&mut history, 400, 2_498);
+        assert_eq!(history.len(), 2, "exactly 500 ms is outside the window");
+        history.undo().unwrap();
+        assert_eq!(history.document().dpi(), Dpi::new(300));
+        history.undo().unwrap();
+        assert_eq!(history.document().dpi(), Dpi::new(96));
+    }
+
+    #[test]
+    fn a_merged_entry_keeps_its_before_and_takes_the_new_after() {
+        let mut history = history();
+        nudge(&mut history, 100, 0);
+        nudge(&mut history, 200, 10);
+        let last = Arc::clone(history.document());
+        history.undo().unwrap();
+        assert_eq!(history.document().dpi(), Dpi::new(96));
+        history.redo().unwrap();
+        assert!(Arc::ptr_eq(&last, history.document()));
+    }
+
+    #[test]
+    fn different_keys_never_merge() {
+        let mut history = history();
+        let gesture = history.begin_gesture();
+        history
+            .execute(Nudge::boxed(100, 1, Some(gesture)), at(0))
+            .unwrap();
+        history
+            .execute(Nudge::boxed(200, 2, Some(gesture)), at(1))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn commands_without_a_key_never_merge() {
+        let mut history = history();
+        history.begin_gesture();
+        set_dpi(&mut history, 100).unwrap();
+        set_dpi(&mut history, 200).unwrap();
+        history
+            .execute(Probe::boxed(Effect::SetDpi(300)), at(1))
+            .unwrap();
+        assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn a_key_with_a_gesture_never_merges_once_the_gesture_closed() {
+        let mut history = history();
+        let gesture = history.begin_gesture();
+        history
+            .execute(Nudge::boxed(100, 1, Some(gesture)), at(0))
+            .unwrap();
+        history.end_gesture();
+        history
+            .execute(Nudge::boxed(200, 1, Some(gesture)), at(10))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn a_gesture_from_a_previous_begin_does_not_merge_into_a_new_one() {
+        let mut history = history();
+        let first = history.begin_gesture();
+        history
+            .execute(Nudge::boxed(100, 1, Some(first)), at(0))
+            .unwrap();
+        history.end_gesture();
+        let second = history.begin_gesture();
+        history
+            .execute(Nudge::boxed(200, 1, Some(second)), at(10_000))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn no_merge_into_an_undone_entry_or_after_an_undo() {
+        let mut history = history();
+        nudge(&mut history, 100, 0);
+        history.undo().unwrap();
+        nudge(&mut history, 200, 100);
+        assert_eq!(history.len(), 1);
+        assert!(!history.can_redo());
+
+        // An undo then a redo also breaks the run.
+        nudge(&mut history, 300, 150);
+        assert_eq!(history.len(), 1);
+        history.undo().unwrap();
+        history.redo().unwrap();
+        nudge(&mut history, 400, 200);
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn an_undo_between_commands_stops_the_merge_into_older_entries() {
+        let mut history = history();
+        let gesture = history.begin_gesture();
+        // Same gesture and 10 ms apart: only the undo can keep lane 1 apart.
+        history
+            .execute(Nudge::boxed(100, 1, Some(gesture)), at(0))
+            .unwrap();
+        history
+            .execute(Nudge::boxed(200, 2, Some(gesture)), at(10))
+            .unwrap();
+        history.undo().unwrap();
+        history
+            .execute(Nudge::boxed(300, 1, Some(gesture)), at(20))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open() {
+        let mut history = history();
+        let first = history.begin_gesture();
+        history
+            .execute(Nudge::boxed(100, 1, Some(first)), at(0))
+            .unwrap();
+        let second = history.begin_gesture();
+        assert_ne!(first, second);
+        history
+            .execute(Nudge::boxed(200, 1, Some(first)), at(10))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn a_merged_command_that_ends_where_it_started_is_kept() {
+        let mut history = history();
+        nudge(&mut history, 100, 0);
+        nudge(&mut history, 96, 10);
+        assert_eq!(history.document().dpi(), Dpi::new(96));
+        assert_eq!(history.len(), 1);
+        assert!(history.can_undo());
+    }
+
+    #[test]
+    fn a_command_that_does_not_merge_becomes_a_new_entry() {
+        let mut history = history();
+        nudge(&mut history, 100, 0);
+        // Same key, but the other type refuses to absorb it.
+        history
+            .execute(Probe::boxed(Effect::SetDpi(200)), at(1))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+        history.undo().unwrap();
+        assert_eq!(history.document().dpi(), Dpi::new(100));
     }
 
     fn assert_send_sync<T: Send + Sync>() {}

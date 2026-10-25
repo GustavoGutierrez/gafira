@@ -570,3 +570,145 @@ None.
 
 - Code rules: no `#[allow]`, `unsafe`, clock, `HashMap` or threads in the diff. Comments and identifiers in English. `CommandError` stays `#[non_exhaustive]`, so the new variant is not a breaking change.
 - The test-only token use (`EditToken::__new_for_gafira_edit_only`) stays inside `gafira-edit`; V13 passes.
+
+## D6: gesture merge
+
+Branch `feat/edit-history-6`, base `main` 714a29a, HEAD 12cac27. Verdict: **FAIL** (1 CRITICAL).
+
+### Gates
+
+| Check | 63aca66 | 613cf8c | HEAD |
+|---|---|---|---|
+| `cargo fmt --check` | ok | ok | ok |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ok | ok | ok |
+| `cargo test --workspace --locked` | ok, 0 failed | ok, 0 failed | ok, 0 failed (gafira-edit: 57 lib, 2 `gesture`, 1 `history`, 2 `prop_commands`) |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, V13 | | | rc 0 each |
+| `cargo deny check` | | | advisories, bans, licenses, sources ok |
+
+The intermediate commits were checked on `git archive` exports, each with its own target dir. `ci.yml` has no V11 step, so there was nothing to run for it.
+
+Size: `git diff --shortstat main..HEAD -- crates` gives 422 insertions and 8 deletions (history.rs +312/-3, of which about 70 are production code; `tests/gesture.rs` +92; `prop_commands.rs` +18/-5). That is under the ~525 forecast and the ~700 split line.
+
+Commits: `feat(edit)`, `test(edit)` x2, `docs(edit-history)`. The types fit the content and there are no AI attribution or Co-Authored-By lines.
+
+### Requirement and scenario coverage (D6, "Gesture merge")
+
+| Rule / scenario | Evidence | State |
+|---|---|---|
+| `begin_gesture` returns a fresh id, `end_gesture` closes it | `each_gesture_gets_a_fresh_id`; closing is proved by `a_key_with_a_gesture_never_merges_once_the_gesture_closed` (mutant `end_gesture -> ()` caught) | covered |
+| (a) both commands carry the **open** gesture's id | positive case: the 300-step unit test and property; closed case: the closed-gesture test | **partial**: a key whose gesture is closed is never tested while another gesture is open (CRITICAL 1) |
+| (b) less than 500 ms after the entry's **last** `at`, on caller time | `equal_keys_less_than_500_ms_apart_merge_and_500_ms_do_not`: 499 ms merges, a later command 499 ms after that merges, and exactly 500 ms does not. Mutants `<` to `<=`/`==`/`>` were caught, and so was hand mutant M3 | covered |
+| On `Ok`: keep before, take the new after and `at`, `len` does not grow | `a_merged_entry_keeps_its_before_and_takes_the_new_after` (redo `ptr_eq`), and `ptr_eq` on undo and redo in the 300-move property | covered |
+| On `Err(next)`: `next` becomes a new entry | `a_command_that_does_not_merge_becomes_a_new_entry` | covered |
+| No merge into an undone entry; the redo stack is cleared | `no_merge_into_an_undone_entry_or_after_an_undo` | covered |
+| No merge when either key is `None` | `commands_without_a_key_never_merge` | covered |
+| Merged entry undoes to the state before the first command | the unit test and the property, both `ptr_eq` against `start` | covered |
+| Scenario: 300-event drag is one entry | `a_300_move_drag_is_one_entry_that_undoes_to_the_origin` (real `SetProperty`, steps 1 s apart so only the gesture can merge) | covered |
+| Scenario: arrow keys within 500 ms | the window test above (stricter boundary than the spec's 1 000/1 499/2 000) | covered |
+| Scenario: different keys never merge | `different_keys_never_merge` | covered |
+| Scenario: no merge after undo | `no_merge_into_an_undone_entry_or_after_an_undo` | covered |
+| Scenario: merging equals the sequence (property) | `merging_equals_applying_the_sequence_one_by_one` (the control uses a closed gesture per step, so it never merges) | covered |
+| `merge` with downcast | test `Nudge::merge` probes by reference first, then upcasts and downcasts, as in R11. `SetProperty::merge` is D3 code | covered |
+| `execute` uses `at` (D4 carry-over) | `Entry::at`, `MERGE_WINDOW` | covered |
+| D4 note: a merged drag that ends where it started is kept | `a_merged_command_that_ends_where_it_started_is_kept` | covered |
+| D3 W3: wide `set_property` strategy | weighted 9:1 toward existing targets; the 28% to 44% success rate is measured in apply-progress, not asserted | closed (tuning only) |
+
+### Recorded deviations, judged
+
+1. **A `Some(g)` key merges only while `g` is open, with no time limit; a `None` key merges only inside 500 ms.** Accepted. The two keys are equal, so they carry the same gesture. Letting rule (b) merge a closed `Some(g)` would break "MUST NOT ... across a closed gesture". That rule taking precedence is the only consistent reading. The spec text still says "(a) or (b)" without this precedence, so it goes under pending spec edits (WARNING 1).
+2. **`undo` and `redo` end the run, even into an older entry still on the undo stack.** Accepted. It is stricter than the spec, which forbids only the undone entry, and no spec scenario conflicts with it. It is not proved, though (WARNING 2). The `mergeable = false` in `redo` is redundant, because a redo always follows an undo that already cleared the flag (hand mutant M4 is equivalent).
+3. **`saturating_sub` treats an earlier `at` as 0 ms apart, so it merges.** Accepted. `at` is monotonic by contract (Q3), and "less than 500 ms after" includes a negative gap. No panic is possible.
+
+### Strict TDD
+
+The unit tests have RED evidence: they were written against a stub, 6 failed on assertions, and one failure came from an arithmetic error in the test itself. The two integration properties passed the first time on finished code. Their RED comes from mutants (merge disabled fails both; `entry.after` not updated fails after the redo `ptr_eq` was added). That is acceptable for properties that sit on already-RED unit behavior. The `prop_commands` change is test-infrastructure tuning with no RED, which is fine.
+
+### Mutation
+
+`cargo-mutants` 27.1.0 on the D6 diff (`scratchpad/mutants-d6/mutants.out`, read only): 17 caught, 0 missed, 0 timeout, plus a few unviable. cargo-mutants does not delete assignments, so the rule-order rules were hand-mutated on a `git archive` export. Each mutant was restored and the export diffed clean:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | `undo` no longer clears `mergeable` (undo does not end the run) | **SURVIVED**. `an_undo_between_commands_stops_the_merge_into_older_entries` leaves 1 100 ms between commands, so the window already refuses the merge. A probe inside one gesture (lane 1, lane 2, undo, lane 1 again) kills it |
+| M2 | time beats gesture: `Some(g) => open == Some(g) \|\| within 500 ms` | KILLED by `a_key_with_a_gesture_never_merges_once_the_gesture_closed` |
+| M3 | `entry.at` not updated (window measured from the first command) | KILLED by `equal_keys_less_than_500_ms_apart_merge_and_500_ms_do_not` |
+| M4 | `redo` no longer clears `mergeable` | survived; equivalent (see deviation 2) |
+| M5 | `Some(_) => open.is_some()` (any open gesture accepts a key carrying a closed gesture) | **SURVIVED**. Probe: begin g1, nudge with g1, begin g2 (g1 is now closed), nudge with g1 key gives `len` 1 instead of 2 |
+
+### CRITICAL
+
+1. **The spec rule "(a) both carry the open gesture's id" / "MUST NOT merge across a closed gesture" is not pinned (M5).** Every closed-gesture test either closes with `end_gesture` (so no gesture is open) or uses a new id in the second key (so the keys differ). A merge check that accepts any open gesture passes the whole suite. This is the merge invariant, which is critical code under AGENTS.md. Fix: one unit test where a stale key's gesture is closed while a newer gesture is open, for example begin g1, execute with g1, `begin_gesture()` again (or end and begin), execute with key g1, assert `len() == 2`. It may also need the case with no `end_gesture` between the two begins.
+
+### WARNING
+
+1. **Pending spec edit:** `edit-history` "Gesture merge" should state the precedence: a key with a gesture merges only while that gesture is open (no time limit), and the 500 ms window applies only to keys without a gesture. It should also state that undo or redo ends the run. Add this to apply-progress "Pending spec edits" before archive.
+2. **The documented "undo ends the run" rule has no test that fails without it (M1).** Make `an_undo_between_commands_stops_the_merge_into_older_entries` merge-eligible apart from the undo (same open gesture, or commands less than 500 ms apart). The rule goes beyond the spec, so this is not CRITICAL.
+3. M4 is an equivalent mutant (the redundant `mergeable = false` in `redo`). It is documented only and is harmless.
+
+### SUGGESTION
+
+1. The property says "one undo returns the original", but the test loops `undo()` until `None` and asserts `len() <= 1`. Assert `len() == 1` (when some step changed the document) and do a single `undo()`.
+2. R12 (a 300-event drag does not copy the whole document per event) was a proposal risk tagged D6. No test checks `Arc::ptr_eq` of untouched nodes after the drag. Adding it to the 300-move property is cheap, and it will matter for D7's estimate.
+3. Add the spec's exact arrow-key numbers (1 000, 1 499, 2 000) as a second assertion block, so the scenario can be traced verbatim.
+
+### Other checks
+
+- No `#[allow]`, `unsafe`, clock reads, `HashMap` or threads in the diff. Comments and identifiers are in English.
+- The V13 grep is clean. `GestureId` is still a public tuple (`GestureId(g)` in `prop_commands.rs`), so callers can build ids `begin_gesture` never issued. Such a key never merges under the current rule.
+- Result: FAIL. 1 CRITICAL, 3 WARNING, 3 SUGGESTION. `next`: tdd-apply (D6 fix round: CRITICAL 1, plus WARNING 2 if cheap), then re-verify D6.
+
+## D6 re-verify (after the fix round)
+
+Branch `feat/edit-history-6`, base `main` 714a29a, HEAD 1615bdc. Fixes: 6f90ef8 (test only, inside `history.rs` `mod tests`) and 1615bdc (docs). Verdict: **PASS** (0 CRITICAL).
+
+### Gates at HEAD 1615bdc
+
+| Check | Result |
+|---|---|
+| `cargo fmt --check` | ok |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ok |
+| `cargo test --workspace --locked` | ok, 0 failed (gafira-edit: 58 lib, was 57; 2 `gesture`, 1 `history`, 2 `prop_commands`) |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, V13 (steps taken from `ci.yml` and run as written) | rc 0 each |
+
+Size: `git diff --shortstat main..HEAD -- crates` gives 445 insertions and 8 deletions (history.rs +335/-3, `tests/gesture.rs` +92, `prop_commands.rs` +18/-5). The fix round added 23 net test lines; production code is unchanged since the first verify. Still under the ~525 forecast.
+
+Commits: `feat(edit)`, `test(edit)` x3, `docs(edit-history)` x2. The types fit the content (6f90ef8 touches only tests, 1615bdc only `openspec/`). No AI attribution or Co-Authored-By lines.
+
+### Disposition of the D6 findings
+
+| Finding | Fix | State |
+|---|---|---|
+| CRITICAL 1 (M5): closed gesture while another is open | `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open`: begin g1, execute g1, begin g2 with no `end_gesture` between, execute with key g1, `len() == 2` | **closed**; M5 killed |
+| WARNING 1: pending spec edit (gesture precedence, undo/redo end the run) | recorded in apply-progress "D6 fix round" | open, see WARNING 1 below |
+| WARNING 2 (M1): undo ends the run, unproved | `an_undo_between_commands_stops_the_merge_into_older_entries` now runs inside one open gesture with commands 10 ms apart (lane 1, lane 2, undo, lane 1), so only the undo rule keeps them apart | **closed**; M1 killed |
+| WARNING 3 (M4 equivalent) | none needed | documented only |
+| SUGGESTIONS 1-3 | not taken | still open, optional |
+
+### Mutation (re-run)
+
+The fix is test-only, so the `cargo-mutants` run on the D6 diff (`scratchpad/mutants-d6/mutants.out`: 13 caught in `caught.txt`, 0 missed, 0 timeout, 4 unviable) still covers the production code; it was not re-run. The hand mutants were re-applied one at a time on a `git archive` export of HEAD with its own target dir, running `cargo test -p gafira-edit --locked`. The file was restored after each one and `cmp` matched the original:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | `undo` no longer clears `mergeable` | **KILLED** by `an_undo_between_commands_stops_the_merge_into_older_entries` |
+| M2 | time beats gesture (`open == Some(g) \|\| within 500 ms`) | KILLED by `a_key_with_a_gesture_never_merges_once_the_gesture_closed` and the new closed-gesture test |
+| M3 | `entry.at` not updated | KILLED by `equal_keys_less_than_500_ms_apart_merge_and_500_ms_do_not` |
+| M4 | `redo` no longer clears `mergeable` | survived; equivalent (unchanged, deviation 2) |
+| M5 | `Some(_) => open.is_some()` | **KILLED** by `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open` |
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Pending spec edit (carried over):** the "Gesture merge" precedence and the undo/redo end-of-run rule are written in apply-progress under "D6 fix round", but not in the consolidated "Pending spec edits (not code)" list. Archive must pick them up from there (or move them into that list) before closing the change.
+2. M4 is an equivalent mutant (the redundant `mergeable = false` in `redo`). Documented only.
+
+### SUGGESTION
+
+1. The D6 first-verify suggestions still apply: a single `undo()` with `len() == 1` in the property, `Arc::ptr_eq` of untouched nodes after the 300-move drag (R12, useful for D7), and the spec's exact 1 000 / 1 499 / 2 000 arrow-key numbers.
+
+### Result
+
+PASS. 0 CRITICAL, 2 WARNING, 1 SUGGESTION. D6 is done; `next`: tdd-apply for the next delivery of `edit-history` (archive only after all deliveries pass).
