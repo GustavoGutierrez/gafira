@@ -1,8 +1,6 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/manuals/marca/assets/gafira-logo-dark-background.svg">
-    <img src="docs/manuals/marca/assets/gafira-logo-primary.svg" alt="Gafira" width="240">
-  </picture>
+  <img src="docs/manuals/marca/assets/gafira-logo-primary.svg#gh-light-mode-only" alt="Gafira" width="240">
+  <img src="docs/manuals/marca/assets/gafira-logo-dark-background.svg#gh-dark-mode-only" alt="Gafira" width="240">
 </p>
 
 # Gafira
