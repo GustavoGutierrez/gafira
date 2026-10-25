@@ -113,17 +113,57 @@ value is **1e-3 px**.
 
 Rationale for the number: the working unit is a pixel, and the reference hardware
 in D-03 is an Intel i5 10th generation. A tolerance of 1e-3 px is three orders of
-magnitude below one pixel, so the geometric error is invisible at any zoom level
-the product offers, while still being large enough to keep the floating-point
-arithmetic of the sweep-line algorithm well conditioned for coordinates of the
-magnitude of a page (thousands of pixels). `spike.md` C2.4 measured that the result
-of the circle-square intersection was identical for tolerances from 1e-9 to 1e-1,
-so the choice does not change the answer on ordinary geometry; it only bounds the
-worst case.
+magnitude below one pixel. `spike.md` C2.4 measured that the result of one
+circle-square intersection was identical for tolerances from 1e-9 to 1e-1; that
+case turned out not to be representative (see below).
 
 Every operation takes the tolerance explicitly or uses the constant. The tolerance
 used inside one operation is the same value throughout it: the crate never mixes
 tolerances inside a single call.
+
+**What the tolerance means for a boolean operation (corrected after verify round
+1, finding C4; facts measured by the explorer on linesweeper 0.5.0).** The earlier
+text said the tolerance bounds the deviation of every result. For the boolean
+operations that is false and is withdrawn. The library's `eps` is the comparison
+tolerance of its sweep line, an error along the sweep coordinate, not a distance
+in the plane; the library documents a bound only for polylines, and its source
+leaves curves as a TODO. Measured:
+
+- straight-edged operands, and curves crossing the other boundary at an angle:
+  the result matches the exact boundary to about 1e-11 (polylines, 600 operations
+  per tolerance, 1e-2 to 1e-8);
+- worst case, a curve tangent to the sweep direction at a crossing: the deviation
+  grows as the square root of the tolerance and stays below
+  `sqrt(2 × R × tolerance)`, R the largest radius of curvature at a crossing
+  (990 adversarial runs, largest ratio deviation / `sqrt(R × tolerance)` = 1.414).
+  Example: circle r=10 minus a rectangle whose vertical edge passes through the
+  circle's top, tolerance 1e-3: deviation 7.8e-2. The deviation does not depend on
+  the coordinate magnitude;
+- the tolerance used to build a curved input (for example `Circle::to_path`)
+  adds to that deviation;
+- a feature thinner than the tolerance can collapse (seen once in 600 runs at
+  tolerance 1e-1, cause not isolated).
+
+These bounds are empirical, not proven. The spec states them as the documented
+behaviour and promises no "within the tolerance" bound for boolean results.
+
+Design note, not a requirement: a caller's distance bound `delta` maps to
+`eps = delta² / (2 × D)` (D the bounding-box diagonal of both operands, and
+`eps <= delta`). In 856 measured cases, 855 met the deviation `<= delta`; one
+outlier reached 4.1 × delta for every eps from 1e-3 to 1e-13, cause not
+isolated. Adopting this mapping would be a new owner decision; it is recorded here
+only as an option.
+
+**Minimum tolerance (finding C5).** Below a tolerance relative to the coordinate
+magnitude, the library's cubic intersection bisects without end: a release build
+overflows its stack and aborts (not catchable), a debug build trips a library
+assertion first. A bigger stack does not help. Rule, empirical: a boolean
+operation rejects a tolerance below `1e-12 × m`, m the largest absolute x or y
+over all points (end points and control points) of both operands, with an error
+that carries the minimum. No failure was observed at or above that bound in debug
+or release (grid and random runs, coordinates from 1e-19 to 1e6); the last debug
+failures were in the 1e-14 decade. The default 1e-3 px clears it for any
+coordinate below 1e9.
 
 ### Q5. The answer for a point exactly on the perimeter
 

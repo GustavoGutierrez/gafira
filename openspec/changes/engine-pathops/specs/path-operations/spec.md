@@ -117,22 +117,28 @@ The definitions above hold when both operands carry the same fill rule. **PENDIN
 owner decision OQ1**: what an operation does when the two operands carry different
 fill rules. Until OQ1 is closed, no test may assert a result for mixed fill rules.
 
-**PENDING explorer (C4)**: the distance from the perimeter of either operand
-within which a point is exempt from the point-by-point definition (the geometric
-bound of a boolean result). Until it is measured, the point-by-point property is
-stated only for operands built from axis-aligned rectangles, with a margin equal to
-the tolerance.
+The point-by-point definition is exact only away from the boundaries: near a
+boundary the computed result deviates from the exact one by the amount stated in
+"Determinism and numeric tolerance" (boolean tolerance). The testable form of the
+definition is therefore stated for operands built from axis-aligned rectangles,
+where the measured deviation is far below the tolerance, with a margin equal to
+the tolerance around the perimeter of both operands.
 
-Empty operands:
+Empty operands. When at least one operand is empty, the operation MUST NOT compute
+the result geometrically; it MUST return:
 
-- `A ∪ ∅` and `∅ ∪ A` MUST return a path equal in value to `A`;
-- `A \ ∅` MUST return a path equal in value to `A`;
-- `A Δ ∅` and `∅ Δ A` MUST return a path equal in value to `A`;
-- `A ∩ ∅`, `∅ ∩ A` and `∅ \ A` MUST return an empty path;
-- any operation over two empty paths MUST return an empty path.
+- `A ∪ ∅` and `∅ ∪ A`: a clone of `A`;
+- `A Δ ∅` and `∅ Δ A`: a clone of `A`;
+- `A \ ∅`: a clone of `A`;
+- `∅ \ A`, `A ∩ ∅` and `∅ ∩ A`: an empty path;
+- any operation over two empty paths: an empty path.
 
-"Equal in value" means the operand is not re-segmented, its start point is not
-moved and no element is added: an empty operand contributes nothing to compute.
+A clone is equal in value to the surviving operand: the same elements in the same
+order, the same start point and the surviving operand's own fill rule, whichever
+operand position it held. (The fill rule an empty result carries is not
+asserted: an empty path covers no point under either rule.) The input validation
+of "Degenerate and invalid inputs" runs before this rule, so an invalid input is
+rejected even when the other operand is empty.
 
 #### Scenario: Union of overlapping rectangles (D2, unit)
 - GIVEN a 10x10 rectangle at the origin and a 10x10 rectangle offset by 5 on the x axis
@@ -159,12 +165,17 @@ moved and no element is added: an empty operand contributes nothing to compute.
 - WHEN their intersection is computed
 - THEN the result contains at least one cubic Bézier segment, and no operation turns a curved input into a polyline
 
-#### Scenario: Union with an empty path returns the operand (D2, unit)
+#### Scenario: Union with an empty path returns a clone (D2, unit)
 - GIVEN a rectangle path R, a circle path C, and an empty path E, all with the `NonZero` fill rule
 - WHEN `R ∪ E`, `E ∪ R`, `C ∪ E` and `E ∪ C` are computed
 - THEN the first two results are equal in value to R and the last two are equal in value to C (same elements in the same order, same start point, same fill rule)
 
-#### Scenario: Difference and xor with an empty path return the operand (D2, unit)
+#### Scenario: The surviving operand keeps its own fill rule (D2, unit)
+- GIVEN an empty path E with the `NonZero` fill rule, and a ring path G with the `EvenOdd` fill rule made of an outer square (0,0)-(10,10) and an inner square (3,3)-(7,7) wound the same way
+- WHEN `E ∪ G`, `G ∪ E`, `E Δ G` and `G \ E` are computed
+- THEN each result is equal in value to G, carries the `EvenOdd` fill rule, and the point (5,5) in the hole is reported outside it
+
+#### Scenario: Difference and xor with an empty path return a clone (D2, unit)
 - GIVEN the rectangle path R and the empty path E
 - WHEN `R \ E`, `R Δ E` and `E Δ R` are computed
 - THEN each result is equal in value to R
@@ -179,6 +190,11 @@ moved and no element is added: an empty operand contributes nothing to compute.
 - WHEN their union, intersection, difference and xor are computed
 - THEN each result is empty and contains no contour
 
+#### Scenario: Validation runs before the empty-operand rule (D2, unit)
+- GIVEN the rectangle path R and the empty path E
+- WHEN `R ∪ E` is computed with tolerance 0
+- THEN the call returns the invalid-tolerance error, not a clone of R
+
 #### Scenario: Crossing bars have overlapping difference boxes (D2, unit)
 - GIVEN A, the rectangle from (0,-10) to (2,10), and B, the rectangle from (-10,0) to (10,2)
 - WHEN `A \ B` and `B \ A` are computed
@@ -190,7 +206,7 @@ moved and no element is added: an empty operand contributes nothing to compute.
 - THEN the bounding box of the xor spans y from 5 to 10 and the bounding box of the union spans y from 0 to 10
 
 #### Scenario: Box containment holds (D2, property)
-- GIVEN two generated well-formed paths with the same fill rule
+- GIVEN two generated paths, each made of one to three axis-aligned rectangles, with the same fill rule
 - WHEN the four operations are computed
 - THEN, for every result that is not empty: the bounding box of `A \ B` is contained in the bounding box of `A`; the bounding box of `A ∩ B` is contained in the intersection of the two operand boxes; the bounding box of `A Δ B` is contained in the bounding box of `A ∪ B`; each within the tolerance
 
@@ -198,6 +214,11 @@ moved and no element is added: an empty operand contributes nothing to compute.
 - GIVEN two generated paths, each made of one to three axis-aligned rectangles, with the same fill rule, and a generated point farther than the tolerance from the perimeter of both operands
 - WHEN the four operations are computed and the point's containment is tested in each operand and each result
 - THEN each result covers the point exactly when the definition above says it does, and no point is covered by both `A \ B` and `B \ A`
+
+#### Scenario: Mixed fill rules (D2, property) — PENDING OQ1, not to be tested
+- GIVEN two generated paths with different fill rules
+- WHEN the four operations are computed
+- THEN the expected result depends on the owner's answer to OQ1; this scenario is completed when OQ1 is closed, and until then no test asserts a result for mixed fill rules
 
 ### Requirement: Degenerate and invalid inputs (D2, D3)
 
@@ -237,7 +258,27 @@ first match wins:
 2. an invalid stroke width (stroke outline only);
 3. a non-finite coordinate in the first operand, then in the second operand;
 4. an open subpath in the first operand, then in the second operand (interior
-   operations only).
+   operations only);
+5. a tolerance too fine for the operands (boolean operations only, see below).
+
+All five checks run before any geometric computation, and before the
+empty-operand rule of "Boolean operations".
+
+A boolean operation MUST reject a tolerance below `1e-12 × m`, where `m` is the
+largest absolute value of any x or y coordinate over all the points (end points
+and control points) of both operands, with a named error that carries that
+minimum (for example `ToleranceTooFine { minimum }`). A tolerance equal to the
+minimum is accepted. The rule applies to every boolean operation whatever the
+shape of the operands (straight or curved). When both operands are empty, `m`
+is 0 and every finite positive tolerance is accepted.
+
+Motivation (measured, `design.md` "Tolerance policy"): below about this bound the
+boolean library recurses without limit on curved inputs. In a release build the
+process overflows its stack and aborts (an abort that cannot be caught); in a debug
+build a library assertion panics earlier. A larger stack does not help. The bound
+`1e-12 × m` is empirical: no failure was observed at or above it in debug or
+release over grid and random runs, and it sits ten times above the last observed
+debug failure.
 
 An error MUST leave no partial result: the operation returns either a complete
 result or an error, never a truncated path, and the inputs are unchanged.
@@ -286,6 +327,26 @@ result or an error, never a truncated path, and the inputs are unchanged.
 - GIVEN tolerances and stroke widths of NaN, positive infinity and negative infinity
 - WHEN the same calls are made
 - THEN each returns the invalid-tolerance or invalid-stroke-width error naming the kind of non-finite value
+
+#### Scenario: Too fine a tolerance is rejected, never aborts (D2, unit)
+- GIVEN the circle of centre (1000,1000) and radius 300 and the rectangle from (900,900) to (1500,1500), both closed with the `NonZero` fill rule (so m = 1500)
+- WHEN their intersection is computed with tolerance 1e-13, in a debug and in a release build
+- THEN the call returns the too-fine-tolerance error carrying the minimum `1e-12 × 1500` (as computed in f64), and the process neither panics nor aborts
+
+#### Scenario: A tolerance at or above the minimum works (D2, unit)
+- GIVEN the same circle and rectangle
+- WHEN their intersection is computed with tolerance `1e-12 × 1500` and with tolerance 1e-3
+- THEN both calls succeed and return a non-empty result
+
+#### Scenario: The minimum applies to straight operands too (D2, unit)
+- GIVEN the rectangles (0,0)-(10,10) and (5,0)-(15,10) (so m = 15)
+- WHEN their union is computed with tolerance 1e-13 and with the default tolerance
+- THEN the first call returns the too-fine-tolerance error carrying `1e-12 × 15`, and the second returns the same result as the scenario "Union of overlapping rectangles"
+
+#### Scenario: Too fine comes after open subpath (D2, unit)
+- GIVEN the same circle and an open path with finite coordinates
+- WHEN their union is computed with tolerance 1e-13
+- THEN the error is the open-subpath error
 
 #### Scenario: Self-intersecting path accepted (D2, unit)
 - GIVEN a path shaped as a bowtie, whose subpath crosses itself
@@ -462,11 +523,31 @@ The stroke outline MUST lie within the tolerance of the exact stroke (the w/2
 geometry stated in "Stroke outlining"), and the simplification MUST lie within the
 tolerance of the original path ("Path simplification").
 
-**PENDING explorer (C4, C5)**: what geometric bound the tolerance gives for a
-boolean result, and the smallest tolerance an operation accepts. The previous
-statement "a result MUST be within the stated tolerance of the exact geometric
-answer" is withdrawn for the boolean operations: it is false (verify-report C4).
-No test may assert a boolean deviation bound until this requirement is completed.
+Boolean tolerance. The tolerance of a boolean operation is the accuracy of the
+sweep that computes it: a comparison tolerance along the sweep direction, not a
+distance in the plane. The crate MUST NOT claim, in a requirement or in its public
+documentation (the boolean operations and the default tolerance constant), that the
+boolean result lies within the tolerance of the exact answer; that claim is false
+(verify-report C4: a circle-rectangle difference deviated 78 times the tolerance).
+The public documentation MUST state what was measured, and MUST say that it is
+empirical, not proven:
+
+- for straight-edged operands, and for curves that meet the other boundary at an
+  angle, the result matched the exact boundary to about 1e-11, far below the
+  tolerance;
+- the worst case is a crossing where a curve runs parallel to the sweep direction;
+  there the deviation from the exact boundary grew as the square root of the
+  tolerance and stayed below `sqrt(2 × R × tolerance)`, where R is the largest
+  radius of curvature of the operands at a crossing (largest observed ratio of
+  deviation to `sqrt(R × tolerance)`: 1.414);
+- the tolerance with which a curved input was itself produced (for example the
+  accuracy of a circle's approximation by cubics) adds to that deviation;
+- the tolerance is meaningful only well below the thinnest feature of the
+  operands.
+
+The only testable boolean accuracy scenario is the point-by-point property for
+rectangle operands ("Boolean operations"). No test may assert a boolean deviation
+bound for curved operands.
 
 #### Scenario: Repeated runs agree (D2, property)
 - GIVEN a fixed pair of paths
@@ -477,6 +558,11 @@ No test may assert a boolean deviation bound until this requirement is completed
 - GIVEN a valid rectangle path, a valid circle path and a valid stroke style
 - WHEN a test calls each of union, intersection, difference, xor, the stroke outline, the simplification, the containment test and the distance to the perimeter, once with an explicit tolerance of 0.5 and once with the crate's documented default tolerance constant
 - THEN every call compiles, passes the tolerance as an argument and succeeds
+
+#### Scenario: Public docs make no boolean bound claim (D2, manual)
+- GIVEN the public documentation of the four boolean operations and of the default tolerance constant
+- WHEN a reviewer reads it
+- THEN no sentence says the tolerance bounds the deviation of a boolean result, and the documentation states the measured behaviour listed above and calls it empirical
 
 #### Scenario: Stroke outline within tolerance (D3, unit)
 - GIVEN the open path from (0,0) to (100,0) and a stroke of width 10
@@ -550,18 +636,24 @@ These belong to the owner. The requirements above mark what they block as PENDIN
 
    | Option | Consequence |
    |---|---|
-   | **A. Each operand is read with its own fill rule (recommended)** | The point-by-point definition holds for every input and the containment test agrees with every boolean result. The result's fill rule must then be one under which the result covers exactly the computed set. Whether the approved library can read two operands with two rules is not yet measured (needs explorer); if it cannot, the crate needs extra work (for example normalizing an operand first), which costs code and delivery budget. |
+   | **A. Each operand is read with its own fill rule (recommended)** | The point-by-point definition holds for every input and the containment test agrees with every boolean result. Measured by the explorer: the approved library's public API can read each operand with its own rule exactly (0 wrong samples over all four operations, squares and circles) at the same speed as today's call (0 to 20% difference, sometimes faster), so the earlier objection (unknown feasibility, extra cost) no longer holds. The result region does not depend on the rule it is tagged with (0 of 90 000 samples differ), so the spec only has to name the tag the result carries (sub-question below). |
    | B. Reject operands whose fill rules differ, with a named error | Simple and honest: no silent wrong result. Callers must make the rules match before the call, which a design tool does often (imported SVG paths carry either rule). |
    | C. Keep the first operand's rule for both, documented | No code change, but the result is not the set the operation names; the point-by-point definition and the hit-test agreement must be weakened to "under the first operand's rule". |
    | D. The caller passes one fill rule that applies to both operands | Explicit, but the same semantic problem as C, and it duplicates the rule each path already carries. |
 
-   Recommendation: **A**, with B as the fallback if the explorer finds that the
-   library cannot read the operands with different rules.
+   Recommendation: **A**. B stays the fallback only if the library's API changes.
+
+   Sub-question if A is chosen: which fill rule does a non-empty result carry?
+   Options: `NonZero` always (simple and predictable; recommended), or the first
+   operand's rule (keeps today's tag, but it means nothing about the region). The
+   empty-operand case is already decided by the requirement: the surviving
+   operand's own rule.
 
 2. **OQ2 — Is a path holding only moves (no segment) empty?** The empty-operand
    rules above are stated for a path with no elements. A path holding a lone move
    covers no area, yet the boolean operations reject it today as an open subpath
-   (verify-report W5).
+   (verify-report W5), before the empty-operand rule is reached. A path of a
+   move followed by a close is accepted today and treated as empty.
 
    | Option | Consequence |
    |---|---|
