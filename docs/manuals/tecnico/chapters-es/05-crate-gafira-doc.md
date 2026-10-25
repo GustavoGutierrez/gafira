@@ -53,13 +53,14 @@ La caja local de un elemento es `[0,w] x [0,h]`; `w` y `h` dimensionan la caja y
 | Método de `DocMut` | Efecto |
 |---|---|
 | `alloc_node_id`, `alloc_page_id` | Toman un id del contador compartido; `IdSpaceExhausted` en `u64::MAX`, con el contador sin cambios |
+| `restore_next_id` | Baja el contador hasta un valor leído antes de las asignaciones que se deshacen; un valor igual o superior al contador se ignora, así que el contador nunca sube y los ids siguen siendo únicos en todo estado |
 | `set_dpi` | Fija el DPI (sin validar) |
 | `pages_mut` | La lista de páginas, para añadir, quitar o reordenar páginas |
 | `page_mut`, `node_mut` | Acceso con copia al escribir a lo largo de un camino |
 | `as_doc` | Acceso de lectura durante la edición |
 
-`EditToken` tiene un campo privado y no implementa `Clone`, `Copy`, `Default` ni `Debug`, así que no puede duplicarse ni construirse con un literal. Su constructor es `#[doc(hidden)]`. Solo los crates de edición pueden nombrarlo; el paso V13 de la CI lo aplica. Nada se valida implícitamente: tras cualquier secuencia de operaciones de `DocMut` el documento puede ser inválido. Reemplazar un valor completo (`*doc = other`) por quien posee el documento es posible y está documentado, no impedido. Las doctests compile-fail de `edit.rs` son ayudas de regresión; una prueba de compilación con `trybuild` para ARQ-30 está **Planificada** (change `edit-history`).
+`EditToken` tiene un campo privado y no implementa `Clone`, `Copy`, `Default` ni `Debug`, así que no puede duplicarse ni construirse con un literal. Su constructor es `#[doc(hidden)]`. Solo los crates de edición pueden nombrarlo; el paso V13 de la CI lo aplica. Nada se valida implícitamente: tras cualquier secuencia de operaciones de `DocMut` el documento puede ser inválido. Reemplazar un valor completo (`*doc = other`) por quien posee el documento es posible y está documentado, no impedido. Las doctests compile-fail de `edit.rs` son ayudas de regresión; los fixtures compile-fail con `trybuild` para ARQ-30 viven en `gafira-edit` (véase el capítulo de edición).
 
 ## Pruebas
 
-Las pruebas de integración están en `crates/gafira-doc/tests/`: `serde.rs`, `golden.rs`, `properties.rs`, `edit.rs`, con generadores compartidos en `common/`. Los archivos JSON golden están en `tests/golden/`.
+Las pruebas de integración están en `crates/gafira-doc/tests/`: `serde.rs`, `golden.rs`, `properties.rs`, `edit.rs`, con los generadores compartidos tomados de `gafira-testkit` (una dev-dependency). Los archivos JSON golden están en `tests/golden/`.

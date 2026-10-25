@@ -18,7 +18,8 @@ Gafira es un editor de escritorio local para diseño gráfico, imagen y video, e
 | `gafira-geom` (longitudes, transformaciones) | Implementado |
 | `gafira-color` (espacios de color, conversiones) | Implementado |
 | `gafira-doc` (modelo de documento, JSON, validación, capacidad de edición) | Implementado |
-| `gafira-edit` (`Command`, `Transaction`, `DirtySet`) | Implementado en parte; `History` y los comandos del núcleo están **Planificados** (change `edit-history`) |
+| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`) | Implementado; `Reorder`, `Reparent` y los comandos de página y DPI están **Planificados** (change `edit-history`, entregas D9 y D10) |
+| `gafira-testkit` (generador de documentos, arnés de propiedades de comandos) | Implementado (solo soporte de pruebas) |
 | `gafira-cli` | Solo `--help` y `--version` |
 | Formato, render, engine, UI, códecs, licencias | **Planificado** (véase el capítulo de arquitectura) |
 

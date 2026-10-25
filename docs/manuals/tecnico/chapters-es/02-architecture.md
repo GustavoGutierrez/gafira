@@ -21,10 +21,13 @@ ARQ-01 fija la regla de dependencias: un crate depende solo de crates de su mism
 | `gafira-geom` | 0 | ninguna | Longitudes con unidades y conversión por DPI, transformaciones 2D, tamaños |
 | `gafira-color` | 0 | ninguna | Espacios de color, tipos RGBA `f32`, conversiones analíticas |
 | `gafira-doc` | 1 | `gafira-geom`, `gafira-color` | Modelo de documento, JSON, validación, capacidad de edición |
-| `gafira-edit` | 1 | `gafira-geom`, `gafira-color`, `gafira-doc` | Contrato `Command`, `Transaction`, `DirtySet` |
+| `gafira-edit` | 1 | `gafira-geom`, `gafira-color`, `gafira-doc` | Contrato `Command`, `Transaction`, `DirtySet`, `History`, comandos del núcleo (`SetProperty`, `InsertNodes`, `RemoveNodes`) |
+| `gafira-testkit` | soporte | `gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit` | Soporte de pruebas: generador acotado de documentos, generadores de corrupción, arnés `prop_command`. Solo se usa como dev-dependency |
 | `gafira-cli` (`apps/`) | binario | ninguna | `--help`, `--version` |
 
-Dependencias externas declaradas en el workspace: `kurbo` (geometría, con `serde`), `serde`, `serde_json` (`float_roundtrip`) y `proptest` para pruebas.
+Dependencias externas declaradas en el workspace: `kurbo` (geometría, con `serde`), `serde`, `serde_json` (`float_roundtrip`) y, solo para pruebas, `proptest` y `trybuild`.
+
+`gafira-testkit` es dev-dependency de `gafira-doc` y de `gafira-edit` mientras depende de ambos. Cargo lo acepta porque una arista de dev-dependency no es una arista de compilación, pero el testkit debe usarse solo desde pruebas de integración (`tests/`), donde cada crate tiene una única copia de cada tipo; dentro de las pruebas unitarias de un crate los tipos serían dos copias distintas.
 
 ## Crates planificados
 
@@ -34,7 +37,7 @@ La especificación enumera más crates que aún no están en el repositorio. Est
 - Capa 2 (motores): `gafira-pathops`, `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment`.
 - Capa 3 (aplicación): `gafira-ports`, `gafira-render`, `gafira-media`, `gafira-engine`.
 - Capa 4 (adaptadores): `gafira-format`, `gafira-assets`, `gafira-io-*`, `gafira-mux`, `gafira-codec-*`, `gafira-render-cpu`, `gafira-render-gpu`, `gafira-platform`, `gafira-i18n`, `gafira-theme`, `gafira-license`, `gafira-ui`, `gafira-captions`, `gafira-plugin`.
-- Soporte: `gafira-testkit`, `xtask`.
+- Soporte: `xtask`.
 
 La tabla autoritativa, con la responsabilidad y las prohibiciones de cada crate, es la sección 2.1 de `docs/specs/02-arquitectura-software.md`.
 
@@ -50,6 +53,7 @@ La CI aplica la tabla de capas en el job `policy`, paso "Domain crates respect t
 | `gafira-color` | ninguna |
 | `gafira-doc` | `gafira-geom`, `gafira-color` |
 | `gafira-edit` | `gafira-geom`, `gafira-color`, `gafira-doc` |
+| `gafira-testkit` | `gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit` |
 
 El paso falla cuando:
 
@@ -58,7 +62,7 @@ El paso falla cuando:
 - `cargo tree` no devuelve nada para un crate listado;
 - un crate tiene su propio `clippy.toml` (la marca de un crate de dominio) pero ninguna fila en la tabla.
 
-Añadir un crate de dominio implica añadir su fila y una copia de `clippy.toml`; el paso en sí no cambia.
+Añadir un crate de dominio implica añadir su fila y una copia de `clippy.toml`; el paso en sí no cambia. `gafira-testkit` tiene fila pero no `clippy.toml`, así que no es un crate de dominio para V12; su fila mantiene acotadas sus aristas internas.
 
 ## Otras reglas aplicadas
 
@@ -69,7 +73,8 @@ Añadir un crate de dominio implica añadir su fila y una copia de `clippy.toml`
 | V12, copias de política sincronizadas | El `clippy.toml` de `gafira-geom` es el canónico; las demás copias deben ser idénticas byte a byte (`diff`) |
 | ARQ-07, CLI sin UI | `cargo tree -p gafira-cli --no-default-features` no debe contener `gafira-ui`, `eframe`, `winit` ni `wgpu` |
 | Sin `unsafe` | `unsafe_code = "deny"` en los lints del workspace, más `#![forbid(unsafe_code)]` en cada `lib.rs` y `main.rs`, verificado por la CI |
-| ARQ-30 provisional, capacidad de edición | V13: `EditToken` solo puede nombrarse en `gafira-doc`, `gafira-edit` y `gafira-testkit`, y `gafira-edit` no debe reexportarlo |
+| ARQ-30 provisional, capacidad de edición | V13: `EditToken` solo puede nombrarse en `gafira-doc`, `gafira-edit` y `gafira-testkit`, y `gafira-edit` no debe reexportarlo. Los fixtures compile-fail de `trybuild` en `gafira-edit` muestran que un crate externo no puede mutar un `Document` sin pasar por `History` |
+| ARQ-81, cada comando del núcleo tiene una prueba de propiedades | **Planificado**: paso de CI V14 (sustituto de `xtask`); hoy las pruebas existen en `crates/gafira-edit/tests/prop_commands.rs`, pero nada las exige |
 
 ## La capacidad de edición dentro de las capas
 
