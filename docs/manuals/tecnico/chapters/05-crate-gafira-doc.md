@@ -53,13 +53,14 @@ The local box of an element is `[0,w] x [0,h]`; `w` and `h` size the box and nev
 | `DocMut` method | Effect |
 |---|---|
 | `alloc_node_id`, `alloc_page_id` | Take an id from the shared counter; `IdSpaceExhausted` at `u64::MAX`, with the counter unchanged |
+| `restore_next_id` | Lower the counter back to a value read before the allocations being undone; a value at or above the counter is ignored, so the counter never moves up and ids stay unique in every state |
 | `set_dpi` | Set the DPI (not validated) |
 | `pages_mut` | The page list, to add, remove or reorder pages |
 | `page_mut`, `node_mut` | Copy-on-write access along one path |
 | `as_doc` | Read access while editing |
 
-`EditToken` has a private field and implements none of `Clone`, `Copy`, `Default` or `Debug`, so it cannot be duplicated or built by a literal. Its constructor is `#[doc(hidden)]`. Only the editing crates may name it; CI step V13 enforces that. Nothing is validated implicitly: after any sequence of `DocMut` operations the document may be invalid. Replacing a whole value (`*doc = other`) by whoever owns the document is possible and is documented, not prevented. The compile-fail doctests in `edit.rs` are regression aids; a `trybuild` compile test for ARQ-30 is **Planned** (change `edit-history`).
+`EditToken` has a private field and implements none of `Clone`, `Copy`, `Default` or `Debug`, so it cannot be duplicated or built by a literal. Its constructor is `#[doc(hidden)]`. Only the editing crates may name it; CI step V13 enforces that. Nothing is validated implicitly: after any sequence of `DocMut` operations the document may be invalid. Replacing a whole value (`*doc = other`) by whoever owns the document is possible and is documented, not prevented. The compile-fail doctests in `edit.rs` are regression aids; the `trybuild` compile-fail fixtures for ARQ-30 live in `gafira-edit` (see the edit chapter).
 
 ## Tests
 
-Integration tests are in `crates/gafira-doc/tests/`: `serde.rs`, `golden.rs`, `properties.rs`, `edit.rs`, with shared generators in `common/`. Golden JSON files are in `tests/golden/`.
+Integration tests are in `crates/gafira-doc/tests/`: `serde.rs`, `golden.rs`, `properties.rs`, `edit.rs`, with the shared generators taken from `gafira-testkit` (a dev-dependency). Golden JSON files are in `tests/golden/`.
