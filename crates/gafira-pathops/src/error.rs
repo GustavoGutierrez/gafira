@@ -64,13 +64,13 @@ pub enum PathOpError {
     },
     /// The stroke width is not a finite positive number.
     InvalidStrokeWidth {
-        /// The offending width.
-        width: f64,
+        /// Which kind of bad number the width holds.
+        value: NonFiniteValue,
     },
     /// The tolerance is not a finite positive number.
     InvalidTolerance {
-        /// The offending tolerance.
-        tolerance: f64,
+        /// Which kind of bad number the tolerance holds.
+        value: NonFiniteValue,
     },
     /// The geometry engine could not complete the operation.
     Geometry(String),
@@ -85,11 +85,11 @@ impl fmt::Display for PathOpError {
             Self::OpenSubpath { subpath } => {
                 write!(f, "subpath {subpath} of the path is not closed")
             }
-            Self::InvalidStrokeWidth { width } => {
-                write!(f, "stroke width is not a finite positive number: {width}")
+            Self::InvalidStrokeWidth { value } => {
+                write!(f, "stroke width is not a finite positive number: {value}")
             }
-            Self::InvalidTolerance { tolerance } => {
-                write!(f, "tolerance is not a finite positive number: {tolerance}")
+            Self::InvalidTolerance { value } => {
+                write!(f, "tolerance is not a finite positive number: {value}")
             }
             Self::Geometry(detail) => write!(f, "geometry operation failed: {detail}"),
         }
@@ -119,12 +119,14 @@ mod tests {
             ),
             (PathOpError::OpenSubpath { subpath: 2 }, "subpath 2"),
             (
-                PathOpError::InvalidStrokeWidth { width: 0.0 },
+                PathOpError::InvalidStrokeWidth {
+                    value: NonFiniteValue::Nan,
+                },
                 "stroke width",
             ),
             (
                 PathOpError::InvalidTolerance {
-                    tolerance: f64::INFINITY,
+                    value: NonFiniteValue::Infinity,
                 },
                 "tolerance",
             ),

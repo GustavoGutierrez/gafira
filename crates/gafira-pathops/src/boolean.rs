@@ -1,0 +1,141 @@
+//! The path boolean operations.
+//!
+//! The four set operations are computed over the Bézier paths themselves, so a
+//! curved input stays curved through the operation.
+
+use kurbo::BezPath;
+use linesweeper::{BinaryOp, FillRule as LibFillRule};
+
+use crate::{BooleanOp, FillRule, NonFiniteValue, Path, PathOpError};
+
+impl Path {
+    /// The set of points covered by both paths.
+    ///
+    /// The tolerance bounds the deviation between the result and the exact
+    /// geometric answer.
+    pub fn union(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
+        self.boolean_op(other, BooleanOp::Union, tolerance)
+    }
+
+    /// The set of points covered by both paths.
+    ///
+    /// The tolerance bounds the deviation between the result and the exact
+    /// geometric answer.
+    pub fn intersection(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
+        self.boolean_op(other, BooleanOp::Intersection, tolerance)
+    }
+
+    /// The set of points covered by the first path and not by the second.
+    ///
+    /// The tolerance bounds the deviation between the result and the exact
+    /// geometric answer.
+    pub fn difference(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
+        self.boolean_op(other, BooleanOp::Difference, tolerance)
+    }
+
+    /// The set of points covered by exactly one of the two paths.
+    ///
+    /// The tolerance bounds the deviation between the result and the exact
+    /// geometric answer.
+    pub fn xor(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
+        self.boolean_op(other, BooleanOp::Xor, tolerance)
+    }
+
+    /// Computes a set operation over the two paths.
+    ///
+    /// The operation uses the fill rule of the first path.
+    pub fn boolean_op(
+        &self,
+        other: &Path,
+        op: BooleanOp,
+        tolerance: f64,
+    ) -> Result<Path, PathOpError> {
+        validate_tolerance(tolerance)?;
+        self.validate_finite()?;
+        other.validate_finite()?;
+        self.validate_closed()?;
+        other.validate_closed()?;
+
+        if self.is_empty() && other.is_empty() {
+            return Ok(Path::new(BezPath::new(), self.fill_rule()));
+        }
+
+        let lib_op = match op {
+            BooleanOp::Union => BinaryOp::Union,
+            BooleanOp::Intersection => BinaryOp::Intersection,
+            BooleanOp::Difference => BinaryOp::Difference,
+            BooleanOp::Xor => BinaryOp::Xor,
+        };
+        let lib_fill = match self.fill_rule() {
+            FillRule::EvenOdd => LibFillRule::EvenOdd,
+            FillRule::NonZero => LibFillRule::NonZero,
+        };
+
+        let contours = linesweeper::binary_op_with_eps(
+            self.as_bez_path(),
+            other.as_bez_path(),
+            lib_fill,
+            lib_op,
+            tolerance,
+        )
+        .map_err(|error| PathOpError::Geometry(error.to_string()))?;
+
+        let mut bez = BezPath::new();
+        for contour in contours.contours() {
+            bez.extend(contour.path.elements().iter().copied());
+        }
+        Ok(Path::new(bez, self.fill_rule()))
+    }
+}
+
+/// Checks that the tolerance is a finite positive number.
+fn validate_tolerance(tolerance: f64) -> Result<(), PathOpError> {
+    if tolerance.is_finite() && tolerance > 0.0 {
+        Ok(())
+    } else if let Some(value) = NonFiniteValue::classify(tolerance) {
+        Err(PathOpError::InvalidTolerance { value })
+    } else {
+        Err(PathOpError::InvalidTolerance {
+            value: NonFiniteValue::Nan,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kurbo::{Rect, Shape};
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Path {
+        Path::new(Rect::new(x0, y0, x1, y1).to_path(0.0), FillRule::NonZero)
+    }
+
+    #[test]
+    fn a_valid_tolerance_passes_the_check() {
+        assert_eq!(validate_tolerance(1e-3), Ok(()));
+    }
+
+    #[test]
+    fn an_invalid_tolerance_is_rejected() {
+        for tolerance in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let expected = match NonFiniteValue::classify(tolerance) {
+                Some(value) => value,
+                None => NonFiniteValue::Nan,
+            };
+            assert_eq!(
+                validate_tolerance(tolerance),
+                Err(PathOpError::InvalidTolerance { value: expected })
+            );
+        }
+    }
+
+    #[test]
+    fn the_operation_maps_to_the_library_operation() {
+        let a = rect(0.0, 0.0, 10.0, 10.0);
+        let b = rect(5.0, 0.0, 15.0, 10.0);
+
+        let union = a.boolean_op(&b, BooleanOp::Union, 1e-3).unwrap();
+        let direct = a.union(&b, 1e-3).unwrap();
+        assert_eq!(union, direct);
+    }
+}

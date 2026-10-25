@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod boolean;
 mod error;
 mod path;
 
