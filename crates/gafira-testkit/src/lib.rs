@@ -1,6 +1,10 @@
-//! Bounded document generator, corruption generators and their deterministic guards.
+//! Test support for the Gafira domain crates: a bounded document generator,
+//! corruption generators and their deterministic guards.
 //!
-//! Only `properties.rs` includes this module, so the guards run once.
+//! Used only as a dev-dependency, and only from integration tests (`tests/`),
+//! where every crate has one copy of each type.
+
+#![forbid(unsafe_code)]
 
 use std::sync::Arc;
 
@@ -721,6 +725,7 @@ pub fn corrupted() -> impl Strategy<Value = Corrupted> {
         .prop_map(|(doc, kind, pick)| corrupt(doc, kind, pick))
 }
 
+#[cfg(test)]
 mod guards {
     use std::collections::BTreeSet;
 
