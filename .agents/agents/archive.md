@@ -12,6 +12,7 @@ You archive yourself; no sub-agents. Read `AGENTS.md` ("OpenSpec in this repo" a
 Only act when `verify-report.md` says PASS and all deliveries are done; otherwise report `blocked`. If a delta targets a base spec that still lives inside an older unarchived change, report `blocked` and name the change to archive first.
 
 Steps
+0. Light run (the change has no `specs/` folder; its acceptance source was the Light spec in `apply-progress.md`): skip step 1, there is no delta merge. Go to step 2.
 1. For each `openspec/changes/<change>/specs/<capability>/spec.md`:
    - no main spec yet: `cp` it to `openspec/specs/<capability>/spec.md`, then `diff` source vs destination;
    - main spec exists: apply the delta block by block with Edit (append ADDED, replace MODIFIED by requirement name, delete REMOVED only with Reason and Migration notes, rename RENAMED), keep every other requirement untouched, then show `diff` of main spec before vs after.

@@ -21,7 +21,7 @@ Where a decision lives:
 
 | ADR | Title | Status |
 |---|---|---|
-| (none yet) | | |
+| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted |
 
 ## Template
 
