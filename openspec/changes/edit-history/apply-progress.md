@@ -73,7 +73,7 @@ Every commit passed alone: `cargo fmt --check`, clippy `--workspace --all-target
 | refactor(testkit): move the document generator into gafira-testkit | 324 |
 | feat(testkit): add prop_command with the six 02 §10 laws | 327 |
 
-Size (`git diff --shortstat e1e4963..HEAD -- crates .github`): 539 insertions, 14 deletions in code and CI (forecast ~450). The move is a rename (`crates/gafira-doc/tests/common/mod.rs => crates/gafira-testkit/src/lib.rs`, 9 changed lines); the move commit alone is 40 insertions, 5 deletions.
+Size (`git diff --shortstat e1e4963..HEAD -- crates .github`): 526 insertions, 14 deletions in code and CI (forecast ~450). The move is a rename (`crates/gafira-doc/tests/common/mod.rs => crates/gafira-testkit/src/lib.rs`, 9 changed lines); the move commit alone is 40 insertions, 5 deletions.
 
 ### Scenario to test
 
