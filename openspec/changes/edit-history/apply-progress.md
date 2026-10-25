@@ -289,3 +289,55 @@ Size (`git diff --shortstat main..HEAD -- crates`, before this file): 422 insert
 - C1 (M5): `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open` (begin g1, execute g1, begin g2, execute g1 again: `len` 2). With `Some(_) => open.is_some()` it fails (`len` 1 vs 2).
 - W2 (M1): `an_undo_between_commands_stops_the_merge_into_older_entries` now uses one open gesture and commands 10 ms apart, so the window cannot hide the rule. With `undo` no longer clearing `mergeable` it fails (`len` 1 vs 2). The rule is kept; it is stricter than the spec and recorded as such.
 - W1 (pending spec edit, not code): `edit-history` "Gesture merge" should state that a key with a gesture merges only while that gesture is open (no time limit), that the 500 ms window applies only to keys without a gesture, and that an undo or redo ends the merge run.
+
+## D8: `InsertNodes` and `RemoveNodes`
+
+Base: `main` 1518560. Branch `feat/edit-history-8`.
+
+### Decision A (owner): `DocMut::restore_next_id(u64)`
+
+Law 1 (`apply; revert` equals the original) compares `next_id`, and `DocMut` could only raise the counter, so `InsertNodes::revert` could not satisfy it. The owner chose option A: an additive `DocMut::restore_next_id(value)` that only lowers the counter (`min`); a value at or above the counter is ignored. `revert` calls it with the counter recorded before the allocation. The clarification of "ids never reused" lives in `specs/edit-commands/spec.md` (requirement "Restoring the id counter"); the main `edit-capability` spec is not edited here. V13 does not enumerate `DocMut` methods, so `ci.yml` is untouched.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| feat(doc): add DocMut::restore_next_id so a revert can return the id counter | method, 2 tests, delta spec requirement |
+| feat(edit): add InsertNodes with ids allocated once and restored on revert | `insert_nodes.rs`, `NodeSpec`, 12 tests in `tests/node_commands.rs` |
+| feat(edit): add RemoveNodes that restores subtrees to their exact positions | `remove_nodes.rs`, 9 more tests |
+| test(edit): run the command laws over InsertNodes and RemoveNodes | two properties (1 000 cases) in `tests/prop_commands.rs` |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0). V11 has no step of that name in `ci.yml`.
+
+Size (`git diff --shortstat main..HEAD -- crates`): 1037 insertions, 2 deletions (forecast ~675, ceiling ~700): about 33 + 526 + 382 + 97 per commit. Over the ceiling; about 550 lines are tests. Cut points for stacked PRs: after commit 2 (~560), then 3 and 4.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Insert then redo reuses ids | `insert_then_redo_reuses_ids` (10, 11, 12; revert equals the original; redo equals the first result) |
+| Remove a subtree and restore order | `remove_a_subtree_and_restore_the_order` |
+| Index out of range | `an_index_above_the_length_is_refused`, `the_end_of_the_list_is_a_valid_index` |
+| Insert under a shape fails cleanly | `a_shape_cannot_be_a_parent` |
+| Node plus descendant equals the ancestor | `listing_a_node_and_its_descendant_is_listing_the_ancestor` |
+| Exhausted id space | `an_exhausted_id_space_changes_nothing` |
+| D1 W4 (reuse after a failed apply) | `a_command_is_reusable_after_a_failed_apply`, `a_remove_command_is_reusable_after_a_failed_apply` |
+| Q6 / counter restore in a rollback | `a_failed_transaction_gives_the_ids_back` |
+| Laws 1 to 5 | `insert_nodes_obeys_the_command_laws`, `remove_nodes_obeys_the_command_laws` |
+
+### RED evidence
+
+- `restore_next_id`: against a no-op stub `restore_next_id_lowers_the_counter_to_a_recorded_value` failed (`left: 3, right: 1`); the "never raises" test caught the mutant `next_id = value`.
+- `InsertNodes` and `RemoveNodes`: tests were written against stubs (`apply` returned `Unchanged`, `revert` `Ok`): 12 of 12 insert tests and 6 of 7 remove tests failed on assertions before the code (the remaining one passed vacuously and is guarded by mutants).
+- Mutants caught by unit tests: no `restore_next_id` in revert, no `validate_new`, no descendant dedupe, no sort of places, no index check in revert (the last two needed two extra tests: `positions_follow_the_list_not_the_id_order`, `a_revert_that_cannot_find_its_place_fails_and_changes_nothing`).
+- The properties passed at once on the finished code (unit tests drove the implementation); RED by mutant: no counter restore gives law 1, touches without the parent node or the page gives law 4, no dedupe or no sort gives law 1.
+- One slip: a commit was first made with a clippy `type_complexity` error because the gate pipeline hid the exit code; it was amended before anything else was built on it, and the gates were rerun green.
+
+### Deviations and notes
+
+- `apply` always allocates its ids from the counter and records them (spec: reuse on a later apply). After a `revert` the counter is back at the recorded value, so a redo gets the same ids; if a caller applies it on a document whose counter moved, fresh ids are used, which keeps ids unique. `History` never re-applies on redo.
+- The new nodes are checked with `validate` on a scratch one-page document before the real one is touched; a bad value gives `InvalidDocument(ValidationError)`. Children below a non-group spec give `InvalidValue`.
+- Empty node lists give `InvalidValue("an empty list of nodes")` (as `SetProperty`).
+- `RemoveNodes` keeps the removed `Arc<Node>`s, so revert restores the identical nodes; it scans the page once for parents and indices (O(page nodes), not O(touched)).
+- Neither command has a `merge_key` (spec: only `SetProperty` merges).
+- Law 4: root inserts and removals list the page; inserts and removals inside a group list the parent node and not the page.
