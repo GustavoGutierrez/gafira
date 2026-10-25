@@ -1950,3 +1950,78 @@ Carry-over warnings:
 The consolidated deltas, however, still state two things the merged code does not do: the dependency rule (C1), and a V5 table without `gafira-time` (C2). Archive must not proceed until the specifier fixes C1, C2 and W3, and the owner settles W2. W1 is a one-line `ci.yml` fix for `tdd-apply`. After that, a short V1 re-verify of the edited specs and the V12 step is enough before archive.
 
 next: specifier (C1, C2, W3), then explorer or owner for the claim (W2: CI run or explicit acceptance), then tdd-apply (W1)
+
+## Whole-change re-verify (V1, before archive)
+
+Commit e3b1043 (branch `docs/edit-history-spec-edits`), clean export of HEAD under the scratchpad, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`. Scope: the fixes of C1, C2, W1, W3 of the whole-change verify (777c4a3), the T4 follow-up (e524cf6, 65bb5be, 8a59fc8), and the new `domain-time` `workspace-tooling` delta (its own V1 check). W2 (cross-platform CI) is owner-accepted (option B, `apply-progress.md`) and not re-raised.
+
+### Gates on HEAD
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (610 passed, 0 failed, 0 ignored) |
+| `cargo deny check` | 0 (advisories, bans, licenses, sources ok) |
+| ARQ-07, forbid unsafe (V11), V5, V12 (extracted from `ci.yml`, `bash --noprofile --norc -eo pipefail`) | all 0; V5 xtrace shows `cargo tree -p` for six rows |
+| V13, V14 (same, in a git-initialised copy of the export) | 0, 0 |
+
+### Changes since 777c4a3
+
+`git diff --stat 777c4a3 HEAD -- crates`: only `gafira-edit/src/error.rs` (new test module case), `src/reorder.rs` and `src/reparent.rs` (the pre-apply `touches` fallback), `tests/history.rs` (new test, `Document` import). `Cargo.lock` and every other crate are unchanged. Outside `crates/`: `.cargo/mutants.toml` (+1 exclusion), `ci.yml` (the W1 line), the spec deltas, the new `domain-time` delta and records.
+
+### Findings of the whole-change verify
+
+| Finding | Check | Status |
+|---|---|---|
+| C1 `serde_json` vs purity rule | `cargo tree -p gafira-edit -e normal --depth 1`: `gafira-color`, `gafira-doc`, `gafira-geom`, `serde_json`; the `gafira-*` normal/build set is exactly edit, doc, geom, color. The three places agree: `edit-commands` "Crate purity and dependencies" (text allows `serde_json`, says V5 does not constrain third-party crates), its "Dependency set" scenario (names the four direct deps), and `workspace-tooling` V5 (third-party crates are outside the table, `serde_json` example). | fixed |
+| C2 `gafira-time` row and copies | `ci.yml` V5 table has 6 rows (geom, color, time, doc, edit, testkit) with the same allowed lists as the delta table, in the same order; `crates/*/clippy.toml` are 5 (geom, color, time, doc, edit), matching "Formatting", V11/V12 text and the scenarios "Entries present in all copies", "Copies identical" and "Clean tree passes the derived V12". | fixed |
+| C2 archive ordering | Simulated the merge (MODIFIED replaced by name, ADDED appended) on a scratch copy of `openspec/specs/workspace-tooling/spec.md`, both orders. No requirement in common, no collision; every requirement block is byte-identical in both results. Only the position of the appended ADDED requirements differs (see S1). | fixed (note S1) |
+| W1 V12 parser | Re-ran `d11/red.sh`, `green.sh`, `w1.sh` and `vwh/d11/neg.sh` on the HEAD export. Spaces-only line before the `gafira-edit` row with its copy deleted: V12 at 777c4a3 exits 0 (RED), V12 at HEAD exits 1 naming `gafira-edit`. Also exit 1 for an empty line, a comment row, tab and trailing spaces, deleted or edited `gafira-time` copy, exemption removed, trailing spaces after `table='` (fails closed), wrong directory (awk exit 2). Clean tree: V5 0, V12 0. | fixed |
+| W3 ARQ-32 wording | `edit-history` "Undo and redo by snapshot" text says "calling neither `apply` nor `revert` ... (they call only `label()`)"; scenarios renamed "Undo calls neither apply nor revert" and "Cost does not grow" reworded; proposal success criterion reworded. No "no command method" left in the deltas. `02` ARQ-32 is in archive note 6 (docs commit). | fixed |
+| W2 cross-platform CI | Owner acceptance, option B, recorded | accepted, not re-raised |
+
+### T4 follow-up
+
+- Tests and hand mutants (scratch export; 5 hand mutants, all killed):
+  - H1, `CommandError::fmt` returns `Ok(())` at once: killed by `error::tests::each_variant_displays_a_message_naming_its_data`.
+  - H2, `RollbackFailed` drops `{revert}`: killed by the same test.
+  - H3, `is_empty` -> `true`: killed by `a_history_is_empty_while_no_entry_can_be_undone`.
+  - H4, `is_empty` -> `false`: killed by the same test.
+  - H5, `is_empty` -> `self.redo.is_empty()`: killed by the same test.
+- `touches` refactor. By reasoning, `DirtySet.nodes` is a `BTreeSet<NodeId>` and `pages` stays the default (empty) in both forms. Collecting an iterator into an empty `BTreeSet` and inserting or extending one element at a time give the same set, duplicates included, so the value is unchanged. Only the `record == None` branch changed, and the post-apply branch is untouched. Probe: I dumped `touches()` before apply, after apply (`Ok` or `Err`) and after revert. The cases were 54 `Reorder` (every node of the fixture plus a missing id, indices 0 to 5) and 168 `Reparent` (empty, single, several, duplicate and missing ids, six parents, indices 0 to 3). The dumps from the old code (`reorder.rs` and `reparent.rs` at 777c4a3) and from HEAD are byte-identical (243 lines). The refactor preserves behaviour and is acceptable: it only removes the struct expression that produced the unexcludable "delete field" mutants, and its comment states why.
+- `.cargo/mutants.toml`. `cargo mutants --list --file crates/gafira-edit/src/history.rs` gives 44 mutants with the config and 45 without (`--no-config`). The only difference is `history.rs:288:9: replace History::debug_check with ()`. Workspace-wide the only differences are that one and the earlier `Document::schema_version` exclusion, so the regex is narrow. The justification holds. `debug_check` runs after undo or redo installs an `Arc` that was either the validated starting document (`with_budget` calls `validate()?`) or a document already checked by `debug_valid`, so the mutant is equivalent through the public API. No "delete field" mutant remains for the `Reorder` and `Reparent` fallbacks; their post-apply `touches -> Default::default()` mutants are still listed.
+- Mutation: not run here. The T4 run (`mutants-gafira-edit`: 227 caught, 6 missed, 48 unviable) had 6 misses. All six are now resolved: 3 by tests (confirmed by H1 to H5 above), 1 equivalent and excluded, 2 that no longer exist after the refactor. The T3 re-run recorded in `apply-progress.md` gives 54 found, 43 caught, 11 unviable, 0 missed, 0 timeout.
+
+### `domain-time` `workspace-tooling` delta (V1 against `ci.yml`)
+
+| Scenario | Evidence | Status |
+|---|---|---|
+| Row and copy present | Row `gafira-time  -` at `ci.yml:82`. `diff -q` geom vs time copy exits 0. V5, V11 and V12 exit 0. | covered |
+| No internal edge | `cargo tree -p gafira-time -e normal,build --target all` filtered for `gafira-*` prints only `gafira-time` | covered |
+| Copy without a row fails V5 | Row removed: V5 exits 1, "gafira-time has clippy.toml but no V5 row" | covered |
+| Forbidden edge fails V5 | `gafira-geom.workspace = true` added: V5 exits 1, "gafira-time must not depend on gafira-geom" | covered |
+| `#![forbid(unsafe_code)]` | Present at line 6 of `crates/gafira-time/src/lib.rs`, after the `//!` module docs. Removing it makes V11 exit 1. The requirement says "MUST start with" it, which is literally false (W1). | covered, wording W1 |
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. class: ambiguity. **`domain-time` `specs/workspace-tooling/spec.md`: "`crates/gafira-time/src/lib.rs` MUST start with `#![forbid(unsafe_code)]`" is literally false.** The file starts with four `//!` lines, and the attribute is on line 6. That is how every domain crate is written, and V11 checks only that a line starts with the attribute (`^#!\[forbid\(unsafe_code\)\]`). Fix (spec text only, `domain-time`, before its archive): "MUST contain the crate attribute `#![forbid(unsafe_code)]` on a line of its own". This does not block the archive of `edit-history`.
+
+### SUGGESTION
+
+1. Archive order. "Either order gives the same main spec" holds for content: every requirement block is identical. The appended ADDED requirements land in different positions, though: archiving `edit-history` first puts "gafira-time domain crate wiring" last, after trybuild and V14, while archiving `domain-time` first puts it before them. Keep the planned order (`edit-history`, then `domain-time`), or reword the claim to "the same requirements".
+2. `design.md` line 134 still says "call no command method". `design.md` is not merged into `openspec/specs`, so it can stay as history or be aligned.
+3. Archive note 7 in `apply-progress.md` sits after the "T4 follow-up" section, apart from notes 1 to 6. The archive agent must read it too.
+4. The V5 requirement cites `.github/workflows/ci.yml:98` for the prefix match; the line is now 102. This is pre-existing in the main spec. Drop the line number or update it.
+
+### Result
+
+**PASS.** 0 CRITICAL, 1 WARNING (ambiguity 1, in `domain-time`'s delta), 4 SUGGESTION. C1, C2, W1 and W3 are fixed. W2 is owner-accepted. The T4 follow-up is sound: the new tests kill the hand mutants, the refactor preserves behaviour (proved by the probe), and the exclusion is narrow and justified. Gates and CI policy are green on HEAD, with 610 tests. The archive of `edit-history` can proceed, then `domain-time` after the one-phrase W1 fix and its own record.
+
+For the archive agent: archive notes 1 to 7 in `apply-progress.md` (note 7 is below the T4 section); keep the order `edit-history` then `domain-time` (S1); do not drop the `gafira-time` row or the fifth copy; warn about the H-N4 scenario dropped by the destructive MODIFIED (note 2); and carry W2 as accepted, R3 not verified.
+
+next: archive (edit-history); then specifier for `domain-time` W1 (ambiguity, one phrase) before the archive of `domain-time`
