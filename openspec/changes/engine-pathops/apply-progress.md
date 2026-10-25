@@ -271,3 +271,182 @@ across four deliveries of 400 to 500 lines each (`design.md`).
 
 `verify` (V3) and, at the archive, the whole-crate T4 run. This run stops before
 both, as instructed.
+
+## Correction to an earlier statement (append-only, verify fix round 1)
+
+The D2 section above says the flaky property in
+`prop_boolean::the_difference_is_contained_in_its_first_operand` "was fixed before
+the D2 commit", and the mutation section says it was fixed by the time the T3 run
+was made. Both statements are false. Verify round 1 (finding C8) measured the
+defect in the commits `9a760e0`, `754099b`, `f198f6a` and `15f4b30` (fresh failure
+rates of 9/40 and 6/40, and a failed gate run at `754099b`); the fix landed only in
+`a8d2c0a`, after D4. So those four commits do not pass `cargo test --workspace
+--locked` reliably.
+
+History is not rewritten. The owner has not yet ruled on a waiver for C8; the
+coordinator will ask. This round does not claim the finding closed.
+
+## Verify fix round 1
+
+Base: `origin/main` merged first (`ec97f7b`: `gafira-time`, edit-history D1-D10 and
+V14 came in; the only conflict was the `docs/specs/README.md` row, resolved by
+keeping both sides). Gates after the merge: fmt, clippy, test, deny and the CI
+policy steps ARQ-07, forbid-unsafe, V5, V12, V13, V14 (extracted from `ci.yml`), all
+rc 0. Every commit below passed the same gates alone. Commits use the repository
+identity and carry no AI attribution; test changes live with the fix they test and
+no docs file is edited inside a test or fix commit.
+
+### Commits
+
+| Group | Finding | Commit |
+|---|---|---|
+| 1 | C7, OQ2 | `e3b9cbf` fix: clone of the surviving operand for an empty operand |
+| 2 | C3, OQ1 | `9c0d95d` fix: each operand read with its own fill rule |
+| 3 | C5 | `dcb06fa` fix: `ToleranceTooFine` below the safe minimum |
+| 4 | C6 | `24cab46` fix: stroke outline carries `NonZero` |
+| 5 | C9, HM4, W1, W4 | `f4438cd` fix: not-positive errors, one shared validation, input-validation tests |
+| 6, 8 | W2, W3, test 18 | `fd81282` test: stronger tests and generators, false xor-box property removed |
+| 7 | W5 | `8b467c5` docs: measured tolerance, real guarantees |
+| - | mutant follow-up | `17a58c0` test: winding of every result, error messages |
+
+### Design notes
+
+- `PathOpError::InvalidTolerance` and `InvalidStrokeWidth` now carry
+  `cause: InvalidNumber`, an enum with `NotPositive(f64)` (zero, `-0.0`, negative:
+  the offending number) and `NonFinite(NonFiniteValue)`. `ToleranceTooFine
+  { minimum }` is new. The old field `value: NonFiniteValue` is gone: this is an
+  API change inside the unreleased crate.
+- Boolean order of checks: tolerance, finite (A then B), open (A then B), too fine,
+  then the empty-operand rule, then the sweep. The sweep uses
+  `Topology::<BinaryWindingNumber>::from_paths_binary(..).contours(..)` with
+  `rule_a.is_inside(w.shape_a)` and `rule_b.is_inside(w.shape_b)`.
+- `Path::is_empty` now means "holds no segment" (moves and closes are not
+  segments); `validate_closed` no longer reports a subpath without a segment.
+- The four copies of the tolerance check are one (`validate.rs`); the unit tests of
+  those private helpers are removed and the behaviour is tested through the public
+  API in `tests/validation.rs` (suggestion S1).
+
+### RED evidence per group
+
+Each failing run was made before the code of its group; the assertion text is the
+one printed.
+
+1. C7, OQ2 (`tests/boolean.rs`): `the_union_with_an_empty_path_returns_a_clone`
+   (left: rotated start point `MoveTo((0.0, 10.0)), LineTo((0.0, 0.0))...`, right:
+   the input rectangle), `the_surviving_operand_keeps_its_own_fill_rule` (left:
+   `fill_rule: NonZero` and a filled ring, right: `EvenOdd`),
+   `a_moves_only_path_is_empty_in_either_operand_position` (left:
+   `Err(OpenSubpath { subpath: 0 })`, right: the ring),
+   `a_moves_only_path_covers_no_point` (left: `Err(OpenSubpath { subpath: 0 })`,
+   right: `Ok(Outside)`), `difference_and_xor_with_an_empty_path_return_a_clone`,
+   `an_empty_operand_with_mixed_rules_keeps_the_survivors_rule`. The two
+   `path_model` tests added with it
+   (`a_path_of_moves_only_is_empty_and_has_no_open_subpath`,
+   `a_path_with_a_segment_is_not_empty`) were written after the code and have no RED
+   run of their own; the boolean tests above are the RED for the same behaviour.
+2. C3, OQ1: `mixed_rules_never_cover_a_point_neither_operand_covers` (left:
+   `[true, true, true]`, right: `[false, true, true]`),
+   `intersection_difference_and_xor_read_each_operand_with_its_own_rule` (left:
+   `[true, true, false]`, right: `[false, true, false]`),
+   `the_rule_of_each_operand_is_used_in_both_directions` (left: `[true, true]`,
+   right: `[false, true]`), `the_result_of_non_empty_operands_carries_non_zero`
+   (left: `EvenOdd`, right: `NonZero`, "Union"), and the property
+   `prop_boolean::the_point_by_point_definition_holds_for_rectangles` (minimal
+   failing input shrunk; the case is kept in `prop_boolean.proptest-regressions`).
+3. C5: `a_tolerance_below_the_minimum_is_rejected_and_never_aborts` (the debug
+   panic `assertion failed: solve_x_for_y(cubic0.c, y0) > solve_x_for_y(cubic1.c,
+   y0)` at `linesweeper-0.5.0/src/curve/mod.rs:1301`; in release the same call
+   aborts the process, not run here), `the_minimum_applies_to_straight_operands_too`
+   (left: `Ok(Path ...)`, right: `Err(ToleranceTooFine { minimum: 1.5e-11 })`),
+   `the_minimum_is_checked_before_the_empty_operand_rule` (right:
+   `Err(ToleranceTooFine { minimum: 1e-11 })`),
+   `the_minimum_is_computed_from_every_point_of_both_operands` (right:
+   `Err(ToleranceTooFine { minimum: 4e-11 })`). The variant was added first so the
+   tests compile.
+4. C6: `the_outline_carries_non_zero_whatever_the_input_rule` (left: `EvenOdd`,
+   right: `NonZero`), `crossing_strokes_stay_solid` and
+   `a_self_crossing_polyline_stays_solid` (left: `Ok(Outside)`, right:
+   `Ok(Inside)`).
+5. C9/HM4, W1, W4 (`tests/validation.rs`): with the validation stubbed to the old
+   behaviour (a non-positive number named NaN), `a_non_positive_tolerance_and_width_are_named_as_such`,
+   `an_invalid_tolerance_is_reported_before_the_path_defects` (left:
+   `Err(InvalidTolerance { cause: NonFinite(Nan) })`, right: `Err(InvalidTolerance {
+   cause: NotPositive(0.0) })`) and `an_invalid_width_is_reported_before_the_path_defects`
+   failed. HM4 re-run: with `validate_finite` deleted from `simplify`,
+   `the_simplification_of_a_non_finite_path_returns_an_error` did not finish within a
+   60 s timeout (the hang); with the guard restored it passes in milliseconds.
+   The tests for the non-finite checks of every operation, the stroke of an infinite
+   path, the non-finite second operand and the second-operand failure without a
+   partial result pass against the code that already had the guards: they close
+   missing evidence and were validated by the mutants above, not by a RED run.
+6. W2/W3, test 18 (`fd81282`): these tests pin behaviour the code already had, so
+   there is no failing run; they were validated by a hand mutant: scaling the
+   tolerance passed to `simplify_bezpath` by 1000 makes
+   `prop_stroke::the_simplification_stays_within_the_tolerance` fail ("a point moved
+   84.5 away, over the tolerance 0.84"). The two scenarios without evidence now have
+   tests: `the_outline_of_a_line_is_half_the_stroke_width_away` and
+   `every_operation_takes_the_tolerance_as_an_argument`. The false property
+   `the_exclusive_or_spans_the_same_box_as_the_union` is replaced by
+   `the_boxes_of_the_results_are_contained` (xor box inside the union box).
+7. W5: documentation only (the scenario is manual). Searched afterwards for
+   "bounds the", "never holds" and "fill rule of the first": no match left except the
+   stroke outline, whose tolerance guarantee the spec keeps.
+
+### Flaky-prone properties
+
+`cargo test -p gafira-pathops --test prop_boolean --test prop_hittest --test
+prop_stroke` was run 30 times in a row after the last source change: 30 passes, 0
+failures, no regression file created. One extra run with `PROPTEST_CASES=3000`
+also passed.
+
+### Mutation (T3), per changed non-test source file
+
+`cargo mutants -p gafira-pathops --file <file> --jobs 2` on a clean `git archive`
+export of the commit, one export and one default `target` per file (no shared
+`CARGO_TARGET_DIR`); the logs show `Compiling gafira-pathops` for every mutant.
+
+| File | Mutants | Caught | Unviable | Missed |
+|---|---|---|---|---|
+| `src/boolean.rs` | 18 | 11 | 7 | 0 |
+| `src/error.rs` | 7 | 6 | 1 | 0 |
+| `src/hittest.rs` | 12 | 10 | 1 | 1 (the known equivalent, `hittest.rs:69:25`) |
+| `src/path.rs` | 28 | 25 | 3 | 0 |
+| `src/stroke.rs` | 2 | 1 | 1 | 0 |
+| `src/simplify.rs` | 1 | 0 | 1 | 0 |
+| `src/validate.rs` | 8 | 8 | 0 | 0 |
+| `src/lib.rs` | 0 | 0 | 0 | 0 |
+
+Two misses on the first run were real gaps and were fixed test-first in `17a58c0`:
+
+- `boolean.rs`: `Xor => in_a != in_b` to `==`. The mutant keeps every boundary but
+  flips its winding, so coverage under either fill rule is identical and the point
+  properties cannot see it. The behaviour that differs is the winding of the
+  result: `every_operation_winds_the_result_the_same_way` (area `-100` against the
+  union's winding `+100`).
+- `error.rs`: `Display for InvalidNumber` replaced by an empty message. The spec says
+  the error "says the value is not positive and states the offending number", so the
+  test now checks the message names the cause and the number
+  (`a_non_positive_tolerance_and_width_are_named_as_such`,
+  `a_non_finite_tolerance_and_width_are_named_by_kind`).
+
+`simplify.rs` has a single generated mutant (the whole function body), unviable.
+The finiteness guard is a statement, which cargo-mutants does not delete, so it was
+checked by the hand mutant HM4 above.
+
+`.cargo/mutants.toml` is unchanged: the exclusion of the equivalent mutant
+`hittest.rs:69:25` is added at archive, as before.
+
+### Not addressed in this round
+
+- W5, drawing after a `ClosePath` with no `MoveTo` is still treated as closed by the
+  subpath model and reaches the library as a "non-closed path" error. The task
+  listed only the documentation items of W5; the spec does not define the case.
+- C8 stays as described in the correction above.
+
+### Measured size
+
+`git diff --shortstat ec97f7b..HEAD` (the fix round only, the merge excluded, before
+this docs commit): 16 files changed, 1262 insertions, 385 deletions (net +877; 8
+source files: 255 insertions, 213 deletions). This is past the 700-line ceiling and
+past the roughly 1 000 changed lines the task named: the tests rewritten for the new
+error shape and the new generators account for most of it. The coordinator decides.
