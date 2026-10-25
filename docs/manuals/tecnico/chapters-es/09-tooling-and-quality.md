@@ -29,7 +29,9 @@ No se debe usar `#[allow]` para silenciar lints. Los crates de dominio añaden u
 
 ## CI
 
-El workflow es `.github/workflows/ci.yml`. Se ejecuta en pushes a `main`, pull requests y ejecución manual, con permiso `contents` de solo lectura y cancelación en curso para los pull requests. Las acciones de terceros se fijan con SHA de commit de 40 caracteres hexadecimales.
+**Estado actual.** La CI está desactivada manualmente en GitHub por un problema de facturación, por lo que ningún workflow se ejecuta en pushes ni en pull requests. Las puertas locales son la única barrera: antes de aceptar una entrega se ejecutan en local los tres comandos anteriores, `cargo deny check` y los pasos de `policy` de `ci.yml` (ARQ-07, prohibición de `unsafe`, V5, V12, V13), los pasos bajo `bash --noprofile --norc -eo pipefail`, y se registran en la carpeta del change. Por tanto, las pruebas en Windows y macOS de la matriz no se ejercitan hoy. La descripción siguiente corresponde al archivo de workflow tal como está en el repositorio, a la espera de que el propietario lo reactive.
+
+El workflow es `.github/workflows/ci.yml`. Se ejecuta en pushes a `main`, pull requests y ejecución manual, con permiso `contents` de solo lectura y cancelación en curso para los pull requests. Las acciones de terceros se fijan con SHA de commit de 40 caracteres hexadecimales. Su tabla V5 tiene una fila por cada crate de biblioteca, incluido `gafira-testkit`.
 
 | Job | Se ejecuta en | Pasos |
 |---|---|---|
@@ -51,13 +53,30 @@ El job `policy` es donde las reglas de arquitectura se vuelven ejecutables. Véa
 ## Política de pruebas
 
 - Las pruebas cubren el comportamiento del contrato público, no la implementación.
-- Capas de prueba: pruebas unitarias junto al código, pruebas de integración en el directorio `tests/` de cada crate, pruebas de propiedades con `proptest` (dependencia del workspace con características por defecto desactivadas y `std` activada) y archivos golden para el formato de documento. Aún no existe una capa de extremo a extremo.
+- Capas de prueba: pruebas unitarias junto al código, pruebas de integración en el directorio `tests/` de cada crate, pruebas de propiedades con `proptest` (dependencia del workspace con características por defecto desactivadas y `std` activada) pruebas compile-fail con `trybuild` y archivos golden para el formato de documento. Aún no existe una capa de extremo a extremo.
+- Todo comando del núcleo pasa por el arnés `prop_command` de seis leyes de `gafira-testkit` (véase más abajo y el capítulo de edición).
 - Código crítico, donde un mutante omitido es un fallo: validación, carga y guardado de JSON, ids y arena, transformaciones, límites de tamaño y DPI, y toda regla con invariante. No crítico: el texto de `Display` y `Error` salvo que una spec lo fije, los accesores triviales y los ayudantes de prueba.
-- Las doctests compile-fail vigilan reglas de capacidad (por ejemplo, que `EditToken` no sea `Clone`). Son ayudas de regresión, no una prueba; la evidencia provisional es el paso V13 de la CI.
+- Las doctests compile-fail vigilan reglas de capacidad (por ejemplo, que `EditToken` no sea `Clone`). Son ayudas de regresión, no una prueba; la evidencia provisional es el paso V13 de la CI más los fixtures de `trybuild`.
+
+### gafira-testkit
+
+Un crate de soporte (solo dev-dependency, `publish = false`, fila V5, sin `clippy.toml`). Ofrece:
+
+- `document()`: una estrategia de documentos válidos, acotada (como máximo 3 páginas, con número de nodos y profundidad de árbol limitados), o el documento vacío.
+- `corrupted()`, `corrupt(doc, Corruption, pick)` y el enum `Corruption` de 24 variantes: un documento válido roto de exactamente una manera, con el error de validación que debe producir.
+- `prop_command` y `try_prop_command`: el arnés de seis leyes para comandos (1 000 casos por defecto; la variable de entorno `PROPTEST_CASES` lo modifica).
+
+Úselo solo desde pruebas de integración (`tests/`), donde cada crate tiene una copia de sus tipos. El generador nació en las pruebas de `gafira-doc` y se movió aquí para que `gafira-edit` lo comparta.
+
+### trybuild
+
+`trybuild` (dev-dependency de `gafira-edit`) compila los fixtures de `crates/gafira-edit/tests/ui/` y compara la salida del compilador con los archivos `.stderr` guardados. Esos archivos citan texto del compilador, así que un cambio de la versión fijada del toolchain o de una firma citada exige regenerarlos con `TRYBUILD=overwrite` y revisarlos. Los fixtures son la evidencia provisional de ARQ-30; el capítulo de edición explica qué demuestran.
 
 ## Pruebas de mutación
 
 `cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI. El agente `mutants` la ejecuta sobre las líneas que cambió una entrega, y el agente `verify` falla ante un mutante omitido o con tiempo agotado en código crítico y documenta el resto. No hay objetivo de puntuación. El paso de archivado pide primero una ejecución del crate completo.
+
+Una segunda práctica la complementa. Cuando una prueba se escribe después del código, la entrega muestra que la prueba puede fallar aplicando a mano una mutación a la vez (por ejemplo `<` en lugar de `<=`, sin `break` temprano, compactar la entrada más reciente), ejecutando las pruebas y restaurando el código. Las mutaciones manuales se registran como una selección en el `apply-progress.md` del change, nunca como una ejecución completa. Un mutante superviviente hallado por `cargo-mutants` en código crítico devuelve la entrega a una ronda de corrección con pruebas nuevas.
 
 ```bash
 cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratch dir>
