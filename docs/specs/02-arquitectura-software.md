@@ -411,18 +411,19 @@ pub enum ToolOutcome {
 ### 4.3 `Command` (patrón Command)
 
 ```rust
-pub trait Command: Send + Sync + std::fmt::Debug {
+pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
     fn label(&self) -> CommandLabel;                          // = MessageKey (gafira-doc::msg) para «Deshacer {x}» (§14)
-    fn apply(&mut self, doc: &mut Document) -> Result<Applied, CommandError>;
-    fn revert(&mut self, doc: &mut Document) -> Result<(), CommandError>;
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError>;
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError>;
     fn merge_key(&self) -> Option<MergeKey> { None }          // p. ej. (Move, node_ids, gesture_id)
     fn merge(&mut self, next: Box<dyn Command>) -> Result<(), Box<dyn Command>> { Err(next) }
     fn touches(&self) -> DirtySet;                            // nodos/páginas afectados (invalidación)
 }
 ```
 
+- **Capacidad de mutación**: `apply` y `revert` reciben `&mut DocMut<'_>`, la vista mutable de `gafira-doc` que solo se obtiene con el `EditToken`; `History` es quien lo usa. Todo comando, del núcleo o de una extensión, muta el documento por esta vía. `Any` permite que `merge` recupere el tipo concreto de `next`: primero comprueba por referencia que es de su propio tipo y solo entonces convierte la caja; si no lo es, devuelve `Err(next)`.
 - **Patrón**: Command, con apply, revert y merge. `Transaction` (Composite) agrupa varios comandos en una sola entrada de historial.
-- **Implementan** los comandos del núcleo en `gafira-edit::cmd`: `SetProperty<T>`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Las extensiones aportan los suyos.
+- **Implementan** los comandos del núcleo en `gafira-edit::cmd`: `SetProperty<T>` (campos de nodo y de forma, y los de página y el DPI del documento), `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Los que dependen de datos que aún no existen (desde `SetFrameContent` hasta `SetSwatch`) llegan con esos datos. Los comandos no comprueban `locked`: lo deciden las herramientas. Las extensiones aportan los suyos.
 - **Cómo añadir un comando**:
   1. Struct con los datos mínimos para aplicar y revertir.
   2. `touches` exacto.
@@ -764,9 +765,9 @@ pub trait Translator: Send + Sync {                                       // gaf
 `Document` es un árbol de `Arc` con compartición estructural propia: `Arc<Page>`, `NodeArena` con `Arc<Node>` y `Arc::make_mut` a lo largo de la ruta modificada.
 
 - Cada entrada de historial guarda una **instantánea `Arc<Document>`** (Memento, O(1) en tiempo y O(nodos tocados) en memoria) y el `Command` que la produjo.
-- **Deshacer** restaura la instantánea, lo que es infalible. `revert` se usa cuando, por el presupuesto de memoria del historial (por defecto 512 MB, FIJADA), las instantáneas antiguas se compactan y solo quedan los comandos.
+- **Deshacer** restaura la instantánea, lo que es infalible. `revert` se usa cuando, por el presupuesto de memoria del historial (por defecto 512 MiB = 536 870 912 bytes, FIJADA), las instantáneas antiguas se compactan y solo quedan los comandos.
 - Los tiles de máscaras pintadas y de píxeles son `Arc<Tile>`: un trazo de pincel solo copia los tiles tocados.
-- **Fusión de gestos**: los comandos con igual `merge_key` dentro del mismo gesto (puntero presionado) o en menos de 500 ms (teclas de flecha, sliders) se fusionan en una entrada.
+- **Fusión de gestos**: los comandos con igual `merge_key` dentro del mismo gesto (puntero presionado) o en menos de 500 ms (teclas de flecha, sliders) se fusionan en una entrada. `History` nunca lee el reloj: quien llama pasa en cada `execute` un instante monótono (`Duration`), que el motor obtiene de su reloj inyectado.
 - Las instantáneas inmutables permiten que render, autoguardado y exportación lean versiones coherentes desde otros hilos sin bloqueos.
 - *Descartado*:
   - `im`/`imbl`/`rpds`: son MPL-2.0 y la política de §9 los evita.
@@ -841,9 +842,9 @@ impl Gafira {
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-30 | Todo cambio de documento pasa por `EditService::execute`. | `Document` solo expone `&mut` dentro de `gafira-edit` (`pub(crate)`). Un test de compilación (`trybuild`) muestra que una mutación desde `gafira-ui` no compila. |
+| ARQ-30 | Todo cambio de documento pasa por `History::execute` de `gafira-edit` (envuelto después por `EditService::execute`). | `Document` solo se muta con la capacidad `EditToken`, que solo usa `gafira-edit`; el CI lo vigila (V13). Un test de compilación (`trybuild`) muestra que una mutación desde `gafira-ui` no compila. |
 | ARQ-31 | No hay estado global mutable para los registros (§4). | Una búsqueda en CI de `static mut`, `lazy_static!` e `inventory::` en crates no de prueba da 0 coincidencias (excepto la `OnceLock` de configuración de logging). |
-| ARQ-32 | Deshacer y rehacer son O(1) para el usuario. | Con un documento de 100 capas, 1 000 deshacer seguidos tardan < 16 ms cada uno en el percentil 99. |
+| ARQ-32 | Deshacer y rehacer son O(1) para el usuario. | Con un documento de 100 capas, 1 000 deshacer seguidos tardan < 16 ms cada uno en el percentil 99. Esa medición se hace con los *benchmarks* de ARQ-40; mientras tanto, `gafira-edit` prueba la estructura: deshacer y rehacer de una entrada con instantánea no llaman a ningún método de `Command` y solo instalan el `Arc` guardado. |
 | ARQ-33 | Un gesto continuo produce una sola entrada de historial. | Prueba: un arrastre de 300 eventos de movimiento deja `history.len()` aumentado en 1. |
 | ARQ-34..ARQ-39 | Reservados. | — |
 
@@ -1264,6 +1265,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | wasmi | última | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | Plugins (Fase 3) | — |
 | ort + ONNX Runtime | — | MIT/Apache (runtime MIT) | VERIFICADA (`cargo-deny`) solo con `default-features = false, features = ["load-dynamic","std"]` (las features por defecto traen `openssl-sys`, prohibido, y descargan binarios nativos). `ort` es una versión candidata (*release candidate*) y la biblioteca ONNX Runtime se entrega aparte (modelo opcional, fuera del instalador base) | Segmentador ML opcional (Fase 3, paquete aparte) | candle (VERIFICAR) |
 | proptest, criterion, insta | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas | — |
+| trybuild | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas de compilación de ARQ-30 en `gafira-edit` | — |
 | **Evitadas** | | | | | |
 | symphonia | — | MPL-2.0 | EVITAR | — | claxon, lewton, hound, códecs del SO |
 | im / imbl / rpds | — | MPL-2.0 | EVITAR | — | `Arc` + `make_mut` propio (ADR-03) |
@@ -1374,7 +1376,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
 | ARQ-80 | CI verde en las 3 plataformas es condición de merge. | Reglas de protección de rama. |
-| ARQ-81 | Cada `Command` del núcleo tiene una prueba de propiedad. | `xtask` comprueba que cada tipo que implementa `Command` en `gafira-edit` aparece en `prop_commands.rs`. |
+| ARQ-81 | Cada `Command` del núcleo tiene una prueba de propiedad. | `xtask` comprueba que cada tipo que implementa `Command` en `gafira-edit` aparece en `prop_commands.rs`. Hasta que exista `xtask`, el paso V14 de la CI hace la misma comprobación. |
 | ARQ-82 | Cada `Importer` tiene un objetivo de fuzz. | `xtask` compara el registro de importadores con `fuzz/fuzz_targets`. |
 | ARQ-83 | Se respeta el presupuesto de tamaño. | Job `xtask size`. |
 | ARQ-84 | Los paquetes de Linux son exactamente `.deb`, `.rpm` y `.tar.gz` para `x86_64`. | `xtask package linux` produce esos tres artefactos y ningún otro; la CI no tiene *targets* Linux distintos de `x86_64-unknown-linux-gnu`. |
