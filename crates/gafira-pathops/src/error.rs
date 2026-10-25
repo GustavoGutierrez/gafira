@@ -72,6 +72,15 @@ pub enum PathOpError {
         /// Which kind of bad number the tolerance holds.
         value: NonFiniteValue,
     },
+    /// The tolerance is below the smallest one the operands allow.
+    ///
+    /// Below that bound the boolean library recurses without limit on curved
+    /// operands. The bound is `1e-12` times the largest absolute coordinate over
+    /// the points of both operands.
+    ToleranceTooFine {
+        /// The smallest tolerance the operands accept.
+        minimum: f64,
+    },
     /// The geometry engine could not complete the operation.
     Geometry(String),
 }
@@ -90,6 +99,12 @@ impl fmt::Display for PathOpError {
             }
             Self::InvalidTolerance { value } => {
                 write!(f, "tolerance is not a finite positive number: {value}")
+            }
+            Self::ToleranceTooFine { minimum } => {
+                write!(
+                    f,
+                    "tolerance is too fine for the operands: the minimum is {minimum}"
+                )
             }
             Self::Geometry(detail) => write!(f, "geometry operation failed: {detail}"),
         }
@@ -130,6 +145,7 @@ mod tests {
                 },
                 "tolerance",
             ),
+            (PathOpError::ToleranceTooFine { minimum: 2.5 }, "2.5"),
             (PathOpError::Geometry("boom".to_string()), "boom"),
         ];
         for (error, expected) in cases {

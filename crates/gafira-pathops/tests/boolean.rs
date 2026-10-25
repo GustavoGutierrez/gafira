@@ -492,3 +492,126 @@ fn the_result_of_non_empty_operands_carries_non_zero() {
     assert!(disjoint.is_empty());
     assert_eq!(disjoint.fill_rule(), FillRule::NonZero);
 }
+
+/// A circle of centre (1000,1000) and radius 300, and a rectangle from
+/// (900,900) to (1500,1500): the largest coordinate is 1500.
+fn big_pair() -> (Path, Path) {
+    (
+        Path::new(
+            Circle::new((1000.0, 1000.0), 300.0).to_path(1e-6),
+            FillRule::NonZero,
+        ),
+        rect(900.0, 900.0, 1500.0, 1500.0),
+    )
+}
+
+#[test]
+fn a_tolerance_below_the_minimum_is_rejected_and_never_aborts() {
+    let (circle, square) = big_pair();
+
+    let result = circle.intersection(&square, 1e-13);
+
+    assert_eq!(
+        result,
+        Err(PathOpError::ToleranceTooFine {
+            minimum: 1e-12 * 1500.0
+        })
+    );
+}
+
+#[test]
+fn a_tolerance_at_or_above_the_minimum_works() {
+    let (circle, square) = big_pair();
+
+    for tolerance in [1e-12 * 1500.0, 1e-3] {
+        let result = circle.intersection(&square, tolerance).unwrap();
+        assert!(!result.is_empty(), "tolerance {tolerance}");
+    }
+}
+
+#[test]
+fn the_minimum_applies_to_straight_operands_too() {
+    let a = rect(0.0, 0.0, 10.0, 10.0);
+    let b = rect(5.0, 0.0, 15.0, 10.0);
+
+    assert_eq!(
+        a.union(&b, 1e-13),
+        Err(PathOpError::ToleranceTooFine {
+            minimum: 1e-12 * 15.0
+        })
+    );
+    assert_eq!(
+        a.union(&b, DEFAULT_TOLERANCE)
+            .map(|u| bounds(&u))
+            .unwrap()
+            .2,
+        15.0
+    );
+}
+
+#[test]
+fn the_minimum_is_computed_from_every_point_of_both_operands() {
+    let near = rect(0.0, 0.0, 1.0, 1.0);
+    let mut bez = BezPath::new();
+    bez.move_to((0.0, 0.0));
+    bez.curve_to((0.0, 0.0), (-40.0, 3.0), (1.0, 0.0));
+    bez.close_path();
+    let curved = Path::new(bez, FillRule::NonZero);
+
+    // The largest absolute value is a control point of the second operand.
+    assert_eq!(
+        near.union(&curved, 1e-14),
+        Err(PathOpError::ToleranceTooFine {
+            minimum: 1e-12 * 40.0
+        })
+    );
+    assert_eq!(
+        curved.union(&near, 1e-14),
+        Err(PathOpError::ToleranceTooFine {
+            minimum: 1e-12 * 40.0
+        })
+    );
+}
+
+#[test]
+fn the_minimum_is_checked_before_the_empty_operand_rule() {
+    let r = rect(0.0, 0.0, 10.0, 10.0);
+    let e = empty(FillRule::NonZero);
+    let m = moves_only(&[(100.0, 0.0)]);
+
+    assert_eq!(
+        r.union(&e, 1e-13),
+        Err(PathOpError::ToleranceTooFine {
+            minimum: 1e-12 * 10.0
+        })
+    );
+    // The move points of a moves-only operand count.
+    assert_eq!(
+        r.intersection(&m, 1e-13),
+        Err(PathOpError::ToleranceTooFine {
+            minimum: 1e-12 * 100.0
+        })
+    );
+}
+
+#[test]
+fn two_empty_paths_accept_every_finite_positive_tolerance() {
+    let e = empty(FillRule::NonZero);
+
+    assert_no_element(&e.union(&e, 1e-300).unwrap());
+}
+
+#[test]
+fn an_open_subpath_is_reported_before_a_too_fine_tolerance() {
+    let (circle, _) = big_pair();
+    let mut bez = BezPath::new();
+    bez.move_to((0.0, 0.0));
+    bez.line_to((5.0, 0.0));
+    bez.line_to((2.5, 5.0));
+    let open = Path::new(bez, FillRule::NonZero);
+
+    assert_eq!(
+        circle.union(&open, 1e-13),
+        Err(PathOpError::OpenSubpath { subpath: 0 })
+    );
+}

@@ -9,6 +9,14 @@ use linesweeper::topology::{BinaryWindingNumber, Topology};
 
 use crate::{BooleanOp, FillRule, NonFiniteValue, Path, PathOpError};
 
+/// The smallest tolerance a boolean operation accepts, per unit of the largest
+/// absolute coordinate of its operands.
+///
+/// Below it the boolean library recurses without limit on curved operands: a
+/// release build overflows its stack and aborts, a debug build panics. The
+/// bound is empirical: no failure was observed at or above it.
+const MINIMUM_TOLERANCE_PER_UNIT: f64 = 1e-12;
+
 impl Path {
     /// The set of points covered by both paths.
     ///
@@ -57,6 +65,12 @@ impl Path {
         other.validate_finite()?;
         self.validate_closed()?;
         other.validate_closed()?;
+
+        let minimum =
+            MINIMUM_TOLERANCE_PER_UNIT * self.max_abs_coordinate().max(other.max_abs_coordinate());
+        if tolerance < minimum {
+            return Err(PathOpError::ToleranceTooFine { minimum });
+        }
 
         if let Some(result) = self.empty_operand_result(other, op) {
             return Ok(result);

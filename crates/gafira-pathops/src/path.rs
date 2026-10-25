@@ -166,6 +166,24 @@ impl Path {
         Ok(())
     }
 
+    /// The largest absolute value of any x or y coordinate over the end points
+    /// and control points of the path, or `0` when the path holds no point.
+    pub(crate) fn max_abs_coordinate(&self) -> f64 {
+        let mut largest = 0.0_f64;
+        for el in self.bez.elements() {
+            let points: &[Point] = match el {
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => &[*p],
+                PathEl::QuadTo(p1, p2) => &[*p1, *p2],
+                PathEl::CurveTo(p1, p2, p3) => &[*p1, *p2, *p3],
+                PathEl::ClosePath => &[],
+            };
+            for p in points {
+                largest = largest.max(p.x.abs()).max(p.y.abs());
+            }
+        }
+        largest
+    }
+
     /// Checks that no subpath of the path is open.
     ///
     /// A subpath is open when it holds a segment and does not end with a close.
