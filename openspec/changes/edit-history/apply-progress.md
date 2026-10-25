@@ -305,7 +305,7 @@ Base: `main` 1518560. Branch `feat/edit-history-7`.
 
 Each commit: `cargo fmt --check`, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the `ci.yml` policy steps ARQ-07, forbid unsafe (V11), V12, V13, V5 under `bash --noprofile --norc -eo pipefail` (all rc 0). 402 tests in the workspace after the last code commit.
 
-Size (`git diff --shortstat main..HEAD -- crates`, before this file): 891 insertions, 34 deletions (forecast ~630, ceiling ~700). About 560 of them are tests (`history_budget_tests.rs` 457, `budget.rs` unit tests about 110, `tests/budget.rs` 72, `tests/gesture.rs` 20); production code is about 230. Over the ceiling. The cut points are commit boundaries: commits 1 and 2 are 679 insertions and stand alone; commits 3 and 4 (92 lines of property tests) can go to a follow-up PR if the owner wants the delivery split.
+Size (`git diff --shortstat main..HEAD -- crates`, before this file): 891 insertions, 34 deletions (forecast ~630, ceiling ~700). About 560 of them are tests (`history_budget_tests.rs` 457, `budget.rs` unit tests about 110, `tests/budget.rs` 72, `tests/gesture.rs` 20); production code is about 230. Over the ceiling. The cut points are commit boundaries: commits 1 and 2 are 799 insertions and stand alone; commits 3 and 4 (92 lines of property tests) can go to a follow-up PR if the owner wants the delivery split.
 
 ### Scenario to test
 
