@@ -9,8 +9,10 @@ mod error;
 mod flicks;
 mod range;
 mod rate;
+mod timecode;
 
 pub use error::TimeError;
 pub use flicks::{FLICKS_PER_MILLISECOND, FLICKS_PER_SECOND, Flicks};
 pub use range::TimeRange;
 pub use rate::{FrameRate, SampleRate};
+pub use timecode::{Timecode, TimecodeFormat, TimecodeMode};

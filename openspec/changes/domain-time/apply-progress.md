@@ -114,5 +114,31 @@ Measured size: 4 files, 346 insertions under `crates/`.
 
 Deviation: none.
 
+## D4 - Timecode
+
+Status: done.
+
+RED evidence (`cargo test -p gafira-time --test timecode` against compile-clean stubs that returned a zero label and an empty string; no compile errors):
+
+- `non_drop_formatting_uses_hh_mm_ss_ff`, `non_drop_parsing_accepts_the_shape_and_sign`, `negative_timecode_formats_with_a_leading_minus`, `hours_are_a_running_count_and_never_wrap`, `non_drop_29_97_drift_is_explicit`, `frames_beyond_nine_hundred_are_three_digits` -> every formatted label was the empty string and every parsed label was 0.
+- `malformed_and_out_of_range_fields_are_rejected`, `the_frames_separator_is_part_of_the_mode`, `skipped_drop_frame_labels_are_rejected` -> the stub accepted every text.
+- `drop_frame_is_rejected_for_unsupported_rates` -> the stub returned a non-drop 24 fps format for every request.
+- `drop_frame_reference_labels_at_29_97`, `drop_frame_reference_times_at_29_97`, `drop_frame_reference_at_59_94`, `tenth_minutes_do_not_skip`, `negative_drop_frame_timecodes_round_trip` -> empty labels and zero times.
+- `from_flicks_floors_to_the_containing_frame` -> every label was 0.
+- `to_flicks_overflow_is_an_error` and `parsing_overflow_is_an_error` -> returned `Ok` instead of `Err(Overflow)`.
+- `exhaustive_drop_frame_round_trip_over_twenty_blocks` failed on the second assertion (real frame 0 recovered as label 0 but the produced label was not accepted by `Timecode::new`, then the loop mis-compared).
+- Proptest `non_drop_parse_round_trip`, `non_drop_from_flicks_floors`, `drop_frame_from_flicks_round_trip` and `drop_frame_from_flicks_round_trip_5994` failed on the zero label.
+- Result of the RED run: `23 failed; 1 passed`.
+
+GREEN evidence:
+
+- `cargo test -p gafira-time --test timecode` -> `24 passed; 0 failed`, including the exhaustive bidirectional drop-frame check over twenty ten-minute blocks at 29.97 and 59.94 (about 1.08 million labels) and the reference vectors from `spike.md` C4.
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check` -> all exit 0; local CI policy replay -> `policy status=0`.
+
+Measured size: 4 files, 696 insertions under `crates/` (under the ~700 delivery ceiling).
+
+Deviation: the first D4 gate run exposed a wrong D2 property, not a D4 defect. `the_tick_divides_every_accepted_frame_duration` asserted that one second is a whole number of frames, which is false for accepted rates such as 245/3 fps (frame duration 8,640,000 flicks does not divide 705,600,000). The correct invariant is `frame_duration * num == FLICKS_PER_SECOND * den`. The test was renamed to `accepted_frame_rates_have_exact_frame_durations`, corrected and committed as `2a57705`; the new proptest counterexample (`num = 19845, den = 243`, normalized 245/3) is kept in the regression file. The D4 gate also caught `clippy::manual_is_multiple_of`, fixed with `!total_minutes.is_multiple_of(10)` before the commit. No production behavior and no spec criterion changed.
+
+
 
 
