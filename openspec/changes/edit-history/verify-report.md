@@ -1293,3 +1293,115 @@ That is 9 rule mutants and 6 replays, more than the usual ~5. The coordinator as
 ### Result
 
 FAIL. 1 CRITICAL, 3 WARNING, 3 SUGGESTION. The code, tests and gates are sound. The only blocker is that the mutation evidence is invalid. `next`: re-run `mutants` for D9 with isolated build dirs, then re-verify D9's mutation section. W1 and W2 are cheap test-only fixes that `tdd-apply` can add in the same round. The change is not ready to archive (D10 remains).
+
+## D9 re-verify (after the fix and mutants rounds)
+
+Branch `feat/edit-history-9`, HEAD `2c15f54`, base `main` `dd35a14`. Since the first D9 verify, the branch gained `e9118cf` (W1 and W2 tests), `c121c2d` (test for a chain as deep as the page), `5825717` (refactor: `.take(at.len() + 1)` becomes `.take(at.len())` at `moves.rs:98`) and two docs commits. `origin/main` (`1d3c0c2`) has moved with docs only (`.agents/`, `AGENTS.md`, `CLAUDE.md`, `docs/adr/`, `docs/manuals/`). It does not touch `crates/`, `Cargo.*`, `deny.toml` or `.github/`. `git merge-tree` against the merge base shows no conflict. All scratch work ran under `scratchpad/vd9r/`, outside the repository. Each tree had its own target dir.
+
+### Gates at HEAD `2c15f54`
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 468 passed, 0 failed |
+| `cargo deny check` | rc 0 |
+| `policy` job steps, taken from `ci.yml` with a YAML parser and run with `bash -eo pipefail`: toolchain, Format, ARQ-07, forbid unsafe, V5, V12, V13 | rc 0 each |
+
+`ci.yml` still has no step named V11.
+
+Each new code commit was checked alone, from a `git archive` export with its own target dir:
+
+| Commit | fmt | clippy | test |
+|---|---|---|---|
+| `e9118cf` test: container-before-cycle order, all-lists revert check | 0 | 0 | 0 (467) |
+| `c121c2d` test: cycle walk over a chain as deep as the page | 0 | 0 | 0 (468) |
+| `5825717` refactor: cycle walk bound | 0 | 0 | 0 (468) |
+
+### Disposition of the D9 findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1: no valid mutation run | closed | My own isolated run below |
+| W1 / M1: check order for a shape moved under itself | closed | `a_shape_moved_under_itself_is_not_a_container`; M1 is now KILLED |
+| W2 / M5: revert checks every list before it writes one | closed | `a_reparent_revert_checks_every_list_before_it_writes_one`. Roots (the first key) still match and only `e` differs, so the test can catch a partial write. M5 is now KILLED |
+| W3: pre-apply `touches` untested | accepted, still open as a WARNING | `apply-progress.md` records it as a non-requirement: the spec defines `touches` only after `apply` |
+| S1: index semantics in the spec | pending for archive | Recorded in `apply-progress.md` "D9 fix round" |
+| S2: `Reorder` and `Reparent` in `tests/budget.rs` | open, deferred | Not in this delivery |
+
+### Mutation
+
+**cargo-mutants, whole D9 diff, run by me.** Command: `git archive 2c15f54` into `scratchpad/vd9r/mut-src`, `git diff dd35a14..2c15f54 > d9.diff`, then `env -u CARGO_TARGET_DIR cargo mutants -p gafira-edit --in-diff d9.diff --jobs 4 -o scratchpad/vd9r/mut-out`. No shared target dir was used; cargo-mutants used its default per-job build dirs.
+
+- Result: 36 mutants. 23 caught, **2 missed**, 0 timeout, 11 unviable.
+- `moves.rs`: 25 mutants, 18 caught, 0 missed, 7 unviable. This matches the `apply-progress.md` "D9 mutants round". The two `moves.rs:98:28` mutants no longer exist after the refactor.
+- The 2 misses are `reorder.rs:72:17` and `reparent.rs:67:17`: "delete field nodes" from the pre-apply `touches`. This is W3, accepted and non-critical.
+- The run is valid. In all 37 logs (baseline plus 36 mutants), the first `gafira-edit` build line is `Compiling gafira-edit`, never `Fresh`.
+
+The 4 misses from the earlier valid run are therefore accounted for. The 2 at `moves.rs:98` are resolved: `c121c2d` kills `+`→`-` and the refactor removes both mutants. The 2 pre-apply `touches` misses remain accepted.
+
+**Hand mutants.** These were applied one at a time with a script to an export of `2c15f54` (`scratchpad/vd9r/hand`, own target), using `cargo test -p gafira-edit --locked --tests`. The script checked `Compiling gafira-edit` on every run. Afterwards the file was restored and compared byte for byte with `git show`.
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | cycle check before container check | KILLED (`a_shape_moved_under_itself_is_not_a_container`), was SURVIVED |
+| M2 | cycle check removed | KILLED (`a_group_cannot_move_under_itself_or_a_descendant`, `the_cycle_check_walks_a_chain_to_its_farthest_ancestor`) |
+| M3 | ancestor dedupe removed | KILLED (`a_node_listed_with_its_descendant_moves_once_as_the_ancestor`) |
+| M4 | index bound `>` to `>=` | KILLED (13 tests) |
+| M5 | revert checks and writes one list at a time | KILLED (`a_reparent_revert_checks_every_list_before_it_writes_one`), was SURVIVED |
+| M6 | `MissingNode` in revert becomes `InvalidValue` | KILLED (2 tests) |
+| M7 | `MissingPage` in revert becomes `InvalidValue` | KILLED (`a_revert_whose_page_is_gone_fails_and_changes_nothing`) |
+| M8 | `Unchanged` revert no-op guard removed | KILLED (`reverting_a_move_that_changed_nothing_is_a_no_op_whatever_happened_since`) |
+| M9 | container check removed | KILLED (4 tests) |
+| M10 | `.take(at.len() - 1)` in the cycle walk | KILLED (`the_cycle_check_walks_a_chain_to_its_farthest_ancestor`) |
+
+That is 10 hand mutants, more than the usual ~5. The coordinator asked for the same list plus M10.
+
+### Is the refactor `5825717` behavior-preserving?
+
+**On valid documents, yes.** The walk at `moves.rs:97-99` visits `c0 = parent`, then the ancestors `c1..cm`. Each of `c0..c(m-1)` is a key of `at`, because its parent was read from `at`. So m ≤ `at.len()`, and the chain has at most `at.len() + 1` elements. In a document that passes `validate()`, every node is reachable (P5). The top `cm` is then a root or a child, so it is a key of `at` as well, and the chain fits in `at.len()`.
+
+**On a document that breaks P5, no.** I probed this in an export, with a test that was not committed. The page has a group `g1` that is not reachable (roots cleared, `g1 > g2`), so `at = {g2}`. `Reparent [g1] under g2`:
+- at `c121c2d` (`+ 1`) it returns `Err(WouldCreateCycle(g1))`;
+- at `2c15f54` it returns `Ok(Unchanged)`.
+
+Neither version writes anything. `moved` is filtered through `document_order`, which only contains reachable nodes, and every reachable node is a key of `at`. So the refactor can never let a cycle-creating write through. The spec states the laws over generated *valid* documents, so this breaks no requirement. Still, two statements overstate the case:
+- the reachability argument in `apply-progress.md` ("a chain has at most `at.len()` elements");
+- "behavior-preserving" in that file and in the commit subject's intent.
+
+They hold only for valid documents. See W2 below.
+
+### Requirement and scenario coverage
+
+No requirement or scenario changed. The D9 coverage table above still holds, with these changes:
+- "Cycle rejected" is now also pinned at full depth (`the_cycle_check_walks_a_chain_to_its_farthest_ancestor`);
+- the check order is pinned (`a_shape_moved_under_itself_is_not_a_container`);
+- "Validate-before-mutate in revert" is now **covered** for "check all before any write" (`a_reparent_revert_checks_every_list_before_it_writes_one`), where it was partial before.
+
+### Strict TDD
+
+The new tests passed at once on the finished code. Their RED is by hand mutant: M1, M5 and `take(at.len() - 1)`, with the failure messages quoted in `apply-progress.md`. I reproduced all three kills. The refactor came after GREEN and kept all 468 tests green. This is credible.
+
+### Size and commits
+
+`git diff --shortstat dd35a14..HEAD -- crates`: 995 insertions, 25 deletions. That is over the ~700 split line, but the owner has approved single larger PRs, so it is not a finding. All 9 commits are conventional, with correct types (`feat`, `test`, `refactor`, `docs`). No message has a Co-Authored-By line, a Claude line or any other AI attribution line.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **The pre-apply `touches` of both commands is untested** (cargo-mutants misses `reorder.rs:72:17` and `reparent.rs:67:17`). This is non-critical: the spec defines `touches` only after `apply`. `tdd-apply` has accepted it as a non-requirement. class: implementation
+2. **The refactor's equivalence holds only for valid documents.** `apply-progress.md` (D9 mutants round) says the `+ 1` step was unreachable slack, but there is a counterexample. On a document that breaks P5 (an unreachable top group), `Reparent` now returns `Ok(Unchanged)` where it returned `Err(WouldCreateCycle)`. Neither version writes, so no cycle can be created, and the spec's laws only cover valid documents. Fix: correct the claim in `apply-progress.md` to "equivalent on documents that pass `validate()`". No code change is needed. Restoring `+ 1` is also acceptable if the owner wants the stricter behavior on invalid input. class: claim
+
+### SUGGESTION
+
+1. Archive: record the S1 index semantics and the W1 check order (container before cycle) in `edit-commands` "Reorder and Reparent".
+2. D10 or the integration delivery: add `Reorder` and `Reparent` to the `tests/budget.rs` `Step` generator (S2 of the first D9 verify).
+
+### Result
+
+**PASS for D9.** 0 CRITICAL, 2 WARNING (implementation 1, claim 1), 2 SUGGESTION. The gates are green at HEAD and on each new commit. The mutation evidence is valid: no missed critical mutant, and all 10 hand mutants are killed. Every D9 requirement and scenario is covered. The change is not ready to archive, because D10 remains.
+
+next: tdd-apply (D10). The coordinator may push `feat/edit-history-9` and open its PR against `main`. W2 is a one-line docs correction that can ride along.

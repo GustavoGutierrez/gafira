@@ -529,3 +529,8 @@ The misses were `+` to `-` and `+` to `*` in `.take(at.len() + 1)`, the ancestor
 - Mutants, own export (`git archive` of 5825717, default per-job target dirs), `cargo mutants -p gafira-edit -f crates/gafira-edit/src/moves.rs --jobs 4`: 25 mutants, 18 caught, 0 missed, 0 timeout, 7 unviable. All 25 logs show `Compiling gafira-edit` on the mutated tree first (the `Fresh` lines in 19 logs are the later `cargo test` run on that same tree).
 - The two pre-apply `touches` survivors (W3) stay accepted, as recorded above.
 - Gates on each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked` (468 passed), `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, all rc 0.
+
+### D9 mutants round: correction (re-verify)
+
+- The `take(at.len())` refactor is behavior-preserving only on documents that pass `validate()`. The line "the spare step was unreachable slack" above holds for valid pages only. Verify found a counterexample on an invalid page: a top group unreachable from the roots (it breaks P5). Before the refactor `Reparent` returned `Err(WouldCreateCycle)`; after it, `Ok(Applied::Unchanged)`. Neither writes anything, so ARQ-13 holds either way. The command laws (`prop_command`) generate valid documents only, so they do not cover this case.
+- The 2 pre-apply `touches` survivors stay accepted (W1 of the re-verify; W3 of the first verify): the spec defines `touches` only after a successful `apply`.
