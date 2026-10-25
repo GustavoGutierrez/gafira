@@ -576,3 +576,57 @@ Own export of the working tree outside the repo, default per-job target dirs, ru
 ### Size
 
 `git diff --shortstat main..HEAD -- crates`: 733 insertions, 30 deletions (forecast for all of D10 ~600, ceiling ~700; about 480 lines are tests).
+
+## D10b: `InsertPage`, `RemovePage`, `Transaction` property, V14
+
+Flow: full (inherited)
+
+Base: branch `feat/edit-history-10` (D10a). Branch `feat/edit-history-10b`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| ee0d347 feat(edit): add InsertPage and RemovePage | `src/pages.rs`, exports, 13 tests in `tests/page_commands.rs`, two properties |
+| 82f3f65 ci: require a property test for every core command (V14) | V14 step in `ci.yml`; `Transaction` property (test-local `Batch` wrapper) |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI steps ARQ-07, forbid unsafe (V11), V5, V12, V13 and, from the V14 commit, V14, all rc 0.
+
+### Scenarios to tests
+
+- Remove and restore a page: `remove_a_page_and_restore_it_at_its_index`; the last page can go.
+- Insert redo reuses the id, index `0..=len`, size at the document DPI, exhausted id space, failed transaction gives the page id back.
+- Carry-overs: re-apply after a failed apply (D1 W4) for `InsertPage` and `RemovePage`; Q6-style reissue through `History` (`an_id_is_reissued_to_a_page_after_an_undo`); validate-before-mutate in `revert`, each precondition tested with the document left equal: `NotApplied`, inserted page gone, inserted page edited since, removed page already back, index beyond the list.
+- Laws (1 000 cases): `insert_page_obeys_the_command_laws`, `remove_page_obeys_the_command_laws`, `transaction_obeys_the_command_laws`.
+
+### RED evidence
+
+- Tests written against a stub whose `apply` returned `Err(InvalidValue("not built yet"))`: 12 of 13 failed on assertions (`left: Err(InvalidValue("not built yet")) right: Ok(Changed)` seven times, `right: Err(IdSpaceExhausted)`, `right: Err(MissingPage(PageId(9)))`); `a_failed_transaction_gives_the_page_id_back` passed on the stub (both children err) and is guarded by the others.
+- The properties passed at once on the finished code; RED by hand mutant, file restored after each: `InsertPage::revert` without `restore_next_id` gives law 1; `RemovePage::touches` without the nodes gives law 4 (`node 3 changed but is not in touches`).
+
+### V14
+
+Step "Every core command has a property test (V14)" in the `policy` job, after V13, additive. It lists the types of `^impl(<..>)? Command for T` in `git ls-files` of `crates/gafira-edit/src` (skipping `*_tests.rs`; indented impls of `#[cfg(test)]` modules do not match), captures every `grep` and `git ls-files` exit code, treats only 1 as no match, has the positive control, and prints the missing types.
+
+- Positive (repo root): rc 0 (found: InsertNodes, InsertPage, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction).
+- Positive control (run from `crates/`): `::error::positive control failed: no impl Command found under crates/gafira-edit/src`, rc 1.
+- Negative 1: scratch `src/scratch_noop.rs` with `impl Command for Noop`, a generic `impl<T: Send> Command for Gen<T>` and an indented `impl Command for Indented`: `... without a property test ...: Gen Noop`, rc 1 (the indented one is ignored). Repeated on the final branch with `Noop` alone: rc 1. File removed.
+- Negative 2: `RemovePage` renamed in `prop_commands.rs`: `... without a property test ...: RemovePage`, rc 1; restored.
+- `Transaction` is an `impl Command` in `src`, so V14 requires it in `prop_commands.rs`. It is not `Clone`, so the test wraps clonable steps in a test-local `Batch` (rebuilt on clone; a `tests/` command, outside V14's search).
+
+### Mutants (T3, `pages.rs`)
+
+Own export of the working tree outside the repo, default per-job target dirs, run together with `set_property.rs` (D10a): 18 mutants in `pages.rs`, 14 caught, 0 missed, 0 timeout, 4 unviable. All 103 logs of the run show `Compiling gafira-edit` on the mutated tree. `lib.rs` gained two `mod`/`pub use` lines, no mutants. The split changed no code.
+
+### Decisions and notes
+
+- `touches`: `InsertPage` lists the new page after `apply`; `RemovePage` lists the page and its nodes (as `RemoveNodes`). A DPI change lists nothing (D10a, owner confirmed).
+- `InsertPage::revert` refuses a page that no longer equals the one it inserted. `RemovePage::revert` does not check node-id collisions with other pages: the counter never moves up, so no later command reuses the ids of a removed page in linear history.
+- For `InsertPage` the size error names the id the page would get.
+- Law 5 and `Transaction`: a transaction that fails midway restores an equal document, not pointer-equal pages, so the generated transactions only hold steps that cannot fail (rename, hide, insert at 0). The rollback is covered by the D1 unit tests and `a_failed_transaction_gives_the_page_id_back`.
+- Pending spec edits (not code, spec untouched; D10a ones are in its section): `edit-commands` "Page and document commands" should state the `InsertPage` revert precondition and the `touches` of both page commands; "Command property laws" should say that `Transaction` needs a property test for V14 and that law 5 cannot hold for a failing transaction; `workspace-tooling` V14 should state that `*_tests.rs` files and indented impls are outside the search (the grep is anchored at column 0).
+- Untracked `.claude/worktrees/` is not part of this delivery and was not staged.
+
+### Size
+
+`git diff --shortstat feat/edit-history-10..HEAD -- crates`: see the coordinator report; about 540 lines in `crates` plus 32 in `ci.yml`, about 70 percent tests.
