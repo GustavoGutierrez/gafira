@@ -1,8 +1,10 @@
 # Apply progress: domain-doc
 
-## D1 (branch `feat/domain-doc-1`, base `chore/lite-sdd-methodology` 369e3d5)
+Commits are cited by subject and branch range (for example `feat/domain-doc-1b..feat/domain-doc-2a`, "feat(doc): add ElementBase") instead of hashes, because a rebase changes hashes.
 
-Status: done. Seven commits (split into PR 1a, d380fd8..f064203, and PR 1b, the rest), each run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green).
+## D1 (branches `feat/domain-doc-1a` and `feat/domain-doc-1b`, base `chore/lite-sdd-methodology`)
+
+Status: done. Seven commits (split into PR 1a, `chore/lite-sdd-methodology..feat/domain-doc-1a`, and PR 1b, `feat/domain-doc-1a..feat/domain-doc-1b`), each run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green).
 
 | # | Commit | Content |
 |---|---|---|
@@ -41,7 +43,7 @@ Document model
 - W3: `openspec/config.yaml` and this file corrected (cargo-deny 0.20.2 is installed; seven commits; PR 1a/1b split).
 - Test hardening (RED shown by mutating each new expected value, one at a time, each failing its test): A4 now asserts height (fractional px and unit preserved); A0 asserts px at 300 DPI (9933 x 14043) and 350 DPI (11589 x 16384).
 
-## D2a (branch `feat/domain-doc-2a`, base `feat/domain-doc-1b` 9905723)
+## D2a (branch `feat/domain-doc-2a`, base `feat/domain-doc-1b`)
 
 Status: done after the verify fixes below. Each commit was run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green). `cargo deny check` and V5/V11/V12 were not run during apply (verify ran them, all green).
 
@@ -49,6 +51,8 @@ Status: done after the verify fixes below. Each commit was run alone through `ca
 |---|---|---|
 | 1 | `feat(doc): add Placement and its affine transform` | `placement.rs` (`Placement`, `Flip`, `to_transform`), exports in `lib.rs` |
 | 2 | `feat(doc): add ElementBase` | `element.rs`, export in `lib.rs` |
+
+Verify-fix commits on top (range `feat/domain-doc-1b..feat/domain-doc-2a`): "test(doc): cover combined rotation, skew and flip order"; "test(doc): assert non-finite coefficients and compare NaN by bits"; "test(doc): widen the skew property to the open interval"; "docs(sdd): record domain-doc D2a verify fixes". The re-verify record is "docs(sdd): record domain-doc D2a re-verify".
 
 ### Requirements and scenarios covered
 
@@ -64,7 +68,7 @@ RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, fli
 - The "node with a NaN placement" part of "IEEE equality" is exercised on `ElementBase` (no `Node` until D2b); D2b should re-check it on `Node`.
 - Composition uses `Affine::scale_non_uniform` for flip and `Affine::new` for the x shear (`c = tan(skew)`).
 - The proptest run created a `proptest-regressions/placement.txt` during RED; it was a stub-induced failure and was deleted, not committed.
-- Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 248 insertions(+) (forecast ~335; under).
+- Size: `git diff --shortstat feat/domain-doc-1b..HEAD -- . ':!openspec'`: 3 files changed, 260 insertions(+) (forecast ~335; under).
 
 ### D2a follow-ups (from verify-report)
 
@@ -72,3 +76,53 @@ RED: `to_transform` stubbed to identity failed 5 tests (plain, quarter turn, fli
 - W2: `non_finite_gives_non_finite_coefficients` asserts non-finite coefficients; returning identity for non-finite input fails it.
 - Suggestions: NaN compared by bits in `element::tests`; skew property widened to the open interval (-90, 90) and still holds (20000 cases run).
 - W1: `document-model` spec notes that serde for D2 types lands in D3.
+
+## D2b (branch `feat/domain-doc-2b`, base `feat/domain-doc-2a`)
+
+Status: done. Each code commit was run alone through `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` (all green). `cargo deny check` and V5/V11/V12 were not run during apply.
+
+| # | Commit | Content |
+|---|---|---|
+| 1 | `feat(doc): add node kinds` | `node.rs` (`GroupNode`, `ShapeGeometry`, `ShapeNode`, `ExtensionNode`, `NodeKind`, `Node`), exports |
+| 2 | `feat(doc): add Page and node arena` | `page.rs` (`Page`, `Page::new`, `Page::node`), export |
+| 3 | `feat(doc): add Document root` | `document.rs` (`Document`, accessors, `Default`, `#[cfg(test)]` `alloc_id` and `test_document`), `IdSpaceExhausted` in `ids.rs`, exports |
+| 4 | `docs(sdd): fix D2a size, fix-commit hashes and D1 report hashes` | verify-report carry-over (b) |
+| 5 | `docs(sdd): record domain-doc D2b apply progress` | this file, D2b section |
+
+### Requirements and scenarios covered
+
+- NodeKind (D2b), `node::tests`: "Variant sets" `variant_sets_are_exhaustive` (no wildcard arms); "Shape without fill" `shape_without_fill`; `new_node_has_no_children`; `extension_keeps_its_own_version_and_payload`.
+- Value policy "IEEE equality" (NaN node part, carry-over (a)): `node::tests::nan_placement_node_is_not_equal_to_itself` (the zeros part stays in `placement::tests::ieee_equality`).
+- Node, Page and the arena (D2b), `page::tests`: "Page defaults" `page_defaults`; "Deterministic iteration" `iteration_is_in_ascending_id_order`; "Lookup stays inside the page" `lookup_stays_inside_the_page`; "Page flags do not cascade" `page_flags_do_not_cascade`; `cloning_a_page_shares_its_nodes`.
+- The single id counter (D2b), `document::tests` and `ids::tests`: "Private allocator before DocMut" `allocator_increments_then_exhausts`; "Default document" `default_document`; `IdSpaceExhausted` `exhaustion_error_displays_and_is_an_error`.
+- Document root accessors (D2b part): `page_lookup_and_order` (built with `test_document`; the `from_parts` version is D4).
+- Structural sharing (D2b): "Clone shares everything" `clone_shares_everything` (2 pages, 3 nodes in the first, `Arc::ptr_eq`).
+
+RED: commits 1 and 2 were written test first and failed to compile (missing types) before the implementation. Commit 3 wrote tests and code together; RED was shown afterwards by mutation: replacing the checked increment with `wrapping_add` failed `allocator_increments_then_exhausts`, then restored.
+
+### Deviations and notes
+
+- Value-policy scenario "Out-of-range values" has no Node-level repeat; it stays on `ElementBase` (nothing node-specific).
+- `GroupNode` is `GroupNode {}` (as the design sketch), derives `Default`.
+- No serde derives on the D2b types: wire attributes belong to D3.
+- Size: `git diff --shortstat feat/domain-doc-2a..HEAD -- . ':!openspec'`: 5 files changed, 472 insertions(+), 1 deletion(-) (forecast ~465; on target).
+
+### D2b follow-ups (from verify-report, all test-first by mutation)
+
+Commits on top (range `feat/domain-doc-2a..feat/domain-doc-2b`, after the five above): "style(doc): add blank line before test modules"; "test(doc): cover Document dpi accessor and test_document dpi argument"; "test(doc): assert required traits of IdSpaceExhausted and Document at compile time"; "test(doc): look up a non-first node by id in Page::node"; "test(doc): show structural violations are representable in a page"; and a final docs commit. Each code commit was run alone through fmt, clippy and test (all green).
+
+| Finding | Mutant (applied, RED, restored, GREEN) | Killing test |
+|---|---|---|
+| CRITICAL 1 | `Document::dpi()` returns `Dpi::default()` | `document::tests::dpi_is_read_back_from_the_document` (left 96, right 300) |
+| CRITICAL 1 | `test_document` stores `Dpi::default()` instead of its argument | same test (left 96, right 300) |
+| CRITICAL 2 | remove `Copy` from `IdSpaceExhausted` | `ids::tests::exhaustion_error_is_copy_and_eq` (build error E0277, `Copy` not satisfied) |
+| CRITICAL 2 | remove `Eq` from `IdSpaceExhausted` | same test (build error E0277, `Eq` not satisfied) |
+| CRITICAL 2 | remove `Debug` from `Document` | `document::tests::document_is_clone_debug_and_partial_eq` (build error E0277) |
+| CRITICAL 2 | remove `PartialEq` from `Document` | same test (build errors E0277/E0369) |
+| CRITICAL 3 | `Page::node` returns the first node of the arena | `page::tests::lookup_stays_inside_the_page` (now three nodes, looks up each id and a missing one) |
+
+- The fake `Copy` check in `exhaustion_error_displays_and_is_an_error` was removed; the new test uses a generic trait-bound assertion and a real copy.
+- S2 `page::tests::structural_violations_are_representable` (a missing root id listed twice and a node listing itself as a child) documents `spec.md` "MUST allow representing structural violations". It passes on the existing code (no behaviour was missing), so it has no RED of its own; the `Page::node` first-node mutant also fails it.
+- S1: blank line before `mod tests` in `document.rs`, `page.rs` and `node.rs`.
+- Docs: stale hashes and branches replaced by subjects and branch ranges in both files; the `verify-report.md` D1 note now says seven non-code files differ and nothing under `crates/`, `Cargo.*` or `.github/`.
+- Size: `git diff --shortstat feat/domain-doc-2a..HEAD -- . ':!openspec'`: 5 files changed, 522 insertions(+), 1 deletion(-) (includes the five original code commits; the follow-up tests alone are 4 files, 55 insertions(+), 5 deletions(-)).

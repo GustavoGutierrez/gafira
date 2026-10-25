@@ -51,6 +51,18 @@ id_type!(
     PageId
 );
 
+/// The id counter reached `u64::MAX`, so no further id can be allocated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdSpaceExhausted;
+
+impl fmt::Display for IdSpaceExhausted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("the document id space is exhausted")
+    }
+}
+
+impl std::error::Error for IdSpaceExhausted {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,5 +112,20 @@ mod tests {
             s.finish()
         };
         assert_eq!(h(NodeId::new(4)), h(NodeId::new(4)));
+    }
+
+    #[test]
+    fn exhaustion_error_displays_and_is_an_error() {
+        let e: &dyn std::error::Error = &IdSpaceExhausted;
+        assert_eq!(e.to_string(), "the document id space is exhausted");
+    }
+
+    #[test]
+    fn exhaustion_error_is_copy_and_eq() {
+        fn assert_traits<T: Copy + Eq + std::fmt::Debug>() {}
+        assert_traits::<IdSpaceExhausted>();
+        let e = IdSpaceExhausted;
+        let copied = e;
+        assert_eq!(e, copied);
     }
 }

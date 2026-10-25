@@ -6,15 +6,21 @@
 #![forbid(unsafe_code)]
 
 mod blend;
+mod document;
 mod dpi;
 mod element;
 mod ids;
+mod node;
+mod page;
 mod page_size;
 mod placement;
 
 pub use blend::BlendMode;
+pub use document::Document;
 pub use dpi::Dpi;
 pub use element::ElementBase;
-pub use ids::{NodeId, PageId};
+pub use ids::{IdSpaceExhausted, NodeId, PageId};
+pub use node::{ExtensionNode, GroupNode, Node, NodeKind, ShapeGeometry, ShapeNode};
+pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};
 pub use placement::{Flip, Placement};
