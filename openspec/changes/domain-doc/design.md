@@ -32,7 +32,7 @@ Mutation of a `Document` in place needs an `EditToken` (`Document::edit(&mut sel
 | A2 | `pages` | `Vec<Arc<Page>>` | `Vec<Page>` | ADR-03 names `Arc<Page>`. Cloning a document for a history snapshot then costs O(pages). Changing this after C3 consumes it would break the API, so it is fixed now. |
 | A3 | serde `rc` | `serde = { workspace = true, features = ["rc"] }` in `crates/gafira-doc/Cargo.toml` only. The root `[workspace.dependencies]` entry is unchanged. | `rc` in `[workspace.dependencies]`; `serialize_with`/`deserialize_with` helpers for `Arc` (~25 lines); no `Arc` in the model | The feature is additive: it only adds `Serialize`/`Deserialize` impls for `Rc`/`Arc`. Declaring it where it is needed documents who needs it. `cargo build -p gafira-geom` alone does not get it, but a workspace build unifies features (resolver 3), which is harmless. Deserializing makes fresh `Arc`s with no deduplication, which is correct because every node appears once. |
 | A4 | `Extension` payload | `serde_json::Value`. **Canonical payload** means exactly the output of `serde_json::to_string(&Value)`: keys sorted, no whitespace, shortest round-trip numbers, serde_json escaping. ARQ-11 holds **byte for byte for canonical payloads**, and **by value** for any other payload. | `Box<RawValue>` (`raw_value` feature) | (1) `NodeKind` is internally tagged (`tag = "type"`). serde buffers internally tagged content into its private `Content` type, and `RawValue` cannot be deserialized from it: making `RawValue` work would need either dropping internal tagging or a hand-written `Deserialize` (~80 lines). (2) `RawValue` has no `PartialEq`, so `Node` and `Document` would lose derived equality, which C3 undo properties need. (3) `Value` is easy to generate with proptest. Accepted costs (amendment 2): a non-canonical third-party payload is normalized; with duplicate keys the last one wins; integers outside the i64/u64 range become f64, which loses precision. Guard tests (T3.7) fail if `preserve_order` or `arbitrary_precision` is ever unified in: the first breaks key order (ARQ-10), and the second breaks `f64` fields inside internally tagged enums. **Depth**: serde_json serializes any depth but parses at most 128 levels in total, so a whole document stops reloading once a payload has 122 or more levels. `validate()` therefore rejects payloads deeper than `MAX_EXTENSION_DEPTH = 64` (`ExtensionTooDeep`). This keeps a wide margin, and guarantees that every document that passes `validate()` reloads. |
-| A5 | Ids | `NodeId(u64)` and `PageId(u64)`, both `#[serde(transparent)]`. One serialized counter, `next_id`, is shared by nodes and pages. An id is allocated only through `DocMut::alloc_node_id`/`alloc_page_id`, which return the current `next_id` and increment it. Until D5 the allocator behind them, `Document::alloc_id` (`pub(crate)`), is gated `#[cfg(test)]` (see "Dead code before its consumer"). Allocation fails with `IdSpaceExhausted` when `next_id == u64::MAX`. `Document::default()` has `next_id = 1`. Ids are never derived from content. | Recomputing `max + 1` on load: deleting the highest node and reloading would reuse its id, which external references (history, extension payloads, future `ClipSource::Nodes`) could still point at. UUIDs or random ids: need an RNG (ARQ-02), are not deterministic (ARQ-10), and are 128-bit. One counter per kind or per page: "unique across nodes and pages" would then need cross-checks. | With one counter, uniqueness is one set and one rule: `next_id > every id`. An id equal to `u64::MAX` can never be valid, which is consistent with the exhaustion rule. |
+| A5 | Ids | `NodeId(u64)` and `PageId(u64)`, both `#[serde(transparent)]`. One serialized counter, `next_id`, is shared by nodes and pages. An id is allocated only through `DocMut::alloc_node_id`/`alloc_page_id`, which return the current `next_id` and increment it. Until D5b the allocator behind them, `Document::alloc_id` (`pub(crate)`), is gated `#[cfg(test)]` (see "Dead code before its consumer"). Allocation fails with `IdSpaceExhausted` when `next_id == u64::MAX`. `Document::default()` has `next_id = 1`. Ids are never derived from content. | Recomputing `max + 1` on load: deleting the highest node and reloading would reuse its id, which external references (history, extension payloads, future `ClipSource::Nodes`) could still point at. UUIDs or random ids: need an RNG (ARQ-02), are not deterministic (ARQ-10), and are 128-bit. One counter per kind or per page: "unique across nodes and pages" would then need cross-checks. | With one counter, uniqueness is one set and one rule: `next_id > every id`. An id equal to `u64::MAX` can never be valid, which is consistent with the exhaustion rule. |
 | A6 | `Dpi` and page limits | `Dpi(u32)`, in pixels per inch, stored **once per document**. Default 96. Valid range **1..=10 000** (PROPOSAL). Wire format: a bare integer, `96`. `PageSize { width: Length, height: Length }` resolves through `gafira_geom::Length::to_px(f64::from(dpi.get()))`; this crate has no unit math of its own. **Each axis**, in **unrounded** px at the **document DPI**, must lie in `[1.0, 16 384.0]` (inclusive). Example: A0 portrait (841×1189 mm) is accepted up to 350 DPI (14 043 px at 300 DPI, 16 383.86 px at 350) and rejected from 351 DPI (16 430.7 px). | `Dpi(f64)`: no `Eq`, and it has `-0.0`/NaN cases, while no fractional DPI is needed by FD-01. Raw `f64`: C1 D7 deferred the newtype to C2. Limits at a fixed 96 DPI: contradicts FD-01, where the base unit is the logical pixel at the project DPI, and its rationale (GPU texture size, export tiles). Per-page DPI: FD-01 says "per project"; it can be added later. Rounded px: the rounding mode belongs to export (C1: no rounding in the domain). | `u32` gives exact bytes, `Eq`/`Ord`, and a lossless conversion to `f64`. The A0 boundary gives a sharp fixture. The proposal's example ("A0 at 300 DPI is rejected") is wrong and is corrected here. Holder question Q1. |
 | A7 | Root name | `Document` | `Project` (02 §3.1) | Every API that C3 consumes uses `Document`: `Command::apply(&mut Document)` (§4.3), `Arc<Document>` snapshots (ADR-03, §6.1) and ARQ-30. In 02, `Project` names the file- and session-level concept (`ProjectMeta` with clock timestamps, `ProjectService`, `project_id`), which belongs to `gafira-format`/`gafira-engine`. Amendment 4 (PROPOSAL): 02 §3.1 shows `Document` as the in-memory aggregate. |
 | A8 | Bare values | `opacity: f32`, `placement: Placement` and `fill: Option<Color>` are stored as bare values. **Rule for any type that may later become `Animatable<T>`**: no container-level `#[serde(default)]`, and at least one field must be required. `Placement` requires `x, y, w, h`; `Color` requires `space`. | `Animatable<T>` now (`gafira-anim` does not exist); a container-level default on `Placement` | `Animatable::Static` is untagged and comes first. A bare value written today (`0.5`, `{"x":..}`) is byte-identical to a future `Static`. A keyed track `{"keys":[...]}` must **fail** as `T` so that the untagged enum falls through to `Keyed`: a container default would accept it as a default `Placement` and lose the animation. Test T3.4 pins this rule. Deviation from 02 §3.2 confirmed. |
@@ -63,7 +63,7 @@ The C2a precedent applies: an item that only tests use until a later commit is g
 
 | Item | Gated in | Gate removed in |
 |---|---|---|
-| `Document::alloc_id` (`pub(crate)`, increments `next_id`) | D2b, commit `add Document root` | D5, commit `add EditToken and DocMut` (`DocMut::alloc_*` consumes it) |
+| `Document::alloc_id` (`pub(crate)`, increments `next_id`) | D2b, commit `add Document root` | D5b, commit `add EditToken and DocMut` (`DocMut::alloc_*` consumes it) |
 | `test_document(...)` helper (`#[cfg(test)] pub(crate)`, builds a `Document` from parts without validation) | D2b, commit `add Document root`, **together with its first test** ("Clone shares everything") | Never: it is permanently test-only |
 
 The helper is never added in a commit before the test that calls it: an uncalled `#[cfg(test)]` item is still dead code under `clippy --all-targets -D warnings`. D3 reuses it.
@@ -89,17 +89,17 @@ The helper is never added in a commit before the test that calls it: an uncalled
 | `crates/gafira-doc/Cargo.toml` | D1 | Create | The same `[package]` block as color; `[dependencies]` `gafira-geom.workspace`, `gafira-color.workspace`, `serde = { workspace = true, features = ["rc"] }`, `serde_json.workspace`; `[dev-dependencies]` `proptest.workspace`; `[lints] workspace = true` |
 | `Cargo.toml` | D1 | Modify | +1 line `gafira-doc = { path = "crates/gafira-doc" }`. `members = ["crates/*", "apps/*"]` already covers the crate. |
 | `Cargo.lock` | D1 | Modify | Only the `gafira-doc` package entry (serde_json is already locked as a dev dependency). Committed together with the skeleton. |
-| `.github/workflows/ci.yml` | D1, D5 | Modify | D1 commit 2: V5 row and V12 hardening (both together with the `gafira-doc` copy). D5: new V13 `EditToken` step. |
+| `.github/workflows/ci.yml` | D1, D5b | Modify | D1 commit 2: V5 row and V12 hardening (both together with the `gafira-doc` copy). D5b: new V13 `EditToken` step. |
 | `crates/gafira-doc/src/lib.rs` | D1+ | Create | Crate docs, `#![forbid(unsafe_code)]`, modules, re-exports |
 | `src/ids.rs`, `src/dpi.rs`, `src/page_size.rs`, `src/blend.rs` | D1 | Create | Types + unit tests. `Axis` and `PageSizeError` live in `page_size.rs` (D1). |
 | `src/placement.rs`, `src/element.rs` | D2a | Create | `Placement`, `Flip`, `to_transform`, `ElementBase` + unit tests |
 | `src/node.rs`, `src/page.rs`, `src/document.rs`; `IdSpaceExhausted` in `src/ids.rs` | D2b | Create / Modify | Node kinds, `Page`, arena, `Document`, read accessors, `#[cfg(test)]` id allocation, the `#[cfg(test)]` helper `test_document` with its first test ("Clone shares everything") + unit tests |
 | `src/arena.rs`, `src/json.rs` | D3 | Create | Arena wire as array + duplicate rejection; `DocumentWire`, `from_json`, `to_json`, `LoadError`; in-crate unit tests that build documents with `test_document` (defined in D2b) |
-| `tests/serde.rs`, `tests/golden.rs` | D3 | Create | Black-box tests on JSON fixtures only, loaded through `Deserialize` without validation in D3: exact JSON per type, defaults, hostile inputs, serde_json feature guards. Goldens via `include_str!` (`std::fs` is banned in tests too). **Fixture rule**: every fixture is a valid document, so it keeps passing after D4b switches loading to `try_from` and after D5 adds P5–P6. In particular, every node in a fixture's arena is listed in `roots` or in exactly one group's `children` (otherwise `Orphan` would fire from D5), and no fixture has a cycle or a second parent. This includes the defaults and normalization fixtures ("nodes 7 then 2" lists both in `roots`). |
+| `tests/serde.rs`, `tests/golden.rs` | D3 | Create | Black-box tests on JSON fixtures only, loaded through `Deserialize` without validation in D3: exact JSON per type, defaults, hostile inputs, serde_json feature guards. Goldens via `include_str!` (`std::fs` is banned in tests too). **Fixture rule**: every fixture is a valid document, so it keeps passing after D4b switches loading to `try_from` and after D5a adds P5–P6. In particular, every node in a fixture's arena is listed in `roots` or in exactly one group's `children` (otherwise `Orphan` would fire from D5a), and no fixture has a cycle or a second parent. This includes the defaults and normalization fixtures ("nodes 7 then 2" lists both in `roots`). |
 | `tests/golden/{minimal,full,extension,extension_noncanonical}.json` | D3 | Create | One line, no trailing newline; compact, except `extension_noncanonical`, which is intentionally not compact |
 | `tests/golden/.gitattributes` | D3 | Create | `*.json -text` (no CRLF conversion on Windows checkouts) |
-| `src/error.rs`, `src/validate.rs` | D4a (P1–P3), D4b (P4), D5 (P5–P6) | Create / Modify | `ValidationError` (all 18 variants in D4a), `NodeField`; passes + table-driven tests. `json.rs` switches to `try_from` in D4b; `from_parts` lands in D4b. |
-| `src/edit.rs`, `tests/edit.rs` | D5 | Create | `EditToken`, `DocMut` (removes the `alloc_id` gate); tests for "Changing the DPI" and "Edit touches one path" |
+| `src/error.rs`, `src/validate.rs` | D4a (P1–P3), D4b (P4), D5a (P5–P6) | Create / Modify | `ValidationError` (all 18 variants in D4a), `NodeField`; passes + table-driven tests. `json.rs` switches to `try_from` in D4b; `from_parts` lands in D4b. |
+| `src/edit.rs`, `tests/edit.rs` | D5b | Create | `EditToken`, `DocMut` (removes the `alloc_id` gate); tests for "Changing the DPI" and "Edit touches one path" |
 | `tests/common/mod.rs` and its guard tests | D6a | Create | Bounded generator, corruption generators, deterministic guards (the guards ship with the generator so no helper is dead code) |
 | `tests/properties.rs` | D6b | Create | Properties Q1–Q5 |
 | `crates/gafira-doc/proptest-regressions/` | D6b | Create if produced | Committed |
@@ -145,7 +145,7 @@ The hardened body lands in **D1 commit 2**, together with the `gafira-doc` copy,
 
 The anchor `^[[:space:]]*\{` rejects a commented line (`# { path = …`). Extracting the array first rejects a ban placed under `disallowed-methods`. If `awk` fails or the file is missing, the substitution fails and `set -e` stops the step.
 
-**V13 (new, D5)**: `EditToken` only in allowed crates.
+**V13 (new, D5b)**: `EditToken` only in allowed crates.
 
     set -euo pipefail
     allowed='^crates/(gafira-doc|gafira-edit|gafira-testkit)/'
@@ -260,14 +260,14 @@ impl Document {
     pub fn from_parts(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Result<Self, ValidationError>; // D4b
     pub fn from_json(bytes: &[u8]) -> Result<Self, LoadError>;                                // D3, typed in D4b
     pub fn to_json(&self) -> Result<String, serde_json::Error>;                               // D3, compact
-    pub fn edit(&mut self, token: &EditToken) -> DocMut<'_>;                                  // D5
-    #[cfg(test)] pub(crate) fn alloc_id(&mut self) -> Result<u64, IdSpaceExhausted>;          // D2b; gate removed in D5
+    pub fn edit(&mut self, token: &EditToken) -> DocMut<'_>;                                  // D5b
+    #[cfg(test)] pub(crate) fn alloc_id(&mut self) -> Result<u64, IdSpaceExhausted>;          // D2b; gate removed in D5b
 }
 #[cfg(test)] pub(crate) fn test_document(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Document; // D2b, unvalidated
 impl Default for Document { /* schema 1, next_id 1, dpi 96, no pages */ }
 #[non_exhaustive] pub enum LoadError { Json(serde_json::Error), Invalid(ValidationError) }  // Display, Error + source
 
-// edit.rs (D5)
+// edit.rs (D5b)
 pub struct EditToken { _private: () }
 impl EditToken { #[doc(hidden)] pub const fn __new_for_gafira_edit_only() -> Self; }
 pub struct DocMut<'a> { doc: &'a mut Document }
@@ -305,10 +305,10 @@ pub enum NodeField { X, Y, W, H, RotationDeg, Skew, Opacity, FillChannel, FillAl
 | P2 Ids | D4a | 3 `DuplicateId` (all page and node ids are distinct); 4 `ArenaKeyMismatch` (key equals `base.id`); 5 `NextIdNotAboveMax` (`next_id > max(id)`; an empty document accepts any `next_id`) |
 | P3 Pages | D4a | 6 `PageSize` (`PageSize::check(dpi)`); 7 `DanglingRoot`; 8 `DuplicateRoot` |
 | P4 Nodes | D4b | Node by node in ascending id; for each node the checks run in the listed order and the first failure ends the pass (a node's check 14 is reached before the next node's check 9). 9 `NonFinite`; 10 `OutOfRange` (A9); 11 `EmptyExtensionTypeId`; **12 `ExtensionTooDeep`** (payload depth > 64); 13 `ChildrenOnLeaf`; 14 `DanglingChild` (every child is in the same arena) |
-| P5 Parents | D5 | 15 `MultipleParents` (more than one parent edge); 16 `RootHasParent`; 17 `Orphan` (no parent and not a root) |
-| P6 Reachability | D5 | 18 `Cycle`: iterative DFS from the roots (no recursion, so a deep tree cannot overflow the stack); any node not reached. After P5, an unreached node has exactly one parent, so it lies in or below a cycle (a ring, or a subtree hanging off a ring) that no root reaches. `Cycle { node }` names the first such node in ascending id, which is not necessarily on the ring itself. |
+| P5 Parents | D5a | 15 `MultipleParents` (more than one parent edge); 16 `RootHasParent`; 17 `Orphan` (no parent and not a root) |
+| P6 Reachability | D5a | 18 `Cycle`: iterative DFS from the roots (no recursion, so a deep tree cannot overflow the stack); any node not reached. After P5, an unreached node has exactly one parent, so it lies in or below a cycle (a ring, or a subtree hanging off a ring) that no root reaches. `Cycle { node }` names the first such node in ascending id, which is not necessarily on the ring itself. |
 
-After D4a, `validate()` runs P1–P3 only; between D4b and D5 it runs P1–P4 only. A D4b build therefore still accepts cycles and multiple parents. That is acceptable inside a stacked chain, and the D5 tests close the gap.
+After D4a, `validate()` runs P1–P3 only; between D4b and D5a it runs P1–P4 only. A D4b build therefore still accepts cycles and multiple parents. That is acceptable inside a stacked chain, and the D5a tests close the gap.
 
 **Not exposed**: `&mut` access to `Document` fields outside `DocMut`; `DocumentWire`; the arena serde helpers; the validation passes (`pub(crate)`); id allocation outside `DocMut`; `kurbo`; `Transform2D` in the model; `Animatable`; `NodeVisitor`/`walk`; `msg`/`ToMessage`; stroke, `Path` and other node kinds; repair or clamping helpers; any I/O.
 
@@ -362,28 +362,29 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | | **D4a total** | | **~507** |
 | D4b | `validate.rs` P4 with the depth check (64/65, `ExtensionTooDeep`) / `try_from` switch, `LoadError::Invalid`, `from_parts` / table-driven tests (P4 rows, validating-load rows, accessors and page order, "D4b build accepts cycles"); edits the D4a 121-level assertion to expect `Invalid(ExtensionTooDeep)` | owner-approved re-cut | |
 | | **D4b total** | | **~387** |
-| D5 | `validate.rs` P5–P6 / their table rows + 10 000-deep chain | 50 / 30 | 95 / 57 |
-| | `edit.rs` (removes the allocator gate) / `tests/edit.rs` (including "Changing the DPI" and "Edit touches one path") / `ci.yml` V13 | 70 / 70 / exact | 133 / 133 / 45 |
-| | **D5 total** | | **~633** (recomputed at the D3 ratio; if D4a plus D4b measure above ×1.5 of their forecasts, cut D5 after its first commit into D5a and D5b) |
+| D5a | `validate.rs` P5–P6 / their table rows + 10 000-deep chain (owner-approved fallback cut of D5: D4a plus D4b measured 1 400 against 894, ratio 1.566 > 1.5) | 50 / 30 | 95 / 57 |
+| | **D5a total** | | **~215** (including the pass-order rows and the `Deep tree` load test) |
+| D5b | `edit.rs` (removes the allocator gate) / `tests/edit.rs` (including "Changing the DPI" and "Edit touches one path") / `ci.yml` V13 | 70 / 70 / exact | 133 / 133 / 45 |
+| | **D5b total** | | **~420** (D5a plus D5b is ~635, the former D5 figure) |
 | D6a | `tests/common/mod.rs`: bounded generator, corruption generators, deterministic guards (the guards ship in this commit so no helper is dead code) | owner-approved re-cut of the old D6 (~645) | |
 | | **D6a total** | | **~540** |
 | D6b | `tests/properties.rs` (Q1–Q5), mutation runs, CI runtime record | owner-approved re-cut | |
 | | **D6b total** | | **~365** |
-| | **Change total** | | **~4 517** (595 + 335 + 465 + 690 + 507 + 387 + 633 + 540 + 365; the older figure was ~3 835 (595 + 335 + 465 + 690 + 640 + 465 + 645); the earlier six-delivery figure was ~3 578, and the proposal said 2 600–2 900. The increase comes from the V12/V13 hardening, `ExtensionTooDeep`, the unit-test helper and the Q5 property.) |
+| | **Change total** | | **~4 517** (595 + 335 + 465 + 690 + 507 + 387 + 215 + 420 + 540 + 365; the older figure was ~3 835 (595 + 335 + 465 + 690 + 640 + 465 + 645); the earlier six-delivery figure was ~3 578, and the proposal said 2 600–2 900. The increase comes from the V12/V13 hardening, `ExtensionTooDeep`, the unit-test helper and the Q5 property.) |
 
 **Re-balancing compared with the proposal**:
 - `BlendMode` moves to D1.
 - The old D2 (~730, only 68 lines of margin) splits into D2a (`Placement` + `ElementBase`) and D2b (`Node` + `Page` + `Document` + arena).
-- P5–P6 (parents, reachability) move from D4 to D5; D4 is then cut into D4a (types, P1–P3) and D4b (P4, validating load), which keeps both under 700.
-- D4a, D4b and D5 MUST use table-driven tests: one `(mutation, expected variant)` row per case, about 3 lines each.
+- P5–P6 (parents, reachability) move from D4 to D5a; D4 is then cut into D4a (types, P1–P3) and D4b (P4, validating load), which keeps both under 700.
+- D4a, D4b and D5a MUST use table-driven tests: one `(mutation, expected variant)` row per case, about 3 lines each.
 
 **Dependencies**:
 - D1 starts from `main`.
 - D2b (`ShapeNode.fill`) needs `Color`, which is already on `main` (C2a, PR #5 merged, `main` 75f7e78): D1, D2a and D2b all branch from the same chain with no wait.
-- The chain is linear: D1 ← D2a ← D2b ← D3a ← D3b ← D4a ← D4b ← D5 ← D6a ← D6b (ten sub-deliveries; D1 also shipped as PR 1a and 1b, and D3 and D4 and D6 were cut during apply).
-- Branches: `feat/domain-doc-1a`, `-1b`, `-2a`, `-2b`, `-3a`, `-3b`, `-4a`, `-4b`, `-5`, `-6a`, `-6b`, each based on the previous one.
+- The chain is linear: D1 ← D2a ← D2b ← D3a ← D3b ← D4a ← D4b ← D5a ← D5b ← D6a ← D6b (eleven sub-deliveries; D1 also shipped as PR 1a and 1b, and D3, D4, D5 and D6 were cut during apply).
+- Branches: `feat/domain-doc-1a`, `-1b`, `-2a`, `-2b`, `-3a`, `-3b`, `-4a`, `-4b`, `-5a`, `-5b`, `-6a`, `-6b`, each based on the previous one.
 
-**Commit order** (each commit passes `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V5, V6, V11, V12 and, from D5, V13):
+**Commit order** (each commit passes `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V5, V6, V11, V12 and, from D5b, V13):
 
 | D | Commits |
 |---|---|
@@ -393,11 +394,12 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | D3 | `feat(doc): define the document wire format` (attributes and defaults; no helper is added here) → `feat(doc): serialize arenas as sorted arrays` → `feat(doc): add from_json/to_json` (`from = "DocumentWire"`, unchecked) → `test(doc): add canonical goldens and hostile inputs` (JSON fixtures only) |
 | D4a | `feat(doc): add ValidationError` (all 18 variants) → `feat(doc): validate header, ids and pages` (P1–P3, with the parse-side half of T4.2) |
 | D4b | `feat(doc): validate node fields and extension depth` (P4) → `feat(doc): validate on every deserialization` (`try_from`, `LoadError::Invalid`, `from_parts`) |
-| D5 | `feat(doc): validate parents and reachability` (P5–P6) → `feat(doc): add EditToken and DocMut` (**removes the `#[cfg(test)]` gate on `alloc_id`**; adds `set_dpi`/`edit`) → `ci: restrict EditToken to the edit crates` (V13) |
+| D5a | `feat(doc): validate parents and reachability` (P5–P6) |
+| D5b | `feat(doc): add EditToken and DocMut` (**removes the `#[cfg(test)]` gate on `alloc_id`**; adds `set_dpi`/`edit`) → `ci: restrict EditToken to the edit crates` (V13) |
 | D6a | `test(doc): add bounded document generator` (with the corruption generators and the deterministic guards) |
 | D6b | `test(doc): add ARQ-10 and ARQ-13 properties` |
 
-**Each prefix passes on its own.** A new module is exported from `lib.rs` in the commit that adds it, so public items are never dead code. Crate-private items with no non-test consumer yet follow the gate table in "Dead code before its consumer"; `#[allow]` is never used. V12 hardening and the third copy land together, and the V5 row lands with the `clippy.toml` that requires it. Every D3 fixture is a valid document (every node is a root or a child, see the fixture rule), so D3's tests keep passing after the D4b `try_from` switch and after the D5 passes.
+**Each prefix passes on its own.** A new module is exported from `lib.rs` in the commit that adds it, so public items are never dead code. Crate-private items with no non-test consumer yet follow the gate table in "Dead code before its consumer"; `#[allow]` is never used. V12 hardening and the third copy land together, and the V5 row lands with the `clippy.toml` that requires it. Every D3 fixture is a valid document (every node is a root or a child, see the fixture rule), so D3's tests keep passing after the D4b `try_from` switch and after the D5a passes.
 
 **Measurement and re-cut rule** (replaces the cumulative 1 720 threshold):
 1. Measure **every** delivery at its end.
@@ -429,9 +431,9 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | T4.2a (D4a) | Passes P1–P3 and parse-side depth | Table test fails | One row per P1–P3 variant (8 rows), each a minimal fixture built in-crate; order rows for P1–P3. Parse side with `serde_json::Value` and the unchecked `from_json`: a bare `Value` of 127 levels parses and 128 fails; a full document whose payload has 121 levels parses, and 122 fails to parse | Mutation: `>=` for `next_id` |
 | T4.2b (D4b) | Pass P4 | Table test fails | One row per P4 variant (6 rows) and the P4 order rows. Depth: a payload of depth 64 passes and 65 → `ExtensionTooDeep`. The D4a 121-level assertion changes to `Invalid(ExtensionTooDeep)` | Mutation: `> 65` for the depth limit |
 | T4.3 (D4b) | Validated deserialization + `from_parts` | `serde_json::from_str::<Document>` accepts an invalid document | `try_from`; `from_json` and `from_parts` return the same variant as `validate`, including `ExtensionTooDeep`; the D3 fixtures still pass | Mutation: revert to `from` → test fails |
-| T5.1 (D5) | Passes P5–P6 | Table rows fail | 4 rows (`MultipleParents`, `RootHasParent`, `Orphan`, `Cycle`, all distinct; together with T4.2a and T4.2b these are 18 rows and cover the proposal's seven success criteria); a 10 000-deep chain validates without stack overflow | Mutations: drop P6 → the cycle row fails; count parents per page → the cross-page row fails |
-| T5.2 (D5) | `EditToken`/`DocMut` | `tests/edit.rs` fails | Allocation is monotonic and shared by pages and nodes; `u64::MAX` → `IdSpaceExhausted`, with `next_id` unchanged; **"Changing the DPI"** (`set_dpi` to a value that pushes a page over 16 384 px → `validate` returns `PageSize`); **"Edit touches one path"** (`node_mut` leaves untouched nodes and pages shared: `Arc::ptr_eq` after cloning the document). The `alloc_id` gate is removed in this commit. | — |
-| T5.3 (D5) | V13 | E1 (below) passes with no step | Step body; E0–E15 as expected | — |
+| T5.1 (D5a) | Passes P5–P6 | Table rows fail | 4 rows (`MultipleParents`, `RootHasParent`, `Orphan`, `Cycle`, all distinct; together with T4.2a and T4.2b these are 18 rows and cover the proposal's seven success criteria); a 10 000-deep chain validates without stack overflow | Mutations: drop P6 → the cycle row fails; count parents per page → the cross-page row fails |
+| T5.2 (D5b) | `EditToken`/`DocMut` | `tests/edit.rs` fails | Allocation is monotonic and shared by pages and nodes; `u64::MAX` → `IdSpaceExhausted`, with `next_id` unchanged; **"Changing the DPI"** (`set_dpi` to a value that pushes a page over 16 384 px → `validate` returns `PageSize`); **"Edit touches one path"** (`node_mut` leaves untouched nodes and pages shared: `Arc::ptr_eq` after cloning the document). The `alloc_id` gate is removed in this commit. | — |
+| T5.3 (D5b) | V13 | E1 (below) passes with no step | Step body; E0–E15 as expected | — |
 | T6.1 (D6a) | Generator | Guard tests fail | Generator, corruption generators and guards | — |
 | T6.2 (D6b) | Properties | RED by mutation (below) | Q1–Q5 | Mutations reverted; `git status` clean |
 
@@ -558,12 +560,12 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 ## Spec Alignment
 
 The specs in `specs/*/spec.md` and this design are aligned on the same orchestrator decisions:
-- ten sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5, D6a, D6b);
+- eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b);
 - 18 `ValidationError` variants including `ExtensionTooDeep`;
 - in-page duplicate ids rejected at parse time;
 - the V12/V13 hardening and its known limits;
 - `compile_fail` not counted as evidence;
-- the D2b helper and the D3 and D5 test placement;
+- the D2b helper and the D3, D5a and D5b test placement;
 - property names Q1–Q5 (distinct from validation passes P1–P6).
 
 ## Migration / Rollout
@@ -577,4 +579,4 @@ No migration: there is no persisted user data yet. Roll back per delivery, newes
 - [ ] Q3: ARQ-11 as "byte for byte for canonical payloads, by value otherwise" (`Value`, amendment 2). Confirm.
 - [ ] Q4: `Document` as the root name (amendment 4); no lock cascade in the data. Confirm.
 - [ ] Q5: `gafira-cli validate` deferred to `gafira-format` (A15), with the C1/C2a chain tables out of date. Confirm, or add D7 (~250 lines).
-- [ ] The forecast is ~4 517 lines across ten sub-deliveries, every one at or under ~700. Accept the stacked chain.
+- [ ] The forecast is ~4 517 lines across eleven sub-deliveries, every one at or under ~700. Accept the stacked chain.

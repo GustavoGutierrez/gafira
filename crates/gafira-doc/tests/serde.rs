@@ -390,3 +390,41 @@ fn duplicate_ids_are_invalid_on_load() {
         );
     }
 }
+
+#[test]
+fn a_chain_of_10000_groups_loads_without_overflow() {
+    const DEPTH: u64 = 10_000;
+    let nodes: Vec<Value> = (2..2 + DEPTH)
+        .map(|id| {
+            let children = if id + 1 < 2 + DEPTH {
+                vec![id + 1]
+            } else {
+                vec![]
+            };
+            serde_json::json!({
+                "base": { "id": id, "placement": { "x": 0, "y": 0, "w": 1, "h": 1 } },
+                "kind": { "type": "group" },
+                "children": children,
+            })
+        })
+        .collect();
+    let mut doc = serde_json::json!({
+        "schema_version": 1,
+        "next_id": 2 + DEPTH,
+        "pages": [{
+            "id": 1,
+            "size": {
+                "width": { "value": 100.0, "unit": "px" },
+                "height": { "value": 100.0, "unit": "px" },
+            },
+            "roots": [2],
+            "nodes": nodes,
+        }],
+    });
+    assert!(load(&doc).is_ok());
+    doc["pages"][0]["roots"] = serde_json::json!([]);
+    assert!(matches!(
+        load(&doc),
+        Err(LoadError::Invalid(ValidationError::Orphan { .. }))
+    ));
+}
