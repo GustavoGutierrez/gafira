@@ -455,3 +455,39 @@ fn an_entry_that_grows_by_merging_can_push_older_ones_out() {
     assert_eq!(history.len(), 2);
     assert_eq!(compacted(&history), [true, false]);
 }
+
+/// The estimate of one entry that moves `count` nodes of a 100-node page.
+fn entry_moving(count: usize) -> usize {
+    let (mut probe, page, ids) = history(100, usize::MAX);
+    probe
+        .execute(Move::boxed(page, ids[..count].to_vec(), 1.0), at(0))
+        .unwrap();
+    probe.estimated_bytes()
+}
+
+#[test]
+fn one_execute_drops_as_many_snapshots_as_it_takes_to_fit() {
+    let small = entry_moving(1);
+    let per_node = entry_moving(2) - small;
+    // A new entry about 1.5 times a small one: two small ones must go, the
+    // third may stay. A new entry of 57 nodes: all three must go.
+    let medium = 1 + small / 2 / per_node;
+    for (count, expected) in [
+        (medium, [true, true, false, false]),
+        (57, [true, true, true, false]),
+    ] {
+        let budget = 3 * small;
+        let (mut history, page, ids) = history(100, budget);
+        for (i, id) in ids.iter().take(3).enumerate() {
+            let step = Move::boxed(page, vec![*id], 1.0);
+            history.execute(step, at(i as u64 * 1_000)).unwrap();
+        }
+        assert_eq!(compacted(&history), [false; 3]);
+
+        let big = Move::boxed(page, ids[3..3 + count].to_vec(), 1.0);
+        history.execute(big, at(10_000)).unwrap();
+        assert_eq!(compacted(&history), expected, "{count} nodes");
+        let newest = history.undo.last().map_or(0, |e| e.bytes);
+        assert!(history.estimated_bytes() <= budget || history.estimated_bytes() == newest);
+    }
+}
