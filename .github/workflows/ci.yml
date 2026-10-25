@@ -79,6 +79,7 @@ jobs:
           table='
           gafira-geom  -
           gafira-color -
+          gafira-time  -
           gafira-doc   gafira-geom gafira-color
           gafira-edit  gafira-geom gafira-color gafira-doc
           gafira-testkit gafira-geom gafira-color gafira-doc gafira-edit
