@@ -1,8 +1,18 @@
+<p align="center">
+  <img src="assets/gafira-logo-symbol.svg" alt="Gafira" width="96">
+</p>
+
 # Gafira
 
 Gafira is a local-first design, image and video editor written in Rust. It is proprietary software.
 
 Status: `gafira-geom` and `gafira-color` are in place; the document model (`gafira-doc`) is in progress. There is no GUI yet.
+
+## Preview
+
+<p align="center">
+  <img src="assets/splash_screen.jpg" alt="Gafira splash screen" width="640">
+</p>
 
 ## Requirements
 
