@@ -518,3 +518,14 @@ The tests passed at once on the finished code; RED is by hand mutant, applied on
 - S1 (pending spec edit, for the coordinator before archive): `edit-commands` "Reorder and Reparent" must state the index semantics. `Reorder`: the index is the final position, `0..siblings` (`index == siblings` gives `IndexOutOfRange`). `Reparent`: the index counts the target list once the moved nodes are out of it, `0..=len`. It should also state that moved nodes keep document order and that a node listed with its ancestor moves with the ancestor.
 
 Size of the round: 28 lines of tests. Gates on the test commit: fmt, clippy, `cargo test --workspace --locked` (467 passed), `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, all rc 0.
+
+### D9 mutants round (valid isolated run: 2 misses at `moves.rs:98:28`)
+
+The misses were `+` to `-` and `+` to `*` in `.take(at.len() + 1)`, the ancestor walk of the cycle check.
+
+- Reachability: the walk visits distinct nodes of one page's `at` map, so a chain has at most `at.len()` elements and `take(at.len())` is already enough. The spare step was unreachable slack. `+` to `*` gave `take(at.len())`, which is equivalent; `+` to `-` gave `take(at.len() - 1)`, which is observable only in a chain as deep as the page.
+- Test first: `the_cycle_check_walks_a_chain_to_its_farthest_ancestor` (page with `g1 > g2 > g3 > g4 > g5`; moving `g1`, then `g2`, under `g5` must give `WouldCreateCycle`). RED against `-` (`left: Ok(Changed)`, `right: Err(WouldCreateCycle(NodeId(2)))`); GREEN on the real code. Against `*` it passes, as the equivalence says.
+- Simplification (behavior-preserving, tests green): the bound is now `.take(at.len())`, so both mutants no longer exist. The hand mutant `take(at.len() - 1)` still fails the new test.
+- Mutants, own export (`git archive` of 5825717, default per-job target dirs), `cargo mutants -p gafira-edit -f crates/gafira-edit/src/moves.rs --jobs 4`: 25 mutants, 18 caught, 0 missed, 0 timeout, 7 unviable. All 25 logs show `Compiling gafira-edit` on the mutated tree first (the `Fresh` lines in 19 logs are the later `cargo test` run on that same tree).
+- The two pre-apply `touches` survivors (W3) stay accepted, as recorded above.
+- Gates on each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked` (468 passed), `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, all rc 0.
