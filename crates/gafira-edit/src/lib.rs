@@ -10,6 +10,7 @@ mod command;
 mod dirty;
 mod error;
 mod history;
+mod insert_nodes;
 mod set_property;
 mod transaction;
 
@@ -17,5 +18,6 @@ pub use command::{Applied, Command, GestureId, MergeKey};
 pub use dirty::DirtySet;
 pub use error::CommandError;
 pub use history::History;
+pub use insert_nodes::{InsertNodes, NodeSpec};
 pub use set_property::{Property, SetProperty};
 pub use transaction::Transaction;
