@@ -1,7 +1,7 @@
 # 0001. Flow modes, request packs and graded mutation testing
 
-- Status: proposed
-- Date: 2026-10-25
+- Status: accepted
+- Date: 2026-10-25 (proposed and accepted the same day)
 - Related: `AGENTS.md` (lite flow, testing and mutation policy), `.agents/agents/coordinator.md` (route, feedback loop), owner decisions in `docs/specs/00-decisiones.md` (none reopened), changes `workspace-scaffold`, `domain-color`, `domain-doc`, `edit-history`
 
 ## Context
@@ -238,14 +238,10 @@ Risks:
 - Light-mode independence is weaker than standard (the same orchestrator planned and routes). Mitigation: blind probes from the ACs, hand mutants, and the second-FAIL upgrade.
 - Thresholds (300, 400, 700 lines; the x1.4 factor; three rounds) are judgment calls from one domain-heavy history and need a review after about ten runs, using the `mode`, `tier` and verdict fields as data.
 
-Follow-up edits (not applied in this phase; to be done after the owner reviews):
-- [ ] `.agents/agents/coordinator.md`: replace the single route with "classify, floors, pack, mode"; add the pack and mode tables (by reference to this ADR once accepted); narrow the rule "you do not write code or specs" to "you write no code, tests or specs, except the Light spec block of light mode"; add `Edit, Write` to `tools` with the path restriction stated as a rule; add G0 to G5; add the escalation triggers, the three-round cap and the light-mode second-FAIL upgrade; add the `Flow:` and `Flow-change:` recording and the override handling; add T3 and T4 to the mutants hand-off (files list, `--iterate` rule); read `verification.json` for routing.
-- [ ] `.agents/agents/verify.md`: add the depth parameter V0 to V3 and what each does; blind probes from the acceptance criteria before reading the implementer's tests; hand-mutant cap 5 (3 in light); check the Light spec commit scope and immutability; write `verification.json` beside `verify-report.md` (the only two files it may write); copy mutation tier, counts and wall time.
-- [ ] `.agents/agents/mutants.md`: add the tier input (T2, T3, T4) with the T3 command shape (`--file` per changed non-test source file) and the `--iterate` rule; report wall time and counts in a fixed shape for `verification.json`; optional `--shard` sampling; keep read-only.
-- [ ] `.agents/agents/tdd-apply.md`: refuse to start without G0; report RED evidence per acceptance criterion; do not edit the Light spec or delta spec.
-- [ ] `AGENTS.md`: add a "Flow modes and packs" section pointing to this ADR; update the flow diagram so light mode is shown; replace the single mutation bullet with the tier table; list `verification.json` in the OpenSpec layout; record that G0 applies to every mode; add the ADR to `docs/adr/README.md` index.
-- [ ] `docs/adr/README.md`: index row for 0001 (status `proposed`, then `accepted` on the owner's confirmation).
-- [ ] `docs/manuals/tecnico/chapters/09-tooling-and-quality.md`: mutation tiers and flow modes (delegate to `manual-writer`).
+Follow-up edits (applied after acceptance, branch `docs/apply-flow-modes`):
+- [x] `.agents/agents/coordinator.md`, `verify.md`, `mutants.md`, `tdd-apply.md`, `archive.md`
+- [x] `AGENTS.md` (flow modes and packs, mutation tiers, size thresholds, `verification.json` in the OpenSpec layout) and the index row in `docs/adr/README.md`
+- [ ] `docs/manuals/tecnico/chapters/09-tooling-and-quality.md`: mutation tiers and flow modes (delegate to `manual-writer`; separate change)
 
 ## Alternatives considered
 
@@ -259,15 +255,17 @@ Follow-up edits (not applied in this phase; to be done after the owner reviews):
 - `verification.json` replaced by stricter report headings. Not rejected outright: the feedback-loop change already made `class:` and `next:` mechanical; the JSON is justified by report size and resume needs, and can be dropped if the pilot shows it unused.
 - Give `tdd-apply` a self-run of `cargo mutants --in-diff` before returning. Not adopted now: it would move the highest-yield check into the author's hands and remove independence; revisit if fix rounds keep costing a full verify cycle each.
 
-## Decisions for the owner to confirm
+## Decision record
 
-1. Three modes (light, standard, full) rather than two. If two, which agents does standard fold into?
-2. In light mode the coordinator writes the Light spec block and receives `Edit`/`Write` limited to that file by rule (alternative: the implementer commits the coordinator's text verbatim).
-3. T3 "touched files" as the intermediate mutation tier, and T4 at archive for every touched crate.
-4. Size thresholds ~300 and ~700 with the x1.4 factor, and the cap of three verify rounds per delivery.
-5. `verification.json` as a pilot for all modes except V0.
-6. Light-run change folders: archive them with `archive` (no delta merge) or delete them after the PR merges.
-7. Who writes agent and skill definitions in the light pack (no dedicated agent exists; today the main session does).
+The owner answered the seven open decisions on 2026-10-25. Where an answer differs from the proposal text above, the answer wins and the agent definitions follow it.
+
+1. Modes: three (light, standard, full), kept.
+2. Light spec author: the coordinator writes the Light spec block itself at the top of `apply-progress.md`, committed before the first `tdd-apply` run. Restriction to that single file is by rule, not tooling. `verify` checks that the Light-spec commit touches only that file and that the implementer did not change it afterwards. The coordinator still must not write production code or tests, edit delta, main or product specs or ADRs, decide owner-only items, invent behavior or approve its own work.
+3. Mutation: T3 (mutation per changed non-test source file with `--file`; `--iterate` only on test-only fix rounds) is adopted as the intermediate tier and is the default for standard mode. T4 (whole crate) runs at archive for every crate the change touched.
+4. Thresholds: escalate from light when the forecast x1.4 exceeds about 300 lines (this replaces the "x1.4 above ~400" wording in sections 1 and 4); delivery ceiling about 700 lines, and above it needs the owner's explicit OK (as accepted before for `edit-history` D4a, D7, D8 and D9); at most three verify rounds per delivery, plus the existing rule "two consecutive FAILs of the same class". These are signals for the coordinator to stop and ask, not hard blocks.
+5. `verification.json`: adopted as a pilot for every mode except V0, emitted by `verify` beside `verify-report.md`. Review point: after the next change that uses it is archived. If routing did not read it, remove it.
+6. Light-run change folders are archived with `archive` into `openspec/changes/archive/` without delta merge (there is no delta spec).
+7. No new agents. Definitions of agents and skills are written by a general-purpose agent that the coordinator delegates to, in a worktree, and the owner reviews the PR before merge.
 
 ## Verification of this ADR
 
