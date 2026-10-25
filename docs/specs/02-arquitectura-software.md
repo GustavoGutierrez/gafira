@@ -844,7 +844,7 @@ impl Gafira {
 |---|---|---|
 | ARQ-30 | Todo cambio de documento pasa por `History::execute` de `gafira-edit` (envuelto después por `EditService::execute`). | `Document` solo se muta con la capacidad `EditToken`, que solo usa `gafira-edit`; el CI lo vigila (V13). Un test de compilación (`trybuild`) muestra que una mutación desde `gafira-ui` no compila. |
 | ARQ-31 | No hay estado global mutable para los registros (§4). | Una búsqueda en CI de `static mut`, `lazy_static!` e `inventory::` en crates no de prueba da 0 coincidencias (excepto la `OnceLock` de configuración de logging). |
-| ARQ-32 | Deshacer y rehacer son O(1) para el usuario. | Con un documento de 100 capas, 1 000 deshacer seguidos tardan < 16 ms cada uno en el percentil 99. |
+| ARQ-32 | Deshacer y rehacer son O(1) para el usuario. | Con un documento de 100 capas, 1 000 deshacer seguidos tardan < 16 ms cada uno en el percentil 99. Esa medición se hace con los *benchmarks* de ARQ-40; mientras tanto, `gafira-edit` prueba la estructura: deshacer y rehacer de una entrada con instantánea no llaman a ningún método de `Command` y solo instalan el `Arc` guardado. |
 | ARQ-33 | Un gesto continuo produce una sola entrada de historial. | Prueba: un arrastre de 300 eventos de movimiento deja `history.len()` aumentado en 1. |
 | ARQ-34..ARQ-39 | Reservados. | — |
 
