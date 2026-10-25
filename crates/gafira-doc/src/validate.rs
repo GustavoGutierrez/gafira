@@ -152,7 +152,7 @@ mod tests {
         edit(Arc::make_mut(&mut d.pages[1]));
     }
 
-    /// Moves the highest node of a page under key 5.
+    /// Moves the highest node of a page under key 5 (which must not collide with an existing id).
     fn rekey(p: &mut Page) {
         let (_, n) = p.nodes.pop_last().unwrap();
         p.nodes.insert(NodeId::new(5), n);
@@ -378,6 +378,19 @@ mod tests {
                     d.next_id = 0;
                 },
                 "Err(DuplicateId { id: 1 })",
+            ),
+            // Inside P2: duplicate id before arena key.
+            (
+                |d| {
+                    push(d, 1, &[]);
+                    rekey(first(d));
+                },
+                "Err(DuplicateId { id: 1 })",
+            ),
+            // Inside P3: dangling root before repeated root.
+            (
+                |d| roots(first(d), &[42, 42]),
+                "Err(DanglingRoot { page: PageId(1), node: NodeId(42) })",
             ),
             // Inside P3, each check runs over all pages before the next one.
             (
