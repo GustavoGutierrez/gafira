@@ -260,3 +260,54 @@ fn an_error_leaves_no_partial_result_when_the_second_operand_fails() {
     assert_eq!(a, a_before);
     assert_eq!(format!("{b:?}"), b_before);
 }
+
+/// A closed triangle followed by two segments drawn after the close, with no new
+/// move: the segments form an open subpath.
+fn closed_then_drawn_on() -> Path {
+    let mut bez = BezPath::new();
+    bez.move_to((0.0, 0.0));
+    bez.line_to((10.0, 0.0));
+    bez.line_to((10.0, 10.0));
+    bez.close_path();
+    bez.line_to((5.0, 20.0));
+    bez.line_to((0.0, 20.0));
+    Path::new(bez, FillRule::NonZero)
+}
+
+#[test]
+fn drawing_after_a_close_without_a_move_is_an_open_subpath() {
+    let path = closed_then_drawn_on();
+    let expected = Err(PathOpError::OpenSubpath { subpath: 1 });
+
+    assert_eq!(path.validate_closed(), expected);
+    assert_eq!(
+        path.contains(Point::new(1.0, 1.0), DEFAULT_TOLERANCE)
+            .map(drop),
+        expected
+    );
+    let mut calls = boolean_calls(&path, &rect(), DEFAULT_TOLERANCE);
+    calls.extend(boolean_calls(&rect(), &path, DEFAULT_TOLERANCE));
+    for (name, outcome) in calls {
+        assert_eq!(outcome, expected, "{name}");
+    }
+}
+
+#[test]
+fn the_stroke_and_the_distance_accept_drawing_after_a_close() {
+    let path = closed_then_drawn_on();
+
+    assert!(path.stroke_outline(&style(2.0), DEFAULT_TOLERANCE).is_ok());
+    assert!(path.simplify(DEFAULT_TOLERANCE).is_ok());
+    assert!(
+        path.distance_to_perimeter(Point::new(1.0, 1.0), DEFAULT_TOLERANCE)
+            .is_ok()
+    );
+}
+
+#[test]
+fn closing_the_subpaths_closes_the_tail_drawn_after_a_close() {
+    let closed = closed_then_drawn_on().close_subpaths();
+
+    assert_eq!(closed.validate_closed(), Ok(()));
+    assert_eq!(closed.subpath_count(), 2);
+}

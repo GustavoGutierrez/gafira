@@ -187,8 +187,9 @@ impl Path {
     /// Checks that no subpath of the path is open.
     ///
     /// A subpath is open when it holds a segment and does not end with a close.
-    /// A lone move holds no segment, so it is not open. The error names the
-    /// index of the first open subpath.
+    /// A lone move holds no segment, so it is not open. A segment drawn after a
+    /// close, with no new move, starts a new subpath, which is open until it is
+    /// closed. The error names the index of the first open subpath.
     pub fn validate_closed(&self) -> Result<(), PathOpError> {
         for subpath in self.subpaths() {
             if !subpath.closed && subpath.has_segment {
@@ -224,9 +225,17 @@ impl Path {
                     }
                 }
                 PathEl::LineTo(_) | PathEl::QuadTo(..) | PathEl::CurveTo(..) => {
-                    if let Some(subpath) = open.as_mut() {
-                        subpath.has_segment = true;
-                    }
+                    // A segment drawn after a close, with no new move, starts a
+                    // new subpath at the point of the close.
+                    let subpath = open.get_or_insert_with(|| {
+                        index += 1;
+                        Subpath {
+                            index: index - 1,
+                            closed: false,
+                            has_segment: false,
+                        }
+                    });
+                    subpath.has_segment = true;
                 }
             }
         }
