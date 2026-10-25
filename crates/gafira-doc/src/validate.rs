@@ -1044,7 +1044,9 @@ mod tests {
 
     #[test]
     fn a_deep_chain_validates_without_overflow() {
-        const DEPTH: u64 = 10_000;
+        // Deep enough that a recursive walk overflows the 2 MiB test-thread stack
+        // (threads are banned in domain crates, so the stack size cannot be lowered).
+        const DEPTH: u64 = 100_000;
         let mut d = base();
         let mut p = page(1, &[]);
         roots(&mut p, &[2]);
