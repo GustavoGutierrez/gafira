@@ -187,3 +187,9 @@ All deliveries D0 to D4 are done and every commit before the mutation fix round 
 Measured size against `origin/main` before this section: `git diff --shortstat origin/main...HEAD -- crates` = 16 files, 2,211 insertions; whole change = 25 files, 3,164 insertions, 1 deletion.
 
 Not run here, by instruction: `verify` (independent verification follows in another session) and T4 (whole crate at archive).
+
+## Specifier ratification and owner waiver (2026-10-25)
+
+Ratified by specifier (verify C1). Commit `3d5ace9` changed one value in `specs/time-model/spec.md`, scenario "Seconds and milliseconds are exact": the result for 1,234 ms went from 870,854,400 to 870,710,400 flicks. The requirement fixes the factor at 705,600 flicks/ms (705,600,000 / 1,000), and 1,234 x 705,600 = 705,600,000 + 165,110,400 = 870,710,400, recomputed independently. The old value was 144,000 flicks too high and matched no rule of the requirement. Nothing else changed: same scenario, same inputs, same wording. The amendment is accepted as a spec-first correction of a wrong example. It is not a change of behavior, and no other criterion depends on it.
+
+Owner waiver (verify C2), owner decision of 2026-10-25, relayed by the coordinator. Commit `25afa83` (D2) fails `cargo test --workspace --locked` because of the false property `the_tick_divides_every_accepted_frame_duration`, and `f80d182` (D3) fails it on some seeds. The finding is WAIVED. History is not rewritten, because the fix `2a57705` makes the final tree correct. This supersedes the "Final state" claim above that every commit before the mutation fix round passed the gates alone: `25afa83` does not, and `f80d182` does not reliably. Verify's condition applies: no stacked PR may be cut at `25afa83` or `f80d182`.
