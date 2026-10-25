@@ -1671,3 +1671,106 @@ None.
 This closes the last delivery of the change only if D10a also passes its own verify. Until then the change verdict waits on D10a. With both deliveries passing, the ambiguity warnings (W2 to W4, and the D10a pending edits) are spec text for `archive`/`specifier` to settle during the delta merge.
 
 next: archive (once D10a passes; W2, W3 and W4 are spec edits to apply at the merge, W1 is optional hardening for `tdd-apply`). The coordinator may push `feat/edit-history-10b` and open its PR against `feat/edit-history-10`.
+
+## D10b hardening re-verify
+
+Branch `feat/edit-history-10b`, HEAD `aefd8e2`. Scope: `c83cb26` (merge of `feat/edit-history-10`), `9226929` (`fix(edit)`: exact-counter precondition on the `InsertPage` and `InsertNodes` reverts), `af18210` (`ci`: V14 hardened), `aefd8e2` (docs). Mode full, depth V3, tier T3. Scratch: `scratchpad/vd10br/`, one `git archive` export per commit, each with its own `CARGO_TARGET_DIR`.
+
+### Gates (clean exports, policy steps taken from each commit's `ci.yml` with a YAML parser)
+
+| Gate | `9226929` | `af18210` | `aefd8e2` |
+|---|---|---|---|
+| fmt, clippy `-D warnings`, `cargo test --workspace --locked` | 0, 0, 0 (508) | 0, 0, 0 (508) | 0, 0, 0 (508) |
+| `cargo deny check` | 0 | 0 | 0 |
+| ARQ-07, forbid unsafe (V11), V5, V12, V13, V14 | 0 each | 0 each | 0 each |
+
+The trees stayed clean after the runs. No file under `specs/` changed in the scope.
+
+### Counter precondition
+
+- The earlier probe `vd10b_probe.rs` (8 tests) passes on HEAD. The out-of-order case now prints `Err(InvalidValue("ids were allocated after the page was inserted"))`, the counter stays at 8, and two more allocations leave the document valid. The hole is closed.
+- New probes `scratchpad/vd10br/probe/crates/gafira-edit/tests/vd10br_probe.rs`, 10 tests, all pass:
+  - `Transaction` over mixed `InsertPage`/`InsertNodes`/`SetProperty`/`RemovePage` steps: apply, then revert and apply 3 times. A rollback with a failing tail and nested transactions give equal documents with the counter restored.
+  - `History` with snapshots, budget 0 (every older entry compacted, so the D7 revert/apply path) and budgets 1, 200, 2 000 and 20 000: undo all, redo all, partial undo, new allocations, then undo and redo all again. No false refusal.
+  - Re-apply after revert, 3 cycles: same ids.
+  - Out-of-order revert is allowed after the later allocation was itself reverted, and with non-allocating commands in between. It is refused, with the document unchanged, for node/node, page/page and a `Transaction` reverted after a later allocation.
+  - 400-step random walks (insert page, insert nodes, remove page, undo, redo) at budgets 0, 500 and `usize::MAX`: ids are unique and below the counter after every step, undo and redo never fail, and the walk ends back at the original.
+- `restore_next_id` has only these two callers, and every lowering of the counter is now guarded. So, by induction, no command sequence can lower the counter under a live id.
+- Hand mutants. Each was applied alone to its own HEAD export and run with `cargo test -p gafira-edit --locked`, using only the implementer's tests. 5 run, 5 killed:
+
+| # | Mutant | Result |
+|---|---|---|
+| H1 | drop the `InsertPage` check | KILLED (`page_commands::an_insert_revert_never_lowers_the_counter_under_live_ids`) |
+| H2 | drop the `InsertNodes` check | KILLED (`node_commands::an_insert_revert_never_lowers_the_counter_under_live_ids`) |
+| H3 | off by one: `InsertPage` also accepts `next_id == counter + 2` | KILLED (same page test) |
+| H4 | `InsertNodes` checks after it writes | KILLED (same node test, `doc == before`) |
+| H5 | `InsertPage` checks after it removes the page | KILLED (same page test) |
+
+- Mutants: the implementer's T3 run (`scratchpad/d10b-round/mut-out`, built from the fixed sources): 45 found, 35 caught, 0 missed, 0 timeout, 10 unviable, about 2 min. Both `!=` to `==` mutants on the new checks (`pages.rs:84`, `insert_nodes.rs:225`) are caught. No `.cargo/mutants.toml` exclusion was added.
+
+### V14
+
+These runs used a standalone git copy of HEAD (`scratchpad/vd10br/neg`), with the step taken from `ci.yml`, a scratch file `src/vd_scratch.rs`, and a restore after each case.
+- Spec scenarios:
+  - clean tree: rc 0;
+  - from `crates/`: rc 1, "positive control failed";
+  - scratch `Noop`: rc 1;
+  - `RemovePage` renamed in `prop_commands.rs`: rc 1;
+  - all 8 types renamed: rc 1, listing all 8.
+- The six shapes the earlier step missed all give rc 1: nested bounds, `crate::Command`, multi-line header, `Box<T>` ("not a type defined under src"), an indented impl in a non-test mod, and `fake_tests.rs`.
+- Break attempts:
+  - Fail closed, which is correct or safe, rc 1:
+    - a `"}"` string ends the skip early;
+    - `#[cfg(all(test, ..))]` is not skipped;
+    - `#[cfg(not(test))]` is counted, both on a mod and on an impl;
+    - an attribute stacked after `#[cfg(test)]`, a one-line `#[cfg(test)] fn`, or a `#[cfg(test)] use` followed by a real impl;
+    - a type alias target, including an alias of a covered type;
+    - a blanket `T`, `&Ref`, `unsafe impl`, an impl inside `/* */`;
+    - an in-file `macro_rules!` emitting `impl Command for $t`.
+  - Hidden, rc 0, covered by the documented limits:
+    - a `{` inside a string, char literal, trailing comment or block comment in a `#[cfg(test)]` block hides the impl that follows;
+    - a macro using `$crate::Command`, or the trait passed as a macro parameter, is invisible.
+  - Hidden, rc 0, not in the step comment:
+    - `use crate::Command as Cmd; impl Cmd for X` (not documented anywhere);
+    - a leading `::gafira_edit::Command` (needs `extern crate self`, so not plausible);
+    - a file under `src` whose basename matches a test module elsewhere, for example `src/inner/history_budget_tests.rs` (listed only in `apply-progress.md`).
+
+  An impl in a block comment is read as an impl and fails closed. This too is listed only in `apply-progress.md`.
+
+### Records, commits, size
+
+- `verification.json` is valid JSON. It keeps the D10a and D10b rounds, each with a `delivery` key, and a top-level `"delivery": "D10a, D10b"`. That extends the `verify.md` schema (one delivery per file) but loses nothing; this round is appended as D10b round 2.
+- Commit types are `fix(edit)`, `ci` and `docs(edit-history)`, plus a plain merge. No Co-Authored-By, Claude or other AI attribution appears.
+- Size: `git diff --shortstat c83cb26 aefd8e2 -- crates .github` gives 97 insertions and 13 deletions. Of these, 13 lines are in `src` and the rest are tests and `ci.yml`. D10b in total is about 680 lines against a forecast of 600, below x1.4.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. class: implementation. **The V14 step comment does not list every remaining limit.** It lists braces in strings or comments, macro-generated impls, and a comment in the property file. These are missing:
+   - the trait imported under an alias (`use crate::Command as Cmd`), which hides the impl and is undocumented anywhere;
+   - the basename collision with a declared test module, which skips a whole file;
+   - an impl inside a block comment, which fails closed.
+   The last two are only in `apply-progress.md`. Fix: add one line to the comment, or fail on any `as` rename of `Command`.
+2. class: ambiguity (carried D10b W2). The `workspace-tooling` V14 text must now describe the new exclusions: `#[cfg(test)]` items are skipped by brace counting, files a `#[cfg(test)]` item declares are skipped, and the target must be a type defined under `src`. It must also carry the full limit list.
+3. class: ambiguity (carried D10b W3). Law 5 (pointer-equal on `Err`) contradicts the `Transaction` rollback rule (equal).
+4. class: ambiguity (carried D10b W4, extended). `edit-commands` "Page and document commands" should state:
+   - the `InsertPage` revert precondition and counter restore;
+   - the new exact-counter precondition of both the `InsertPage` and `InsertNodes` reverts;
+   - the `touches` of both page commands.
+
+The earlier D10b W1 (V14 false negatives) is resolved, and so is S2 (the counter precondition).
+
+### SUGGESTION
+
+1. Pin the compacted-history path for the insert commands (carried S1). The probes above cover it, but no implementer test does.
+2. Each new precondition is pinned by a single test per command. A `Transaction` or `History` property step that tries an out-of-order revert would give them property coverage.
+3. A value-equality rollback property (carried S4).
+
+### Result
+
+**PASS for the D10b hardening round.** 0 CRITICAL, 4 WARNING (implementation 1, ambiguity 3), 3 SUGGESTION. All gates and policy steps are green on `9226929`, `af18210` and `aefd8e2`. The counter hole is closed with no false refusal, all 5 hand mutants are killed, and V14 passes the spec scenarios and the six earlier misses. D10a (PASS, `419a5bd`) and D10b are both done.
+
+next: archive (W2 to W4 are spec edits to apply at archive; W1 is an optional one-line comment fix for `tdd-apply`)
