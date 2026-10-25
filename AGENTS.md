@@ -101,6 +101,7 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 | Committing, branching, pushing, PRs, releases | `git-workflow-and-versioning` |
 | Delivery over ~400 lines, stacked PRs, review slices | `chained-pr` |
 | Preparing a PR (owner opens it) | `branch-pr` |
+| Creating, promoting or archiving product specs; deriving OpenSpec changes | `product-specs` |
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
 | PR and issue comments | `comment-writer` |
 | Creating, refreshing or reading the skill registry | `skill-registry` |

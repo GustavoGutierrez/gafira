@@ -4,6 +4,8 @@ Aquí solo viven los documentos **en curso**. Todo lo demás espera en `backlog/
 
 Ciclo de vida: `backlog/` -> en curso (`docs/specs/`) -> `archive/` (completado).
 
+El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de vida, el formato de los documentos y cómo derivar changes de OpenSpec.
+
 ## Estado
 
 | Doc | Estado | Detalle |
