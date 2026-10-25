@@ -1367,7 +1367,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
 | ARQ-80 | CI verde en las 3 plataformas es condición de merge. | Reglas de protección de rama. |
-| ARQ-81 | Cada `Command` del núcleo tiene una prueba de propiedad. | `xtask` comprueba que cada tipo que implementa `Command` en `gafira-edit` aparece en `prop_commands.rs`. |
+| ARQ-81 | Cada `Command` del núcleo tiene una prueba de propiedad. | `xtask` comprueba que cada tipo que implementa `Command` en `gafira-edit` aparece en `prop_commands.rs`. Hasta que exista `xtask`, el paso V14 de la CI hace la misma comprobación. |
 | ARQ-82 | Cada `Importer` tiene un objetivo de fuzz. | `xtask` compara el registro de importadores con `fuzz/fuzz_targets`. |
 | ARQ-83 | Se respeta el presupuesto de tamaño. | Job `xtask size`. |
 | ARQ-84 | Los paquetes de Linux son exactamente `.deb`, `.rpm` y `.tar.gz` para `x86_64`. | `xtask package linux` produce esos tres artefactos y ningún otro; la CI no tiene *targets* Linux distintos de `x86_64-unknown-linux-gnu`. |
