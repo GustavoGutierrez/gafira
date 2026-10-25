@@ -1,0 +1,7 @@
+error[E0596]: cannot borrow `page.name` as mutable, as it is behind a `&` reference
+ --> tests/ui/fail_mut_page_from_shared_doc.rs:5:9
+  |
+4 |     if let Some(page) = doc.page(id) {
+  |                 ---- consider changing this binding's type to be: `&mut Page`
+5 |         page.name.push('x');
+  |         ^^^^^^^^^ `page` is a `&` reference, so it cannot be borrowed as mutable
