@@ -1,8 +1,18 @@
+<p align="center">
+  <img src="assets/gafira-logo-symbol.svg" alt="Gafira" width="96">
+</p>
+
 # Gafira
 
 Gafira is a local-first design, image and video editor written in Rust. It is proprietary software.
 
-Status: the domain crates are in progress (`gafira-geom`, `gafira-color`, document model next). There is no GUI yet.
+Status: `gafira-geom` and `gafira-color` are in place; the document model (`gafira-doc`) is in progress. There is no GUI yet.
+
+## Preview
+
+<p align="center">
+  <img src="assets/splash_screen.jpg" alt="Gafira splash screen" width="640">
+</p>
 
 ## Requirements
 
@@ -54,7 +64,7 @@ spec -> explorer (only for risky claims) -> tdd-apply -> mutants + verify -> arc
 - `mutants` (cargo-mutants, optional dev tool) lists surviving mutants on changed lines.
 - `verify` checks the gates and every scenario; on FAIL the work goes back to `tdd-apply`.
 - The coordinator rejects `done` without evidence.
-- The owner does every push, PR and merge. The coordinator stops and asks.
+- The coordinator may push branches and open PRs after verify PASS; the owner does every merge. Each delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.
 
 First-time setup: generate the gitignored skill registry (`.atl/skill-registry.md`):
 

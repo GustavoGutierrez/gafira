@@ -116,6 +116,32 @@ jobs:
             [ "$c" = "$canon" ] || diff -q "$canon" "$c"
           done
           [ "$n" -ge 3 ] || { echo "::error::expected >= 3 domain clippy.toml copies, found $n" >&2; exit 1; }
+      - name: EditToken only in the edit crates (V13)
+        run: |
+          set -euo pipefail
+          allowed='^crates/(gafira-doc|gafira-edit|gafira-testkit)/'
+          rc=0; hits=$(git grep --untracked -nE 'EditToken|__new_for_gafira_edit_only' -- '*.rs') || rc=$?
+          [ "$rc" -le 1 ] || { echo "::error::git grep failed (rc=$rc)" >&2; exit 1; }
+          # Positive control: the repo-wide search must see the definition, otherwise it searched the wrong place.
+          grep -qE '^crates/gafira-doc/src/[a-z_/]+\.rs:[0-9]+:pub struct EditToken \{' <<<"$hits" \
+            || { echo "::error::positive control failed: EditToken definition not found" >&2; exit 1; }
+          rc=0; bad=$(grep -vE "$allowed" <<<"$hits") || rc=$?
+          case "$rc" in
+            0) echo "::error::EditToken outside allowed crates:" >&2; echo "$bad" >&2; exit 1 ;;
+            1) ;;
+            *) echo "::error::filter grep failed (rc=$rc)" >&2; exit 1 ;;
+          esac
+          # Public re-exports from gafira-edit. Records are split on ';', so a multi-line
+          # `pub use gafira_doc::{\n EditToken,\n};` is one record. A plain directory pathspec is silent when the dir does not exist
+          # (a glob pathspec is not: git 2.34 prints "could not open directory" to stderr). `|| true`: grep exits 1 on no match.
+          files=$(git ls-files --cached --others --exclude-standard -- crates/gafira-edit | grep '\.rs$' || true)
+          status=0
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            out=$(awk 'BEGIN{RS=";"} /pub[[:space:]]+(use|type)[^;]*EditToken/ || /pub[[:space:]]+use[^;]*\*/ {print FILENAME ": " $0}' "$f")
+            [ -z "$out" ] || { echo "::error::gafira-edit must not publicly re-export EditToken:" >&2; echo "$out" >&2; status=1; }
+          done <<<"$files"
+          exit "$status"
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check

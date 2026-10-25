@@ -449,7 +449,7 @@ Written against the D4b `validate` (P1 to P4 only): `parent_and_reachability_row
 
 ### Deviations
 
-- The D4b scenario text said the self-parenting document "then fails with `Cycle`"; the D4b fixture makes the group a root, so it fails with `RootHasParent`. The spec line was corrected in the docs commit (non-root self-parent gives `Cycle`).
+- The old D4b scenario line said the self-parenting document "removed or inverted" (the D4b test was to be removed or inverted once cycles were rejected), not `Cycle`; the D4b fixture makes the group a root, so after D5a it fails with `RootHasParent`. The scenario was corrected in the docs commit (a non-root self-parent gives `Cycle`).
 - P5 inner order is not spelled out beyond "first in the stated order"; it follows P1 to P3 (each check runs over all pages in order, nodes in ascending id, before the next check). Pinned by the page-2 row and the three lower-id rows.
 - `RootHasParent { node, parent }` names the lowest-id root with a parent and the lowest-id group that lists it (unique after the 15 check).
 - The `child_rows` "child in the same arena passes" row listed node 3 as both root and child; it now uses a tree where only 2 is a root.
@@ -463,3 +463,68 @@ Code-only `git diff --shortstat feat/domain-doc-4b..HEAD -- . ':!openspec'`: 2 f
 ### Gates
 
 `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` pass on the code commit: 278 tests passed (275 before). The docs commit changes no code (275 unchanged). `cargo deny`, V5, V11, V12 not run during apply.
+
+## D5b: EditToken, DocMut and V13 (`main..feat/domain-doc-5b`)
+
+Status: done (pending verify). Base: `main` at 777231d (D1 to D5a merged); branch `feat/domain-doc-5b`.
+
+### Commits
+
+1. `chore: let the coordinator push branches` (owner's `.claude/settings.json` edit, plus `AGENTS.md`, `CLAUDE.md`, `coordinator.md`, `README.md`; README status line fixed)
+2. `docs(sdd): settle P5 order and fix D5a verify items` (P5 check order in the spec and design; "Eleven sub-deliveries"; change total 4 519; the D5a misquote of the old scenario line)
+3. `test(doc): prove the reachability walk is not recursive` (D5a verify WARNING 1)
+4. `feat(doc): add EditToken and DocMut` (removes the `#[cfg(test)]` gate on `Document::alloc_id`)
+5. `ci: restrict EditToken to the edit crates` (V13)
+
+### Follow-up c (WARNING 1)
+
+The planned `std::thread::Builder` with a 64 KiB stack is not possible: `std::thread::Builder` and `spawn` are banned by `clippy.toml` (ARQ-02), and `#[allow]` is forbidden. The chain depth was raised from 10 000 to 100 000 instead (test time 0.42 s in the debug build). RED: P6 temporarily replaced by a recursive DFS. The test binary aborts: `thread 'validate::tests::a_deep_chain_validates_without_overflow' has overflowed its stack`, `fatal runtime error: stack overflow, aborting`, `process didn't exit successfully ... (signal: 6, SIGABRT)`, so `cargo test` exits 101 with no per-test FAILED line. Restored afterwards. At 10 000 levels a recursive walk did not overflow the 2 MiB test-thread stack in the debug build (the earlier test could not catch it). The existing wording "10 000-deep chain" in the D5a section and the design is now 100 000 in `validate::tests::a_deep_chain_validates_without_overflow`; the `serde` 10 000 load test is unchanged.
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Edit through the capability | `tests/edit.rs::edit_builds_a_valid_document` |
+| One token, many edits | `one_token_serves_many_edits` |
+| Invalid state allowed until validated | `an_invalid_document_is_allowed_until_validated` (`Orphan`) |
+| Copy on write keeps sharing | `an_edit_copies_only_its_path` ("Edit touches one path") |
+| Shared counter | `ids_come_from_one_counter` (5, 6, 7, next 8) |
+| Last issuable id | `the_last_issuable_id_is_u64_max_minus_one` |
+| Exhaustion (node and page) | `an_exhausted_counter_fails_and_does_not_wrap` |
+| Copy on write handle | `a_cloned_node_handle_does_not_make_the_document_mutable` |
+| Changing the DPI | `changing_the_dpi_can_break_a_page_size` (`set_dpi` to 10 000 gives `PageSize`) |
+| `page_mut`/`node_mut` on a missing id | `a_missing_page_or_node_is_none` |
+| Not Clone, not Copy, no struct literal | `compile_fail` doctests on `EditToken` (regression aids) |
+| No write without a token, shared `Arc` cannot be mutated | five `compile_fail` doctests on `Document::edit` (regression aids) |
+| Hidden from the docs | `cargo doc -p gafira-doc --no-deps`; no file under `target/doc` outside `src/` contains `__new_for_gafira_edit_only` |
+| Whole-value replacement documented | rustdoc of `Document` and `Document::edit` (manual) |
+| `IdSpaceExhausted` is `Copy`, `Eq`, `Display`, `Error` | already covered in `ids.rs` (D2b) |
+| Lock unchanged, `trybuild` deferred | no dependency added; deferral goes in the verify report |
+| V13 E0 to E15 | run locally, see below |
+
+The old private unit test `allocator_increments_then_exhausts` was removed: `alloc_id` is now reached only through the public `DocMut` tests above.
+
+### RED evidence
+
+`edit.rs` was first created with stub allocators (always id 0), a no-op `set_dpi` and `page_mut`/`node_mut` returning `None`. All 10 tests in `tests/edit.rs` failed on assertions or unwraps (for example `ids_come_from_one_counter` left 0, wanted 5; `exhausted` expected `Err(IdSpaceExhausted)`), then went green with the real bodies. The `compile_fail` doctests are not RED evidence (ED3). Each snippet was compiled once by hand in a scratch crate: Clone `E0599`, Copy `E0382`, literal `E0451`, `doc.dpi = ..` `E0616`, `pages_mut` on `Document` `E0599`, `edit()` `E0061`, `Arc::get_mut(..).pages` `E0616` (privacy, not a mutability error), `&mut Page` from `&Document` `E0308`.
+
+V13 RED: before the step, E1 (`// EditToken` in `apps/gafira-cli`) passes unnoticed; with the step it exits 1.
+
+### V13 run
+
+Run under `bash --noprofile --norc -eo pipefail` on a clone of the branch. The body was extracted from `ci.yml` and is byte-identical to the design text. Results: E0 rc=0; E1 rc=1; E2 rc=1; E3 rc=1 (positive control); E4a rc=1 (`git grep failed (rc=128)`); E4b rc=1 (`filter grep failed (rc=2)`); E5 from `crates/` rc=1 and non-repository copy rc=1 (rc=128); E6, E7a, E7b, E8, E9 rc=1 (re-export message); E10 rc=0 with empty combined output; E12 rc=0; E14 (gafira-edit mention without re-export, gafira-testkit mention) rc=0; E11, E13, E15a, E15b rc=0 (known limits 1, 2 and 6). E14 with `crates/gafira-doc/tests/edit.rs` holds on the real tree (E0).
+
+### Deviations
+
+- Follow-up c used a deeper chain instead of a small thread stack (see above).
+- `Document::edit` is defined in `edit.rs` (`impl Document`), not in `document.rs`; `Document::alloc_id` stays `pub(crate)` in `document.rs` with the gate removed.
+- `DocMut::node_mut` on a missing node still copies the page on write when the page exists (the page is unshared before the node lookup). It changes no value; the spec only requires that untouched paths stay shared.
+- Commits 1 and 2 touch no code. Their gates were not re-run.
+
+### Size
+
+Code-only `git diff --shortstat main..HEAD -- crates .github`: 6 files changed, 362 insertions(+), 16 deletions(-) (378 changed lines against ~420 forecast, ratio 0.9; commit 3 is 4 lines, commit 4 is 348, commit 5 is 26). Whole branch against `main`, docs included: 15 files changed, 440 insertions(+), 30 deletions(-).
+
+### Gates
+
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` pass on each code commit: commit 3 278 passed (unchanged count); commit 4 295 passed (278 - 1 removed unit test + 10 integration tests + 8 doctests); commit 5 295. `cargo deny`, V5, V11, V12 not run during apply.

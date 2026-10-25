@@ -305,7 +305,7 @@ pub enum NodeField { X, Y, W, H, RotationDeg, Skew, Opacity, FillChannel, FillAl
 | P2 Ids | D4a | 3 `DuplicateId` (all page and node ids are distinct); 4 `ArenaKeyMismatch` (key equals `base.id`); 5 `NextIdNotAboveMax` (`next_id > max(id)`; an empty document accepts any `next_id`) |
 | P3 Pages | D4a | 6 `PageSize` (`PageSize::check(dpi)`); 7 `DanglingRoot`; 8 `DuplicateRoot` |
 | P4 Nodes | D4b | Node by node in ascending id; for each node the checks run in the listed order and the first failure ends the pass (a node's check 14 is reached before the next node's check 9). 9 `NonFinite`; 10 `OutOfRange` (A9); 11 `EmptyExtensionTypeId`; **12 `ExtensionTooDeep`** (payload depth > 64); 13 `ChildrenOnLeaf`; 14 `DanglingChild` (every child is in the same arena) |
-| P5 Parents | D5a | 15 `MultipleParents` (more than one parent edge); 16 `RootHasParent`; 17 `Orphan` (no parent and not a root) |
+| P5 Parents | D5a | 15 `MultipleParents` (more than one parent edge); 16 `RootHasParent`; 17 `Orphan` (no parent and not a root). Each check runs over all pages before the next (all `MultipleParents`, then all `RootHasParent`, then all `Orphan`), like P1–P3 |
 | P6 Reachability | D5a | 18 `Cycle`: iterative DFS from the roots (no recursion, so a deep tree cannot overflow the stack); any node not reached. After P5, an unreached node has exactly one parent, so it lies in or below a cycle (a ring, or a subtree hanging off a ring) that no root reaches. `Cycle { node }` names the first such node in ascending id, which is not necessarily on the ring itself. |
 
 After D4a, `validate()` runs P1–P3 only; between D4b and D5a it runs P1–P4 only. A D4b build therefore still accepts cycles and multiple parents. That is acceptable inside a stacked chain, and the D5a tests close the gap.
@@ -370,7 +370,7 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | | **D6a total** | | **~540** |
 | D6b | `tests/properties.rs` (Q1–Q5), mutation runs, CI runtime record | owner-approved re-cut | |
 | | **D6b total** | | **~365** |
-| | **Change total** | | **~4 517** (595 + 335 + 465 + 690 + 507 + 387 + 215 + 420 + 540 + 365; the older figure was ~3 835 (595 + 335 + 465 + 690 + 640 + 465 + 645); the earlier six-delivery figure was ~3 578, and the proposal said 2 600–2 900. The increase comes from the V12/V13 hardening, `ExtensionTooDeep`, the unit-test helper and the Q5 property.) |
+| | **Change total** | | **~4 519** (595 + 335 + 465 + 690 + 507 + 387 + 215 + 420 + 540 + 365; the older figure was ~3 835 (595 + 335 + 465 + 690 + 640 + 465 + 645); the earlier six-delivery figure was ~3 578, and the proposal said 2 600–2 900. The increase comes from the V12/V13 hardening, `ExtensionTooDeep`, the unit-test helper and the Q5 property.) |
 
 **Re-balancing compared with the proposal**:
 - `BlendMode` moves to D1.
@@ -579,4 +579,4 @@ No migration: there is no persisted user data yet. Roll back per delivery, newes
 - [ ] Q3: ARQ-11 as "byte for byte for canonical payloads, by value otherwise" (`Value`, amendment 2). Confirm.
 - [ ] Q4: `Document` as the root name (amendment 4); no lock cascade in the data. Confirm.
 - [ ] Q5: `gafira-cli validate` deferred to `gafira-format` (A15), with the C1/C2a chain tables out of date. Confirm, or add D7 (~250 lines).
-- [ ] The forecast is ~4 517 lines across eleven sub-deliveries, every one at or under ~700. Accept the stacked chain.
+- [ ] The forecast is ~4 519 lines across eleven sub-deliveries, every one at or under ~700. Accept the stacked chain.
