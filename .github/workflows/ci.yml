@@ -114,7 +114,7 @@ jobs:
               || { echo "::error::$canon lacks the std::collections::$t ban under disallowed-types" >&2; exit 1; }
           done
           # The required copies come from the V5 table (the one list of domain crates): read its rows from this file.
-          table=$(awk '/^ *table=.$/{on=1; next} on && /^ *.$/{exit} on{print}' .github/workflows/ci.yml)
+          table=$(awk -v q="'" '$0 ~ "^ *table=" q "$"{on=1; next} on && $0 ~ "^ *" q "$"{exit} on{print}' .github/workflows/ci.yml)
           crates=$(awk 'NF{print $1}' <<<"$table")
           [ -n "$crates" ] || { echo "::error::no V5 table rows found in .github/workflows/ci.yml" >&2; exit 1; }
           status=0
