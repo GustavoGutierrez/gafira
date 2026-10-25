@@ -3,7 +3,7 @@
 //! A stroke covers an area around a path. The crate returns that area as a
 //! path, so a caller can fill it, intersect it or measure it.
 
-use kurbo::{BezPath, Cap, Join, Stroke, StrokeOpts};
+use kurbo::{Arc, BezPath, Cap, CubicBez, Join, ParamCurve, PathEl, Point, Stroke, StrokeOpts};
 
 use crate::{FillRule, Path, PathOpError, validate};
 
@@ -30,7 +30,8 @@ impl Path {
     /// stroked path is open. The outline carries the `NonZero` fill rule,
     /// whatever rule the input carries, so a region the stroke covers more than
     /// once is covered by the outline and never a hole. The tolerance bounds the
-    /// deviation between the outline and the exact stroke.
+    /// deviation between the outline and the exact stroke, including the arcs of
+    /// round caps and round joins, whatever the width.
     pub fn stroke_outline(&self, style: &StrokeStyle, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         validate::stroke_width(style.width)?;
@@ -47,7 +48,88 @@ impl Path {
             tolerance,
         );
 
-        Ok(Path::new(close_all(outline), FillRule::NonZero))
+        let refined = refine_round_arcs(&outline, self.as_bez_path(), style.width / 2.0, tolerance);
+
+        Ok(Path::new(close_all(refined), FillRule::NonZero))
+    }
+}
+
+/// Replaces the arcs the stroker draws for round caps and round joins by arcs
+/// that lie within the tolerance.
+///
+/// The stroker fits those arcs on a unit circle with a fixed internal tolerance
+/// and then scales them by half the width, so their error grows with the width
+/// and ignores the tolerance of the caller. An arc of a round cap or a round
+/// join is a cubic whose end points and middle point lie at half the width from
+/// a vertex of the stroked path; each such cubic is replaced by an arc of the
+/// same circle, sweeping the same angle, fitted at the tolerance of the caller.
+fn refine_round_arcs(
+    outline: &BezPath,
+    centreline: &BezPath,
+    radius: f64,
+    tolerance: f64,
+) -> BezPath {
+    let vertices: Vec<Point> = centreline
+        .elements()
+        .iter()
+        .filter_map(|el| el.end_point())
+        .collect();
+    let slack = radius * 1e-3;
+    let on_circle = |c: Point, p: Point| (c.distance(p) - radius).abs() <= slack;
+
+    let mut refined = BezPath::new();
+    let mut current = Point::ORIGIN;
+    for el in outline.elements() {
+        if let PathEl::CurveTo(c1, c2, end) = *el {
+            let cubic = CubicBez::new(current, c1, c2, end);
+            let mid = cubic.eval(0.5);
+            let replaced = vertices
+                .iter()
+                .copied()
+                .filter(|c| on_circle(*c, current) && on_circle(*c, end) && on_circle(*c, mid))
+                .find_map(|c| arc_sweep(c, current, mid, end).map(|sweep| (c, sweep)));
+            if let Some((centre, sweep)) = replaced {
+                let start_angle = (current - centre).atan2();
+                let arc = Arc::new(centre, (radius, radius), start_angle, sweep, 0.0);
+                let mut pieces: Vec<[Point; 3]> = Vec::new();
+                arc.to_cubic_beziers(tolerance, |p1, p2, p3| pieces.push([p1, p2, p3]));
+                if let Some(last) = pieces.last_mut() {
+                    last[2] = end;
+                }
+                for [p1, p2, p3] in pieces {
+                    refined.curve_to(p1, p2, p3);
+                }
+                current = end;
+                continue;
+            }
+        }
+        refined.push(*el);
+        match el {
+            PathEl::ClosePath => {}
+            other => {
+                if let Some(p) = other.end_point() {
+                    current = p;
+                }
+            }
+        }
+    }
+    refined
+}
+
+/// The signed angle swept from `start` to `end` around `centre`, in the
+/// direction that passes through `mid`.
+fn arc_sweep(centre: Point, start: Point, mid: Point, end: Point) -> Option<f64> {
+    use std::f64::consts::{PI, TAU};
+    let a0 = (start - centre).atan2();
+    let am = (mid - centre).atan2();
+    let a1 = (end - centre).atan2();
+    let towards_mid = (am - a0 + PI).rem_euclid(TAU) - PI;
+    if towards_mid == 0.0 {
+        None
+    } else if towards_mid > 0.0 {
+        Some((a1 - a0).rem_euclid(TAU))
+    } else {
+        Some(-(a0 - a1).rem_euclid(TAU))
     }
 }
 

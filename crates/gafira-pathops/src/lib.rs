@@ -52,7 +52,8 @@ pub enum BooleanOp {
 /// Every operation takes the tolerance explicitly or uses this constant; the
 /// crate never mixes tolerances inside a single call. For the stroke outline
 /// and the simplification it is the distance the result may move from the exact
-/// answer. For the boolean operations it is the accuracy of the sweep, not a
+/// answer; the arcs of round caps and round joins are fitted at this distance
+/// too, so a finer tolerance gives more curve segments there. For the boolean operations it is the accuracy of the sweep, not a
 /// bound on the distance to the exact result: measured, and not proven, the
 /// result matches the exact boundary far below the tolerance for straight edges,
 /// and for a curve that runs parallel to the sweep direction at a crossing the
