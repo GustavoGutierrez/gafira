@@ -1,6 +1,7 @@
 //! `InsertNodes` and `RemoveNodes` through their public contract.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use gafira_doc::msg::MessageKey;
 use gafira_doc::{
@@ -8,7 +9,7 @@ use gafira_doc::{
     ShapeGeometry, ShapeNode, ValidationError,
 };
 use gafira_edit::{
-    Applied, Command, CommandError, InsertNodes, NodeSpec, RemoveNodes, Transaction,
+    Applied, Command, CommandError, History, InsertNodes, NodeSpec, RemoveNodes, Transaction,
 };
 use gafira_geom::{Length, Unit};
 
@@ -436,4 +437,52 @@ fn a_revert_that_cannot_find_its_place_fails_and_changes_nothing() {
         Err(CommandError::IndexOutOfRange { index: 2, len: 0 })
     );
     assert_eq!(doc, before);
+}
+
+#[test]
+fn an_id_is_reissued_after_an_undo() {
+    let mut history = History::new(empty(10)).expect("valid");
+    let insert = || Box::new(InsertNodes::new(PAGE, None, 0, vec![shape()]));
+    assert_eq!(
+        history.execute(insert(), Duration::ZERO),
+        Ok(Applied::Changed)
+    );
+    assert_eq!(page(history.document()).roots, ids(&[10]));
+    assert!(history.undo().unwrap().is_some());
+    assert_eq!(history.document().next_id(), 10);
+    assert_eq!(
+        history.execute(insert(), Duration::ZERO),
+        Ok(Applied::Changed)
+    );
+    assert_eq!(page(history.document()).roots, ids(&[10]));
+    assert_eq!(history.document().validate(), Ok(()));
+}
+
+#[test]
+fn a_revert_whose_parent_is_gone_fails_and_changes_nothing() {
+    let mut doc = tree();
+    let mut inner = RemoveNodes::new(PAGE, vec![n(4)]);
+    apply(&mut inner, &mut doc).unwrap();
+    apply(&mut RemoveNodes::new(PAGE, vec![n(3)]), &mut doc).unwrap();
+    let before = doc.clone();
+    assert_eq!(
+        revert(&mut inner, &mut doc),
+        Err(CommandError::MissingNode(n(3)))
+    );
+    assert_eq!(doc, before);
+}
+
+#[test]
+fn a_revert_of_nodes_that_are_already_back_fails_and_changes_nothing() {
+    let mut doc = tree();
+    let mut remove = RemoveNodes::new(PAGE, vec![n(5)]);
+    apply(&mut remove, &mut doc).unwrap();
+    revert(&mut remove, &mut doc).unwrap();
+    let before = doc.clone();
+    assert_eq!(
+        revert(&mut remove, &mut doc),
+        Err(CommandError::InvalidValue("a removed node is already back"))
+    );
+    assert_eq!(doc, before);
+    assert_eq!(doc.validate(), Ok(()));
 }
