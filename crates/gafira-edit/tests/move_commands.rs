@@ -341,6 +341,34 @@ fn a_group_cannot_move_under_itself_or_a_descendant() {
 }
 
 #[test]
+fn the_cycle_check_walks_a_chain_to_its_farthest_ancestor() {
+    // Roots `[g1]`; `g1 > g2 > g3 > g4 > g5`, so the page has five nodes and
+    // the walk up from `g5` needs all five steps to reach `g1`.
+    let mut chain = group(vec![]);
+    for _ in 0..4 {
+        chain = group(vec![chain]);
+    }
+    let size = PageSize {
+        width: Length::new(800.0, Unit::Px),
+        height: Length::new(600.0, Unit::Px),
+    };
+    let page = Arc::new(Page::new(PAGE, "p".into(), size));
+    let mut doc = Document::from_parts(2, Dpi::default(), vec![page]).expect("valid");
+    apply(&mut InsertNodes::new(PAGE, None, 0, vec![chain]), &mut doc).unwrap();
+    assert_eq!(page_of(&doc).roots, ids(&[2]));
+    refused(
+        Reparent::new(PAGE, vec![n(2)], Some(n(6)), 0),
+        &doc,
+        CommandError::WouldCreateCycle(n(2)),
+    );
+    refused(
+        Reparent::new(PAGE, vec![n(3)], Some(n(6)), 0),
+        &doc,
+        CommandError::WouldCreateCycle(n(3)),
+    );
+}
+
+#[test]
 fn a_shape_is_not_a_parent() {
     let doc = tree();
     refused(
