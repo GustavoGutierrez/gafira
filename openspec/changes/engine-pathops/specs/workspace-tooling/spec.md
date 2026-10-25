@@ -6,7 +6,7 @@ C4 adds the layer-2 engine crate `gafira-pathops`, which needs a V5 row and a
 `clippy.toml` copy like every other crate in `crates/`. This delta extends the V5
 allowed-dependency table and the clippy-copy policy with the new crate. The V5 and
 V12 step bodies stay unchanged: only the table and the copy list grow. Requirements
-not listed here are unchanged. Open decisions: `design.md` Q1, Q4.
+not listed here are unchanged. Decisions `design.md` Q1 and Q4 are closed; none stays open for this capability.
 
 ## MODIFIED Requirements
 
