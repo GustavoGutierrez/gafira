@@ -5,4 +5,6 @@ additional_cargo_test_args = ["--locked"]
 exclude_re = [
     # Equivalent while SCHEMA_VERSION is 1 and load accepts only version 1; remove when a second schema version exists.
     'replace Document::schema_version -> u32 with 1$',
+    # ARQ-13 invariant check compiled only with debug_assertions: every installed snapshot was validated, so it cannot fire through the public API.
+    'replace History::debug_check with \(\)$',
 ]
