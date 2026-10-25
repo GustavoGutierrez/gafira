@@ -204,11 +204,16 @@ an open path, because a stroke always encloses an area.
 ### Requirement: Path simplification (D3)
 
 The crate MUST simplify a path within a given tolerance: the simplified path MUST
-stay within the tolerance of the original, and MUST NOT contain more segments than
-the original. Simplification MUST preserve the path's subpath structure: every
-subpath of the input MUST appear in the output, in the same order.
+stay within the tolerance of the original. Simplification MUST preserve the path's
+subpath structure: every subpath of the input MUST appear in the output, in the
+same order.
 
-A path that is already minimal MUST be returned unchanged.
+A path that is already minimal MUST be returned unchanged: the simplification MUST
+NOT alter a path that carries no redundant detail.
+
+The simplification MAY replace straight segments with fitted curves, so the number
+of segments is not a measure of the amount of detail a path carries. The
+guarantee is about shape, not about the count of segments.
 
 #### Scenario: Redundant point removed (D3, unit)
 - GIVEN a path with a point that lies on the straight line between its neighbours, and a tolerance

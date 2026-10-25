@@ -265,6 +265,19 @@ Names verified against the vendored source of kurbo 0.13.1
 | `simplify.rs` | `simplify` | D3 |
 | `hittest.rs` | `contains`, `Containment`, `distance_to_perimeter` | D4 |
 
+### Simplification is measured by shape, not by segment count
+
+`kurbo::simplify::simplify_bezpath` fits curves to the source path. On an open
+polyline with a corner it replaces the corner with fitted cubic segments, so the
+element count can grow: a three-element polyline came back as five elements
+(measured, D3). The guarantee the crate offers is therefore about shape, not
+about the number of segments: the result stays within the tolerance of the
+original, and a path that is already minimal is returned unchanged.
+
+The spec was amended before the D3 implementation commit, in its own `docs(spec)`
+commit, so the requirement and the implementation agree (see `apply-progress.md`,
+D3 deviations).
+
 ## Delivery table
 
 Estimates apply the x1.4 undershoot factor measured in ADR 0001 (forecasts undershoot
