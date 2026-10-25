@@ -405,3 +405,21 @@ D4a plus D4b: 766 + 576 = 1342 changed lines against 507 + 387 = 894 forecast, r
 ### Gates
 
 `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run and passed on each of commits 1 and 2 (274 tests passed after commit 2). Commit 3 changes docs only. `cargo deny check`, V5, V11 and V12 were not run during apply.
+
+### D4b verify fixes (commits `test(doc): pin the per-node check order of P4` to `test(doc): drop display-prefix and redundant validation rows`; `feat/domain-doc-4a..feat/domain-doc-4b`)
+
+- CRITICAL 1: four rows added to `validate::tests::nodes_are_checked_in_ascending_id_and_check_order` (rows 3-6). Each swap was applied to the code, the row failed as an assertion, and the code was restored:
+
+| Mutation | Killing row | Evidence |
+|---|---|---|
+| check 10 and 11 swapped (empty `type_id` before ranges) | row 3 (empty `type_id`, opacity 2.0) | left `EmptyExtensionTypeId`, wanted `OutOfRange` on `Opacity` |
+| H3: 12 before 11 (depth before empty `type_id`) | row 4 (empty `type_id`, 65-level payload) | left `ExtensionTooDeep`, wanted `EmptyExtensionTypeId` |
+| check 12 and 13 swapped (leaf check before depth) | row 5 (65-level extension with `children = [3]`) | left `ChildrenOnLeaf`, wanted `ExtensionTooDeep` |
+| H2: 14 before 13 (dangling before leaf) | row 6 (shape with `children = [99]`) | left `DanglingChild`, wanted `ChildrenOnLeaf` |
+
+- WARNING 1: the duplicate-id load rows moved to `serde::duplicate_ids_are_invalid_on_load` and assert `Invalid(DuplicateId { id })` (page id 1, node against page id 10, and node id 5 present in two pages' arenas). RED: `DuplicateId { id: id + 100 }` in `check_ids` failed row 0.
+- WARNING 2: `json.rs` no longer asserts the `"invalid document: "` prefix; it checks non-empty text and that `source()` is `UnsupportedSchemaVersion { found: 2 }`.
+- WARNING 3: removed `json!([[[[0]]]])` (the 64-level pass row and the mixed object/array row already cover the pass side) and the `f32::MAX` blue-channel row (the `-0.5`/`1.75` row proves extended RGB passes). Neither was the only coverage of a rule.
+- SUGGESTION 1: the 64-level reopen test also compares `to_json` bytes before and after the reload.
+- Gate totals per commit: D4b commit 1 (`feat(doc): validate node fields and extension depth`) 270 passed, commit 2 (`feat(doc): validate on every deserialization`) 274; fix commits 274, 275, 275. `cargo deny`, V5, V11 and V12 were checked by verify (all ok).
+- Size: code-only `git diff --shortstat feat/domain-doc-4a..HEAD -- . ':!openspec'` is 611 insertions, 23 deletions (634 changed lines, ratio 1.64 to ~387). D4a plus D4b is 766 + 634 = 1400 against 894, ratio 1.566, above the D5 split trigger (> 1.5, `design.md:367`); the owner decides on the D5a/D5b cut.

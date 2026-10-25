@@ -1217,3 +1217,124 @@ None.
 - Mutants: 67 of 68 killed, 1 equivalent (F01), 0 in-scope survivors.
 - Production code is unchanged apart from comments.
 - Next: the owner decides the split (WARNING 1) and opens the PR or PRs. Then **tdd-apply D4b**.
+
+## D4b (branch `feat/domain-doc-4b`, range `feat/domain-doc-4a..feat/domain-doc-4b`, 3 commits from `feat(doc): validate node fields and extension depth` to `docs(sdd): record domain-doc D4b progress`)
+
+**Verdict: FAIL** (D4b). CRITICAL 1, WARNING 4, SUGGESTION 3. All gates pass on each of the three commits, and cargo-mutants reports 0 missed and 0 timeout. Two hand mutations of the P4 check order survive (CRITICAL 1). Four table rows fix them. `next` = **tdd-apply D4b** (one test commit), then re-verify D4b.
+
+Method:
+- Each commit was extracted with `git archive` into its own scratch directory, with its own `CARGO_TARGET_DIR`. The ARQ-07, V11 ("Domain crates forbid unsafe code"), V5 and V12 steps were parsed from that commit's `ci.yml`, which is byte-identical across the range.
+- Mutation follows the new policy in `AGENTS.md` ("Testing and mutation policy"). cargo-mutants ran `--in-diff` (see the `mutants` agent report). Verify hand-mutated only the spec rules that cargo-mutants cannot express (6 mutations, listed below).
+
+### Gates per commit
+
+| # | Commit | fmt | clippy `-D warnings` | test `--workspace --locked` | `cargo deny check` | ARQ-07 | V11 | V5 | V12 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `feat(doc): validate node fields and extension depth` | ok | ok | ok, **270** passed (doc lib 98, serde 13, golden 3, doctests 2) | ok | ok | ok | ok | ok |
+| 2 | `feat(doc): validate on every deserialization` | ok | ok | ok, **274** passed (doc lib 99, serde 16, golden 3, doctests 2) | ok | ok | ok | ok | ok |
+| 3 | `docs(sdd): record domain-doc D4b progress` | ok | ok | ok, 274 passed | ok | ok | ok | ok | ok |
+
+The count of 274 after commit 2 matches `apply-progress.md`. Commit 1 had not been totaled before; it is 270. The other crates are unchanged: cli 5+6, color 63+10+21, geom 31+7+11. `cargo deny check` gives "advisories ok, bans ok, licenses ok, sources ok" on all three commits.
+
+### Mutants
+
+- cargo-mutants (`mutants` agent report, `--in-diff` against `feat/domain-doc-4a`): 47 mutants, 42 caught, **0 missed, 0 timeout**, 5 unviable (`LoadError::source` with a leaked default, three `numbers` constant-vector replacements, `&&`→`||` in the `if let` chain). By file, caught: `validate.rs` 37, `json.rs` 4, `document.rs` 1. Process note from that report: `--cargo-arg=--locked` conflicts with `additional_cargo_test_args = ["--locked"]` in `.cargo/mutants.toml`, so the run dropped the flag. Tests still ran with `--locked`. The `AGENTS.md` flag line should be corrected (SUGGESTION 3).
+- Hand mutations (run on a scratch copy of HEAD with `cargo test -p gafira-doc --locked`; the copy was restored and diffed clean afterwards):
+
+| Id | Spec rule | Mutation | Result |
+|---|---|---|---|
+| H1 | P4 order: 9 `NonFinite` before 10 `OutOfRange` | swap the two `if let` blocks (`validate.rs:161-170`) | killed: `node_value_rows`, `nodes_are_checked_in_ascending_id_and_check_order` |
+| H2 | P4 order: 13 `ChildrenOnLeaf` before 14 `DanglingChild` | check dangling children before the leaf check (`validate.rs:180-185`) | **survived** |
+| H3 | P4 order: 11 `EmptyExtensionTypeId` before 12 `ExtensionTooDeep` | compute depth and reject before the empty `type_id` check (`validate.rs:172-178`) | **survived** |
+| H4 | Ascending node order, and the third "Earlier pass wins" case | `page.nodes.values().rev()` in `check_nodes` (`validate.rs:99`) | killed: `earlier_rules_win`, `nodes_are_checked_in_ascending_id_and_check_order` |
+| H5 | Depth boundary 64/65 | `depth > MAX_EXTENSION_DEPTH + 1` (`validate.rs:176`) | killed: `extension_rows` |
+| H6 | Spec scenario "Revert mutation is caught" (`try_from` effectively `from`) | delete `doc.validate()?;` in `TryFrom<DocumentWire>` (`json.rs:48-60`) | killed: `json::tests::load_errors_...` and 4 `serde` tests, including `plain_serde_cannot_build_an_invalid_document` |
+
+Not run, but the result is clear from the tests: swapping check 10 with 11 (an extension with an out-of-range value and an empty `type_id`) and check 12 with 13 (a too-deep extension that has children) would also survive. No test row combines those two defects on one node.
+
+The "Very deep payload" scenario asks for a recursive-walk mutation to be recorded, not exercised. Recorded here: `depth` (`validate.rs:191-205`) is iterative (explicit stack), as the code shows. A recursive rewrite would still pass the 1 000-level row. The spec accepts this.
+
+### Requirement and scenario coverage
+
+| Requirement / scenario | Evidence | Status |
+|---|---|---|
+| Node values: opacity edges (0.0, -0.0, 1.0, 1e-45 pass) | `validate.rs:570` `node_value_rows` rows 0-3 | covered |
+| Opacity out of range (3 × `OutOfRange`, NaN/±inf → `NonFinite`) | `node_value_rows` rows 4-9 | covered |
+| Placement values table (X, Y, RotationDeg, Skew `NonFinite`; W, H, Skew ±90 `OutOfRange`) | `node_value_rows` rows 10-17 | covered |
+| Placement values accepted (w ±0, rotation 720, skew ±89.999) | `node_value_rows` rows 18-22 | covered |
+| Fill values (NaN channel, NaN alpha, alpha 1.5, extended RGB passes) | `node_value_rows` rows 23-26 (plus `LinearSrgb` rows at `:667`, `:674`) | covered |
+| Extension `type_id` ("" fails, "x" passes) | `validate.rs:702` `extension_rows` (tail assertion and every "x" row) | covered |
+| Payload depth at the limit (64, 65 arrays, 65 objects, scalar, `[]`) | `extension_rows` rows 0-4; H5 killed | covered |
+| Very deep payload (1 000 levels, iterative) | `extension_rows` row 5 (`:714`); see note above | covered |
+| Children on a leaf (Shape, Extension), dangling 99, child only in another page | `validate.rs:732` `child_rows` rows 0-3 | covered |
+| Not clamped (opacity 1.5 bit-identical after the error) | `validate.rs:693` `validation_does_not_clamp` | covered |
+| `validate()` MUST NOT recurse (depth walk) | `validate.rs:191-205` | covered (by code) |
+| Pass order, P4 node by node, first in the stated order (9 to 14) | ascending id: H4 killed; 9 before 10: H1 killed; 11 before 12, 13 before 14: **H2, H3 survive**; 10 before 11, 12 before 13: no row | **partially covered → CRITICAL 1** |
+| Earlier pass wins, third case (opacity on node 2 vs dangling child on node 3 → `OutOfRange`) | `validate.rs:482-489`, a row in `earlier_rules_win` | covered |
+| D4b build accepts cycles | `validate.rs:820` `a_self_parenting_group_still_passes_until_d5` | covered (D5 inverts it) |
+| Ascending node order (NaN x on nodes 3 and 8 → node 3) | `validate.rs:776` row 0 | covered |
+| Each rule has its own variant, rows 9-14 | `node_value_rows`, `extension_rows`, `child_rows` give `NonFinite`, `OutOfRange`, `EmptyExtensionTypeId`, `ExtensionTooDeep`, `ChildrenOnLeaf`, `DanglingChild` | covered |
+| Valid documents (group with rectangle and extension) now pass through P4 | `validate.rs:317` `valid_documents_pass` | covered |
+| Validating load: `try_from = "DocumentWire"` | `document.rs:17`, `json.rs:48-60`; H6 killed | covered |
+| `DocumentWire` not public | `pub(crate) struct DocumentWire` (`json.rs`) | covered |
+| Plain serde cannot build an invalid document | `tests/serde.rs:332` | covered |
+| Shape versus validation (truncated → `Json`; schema 2 → `Invalid(UnsupportedSchemaVersion { found: 2 })`) | `json.rs:327` `load_errors_name_their_cause_and_expose_the_inner_error` | covered |
+| `LoadError` error contract (`Invalid` and `Json`: display and `source()`) | `json.rs:327` (`Invalid`); `json.rs:241` `unreadable_bytes_are_json_errors_with_a_source` (`Json`, from D3) | covered |
+| Revert mutation is caught | H6 | covered |
+| Finite out-of-range survives serde, not load (D4b half) | `tests/serde.rs:345` row `"opacity":1.5` (observed `Invalid(OutOfRange { node: 3, Opacity, 1.5 })`) | covered |
+| Hostile values (dpi 0, 10001, schema 0 → `Invalid`; unknown `space` → `Json`) | `tests/serde.rs:345` rows 0-2 and the `space` tail | covered |
+| Duplicate id across pages and against a page id (integration) → `Invalid(DuplicateId)` | `tests/serde.rs:345` rows 4-5 assert only `Invalid(_)`; row 4 is a duplicate **page** id, not a node id in two page arenas | **partial → WARNING 1** |
+| Payload depth inside a full document (121 → `Invalid(ExtensionTooDeep { depth: 121 })`, 122 → `Json`) | `tests/serde.rs:294-307` | covered |
+| Deep payload rejected by validation and by load; 64 reopens identical | `extension_rows`; `tests/serde.rs:311` | covered (SUGGESTION 1) |
+| Document root: `from_parts` accessors and page order 3, 1, 2; unknown → `None` | `document.rs:167` `from_parts_keeps_page_order_and_looks_pages_up` | covered |
+| `from_parts` validates (`next_id` 1, page 5 → `NextIdNotAboveMax`) | `document.rs:181` `from_parts_validates` (exact variant, `next_id: 1, max_id: 5`) | covered |
+| D3 fixtures still pass through `try_from` | `tests/golden.rs` (3) and `tests/serde.rs` (the D3 tests) unchanged and green on commit 2; `json.rs` D3 unit tests green with the `doc_with` fix | covered |
+| `from_json` returns the same variant as `validate()` | `json.rs:65-68` (deserializes `DocumentWire`, `try_from`, `map_err(LoadError::Invalid)`); the observed variants equal the `validate()` variants | covered |
+
+### Out-of-spec fixture fix in `json.rs` (`doc_with`, `next_id` 3 → 20)
+
+Correct and justified. `doc_with` (`json.rs:101-109`) builds a page from the given nodes, and `round_trip_is_idempotent_and_independent_of_build_order` passes `group(10)`. With `next_id = 3` that document breaks P2 (`NextIdNotAboveMax { next_id: 3, max_id: 10 }`), so it could only round-trip through the unchecked D3 `from`. The highest id any caller passes is 10, so 20 is valid for all of them. No byte-exact expectation built from `doc_with` contains `"next_id":3`; the only such literal is `minimal_document_has_exact_bytes` (`json.rs:122`), which uses `test_document(3, ..)` with no nodes and stays valid. The fix restores the spirit of the D3 fixture rule ("every fixture is a valid document") and does not weaken any assertion. The two other D3-era rewrites are justified too: the `schema_version` 2 round-trip test became the shape-versus-validation test, and `page_lookup_and_order` now builds through `from_parts`.
+
+### Code rules
+
+- No `#[allow]`, no `HashMap`/`HashSet`, no `unsafe` added. The new `unwrap()` calls are all inside tests.
+- No AI attribution lines in the three commit messages.
+- No `proptest-regressions` directory is tracked.
+- The `design.md` change in commit 3 only lowercases "In" after "order):" (D4a SUGGESTION 3).
+
+### Size
+
+- Code only, `git diff --shortstat feat/domain-doc-4a..HEAD -- . ':!openspec'`: 5 files changed, 553 insertions(+), 23 deletions(-), so 576 changed lines. This matches `apply-progress.md`. Commit 1 alone is 423/3. The ratio to the ~387 forecast is 1.49. Under the ~700 guideline.
+- D4a plus D4b, summed per delivery: 766 + 576 = 1342 against 894, a ratio of **1.501**.
+- Cumulative diff `feat/domain-doc-3b..HEAD`: 1314/20, which is 1334 changed lines (1.492), because D4b rewrites a few D4a lines.
+- The CRITICAL 1 rows add about 15 lines, which puts both measures at or above 1.5. See WARNING 4.
+
+### CRITICAL
+
+1. **Two P4 check orders of a MUST are unproven (H2 and H3 survive). Two more have no row.** `spec.md:47` says that for each node "its checks in the listed order (9 to 14)", and `design.md:307` says the same. The tests pin ascending ids (H4), and they pin `NonFinite` before `OutOfRange` (H1). They do not pin:
+   - 11 before 12: an `Extension` with `type_id = ""` **and** a 65-level payload must give `EmptyExtensionTypeId`. Today depth-first passes all tests (H3).
+   - 13 before 14: a `Shape` with `children = [99]` (absent) must give `ChildrenOnLeaf`. Today dangling-first passes all tests (H2), because every leaf row uses child 3, which exists (`validate.rs:735-740`).
+   - 10 before 11: an `Extension` with `type_id = ""` and `opacity = 2.0` must give `OutOfRange` (Opacity).
+   - 12 before 13: an `Extension` with a 65-level payload and `children = [3]` must give `ExtensionTooDeep`.
+
+   Fix: add these four rows, for example in `nodes_are_checked_in_ascending_id_and_check_order` (`validate.rs:776`). Each row must fail with its mutation applied. This follows the D4a precedent (V38/V39).
+
+### WARNING
+
+1. **Load-side duplicate-id scenario only partly proven** (`tests/serde.rs:345-366`). The scenario requires `LoadError::Invalid(DuplicateId { .. })` for "two pages whose arrays both contain id 9" and for "a node id equal to a page id". The rows assert only `Invalid(_)`. Row `"id":10,` → `"id":1,` makes two **pages** with id 1, not a node id shared by two arenas. The observed results are correct (`DuplicateId { id: 1 }` and `DuplicateId { id: 10 }`), and the in-memory cross-arena case is covered in `validate.rs` (D4a `id_rows`). Still, the integration THEN clause is not asserted. Assert the variant for those rows, and add a JSON row with a node id present in two pages' `nodes`.
+2. **Test scope: `Display` text pinned beyond the spec** (`json.rs:334`, `:336`). The spec asks only that both errors "display text" and that `source()` returns the inner error. The exact prefix `"invalid document: "` is non-critical text that the spec does not fix. Asserting non-empty text plus the `source()` identity is enough.
+3. **Test scope: redundant rows.** `extension_rows` row `json!([[[[0]]]])` (`validate.rs:716`) adds nothing beyond the 64-level pass row. `node_value_rows` row `f32::MAX` blue (`validate.rs:679-683`) repeats the extended-range acceptance already proven by `r = -0.5, g = 1.75`. Low cost; consider removing them.
+4. **D5 fallback trigger is at the boundary** (`design.md:367`). The summed ratio is 1.501 now and will be about 1.52 after the CRITICAL 1 rows. The cumulative-diff ratio is 1.492 now and about 1.51 after the fix. Either way the "> ×1.5" condition holds after the fix, so expect the D5a/D5b cut after D5's first commit. The owner decides.
+
+### SUGGESTION
+
+1. `tests/serde.rs:316-319` compares the reloaded 64-level document with `PartialEq`, but the scenario says "reloads bit-identical". The payload holds no floats, so this is sound. Also comparing `to_json()` bytes before and after the reload would state the claim literally.
+2. `apply-progress.md` "Gates": record commit 1's total (270) and the `cargo deny`/ARQ-07/V5/V11/V12 results from this verify. Add the hand-mutation table once CRITICAL 1 is fixed.
+3. `AGENTS.md` mutation flags: `--cargo-arg=--locked` conflicts with `.cargo/mutants.toml` (`additional_cargo_test_args = ["--locked"]`). Drop the flag from the documented command (owner/coordinator change; outside this delivery's code).
+
+### Result
+
+- Verdict: **FAIL** for D4b (1 CRITICAL, 4 WARNING, 3 SUGGESTION).
+- Gates are green on all three commits: fmt, clippy, test (270 / 274 / 274), `cargo deny check`, ARQ-07, V11, V5 and V12.
+- Mutants: cargo-mutants 42/47 caught, 0 missed, 0 timeout, 5 unviable. Hand mutations: 4/6 killed, and H2 and H3 survive (CRITICAL 1).
+- Next: **tdd-apply D4b**, one test commit with the four P4 order rows (CRITICAL 1), ideally with WARNING 1 and 2. Then re-verify D4b.
