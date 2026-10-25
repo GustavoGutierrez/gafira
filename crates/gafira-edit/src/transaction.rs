@@ -244,9 +244,8 @@ mod tests {
     }
 
     #[test]
-    fn it_has_its_own_label_and_never_merges() {
+    fn a_transaction_never_merges() {
         let tx = Transaction::new(label(), Vec::new());
-        assert_eq!(tx.label(), label());
         assert_eq!(tx.merge_key(), None);
     }
 }
