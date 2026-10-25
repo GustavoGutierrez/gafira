@@ -411,16 +411,17 @@ pub enum ToolOutcome {
 ### 4.3 `Command` (patrón Command)
 
 ```rust
-pub trait Command: Send + Sync + std::fmt::Debug {
+pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
     fn label(&self) -> CommandLabel;                          // = MessageKey (gafira-doc::msg) para «Deshacer {x}» (§14)
-    fn apply(&mut self, doc: &mut Document) -> Result<Applied, CommandError>;
-    fn revert(&mut self, doc: &mut Document) -> Result<(), CommandError>;
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError>;
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError>;
     fn merge_key(&self) -> Option<MergeKey> { None }          // p. ej. (Move, node_ids, gesture_id)
     fn merge(&mut self, next: Box<dyn Command>) -> Result<(), Box<dyn Command>> { Err(next) }
     fn touches(&self) -> DirtySet;                            // nodos/páginas afectados (invalidación)
 }
 ```
 
+- **Capacidad de mutación**: `apply` y `revert` reciben `&mut DocMut<'_>`, la vista mutable de `gafira-doc` que solo se obtiene con el `EditToken`; `History` es quien lo usa. Todo comando, del núcleo o de una extensión, muta el documento por esta vía. `Any` permite que `merge` recupere el tipo concreto de `next`: primero comprueba por referencia que es de su propio tipo y solo entonces convierte la caja; si no lo es, devuelve `Err(next)`.
 - **Patrón**: Command, con apply, revert y merge. `Transaction` (Composite) agrupa varios comandos en una sola entrada de historial.
 - **Implementan** los comandos del núcleo en `gafira-edit::cmd`: `SetProperty<T>`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Las extensiones aportan los suyos.
 - **Cómo añadir un comando**:
