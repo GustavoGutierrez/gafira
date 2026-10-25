@@ -37,3 +37,6 @@ assets/musics/*
 
 # Playwright MCP tool output (not project files)
 /.playwright-mcp/
+
+# Technical manual build output (generated PDF is not committed)
+docs/manuals/tecnico/build/
