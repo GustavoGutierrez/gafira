@@ -67,6 +67,26 @@ proptest! {
     }
 
     #[test]
+    fn a_drag_copies_only_the_dragged_node(
+        doc in document().prop_filter("needs a node", |d| first_node(d).is_some()),
+    ) {
+        let (page, node) = first_node(&doc).unwrap();
+        let mut history = History::new(doc).unwrap();
+        let start = Arc::clone(history.document());
+        let gesture = history.begin_gesture();
+        for i in 0..300_usize {
+            history.execute(drag_step(page, node, i as f64, gesture), at(i, 1)).unwrap();
+        }
+        for before in start.pages() {
+            let after = history.document().page(before.id).expect("the page is kept");
+            for (id, kept) in &before.nodes {
+                let same = Arc::ptr_eq(kept, &after.nodes[id]);
+                prop_assert_eq!(same, !(before.id == page && *id == node));
+            }
+        }
+    }
+
+    #[test]
     fn merging_equals_applying_the_sequence_one_by_one(
         doc in document().prop_filter("needs a node", |d| first_node(d).is_some()),
         xs in prop::collection::vec(-1.0e6..1.0e6_f64, 1..20),
