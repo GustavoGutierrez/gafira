@@ -48,6 +48,23 @@ impl fmt::Display for NodeField {
 ///
 /// Variants are listed in pass order; `Document::validate` returns the
 /// earliest one.
+///
+/// The enum is `#[non_exhaustive]`: a downstream `match` needs a wildcard arm,
+/// so this does not compile outside the crate:
+///
+/// ```compile_fail
+/// use gafira_doc::ValidationError::*;
+/// fn rule(e: gafira_doc::ValidationError) {
+///     match e {
+///         UnsupportedSchemaVersion { .. } | InvalidDpi { .. } | DuplicateId { .. }
+///         | ArenaKeyMismatch { .. } | NextIdNotAboveMax { .. } | PageSize { .. }
+///         | DanglingRoot { .. } | DuplicateRoot { .. } | NonFinite { .. }
+///         | OutOfRange { .. } | EmptyExtensionTypeId { .. } | ExtensionTooDeep { .. }
+///         | ChildrenOnLeaf { .. } | DanglingChild { .. } | MultipleParents { .. }
+///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } => {}
+///     }
+/// }
+/// ```
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ValidationError {
