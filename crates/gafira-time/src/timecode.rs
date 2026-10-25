@@ -276,7 +276,7 @@ fn real_from_label(label: i64, rate: FrameRate) -> i64 {
 /// Whether a hours or frames field has at least two digits and no zero padding
 /// beyond that minimum.
 fn is_canonical_width(text: &str) -> bool {
-    text.len() == 2 || (text.len() > 2 && !text.starts_with('0'))
+    text.len() >= 2 && (text.len() == 2 || !text.starts_with('0'))
 }
 
 /// Parses a non-empty run of ASCII digits.
