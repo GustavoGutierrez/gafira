@@ -869,6 +869,72 @@ The hand mutants were applied one at a time to a `git archive` export of HEAD (`
 | C1 | `History::undo` does not install `entry.before` | KILLED by `an_id_is_reissued_after_an_undo` (`left: 11, right: 10` on `next_id`), and also by 7 `history::tests`, `merging_equals_applying_the_sequence_one_by_one` and `undo_and_redo_install_the_recorded_snapshots_whatever_the_size` |
 
 That makes 7 hand mutants: the 6 from the D8 verify, re-run, plus C1.
+## D5: trybuild, ARQ-30 fixtures
+
+Branch `feat/edit-history-5`, base `main` 1518560, HEAD 1b58262. Verdict: **PASS** (0 CRITICAL).
+
+### Gates
+
+| Check | 11a0b8e | 7a05cb3 / HEAD |
+|---|---|---|
+| `cargo fmt --check` | ok | ok |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | ok | ok |
+| `cargo test --workspace --locked` | ok, 0 failed | ok, 0 failed; `ui` test runs 1 pass and 8 compile-fail cases, each `ok` |
+| CI policy: ARQ-07, forbid unsafe (V11), V5, V12, V13 (bodies taken from `ci.yml`, run under `bash --noprofile --norc -eo pipefail`) | rc 0 each | rc 0 each |
+| `cargo deny check` | advisories, bans, licenses, sources ok | advisories, bans, licenses, sources ok |
+
+11a0b8e was checked in a detached scratch worktree with its own target dir. HEAD differs from 7a05cb3 only in `apply-progress.md`. `ci.yml` and `deny.toml` are unchanged against `main`.
+
+Size: `git diff --shortstat main...HEAD -- . ':!Cargo.lock' ':!openspec'` gives 20 files and 204 insertions. `Cargo.lock` adds 137 lines and removes none. Commits: `test(edit)` x2 and `docs(edit-history)`. The types fit the content, and there are no AI attribution or Co-Authored-By lines.
+
+### Requirement and scenario coverage
+
+| Rule / scenario | Evidence | State |
+|---|---|---|
+| `trybuild` declared once in `[workspace.dependencies]`, version req, no git source | `trybuild = "1"` in the root `Cargo.toml`; locked 1.0.122 from the registry | covered |
+| Release at least two weeks old | crates.io `created_at` 2026-10-07, added 2026-10-25 (18 days) | covered |
+| Dev-only for `gafira-edit` (scenario "Dev-only") | `[dev-dependencies] trybuild.workspace = true`. `cargo tree -e normal,build -i trybuild --workspace` prints `warning: nothing to print.`, and so does the same command with `--target all` | covered |
+| Lock delta is bounded | 16 new names (equivalent, glob, hashbrown, indexmap, serde_spanned, target-tuple, termcolor, toml, toml_datetime, toml_parser, toml_writer, trybuild, winapi-util, windows-link, windows-sys, winnow). All 16 are `registry+` sources and all are in the `cargo metadata` resolve closure of `trybuild` (computed: none missing). No package was removed | covered |
+| Deny passes unchanged | `cargo deny check` ok; `git diff main -- deny.toml` empty | covered |
+| Runs inside `cargo test --workspace --locked` with no separate job | `crates/gafira-edit/tests/ui.rs` is an ordinary integration test | covered |
+| Fixture 1: no `&mut Document` from `History` | `fail_history_document_mut` E0599 (`document_mut` does not exist). The `&Arc<Document>` side is fixture 2 | covered |
+| Fixture 2: assign through `history.document()` / `&Document` | `fail_assign_through_history` E0594 (`**history.document() =`, no `DerefMut` for `Arc`); `fail_assign_through_ref` E0594 | covered (see deviation 4) |
+| Fixture 3: `Document::edit` without a token, and on `&Document` | `fail_edit_without_token` E0061; `fail_edit_on_shared_ref` E0596 | covered |
+| Fixture 4: write a private field | `fail_write_private_field` E0616 (`dpi`) | covered |
+| Fixture 5: `&mut Page` / `&mut Node` from shared refs | `fail_mut_page_from_shared_doc` E0596 (`Document::page`); `fail_mut_node_from_shared_page` E0596 (`Page::node`) | covered |
+| Scenario "No mutable access from outside" | `cargo test -p gafira-edit --test ui --locked`: all 8 fail to compile and match their `.stderr`. The five codes the spec names (E0599, E0594, E0061, E0596, E0616) all appear | covered |
+| Scenario "Outside command takes the legitimate path" | `pass_outside_command.rs`: an outside `AddPage: Command` mutates only through `DocMut`, and `main` asserts the page count after execute, undo and redo | covered |
+| Scenario "A wrong error code fails the test" | rerun by verify (H3 below): `mismatch`, rc 101; reverted | covered |
+| No fixture claims the hidden constructor fails | no fixture names `__new_for_gafira_edit_only`. `fail_edit_on_shared_ref` takes the token as a parameter | covered |
+| Fixtures have no `pub use`/`pub type` naming the token, no public glob | `grep 'pub '` over `tests/ui/*.rs` and `ui.rs`: no hits | covered |
+| V13 E16 (fixtures pass V13) | V13 rc 0 on HEAD. Its file list (`git ls-files ... crates/gafira-edit \| grep '\.rs$'`) contains the 9 fixture files | covered |
+| V13 E17 (a fixture that re-exports fails) | untracked `tests/ui/scratch.rs` with `pub use gafira_doc::EditToken;`: rc 1 with the re-export message; removed | covered |
+| V13 E10 (missing `gafira-edit`) and E1, rechecked | `git rm -r` of the directory in a scratch worktree: rc 0, empty stderr. `// EditToken` in `apps/gafira-cli/src/main.rs`: names the file. Both restored | covered (D1 rules, still hold) |
+| R3: identical `.stderr` on Windows/macOS, or Linux-only fallback | not run (nothing pushed). See WARNING 1 | **open** |
+
+### Deviations, judged
+
+1. **No V13 or spec commit in D5.** Accepted. The `edit-capability` REMOVED/ADDED/MODIFIED and `workspace-tooling` deltas already sit in the change folder. The V13 body from D1 already scans every `.rs` file under `crates/gafira-edit` with a plain directory pathspec, so fixtures are covered with no edit (E16, E17 and E10 rechecked above). `ci.yml` is unchanged against `main`.
+2. **204 code lines against a forecast of ~380.** Accepted. The forecast included the V13 update and the spec deltas, which were already done (deviation 1). Every required fixture category (1 to 5), the pass fixture, the deny, dev-only and lock-delta checks are present. There are 8 compile-fail fixtures for 5 categories. Nothing in the D5 requirements is under-delivered.
+3. **R3 unverified on Windows/macOS.** Accepted as WARNING, not CRITICAL. The spec makes the Linux-only `cfg` conditional on a run that shows a difference, and this PR's CI matrix (`pull_request` trigger; `windows-2022`, `macos-14`, pinned 1.93.1) is that run. A mismatch would fail a test job, so it cannot pass silently. The likely sources are covered by trybuild: `run.rs:511-513` strips CRLF from the expected file (a Windows checkout with `autocrlf`), and `normalize.rs:85` strips it from the output. Paths become `$DIR` / `$WORKSPACE`.
+4. **Fixture 2 uses `**history.document() =`, not `*`.** Accepted. `*history.document()` is an `Arc<Document>`, so assigning a `Document` gives E0308, a type error that does not prove immutability. `**` reaches the `Document` and shows the real protection (E0594, no `DerefMut` for `Arc`).
+5. **`fail_edit_without_token.stderr` quotes `gafira-doc/src/edit.rs`.** Accepted, as the spec predicts: a change to the `Document::edit` signature line needs `TRYBUILD=overwrite`.
+
+### Strict TDD
+
+The diff is test-only, so RED means proving that each test can fail. The recorded RED evidence is credible and specific. The pass fixture first asserted a wrong page count after undo and failed at runtime (`left: 0, right: 1`). `fail_history_document_mut` first compiled (`document()` is legal), which trybuild reported as "expected to fail, but it succeeded". `fail_assign_through_history` first gave E0308 instead of E0594. The others failed as `wip` before their snapshots were accepted and read by hand. This history is not in git, so verify reproduced non-vacuity independently with the hand mutations below.
+
+### Mutation
+
+No `cargo-mutants` run: the diff touches no production code (test files, manifests and lock only). Hand mutations were applied one at a time in a scratch worktree of HEAD with its own target dir, running `cargo test -p gafira-edit --test ui --locked`. The tree was restored after each one (`git checkout -- .`, status clean):
+
+| # | Protection removed / changed | Result |
+|---|---|---|
+| H1 | `Document::dpi` made `pub` (was `pub(crate)`) | KILLED: `fail_write_private_field` "Expected test case to fail to compile, but it succeeded", rc 101 |
+| H2 | `History::document_mut(&mut self) -> &mut Document` added (`Arc::make_mut`) | KILLED: `fail_history_document_mut` `mismatch` (a different error replaces E0599), rc 101 |
+| H3 | `fail_write_private_field.stderr` E0616 changed to E0599 (the spec's manual negative scenario) | KILLED: `mismatch`, rc 101 |
+
+Not feasible to hand-mutate: the E0594/E0596 fixtures (assign or borrow through `&`, `&Arc`, `page()`, `node()`). Their protection is the borrow checker plus the shared-reference return types, and changing those would break `gafira-doc` itself. The E0061 fixture would need `Document::edit` to drop its token parameter, which breaks every caller in `gafira-edit`.
 
 ### CRITICAL
 
@@ -885,3 +951,14 @@ D8 SUGGESTIONs 1 to 3 are unchanged and still open: the non-LIFO guard on `resto
 ### Result
 
 PASS for D8. 0 CRITICAL, 1 WARNING, 3 SUGGESTION. The change is not complete: D7 (being verified separately), D9 and D10 remain. `next`: push `feat/edit-history-8` and open its PR against `main`, then tdd-apply for the next delivery.
+1. **R3 still open.** The coordinator MUST NOT treat D5 as merge-ready until this PR's `test (x86_64-pc-windows-msvc)` and `test (aarch64-apple-darwin)` jobs are green. If either shows a `.stderr` mismatch, gate `tests/ui.rs` with `#[cfg(target_os = "linux")]` (spec fallback) and record it here in a D5 re-verify.
+2. Known V13 limits 1 to 6 (alias, lend, macro, `;` in comments, inference, crate or module re-export) stay not met, as recorded in D1. The fixtures cover only the no-token mutation paths, and the hidden constructor stays with V13 and review (Q13).
+
+### SUGGESTION
+
+1. Optionally, add a fixture `Arc::make_mut(history.document())` / `Arc::get_mut(...)`. It fails with E0308 (needs `&mut Arc`), which pins the `&Arc<Document>` return type of `document()` directly.
+2. Optionally, put a one-line comment in `fail_edit_without_token.rs` naming the `TRYBUILD=overwrite` step for when the `Document::edit` signature changes.
+
+### Result
+
+PASS. 0 CRITICAL, 2 WARNING, 2 SUGGESTION. D5 is done (subject to WARNING 1 on the PR's CI matrix). `next`: tdd-apply for the next delivery of `edit-history` (archive only after all deliveries pass).

@@ -1,0 +1,10 @@
+error[E0596]: cannot borrow `*doc` as mutable, as it is behind a `&` reference
+ --> tests/ui/fail_edit_on_shared_ref.rs:4:17
+  |
+4 |     let _view = doc.edit(token);
+  |                 ^^^ `doc` is a `&` reference, so it cannot be borrowed as mutable
+  |
+help: consider changing this to be a mutable reference
+  |
+3 | fn edit_shared(doc: &mut Document, token: &EditToken) {
+  |                      +++

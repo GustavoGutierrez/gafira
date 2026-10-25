@@ -1,0 +1,7 @@
+error[E0594]: cannot assign to data in an `Arc`
+ --> tests/ui/fail_assign_through_history.rs:6:5
+  |
+6 |     **history.document() = Document::default();
+  |     ^^^^^^^^^^^^^^^^^^^^ cannot assign
+  |
+  = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `Arc<Document>`
