@@ -129,11 +129,9 @@ Known limitation: a crate under `crates/` without a `clippy.toml` is not recogni
 
 ### Requirement: Policy checks cover every domain crate (V11, V12)
 
-C3 delivery: D1, D2. Scenarios without a delivery tag below belong to it.
+C3 delivery: D1, D2, D11. Scenarios without a delivery tag below belong to D1 and D2.
 
-V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-color`, `gafira-doc`, `gafira-edit` and `gafira-testkit` through its existing `crates/*` wildcard without per-crate edits. V12 MUST run under `set -euo pipefail` and MUST: (1) fail unless the canonical copy `crates/gafira-geom/clippy.toml` contains, inside the `disallowed-types` array, an uncommented entry anchored with `^[[:space:]]*\{ path = "std::collections::HashMap"` and the same for `HashSet` (a positive control, so removing the ban consistently from every copy, commenting it out, or moving it under `disallowed-methods` cannot pass); (2) fail when any `crates/*/clippy.toml` differs from the canonical copy; (3) count the copies and fail when fewer than three exist (so an empty or shrunken glob cannot pass). From C3 the tree has four copies (`gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`) and the floor stays at three (`>= 3`). The hardened V12 (all three checks) becomes active in the commit that adds the `gafira-doc` copy of `clippy.toml`, not before: with only two copies the count check would fail the earlier commits. The commit that adds the ban to the `gafira-geom` and `gafira-color` copies comes first and keeps the previous V12 body. `crates/gafira-color/clippy.toml`, `crates/gafira-doc/clippy.toml` and `crates/gafira-edit/clippy.toml` MUST be byte-identical to the canonical copy and MUST never be edited by hand (they are produced with `cp`).
-
-Known limitation, recorded in the verify report as not met: with four copies and a floor of three, deleting one non-canonical copy (for example `crates/gafira-edit/clippy.toml`) passes V12, and V5 as well, because V5's coverage loop iterates the `clippy.toml` copies, not the table rows. The crate then loses its ARQ-02 and ARQ-10 bans with CI green (measured in the D1 verify).
+V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-color`, `gafira-doc`, `gafira-edit` and `gafira-testkit` through its existing `crates/*` wildcard without per-crate edits. V12 MUST run under `set -euo pipefail` and MUST: (1) fail unless the canonical copy `crates/gafira-geom/clippy.toml` contains, inside the `disallowed-types` array, an uncommented entry anchored with `^[[:space:]]*\{ path = "std::collections::HashMap"` and the same for `HashSet` (a positive control, so removing the ban consistently from every copy, commenting it out, or moving it under `disallowed-methods` cannot pass); (2) fail when any `crates/*/clippy.toml` differs from the canonical copy, naming the crate; (3) fail, naming the crate, when a crate listed in the V5 table has no `crates/<crate>/clippy.toml`. The set of required copies MUST be derived from the V5 table, the one list that V5 iterates, so editing that table is enough to change what V12 requires; V12 MUST NOT keep a second list of crates. The only exception is `gafira-testkit`, a support crate without a `clippy.toml` (`design.md` Q10), which V12 MUST name explicitly as exempt. The reverse check stays in V5: a crate that has a `clippy.toml` but no V5 row fails V5 (see "Per-crate allowed-dependency table (V5)"). The fixed count floor of C2b (`>= 3` copies) is removed (owner decision, 2026-10-25, C3 D11): with a floor, deleting one of four copies passed both V12 and V5. History: in C2b the hardened V12 became active in the commit that added the `gafira-doc` copy, after the commit that added the ban to the `gafira-geom` and `gafira-color` copies. `crates/gafira-color/clippy.toml`, `crates/gafira-doc/clippy.toml` and `crates/gafira-edit/clippy.toml` MUST be byte-identical to the canonical copy and MUST never be edited by hand (they are produced with `cp`).
 
 #### Scenario: Copies identical (command)
 - GIVEN the final tree
@@ -160,20 +158,40 @@ Known limitation, recorded in the verify report as not met: with four copies and
 - WHEN V12 runs
 - THEN it exits 1 with the same message
 
-#### Scenario: Hardened V12 timing (command)
+#### Scenario: Hardened V12 timing (C2b history, command)
 - GIVEN the commit history of D1
 - WHEN V12 runs on the commit that adds the ban to the geom and color copies, and on the commit that adds the `gafira-doc` copy
 - THEN it passes on both (the first with the previous body, the second with the hardened body and three copies)
 
-#### Scenario: Too few copies fails V12 (H-N4, manual negative test)
-- GIVEN the `gafira-doc` and `gafira-color` copies removed (only the canonical one left)
-- WHEN V12 runs
-- THEN it exits 1 with "expected >= 3"
+#### Scenario: Clean tree passes the derived V12 (D11, command)
+- GIVEN the final tree, where `gafira-testkit` has no `clippy.toml`
+- WHEN V12 runs from a scratch copy under `bash --noprofile --norc -eo pipefail`
+- THEN it exits 0, having required the copies of `gafira-geom`, `gafira-color`, `gafira-doc` and `gafira-edit` and not one for `gafira-testkit`
 
-#### Scenario: Removing one of four copies is not detected (known limitation, manual)
+#### Scenario: A deleted copy fails V12 (D11, manual negative test)
 - GIVEN a scratch copy of the final tree with `crates/gafira-edit/clippy.toml` removed
-- WHEN V12 and V5 run
-- THEN both exit 0; this documents the limitation above
+- WHEN V12 runs
+- THEN it exits 1 with a message naming `gafira-edit`; the V12 before D11 exits 0 on the same tree (the RED)
+
+#### Scenario: An edited copy fails V12 (D11, manual negative test)
+- GIVEN a scratch copy of the final tree with one line appended to `crates/gafira-edit/clippy.toml`
+- WHEN V12 runs
+- THEN it exits 1 with a message naming `gafira-edit`
+
+#### Scenario: A V5 crate without a copy fails V12 (D11, manual negative test)
+- GIVEN a scratch crate `crates/gafira-scratch/` (valid manifest, `#![forbid(unsafe_code)]`, workspace member, no `clippy.toml`) and the row `gafira-scratch -` added to the V5 table
+- WHEN V12 runs
+- THEN it exits 1 with a message naming `gafira-scratch`; the V12 before D11 exits 0 on the same tree (the RED); removed afterwards
+
+#### Scenario: gafira-testkit is the named exception (D11, manual negative test)
+- GIVEN the final tree, and separately the `gafira-testkit` exemption removed from the step in a scratch copy
+- WHEN V12 runs
+- THEN it exits 0 on the final tree, and exits 1 naming `gafira-testkit` without the exemption (so the exemption is what lets it pass)
+
+#### Scenario: A copy without a V5 row still fails V5 (D11, manual negative test)
+- GIVEN a scratch copy of the final tree with the `gafira-color` row removed from the V5 table
+- WHEN V5 runs
+- THEN it exits 1 with "gafira-color has clippy.toml but no V5 row" (the existing reverse check, unchanged)
 
 #### Scenario: Missing forbid fails V11 (manual negative test)
 - GIVEN `#![forbid(unsafe_code)]` temporarily removed from `crates/gafira-doc/src/lib.rs`, and separately from `crates/gafira-color/src/lib.rs`

@@ -89,6 +89,7 @@ Measured size has run ×1.4 to ×1.9 over raw forecasts (mostly tests); C2b's de
 | D8 | `InsertNodes` (ids allocated on first apply, reused on redo) and `RemoveNodes` (subtrees, positions restored), with properties | ~675 | D4 |
 | D9 | `Reorder` and `Reparent` (cycle and container checks), with properties | ~630 | D8 |
 | D10 | (Q4) Page and DPI targets of `SetProperty`, `InsertPage`, `RemovePage`, with properties; CI step V14 (ARQ-81) | ~600 | D9 |
+| D11 | (owner, 2026-10-25) V12 derives the required `clippy.toml` copies from the V5 table (every row except `gafira-testkit`), names the failing crate, and drops the `>= 3` floor; CI only, spec first (`workspace-tooling` V12, scenarios D11) | small (one CI step) | D10 |
 
 Total forecast ~5 690. D5 to D7 and D8 to D10 are two chains after D4; they are listed in merge order, and each PR targets `main` or the previous unmerged delivery branch.
 
