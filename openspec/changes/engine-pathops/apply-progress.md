@@ -574,5 +574,5 @@ gafira-pathops` confirmed on every mutated tree):
 ### Measured size
 
 `git diff --shortstat ea1b17f..HEAD` before this docs commit: 5 files changed, 356
-insertions, 9 deletions (source: `stroke.rs` +85 / -4, `path.rs` +14 / -5, `lib.rs`
-+3 / -1; tests: `stroke_accuracy.rs` new, `validation.rs` +55).
+insertions, 9 deletions (source: `stroke.rs` +76 / -3, `path.rs` +14 / -5, `lib.rs`
++2 / -1; tests: `stroke_accuracy.rs` new, 213 lines, `validation.rs` +51).
