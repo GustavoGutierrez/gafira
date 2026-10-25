@@ -1,15 +1,15 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/manuals/marca/assets/gafira-logo-dark-background.svg">
-    <img src="docs/manuals/marca/assets/gafira-logo-primary.svg" alt="Gafira" width="240">
-  </picture>
+  <img src="docs/manuals/marca/assets/gafira-logo-primary.svg#gh-light-mode-only" alt="Gafira" width="240">
+  <img src="docs/manuals/marca/assets/gafira-logo-dark-background.svg#gh-dark-mode-only" alt="Gafira" width="240">
 </p>
 
 # Gafira
 
 Gafira is a local-first design, image and video editor written in Rust. It is proprietary software.
 
-Status: `gafira-geom`, `gafira-color` and the document model (`gafira-doc`) are in place; edit history is next. There is no GUI yet.
+Status: `gafira-geom`, `gafira-color` and the document model (`gafira-doc`) are in place; edit history is in progress (D1, the `Command` contract and `Transaction`, is done). There is no GUI yet.
+
+Current version: `0.1.0-beta.1` (see `CHANGELOG.md`).
 
 ## Preview
 
