@@ -367,7 +367,7 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 | D5b | `edit.rs` (removes the allocator gate) / `tests/edit.rs` (including "Changing the DPI" and "Edit touches one path") / `ci.yml` V13 | 70 / 70 / exact | 133 / 133 / 45 |
 | | **D5b total** | | **~420** (D5a plus D5b is ~635, the former D5 figure) |
 | D6a1 | `tests/properties.rs` (`mod common;`) / `tests/common/mod.rs` generator and feature/bounds guard | owner-approved re-cut of the old D6 (~645); D6a measured 874 against ~540, so split by the 700 rule | 495 measured |
-| D6a2 | `tests/common/mod.rs`: 24 `Corruption` kinds, `observed()`, corruption guard | | 379 measured |
+| D6a2 | `tests/common/mod.rs`: 24 `Corruption` kinds, `observed()`, corruption guard | | 388 measured |
 | | **D6a total** | | **~540 forecast, 874 measured** |
 | D6b | `tests/properties.rs` (Q1–Q5), mutation runs, CI runtime record | owner-approved re-cut | |
 | | **D6b total** | | **~365** |
@@ -383,7 +383,7 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 - D1 starts from `main`.
 - D2b (`ShapeNode.fill`) needs `Color`, which is already on `main` (C2a, PR #5 merged, `main` 75f7e78): D1, D2a and D2b all branch from the same chain with no wait.
 - The chain is linear: D1 ← D2a ← D2b ← D3a ← D3b ← D4a ← D4b ← D5a ← D5b ← D6a1 ← D6a2 ← D6b (twelve sub-deliveries; D1 also shipped as PR 1a and 1b, and D3, D4, D5 and D6 were cut during apply).
-- Branches: `feat/domain-doc-1a`, `-1b`, `-2a`, `-2b`, `-3a`, `-3b`, `-4a`, `-4b`, `-5a`, `-5b`, `-6a`, `-6b`, each based on the previous one.
+- Branches: `feat/domain-doc-1a`, `-1b`, `-2a`, `-2b`, `-3a`, `-3b`, `-4a`, `-4b`, `-5a`, `-5b`, `-6a`, `-6a2`, `-6b`, each based on the previous one.
 
 **Commit order** (each commit passes `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V5, V6, V11, V12 and, from D5b, V13):
 
@@ -457,7 +457,7 @@ The measured factor is ×1.9 on raw estimates, with tests included in the raw nu
 |---|---|---|
 | Q1 | ARQ-10: `to_json(from_json(to_json(d))) == to_json(d)` (bytes), and `from_json(to_json(d))` equals `d` field by field with `to_bits()` | **10 000** (`ProptestConfig::with_cases(10_000)`; the env cannot be read because `std::env` is banned in tests too) |
 | Q2 | Every generated document validates | default 256 |
-| Q3 | ARQ-13: one corruption from {duplicate id (across two pages, or a page id equal to a node id: an in-page duplicate cannot exist in a `BTreeMap`), key mismatch, `next_id` ≤ max, page size below or above the limit, dangling root, duplicate root, non-finite field, out-of-range opacity/alpha/skew/w/h, empty `type_id`, extension payload deepened to 65 levels, children on a leaf, dangling child, multiple parents, root with a parent, orphan, cycle, bad DPI, schema 2} → `validate` returns **exactly** that variant. **Wire clause**: for a *wire-visible* corruption, `from_json(to_json(d))` is `Err(Invalid(same))`. A corruption is wire-visible when `to_json` writes it and a reader reads the same value back. **Two corruptions are excluded from the wire clause** (they still get the `validate` clause): `ArenaKeyMismatch`, because the arena is written as the node array only, so the key is not on the wire and a reload derives it from `base.id` and succeeds; and `NonFinite`, because `to_json` writes `null` and the reload fails earlier with `LoadError::Json`, never `Invalid(NonFinite)`. Every other corruption is wire-visible. | default 256 |
+| Q3 | ARQ-13: one corruption from {duplicate id (across two pages, or a page id equal to a node id: an in-page duplicate cannot exist in a `BTreeMap`), key mismatch, `next_id` ≤ max, page size below or above the limit, dangling root, duplicate root, non-finite field, out-of-range opacity/alpha/skew/w/h, empty `type_id`, extension payload deepened to 65 levels, children on a leaf, dangling child, multiple parents, root with a parent, orphan, cycle, bad DPI, schema 2} → `validate` returns **exactly** that variant. **`schema 2` is wire-only**: no public path holds a `Document` with `schema_version != 1`, so the corruption patches `to_json(d)` and `from_json` returns `Err(Invalid(UnsupportedSchemaVersion { found: 2 }))`; it has no `validate` clause. **Wire clause**: for a *wire-visible* corruption, `from_json(to_json(d))` is `Err(Invalid(same))`. A corruption is wire-visible when `to_json` writes it and a reader reads the same value back. **Two corruptions are excluded from the wire clause** (they still get the `validate` clause): `ArenaKeyMismatch`, because the arena is written as the node array only, so the key is not on the wire and a reload derives it from `base.id` and succeeds; and `NonFinite`, because `to_json` writes `null` and the reload fails earlier with `LoadError::Json`, never `Invalid(NonFinite)`. Every other corruption is wire-visible. | default 256 |
 | Q4 | Canonical payload: `to_string(from_str::<Value>(to_string(v)))` is byte-stable | default 256 |
 | Q5 | Corruption never panics: a golden document (`minimal`, `full`, `extension`) with one random single-byte mutation (replace, insert or delete) → `from_json` returns `Err`, or an `Ok` document that passes `validate()`; nothing panics. Goldens come from `include_str!`. | default 256 |
 

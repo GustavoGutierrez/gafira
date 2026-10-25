@@ -108,7 +108,7 @@ Measure with `git diff --shortstat` after D2a. If the ratio is above ×1.3 of th
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Size overrun (C2a was ×1.92) | High | Eleven sub-deliveries of ≤ 700 lines each; measure after D2a; cut stacked branches at commit boundaries |
+| Size overrun (C2a was ×1.92) | High | Twelve sub-deliveries of ≤ 700 lines each; measure after D2a; cut stacked branches at commit boundaries |
 | The `EditToken` grep or V5 passes silently | Med | `set -euo pipefail`; a positive control (the definition must be found); manual negative runs per C2a N0–N7 |
 | 10 000 proptest cases are slow on 3 OS | Med | Bounded node and page counts; CI case count in design; `PROPTEST_CASES` runs locally |
 | `Value` normalization versus "byte for byte" in ARQ-11 | Med | Amendment 2; goldens written in canonical form |
