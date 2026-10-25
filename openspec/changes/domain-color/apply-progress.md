@@ -1,10 +1,10 @@
 # Apply Progress: domain-color (PR1 T1-T6, PR2 T7)
 
-Mode: Strict TDD (runner `cargo test`). Backend: hybrid (Engram not available to the executor; the orchestrator persists it). Branch: `feat/domain-color` from `main` (d02bb6f). Not pushed; no PR opened.
+Mode: Strict TDD (runner `cargo test`). Backend: hybrid (Engram not available to the executor; the orchestrator persists it). Branch: `feat/domain-color` from `main` (d02bb6f). PR1 was merged as #3-#5; this file now also covers PR2 on `feat/domain-color-transform`.
 
 Status: tasks 0.1, 0.2, 1.1-6.3, 7.1-7.4, 8.1 done (8.2 by the coordinator). Pending: 0.3 `Result` deviation confirmation.
 
-**DECISION REQUIRED BEFORE PUSH: PR1 measures 1718 lines (limit 800). See "Size checkpoint".**
+PR1 measured 1718 lines (limit 800) and was split and merged as #3-#5 (see "PR1 delivery note").
 
 ## Commits (oldest first)
 
@@ -156,7 +156,7 @@ Origin: the pre-archive verify found `ColorTransform` (PR2) was never built, so 
 | Identity transform | `identity_transform_keeps_every_bit` |
 | Agreement with the typed API (P6) | `tests/properties.rs::apply_f32_agrees_with_the_typed_api` |
 
-Not covered as a separate test: "Slice round trip (property)"; it follows from P6 plus the typed P-round-trip properties (P6 proves bit identity with the typed API, whose round trip is covered by P2).
+Not covered as a separate test: "Slice round trip (property)"; it follows from P6 (`apply_f32_agrees_with_the_typed_api`, bit identity with the typed API) plus the typed round trips: sRGB<->linear (P4, `srgb_linear_srgb_round_trip_*`) and sRGB<->P3 (`display_p3_round_trip_*`, `tests/properties.rs:199`).
 
 ### RED
 

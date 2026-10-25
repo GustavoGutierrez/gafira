@@ -154,8 +154,8 @@ Reference data (each checked within 1e-4): sRGB red, green, blue in encoded Disp
 
 #### Scenario: Object safety and thread bounds (unit)
 - GIVEN a `Box<dyn ColorTransform>` built from `AnalyticTransform`
-- WHEN moved to another thread and called there
-- THEN it compiles and runs
+- WHEN a function requiring `Send + Sync` is instantiated with it (compile-time proof; domain crates ban thread spawning, ARQ-02)
+- THEN it compiles and `apply_f32` is callable through the trait object
 
 #### Scenario: Rgba slice (unit)
 - GIVEN 3 sRGB RGBA pixels and an sRGB -> linear transform

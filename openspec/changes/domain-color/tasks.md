@@ -78,7 +78,7 @@ Cut and CI:
 - [x] 6.1 `tests/properties.rs`: P1 (sRGB -> linear -> sRGB, [0,1] and [-4,4], `2e-6`), P2, P3 (monotonic decode and encode on [-4,4]), P4 (alpha bit-preserved), P5 (`decode(-x)` bits = `-decode(x)`), P7 (serde round trip bit-identical for all three types, all `Color` variants and `ColorSpaceId`, finite `f32` incl. `-0.0`/subnormals; verify the internally-tagged `Content` path is bit-exact), P8 (composition, `1e-4`); P3 round trips `1e-5` in [0,1] and `1e-4` in [-4,4]; add near-zero samples. Guard test with `TestRunner::deterministic()` proves the generators reach `-0.0` and subnormals. RED by mutation (truncate through `f32` mid-pipeline; rename a variant), then revert. Done when properties pass; commit any real `proptest-regressions/` (not mutation artifacts). Commit: `test(color): add property tests for curves, conversions and serde`.
 - [x] 6.2 Run all gates, V3, V5 (N0), V6, V11, V12, `cargo tree -p gafira-color -e dev` check, `cargo deny check`.
 - [x] 6.3 Size checkpoint: `git diff --shortstat main...HEAD -- . ':!Cargo.lock' ':!openspec'`. Done when the figure is in apply-progress; if over 800, move task 2 to PR2 and tell the orchestrator before pushing.
-- [ ] 6.4 Commit `Cargo.lock` if changed (`build: add gafira-color to Cargo.lock`), push `feat/domain-color`, open PR1 (chain context; dependency diagram if chained). Done when the three `test` jobs and `policy` are green.
+- [x] 6.4 Commit `Cargo.lock` if changed (`build: add gafira-color to Cargo.lock`), push `feat/domain-color`, open PR1 (chain context; dependency diagram if chained). Done when the three `test` jobs and `policy` are green.
 
 ## PR2 (T7, ~175 lines), after PR1 merges (or per chain strategy)
 
@@ -92,4 +92,4 @@ Cut and CI:
 ### Phase 8: Final verification (T8)
 
 - [x] 8.1 Run `cargo fmt --check`, clippy with `-D warnings`, `cargo test --workspace --locked`, `cargo deny check`, V3, V5 (N0), V6, V11, V12; record the measured size of PR2 and of the whole change. Done when green locally.
-- [x] 8.2 (push and PR done by the coordinator) Push, open PR2, wait for the three `test` jobs and `policy` green. Pending items stay recorded: ΔE2000 (deferred), holder confirmation of the `Result` deviation, N5 limitation (not met), ARQ-80 (403).
+- [ ] 8.2 (after verify, by the coordinator, not the executor) Push, open PR2, wait for the three `test` jobs and `policy` green. Pending items stay recorded: ΔE2000 (deferred), holder confirmation of the `Result` deviation, N5 limitation (not met), ARQ-80 (403).
