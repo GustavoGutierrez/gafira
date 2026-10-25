@@ -200,12 +200,12 @@ The `policy` job MUST contain step V13, which fails when `EditToken` or the hidd
 #### Scenario: Dev-only (D5, command)
 - GIVEN the final tree
 - WHEN `cargo tree -e normal,build -i trybuild --workspace` runs
-- THEN no workspace crate is listed as a dependent of `trybuild` (or cargo reports that `trybuild` is not in the normal/build graph)
+- THEN no workspace crate is listed as a dependent of `trybuild` (or cargo reports that `trybuild` is not in the normal/build graph); the scenario judges the printed output, not the exit code, because `cargo tree -i trybuild -e normal,build` exits 0 both when clean ("nothing to print") and when violated (spike R13)
 
 #### Scenario: Lock delta is bounded (D5, command)
 - GIVEN `Cargo.lock` before and after D5
 - WHEN the added `[[package]]` names are listed
-- THEN each is `trybuild` or a package of `cargo tree -p trybuild`, and none comes from a git source
+- THEN each is a registry package (none from a git source) that appears in `cargo metadata --format-version 1` as a transitive dependency of `trybuild` or is a new workspace crate, and `cargo deny check` passes; the comparison uses `cargo metadata`, not `cargo tree -p trybuild`, because the lock also gains `equivalent`, `hashbrown` and `indexmap` (through `toml`'s optional `indexmap`), which `cargo tree` does not list (spike R2)
 
 #### Scenario: Deny passes unchanged (D5, command)
 - GIVEN `cargo-deny` installed

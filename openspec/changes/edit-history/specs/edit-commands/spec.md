@@ -44,7 +44,7 @@ Open decisions are in `design.md`; a requirement that depends on one names it ("
 - THEN it returns `Err` holding the same second command (pointer-equal box contents)
 
 #### Scenario: Merge can recover the concrete type (D1, unit)
-- GIVEN a test command that overrides `merge` by upcasting `next` to `Box<dyn Any + Send + Sync>` and downcasting it to its own type
+- GIVEN a test command that overrides `merge` by first probing `next` by reference (`(&*next as &dyn Any).is::<Own>()`), returning `Err(next)` on a mismatch, and only then upcasting the box to `Box<dyn Any + Send + Sync>` and downcasting it to its own type (a failed by-value `Box<dyn Any>::downcast` cannot give back the `Box<dyn Command>`, so the probe MUST come first; spike R11)
 - WHEN it merges a command of its own type and then one of another type
 - THEN the first returns `Ok(())`, and the second returns `Err` with the other command intact
 

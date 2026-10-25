@@ -137,7 +137,7 @@ C2b constraint 7: the generator lives in `crates/gafira-doc/tests/common` and C3
 
 | Option | Effect |
 |---|---|
-| **A. Create `gafira-testkit`**: the generator moved with `git mv`, plus the `prop_command` harness. Normal dependencies `gafira-doc`, `gafira-edit`, `proptest`. Used only as a dev-dependency by the integration tests of `gafira-doc` and `gafira-edit`. A V5 row, `#![forbid(unsafe_code)]` (V11), and **no** domain `clippy.toml` (it will read golden files later) | One home for generators. The dev-dependency cycle works for integration tests only (explorer R7). |
+| **A. Create `gafira-testkit`**: the generator moved with `git mv`, plus the `prop_command` harness. After the move, `mod guards` MUST get `#[cfg(test)]` (else clippy reports dead code in the library); the two guard tests then run in a separate binary (~6 s on Linux). Normal dependencies `gafira-doc`, `gafira-edit`, `proptest`. Used only as a dev-dependency by the integration tests of `gafira-doc` and `gafira-edit`. A V5 row, `#![forbid(unsafe_code)]` (V11), and **no** domain `clippy.toml` (it will read golden files later) | One home for generators. The dev-dependency cycle works for integration tests only (explorer R7). |
 | B. Copy the generator into `gafira-edit/tests/common` | Two generators drift apart. |
 
 Recommendation: **A**. Its V5 row exists although V5's coverage check only requires rows for crates with a `clippy.toml`.
