@@ -79,6 +79,7 @@ jobs:
           table='
           gafira-geom  -
           gafira-color -
+          gafira-doc   gafira-geom gafira-color
           '
           forbidden='egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq'
           status=0
@@ -100,9 +101,21 @@ jobs:
           exit "$status"
       - name: Domain clippy.toml copies are in sync (V12)
         run: |
-          for c in crates/*/clippy.toml; do
-            [ "$c" = crates/gafira-geom/clippy.toml ] || diff -q crates/gafira-geom/clippy.toml "$c"
+          set -euo pipefail
+          canon=crates/gafira-geom/clippy.toml
+          # Only the disallowed-types array counts: from its key line to its closing bracket.
+          types=$(awk '/^disallowed-types[[:space:]]*=/{on=1} on{print} on && /^\]/{exit}' "$canon")
+          [ -n "$types" ] || { echo "::error::$canon has no disallowed-types array" >&2; exit 1; }
+          for t in HashMap HashSet; do
+            grep -qE "^[[:space:]]*\{ path = \"std::collections::$t\"" <<<"$types" \
+              || { echo "::error::$canon lacks the std::collections::$t ban under disallowed-types" >&2; exit 1; }
           done
+          n=0
+          for c in crates/*/clippy.toml; do
+            n=$((n + 1))
+            [ "$c" = "$canon" ] || diff -q "$canon" "$c"
+          done
+          [ "$n" -ge 3 ] || { echo "::error::expected >= 3 domain clippy.toml copies, found $n" >&2; exit 1; }
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
