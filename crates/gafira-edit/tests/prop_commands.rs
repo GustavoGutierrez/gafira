@@ -1,8 +1,10 @@
 //! Every core command runs the six 02 §10 laws (ARQ-81).
 
 use gafira_color::{Color, Rgba};
-use gafira_doc::{BlendMode, Document, NodeId, PageId, Placement, ShapeGeometry};
-use gafira_edit::{GestureId, Property, SetProperty};
+use gafira_doc::{
+    BlendMode, Document, GroupNode, NodeId, NodeKind, PageId, Placement, ShapeGeometry, ShapeNode,
+};
+use gafira_edit::{GestureId, InsertNodes, NodeSpec, Property, RemoveNodes, SetProperty};
 use gafira_testkit::prop_command;
 use proptest::prelude::*;
 
@@ -113,4 +115,97 @@ fn drag(doc: &Document) -> BoxedStrategy<SetProperty> {
 #[test]
 fn merged_set_property_drags_obey_the_command_laws() {
     prop_command(drag);
+}
+
+/// A page of `doc` (sometimes a missing one) with a pool of its node ids.
+fn page_and_pool(doc: &Document) -> BoxedStrategy<(PageId, Vec<NodeId>)> {
+    let pages: Vec<(PageId, Vec<NodeId>)> = doc
+        .pages()
+        .iter()
+        .map(|p| (p.id, p.nodes.keys().copied().collect()))
+        .collect();
+    (0..=pages.len())
+        .prop_map(move |i| {
+            pages
+                .get(i)
+                .cloned()
+                .unwrap_or((PageId::new(u64::MAX), Vec::new()))
+        })
+        .boxed()
+}
+
+/// Small trees of shapes and groups; one case in twenty has an opacity
+/// `validate()` refuses.
+fn node_spec() -> impl Strategy<Value = NodeSpec> {
+    let leaf = (
+        placement(),
+        prop_oneof![19 => Just(1.0_f32), 1 => Just(1.5_f32)],
+    )
+        .prop_map(|(at, opacity)| NodeSpec {
+            opacity,
+            ..NodeSpec::new(NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect)), at)
+        });
+    leaf.prop_recursive(2, 6, 3, |inner| {
+        (placement(), prop::collection::vec(inner, 0..=3)).prop_map(|(at, kids)| {
+            NodeSpec::new(NodeKind::Group(GroupNode {}), at).with_children(kids)
+        })
+    })
+}
+
+/// A page id, its root count, and each node id with its child count.
+type PageShape = (PageId, usize, Vec<(NodeId, usize)>);
+
+/// A page, a parent (a root insert, a node of the page, or a missing one) and
+/// an index that is mostly inside `0..=len` and sometimes past it.
+fn insert_nodes(doc: &Document) -> BoxedStrategy<InsertNodes> {
+    let sizes: Vec<PageShape> = doc
+        .pages()
+        .iter()
+        .map(|p| {
+            let kids = p.nodes.values().map(|n| (n.base.id, n.children.len()));
+            (p.id, p.roots.len(), kids.collect())
+        })
+        .collect();
+    let target = (0..=sizes.len(), any::<prop::sample::Index>()).prop_flat_map(move |(i, pick)| {
+        let Some((page, roots, nodes)) = sizes.get(i).cloned() else {
+            return Just((PageId::new(u64::MAX), None, 0)).boxed();
+        };
+        let mut parents: Vec<(Option<NodeId>, usize)> = vec![(None, roots)];
+        parents.extend(nodes.iter().map(|(id, len)| (Some(*id), *len)));
+        parents.push((Some(NodeId::new(u64::MAX)), 0));
+        let (parent, len) = parents[pick.index(parents.len())];
+        Just((page, parent, len)).boxed()
+    });
+    (
+        target,
+        0..=6_usize,
+        prop::collection::vec(node_spec(), 0..=2),
+    )
+        .prop_map(|((page, parent, len), over, specs)| {
+            let index = if over == 6 { len + 1 } else { over.min(len) };
+            InsertNodes::new(page, parent, index, specs)
+        })
+        .boxed()
+}
+
+#[test]
+fn insert_nodes_obeys_the_command_laws() {
+    prop_command(insert_nodes);
+}
+
+/// One to three nodes of one page, sometimes a missing one.
+fn remove_nodes(doc: &Document) -> BoxedStrategy<RemoveNodes> {
+    page_and_pool(doc)
+        .prop_flat_map(|(page, mut pool)| {
+            pool.push(NodeId::new(u64::MAX));
+            let nodes = prop::collection::vec(prop::sample::select(pool), 0..=3);
+            (Just(page), nodes)
+        })
+        .prop_map(|(page, nodes)| RemoveNodes::new(page, nodes))
+        .boxed()
+}
+
+#[test]
+fn remove_nodes_obeys_the_command_laws() {
+    prop_command(remove_nodes);
 }

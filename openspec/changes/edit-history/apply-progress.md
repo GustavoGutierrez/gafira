@@ -290,6 +290,13 @@ Size (`git diff --shortstat main..HEAD -- crates`, before this file): 422 insert
 - W2 (M1): `an_undo_between_commands_stops_the_merge_into_older_entries` now uses one open gesture and commands 10 ms apart, so the window cannot hide the rule. With `undo` no longer clearing `mergeable` it fails (`len` 1 vs 2). The rule is kept; it is stricter than the spec and recorded as such.
 - W1 (pending spec edit, not code): `edit-history` "Gesture merge" should state that a key with a gesture merges only while that gesture is open (no time limit), that the 500 ms window applies only to keys without a gesture, and that an undo or redo ends the merge run.
 
+## D8: `InsertNodes` and `RemoveNodes`
+
+Base: `main` 1518560. Branch `feat/edit-history-8`.
+
+### Decision A (owner): `DocMut::restore_next_id(u64)`
+
+Law 1 (`apply; revert` equals the original) compares `next_id`, and `DocMut` could only raise the counter, so `InsertNodes::revert` could not satisfy it. The owner chose option A: an additive `DocMut::restore_next_id(value)` that only lowers the counter (`min`); a value at or above the counter is ignored. `revert` calls it with the counter recorded before the allocation. The clarification of "ids never reused" lives in `specs/edit-commands/spec.md` (requirement "Restoring the id counter"); the main `edit-capability` spec is not edited here. V13 does not enumerate `DocMut` methods, so `ci.yml` is untouched.
 ## D5: trybuild, ARQ-30 fixtures
 
 Base: `main` 1518560. Branch `feat/edit-history-5`.
@@ -298,6 +305,14 @@ Base: `main` 1518560. Branch `feat/edit-history-5`.
 
 | Commit | Content |
 |---|---|
+| feat(doc): add DocMut::restore_next_id so a revert can return the id counter | method, 2 tests, delta spec requirement |
+| feat(edit): add InsertNodes with ids allocated once and restored on revert | `insert_nodes.rs`, `NodeSpec`, 12 tests in `tests/node_commands.rs` |
+| feat(edit): add RemoveNodes that restores subtrees to their exact positions | `remove_nodes.rs`, 9 more tests |
+| test(edit): run the command laws over InsertNodes and RemoveNodes | two properties (1 000 cases) in `tests/prop_commands.rs` |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0). V11 has no step of that name in `ci.yml`.
+
+Size (`git diff --shortstat main..HEAD -- crates`): 1037 insertions, 2 deletions (forecast ~675, ceiling ~700): about 33 + 526 + 382 + 97 per commit. Over the ceiling; about 550 lines are tests. Cut points for stacked PRs: after commit 2 (~560), then 3 and 4.
 | test(edit): run an outside Command through History with trybuild (ARQ-30) | `trybuild = "1"` in `[workspace.dependencies]` (locked 1.0.122, 18 days old), dev-dependency of `gafira-edit`, `tests/ui.rs`, pass fixture `pass_outside_command.rs` (outside `Command`: execute, undo, redo) |
 | test(edit): prove with compile-fail fixtures that a Document cannot be mutated from outside (ARQ-30) | 8 compile-fail fixtures with `.stderr` |
 
@@ -309,6 +324,43 @@ Size (`git diff --shortstat main..HEAD -- . ':!Cargo.lock' ':!openspec'`): 20 fi
 
 | Scenario | Evidence |
 |---|---|
+| Insert then redo reuses ids | `insert_then_redo_reuses_ids` (10, 11, 12; revert equals the original; redo equals the first result) |
+| Remove a subtree and restore order | `remove_a_subtree_and_restore_the_order` |
+| Index out of range | `an_index_above_the_length_is_refused`, `the_end_of_the_list_is_a_valid_index` |
+| Insert under a shape fails cleanly | `a_shape_cannot_be_a_parent` |
+| Node plus descendant equals the ancestor | `listing_a_node_and_its_descendant_is_listing_the_ancestor` |
+| Exhausted id space | `an_exhausted_id_space_changes_nothing` |
+| D1 W4 (reuse after a failed apply) | `a_command_is_reusable_after_a_failed_apply`, `a_remove_command_is_reusable_after_a_failed_apply` |
+| Reissued id after undo (Q6, through a real `History`) | `an_id_is_reissued_after_an_undo` |
+| Counter restored in a rollback | `a_failed_transaction_gives_the_ids_back` |
+| Laws 1 to 5 | `insert_nodes_obeys_the_command_laws`, `remove_nodes_obeys_the_command_laws` |
+
+### RED evidence
+
+- `restore_next_id`: against a no-op stub `restore_next_id_lowers_the_counter_to_a_recorded_value` failed (`left: 3, right: 1`); the "never raises" test caught the mutant `next_id = value`.
+- `InsertNodes` and `RemoveNodes`: tests were written against stubs (`apply` returned `Unchanged`, `revert` `Ok`): 12 of 12 insert tests and 6 of 7 remove tests failed on assertions before the code (the remaining one passed vacuously and is guarded by mutants).
+- Mutants caught by unit tests: no `restore_next_id` in revert, no `validate_new`, no descendant dedupe, no sort of places, no index check in revert (the last two needed two extra tests: `positions_follow_the_list_not_the_id_order`, `a_revert_that_cannot_find_its_place_fails_and_changes_nothing`).
+- The properties passed at once on the finished code (unit tests drove the implementation); RED by mutant: no counter restore gives law 1, touches without the parent node or the page gives law 4, no dedupe or no sort gives law 1.
+- One slip: a commit was first made with a clippy `type_complexity` error because the gate pipeline hid the exit code; it was amended before anything else was built on it, and the gates were rerun green.
+
+### Deviations and notes
+
+- `apply` always allocates its ids from the counter and records them (spec: reuse on a later apply). After a `revert` the counter is back at the recorded value, so a redo gets the same ids; if a caller applies it on a document whose counter moved, fresh ids are used, which keeps ids unique. `History` never re-applies on redo.
+- The new nodes are checked with `validate` on a scratch one-page document before the real one is touched; a bad value gives `InvalidDocument(ValidationError)`. Children below a non-group spec give `InvalidValue`.
+- Empty node lists give `InvalidValue("an empty list of nodes")` (as `SetProperty`).
+- `RemoveNodes` keeps the removed `Arc<Node>`s, so revert restores the identical nodes; it scans the page once for parents and indices (O(page nodes), not O(touched)).
+- Neither command has a `merge_key` (spec: only `SetProperty` merges).
+- Law 4: root inserts and removals list the page; inserts and removals inside a group list the parent node and not the page.
+
+### D8 fix round (verify FAIL: C1, W2, W3, W4), test first
+
+- C1: `an_id_is_reissued_after_an_undo` (real `History`: InsertNodes takes id 10, undo, a second InsertNodes takes 10 again, `validate()` passes). The behavior already held, so RED is by mutant: with `undo` not installing the `before` snapshot (temporary, reverted) it fails with `left: 11, right: 10`. The Q6 evidence row above was wrong (a `Transaction` rollback test) and is corrected.
+- W2/H3: `a_revert_whose_parent_is_gone_fails_and_changes_nothing` fails with the missing-parent check removed.
+- W3/H6: `a_revert_of_nodes_that_are_already_back_fails_and_changes_nothing` fails with the "already back" check removed.
+- W4 (pending spec edits, for the coordinator before archive):
+  1. `edit-commands` "InsertNodes and RemoveNodes": reword "on a later apply (redo after revert) it MUST reuse the same ids" as "a redo after `revert` produces the same ids".
+  2. Archive carries the "Restoring the id counter" clarification of "ids never reused" into the main `edit-capability` "Id allocation" requirement.
+- Not done: SUGGESTION 1 (guard `restore_next_id` in `InsertNodes::revert` against non-LIFO reverts) and the size decision (WARNING 1).
 | Fixtures 1 to 5 fail to compile with the recorded code | E0599 `fail_history_document_mut`; E0594 `fail_assign_through_history` (`**history.document() =`), `fail_assign_through_ref`; E0061 `fail_edit_without_token`; E0596 `fail_edit_on_shared_ref`, `fail_mut_page_from_shared_doc`, `fail_mut_node_from_shared_page`; E0616 `fail_write_private_field` |
 | Outside command takes the legitimate path | `pass_outside_command.rs` asserts the change, the undo and the redo |
 | Wrong error code fails | `fail_write_private_field.stderr` changed E0616 to E0599: `mismatch`, test FAILED; reverted, ok |
