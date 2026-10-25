@@ -7,7 +7,9 @@ use gafira_doc::{
     Document, Dpi, EditToken, GroupNode, NodeId, NodeKind, Page, PageId, PageSize, Placement,
     ShapeGeometry, ShapeNode, ValidationError,
 };
-use gafira_edit::{Applied, Command, CommandError, InsertNodes, NodeSpec, Transaction};
+use gafira_edit::{
+    Applied, Command, CommandError, InsertNodes, NodeSpec, RemoveNodes, Transaction,
+};
 use gafira_geom::{Length, Unit};
 
 const PAGE: PageId = PageId::new(1);
@@ -267,4 +269,171 @@ fn a_failed_transaction_gives_the_ids_back() {
     let mut tx = Transaction::new(MessageKey("test.tx"), vec![Box::new(ok), Box::new(bad)]);
     assert!(apply(&mut tx, &mut doc).is_err());
     assert_eq!(doc, original);
+}
+
+fn n(id: u64) -> NodeId {
+    NodeId::new(id)
+}
+
+/// Roots `[a, g, b]` = `[2, 3, 6]`; group `g` has children `[c, d]` = `[4, 5]`.
+fn tree() -> Document {
+    let mut doc = empty(2);
+    let specs = vec![shape(), group(vec![shape(), shape()]), shape()];
+    apply(&mut InsertNodes::new(PAGE, None, 0, specs), &mut doc).unwrap();
+    assert_eq!(page(&doc).roots, ids(&[2, 3, 6]));
+    doc
+}
+
+#[test]
+fn remove_a_subtree_and_restore_the_order() {
+    let original = tree();
+    let mut doc = original.clone();
+    let mut remove = RemoveNodes::new(PAGE, vec![n(3), n(5)]);
+    assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+    assert_eq!(page(&doc).roots, ids(&[2, 6]));
+    let left: Vec<NodeId> = page(&doc).nodes.keys().copied().collect();
+    assert_eq!(left, ids(&[2, 6]));
+    assert_eq!(doc.validate(), Ok(()));
+
+    revert(&mut remove, &mut doc).unwrap();
+    assert_eq!(doc, original);
+    assert_eq!(page(&doc).roots, ids(&[2, 3, 6]));
+    assert_eq!(page(&doc).node(n(3)).unwrap().children, ids(&[4, 5]));
+}
+
+#[test]
+fn listing_a_node_and_its_descendant_is_listing_the_ancestor() {
+    let alone = {
+        let mut doc = tree();
+        let mut remove = RemoveNodes::new(PAGE, vec![n(3)]);
+        apply(&mut remove, &mut doc).unwrap();
+        (doc, remove.touches())
+    };
+    for list in [vec![n(3), n(5)], vec![n(5), n(3)], vec![n(3), n(3)]] {
+        let mut doc = tree();
+        let mut remove = RemoveNodes::new(PAGE, list);
+        apply(&mut remove, &mut doc).unwrap();
+        assert_eq!(doc, alone.0);
+        assert_eq!(remove.touches(), alone.1);
+    }
+}
+
+#[test]
+fn siblings_return_to_their_exact_positions() {
+    let mut doc = empty(2);
+    let kids = vec![shape(), shape(), shape(), shape()];
+    apply(
+        &mut InsertNodes::new(PAGE, None, 0, vec![group(kids)]),
+        &mut doc,
+    )
+    .unwrap();
+    // Group 2, children 3..=6.
+    let original = doc.clone();
+    for list in [vec![n(3), n(5)], vec![n(5), n(3)], vec![n(3), n(4), n(6)]] {
+        let mut copy = original.clone();
+        let mut remove = RemoveNodes::new(PAGE, list.clone());
+        apply(&mut remove, &mut copy).unwrap();
+        let kept: Vec<NodeId> = [3, 4, 5, 6]
+            .into_iter()
+            .map(n)
+            .filter(|id| !list.contains(id))
+            .collect();
+        assert_eq!(page(&copy).node(n(2)).unwrap().children, kept);
+        revert(&mut remove, &mut copy).unwrap();
+        assert_eq!(copy, original, "{list:?}");
+    }
+}
+
+#[test]
+fn removal_touches_the_parent_and_the_removed_nodes() {
+    let mut doc = tree();
+    let mut inner = RemoveNodes::new(PAGE, vec![n(4)]);
+    apply(&mut inner, &mut doc).unwrap();
+    let touched = inner.touches();
+    assert!(touched.pages.is_empty());
+    assert_eq!(touched.nodes, ids(&[3, 4]).into_iter().collect());
+
+    let mut roots = RemoveNodes::new(PAGE, vec![n(3)]);
+    apply(&mut roots, &mut doc).unwrap();
+    let touched = roots.touches();
+    assert_eq!(touched.pages, [PAGE].into_iter().collect());
+    assert_eq!(touched.nodes, ids(&[3, 5]).into_iter().collect());
+}
+
+#[test]
+fn a_missing_node_page_or_list_is_refused() {
+    let doc = tree();
+    refused(
+        RemoveNodes::new(PAGE, vec![n(2), n(77)]),
+        &doc,
+        CommandError::MissingNode(n(77)),
+    );
+    refused(
+        RemoveNodes::new(PageId::new(9), vec![n(2)]),
+        &doc,
+        CommandError::MissingPage(PageId::new(9)),
+    );
+    refused(
+        RemoveNodes::new(PAGE, vec![]),
+        &doc,
+        CommandError::InvalidValue("an empty list of nodes"),
+    );
+}
+
+#[test]
+fn a_remove_command_is_reusable_after_a_failed_apply() {
+    let mut remove = RemoveNodes::new(PAGE, vec![n(3)]);
+    let mut bare = empty(2);
+    assert_eq!(
+        apply(&mut remove, &mut bare),
+        Err(CommandError::MissingNode(n(3)))
+    );
+    let mut doc = tree();
+    let mut fresh = doc.clone();
+    apply(&mut RemoveNodes::new(PAGE, vec![n(3)]), &mut fresh).unwrap();
+    assert_eq!(apply(&mut remove, &mut doc), Ok(Applied::Changed));
+    assert_eq!(doc, fresh);
+    revert(&mut remove, &mut doc).unwrap();
+    assert_eq!(doc, tree());
+}
+
+#[test]
+fn reverting_a_remove_that_never_applied_fails() {
+    let mut doc = tree();
+    let mut remove = RemoveNodes::new(PAGE, vec![n(3)]);
+    assert_eq!(revert(&mut remove, &mut doc), Err(CommandError::NotApplied));
+}
+
+#[test]
+fn positions_follow_the_list_not_the_id_order() {
+    // Inserting at the front makes the roots `[4, 3, 2]`: ids run against positions.
+    let mut doc = empty(2);
+    for _ in 0..3 {
+        apply(
+            &mut InsertNodes::new(PAGE, None, 0, vec![shape()]),
+            &mut doc,
+        )
+        .unwrap();
+    }
+    assert_eq!(page(&doc).roots, ids(&[4, 3, 2]));
+    let original = doc.clone();
+    let mut remove = RemoveNodes::new(PAGE, vec![n(2), n(4)]);
+    apply(&mut remove, &mut doc).unwrap();
+    assert_eq!(page(&doc).roots, ids(&[3]));
+    revert(&mut remove, &mut doc).unwrap();
+    assert_eq!(doc, original);
+}
+
+#[test]
+fn a_revert_that_cannot_find_its_place_fails_and_changes_nothing() {
+    let mut doc = tree();
+    let mut remove = RemoveNodes::new(PAGE, vec![n(6)]);
+    apply(&mut remove, &mut doc).unwrap();
+    apply(&mut RemoveNodes::new(PAGE, vec![n(2), n(3)]), &mut doc).unwrap();
+    let before = doc.clone();
+    assert_eq!(
+        revert(&mut remove, &mut doc),
+        Err(CommandError::IndexOutOfRange { index: 2, len: 0 })
+    );
+    assert_eq!(doc, before);
 }
