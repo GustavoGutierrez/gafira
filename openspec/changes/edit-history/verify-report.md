@@ -291,3 +291,177 @@ None.
 1. S1 to S3 from the D2 section are unchanged.
 2. The "D2 fix round" in `apply-progress.md` does not record the new test total (329). Add it with the D3 progress update.
 3. `it_runs_a_thousand_cases_by_default` relies on proptest calling the `prop_flat_map` closure exactly once per accepted case (2 strategy builds). It passed 5 runs in a row. If a later `document()` change adds `prop_filter` after the flat map, or the proptest version changes, update the assertion. A `>= 2_000` bound with a matching comment would be less brittle without losing the kill on mutant `83:9` (256 cases gives 512).
+
+## D3: `SetProperty` (node and shape fields)
+
+Branch `feat/edit-history-3`, base `main` a34cdb7, HEAD 64c5965 (commits 05aad32, 0a5c444, 64c5965). Verified on 2026-10-25. Gates ran in the main checkout. Per-commit runs, the outcome tally and the hand mutations ran on `git archive` exports in the session scratchpad (`scratchpad/vd3`). The source was not edited, and `git status` is clean apart from this report.
+
+**Delivery verdict: FAIL** (1 CRITICAL, 5 WARNING, 4 SUGGESTION). **Change verdict: not final.** `next`: `tdd-apply` for a test-only D3 fix round (C1, and W2 if cheap), then re-verify. D4 follows after that.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 346 passed, 0 failed |
+| Each commit alone (fmt, clippy, test) | 05aad32: rc 0, 0, 344 passed. 0a5c444: rc 0, 0, 346 passed. 64c5965 is docs only |
+| `cargo deny check` | advisories, bans, licenses and sources ok |
+| `ci.yml` policy steps ARQ-07, forbid unsafe, V5, V12, V13 (from HEAD's `ci.yml`, `bash --noprofile --norc -eo pipefail`) | all rc 0. V5 does not see the new `gafira-testkit` dev-dependency (`-e normal,build`) |
+| `PROPTEST_CASES` = 10 / 1 000 / 20 000 on `prop_commands` | 0.06 s / 0.34 s / 5.77 s. The time scales with the count, so the 1 000 default cases really run. R14 on Linux: 2 x 1 000 cases in about 0.3 s (debug) |
+
+Size: `git diff --shortstat a34cdb7..HEAD` gives 727 insertions (683 in `crates/`, of which 577 is `set_property.rs` with its unit tests, and 103 is `prop_commands.rs`). The code is under the ~700 limit; the total is just over it because of `apply-progress.md`. Acceptable. Commits use conventional subjects, author Gustavo Gutierrez, and contain no `Co-Authored-By`, Claude or AI lines (0 matches). No `proptest-regressions` files.
+
+### Requirement and scenario coverage (D3)
+
+| Requirement / scenario | Status | Evidence |
+|---|---|---|
+| SetProperty sets `name`, `placement`, `opacity`, `blend`, `visible`, `locked`, and `fill`, `geometry` on shapes | covered | `every_property_is_set_and_restored` (8 properties, set, `validate()`, revert equals the original) |
+| Stores the previous value of every target and restores it on `revert` | covered | same test; `a_node_listed_twice_reverts_to_its_first_value`; deviation 1 below |
+| `Unchanged` when **every** target already holds the value | **partly covered** | `the_same_value_is_unchanged_and_shares_the_page` covers "all hold it". The mixed case (some targets hold it, some do not) is untested. See C1 |
+| Shape property on a non-shape fails with `InvalidValue` | covered | `a_shape_property_on_another_node_fails_without_a_partial_change` (`[A, GROUP]`, no partial write); hand mutant H1 killed |
+| `merge_key` always `Some`, from kind + property, page, targets, gesture | covered | `the_merge_key_names_the_property_page_nodes_and_gesture` (8 kinds). D1 W2 carry-over (property folded into `kind`) is honoured: `set_property.<property>` |
+| `merge`: equal keys keep the first command's previous values and the second's new value; `Err(next)` unchanged otherwise | covered | `a_merged_drag_applies_the_last_value_and_reverts_to_the_origin`, `merge_needs_an_equal_key_and_a_set_property` (gesture, no gesture, nodes, property, page, `Transaction`); H4 killed; cargo-mutants caught both guard mutants at line 209 |
+| Scenario: Move several nodes | covered | `it_moves_several_nodes_and_reverts`: both moved, `touches` is exactly `{A, B}` with no page, revert equals the original |
+| Scenario: Same value is Unchanged | covered | page `Arc` pointer-equal after `apply` and after `revert` |
+| Scenario: Merged drag keeps the origin | covered | apply leads to the last value, revert restores the origin |
+| Failed commands change nothing: Non-finite value rejected (NaN, 1.5) | covered | `invalid_values_fail_and_change_nothing` (13 rows) and `range_edges_are_accepted`. The checks match `validate.rs` (`numbers`, `below_quarter_turn`, `unit_interval`, fill channels finite, alpha in 0..=1). The checks are plain `if`s, so they also run in release builds (Q15) |
+| Failed commands change nothing: Locked node is still editable (Q12) | covered | `a_locked_node_is_still_editable`; the code reads no `locked` flag |
+| Missing page or node fails with no change | covered | `a_missing_page_or_node_fails_and_changes_nothing` |
+| D1 W4: the command stays reusable after a failed apply | covered for `SetProperty` | `a_command_is_reusable_after_a_failed_apply`, `a_failed_apply_keeps_the_record_of_the_last_good_one`. Still owed for `Transaction`, D8, D9 and D10 |
+| `touches` lists nodes, not the page | covered | unit assertion `touched.pages.is_empty()`. Law 4 cannot catch over-listing (D2 W5) |
+| Every core command passes the laws (property, 1 000 cases) | covered | `set_property_obeys_the_command_laws`, `merged_set_property_drags_obey_the_command_laws`. See W3 for how much of each run reaches the `Changed` path |
+
+### Recorded deviations, judged
+
+1. **Command written before its tests (strict TDD broken).** `AGENTS.md` requires RED first. `apply-progress.md` records it honestly. The RED evidence is post hoc: hand mutants on the finished code, and the `mutants` run has 0 missed. This is accepted **once**, as a process WARNING (W1), and not as a FAIL, because the observable result is what counts at verify time. It is not a neutral trade, though: C1 is exactly the kind of gap test-first prevents. Nobody wrote a failing "mixed targets" test before the `all(...)`, so nothing pins it. cargo-mutants cannot express `all` to `any`, so "0 missed" does not prove the rule. The C1 fix should be written test-first, with the H3 mutant as its RED. D4 and later deliveries must follow RED-first. A second occurrence should be a FAIL.
+2. **`previous` captured on every successful `apply`, not only the first.** Acceptable. The observable contract ("restores the state before the last successful `apply`", the `Command::revert` doc) is the same. It is also what keeps the command correct after a failed or repeated apply. `merge` still keeps the first command's record.
+3. **`Unchanged` records an empty `previous`, so `revert` after it is a no-op without copy-on-write.** Acceptable, and covered (page `Arc` shared after revert).
+4. **Law 4 cannot catch over-listing.** Correct. The unit test pins it. Same as D2 W5.
+5. **`Property::Name(Option<String>)`.** Matches the optional node field. Acceptable.
+
+### Mutation
+
+`mutants` report: `scratchpad/mutants-D3/mutants.out` (cargo-mutants 27.1.0, `set_property.rs`). 36 mutants: 32 caught, **0 missed, 0 timeout**, 4 unviable. The 4 unviable mutants have no `Default` impl: `read -> Some(Default)`, `label`, `apply -> Ok(Default)` and `merge_key -> Some(Default)`. The `==` to `!=` mutant on the `Unchanged` comparison (line 167) and the `merge` guard mutants (line 209) are caught.
+
+Hand mutations, for rules cargo-mutants cannot express. Each ran `cargo test -p gafira-edit --locked` on the export, which includes `prop_commands`. Each was reverted, and the file was byte-checked against the original:
+
+| # | Mutation (`set_property.rs`) | Result |
+|---|---|---|
+| H1 | Shape property on a non-shape skips the node instead of failing (line 162) | KILLED by `a_shape_property_on_another_node_fails_without_a_partial_change` |
+| H2 | `revert` drops its existence pre-check (lines 186-188), so `write_all` can fail half-way | **SURVIVED**. See W2 |
+| H3 | `Unchanged` when **any** target holds the value (`all` to `any`, line 167) | **SURVIVED**, also with `PROPTEST_CASES=20000`. See C1 |
+| H4 | `merge` takes the second command's `previous` | KILLED by `a_merged_drag_applies_the_last_value_and_reverts_to_the_origin` |
+| H5 | `Unchanged` decided by the first target only (`old.first()`) | **SURVIVED**. See C1 |
+
+Outcome tally of the generated commands (1 000 cases each, scratch-only test, not committed): the wide strategy gives 151 `Changed`, 191 `Unchanged` and 658 `Err`, with `merge` accepted 5 times and law 6 compared once. The drag strategy gives 887 `Changed`, 18 `Unchanged` and 95 `Err`, with law 6 compared 457 times.
+
+### CRITICAL
+
+1. **The "every target" half of the `Unchanged` rule is untested** (`crates/gafira-edit/src/set_property.rs:167`). The spec says "It MUST return `Unchanged` when every target already holds the value". It is a spec rule with an invariant, so it is critical code under `AGENTS.md`. Mutants H3 (`any`) and H5 (first target only) both survive the unit tests and 20 000 property cases. With either mutant, a multi-node edit where one target already holds the value returns `Unchanged` and writes nothing. In the product, that silently drops an edit on a multi-selection, and History (Q14) would not record it. The property laws cannot catch it: a command that changes nothing obeys laws 1 to 6, and no law checks that the value was set. The code itself is correct today; this is a test gap, like D2 C1. Fix (test-only, RED first against H3): two targets, one already holding the value (for example `A` visible, `B` hidden, set `visible = true`). Then `apply` returns `Changed`, both nodes hold the value, and `revert` restores the original. That test kills H3 and H5.
+
+### WARNING
+
+1. **Strict TDD deviation** (see deviation 1). Accepted once for D3. It must not repeat in D4 and later. C1 shows the cost.
+2. **`revert` atomicity is not pinned** (`set_property.rs:186-188`, H2). `reverting_on_a_document_without_the_node_fails_cleanly` removes `B`, which is last in `[A, B]`. Because `revert` writes back to front, `B` fails before anything is written, so the pre-check is redundant for that test. Removing `A` instead would make H2 write `B` and then fail, which leaves a partial revert. The spec states no atomicity rule for `revert`, so this is not critical. The pre-check is still deliberate code that no test proves. A one-row change to the existing test (remove `A`, the first target) closes it.
+3. **The wide property strategy mostly exercises the error path.** Only 15 % of cases reach `Changed`, and law 6 ran once in 1 000 cases. Laws 1 to 4 therefore get about 150 effective cases for the eight properties. Shape properties (`fill`, `geometry`) on shapes are rarer still. `drag` covers law 6 well, but only for `placement` and `opacity`. The unit tests cover every property, so this is a warning. Cheap improvements: generate the missing page and the missing node less often (for example 1 in 10), and draw the property in the drag strategy from the full `property()` set, minus the invalid values.
+4. **D1 W4 remainder.** The reusability test is now done for `SetProperty`. It is still owed for `Transaction`, D8, D9 and D10.
+5. **Open items carried from D2** (unchanged): W1 (law 4 wording), W2' (`failure_persistence` mutant), W5 (law 4 one-sided), W6 (V12 count `>= 3`).
+
+### SUGGESTION
+
+1. An empty target list (`nodes: vec![]`) is accepted and returns `Unchanged` (`all` over an empty list). The spec says "one or more nodes". Either reject it with `InvalidValue` or record it as accepted. The `drag` fallback relies on it today.
+2. `apply-progress.md` says "14 unit tests". There are 15 (329 + 15 = 344 at 05aad32). It also still does not record the test totals (D2 S2). Record 344 and 346.
+3. For D4 and D6: a merged drag that returns to its start (a to b to a) has `value == previous`. Redo then returns `Unchanged`. `History` should decide whether such an entry is dropped or kept.
+4. The `merge` test checks that the returned command keeps its type, not that it is the same box. The spec says "unchanged". A pointer check like the D1 default-merge test would pin that as well (optional).
+
+### Other checks
+
+- Code rules: `#![forbid(unsafe_code)]` is inherited from the crate. No `#[allow]`, no `HashMap` or `HashSet`, no clock, no threads, and no global state in the diff. Comments, identifiers and errors are in English. `unreachable!("probed above")` follows the by-reference probe (spike R11), so it is unreachable.
+- Hexagonal layering: `gafira-testkit` is a dev-dependency only. The normal dependencies of `gafira-edit` are unchanged (V5 rc 0). `Cargo.lock` gains only that edge.
+- The `mutants` report was read. Its counts match `outcomes.json` (36 / 32 / 0 / 0 / 4).
+
+## D3 re-verify (after the fix round)
+
+Branch `feat/edit-history-3`, base `main` a34cdb7, HEAD d6c364b (fix commits 6312c2f, test and code, and d6c364b, docs only). Verified on 2026-10-25. Gates ran in the main checkout. Hand mutations and cargo-mutants ran on a `git archive HEAD` export in the session scratchpad (`scratchpad/vd3r`). The source was not edited. After the hand mutations the export file was byte-identical to the tracked file (`cmp`). `git status` is clean apart from this report.
+
+**Delivery verdict: PASS** (0 CRITICAL, 4 WARNING, 4 SUGGESTION). **Change verdict: not final** (D4 onwards remain). `next`: the coordinator pushes `feat/edit-history-3` and opens its PR, then `tdd-apply` for D4.
+
+### Gates at HEAD d6c364b
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 348 passed, 0 failed (346 + 2 new unit tests; the W2 test was renamed, not added). Matches `apply-progress.md` |
+| 6312c2f alone | same tree under `crates/` as HEAD (d6c364b only touches `openspec/`), so the HEAD run covers it |
+| `cargo deny check` | advisories, bans, licenses and sources ok |
+| `ci.yml` policy steps ARQ-07, forbid unsafe (V11), V5, V12, V13 (extracted from HEAD's `ci.yml`, run with `bash --noprofile --norc -eo pipefail`) | all rc 0, empty stderr |
+
+### Disposition of the D3 findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 every-target `Unchanged` rule untested | **closed** | `it_is_unchanged_only_when_every_target_holds_the_value`: `A` already hidden, `visible = false` on `[A, B]` and on `[B, A]`. It expects `Changed`, both nodes hidden, and `revert` back to the seed. H3 and H5 are now killed (below). H3 fails in either order. H5 fails on `[A, B]`, where the first target is the one that already holds the value |
+| W1 strict TDD deviation | closed for the fix round | `apply-progress.md` records RED for each fix test. The re-run mutants confirm that each test fails against the defect it targets. The rule still stands for D4 and later |
+| W2 `revert` atomicity not pinned | **closed** | `reverting_with_any_target_missing_fails_and_changes_nothing` removes `A`, then `B`. H2 is now killed |
+| W3 wide strategy mostly takes the error path | open | Unchanged by the fix round. Carried to D4 as a WARNING |
+| W4 D1 W4 remainder | open | `Transaction`, D8, D9 and D10 still owe the reusability test |
+| W5 D2 carry-overs | open | Unchanged |
+| S1 empty target list | **closed** | It is now refused. Judged below |
+| S2 test counts in `apply-progress.md` | closed | 15 unit tests, 344, 346 and 348 recorded |
+| S3 a to b to a drag, then redo | recorded | Recorded as "Note for D4" in `apply-progress.md`. D6 must decide it (Q14) |
+| S4 `merge` returns the same box | closed | `std::ptr::addr_eq(before, &*back)` for each refused key |
+
+### Empty target list, judged against the spec
+
+The spec says "`SetProperty` MUST set one property on **one or more** nodes of one page". It defines no meaning for zero targets. Before the fix, `all` over an empty list returned `Unchanged`, so the command accepted an input that falls outside its contract. Refusing it is consistent with the spec. `InvalidValue` is the right existing variant ("not valid for the target"). The other variants name a specific id or index. Specifically:
+
+- The check comes first in `apply`, so `revert`, `merge_key` and `touches` cannot meet an applied empty command. An empty command that fails keeps `previous = None`, so `revert` returns `NotApplied`.
+- The check runs before the page lookup, so `nodes: []` on a missing page reports `InvalidValue`, not `MissingPage`. The spec sets no order for errors, so this is acceptable.
+- The `drag` fallback (a document without nodes) now yields `Err` on every case. Law 5 (an `Err` changes nothing) still holds. The wide strategy now draws 1 to 2 targets, so it never generates the refused input.
+- `an_empty_target_list_is_refused` checks the variant and that the document is unchanged. Hand mutant H6 kills it.
+- `Transaction` keeps "an empty transaction MUST apply as `Unchanged`". That rule is different and stays untouched.
+
+This is not a spec deviation. At archive time, a one-line spec note ("an empty target list fails with `InvalidValue`") would make the rule explicit (S2 below).
+
+### Mutation (re-run)
+
+cargo-mutants 27.1.0, `-p gafira-edit --in-diff` on `git diff a34cdb7..HEAD -- crates/gafira-edit/src/set_property.rs` (the whole new file, including the empty-targets check), `--jobs 4`, output in `scratchpad/vd3r/mut/mutants.out`. Result: 36 mutants, 32 caught, **0 missed, 0 timeout**, 4 unviable. The 4 unviable are the same `Default` replacements as before (`read`, `label`, `apply -> Ok(Default)`, `merge_key -> Some(Default)`). cargo-mutants generates no mutant for `if self.nodes.is_empty()`: it has no operator to swap, and replacing the whole `apply` body is unviable. H6 covers that check.
+
+Hand mutations. Each ran `cargo test -p gafira-edit --locked`, which includes `prop_commands`:
+
+| # | Mutation (`set_property.rs`) | Result |
+|---|---|---|
+| H1 | Shape property on a non-shape skips the node (`let Some(held) = ... else { continue }`) | KILLED by `a_shape_property_on_another_node_fails_without_a_partial_change` |
+| H2 | `revert` drops its existence pre-check | KILLED by `reverting_with_any_target_missing_fails_and_changes_nothing` (was SURVIVED) |
+| H3 | `Unchanged` when **any** target holds the value | KILLED by `it_is_unchanged_only_when_every_target_holds_the_value` (was SURVIVED) |
+| H4 | `merge` also takes the second command's `previous` | KILLED by `a_merged_drag_applies_the_last_value_and_reverts_to_the_origin` |
+| H5 | `Unchanged` decided by the first target only (`old.first().is_some_and(..)`) | KILLED by `it_is_unchanged_only_when_every_target_holds_the_value` (was SURVIVED) |
+| H6 | The empty-targets guard is deleted (the pre-fix behaviour) | KILLED by `an_empty_target_list_is_refused` |
+
+H6 goes past the ~5 hand-mutant budget. It was added because cargo-mutants cannot express the new guard, and the brief asked for that guard to be checked.
+
+### Size and commits
+
+`git diff --shortstat a34cdb7..HEAD`: 862 insertions in total. 715 of them are in `crates/` and `Cargo.lock`, and 147 in `openspec/`. Of the 715, `set_property.rs` is 608 (229 production lines, then the `#[cfg(test)]` module from line 230), `prop_commands.rs` is 103, and the manifests and `lib.rs` are 4. The 15 lines over the ~700 guide are all tests that the D3 verify asked for (C1, W2, S1, S4). The fix round added 51 lines and removed 20. Splitting these tests away from the code they pin would make no sense as a review slice. **Accepted, justified.**
+
+Commits: 5 conventional subjects, author Gustavo Gutierrez. 0 matches for `Co-Authored-By`, Claude, Anthropic, "generated" or AI in any message. No `proptest-regressions` directory.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **D3 W3 still open:** the wide `set_property` strategy mostly takes the error path, and law 6 rarely runs there. The fix to 1 to 2 targets does not change that. Address it in D4 or D6, where the merge property tests (Scenario "Merging equals the sequence") will lean on this generator.
+2. **D1 W4 remainder** (reusability after a failed apply): still owed for `Transaction`, D8, D9 and D10.
+3. **D2 carry-overs** W1, W2', W5 and W6: unchanged.
+4. **Strict TDD:** RED-first is now mandatory for D4 and later deliveries (D3 W1). A repeat is a FAIL.
+
+### SUGGESTION
+
+1. The 6312c2f subject is `test(edit): ...`, but the commit also changes behaviour (`apply` now refuses an empty list). `fix(edit)` would be more accurate. Optional: reword it before the PR. If not, the PR description should name the behaviour change.
+2. At archive, add one sentence to the `SetProperty` requirement: an empty target list fails with `InvalidValue` and changes nothing.
+3. The `drag` doc comment ("law 6 runs on almost every case") does not mention that a document without nodes now gives an all-`Err` run. A one-line note would help.
+4. D2 S3 (the brittle `it_runs_a_thousand_cases_by_default` bound) is unchanged.

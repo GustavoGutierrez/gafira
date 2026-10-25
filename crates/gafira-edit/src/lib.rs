@@ -9,9 +9,11 @@
 mod command;
 mod dirty;
 mod error;
+mod set_property;
 mod transaction;
 
 pub use command::{Applied, Command, GestureId, MergeKey};
 pub use dirty::DirtySet;
 pub use error::CommandError;
+pub use set_property::{Property, SetProperty};
 pub use transaction::Transaction;

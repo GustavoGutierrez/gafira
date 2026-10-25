@@ -93,6 +93,7 @@ dependencies = [
  "gafira-color",
  "gafira-doc",
  "gafira-geom",
+ "gafira-testkit",
  "proptest",
 ]
 
