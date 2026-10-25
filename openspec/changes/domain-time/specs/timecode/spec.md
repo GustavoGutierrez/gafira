@@ -29,7 +29,12 @@ A timecode MUST pair a label of whole frames with the frame rate and the labelin
 
 ### Requirement: Non-drop timecode (D4)
 
-Non-drop timecode MUST format as `HH:MM:SS:FF`, with the hours field at least two digits and no 24-hour wrap, minutes and seconds below 60, and frames below the nominal integer frame rate. The separator before the frames field MUST be `:`. Parsing MUST accept exactly that shape, with an optional leading `-` for negative time, and MUST reject out-of-range fields, missing or extra fields, non-digit characters and the drop-frame separator. Non-drop labels count frames at the declared rational rate: at 30000/1001 fps the label drifts against wall-clock time by design and MUST NOT be silently compensated.
+Non-drop timecode MUST format as `HH:MM:SS:FF`, with the hours field at least two digits and no 24-hour wrap, minutes and seconds below 60, and frames below the nominal integer frame rate. The nominal integer frame rate MUST be the declared rate rounded to the nearest integer, with ties rounded up; it is 24 for 24000/1001, 30 for 30000/1001 and 60 for 60000/1001. The separator before the frames field MUST be `:`. Parsing MUST accept exactly that shape, with an optional leading `-` for negative time, and MUST reject out-of-range fields, missing or extra fields, non-digit characters and the drop-frame separator. Non-drop labels count frames at the declared rational rate: at 30000/1001 fps the label drifts against wall-clock time by design and MUST NOT be silently compensated.
+
+#### Scenario: Nominal frame rate (unit)
+- GIVEN 24000/1001, 30000/1001, 60000/1001 and 24.5 fps
+- WHEN the nominal integer frame rate is used for a label
+- THEN it is 24, 30, 60 and 25 respectively, and a frames field equal to it is rejected
 
 #### Scenario: Formatting (unit)
 - GIVEN label 90,000 at 25 fps non-drop
