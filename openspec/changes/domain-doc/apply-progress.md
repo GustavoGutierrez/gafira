@@ -449,7 +449,7 @@ Written against the D4b `validate` (P1 to P4 only): `parent_and_reachability_row
 
 ### Deviations
 
-- The D4b scenario text said the self-parenting document "then fails with `Cycle`"; the D4b fixture makes the group a root, so it fails with `RootHasParent`. The spec line was corrected in the docs commit (non-root self-parent gives `Cycle`).
+- The old D4b scenario line said the self-parenting document "removed or inverted" (the D4b test was to be removed or inverted once cycles were rejected), not `Cycle`; the D4b fixture makes the group a root, so after D5a it fails with `RootHasParent`. The scenario was corrected in the docs commit (a non-root self-parent gives `Cycle`).
 - P5 inner order is not spelled out beyond "first in the stated order"; it follows P1 to P3 (each check runs over all pages in order, nodes in ascending id, before the next check). Pinned by the page-2 row and the three lower-id rows.
 - `RootHasParent { node, parent }` names the lowest-id root with a parent and the lowest-id group that lists it (unique after the 15 check).
 - The `child_rows` "child in the same arena passes" row listed node 3 as both root and child; it now uses a tree where only 2 is a root.

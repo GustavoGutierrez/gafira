@@ -65,7 +65,7 @@ C2b MUST NOT decide `Command`/`History` APIs. It only provides `Document::edit(&
 Strict TDD. New dependencies: none from third parties. Normal dependencies are `serde` (+`rc`), `serde_json`, `gafira-geom` and `gafira-color`; `proptest` is dev-only. `Color` stays a bare value, so that a future untagged `Animatable::Static` stays compatible.
 
 ### Delivery plan
-With the real size factor of about ×1.9, the forecast is about 4 517 measured lines (re-cut during apply). The work is a stacked chain of eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b; D1 also shipped as PR 1a and 1b), and every commit passes the gates on its own.
+With the real size factor of about ×1.9, the forecast is about 4 519 measured lines (re-cut during apply). The work is a stacked chain of eleven sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5a, D5b, D6a, D6b; D1 also shipped as PR 1a and 1b), and every commit passes the gates on its own.
 
 | # | Delivery | Forecast | Depends on |
 |---|---|---|---|
@@ -107,7 +107,7 @@ Measure with `git diff --shortstat` after D2a. If the ratio is above ×1.3 of th
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Size overrun (C2a was ×1.92) | High | Ten sub-deliveries of ≤ 700 lines each; measure after D2a; cut stacked branches at commit boundaries |
+| Size overrun (C2a was ×1.92) | High | Eleven sub-deliveries of ≤ 700 lines each; measure after D2a; cut stacked branches at commit boundaries |
 | The `EditToken` grep or V5 passes silently | Med | `set -euo pipefail`; a positive control (the definition must be found); manual negative runs per C2a N0–N7 |
 | 10 000 proptest cases are slow on 3 OS | Med | Bounded node and page counts; CI case count in design; `PROPTEST_CASES` runs locally |
 | `Value` normalization versus "byte for byte" in ARQ-11 | Med | Amendment 2; goldens written in canonical form |
