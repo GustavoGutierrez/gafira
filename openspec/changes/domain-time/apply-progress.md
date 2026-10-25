@@ -142,3 +142,48 @@ Deviation: the first D4 gate run exposed a wrong D2 property, not a D4 defect. `
 
 
 
+
+## T3 - mutation per changed source file
+
+Status: done. Tier T3, one `cargo mutants -p gafira-time --file <file> --jobs 1 -o <scratch>` run per changed non-test source file, each with its own `CARGO_TARGET_DIR` (`--jobs 4` was tried first and rejected, see deviations).
+
+Final results (0 missed in every file):
+
+| File | Tested | Caught | Unviable | Missed | Wall |
+|---|---|---|---|---|---|
+| `src/error.rs` | 1 | 1 | 0 | 0 | 15 s |
+| `src/flicks.rs` | 18 | 17 | 1 | 0 | 3 min |
+| `src/range.rs` | 24 | 17 | 7 | 0 | 3 min |
+| `src/rate.rs` | 47 | 43 | 4 | 0 | 6 min |
+| `src/timecode.rs` | 139 | 133 | 6 | 0 | 59 s |
+| `src/lib.rs` | 0 | 0 | 0 | 0 | - |
+| **Total** | **229** | **211** | **18** | **0** | ~13 min |
+
+Recompilation evidence: every per-mutant log in `mutants.out/log/` contains `Dirty gafira-time ... the file ... has changed` followed by `Compiling gafira-time`; the count equals the mutant count plus the baseline in each file (for example 139 mutants and 140 compiling logs for `timecode.rs`). No shared target directory was used between files.
+
+Fixes made during the T3 round, all after their gates:
+
+1. `refactor(time): drop the redundant emptiness guard in TimeRange::intersection` (`15eb6cd`). The guard was provably redundant (an empty range has `start == end`, and the bounds then give `start >= end`), and it produced an equivalent `|| -> &&` mutant. Removing it leaves the behavior unchanged and the mutant space smaller.
+2. `test(time): cover overlap, equal bounds and error display` (`c64825d`). Added a positive `intersects` case, the equal-bounds empty range, and a unit test that every `TimeError` variant renders a non-empty message. The last one killed the only `error.rs` survivor, a `Display` stub; it is a behavior check (errors must be reportable), not a text assertion.
+3. `refactor(time): use is_negative for timecode label signs` (`23af75e`). `if value < 0` produced two equivalent `<=` mutants at zero; `is_negative()` states the intent and removes the equivalent mutant space.
+
+Deviations:
+
+- The first T3 attempt used `--jobs 4` as suggested by `AGENTS.md`. Some worker copies shared one target directory, and cargo reported `Fresh gafira-time` for mutants whose source copy was older than another worker's build; those tests ran against a sibling's binary. The symptoms were `range.rs` reporting misses for behavior that deterministic tests assert (an `intersection` that always returned `None` still passed). The run was discarded. Every final result above comes from `--jobs 1`, which shows one rebuild per mutant in the logs.
+- `--iterate` was not used: this is the closing round and the source changed after the interrupted run, which the policy forbids.
+- The `error.rs` `Display` survivor is non-critical by policy; it was killed anyway with the non-empty-message test.
+- `src/lib.rs` has no mutable code (module declarations and re-exports); cargo-mutants reports `0 mutants` for it.
+
+## Final state
+
+All deliveries D0 to D4 are done and every commit before the mutation fix round passed the gates alone. The final HEAD (before this section) passes:
+
+- `cargo fmt --check` -> exit 0.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings` -> exit 0.
+- `cargo test --workspace --locked` -> exit 0 (`gafira-time`: 1 error unit test, 19 flicks, 17 ranges, 28 rates, 24 timecode).
+- `cargo deny check` -> `advisories ok, bans ok, licenses ok, sources ok`.
+- Local CI `policy` replay -> `policy status=0` (ARQ-07, `forbid(unsafe_code)`, V5, V12, V13, fmt).
+
+Measured size against `origin/main` before this section: `git diff --shortstat origin/main...HEAD -- crates` = 16 files, 2,211 insertions; whole change = 25 files, 3,164 insertions, 1 deletion.
+
+Not run here, by instruction: `verify` (independent verification follows in another session) and T4 (whole crate at archive).
