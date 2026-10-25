@@ -213,6 +213,13 @@ mod tests {
     }
 
     #[test]
+    fn infinite_determinant_has_no_inverse() {
+        // Finite coefficients, but the determinant overflows to +inf while
+        // kurbo's inverse coefficients come out as finite zeros.
+        assert_eq!(Transform2D::scale(1e200).inverse(), Err(SingularTransform));
+    }
+
+    #[test]
     fn affine_round_trip_is_bit_equal() {
         let coeffs = [-0.0, 1.5, 5e-324, -2.25, 1e300, f64::MIN_POSITIVE];
         let affine = Affine::new(coeffs);

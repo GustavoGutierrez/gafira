@@ -1,6 +1,9 @@
 //! Property tests: curve and gamut round trips, symmetry, composition and serde round trips.
 
-use gafira_color::{Color, ColorSpaceId, DisplayP3Rgba, LinearRgba, Rgba};
+use gafira_color::{
+    AnalyticTransform, Color, ColorSpaceId, ColorTransform, DisplayP3Rgba, LinearRgba, PixelLayout,
+    Rgba,
+};
 use proptest::prelude::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -148,6 +151,21 @@ proptest! {
     fn encode_is_monotonic_up_to_the_published_step(x in extended(), y in extended()) {
         let (lo, hi) = if x <= y { (x, y) } else { (y, x) };
         prop_assert!(encode(lo) <= encode(hi) + ENCODE_STEP, "{lo} {hi}");
+    }
+
+    // P6: the buffer API is bit-identical to the per-pixel typed API.
+    #[test]
+    fn apply_f32_agrees_with_the_typed_api(
+        from in space(), to in space(), rgba_layout in any::<bool>(),
+        pixels in proptest::collection::vec([any_bits(), any_bits(), any_bits(), any_bits()], 0..8),
+    ) {
+        let layout = if rgba_layout { PixelLayout::Rgba } else { PixelLayout::Rgb };
+        let mut buffer: Vec<f32> = pixels.iter().flat_map(|p| p[..layout.channels()].to_vec()).collect();
+        prop_assert_eq!(AnalyticTransform::new(from, to).apply_f32(&mut buffer, layout), Ok(()));
+        for (got, p) in buffer.chunks_exact(layout.channels()).zip(&pixels) {
+            let want = channels(color(from, *p).convert(to));
+            prop_assert_eq!(bits4(std::array::from_fn(|i| *got.get(i).unwrap_or(&p[i]))), bits4([want[0], want[1], want[2], if rgba_layout { want[3] } else { p[3] }]));
+        }
     }
 
     // P4: alpha is bit-preserved by every conversion.

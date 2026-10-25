@@ -43,7 +43,7 @@ The sRGB transfer curve (IEC 61966-2-1) MUST be used for sRGB and, unchanged, fo
 #### Scenario: Monotonic (property)
 - GIVEN `x <= y` in `[-4, 4]`
 - WHEN both are decoded (and, separately, encoded)
-- THEN `f(x) <= f(y)`
+- THEN decode satisfies `decode(x) <= decode(y)` strictly, and encode satisfies `encode(x) <= encode(y) + 5e-8` (the encode formula with the published constants has a genuine downward step of about 2.85e-8 just above 0.0031308, which survives `f32` narrowing; the tolerance matches `tests/properties.rs`)
 
 #### Scenario: Odd symmetry (property)
 - GIVEN any finite `x`
@@ -154,8 +154,8 @@ Reference data (each checked within 1e-4): sRGB red, green, blue in encoded Disp
 
 #### Scenario: Object safety and thread bounds (unit)
 - GIVEN a `Box<dyn ColorTransform>` built from `AnalyticTransform`
-- WHEN moved to another thread and called there
-- THEN it compiles and runs
+- WHEN a function requiring `Send + Sync` is instantiated with it (compile-time proof; domain crates ban thread spawning, ARQ-02)
+- THEN it compiles and `apply_f32` is callable through the trait object
 
 #### Scenario: Rgba slice (unit)
 - GIVEN 3 sRGB RGBA pixels and an sRGB -> linear transform

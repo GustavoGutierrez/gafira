@@ -1,2 +1,8 @@
 # cargo-mutants settings. Keep minimal; see AGENTS.md "Testing and mutation policy".
 additional_cargo_test_args = ["--locked"]
+
+# Equivalent mutants (AGENTS.md "Testing and mutation policy"); each regex matches exactly one mutant.
+exclude_re = [
+    # Equivalent while SCHEMA_VERSION is 1 and load accepts only version 1; remove when a second schema version exists.
+    'replace Document::schema_version -> u32 with 1$',
+]
