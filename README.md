@@ -39,7 +39,7 @@ cargo test --workspace --locked
 |---|---|
 | `crates/` | `gafira-*` library crates (hexagonal layering enforced in CI) |
 | `apps/` | Binaries (`gafira-cli`; the GUI app comes later) |
-| `docs/specs/` | Product and architecture specs (in Spanish); `00-decisiones.md` holds owner decisions |
+| `docs/specs/` | Product specs in progress (in Spanish) plus `00-decisiones.md` (owner decisions); completed ones go to `docs/specs/archive/`, the rest waits in `docs/specs/backlog/`, see `docs/specs/README.md` |
 | `openspec/` | Specs and changes that drive development (`config.yaml`, `specs/`, `changes/`) |
 | `assets/` | Logo, splash screen and other design assets |
 | `.agents/` | Agents and skills for Claude Code; `.claude/agents` and `.claude/skills` are symlinks to it |
@@ -80,4 +80,4 @@ Audio under `assets/musics/` is kept out of git (owner decision D-10 in `docs/sp
 
 ## License
 
-Proprietary; see `docs/specs/06-licencia-y-activacion.md`. Third-party crates must use permissive licenses only (`deny.toml`).
+Proprietary; see `docs/specs/backlog/06-licencia-y-activacion.md`. Third-party crates must use permissive licenses only (`deny.toml`).

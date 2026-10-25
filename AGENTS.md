@@ -1,6 +1,6 @@
 # Gafira: development methodology
 
-Gafira is a local-first design, image and video editor written in Rust (Cargo workspace of `gafira-*` crates). Product and architecture live in `docs/specs/` (00 decisions, 01 product and quality, 02 architecture, 03 visual design, 04 image/export, 05 video/distribution, 06 license). Owner decisions in `00-decisiones.md` are not reopened without the owner.
+Gafira is a local-first design, image and video editor written in Rust (Cargo workspace of `gafira-*` crates). Product and architecture live in `docs/specs/` (see its `README.md` for the status table): only `00-decisiones.md` (owner decisions) and the document in progress sit there; a completed document moves with `git mv` to `docs/specs/archive/` (never `00-decisiones.md`) before the next one is promoted; the rest (01 product and quality, 03 visual design, 04 image/export, 05 video/distribution, 06 license) wait in `docs/specs/backlog/`. When the document in progress is completed, the coordinator promotes the next one from the backlog (`git mv` into `docs/specs/`, in its own commit) and keeps the status table current. Owner decisions in `00-decisiones.md` are not reopened without the owner.
 
 ## Flow (lite SDD)
 
@@ -101,6 +101,7 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 | Committing, branching, pushing, PRs, releases | `git-workflow-and-versioning` |
 | Delivery over ~400 lines, stacked PRs, review slices | `chained-pr` |
 | Preparing a PR (coordinator opens it, owner merges) | `branch-pr` |
+| Creating, promoting or archiving product specs; deriving OpenSpec changes | `product-specs` |
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
 | PR and issue comments | `comment-writer` |
 | Creating, refreshing or reading the skill registry | `skill-registry` |
