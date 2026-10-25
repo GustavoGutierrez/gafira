@@ -29,7 +29,7 @@ A timecode MUST pair a label of whole frames with the frame rate and the labelin
 
 ### Requirement: Non-drop timecode (D4)
 
-Non-drop timecode MUST format as `HH:MM:SS:FF`, with the hours field at least two digits and no 24-hour wrap, minutes and seconds below 60, and frames below the nominal integer frame rate. The nominal integer frame rate MUST be the declared rate rounded to the nearest integer, with ties rounded up; it is 24 for 24000/1001, 30 for 30000/1001 and 60 for 60000/1001. The separator before the frames field MUST be `:`. Parsing MUST accept exactly that shape, with an optional leading `-` for negative time, and MUST reject out-of-range fields, missing or extra fields, non-digit characters and the drop-frame separator. Non-drop labels count frames at the declared rational rate: at 30000/1001 fps the label drifts against wall-clock time by design and MUST NOT be silently compensated.
+Non-drop timecode MUST format as `HH:MM:SS:FF`, with the field widths of "Timecode text is canonical", no 24-hour wrap on hours, minutes and seconds below 60, and frames below the nominal integer frame rate. The nominal integer frame rate MUST be the declared rate rounded to the nearest integer, with ties rounded up; it is 24 for 24000/1001, 30 for 30000/1001 and 60 for 60000/1001. The separator before the frames field MUST be `:`. Parsing MUST accept exactly the canonical text, with a leading `-` only for negative time, and MUST reject out-of-range fields, missing or extra fields, non-digit characters and the drop-frame separator. Non-drop labels count frames at the declared rational rate: at 30000/1001 fps the label drifts against wall-clock time by design and MUST NOT be silently compensated.
 
 #### Scenario: Nominal frame rate (unit)
 - GIVEN 24000/1001, 30000/1001, 60000/1001 and 24.5 fps
@@ -119,6 +119,35 @@ A timecode format MUST fix the rate and the mode, and parsing MUST reject text w
 - WHEN each is formatted
 - THEN the non-drop text has `:` before the frames field and the drop-frame text has `;`
 
+### Requirement: Timecode text is canonical (D4)
+
+Each label MUST have exactly one canonical text in both modes, and formatting MUST produce it. The minutes and seconds fields MUST have exactly two digits. The hours and frames fields MUST have at least two digits and no leading zero beyond that minimum: a value below 10 has one leading zero, and a value of 10 or more has none. A leading `-` MUST appear only before a label whose frame count is not zero. Parsing MUST reject any text that formatting cannot produce for that format, so formatting a parsed text returns the input text unchanged.
+
+#### Scenario: Frames field width at 120 fps (unit)
+- GIVEN 120 fps non-drop
+- WHEN labels 5, 99, 100 and 119 are formatted
+- THEN they read `00:00:00:05`, `00:00:00:99`, `00:00:00:100` and `00:00:00:119`, and parsing each text returns the same label
+
+#### Scenario: Extra leading zeros rejected (unit)
+- GIVEN `00:00:00:005` at 120 fps; `00:00:00:005`, `00:00:00:0023`, `000:00:00:00` and `001:00:00:00` at 24 fps; `00:00:00;005` at 30000/1001 fps drop-frame; and `0:00:00:00`, `00:0:00:00` and `00:00:000:00` at 24 fps
+- WHEN each is parsed with that format
+- THEN each is rejected
+
+#### Scenario: Hours of 100 or more have no padding (unit)
+- GIVEN a label of 100 hours at 24 fps non-drop
+- WHEN it is formatted
+- THEN it reads `100:00:00:00`, and parsing that text returns the same label
+
+#### Scenario: Negative zero rejected (unit)
+- GIVEN `-00:00:00:00` at 24 fps non-drop and `-00:00:00;00` at 30000/1001 fps drop-frame
+- WHEN each is parsed
+- THEN each is rejected, while `-00:00:00:01` at 24 fps is accepted as one frame before zero
+
+#### Scenario: Accepted text is canonical (property)
+- GIVEN an arbitrary valid label and a format at an accepted rate (non-drop at any accepted rate, including rates of 100 fps or more, or drop-frame at 30000/1001 or 60000/1001), and a text derived from the formatted label by one arbitrary edit: inserting extra leading zeros into any field, adding or removing a leading `-`, or inserting, deleting or replacing one character from `0-9`, `:`, `;` and `-`
+- WHEN the derived text is parsed with that format
+- THEN either parsing is rejected, or it succeeds and formatting the result returns the derived text unchanged; inserting extra leading zeros and adding `-` to a zero label are always rejected
+
 ## Non-goals
 
 - A second time base: drop-frame changes labels only, never the underlying flicks.
@@ -141,6 +170,8 @@ A timecode format MUST fix the rate and the mode, and parsing MUST reject text w
 | Zero time | `00:00:00:00` non-drop, `00:00:00;00` drop-frame |
 | Contradictory separator | Parsing fails |
 | Out-of-range fields | Parsing fails (minutes or seconds 60 or more, frames at or above the nominal rate) |
+| Non-canonical field width | Parsing fails (extra leading zeros in hours or frames, minutes or seconds not exactly two digits); formatting never emits it |
+| Negative zero | A `-` before a zero label is rejected by parsing; formatting never emits it |
 | Overflowing conversion | Return an overflow error; never wrap |
 | Non-drop 29.97 drift | Expected and documented; never compensated |
 

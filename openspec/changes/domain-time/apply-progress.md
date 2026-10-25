@@ -193,3 +193,12 @@ Not run here, by instruction: `verify` (independent verification follows in anot
 Ratified by specifier (verify C1). Commit `3d5ace9` changed one value in `specs/time-model/spec.md`, scenario "Seconds and milliseconds are exact": the result for 1,234 ms went from 870,854,400 to 870,710,400 flicks. The requirement fixes the factor at 705,600 flicks/ms (705,600,000 / 1,000), and 1,234 x 705,600 = 705,600,000 + 165,110,400 = 870,710,400, recomputed independently. The old value was 144,000 flicks too high and matched no rule of the requirement. Nothing else changed: same scenario, same inputs, same wording. The amendment is accepted as a spec-first correction of a wrong example. It is not a change of behavior, and no other criterion depends on it.
 
 Owner waiver (verify C2), owner decision of 2026-10-25, relayed by the coordinator. Commit `25afa83` (D2) fails `cargo test --workspace --locked` because of the false property `the_tick_divides_every_accepted_frame_duration`, and `f80d182` (D3) fails it on some seeds. The finding is WAIVED. History is not rewritten, because the fix `2a57705` makes the final tree correct. This supersedes the "Final state" claim above that every commit before the mutation fix round passed the gates alone: `25afa83` does not, and `f80d182` does not reliably. Verify's condition applies: no stacked PR may be cut at `25afa83` or `f80d182`.
+
+## Owner decisions on timecode text (verify W2, 2026-10-25)
+
+Owner decisions of 2026-10-25, relayed by the coordinator. They are recorded in `specs/timecode/spec.md` as the requirement "Timecode text is canonical".
+
+- Q1 = A, canonical text only. Minutes and seconds have exactly two digits. Hours and frames have at least two digits and no extra leading zeros. `00:00:00:005`, `00:00:00:0023` and `000:00:00:00` are rejected, and `format()` is unchanged (120 fps prints `00:00:00:05` and `00:00:00:100`). Rejected options: a fixed frames width of max(2, digits of nominal rate minus 1), and lenient parsing.
+- Q2 = A, no negative zero. `-00:00:00:00` and `-00:00:00;00` are rejected; a `-` is allowed only before a non-zero label. Rejected option: accept it as zero.
+
+The current parser accepts both non-canonical forms, so tdd-apply has new RED scenarios to cover.
