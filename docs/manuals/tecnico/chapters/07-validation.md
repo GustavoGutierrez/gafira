@@ -43,7 +43,7 @@ Passes run in a fixed order, P1 to P6. An earlier pass always wins over a later 
 | Place | State |
 |---|---|
 | `Document::from_parts` and `Document::from_json` / `Deserialize` | Implemented: invalid documents cannot be built through these paths |
-| After every command (`debug_assert!(doc.validate().is_ok())`, ARQ-13) | **Planned** with `History` (change `edit-history`) |
+| After every command (`debug_assert!(doc.validate().is_ok())`, ARQ-13) | Implemented in `History` (debug builds); commands check their own inputs in all builds |
 
 ## Property tests
 

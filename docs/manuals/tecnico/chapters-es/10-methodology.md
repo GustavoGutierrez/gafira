@@ -18,11 +18,13 @@ spec -> (explorer, only when a claim is risky) -> tdd-apply -> mutants + verify 
 
 Ante un FAIL, o cuando quedan entregas, el flujo vuelve a `tdd-apply`.
 
+En la práctica `mutants` y `verify` se ejecutan en paralelo sobre la misma entrega. `verify` ejecuta las puertas locales, comprueba cada requisito y escenario contra el código y las pruebas, lee el informe de mutantes y escribe `verify-report.md` con un veredicto PASS o FAIL y hallazgos numerados (críticos, advertencias, sugerencias). Un FAIL abre una ronda de corrección: `tdd-apply` escribe primero las pruebas y registra la ronda en `apply-progress.md`, después `verify` se ejecuta de nuevo sobre el resultado y el veredicto de la nueva verificación va al mismo informe.
+
 El agente `coordinator` ejecuta todo el flujo: lee el estado del repositorio, elige el siguiente paso, delega en los agentes anteriores con un solo escritor a la vez, rechaza un «hecho» sin evidencia y se detiene ante decisiones del titular y fusiones. Los subagentes no pueden lanzar subagentes, así que el coordinador debe ser el agente del hilo principal. Solo se escribe una nota de diseño breve cuando una spec deja abierta una decisión real.
 
 ## TDD estricto
 
-RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REFACTOR (las pruebas siguen en verde). Un commit por unidad de trabajo revisable. Cada commit pasa por sí solo las tres puertas locales (véase el capítulo de herramientas).
+RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REFACTOR (las pruebas siguen en verde). Un commit por unidad de trabajo revisable. Cada commit pasa por sí solo las tres puertas locales (véase el capítulo de herramientas). Cuando una prueba pasa de inmediato porque el código ya existe, el RED se demuestra con un mutante (véase la sección de pruebas de mutación del capítulo de herramientas).
 
 ## Specs
 
@@ -35,13 +37,14 @@ RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REF
 
 Formato de spec: palabras clave de RFC 2119; escenarios como Given/When/Then; cada requisito etiquetado con su entrega (`D1`, `D2a`...) y cada escenario con su tipo (unit, property, integration, command, manual). Las delta specs usan `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` (con Reason y nota de Migration) y `## RENAMED Requirements`. El archivado es el único paso que edita las specs principales, y avisa antes de cualquier delta destructiva.
 
-Cadena de changes hasta ahora: `workspace-scaffold`, `domain-color` y `domain-doc` están cerrados (los dos últimos en `openspec/changes/archive/`); `edit-history` está abierto.
+Cadena de changes hasta ahora: `workspace-scaffold`, `domain-color` y `domain-doc` están cerrados (los dos últimos en `openspec/changes/archive/`); `edit-history` está abierto: sus entregas hasta D8 (`Command` y `Transaction`, `History`, fusión de gestos, presupuesto de memoria, `SetProperty`, `InsertNodes` y `RemoveNodes`, `gafira-testkit`, `trybuild`) están fusionadas en `main`; D9 (`Reorder`, `Reparent`) está en curso y D10 (comandos de página y DPI, paso de CI V14) está **Planificado**.
 
 ## Commits, ramas y pull requests
 
 - Conventional commits; sin líneas de atribución de IA.
 - Desarrollo basado en tronco con ramas de vida corta. Cuando una entrega pasa verify, el coordinador empuja la rama y abre un pull request contra `main` (o contra la rama de la entrega anterior aún sin fusionar). El titular fusiona, en orden, de abajo hacia arriba, con commits de fusión. Un pull request cuya base ya se fusionó se redirige primero a `main`.
 - El estado vive en la carpeta del change y en git, no en una herramienta de memoria externa.
+- La CI está desactivada manualmente en GitHub por ahora (facturación), así que las puertas de cada entrega se ejecutan en local antes del pull request; véase el capítulo de herramientas.
 
 ## Reglas de código e idioma
 

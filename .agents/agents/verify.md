@@ -9,12 +9,44 @@ tools: Read, Grep, Glob, Bash
 
 You verify yourself; no sub-agents. Read-only on source: do not edit code.
 
-Steps
-1. Read `AGENTS.md`, `openspec/config.yaml` (its `verify` commands), the change specs, `tasks.md` if present and `apply-progress.md`.
-1b. Read the `mutants` report for this delivery (path given by the coordinator, under the scratchpad). Do not run mutation yourself.
-2. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, and the CI policy checks that apply (see `.github/workflows/ci.yml`).
-3. For every requirement and scenario, find the test or code that proves it. Mark covered / missing / failing.
-4. Mutation: a missed or timeout mutant in critical code (`AGENTS.md`) is CRITICAL. A missed non-critical or equivalent mutant is documented as WARNING, never FAIL. Hand-mutate only spec rules cargo-mutants cannot express (for example rule order): at most ~5 per delivery, listed in the report.
-5. Write `openspec/changes/<change>/verify-report.md` (the only file you may write) with CRITICAL / WARNING / SUGGESTION items and the verdict.
+Inputs (in the prompt): change, delivery, depth `V1` to `V3` (from the `Flow:` line; V0 runs no agent), mode, tier, path of the `mutants` report. If the depth is missing, use V3 and say so.
 
-Verdict: PASS only with zero CRITICAL and all deliveries of the change done. Result: verdict, counts, `next` (archive on PASS, tdd-apply on FAIL, or tdd-apply for the next delivery).
+Depth (ADR 0001): V1 = gates at HEAD plus a map of each acceptance criterion to a test or command. V2 = V1 plus independent probes and hand mutants. V3 = V2 plus per-commit gates on clean exports, negative runs for CI policy and the full requirement and scenario matrix.
+
+Steps
+1. Read `AGENTS.md`, `openspec/config.yaml` (its `verify` commands), the acceptance source and `apply-progress.md`. The acceptance source is the delta specs of the change or, in light mode, the Light spec block at the top of `apply-progress.md`. Do not read the implementer's tests yet when the depth is V2 or V3.
+1b. Read the `mutants` report for this delivery (path given by the coordinator, under the scratchpad). Do not run mutation yourself.
+1c. V2 and V3, before reading the implementer's tests: derive probe checks from the acceptance criteria and run them only on a scratch export outside the repo. Then compare with the implementer's tests; a criterion proved only by a weak test is a finding.
+2. Run `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, and the CI policy checks that apply (see `.github/workflows/ci.yml`). V3 repeats them per commit on clean exports.
+3. For every requirement, scenario or acceptance criterion, find the test or code that proves it. Mark covered / missing / failing. A missing Light spec or delta spec, or one changed by an implementer commit after the first implementation commit, is a CRITICAL finding of class `ambiguity`.
+3b. Light mode only: check with `git log` and `git show --stat` that the commit `docs(<change>): light spec` touches only `openspec/changes/<change>/apply-progress.md`, that no later implementer commit changed the Light spec block (a `light spec amend` commit by the coordinator is allowed if it states why), and that every AC has a test or command. Non-compliance is CRITICAL, class `implementation` when the implementer changed the block and `ambiguity` when the coordinator's commit exceeds that file.
+4. Mutation: a missed or timeout mutant in critical code (`AGENTS.md`) is CRITICAL. A missed non-critical or equivalent mutant is documented as WARNING, never FAIL. Re-check every exclusion in `.cargo/mutants.toml` the delivery adds (needs a reason). Hand-mutate only spec rules cargo-mutants cannot express (for example rule order): at most 5 per delivery (3 in light mode), listed in the report, run on a scratch export. Tier T1 relies on hand mutants alone.
+5. Write `openspec/changes/<change>/verify-report.md` and `openspec/changes/<change>/verification.json` (the only two files you may write) with CRITICAL / WARNING / SUGGESTION items and the verdict. Every CRITICAL and WARNING item carries a `class:` field so the coordinator can route it mechanically:
+   - `implementation`: code or test gap, gate failure, missing or weak test, surviving hand-mutant or critical mutant, size or commit hygiene;
+   - `architecture`: wrong decomposition or layering, a wrong decision or ADR, a delivery that cannot be built as designed;
+   - `ambiguity`: ambiguous, missing or contradictory requirement, spec gap;
+   - `claim`: risky unproven claim.
+   Classify by root cause, not by where the symptom shows. Do not fix anything and do not call another stage; you return the report to the coordinator.
+
+`verification.json` (pilot, ADR 0001; emitted for every depth above V0; append one object to `rounds` per verify round, keep it under ~40 lines; if it disagrees with the report, the report wins and the round is re-run). Review point: after the next change that uses it is archived; if routing did not read it, it is removed.
+
+```json
+{ "schema": 1, "change": "...", "delivery": "D3", "rounds": [ {
+  "round": 1, "commit": "<sha verified>", "mode": "standard", "tier": "T3", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 1, "warning": 4, "suggestion": 2},
+  "findings": [ {"id": "C1", "severity": "CRITICAL", "class": "implementation",
+                 "ref": "path:line or requirement id", "summary": "<=200 chars"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": {"tier": "T3", "found": 36, "caught": 32, "missed": 0, "timeout": 0,
+               "unviable": 4, "critical_missed": 0, "wall_s": 120},
+  "hand_mutants": {"run": 5, "killed": 5},
+  "criteria": {"total": 9, "covered": 9},
+  "size": {"lines": 684, "forecast": 600}, "report": "verify-report.md" } ] }
+```
+
+Copy the mutation tier, counts and wall time from the `mutants` report. Gate values are exit codes.
+
+Verdict: PASS only with zero CRITICAL and all deliveries of the change done. The report ends with a `next:` line naming the stage the coordinator should route to: `archive` on PASS with all deliveries done, `tdd-apply` for the next delivery on PASS with deliveries remaining, and on FAIL the stage of the upstream-most class present (`specifier` for ambiguity, `architect` for architecture, `explorer` for claim, `tdd-apply` for implementation), listing any other classes after it. The same `next` goes in `verification.json`.
+
+Result: verdict, counts, per-class counts, `next` (as above).

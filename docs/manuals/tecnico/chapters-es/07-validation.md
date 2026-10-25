@@ -43,7 +43,7 @@ Las pasadas se ejecutan en un orden fijo, de P1 a P6. Una pasada anterior siempr
 | Lugar | Estado |
 |---|---|
 | `Document::from_parts` y `Document::from_json` / `Deserialize` | Implementado: por estas rutas no se puede construir un documento inválido |
-| Tras cada comando (`debug_assert!(doc.validate().is_ok())`, ARQ-13) | **Planificado** con `History` (change `edit-history`) |
+| Tras cada comando (`debug_assert!(doc.validate().is_ok())`, ARQ-13) | Implementado en `History` (compilaciones de depuración); los comandos comprueban sus propias entradas en todas las compilaciones |
 
 ## Pruebas de propiedades
 

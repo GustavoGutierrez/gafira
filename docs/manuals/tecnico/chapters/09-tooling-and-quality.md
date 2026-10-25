@@ -29,7 +29,9 @@ Defined in the root `Cargo.toml` and inherited by each crate with `[lints] works
 
 ## CI
 
-The workflow is `.github/workflows/ci.yml`. It runs on pushes to `main`, pull requests and manual dispatch, with read-only `contents` permission and cancel-in-progress for pull requests. Third-party actions are pinned to 40-hex commit SHAs.
+**Current status.** CI is disabled manually on GitHub because of a billing problem, so no workflow runs on pushes or pull requests. The local gates are the only barrier: before a delivery is accepted, the three commands above, `cargo deny check` and the `policy` steps of `ci.yml` (ARQ-07, forbid `unsafe`, V5, V12, V13) are run locally, the steps under `bash --noprofile --norc -eo pipefail`, and recorded in the change folder. The Windows and macOS legs of the matrix are therefore not exercised today. The description below is of the workflow file as it stands in the repository, to be re-enabled by the owner.
+
+The workflow is `.github/workflows/ci.yml`. It runs on pushes to `main`, pull requests and manual dispatch, with read-only `contents` permission and cancel-in-progress for pull requests. Third-party actions are pinned to 40-hex commit SHAs. Its V5 table has a row for each library crate, `gafira-testkit` included.
 
 | Job | Runs on | Steps |
 |---|---|---|
@@ -51,13 +53,30 @@ The `policy` job is where architecture rules become executable. See the architec
 ## Testing policy
 
 - Tests cover the behavior of the public contract, not the implementation.
-- Test layers: unit tests next to the code, integration tests in each crate's `tests/` directory, property tests with `proptest` (a workspace dependency with default features off and `std` on), and golden files for the document format. No end-to-end layer exists yet.
+- Test layers: unit tests next to the code, integration tests in each crate's `tests/` directory, property tests with `proptest` (a workspace dependency with default features off and `std` on), compile-fail tests with `trybuild`, and golden files for the document format. No end-to-end layer exists yet.
+- Every core command runs the six-law `prop_command` harness of `gafira-testkit` (see below and the edit chapter).
 - Critical code, for which a missed mutant is a failure: validation, JSON load and save, ids and the arena, transforms, size and DPI limits, and any rule with an invariant. Non-critical: `Display` and `Error` text unless a spec fixes it, trivial accessors and test helpers.
-- Compile-fail doctests guard capability rules (for example that `EditToken` is not `Clone`). They are regression aids, not proof; the interim evidence is CI step V13.
+- Compile-fail doctests guard capability rules (for example that `EditToken` is not `Clone`). They are regression aids, not proof; the interim evidence is CI step V13 plus the `trybuild` fixtures.
+
+### gafira-testkit
+
+A support crate (dev-dependency only, `publish = false`, V5 row, no `clippy.toml`). It provides:
+
+- `document()`: a strategy for valid documents, bounded (at most 3 pages, with capped node count and tree depth), or the empty document.
+- `corrupted()`, `corrupt(doc, Corruption, pick)` and the 24-variant `Corruption` enum: a valid document broken in exactly one way, with the validation error it must produce.
+- `prop_command` and `try_prop_command`: the six-law command harness (1 000 cases by default; the `PROPTEST_CASES` environment variable overrides it).
+
+Use it from integration tests (`tests/`) only, where each crate has one copy of its types. The generator started in the tests of `gafira-doc` and moved here so `gafira-edit` can share it.
+
+### trybuild
+
+`trybuild` (a dev-dependency of `gafira-edit`) compiles the fixtures in `crates/gafira-edit/tests/ui/` and compares the compiler output with the stored `.stderr` files. Those files quote compiler text, so a change of the toolchain pin or of a quoted signature needs them regenerated with `TRYBUILD=overwrite` and reviewed. The fixtures are the interim evidence for ARQ-30; the edit chapter says what they prove.
 
 ## Mutation testing
 
 `cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate. The `mutants` agent runs it on the lines a delivery changed, and the `verify` agent fails on a missed or timed-out mutant in critical code and documents the rest. There is no score target. An archive step first asks for a whole-crate run.
+
+A second practice complements it. When a test is written after the code, the delivery shows that the test can fail by applying one hand mutation at a time (for example `<` for `<=`, no early `break`, compacting the newest entry), running the tests and restoring the code. Hand mutations are recorded as a selection in the change's `apply-progress.md`, never as a complete run. A surviving mutant found by `cargo-mutants` in critical code sends the delivery back for a fix round with new tests.
 
 ```bash
 cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratch dir>
