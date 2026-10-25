@@ -10,7 +10,7 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 
 | Doc | Estado | Detalle |
 |---|---|---|
-| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-07), C2a `domain-color` (ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-12, ARQ-13, ARQ-30) (archivados). Sigue: C3 `edit-history`, luego `gafira-format`, render, UI... |
+| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-07), C2a `domain-color` (ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-12, ARQ-13, ARQ-30) (archivados). Activo: C3 `edit-history` (propuesta en `openspec/changes/edit-history/`; preguntas abiertas Q1-Q15 en su `design.md`). Luego `gafira-format`, render, UI... |
 | `00-decisiones.md` | Vigente (no ejecutable) | Registro de decisiones del titular; prevalece sobre 01-05. No se promueve ni se archiva. |
 | `backlog/01-producto-y-calidad.md` | Backlog | Producto, calidad y criterios de aceptación. |
 | `backlog/03-diseno-visual-e-interaccion.md` | Backlog | Tokens, modo oscuro, glosario ES+EN, wireframes. |
