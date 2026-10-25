@@ -29,3 +29,7 @@ Thumbs.db
 # Locally generated audio (see assets/musics/LICENSE.md, D-10)
 assets/musics/*
 !assets/musics/LICENSE.md
+
+# cargo-mutants output (use -o <scratchpad> instead)
+/mutants.out/
+/mutants.out.old/

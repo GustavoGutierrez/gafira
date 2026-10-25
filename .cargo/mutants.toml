@@ -1,0 +1,2 @@
+# cargo-mutants settings. Keep minimal; see AGENTS.md "Testing and mutation policy".
+additional_cargo_test_args = ["--locked"]
