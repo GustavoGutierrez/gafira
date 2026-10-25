@@ -197,6 +197,8 @@ fn a_non_positive_tolerance_and_width_are_named_as_such() {
             );
             let message = outcome.unwrap_err().to_string();
             assert!(!message.contains("NaN"), "{name}: {message}");
+            assert!(message.contains("not positive"), "{name}: {message}");
+            assert!(message.contains(&value.to_string()), "{name}: {message}");
         }
 
         let outcome = rect().stroke_outline(&style(value), 1e-3).map(drop);
@@ -204,7 +206,13 @@ fn a_non_positive_tolerance_and_width_are_named_as_such() {
             is_not_positive(&outcome, false, value),
             "width {value}: {outcome:?}"
         );
-        assert!(!outcome.unwrap_err().to_string().contains("NaN"));
+        let message = outcome.unwrap_err().to_string();
+        assert!(!message.contains("NaN"), "width {value}: {message}");
+        assert!(message.contains("not positive"), "width {value}: {message}");
+        assert!(
+            message.contains(&value.to_string()),
+            "width {value}: {message}"
+        );
     }
 }
 
@@ -221,6 +229,8 @@ fn a_non_finite_tolerance_and_width_are_named_by_kind() {
                 }),
                 "{name} with tolerance {kind}"
             );
+            let message = outcome.unwrap_err().to_string();
+            assert!(message.contains(&kind.to_string()), "{name}: {message}");
         }
 
         assert_eq!(

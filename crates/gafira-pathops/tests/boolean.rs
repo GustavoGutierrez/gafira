@@ -579,3 +579,29 @@ fn an_open_subpath_is_reported_before_a_too_fine_tolerance() {
         Err(PathOpError::OpenSubpath { subpath: 0 })
     );
 }
+
+#[test]
+fn every_operation_winds_the_result_the_same_way() {
+    let a = rect(0.0, 0.0, 10.0, 10.0);
+    let b = rect(5.0, 0.0, 15.0, 10.0);
+
+    let areas: Vec<f64> = [
+        a.union(&b, DEFAULT_TOLERANCE),
+        a.intersection(&b, DEFAULT_TOLERANCE),
+        a.difference(&b, DEFAULT_TOLERANCE),
+        a.xor(&b, DEFAULT_TOLERANCE),
+    ]
+    .into_iter()
+    .map(|result| result.unwrap().as_bez_path().area())
+    .collect();
+
+    let expected = [150.0, 50.0, 50.0, 100.0];
+    let sign = areas[0].signum();
+    for (area, magnitude) in areas.iter().zip(expected) {
+        assert!(
+            (area - sign * magnitude).abs() < 1e-6,
+            "area {area}, expected {} in the winding of the union",
+            sign * magnitude
+        );
+    }
+}
