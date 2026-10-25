@@ -15,8 +15,9 @@ Inputs (in the prompt): change, delivery, base branch, crates, optional `whole-c
 Steps
 1. Read `AGENTS.md` ("Testing and mutation policy") for the critical / non-critical rule.
 2. Delivery mode: `git diff <base>...HEAD > <scratchpad>/<change>-<delivery>.diff`, then
-   `cargo mutants -p <crates> --in-diff <diff> --jobs 4 --cargo-arg=--locked -o <scratchpad>/mutants-<delivery>`
+   `cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratchpad>/mutants-<delivery>`
    Whole-crate mode (archive): same command without `--in-diff`.
+   `--locked` comes from `.cargo/mutants.toml`; do not pass it again.
 3. Do not set `RUSTFLAGS=-D warnings` (it creates unviable mutants). Use the default `cargo test` runner: nextest skips the doctests (`compile_fail`) we rely on.
 4. Read `missed.txt` and `timeout.txt` from the output dir. Classify each mutant critical or non-critical by its file and function. Mark a suspected equivalent mutant and say why.
 

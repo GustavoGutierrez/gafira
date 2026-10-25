@@ -39,7 +39,7 @@ cargo test --workspace --locked
 - Tests cover behavior of the public contract, not implementation (see `tdd-apply`).
 - Critical code: validation, JSON load/save, ids and arena, transforms, size/DPI limits, any spec rule with an invariant. Non-critical: `Display`/`Error` text unless the spec fixes it, trivial accessors, test helpers.
 - `mutants` runs `cargo-mutants` on the delivery diff; `verify` fails on a missed or timeout mutant in critical code and documents the rest. No score target. Archive first requests a whole-crate run.
-- Flags: `cargo mutants -p <crates> --in-diff <diff> --jobs 4 --cargo-arg=--locked -o <scratchpad dir>`. Default `cargo test` runner (nextest skips doctests), no `RUSTFLAGS=-D warnings`. `#[mutants::skip]` is forbidden (it needs a dependency); exclude through `.cargo/mutants.toml` with a reason.
+- Flags: `cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratchpad dir>`. Default `cargo test` runner (nextest skips doctests), no `RUSTFLAGS=-D warnings`. `#[mutants::skip]` is forbidden (it needs a dependency); exclude through `.cargo/mutants.toml` with a reason. `--locked` comes from `.cargo/mutants.toml` (`additional_cargo_test_args`); do not pass it again (cargo rejects a duplicate).
 - `cargo-mutants` is an optional dev tool, like `cargo-deny`; it is not a CI gate.
 
 ## Delivery rules
