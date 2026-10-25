@@ -481,6 +481,96 @@ fn negative_zero_is_rejected() {
     );
 }
 
+fn fixed_rates() -> Vec<FrameRate> {
+    vec![
+        FrameRate::FPS_23_976,
+        FrameRate::FPS_24,
+        FrameRate::FPS_25,
+        FrameRate::FPS_29_97,
+        FrameRate::FPS_30,
+        FrameRate::FPS_59_94,
+        FrameRate::FPS_120,
+        FrameRate::new(245, 3).unwrap(),
+    ]
+}
+
+#[test]
+fn non_drop_labels_round_trip_at_every_rate() {
+    for rate in fixed_rates() {
+        let nominal = i64::from(rate.nominal_fps());
+        let format = ndf(rate);
+        // (hours, seconds into the hour, frames) of the fixed labels.
+        for (hours, seconds, frames) in [
+            (0, 0, 0),
+            (0, 0, nominal - 1),
+            (0, 59, nominal - 1),
+            (1, 0, 0),
+            (25, 0, 0),
+        ] {
+            let label = (hours * 3_600 + seconds) * nominal + frames;
+            let expected = format!(
+                "{hours:02}:{:02}:{:02}:{frames:02}",
+                seconds / 60,
+                seconds % 60
+            );
+            for signed in [label, -label] {
+                let timecode = tc(signed, format);
+                let sign = if signed < 0 { "-" } else { "" };
+                assert_eq!(timecode.format(), format!("{sign}{expected}"), "{rate:?}");
+                let parsed = Timecode::parse(&timecode.format(), format).unwrap();
+                assert_eq!(parsed, timecode, "{rate:?} {signed}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_frames_field_equal_to_the_nominal_rate_is_rejected() {
+    let r24_5 = FrameRate::new(49, 2).unwrap();
+    // (format, last valid text, first rejected text).
+    let cases = [
+        (ndf(FrameRate::FPS_23_976), "00:00:00:23", "00:00:00:24"),
+        (ndf(FrameRate::FPS_24), "00:00:00:23", "00:00:00:24"),
+        (ndf(FrameRate::FPS_29_97), "00:00:00:29", "00:00:00:30"),
+        (df(FrameRate::FPS_29_97), "00:00:00;29", "00:00:00;30"),
+        (ndf(FrameRate::FPS_59_94), "00:00:00:59", "00:00:00:60"),
+        (df(FrameRate::FPS_59_94), "00:00:00;59", "00:00:00;60"),
+        (ndf(r24_5), "00:00:00:24", "00:00:00:25"),
+        (ndf(FrameRate::FPS_120), "00:00:00:119", "00:00:00:120"),
+    ];
+    for (format, accepted, rejected) in cases {
+        assert!(
+            Timecode::parse(accepted, format).is_ok(),
+            "rejected {accepted}"
+        );
+        assert_eq!(
+            Timecode::parse(rejected, format),
+            Err(TimeError::InvalidTimecodeField),
+            "accepted {rejected}"
+        );
+    }
+}
+
+#[test]
+fn the_label_after_the_last_frame_rolls_into_the_next_second() {
+    for (format, expected) in [
+        (ndf(FrameRate::FPS_23_976), "00:00:01:00"),
+        (ndf(FrameRate::FPS_24), "00:00:01:00"),
+        (ndf(FrameRate::FPS_29_97), "00:00:01:00"),
+        (ndf(FrameRate::FPS_59_94), "00:00:01:00"),
+        (ndf(FrameRate::new(49, 2).unwrap()), "00:00:01:00"),
+    ] {
+        let nominal = i64::from(format.rate().nominal_fps());
+        assert_eq!(tc(nominal, format).format(), expected);
+    }
+}
+
+#[test]
+fn the_nominal_rate_bounds_the_last_label_of_a_minute() {
+    assert!(Timecode::parse("00:00:59;59", df(FrameRate::FPS_59_94)).is_ok());
+    assert!(Timecode::parse("00:00:59:29", ndf(FrameRate::FPS_29_97)).is_ok());
+}
+
 proptest! {
     #[test]
     fn non_drop_parse_round_trip(label in -1_000_000_000i64..=1_000_000_000) {

@@ -303,6 +303,41 @@ fn serde_rejects_invalid_rates() {
     assert!(serde_json::from_str::<SampleRate>(r#"{"hz":11}"#).is_err());
 }
 
+fn every_tested_rate() -> Vec<FrameRate> {
+    vec![
+        FrameRate::FPS_23_976,
+        FrameRate::FPS_24,
+        FrameRate::FPS_25,
+        FrameRate::FPS_29_97,
+        FrameRate::FPS_30,
+        FrameRate::FPS_59_94,
+        FrameRate::FPS_120,
+        FrameRate::new(245, 3).unwrap(),
+    ]
+}
+
+#[test]
+fn frames_round_trip_at_every_rate() {
+    for rate in every_tested_rate() {
+        for frames in [-1_000_000, -86_400, -24, -1, 0, 1, 23, 24, 1_001, 123_456] {
+            let flicks = Flicks::from_frames(frames, rate).unwrap();
+            assert_eq!(flicks.to_frames_floor(rate), frames, "{rate:?} {frames}");
+            assert!(flicks.is_frame_boundary(rate), "{rate:?} {frames}");
+        }
+    }
+}
+
+#[test]
+fn samples_round_trip_at_every_standard_rate() {
+    for hz in [44_100, 48_000, 96_000] {
+        let rate = SampleRate::new(hz).unwrap();
+        for samples in [-1_000_000, -48_000, -1, 0, 1, 44_099, 48_000, 123_456] {
+            let flicks = Flicks::from_samples(samples, rate).unwrap();
+            assert_eq!(flicks.to_samples_floor(rate), samples, "{hz} {samples}");
+        }
+    }
+}
+
 proptest! {
     #[test]
     fn frames_round_trip_when_representable(frames in any::<i64>()) {
