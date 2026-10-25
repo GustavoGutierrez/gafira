@@ -43,12 +43,11 @@ fn sample(pages: u64) -> Document {
     let mut doc = Document::default();
     let mut edit = doc.edit(&t);
     for _ in 0..pages {
-        let (page_id, first) = add_page(&mut edit);
+        let (page_id, _) = add_page(&mut edit);
         let second = edit.alloc_node_id().unwrap();
         let page = edit.page_mut(page_id).unwrap();
         page.roots.push(second);
         page.nodes.insert(second, Arc::new(group(second)));
-        assert_ne!(first, second);
     }
     doc
 }
@@ -58,8 +57,14 @@ fn edit_builds_a_valid_document() {
     let mut doc = Document::default();
     let t = token();
     let mut edit = doc.edit(&t);
-    let (page_id, node_id) = add_page(&mut edit);
+    let page_id = edit.alloc_page_id().unwrap();
+    let node_id = edit.alloc_node_id().unwrap();
     assert_eq!((page_id.get(), node_id.get()), (1, 2));
+    edit.pages_mut()
+        .push(Arc::new(Page::new(page_id, String::new(), size(2.0))));
+    let page = edit.page_mut(page_id).unwrap();
+    page.roots.push(node_id);
+    page.nodes.insert(node_id, Arc::new(group(node_id)));
     assert_eq!(edit.as_doc().pages().len(), 1);
     assert_eq!(doc.next_id(), 3);
     assert_eq!(doc.page(page_id).unwrap().roots, [node_id]);

@@ -330,7 +330,7 @@ V5, V6, V11 and V12 are interim shell commands. They migrate to `xtask check-lay
 
 | Item | How to verify |
 |---|---|
-| kurbo `0.13` exists, has a `serde` feature, and supports MSRV ≤ 1.93 | `cargo add`/`cargo check` resolves it. Read `rust-version` in `~/.cargo/registry/src/*/kurbo-*/Cargo.toml`. Use the newest compatible minor version. |
+| kurbo `0.13` exists, has a `serde` feature, and supports MSRV ≤ 1.93 | `cargo add`/`cargo check` resolves it. Read `rust-version` in `$CARGO_HOME/registry/src/*/kurbo-*/Cargo.toml`. Use the newest compatible minor version. |
 | cargo-deny keys (`[graph] targets`, `unused-allowed-license`, `allow-wildcard-paths`, advisories v2 keys) | `cargo deny --version`, then `cargo deny check` has no config errors. Check against the docs for that version. |
 | Every `clippy.toml` path resolves in std 1.93 | `cargo clippy -p gafira-geom` emits no "does not refer to an existing" config warnings. The scratch `std::fs::read` RED (T7) fails as expected. |
 | proptest `default-features = false, features = ["std"]` is a valid and enough set | `cargo tree -p gafira-geom -e dev` shows no `rusty-fork` or `tempfile`. The T6 tests compile and run. |
