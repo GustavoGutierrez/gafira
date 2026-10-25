@@ -565,3 +565,60 @@ Code-only `git diff --shortstat`: D6a1 against `feat/domain-doc-5b`: 3 files cha
 ### Gates
 
 `cargo fmt --check` and `cargo clippy --workspace --all-targets --locked -- -D warnings` pass on each commit. `cargo test --workspace --locked`: docs commit 295 passed; D6a1 296 passed; D6a2 297 passed. The guards take about 3 s each.
+
+## D6b (properties Q1 to Q5)
+
+Status: done. Base: `origin/main` (c2bf347, contains D1 to D6a2 and the docs/specs backlog reorg); branch `feat/domain-doc-6b`. Commits (subjects):
+
+- `docs: apply D6a verify follow-ups` (schema 2 wire-only in the validation spec and design, "Twelve" in the proposal, D6a2 measured 388 and `-6a2` in the branch list, vendored MIT `LICENSE` for the `git-workflow-and-versioning` skill)
+- `test(doc): guard id order, id gaps and special characters` (D6a1 guard gaps, `cfg(test)` removal, duplicate-id kinds pin the reported id)
+- `test(doc): add ARQ-10 and ARQ-13 properties` (`tests/properties.rs`)
+- `docs(sdd): record domain-doc D6b` (design mutation and runtime text, this section)
+
+### Scenario -> test (`crates/gafira-doc/tests/properties.rs`)
+
+| Scenario | Test |
+|---|---|
+| Round trip idempotent (Q1, 10 000 cases) | `round_trip_is_idempotent_and_bit_identical` |
+| Valid generated documents / Generated documents are valid (Q2) | `generated_documents_validate` |
+| Corruption is detected exactly; Corruption survives the wire (Q3, incl. the wire-only schema 2 clause) | `corruption_is_detected_exactly_and_survives_the_wire` |
+| Determinism (D6b, property) | `validation_is_deterministic` |
+| Canonical payload (Q4) | `payload_text_is_canonical` |
+| Corruption never panics (Q5) | `one_byte_of_damage_is_an_error_or_a_valid_document` |
+| Coverage guards (D6a1/D6a2, now also ids out of order, id gap, quote, backslash, control and non-ASCII characters) | `common::guards::*` |
+
+### RED evidence
+
+The properties pass on correct code, so non-vacuity is shown by mutation (each reverted, `git status` clean):
+
+| Mutation | Result |
+|---|---|
+| Guard: sort slots by a constant key (no shuffle) | killed: `never reached: ["ids out of order"]` |
+| Guard: gap loop `0..0` | killed: `never reached: ["id gap"]` |
+| Guard: text generator limited to `a..z` | killed: `never reached: ["quote", "backslash", "control char", "non-ASCII char"]` |
+| Guard: `duplicate = Some(id + 1)` | killed: corruption guard assertion |
+| Drop `float_roundtrip` | killed: Q1 and Q4 fail |
+| Remove P6 (reachability) | killed: Q3 and the corruption guard fail |
+| Clamp opacity on read | killed: Q3 wire clause fails |
+| Serialize the arena in reverse | NOT detected by Q1 (reload sorts, second save reverses again); detected by `full_golden_equals_the_built_document` and `arena_is_written_as_an_ascending_array` |
+| Parent counts merged across pages | NOT detected: equivalent, P2 rejects a repeated id before P5 |
+
+`cargo mutants -p gafira-doc --in-diff` on the delivery diff: "No mutants to filter" (only `tests/` changed).
+
+### Timings (`cargo test --test properties --locked -p gafira-doc`, 20-core local machine)
+
+Debug 6.7 s (parallel), 17.5 s with `--test-threads=1`. Release 2.3 s (parallel), 6.2 s with one thread. Under the 60 s limit; no bound was reduced and Q1 keeps 10 000 cases. The per-runner CI times are recorded in the PR after the first push (design: "Not verifiable today").
+
+### Deviations
+
+1. Bit identity in Q1: floats of placement, opacity and extension payload numbers are compared with `to_bits()`; the rest of the document is compared with `==` and by `Debug` text (which prints the sign and shortest round-trip digits of finite floats), instead of a walker over every field.
+2. Design text updated to the current mutation policy (two planned mutations are not detectable by the properties; reasons above) and runtime wording (CI per-runner times come after the first push).
+3. No `proptest-regressions` produced or committed (failing mutation runs wrote one; deleted).
+
+### Gates (fmt, clippy `-D warnings`, `cargo test --workspace --locked` passed / failed)
+
+Docs commit 297 / 0 (code unchanged); guard commit 297 / 0; properties commit 303 / 0 (297 + 6 new properties).
+
+### Size
+
+Code-only `git diff --shortstat c2bf347..HEAD -- crates .github`: 2 files changed, 206 insertions(+), 8 deletions(-) (214 changed lines against ~365 forecast). Whole branch, docs included: 8 files changed, 293 insertions(+), 17 deletions(-). (`origin/main` has since moved to aa4280c; the base used is the D6a2 merge c2bf347.)

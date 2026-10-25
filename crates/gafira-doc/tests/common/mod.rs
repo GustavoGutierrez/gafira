@@ -1,4 +1,6 @@
 //! Bounded document generator, corruption generators and their deterministic guards.
+//!
+//! Only `properties.rs` includes this module, so the guards run once.
 
 use std::sync::Arc;
 
@@ -83,7 +85,7 @@ fn text() -> impl Strategy<Value = String> {
 }
 
 /// Payloads nest at most 3 containers deep, with at most 4 entries each.
-fn json_value() -> impl Strategy<Value = Value> {
+pub fn json_value() -> impl Strategy<Value = Value> {
     let number = prop_oneof![Just(-0.0_f64), finite()]
         .prop_map(|f| Value::Number(Number::from_f64(f).expect("finite")));
     let leaf = prop_oneof![
@@ -396,13 +398,13 @@ impl Corruption {
     ];
 
     /// Whether `error` is the variant this corruption must produce.
-    pub fn matches(self, error: &ValidationError) -> bool {
+    pub fn matches(self, error: &ValidationError, duplicate: Option<u64>) -> bool {
         use ValidationError as E;
         let range =
             |want: NodeField| matches!(error, E::OutOfRange { field, .. } if *field == want);
         match self {
             Self::DuplicateIdAcrossPages | Self::DuplicateIdPageAndNode => {
-                matches!(error, E::DuplicateId { .. })
+                matches!(error, E::DuplicateId { id } if Some(*id) == duplicate)
             }
             Self::ArenaKeyMismatch => matches!(error, E::ArenaKeyMismatch { .. }),
             Self::NextIdNotAboveMax => matches!(error, E::NextIdNotAboveMax { .. }),
@@ -438,9 +440,16 @@ pub struct Corrupted {
     pub kind: Corruption,
     pub doc: Document,
     pub json: String,
+    /// The id the duplicate-id kinds repeat.
+    pub duplicate: Option<u64>,
 }
 
 impl Corrupted {
+    /// Whether `error` is the variant (and, for duplicates, the id) expected.
+    pub fn explained_by(&self, error: &ValidationError) -> bool {
+        self.kind.matches(error, self.duplicate)
+    }
+
     /// The rule broken: `validate()` on the document, or the load error of
     /// the patched JSON for the wire-only corruption.
     pub fn observed(&self) -> Option<ValidationError> {
@@ -520,12 +529,14 @@ fn nested(depth: usize) -> Value {
 pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
     let token = token();
     let mut schema_two = false;
+    let mut duplicate = None;
     {
         let mut edit = doc.edit(&token);
         let page = first_page(&mut edit);
         match kind {
             Corruption::DuplicateIdAcrossPages => {
                 let node = fresh(&mut edit, group());
+                duplicate = Some(node.base.id.get());
                 add_root(&mut edit, page, node.clone());
                 let other = push_page(&mut edit, px_size(100.0, 100.0));
                 add_root(&mut edit, other, node);
@@ -533,6 +544,7 @@ pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
             Corruption::DuplicateIdPageAndNode => {
                 let node = fresh(&mut edit, group());
                 let same = PageId::new(node.base.id.get());
+                duplicate = Some(same.get());
                 add_root(&mut edit, page, node);
                 edit.pages_mut().push(Arc::new(Page::new(
                     same,
@@ -691,7 +703,12 @@ pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
     if schema_two {
         json = json.replacen("\"schema_version\":1", "\"schema_version\":2", 1);
     }
-    Corrupted { kind, doc, json }
+    Corrupted {
+        kind,
+        doc,
+        json,
+        duplicate,
+    }
 }
 
 /// A valid generated document with one corruption applied.
@@ -704,7 +721,6 @@ pub fn corrupted() -> impl Strategy<Value = Corrupted> {
         .prop_map(|(doc, kind, pick)| corrupt(doc, kind, pick))
 }
 
-#[cfg(test)]
 mod guards {
     use std::collections::BTreeSet;
 
@@ -751,6 +767,31 @@ mod guards {
             .unwrap_or(0)
     }
 
+    /// Records the special characters a string holds.
+    fn note_text(seen: &mut BTreeSet<&'static str>, s: &str) {
+        for c in s.chars() {
+            match c {
+                '"' => seen.insert("quote"),
+                '\\' => seen.insert("backslash"),
+                c if c.is_control() => seen.insert("control char"),
+                c if !c.is_ascii() => seen.insert("non-ASCII char"),
+                _ => false,
+            };
+        }
+    }
+
+    fn note_payload(seen: &mut BTreeSet<&'static str>, v: &Value) {
+        match v {
+            Value::String(s) => note_text(seen, s),
+            Value::Array(a) => a.iter().for_each(|v| note_payload(seen, v)),
+            Value::Object(o) => o.iter().for_each(|(k, v)| {
+                note_text(seen, k);
+                note_payload(seen, v);
+            }),
+            _ => {}
+        }
+    }
+
     fn note_f64(seen: &mut BTreeSet<&'static str>, v: f64) {
         if v == 0.0 && v.is_sign_negative() {
             seen.insert("-0.0");
@@ -775,6 +816,7 @@ mod guards {
             let mut max_id = 0;
             for page in doc.pages() {
                 max_id = max_id.max(page.id.get());
+                note_text(&mut seen, &page.name);
                 assert!(page.nodes.len() <= MAX_NODES);
                 if page.nodes.is_empty() {
                     seen.insert("empty page");
@@ -794,6 +836,10 @@ mod guards {
                 }
                 for node in page.nodes.values() {
                     max_id = max_id.max(node.base.id.get());
+                    if node.base.id.get() < page.id.get() {
+                        seen.insert("ids out of order");
+                    }
+                    note_text(&mut seen, node.base.name.as_deref().unwrap_or(""));
                     let p = &node.base.placement;
                     for v in [p.x, p.y, p.w, p.h, p.rotation_deg, p.skew] {
                         note_f64(&mut seen, v);
@@ -817,6 +863,8 @@ mod guards {
                         }
                         NodeKind::Extension(e) => {
                             seen.insert("extension");
+                            note_text(&mut seen, &e.type_id);
+                            note_payload(&mut seen, &e.payload);
                             assert!(node.children.is_empty());
                             assert!(value_depth(&e.payload) <= 3);
                             assert!(payload_in_bounds(&e.payload));
@@ -825,7 +873,11 @@ mod guards {
                     }
                 }
             }
-            assert!(doc.next_id() - 1 - max_id <= MAX_GAP);
+            let gap = doc.next_id() - 1 - max_id;
+            assert!(gap <= MAX_GAP);
+            if gap > 0 {
+                seen.insert("id gap");
+            }
         }
         let wanted = [
             "-0.0",
@@ -841,6 +893,12 @@ mod guards {
             "several pages",
             "empty page",
             "empty document",
+            "ids out of order",
+            "id gap",
+            "quote",
+            "backslash",
+            "control char",
+            "non-ASCII char",
         ];
         let missing: Vec<_> = wanted.iter().filter(|f| !seen.contains(*f)).collect();
         assert!(missing.is_empty(), "never reached: {missing:?}");
@@ -851,7 +909,7 @@ mod guards {
         let mut seen = BTreeSet::new();
         for c in draws(corrupted()) {
             let error = c.observed().expect("a corruption is detected");
-            assert!(c.kind.matches(&error), "{:?} produced {error:?}", c.kind);
+            assert!(c.explained_by(&error), "{:?} produced {error:?}", c.kind);
             seen.insert(c.kind);
         }
         let missing: Vec<_> = Corruption::ALL

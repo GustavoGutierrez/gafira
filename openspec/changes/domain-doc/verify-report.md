@@ -1761,3 +1761,150 @@ H2 also broke the corruption guard (`keys` index at `:296`). Total for D6a: 5 of
 
 - Verdict: **PASS** for D6a2 (0 CRITICAL, 2 WARNING, 2 SUGGESTION). The change is not complete because D6b remains.
 - Next: the coordinator pushes `feat/domain-doc-6a` and `feat/domain-doc-6a2` and opens their PRs, one after the other per the integration rule. Then **tdd-apply D6b**. D6a2 WARNING 1 (spec fix for schema 2) must land before or in D6b's first commit. D6a1 WARNING 1, D6a2 WARNING 2 and the SUGGESTIONS can ride along.
+
+## D6b (branch `feat/domain-doc-6b`, range `c2bf347..feat/domain-doc-6b`, 4 commits: "docs: apply D6a verify follow-ups", "test(doc): guard id order, id gaps and special characters", "test(doc): add ARQ-10 and ARQ-13 properties", "docs(sdd): record domain-doc D6b")
+
+**Verdict: PASS** (D6b). CRITICAL 0, WARNING 2, SUGGESTION 2.
+
+### Gates per commit
+
+Each commit was checked out in its own fresh `git clone --shared` under the session scratchpad, at a distinct path, so every package was rebuilt. Each policy step body was extracted from that commit's `ci.yml` with a YAML parser and run under `bash -e -o pipefail`, plus `cargo deny check`.
+
+| Commit | fmt | clippy `-D warnings` | test (passed / failed) | `cargo deny` | ARQ-07 | V11 | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| b84abd1 docs: apply D6a verify follow-ups | ok | ok | 297 / 0 | ok | ok | ok | ok | ok | ok |
+| c650717 test(doc): guard id order, id gaps and special characters | ok | ok | 297 / 0 | ok | ok | ok | ok | ok | ok |
+| 2a4e8a4 test(doc): add ARQ-10 and ARQ-13 properties | ok | ok | 303 / 0 | ok | ok | ok | ok | ok | ok |
+| 3442ee0 docs(sdd): record domain-doc D6b (tip) | ok | ok | 303 / 0 | ok | ok | ok | ok | ok | ok |
+
+303 = 297 + 6 properties (Q1, Q2, Q3, Determinism, Q4, Q5). No `proptest-regressions` file is committed. No commit carries AI attribution (all authored by the owner, no trailer). The diff adds no `#[allow]`, no `HashMap`/`HashSet`, no `unsafe` and no `std::env`. It does not touch `Cargo.toml` or `Cargo.lock`.
+
+**Runtime** (`cargo test --test properties --locked -p gafira-doc`, tip, 20 cores, 8 tests):
+
+| Build | parallel | `--test-threads=1` |
+|---|---|---|
+| debug | 6.7 s | 17.5 s |
+| release | 2.3 s | 6.3 s |
+
+Every run is under 60 s. Q1 keeps `ProptestConfig::with_cases(10_000)` (`tests/properties.rs:71`). These numbers match `apply-progress.md`.
+
+**Size**, code only (`git diff --shortstat c2bf347..HEAD -- crates .github`): 2 files, 206 insertions, 8 deletions = **214** (forecast ~365). This matches `apply-progress.md`. Whole branch: 8 files, 293 / 17.
+
+### D6a1 / D6a2 follow-ups (b84abd1, c650717)
+
+| Item | Evidence | Status |
+|---|---|---|
+| D6a2 W1: schema 2 is wire-only | `document-validation/spec.md:228` and `:237`; `design.md:460` | closed |
+| D6a2 W2: "Twelve" | `proposal.md:111` | closed |
+| D6a2 S1: 388 measured, `-6a2` branch | `design.md:370`, `:386` | closed |
+| D6a2 S2: duplicate-id kinds pin the reported id | `tests/common/mod.rs:407` (`DuplicateId { id } if Some(*id) == duplicate`), set at `:539`, `:547`; used through `explained_by` (`:449`) by the guard and by Q3 | closed |
+| D6a1 W1: guards for shuffle, gap and special characters | `tests/common/mod.rs:840` ("ids out of order"), `:879` ("id gap"), `:771-781` (quote, backslash, control, non-ASCII), all in `wanted` (`:896-901`). The writer killed each one with a mutation (constant sort key, gap loop `0..0`, text limited to `a..z`) | closed |
+| D6a1 S1: redundant `#[cfg(test)]` | removed from `mod guards` (`:724`); module doc `:3` says only `properties.rs` includes it | closed |
+| D6a1 S2: vendored LICENSE | `.agents/skills/git-workflow-and-versioning/LICENSE` (MIT, Addy Osmani), with `SOURCE.md:5` updated | closed |
+
+### Requirements and scenarios (D6b)
+
+| Requirement / scenario | Evidence | Status |
+|---|---|---|
+| `document-serde` "Deterministic round trip (ARQ-10)": Round trip idempotent (property, 10 000 cases) | `round_trip_is_idempotent_and_bit_identical` (`tests/properties.rs:75`): bytes equal after save, load, save; `bit_identical` (`:56`) | covered (H1 killed) |
+| Same requirement: bit identity of every float | node floats and opacity by `to_bits()` (`:35-52`), payload floats by bits (`:17-33`), the rest by `==` plus `Debug` (`:66-67`) | covered (deviation 2 accepted) |
+| `document-serde` "Arena order mutation is caught" (D3 unit, recorded as property mutation) | H4: Q1 stays green; `full_golden_equals_the_built_document` and `arena_is_written_as_an_ascending_array` fail | covered (by unit tests, as the design now says) |
+| `document-validation` / `document-model`: Valid generated documents (property, 256) | `generated_documents_validate` (`:86`) | covered (H2 killed) |
+| Corruption is detected exactly (property; schema 2 through `from_json`) | `corruption_is_detected_exactly_and_survives_the_wire` (`:93`) via `observed()` and `explained_by` | covered (see SUGGESTION 1 on `found`) |
+| Corruption survives the wire (except `ArenaKeyMismatch`, `NonFinite`) | same test, `:97-104`, requires `Err(LoadError::Invalid(e))` with the same variant | covered (H3 and H5 killed) |
+| Determinism (D6b, property) | `validation_is_deterministic` (`:109`) | covered (pure function; by inspection) |
+| Q4 canonical payload | `payload_text_is_canonical` (`:115`) | covered (H1 killed) |
+| `document-serde` "Corruption never panics" (Q5) | `one_byte_of_damage_is_an_error_or_a_valid_document` (`:124`): 3 goldens through `include_str!`, replace / insert / delete | covered (WARNING 1 on power) |
+| "Coverage guards and mutations": remove P6, parents across pages, clamp opacity | P6 and clamp: killed (the writer killed P6; verify re-ran clamp as H5). Parents across pages: recorded as not observable, because P2 `DuplicateId` runs over all pages before P5 and rejects the only distinguishing input | covered (one mutation recorded with its reason, as the scenario allows) |
+
+### Deviations judged
+
+1. **Design text rewritten to the current mutation policy** (`design.md:466`): **accepted**. H4 confirms that reversing the arena keeps Q1 green and that the unit tests catch it. The cross-page parent mutation cannot be observed, for the P2 reason above. The `document-validation` scenario explicitly allows recording an undetected mutation with its reason.
+2. **Q1 compares floats by `to_bits()` and the rest by `==` and `Debug`**: **accepted**. For finite floats, Rust's `Debug` prints the shortest round-trip digits and the sign of zero, so equal text means equal bits. NaN never appears: Q2 shows that every generated document is valid, and validation rejects non-finite values.
+3. **CI per-runner timings come only after the push**: **accepted**. `design.md:516` already lists this as "not verifiable today", and no spec requirement fixes a runtime. It stays open until the PR (WARNING 2).
+
+### Hand mutations (verify; scratch clone, each reverted, `git status` clean, the regression file deleted after each)
+
+| # | Mutation | Target | Result |
+|---|---|---|---|
+| H1 | Drop `float_roundtrip` from the workspace `serde_json` | Q1, Q4 | killed: both fail |
+| H2 | Generator `opacity()` also emits `Just(1.5)` | Q2 alone | killed: `Err(OutOfRange { field: Opacity, value: 1.5 })` |
+| H3 | `try_from(DocumentWire)` skips `validate()` (`json.rs:58`) | Q3, Q5 | Q3 killed (`MultipleParents reloaded as Ok(..)`). Q5 caught it in 8 of 11 runs at 256 cases, and always at `PROPTEST_CASES=20000` (`Orphan`) (WARNING 1) |
+| H4 | Arena serialized in reverse (`arena.rs:15` `.rev()`) | Q1 | survives, as the design records; 2 unit tests fail |
+| H5 | Opacity clamped to `[0, 1]` on read (`element.rs:21`) | Q3 wire clause | killed: `OpacityRange reloaded as Ok(..)`; Q1 green, as expected |
+
+### Mutants
+
+The `mutants` report (`scratchpad/mutants-D6b/report.md`) gives **0 mutants** ("No mutants to filter"), because the diff touches only `crates/gafira-doc/tests/` and docs. It reports 0 caught, 0 missed, 0 timeout and 0 unviable, so no critical code is affected. The strength of the properties was checked with H1 to H5 instead.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Q5 is a weak detector of a missing load validation** (`tests/properties.rs:124-141`). Most random single-byte edits break the JSON syntax. With validation removed (H3), Q5 failed in only 8 of 11 runs of 256 cases. The scenario's assertion is correct, and Q3's wire clause plus the D4b unit tests catch H3 every time, so this is not a coverage gap. Suggested fix: draw `byte` partly from digits and structural characters, or raise Q5 to about 2 000 cases (still well under 60 s). Test code, non-critical.
+2. **CI per-runner runtime still to record** (`design.md:468`, `:516`, `:531`; `proposal.md:82` "CI runtime record"). After the push, the coordinator records the `properties` time for each of the three runners in the PR. If the slowest runner exceeds 60 s, reduce the bounds, never Q1's cases.
+
+### SUGGESTION
+
+1. `Corruption::matches` accepts `UnsupportedSchemaVersion { .. }` (`tests/common/mod.rs:429`), while the spec requires `{ found: 2 }` (`document-validation/spec.md:228`). The value is pinned by the unit test `json.rs:332`. Pinning `found: 2` in the matcher would make Q3 match the spec word for word.
+2. `design.md:105` names `crates/gafira-doc/proptest-regressions/`, but proptest writes `crates/gafira-doc/tests/properties.proptest-regressions`, as observed in the H runs. The D6b row (`design.md:372-373`) also still shows only the ~365 forecast, without the 214 measured.
+
+### Result
+
+- Verdict: **PASS** for D6b (0 CRITICAL, 2 WARNING, 2 SUGGESTION).
+
+## Change complete (domain-doc)
+
+**Verdict: PASS.** All twelve sub-deliveries are done and verified PASS. Every requirement and scenario in the five delta specs is covered by some delivery. Nothing is left uncovered.
+
+### Deliveries
+
+| Delivery | Final verify | Line |
+|---|---|---|
+| D1 (1a, 1b) | PASS | `verify-report.md:143` |
+| D2a | PASS (re-verify) | `:301` |
+| D2b | PASS (re-verify) | `:506` |
+| D3a | PASS (re-verify) | `:741` |
+| D3b | PASS | `:889` |
+| D4a | PASS (third verify) | `:1215` |
+| D4b | PASS (re-verify) | `:1410` |
+| D5a | PASS | `:1502` |
+| D5b | PASS | `:1630` |
+| D6a1 | PASS | `:1700` |
+| D6a2 | PASS | `:1762` |
+| D6b | PASS | this file, D6b section |
+
+`apply-progress.md` records all twelve as done, and D6b ends with status "done".
+
+### Scenario coverage across the five specs
+
+There are 190 scenarios. Each scenario title was matched against this report, then the 50 titles without a literal match were checked by hand: they appear under paraphrased rows. Examples: D1 `document-model` rows at `:72-95`, D4b `document-validation` rows at `:1259-1292`, D5b `edit-capability` rows at `:1548-1570`, the V13 E-table at `:1528-1544`, and the `workspace-tooling` table at `:32-58`. None is uncovered.
+
+Command and manual scenarios, all executed or recorded in earlier deliveries:
+
+- `workspace-tooling`: N0 to N5, D-N0 to D-N3, H-N1 to H-N6, V11 missing forbid, "Hardened V12 timing", workspace membership, entries present, clean tree (D1, `:32-58`). V13 "Step present and green" and "Each commit stays green" were checked on every D5b commit and again on each D6b commit above.
+- `document-model`: normal tree, dev tree bounded, no kurbo or new package (D1, `:68-70`).
+- `document-serde`: feature guards, text conversion off, golden shape (D3a/D3b, `:658-659`).
+- `edit-capability`: E0 to E15 (D5b, `:1528-1544`), "Hidden from the docs" (`:1555`), "Whole-value replacement documented" (manual, `:1563`), "Lock unchanged except gafira-doc" and "Deferral recorded" (D5b "Deferred to C3" paragraph, `:1546`). D6b does not touch `Cargo.lock`.
+
+Known limitations, recorded as specified and still not met:
+
+- V5 skips a crate without `clippy.toml`. This is deferred to `xtask check-layers`.
+- V13 has six textual limits. Review covers them until C3.
+- The `trybuild` ARQ-30 test is deferred to C3.
+
+Open, non-blocking items:
+
+- D6b WARNING 2: CI per-runner timing.
+- The design's "Holder questions" Q1 to Q5 (`design.md:580-584`) are owner confirmations, not spec scenarios.
+
+### Next
+
+`next` = **archive**. AGENTS.md sets two conditions:
+
+1. Archive `workspace-scaffold`, then `domain-color`, before `domain-doc`, because `domain-doc/specs/workspace-tooling` targets their base spec.
+2. Archive first requests a whole-crate `cargo-mutants` run.
+
+Before that, push `feat/domain-doc-6b`, open its PR and record the CI timings (W2).
