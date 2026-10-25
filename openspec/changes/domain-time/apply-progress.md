@@ -60,3 +60,32 @@ Measured size: 5 files, 435 insertions under `crates/` (including the proptest r
 
 Deviation: the spec example for 1,234 ms said 870,854,400 flicks; the correct product is 870,710,400 (1,234 x 705,600). The RED unit test exposed it before the implementation commit. The spec was corrected in commit `3d5ace9` (`docs(spec): correct the 1,234 ms example to 870,710,400 flicks`), and the test asserts the corrected value. No other criterion changed.
 
+## D2 - Frame rates, sample rates and alignment conversions
+
+Status: done.
+
+RED evidence (`cargo test -p gafira-time --test rates` against compile-clean stubs that returned 1/1 rates and zero conversions; no compile errors):
+
+- `standard_frame_rates_are_accepted_with_exact_durations` -> `left: 0, right: 29429400` for 23.976 fps.
+- `ntsc_frame_durations_are_exact` -> all three durations were 0.
+- `non_integral_frame_durations_are_rejected` -> 11 fps and 2398/100 were accepted instead of rejected.
+- `zero_rates_are_rejected` -> `left: Ok(FrameRate { num: 1, den: 1 }), right: Err(ZeroDenominator)`.
+- `rates_below_one_frame_per_second_are_rejected` -> 1/2 was accepted.
+- `equivalent_fractions_normalize` -> 48/2 did not equal 24/1.
+- `nominal_frame_rate_rounds_to_nearest_with_ties_up` -> every nominal rate was 0.
+- `fps_f64_is_the_lossy_display_value` -> `left: 0.0`.
+- `frames_convert_to_flicks_exactly`, `frame_conversion_overflow_is_an_error`, `instants_floor_to_the_containing_frame`, `frame_boundaries_are_exact_multiples`, `cross_rate_conversion_floors_instead_of_rounding` -> conversion stubs returned 0/false.
+- Sample-rate tests and both serde tests failed the same way; `sample_rate_serde_uses_hertz` and the invalid-input guards exposed the stub normalization.
+- Proptest `frames_round_trip_when_representable` failed with minimal input `frames = -1`; `samples_round_trip_when_representable`, `to_frames_floor_matches_euclidean_division`, `frame_boundary_matches_the_remainder` and `the_tick_divides_every_accepted_frame_duration` failed on the zero durations.
+- Result of the RED run: `24 failed; 4 passed`.
+
+GREEN evidence:
+
+- `cargo test -p gafira-time --test rates` -> `28 passed; 0 failed` (unit tests plus 7 proptest properties).
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check` -> all exit 0; local CI policy replay -> `policy status=0`.
+
+Measured size: 4 files, 618 insertions under `crates/` (including the proptest regression seed).
+
+Deviation: none. The two proptest regression seeds committed with this delivery record the cases the stubs rejected; they pass now and stay as regression guards.
+
+

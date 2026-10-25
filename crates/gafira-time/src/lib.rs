@@ -7,6 +7,8 @@
 
 mod error;
 mod flicks;
+mod rate;
 
 pub use error::TimeError;
 pub use flicks::{FLICKS_PER_MILLISECOND, FLICKS_PER_SECOND, Flicks};
+pub use rate::{FrameRate, SampleRate};
