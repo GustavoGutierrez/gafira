@@ -22,6 +22,16 @@ struct Subpath {
     index: usize,
     /// Whether the subpath is closed.
     closed: bool,
+    /// Whether the subpath holds at least one segment.
+    has_segment: bool,
+}
+
+/// Whether the element is a segment: a line, a quadratic or a cubic.
+fn is_segment(el: &PathEl) -> bool {
+    matches!(
+        el,
+        PathEl::LineTo(_) | PathEl::QuadTo(..) | PathEl::CurveTo(..)
+    )
 }
 
 impl Path {
@@ -48,12 +58,13 @@ impl Path {
         self.fill_rule
     }
 
-    /// Whether the path holds no drawing element.
+    /// Whether the path holds no segment.
     ///
-    /// A path holding only a move or a close is empty: it covers no area.
+    /// A path with no element, or with only moves and closes, is empty: it
+    /// covers no area and is never an open subpath.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.bez.is_empty()
+        !self.bez.elements().iter().any(is_segment)
     }
 
     /// The number of subpaths in the path.
@@ -155,12 +166,14 @@ impl Path {
         Ok(())
     }
 
-    /// Checks that every subpath of the path is closed.
+    /// Checks that no subpath of the path is open.
     ///
-    /// The error names the index of the first open subpath.
+    /// A subpath is open when it holds a segment and does not end with a close.
+    /// A lone move holds no segment, so it is not open. The error names the
+    /// index of the first open subpath.
     pub fn validate_closed(&self) -> Result<(), PathOpError> {
         for subpath in self.subpaths() {
-            if !subpath.closed {
+            if !subpath.closed && subpath.has_segment {
                 return Err(PathOpError::OpenSubpath {
                     subpath: subpath.index,
                 });
@@ -171,39 +184,35 @@ impl Path {
 
     /// The subpaths of the path, in path order.
     fn subpaths(&self) -> Vec<Subpath> {
-        let mut subpaths = Vec::new();
+        let mut subpaths: Vec<Subpath> = Vec::new();
+        let mut open: Option<Subpath> = None;
         let mut index = 0usize;
-        let mut open: Option<usize> = None;
 
         for el in self.bez.elements() {
             match el {
                 PathEl::MoveTo(_) => {
-                    if let Some(start) = open.take() {
-                        subpaths.push(Subpath {
-                            index: start,
-                            closed: false,
-                        });
-                    }
-                    open = Some(index);
+                    subpaths.extend(open.take());
+                    open = Some(Subpath {
+                        index,
+                        closed: false,
+                        has_segment: false,
+                    });
                     index += 1;
                 }
                 PathEl::ClosePath => {
-                    if let Some(start) = open.take() {
-                        subpaths.push(Subpath {
-                            index: start,
-                            closed: true,
-                        });
+                    if let Some(mut subpath) = open.take() {
+                        subpath.closed = true;
+                        subpaths.push(subpath);
                     }
                 }
-                PathEl::LineTo(_) | PathEl::QuadTo(..) | PathEl::CurveTo(..) => {}
+                PathEl::LineTo(_) | PathEl::QuadTo(..) | PathEl::CurveTo(..) => {
+                    if let Some(subpath) = open.as_mut() {
+                        subpath.has_segment = true;
+                    }
+                }
             }
         }
-        if let Some(start) = open {
-            subpaths.push(Subpath {
-                index: start,
-                closed: false,
-            });
-        }
+        subpaths.extend(open);
         subpaths
     }
 }

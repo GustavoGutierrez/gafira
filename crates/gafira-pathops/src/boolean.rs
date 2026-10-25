@@ -56,8 +56,8 @@ impl Path {
         self.validate_closed()?;
         other.validate_closed()?;
 
-        if self.is_empty() && other.is_empty() {
-            return Ok(Path::new(BezPath::new(), self.fill_rule()));
+        if let Some(result) = self.empty_operand_result(other, op) {
+            return Ok(result);
         }
 
         let lib_op = match op {
@@ -85,6 +85,25 @@ impl Path {
             bez.extend(contour.path.elements().iter().copied());
         }
         Ok(Path::new(bez, self.fill_rule()))
+    }
+}
+
+impl Path {
+    /// The result of the operation when at least one operand is empty, or
+    /// `None` when both hold a segment.
+    ///
+    /// The result is decided without a sweep: a clone of the surviving operand,
+    /// with its own fill rule, or an empty path.
+    fn empty_operand_result(&self, other: &Path, op: BooleanOp) -> Option<Path> {
+        let nothing = || Path::new(BezPath::new(), FillRule::NonZero);
+        match (self.is_empty(), other.is_empty(), op) {
+            (false, false, _) => None,
+            (true, true, _)
+            | (true, false, BooleanOp::Intersection | BooleanOp::Difference)
+            | (false, true, BooleanOp::Intersection) => Some(nothing()),
+            (true, false, BooleanOp::Union | BooleanOp::Xor) => Some(other.clone()),
+            (false, true, _) => Some(self.clone()),
+        }
     }
 }
 

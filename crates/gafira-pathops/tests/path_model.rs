@@ -212,3 +212,20 @@ fn a_non_finite_value_is_classified_by_kind() {
     );
     assert_eq!(gafira_pathops::NonFiniteValue::classify(1.5), None);
 }
+
+#[test]
+fn a_path_of_moves_only_is_empty_and_has_no_open_subpath() {
+    let mut bez = BezPath::new();
+    bez.move_to((1.0, 1.0));
+    bez.move_to((4.0, 4.0));
+    let path = Path::new(bez, FillRule::NonZero);
+
+    assert!(path.is_empty());
+    assert_eq!(path.validate_closed(), Ok(()));
+}
+
+#[test]
+fn a_path_with_a_segment_is_not_empty() {
+    assert!(!Path::new(closed_square(), FillRule::NonZero).is_empty());
+    assert!(!Path::new(open_triangle(), FillRule::NonZero).is_empty());
+}
