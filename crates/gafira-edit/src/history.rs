@@ -756,10 +756,33 @@ mod tests {
     #[test]
     fn an_undo_between_commands_stops_the_merge_into_older_entries() {
         let mut history = history();
-        nudge(&mut history, 100, 0);
-        nudge(&mut history, 200, 1_000);
+        let gesture = history.begin_gesture();
+        // Same gesture and 10 ms apart: only the undo can keep lane 1 apart.
+        history
+            .execute(Nudge::boxed(100, 1, Some(gesture)), at(0))
+            .unwrap();
+        history
+            .execute(Nudge::boxed(200, 2, Some(gesture)), at(10))
+            .unwrap();
         history.undo().unwrap();
-        nudge(&mut history, 300, 1_100);
+        history
+            .execute(Nudge::boxed(300, 1, Some(gesture)), at(20))
+            .unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open() {
+        let mut history = history();
+        let first = history.begin_gesture();
+        history
+            .execute(Nudge::boxed(100, 1, Some(first)), at(0))
+            .unwrap();
+        let second = history.begin_gesture();
+        assert_ne!(first, second);
+        history
+            .execute(Nudge::boxed(200, 1, Some(first)), at(10))
+            .unwrap();
         assert_eq!(history.len(), 2);
     }
 
