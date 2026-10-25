@@ -144,6 +144,38 @@ jobs:
             [ -z "$out" ] || { echo "::error::gafira-edit must not publicly re-export EditToken:" >&2; echo "$out" >&2; status=1; }
           done <<<"$files"
           exit "$status"
+      - name: Every core command has a property test (V14)
+        run: |
+          set -euo pipefail
+          props=crates/gafira-edit/tests/prop_commands.rs
+          # Core commands are the types of a top-level `impl Command for T` (generics allowed) under crates/gafira-edit/src.
+          # Indented impls sit in #[cfg(test)] modules and *_tests.rs files are test modules: both are outside the search.
+          # A pathspec that matches nothing lists nothing (V13), so a wrong working directory ends at the positive control.
+          rc=0; listed=$(git ls-files --cached --others --exclude-standard -- crates/gafira-edit/src) || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::git ls-files failed (rc=$rc)" >&2; exit 1; }
+          types=""
+          while IFS= read -r f; do
+            case "$f" in *_tests.rs) continue ;; *.rs) ;; *) continue ;; esac
+            rc=0; found=$(grep -Eo '^impl(<[^>]*>)?[[:space:]]+Command[[:space:]]+for[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' "$f") || rc=$?
+            case "$rc" in
+              0) types+="$(sed -E 's/.*for[[:space:]]+//' <<<"$found")"$'\n' ;;
+              1) ;;
+              *) echo "::error::grep failed on $f (rc=$rc)" >&2; exit 1 ;;
+            esac
+          done <<<"$listed"
+          # Positive control: at least one implementation must be found.
+          [ -n "$types" ] || { echo "::error::positive control failed: no impl Command found under crates/gafira-edit/src" >&2; exit 1; }
+          [ -f "$props" ] || { echo "::error::$props not found" >&2; exit 1; }
+          missing=""
+          for t in $(sort -u <<<"$types"); do
+            rc=0; grep -Eqw -- "$t" "$props" || rc=$?
+            case "$rc" in
+              0) ;;
+              1) missing+=" $t" ;;
+              *) echo "::error::grep failed on $props (rc=$rc)" >&2; exit 1 ;;
+            esac
+          done
+          [ -z "$missing" ] || { echo "::error::core commands without a property test in $props:$missing" >&2; exit 1; }
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
