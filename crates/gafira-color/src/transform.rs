@@ -114,10 +114,27 @@ mod tests {
     use super::*;
     use crate::{Color, DisplayP3Rgba, LinearRgba, Rgba};
 
-    const RGBA: [f32; 12] = [
-        0.0, 0.25, 1.0, 0.5, //
-        0.5, 0.04045, 0.003, 0.25, //
-        -0.5, 1.75, 0.9, 1.0,
+    /// A signaling NaN: any arithmetic on it would quiet it and change the bits.
+    const SIGNALING_NAN: f32 = f32::from_bits(0x7fa0_0000);
+
+    /// Four RGBA pixels; the alphas are `0.5`, `-0.0`, a signaling NaN and `1.0`.
+    const RGBA: [f32; 16] = [
+        0.0,
+        0.25,
+        1.0,
+        0.5,
+        0.5,
+        0.04045,
+        0.003,
+        -0.0,
+        -0.5,
+        1.75,
+        0.9,
+        SIGNALING_NAN,
+        0.2,
+        0.8,
+        0.6,
+        1.0,
     ];
 
     fn bits(v: &[f32]) -> Vec<u32> {
@@ -181,8 +198,12 @@ mod tests {
                 assert_eq!(t.apply_f32(&mut px, PixelLayout::Rgba), Ok(()));
                 let expected = typed(src, dst, &RGBA, PixelLayout::Rgba);
                 assert_eq!(bits(&px), bits(&expected), "{src:?} -> {dst:?}");
-                for i in 0..3 {
-                    assert_eq!(px[i * 4 + 3].to_bits(), RGBA[i * 4 + 3].to_bits());
+                for i in 0..4 {
+                    assert_eq!(
+                        px[i * 4 + 3].to_bits(),
+                        RGBA[i * 4 + 3].to_bits(),
+                        "{src:?} -> {dst:?}: alpha of pixel {i}"
+                    );
                 }
             }
         }
