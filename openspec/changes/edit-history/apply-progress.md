@@ -283,3 +283,9 @@ Size (`git diff --shortstat main..HEAD -- crates`, before this file): 422 insert
 - `undo` and `redo` end the run (`mergeable = false`), so a command after either never merges, even into an older entry still on the undo stack.
 - The window uses `saturating_sub`, so an `at` earlier than the entry's counts as zero apart (merges). Callers pass a monotonic time.
 - No `touches` use; the compaction state is D7's.
+
+### D6 fix round (verify FAIL: C1, W1, W2), test first
+
+- C1 (M5): `a_key_with_a_closed_gesture_never_merges_while_another_gesture_is_open` (begin g1, execute g1, begin g2, execute g1 again: `len` 2). With `Some(_) => open.is_some()` it fails (`len` 1 vs 2).
+- W2 (M1): `an_undo_between_commands_stops_the_merge_into_older_entries` now uses one open gesture and commands 10 ms apart, so the window cannot hide the rule. With `undo` no longer clearing `mergeable` it fails (`len` 1 vs 2). The rule is kept; it is stricter than the spec and recorded as such.
+- W1 (pending spec edit, not code): `edit-history` "Gesture merge" should state that a key with a gesture merges only while that gesture is open (no time limit), that the 500 ms window applies only to keys without a gesture, and that an undo or redo ends the merge run.
