@@ -79,7 +79,7 @@ Measured size has run ×1.4 to ×1.9 over raw forecasts (mostly tests); C2b's de
 
 | # | Delivery | Forecast | Depends on |
 |---|---|---|---|
-| D1 | Crate skeleton (`Cargo.toml`, `clippy.toml` copy, `lib.rs`), V5 row, V12 count; `gafira-doc::msg` (`MessageKey`, `CommandLabel`); `Command` trait, `Applied`, `CommandError`, `DirtySet`, `MergeKey`, `GestureId`; `Transaction` with a test-only command | ~570 | `main` (f198790) |
+| D1 | Crate skeleton (`Cargo.toml`, `clippy.toml` copy, `lib.rs`), V5 row, V12 coverage of the fourth copy (count floor unchanged at `>= 3`); `gafira-doc::msg` (`MessageKey`, `CommandLabel`); `Command` trait, `Applied`, `CommandError`, `DirtySet`, `MergeKey`, `GestureId`; `Transaction` with a test-only command | ~570 | `main` (f198790) |
 | D2 | `gafira-testkit`: generator moved by `git mv` (rename-detected), `prop_command` harness (the 02 §10 laws), V5 row; `mod guards` of the moved generator gets `#[cfg(test)]` (else clippy dead-code errors in the library; its two guard tests then run in a separate binary, ~6 s on Linux); `gafira-doc` property tests switched to it | ~450 | D1 |
 | D3 | `SetProperty` (node and shape fields) with its unit and property tests | ~600 | D2 |
 | D4 | `History`: owned `Arc<Document>`, atomic `execute`, `debug_assert`, undo and redo by snapshot, redo cleared, `len`/`can_undo`/`can_redo`, `preview`, `Send + Sync` static checks, ARQ-32 structural tests | ~630 | D3 |
@@ -89,6 +89,7 @@ Measured size has run ×1.4 to ×1.9 over raw forecasts (mostly tests); C2b's de
 | D8 | `InsertNodes` (ids allocated on first apply, reused on redo) and `RemoveNodes` (subtrees, positions restored), with properties | ~675 | D4 |
 | D9 | `Reorder` and `Reparent` (cycle and container checks), with properties | ~630 | D8 |
 | D10 | (Q4) Page and DPI targets of `SetProperty`, `InsertPage`, `RemovePage`, with properties; CI step V14 (ARQ-81) | ~600 | D9 |
+| D11 | (owner, 2026-10-25) V12 derives the required `clippy.toml` copies from the V5 table (every row except `gafira-testkit`), names the failing crate, and drops the `>= 3` floor; CI only, spec first (`workspace-tooling` V12, scenarios D11) | small (one CI step) | D10 |
 
 Total forecast ~5 690. D5 to D7 and D8 to D10 are two chains after D4; they are listed in merge order, and each PR targets `main` or the previous unmerged delivery branch.
 
@@ -138,7 +139,7 @@ Revert per delivery, newest first. In full: delete `crates/gafira-edit/` and `cr
 - [ ] Every core command satisfies `apply; revert` = previous state, `apply; revert; apply` = `apply`, and exact `touches`, in 1 000 generated cases (ARQ-81).
 - [ ] `execute` that fails leaves the document pointer-equal to before; every successful command leaves `validate()` passing (ARQ-13).
 - [ ] 300 move events inside one gesture raise `History::len()` by exactly 1 (ARQ-33).
-- [ ] Undo and redo of a snapshot entry call no command method and restore the stored `Arc` (ARQ-32, structural).
+- [ ] Undo and redo of a snapshot entry call neither `apply` nor `revert` (only `label()`) and restore the stored `Arc` (ARQ-32, structural).
 - [ ] With a small budget, the oldest snapshots are compacted and undo through `revert` reaches the same states (ADR-03).
 - [ ] `trybuild` fixtures: no-token mutations fail to compile with the recorded errors; an outside `Command` passes (ARQ-30).
 
