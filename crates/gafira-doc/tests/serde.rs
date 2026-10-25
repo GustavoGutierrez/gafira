@@ -1,6 +1,6 @@
-//! Black-box serde tests on JSON fixtures, loaded without validation in D3.
+//! Black-box serde tests on JSON fixtures.
 
-use gafira_doc::{Document, LoadError};
+use gafira_doc::{Document, LoadError, ValidationError};
 use serde_json::Value;
 
 const FULL: &str = include_str!("golden/full.json");
@@ -297,6 +297,71 @@ fn a_document_payload_parses_to_121_levels_and_not_beyond() {
         *v.pointer_mut("/pages/0/nodes/2/kind/payload").unwrap() = nested(n);
         load(&v)
     };
-    assert!(with_depth(121).is_ok());
+    assert!(matches!(
+        with_depth(121),
+        Err(LoadError::Invalid(ValidationError::ExtensionTooDeep {
+            depth: 121,
+            ..
+        }))
+    ));
     assert!(matches!(with_depth(122), Err(LoadError::Json(_))));
+}
+
+#[test]
+fn a_payload_of_64_levels_saves_and_reopens_and_65_is_refused() {
+    let with_depth = |n: usize| {
+        let mut v = full();
+        *v.pointer_mut("/pages/0/nodes/2/kind/payload").unwrap() = nested(n);
+        load(&v)
+    };
+    let ok = with_depth(64).unwrap();
+    assert_eq!(
+        Document::from_json(ok.to_json().unwrap().as_bytes()).unwrap(),
+        ok
+    );
+    assert!(matches!(
+        with_depth(65),
+        Err(LoadError::Invalid(ValidationError::ExtensionTooDeep {
+            depth: 65,
+            ..
+        }))
+    ));
+}
+
+#[test]
+fn plain_serde_cannot_build_an_invalid_document() {
+    let text = FULL.replacen(r#""next_id":20"#, r#""next_id":1"#, 1);
+    assert_ne!(text, FULL);
+    assert!(serde_json::from_str::<Document>(&text).is_err());
+    assert!(matches!(
+        Document::from_json(text.as_bytes()),
+        Err(LoadError::Invalid(
+            ValidationError::NextIdNotAboveMax { .. }
+        ))
+    ));
+}
+
+#[test]
+fn well_formed_documents_that_break_a_rule_are_invalid_not_json() {
+    let rows = [
+        (r#""dpi":300"#, r#""dpi":0"#),
+        (r#""dpi":300"#, r#""dpi":10001"#),
+        (r#""schema_version":1"#, r#""schema_version":0"#),
+        (r#""opacity":0.5"#, r#""opacity":1.5"#),
+        (r#""id":10,"#, r#""id":1,"#),
+        (r#""id":5,"#, r#""id":10,"#),
+    ];
+    for (from, to) in rows {
+        let text = FULL.replacen(from, to, 1);
+        assert_ne!(text, FULL, "{to}");
+        assert!(
+            matches!(
+                Document::from_json(text.as_bytes()),
+                Err(LoadError::Invalid(_))
+            ),
+            "{to}"
+        );
+    }
+    let space = FULL.replacen(r#""space":"srgb""#, r#""space":"lab""#, 1);
+    assert!(is_json_error(space.as_bytes()));
 }

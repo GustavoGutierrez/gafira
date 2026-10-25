@@ -14,7 +14,7 @@ use crate::{Dpi, Page, PageId};
 /// Fields are private; pages are shared by `Arc` so cloning copies no page
 /// or node. Reading never hands out `&mut` access.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(from = "DocumentWire")]
+#[serde(try_from = "DocumentWire")]
 pub struct Document {
     pub(crate) schema_version: u32,
     pub(crate) next_id: u64,
@@ -49,6 +49,22 @@ impl Document {
     /// The page with this id, if any.
     pub fn page(&self, id: PageId) -> Option<&Page> {
         self.pages.iter().map(Arc::as_ref).find(|p| p.id == id)
+    }
+
+    /// Builds a document from parts and validates it.
+    pub fn from_parts(
+        next_id: u64,
+        dpi: Dpi,
+        pages: Vec<Arc<Page>>,
+    ) -> Result<Self, crate::ValidationError> {
+        let doc = Self {
+            schema_version: Self::SCHEMA_VERSION,
+            next_id,
+            dpi,
+            pages,
+        };
+        doc.validate()?;
+        Ok(doc)
     }
 
     /// Returns the current counter value and advances it; fails at `u64::MAX`
@@ -148,16 +164,29 @@ mod tests {
     }
 
     #[test]
-    fn page_lookup_and_order() {
-        let d = test_document(
+    fn from_parts_keeps_page_order_and_looks_pages_up() {
+        let d = Document::from_parts(
             10,
             Dpi::default(),
             vec![page(3, &[]), page(1, &[]), page(2, &[])],
-        );
+        )
+        .unwrap();
         let order: Vec<u64> = d.pages().iter().map(|p| p.id.get()).collect();
         assert_eq!(order, [3, 1, 2]);
         assert_eq!(d.page(PageId::new(1)).unwrap().id, PageId::new(1));
         assert!(d.page(PageId::new(9)).is_none());
+    }
+
+    #[test]
+    fn from_parts_validates() {
+        let err = Document::from_parts(1, Dpi::default(), vec![page(5, &[])]).unwrap_err();
+        assert_eq!(
+            err,
+            crate::ValidationError::NextIdNotAboveMax {
+                next_id: 1,
+                max_id: 5
+            }
+        );
     }
 
     #[test]
