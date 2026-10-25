@@ -129,6 +129,15 @@ Every core command MUST check its inputs before it mutates: the target page and 
 - WHEN `InsertNodes` targets index 3
 - THEN it returns `Err(IndexOutOfRange)` and nothing changes
 
+### Requirement: Restoring the id counter (ARQ-81) (D8, Decision A)
+
+`DocMut` MUST offer `restore_next_id(value: u64)`, which lowers the shared id counter to `value` and MUST ignore a `value` at or above the counter, so the counter never moves up. A command that allocated ids MUST record the counter before its first allocation and `revert` MUST restore it, so that `apply; revert` gives a document equal to the original (law 1). This clarifies the main `edit-capability` requirement "Id allocation": "ids MUST never be reused within a document" holds for allocation (`alloc_*` never returns an id twice in a row of states); a revert or an undo returns the counter to a value it held before, which is the same exact-restore rule as snapshot undo (Q6).
+
+#### Scenario: Counter restored, never raised (D8, unit)
+- GIVEN a counter at 1 that allocated two ids
+- WHEN `restore_next_id(1)` runs, then `restore_next_id` with a higher value
+- THEN the counter is 1 after the first call, the next allocation returns the first id again, and the higher value changes nothing
+
 ### Requirement: Reorder and Reparent (ARQ-81) (D9)
 
 `Reorder` MUST move one node to a new index inside its current sibling list (the page roots or its parent's children) and restore the old index on `revert`. `Reparent` MUST move one or more nodes of one page, keeping their relative order, under a new `Group` parent or to the roots, at a given index, and restore every old parent and index on `revert`. Moving a node under itself or under one of its descendants MUST fail with `WouldCreateCycle`. A non-`Group` target MUST fail with `NotAContainer`. Moves across pages are out of scope.
