@@ -65,7 +65,7 @@ C2b MUST NOT decide `Command`/`History` APIs. It only provides `Document::edit(&
 Strict TDD. New dependencies: none from third parties. Normal dependencies are `serde` (+`rc`), `serde_json`, `gafira-geom` and `gafira-color`; `proptest` is dev-only. `Color` stays a bare value, so that a future untagged `Animatable::Static` stays compatible.
 
 ### Delivery plan
-With the real size factor of about ×1.9, the forecast is about 3 835 measured lines. The work is a stacked chain of seven deliveries, and every commit passes the gates on its own.
+With the real size factor of about ×1.9, the forecast is about 4 517 measured lines (re-cut during apply). The work is a stacked chain of ten sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5, D6a, D6b; D1 also shipped as PR 1a and 1b), and every commit passes the gates on its own.
 
 | # | Delivery | Forecast | Depends on |
 |---|---|---|---|
@@ -73,9 +73,11 @@ With the real size factor of about ×1.9, the forecast is about 3 835 measured l
 | D2a | `Placement` + `to_transform`, `ElementBase` | ~335 | D1 |
 | D2b | `NodeKind`, `Node`, `Page`, `Document`, arena, `next_id`, `#[cfg(test)]` `test_document` helper with its first test | ~465 | D2a |
 | D3 | Wire format (sorted arena array), `rc`, defaults, `Extension`/`Value`, canonical goldens | ~690 | D2b |
-| D4 | `validate()` + `ValidationError` (incl. `ExtensionTooDeep`), validating load (passes P1–P4) | ~640 | D3 |
-| D5 | `validate()` passes P5–P6, `EditToken`, `edit`/`DocMut`, the `EditToken` CI step + negative runs | ~465 | D4 |
-| D6 | Bounded generator, ARQ-10/13 properties (Q1–Q5) | ~645 | D5 |
+| D4a | `ValidationError` (18 variants), passes P1–P3, parse-side depth boundaries | ~507 | D3b |
+| D4b | pass P4 and `ExtensionTooDeep`, validating load (`try_from`, `LoadError::Invalid`), `from_parts` | ~387 | D4a |
+| D5 | `validate()` passes P5–P6, `EditToken`, `edit`/`DocMut`, the `EditToken` CI step + negative runs | ~633 | D4b |
+| D6a | Bounded generator, corruption generators, deterministic guards | ~540 | D5 |
+| D6b | ARQ-10/13 properties (Q1–Q5), mutation runs, CI runtime record | ~365 | D6a |
 
 Measure with `git diff --shortstat` after D2a. If the ratio is above ×1.3 of the forecast, re-cut the remaining deliveries before you continue.
 
@@ -104,7 +106,7 @@ Measure with `git diff --shortstat` after D2a. If the ratio is above ×1.3 of th
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Size overrun (C2a was ×1.92) | High | Seven deliveries of ≤ 700 lines each; measure after D2a; cut stacked branches at commit boundaries |
+| Size overrun (C2a was ×1.92) | High | Ten sub-deliveries of ≤ 700 lines each; measure after D2a; cut stacked branches at commit boundaries |
 | The `EditToken` grep or V5 passes silently | Med | `set -euo pipefail`; a positive control (the definition must be found); manual negative runs per C2a N0–N7 |
 | 10 000 proptest cases are slow on 3 OS | Med | Bounded node and page counts; CI case count in design; `PROPTEST_CASES` runs locally |
 | `Value` normalization versus "byte for byte" in ARQ-11 | Med | Amendment 2; goldens written in canonical form |

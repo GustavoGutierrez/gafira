@@ -219,6 +219,7 @@ Status: done. Base branch `feat/domain-doc-3a`; work on `feat/domain-doc-3b` (ra
 | Every prefix of a small golden | `serde::every_prefix_of_the_minimal_golden_is_a_json_error` |
 | Finite out-of-range survives serde | `serde::finite_out_of_range_values_survive_serde_by_bits` (the `from_json` half is D4) |
 | Fill channel `-0.0` by sign (suggestion) | `json::tests::numbers_keep_their_bits_through_a_document` |
+| f64 field in an internally tagged node | closed by the goldens and the `serde` tests failing under `arbitrary_precision` (mutation table below, row `arbitrary_precision`), plus `node::tests::floats_inside_the_tagged_kind_survive` (`node.rs:264`) |
 
 ### RED / mutation evidence
 
@@ -250,7 +251,101 @@ Process note: one intermediate commit state left an unused `const` (clippy dead 
 - "Golden shape" is a byte test over `include_str!` instead of a shell check.
 - Recursion limits 127/128 and payload depth 121/122 stay with D4 (T4.2), as listed in the D3a section.
 - Re-cut forecasts (D3a WARNING 6): D3a measured 696 against 399 (ratio 1.74, over the x1.3 trigger). At that ratio D4 (640) is about 1115, D5 (465) about 810 and D6 (645) about 1120; all three need a re-cut before they start. D3b itself measured 379 code-only lines (384 with goldens) against the ~290 forecast (ratio 1.31).
+- Split points chosen from those forecasts (owner-approved re-cut, recorded in `design.md` "Delivery Cut"): D4 -> D4a (`ValidationError`, P1-P3, parse-side depth boundaries, ~507) and D4b (P4, `try_from`, `from_parts`, ~387); D6 -> D6a (generator, corruption generators, deterministic guards, ~540) and D6b (Q1-Q5, mutation runs, CI runtime, ~365); D5 stays whole (~633) with a fallback cut after its first commit if D4a plus D4b measure above x1.5.
 
 ### Gates
 
 `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run and passed on each of the six commits (each commit was checked out alone for the final confirmation).
+
+## D4a (tdd-apply)
+
+Status: done. Base branch `feat/domain-doc-3b`; work on `feat/domain-doc-4a` (range `feat/domain-doc-3b..feat/domain-doc-4a`). The re-cut of D4 and D6 is the first commit of the range ("docs(sdd): re-cut domain-doc D4 and D6 into sub-deliveries").
+
+### Commits
+
+1. `docs(sdd): re-cut domain-doc D4 and D6 into sub-deliveries`: design, proposal and the three spec files; also the D3b verify fixes (f64 row, split points, `reverse output order`, non-canonical golden not compact).
+2. `feat(doc): add ValidationError`: `error.rs` (18 variants in pass order, `NodeField`, `Display`, `Error::source`), `MAX_EXTENSION_DEPTH` in `node.rs`, exports.
+3. `feat(doc): validate header, ids and pages`: `validate.rs` (`Document::validate`, passes P1 to P3).
+4. `test(doc): pin the parse-side depth limits for payloads`: `tests/serde.rs` (pure `Value` 127/128/10 000 and a full document with a 121/122-level payload).
+5. `docs(sdd): record domain-doc D4a progress` (this file; its order-row retag to D4b is reverted by commit 8).
+6. `test(doc): pin page naming, pass order and empty-document rows`: verify fixes for CRITICAL 1 and 2, the order rows of CRITICAL 3, and the W3 spec alignment (`validate.rs`).
+7. `test(doc): guard non_exhaustive on ValidationError with a compile_fail doctest` (`error.rs`, W2).
+8. `docs(sdd): restore the D4a order rows and tag determinism D6b`: spec, design and this file (CRITICAL 3, W4, W5, suggestions).
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Error contract; each rule has its own variant (18 distinct, messages name ids and field) | `error::tests::every_variant_has_a_distinct_message_naming_ids_and_field`, `node_fields_have_names`, `errors_are_comparable_clone_and_expose_the_page_size_cause` (`&dyn Error`, `source()`) |
+| Valid documents | `validate::tests::valid_documents_pass` |
+| Versions; DPI edges | `validate::tests::header_rows` |
+| Duplicate ids (two pages, two arenas, page id = node id); key differs; next_id bound; id `u64::MAX`; empty document accepts any `next_id` | `validate::tests::id_rows` |
+| Size edges; limit follows the DPI (A0 at 300/350/351); non-finite or zero size | `validate::tests::page_rows` (NaN and `+inf` widths by destructuring, because `NaN != NaN` in the error) |
+| Dangling and duplicate roots, root only in another page | `validate::tests::root_rows` |
+| Earlier pass wins (first two cases); earlier rule wins inside a pass | `validate::tests::earlier_rules_win` |
+| `ValidationError` is `#[non_exhaustive]` | `compile_fail` doctest on `ValidationError` |
+| Pure JSON recursion limit (127 / 128 / 10 000) | `serde::a_bare_value_parses_to_127_levels_and_not_beyond` |
+| Payload depth inside a full document, parse side (121 parses, 122 is `LoadError::Json`) | `serde::a_document_payload_parses_to_121_levels_and_not_beyond` |
+
+### RED / mutation evidence
+
+- `ValidationError` and `validate` tests were written first and failed to compile (E0432/E0282 for the missing types, E0599 for the missing `validate`).
+- Validation tests passed on the first run after the code, so each was proven non-vacuous by mutation (applied, RED, restored): `next_id <= max_id` to `<` (`id_rows`); `schema_version !=` to `<` (`header_rows`); DPI check reduced to zero only (`header_rows`); node ids left out of the id set (`id_rows`); no arena-key check (`id_rows`); no `next_id` check (`id_rows`); no page-size check (`page_rows`); no dangling-root check and no duplicate-root check (`root_rows`). `source()` returning `None` fails `errors_are_comparable_clone_and_expose_the_page_size_cause`.
+- The two parse-side tests pass on existing code; mutations: nested helper off by one in either direction fails the 121/122 test; shifting the 127/128 boundary fails the bare-value test.
+
+### Deviations
+
+- Delivery count: the owner's message said "nine" but listed ten names; the docs now say ten sub-deliveries (D1, D2a, D2b, D3a, D3b, D4a, D4b, D5, D6a, D6b).
+- Order rows: the progress commit moved them to D4b on the size rule; the owner-approved cut keeps the first two "Earlier pass wins" cases and the P1-P3 order rows in D4a, so the verify fix restores them (test `earlier_rules_win`). Only the P4 order rows stay in D4b.
+- Interpretation, now in the spec and pinned in D4a: inside P2 and P3 the checks run in variant order across all pages (all duplicate ids, then all key mismatches, then `next_id`; all page sizes, then all dangling roots, then all repeated roots); only P4 is node by node. The P3 row is page 1 with a dangling root and page 2 with a bad size, which gives `PageSize` on page 2. Duplicates use the node's own `base.id`.
+- Three code commits instead of the two in the design: the parse-side half of T4.2 is its own commit.
+- `MAX_EXTENSION_DEPTH` is added in D4a (design said D4b) so the `ExtensionTooDeep` message does not hard-code 64; it is exported and used by `Display`.
+- Validation tests compare the `Debug` text of the result (`"Err(DuplicateId { id: 1 })"`) so each table row stays at one to three lines; rustfmt otherwise explodes struct literals.
+- The first `error.rs` was 407 lines; it was trimmed (field docs, test layout) with `git commit --amend` before the next commit, so the final history passes per commit.
+
+### Size
+
+`git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'` after commit 4 (code-only): 5 files changed, 653 insertions(+), 1 deletion(-); forecast ~507, ratio 1.29 (under the x1.3 trigger; D4b forecast ~387 stays). D4a plus D4b ratio check for the D5 fallback happens after D4b.
+
+### Gates
+
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` were run on each code commit checked out alone (commits 2, 3 and 4) and on the re-cut docs commit: all green. `cargo deny check`, V5, V11 and V12 were not run during apply.
+
+### Verify fixes (D4a re-verify, commits 6 to 8)
+
+Each row below was applied as a mutant on the final tests: RED with the mutant, restored, GREEN. Mutation script and output are in the verify scratchpad, not tracked.
+
+| Mutant | Killing test |
+|---|---|
+| V14 empty document uses max 0 | `id_rows` (empty document, `next_id` 0, must pass) |
+| V20 P2 before P1 | `earlier_rules_win` (schema 2 with a duplicate id) |
+| V22 `next_id` before duplicate | `earlier_rules_win` (duplicate id with `next_id` 0) |
+| V23 DPI before schema | `earlier_rules_win` (schema 2 with DPI 0) |
+| V24 key check on page 1 only | `id_rows` (key mismatch on page 7) |
+| V25 size check on page 1 only | `page_rows`, `earlier_rules_win` (bad size on page 7) |
+| V26 dangling root on page 1 only | `root_rows` (dangling root on page 7) |
+| V27 repeated root on page 1 only | `root_rows` (repeated root on page 7) |
+| V28 size error names page 1 | `page_rows`, `earlier_rules_win` |
+| V29 dangling root names page 1 | `root_rows` |
+| V30 repeated root names page 1 | `root_rows` |
+| V31 key mismatch names page 1 | `id_rows` |
+| E01 no `#[non_exhaustive]` | doctest `error::ValidationError` (compile_fail passes with the attribute, fails without it) |
+
+V21 (P3 before P2) is now also killed by `earlier_rules_win`. An extra mutant (max over page ids only) is killed by the new node `u64::MAX` row. `unbounded_depth` stays equivalent (no test can observe it).
+
+Other changes: `next_id` rows use max 10 (11 passes; 10, 5 and 0 fail), the width rows follow the spec (`-5.0` on the width, `+inf` next to NaN as a `Conversion` error), "Determinism (property)" is tagged D6b, the `MAX_EXTENSION_DEPTH` comment in `design.md` says D4a, and T4.2 in the T5.1 row is T4.2a and T4.2b. Value-based helpers (`next`, `root`, `key`) build the expected text for the rows whose literal would not fit on one line; other rows keep `Debug` strings.
+
+Size after commit 7: `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'` is 5 files changed, 752 insertions(+), 1 deletion(-).
+
+### Second verify fix (D4a re-verify 2)
+
+Commit `test(doc): pin duplicate id before arena key and dangling before repeated root` adds two rows to `earlier_rules_win`. Each was proven as a mutant on the final tests: RED with the mutant, restored, GREEN.
+
+| Mutant | Killing row |
+|---|---|
+| V38 P3 repeated-root loop before dangling-root loop | `roots(first(d), &[42, 42])` expects `DanglingRoot` (page 1, node 42); the mutant returns `DuplicateRoot` (row 5) |
+| V39 P2 arena-key loop before duplicate-id check | `push(d, 1, &[]); rekey(first(d))` expects `DuplicateId { id: 1 }`; the mutant returns `ArenaKeyMismatch` (row 4) |
+
+Docs: `design.md` pass-order sentence now states the check-major rule; the "Ascending node order within a pass" scenario is tagged D4b; `rekey` carries a comment that key 5 must not collide with an existing id.
+
+Size: see the final report line from `git diff --shortstat feat/domain-doc-3b..HEAD -- . ':!openspec'`: 5 files changed, 765 insertions(+), 1 deletion(-) after the test commit.
