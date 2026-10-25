@@ -1774,3 +1774,179 @@ The earlier D10b W1 (V14 false negatives) is resolved, and so is S2 (the counter
 **PASS for the D10b hardening round.** 0 CRITICAL, 4 WARNING (implementation 1, ambiguity 3), 3 SUGGESTION. All gates and policy steps are green on `9226929`, `af18210` and `aefd8e2`. The counter hole is closed with no false refusal, all 5 hand mutants are killed, and V14 passes the spec scenarios and the six earlier misses. D10a (PASS, `419a5bd`) and D10b are both done.
 
 next: archive (W2 to W4 are spec edits to apply at archive; W1 is an optional one-line comment fix for `tdd-apply`)
+
+## Whole-change verify (before archive)
+
+Branch `docs/edit-history-spec-edits`, HEAD `777c4a3` (merged with current `main`). Scope: all of D1 to D11 and the consolidated delta specs. Mode full, depth V3 for D11 and the policy steps, V2 for the rest of the change (each delivery already passed on its own). The T4 mutation run belongs to another agent and is not repeated here. Scratch: `scratchpad/vwh/`, one `git archive` export per tree, each with its own `CARGO_TARGET_DIR`. `CARGO_INCREMENTAL=0`; disk had 99 GB free.
+
+### Gates (clean export of HEAD)
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check`, clippy `--workspace --all-targets --locked -D warnings` | 0, 0 |
+| `cargo test --workspace --locked` | 0. All binaries pass, including `prop_commands` (10 properties, 1 000 cases each), `tests/ui.rs` (9 trybuild fixtures) and the doctests |
+| `cargo deny check` | 0 (advisories, bans, licenses and sources all ok) |
+| ARQ-07, forbid unsafe (V11), V5, V12, V13, V14, each taken from `ci.yml` and run under `bash --noprofile --norc -eo pipefail` | 0 each. V14 finds `InsertNodes`, `InsertPage`, `RemoveNodes`, `RemovePage`, `Reorder`, `Reparent`, `SetProperty` and `Transaction` |
+| Per commit, D11 (`357a98d` spec, `d6a7d57` ci): V5, V12 | 0, 0 on both. Only `ci.yml` and docs change on the branch, so the Rust gates at HEAD cover them |
+
+### D11: V12 derived from V5 (negative runs)
+
+I re-ran `d11/red.sh` and `green.sh` against the export. Every V12 case behaves as the spec says. The last V5 case in `green.sh` exits 101 for the wrong reason: its tree has no `apps/`, so `cargo tree` fails. On a full copy it exits 1 with "gafira-color has clippy.toml but no V5 row".
+
+My own runs (script `scratchpad/vwh/d11/neg.sh`):
+
+| Case | V12 | Notes |
+|---|---|---|
+| Delete the `gafira-edit` copy | 1, names `gafira-edit` | The V12 before D11 exits 0 on the same tree (the RED). V5 exits 0 too, as expected |
+| Delete or edit the `gafira-time` copy | 1, names `gafira-time` | |
+| V5 row `gafira-scratch -` with no copy | 1, names `gafira-scratch` | The V12 before D11 exits 0 |
+| Remove the testkit exemption | 1, names `gafira-testkit` | |
+| A row with a tab and trailing spaces, edit copy deleted | 1 | Parsing tolerates the whitespace |
+| A comment row `# a comment` in the table | V12 1, V5 101 | Fails closed in both steps |
+| A truly empty line in the table, edit copy deleted | 1 | |
+| Trailing spaces after `table='` | 1, "no V5 table rows found" | Fails closed |
+| Run from `crates/gafira-edit` | 2 | Fails closed |
+| **A whitespace-only line in the table, edit copy deleted** | **0** | **Fails open; V5 also exits 0. See W1** |
+
+### Spec and code consistency (independent probes, then the implementer's tests)
+
+Before I read the implementer's tests, I read all of `src/` and wrote two probe files in a scratch copy: `crates/gafira-edit/tests/vwh_probes.rs` (18 tests, public API and `History` only) and `vwh_reverts.rs` (10 tests, direct `apply` and `revert` through the hidden constructor, which is allowed in that path). All 28 pass. Together they check about 65 scenario statements across the five deltas, including every statement the latest spec edits touched:
+- **Law 4 and 5 wording:**
+  - a DPI change replaces no page `Arc` and its `touches` is empty;
+  - a failing `Transaction` rolls back to an equal page that is not pointer-equal (the law 5 limit);
+  - a failed `Transaction` through `History` leaves the document pointer-equal.
+- **Reorder and Reparent index rules:**
+  - `Reorder` index 3 gives `[g,b,e,a]`, and index 4 gives `IndexOutOfRange{4,4}`;
+  - `Reparent` index 2 gives `[g,e,a,b]` for the list `[b,a]` (document order), and index 3 gives `IndexOutOfRange{3,2}`;
+  - the ancestor and its descendants move once;
+  - the container check comes first (`NotAContainer`), and the cycle error names the listed holder;
+  - a no-op move is `Unchanged` and pointer-equal.
+- **Revert preconditions:**
+  - `NotApplied` for all nine command shapes;
+  - revert after `Unchanged` writes nothing;
+  - `SetProperty` revert checks every target first;
+  - page and DPI reverts are checked against the current limits, and a page revert fails when its page is gone;
+  - `RemoveNodes`: missing parent, index beyond the list, nodes already back;
+  - `Reparent` after a `Reorder`, and a list owner that is gone;
+  - `InsertPage`: page edited, page gone, counter moved;
+  - `RemovePage`: page already back, index beyond the list.
+- **Exact-counter reverts:**
+  - `InsertNodes` then `InsertPage`, reverted out of order: refused;
+  - reverted in LIFO order: the original comes back;
+  - through `History` with a compacted entry: counter 21 then 20.
+- **Gesture merge precedence:**
+  - a key with a gesture merges 60 s apart while its gesture is open;
+  - once the gesture is closed it never merges, even 10 ms later;
+  - `begin_gesture` closes the open gesture;
+  - a key without a gesture merges within 500 ms while a gesture is open, but not at exactly 500 ms;
+  - an earlier `at` counts as 0 ms;
+  - a merged no-op entry is kept and undoes to the start `Arc`;
+  - an undo ends the run for older entries.
+- **Undo and redo `Result`:** `Ok(None)` when empty, `Ok(Some(MessageKey("edit.set_property")))` otherwise; `DEFAULT_BUDGET == 536_870_912`.
+- **DPI touches:** the DPI merge key has no page and no nodes; a page field's key names its page.
+- **V14 and V12 from V5:** the policy runs above.
+
+Hand mutants (3 run, 3 killed), each on a scratch export and run with the implementer's tests only:
+
+| # | Mutant | Result |
+|---|---|---|
+| HM1 | Cycle check moved before the container check (`moves.rs`) | KILLED (`a_shape_moved_under_itself_is_not_a_container`) |
+| HM2 | A key with a gesture also merges inside the 500 ms window after its gesture closed | KILLED (2 tests) |
+| HM3 | `undo` no longer ends the merge run | KILLED (`an_undo_between_commands_stops_the_merge_into_older_entries`) |
+
+Comparison with the implementer's tests: every probed statement also has an implementer test, by name and by reading. No criterion relies on a weak test only. Two statements do not match the code; see C1 and W3.
+
+### Archive simulation (scratch copy, `scratchpad/vwh/merge.py`, output in `scratchpad/vwh/arch/specs`)
+
+- **`document-model`:** ADDED "Message key for command labels". No name collision.
+- **`edit-capability`:**
+  - ADDED "trybuild evidence for ARQ-30";
+  - MODIFIED "Id allocation (D5b)" (3 to 4 scenarios, none dropped) and "V13 CI step (D5b)" (12 to 14, none dropped);
+  - REMOVED "trybuild is deferred (D5b)", with Reason and Migration.
+  - Every MODIFIED and REMOVED target exists in the main spec.
+- **`workspace-tooling`:**
+  - MODIFIED "Formatting and per-crate Clippy policy" (5 to 5), "Per-crate allowed-dependency table (V5)" (10 to 13), "Policy checks cover every domain crate (V11, V12)" (9 to 15) and "V13 EditToken step (D5b)" (2 to 2);
+  - ADDED "Compile-test dependency (trybuild)" and "V14 command property coverage";
+  - all targets exist, and there are no collisions.
+- **`edit-commands`** (10 requirements) **and `edit-history`** (7): new capabilities, copied with `cp`. No duplicate names.
+- **Headings:** every `###` is a `Requirement:` and every `####` a `Scenario:`. All 142 scenarios have GIVEN, WHEN and THEN and a type.
+- **For the archive agent:**
+  1. **Destructive MODIFIED:** "Policy checks cover every domain crate (V11, V12)" drops the main scenario "Too few copies fails V12 (H-N4, manual negative test)" (owner decision of 2026-10-25, D11). Warn before merging.
+  2. The main scenario "Hardened V12 timing (command)" comes back as "Hardened V12 timing (C2b history, command)". This is a rename, not a loss.
+  3. The two new capability files carry `## ADDED Requirements`. Rename it to `## Requirements`, as the earlier archives did.
+  4. `domain-time` (merged, not archived, no `workspace-tooling` delta) added the V5 row `gafira-time -` and a fifth `clippy.toml` copy. Unless C2 is fixed, archiving this delta writes a V5 table without that row.
+
+### Coverage trace (proposal success criteria)
+
+| Criterion | Delivery | Evidence | Status |
+|---|---|---|---|
+| Gates after every delivery on Windows, Linux and macOS | all | Linux: per-commit gates in each delivery verify, plus HEAD here. CI ran on the 3 systems up to D6 and D4. Since D5 every run is "job was not started" (billing) | Linux covered; Windows and macOS **unproven** (W2) |
+| `gafira-edit` normal tree: only geom, color and doc among `gafira-*` | D1 | V5, `cargo tree` | covered |
+| Laws in 1 000 cases for every core command | D2, D3, D8 to D10 | `prop_commands.rs` (10 tests), V14 | covered |
+| Failed `execute` is pointer-equal; `validate()` holds after success | D4 | `a_failed_command_leaves_the_session_untouched_and_usable`, the `debug_assert` and its `should_panic` test, probes | covered |
+| 300 moves in one gesture add 1 entry | D6 | `tests/gesture.rs::a_300_move_drag_is_one_entry_that_undoes_to_the_origin` | covered |
+| Snapshot undo and redo call no command method and restore the stored `Arc` | D4 | `undo_and_redo_call_no_command_method` (`apply` and `revert` counted), `tests/history.rs` | covered (wording, W3) |
+| Small budget compacts; undo through `revert` reaches the same states | D7 | `tests/budget.rs`, `history_budget_tests.rs` | covered |
+| trybuild: no-token mutations fail to compile; an outside `Command` passes | D5 | `tests/ui.rs` (8 fail fixtures and 1 pass fixture, run here) | covered |
+
+The per-delivery records:
+- D1 to D9 have no `verification.json` round, because the file started at D10. Their verdicts are in this report. Each delivery's last round is PASS: D2, D3, D6, D7, D8 and D9 after a fix round, D1, D4, D5, D10a and D10b on the first round.
+- D10a, D10b and D10b round 2 are in `verification.json`, all PASS with 0 critical misses.
+- D11 had no independent verify before this round; it is verified above.
+
+Carry-over warnings:
+
+| Warning | Status |
+|---|---|
+| D10a W1: DPI signal | Specified (owner decision B) |
+| D10b W2: V14 text and limits | Specified |
+| D10b W3: law 5 vs `Transaction` | Specified |
+| D10b W4: `InsertPage` revert and exact counters | Specified |
+| D10b round 2 W1: V14 comment limits | Specified in the spec; the `ci.yml` comment is still short (S3) |
+| D1 W6, D2 W6: V12 floor | Resolved by D11 |
+| Two pre-apply `touches` mutants | Explicitly accepted (`apply-progress.md`) |
+| D5 W1, R3: `.stderr` identity on Windows and macOS | **Still open, never accepted** (W2) |
+| D7: `serde_json` accepted on a wrong premise | Reopened as C1 |
+
+### Product documents (00, 02)
+
+- No contradiction with `00-decisiones.md`: D-03 (512 MiB budget FIJADA) and the Q12 lock rule hold.
+- `02`, ARQ-30 (trybuild from an outside crate, V13), ARQ-31 (no mutable global, no `static` in `gafira-edit`), ARQ-33 and ARQ-81 (V14 until `xtask`) are consistent with the change.
+- ARQ-32's structural text says snapshot undo and redo "no llaman a ningún método de `Command`", but `History::undo` and `redo` call `label()` (W3).
+- §4.3 still names `SetProperty<T>` in `gafira-edit::cmd` and says "`touches` exacto" (S2).
+
+### CRITICAL
+
+1. class: ambiguity. **`edit-commands` "Crate purity and dependencies (ARQ-01, ARQ-02) (D1)" is false for the merged code.** It says normal dependencies are "limited to `gafira-geom`, `gafira-color`, `gafira-doc` and the standard library". `crates/gafira-edit/Cargo.toml` has `serde_json` as a direct normal dependency (D7, used by `src/budget.rs` to size extension payloads), and `cargo tree -p gafira-edit -e normal --depth 1` lists it. The D7 verify accepted it on the premise that "no rule restricts third-party crates in `gafira-edit`", but this rule does. The root cause is the spec: the edge is harmless (already in the tree through `gafira-doc`, no new package, deny ok), and the spec was not updated when D7 added it. Fix: allow `serde_json` (or "third-party crates already in `gafira-doc`'s normal tree") in that requirement, and name it in the dependency scenario.
+2. class: ambiguity. **The `workspace-tooling` V5 table and the `clippy.toml` copy lists do not describe the merged CI.**
+   - The MODIFIED "Per-crate allowed-dependency table (V5)" lists 5 rows. `ci.yml` has 6, because `domain-time` added `gafira-time -` and a fifth copy, and `domain-time` has no `workspace-tooling` delta.
+   - "Formatting and per-crate Clippy policy" and "Policy checks cover every domain crate (V11, V12)" name four copies.
+   - The D11 scenario "Clean tree passes the derived V12" says the step required exactly the copies of geom, color, doc and edit. It also requires `gafira-time`; my "delete or edit the `gafira-time` copy" runs exit 1.
+
+   Archiving this delta as written puts a V5 table without `gafira-time` into `openspec/specs/`, whatever the archive order. Fix (spec only): add the `gafira-time` row and the fifth copy to these three requirements and their scenarios, and note that the row came from `domain-time`. Alternatively, give `domain-time` its own delta and fix the archive order; the coordinator decides.
+
+### WARNING
+
+1. class: implementation. **V12's table parser fails open on a whitespace-only line.** The end pattern `on && /^ *.$/{exit}` matches a line of only spaces (the last space is the `.`), so V12 stops reading the table there. V5's `while read` loop keeps going. With such a line before the `gafira-edit` row and `crates/gafira-edit/clippy.toml` deleted, both V12 and V5 exit 0: the exact hole D11 closed. This breaks the D11 rule that the required set is derived from "the one list that V5 iterates". It needs a non-default edit (an editor that keeps the indent on a blank line), so it is not CRITICAL. Fix: end the table on `/^ *'$/`, or read the rows with the same loop V5 uses, and add the negative run.
+2. class: claim. **R3 and the cross-OS success criterion are unproven since D5.** Every CI run from D5 on (for example run 40204149624) has "job was not started because recent account payments have failed". So the trybuild `.stderr` identity on Windows and macOS (spec: UNVERIFIED, Linux-only fallback only "if the D5 run shows" a difference) and the gates on Windows and macOS for D5 to D11 were never observed. Nothing in the change records an owner acceptance. Fix: one green CI matrix run on HEAD, or an explicit owner acceptance recorded before archive.
+3. class: ambiguity. **"Without calling any `Command` method" is not literally true.** `edit-history` "Undo and redo by snapshot", proposal success criterion 6 and `02` ARQ-32 all say snapshot undo and redo call no `Command` method. `History::undo` and `redo` call `entry.command.label()` to return `Ok(Some(label))`, which the same requirement mandates. The tests count only `apply` and `revert`. Fix: write "calls neither `apply` nor `revert`" in the spec and in `02` ARQ-32 (or store the label in the entry).
+
+### SUGGESTION
+
+1. The archive notes above: H-N4 dropped (warn), the "Hardened V12 timing" rename, and the `## ADDED Requirements` heading of the new capabilities.
+2. `02` §4.3: `SetProperty<T>` in `gafira-edit::cmd` became `SetProperty` with a `Property` enum at the crate root, and "`touches` exacto" is one-sided in the spec (law 4 limits). Align in a docs pass. Line 207 still calls `NodeArena` a `HashMap`; that is pre-existing from C2b.
+3. The V14 step comment in `ci.yml` still omits the alias import, the basename collision and the block-comment impl. The spec lists all three, so this is comment-only.
+4. The D11 record in `apply-progress.md` says V5 "exit 1" for the removed color row. The scratch harness it used has no `apps/` and exits 101. The full-tree rerun here gives 1.
+5. The `harness.rs` module comment still says law 4 "is exact" and law 5 "pointer-equal" only. Align it with the spec wording (one-sided law 4; law 5 is equality plus pointer-equal pages).
+6. `02` ARQ-31's CI search (`static mut`, `lazy_static!`, `inventory::`) does not exist in `ci.yml`. This is pre-existing and outside this change.
+
+### Result
+
+**FAIL.** 2 CRITICAL (ambiguity 2), 3 WARNING (implementation 1, claim 1, ambiguity 1), 6 SUGGESTION. The code is sound:
+- the gates and every policy step are green on HEAD;
+- 28 independent probes and 3 hand mutants confirm the specified behavior;
+- D11 meets all of its scenarios.
+
+The consolidated deltas, however, still state two things the merged code does not do: the dependency rule (C1), and a V5 table without `gafira-time` (C2). Archive must not proceed until the specifier fixes C1, C2 and W3, and the owner settles W2. W1 is a one-line `ci.yml` fix for `tdd-apply`. After that, a short V1 re-verify of the edited specs and the V12 step is enough before archive.
+
+next: specifier (C1, C2, W3), then explorer or owner for the claim (W2: CI run or explicit acceptance), then tdd-apply (W1)
