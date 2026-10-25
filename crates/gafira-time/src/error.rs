@@ -110,3 +110,36 @@ impl fmt::Display for TimeError {
 }
 
 impl std::error::Error for TimeError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_variant_displays_a_message() {
+        let errors = [
+            TimeError::Overflow,
+            TimeError::ZeroDenominator,
+            TimeError::ZeroFrameRate,
+            TimeError::FrameRateBelowOneFps { num: 1, den: 2 },
+            TimeError::FrameRateNotIntegral { num: 11, den: 1 },
+            TimeError::ZeroSampleRate,
+            TimeError::SampleRateNotIntegral { hz: 11 },
+            TimeError::NegativeDuration {
+                flicks: Flicks::from_ticks(-1),
+            },
+            TimeError::InvertedRange {
+                start: Flicks::from_ticks(1),
+                end: Flicks::ZERO,
+            },
+            TimeError::DropFrameUnsupported { num: 24, den: 1 },
+            TimeError::DroppedFrameLabel,
+            TimeError::MalformedTimecode,
+            TimeError::InvalidTimecodeField,
+            TimeError::WrongTimecodeSeparator,
+        ];
+        for error in errors {
+            assert!(!error.to_string().is_empty(), "{error:?} displayed nothing");
+        }
+    }
+}

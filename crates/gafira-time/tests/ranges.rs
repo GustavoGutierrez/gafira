@@ -107,15 +107,25 @@ fn adjacent_ranges_do_not_overlap() {
 fn intersection_covers_overlap_containment_and_disjoint_cases() {
     let overlapping = bounds(0, 2 * SECOND).intersection(bounds(SECOND, 3 * SECOND));
     assert_eq!(overlapping, Some(bounds(SECOND, 2 * SECOND)));
+    assert!(bounds(0, 2 * SECOND).intersects(bounds(SECOND, 3 * SECOND)));
 
     let contained = bounds(0, 3 * SECOND).intersection(bounds(SECOND, 2 * SECOND));
     assert_eq!(contained, Some(bounds(SECOND, 2 * SECOND)));
 
     let disjoint = bounds(0, SECOND).intersection(bounds(2 * SECOND, 3 * SECOND));
     assert_eq!(disjoint, None);
+    assert!(!bounds(0, SECOND).intersects(bounds(2 * SECOND, 3 * SECOND)));
 
     let identical = bounds(0, SECOND);
     assert_eq!(identical.intersection(identical), Some(identical));
+}
+
+#[test]
+fn equal_bounds_are_an_empty_range() {
+    let r = bounds(SECOND, SECOND);
+    assert!(r.is_empty());
+    assert_eq!(r.duration(), Flicks::ZERO);
+    assert_eq!(r, range(SECOND, 0));
 }
 
 #[test]
