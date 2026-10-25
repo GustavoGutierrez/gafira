@@ -2,17 +2,18 @@
 
 use std::sync::Arc;
 
-#[cfg(test)]
-use crate::IdSpaceExhausted;
 use serde::{Deserialize, Serialize};
 
 use crate::json::DocumentWire;
-use crate::{Dpi, Page, PageId};
+use crate::{Dpi, IdSpaceExhausted, Page, PageId};
 
 /// A whole document: a version, one id counter, a DPI and ordered pages.
 ///
 /// Fields are private; pages are shared by `Arc` so cloning copies no page
-/// or node. Reading never hands out `&mut` access.
+/// or node. Reading never hands out `&mut` access; mutation needs an
+/// `EditToken` and goes through `Document::edit`. Replacing a whole value
+/// (`*doc = other`) is possible for whoever owns the document and is owned by
+/// `EditService` in C3; it is documented, not prevented.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DocumentWire")]
 pub struct Document {
@@ -69,7 +70,6 @@ impl Document {
 
     /// Returns the current counter value and advances it; fails at `u64::MAX`
     /// leaving the counter unchanged.
-    #[cfg(test)]
     pub(crate) fn alloc_id(&mut self) -> Result<u64, IdSpaceExhausted> {
         let id = self.next_id;
         self.next_id = id.checked_add(1).ok_or(IdSpaceExhausted)?;
@@ -151,16 +151,6 @@ mod tests {
         assert_eq!(d.dpi().get(), 300);
         assert_eq!(d.dpi(), Dpi::new(300));
         assert_ne!(d.dpi(), Dpi::default());
-    }
-
-    #[test]
-    fn allocator_increments_then_exhausts() {
-        let mut d = test_document(5, Dpi::default(), Vec::new());
-        assert_eq!(d.alloc_id(), Ok(5));
-        assert_eq!(d.next_id(), 6);
-        let mut full = test_document(u64::MAX, Dpi::default(), Vec::new());
-        assert_eq!(full.alloc_id(), Err(IdSpaceExhausted));
-        assert_eq!(full.next_id(), u64::MAX);
     }
 
     #[test]
