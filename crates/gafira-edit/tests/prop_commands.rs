@@ -59,7 +59,7 @@ fn set_property(doc: &Document) -> BoxedStrategy<SetProperty> {
         let page = pages.get(i).copied().unwrap_or(PageId::new(u64::MAX));
         let mut pool = ids.get(i).cloned().unwrap_or_default();
         pool.push(NodeId::new(u64::MAX));
-        let nodes = prop::collection::vec(prop::sample::select(pool), 0..=2);
+        let nodes = prop::collection::vec(prop::sample::select(pool), 1..=2);
         (Just(page), nodes)
     });
     let gesture = prop_oneof![Just(None), (0..2_u64).prop_map(|g| Some(GestureId(g)))];

@@ -97,7 +97,8 @@ impl Property {
     }
 }
 
-/// Sets one property on one or more nodes of one page.
+/// Sets one property on one or more nodes of one page (an empty list of
+/// targets is refused).
 ///
 /// The previous values are captured by every successful `apply`, so a
 /// command stays reusable after a failed one. Commands do not check
@@ -151,6 +152,9 @@ impl Command for SetProperty {
     }
 
     fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        if self.nodes.is_empty() {
+            return Err(CommandError::InvalidValue("an empty list of target nodes"));
+        }
         self.value.check()?;
         let page = doc
             .as_doc()
@@ -377,8 +381,10 @@ mod tests {
             SetProperty::new(PageId::new(9), vec![A], value, Some(GestureId(1))),
         ];
         for other in others {
-            let back = first.merge(Box::new(other)).expect_err("keys differ");
-            assert!((&*back as &dyn Any).is::<SetProperty>());
+            let next: Box<dyn Command> = Box::new(other);
+            let before: *const dyn Command = &*next;
+            let back = first.merge(next).expect_err("keys differ");
+            assert!(std::ptr::addr_eq(before, &*back));
         }
         let tx: Box<dyn Command> = Box::new(Transaction::new(MessageKey("t"), Vec::new()));
         let back = first.merge(tx).expect_err("not a SetProperty");
@@ -556,22 +562,47 @@ mod tests {
     }
 
     #[test]
-    fn reverting_on_a_document_without_the_node_fails_cleanly() {
-        let mut doc = fixture();
-        let mut command = set(&[A, B], Property::Opacity(0.5));
-        apply(&mut command, &mut doc).unwrap();
-        let token = EditToken::__new_for_gafira_edit_only();
-        doc.edit(&token).pages_mut()[0] = {
+    fn reverting_with_any_target_missing_fails_and_changes_nothing() {
+        for gone in [A, B] {
+            let mut doc = fixture();
+            let mut command = set(&[A, B], Property::Opacity(0.5));
+            apply(&mut command, &mut doc).unwrap();
+            let token = EditToken::__new_for_gafira_edit_only();
             let mut page = (*doc.pages()[0]).clone();
-            page.nodes.remove(&B);
-            page.roots.retain(|id| *id != B);
-            Arc::new(page)
-        };
-        let before = doc.clone();
-        assert_eq!(
-            revert(&mut command, &mut doc),
-            Err(CommandError::MissingNode(B))
-        );
-        assert_eq!(doc, before);
+            page.nodes.remove(&gone);
+            page.roots.retain(|id| *id != gone);
+            doc.edit(&token).pages_mut()[0] = Arc::new(page);
+            let before = doc.clone();
+            assert_eq!(
+                revert(&mut command, &mut doc),
+                Err(CommandError::MissingNode(gone))
+            );
+            assert_eq!(doc, before);
+        }
+    }
+
+    #[test]
+    fn it_is_unchanged_only_when_every_target_holds_the_value() {
+        let original = fixture();
+        let mut seed = original.clone();
+        apply(&mut set(&[A], Property::Visible(false)), &mut seed).unwrap();
+        // One of two targets already holds the value, in either position.
+        for targets in [[A, B], [B, A]] {
+            let mut doc = seed.clone();
+            let mut command = set(&targets, Property::Visible(false));
+            assert_eq!(apply(&mut command, &mut doc), Ok(Applied::Changed));
+            assert!(!node(&doc, A).base.visible && !node(&doc, B).base.visible);
+            revert(&mut command, &mut doc).unwrap();
+            assert_eq!(doc, seed);
+        }
+    }
+
+    #[test]
+    fn an_empty_target_list_is_refused() {
+        let original = fixture();
+        let mut doc = original.clone();
+        let result = apply(&mut set(&[], Property::Visible(false)), &mut doc);
+        assert!(matches!(result, Err(CommandError::InvalidValue(_))));
+        assert_eq!(doc, original);
     }
 }
