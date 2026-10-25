@@ -7,9 +7,10 @@ use crate::{Document, ValidationError};
 impl Document {
     /// Returns the first rule the document breaks, or `Ok(())`.
     ///
-    /// Passes run in a fixed order and, inside a pass, checks run in the
-    /// order of the [`ValidationError`] variants (pages in `pages` order,
-    /// nodes in ascending id). Nothing is altered or clamped.
+    /// Passes run in a fixed order. In P1 to P3 each check runs over all
+    /// pages (in `pages` order) before the next check, in the order of the
+    /// [`ValidationError`] variants; P4 goes node by node. Nothing is altered
+    /// or clamped.
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.check_header()?;
         self.check_ids()?;
@@ -95,7 +96,7 @@ mod tests {
     use gafira_geom::{Length, Unit};
     use serde_json::json;
 
-    use crate::ValidationError::{self, *};
+    use crate::ValidationError;
     use crate::document::test_document;
     use crate::{
         Axis, Document, Dpi, ElementBase, ExtensionNode, GroupNode, Node, NodeId, NodeKind, Page,
@@ -141,8 +142,32 @@ mod tests {
         d.pages.push(Arc::new(page(id, nodes)));
     }
 
-    fn roots(d: &mut Document, ids: &[u64]) {
-        first(d).roots = ids.iter().map(|&i| NodeId::new(i)).collect();
+    fn roots(p: &mut Page, ids: &[u64]) {
+        p.roots = ids.iter().map(|&i| NodeId::new(i)).collect();
+    }
+
+    /// Appends page 7 (nodes 8 and 9) and edits it, so the defect is on the second page.
+    fn two(d: &mut Document, edit: fn(&mut Page)) {
+        push(d, 7, &[8, 9]);
+        edit(Arc::make_mut(&mut d.pages[1]));
+    }
+
+    /// Moves the highest node of a page under key 5.
+    fn rekey(p: &mut Page) {
+        let (_, n) = p.nodes.pop_last().unwrap();
+        p.nodes.insert(NodeId::new(5), n);
+    }
+
+    /// Appends page 7 holding node 10 and sets `next_id`.
+    fn ten(d: &mut Document, next_id: u64) {
+        push(d, 7, &[10]);
+        d.next_id = next_id;
+    }
+
+    /// Appends page `page` holding `nodes` and sets `next_id` to `u64::MAX`.
+    fn at_max(d: &mut Document, page: u64, nodes: &[u64]) {
+        push(d, page, nodes);
+        d.next_id = u64::MAX;
     }
 
     /// Applies each edit to a valid document and compares the `Debug` form of the result.
@@ -154,9 +179,22 @@ mod tests {
         }
     }
 
-    fn out(axis: &str, px: f64) -> String {
+    fn out(page: u64, axis: &str, px: f64) -> String {
         let err = format!("OutOfRange {{ axis: {axis}, px: {px:?} }}");
-        format!("Err(PageSize {{ page: PageId(1), error: {err} }})")
+        format!("Err(PageSize {{ page: PageId({page}), error: {err} }})")
+    }
+
+    fn next(next_id: u64, max_id: u64) -> String {
+        format!("Err(NextIdNotAboveMax {{ next_id: {next_id}, max_id: {max_id} }})")
+    }
+
+    fn root(kind: &str, page: u64, node: u64) -> String {
+        format!("Err({kind} {{ page: PageId({page}), node: NodeId({node}) }})")
+    }
+
+    fn key(page: u64, key: u64, id: u64) -> String {
+        let (page, key, id) = (format!("PageId({page})"), format!("NodeId({key})"), id);
+        format!("Err(ArenaKeyMismatch {{ page: {page}, key: {key}, id: NodeId({id}) }})")
     }
 
     #[test]
@@ -215,34 +253,27 @@ mod tests {
 
     #[test]
     fn id_rows() {
-        fn rekey(d: &mut Document) {
-            let n = first(d).nodes.remove(&NodeId::new(3)).unwrap();
-            first(d).nodes.insert(NodeId::new(5), n);
-        }
+        let max = next(u64::MAX, u64::MAX);
         run(&[
             (|d| push(d, 1, &[]), "Err(DuplicateId { id: 1 })"),
             (|d| push(d, 7, &[3]), "Err(DuplicateId { id: 3 })"),
             (|d| push(d, 2, &[]), "Err(DuplicateId { id: 2 })"),
+            (|d| rekey(first(d)), &key(1, 5, 3)),
+            (|d| two(d, rekey), &key(7, 5, 9)),
+            (|d| ten(d, 11), "Ok(())"),
+            (|d| ten(d, 10), &next(10, 10)),
+            (|d| ten(d, 5), &next(5, 10)),
+            (|d| ten(d, 0), &next(0, 10)),
             (
-                rekey,
-                "Err(ArenaKeyMismatch { page: PageId(1), key: NodeId(5), id: NodeId(3) })",
+                |d| {
+                    d.pages.clear();
+                    d.next_id = 0;
+                },
+                "Ok(())",
             ),
-            (|d| d.next_id = 4, "Ok(())"),
-            (
-                |d| d.next_id = 3,
-                "Err(NextIdNotAboveMax { next_id: 3, max_id: 3 })",
-            ),
-            (
-                |d| d.next_id = 0,
-                "Err(NextIdNotAboveMax { next_id: 0, max_id: 3 })",
-            ),
-            (|d| d.pages.clear(), "Ok(())"),
+            (|d| at_max(d, u64::MAX, &[]), &max),
+            (|d| at_max(d, 7, &[u64::MAX]), &max),
         ]);
-        let mut d = base();
-        push(&mut d, u64::MAX, &[]);
-        d.next_id = u64::MAX;
-        let (next_id, max_id) = (u64::MAX, u64::MAX);
-        assert_eq!(d.validate(), Err(NextIdNotAboveMax { next_id, max_id }));
     }
 
     #[test]
@@ -262,48 +293,99 @@ mod tests {
             (|d| first(d).size = px(16_384.0, 16_384.0), "Ok(())"),
             (
                 |d| first(d).size = px(1.0f64.next_down(), 5.0),
-                &out("Width", low),
+                &out(1, "Width", low),
             ),
             (
                 |d| first(d).size = px(5.0, 16_384.0f64.next_up()),
-                &out("Height", high),
+                &out(1, "Height", high),
             ),
-            (|d| first(d).size = px(0.0, 5.0), &out("Width", 0.0)),
-            (|d| first(d).size = px(5.0, -5.0), &out("Height", -5.0)),
+            (|d| first(d).size = px(0.0, 5.0), &out(1, "Width", 0.0)),
+            (|d| first(d).size = px(-5.0, 5.0), &out(1, "Width", -5.0)),
             (|d| a0(d, 300), "Ok(())"),
             (|d| a0(d, 350), "Ok(())"),
-            (|d| a0(d, 351), &out("Height", a0_px)),
+            (|d| a0(d, 351), &out(1, "Height", a0_px)),
+            (|d| two(d, |p| p.size = px(0.0, 5.0)), &out(7, "Width", 0.0)),
         ]);
-        let mut d = base();
-        first(&mut d).size = px(f64::NAN, 5.0);
-        let Err(ValidationError::PageSize {
-            page,
-            error: PageSizeError::Conversion { axis, .. },
-        }) = d.validate()
-        else {
-            panic!("expected a conversion error");
-        };
-        assert_eq!((page, axis), (PageId::new(1), Axis::Width));
+        for width in [f64::NAN, f64::INFINITY] {
+            let mut d = base();
+            first(&mut d).size = px(width, 5.0);
+            let Err(ValidationError::PageSize {
+                page,
+                error: PageSizeError::Conversion { axis, .. },
+            }) = d.validate()
+            else {
+                panic!("expected a conversion error for {width}");
+            };
+            assert_eq!((page, axis), (PageId::new(1), Axis::Width));
+        }
     }
 
     #[test]
     fn root_rows() {
         fn elsewhere(d: &mut Document) {
             push(d, 7, &[9]);
-            roots(d, &[2, 9]);
+            roots(first(d), &[2, 9]);
         }
         run(&[
+            (|d| roots(first(d), &[42]), &root("DanglingRoot", 1, 42)),
             (
-                |d| roots(d, &[42]),
-                "Err(DanglingRoot { page: PageId(1), node: NodeId(42) })",
+                |d| two(d, |p| roots(p, &[42])),
+                &root("DanglingRoot", 7, 42),
             ),
+            (|d| roots(first(d), &[3, 3]), &root("DuplicateRoot", 1, 3)),
             (
-                |d| roots(d, &[3, 3]),
-                "Err(DuplicateRoot { page: PageId(1), node: NodeId(3) })",
+                |d| two(d, |p| roots(p, &[9, 9])),
+                &root("DuplicateRoot", 7, 9),
             ),
             (
                 elsewhere,
                 "Err(DanglingRoot { page: PageId(1), node: NodeId(9) })",
+            ),
+        ]);
+    }
+
+    #[test]
+    fn earlier_rules_win() {
+        run(&[
+            // P1 before P2.
+            (
+                |d| {
+                    d.schema_version = 2;
+                    push(d, 1, &[]);
+                },
+                "Err(UnsupportedSchemaVersion { found: 2 })",
+            ),
+            // P2 before P3.
+            (
+                |d| {
+                    push(d, 1, &[]);
+                    first(d).size = px(0.0, 5.0);
+                },
+                "Err(DuplicateId { id: 1 })",
+            ),
+            // Inside P1: schema before DPI.
+            (
+                |d| {
+                    d.schema_version = 2;
+                    d.dpi = Dpi::new(0);
+                },
+                "Err(UnsupportedSchemaVersion { found: 2 })",
+            ),
+            // Inside P2: duplicate id before `next_id`.
+            (
+                |d| {
+                    push(d, 1, &[]);
+                    d.next_id = 0;
+                },
+                "Err(DuplicateId { id: 1 })",
+            ),
+            // Inside P3, each check runs over all pages before the next one.
+            (
+                |d| {
+                    roots(first(d), &[42]);
+                    two(d, |p| p.size = px(0.0, 5.0));
+                },
+                &out(7, "Width", 0.0),
             ),
         ]);
     }
