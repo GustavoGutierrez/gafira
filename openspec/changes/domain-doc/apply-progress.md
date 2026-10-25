@@ -427,3 +427,39 @@ D4a plus D4b: 766 + 576 = 1342 changed lines against 507 + 387 = 894 forecast, r
 ## D5 cut into D5a and D5b (docs commit `docs(sdd): cut domain-doc D5 into D5a and D5b`)
 
 Trigger measured at the end of D4b: D4a plus D4b is 766 + 634 = 1400 changed lines against 894 forecast, ratio 1.566, above the 1.5 threshold of `design.md` (D5 total row). The owner approved the fallback cut. D5a = commit 1 of the old D5 (P5 parents, P6 reachability, the 10 000-deep chain), forecast ~215. D5b = old commits 2 and 3 (`EditToken`/`DocMut`, V13), forecast ~420. Design (size table, commit plan, file map, passes, T5.x), the delta specs and the proposal delivery count (eleven) were relabeled.
+
+## D5a: parents and reachability (`feat/domain-doc-4b..feat/domain-doc-5a`)
+
+Status: done, ready for verify. Base branch: `feat/domain-doc-4b`. Commits: `docs(sdd): cut domain-doc D5 into D5a and D5b`, `feat(doc): validate parents and reachability`, and this progress record.
+
+### Scenario -> test
+
+| Scenario | Test |
+|---|---|
+| Second parent (two groups; one group twice); Root with a parent (including a root that lists itself); Orphan (also on page 2); Cycles (self-parent that is not a root, ring, subtree below a ring naming the lowest id off the ring); valid chains still pass | `validate::tests::parent_and_reachability_rows` (11 rows) |
+| Each rule has its own variant, rows 15 to 18 | the same rows (one distinct variant each) |
+| Earlier rule wins inside P5 (15 before 16, 16 before 17, 15 before 17, each with the lower id on the later rule; each check over all pages before the next); P4 before P5; P5 before P6 (3 rows); Earlier pass wins over parents and cycles | `validate::tests::parent_checks_and_passes_run_in_order` (8 rows) |
+| D4b build accepts cycles (inverted) | the old `a_self_parenting_group_still_passes_until_d5` is removed; its document (a root listing itself) is the `RootHasParent { 2, 2 }` row, the non-root self-parent is the `Cycle` row |
+| Deep chain without overflow | `validate::tests::a_deep_chain_validates_without_overflow` (10 000 groups) |
+| Deep tree (load, P1 to P6) | `serde::a_chain_of_10000_groups_loads_without_overflow` (also loads the same chain with no roots and expects `Invalid(Orphan)`) |
+
+### RED evidence
+
+Written against the D4b `validate` (P1 to P4 only): `parent_and_reachability_rows` failed at row 2 (left `Ok(())`, wanted `MultipleParents` on 4); `parent_checks_and_passes_run_in_order` failed at row 0 (left `Ok(())`); `serde::a_chain_of_10000_groups_loads_without_overflow` failed on the `Orphan` assertion. Passed immediately, noted: `a_deep_chain_validates_without_overflow` (P1 to P4 never recurse; it guards the new passes).
+
+### Deviations
+
+- The D4b scenario text said the self-parenting document "then fails with `Cycle`"; the D4b fixture makes the group a root, so it fails with `RootHasParent`. The spec line was corrected in the docs commit (non-root self-parent gives `Cycle`).
+- P5 inner order is not spelled out beyond "first in the stated order"; it follows P1 to P3 (each check runs over all pages in order, nodes in ascending id, before the next check). Pinned by the page-2 row and the three lower-id rows.
+- `RootHasParent { node, parent }` names the lowest-id root with a parent and the lowest-id group that lists it (unique after the 15 check).
+- The `child_rows` "child in the same arena passes" row listed node 3 as both root and child; it now uses a tree where only 2 is a root.
+- Counting parents per page versus per document is not distinguishable: ids are unique across the document (P2) and children must be in the same arena (P4). No row was added for it.
+- No mutation run in this delivery.
+
+### Size
+
+Code-only `git diff --shortstat feat/domain-doc-4b..HEAD -- . ':!openspec'`: 2 files changed, 257 insertions(+), 9 deletions(-) (266 changed lines against ~215 forecast, ratio 1.24).
+
+### Gates
+
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` pass on the code commit: 278 tests passed (275 before). The docs commit changes no code (275 unchanged). `cargo deny`, V5, V11, V12 not run during apply.
