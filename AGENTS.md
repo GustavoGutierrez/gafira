@@ -17,10 +17,11 @@ spec  ->  (explorer, only when a claim is risky)  ->  tdd-apply  ->  mutants + v
 | Mutation-test the changed lines; report surviving mutants (read-only) | `mutants` (Sonnet) | report in the session scratchpad, outside the repo |
 | Check gates and every requirement/scenario | `verify` (Opus) | `openspec/changes/<change>/verify-report.md`, PASS or FAIL |
 | Close the change (PASS and all deliveries done) | `archive` (Haiku) | delta specs merged into `openspec/specs/`, change moved to `openspec/changes/archive/` |
+| Update, extend or regenerate the technical manual (`docs/manuals/tecnico/`), English first with a Spanish mirror | `manual-writer` (Sonnet) | edited chapters in both languages, `manual.py check` and `build` evidence, `docs(manual)` commits |
 
 On FAIL, or when deliveries remain, go back to `tdd-apply`.
 
-`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions and merges. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants` on changed lines in parallel with `verify`. `.claude/agents` is a symlink to `.agents/agents`.
+`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions and merges. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants` on changed lines in parallel with `verify`. `manual-writer` (Sonnet) sits outside the spec flow: the coordinator delegates to it whenever the owner asks to change the technical manual; it needs the `technical-manual` and `skill-registry` skills and stops if `technical-manual` is unavailable. `.claude/agents` is a symlink to `.agents/agents`.
 
 A short design note is written only when a spec leaves a real decision open, and only for that decision. If a test or CI claim is risky, `explorer` settles it with a real experiment before specs or code rely on it; refuted claims are fixed in the specs first.
 
@@ -105,5 +106,6 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
 | PR and issue comments | `comment-writer` |
 | Creating, refreshing or reading the skill registry | `skill-registry` |
+| Updating, finding a chapter in, or building the PDFs of the technical manual | `technical-manual` |
 
 No Rust-specific skill is installed; the Rust rules are the ones above and in `openspec/config.yaml`. The user-level `CLAUDE.md` still applies to the main conversation (language, no AI attribution in commits).
