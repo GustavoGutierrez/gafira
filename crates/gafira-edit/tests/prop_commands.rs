@@ -1,10 +1,16 @@
 //! Every core command runs the six 02 §10 laws (ARQ-81).
 
 use gafira_color::{Color, Rgba};
+use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
-    BlendMode, Document, GroupNode, NodeId, NodeKind, PageId, Placement, ShapeGeometry, ShapeNode,
+    BlendMode, DocMut, Document, Dpi, GroupNode, NodeId, NodeKind, PageId, PageSize, Placement,
+    ShapeGeometry, ShapeNode,
 };
-use gafira_edit::{GestureId, InsertNodes, NodeSpec, Property, RemoveNodes, SetProperty};
+use gafira_edit::{
+    Applied, Command, CommandError, DirtySet, GestureId, InsertNodes, InsertPage, NodeSpec,
+    Property, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction,
+};
+use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
 use proptest::prelude::*;
 
@@ -208,4 +214,218 @@ fn remove_nodes(doc: &Document) -> BoxedStrategy<RemoveNodes> {
 #[test]
 fn remove_nodes_obeys_the_command_laws() {
     prop_command(remove_nodes);
+}
+
+/// A node of `doc` (sometimes a missing one) with its sibling count; the
+/// index runs one past it now and then, which the command must refuse.
+fn reorder(doc: &Document) -> BoxedStrategy<Reorder> {
+    let mut targets: Vec<(PageId, NodeId, usize)> = Vec::new();
+    for page in doc.pages() {
+        targets.extend(page.roots.iter().map(|id| (page.id, *id, page.roots.len())));
+        for node in page.nodes.values() {
+            let kids = node.children.len();
+            targets.extend(node.children.iter().map(|id| (page.id, *id, kids)));
+        }
+    }
+    targets.push((PageId::new(u64::MAX), NodeId::new(u64::MAX), 0));
+    prop::sample::select(targets)
+        .prop_flat_map(|(page, node, siblings)| (Just(page), Just(node), 0..=siblings))
+        .prop_map(|(page, node, index)| Reorder::new(page, node, index))
+        .boxed()
+}
+
+#[test]
+fn reorder_obeys_the_command_laws() {
+    prop_command(reorder);
+}
+
+/// One to three nodes of one page (sometimes a missing one) under the roots,
+/// a node of the page (shape or group, so cycles and non-containers come up)
+/// or a missing node, at a small index.
+fn reparent(doc: &Document) -> BoxedStrategy<Reparent> {
+    page_and_pool(doc)
+        .prop_flat_map(|(page, mut pool)| {
+            pool.push(NodeId::new(u64::MAX));
+            let nodes = prop::collection::vec(prop::sample::select(pool.clone()), 1..=3);
+            let mut parents: Vec<Option<NodeId>> = vec![None];
+            parents.extend(pool.iter().map(|id| Some(*id)));
+            (
+                Just(page),
+                nodes,
+                prop::sample::select(parents),
+                0..=3_usize,
+            )
+        })
+        .prop_map(|(page, nodes, parent, index)| Reparent::new(page, nodes, parent, index))
+        .boxed()
+}
+
+#[test]
+fn reparent_obeys_the_command_laws() {
+    prop_command(reparent);
+}
+
+/// A page size in any unit, mostly inside the pixel limits and sometimes not.
+fn page_size() -> impl Strategy<Value = PageSize> {
+    let unit = prop_oneof![
+        Just(Unit::Px),
+        Just(Unit::Mm),
+        Just(Unit::Cm),
+        Just(Unit::In),
+        Just(Unit::Pt)
+    ];
+    let side = (
+        prop_oneof![9 => 1.0..2_000.0_f64, 1 => 0.0..40_000.0_f64],
+        unit,
+    )
+        .prop_map(|(v, u)| Length::new(v, u));
+    (side.clone(), side).prop_map(|(width, height)| PageSize { width, height })
+}
+
+/// A page field or the DPI. DPI values reach past both ends of the valid
+/// range, and the pages the generator builds make some of them overflow.
+fn page_property() -> impl Strategy<Value = Property> {
+    prop_oneof![
+        "[a-z]{0,6}".prop_map(Property::PageName),
+        page_size().prop_map(Property::PageSize),
+        any::<bool>().prop_map(Property::PageLocked),
+        any::<bool>().prop_map(Property::PageHidden),
+        prop_oneof![
+            8 => 1..=10_000_u32,
+            1 => Just(0_u32),
+            1 => Just(10_001_u32),
+        ]
+        .prop_map(|dpi| Property::Dpi(Dpi::new(dpi))),
+    ]
+}
+
+/// A page of `doc` (sometimes a missing one), a page property and a gesture
+/// out of two, so equal keys, and law 6, come up.
+fn set_page_property(doc: &Document) -> BoxedStrategy<SetProperty> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    pages.push(PageId::new(u64::MAX));
+    let gesture = prop_oneof![Just(None), (0..2_u64).prop_map(|g| Some(GestureId(g)))];
+    (prop::sample::select(pages), page_property(), gesture)
+        .prop_map(|(page, value, gesture)| match value {
+            Property::Dpi(_) => SetProperty::document(value, gesture),
+            _ => SetProperty::page(page, value, gesture),
+        })
+        .boxed()
+}
+
+#[test]
+fn set_property_on_pages_and_dpi_obeys_the_command_laws() {
+    prop_command(set_page_property);
+}
+
+/// An index that is mostly inside `0..=len` and sometimes past it, a name and
+/// a size that is sometimes outside the pixel limits.
+fn insert_page(doc: &Document) -> BoxedStrategy<InsertPage> {
+    let len = doc.pages().len();
+    (0..=len + 1, "[a-z]{0,6}", page_size())
+        .prop_map(|(index, name, size)| InsertPage::new(index, name, size))
+        .boxed()
+}
+
+#[test]
+fn insert_page_obeys_the_command_laws() {
+    prop_command(insert_page);
+}
+
+/// A page of `doc`, or a missing one now and then.
+fn remove_page(doc: &Document) -> BoxedStrategy<RemovePage> {
+    let mut pages: Vec<PageId> = doc.pages().iter().map(|p| p.id).collect();
+    pages.push(PageId::new(u64::MAX));
+    prop::sample::select(pages)
+        .prop_map(RemovePage::new)
+        .boxed()
+}
+
+#[test]
+fn remove_page_obeys_the_command_laws() {
+    prop_command(remove_page);
+}
+
+/// One child of a generated transaction. Every step is valid on any
+/// document the transaction can start from, whatever ran before it: a
+/// failing child would roll back to equal but not pointer-equal pages, which
+/// law 5 cannot accept (the rollback is covered by the `Transaction` unit tests).
+#[derive(Clone, Debug)]
+enum Step {
+    Set(SetProperty),
+    Insert(InsertPage),
+}
+
+fn step(first: Option<PageId>) -> BoxedStrategy<Step> {
+    let size = |w: f64| PageSize {
+        width: Length::new(w, Unit::Px),
+        height: Length::new(50.0, Unit::Px),
+    };
+    let insert = ("[a-z]{0,6}", 100.0..=800.0_f64)
+        .prop_map(move |(name, w)| Step::Insert(InsertPage::new(0, name, size(w))));
+    let Some(page) = first else {
+        return insert.boxed();
+    };
+    let rename = "[a-z]{0,6}"
+        .prop_map(move |n| Step::Set(SetProperty::page(page, Property::PageName(n), None)));
+    let hide = any::<bool>()
+        .prop_map(move |h| Step::Set(SetProperty::page(page, Property::PageHidden(h), None)));
+    prop_oneof![insert, rename, hide].boxed()
+}
+
+/// A `Transaction` that the harness can clone: it keeps the clonable steps
+/// and rebuilds the transaction from them (a clone is always taken before the
+/// first apply).
+#[derive(Debug)]
+struct Batch {
+    steps: Vec<Step>,
+    tx: Transaction,
+}
+
+impl Batch {
+    fn new(steps: Vec<Step>) -> Self {
+        let boxed = steps
+            .iter()
+            .map(|s| match s {
+                Step::Set(c) => Box::new(c.clone()) as Box<dyn Command>,
+                Step::Insert(c) => Box::new(c.clone()),
+            })
+            .collect();
+        let tx = Transaction::new(MessageKey("test.batch"), boxed);
+        Self { steps, tx }
+    }
+}
+
+impl Clone for Batch {
+    fn clone(&self) -> Self {
+        Self::new(self.steps.clone())
+    }
+}
+
+impl Command for Batch {
+    fn label(&self) -> CommandLabel {
+        self.tx.label()
+    }
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        self.tx.apply(doc)
+    }
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+        self.tx.revert(doc)
+    }
+    fn touches(&self) -> DirtySet {
+        self.tx.touches()
+    }
+}
+
+/// Up to three steps; the empty transaction is one of the cases.
+fn batch(doc: &Document) -> BoxedStrategy<Batch> {
+    let first = doc.pages().first().map(|p| p.id);
+    prop::collection::vec(step(first), 0..=3)
+        .prop_map(Batch::new)
+        .boxed()
+}
+
+#[test]
+fn transaction_obeys_the_command_laws() {
+    prop_command(batch);
 }

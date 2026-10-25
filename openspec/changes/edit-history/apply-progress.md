@@ -455,3 +455,197 @@ Each test was written against the finished code and passed at once; RED is by ca
 - S2: the `next_id` note is updated (option A decided).
 
 Size of the fix round: 140 lines of tests (`git diff --shortstat c3259a8..HEAD -- crates` before the merge: `budget.rs` 104, `history_budget_tests.rs` 36). Total for the delivery, `git diff --shortstat main..HEAD -- crates`: 1030 insertions, 34 deletions.
+
+## D9: `Reorder` and `Reparent`
+
+Base: `main` dd35a14. Branch `feat/edit-history-9`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| test(edit): cover InsertNodes and RemoveNodes in the undo-through-revert property | D7 W3 carry-over: `tests/budget.rs` steps are now `SetProperty`, root `InsertNodes` and `RemoveNodes` |
+| feat(edit): add Reorder and Reparent with cycle and container checks | `moves.rs` (shared plan, write, checked revert), `reorder.rs`, `reparent.rs`, 27 tests in `tests/move_commands.rs` |
+| test(edit): run the command laws over Reorder and Reparent | two properties (1 000 cases) in `tests/prop_commands.rs` (held for the owner's go-ahead on size, see below) |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI policy steps ARQ-07, forbid unsafe, V5, V12, V13 (all rc 0). V11 has no step of that name in `ci.yml`.
+
+Size (`git diff --shortstat main..HEAD -- crates`): 888 insertions, 24 deletions after commit 2; 940 insertions with the properties (forecast ~630, ceiling ~700). About 560 lines are tests.
+
+### Scenario to test
+
+| Scenario | Evidence |
+|---|---|
+| Bring to front | `bring_to_front_and_back` |
+| Group two nodes | `group_two_nodes` (roots `[g]`, children `[a, b]`, `validate()` passes) |
+| Cycle rejected | `a_group_cannot_move_under_itself_or_a_descendant` (descendant, itself, one culprit among several nodes) |
+| Non-`Group` target | `a_shape_is_not_a_parent` |
+| Index range | `a_reorder_index_must_be_below_the_sibling_count`, `the_index_counts_the_target_list_without_the_moved_nodes` |
+| Failed commands change nothing, D1 W4 (reuse after a failed apply) | `refused` (pointer-equal page) in every refusal test; `a_reorder_is_reusable_after_a_failed_apply`, `a_reparent_is_reusable_after_a_failed_apply` |
+| Law 4 touches | `reordering_inside_a_group_touches_the_group_and_not_the_page`, `reordering_a_root_touches_the_page`, `a_reparent_touches_both_parents_and_the_moved_nodes` |
+| Validate-before-mutate in revert | `a_reorder_revert_over_a_changed_list_fails_and_changes_nothing`, `a_reorder_revert_whose_group_is_gone_...`, `a_revert_whose_page_is_gone_...`, `a_reparent_revert_over_a_changed_list_...`, `a_reparent_revert_whose_old_parent_is_gone_...`, `reverting_a_move_that_changed_nothing_is_a_no_op_...` (each asserts the document equals the pre-revert clone) |
+| Rollback in a transaction | `a_failed_transaction_undoes_a_reparent` |
+| Laws 1 to 5 | `reorder_obeys_the_command_laws`, `reparent_obeys_the_command_laws` |
+
+### RED evidence
+
+- Commit 1 passed at once on the finished code (D8 already restores the counter); RED by mutant: `InsertNodes::revert` without `restore_next_id` fails the property (`next_id` 26 vs 25); `RemoveNodes::revert` pushing roots at the end instead of the recorded index fails it (roots `[8, 2, 5]` vs `[2, 5, 8]`).
+- Commands: tests were written against a stub (`apply` returned `Unchanged`, `revert` `Ok`): 24 of 26 failed on assertions (for example `left: Ok(Unchanged), right: Err(IndexOutOfRange { index: 4, len: 4 })`, `left: Ok(Unchanged), right: Err(WouldCreateCycle(NodeId(3)))`, roots still `[2, 3, 7, 8]` vs `[2, 7, 8]`); the 2 that passed are the `Unchanged` cases, guarded by the others.
+- Hand mutants on the finished code, applied one at a time: revert state check removed, `MissingNode`/`MissingPage` in revert replaced, index bound off by one, container check removed, ancestor dedupe removed, cycle check removed, document order reversed, `touches` without moved nodes or without the page, revert writing the after-lists, empty-list check, missing-node check: all caught by `tests/move_commands.rs`. One survivor, "an unchanged move reverts as a no-op even if the page is gone", led to `reverting_a_move_that_changed_nothing_is_a_no_op_...`, now caught.
+- The properties passed at once (unit tests drove the code); RED by mutant: no cycle check and no container check give law 3, `touches` without the page gives law 4, revert writing the after-lists gives law 1. Not caught by laws, caught by unit tests: moved nodes missing from `touches` (law 4 only requires a superset), moved order reversed (apply and revert agree).
+
+### Decisions and notes
+
+- Index of `Reparent`: counts the target list once the moved nodes are out of it (`0..=len`); a larger value gives `IndexOutOfRange { index, len }` with that len. `Reorder`: final index, `0..siblings`; `index == siblings` gives `IndexOutOfRange { index, len: siblings }`. Same position gives `Unchanged` and no write.
+- Moved nodes keep their document order (parents before children, siblings in list order), whatever the order of the list given. A node listed with one of its ancestors moves once, with the ancestor (as in `RemoveNodes`).
+- Check order in `Reparent::apply`: empty list, page, listed nodes, parent exists, parent is a `Group` (`NotAContainer`), cycle (`WouldCreateCycle(top)` names the moved node that holds the target), index. A shape moved under itself therefore reports `NotAContainer`.
+- Revert (validate-before-mutate): `revert` compares every list it will rewrite with the list `apply` left (page present, owner nodes present, equal contents) and fails with `MissingPage`, `MissingNode` or `InvalidValue("the lists changed since apply")` before writing; it restores whole old lists. A stricter rule than `RemoveNodes::revert`: a revert over any other state of those lists is refused, not guessed. `History` and `Transaction` only revert in LIFO order, so they always meet the left state. An `Unchanged` apply stores an empty record; its revert is `Ok` and writes nothing.
+- Law 4: a root list change lists the page; a children list change lists the owner node and not the page; the moved nodes are listed too (the spec says "the node"), a superset the law allows. Before `apply`, `touches` lists the target nodes only (as `RemoveNodes`).
+- These commands allocate no ids, so `restore_next_id` is not used.
+- `places` moved from `remove_nodes.rs` to `moves.rs` and is shared; no behavior change.
+- Two error branches in `moves::write` (page or owner missing) are unreachable: `plan` and the revert check prove both exist before the first write.
+- Neither command has a `merge_key` (spec: only `SetProperty` merges).
+- Not extended: the budget property (`tests/budget.rs`) does not run `Reorder` or `Reparent`; their revert path is covered by the unit tests and laws 1 and 2. Adding them is about 15 lines if the owner wants it.
+- Untracked `.claude/worktrees/` is not part of this delivery and was not staged.
+
+### D9 fix round (verify: W1, W2, W3, S1), test first
+
+The tests passed at once on the finished code; RED is by hand mutant, applied one at a time with the file restored after each (script outside the repo), then GREEN on the real code.
+
+- W1 / M1: `a_shape_moved_under_itself_is_not_a_container` (`refused(...)`, `Reparent` of shape `a` under `a`). With the cycle check moved before the container check it fails (`left: Err(WouldCreateCycle(NodeId(2)))`, `right: Err(NotAContainer(NodeId(2)))`). The order is now pinned.
+- W2 / M5: `a_reparent_revert_checks_every_list_before_it_writes_one` (a reparent into `e`, then a `Reorder` inside `e`, so the roots still match and only `e`'s children differ; `revert` must fail with `InvalidValue` and leave the document equal and page pointer-equal). With a revert that checks and writes one list at a time (roots first) it fails: the document differs from the clone taken before the revert.
+- W3: not a test. The spec defines `touches` only after a successful `apply`; its value before `apply` (the listed target nodes, as `RemoveNodes`) is a known non-requirement, not pinned. The two pre-apply mutants (`reorder.rs`, `reparent.rs`) are accepted as surviving.
+- S1 (pending spec edit, for the coordinator before archive): `edit-commands` "Reorder and Reparent" must state the index semantics. `Reorder`: the index is the final position, `0..siblings` (`index == siblings` gives `IndexOutOfRange`). `Reparent`: the index counts the target list once the moved nodes are out of it, `0..=len`. It should also state that moved nodes keep document order and that a node listed with its ancestor moves with the ancestor.
+
+Size of the round: 28 lines of tests. Gates on the test commit: fmt, clippy, `cargo test --workspace --locked` (467 passed), `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, all rc 0.
+
+### D9 mutants round (valid isolated run: 2 misses at `moves.rs:98:28`)
+
+The misses were `+` to `-` and `+` to `*` in `.take(at.len() + 1)`, the ancestor walk of the cycle check.
+
+- Reachability: the walk visits distinct nodes of one page's `at` map, so a chain has at most `at.len()` elements and `take(at.len())` is already enough. The spare step was unreachable slack. `+` to `*` gave `take(at.len())`, which is equivalent; `+` to `-` gave `take(at.len() - 1)`, which is observable only in a chain as deep as the page.
+- Test first: `the_cycle_check_walks_a_chain_to_its_farthest_ancestor` (page with `g1 > g2 > g3 > g4 > g5`; moving `g1`, then `g2`, under `g5` must give `WouldCreateCycle`). RED against `-` (`left: Ok(Changed)`, `right: Err(WouldCreateCycle(NodeId(2)))`); GREEN on the real code. Against `*` it passes, as the equivalence says.
+- Simplification (behavior-preserving, tests green): the bound is now `.take(at.len())`, so both mutants no longer exist. The hand mutant `take(at.len() - 1)` still fails the new test.
+- Mutants, own export (`git archive` of 5825717, default per-job target dirs), `cargo mutants -p gafira-edit -f crates/gafira-edit/src/moves.rs --jobs 4`: 25 mutants, 18 caught, 0 missed, 0 timeout, 7 unviable. All 25 logs show `Compiling gafira-edit` on the mutated tree first (the `Fresh` lines in 19 logs are the later `cargo test` run on that same tree).
+- The two pre-apply `touches` survivors (W3) stay accepted, as recorded above.
+- Gates on each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked` (468 passed), `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, all rc 0.
+
+### D9 mutants round: correction (re-verify)
+
+- The `take(at.len())` refactor is behavior-preserving only on documents that pass `validate()`. The line "the spare step was unreachable slack" above holds for valid pages only. Verify found a counterexample on an invalid page: a top group unreachable from the roots (it breaks P5). Before the refactor `Reparent` returned `Err(WouldCreateCycle)`; after it, `Ok(Applied::Unchanged)`. Neither writes anything, so ARQ-13 holds either way. The command laws (`prop_command`) generate valid documents only, so they do not cover this case.
+- The 2 pre-apply `touches` survivors stay accepted (W1 of the re-verify; W3 of the first verify): the spec defines `touches` only after a successful `apply`.
+
+## D10a: page and DPI targets of `SetProperty`
+
+Flow: full (inherited)
+
+Base: `main` e95e56d. Branch `feat/edit-history-10`. The owner split D10 in two PRs: D10a (this one) and D10b (`InsertPage`, `RemovePage`, the `Transaction` property and V14, branch `feat/edit-history-10b`).
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| f9b9b07 feat(edit): SetProperty targets page fields and the document DPI | `Property::{PageName, PageSize, PageLocked, PageHidden, Dpi}`, `SetProperty::page` and `SetProperty::document`, 21 tests in `tests/page_commands.rs`, one property in `tests/prop_commands.rs` |
+
+Gates: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI steps ARQ-07, forbid unsafe (V11), V5, V12, V13 (extracted from `ci.yml`, run under `bash --noprofile --norc -eo pipefail`), all rc 0. V14 does not exist on this branch.
+
+### Scenarios to tests
+
+- DPI pushes a page over the limit: `a_dpi_that_pushes_a_page_over_the_limit_is_refused` (A0 at 300, DPI 351 gives `InvalidDocument(PageSize { page: 2, OutOfRange { Height } })`; 350 fits).
+- Page fields, size limits, DPI edges (0, 1, 10 000, 10 001, `u32::MAX`), every page checked, unchanged cases, merge keys and merged drag, locked page still editable (Q12): `tests/page_commands.rs`.
+- Carry-overs: re-apply after a failed apply (D1 W4) for the page and DPI commands; validate-before-mutate in `revert`, each precondition tested with the document left equal: `NotApplied` (page, DPI), page gone, old size no longer fits, old DPI no longer fits a page.
+- Law: `set_property_on_pages_and_dpi_obeys_the_command_laws` (1 000 cases).
+
+### RED evidence
+
+- Tests written against a stub (new variants and constructors that fell into the node path): 19 of 21 failed on assertions (`left: Err(InvalidValue("an empty list of target nodes")) right: Ok(Changed)`, `... right: Err(MissingPage(PageId(9)))`, merge key `page: Some(PageId(0))` vs `None`); the 2 that passed (`reverting_a_page_command_that_never_applied_fails`, `only_a_page_property_works_without_nodes`) hold on the final code as well.
+- The property passed at once on the finished code (unit tests drove it); RED by hand mutant, file restored after each: page `touches` without the page gives law 4 (`page 1 changed but is not in touches`); DPI revert without `set_dpi` gives law 1.
+
+### Mutants (T3, `set_property.rs`)
+
+Own export of the working tree outside the repo, default per-job target dirs, run together with `pages.rs` (D10b): 84 mutants in `set_property.rs`, 73 caught, 0 missed, 0 timeout, 11 unviable. Every log shows `Compiling gafira-edit` on the mutated tree. The code of D10a is unchanged by the split.
+
+### Decisions and notes
+
+- Page and DPI properties are variants of `Property`; the command picks its scope from the variant. A page property with node targets, or a node property through `SetProperty::page`, is `InvalidValue`. `SetProperty::document` ignores the page (merge key `page: None`).
+- A size or DPI change is validated before any write: `PageSize::check` at the document DPI (`InvalidDocument(PageSize { page, error })`, as `validate()`); a DPI outside `Dpi::MIN..=Dpi::MAX` is `InvalidValue("dpi")`; a DPI change checks every page.
+- `touches` (owner confirmed): a page field lists the page; a DPI change lists nothing, because no page or node `Arc` changes (law 4 counts `Arc`s). A renderer cannot learn about a DPI change from `touches`.
+- Revert preconditions beyond the spec text: the page-size and DPI reverts re-check the old value against the current DPI or pages. Linear history never meets these states; they keep a revert on a foreign state from writing.
+- Pending spec edits (not code, spec untouched): the main `edit-commands` "Page and document commands" should state the `touches` of a DPI change (empty) and the revert preconditions above.
+
+### Size
+
+`git diff --shortstat main..HEAD -- crates`: 733 insertions, 30 deletions (forecast for all of D10 ~600, ceiling ~700; about 480 lines are tests).
+
+## D10b: `InsertPage`, `RemovePage`, `Transaction` property, V14
+
+Flow: full (inherited)
+
+Base: branch `feat/edit-history-10` (D10a). Branch `feat/edit-history-10b`.
+
+### Commits and gates
+
+| Commit | Content |
+|---|---|
+| ee0d347 feat(edit): add InsertPage and RemovePage | `src/pages.rs`, exports, 13 tests in `tests/page_commands.rs`, two properties |
+| 82f3f65 ci: require a property test for every core command (V14) | V14 step in `ci.yml`; `Transaction` property (test-local `Batch` wrapper) |
+
+Each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, CI steps ARQ-07, forbid unsafe (V11), V5, V12, V13 and, from the V14 commit, V14, all rc 0.
+
+### Scenarios to tests
+
+- Remove and restore a page: `remove_a_page_and_restore_it_at_its_index`; the last page can go.
+- Insert redo reuses the id, index `0..=len`, size at the document DPI, exhausted id space, failed transaction gives the page id back.
+- Carry-overs: re-apply after a failed apply (D1 W4) for `InsertPage` and `RemovePage`; Q6-style reissue through `History` (`an_id_is_reissued_to_a_page_after_an_undo`); validate-before-mutate in `revert`, each precondition tested with the document left equal: `NotApplied`, inserted page gone, inserted page edited since, removed page already back, index beyond the list.
+- Laws (1 000 cases): `insert_page_obeys_the_command_laws`, `remove_page_obeys_the_command_laws`, `transaction_obeys_the_command_laws`.
+
+### RED evidence
+
+- Tests written against a stub whose `apply` returned `Err(InvalidValue("not built yet"))`: 12 of 13 failed on assertions (`left: Err(InvalidValue("not built yet")) right: Ok(Changed)` seven times, `right: Err(IdSpaceExhausted)`, `right: Err(MissingPage(PageId(9)))`); `a_failed_transaction_gives_the_page_id_back` passed on the stub (both children err) and is guarded by the others.
+- The properties passed at once on the finished code; RED by hand mutant, file restored after each: `InsertPage::revert` without `restore_next_id` gives law 1; `RemovePage::touches` without the nodes gives law 4 (`node 3 changed but is not in touches`).
+
+### V14
+
+Step "Every core command has a property test (V14)" in the `policy` job, after V13, additive. It lists the types of `^impl(<..>)? Command for T` in `git ls-files` of `crates/gafira-edit/src` (skipping `*_tests.rs`; indented impls of `#[cfg(test)]` modules do not match), captures every `grep` and `git ls-files` exit code, treats only 1 as no match, has the positive control, and prints the missing types.
+
+- Positive (repo root): rc 0 (found: InsertNodes, InsertPage, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction).
+- Positive control (run from `crates/`): `::error::positive control failed: no impl Command found under crates/gafira-edit/src`, rc 1.
+- Negative 1: scratch `src/scratch_noop.rs` with `impl Command for Noop`, a generic `impl<T: Send> Command for Gen<T>` and an indented `impl Command for Indented`: `... without a property test ...: Gen Noop`, rc 1 (the indented one is ignored). Repeated on the final branch with `Noop` alone: rc 1. File removed.
+- Negative 2: `RemovePage` renamed in `prop_commands.rs`: `... without a property test ...: RemovePage`, rc 1; restored.
+- `Transaction` is an `impl Command` in `src`, so V14 requires it in `prop_commands.rs`. It is not `Clone`, so the test wraps clonable steps in a test-local `Batch` (rebuilt on clone; a `tests/` command, outside V14's search).
+
+### Mutants (T3, `pages.rs`)
+
+Own export of the working tree outside the repo, default per-job target dirs, run together with `set_property.rs` (D10a): 18 mutants in `pages.rs`, 14 caught, 0 missed, 0 timeout, 4 unviable. All 103 logs of the run show `Compiling gafira-edit` on the mutated tree. `lib.rs` gained two `mod`/`pub use` lines, no mutants. The split changed no code.
+
+### Decisions and notes
+
+- `touches`: `InsertPage` lists the new page after `apply`; `RemovePage` lists the page and its nodes (as `RemoveNodes`). A DPI change lists nothing (D10a, owner confirmed).
+- `InsertPage::revert` refuses a page that no longer equals the one it inserted. `RemovePage::revert` does not check node-id collisions with other pages: the counter never moves up, so no later command reuses the ids of a removed page in linear history.
+- For `InsertPage` the size error names the id the page would get.
+- Law 5 and `Transaction`: a transaction that fails midway restores an equal document, not pointer-equal pages, so the generated transactions only hold steps that cannot fail (rename, hide, insert at 0). The rollback is covered by the D1 unit tests and `a_failed_transaction_gives_the_page_id_back`.
+- Pending spec edits (not code, spec untouched; D10a ones are in its section): `edit-commands` "Page and document commands" should state the `InsertPage` revert precondition and the `touches` of both page commands; "Command property laws" should say that `Transaction` needs a property test for V14 and that law 5 cannot hold for a failing transaction; `workspace-tooling` V14 should state that `*_tests.rs` files and indented impls are outside the search (the grep is anchored at column 0).
+- Untracked `.claude/worktrees/` is not part of this delivery and was not staged.
+
+### Size
+
+`git diff --shortstat feat/edit-history-10..HEAD -- crates`: see the coordinator report; about 540 lines in `crates` plus 32 in `ci.yml`, about 70 percent tests.
+
+### D10b hardening round (owner option A, after the D10b verify PASS), test first
+
+Flow: full (inherited)
+
+`feat/edit-history-10b` was merged with `feat/edit-history-10` (419a5bd, the D10a verify report) first; the D10b verify report and `verification.json` round are re-applied in the docs commit. Commits: `fix(edit): refuse an insert revert that would reuse a live id`, `ci: make V14 see the impls it missed`, then this docs commit.
+
+1. Counter hole in the insert reverts (verify probe `vd10b_probe.rs`):
+   - RED: `an_insert_revert_never_lowers_the_counter_under_live_ids` in `tests/page_commands.rs` (`InsertPage`, then a later `InsertNodes` takes node 4, then the `InsertPage` revert): `left: Ok(()) right: Err(InvalidValue("ids were allocated after the page was inserted"))`. The same test for `InsertNodes` in `tests/node_commands.rs` (a later `InsertPage` takes page 12): `left: Ok(()) right: Err(InvalidValue("ids were allocated after the nodes were inserted"))`. So the hole existed in both commands.
+   - GREEN: both reverts check, before any write, that the counter stands exactly where `apply` left it (`next_id - 1 == counter` for a page, `next_id - counter == ids.len()` for nodes), and fail with `InvalidValue`, the document equal and valid. History, `Transaction` and the budget property revert in LIFO order, so they always meet that state; all other tests are unchanged.
+   - `RemovePage` and the other commands allocate no ids, so the hole cannot exist there (no change).
+2. V14 false negatives. The negative cases are in a script outside the repo (`scratchpad/d10b-round/neg.sh`), each a scratch file in `crates/gafira-edit/src` removed afterwards.
+   - RED on the step as it was (expected rc 1): nested generic bounds `impl<T: Into<Vec<u8>>> Command for Nest<T>` rc 0; `impl crate::Command for Pathed` rc 0; header split over three lines rc 0; `impl<T: Send> Command for Box<T>` rc 0; an indented impl in a non-test `mod inner` rc 0; an impl in `fake_tests.rs` rc 0. Already correct: a `where` clause on its own lines (rc 1), plain `Noop` (rc 1).
+   - GREEN: all eight cases give rc 1 (`Nest`, `Pathed`, `Multi`, `Box(not a type defined under src)`, `Indent`, `Hidden`, `W`, `Noop`); a `#[cfg(test)] mod tests { impl Command for T1 {} }` still gives rc 0; the clean tree gives rc 0; from `crates/` rc 1 with the positive control message; with every core type renamed in `prop_commands.rs` the message lists all eight types (so the clean pass is not vacuous).
+   - How: impl headers are read as text with line breaks folded (`impl ... {`), with an optional `<...>` greedy group and an optional path before `Command`; `#[cfg(test)]` items are skipped by brace counting; files are skipped only when a `#[cfg(test)]` item declares them (`#[path = ".."] mod x;` or `mod x;`), not by name; the target must be a plain identifier (optionally with generics) that is a `struct`, `enum` or `union` defined under `src`, otherwise the step fails (`Box<T>`, `&X`, `crate::X`, a blanket `T`).
+   - Known limits (kept): braces in strings or comments confuse the `#[cfg(test)]` skip; macro-generated impls are invisible; an impl inside a comment or string is read as an impl (fails closed); a type name that only appears in a comment of `prop_commands.rs` counts as covered; a file name shared with a test module elsewhere under `src` is also skipped.
+3. Mutants (T3, own `git archive` export of the commit under test, default per-job target dirs): `cargo mutants -p gafira-edit --file crates/gafira-edit/src/pages.rs --file crates/gafira-edit/src/insert_nodes.rs --jobs 4`: 45 mutants, 35 caught, 0 missed, 0 timeout, 10 unviable (`pages.rs` 15 caught, 4 unviable; `insert_nodes.rs` 20 caught, 6 unviable). All 46 logs show `Compiling gafira-edit` on the mutated tree. `ci.yml` has no mutants.
+4. Gates on each commit: fmt, clippy `--workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, ARQ-07, forbid unsafe, V5, V12, V13, V14, all rc 0.
+5. Pending spec edits stay pending and untouched: W2 (V14 text: what is excluded and the limit list, now also the new limits above), W3 (law 5 against `Transaction` rollback), W4 (`InsertPage` revert precondition, counter restore and `touches` of the page commands; add the exact-counter precondition of both insert reverts to it). Suggestions from the verify report (S1 and others) were not part of this round.

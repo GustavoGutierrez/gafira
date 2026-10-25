@@ -220,6 +220,13 @@ impl Command for InsertNodes {
         if let Some(id) = record.ids.iter().find(|id| page.node(**id).is_none()) {
             return Err(CommandError::MissingNode(*id));
         }
+        // Restoring the counter must not hand out an id a later command took.
+        let allocated = u64::try_from(record.ids.len()).ok();
+        if doc.as_doc().next_id().checked_sub(record.counter) != allocated {
+            return Err(CommandError::InvalidValue(
+                "ids were allocated after the nodes were inserted",
+            ));
+        }
         let tops: BTreeSet<NodeId> = record.tops.iter().copied().collect();
         if let Some(parent) = self.parent {
             let node = doc

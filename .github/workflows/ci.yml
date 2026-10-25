@@ -145,6 +145,66 @@ jobs:
             [ -z "$out" ] || { echo "::error::gafira-edit must not publicly re-export EditToken:" >&2; echo "$out" >&2; status=1; }
           done <<<"$files"
           exit "$status"
+      - name: Every core command has a property test (V14)
+        run: |
+          set -euo pipefail
+          props=crates/gafira-edit/tests/prop_commands.rs
+          # A core command is the type of an `impl [path::]Command for T` under crates/gafira-edit/src. Headers are read as
+          # text with line breaks folded, so generics, a path before the trait and multi-line headers are seen. Left out:
+          # blocks under #[cfg(test)] (brace counted) and the files such a block declares (`#[path = ".."] mod x;`, `mod x;`).
+          # Known limits: braces inside strings or comments confuse the block skip, macro-generated impls are invisible, and
+          # a type name that only appears in a comment of the property file counts as covered.
+          # A pathspec that matches nothing lists nothing (V13), so a wrong working directory ends at the positive control.
+          rc=0; listed=$(git ls-files --cached --others --exclude-standard -- crates/gafira-edit/src) || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::git ls-files failed (rc=$rc)" >&2; exit 1; }
+          sources=$(grep -E '\.rs$' <<<"$listed" || true)
+          tests=""
+          for f in $sources; do
+            rc=0; out=$(awk '/^[[:space:]]*#\[cfg\(test\)\]/{p=1;next}
+              p && /#\[path[[:space:]]*=/{match($0,/"[^"]+"/);n=substr($0,RSTART+1,RLENGTH-2);sub(/^.*\//,"",n);print n;next}
+              p && /^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_]+[[:space:]]*;/{n=$0;sub(/^.*mod[[:space:]]+/,"",n);sub(/[[:space:]]*;.*/,"",n);print n ".rs";p=0;next}
+              p && !/^[[:space:]]*#\[/{p=0}' "$f") || rc=$?
+            [ "$rc" -eq 0 ] || { echo "::error::awk failed on $f (rc=$rc)" >&2; exit 1; }
+            tests+="$out"$'\n'
+          done
+          types=""; defs=""
+          for f in $sources; do
+            grep -qxF "$(basename "$f")" <<<"$tests" && continue
+            rc=0; text=$(awk '/^[[:space:]]*\/\//{next}
+              /^[[:space:]]*#\[cfg\(test\)\]/{k=1;next}
+              k==1 && /^[[:space:]]*#\[/{next}
+              k==1{k=2;d=0}
+              k==2{o=gsub(/\{/,"{");c=gsub(/\}/,"}");d+=o-c;if(d<=0&&(o>0||/;[[:space:]]*$/))k=0;next}
+              {printf "%s ",$0}' "$f") || rc=$?
+            [ "$rc" -eq 0 ] || { echo "::error::awk failed on $f (rc=$rc)" >&2; exit 1; }
+            rc=0; headers=$(grep -Eo '(^|[^A-Za-z0-9_])impl[^{;]*\{' <<<"$text") || rc=$?
+            case "$rc" in 0) ;; 1) headers="" ;; *) echo "::error::grep failed on $f (rc=$rc)" >&2; exit 1 ;; esac
+            while IFS= read -r h; do
+              [ -n "$h" ] || continue
+              t=$(sed -nE 's/^.*impl[[:space:]]*(<.*>)?[[:space:]]*([A-Za-z0-9_]+::)*Command[[:space:]]+for[[:space:]]+([^{]*)\{$/\3/p' <<<"$h")
+              [ -n "$t" ] || continue
+              t=$(sed -E 's/[[:space:]]+where([[:space:]].*)?$//; s/[[:space:]]+$//' <<<"$t")
+              grep -Eq '^[A-Za-z_][A-Za-z0-9_]*(<.*>)?$' <<<"$t" \
+                || { echo "::error::V14 cannot name the type of 'impl Command for $t' in $f; use a plain local type" >&2; exit 1; }
+              types+="${t%%<*}"$'\n'
+            done <<<"$headers"
+            rc=0; found=$(grep -Eo '(struct|enum|union)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' "$f") || rc=$?
+            case "$rc" in 0) defs+="$(sed -E 's/^[a-z]+[[:space:]]+//' <<<"$found")"$'\n' ;; 1) ;; *) echo "::error::grep failed on $f (rc=$rc)" >&2; exit 1 ;; esac
+          done
+          # Positive control: at least one implementation must be found.
+          [ -n "$types" ] || { echo "::error::positive control failed: no impl Command found under crates/gafira-edit/src" >&2; exit 1; }
+          [ -f "$props" ] || { echo "::error::$props not found" >&2; exit 1; }
+          missing=""
+          for t in $(sort -u <<<"$types"); do
+            grep -qxF "$t" <<<"$defs" || missing+=" $t(not a type defined under src)"
+            rc=0; grep -Eqw -- "$t" "$props" || rc=$?
+            case "$rc" in
+              0) ;;
+              1) missing+=" $t" ;;
+              *) echo "::error::grep failed on $props (rc=$rc)" >&2; exit 1 ;;
+            esac
+          done
+          [ -z "$missing" ] || { echo "::error::core commands without a property test in $props:$missing" >&2; exit 1; }
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check

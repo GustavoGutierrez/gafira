@@ -9,7 +9,8 @@ use gafira_doc::{
     ShapeGeometry, ShapeNode, ValidationError,
 };
 use gafira_edit::{
-    Applied, Command, CommandError, History, InsertNodes, NodeSpec, RemoveNodes, Transaction,
+    Applied, Command, CommandError, History, InsertNodes, InsertPage, NodeSpec, RemoveNodes,
+    Transaction,
 };
 use gafira_geom::{Length, Unit};
 
@@ -482,6 +483,25 @@ fn a_revert_of_nodes_that_are_already_back_fails_and_changes_nothing() {
     assert_eq!(
         revert(&mut remove, &mut doc),
         Err(CommandError::InvalidValue("a removed node is already back"))
+    );
+    assert_eq!(doc, before);
+    assert_eq!(doc.validate(), Ok(()));
+}
+
+#[test]
+fn an_insert_revert_never_lowers_the_counter_under_live_ids() {
+    let mut doc = empty(10);
+    let mut insert = InsertNodes::new(PAGE, None, 0, vec![shape(), shape()]);
+    apply(&mut insert, &mut doc).unwrap();
+    // A later command took the next id (page 12); reverting out of order
+    // would hand it out again.
+    apply(&mut InsertPage::new(1, "n".into(), size()), &mut doc).unwrap();
+    let before = doc.clone();
+    assert_eq!(
+        revert(&mut insert, &mut doc),
+        Err(CommandError::InvalidValue(
+            "ids were allocated after the nodes were inserted"
+        ))
     );
     assert_eq!(doc, before);
     assert_eq!(doc.validate(), Ok(()));

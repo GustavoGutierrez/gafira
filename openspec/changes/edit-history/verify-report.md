@@ -1175,3 +1175,602 @@ None.
 ### Result
 
 PASS. 0 CRITICAL, 1 WARNING, 4 SUGGESTION. `next`: the coordinator pushes `feat/edit-history-7` and opens its PR against `main`. Then `tdd-apply` continues with the next pending delivery. The change is not ready to archive.
+
+## D9: `Reorder` and `Reparent`
+
+Branch `feat/edit-history-9`, HEAD `642575f`, base `main` `dd35a14`. `origin/main` has since gained docs only (`.agents/`, `AGENTS.md`, `CLAUDE.md`). `git merge-tree` shows no conflict.
+
+### Gates
+
+The gates ran in the repository with `CARGO_TARGET_DIR` in the scratchpad (`scratchpad/vd9/`). The six run steps of the `policy` job were taken from `ci.yml` with a YAML parser and run with `bash -eo pipefail`.
+
+| Gate | HEAD `642575f` |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 465 passed, 0 failed |
+| `cargo deny check` | rc 0 |
+| Format, ARQ-07, forbid unsafe, V5, V12, V13 | rc 0 each |
+
+`ci.yml` has no step named V11, which matches what `apply-progress.md` says.
+
+Each commit was also checked alone, from a `git archive` export with its own target dir. A first attempt shared one target dir. Archive mtimes then made cargo reuse a stale `gafira-edit` and give a false E0432, so it was discarded.
+
+| Commit | fmt | clippy | test |
+|---|---|---|---|
+| `fab0cc4` test: InsertNodes/RemoveNodes in the undo-through-revert property | 0 | 0 | 0 (436) |
+| `725a29e` feat: Reorder and Reparent | 0 | 0 | 0 (463) |
+| `570bb70` test: command laws over Reorder and Reparent | 0 | 0 | 0 (465) |
+
+The default case count is 1 000 (`DEFAULT_CASES`, `harness.rs:31`). No commit message has an AI attribution line.
+
+### Requirement and scenario coverage
+
+| Requirement / scenario | Status | Evidence |
+|---|---|---|
+| Bring to front (D9, unit) | covered | `bring_to_front_and_back`: 4 roots, index 3 = last. This is the same rule as the spec's 3 roots with index 2. Revert gives the original back |
+| Group two nodes (D9, unit) | covered | `group_two_nodes`: roots `[g, e]`, `e` children `[a, b]`, `validate()` Ok, revert gives the original |
+| Cycle rejected (D9, unit) | covered | `a_group_cannot_move_under_itself_or_a_descendant` (under a descendant, under itself, one culprit among two nodes), pointer-equal page |
+| Non-`Group` target gives `NotAContainer` | covered | `a_shape_is_not_a_parent` |
+| Reorder final index `0..siblings` | covered | `a_reorder_index_must_be_below_the_sibling_count` (roots and children), `the_same_index_is_unchanged` |
+| Reparent index over the target list after removing the moved nodes (`0..=len`) | covered | `the_index_counts_the_target_list_without_the_moved_nodes` (2 accepted, 3 gives `IndexOutOfRange { 3, 2 }`) |
+| Ancestor dedupe | covered | `a_node_listed_with_its_descendant_moves_once_as_the_ancestor` |
+| Document order of moved nodes | covered | `moved_nodes_keep_their_document_order_whatever_the_list_order` |
+| Restore every old parent and index | covered | `nodes_leave_every_old_parent_and_come_back_to_it`, `group_two_nodes`, laws 1 and 2 |
+| Law 4 touches (old and new parent, page for roots, moved nodes) | covered | `reordering_inside_a_group_touches_the_group_and_not_the_page`, `reordering_a_root_touches_the_page`, `a_reparent_touches_both_parents_and_the_moved_nodes` |
+| Failed commands change nothing (ARQ-13) | covered | `refused` (equal and pointer-equal page) in every refusal test, plus missing page, node, parent and empty list. Law 5 |
+| D1 W4: the command stays reusable after a failed apply | covered (closed for D9) | `a_reorder_is_reusable_after_a_failed_apply`, `a_reparent_is_reusable_after_a_failed_apply`. Still owed by D10 |
+| Validate-before-mutate in revert, each precondition | covered for each single precondition; partial for "check all before any write" (W2) | changed list (Reorder and Reparent), group gone, old parent gone, page gone, `Unchanged` no-op, `NotApplied` |
+| Rollback in a transaction | covered | `a_failed_transaction_undoes_a_reparent` |
+| Every core command passes the laws (property, 1 000 cases) | covered | `reorder_obeys_the_command_laws`, `reparent_obeys_the_command_laws`. The generators include missing pages and nodes, index one past the end, shapes and nested groups as parents |
+| D7 W3 carry-over: undo-through-revert property over core commands | covered for `SetProperty`, root `InsertNodes` and `RemoveNodes` | `tests/budget.rs` `Step`. Reorder and Reparent are not in it (recorded, see S2) |
+| `places` moved to `moves.rs` with no behavior change | covered | The function body is identical to the removed one in `remove_nodes.rs` (only `pub(crate)` added). The `RemoveNodes` tests and property pass |
+| No `merge_key` (only `SetProperty` merges) | covered | default `merge_key` |
+
+### Recorded deviations
+
+1. **Index semantics: acceptable.** For `Reorder` the index is the final index (`0..siblings`). The spec scenario (a to 2 gives `[b, c, a]`) only works under this reading. For `Reparent` the index counts the target list without the moved nodes (`0..=len`). This is the only reading under which "Group two nodes" at index 0 is well defined when the moved nodes come from the target list itself. Both are documented on `new`. Archive should put one sentence in the spec (S1).
+2. **A shape moved under itself reports `NotAContainer`: acceptable, but nothing pins it (W1).** The spec has two MUSTs that both apply here (cycle, and non-`Group` target), and it fixes no order between them. Either error satisfies ARQ-13. Hand mutant M1 (cycle check before container check) survives because no test moves a shape under itself.
+3. **Revert is stricter than `RemoveNodes::revert`: acceptable.** It compares every list it rewrites with the list `apply` left, then restores whole old lists. `History` and `Transaction` revert in LIFO order, so they always meet that state. A refused revert is safer than a guessed one. The D8 precedent (revert pre-checks are not a spec rule) applies.
+
+### Strict TDD
+
+- Commit 1 (budget property) passed at once on the finished code. Its RED comes from two mutants of D8 code (no `restore_next_id`, root pushed at the end), with concrete counterexamples recorded. This is credible: both are behaviors the extended property now exercises.
+- Commands: tests were written against a stub. 24 of 26 failed on assertions, and the quoted messages match the tests. The 2 `Unchanged` cases passed on the stub and are guarded by the others. RED is credible.
+- Properties: they passed at once (the unit tests drove the code). The RED by mutant (no cycle or container check gives law 3, `touches` without the page gives law 4, revert writing the after-lists gives law 1) is plausible, and it is the same accepted pattern as D4, D6 and D8.
+
+### Mutation
+
+**The `cargo-mutants` run for D9 (`scratchpad/mutants-9/mutants.out`) is not valid evidence.** It reports 38 mutants: 22 caught, 6 missed, 0 timeout, 10 unviable. Its logs show `Fresh gafira-edit` in the test build of mutated trees, for example `moves.rs_line_78_col_12.log` lines 123 and 183 and `reparent.rs_line_59_col_9.log` lines 75 and 134. So cargo tested a binary that was not the mutant: every job used `CARGO_TARGET_DIR=scratchpad/md9-target`. I replayed the six "missed" mutants by hand on an export of HEAD with its own target dir:
+
+| Reported missed | Hand replay |
+|---|---|
+| `moves.rs:78:12` delete `!` (container check) | KILLED, 11 tests (`a_shape_is_not_a_parent`, `group_two_nodes`, ...) |
+| `moves.rs:70:5` `plan` returns `Ok(Some(Default))` | KILLED, 21 tests |
+| `reparent.rs:59:9` `revert` returns `Ok(())` | KILLED (`group_two_nodes`, `nodes_leave_every_old_parent_...`, `a_failed_transaction_undoes_a_reparent`, ...) |
+| `reparent.rs:64:9` `touches` returns `Default` | KILLED (`a_reparent_touches_both_parents_and_the_moved_nodes`) |
+| `reorder.rs:72:17` pre-apply `touches` without nodes | SURVIVED (genuine, W3) |
+| `reparent.rs:67:17` pre-apply `touches` without nodes | SURVIVED (genuine, W3) |
+
+The 22 "caught" results may also be false, because a stale binary from another mutant can fail a test too. They therefore prove nothing.
+
+Hand mutants (rule order and validation before mutation). Each was applied one at a time to `scratchpad/vd9/src` with its own target, using `cargo test -p gafira-edit --locked --tests`, and the file was restored afterwards:
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | cycle check before container check | **SURVIVED** (W1) |
+| M2 | cycle check removed | KILLED (`a_group_cannot_move_under_itself_or_a_descendant`) |
+| M3 | ancestor dedupe removed | KILLED (`a_node_listed_with_its_descendant_moves_once_as_the_ancestor`) |
+| M4 | `Reparent` index bound `>` to `>=` | KILLED (6+ tests) |
+| M5 | revert checks and writes one list at a time (no "check all, then write") | **SURVIVED** (W2) |
+| M6 | `MissingNode` in revert becomes `InvalidValue` | KILLED (`a_reorder_revert_whose_group_is_gone_...`, `a_reparent_revert_whose_old_parent_is_gone_...`) |
+| M7 | `MissingPage` in revert becomes `InvalidValue` | KILLED (`a_revert_whose_page_is_gone_...`) |
+| M8 | `Unchanged` revert no-op guard removed | KILLED (`reverting_a_move_that_changed_nothing_is_a_no_op_...`) |
+| M9 | container check removed | KILLED (`a_shape_is_not_a_parent`) |
+
+That is 9 rule mutants and 6 replays, more than the usual ~5. The coordinator asked for the rule list, and the replays were needed because the mutants report is invalid.
+
+### Size
+
+`git diff --shortstat dd35a14..HEAD -- crates`: 940 insertions, 25 deletions (forecast ~630, about 560 of the lines are tests). This is over the ~700 split line. The owner has approved single larger PRs, so this is not a finding. The commits can be split cleanly at `725a29e` if wanted.
+
+### CRITICAL
+
+1. **No valid mutation run for D9.** The `mutants` report shows four misses in critical code (the container check, `plan`, `Reparent::revert` and `Reparent::touches`). My replay shows they are false, and that the run tested stale binaries, so its caught list is not proof either. AGENTS.md requires a cargo-mutants run on the delivery diff before verify can rule on missed critical mutants. Fix (no code change expected): re-run `mutants` on `dd35a14..HEAD` with no shared `CARGO_TARGET_DIR` (let cargo-mutants use its per-job build dirs), and check that the logs show `Compiling gafira-edit` and not `Fresh` for mutated trees. Then re-verify the mutation section only. If the re-run shows a missed critical mutant, the fix goes to `tdd-apply`.
+
+### WARNING
+
+1. **M1: the check order for a shape moved under itself is unpinned.** Add `refused(Reparent::new(PAGE, vec![n(A)], Some(n(A)), 0), &doc, NotAContainer(n(A)))`. Archive should record the order in the spec (container before cycle).
+2. **M5: "fails before a single write" in `Record::revert` is unpinned.** In every revert-failure test, the failing list is the first one checked (the roots key sorts first, or there is only one list). Add a test where the first list matches and a later one does not, for example: Reparent `[a]` from the roots into `e`, then insert a node into `e`, then revert. Expect `Err(InvalidValue(..))` and the roots unchanged. As in D8 H3/H6, revert atomicity is not a spec rule, but the code comment and `apply-progress.md` claim it.
+3. **The pre-apply `touches` of both commands is untested** (genuine cargo-mutants survivors `reorder.rs:72:17` and `reparent.rs:67:17`). This is not critical: the spec defines `touches` after apply (law 4), and the pre-apply set is a convention shared with `RemoveNodes`. One assertion per command would pin it.
+
+### SUGGESTION
+
+1. Archive: write the index semantics into `edit-commands` "Reorder and Reparent" (final index for `Reorder`, index after removal for `Reparent`), together with the check order from W1.
+2. Extend `tests/budget.rs` `Step` with `Reorder` and `Reparent` (about 15 lines, as `apply-progress.md` offers). The spec says "a generated sequence of core commands". D10 or the integration delivery can do it.
+3. `moves::write` has two error branches that cannot be reached, as `apply-progress.md` notes. If cargo-mutants reports them as missed in the valid re-run, they are equivalent. Record them as such; do not add tests for them.
+
+### Result
+
+FAIL. 1 CRITICAL, 3 WARNING, 3 SUGGESTION. The code, tests and gates are sound. The only blocker is that the mutation evidence is invalid. `next`: re-run `mutants` for D9 with isolated build dirs, then re-verify D9's mutation section. W1 and W2 are cheap test-only fixes that `tdd-apply` can add in the same round. The change is not ready to archive (D10 remains).
+
+## D9 re-verify (after the fix and mutants rounds)
+
+Branch `feat/edit-history-9`, HEAD `2c15f54`, base `main` `dd35a14`. Since the first D9 verify, the branch gained `e9118cf` (W1 and W2 tests), `c121c2d` (test for a chain as deep as the page), `5825717` (refactor: `.take(at.len() + 1)` becomes `.take(at.len())` at `moves.rs:98`) and two docs commits. `origin/main` (`1d3c0c2`) has moved with docs only (`.agents/`, `AGENTS.md`, `CLAUDE.md`, `docs/adr/`, `docs/manuals/`). It does not touch `crates/`, `Cargo.*`, `deny.toml` or `.github/`. `git merge-tree` against the merge base shows no conflict. All scratch work ran under `scratchpad/vd9r/`, outside the repository. Each tree had its own target dir.
+
+### Gates at HEAD `2c15f54`
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --check` | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 468 passed, 0 failed |
+| `cargo deny check` | rc 0 |
+| `policy` job steps, taken from `ci.yml` with a YAML parser and run with `bash -eo pipefail`: toolchain, Format, ARQ-07, forbid unsafe, V5, V12, V13 | rc 0 each |
+
+`ci.yml` still has no step named V11.
+
+Each new code commit was checked alone, from a `git archive` export with its own target dir:
+
+| Commit | fmt | clippy | test |
+|---|---|---|---|
+| `e9118cf` test: container-before-cycle order, all-lists revert check | 0 | 0 | 0 (467) |
+| `c121c2d` test: cycle walk over a chain as deep as the page | 0 | 0 | 0 (468) |
+| `5825717` refactor: cycle walk bound | 0 | 0 | 0 (468) |
+
+### Disposition of the D9 findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1: no valid mutation run | closed | My own isolated run below |
+| W1 / M1: check order for a shape moved under itself | closed | `a_shape_moved_under_itself_is_not_a_container`; M1 is now KILLED |
+| W2 / M5: revert checks every list before it writes one | closed | `a_reparent_revert_checks_every_list_before_it_writes_one`. Roots (the first key) still match and only `e` differs, so the test can catch a partial write. M5 is now KILLED |
+| W3: pre-apply `touches` untested | accepted, still open as a WARNING | `apply-progress.md` records it as a non-requirement: the spec defines `touches` only after `apply` |
+| S1: index semantics in the spec | pending for archive | Recorded in `apply-progress.md` "D9 fix round" |
+| S2: `Reorder` and `Reparent` in `tests/budget.rs` | open, deferred | Not in this delivery |
+
+### Mutation
+
+**cargo-mutants, whole D9 diff, run by me.** Command: `git archive 2c15f54` into `scratchpad/vd9r/mut-src`, `git diff dd35a14..2c15f54 > d9.diff`, then `env -u CARGO_TARGET_DIR cargo mutants -p gafira-edit --in-diff d9.diff --jobs 4 -o scratchpad/vd9r/mut-out`. No shared target dir was used; cargo-mutants used its default per-job build dirs.
+
+- Result: 36 mutants. 23 caught, **2 missed**, 0 timeout, 11 unviable.
+- `moves.rs`: 25 mutants, 18 caught, 0 missed, 7 unviable. This matches the `apply-progress.md` "D9 mutants round". The two `moves.rs:98:28` mutants no longer exist after the refactor.
+- The 2 misses are `reorder.rs:72:17` and `reparent.rs:67:17`: "delete field nodes" from the pre-apply `touches`. This is W3, accepted and non-critical.
+- The run is valid. In all 37 logs (baseline plus 36 mutants), the first `gafira-edit` build line is `Compiling gafira-edit`, never `Fresh`.
+
+The 4 misses from the earlier valid run are therefore accounted for. The 2 at `moves.rs:98` are resolved: `c121c2d` kills `+`→`-` and the refactor removes both mutants. The 2 pre-apply `touches` misses remain accepted.
+
+**Hand mutants.** These were applied one at a time with a script to an export of `2c15f54` (`scratchpad/vd9r/hand`, own target), using `cargo test -p gafira-edit --locked --tests`. The script checked `Compiling gafira-edit` on every run. Afterwards the file was restored and compared byte for byte with `git show`.
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | cycle check before container check | KILLED (`a_shape_moved_under_itself_is_not_a_container`), was SURVIVED |
+| M2 | cycle check removed | KILLED (`a_group_cannot_move_under_itself_or_a_descendant`, `the_cycle_check_walks_a_chain_to_its_farthest_ancestor`) |
+| M3 | ancestor dedupe removed | KILLED (`a_node_listed_with_its_descendant_moves_once_as_the_ancestor`) |
+| M4 | index bound `>` to `>=` | KILLED (13 tests) |
+| M5 | revert checks and writes one list at a time | KILLED (`a_reparent_revert_checks_every_list_before_it_writes_one`), was SURVIVED |
+| M6 | `MissingNode` in revert becomes `InvalidValue` | KILLED (2 tests) |
+| M7 | `MissingPage` in revert becomes `InvalidValue` | KILLED (`a_revert_whose_page_is_gone_fails_and_changes_nothing`) |
+| M8 | `Unchanged` revert no-op guard removed | KILLED (`reverting_a_move_that_changed_nothing_is_a_no_op_whatever_happened_since`) |
+| M9 | container check removed | KILLED (4 tests) |
+| M10 | `.take(at.len() - 1)` in the cycle walk | KILLED (`the_cycle_check_walks_a_chain_to_its_farthest_ancestor`) |
+
+That is 10 hand mutants, more than the usual ~5. The coordinator asked for the same list plus M10.
+
+### Is the refactor `5825717` behavior-preserving?
+
+**On valid documents, yes.** The walk at `moves.rs:97-99` visits `c0 = parent`, then the ancestors `c1..cm`. Each of `c0..c(m-1)` is a key of `at`, because its parent was read from `at`. So m ≤ `at.len()`, and the chain has at most `at.len() + 1` elements. In a document that passes `validate()`, every node is reachable (P5). The top `cm` is then a root or a child, so it is a key of `at` as well, and the chain fits in `at.len()`.
+
+**On a document that breaks P5, no.** I probed this in an export, with a test that was not committed. The page has a group `g1` that is not reachable (roots cleared, `g1 > g2`), so `at = {g2}`. `Reparent [g1] under g2`:
+- at `c121c2d` (`+ 1`) it returns `Err(WouldCreateCycle(g1))`;
+- at `2c15f54` it returns `Ok(Unchanged)`.
+
+Neither version writes anything. `moved` is filtered through `document_order`, which only contains reachable nodes, and every reachable node is a key of `at`. So the refactor can never let a cycle-creating write through. The spec states the laws over generated *valid* documents, so this breaks no requirement. Still, two statements overstate the case:
+- the reachability argument in `apply-progress.md` ("a chain has at most `at.len()` elements");
+- "behavior-preserving" in that file and in the commit subject's intent.
+
+They hold only for valid documents. See W2 below.
+
+### Requirement and scenario coverage
+
+No requirement or scenario changed. The D9 coverage table above still holds, with these changes:
+- "Cycle rejected" is now also pinned at full depth (`the_cycle_check_walks_a_chain_to_its_farthest_ancestor`);
+- the check order is pinned (`a_shape_moved_under_itself_is_not_a_container`);
+- "Validate-before-mutate in revert" is now **covered** for "check all before any write" (`a_reparent_revert_checks_every_list_before_it_writes_one`), where it was partial before.
+
+### Strict TDD
+
+The new tests passed at once on the finished code. Their RED is by hand mutant: M1, M5 and `take(at.len() - 1)`, with the failure messages quoted in `apply-progress.md`. I reproduced all three kills. The refactor came after GREEN and kept all 468 tests green. This is credible.
+
+### Size and commits
+
+`git diff --shortstat dd35a14..HEAD -- crates`: 995 insertions, 25 deletions. That is over the ~700 split line, but the owner has approved single larger PRs, so it is not a finding. All 9 commits are conventional, with correct types (`feat`, `test`, `refactor`, `docs`). No message has a Co-Authored-By line, a Claude line or any other AI attribution line.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **The pre-apply `touches` of both commands is untested** (cargo-mutants misses `reorder.rs:72:17` and `reparent.rs:67:17`). This is non-critical: the spec defines `touches` only after `apply`. `tdd-apply` has accepted it as a non-requirement. class: implementation
+2. **The refactor's equivalence holds only for valid documents.** `apply-progress.md` (D9 mutants round) says the `+ 1` step was unreachable slack, but there is a counterexample. On a document that breaks P5 (an unreachable top group), `Reparent` now returns `Ok(Unchanged)` where it returned `Err(WouldCreateCycle)`. Neither version writes, so no cycle can be created, and the spec's laws only cover valid documents. Fix: correct the claim in `apply-progress.md` to "equivalent on documents that pass `validate()`". No code change is needed. Restoring `+ 1` is also acceptable if the owner wants the stricter behavior on invalid input. class: claim
+
+### SUGGESTION
+
+1. Archive: record the S1 index semantics and the W1 check order (container before cycle) in `edit-commands` "Reorder and Reparent".
+2. D10 or the integration delivery: add `Reorder` and `Reparent` to the `tests/budget.rs` `Step` generator (S2 of the first D9 verify).
+
+### Result
+
+**PASS for D9.** 0 CRITICAL, 2 WARNING (implementation 1, claim 1), 2 SUGGESTION. The gates are green at HEAD and on each new commit. The mutation evidence is valid: no missed critical mutant, and all 10 hand mutants are killed. Every D9 requirement and scenario is covered. The change is not ready to archive, because D10 remains.
+
+next: tdd-apply (D10). The coordinator may push `feat/edit-history-9` and open its PR against `main`. W2 is a one-line docs correction that can ride along.
+
+## D10a: page and DPI targets of `SetProperty`
+
+Verified at `3cd1a46` on `feat/edit-history-10` (`main` e95e56d, plus `f9b9b07` and `3cd1a46`). Mode full, tier T3. The `Flow:` line ("full (inherited)") names no verify depth, so this round runs at **V3**. All work ran on clean `git archive` exports outside the repo, each with its own `CARGO_TARGET_DIR`.
+
+### Gates
+
+| Commit | fmt | clippy `-D warnings` | test (passed) | deny | ARQ-07 | forbid unsafe (V11) | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| `f9b9b07` feat(edit) | 0 | 0 | 0 (490) | 0 | 0 | 0 | 0 | 0 | 0 |
+| `3cd1a46` docs(edit-history) | 0 | 0 | 0 (490) | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- I extracted the CI steps from `ci.yml` and ran them under `bash --noprofile --norc -eo pipefail`. V14 does not exist on this branch; it belongs to D10b.
+- The first `cargo deny` run returned 1 on both exports. Cause: the two parallel runs fought over the advisory-database lock ("failed to acquire advisory database lock"). Run again one after the other, both returned 0 (advisories, bans, licenses, sources ok).
+- Negative runs, on scratch exports: dropping `#![forbid(unsafe_code)]` from `gafira-edit` fails V11 (rc 1). Changing `gafira-edit/clippy.toml` fails V12 (rc 1). An `EditToken` call in `gafira-geom` fails V13 (rc 1). I did not run a negative V5, because D10a changes no manifest.
+
+### Independent probes (before reading the implementer's tests)
+
+I wrote 9 probe tests (`vprobe.rs`, scratch export only) from the delta spec. All pass:
+- A0 at 300 DPI: DPI 351 fails with `PageSize { page 1, OutOfRange Height }`, and the DPI stays 300 with the page pointer-equal. DPI 350 applies, touches nothing, and reverts to the original.
+- DPI 0, 10 001 and `u32::MAX` fail with `InvalidValue` and change nothing, even on an A0 page. DPI 1 and 10 000 apply.
+- A DPI change checks every page, and the first failing page is named. A tiny mm page that drops under 1 px at a lower DPI is refused on the width axis.
+- A page size is checked at the document DPI: A0 is refused at 351 DPI and accepted at 300. The pixel edges 16 384 and 1 are accepted; 16 385, 0.5 and 0 are refused.
+- All four page fields round-trip: apply, revert, apply, revert. `touches` is exactly `{page}`, and the other pages stay pointer-equal. Setting the same value is `Unchanged`, pointer-equal after apply and after revert. The same DPI is `Unchanged`.
+- Merge keys: the five kinds are distinct. A page key carries `Some(page)`; the DPI key carries `None`. Keys differ across pages and across fields. A merged DPI drag and a merged size drag revert to the origin and redo to the last value.
+- Scope mismatches fail with `InvalidValue` and change nothing: a page property with nodes, the DPI with nodes, a node property through `page()` or `document()`.
+- A locked page can still be renamed and resized (Q12). A missing page gives `MissingPage`, even with an oversized size.
+- Revert preconditions: a DPI revert onto a page that no longer fits is refused with no change. So is a size revert after the DPI went up. A revert after the page is gone gives `MissingPage`, and a revert before any apply gives `NotApplied`. A command stays reusable after a failed apply and keeps the record of its last good apply.
+
+When I compared these with `tests/page_commands.rs` (21 tests) and the new property, every probe has a matching test or a stronger one. No criterion rests on a weak test.
+
+### Requirement and scenario coverage (D10a scope)
+
+| # | Criterion (delta spec) | Proof | Status |
+|---|---|---|---|
+| 1 | `SetProperty` targets page `name`, `size`, `locked`, `hidden` | `every_page_field_is_set_and_restored`, `a_page_field_takes_the_value_given` | covered |
+| 2 | `SetProperty` targets the document DPI | `a_dpi_that_pushes_a_page_over_the_limit_is_refused`, `the_dpi_range_edges` | covered |
+| 3 | A size or DPI change that leaves any page outside its pixel limits fails with `InvalidDocument(PageSize)` and no change | `a_page_size_outside_the_pixel_limits_is_refused` (also NaN gives `Conversion`), `a_dpi_is_checked_against_every_page`, `refused_size` (checks pointer equality) | covered |
+| 4 | Scenario "DPI pushes a page over the limit" | `a_dpi_that_pushes_a_page_over_the_limit_is_refused`, probe P1 | covered |
+| 5 | Values inside the ranges `validate()` enforces (ARQ-13): DPI `1..=10 000` | `the_dpi_range_edges` (0, 10 001, `u32::MAX` refused with `InvalidValue("dpi")`) | covered |
+| 6 | `Unchanged` when the target already holds the value | `the_same_page_value_is_unchanged_and_shares_the_page`, `the_same_dpi_is_unchanged` | covered |
+| 7 | `merge_key` always `Some`; merge keeps the first old value and the last new value | `the_merge_key_names_the_page_field_or_the_document`, `a_merged_resize_drag_keeps_the_origin_and_the_last_value` | covered |
+| 8 | `touches`: a page field reports its page; the DPI reports nothing (see W1) | `a_dpi_change_touches_no_page_and_a_page_change_touches_its_page`, `every_page_field_is_set_and_restored` | covered |
+| 9 | Reusable after a failed apply; `NotApplied`; validate-before-mutate in revert (D1 W4 carry-over) | `a_page_command_is_reusable_after_a_failed_apply`, `a_dpi_command_is_reusable_after_a_failed_apply`, `reverting_a_page_command_that_never_applied_fails`, `a_page_revert_without_its_page_fails_and_changes_nothing`, `a_size_revert_...`, `a_dpi_revert_...` | covered |
+| 10 | Commands do not check `locked` (Q12) | `a_locked_page_is_still_editable` | covered |
+| 11 | Laws 1 to 6, 1 000 cases (scenario "Every core command passes the laws", for this command) | `set_property_on_pages_and_dpi_obeys_the_command_laws` (default 1 000 cases from `gafira-testkit`; DPI values past both ends of the range, sizes in every unit, a missing page, gestures for law 6) | covered |
+
+The checks are plain `Result` code, not `debug_assert!`, so they also run in release builds (Q15). Out of scope for D10a and left to D10b: `InsertPage`, `RemovePage`, the scenario "Remove and restore a page", and V14.
+
+The delta specs were not changed by any D10a commit. `git diff main..HEAD` touches `crates/gafira-edit` and `apply-progress.md` only.
+
+### Recorded deviations
+
+1. **Revert preconditions beyond the spec text.** The page-size and DPI reverts check the old value against the current DPI and pages before they write. This is consistent with ARQ-13 and with the D1 W4 carry-over: a revert on a foreign state cannot leave an invalid document. It adds behavior and contradicts nothing. Accepted; see S1.
+2. **A DPI change has an empty `touches`.** This holds against the text:
+   - Law 4 counts `Arc`s that are no longer pointer-equal, and `set_dpi` replaces no page or node `Arc`. My probe P1 confirms the page stays pointer-equal.
+   - The `DirtySet` contract reports a page only when "its own fields or its `roots` change", and the DPI is a document field.
+
+   The cost is real, though. A DPI change rescales the pixel size of every page not sized in `px`. A renderer or thumbnail cache driven only by `touches` would miss it. No consumer of `DirtySet` is specified in this change, so nothing breaks today. It is a spec gap, not an implementation defect; see W1.
+
+### Strict TDD
+
+- `red1.txt` in the implementer's scratchpad shows the stub run: 19 of 21 tests in `page_commands.rs` failed on assertions. The two that passed (`reverting_a_page_command_that_never_applied_fails`, `only_a_page_property_works_without_nodes`) are refusals that the node path already produced. This is acknowledged in `apply-progress.md`, and it is credible.
+- The property passed on its first run. Its RED comes from two hand breakages (page `touches` without the page gives law 4; a DPI revert without `set_dpi` gives law 1).
+- None of my 5 hand mutants was caught by the property; the unit tests caught all of them. That fits the design: the property covers the laws, and the unit tests cover rule order and error kinds.
+
+### Mutation
+
+- The coordinator gave no report path. The only run is the one in `apply-progress.md`, at `scratchpad/d10/mut-out/mutants.out`: T3 `--file` on `set_property.rs` and `pages.rs` together, on an export of the D10b tree. 102 mutants in 4 min: 87 caught, 15 unviable, 0 missed, 0 timeout. For `set_property.rs` alone: 84 found, 73 caught, 11 unviable, 0 missed, 0 timeout.
+- Is that evidence valid for D10a? Three checks:
+  - The export's `set_property.rs` is byte-identical to `3cd1a46`.
+  - The D10a tests are unchanged in that export: the diff removes only import lines and adds D10b tests.
+  - Each of the 73 failing mutant logs names at least one failing test that exists in the D10a tree, so no kill depends on a D10b test.
+
+  So: **0 critical missed**. `.cargo/mutants.toml` is unchanged by this delivery.
+- Hand mutants: 5, on separate scratch exports with separate target dirs, `cargo test -p gafira-edit --locked`. Each log shows `Compiling gafira-edit` on the mutated tree.
+
+| # | Rule (order or kind, not expressible by cargo-mutants) | Mutation | Result |
+|---|---|---|---|
+| M1 | DPI range checked before the pages | `check_pages` before `is_valid` | killed: `the_dpi_range_edges` (DPI 0 gives `PageSize { Conversion InvalidDpi(0.0) }` instead of `InvalidValue("dpi")`) |
+| M2 | Page size validated before any write | write the size, then check | killed: `a_page_size_outside_the_pixel_limits_is_refused` (document changed) |
+| M3 | Merge key carries the page for page fields | `page` only for node scope | killed: `the_merge_key_names_the_page_field_or_the_document` |
+| M4 | DPI change checks pages at the new DPI, not the held one | `check_pages(doc, held)` | killed: 3 tests (`a_dpi_that_pushes_...`, `a_dpi_is_checked_against_every_page`, `a_dpi_command_is_reusable_...`) |
+| M5 | Size revert checks the old value against the current DPI | drop the check | killed: `a_size_revert_that_would_leave_the_page_invalid_fails_and_changes_nothing` |
+
+The rule "Unchanged when every target holds the value" has a single target for page and DPI commands. Its comparison operators are mutated by cargo-mutants and caught, so it needed no hand mutant. The DPI revert check is covered by `a_dpi_revert_...` and by cargo-mutants on `check_pages`.
+
+### Size and commits
+
+- `git diff --shortstat main..HEAD -- crates`: 733 insertions, 30 deletions, of which about 480 are tests. That is just over the ~700 line. The owner split D10 in two and has approved larger single PRs before (see D9), so it is not a finding.
+- Commits: `feat(edit): ...` (code and tests) and `docs(edit-history): ...` (only `apply-progress.md`). Both are conventional, with the correct types. Neither has a Co-Authored-By line, a Claude line or any other AI attribution line.
+- Each commit passes the gates alone (table above).
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **The spec does not say how a DPI change reaches consumers of `DirtySet`.** `touches` is empty for a DPI change. That is correct under law 4 and the `DirtySet` text, and the owner confirmed it. But a DPI change rescales every non-`px` page, so a renderer driven only by `touches` would miss it. Fix in `specifier`, before any `DirtySet` consumer is specified (and at the latest at archive). Either add a document-level flag to `DirtySet` (for example `document: bool`), or state in `edit-commands` that consumers must compare `Document::dpi`. Also record that the `touches` of a DPI change is empty. No D10a code change is needed now. class: ambiguity
+
+### SUGGESTION
+
+1. Archive: record in `edit-commands` "Page and document commands" what `apply-progress.md` lists as pending spec edits. That means the revert preconditions (the old size or DPI is checked against the current state, `MissingPage`) and the error precedence (a DPI outside the range is `InvalidValue("dpi")` before any page check; M1 pins it).
+2. Process: give `verify` the `mutants` report path. This round had to establish that the combined D10a+D10b run transfers to D10a.
+3. `apply_dpi`'s `let ... else` is unreachable (the `Document` scope implies `Property::Dpi`). It is harmless defensive code; keep it or turn it into an `unreachable!`, whichever reads better.
+
+### Result
+
+**PASS for D10a.** 0 CRITICAL, 1 WARNING (ambiguity 1), 3 SUGGESTION. The gates are green on each commit, the mutation evidence is valid with no missed critical mutant, all 5 hand mutants are killed, and all 11 D10a criteria are covered. The change is not ready to archive: D10b remains.
+
+next: tdd-apply (D10b, already implemented on `feat/edit-history-10b`: route it to mutants + verify). The coordinator may push `feat/edit-history-10` and open its PR against `main`. W1 goes to `specifier` as a spec edit, not as a blocker.
+
+## D10b: `InsertPage`, `RemovePage`, `Transaction` property, V14
+
+Branch `feat/edit-history-10b`, HEAD `a94c7d9`, base `feat/edit-history-10` (D10a, verified separately). Only the D10b range `feat/edit-history-10..feat/edit-history-10b` is judged here. Mode full (inherited), depth V3 (not stated by the coordinator, so the default applies), tier T3 on `pages.rs`.
+
+### Gates
+
+Each commit was checked on its own checkout outside the repository (`scratchpad/vd10b/`), with its own `CARGO_TARGET_DIR`. The `policy` steps were taken from `ci.yml` with a YAML parser and run with `bash --noprofile --norc -eo pipefail`. A first HEAD run shared a target dir with the `ee0d347` run. Cargo then reused a stale `prop_commands` binary: 9 tests instead of 10, with `transaction_obeys_the_command_laws` missing. That run was discarded and redone with a separate target dir (the same trap as in D9).
+
+| Gate | `ee0d347` feat | `82f3f65` ci / `a94c7d9` docs (same code) |
+|---|---|---|
+| `cargo fmt --check` | 0 | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | 0 |
+| `cargo test --workspace --locked` | 0 (505) | 0 (506) |
+| `cargo deny check` | 0 | 0 |
+| ARQ-07, forbid unsafe (V11), V5, V12, V13 | 0 each | 0 each |
+| V14 | absent | 0 |
+
+`git diff 82f3f65 a94c7d9 -- crates .github` is empty. The default case count is 1 000 (`DEFAULT_CASES`). The four page and transaction properties also pass at `PROPTEST_CASES=10000`.
+
+### Independent probes (before reading the implementer's tests)
+
+The probes are in `scratchpad/vd10b/head/crates/gafira-edit/tests/vd10b_probe.rs`, on an export of HEAD. All 8 pass:
+- insert at every index `0..=3`: id = counter, `touches` = {new page}, and revert gives the original back with the counter at 6;
+- index 4 gives `IndexOutOfRange { 4, 3 }`, with the document pointer-equal and the counter unchanged, and the command is reusable after that;
+- an oversized page gives `PageSize { page: 6 }`, and `u64::MAX` gives `IdSpaceExhausted`, with no change in either case;
+- remove the middle, first and last page, then revert: the result is pointer-equal to the original, and `touches` = {page 2, nodes 4, 5};
+- all pages can be removed, and the empty document is valid;
+- every revert precondition leaves the document pointer-equal:
+  - `InsertPage`: page gone, page given a node, page renamed;
+  - `RemovePage`: page already back, index beyond the list, index == len allowed;
+- Q6 reissue through `History`, on both paths:
+  - snapshot undo;
+  - a zero budget, which compacts the older entries, so `undo` and `redo` call `InsertPage::revert`/`apply` and `RemovePage::revert`/`apply`. Three undos give the original back with the counter at 6, three redos rebuild ids `[7, 6, 1, 3]`, and a new insert after the undos gets id 6 again;
+- transactions:
+  - a rollback over `[InsertPage, RemovePage, InsertPage, RemovePage(new), RemovePage(missing)]` gives an equal document and counter;
+  - `[InsertNodes, InsertPage]` and `[InsertPage, InsertNodes]` survive apply; revert; apply with valid, equal documents.
+
+One probe has no matching implementer test: the compacted-history path. It passes (S1).
+
+### Requirement and scenario coverage
+
+| Requirement / scenario | Status | Evidence |
+|---|---|---|
+| `InsertPage` inserts one empty page at `0..=len` | covered | `insert_a_page_then_redo_reuses_its_id` (empty, unlocked, visible, name and size), `a_page_goes_in_at_any_index_up_to_the_length` (0, len, len+1 refused) |
+| Id allocated on first apply, reused on redo | covered | `insert_a_page_then_redo_reuses_its_id`, law 2. See deviation 1 |
+| Revert restores the counter (`restore_next_id`), Q6 reissue after undo | covered | `insert_a_page_then_redo_reuses_its_id` (`doc == original`, which includes `next_id`), `an_id_is_reissued_to_a_page_after_an_undo` (snapshot path), law 1. Hand mutant: no `restore_next_id` is killed (implementer and cargo-mutants `72:9`) |
+| Size checked at the document DPI, no change on error | covered | `a_page_outside_the_pixel_limits_is_not_inserted` (px width, A0 at 351 refused and at 300 accepted) |
+| Exhausted id space | covered | `an_exhausted_page_id_space_changes_nothing` |
+| Remove and restore a page (D10, unit) | covered | `remove_a_page_and_restore_it_at_its_index`: `[p1, p3]`, then `[p1, p2, p3]` with `p2` equal and pointer-equal, nodes kept |
+| Removing the last page is allowed | covered | `the_last_page_can_go` |
+| Missing page fails with no change (ARQ-13) | covered | `a_missing_page_is_not_removed` (`refused`: equal and pointer-equal) |
+| Reusable after a failed apply (D1 W4 carry-over) | covered | `an_insert_is_reusable_after_a_failed_apply`, `a_remove_is_reusable_after_a_failed_apply` (also: a failed call after a good one keeps the record) |
+| Revert preconditions, each with the document left equal | covered | `NotApplied` (both), page gone and page edited (`an_insert_revert_checks_before_it_removes`), already back and index beyond the list (`a_remove_revert_checks_before_it_inserts`) |
+| Law 4 `touches` | covered | unit assertions in both main tests, and the properties. Hand mutant: `RemovePage::touches` without nodes is killed by law 4 |
+| Rollback in a transaction | covered | `a_failed_transaction_gives_the_page_id_back`, plus the D1 `Transaction` unit tests. See W3 |
+| Every core command passes the laws, 1 000 cases | covered | `insert_page_obeys_the_command_laws` (index up to len+1, sizes sometimes out of range), `remove_page_obeys_the_command_laws` (missing id included), `transaction_obeys_the_command_laws` (restricted generator, W3) |
+| V14: `set -euo pipefail`, every `grep`/`git ls-files` rc captured, only rc 1 = no match, missing types printed | covered | step body. R4 (`prop_commands.rs` removed) fails with "not found" |
+| V14 scenario: clean tree passes | covered | rc 0 at HEAD, in the gate run and from a standalone git copy |
+| V14 scenario: command without a property fails | covered | scratch `impl Command for Noop` gives rc 1 naming `Noop`. It also works when the file is only intent-to-add |
+| V14 scenario: positive control | covered | from `crates/`: rc 1, "positive control failed" |
+
+16 of 16 covered. No spec file under `specs/` changed in the D10b range.
+
+### V14 robustness (negative runs on a standalone git copy, `scratchpad/vd10b/neg`)
+
+| Case | rc | Verdict |
+|---|---|---|
+| `RemovePage` renamed everywhere in `prop_commands.rs` | 1, names `RemovePage` | correct |
+| `impl<T: Send> Command for Gen<T>`, `impl<'a> … for L<'a>`, `where` clause on the next line, extra spaces, tabs | 1 | correct |
+| `impl<T: Into<Vec<u8>>> Command for G<T>` (nested `<>`) | 0 | **false negative**: `<[^>]*>` stops at the first `>` |
+| `impl crate::Command for Q` (path-qualified trait) | 0 | **false negative** |
+| header split over lines (`impl<T> Command` / `for M<T>`) | 0 | **false negative** (rustfmt does this for long generic headers) |
+| `impl Command for Box<Dy>` | 0 | false negative: captures `Box`, which `prop_commands.rs` contains (blanket-like, a known limit) |
+| indented impl in a non-test inline `mod inner { }` | 0 | false negative: the column-0 anchor stands in for `#[cfg(test)]` |
+| any `*_tests.rs` file | 0 | skipped by name, whatever its `cfg` |
+| line or doc comment `// impl Command for X` | 0 | correct (no match) |
+| column-0 impl inside `/* */` or a multi-line string, column-0 `#[cfg(test)] impl` | 1 | false positive, which fails closed (safe) |
+| type present only in a comment, or the property test body removed but the generator kept | 0 | known limit (spec). Clippy `-D warnings` catches a generator or import left unused |
+
+The step does what the three spec scenarios require, and today's tree has no false negative: all 8 core commands are found. The textual limits beyond the three the spec lists are W1 and W2.
+
+### Recorded deviations
+
+1. **The id is re-allocated on redo, not stored: acceptable.** The spec says "reusing it on redo". `apply` allocates from the counter every time, and `revert` restores the counter, so a redo on the reverted state gets the same id. History is LIFO and redo runs on the exact state after the undo, so the ids always agree. The compacted-path probe and the mixed `InsertNodes` transactions confirm this.
+2. **`RemovePage::revert` does not check node-id collisions.** The reason is recorded in `apply-progress.md`: the counter never rises, so linear history cannot meet one. This is acceptable under the D8/D9 precedent (revert pre-checks are not a spec rule).
+3. **A DPI change has empty `touches`** (D10a, owner confirmed). It is outside the D10b scope.
+
+### Strict TDD
+
+- Commands: the tests were written against a stub whose `apply` returned `Err(InvalidValue("not built yet"))`. 12 of 13 failed on assertions, and the quoted messages match the tests (implementer log `scratchpad/d10/red2.txt`). The one that passed on the stub (`a_failed_transaction_gives_the_page_id_back`) is guarded by the others. RED is credible.
+- Properties: they passed at once. Their RED is by hand mutant (no `restore_next_id` gives law 1, `RemovePage::touches` without nodes gives law 4). This is the same accepted pattern as D4 to D9.
+
+### Mutation
+
+The coordinator gave no `mutants` report path for D10b. The only run is the implementer's: T3 on `pages.rs` together with D10a's `set_property.rs`, from its own export, in `scratchpad/d10/mut-out/mutants.out`. I checked it:
+- the exported `pages.rs` is byte-identical to HEAD;
+- every `pages.rs` log compiles `gafira-edit` in the mutated build dir in the `--no-run` phase, then shows `Fresh` in the test phase of the same dir, which is valid;
+- the failing tests are the expected ones.
+
+Result for `pages.rs`: 18 found, 14 caught, 0 missed, 0 timeout, 4 unviable. Wall time is about 4 min for the joint 102-mutant run. No `.cargo/mutants.toml` exclusion was added.
+
+Hand mutants (rule order). Each was applied alone to `scratchpad/vd10b/hm` with its own target, using `cargo test -p gafira-edit --locked --test page_commands --test prop_commands`, and the file was restored afterwards (`cmp` clean):
+
+| # | Mutant | Result |
+|---|---|---|
+| H1 | `InsertPage::apply` allocates the id before the size check | KILLED (`a_page_outside_the_pixel_limits_is_not_inserted`) |
+| H2 | `InsertPage::revert` removes the page before the equality check | KILLED (`an_insert_revert_checks_before_it_removes`) |
+| H3 | `RemovePage::revert` restores at the end, not at its index | KILLED (`remove_a_page_and_restore_it_at_its_index`, `a_remove_is_reusable_after_a_failed_apply`) |
+| H4 | `InsertPage::revert` uses the construction index instead of the page's position | KILLED (`an_insert_revert_checks_before_it_removes`) |
+| H5 | `InsertPage::apply` checks the index after the allocation | KILLED (`a_page_goes_in_at_any_index_up_to_the_length`) |
+
+### `Transaction` property
+
+The generated batches hold only steps that cannot fail: rename or hide the first page, and insert at 0. So law 5 is never exercised for `Transaction`, and the rollback path never runs under the property. The reason is real. Law 5 demands pointer-equal pages on `Err`, but a rollback restores equal pages: for example, a reverted rename leaves a new `Arc`. The `Transaction` requirement itself asks only for "equal". The rollback is covered by unit tests:
+- D1: all or nothing, reverse order;
+- `a_failed_transaction_gives_the_ids_back` (D8), `a_failed_transaction_undoes_a_reparent` (D9) and `a_failed_transaction_gives_the_page_id_back` (D10b);
+- my probe over five mixed page steps.
+
+That meets the spec's "All or nothing (D1, unit)" scenario. Two gaps remain, both recorded:
+- the spec contradiction (W3);
+- a missing value-equality rollback property (S4).
+
+### Size and commits
+
+`git diff --shortstat feat/edit-history-10..feat/edit-history-10b -- crates`: 540 insertions, 4 deletions, plus 32 in `ci.yml`, for 572 lines under the ~700 ceiling. D10a and D10b together are about 1 300 lines against a forecast of ~600 for D10. The owner split it, so this is not a finding.
+
+The commits are `feat(edit)`, `ci` and `docs(edit-history)`. The `ci:` commit also adds the `Transaction` property (91 test lines in `crates`), which V14 needs to pass (S3). No message has a Co-Authored-By, Claude or other AI attribution line. Untracked `.claude/worktrees/` was not committed.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **V14 misses three plausible impl forms that the spec's known-limit list does not cover.** These are nested generic bounds (`impl<T: Into<Vec<u8>>> Command for G<T>`), a path-qualified trait (`impl crate::Command for Q`) and a header split across lines. The spec says the step lists types "optionally with generics", and `design.md` already accepts "generic impls" as textual limits, so this is not blocking. A cheap hardening covers the first two: `^impl(<.*>)?[[:space:]]+([A-Za-z_][A-Za-z0-9_]*::)*Command[[:space:]]+for[[:space:]]+…`. A split header stays a limit until `xtask` exists. Today's tree is unaffected. class: implementation
+2. **The V14 search scope differs from the spec text.** The spec excludes `#[cfg(test)]` modules. The step uses two textual proxies instead: the column-0 anchor, which drops every indented impl, including non-test inline modules, and a by-name skip of every `*_tests.rs`. The implementer listed this as a pending spec edit. Archive should state both proxies, plus the extra limits of W1 and the `for Box<T>` capture, in `workspace-tooling` V14, or V14 should be hardened. class: ambiguity
+3. **Law 5 contradicts the `Transaction` rollback rule.** The harness law 5 requires pointer-equal pages on `Err`, while `Transaction` requires only an equal document after a rollback. As a result, `transaction_obeys_the_command_laws` is limited to steps that cannot fail, and law 5 is vacuous for `Transaction`. "Command property laws" should say that law 5 for a composite means value equality, or that its generator excludes failing children. class: ambiguity
+4. **Pending spec edits for the page commands.** `edit-commands` "Page and document commands" should state the `InsertPage` revert precondition (the page must be unchanged), the counter restore, and the `touches` of both commands (new page; page plus all its nodes). They are implemented and tested but not specified. class: ambiguity
+
+### SUGGESTION
+
+1. Pin the compacted-history path for the page commands: undo and redo through `revert`/`apply` with a small budget, or extend the D7 W3 `tests/budget.rs` `Step` generator with `InsertPage`/`RemovePage` (and `Reorder`/`Reparent`, D9 S2). The implementer's `History` test hits the snapshot path only. My probe shows the revert path is correct.
+2. `InsertPage::revert` could also require `next_id == counter + 1`. An out-of-order revert (not reachable through `History` or `Transaction`) lowers the counter under live ids. Probe: insert page 6, insert node 7 elsewhere, revert the page, allocate two nodes. The result is `validate()` = `DuplicateRoot { node: 7 }`. The D8 `InsertNodes` revert has the same shape.
+3. Commit hygiene: a separate `test(edit):` commit for the `Transaction` property before the `ci:` commit would keep each type exact.
+4. Add a value-equality rollback property: a generated document, a batch of real commands with a failing tail, then assert `doc == original` and the counter restored. This needs no harness change.
+
+### Result
+
+**PASS for D10b.** 0 CRITICAL, 4 WARNING (implementation 1, ambiguity 3), 4 SUGGESTION. The gates are green on each commit. V14 passes on the clean tree and fails on the spec's negatives. All 5 hand mutants are killed, and cargo-mutants missed none in `pages.rs`. All 16 D10b criteria are covered.
+
+This closes the last delivery of the change only if D10a also passes its own verify. Until then the change verdict waits on D10a. With both deliveries passing, the ambiguity warnings (W2 to W4, and the D10a pending edits) are spec text for `archive`/`specifier` to settle during the delta merge.
+
+next: archive (once D10a passes; W2, W3 and W4 are spec edits to apply at the merge, W1 is optional hardening for `tdd-apply`). The coordinator may push `feat/edit-history-10b` and open its PR against `feat/edit-history-10`.
+
+## D10b hardening re-verify
+
+Branch `feat/edit-history-10b`, HEAD `aefd8e2`. Scope: `c83cb26` (merge of `feat/edit-history-10`), `9226929` (`fix(edit)`: exact-counter precondition on the `InsertPage` and `InsertNodes` reverts), `af18210` (`ci`: V14 hardened), `aefd8e2` (docs). Mode full, depth V3, tier T3. Scratch: `scratchpad/vd10br/`, one `git archive` export per commit, each with its own `CARGO_TARGET_DIR`.
+
+### Gates (clean exports, policy steps taken from each commit's `ci.yml` with a YAML parser)
+
+| Gate | `9226929` | `af18210` | `aefd8e2` |
+|---|---|---|---|
+| fmt, clippy `-D warnings`, `cargo test --workspace --locked` | 0, 0, 0 (508) | 0, 0, 0 (508) | 0, 0, 0 (508) |
+| `cargo deny check` | 0 | 0 | 0 |
+| ARQ-07, forbid unsafe (V11), V5, V12, V13, V14 | 0 each | 0 each | 0 each |
+
+The trees stayed clean after the runs. No file under `specs/` changed in the scope.
+
+### Counter precondition
+
+- The earlier probe `vd10b_probe.rs` (8 tests) passes on HEAD. The out-of-order case now prints `Err(InvalidValue("ids were allocated after the page was inserted"))`, the counter stays at 8, and two more allocations leave the document valid. The hole is closed.
+- New probes `scratchpad/vd10br/probe/crates/gafira-edit/tests/vd10br_probe.rs`, 10 tests, all pass:
+  - `Transaction` over mixed `InsertPage`/`InsertNodes`/`SetProperty`/`RemovePage` steps: apply, then revert and apply 3 times. A rollback with a failing tail and nested transactions give equal documents with the counter restored.
+  - `History` with snapshots, budget 0 (every older entry compacted, so the D7 revert/apply path) and budgets 1, 200, 2 000 and 20 000: undo all, redo all, partial undo, new allocations, then undo and redo all again. No false refusal.
+  - Re-apply after revert, 3 cycles: same ids.
+  - Out-of-order revert is allowed after the later allocation was itself reverted, and with non-allocating commands in between. It is refused, with the document unchanged, for node/node, page/page and a `Transaction` reverted after a later allocation.
+  - 400-step random walks (insert page, insert nodes, remove page, undo, redo) at budgets 0, 500 and `usize::MAX`: ids are unique and below the counter after every step, undo and redo never fail, and the walk ends back at the original.
+- `restore_next_id` has only these two callers, and every lowering of the counter is now guarded. So, by induction, no command sequence can lower the counter under a live id.
+- Hand mutants. Each was applied alone to its own HEAD export and run with `cargo test -p gafira-edit --locked`, using only the implementer's tests. 5 run, 5 killed:
+
+| # | Mutant | Result |
+|---|---|---|
+| H1 | drop the `InsertPage` check | KILLED (`page_commands::an_insert_revert_never_lowers_the_counter_under_live_ids`) |
+| H2 | drop the `InsertNodes` check | KILLED (`node_commands::an_insert_revert_never_lowers_the_counter_under_live_ids`) |
+| H3 | off by one: `InsertPage` also accepts `next_id == counter + 2` | KILLED (same page test) |
+| H4 | `InsertNodes` checks after it writes | KILLED (same node test, `doc == before`) |
+| H5 | `InsertPage` checks after it removes the page | KILLED (same page test) |
+
+- Mutants: the implementer's T3 run (`scratchpad/d10b-round/mut-out`, built from the fixed sources): 45 found, 35 caught, 0 missed, 0 timeout, 10 unviable, about 2 min. Both `!=` to `==` mutants on the new checks (`pages.rs:84`, `insert_nodes.rs:225`) are caught. No `.cargo/mutants.toml` exclusion was added.
+
+### V14
+
+These runs used a standalone git copy of HEAD (`scratchpad/vd10br/neg`), with the step taken from `ci.yml`, a scratch file `src/vd_scratch.rs`, and a restore after each case.
+- Spec scenarios:
+  - clean tree: rc 0;
+  - from `crates/`: rc 1, "positive control failed";
+  - scratch `Noop`: rc 1;
+  - `RemovePage` renamed in `prop_commands.rs`: rc 1;
+  - all 8 types renamed: rc 1, listing all 8.
+- The six shapes the earlier step missed all give rc 1: nested bounds, `crate::Command`, multi-line header, `Box<T>` ("not a type defined under src"), an indented impl in a non-test mod, and `fake_tests.rs`.
+- Break attempts:
+  - Fail closed, which is correct or safe, rc 1:
+    - a `"}"` string ends the skip early;
+    - `#[cfg(all(test, ..))]` is not skipped;
+    - `#[cfg(not(test))]` is counted, both on a mod and on an impl;
+    - an attribute stacked after `#[cfg(test)]`, a one-line `#[cfg(test)] fn`, or a `#[cfg(test)] use` followed by a real impl;
+    - a type alias target, including an alias of a covered type;
+    - a blanket `T`, `&Ref`, `unsafe impl`, an impl inside `/* */`;
+    - an in-file `macro_rules!` emitting `impl Command for $t`.
+  - Hidden, rc 0, covered by the documented limits:
+    - a `{` inside a string, char literal, trailing comment or block comment in a `#[cfg(test)]` block hides the impl that follows;
+    - a macro using `$crate::Command`, or the trait passed as a macro parameter, is invisible.
+  - Hidden, rc 0, not in the step comment:
+    - `use crate::Command as Cmd; impl Cmd for X` (not documented anywhere);
+    - a leading `::gafira_edit::Command` (needs `extern crate self`, so not plausible);
+    - a file under `src` whose basename matches a test module elsewhere, for example `src/inner/history_budget_tests.rs` (listed only in `apply-progress.md`).
+
+  An impl in a block comment is read as an impl and fails closed. This too is listed only in `apply-progress.md`.
+
+### Records, commits, size
+
+- `verification.json` is valid JSON. It keeps the D10a and D10b rounds, each with a `delivery` key, and a top-level `"delivery": "D10a, D10b"`. That extends the `verify.md` schema (one delivery per file) but loses nothing; this round is appended as D10b round 2.
+- Commit types are `fix(edit)`, `ci` and `docs(edit-history)`, plus a plain merge. No Co-Authored-By, Claude or other AI attribution appears.
+- Size: `git diff --shortstat c83cb26 aefd8e2 -- crates .github` gives 97 insertions and 13 deletions. Of these, 13 lines are in `src` and the rest are tests and `ci.yml`. D10b in total is about 680 lines against a forecast of 600, below x1.4.
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. class: implementation. **The V14 step comment does not list every remaining limit.** It lists braces in strings or comments, macro-generated impls, and a comment in the property file. These are missing:
+   - the trait imported under an alias (`use crate::Command as Cmd`), which hides the impl and is undocumented anywhere;
+   - the basename collision with a declared test module, which skips a whole file;
+   - an impl inside a block comment, which fails closed.
+   The last two are only in `apply-progress.md`. Fix: add one line to the comment, or fail on any `as` rename of `Command`.
+2. class: ambiguity (carried D10b W2). The `workspace-tooling` V14 text must now describe the new exclusions: `#[cfg(test)]` items are skipped by brace counting, files a `#[cfg(test)]` item declares are skipped, and the target must be a type defined under `src`. It must also carry the full limit list.
+3. class: ambiguity (carried D10b W3). Law 5 (pointer-equal on `Err`) contradicts the `Transaction` rollback rule (equal).
+4. class: ambiguity (carried D10b W4, extended). `edit-commands` "Page and document commands" should state:
+   - the `InsertPage` revert precondition and counter restore;
+   - the new exact-counter precondition of both the `InsertPage` and `InsertNodes` reverts;
+   - the `touches` of both page commands.
+
+The earlier D10b W1 (V14 false negatives) is resolved, and so is S2 (the counter precondition).
+
+### SUGGESTION
+
+1. Pin the compacted-history path for the insert commands (carried S1). The probes above cover it, but no implementer test does.
+2. Each new precondition is pinned by a single test per command. A `Transaction` or `History` property step that tries an out-of-order revert would give them property coverage.
+3. A value-equality rollback property (carried S4).
+
+### Result
+
+**PASS for the D10b hardening round.** 0 CRITICAL, 4 WARNING (implementation 1, ambiguity 3), 3 SUGGESTION. All gates and policy steps are green on `9226929`, `af18210` and `aefd8e2`. The counter hole is closed with no false refusal, all 5 hand mutants are killed, and V14 passes the spec scenarios and the six earlier misses. D10a (PASS, `419a5bd`) and D10b are both done.
+
+next: archive (W2 to W4 are spec edits to apply at archive; W1 is an optional one-line comment fix for `tdd-apply`)
