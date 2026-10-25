@@ -10,6 +10,7 @@ publish.workspace = true
 gafira-geom.workspace = true
 gafira-color.workspace = true
 gafira-doc.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 gafira-testkit.workspace = true

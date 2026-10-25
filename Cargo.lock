@@ -95,6 +95,7 @@ dependencies = [
  "gafira-geom",
  "gafira-testkit",
  "proptest",
+ "serde_json",
 ]
 
 [[package]]

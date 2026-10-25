@@ -6,14 +6,16 @@ use std::time::Duration;
 use gafira_doc::msg::CommandLabel;
 use gafira_doc::{Document, EditToken, ValidationError};
 
-use crate::{Applied, Command, CommandError, GestureId};
+use crate::{Applied, Command, CommandError, GestureId, budget};
 
-/// One undo step: the command and the document before and after it.
+/// One undo step: the command, the document before and after it, and the
+/// estimate of what the snapshot holds alone (Q7).
 #[derive(Debug)]
 struct Entry {
     command: Box<dyn Command>,
     before: Arc<Document>,
     after: Arc<Document>,
+    bytes: usize,
     /// When the entry's newest command ran (the caller's clock).
     at: Duration,
 }
@@ -79,10 +81,12 @@ impl History {
                 Ok(()) => return Ok(applied),
                 Err(cmd) => cmd,
             };
+            let bytes = budget::unshared_bytes(&before, &after);
             self.undo.push(Entry {
                 command: cmd,
                 before,
                 after,
+                bytes,
                 at,
             });
             self.mergeable = true;
@@ -116,6 +120,7 @@ impl History {
         }
         entry.command.merge(cmd)?;
         entry.after = Arc::clone(after);
+        entry.bytes = budget::unshared_bytes(&entry.before, after);
         entry.at = at;
         Ok(())
     }
@@ -137,6 +142,11 @@ impl History {
     /// Closes the open gesture.
     pub fn end_gesture(&mut self) {
         self.open_gesture = None;
+    }
+
+    /// The estimated bytes the entries' snapshots hold alone (Q7).
+    pub fn estimated_bytes(&self) -> usize {
+        self.undo.iter().chain(&self.redo).map(|e| e.bytes).sum()
     }
 
     /// How many entries can be undone.
@@ -216,6 +226,10 @@ impl History {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "history_budget_tests.rs"]
+mod budget_tests;
 
 #[cfg(test)]
 mod tests {

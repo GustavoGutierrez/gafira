@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod budget;
 mod command;
 mod dirty;
 mod error;
