@@ -4,7 +4,9 @@ use gafira_color::{Color, Rgba};
 use gafira_doc::{
     BlendMode, Document, GroupNode, NodeId, NodeKind, PageId, Placement, ShapeGeometry, ShapeNode,
 };
-use gafira_edit::{GestureId, InsertNodes, NodeSpec, Property, RemoveNodes, SetProperty};
+use gafira_edit::{
+    GestureId, InsertNodes, NodeSpec, Property, RemoveNodes, Reorder, Reparent, SetProperty,
+};
 use gafira_testkit::prop_command;
 use proptest::prelude::*;
 
@@ -208,4 +210,53 @@ fn remove_nodes(doc: &Document) -> BoxedStrategy<RemoveNodes> {
 #[test]
 fn remove_nodes_obeys_the_command_laws() {
     prop_command(remove_nodes);
+}
+
+/// A node of `doc` (sometimes a missing one) with its sibling count; the
+/// index runs one past it now and then, which the command must refuse.
+fn reorder(doc: &Document) -> BoxedStrategy<Reorder> {
+    let mut targets: Vec<(PageId, NodeId, usize)> = Vec::new();
+    for page in doc.pages() {
+        targets.extend(page.roots.iter().map(|id| (page.id, *id, page.roots.len())));
+        for node in page.nodes.values() {
+            let kids = node.children.len();
+            targets.extend(node.children.iter().map(|id| (page.id, *id, kids)));
+        }
+    }
+    targets.push((PageId::new(u64::MAX), NodeId::new(u64::MAX), 0));
+    prop::sample::select(targets)
+        .prop_flat_map(|(page, node, siblings)| (Just(page), Just(node), 0..=siblings))
+        .prop_map(|(page, node, index)| Reorder::new(page, node, index))
+        .boxed()
+}
+
+#[test]
+fn reorder_obeys_the_command_laws() {
+    prop_command(reorder);
+}
+
+/// One to three nodes of one page (sometimes a missing one) under the roots,
+/// a node of the page (shape or group, so cycles and non-containers come up)
+/// or a missing node, at a small index.
+fn reparent(doc: &Document) -> BoxedStrategy<Reparent> {
+    page_and_pool(doc)
+        .prop_flat_map(|(page, mut pool)| {
+            pool.push(NodeId::new(u64::MAX));
+            let nodes = prop::collection::vec(prop::sample::select(pool.clone()), 1..=3);
+            let mut parents: Vec<Option<NodeId>> = vec![None];
+            parents.extend(pool.iter().map(|id| Some(*id)));
+            (
+                Just(page),
+                nodes,
+                prop::sample::select(parents),
+                0..=3_usize,
+            )
+        })
+        .prop_map(|(page, nodes, parent, index)| Reparent::new(page, nodes, parent, index))
+        .boxed()
+}
+
+#[test]
+fn reparent_obeys_the_command_laws() {
+    prop_command(reparent);
 }
