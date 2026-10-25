@@ -194,6 +194,16 @@ Status: done. Commit: `15f4b30`.
 - A point within the tolerance of the perimeter is `OnBoundary`, an answer of
   its own, so a caller can tell an edge hit from a fill hit.
 
+## Owner decisions after verify round 1 (2026-10-25)
+
+Recorded by the specifier; the delta spec carries them in "Owner decisions".
+
+| # | Question | Owner decision |
+|---|---|---|
+| OQ1 (C3) | Which fill rule applies when the two operands of a boolean operation carry different ones | **A**: each operand is read with its own fill rule. The explorer measured that the approved library's public topology API does this exactly (0 wrong samples, all four operations) at the same cost as the current call. |
+| OQ1 follow-up | Which fill rule the result of a boolean between non-empty operands carries | **A**: always `NonZero`, independent of operand order, the same rule as stroke outlines. A clone returned for an empty operand keeps the surviving operand's own rule. |
+| OQ2 (W5) | Is a path holding only moves empty | **A**: yes. It holds no segment and covers no area, so it takes the empty-operand short circuit; a subpath without segments is never reported as an open subpath. |
+
 ## Mutation testing (T3)
 
 Tier T3: `cargo mutants -p gafira-pathops --file <each changed source file>`.

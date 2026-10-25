@@ -13,14 +13,16 @@ or any adapter.
 Scope: the WHAT. The HOW (API shape, tolerance policy, error types, library
 choice) lives in `design.md`. Decisions Q1-Q7 are closed there (see "Closed
 decisions" below); a requirement that depends on one names it ("Q1", "Q2"...).
-Decisions still open for the owner are listed under "Open questions" at the end,
-and the requirements they affect say so. Scenario types: unit, property,
+The owner closed the two questions this spec raised (OQ1, OQ2) on 2026-10-25;
+they are recorded under "Owner decisions" at the end. Scenario types: unit, property,
 integration, command, manual.
 
 Terms used below:
 
-- **Empty path**: a path with no elements at all. (Whether a path holding only
-  moves or closes also counts as empty is open question OQ2.)
+- **Segment**: a line, quadratic or cubic element. Moves and closes are not
+  segments.
+- **Empty path**: a path that holds no segment: no elements at all, or only moves
+  (and closes). It covers no area (owner decision OQ2, 2026-10-25).
 - **Covers**: a path covers a point when its containment test answers `Inside`
   for that point under the path's own fill rule.
 - **Equal in value**: two paths are equal in value when they hold the same
@@ -113,9 +115,12 @@ and `B \ A` MAY overlap (two crossing bars give two non-empty differences whose
 boxes overlap), and the bounding box of `A Δ B` MAY be smaller than the bounding
 box of `A ∪ B` (when one operand contains the other along a side).
 
-The definitions above hold when both operands carry the same fill rule. **PENDING
-owner decision OQ1**: what an operation does when the two operands carry different
-fill rules. Until OQ1 is closed, no test may assert a result for mixed fill rules.
+Each operand is read with its own fill rule (owner decision OQ1, 2026-10-25): A
+covers a point under A's fill rule and B covers it under B's fill rule, whether the
+two rules are equal or not. The definitions above therefore hold for every pair of
+fill rules. The result of an operation between two non-empty operands MUST carry
+the `NonZero` fill rule, whatever the operands' rules and whatever their order,
+including when that result is empty.
 
 The point-by-point definition is exact only away from the boundaries: near a
 boundary the computed result deviates from the exact one by the amount stated in
@@ -134,9 +139,11 @@ the result geometrically; it MUST return:
 - any operation over two empty paths: an empty path.
 
 A clone is equal in value to the surviving operand: the same elements in the same
-order, the same start point and the surviving operand's own fill rule, whichever
-operand position it held. (The fill rule an empty result carries is not
-asserted: an empty path covers no point under either rule.) The input validation
+order, the same start point and the surviving operand's own fill rule (not
+`NonZero`), whichever operand position it held and whatever fill rule the empty
+operand carries. A moves-only operand is empty and takes this rule. An empty
+result returned by this rule holds no elements; its fill rule is not asserted,
+because an empty path covers no point under either rule. The input validation
 of "Degenerate and invalid inputs" runs before this rule, so an invalid input is
 rejected even when the other operand is empty.
 
@@ -175,6 +182,16 @@ rejected even when the other operand is empty.
 - WHEN `E ∪ G`, `G ∪ E`, `E Δ G` and `G \ E` are computed
 - THEN each result is equal in value to G, carries the `EvenOdd` fill rule, and the point (5,5) in the hole is reported outside it
 
+#### Scenario: A moves-only path is empty in either operand position (D2, unit)
+- GIVEN a moves-only path M holding `MoveTo(1,1)` and `MoveTo(4,4)` with the `NonZero` fill rule, a second moves-only path M2 holding one `MoveTo(2,2)`, and the ring path G (`EvenOdd`) above
+- WHEN `M ∪ G`, `G ∪ M`, `M Δ G`, `G \ M`, `M \ G`, `M ∩ G`, `G ∩ M` and `M ∪ M2` are computed
+- THEN none returns the open-subpath error; the first four results are equal in value to G (with `EvenOdd`), and the last four are empty paths with no elements
+
+#### Scenario: A moves-only path covers no point (D4, unit)
+- GIVEN the moves-only path M
+- WHEN the containment of the point (1,1) is tested
+- THEN the call succeeds and answers `Outside`, not the open-subpath error
+
 #### Scenario: Difference and xor with an empty path return a clone (D2, unit)
 - GIVEN the rectangle path R and the empty path E
 - WHEN `R \ E`, `R Δ E` and `E Δ R` are computed
@@ -206,19 +223,39 @@ rejected even when the other operand is empty.
 - THEN the bounding box of the xor spans y from 5 to 10 and the bounding box of the union spans y from 0 to 10
 
 #### Scenario: Box containment holds (D2, property)
-- GIVEN two generated paths, each made of one to three axis-aligned rectangles, with the same fill rule
+- GIVEN two generated paths, each made of one to three axis-aligned rectangles, each with a fill rule chosen independently
 - WHEN the four operations are computed
 - THEN, for every result that is not empty: the bounding box of `A \ B` is contained in the bounding box of `A`; the bounding box of `A ∩ B` is contained in the intersection of the two operand boxes; the bounding box of `A Δ B` is contained in the bounding box of `A ∪ B`; each within the tolerance
 
 #### Scenario: Point-by-point definition holds for rectangles (D2, property)
-- GIVEN two generated paths, each made of one to three axis-aligned rectangles, with the same fill rule, and a generated point farther than the tolerance from the perimeter of both operands
-- WHEN the four operations are computed and the point's containment is tested in each operand and each result
-- THEN each result covers the point exactly when the definition above says it does, and no point is covered by both `A \ B` and `B \ A`
+- GIVEN two generated paths, each made of one to three possibly overlapping axis-aligned rectangles wound the same way, each path with a fill rule chosen independently (so all four combinations occur), and a generated point farther than the tolerance from every rectangle edge of both operands
+- WHEN the four operations are computed, the point's containment is tested in each result, and the oracle decides whether each operand covers the point by counting the operand's rectangles that contain it (odd for `EvenOdd`, non-zero for `NonZero`)
+- THEN each result covers the point exactly when the definition above says it does from the oracle's answers, no point is covered by both `A \ B` and `B \ A`, and every result carries `NonZero`
 
-#### Scenario: Mixed fill rules (D2, property) — PENDING OQ1, not to be tested
-- GIVEN two generated paths with different fill rules
-- WHEN the four operations are computed
-- THEN the expected result depends on the owner's answer to OQ1; this scenario is completed when OQ1 is closed, and until then no test asserts a result for mixed fill rules
+#### Scenario: Mixed rules never cover a point neither operand covers (D2, unit)
+- GIVEN A, the rectangle (20,0)-(30,10) with the `NonZero` fill rule, and B, the nested squares (0,0)-(10,10) and (3,3)-(7,7) wound the same way with the `EvenOdd` fill rule
+- WHEN `A ∪ B` and `B ∪ A` are computed
+- THEN in both results (5,5) is outside, (1,1) is inside and (25,5) is inside, and both results carry `NonZero`
+
+#### Scenario: Intersection, difference and xor with mixed rules (D2, unit)
+- GIVEN A, the rectangle (2,2)-(8,8) with the `NonZero` fill rule, and B, the same `EvenOdd` nested squares
+- WHEN `A ∩ B`, `A \ B`, `B \ A` and `A Δ B` are computed and the points (5,5), (2.5,2.5) and (1,1) are tested in each
+- THEN `A ∩ B` covers (2.5,2.5) only; `A \ B` covers (5,5) only; `B \ A` covers (1,1) only; `A Δ B` covers (5,5) and (1,1) but not (2.5,2.5); and every result carries `NonZero`
+
+#### Scenario: The rule of each operand is used in both directions (D2, unit)
+- GIVEN A, the nested squares (0,0)-(10,10) and (3,3)-(7,7) wound the same way with the `NonZero` fill rule (A covers the whole square (0,0)-(10,10)), and B, the nested squares (2,0)-(12,10) and (5,3)-(9,7) wound the same way with the `EvenOdd` fill rule (B has a hole spanning x 5..9, y 3..7)
+- WHEN `A ∩ B`, `B ∩ A` and `A \ B` are computed and the points (6,5) and (4,5) are tested in each
+- THEN (6,5), which A covers and B does not, is outside `A ∩ B` and `B ∩ A` and inside `A \ B`; (4,5), which both cover, is inside `A ∩ B` and `B ∩ A` and outside `A \ B`
+
+#### Scenario: Result of non-empty operands carries NonZero (D2, unit)
+- GIVEN two `EvenOdd` rectangles (0,0)-(10,10) and (5,0)-(15,10), and the same pair with their rules swapped to `EvenOdd` and `NonZero`
+- WHEN each of the four operations is computed in both operand orders, and the intersection of two disjoint `EvenOdd` rectangles is computed
+- THEN every result carries the `NonZero` fill rule, including the empty intersection
+
+#### Scenario: Empty operand with mixed rules keeps the survivor's rule (D2, unit)
+- GIVEN an empty path E with the `EvenOdd` fill rule and the rectangle R with the `NonZero` fill rule, and the empty path E2 with the `NonZero` fill rule and the ring G with the `EvenOdd` fill rule
+- WHEN `E ∪ R`, `R Δ E`, `R \ E`, `E2 ∪ G` and `G Δ E2` are computed
+- THEN the first three are equal in value to R (`NonZero`) and the last two are equal in value to G (`EvenOdd`)
 
 ### Requirement: Degenerate and invalid inputs (D2, D3)
 
@@ -236,7 +273,10 @@ abort the process or return a result.
 
 An operation that depends on the path's interior (the four boolean operations and
 the containment test) MUST reject an open subpath with an error that names the
-index of the open subpath, counted from zero in path order. Such an operation MUST
+index of the open subpath, counted from zero in path order. A subpath is open when
+it holds at least one segment and does not end with a close; a subpath that holds
+no segment (a lone move) is not open, and a path made only of such subpaths is
+empty (OQ2). Such an operation MUST
 NOT close the subpath itself; a caller closes open subpaths explicitly with a
 separate operation first (Q3). The stroke outline, the simplification and the
 distance to the perimeter MUST accept open subpaths.
@@ -258,11 +298,14 @@ first match wins:
 2. an invalid stroke width (stroke outline only);
 3. a non-finite coordinate in the first operand, then in the second operand;
 4. an open subpath in the first operand, then in the second operand (interior
-   operations only);
+   operations only; a moves-only subpath is never open, so a moves-only operand
+   never reaches this step's error);
 5. a tolerance too fine for the operands (boolean operations only, see below).
 
 All five checks run before any geometric computation, and before the
-empty-operand rule of "Boolean operations".
+empty-operand rule of "Boolean operations". A moves-only operand still goes
+through steps 3 and 5: a non-finite move coordinate is rejected, and its move
+points count in `m`.
 
 A boolean operation MUST reject a tolerance below `1e-12 × m`, where `m` is the
 largest absolute value of any x or y coordinate over all the points (end points
@@ -469,7 +512,8 @@ the nearest point of the perimeter, whether the point is inside or outside.
 
 The containment test MUST use the same fill rule semantics as the boolean
 operations, so a point reported inside a path is a point the path's interior covers
-under that rule. A point within the tolerance of the perimeter MUST be reported as
+under that rule. An empty path, including a moves-only path, covers no point: its
+containment test answers `Outside`. A point within the tolerance of the perimeter MUST be reported as
 on the boundary, a third answer distinct from inside and outside (Q5), and the same
 rule MUST apply to every path.
 
@@ -499,7 +543,7 @@ rule MUST apply to every path.
 - THEN the result is 2 within the tolerance
 
 #### Scenario: Containment agrees with the boolean result (D4, property)
-- GIVEN two generated well-formed paths with the same fill rule, made of axis-aligned rectangles, and a point farther than the tolerance from the perimeter of both operands
+- GIVEN two generated well-formed paths made of axis-aligned rectangles, each with a fill rule chosen independently, and a point farther than the tolerance from every rectangle edge of both operands
 - WHEN the point's containment in the union is tested and the union is computed
 - THEN the point is reported inside the union exactly when it is inside at least one of the two operands
 
@@ -623,41 +667,14 @@ merge this section into the main spec as requirements. The full record is in
 | Q6 | a thin wrapper over the kurbo Bézier path; direct `kurbo` dependency | "Crate purity", "Path model" |
 | Q7 | the `clippy.toml` copy marks the crate for V5 and V12 | "Workspace integration" |
 
-## Open questions
+## Owner decisions
 
-These belong to the owner. The requirements above mark what they block as PENDING.
+Closed by the owner on 2026-10-25, after verify round 1 (findings C3 and W5); also
+recorded in `apply-progress.md`. Like "Closed decisions", this section is not a
+requirement and archive MUST NOT merge it as one.
 
-1. **OQ1 — Fill rule when the two operands of a boolean operation carry different
-   fill rules.** Each path carries its own fill rule, but the spec never said how
-   two different rules combine. The implementation applies the first operand's
-   rule to both operands, so a union can cover a point that neither operand covers
-   (verify-report C3: a `NonZero` rectangle united with `EvenOdd` nested squares
-   covers (5,5), which neither operand covers).
-
-   | Option | Consequence |
-   |---|---|
-   | **A. Each operand is read with its own fill rule (recommended)** | The point-by-point definition holds for every input and the containment test agrees with every boolean result. Measured by the explorer: the approved library's public API can read each operand with its own rule exactly (0 wrong samples over all four operations, squares and circles) at the same speed as today's call (0 to 20% difference, sometimes faster), so the earlier objection (unknown feasibility, extra cost) no longer holds. The result region does not depend on the rule it is tagged with (0 of 90 000 samples differ), so the spec only has to name the tag the result carries (sub-question below). |
-   | B. Reject operands whose fill rules differ, with a named error | Simple and honest: no silent wrong result. Callers must make the rules match before the call, which a design tool does often (imported SVG paths carry either rule). |
-   | C. Keep the first operand's rule for both, documented | No code change, but the result is not the set the operation names; the point-by-point definition and the hit-test agreement must be weakened to "under the first operand's rule". |
-   | D. The caller passes one fill rule that applies to both operands | Explicit, but the same semantic problem as C, and it duplicates the rule each path already carries. |
-
-   Recommendation: **A**. B stays the fallback only if the library's API changes.
-
-   Sub-question if A is chosen: which fill rule does a non-empty result carry?
-   Options: `NonZero` always (simple and predictable; recommended), or the first
-   operand's rule (keeps today's tag, but it means nothing about the region). The
-   empty-operand case is already decided by the requirement: the surviving
-   operand's own rule.
-
-2. **OQ2 — Is a path holding only moves (no segment) empty?** The empty-operand
-   rules above are stated for a path with no elements. A path holding a lone move
-   covers no area, yet the boolean operations reject it today as an open subpath
-   (verify-report W5), before the empty-operand rule is reached. A path of a
-   move followed by a close is accepted today and treated as empty.
-
-   | Option | Consequence |
-   |---|---|
-   | **A. Empty: a path with no segment is empty, and a subpath with no segment is not an open subpath (recommended)** | A path that covers no area behaves as the empty path in every operation; callers that build paths incrementally do not hit a spurious error. |
-   | B. Not empty: a lone move is an open subpath and is rejected | Strict; the caller must strip such moves. The "is empty" query and the operations must then agree on this narrower meaning. |
-
-   Recommendation: **A**.
+| # | Question | Decision | Where it constrains this spec |
+|---|---|---|---|
+| OQ1 | Which fill rule applies when the two operands of a boolean operation carry different ones | A: each operand is read with its own fill rule (the explorer measured an exact, same-cost way to do it with the approved library) | "Boolean operations", "Geometric hit testing" |
+| OQ1 follow-up | Which fill rule a result between non-empty operands carries | `NonZero` always, independent of operand order (the same rule as stroke outlines) | "Boolean operations" |
+| OQ2 | Is a path holding only moves empty | A: yes; it holds no segment and covers no area, so it takes the empty-operand rule and is never an open subpath | Terms, "Boolean operations", "Degenerate and invalid inputs", "Geometric hit testing" |
