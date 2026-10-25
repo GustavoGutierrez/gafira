@@ -2,7 +2,7 @@
 
 ## Intent
 
-Gafira has specs (`docs/specs/00`–`05`) but no code. Every later crate needs a shared, policy-enforcing workspace: edition, MSRV, lints, license gate, CI on the three targets (ARQ-03, ARQ-70, ARQ-71, ARQ-80). This change lays that foundation plus the first domain crate (`gafira-geom`) and a minimal `gafira-cli`, so C2/C3 only add crates.
+Gafira has specs (`docs/specs/00`–`05` (now `docs/specs/backlog/` for the ones not in progress)) but no code. Every later crate needs a shared, policy-enforcing workspace: edition, MSRV, lints, license gate, CI on the three targets (ARQ-03, ARQ-70, ARQ-71, ARQ-80). This change lays that foundation plus the first domain crate (`gafira-geom`) and a minimal `gafira-cli`, so C2/C3 only add crates.
 
 ## Change Chain
 
