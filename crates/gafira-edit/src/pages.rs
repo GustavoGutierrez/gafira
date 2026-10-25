@@ -80,6 +80,12 @@ impl Command for InsertPage {
         if *doc.as_doc().pages()[at] != *record.page {
             return Err(CommandError::InvalidValue("the inserted page was changed"));
         }
+        // Restoring the counter must not hand out an id a later command took.
+        if doc.as_doc().next_id().checked_sub(1) != Some(record.counter) {
+            return Err(CommandError::InvalidValue(
+                "ids were allocated after the page was inserted",
+            ));
+        }
         doc.pages_mut().remove(at);
         doc.restore_next_id(record.counter);
         Ok(())

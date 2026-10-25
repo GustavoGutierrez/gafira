@@ -583,6 +583,29 @@ fn an_insert_revert_checks_before_it_removes() {
 }
 
 #[test]
+fn an_insert_revert_never_lowers_the_counter_under_live_ids() {
+    let mut doc = two_pages(96);
+    let mut insert = new_page(0, "n");
+    apply(&mut insert, &mut doc).unwrap();
+    // A later command took the next id (node 4); reverting out of order would
+    // hand it out again.
+    let shape = NodeSpec::new(
+        NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect)),
+        Placement::new(0.0, 0.0, 10.0, 10.0),
+    );
+    apply(&mut InsertNodes::new(P1, None, 0, vec![shape]), &mut doc).unwrap();
+    let before = doc.clone();
+    assert_eq!(
+        revert(&mut insert, &mut doc),
+        Err(CommandError::InvalidValue(
+            "ids were allocated after the page was inserted"
+        ))
+    );
+    assert_eq!(doc, before);
+    assert_eq!(doc.validate(), Ok(()));
+}
+
+#[test]
 fn an_id_is_reissued_to_a_page_after_an_undo() {
     let mut history = History::new(two_pages(96)).expect("valid");
     let made = PageId::new(3);
