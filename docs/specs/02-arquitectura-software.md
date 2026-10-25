@@ -765,9 +765,9 @@ pub trait Translator: Send + Sync {                                       // gaf
 `Document` es un árbol de `Arc` con compartición estructural propia: `Arc<Page>`, `NodeArena` con `Arc<Node>` y `Arc::make_mut` a lo largo de la ruta modificada.
 
 - Cada entrada de historial guarda una **instantánea `Arc<Document>`** (Memento, O(1) en tiempo y O(nodos tocados) en memoria) y el `Command` que la produjo.
-- **Deshacer** restaura la instantánea, lo que es infalible. `revert` se usa cuando, por el presupuesto de memoria del historial (por defecto 512 MB, FIJADA), las instantáneas antiguas se compactan y solo quedan los comandos.
+- **Deshacer** restaura la instantánea, lo que es infalible. `revert` se usa cuando, por el presupuesto de memoria del historial (por defecto 512 MiB = 536 870 912 bytes, FIJADA), las instantáneas antiguas se compactan y solo quedan los comandos.
 - Los tiles de máscaras pintadas y de píxeles son `Arc<Tile>`: un trazo de pincel solo copia los tiles tocados.
-- **Fusión de gestos**: los comandos con igual `merge_key` dentro del mismo gesto (puntero presionado) o en menos de 500 ms (teclas de flecha, sliders) se fusionan en una entrada.
+- **Fusión de gestos**: los comandos con igual `merge_key` dentro del mismo gesto (puntero presionado) o en menos de 500 ms (teclas de flecha, sliders) se fusionan en una entrada. `History` nunca lee el reloj: quien llama pasa en cada `execute` un instante monótono (`Duration`), que el motor obtiene de su reloj inyectado.
 - Las instantáneas inmutables permiten que render, autoguardado y exportación lean versiones coherentes desde otros hilos sin bloqueos.
 - *Descartado*:
   - `im`/`imbl`/`rpds`: son MPL-2.0 y la política de §9 los evita.
