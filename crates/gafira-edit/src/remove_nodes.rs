@@ -6,6 +6,7 @@ use std::sync::Arc;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{DocMut, Node, NodeId, Page, PageId};
 
+use crate::moves::places;
 use crate::{Applied, Command, CommandError, DirtySet};
 
 /// Where a removed subtree root sat: its parent (`None` for a page root) and
@@ -57,21 +58,6 @@ fn below(page: &Page, roots: &[NodeId]) -> BTreeSet<NodeId> {
             if found.insert(*child) {
                 stack.push(*child);
             }
-        }
-    }
-    found
-}
-
-/// Parent and index of every node reachable from the roots or a `children`
-/// list of the page.
-fn places(page: &Page) -> BTreeMap<NodeId, (Option<NodeId>, usize)> {
-    let mut found = BTreeMap::new();
-    for (index, id) in page.roots.iter().enumerate() {
-        found.insert(*id, (None, index));
-    }
-    for (parent, node) in &page.nodes {
-        for (index, id) in node.children.iter().enumerate() {
-            found.insert(*id, (Some(*parent), index));
         }
     }
     found

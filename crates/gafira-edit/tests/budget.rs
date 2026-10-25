@@ -3,8 +3,12 @@
 
 use std::time::Duration;
 
-use gafira_doc::{Document, NodeId, PageId, Placement};
-use gafira_edit::{Applied, History, Property, SetProperty};
+use gafira_doc::{
+    Document, GroupNode, NodeId, NodeKind, PageId, Placement, ShapeGeometry, ShapeNode,
+};
+use gafira_edit::{
+    Applied, Command, History, InsertNodes, NodeSpec, Property, RemoveNodes, SetProperty,
+};
 use gafira_testkit::document;
 use proptest::prelude::*;
 
@@ -26,17 +30,69 @@ fn property() -> impl Strategy<Value = Property> {
     ]
 }
 
+/// One recorded step: a property change, a root insert or a removal. The
+/// numbers pick a target among those the document has at that moment.
+#[derive(Clone, Debug)]
+enum Step {
+    Set(usize, Property),
+    Insert {
+        page: usize,
+        index: usize,
+        group: bool,
+    },
+    Remove(usize),
+}
+
+fn step() -> impl Strategy<Value = Step> {
+    prop_oneof![
+        (any::<usize>(), property()).prop_map(|(pick, value)| Step::Set(pick, value)),
+        (any::<usize>(), any::<usize>(), any::<bool>())
+            .prop_map(|(page, index, group)| Step::Insert { page, index, group }),
+        any::<usize>().prop_map(Step::Remove),
+    ]
+}
+
+fn at() -> Placement {
+    Placement::new(0.0, 0.0, 10.0, 10.0)
+}
+
+/// The command a step stands for on `doc`, or `None` when it has no target.
+fn command(doc: &Document, step: &Step) -> Option<Box<dyn Command>> {
+    let pairs = targets(doc);
+    let shape = || NodeSpec::new(NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect)), at());
+    Some(match step {
+        Step::Set(pick, value) => {
+            let (page, node) = *pairs.get(pick.checked_rem(pairs.len())?)?;
+            Box::new(SetProperty::new(page, vec![node], value.clone(), None))
+        }
+        Step::Insert { page, index, group } => {
+            let target = doc.pages().get(page.checked_rem(doc.pages().len())?)?;
+            let spec = if *group {
+                NodeSpec::new(NodeKind::Group(GroupNode {}), at()).with_children(vec![shape()])
+            } else {
+                shape()
+            };
+            let index = index % (target.roots.len() + 1);
+            Box::new(InsertNodes::new(target.id, None, index, vec![spec]))
+        }
+        Step::Remove(pick) => {
+            let (page, node) = *pairs.get(pick.checked_rem(pairs.len())?)?;
+            Box::new(RemoveNodes::new(page, vec![node]))
+        }
+    })
+}
+
 /// Runs `steps` one second apart (so none merge) and returns the history
 /// and the document after every recorded step, the start included.
-fn run(doc: &Document, budget: usize, steps: &[(usize, Property)]) -> (History, Vec<Document>) {
-    let pairs = targets(doc);
+fn run(doc: &Document, budget: usize, steps: &[Step]) -> (History, Vec<Document>) {
     let mut history = History::with_budget(doc.clone(), budget).unwrap();
     let mut states = vec![doc.clone()];
-    for (i, (pick, value)) in steps.iter().enumerate() {
-        let (page, node) = pairs[pick % pairs.len()];
-        let command = SetProperty::new(page, vec![node], value.clone(), None);
+    for (i, step) in steps.iter().enumerate() {
+        let Some(command) = command(history.document(), step) else {
+            continue;
+        };
         let at = Duration::from_secs(i as u64);
-        if history.execute(Box::new(command), at) == Ok(Applied::Changed) {
+        if history.execute(command, at) == Ok(Applied::Changed) {
             states.push((**history.document()).clone());
         }
     }
@@ -49,7 +105,7 @@ proptest! {
     #[test]
     fn undo_and_redo_through_revert_reach_the_same_states(
         doc in document().prop_filter("needs a node", |d| !targets(d).is_empty()),
-        steps in prop::collection::vec((any::<usize>(), property()), 1..12),
+        steps in prop::collection::vec(step(), 1..12),
     ) {
         let (kept, recorded) = run(&doc, usize::MAX, &steps);
         let (mut squeezed, states) = run(&doc, 0, &steps);

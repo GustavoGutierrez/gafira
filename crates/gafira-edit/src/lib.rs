@@ -12,7 +12,10 @@ mod dirty;
 mod error;
 mod history;
 mod insert_nodes;
+mod moves;
 mod remove_nodes;
+mod reorder;
+mod reparent;
 mod set_property;
 mod transaction;
 
@@ -22,5 +25,7 @@ pub use error::CommandError;
 pub use history::{DEFAULT_BUDGET, History};
 pub use insert_nodes::{InsertNodes, NodeSpec};
 pub use remove_nodes::RemoveNodes;
+pub use reorder::Reorder;
+pub use reparent::Reparent;
 pub use set_property::{Property, SetProperty};
 pub use transaction::Transaction;
