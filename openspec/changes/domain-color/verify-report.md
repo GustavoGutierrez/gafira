@@ -173,3 +173,82 @@ The delivery's code has no missed mutants.
 ## Result
 
 PR2: FAIL (CRITICAL 1, WARNING 4, SUGGESTION 4). Change complete: FAIL. `next`: tdd-apply (drop the `inverse` exclude entry and add the geom overflow test), then verify, then the owner decision on task 0.3, then archive.
+
+---
+
+## Part D. PR2 re-verify (after the fixes for CRITICAL 1)
+
+New commits on `feat/domain-color-transform`: `c48a18d` test(geom): reject an infinite determinant in inverse; `22b4b09` docs(sdd): fix domain-color PR2 verify items; `15027d8` test(color): pin alpha preservation and the nine-pair buffer size. Base `origin/main` `0bb420b` is an ancestor of HEAD. Each commit was extracted with `git archive` into the scratchpad and checked there (V13 needs git, so it ran after a scratch `git init && git add -A`; HEAD policy also ran in the clean worktree).
+
+**PR2 re-verify verdict: PASS.** CRITICAL 0, WARNING 1, SUGGESTION 3.
+
+### D1. Gates
+
+| Gate | c48a18d | 22b4b09 | 15027d8 |
+|---|---|---|---|
+| `cargo fmt --check` | rc 0 | rc 0 | rc 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | rc 0 | rc 0 | rc 0 |
+| `cargo test --workspace --locked` | rc 0, 313 / 0 | rc 0, 313 / 0 | rc 0, 313 / 0 |
+| `cargo deny check` | ok (4/4) | ok (4/4) | ok (4/4) |
+| CI policy: Format, ARQ-07, V11, V5, V12, V13 | all rc 0 | all rc 0 | all rc 0 |
+
+313 = 312 + 1 (gafira-geom lib 31 -> 32). gafira-color stays 71 lib + 10 api + 22 properties (the nine-pair test was strengthened, not added). No `Cargo.toml`, `Cargo.lock` or `.github` changes.
+
+**Size.** `git diff --shortstat origin/main..HEAD -- crates .github` = 4 files, +300 -1 = 301 changed lines (300 insertions, as reported); 306 insertions with `.cargo/mutants.toml`. Budget 800.
+
+**Code rules.** New test code has no `#[allow]`, `unwrap`, `expect`, `panic!`, `HashMap`/`HashSet`; `#![forbid(unsafe_code)]` unchanged; no `Lut3d`. All six PR2 commits are conventional with no AI attribution lines.
+
+### D2. CRITICAL 1: closed
+
+- `.cargo/mutants.toml` no longer excludes `replace || with && in Transform2D::inverse` (entry and comment removed in `c48a18d`).
+- New test `infinite_determinant_has_no_inverse` (`crates/gafira-geom/src/transform.rs:215-220`) asserts `Transform2D::scale(1e200).inverse() == Err(SingularTransform)`.
+- `cargo mutants -p gafira-geom --file crates/gafira-geom/src/transform.rs` (scratchpad `mutants-C2a-PR2-reverify-geom/`): 25 mutants, 13 caught, 0 missed, 0 timeout, 12 unviable. `transform.rs:63:23: replace || with && in Transform2D::inverse` is **caught**, and its log shows `infinite_determinant_has_no_inverse` as the only failing test (31 passed, 1 failed). The other two `inverse` guard mutants (`== -> !=`, `delete !`) are also caught.
+- Optional `det = -inf` case (`scale_xy(1e200, -1e200)`) was not added; not required, since the `||` mutant is killed.
+- Remaining exclusion `'replace Document::schema_version -> u32 with 1$'` is still narrow: `cargo mutants --list --workspace` with and without `--no-config` differ by exactly that one mutant (`crates/gafira-doc/src/document.rs:32:9 ... with 1`); `... with 0` stays active.
+
+### D3. Earlier items
+
+| Item | Status | Evidence |
+|---|---|---|
+| W1 thread-bounds wording | **Closed** | `specs/color-conversions/spec.md:157-158` now describes the compile-time `Send + Sync` proof and a call through the trait object, matching `src/transform.rs:178-189` |
+| W2 `Result` deviation | **Open (owner)** | `tasks.md:40` (0.3 unticked), `apply-progress.md:5,192`. Spec (`spec.md:153`) and code already use `Result` |
+| W3 tasks ticks | **Closed** | `tasks.md:81` 6.4 ticked (PR1 merged as #3-#5; context in `apply-progress.md:137`); `tasks.md:95` 8.2 unticked and labelled "after verify, by the coordinator" |
+| W4 / S3 deterministic alpha bits | **Closed** | `RGBA` (`src/transform.rs:118-138`) now carries alphas `0.5`, `-0.0`, sNaN `0x7fa00000`, `1.0`; the loop at `:201-207` compares every alpha by bits. Hand mutations below show this unit test, not only P6, kills canonicalization |
+| S1 round-trip citation | **Still wrong (SUGGESTION 1)** | `apply-progress.md:159` labels `srgb_linear_srgb_round_trip_*` as "P4". In `tests/properties.rs` those are **P1** (`:109-119`); P4 is `alpha_survives_every_conversion` (`:171-173`). The sRGB<->linear round trip is also not needed for this scenario (sRGB -> P3 -> sRGB). The correct derivation is P6 (`:156-169`) + `display_p3_round_trip_in_unit_range` (`:199`) + P4 alpha (`:173`) |
+| S2 four-pixel buffer | **Closed** | `RGBA: [f32; 16]` (`src/transform.rs:121`), four pixels, matches `spec.md:196` |
+| S4 stale apply-progress header | **Closed** | `apply-progress.md:3,7` rewritten |
+
+**Hand mutations** (3, on a scratch copy of `15027d8`, restored and `cmp`-checked; `cargo test -p gafira-color --lib`, so the property tests are not involved):
+
+| # | Mutation in `apply_f32`, Rgba only | Killed by |
+|---|---|---|
+| H6 | `pixel[3] += 0.0` (`-0.0 -> +0.0`, quiets sNaN) | `all_nine_pairs_match_color_convert_on_rgba` |
+| H7 | `pixel[3] *= 1.0` (only quiets sNaN; `-0.0` survives) | `all_nine_pairs_match_color_convert_on_rgba` |
+| H8 | `if pixel[3] == 0.0 { pixel[3] = 0.0 }` (only `-0.0 -> +0.0`) | `all_nine_pairs_match_color_convert_on_rgba` |
+
+H7 and H8 show that both the sNaN slot and the `-0.0` slot are effective on their own.
+
+### WARNING
+
+1. Task 0.3 (`tasks.md:40`): the `Result` deviation from 02 §4.10 still needs owner confirmation. This is the only blocker for archive. It is not a PR2 defect, because the delta spec already requires `Result`.
+
+### SUGGESTION
+
+1. `apply-progress.md:159`: replace "P4, `srgb_linear_srgb_round_trip_*`" with the derivation P6 + `display_p3_round_trip_in_unit_range` (`tests/properties.rs:199`) + P4 `alpha_survives_every_conversion` (`:173`). This is documentation only.
+2. `spec.md:161` ("Rgba slice: GIVEN 3 sRGB RGBA pixels") now disagrees with the 4-pixel `RGBA` buffer that covers it (`src/transform.rs:121`). The test is a superset, so coverage holds. Change the wording to "4" (or "N") at archive.
+3. Carried from Part A: N5 label duplication (W4), `proposal.md:9-15` (S1). Neither blocks.
+
+### D4. Change complete (C2a), updated
+
+| Check | Result |
+|---|---|
+| color-model (23), color-conversions (31), workspace-tooling delta | all scenarios covered (Parts A, B; D3 re-confirms the PR2 rows) |
+| Deliveries | PR1 (#3-#5) merged, CI green. PR2 verify **PASS**. Push, PR and CI (task 8.2) are still with the coordinator |
+| Open items recorded | ΔE2000 deferred (manual scenario, `tasks.md:95`, `apply-progress.md:192`); `Result` deviation pending owner (`tasks.md:40`, `apply-progress.md:5,192`); N5 limitation not met (`apply-progress.md:72,192`); ARQ-80 403 (`tasks.md:39`, `apply-progress.md:24,192`) |
+| Before archive | owner confirms task 0.3; PR2 CI green and merged; whole-crate `cargo mutants -p gafira-color` run (AGENTS.md); archive order C1, domain-color, domain-doc |
+
+**Change complete: PASS on scenarios and deliveries. Archive is BLOCKED on one item: owner confirmation of the `Result` deviation (task 0.3).**
+
+## Result (re-verify)
+
+PR2: **PASS** (CRITICAL 0, WARNING 1, SUGGESTION 3). Change complete: PASS, archive blocked only by task 0.3 (owner). `next`: the coordinator pushes PR2 and opens the PR (8.2). After CI is green and the owner merges and confirms 0.3, run the whole-crate mutation and then archive.
