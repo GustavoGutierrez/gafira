@@ -9,9 +9,12 @@
 mod boolean;
 mod error;
 mod path;
+mod simplify;
+mod stroke;
 
 pub use error::{NonFiniteValue, PathOpError};
 pub use path::Path;
+pub use stroke::StrokeStyle;
 
 pub use gafira_geom::{Affine, Point, Rect, Vec2};
 pub use kurbo::{BezPath, Cap, Join, PathEl};
