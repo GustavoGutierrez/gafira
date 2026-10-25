@@ -9,7 +9,9 @@ use crate::{Applied, Command, CommandError, DirtySet};
 ///
 /// If a child fails, the children applied before it are reverted in reverse
 /// order and the failing child's error is returned, so the document ends as
-/// it started.
+/// it started. If one of those reverts fails too, the document may not match
+/// its prior state and the error is `RollbackFailed`; a caller that applies
+/// on a copy (`History`) just drops it.
 #[derive(Debug)]
 pub struct Transaction {
     label: CommandLabel,
@@ -20,6 +22,31 @@ impl Transaction {
     /// A transaction that applies `commands` in the given order.
     pub fn new(label: CommandLabel, commands: Vec<Box<dyn Command>>) -> Self {
         Self { label, commands }
+    }
+}
+
+impl Transaction {
+    /// Reverts the commands before `failed`, newest first, and returns what
+    /// to report. Every revert is tried even after one fails.
+    fn roll_back(
+        &mut self,
+        failed: usize,
+        doc: &mut DocMut<'_>,
+        apply: CommandError,
+    ) -> CommandError {
+        let mut first_revert_error = None;
+        for done in self.commands[..failed].iter_mut().rev() {
+            if let Err(error) = done.revert(doc) {
+                first_revert_error.get_or_insert(error);
+            }
+        }
+        match first_revert_error {
+            None => apply,
+            Some(revert) => CommandError::RollbackFailed {
+                apply: Box::new(apply),
+                revert: Box::new(revert),
+            },
+        }
     }
 }
 
@@ -34,15 +61,7 @@ impl Command for Transaction {
             match self.commands[i].apply(doc) {
                 Ok(Applied::Changed) => result = Applied::Changed,
                 Ok(Applied::Unchanged) => {}
-                Err(error) => {
-                    for done in self.commands[..i].iter_mut().rev() {
-                        // The children applied cleanly, so their revert is
-                        // expected to succeed; the failing child's error is
-                        // the one to report.
-                        let _ = done.revert(doc);
-                    }
-                    return Err(error);
-                }
+                Err(error) => return Err(self.roll_back(i, doc, error)),
             }
         }
         Ok(result)
@@ -77,6 +96,10 @@ mod tests {
     #[derive(Debug)]
     enum Effect {
         SetDpi(u32),
+        /// Sets the DPI, but its revert fails.
+        SetDpiBrokenRevert(u32),
+        /// Fails the first time it is applied, then sets the DPI.
+        FailOnceThenSetDpi(u32),
         Fail,
         Nothing,
     }
@@ -88,6 +111,7 @@ mod tests {
         log: Log,
         effect: Effect,
         previous: Option<Dpi>,
+        applied_before: bool,
         dirty: DirtySet,
     }
 
@@ -98,6 +122,7 @@ mod tests {
                 log: Arc::clone(log),
                 effect,
                 previous: None,
+                applied_before: false,
                 dirty: DirtySet::default(),
             })
         }
@@ -125,7 +150,13 @@ mod tests {
             match self.effect {
                 Effect::Fail => Err(CommandError::InvalidValue(self.name)),
                 Effect::Nothing => Ok(Applied::Unchanged),
-                Effect::SetDpi(value) => {
+                Effect::FailOnceThenSetDpi(_) if !self.applied_before => {
+                    self.applied_before = true;
+                    Err(CommandError::InvalidValue(self.name))
+                }
+                Effect::SetDpi(value)
+                | Effect::SetDpiBrokenRevert(value)
+                | Effect::FailOnceThenSetDpi(value) => {
                     let old = doc.as_doc().dpi();
                     self.previous = Some(old);
                     doc.set_dpi(Dpi::new(value));
@@ -146,7 +177,10 @@ mod tests {
             if let Some(old) = self.previous {
                 doc.set_dpi(old);
             }
-            Ok(())
+            match self.effect {
+                Effect::SetDpiBrokenRevert(_) => Err(CommandError::InvalidValue(self.name)),
+                _ => Ok(()),
+            }
         }
 
         fn touches(&self) -> DirtySet {
@@ -183,6 +217,57 @@ mod tests {
             calls(&log),
             ["apply a", "apply b", "apply c", "revert b", "revert a"]
         );
+    }
+
+    #[test]
+    fn a_failed_rollback_is_reported_after_trying_every_earlier_child() {
+        let log = Log::default();
+        let token = EditToken::__new_for_gafira_edit_only();
+        let mut doc = Document::default();
+        let mut tx = Transaction::new(
+            label(),
+            vec![
+                Step::new("a", &log, Effect::SetDpiBrokenRevert(300)),
+                Step::new("b", &log, Effect::SetDpiBrokenRevert(600)),
+                Step::new("c", &log, Effect::Fail),
+            ],
+        );
+        let err = tx.apply(&mut doc.edit(&token)).unwrap_err();
+        assert_eq!(
+            err,
+            CommandError::RollbackFailed {
+                apply: Box::new(CommandError::InvalidValue("c")),
+                revert: Box::new(CommandError::InvalidValue("b")),
+            }
+        );
+        assert_eq!(
+            calls(&log),
+            ["apply a", "apply b", "apply c", "revert b", "revert a"]
+        );
+    }
+
+    #[test]
+    fn a_transaction_is_reusable_after_a_failed_apply() {
+        let log = Log::default();
+        let token = EditToken::__new_for_gafira_edit_only();
+        let mut doc = Document::default();
+        let before = doc.clone();
+        let mut tx = Transaction::new(
+            label(),
+            vec![
+                Step::new("a", &log, Effect::SetDpi(300)),
+                Step::new("b", &log, Effect::FailOnceThenSetDpi(600)),
+            ],
+        );
+        assert_eq!(
+            tx.apply(&mut doc.edit(&token)),
+            Err(CommandError::InvalidValue("b"))
+        );
+        assert_eq!(doc, before);
+        assert_eq!(tx.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        assert_eq!(doc.dpi(), Dpi::new(600));
+        tx.revert(&mut doc.edit(&token)).unwrap();
+        assert_eq!(doc, before);
     }
 
     #[test]

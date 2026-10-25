@@ -28,6 +28,14 @@ pub enum CommandError {
     IdSpaceExhausted,
     /// `revert` was called on a command that was never applied.
     NotApplied,
+    /// An `apply` failed, and undoing the commands applied before it failed
+    /// too, so the document may not equal its prior state.
+    RollbackFailed {
+        /// The error that made the apply fail.
+        apply: Box<CommandError>,
+        /// The first error met while rolling back.
+        revert: Box<CommandError>,
+    },
 }
 
 impl fmt::Display for CommandError {
@@ -46,6 +54,9 @@ impl fmt::Display for CommandError {
             }
             Self::IdSpaceExhausted => f.write_str("the document id space is exhausted"),
             Self::NotApplied => f.write_str("the command was reverted without being applied"),
+            Self::RollbackFailed { apply, revert } => {
+                write!(f, "{apply}; rolling back failed too: {revert}")
+            }
         }
     }
 }
