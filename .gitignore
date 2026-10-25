@@ -34,3 +34,6 @@ assets/musics/*
 # cargo-mutants output (use -o <scratchpad> instead)
 /mutants.out/
 /mutants.out.old/
+
+# Playwright MCP tool output (not project files)
+/.playwright-mcp/
