@@ -10,7 +10,7 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 
 | Doc | Estado | Detalle |
 |---|---|---|
-| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-01 parcial, ARQ-02, ARQ-03, ARQ-07, ARQ-70, ARQ-71, ARQ-80 parcial: la puerta de merge está diferida por el 403 de GitHub), C2a `domain-color` (ARQ-02, ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-12, ARQ-13, ARQ-30) (archivados). Activo: C3 `edit-history` (propuesta cerrada en `openspec/changes/edit-history/`, diez entregas D1-D10). Luego `gafira-format`, render, UI... |
+| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-01 parcial, ARQ-02, ARQ-03, ARQ-07, ARQ-70, ARQ-71, ARQ-80 parcial: la puerta de merge está diferida por el 403 de GitHub), C2a `domain-color` (ARQ-02, ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-12, ARQ-13, ARQ-30) (archivados). Activo: C3 `edit-history` (propuesta cerrada en `openspec/changes/edit-history/`, diez entregas D1-D10). En paralelo al C3: C2c `domain-time` (`gafira-time`, capa 0, `openspec/changes/domain-time/`). Luego `gafira-format`, render, UI... |
 | `00-decisiones.md` | Vigente (no ejecutable) | Registro de decisiones del titular; prevalece sobre 01-05. No se promueve ni se archiva. |
 | `backlog/01-producto-y-calidad.md` | Backlog | Producto, calidad y criterios de aceptación. |
 | `backlog/03-diseno-visual-e-interaccion.md` | Backlog | Tokens, modo oscuro, glosario ES+EN, wireframes. |
