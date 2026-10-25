@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="docs/manuals/marca/assets/gafira-logo-primary.svg#gh-light-mode-only" alt="Gafira" width="240">
-  <img src="docs/manuals/marca/assets/gafira-logo-dark-background.svg#gh-dark-mode-only" alt="Gafira" width="240">
+  <img src="docs/manuals/marca/assets/gafira-logo-primary.png#gh-light-mode-only" alt="Gafira" width="240">
+  <img src="docs/manuals/marca/assets/gafira-logo-dark-background.png#gh-dark-mode-only" alt="Gafira" width="240">
 </p>
 
 # Gafira
