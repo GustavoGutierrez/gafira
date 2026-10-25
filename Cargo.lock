@@ -75,6 +75,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-doc"
+version = "0.1.0"
+dependencies = [
+ "gafira-color",
+ "gafira-geom",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gafira-geom"
 version = "0.1.0"
 dependencies = [

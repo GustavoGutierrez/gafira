@@ -42,4 +42,6 @@ disallowed-types = [
     { path = "std::net::UdpSocket", reason = "ARQ-02" },
     { path = "std::process::Command", reason = "ARQ-02" },
     { path = "std::thread::Builder", reason = "ARQ-02" },
+    { path = "std::collections::HashMap", reason = "ARQ-10: unstable iteration order; use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "ARQ-10: unstable iteration order; use BTreeSet" },
 ]
