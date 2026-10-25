@@ -19,6 +19,7 @@ kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
+trybuild = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
