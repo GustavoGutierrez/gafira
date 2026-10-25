@@ -1,0 +1,15 @@
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+ --> tests/ui/fail_edit_without_token.rs:5:21
+  |
+5 |     let _view = doc.edit();
+  |                     ^^^^-- argument #1 of type `&EditToken` is missing
+  |
+note: method defined here
+ --> $WORKSPACE/crates/gafira-doc/src/edit.rs
+  |
+  |     pub fn edit(&mut self, token: &EditToken) -> DocMut<'_> {
+  |            ^^^^
+help: provide the argument
+  |
+5 |     let _view = doc.edit(/* &EditToken */);
+  |                          ++++++++++++++++

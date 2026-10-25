@@ -1,0 +1,5 @@
+error[E0616]: field `dpi` of struct `Document` is private
+ --> tests/ui/fail_write_private_field.rs:5:9
+  |
+5 |     doc.dpi = Dpi::default();
+  |         ^^^ private field

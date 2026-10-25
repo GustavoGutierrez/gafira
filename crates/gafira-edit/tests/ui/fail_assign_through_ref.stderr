@@ -1,0 +1,10 @@
+error[E0594]: cannot assign to `*doc`, which is behind a `&` reference
+ --> tests/ui/fail_assign_through_ref.rs:4:5
+  |
+4 |     *doc = Document::default();
+  |     ^^^^ `doc` is a `&` reference, so it cannot be written to
+  |
+help: consider changing this to be a mutable reference
+  |
+3 | fn replace(doc: &mut Document) {
+  |                  +++

@@ -1,0 +1,11 @@
+error[E0599]: no method named `document_mut` found for struct `History` in the current scope
+ --> tests/ui/fail_history_document_mut.rs:6:39
+  |
+6 |     let _doc: &mut Document = history.document_mut();
+  |                                       ^^^^^^^^^^^^
+  |
+help: there is a method `document` with a similar name
+  |
+6 -     let _doc: &mut Document = history.document_mut();
+6 +     let _doc: &mut Document = history.document();
+  |

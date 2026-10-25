@@ -1,0 +1,7 @@
+error[E0596]: cannot borrow `node.children` as mutable, as it is behind a `&` reference
+ --> tests/ui/fail_mut_node_from_shared_page.rs:5:9
+  |
+4 |     if let Some(node) = page.node(id) {
+  |                 ---- consider changing this binding's type to be: `&mut Node`
+5 |         node.children.clear();
+  |         ^^^^^^^^^^^^^ `node` is a `&` reference, so it cannot be borrowed as mutable
