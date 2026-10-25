@@ -9,7 +9,9 @@
 
 Gafira is a local-first design, image and video editor written in Rust. It is proprietary software.
 
-Status: `gafira-geom`, `gafira-color` and the document model (`gafira-doc`) are in place; edit history is next. There is no GUI yet.
+Status: `gafira-geom`, `gafira-color` and the document model (`gafira-doc`) are in place; edit history is in progress (D1, the `Command` contract and `Transaction`, is done). There is no GUI yet.
+
+Current version: `0.1.0-beta.1` (see `CHANGELOG.md`).
 
 ## Preview
 

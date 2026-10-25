@@ -63,11 +63,11 @@ dependencies = [
 
 [[package]]
 name = "gafira-cli"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "gafira-color"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "proptest",
  "serde",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-doc"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -87,7 +87,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-edit"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-geom"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "kurbo",
  "proptest",
