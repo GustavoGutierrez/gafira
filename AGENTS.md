@@ -20,7 +20,7 @@ spec  ->  (explorer, only when a claim is risky)  ->  tdd-apply  ->  mutants + v
 
 On FAIL, or when deliveries remain, go back to `tdd-apply`.
 
-`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions, pushes and PRs. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants` on changed lines in parallel with `verify`. `.claude/agents` is a symlink to `.agents/agents`.
+`coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions and merges. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants` on changed lines in parallel with `verify`. `.claude/agents` is a symlink to `.agents/agents`.
 
 A short design note is written only when a spec leaves a real decision open, and only for that decision. If a test or CI claim is risky, `explorer` settles it with a real experiment before specs or code rely on it; refuted claims are fixed in the specs first.
 
@@ -47,7 +47,7 @@ cargo test --workspace --locked
 - Measure each delivery with `git diff --shortstat`; split when it exceeds ~700 lines. Estimates undershoot (measured x1.4 to x1.9 over forecast, mostly tests).
 - Stacked PRs cut at commit boundaries; each prefix passes the gates alone.
 - Conventional commits, no AI attribution lines.
-- Push, PR creation and merges stay with the owner (`git push` is denied in `.claude/settings.json`).
+- The coordinator may push branches and open PRs after verify PASS; merges stay with the owner. Each new delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.
 - State lives in the change folder and git, not in an external memory tool.
 
 ## Code rules
