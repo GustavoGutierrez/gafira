@@ -1631,3 +1631,133 @@ None.
 - Gates are green on every code commit and on the tip: fmt, clippy, tests 278 / 295 / 295 / 295, `cargo deny`, ARQ-07, V11, V5, V12, and V13 (once present). V13 E0 to E15 behave as specified, and limits 1 to 6 are recorded as not met. `trybuild` is deferred to C3.
 - Mutants: cargo-mutants 6/13 caught, 0 missed, 0 timeout, 7 unviable. Hand mutations: 4/4 killed.
 - Next: the coordinator pushes `feat/domain-doc-5b` and opens its PR against `main`. Then **tdd-apply D6a**. WARNINGs 1 and 2 and SUGGESTION 1 can ride along with D6a.
+
+## D6a1 (branch `feat/domain-doc-6a`, range `feat/domain-doc-5b..feat/domain-doc-6a`, 2 commits: "docs: apply D5b verify follow-ups", "test(doc): add bounded document generator and its coverage guard")
+
+Base note: `feat/domain-doc-5b` is merged on `origin/main` (PR #19, 32693ef). `feat/domain-doc-6a` is not on `main` or on `origin` yet, so its PR is still to be opened. The local `main` (777231d) is behind `origin/main`.
+
+### Gates per commit
+
+Each commit was checked out in its own worktree. Every policy step body was extracted from that commit's `ci.yml` and run, plus `cargo deny check`. The first pass shared one target directory, and on the later commits it reused stale fingerprints: they showed 296 tests at 159a451 and no corruption guard. That was a harness artifact. The re-run touched every `.rs` file first, so each commit was really rebuilt. The numbers below come from that re-run.
+
+| Commit | fmt | clippy `-D warnings` | test (passed / failed) | `cargo deny` | ARQ-07 | V11 | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| f16015f docs: apply D5b verify follow-ups | ok | ok | 295 / 0 | ok | ok | ok | ok | ok | ok |
+| 29f3b86 test(doc): add bounded document generator and its coverage guard | ok | ok | 296 / 0 | ok | ok | ok | ok | ok | ok |
+
+296 = 295 + `generated_documents_reach_every_feature_within_the_bounds`. Workspace `cargo test` takes 6 to 8 s. No `proptest-regressions/` is committed or produced (`git ls-files`, and `git status` was clean after the runs). Commit authors and bodies carry no AI attribution. No `#[allow]`, `HashMap` or `HashSet` was added (the guards use `BTreeSet`). `EditToken` appears only under `crates/gafira-doc/` (V13 ok).
+
+Size, code only (`git diff --shortstat feat/domain-doc-5b feat/domain-doc-6a -- crates .github`): 3 files, 492 insertions, 3 deletions = **495**. This matches `apply-progress.md` and `design.md:369`. It is under 700.
+
+### D5b follow-ups (f16015f)
+
+| Item | Evidence | Status |
+|---|---|---|
+| D5b WARNING 1: `page_mut` in "Edit through the capability" | `tests/edit.rs:57-73`: allocate ids, push an empty page through `pages_mut`, insert the root through `page_mut`, `validate() == Ok` | applied |
+| D5b WARNING 2: PR row | `AGENTS.md:103` "Preparing a PR (coordinator opens it, owner merges)" | applied |
+| D5b SUGGESTION 1: 100 000 in the design | `design.md:365` and T5.1 `:436` match `validate.rs:1049` (`DEPTH = 100_000`). The spec's 10 000 (`document-validation/spec.md:222`) is still met. | applied |
+| D5b SUGGESTION 3: redundant `assert_ne!` | removed from `sample()` (`tests/edit.rs:41-53`) | applied |
+| D5b SUGGESTION 4: `$CARGO_HOME` | `openspec/changes/workspace-scaffold/design.md:333` | applied |
+| D5b SUGGESTION 5: skill license | `.agents/skills/git-workflow-and-versioning/SOURCE.md`: upstream, lock hash, MIT (from the GitHub license API), with a note that the upstream LICENSE text was not copied | applied (see SUGGESTION 2) |
+
+### Requirements and scenarios (D6a1)
+
+| Requirement / scenario | Evidence | Status |
+|---|---|---|
+| Generator is dev-only code in `tests/common`, built through `DocMut` with an `EditToken` | `tests/common/mod.rs:282-331` (`doc.edit(&token)`, `alloc_node_id`, `set_dpi`, `pages_mut`). Only `tests/properties.rs:3` includes `mod common;` | covered |
+| 1 to 3 pages plus an empty-document case | `:209` `1..=MAX_PAGES`, `:334-339` `Just(Document::default())`. Guard asserts `<= 3` (`:768`) and reaches "empty document" | covered |
+| 0 to 12 nodes per page; depth at most 4; only groups have children | `:181`, `:309-321`. Guard `:778`, `:790`, `:820`, `:824`, and `validate() == Ok` on every draw (`:767`) | covered (hand mutations H2, H3) |
+| Ids from the counter in shuffled order, `next_id` gap 0 to 3 | `:289-297` (sort by random keys), `:292-294`. The guard checks only gap `<= 3` (`:828`) | covered by code; shuffle and gap > 0 not guarded (WARNING 1) |
+| Payload depth at most 3, at most 4 entries, strings at most 8 chars including non-ASCII, quote, backslash and controls | `:75-104`. Guard `:821-822` checks depth, entries and lengths | bounds covered; character classes not guarded (WARNING 1) |
+| Valid documents only | `validate() == Ok` on all 20 000 draws (`:767`) | covered |
+| Scenario "Generator coverage guard" (20 000 deterministic draws reach `-0.0`, subnormal, px 1.0 and 16 384.0, opacity 0.0/-0.0/1.0, depth >= 3, extension, group with children, several pages, empty page) | `:763-847` (`TestRunner::deterministic()`, `DRAWS = 20_000`) | covered (hand mutation H1) |
+| Scenario "Generated documents are valid" (property, 256 cases) | D6b (Q2). Already asserted per guard draw | deferred to D6b |
+| "every corruption variant" in the guard list | D6a2 | see D6a2 |
+
+### Deviation judged
+
+- `tests/properties.rs` created in D6a1 holding only `mod common;` (design said D6b): **accepted**. Without a test target that includes `common`, the guard would not run and the generator would be dead code. `design.md:104` was updated in the D6a2 docs commit.
+
+### Hand mutations (D6a1 scope; run on the tip worktree, reverted)
+
+| # | Mutation | Result |
+|---|---|---|
+| H1 | Drop `Just(-0.0_f32)` from `opacity()` (`:39`): a feature never generated | killed: `never reached: ["opacity -0.0"]` (`:845`) |
+| H2 | `vec(node_spec(), 0..=MAX_NODES + 1)` (`:181`): node bound off by one | killed: `page.nodes.len() <= MAX_NODES` (`:778`) |
+| H3 | `depths[i] <= MAX_TREE_DEPTH` (`:311`): depth bound off by one | killed: `depth <= MAX_TREE_DEPTH` (`:790`) |
+
+### WARNING
+
+1. **Some generator MUSTs have no guard** (`tests/common/mod.rs:289-297`, `:828`, `:75-83`). Three things are never checked: that the shuffle actually reorders ids (replacing the `sort_by_key` at `:296` with the identity would survive, by inspection), that a gap greater than 0 is ever produced (removing the loop at `:292-294` would survive), and that the special characters are ever reached. The spec's guard list (`document-model/spec.md:311`) does not name them, so this is not a spec breach. D6b's Q1 relies on the shuffle ("build-order independence"). Add "ids out of order", "gap > 0" and "special char" to `wanted` with D6b. Test helper, non-critical.
+
+### SUGGESTION
+
+1. The `#[cfg(test)] mod guards` in `tests/common/mod.rs:707` is redundant in a test target. It is harmless, but any future target that adds `mod common;` will run both 20 000-draw guards again. Keep `common` included only from `properties.rs`, or say so in the module doc.
+2. `SOURCE.md` takes MIT from the GitHub API without the license text. MIT requires the notice to travel with copies, so vendor the upstream `LICENSE` next to `SKILL.md`.
+
+### Result
+
+- Verdict: **PASS** for D6a1 (0 CRITICAL, 1 WARNING, 2 SUGGESTION).
+
+## D6a2 (branch `feat/domain-doc-6a2`, range `feat/domain-doc-6a..feat/domain-doc-6a2`, 2 commits: "test(doc): add corruption generators and their guard", "docs(sdd): record domain-doc D6a and split it into D6a1 and D6a2")
+
+### Gates per commit (same method as D6a1, rebuilt)
+
+| Commit | fmt | clippy `-D warnings` | test (passed / failed) | `cargo deny` | ARQ-07 | V11 | V5 | V12 | V13 |
+|---|---|---|---|---|---|---|---|---|---|
+| 159a451 test(doc): add corruption generators and their guard | ok | ok | 297 / 0 | ok | ok | ok | ok | ok | ok |
+| 64ff07e docs(sdd): record domain-doc D6a and split it into D6a1 and D6a2 (tip) | ok | ok | 297 / 0 | ok | ok | ok | ok | ok | ok |
+
+297 = 296 + `every_corruption_is_produced_and_breaks_its_own_rule`. `cargo test -p gafira-doc --test properties` runs both guards in 6.3 s (debug, parallel), and the workspace in 9 to 10 s, which is normal test time. No `proptest-regressions/` is committed or produced. No AI attribution. No `#[allow]`.
+
+Size, code only (`git diff --shortstat feat/domain-doc-6a HEAD -- crates .github`): 1 file, 385 insertions, 3 deletions = **388**. It is under 700. D6a1 plus D6a2 against `feat/domain-doc-5b` is 874 insertions and 3 deletions, which matches `apply-progress.md`.
+
+### Requirements and scenarios (D6a2, `document-validation` "Validation properties" and the model guard list)
+
+| Requirement / scenario | Evidence | Status |
+|---|---|---|
+| A corruption step for each of the 21 listed rules | `Corruption` (`tests/common/mod.rs:343-368`), 24 kinds: duplicate id split into across pages and page equals node, page size into below and above, `w`/`h` into two kinds | covered |
+| Duplicate id across two pages or as page id = node id | `:527-542` | covered |
+| Applying one yields exactly the matching variant | `matches` (`:399-429`). The `OutOfRange` kinds also check `field`. The guard asserts it on all 20 000 draws (`:853-854`) | covered for 23 kinds; `UnsupportedSchema` via `from_json` (WARNING 1) |
+| Wire clause `from_json(to_json(d)) == Err(Invalid(same))` except `ArenaKeyMismatch` and `NonFinite` | `Corrupted.json` is produced (`:690-694`). Asserting it is Q3 in D6b | deferred to D6b |
+| Scenario "Coverage guards and mutations": every variant reached by the guard | `:849-862` (deterministic, 20 000 draws, `never produced` check) | covered |
+| Same scenario: the planned property mutations (drop P6, per-page parents, clamp opacity) | D6b | deferred to D6b |
+| Scenarios "Corruption is detected exactly" and "Corruption survives the wire" (property) | D6b (Q3) | deferred to D6b |
+
+### Deviations judged
+
+- **`UnsupportedSchema` wire-only:** the implementation is **acceptable**, but the spec needs a fix (WARNING 1). No public path holds a `Document` with `schema_version != 1`. `schema_version` is `pub(crate)` with only a getter (`document.rs:20`, `:31`), and both `from_parts` and `Default` set `SCHEMA_VERSION` (`document.rs:62`, `:83`, `:95`). So patching the JSON and reading `from_json` (`tests/common/mod.rs:446-455`, `:691-693`) is the strongest observable test. The `replacen` is safe because `schema_version` is the first wire key (`json.rs:41`).
+- **Out-of-range kinds and page size split into separate kinds:** **accepted**. Each value range is reached separately, and the `OutOfRange` matcher pins the field.
+- **Shuffled ids via random sort keys** (`:295-297`): **accepted**. The ids stay a permutation of the counter output, and the shrinking stays clean. The shuffle itself is not guarded (D6a1 WARNING 1).
+
+### Relabel D6a -> D6a1/D6a2 (64ff07e)
+
+Consistent in the specs (`document-model/spec.md:7` and `:309`, `document-serde/spec.md:7`, `document-validation/spec.md:7` and `:226`), in `proposal.md:68` and `:80-82`, in `design.md:103-104`, `:369-371`, `:385`, `:400-401`, `:439-440`, `:566` and `:585`, and in `apply-progress.md:532-567` ("twelve", the chain D5b ← D6a1 ← D6a2 ← D6b). Leftovers are WARNING 2 and SUGGESTION 1.
+
+### Hand mutations (D6a2 scope; reverted)
+
+| # | Mutation | Result |
+|---|---|---|
+| H4 | `SkewRange` writes in-range values `[89.0, -89.0, 0.0, 1.0, -1.0]` (`:614`): the corruption no longer corrupts | killed: `a corruption is detected` (`:853`) |
+| H5 | `WidthRange` writes `h` (`:620` tests `HeightRange`): wrong variant | killed: `WidthRange produced OutOfRange { .. field: H .. }` (`:854`) |
+
+H2 also broke the corruption guard (`keys` index at `:296`). Total for D6a: 5 of 5 killed.
+
+### WARNING
+
+1. **Spec gap: the `validate()` clause cannot hold for `schema_version = 2`** (`document-validation/spec.md:228`, "Applying one to a generated document MUST make `validate()` return exactly the matching variant"; `design.md:460` Q3). By construction no in-memory `Document` has schema 2, so the clause is unsatisfiable through the public API. The spec must change, not the code. Before or with D6b, amend both places as follows: `schema_version = 2` is wire-only, the corruption is applied to `to_json(d)`, `from_json` MUST return `Err(LoadError::Invalid(UnsupportedSchemaVersion { found: 2 }))`, and there is no `validate()` clause. This mirrors the two wire-clause exclusions. D6b's Q3 must use `observed()` (or the equivalent), never `doc.validate()`, for this kind.
+2. **Stale "Eleven"** at `proposal.md:111` (risk table: "Eleven sub-deliveries of ≤ 700 lines each"). It should say twelve.
+
+### SUGGESTION
+
+1. `design.md:370` says D6a2 is "379 measured", but the shortstat and `apply-progress.md` give 388. `design.md:386` lists the branches without `-6a2`.
+2. `Corruption::matches` accepts either `DuplicateId` kind for both duplicate forms (`:404-406`). That is correct for the variant, but checking the reported id would prove each form hits its own path.
+
+### Mutants
+
+`mutants` report (`scratchpad/mutants-D6a/report.md`): `cargo mutants -p gafira-doc --in-diff` found **0 mutants** ("No mutants to filter"). The diff touches only `crates/gafira-doc/tests/`. 0 caught, 0 missed, 0 timeout, 0 unviable. Nothing critical is affected. The guards' strength was checked instead with hand mutations H1 to H5, and all 5 were killed.
+
+### Result
+
+- Verdict: **PASS** for D6a2 (0 CRITICAL, 2 WARNING, 2 SUGGESTION). The change is not complete because D6b remains.
+- Next: the coordinator pushes `feat/domain-doc-6a` and `feat/domain-doc-6a2` and opens their PRs, one after the other per the integration rule. Then **tdd-apply D6b**. D6a2 WARNING 1 (spec fix for schema 2) must land before or in D6b's first commit. D6a1 WARNING 1, D6a2 WARNING 2 and the SUGGESTIONS can ride along.
