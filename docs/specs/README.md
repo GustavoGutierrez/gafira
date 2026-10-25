@@ -2,6 +2,8 @@
 
 Aquí solo viven los documentos **en curso**. Todo lo demás espera en `backlog/`. Al completar el documento en curso, se promueve el siguiente desde el backlog.
 
+Ciclo de vida: `backlog/` -> en curso (`docs/specs/`) -> `archive/` (completado).
+
 ## Estado
 
 | Doc | Estado | Detalle |
@@ -13,12 +15,22 @@ Aquí solo viven los documentos **en curso**. Todo lo demás espera en `backlog/
 | `backlog/04-funcionalidad-diseno-imagen-exportacion.md` | Backlog | Diseño, imagen y exportación. |
 | `backlog/05-funcionalidad-video-y-distribucion.md` | Backlog | Video y distribución. |
 | `backlog/06-licencia-y-activacion.md` | Backlog | Licencia y activación. |
+| `archive/` | Archivados | Ninguno todavía. |
 
 ## Promover un documento del backlog
 
 1. `git mv docs/specs/backlog/<NN-doc>.md docs/specs/`
 2. Actualizar la tabla de arriba y las referencias de ruta (`git grep "backlog/<NN>"`).
 3. Hacerlo en su propio commit.
+
+## Archivar un documento completado
+
+Criterio: cada requisito del documento está cubierto por changes de OpenSpec archivados y la tabla de estado lo dice. `00-decisiones.md` no se archiva nunca.
+
+1. `git mv docs/specs/<NN-doc>.md docs/specs/archive/` (mismo nombre de archivo).
+2. Actualizar la tabla de arriba y las referencias de ruta (`git grep "<NN-doc>"`).
+3. Promover el siguiente documento desde `backlog/` (sección anterior).
+4. Hacerlo en su propio commit.
 
 Si un change de 02 necesita un documento del backlog (p. ej. la UI necesita 03), se promueve en ese momento.
 
