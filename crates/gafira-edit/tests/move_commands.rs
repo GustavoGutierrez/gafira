@@ -351,6 +351,16 @@ fn a_shape_is_not_a_parent() {
 }
 
 #[test]
+fn a_shape_moved_under_itself_is_not_a_container() {
+    let doc = tree();
+    refused(
+        Reparent::new(PAGE, vec![n(A)], Some(n(A)), 0),
+        &doc,
+        CommandError::NotAContainer(n(A)),
+    );
+}
+
+#[test]
 fn missing_pages_nodes_parents_and_empty_lists_are_refused() {
     let doc = tree();
     refused(
@@ -433,6 +443,23 @@ fn a_reparent_revert_over_a_changed_list_fails_and_changes_nothing() {
         Err(CommandError::InvalidValue("the lists changed since apply"))
     );
     assert_eq!(doc, before);
+}
+
+#[test]
+fn a_reparent_revert_checks_every_list_before_it_writes_one() {
+    let mut doc = tree();
+    let mut reparent = Reparent::new(PAGE, vec![n(A), n(B)], Some(n(E)), 0);
+    apply(&mut reparent, &mut doc).unwrap();
+    // The roots are still as `reparent` left them; only `e`'s children differ.
+    apply(&mut Reorder::new(PAGE, n(A), 1), &mut doc).unwrap();
+    assert_eq!(children(&doc, E), ids(&[B, A]));
+    let before = doc.clone();
+    assert_eq!(
+        revert(&mut reparent, &mut doc),
+        Err(CommandError::InvalidValue("the lists changed since apply"))
+    );
+    assert_eq!(doc, before);
+    assert!(Arc::ptr_eq(&doc.pages()[0], &before.pages()[0]));
 }
 
 #[test]
