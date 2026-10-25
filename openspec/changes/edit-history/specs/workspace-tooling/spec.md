@@ -8,6 +8,8 @@ C3 adds two crates, `gafira-edit` (layer 1 domain) and `gafira-testkit` (support
 
 ### Requirement: Formatting and per-crate Clippy policy
 
+C3 delivery: D1. Scenarios without a delivery tag below belong to it.
+
 `rustfmt.toml` MUST exist. Each domain crate MUST have a `clippy.toml` whose `disallowed-methods`/`disallowed-types` cover `std::fs`, `std::net`, `std::thread::spawn`, `std::time::SystemTime::now` and `std::env` (ARQ-02). Every `clippy.toml` copy (`gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`) MUST additionally list `std::collections::HashMap` and `std::collections::HashSet` in `disallowed-types`, with the reasons "ARQ-10: unstable iteration order; use BTreeMap" and "ARQ-10: unstable iteration order; use BTreeSet". The copies MUST stay byte-identical (V12). The ban applies to all targets (`--all-targets`), including tests. `gafira-geom` and `gafira-color` MUST still pass clippy after the change with no code edit (neither uses the types today). The only ordering constraint is that the commit adding the `HashMap`/`HashSet` ban to the `gafira-geom` and `gafira-color` copies precedes the `gafira-doc` skeleton commit; the hardened V12 is activated later, together with the `gafira-doc` copy (see V12 above). The `gafira-edit` copy (C3 D1) is produced with `cp` from the canonical copy in the crate's skeleton commit, together with its V5 row. `gafira-testkit` has no `clippy.toml`: it is a support crate that will read golden files (`design.md` Q10).
 
 #### Scenario: Disallowed I/O flagged (integration)
@@ -36,6 +38,8 @@ C3 adds two crates, `gafira-edit` (layer 1 domain) and `gafira-testkit` (support
 - THEN both exit 0
 
 ### Requirement: Per-crate allowed-dependency table (V5)
+
+C3 delivery: D1, D2. Scenarios without a delivery tag below belong to it.
 
 CI step V5 MUST be driven by one table of allowed internal dependencies per domain crate, not by a step hard-coded for `gafira-geom`. The table in this change:
 
@@ -125,6 +129,8 @@ Known limitation: a crate under `crates/` without a `clippy.toml` is not recogni
 
 ### Requirement: Policy checks cover every domain crate (V11, V12)
 
+C3 delivery: D1, D2. Scenarios without a delivery tag below belong to it.
+
 V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-color`, `gafira-doc`, `gafira-edit` and `gafira-testkit` through its existing `crates/*` wildcard without per-crate edits. V12 MUST run under `set -euo pipefail` and MUST: (1) fail unless the canonical copy `crates/gafira-geom/clippy.toml` contains, inside the `disallowed-types` array, an uncommented entry anchored with `^[[:space:]]*\{ path = "std::collections::HashMap"` and the same for `HashSet` (a positive control, so removing the ban consistently from every copy, commenting it out, or moving it under `disallowed-methods` cannot pass); (2) fail when any `crates/*/clippy.toml` differs from the canonical copy; (3) count the copies and fail when fewer than three exist (so an empty or shrunken glob cannot pass). The hardened V12 (all three checks) becomes active in the commit that adds the `gafira-doc` copy of `clippy.toml`, not before: with only two copies the count check would fail the earlier commits. The commit that adds the ban to the `gafira-geom` and `gafira-color` copies comes first and keeps the previous V12 body. `crates/gafira-color/clippy.toml`, `crates/gafira-doc/clippy.toml` and `crates/gafira-edit/clippy.toml` MUST be byte-identical to the canonical copy and MUST never be edited by hand (they are produced with `cp`).
 
 #### Scenario: Copies identical (command)
@@ -178,6 +184,8 @@ V11 (`#![forbid(unsafe_code)]` in `crates/*/src/lib.rs`) MUST cover `gafira-colo
 - THEN it exits non-zero naming that file; reverted afterwards
 
 ### Requirement: V13 EditToken step (D5b)
+
+C3 delivery: D1, D5. Scenarios without a delivery tag below belong to it.
 
 The `policy` job MUST contain step V13, which fails when `EditToken` or the hidden constructor's identifier appears in Rust sources outside `gafira-doc`, `gafira-edit` and `gafira-testkit`, with a positive control, `set -euo pipefail`, explicit `grep` exit-code handling and a re-export check for `gafira-edit`. The full rule, what Rust does and does not guarantee, the known textual limits (two-step alias, public function or wrapper handing out the token, macro-generated re-export, `;` inside comments or strings, type inference, crate or module re-export such as `pub use gafira_doc as d;`) and the negative runs E0 to E15 (including the multi-line, `pub type` and glob re-export cases, which V13 does catch) are specified in `edit-capability` (requirement "V13 CI step") and are not repeated here; this requirement makes the step part of the tooling contract. V13 is evidence for ARQ-30 together with the guarantees table, review and, from C3, the `trybuild` fixtures (`edit-capability`, "trybuild evidence for ARQ-30"). The fixtures live under `crates/gafira-edit/tests/ui/`, an allowed path, so the allowlist is unchanged.
 

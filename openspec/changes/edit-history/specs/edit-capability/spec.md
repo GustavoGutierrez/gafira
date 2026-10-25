@@ -41,6 +41,8 @@ Each compile-fail fixture MUST fail with exactly the error code recorded in its 
 
 ### Requirement: V13 CI step (D5b)
 
+C3 delivery: D1, D5. Scenarios without a delivery tag below belong to it.
+
 The `policy` job MUST contain a step V13, run under `set -euo pipefail`, that searches the repository with `git grep --untracked -nE 'EditToken|__new_for_gafira_edit_only' -- '*.rs'` and fails when a hit lies outside `^crates/(gafira-doc|gafira-edit|gafira-testkit)/`. The step MUST: capture every `grep` exit code explicitly and treat only exit 1 (no match) as clean, so that any exit above 1 fails the step (`git grep` exits 128 for a broken pattern or no repository; the filter `grep` exits 2 for a broken pattern); run a positive control that fails the step unless the search finds `pub struct EditToken {` in a file under `crates/gafira-doc/src/` (so a wrong working directory, a renamed definition or an empty search cannot pass); print the offending hits; and also fail when any Rust file under `crates/gafira-edit/` (listed with `git ls-files --cached --others --exclude-standard -- crates/gafira-edit | grep '\.rs$' || true`: a plain directory pathspec, so untracked files count and a missing directory prints nothing; `|| true` is required because `grep` exits 1 on no match under `pipefail`) publicly re-exports the token. The re-export check MUST split each file into records at `;` so that a multi-line brace group is one record, and MUST fail on a record that has a `pub use` or `pub type` item naming `EditToken`, and on every public glob re-export (`pub use ...::*`), even if it does not name the token (stricter than needed, accepted). `pub(crate)` re-exports are deliberately allowed. Only `*.rs` files are searched, so `openspec/` and `ci.yml` never match. V13 does NOT prove ARQ-30: the limits are in the table above.
 
 From C3 on, `crates/gafira-edit/` exists. The re-export check MUST scan every Rust file under it, the `trybuild` fixtures under `crates/gafira-edit/tests/ui/` included; fixtures MUST therefore never contain a `pub use` or `pub type` naming the token nor a public glob re-export. The check MUST still pass silently on a tree without the directory (for example a scratch copy used in negative runs): listing files with a plain directory pathspec prints nothing for a missing directory (verified on git 2.34.1). A glob pathspec such as `'crates/gafira-edit/*.rs'` is NOT silent (it prints `warning: could not open directory` to stderr, exit 0), so the step MUST NOT use one. Even if git printed a warning, it MUST NOT break the positive control or change the exit-code mapping.
@@ -120,6 +122,8 @@ Known limits of V13 (recorded in the verify report as not met; review covers the
 ## REMOVED Requirements
 
 ### Requirement: trybuild is deferred (D5b)
+
+C3 delivery: D5. Scenarios without a delivery tag below belong to it.
 
 **Reason**: C3 adds `trybuild` as a dev-dependency of `gafira-edit` and the ARQ-30 compile test it deferred (ED3, ED5).
 
