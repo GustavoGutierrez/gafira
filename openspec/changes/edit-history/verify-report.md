@@ -919,3 +919,94 @@ Probe P1, which confirms C1, was a scratch test in the export (removed afterward
 ### Result
 
 FAIL. 2 CRITICAL, 4 WARNING, 4 SUGGESTION. `next`: `tdd-apply` for a test-only D7 fix round (C1, C2; rebase on `main`, W2), then `mutants` on the D7 diff and re-verify. The owner decides the split (W1).
+
+## D7 re-verify (after the fix round)
+
+Branch `feat/edit-history-7`, HEAD 5be2493 (fixes 3eecd30, 8435e20; merge of `main` 3d92768 at 4a6168a; docs 5be2493). Code at HEAD is byte-identical to 4a6168a (`git diff --quiet 4a6168a HEAD -- crates Cargo.lock Cargo.toml`). **Delivery verdict: PASS** (0 CRITICAL, 1 WARNING, 4 SUGGESTION). **Change verdict: not final** (deliveries remain). `next`: the coordinator pushes `feat/edit-history-7` and opens its PR against `main` (single PR, owner-approved), then `tdd-apply` for the next delivery.
+
+### Gates at HEAD 5be2493
+
+All runs used a target dir outside the worktree.
+
+| Check | Result |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0, 408 passed, 0 failed (including the 9 trybuild fixtures from D5) |
+| `cargo deny check` | advisories, bans, licenses, sources ok |
+| CI `policy` steps extracted from `ci.yml`, run with `bash --noprofile --norc -eo pipefail`: ARQ-07, forbid unsafe (V11), V5, V12, V13 | all rc 0 |
+| Per commit, `git archive` export with its own target dir (fmt, clippy `-D warnings`, test) | 3eecd30 0/0/0 (406 tests), 8435e20 0/0/0 (407), 4a6168a 0/0/0 (408). 5be2493 is docs only. |
+
+### Disposition of the D7 findings
+
+| Finding | Fix | State |
+|---|---|---|
+| C1: compaction "until the sum fits" when one execute must drop several snapshots | `history_budget_tests.rs::one_execute_drops_as_many_snapshots_as_it_takes_to_fit`. Budget 3 small entries. A medium move must give `[true, true, false, false]` and a 57-node move must give `[true, true, true, false]`. The test also asserts the sum fits or only the newest holds snapshots. The `history.rs:128:23` mutants `/=` and `+=` are caught by this test. | resolved |
+| C2: the size model was pinned only relatively | Four exact-estimate tests in `budget.rs`: 7 pages (the `16:40 -` underflow case), page record with name, roots and arena slots, a node with 30 children (the `57:9 -` underflow case) plus a name, and an extension with type id +9, a 500-byte string, object keys and nested array/object, each with `assert_eq!`. All 13 previously missed `budget.rs` mutants are caught. | resolved |
+| W1: size over the ceiling | Now 1030 insertions, 34 deletions (`git diff --shortstat 3d92768..HEAD -- crates`). This matches the coordinator's figure. The owner approved a single PR. | accepted by the owner |
+| W2: branch did not merge with `main` | Merge 4a6168a. `Cargo.lock`: the `gafira-edit` dependencies list both `serde_json` and `trybuild`. `crates/gafira-edit/Cargo.toml` keeps `serde_json` (normal) and `trybuild` (dev). `apply-progress.md` and `verify-report.md` keep both sides (D5 section, then D7). `git diff 3d92768..HEAD -- openspec` removes no line. No conflict markers. | resolved |
+| W3: the revert property covers `SetProperty` only | Recorded as a carry-over in apply-progress (extend to `InsertNodes`/`RemoveNodes` after D8 merges) | open carry-over (WARNING 1 below) |
+| W4: the RED-by-mutant claim was overstated | apply-progress now says "a selection" and cites the full cargo-mutants numbers | resolved |
+| S2: stale `next_id` note | The note now states that option A is decided | resolved |
+
+### Mutation (re-run)
+
+The `mutants` re-run is at `scratchpad/md7b/out/mutants.out` (cargo-mutants 27.1.0, `-p gafira-edit`, `--in-diff` of `3d92768..HEAD`). I checked that the diff file is byte-equal to `git diff 3d92768..HEAD`, and that the mutated tree's `budget.rs`, `history.rs`, `history_budget_tests.rs`, `lib.rs` and `tests/budget.rs` are byte-equal to HEAD. Results: **64 mutants, 61 caught, 0 missed, 0 timeout, 3 unviable** (the `Default` replacements of `execute`, `undo -> Ok(Some(Default))` and `on_copy`). The `with_budget`, `redo` and `apply_to_copy` `Default` replacements that were unviable before now compile and are caught.
+
+The 14 previously missed mutants are now caught. Per-mutant logs name the killing tests:
+
+| Mutant | Killed by |
+|---|---|
+| `history.rs:128:23` `-=` to `/=` | `one_execute_drops_as_many_snapshots_as_it_takes_to_fit` |
+| `budget.rs:16:40` `+` to `-`, `*` | the four new exact tests and `strings_and_payloads_count_their_heap_length` |
+| `budget.rs:35:28` `*` to `+`, `/` | `a_page_counts_its_record_name_roots_and_arena_slots` |
+| `budget.rs:36:28` `*` to `+`, `/`; `36:51` `+` to `-` | `a_page_counts_its_record_name_roots_and_arena_slots` (and `shared_data_is_not_double_counted` for some) |
+| `budget.rs:52:55` `+` to `*` | `an_extension_counts_its_type_id_and_payload_exactly` |
+| `budget.rs:57:9` `+` to `-`; `57:31` `*` to `+`, `/` | `a_node_counts_its_record_name_and_children`, `an_extension_counts_its_type_id_and_payload_exactly` |
+| `budget.rs:64:9` `+` to `*`; `67:67` `+` to `*` | `an_extension_counts_its_type_id_and_payload_exactly` |
+
+Hand mutants, re-applied to a `git archive` export of 4a6168a (code identical to HEAD). Each used its own target dir and ran `cargo test -p gafira-edit --locked --no-fail-fast`. A script restored the file after each mutant, and `cmp` against the worktree matched at the end.
+
+| # | Mutation | Result |
+|---|---|---|
+| H1 | `total <= self.budget` to `<` | KILLED (`a_sum_equal_to_the_budget_fits`, `one_execute_drops_...`) |
+| H2 | compact newest-older first (`take(older).rev()`) | KILLED (`a_small_budget_compacts_the_oldest_entries_first`, `one_execute_drops_...`) |
+| H3 | newest may be compacted (`take(older + 1)`) | KILLED (5 tests) |
+| H4 | no estimate recompute on merge | KILLED (`a_merged_entry_is_estimated_from_its_first_before_to_its_last_after`, `an_entry_that_grows_by_merging_can_push_older_ones_out`) |
+| H5 | failed compacted redo drops the entry instead of pushing it back | KILLED (`a_failed_apply_on_a_compacted_redo_changes_nothing`) |
+| H6 | compacted undo reverts in place on `self.doc` | KILLED (`a_failed_revert_changes_nothing`, `a_transaction_that_fails_midway_through_revert_leaves_no_partial_change`) |
+
+### Requirement and scenario coverage
+
+The D7 table above still holds. The two gaps are closed:
+- "Compact oldest first, until the sum fits or only the newest holds snapshots" is now covered for several compactions in one execute (C1 test).
+- "Per-entry estimate, fixed size model" is pinned term by term (C2 tests).
+
+Every D7 requirement and scenario is covered.
+
+### Strict TDD
+
+The fix round is test-only. Its RED comes from the cargo-mutants mutants named in C1 and C2: each was applied, failed the new test, and was restored. That is credible, and the re-run independently confirms it (0 missed).
+
+### Size and commits
+
+`git diff --shortstat 3d92768..HEAD -- crates`: 1030 insertions, 34 deletions. The owner approved shipping D7 as a single PR. Commit subjects follow conventional types: `feat(edit)` for production code, `test(edit)` for the test-only commits, `docs(edit-history)` for the change docs, and a plain merge commit. No commit message on the branch (`3d92768..HEAD`, merge included) has a Co-Authored-By or other AI attribution line. The only match for "generated" is the property description "generated SetProperty sequences".
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+1. **Carry-over (D7 W3): the revert-versus-snapshot property covers `SetProperty` only.** The spec says "a generated sequence of core commands". When D8 (`InsertNodes`, `RemoveNodes`) is on `main`, extend `tests/budget.rs` to them, in D9/D10 or the integration delivery. Under option A this also exercises the compacted redo with the `next_id` restore. It is recorded in apply-progress.
+
+### SUGGESTION
+
+1. The C1 test's final assertion (`estimated_bytes() <= budget || == newest`) is weaker than its state assertion. The exact `compacted(...)` arrays are what pin the behavior. Keep it as a guard, or assert `<= budget` for the medium case, where it must hold.
+2. The D7 "Commits and gates" size paragraph in apply-progress still says 891 insertions and suggests a 1-2 / 3-4 cut. The fix-round section gives the current 1030 and the owner chose a single PR. Archive may drop the stale paragraph.
+3. Carried from D7 and still valid: S1 (unreachable let-else guard for a merge into a compacted entry), S3 (O(pages²) counterpart scan in `unshared_bytes`), S4 (undone entries do not count their redo `after`; one sentence in the spec or design when archive merges Q7).
+4. The untracked `scratchpad/` inside the d7 worktree (about 1.1 GB) is still there. It is not staged and not part of the delivery. Remove it once the PR is open (`rm -rf scratchpad` in the worktree).
+
+### Result
+
+PASS. 0 CRITICAL, 1 WARNING, 4 SUGGESTION. `next`: the coordinator pushes `feat/edit-history-7` and opens its PR against `main`. Then `tdd-apply` continues with the next pending delivery. The change is not ready to archive.
