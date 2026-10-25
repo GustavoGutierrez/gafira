@@ -709,3 +709,12 @@ For the `archive` agent (from the whole-change verify and the spec fixes above):
    - ARQ-32, criterion: replace "deshacer y rehacer de una entrada con instantánea no llaman a ningún método de `Command` y solo instalan el `Arc` guardado" with "deshacer y rehacer de una entrada con instantánea no llaman ni a `apply` ni a `revert` (solo a `label()`, para devolver la etiqueta) y solo instalan el `Arc` guardado".
    - §4.3 "Implementan": replace "en `gafira-edit::cmd`: `SetProperty<T>` (campos de nodo y de forma, y los de página y el DPI del documento)" with "en la raíz de `gafira-edit`: `SetProperty` (un enum `Property` con los campos de nodo y de forma, los de página y el DPI del documento)".
    - §4.3 "Cómo añadir un comando", step 2: replace "`touches` exacto." with "`touches` cubre todo cambio: una página cuando cambian sus campos o sus `roots`, un nodo cuando cambia su registro o sus `children`; un cambio del DPI no lista nada y quien dependa del DPI compara `Document::dpi`."
+
+### W1 result (tdd-apply, verify finding in the D11 V12 step)
+
+Done. The V12 step read the V5 table up to the first line matching `/^ *.$/`, which also matches a whitespace-only line, so rows after it (for example `gafira-edit`) were never required. It now ends the table only at the real terminator, a line holding just the closing single quote (awk `-v q="'"`, `$0 ~ "^ *" q "$"`; portable to mawk and gawk), and the start line is matched the same way. V5 is unaffected: it iterates its own `table` variable, not this parser.
+
+RED (V12 before the fix): a spaces-only line before the `gafira-edit` row and `crates/gafira-edit/clippy.toml` deleted: exit 0.
+GREEN: same tree: exit 1, "gafira-edit is in the V5 table but has no crates/gafira-edit/clippy.toml". Also exit 1 naming the crate for an empty line, a tab/trailing-space row, a comment row (`#` named), a deleted or edited `gafira-time` copy, a run from the wrong directory (fails closed, awk exit 2), trailing spaces after `table='` (fails closed, "no V5 table rows found"), and the exemption removed (names `gafira-testkit`). Clean tree exit 0 with five copies required (geom, color, time, doc, edit; testkit exempt). red.sh, green.sh, the verifier's neg.sh and the new w1.sh were re-run.
+
+Gates: fmt, clippy -D warnings, test (608 passed, 0 failed), deny ok; ARQ-07, forbid unsafe, V5, V12, V13, V14 extracted from ci.yml exit 0.
