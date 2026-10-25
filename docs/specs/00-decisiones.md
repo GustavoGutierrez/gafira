@@ -88,6 +88,31 @@ Fecha: 24 de octubre de 2026.
   - El instalador MSI y la imagen del DMG **no** usan esta ilustración (05 sin cambios): siguen con el logo sobre `#FAFAF7`.
 - Aplicado a 01 (RF-67, CAL-38, CAL-39), 02 (ARQ-65..ARQ-69, ADR-10, evento `StartupProgress`) y 03 (§7.10, DIS-80..DIS-87, glosario, tokens y contraste).
 
+## D-10 Excepción de licencia para el audio generado localmente
+
+Fecha: 24 de octubre de 2026.
+
+- **Decisión**: se admite una **excepción a la regla «solo assets propios o con licencia permisiva»** (ARQ-75, FV-09, P-03). Vale **solo en este repositorio**, **solo para los 40 WAV** de `assets/musics/` y **solo mientras la licencia del modelo permita distribuirlos o regalarlos**. No sienta precedente para otros assets.
+- **Origen**: el titular los generó en local el 24 de octubre de 2026 con su herramienta `minimax-music3`. Usa el runtime audio.cpp (Apache-2.0) con un único modelo, `minimax-music3`, en el port GGUF `audio-cpp/MiniMax-Music3-GGUF` (mezcla q4_0) del modelo `MiniMaxAI/MiniMax-Music3`. No se usó ACE-Step. Formato: WAV de 44,1 kHz, 16 bits, estéreo (~201 MB).
+- **Licencia**: «MiniMax-Music3 Community License» (https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/main/LICENSE). El port GGUF publica el mismo texto, byte a byte.
+- **Qué permite**: la licencia **no reclama ni restringe los resultados** y **no prohíbe distribuirlos**. Su cláusula de exención de garantía contempla expresamente «distributing any of the Software or outputs». Concede uso, copia y distribución «free of charge», incluido el uso comercial con las condiciones de abajo.
+- **Obligaciones** (texto de la licencia):
+
+| Cláusula | Qué exige | Qué hace Gafira |
+|---|---|---|
+| §3.1 | «prominently display “MiniMax-Music3” on the user interface of commercial product or service that uses the Software» | Lectura prudente: **aplica**. Mostrar «MiniMax-Music3» de forma visible en la interfaz (pestaña Sonidos y/o Acerca de) |
+| Anexo A, punto 11 | No difundir contenido en un entorno público sin indicar «clearly and prominently» que es **generado por máquina** | Indicar en la interfaz y en `THIRD_PARTY_NOTICES.md` que la música es generada por IA |
+| Anexo A (lista completa) | Cumplir la política de uso aceptable; «MiniMax reserves the right to update» | Revisar el anexo antes de cada versión que distribuya el audio |
+| §3.2 | Autorización previa por escrito si los ingresos anuales superan 20 millones de USD (api@minimax.io) | No aplica hoy; revisar si el negocio crece |
+| Exención de garantía | El usuario asume los riesgos de distribuir los resultados y **indemniza a MiniMax** por incumplir la licencia | Riesgo del titular, sin garantía de MiniMax |
+| §1 | Conservar el aviso de copyright y de permiso | Incluir el texto de la licencia en `THIRD_PARTY_NOTICES.md` |
+
+- **Salvedad de derechos de autor** (contexto general, no es asesoría legal): el audio puramente generado por IA puede **no ser protegible por copyright** en algunas jurisdicciones. Gafira no podría impedir que otros lo copien, y no debe prometer exclusividad sobre estas pistas.
+- **Almacenamiento**: el audio **queda fuera de git por ahora** (`.gitignore` ignora `assets/musics/*` salvo `assets/musics/LICENSE.md`). Al implementar la pestaña Sonidos (05, FV-09) se **convierten a un formato comprimido**, se versionan, y se registran en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` con esta excepción como justificación.
+- **Voces detectadas**: la verificación de voz del lote marcó palabras en 9 pistas de la primera tanda: `bgm-04`, `underscore-02`, `underscore-04`, `underscore-05`, `underscore-06`, `underscore-10`, `soundtrack-08`, `ambient-06`, `ambient-10`. Las tres `underscore` -05, -06 y -10 se regeneraron después y **no se volvieron a comprobar**. Hay que revisarlas antes de publicar.
+- **Condición de caducidad**: si MiniMax cambia la licencia o el anexo de modo que impida distribuir los resultados, esta excepción **deja de valer** y se retira el audio.
+- Aplicado a 05 (pestaña Sonidos, FV-09) cuando se implemente; sin cambios en las demás specs.
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
@@ -105,5 +130,6 @@ Fecha: 24 de octubre de 2026.
 3. Completar la lista de seguridad del `license-hub` y desplegarlo.
 4. Hacer la búsqueda de marca de D-04.
 5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
-6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09); si la ilustración se generó con una herramienta, comprobar que sus condiciones permiten el uso comercial (VERIFICAR).
+6. Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09); si la ilustración se generó con una herramienta, comprobar que sus condiciones permiten el uso comercial (VERIFICAR). D-10 cubre solo el audio de `assets/musics/`; la ilustración sigue pendiente.
 7. Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras PROPUESTA de D-09 (máximo de 5 s, primer frame < 300 ms, ventana de 800×450).
+8. D-10: revisar las 9 pistas con voz detectada, volver a comprobar `underscore-05`, `-06` y `-10`, y al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.

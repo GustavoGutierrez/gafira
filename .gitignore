@@ -25,3 +25,7 @@ Thumbs.db
 .env.*
 *.pem
 *.key
+
+# Locally generated audio (see assets/musics/LICENSE.md, D-10)
+assets/musics/*
+!assets/musics/LICENSE.md
