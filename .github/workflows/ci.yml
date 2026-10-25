@@ -112,12 +112,21 @@ jobs:
             grep -qE "^[[:space:]]*\{ path = \"std::collections::$t\"" <<<"$types" \
               || { echo "::error::$canon lacks the std::collections::$t ban under disallowed-types" >&2; exit 1; }
           done
-          n=0
-          for c in crates/*/clippy.toml; do
-            n=$((n + 1))
-            [ "$c" = "$canon" ] || diff -q "$canon" "$c"
+          # The required copies come from the V5 table (the one list of domain crates): read its rows from this file.
+          table=$(awk '/^ *table=.$/{on=1; next} on && /^ *.$/{exit} on{print}' .github/workflows/ci.yml)
+          crates=$(awk 'NF{print $1}' <<<"$table")
+          [ -n "$crates" ] || { echo "::error::no V5 table rows found in .github/workflows/ci.yml" >&2; exit 1; }
+          status=0
+          for name in $crates; do
+            if [ "$name" = gafira-testkit ]; then
+              echo "gafira-testkit: exempt, a support crate without clippy.toml (design Q10)"
+              continue
+            fi
+            c=crates/$name/clippy.toml
+            [ -f "$c" ] || { echo "::error::$name is in the V5 table but has no $c" >&2; status=1; continue; }
+            [ "$c" = "$canon" ] || cmp -s "$canon" "$c" || { echo "::error::$name: clippy.toml differs from $canon" >&2; status=1; }
           done
-          [ "$n" -ge 3 ] || { echo "::error::expected >= 3 domain clippy.toml copies, found $n" >&2; exit 1; }
+          exit "$status"
       - name: EditToken only in the edit crates (V13)
         run: |
           set -euo pipefail
