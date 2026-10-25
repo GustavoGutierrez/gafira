@@ -95,7 +95,7 @@ pub(crate) fn plan(
         .collect();
     if let Some(id) = parent
         && let Some(top) = successors(Some(id), |c| above(*c).next())
-            .take(at.len() + 1)
+            .take(at.len())
             .find(|c| tops.contains(c))
     {
         return Err(CommandError::WouldCreateCycle(top));
