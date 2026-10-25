@@ -14,6 +14,7 @@ mod element;
 mod error;
 mod ids;
 mod json;
+pub mod msg;
 mod node;
 mod page;
 mod page_size;
