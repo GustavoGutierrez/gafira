@@ -1,4 +1,4 @@
-# Path Operations Specification (delta for C4 `engine-pathops`)
+# Path Operations Specification
 
 ## Purpose
 
@@ -30,7 +30,7 @@ Terms used below:
 - **Equal in value**: two paths are equal in value when they hold the same
   sequence of elements with the same coordinates and the same fill rule.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Crate purity and dependencies (ARQ-01, ARQ-02, ARQ-03) (D1)
 
