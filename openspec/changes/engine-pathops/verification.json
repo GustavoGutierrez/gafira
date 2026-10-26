@@ -449,6 +449,60 @@
         "forecast": null
       },
       "report": "verify-report.md"
+    },
+    {
+      "round": 5,
+      "commit": "9d549f1",
+      "mode": "standard",
+      "tier": "T3",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "counts": {
+        "critical": 1,
+        "warning": 0,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "951e777, 5f9ead0",
+          "summary": "Implementer-recorded delta-spec commits after implementation; content correct. Void once the owner's close instruction is recorded as ratifying them (as for f89f883)"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": {
+        "tier": "T3",
+        "found": 51,
+        "caught": 46,
+        "missed": 0,
+        "timeout": 0,
+        "unviable": 5,
+        "critical_missed": 0,
+        "wall_s": null
+      },
+      "hand_mutants": {
+        "run": 5,
+        "killed": 4,
+        "equivalent": 1
+      },
+      "criteria": {
+        "total": 114,
+        "covered": 114
+      },
+      "size": {
+        "lines": 8507,
+        "forecast": null
+      },
+      "report": "verify-report.md"
     }
   ]
 }

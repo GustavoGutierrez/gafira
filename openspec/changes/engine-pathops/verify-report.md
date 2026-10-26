@@ -637,3 +637,88 @@ next: specifier (ambiguity: C2, W1), then tdd-apply (implementation: C1, W2, W3,
 - Hand mutants: 5 run, 5 killed. Mutation T3: 0 missed, 0 timeouts.
 
 next: specifier (ambiguity: C2, W1), then tdd-apply (implementation: C1, W2). This is round 4, beyond the 3-round cap, and the second consecutive FAIL with both an `implementation` and an `ambiguity` CRITICAL: the coordinator stops and asks the owner before routing.
+
+# Verify report: engine-pathops (C4), round 5 (closing pass, narrow)
+
+- Commit verified: `9d549f1` (HEAD of `feat/engine-pathops-1`). Flow: full | tier T3 | depth V2, narrowed by the coordinator to the round 4 findings. Acceptance source: the delta specs at HEAD (path-operations 9 requirements, 91 scenarios; workspace-tooling 2 MODIFIED requirements, now restating 23 scenarios).
+- Code trees since round 4: `a7c1dcb` (fix) and `c8aff2e` (test). The merge `4ac92bf` changes no file under `crates/`, `Cargo.*`, `.github/`, `.cargo/` or `deny.toml` against `a7c1dcb`; `951e777`, `5f9ead0`, `de7b8fe` and `9d549f1` are docs-only; HEAD equals `c8aff2e` on code. Clean `git archive` exports of `a7c1dcb` and HEAD, every file `touch`ed, fresh `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`; both logs show a rebuild of `gafira-pathops`. Disk: 90 GB free at the start.
+- Mutation: no fresh `mutants` report; the coordinator states the T3 evidence for the closing pass, which matches the `cargo mutants` outcomes in the session scratchpad (`mut3`: `simplify.rs` 8 mutants, 6 caught, 2 unviable; `mut4`: `path.rs` 43 mutants, 40 caught, 3 unviable; 0 missed, 0 timeouts). The earlier `--jobs 4` run had 19 load timeouts; the reruns at `--jobs 2 --minimum-test-timeout 120` over the same files supersede it. No `.cargo/mutants.toml` change since round 4.
+- Treated as resolved as instructed: round 4 C2 (`f89f883`, ratified by the owner's instruction to close the change).
+
+**Verdict: FAIL.** 1 CRITICAL, 0 WARNING, 4 SUGGESTION items. By class (CRITICAL and WARNING): ambiguity 1. The code is clean; the only blocker is process (spec commits by the implementer), and it needs a ratification record, not a code or spec change.
+
+## Gates (clean exports)
+
+| Export | fmt | clippy | test (passed/failed) | ARQ-07 | forbid-unsafe | V5 | V12 | V13 | V14 |
+|---|---|---|---|---|---|---|---|---|---|
+| a7c1dcb | 0 | 0 | 0 (766/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+| 9d549f1 HEAD | 0 | 0 | 0 (767/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- At HEAD: `cargo deny check` rc 0 (advisories, bans, licenses, sources ok); `cargo test -p gafira-pathops --release --locked` rc 0 (157 passed).
+- The CI policy steps ran from `ci.yml` under `bash --noprofile --norc -eo pipefail` on the export (V13 and V14 need a git index; the export was `git init`ed and committed first).
+- `origin/main` (`c7187ca`) is an ancestor of HEAD: the PR merge is a fast-forward, `git merge-tree` reports 0 conflicts, and 0 commits of main are missing. Against main the branch adds 36 files, +8507/-1; outside `openspec/changes/` and the crate it touches only `.cargo/mutants.toml`, `ci.yml` (+1, the V5 row), `Cargo.toml` (+1), `Cargo.lock` (+32) and the README row.
+- Commits since round 4: 6 own plus the merge, all by the owner identity, conventional, no attribution lines.
+
+## Independent probes (written from the spec before reading `tests/empty_subpaths.rs`; scratch export of HEAD)
+
+- **P1, simplification over every mix (9840 cases, debug and release).** Fragments: a closed square, a closed triangle, `M Z`, `M Z M Z`, `M Z Z`, a lone `M`, a bare `Z`, a closed tail (line and quadratic) and an open tail (line and cubic) drawn after a close with no move; every sequence of 1 to 4 fragments that starts with a move, both fill rules, tolerances `1e-1` and `1e-3`, each case under `catch_unwind`. Reference written independently (implicit moves written out, subpaths with no segment dropped, a close after a close collapsed). Result: 0 panics and 0 failures in debug and release. Every output starts with a move or is empty, holds no `M Z`, `M M`, trailing `M` or `Z Z`, equals the simplification of the reference element by element, keeps the fill rule and the reference's subpath count, and simplifies again without a panic; `contains`, `distance_to_perimeter`, `validate_closed` and `close_subpaths` accept it.
+- **P2, every operation, original and reused output (1092 cases, debug and release).** Sequences of 1 to 3 fragments, both rules. On the input and on its simplification at both tolerances, compared with the reference: `is_empty`, `validate_closed` (ok or error alike), `close_subpaths` then `contains`, `contains` and `distance_to_perimeter` at 7 points (two of them on an `M Z` point), the four boolean operations against a rectangle in both positions (results compared on a 37 x 9 containment grid, errors alike), `stroke_outline` with butt, round and square caps (grid). 0 panics, 0 failures.
+- **P3, a zero-length subpath with a doubled close.** `M(1,1) L(1,1) Z Z`, the same followed by a tail, and `M Z Z` + tail + `Z Z Z`: simplify three times in a row and run every operation on each output, debug and release. No panic, no error, idempotent. The zero-length subpath keeps its `Z Z` (it is copied as it is), the other forms collapse; see S1.
+- **Positive control.** P1 fails on the round 4 behaviour (hand mutant HM1 below), so the probe detects the defect.
+
+- P2 in debug: the same 1092 cases, 0 panics and 0 failures (364 s).
+
+### Comparison with the implementer's tests
+
+- `tests/empty_subpaths.rs` holds the 8 fixed forms (`M Z`, `M Z M Z`, square + `M Z`, `M Z` + square, two squares with `M Z` between and after, square `Z Z`, `M Z` + tail, square `Z Z` + tail), each against the path without them, over simplify (with output reuse in `validate_closed`, `contains`, `distance_to_perimeter`, `union`, `stroke_outline`, `simplify`), the queries, the four booleans, the stroke, `close_subpaths`, plus a generated property over squares, `M Z` and bare `Z` in any order. `after_close.rs` now emits `M Z` before and after the polygon. Not weak; P1 and P2 add `M Z Z`, lone moves, open tails and curved tails after empty subpaths, and agree.
+- `c8aff2e` (round 4 S5) pins the union of a closed tail after a close against its written-out form. I did not re-run the implementer's claim that it fails with the `boolean_op` fix reverted (hand-mutant budget used below).
+
+## Hand mutants (5, each on its own HEAD export, rebuilt from touched sources; kills counted on the implementer's tests only)
+
+| # | Mutation of `Path::simplify` | Result |
+|---|---|---|
+| HM1 | no-segment subpaths are not skipped (`if false`) | killed (`a_simplification_never_starts_with_a_close...`, the generated property, `the_simplification_reads_the_implicit_move`) |
+| HM2 | the `Z Z` collapse removed | killed (`a_simplification_never_starts_with_a_close...`, the generated property) |
+| HM3 | rule order: the zero-length check before the no-segment check | survives, **equivalent**: `is_zero_length` returns false without a segment, so the two branches are disjoint |
+| HM4 | the round 3 rule: skip only a slice shorter than 2 | killed (3 tests, as HM1) |
+| HM5 | the no-segment check sees only `LineTo` (forgets curves) | killed (`a_curved_path_stays_within_the_tolerance`) |
+
+4 killed, 1 equivalent, 0 surviving.
+
+## Status of the round 4 findings
+
+| Round 4 | Status |
+|---|---|
+| C1 `M Z` breaks simplify | resolved (`a7c1dcb`; P1, P2, P3; HM1, HM2, HM4) |
+| C2 `f89f883` | resolved by the owner's instruction to close the change (as instructed) |
+| W1 workspace-tooling delta | resolved in content (`951e777`): each MODIFIED block, diffed against `origin/main`'s requirement, only adds lines: the `gafira-pathops` row, the landing sentence, the layer-2 note, the copy in the clippy list, "seven rows" in N0, "six" copies, `gafira-pathops` in H-N1, and the P-N1, P-N2, P-N3, geom-edge and byte-identical scenarios. Nothing of main is dropped: the `gafira-time` row and notes, N1-N5, the known-limitation, D-N1, D-N2, E-N1, E-N2 and dev-dependency scenarios, "Disallowed I/O", H-N1, "BTreeMap allowed" and the `gafira-time` copy are all kept, so the merged spec keeps them. Provenance: see C1 below |
+| W2 merge with main | resolved (`4ac92bf`; fast-forward against `c7187ca`, README row keeps main's text and adds `engine-pathops` as active) |
+| S1 path with no initial move | accepted, recorded under "Not settled" |
+| S2 simplify wording | applied (`5f9ead0`, "holds no segment (moves and closes only)"); provenance: see C1 |
+| S3, S4 | accepted as they are |
+| S5 fixed sliver test | applied (`c8aff2e`) |
+
+## Findings
+
+### CRITICAL
+
+- **C1** class: ambiguity, ref `951e777` (delta spec `workspace-tooling`) and `5f9ead0` (delta spec `path-operations`, "Path simplification").
+  - Both commits change a delta spec after the first implementation commit, and the closing pass in `apply-progress.md` lists them as its own work ("W2/W1", "S2"). `verify.md` makes an implementer change to a delta spec CRITICAL, whatever its quality; the instruction treated as resolved covers `f89f883` only.
+  - The content is right: W1 is a pure rebase (only additions against main) and S2 is the wording round 4 proposed. No spec or code change is needed.
+  - Remedy: the coordinator records in `apply-progress.md` that the owner's instruction to close the change also ratifies `951e777` and `5f9ead0` (as for `f89f883`), or the specifier ratifies them. With that record this finding is void and the change can go to archive.
+
+### SUGGESTION
+
+- **S1**: A zero-length subpath keeps a doubled close (`M(1,1) L(1,1) Z Z` comes back as it is), while every other subpath has `Z Z` collapsed. Harmless (P3: every operation accepts it, the result is idempotent), but one canonical form would be simpler: collapse in that branch too.
+- **S2**: The V5 paragraph of the `workspace-tooling` delta states the `gafira-pathops` landing twice ("and for the `gafira-pathops` row (C4 D1)" and "The `gafira-pathops` row lands with that crate (C4 D1)"). Drop one when merging at archive.
+- **S3**: No scenario names `M Z` in "Path simplification"; the requirement text covers it and `tests/empty_subpaths.rs` proves it. The archive may add one ("A subpath of a move and a close is dropped").
+- **S4**: `apply-progress.md` records the whole change as +8458; measured at HEAD it is +8507 (the two later docs commits). Informational.
+- Carried and accepted, not counted: no initial move (round 4 S1), message wording when the query point is at fault, `distance_to_perimeter` of an empty path is `+inf`.
+
+## Criteria matrix (114 scenarios: 91 path-operations, 23 workspace-tooling)
+
+- path-operations: 91 of 91, including "Path simplification" at requirement level for subpaths with no segment (round 4 C1), now proved by `tests/empty_subpaths.rs` and P1 to P3.
+- workspace-tooling: 23 of 23. Re-run on the HEAD export: N0 (V5 under xtrace runs `cargo tree` for all seven rows, rc 0), P-N1 (row `gafira-pathops -`: rc 1, "gafira-pathops must not depend on gafira-geom"), "Doc may depend on geom and color" (exactly `gafira-color`, `gafira-doc`, `gafira-geom`), "Pathops may depend on geom" (exactly `gafira-geom`, `gafira-pathops`), dev-dependencies absent from the `gafira-edit` normal tree, "Entries present in all copies" (six files, both entries), "Clean tree" (fmt and clippy rc 0), V12 rc 0. The other restated main scenarios (N1-N5, D-N1, D-N2, E-N1, E-N2, the known limitation, "Disallowed I/O", H-N1, "BTreeMap allowed") are unchanged by this change and covered by the archived edit-history and domain-time verifications; P-N2, P-N3, H-N1 for `gafira-pathops` and the byte-identical copy were run in rounds 1 to 4 and nothing they read has changed.
+- Hand mutants: 5 run, 4 killed, 1 equivalent. Mutation T3 (closing pass files): 0 missed, 0 timeouts.
+
+next: specifier (ambiguity: C1, a ratification record only; the coordinator may void C1 by recording the owner's ratification of `951e777` and `5f9ead0`, then route to archive).
