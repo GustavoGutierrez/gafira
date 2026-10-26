@@ -9,10 +9,12 @@ generator (`document()`), the corruption generators (`corrupt`, `corrupted()`,
 mutants in the crate: 84 caught, 23 unviable, 36 missed
 (`openspec/changes/archive/2026-10-25-edit-history/archive-report.md`, "Mutation
 results (T4)"). One miss is a documented equivalent that cannot be excluded. The
-other 35 were deferred to this change.
+other 35 were deferred to this change. One of those 35, mutant 13
+(`lib.rs:235:18`), is now accepted as a second documented equivalent (owner
+decision 2026-10-26, see "Closed decisions" C2). The target is 34 kills.
 
 This change is test-only. It adds or strengthens tests under
-`crates/gafira-testkit/tests/` until those 35 mutants are caught. The tests pin
+`crates/gafira-testkit/tests/` until those 34 mutants are caught. The tests pin
 behaviour the crate already has. No source file of any crate changes. This is a
 new capability, so there is no main spec to modify.
 
@@ -46,7 +48,7 @@ match the archive report. The run was package-scoped:
 | 10 | `lib.rs:234:23: replace - with + in axis_length` | page size | same |
 | 11 | `lib.rs:234:23: replace - with / in axis_length` | page size | same |
 | 12 | `lib.rs:235:18: replace + with - in axis_length` | page size | same |
-| 13 | `lib.rs:235:18: replace + with * in axis_length` | page size | **pending** (Open question 2, Needs explorer N1) |
+| 13 | `lib.rs:235:18: replace + with * in axis_length` | equivalent | Accepted equivalent (C2); not a target |
 | 14 | `lib.rs:235:30: replace * with + in axis_length` | page size | same as 6 |
 | 15 | `lib.rs:235:30: replace * with / in axis_length` | page size | same as 6 |
 | 16 | `lib.rs:238:26: replace == with != in axis_length` | page size | same as 6 |
@@ -56,9 +58,9 @@ match the archive report. The run was package-scoped:
 | 20 | `lib.rs:572:70: replace % with + in corrupt` | sub-case | same |
 | 21 | `lib.rs:580:35: replace == with != in corrupt` | sub-case | same |
 | 22 | `lib.rs:585:37: replace / with % in corrupt` | sub-case | same |
-| 23 | `lib.rs:585:37: replace / with * in corrupt` | sub-case | same (exact mapping only; Open question 3) |
+| 23 | `lib.rs:585:37: replace / with * in corrupt` | sub-case | same (exact mapping only; C3) |
 | 24 | `lib.rs:604:78: replace / with % in corrupt` | sub-case | same |
-| 25 | `lib.rs:604:78: replace / with * in corrupt` | sub-case | same (exact mapping only; Open question 3) |
+| 25 | `lib.rs:604:78: replace / with * in corrupt` | sub-case | same (exact mapping only; C3) |
 | 26 | `lib.rs:606:28: replace % with / in corrupt` | sub-case | same |
 | 27 | `lib.rs:606:28: replace % with + in corrupt` | sub-case | same |
 | 28 to 33 | `lib.rs:607:21` to `lib.rs:612:21: delete match arm 0` to `5 in corrupt` | sub-case | same |
@@ -151,8 +153,19 @@ Over the deterministic draws of `document()`, a page whose `size` unit is
 `Unit::Px` on the side in question MUST reach each band below. Each band names
 the generator mode that produces it in `axis_length`. Each band except the
 exact limits MUST be reached at least 10 times. That bound stops the random mode
-from satisfying a band by chance. With 20 000 draws the random mode lands in a
-band about once in 16 383 random sides. Bands:
+from satisfying a band by chance: the random mode lands in a band about once in
+16 383 random sides, which is about 0.18 expected hits in 20 000 documents. The
+band oracles MUST use at least 1 000 deterministic draws and SHOULD use 20 000,
+the same as the existing guard.
+
+Measured (explorer N2, release build, `TestRunner::deterministic()`, public API
+only): 20 000 documents give 14 666 px sides. On the unmutated generator the
+bands hold 3 027 (exactly 1.0), 2 937 (exactly 16 384.0), 2 891 in (1, 2),
+2 897 in (16 383, 16 384) and 2 914 in the random band. With 1 000 documents
+the two near-limit bands hold 145 and 160. Under each of mutants 6 to 12 and
+14 to 16, the band that mutant breaks holds 0 sides at 20 000 documents. Run
+time is about 5.4 s for 20 000 documents in the dev profile, and 0.27 s for
+1 000. Bands:
 
 | Band | Side value in px | Mode in `axis_length` |
 |---|---|---|
@@ -184,10 +197,10 @@ the existing guard.
 - THEN the random band has at least 10 sides
 - AND the test fails for mutants 12, 14 and 15
 
-#### Scenario: Shifted random band (unit, pending)
+#### Scenario: Shifted random band is an accepted equivalent (manual)
 - GIVEN mutant 13 (`1.0 + frac * 16 383.0` becomes `1.0 * frac * 16 383.0`, which moves the random band from [1, 16 384] to [0, 16 383])
-- WHEN the oracles above run against it
-- THEN the expected outcome depends on Open question 2 and Needs explorer N1. Until both are settled, this scenario is not an acceptance condition
+- WHEN the band oracles above run against it
+- THEN they pass (every count, minimum and maximum over 20 000 draws equals the unmutated values), the mutant stays in the T4 missed list, and no test pins exact generated values to kill it (C2)
 
 ### Requirement: The corruption guards reject a foreign error
 
@@ -217,8 +230,12 @@ vacuously if the guard accepted every error.
 `corrupt(doc, kind, pick)` documents that "`pick` chooses the sub-case". For the
 kinds below, the sub-case MUST follow this table, for every `pick` in
 `0..=999` (the range `corrupted()` draws from). The table states the current
-behaviour of `crates/gafira-testkit/src/lib.rs`. It becomes part of the crate's
-contract only for these kinds (Open question 3).
+behaviour of `crates/gafira-testkit/src/lib.rs`. It is part of the crate's
+contract for these kinds only, and tests pin it (owner decision 2026-10-26,
+C3). A future edit to these sub-cases needs a spec change. The exact mapping is
+needed for mutants 23 (`lib.rs:585:37`) and 25 (`lib.rs:604:78`). Both keep
+the same set of sub-cases over a full period and change only which pick
+reaches which one.
 
 | Kind | Sub-case chosen by `pick` | Observable on the corrupted document |
 |---|---|---|
@@ -281,23 +298,29 @@ The final run MUST be a full run, without `--iterate` (ADR 0001, section 5).
 ### Requirement: Acceptance: T4 on gafira-testkit
 
 On the final tree, the T4 run on `gafira-testkit` MUST report 0 timeouts. Its
-missed list MUST hold exactly the accepted equivalents. Today that is only
-mutant 36:
-`crates/gafira-testkit/src/harness.rs:84:9: delete field failure_persistence from struct Config expression in try_prop_command`.
-It is a documented equivalent that cargo-mutants 27.1.0 cannot exclude
-(archive report of `edit-history`). If the owner accepts mutant 13 as a second
-equivalent (Open question 2), the list grows to those two lines and nothing
-else. The new caught and unviable counts MUST be recorded. The number of
-mutants MUST stay 143, because no source changes.
+missed list MUST hold exactly these two accepted equivalents, and nothing else:
 
-The T4 command is the AGENTS.md form: `cargo mutants -p gafira-testkit --jobs 4
--o <scratchpad dir>`. A `--test-workspace=true` variant is pending Open
-question 1.
+- mutant 36,
+  `crates/gafira-testkit/src/harness.rs:84:9: delete field failure_persistence from struct Config expression in try_prop_command`.
+  It is a documented equivalent that cargo-mutants 27.1.0 cannot exclude
+  (archive report of `edit-history`);
+- mutant 13,
+  `crates/gafira-testkit/src/lib.rs:235:18: replace + with * in axis_length`.
+  It is accepted as an equivalent (C2), and it cannot be excluded either: an
+  `exclude_re` entry is out of scope by "Test-only scope".
 
-#### Scenario: Zero non-equivalent misses (command)
+The new caught and unviable counts MUST be recorded. The number of mutants MUST
+stay 143, because no source changes. Compared with the baseline, the caught
+count MUST grow by 34 to 118.
+
+The T4 command is the package-scoped AGENTS.md form (owner decision 2026-10-26,
+C1): `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`. A
+`--test-workspace=true` run is not part of acceptance.
+
+#### Scenario: Only the two equivalents survive (command)
 - GIVEN the final tree and at least 20 GB free on `/`
-- WHEN the T4 command runs
-- THEN it reports 143 mutants and 0 timeouts, and `missed.txt` holds only the accepted equivalent lines
+- WHEN `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>` runs
+- THEN it reports 143 mutants, 118 caught, 23 unviable, 2 missed and 0 timeouts, and `missed.txt` holds exactly the two lines above
 
 #### Scenario: Each oracle has RED evidence (manual)
 - GIVEN `apply-progress.md`
@@ -319,7 +342,8 @@ question 1.
   the page's unit. Without the filter it stays green under the mutant, which is
   how the existing guard behaves.
 - **Run time.** Every mutant reruns the crate's tests. New oracles that draw
-  20 000 documents add to every mutant's test time. The T4 wall time MUST be
+  20 000 documents add about 5.4 s (dev profile, N2) to every mutant's test
+  time. 1 000 draws cost about 0.27 s and still meet the bound of 10. The T4 wall time MUST be
   recorded beside the baseline's 10 min 17 s.
 
 ## Non-goals
@@ -331,71 +355,54 @@ question 1.
   testkit mutants.
 - Pinning sub-cases of corruption kinds outside the pick table.
 - Fixing the stale `document-model` text that places the generator in
-  `crates/gafira-doc/tests/common` (Open question 4).
+  `crates/gafira-doc/tests/common` (C4; a separate docs change).
+- Killing mutant 13 with a seed-pinned golden test, a draw count in the
+  millions, or a source change (C2).
 - Making `cargo-mutants` a CI gate.
 
-## Open questions
+## Closed decisions
 
-1. **Which T4 form decides acceptance?** The request names
-   `cargo mutants -p gafira-testkit --test-workspace=true`. AGENTS.md and ADR
-   0001 define T4 as `cargo mutants -p <crate> --jobs 4 -o <dir>`, which is
-   package-scoped, and the baseline of 36 was measured that way.
-   - (a) AGENTS.md form. It matches the baseline. Only the crate's own tests
-     can kill its mutants, so the result is stricter. Because the workspace
-     test set includes the package's tests, 0 non-equivalent misses here
-     implies the same result with `--test-workspace=true`.
-   - (b) `--test-workspace=true`. Tests in `gafira-doc` and `gafira-edit` also
-     run, so some baseline misses may already be caught before this change.
-     That would make the before and after comparison invalid. Each mutant also
-     runs the whole workspace test suite, which is slower.
-   - **Recommendation: (a).** If the owner wants (b) as well, run it once at
-     the end as extra evidence.
-2. **Mutant 13 (`lib.rs:235:18`, `+` to `*`) looks equivalent at the level of
-   observable behaviour.** It shifts the random band from [1, 16 384] to
-   [0, 16 383]. A random side lands in [0, 1) in about 1 of 16 383 draws, and
-   only then does the result change (to the 100 px fallback). The two
-   distributions differ by one part in 16 383, which a deterministic sample of
-   20 000 documents cannot tell apart through a distribution oracle. The only
-   certain kill is a golden test that pins exact generated values for a fixed
-   seed. Such a test breaks on any generator edit or proptest update, and
-   AGENTS.md says to test "behavior of the public contract, not
-   implementation".
-   - (a) Accept it as a second documented equivalent. Acceptance becomes 2
-     missed.
-   - (b) Add a seed-pinned golden oracle for this mutant only.
-   - (c) Kill it with a source change in a separate change (for example,
-     making the random band's bounds explicit). That is not test-only.
-   - **Recommendation: (a), after explorer N1 confirms.** This means 34 kills,
-     not 35. The owner's figure of "35 killable" assumed it could be killed.
-3. **Should the `corrupt` pick table be a contract?** Mutants 23
-   (`lib.rs:585:37`, `/` to `*`) and 25 (`lib.rs:604:78`, `/` to `*`) keep the
-   same set of sub-cases over a full period: (side, value) and (field, value)
-   are still covered once each, just in a different order of picks. Only a
-   test that pins the exact pick-to-sub-case mapping can kill them. The other
-   sub-case mutants are also killed by weaker coverage oracles.
-   - (a) Make the table in "`corrupt` sub-cases follow the pick table" a
-     contract, as written. Future edits to these sub-cases then need a spec
-     change.
-   - (b) Use coverage oracles only and accept mutants 23 and 25 as
-     equivalent. Acceptance gains 2 misses.
-   - **Recommendation: (a).** `corrupt` is public, `pick` is its documented
-     selector, and this is test-support code, so the cost is low.
-4. **The stale generator location in `document-model`.** "Generator and model
-   properties" still says the generator lives in `crates/gafira-doc/tests/common`.
-   It moved to `gafira-testkit` (commit `224b6b6`).
-   - (a) Leave it out of this change. Fix it in a docs-only change.
-   - (b) Add a MODIFIED delta for `document-model` here.
-   - **Recommendation: (a).** It keeps this change test-only and the delta to a
-     single capability.
+There are no open questions left. The owner decided these on 2026-10-26, and
+they are binding for this change.
 
-## Needs explorer
+- **C1. Acceptance command.** T4 is the package-scoped AGENTS.md form,
+  `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`, the same form
+  that produced the baseline. `--test-workspace=true` is not used for
+  acceptance. Because the workspace test set includes the package's tests, a
+  package-scoped pass also implies a workspace-scoped pass.
+- **C2. Mutant 13 (`lib.rs:235:18`, `+` to `*`) is a second documented
+  equivalent** (option A). The target is 34 kills, and acceptance allows
+  exactly two missed mutants: `harness.rs:84:9` and `lib.rs:235:18`. Evidence
+  is in Needs explorer N1.
+- **C3. The `corrupt` pick-to-sub-case table is a contract** (option A), pinned
+  by tests. It kills mutants 23 (`lib.rs:585:37`) and 25 (`lib.rs:604:78`).
+- **C4. The stale `document-model` text** that places the generator in
+  `crates/gafira-doc/tests/common` is out of scope. A separate docs change will
+  fix it.
 
-- **N1.** Mutant 13 cannot be killed by a deterministic oracle over the 20 000
-  draws of `document()` without pinning exact values. Measure this on a scratch
-  copy: apply the mutant, run candidate band and count oracles, and check
-  whether any page-size statistic differs. The "Shifted random band" scenario
-  is pending until the verdict.
-- **N2.** Under mutants 6 to 11, the near-limit bands receive fewer than 10 px
-  sides in the 20 000 deterministic draws. The 1-in-16 383 estimate is
-  analytic. Confirm it by counting the bands with each mutant applied on a
-  scratch copy.
+## Needs explorer (settled)
+
+Explorer run xp3, 2026-10-26. It used a scratch copy of the worktree, release
+build, `TestRunner::deterministic()` over `gafira_testkit::document()`, public
+API only, and each mutant applied at its line and column.
+
+- **N1. Settled: mutant 13 is not killable by a statistic of the draws.**
+  Over 20 000 draws every count, minimum and maximum equals the unmutated
+  generator's. The random band holds 2 914 sides in both, and the page-size
+  range is 1 to 16 384 px in both. Paired values differ by exactly 1.0, so
+  only a test that pins stream values can see the shift. The shift is 1 on a
+  spread of about 4 730, so a mean or histogram oracle would need about 4e9
+  documents.
+
+  The only discriminator that does not pin values is the 100 x 100 px fallback
+  page. It appears when a random px side falls in [0, 1), which is about 1 in
+  16 383 random px sides. The unmutated generator never produces it. At 2 000 000
+  documents the mutant gave 13 such pages and the base gave 0. That run took
+  about 200 s in release. Under T4 (dev profile, the suite rerun for every
+  viable mutant) it would cost about 14 h of CPU. This settles C2.
+- **N2. Settled: a count of at least 10 kills mutants 6 to 11.** At 20 000
+  documents the unmutated bands hold about 2 891 sides in (1, 2) and 2 897 in
+  (16 383, 16 384). At 1 000 documents they hold 145 and 160. Each of mutants 6
+  to 11 leaves the band it breaks at 0. The random-band count (2 914 against 0)
+  kills mutants 12, 14 and 15. The px-only exact-limit count (3 027 and 2 937
+  against 0) kills mutant 16.
