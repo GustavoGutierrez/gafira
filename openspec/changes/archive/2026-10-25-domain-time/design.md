@@ -186,10 +186,11 @@ impl Timecode {
 - `Flicks::seconds_floor`: `div_euclid(FLICKS_PER_SECOND)`, so negative values floor towards minus infinity.
 - `FrameRate::new`: zero checks, `gcd` reduction, `num >= den`, integrality check in `i128`.
 - `Flicks::to_frames_floor`: `ticks.div_euclid(frame_duration)`; boundary: `ticks.rem_euclid(frame_duration) == 0`.
-- `TimeRange` intersection: non-empty check, `start = max(starts)`, `end = min(ends)`, `Some` only when `start < end`; the duration cannot overflow because it is bounded by an operand's duration.
+- `TimeRange` intersection: `start = max(starts)`, `end = min(ends)`, `Some` only when `start < end`; an empty operand needs no separate check because it has `start == end`, so the single test covers it (the earlier non-empty check was removed in `15eb6cd`, behaviour-preserving). The duration cannot overflow because it is bounded by an operand's duration.
 - Timecode NDF: label == real frame index; `to_flicks = label * frame_duration`.
 - Timecode DF: the bidirectional mapping in `spike.md` C4, applied symmetrically to the magnitude for negative labels; skipped-label validation is `minutes % 10 != 0 && seconds == 0 && frames < drop`.
 - Timecode fields: `hh` unbounded, `mm < 60`, `ss < 60`, `ff < nominal_fps`; parse uses checked arithmetic and rejects malformed shapes and contradictory separators.
+- Timecode canonical text (owner decisions Q1 = A and Q2 = A, `specs/timecode` "Timecode text is canonical"): `mm` and `ss` have exactly two digits; `hh` and `ff` have at least two digits with no leading zero beyond that minimum (a value below 10 has one leading zero, 10 or more has none); a `-` appears only before a label whose frame count is not zero. `format()` emits only this text, and `parse()` rejects any text that formatting cannot produce, so a parsed text formats back unchanged. Negative zero (`-00:00:00:00`, `-00:00:00;00`) is rejected.
 
 ## Delivery table
 
