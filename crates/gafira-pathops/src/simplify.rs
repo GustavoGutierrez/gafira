@@ -22,8 +22,11 @@ impl Path {
     /// The simplified path stays within `tolerance` of the original. The
     /// guarantee is about shape, not about the segment count: straight segments
     /// may be replaced by fitted curves, and the result may hold more segments
-    /// than the original. Every subpath of the original appears in the result,
-    /// in the same order, with the same fill rule. A closed path of straight
+    /// than the original. Every subpath of the original that holds a segment appears
+    /// in the result, in the same order, with the same fill rule; a subpath made
+    /// only of a move holds no shape and is dropped. A segment drawn after a
+    /// close, with no new move, belongs to a new subpath that starts at the
+    /// start point of the subpath just closed. A closed path of straight
     /// segments whose every vertex lies farther than `tolerance` from the line
     /// through its neighbours comes back equal in value. A subpath whose every
     /// segment has zero length is kept as it is.
@@ -49,12 +52,12 @@ impl Path {
         let options = SimplifyOptions::default();
         let mut simplified: Vec<PathEl> = Vec::new();
         for subpath in subpaths(self.as_bez_path().elements()) {
-            if is_zero_length(subpath) {
+            if is_zero_length(&subpath) {
                 // The simplifier drops a subpath that covers no distance; it is
                 // still a subpath of the input, so it is kept as it is.
-                simplified.extend_from_slice(subpath);
+                simplified.extend_from_slice(&subpath);
             } else {
-                simplified.extend(simplify_bezpath(subpath.to_vec(), tolerance, &options));
+                simplified.extend(simplify_bezpath(subpath, tolerance, &options));
             }
         }
 
@@ -62,21 +65,41 @@ impl Path {
     }
 }
 
-/// The elements split before each move, so each slice is one subpath.
-fn subpaths(elements: &[PathEl]) -> Vec<&[PathEl]> {
-    let mut starts: Vec<usize> = elements
-        .iter()
-        .enumerate()
-        .filter(|(index, el)| *index > 0 && matches!(el, PathEl::MoveTo(_)))
-        .map(|(index, _)| index)
-        .collect();
-    starts.insert(0, 0);
-    starts.push(elements.len());
-    starts
-        .windows(2)
-        .map(|bounds| &elements[bounds[0]..bounds[1]])
-        .filter(|subpath| !subpath.is_empty())
-        .collect()
+/// The subpaths of the elements, each starting with a move.
+///
+/// A segment drawn after a close, with no new move, starts a new subpath at the
+/// start point of the subpath just closed (the SVG convention): the move is
+/// written out. A subpath made only of a move holds no shape and is dropped.
+fn subpaths(elements: &[PathEl]) -> Vec<Vec<PathEl>> {
+    let mut subpaths: Vec<Vec<PathEl>> = Vec::new();
+    let mut start = Point::ORIGIN;
+    let mut closed = false;
+    for el in elements {
+        match *el {
+            PathEl::MoveTo(p) => {
+                start = p;
+                closed = false;
+                subpaths.push(vec![*el]);
+            }
+            PathEl::ClosePath => {
+                closed = true;
+                if let Some(current) = subpaths.last_mut() {
+                    current.push(*el);
+                }
+            }
+            _ => {
+                if closed || subpaths.is_empty() {
+                    closed = false;
+                    subpaths.push(vec![PathEl::MoveTo(start)]);
+                }
+                if let Some(current) = subpaths.last_mut() {
+                    current.push(*el);
+                }
+            }
+        }
+    }
+    subpaths.retain(|subpath| subpath.iter().any(|el| !matches!(el, PathEl::MoveTo(_))));
+    subpaths
 }
 
 /// Whether the subpath starts with a move, holds a segment, and every point of
