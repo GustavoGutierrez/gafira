@@ -13,9 +13,12 @@ use crate::{BooleanOp, FillRule, Path, PathOpError, validate};
 /// absolute coordinate of its operands.
 ///
 /// Below it the boolean library recurses without limit on curved operands: a
-/// release build overflows its stack and aborts, a debug build panics. The
-/// bound is empirical: no failure was observed at or above it.
-const MINIMUM_TOLERANCE_PER_UNIT: f64 = 1e-12;
+/// release build overflows its stack and aborts, a debug build panics. A debug
+/// build also panics on a library assertion for shapes centred near the origin
+/// down to about this bound, which is why it is ten times the bound of the
+/// simplification. The bound is empirical: no failure was observed at or above
+/// it.
+const MINIMUM_TOLERANCE_PER_UNIT: f64 = 1e-11;
 
 impl Path {
     /// The set of points covered by either path, or by both.
@@ -87,7 +90,7 @@ impl Path {
     /// coordinate (first operand, then second), a coordinate whose absolute
     /// value is above [`crate::COORDINATE_LIMIT`] (`1e9`;
     /// [`PathOpError::CoordinateOutOfRange`], first operand, then second), an
-    /// open subpath (first operand, then second), and a tolerance below `1e-12`
+    /// open subpath (first operand, then second), and a tolerance below `1e-11`
     /// times the largest absolute coordinate of both operands
     /// ([`PathOpError::ToleranceTooFine`]). All the checks run before the
     /// empty-operand rule.

@@ -478,7 +478,7 @@ fn a_tolerance_below_the_minimum_is_rejected_and_never_aborts() {
     assert_eq!(
         result,
         Err(PathOpError::ToleranceTooFine {
-            minimum: 1e-12 * 1500.0
+            minimum: 1e-11 * 1500.0
         })
     );
 }
@@ -487,7 +487,7 @@ fn a_tolerance_below_the_minimum_is_rejected_and_never_aborts() {
 fn a_tolerance_at_or_above_the_minimum_works() {
     let (circle, square) = big_pair();
 
-    for tolerance in [1e-12 * 1500.0, 1e-3] {
+    for tolerance in [1e-11 * 1500.0, 1e-3] {
         let result = circle.intersection(&square, tolerance).unwrap();
         assert!(!result.is_empty(), "tolerance {tolerance}");
     }
@@ -501,7 +501,7 @@ fn the_minimum_applies_to_straight_operands_too() {
     assert_eq!(
         a.union(&b, 1e-13),
         Err(PathOpError::ToleranceTooFine {
-            minimum: 1e-12 * 15.0
+            minimum: 1e-11 * 15.0
         })
     );
     assert_eq!(
@@ -526,13 +526,13 @@ fn the_minimum_is_computed_from_every_point_of_both_operands() {
     assert_eq!(
         near.union(&curved, 1e-14),
         Err(PathOpError::ToleranceTooFine {
-            minimum: 1e-12 * 40.0
+            minimum: 1e-11 * 40.0
         })
     );
     assert_eq!(
         curved.union(&near, 1e-14),
         Err(PathOpError::ToleranceTooFine {
-            minimum: 1e-12 * 40.0
+            minimum: 1e-11 * 40.0
         })
     );
 }
@@ -546,14 +546,14 @@ fn the_minimum_is_checked_before_the_empty_operand_rule() {
     assert_eq!(
         r.union(&e, 1e-13),
         Err(PathOpError::ToleranceTooFine {
-            minimum: 1e-12 * 10.0
+            minimum: 1e-11 * 10.0
         })
     );
     // The move points of a moves-only operand count.
     assert_eq!(
         r.intersection(&m, 1e-13),
         Err(PathOpError::ToleranceTooFine {
-            minimum: 1e-12 * 100.0
+            minimum: 1e-11 * 100.0
         })
     );
 }
@@ -604,4 +604,30 @@ fn every_operation_winds_the_result_the_same_way() {
             sign * magnitude
         );
     }
+}
+
+#[test]
+fn a_boolean_tolerance_is_accepted_exactly_at_the_minimum() {
+    let a = rect(0.0, 0.0, 10.0, 10.0);
+    let b = rect(5.0, 0.0, 15.0, 10.0);
+    let minimum: f64 = 1e-11 * 15.0;
+
+    assert_eq!(
+        a.union(&b, minimum.next_down()),
+        Err(PathOpError::ToleranceTooFine { minimum })
+    );
+    assert!(a.union(&b, minimum).is_ok());
+}
+
+#[test]
+fn the_default_tolerance_is_below_the_minimum_for_large_operands() {
+    let large = rect(0.0, 0.0, 2e8, 2e8);
+    let small = rect(0.0, 0.0, 10.0, 10.0);
+    let minimum: f64 = 1e-11 * 2e8;
+
+    assert_eq!(
+        large.union(&small, DEFAULT_TOLERANCE),
+        Err(PathOpError::ToleranceTooFine { minimum })
+    );
+    assert!(large.union(&small, minimum).is_ok());
 }
