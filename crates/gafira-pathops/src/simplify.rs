@@ -69,7 +69,8 @@ impl Path {
 /// The subpaths of the elements, each starting with a move.
 ///
 /// The elements are the ones of a path with its implicit moves written out. A
-/// subpath made only of a move holds no shape and is dropped.
+/// subpath made only of a move holds no shape: the simplifier returns it empty,
+/// so it is dropped.
 fn subpaths(elements: &[PathEl]) -> Vec<&[PathEl]> {
     let mut starts: Vec<usize> = elements
         .iter()
@@ -81,7 +82,6 @@ fn subpaths(elements: &[PathEl]) -> Vec<&[PathEl]> {
     starts
         .windows(2)
         .map(|bounds| &elements[bounds[0]..bounds[1]])
-        .filter(|subpath| subpath.iter().any(|el| !matches!(el, PathEl::MoveTo(_))))
         .collect()
 }
 
