@@ -1,4 +1,4 @@
-Flow: standard | test-only hardening | decided-by coordinator (Flow line not passed verbatim to tdd-apply; coordinator to confirm)
+Flow: standard | test-only hardening | decided-by coordinator | verify V3 | mutation T4 (crate) | owner-ratified Q1-Q3
 
 # testkit-oracle: apply progress
 
@@ -54,13 +54,15 @@ crates/gafira-testkit/src/harness.rs:84:9: delete field failure_persistence from
   `each_broken_law_is_named_with_a_counterexample` fails intermittently (about
   half of runs) with `PROPTEST_CASES=1`; it passes with the variable unset.
   The new oracles pass in both settings and draw the same counts. The spec
-  scenario "Oracles ignore PROPTEST_CASES" requires the whole package to pass
-  with `PROPTEST_CASES=1`, which that existing test prevents. Left for the
-  coordinator.
+  scenario "Oracles ignore PROPTEST_CASES" is scoped (C6, commit `97c85e1`) to
+  the two new test files, `tests/generator.rs` and `tests/corruption.rs`; both
+  pass with `PROPTEST_CASES=1`. The package-wide run still fails on this
+  pre-existing flake; accepted as follow-up C6, not fixed here.
 - `crates/gafira-testkit/src`, `.cargo/mutants.toml` and CI are untouched; no
   `mutants::skip`.
 
 ## Size
 
-`git diff --shortstat main...HEAD`: 3 files changed, 890 insertions (spec 444
-of those; tests 446).
+`git diff --shortstat main...HEAD` at `97c85e1`: 970 insertions over the ~700
+ceiling (tests 446; delta spec and this file the rest). Accepted by the owner's
+request to do the whole testkit-oracle change as one delivery.
