@@ -27,7 +27,7 @@ struct Subpath {
 }
 
 /// Whether the element is a segment: a line, a quadratic or a cubic.
-fn is_segment(el: &PathEl) -> bool {
+pub(crate) fn is_segment(el: &PathEl) -> bool {
     matches!(
         el,
         PathEl::LineTo(_) | PathEl::QuadTo(..) | PathEl::CurveTo(..)

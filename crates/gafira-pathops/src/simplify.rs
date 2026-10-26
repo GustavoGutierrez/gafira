@@ -6,6 +6,7 @@
 use kurbo::simplify::{SimplifyOptions, simplify_bezpath};
 use kurbo::{BezPath, PathEl, Point};
 
+use crate::path::is_segment;
 use crate::{Path, PathOpError, validate};
 
 /// The smallest tolerance the simplification accepts, per unit of the largest
@@ -23,8 +24,8 @@ impl Path {
     /// guarantee is about shape, not about the segment count: straight segments
     /// may be replaced by fitted curves, and the result may hold more segments
     /// than the original. Every subpath of the original that holds a segment appears
-    /// in the result, in the same order, with the same fill rule; a subpath made
-    /// only of a move holds no shape and is dropped. A segment drawn after a
+    /// in the result, in the same order, with the same fill rule; a subpath that
+    /// holds no segment (moves and closes only) holds no shape and is dropped. A segment drawn after a
     /// close, with no new move, belongs to a new subpath that starts at the
     /// start point of the subpath just closed. A closed path of straight
     /// segments whose every vertex lies farther than `tolerance` from the line
@@ -53,12 +54,18 @@ impl Path {
         let mut simplified: Vec<PathEl> = Vec::new();
         let written = self.with_explicit_moves();
         for subpath in subpaths(written.elements()) {
-            if is_zero_length(subpath) {
+            if !subpath.iter().any(is_segment) {
+                // A subpath that holds no segment (a move, a close, or both)
+                // holds no shape: it is dropped.
+            } else if is_zero_length(subpath) {
                 // The simplifier drops a subpath that covers no distance; it is
                 // still a subpath of the input, so it is kept as it is.
                 simplified.extend_from_slice(subpath);
             } else {
-                simplified.extend(simplify_bezpath(subpath.to_vec(), tolerance, &options));
+                let mut elements = subpath.to_vec();
+                // A close right after a close closes nothing more.
+                elements.dedup_by(|a, b| matches!((a, b), (PathEl::ClosePath, PathEl::ClosePath)));
+                simplified.extend(simplify_bezpath(elements, tolerance, &options));
             }
         }
 
@@ -68,9 +75,7 @@ impl Path {
 
 /// The subpaths of the elements, each starting with a move.
 ///
-/// The elements are the ones of a path with its implicit moves written out. A
-/// subpath made only of a move holds no shape: the simplifier returns it empty,
-/// so it is dropped.
+/// The elements are the ones of a path with its implicit moves written out.
 fn subpaths(elements: &[PathEl]) -> Vec<&[PathEl]> {
     let mut starts: Vec<usize> = elements
         .iter()

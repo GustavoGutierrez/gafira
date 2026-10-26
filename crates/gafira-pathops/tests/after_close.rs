@@ -34,6 +34,10 @@ fn explicit(path: &Path) -> Path {
 /// A closed polygon, then more segments with or without a move, closed or not.
 #[derive(Clone, Debug)]
 struct Shape {
+    /// A subpath of a move and a close, before the polygon.
+    empty_before: Option<(f64, f64)>,
+    /// A subpath of a move and a close, right after the polygon.
+    empty_between: Option<(f64, f64)>,
     first: Vec<(f64, f64)>,
     with_move: Option<(f64, f64)>,
     tail: Vec<(f64, f64)>,
@@ -43,11 +47,19 @@ struct Shape {
 impl Shape {
     fn path(&self, rule: FillRule) -> Path {
         let mut bez = BezPath::new();
+        if let Some(p) = self.empty_before {
+            bez.move_to(p);
+            bez.close_path();
+        }
         bez.move_to(self.first[0]);
         for p in &self.first[1..] {
             bez.line_to(*p);
         }
         bez.close_path();
+        if let Some(p) = self.empty_between {
+            bez.move_to(p);
+            bez.close_path();
+        }
         if let Some(p) = self.with_move {
             bez.move_to(p);
         }
@@ -67,16 +79,21 @@ fn point() -> impl Strategy<Value = (f64, f64)> {
 
 fn shape_strategy(close_tail: bool) -> impl Strategy<Value = Shape> {
     (
+        (prop::option::of(point()), prop::option::of(point())),
         prop::collection::vec(point(), 3..6),
         prop::option::of(point()),
         prop::collection::vec(point(), 2..5),
     )
-        .prop_map(move |(first, with_move, tail)| Shape {
-            first,
-            with_move,
-            tail,
-            close_tail,
-        })
+        .prop_map(
+            move |((empty_before, empty_between), first, with_move, tail)| Shape {
+                empty_before,
+                empty_between,
+                first,
+                with_move,
+                tail,
+                close_tail,
+            },
+        )
 }
 
 fn distance(path: &Path, point: Point) -> f64 {
@@ -144,10 +161,10 @@ proptest! {
         shape in shape_strategy(false),
         probe in point(),
     ) {
-        let other = Shape { first: vec![(10.0, 10.0), (60.0, 10.0), (60.0, 60.0), (10.0, 60.0)], with_move: None, tail: vec![], close_tail: false }.path(FillRule::NonZero);
+        let other = Shape { empty_before: None, empty_between: None, first: vec![(10.0, 10.0), (60.0, 10.0), (60.0, 60.0), (10.0, 60.0)], with_move: None, tail: vec![], close_tail: false }.path(FillRule::NonZero);
         let q = Point::new(probe.0, probe.1);
         let open = shape.path(FillRule::NonZero);
-        let open_tail = Some(PathOpError::OpenSubpath { subpath: 1 });
+        let open_tail = Some(PathOpError::OpenSubpath { subpath: open.subpath_count() - 1 });
         for result in [open.union(&other, 1e-3), other.xor(&open, 1e-3)] {
             prop_assert_eq!(result.err(), open_tail.clone());
         }
