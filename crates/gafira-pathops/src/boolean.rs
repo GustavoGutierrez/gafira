@@ -122,8 +122,8 @@ impl Path {
         let rule_b = lib_fill_rule(other.fill_rule());
 
         let topology = Topology::<BinaryWindingNumber>::from_paths_binary(
-            self.as_bez_path(),
-            other.as_bez_path(),
+            &self.with_explicit_moves(),
+            &other.with_explicit_moves(),
             tolerance,
         )
         .map_err(|error| PathOpError::Geometry(error.to_string()))?;

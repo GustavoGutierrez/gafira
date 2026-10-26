@@ -184,6 +184,36 @@ impl Path {
         })
     }
 
+    /// The path with the implicit moves written out.
+    ///
+    /// A segment drawn after a close, with no new move, starts a new subpath at
+    /// the start point of the subpath just closed (the SVG convention). The
+    /// returned path holds a move to that point before the segment, so each
+    /// subpath starts with its own move. A path that starts with a segment
+    /// starts at the origin.
+    pub(crate) fn with_explicit_moves(&self) -> BezPath {
+        let mut bez = BezPath::new();
+        let mut start = Point::ORIGIN;
+        let mut needs_move = true;
+        for el in self.bez.elements() {
+            match *el {
+                PathEl::MoveTo(p) => {
+                    start = p;
+                    needs_move = false;
+                }
+                PathEl::ClosePath => needs_move = true,
+                _ => {
+                    if needs_move {
+                        bez.move_to(start);
+                        needs_move = false;
+                    }
+                }
+            }
+            bez.push(*el);
+        }
+        bez
+    }
+
     /// Checks that no subpath of the path is open.
     ///
     /// A subpath is open when it holds a segment and does not end with a close.

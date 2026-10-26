@@ -51,13 +51,14 @@ impl Path {
 
         let options = SimplifyOptions::default();
         let mut simplified: Vec<PathEl> = Vec::new();
-        for subpath in subpaths(self.as_bez_path().elements()) {
-            if is_zero_length(&subpath) {
+        let written = self.with_explicit_moves();
+        for subpath in subpaths(written.elements()) {
+            if is_zero_length(subpath) {
                 // The simplifier drops a subpath that covers no distance; it is
                 // still a subpath of the input, so it is kept as it is.
-                simplified.extend_from_slice(&subpath);
+                simplified.extend_from_slice(subpath);
             } else {
-                simplified.extend(simplify_bezpath(subpath, tolerance, &options));
+                simplified.extend(simplify_bezpath(subpath.to_vec(), tolerance, &options));
             }
         }
 
@@ -67,39 +68,21 @@ impl Path {
 
 /// The subpaths of the elements, each starting with a move.
 ///
-/// A segment drawn after a close, with no new move, starts a new subpath at the
-/// start point of the subpath just closed (the SVG convention): the move is
-/// written out. A subpath made only of a move holds no shape and is dropped.
-fn subpaths(elements: &[PathEl]) -> Vec<Vec<PathEl>> {
-    let mut subpaths: Vec<Vec<PathEl>> = Vec::new();
-    let mut start = Point::ORIGIN;
-    let mut closed = false;
-    for el in elements {
-        match *el {
-            PathEl::MoveTo(p) => {
-                start = p;
-                closed = false;
-                subpaths.push(vec![*el]);
-            }
-            PathEl::ClosePath => {
-                closed = true;
-                if let Some(current) = subpaths.last_mut() {
-                    current.push(*el);
-                }
-            }
-            _ => {
-                if closed || subpaths.is_empty() {
-                    closed = false;
-                    subpaths.push(vec![PathEl::MoveTo(start)]);
-                }
-                if let Some(current) = subpaths.last_mut() {
-                    current.push(*el);
-                }
-            }
-        }
-    }
-    subpaths.retain(|subpath| subpath.iter().any(|el| !matches!(el, PathEl::MoveTo(_))));
-    subpaths
+/// The elements are the ones of a path with its implicit moves written out. A
+/// subpath made only of a move holds no shape and is dropped.
+fn subpaths(elements: &[PathEl]) -> Vec<&[PathEl]> {
+    let mut starts: Vec<usize> = elements
+        .iter()
+        .enumerate()
+        .filter(|(_, el)| matches!(el, PathEl::MoveTo(_)))
+        .map(|(index, _)| index)
+        .collect();
+    starts.push(elements.len());
+    starts
+        .windows(2)
+        .map(|bounds| &elements[bounds[0]..bounds[1]])
+        .filter(|subpath| subpath.iter().any(|el| !matches!(el, PathEl::MoveTo(_))))
+        .collect()
 }
 
 /// Whether the subpath starts with a move, holds a segment, and every point of

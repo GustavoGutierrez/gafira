@@ -2,7 +2,7 @@
 //! start point of the subpath just closed. Every operation reads such a path
 //! the way it reads the same path with that move written out.
 
-use gafira_pathops::{BezPath, Cap, FillRule, Join, Path, StrokeStyle};
+use gafira_pathops::{BezPath, Cap, FillRule, Join, Path, PathOpError, StrokeStyle};
 use kurbo::{ParamCurve, ParamCurveNearest, PathEl, Point};
 use proptest::prelude::*;
 
@@ -135,6 +135,31 @@ proptest! {
             path.distance_to_perimeter(q, 1e-3).unwrap(),
             written.distance_to_perimeter(q, 1e-3).unwrap()
         );
+    }
+
+    /// An operand whose tail after a close is left open is rejected, naming
+    /// the subpath, in either position; closed, it computes as the written one.
+    #[test]
+    fn the_interior_operations_read_the_implicit_move(
+        shape in shape_strategy(false),
+        probe in point(),
+    ) {
+        let other = Shape { first: vec![(10.0, 10.0), (60.0, 10.0), (60.0, 60.0), (10.0, 60.0)], with_move: None, tail: vec![], close_tail: false }.path(FillRule::NonZero);
+        let q = Point::new(probe.0, probe.1);
+        let open = shape.path(FillRule::NonZero);
+        let open_tail = Some(PathOpError::OpenSubpath { subpath: 1 });
+        for result in [open.union(&other, 1e-3), other.xor(&open, 1e-3)] {
+            prop_assert_eq!(result.err(), open_tail.clone());
+        }
+        prop_assert_eq!(open.contains(q, 1e-3).err(), open_tail);
+
+        let closed = Shape { close_tail: true, ..shape }.path(FillRule::NonZero);
+        let written = explicit(&closed);
+        prop_assert_eq!(closed.union(&other, 1e-3).unwrap(), written.union(&other, 1e-3).unwrap());
+        prop_assert_eq!(closed.intersection(&other, 1e-3).unwrap(), written.intersection(&other, 1e-3).unwrap());
+        prop_assert_eq!(closed.xor(&other, 1e-3).unwrap(), written.xor(&other, 1e-3).unwrap());
+        prop_assert_eq!(closed.difference(&other, 1e-3).unwrap(), written.difference(&other, 1e-3).unwrap());
+        prop_assert_eq!(closed.contains(q, 1e-3).unwrap(), written.contains(q, 1e-3).unwrap());
     }
 
     /// Closing the open subpaths leaves no open subpath, tails included, and
