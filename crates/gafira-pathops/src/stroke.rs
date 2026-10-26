@@ -23,6 +23,15 @@ pub struct StrokeStyle {
     pub join: Join,
 }
 
+/// The smallest tolerance the stroke outline accepts, per unit of the larger of
+/// the largest absolute coordinate of the path and half the stroke width.
+///
+/// The arcs of round caps and round joins grow in number with the ratio of the
+/// width to the tolerance and have no cap of their own: measured, the process
+/// ran out of memory from a ratio of about `1e40`. This bound keeps the ratio
+/// near `1e12`. The width takes part because the coordinates alone can be zero.
+const MINIMUM_TOLERANCE_PER_UNIT: f64 = 1e-12;
+
 impl Path {
     /// The outline of the area this path covers when stroked.
     ///
@@ -37,12 +46,21 @@ impl Path {
     ///
     /// A path with a coordinate whose absolute value is above
     /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
-    /// [`PathOpError::CoordinateOutOfRange`].
+    /// [`PathOpError::CoordinateOutOfRange`]. A tolerance below
+    /// `1e-12 * max(m, w / 2)`, where `m` is the largest absolute coordinate of
+    /// the path and `w` the stroke width, is rejected with
+    /// [`PathOpError::ToleranceTooFine`]; a tolerance equal to the minimum is
+    /// accepted.
     pub fn stroke_outline(&self, style: &StrokeStyle, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         validate::stroke_width(style.width)?;
         self.validate_finite()?;
         self.validate_in_range()?;
+        validate::not_too_fine(
+            tolerance,
+            MINIMUM_TOLERANCE_PER_UNIT,
+            self.max_abs_coordinate().max(style.width / 2.0),
+        )?;
 
         let kurbo_style = Stroke::new(style.width)
             .with_caps(style.cap)

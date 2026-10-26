@@ -1,7 +1,7 @@
 //! The minimum tolerance of the operations that hang or abort below one:
 //! the boolean operations, the simplification and the stroke outline.
 
-use gafira_pathops::{BezPath, FillRule, Path, PathOpError, Point};
+use gafira_pathops::{BezPath, Cap, FillRule, Join, Path, PathOpError, Point, StrokeStyle};
 
 fn open_polyline(points: &[(f64, f64)]) -> Path {
     let mut bez = BezPath::new();
@@ -79,6 +79,62 @@ fn a_too_fine_simplification_tolerance_is_reported_after_a_coordinate_beyond_the
 
     assert_eq!(
         line.simplify(1e-15).map(drop),
+        Err(PathOpError::CoordinateOutOfRange {
+            value: 2e9,
+            limit: 1e9
+        })
+    );
+}
+
+fn round(width: f64) -> StrokeStyle {
+    StrokeStyle {
+        width,
+        cap: Cap::Round,
+        join: Join::Round,
+    }
+}
+
+#[test]
+fn a_stroke_tolerance_is_checked_against_the_larger_of_the_extent_and_half_the_width() {
+    // (path, width, largest coordinate): the extent decides in the first, half the width in the second.
+    let cases = [
+        (open_polyline(&[(0.0, 0.0), (100.0, 0.0)]), 10.0, 100.0_f64),
+        (open_polyline(&[(0.0, 0.0), (1.0, 0.0)]), 1e6, 1.0),
+    ];
+    for (path, width, extent) in cases {
+        let minimum: f64 = 1e-12 * extent.max(width / 2.0);
+
+        assert_eq!(
+            path.stroke_outline(&round(width), minimum.next_down())
+                .map(drop),
+            too_fine(minimum),
+            "width {width}"
+        );
+        assert!(
+            path.stroke_outline(&round(width), minimum).is_ok(),
+            "width {width}"
+        );
+    }
+}
+
+#[test]
+fn a_stroke_of_a_path_at_the_origin_still_has_a_minimum_tolerance() {
+    let dot = open_polyline(&[(0.0, 0.0), (0.0, 0.0)]);
+    let minimum: f64 = 1e-12 * 4.0;
+
+    assert_eq!(
+        dot.stroke_outline(&round(8.0), 1e-13).map(drop),
+        too_fine(minimum)
+    );
+    assert!(dot.stroke_outline(&round(8.0), minimum).is_ok());
+}
+
+#[test]
+fn a_too_fine_stroke_tolerance_is_reported_after_a_coordinate_beyond_the_limit() {
+    let line = open_polyline(&[(0.0, 0.0), (2e9, 0.0)]);
+
+    assert_eq!(
+        line.stroke_outline(&round(10.0), 1e-15).map(drop),
         Err(PathOpError::CoordinateOutOfRange {
             value: 2e9,
             limit: 1e9
