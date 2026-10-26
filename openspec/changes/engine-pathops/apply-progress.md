@@ -685,3 +685,88 @@ files changed, 931 insertions, 91 deletions (net +840). The crate code alone
 deletions, of which `src/` is 260 insertions and 55 deletions and the rest is tests
 (`limits.rs` 329 lines and `tolerance_floor.rs` 143 lines are new). This is past the
 ~700-line ceiling; the coordinator decides.
+
+## Fix round 4 (final, owner-authorized)
+
+Items from the coordinator's final-round brief; decisions were made upstream and not reopened.
+
+### Done
+
+- Docs commit of the verifier's round 3 edits (`verify-report.md`, `verification.json`).
+- W1 spec (docs commit first): the simplification drops a subpath made only of a move;
+  the requirement and a new scenario say so, and the implicit-move rule is stated for the
+  simplification. Code and tests agree (`a_subpath_made_only_of_a_move_is_dropped`).
+- C1: `simplify` now works on the path with its implicit moves written out
+  (`Path::with_explicit_moves`), so a segment drawn after a close is simplified from the
+  start of the closed subpath. A zero-length tail comes back as `MoveTo(0,0)`,
+  `LineTo(0,0)` instead of `MoveTo(10,10)`, `LineTo(0,0)`.
+- Sweep for siblings, audited operation by operation:
+  - simplify: fixed (above). The same input also made `kurbo::simplify_bezpath` panic in
+    debug builds (`uninitialized subpath`) on a degenerate closed subpath followed by a
+    tail; that goes away because every slice now starts with its move.
+  - boolean: the sweep library gave a different result for the same geometry with and
+    without the written-out move on zero-area operands (a sliver survived). `boolean_op`
+    now feeds the sweep the explicit-move paths, so both read the same.
+  - stroke, distance to the perimeter, containment, `validate_closed`, `close_subpaths`:
+    already read the implicit move correctly (tested against the explicit form on
+    generated paths; no change needed).
+  - A path that starts with a segment and no move at all is not a valid `BezPath`
+    (kurbo debug-asserts); `with_explicit_moves` starts it at the origin, and
+    `close_subpaths` does not close it (no start point). Not part of the spec; reported.
+- New shared generator and properties in `tests/after_close.rs`: a closed polygon, then a
+  tail with or without a `MoveTo`, closed or not, checked for simplify, stroke outline,
+  distance, the four boolean operations, containment, `close_subpaths` and the
+  open-subpath error index.
+- W2: the docs of union, intersection, difference and xor state the `1e9` limit,
+  `CoordinateOutOfRange` and the `1e-11 * m` minimum.
+- W3 is void (the T3 report exists). Mutants re-run on `simplify.rs`, `path.rs` and
+  `boolean.rs` (see below); the old `simplify.rs:70:38` mutant disappeared with the
+  rewrite of `subpaths`.
+- W5: `.cargo/mutants.toml` excludes `hittest.rs` `distance_to_perimeter` `<` to `<=`
+  (tie-break between equally near segments gives the same distance); `--list` confirms
+  it no longer appears and the `==` and `>` mutants still do.
+
+### RED evidence
+
+- `a_tail_after_a_close_is_simplified_from_the_start_of_the_closed_subpath`: failed
+  before the fix.
+- `a_zero_length_tail_after_a_close_stays_at_the_start_of_the_closed_subpath`: left
+  `... MoveTo(10,10), LineTo(0,0)`, right `... MoveTo(0,0), LineTo(0,0)`.
+- `the_simplification_reads_the_implicit_move`: panic `uninitialized subpath (missing
+  MoveTo)` in kurbo, then a value mismatch on the implicit versus the written-out form.
+- `the_interior_operations_read_the_implicit_move`: union of the closed-tail path differed
+  from union of the written-out path (a zero-area sliver in one result only).
+- `a_subpath_made_only_of_a_move_is_dropped`: already green on the old code (the
+  simplifier dropped it); the gap was only the spec, now written.
+
+### Process notes
+
+- C2: spec commit `61fb23a` was made by `tdd-apply` on the coordinator's routing; its
+  content was ratified by owner decision A (2026-10-26), so no implementer-authored spec
+  change remains unratified. This round's W1 spec edit is ratified by the owner's
+  instruction to close the change.
+- Size: the whole change is past ~700 lines; the owner approved a single PR for it.
+
+### Mutants (T3, no `--locked`, default per-job dirs)
+
+- `simplify.rs`, `path.rs`, `boolean.rs` together: 64 mutants, 51 caught, 12 unviable,
+  1 timeout (`simplify.rs` `delete !` in the moves-only filter of `subpaths`). The
+  mutation changed no behavior: the simplifier already returns a moves-only slice empty,
+  so the filter was redundant and was removed (refactor commit).
+- `simplify.rs` after that: 7 mutants, 5 caught, 2 unviable, 0 missed, 0 timeouts.
+  `path.rs` and `boolean.rs` are unchanged since the first run (0 missed there).
+- The old `simplify.rs:70:38` mutant no longer exists (the `subpaths` rewrite removed the
+  `index > 0` filter); the first slice of a path starting with a move is covered by
+  every simplify test.
+
+### Measured size (round 4)
+
+`git diff --shortstat 7814c10..HEAD -- crates .cargo`: 5 files, 319 insertions, 13
+deletions (most of it the new `tests/after_close.rs`). Whole change against `main`:
+35 files, 7744 insertions, 1 deletion (crates only: 23 files, 4510 insertions). Past the
+~700-line ceiling; the owner approved a single PR for it.
+
+### Not settled
+
+- A path whose first element is a segment (no `MoveTo` at all) is not a valid `BezPath`;
+  `close_subpaths` leaves it open. The spec is silent; no change made.
