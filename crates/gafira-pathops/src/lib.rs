@@ -59,6 +59,15 @@ pub enum BooleanOp {
 /// and for a curve that runs parallel to the sweep direction at a crossing the
 /// deviation grows as the square root of the tolerance (see
 /// [`Path::boolean_op`]).
+///
+/// Some operations reject a tolerance that is too fine for their input
+/// ([`PathOpError::ToleranceTooFine`]): the boolean operations below `1e-11 * m`
+/// (`m` the largest absolute coordinate of both operands), the simplification
+/// below `1e-12 * m`, and the stroke outline below `1e-12 * max(m, w / 2)`
+/// (`w` the stroke width). The default is above the minimum of the
+/// simplification and of the stroke outline for every path within
+/// [`COORDINATE_LIMIT`], and of the boolean operations while `m` is at most
+/// `1e8`.
 pub const DEFAULT_TOLERANCE: f64 = 1e-3;
 
 /// The largest absolute value of a coordinate that any operation accepts.

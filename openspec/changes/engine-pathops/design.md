@@ -158,12 +158,17 @@ only as an option.
 magnitude, the library's cubic intersection bisects without end: a release build
 overflows its stack and aborts (not catchable), a debug build trips a library
 assertion first. A bigger stack does not help. Rule, empirical: a boolean
-operation rejects a tolerance below `1e-12 × m`, m the largest absolute x or y
+operation rejects a tolerance below `1e-11 × m`, m the largest absolute x or y
 over all points (end points and control points) of both operands, with an error
-that carries the minimum. No failure was observed at or above that bound in debug
-or release (grid and random runs, coordinates from 1e-19 to 1e6); the last debug
-failures were in the 1e-14 decade. The default 1e-3 px clears it for any
-coordinate below 1e9.
+that carries the minimum. In release no failure was observed at or above
+`1e-12 × m`; in debug the library's assertions panicked for shapes centred near
+the origin down to about `1e-11 × m` (0 of 3 000 cases at `1e-11 × m`), which set
+the factor (owner decision W2, verify round 3). The default 1e-3 px clears it
+while m is at most 1e8. The simplification keeps `1e-12 × m`, and the stroke
+outline rejects a tolerance below `1e-12 × max(m, w / 2)`, w the stroke width,
+because its round arcs grow with the ratio of width to tolerance. Every
+operation rejects a coordinate beyond 1e9 (owner decision W1), the query point
+of the hit tests included.
 
 ### Q5. The answer for a point exactly on the perimeter
 
