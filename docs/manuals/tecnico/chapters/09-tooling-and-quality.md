@@ -74,13 +74,22 @@ Use it from integration tests (`tests/`) only, where each crate has one copy of 
 
 ## Mutation testing
 
-`cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate. The `mutants` agent runs it on the lines a delivery changed, and the `verify` agent fails on a missed or timed-out mutant in critical code and documents the rest. There is no score target. An archive step first asks for a whole-crate run.
+`cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate. The `mutants` agent runs it on the lines a delivery changed, and the `verify` agent fails on a missed or timed-out mutant in critical code and documents the rest. There is no score target. The run mutates a scope set by the mutation tier of the change (T0 to T4, see the [methodology chapter](10-methodology.md)); the archive step first asks for a whole-crate run (T4) of every crate the change touched.
 
 A second practice complements it. When a test is written after the code, the delivery shows that the test can fail by applying one hand mutation at a time (for example `<` for `<=`, no early `break`, compacting the newest entry), running the tests and restoring the code. Hand mutations are recorded as a selection in the change's `apply-progress.md`, never as a complete run. A surviving mutant found by `cargo-mutants` in critical code sends the delivery back for a fix round with new tests.
 
 ```bash
 cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratch dir>
 ```
+
+This is the T2 command. The other tiers that run `cargo-mutants` use these shapes (`AGENTS.md`):
+
+| Tier | Command shape |
+|---|---|
+| T3 | `cargo mutants -p <crate> --file <file> --jobs 4 -o <scratch dir>`, one `--file` per changed non-test source file |
+| T4 | `cargo mutants -p <crate> --jobs 4 -o <scratch dir>` |
+
+`--iterate` is allowed on T3 only for test-only fix rounds with the same file set, never on the closing PASS round.
 
 Rules, from `AGENTS.md` and `.cargo/mutants.toml`:
 

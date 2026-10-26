@@ -17,6 +17,7 @@
 | `DocMut` | La vista de edición exclusiva de un `Document`, obtenida con un `EditToken` |
 | Crate de dominio | Un crate de las capas 0 y 1 con un `clippy.toml` y una fila V5 |
 | `EditToken` | La prueba no copiable de que quien la posee puede editar documentos |
+| Flick | La unidad de tiempo exacta de `gafira-time`: 1/705 600 000 de segundo |
 | Gesto | Un arrastre u otra acción del usuario, nombrado por un `GestureId`, cuyos comandos pueden fusionarse |
 | Archivo golden | Una salida esperada almacenada que se compara byte a byte en las pruebas |
 | Mutación manual | Un cambio deliberado de una línea en código terminado, aplicado a mano para mostrar que una prueba falla; se registra como selección, no como ejecución completa |
@@ -24,6 +25,14 @@
 | History | El dueño del `Arc<Document>` de la sesión y de sus pilas de deshacer y rehacer (`gafira-edit`) |
 | Ley | Una de las seis propiedades que `prop_command` comprueba para un comando |
 | SDD ligero | El flujo spec, apply, verify, archive de este repositorio |
+| Clase de hallazgo | El `class:` de un hallazgo de verify (`implementation`, `architecture`, `ambiguity`, `claim`); el coordinador enruta según ella |
+| Modo de flujo | Light, standard o full: el conjunto de agentes, puertas y comprobaciones que ejecuta una solicitud; lo elige el coordinador |
+| Puerta (G0 a G5) | Una comprobación que hace el coordinador entre fases de un flujo; no es lo mismo que las puertas locales (`fmt`, `clippy`, `test`) |
+| Light spec | El bloque de criterios de aceptación que el coordinador escribe al principio de `apply-progress.md` en modo light |
+| Nivel de mutación (T0 a T4) | Cuánto código cubre la ejecución de mutación: ninguno, mutantes manuales, diff, archivos cambiados, crate completo |
+| Pack | El modo, los agentes, el nivel de mutación y la profundidad de verify predefinidos para un tipo de solicitud |
+| `verification.json` | El registro legible por máquina de cada ronda de verify, escrito por `verify` (piloto) |
+| Profundidad de verify (V0 a V3) | Cuánto trabajo independiente hace `verify`, desde solo comprobaciones deterministas hasta la matriz completa |
 | MergeKey | La clave bajo la que dos comandos pueden fusionarse en una sola entrada de historial |
 | Mutante | Un pequeño cambio deliberado de código hecho por `cargo-mutants`; un mutante superviviente indica una laguna de pruebas |
 | NodeSpec | Un nodo descrito sin ids, la entrada de `InsertNodes` |
@@ -35,6 +44,6 @@
 | `testkit` | `gafira-testkit`, el crate de soporte de pruebas con el generador de documentos y `prop_command` |
 | `trybuild` | La dev-dependency que comprueba que los fixtures no compilen (o compilen); evidencia de ARQ-30 |
 | Transaction | Un comando compuesto: muchos comandos, una entrada de historial, todo o nada |
-| V14 | Paso de CI **Planificado** que comprueba que cada comando del núcleo tiene una prueba de propiedades (ARQ-81) |
+| V14 | Paso de CI que comprueba que cada comando del núcleo tiene una prueba de propiedades (ARQ-81) |
 | V5, V12, V13 | Pasos de política de la CI: tabla de capas, sincronía de `clippy.toml`, confinamiento de `EditToken` |
 | Forma en disco | La forma JSON de un tipo guardado |
