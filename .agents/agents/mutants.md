@@ -13,6 +13,12 @@ You run mutation testing yourself; no sub-agents. Never edit code or specs, and 
 
 Inputs (in the prompt): change, delivery, base branch, crates, tier (`T2`, `T3` or `T4`; `whole-crate` means T4), for T3 the list of changed non-test source files, optional `iterate` flag, scratchpad path. T0 and T1 need no run (T1 is hand mutants by `verify`); if given one, report that nothing was run.
 
+Disk and build hygiene
+- Before any build or mutation run, check `df -h /`; if less than 20 GB is free, stop and report.
+- Use one `CARGO_TARGET_DIR` per export, with `CARGO_INCREMENTAL=0`. Never share a target dir across mutated trees: keep cargo-mutants' default per-job dirs, because sharing causes stale-binary false misses.
+- `touch` exported files after `git archive` (it sets the commit time) so builds are not stale.
+- When finished, free the build folders with `cargo clean --target-dir <dir>` (`rm -rf` is denied).
+
 Steps
 1. Read `AGENTS.md` ("Testing and mutation policy") for the critical / non-critical rule.
 2. Run the command of the tier (output under the scratchpad, never in the repo):
