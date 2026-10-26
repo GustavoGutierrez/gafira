@@ -241,7 +241,7 @@ Risks:
 Follow-up edits (applied after acceptance, branch `docs/apply-flow-modes`):
 - [x] `.agents/agents/coordinator.md`, `verify.md`, `mutants.md`, `tdd-apply.md`, `archive.md`
 - [x] `AGENTS.md` (flow modes and packs, mutation tiers, size thresholds, `verification.json` in the OpenSpec layout) and the index row in `docs/adr/README.md`
-- [ ] `docs/manuals/tecnico/chapters/09-tooling-and-quality.md`: mutation tiers and flow modes (delegate to `manual-writer`; separate change)
+- [x] `docs/manuals/tecnico/chapters/09-tooling-and-quality.md`: mutation tiers and flow modes (delegate to `manual-writer`; separate change)
 
 ## Alternatives considered
 
