@@ -200,7 +200,7 @@ RED (write the test, run it, see it fail), GREEN (minimal code), REFACTOR (tests
 
 Spec format: RFC 2119 keywords; scenarios as Given/When/Then; each requirement tagged with its delivery (`D1`, `D2a`...) and each scenario with its type (unit, property, integration, command, manual). Delta specs use `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` (with a Reason and a Migration note) and `## RENAMED Requirements`. Archive is the only step that edits main specs, and it warns before any destructive delta.
 
-Change chain so far: `workspace-scaffold`, `domain-color` and `domain-doc` are closed (the last two under `openspec/changes/archive/`); `edit-history` is open: its deliveries up to D8 (`Command` and `Transaction`, `History`, gesture merge, memory budget, `SetProperty`, `InsertNodes` and `RemoveNodes`, `gafira-testkit`, `trybuild`) are merged to `main`; D9 (`Reorder`, `Reparent`) is in progress and D10 (page and DPI commands, CI step V14) is **Planned**.
+Change chain so far: six changes are closed and archived under `openspec/changes/archive/`, and no change is open. In order: `workspace-scaffold`, `domain-color` and `domain-doc` (2026-10-24), `domain-time` and `edit-history` (2026-10-25), and `engine-pathops` (2026-10-26). The `edit-history` change includes all its deliveries, D1 to D10, with the CI step V14.
 
 ## Commits, branches and pull requests
 

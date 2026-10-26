@@ -200,7 +200,7 @@ RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REF
 
 Formato de spec: palabras clave de RFC 2119; escenarios como Given/When/Then; cada requisito etiquetado con su entrega (`D1`, `D2a`...) y cada escenario con su tipo (unit, property, integration, command, manual). Las delta specs usan `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` (con Reason y nota de Migration) y `## RENAMED Requirements`. El archivado es el único paso que edita las specs principales, y avisa antes de cualquier delta destructiva.
 
-Cadena de changes hasta ahora: `workspace-scaffold`, `domain-color` y `domain-doc` están cerrados (los dos últimos en `openspec/changes/archive/`); `edit-history` está abierto: sus entregas hasta D8 (`Command` y `Transaction`, `History`, fusión de gestos, presupuesto de memoria, `SetProperty`, `InsertNodes` y `RemoveNodes`, `gafira-testkit`, `trybuild`) están fusionadas en `main`; D9 (`Reorder`, `Reparent`) está en curso y D10 (comandos de página y DPI, paso de CI V14) está **Planificado**.
+Cadena de changes hasta ahora: seis changes están cerrados y archivados en `openspec/changes/archive/`, y no hay ninguno abierto. En orden: `workspace-scaffold`, `domain-color` y `domain-doc` (2026-10-24), `domain-time` y `edit-history` (2026-10-25), y `engine-pathops` (2026-10-26). El change `edit-history` incluye todas sus entregas, de D1 a D10, con el paso de CI V14.
 
 ## Commits, ramas y pull requests
 
