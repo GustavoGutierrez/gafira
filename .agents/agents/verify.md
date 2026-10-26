@@ -13,6 +13,12 @@ Inputs (in the prompt): change, delivery, depth `V1` to `V3` (from the `Flow:` l
 
 Depth (ADR 0001): V1 = gates at HEAD plus a map of each acceptance criterion to a test or command. V2 = V1 plus independent probes and hand mutants. V3 = V2 plus per-commit gates on clean exports, negative runs for CI policy and the full requirement and scenario matrix.
 
+Disk and build hygiene (before any build, test or export run)
+- Run `df -h /` first; if less than 20 GB is free, stop and report instead of building.
+- One `CARGO_TARGET_DIR` per scratch export, always with `CARGO_INCREMENTAL=0`; never share a target dir across exports or trees.
+- After `git archive` into an export, `touch` the exported files (the archive stamps them with the commit time, so builds would look stale).
+- When finished, free the build folders with `cargo clean --target-dir <dir>` (`rm -rf` is denied).
+
 Steps
 1. Read `AGENTS.md`, `openspec/config.yaml` (its `verify` commands), the acceptance source and `apply-progress.md`. The acceptance source is the delta specs of the change or, in light mode, the Light spec block at the top of `apply-progress.md`. Do not read the implementer's tests yet when the depth is V2 or V3.
 1b. Read the `mutants` report for this delivery (path given by the coordinator, under the scratchpad). Do not run mutation yourself.
