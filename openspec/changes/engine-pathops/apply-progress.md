@@ -591,3 +591,97 @@ segment drawn after a close with no new move starts the next subpath in order of
 appearance (round 2 S1; the implementation already reports index 1), and the
 simplification keeps a subpath made only of zero-length segments (it came back
 with 0 elements).
+
+## Fix round 3 (owner decisions W1 and W2, 2026-10-25 and 2026-10-26)
+
+Scope: implement the coordinate limit, the simplification too-fine rule, the
+zero-length-subpath survival and the drawing-after-close evidence from spec commit
+`38ee579`, plus the owner decisions W2 of 2026-10-26 (all A) recorded in the spec
+commit `61fb23a` (single-purpose `docs`): the boolean minimum becomes `1e-11 x m`; the
+stroke outline gets a too-fine rule `1e-12 x max(m, w / 2)`; the query point of
+`contains` and `distance_to_perimeter` obeys the coordinate limit and the non-finite
+rule, checked after the path checks; no too-fine rule for the hit tests; the
+simplification keeps `1e-12 x m`. The error order has eight steps now.
+
+Commits (each passed fmt, clippy `-D warnings`, `cargo test --workspace --locked`,
+the crate in `--release`, `cargo deny check` and the CI policy steps ARQ-07,
+forbid-unsafe, V5, V12, V13, V14, all rc 0):
+
+- `61fb23a` docs(engine-pathops): spec for the floors and the query point
+- `21131b1` feat(pathops): coordinate limit `COORDINATE_LIMIT = 1e9`,
+  `PathOpError::CoordinateOutOfRange { value, limit }`, all eight operations
+- `02e4ff5` feat(pathops): simplification too-fine rule `1e-12 x m`
+- `c19eba8` feat(pathops): boolean minimum `1e-11 x m`
+- `ac68d6e` feat(pathops): stroke minimum `1e-12 x max(m, w / 2)`
+- `3839e6e` feat(pathops): query point checks
+- `cecfa67` fix(pathops): zero-length subpath survives the simplification
+- `eefaf1e` docs(pathops): minimums in `DEFAULT_TOLERANCE`, design "Minimum tolerance"
+
+### RED evidence (failing assertion, then GREEN)
+
+| Criterion | Test | RED |
+|---|---|---|
+| Limit rejected by every operation, in either position | `limits::a_coordinate_beyond_the_limit_is_rejected_by_every_operation` | `is_out_of_range` false: the call returned `Ok` for `next_up(1e9)` (end point, control point, move) |
+| First offending coordinate in path order | `limits::the_first_offending_coordinate_in_path_order_is_reported` | assertion false (`Ok`) |
+| Overflow cases return an error | `limits::the_overflow_cases_return_an_error_instead_of_hanging` | assertion false for `1e154` and `1e155` |
+| Out of range before open subpath; moves-only beyond limit | `limits::a_coordinate_beyond_the_limit_is_reported_before_an_open_subpath`, `limits::a_moves_only_operand_beyond_the_limit_is_rejected` | assertion false (open-subpath error, a clone of the rectangle) |
+| Limit inclusive; non-finite before out of range | `limits::a_coordinate_of_exactly_the_limit_is_accepted`, `limits::a_non_finite_coordinate_is_reported_before_one_beyond_the_limit` | pin behaviour that already held (the stub accepted everything and the old code reported the right non-finite error); they guard the order |
+| Simplification too fine | `tolerance_floor::the_simplification_accepts_exactly_the_minimum_tolerance` | `left: Ok(())`, `right: Err(ToleranceTooFine { minimum: 4e-12 })` |
+| Simplification never hangs (spec case, `1e-9` on a path near `1e7`) | `tolerance_floor::a_simplification_tolerance_below_the_minimum_is_rejected_and_never_hangs` | RED is a hang: `timeout 40` ended it (rc 124) before the rule; a test cannot guard a hang without a thread (ARQ-02 bans threads), same as HM4 |
+| Boolean minimum `1e-11 x m` | `boolean::the_minimum_applies_to_straight_operands_too` | `left: Err(ToleranceTooFine { minimum: 1.5e-10 })`, `right: Err(ToleranceTooFine { minimum: 1.5e-11 })` after updating to the new floor; also `a_boolean_tolerance_is_accepted_exactly_at_the_minimum`, `the_default_tolerance_is_below_the_minimum_for_large_operands` (`left: Ok`, `right: Err(ToleranceTooFine { minimum: 0.002 })`) |
+| Stroke minimum | `tolerance_floor::a_stroke_tolerance_is_checked_against_the_larger_of_the_extent_and_half_the_width`, `a_stroke_of_a_path_at_the_origin_still_has_a_minimum_tolerance` | `left: Ok(())`, `right: Err(ToleranceTooFine { minimum: 1e-10 })` and `{ minimum: 4e-12 }` |
+| Too fine after out of range (simplification, stroke) | `tolerance_floor::a_too_fine_*_is_reported_after_a_coordinate_beyond_the_limit` | pin the order (the new rule sits after the range check); they pass at the first run because the range check landed first |
+| Query point rejected | `limits::a_query_point_that_is_not_finite_or_beyond_the_limit_is_rejected` | `left: Ok(())`, `right: Err(NonFiniteCoordinate { value: Nan })` |
+| Query point after the path, non-finite first | `limits::the_query_point_is_checked_after_the_path_and_non_finite_first` | `left: Ok(())`, `right: Err(NonFiniteCoordinate { value: Nan })` |
+| No too-fine rule for the hit tests; point at the limit accepted | `limits::the_hit_tests_have_no_too_fine_rule`, `limits::a_query_point_at_exactly_the_limit_is_accepted` | pin behaviour that already held |
+| Zero-length subpath kept | `stroke_and_simplify::a_subpath_of_zero_length_segments_is_kept_by_the_simplification` | `left: 0`, `right: 1` (`subpath_count`) |
+
+Evidence row for the drawing-after-close index (spec "Drawing after a close without a
+move is the next subpath"): `validation::drawing_after_a_close_without_a_move_is_an_open_subpath`
+asserts `OpenSubpath { subpath: 1 }` from `validate_closed`, `contains` and the four
+boolean operations in both operand positions; it was written in round 2 and passes
+unchanged. No new test was needed.
+
+### Existing tests that changed
+
+Only `tests/boolean.rs`: the expected minimums moved from `1e-12 x m` to `1e-11 x m`
+(six assertions). No existing test used a coordinate above `1e9`, or a stroke or
+simplification tolerance below its new floor.
+
+### Design of the code
+
+`validate::not_too_fine(tolerance, per_unit, extent)` is shared by the three rules;
+`Path::coordinates()` is the one iterator behind `validate_finite`, `validate_in_range`
+and `max_abs_coordinate`; `validate::query_point` checks the point of the hit tests.
+`simplify` now splits the path before each move and passes a subpath that holds only
+zero-length segments through unchanged, because the underlying simplifier drops it.
+
+### Deviations and decisions to confirm
+
+1. The inclusive-limit scenario in the spec asked every call to use the default
+   tolerance; with the boolean floor at `1e-11` the minimum at `m = 1e9` is `1e-2`, so
+   the spec commit changes the boolean calls of that scenario to the minimum and adds the
+   scenario "The default tolerance is below the boolean minimum for large operands".
+   This follows arithmetically from the owner's choice; the owner may want to know that
+   the default tolerance no longer works for boolean operations above `m = 1e8`.
+2. The too-fine error for the stroke is the existing `ToleranceTooFine { minimum }`; it
+   does not carry the offending tolerance (the caller holds it), because the earlier
+   rule for the boolean operations and the simplification does the same.
+3. The query point is checked after the open-subpath check in `contains` (step 7 and 8
+   of the order), so an open path with a bad point reports the open subpath.
+4. The spec line "stroke has no too-fine rule" named in the task does not exist in the
+   committed spec; the stroke rule was added as new text.
+5. Mutation T3 was not run in this round (no `mutants` report); `verify` or `mutants`
+   should cover `validate.rs`, `path.rs`, `simplify.rs`, `stroke.rs`, `hittest.rs` and
+   `boolean.rs`.
+6. `verify-report.md` and `verification.json` carry uncommitted verifier edits in this
+   worktree; they were left untouched and are not part of these commits.
+
+### Measured size
+
+`git diff --shortstat 38ee579..HEAD` (the previous round's last commit to here): 14
+files changed, 931 insertions, 91 deletions (net +840). The crate code alone
+(`git diff --shortstat 61fb23a..HEAD -- crates`): 12 files, 824 insertions, 63
+deletions, of which `src/` is 260 insertions and 55 deletions and the rest is tests
+(`limits.rs` 329 lines and `tolerance_floor.rs` 143 lines are new). This is past the
+~700-line ceiling; the coordinator decides.
