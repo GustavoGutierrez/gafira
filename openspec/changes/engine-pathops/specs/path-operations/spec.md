@@ -640,9 +640,10 @@ The crate MUST simplify a path within a given tolerance: every point of the
 original path MUST lie within the tolerance of the simplified path. Simplification
 MUST preserve the path's subpath structure: every subpath of the input that holds
 a segment MUST appear in the output, in the same order, and the fill rule MUST be
-kept. A subpath made only of a move holds no shape and, consistently with a
-moves-only path being empty (OQ2), MUST NOT appear in the output (verify round 3,
-W1; ratified by the owner's instruction to close the change). A segment drawn
+kept. A subpath that holds no segment (moves and closes only) holds no shape and,
+consistently with a path of moves and closes being empty (OQ2), MUST NOT appear in
+the output (verify round 3, W1; ratified by the owner's instruction to close the
+change). A segment drawn
 after a close with no new move belongs to a new subpath that starts at the start
 point of the subpath just closed, and it is simplified from that point.
 
