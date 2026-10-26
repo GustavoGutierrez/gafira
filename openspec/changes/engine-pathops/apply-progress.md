@@ -816,3 +816,6 @@ deletions (most of it the new `tests/after_close.rs`). Whole change against `mai
   `distance_to_perimeter` of an empty path is `+inf`, undefined by the spec).
 - C2 (process): spec commit `f89f883` was made on the coordinator's routing and is
   ratified by the owner's instruction to close the change (2026-10-26).
+- Measured size: `git diff --shortstat 7814c10..HEAD -- crates .cargo`: 6 files, 685
+  insertions, 16 deletions. Whole change against `origin/main`: 36 files, 8458
+  insertions, 1 deletion. Past the ~700-line ceiling; the owner approved a single PR.
