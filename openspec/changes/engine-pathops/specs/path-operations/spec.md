@@ -638,8 +638,13 @@ a hole.
 
 The crate MUST simplify a path within a given tolerance: every point of the
 original path MUST lie within the tolerance of the simplified path. Simplification
-MUST preserve the path's subpath structure: every subpath of the input MUST appear
-in the output, in the same order, and the fill rule MUST be kept.
+MUST preserve the path's subpath structure: every subpath of the input that holds
+a segment MUST appear in the output, in the same order, and the fill rule MUST be
+kept. A subpath made only of a move holds no shape and, consistently with a
+moves-only path being empty (OQ2), MUST NOT appear in the output (verify round 3,
+W1; ratified by the owner's instruction to close the change). A segment drawn
+after a close with no new move belongs to a new subpath that starts at the start
+point of the subpath just closed, and it is simplified from that point.
 
 This includes a subpath whose every segment has zero length (verify round 2,
 follow-up of W1). Such a subpath is not moves-only, so it is not empty (OQ2), and
@@ -673,6 +678,11 @@ definition (open polylines, curved paths) carry only the tolerance guarantee.
 - GIVEN the path `MoveTo(5,5)`, `LineTo(5,5)`, `LineTo(5,5)` with the `EvenOdd` fill rule, and the path made of the closed square (0,0)-(10,10) followed by that same subpath
 - WHEN each is simplified with tolerance 1e-3
 - THEN the first result is not empty (it does not come back with 0 elements): it holds exactly one subpath, whose first element is `MoveTo(5,5)`, which holds at least one segment, and every end point and control point of it is (5,5), with the `EvenOdd` fill rule; the second result holds two subpaths, the square first and then a subpath meeting the same conditions
+
+#### Scenario: A subpath made only of a move is dropped (D3, unit)
+- GIVEN the path `MoveTo(1,1)`, `MoveTo(4,4)`, and the path `MoveTo(1,1)` followed by the closed square (0,0)-(10,10)
+- WHEN each is simplified with tolerance 1e-3
+- THEN the first result is empty with no elements; the second result holds exactly one subpath, the square, and no lone move
 
 #### Scenario: Already minimal path is unchanged (D3, unit)
 - GIVEN a closed square path and a closed triangle path, and tolerance 1e-3
