@@ -231,3 +231,99 @@ fn a_moves_only_operand_beyond_the_limit_is_rejected() {
         2e9
     ));
 }
+
+/// The two hit tests over `path` and `point`, by name.
+fn hit_tests(path: &Path, point: Point) -> [(&'static str, Result<(), PathOpError>); 2] {
+    [
+        (
+            "contains",
+            path.contains(point, DEFAULT_TOLERANCE).map(drop),
+        ),
+        (
+            "distance_to_perimeter",
+            path.distance_to_perimeter(point, DEFAULT_TOLERANCE)
+                .map(drop),
+        ),
+    ]
+}
+
+#[test]
+fn a_query_point_that_is_not_finite_or_beyond_the_limit_is_rejected() {
+    let beyond = COORDINATE_LIMIT.next_up();
+    let cases = [
+        (f64::NAN, Some(NonFiniteValue::Nan), None),
+        (f64::INFINITY, Some(NonFiniteValue::Infinity), None),
+        (
+            f64::NEG_INFINITY,
+            Some(NonFiniteValue::NegativeInfinity),
+            None,
+        ),
+        (beyond, None, Some(beyond)),
+        (-beyond, None, Some(-beyond)),
+    ];
+    for (value, non_finite, out_of_range) in cases {
+        for point in [Point::new(value, 1.0), Point::new(1.0, value)] {
+            for (name, outcome) in hit_tests(&rect(), point) {
+                match (non_finite, out_of_range) {
+                    (Some(kind), _) => assert_eq!(
+                        outcome,
+                        Err(PathOpError::NonFiniteCoordinate { value: kind }),
+                        "{name} at {point:?}"
+                    ),
+                    (None, Some(expected)) => assert!(
+                        is_out_of_range(&outcome, expected),
+                        "{name} at {point:?}: {outcome:?}"
+                    ),
+                    (None, None) => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_query_point_at_exactly_the_limit_is_accepted() {
+    for point in [Point::new(1e9, -1e9), Point::new(-1e9, 1e9)] {
+        for (name, outcome) in hit_tests(&rect(), point) {
+            assert_eq!(outcome, Ok(()), "{name} at {point:?}");
+        }
+    }
+}
+
+#[test]
+fn the_query_point_is_checked_after_the_path_and_non_finite_first() {
+    let beyond_path = path_with(Slot::EndPoint, 2e9, 1.0);
+    let mut bez = BezPath::new();
+    bez.move_to((0.0, 0.0));
+    bez.line_to((10.0, 0.0));
+    bez.line_to((5.0, 5.0));
+    let open = Path::new(bez, FillRule::NonZero);
+
+    let first = beyond_path.distance_to_perimeter(Point::new(f64::NAN, 0.0), DEFAULT_TOLERANCE);
+    let second = open.contains(Point::new(f64::NAN, 0.0), DEFAULT_TOLERANCE);
+    let third = rect().contains(Point::new(1e10, f64::NAN), DEFAULT_TOLERANCE);
+
+    assert!(is_out_of_range(&first.map(drop), 2e9));
+    assert_eq!(
+        second.map(drop),
+        Err(PathOpError::OpenSubpath { subpath: 0 })
+    );
+    assert_eq!(
+        third.map(drop),
+        Err(PathOpError::NonFiniteCoordinate {
+            value: NonFiniteValue::Nan
+        })
+    );
+}
+
+#[test]
+fn the_hit_tests_have_no_too_fine_rule() {
+    let rectangle = rect();
+
+    assert!(rectangle.contains(Point::new(5.0, 5.0), 1e-30).is_ok());
+    assert!(
+        rectangle
+            .distance_to_perimeter(Point::new(12.0, 5.0), 1e-30)
+            .is_ok()
+    );
+}

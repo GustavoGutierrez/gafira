@@ -1,6 +1,8 @@
 //! The checks on the numbers every operation takes.
 
-use crate::{InvalidNumber, NonFiniteValue, PathOpError};
+use kurbo::Point;
+
+use crate::{COORDINATE_LIMIT, InvalidNumber, NonFiniteValue, PathOpError};
 
 /// Checks that a number is finite and above zero.
 fn positive(value: f64) -> Result<(), InvalidNumber> {
@@ -30,6 +32,25 @@ pub(crate) fn not_too_fine(tolerance: f64, per_unit: f64, extent: f64) -> Result
     let minimum = per_unit * extent;
     if tolerance < minimum {
         return Err(PathOpError::ToleranceTooFine { minimum });
+    }
+    Ok(())
+}
+
+/// Checks the query point of a hit test: both coordinates finite (x first),
+/// then both within the coordinate limit (x first).
+pub(crate) fn query_point(point: Point) -> Result<(), PathOpError> {
+    for coordinate in [point.x, point.y] {
+        if let Some(value) = NonFiniteValue::classify(coordinate) {
+            return Err(PathOpError::NonFiniteCoordinate { value });
+        }
+    }
+    for value in [point.x, point.y] {
+        if value.abs() > COORDINATE_LIMIT {
+            return Err(PathOpError::CoordinateOutOfRange {
+                value,
+                limit: COORDINATE_LIMIT,
+            });
+        }
     }
     Ok(())
 }

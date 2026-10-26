@@ -32,12 +32,17 @@ impl Path {
     ///
     /// A path with a coordinate whose absolute value is above
     /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
-    /// [`PathOpError::CoordinateOutOfRange`].
+    /// [`PathOpError::CoordinateOutOfRange`]. The query point is subject to
+    /// the same rules, checked after the path: a non-finite coordinate is
+    /// rejected with [`PathOpError::NonFiniteCoordinate`] and one beyond the
+    /// limit with [`PathOpError::CoordinateOutOfRange`]. The tolerance has no
+    /// minimum here.
     pub fn contains(&self, point: Point, tolerance: f64) -> Result<Containment, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
         self.validate_in_range()?;
         self.validate_closed()?;
+        validate::query_point(point)?;
 
         if self.is_empty() {
             return Ok(Containment::Outside);
@@ -70,11 +75,16 @@ impl Path {
     ///
     /// A path with a coordinate whose absolute value is above
     /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
-    /// [`PathOpError::CoordinateOutOfRange`].
+    /// [`PathOpError::CoordinateOutOfRange`]. The query point is subject to
+    /// the same rules, checked after the path: a non-finite coordinate is
+    /// rejected with [`PathOpError::NonFiniteCoordinate`] and one beyond the
+    /// limit with [`PathOpError::CoordinateOutOfRange`]. The tolerance has no
+    /// minimum here.
     pub fn distance_to_perimeter(&self, point: Point, tolerance: f64) -> Result<f64, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
         self.validate_in_range()?;
+        validate::query_point(point)?;
 
         let mut closest = f64::INFINITY;
         for segment in self.as_bez_path().path_segments(tolerance) {
