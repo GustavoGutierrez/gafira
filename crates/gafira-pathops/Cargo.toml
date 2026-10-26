@@ -1,0 +1,18 @@
+[package]
+name = "gafira-pathops"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-geom.workspace = true
+kurbo.workspace = true
+linesweeper = "0.5"
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,82 @@
+//! Layer-2 path operations for Gafira.
+//!
+//! Pure engine code: no I/O, no `unsafe`, `f64` everywhere. The crate provides
+//! path boolean operations, stroke outlining, path simplification and geometric
+//! hit testing over the Bézier paths that `gafira-geom` speaks.
+
+#![forbid(unsafe_code)]
+
+mod boolean;
+mod error;
+mod hittest;
+mod path;
+mod simplify;
+mod stroke;
+mod validate;
+
+pub use error::{InvalidNumber, NonFiniteValue, PathOpError};
+pub use hittest::Containment;
+pub use path::Path;
+pub use stroke::StrokeStyle;
+
+pub use gafira_geom::{Affine, Point, Rect, Vec2};
+pub use kurbo::{BezPath, Cap, Join, PathEl};
+
+/// The rule that decides which points of a path the path covers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FillRule {
+    /// A point is inside when the number of crossings of the path is odd.
+    EvenOdd,
+    /// A point is inside when the winding number of the path around it is not
+    /// zero.
+    NonZero,
+}
+
+/// The four set operations over two paths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BooleanOp {
+    /// A point is in the union when it is in either operand.
+    Union,
+    /// A point is in the intersection when it is in both operands.
+    Intersection,
+    /// A point is in the difference when it is in the first operand and not in
+    /// the second.
+    Difference,
+    /// A point is in the exclusive-or when it is in one operand but not the
+    /// other.
+    Xor,
+}
+
+/// The default tolerance, in the unit of the paths (pixels).
+///
+/// Every operation takes the tolerance explicitly or uses this constant; the
+/// crate never mixes tolerances inside a single call. For the stroke outline
+/// and the simplification it is the distance the result may move from the exact
+/// answer; the arcs of round caps and round joins are fitted at this distance
+/// too, so a finer tolerance gives more curve segments there. For the boolean operations it is the accuracy of the sweep, not a
+/// bound on the distance to the exact result: measured, and not proven, the
+/// result matches the exact boundary far below the tolerance for straight edges,
+/// and for a curve that runs parallel to the sweep direction at a crossing the
+/// deviation grows as the square root of the tolerance (see
+/// [`Path::boolean_op`]).
+///
+/// Some operations reject a tolerance that is too fine for their input
+/// ([`PathOpError::ToleranceTooFine`]): the boolean operations below `1e-11 * m`
+/// (`m` the largest absolute coordinate of both operands), the simplification
+/// below `1e-12 * m`, and the stroke outline below `1e-12 * max(m, w / 2)`
+/// (`w` the stroke width). The default is above the minimum of the
+/// simplification and of the stroke outline for every path within
+/// [`COORDINATE_LIMIT`], and of the boolean operations while `m` is at most
+/// `1e8`.
+pub const DEFAULT_TOLERANCE: f64 = 1e-3;
+
+/// The largest absolute value of a coordinate that any operation accepts.
+///
+/// Every operation rejects a path with an x or y coordinate whose absolute
+/// value is above this limit with [`PathOpError::CoordinateOutOfRange`], before
+/// it computes anything. A coordinate of exactly `COORDINATE_LIMIT` or
+/// `-COORDINATE_LIMIT` is accepted. The limit is set by precision: with the
+/// minimum tolerances, the default tolerance still works for the simplification
+/// and the stroke outline at the limit. The limit applies to inputs only; a
+/// result may hold coordinates beyond it.
+pub const COORDINATE_LIMIT: f64 = 1e9;

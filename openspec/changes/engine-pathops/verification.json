@@ -1,0 +1,508 @@
+{
+  "schema": 1,
+  "change": "engine-pathops",
+  "delivery": "D1-D4",
+  "rounds": [
+    {
+      "round": 1,
+      "commit": "2a9f1a731e05cd308238eea9f3e1f8832135f9a0",
+      "mode": "full",
+      "tier": "T3",
+      "depth": "V3",
+      "verdict": "FAIL",
+      "next": "specifier, explorer, tdd-apply",
+      "counts": {
+        "critical": 9,
+        "warning": 9,
+        "suggestion": 6
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "754099b",
+          "summary": "Implementer amended the delta spec (simplification) after the first impl commits; content sound and ordered before D3, needs specifier ratification"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "path-operations Boolean/Stroke",
+          "summary": "False reqs: empty operand returned unchanged (false for intersection, empty\\B); bbox(A\\B) vs bbox(B\\A) disjoint (cross counterexample); stroke width vs w/2"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "boolean.rs:47-87",
+          "summary": "Fill rule of operands unspecified; code applies self's rule to both; NonZero A + EvenOdd B union covers a point neither covers"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "claim",
+          "ref": "design Tolerance policy",
+          "summary": "Tolerance does not bound boolean deviation: circle vs rect A\\B off by 7.7e-2 at tol 1e-3 (77x), grows ~sqrt(tol)"
+        },
+        {
+          "id": "C5",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "boolean.rs:92-101",
+          "summary": "Tolerance <=1e-13 accepted; linesweeper stack overflow aborts the process in release (debug_assert panic in debug)"
+        },
+        {
+          "id": "C6",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "stroke.rs:48",
+          "summary": "Stroke outline inherits input fill rule; under EvenOdd overlapping stroke regions become holes (X path centre Outside)"
+        },
+        {
+          "id": "C7",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "boolean.rs:59-61",
+          "summary": "Union with an empty path does not equal the operand (rect rotated, circle re-segmented); test checks bbox only"
+        },
+        {
+          "id": "C8",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "9a760e0..15f4b30",
+          "summary": "Flaky prop in D2-D4 commits (9/40, 6/40 fresh failures; 754099b gate failed); fix only in a8d2c0a; apply-progress claim false"
+        },
+        {
+          "id": "C9",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "simplify.rs:17-18",
+          "summary": "Hand mutant HM4 survives: without the finite guard simplify hangs on NaN; no non-finite test for simplify/stroke"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "boolean.rs:54-57",
+          "summary": "Hand mutant HM2 survives: NaN+open path reports OpenSubpath instead of NonFiniteCoordinate"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "tests/",
+          "summary": "Weak tests: NaN-only non-finite, no 2nd-operand failure, vacuous simplify tolerance unit, rect-only generators"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "apply-progress.md",
+          "summary": "Result within tolerance and Tolerance visible scenarios have no evidence row; the first has no test"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "error.rs, stroke.rs:95-105",
+          "summary": "Zero/negative width or tolerance reported as NaN"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "boolean.rs:12, simplify.rs:13",
+          "summary": "Wrong docs (union 'both', simplify 'never more segments'); lone MoveTo empty yet rejected; tail after close not named"
+        },
+        {
+          "id": "W6",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "commits",
+          "summary": "Author el Gentleman <agent@gafira.local>; owner approval dated 2026-10-26 written in feat commit; docs in test commit"
+        },
+        {
+          "id": "W7",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "path-operations",
+          "summary": "Dependency-set filter cannot match the library; purity MUST excludes kurbo; scenario title contradicts body"
+        },
+        {
+          "id": "W8",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "spec Open questions",
+          "summary": "Delta spec still lists Q1-Q5 as open recommendations while design closes them"
+        },
+        {
+          "id": "W9",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "hittest.rs:69",
+          "summary": "Equivalent mutant (< to <=, proven); mutants.toml exclusion pending at archive"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": {
+        "tier": "T3",
+        "found": 73,
+        "caught": 60,
+        "missed": 1,
+        "timeout": 0,
+        "unviable": 12,
+        "critical_missed": 0,
+        "wall_s": 45
+      },
+      "hand_mutants": {
+        "run": 5,
+        "killed": 3
+      },
+      "criteria": {
+        "total": 48,
+        "covered": 43
+      },
+      "size": {
+        "lines": 2221,
+        "forecast": 1780
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "round": 2,
+      "commit": "b713ceb2d2180d9a782d282e66ec5e4f152997eb",
+      "mode": "full",
+      "tier": "T3",
+      "depth": "V3",
+      "verdict": "FAIL",
+      "next": "specifier, tdd-apply",
+      "counts": {
+        "critical": 2,
+        "warning": 4,
+        "suggestion": 5
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "stroke.rs:30-35",
+          "summary": "Round caps/joins exceed tolerance: kurbo fits a unit arc then scales by w/2; capsule w=10 deviates 1.363e-3 at tol 1e-3, 136x at 1e-5"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "path.rs validate_closed, hittest.rs:30-37",
+          "summary": "Segments after ClosePath without MoveTo: validate_closed Ok, contains returns Outside, booleans give Geometry instead of OpenSubpath"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "Degenerate and invalid inputs",
+          "summary": "No coordinate bound: simplify hangs on finite coords >=1e154 (debug and release); distance returns inf from 1e155"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "tests/boolean.rs:473",
+          "summary": "Too-fine scenario requires a release run; only debug tested, no release evidence (verify probe confirms it holds)"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "ec97f7b..17a58c0",
+          "summary": "Fix round 1262+/385- (net +877) over the ~700-line ceiling; needs owner OK"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "hittest.rs:69:25",
+          "summary": "Equivalent mutant exclusion still pending at archive (round 1 W9)"
+        }
+      ],
+      "carried": [
+        {
+          "id": "C8",
+          "class": "implementation",
+          "summary": "Flaky property in D2-D4 commits and the false apply-progress statement; awaiting owner waiver; not counted"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": {
+        "tier": "T3",
+        "source": "independent run pending; implementer figures",
+        "found": 76,
+        "caught": 61,
+        "missed": 1,
+        "timeout": 0,
+        "unviable": 14,
+        "critical_missed": 0,
+        "wall_s": null
+      },
+      "hand_mutants": {
+        "run": 5,
+        "killed": 5
+      },
+      "criteria": {
+        "total": 80,
+        "covered": 80
+      },
+      "size": {
+        "lines": 1647,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "round": 3,
+      "commit": "7814c10f13e33ebe1bcfc1bd160cbd0e5cb2c13f",
+      "mode": "full",
+      "tier": "T3",
+      "depth": "V3",
+      "verdict": "FAIL",
+      "next": "specifier, tdd-apply",
+      "counts": {
+        "critical": 2,
+        "warning": 5,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "simplify.rs:57,66",
+          "summary": "Segments drawn after ClosePath without MoveTo are simplified from the last point, not the subpath start: tail points off by 5.3 at tol 1e-3; 200/200 random cases; zero-length tail breaks rule"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "61fb23a",
+          "summary": "Delta spec changed by the implementer after the first impl commits (apply-progress fix round 3); content faithful to owner W2; needs specifier ratification"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "Path simplification",
+          "summary": "Spec silent whether a lone MoveTo is a subpath that must survive; simplify drops lone moves (subpath_count 2->0, 2->1)"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "boolean.rs:29-56",
+          "summary": "union/intersection/difference/xor docs do not state the 1e9 limit, its error or the 1e-11 x m minimum; they only link to boolean_op"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "fix round 3 sources",
+          "summary": "No T3 mutants report for the round's critical code; mutation gate unevidenced"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "38ee579..7814c10",
+          "summary": "Fix round 3 +1025/-91 (crate code +824/-63), over the ~700-line ceiling; needs owner OK"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "hittest.rs:93",
+          "summary": "Equivalent mutant < to <= in distance_to_perimeter still not excluded in .cargo/mutants.toml"
+        }
+      ],
+      "waived": [
+        "C8 history not rewritten",
+        "flaky-property history"
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": {
+        "tier": "T3",
+        "source": "no mutants report supplied",
+        "found": null,
+        "caught": null,
+        "missed": null,
+        "timeout": null,
+        "unviable": null,
+        "critical_missed": null,
+        "wall_s": null
+      },
+      "hand_mutants": {
+        "run": 5,
+        "killed": 5
+      },
+      "criteria": {
+        "total": 98,
+        "covered": 96
+      },
+      "size": {
+        "lines": 1116,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "round": 4,
+      "commit": "0b4c7ed",
+      "mode": "full",
+      "tier": "T3",
+      "depth": "V3",
+      "verdict": "FAIL",
+      "next": "specifier, tdd-apply",
+      "counts": {
+        "critical": 2,
+        "warning": 2,
+        "suggestion": 5
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "simplify.rs:54-62,74",
+          "summary": "Subpath M then Z (no segment): simplify panics in debug; in release returns ClosePath without MoveTo, and distance/contains/union of it panic. Since D3; untested"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "f89f883",
+          "summary": "Delta spec changed by the implementer in fix round 4 (W1 text); content faithful; owner ratification not recorded; void if shown"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "specs/workspace-tooling/spec.md",
+          "summary": "MODIFIED blocks stale vs main: archive would drop gafira-time row, V5 N1-N4 and H-N1/BTreeMap scenarios; rebase onto main"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "docs/specs/README.md",
+          "summary": "Branch conflicts with origin/main on the 02 status row; merge main and resolve before the PR"
+        }
+      ],
+      "waived": [
+        "C8 history not rewritten",
+        "flaky-property history",
+        "size over ~700 (single PR approved)"
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": {
+        "tier": "T3",
+        "found": 126,
+        "caught": 105,
+        "missed": 0,
+        "timeout": 0,
+        "unviable": 21,
+        "critical_missed": 0,
+        "wall_s": 61
+      },
+      "hand_mutants": {
+        "run": 5,
+        "killed": 5
+      },
+      "criteria": {
+        "total": 99,
+        "covered": 98
+      },
+      "size": {
+        "lines": 7830,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "round": 5,
+      "commit": "9d549f1",
+      "mode": "standard",
+      "tier": "T3",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "counts": {
+        "critical": 1,
+        "warning": 0,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "951e777, 5f9ead0",
+          "summary": "Implementer-recorded delta-spec commits after implementation; content correct. Void once the owner's close instruction is recorded as ratifying them (as for f89f883)"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": {
+        "tier": "T3",
+        "found": 51,
+        "caught": 46,
+        "missed": 0,
+        "timeout": 0,
+        "unviable": 5,
+        "critical_missed": 0,
+        "wall_s": null
+      },
+      "hand_mutants": {
+        "run": 5,
+        "killed": 4,
+        "equivalent": 1
+      },
+      "criteria": {
+        "total": 114,
+        "covered": 114
+      },
+      "size": {
+        "lines": 8507,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    }
+  ]
+}
