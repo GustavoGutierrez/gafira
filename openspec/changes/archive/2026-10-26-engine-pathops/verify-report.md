@@ -722,3 +722,32 @@ next: specifier (ambiguity: C2, W1), then tdd-apply (implementation: C1, W2). Th
 - Hand mutants: 5 run, 4 killed, 1 equivalent. Mutation T3 (closing pass files): 0 missed, 0 timeouts.
 
 next: specifier (ambiguity: C1, a ratification record only; the coordinator may void C1 by recording the owner's ratification of `951e777` and `5f9ead0`, then route to archive).
+
+# Verify report: engine-pathops (C4), round 6 (re-verification, narrow)
+
+- Commit verified: `3afbf01` (merge of PR #58 into `main`; checked out on `chore/archive-engine-pathops`, clean tree). Flow: full | tier T3 | depth V1, narrowed by the coordinator to the round 5 finding plus gates at HEAD. Acceptance source unchanged since round 5.
+- Changes since round 5 (`9d549f1..3afbf01`): `5f4712c` (round 5 report), `a67a03e` (ratification record and size) and the merge. The merge tree equals `a67a03e`'s tree (`e9077a1`). `git diff 9d549f1..HEAD -- crates .cargo .github Cargo.toml Cargo.lock deny.toml` is empty: no code, CI or dependency change. Only `apply-progress.md`, `verify-report.md` and `verification.json` differ.
+- Mutation: no new code, so the round 5 T3 evidence stands (51 found, 46 caught, 5 unviable, 0 missed, 0 timeouts). No hand mutants this round.
+
+**Verdict: PASS.** 0 CRITICAL, 0 WARNING, 0 new SUGGESTION items (round 5 S1-S4 carried, informational). All deliveries of the change are done.
+
+## Ratification record
+
+- `apply-progress.md` lines 816-821 (closing pass): `f89f883` is "ratified by the owner's instruction to close the change (2026-10-26)"; `951e777` (workspace-tooling rebase) and `5f9ead0` (simplify wording) are "likewise ratified by the owner's instruction to close the change (2026-10-26), as done for `f89f883` and `61fb23a`". `61fb23a` is recorded as ratified by owner decision A (lines 744-747).
+- The record is in a docs-only commit (`a67a03e`, one file, +4/-2) under the owner identity, and the owner merged PR #58 containing it.
+- Every implementer-authored delta-spec commit after the first implementation commit (`61fb23a`, `f89f883`, `951e777`, `5f9ead0`) is now covered. Round 5 C1 is void as stated in that report.
+- The size line was refreshed to 8648 insertions; measured `git diff --shortstat c7187ca..a67a03e`: 36 files, +8648/-1. Matches (round 5 S4 resolved).
+
+## Gates (current tree at `3afbf01`, fresh `CARGO_TARGET_DIR` in the scratchpad, cleaned afterwards; 90 GB free before and after)
+
+| fmt | clippy | test (passed/failed) | deny | ARQ-07 | forbid-unsafe | V5 | V12 | V13 | V14 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | 0 | 0 (767/0) | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- The CI policy steps were extracted from `.github/workflows/ci.yml` and run under `bash --noprofile --norc -eo pipefail`. `cargo deny check`: advisories, bans, licenses and sources ok. The test count equals round 5 at `9d549f1` (767), consistent with no code change.
+
+## Criteria matrix
+
+- Unchanged from round 5: 114 of 114 scenarios (91 path-operations, 23 workspace-tooling) covered. The code and specs they read have not changed since then.
+
+next: archive
