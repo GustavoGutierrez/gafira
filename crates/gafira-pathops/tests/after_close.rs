@@ -267,3 +267,36 @@ fn a_subpath_made_only_of_a_move_is_dropped() {
         Some(PathEl::MoveTo(p)) if *p == Point::new(0.0, 0.0)
     ));
 }
+
+/// A closed tail after a close unions as its written-out form: the sweep sees
+/// the move, so the tail starts at the start point of the subpath just closed
+/// (the shrunk failure of the generated property before `d1638a3`).
+#[test]
+fn a_closed_tail_after_a_close_unions_as_its_written_out_form() {
+    let drawn = |explicit_move: bool| {
+        let mut bez = BezPath::new();
+        bez.move_to((19.6, 0.0));
+        bez.line_to((0.0, 93.3));
+        bez.line_to((0.0, 0.0));
+        bez.close_path();
+        if explicit_move {
+            bez.move_to((19.6, 0.0));
+        }
+        bez.line_to((0.0, 75.0));
+        bez.line_to((57.8, 77.3));
+        bez.close_path();
+        Path::new(bez, FillRule::NonZero)
+    };
+    let mut square = BezPath::new();
+    square.move_to((10.0, 10.0));
+    square.line_to((60.0, 10.0));
+    square.line_to((60.0, 60.0));
+    square.line_to((10.0, 60.0));
+    square.close_path();
+    let square = Path::new(square, FillRule::NonZero);
+
+    let implicit = drawn(false).union(&square, 1e-3).unwrap();
+    let written = drawn(true).union(&square, 1e-3).unwrap();
+
+    assert_eq!(implicit, written);
+}
