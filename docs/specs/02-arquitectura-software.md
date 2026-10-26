@@ -423,10 +423,10 @@ pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
 
 - **Capacidad de mutación**: `apply` y `revert` reciben `&mut DocMut<'_>`, la vista mutable de `gafira-doc` que solo se obtiene con el `EditToken`; `History` es quien lo usa. Todo comando, del núcleo o de una extensión, muta el documento por esta vía. `Any` permite que `merge` recupere el tipo concreto de `next`: primero comprueba por referencia que es de su propio tipo y solo entonces convierte la caja; si no lo es, devuelve `Err(next)`.
 - **Patrón**: Command, con apply, revert y merge. `Transaction` (Composite) agrupa varios comandos en una sola entrada de historial.
-- **Implementan** los comandos del núcleo en `gafira-edit::cmd`: `SetProperty<T>` (campos de nodo y de forma, y los de página y el DPI del documento), `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Los que dependen de datos que aún no existen (desde `SetFrameContent` hasta `SetSwatch`) llegan con esos datos. Los comandos no comprueban `locked`: lo deciden las herramientas. Las extensiones aportan los suyos.
+- **Implementan** los comandos del núcleo en la raíz de `gafira-edit`: `SetProperty` (un enum `Property` con los campos de nodo y de forma, los de página y el DPI del documento), `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Los que dependen de datos que aún no existen (desde `SetFrameContent` hasta `SetSwatch`) llegan con esos datos. Los comandos no comprueban `locked`: lo deciden las herramientas. Las extensiones aportan los suyos.
 - **Cómo añadir un comando**:
   1. Struct con los datos mínimos para aplicar y revertir.
-  2. `touches` exacto.
+  2. `touches` cubre todo cambio: una página cuando cambian sus campos o sus `roots`, un nodo cuando cambia su registro o sus `children`; un cambio del DPI no lista nada y quien dependa del DPI compara `Document::dpi`.
   3. Prueba de propiedad con `gafira-testkit::prop_command` (apply → revert → igualdad con la instantánea).
   4. Exponerlo en el servicio correspondiente.
 
@@ -844,7 +844,7 @@ impl Gafira {
 |---|---|---|
 | ARQ-30 | Todo cambio de documento pasa por `History::execute` de `gafira-edit` (envuelto después por `EditService::execute`). | `Document` solo se muta con la capacidad `EditToken`, que solo usa `gafira-edit`; el CI lo vigila (V13). Un test de compilación (`trybuild`) muestra que una mutación desde `gafira-ui` no compila. |
 | ARQ-31 | No hay estado global mutable para los registros (§4). | Una búsqueda en CI de `static mut`, `lazy_static!` e `inventory::` en crates no de prueba da 0 coincidencias (excepto la `OnceLock` de configuración de logging). |
-| ARQ-32 | Deshacer y rehacer son O(1) para el usuario. | Con un documento de 100 capas, 1 000 deshacer seguidos tardan < 16 ms cada uno en el percentil 99. Esa medición se hace con los *benchmarks* de ARQ-40; mientras tanto, `gafira-edit` prueba la estructura: deshacer y rehacer de una entrada con instantánea no llaman a ningún método de `Command` y solo instalan el `Arc` guardado. |
+| ARQ-32 | Deshacer y rehacer son O(1) para el usuario. | Con un documento de 100 capas, 1 000 deshacer seguidos tardan < 16 ms cada uno en el percentil 99. Esa medición se hace con los *benchmarks* de ARQ-40; mientras tanto, `gafira-edit` prueba la estructura: deshacer y rehacer de una entrada con instantánea no llaman ni a `apply` ni a `revert` (solo a `label()`, para devolver la etiqueta) y solo instalan el `Arc` guardado. |
 | ARQ-33 | Un gesto continuo produce una sola entrada de historial. | Prueba: un arrastre de 300 eventos de movimiento deja `history.len()` aumentado en 1. |
 | ARQ-34..ARQ-39 | Reservados. | — |
 
