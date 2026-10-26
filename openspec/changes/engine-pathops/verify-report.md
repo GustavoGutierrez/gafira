@@ -157,3 +157,370 @@ Covered 43. Not covered 5:
 Every other scenario has a passing implementer test, or a command I re-ran, and an agreeing probe. That includes the four D1 commands, the clippy scratch scenarios, P-N1 to P-N3, and the clean-tree and V12 checks. At requirement level, "Determinism and numeric tolerance" fails its "within the stated tolerance" clause (C4).
 
 next: specifier (ambiguity: C1, C2, C3, W7, W8), then explorer (claim: C4), then tdd-apply (implementation: C5-C9, W1-W6, W9)
+
+---
+
+# Verify report: engine-pathops (C4), round 2 (after verify fix round 1)
+
+- Commit verified: `b713ceb` (HEAD of `feat/engine-pathops-1`, `origin/main` `fea8b6b` merged). Clean `git archive` exports of every commit boundary of the fix round: `ec97f7b` (merge of main), `e3b9cbf`, `9c0d95d`, `dcb06fa`, `24cab46`, `f4438cd`, `fd81282`, `8b467c5`, `17a58c0`, `b713ceb`. Each export had its own `CARGO_TARGET_DIR` and `CARGO_INCREMENTAL=0`; the build folders were freed with `cargo clean` afterwards. The worktree was not modified except for these two files.
+- Flow: full | tier T3 | depth V3. Acceptance source: the delta specs as rewritten by the specifier (`d5ccf09`, `2370269`, `e447d07`): 11 requirements, 80 scenarios (path-operations 9 requirements and 72 scenarios, workspace-tooling 2 and 8).
+- No `mutants` report was supplied. The independent T3 run is pending, so the mutation figures below are the implementer's and were not reproduced here.
+
+**Verdict: FAIL.** 2 CRITICAL, 4 WARNING and 5 SUGGESTION items. By class (CRITICAL and WARNING): implementation 5, ambiguity 1. C8 from round 1 is carried and waits for an owner ruling on a waiver; it is not counted (see "Carried").
+
+next: specifier (ambiguity: W1), then tdd-apply (implementation: C1, C2, W2, W3, W4)
+
+## Gates (every commit boundary of the fix round)
+
+| Export | fmt | clippy | test | install | ARQ-07 | V11 forbid-unsafe | V5 | V12 | V13 | V14 | deny (bans, licenses, sources) | deny advisories |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ec97f7b merge | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| e3b9cbf | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 9c0d95d | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| dcb06fa | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 24cab46 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| f4438cd | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| fd81282 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 8b467c5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 17a58c0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| b713ceb HEAD | 0 | 0 | 0 (720 tests) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- How the steps were run: each policy step was extracted from that export's own `ci.yml` and run under `bash --noprofile --norc -eo pipefail`. V13 and V14 ran inside a scratch git repository made in the export.
+- V5 with xtrace at HEAD: rc 0. The trace shows `cargo tree -p gafira-edit`, `-p gafira-testkit` and `-p gafira-pathops`.
+- Negative runs on fresh HEAD exports: P-N1 (row reduced to `gafira-pathops -`) rc 1, "must not depend on gafira-geom"; P-N2 (row deleted) rc 1, "has clippy.toml but no V5 row"; P-N3 (`gafira-doc` added) rc 1, "must not depend on gafira-doc" (it also reports `gafira-color`).
+- A scratch `Instant::now()` test and a scratch `HashMap` test fail `cargo clippy -p gafira-pathops --all-targets -- -D warnings` with `disallowed_methods` (note ARQ-02) and `disallowed_types` (note ARQ-10).
+- Dependency scenarios at HEAD:
+  - the direct normal set is exactly `gafira-geom`, `kurbo 0.13.1` and `linesweeper 0.5.0`;
+  - the `gafira-*` filter gives exactly `gafira-geom` and `gafira-pathops`;
+  - none of `gafira-doc`, `-edit`, `-color`, `-time` or `-anim` appears.
+
+## Dependency and lockfile (main merged)
+
+- `linesweeper` is still encapsulated. It is used only in `src/boolean.rs` (`FillRule` and `topology::{BinaryWindingNumber, Topology}`). No public item names it, and its errors map to `PathOpError::Geometry(String)`.
+- Lockfile delta against `origin/main`:
+  - two new packages, `linesweeper 0.5.0` and `rustc-hash 2.1.3`, plus the `gafira-pathops` entry;
+  - one new edge, `arrayvec -> serde` (see S3).
+- `Cargo.toml` adds one workspace dependency line, and `ci.yml` adds the V5 row. `cargo deny` passes at every boundary.
+
+## History and hygiene of the new commits (W6)
+
+- All 10 new commits use the repository identity (`Gustavo Gutierrez`) as both author and committer. No commit carries an AI attribution line.
+- Commit types and scopes are right:
+  - `fd81282` and `17a58c0` (`test`) touch only `tests/`;
+  - `8b467c5` (`docs`) changes only comment lines;
+  - every `fix` commit carries its own tests;
+  - the only `openspec` change in the round is `apply-progress.md`, in `b713ceb`.
+- No implementer commit changed the delta specs: they were last changed by the specifier commits `d5ccf09`, `2370269` and `e447d07`, which ratify C1.
+
+## Size of the fix round
+
+- `git diff --shortstat ec97f7b..17a58c0`: 16 files, 1262 insertions and 385 deletions (net +877). With the docs commit `b713ceb`: 1441 insertions. Source files account for 255 insertions and 213 deletions.
+- This confirms the implementer's figures. The round is over the ~700-line ceiling (W3).
+- The whole change against main is 3132 insertions in `crates`, `.github`, `Cargo.toml` and `Cargo.lock`.
+
+## Independent probes (written from the final spec before reading the implementer's tests)
+
+The probes are in the session scratchpad under `vdp2/x-probe/crates/gafira-pathops/tests/` (`vp2.rs`, `vp2_fine.rs`). `vp2` has 21 probes; 20 pass in both the debug and the release build, and the one failure is C1.
+
+- **Fill-rule oracle** (p01): 150 random pairs of 1-3 integer-grid rectangles, for all 4 rule combinations and all 4 operations, with 40 points per combination at least 0.25 from every edge. That is 24 000 points per operation. Each result's containment matched the definition computed from the counting oracle, `A \ B` and `B \ A` never overlapped, and every result carried `NonZero`.
+  - Extra, beyond the spec (p01b): a `NonZero` operand with opposite windings, checked against a signed oracle. 2 400 points, all correct.
+- **Result `NonZero`** (p02): for every rule pair and both orders, including three empty results (a disjoint intersection, `A \ A` and `A Δ A`). Pass.
+- **Named mixed-rule scenarios** (p03): the union in both orders, intersection, difference and xor, and "rule of each operand in both directions". Pass.
+- **Empty and moves-only operands** (p04-p06): pass.
+  - Clones are equal in value for R, C and the ring G, with both rules of E, in every survivor position.
+  - `∅ \ A`, `A ∩ ∅`, `∅ ∩ A` and every operation over two empty paths hold no element.
+  - A moves-only path (and a moves-plus-closes path) is empty, takes the clone rule, and `contains` answers `Outside`.
+  - Validation runs before the empty rule: tolerance 0 or NaN, a NaN move, and an open operand against E.
+  - Move points count in `m`: `MoveTo(1e6, -2e6)` against R at 1e-9 gives `ToleranceTooFine { minimum: 2e-6 }` in both positions.
+  - Two empty paths accept 5e-324.
+- **`ToleranceTooFine` boundary** (p07, p08), straight and curved operands: the minimum is accepted by all four operations, and `next_down(minimum)` is rejected with exactly `1e-12 × m`. This holds for straight rectangles (m=15), for negative coordinates (m=40), for a control point at 5000, and for `circle(1000,1000,300) ∩ rect(900,900,1500,1500)` (m=1500).
+- **Spec case at 1e-13, debug and release** (`vp2_fine` f1-f3, each run alone under `timeout`): rc 0 in both builds.
+  - `ToleranceTooFine { minimum: 1.5e-9 }` at 1e-13, 1e-14, 1e-15 and 1e-300. There was no panic and no abort.
+  - At the minimum, and at 2 and 10 times it, all four operations succeed in both operand orders, in release too.
+  - Four other curved pairs (unit circle against rect, circle against circle, the large circles, half-plane cuts) succeed at their own minimum in release.
+  - The round 1 abort (C5) is gone.
+- **Error precedence** (p09): pass for every adjacent pair of the order.
+  - Tolerance before a NaN or open path; non-finite A before B; B's +inf before A's open subpath; open A (index 1) before open B; open before too fine.
+  - For the stroke: tolerance, then width, then coordinate. For `contains`: tolerance, then finite, then open.
+- **Non-finite coordinates** (p10, p11): NaN, +inf and -inf in a curve control point, in either operand position, for all four boolean operations, the stroke, simplify, `contains` and the distance. Each kind is named, including in a move coordinate. Pass.
+- **Not-positive and non-finite numbers** (p12): pass.
+  - For 0, -0.0, -1, -1e-300 and `f64::MIN` across all seven calls, and for the width: `NotPositive(v)` with identical bits (-0.0 keeps its sign). The message contains "not positive" and the number, and no `NaN`.
+  - NaN, +inf and -inf are named by kind, and the width error is distinguishable from the tolerance error.
+- **Failure on the second operand** (p13): for all four operations, A is unchanged and B is unchanged, compared by text. Pass.
+- **Stroke** (p14): mostly pass; the full-outline sample fails (C1).
+  - The capsule bounding box is exactly (-5,-5)-(105,5). The midpoint distance is 5.
+  - The X path and the self-crossing polyline are `Inside` at (5,5) with Butt, Round and Square caps, and the outline carries `NonZero`.
+  - Every subpath is closed, and a doubled width gives a wider box.
+  - **Failed:** sampling the whole capsule outline gives a worst deviation of 1.363e-3 from the exact w/2 boundary at tolerance 1e-3 (C1).
+- **Simplify** (p15, p16): pass.
+  - Redundant point removed: 4 segments down to fewer.
+  - Square, triangle and rectangle come back equal in value. Two subpaths keep their order and `EvenOdd`.
+  - On the open corner, every sampled point is within 1e-3.
+  - Property: 300 random paths mixing lines, quadratics and cubics, open and closed, at tolerances 1e-3 to 1, sampled along every segment. The worst deviation/tolerance ratio is at most 1.
+- **Simplify with NaN or inf never hangs**: p10 and p11 return immediately, under a 900 s `timeout` for the binary. With a finite coordinate of 1e154 or more, it hangs (W1).
+- **Hit testing, determinism, tolerance visible, rectangle scenarios, box containment** (p17-p20): pass.
+  - 100 equal unions.
+  - All 8 calls succeed at 0.5 and at the default tolerance.
+  - The crossing bars' boxes overlap by an area of 4, and (1,1) is in neither difference.
+  - The xor box spans y 5..10 and the union box y 0..10.
+  - Bowtie and zero-length segment accepted; open subpath named in either position.
+- **Docs**: the doc comments of the four boolean operations, of `boolean_op` and of `DEFAULT_TOLERANCE` say the result is not guaranteed within the tolerance, list the measured behaviour and call it empirical. The manual scenario passes. `DEFAULT_TOLERANCE` still says the stroke outline stays within the tolerance, which C1 shows is false.
+
+### Comparison with the implementer's tests
+
+Every scenario has an implementer test or command, and every one agrees with my probes. Two weak spots remain:
+
+- "Too fine ... in a debug and in a release build" is tested only in the debug profile; only my probe covers release (W2).
+- No test samples the stroke outline beyond its bounding box and the midpoint, which is why C1 went undetected.
+
+The tests use 1e-13 rather than `next_down(minimum)` for the too-fine boundary (S2). The `<=` mutant is still killed by the test at exactly the minimum.
+
+## Flaky-prone properties and C8
+
+- `cargo test -p gafira-pathops --test prop_boolean --test prop_hittest --test prop_stroke` on the HEAD export:
+  - 40 consecutive runs, with 40 passes and no new regression file;
+  - then 20 runs with `PROPTEST_CASES=1000` and the persisted regressions file moved aside, with 20 passes.
+- **The claim is confirmed.** The C8 property `the_difference_is_contained_in_its_first_operand` no longer exists at HEAD. Its replacement `the_boxes_of_the_results_are_contained` guards empty results with `is_empty()`.
+
+## Hand mutants (5, each on its own HEAD export and target)
+
+| # | Mutation | Result |
+|---|---|---|
+| HM2 (re-run) | `validate_closed` before `validate_finite` in `boolean_op` | killed (`a_non_finite_coordinate_is_reported_before_an_open_subpath`, `a_non_finite_second_operand_is_reported_before_an_open_first_one`) |
+| HM4 (re-run) | `validate_finite` deleted from `simplify` | killed by hang: `the_simplification_of_a_non_finite_path_returns_an_error` and `a_non_finite_coordinate_is_rejected_by_every_operation` run past 60 s, suite stopped by `timeout 300` (S4) |
+| HM6 | fill-rule selection: `rule_b` taken from the first operand | killed (3 mixed-rule tests) |
+| HM7 | tolerance check order: the too-fine check moved after the empty short-circuit | killed (`the_minimum_is_checked_before_the_empty_operand_rule`) |
+| HM8 | empty short-circuit: `A op ∅` clone rebuilt with `NonZero` | killed (3 survivor-rule tests) |
+
+## Mutation
+
+No independent T3 report was available to this round. The implementer reports 76 mutants:
+
+- caught 61, unviable 14, missed 1;
+- the miss is the known equivalent `hittest.rs:69:25`, carried as W4;
+- two real misses were fixed test-first in `17a58c0`.
+
+I did not run cargo-mutants. `.cargo/mutants.toml` is unchanged by the change.
+
+## Status of the round 1 findings
+
+| Round 1 | Status |
+|---|---|
+| C1 implementer spec amendment | resolved: ratified and rewritten by the specifier (`d5ccf09`) |
+| C2 false requirements | resolved in the spec; the new scenarios pass |
+| C3 fill rule of the operands | resolved: OQ1 is implemented through `Topology`, and the oracle probe passes for all four combinations |
+| C4 tolerance claim | resolved: the claim is removed and the measured behaviour documented |
+| C5 abort below the safe tolerance | resolved: `ToleranceTooFine`, confirmed in release |
+| C6 stroke fill rule | resolved |
+| C7 union with empty | resolved: the clones are equal in value |
+| C8 flaky property in D2-D4 | **carried**, see below |
+| C9 / HM4 simplify guard | resolved: HM4 is killed |
+| W1 / HM2 | resolved: HM2 is killed |
+| W2 weak tests | resolved: mixed-rule generators, curve sampling, second-operand failure |
+| W3 missing evidence | resolved: both tests exist |
+| W4 non-positive named NaN | resolved |
+| W5 docs and edge cases | docs and moves-only resolved; the tail after a close without a move is not, and is now C2 because the spec defines an open subpath |
+| W6 hygiene | resolved for the new commits; the historical commits are unchanged |
+| W7, W8 spec defects | resolved in the spec |
+| W9 equivalent mutant exclusion | carried as W4 |
+
+## Carried, awaiting an owner ruling (not counted)
+
+- **C8** (round 1, class implementation): the flaky property in `9a760e0`, `754099b`, `f198f6a` and `15f4b30`, and the false statement in the D2 section of `apply-progress.md`. History is not rewritten. `apply-progress.md` now carries an append-only correction. It waits for the owner's waiver ruling, as was done for gafira-time, and is not re-raised here as a blocker.
+
+## Findings
+
+### CRITICAL
+
+- **C1** class: implementation, ref `stroke.rs:30-35` (`kurbo::stroke` call), "Determinism and numeric tolerance" ("The stroke outline MUST lie within the tolerance of the exact stroke") and the `DEFAULT_TOLERANCE` doc. Round caps and round joins break the tolerance.
+  - Cause: kurbo 0.13.1 `round_join` and `round_cap` (`stroke.rs:363-367`) fit a **unit** arc to `tolerance` and then scale it by w/2. The output error is therefore about `min(tolerance, 2.7e-4) × w/2`.
+  - Measured on the line (0,0)-(100,0), width 10, round cap: worst deviation 1.363e-3 at tolerance 1e-3 (1.36 times), and 136 times at 1e-5 (the deviation does not shrink with the tolerance). The outer arc of a round join shows the same deviation: 1.363e-3, 1.36 times at 1e-3.
+  - Offsets of curves are fine: a circle stroke deviates by 1.1e-9.
+  - No test samples the outline beyond its bounding box and the midpoint.
+  - A possible fix: pass `tolerance × min(1, 2 / width)` to `kurbo::stroke`, and add a test that samples the whole outline.
+- **C2** class: implementation, ref `path.rs` `subpaths`/`validate_closed`, `hittest.rs:30-37`, "Degenerate and invalid inputs". A path that draws after a `ClosePath` without a new `MoveTo` (for example a closed triangle followed by `LineTo(5,20)` and `LineTo(0,20)`) ends with segments and no close, so the spec calls it open whichever way the subpaths are split. The code mishandles it:
+  - `validate_closed` returns `Ok`;
+  - `contains` returns `Ok(Outside)`, a result where the spec requires the open-subpath error;
+  - the boolean operations return `Geometry("non-closed path starting at (0, 0) ...")` instead of `OpenSubpath`.
+  This is validation, so it is critical code. It is the leftover of round 1 W5. The subpath index to report is pinned in S1.
+
+### WARNING
+
+- **W1** class: ambiguity, ref path-operations "Degenerate and invalid inputs" and "Path simplification". The spec bounds no coordinate magnitude, and "MUST NOT loop" covers only non-finite values. Measured on release builds, each call under a 20 s `timeout`:
+  - `simplify` never returns for a finite polyline with coordinates of 1e154 or more (1e150 returns), in debug (over 60 s) and in release;
+  - `distance_to_perimeter` returns `inf` from 1e155;
+  - the boolean operations (at their minimum tolerance), `contains` and the stroke return normally up to 1e300.
+  The specifier should decide between a coordinate limit with a named error and a termination requirement for every finite input.
+- **W2** class: implementation, ref `tests/boolean.rs:473` and `apply-progress.md`. The scenario "Too fine a tolerance is rejected, never aborts" requires a debug **and** a release run. The test runs only under the default debug profile, and no release command is recorded as evidence. My probe (f1, f2 with `--release`) shows it holds. Record a release command, for example `cargo test -p gafira-pathops --release --test boolean`.
+- **W3** class: implementation, ref the fix round `ec97f7b..17a58c0`. The round adds 1262 lines and deletes 385 (net +877; 1441 insertions with the docs commit). That is over the ~700-line ceiling, so it needs the owner's explicit OK, as the implementer flagged.
+- **W4** class: implementation, ref `hittest.rs:69:25` (round 1 W9, carried). The mutant is equivalent (proof in round 1). The `.cargo/mutants.toml` exclusion, with its reason, is still to be added at archive.
+
+### SUGGESTION
+
+- **S1** (specifier): pin which subpath index a path reports when it draws after a close without a move. The SVG and kurbo convention starts a new subpath, which gives index 1 in the C2 example.
+- **S2**: add tests at `next_down(minimum)` (rejected) and at exactly the minimum for straight operands. My probes p07 and p08 show both behave.
+- **S3**: `linesweeper` turns on `arrayvec`'s `serde` feature (the lockfile gains `arrayvec -> serde`), so `serde` and `serde_derive` now sit in `gafira-pathops`'s normal tree. This is harmless for ARQ-02 and V5; it is noted for the dependency record. As in round 1, consider declaring `linesweeper` in `[workspace.dependencies]`.
+- **S4**: HM4 is detected only by a hang, so a regression would stall CI rather than fail it. A deadline in the test (run the call on a thread and fail after N seconds) would make it fail fast.
+- **S5**: `distance_to_perimeter` of an empty path returns `+inf`. Document it, or let the specifier define it.
+
+## Criteria matrix (80 scenarios: 72 path-operations, 8 workspace-tooling)
+
+- Covered: 80 of 80. Every scenario has a passing implementer test or a command I re-ran, and an agreeing probe. One clause is proven only by my probe: the release build of "Too fine a tolerance is rejected, never aborts" (W2).
+- At requirement level, two clauses fail and are not exercised by any scenario:
+  - "Determinism and numeric tolerance": the stroke outline is not within the tolerance (C1);
+  - "Degenerate and invalid inputs": an open subpath after a close is not rejected (C2).
+
+next: specifier (ambiguity: W1), then tdd-apply (implementation: C1, C2, W2, W3, W4)
+
+# Verify report: engine-pathops (C4), round 3 (after verify fix rounds 2 and 3)
+
+- Commit verified: `7814c10` (HEAD of `feat/engine-pathops-1`). Clean `git archive` exports of every commit boundary since round 2: `ea1b17f` (merge of `origin/main`), `aecd57d`, `b7e00ca`, `b711725`, `baa1a0f`, `21131b1`, `02e4ff5`, `c19eba8`, `ac68d6e`, `3839e6e`, `cecfa67`, `eefaf1e`, `7814c10`. The docs-only commits `9671ca1`, `ff5c29e`, `38ee579` and `61fb23a` leave `crates/`, `Cargo.*`, `.github/`, `.cargo/` and the lint configs byte-identical to their parents (`git diff --quiet`), so they share the gate result of `baa1a0f`.
+- One `CARGO_TARGET_DIR` for the gate runs and one for probes and hand mutants, with `CARGO_INCREMENTAL=0`. `git archive` stamps every file with the commit time, so a shared target dir reuses stale artifacts. My first gate pass hit this (no `Compiling gafira-pathops` after the first export) and was thrown away. Every export was then `touch`ed, and every log below shows a rebuild of `gafira-pathops`. Disk: 102 GB free at the start.
+- Flow: full | tier T3 | depth V3. Acceptance source: the delta specs at HEAD, 13 requirements and 98 scenarios (path-operations 11 requirements and 90 scenarios, 18 of them new since round 2; workspace-tooling 2 and 8).
+- No `mutants` report was supplied, and the implementer ran no mutation in fix round 3. The mutation figures are pending (W3).
+- Owner waivers applied: C8 (history not rewritten) and the flaky-property history. Neither is counted.
+
+**Verdict: FAIL.** 2 CRITICAL, 5 WARNING and 4 SUGGESTION items. By class (CRITICAL and WARNING): implementation 5, ambiguity 2. This is round 3 of the 3-round cap, and the second FAIL in a row with an `implementation` CRITICAL, so the coordinator stops and asks the owner.
+
+## Gates (every commit boundary, clean exports)
+
+| Export | fmt | clippy | test | ARQ-07 | forbid-unsafe | V5 | V12 | V13 | V14 |
+|---|---|---|---|---|---|---|---|---|---|
+| ea1b17f (merge main) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| aecd57d | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| b7e00ca | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| b711725 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| baa1a0f (+ 4 docs commits) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 21131b1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 02e4ff5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| c19eba8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ac68d6e | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 3839e6e | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| cecfa67 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| eefaf1e | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 7814c10 HEAD | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- The CI policy steps were extracted from each export's own `ci.yml` and run under `bash --noprofile --norc -eo pipefail`. V13 and V14 ran inside a scratch git repository.
+- At HEAD:
+  - `cargo deny check`: advisories, bans, licenses and sources ok, rc 0.
+  - `cargo test -p gafira-pathops --release --locked`: 142 passed, 0 failed (round 2 W2 release evidence).
+  - The three property binaries passed 20 runs in a row, with 0 failures.
+- Negative runs on HEAD exports:
+  - P-N1 (row reduced to `gafira-pathops -`): rc 1, "must not depend on gafira-geom".
+  - P-N2 (row deleted): V5 rc 1, "has clippy.toml but no V5 row". V12 now derives its list from the V5 table, so it passes in that case (rc 0) and V5 alone guards it.
+  - P-N3 (`gafira-doc` dependency added): rc 1, "must not depend on gafira-doc" (it also reports `gafira-color`).
+  - Drifted `gafira-pathops/clippy.toml`: V12 rc 1, "clippy.toml differs".
+  - A scratch test with `Instant::now()` and `HashMap` fails clippy with `disallowed_methods` (note ARQ-02) and `disallowed_types`.
+
+## Independent probes (written from the spec before reading the new tests; scratch export of HEAD)
+
+21 probe tests (`tests/zz_probe.rs` on a scratch export only):
+
+- **Coordinate limit** (p01-p05). Every check passes:
+  - `±next_up(1e9)` in an end point, a control point and a move is rejected by all eight operations, the booleans in both operand positions. The error carries the same bits and the limit `1e9`.
+  - The first offending value in path order is reported, x before y.
+  - The inclusive rectangle `±1e9` passes the four booleans at `1e-11 × 1e9`, and `next_down` of that value is rejected with that minimum. It also passes a stroke (round and butt), the simplification, `contains` and `distance` at the default tolerance.
+  - The overflow cases return `1e154` and `1e155`.
+  - The error order holds: non-finite before out of range, out of range before an open subpath, and a moves-only `2e9` operand is rejected.
+  - A moves-only `MoveTo(5e8,0)` counts in `m`: the union with the default tolerance returns `ToleranceTooFine { 5e-3 }`.
+- **Floors** (p06-p08). Every check passes:
+  - Simplification: the `1e7` polyline rejects `1e-9` and `next_down(min)` and accepts `min`, and every vertex stays within `min`. A control point at `5e8` sets `m`. A path with `m = 0` accepts `f64::MIN_POSITIVE`.
+  - Boolean: the `2e8` case, the circle-rectangle case at `1e-13`, the exact minimum, `next_down` and two empty operands at `5e-324` all behave as the spec says.
+  - Stroke: `1e-10`, `5e-7` and `4e-12` hold at their exact boundaries. Width `1e6` at its minimum gives 108 elements. `2e9` gives out of range. A width of `4e9` is too fine at the default tolerance, and `2e9` is accepted.
+- **Query point** (p09, p10). Every check passes:
+  - NaN, ±inf and `±next_up(1e9)` in x and y are rejected by both hit tests, and `(1e9,-1e9)` and `(-1e9,1e9)` are accepted.
+  - The order holds: path before point, open subpath before point, `(1e10, NaN)` gives NaN, and an invalid tolerance comes first.
+  - An empty path with a bad point is rejected.
+  - Tolerances of `1e-30`, `1e-300` and `5e-324` on a circle return at once, with the right answers: no hang without a floor.
+- **Zero-length subpath** (p11). Passes. The spec example comes back as one subpath `MoveTo(5,5)` with segments only at (5,5) and `EvenOdd`, and the square plus that subpath gives two subpaths. Variants also pass: closed, quad and cubic, and in the middle of two squares.
+- **Round 2 C1, stroke arcs** (p12b). Resolved. Over open polylines with a cap, joins turning either way and an acute join (widths 0.1 to 1000, tolerances 1e-1 to 1e-7), no outline point lies outside the exact stroke by more than 0.92 × tolerance. Points inside the exact boundary are kurbo's inner-join detour through the vertex, which is interior and changes no covered area.
+- **Round 2 C2, drawing after a close** (p13). Resolved for validation: the four booleans in both positions and `contains` return `OpenSubpath { subpath: 1 }`.
+- **Drawing after a close, through the simplification** (p11b, p11c, p11e, p15). **Fails**, see C1:
+  - kurbo's `segments()`, the distance and the stroke start the tail at (0,0), the start of the closed subpath (SVG convention, as the spec says). The simplification starts it at (10,10), the last drawn point.
+  - Spec C2 path at tolerance 1e-3: the point (2.5,10) of the original tail lies 5.30 from the simplified path.
+  - 200 random closed polylines followed by a tail: 200 of 200 violate the tolerance, by up to 11.3 at tolerance 1e-2. The same polylines with a `MoveTo` before the tail: 0 of 200.
+  - A zero-length tail `ClosePath, LineTo(0,0)` comes back as `MoveTo(10,10), LineTo(0,0)`. That breaks the zero-length rule (start at the input start point; all points equal it).
+- **Lone moves through the simplification** (p11d). `MoveTo(1,1) MoveTo(4,4)` gives 0 elements (`subpath_count` 2 to 0), and a lone move before a square gives 2 to 1. See W1.
+
+### Comparison with the implementer's tests
+
+- `limits.rs` and `tolerance_floor.rs` match the probes scenario by scenario, check the exact error values (bits for the coordinate), and pin both sides of each boundary with `next_down`. They are not weak.
+- `validation::the_stroke_and_the_distance_accept_drawing_after_a_close` covers the stroke and the distance, but it does not check the simplification of that path. `prop_stroke` generates single open polylines only, with no close, no tail and no lone move. Both of C1's paths are therefore untested.
+- `stroke_accuracy.rs` checks the outer contour of closed shapes and the cap of a line. My open-polyline join probe agrees with it.
+
+## Hand mutants (5, each on its own HEAD export, rebuilt from touched sources)
+
+| # | Mutation (rule order or rule input) | Result |
+|---|---|---|
+| HM1 | `contains`: the query-point check before the open-subpath check | killed (`limits::the_query_point_is_checked_after_the_path_and_non_finite_first`) |
+| HM2 | `query_point`: x checked fully (finite, then range) before y | killed (same test, `(1e10, NaN)`) |
+| HM3 | `boolean_op`: the empty-operand rule before the too-fine rule | killed (`boolean::the_minimum_is_checked_before_the_empty_operand_rule`) |
+| HM4 | `stroke_outline`: minimum from `m` alone (no `w / 2`) | killed (2 tests in `tolerance_floor.rs`) |
+| HM5 | `simplify`: range check before the finiteness check | killed (`limits::a_non_finite_coordinate_is_reported_before_one_beyond_the_limit`, `validation::a_non_finite_coordinate_is_rejected_by_every_operation`) |
+
+## Mutation
+
+No report was supplied. `.cargo/mutants.toml` gained only the `History::debug_check` exclusion from `origin/main` (edit-history), and it has a reason. The `distance_to_perimeter` equivalent mutant is still not excluded (W5).
+
+## The implementer's flagged items
+
+1. **Inclusive-limit booleans at the minimum.** Consistent with the spec at `61fb23a`: at `m = 1e9` the boolean minimum is `1e-2`, so the default `1e-3` is rejected (p03 confirms `next_down` is rejected and the minimum accepted). The spec states the consequence: the default works for booleans only up to `m = 1e8`. The text is sound, but its provenance is C2.
+2. **The stroke error carries only the minimum.** Compliant: the spec asks for "the same too-fine-tolerance error carrying that minimum".
+3. **Query-point checks after the open subpath.** Compliant with error-order steps 5, 7 and 8. Tested, and HM1 is killed.
+6. **No mutation run.** Recorded as W3.
+
+## Status of the round 2 findings
+
+| Round 2 | Status |
+|---|---|
+| C1 round caps and joins | resolved (p12b: outward deviation at most 0.92 × tolerance) |
+| C2 drawing after a close | resolved for validation, booleans and `contains`. The simplification of such a path is wrong (new C1) |
+| W1 coordinate bound | resolved (owner decision W1; p01-p05) |
+| W2 release evidence | resolved (release run 142 passed; apply-progress records the disabled-check abort) |
+| W3 size | carried, now W4 |
+| W4 equivalent-mutant exclusion | carried, now W5 |
+
+## Findings
+
+### CRITICAL
+
+- **C1** class: implementation, ref `crates/gafira-pathops/src/simplify.rs:57,66`, requirement "Path simplification" and "Degenerate and invalid inputs" (drawing after a close).
+  - The defect: `subpaths` splits only before a `MoveTo`, so a segment drawn after a `ClosePath` without a new move reaches `kurbo::simplify::simplify_bezpath` in the same slice. kurbo then starts that tail at the last drawn point instead of the start of the closed subpath.
+  - The spec requires every point of the original to lie within the tolerance of the result, and requires the tail to begin at the start of the subpath just closed. Spec C2 path at 1e-3: a tail point lies 5.30 away. Random cases: 200 of 200 fail, by up to 11.3 at 1e-2.
+  - A zero-length tail comes back as `MoveTo(10,10), LineTo(0,0)`, against the zero-length-subpath rule.
+  - It is critical code: a spec rule with an invariant.
+  - Fix test-first: start each tail as its own slice with a `MoveTo` of the closed subpath's start. Add the C2 path and the zero-length tail to the simplification tests, and add closes, tails and several subpaths to the `prop_stroke` generator.
+- **C2** class: ambiguity, ref `61fb23a` (delta spec `path-operations`).
+  - The commit came after the first implementation commits, and `apply-progress.md` names the implementer as its author. Fix round 3 lists it among its own commits. Deviation 1 says "the spec commit changes the boolean calls of that scenario". Deviation 4 says the stroke rule "was added as new text" because the task's wording did not match the spec.
+  - The rule in `verify.md` makes an implementer change to the delta spec CRITICAL, whatever its quality. The content is faithful to owner decision W2 and is internally consistent (checked line by line against the probes). The only extrapolations are the query-point order (x first, non-finite first) and the new inclusive-limit and large-operand scenarios.
+  - Remedy: the specifier ratifies `61fb23a` (or rewrites it). No code change is expected.
+  - If the coordinator can show the specifier wrote `61fb23a`, this finding is void.
+
+### WARNING
+
+- **W1** class: ambiguity, ref "Path simplification" and `Path::subpath_count`.
+  - The requirement says every subpath of the input appears in the output, but it does not say whether a lone `MoveTo` counts as a subpath.
+  - The crate counts it (`subpath_count`), and the simplification drops it: moves-only `M(1,1) M(4,4)` goes from 2 to 0, and a lone move before a square from 2 to 1. So "Subpath structure preserved" fails for such paths by the crate's own count.
+  - The specifier should state whether lone moves survive the simplification. If they must, it is a code fix.
+- **W2** class: implementation, ref `crates/gafira-pathops/src/boolean.rs:29-56`, scenario "Public docs state the coordinate limit".
+  - The docs of `union`, `intersection`, `difference` and `xor` do not state the limit `1e9`, the error above it or the minimum `1e-11 × m`. They only link to `boolean_op`, while the spec says "the public documentation of each of the eight operations MUST state the limit".
+  - `boolean_op`, `stroke_outline`, `simplify`, `contains`, `distance_to_perimeter`, `DEFAULT_TOLERANCE` and `COORDINATE_LIMIT` do state it.
+- **W3** class: implementation, ref fix round 3 sources (`validate.rs`, `path.rs`, `simplify.rs`, `stroke.rs`, `hittest.rs`, `boolean.rs`, `error.rs`). There is no T3 `mutants` report for the round's code, so the critical-mutant gate is not evidenced. If the pending report shows a missed or timeout mutant in this critical code, it adds a CRITICAL.
+- **W4** class: implementation, ref `38ee579..7814c10`. Fix round 3 measures 15 files, +1025/-91, and the crate code alone +824/-63. That is over the ~700-line ceiling, so it needs the owner's explicit OK (the implementer reported it).
+- **W5** class: implementation, ref `crates/gafira-pathops/src/hittest.rs:93`. The equivalent mutant `<` to `<=` in `distance_to_perimeter` (proof in round 1) is still not excluded in `.cargo/mutants.toml`. Its line moved from 69 to 93, so the archive-time regex must match by name and operator, not by line.
+
+### SUGGESTION
+
+- **S1**: The `Display` texts of `NonFiniteCoordinate` and `CoordinateOutOfRange` say "path has ..." even when the query point is at fault. A neutral wording ("a coordinate is ...") would not mislead.
+- **S2**: `stroke_accuracy.rs` compares only the outer contour of closed shapes. An open polyline with a turning round join (as in p12b, outward deviation only) would pin the join of open paths too.
+- **S3**: The implementer edited the architect's `design.md` (`eefaf1e`, Q4 "Minimum tolerance"). The text matches owner decisions W1 and W2. The architect may want to acknowledge it at archive.
+- **S4**: `distance_to_perimeter` on an empty path still returns `+inf` (round 2 S5), and the spec still does not define it.
+
+## Criteria matrix (98 scenarios: 90 path-operations, 8 workspace-tooling)
+
+- 96 of 98 are covered: each has a passing implementer test or a command I re-ran, and an agreeing probe. That includes all 18 new scenarios (`limits.rs`, `tolerance_floor.rs`, `boolean.rs`, `stroke_and_simplify.rs`).
+- Partial (1): "Public docs state the coordinate limit" (manual). The four boolean wrappers do not state it (W2).
+- Failing at requirement level (1): "Deviation stays within tolerance" (property). The property holds for its generator, but the requirement fails for paths with a segment drawn after a close (C1), which no scenario generates.
+- Hand mutants: 5 run, 5 killed.
+
+next: specifier (ambiguity: C2, W1), then tdd-apply (implementation: C1, W2, W3, W4, W5). Round cap reached and second consecutive implementation FAIL: the coordinator asks the owner before routing.
