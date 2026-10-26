@@ -25,7 +25,11 @@ impl Path {
     ///
     /// The tolerance is the accuracy of the sweep, not a bound on the distance
     /// between the result and the exact answer. See [`Path::boolean_op`] for
-    /// what was measured, and for the errors.
+    /// what was measured, and for the errors. A coordinate whose absolute value
+    /// is above [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`], and a tolerance below `1e-11 * m`,
+    /// where `m` is the largest absolute coordinate of both operands, with
+    /// [`PathOpError::ToleranceTooFine`].
     pub fn union(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Union, tolerance)
     }
@@ -34,7 +38,11 @@ impl Path {
     ///
     /// The tolerance is the accuracy of the sweep, not a bound on the distance
     /// between the result and the exact answer. See [`Path::boolean_op`] for
-    /// what was measured, and for the errors.
+    /// what was measured, and for the errors. A coordinate whose absolute value
+    /// is above [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`], and a tolerance below `1e-11 * m`,
+    /// where `m` is the largest absolute coordinate of both operands, with
+    /// [`PathOpError::ToleranceTooFine`].
     pub fn intersection(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Intersection, tolerance)
     }
@@ -43,7 +51,11 @@ impl Path {
     ///
     /// The tolerance is the accuracy of the sweep, not a bound on the distance
     /// between the result and the exact answer. See [`Path::boolean_op`] for
-    /// what was measured, and for the errors.
+    /// what was measured, and for the errors. A coordinate whose absolute value
+    /// is above [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`], and a tolerance below `1e-11 * m`,
+    /// where `m` is the largest absolute coordinate of both operands, with
+    /// [`PathOpError::ToleranceTooFine`].
     pub fn difference(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Difference, tolerance)
     }
@@ -52,7 +64,11 @@ impl Path {
     ///
     /// The tolerance is the accuracy of the sweep, not a bound on the distance
     /// between the result and the exact answer. See [`Path::boolean_op`] for
-    /// what was measured, and for the errors.
+    /// what was measured, and for the errors. A coordinate whose absolute value
+    /// is above [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`], and a tolerance below `1e-11 * m`,
+    /// where `m` is the largest absolute coordinate of both operands, with
+    /// [`PathOpError::ToleranceTooFine`].
     pub fn xor(&self, other: &Path, tolerance: f64) -> Result<Path, PathOpError> {
         self.boolean_op(other, BooleanOp::Xor, tolerance)
     }
