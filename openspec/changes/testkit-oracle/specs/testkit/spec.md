@@ -11,10 +11,16 @@ mutants in the crate: 84 caught, 23 unviable, 36 missed
 results (T4)"). One miss is a documented equivalent that cannot be excluded. The
 other 35 were deferred to this change. One of those 35, mutant 13
 (`lib.rs:235:18`), is now accepted as a second documented equivalent (owner
-decision 2026-10-26, see "Closed decisions" C2). The target is 34 kills.
+decision 2026-10-26, see "Closed decisions" C2).
+
+The archived figures did not reproduce. The Step 0 baseline of this change, a
+package-scoped T4 run on the current tree, found 143 mutants: 82 caught, 23
+unviable and 38 missed. That is the 36 above plus mutants 37 and 38 at
+`lib.rs:652:80`, in the `ExtensionTooDeep` arm of `corrupt` (C5). With mutant
+13 and mutant 36 accepted as equivalents, the target is 36 kills.
 
 This change is test-only. It adds or strengthens tests under
-`crates/gafira-testkit/tests/` until those 34 mutants are caught. The tests pin
+`crates/gafira-testkit/tests/` until those 36 mutants are caught. The tests pin
 behaviour the crate already has. No source file of any crate changes. This is a
 new capability, so there is no main spec to modify.
 
@@ -25,14 +31,22 @@ Mode: standard (set by the coordinator). Pack: test-only hardening.
 
 ## Baseline
 
-Source: the T4 run of 2026-10-25, cargo-mutants 27.1.0, 143 mutants, started
-20:00:53Z and finished 20:11:10Z. It was run by the `mutants` agent, with output
-in the session scratchpad (directory `mutants-t4c`), outside the repo. Its counts
-match the archive report. The run was package-scoped:
-`cargo test --package=gafira-testkit --locked`, which is the AGENTS.md T4 form.
-`crates/gafira-testkit/src` has not changed since then (last commit `b37b7d1`,
-2026-10-25 08:12). Every line and column below matches the current
-`crates/gafira-testkit/src/lib.rs`.
+Rows 1 to 36 come from the archived T4 run of 2026-10-25, cargo-mutants 27.1.0,
+143 mutants, started 20:00:53Z and finished 20:11:10Z. The `mutants` agent ran
+it, with output in the session scratchpad (directory `mutants-t4c`), outside the
+repo. Its counts (84 caught, 36 missed) match the archive report. The run was
+package-scoped (`cargo test --package=gafira-testkit --locked`), which is the
+AGENTS.md T4 form.
+
+Rows 37 and 38 come from the Step 0 baseline of this change (2026-10-26). That
+run used the same package-scoped command on the branch base. It reported 143
+mutants, 82 caught, 23 unviable and 38 missed: rows 1 to 36 plus rows 37 and
+38. In the same run, `lib.rs:652:80: replace % with * in corrupt` was caught.
+The archived 84/36 figures therefore do not reproduce on the current tree, even
+though `crates/gafira-testkit/src` has not changed since `b37b7d1`
+(2026-10-25 08:12). This spec does not establish why the two runs differ. The
+Step 0 figures (82/38) are the baseline of record for this change. Every line
+and column below matches the current `crates/gafira-testkit/src/lib.rs`.
 
 | # | Mutant (file:line:col, as cargo-mutants names it) | Group | Requirement |
 |---|---|---|---|
@@ -67,6 +81,8 @@ match the archive report. The run was package-scoped:
 | 34 | `lib.rs:634:51: delete - in corrupt` | sub-case | same |
 | 35 | `lib.rs:634:69: delete - in corrupt` | sub-case | same |
 | 36 | `harness.rs:84:9: delete field failure_persistence from struct Config expression in try_prop_command` | equivalent | Accepted equivalent; not a target |
+| 37 | `lib.rs:652:80: replace % with / in corrupt` | sub-case | `corrupt` sub-cases follow the pick table (C5) |
+| 38 | `lib.rs:652:80: replace % with + in corrupt` | sub-case | same |
 
 All file paths are under `crates/gafira-testkit/src/`.
 
@@ -116,16 +132,18 @@ Every commit MUST pass `cargo fmt --check`,
 ### Requirement: Baseline confirmed before the first test commit
 
 Before the first test commit, the T4 run MUST be repeated on the branch base. The
-run MUST reproduce the baseline table: 36 missed, with the same names. The
+run MUST reproduce the baseline table: 38 missed, with the same names. The
 result MUST be recorded in `openspec/changes/testkit-oracle/apply-progress.md`.
 This is the RED evidence for the whole change. The run MUST follow the
 constraints in "Mutation run constraints". If the list differs, the work MUST
-stop and the difference MUST go to the coordinator.
+stop and the difference MUST go to the coordinator. This step is done: the Step
+0 run found the 38 rows of the baseline table, and the coordinator extended the
+table to match (C5).
 
 #### Scenario: Baseline reproduced (command)
 - GIVEN the branch base and at least 20 GB free on `/`
 - WHEN the T4 command runs
-- THEN it reports 143 mutants, 84 caught, 36 missed, 0 timeout and 23 unviable, and `missed.txt` holds the 36 names in the baseline table
+- THEN it reports 143 mutants, 82 caught, 38 missed, 0 timeout and 23 unviable, and `missed.txt` holds the 38 names in the baseline table
 
 ### Requirement: Generated fills cover every colour space and negative channels
 
@@ -246,6 +264,7 @@ reaches which one.
 | `NonFinite` | field `[x, y, w, h, rotation_deg, skew, opacity][pick % 7]` | the `NodeField` of the `NonFinite` error, and the only non-finite field of the injected node |
 | `NonFinite` | value `[NaN, +inf, -inf][(pick / 7) % 3]` | the class of that field's value (NaN, positive infinity, negative infinity) |
 | `SkewRange` | skew `[90.0, -90.0, 91.0, 1e3, -1e3][pick % 5]` | the injected node's `placement.skew` |
+| `ExtensionTooDeep` | depth `65 + pick % 3` (C5) | the injected extension node's payload is that many nested arrays, each holding one element, around `null`. Its container depth is 65, 66 or 67 |
 
 #### Scenario: Next-id offset (unit)
 - GIVEN a generated document and each `pick` in `0..=5`
@@ -270,6 +289,12 @@ reaches which one.
 - WHEN `corrupt(doc, SkewRange, pick)` runs
 - THEN the skews are 90.0, -90.0, 91.0, 1e3 and -1e3 in that order
 - AND the test fails for mutants 34 and 35
+
+#### Scenario: Extension payload depth (unit)
+- GIVEN a generated document and each `pick` in `0..=5`
+- WHEN `corrupt(doc, ExtensionTooDeep, pick)` runs and the payload of the injected extension node is measured
+- THEN its container depth is 65, 66, 67, 65, 66, 67 in that order, and validation reports `ExtensionTooDeep`
+- AND the test fails for mutants 37 and 38 (the `% -> *` mutant at the same position is already caught)
 
 #### Scenario: Periodicity across the drawn range (property)
 - GIVEN any `pick` in `0..=999` and any generated document
@@ -310,8 +335,8 @@ missed list MUST hold exactly these two accepted equivalents, and nothing else:
   `exclude_re` entry is out of scope by "Test-only scope".
 
 The new caught and unviable counts MUST be recorded. The number of mutants MUST
-stay 143, because no source changes. Compared with the baseline, the caught
-count MUST grow by 34 to 118.
+stay 143, because no source changes. Compared with the Step 0 baseline of 82,
+the caught count MUST grow by 36 to 118 (143 - 23 unviable - 2 missed).
 
 The T4 command is the package-scoped AGENTS.md form (owner decision 2026-10-26,
 C1): `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`. A
@@ -353,7 +378,11 @@ C1): `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`. A
   that refactor as a separate owner option.
 - Mutants in other crates, or making `gafira-doc` and `gafira-edit` tests kill
   testkit mutants.
-- Pinning sub-cases of corruption kinds outside the pick table.
+- Pinning sub-cases of corruption kinds that are not in the pick table
+  (`NextIdNotAboveMax`, `PageSizeBelow`, `PageSizeAbove`, `NonFinite`,
+  `SkewRange` and `ExtensionTooDeep`). For example, the values that
+  `OpacityRange`, `AlphaRange`, `WidthRange`, `HeightRange` and `InvalidDpi`
+  pick stay unpinned.
 - Fixing the stale `document-model` text that places the generator in
   `crates/gafira-doc/tests/common` (C4; a separate docs change).
 - Killing mutant 13 with a seed-pinned golden test, a draw count in the
@@ -362,8 +391,8 @@ C1): `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`. A
 
 ## Closed decisions
 
-There are no open questions left. The owner decided these on 2026-10-26, and
-they are binding for this change.
+There are no open questions left. The owner decided C1 to C4 on 2026-10-26.
+The coordinator decided C5 under C3. All five are binding for this change.
 
 - **C1. Acceptance command.** T4 is the package-scoped AGENTS.md form,
   `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`, the same form
@@ -371,7 +400,7 @@ they are binding for this change.
   acceptance. Because the workspace test set includes the package's tests, a
   package-scoped pass also implies a workspace-scoped pass.
 - **C2. Mutant 13 (`lib.rs:235:18`, `+` to `*`) is a second documented
-  equivalent** (option A). The target is 34 kills, and acceptance allows
+  equivalent** (option A). The target becomes 36 kills with C5 (34 before it), and acceptance allows
   exactly two missed mutants: `harness.rs:84:9` and `lib.rs:235:18`. Evidence
   is in Needs explorer N1.
 - **C3. The `corrupt` pick-to-sub-case table is a contract** (option A), pinned
@@ -379,6 +408,13 @@ they are binding for this change.
 - **C4. The stale `document-model` text** that places the generator in
   `crates/gafira-doc/tests/common` is out of scope. A separate docs change will
   fix it.
+- **C5. `ExtensionTooDeep` joins the pick table.** This is a coordinator
+  decision of 2026-10-26, taken under C3. The Step 0 baseline found two misses
+  the archived run did not list: `lib.rs:652:80`, `%` to `/` and `%` to `+` in
+  `nested(65 + pick % 3)`. The payload depth `65 + pick % 3` is now part of the
+  pick-table contract and is pinned by "Extension payload depth". The target is
+  36 kills, and acceptance is 143 mutants, 118 caught, 23 unviable, 2 missed and
+  0 timeouts.
 
 ## Needs explorer (settled)
 
