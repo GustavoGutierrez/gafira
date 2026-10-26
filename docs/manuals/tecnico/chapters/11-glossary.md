@@ -16,6 +16,7 @@
 | `DocMut` | The exclusive editing view of a `Document`, obtained with an `EditToken` |
 | Domain crate | A crate in layers 0 and 1 with a `clippy.toml` and a V5 row |
 | `EditToken` | The non-copyable proof that the holder may edit documents |
+| Flick | The exact time unit of `gafira-time`: 1/705 600 000 of a second |
 | Gesture | One user drag or similar action, named by a `GestureId`, whose commands may merge |
 | Fix round | A return to `tdd-apply` after a verify FAIL, with tests first and a new verify |
 | Golden file | A stored expected output compared byte for byte in tests |
@@ -44,5 +45,5 @@
 | `trybuild` | The dev-dependency that checks that fixtures fail (or pass) to compile; evidence for ARQ-30 |
 | Transaction | A composite command: many commands, one history entry, all or nothing |
 | V5, V12, V13 | CI policy steps: layer table, `clippy.toml` sync, `EditToken` confinement |
-| V14 | **Planned** CI step that checks that every core command has a property test (ARQ-81) |
+| V14 | CI step that checks that every core command has a property test (ARQ-81) |
 | Wire form | The JSON shape of a type on disk |

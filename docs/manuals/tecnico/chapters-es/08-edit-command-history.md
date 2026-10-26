@@ -7,16 +7,17 @@
 | Trait `Command`, `Applied`, `CommandError` (con `RollbackFailed`), `DirtySet`, `MergeKey`, `GestureId` | Implementado en `gafira-edit` |
 | `Transaction` (Composite) | Implementado |
 | `History`: `Arc<Document>` propio, `execute` atómico, deshacer y rehacer por instantánea, `preview`, fusión de gestos, presupuesto de memoria con compactación | Implementado |
-| `SetProperty` (ocho propiedades de nodo), `InsertNodes`, `RemoveNodes` | Implementado |
+| `SetProperty` (ocho propiedades de nodo, cuatro campos de página, DPI del documento), `InsertNodes`, `RemoveNodes` | Implementado |
+| `Reorder`, `Reparent` | Implementado |
+| `InsertPage`, `RemovePage` | Implementado |
 | `debug_assert` tras cada comando, deshacer y rehacer (ARQ-13) | Implementado en `History` |
 | `gafira-testkit` (generador de documentos, `prop_command` con seis leyes) | Implementado |
 | Fixtures compile-fail con `trybuild` para ARQ-30 | Implementado |
-| `Reorder`, `Reparent` (entrega D9) | **Planificado**: en curso, sin fusionar |
-| `InsertPage`, `RemovePage`, destinos de página y DPI de `SetProperty` (entrega D10) y paso de CI V14 | **Planificado** |
+| Paso de CI V14 (cada comando del núcleo tiene una prueba de propiedades) | Implementado |
 | `EditService`, `Session`, `SelectionService`, bus de eventos | **Planificado**: capa 3, `gafira-engine` |
 | `Selection`, `HitTester`, `Tool` | **Planificado** |
 
-El crate es código de dominio de la capa 1: sin I/O, sin relojes, sin `unsafe`. Depende de `gafira-geom`, `gafira-color`, `gafira-doc` y, para dimensionar cargas de extensión, de `serde_json`. Sus elementos públicos son `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec` y `RemoveNodes`. No debe reexportar públicamente `EditToken` (CI V13). Las fuentes de verdad de este capítulo son el código bajo `crates/gafira-edit/`, `openspec/specs/` y el change abierto `openspec/changes/edit-history`.
+El crate es código de dominio de la capa 1: sin I/O, sin relojes, sin `unsafe`. Depende de `gafira-geom`, `gafira-color`, `gafira-doc` y, para dimensionar cargas de extensión, de `serde_json`. Sus elementos públicos son `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage` y `RemovePage`. No debe reexportar públicamente `EditToken` (CI V13). Las fuentes de verdad de este capítulo son el código bajo `crates/gafira-edit/`, y las specs principales `openspec/specs/edit-commands/` y `openspec/specs/edit-history/`. El change `edit-history` está archivado.
 
 ## El contrato Command
 
@@ -91,7 +92,7 @@ Los comandos actúan sobre una página y no comprueban `locked`: los bloqueos lo
 
 ### SetProperty
 
-`SetProperty::new(page, nodes, value: Property, gesture: Option<GestureId>)` fija una propiedad en uno o más nodos. `Property` tiene ocho variantes:
+`SetProperty::new(page, nodes, value: Property, gesture: Option<GestureId>)` fija una propiedad en uno o más nodos. `SetProperty::page(page, value, gesture)` fija un campo de página y `SetProperty::document(value, gesture)` fija el DPI del documento. `Property` tiene trece variantes. Ocho afectan a nodos:
 
 | Variante | Campo del nodo | Comprobación |
 |---|---|---|
@@ -104,6 +105,15 @@ Los comandos actúan sobre una página y no comprueban `locked`: los bloqueos lo
 | `Fill(Option<Color>)` | relleno de la forma | color finito, alfa en `0.0..=1.0`; solo formas |
 | `Geometry(ShapeGeometry)` | geometría de la forma | solo formas |
 
+Las otras cinco afectan a una página o al documento:
+
+| Variante | Destino | Comprobación |
+|---|---|---|
+| `PageName(String)` | nombre de la página | ninguna |
+| `PageSize(PageSize)` | tamaño de la página | dentro de los límites de píxeles con el DPI del documento; si no, `InvalidDocument` |
+| `PageLocked(bool)`, `PageHidden(bool)` | indicadores de la página | ninguna |
+| `Dpi(Dpi)` | DPI del documento | válido y con todas las páginas aún dentro de los límites de píxeles; si no, `InvalidValue` o `InvalidDocument` |
+
 Un valor inválido es `InvalidValue`; una página o nodo inexistente es `MissingPage` o `MissingNode`; una propiedad de forma sobre otro tipo de nodo y una lista de destinos vacía son `InvalidValue`. Devuelve `Unchanged` cuando todos los destinos ya tienen el valor. Su clave de fusión es el tipo de propiedad (por ejemplo `set_property.opacity`), la página, los destinos y el gesto; al fusionar conserva los valores previos del primer comando y toma el valor más reciente.
 
 ### InsertNodes y NodeSpec
@@ -114,11 +124,17 @@ Un valor inválido es `InvalidValue`; una página o nodo inexistente es `Missing
 
 `RemoveNodes::new(page, nodes)` quita nodos con todos sus descendientes. Un nodo listado junto con uno de sus descendientes cuenta una vez, como el ancestro. Conserva los mismos valores `Arc<Node>` que quitó, y `revert` devuelve cada subárbol a su padre e índice anteriores. Una lista vacía es `InvalidValue`.
 
-### Comandos planificados
+### Reorder y Reparent
 
-- `Reorder` y `Reparent` dentro de una página (entrega D9, en curso): **Planificado**.
-- `InsertPage`, `RemovePage`, y los campos de página (`name`, `size`, `locked`, `hidden`) y el DPI del documento como destinos de `SetProperty` (entrega D10): **Planificado**.
-- Los comandos para tipos o datos que aún no existen (clips, fotogramas clave, máscaras, plantillas, versiones), mover nodos entre páginas y aplicar bloqueos en los comandos quedan fuera de alcance del change.
+`Reorder::new(page, node, index)` mueve un nodo a `index` entre sus hermanos actuales; un índice igual o superior al número de hermanos es `IndexOutOfRange`. `Reparent::new(page, nodes, parent, index)` mueve nodos bajo un `Group` (o a las raíces de la página cuando `parent` es `None`) en `index` de esa lista una vez que los nodos movidos han salido de ella. Los nodos movidos conservan su orden de documento, y un nodo listado junto a uno de sus descendientes se mueve una sola vez, como el ancestro. Ambos devuelven `Unchanged` cuando las listas de hermanos no cambiarían. Errores: `MissingPage`, `MissingNode`, `NotAContainer`, `WouldCreateCycle` e `InvalidValue` para una lista vacía. `revert` restaura las listas de hermanos que reescribió `apply`.
+
+### InsertPage y RemovePage
+
+`InsertPage::new(index, name, size)` inserta una página vacía en `index` de la lista de páginas (`0..=len`). `apply` asigna el id de la página desde el contador del documento y `revert` quita la página y restaura el contador, de modo que un rehacer obtiene el mismo id. `revert` se niega si la página cambió o si se asignaron ids después de ella. Errores: `IndexOutOfRange`, `IdSpaceExhausted` e `InvalidDocument` para un tamaño fuera de los límites de píxeles. `RemovePage::new(page)` quita una página con toda su arena; `revert` devuelve la misma página a su índice anterior. Una página inexistente es `MissingPage`.
+
+### Fuera de alcance
+
+Los comandos para tipos o datos que aún no existen (clips, fotogramas clave, máscaras, plantillas, versiones), mover nodos entre páginas y aplicar bloqueos en los comandos quedan fuera de alcance del change `edit-history`.
 
 ## Evidencia del contrato
 
@@ -133,7 +149,7 @@ Un valor inválido es `InvalidValue`; una página o nodo inexistente es `Missing
 5. Con `Err`, el documento es igual por puntero al original.
 6. Cuando dos comandos se fusionan, aplicar el comando fusionado equivale a aplicar ambos en secuencia.
 
-Ejecuta 1 000 casos salvo que la variable de entorno `PROPTEST_CASES` indique otro valor. `try_prop_command` devuelve un `LawViolation` (número de ley, detalle, entrada minimizada) en lugar de entrar en pánico. `crates/gafira-edit/tests/prop_commands.rs` lo ejecuta para cada comando del núcleo. El paso de CI V14, que comprobaría que cada comando del núcleo tiene una prueba así, está **Planificado** (sustituye a `xtask`, que aún no existe).
+Ejecuta 1 000 casos salvo que la variable de entorno `PROPTEST_CASES` indique otro valor. `try_prop_command` devuelve un `LawViolation` (número de ley, detalle, entrada minimizada) en lugar de entrar en pánico. `crates/gafira-edit/tests/prop_commands.rs` lo ejecuta para cada comando del núcleo. El paso de CI V14 comprueba que cada comando del núcleo tiene una prueba así; sustituye a `xtask`, que aún no existe.
 
 ### Fixtures compile-fail (ARQ-30)
 
@@ -143,4 +159,4 @@ Ejecuta 1 000 casos salvo que la variable de entorno `PROPTEST_CASES` indique ot
 
 - Deshacer y rehacer una entrada que conserva sus instantáneas intercambian un solo `Arc` y no llaman a ningún método del comando, sea cual sea el tamaño del documento (ARQ-32, prueba estructural; el criterio temporizado espera al benchmark de ARQ-40).
 - Un arrastre de 300 movimientos copia solo el nodo arrastrado (`Arc::ptr_eq` para todos los demás nodos).
-- Una prueba de propiedades muestra que deshacer y rehacer mediante `revert` y `apply` (entradas compactadas) alcanzan los mismos estados que mediante instantáneas; hoy cubre solo `SetProperty`.
+- Una prueba de propiedades muestra que deshacer y rehacer mediante `revert` y `apply` (entradas compactadas) alcanzan los mismos estados que mediante instantáneas; cubre `SetProperty` sobre nodos, `InsertNodes` y `RemoveNodes`.

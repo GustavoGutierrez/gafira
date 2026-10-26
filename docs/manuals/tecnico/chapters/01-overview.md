@@ -18,7 +18,9 @@ Gafira is a local-first desktop editor for graphic design, images and video, wri
 | `gafira-geom` (lengths, transforms) | Implemented |
 | `gafira-color` (color spaces, conversions) | Implemented |
 | `gafira-doc` (document model, JSON, validation, edit capability) | Implemented |
-| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`) | Implemented; `Reorder`, `Reparent` and the page and DPI commands are **Planned** (change `edit-history`, deliveries D9 and D10) |
+| `gafira-time` (flicks, frame and sample rates, time ranges, timecode) | Implemented |
+| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`) | Implemented |
+| `gafira-pathops` (path booleans, stroke outline, simplification, hit testing) | Implemented |
 | `gafira-testkit` (document generator, command property harness) | Implemented (test support only) |
 | `gafira-cli` | Only `--help` and `--version` |
 | Format, render, engine, UI, codecs, licensing | **Planned** (see the architecture chapter) |
@@ -29,7 +31,7 @@ Workspace version: `0.1.0-beta.1`. Edition 2024, toolchain `1.93.1` pinned in `r
 
 | Path | Content |
 |---|---|
-| `crates/` | Library crates (`gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`) |
+| `crates/` | Library crates (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`, `gafira-pathops`, `gafira-testkit`) |
 | `apps/gafira-cli/` | Command-line binary |
 | `docs/specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
 | `docs/manuals/` | Brand manual (`marca/`) and this technical manual (`tecnico/`) |

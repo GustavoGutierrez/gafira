@@ -18,7 +18,9 @@ Gafira es un editor de escritorio local para diseño gráfico, imagen y video, e
 | `gafira-geom` (longitudes, transformaciones) | Implementado |
 | `gafira-color` (espacios de color, conversiones) | Implementado |
 | `gafira-doc` (modelo de documento, JSON, validación, capacidad de edición) | Implementado |
-| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`) | Implementado; `Reorder`, `Reparent` y los comandos de página y DPI están **Planificados** (change `edit-history`, entregas D9 y D10) |
+| `gafira-time` (flicks, frecuencias de fotogramas y de muestreo, rangos de tiempo, timecode) | Implementado |
+| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`) | Implementado |
+| `gafira-pathops` (booleanas de trazados, contorno de trazo, simplificación, detección de impacto) | Implementado |
 | `gafira-testkit` (generador de documentos, arnés de propiedades de comandos) | Implementado (solo soporte de pruebas) |
 | `gafira-cli` | Solo `--help` y `--version` |
 | Formato, render, engine, UI, códecs, licencias | **Planificado** (véase el capítulo de arquitectura) |
@@ -29,7 +31,7 @@ Versión del workspace: `0.1.0-beta.1`. Edición 2024, toolchain `1.93.1` fijado
 
 | Ruta | Contenido |
 |---|---|
-| `crates/` | Crates de biblioteca (`gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit`) |
+| `crates/` | Crates de biblioteca (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`, `gafira-pathops`, `gafira-testkit`) |
 | `apps/gafira-cli/` | Binario de línea de comandos |
 | `docs/specs/` | Especificaciones de producto y arquitectura; `00-decisiones.md` recoge las decisiones del titular |
 | `docs/manuals/` | Manual de marca (`marca/`) y este manual técnico (`tecnico/`) |

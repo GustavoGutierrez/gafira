@@ -20,21 +20,52 @@ ARQ-01 fija la regla de dependencias: un crate depende solo de crates de su mism
 |---|---|---|---|
 | `gafira-geom` | 0 | ninguna | Longitudes con unidades y conversión por DPI, transformaciones 2D, tamaños |
 | `gafira-color` | 0 | ninguna | Espacios de color, tipos RGBA `f32`, conversiones analíticas |
+| `gafira-time` | 0 | ninguna | Tiempo exacto en flicks, frecuencias de fotogramas y de muestreo, rangos de tiempo, timecode |
 | `gafira-doc` | 1 | `gafira-geom`, `gafira-color` | Modelo de documento, JSON, validación, capacidad de edición |
-| `gafira-edit` | 1 | `gafira-geom`, `gafira-color`, `gafira-doc` | Contrato `Command`, `Transaction`, `DirtySet`, `History`, comandos del núcleo (`SetProperty`, `InsertNodes`, `RemoveNodes`) |
+| `gafira-edit` | 1 | `gafira-geom`, `gafira-color`, `gafira-doc` | Contrato `Command`, `Transaction`, `DirtySet`, `History`, comandos del núcleo (`SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`) |
+| `gafira-pathops` | 2 | `gafira-geom` | Operaciones booleanas de trazados, contorno de trazo, simplificación, detección de impacto |
 | `gafira-testkit` | soporte | `gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit` | Soporte de pruebas: generador acotado de documentos, generadores de corrupción, arnés `prop_command`. Solo se usa como dev-dependency |
 | `gafira-cli` (`apps/`) | binario | ninguna | `--help`, `--version` |
 
-Dependencias externas declaradas en el workspace: `kurbo` (geometría, con `serde`), `serde`, `serde_json` (`float_roundtrip`) y, solo para pruebas, `proptest` y `trybuild`.
+Dependencias externas declaradas en el workspace: `kurbo` (geometría, con `serde`), `serde`, `serde_json` (`float_roundtrip`), `linesweeper` (declarada por `gafira-pathops`) y, solo para pruebas, `proptest` y `trybuild`.
 
 `gafira-testkit` es dev-dependency de `gafira-doc` y de `gafira-edit` mientras depende de ambos. Cargo lo acepta porque una arista de dev-dependency no es una arista de compilación, pero el testkit debe usarse solo desde pruebas de integración (`tests/`), donde cada crate tiene una única copia de cada tipo; dentro de las pruebas unitarias de un crate los tipos serían dos copias distintas.
+
+## Crates gafira-time y gafira-pathops
+
+Ambos son crates puros con un `clippy.toml` y una fila V5. Fuentes: `openspec/specs/time-model/`, `openspec/specs/timecode/`, `openspec/specs/path-operations/` y el código de cada crate.
+
+### gafira-time
+
+Capa 0, sin dependencias internas (solo `serde`). El tiempo es un número entero con signo de flicks, 1/705 600 000 s. El crate no lee ningún reloj.
+
+| Elemento | Contrato |
+|---|---|
+| `Flicks`, `FLICKS_PER_SECOND`, `FLICKS_PER_MILLISECOND` | Tiempo exacto; la construcción desde segundos y milisegundos y la aritmética son comprobadas y devuelven `TimeError` ante un desbordamiento |
+| `FrameRate` | Racional exacto (`num`, `den`) de al menos un fotograma por segundo; convierte fotogramas en flicks y redondea un tiempo hacia abajo al fotograma que lo contiene |
+| `SampleRate` | Frecuencia de audio en hercios; la alineación de muestras con los flicks es exacta |
+| `TimeRange` | Rango semiabierto con duración no negativa; `contains`, `intersects`, `intersection` |
+| `Timecode`, `TimecodeFormat`, `TimecodeMode` | Etiqueta de fotograma validada sobre flicks; sin descarte de fotogramas y con descarte solo para 29,97 y 59,94; `parse` y `format` son canónicos |
+
+### gafira-pathops
+
+Capa 2, depende de `gafira-geom`, `kurbo` y `linesweeper`. Las coordenadas son `f64`; cada operación recibe una tolerancia, con `DEFAULT_TOLERANCE` de `1e-3` por defecto.
+
+| Elemento | Contrato |
+|---|---|
+| `Path`, `FillRule` | Un trazado de Bézier con regla de relleno par-impar o no cero |
+| `union`, `intersection`, `difference`, `xor`, `boolean_op` (`BooleanOp`) | Operaciones booleanas entre dos trazados |
+| `stroke_outline` (`StrokeStyle`) | El contorno de un trazado con trazo |
+| `simplify` | Simplificación del trazado dentro de una tolerancia |
+| `contains` (`Containment`), `distance_to_perimeter` | Detección geométrica de impacto |
+| `PathOpError` | Entrada no finita, tolerancia demasiado fina para la entrada y otras entradas inválidas |
 
 ## Crates planificados
 
 La especificación enumera más crates que aún no están en el repositorio. Están **Planificados** y se nombran aquí solo para ubicar a los existentes:
 
-- Capas 0 y 1: `gafira-time`, `gafira-anim`.
-- Capa 2 (motores): `gafira-pathops`, `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment`.
+- Capas 0 y 1: `gafira-anim`.
+- Capa 2 (motores): `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment`.
 - Capa 3 (aplicación): `gafira-ports`, `gafira-render`, `gafira-media`, `gafira-engine`.
 - Capa 4 (adaptadores): `gafira-format`, `gafira-assets`, `gafira-io-*`, `gafira-mux`, `gafira-codec-*`, `gafira-render-cpu`, `gafira-render-gpu`, `gafira-platform`, `gafira-i18n`, `gafira-theme`, `gafira-license`, `gafira-ui`, `gafira-captions`, `gafira-plugin`.
 - Soporte: `xtask`.
@@ -51,9 +82,11 @@ La CI aplica la tabla de capas en el job `policy`, paso "Domain crates respect t
 |---|---|
 | `gafira-geom` | ninguna |
 | `gafira-color` | ninguna |
+| `gafira-time` | ninguna |
 | `gafira-doc` | `gafira-geom`, `gafira-color` |
 | `gafira-edit` | `gafira-geom`, `gafira-color`, `gafira-doc` |
 | `gafira-testkit` | `gafira-geom`, `gafira-color`, `gafira-doc`, `gafira-edit` |
+| `gafira-pathops` | `gafira-geom` |
 
 El paso falla cuando:
 
@@ -74,7 +107,7 @@ Añadir un crate de dominio implica añadir su fila y una copia de `clippy.toml`
 | ARQ-07, CLI sin UI | `cargo tree -p gafira-cli --no-default-features` no debe contener `gafira-ui`, `eframe`, `winit` ni `wgpu` |
 | Sin `unsafe` | `unsafe_code = "deny"` en los lints del workspace, más `#![forbid(unsafe_code)]` en cada `lib.rs` y `main.rs`, verificado por la CI |
 | ARQ-30 provisional, capacidad de edición | V13: `EditToken` solo puede nombrarse en `gafira-doc`, `gafira-edit` y `gafira-testkit`, y `gafira-edit` no debe reexportarlo. Los fixtures compile-fail de `trybuild` en `gafira-edit` muestran que un crate externo no puede mutar un `Document` sin pasar por `History` |
-| ARQ-81, cada comando del núcleo tiene una prueba de propiedades | **Planificado**: paso de CI V14 (sustituto de `xtask`); hoy las pruebas existen en `crates/gafira-edit/tests/prop_commands.rs`, pero nada las exige |
+| ARQ-81, cada comando del núcleo tiene una prueba de propiedades | El paso de CI V14 (sustituto de `xtask`) comprueba que cada tipo que implementa `Command` tiene una prueba en `crates/gafira-edit/tests/prop_commands.rs` |
 
 ## La capacidad de edición dentro de las capas
 

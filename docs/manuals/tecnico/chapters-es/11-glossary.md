@@ -17,6 +17,7 @@
 | `DocMut` | La vista de edición exclusiva de un `Document`, obtenida con un `EditToken` |
 | Crate de dominio | Un crate de las capas 0 y 1 con un `clippy.toml` y una fila V5 |
 | `EditToken` | La prueba no copiable de que quien la posee puede editar documentos |
+| Flick | La unidad de tiempo exacta de `gafira-time`: 1/705 600 000 de segundo |
 | Gesto | Un arrastre u otra acción del usuario, nombrado por un `GestureId`, cuyos comandos pueden fusionarse |
 | Archivo golden | Una salida esperada almacenada que se compara byte a byte en las pruebas |
 | Mutación manual | Un cambio deliberado de una línea en código terminado, aplicado a mano para mostrar que una prueba falla; se registra como selección, no como ejecución completa |
@@ -43,6 +44,6 @@
 | `testkit` | `gafira-testkit`, el crate de soporte de pruebas con el generador de documentos y `prop_command` |
 | `trybuild` | La dev-dependency que comprueba que los fixtures no compilen (o compilen); evidencia de ARQ-30 |
 | Transaction | Un comando compuesto: muchos comandos, una entrada de historial, todo o nada |
-| V14 | Paso de CI **Planificado** que comprueba que cada comando del núcleo tiene una prueba de propiedades (ARQ-81) |
+| V14 | Paso de CI que comprueba que cada comando del núcleo tiene una prueba de propiedades (ARQ-81) |
 | V5, V12, V13 | Pasos de política de la CI: tabla de capas, sincronía de `clippy.toml`, confinamiento de `EditToken` |
 | Forma en disco | La forma JSON de un tipo guardado |

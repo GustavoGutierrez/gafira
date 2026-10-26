@@ -7,16 +7,17 @@
 | `Command` trait, `Applied`, `CommandError` (with `RollbackFailed`), `DirtySet`, `MergeKey`, `GestureId` | Implemented in `gafira-edit` |
 | `Transaction` (Composite) | Implemented |
 | `History`: owned `Arc<Document>`, atomic `execute`, undo and redo by snapshot, `preview`, gesture merge, memory budget with compaction | Implemented |
-| `SetProperty` (eight node properties), `InsertNodes`, `RemoveNodes` | Implemented |
+| `SetProperty` (eight node properties, four page fields, document DPI), `InsertNodes`, `RemoveNodes` | Implemented |
+| `Reorder`, `Reparent` | Implemented |
+| `InsertPage`, `RemovePage` | Implemented |
 | `debug_assert` after each command, undo and redo (ARQ-13) | Implemented in `History` |
 | `gafira-testkit` (document generator, `prop_command` with six laws) | Implemented |
 | `trybuild` compile-fail fixtures for ARQ-30 | Implemented |
-| `Reorder`, `Reparent` (delivery D9) | **Planned**: in progress, not merged |
-| `InsertPage`, `RemovePage`, page and DPI targets of `SetProperty` (delivery D10) and CI step V14 | **Planned** |
+| CI step V14 (every core command has a property test) | Implemented |
 | `EditService`, `Session`, `SelectionService`, event bus | **Planned**: layer 3, `gafira-engine` |
 | `Selection`, `HitTester`, `Tool` | **Planned** |
 
-The crate is layer-1 domain code: no I/O, no clocks, no `unsafe`. It depends on `gafira-geom`, `gafira-color`, `gafira-doc` and, to size extension payloads, `serde_json`. Its public items are `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec` and `RemoveNodes`. It must not publicly re-export `EditToken` (CI V13). The sources of truth for this chapter are the code under `crates/gafira-edit/`, `openspec/specs/` and the open change `openspec/changes/edit-history`.
+The crate is layer-1 domain code: no I/O, no clocks, no `unsafe`. It depends on `gafira-geom`, `gafira-color`, `gafira-doc` and, to size extension payloads, `serde_json`. Its public items are `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage` and `RemovePage`. It must not publicly re-export `EditToken` (CI V13). The sources of truth for this chapter are the code under `crates/gafira-edit/`, and the main specs `openspec/specs/edit-commands/` and `openspec/specs/edit-history/`. The change `edit-history` is archived.
 
 ## The Command contract
 
@@ -91,7 +92,7 @@ Commands act on one page and do not check `locked`: tools enforce locks, not com
 
 ### SetProperty
 
-`SetProperty::new(page, nodes, value: Property, gesture: Option<GestureId>)` sets one property on one or more nodes. `Property` has eight variants:
+`SetProperty::new(page, nodes, value: Property, gesture: Option<GestureId>)` sets one property on one or more nodes. `SetProperty::page(page, value, gesture)` sets a page field and `SetProperty::document(value, gesture)` sets the document DPI. `Property` has thirteen variants. Eight target nodes:
 
 | Variant | Node field | Check |
 |---|---|---|
@@ -104,6 +105,15 @@ Commands act on one page and do not check `locked`: tools enforce locks, not com
 | `Fill(Option<Color>)` | shape fill | finite color, alpha in `0.0..=1.0`; shapes only |
 | `Geometry(ShapeGeometry)` | shape geometry | shapes only |
 
+The other five target a page or the document:
+
+| Variant | Target | Check |
+|---|---|---|
+| `PageName(String)` | page name | none |
+| `PageSize(PageSize)` | page size | within the pixel limits at the document DPI, else `InvalidDocument` |
+| `PageLocked(bool)`, `PageHidden(bool)` | page flags | none |
+| `Dpi(Dpi)` | document DPI | valid, and every page still within the pixel limits, else `InvalidValue` or `InvalidDocument` |
+
 A bad value is `InvalidValue`; a missing page or node is `MissingPage` or `MissingNode`; a shape property on another node kind and an empty target list are `InvalidValue`. It returns `Unchanged` when every target already holds the value. Its merge key is the property kind (for example `set_property.opacity`), the page, the targets and the gesture; merging keeps the first command's previous values and takes the newer value.
 
 ### InsertNodes and NodeSpec
@@ -114,11 +124,17 @@ A bad value is `InvalidValue`; a missing page or node is `MissingPage` or `Missi
 
 `RemoveNodes::new(page, nodes)` removes nodes with all their descendants. A node listed together with one of its descendants counts once, as the ancestor. It keeps the very `Arc<Node>` values it removed, and `revert` puts every subtree back at its old parent and index. An empty list is `InvalidValue`.
 
-### Planned commands
+### Reorder and Reparent
 
-- `Reorder` and `Reparent` inside one page (delivery D9, in progress): **Planned**.
-- `InsertPage`, `RemovePage`, and the page fields (`name`, `size`, `locked`, `hidden`) and document DPI targets of `SetProperty` (delivery D10): **Planned**.
-- Commands for kinds or data that do not exist yet (clips, keyframes, masks, templates, versions), moving nodes between pages and lock enforcement in commands are out of scope of the change.
+`Reorder::new(page, node, index)` moves one node to `index` among its current siblings; an index at or past the sibling count is `IndexOutOfRange`. `Reparent::new(page, nodes, parent, index)` moves nodes under a `Group` (or to the page roots when `parent` is `None`) at `index` of that list once the moved nodes are out of it. The moved nodes keep their document order, and a node listed with one of its descendants moves once, as the ancestor. Both return `Unchanged` when the sibling lists would not change. Errors: `MissingPage`, `MissingNode`, `NotAContainer`, `WouldCreateCycle` and `InvalidValue` for an empty list. `revert` restores the sibling lists that `apply` rewrote.
+
+### InsertPage and RemovePage
+
+`InsertPage::new(index, name, size)` inserts an empty page at `index` of the page list (`0..=len`). `apply` allocates the page id from the document counter and `revert` removes the page and restores the counter, so a redo gets the same id. `revert` refuses when the page was changed or when ids were allocated after it. Errors: `IndexOutOfRange`, `IdSpaceExhausted` and `InvalidDocument` for a size outside the pixel limits. `RemovePage::new(page)` removes a page with its whole arena; `revert` puts the same page back at its old index. A missing page is `MissingPage`.
+
+### Out of scope
+
+Commands for kinds or data that do not exist yet (clips, keyframes, masks, templates, versions), moving nodes between pages and lock enforcement in commands are out of scope of the `edit-history` change.
 
 ## Evidence for the contract
 
@@ -133,7 +149,7 @@ A bad value is `InvalidValue`; a missing page or node is `MissingPage` or `Missi
 5. On `Err`, the document is pointer-equal to the original.
 6. When two commands merge, applying the merged command equals applying both in sequence.
 
-It runs 1 000 cases unless the `PROPTEST_CASES` environment variable says otherwise. `try_prop_command` returns a `LawViolation` (law number, detail, minimized input) instead of panicking. `crates/gafira-edit/tests/prop_commands.rs` runs it for every core command. The CI step V14, which would check that each core command has such a test, is **Planned** (it stands in for `xtask`, which does not exist yet).
+It runs 1 000 cases unless the `PROPTEST_CASES` environment variable says otherwise. `try_prop_command` returns a `LawViolation` (law number, detail, minimized input) instead of panicking. `crates/gafira-edit/tests/prop_commands.rs` runs it for every core command. The CI step V14 checks that each core command has such a test; it stands in for `xtask`, which does not exist yet.
 
 ### Compile-fail fixtures (ARQ-30)
 
@@ -143,4 +159,4 @@ It runs 1 000 cases unless the `PROPTEST_CASES` environment variable says otherw
 
 - Undo and redo of an entry that holds its snapshots swap one `Arc` and call no command method, for any document size (ARQ-32, structural proof; the timed criterion waits for the ARQ-40 benchmark).
 - A 300-move drag copies only the dragged node (`Arc::ptr_eq` for every other node).
-- A property test shows that undo and redo through `revert` and `apply` (compacted entries) reach the same states as through snapshots; today it covers `SetProperty` only.
+- A property test shows that undo and redo through `revert` and `apply` (compacted entries) reach the same states as through snapshots; it covers `SetProperty` on nodes, `InsertNodes` and `RemoveNodes`.
