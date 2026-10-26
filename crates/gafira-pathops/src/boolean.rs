@@ -105,11 +105,11 @@ impl Path {
         self.validate_closed()?;
         other.validate_closed()?;
 
-        let minimum =
-            MINIMUM_TOLERANCE_PER_UNIT * self.max_abs_coordinate().max(other.max_abs_coordinate());
-        if tolerance < minimum {
-            return Err(PathOpError::ToleranceTooFine { minimum });
-        }
+        validate::not_too_fine(
+            tolerance,
+            MINIMUM_TOLERANCE_PER_UNIT,
+            self.max_abs_coordinate().max(other.max_abs_coordinate()),
+        )?;
 
         if let Some(result) = self.empty_operand_result(other, op) {
             return Ok(result);

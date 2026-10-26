@@ -7,6 +7,14 @@ use kurbo::simplify::{SimplifyOptions, simplify_bezpath};
 
 use crate::{Path, PathOpError, validate};
 
+/// The smallest tolerance the simplification accepts, per unit of the largest
+/// absolute coordinate of the path.
+///
+/// Below it the simplification can run without end, on curved paths and, a
+/// little further down, on straight ones. The bound is empirical: no hang was
+/// observed at or above it.
+const MINIMUM_TOLERANCE_PER_UNIT: f64 = 1e-12;
+
 impl Path {
     /// The path with its redundant parts removed.
     ///
@@ -22,11 +30,19 @@ impl Path {
     ///
     /// A path with a coordinate whose absolute value is above
     /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
-    /// [`PathOpError::CoordinateOutOfRange`].
+    /// [`PathOpError::CoordinateOutOfRange`]. A tolerance below `1e-12 * m`,
+    /// where `m` is the largest absolute coordinate of the path, is rejected
+    /// with [`PathOpError::ToleranceTooFine`]; a tolerance equal to the minimum
+    /// is accepted, and an empty path has no minimum.
     pub fn simplify(&self, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
         self.validate_in_range()?;
+        validate::not_too_fine(
+            tolerance,
+            MINIMUM_TOLERANCE_PER_UNIT,
+            self.max_abs_coordinate(),
+        )?;
 
         let simplified = simplify_bezpath(
             self.as_bez_path().elements().to_vec(),

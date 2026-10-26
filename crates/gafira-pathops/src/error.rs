@@ -104,8 +104,9 @@ pub enum PathOpError {
     /// The tolerance is below the smallest one the operands allow.
     ///
     /// Below that bound the boolean library recurses without limit on curved
-    /// operands. The bound is `1e-12` times the largest absolute coordinate over
-    /// the points of both operands.
+    /// operands and the simplification can run without end. The bound is a
+    /// fixed factor times the largest absolute coordinate over the points of
+    /// the operands.
     ToleranceTooFine {
         /// The smallest tolerance the operands accept.
         minimum: f64,
