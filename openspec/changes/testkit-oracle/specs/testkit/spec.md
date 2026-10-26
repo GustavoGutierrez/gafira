@@ -121,8 +121,9 @@ Every commit MUST pass `cargo fmt --check`,
 
 #### Scenario: Oracles ignore PROPTEST_CASES (command)
 - GIVEN the final tree
-- WHEN `cargo test -p gafira-testkit --locked` runs with `PROPTEST_CASES` unset, and again with `PROPTEST_CASES=1`
-- THEN both runs pass, and each new oracle test runs the same number of draws in both
+- WHEN `cargo test -p gafira-testkit --locked --test generator --test corruption` runs with `PROPTEST_CASES` unset, and again with `PROPTEST_CASES=1`
+- THEN both runs pass, and each oracle test in `tests/generator.rs` and `tests/corruption.rs` runs the same number of draws in both
+- AND the scenario does not cover the test targets that existed before this change. In particular, `tests/harness.rs` is outside it (C6)
 
 #### Scenario: No exclusion added (command)
 - GIVEN the final tree
@@ -388,11 +389,14 @@ C1): `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`. A
 - Killing mutant 13 with a seed-pinned golden test, a draw count in the
   millions, or a source change (C2).
 - Making `cargo-mutants` a CI gate.
+- Fixing the flake in the existing test
+  `tests/harness.rs::each_broken_law_is_named_with_a_counterexample` at
+  `PROPTEST_CASES=1` (C6; accepted follow-up).
 
 ## Closed decisions
 
 There are no open questions left. The owner decided C1 to C4 on 2026-10-26.
-The coordinator decided C5 under C3. All five are binding for this change.
+The coordinator decided C5 (under C3) and C6 the same day. All six are binding for this change.
 
 - **C1. Acceptance command.** T4 is the package-scoped AGENTS.md form,
   `cargo mutants -p gafira-testkit --jobs 4 -o <scratchpad dir>`, the same form
@@ -408,6 +412,16 @@ The coordinator decided C5 under C3. All five are binding for this change.
 - **C4. The stale `document-model` text** that places the generator in
   `crates/gafira-doc/tests/common` is out of scope. A separate docs change will
   fix it.
+- **C6. Existing harness flake at `PROPTEST_CASES=1` is an accepted
+  follow-up.** This is a coordinator decision of 2026-10-26. With
+  `PROPTEST_CASES=1`, the existing test
+  `tests/harness.rs::each_broken_law_is_named_with_a_counterexample` fails in
+  about half the runs. With the variable unset, it passes. That file predates
+  this change, which is test-only, so the file is out of scope. "Oracles
+  ignore PROPTEST_CASES" therefore covers only the oracles this change adds
+  (`tests/generator.rs`, `tests/corruption.rs`). The flake stays open as a
+  candidate for a later fix. The per-commit gates run with the variable unset
+  and are not affected.
 - **C5. `ExtensionTooDeep` joins the pick table.** This is a coordinator
   decision of 2026-10-26, taken under C3. The Step 0 baseline found two misses
   the archived run did not list: `lib.rs:652:80`, `%` to `/` and `%` to `+` in
