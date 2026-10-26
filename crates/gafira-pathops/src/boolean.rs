@@ -84,10 +84,13 @@ impl Path {
     /// # Errors
     ///
     /// In this order, the first match wins: an invalid tolerance, a non-finite
-    /// coordinate (first operand, then second), an open subpath (first operand,
-    /// then second), and a tolerance below `1e-12` times the largest absolute
-    /// coordinate of both operands ([`PathOpError::ToleranceTooFine`]). All the
-    /// checks run before the empty-operand rule.
+    /// coordinate (first operand, then second), a coordinate whose absolute
+    /// value is above [`crate::COORDINATE_LIMIT`] (`1e9`;
+    /// [`PathOpError::CoordinateOutOfRange`], first operand, then second), an
+    /// open subpath (first operand, then second), and a tolerance below `1e-12`
+    /// times the largest absolute coordinate of both operands
+    /// ([`PathOpError::ToleranceTooFine`]). All the checks run before the
+    /// empty-operand rule.
     pub fn boolean_op(
         &self,
         other: &Path,
@@ -97,6 +100,8 @@ impl Path {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
         other.validate_finite()?;
+        self.validate_in_range()?;
+        other.validate_in_range()?;
         self.validate_closed()?;
         other.validate_closed()?;
 

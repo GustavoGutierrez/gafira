@@ -32,10 +32,17 @@ impl Path {
     /// once is covered by the outline and never a hole. The tolerance bounds the
     /// deviation between the outline and the exact stroke, including the arcs of
     /// round caps and round joins, whatever the width.
+    ///
+    /// # Errors
+    ///
+    /// A path with a coordinate whose absolute value is above
+    /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`].
     pub fn stroke_outline(&self, style: &StrokeStyle, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         validate::stroke_width(style.width)?;
         self.validate_finite()?;
+        self.validate_in_range()?;
 
         let kurbo_style = Stroke::new(style.width)
             .with_caps(style.cap)

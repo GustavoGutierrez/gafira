@@ -60,3 +60,14 @@ pub enum BooleanOp {
 /// deviation grows as the square root of the tolerance (see
 /// [`Path::boolean_op`]).
 pub const DEFAULT_TOLERANCE: f64 = 1e-3;
+
+/// The largest absolute value of a coordinate that any operation accepts.
+///
+/// Every operation rejects a path with an x or y coordinate whose absolute
+/// value is above this limit with [`PathOpError::CoordinateOutOfRange`], before
+/// it computes anything. A coordinate of exactly `COORDINATE_LIMIT` or
+/// `-COORDINATE_LIMIT` is accepted. The limit is set by precision: with the
+/// minimum tolerances, the default tolerance still works for the simplification
+/// and the stroke outline at the limit. The limit applies to inputs only; a
+/// result may hold coordinates beyond it.
+pub const COORDINATE_LIMIT: f64 = 1e9;

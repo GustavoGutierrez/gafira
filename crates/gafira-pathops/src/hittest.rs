@@ -27,9 +27,16 @@ impl Path {
     /// A point that lies on the perimeter is reported as
     /// [`Containment::OnBoundary`], so a caller can tell an edge hit from a
     /// fill hit.
+    ///
+    /// # Errors
+    ///
+    /// A path with a coordinate whose absolute value is above
+    /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`].
     pub fn contains(&self, point: Point, tolerance: f64) -> Result<Containment, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
+        self.validate_in_range()?;
         self.validate_closed()?;
 
         if self.is_empty() {
@@ -58,9 +65,16 @@ impl Path {
     /// The distance is zero on the perimeter and grows as the point moves
     /// away, in either direction. A caller that hit tests a stroke uses it to
     /// decide whether the point is within the stroke's width.
+    ///
+    /// # Errors
+    ///
+    /// A path with a coordinate whose absolute value is above
+    /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`].
     pub fn distance_to_perimeter(&self, point: Point, tolerance: f64) -> Result<f64, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
+        self.validate_in_range()?;
 
         let mut closest = f64::INFINITY;
         for segment in self.as_bez_path().path_segments(tolerance) {

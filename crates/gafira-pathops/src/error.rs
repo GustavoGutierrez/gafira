@@ -75,6 +75,14 @@ pub enum PathOpError {
         /// Which kind of non-finite number the coordinate holds.
         value: NonFiniteValue,
     },
+    /// A coordinate of the path, or of a query point, is finite but its
+    /// absolute value is above [`crate::COORDINATE_LIMIT`].
+    CoordinateOutOfRange {
+        /// The offending coordinate.
+        value: f64,
+        /// The largest absolute value an operation accepts.
+        limit: f64,
+    },
     /// A subpath of the path is not closed.
     ///
     /// An open subpath has no interior, so it has no defined meaning under a
@@ -111,6 +119,12 @@ impl fmt::Display for PathOpError {
         match self {
             Self::NonFiniteCoordinate { value } => {
                 write!(f, "path has a non-finite coordinate: {value}")
+            }
+            Self::CoordinateOutOfRange { value, limit } => {
+                write!(
+                    f,
+                    "path has a coordinate beyond the limit: {value} (limit {limit})"
+                )
             }
             Self::OpenSubpath { subpath } => {
                 write!(f, "subpath {subpath} of the path is not closed")

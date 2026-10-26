@@ -17,9 +17,16 @@ impl Path {
     /// in the same order, with the same fill rule. A closed path of straight
     /// segments whose every vertex lies farther than `tolerance` from the line
     /// through its neighbours comes back equal in value.
+    ///
+    /// # Errors
+    ///
+    /// A path with a coordinate whose absolute value is above
+    /// [`crate::COORDINATE_LIMIT`] (`1e9`) is rejected with
+    /// [`PathOpError::CoordinateOutOfRange`].
     pub fn simplify(&self, tolerance: f64) -> Result<Path, PathOpError> {
         validate::tolerance(tolerance)?;
         self.validate_finite()?;
+        self.validate_in_range()?;
 
         let simplified = simplify_bezpath(
             self.as_bez_path().elements().to_vec(),

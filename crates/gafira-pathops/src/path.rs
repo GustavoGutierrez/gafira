@@ -2,7 +2,7 @@
 
 use kurbo::{BezPath, PathEl, Point};
 
-use crate::{FillRule, NonFiniteValue, PathOpError};
+use crate::{COORDINATE_LIMIT, FillRule, NonFiniteValue, PathOpError};
 
 /// A path: a sequence of Bézier subpaths, plus the rule that decides which
 /// points the path covers.
@@ -139,49 +139,49 @@ impl Path {
     /// coordinate is reported as such instead of surfacing as a misleading
     /// lower-level error.
     pub fn validate_finite(&self) -> Result<(), PathOpError> {
-        for el in self.bez.elements() {
-            let check = |p: Point| -> Result<(), PathOpError> {
-                if let Some(value) = NonFiniteValue::classify(p.x) {
-                    return Err(PathOpError::NonFiniteCoordinate { value });
-                }
-                if let Some(value) = NonFiniteValue::classify(p.y) {
-                    return Err(PathOpError::NonFiniteCoordinate { value });
-                }
-                Ok(())
-            };
-            match el {
-                PathEl::MoveTo(p) | PathEl::LineTo(p) => check(*p)?,
-                PathEl::QuadTo(p1, p2) => {
-                    check(*p1)?;
-                    check(*p2)?;
-                }
-                PathEl::CurveTo(p1, p2, p3) => {
-                    check(*p1)?;
-                    check(*p2)?;
-                    check(*p3)?;
-                }
-                PathEl::ClosePath => {}
-            }
+        match self.coordinates().find_map(NonFiniteValue::classify) {
+            Some(value) => Err(PathOpError::NonFiniteCoordinate { value }),
+            None => Ok(()),
         }
-        Ok(())
+    }
+
+    /// Checks that no coordinate of the path is beyond the coordinate limit.
+    ///
+    /// The check assumes the path is finite and runs right after
+    /// [`Path::validate_finite`]. The error carries the first offending value
+    /// in path order, x before y within a point.
+    pub(crate) fn validate_in_range(&self) -> Result<(), PathOpError> {
+        match self
+            .coordinates()
+            .find(|coordinate| coordinate.abs() > COORDINATE_LIMIT)
+        {
+            Some(value) => Err(PathOpError::CoordinateOutOfRange {
+                value,
+                limit: COORDINATE_LIMIT,
+            }),
+            None => Ok(()),
+        }
     }
 
     /// The largest absolute value of any x or y coordinate over the end points
     /// and control points of the path, or `0` when the path holds no point.
     pub(crate) fn max_abs_coordinate(&self) -> f64 {
-        let mut largest = 0.0_f64;
-        for el in self.bez.elements() {
+        self.coordinates()
+            .fold(0.0_f64, |largest, coordinate| largest.max(coordinate.abs()))
+    }
+
+    /// Every x and y coordinate of the path, in path order, x before y within
+    /// a point: move points, end points and control points.
+    fn coordinates(&self) -> impl Iterator<Item = f64> + '_ {
+        self.bez.elements().iter().flat_map(|el| {
             let points: &[Point] = match el {
-                PathEl::MoveTo(p) | PathEl::LineTo(p) => &[*p],
+                PathEl::MoveTo(p) | PathEl::LineTo(p) => std::slice::from_ref(p),
                 PathEl::QuadTo(p1, p2) => &[*p1, *p2],
                 PathEl::CurveTo(p1, p2, p3) => &[*p1, *p2, *p3],
                 PathEl::ClosePath => &[],
             };
-            for p in points {
-                largest = largest.max(p.x.abs()).max(p.y.abs());
-            }
-        }
-        largest
+            points.iter().flat_map(|p| [p.x, p.y]).collect::<Vec<f64>>()
+        })
     }
 
     /// Checks that no subpath of the path is open.
