@@ -19,6 +19,19 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 | `backlog/06-licencia-y-activacion.md` | Backlog | Licencia y activación. |
 | `archive/` | Archivados | Ninguno todavía. |
 
+## Pending follow-ups
+
+Recorded 2026-10-26. Open items that belong to no active change. Remove an item when done.
+
+1. **Flaky test** `crates/gafira-testkit/tests/harness.rs::each_broken_law_is_named_with_a_counterexample`. Why: it fails about half the runs with `PROPTEST_CASES=1` (passes unset); accepted as out of scope in the archived change `testkit-oracle` (decision C6). Start: a small test-only change (for example make the broken-law case deterministic or pin its seed/case count), then run it repeatedly with `PROPTEST_CASES=1`.
+2. **Re-enable CI.** Why: workflow `CI` was disabled manually because jobs failed to start (billing). Start: `gh workflow enable 395407504`, then observe the first runs. Unobserved since D5 (owner accepted the risk, decision W2=B): the Windows and macOS matrix and the trybuild `.stderr` fixtures (ARQ-30, R3). Fix whatever fails.
+3. **Spec gaps recorded at archive** (`openspec/changes/archive/2026-10-26-engine-pathops/`, crate `gafira-pathops`). Start: decide each with the owner, then specify via `specifier` and test first.
+   - A path with no initial `MoveTo`: the spec is silent (it is not a valid `BezPath`).
+   - Infinite distance on an empty path and the wording of the "path has" error (accepted suggestions S3/S4 of `engine-pathops`).
+   - `simplify` collapses `Z Z` (coordinator choice, not in the spec).
+4. **Owner-only items**, all tracked in `00-decisiones.md`, section "Pendientes del titular" (not duplicated here): locked-feature list and final price (D-12, item 1); EULA (`LICENCIA.md`) and `PRIVACY.md` (item 2, phase 06); `license-hub` security list and deploy (item 3, R-12 in 02); trademark: lawyer availability search, first registration country, optional domains (item 4, D-04); splash reverse-image search, original C2PA download kept outside the repo, `assets/LICENSES.toml` entry (item 6, D-09); convert the audio, register it in `assets/LICENSES.toml` and `THIRD_PARTY_NOTICES.md`, show the AI-content notice (item 8, D-10).
+5. **`02-arquitectura-software.md`, `gafira-time` row** (layer 0 table). Why: it lists the exact-divisor rates (24, 25, 30, 48, 50, 60, 120 fps) but omits the NTSC rates (23.976, 29.97) that the project frame rates include; incomplete, not false. Start: add them to that row (docs-only change).
+
 ## Promover un documento del backlog
 
 1. `git mv docs/specs/backlog/<NN-doc>.md docs/specs/`
