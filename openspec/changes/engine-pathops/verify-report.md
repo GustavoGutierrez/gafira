@@ -524,3 +524,116 @@ No report was supplied. `.cargo/mutants.toml` gained only the `History::debug_ch
 - Hand mutants: 5 run, 5 killed.
 
 next: specifier (ambiguity: C2, W1), then tdd-apply (implementation: C1, W2, W3, W4, W5). Round cap reached and second consecutive implementation FAIL: the coordinator asks the owner before routing.
+
+# Verify report: engine-pathops (C4), round 4 (final, owner-authorized, after fix round 4)
+
+- Commit verified: `0b4c7ed` (HEAD of `feat/engine-pathops-1`). Flow: full | tier T3 | depth V3. Acceptance source: the delta specs at HEAD, 11 requirements and 99 scenarios (path-operations 91, one new since round 3; workspace-tooling 8).
+- Clean `git archive` exports of every code commit since round 3 (`5c55ebf`, `d1638a3`, `440be8b`, `07a927c`, `8f1978c`) and of HEAD, every file `touch`ed, one fresh `CARGO_TARGET_DIR` for gates and separate ones for probes and hand mutants, `CARGO_INCREMENTAL=0`. Every gate log shows a rebuild of `gafira-pathops`. The docs-only commits `9c0c61f`, `f89f883` and `0b4c7ed` leave `crates/`, `Cargo.*`, `.github/` and `.cargo/` identical to their parents. Disk: 94 GB free at the start.
+- `mutants` report: `mutants-pathops/mutants.out` in the session scratchpad (T3, `--file` for all eight source files of the crate, at HEAD).
+- Owner decisions applied and not counted: single PR beyond ~700 lines, waiver of C8 and of the flaky-property history, and decision A ratifying `61fb23a` (round 3 C2, treated as resolved as instructed).
+
+**Verdict: FAIL.** 2 CRITICAL, 2 WARNING and 5 SUGGESTION items. By class (CRITICAL and WARNING): implementation 2, ambiguity 2.
+
+## Gates (every code commit since round 3, clean exports)
+
+| Export | fmt | clippy | test (passed/failed) | ARQ-07 | forbid-unsafe | V5 | V12 | V13 | V14 |
+|---|---|---|---|---|---|---|---|---|---|
+| 5c55ebf | 0 | 0 | 0 (758/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+| d1638a3 | 0 | 0 | 0 (759/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+| 440be8b | 0 | 0 | 0 (759/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+| 07a927c | 0 | 0 | 0 (759/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+| 8f1978c | 0 | 0 | 0 (759/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+| 0b4c7ed HEAD | 0 | 0 | 0 (759/0) | 0 | 0 | 0 | 0 | 0 | 0 |
+
+- At HEAD: `cargo deny check` rc 0; `cargo test -p gafira-pathops --release --locked` rc 0 (149 passed); the property binaries `prop_boolean`, `prop_hittest`, `prop_stroke` and `after_close` passed 10 runs in a row (40 of 40).
+- Negative runs on HEAD exports: row reduced to `gafira-pathops -`: V5 rc 1 "must not depend on gafira-geom"; row deleted: V5 rc 1 "has clippy.toml but no V5 row"; `gafira-doc` dependency added: V5 rc 1 "must not depend on gafira-doc" (and `gafira-color`); drifted `clippy.toml`: V12 rc 1 "clippy.toml differs"; scratch `Instant::now()` and `HashMap` test: clippy rc 101 with `disallowed_methods` (ARQ-02) and `disallowed_types` (ARQ-10).
+- Commits since round 3: 8, all by the owner identity, conventional, no attribution lines.
+- `origin/main` has moved (archives of edit-history and domain-time). The branch does not merge cleanly: `docs/specs/README.md` conflicts on the status row (W2). No code, `Cargo.lock` or CI file changed on `main`, so the gates above still hold after the merge.
+
+## Independent probes (written from the spec before reading the new tests; scratch export of HEAD, debug and release)
+
+- **Drawing after a close, every operation (P01).** 300 generated cases: a closed polygon, then one or two tails of lines, quadratics and cubics drawn after a close with no move (some with the move written), closed or open, either fill rule. Each compared with its written-out form. All pass in debug and release:
+  - simplification at 1e-1 and 1e-3: equal in value to the written-out form, same subpath count, every point sampled along every original segment within the tolerance (worst 0.013 × tolerance);
+  - distance to the perimeter: identical values; stroke outline: equal in value in 300 of 300 cases (random caps and joins);
+  - closed tails (135 cases): containment identical, the four boolean operations equal in value in both operand positions, and, for straight cases, the point-by-point definition holds away from both boundaries;
+  - open tails: the four booleans in both positions, `contains` and `validate_closed` return `OpenSubpath` with the tail's index; after `close_subpaths` the implicit and written-out forms give equal boolean results.
+- **Spec tail paths (P02).** The spec path simplified at 1e-3 stays within tolerance; booleans and `contains` return `OpenSubpath { subpath: 1 }`; the zero-length tail comes back as `MoveTo(0,0), LineTo(0,0)`; a degenerate closed subpath followed by a tail no longer panics. **Fails** for a close straight after a move, see C1.
+- **Zero-area operands (P03).** A collinear closed triangle, a closed zero-length subpath, a zero-width rectangle, a square followed by a zero-area tail after a close, and a triangle followed by a collinear closed tail, against a rectangle, four operations, both positions: no error, implicit equals written-out, and a 61 × 61 grid away from the boundaries matches the definition (0 wrong points). Simplification, containment and stroke accept them.
+- **Limits and floors (P04).** `±next_up(1e9)` in an end point, a control point and a move: all eight operations, booleans in both positions, return `CoordinateOutOfRange` with the same bits and limit `1e9`. The `±1e9` rectangle passes the booleans at `1e-11 × 1e9` (and `next_down` gives `ToleranceTooFine` with that minimum) and the other four at the default. Boolean floor at `m = 15` and for the circle case; simplification floor at `1e7+2` (`1e-9`, `next_down(min)`, `min`) and with `m` set by a tail point (`5e8`); stroke floors `1e-10`, `5e-7`, `4e-12` at both sides; query-point checks and order; hit tests at `1e-30`; two empty operands at `5e-324`. All pass.
+- **Lone moves (P05).** `M M` simplifies to no elements; a lone move before, between and after closed squares is dropped; moves-only booleans and containment follow the empty-operand rule. All pass.
+- **A close straight after a move (P07, P08). Fails, see C1.** In debug, `simplify` panics (`uninitialized subpath (missing MoveTo)`, kurbo `bezpath.rs:275`) for `M Z`, `M Z M Z`, a square then `M Z`, `M Z` then a square, and `M Z` then a tail. In release it returns elements without a leading move: `M Z` gives `[ClosePath]`, `M Z` then a square gives `[ClosePath, MoveTo(0,0), ...]`. On that output, `distance_to_perimeter`, `contains` and `union` panic in release (`Can't start a segment on a ClosePath`, kurbo `bezpath.rs:902`). The same input reproduces at `7814c10`, so the defect dates from D3. Booleans, stroke, containment and distance accept `M Z` inputs themselves.
+- **Path with no initial move (P06; spec silent, release only, because kurbo debug-asserts at construction).** `validate_closed` reports an open one as `OpenSubpath { subpath: 0 }`, but `close_subpaths` returns it unchanged, so the error's advice cannot be followed; the union reads it from the origin. See S1.
+
+### Comparison with the implementer's tests
+
+- `tests/after_close.rs` matches P01 on the main points: its generator mixes tails with and without a move, closed or not, and checks simplify, stroke, distance, the four booleans, containment, `close_subpaths` and the error index against the written-out form. Not weak.
+- No test, unit or property, holds a close straight after a move, so C1 is untested. `a_subpath_made_only_of_a_move_is_dropped` covers `M M` only.
+- Hand mutant HM2 below is killed by a single property test (`the_interior_operations_read_the_implicit_move`) and by no fixed unit test (S5).
+
+## Hand mutants (5, each on its own HEAD export, rebuilt from touched sources)
+
+| # | Mutation (rule order or rule input) | Result |
+|---|---|---|
+| HM1 | `simplify` reads `as_bez_path()` instead of the written-out moves | killed (3 tests in `after_close.rs`) |
+| HM2 | `boolean_op` feeds the sweep `as_bez_path()` again | killed (`the_interior_operations_read_the_implicit_move`) |
+| HM3 | `with_explicit_moves`: a close does not require a new move | killed (4 tests) |
+| HM4 | `with_explicit_moves`: the tail starts at the last drawn point | killed (4 tests) |
+| HM5 | `with_explicit_moves`: the written move goes to the origin | killed (2 tests) |
+
+## Mutation (T3, from the `mutants` report)
+
+126 mutants over `simplify.rs`, `path.rs`, `boolean.rs`, `hittest.rs`, `validate.rs`, `stroke.rs`, `error.rs` and `lib.rs`: 105 caught, 0 missed, 0 timeouts, 21 unviable, 61 s wall. No critical mutant survives. The new `.cargo/mutants.toml` exclusion (`replace < with <= in Path::distance_to_perimeter`) has a reason and is sound (keeping the first or the last of equally near segments gives the same minimum); the report confirms it is gone while `==` and `>` at `hittest.rs:93` are still generated and caught.
+
+## Status of the round 3 findings
+
+| Round 3 | Status |
+|---|---|
+| C1 simplification after a close | resolved (P01, P02; `with_explicit_moves`) |
+| C2 `61fb23a` | resolved by owner decision A (as instructed) |
+| W1 lone moves in the simplification | resolved in spec (`f89f883`) and code for `M M`; the `M Z` form fails (C1) and the spec commit has the same provenance issue (C2) |
+| W2 boolean docs | resolved (`boolean.rs:28-32`, `41-45`, `54-58`, `67-71` state `1e9`, `CoordinateOutOfRange` and `1e-11 * m`) |
+| W3 mutation evidence | void: T3 report above, 0 missed |
+| W4 size | owner approved a single PR (whole change against `main`: 35 files, +7829/-1; crates and CI +4546) |
+| W5 equivalent-mutant exclusion | resolved (`07a927c`) |
+
+## Findings
+
+### CRITICAL
+
+- **C1** class: implementation, ref `crates/gafira-pathops/src/simplify.rs:54-62,74` (`subpaths` and the call to `simplify_bezpath`), requirement "Path simplification" and the Terms ("Empty path": only moves and closes).
+  - The defect: a subpath made of a move followed by a close, with no segment, reaches `kurbo::simplify::simplify_bezpath` as `[MoveTo, ClosePath]`. kurbo drops the move and pushes the close onto an empty path.
+  - Debug builds: `simplify` panics for `M Z`, `M Z M Z`, a square then `M Z`, `M Z` then a square, and `M Z` then a tail.
+  - Release builds: `simplify` returns a path without a leading move (`[ClosePath]`, `[ClosePath, MoveTo(0,0), ...]`). The subpath appears in the output, against "MUST NOT appear". `distance_to_perimeter`, `contains` and `union` of that output then panic in release. One operation of the crate thus breaks another on valid input.
+  - The input is valid and empty by the spec's own definition. Present since D3 (reproduced at `7814c10`); no test holds the form.
+  - Fix test-first: drop a slice that holds no segment before calling the simplifier. Test `M Z`, `M Z M Z`, `M Z` before and after a square and `M Z` before a tail, in debug and release, and reuse each result in `contains`, `distance_to_perimeter` and a boolean. Let the `after_close.rs` generator emit a close straight after a move.
+- **C2** class: ambiguity, ref `f89f883` (delta spec `path-operations`, "Path simplification" and the new scenario).
+  - Fix round 4 lists this spec commit among its own work ("W1 spec (docs commit first)"), after the first implementation commits. `verify.md` makes an implementer change to the delta spec CRITICAL, whatever its quality.
+  - The text says it is "ratified by the owner's instruction to close the change", but the repo records no such owner decision (the "Owner decisions" table ends at W2). The content is faithful to round 3 W1 and matches the code for `M M`.
+  - Remedy: the specifier ratifies `f89f883` and records the ratification. A good moment is when S2 is applied. If the coordinator shows the owner ratified it, as for `61fb23a`, this finding is void.
+
+### WARNING
+
+- **W1** class: ambiguity, ref `openspec/changes/engine-pathops/specs/workspace-tooling/spec.md` (MODIFIED "Per-crate allowed-dependency table (V5)" and "Formatting and per-crate Clippy policy").
+  - The MODIFIED blocks were written against an older main spec. At archive they would replace the current requirements, dropping:
+    - the `gafira-time` row and its notes (added by `domain-time`, `17fc5ff`);
+    - scenarios N1-N4 of V5;
+    - the scenarios "Disallowed I/O flagged", "HashMap and HashSet flagged in every domain crate (H-N1)" and "BTreeMap allowed";
+    - the `gafira-time` copy in the clippy list.
+  - The specifier should rebase both blocks onto `origin/main`'s `openspec/specs/workspace-tooling/spec.md`, adding only the `gafira-pathops` row, notes and scenario.
+- **W2** class: implementation, ref `docs/specs/README.md`. `feat/engine-pathops-1` conflicts with `origin/main` on the status row of `02-arquitectura-software.md` (main records edit-history and domain-time as archived). Merge `origin/main` and resolve before the PR. The gates are unaffected (no code or CI change on main).
+
+### SUGGESTION
+
+- **S1**: A path whose first element is a segment (no `MoveTo`) is not a valid `BezPath`. kurbo debug-asserts at construction; in release `validate_closed` reports it open while `close_subpaths` cannot close it, and the booleans read it from the origin. The spec is silent. Either state that a path starts with a move and reject it with a named error, or document the origin convention.
+- **S2**: Reword the simplification rule from "a subpath made only of a move" to "a subpath that holds no segment (moves and closes only)". That matches the Terms and covers C1's form explicitly.
+- **S3** (carried from round 3 S1): `NonFiniteCoordinate` and `CoordinateOutOfRange` display "path has ..." also when the query point is at fault.
+- **S4** (carried): `distance_to_perimeter` on an empty path returns `+inf`; the spec does not define it.
+- **S5**: Add a fixed unit test for the zero-area sliver that motivated `d1638a3` (union of a closed zero-area tail against its written-out form). HM2 is killed today only by a generated property.
+
+## Criteria matrix (99 scenarios: 91 path-operations, 8 workspace-tooling)
+
+- 99 of 99 scenarios pass as written, with an implementer test or a command I re-ran and an agreeing probe. That includes the new "A subpath made only of a move is dropped" and every drawing-after-a-close scenario.
+- Failing at requirement level (1): "Path simplification" (a subpath with no segment must not appear; the operation must not panic) for a close straight after a move (C1). I count it as not covered: 98 of 99.
+- Hand mutants: 5 run, 5 killed. Mutation T3: 0 missed, 0 timeouts.
+
+next: specifier (ambiguity: C2, W1), then tdd-apply (implementation: C1, W2). This is round 4, beyond the 3-round cap, and the second consecutive FAIL with both an `implementation` and an `ambiguity` CRITICAL: the coordinator stops and asks the owner before routing.
