@@ -14,8 +14,9 @@ Scope: the WHAT. The HOW (API shape, tolerance policy, error types, library
 choice) lives in `design.md`. Decisions Q1-Q7 are closed there (see "Closed
 decisions" below); a requirement that depends on one names it ("Q1", "Q2"...).
 The owner closed the two questions this spec raised (OQ1, OQ2) on 2026-10-25,
-and the coordinate-magnitude question of verify round 2 (W1) the same day; they are
-recorded under "Owner decisions" at the end. Scenario types: unit, property,
+the coordinate-magnitude question of verify round 2 (W1) the same day, and the
+tolerance floors of verify round 3 (W2) on 2026-10-26; they are recorded under
+"Owner decisions" at the end. Scenario types: unit, property,
 integration, command, manual.
 
 Terms used below:
@@ -287,14 +288,29 @@ result MAY hold coordinates beyond it (for example the stroke outline of a path
 that lies at the limit). The public documentation of each of the eight
 operations MUST state the limit `1e9` and the error returned above it.
 
+The query point of the containment test and of the distance to the perimeter is
+subject to the same rules (owner decision W2, 2026-10-26): a point with a
+non-finite x or y MUST be rejected with the same non-finite-coordinate error naming
+the kind of value, and a point with an x or y whose absolute value is greater than
+`1e9` MUST be rejected with the same coordinate-out-of-range error carrying that
+value and the limit `1e9`. A coordinate of exactly `1e9` or `-1e9` is accepted.
+When both the x and the y of the point are defective, x is reported first, and a
+non-finite value is reported before a value beyond the limit. These checks run
+after all the checks of the path (the error order below), and they run before any
+geometric computation. The query point takes no part in `m` and no too-fine rule
+applies to the containment test or to the distance to the perimeter.
+
 Motivation (measured, verify round 2 W1): above about `1.34e154` (the square root
 of the largest finite f64) the squared length of a segment overflows; the
 distance to the perimeter becomes wrong (41% off at `1e154`) and then infinite
 (from `1e155`), and the simplification never returns or returns garbage. The
-limit `1e9` is set by precision, not by overflow: with the too-fine rule below,
-the minimum tolerance of any accepted path is at most `1e-12 × 1e9`, which equals
-the default tolerance `1e-3` in f64, so the default tolerance is accepted for every
-path within the limit. A page is at most 16 384 px per side (`document-model`),
+limit `1e9` is set by precision, not by overflow: with the too-fine rules below,
+the minimum tolerance of the simplification and of a stroke of width up to `2e9`
+is at most `1e-12 × 1e9`, which equals the default tolerance `1e-3` in f64, so the
+default tolerance is accepted by them for every path within the limit. The
+boolean operations have a ten times higher floor, `1e-11 × m`, so the default
+tolerance is accepted by them only when `m` is at most `1e8`; at the limit their
+minimum is `1e-11 × 1e9`, which is `1e-2`. A page is at most 16 384 px per side (`document-model`),
 so the limit is about 61 000 page widths.
 
 An operation that depends on the path's interior (the four boolean operations and
@@ -331,19 +347,25 @@ first match wins:
 5. an open subpath in the first operand, then in the second operand (interior
    operations only; a moves-only subpath is never open, so a moves-only operand
    never reaches this step's error);
-6. a tolerance too fine for the operands (boolean operations and the
-   simplification, see below).
+6. a tolerance too fine for the operands (boolean operations, the simplification
+   and the stroke outline, see below);
+7. a non-finite coordinate of the query point (containment test and distance to
+   the perimeter only), x before y;
+8. a coordinate of the query point beyond the coordinate limit (the same two
+   operations), x before y.
 
 For an operation over one path (the stroke outline, the simplification, the
 containment test and the distance to the perimeter) that path is the first
 operand and there is no second. A non-finite value is never reported as beyond
-the limit, because step 3 comes first. All six checks run before any geometric
+the limit, because step 3 comes before step 4 and step 7 before step 8. Steps 6 to
+8 do not compete: the too-fine rule applies to the first three operations only and
+the query point to the last two. All the checks run before any geometric
 computation, and before the empty-operand rule of "Boolean operations". A
 moves-only operand still goes through steps 3, 4 and 6: a non-finite move
 coordinate is rejected, a move coordinate beyond the limit is rejected, and its
 move points count in `m`.
 
-A boolean operation MUST reject a tolerance below `1e-12 × m`, where `m` is the
+A boolean operation MUST reject a tolerance below `1e-11 × m`, where `m` is the
 largest absolute value of any x or y coordinate over all the points (move points,
 end points and control points) of both operands, with a named error that carries
 that minimum (for example `ToleranceTooFine { minimum }`). A tolerance equal to
@@ -351,20 +373,36 @@ the minimum is accepted. The rule applies to every boolean operation whatever th
 shape of the operands (straight or curved). When both operands are empty, `m`
 is 0 and every finite positive tolerance is accepted.
 
-The simplification MUST apply the same rule to its one path (owner decision W1,
+The simplification MUST apply a too-fine rule to its one path (owner decision W1,
 2026-10-25): it MUST reject a tolerance below `1e-12 × m`, where `m` is the
 largest absolute value of any x or y coordinate over all the points of the path,
 with the same too-fine-tolerance error carrying that minimum. A tolerance equal to
 the minimum is accepted. For an empty path, or a path whose every coordinate is
-0, `m` is 0 and every finite positive tolerance is accepted.
+0, `m` is 0 and every finite positive tolerance is accepted. Its factor stays
+`1e-12`; only the boolean operations use `1e-11`.
+
+The stroke outline MUST also reject a tolerance that is too fine (owner decision
+W2, 2026-10-26): it MUST reject a tolerance below `1e-12 × max(m, w / 2)`, where
+`m` is the largest absolute value of any x or y coordinate over all the points of
+the path, and `w` is the stroke width, with the same too-fine-tolerance error
+carrying that minimum. A tolerance equal to the minimum is accepted. The width
+takes part because the number of segments of a round cap or join grows with the
+ratio of the width to the tolerance, and `m` alone can be 0. The minimum is
+positive for every valid width, so the rule has no exemption. The containment
+test and the distance to the perimeter have no too-fine rule.
 
 Motivation (measured, `design.md` "Tolerance policy"): below about this bound the
 boolean library recurses without limit on curved inputs. In a release build the
 process overflows its stack and aborts (an abort that cannot be caught); in a debug
 build a library assertion panics earlier. A larger stack does not help. The bound
-`1e-12 × m` is empirical: no failure was observed at or above it in debug or
-release over grid and random runs, and it sits ten times above the last observed
-debug failure. For the simplification (measured, verify round 2 W1 follow-up, on
+`1e-11 × m` is empirical: in a release build no failure was observed at or above
+`1e-12 × m`, but in a debug build the library's assertions panicked for shapes
+centred near the origin (92 of 700 cases per operation at `1e-12 × m`, about
+`1e-11` times the extent of the shapes) and none at `1e-11 × m` (0 of 3 000 cases
+in union). For the stroke outline (measured): the arcs of round caps and joins
+grow in number with the ratio of the width to the tolerance and have no cap; the
+process aborted for lack of memory from a ratio of about `1e40`, so a floor
+relative to the width bounds the ratio at about `1e12`. For the simplification (measured, verify round 2 W1 follow-up, on
 straight polylines in a release build): the call never returned for tolerances of
 about `1e-16 × m` and `3e-16 × m` (60 and 43 of 105 cases) and always returned
 from `1e-15 × m` up (0 of 105 per level). Examples of hangs: the default
@@ -429,17 +467,17 @@ result or an error, never a truncated path, and the inputs are unchanged.
 #### Scenario: Too fine a tolerance is rejected, never aborts (D2, unit)
 - GIVEN the circle of centre (1000,1000) and radius 300 and the rectangle from (900,900) to (1500,1500), both closed with the `NonZero` fill rule (so m = 1500)
 - WHEN their intersection is computed with tolerance 1e-13, in a debug and in a release build
-- THEN the call returns the too-fine-tolerance error carrying the minimum `1e-12 × 1500` (as computed in f64), and the process neither panics nor aborts
+- THEN the call returns the too-fine-tolerance error carrying the minimum `1e-11 × 1500` (as computed in f64), and the process neither panics nor aborts
 
 #### Scenario: A tolerance at or above the minimum works (D2, unit)
 - GIVEN the same circle and rectangle
-- WHEN their intersection is computed with tolerance `1e-12 × 1500` and with tolerance 1e-3
+- WHEN their intersection is computed with tolerance `1e-11 × 1500` and with tolerance 1e-3
 - THEN both calls succeed and return a non-empty result
 
 #### Scenario: The minimum applies to straight operands too (D2, unit)
 - GIVEN the rectangles (0,0)-(10,10) and (5,0)-(15,10) (so m = 15)
 - WHEN their union is computed with tolerance 1e-13 and with the default tolerance
-- THEN the first call returns the too-fine-tolerance error carrying `1e-12 × 15`, and the second returns the same result as the scenario "Union of overlapping rectangles"
+- THEN the first call returns the too-fine-tolerance error carrying `1e-11 × 15`, and the second returns the same result as the scenario "Union of overlapping rectangles"
 
 #### Scenario: Too fine comes after open subpath (D2, unit)
 - GIVEN the same circle and an open path with finite coordinates
@@ -448,8 +486,8 @@ result or an error, never a truncated path, and the inputs are unchanged.
 
 #### Scenario: The coordinate limit is inclusive (D2, D3, D4, unit)
 - GIVEN the closed rectangle path with corners (-1e9,-1e9) and (1e9,1e9), the valid rectangle path (0,0)-(10,10) and a valid stroke style of width 10
-- WHEN the four boolean operations are computed with the large rectangle in either operand position, and the large rectangle is passed to the stroke outline, the simplification, the containment test of the point (0,0) and the distance from the point (0,0) to the perimeter, every call with the crate's default tolerance
-- THEN every call succeeds (the minimum tolerance `1e-12 × 1e9` equals the default tolerance and is accepted)
+- WHEN the four boolean operations are computed with the large rectangle in either operand position and with tolerance `1e-11 × 1e9` (their minimum), and the large rectangle is passed to the stroke outline, the simplification, the containment test of the point (0,0) and the distance from the point (0,0) to the perimeter, those four with the crate's default tolerance
+- THEN every call succeeds (the minimum tolerance of the stroke and of the simplification, `1e-12 × 1e9`, equals the default tolerance and is accepted)
 
 #### Scenario: A coordinate beyond the limit is rejected by every operation (D2, D3, D4, unit)
 - GIVEN closed paths that are valid except for one coordinate of `next_up(1e9)` or of `-next_up(1e9)`, placed once in an end point, once in a curve control point and once in a move, and the valid rectangle path (0,0)-(10,10)
@@ -486,10 +524,45 @@ result or an error, never a truncated path, and the inputs are unchanged.
 - WHEN it is simplified with tolerance 1e-15
 - THEN the error is the coordinate-out-of-range error carrying `2e9`, not the too-fine-tolerance error
 
+#### Scenario: The default tolerance is below the boolean minimum for large operands (D2, unit)
+- GIVEN the closed rectangle (0,0)-(2e8,2e8) and the valid rectangle path (0,0)-(10,10), so m = 2e8
+- WHEN their union is computed with the default tolerance and with tolerance `1e-11 × 2e8`
+- THEN the first call returns the too-fine-tolerance error carrying `1e-11 × 2e8` (as computed in f64) and the second succeeds
+
+#### Scenario: Too fine a stroke tolerance is rejected (D3, unit)
+- GIVEN the open line from (0,0) to (100,0) with a round cap and round join, so m = 100, and the open line from (0,0) to (1,0) of width 1e6, so w / 2 = 5e5 is above m
+- WHEN the first is stroked with width 10 and the second with width 1e6, each with `next_down(minimum)` and with the minimum, where the minimum is `1e-12 × max(m, w / 2)` as computed in f64 (`1e-10` and `5e-7`)
+- THEN the calls with `next_down(minimum)` return the too-fine-tolerance error carrying the minimum, and the calls with the minimum succeed; no call aborts the process or runs out of memory
+
+#### Scenario: A degenerate path still has a stroke minimum (D3, unit)
+- GIVEN the path made of one move to (0,0) and one line to (0,0) (m = 0) and a stroke width of 8
+- WHEN it is stroked with tolerance 1e-13 and with tolerance `1e-12 × 4`
+- THEN the first call returns the too-fine-tolerance error carrying `1e-12 × 4`, and the second succeeds
+
+#### Scenario: Too fine comes after out of range in the stroke (D3, unit)
+- GIVEN an open line with a coordinate of `2e9`
+- WHEN it is stroked with width 10 and tolerance 1e-15
+- THEN the error is the coordinate-out-of-range error carrying `2e9`, not the too-fine-tolerance error
+
+#### Scenario: No too-fine rule for the hit tests (D4, unit)
+- GIVEN the valid rectangle path (0,0)-(10,10)
+- WHEN its containment of the point (5,5) and the distance from the point (12,5) to its perimeter are computed with tolerance 1e-30
+- THEN both calls succeed
+
+#### Scenario: A query point beyond the limit or not finite is rejected (D4, unit)
+- GIVEN the valid rectangle path (0,0)-(10,10) and query points with one coordinate NaN, positive infinite, negative infinite, `next_up(1e9)` or `-next_up(1e9)`, placed in x and in y
+- WHEN the containment test and the distance to the perimeter are called with each point and the default tolerance
+- THEN every call returns the non-finite-coordinate error naming the kind of value, or the coordinate-out-of-range error carrying the value (reading it back gives the same bits) and the limit `1e9`, and no result; and the points (1e9, -1e9) and (-1e9, 1e9) are accepted
+
+#### Scenario: The query point is checked after the path and in order (D4, unit)
+- GIVEN a path holding a coordinate of `2e9`, an open path with finite coordinates, and the query points (NaN, 0), (1e10, 0) and (1e10, NaN)
+- WHEN the path with a coordinate of `2e9` and the point (NaN, 0) are passed to the distance to the perimeter, the open path and the point (NaN, 0) to the containment test, and a valid rectangle and the point (1e10, NaN) to the containment test
+- THEN the first call returns the coordinate-out-of-range error carrying `2e9`, the second the open-subpath error, and the third the non-finite-coordinate error naming NaN (non-finite before beyond the limit, though y comes after x)
+
 #### Scenario: Public docs state the coordinate limit (D2, D3, D4, manual)
 - GIVEN the public documentation of union, intersection, difference, xor, the stroke outline, the simplification, the containment test and the distance to the perimeter
 - WHEN a reviewer reads it
-- THEN each states the coordinate limit `1e9` and names the error returned above it, and the simplification's documentation also states its minimum tolerance `1e-12 × m`
+- THEN each states the coordinate limit `1e9` and names the error returned above it; the containment test and the distance to the perimeter state that the query point is subject to the same limit; the boolean operations state their minimum tolerance `1e-11 × m`, the simplification its minimum `1e-12 × m` and the stroke outline its minimum `1e-12 × max(m, w / 2)`
 
 #### Scenario: Self-intersecting path accepted (D2, unit)
 - GIVEN a path shaped as a bowtie, whose subpath crosses itself
@@ -782,8 +855,8 @@ merge this section into the main spec as requirements. The full record is in
 
 ## Owner decisions
 
-Closed by the owner on 2026-10-25, after verify round 1 (findings C3 and W5) and
-verify round 2 (finding W1); also recorded in `apply-progress.md`. Like "Closed decisions", this section is not a
+Closed by the owner on 2026-10-25 and 2026-10-26, after verify round 1 (findings C3
+and W5), verify round 2 (finding W1) and verify round 3 (finding W2); also recorded in `apply-progress.md`. Like "Closed decisions", this section is not a
 requirement and archive MUST NOT merge it as one.
 
 | # | Question | Decision | Where it constrains this spec |
@@ -792,3 +865,4 @@ requirement and archive MUST NOT merge it as one.
 | OQ1 follow-up | Which fill rule a result between non-empty operands carries | `NonZero` always, independent of operand order (the same rule as stroke outlines) | "Boolean operations" |
 | OQ2 | Is a path holding only moves empty | A: yes; it holds no segment and covers no area, so it takes the empty-operand rule and is never an open subpath | Terms, "Boolean operations", "Degenerate and invalid inputs", "Geometric hit testing" |
 | W1 (verify round 2) | How to bound coordinate magnitude, given that the simplification hangs and the distance overflows on large finite coordinates | A: every operation rejects a path with a coordinate whose absolute value exceeds `1e9`, with a named error carrying the value and the limit; and the simplification also rejects a tolerance below `1e-12 × m` with the too-fine-tolerance error | "Degenerate and invalid inputs" |
+| W2 (verify round 3) | The floors found by the explorer's measurements: in debug builds the boolean library panics up to about `1e-11 × m` for shapes centred near the origin; a stroke with a tiny tolerance relative to the width grows without bound and can abort for lack of memory; the hit tests accept a query point of any magnitude | A for all: the boolean minimum becomes `1e-11 × m` (the simplification keeps `1e-12 × m`); the stroke outline rejects a tolerance below `1e-12 × max(m, w / 2)` with the too-fine-tolerance error (the hit tests get no too-fine rule); the query point of the containment test and of the distance is subject to the coordinate limit and the non-finite rule, checked after the path checks | "Degenerate and invalid inputs" |
