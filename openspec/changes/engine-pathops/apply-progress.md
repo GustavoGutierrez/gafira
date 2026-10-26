@@ -770,3 +770,49 @@ deletions (most of it the new `tests/after_close.rs`). Whole change against `mai
 
 - A path whose first element is a segment (no `MoveTo` at all) is not a valid `BezPath`;
   `close_subpaths` leaves it open. The spec is silent; no change made.
+
+## Closing pass (verify round 4 findings, owner asked to close the change)
+
+- Verifier edits (`verify-report.md`, `verification.json`, round 4) committed as docs.
+- C1 (class implementation), strict TDD:
+  - RED: `tests/empty_subpaths.rs`
+    `a_simplification_never_starts_with_a_close_and_holds_no_empty_subpath` panicked in
+    kurbo (`uninitialized subpath (missing MoveTo)`) on `M Z`; after the first fix it
+    failed on `square Z Z` (`left` ended `ClosePath, ClosePath`, `right` one close).
+  - GREEN: `Path::simplify` skips a subpath that holds no segment (`is_segment`, now
+    `pub(crate)`) and collapses a close right after a close before calling kurbo.
+  - Sweep, per operation, on `M Z`, `M Z M Z`, square + `M Z`, `M Z` + square, mixes,
+    `Z Z`, `M Z` + tail and `Z Z` + tail, each compared with the same path without the
+    empty subpaths: `validate_closed`, `close_subpaths`, `contains`,
+    `distance_to_perimeter`, `is_empty`, the four boolean operations (both positions),
+    `stroke_outline`, `simplify`, and the simplified output reused in every operation.
+    Only `simplify` was broken; the other operations already passed (no change).
+  - Generators: `tests/after_close.rs` `Shape` now emits `M Z` before and after the
+    polygon; `tests/empty_subpaths.rs` has a generated property over squares, `M Z` and
+    bare `Z` in any order. Debug and release both green.
+  - Mutants (`--test-workspace=true`, no `--locked`, per-job dirs). First run at `--jobs 4`
+    had timeouts from machine load (load average 7 to 10, 20 s auto timeout, also on
+    mutants unrelated to the change); every test binary runs in under 1 s on a mutated
+    `simplify.rs`, so I re-ran with `--jobs 2 --minimum-test-timeout 120`:
+    `simplify.rs` 8 mutants, 6 caught, 2 unviable, 0 missed, 0 timeouts;
+    `path.rs` 43 mutants, 40 caught, 3 unviable, 0 missed, 0 timeouts.
+- W2/W1: `origin/main` merged (README status row: main's rows kept, `engine-pathops`
+  added as active in the 02 row). The `workspace-tooling` delta now holds only the two
+  MODIFIED requirements (V5 table and the clippy policy) as they stand on main, plus the
+  `gafira-pathops` row, note, copy and scenarios; `gafira-time`, N1-N5, H-N1 and the
+  BTreeMap scenario are kept.
+- S2: the simplify rule reads "holds no segment (moves and closes only)" in the delta
+  spec. No scenario was added for `M Z`; the requirement text covers it and the tests
+  above cite it. The coordinator may add one if wanted.
+- S5: `a_closed_tail_after_a_close_unions_as_its_written_out_form` (fixed unit test). It
+  fails with the `boolean_op` fix reverted (`assertion left == right`) and passes now.
+  The shape that fails is not a zero-area sliver: without the written-out move the
+  sweep read the tail from another start point; a zero-area tail agreed in every
+  variant I tried.
+- S1: accepted. The `OpenSubpath` message does not point to `close_subpaths` (only the
+  variant doc does); the real gap is a path with no initial move, already under "Not
+  settled".
+- S3, S4: accepted as they are (message wording when the query point is at fault;
+  `distance_to_perimeter` of an empty path is `+inf`, undefined by the spec).
+- C2 (process): spec commit `f89f883` was made on the coordinator's routing and is
+  ratified by the owner's instruction to close the change (2026-10-26).
