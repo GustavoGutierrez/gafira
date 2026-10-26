@@ -4,6 +4,7 @@
 //! tolerance that bounds how far the result may move from the original.
 
 use kurbo::simplify::{SimplifyOptions, simplify_bezpath};
+use kurbo::{BezPath, PathEl, Point};
 
 use crate::{Path, PathOpError, validate};
 
@@ -24,7 +25,8 @@ impl Path {
     /// than the original. Every subpath of the original appears in the result,
     /// in the same order, with the same fill rule. A closed path of straight
     /// segments whose every vertex lies farther than `tolerance` from the line
-    /// through its neighbours comes back equal in value.
+    /// through its neighbours comes back equal in value. A subpath whose every
+    /// segment has zero length is kept as it is.
     ///
     /// # Errors
     ///
@@ -44,14 +46,68 @@ impl Path {
             self.max_abs_coordinate(),
         )?;
 
-        let simplified = simplify_bezpath(
-            self.as_bez_path().elements().to_vec(),
-            tolerance,
-            &SimplifyOptions::default(),
-        );
+        let options = SimplifyOptions::default();
+        let mut simplified: Vec<PathEl> = Vec::new();
+        for subpath in subpaths(self.as_bez_path().elements()) {
+            if is_zero_length(subpath) {
+                // The simplifier drops a subpath that covers no distance; it is
+                // still a subpath of the input, so it is kept as it is.
+                simplified.extend_from_slice(subpath);
+            } else {
+                simplified.extend(simplify_bezpath(subpath.to_vec(), tolerance, &options));
+            }
+        }
 
-        Ok(Path::new(simplified, self.fill_rule()))
+        Ok(Path::new(BezPath::from_vec(simplified), self.fill_rule()))
     }
+}
+
+/// The elements split before each move, so each slice is one subpath.
+fn subpaths(elements: &[PathEl]) -> Vec<&[PathEl]> {
+    let mut starts: Vec<usize> = elements
+        .iter()
+        .enumerate()
+        .filter(|(index, el)| *index > 0 && matches!(el, PathEl::MoveTo(_)))
+        .map(|(index, _)| index)
+        .collect();
+    starts.insert(0, 0);
+    starts.push(elements.len());
+    starts
+        .windows(2)
+        .map(|bounds| &elements[bounds[0]..bounds[1]])
+        .filter(|subpath| !subpath.is_empty())
+        .collect()
+}
+
+/// Whether the subpath starts with a move, holds a segment, and every point of
+/// it is the start point: all its segments have zero length.
+fn is_zero_length(subpath: &[PathEl]) -> bool {
+    let Some(PathEl::MoveTo(start)) = subpath.first() else {
+        return false;
+    };
+    let mut has_segment = false;
+    for el in subpath {
+        let points: &[Point] = match el {
+            PathEl::MoveTo(p) => std::slice::from_ref(p),
+            PathEl::LineTo(p) => {
+                has_segment = true;
+                std::slice::from_ref(p)
+            }
+            PathEl::QuadTo(a, b) => {
+                has_segment = true;
+                &[*a, *b]
+            }
+            PathEl::CurveTo(a, b, c) => {
+                has_segment = true;
+                &[*a, *b, *c]
+            }
+            PathEl::ClosePath => &[],
+        };
+        if points.iter().any(|p| p != start) {
+            return false;
+        }
+    }
+    has_segment
 }
 
 #[cfg(test)]

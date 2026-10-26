@@ -1,7 +1,7 @@
 //! The public contract of the stroke outlining and the path simplification.
 
 use gafira_pathops::{
-    BezPath, Cap, Containment, DEFAULT_TOLERANCE, FillRule, Join, Path, PathOpError, Point,
+    BezPath, Cap, Containment, DEFAULT_TOLERANCE, FillRule, Join, Path, PathEl, PathOpError, Point,
 };
 use kurbo::{ParamCurve, Rect, Shape};
 
@@ -291,5 +291,63 @@ fn a_self_crossing_polyline_stays_solid() {
     assert_eq!(
         outline.contains(Point::new(5.0, 5.0), DEFAULT_TOLERANCE),
         Ok(Containment::Inside)
+    );
+}
+
+/// Whether a subpath of zero-length segments at (5,5) survives: it starts with
+/// a move to the point, holds at least one segment, and every point of it is the
+/// start point.
+fn is_kept_zero_length_subpath(elements: &[PathEl]) -> bool {
+    let target = Point::new(5.0, 5.0);
+    let mut points = elements.iter().flat_map(|el| match el {
+        PathEl::MoveTo(p) | PathEl::LineTo(p) => vec![*p],
+        PathEl::QuadTo(a, b) => vec![*a, *b],
+        PathEl::CurveTo(a, b, c) => vec![*a, *b, *c],
+        PathEl::ClosePath => vec![],
+    });
+    matches!(elements.first(), Some(PathEl::MoveTo(p)) if *p == target)
+        && elements
+            .iter()
+            .any(|el| !matches!(el, PathEl::MoveTo(_) | PathEl::ClosePath))
+        && points.all(|p| p == target)
+}
+
+#[test]
+fn a_subpath_of_zero_length_segments_is_kept_by_the_simplification() {
+    let mut dot = BezPath::new();
+    dot.move_to((5.0, 5.0));
+    dot.line_to((5.0, 5.0));
+    dot.line_to((5.0, 5.0));
+    let alone = Path::new(dot.clone(), FillRule::EvenOdd);
+
+    let mut both = square().as_bez_path().clone();
+    both.extend(dot.elements().iter().copied());
+    let with_square = Path::new(both, FillRule::NonZero);
+
+    let kept = alone.simplify(1e-3).unwrap();
+    assert_eq!(kept.subpath_count(), 1);
+    assert_eq!(kept.fill_rule(), FillRule::EvenOdd);
+    assert!(
+        is_kept_zero_length_subpath(kept.as_bez_path().elements()),
+        "{:?}",
+        kept.as_bez_path()
+    );
+
+    let both = with_square.simplify(1e-3).unwrap();
+    assert_eq!(both.subpath_count(), 2);
+    let elements = both.as_bez_path().elements();
+    let second = elements
+        .iter()
+        .rposition(|el| matches!(el, PathEl::MoveTo(_)))
+        .unwrap();
+    assert_ne!(second, 0);
+    assert!(
+        matches!(elements[0], PathEl::MoveTo(p) if p != Point::new(5.0, 5.0)),
+        "the square comes first"
+    );
+    assert!(
+        is_kept_zero_length_subpath(&elements[second..]),
+        "{:?}",
+        both.as_bez_path()
     );
 }
