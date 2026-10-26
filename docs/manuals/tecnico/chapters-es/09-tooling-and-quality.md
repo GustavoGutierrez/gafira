@@ -74,13 +74,22 @@ Un crate de soporte (solo dev-dependency, `publish = false`, fila V5, sin `clipp
 
 ## Pruebas de mutación
 
-`cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI. El agente `mutants` la ejecuta sobre las líneas que cambió una entrega, y el agente `verify` falla ante un mutante omitido o con tiempo agotado en código crítico y documenta el resto. No hay objetivo de puntuación. El paso de archivado pide primero una ejecución del crate completo.
+`cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI. El agente `mutants` la ejecuta sobre las líneas que cambió una entrega, y el agente `verify` falla ante un mutante omitido o con tiempo agotado en código crítico y documenta el resto. No hay objetivo de puntuación. La ejecución muta un alcance fijado por el nivel de mutación del change (T0 a T4, véase el [capítulo de metodología](10-methodology.md)); el paso de archivado pide primero una ejecución del crate completo (T4) de cada crate que toca el change.
 
 Una segunda práctica la complementa. Cuando una prueba se escribe después del código, la entrega muestra que la prueba puede fallar aplicando a mano una mutación a la vez (por ejemplo `<` en lugar de `<=`, sin `break` temprano, compactar la entrada más reciente), ejecutando las pruebas y restaurando el código. Las mutaciones manuales se registran como una selección en el `apply-progress.md` del change, nunca como una ejecución completa. Un mutante superviviente hallado por `cargo-mutants` en código crítico devuelve la entrega a una ronda de corrección con pruebas nuevas.
 
 ```bash
 cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratch dir>
 ```
+
+Este es el comando de T2. Los demás niveles que ejecutan `cargo-mutants` usan estas formas (`AGENTS.md`):
+
+| Nivel | Forma del comando |
+|---|---|
+| T3 | `cargo mutants -p <crate> --file <file> --jobs 4 -o <scratch dir>`, un `--file` por cada archivo fuente no de prueba cambiado |
+| T4 | `cargo mutants -p <crate> --jobs 4 -o <scratch dir>` |
+
+`--iterate` se permite en T3 solo en rondas de corrección solo de pruebas con el mismo conjunto de archivos, nunca en la ronda de cierre con PASS.
 
 Reglas, de `AGENTS.md` y `.cargo/mutants.toml`:
 

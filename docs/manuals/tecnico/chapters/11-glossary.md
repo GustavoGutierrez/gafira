@@ -24,6 +24,14 @@
 | History | The owner of the session `Arc<Document>` and its undo and redo stacks (`gafira-edit`) |
 | Law | One of the six properties `prop_command` checks for a command |
 | Lite SDD | The spec, apply, verify, archive flow of this repository |
+| Finding class | The `class:` of a verify finding (`implementation`, `architecture`, `ambiguity`, `claim`); the coordinator routes by it |
+| Flow mode | Light, standard or full: the set of agents, gates and checks a request runs; chosen by the coordinator |
+| Gate (G0 to G5) | A check the coordinator makes between phases of a flow; not the same as the local gates (`fmt`, `clippy`, `test`) |
+| Light spec | The block of acceptance criteria the coordinator writes at the top of `apply-progress.md` in light mode |
+| Mutation tier (T0 to T4) | How much code the mutation run covers: none, hand mutants, diff, changed files, whole crate |
+| Pack | The predefined mode, agents, mutation tier and verify depth for a request type |
+| `verification.json` | The machine-readable record of each verify round, written by `verify` (pilot) |
+| Verify depth (V0 to V3) | How much independent work `verify` does, from deterministic checks only to the full matrix |
 | MergeKey | The key under which two commands may be merged into one history entry |
 | Mutant | A small deliberate code change made by `cargo-mutants`; a surviving mutant means a test gap |
 | NodeSpec | A node described without ids, the input of `InsertNodes` |

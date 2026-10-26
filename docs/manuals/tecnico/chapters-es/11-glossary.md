@@ -24,6 +24,14 @@
 | History | El dueño del `Arc<Document>` de la sesión y de sus pilas de deshacer y rehacer (`gafira-edit`) |
 | Ley | Una de las seis propiedades que `prop_command` comprueba para un comando |
 | SDD ligero | El flujo spec, apply, verify, archive de este repositorio |
+| Clase de hallazgo | El `class:` de un hallazgo de verify (`implementation`, `architecture`, `ambiguity`, `claim`); el coordinador enruta según ella |
+| Modo de flujo | Light, standard o full: el conjunto de agentes, puertas y comprobaciones que ejecuta una solicitud; lo elige el coordinador |
+| Puerta (G0 a G5) | Una comprobación que hace el coordinador entre fases de un flujo; no es lo mismo que las puertas locales (`fmt`, `clippy`, `test`) |
+| Light spec | El bloque de criterios de aceptación que el coordinador escribe al principio de `apply-progress.md` en modo light |
+| Nivel de mutación (T0 a T4) | Cuánto código cubre la ejecución de mutación: ninguno, mutantes manuales, diff, archivos cambiados, crate completo |
+| Pack | El modo, los agentes, el nivel de mutación y la profundidad de verify predefinidos para un tipo de solicitud |
+| `verification.json` | El registro legible por máquina de cada ronda de verify, escrito por `verify` (piloto) |
+| Profundidad de verify (V0 a V3) | Cuánto trabajo independiente hace `verify`, desde solo comprobaciones deterministas hasta la matriz completa |
 | MergeKey | La clave bajo la que dos comandos pueden fusionarse en una sola entrada de historial |
 | Mutante | Un pequeño cambio deliberado de código hecho por `cargo-mutants`; un mutante superviviente indica una laguna de pruebas |
 | NodeSpec | Un nodo descrito sin ids, la entrada de `InsertNodes` |
