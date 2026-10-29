@@ -35,4 +35,4 @@ Steps
 
 Return the result to the coordinator; never invoke another stage.
 
-Result, in this fixed shape (the coordinator and `verify` copy it into `verification.json`): `tier`, `found`, `caught`, `missed`, `timeout`, `unviable`, `critical_missed`, `wall_s`; then only the missed and timeout mutants as `name, file:line, critical|non-critical, note`. No score, no caught list. If the run fails to build, report that and stop.
+Result, in this fixed shape (the coordinator and `verify` copy it into `verification.json`): `tier`, `found`, `caught`, `missed`, `timeout`, `unviable`, `critical_missed`, `wall_s`, `jobs` (the `--jobs` value used), `load_timeouts` (timeouts the log attributes to machine load rather than to the mutant, for example the same mutant passing on a re-run or many timeouts at once); then only the missed and timeout mutants as `name, file:line, critical|non-critical, note`. No score, no caught list. If the run fails to build, report that and stop.
