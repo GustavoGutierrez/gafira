@@ -19,6 +19,16 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 | `backlog/06-licencia-y-activacion.md` | Backlog | Licencia y activación. |
 | `archive/` | Archivados | Ninguno todavía. |
 
+## Cómo continuar el documento en curso
+
+Desde 2026-10-29 los documentos se ejecutan por la vía rápida (ADR 0002): sin propuesta ni delta specs, con una Slice card en `openspec/changes/<change>/apply-progress.md` que cita los IDs del documento. Los changes ya archivados (delta specs en `openspec/specs/`) no se tocan.
+
+1. Arrancar `claude --agent coordinator` en `main` y pedir: "ejecuta docs/specs/02-arquitectura-software.md".
+2. El coordinador calcula los IDs pendientes (los que ningún change ni test nombra todavía):
+   `comm -23 <(grep -oE 'ARQ-[0-9]+' docs/specs/02-arquitectura-software.md | sort -u) <(git grep -hoE 'ARQ-[0-9]+' -- openspec crates | sort -u)`
+3. Elige el siguiente bloque según la tabla de estado (próximo: `gafira-format`), escribe su Slice card y sigue con `tdd-apply` -> `verify`; la mutación corre una vez (T4) al cerrar.
+4. Cada change cerrado actualiza "Detalle" arriba. Cuando no quedan IDs pendientes, el documento se archiva (sección de abajo).
+
 ## Pending follow-ups
 
 Recorded 2026-10-26. Open items that belong to no active change. Remove an item when done.
