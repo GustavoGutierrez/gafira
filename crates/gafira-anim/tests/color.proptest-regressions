@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 621024870b05a359ed3dc65776c40c8a2bbfe6bbb63bc4ce8f3321c2bef08451 # shrinks to a = Srgb(Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }), b = Srgb(Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.37358865 }), t = 0.6115373
+cc 76c539d99a6068beee9f48ab07851e817de0161e6a8f503656604082a68d2b47 # shrinks to a = Srgb(Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.528554 }), b = Srgb(Rgba { r: 0.0, g: 0.0, b: 0.8847178, a: 0.025367599 }), t = 1.0502127

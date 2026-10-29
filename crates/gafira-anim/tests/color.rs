@@ -24,10 +24,12 @@ fn lin(c: Color) -> [f64; 4] {
     [l.r, l.g, l.b, l.a].map(f64::from)
 }
 
-/// f64 reference of the §3.4 rule, in linear sRGB.
+/// f64 reference of the §3.4 rule, in linear sRGB. The result alpha is the f32
+/// linear interpolation of the alphas (bit exact, ARQ-19) and is the divisor
+/// and the branch test, as §3.4 says ("divided by its own a").
 fn reference(a: Color, b: Color, t: f32) -> [f64; 3] {
+    let alpha = f64::from(a.alpha() + (b.alpha() - a.alpha()) * t);
     let (a, b, t) = (lin(a), lin(b), f64::from(t));
-    let alpha = a[3] + (b[3] - a[3]) * t;
     let mut out = [0.0; 3];
     for i in 0..3 {
         out[i] = if alpha <= 0.0 {
@@ -137,19 +139,18 @@ fn arq_19_opaque_red_to_transparent_black_keeps_hue() {
     for space in ColorSpaceId::ALL {
         let red = build(space, [1.0, 0.0, 0.0, 1.0]);
         let black = build(space, [0.0, 0.0, 0.0, 0.0]);
-        let red_lin = lin(red);
         for t in [0.1_f32, 0.25, 0.5, 0.75, 0.9, 0.999] {
             let r = red.interpolate(&black, t);
             assert!(r.alpha() > 0.0);
-            let l = lin(r);
-            for i in 0..3 {
-                assert!((l[i] - red_lin[i]).abs() <= 1e-5, "{space:?} {t}: {l:?}");
-            }
-            if space != ColorSpaceId::DisplayP3 {
-                assert!(
-                    l[1].abs() <= 1e-5 && l[2].abs() <= 1e-5,
-                    "{space:?} {t}: {l:?}"
-                );
+            assert_eq!(r.space(), space);
+            // The criterion holds in the result space's own channels.
+            let own = match r {
+                Color::Srgb(v) => [v.r, v.g, v.b],
+                Color::LinearSrgb(v) => [v.r, v.g, v.b],
+                Color::DisplayP3(v) => [v.r, v.g, v.b],
+            };
+            for (got, want) in own.into_iter().zip([1.0_f32, 0.0, 0.0]) {
+                assert!((got - want).abs() <= 1e-5, "{space:?} {t}: {own:?}");
             }
         }
     }
@@ -158,13 +159,17 @@ fn arq_19_opaque_red_to_transparent_black_keeps_hue() {
 // ARQ-19 (Q-31): two transparent ends blend straight, finite, alpha 0.
 #[test]
 fn arq_19_color_transparent_to_transparent_blends_straight() {
+    for space in ColorSpaceId::ALL {
+        let a = build(space, [1.0, 0.0, 0.0, 0.0]);
+        let b = build(space, [0.0, 0.0, 1.0, 0.0]);
+        let r = a.interpolate(&b, 0.5);
+        assert!(r.is_finite());
+        assert_eq!(r.alpha(), 0.0);
+        assert_close(r, reference(a, b, 0.5));
+    }
     let a = build(ColorSpaceId::Srgb, [1.0, 0.0, 0.0, 0.0]);
     let b = build(ColorSpaceId::Srgb, [0.0, 0.0, 1.0, 0.0]);
-    let r = a.interpolate(&b, 0.5);
-    assert!(r.is_finite());
-    assert_eq!(r.alpha(), 0.0);
-    assert_close(r, reference(a, b, 0.5));
-    let l = lin(r);
+    let l = lin(a.interpolate(&b, 0.5));
     assert!(
         (l[0] - 0.5).abs() <= 1e-5 && (l[2] - 0.5).abs() <= 1e-5,
         "{l:?}"
