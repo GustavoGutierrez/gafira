@@ -4,3 +4,7 @@
 //! lower-layer `gafira-*` crates.
 
 #![forbid(unsafe_code)]
+
+mod easing;
+
+pub use easing::Easing;
