@@ -120,3 +120,18 @@ Hand mutants, run against the full gafira-anim suite, source restored after each
 | H2 `\|c1\|·\|c1\|` instead of `\|c1\|·\|c2\|` | killed | `arq_19_q33_unequal_columns_with_sine_1e_3_are_decomposed_in_both_orders` |
 
 Seeds: transform tests passed under 30 distinct `PROPTEST_RNG_SEED` values (7919*i+13, i = 1..30).
+
+## D3c progress (tdd-apply)
+Done: ARQ-12 cross-platform golden in `crates/gafira-anim/tests/golden.rs` with data file `crates/gafira-anim/tests/golden/sample.json` (53 lines, one track case per line). Tracks of `f32`, `Vec2`, `Color`, `Transform2D`; expected values stored as IEEE bit patterns (u32/u64, color tagged with its space). Compare: `f32`, `Vec2` bit for bit; `Color` r/g/b within `4 * 2^-23 * max(1, |c|)` with the same space and alpha bit-exact; `Transform2D` within `1e-9 * max(1, |c|)` per coefficient. Coverage (asserted by a test): every easing variant for each type, key instants, instants around keys, `i64::MIN`/`i64::MAX`, Hold, Static, and the cases Q-28 (degenerate endpoint, both degenerate), Q-30 (rank 1 to identity), Q-31 (zero alpha, negative-alpha extrapolation through a bezier overshoot), Q-33 (rounding det, exact det 0, 1e200, both relative-threshold examples).
+Platform note: CI is disabled (README follow-up 2), so this test only ran locally on Linux x86_64; the aarch64 FMA claim in 02 §3.4 stays unchecked until CI runs on the three platforms.
+Regeneration (opt-in): gafira-anim is under the ARQ-02 purity lint (no `std::fs`, no `std::env::var`), and `#[allow]` is not permitted. So the switch is compile-time (`option_env!("GAFIRA_BLESS_GOLDEN")`, only the value `1` counts) and the test `arq_12_golden_print_regenerated` prints the new file between markers; the one-liner to write it is in the module docs. It never writes anything itself. Checked: regenerating on this platform reproduces the committed file byte for byte.
+RED: with the data file absent, `arq_12_golden_file_matches_sample_on_this_platform` and `arq_12_golden_file_covers_the_required_cases` failed ("cannot read .../sample.json"). The comparator and switch tests live in the same file and pass by construction; they get their RED from the mutants below.
+Hand mutants (each applied alone, restored after; run with `cargo test -p gafira-anim --locked`, which stops at the first failing test binary):
+| # | Mutant | Killed by |
+|---|---|---|
+| 1 | f32 compared with tolerance 1e-5 instead of bits | `arq_12_f32_and_vec2_compare_bit_for_bit` |
+| 2 | Color alpha compared with tolerance | `arq_12_color_tolerance_is_4_eps_per_channel_and_alpha_is_exact` |
+| 3 | Transform2D tolerance 1e-6 instead of 1e-9 | `arq_12_transform_tolerance_is_1e9_relative_to_max_1_and_c` |
+| 4 | regenerate switch on by default (`value != Some("0")`) | `arq_12_regenerate_switch_is_opt_in` |
+| 5 | one-ULP change (+1 bit) in a stored f32 expected value | `arq_12_golden_file_matches_sample_on_this_platform` |
+Deviations: regeneration prints instead of writing (reason above); the first commit attempt failed clippy (ARQ-02) and was amended before any other commit, so the single commit passes alone.
