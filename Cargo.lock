@@ -71,6 +71,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-anim"
+version = "0.1.0-beta.1"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gafira-cli"
 version = "0.1.0-beta.1"
 
