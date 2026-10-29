@@ -102,4 +102,4 @@ Rules, from `AGENTS.md` and `.cargo/mutants.toml`:
 
 ## Delivery size
 
-Measure each delivery with `git diff --shortstat`. Split when it exceeds about 700 lines; estimates have undershot by 1.4 to 1.9 times, mostly in tests. Stacked pull requests are cut at commit boundaries and each prefix must pass the gates alone.
+Measure each delivery with `git diff --shortstat`. Split when it exceeds about 700 lines; estimates have undershot by 1.4 to 1.9 times, mostly in tests. Deliveries are cut at commit boundaries and each prefix must pass the gates alone.
