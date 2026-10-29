@@ -10,14 +10,14 @@ D3b round 2: FAIL at `33f1a4c` (1 CRITICAL C2 implementation: absolute-threshold
 D3b round 3: FAIL at `e314c4f` (2 CRITICAL implementation: C3 `|c1|·|c1|` mutant H2 and C4 `<` mutant H1 survived; 2 SUGGESTION S7, S8).
 D3b round 4: PASS at `a2684e5` (0 CRITICAL, 0 WARNING, 0 SUGGESTION; limited closure round); merged into `develop` at `36282c5`.
 D3c round 1: PASS at `84d5f17` (0 CRITICAL, 3 WARNING implementation: W1 key-instant exactness compared with tolerance for Color/Transform2D, W2 coverage test weaker than claimed, W3 size; 4 SUGGESTION).
+D3c round 2: PASS at `02cf69e` (0 CRITICAL, 0 WARNING, 0 SUGGESTION; closure-only round; W1, W2, S1-S4 closed; size note).
 
-## D3c round 1
+## D3c round 2 (closure only)
 
-Flow: standard | mutation: archive | tier: T4 | verify: V2. No cargo-mutants report (expected with `mutation: archive`; not a finding). Hand mutants and probes only.
-Acceptance source: Slice card D3c row (amended by the coordinator in `e0e2b49`, reason stated) and 02 ARQ-12 golden criterion plus the §3.4 determinism table (including the bullet "en `t` igual al `at` de un key, fuera del rango de keys y con `Hold`, ... bit a bit ... para todos los tipos").
-Scope: `36282c5..84d5f17`: `b861cb1` (`tests/golden.rs` +688, `tests/golden/sample.json` +53 lines / 92 KB), `84d5f17` (`apply-progress.md` +15, pure append). Judged on a clean `git archive` export of HEAD.
+Flow: standard | mutation: archive | tier: T4 | verify: V2. Owner-limited scope: closure of the round-1 findings W1, W2, W3, S1-S4 only; no hunt for new gaps. No cargo-mutants report (expected with `mutation: archive`; not a finding).
+Scope: `afb7751..02cf69e`: `39c2253` (`tests/golden.rs` +242/-105, `tests/golden/sample.json` +4/-1), `02cf69e` (`apply-progress.md` +18/-0, pure append). Judged on a clean `git archive` export of HEAD (files touched after extraction, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`).
 
-## Gates (clean export of `84d5f17`)
+## Gates (clean export of `02cf69e`)
 
 | Gate | Exit |
 |---|---|
@@ -25,57 +25,33 @@ Scope: `36282c5..84d5f17`: `b861cb1` (`tests/golden.rs` +688, `tests/golden/samp
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
 | `cargo test --workspace --locked` | 0 |
 | `cargo deny check bans licenses sources` | 0 |
-| CI: forbid(unsafe_code), V5 layer table, V12 clippy.toml sync | 0, 0, 0 |
+| CI policy (forbid(unsafe_code), V5 layer table, V12 clippy.toml sync) | 0: no manifest, `clippy.toml`, `deny.toml` or `.github` change since `afb7751`; no `src/` change |
 
-Hygiene: no AI attribution in commit messages or files; no new `*.proptest-regressions` (the four in gafira-anim predate D3c). Slice card: the `apply-progress.md` diff is a pure append (`## D3c progress`); no implementer commit touched the card.
+Hygiene: no `src/` file changed (`git diff afb7751 HEAD -- crates/*/src` is empty); no Slice card or spec change (the `apply-progress.md` diff has 0 deleted lines); no AI attribution in commit messages or added lines; no new `*.proptest-regressions`.
+Data file: the diff has 1 deleted line, `out_of_gamut_no_clamp`, and the new version equals the old one plus a trailing comma; the 3 new color cases are appended at the end of the color group. Every other existing line keeps its bytes.
 
-## Criteria
+## Closure
 
-| # | Criterion | Proof | Status |
-|---|---|---|---|
-| 1 | Golden file of tracks of the four §3.4 types | `tests/golden/sample.json` (f32 8, Vec2 7, Color 11, Transform2D 17 cases) | covered |
-| 2 | Sampled `t` values with stored expected results | `samples[{t, bits}]`, IEEE bit patterns; `arq_12_golden_file_matches_sample_on_this_platform` | covered |
-| 3 | `f32` bit for bit | `bits_equal`; implementer M1 and M5 killed (M5 spot-checked, D1 below) | covered |
-| 4 | `Vec2` bit for bit (both components) | `bits_equal` over `[x, y]`; probe P7 (y-only drift 1e-12) killed by the golden | covered |
-| 5 | Easing curves bit for bit | indirect through f32/Vec2 tracks; probe P3 (EaseIn constant) and hand mutant H3 (curve output +1 ULP, killed only by the golden) | covered |
-| 6 | `Color` r,g,b within `4·2^-23·max(1,|c|)`, alpha bit for bit, same space | `color_within` (tag, alpha bits, per-channel tolerance); probe P1 (1e-5 drift) killed | covered |
-| 7 | `Transform2D` within `1e-9·max(1,|c|)` | `transform_within`; probe P2 (1e-8 relative on one coefficient) killed | covered |
-| 8 | §3.4: key instants, out of range and `Hold` bit for bit for every type | f32/Vec2 bit for bit; Color/Transform2D only within tolerance (W1) | covered, weak |
-| 9 | Run on the 3 CI platforms | Linux x86_64 only, CI disabled (README follow-up 2) | deferred, accepted in the card |
-
-Total 9: 8 covered (one weak), 1 deferred by the card.
-
-## Independence of the expected data
-
-The expected data is a snapshot of the current implementation: `authored()` builds the tracks and `case()` stores `track.sample(t)` for each instant. I regenerated with `GAFIRA_BLESS_GOLDEN=1` and the output is byte-identical to the committed file. That is acceptable for a cross-platform golden (its job is to catch divergence between platforms and future regressions, not to prove correctness), and the test is not circular at check time: the check reads tracks and expected bits from the committed file only, and `authored()` runs only under the switch. Correctness comes from the ARQ-16/17/19 tests. As an independent cross-check I recomputed from the JSON with a Python script (`scripts/indep.py` in the scratchpad): Q-33 rounding det `[0.55,0,0,1.55]`, exact det 0 `[1.05,0,0,3.8]`, `1e200` `[5e199,0,0,1e200]`, both relative-threshold examples, rotation 350->10 = identity, Q-30 `[1,0,0,2.5]`, Q-28 degenerate end and both degenerate, all within 1e-9; Q-31 zero alpha straight blend, premultiplied red->transparent `(1,0,0,0.5)`, negative-alpha samples (alpha -0.125 at the overshoot peak) match a straight linear-light extrapolation to f32 precision; EaseIn f32 segment within 6.2e-7 of an independent bisection reference. The snapshot is therefore also right where the spec states numbers.
-
-## Implementer deviations
-
-1. Compile-time `option_env!("GAFIRA_BLESS_GOLDEN") == "1"` that prints between markers: acceptable. It respects the ARQ-02 purity lint without `#[allow]`, is documented in the module docs and the progress notes, only the exact value `1` counts (`GAFIRA_BLESS_GOLDEN=0` printed nothing; `arq_12_regenerate_switch_is_opt_in`), it never writes, and the check always compares against the committed file, so a bless run cannot silently pass a mismatch. The extraction one-liner works.
-2. Q-31 negative alpha through a bezier overshoot: consistent with ARQ-16 and §3.4. `sample` gives `u` in (0, 1) and passes `e(u)` unclamped to `interpolate`; §3.4 states "con una curva con rebote, `a` puede salir negativo". The data holds three negative-alpha samples.
-3. Size: see W3.
-
-## Probes (step 1c, derived from the criteria before reading the tests; scratch export)
-
-| Probe | Change | Golden result |
+| Finding | Evidence | Status |
 |---|---|---|
-| P1 | Color channels x(1+1e-5) | killed |
-| P2 | Transform2D `sx·cos` x(1+1e-8) | killed |
-| P3 | EaseIn constant 0.42 -> 0.42000002 | killed |
-| P7 | Vec2 y uses `t + 1e-12` | killed |
-| D3/D4 | data: drop the at±1 and at±1e6 samples; keep `static` only in f32 | coverage test passes (part of W2) |
+| W1 bit for bit at no-interpolation instants | `Golden::matches(got, want, exact)`; Color and Transform2D accept the tolerance only when `exact` is false. `is_exact_instant` (golden.rs:485-498) is true for a static track, `t <= first.at`, `t >= last.at`, `t` equal to a key `at`, or `t` inside a segment whose `out` is `Hold`, which matches the §3.4 bullet and the `sample_keys` branches in `src/animatable.rs:55-74`. Unit tests `arq_12_color_and_transform_are_bit_exact_where_no_interpolation_runs` and `arq_12_exact_instants_are_static_outside_range_keys_and_hold`. Re-run of the round-1 H1 (an interior key returns `from.interpolate(to, 1e-30)`) through the golden alone, one type at a time: Transform2D is now killed (`easing_0` at t=1e9: `sx` 1.22e-16 against a stored 0.0, a difference the tolerance would accept); Color killed. H1b (the Hold interior returns `interpolate(.., 1e-30)`): Color killed (`easing_2`) and Transform2D killed (`easing_4`). f32 and Vec2 pass H1 because `a + (b-a)*1e-30` rounds back to `a`; they were already compared bit for bit. | closed |
+| W2 coverage test | `covers` runs per type: required names (`static`, `easing_0..5`, plus the Q-28/Q-30/Q-31/Q-33, `premultiplied_alpha`, `rotation_350_to_10`, `skew`, the S1/S2 cases, and `extreme_ats` for f32), a Static track per type, `i64::MIN`/`i64::MAX` sampled per type, samples at `at-1`, `at` and `at+1` for every key, a sample strictly inside every segment, and all 6 easings as a segment `out`. `extreme_ats` is asserted to have keys at `i64::MIN` and `i64::MAX`. H5 re-run: deleting the 5 cases together is killed ("f32: missing case extreme_ats"), and so is deleting each one alone (4 named "missing case" failures; dropping `extreme_ats` by line also breaks the JSON). The round-1 data probes are now killed: D3 (drop an `at+1` sample) gives "color easing_2: no sample at 1"; D4 (Vec2 loses `static`) gives "vec2: missing case static"; D5 (Transform2D loses its `i64::MAX` samples) gives "transform: extreme instants not sampled". Judgment on `extreme_ats` being f32-only: it meets W2. Keys at the ends of the i64 range only exercise the generic i128 arithmetic in `sample_keys`, which is the same for every `T`. The per-type value paths at extreme instants are covered by the per-type `i64::MIN`/`i64::MAX` requirement. ARQ-12 and §3.4 do not ask for extreme keys per type. | closed |
+| W3 size | See the size note. | note |
+| S1 same-space P3 and linear sRGB | `same_space_display_p3` and `same_space_linear_srgb` are required in the coverage test and present in the data. | closed |
+| S2 f32 against f64 alpha rounding | `alpha_f32_rounding` (alpha 0.9 -> 0.1, Linear). H2 re-run (alpha computed in f64, then narrowed): the golden alone kills it (`alpha_f32_rounding` at t=996093750, alpha bits 1037251379 against 1037251384); the ARQ-19 color tests also kill it. | closed |
+| S3 comment | The `covers` doc and comments now describe every key, per type; no "first key" wording is left about coverage. | closed |
+| S4 last key's `out` | Easings are collected from `keys.windows(2)` as `w[0].out` only (golden.rs:577-585). | closed |
 
-## Hand mutants (5, scratch export, full gafira-anim suite)
+Spot-check of the implementer's table in "## D3c round 2": H2 confirmed (killed by the golden alone and by the ARQ-19 color tests); H5 confirmed (killed only by the coverage test, with the same message). The rows W1 and W1b match my H1 and H1b re-runs above.
 
-| # | Mutant | Full suite | Golden alone |
-|---|---|---|---|
-| H1 | interior key instant returns `from.interpolate(to, 1e-30)` instead of the exact value | killed (`arq_12_sample_calls_interpolate_at_most_once`) | Transform2D cases pass (W1); Color killed only by the space tag |
-| H2 | Color alpha computed in f64 then narrowed | killed (ARQ-19 alpha tests) | survives (S2) |
-| H3 | easing output +1 ULP | killed only by the golden | killed |
-| H4 | i64 differences in `sample` with `wrapping_sub` | killed (golden `extreme_ats`, `arq_16_adjacent_and_extreme_keys_are_total`) | killed |
-| H5 | data: delete `q28_both_degenerate`, `q33_det_zero_exact`, `premultiplied_alpha`, `rotation_350_to_10`, `extreme_ats` | survives | coverage test passes (W2) |
+## Hand mutants (4, scratch export, restored after each; the export was confirmed identical to the repo afterwards)
 
-Spot-check of the implementer's table: M5 (stored f32 bits 841731191 -> 841731192 in `easing_0`, `t = 1`) is killed by `arq_12_golden_file_matches_sample_on_this_platform`. Confirmed.
+| # | Mutant | Result |
+|---|---|---|
+| H1 | interior key `t == from.at` returns `from.interpolate(to, 1e-30)` | killed by the golden for Color and Transform2D |
+| H1b | Hold interior returns `from.interpolate(to, 1e-30)` | killed by the golden for Color and Transform2D |
+| H2 | Color alpha in f64, narrowed to f32 | killed by the golden alone (`alpha_f32_rounding`) |
+| H5 | delete the 5 claimed cases (together, then each alone) | killed by `arq_12_golden_file_covers_the_required_cases` |
 
 ## CRITICAL
 
@@ -83,18 +59,18 @@ None.
 
 ## WARNING
 
-- W1 (class: implementation, ref: `crates/gafira-anim/tests/golden.rs:111-124`, §3.4 bullet under the determinism table). The golden compares Color and Transform2D at key instants, outside the key range and under `Hold` with the tolerance, but §3.4 requires those results bit for bit for every type. H1 (key value replaced by a near value) passes every Transform2D case of the golden. The full suite catches H1 through the call-count test, so it is not a correctness hole today, but the golden does not apply the rule it claims to cover. Fix: compare bit for bit when `t` is a key `at`, `t <= first.at`, `t >= last.at`, or the segment's `out` is `Hold` (or store a per-sample "exact" flag).
-- W2 (class: implementation, ref: `crates/gafira-anim/tests/golden.rs:491-578`, `apply-progress.md` "## D3c progress"). `arq_12_golden_file_covers_the_required_cases` is weaker than the coverage the notes say it asserts. It does not require `q28_both_degenerate`, `q33_det_zero_exact`, `extreme_ats` (the only keys at `i64::MIN`/`i64::MAX`), `premultiplied_alpha`, `rotation_350_to_10`; it checks names in a pooled list, so `static` in one type satisfies all four; it does not check instants around keys. H5 and D3/D4 pass it. Fix: per-type required names including the ones above, and assert at±1 samples exist for every key.
-- W3 (class: implementation, ref: card D3c "~200 lines"). Measured 741 lines (688 test + 53 data lines, 92 KB) against a ~200 forecast (x3.7), and slightly above the ~700 delivery mark when the data is counted. Test-only and reviewable per case; noted for forecasting, no split asked.
+None. W1 and W2 are closed, and W3 is now a size note.
 
 ## SUGGESTION
 
-- S1: no same-space interpolation in Display-P3 or linear sRGB is in the data (interpolated results are tag 0 or 1; the 26 tag-2 results are key clones). Add a P3->P3 pair so the linear->P3 output path is in the golden.
-- S2: no Color alpha case where the f32 formula and an f64 formula round differently (H2 passes the golden). Add an alpha pair such as 0.3 -> 0.7 at a non-dyadic `t`.
-- S3: the comment at `golden.rs:564` says "the first key of every keyed track" but the code checks every key.
-- S4: the easing coverage counts the last key's `out`, which `sample` never uses; restrict to `keys[..len-1]`.
+None. S1-S4 are closed.
 
-Verdict: PASS (0 CRITICAL, 3 WARNING implementation, 4 SUGGESTION). D3c is the last delivery of the change; per the plan the T4 mutants run on gafira-anim (`mutation: archive`) comes before close.
-Per class: implementation 3 (WARNING), architecture 0, ambiguity 0, claim 0.
+## Notes
+
+- Size: D3c is now 881 lines, all of them test and data (`tests/golden.rs` 825 + `tests/golden/sample.json` 56, from `36282c5`), plus 33 lines of progress notes. That is about 900 against the card forecast of ~200 (x4.4) and above the ~700 delivery mark. It is test-only and readable case by case; this is a forecasting note, not a split request.
+- ARQ-12 on the 3 CI platforms is still deferred, as the card accepts (README follow-up 2).
+
+Verdict: PASS (0 CRITICAL, 0 WARNING, 0 SUGGESTION). D3c is the last delivery of the change. Per the plan, the T4 mutants run on gafira-anim (`mutation: archive`) comes before close.
+Per class: implementation 0, architecture 0, ambiguity 0, claim 0.
 
 next: archive
