@@ -353,7 +353,7 @@ Implementan `Interpolate`: `f32`, `Vec2`, `Transform2D` (descompuesto: traslaci�
 - `interpolate(a, b, 0.0) == a` e `interpolate(a, b, 1.0) == b` (igualdad de `PartialEq`). Los dos extremos se devuelven tal cual, sin pasar por la descomposición ni por la conversión, porque recomponer un valor descompuesto solo se acerca a él (≈ 1e-15 en `Transform2D`).
 - Los valores son finitos: un componente NaN o `±∞` en el `value` de un key hace inválida la pista (ARQ-18). `is_finite` da `true` si y solo si todos los componentes del valor son finitos; todo tipo que implementa `Interpolate` lo implementa (`Color`, `Transform2D` y `GradientStops` incluidos), y es la única vía por la que `KeyTrack` comprueba la finitud de un `T` genérico. Un `Static` con un componente no finito queda fuera de contrato: JSON no representa esos números (`serde_json` escribe `null`) y ese archivo no se vuelve a leer.
 - Con `t` fuera de `[0, 1]` (curvas con rebote) se extrapola. `Interpolate` no recorta: el consumidor recorta si lo necesita (por ejemplo, la opacidad al renderizar).
-- **Rango de contrato de `f32` y `Vec2`** (PROPUESTA, Q-32): la propiedad «entre `a` y `b`» para `t` en `[0, 1]` se garantiza cuando `b − a` es finito en cada componente, en su tipo (`f32` o `f64`). Con extremos finitos cuya diferencia desborda (por ejemplo `3e38` y `−3e38` en `f32`), el resultado intermedio puede ser `±∞` y queda fuera de contrato. Los valores reales de un documento quedan muy lejos de ese límite. Un resultado no finito de la extrapolación (`t` fuera de `[0, 1]`) también queda fuera de contrato.
+- **Rango de contrato de `f32` y `Vec2`** (Q-32): la fórmula es `a + (b − a) · t`. La propiedad «entre `a` y `b`» para `t` en `[0, 1]` se garantiza cuando `b − a` es finito en cada componente, en su tipo (`f32` o `f64`). Con extremos finitos cuya diferencia desborda (por ejemplo `3e38` y `−3e38` en `f32`), el resultado intermedio puede ser `±∞` y queda fuera de contrato. Los valores reales de un documento quedan muy lejos de ese límite. Un resultado no finito de la extrapolación (`t` fuera de `[0, 1]`) también queda fuera de contrato.
 
 | Tipo | Regla |
 |---|---|
@@ -1524,7 +1524,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-31 se resolvieron en el cambio `anim-core` y su regla está en §3.4.
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-32 se resolvieron en el cambio `anim-core` y su regla está en §3.4.
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1547,6 +1547,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-29 | ¿`sample` da resultados idénticos bit a bit en las 3 plataformas (ARQ-12)? | Titular: A, enmendada tras el spike de `anim-core`. Bit a bit para `f32`, `Vec2` y las curvas (aritmética IEEE; sin FMA comprobado en el ensamblador de x86_64, aarch64 sin comprobar). `Color` y `Transform2D` con tolerancia, porque usan `powf` y funciones trigonométricas de la `libm` de la plataforma: `4 · ε_f32 · max(1, abs(c))` por canal en `Color` y `1e-9 · max(1, abs(c))` por coeficiente en `Transform2D` (PROPUESTA; §3.4, ARQ-12). |
 | Q-30 | ¿Qué escala por eje tiene un extremo degenerado de `Transform2D` (ARQ-19, Q-28 B)? | Titular: A. La diagonal de su parte lineal expresada en el marco de rotación y sesgo del otro extremo. Un extremo de rango 1 que no encaja en ese marco (por ejemplo `[1, 2, 2, 4]`) salta justo después de `t = 0` (o antes de `t = 1`); se acepta como comportamiento conocido y documentado, porque los presets solo producen escalas 0 por eje (§3.4, ARQ-19). |
 | Q-31 | ¿Qué da `Color::interpolate` cuando el alfa resultante es ≤ 0 (ARQ-19, Q-27 A)? | Titular: A. Con `a ≤ 0` se interpolan `r`, `g`, `b` en recto, sin premultiplicar, y `a` queda sin recortar; el consumidor recorta `a` al componer (§3.4, ARQ-19). |
+| Q-32 | ¿Qué hace `f32::interpolate` (y `Vec2`, en `f64`) con extremos finitos cuya diferencia desborda, por ejemplo de `3e38` a `−3e38` con `t = 0,5` (ARQ-19)? | Titular: A. Se mantiene `a + (b − a) · t`. El rango de contrato es `b − a` finito en cada componente; fuera de él el resultado puede ser `±∞` y queda fuera de contrato. Las pruebas de propiedad usan el dominio `[−MAX/2, MAX/2]` de su tipo. No cambian el código ni los resultados bit a bit (Q-29) (§3.4, ARQ-19). |
 
 ### 12.3 Preguntas abiertas
 
@@ -1561,7 +1562,6 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
-| Q-32 | ¿Qué hace `f32::interpolate` (y `Vec2`, en `f64`) con extremos finitos cuya diferencia desborda, por ejemplo de `3e38` a `−3e38` con `t = 0,5` (ARQ-19)? A (propuesta actual de §3.4): fijar el rango de contrato en `b − a` finito; fuera de él el resultado puede ser `±∞`. No cambia el código ni los resultados bit a bit; solo amplía el dominio de las pruebas de propiedad a `[−MAX/2, MAX/2]`. B: cambiar la fórmula a `a·(1 − t) + b·t`, que no tiene el término `b − a`. Cambia los resultados bit a bit de `f32` y `Vec2` (código y pruebas de la entrega D2a, y el golden de ARQ-12), pierde la monotonía en `t` y que `a == b` devuelva `a` en todo `t`, y su acotación cerca de `MAX` está sin comprobar. C: solo para `f32`, calcular en `f64` y redondear a `f32`; no desborda y sigue siendo IEEE, pero cambia los resultados bit a bit de `f32` y no resuelve `Vec2`. Recomendación: A, porque los valores de un documento quedan muy lejos de `±3e38` y no reabre los resultados bit a bit ya fijados (Q-29). | Titular |
 
 ---
 
