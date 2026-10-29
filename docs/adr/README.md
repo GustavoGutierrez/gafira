@@ -23,7 +23,7 @@ Where a decision lives:
 |---|---|---|
 | [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted, partly superseded by 0002 |
 | [0002](0002-fast-lane.md) | Fast lane: spec-direct execution, mutation toggle, lighter defaults | accepted |
-| [0003](0003-develop-integration-branch.md) | Develop integration branch, one PR to main | accepted |
+| [0003](0003-develop-integration-branch.md) | Develop integration branch, PR to main on request | accepted |
 
 ## Template
 
