@@ -31,3 +31,19 @@ Fixes for verify round 1 (`openspec/changes/anim-core/verify-report.md`).
   - Dropping the final `y.clamp(min, max)`: `y` is a convex combination of values that are exact f32 hull bounds, so a rounding overshoot in f64 is about 1e-16 and the cast to f32 rounds it back to the bound. Unobservable on the f32 output, so equivalent.
   - Dropping the Newton bracket guard (`next > lo && next < hi`): `x` is monotone and the bracket is updated every iteration with the bisection fallback, so convergence within 64 iterations holds on all tested inputs (grid plus 4096 random curves); no input found where the result differs beyond tolerance. Treated as equivalent for the output contract.
 - Test note: the grid test skips `u >= 1.0` because e(1) = 1 is pinned by the exact-ends tests and the f64 reference is ill-conditioned at u = 1 with x2 = 1.
+
+## D2 progress (tdd-apply)
+Done: `Interpolate` (+ `f32`, `Vec2`), `Keyframe`, `KeyTrack` with `KeyTrackError`/`KeyTrackRule`, `Animatable<T>` with `sample` and serde (untagged write; read through the private `RawAnimatable` wire shape, then validate). Deps added: gafira-time, gafira-geom (both already in the V5 row).
+RED evidence (stubs first, then implementation):
+- ARQ-19 f32/Vec2: `arq_19_f32_endpoints_are_exact` (minimal input a = 0.0, b = -0.0), `arq_19_vec2_endpoints_are_exact`, `arq_19_f32_follows_the_formula_and_extrapolates`, `arq_19_vec2_follows_the_formula_per_component` failed against an identity stub. The between-ends properties pass against the stub (identity lies between the ends), so they have no RED; the formula tests kill that gap.
+- ARQ-18 construction: `arq_18_construction_names_the_rule_and_index`, `arq_18_non_finite_vec2_component_is_rejected`, `arq_18_error_message_names_rule_and_index` failed against a `new` that accepts everything.
+- ARQ-16 / ARQ-12: against a `sample` that returns the first key: 12 of 17 tests failed (table rows, `arq_12_sample_calls_interpolate_at_most_once`, the sampling properties).
+- ARQ-18 serde: `arq_18_invalid_tracks_fail_naming_rule_and_index` failed twice: with a plain derive the invalid track was accepted ("empty: Keyed(KeyTrack { keys: [] })"); with validation inside `KeyTrack` but a plain untagged enum the error was "data did not match any variant of untagged enum Animatable" (spike claim 3). Fixed by the `RawAnimatable` + `try_from` pattern.
+- Round-trip, golden and residual-ambiguity serde tests pass against the naive derive by construction (no RED).
+Deviations:
+- `Interpolate` has a second required method `is_finite(&self) -> bool`, which the spec snippet does not list; ARQ-18 needs a finiteness check over generic `T` and there is no other way to get it.
+- `KeyTrack.keys` is private with `keys()` and `KeyTrack::new`, so no public operation can leave an invalid track (spec: "Ninguna operación pública deja una pista inválida"); the snippet shows it `pub`.
+- Error type: `KeyTrackError { rule: KeyTrackRule, index: Option<usize> }`; `index` is `None` only for the empty-track rule. Added `Debug`/`PartialEq` derives.
+- Non-finite values through JSON are covered only by construction tests (JSON cannot carry them).
+- `f32::interpolate` uses the spec formula `a + (b - a) * t`; with finite ends whose difference overflows f32 (|a|, |b| near 3e38 with opposite signs) the result is infinite. The property tests stay within 1e30. Not specified; flag to the specifier if it matters.
+- Test sizes: source ~256 lines, tests ~815, so the delivery is past the ~700 line mark in total (git diff --shortstat 261dd77..HEAD: see the coordinator result).

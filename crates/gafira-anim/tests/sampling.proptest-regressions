@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ecb580809b2111b8945fbcc4cff1193655c8215e30ae4eb72c251e5cbd4c3391 # shrinks to a = Keyed(KeyTrack { keys: [Keyframe { at: Flicks(0), value: 0.0, out: Hold }, Keyframe { at: Flicks(1), value: -49.75993, out: Hold }] })
+cc 4e81042072d001ae9f7eec5f5a2f19ffd06ea55bdcc58a8b2510d209d3811cb4 # shrinks to a = Keyed(KeyTrack { keys: [Keyframe { at: Flicks(-4), value: 0.0, out: Hold }, Keyframe { at: Flicks(-3), value: -52.665154, out: Hold }] }), t = 9223372036854775807
+cc ed5c51ea8ad0fb0c304e1a4b500f22624471ccdcf52925588a202e3bf42f1932 # shrinks to a = Keyed(KeyTrack { keys: [Keyframe { at: Flicks(-1), value: 0.0, out: Hold }, Keyframe { at: Flicks(0), value: 82.27725, out: Hold }] }), t = 0
+cc c3785f1d373089ea8e29a951dad9586b86ff7d94b0a550de1afc1f09e498d3f7 # shrinks to a = Keyed(KeyTrack { keys: [Keyframe { at: Flicks(0), value: 0.0, out: Linear }, Keyframe { at: Flicks(1), value: 0.0, out: Linear }, Keyframe { at: Flicks(2), value: -58.205368, out: Linear }, Keyframe { at: Flicks(9223372036854775807), value: -14.229561, out: Linear }] }), t = 0

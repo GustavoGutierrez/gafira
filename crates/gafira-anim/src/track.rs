@@ -60,9 +60,28 @@ impl fmt::Display for KeyTrackError {
 impl std::error::Error for KeyTrackError {}
 
 /// Keys sorted by time. The invariant holds by construction and when read.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "KeyTrackWire<T>",
+    bound(deserialize = "T: Interpolate + Deserialize<'de>")
+)]
 pub struct KeyTrack<T> {
     keys: Vec<Keyframe<T>>,
+}
+
+/// Unvalidated transport shape of a [`KeyTrack`].
+#[derive(Deserialize)]
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
+pub(crate) struct KeyTrackWire<T> {
+    pub(crate) keys: Vec<Keyframe<T>>,
+}
+
+impl<T: Interpolate> TryFrom<KeyTrackWire<T>> for KeyTrack<T> {
+    type Error = KeyTrackError;
+
+    fn try_from(wire: KeyTrackWire<T>) -> Result<Self, KeyTrackError> {
+        Self::new(wire.keys)
+    }
 }
 
 impl<T: Interpolate> KeyTrack<T> {
