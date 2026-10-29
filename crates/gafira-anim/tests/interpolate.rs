@@ -2,9 +2,16 @@ use gafira_anim::Interpolate;
 use gafira_geom::Vec2;
 use proptest::prelude::*;
 
+// Q-32: contract range is [-MAX/2, MAX/2], so `b - a` is finite.
+const HALF32: f32 = f32::MAX / 2.0;
+const HALF64: f64 = f64::MAX / 2.0;
+
 fn f32_any() -> impl Strategy<Value = f32> {
     prop_oneof![
         -1.0e30_f32..1.0e30_f32,
+        -HALF32..=HALF32,
+        Just(HALF32),
+        Just(-HALF32),
         Just(0.0_f32),
         Just(-0.0_f32),
         Just(f32::MIN_POSITIVE),
@@ -18,6 +25,9 @@ fn f32_any() -> impl Strategy<Value = f32> {
 fn f64_any() -> impl Strategy<Value = f64> {
     prop_oneof![
         -1.0e300_f64..1.0e300_f64,
+        -HALF64..=HALF64,
+        Just(HALF64),
+        Just(-HALF64),
         Just(0.0_f64),
         Just(f64::MIN_POSITIVE),
         Just(1.0e300_f64),

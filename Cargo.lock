@@ -74,6 +74,7 @@ dependencies = [
 name = "gafira-anim"
 version = "0.1.0-beta.1"
 dependencies = [
+ "gafira-color",
  "gafira-geom",
  "gafira-time",
  "proptest",
