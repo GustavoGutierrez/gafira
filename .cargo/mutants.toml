@@ -11,4 +11,26 @@ exclude_re = [
     'replace History::debug_check with \(\)$',
     # Equivalent: when two segments are equally near the point, keeping the first or the last gives the same distance.
     'hittest\.rs:\d+:\d+: replace < with <= in Path::distance_to_perimeter$',
+    # easing.rs bezier solver (T4 fix round; arguments in openspec/changes/anim-core/apply-progress.md "T4 fix round").
+    # Unreachable: the loop breaks on |err| <= 1e-12 * u with u > 0 before `err < 0.0`, so err == 0 never gets there.
+    'easing\.rs:82:16: replace < with <= in bezier$',
+    # Newton step sign or form wrong: the guard then rejects it or the next iterate stays inside the bracket, so the loop only changes how fast the bracket shrinks and the bisection bound still holds.
+    'easing\.rs:88:22: replace - with \+ in bezier$',
+    'easing\.rs:88:22: replace - with / in bezier$',
+    # slope is only used as the Newton divisor: 0.0 fails the |d| guard and -1.0 puts every step outside the bracket, which is pure bisection (64 halvings, width 2^-64).
+    'easing\.rs:68:5: replace slope -> f64 with 0\.0$',
+    'easing\.rs:68:5: replace slope -> f64 with -1\.0$',
+    # Newton guard `d.abs() > 1e-9 && next > lo && next < hi` changed only at an exact tie (>= / <= / ==), where taking Newton or bisection gives the same precision.
+    'easing\.rs:89:24: replace > with >= in bezier$',
+    'easing\.rs:89:24: replace > with == in bezier$',
+    'easing\.rs:89:39: replace > with >= in bezier$',
+    'easing\.rs:89:39: replace > with == in bezier$',
+    'easing\.rs:89:52: replace < with <= in bezier$',
+    'easing\.rs:89:52: replace < with == in bezier$',
+    # Newton guard accepts a wrong or out-of-bracket iterate: Newton still converges on the monotone x(s) and the result stays within 1.2e-7 of the f64 reference (bound 1e-5) over the f32 domain.
+    'easing\.rs:89:24: replace > with < in bezier$',
+    'easing\.rs:89:39: replace > with < in bezier$',
+    'easing\.rs:89:52: replace < with > in bezier$',
+    'easing\.rs:89:31: replace && with \|\| in bezier$',
+    'easing\.rs:89:44: replace && with \|\| in bezier$',
 ]
