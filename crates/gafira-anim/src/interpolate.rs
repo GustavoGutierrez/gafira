@@ -152,6 +152,8 @@ impl Parts {
         let [a, b, c_, d, tx, ty] = c;
         let det = a * d - b * c_;
         let area = a.hypot(b) * c_.hypot(d);
+        // `!area.is_finite()` is implied by the other checks; kept to mirror
+        // the Q-33 text literally.
         if !is_finite6(&c) || !det.is_finite() || !area.is_finite() || det.abs() <= 1e-12 * area {
             return None;
         }

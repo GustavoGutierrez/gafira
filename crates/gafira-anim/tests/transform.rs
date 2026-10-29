@@ -301,21 +301,8 @@ fn linear_only(c: [f64; 4]) -> Transform2D {
     tf(linear(c, 0.0, 0.0))
 }
 
-/// Per-coefficient relative difference <= 1e-9 (Q-33 degeneracy tests).
-fn assert_rel(got: Transform2D, want: [f64; 6]) {
-    let got = got.coeffs();
-    for i in 0..6 {
-        let diff = (got[i] - want[i]).abs();
-        let scale = want[i].abs().max(got[i].abs());
-        assert!(
-            got[i].is_finite() && diff <= 1e-9 * scale,
-            "coeff {i}: {got:?} vs {want:?}"
-        );
-    }
-}
-
+/// ARQ-19 Q-33 tolerance: |got - want| <= 1e-9 * max(1, |want|) per coefficient.
 fn assert_abs_rel(got: Transform2D, want: [f64; 6]) {
-    // Zero coefficients of the expectation must be zero within 1e-9 absolute.
     let got = got.coeffs();
     for i in 0..6 {
         let tol = 1e-9 * want[i].abs().max(1.0);
@@ -346,16 +333,32 @@ fn arq_19_q33_rank_one_end_with_rounding_determinant_is_degenerate() {
 fn arq_19_q33_finite_coefficients_with_non_finite_determinant_are_degenerate() {
     let big = linear_only([1e200, 1e200, 1e200, 2e200]);
     let got = big.interpolate(&Transform2D::IDENTITY, 0.5);
-    assert_rel(got, [5e199, 0.0, 0.0, 1e200, 0.0, 0.0]);
+    assert_abs_rel(got, [5e199, 0.0, 0.0, 1e200, 0.0, 0.0]);
     assert!(got.is_finite());
 }
 
-// ARQ-19, Q-33
+// ARQ-19, Q-33: a huge end with sine 1e-13 between columns (det 0.2) is
+// degenerate; an absolute threshold would decompose it with a shear near 1e13.
 #[test]
-fn arq_19_q33_tiny_uniform_scale_is_not_degenerate() {
-    let got = Transform2D::scale(1e-9).interpolate(&Transform2D::IDENTITY, 0.5);
-    let want = 0.5 + 5e-10;
-    assert_rel(got, [want, 0.0, 0.0, want, 0.0, 0.0]);
+fn arq_19_q33_large_scale_with_tiny_column_sine_is_degenerate() {
+    let (s, c) = 1e-13_f64.sin_cos();
+    let big = linear_only([1e6, 0.0, 2e6 * c, 2e6 * s]);
+    let got = big.interpolate(&Transform2D::IDENTITY, 0.5);
+    assert_abs_rel(got, [500000.5, 0.0, 0.0, (1.0 + 2e-7) / 2.0, 0.0, 0.0]);
+}
+
+// ARQ-19, Q-33: a tiny end with columns at a right angle (det 1e-14) is not
+// degenerate; an absolute threshold would borrow rotation(2.0) instead.
+#[test]
+fn arq_19_q33_tiny_rotated_scale_keeps_its_own_rotation() {
+    let rot = |th: f64| {
+        let (s, c) = th.sin_cos();
+        [c, s, -s, c]
+    };
+    let a = rot(0.3).map(|v| 1e-7 * v);
+    let got = linear_only(a).interpolate(&linear_only(rot(2.0)), 0.5);
+    let w = rot(1.15).map(|v| 0.50000005 * v);
+    assert_abs_rel(got, [w[0], w[1], w[2], w[3], 0.0, 0.0]);
 }
 
 // ARQ-19, Q-33: the threshold is the sine of the angle between the columns.
@@ -456,8 +459,7 @@ proptest! {
         let (sn, cs) = (pa.3 + dth * t64).sin_cos();
         let want = [sx * cs, sx * sn, sy * (k * cs - sn), sy * (k * sn + cs), lerp(a[4], b[4], t64), lerp(a[5], b[5], t64)];
         let got = tf(a).interpolate(&tf(b), t).coeffs();
-        // The reference sees large shears for near-singular ends: relative bound.
-        let ok = got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1e-9 * w.abs().max(1.0) * 1e3);
+        let ok = got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1e-9 * w.abs().max(1.0));
         prop_assert!(ok, "{:?} vs {:?}", got, want);
     }
 }
