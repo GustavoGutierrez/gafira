@@ -30,7 +30,7 @@ Mutation (`mutation:` in the Flow line): `archive` (default) runs no per-deliver
 
 Delivery size: ~700 lines per delivery stays a signal to stop and ask. One change may run several deliveries serially without `architect` when the Slice card lists them; `architect` runs only for an open design decision or a dependency table with parallel deliveries.
 
-Packs: docs, manual, agent/skill definitions, bumps, bug fix, refactor, new function, new capability, spec-only, release, spike, CI hotfix, test-only round (table in ADR 0001, defaults amended by ADR 0002, and in `coordinator.md`). Agent and skill definitions are written by a general-purpose agent in a worktree, delegated by the coordinator; the owner reviews the PR. Light and fast-lane runs are archived without delta merge (archive moves the folder and, for a fast-lane change, updates the `docs/specs/README.md` status table with the covered IDs).
+Packs: docs, manual, agent/skill definitions, bumps, bug fix, refactor, new function, new capability, spec-only, release, spike, CI hotfix, test-only round (table in ADR 0001, defaults amended by ADR 0002, and in `coordinator.md`). Agent and skill definitions are written by a general-purpose agent in a worktree, delegated by the coordinator; the owner reviews them, at the latest in the `develop` -> `main` PR. Light and fast-lane runs are archived without delta merge (archive moves the folder and, for a fast-lane change, updates the `docs/specs/README.md` status table with the covered IDs).
 
 Feedback loop: the coordinator keeps control of the whole cycle; every agent returns to it and none calls another. `verify` classifies each finding, and the coordinator routes it back to the matching stage:
 
@@ -84,10 +84,11 @@ cargo test --workspace --locked
 ## Delivery rules
 
 - Measure each delivery with `git diff --shortstat`; the ceiling is ~700 lines, and above it needs the owner's explicit OK. Estimates undershoot (measured x1.4 to x1.9 over forecast, mostly tests): apply x1.4 to forecasts; a forecast x1.4 above ~300 lines leaves light mode. At most three verify rounds per delivery, and a stop after two consecutive FAILs of the same class. These are signals for the coordinator to stop and ask, not hard blocks.
-- Stacked PRs cut at commit boundaries; each prefix passes the gates alone.
+- Deliveries cut at commit boundaries; each prefix passes the gates alone.
 - Conventional commits, no AI attribution lines.
-- The coordinator may push branches and open PRs after verify PASS; merges stay with the owner. Each new delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.
-- Integration: trunk-based, short-lived branches. After each delivery's verify PASS the coordinator pushes that branch and opens its PR against `main` (or the previous unmerged delivery branch) right away, instead of accumulating many stacked PRs. The owner merges promptly, in order, bottom-up, with merge commits. Never merge a PR whose base is another delivery branch after that base has been merged: retarget it to `main` first.
+- Branches (ADR 0003): `main` is released and stable; `develop`, created from `main`, is the integration branch. They are the only long-lived branches. Every change and delivery is a short-lived branch cut from `develop` (`feat/<change>-<delivery>`, `docs/...`, `chore/...`).
+- Integration: after a delivery's verify PASS the coordinator merges its branch into `develop` locally with `git merge --no-ff`, runs the gates once on `develop` (skip cargo when no Rust or Cargo files changed), pushes `develop` and deletes the branch (locally, and remotely if pushed). No PR per delivery or change; deliveries of one change merge in order. A FAIL never reaches `develop`.
+- The only PR is `develop` -> `main`, opened only when the owner asks or at a release-worthy point (a release or tag, a completed product document, a milestone the owner names); the coordinator may suggest one in one line at those points and opens it only with the owner's OK. The owner reviews and merges it with a merge commit. Releases and tags are cut from `main` after that merge; then the coordinator syncs `develop` (`git pull`, `git merge --ff-only origin/main`, else a plain merge) and pushes it.
 - State lives in the change folder and git, not in an external memory tool.
 
 ## Code rules
@@ -139,8 +140,8 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 | UI code, theme tokens, colors, fonts, logo/icon, microcopy, splash, any visual rule | `gafira-brand` |
 | Splitting work into commits, tests and docs with code | `work-unit-commits` |
 | Committing, branching, pushing, PRs, releases | `git-workflow-and-versioning` |
-| Delivery over ~400 lines, stacked PRs, review slices | `chained-pr` |
-| Preparing a PR (coordinator opens it, owner merges) | `branch-pr` |
+| Delivery over ~400 lines, review slices | `chained-pr` |
+| Preparing the `develop` -> `main` PR (coordinator opens it, owner merges) | `branch-pr` |
 | Creating, promoting or archiving product specs; deriving OpenSpec changes | `product-specs` |
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
 | PR and issue comments | `comment-writer` |

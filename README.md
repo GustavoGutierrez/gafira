@@ -68,7 +68,7 @@ spec -> explorer (only for risky claims) -> tdd-apply -> verify -> mutants (whol
 - `mutants` (cargo-mutants, optional dev tool) lists surviving mutants; by default once per touched crate when the change closes (`mutation: archive` in the Flow line; `delivery` and `off` are the alternatives).
 - `verify` checks the gates and every scenario; on FAIL the work goes back to `tdd-apply`.
 - The coordinator rejects `done` without evidence.
-- The coordinator may push branches and open PRs after verify PASS; the owner does every merge. Each delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.
+- Each change and delivery is a short-lived branch cut from `develop`. After verify PASS the coordinator merges it into `develop`, runs the gates and pushes `develop`; the only PR is `develop` -> `main`, opened only when the owner asks or at a release-worthy point, and the owner reviews and merges it (`docs/adr/0003-develop-integration-branch.md`).
 
 First-time setup: generate the gitignored skill registry (`.atl/skill-registry.md`):
 

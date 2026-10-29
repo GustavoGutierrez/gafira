@@ -81,7 +81,7 @@ A pack fixes the mode, agents, `mutation` value and verify depth for a request t
 | Hotfix on CI or tooling | Light | `off` (T0) | V1 |
 | Test-only hardening or fix round after a FAIL | Inherits the mode of the change | Same value; `--iterate` allowed with `delivery` | V2 on the findings only |
 
-A change to a V5 row or an action pin in a CI hotfix is a full floor. The owner reviews every pull request that changes agent or skill definitions, because it changes the process itself.
+A change to a V5 row or an action pin in a CI hotfix is a full floor. The owner reviews every change to agent or skill definitions, at the latest in the `develop` -> `main` pull request, because it changes the process itself.
 
 ### Recording and override
 
@@ -108,7 +108,7 @@ The coordinator checks each gate before the next phase. A failed gate returns th
 | G2 | After `architect`: delivery table with dependencies, each delivery near or below about 700 lines | Full |
 | G3 | After `tdd-apply`: `status: done` with commits, gate output, measured lines, RED evidence per criterion, deviations | All code modes |
 | G4 | After `verify` (and `mutants` when a run happened): zero CRITICAL, tier thresholds met, `verification.json` written | All modes with V1 or above |
-| G5 | Before push, pull request and archive: PASS for all deliveries; with `mutation: archive` or `delivery`, T4 run for every crate the change touched and no critical survivor | Standard, full |
+| G5 | Before merge into `develop` and archive: PASS for all deliveries; with `mutation: archive` or `delivery`, T4 run for every crate the change touched and no critical survivor | Standard, full |
 
 The coordinator cannot waive G0. If the owner asks for no spec, the coordinator writes a three-line Light spec. For a product-spec slice the Slice card satisfies G0.
 
@@ -243,9 +243,11 @@ Change chain so far: six changes are closed and archived under `openspec/changes
 ## Commits, branches and pull requests
 
 - Conventional commits; no AI attribution lines.
-- Trunk-based development with short-lived branches. After a delivery passes verify, the coordinator pushes the branch and opens a pull request against `main` (or the previous unmerged delivery branch). The owner merges, in order, bottom-up, with merge commits. A pull request whose base was merged is retargeted to `main` first.
+- `main` holds released, stable code and `develop`, created from `main`, is the integration branch; they are the only long-lived branches (ADR 0003). Every change and delivery is a short-lived branch cut from `develop` (`feat/<change>-<delivery>`, `docs/...`, `chore/...`).
+- After a delivery passes verify, the coordinator merges its branch into `develop` locally with `git merge --no-ff`, runs the gates once on `develop`, pushes `develop` and deletes the branch. There is no pull request per delivery or change; deliveries of one change merge in order, and a FAIL never reaches `develop`.
+- The only pull request is `develop` -> `main`, opened only when the owner asks or at a release-worthy point (a release or tag, a completed product document, a milestone the owner names); the coordinator may suggest one at those points and opens it only with the owner's OK. The owner reviews and merges it with a merge commit; releases and tags are cut from `main` after that merge, and the coordinator syncs `develop` with `main` (fast-forward when possible) and pushes it.
 - State lives in the change folder and in git, not in an external memory tool.
-- CI is disabled manually on GitHub for now (billing), so each delivery's gates run locally before the pull request; see the tooling chapter.
+- CI is disabled manually on GitHub for now (billing), so each delivery's gates run locally before its merge into `develop`; see the tooling chapter.
 
 ## Code and language rules
 

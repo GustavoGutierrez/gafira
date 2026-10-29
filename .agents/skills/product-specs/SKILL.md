@@ -74,4 +74,4 @@ Full OpenSpec derivation (only when the owner asks, or the change runs in full m
 
 ## 6. Hand-off
 
-product spec + Slice card -> `explorer` (risky claims) -> `tdd-apply` -> `verify` -> `mutants` T4 per touched crate at close (per the Flow line's `mutation`) -> `archive`, run by the `coordinator`; `specifier` only on a reported ambiguity; see `AGENTS.md` for gates, delivery sizes and PR rules. The coordinator keeps the status table current and promotes the next document when one completes. Related skills: `cognitive-doc-design` (prose), `work-unit-commits`, `git-workflow-and-versioning`.
+product spec + Slice card -> `explorer` (risky claims) -> `tdd-apply` -> `verify` -> `mutants` T4 per touched crate at close (per the Flow line's `mutation`) -> `archive`, run by the `coordinator`; `specifier` only on a reported ambiguity; see `AGENTS.md` for gates, delivery sizes and integration rules (ADR 0003). The coordinator keeps the status table current and promotes the next document when one completes. Related skills: `cognitive-doc-design` (prose), `work-unit-commits`, `git-workflow-and-versioning`.

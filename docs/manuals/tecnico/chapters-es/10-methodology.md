@@ -81,7 +81,7 @@ Un pack fija el modo, los agentes, el valor de `mutation` y la profundidad de ve
 | Hotfix de CI o de herramientas | Light | `off` (T0) | V1 |
 | Refuerzo solo de pruebas o ronda de corrección tras un FAIL | Hereda el modo del change | Mismo valor; `--iterate` permitido con `delivery` | V2 solo sobre los hallazgos |
 
-Un cambio en una fila V5 o en un pin de acción dentro de un hotfix de CI es un mínimo full. El titular revisa todo pull request que cambie definiciones de agentes o skills, porque cambia el propio proceso.
+Un cambio en una fila V5 o en un pin de acción dentro de un hotfix de CI es un mínimo full. El titular revisa todo cambio en definiciones de agentes o skills, como tarde en el pull request `develop` -> `main`, porque cambia el propio proceso.
 
 ### Registro y anulación
 
@@ -108,7 +108,7 @@ El coordinador comprueba cada puerta antes de la fase siguiente. Una puerta fall
 | G2 | Tras `architect`: tabla de entregas con dependencias, cada entrega cerca o por debajo de unas 700 líneas | Full |
 | G3 | Tras `tdd-apply`: `status: done` con commits, salida de las puertas, líneas medidas, evidencia RED por criterio, desviaciones | Todos los modos con código |
 | G4 | Tras `verify` (y `mutants` cuando hubo una ejecución): cero CRITICAL, umbrales del nivel cumplidos, `verification.json` escrito | Todos los modos con V1 o superior |
-| G5 | Antes de push, pull request y archivado: PASS en todas las entregas; con `mutation: archive` o `delivery`, T4 ejecutado en cada crate que toca el change y sin supervivientes críticos | Standard, full |
+| G5 | Antes de fusionar en `develop` y de archivar: PASS en todas las entregas; con `mutation: archive` o `delivery`, T4 ejecutado en cada crate que toca el change y sin supervivientes críticos | Standard, full |
 
 El coordinador no puede dispensar G0. Si el titular pide no tener spec, el coordinador escribe igualmente una Light spec de tres líneas. En una porción de spec de producto, la Slice card satisface G0.
 
@@ -243,9 +243,11 @@ Cadena de changes hasta ahora: seis changes están cerrados y archivados en `ope
 ## Commits, ramas y pull requests
 
 - Conventional commits; sin líneas de atribución de IA.
-- Desarrollo basado en tronco con ramas de vida corta. Cuando una entrega pasa verify, el coordinador empuja la rama y abre un pull request contra `main` (o contra la rama de la entrega anterior aún sin fusionar). El titular fusiona, en orden, de abajo hacia arriba, con commits de fusión. Un pull request cuya base ya se fusionó se redirige primero a `main`.
+- `main` contiene el código publicado y estable, y `develop`, creada desde `main`, es la rama de integración; son las únicas ramas de vida larga (ADR 0003). Cada change y cada entrega es una rama de vida corta creada desde `develop` (`feat/<change>-<delivery>`, `docs/...`, `chore/...`).
+- Cuando una entrega pasa verify, el coordinador fusiona su rama en `develop` en local con `git merge --no-ff`, ejecuta las puertas una vez sobre `develop`, empuja `develop` y borra la rama. No hay pull request por entrega ni por change; las entregas de un change se fusionan en orden, y un FAIL nunca llega a `develop`.
+- El único pull request es `develop` -> `main`, y se abre solo cuando el titular lo pide o en un punto digno de versión (una versión o etiqueta, un documento de producto completado, un hito que nombre el titular); el coordinador puede sugerirlo en esos puntos y solo lo abre con el visto bueno del titular. El titular lo revisa y lo fusiona con un commit de fusión; las versiones y etiquetas se crean desde `main` tras esa fusión, y el coordinador sincroniza `develop` con `main` (avance rápido cuando es posible) y la empuja.
 - El estado vive en la carpeta del change y en git, no en una herramienta de memoria externa.
-- La CI está desactivada manualmente en GitHub por ahora (facturación), así que las puertas de cada entrega se ejecutan en local antes del pull request; véase el capítulo de herramientas.
+- La CI está desactivada manualmente en GitHub por ahora (facturación), así que las puertas de cada entrega se ejecutan en local antes de fusionarla en `develop`; véase el capítulo de herramientas.
 
 ## Reglas de código e idioma
 

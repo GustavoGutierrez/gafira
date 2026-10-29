@@ -102,4 +102,4 @@ Reglas, de `AGENTS.md` y `.cargo/mutants.toml`:
 
 ## Tamaño de las entregas
 
-Mida cada entrega con `git diff --shortstat`. Divídala cuando supere unas 700 líneas; las estimaciones se han quedado cortas entre 1,4 y 1,9 veces, sobre todo en pruebas. Los pull requests apilados se cortan en límites de commit y cada prefijo debe pasar las puertas por sí solo.
+Mida cada entrega con `git diff --shortstat`. Divídala cuando supere unas 700 líneas; las estimaciones se han quedado cortas entre 1,4 y 1,9 veces, sobre todo en pruebas. Las entregas se cortan en límites de commit y cada prefijo debe pasar las puertas por sí solo.
