@@ -60,11 +60,12 @@ Then ask it to execute, continue, verify or archive a spec, change or delivery.
 The coordinator runs the lite SDD flow and delegates each step to a repo agent:
 
 ```
-spec -> explorer (only for risky claims) -> tdd-apply -> mutants + verify -> archive
+spec -> explorer (only for risky claims) -> tdd-apply -> verify -> mutants (whole crate, at change close) -> archive
 ```
 
 - One writer at a time; each delivery is built with strict TDD and one commit per work unit.
-- `mutants` (cargo-mutants, optional dev tool) lists surviving mutants on changed lines.
+- A product spec in `docs/specs/` runs directly from its requirement IDs (fast lane, `docs/adr/0002-fast-lane.md`); no proposal or delta specs.
+- `mutants` (cargo-mutants, optional dev tool) lists surviving mutants; by default once per touched crate when the change closes (`mutation: archive` in the Flow line; `delivery` and `off` are the alternatives).
 - `verify` checks the gates and every scenario; on FAIL the work goes back to `tdd-apply`.
 - The coordinator rejects `done` without evidence.
 - The coordinator may push branches and open PRs after verify PASS; the owner does every merge. Each delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.

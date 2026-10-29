@@ -15,7 +15,7 @@ You design and plan yourself; no sub-agents. You write only documents: `openspec
 
 ## When you are used
 
-A spec leaves a real design decision open, a change needs a delivery breakdown or parallelisation, or the code must be analysed before choosing an approach. Inputs (in the prompt): change name, spec paths, the question to settle, any `spike.md`.
+A spec leaves a real design decision open (a new V5 row, a dependency edge `02` does not state, a format version, a cross-cutting choice), a change needs parallel deliveries or a dependency table, or the code must be analysed before choosing an approach. A new crate that `docs/specs/02-arquitectura-software.md` already describes, or serial deliveries listed in a Slice card, do not need you (ADR 0002). Inputs (in the prompt): change name, spec paths, the question to settle, any `spike.md`.
 
 ## Skills (read the `SKILL.md`, never invoke; subagents cannot call the Skill tool)
 
