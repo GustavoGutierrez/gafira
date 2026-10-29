@@ -1,0 +1,17 @@
+{ "schema": 1, "change": "fast-lane-flow", "delivery": "D1", "rounds": [ {
+  "round": 1, "commit": "91f9b71f28a192a08cbe1e0a2228ec5038ceb83b", "mode": "light", "tier": "T0", "depth": "V1",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 6, "suggestion": 3},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "claim", "ref": "docs/adr/0002-fast-lane.md:34", "summary": "--jobs 8 adopted without measurement; archived pathops/time runs saw timeouts and stale builds at --jobs 4"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md AC4", "summary": "AC4 says architect for ordered deliveries; ADR 0002 and agents say serial deliveries in a Slice card need no architect"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md:7,63; coordinator.md:119; architect.md:8; manual ch10:14", "summary": "Residual 'delivery breakdown needs architect' wording against ADR 0002 section 4"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "docs/manuals/tecnico/chapters/10-methodology.md:49 (EN+ES)", "summary": "Light column says V1 or V2 per pack; docs-only and manual packs are V0"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "commit 91f9b71", "summary": "Coordinator edited coordinator.md and docs/specs/README.md beyond its Light spec write authority (owner-requested)"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "git diff --shortstat main...HEAD", "summary": "721 changed lines in light mode, above ~300 trigger and at ~700 signal; no Flow-change or recorded owner ack"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 721, "forecast": null}, "report": "verify-report.md" } ] }
