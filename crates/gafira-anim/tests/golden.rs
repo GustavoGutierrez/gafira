@@ -1,7 +1,9 @@
 //! ARQ-12 cross-platform golden: `tests/golden/sample.json` holds tracks of the
 //! four §3.4 types, the sampled instants `t` (flicks) and the expected results
 //! stored losslessly as IEEE bit patterns. `f32`, `Vec2` and the easing curves
-//! must match bit for bit; `Color` and `Transform2D` within the §3.4 tolerances.
+//! must match bit for bit. `Color` and `Transform2D` match within the §3.4
+//! tolerances at interpolated instants, and bit for bit at key instants, outside
+//! the key range, under `Hold` and for static tracks (no interpolation runs).
 //!
 //! Regenerating: this crate is a pure domain crate (ARQ-02), so a test cannot
 //! write files or read the environment. The switch is therefore read at compile
@@ -73,7 +75,8 @@ fn transform_within(got: &[u64], want: &[u64]) -> bool {
 trait Golden: Interpolate + Serialize + DeserializeOwned {
     const NAME: &'static str;
     fn encode(&self) -> Vec<u64>;
-    fn matches(got: &[u64], want: &[u64]) -> bool;
+    /// `exact`: the instant involves no interpolation, so the bits must agree.
+    fn matches(got: &[u64], want: &[u64], exact: bool) -> bool;
 }
 
 impl Golden for f32 {
@@ -81,7 +84,7 @@ impl Golden for f32 {
     fn encode(&self) -> Vec<u64> {
         vec![u64::from(self.to_bits())]
     }
-    fn matches(got: &[u64], want: &[u64]) -> bool {
+    fn matches(got: &[u64], want: &[u64], _exact: bool) -> bool {
         bits_equal(got, want)
     }
 }
@@ -91,7 +94,7 @@ impl Golden for Vec2 {
     fn encode(&self) -> Vec<u64> {
         vec![self.x.to_bits(), self.y.to_bits()]
     }
-    fn matches(got: &[u64], want: &[u64]) -> bool {
+    fn matches(got: &[u64], want: &[u64], _exact: bool) -> bool {
         bits_equal(got, want)
     }
 }
@@ -108,8 +111,8 @@ impl Golden for Color {
         out.extend(c.map(|x| u64::from(x.to_bits())));
         out
     }
-    fn matches(got: &[u64], want: &[u64]) -> bool {
-        color_within(got, want)
+    fn matches(got: &[u64], want: &[u64], exact: bool) -> bool {
+        bits_equal(got, want) || (!exact && color_within(got, want))
     }
 }
 
@@ -118,8 +121,8 @@ impl Golden for Transform2D {
     fn encode(&self) -> Vec<u64> {
         self.coeffs().map(f64::to_bits).to_vec()
     }
-    fn matches(got: &[u64], want: &[u64]) -> bool {
-        transform_within(got, want)
+    fn matches(got: &[u64], want: &[u64], exact: bool) -> bool {
+        bits_equal(got, want) || (!exact && transform_within(got, want))
     }
 }
 
@@ -358,6 +361,33 @@ fn authored() -> GoldenFile {
             Easing::EaseInOut,
         ),
     ));
+    // Same-space blends in the two other spaces (the result keeps the space).
+    colors.push(case(
+        "same_space_display_p3",
+        pair(
+            p3([0.9, 0.2, 0.1, 1.0]),
+            p3([0.1, 0.7, 0.9, 0.6]),
+            Easing::Linear,
+        ),
+    ));
+    colors.push(case(
+        "same_space_linear_srgb",
+        pair(
+            lin([0.8, 0.1, 0.3, 0.5]),
+            lin([0.2, 0.9, 0.6, 1.0]),
+            Easing::EaseInOut,
+        ),
+    ));
+    // Alpha 0.9 -> 0.1: at several instants the f32 formula and an f64 formula
+    // narrowed to f32 round differently.
+    colors.push(case(
+        "alpha_f32_rounding",
+        pair(
+            srgb([0.3, 0.6, 0.9, 0.9]),
+            srgb([0.7, 0.2, 0.4, 0.1]),
+            Easing::Linear,
+        ),
+    ));
 
     // Transform2D: every easing, then the documented special cases.
     for (i, e) in every_easing().into_iter().enumerate() {
@@ -450,13 +480,30 @@ fn authored() -> GoldenFile {
 
 // ---- checks ------------------------------------------------------------
 
+/// `true` when sampling at `t` runs no interpolation: static track, outside the
+/// key range, at a key, or inside a segment whose `out` is `Hold`.
+fn is_exact_instant<T: Interpolate>(track: &Animatable<T>, t: i64) -> bool {
+    let Animatable::Keyed(k) = track else {
+        return true;
+    };
+    let keys = k.keys();
+    let (first, last) = (keys[0].at.ticks(), keys[keys.len() - 1].at.ticks());
+    if t <= first || t >= last {
+        return true;
+    }
+    keys.iter().any(|key| key.at.ticks() == t)
+        || keys
+            .windows(2)
+            .any(|w| w[0].at.ticks() < t && t < w[1].at.ticks() && w[0].out == Easing::Hold)
+}
+
 fn check<T: Golden>(cases: &[Case<T>]) {
     assert!(!cases.is_empty(), "{}: no cases", T::NAME);
     for c in cases {
         for s in &c.samples {
             let got = c.track.sample(fl(s.t)).encode();
             assert!(
-                T::matches(&got, &s.bits),
+                T::matches(&got, &s.bits, is_exact_instant(&c.track, s.t)),
                 "{} case {:?} at t={}: got {:?}, stored {:?}",
                 T::NAME,
                 c.name,
@@ -488,93 +535,125 @@ fn arq_12_golden_print_regenerated() {
     }
 }
 
+type EasingTest = fn(&Easing) -> bool;
+
+/// Per type: the named cases, every easing as a segment's `out`, Hold, Static,
+/// the extreme instants, and samples just before and after every key.
+fn covers<T: Interpolate>(kind: &str, cases: &[Case<T>], required: &[&str]) {
+    for needed in required {
+        assert!(
+            cases.iter().any(|c| c.name == *needed),
+            "{kind}: missing case {needed}"
+        );
+    }
+    assert!(
+        cases
+            .iter()
+            .any(|c| matches!(c.track, Animatable::Static(_))),
+        "{kind}: no static track"
+    );
+    let ts: Vec<i64> = cases
+        .iter()
+        .flat_map(|c| c.samples.iter().map(|s| s.t))
+        .collect();
+    assert!(
+        ts.contains(&i64::MIN) && ts.contains(&i64::MAX),
+        "{kind}: extreme instants not sampled"
+    );
+    // The last key's `out` is never used (S4): only segment curves count.
+    let mut segment_outs = Vec::new();
+    for c in cases {
+        let Animatable::Keyed(k) = &c.track else {
+            continue;
+        };
+        let keys = k.keys();
+        let sampled = |t: i64| c.samples.iter().any(|s| s.t == t);
+        for key in keys {
+            let at = key.at.ticks();
+            for t in [at.saturating_sub(1), at, at.saturating_add(1)] {
+                assert!(sampled(t), "{kind} {}: no sample at {t}", c.name);
+            }
+        }
+        for w in keys.windows(2) {
+            let (lo, hi) = (w[0].at.ticks(), w[1].at.ticks());
+            assert!(
+                c.samples.iter().any(|s| lo < s.t && s.t < hi),
+                "{kind} {}: no sample inside the segment at {lo}",
+                c.name
+            );
+            segment_outs.push(w[0].out);
+        }
+    }
+    let variants: [(&str, EasingTest); 6] = [
+        ("Linear", |e: &Easing| matches!(e, Easing::Linear)),
+        ("EaseIn", |e: &Easing| matches!(e, Easing::EaseIn)),
+        ("EaseOut", |e: &Easing| matches!(e, Easing::EaseOut)),
+        ("EaseInOut", |e: &Easing| matches!(e, Easing::EaseInOut)),
+        ("CubicBezier", |e: &Easing| {
+            matches!(e, Easing::CubicBezier { .. })
+        }),
+        ("Hold", |e: &Easing| matches!(e, Easing::Hold)),
+    ];
+    for (label, hit) in variants {
+        assert!(
+            segment_outs.iter().any(hit),
+            "{kind}: easing {label} is not used by any segment"
+        );
+    }
+}
+
+fn easing_cases() -> [&'static str; 7] {
+    [
+        "static", "easing_0", "easing_1", "easing_2", "easing_3", "easing_4", "easing_5",
+    ]
+}
+
 #[test]
 fn arq_12_golden_file_covers_the_required_cases() {
     let file = load();
-    let all_names: Vec<&str> = file
-        .f32
-        .iter()
-        .map(|c| c.name.as_str())
-        .chain(file.vec2.iter().map(|c| c.name.as_str()))
-        .chain(file.color.iter().map(|c| c.name.as_str()))
-        .chain(file.transform.iter().map(|c| c.name.as_str()))
-        .collect();
-    for needed in [
-        "static",
-        "q28_degenerate_endpoint",
-        "q30_rank1_to_identity",
-        "q31_zero_alpha_both",
-        "q31_negative_alpha_extrapolation",
-        "q33_rank1_rounding_det",
-        "q33_huge_coefficients",
-        "q33_relative_threshold_large",
-        "q33_relative_threshold_small",
-    ] {
-        assert!(all_names.contains(&needed), "missing case {needed}");
-    }
-
-    fn easings<T: Interpolate>(cases: &[Case<T>]) -> Vec<Easing> {
-        cases
-            .iter()
-            .filter_map(|c| match &c.track {
-                Animatable::Keyed(k) => Some(k.keys().iter().map(|k| k.out)),
-                Animatable::Static(_) => None,
-            })
-            .flatten()
-            .collect()
-    }
-    for (kind, used) in [
-        ("f32", easings(&file.f32)),
-        ("vec2", easings(&file.vec2)),
-        ("color", easings(&file.color)),
-        ("transform", easings(&file.transform)),
-    ] {
-        for (label, hit) in [
-            ("Hold", used.iter().any(|e| matches!(e, Easing::Hold))),
-            ("Linear", used.iter().any(|e| matches!(e, Easing::Linear))),
-            ("EaseIn", used.iter().any(|e| matches!(e, Easing::EaseIn))),
-            ("EaseOut", used.iter().any(|e| matches!(e, Easing::EaseOut))),
-            (
-                "EaseInOut",
-                used.iter().any(|e| matches!(e, Easing::EaseInOut)),
-            ),
-            (
-                "CubicBezier",
-                used.iter().any(|e| matches!(e, Easing::CubicBezier { .. })),
-            ),
-        ] {
-            assert!(hit, "{kind}: easing {label} not covered");
-        }
-    }
-
-    fn ts<T: Interpolate>(cases: &[Case<T>]) -> Vec<i64> {
-        cases
-            .iter()
-            .flat_map(|c| c.samples.iter().map(|s| s.t))
-            .collect()
-    }
-    for t in [
-        ts(&file.f32),
-        ts(&file.vec2),
-        ts(&file.color),
-        ts(&file.transform),
-    ] {
-        assert!(t.contains(&i64::MIN) && t.contains(&i64::MAX));
-    }
-    // Key instants: the first key of every keyed track is sampled exactly.
-    fn key_instants_sampled<T: Interpolate>(cases: &[Case<T>]) -> bool {
-        cases.iter().all(|c| match &c.track {
-            Animatable::Keyed(k) => k
-                .keys()
-                .iter()
-                .all(|key| c.samples.iter().any(|s| s.t == key.at.ticks())),
-            Animatable::Static(_) => true,
-        })
-    }
-    assert!(key_instants_sampled(&file.f32));
-    assert!(key_instants_sampled(&file.vec2));
-    assert!(key_instants_sampled(&file.color));
-    assert!(key_instants_sampled(&file.transform));
+    let with = |extra: &[&'static str]| {
+        let mut v = easing_cases().to_vec();
+        v.extend_from_slice(extra);
+        v
+    };
+    covers("f32", &file.f32, &with(&["extreme_ats"]));
+    covers("vec2", &file.vec2, &with(&[]));
+    covers(
+        "color",
+        &file.color,
+        &with(&[
+            "premultiplied_alpha",
+            "q31_zero_alpha_both",
+            "q31_negative_alpha_extrapolation",
+            "out_of_gamut_no_clamp",
+            "same_space_display_p3",
+            "same_space_linear_srgb",
+            "alpha_f32_rounding",
+        ]),
+    );
+    covers(
+        "transform",
+        &file.transform,
+        &with(&[
+            "rotation_350_to_10",
+            "q28_degenerate_endpoint",
+            "q28_both_degenerate",
+            "q30_rank1_to_identity",
+            "q33_rank1_rounding_det",
+            "q33_det_zero_exact",
+            "q33_huge_coefficients",
+            "q33_relative_threshold_large",
+            "q33_relative_threshold_small",
+            "skew",
+        ]),
+    );
+    // extreme_ats really has keys at both ends of the i64 range.
+    let extreme = file.f32.iter().find(|c| c.name == "extreme_ats").unwrap();
+    let Animatable::Keyed(k) = &extreme.track else {
+        panic!("extreme_ats must be keyed");
+    };
+    let ats: Vec<i64> = k.keys().iter().map(|k| k.at.ticks()).collect();
+    assert!(ats.contains(&i64::MIN) && ats.contains(&i64::MAX));
 }
 
 // ---- the rules themselves ----------------------------------------------
@@ -596,20 +675,23 @@ fn arq_12_regenerate_switch_is_opt_in() {
 fn arq_12_f32_and_vec2_compare_bit_for_bit() {
     let one = 1.0_f32.to_bits();
     let next = f32::from_bits(one + 1).to_bits();
-    assert!(f32::matches(&[u64::from(one)], &[u64::from(one)]));
-    assert!(!f32::matches(&[u64::from(one)], &[u64::from(next)]));
+    assert!(f32::matches(&[u64::from(one)], &[u64::from(one)], false));
+    assert!(!f32::matches(&[u64::from(one)], &[u64::from(next)], false));
     assert!(!f32::matches(
         &[u64::from(0.0_f32.to_bits())],
-        &[u64::from((-0.0_f32).to_bits())]
+        &[u64::from((-0.0_f32).to_bits())],
+        false
     ));
     let y = 2.0_f64.to_bits();
     assert!(Vec2::matches(
         &[1.0_f64.to_bits(), y],
-        &[1.0_f64.to_bits(), y]
+        &[1.0_f64.to_bits(), y],
+        false
     ));
     assert!(!Vec2::matches(
         &[1.0_f64.to_bits(), y],
-        &[1.0_f64.to_bits(), y + 1]
+        &[1.0_f64.to_bits(), y + 1],
+        false
     ));
 }
 
@@ -625,21 +707,28 @@ fn arq_12_color_tolerance_is_4_eps_per_channel_and_alpha_is_exact() {
     let eps = EPS_F32 as f32;
     assert!(Color::matches(
         &enc(0, [0.5 + 3.0 * eps, 2.0 + 7.0 * eps, 0.25, 0.5]),
-        &want
+        &want,
+        false
     ));
     assert!(!Color::matches(
         &enc(0, [0.5 + 5.0 * eps, 2.0, 0.25, 0.5]),
-        &want
+        &want,
+        false
     ));
     assert!(!Color::matches(
         &enc(0, [0.5, 2.0 + 16.0 * eps, 0.25, 0.5]),
-        &want
+        &want,
+        false
     ));
     // Alpha: one ULP is a failure.
     let a1 = f32::from_bits(0.5_f32.to_bits() + 1);
-    assert!(!Color::matches(&enc(0, [0.5, 2.0, 0.25, a1]), &want));
+    assert!(!Color::matches(&enc(0, [0.5, 2.0, 0.25, a1]), &want, false));
     // Same values in another space are not the same color.
-    assert!(!Color::matches(&enc(1, [0.5, 2.0, 0.25, 0.5]), &want));
+    assert!(!Color::matches(
+        &enc(1, [0.5, 2.0, 0.25, 0.5]),
+        &want,
+        false
+    ));
 }
 
 #[test]
@@ -648,26 +737,74 @@ fn arq_12_transform_tolerance_is_1e9_relative_to_max_1_and_c() {
     let want = enc([0.5, 0.0, 0.0, 1000.0, 0.0, 0.0]);
     assert!(Transform2D::matches(
         &enc([0.5 + 5e-10, 0.0, 0.0, 1000.0, 0.0, 0.0]),
-        &want
+        &want,
+        false
     ));
     assert!(!Transform2D::matches(
         &enc([0.5 + 1e-8, 0.0, 0.0, 1000.0, 0.0, 0.0]),
-        &want
+        &want,
+        false
     ));
     // Large coefficients scale the tolerance: 1e-9 * 1000 = 1e-6.
     assert!(Transform2D::matches(
         &enc([0.5, 0.0, 0.0, 1000.0 + 5e-7, 0.0, 0.0]),
-        &want
+        &want,
+        false
     ));
     assert!(!Transform2D::matches(
         &enc([0.5, 0.0, 0.0, 1000.0 + 5e-6, 0.0, 0.0]),
-        &want
+        &want,
+        false
     ));
     // A zero coefficient admits up to 1e-9.
     assert!(!Transform2D::matches(
         &enc([0.5, 2e-9, 0.0, 1000.0, 0.0, 0.0]),
-        &want
+        &want,
+        false
     ));
+}
+
+#[test]
+fn arq_12_color_and_transform_are_bit_exact_where_no_interpolation_runs() {
+    let enc = |c: [f32; 4]| {
+        let mut v = vec![0];
+        v.extend(c.map(|x| u64::from(x.to_bits())));
+        v
+    };
+    let want = enc([0.5, 0.25, 0.75, 1.0]);
+    let one_ulp = enc([f32::from_bits(0.5_f32.to_bits() + 1), 0.25, 0.75, 1.0]);
+    assert!(!Color::matches(&one_ulp, &want, true));
+    assert!(Color::matches(&one_ulp, &want, false));
+    assert!(Color::matches(&want, &want, true));
+    let tw = [1.0_f64, 0.0, 0.0, 1.0, 5.0, 6.0]
+        .map(f64::to_bits)
+        .to_vec();
+    let mut off = tw.clone();
+    off[4] += 1;
+    assert!(!Transform2D::matches(&off, &tw, true));
+    assert!(Transform2D::matches(&off, &tw, false));
+    assert!(Transform2D::matches(&tw, &tw, true));
+}
+
+#[test]
+fn arq_12_exact_instants_are_static_outside_range_keys_and_hold() {
+    let hold_then_linear = keyed(vec![
+        (0, 0.0_f32, Easing::Hold),
+        (10, 1.0, Easing::Linear),
+        (20, 2.0, Easing::Linear),
+    ]);
+    for (t, want) in [
+        (i64::MIN, true),
+        (0, true),
+        (5, true),   // inside the Hold segment
+        (10, true),  // a key
+        (15, false), // interpolated
+        (20, true),
+        (i64::MAX, true),
+    ] {
+        assert_eq!(is_exact_instant(&hold_then_linear, t), want, "t={t}");
+    }
+    assert!(is_exact_instant(&Animatable::Static(1.0_f32), 7));
 }
 
 #[test]
