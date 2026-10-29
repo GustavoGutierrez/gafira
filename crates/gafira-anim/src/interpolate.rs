@@ -145,11 +145,14 @@ struct Parts {
 }
 
 impl Parts {
-    /// `None` when the determinant is zero or the parts are not finite.
+    /// `None` for a degenerate end (Q-33): non-finite coefficients, a
+    /// non-finite `det` or `|c1|·|c2|`, or `|det| <= 1e-12·|c1|·|c2|` (the sine
+    /// of the angle between the columns), all in `f64`.
     fn decompose(c: [f64; 6]) -> Option<Self> {
         let [a, b, c_, d, tx, ty] = c;
         let det = a * d - b * c_;
-        if det == 0.0 || !is_finite6(&c) {
+        let area = a.hypot(b) * c_.hypot(d);
+        if !is_finite6(&c) || !det.is_finite() || !area.is_finite() || det.abs() <= 1e-12 * area {
             return None;
         }
         let sx = a.hypot(b);

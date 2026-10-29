@@ -296,3 +296,223 @@ proptest! {
         prop_assert!(ok, "{:?} vs {:?}", got, want);
     }
 }
+
+fn linear_only(c: [f64; 4]) -> Transform2D {
+    tf(linear(c, 0.0, 0.0))
+}
+
+/// Per-coefficient relative difference <= 1e-9 (Q-33 degeneracy tests).
+fn assert_rel(got: Transform2D, want: [f64; 6]) {
+    let got = got.coeffs();
+    for i in 0..6 {
+        let diff = (got[i] - want[i]).abs();
+        let scale = want[i].abs().max(got[i].abs());
+        assert!(
+            got[i].is_finite() && diff <= 1e-9 * scale,
+            "coeff {i}: {got:?} vs {want:?}"
+        );
+    }
+}
+
+fn assert_abs_rel(got: Transform2D, want: [f64; 6]) {
+    // Zero coefficients of the expectation must be zero within 1e-9 absolute.
+    let got = got.coeffs();
+    for i in 0..6 {
+        let tol = 1e-9 * want[i].abs().max(1.0);
+        assert!(
+            got[i].is_finite() && (got[i] - want[i]).abs() <= tol,
+            "coeff {i}: {got:?} vs {want:?}"
+        );
+    }
+}
+
+// ARQ-19, Q-33
+#[test]
+fn arq_19_q33_rank_one_end_with_rounding_determinant_is_degenerate() {
+    let id = Transform2D::IDENTITY;
+    let rounded = linear_only([0.1, 0.3, 0.7, 2.1]);
+    assert!(
+        det(rounded.coeffs()) != 0.0,
+        "premise: det is rounding noise"
+    );
+    let got = rounded.interpolate(&id, 0.5);
+    assert_abs_rel(got, [0.55, 0.0, 0.0, 1.55, 0.0, 0.0]);
+    let exact = linear_only([1.1, 2.2, 3.3, 6.6]);
+    assert_abs_rel(exact.interpolate(&id, 0.5), [1.05, 0.0, 0.0, 3.8, 0.0, 0.0]);
+}
+
+// ARQ-19, Q-33
+#[test]
+fn arq_19_q33_finite_coefficients_with_non_finite_determinant_are_degenerate() {
+    let big = linear_only([1e200, 1e200, 1e200, 2e200]);
+    let got = big.interpolate(&Transform2D::IDENTITY, 0.5);
+    assert_rel(got, [5e199, 0.0, 0.0, 1e200, 0.0, 0.0]);
+    assert!(got.is_finite());
+}
+
+// ARQ-19, Q-33
+#[test]
+fn arq_19_q33_tiny_uniform_scale_is_not_degenerate() {
+    let got = Transform2D::scale(1e-9).interpolate(&Transform2D::IDENTITY, 0.5);
+    let want = 0.5 + 5e-10;
+    assert_rel(got, [want, 0.0, 0.0, want, 0.0, 0.0]);
+}
+
+// ARQ-19, Q-33: the threshold is the sine of the angle between the columns.
+#[test]
+fn arq_19_q33_threshold_is_relative_to_the_column_lengths() {
+    // sin(angle) = 1e-13 (below 1e-12): degenerate, borrows the identity frame.
+    let below = linear_only([1.0, 0.0, 1.0, 1e-13]);
+    assert_abs_rel(
+        below.interpolate(&Transform2D::IDENTITY, 0.5),
+        [1.0, 0.0, 0.0, 0.5 * (1e-13 + 1.0), 0.0, 0.0],
+    );
+    // sin(angle) = 1e-11 (above 1e-12): decomposed, sy = 1e-11, k = 1e11.
+    let above = linear_only([1.0, 0.0, 1.0, 1e-11]);
+    let c = above.interpolate(&Transform2D::IDENTITY, 0.5).coeffs();
+    assert!(c[2].abs() > 1e3, "decomposed with a large shear: {c:?}");
+}
+
+// ARQ-19, S1
+#[test]
+fn arq_19_transform_non_finite_endpoint_never_panics() {
+    let ok = Transform2D::IDENTITY;
+    for i in 0..6 {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut c = [1.0, 0.0, 0.0, 1.0, 5.0, 6.0];
+            c[i] = bad;
+            for t in [0.0_f32, 0.25, 0.5, 1.0, 1.5] {
+                let _ = tf(c).interpolate(&ok, t);
+                let _ = ok.interpolate(&tf(c), t);
+                let _ = tf(c).interpolate(&tf(c), t);
+            }
+        }
+    }
+}
+
+// ARQ-19, C1: "un volteo es siempre sy < 0": sx stays positive and sy crosses 0.
+#[test]
+fn arq_19_transform_flip_from_identity_collapses_the_y_axis_at_the_middle() {
+    let id = Transform2D::IDENTITY;
+    let flip = Transform2D::scale_xy(1.0, -1.0);
+    assert_close(id.interpolate(&flip, 0.5), [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    assert_close(flip.interpolate(&id, 0.5), [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    assert_close(id.interpolate(&flip, 0.25), [1.0, 0.0, 0.0, 0.5, 0.0, 0.0]);
+    assert_close(id.interpolate(&flip, 1.5), [1.0, 0.0, 0.0, -2.0, 0.0, 0.0]);
+}
+
+// ARQ-19, C1: scale(-1, 1) has det < 0 too: sx = 1, theta = pi, sy = -1.
+#[test]
+fn arq_19_transform_horizontal_flip_from_identity_goes_through_a_half_turn_frame() {
+    let id = Transform2D::IDENTITY;
+    let got = id
+        .interpolate(&Transform2D::scale_xy(-1.0, 1.0), 0.5)
+        .coeffs();
+    // theta = pi/2, sx = 1, sy = 0: [0, 1, 0, 0] (or its mirror at exactly pi).
+    assert!(got[0].abs() < 1e-9 && got[2].abs() < 1e-9 && got[3].abs() < 1e-9);
+    assert!((got[1].abs() - 1.0).abs() < 1e-9, "{got:?}");
+}
+
+// ARQ-19, C1: rotated mixed-sign pair.
+#[test]
+fn arq_19_transform_rotated_flip_keeps_the_rotation_and_collapses_the_y_axis() {
+    let r = Transform2D::rotation(0.5);
+    let (s, c) = 0.5_f64.sin_cos();
+    // r * scale(1, -1): second column negated.
+    let flipped = tf([c, s, s, -c, 0.0, 0.0]);
+    assert!(det(flipped.coeffs()) < 0.0);
+    assert_close(r.interpolate(&flipped, 0.5), [c, s, 0.0, 0.0, 0.0, 0.0]);
+    assert_close(flipped.interpolate(&r, 0.5), [c, s, 0.0, 0.0, 0.0, 0.0]);
+}
+
+/// Independent reference decomposition `(sx, sy, k, theta)` for det != 0.
+fn reference_parts(c: [f64; 6]) -> (f64, f64, f64, f64) {
+    let (c1, c2) = ((c[0], c[1]), (c[2], c[3]));
+    let sx = c1.0.hypot(c1.1);
+    let sy = det(c) / sx;
+    let k = (c1.0 * c2.0 + c1.1 * c2.1) / (sx * sy);
+    (sx, sy, k, c1.1.atan2(c1.0))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2048))]
+
+    // ARQ-19, C1: opposite-sign determinants blend sx > 0 and sy through 0.
+    #[test]
+    fn arq_19_transform_opposite_sign_pairs_match_the_decomposition_reference(
+        a in matrix(), b in matrix(), t in t01(),
+    ) {
+        prop_assume!(det(a).abs() > 1e-3 && det(b).abs() > 1e-3);
+        let b = if det(a).signum() != det(b).signum() { b } else { [b[2], b[3], b[0], b[1], b[4], b[5]] };
+        prop_assert!(det(a) * det(b) < 0.0);
+        let (pa, pb) = (reference_parts(a), reference_parts(b));
+        let mut dth = pb.3 - pa.3;
+        if dth > std::f64::consts::PI { dth -= std::f64::consts::TAU; }
+        if dth < -std::f64::consts::PI { dth += std::f64::consts::TAU; }
+        // Skip the tie at exactly half a turn, where the short way is ambiguous.
+        prop_assume!(dth.abs() < std::f64::consts::PI - 1e-6);
+        let t64 = f64::from(t);
+        let (sx, sy, k) = (lerp(pa.0, pb.0, t64), lerp(pa.1, pb.1, t64), lerp(pa.2, pb.2, t64));
+        let (sn, cs) = (pa.3 + dth * t64).sin_cos();
+        let want = [sx * cs, sx * sn, sy * (k * cs - sn), sy * (k * sn + cs), lerp(a[4], b[4], t64), lerp(a[5], b[5], t64)];
+        let got = tf(a).interpolate(&tf(b), t).coeffs();
+        // The reference sees large shears for near-singular ends: relative bound.
+        let ok = got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1e-9 * w.abs().max(1.0) * 1e3);
+        prop_assert!(ok, "{:?} vs {:?}", got, want);
+    }
+}
+
+// ARQ-19, Q-28 B, S3: a degenerate end whose off-diagonal part does not fit
+// the borrowed (theta, k) frame of a rotated and sheared B.
+#[test]
+fn arq_19_transform_degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame() {
+    let (theta, k, bsx, bsy) = (0.7_f64, 0.8_f64, 2.0_f64, 3.0_f64);
+    let (s, c) = theta.sin_cos();
+    let b = tf([
+        bsx * c,
+        bsx * s,
+        bsy * (k * c - s),
+        bsy * (k * s + c),
+        1.0,
+        -2.0,
+    ]);
+    let a = tf([1.0, 0.0, 0.0, 0.0, 3.0, 4.0]); // scaleY(0), det 0
+    // Independent expectation: S = U^-1 R^T L_a, diagonal (S11, S22).
+    // R^T L_a with L_a = [[1, 0], [0, 0]] (columns (1,0) and (0,0)).
+    let rt_l = [[c, 0.0], [-s, 0.0]];
+    let s11 = rt_l[0][0] - k * rt_l[1][0];
+    let s22 = rt_l[1][1];
+    let t = 0.5;
+    let sx = lerp(s11, bsx, t);
+    let sy = lerp(s22, bsy, t);
+    let want = [
+        sx * c,
+        sx * s,
+        sy * (k * c - s),
+        sy * (k * s + c),
+        lerp(3.0, 1.0, t),
+        lerp(4.0, -2.0, t),
+    ];
+    let got = a.interpolate(&b, 0.5);
+    assert_close(got, want);
+    // A plain 6-coefficient blend would give a different linear part.
+    let plain = lerp6(a.coeffs(), b.coeffs(), 0.5);
+    let far = got
+        .coeffs()
+        .iter()
+        .zip(plain)
+        .any(|(g, p)| (g - p).abs() > 1e-2);
+    assert!(far, "borrowing must differ from the plain blend: {plain:?}");
+    // Mirrored: the degenerate end last, blend towards it.
+    assert_close(
+        b.interpolate(&a, 0.5),
+        [
+            lerp(bsx, s11, t) * c,
+            lerp(bsx, s11, t) * s,
+            lerp(bsy, s22, t) * (k * c - s),
+            lerp(bsy, s22, t) * (k * s + c),
+            lerp(1.0, 3.0, t),
+            lerp(-2.0, 4.0, t),
+        ],
+    );
+}
