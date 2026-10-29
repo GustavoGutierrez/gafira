@@ -442,16 +442,20 @@ fn arq_19_transform_flip_from_identity_collapses_the_y_axis_at_the_middle() {
     assert_close(id.interpolate(&flip, 1.5), [1.0, 0.0, 0.0, -2.0, 0.0, 0.0]);
 }
 
-// ARQ-19, C1: scale(-1, 1) has det < 0 too: sx = 1, theta = pi, sy = -1.
+// ARQ-19, C1: scale(-1, 1) has det < 0 too: sx = 1, theta = pi, sy = -1. The tie at
+// |dtheta| = pi keeps dtheta as computed (+pi from the identity, -pi towards it), so
+// both directions go through the same half-turn frame (theta = pi/2 at the middle).
 #[test]
-fn arq_19_transform_horizontal_flip_from_identity_goes_through_a_half_turn_frame() {
+fn arq_19_transform_horizontal_flip_tie_at_pi_keeps_dtheta_as_computed() {
     let id = Transform2D::IDENTITY;
-    let got = id
-        .interpolate(&Transform2D::scale_xy(-1.0, 1.0), 0.5)
-        .coeffs();
-    // theta = pi/2, sx = 1, sy = 0: [0, 1, 0, 0] (or its mirror at exactly pi).
-    assert!(got[0].abs() < 1e-9 && got[2].abs() < 1e-9 && got[3].abs() < 1e-9);
-    assert!((got[1].abs() - 1.0).abs() < 1e-9, "{got:?}");
+    let flip = Transform2D::scale_xy(-1.0, 1.0);
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let q = [h, h, -h / 2.0, h / 2.0, 0.0, 0.0];
+    let half = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+    assert_close(id.interpolate(&flip, 0.5), half);
+    assert_close(id.interpolate(&flip, 0.25), q);
+    assert_close(flip.interpolate(&id, 0.5), half);
+    assert_close(flip.interpolate(&id, 0.75), q);
 }
 
 // ARQ-19, C1: rotated mixed-sign pair.
