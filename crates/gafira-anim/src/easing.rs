@@ -15,10 +15,13 @@ const EASE_IN: [f32; 4] = [0.42, 0.0, 1.0, 1.0];
 const EASE_OUT: [f32; 4] = [0.0, 0.0, 0.58, 1.0];
 const EASE_IN_OUT: [f32; 4] = [0.42, 0.0, 0.58, 1.0];
 
-/// Solver stop threshold on the relative error `|x(s) - u| / u`. Relative, not
-/// absolute: near `u = 0` with `x1, x2 ~ 0`, `x(s) ~ s^3` is flat, so a small
-/// absolute error can still mean a root that is far off in `s` (and in `y`).
-const X_EPSILON: f64 = 1e-12;
+/// Solver stop threshold on the last step in `s`. A bound on the error in `x`
+/// is not enough: near a flat inflection (`x1 = 1`, `x2 ~ 0`) `x(s) - u` is
+/// cubic in the distance to the root, so a tiny `x` error hides a large `s`
+/// (and `y`) error. A step of at most `S_EPSILON` bounds the error in `s` by a
+/// small multiple of it (bisection halves the bracket; Newton converges at
+/// least linearly at a triple root).
+const S_EPSILON: f64 = 1e-12;
 const MAX_ITERATIONS: usize = 64;
 
 impl Easing {
@@ -76,9 +79,6 @@ fn bezier([x1, y1, x2, y2]: [f32; 4], u: f32) -> f32 {
     let (mut lo, mut hi, mut s) = (0.0_f64, 1.0_f64, u);
     for _ in 0..MAX_ITERATIONS {
         let err = coord(x1, x2, s) - u;
-        if err.abs() <= X_EPSILON * u {
-            break;
-        }
         if err < 0.0 {
             lo = s;
         } else {
@@ -86,11 +86,16 @@ fn bezier([x1, y1, x2, y2]: [f32; 4], u: f32) -> f32 {
         }
         let d = slope(x1, x2, s);
         let next = s - err / d;
-        s = if d.abs() > 1e-9 && next > lo && next < hi {
+        let next = if d.abs() > 1e-9 && next > lo && next < hi {
             next
         } else {
             0.5 * (lo + hi)
         };
+        let done = (next - s).abs() <= S_EPSILON;
+        s = next;
+        if done {
+            break;
+        }
     }
     let y = coord(y1, y2, s);
     let (min, max) = (0.0_f64.min(y1).min(y2), 1.0_f64.max(y1).max(y2));

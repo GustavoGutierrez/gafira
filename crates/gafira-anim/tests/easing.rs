@@ -267,3 +267,26 @@ fn arq_17_every_curve_clamps_its_input_and_maps_nan_to_zero() {
         }
     }
 }
+
+#[test]
+fn arq_17_bezier_is_precise_near_a_flat_inflection() {
+    // x(s) - u ~ 4h^3 around the root when one control x is 1 and the other ~ 0, so
+    // a small error in x can hide a large error in s (and in y).
+    let us = [0.1_f32, 0.25, 0.5, 0.75, 0.9];
+    for k in 30..=60 {
+        let tiny = 2.0_f32.powi(-k);
+        for (x1, x2) in [(1.0, tiny), (tiny, 1.0), (1.0, 0.0), (0.0, 1.0)] {
+            for (y1, y2) in [(0.0, 1.0), (-2.0, 3.0), (3.0, -2.0)] {
+                for u in us {
+                    let got = f64::from(bezier((x1, y1, x2, y2)).apply(u));
+                    let want = reference(x1, y1, x2, y2, u);
+                    let tol = 1e-5 * 1.0_f64.max(f64::from(y1).abs()).max(f64::from(y2).abs());
+                    assert!(
+                        (got - want).abs() <= tol,
+                        "({x1:e},{y1},{x2:e},{y2}) u = {u}: got {got}, want {want}"
+                    );
+                }
+            }
+        }
+    }
+}
