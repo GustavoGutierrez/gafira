@@ -1,97 +1,98 @@
-# Verify report: anim-core D1
+# Verify report: anim-core D2a
 
-Flow: standard | mutation: archive | tier: T4 | verify: V2 (round 2: on the round-1 findings only).
-No cargo-mutants report for this delivery (expected with `mutation: archive`; not a finding).
-Acceptance source: Slice card (`apply-progress.md`), `docs/specs/02-arquitectura-software.md` §2.1, §2.2, §3.4, ARQ-17 (as amended by `9907bf9`).
+D1: PASS in round 2 at `0a2f336` (0 CRITICAL, 1 WARNING W3 equivalent bezier mutants, 4 SUGGESTION); merged into `develop` at `261dd77`.
 
-## Round 1 summary (commit `f7e64ba`): FAIL
+Flow: standard | mutation: archive | tier: T4 | verify: V2. No cargo-mutants report for this delivery (expected with `mutation: archive`; not a finding). Hand mutants only.
+Acceptance source: Slice card as amended by `c5262bd` (`apply-progress.md`), `docs/specs/02-arquitectura-software.md` §3.4, ARQ-18 (construction part) and ARQ-19 (`f32` and `Vec2` part).
+Scope: delivery commits `c2b26f9` (Interpolate, f32, Vec2) and `d9d2e50` (Keyframe, KeyTrack, invariant). Out of scope: D2b (`Animatable`, `sample`, serde, ARQ-16, ARQ-12, ARQ-18 deserialization) and D3 (`Color`, `Transform2D`).
 
-3 CRITICAL, 3 WARNING, 3 SUGGESTION. C1: the absolute solver stop `|x(s)-u| < 1e-12` returned the first guess for tiny `u` with flat-start curves (30x the precision tolerance). C2: no valid `x1 = 1.0` case (hand mutant M1 survived). C3: the precision property used uniform `u` and missed C1 and M2. W1: input clamping and NaN untested (M5 survived). W2 (ambiguity): spec silent on `apply` outside [0,1] and NaN. W3: hand mutants M3 (hull clamp) and M4 (Newton bracket guard) survived, likely equivalent. S1 Hold step, S2 extra derives, S3 CSS literals.
+## Round 1 (commit `d9d2e50`)
 
-## Round 2 (commit `0a2f336`)
+### Verdict: PASS (delivery D2a; D2b and D3 remain)
 
-Verified on a clean `git archive` export of `0a2f336` outside the repo (files touched after export, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`). Delivery range `9219560..0a2f336` without the docs commits `9907bf9` (spec) and `e501ee1` (round-1 report).
+Counts: 0 CRITICAL, 2 WARNING (both class ambiguity), 4 SUGGESTION.
 
-### Verdict: PASS (delivery D1; D2 and D3 remain)
+### Method
 
-Counts: 0 CRITICAL, 1 WARNING, 4 SUGGESTION. Per class: implementation 1 WARNING.
+- Clean `git archive` export of `d9d2e50` in the session scratchpad, files touched after export, own `CARGO_TARGET_DIR` per export, `CARGO_INCREMENTAL=0`. Disk free before building: 68 GB.
+- V2 probes: 18 checks (16 unit, 2 property with 4096 cases) derived from §3.4 and ARQ-18/ARQ-19 and written before reading the implementer's tests, run on a second export with `tests/track.rs` and `tests/interpolate.rs` removed. All 18 pass.
+- Hand mutants: 5, on a third export, against the implementer's tests.
+- Per-commit gates were not run (V3 only).
 
-### Gates (export of `0a2f336`, toolchain 1.93.1)
+### Gates (export of `d9d2e50`)
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0 (gafira-anim `easing`: 13 tests pass) |
-| CI "Domain crates forbid unsafe code" (replayed from `ci.yml`) | 0 |
-| CI "Domain crates respect the layer table (V5)" (replayed) | 0 |
-| CI "Domain clippy.toml copies are in sync (V12)" (replayed) | 0 |
-| `cargo deny --locked check` | 0 |
+| `cargo test --workspace --locked` | 0 (no failures; the known flaky gafira-testkit test did not fail) |
+| `cargo deny check bans licenses sources` | 0 |
+| CI: Domain crates forbid unsafe code | 0 |
+| CI: Domain crates respect the layer table (V5) | 0 (gafira-anim depends on gafira-geom and gafira-time, both in its row) |
+| CI: Domain clippy.toml copies are in sync (V12) | 0 |
 
-### Hygiene
+### Slice card and commit checks (fast lane, 3c)
 
-- No AI attribution in any commit of the range (`9219560`, `3f13d9a`, `f7e64ba`, `9907bf9`, `e501ee1`, `0a2f336`). Conventional subjects.
-- Slice card: `git diff 9219560 0a2f336 -- apply-progress.md` has no removed lines; `f7e64ba` and `0a2f336` only append `## D1 progress` and `## D1 round 2`. The card block is unchanged. OK.
-- `0a2f336` adds 2 seeds to `tests/easing.proptest-regressions` (checked in as proptest recommends). OK.
-- Size: `git diff --shortstat 9219560 0a2f336` (docs and report excluded) = 501 inserted lines, forecast ~300 (x1.67, inside the measured x1.4 to x1.9 band), below the ~700 ceiling.
-
-### Round-1 findings re-checked
-
-| ID | Status | Evidence |
-|---|---|---|
-| C1 | fixed | Stop is now `err.abs() <= X_EPSILON * u`. Round-1 probe file: `p_fail_map` shows no failures for any of the five curves that failed in round 1 (`(0,1,0,1)`, `(0,3,0,-2)`, `(0,3,1e-6,1)` ...); named-curve worst ratio 0.003. `zz_probe2::q_grid_fails_only_at_u_one`: 0 violations for `u < 1` over the round-1 grid plus `u` = smallest subnormal, largest subnormal, `MIN_POSITIVE`. Reverting the stop to the round-1 absolute form (R0) makes 3 implementer tests fail, confirming the RED claim. |
-| C1 termination | bounded, precise | The loop is a `for` over `MAX_ITERATIONS = 64`, so it always ends. `u = 0` (and `-0.0`, NaN) never reaches the solver (`apply` returns early); for subnormal `u` the threshold `1e-12 * u` stays a normal f64 (~1.4e-57), so no underflow to 0. An instrumented replica of the solver (bit-identical to `apply` on all 6.9 M cases) over x1, x2 in {0, 1e-45, 1e-6, 0.1, 0.42, 0.58, 0.9, 1-eps, 1}, y in {-2,0,1,3} and ~5 200 `u` bit patterns from 1e-45 to 1-eps: 0 precision violations, all results finite. 300 000 random curves with log-uniform `u`: max 11 iterations, 0 cap hits, 0 violations. The 64-iteration cap is reached only with `x1 ~ 0` and `u < ~6e-15` (see S1); the result there is still within tolerance. |
-| C2 | fixed | Validity test now has `x1 = 1.0`, `x2 = 1.0`, `x1 = x2 = 0.0` valid and `-MIN_POSITIVE` / `next_up(1.0)` invalid on both x. M1 killed by the implementer suite. |
-| C3 | fixed | Precision property draws `u` log-biased near 0 and 1 and x near 0 and 1, 4 096 cases; plus a fixed grid test and a pinned C1 test (`arq_17_bezier_is_precise_for_tiny_u_with_flat_start`). M2 killed by the implementer suite. |
-| W1 | fixed | `arq_17_every_curve_clamps_its_input_and_maps_nan_to_zero` covers u < 0, -0.0 (bit-exact +0), -inf, NaN -> 0 and u > 1, +inf -> 1 for every variant. M5 killed. |
-| W2 | settled | `9907bf9` amends §3.4 and ARQ-17: `Hold` is `e(u)=0` for `u<1`, `e(1)=1`; input clamped to [0,1], NaN -> 0, output not clamped. The code matches: `apply` returns 0 for NaN or `u <= 0`, 1 for `u >= 1`, `Hold` -> 0 inside; `bezier` output may leave [0,1] up to the hull bounds. The ARQ-17 unit tests the spec now lists (Hold at 0, 0.5, 1; every curve at -1, -inf, NaN, 2, +inf) are all present. |
-| W3 | open, documented equivalent | See W3 below. |
-| S1, S2 (round 1) | closed | Hold step now in the spec; derives are not a finding. |
-| S3 (round 1) | open | Carried as S3 below. |
-
-Note on the round-1 probe `p_precision_grid`: it still reports 15 "violations", all at `u = 1.0` exactly with `x2 = 1` (for example `(1,-1,1,-1)`). There `apply` returns 1 exactly (spec), and the f64 bisection reference is wrong because `1 - m^3` rounds to 1 for `m < ~5e-6`. This is a reference artefact, not a defect; the implementer's grid skipping `u >= 1.0` is justified (`e(1)=1` is pinned by the exact-ends tests).
+- `c5262bd docs(anim-core): slice card amend` touches only `openspec/changes/anim-core/apply-progress.md` and says why (D2 measured 1107 lines; owner OK to split). Allowed.
+- Implementer commits `c2b26f9` and `d9d2e50` do not touch `apply-progress.md` or any spec. The Slice card block was not changed by the implementer.
+- No AI attribution or Co-Authored-By lines in `261dd77..c5262bd`. Conventional commit subjects.
+- Size: 454 lines (`git diff --shortstat 261dd77 d9d2e50`: 180 + 274), below ~700; matches the card.
+- No `mul_add`, `#[allow]` or `unsafe` in gafira-anim; `#![forbid(unsafe_code)]` present.
+- `git grep` traces: ARQ-18 in `tests/track.rs` (4) and `tests/interpolate.rs`; ARQ-19 in `tests/interpolate.rs` (7 tests).
 
 ### Criteria map
 
 | # | Criterion | Proof | Status |
 |---|---|---|---|
-| 1 | Workspace entry for `gafira-anim` (§2.1, layer 1) | `Cargo.toml`; builds | covered |
-| 2 | V5 row (§2.2) | `ci.yml` row; V5 replay exit 0 | covered |
-| 3 | `clippy.toml` copy | V12 replay exit 0 | covered |
-| 4 | `#![forbid(unsafe_code)]` | `src/lib.rs`; forbid replay exit 0 | covered |
-| 5 | ARQ-17 `Linear` identity | `arq_17_linear_is_the_identity` | covered |
-| 6 | ARQ-17 named == `CubicBezier` bit for bit, 1 001 `u` | `arq_17_named_curves_equal_their_cubic_bezier_bit_for_bit` | covered |
-| 7 | ARQ-17 `e(0)=0`, `e(1)=1` exact | `arq_17_bezier_ends_are_exact`, `arq_17_every_curve_is_exact_at_the_ends` | covered |
-| 8 | ARQ-17 precision vs f64 bisection | `arq_17_bezier_matches_f64_reference_within_tolerance`, `..._precision_grid_of_extreme_control_points`, `..._precise_for_tiny_u_with_flat_start`; probes agree | covered |
-| 9 | ARQ-17 hull bounds | `arq_17_bezier_stays_within_bounds`; probes agree | covered |
-| 10 | `CubicBezier` validity rule | `arq_17_cubic_bezier_validity_rule` (boundaries both sides) | covered |
-| 11 | ARQ-17 `Hold` step (amended) | `arq_17_hold_is_a_step_that_reaches_one_only_at_the_end` + exact-ends test | covered |
-| 12 | ARQ-17 input clamp, NaN -> 0 (amended) | `arq_17_every_curve_clamps_its_input_and_maps_nan_to_zero` | covered |
-| - | serde names (§3.4 format) | `arq_17_serde_names_follow_the_spec_enum` | covered (extra) |
+| 1 | ARQ-18: 0 keys rejected, rule named | `arq_18_construction_names_the_rule_and_index` ("empty", `AtLeastOneKey`, `None`); probe `p_empty` | covered |
+| 2 | ARQ-18: two equal `at` rejected at the key index | same test ("equal at", `Some(2)`); hand mutant M1 killed | covered |
+| 3 | ARQ-18: decreasing `at` rejected, not sorted | same test ("decreasing at", "decreasing at i64"); probe `p_not_sorted_silently` | covered |
+| 4 | ARQ-18: `CubicBezier` `x1` or `x2` outside [0, 1] rejected | same test (x1/x2 below and above, at index 0, 1, 2); boundary values valid in `arq_18_valid_tracks_are_kept_untouched`; probe `p_bezier_bounds` (adjacent floats) | covered |
+| 5 | ARQ-18: non-finite bezier value rejected | same test (y1 NaN, y2 inf, x1 NaN) | covered |
+| 6 | ARQ-18: non-finite `value` component rejected (f32, Vec2) | same test (NaN, -inf); `arq_18_non_finite_vec2_component_is_rejected`; `arq_18_finiteness_covers_every_component`; M3 killed | covered |
+| 7 | ARQ-18: error names the rule and the key index | `KeyTrackError { rule, index }` compared in every case; `arq_18_error_message_names_rule_and_index` for the Display text | covered |
+| 8 | ARQ-18: no silent sort or repair; no public operation leaves an invalid track | `arq_18_valid_tracks_are_kept_untouched` (keys returned as given); structural: `keys` private, only `new` and `keys()`, no `Deserialize` yet, no `&mut` accessor | covered (D2b must keep this when it adds `Deserialize`) |
+| 9 | ARQ-19: `t = 0` gives `a`, `t = 1` gives `b` (f32, Vec2) | `arq_19_f32_endpoints_are_exact` (bits, includes -0.0), `arq_19_vec2_endpoints_are_exact`; M5 killed | covered |
+| 10 | ARQ-19: for `t` in [0, 1], within `eps * max(abs(a), abs(b))` of the ends | `arq_19_f32_stays_between_ends`, `arq_19_vec2_stays_between_ends` (domain ±1e30 / ±1e300, see W2) | covered |
+| 11 | ARQ-19: formula `a + (b - a) * t`; Vec2 per component in f64 with `t` widened | `arq_19_f32_follows_the_formula_and_extrapolates`, `arq_19_vec2_follows_the_formula_per_component` (bit equality); M4 killed | covered |
+| 12 | ARQ-19: extrapolation without clamping | same tests (`t` = 1.5, -0.5, 2.0, -1.0); M2 killed | covered |
+| 13 | ARQ-12/Q-29 for f32 and Vec2: bit-identical, IEEE only, no FMA | bit-equality formula tests run on the 3-target CI matrix; no `mul_add` in the crate | covered for D2a (the cross-platform golden of ARQ-12 belongs to D2b) |
 
-Total 12, covered 12. Product ID in D1 scope: ARQ-17 (all tests named `arq_17_*`). ARQ-12, ARQ-16, ARQ-18, ARQ-19 are left to D2/D3 by the card.
+Total 13, covered 13. IDs left out on purpose: ARQ-16, ARQ-12 structural and ARQ-18 deserialization (D2b), ARQ-19 `Color` and `Transform2D` (D3), ARQ-17 (D1, done).
 
-### Hand mutants (round-1 set re-run, scratch export, `src/easing.rs`)
+### Hand mutants (5, all killed)
 
-| ID | Mutation | Implementer tests | Probes | Reading |
-|---|---|---|---|---|
-| M1 | x1 range `0.0..=1.0` -> `0.0..1.0` | killed | killed | C2 fixed |
-| M2 | `X_EPSILON` 1e-12 -> 1e-6 | killed | killed | C3 fixed |
-| M3 | drop final `y.clamp(min, max)` | survived | survived | equivalent (W3) |
-| M4 | drop `next > lo && next < hi` guard | survived | survived | equivalent on all searched inputs (W3) |
-| M5 | NaN `u` -> 1.0 | killed | killed | W1 fixed |
+| # | Mutant | Killed by |
+|---|---|---|
+| M1 | `key.at <= prev.at` -> `key.at < prev.at` (equal `at` allowed) | `arq_18_error_message_names_rule_and_index`, construction test |
+| M2 | f32: clamp `t` to [0, 1] before the formula | `arq_19_f32_follows_the_formula_and_extrapolates` |
+| M3 | Vec2 `is_finite` checks only `x` | `arq_18_finiteness_covers_every_component` |
+| M4 | Vec2: result rounded through f32 | `arq_19_vec2_stays_between_ends`, formula test |
+| M5 | f32: drop the `t == 1.0` exact-end shortcut | `arq_19_f32_endpoints_are_exact` |
 
-Run 5, killed 3 by the implementer suite. Extra check R0 (revert the stop to round-1 absolute `< 1e-12`, not counted as a mutant): killed (3 implementer tests fail).
+Rule order inside one key (at, then out, then value) is not fixed by the spec, so a mutant swapping it would be equivalent to the contract; not counted.
+
+### Implementer deviations, judged
+
+1. `Interpolate::is_finite` (required method, not in the §3.4 snippet): needed. ARQ-18 requires "cada `value` es finito en todos sus componentes" for a generic `T`, and the snippet's bounds (`Clone + PartialEq + Send + Sync`) give no way to test finiteness. The implementation is right; the spec snippet is incomplete. See W1.
+2. `KeyTrack.keys` private with `new` and `keys()`: required by the normative text ("Ninguna operación pública deja una pista inválida"); a `pub` field as in the snippet would break it. Snippet drift only. See S1.
+3. `KeyTrackError { rule: KeyTrackRule, index: Option<usize> }`: meets "nombra la regla y el índice"; `None` only for 0 keys, where no index exists. No finding. See S2.
+4. f32 overflow for finite opposite-sign ends near ±3e38: the prescribed formula gives `-inf` (probe: `3e38.interpolate(&-3e38, 0.5) == -inf`), which contradicts the ARQ-19 between-ends property for that domain. Spec gap. See W2.
+
+### CRITICAL
+
+None.
 
 ### WARNING
 
-- **W3** class: implementation. ref: `crates/gafira-anim/src/easing.rs` `bezier` (hull clamp, Newton bracket guard); hand mutants M3, M4. Both still survive tests and probes. Extra search this round (3 M curves, x biased to 0/1/log-small, `u` uniform and log-uniform): M4 gives 0 precision violations; without the clamp the guarded solver's f32 result never left the hull (0 of 3 M). Accepted as equivalent and documented in `apply-progress.md`; not blocking. The implementer's M4 rationale is slightly off: without the guard the bisection fallback only triggers on a tiny slope, so equivalence rests on the empirical search, not on the bracket argument (M4 hits the 64-iteration cap 208 928 times in that search and still meets tolerance).
+- W1. class: ambiguity. ref: `docs/specs/02-arquitectura-software.md` §3.4 snippet; `crates/gafira-anim/src/interpolate.rs`. The `Interpolate` trait in the snippet has only `interpolate`, but ARQ-18 needs a finiteness check over generic `T`. The implementer added a required `fn is_finite(&self) -> bool` to the public trait. Correct choice; the specifier should add it to the snippet so the public API and the spec agree (D3 `Color`, `Transform2D` and later `GradientStops` must implement it). Not blocking.
+- W2. class: ambiguity. ref: ARQ-19 (`f32` and `Vec2` rows, between-ends property). With finite ends whose difference overflows (`abs(b - a) > f32::MAX`, e.g. 3e38 and -3e38), `a + (b - a) * t` is infinite for `t` in (0, 1), so "each component is between `a` and `b`" does not hold for every finite pair; the same applies to Vec2 near `f64::MAX`. The tests cap the domain at ±1e30 / ±1e300, which the spec never states. The specifier should either state the value domain for the property or pick a formula that cannot overflow (that changes the bit-level result, so it is a spec decision). Not blocking: real document values are far from that range.
 
 ### SUGGESTION
 
-- **S1** ref: `easing.rs` `bezier`, slope threshold `d.abs() > 1e-9`. With `x1 ~ 0` and `u < ~6e-15` (x1 = x2 = 0) or `u < ~1e-19` (x1 = 0, x2 >= 0.1), the slope at the root is below the absolute 1e-9, so Newton is never taken, pure bisection cannot reach the relative stop and the loop runs all 64 iterations. Results stay within tolerance (bisection width 2^-64), so this is cost only (64 cheap iterations, still far below the ARQ-12 1 µs budget). A relative slope test or a stop on bracket width would end earlier.
-- **S2** ref: `apply-progress.md` `## D1 round 2`, W3/M4 bullet. Reword the equivalence argument to rest on the search evidence (see W3), so it does not read as a proof.
-- **S3** ref: `arq_17_named_curves_match_css_reference_values` (carried from round 1). It still compares to the bisection reference, not to published CSS values; two literals (`ease-in(0.5) ~ 0.3153`, `ease-out(0.5) ~ 0.6847`, both confirmed by the probes) would make it independent.
-- **S4** ref: size. 501 lines is over the ~400 lines at which `AGENTS.md` suggests `chained-pr` review slices; the coordinator may want to keep D2/D3 closer to their forecasts.
+- S1. When updating the §3.4 snippet (W1), also show `KeyTrack` with a private `keys`, `KeyTrack::new` returning `Result<_, KeyTrackError>` and `keys()`.
+- S2. D2b should reuse `KeyTrackError`/`KeyTrackRule` for the deserialization error so "same rule and same index" (ARQ-18) compares the same values.
+- S3. The D2a RED evidence and deviations live in `0061556 docs(anim-core): D2 progress` on `feat/anim-core-d2`, not on this branch (the split left them after D2b). They agree with this report (RED against stubs for the formula, endpoint and construction tests; between-ends properties have no RED by construction, closed by the formula tests). Carry that note with D2b so `apply-progress.md` holds it after merge.
+- S4. `arq_19_vec2_endpoints_are_exact` compares with `PartialEq`, which treats -0.0 and 0.0 as equal; the spec asks only for `PartialEq`, so it is enough, but a bit comparison like the f32 test would also pin the sign of zero.
 
-next: tdd-apply (D2)
+next: tdd-apply (D2b); W1 and W2 (ambiguity) can go to specifier without blocking D2b.
