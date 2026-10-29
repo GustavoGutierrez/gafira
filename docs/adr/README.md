@@ -21,7 +21,8 @@ Where a decision lives:
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted |
+| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted, partly superseded by 0002 |
+| [0002](0002-fast-lane.md) | Fast lane: spec-direct execution, mutation toggle, lighter defaults | accepted |
 
 ## Template
 

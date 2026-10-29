@@ -1,5 +1,7 @@
 # OpenSpec change skeleton
 
+Only for the full OpenSpec derivation (owner request or full mode). The default fast lane uses a Slice card in `apply-progress.md` instead (`SKILL.md` section 4).
+
 Layout: `openspec/changes/<change>/{proposal.md, design.md (optional), specs/<capability>/spec.md}`. `config.yaml` has the per-phase rules.
 
 ## proposal.md

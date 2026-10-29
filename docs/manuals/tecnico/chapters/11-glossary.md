@@ -25,12 +25,15 @@
 | History | The owner of the session `Arc<Document>` and its undo and redo stacks (`gafira-edit`) |
 | Law | One of the six properties `prop_command` checks for a command |
 | Lite SDD | The spec, apply, verify, archive flow of this repository |
+| Fast lane | The default route (ADR 0002): a product spec runs directly from its requirement IDs through a Slice card, with no proposal, design or delta specs |
 | Finding class | The `class:` of a verify finding (`implementation`, `architecture`, `ambiguity`, `claim`); the coordinator routes by it |
 | Flow mode | Light, standard or full: the set of agents, gates and checks a request runs; chosen by the coordinator |
 | Gate (G0 to G5) | A check the coordinator makes between phases of a flow; not the same as the local gates (`fmt`, `clippy`, `test`) |
 | Light spec | The block of acceptance criteria the coordinator writes at the top of `apply-progress.md` in light mode |
+| Slice card | The block the coordinator writes at the top of `apply-progress.md` in the fast lane: `Flow:` line, product IDs, scope, non-goals, deliveries and plan; it satisfies G0 |
 | Mutation tier (T0 to T4) | How much code the mutation run covers: none, hand mutants, diff, changed files, whole crate |
-| Pack | The predefined mode, agents, mutation tier and verify depth for a request type |
+| Mutation toggle | The `mutation: off\|archive\|delivery` field of the `Flow:` line; it sets when `cargo-mutants` runs (default `archive`: T4 per touched crate at change close) |
+| Pack | The predefined mode, agents, `mutation` value and verify depth for a request type |
 | `verification.json` | The machine-readable record of each verify round, written by `verify` (pilot) |
 | Verify depth (V0 to V3) | How much independent work `verify` does, from deterministic checks only to the full matrix |
 | MergeKey | The key under which two commands may be merged into one history entry |

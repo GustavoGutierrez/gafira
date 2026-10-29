@@ -5,45 +5,48 @@
 | Área | Estado | Fuente |
 |---|---|---|
 | Modos de flujo, packs, puertas G0 a G5, profundidades de verify V0 a V3, niveles de mutación T0 a T4 | **Implementado** (decisión aceptada; las definiciones de los agentes la siguen) | `docs/adr/0001-flow-modes-and-packs.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
+| Carril rápido: ejecución directa de la spec con Slice card, el interruptor `mutation`, valores por defecto V1/V2 de verify | **Implementado** (decisión aceptada; sustituye partes del ADR 0001) | `docs/adr/0002-fast-lane.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | `verification.json` | **Implementado** como piloto; el punto de revisión es el archivado del siguiente change que lo use | ADR 0001 registro de decisiones 5, `.agents/agents/verify.md` |
-| Archivado de una ejecución ligera sin fusión de deltas | **Implementado** | ADR 0001 registro de decisiones 6, `.agents/agents/archive.md` |
+| Archivado de una ejecución ligera o de carril rápido sin fusión de deltas | **Implementado** | ADR 0001 registro de decisiones 6, ADR 0002 sección 6, `.agents/agents/archive.md` |
 
 ## SDD ligero
 
-Las specs ya dicen qué construir, así que por defecto no hay fases separadas de propuesta, diseño o tareas. Dos etapas previas son opcionales: `specifier`, cuando falta la spec o es ambigua, y `architect`, cuando hace falta una decisión de diseño real o un desglose en entregas. El flujo completo es:
+Las specs ya dicen qué construir, así que por defecto no hay fases separadas de propuesta, diseño o tareas. Dos etapas previas son opcionales: `specifier`, cuando falta la spec o es ambigua, y `architect`, cuando hace falta una decisión de diseño real o entregas en paralelo (las entregas en serie listadas en una Slice card no necesitan `architect`). El flujo completo es:
 
 ```
-(specify) -> spec -> (architect) -> (explorer, only when a claim is risky) -> tdd-apply -> mutants + verify -> archive
+(specify) -> spec -> (architect) -> (explorer, only when a claim is risky) -> tdd-apply -> verify -> (mutants T4 per touched crate) -> archive
 ```
 
-El modo de una solicitud (sección siguiente) decide qué etapas se ejecutan. Los agentes están en `.agents/agents/`.
+El carril rápido es la ruta por defecto (ADR 0002, [Carril rápido](#carril-rápido)). Cuando el titular pide ejecutar una spec de producto de `docs/specs/`, o una sección o un rango de IDs de ella, el `coordinator` escribe una Slice card y `tdd-apply` trabaja directamente a partir de los IDs de requisitos de producto. No hay propuesta, ni diseño, ni delta specs. En este flujo, `spec` significa la spec de producto más la Slice card.
+
+El modo de una solicitud (sección siguiente) decide qué etapas se ejecutan. `mutants` se ejecuta según el valor `mutation` de la línea `Flow:`. Los agentes están en `.agents/agents/`.
 
 | Paso | Agente | Salida |
 |---|---|---|
-| Convertir una solicitud en specs: requisitos, escenarios, criterios de aceptación, no objetivos, preguntas abiertas | `specifier` | Delta specs en `openspec/changes/<change>/specs/` |
+| Convertir una solicitud en specs: requisitos, escenarios, criterios de aceptación, no objetivos, preguntas abiertas | `specifier` | Carril rápido: solo ante una ambigüedad reportada, y corrige la spec de producto en `docs/specs/`. En otro caso, delta specs en `openspec/changes/<change>/specs/` |
 | Decidir el cómo cuando una spec deja abierta una decisión de diseño; dividir el trabajo en entregas con una tabla de dependencias | `architect` | `openspec/changes/<change>/design.md`, ADR transversales en `docs/adr/` |
 | Medir afirmaciones riesgosas en un directorio temporal y contrastar cifras entre documentos | `explorer` | `openspec/changes/<change>/spike.md` con comando, salida y veredicto |
 | Construir una entrega con TDD estricto | `tdd-apply` | Commits y `openspec/changes/<change>/apply-progress.md` |
-| Probar por mutación el código según el nivel de la ejecución; reportar mutantes supervivientes (solo lectura) | `mutants` | Un informe en el directorio temporal de la sesión, fuera del repositorio |
+| Probar por mutación el código según el valor de `mutation` (por defecto, crate completo al cerrar el change); reportar mutantes supervivientes (solo lectura) | `mutants` | Un informe en el directorio temporal de la sesión, fuera del repositorio |
 | Comprobar las puertas y cada criterio de aceptación, requisito y escenario | `verify` | `verify-report.md` y `verification.json` en la carpeta del change, PASS o FAIL |
-| Cerrar el change tras PASS y con todas las entregas hechas | `archive` | Delta specs fusionadas en `openspec/specs/`; el change pasa a `openspec/changes/archive/` |
+| Cerrar el change tras PASS y con todas las entregas hechas | `archive` | El change pasa a `openspec/changes/archive/`; carril rápido: tabla de estado de `docs/specs/README.md` actualizada con los IDs cubiertos; las delta specs, si existen, se fusionan en `openspec/specs/` |
 | Editar el manual técnico, primero en inglés y con espejo en español | `manual-writer` | Capítulos en ambos idiomas, evidencia de `manual.py check` y `build` |
 
-`mutants` y `verify` se ejecutan en paralelo sobre la misma entrega. `verify` ejecuta las puertas locales, asocia cada criterio a una prueba o un comando, lee el informe de mutantes y escribe un veredicto con hallazgos numerados (críticos, advertencias, sugerencias). Un FAIL abre una ronda de corrección: `tdd-apply` escribe primero las pruebas y registra la ronda en `apply-progress.md`, después `verify` se ejecuta de nuevo.
+`verify` ejecuta las puertas locales, asocia cada criterio a una prueba o un comando, lee el informe de mutantes cuando hubo una ejecución y escribe un veredicto con hallazgos numerados (críticos, advertencias, sugerencias). Un FAIL abre una ronda de corrección: `tdd-apply` escribe primero las pruebas y registra la ronda en `apply-progress.md`, después `verify` se ejecuta de nuevo.
 
 ## Modos de flujo y packs
 
-El `coordinator` clasifica cada solicitud antes de enrutarla. Aplica los mínimos obligatorios, después el valor por defecto del pack y, por último, la instrucción explícita del titular. Solo ejecuta los agentes y las comprobaciones del modo resultante. Decisión: `docs/adr/0001-flow-modes-and-packs.md` (aceptada).
+El `coordinator` clasifica cada solicitud antes de enrutarla. Aplica los mínimos obligatorios, después el valor por defecto del pack y, por último, la instrucción explícita del titular. Solo ejecuta los agentes y las comprobaciones del modo resultante. Decisiones: `docs/adr/0001-flow-modes-and-packs.md` (aceptada, sustituida en parte) y `docs/adr/0002-fast-lane.md` (aceptada).
 
 ### Modos
 
 | | Light | Standard | Full |
 |---|---|---|---|
-| Agentes | `coordinator`, `tdd-apply`, `verify` | añade `specifier`, `explorer` opcional, `mutants`, `archive` | añade `architect`; `mutants` y `verify` por entrega |
-| Fuente de la aceptación | Bloque Light spec escrito por el coordinador | Delta specs de `specifier` | Delta specs y `design.md` con la tabla de entregas |
-| Puertas | G0, G3, G4 | G0, G1, G3, G4, G5 | G0 a G5 |
-| Nivel de mutación por defecto | T1 o T2 según el pack | T2 o T3 según el pack | T2 por entrega, T4 al archivar |
-| Profundidad de verify por defecto | V1 o V2 según el pack | V2 | V3 para la primera entrega de un crate o capacidad nuevos, V2 después |
+| Agentes | `coordinator`, `tdd-apply`, `verify` | añade `explorer` opcional, `mutants` (según `mutation`), `archive`; `specifier` solo ante ambigüedad o sin spec de producto | añade `architect` |
+| Fuente de la aceptación | Bloque Light spec escrito por el coordinador | IDs de la spec de producto más Slice card (carril rápido), o delta specs | Como standard, más `design.md` con la tabla de entregas |
+| Puertas | G0, G3, G4 | G0, G1 (solo si se ejecutó `specifier`), G3, G4, G5 | G0 a G5 |
+| `mutation` por defecto | `off` o `archive` según el pack | `archive` (T4 al cerrar) | `archive` (T4 al cerrar) |
+| Profundidad de verify por defecto | V0, V1 o V2 según el pack | V2 | V2 (V3 solo a petición del titular) |
 
 ### Mínimos obligatorios
 
@@ -52,46 +55,47 @@ La primera fila que coincide fija el modo mínimo y siempre prevalece el modo m�
 | Señal | Modo mínimo |
 |---|---|
 | Los criterios requieren una decisión del titular que `docs/specs/00-decisiones.md` no da | Detenerse y preguntar al titular |
-| Crate nuevo, arista de dependencia, fila de la tabla de capas V5, versión de formato serializado, decisión de diseño transversal o varias entregas ordenadas | Full |
-| Cambio de API pública o de formato en un crate existente; una regla nueva sobre código crítico; una solicitud tan ambigua que los criterios inventarían comportamiento | Standard |
+| Fila nueva de la tabla de capas V5, arista de dependencia nueva que `docs/specs/02-arquitectura-software.md` no recoge, versión nueva de formato serializado, una decisión de diseño transversal que la spec deja abierta, o entregas en paralelo | Full |
+| Crate nuevo que `02` ya describe (lista de crates, capa, dependencias); cambio de API pública o de formato en un crate existente; una regla nueva sobre código crítico; una solicitud tan ambigua que los criterios inventarían comportamiento | Standard |
 | Previsión multiplicada por 1,4 por encima de unas 300 líneas cambiadas | Standard |
-| Previsión multiplicada por 1,4 por encima de unas 700 líneas, o entregas en paralelo | Full |
 
-Una solicitud que no coincide con ninguna fila de pack, o con dos, se trata como la más pesada.
+Unas 700 líneas por entrega siguen siendo una señal para detenerse y preguntar, no un mínimo. Un change puede ejecutar varias entregas en serie sin `architect` cuando la Slice card las enumera. Una solicitud que no coincide con ninguna fila de pack, o con dos, se trata como la más pesada.
 
 ### Packs
 
-Un pack fija el modo, los agentes, el nivel de mutación y la profundidad de verify para un tipo de solicitud.
+Un pack fija el modo, los agentes, el valor de `mutation` y la profundidad de verify para un tipo de solicitud. La columna Mutación indica el valor y el nivel.
 
-| Tipo de solicitud | Modo | Nivel | Verify |
+| Tipo de solicitud | Modo | Mutación | Verify |
 |---|---|---|---|
-| Solo documentación | Light | T0 | V0 |
-| Cambio del manual | Light, `manual-writer` | T0 | V0 (`manual.py check` y `build`) |
-| Cambio de skill o de definición de agente | Light, un agente de propósito general en un worktree, después `verify` | T0 | V1 |
-| Actualización de dependencia o de toolchain | Light | T0 (T2 sobre el diff derivado si cambió código) | V1 (V2 si cambió código) |
-| Corrección de error | Light si las specs fijan el comportamiento y la causa es local; si no, standard | T2 (T3 en un archivo crítico) | V2, prueba reproductora en RED primero |
-| Refactor pequeño sin cambio de comportamiento | Light | T2 (T3 en un archivo crítico) | V2 y diff de elementos públicos vacío |
-| Función nueva en un crate de dominio existente | Standard | T3 | V2 |
-| Capacidad o crate nuevo | Full | T2 por entrega, T4 al archivar | V3, después V2 |
-| Trabajo solo de spec o de spec de producto | Standard sin código, `specifier` | T0 | V0 |
-| Release o versionado | Light | T0 | V1 |
-| Investigación o spike | Light, solo `explorer` | T0 | Ninguna; la salida es `spike.md` |
-| Hotfix de CI o de herramientas | Light | T0 | V1 |
-| Refuerzo solo de pruebas o ronda de corrección tras un FAIL | Hereda el modo del change | Mismo nivel, `--iterate` permitido | V2 solo sobre los hallazgos |
+| Solo documentación | Light | `off` (T0) | V0 |
+| Cambio del manual | Light, `manual-writer` | `off` (T0) | V0 (`manual.py check` y `build`) |
+| Cambio de skill o de definición de agente | Light, un agente de propósito general en un worktree, después `verify` | `off` (T0) | V1 |
+| Actualización de dependencia o de toolchain | Light | `off` (T0); `archive` (T4) si cambió código | V1 (V2 si cambió código) |
+| Corrección de error | Light si las specs fijan el comportamiento y la causa es local; si no, standard | `archive` (T4) | V2, prueba reproductora en RED primero |
+| Refactor pequeño sin cambio de comportamiento | Light | `archive` (T4) | V2 y diff de elementos públicos vacío |
+| Función nueva en un crate de dominio existente | Standard (carril rápido cuando una spec de producto la fija) | `archive` (T4) | V2 |
+| Porción de spec de producto: capacidad o crate nuevo que `02` describe (carril rápido) | Standard; full solo con un mínimo full | `archive` (T4) | V2 |
+| Trabajo solo de spec o de spec de producto | Standard sin código, `specifier` | `off` (T0) | V0 |
+| Release o versionado | Light | `off` (T0) | V1 |
+| Investigación o spike | Light, solo `explorer` | `off` (T0) | Ninguna; la salida es `spike.md` |
+| Hotfix de CI o de herramientas | Light | `off` (T0) | V1 |
+| Refuerzo solo de pruebas o ronda de corrección tras un FAIL | Hereda el modo del change | Mismo valor; `--iterate` permitido con `delivery` | V2 solo sobre los hallazgos |
 
 Un cambio en una fila V5 o en un pin de acción dentro de un hotfix de CI es un mínimo full. El titular revisa todo pull request que cambie definiciones de agentes o skills, porque cambia el propio proceso.
 
 ### Registro y anulación
 
-El coordinador escribe una línea en la cabecera de `apply-progress.md` (dentro del bloque Light spec en modo light):
+El coordinador escribe una línea en la cabecera de `apply-progress.md` (dentro del bloque Light spec en modo light, dentro de la Slice card en el carril rápido):
 
 ```
-Flow: <mode> | pack: <pack> | tier: T<n> | verify: V<n> | decided-by: coordinator|owner | reason: <one line>
+Flow: <mode> | pack: <pack> | mutation: off|archive|delivery | tier: T<n> | verify: V<n> | decided-by: coordinator|owner | reason: <one line>
 ```
+
+En el carril rápido la línea va dentro de la Slice card. El campo `tier` indica el nivel por entrega con `mutation: delivery`, `T4` con `archive` y `T0` con `off`.
 
 Cada cambio de modo se añade como `Flow-change: light -> standard (trigger: ambiguity, after verify round 1)`. El coordinador comunica al titular el modo elegido en su primer informe.
 
-La instrucción explícita del titular prevalece sobre cualquier otra regla («run it full», «run it light», «skip mutation», «T4 now»). El coordinador registra `decided-by: owner`. Si la instrucción baja de un mínimo, el coordinador expone el riesgo una vez y después obedece, y G0 se mantiene en su forma mínima. Una anulación se aplica solo al change en curso. El coordinador puede subir el modo de inmediato. Solo puede bajarlo en un límite de fase, antes de que empiece trabajo del modo más pesado, y nunca por debajo de un mínimo.
+La instrucción explícita del titular prevalece sobre cualquier otra regla («run it full», «run it light», «skip mutation», que equivale a `mutation: off`, «mutate every delivery», que equivale a `delivery`, «T4 now», «V3»). El coordinador registra `decided-by: owner`. Si la instrucción baja de un mínimo, el coordinador expone el riesgo una vez y después obedece, y G0 se mantiene en su forma mínima. Una anulación se aplica solo al change en curso. El coordinador puede subir el modo de inmediato. Solo puede bajarlo en un límite de fase, antes de que empiece trabajo del modo más pesado, y nunca por debajo de un mínimo.
 
 ## Puertas
 
@@ -99,14 +103,14 @@ El coordinador comprueba cada puerta antes de la fase siguiente. Una puerta fall
 
 | Puerta | Se supera cuando | Modos |
 |---|---|---|
-| G0 | Existe un artefacto confirmado (bloque Light spec o delta spec) antes del primer commit de implementación, con alcance, no objetivos, un criterio comprobable y tipado por cada cambio de comportamiento y la línea `Flow:` | Todos |
+| G0 | Existe un artefacto confirmado (bloque Light spec, Slice card con sus IDs de spec de producto, o delta spec) antes del primer commit de implementación, con alcance, no objetivos, un criterio comprobable y tipado por cada cambio de comportamiento y la línea `Flow:` | Todos |
 | G1 | Tras `specifier`: sin preguntas abiertas, cada requisito con un escenario tipado, decisiones del titular respetadas | Standard, full |
 | G2 | Tras `architect`: tabla de entregas con dependencias, cada entrega cerca o por debajo de unas 700 líneas | Full |
 | G3 | Tras `tdd-apply`: `status: done` con commits, salida de las puertas, líneas medidas, evidencia RED por criterio, desviaciones | Todos los modos con código |
-| G4 | Tras `verify` y `mutants`: cero CRITICAL, umbrales del nivel cumplidos, `verification.json` escrito | Todos los modos con V1 o superior |
-| G5 | Antes de push, pull request y archivado: PASS en todas las entregas, T4 ejecutado en cada crate que toca el change | Standard, full |
+| G4 | Tras `verify` (y `mutants` cuando hubo una ejecución): cero CRITICAL, umbrales del nivel cumplidos, `verification.json` escrito | Todos los modos con V1 o superior |
+| G5 | Antes de push, pull request y archivado: PASS en todas las entregas; con `mutation: archive` o `delivery`, T4 ejecutado en cada crate que toca el change y sin supervivientes críticos | Standard, full |
 
-El coordinador no puede dispensar G0. Si el titular pide no tener spec, el coordinador escribe igualmente una Light spec de tres líneas.
+El coordinador no puede dispensar G0. Si el titular pide no tener spec, el coordinador escribe igualmente una Light spec de tres líneas. En una porción de spec de producto, la Slice card satisface G0.
 
 ## Modo light
 
@@ -122,13 +126,37 @@ El coordinador comprueba estos desencadenantes tras cada retorno de un agente. S
 
 | Desencadenante | Acción |
 |---|---|
-| Un criterio de aceptación necesita un comportamiento que ninguna spec fija (`blocked` o hallazgo de clase `ambiguity`) | Standard: `specifier` escribe la delta spec |
+| Un criterio de aceptación necesita un comportamiento que ninguna spec fija (`blocked` o hallazgo de clase `ambiguity`) | Standard: `specifier` corrige la spec de producto cuando existe (carril rápido); en otro caso escribe la delta spec |
 | Cambio de API pública o de formato serializado en el diff | Standard |
-| Una regla nueva sobre código crítico | Standard, nivel subido a T3 |
-| Tamaño medido por encima de unas 300 líneas, o previsión multiplicada por 1,4 por encima de unas 300 | Standard; por encima de unas 700 o con varias entregas: full |
-| Cuestión de arquitectura (arista de dependencia, fila V5, crate nuevo, capas) | Full: `architect` |
+| Una regla nueva sobre código crítico | Standard; el coordinador valora `mutation: delivery` (T3) y expone el motivo |
+| Tamaño medido por encima de unas 300 líneas, o previsión multiplicada por 1,4 por encima de unas 300 | Standard; por encima de unas 700: dividir en entregas en serie enumeradas en la Slice card, o `architect` si la división requiere una decisión de diseño o trabajo en paralelo |
+| Cuestión de arquitectura (fila V5 nueva, arista de dependencia que `02` no recoge, versión de formato, decisión transversal abierta) | Full: `architect` |
 | Se toca una decisión del titular | Detenerse y preguntar al titular |
 | Segundo FAIL de cualquier clase en la misma entrega | Subir un modo e informar al titular; sin tercera ronda light |
+
+## Carril rápido
+
+El carril rápido ejecuta directamente una spec de producto (ADR 0002, sección 3). Cuando el titular pide ejecutar un documento de `docs/specs/`, o una sección o un rango de IDs de él, el coordinador escribe una Slice card al principio de `openspec/changes/<change>/apply-progress.md`. La confirma como `docs(<change>): slice card` antes de cualquier implementación, y la tarjeta satisface G0.
+
+```
+## Slice card
+Flow: <mode> | pack: <pack> | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator|owner | reason: <one line>
+Product IDs: <ARQ-nn, RF-nn ...> (source: docs/specs/<NN-doc>.md §x)
+Scope: <1 to 3 lines>      Non-goals: <list>
+Deliveries: <only if more than one: D1 <scope, ~lines>, D2 ...; serial>
+Plan: <ordered steps, expected crates and files>
+Owner decisions touched: none (checked D-nn: ...)
+```
+
+Reglas del carril rápido:
+
+- No hay `proposal.md`, ni `design.md`, ni delta specs. La fuente de aceptación de `tdd-apply` y `verify` son las filas de la spec de producto de los IDs enumerados más la Slice card.
+- Cada prueba nombra el ID de requisito que demuestra, en el nombre de la prueba o en un comentario de una línea, de modo que `git grep ARQ-nn` traza la cobertura. `verify` comprueba que cada ID de la Slice card tiene una prueba que lo nombra.
+- `specifier` se ejecuta solo cuando `tdd-apply` reporta `blocked` o `verify` reporta un hallazgo de clase `ambiguity`. Corrige la spec de producto en `docs/specs/` (en español), no una delta spec, salvo que el titular pida una.
+- El coordinador escribe la Slice card con los mismos límites que la Light spec. Nunca edita la spec de producto, y solo modifica la tarjeta en un commit aparte `docs(<change>): slice card amend` que indica el motivo.
+- Un crate nuevo que `02` ya describe es un mínimo standard, no full. El tamaño de las entregas y las entregas en serie siguen los mínimos obligatorios anteriores.
+- Las solicitudes que no son porciones de spec de producto mantienen el bloque Light spec.
+- `archive` no fusiona deltas. Mueve la carpeta y actualiza la columna «Detalle» de la tabla de estado de `docs/specs/README.md` con los IDs cubiertos. Los changes con delta specs mantienen la fusión del ADR 0001, y `openspec/specs/` sigue siendo el registro de los changes pasados.
 
 ## Profundidades de verify
 
@@ -139,7 +167,7 @@ La profundidad fija cuánto trabajo independiente hace `verify`. `verify` nunca 
 | V0 | Sin agente. El coordinador ejecuta las comprobaciones deterministas del pack (enlaces, `manual.py check`, `cargo fmt --check`, `git diff --stat`) y las reporta tal cual |
 | V1 | Puertas en HEAD; cada criterio de aceptación asociado a una prueba o un comando; PASS o FAIL |
 | V2 | V1, más comprobaciones de sondeo derivadas de los criterios antes de leer las pruebas del implementador, mutantes manuales (5 como máximo, 3 en modo light) sobre una exportación temporal, hallazgos clasificados por `class:` |
-| V3 | V2, más puertas por commit sobre exportaciones limpias, ejecuciones negativas de la política de CI y la matriz completa de requisitos y escenarios |
+| V3 | Solo a petición del titular: V2, más puertas por commit sobre exportaciones limpias, ejecuciones negativas de la política de CI y la matriz completa de requisitos y escenarios |
 
 ### verification.json
 
@@ -155,11 +183,21 @@ Los niveles fijan cuánto código mutan `mutants` y `verify`. El [capítulo de h
 |---|---|---|
 | T0 | Ninguno | No se toca código Rust |
 | T1 | Solo mutantes manuales de `verify`, de 3 a 5 como máximo | Cambios mínimos en código no crítico |
-| T2 | `cargo mutants --in-diff`: líneas cambiadas | Toda entrega que cambia Rust |
-| T3 | `--file` por cada archivo fuente no de prueba cambiado | Valor por defecto de standard; entregas que editan un archivo crítico existente |
-| T4 | Crate completo | Archivado, en cada crate que toca el change, en todos los modos |
+| T2 | `cargo mutants --in-diff`: líneas cambiadas | `mutation: delivery`, entregas que cambian Rust |
+| T3 | `--file` por cada archivo fuente no de prueba cambiado | `mutation: delivery`; entregas que editan un archivo crítico existente |
+| T4 | Crate completo | Cierre del change, antes de archivar, en cada crate que toca el change; el valor por defecto (`mutation: archive`) |
 
 El coordinador sube un nivel cuando una entrega edita un archivo crítico existente o añade una regla de un tipo nuevo. Solo el titular baja un nivel. `--iterate` se permite únicamente en rondas de corrección solo de pruebas con el mismo conjunto de archivos, nunca en la ronda que cierra una entrega ni en T4. En modo light `mutants` se ejecuta solo desde T2.
+
+### Interruptor de mutación
+
+El campo `mutation` de la línea `Flow:` elige cuándo se ejecuta `cargo-mutants` (ADR 0002, sección 1).
+
+| Valor | Efecto |
+|---|---|
+| `archive` (por defecto) | Sin ejecución por entrega. Una ejecución T4 por crate tocado al cerrar el change, antes de archivar. Un superviviente crítico vuelve a `tdd-apply` y después al `verify` final |
+| `delivery` | T2 o T3 por entrega (`--iterate` en rondas de corrección solo de pruebas), más T4 al cerrar. Solo a petición del titular, o cuando el coordinador señala una regla nueva sobre código crítico |
+| `off` | Sin `cargo-mutants`. Los mutantes manuales de `verify` en V2 siguen aplicándose |
 
 ## Control del ciclo
 
@@ -196,9 +234,9 @@ RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REF
 | `docs/specs/00-decisiones.md` | Decisiones del titular (D-nn). Prevalecen sobre las demás specs y no se reabren sin el titular |
 | `docs/specs/NN-*.md` | El documento en curso; los completados pasan a `docs/specs/archive/` con `git mv`, los que esperan están en `docs/specs/backlog/` |
 | `openspec/specs/<capability>/spec.md` | Specs principales por capacidad, la fuente de verdad, completadas al archivar |
-| `openspec/changes/<change>/` | `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light), `apply-progress.md`, `verify-report.md`, `verification.json` |
+| `openspec/changes/<change>/` | `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md`, `verification.json` |
 
-Formato de spec: palabras clave de RFC 2119; escenarios como Given/When/Then; cada requisito etiquetado con su entrega (`D1`, `D2a`...) y cada escenario con su tipo (unit, property, integration, command, manual). Las delta specs usan `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` (con Reason y nota de Migration) y `## RENAMED Requirements`. El archivado es el único paso que edita las specs principales, y avisa antes de cualquier delta destructiva.
+Formato de spec: palabras clave de RFC 2119; escenarios como Given/When/Then; cada requisito etiquetado con su entrega (`D1`, `D2a`...) y cada escenario con su tipo (unit, property, integration, command, manual). Las delta specs usan `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements` (con Reason y nota de Migration) y `## RENAMED Requirements`. El archivado es el único paso que edita las specs principales, solo en changes con delta specs, y avisa antes de cualquier delta destructiva. Los changes de carril rápido no tienen ninguna, así que el trabajo nuevo de carril rápido no edita `openspec/specs/`.
 
 Cadena de changes hasta ahora: seis changes están cerrados y archivados en `openspec/changes/archive/`, y no hay ninguno abierto. En orden: `workspace-scaffold`, `domain-color` y `domain-doc` (2026-10-24), `domain-time` y `edit-history` (2026-10-25), y `engine-pathops` (2026-10-26). El change `edit-history` incluye todas sus entregas, de D1 a D10, con el paso de CI V14.
 

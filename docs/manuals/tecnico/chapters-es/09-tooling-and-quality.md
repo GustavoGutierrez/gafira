@@ -74,20 +74,20 @@ Un crate de soporte (solo dev-dependency, `publish = false`, fila V5, sin `clipp
 
 ## Pruebas de mutación
 
-`cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI. El agente `mutants` la ejecuta sobre las líneas que cambió una entrega, y el agente `verify` falla ante un mutante omitido o con tiempo agotado en código crítico y documenta el resto. No hay objetivo de puntuación. La ejecución muta un alcance fijado por el nivel de mutación del change (T0 a T4, véase el [capítulo de metodología](10-methodology.md)); el paso de archivado pide primero una ejecución del crate completo (T4) de cada crate que toca el change.
+`cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI. El agente `mutants` la ejecuta cuando el valor `mutation` de la línea `Flow:` pide una ejecución, y el agente `verify` falla ante un mutante omitido o con tiempo agotado en código crítico y documenta el resto. No hay objetivo de puntuación. La ejecución muta un alcance fijado por el nivel de mutación (T0 a T4, véase el [capítulo de metodología](10-methodology.md)). Por defecto (`mutation: archive`) no hay ejecución por entrega, y el change se cierra con una ejecución del crate completo (T4) de cada crate que toca, antes de archivar. `mutation: delivery` añade los niveles por entrega T2 y T3, y `mutation: off` no ejecuta `cargo-mutants`.
 
 Una segunda práctica la complementa. Cuando una prueba se escribe después del código, la entrega muestra que la prueba puede fallar aplicando a mano una mutación a la vez (por ejemplo `<` en lugar de `<=`, sin `break` temprano, compactar la entrada más reciente), ejecutando las pruebas y restaurando el código. Las mutaciones manuales se registran como una selección en el `apply-progress.md` del change, nunca como una ejecución completa. Un mutante superviviente hallado por `cargo-mutants` en código crítico devuelve la entrega a una ronda de corrección con pruebas nuevas.
 
 ```bash
-cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratch dir>
+cargo mutants -p <crates> --in-diff <diff> --jobs 8 -o <scratch dir>
 ```
 
-Este es el comando de T2. Los demás niveles que ejecutan `cargo-mutants` usan estas formas (`AGENTS.md`):
+Este es el comando de T2, que se usa solo con `mutation: delivery`. Los demás niveles que ejecutan `cargo-mutants` usan estas formas (`AGENTS.md`):
 
 | Nivel | Forma del comando |
 |---|---|
-| T3 | `cargo mutants -p <crate> --file <file> --jobs 4 -o <scratch dir>`, un `--file` por cada archivo fuente no de prueba cambiado |
-| T4 | `cargo mutants -p <crate> --jobs 4 -o <scratch dir>` |
+| T3 | `cargo mutants -p <crate> --file <file> --jobs 8 -o <scratch dir>`, un `--file` por cada archivo fuente no de prueba cambiado; solo con `mutation: delivery` |
+| T4 | `cargo mutants -p <crate> --jobs 8 -o <scratch dir>`; la ejecución por defecto, una vez por crate tocado al cerrar el change |
 
 `--iterate` se permite en T3 solo en rondas de corrección solo de pruebas con el mismo conjunto de archivos, nunca en la ronda de cierre con PASS.
 
@@ -95,6 +95,8 @@ Reglas, de `AGENTS.md` y `.cargo/mutants.toml`:
 
 - Use el ejecutor `cargo test` por defecto (nextest omite las doctests) y no use `RUSTFLAGS=-D warnings`.
 - `--locked` ya viene de `additional_cargo_test_args` en `.cargo/mutants.toml`; no lo pase de nuevo, porque cargo rechaza un duplicado.
+- `.cargo/mutants.toml` fija `profile = "mutants"`. La tabla `[profile.mutants]` de `Cargo.toml` hereda `test` y fija `debug = "none"`, lo que acorta la compilación de cada mutante. No pase `--profile`.
+- Use `--jobs 8`. Un enlazador rápido como mold o wild es opcional y no está instalado.
 - `#[mutants::skip]` está prohibido porque requiere una dependencia. Los mutantes equivalentes se excluyen en `.cargo/mutants.toml` con una expresión regular que coincide con exactamente un mutante y una razón escrita. La entrada actual excluye `Document::schema_version -> u32 with 1`, equivalente mientras `SCHEMA_VERSION` sea 1 y la carga acepte solo la versión 1.
 - Dirija la salida a un directorio temporal con `-o`; `/mutants.out/` está ignorado por git.
 

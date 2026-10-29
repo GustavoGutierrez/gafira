@@ -74,20 +74,20 @@ Use it from integration tests (`tests/`) only, where each crate has one copy of 
 
 ## Mutation testing
 
-`cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate. The `mutants` agent runs it on the lines a delivery changed, and the `verify` agent fails on a missed or timed-out mutant in critical code and documents the rest. There is no score target. The run mutates a scope set by the mutation tier of the change (T0 to T4, see the [methodology chapter](10-methodology.md)); the archive step first asks for a whole-crate run (T4) of every crate the change touched.
+`cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate. The `mutants` agent runs it when the `mutation` value of the `Flow:` line asks for a run, and the `verify` agent fails on a missed or timed-out mutant in critical code and documents the rest. There is no score target. The run mutates a scope set by the mutation tier (T0 to T4, see the [methodology chapter](10-methodology.md)). By default (`mutation: archive`) there is no per-delivery run, and the change closes with one whole-crate run (T4) of every crate it touched, before archive. `mutation: delivery` adds the per-delivery tiers T2 and T3, and `mutation: off` runs no `cargo-mutants`.
 
 A second practice complements it. When a test is written after the code, the delivery shows that the test can fail by applying one hand mutation at a time (for example `<` for `<=`, no early `break`, compacting the newest entry), running the tests and restoring the code. Hand mutations are recorded as a selection in the change's `apply-progress.md`, never as a complete run. A surviving mutant found by `cargo-mutants` in critical code sends the delivery back for a fix round with new tests.
 
 ```bash
-cargo mutants -p <crates> --in-diff <diff> --jobs 4 -o <scratch dir>
+cargo mutants -p <crates> --in-diff <diff> --jobs 8 -o <scratch dir>
 ```
 
-This is the T2 command. The other tiers that run `cargo-mutants` use these shapes (`AGENTS.md`):
+This is the T2 command, used only with `mutation: delivery`. The other tiers that run `cargo-mutants` use these shapes (`AGENTS.md`):
 
 | Tier | Command shape |
 |---|---|
-| T3 | `cargo mutants -p <crate> --file <file> --jobs 4 -o <scratch dir>`, one `--file` per changed non-test source file |
-| T4 | `cargo mutants -p <crate> --jobs 4 -o <scratch dir>` |
+| T3 | `cargo mutants -p <crate> --file <file> --jobs 8 -o <scratch dir>`, one `--file` per changed non-test source file; only with `mutation: delivery` |
+| T4 | `cargo mutants -p <crate> --jobs 8 -o <scratch dir>`; the default run, once per touched crate at change close |
 
 `--iterate` is allowed on T3 only for test-only fix rounds with the same file set, never on the closing PASS round.
 
@@ -95,6 +95,8 @@ Rules, from `AGENTS.md` and `.cargo/mutants.toml`:
 
 - Use the default `cargo test` runner (nextest skips doctests) and no `RUSTFLAGS=-D warnings`.
 - `--locked` already comes from `additional_cargo_test_args` in `.cargo/mutants.toml`; do not pass it again, because cargo rejects a duplicate.
+- `.cargo/mutants.toml` sets `profile = "mutants"`. The `[profile.mutants]` table in `Cargo.toml` inherits `test` and sets `debug = "none"`, which shortens the build of each mutant. Do not pass `--profile`.
+- Use `--jobs 8`. A fast linker such as mold or wild is optional and not installed.
 - `#[mutants::skip]` is forbidden because it needs a dependency. Equivalent mutants are excluded in `.cargo/mutants.toml` with a regex that matches exactly one mutant and a written reason. The current entry excludes `Document::schema_version -> u32 with 1`, equivalent while `SCHEMA_VERSION` is 1 and load accepts only version 1.
 - Send output to a scratch directory with `-o`; `/mutants.out/` is gitignored.
 

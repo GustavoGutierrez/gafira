@@ -25,12 +25,15 @@
 | History | El dueño del `Arc<Document>` de la sesión y de sus pilas de deshacer y rehacer (`gafira-edit`) |
 | Ley | Una de las seis propiedades que `prop_command` comprueba para un comando |
 | SDD ligero | El flujo spec, apply, verify, archive de este repositorio |
+| Carril rápido | La ruta por defecto (ADR 0002): una spec de producto se ejecuta directamente desde sus IDs de requisitos mediante una Slice card, sin propuesta, diseño ni delta specs |
 | Clase de hallazgo | El `class:` de un hallazgo de verify (`implementation`, `architecture`, `ambiguity`, `claim`); el coordinador enruta según ella |
 | Modo de flujo | Light, standard o full: el conjunto de agentes, puertas y comprobaciones que ejecuta una solicitud; lo elige el coordinador |
 | Puerta (G0 a G5) | Una comprobación que hace el coordinador entre fases de un flujo; no es lo mismo que las puertas locales (`fmt`, `clippy`, `test`) |
 | Light spec | El bloque de criterios de aceptación que el coordinador escribe al principio de `apply-progress.md` en modo light |
+| Slice card | El bloque que el coordinador escribe al principio de `apply-progress.md` en el carril rápido: línea `Flow:`, IDs de producto, alcance, no objetivos, entregas y plan; satisface G0 |
 | Nivel de mutación (T0 a T4) | Cuánto código cubre la ejecución de mutación: ninguno, mutantes manuales, diff, archivos cambiados, crate completo |
-| Pack | El modo, los agentes, el nivel de mutación y la profundidad de verify predefinidos para un tipo de solicitud |
+| Interruptor de mutación | El campo `mutation: off\|archive\|delivery` de la línea `Flow:`; fija cuándo se ejecuta `cargo-mutants` (por defecto `archive`: T4 por crate tocado al cerrar el change) |
+| Pack | El modo, los agentes, el valor de `mutation` y la profundidad de verify predefinidos para un tipo de solicitud |
 | `verification.json` | El registro legible por máquina de cada ronda de verify, escrito por `verify` (piloto) |
 | Profundidad de verify (V0 a V3) | Cuánto trabajo independiente hace `verify`, desde solo comprobaciones deterministas hasta la matriz completa |
 | MergeKey | La clave bajo la que dos comandos pueden fusionarse en una sola entrada de historial |

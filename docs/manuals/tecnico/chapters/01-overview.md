@@ -35,14 +35,15 @@ Workspace version: `0.1.0-beta.1`. Edition 2024, toolchain `1.93.1` pinned in `r
 | `apps/gafira-cli/` | Command-line binary |
 | `docs/specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
 | `docs/manuals/` | Brand manual (`marca/`) and this technical manual (`tecnico/`) |
-| `openspec/specs/` | Main specs per capability, merged at archive time |
+| `openspec/specs/` | Main specs per capability, merged at archive time; fast-lane changes do not edit them |
 | `openspec/changes/` | Open changes; closed ones move to `openspec/changes/archive/` |
 | `.agents/agents/` | Agents of the development flow (`.claude/agents` is a symlink) |
 | `.github/workflows/ci.yml` | CI: tests, policy checks, `cargo-deny` |
-| `deny.toml`, `.cargo/mutants.toml` | License and source policy; mutation-testing settings |
+| `deny.toml`, `.cargo/mutants.toml` | License and source policy; mutation-testing settings (the `mutants` profile is in `Cargo.toml`) |
+| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane) |
 
 ## Reading order
 
 1. Architecture and layering, to know where code may live.
 2. The crate chapters, bottom-up: geometry, color, document, edit.
-3. Tooling and methodology, before sending a change.
+3. Tooling and methodology, before sending a change. Product specs run through the fast lane described in the methodology chapter.

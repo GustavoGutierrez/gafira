@@ -1,5 +1,7 @@
 # cargo-mutants settings. Keep minimal; see AGENTS.md "Testing and mutation policy".
 additional_cargo_test_args = ["--locked"]
+# Cargo profile from Cargo.toml [profile.mutants] (inherits test, no debug info) to cut build time per mutant.
+profile = "mutants"
 
 # Equivalent mutants (AGENTS.md "Testing and mutation policy"); each regex matches exactly one mutant.
 exclude_re = [
