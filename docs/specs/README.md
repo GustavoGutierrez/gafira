@@ -25,7 +25,7 @@ Desde 2026-10-29 los documentos se ejecutan por la vía rápida (ADR 0002): sin 
 
 1. Arrancar `claude --agent coordinator` en `main` y pedir: "ejecuta docs/specs/02-arquitectura-software.md".
 2. El coordinador calcula los IDs pendientes (los que ningún change ni test nombra todavía):
-   `comm -23 <(grep -oE 'ARQ-[0-9]+' docs/specs/02-arquitectura-software.md | sort -u) <(git grep -hoE 'ARQ-[0-9]+' -- openspec crates | sort -u)`
+   `comm -23 <(grep -oE 'ARQ-[0-9]+' docs/specs/02-arquitectura-software.md | sort -u) <(git grep -hoE 'ARQ-[0-9]+' -- openspec crates apps | sort -u)`
 3. Elige el siguiente bloque según la tabla de estado (próximo: `gafira-format`), escribe su Slice card y sigue con `tdd-apply` -> `verify`; la mutación corre una vez (T4) al cerrar.
 4. Cada change cerrado actualiza "Detalle" arriba. Cuando no quedan IDs pendientes, el documento se archiva (sección de abajo).
 

@@ -5,7 +5,7 @@ description: >
   decisions as ADRs, and break the work into ordered deliveries (~700 lines)
   with dependencies, parallel or serial. Writes design.md (and proposal.md or
   tasks only when needed) and ADRs; never production code or tests. Use when a
-  spec leaves a real design decision open, a change needs a delivery breakdown,
+  spec leaves a real design decision open, a change needs parallel deliveries or a design-dependent split,
   or code must be analysed before choosing an approach.
 model: opus
 tools: Read, Edit, Write, Glob, Grep, Bash

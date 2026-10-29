@@ -11,7 +11,7 @@
 
 ## SDD ligero
 
-Las specs ya dicen qué construir, así que por defecto no hay fases separadas de propuesta, diseño o tareas. Dos etapas previas son opcionales: `specifier`, cuando falta la spec o es ambigua, y `architect`, cuando hace falta una decisión de diseño real o un desglose en entregas. El flujo completo es:
+Las specs ya dicen qué construir, así que por defecto no hay fases separadas de propuesta, diseño o tareas. Dos etapas previas son opcionales: `specifier`, cuando falta la spec o es ambigua, y `architect`, cuando hace falta una decisión de diseño real o entregas en paralelo (las entregas en serie listadas en una Slice card no necesitan `architect`). El flujo completo es:
 
 ```
 (specify) -> spec -> (architect) -> (explorer, only when a claim is risky) -> tdd-apply -> verify -> (mutants T4 per touched crate) -> archive
@@ -46,7 +46,7 @@ El `coordinator` clasifica cada solicitud antes de enrutarla. Aplica los mínimo
 | Fuente de la aceptación | Bloque Light spec escrito por el coordinador | IDs de la spec de producto más Slice card (carril rápido), o delta specs | Como standard, más `design.md` con la tabla de entregas |
 | Puertas | G0, G3, G4 | G0, G1 (solo si se ejecutó `specifier`), G3, G4, G5 | G0 a G5 |
 | `mutation` por defecto | `off` o `archive` según el pack | `archive` (T4 al cerrar) | `archive` (T4 al cerrar) |
-| Profundidad de verify por defecto | V1 o V2 según el pack | V2 | V2 (V3 solo a petición del titular) |
+| Profundidad de verify por defecto | V0, V1 o V2 según el pack | V2 | V2 (V3 solo a petición del titular) |
 
 ### Mínimos obligatorios
 

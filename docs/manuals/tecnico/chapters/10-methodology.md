@@ -11,7 +11,7 @@
 
 ## Lite SDD
 
-Specs already say what to build, so there are no separate proposal, design or tasks phases by default. Two upstream stages are optional: `specifier` when the spec is missing or ambiguous, and `architect` when a real design decision or a delivery breakdown is needed. The full flow is:
+Specs already say what to build, so there are no separate proposal, design or tasks phases by default. Two upstream stages are optional: `specifier` when the spec is missing or ambiguous, and `architect` when a real design decision is open or deliveries must run in parallel (serial deliveries listed in a Slice card need no `architect`). The full flow is:
 
 ```
 (specify) -> spec -> (architect) -> (explorer, only when a claim is risky) -> tdd-apply -> verify -> (mutants T4 per touched crate) -> archive
@@ -46,7 +46,7 @@ The `coordinator` classifies each request before it routes. It applies the hard 
 | Acceptance source | Light spec block written by the coordinator | Product spec IDs plus Slice card (fast lane), or delta specs | As standard, plus `design.md` with the delivery table |
 | Gates | G0, G3, G4 | G0, G1 (only if `specifier` ran), G3, G4, G5 | G0 to G5 |
 | Default `mutation` | `off` or `archive` per pack | `archive` (T4 at close) | `archive` (T4 at close) |
-| Default verify depth | V1 or V2 per pack | V2 | V2 (V3 only on owner request) |
+| Default verify depth | V0, V1 or V2 per pack | V2 | V2 (V3 only on owner request) |
 
 ### Hard floors
 
