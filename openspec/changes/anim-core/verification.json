@@ -1,0 +1,20 @@
+{ "schema": 1, "change": "anim-core", "delivery": "D1", "rounds": [ {
+  "round": 1, "commit": "f7e64ba78861475bdc47e26e727fead1b5e75f9f", "mode": "standard", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier, tdd-apply",
+  "counts": {"critical": 3, "warning": 3, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-anim/src/easing.rs X_EPSILON/bezier; ARQ-17 precision",
+     "summary": "Absolute stop |x(s)-u|<1e-12 exits on initial guess for u<=1e-12; x1=x2=0,y1=y2=1,u=1e-12 gives 3e-12 vs ref 3e-4 (30x tol)"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "tests/easing.rs arq_17_cubic_bezier_validity_rule",
+     "summary": "No valid x1=1.0 case; hand mutant M1 (half-open x1 range) survives; out-of-range cases are coarse (+-0.01)"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "tests/easing.rs arq_17_bezier_matches_f64_reference_within_tolerance",
+     "summary": "Uniform u, 256 cases: misses C1 and M2 (X_EPSILON 1e-6) survives; needs log-scale u near 0/1 and pinned counterexample"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "easing.rs apply", "summary": "u outside [0,1]/NaN clamp untested; M5 (NaN->1) survives"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02 §3.4 Curvas / ARQ-17", "summary": "Spec silent on apply for u outside [0,1], NaN and invalid CubicBezier; specifier should record deviation (2) or mark unspecified"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "hand mutants M3, M4", "summary": "Hull clamp removal and Newton bracket guard removal survive tests and probes; likely equivalent, documented"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 0},
+  "criteria": {"total": 10, "covered": 9},
+  "size": {"lines": 371, "forecast": 300}, "report": "verify-report.md" } ] }
