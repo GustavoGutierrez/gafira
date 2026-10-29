@@ -5,103 +5,107 @@ D2a: PASS in round 1 at `d9d2e50` (0 CRITICAL, 2 WARNING ambiguity: `is_finite` 
 D2b: PASS in round 1 at `f30293b` (0 CRITICAL, 1 WARNING ambiguity: ARQ-12 golden assigned to no delivery, since assigned to D3c, 4 SUGGESTION); merged into `develop` at `c048b97`.
 D3a: PASS in round 1 at `1dfa4a2` (0 CRITICAL, 1 WARNING W1 Display-P3 hue test, 3 SUGGESTION); merged at `4e1089e`, then RED on `develop` (flaky Color reference property).
 D3a fix round: PASS in round 2 at `8a9d36e` (0 CRITICAL, 1 WARNING ambiguity: ARQ-19 Color reference divisor not stated, 2 SUGGESTION; 5.4M property cases, 0 failures); merged into `develop` at `6710050`.
+D3b round 1: FAIL at `33417d3` (1 CRITICAL C1 implementation: no opposite-sign determinant test, sign-on-`sx` mutant survived; 1 WARNING W1 ambiguity: "determinante 0" undefined in floats, settled as Q-33 B; 3 SUGGESTION S1-S3).
 
-Flow: standard | mutation: archive | tier: T4 | verify: V2. No cargo-mutants report (expected with `mutation: archive`; not a finding). Hand mutants only.
-Acceptance source: Slice card D3b row (`apply-progress.md`), `docs/specs/02-arquitectura-software.md` §3.4 Transform2D rows (decomposition, degenerate end Q-28 B / Q-30 A), common rules (exact endpoints, `is_finite`), determinism table (1e-9 tolerance), ARQ-19 (Transform2D part) and ARQ-18 (`is_finite`). Spike claim 1 (modified decomposition, sign kept on 0/200000 same-sign pairs).
-Scope: `6710050..33417d3` on `feat/anim-core-d3b`: `d6c05c2` (`src/interpolate.rs` +128/-1, `tests/transform.rs` +298) and `33417d3` (appends `## D3b progress` to `apply-progress.md`).
+Flow: standard | mutation: archive | tier: T4 | verify: V2 (on the round-1 findings and the Q-33 change). No cargo-mutants report (expected with `mutation: archive`; not a finding). Hand mutants only.
+Acceptance source: Slice card D3b row (`apply-progress.md`), 02 §3.4 Transform2D rows (now with "Prueba de degeneración", Q-33), the ARQ-19 Transform2D criteria (new Q-33 unit tests with stated values), the determinism table (1e-9 Transform2D cross-platform tolerance), and the round-1 findings.
+Scope: `6710050..33f1a4c` on `feat/anim-core-d3b`; new in this round: `33960ab`, `662f195` (spec, `docs/specs/02-arquitectura-software.md` only), `bde57a1` (`src/interpolate.rs` +5/-2, `tests/transform.rs` +220), `33f1a4c` (`apply-progress.md`).
 
-## Round 1 of D3b (commit `33417d3`)
+## Round 2 of D3b (commit `33f1a4c`)
 
 ### Verdict: FAIL
 
-Counts: 1 CRITICAL (implementation), 1 WARNING (ambiguity), 3 SUGGESTION. Per class: implementation 1, ambiguity 1, architecture 0, claim 0.
+Counts: 1 CRITICAL, 2 WARNING, 3 SUGGESTION. Per class: implementation 2 (C2, W2), ambiguity 1 (W3), architecture 0, claim 0.
 
 ### Method
 
-- Disk free before building: 67 GB. Two `git archive` exports of `33417d3` in the scratchpad (`head`: gates, CI steps, implementer seeds; `mut`: probes and hand mutants), files touched after export, one `CARGO_TARGET_DIR` per export, `CARGO_INCREMENTAL=0`; both freed with `cargo clean --target-dir`.
-- Probes written from §3.4 / ARQ-19 before reading `tests/transform.rs` (19 tests, 5 properties at 2048 cases), including an independent reference decomposition (`sx = |col1|`, `sy = det / sx`, `k = col1·col2 / (sx·sy)`, `θ = atan2`), compared within 1e-9 on random non-degenerate pairs with `t` in [-0.5, 1.5]. All 19 pass on the clean code.
+- Disk free before building: 67 GB. Two `git archive` exports of HEAD in the scratchpad (`head`: gates, CI steps, implementer seeds; `mut`: probes, hand mutants, a no-slack copy of the implementer's opposite-sign property), files touched after export, one `CARGO_TARGET_DIR` per export, `CARGO_INCREMENTAL=0`; both freed with `cargo clean --target-dir`.
+- Probes (`probe_d3b2.rs`, 11 tests) written from §3.4 / ARQ-19 / Q-33 before reading the new implementer tests: the four Q-33 values, a column-sine threshold edge (1e-13 / 1e-11), scale invariance of the threshold (same near-singular shape at scale 1e-6, 1, 1e6), a tiny rotated scale towards a different rotation (distinguishes relative from absolute threshold), fixed flip cases, strict 1e-9 reference properties for opposite-sign and same-sign pairs (`t` in [-0.5, 1.5]) and a 2M-pair error census. All pass on the clean code.
 
-### Gates (clean export of `33417d3`)
+### Gates (clean export of `33f1a4c`)
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0 (`tests/transform.rs` 18 passed) |
+| `cargo test --workspace --locked` | 0 (`tests/transform.rs` 28 passed) |
 | `cargo deny check bans licenses sources` | 0 |
 | CI: Domain crates forbid unsafe code | 0 |
 | CI: V5 layer table | 0 |
 | CI: V12 clippy.toml copies | 0 |
 
+`.github/workflows/ci.yml` is unchanged in the range; the step scripts are the round-1 extracts.
+
 ### Card, commit and size checks
 
-- Only `33417d3` touches `apply-progress.md` in the range, and it only appends the `## D3b progress` section: the Slice card is unchanged by implementer commits.
-- Size: `git diff --shortstat 6710050..HEAD` = 3 files, 432 insertions, 1 deletion (forecast ~450). OK.
-- Hygiene: both commits conventional, author Gustavo Gutierrez, no Co-Authored-By or AI attribution.
+- `apply-progress.md`: `git diff 6710050..HEAD` removes no line; `33f1a4c` edits only the implementer's own `## D3b progress` notes (S2 correction) and appends `## D3b round 2`. The Slice card is unchanged.
+- Spec commits `33960ab`, `662f195` touch only `docs/specs/02-arquitectura-software.md`; no implementer commit touches `docs/specs`.
+- Size: crates `6710050..HEAD` = 131 + 518 insertions, 1 deletion (649 lines, ceiling ~700). OK.
+- Hygiene: all four commits conventional, author Gustavo Gutierrez, no Co-Authored-By or AI attribution.
 
-### Criteria map
+### Round-1 findings
 
-| # | Criterion (§3.4 / ARQ-19 / ARQ-18) | Implementer test | Verifier probe | Status |
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 opposite-sign coverage | closed | 3 unit tests (`..._flip_from_identity_collapses_the_y_axis_at_the_middle`, `..._horizontal_flip_..._half_turn_frame`, `..._rotated_flip_keeps_the_rotation_...`) and property `..._opposite_sign_pairs_match_the_decomposition_reference`; sign-on-`sx` mutant M1 killed by all 4. Expected values match my probes (`[1, 0, 0, 0]`; `[0, ±1, 0, 0]`). |
+| W1 degeneracy test (Q-33 B) | code matches spec; one rule untested (C2) | `Parts::decompose`: `!is_finite6 || !det.is_finite() || !area.is_finite() || |det| <= 1e-12·area`, `area = hypot(a, b)·hypot(c, d)`, all `f64`, exactly §3.4. |
+| S1 non-finite end never panics | closed | `arq_19_transform_non_finite_endpoint_never_panics` (NaN, ±inf per coefficient, either or both ends, 5 `t`). |
+| S2 "mixed-sign unspecified" note | closed | note now cites "un volteo es siempre `sy < 0`". |
+| S3 borrowed frame on one test | closed | `..._degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame` (expectation `diag(U^-1 R^T L)`, checked by hand: `s11 = cos θ + k sin θ`, `s22 = 0`), asserts it differs from the 6-coefficient blend, both directions; M5 killed by 5 tests. |
+
+### Q-33 criteria (ARQ-19 numbers, zero translation, towards the identity, t = 0.5)
+
+| # | Spec value | Implementer test | Probe | Status |
 |---|---|---|---|---|
-| 1 | Two translations interpolate only the translation | `arq_19_transform_two_translations_interpolate_only_the_translation` | `p_translations_and_scales` | covered |
-| 2 | 350° to 10°, t = 0.5 gives 0° | `arq_19_transform_rotation_takes_the_short_way` | `p_rotation_350_to_10` | covered |
-| 3 | Shortest path `|Δθ| ≤ π` | `arq_19_transform_rotations_follow_the_short_arc` (property) | `pp_short_arc` | covered |
-| 4 | Two scales per axis | `arq_19_transform_two_scales_interpolate_per_axis_and_extrapolate` | `p_translations_and_scales` | covered |
-| 5 | Identity to shear `k`: continuous, Δt = 1e-3, ≤ 1e-2·max(1,|k|) | `arq_19_transform_shear_from_identity_is_linear_and_continuous` | `p_shear_from_identity` | covered |
-| 6 | Scale 0 to B: linear part `t·B`, translation lerped | `arq_19_transform_scale_zero_to_b_scales_the_linear_part_by_t` | `p_scale0_to_b_and_back` | covered |
-| 7 | `scaleX(0)` to identity, t = 0.5 gives `scale(0.5, 1)` | `arq_19_transform_scale_x_zero_to_identity_gives_half_scale_at_the_middle` | `p_scale_x0_to_identity` | covered |
-| 8 | Rank-1 jump Q-30 (`[1,2,2,4]`: t = 0 bitwise, 0.5, 1e-6) | `arq_19_transform_rank_one_endpoint_jumps_as_documented` | `p_rank_one_jump` | covered |
-| 9 | Both degenerate: 6-coefficient lerp | `arq_19_transform_both_degenerate_...`, `..._degenerate_pairs_are_the_linear_blend` (property) | `p_both_degenerate`, `pp_degenerate_pairs_lerp` | covered |
-| 10 | Q-30 diagonal in the borrowed (θ, k) frame | rank-1 test only | `p_degenerate_in_rotated_sheared_frame` | covered (see S3) |
-| 11 | Same-sign determinant kept, `|det| > 1e-3`, coeffs [-3,3], t in 0.01..0.99 | `arq_19_transform_same_sign_determinants_keep_their_sign` | `pp_same_sign_keeps_sign` | covered |
-| 12 | Exact endpoints at t = 0 / 1, also degenerate | `arq_19_transform_endpoints_are_exact` (property), `..._for_fixed_cases` | `pp_endpoints_exact` | covered |
-| 13 | Extrapolation (no wrap, no clamp) | `..._rotation_extrapolates_without_wrapping`, scales at 1.5 / -0.5 | `p_extrapolation` | covered |
-| 14 | Decomposition form `[sx c, sx s, sy(kc - s), sy(ks + c)]`, each part lerped, 1e-9 | indirect (fixed cases) | `pp_matches_reference` | covered |
-| 15 | "Un volteo (determinante negativo) es siempre `sy < 0`" | `..._flip_is_carried_by_the_y_scale`, `..._flip_blends_the_rotation_...` (same-sign pairs only) | `p_flip_is_sy_crossing_zero` (mixed-sign) | **weak: C1** |
-| 16 | `is_finite` false on NaN / ±∞ per coefficient, true when finite (ARQ-18, ARQ-19) | `arq_18_transform_is_finite_checks_every_coefficient` | `p_is_finite` | covered |
-| 17 | Non-finite coefficient: track invalid (out of contract for `interpolate`) | none (by ARQ-18 at track level) | `p_non_finite_no_panic` | covered (out of contract, S1) |
-| 18 | Tolerance 1e-9·max(1,|c|) per coefficient | `assert_close` helper | `close(…, 1e-9)` | covered |
+| Q1 | `[0.1, 0.3, 0.7, 2.1]` (det ≈ 2.8e-17) degenerate -> `[0.55, 0, 0, 1.55]` | `arq_19_q33_rank_one_end_with_rounding_determinant_is_degenerate` (asserts det != 0 premise) | `q33_rank_one_by_rounding_is_degenerate` (both directions) | covered |
+| Q2 | `[1.1, 2.2, 3.3, 6.6]` (det 0 exact) -> `[1.05, 0, 0, 3.8]` | same test | `q33_exact_zero_det_is_degenerate` | covered |
+| Q3 | `[1e200, 1e200, 1e200, 2e200]` (det NaN) degenerate -> `[5e199, 0, 0, 1e200]`, all finite | `arq_19_q33_finite_coefficients_with_non_finite_determinant_are_degenerate` (`is_finite` asserted; CI runs the 3 OS) | `q33_non_finite_det_is_degenerate` (both directions) | covered |
+| Q4 | `scale(1e-9)` not degenerate -> `scale(0.5 + 5e-10)` | `arq_19_q33_tiny_uniform_scale_is_not_degenerate` | `q33_tiny_scale_spec_example` | covered as literally specified, but not observable (W3) |
+| Q5 | Threshold `|det| <= 1e-12·|c1|·|c2|`, scale-independent ("no depende de la escala") | `arq_19_q33_threshold_is_relative_to_the_column_lengths` (sine 1e-13 / 1e-11, unit-length columns only) | `q33_threshold_is_the_column_sine`, `q33_threshold_scale_invariant`, `q33_tiny_rotated_scale_is_decomposed` | **weak: C2** |
 
-Total 18, covered 17, weak 1.
+The Q-33 unit tests use 1e-9 without slack (`assert_rel`, `assert_abs_rel`). Color divisor wording (`33960ab`): code divides by `f64::from(alpha)` with `alpha = a.a.interpolate(&b.a, t)` (the f32 rule, bit exact) and the `tests/color.rs` reference divides by the same f32 alpha; matches the new text, no Color code change in the range.
 
-### Hand mutants (5 run, 5 killed; `src/interpolate.rs` Transform2D impl, scratch export `mut`)
+Earlier criteria 1-18 (round 1) unchanged and still green; total for D3b now 18 + Q1-Q5 = 23 criteria, 22 covered, 1 weak (Q5).
 
-| # | Mutant | Killed by implementer tests | Killed by probes |
+### Hand mutants (5 run on `src/interpolate.rs`, scratch export `mut`; implementer suite: 4 killed, 1 survived)
+
+| # | Mutant | Implementer tests | Probes |
 |---|---|---|---|
-| M1 | Longest-path rotation (`if |dθ| < π { dθ -= copysign(τ, dθ) }`) | 11 tests incl. `rotation_takes_the_short_way`, `rotations_follow_the_short_arc` | 11 |
-| M2 | Missing shear (`k = 0`) | `shear_from_identity_...`, `scale_zero_to_b_...`, `equal_endpoints_stay_put_...` | 4 incl. `pp_matches_reference` |
-| M3 | No t = 0 / 1 special case (Transform2D only) | `endpoints_are_exact`, `..._for_fixed_cases`, `rank_one_...` (t = 0 bitwise) | `p_rank_one_jump`, `pp_endpoints_exact` |
-| M4 | Degenerate rule swapped (one degenerate end -> 6-coefficient lerp, Q-28 A instead of B) | `rank_one_endpoint_jumps_as_documented` only | `p_rank_one_jump` |
-| M5 | Wrong per-axis scale for a degenerate end (column norms instead of the diagonal in the borrowed frame, Q-30) | `rank_one_endpoint_jumps_as_documented` only | `p_rank_one_jump`, `p_degenerate_in_rotated_sheared_frame` |
+| M1 | Sign on `sx` (`sx = hypot.copysign(det)`, `sy = |p|`) | killed: 4 (3 flip unit tests, opposite-sign property) | killed: `c1_flip_cases`, `pp_opposite_sign_strict` |
+| M2 | Exact `det == 0.0` instead of the relative test | killed: 3 (rounding rank-1, non-finite det, column sine) | killed: 4 |
+| M3 | Absolute threshold `|det| <= 1e-12` | **survives (28/28 pass)** | killed: `q33_threshold_scale_invariant`, `q33_tiny_rotated_scale_is_decomposed` |
+| M4 | Non-finite checks removed (`!det.is_finite() || !area.is_finite()`) | killed: non-finite det test | killed: `q33_non_finite_det_is_degenerate` |
+| M5 | Borrowing disabled (one degenerate end -> 6-coefficient lerp) | killed: 5 | killed: 5 |
 
-### Flake evidence (proptest 1.12, `PROPTEST_RNG_SEED`, outside the tree, no `transform.proptest-regressions` file exists)
+M3 is not equivalent: `1e-7·rotation(0.3)` to `rotation(2.0)` at t = 0.5 must keep its own rotation (θ = 1.15), but under M3 (det 1e-14) it borrows θ = 2.0; and `[1e6, 0, 2e6·cos 1e-13, 2e6·sin 1e-13]` (sine 1e-13, det 0.2) must be degenerate but is decomposed with a ~1e13 shear. Note: removing only `!area.is_finite()` is equivalent (a non-finite area makes `1e-12·area = ∞`, so any finite `|det|` already passes the threshold, and `|det| ≤ |c1|·|c2|` keeps a NaN det from coexisting with a finite area); not counted.
 
-- `tests/transform.rs` binary from the clean export, 100 distinct seeds (`104729·i + 13`, i = 1..100), 1024 cases per property: 0 failures.
-- Verifier probes, 60 distinct seeds (`15485863·i + 7`), 2048 cases per property: 0 failures.
-- About 0.6M implementer property cases and 0.6M probe cases, no flake. (A first probe batch failed on every seed because the binary was still the M3 mutant build; rebuilt on the original source and rerun: 0 failures. Recorded so the count is not misread.)
+### Implementer deviation judged: 1e3 slack on the opposite-sign property
 
-### Implementer deviations, judged
+- Not a loosening of a spec tolerance. ARQ-19 asks only for a same-sign property; the opposite-sign property is extra coverage (round-1 C1 suggested it as optional). The 1e-9 in the determinism table is the cross-platform drift tolerance between platforms, not an accuracy bound against a reference, and the ARQ-19 1e-9 for Q-33 applies to the four Q-33 unit tests, which keep it. No spec text is weakened, so not class `ambiguity`.
+- The stated reason ("near-singular ends give large shears") does not hold in the test's own domain (`|det| > 1e-3`, coefficients in [-3, 3]): census of 2,000,000 opposite-sign pairs, `t` in [-0.5, 1.5], against an independent reference: worst error 9.3e-4 of the 1e-9·max(1, |w|) bound, 0 over. A copy of the implementer property with the slack removed passes 150 distinct seeds × 2048 cases. The slack makes the property accept 1e-6 relative error, 1000× more than needed. Class `implementation` (test quality), non-blocking: M1 is killed by large margins and the 3 unit tests use the plain 1e-9 bound (W2).
 
-1. Non-finite coefficient on either end yields the 6-coefficient lerp, no panic. §3.4: "Un coeficiente no finito hace inválida la pista (ARQ-18)", so `interpolate` on such a value is out of contract; any total behavior is acceptable. Probe confirms no panic. Accepted (S1).
-2. "Degenerate" = `det == 0.0` exactly or non-finite decomposed parts. Matches §3.4 literally ("Un extremo con determinante 0") and the Q-28 question wording ("determinante 0 o coeficientes no finitos"); the non-finite-parts extension only triggers for finite coefficients near `f64::MAX`. Accepted, but the literal test exposes a spec gap (W1).
-3. Mixed-sign determinants "unspecified": not so. §3.4 states "Cada componente se interpola linealmente" and "Un volteo (determinante negativo) es siempre `sy < 0`", which fully fix the mixed-sign result: `sx` stays > 0 and `sy` lerps through 0. The code does exactly that (probe: identity to `scale(1, -1)` at t = 0.5 gives `[1, 0, 0, 0]`). Not an ambiguity; the note is inaccurate (S2) and the rule is untested (C1).
-4. Sign-on-`sx` mutant claimed equivalent: refuted. For a det < 0 end it maps `(sx, sy, k, θ)` to `(-sx, -sy, k, θ + π)`; between two det < 0 ends (or two det > 0 ends, or with a degenerate end, whose borrowed diagonal also flips) the results coincide, which is why it survives. Between ends of opposite sign it differs: identity to `scale(1, -1)` at t = 0.5 gives `[0, 0, 1, 0]` (a quarter-turn path) instead of the spec's `[1, 0, 0, 0]`. The implementer suite has no mixed-sign pair. C1.
-5. Det-sign property swaps `b`'s two linear columns (`[b2, b3, b0, b1]`) when signs differ. The swap negates the determinant and keeps `|det|` and the coefficient range, so it is a bijection between the two sign classes: `b` is still uniform over same-sign endpoints with `|det| > 1e-3`, coefficients in [-3, 3], and `a` covers both signs. It tests what ARQ-19 asks. Accepted.
+### Flake evidence (proptest, `PROPTEST_RNG_SEED`, outside the tree; no `transform.proptest-regressions` file created)
+
+- HEAD `tests/transform.rs` binary (clean export), 150 distinct seeds (`2654435761·i + 17`), all 28 tests: 0 failures (about 1.1M property cases).
+- No-slack copy of the opposite-sign property, same 150 seeds × 2048: 0 failures.
+- Verifier properties `pp_opposite_sign_strict`, `pp_same_sign_strict`, 150 seeds × 4096: 0 failures. Plus the 2M-pair census.
 
 ### Findings
 
-**C1 (CRITICAL, class: implementation)** `crates/gafira-anim/tests/transform.rs`; §3.4 Transform2D row "Un volteo (determinante negativo) es siempre `sy < 0`". Transforms are critical code (`AGENTS.md`), and this spec rule is only observable between ends of opposite determinant sign, which no implementer test exercises; the sign-on-`sx` hand mutant (the implementer's own) survives and is not equivalent (deviation 4 above: `[0, 0, 1, 0]` vs `[1, 0, 0, 0]` for identity to `scale(1, -1)`, t = 0.5). This is the common flip preset path. Fix (test-only): unit tests with opposite-sign ends, e.g. identity to `scale_xy(1, -1)` at t = 0.5 gives `[1, 0, 0, 0]`, and identity to `scale_xy(-1, 1)` (det < 0: `sx = 1`, `θ = π`, `sy = -1`) at t = 0.5 gives `[0, ±1, 0, 0]`; optionally an opposite-sign property against an independent reference decomposition. Rerun the sign-on-`sx` mutant and show it killed; correct the "mixed-sign unspecified" note.
+**C2 (CRITICAL, class: implementation)** `crates/gafira-anim/tests/transform.rs` `arq_19_q33_threshold_is_relative_to_the_column_lengths` / `arq_19_q33_tiny_uniform_scale_is_not_degenerate`; 02 §3.4 "Prueba de degeneración" ("no depende de la escala"), Q-33 B. Transforms are critical code (`AGENTS.md`). The absolute-threshold mutant M3 (`|det| <= 1e-12`) passes all 28 implementer tests: the column-sine test uses unit-length columns, where relative and absolute thresholds agree, and `scale(1e-9)` to the identity gives the same result whether the end is decomposed or borrows the identity frame. The progress note's claim that the `scale(1e-9)` test "guards against an absolute threshold" is wrong. Fix (test-only): add a case where scale changes the verdict, e.g. the sine-1e-13 shape scaled by 1e6 (`[1e6, 0, 2e6·cos 1e-13, 2e6·sin 1e-13]`, det 0.2, must be degenerate: towards the identity at t = 0.5 it borrows the identity frame and gives `[500000.5, 0, 0, (1 + 2e-7)/2]`, no large shear), and a tiny rotated scale towards a different rotation (`1e-7·rotation(0.3)` to `rotation(2.0)`, t = 0.5 gives `0.50000005·rotation(1.15)`); show M3 killed.
 
-**W1 (WARNING, class: ambiguity)** 02 §3.4 Transform2D degenerate row (Q-28) / ARQ-19. "Determinante 0" is not defined for floating point. The code tests `det == 0.0`, so a rank-1 end whose determinant rounds away from 0 is decomposed with a near-zero `sy` and a huge shear: `[0.1, 0.3, 0.7, 2.1]` (det 2.8e-17) to the identity at t = 0.5 gives `c = 4.0e15, d = 2.9e15`, while `[1.1, 2.2, 3.3, 6.6]` (det exactly 0) gives the Q-28 B result `[1.05, 0, 0, 3.8]`. Also, finite coefficients near 1e200 give `det = NaN` (∞ - ∞), treated as non-degenerate with an arbitrary sign. Presets produce exact zeros, so not blocking for D3b; the specifier should state whether the test is exact (and that near-singular ends are out of contract) or a relative threshold such as `|det| ≤ ε·|a|·|d|`-style, and what a non-finite determinant of finite coefficients means.
+**W2 (WARNING, class: implementation)** `crates/gafira-anim/tests/transform.rs:460` opposite-sign property. The `* 1e3` slack is not needed (census: worst 9.3e-4 of the 1e-9 bound over 2M pairs; slack-free copy green on 150 seeds) and its rationale is inaccurate. Drop it, or justify it with a measured error; not blocking, as the property still kills M1.
 
-**S1 (SUGGESTION)** No implementer test pins that `interpolate` never panics with a non-finite end (out of contract, total by construction). Optional one-line test.
+**W3 (WARNING, class: ambiguity)** 02 ARQ-19 Q-33 criterion "`scale(1e-9)` no es degenerado y da `scale(0,5 + 5e-10)`". The example cannot observe the rule it illustrates: towards the identity, a degenerate `scale(1e-9)` borrows the identity frame and its diagonal is `1e-9`, giving the same `scale(0.5 + 5e-10)`. The specifier should replace or add an observable example (a tiny scale with a rotation different from the other end, or a near-singular shape at large scale) so the mandated test pins scale independence. Non-blocking; the implementation part of the gap is C2.
 
-**S2 (SUGGESTION)** `apply-progress.md` D3b note "Mixed-sign determinants are unspecified" is inaccurate (deviation 3); fix it with C1.
+**S4 (SUGGESTION)** ARQ-19 says "diferencia relativa ≤ 1e-9 por coeficiente", which is undefined for expected zeros; `assert_rel` (relative to `max(|got|, |want|)`, zeros must be exact) and `assert_abs_rel` (`1e-9·max(1, |w|)`) read it two ways. The specifier could state `1e-9·max(1, |c|)` as in the determinism table.
 
-**S3 (SUGGESTION)** The Q-28 B borrowing rule differs from a plain 6-coefficient lerp only when the degenerate end does not fit the borrowed frame, so M4 and M5 are each killed by the single rank-1 test. Add a case such as `scale_xy(0, 1)` to a rotated and sheared `B`, with the expected diagonal in B's frame, so the rule does not hang on one test.
+**S5 (SUGGESTION)** The `!area.is_finite()` clause in `Parts::decompose` is redundant (see the M4 note); it matches the spec text literally, so keep it, but a comment saying it is implied would stop a future mutant run from flagging it as a survivor.
+
+**S6 (SUGGESTION)** The progress note for round 2 should drop the claim that `arq_19_q33_tiny_uniform_scale_is_not_degenerate` guards against an absolute threshold, once C2 adds a test that does.
 
 ### Covered IDs
 
-ARQ-19 (Transform2D part): all listed tests present; criterion 15 weak (C1). ARQ-18 (`is_finite` for Transform2D): covered. ARQ-12 golden: out of scope (D3c).
+ARQ-19 (Transform2D part, including Q-33): all listed tests present; Q5 weak (C2). ARQ-18 (`is_finite` for Transform2D): covered. ARQ-19 Color divisor wording: matches code and test reference. ARQ-12 golden: out of scope (D3c).
 
-next: tdd-apply (D3b round 2: C1 test-only); then specifier for W1 (non-blocking)
+next: tdd-apply (D3b round 3: C2 test-only, W2 optional); then specifier for W3 and S4 (non-blocking)
