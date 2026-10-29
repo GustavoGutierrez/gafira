@@ -1,7 +1,8 @@
 use gafira_time::Flicks;
 use serde::{Deserialize, Serialize};
 
-use crate::{Easing, Interpolate, KeyTrack, Keyframe};
+use crate::track::KeyTrackWire;
+use crate::{Easing, Interpolate, KeyTrack, KeyTrackError, Keyframe};
 
 /// A value that is either fixed or animated by a [`KeyTrack`] (ARQ-16, ARQ-18).
 ///
@@ -9,10 +10,35 @@ use crate::{Easing, Interpolate, KeyTrack, Keyframe};
 /// `{"keys":[...]}`. A `Keyed` track that breaks the [`KeyTrack`] invariant
 /// fails to read.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(
+    untagged,
+    try_from = "RawAnimatable<T>",
+    bound(deserialize = "T: Interpolate + Deserialize<'de>")
+)]
 pub enum Animatable<T: Interpolate> {
     Static(T),
     Keyed(KeyTrack<T>),
+}
+
+/// Unvalidated transport shape. Reading goes through it so the track is
+/// validated after the variant is chosen; validating inside an untagged
+/// attempt would lose the rule and the index in the error.
+#[derive(Deserialize)]
+#[serde(untagged, bound(deserialize = "T: Deserialize<'de>"))]
+enum RawAnimatable<T> {
+    Static(T),
+    Keyed(KeyTrackWire<T>),
+}
+
+impl<T: Interpolate> TryFrom<RawAnimatable<T>> for Animatable<T> {
+    type Error = KeyTrackError;
+
+    fn try_from(raw: RawAnimatable<T>) -> Result<Self, KeyTrackError> {
+        Ok(match raw {
+            RawAnimatable::Static(v) => Self::Static(v),
+            RawAnimatable::Keyed(wire) => Self::Keyed(KeyTrack::try_from(wire)?),
+        })
+    }
 }
 
 impl<T: Interpolate> Animatable<T> {
