@@ -1,0 +1,17 @@
+{ "schema": 1, "change": "anim-core", "delivery": "D1", "rounds": [
+  { "round": 1, "commit": "f7e64ba78861475bdc47e26e727fead1b5e75f9f", "mode": "standard", "tier": "T4", "depth": "V2",
+    "verdict": "FAIL", "next": "specifier, tdd-apply",
+    "counts": {"critical": 3, "warning": 3, "suggestion": 3},
+    "findings": [ {"id": "C1-C3, W1, W3", "severity": "CRITICAL", "class": "implementation", "ref": "easing.rs / tests/easing.rs", "summary": "Absolute solver stop broke ARQ-17 precision for tiny u; weak validity and precision tests; clamp/NaN untested"},
+                  {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02 §3.4 / ARQ-17", "summary": "apply outside [0,1]/NaN unspecified"} ],
+    "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+    "mutation": null, "hand_mutants": {"run": 5, "killed": 0},
+    "criteria": {"total": 10, "covered": 9}, "size": {"lines": 371, "forecast": 300}, "report": "verify-report.md" },
+  { "round": 2, "commit": "0a2f33645da3056ea07b60378cdcd94952ac8a6f", "mode": "standard", "tier": "T4", "depth": "V2",
+    "verdict": "PASS", "next": "tdd-apply",
+    "counts": {"critical": 0, "warning": 1, "suggestion": 4},
+    "findings": [ {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-anim/src/easing.rs bezier; hand mutants M3, M4",
+                   "summary": "Hull clamp and Newton bracket guard mutants survive; equivalent on 3M-case search, documented, not blocking"} ],
+    "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+    "mutation": null, "hand_mutants": {"run": 5, "killed": 3},
+    "criteria": {"total": 12, "covered": 12}, "size": {"lines": 501, "forecast": 300}, "report": "verify-report.md" } ] }

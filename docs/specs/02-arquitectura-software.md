@@ -7,7 +7,7 @@
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
 | Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-16..ARQ-19, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09) |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -287,7 +287,7 @@ pub trait Interpolate: Clone + PartialEq + Send + Sync + 'static {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged)] // al leer: forma de transporte sin validar y validación después (ARQ-18)
 pub enum Animatable<T: Interpolate> {
     Static(T),
     Keyed(KeyTrack<T>),
@@ -312,6 +312,73 @@ impl<T: Interpolate> Animatable<T> {
 
 Implementan `Interpolate`: `f32`, `Vec2`, `Transform2D` (descompuesto: traslación, escala, rotación por el camino corto), `Color` (en espacio lineal) y `GradientStops`. Los presets de animación (entrada, énfasis, salida, trayectoria) se **compilan** a `KeyTrack` al aplicarse. La capa avanzada de video edita esos mismos keyframes con curvas.
 
+**Muestreo (ARQ-16).** `n` es el número de keys; `keys` está ordenada por `at` (ARQ-18).
+
+| Caso | Resultado de `sample(t)` |
+|---|---|
+| `Static(v)` | `v`, para cualquier `t`. |
+| `t ≤ keys[0].at` | `keys[0].value`. Antes del primer key se mantiene su valor. |
+| `t ≥ keys[n−1].at` | `keys[n−1].value`. El `out` del último key no se usa. |
+| `t == keys[i].at` | `keys[i].value`, sin interpolar. |
+| `keys[i].at < t < keys[i+1].at` | Progreso `u = (t − keys[i].at) / (keys[i+1].at − keys[i].at)`, en `[0, 1]`. Se aplica la curva del key **anterior**: `e = keys[i].out(u)`. Resultado: `keys[i].value.interpolate(&keys[i+1].value, e)`. |
+| Lo mismo con `keys[i].out = Hold` | `keys[i].value` para todo `t < keys[i+1].at`. El valor salta en `keys[i+1].at`. |
+
+- `sample` es total: ninguna pista válida y ningún `t` representable en `Flicks` (incluidos los extremos de `i64`) producen pánico ni desbordamiento.
+- Dentro de un tramo, `u` no decrece cuando `t` crece.
+- Un `KeyTrack` de un solo key devuelve ese valor para cualquier `t`.
+
+**Curvas (ARQ-17).** Todas las curvas cumplen `e(0) = 0` y `e(1) = 1`. Las tres con nombre son las de CSS Easing Functions Level 1.
+
+| `Easing` | Definición de `e(u)` |
+|---|---|
+| `Hold` | Escalón: `e(u) = 0` para `u < 1` y `e(1) = 1`. En la tabla de muestreo, el valor del key anterior hasta el siguiente key; `sample` no evalúa esta curva. |
+| `Linear` | `e(u) = u`. |
+| `EaseIn` | `CubicBezier { x1: 0.42, y1: 0.0, x2: 1.0, y2: 1.0 }` (CSS `ease-in`). |
+| `EaseOut` | `CubicBezier { x1: 0.0, y1: 0.0, x2: 0.58, y2: 1.0 }` (CSS `ease-out`). |
+| `EaseInOut` | `CubicBezier { x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0 }` (CSS `ease-in-out`). |
+| `CubicBezier { x1, y1, x2, y2 }` | Bézier cúbica de puntos `P0 = (0, 0)`, `P1 = (x1, y1)`, `P2 = (x2, y2)`, `P3 = (1, 1)`, como `cubic-bezier()` de CSS: `e(u) = y(s)`, donde `s ∈ [0, 1]` cumple `x(s) = u`. `x1` y `x2` están en `[0, 1]`, de modo que `x(s)` es monótona y `s` es único. `y1` e `y2` admiten cualquier valor finito: la curva puede salirse de `[0, 1]` (rebote). |
+
+- **Precisión**: `|e(u) − y(s*)| ≤ 1e-5 · max(1, |y1|, |y2|)` (PROPUESTA), donde `s*` es la raíz exacta de `x(s) = u`.
+- **Acotación**: `e(u)` queda en `[min(0, y1, y2), max(1, y1, y2)]`.
+- **Entrada fuera de rango**: con `u < 0` la curva da `e(0) = 0`, con `u > 1` da `e(1) = 1` (incluidos `±∞`), y con `u` NaN da `0`. `sample` solo pide `u ∈ [0, 1]`; esta regla hace la curva total. Se recorta la entrada `u`, no la salida: una curva con rebote sigue dando valores fuera de `[0, 1]` dentro del rango.
+
+**Interpolación (ARQ-19).** Reglas comunes a todo `Interpolate`:
+
+- `interpolate(a, b, 0.0) == a` e `interpolate(a, b, 1.0) == b` (igualdad de `PartialEq`). Los dos extremos se devuelven tal cual, sin pasar por la descomposición ni por la conversión, porque recomponer un valor descompuesto solo se acerca a él (≈ 1e-15 en `Transform2D`).
+- Los valores son finitos: un componente NaN o `±∞` en el `value` de un key hace inválida la pista (ARQ-18). Un `Static` con un componente no finito queda fuera de contrato: JSON no representa esos números (`serde_json` escribe `null`) y ese archivo no se vuelve a leer.
+- Con `t` fuera de `[0, 1]` (curvas con rebote) se extrapola. `Interpolate` no recorta: el consumidor recorta si lo necesita (por ejemplo, la opacidad al renderizar).
+
+| Tipo | Regla |
+|---|---|
+| `f32` | `a + (b − a) · t`, con los extremos exactos. |
+| `Vec2` (`f64` por componente) | La misma regla por componente en `f64`. `t` pasa de `f32` a `f64` sin pérdida. |
+| `Color` | Ambos extremos se pasan a luz lineal y se interpolan `r`, `g`, `b` linealmente. El resultado no depende de las primarias lineales elegidas, porque el cambio entre ellas es lineal. Si los dos extremos tienen el mismo espacio, el resultado se expresa en ese espacio; si no, en sRGB lineal. **Alfa premultiplicado** (Q-27, como CSS Color 4): se interpolan `r·a`, `g·a`, `b·a` y `a` linealmente, y el resultado se divide por su `a`. Así un fundido hacia transparente no oscurece ni tiñe el color, igual que la composición premultiplicada de `gafira-raster`. **Alfa resultante ≤ 0** (Q-31): no se premultiplica; `r`, `g`, `b` se interpolan en recto (`c_a + (c_b − c_a) · t` en luz lineal) y `a` queda sin recortar. Con `t` en `[0, 1]` y alfas no negativos solo ocurre si los dos alfas son 0; con una curva con rebote, `a` puede salir negativo. El consumidor recorta `a` al componer. |
+| `Transform2D` | Se descompone cada extremo en traslación `(tx, ty)`, escala `sx > 0` en x, escala `sy` en y con el signo del determinante, sesgo `k` y rotación `θ`, de modo que la parte lineal es `[sx·cos θ, sx·sin θ, sy·(k·cos θ − sin θ), sy·(k·sin θ + cos θ)]` y el determinante es `sx·sy`. Cada componente se interpola linealmente, y la rotación por el camino corto (`|Δθ| ≤ π`). Un volteo (determinante negativo) es siempre `sy < 0`. Entre extremos con el mismo signo de determinante, todo resultado intermedio conserva ese signo, porque `sx` y `sy` se interpolan entre valores del mismo signo. No se usa la descomposición de «Interpolation of Matrices» 2D de CSS Transforms Module Level 1 tal cual: su matriz de sesgo residual deja que el determinante cruce 0 dentro del camino (0,8 % de los pares aleatorios del mismo signo, spike de `anim-core`). |
+| `Transform2D`, extremo degenerado (Q-28) | Un extremo con determinante 0 (por ejemplo la escala 0 de un preset «aparecer desde 0») no se descompone: toma `θ` y `k` del otro extremo, y solo se interpolan la traslación y la escala por eje. Su escala por eje es la diagonal de su parte lineal expresada en el marco `θ`, `k` prestado (Q-30). Así, de la escala 0 a `B`, la parte lineal es `t ·` la de `B`; y de `scaleX(0)` a la identidad, `t = 0,5` da `scale(0,5, 1)`. **Comportamiento conocido** (Q-30): un extremo de rango 1 que no encaja en ese marco (por ejemplo la parte lineal `[1, 2, 2, 4]`) salta justo después de `t = 0` (o justo antes de `t = 1`), porque la parte fuera de la diagonal se pierde; el extremo exacto se sigue devolviendo en `t = 0` y `t = 1`. Ningún preset produce esos extremos: solo producen escalas 0 por eje. Si los dos extremos son degenerados, se interpolan linealmente los 6 coeficientes. Un coeficiente no finito hace inválida la pista (ARQ-18). |
+| `GradientStops` | Llega con el tipo de degradado de `gafira-color`, fuera del bloque `gafira-anim`. Su regla se especifica con ese tipo. |
+
+**Pista y formato (ARQ-18).**
+
+- **Invariante de `KeyTrack`**: al menos un key; `at` estrictamente creciente (no hay dos keys en el mismo instante, porque `sample` en ese instante sería ambiguo, ARQ-12); cada `out` es válido (`CubicBezier` con `x1` y `x2` en `[0, 1]` y los cuatro valores finitos); cada `value` es finito en todos sus componentes (ARQ-19).
+- Construir una pista desde una lista de keys devuelve un error que indica la regla incumplida y el índice del key. La pista no se ordena ni se corrige en silencio. Ninguna operación pública deja una pista inválida.
+- Deserializar una pista inválida falla. Nunca produce un `KeyTrack` inválido ni lo repara (ARQ-13).
+- **Lectura de `Animatable<T>`**: el JSON se lee primero en una forma de transporte sin validar (`Static` o `Keyed` con keys sin validar) y la pista se valida después. Así el error de una pista inválida leída como `Animatable<T>` nombra la regla y el índice del key, igual que al leer un `KeyTrack` directamente. Un `#[serde(untagged)]` derivado que valida dentro de cada intento pierde esa información: solo informa de que ninguna variante encaja. Un valor de tipo equivocado (por ejemplo, una cadena en un campo `f32`) sí puede dar ese error genérico, porque no incumple ninguna regla de la pista.
+- **Formato serde** (`#[serde(untagged)]`): `Static(v)` se escribe como el valor `v` sin envoltorio. `Keyed` se escribe como `{"keys":[{"at":<ticks>,"value":<T>,"out":<Easing>}, …]}`, con `at` como entero de *flicks*. `Easing` usa la representación por defecto de serde del enum tal como se declara: `"Hold"`, `"Linear"`, `"EaseIn"`, `"EaseOut"`, `"EaseInOut"` y `{"CubicBezier":{"x1":…,"y1":…,"x2":…,"y2":…}}`.
+- **Compatibilidad**: un campo que pasa de `T` a `Animatable<T>` lee los archivos ya guardados, cuyo valor desnudo se lee como `Static`.
+- **Ambigüedad residual**: un objeto escrito a mano con los campos de `T` y además un campo `keys` (por ejemplo `{"x":1,"y":2,"keys":[]}` para `Vec2`) se lee como `Static` y `keys` se ignora. El serializador nunca escribe esa forma.
+
+**Determinismo entre plataformas (ARQ-12, Q-29).** En la misma plataforma, `sample` es determinista bit a bit para todos los tipos. Entre las 3 plataformas de §10.1:
+
+| Tipo | Garantía | Motivo |
+|---|---|---|
+| `f32`, `Vec2` y las curvas de `Easing` | Bit a bit. | Solo usan aritmética IEEE (suma, resta, producto, división, raíz). El compilador no fusiona `a·b + c` en FMA si el código no usa `mul_add`: comprobado en el ensamblador de x86_64, también con `+fma` y `target-cpu=native`. En aarch64 no se ha comprobado en ensamblador (VERIFICAR); la prueba golden de ARQ-12 lo cubre en el *runner* `aarch64-apple-darwin`. |
+| `Color` | `r`, `g`, `b`: diferencia absoluta ≤ `4 · ε_f32 · max(1, abs(c))` por canal, con `ε_f32 = 2^−23` (PROPUESTA). `a`: bit a bit. | La conversión entre espacios usa `powf` (curva de transferencia de `gafira-color`), que llama a la `libm` de la plataforma, de precisión no especificada. Los canales son `f32`: una tolerancia de 1e-9 relativa estaría por debajo de su épsilon (≈ 1,19e-7). El alfa solo usa aritmética IEEE. |
+| `Transform2D` | diferencia absoluta ≤ `1e-9 · max(1, abs(c))` por coeficiente (`f64`, PROPUESTA). | Usa funciones trigonométricas (`sin`, `cos`, `atan2`) de la `libm` de la plataforma. |
+
+- En `t` igual al `at` de un key, fuera del rango de keys y con `Hold`, el resultado es el `value` del key: bit a bit en todas las plataformas para todos los tipos.
+
+Fuera de este bloque: los presets de animación, `GradientStops`, la edición de curvas en la UI y el muestreo de nodos concretos (lo hacen `gafira-doc` y `gafira-render`).
+
 ### 3.5 Serialización
 
 - `serde` + `serde_json` para el documento, con campos `#[serde(default)]` para compatibilidad hacia delante y `deny_unknown_fields` **desactivado** en los nodos para tolerar versiones futuras.
@@ -321,11 +388,14 @@ Implementan `Interpolate`: `f32`, `Vec2`, `Transform2D` (descompuesto: traslaci�
 |---|---|---|
 | ARQ-10 | El documento se serializa de forma determinista: el mismo documento produce los mismos bytes. | Una prueba de propiedad dice que `serialize(deserialize(serialize(d))) == serialize(d)` para 10 000 documentos generados. Los mapas usan `BTreeMap` u orden estable. |
 | ARQ-11 | Los nodos `Extension` desconocidos sobreviven a abrir y guardar. | Prueba golden: un proyecto con extensión ficticia, abierto sin el registro, se guarda con su `payload` intacto byte a byte. |
-| ARQ-12 | `Animatable::sample` es O(log n) y determinista. | Un *benchmark* de 10 000 keyframes da < 1 µs por muestra en el hardware de referencia (FIJADA). Prueba de propiedad: `sample` en `at` de cada key devuelve su `value`. |
+| ARQ-12 | `Animatable::sample` es O(log n) en el número de keys y determinista: la misma pista y el mismo `t` dan el mismo resultado bit a bit en la misma plataforma, y entre plataformas cumple la tabla de determinismo de §3.4 (Q-29). | Un *benchmark* de 10 000 keyframes da < 1 µs por muestra en el hardware de referencia (FIJADA). Esa medición se hace con los *benchmarks* de ARQ-40 (`bench_anim_sample_10k`, §6.7); mientras tanto, `gafira-anim` prueba la estructura: con un `T` de prueba que cuenta llamadas, cada `sample` llama a `interpolate` como mucho una vez, y ninguna en el `at` de un key, fuera del rango de keys o con `Hold`. Pruebas de propiedad: `sample` en `at` de cada key devuelve su `value`, y dos llamadas con la misma pista y el mismo `t` dan resultados idénticos bit a bit. Prueba golden entre plataformas: un archivo de pistas de los cuatro tipos de §3.4 y valores de `t`, con los resultados esperados guardados, se muestrea en las 3 plataformas de CI (§10.1); `f32`, `Vec2` y las curvas coinciden bit a bit, y `Color` y `Transform2D` quedan dentro de las tolerancias de §3.4 (PROPUESTA). |
 | ARQ-13 | Las invariantes del documento (ids únicos, hijos existentes, sin ciclos, keys ordenadas, `TimeRange` válidos) se validan tras cada carga y en `debug_assert` tras cada `Command`. | Un fuzzing de `gafira-format` no produce documentos inválidos aceptados. |
 | ARQ-14 | «Fijar tipografía» protege las propiedades marcadas frente a cambios masivos, y «Ajustar al cuadro» es determinista. | Prueba de propiedad: tras `SetSwatch` de fuente, aplicar identidad y `ResizeDesign`, un `TextNode` con `type_lock` conserva fuente, tamaño y estilo bloqueados. Prueba golden: `FitBox` da el mismo tamaño en las 3 plataformas con las fuentes embebidas. |
 | ARQ-15 | Las `notes` y la `grid` de una página nunca aparecen en las exportaciones de imagen, video, SVG ni PPTX. | Prueba golden: un documento con notas y cuadrícula visibles exporta píxeles idénticos al mismo documento sin ellas. |
-| ARQ-16..ARQ-19 | Reservados. | — |
+| ARQ-16 | `sample` sigue la tabla de muestreo de §3.4: fuera del rango de keys mantiene el primer o el último valor, en el `at` de un key devuelve su valor, entre dos keys aplica la curva `out` del key anterior y con `Hold` mantiene el valor anterior hasta el siguiente key. Es total. | Pruebas unitarias, una por fila de la tabla, con una pista `f32` de 3 keys (incluido `t` un *flick* antes y después de cada key). Pruebas de propiedad sobre pistas generadas: `sample(t)` con `t ≤ keys[0].at` es `keys[0].value` y con `t ≥ keys[n−1].at` es `keys[n−1].value`; con `out = Linear`, el resultado está entre los dos valores vecinos (con la tolerancia de ARQ-19); con `out = Hold`, el resultado es `keys[i].value` para todo `t < keys[i+1].at`; `sample` no hace pánico con `t` y `at` en `i64::MIN` e `i64::MAX`. |
+| ARQ-17 | Las curvas de `Easing` son las de §3.4: `Linear` es la identidad y `EaseIn`, `EaseOut` y `EaseInOut` son las curvas CSS `ease-in`, `ease-out` y `ease-in-out` como `CubicBezier`. `CubicBezier` se resuelve con la precisión de §3.4. `Hold` es el escalón de §3.4, y toda curva recorta su entrada `u` a `[0, 1]` (NaN da 0). | Pruebas unitarias: cada curva con nombre da el mismo `e(u)` que su `CubicBezier` equivalente en 1 001 valores de `u`, bit a bit. Pruebas de propiedad con `x1`, `x2` en `[0, 1]` e `y1`, `y2` en `[−2, 3]`: `e(0) = 0` y `e(1) = 1` exactos; `|e(u) − y(s*)| ≤ 1e-5 · max(1, |y1|, |y2|)` (PROPUESTA) frente a una referencia en `f64` por bisección; `e(u)` queda en `[min(0, y1, y2), max(1, y1, y2)]`. Pruebas unitarias: `Hold` da 0 en `u = 0` y `u = 0,5`, y 1 en `u = 1`; cada curva da 0 con `u = −1`, `−∞` y NaN, y 1 con `u = 2` y `+∞`. |
+| ARQ-18 | `KeyTrack` cumple su invariante (al menos un key, `at` estrictamente creciente, `out` válido, `value` finito) por construcción y al deserializar, y `Animatable<T>` tiene el formato serde de §3.4. | Pruebas unitarias: construir con 0 keys, con dos `at` iguales, con `at` decreciente, con `CubicBezier` con `x1` o `x2` fuera de `[0, 1]` o con un valor no finito, y con un `value` con un componente no finito, devuelve un error que nombra la regla y el índice; el mismo JSON (salvo los no finitos, que JSON no representa), leído como `Animatable<T>` (no solo como `KeyTrack`), falla con un error que nombra la misma regla y el mismo índice. Prueba de propiedad: `deserialize(serialize(a)) == a` y conserva la variante (`Static` o `Keyed`) para los `T` de §3.4 con valores finitos. Prueba golden: `Static(1.5_f32)` se escribe `1.5`, y un JSON con el valor desnudo de un campo `T` se lee como `Static`. |
+| ARQ-19 | `f32`, `Vec2`, `Color` y `Transform2D` implementan `Interpolate` con las reglas de §3.4. | Pruebas de propiedad: para cada tipo, `t = 0` devuelve `a` y `t = 1` devuelve `b`. `f32` y `Vec2`: para `t ∈ [0, 1]`, cada componente está entre `a` y `b` con una tolerancia de `ε · max(|a|, |b|)`, donde `ε` es el épsilon de máquina de su tipo (`f32` o `f64`). `Color`: tras convertir a sRGB lineal, cada canal `r`, `g`, `b` difiere de la interpolación premultiplicada de referencia en `f64` en ≤ 1e-5 (PROPUESTA), `a` es la interpolación lineal de los dos alfas, y el espacio del resultado sigue la regla de §3.4; prueba unitaria: de rojo opaco a negro transparente (`a = 0`), todo resultado con `a > 0` tiene el tono rojo de partida en luz lineal (`g = b = 0`, `r` del rojo). `Color` con alfa resultante ≤ 0 (Q-31), pruebas unitarias: de rojo transparente a azul transparente (los dos con `a = 0`, mismo espacio), `t = 0,5` da `a = 0` y `r`, `g`, `b` iguales a la interpolación en recto de referencia en `f64` (≤ 1e-5, PROPUESTA), todos finitos (sin NaN); de un color con `a = 0,5` a otro con `a = 0` y `t = 1,5`, el resultado tiene `a = −0,25` (sin recortar) y `r`, `g`, `b` iguales a la extrapolación en recto de referencia en `f64` (≤ 1e-5, PROPUESTA), sin canales invertidos de signo por la división. `Transform2D`, pruebas unitarias: dos traslaciones interpolan solo la traslación; de una rotación de 350° a una de 10°, `t = 0,5` da 0° y no 180°; dos escalas interpolan la escala por eje; de la identidad a un sesgo `k` el resultado es continuo: entre muestras separadas por `Δt = 1e-3`, cada coeficiente cambia ≤ `1e-2 · max(1, |k|)` (PROPUESTA); de la escala 0 a `B`, la parte lineal es `t ·` la de `B` y la traslación se interpola; de `scaleX(0)` a la identidad, `t = 0,5` da `scale(0,5, 1)`; comportamiento conocido de rango 1 (Q-30): de la parte lineal `[1, 2, 2, 4]` con traslación nula a la identidad, `t = 0` devuelve el extremo bit a bit, `t = 0,5` da la parte lineal `[1, 0, 0, 2,5]` y `t = 1e-6` da `[1, 0, 0, 4]` con una diferencia ≤ 1e-5 por coeficiente (el salto documentado; tolerancias PROPUESTA); entre dos extremos degenerados, cada uno de los 6 coeficientes es la interpolación lineal de los suyos. `Transform2D`, prueba de propiedad: entre extremos aleatorios con el mismo signo de determinante (`abs(det) > 1e-3`, coeficientes en `[−3, 3]`), todo resultado con `t` en `0,01..0,99` tiene ese signo; en `t = 0` y `t = 1`, también con extremos degenerados, devuelve el extremo bit a bit. |
 
 ---
 
@@ -935,6 +1005,7 @@ Otras cifras (FIJADAS, D-03):
 | Cambio de color < 50 ms (spec) | Invalidación por `touches` y re-rasterización solo de los tiles del nodo | `bench_recolor`, p99 < 50 ms |
 | Filtro < 300 ms (spec) | Efecto sobre el mip del viewport (vista previa) en GPU o rayon; resolución completa en segundo plano | `bench_filter_4000px_preview` < 300 ms |
 | Interacciones locales < 100 ms (spec) | Todo comando del núcleo es O(nodos tocados); trabajo pesado asíncrono | Suite `bench_interactions`: cada acción < 100 ms p99 |
+| Muestreo de animación < 1 µs con 10 000 keyframes (ARQ-12, FIJADA) | Búsqueda binaria sobre los `at` ordenados (ARQ-18) y como mucho una evaluación de curva y una interpolación por muestra (ARQ-16) | `bench_anim_sample_10k`: < 1 µs por muestra en la máquina de referencia |
 | Aislar sujeto 4000 px < 5 s CPU, < 2 s GPU (spec/PRD) | Segmentación en 1024 px y escalado guiado; SLIC y GMM paralelos; variante GPU del *guided filter* | `bench_segment_4000` en la máquina de referencia: CPU < 5 s; GPU < 2 s (VERIFICAR viabilidad de la vía GPU con la técnica clásica, R-04) |
 | Arranque < 5 s gama media (PRD) | Inicialización perezosa de la GPU y de los registros pesados; fuentes embebidas sin escanear el sistema al arrancar (escaneo en segundo plano); LTO; la Pantalla de arranque solo espera los pasos bloqueantes y los diferibles siguen tras cerrarla (§8.4) | `gafira --bench-startup` hasta el primer frame interactivo de Inicio < 5 s (objetivo interno < 2 s, FIJADA), incluida la Pantalla de arranque |
 | Primer frame de la Pantalla de arranque < 300 ms (PROPUESTA, D-09) | Ventana y primer frame antes de cualquier otro paso; logo pequeño incrustado; decodificación y reescalado de la imagen en un hilo propio (ARQ-65) | `gafira --bench-startup` informa de `splash_first_frame_ms` < 300 ms en gama media |
@@ -1446,7 +1517,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otras specs los citan.
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-31 se resolvieron en el cambio `anim-core` y su regla está en §3.4.
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1464,6 +1535,11 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-13 | Importación de AVI y de AAC/M4A más allá del SO (01). | D-07: AVI en Fase 2 solo con códecs libres; D-02: AAC solo vía SO. |
 | Q-16 | Aprobación del glosario de 03 (01). | D-04: aprobado; queda la búsqueda de marca del titular. |
 | Q-14 | Idioma del producto (01). | D-08: español e inglés; idioma por defecto según el sistema (cualquier variante de español → español; cualquier otro → inglés); selector en Ajustes → General. Arquitectura en §14 (`gafira-i18n`, ADR-09). |
+| Q-27 | ¿Cómo se interpola el alfa de `Color` (ARQ-19)? | Titular: A, alfa premultiplicado, como CSS Color 4 (§3.4, ARQ-19). |
+| Q-28 | ¿Qué hace `Transform2D::interpolate` con un extremo no descomponible (determinante 0 o coeficientes no finitos)? | Titular: B. El extremo degenerado toma la rotación y el sesgo del otro extremo y solo se interpolan traslación y escala; si los dos son degenerados, se interpolan los 6 coeficientes linealmente; un coeficiente no finito hace inválida la pista (§3.4, ARQ-18, ARQ-19). La escala del extremo degenerado se fija en Q-30. |
+| Q-29 | ¿`sample` da resultados idénticos bit a bit en las 3 plataformas (ARQ-12)? | Titular: A, enmendada tras el spike de `anim-core`. Bit a bit para `f32`, `Vec2` y las curvas (aritmética IEEE; sin FMA comprobado en el ensamblador de x86_64, aarch64 sin comprobar). `Color` y `Transform2D` con tolerancia, porque usan `powf` y funciones trigonométricas de la `libm` de la plataforma: `4 · ε_f32 · max(1, abs(c))` por canal en `Color` y `1e-9 · max(1, abs(c))` por coeficiente en `Transform2D` (PROPUESTA; §3.4, ARQ-12). |
+| Q-30 | ¿Qué escala por eje tiene un extremo degenerado de `Transform2D` (ARQ-19, Q-28 B)? | Titular: A. La diagonal de su parte lineal expresada en el marco de rotación y sesgo del otro extremo. Un extremo de rango 1 que no encaja en ese marco (por ejemplo `[1, 2, 2, 4]`) salta justo después de `t = 0` (o antes de `t = 1`); se acepta como comportamiento conocido y documentado, porque los presets solo producen escalas 0 por eje (§3.4, ARQ-19). |
+| Q-31 | ¿Qué da `Color::interpolate` cuando el alfa resultante es ≤ 0 (ARQ-19, Q-27 A)? | Titular: A. Con `a ≤ 0` se interpolan `r`, `g`, `b` en recto, sin premultiplicar, y `a` queda sin recortar; el consumidor recorta `a` al componer (§3.4, ARQ-19). |
 
 ### 12.3 Preguntas abiertas
 

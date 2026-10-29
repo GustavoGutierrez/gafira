@@ -15,6 +15,7 @@ gafira-color = { path = "crates/gafira-color" }
 gafira-doc = { path = "crates/gafira-doc" }
 gafira-edit = { path = "crates/gafira-edit" }
 gafira-time = { path = "crates/gafira-time" }
+gafira-anim = { path = "crates/gafira-anim" }
 gafira-testkit = { path = "crates/gafira-testkit" }
 gafira-pathops = { path = "crates/gafira-pathops" }
 kurbo = { version = "0.13", features = ["serde"] }
