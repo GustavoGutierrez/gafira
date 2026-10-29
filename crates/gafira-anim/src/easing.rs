@@ -15,11 +15,13 @@ const EASE_IN: [f32; 4] = [0.42, 0.0, 1.0, 1.0];
 const EASE_OUT: [f32; 4] = [0.0, 0.0, 0.58, 1.0];
 const EASE_IN_OUT: [f32; 4] = [0.42, 0.0, 0.58, 1.0];
 
-/// Solver stop threshold on the relative error `|x(s) - u| / u`. Relative, not
-/// absolute: near `u = 0` with `x1, x2 ~ 0`, `x(s) ~ s^3` is flat, so a small
-/// absolute error can still mean a root that is far off in `s` (and in `y`).
-const X_EPSILON: f64 = 1e-12;
-const MAX_ITERATIONS: usize = 64;
+/// Bisection steps of the solver. The bracket on `s` starts at width 1 and halves
+/// each step, so 53 steps leave it at 2^-53, the `f64` resolution on `[0, 1]`.
+/// The error in `s` is bounded by construction; a stop rule on the error in `x`
+/// is not enough, because near a flat inflection (`x1 = 1`, `x2 ~ 0`) `x(s) - u`
+/// is cubic in the distance to the root, so a tiny `x` error hides a large `s`
+/// (and `y`) error.
+const BISECTIONS: usize = 53;
 
 impl Easing {
     /// `true` when the curve satisfies its validity rule: a `CubicBezier` needs
@@ -64,35 +66,21 @@ fn coord(p1: f64, p2: f64, s: f64) -> f64 {
     3.0 * m * m * s * p1 + 3.0 * m * s * s * p2 + s * s * s
 }
 
-fn slope(p1: f64, p2: f64, s: f64) -> f64 {
-    let m = 1.0 - s;
-    3.0 * m * m * p1 + 6.0 * m * s * (p2 - p1) + 3.0 * s * s * (1.0 - p2)
-}
-
-/// Solves `x(s) = u` (Newton, safeguarded by a bisection bracket) and returns `y(s)`
-/// clamped to the convex-hull bounds.
+/// Solves `x(s) = u` by bisection on the monotone `x(s)` and returns `y(s)` clamped
+/// to the convex-hull bounds. Plain IEEE arithmetic, so the result is the same on
+/// every platform.
 fn bezier([x1, y1, x2, y2]: [f32; 4], u: f32) -> f32 {
     let (x1, y1, x2, y2, u) = (x1.into(), y1.into(), x2.into(), y2.into(), f64::from(u));
-    let (mut lo, mut hi, mut s) = (0.0_f64, 1.0_f64, u);
-    for _ in 0..MAX_ITERATIONS {
-        let err = coord(x1, x2, s) - u;
-        if err.abs() <= X_EPSILON * u {
-            break;
-        }
-        if err < 0.0 {
-            lo = s;
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..BISECTIONS {
+        let mid = 0.5 * (lo + hi);
+        if coord(x1, x2, mid) < u {
+            lo = mid;
         } else {
-            hi = s;
+            hi = mid;
         }
-        let d = slope(x1, x2, s);
-        let next = s - err / d;
-        s = if d.abs() > 1e-9 && next > lo && next < hi {
-            next
-        } else {
-            0.5 * (lo + hi)
-        };
     }
-    let y = coord(y1, y2, s);
+    let y = coord(y1, y2, 0.5 * (lo + hi));
     let (min, max) = (0.0_f64.min(y1).min(y2), 1.0_f64.max(y1).max(y2));
     y.clamp(min, max) as f32
 }

@@ -393,6 +393,44 @@ fn arq_19_transform_non_finite_endpoint_never_panics() {
     }
 }
 
+// ARQ-19, Q-33: an end with a non-finite coefficient (outside the contracted
+// domain, ARQ-18 makes such a track invalid) is treated as degenerate and,
+// whatever the other end is, the six coefficients are blended linearly; it is
+// never decomposed nor does it lend or borrow a frame. Only the non-finite
+// coefficient itself may come out non-finite.
+#[test]
+fn arq_19_transform_end_with_a_non_finite_coefficient_blends_the_six_coefficients_linearly() {
+    let (theta, k) = (2.0_f64, 0.8_f64);
+    let (s, c) = theta.sin_cos();
+    let rotated = tf([
+        2.0 * c,
+        2.0 * s,
+        3.0 * (k * c - s),
+        3.0 * (k * s + c),
+        1.0,
+        -2.0,
+    ]);
+    let t = 0.5_f32;
+    for bad in [f64::NAN, f64::INFINITY] {
+        // Non-finite translation with a perfectly decomposable linear part.
+        let broken = tf([1.0, 0.0, 0.0, 1.0, bad, 4.0]);
+        let first = broken.interpolate(&rotated, t).coeffs();
+        let last = rotated.interpolate(&broken, t).coeffs();
+        let want_first = lerp6(broken.coeffs(), rotated.coeffs(), t);
+        let want_last = lerp6(rotated.coeffs(), broken.coeffs(), t);
+        for i in [0, 1, 2, 3, 5] {
+            assert!(
+                (first[i] - want_first[i]).abs() <= 1e-9 * want_first[i].abs().max(1.0),
+                "first, coeff {i} (bad = {bad}): {first:?} vs {want_first:?}"
+            );
+            assert!(
+                (last[i] - want_last[i]).abs() <= 1e-9 * want_last[i].abs().max(1.0),
+                "last, coeff {i} (bad = {bad}): {last:?} vs {want_last:?}"
+            );
+        }
+    }
+}
+
 // ARQ-19, C1: "un volteo es siempre sy < 0": sx stays positive and sy crosses 0.
 #[test]
 fn arq_19_transform_flip_from_identity_collapses_the_y_axis_at_the_middle() {
@@ -404,16 +442,20 @@ fn arq_19_transform_flip_from_identity_collapses_the_y_axis_at_the_middle() {
     assert_close(id.interpolate(&flip, 1.5), [1.0, 0.0, 0.0, -2.0, 0.0, 0.0]);
 }
 
-// ARQ-19, C1: scale(-1, 1) has det < 0 too: sx = 1, theta = pi, sy = -1.
+// ARQ-19, C1: scale(-1, 1) has det < 0 too: sx = 1, theta = pi, sy = -1. The tie at
+// |dtheta| = pi keeps dtheta as computed (+pi from the identity, -pi towards it), so
+// both directions go through the same half-turn frame (theta = pi/2 at the middle).
 #[test]
-fn arq_19_transform_horizontal_flip_from_identity_goes_through_a_half_turn_frame() {
+fn arq_19_transform_horizontal_flip_tie_at_pi_keeps_dtheta_as_computed() {
     let id = Transform2D::IDENTITY;
-    let got = id
-        .interpolate(&Transform2D::scale_xy(-1.0, 1.0), 0.5)
-        .coeffs();
-    // theta = pi/2, sx = 1, sy = 0: [0, 1, 0, 0] (or its mirror at exactly pi).
-    assert!(got[0].abs() < 1e-9 && got[2].abs() < 1e-9 && got[3].abs() < 1e-9);
-    assert!((got[1].abs() - 1.0).abs() < 1e-9, "{got:?}");
+    let flip = Transform2D::scale_xy(-1.0, 1.0);
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let q = [h, h, -h / 2.0, h / 2.0, 0.0, 0.0];
+    let half = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+    assert_close(id.interpolate(&flip, 0.5), half);
+    assert_close(id.interpolate(&flip, 0.25), q);
+    assert_close(flip.interpolate(&id, 0.5), half);
+    assert_close(flip.interpolate(&id, 0.75), q);
 }
 
 // ARQ-19, C1: rotated mixed-sign pair.
@@ -462,6 +504,44 @@ proptest! {
         let ok = got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1e-9 * w.abs().max(1.0));
         prop_assert!(ok, "{:?} vs {:?}", got, want);
     }
+}
+
+// ARQ-19, Q-28 B: a degenerate end with every linear coefficient non-zero
+// (columns (2, 1) and (4, 2), det 0) borrows both scales from a frame with a
+// non-trivial rotation AND a non-zero shear; every term of the borrowed
+// sx = a*(k*s+co) - b*(k*co-s) and sy = d*co - c*s is then non-zero.
+#[test]
+fn arq_19_transform_degenerate_end_with_full_linear_part_borrows_both_scales() {
+    let (theta, k, bsx, bsy) = (0.7_f64, 0.8_f64, 2.0_f64, 3.0_f64);
+    let (s, c) = theta.sin_cos();
+    let b = tf([
+        bsx * c,
+        bsx * s,
+        bsy * (k * c - s),
+        bsy * (k * s + c),
+        1.0,
+        -2.0,
+    ]);
+    let a = tf([2.0, 1.0, 4.0, 2.0, 3.0, 4.0]);
+    // Independent expectation (python3 f64): S = U^-1 R^T L_a, with
+    // S11 = 2.5927766115593833 and S22 = -1.047186374381787; at t = 0.5 the
+    // scales are (S11 + bsx) / 2 and (S22 + bsy) / 2, the shear and angle are B's.
+    let (s11, s22) = (2.592_776_611_559_383_3_f64, -1.047_186_374_381_787_f64);
+    let want = [
+        1.756_374_654_647_047,
+        1.479_373_963_349_072_6,
+        -0.031_580_840_840_290_18,
+        1.250_011_953_389_199_2,
+        2.0,
+        1.0,
+    ];
+    assert_close(a.interpolate(&b, 0.5), want);
+    // Degenerate end last: the same scales, blended from B's.
+    let (sx, sy) = (0.5 * (bsx + s11), 0.5 * (bsy + s22));
+    assert_close(
+        b.interpolate(&a, 0.5),
+        [sx * c, sx * s, sy * (k * c - s), sy * (k * s + c), 2.0, 1.0],
+    );
 }
 
 // ARQ-19, Q-28 B, S3: a degenerate end whose off-diagonal part does not fit
