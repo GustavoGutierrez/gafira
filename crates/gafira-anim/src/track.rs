@@ -60,7 +60,7 @@ impl fmt::Display for KeyTrackError {
 impl std::error::Error for KeyTrackError {}
 
 /// Keys sorted by time. The invariant holds by construction and when read.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KeyTrack<T> {
     keys: Vec<Keyframe<T>>,
 }

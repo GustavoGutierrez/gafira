@@ -5,10 +5,12 @@
 
 #![forbid(unsafe_code)]
 
+mod animatable;
 mod easing;
 mod interpolate;
 mod track;
 
+pub use animatable::Animatable;
 pub use easing::Easing;
 pub use interpolate::Interpolate;
 pub use track::{KeyTrack, KeyTrackError, KeyTrackRule, Keyframe};
