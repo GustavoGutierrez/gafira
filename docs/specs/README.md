@@ -10,7 +10,7 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 
 | Doc | Estado | Detalle |
 |---|---|---|
-| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-01 parcial, ARQ-02, ARQ-03, ARQ-07, ARQ-70, ARQ-71, ARQ-80 parcial: la puerta de merge está diferida por el 403 de GitHub), C2a `domain-color` (ARQ-02, ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-12, ARQ-13, ARQ-30) (archivados), C3 `edit-history` (`gafira-edit`, entregas D1-D11, archivado en `openspec/changes/archive/2026-10-25-edit-history/`), C2c `domain-time` (`gafira-time`, capa 0, entregas D0-D4, archivado en `openspec/changes/archive/2026-10-25-domain-time/`). C4 `engine-pathops` (`gafira-pathops`, capa 2, entregas D1-D4, archivado en `openspec/changes/archive/2026-10-26-engine-pathops/`). Activo: el resto del trabajo de 02. Luego `gafira-format`, render, UI... |
+| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-01 parcial, ARQ-02, ARQ-03, ARQ-07, ARQ-70, ARQ-71, ARQ-80 parcial: la puerta de merge está diferida por el 403 de GitHub), C2a `domain-color` (ARQ-02, ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-12, ARQ-13, ARQ-30) (archivados), C3 `edit-history` (`gafira-edit`, entregas D1-D11, archivado en `openspec/changes/archive/2026-10-25-edit-history/`), C2c `domain-time` (`gafira-time`, capa 0, entregas D0-D4, archivado en `openspec/changes/archive/2026-10-25-domain-time/`). C4 `engine-pathops` (`gafira-pathops`, capa 2, entregas D1-D4, archivado en `openspec/changes/archive/2026-10-26-engine-pathops/`). Activo: el resto del trabajo de 02. Siguiente, de abajo arriba por capas (§2.1): capa 1 `gafira-anim`; capa 2 `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment`; capa 3 `gafira-ports` y el resto; capa 4 adaptadores (`gafira-format` necesita `gafira-ports`). |
 | `00-decisiones.md` | Vigente (no ejecutable) | Registro de decisiones del titular; prevalece sobre 01-05. No se promueve ni se archiva. |
 | `backlog/01-producto-y-calidad.md` | Backlog | Producto, calidad y criterios de aceptación. |
 | `backlog/03-diseno-visual-e-interaccion.md` | Backlog | Tokens, modo oscuro, glosario ES+EN, wireframes. |
@@ -26,7 +26,7 @@ Desde 2026-10-29 los documentos se ejecutan por la vía rápida (ADR 0002): sin 
 1. Arrancar `claude --agent coordinator` en `main` y pedir: "ejecuta docs/specs/02-arquitectura-software.md".
 2. El coordinador calcula los IDs pendientes (los que ningún change ni test nombra todavía):
    `comm -23 <(grep -oE 'ARQ-[0-9]+' docs/specs/02-arquitectura-software.md | sort -u) <(git grep -hoE 'ARQ-[0-9]+' -- openspec crates apps | sort -u)`
-3. Elige el siguiente bloque según la tabla de estado (próximo: `gafira-format`), escribe su Slice card y sigue con `tdd-apply` -> `verify`; la mutación corre una vez (T4) al cerrar.
+3. Elige el siguiente bloque de abajo arriba por capas (§2.1 de 02): la capa más baja con crates pendientes cuyas dependencias ya existan (próximo: `gafira-anim`), escribe su Slice card y sigue con `tdd-apply` -> `verify`; la mutación corre una vez (T4) al cerrar.
 4. Cada change cerrado actualiza "Detalle" arriba. Cuando no quedan IDs pendientes, el documento se archiva (sección de abajo).
 
 ## Pending follow-ups
