@@ -107,3 +107,16 @@ Hand mutants against the full gafira-anim suite (one at a time, source restored 
 | M5 | degenerate-end borrowing disabled (6-coefficient blend) | `q33_finite_coefficients_with_non_finite_determinant_are_degenerate`, `q33_large_scale_with_tiny_column_sine_is_degenerate`, `q33_rank_one_end_with_rounding_determinant_is_degenerate`, `q33_threshold_is_relative_to_the_column_lengths`, `degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame`, `rank_one_endpoint_jumps_as_documented` |
 All five killed. (Test names abbreviated: prefix `arq_19_transform_` or `arq_19_`.)
 Multi-seed: 60 distinct `PROPTEST_RNG_SEED` values (`15485863*i + 977`), `PROPTEST_CASES=4096`, 29/29 transform tests each, 0 failures; no regressions file kept (the file written by the mutant runs was deleted).
+
+## D3b round 4 (tdd-apply, test-only)
+
+Added to `crates/gafira-anim/tests/transform.rs` (no source change): C3 (both column orders, decomposed), C4 (exact threshold is degenerate), S7 (tiny rotation, reverse direction), S8 (extrapolation with one degenerate end). All pass against the current code on first run (they pin behavior already implemented; no RED possible without a source change).
+
+Hand mutants, run against the full gafira-anim suite, source restored after each:
+
+| Mutant | Result | Killing test |
+|---|---|---|
+| H1 `<` instead of `<=` in the threshold | killed | `arq_19_q33_determinant_exactly_at_the_threshold_is_degenerate` |
+| H2 `\|c1\|·\|c1\|` instead of `\|c1\|·\|c2\|` | killed | `arq_19_q33_unequal_columns_with_sine_1e_3_are_decomposed_in_both_orders` |
+
+Seeds: transform tests passed under 30 distinct `PROPTEST_RNG_SEED` values (7919*i+13, i = 1..30).

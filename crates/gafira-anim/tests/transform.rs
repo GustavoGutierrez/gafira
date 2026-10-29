@@ -518,3 +518,88 @@ fn arq_19_transform_degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame(
         ],
     );
 }
+
+// ARQ-19, Q-33: |c1| = 1e6, |c2| = 1e-6, column sine 1e-3 (|det| = 1e-3, far
+// above 1e-12·|c1|·|c2|): decomposed, so the shear survives; the degenerate
+// path would zero c (index 2).
+#[test]
+fn arq_19_q33_unequal_columns_with_sine_1e_3_are_decomposed_in_both_orders() {
+    let id = Transform2D::IDENTITY;
+    let x = 1e-6 * (1.0_f64 - 1e-6).sqrt();
+    // columns (1e6, 0) and (x, 1e-9): theta 0, sx 1e6, sy 1e-9, k = x / 1e-9.
+    let a = linear_only([1e6, 0.0, x, 1e-9]);
+    let sx = 0.5 * (1e6 + 1.0);
+    let sy = 0.5 * (1e-9 + 1.0);
+    let k = 0.5 * (x / 1e-9);
+    let want = [sx, 0.0, sy * k, sy, 0.0, 0.0];
+    assert!(want[2] > 100.0, "premise: decomposed result has a shear");
+    assert_abs_rel(a.interpolate(&id, 0.5), want);
+    assert_abs_rel(id.interpolate(&a, 0.5), want);
+
+    // swapped columns (x, 1e-9) and (1e6, 0): flip carried by sy = det / sx,
+    // theta = atan2(1e-9, x), k = (c1 . c2) / det.
+    let b = linear_only([x, 1e-9, 1e6, 0.0]);
+    let sx0 = x.hypot(1e-9);
+    let th0 = 1e-9_f64.atan2(x);
+    let sy0 = (x * 0.0 - 1e-9 * 1e6) / sx0;
+    let k0 = (x * 1e6) / (sx0 * sy0);
+    let (th, sx, sy, k) = (0.5 * th0, 0.5 * (sx0 + 1.0), 0.5 * (sy0 + 1.0), 0.5 * k0);
+    let (s, c) = th.sin_cos();
+    let want = [sx * c, sx * s, sy * (k * c - s), sy * (k * s + c), 0.0, 0.0];
+    assert!(
+        want[2].abs() > 1e5,
+        "premise: decomposed result has a shear"
+    );
+    assert_abs_rel(b.interpolate(&id, 0.5), want);
+    assert_abs_rel(id.interpolate(&b, 0.5), want);
+}
+
+// ARQ-19, Q-33: |det| == 1e-12·|c1|·|c2| exactly in f64 is degenerate (<=).
+#[test]
+fn arq_19_q33_determinant_exactly_at_the_threshold_is_degenerate() {
+    let e = linear_only([1.0, 0.0, 1.0, 1e-12]);
+    assert_eq!(
+        det(e.coeffs()).abs(),
+        1e-12 * (1.0_f64.hypot(0.0) * 1.0_f64.hypot(1e-12)),
+        "premise: exact boundary"
+    );
+    let want = [1.0, 0.0, 0.0, (1.0 + 1e-12) / 2.0, 0.0, 0.0];
+    assert_abs_rel(e.interpolate(&Transform2D::IDENTITY, 0.5), want);
+    assert_abs_rel(Transform2D::IDENTITY.interpolate(&e, 0.5), want);
+    // exact zero shear, which the decomposed path (k = 1e12 / 2) never gives
+    assert_eq!(e.interpolate(&Transform2D::IDENTITY, 0.5).coeffs()[2], 0.0);
+}
+
+// ARQ-19, Q-33: the tiny-rotation case, reverse direction.
+#[test]
+fn arq_19_q33_tiny_rotated_scale_keeps_its_own_rotation_reversed() {
+    let rot = |th: f64| {
+        let (s, c) = th.sin_cos();
+        [c, s, -s, c]
+    };
+    let tiny = rot(0.3).map(|v| 1e-7 * v);
+    let got = linear_only(rot(2.0)).interpolate(&linear_only(tiny), 0.5);
+    let w = rot(1.15).map(|v| 0.50000005 * v);
+    assert_abs_rel(got, [w[0], w[1], w[2], w[3], 0.0, 0.0]);
+}
+
+// ARQ-19, S8: extrapolation with exactly one degenerate end (sine 1e-13, huge):
+// the degenerate end borrows the identity frame, parts extrapolate linearly.
+#[test]
+fn arq_19_s8_extrapolation_with_one_degenerate_end() {
+    let (s, c) = 1e-13_f64.sin_cos();
+    let big = linear_only([1e6, 0.0, 2e6 * c, 2e6 * s]);
+    let sy0 = 1e6 * (2e6 * s) / 1e6;
+    let id = Transform2D::IDENTITY;
+    for t in [-0.5_f32, 1.5, 2.0] {
+        let tt = f64::from(t);
+        assert_abs_rel(
+            big.interpolate(&id, t),
+            [lerp(1e6, 1.0, tt), 0.0, 0.0, lerp(sy0, 1.0, tt), 0.0, 0.0],
+        );
+        assert_abs_rel(
+            id.interpolate(&big, t),
+            [lerp(1.0, 1e6, tt), 0.0, 0.0, lerp(1.0, sy0, tt), 0.0, 0.0],
+        );
+    }
+}
