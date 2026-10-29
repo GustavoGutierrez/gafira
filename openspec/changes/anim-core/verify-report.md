@@ -12,118 +12,112 @@ D3b round 4: PASS at `a2684e5` (0 CRITICAL, 0 WARNING, 0 SUGGESTION; limited clo
 D3c round 1: PASS at `84d5f17` (0 CRITICAL, 3 WARNING implementation: W1 key-instant exactness compared with tolerance for Color/Transform2D, W2 coverage test weaker than claimed, W3 size; 4 SUGGESTION).
 D3c round 2: PASS at `02cf69e` (0 CRITICAL, 0 WARNING, 0 SUGGESTION; closure-only round; W1, W2, S1-S4 closed; size note).
 T4 fix round (final, change level): FAIL at `22fd047` (1 CRITICAL C1 implementation: bezier solver misses the ARQ-17 bound at a valid f32 input near the triple root; 3 WARNING; 2 SUGGESTION; T4 0 missed, critical_missed 0, 19 exclusions checked).
+T4 fix round 2 (final, change level): PASS at `c49f2a7` (0 CRITICAL, 1 WARNING W1 claim: the bisection solver costs ~20x the old one, ARQ-12 1 µs at risk on the reference hardware; 3 SUGGESTION; T4 0 missed, critical_missed 0; C1, W1-W3, S1, S2 of the previous round closed).
 
-## T4 fix round (final verify, change level)
+## T4 fix round 2 (final verify, G5 before archive)
 
-Flow: standard | mutation: archive | tier: T4 | verify: V2. Branch `feat/anim-core-t4` from `develop` at `9572a06`; commits `568e79d`, `5eb8cb2`, `f0f851a`, `adef88e`, `22fd047`. Judged on a clean `git archive` export of `22fd047` (files touched after extraction, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`). This is the G5 check before archive.
+Flow: standard | mutation: archive | tier: T4 | verify: V2. Branch `feat/anim-core-t4`; commits since the last report (`b0857f5`): `f22f0c9` spec (ARQ-19 tie and non-finite end), `337864b` stop rule, `3a509ee` tie tests, `0566a3a` solver rewritten as plain bisection plus golden regeneration, `04ef3d1` exclusions dropped, `c49f2a7` progress notes. Judged on a clean `git archive` export of `c49f2a7` (files touched after extraction, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`; 63 GB free before building).
 
-## Gates (clean export of `22fd047`)
+## Gates (clean export of `c49f2a7`)
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0 |
+| `cargo test --workspace --locked` | 0 (62 test binaries, 0 failures) |
 | `cargo deny check bans licenses sources` | 0 |
 | CI policy: forbid(unsafe_code), V5 layer table, V12 clippy.toml sync (steps extracted from `.github/workflows/ci.yml`, run on the export) | 0, 0, 0 |
 
-Hygiene: no `src/` change in the round (`9572a06..HEAD` touches `tests/transform.rs` +76, `.cargo/mutants.toml` +27, `apply-progress.md` +33, all pure additions); the Slice card is unchanged (0 deleted lines in `apply-progress.md`); no AI attribution in commit messages or added lines; no new `*.proptest-regressions`. Size of the round: 136 lines.
+Hygiene: no AI attribution in commit messages or added lines; no new `*.proptest-regressions`; the Slice card is unchanged (`9572a06..HEAD` deletes 0 lines of `apply-progress.md`; the one edited line since `b0857f5` is the Group A note of the T4 round, S1). `crates/` is identical between `0566a3a` and HEAD. Size of the round: 94 insertions, 79 deletions (easing.rs 46, tests 43, golden 26, mutants.toml 25, spec 6, progress 27).
 
-## T4 report
+## 1. Closure of the previous findings
 
-Source: the implementer's re-run without `CARGO_TARGET_DIR` (`scratchpad/mutants-t4c/mutants.out`, cargo-mutants 27.1.0, `--jobs 8`): 293 tested, 279 caught, 0 missed, 0 timeout, 14 unviable, 19 excluded (312 listed), wall 194 s. The first run (`scratchpad/mutants-t4`) shared one target dir across jobs and is not used.
-Validity of the re-run for HEAD: it started at 20:43:11Z, the commit time of `f0f851a`/`adef88e`; `src/` is identical in every commit since `9572a06` and `22fd047` changes only docs. The tested+unviable set equals my `cargo mutants -p gafira-anim --list` on the export of HEAD (293 lines, identical), and the mutants killed only by `f0f851a` (107:33, 108:33, 157:28) are in `caught.txt`, so the run included that test. I did not re-run T4.
-Unviable (14): all `Default::default()` / `Vec::leak` return replacements for types without `Default`; not a finding.
+| Finding | Evidence at `c49f2a7` | Status |
+|---|---|---|
+| C1 ARQ-17 precision near the flat inflection | Former failing inputs through the public API, checked against an exact `Fraction` bisection (140 halvings): `x1 = 1`, `x2 = 2^-39, 2^-40, 2^-44, 2^-49`, `u = 0.5`, `y = (0, 1)` and `(-1, 1)`: worst error 0.022 of the bound (was 6.6 times the bound). New unit test `arq_17_bezier_is_precise_near_a_flat_inflection` (k = 30..60, both mirrors, 3 y pairs, 5 u). Full probe in section 2. | closed |
+| W1 easing exclusions on measured equivalence | Newton, `slope` and every guard removed; all 16 easing entries dropped from `.cargo/mutants.toml`. The only comparison of the loop, 77:31 (`<=`, `==`, `>`), and every arithmetic mutant of lines 73-83 are in `caught.txt`. | closed |
+| W2 tie at `\|Δθ\| = π` | §3.4 now fixes it (`Δθ` keeps the sign of `θ_b − θ_a`). `arq_19_transform_horizontal_flip_tie_at_pi_keeps_dtheta_as_computed` pins the four values of ARQ-19; I re-derived them (θ = π/2, `sy = 0` at t = 0.5; θ = π/4, `sy = 0.5` at 0.25 and 0.75). `interpolate.rs:195:19 >=` and `197:26 <=` are no longer excluded and are in `caught.txt`. Code (`blend`, lines 194-199) matches the rule. | closed |
+| W3 non-finite end | ARQ-19 and §3.4 now state it. `arq_19_transform_end_with_a_non_finite_coefficient_blends_the_six_coefficients_linearly` matches the text: identity linear part, `tx` NaN and `+inf`, `ty = 4`, towards and from θ 2, k 0.8, sx 2, sy 3, translation (1, −2), t = 0.5, coefficients 0, 1, 2, 3, 5 within `1e-9 · max(1, \|want\|)`. | closed |
+| S1 Group A note | Corrected in `apply-progress.md` (3 of 8 needed the new test). | closed |
+| S2 `==` comment | Gone with the entries. | closed |
+
+## 2. The rewritten solver (`crates/gafira-anim/src/easing.rs`)
+
+Design read against §3.4 and ARQ-17: 53 halvings of `[0, 1]` on `coord(x1, x2, mid) < u`, then `y` at the bracket midpoint, clamped to `[min(0, y1, y2), max(1, y1, y2)]`, cast to f32. For `s` in `[0.5, 1)` the f64 spacing is 2^-53, so 53 halvings keep every midpoint exact and end at one ulp of width. The invariant `coord(lo) < u <= coord(hi)` holds for the computed `coord` (`coord(0) = 0 < u`, `coord(1) = 1 >= u`), so the root is bracketed up to the rounding of `coord`, about 4 ulps (all terms are non-negative for valid `x1`, `x2`, so no cancellation). Near the flat inflection (`x1 = 1`, `x2 = 0`, `x(s) − u = 4h^3`) that floor gives `h ~ 2e-6` and the worst `y` error, `|y'(0.5)| / sc ≤ 2.25` at `y = (−1, 1)`.
+
+Independent probe (outside the repo, `scratchpad/verify-final2/probe/src/main.rs`): calls the real `Easing::apply` of the export and compares with a double-double reference (bisection over f64 `s` until the bracket is one ulp, `x(s) − u` and `y(s)` in double-double, sign wrong only when `|x(s) − u| < 1e-31`, so the reference error is below 1e-10 of the bound). All inputs are f32; y pairs include `(−1, 1)` (the worst slope ratio), `(−2, 3)`, `(3, −2)`, mixed, and in the random run log-uniform magnitudes from 1e-30 to 1e30.
+
+| Run | Cases | Over the bound | Out of hull bounds | Worst error / bound |
+|---|---|---|---|---|
+| Flat inflection: `x1` in {1, 1 − 2^-k}, `x2` in {0, 2^-k down to the smallest subnormal}, both mirrors, 801 f32 `u` around the inflection value and 5 fixed `u`, 10 y pairs | 60 450 000 | 0 | 0 | 0.472 |
+| Adversarial random (x at 0, 1, subnormal, last floats below 1, log-uniform; u in the last 5 000 floats below 1, log-uniform over all positive floats, around 0.5, uniform) | 24 000 000 | 0 | 0 | 0.472 |
+| Grid (50 x1 by 50 x2 by ~4 100 u by 10 y pairs, as in the previous round) | 102 551 040 | 0 | 0 | 0.472 |
+
+The worst case in all three runs is `CubicBezier { x1: 1, y1: −1, x2: 0, y2: 1 }.apply(0.5)` = `0.12499528...`; there `s* = 0.5` and `y(s*) = 0.125` exactly, error 4.72e-6, bound 1e-5. That is the f64 noise floor of the triple root, about half the bound.
+
+Other rules, checked on the export through the public API:
+
+- `e(0) = 0` and `e(1) = 1` exactly, and `u = −1, −inf, NaN, −NaN, −0` give `+0`, `u = 2, +inf` give 1, bit for bit, for all 7 curve kinds (`ends` mode, 0 mismatches). The early returns in `apply` come before `bezier`.
+- Output bounds: 0 of 187M cases outside `[min(0, y1, y2), max(1, y1, y2)]`.
+- Termination: a fixed 53-step loop, no data-dependent iteration count, no other loop.
+- Determinism: plain IEEE `+ − *` and comparisons; `git grep mul_add crates/gafira-anim` finds nothing. Bit-for-bit golden passes on this platform; cross-platform is still the deferred ARQ-12 CI part.
+- Cost (ARQ-12, rough, local i7-12700H laptop, release build, `black_box` inputs): one `CubicBezier` sample (EaseInOut constants, random `u`) 645-657 ns; the previous Newton solver on the same loop 32-34 ns; a branchless variant of the same bisection 465-479 ns (latency bound, about 9 ns per `coord`); one `sample` of a 10 000-key f32 track, all keys `CubicBezier`, 710-728 ns. See W1.
+
+## 3. Golden regeneration (`crates/gafira-anim/tests/golden/sample.json`)
+
+- Structure: a JSON walk of `b0857f5` against HEAD finds the same 46 cases (8 f32, 7 vec2, 14 color, 17 transform), the same names, tracks, sample lists and `t` values; no case and no sample removed or added. `tests/golden.rs` (with the coverage test) is untouched since `39c2253`.
+- Changed values: 33 values in 14 samples. 7 f32 values (2 f32, 5 Color), each 1 ulp. 26 f64 values (Vec2, Transform2D): 16 of magnitude 3e-18 to 2e-17 (absolute change ≤ 2.1e-24) and 10 of magnitude 9e-9 to 10, changed by 1 to 5 ulps (absolute ≤ 2.2e-15). The implementer's note says all f64 values have magnitude ~1e-17; that holds for 16 of 26 (S1).
+- Cause: every changed sample sits at `u ≤ 1e-9` (t = 1 or one flick after a key), and they reduce to 4 distinct (curve, u) pairs: EaseIn and EaseInOut at `u = 1e-9`, the custom bezier `(0.17, −0.6, 0.83, 1.9)` at `u = 1e-9` and `u = 3.33e-10`. New `e(u)` against the exact `Fraction` reference: errors of 2.8e-20, 2.8e-20, 8.5e-12 and 4.4e-12 of the bound. At these tiny `u` the new solver is less precise in relative terms (2^-53 absolute in `s`), but ARQ-17 is an absolute bound.
+- Legitimacy: the file is a snapshot of this implementation used to compare platforms; §3.4 fixes precision, not the bits of a given solver. The regeneration used the documented `GAFIRA_BLESS_GOLDEN=1` procedure (`tests/golden.rs` header), sits in the same commit as the solver change and is explained there. Accepted.
+
+## 4. Mutation (T4)
+
+Source: the implementer's run, `scratchpad/mutants-t4d/mutants.out` (cargo-mutants 27.1.0, `--jobs 8`, no `CARGO_TARGET_DIR`, per-job build dirs `/tmp/cargo-mutants-gafira-*.tmp` in `debug.log`): 264 tested, 250 caught, 0 missed, 0 timeout, 14 unviable, 1 excluded, wall 131 s (21:16:55Z to 21:19:06Z).
+Validity for HEAD: the run started at the commit time of `04ef3d1`; `crates/` is identical from `0566a3a` to HEAD. `sort(caught + unviable)` equals my `cargo mutants -p gafira-anim --list` on the export of HEAD (264 lines, `diff` empty). I did not re-run T4.
+Exclusions: `exclude_re` has 4 entries; the only gafira-anim one is `interpolate.rs:157:48 || -> &&`, which matches exactly 1 mutant in `--list --no-config` for gafira-anim (265) and for the workspace (1 441), and is the only mutant dropped by the config. Its argument (an overflowing `det` implies an overflowing `area` by Hadamard for finite coefficients; a finite `det` with an infinite `area` is caught by the last term) is unchanged and was proved in the previous round. The other 3 entries are outside gafira-anim and unchanged.
+Unviable (14): `Default::default()` / `Vec::leak` replacements for types without `Default`; not a finding.
 critical_missed: 0.
 
-## 1. Group A (`Parts::borrowing`, interpolate.rs 186-187)
+## Hand mutants (5, scratch export `scratchpad/verify-final2/hm`, own target, restored and compared with `cmp` afterwards)
 
-Expected values re-derived in python3 f64 as `S = U^-1 R^T L` with `L = [[2, 4], [1, 2]]`, theta 0.7, k 0.8: `S11 = 2.5927766115593833`, `S22 = -1.047186374381787`, blend at t = 0.5 gives `[1.7563746546470602, 1.4793739633490726, -0.03158084084029318, 1.2500119533891993, 2, 1]`; the test's literals agree within 1.3e-14 (tolerance 1e-9). Independent of the code.
-Each of the 8 mutants applied by hand on a scratch export, then the new test alone (`--exact`) and the rest of the suite (`--skip` the new test):
-
-| Mutant | New test | Other failing tests |
+| # | Mutant (rule cargo-mutants cannot express) | Result |
 |---|---|---|
-| 186:43 `*` -> `/` | killed | 0 |
-| 186:48 `-` -> `/` | killed | 12 |
-| 187:29 `*` -> `+` | killed | 12 |
-| 187:19 `*` -> `+` | killed | 12 |
-| 186:43 `*` -> `+` | killed | 6 |
-| 187:24 `-` -> `+` | killed | 0 |
-| 187:19 `*` -> `/` | killed | 0 |
-| 187:24 `-` -> `/` | killed | 11 |
-
-All 8 are killed by the new test. Five of them were already killed by older tests (for example `d + co` is non-zero even with `d = 0`), so they were false "missed" from the shared-target run, and the apply-progress explanation that every one "changes nothing" holds only for three (S1).
-
-## 2. The 19 exclusions
-
-Regex check: each of the 22 `exclude_re` entries was matched against `cargo mutants --list --no-config` for gafira-anim (312) and for the whole workspace (1488). Every one of the 19 new entries matches exactly one mutant, workspace-wide; `--list` with the config drops exactly those 19 (293 left). The 3 older entries match 0 in gafira-anim and 1 each workspace-wide.
-
-Independent probe: a standalone Rust copy of `bezier` with each of the 16 easing mutants selectable, against a 200-step f64 bisection reference with the ARQ-17 bound `1e-5 * max(1, |y1|, |y2|)`, over f32 inputs only: (a) a grid of 50 x1 by 50 x2 values (0, 1, 2^-k down to the smallest subnormal, 1 - 2^-k for k = 1..24, the CSS values) by ~3 900 u values (2^-k and 1.5 * 2^-k for k = 1..149, the 199 smallest subnormals, the 2 999 floats below 1, j/1000) by 8 y pairs; (b) 3M random cases; (c) 20M adversarial cases (x at 0, 1, subnormal, last 1 000 floats below 1, log-uniform; u in the last 5 000 floats below 1 or log-uniform over all positive floats), counting cases where a mutant fails while the original passes.
-
-| Exclusion | Argument | Verdict |
-|---|---|---|
-| 82:16 `<` -> `<=` | `err == 0` breaks first (`1e-12 * u > 0` for every f32 `u > 0`) | proved, equivalent |
-| 88:22 `-` -> `+`, `slope -> 0.0`, `slope -> -1.0` | every Newton candidate is rejected, so pure bisection with the same stop rule | proved (sign argument holds: `d >= 0` inside `[0, 1]`) |
-| 88:22 `-` -> `/` | negative candidates rejected; accepted ones lie in the bracket | bracket kept, shrink rate not bounded; measured: 0 extra failures in 23M cases |
-| 89:24/39/52 `>=`, `<=` | differ only at an exact tie | sound; the probe found identical `s` on every case |
-| 89:24/39/52 `==` | comment says "changed only at an exact tie" | conclusion holds, reason is wrong: `==` turns Newton off everywhere (pure bisection), see S2 |
-| 89:24 `<`, 89:39 `<`, 89:52 `>`, 89:31 `\|\|`, 89:44 `\|\|` | Newton converges and the bracket is kept | not proved; measured, 0 extra failures in 23M f32 cases, worst mutant-only error 7.0e-8 (W1) |
-| interpolate 157:48 `\|\|` -> `&&` | finite coefficients: an overflowing `det` implies an overflowing `area` (Hadamard `\|det\| <= \|c1\|\|c2\|` and `\|c1\| >= \|a\|`, `\|c2\| >= \|d\|`) | proved, equivalent |
-| interpolate 195:19 `>=`, 197:26 `<=` | tie at `\|dtheta\| = pi`, both short paths | not equivalent: the tie is reachable with common input (identity to `scale_xy(-1, 1)` gives `dtheta = pi` exactly; t = 0.5 is `[0, 1, 0, 0]` vs `[0, -1, 0, 0]`); allowed only because §3.4 leaves the tie open (W2) |
-
-Input domain: `Easing::apply(u: f32)` and `bezier(.., u: f32)`; the only caller (`animatable.rs:72-73`) narrows `u` to f32 before `apply`. The 89:44 excursion at `u = 1 - 1e-9` is not reachable; the probe found no f32 input past the bound for any of the five weakest mutants.
-
-The probe found something else: the **original** solver misses the ARQ-17 bound at a valid input (C1).
-
-## 3. `f0f851a` (non-finite coefficient pinned)
-
-107:33, 108:33 and 157:28 are observable only with a non-finite coefficient: an input outside the contract (ARQ-18 rejects such a track; Q-33 defines degeneracy only "for finite coefficients"; Q-32 calls non-finite results out of contract). They are not equivalent, so an exclusion would break the AGENTS.md rule "exclude equivalent mutants only". Keeping the test is the right tool: it is labeled as out of contract, cheap, and kills the 3 mutants. The root cause is that the spec does not say what `Interpolate` does with a non-finite end, so the test now defines it. Class `ambiguity` (W3), not `implementation`.
-
-## 4. Line:column anchors (maintenance note, not a finding)
-
-cargo-mutants does not warn about an `exclude_re` that matches nothing. When lines move, the excluded mutants come back and show as missed (loud, not silent). A silent wrong exclusion would need the same operator, replacement and function at the same line and column. That is unlikely, but it can happen if line 89 is rewritten in place. C1 changes `bezier`, so all 16 easing entries must be re-derived after the fix, and T4 must run again.
+| HM1 | `BISECTIONS` 53 -> 20 | killed (`arq_12_golden_file_matches_sample_on_this_platform`); the precision tests accept it, which is right: 20 halvings still meet the ARQ-17 bound |
+| HM2 | `BISECTIONS` 53 -> 30 | killed (golden) |
+| HM3 | `y` evaluated at `lo` instead of the bracket midpoint | killed (golden) |
+| HM4 | `coord` written with `mul_add` (FMA), against the §3.4 "no `mul_add`" rule | survived; with it the probe still gives 0 of 84M cases over the bound or the hull, and the golden does not change. Not a spec violation in itself (IEEE fma is correctly rounded); the rule is a code rule no test can see (S2) |
+| HM5 | clamp removed | survived; equivalent: the computed `y(s)` stays within f64 rounding of the convex hull (Bernstein weights) and the f32 cast absorbs it; probe 0 of 84M cases out of bounds. The clamp is defensive |
 
 ## Criteria (change level)
 
 | ID | Proof | Status |
 |---|---|---|
-| ARQ-12 | 12 `arq_12_*` tests (`sampling.rs`, `golden.rs`, structural plus golden) | covered (cross-platform part deferred per card) |
+| ARQ-12 | 12 `arq_12_*` tests (`sampling.rs`, `golden.rs`, structural plus golden, regenerated golden checked in section 3) | covered (cross-platform part deferred per card; 1 µs bench is ARQ-40, see W1) |
 | ARQ-16 | 15 `arq_16_*` tests (`sampling.rs`) | covered |
-| ARQ-17 | 13 `arq_17_*` tests (`easing.rs`) | failing: the precision rule does not hold at a valid input (C1) |
+| ARQ-17 | 14 `arq_17_*` tests (`easing.rs`), including the new flat-inflection test; independent probe of 187M f32 cases, worst 0.47 of the bound | covered |
 | ARQ-18 | 13 `arq_18_*` tests (track, serde, interpolate, transform) | covered |
-| ARQ-19 | 51 `arq_19_*` tests (color, interpolate, transform) | covered (tie at pi open, W2) |
-
-## Hand mutants (3, scratch export, restored and compared afterwards)
-
-| # | Mutant | Result |
-|---|---|---|
-| HM1 | `X_EPSILON` 1e-12 -> 1e-9 | killed (`arq_17_bezier_matches_f64_reference_within_tolerance`, `..._precision_grid_of_extreme_control_points`) |
-| HM2 | absolute stop `\|err\| <= X_EPSILON` | killed (3 ARQ-17 tests plus the golden) |
-| HM3 | Group A spot checks by hand (8, table above) | killed |
+| ARQ-19 | 51 `arq_19_*` tests (color, interpolate, transform), tie at π and non-finite end pinned as the new text says | covered |
 
 ## CRITICAL
 
-- **C1** class: implementation. `crates/gafira-anim/src/easing.rs:79` (stop rule) against ARQ-17 / §3.4 "Precisión" (`|e(u) − y(s*)| ≤ 1e-5 · max(1, |y1|, |y2|)`, `s*` the exact root). The only stop test is `|x(s) − u| <= 1e-12 · u`, a bound on `x`, not on `s`. Near a flat inflection `x(s) − u ≈ 4h³`, so an `x` error of 5e-13 allows `h ≈ 4.4e-5` in `s`. Valid failing input, through the public API: `Easing::CubicBezier { x1: 1.0, y1: 0.0, x2: 2^-40 (9.094947e-13), y2: 1.0 }.apply(0.5)` returns `0.5`; the exact root (python3 `Fraction` bisection) gives `y(s*) = 0.49993398099166364`, error 6.60e-5 against a bound of 1e-5 (6.6 times over). Also failing: `x2 = 2^-39` (1.10e-5) and `2^-44` (2.62e-5); about 10 values of `x2` between 2^-49 and 2^-39 fail at `u = 0.5`. The solver breaks on the first iterate (`err = 0.375·x2 <= 5e-13`). Every one of the 16 excluded mutants fails on the same inputs, so this is a defect of the code, not of a mutant. The grid test uses `x` in `{0, 1e-6, .., 1 − 1e-6, 1}` and never reaches `x2 ~ 1e-12`. Fix direction (tdd-apply): a stop rule that bounds the error in `s` (for example, keep going until the bracket is narrow enough, or stop on `|err| <= ε` only when the slope is not tiny), with a unit test on this input. Then re-derive the 16 easing exclusions and re-run T4.
+None.
 
 ## WARNING
 
-- **W1** class: implementation. `.cargo/mutants.toml` easing entries 89:24 `<`, 89:39 `<`, 89:52 `>`, 89:31 `||`, 89:44 `||` (and 88:22 `/`). They are excluded as equivalent on measured evidence, not on a proof. My independent search (23M f32 cases plus a grid; details in section 2) found no killing input, and the worst error that only a mutant produced was 7.0e-8. I accept them as equivalent mutants in critical code, documented here as AGENTS.md requires. They must be re-checked after the C1 fix.
-- **W2** class: ambiguity. §3.4 Transform2D says "la rotación por el camino corto (`|Δθ| ≤ π`)" but does not settle `|Δθ| = π` exactly. The tie is reachable with ordinary input: identity to `scale_xy(-1, 1)`, a horizontal flip, gives `dtheta = π`, and the result at t = 0.5 depends on the direction (`[0, 1, 0, 0]` or `[0, −1, 0, 0]`). That result is user-visible. `arq_19_transform_horizontal_flip_from_identity_goes_through_a_half_turn_frame` accepts both, and the exclusions 195:19 and 197:26 rest only on this gap. Specifier: fix the tie (for example, keep `Δθ = +π` as computed); tdd-apply then pins it and removes the two exclusions.
-- **W3** class: ambiguity. `f0f851a` pins behavior for an end with a non-finite coefficient (a plain six-coefficient blend), and the spec does not state it (Q-33 covers finite coefficients only; ARQ-18 and Q-32 put such values out of contract). The test is acceptable and better than excluding (section 3). Specifier: add one line to §3.4 saying either that a non-finite end gives the six-coefficient blend, which the test already pins, or that the result is unspecified apart from never panicking. If it is the second, the test should be relaxed and the 3 mutants handled again.
+- **W1** class: claim. `crates/gafira-anim/src/easing.rs` (`BISECTIONS = 53`) against ARQ-12 "< 1 µs por muestra" with 10 000 keys on the reference hardware (§6.6: Core i5 10th gen or Ryzen 5 3600; FIJADA). The new solver costs about 650 ns per `CubicBezier` evaluation on a faster laptop CPU (i7-12700H), about 20 times the previous solver (33 ns), and one 10 000-key `sample` with `CubicBezier` keys takes 710-728 ns here, so the margin is about 30 % on a faster machine than the reference one. The apply-progress note says "the cost is 53 `coord` calls" but gives no measurement, and the real benchmark is ARQ-40 (`bench_anim_sample_10k`), not yet built. The cost is latency bound (a branchless version is still 470 ns), so it scales with the iteration count. Not blocking: ARQ-17 and ARQ-12 as testable now both hold. Before ARQ-40 (or now, if the owner prefers), either measure on the reference profile or cut the cost while keeping a bound on the error in `s` (for example a safeguarded Newton that stops on the bracket width, or about 24-30 halvings, which still meet the bound by the slope argument above; any of these re-blesses the golden and needs T4 again).
 
 ## SUGGESTION
 
-- **S1** `apply-progress.md` "Group A" says all 8 mutants changed nothing because `b = c = d = 0`; that holds for 186:43 `* -> /`, 187:24 `- -> +` and 187:19 `* -> /` only. The other 5 were artifacts of the shared target dir.
-- **S2** `.cargo/mutants.toml` comment for the `==` variants: "changed only at an exact tie" is wrong for `==`. It makes the guard true only at the tie, so Newton is never taken (pure bisection, the same argument as `slope -> 0.0`). Reword when the entries are re-derived after C1.
+- **S1** `apply-progress.md` "T4 fix round 2", Step 2: the golden note says the f64 changes are values of magnitude ~1e-17; 10 of the 26 have magnitude 9e-9 to 10 and moved by 1 to 5 ulps (absolute ≤ 2.2e-15). Harmless, but the note should say so.
+- **S2** The §3.4 rule "no `mul_add`" is not observable by any test (HM4). If it matters for cross-platform bits, a one-line CI grep for `mul_add` in `crates/gafira-anim/src` would hold it.
+- **S3** The ARQ-17 test reference (`tests/easing.rs:13`) is the same f64 bisection as the solver, so it shares the noise floor (4.7e-6 at the triple root) and cannot see it. One unit point with an exact expected value, `CubicBezier { 1, −1, 0, 1 }.apply(0.5)` against `0.125` within `1e-5`, would make a regression of that floor visible.
 
 ## Notes
 
-- Tooling (not a finding, already resolved by the re-run): the first T4 run shared one `CARGO_TARGET_DIR` across jobs on the coordinator's instruction, which AGENTS.md forbids. It gave false "missed" results (5 of the 8 Group A mutants are killed by older tests) and, per the implementer, false "caught" results. Do not cite it. The re-run after C1 must use the default per-job target.
-- With `mutation: archive`, T4 at close is the only cargo-mutants run; after the C1 fix it must run again on gafira-anim (default per-job target, no `CARGO_TARGET_DIR`).
+- Probe and bench sources (outside the repo): `scratchpad/verify-final2/probe/src/main.rs`, `scratchpad/verify-final2/bench/src/main.rs`; hand-mutant script `scratchpad/verify-final2/hm.sh`.
 - The ARQ-12 golden on 3 CI platforms is still deferred, as the card accepts (README follow-up 2).
-- Probe sources (outside the repo): `scratchpad/verify-final/probe/src/main.rs`, `scratchpad/verify-final/apiprobe/src/main.rs`.
 
-Verdict: FAIL (1 CRITICAL, 3 WARNING, 2 SUGGESTION). T4: 0 missed, 0 timeout, critical_missed 0; the 19 exclusions match one mutant each and are accepted (W1 measured, W2 spec tie), but ARQ-17 fails at a valid input (C1), so the change cannot be archived yet.
-Per class: implementation 2 (C1, W1), ambiguity 2 (W2, W3), architecture 0, claim 0.
+Verdict: PASS (0 CRITICAL, 1 WARNING, 3 SUGGESTION). T4: 0 missed, 0 timeout, critical_missed 0; one exclusion left, checked. All deliveries of `anim-core` are done.
+Per class: claim 1 (W1), implementation 0, architecture 0, ambiguity 0.
 
-next: specifier, tdd-apply (specifier settles W2 and W3 first so that one tdd-apply round fixes C1, pins the tie and re-derives the exclusions; then T4 again and verify)
+next: archive
