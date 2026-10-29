@@ -33,4 +33,9 @@ exclude_re = [
     'easing\.rs:89:52: replace < with > in bezier$',
     'easing\.rs:89:31: replace && with \|\| in bezier$',
     'easing\.rs:89:44: replace && with \|\| in bezier$',
+    # interpolate.rs (T4 fix round). Redundant term: `!det.is_finite()` implies `!area.is_finite()` (Hadamard, |a*d| <= |c1||c2|) and a finite `det` with an infinite `area` is degenerate through the last term anyway, so `A || B || C || D` and `A || (B && C) || D` agree on every input.
+    'interpolate\.rs:157:48: replace \|\| with && in Parts::decompose$',
+    # interpolate.rs (T4 fix round). Tie at exactly |dtheta| = pi: the spec rule is the short path `|dtheta| <= pi`, so +pi and -pi are both valid.
+    'interpolate\.rs:195:19: replace > with >= in Parts::blend$',
+    'interpolate\.rs:197:26: replace < with <= in Parts::blend$',
 ]
