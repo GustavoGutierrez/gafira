@@ -7,9 +7,12 @@ Deliveries (serial):
   D1 crate scaffold (workspace entry, V5 row `gafira-anim gafira-time gafira-geom gafira-color`, clippy.toml copy, forbid(unsafe_code)), `Easing` and its curves (ARQ-17), ~300 lines
   D2a `Interpolate` with `f32` and `Vec2` (ARQ-19 part), `Keyframe`, `KeyTrack` and its invariant (ARQ-18 construction), commits c2b26f9..d9d2e50, 454 lines measured
   D2b `Animatable` with `sample` (ARQ-16, ARQ-12 structural) and serde through an unvalidated wire shape (ARQ-18 deserialization), commits 71681b3..d8ab4cf, 640 lines measured
-  D3 `Interpolate` for `Color` and `Transform2D` (ARQ-19 rest); waits for owner answers to Q-27, Q-28, Q-29 and the explorer spike, ~350 lines
-Plan: D1 -> verify -> merge to develop; D2a -> verify -> merge; D2b -> verify -> merge; D3 -> verify -> merge; T4 mutants on gafira-anim; archive (also fixes the README "Detalle" entry that lists ARQ-12 under domain-doc).
+  D3a `Interpolate` for `Color` (ARQ-19: premultiplied alpha Q-27, alpha <= 0 rule Q-31, tolerance per §3.4, `is_finite`), plus widening the `f32`/`Vec2` property domains to [-MAX/2, MAX/2] (Q-32 A, test-only), ~350 lines
+  D3b `Interpolate` for `Transform2D` (ARQ-19: modified decomposition, shortest-path rotation, degenerate endpoints Q-28 B and Q-30 A, exact endpoints, `is_finite`), ~450 lines
+  D3c ARQ-12 cross-platform golden: a file of tracks of the four types with sampled `t` and stored expected results, checked bit for bit or within the §3.4 tolerances; locally only Linux runs it while CI is disabled (README follow-up 2), ~200 lines
+Plan: D1 -> verify -> merge to develop; D2a -> verify -> merge; D2b -> verify -> merge; D3a, D3b, D3c each -> verify -> merge; T4 mutants on gafira-anim; archive (also fixes the README "Detalle" entry that lists ARQ-12 under domain-doc).
 Owner decisions touched: none (checked D-03: the 1 µs figure is unchanged); Q-27..Q-31 answered by the owner and recorded in 02 §12.2 (9907bf9, c10e38b).
+Flow-change: D3 split into D3a, D3b, D3c and the ARQ-12 golden assigned to D3c (trigger: size forecast x1.4 above ~700, and verify D2b W1: the golden had no delivery)
 Flow-change: D2 split into D2a and D2b at commit boundaries (trigger: size, D2 measured 1107 lines; owner OK to split)
 
 ## D1 progress (tdd-apply)
