@@ -5,10 +5,12 @@ Scope: new crate `crates/gafira-anim`: `Interpolate`, `Easing` with its curves, 
 Non-goals: `GradientStops` (arrives with the gradient type); the ARQ-12 benchmark and `perf-budgets.toml` (ARQ-40); `ToMessage` for anim errors (ARQ-102, belongs above gafira-doc); wiring `Animatable` into gafira-doc nodes; animation presets; `SetKeyframe`.
 Deliveries (serial):
   D1 crate scaffold (workspace entry, V5 row `gafira-anim gafira-time gafira-geom gafira-color`, clippy.toml copy, forbid(unsafe_code)), `Easing` and its curves (ARQ-17), ~300 lines
-  D2 `Interpolate`, `Keyframe`, `KeyTrack` (ARQ-18), `Animatable` serde and `sample` (ARQ-16, ARQ-12 structural), `Interpolate` for `f32` and `Vec2` (ARQ-19 part), ~400 lines
+  D2a `Interpolate` with `f32` and `Vec2` (ARQ-19 part), `Keyframe`, `KeyTrack` and its invariant (ARQ-18 construction), commits c2b26f9..d9d2e50, 454 lines measured
+  D2b `Animatable` with `sample` (ARQ-16, ARQ-12 structural) and serde through an unvalidated wire shape (ARQ-18 deserialization), commits 71681b3..d8ab4cf, 640 lines measured
   D3 `Interpolate` for `Color` and `Transform2D` (ARQ-19 rest); waits for owner answers to Q-27, Q-28, Q-29 and the explorer spike, ~350 lines
-Plan: D1 -> verify -> merge to develop; D2 -> verify -> merge; D3 -> verify -> merge; T4 mutants on gafira-anim; archive (also fixes the README "Detalle" entry that lists ARQ-12 under domain-doc).
-Owner decisions touched: none (checked D-03: the 1 µs figure is unchanged); open questions Q-27, Q-28, Q-29 gate D3 only.
+Plan: D1 -> verify -> merge to develop; D2a -> verify -> merge; D2b -> verify -> merge; D3 -> verify -> merge; T4 mutants on gafira-anim; archive (also fixes the README "Detalle" entry that lists ARQ-12 under domain-doc).
+Owner decisions touched: none (checked D-03: the 1 µs figure is unchanged); Q-27..Q-31 answered by the owner and recorded in 02 §12.2 (9907bf9, c10e38b).
+Flow-change: D2 split into D2a and D2b at commit boundaries (trigger: size, D2 measured 1107 lines; owner OK to split)
 
 ## D1 progress (tdd-apply)
 Done: crate scaffold (workspace entry, V5 row, clippy.toml copy, forbid(unsafe_code)); `Easing` with `is_valid` and `apply` (ARQ-17). Only dependency: serde (+ proptest, serde_json dev); gafira-time/geom/color are in the V5 row but not yet used by code.
