@@ -15,7 +15,9 @@ const EASE_IN: [f32; 4] = [0.42, 0.0, 1.0, 1.0];
 const EASE_OUT: [f32; 4] = [0.0, 0.0, 0.58, 1.0];
 const EASE_IN_OUT: [f32; 4] = [0.42, 0.0, 0.58, 1.0];
 
-/// Solver stop threshold on `|x(s) - u|`, far below the 1e-5 contract.
+/// Solver stop threshold on the relative error `|x(s) - u| / u`. Relative, not
+/// absolute: near `u = 0` with `x1, x2 ~ 0`, `x(s) ~ s^3` is flat, so a small
+/// absolute error can still mean a root that is far off in `s` (and in `y`).
 const X_EPSILON: f64 = 1e-12;
 const MAX_ITERATIONS: usize = 64;
 
@@ -74,7 +76,7 @@ fn bezier([x1, y1, x2, y2]: [f32; 4], u: f32) -> f32 {
     let (mut lo, mut hi, mut s) = (0.0_f64, 1.0_f64, u);
     for _ in 0..MAX_ITERATIONS {
         let err = coord(x1, x2, s) - u;
-        if err.abs() < X_EPSILON {
+        if err.abs() <= X_EPSILON * u {
             break;
         }
         if err < 0.0 {

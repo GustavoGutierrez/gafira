@@ -28,6 +28,10 @@ fn reference(x1: f32, y1: f32, x2: f32, y2: f32, u: f32) -> f64 {
     b(y1, y2, 0.5 * (lo + hi))
 }
 
+fn next_up(x: f32) -> f32 {
+    f32::from_bits(x.to_bits() + 1)
+}
+
 fn grid() -> impl Iterator<Item = f32> {
     (0..=1000).map(|i| i as f32 / 1000.0)
 }
@@ -96,10 +100,14 @@ fn arq_17_cubic_bezier_validity_rule() {
     let cases = [
         ((0.0, 0.0, 1.0, 1.0), true),
         ((0.5, -2.0, 0.5, 3.0), true),
-        ((-0.01, 0.0, 0.5, 1.0), false),
-        ((1.01, 0.0, 0.5, 1.0), false),
-        ((0.5, 0.0, -0.01, 1.0), false),
-        ((0.5, 0.0, 1.01, 1.0), false),
+        ((1.0, 0.0, 0.0, 1.0), true),
+        ((0.0, 0.0, 1.0, 1.0), true),
+        ((1.0, 0.0, 1.0, 1.0), true),
+        ((0.0, 0.0, 0.0, 1.0), true),
+        ((-f32::MIN_POSITIVE, 0.0, 0.5, 1.0), false),
+        ((next_up(1.0), 0.0, 0.5, 1.0), false),
+        ((0.5, 0.0, -f32::MIN_POSITIVE, 1.0), false),
+        ((0.5, 0.0, next_up(1.0), 1.0), false),
         ((f32::NAN, 0.0, 0.5, 1.0), false),
         ((0.5, f32::NAN, 0.5, 1.0), false),
         ((0.5, 0.0, 0.5, f32::INFINITY), false),
@@ -136,7 +144,28 @@ fn arq_17_serde_names_follow_the_spec_enum() {
     );
 }
 
+/// `u` in [0,1], biased towards both ends on a log scale.
+fn unit_interval_log_biased() -> impl Strategy<Value = f32> {
+    prop_oneof![
+        1 => 0.0_f32..=1.0,
+        2 => (-45.0_f32..=0.0).prop_map(|k| 10.0_f32.powf(k).min(1.0)),
+        2 => (-7.0_f32..=0.0).prop_map(|k| 1.0 - 10.0_f32.powf(k).min(1.0)),
+    ]
+}
+
+/// Control-point coordinate in [0,1], biased towards both ends.
+fn edge_biased_x() -> impl Strategy<Value = f32> {
+    prop_oneof![
+        1 => 0.0_f32..=1.0,
+        1 => Just(0.0_f32),
+        1 => Just(1.0_f32),
+        2 => (-9.0_f32..=0.0).prop_map(|k| 10.0_f32.powf(k).min(1.0)),
+        2 => (-7.0_f32..=0.0).prop_map(|k| 1.0 - 10.0_f32.powf(k).min(1.0)),
+    ]
+}
+
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(4096))]
     #[test]
     fn arq_17_bezier_ends_are_exact(
         x1 in 0.0_f32..=1.0, y1 in -2.0_f32..=3.0, x2 in 0.0_f32..=1.0, y2 in -2.0_f32..=3.0,
@@ -148,8 +177,8 @@ proptest! {
 
     #[test]
     fn arq_17_bezier_matches_f64_reference_within_tolerance(
-        x1 in 0.0_f32..=1.0, y1 in -2.0_f32..=3.0, x2 in 0.0_f32..=1.0, y2 in -2.0_f32..=3.0,
-        u in 0.0_f32..=1.0,
+        x1 in edge_biased_x(), y1 in -2.0_f32..=3.0, x2 in edge_biased_x(), y2 in -2.0_f32..=3.0,
+        u in unit_interval_log_biased(),
     ) {
         let got = f64::from(Easing::CubicBezier { x1, y1, x2, y2 }.apply(u));
         let want = reference(x1, y1, x2, y2, u);
@@ -171,5 +200,70 @@ proptest! {
 fn arq_17_hold_is_a_step_that_reaches_one_only_at_the_end() {
     for u in grid().filter(|&u| u < 1.0) {
         assert_eq!(Easing::Hold.apply(u), 0.0, "u = {u}");
+    }
+}
+
+#[test]
+fn arq_17_bezier_is_precise_for_tiny_u_with_flat_start() {
+    // x(s) ~ s^3 near 0: the root for u = 1e-12 is s = 1e-4, y ~ 3e-4.
+    let (x1, y1, x2, y2) = (0.0, 1.0, 0.0, 1.0);
+    for k in 1..=45 {
+        let u = 10.0_f32.powi(-k);
+        let got = f64::from(bezier((x1, y1, x2, y2)).apply(u));
+        let want = reference(x1, y1, x2, y2, u);
+        assert!(
+            (got - want).abs() <= 1e-5,
+            "u = {u:e}: got {got}, want {want}"
+        );
+    }
+    let got = f64::from(bezier((x1, y1, x2, y2)).apply(1e-12));
+    assert!((got - 3.0e-4).abs() <= 1e-5, "got {got}");
+}
+
+#[test]
+fn arq_17_bezier_precision_grid_of_extreme_control_points() {
+    let xs = [0.0_f32, 1e-6, 0.1, 0.42, 0.58, 0.9, 1.0 - 1e-6, 1.0];
+    let ys = [-2.0_f32, -1.0, 0.0, 0.5, 1.0, 3.0];
+    let us: Vec<f32> = (0..=200)
+        .map(|i| i as f32 / 200.0)
+        .chain((1..=45).map(|k| 10.0_f32.powi(-k)))
+        .chain((1..=7).map(|k| 1.0 - 10.0_f32.powi(-k)))
+        .filter(|&u| u < 1.0) // e(1) = 1 is pinned by the exact-ends tests
+        .collect();
+    for &x1 in &xs {
+        for &x2 in &xs {
+            for &y1 in &ys {
+                for &y2 in &ys {
+                    for &u in &us {
+                        let got = f64::from(bezier((x1, y1, x2, y2)).apply(u));
+                        let want = reference(x1, y1, x2, y2, u);
+                        let tol = 1e-5 * 1.0_f64.max(f64::from(y1).abs()).max(f64::from(y2).abs());
+                        assert!(
+                            (got - want).abs() <= tol,
+                            "({x1},{y1},{x2},{y2}) u = {u:e}: got {got}, want {want}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn arq_17_every_curve_clamps_its_input_and_maps_nan_to_zero() {
+    for e in [
+        Easing::Hold,
+        Easing::Linear,
+        Easing::EaseIn,
+        Easing::EaseOut,
+        Easing::EaseInOut,
+        bezier((0.3, -2.0, 0.9, 3.0)),
+    ] {
+        for u in [-1.0, -f32::MIN_POSITIVE, -0.0, f32::NEG_INFINITY, f32::NAN] {
+            assert_eq!(e.apply(u).to_bits(), 0.0_f32.to_bits(), "{e:?} at {u}");
+        }
+        for u in [next_up(1.0), 2.0, 1e30, f32::INFINITY] {
+            assert_eq!(e.apply(u), 1.0, "{e:?} at {u}");
+        }
     }
 }
