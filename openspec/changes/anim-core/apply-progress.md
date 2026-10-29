@@ -50,3 +50,18 @@ Deviations:
 - Non-finite values through JSON are covered only by construction tests (JSON cannot carry them).
 - `f32::interpolate` uses the spec formula `a + (b - a) * t`; with finite ends whose difference overflows f32 (|a|, |b| near 3e38 with opposite signs) the result is infinite. The property tests stay within 1e30. Not specified; flag to the specifier if it matters.
 - Test sizes: source ~256 lines, tests ~815, so the delivery is past the ~700 line mark in total (git diff --shortstat 261dd77..HEAD: see the coordinator result).
+
+## D3a progress (tdd-apply)
+Done: `Interpolate for Color` (linear-light blend, premultiplied alpha Q-27, straight blend when the resulting alpha <= 0 Q-31, shared space kept else linear sRGB, no clamping, exact endpoints, `is_finite`); `gafira-color` added to `gafira-anim` dependencies (the V5 row and 02 §2.2 already listed it, so no doc change); Q-32 test-only widening of the `f32`/`Vec2` between-ends domains to [-MAX/2, MAX/2] (`HALF32`/`HALF64` plus the extremes as fixed cases).
+RED evidence (stub `interpolate` = `*self`, `is_finite` = true; all 11 tests in `tests/color.rs` failed on assertions):
+- Endpoints: `arq_19_color_endpoints_are_exact` (t = 1 returned `a`).
+- Reference match / premultiplied: `arq_19_color_matches_premultiplied_reference`, `arq_19_color_premultiplies_alpha` (r 0.8 expected, got the start color).
+- Result space: `arq_19_color_result_space_rule`; linear light: `arq_19_color_blends_in_linear_light`; no clamp: `arq_19_color_does_not_clamp_channels`.
+- Alpha bit-exact: `arq_19_color_alpha_is_linear_and_bit_exact`.
+- Red to transparent black: `arq_19_opaque_red_to_transparent_black_keeps_hue`; Q-31: `arq_19_color_transparent_to_transparent_blends_straight`, `arq_19_color_negative_alpha_extrapolates_straight` (a = -0.25).
+- ARQ-18/19 finiteness: `arq_19_color_is_finite_checks_every_channel`.
+- Q-32 widening: no RED (test-only, the code already satisfies the wider domain; passes first run).
+Deviations:
+- Red-to-transparent-black test: for Display-P3 the expected hue is the converted red in linear sRGB (g, b nonzero there); g = b = 0 is asserted only for sRGB and linear sRGB. Spec wording ("g = b = 0") holds in the sRGB primaries.
+- Alpha uses the `f32` formula (`a + (b - a) * t` in f32, same as `f32::interpolate`); channels are computed in f64 and narrowed once.
+- Tolerance 1e-5 (ARQ-19) is tested against an f64 reference; the cross-platform 4*eps bound of §3.4 belongs to the D3c golden.
