@@ -393,6 +393,44 @@ fn arq_19_transform_non_finite_endpoint_never_panics() {
     }
 }
 
+// ARQ-19, Q-33: an end with a non-finite coefficient (outside the contracted
+// domain, ARQ-18 makes such a track invalid) is treated as degenerate and,
+// whatever the other end is, the six coefficients are blended linearly; it is
+// never decomposed nor does it lend or borrow a frame. Only the non-finite
+// coefficient itself may come out non-finite.
+#[test]
+fn arq_19_transform_end_with_a_non_finite_coefficient_blends_the_six_coefficients_linearly() {
+    let (theta, k) = (2.0_f64, 0.8_f64);
+    let (s, c) = theta.sin_cos();
+    let rotated = tf([
+        2.0 * c,
+        2.0 * s,
+        3.0 * (k * c - s),
+        3.0 * (k * s + c),
+        1.0,
+        -2.0,
+    ]);
+    let t = 0.5_f32;
+    for bad in [f64::NAN, f64::INFINITY] {
+        // Non-finite translation with a perfectly decomposable linear part.
+        let broken = tf([1.0, 0.0, 0.0, 1.0, bad, 4.0]);
+        let first = broken.interpolate(&rotated, t).coeffs();
+        let last = rotated.interpolate(&broken, t).coeffs();
+        let want_first = lerp6(broken.coeffs(), rotated.coeffs(), t);
+        let want_last = lerp6(rotated.coeffs(), broken.coeffs(), t);
+        for i in [0, 1, 2, 3, 5] {
+            assert!(
+                (first[i] - want_first[i]).abs() <= 1e-9 * want_first[i].abs().max(1.0),
+                "first, coeff {i} (bad = {bad}): {first:?} vs {want_first:?}"
+            );
+            assert!(
+                (last[i] - want_last[i]).abs() <= 1e-9 * want_last[i].abs().max(1.0),
+                "last, coeff {i} (bad = {bad}): {last:?} vs {want_last:?}"
+            );
+        }
+    }
+}
+
 // ARQ-19, C1: "un volteo es siempre sy < 0": sx stays positive and sy crosses 0.
 #[test]
 fn arq_19_transform_flip_from_identity_collapses_the_y_axis_at_the_middle() {
