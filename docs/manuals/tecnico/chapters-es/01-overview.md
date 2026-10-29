@@ -35,14 +35,15 @@ Versión del workspace: `0.1.0-beta.1`. Edición 2024, toolchain `1.93.1` fijado
 | `apps/gafira-cli/` | Binario de línea de comandos |
 | `docs/specs/` | Especificaciones de producto y arquitectura; `00-decisiones.md` recoge las decisiones del titular |
 | `docs/manuals/` | Manual de marca (`marca/`) y este manual técnico (`tecnico/`) |
-| `openspec/specs/` | Specs principales por capacidad, fusionadas al archivar |
+| `openspec/specs/` | Specs principales por capacidad, fusionadas al archivar; los changes de carril rápido no las editan |
 | `openspec/changes/` | Changes abiertos; los cerrados pasan a `openspec/changes/archive/` |
 | `.agents/agents/` | Agentes del flujo de desarrollo (`.claude/agents` es un enlace simbólico) |
 | `.github/workflows/ci.yml` | CI: pruebas, comprobaciones de política, `cargo-deny` |
-| `deny.toml`, `.cargo/mutants.toml` | Política de licencias y fuentes; ajustes de pruebas de mutación |
+| `deny.toml`, `.cargo/mutants.toml` | Política de licencias y fuentes; ajustes de pruebas de mutación (el perfil `mutants` está en `Cargo.toml`) |
+| `docs/adr/` | Registros de decisiones de arquitectura, incluidas las del flujo (ADR 0001 modos y packs, ADR 0002 carril rápido) |
 
 ## Orden de lectura
 
 1. Arquitectura y capas, para saber dónde puede vivir cada código.
 2. Los capítulos de crates, de abajo hacia arriba: geometría, color, documento, edición.
-3. Herramientas y metodología, antes de enviar un cambio.
+3. Herramientas y metodología, antes de enviar un cambio. Las specs de producto se ejecutan por el carril rápido que describe el capítulo de metodología.
