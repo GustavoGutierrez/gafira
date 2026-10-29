@@ -6,5 +6,9 @@
 #![forbid(unsafe_code)]
 
 mod easing;
+mod interpolate;
+mod track;
 
 pub use easing::Easing;
+pub use interpolate::Interpolate;
+pub use track::{KeyTrack, KeyTrackError, KeyTrackRule, Keyframe};
