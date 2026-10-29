@@ -6,5 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod easing;
+mod interpolate;
 
 pub use easing::Easing;
+pub use interpolate::Interpolate;

@@ -74,6 +74,8 @@ dependencies = [
 name = "gafira-anim"
 version = "0.1.0-beta.1"
 dependencies = [
+ "gafira-geom",
+ "gafira-time",
  "proptest",
  "serde",
  "serde_json",
