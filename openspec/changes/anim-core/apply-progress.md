@@ -135,3 +135,21 @@ Hand mutants (each applied alone, restored after; run with `cargo test -p gafira
 | 4 | regenerate switch on by default (`value != Some("0")`) | `arq_12_regenerate_switch_is_opt_in` |
 | 5 | one-ULP change (+1 bit) in a stored f32 expected value | `arq_12_golden_file_matches_sample_on_this_platform` |
 Deviations: regeneration prints instead of writing (reason above); the first commit attempt failed clippy (ARQ-02) and was amended before any other commit, so the single commit passes alone.
+
+## D3c round 2 (tdd-apply, test-only)
+
+Scope: W1, W2, S1, S2, S3 of the D3c round 1 verify report. No `src/` change, Slice card and spec untouched.
+- W1: `Golden::matches` takes `exact`. `is_exact_instant` (static track, `t` outside the key range, `t` at a key, `t` inside a segment whose `out` is `Hold`) makes `Color` and `Transform2D` compare bit for bit; the tolerance applies only to interpolated instants. Tests: `arq_12_color_and_transform_are_bit_exact_where_no_interpolation_runs`, `arq_12_exact_instants_are_static_outside_range_keys_and_hold`.
+- W2: `arq_12_golden_file_covers_the_required_cases` now checks per type: required case names (`static`, `easing_0..5`, plus `extreme_ats` for f32, the Q-28/Q-30/Q-31/Q-33 and `premultiplied_alpha`/`rotation_350_to_10`/`skew` cases for the types that have them), a Static track, `i64::MIN`/`i64::MAX` samples, samples at `at-1`, `at`, `at+1` for every key, a sample strictly inside every segment, and every easing variant (Hold included) as a segment's `out` (the last key's `out` does not count, S4). `extreme_ats` has keys at both ends of the range (asserted on its track). It exists only for f32; the other types are covered structurally (extreme instants sampled).
+- S1: colors `same_space_display_p3`, `same_space_linear_srgb`. S2: color `alpha_f32_rounding` (alpha 0.9 -> 0.1, Linear; at several sampled instants the f32 formula and an f64 formula narrowed to f32 differ, e.g. t=255/256 and t=0.999). S3: comment fixed (now describes every key, per type).
+- Data: `sample.json` regenerated with `GAFIRA_BLESS_GOLDEN=1`; the 3 new color cases are appended at the end of the color group, every existing case line is byte-identical (the only touched old line is `out_of_gamut_no_clamp`, which gained the trailing comma).
+- RED: before regenerating, `arq_12_golden_file_covers_the_required_cases` failed with "color: missing case same_space_display_p3". The exactness tests pass by construction on the comparator; their RED is the mutants below.
+
+Hand mutants, each applied alone against `cargo test -p gafira-anim --locked --no-fail-fast`, restored after each:
+
+| Mutant | Result | Killing test |
+|---|---|---|
+| H2 Color alpha computed in f64 then narrowed (`src/interpolate.rs`) | killed by the golden alone (also by ARQ-19 color tests) | `arq_12_golden_file_matches_sample_on_this_platform` |
+| H5 five claimed cases deleted from the data file (`q28_both_degenerate`, `q33_det_zero_exact`, `premultiplied_alpha`, `rotation_350_to_10`, `extreme_ats`; JSON kept valid) | killed by the coverage test only (the match test still passes) | `arq_12_golden_file_covers_the_required_cases` ("f32: missing case extreme_ats") |
+| W1 Color key instant off by one ULP: stored r bits of `same_space_display_p3` at `t=0` +1 (within the 4-eps tolerance) | killed | `arq_12_golden_file_matches_sample_on_this_platform` |
+| W1b key/Hold instants return `interpolate(.., MIN_POSITIVE)` instead of the stored value (`src/animatable.rs`) | killed | `arq_12_golden_file_matches_sample_on_this_platform`, `arq_12_sample_calls_interpolate_at_most_once`, `arq_16_hold_keeps_the_previous_value_until_the_next_key` |
