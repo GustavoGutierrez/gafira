@@ -464,6 +464,44 @@ proptest! {
     }
 }
 
+// ARQ-19, Q-28 B: a degenerate end with every linear coefficient non-zero
+// (columns (2, 1) and (4, 2), det 0) borrows both scales from a frame with a
+// non-trivial rotation AND a non-zero shear; every term of the borrowed
+// sx = a*(k*s+co) - b*(k*co-s) and sy = d*co - c*s is then non-zero.
+#[test]
+fn arq_19_transform_degenerate_end_with_full_linear_part_borrows_both_scales() {
+    let (theta, k, bsx, bsy) = (0.7_f64, 0.8_f64, 2.0_f64, 3.0_f64);
+    let (s, c) = theta.sin_cos();
+    let b = tf([
+        bsx * c,
+        bsx * s,
+        bsy * (k * c - s),
+        bsy * (k * s + c),
+        1.0,
+        -2.0,
+    ]);
+    let a = tf([2.0, 1.0, 4.0, 2.0, 3.0, 4.0]);
+    // Independent expectation (python3 f64): S = U^-1 R^T L_a, with
+    // S11 = 2.5927766115593833 and S22 = -1.047186374381787; at t = 0.5 the
+    // scales are (S11 + bsx) / 2 and (S22 + bsy) / 2, the shear and angle are B's.
+    let (s11, s22) = (2.592_776_611_559_383_3_f64, -1.047_186_374_381_787_f64);
+    let want = [
+        1.756_374_654_647_047,
+        1.479_373_963_349_072_6,
+        -0.031_580_840_840_290_18,
+        1.250_011_953_389_199_2,
+        2.0,
+        1.0,
+    ];
+    assert_close(a.interpolate(&b, 0.5), want);
+    // Degenerate end last: the same scales, blended from B's.
+    let (sx, sy) = (0.5 * (bsx + s11), 0.5 * (bsy + s22));
+    assert_close(
+        b.interpolate(&a, 0.5),
+        [sx * c, sx * s, sy * (k * c - s), sy * (k * s + c), 2.0, 1.0],
+    );
+}
+
 // ARQ-19, Q-28 B, S3: a degenerate end whose off-diagonal part does not fit
 // the borrowed (theta, k) frame of a rotated and sheared B.
 #[test]
