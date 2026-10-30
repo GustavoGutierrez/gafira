@@ -5,7 +5,7 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-28 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
@@ -836,7 +836,7 @@ pub trait Translator: Send + Sync {                                       // gaf
 
 Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las fichas de 04 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
 
-Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Solo `gafira-segment` depende de otro de estos crates (`gafira-raster`).
+Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Entre estos crates, §2.2 solo declara `segment → raster`. La contradicción entre ADR-01 y §2.2 sobre `layout` y `text` queda para el diseño del change.
 
 Quedan fuera de esta sección, para el diseño del change: dónde viven los tipos compartidos, qué aristas nuevas se añaden a §2.2 y qué terceros se eligen. Los nombres de tipo que aparecen aquí identifican un concepto, no una ubicación.
 
@@ -1719,6 +1719,13 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
+| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. Recomendación: revisarlas sobre imágenes de muestra cuando exista el corte de efectos, antes de cerrar FD-33; alternativa: aprobarlas ya y ajustar después con nuevas referencias. | Titular |
+| Q-35 | Al alinear una selección con elementos bloqueados, ¿la caja de referencia los incluye (04 FD-11)? Recomendación: sí, porque el bloqueado queda como ancla visible. Alternativa: solo elementos libres, igual que distribuir (D-17), con el coste de que dos reglas parecidas den resultados distintos. | Titular |
+| Q-36 | FD-41 (a) pide emoji, pero las fuentes de D-19 no tienen emoji. Recomendación: añadir un subconjunto OFL monocromo. Alternativa: probar solo clústeres y el mecanismo de reserva con otra escritura, con el coste de no comprobar ningún contorno de emoji. | Titular |
+| Q-37 | Nivelar puede pedir más de +6 dB y el Volumen de clip llega a 200 % (05 FV-10). Recomendación: una ganancia aparte del Volumen, aplicada por `LoudnessNormalizer`, para no recortar el objetivo. Alternativa: limitar Nivelar al Volumen, con el coste de no alcanzar el objetivo en audio bajo. | Titular |
+| Q-38 | 05 FV-10 pone Nivelar en Inspector → Mezclador, pero la interfaz del Mezclador es de Fase 2. Recomendación: en el MVP, Nivelar va en Inspector → Clip. Alternativa: adelantar una parte del Mezclador al MVP, con más alcance de interfaz. | Titular |
+| Q-39 | 02 §2.1 lista el desenfoque como efecto, pero 04 FD-33 no tiene ese slider. Recomendación: en el MVP solo se usa dentro de Sombras y Nitidez. Alternativa: añadir un slider Desenfoque a Textura, con más alcance y pruebas. | Titular |
+| Q-40 | ¿Se confirman en bloque las cifras PROPUESTA nuevas de capa 2 (04 FD-04, FD-05, FD-07, FD-35, FD-41, FD-44; 02 §4.17)? Recomendación: sí, porque se pueden cambiar sin tocar el contrato. Alternativa: revisarlas una a una al abrir cada change. | Titular |
 
 ---
 

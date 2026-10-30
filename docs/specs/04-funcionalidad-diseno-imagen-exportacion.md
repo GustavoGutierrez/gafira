@@ -791,6 +791,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-10 | Empaquetar fuentes del usuario en `.gafira` | Abierta (FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
+| Q-34..Q-36, Q-39, Q-40 | Decisiones pendientes de capa 2 | Abiertas (02 §12.3) |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
 | R-B | Licencia de krilla, hayro y qrcode | VERIFICAR con `cargo-deny` (02 §9.2) |

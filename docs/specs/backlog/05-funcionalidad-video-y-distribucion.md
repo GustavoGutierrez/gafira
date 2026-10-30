@@ -333,7 +333,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 - *UI*: Mezclador; Inspector → Clip (Volumen).
 - *Técnica*: `AudioProcessor` + `ProcessorChain` (02 §4.9) en `gafira-audio` (sin asignaciones ni bloqueos, bloques de 512 muestras, parámetros por ring buffer `rtrb`); medidor EBU R128 propio; `NoiseGate`, `Compressor`, `Limiter`, `NoiseReducer` y `TimeStretch` son procesadores de `gafira-audio` de Fase 2 registrados en `AudioRegistry` (02 §4.9, §11.1).
 - *Presupuesto*: **mezcla de 16 pistas con EQ de 3 bandas < 25 % de un núcleo a 48 kHz** (CAL-15); latencia de monitorización < 20 ms (PROPUESTA).
-- *Aceptación*: (a) `bench_mix_16` dentro del umbral; (b) el asignador vigilante no detecta asignaciones en el hilo de audio con 16 pistas activas (ARQ-23); (c) la respuesta del EQ a un barrido coincide con la curva teórica, que es la respuesta digital del diseño (02 ARQ-125), en ±0,5 dB; (d) Nivelar cumple FV-10 (b); (e) con un tono a 0 dBFS, el limitador no supera el techo en más de 0,1 dB.
+- *Aceptación*: (a) `bench_mix_16` dentro del umbral; (b) la guardia de asignación no detecta asignaciones en el hilo de audio con 16 pistas activas (ARQ-23); (c) la respuesta del EQ a un barrido coincide con la curva teórica, que es la respuesta digital del diseño (02 ARQ-125), en ±0,5 dB; (d) Nivelar cumple FV-10 (b); (e) con un tono a 0 dBFS, el limitador no supera el techo en más de 0,1 dB.
 
 ## B7. Subtítulos SRT y VTT
 

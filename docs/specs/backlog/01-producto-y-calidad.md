@@ -445,6 +445,7 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma (es-MX `1,234.5`, es-ES `1234,5`) o un formato fijo por idioma? Propuesta de 02 §14.4: según la región. | Titular | RF-64 |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto y solo cambia con `--lang` (02 ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux también se ofrecen en los dos idiomas (la spec 05 FV-30 dice solo español)? | Titular | RF-56, RF-64 |
+| Q-34..Q-40 | Decisiones pendientes de los motores de capa 2 (02 §12.3). | Titular | Spec 04 y 05 |
 
 ### 12.4 Pendientes del titular
 
