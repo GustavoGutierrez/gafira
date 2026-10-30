@@ -15,9 +15,9 @@ Inputs (in the prompt): change, delivery, base branch, crates, the Flow line's `
 
 Disk and build hygiene
 - Before any build or mutation run, check `df -h /`; if less than 20 GB is free, stop and report.
-- Use one `CARGO_TARGET_DIR` per export, with `CARGO_INCREMENTAL=0`. Never share a target dir across mutated trees: keep cargo-mutants' default per-job dirs, because sharing causes stale-binary false misses.
+- Leave `CARGO_TARGET_DIR` unset (`unset` it if the environment has it); the coordinator never passes it. cargo-mutants' default per-job dirs must stay in use: a shared target dir causes stale-binary false misses.
 - `touch` exported files after `git archive` (it sets the commit time) so builds are not stale.
-- When finished, free the build folders with `cargo clean --target-dir <dir>` (`rm -rf` is denied).
+- cargo-mutants deletes its per-job dirs when it finishes; do not pass `--leak-dirs`.
 
 Steps
 1. Read `AGENTS.md` ("Testing and mutation policy") for the critical / non-critical rule.
@@ -30,7 +30,7 @@ Steps
    - Optional `--shard 1/4 --sharding round-robin` on a whole crate only when the coordinator asks for a mid-change checkpoint.
    `--locked` and `profile = "mutants"` (the `Cargo.toml` profile with `debug = "none"`) come from `.cargo/mutants.toml`; do not pass them again. A fast linker (mold, wild) is optional and not installed; do not require one.
 3. Do not set `RUSTFLAGS=-D warnings` (it creates unviable mutants). Use the default `cargo test` runner: nextest skips the doctests (`compile_fail`) we rely on.
-4. Never share one `CARGO_TARGET_DIR` across mutated trees, and do not set it to the workspace target dir: cargo-mutants copies the tree and builds each mutant in its own copy. Check the run log for a rebuild of the mutated trees; if the log shows the mutants reusing a stale build (zero compile time per mutant, or suspiciously many caught in a few seconds), report that and re-run with a clean output dir.
+4. cargo-mutants copies the tree and builds each mutant in its own copy, which is why `CARGO_TARGET_DIR` stays unset. Check the run log for a rebuild of the mutated trees; if the log shows the mutants reusing a stale build (zero compile time per mutant, or suspiciously many caught in a few seconds), report that and re-run with a clean output dir.
 5. Read `missed.txt` and `timeout.txt` from the output dir. Classify each mutant critical or non-critical by its file and function. Mark a suspected equivalent mutant and say why.
 
 Return the result to the coordinator; never invoke another stage.
