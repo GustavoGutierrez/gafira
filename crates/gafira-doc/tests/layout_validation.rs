@@ -337,3 +337,138 @@ proptest! {
         prop_assert_eq!(validate(with_margin(side, v)), out(SIDES[side], v));
     }
 }
+
+fn second_page() -> Page {
+    let mut p = page();
+    p.id = PageId::new(2);
+    p
+}
+
+fn validate_two(first: Page, second: Page) -> Result<(), ValidationError> {
+    let pages = vec![first.into(), second.into()];
+    Document::from_parts(3, Dpi::new(96), pages).map(|_| ())
+}
+
+fn on_page_two(error: PageLayoutError) -> Result<(), ValidationError> {
+    Err(ValidationError::PageLayout {
+        page: PageId::new(2),
+        error,
+    })
+}
+
+// C2, design L1: every page is checked, not only the first. One bad field per
+// case on the second page; the first page is fine.
+#[test]
+fn fd_05_fd_07_a_bad_value_on_a_later_page_is_found() {
+    let bad_guide = Guide {
+        axis: GuideAxis::Vertical,
+        position: px(f64::NAN),
+        locked: false,
+    };
+    let cases: Vec<(Page, PageLayoutError)> = vec![
+        (
+            Page {
+                bleed: mm(11.0),
+                ..second_page()
+            },
+            PageLayoutError::OutOfRange {
+                field: PageField::Bleed,
+                value: 11.0,
+            },
+        ),
+        (
+            with_margin(2, -1.0),
+            PageLayoutError::OutOfRange {
+                field: PageField::MarginBottom,
+                value: -1.0,
+            },
+        ),
+        (
+            Page {
+                guides: GuideSet(vec![bad_guide]),
+                ..second_page()
+            },
+            PageLayoutError::NonFinite {
+                field: PageField::GuidePosition,
+            },
+        ),
+        (
+            {
+                let mut p = second_page();
+                p.grid.step = px(0.0);
+                p
+            },
+            PageLayoutError::OutOfRange {
+                field: PageField::GridStep,
+                value: 0.0,
+            },
+        ),
+        (
+            {
+                let mut p = second_page();
+                p.grid.subdivisions = 11;
+                p
+            },
+            PageLayoutError::OutOfRange {
+                field: PageField::GridSubdivisions,
+                value: 11.0,
+            },
+        ),
+    ];
+    for (mut bad, error) in cases {
+        bad.id = PageId::new(2);
+        assert_eq!(validate_two(page(), bad), on_page_two(error), "{error:?}");
+    }
+}
+
+// C2 on load: the second page of a file is checked too.
+#[test]
+fn fd_05_a_later_page_with_a_bad_value_is_rejected_on_load() {
+    let size = r#""size":{"width":{"value":100,"unit":"px"},"height":{"value":50,"unit":"px"}}"#;
+    let text = format!(
+        r#"{{"schema_version":1,"next_id":3,"pages":[{{"id":1,{size}}},{{"id":2,{size},"bleed":{{"value":99,"unit":"mm"}}}}]}}"#
+    );
+    match Document::from_json(text.as_bytes()) {
+        Err(LoadError::Invalid(got)) => assert_eq!(
+            Err(got),
+            on_page_two(PageLayoutError::OutOfRange {
+                field: PageField::Bleed,
+                value: 99.0
+            })
+        ),
+        other => panic!("{other:?}"),
+    }
+}
+
+// C3, design L1: the layout step runs after page sizes, for all pages. A
+// document with a bad size and a bad layout value reports the size, whichever
+// page holds which.
+#[test]
+fn design_l1_page_sizes_are_reported_before_layout_data() {
+    let tiny = PageSize {
+        width: px(0.5),
+        height: px(50.0),
+    };
+    let same_page = Page {
+        size: tiny,
+        bleed: mm(11.0),
+        ..page()
+    };
+    let size_error = |id: u64| {
+        Err(ValidationError::PageSize {
+            page: PageId::new(id),
+            error: tiny.check(Dpi::new(96)).unwrap_err(),
+        })
+    };
+    assert_eq!(validate(same_page), size_error(1));
+    // Layout error on page 1, size error on page 2: the size still wins.
+    let bad_layout = Page {
+        bleed: mm(11.0),
+        ..page()
+    };
+    let bad_size = Page {
+        size: tiny,
+        ..second_page()
+    };
+    assert_eq!(validate_two(bad_layout, bad_size), size_error(2));
+}

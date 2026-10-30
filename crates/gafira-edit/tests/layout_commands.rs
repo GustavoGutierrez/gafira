@@ -533,3 +533,100 @@ fn fd_04_the_history_estimate_grows_with_the_guide_count() {
         assert_eq!(grown, count * size_of::<Guide>(), "{count} guides");
     }
 }
+
+const P2: PageId = PageId::new(2);
+
+/// Page 1 as in `fixture`, page 2 with a 100 px bleed: 8.47 mm at 300 dpi,
+/// 26.46 mm at 96 dpi.
+fn two_pages(dpi: u32) -> Document {
+    let one = fixture(dpi).pages()[0].clone();
+    let mut two = Page::new(
+        P2,
+        "two".into(),
+        PageSize {
+            width: px(800.0),
+            height: px(600.0),
+        },
+    );
+    two.bleed = px(100.0);
+    Document::from_parts(3, Dpi::new(dpi), vec![one, Arc::new(two)]).expect("valid")
+}
+
+// ARQ-13, FD-05: a DPI change that would put the bleed of any page out of
+// range is refused like setting that bleed directly, and changes nothing.
+#[test]
+fn arq_13_a_dpi_change_that_breaks_a_bleed_is_refused() {
+    let original = two_pages(300);
+    let mut doc = original.clone();
+    let mut command = SetProperty::document(Property::Dpi(Dpi::new(96)), None);
+    let error = apply(&mut command, &mut doc).unwrap_err();
+    // The same 100 px bleed set directly at 96 dpi, on page 2's id.
+    let mut direct = SetProperty::page(P1, Property::Bleed(px(100.0)), None);
+    let want = apply(&mut direct, &mut fixture(96)).unwrap_err();
+    let CommandError::InvalidDocument(ValidationError::PageLayout { error: layout, .. }) = want
+    else {
+        panic!("{want:?}");
+    };
+    let page_two = ValidationError::PageLayout {
+        page: P2,
+        error: layout,
+    };
+    assert_eq!(error, CommandError::InvalidDocument(page_two));
+    assert_eq!(doc, original);
+    assert_eq!(doc.dpi(), Dpi::new(300));
+}
+
+// ARQ-13: a DPI change that keeps every bleed in range still works, and
+// revert gives the old DPI back.
+#[test]
+fn arq_13_a_dpi_change_that_keeps_bleeds_in_range_applies_and_reverts() {
+    let original = two_pages(300);
+    let mut doc = original.clone();
+    // 100 px is 12.7 mm at 200 dpi, still out; 150 dpi is further out; 600 is in.
+    let mut command = SetProperty::document(Property::Dpi(Dpi::new(600)), None);
+    assert_eq!(apply(&mut command, &mut doc), Ok(Applied::Changed));
+    assert_eq!(doc.validate(), Ok(()));
+    revert(&mut command, &mut doc).unwrap();
+    assert_eq!(doc, original);
+}
+
+// L1 order inside the DPI path: when the new DPI breaks both a page size and a
+// bleed, the size is reported, as `validate()` does.
+#[test]
+fn arq_13_a_dpi_change_reports_page_sizes_before_layout() {
+    let mut pages: Vec<Arc<Page>> = two_pages(300).pages().to_vec();
+    // Page 2 has the 100 px bleed (out of range at 96 dpi). Its width of
+    // 0.004 in is 1.2 px at 300 dpi and 0.38 px at 96 dpi.
+    let mut thin = (*pages[1]).clone();
+    thin.size.width = Length::new(0.004, Unit::In);
+    pages[1] = Arc::new(thin);
+    let original = Document::from_parts(3, Dpi::new(300), pages).unwrap();
+    let mut doc = original.clone();
+    let mut command = SetProperty::document(Property::Dpi(Dpi::new(96)), None);
+    let error = apply(&mut command, &mut doc).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CommandError::InvalidDocument(ValidationError::PageSize { page: P2, .. })
+        ),
+        "{error:?}"
+    );
+    assert_eq!(doc, original);
+}
+
+// C2: a bad value on a later page is refused through the property path.
+#[test]
+fn fd_05_a_layout_value_is_checked_on_the_page_it_targets() {
+    let original = two_pages(300);
+    let mut doc = original.clone();
+    let mut command = SetProperty::page(P2, Property::Bleed(mm(11.0)), None);
+    let want = CommandError::InvalidDocument(ValidationError::PageLayout {
+        page: P2,
+        error: PageLayoutError::OutOfRange {
+            field: PageField::Bleed,
+            value: 11.0,
+        },
+    });
+    assert_eq!(apply(&mut command, &mut doc), Err(want));
+    assert_eq!(doc, original);
+}

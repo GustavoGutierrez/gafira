@@ -1,7 +1,9 @@
 //! Page layout data: margins, guides and grid settings.
 //!
-//! Plain data, like the rest of the model: nothing here validates, and values
-//! are stored unchanged. `gafira-layout` operates on these types.
+//! Plain data, like the rest of the model: construction does not validate and
+//! values are stored unchanged. The range checks (`check_bleed` and the
+//! `check` methods) run in `Document::validate` and in the edit commands.
+//! `gafira-layout` operates on these types.
 
 use std::fmt;
 

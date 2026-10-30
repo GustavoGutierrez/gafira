@@ -201,11 +201,21 @@ fn check_size(page: PageId, size: PageSize, dpi: Dpi) -> Result<(), CommandError
         .map_err(|error| CommandError::InvalidDocument(ValidationError::PageSize { page, error }))
 }
 
-/// Checks that every page of `doc` fits the pixel limits at `dpi`.
+/// Checks that every page of `doc` fits the pixel limits and keeps its
+/// layout data in range at `dpi`, in the order of `validate()`: all sizes,
+/// then all layouts.
 fn check_pages(doc: &Document, dpi: Dpi) -> Result<(), CommandError> {
-    doc.pages()
-        .iter()
-        .try_for_each(|page| check_size(page.id, page.size, dpi))
+    for page in doc.pages() {
+        check_size(page.id, page.size, dpi)?;
+    }
+    for page in doc.pages() {
+        let layout = page.check_layout(dpi);
+        layout.map_err(|error| {
+            let page = page.id;
+            CommandError::InvalidDocument(ValidationError::PageLayout { page, error })
+        })?;
+    }
+    Ok(())
 }
 
 /// Sets one property on one or more nodes of one page (an empty list of
