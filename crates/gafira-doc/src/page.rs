@@ -5,7 +5,10 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Node, NodeId, PageId, PageSize};
+use gafira_geom::Length;
+
+use crate::layout::default_bleed;
+use crate::{GridSettings, GuideSet, Margins, Node, NodeId, PageId, PageSize};
 
 /// One page: its size, flags, root order and the arena that owns its nodes.
 ///
@@ -21,6 +24,18 @@ pub struct Page {
     pub name: String,
     /// Dimensions in any unit.
     pub size: PageSize,
+    /// Bleed past the page edge, the same on all four sides.
+    #[serde(default = "default_bleed")]
+    pub bleed: Length,
+    /// Page margins.
+    #[serde(default)]
+    pub margins: Margins,
+    /// Guide lines, in the order they were added.
+    #[serde(default)]
+    pub guides: GuideSet,
+    /// The background grid.
+    #[serde(default)]
+    pub grid: GridSettings,
     /// Whether the whole page is protected from edits.
     #[serde(default)]
     pub locked: bool,
@@ -42,6 +57,10 @@ impl Page {
             id,
             name,
             size,
+            bleed: default_bleed(),
+            margins: Margins::default(),
+            guides: GuideSet::default(),
+            grid: GridSettings::default(),
             locked: false,
             hidden: false,
             roots: Vec::new(),
@@ -176,8 +195,12 @@ mod tests {
             json,
             concat!(
                 r#"{"id":1,"name":"P","size":{"width":{"value":100.0,"unit":"px"},"#,
-                r#""height":{"value":50.0,"unit":"px"}},"locked":false,"hidden":false,"#,
-                r#""roots":[],"nodes":[]}"#
+                r#""height":{"value":50.0,"unit":"px"}},"bleed":{"value":0.0,"unit":"mm"},"#,
+                r#""margins":{"top":{"value":0.0,"unit":"px"},"right":{"value":0.0,"unit":"px"},"#,
+                r#""bottom":{"value":0.0,"unit":"px"},"left":{"value":0.0,"unit":"px"},"#,
+                r#""linked":true},"guides":[],"grid":{"visible":false,"#,
+                r#""step":{"value":10.0,"unit":"px"},"subdivisions":1,"style":"lines","#,
+                r#""snap":true},"locked":false,"hidden":false,"roots":[],"nodes":[]}"#
             )
         );
         assert_eq!(serde_json::from_str::<Page>(&json).unwrap(), p);
