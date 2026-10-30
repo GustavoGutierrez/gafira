@@ -155,6 +155,118 @@ Fecha: 24 de octubre de 2026.
 - **Archivos archivados**: no se editan; esta decisión es el registro de la confirmación.
 - Aplicado al change `gafira-format` cuando se cree.
 
+## D-14 Alcance del primer change de `gafira-layout`
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el primer change de `gafira-layout` cubre solo las primitivas: FD-03, FD-04, FD-05, FD-06, FD-07, FD-09 y FD-11.
+- **Consecuencia**: FD-53 y FD-54 (reflujo y catálogo de tamaños) pasan a un change posterior a `gafira-text`.
+- Aplicado a 04.
+
+## D-15 Guías generadas por FD-04
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el Generador de guías crea dos guías por cada espacio entre columnas. «12 columnas» con espacio de 24 px da 22 guías de borde de columna y 2 de margen: 24 en total.
+- Aplicado a 04 (FD-04, criterio a).
+
+## D-16 Prioridad del Imán
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el Imán resuelve cada eje por separado y gana el destino más cercano dentro del umbral. En un empate exacto, la prioridad es guía > margen > página > elemento > cuadrícula.
+- Aplicado a 04 (FD-06).
+
+## D-17 Distribuir con elementos bloqueados
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: distribuir ignora los elementos bloqueados. Solo se distribuyen los libres, entre el primero y el último libre, que no se mueven. Con menos de 3 elementos libres no hace nada. Un elemento libre puede quedar sobre uno bloqueado.
+- Aplicado a 04 (FD-11).
+
+## D-18 Guardia de asignación de ARQ-23
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: la guardia de asignación de ARQ-23 es un crate externo, solo como `dev-dependency`. `unsafe` sigue prohibido en el código propio.
+- **Licencia**: se añade a 02 §9.2 como VERIFICAR. Si ningún crate pasa la comprobación de licencia, la decisión vuelve al titular.
+- Aplicado a 02 (§4.9, §9.2, ARQ-23).
+
+## D-19 Fuentes de prueba de texto y emoji
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: las pruebas de texto usan subconjuntos de Inter y Manrope y una fuente OFL con árabe o hebreo. Toda fuente se registra con su licencia (ARQ-75).
+- **Emoji**: en el MVP son contornos que salen de fuentes de reserva que aporta quien llama. El emoji en color pasa a Fase 2.
+- Aplicado a 02 (§4.17) y 04 (FD-41).
+
+## D-20 Puerta de calidad de `gafira-segment`
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: las pruebas bloqueantes usan escenas sintéticas con máscaras exactas conocidas. El IoU sobre fotos reales es solo un aviso hasta que el titular aporte un conjunto con licencia.
+- **Consecuencia**: se resuelve el choque entre FIJADA y PROPUESTA de 02, 01 y 04, y se añade el pendiente 9 del titular.
+- Aplicado a 01 (P-04), 02 (§4.7, ARQ-132) y 04 (FD-38).
+
+## D-21 Nivelar sin limitador
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: Nivelar limita la ganancia para que el pico real quede en −1 dBTP o por debajo, e informa de que no se alcanzó el objetivo.
+- Aplicado a 02 (ARQ-127) y 05 (FV-10).
+
+## D-22 `Eq3Band` y `Pan` en el MVP
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: `Eq3Band` y `Pan` son del MVP en `gafira-audio`, como dice 02.
+- Aplicado a 01 (RF-51), 02 (§11.2) y 05 (FV-20).
+
+## D-23 Zona de edición: «Texto» y «Elemento»
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: «Texto» pasa a Fase 2 y se muestra atenuada con el motivo. «Elemento» usa `ClassicSegmenter` con una pista de prioridad central y se atenúa con el motivo si el resultado no es fiable.
+- Aplicado a 02 (ARQ-130, ARQ-131) y 04 (FD-32).
+
+## D-24 Salto de columna manual
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el salto de columna manual pasa a Fase 2 y FD-45(b) sale del MVP.
+- Aplicado a 04 (FD-45).
+
+## D-25 `type_lock.size` y Ajustar al cuadro
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: `type_lock.size` prevalece sobre `FitBox`. El tamaño no cambia y el interruptor «Ajustar al cuadro» se atenúa con el motivo.
+- Aplicado a 02 (§3.2) y 04 (FD-46).
+
+## D-26 Escala de Curvar
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el rango ±100 de Curvar corresponde de forma lineal a ±180° de arco.
+- Aplicado a 04 (FD-44).
+
+## D-27 Modos de mezcla y sombra «Curva»
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el MVP tiene 16 modos de mezcla. La sombra «Curva» pasa a Fase 2.
+- Aplicado a 04 (FD-12, FD-35).
+
+## D-28 Valores por defecto de `gafira-layout`
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el titular acepta tres propuestas:
+  - Distribuir ordena los elementos por su posición en el eje.
+  - Los nodos girados usan su caja alineada a los ejes.
+  - El Imán está activo por defecto, con umbral de 6 px y rango de 2 a 16.
+- Aplicado a 04 (FD-06, FD-11).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
@@ -176,3 +288,4 @@ Fecha: 24 de octubre de 2026.
 6. ~~Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09)~~ (**resuelto** el 24 de octubre de 2026: generada con ChatGPT Plus; los Términos de uso de OpenAI ceden al titular los derechos sobre el *Output* y permiten el uso comercial sin atribución ni regalías; se muestra como «generada con IA (OpenAI)» en Acerca de / créditos; sin garantía de unicidad ni de no infracción y probablemente sin derechos de autor exclusivos; ver D-09). D-10 cubre solo el audio de `assets/musics/`. Quedan como VERIFICAR para el titular: (a) búsqueda inversa de imagen (Google Lens, TinEye) y revisión visual de logos, textos o firmas; (b) conservar fuera del repositorio la descarga original con C2PA como prueba de procedencia; (c) ~~anotar la fecha de generación~~ (**resuelto**: la noche del 23 de octubre de 2026); (d) crear la entrada en `assets/LICENSES.toml` al introducir ese archivo (ARQ-75).
 7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
 8. D-10: ~~revisar las 9 pistas con voz detectada y volver a comprobar `underscore-05`, `-06` y `-10`~~ (**hecho**: las 9 regeneradas y comprobadas, 40/40 sin voz); queda al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.
+9. D-20: aportar un conjunto de fotos reales con licencia y máscaras de referencia para `gafira-segment` antes de publicar. Hasta entonces, el IoU sobre fotos reales es solo un aviso.
