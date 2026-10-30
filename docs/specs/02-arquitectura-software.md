@@ -94,7 +94,7 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 2 Motores | `gafira-pathops` | Booleanas de rutas, contorno de trazo, simplificación, *hit testing* geométrico. | Pintar píxeles. | MVP |
 | 2 Motores | `gafira-text` | Shaping, bidi, saltos de línea, maquetación de cajas, interletrado, ligaduras, texto en curva y conversión a contornos. Las fuentes llegan como bytes. | Enumerar fuentes del sistema (eso es `gafira-platform`). | MVP |
 | 2 Motores | `gafira-layout` | Guías, rejillas de columnas, ajuste magnético (*snap*), alineación y distribución, cálculo de sangrado y zona segura, reflujo al cambiar de tamaño. | Mutar el documento (devuelve resultados que un `Command` aplica). | MVP |
-| 2 Motores | `gafira-raster` | Buffers de imagen (u8/f16/f32, premultiplicados), tiles, mipmaps, trait `Effect` y efectos del núcleo (ajustes, desenfoque, nitidez, viñeta, sombras), trait `Transition` y transiciones del núcleo (§4.13), scopes (Fase 2). | Decodificar formatos de archivo. | MVP |
+| 2 Motores | `gafira-raster` | Buffers de imagen (u8/f16/f32, premultiplicados), tiles, mipmaps, fórmulas de los modos de mezcla, trait `Effect` y efectos del núcleo (ajustes, desenfoque, nitidez, viñeta, sombras), trait `Transition` y transiciones del núcleo (§4.13), paleta dominante y hash perceptual, scopes (Fase 2). | Decodificar formatos de archivo. | MVP |
 | 2 Motores | `gafira-audio` | Grafo de mezcla, trait `AudioProcessor`, ganancia, fundidos, EQ de 3 bandas, nivelación (EBU R128), remuestreo. Fase 2: puerta de ruido, compresor, limitador, reducción de ruido y *time-stretch* con «mantener tono». | Abrir dispositivos de audio. | MVP |
 | 2 Motores | `gafira-segment` | Trait `Segmenter` e implementación clásica sin ML (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC, refinado de bordes con *matting*). Feature `onnx` opcional (Fase 3). | Incluir pesos de modelos por defecto. | MVP |
 | 3 Aplicación | `gafira-ports` | Traits de puertos y registros: `Importer`, `Exporter`, `RenderBackend`, `Container`, `Codec`, `Decoder`, `Encoder`, `AssetProvider`, `ProjectRepository`, `ContentStore`, `FileSystem`, `Clock`, `Notifier`, `PluginHost`, `LicenseVerifier` (§4.14), `TextAssistant` (§4.15, opcional), los puertos de idioma `Translator`, `LocaleResolver` y `SystemLocaleSource` con los tipos `Locale`, `LanguagePreference` y `FormatLocale` (§4.16) y `Registry<T>`. | Implementar adaptadores. | MVP |
@@ -745,7 +745,7 @@ pub struct TransitionInstance {                        // dato del documento, en
 - **Cómo añadir una transición**:
   1. Implementar `Transition` (y opcionalmente `GpuTransition`) en `gafira-raster::transitions` o en un crate adaptador.
   2. Declarar `handles` y los parámetros en `ParamSchema`; el Inspector → Clip → Transición se genera solo.
-  3. Añadir pruebas golden en `progress` = 0, 0,5 y 1. En 0 la salida es idéntica a «desde» y en 1 idéntica a «hacia».
+  3. Añadir pruebas golden en `progress` = 0, 0,5 y 1. En 0 la salida es idéntica a «desde» y en 1 idéntica a «hacia» (reglas del núcleo en ARQ-118).
   4. Si tiene variante GPU, compararla con la CPU dentro de la tolerancia de §10.
   5. Registrar en `TransitionRegistry` con su nombre del glosario y su miniatura de vista previa. El núcleo no cambia.
 
@@ -894,6 +894,35 @@ Quedan fuera de esta sección, para el diseño del change: dónde viven los tipo
 | `FitBox` | `min_size ≤ max_size`, los dos en `[1, 1000]`; el límite «cabe» incluye la igualdad; rejilla de 0,25 pt. | FD-46 |
 | Curvar | `[−100, 100]`, extremos incluidos; 0 no calcula radio; avance 0 no hace nada. | FD-44 |
 | Tolerancia de las pruebas | Identidades, bit a bit; medidas en px, ±0,01. | FD-41, FD-44 |
+
+#### 4.17.4 `gafira-raster`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| ARQ-25 (extremos), ARQ-117 a ARQ-122, FD-12 (c, mitad CPU), FD-26 (paleta), FD-28 (b, hash), FD-33 (a, d a h), FD-34 (a, b), FD-35 (a, d) | GPU y escenario de `extension-demo`: FD-33 (b), FD-12 (c, mitad GPU), FV-06 (b). Interfaz: FD-32, FD-33 (c), FD-37. Exportación y rendimiento de lienzo: FD-35 (b, c). Scopes, *chroma key*, LUT y seguimiento: Fase 2. |
+
+Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), que hoy no existen.
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-117 | **Búferes.** Los píxeles son de 8 bits o `f32`, premultiplicados. Premultiplicar en 8 bits es `(c × a + 127) / 255` con división entera. Despremultiplicar da `(0, 0, 0, 0)` con `a = 0`, y en otro caso `min(255, redondeo(c × 255 / a))`. Las operaciones de color trabajan sin premultiplicar y conservan el alfa. La variante `f16` no entra en el primer corte: solo la usa la GPU (§6.2). | Prueba exhaustiva de los 65 536 pares `(c, a)` en 8 bits: el resultado premultiplicado es ≤ `a` y coincide con el redondeo exacto de `c × a / 255`. Con `a = 255`, premultiplicar y despremultiplicar es la identidad. Con `a = 0`, la salida es 0. Un búfer con longitud distinta de `ancho × alto × canales` da `Err`. |
+| ARQ-118 | **Transiciones del núcleo.** `progress` finito fuera de `[0, 1]` se recorta a ese rango; NaN y `±∞` dan `Err`. Con `progress` 0, la salida es la copia exacta de «desde»; con 1, de «hacia». «Desde», «hacia» y destino tienen las mismas dimensiones; si no, `Err`. **Corte**: «desde» si `p < 0,5` y «hacia» si `p ≥ 0,5`. **Disolvencia**: `desde × (1 − p) + hacia × p`. **Fundido**: de «desde» al color con `2p` si `p < 0,5` y del color a «hacia» con `2p − 1` si no. **Deslizar**: «hacia» entra sobre «desde», que no se mueve, con desplazamiento `redondeo((1 − p) × lado)` (PROPUESTA). **Zoom**: mezcla como Disolvencia, «desde» escalada de 1 a 2 y «hacia» de 0,5 a 1 (PROPUESTA). **Borrado**: `u` es la posición del centro del píxel en `[0, 1]` en la dirección elegida, o la distancia al centro dividida por media diagonal en el circular; con suavidad `s` en `[0, 1]`, la máscara es `limita((p × (1 + s) − u) / s, 0, 1)`; con `s = 0`, es 1 si `u < p` y 0 si no. | Por transición y formato: con `p` 0 y 1, igualdad byte a byte, también con suavidad 1 en Borrado. `p` −0,5 da lo mismo que 0 y 1,5 lo mismo que 1. Valores analíticos: Disolvencia a 0,25 sobre 0 y 1 da 0,25; Fundido a 0,5 da el color exacto; Corte a 0,4999 da «desde» y a 0,5 da «hacia». Borrado circular con `p` 1 no deja ningún píxel de «desde», esquinas incluidas. Imagen de tamaño 0: `Ok` sin cambios. |
+| ARQ-119 | **Mezcla y composición.** `gafira-raster` contiene las fórmulas de los 16 modos de `BlendMode::ALL` (D-27), según W3C *Compositing and Blending Level 1*, con composición *source-over* premultiplicada. `gafira-render-cpu` las usa, no las redefine. Antes de un modo distinto de `Normal`, los canales `f32` se recortan a `[0, 1]`. | Por modo, tabla de al menos 256 ternas (fondo, fuente, alfa) frente a una referencia en `f64` de la fórmula W3C: error ≤ 1e-5 en `f32` y ≤ 1/255 en 8 bits. Por modo: fuente con alfa 0 deja el fondo igual; fondo con alfa 0 da la fuente; `Normal` con alfa 1 da la fuente. |
+| ARQ-120 | **Desenfoque, bordes y escala.** El desenfoque es gaussiano con `σ = radio / 2`, como `blur()` de CSS, y radio 0 es la identidad. Fuera de la imagen, los píxeles son negro transparente. Los radios se expresan en px lógicos y se multiplican por la `scale` del contexto del efecto. `roi` devuelve la región de entrada necesaria. | Un impulso da una respuesta gaussiana con `σ` medida dentro de ±2 %. Una imagen constante opaca conserva su valor a más de `3σ` del borde. Una imagen y su mitad con `scale` 0,5 coinciden ≤ 1/255 tras reescalar. Ejecutar por tiles con `roi` coincide con la imagen entera ≤ 1/255 en todos los píxeles. |
+| ARQ-121 | **Tiles y mipmaps.** Los tiles miden 256×256 px (FIJADA, §6.1). Cada nivel de mip divide cada lado por 2 con redondeo hacia abajo, con mínimo 1. El nivel promedia caja de 2×2 en luz lineal con alfa premultiplicado. Hay `⌊log2(max(ancho, alto))⌋ + 1` niveles. | Imagen de 1000×600: 10 niveles, el último de 1×1. Imagen constante: todos los niveles iguales. Ajedrez sRGB 0 y 255 opaco: el nivel 1 da 188 ±1. El nivel de un píxel `a = 0` no aporta color. Una imagen de 257×1 se reparte en 2 tiles. |
+| ARQ-122 | **Paleta y hash perceptual.** La paleta da hasta 5 colores dominantes, ordenados por área, e ignora los píxeles con alfa 0. El dHash (PROPUESTA) da 64 bits, y dos imágenes son parecidas si su distancia de Hamming es ≤ 10 (PROPUESTA). Lab y ΔE2000 los aporta `gafira-color`. | Imagen sintética de 5 colores planos con áreas conocidas: los 5 colores con ΔE2000 < 1, en orden de área. Imagen de 2 colores: 2 entradas. Imagen transparente: lista vacía. Una imagen y su versión al 50 %: distancia ≤ 10; dos imágenes de ruido con semillas distintas: > 10. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Píxel `f32` NaN o `±∞` | `Err` antes de escribir en destino. | ARQ-110 |
+| Parámetro no finito o fuera de rango | `Err` antes de escribir en destino. | ARQ-110, FD-33 |
+| `progress` finito fuera de `[0, 1]` | Se recorta: las curvas con rebote lo producen (§3.4). | ARQ-118 |
+| Imagen de tamaño 0 | `Ok` sin cambios. | ARQ-118 |
+| Producto `ancho × alto × canales` que desborda | `Err`, sin reservar memoria. | ARQ-117 |
+| Canal `f32` fuera de `[0, 1]` | Se admite, salvo en modos de mezcla y curvas que lo recortan. | ARQ-119, FD-33 |
+| División por alfa 0 | No ocurre: el resultado es 0. | ARQ-117 |
+| Canal 0 en un cociente (cuentagotas) | El ajuste no cambia. | FD-33 |
+| Tolerancia de las pruebas | Identidades, diferencia 0; fórmulas `f32`, 1e-5; 8 bits, 1/255. | ARQ-118, ARQ-119 |
 
 ---
 
@@ -1087,6 +1116,8 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
+| Sombra < 100 ms con radio ≤ 40 px en 1080p (04 FD-35) | Desenfoque gaussiano separable | `bench_shadow_1080`: < 100 ms |
+| Hash perceptual de 12 MP < 100 ms (04 FD-28) | La fija el diseño del change | `bench_dhash_12mp`: < 100 ms |
 | Escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (04 FD-41) | La fija el diseño del change | `bench_text_type_5000`: p99 < 16 ms |
 | Actualizar Curvar < 16 ms con 100 caracteres (04 FD-44) | La fija el diseño del change | `bench_text_curve_100`: p99 < 16 ms |
 | Re-maquetar 5 000 caracteres en 4 columnas < 16 ms (04 FD-45) | La fija el diseño del change | `bench_text_columns_5000`: p99 < 16 ms |

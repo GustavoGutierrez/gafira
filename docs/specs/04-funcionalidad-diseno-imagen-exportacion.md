@@ -157,9 +157,9 @@
 
 **FD-12 · Orden de apilado y Capas** (RF-11)
 - *Propósito*: controlar qué queda delante y gestionar la estructura.
-- *Comportamiento y reglas*: acciones **Traer adelante, Enviar atrás, Al frente, Al fondo**; las no aplicables se atenúan (por ejemplo, «Al frente» en el elemento superior). La pestaña **Capas** lista los elementos con arrastre para reordenar, visibilidad y bloqueo; la selección está sincronizada con el lienzo; doble clic renombra. Cada elemento tiene **modo de mezcla** (normal, multiplicar, trama, superponer, oscurecer, aclarar y otros estándar; PROPUESTA: 16 modos en el MVP) y **Opacidad**. Alcance: Capas muestra la página activa, con opción «Todas las páginas».
+- *Comportamiento y reglas*: acciones **Traer adelante, Enviar atrás, Al frente, Al fondo**; las no aplicables se atenúan (por ejemplo, «Al frente» en el elemento superior). La pestaña **Capas** lista los elementos con arrastre para reordenar, visibilidad y bloqueo; la selección está sincronizada con el lienzo; doble clic renombra. Cada elemento tiene **modo de mezcla** (normal, multiplicar, trama, superponer, oscurecer, aclarar y otros estándar; 16 modos en el MVP, D-27) y **Opacidad**. Alcance: Capas muestra la página activa, con opción «Todas las páginas».
 - *UI*: Inspector → Capas y Posición.
-- *Técnica*: `NodeKind`, `ElementBase.blend`, `Reorder`/`Reparent` (02 §4.3); modos de mezcla en `gafira-raster` y WGSL.
+- *Técnica*: `NodeKind`, `ElementBase.blend`, `Reorder`/`Reparent` (02 §4.3); modos de mezcla en `gafira-raster` (ARQ-119) y WGSL.
 - *Presupuesto*: reordenar < 100 ms; las Capas con 100 elementos se dibujan sin superar 16 ms de frame (CAL-02).
 - *Aceptación*: (a) el orden de la lista equivale al orden de pintado; (b) arrastrar una fila muestra la línea de inserción y es un solo `Command`; (c) los 16 modos coinciden entre CPU y GPU en los golden (≤ 2/255).
 
@@ -289,7 +289,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: encontrar archivos rápido.
 - *Comportamiento y reglas*: búsqueda por nombre, **etiqueta** (con autocompletado), **color dominante** (selector de muestra; se calculan 5 colores dominantes por imagen), tipo, tamaño, duración y licencia. Se pueden combinar filtros. La búsqueda semántica es opcional y solo local (Fase 3, PROPUESTA).
 - *UI*: Biblioteca → barra de búsqueda y filtros.
-- *Técnica*: `LibraryRepository` (índice `rusqlite` o `redb`, VERIFICAR; 02 §9.2), cálculo de paleta en `gafira-raster`.
+- *Técnica*: `LibraryRepository` (índice `rusqlite` o `redb`, VERIFICAR; 02 §9.2), cálculo de paleta en `gafira-raster` (ARQ-122), con Lab y ΔE2000 de `gafira-color`.
 - *Presupuesto*: < 100 ms con 10 000 archivos (PROPUESTA).
 - *Aceptación*: (a) buscar el color de una muestra devuelve imágenes con ese color dominante con ΔE2000 < 15 (PROPUESTA); (b) combinar etiqueta y tipo reduce el resultado; (c) sin red.
 
@@ -305,8 +305,8 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: evitar archivos repetidos.
 - *Comportamiento y reglas*: al importar, igual hash BLAKE3 se considera duplicado exacto y se ofrece «Usar el existente»; imágenes parecidas se detectan con un hash perceptual (dHash, PROPUESTA) y se listan para revisar sin borrar nada automáticamente.
 - *UI*: Biblioteca → «Duplicados».
-- *Técnica*: `blake3`; hash perceptual en `gafira-raster`.
-- *Presupuesto*: hash de 12 MP < 100 ms.
+- *Técnica*: `blake3`; hash perceptual en `gafira-raster` (ARQ-122).
+- *Presupuesto*: hash de 12 MP < 100 ms (02 §6.7, `bench_dhash_12mp`).
 - *Aceptación*: (a) importar dos veces el mismo archivo no crea dos recursos; (b) una versión redimensionada de una imagen aparece como parecida; (c) nada se borra sin confirmar.
 
 **FD-29 · Versiones y licencias de archivos** (RF-18)
@@ -360,14 +360,39 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 | **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
 | **Textura** | Nitidez, Claridad, Viñeta | 0–100 (viñeta −100–100) | Nitidez con máscara de bordes; la viñeta es centrada y ajustable |
 
+**Fórmulas de FD-33** (PROPUESTA; pendientes de aprobación visual del titular, Q-34). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
+
+Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codificado con la curva sRGB y recortado a `[0, 1]`; `k = valor / 100`; `Y = 0,2126 R + 0,7152 G + 0,0722 B`; `w(a, b, x)` es *smoothstep* de `a` a `b`.
+
+| Parámetro | Fórmula |
+|---|---|
+| Temperatura `T`, Matiz `M` | `R × 2^(T/200)`, `G × 2^(−M/200)`, `B × 2^(−T/200)` |
+| Cuentagotas | Sobre un gris elegido: `T = 100 × log2(B / R)` y `M = 200 × log2(G / √(R × B))`, recortados a ±100. Con un canal 0, el ajuste no cambia |
+| Brillo | `c × 2^k` |
+| Contraste | `v' = v^g / (v^g + (1 − v)^g)`, con `g = 2^k` |
+| Luces, Sombras | `c × 2^(k_L × w(0,5; 1; v_Y) + k_S × (1 − w(0; 0,5; v_Y)))`, con `v_Y` = `Y` codificada |
+| Blancos, Negros | `v' = (v − n) / (b − n)`, con `b = 1 − 0,25 × k_B` y `n = −0,25 × k_N` |
+| Tono | Matriz `hue-rotate` de W3C *Filter Effects* sobre `c` |
+| Saturación | Matriz `saturate` de W3C *Filter Effects* con `s = 1 + k` |
+| Vitalidad | La misma matriz con `s = 1 + k × (1 − (max − min))`, con `max` y `min` de `R`, `G`, `B` |
+| Invertir | `v' = 1 − v` |
+| Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` en Lab frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
+| Nitidez | `c + 1,5 × k × e × (c − G)`, con `G` desenfoque de radio 2 px y `e = w(0,02; 0,1; |Y − Y_G|)` |
+| Claridad | Igual que Nitidez, con radio 40 px, peso 0,5 y solo sobre `Y`, sin máscara `e` |
+| Viñeta | `c × 2^(k × w(0,5; 1; d))`, con `d` la distancia al centro dividida por media diagonal |
+| Ajuste automático | Se calcula sobre el original, sin la pila de ajustes. `n` y `b` son los percentiles 0,5 y 99,5 de `v_Y`, de los que salen Negros y Blancos. Brillo lleva la mediana de `Y` a 0,18. `T` y `M` salen del cuentagotas con la media de `R`, `G`, `B`. Una imagen negra deja Brillo, `T` y `M` en 0. El resultado se multiplica por Intensidad / 100 y queda en los sliders |
+
+Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, Blancos y Negros), Color (Tono, Saturación, Vitalidad, Invertir, colores detectados) y Textura (Nitidez, Claridad, Viñeta).
+
+
 - *UI*: Inspector → Imagen; Barra contextual (Ajuste automático, Zona de edición).
 - *Técnica*: `Effect` + `GpuEffect` (WGSL) en `gafira-raster::effects` (02 §4.4); cálculo en f32 de luz lineal; golden CPU y comparación GPU↔CPU ≤ 2/255.
 - *Presupuesto*: vista previa de cualquier ajuste < 300 ms con 4000 px (CAL-04); el cambio de un slider mantiene la respuesta de interacción < 100 ms (CAL-05).
-- *Aceptación*: (a) cada slider en su valor por defecto es la identidad (diferencia 0); (b) el ajuste de GPU coincide con CPU en ≤ 2/255 en el 99,5 % de los píxeles; (c) los ajustes se pueden desactivar uno a uno (ojo) sin perder valores; (d) `Ajuste automático` es idempotente: aplicarlo dos veces no empeora el resultado más de 1/255.
+- *Aceptación*: (a) cada slider en su valor por defecto es la identidad (diferencia 0); (b) el ajuste de GPU coincide con CPU en ≤ 2/255 en el 99,5 % de los píxeles; (c) los ajustes se pueden desactivar uno a uno (ojo) sin perder valores; (d) `Ajuste automático` es idempotente: se calcula sobre el original, así que aplicarlo dos veces da los mismos valores y no empeora el resultado más de 1/255; (e) valores analíticos de la tabla, ±1e-5: Brillo +100 lleva 0,25 a 0,5; Contraste deja `v = 0,5` en 0,5 con cualquier valor y con +100 lleva `v = 0,75` a 0,9; Blancos +100 lleva `v = 0,75` a 1; Saturación −100 da `R = G = B`; Temperatura +100 multiplica `R` por √2 y divide `B` por √2; (f) un píxel con alfa 0 sigue en 0 y el alfa no cambia con ningún ajuste; Nitidez y Claridad no cambian una imagen plana; Viñeta no cambia el centro; Invertir dos veces da la imagen original ≤ 1/255; (g) tras el cuentagotas sobre un gris dentro del rango, `R`, `G` y `B` de ese gris coinciden ≤ 1/255; (h) un parámetro no finito o fuera de rango da error y no escribe en destino.
 
 **FD-34 · Filtros** (RF-21)
 - *Propósito*: aplicar estilos listos con vista previa.
-- *Comportamiento y reglas*: rejilla de filtros con **vista previa sobre la propia imagen** (miniaturas del elemento actual); intensidad 0–100; los filtros son presets de parámetros (`ParamValues` guardados, no código; 02 §4.4) y pueden crearse y guardarse como propios. En Fase 2 se admiten LUT `.cube` como filtros.
+- *Comportamiento y reglas*: rejilla de filtros con **vista previa sobre la propia imagen** (miniaturas del elemento actual); intensidad 0–100; los filtros son presets de parámetros (`ParamValues` guardados, no código; 02 §4.4) y pueden crearse y guardarse como propios. Los radios escalan con el tamaño de la imagen (ARQ-120), de modo que una miniatura representa el resultado final. En Fase 2 se admiten LUT `.cube` como filtros.
 - *UI*: Inspector → Imagen → Filtros.
 - *Técnica*: `Effect` con presets en datos; `LutTransform` (Fase 2).
 - *Presupuesto*: generar la rejilla de 12 miniaturas < 300 ms (CAL-04); aplicar < 300 ms.
@@ -375,11 +400,11 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 
 **FD-35 · Sombras** (RF-21)
 - *Propósito*: dar profundidad a imágenes, formas y texto.
-- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento, desenfoque, color, opacidad), **Brillo** (halo difuso), **Contorno** (trazo exterior con grosor) y **Curva** (sombra deformada bajo el elemento, PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias.
+- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27).
 - *UI*: Inspector → Imagen → Sombras; Efectos de texto.
 - *Técnica*: `Effect` de sombra en `gafira-raster` (desenfoque gaussiano separable).
-- *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p.
-- *Aceptación*: (a) la sombra sigue el canal alfa del elemento; (b) la exportación SVG la rasteriza o la reproduce con filtro, sin pérdida visible > 2/255 (VERIFICAR modo); (c) apilar tres sombras mantiene el arrastre a 60 fps.
+- *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p (02 §6.7, `bench_shadow_1080`).
+- *Aceptación*: (a) la sombra sigue el canal alfa del elemento: con desenfoque 0, el alfa de la sombra es el del elemento desplazado por `opacidad`, exacto; (b) la exportación SVG la rasteriza o la reproduce con filtro, sin pérdida visible > 2/255 (VERIFICAR modo); (c) apilar tres sombras mantiene el arrastre a 60 fps; (d) opacidad 0 no cambia la imagen, y un parámetro fuera de rango da error.
 
 **FD-36 · Bordes y esquinas** (RF-21)
 - *Propósito*: enmarcar y redondear.
