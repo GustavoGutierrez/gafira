@@ -83,3 +83,12 @@ All items killed; no survivors.
 Gates (before each commit): `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` (924 passed, 0 failed).
 
 Deviations: none. Notes: (a) the bleed is compared after conversion to mm with `Length::convert`, so a bleed written in another unit sits on floating-point rounding at exactly 10 mm; 10 mm written as `10/25.4 in` passes (tested), other units were not probed. (b) Out-of-range guide positions do not exist (finite only), so FD-03(d) is covered by the non-finite tests. (c) `gafira-layout` is untouched (D3).
+
+### D2 fix round 1 (verify FAIL: C1, C2, C3, S1)
+
+- C1: `check_pages` (DPI path of `SetProperty`) now checks every page size, then every page's layout data via `Page::check_layout(dpi)`, same order as `validate()`; a refused change returns `InvalidDocument(PageLayout)` and changes nothing. RED: `arq_13_a_dpi_change_that_breaks_a_bleed_is_refused` (300 to 96 dpi with a 100 px bleed on page 2): `unwrap_err` on `Ok(Changed)`. Companion tests `arq_13_a_dpi_change_that_keeps_bleeds_in_range_applies_and_reverts`, `arq_13_a_dpi_change_reports_page_sizes_before_layout`.
+- C2: `fd_05_fd_07_a_bad_value_on_a_later_page_is_found` (one bad field per case on page 2), `fd_05_a_later_page_with_a_bad_value_is_rejected_on_load`, `fd_05_a_layout_value_is_checked_on_the_page_it_targets`. They passed on existing code (coverage gap); proved by mutants.
+- C3: `design_l1_page_sizes_are_reported_before_layout_data` (same page, and layout error on page 1 with size error on page 2). Passed on existing code; proved by mutant.
+- S1: module comment of `layout.rs` corrected.
+- New mutants (reverted): validate layout on the first page only -> `fd_05_fd_07_a_bad_value_on_a_later_page_is_found`, `fd_05_a_later_page_with_a_bad_value_is_rejected_on_load`; layout step before page sizes in `validate` -> `design_l1_page_sizes_are_reported_before_layout_data`; DPI path layout on first page only, or no layout loop -> `arq_13_a_dpi_change_that_breaks_a_bleed_is_refused`; DPI path layout before sizes -> `arq_13_a_dpi_change_reports_page_sizes_before_layout` (the first version of this test survived because no bleed broke at the chosen DPI; rewritten so both a size and a bleed break). All killed.
+- Not done: W1 (exact 10 mm comparison unchanged), S2 (no trimming).
