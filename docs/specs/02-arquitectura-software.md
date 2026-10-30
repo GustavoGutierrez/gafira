@@ -5,9 +5,9 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-39 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4) |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -81,21 +81,21 @@ Gafira sigue el patrón de puertos y adaptadores:
 
 ### 2.1 Lista de crates
 
-Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se publica algún crate de forma aislada, y hace evidente la frontera del producto en `cargo tree`. Edición Rust 2024 y MSRV 1.95, alineada con las apps de referencia (PROPUESTA).
+Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se publica algún crate de forma aislada, y hace evidente la frontera del producto en `cargo tree`. Edición Rust 2024 y MSRV 1.93 (`rust-toolchain.toml` fija 1.93.1).
 
 | Capa | Crate | Responsabilidad | NO debe | Fase |
 |---|---|---|---|---|
-| 0 Dominio | `gafira-geom` | Puntos, vectores, `Affine`, `Rect`, rutas Bézier (sobre `kurbo`), unidades (px, mm, cm, in, pt) y conversión por DPI. | Rasterizar, conocer nodos. | MVP |
+| 0 Dominio | `gafira-geom` | Puntos, vectores, `Affine`, `Rect`, `IRect`, rutas Bézier (sobre `kurbo`), unidades (px, mm, cm, in, pt) y conversión por DPI. | Rasterizar, conocer nodos. | MVP |
 | 0 Dominio | `gafira-color` | Tipos de color (sRGB, lineal, Display-P3, CMYK nominal, Lab), conversión, degradados, `ColorTransform`, perfiles ICC (sobre `moxcms`), muestras de paleta. | Leer archivos ICC del disco (recibe bytes). | MVP |
 | 0 Dominio | `gafira-time` | Tiempo racional en *flicks* (1/705 600 000 s; divide exactamente 24, 25, 30, 48, 50, 60, 120 fps y 44,1/48/96 kHz), `TimeRange`, timecode y frecuencias de fotograma. | Usar relojes del sistema. | MVP |
 | 1 Dominio | `gafira-anim` | `Animatable<T>`, keyframes, curvas (Hold, lineal, ease, Bézier cúbica), trait `Interpolate`, muestreo determinista. | Conocer nodos concretos. | MVP |
-| 1 Dominio | `gafira-doc` | Modelo de documento unificado (§3): `Project`, `Page`, `Sequence`, `Track`, `Clip`, `Node`, `ElementBase`, estilos, identidad visual, `AssetRef`, `NodeVisitor`, validación de invariantes, esquema serde. Módulo `msg`: tipos neutros de mensaje (`MessageKey`, `Message`, `MsgArg`, trait `ToMessage`) que las capas superiores usan para hablar por claves (§14.2). | Renderizar, decodificar recursos, leer archivos. Conocer idiomas o textos traducidos. | MVP |
+| 1 Dominio | `gafira-doc` | Modelo de documento unificado (§3): `Project`, `Page`, `Sequence`, `Track`, `Clip`, `Node`, `ElementBase`, estilos, identidad visual, `AssetRef`, `NodeVisitor`, validación de invariantes, esquema serde. Módulo `msg`: tipos neutros de mensaje (`MessageKey`, `Message`, `MsgArg`, trait `ToMessage`) que las capas superiores usan para hablar por claves (§14.2). Módulo `contract`: tipos compartidos por los motores (§4.17, ADR 0005). | Renderizar, decodificar recursos, leer archivos. Conocer idiomas o textos traducidos. | MVP |
 | 1 Dominio | `gafira-edit` | Trait `Command`, comandos del núcleo, `History` (Command + Memento), `Selection`, transacciones y fusión de gestos. | Conocer la UI o los formatos. | MVP |
 | 2 Motores | `gafira-pathops` | Booleanas de rutas, contorno de trazo, simplificación, *hit testing* geométrico. | Pintar píxeles. | MVP |
 | 2 Motores | `gafira-text` | Shaping, bidi, saltos de línea, maquetación de cajas, interletrado, ligaduras, texto en curva y conversión a contornos. Las fuentes llegan como bytes. | Enumerar fuentes del sistema (eso es `gafira-platform`). | MVP |
 | 2 Motores | `gafira-layout` | Guías, rejillas de columnas, ajuste magnético (*snap*), alineación y distribución, cálculo de sangrado y zona segura, reflujo al cambiar de tamaño. | Mutar el documento (devuelve resultados que un `Command` aplica). | MVP |
-| 2 Motores | `gafira-raster` | Buffers de imagen (u8/f16/f32, premultiplicados), tiles, mipmaps, trait `Effect` y efectos del núcleo (ajustes, desenfoque, nitidez, viñeta, sombras), trait `Transition` y transiciones del núcleo (§4.13), scopes (Fase 2). | Decodificar formatos de archivo. | MVP |
-| 2 Motores | `gafira-audio` | Grafo de mezcla, trait `AudioProcessor`, ganancia, fundidos, EQ de 3 bandas, nivelación (EBU R128), remuestreo. Fase 2: puerta de ruido, compresor, limitador, reducción de ruido y *time-stretch* con «mantener tono». | Abrir dispositivos de audio. | MVP |
+| 2 Motores | `gafira-raster` | Buffers de imagen (u8/f16/f32, premultiplicados), `AlphaMask`, tiles, mipmaps, fórmulas de los modos de mezcla, trait `Effect` y efectos del núcleo (ajustes, desenfoque, nitidez, viñeta, sombras), trait `Transition` y transiciones del núcleo (§4.13), paleta dominante y hash perceptual, scopes (Fase 2). | Decodificar formatos de archivo. | MVP |
+| 2 Motores | `gafira-audio` | Grafo de mezcla, trait `AudioProcessor`, ganancia, fundidos, EQ de 3 bandas, panorama, nivelación (EBU R128), remuestreo. Fase 2: puerta de ruido, compresor, limitador, reducción de ruido y *time-stretch* con «mantener tono». | Abrir dispositivos de audio. | MVP |
 | 2 Motores | `gafira-segment` | Trait `Segmenter` e implementación clásica sin ML (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC, refinado de bordes con *matting*). Feature `onnx` opcional (Fase 3). | Incluir pesos de modelos por defecto. | MVP |
 | 3 Aplicación | `gafira-ports` | Traits de puertos y registros: `Importer`, `Exporter`, `RenderBackend`, `Container`, `Codec`, `Decoder`, `Encoder`, `AssetProvider`, `ProjectRepository`, `ContentStore`, `FileSystem`, `Clock`, `Notifier`, `PluginHost`, `LicenseVerifier` (§4.14), `TextAssistant` (§4.15, opcional), los puertos de idioma `Translator`, `LocaleResolver` y `SystemLocaleSource` con los tipos `Locale`, `LanguagePreference` y `FormatLocale` (§4.16) y `Registry<T>`. | Implementar adaptadores. | MVP |
 | 3 Aplicación | `gafira-render` | Construcción del grafo de render (Visitor), caché por contenido y por tiles, planificador con prioridades, presupuesto de frame, selección y degradación de backend. | Hablar con wgpu directamente. | MVP |
@@ -119,7 +119,7 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 4 Adaptadores | `gafira-ui` | Interfaz egui/eframe: shell, paneles, lienzo, timeline, herramientas (`Tool`), widgets accesibles y traducción de eventos. Pantalla de arranque con sus recursos incrustados (§8.4, D-09). Todo texto visible sale de `Translator` por clave (ARQ-97). | Mutar el documento sin `Command`, o hacer I/O directo. Contener texto literal visible. | MVP |
 | 4 Adaptadores | `gafira-captions` | Lectura y escritura de SRT y WebVTT, estilos de subtítulo. | — | Fase 2 |
 | 4 Adaptadores | `gafira-plugin` | `PluginHost` con wasmi (sandbox, combustible, capacidades), manifiesto de extensión. | Dar acceso a red o disco no concedido. | Fase 3 |
-| Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
+| Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas), escenas sintéticas con máscara exacta (ARQ-132). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
 | Soporte | `xtask` | Comprobación de capas, empaquetado (MSI; `.deb`, `.rpm` y `.tar.gz` para Linux x86_64; DMG), generación de iconos, auditoría de licencias y generación de `THIRD_PARTY_NOTICES.md`. | Distribuirse. | MVP |
 | Binario | `gafira` (`apps/gafira`) | App de escritorio: composición, registros e inyección. | Contener lógica. | MVP |
 | Binario | `gafira-cli` (`apps/gafira-cli`) | Exportación por lotes (`gafira-cli export proyecto.gafira --format png --pages 1-5`), validación de proyectos, *benchmarks* de escenario (`gafira-cli bench`), regeneración de golden. Mensajes en inglés por defecto; `--lang` para cambiarlo (ARQ-104). | Depender de `gafira-ui`. | MVP |
@@ -132,8 +132,10 @@ gafira-geom ─┼─► gafira-anim ─► gafira-doc ─► gafira-edit
 gafira-color ┘                     │
                                    ▼
         gafira-pathops  gafira-text  gafira-layout  gafira-raster  gafira-audio  gafira-segment
-                 (dependen de geom/color/time/doc según necesidad; nunca entre sí en ciclo:
-                  text → pathops; layout → geom, doc; raster → color, geom; segment → raster)
+                 (cada motor puede depender de geom, color y doc; audio, también de time; ADR 0007.
+                  Únicas aristas entre motores: text → pathops y segment → raster.
+                  Sin layout → text, testkit → raster, doc → time, audio → anim ni raster → anim.
+                  Aquí a → b significa que a depende de b. Hoy gafira-doc solo depende de geom y color)
                                    │
                                    ▼
                               gafira-ports  ◄── todos los adaptadores
@@ -167,7 +169,7 @@ Se crea un crate nuevo solo si cumple al menos uno de estos criterios:
 1. **Frontera de capa**: separa dominio de I/O (por ejemplo, `gafira-doc` frente a `gafira-format`).
 2. **Feature opcional o exposición legal**: aísla código con patentes o nativo (`gafira-codec-os`, la feature `onnx` de `gafira-segment`) para poder excluirlo del build.
 3. **Compilación incremental**: código grande y estable que cambia poco (códecs, contenedores) y que, separado, evita recompilar el resto.
-4. **Reutilización por varios consumidores** con API estrecha (`gafira-text` lo usan render, exportación SVG/PDF y layout).
+4. **Reutilización por varios consumidores** con API estrecha (`gafira-text` lo usan render y exportación SVG/PDF).
 
 No se divide cuando solo hay organización interna: se usan módulos.
 
@@ -189,9 +191,11 @@ Project
  ├─ styles: StyleSheet                        (estilos de texto, de relleno y de efecto con nombre)
  ├─ assets: AssetTable                        (AssetRef → ContentHash + metadatos + AssetStorage::{Embedded | Linked})
  ├─ pages: Vec<Page>                          (lienzos; en video, cada escena es una Page con duración)
- │    └─ Page { id, name, size: PageSize, bleed, margins, guides, grid: GridSettings, notes: String,
+ │    └─ Page { id, name, size: PageSize, bleed: Length, margins: Margins, guides: GuideSet, grid: GridSettings, notes: String,
  │              background, duration: Option<Flicks>, locked, hidden, roots: Vec<NodeId>, nodes: NodeArena }
- │         GridSettings { visible: bool, step: Length, subdivisions: u8, snap: bool }   (Cuadrícula de 03 §2.6)
+ │         GridSettings { visible: bool, step: Length, subdivisions: u8, style: GridStyle, snap: bool }   (Cuadrícula de 03 §2.6)
+         Margins { top, right, bottom, left: Length, linked: bool }
+         GuideSet = lista de Guide { axis: GuideAxis, position: Length, locked: bool }; GuideAxis = Vertical | Horizontal
  └─ sequences: Vec<Sequence>                  (timelines)
       └─ Sequence { id, fps: FrameRate, size, sample_rate, tracks: Vec<Track>, markers }
            └─ Track { id, kind: Video|Overlay|Audio|Caption, muted, locked, solo, clips: Vec<Clip> }
@@ -206,7 +210,10 @@ Project
 
 `NodeArena` es un `HashMap<NodeId, Arc<Node>>` con hijos por `NodeId`. Así se comparte estructura entre versiones (§5.1) y se hace *lookup* O(1).
 
-- **Cuadrícula** (`Page::grid`): rejilla de fondo con paso configurable (`step` en unidades de la página, `subdivisions` internas). Es un dato de la página, se guarda con ella y la usa `gafira-layout::snap` cuando el Imán está activo. Nunca se exporta.
+- **Cuadrícula** (`Page::grid`): rejilla de fondo con paso configurable (`step` en su propia unidad, de 1 a 500; `subdivisions` internas, de 1 a 10) y estilo `Lines | Dots` (04 FD-07). Es un dato de la página, se guarda con ella y la usa `gafira-layout::snap` cuando el Imán está activo. Nunca se exporta.
+- **Datos de maquetación de la página** (ADR 0008): `bleed` vale para los cuatro lados, 0 mm por defecto. `Margins` es 0 px en los cuatro lados y `linked` es verdadero por defecto. Son tipos de `gafira-doc`; `gafira-layout` opera sobre ellos.
+- **Validación al cargar** (`Document::validate`): posiciones de guía y márgenes finitos, márgenes ≥ 0, sangrado de 0 a 10 mm, `step` de 1 a 500 en su unidad y `subdivisions` de 1 a 10. Nada se recorta. Unos márgenes que dejan la página sin área no son un error de carga, porque la página puede cambiar de tamaño; lo informa `gafira-layout` (04 FD-05).
+- **Campos nuevos** (D-36): el esquema 1 sigue abierto hasta que la primera build que escriba `.gafira` llegue a un usuario. Desde entonces, un campo nuevo con datos de usuario sube el esquema (ADR 0006).
 - **Notas** (`Page::notes`): texto plano por página que se edita en la Barra inferior (03 §2.6). No se renderiza en el lienzo ni en ninguna exportación de imagen o video. Si un exportador ofrece incluirlas (por ejemplo, como anotaciones de PDF), lo declara en su `ExportCaps` y la opción está desactivada por defecto.
 
 ### 3.2 `ElementBase` y nodos
@@ -256,11 +263,13 @@ pub struct TextNode {
 }
 ```
 
-- **Columnas**: `gafira-text` reparte el flujo en `count` columnas de igual ancho dentro de la caja, separadas por `gap`. Con `balance`, las columnas terminan a alturas similares. Solo aplica con `sizing = Fixed` o `AutoHeight`.
-- **Ajustar al cuadro**: con `Autofit::FitBox`, `gafira-text` busca por bisección el mayor tamaño de fuente en `[min_size, max_size]` con el que el texto cabe en la caja. El tamaño resultante es un valor derivado (no se guarda como dato del usuario) y es determinista para las mismas fuentes.
-- **Fijar tipografía**: los comandos que cambian estilos de forma masiva (`SetSwatch` sobre fuentes de la identidad, aplicar una identidad o plantilla, `ResizeDesign` con reflujo) no modifican las propiedades marcadas en `type_lock`. Las ediciones directas del usuario sobre ese texto sí se aplican.
+- **Tipos de texto** (ADR 0008; llegan a `gafira-doc` con `TextNode`): `RichText` es una lista de párrafos, cada uno con tramos (texto y estilo: fuente, tamaño, color, efectos) y un nivel de lista opcional. `TextSizing` es `AutoWidth | AutoHeight | Fixed`. `TextAlign` es `Left | Center | Right | Justify`. `VAnchor` es `Top | Middle | Bottom`. `TextPath` tiene en el MVP la variante `Arc { bend: f32 }`, con `bend` en −100..100 (04 FD-44); la forma vectorial de Fase 2 añade otra. `StyleRef` referencia por nombre un estilo de `StyleSheet`.
+- **Columnas**: `gafira-text` reparte el flujo en `count` columnas de igual ancho dentro de la caja, separadas por `gap`. Con `balance`, las columnas terminan a alturas similares. Solo aplica con `sizing = Fixed` o `AutoHeight` (reglas en 04 FD-45).
+- **Ajustar al cuadro**: con `Autofit::FitBox`, `gafira-text` busca por bisección, en `[min_size, max_size]`, un tamaño con el que el texto cabe y con el que el siguiente de la rejilla ya no cabe (regla exacta en 04 FD-46). El tamaño resultante es un valor derivado (no se guarda como dato del usuario) y es determinista para las mismas fuentes.
+- **Fijar tipografía**: los comandos que cambian estilos de forma masiva (`SetSwatch` sobre fuentes de la identidad, aplicar una identidad o plantilla, `ResizeDesign` con reflujo) no modifican las propiedades marcadas en `type_lock`. Las ediciones directas del usuario sobre ese texto sí se aplican. `type_lock.size` prevalece sobre `FitBox`: el tamaño no cambia (D-25).
 
 - **Marco con contenido recortado** (`FrameNode`): tiene `clip_shape: ShapeGeometry` y `content: Option<NodeId>` con `content_offset`, `content_scale` y `fit: Fill|Fit|Stretch|None`. Al soltar una imagen sobre un marco se aplica un `Command` que asigna el contenido. Reemplazarla conserva la forma.
+- **Grupos en espacio de página** (D-35, ADR 0009): la `Placement` de todo nodo está en espacio de página, también la de los hijos de un grupo. La `Placement` de un grupo no mueve a sus hijos. La caja de un grupo es la unión de las cajas de sus hijos; solo un grupo vacío usa su propia caja. Mover un grupo mueve cada descendiente, y girarlo o redimensionarlo reescribe la `Placement` de cada uno.
 - **Fuera de página**: los nodos fuera del área se conservan y solo se recortan al renderizar. La selección informa del exceso con `layout::overflow(bounds, page)`.
 - **Máscaras no destructivas**: `Mask { source: MaskSource::{Node(NodeId) | Alpha(AssetRef) | Painted(TileSetRef)}, mode: Alpha|Luma, invert, feather: Animatable<f32> }`. Al aislar un sujeto se genera una `Mask::Alpha` editable con pincel Borrar/Restaurar (tiles con COW). El píxel original nunca se modifica.
 - **Capas de ajuste**: `AdjustmentNode` aplica su `effects` al compuesto de los hermanos inferiores, acotado por su máscara.
@@ -500,7 +509,7 @@ pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
 
 - **Capacidad de mutación**: `apply` y `revert` reciben `&mut DocMut<'_>`, la vista mutable de `gafira-doc` que solo se obtiene con el `EditToken`; `History` es quien lo usa. Todo comando, del núcleo o de una extensión, muta el documento por esta vía. `Any` permite que `merge` recupere el tipo concreto de `next`: primero comprueba por referencia que es de su propio tipo y solo entonces convierte la caja; si no lo es, devuelve `Err(next)`.
 - **Patrón**: Command, con apply, revert y merge. `Transaction` (Composite) agrupa varios comandos en una sola entrada de historial.
-- **Implementan** los comandos del núcleo en la raíz de `gafira-edit`: `SetProperty` (un enum `Property` con los campos de nodo y de forma, los de página y el DPI del documento), `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Los que dependen de datos que aún no existen (desde `SetFrameContent` hasta `SetSwatch`) llegan con esos datos. Los comandos no comprueban `locked`: lo deciden las herramientas. Las extensiones aportan los suyos.
+- **Implementan** los comandos del núcleo en la raíz de `gafira-edit`: `SetProperty` (un enum `Property` con los campos de nodo y de forma, los de página y el DPI del documento), `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`, `SetFrameContent`, `PaintMask`, `ApplyTemplate`, `ResizeDesign`, `SplitClip`, `TrimClip`, `MoveClip`, `SetKeyframe` y `SetSwatch`. Los que dependen de datos que aún no existen (desde `SetFrameContent` hasta `SetSwatch`) llegan con esos datos. `PaintMask` cambia una `TileSetRef` por otra y `ResizeDesign` recibe el resultado de `gafira-layout::reflow`: un comando de capa 1 no llama a un motor (ADR 0008). Los comandos no comprueban `locked`: lo deciden las herramientas. Las extensiones aportan los suyos.
 - **Cómo añadir un comando**:
   1. Struct con los datos mínimos para aplicar y revertir.
   2. `touches` cubre todo cambio: una página cuando cambian sus campos o sus `roots`, un nodo cuando cambia su registro o sus `children`; un cambio del DPI no lista nada y quien dependa del DPI compara `Document::dpi`.
@@ -589,17 +598,17 @@ pub trait RenderBackend: Send {
 ```rust
 pub trait Segmenter: Describe + Send + Sync {
     fn requirements(&self) -> SegReq;            // CPU/GPU, RAM estimada, tamaño máx. de trabajo
-    fn segment(&self, img: ImageView<'_>, hints: &SegHints,  // zona: todo, primer plano, trazo del usuario
+    fn segment(&self, img: ImageView<'_>, hints: &SegHints,  // zona, trazos de semilla y prioridad central (ARQ-130)
                progress: &dyn Progress, cancel: &CancelToken) -> Result<AlphaMask, SegError>;
 }
 ```
 
-- **Implementación MVP**: `ClassicSegmenter`. Reduce a un lado largo de 1024 px, aplica SLIC, GMM de primer plano y fondo, *max-flow* (GrabCut iterativo), escala con un *guided filter* sobre la imagen completa y hace *matting* de bordes. Paraleliza con rayon.
+- **Implementación MVP**: `ClassicSegmenter`, que recibe el pool de `rayon` en su constructor, de modo que el trait no depende de `rayon`. Reduce a un lado largo de 1024 px, aplica SLIC, GMM de primer plano y fondo, *max-flow* (GrabCut iterativo), escala con un *guided filter* sobre la imagen completa y hace *matting* de bordes. Paraleliza con rayon.
 - **Fase 3**: `OnnxSegmenter` tras la feature `onnx`. Los pesos los instala el usuario como paquete separado, con licencia declarada en su manifiesto y verificada por el propio paquete. Nunca se incluyen en el instalador base.
 - **Patrón**: Strategy + Registry. La UI elige la estrategia por `requirements` y la preferencia del usuario.
 - **Cómo añadir un segmentador**:
   1. Implementar el trait.
-  2. Validar con el conjunto de referencia de `gafira-testkit` (IoU ≥ 0,90 frente a máscaras de verdad en el conjunto de prueba, FIJADA).
+  2. Validar con las escenas sintéticas de `gafira-testkit` (IoU ≥ 0,90 frente a máscaras exactas, prueba bloqueante, D-20, ARQ-132). El IoU sobre fotos reales es solo un aviso hasta que exista un conjunto con licencia.
   3. Registrar.
 
 ### 4.8 Video: `Container`, `Codec`, `Decoder`, `Encoder`
@@ -657,11 +666,11 @@ pub trait AudioProcessor: Describe + Send {
 }
 ```
 
-- **Patrón**: Pipeline/Chain of Responsibility. Cada pista es una `ProcessorChain` (ganancia → EQ de 3 bandas → puerta de ruido → compresor → limitador → panorama, en el orden de 05 FV-20; en el MVP solo ganancia, EQ y panorama) y el bus maestro aplica la nivelación de sonoridad. Los parámetros llegan por un *ring buffer* sin bloqueo (*lock-free*) desde la UI.
+- **Patrón**: Pipeline/Chain of Responsibility. Cada pista es una `ProcessorChain` (ganancia → EQ de 3 bandas → puerta de ruido → compresor → limitador → panorama, en el orden de 05 FV-20; en el MVP solo ganancia, EQ y panorama). `LoudnessNormalizer` aplica la ganancia de Nivelar, aparte del Volumen, en clip, pista o bus maestro (D-31). Los parámetros llegan por un *ring buffer* sin bloqueo (*lock-free*) desde la UI.
 - **Implementa**: `gafira-audio`: `Gain`, `Fade`, `Eq3Band`, `Pan` y `LoudnessNormalizer` (MVP); `NoiseGate` (puerta de ruido: umbral, ataque, retención, liberación), `Compressor`, `Limiter`, `NoiseReducer` y `TimeStretch` (Fase 2).
 - ***Time-stretch***: «mantener tono» al cambiar la velocidad de un clip (05 FV-04) es un `AudioProcessor` con latencia declarada (`latency()`) que cambia la duración sin cambiar el tono. Como su salida no tiene la misma longitud que la entrada, `gafira-media` lo aplica antes de la mezcla, al leer el clip, y no dentro de la cadena de la pista. Algoritmo propio en Rust (por ejemplo, WSOLA o vocoder de fase) o crate permisivo (VERIFICAR).
 - **Cómo añadir un procesador**:
-  1. Implementar el trait sin asignar en `process`. Se verifica con el asignador de prueba de `gafira-testkit`, que hace `panic` si hay asignaciones en el hilo de audio.
+  1. Implementar el trait sin asignar en `process`. Se verifica con una guardia de asignación: `assert_no_alloc`, solo como `dev-dependency` (§9.2, D-18), que aborta el proceso si `process` asigna; no hace `panic`. Solo actúa en builds de depuración. El control negativo que demuestra que la guardia detecta una asignación vive en `gafira-testkit` y corre en un subproceso. `unsafe` sigue prohibido en el código propio.
   2. Añadir prueba de respuesta (impulso o barrido) contra la referencia.
   3. Registrar.
 
@@ -745,7 +754,7 @@ pub struct TransitionInstance {                        // dato del documento, en
 - **Cómo añadir una transición**:
   1. Implementar `Transition` (y opcionalmente `GpuTransition`) en `gafira-raster::transitions` o en un crate adaptador.
   2. Declarar `handles` y los parámetros en `ParamSchema`; el Inspector → Clip → Transición se genera solo.
-  3. Añadir pruebas golden en `progress` = 0, 0,5 y 1. En 0 la salida es idéntica a «desde» y en 1 idéntica a «hacia».
+  3. Añadir pruebas golden en `progress` = 0, 0,5 y 1. En 0 la salida es idéntica a «desde» y en 1 idéntica a «hacia» (reglas del núcleo en ARQ-118).
   4. Si tiene variante GPU, compararla con la CPU dentro de la tolerancia de §10.
   5. Registrar en `TransitionRegistry` con su nombre del glosario y su miniatura de vista previa. El núcleo no cambia.
 
@@ -793,7 +802,7 @@ pub trait TextAssistant: Describe + Send + Sync {
 | ARQ-20 | Toda capacidad de las §4.4–§4.13 y §4.15 se añade sin modificar `gafira-doc`, `gafira-edit` ni `gafira-engine`. | Prueba arquitectónica: el crate `gafira-testkit/examples/extension-demo` registra un efecto, un exportador y un proveedor nuevos sin tocar el núcleo, y compila en CI. |
 | ARQ-21 | Los importadores no causan `panic` con entradas arbitrarias. | Los objetivos `cargo fuzz` de cada importador corren 10 min por PR y 8 h por semana sin fallos. |
 | ARQ-22 | La GPU degrada a CPU sin perder el documento. | Una prueba con inyección de `DeviceLost` en mitad de un render termina el frame en CPU y la sesión sigue editable. |
-| ARQ-23 | El hilo de audio no asigna ni bloquea. | La prueba con el asignador vigilante pasa con 16 pistas activas. |
+| ARQ-23 | El hilo de audio no asigna ni bloquea. | En build de depuración, la prueba con la guardia de asignación (§4.9, D-18) pasa con 16 pistas activas y bloques de 512 muestras. Una asignación aborta el proceso, así que el control negativo de `gafira-testkit` corre en un subproceso y comprueba ese fallo. |
 | ARQ-24 | Un plugin no puede colgar la app. | Un plugin con bucle infinito se interrumpe en ≤ 100 ms por combustible y la UI sigue respondiendo. |
 | ARQ-25 | Una transición nueva se añade sin modificar el núcleo y respeta sus extremos. | `extension-demo` registra una `Transition` nueva y compila sin tocar `gafira-doc`, `gafira-edit` ni `gafira-engine`. Para cada transición registrada, la prueba golden da salida idéntica a «desde» en `progress = 0` y a «hacia» en `progress = 1`. |
 | ARQ-26 | `TextAssistant` es opcional, local, desactivado por defecto y no forma parte del MVP. | El build del MVP no registra ninguna implementación (`TextAssistantRegistry` vacío). Con una implementación de prueba registrada, la prueba con red bloqueada pasa y la función está desactivada hasta que el usuario la activa en Ajustes. |
@@ -831,6 +840,160 @@ pub trait Translator: Send + Sync {                                       // gaf
 - **Patrón**: Port/Adapter + Strategy. Los tipos viven en `gafira-ports` para que el engine, la UI y la CLI los usen sin depender del adaptador; `gafira-i18n` implementa `Translator` y `LocaleResolver`, y `gafira-platform` implementa `SystemLocaleSource`. El *composition root* los inyecta. El detalle, el ADR y los requisitos están en §14.
 - **Sin estado global**: el idioma activo es un `Locale` (`Copy`) que guarda quien pinta (la UI o la CLI) y que se pasa en cada llamada. No hay `set_locale` global (ARQ-31).
 - **Dobles de prueba**: `FakeSystemLocaleSource` (etiquetas fijas) en `gafira-testkit`; `PseudoTranslator` (feature `pseudo` de `gafira-i18n`, solo desarrollo y pruebas, §14.6).
+
+### 4.17 Contratos de los motores de capa 2
+
+Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las fichas de 04 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
+
+Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007).
+
+Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
+
+| Tipos | Crate |
+|---|---|
+| `Describe`, `Descriptor`, `ParamSchema`, `ParamValues`, `CancelToken`, `Progress`, `AudioCrossfade` | `gafira_doc::contract` |
+| `IRect` | `gafira-geom` |
+| `ImageView`, `ImageViewMut`, `EffectCx`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
+| `AudioBlock`, `ParamSnapshot` | `gafira-audio` |
+| `Registry<T>` | `gafira-ports` |
+
+Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pueden cambiar con mediciones.
+
+#### 4.17.1 Reglas comunes
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-110 | **Entrada no finita.** Toda función pública de un motor de capa 2 comprueba sus números antes de calcular. Un NaN, un `±∞` o un resultado intermedio no finito dan un `Err` tipado que nombra el campo. No hay `panic`, salida parcial ni un no finito en la salida. Los constructores y los datos planos no validan, como en `gafira-geom` y `gafira-doc`. Única excepción: `AudioProcessor::process` (ARQ-123). | Prueba de tabla por función pública: NaN, `+∞` y `−∞` en cada parámetro numérico dan `Err` con ese campo, y el búfer de destino, si lo hay, queda idéntico byte a byte. Prueba de propiedad: con entrada finita dentro del dominio, toda salida numérica es finita. |
+| ARQ-111 | **Determinismo.** La misma entrada produce los mismos bytes. El resultado no depende del número de hilos ni de ninguna fuente de entropía. Un generador pseudoaleatorio, si existe, usa una semilla fija. | Cada crate ejecuta dos veces cada operación de su primer corte y compara los bytes. Los crates con `rayon` comparan además pools de 1, 2 y 4 hilos. |
+| ARQ-112 | **Cancelación y progreso sin reloj.** Una operación larga con `CancelToken` emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. Comprueba el token al menos una vez por informe. Al ver la cancelación devuelve `Err` de cancelado, no entrega salida y no emite más progreso. La estimación de tiempo no se calcula en capa 2 (ARQ-02): la calcula `gafira-engine` con su `Clock` a partir de la fracción. | Prueba con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo): la llamada devuelve cancelado y hay como mucho 1 informe después del `k`. Sobre la entrada de referencia de la operación, la fracción sube ≤ 0,02 entre dos informes seguidos. Sin medidas de tiempo en `cargo test`. La cifra de ≤ 100 ms (ARQ-43) se mide en §6.7. |
+| ARQ-113 | **Golden de capa 2.** Un criterio de píxel usa primero un valor analítico. Un golden guardado se genera en `x86_64-unknown-linux-gnu`, usa un formato sin pérdida y solo se regenera con una acción explícita: ninguna prueba reescribe su referencia. La tolerancia es la de §10. | Prueba del comparador: una referencia con 1 byte alterado falla en la misma plataforma. Entre plataformas, con 1 000 píxeles, 1 píxel a 2/255 pasa (99,9 %), 2 píxeles a 2/255 fallan, y todos a 1/255 pasan. |
+| ARQ-114 | **Presupuestos.** Las cifras de capa 2 viven en §6.7 y las mide un *benchmark* (ARQ-40). No son una puerta de `cargo test`. | Cada cifra de §6.7 citada por una ficha de capa 2 tiene un *benchmark* con el nombre de esa fila. |
+
+#### 4.17.2 `gafira-layout`
+
+| Primer corte (D-14) | Fuera del corte |
+|---|---|
+| FD-03 (a, c, d), FD-04 (a, d, e, f), FD-05 (b, d, e, f), FD-06 (a a i), FD-07 (a, c, d, e), FD-09 (d), FD-11 (a, b, d, e, f) | Datos y comandos en otros crates: FD-03 (b), FD-04 (b, c), FD-11 (c). Exportación o interfaz: FD-05 (a), FD-07 (b), FD-09 (a, b, c). Con FD-54: FD-05 (c). Change posterior a `gafira-text`: FD-53, FD-54. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| NaN o `±∞` en cualquier entrada | `Err` de toda la llamada; ningún resultado parcial. | ARQ-110 |
+| Suma que desborda (`x + w` con valores enormes) | `Err` por resultado no finito. | ARQ-110 |
+| Caja con `x1 < x0` o `y1 < y0` | `Err`. | FD-05, FD-06, FD-11 |
+| Caja de tamaño 0 | Válida: `gafira-doc` admite `w = 0` y `h = 0`. Sus bordes y su centro coinciden. | FD-05, FD-06, FD-11 |
+| Umbral del Imán | Finito y > 0. La distancia igual al umbral engancha; por encima, no. El rango 2–16 lo aplica Ajustes. | FD-06 |
+| Zoom | Finito en `[0,05; 32]`; fuera, `Err`. | FD-06, FD-07 |
+| Empate del Imán | Comparación exacta de `f64`, sin tolerancia. | FD-06 |
+| Ancho de columna | `c ≥ 1 px`; `c = 1` vale. | FD-04 |
+| Aviso de zona de seguridad | Exceso `> 0`, sin tolerancia; el borde sobre el límite no avisa. | FD-05 |
+| Porcentaje de zona de seguridad | Entrada; por defecto 5 % (D-38). En `[0, 50)`; 50 deja un rectángulo sin área y da `Err`. | FD-05 |
+| Sangrado | En `[0, 10]` mm, extremos incluidos. | FD-05 |
+| Tolerancia de las pruebas | Posiciones generadas y resultados de alinear y distribuir: ±0,01 unidades (FD-11) y 1e-9 cuando la ficha lo indica. | FD-04, FD-06, FD-11 |
+
+#### 4.17.3 `gafira-text`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| FD-41 (a, c a j), FD-43 (a), FD-44 (a, c, d, e), FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`), ARQ-115, ARQ-116 | Comandos y estilos: FD-41 (b), FD-47, FD-49. Interfaz: FD-42, FD-46 (d). Exportación: FD-43 (b, c), FD-44 (b). `gafira-engine` y `gafira-platform`: FD-48. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-115 | **Fuentes de prueba** (D-19): las pruebas usan subconjuntos de Inter y Manrope, una fuente OFL con árabe o hebreo y un subconjunto OFL monocromo de emoji (D-30). La prueba de ligadura opcional de FD-41 (e) usa Manrope, porque Inter no tiene `liga`. Toda fuente de prueba tiene entrada en `assets/LICENSES.toml` (ARQ-75), esté donde esté. | Una prueba o comprobación de CI recorre las fuentes de prueba y falla si alguna no tiene entrada de licencia. |
+| ARQ-116 | **Salida de la maquetación.** La maquetación da, sin píxeles: las líneas con su base y su avance, y cada clúster de grafemas con su índice en el texto, su posición y su avance. Indica además el desborde, que sale de comparar el avance con el ancho de la caja, y los glifos sin cobertura, es decir, los `.notdef` de 04 FD-41. Así FV-07 anima letra a letra y FV-08 cuenta líneas y caracteres por línea. | Con Inter: un texto de 3 líneas forzadas da 3 líneas; concatenar los clústeres en orden lógico da el texto de entrada; `é` compuesta (U+0065 U+0301) es 1 clúster; un texto que excede una caja `Fixed` indica desborde y conserva todo el texto. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| NaN o `±∞` en tamaños, medidas o caja | `Err`. | ARQ-110 |
+| Tamaño | `[1, 1000]` pt, extremos incluidos; fuera, `Err`. | FD-41 |
+| Interletrado | `[−100, 500]` milésimas de em, extremos incluidos. | FD-41 |
+| Interlineado | `[0,5; 4,0]`, extremos incluidos. | FD-41 |
+| Fuente sin métricas | Altura natural ≤ 0: `Err` de fuente inválida. | FD-41 |
+| Caja de tamaño 0 | Sin error; hay desborde si el texto no está vacío. | FD-45 |
+| Columnas | `count` en 1–8; `gap` en `[0, 200]`; ancho de columna ≥ 1 px. | FD-45 |
+| `FitBox` | `min_size ≤ max_size`, los dos en `[1, 1000]`; el límite «cabe» incluye la igualdad; rejilla de 0,25 pt. | FD-46 |
+| Curvar | `[−100, 100]`, extremos incluidos; 0 no calcula radio; avance 0 no hace nada. | FD-44 |
+| Tolerancia de las pruebas | Identidades, bit a bit; medidas en px, ±0,01. | FD-41, FD-44 |
+
+#### 4.17.4 `gafira-raster`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| ARQ-25 (extremos), ARQ-117 a ARQ-122, FD-12 (c, mitad CPU), FD-26 (paleta), FD-28 (b, hash), FD-33 (a, d a h), FD-34 (a, b), FD-35 (a, d) | GPU y escenario de `extension-demo`: FD-33 (b), FD-12 (c, mitad GPU), FV-06 (b). Interfaz: FD-32, FD-33 (c), FD-37. Exportación y rendimiento de lienzo: FD-35 (b, c). Scopes, *chroma key*, LUT y seguimiento: Fase 2. |
+
+Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), que hoy no existen.
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-117 | **Búferes.** Los píxeles son de 8 bits o `f32`, premultiplicados. Premultiplicar en 8 bits es `(c × a + 127) / 255` con división entera. Despremultiplicar da `(0, 0, 0, 0)` con `a = 0`, y en otro caso `min(255, redondeo(c × 255 / a))`. Las operaciones de color trabajan sin premultiplicar y conservan el alfa. La variante `f16` no entra en el primer corte: solo la usa la GPU (§6.2). | Prueba exhaustiva de los 65 536 pares `(c, a)` en 8 bits: el resultado premultiplicado es ≤ `a` y coincide con el redondeo exacto de `c × a / 255`. Con `a = 255`, premultiplicar y despremultiplicar es la identidad. Con `a = 0`, la salida es 0. Un búfer con longitud distinta de `ancho × alto × canales` da `Err`. |
+| ARQ-118 | **Transiciones del núcleo.** `progress` finito fuera de `[0, 1]` se recorta a ese rango; NaN y `±∞` dan `Err`. Con `progress` 0, la salida es la copia exacta de «desde»; con 1, de «hacia». «Desde», «hacia» y destino tienen las mismas dimensiones; si no, `Err`. **Corte**: «desde» si `p < 0,5` y «hacia» si `p ≥ 0,5`. **Disolvencia**: `desde × (1 − p) + hacia × p`. **Fundido**: de «desde» al color con `2p` si `p < 0,5` y del color a «hacia» con `2p − 1` si no. **Deslizar**: «hacia» entra sobre «desde», que no se mueve, con desplazamiento `redondeo((1 − p) × lado)` (PROPUESTA). **Zoom**: mezcla como Disolvencia, «desde» escalada de 1 a 2 y «hacia» de 0,5 a 1 (PROPUESTA). **Borrado**: `u` es la posición del centro del píxel en `[0, 1]` en la dirección elegida, o la distancia al centro dividida por media diagonal en el circular; con suavidad `s` en `[0, 1]`, la máscara es `limita((p × (1 + s) − u) / s, 0, 1)`; con `s = 0`, es 1 si `u < p` y 0 si no. | Por transición y formato: con `p` 0 y 1, igualdad byte a byte, también con suavidad 1 en Borrado. `p` −0,5 da lo mismo que 0 y 1,5 lo mismo que 1. Valores analíticos: Disolvencia a 0,25 sobre 0 y 1 da 0,25; Fundido a 0,5 da el color exacto; Corte a 0,4999 da «desde» y a 0,5 da «hacia». Borrado circular con `p` 1 no deja ningún píxel de «desde», esquinas incluidas. Imagen de tamaño 0: `Ok` sin cambios. |
+| ARQ-119 | **Mezcla y composición.** `gafira-raster` contiene las fórmulas de los 16 modos de `BlendMode::ALL` (D-27), según W3C *Compositing and Blending Level 1*, con composición *source-over* premultiplicada. `gafira-render-cpu` las usa, no las redefine. Antes de un modo distinto de `Normal`, los canales `f32` se recortan a `[0, 1]`. | Por modo, tabla de al menos 256 ternas (fondo, fuente, alfa) frente a una referencia en `f64` de la fórmula W3C: error ≤ 1e-5 en `f32` y ≤ 1/255 en 8 bits. Por modo: fuente con alfa 0 deja el fondo igual; fondo con alfa 0 da la fuente; `Normal` con alfa 1 da la fuente. |
+| ARQ-120 | **Desenfoque, bordes y escala.** El desenfoque es gaussiano con `σ = radio / 2`, como `blur()` de CSS, y radio 0 es la identidad. Fuera de la imagen, los píxeles son negro transparente. Los radios se expresan en px lógicos y se multiplican por la `scale` del contexto del efecto. `roi` devuelve la región de entrada necesaria. | Un impulso da una respuesta gaussiana con `σ` medida dentro de ±2 %. Una imagen constante opaca conserva su valor a más de `3σ` del borde. Una imagen y su mitad con `scale` 0,5 coinciden ≤ 1/255 tras reescalar. Ejecutar por tiles con `roi` coincide con la imagen entera ≤ 1/255 en todos los píxeles. |
+| ARQ-121 | **Tiles y mipmaps.** Los tiles miden 256×256 px (FIJADA, §6.1). Cada nivel de mip divide cada lado por 2 con redondeo hacia abajo, con mínimo 1. El nivel promedia caja de 2×2 en luz lineal con alfa premultiplicado. Hay `⌊log2(max(ancho, alto))⌋ + 1` niveles. | Imagen de 1000×600: 10 niveles, el último de 1×1. Imagen constante: todos los niveles iguales. Ajedrez sRGB 0 y 255 opaco: el nivel 1 da 188 ±1. El nivel de un píxel `a = 0` no aporta color. Una imagen de 257×1 se reparte en 2 tiles. |
+| ARQ-122 | **Paleta y hash perceptual.** La paleta da hasta 5 colores dominantes, ordenados por área, e ignora los píxeles con alfa 0. El dHash (PROPUESTA) da 64 bits, y dos imágenes son parecidas si su distancia de Hamming es ≤ 10 (PROPUESTA). Lab y ΔE2000 los aporta `gafira-color`: Lab usa el blanco D50 y la adaptación de CSS Color 4. | Imagen sintética de 5 colores planos con áreas conocidas: los 5 colores con ΔE2000 < 1, en orden de área. Imagen de 2 colores: 2 entradas. Imagen transparente: lista vacía. Una imagen y su versión al 50 %: distancia ≤ 10; dos imágenes de ruido con semillas distintas: > 10. `delta_e2000` reproduce los pares de referencia publicados por Sharma, Wu y Dalal. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Píxel `f32` NaN o `±∞` | `Err` antes de escribir en destino. | ARQ-110 |
+| Parámetro no finito o fuera de rango | `Err` antes de escribir en destino. | ARQ-110, FD-33 |
+| `progress` finito fuera de `[0, 1]` | Se recorta: las curvas con rebote lo producen (§3.4). | ARQ-118 |
+| Imagen de tamaño 0 | `Ok` sin cambios. | ARQ-118 |
+| Producto `ancho × alto × canales` que desborda | `Err`, sin reservar memoria. | ARQ-117 |
+| Canal `f32` fuera de `[0, 1]` | Se admite, salvo en modos de mezcla y curvas que lo recortan. | ARQ-119, FD-33 |
+| División por alfa 0 | No ocurre: el resultado es 0. | ARQ-117 |
+| Canal 0 en un cociente (cuentagotas) | El ajuste no cambia. | FD-33 |
+| Tolerancia de las pruebas | Identidades, diferencia 0; fórmulas `f32`, 1e-5; 8 bits, 1/255. | ARQ-118, ARQ-119 |
+
+#### 4.17.5 `gafira-audio`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| ARQ-23, ARQ-123 a ARQ-129, CAL-15 (`bench_mix_16`), FV-04 (b, longitud de audio), FV-10 (a, b, d), FV-20 (c, d) | `gafira-media` y exportación: FV-10 (c), FV-12. Interfaz del Mezclador: FV-20. Fase 2: limitador (FV-20 e), puerta de ruido, compresor, reducción de ruido, *time-stretch* y medidores en vivo. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-123 | **`process` es total.** `AudioProcessor::process` no devuelve error. Una muestra NaN o `±∞` cuenta como 0, un parámetro no finito se ignora y queda el último válido, y un parámetro fuera de rango se recorta. Ninguna salida es no finita ni subnormal. Si `prepare` recibió `sample_rate`, `channels` o `max_block` iguales a 0, o el bloque supera `max_block`, `process` deja el bloque intacto. `process` no recorta a ±1: una muestra puede superar 0 dBFS en la mezcla. | Por procesador: un bloque con NaN, `+∞` y `−∞` da salida finita y los bloques siguientes también. Tras 1 s de señal a −6 dBFS y 1 s de ceros, ninguna muestra es subnormal. Con `prepare` en 0 y con un bloque mayor que `max_block`, el bloque queda idéntico. |
+| ARQ-124 | **Ganancia, fundido y panorama.** Ganancia: `10^(dB / 20)`; −∞ dB es 0 y 200 % es 2,0. Un cambio de ganancia se aplica con una rampa lineal de 10 ms (PROPUESTA). Fundido de clip: rampa lineal de ganancia de 0 a 1 o de 1 a 0 (PROPUESTA); duración 0 no cambia nada. Fundido cruzado `EqualPower`: `cos(π p / 2)` y `sin(π p / 2)`. Panorama en bloques estéreo, con `p` en `[−1, 1]`, `θ = (p + 1) × π / 4`: `L × min(1, √2 cos θ)` y `R × min(1, √2 sin θ)` (ley de −3 dB normalizada a 0 dB en el centro, PROPUESTA). En otros bloques, `Pan` no cambia nada. | +6 dB da 1,9953 ±1e-4. Un salto de ganancia de 0 a 1 a 48 kHz cambia ≤ 1/480 + 1e-6 por muestra. Un fundido de 2 s a 48 kHz sube 1/96 000 + 1e-6 por muestra como máximo, de 0 a 1. `EqualPower`: `g_a² + g_b² = 1`, ±1e-6, en todo `p`. Panorama: `p = 0` deja el bloque igual, ±1e-6; `p = −1` da `R` ≤ 1e-6 y `L` igual; `p = 0,5` da `L × 0,5412` ±1e-4 y `R` igual. |
+| ARQ-125 | **`Eq3Band`** (D-22): tres biquads del *Audio EQ Cookbook* de RBJ: estante de graves en 100 Hz con `S = 1`, campana en 1 kHz con `Q = 1` y estante de agudos en 8 kHz con `S = 1` (PROPUESTA), ±15 dB. La curva teórica de 05 FV-20 es la respuesta digital de esos biquads. Con ganancia 0, la banda no cambia la señal. Una banda con frecuencia ≥ `fs / 2` se omite. | A 44,1, 48 y 96 kHz, con cada banda a ±15 dB y 0 dB: la respuesta medida con barrido o impulso coincide con `H(e^jω)` en ±0,5 dB de 20 Hz a 20 kHz. Con todas a 0 dB, la salida es idéntica bit a bit. Todos los polos tienen módulo < 1. A `fs = 16 000 Hz`, la banda de 8 kHz se omite. |
+| ARQ-126 | **Sonoridad integrada.** Sigue ITU-R BS.1770-4 y EBU R128: ponderación K, bloques de 400 ms con solape del 75 %, puerta absoluta de −70 LUFS y relativa de −10 LU, y pesos 1,0 para L, R y C, 1,41 para Ls y Rs, y sin LFE. Admite 1, 2 y 6 canales; otro número da `Err`. En otras frecuencias, la ponderación K coincide con la de 48 kHz en ±0,1 dB hasta 16 kHz. Una señal sin bloques válidos, por silencio o por durar menos de 400 ms, da un resultado «sin medida», no −∞. | Señales sintéticas de los casos 1 a 5 de EBU Tech 3341, sin guardar sus archivos: ±0,1 LU. Seno estéreo de 997 Hz a −23 dBFS: −23,0 ±0,1 LUFS a 44,1, 48 y 96 kHz. Silencio y una señal de 399 ms: «sin medida». 3 canales: `Err`. |
+| ARQ-127 | **Nivelar** (D-21, D-31). Nivelar tiene su propia ganancia, aparte del Volumen del clip, y la aplica `LoudnessNormalizer`. La ganancia pedida es `objetivo − sonoridad medida`. El tope es `−1 dBTP − pico real medido`. La ganancia aplicada es la menor de las dos, y el resultado indica si se alcanzó el objetivo; la igualdad lo alcanza. El pico real sigue el anexo 2 de BS.1770 con sobremuestreo ×4 a 48 kHz o menos. La ganancia es constante en toda la señal. Sin medida, la ganancia es 0 y no se alcanza el objetivo. | Señal de −20 LUFS con pico holgado y objetivo −14: −14 ±0,5 LU y objetivo alcanzado. Señal de −30 LUFS y −3 dBTP con objetivo −14: ganancia +2 dB ±0,01, pico real ≤ −1 dBTP, −28 ±0,5 LU y objetivo no alcanzado. Silencio: ganancia 0 y objetivo no alcanzado. Una ganancia de +16 dB se aplica con el Volumen al 100 %, sin cambiarlo. |
+| ARQ-128 | **Remuestreo.** Admite una razón constante entre cualquier par de frecuencias de `SampleRate`, con Velocidad de 0,1 a 10. La longitud de salida es `redondeo(n × fs_salida / (fs_entrada × velocidad))`, evaluada en `f64`: esa evaluación es normativa también en los empates. Banda pasante ±0,1 dB hasta 0,9 veces el Nyquist menor y atenuación ≥ 80 dB en banda eliminada, que empieza en 1,0 vez el Nyquist menor (PROPUESTA). La latencia se declara. | 44 100 muestras de 44,1 a 48 kHz dan 48 000; 96 000 muestras a 2,0× dan 48 000. Seno de 1 kHz de 44,1 a 48 kHz: SNR ≥ 80 dB. Un impulso sale en la latencia declarada, ±1 muestra. Entrada vacía: salida vacía. Velocidad 0, negativa, 0,09 o 10,1: `Err`. |
+| ARQ-129 | **Cadena, mezcla y desfase.** `ProcessorChain` aplica los procesadores en orden y su `latency()` es la suma. La mezcla suma las muestras de las pistas no silenciadas. No hay límite de pistas en el motor: 16 es la cifra del Mezclador. Un desfase en *flicks* pasa a muestras con `redondeo(desfase × fs / 705 600 000)`, medio se aleja de 0, en aritmética entera sin desbordamiento. | Una cadena con latencias 3 y 5 declara 8. Sumar 16 pistas coincide con la suma manual ±1e-6. Una pista silenciada no aporta. +1 ms a 44,1 kHz da 44 muestras y a 48 kHz, 48. Con `i64::MAX` *flicks*, sin `panic`. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| NaN o `±∞` en funciones con `Result` | `Err`. | ARQ-110 |
+| NaN o `±∞` en `process` | Muestra a 0; parámetro ignorado. | ARQ-123 |
+| Subnormales | Ninguna salida subnormal. | ARQ-123 |
+| Desbordamiento de `f32` en la mezcla | Sin recorte a ±1; la salida sigue finita. | ARQ-123 |
+| Desbordamiento entero en desfases | Aritmética sin desbordamiento. | ARQ-129 |
+| Tamaño 0 | `prepare` en 0 o bloque vacío: bloque intacto. | ARQ-123 |
+| Tope de pico | Pico resultante ≤ −1 dBTP; igualdad admitida. | ARQ-127 |
+| Sonoridad sin bloques | «Sin medida», nunca −∞. | ARQ-126 |
+| Tolerancias | ±0,5 LU en Nivelar; ±0,1 LU en el medidor; ±0,5 dB en EQ; 1 muestra en desfases. | ARQ-125 a ARQ-129 |
+
+#### 4.17.6 `gafira-segment`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| ARQ-130, ARQ-131, ARQ-132, ARQ-43 (segmentación), CAL-06 (`bench_segment_4000`), FD-32 (e), FD-38 (a, b, c) | Interfaz y comandos: FD-32 (a a d, f), FD-38 (d), FD-39. Fase 3: FD-40, `onnx`. GPU: CAL-07. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
+| ARQ-131 | **Fiabilidad** (D-23). El resultado indica si es fiable: el primer plano ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Un resultado no fiable no es un error. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: no fiable. Las escenas de ARQ-132: fiable. |
+| ARQ-132 | **Puerta de calidad** (D-20). `gafira-testkit` genera escenas sintéticas deterministas con máscara exacta conocida: al menos 12, con fondo plano, degradado y texturizado, sujeto centrado y desplazado, formas cóncavas y con agujero, y contraste bajo. La prueba bloqueante exige IoU ≥ 0,90 por escena, no en media, binarizando con alfa ≥ 128. Con las dos máscaras vacías, el IoU es 1. Sobre fotos reales, el IoU es solo un aviso hasta que el titular aporte un conjunto con licencia (pendiente 9). | La prueba de escenas falla si una sola queda por debajo de 0,90. Prueba del cálculo de IoU: 0,90 pasa y 0,8999 falla. Mientras no exista el conjunto real, ninguna prueba bloqueante depende de él. |
+
+Parámetros de partida de `ClassicSegmenter` (PROPUESTA; se pueden cambiar sin tocar esta spec mientras se cumplan ARQ-132 y CAL-06): unos 1 500 superpíxeles SLIC, 5 componentes por GMM, hasta 5 iteraciones de GrabCut y *guided filter* de radio 8 px.
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Píxel `f32` NaN o `±∞` | `Err`. | ARQ-110 |
+| Imagen de tamaño 0 | `Err`. | ARQ-130 |
+| Imagen de 1×1 o uniforme | `Ok`, no fiable. | ARQ-131 |
+| Tamaño de trabajo | Lado largo > 1024: reduce; = 1024 o menos: no. | ARQ-130 |
+| Umbral de IoU | `≥ 0,90`, igualdad incluida. | ARQ-132 |
+| Límites de área | 1 % y 95 % incluidos. | ARQ-131 |
+| Cancelación | Sin reloj en las pruebas unitarias (ARQ-112). | ARQ-112 |
 
 ---
 
@@ -967,7 +1130,7 @@ Reglas:
 
 - **Canales**: `crossbeam_channel` acotados en las etapas del pipeline, para aplicar contrapresión.
 - **Cancelación**: `CancelToken` (generación `AtomicU64`). Se comprueba por tile, por fotograma y por iteración de algoritmo. Una nueva interacción invalida la generación previa del viewport.
-- **Paralelismo de datos**: `rayon` solo dentro de los motores puros, que reciben el pool por parámetro y no usan el pool global.
+- **Paralelismo de datos**: `rayon` solo dentro de los motores puros, que reciben el pool por parámetro o en su constructor y no usan el pool global. Los efectos corren en un solo hilo por llamada: el paralelismo por tiles es de `gafira-render`.
 
 ### 6.4 Cola de exportación
 
@@ -1024,6 +1187,17 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
+| Cancelar una segmentación ≤ 100 ms (ARQ-43) | Comprobación del token por unidad de trabajo (ARQ-112) | `bench_cancel_segment`: ≤ 100 ms |
+| Sombra < 100 ms con radio ≤ 40 px en 1080p (04 FD-35) | Desenfoque gaussiano separable | `bench_shadow_1080`: < 100 ms |
+| Hash perceptual de 12 MP < 100 ms (04 FD-28) | La fija el diseño del change | `bench_dhash_12mp`: < 100 ms |
+| Escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (04 FD-41) | La fija el diseño del change | `bench_text_type_5000`: p99 < 16 ms |
+| Actualizar Curvar < 16 ms con 100 caracteres (04 FD-44) | La fija el diseño del change | `bench_text_curve_100`: p99 < 16 ms |
+| Re-maquetar 5 000 caracteres en 4 columnas < 16 ms (04 FD-45) | La fija el diseño del change | `bench_text_columns_5000`: p99 < 16 ms |
+| Ajustar al cuadro < 16 ms con 500 caracteres (04 FD-46) | Bisección sobre la rejilla de tamaños | `bench_text_fit_500`: p99 < 16 ms |
+| Vista previa del Generador de guías < 16 ms (04 FD-04) | Función pura sin tocar el documento | `bench_guides_generate`: < 16 ms por cambio de valor |
+| Márgenes, sangrado y zona de seguridad < 1 ms por página (04 FD-05) | Función pura | `bench_layout_rects`: < 1 ms |
+| Imán < 2 ms con 1 000 nodos (04 FD-06) | Búsqueda del destino más cercano por eje | `bench_snap_1000`: p99 < 2 ms |
+| Cuadrícula < 1 ms (04 FD-07) | Solo se calculan las líneas del *viewport*; se dibuja como overlay | `bench_grid_lines`: < 1 ms |
 | Reel de 60 s 1080p en < 3 min (PRD) | Exportación encadenada en paralelo (composición y codificación en hilos distintos); codificador por hardware del SO o AV1 en preset rápido | `bench_export_reel_60s`: < 180 s (requiere ≥ 10 fps de extremo a extremo a 30 fps) |
 | Exportaciones sin intervención ≥ 98 % (PRD) | Validación previa, reintentos transitorios, alternativa de códec, escritura atómica | Suite `export_matrix` (≥ 200 combinaciones formato × opción × documento) con ≥ 98 % de éxito; meta interna 100 % |
 | Autoguardado cada 5–15 s, pérdida ≤ 15 s, recuperación 100 % (PRD) | §7.2 | Prueba de *kill* aleatorio (`SIGKILL` / `TerminateProcess`) 500 veces: siempre recuperable y pérdida ≤ intervalo configurado |
@@ -1254,13 +1428,13 @@ El diseño visible está en 03 §7.10. Aquí se fija dónde vive, cómo se incru
 
 ### 9.1 Reglas
 
-- Licencias permitidas (allowlist de `cargo-deny`): `MIT`, `Apache-2.0`, `Apache-2.0 WITH LLVM-exception`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `Zlib`, `Unicode-3.0`, `Unicode-DFS-2016`, `BSL-1.0`, `CC0-1.0`, `MIT-0`, `0BSD`. `OFL-1.1` se permite solo para fuentes y nunca para código.
+- Licencias permitidas (allowlist de `cargo-deny`): `MIT`, `Apache-2.0`, `Apache-2.0 WITH LLVM-exception`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `Zlib`, `Unicode-3.0`, `Unicode-DFS-2016`, `BSL-1.0`, `CC0-1.0`, `MIT-0`, `0BSD`. `OFL-1.1` se permite solo para fuentes y nunca para código. **Excepción por crate**: `assert_no_alloc` (BSD-1-Clause, D-37), con una entrada `[[licenses.exceptions]]` y su motivo en `deny.toml`; BSD-1-Clause no entra en la lista general.
 - Prohibidas: `GPL-*`, `LGPL-*`, `AGPL-*`, `SSPL`, `CC-BY-NC*`, `BUSL`, cualquier licencia no comercial y licencias desconocidas.
 - `MPL-2.0`: **denegada por defecto**. Una excepción requiere un ADR, aislamiento en un crate opcional y la publicación del código fuente de los archivos MPL modificados. Se evitan `symphonia`, `imbl`, `im` y `rpds` (alternativas en la tabla).
 - Sin dependencias git: nada de `storytold/craft-libs` ni forks sin publicar. Solo crates.io.
 - Sin binarios externos en el instalador: ni FFmpeg, ni `ffmpeg-sidecar`, ni ejecutables de terceros. Las librerías C con licencia permisiva compiladas estáticamente (por ejemplo libdav1d, BSD-2) se aceptan con VERIFICAR.
 - **Bibliotecas del sistema con licencia LGPL**: solo se aceptan si son parte del SO del usuario, se enlazan de forma **dinámica** y **nunca se empaquetan** en el instalador. Caso conocido: `cpal` en Linux enlaza `libasound` (ALSA, LGPL-2.1) del sistema. Es un riesgo **VERIFICAR** con asesoría legal (R-06). Mitigación propuesta: enlace dinámico a la `libasound.so.2` del sistema (dependencia del paquete `.deb`/`.rpm`, no un archivo incluido), `xtask audit-bundle` falla si una `.so` LGPL aparece en el paquete y, como alternativa si el dictamen lo exige, un backend de audio propio por PipeWire/PulseAudio.
-- Toda dependencia nueva pasa `cargo deny check licenses bans sources advisories` en CI y se registra en `THIRD_PARTY_NOTICES.md` (generado con `cargo about`, licencia de la herramienta sin medir: VERIFICAR, que solo se usa en build). Es el **único nombre** del archivo de avisos de terceros en todas las specs y en el instalador.
+- Toda dependencia nueva que llega a un binario pasa `cargo deny check licenses bans sources advisories` en CI. `cargo-deny` no comprueba la licencia de las dependencias solo de desarrollo de crates privados, como `png` en `gafira-testkit`, `proptest`, `criterion`, `trybuild` y `assert_no_alloc`: su licencia se comprueba a mano al añadirlas y se anota en §9.2. Toda dependencia se registra en `THIRD_PARTY_NOTICES.md` (generado con `cargo about`, licencia de la herramienta sin medir: VERIFICAR, que solo se usa en build). Es el **único nombre** del archivo de avisos de terceros en todas las specs y en el instalador.
 
 ```toml
 # deny.toml (extracto)
@@ -1308,7 +1482,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | sys-locale | última | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | **No se usa**: alternativa a la detección propia de `gafira-platform` (§14.3) | `windows` / `objc2` / variables de entorno |
 | vello | compatible con wgpu | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Vectores en GPU | rasterizar en CPU y subir |
 | vello_cpu | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Alternativa CPU | tiny-skia |
-| parley + skrifa + harfrust | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Maquetación y shaping de texto | cosmic-text (MIT/Apache) |
+| parley + skrifa + harfrust | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`). `parley` con `default-features = false, features = ["std"]` | Maquetación y shaping de texto | cosmic-text (MIT/Apache) |
 | linesweeper | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Booleanas de rutas | implementación propia |
 | krilla | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Exportar PDF | pdf-writer (MIT/Apache) |
 | hayro | última | Apache-2.0/MIT | VERIFICADA (`cargo-deny`) | Importar PDF (Fase 2) | — |
@@ -1344,6 +1518,11 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | ort + ONNX Runtime | — | MIT/Apache (runtime MIT) | VERIFICADA (`cargo-deny`) solo con `default-features = false, features = ["load-dynamic","std"]` (las features por defecto traen `openssl-sys`, prohibido, y descargan binarios nativos). `ort` es una versión candidata (*release candidate*) y la biblioteca ONNX Runtime se entrega aparte (modelo opcional, fuera del instalador base) | Segmentador ML opcional (Fase 3, paquete aparte) | candle (VERIFICAR) |
 | proptest, criterion, insta | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas | — |
 | trybuild | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas de compilación de ARQ-30 en `gafira-edit` | — |
+| assert_no_alloc | 1.1.2 | BSD-1-Clause | VERIFICADA a mano, con excepción por crate (§9.1, D-37). Solo `dev-dependency`; `cargo-deny` no la comprueba | Guardia de asignación (ARQ-23) | — |
+| png | 0.18 | MIT/Apache-2.0 | Pasa `cargo deny` (spike E5); ver la nota de dependencias de desarrollo de §9.1 | Golden de píxeles, solo en `gafira-testkit` (ADR 0010) | — |
+| Fuentes de prueba: subconjuntos de Inter, Manrope, Noto Sans Arabic y Noto Emoji | — | OFL-1.1, sin nombre de fuente reservado | VERIFICADA (spike E4 de `layout-core`). Se registran en `assets/LICENSES.toml` (ARQ-115) | Pruebas de `gafira-text` | — |
+| half | — | MIT OR Apache-2.0 | Diferido: llega con `gafira-render-gpu`, porque ARQ-117 deja `f16` fuera | Búferes `f16` | — |
+| Remuestreador | — | Propio | Sinc con ventana de Kaiser, sin tercero (spike E3) | ARQ-128 | — |
 | **Evitadas** | | | | | |
 | symphonia | — | MPL-2.0 | EVITAR | — | claxon, lewton, hound, códecs del SO |
 | im / imbl / rpds | — | MPL-2.0 | EVITAR | — | `Arc` + `make_mut` propio (ADR-03) |
@@ -1489,7 +1668,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 | Fase | Crates entregados | Traits activos | Formatos de importación | Formatos de exportación |
 |---|---|---|---|---|
-| **MVP** (diseño + video básico) | geom, color, time, anim, doc, edit, pathops, text, layout, raster, audio, segment (clásico), ports, render, media, engine, format, assets, io-image, io-svg, io-pdf, mux, codec-free, codec-os, render-cpu, render-gpu, platform, theme, i18n (español e inglés, D-08), license, ui (con la Pantalla de arranque, D-09), testkit, apps | `NodeVisitor`, `Tool`, `Command`, `Effect`, `Transition`, `Importer`, `Exporter`, `RenderBackend`, `Segmenter`, `Container`, `Codec`, `Decoder`, `Encoder`, `AudioProcessor` (ganancia, fundidos, EQ de 3 bandas, nivelación), `ColorTransform` (sRGB, P3), `AssetProvider`, `ProjectRepository`, `LicenseVerifier`, `Translator`, `LocaleResolver`, `SystemLocaleSource` | `.gafira` (con `versions/`); PNG, JPEG, WebP, GIF, TIFF, BMP, QOI (`gafira-io-image`); SVG (`gafira-io-svg`); MP4/MOV y WebM/MKV (`gafira-mux`) con H.264/AAC vía API del sistema (`gafira-codec-os`) y AV1/Opus/Vorbis/FLAC (`gafira-codec-free`); WAV, FLAC, Ogg y MP3 (**solo importación**, decodificador permisivo VERIFICAR) | `.gafira`; PNG (transparencia, escala), JPEG, WebP, GIF animado (`gafira-io-image`); SVG (`gafira-io-svg`); PDF RGB Digital/Impresión con sangrado y marcas de corte (`gafira-io-pdf`); **WebM y MP4 AV1 + Opus por defecto** (`gafira-codec-free`); MP4 H.264/AAC 480p–4K solo si la API del sistema está disponible (`gafira-codec-os` + `gafira-mux`); secuencia PNG; WAV; **extracción de fotograma (PNG) y de audio (WAV)** |
+| **MVP** (diseño + video básico) | geom, color, time, anim, doc, edit, pathops, text, layout, raster, audio, segment (clásico), ports, render, media, engine, format, assets, io-image, io-svg, io-pdf, mux, codec-free, codec-os, render-cpu, render-gpu, platform, theme, i18n (español e inglés, D-08), license, ui (con la Pantalla de arranque, D-09), testkit, apps | `NodeVisitor`, `Tool`, `Command`, `Effect`, `Transition`, `Importer`, `Exporter`, `RenderBackend`, `Segmenter`, `Container`, `Codec`, `Decoder`, `Encoder`, `AudioProcessor` (ganancia, fundidos, EQ de 3 bandas, panorama, nivelación), `ColorTransform` (sRGB, P3), `AssetProvider`, `ProjectRepository`, `LicenseVerifier`, `Translator`, `LocaleResolver`, `SystemLocaleSource` | `.gafira` (con `versions/`); PNG, JPEG, WebP, GIF, TIFF, BMP, QOI (`gafira-io-image`); SVG (`gafira-io-svg`); MP4/MOV y WebM/MKV (`gafira-mux`) con H.264/AAC vía API del sistema (`gafira-codec-os`) y AV1/Opus/Vorbis/FLAC (`gafira-codec-free`); WAV, FLAC, Ogg y MP3 (**solo importación**, decodificador permisivo VERIFICAR) | `.gafira`; PNG (transparencia, escala), JPEG, WebP, GIF animado (`gafira-io-image`); SVG (`gafira-io-svg`); PDF RGB Digital/Impresión con sangrado y marcas de corte (`gafira-io-pdf`); **WebM y MP4 AV1 + Opus por defecto** (`gafira-codec-free`); MP4 H.264/AAC 480p–4K solo si la API del sistema está disponible (`gafira-codec-os` + `gafira-mux`); secuencia PNG; WAV; **extracción de fotograma (PNG) y de audio (WAV)** |
 | **Fase 2** (control profesional) | captions, io-pptx, `scopes` en raster, `heic-os` (según Q-17), VP9 en codec-free, CMYK en io-pdf, AVI de solo lectura en mux | Keyframes con curvas en la UI, máscaras de video, *chroma key*, LUT (`LutTransform`), curvas y ruedas de color, puerta de ruido, compresor, limitador, reducción de ruido, *time-stretch*, cola de render avanzada, control de códec, bitrate y fps, medios vinculados y Relocalizar medios | + AVI con MJPEG, sin comprimir o PCM (D-07); HEIC (SO, solo lectura, según Q-17); PDF (hayro, VERIFICAR); SRT y VTT (`gafira-captions`); LUT `.cube` | + PDF CMYK (moxcms); SRT y VTT; WebM VP9; extracción de fotograma en JPEG y de audio en FLAC u Opus; **PPTX** con una imagen de alta resolución por diapositiva y sin objetos editables (`gafira-io-pptx`, D-07) |
 | **Fase 3** (plugins, lotes) | plugin, `onnx` en segment, lotes extendidos en cli | `PluginHost`, `NodeExtension` por plugin, `OnnxSegmenter`, `TextAssistant` (opcional, local, desactivable) | Formatos de plugins | Formatos de plugins; exportación por lotes con plantillas de datos (CSV). El render distribuido en la red local del usuario queda **en suspenso**: abriría una conexión de red distinta de la de licencia, prohibida por D-01 (Q-18) |
 
@@ -1524,7 +1703,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4.
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-40 constan en `00-decisiones.md` (D-29 a D-34).
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1549,6 +1728,12 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-31 | ¿Qué da `Color::interpolate` cuando el alfa resultante es ≤ 0 (ARQ-19, Q-27 A)? | Titular: A. Con `a ≤ 0` se interpolan `r`, `g`, `b` en recto, sin premultiplicar, y `a` queda sin recortar; el consumidor recorta `a` al componer (§3.4, ARQ-19). |
 | Q-32 | ¿Qué hace `f32::interpolate` (y `Vec2`, en `f64`) con extremos finitos cuya diferencia desborda, por ejemplo de `3e38` a `−3e38` con `t = 0,5` (ARQ-19)? | Titular: A. Se mantiene `a + (b − a) · t`. El rango de contrato es `b − a` finito en cada componente; fuera de él el resultado puede ser `±∞` y queda fuera de contrato. Las pruebas de propiedad usan el dominio `[−MAX/2, MAX/2]` de su tipo. No cambian el código ni los resultados bit a bit (Q-29) (§3.4, ARQ-19). |
 | Q-33 | ¿Cómo se decide en coma flotante que un extremo de `Transform2D` es degenerado (§3.4, ARQ-19, Q-28 B)? | Titular: B, umbral relativo. Con la parte lineal `[a, b, c, d]`, columnas `c1 = (a, b)` y `c2 = (c, d)` y `det = a·d − b·c` en `f64`, un extremo de coeficientes finitos es degenerado si `det` o `|c1| · |c2|` no es finito, o si `|det| ≤ 1e-12 · |c1| · |c2|`. No depende de la escala, trata como rango 1 lo que solo lo es por redondeo y da el mismo resultado en las 3 plataformas (Q-29). Justo por encima del umbral el sesgo crece como el inverso del cociente; se acepta como comportamiento conocido. Ningún preset cambia: todos producen ceros exactos (§3.4, ARQ-19). |
+| Q-35 | Al alinear una selección con elementos bloqueados, ¿la caja de referencia los incluye (04 FD-11)? | D-29: sí. |
+| Q-36 | ¿Cómo se prueba el emoji de 04 FD-41 (a), si las fuentes de D-19 no lo tienen? | D-30: se añade un subconjunto OFL monocromo y se comprueban contornos reales. |
+| Q-37 | ¿Cómo aplica Nivelar más de +6 dB si el Volumen de clip llega a 200 % (05 FV-10)? | D-31: con una ganancia propia, aparte del Volumen, aplicada por `LoudnessNormalizer`. El tope de −1 dBTP de D-21 sigue vigente. |
+| Q-38 | ¿Dónde está Nivelar en el MVP, si la interfaz del Mezclador es de Fase 2? | D-32: en Inspector → Clip. |
+| Q-39 | ¿FD-33 tiene un slider de Desenfoque? | D-33: no en el MVP. |
+| Q-40 | ¿Se confirman en bloque las cifras PROPUESTA nuevas de capa 2? | D-34: sí, y pueden cambiar con mediciones. Conservan su marca. |
 
 ### 12.3 Preguntas abiertas
 
@@ -1563,6 +1748,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
+| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos. No bloquea la especificación. | Titular |
 
 ---
 
@@ -1808,7 +1994,7 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | ARQ-99 | **Cadena de respaldo**: idioma pedido → inglés → clave visible solo en desarrollo. | Pruebas con un catálogo de prueba incompleto: falta en `es` → texto inglés; falta en los dos → `⟦clave⟧` en desarrollo y, compilado con la configuración de `dist`, el texto del otro idioma o `…`; ninguna salida de release coincide con el patrón de clave `^[a-z0-9_]+(\.[a-z0-9_]+)+$`. |
 | ARQ-100 | **Regla de D-08 exacta.** | Prueba de tabla con `FakeSystemLocaleSource` y todas las etiquetas de §14.4 (≥ 30): cualquier `es*` → `Es`; `en*` y cualquier otro idioma → `En`; sin dato o `C`/`POSIX` → `En` con `Fallback`; `Es` y `En` manuales ignoran el sistema. En Linux, una prueba en subproceso cubre la precedencia `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG`. En cada SO de la CI, `gafira-platform` devuelve una etiqueta no vacía. |
 | ARQ-101 | **Cambio de idioma sin reiniciar**, en ≤ 100 ms. | Prueba E2E: cambiar Ajustes → General → Idioma con un proyecto abierto deja todo el texto visible, los menús y los nombres de AccessKit en el idioma nuevo en el siguiente frame, sin cerrar el proyecto ni tocar el historial (`history.len()` igual) ni la selección. `bench_locale_switch`: del cambio al primer frame completo en el idioma nuevo ≤ 100 ms (p99) en el hardware de gama media (§6.6). |
-| ARQ-102 | **Los errores de capas inferiores viajan como claves con parámetros.** | Cada enum de error (§7.3) implementa `ToMessage`; una prueba recorre sus variantes (fixtures por variante) y comprueba que la clave existe en los dos catálogos y que la UI muestra el texto del catálogo, nunca el `Display`. Un lint de `gafira-ui` prohíbe `to_string()` y `format!` sobre tipos de error: 0 coincidencias. `UserError` no tiene campos `String` visibles. |
+| ARQ-102 | **Los errores de capas inferiores viajan como claves con parámetros.** | Cada enum de error (§7.3) implementa `ToMessage`; una prueba recorre sus variantes (fixtures por variante) y comprueba que la clave existe en los dos catálogos y que la UI muestra el texto del catálogo, nunca el `Display`. Un lint de `gafira-ui` prohíbe `to_string()` y `format!` sobre tipos de error: 0 coincidencias. `UserError` no tiene campos `String` visibles. **Cumplimiento**: hoy `gafira-doc::msg` solo tiene `MessageKey` y ningún error implementa `ToMessage`. Los tipos llegan con el change `engine-contracts`, que adapta `LayoutError` y `PathOpError`. Los demás crates cumplen al crearse, o con el change que los adapte. |
 | ARQ-103 | **Seudo-localización en las pruebas de expansión.** | La suite E2E recorre las 8 pantallas (03 DIS-18) con `PseudoTranslator`: 0 truncados sin tooltip, 0 solapes y 0 textos sin `⟦ ⟧`. Capturas golden nocturnas en `es`, `en` y seudo. `cargo tree -e features -p gafira` del perfil `dist` no contiene la feature `pseudo`. |
 | ARQ-104 | **`gafira-cli` imprime en inglés por defecto** y respeta otro idioma solo si se pide. | Con `LANG=es_ES.UTF-8`, `gafira-cli export` imprime en inglés; con `--lang es` (o `GAFIRA_CLI_LANG=es`), en español; `--lang system` aplica la regla de D-08 y `--lang app` la preferencia guardada por la app. La salida `--json` contiene claves y valores, no texto traducido, y es idéntica con cualquier `--lang`. Subcomandos, opciones y códigos de salida no cambian con el idioma. |
 | ARQ-105 | **Las fuentes cubren los dos idiomas.** | Una prueba de `gafira-theme` lee la tabla `cmap` de Inter y Manrope embebidas y comprueba todos los caracteres de `es.toml`, `en.toml` y `glosario.toml` más ¿ ¡ ñ Ñ á é í ó ú ü Á É Í Ó Ú Ü « » “ ” ‘ ’ — – … × °: 0 ausentes. |

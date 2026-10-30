@@ -215,7 +215,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-48 | Clave de color con tolerancia, supresión de derrame y ajuste de bordes. | RF-08 | F2 | `Effect` | 05 §B |
 | RF-49 | Seguimiento básico y Estabilizar (opcional). | RF-08 | F2 | `Effect` | 05 §B |
 | RF-50 | Corrección de color: LUT `.cube`, Curvas RGB, Ruedas, Balance de blancos, Medidores y comparación antes/después. | RF-08 | F2 | `LutTransform`, `ColorTransform` | 05 §B |
-| RF-51 | Audio avanzado: Mezclador de hasta 16 pistas, Ecualizador de 3 bandas, Puerta de ruido (`NoiseGate`), Compresor, Limitador, Reducir ruido, *time-stretch* (`TimeStretch`), Nivelar y medidor de sonoridad EBU R128. | RF-08 | F2 | ARQ-23, 02 §4.9 | 05 §B |
+| RF-51 | Audio avanzado: Mezclador de hasta 16 pistas, Ecualizador de 3 bandas (procesadores `Eq3Band` y `Pan`: MVP en `gafira-audio`, D-22; su interfaz, F2), Puerta de ruido (`NoiseGate`), Compresor, Limitador, Reducir ruido, *time-stretch* (`TimeStretch`), Nivelar y medidor de sonoridad EBU R128. | RF-08 | F2 | ARQ-23, 02 §4.9 | 05 §B |
 | RF-52 | Importar y exportar SRT y VTT. | §2.3 | F2 | `gafira-captions` | 05 §B |
 | RF-53 | Copias ligeras: generación automática y manual para material de alta resolución; la exportación usa siempre el original. | RF-08 | MVP (motor) / F2 (gestión) | §6.5 de 02 | 05 §B |
 | RF-54 | Exportación con control de códec, bitrate, fps, resolución, rango de color, audio y metadatos. | RF-08, RF-09 | F2 | `EncoderConfig` | 05 §B |
@@ -401,7 +401,7 @@ Los riesgos técnicos R-01..R-14 están en 02 (§12.1). Aquí se añaden los de 
 | P-01 | **Alcance.** Tres capas en un solo MVP (diseño, video básico y motor para el avanzado) es mucho trabajo para un equipo pequeño. | Entregas incrementales dentro del MVP: diseño estático primero, luego video básico (02 §11.2). Cada incremento es utilizable. |
 | P-02 | **Exportar H.264 puede exponer a patentes** y no funciona en Linux sin VA-API. | D-02, ADR-07: solo vía API del sistema; AV1 + Opus es la salida por defecto y siempre está disponible. |
 | P-03 | **Contenido incluido** (plantillas, ilustraciones, fotos, música, sonidos) sin licencia clara impide vender. | Solo contenido propio o con licencia permisiva registrada (ARQ-75); paquete de contenido separado si crece el instalador (R-09). |
-| P-04 | **Calidad percibida de la técnica clásica de Aislar sujeto** frente a modelos de IA. | Retocar borde con pincel; IoU ≥ 0,90 en el conjunto de prueba (PROPUESTA); Segmentadores ONNX opcionales en Fase 3. |
+| P-04 | **Calidad percibida de la técnica clásica de Aislar sujeto** frente a modelos de IA. | Retocar borde con pincel; prueba bloqueante con IoU ≥ 0,90 en escenas sintéticas con máscara exacta (D-20); el IoU sobre fotos reales es un aviso hasta que el titular aporte un conjunto con licencia; Segmentadores ONNX opcionales en Fase 3. |
 | P-05 | **Accesibilidad de egui** insuficiente en el lienzo. | AccessKit con árbol propio; plan B iced (R-10 de 02). |
 | P-06 | **Marca y nombres.** «Gafira» (y «Gefira», por parecido) podrían coincidir con marcas registradas; el glosario está aprobado (D-04). | Búsqueda del titular en USPTO, TMview y WIPO antes de publicar (§12.4; spec 05, Parte C). |
 | P-07 | **Prueba gratuita y precio sin definir.** | Pendiente 1 del titular y Q-19 antes de la comunicación comercial; la licencia se diseña en la spec 06. |
@@ -445,6 +445,7 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma (es-MX `1,234.5`, es-ES `1234,5`) o un formato fijo por idioma? Propuesta de 02 §14.4: según la región. | Titular | RF-64 |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto y solo cambia con `--lang` (02 ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux también se ofrecen en los dos idiomas (la spec 05 FV-30 dice solo español)? | Titular | RF-56, RF-64 |
+| Q-34 | Aspecto de las fórmulas de 04 FD-33 (02 §12.3). Q-35..Q-40 están cerradas (D-29 a D-34). | Titular | No bloquea la especificación |
 
 ### 12.4 Pendientes del titular
 
@@ -455,6 +456,7 @@ Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `licen
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
 4. Hacer la búsqueda de marca de D-04 (lista de comprobación siguiente).
 5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
+6. Aportar un conjunto de fotos reales con licencia para `gafira-segment` antes de publicar (D-20).
 
 **Lista de comprobación de marca (D-04).** Sin abogado; registrar fecha, término, resultado y captura de cada búsqueda antes de publicar.
 
