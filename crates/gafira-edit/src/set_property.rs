@@ -5,16 +5,18 @@ use std::any::Any;
 use gafira_color::Color;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
-    BlendMode, DocMut, Document, Dpi, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement,
-    ShapeGeometry, ValidationError,
+    BlendMode, DocMut, Document, Dpi, GridSettings, GuideSet, Margins, Node, NodeId, NodeKind,
+    Page, PageId, PageSize, Placement, ShapeGeometry, ValidationError, check_bleed,
 };
+use gafira_geom::Length;
 
 use crate::{Applied, Command, CommandError, DirtySet, GestureId, MergeKey};
 
 /// A property value of a node, tagged with the property it belongs to.
 ///
-/// `Fill` and `Geometry` only apply to `Shape` nodes. The `Page` variants
-/// target a page and `Dpi` the document; build those commands with
+/// `Fill` and `Geometry` only apply to `Shape` nodes. The `Page` variants,
+/// `Bleed`, `Margins`, `Guides` and `Grid` target a page and `Dpi` the
+/// document; build those commands with
 /// [`SetProperty::page`] and [`SetProperty::document`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Property {
@@ -30,6 +32,14 @@ pub enum Property {
     PageSize(PageSize),
     PageLocked(bool),
     PageHidden(bool),
+    /// The page bleed, 0 to 10 mm (FD-05).
+    Bleed(Length),
+    /// The page margins (FD-05).
+    Margins(Margins),
+    /// The whole guide set of the page, in order (FD-03, FD-04).
+    Guides(GuideSet),
+    /// The page grid settings (FD-07).
+    Grid(GridSettings),
     Dpi(Dpi),
 }
 
@@ -49,6 +59,10 @@ impl Property {
             Self::PageSize(_) => "set_property.page_size",
             Self::PageLocked(_) => "set_property.page_locked",
             Self::PageHidden(_) => "set_property.page_hidden",
+            Self::Bleed(_) => "set_property.bleed",
+            Self::Margins(_) => "set_property.margins",
+            Self::Guides(_) => "set_property.guides",
+            Self::Grid(_) => "set_property.grid",
             Self::Dpi(_) => "set_property.dpi",
         }
     }
@@ -123,9 +137,14 @@ enum Scope {
 impl Property {
     fn scope(&self) -> Scope {
         match self {
-            Self::PageName(_) | Self::PageSize(_) | Self::PageLocked(_) | Self::PageHidden(_) => {
-                Scope::Page
-            }
+            Self::PageName(_)
+            | Self::PageSize(_)
+            | Self::PageLocked(_)
+            | Self::PageHidden(_)
+            | Self::Bleed(_)
+            | Self::Margins(_)
+            | Self::Guides(_)
+            | Self::Grid(_) => Scope::Page,
             Self::Dpi(_) => Scope::Document,
             _ => Scope::Nodes,
         }
@@ -138,6 +157,10 @@ impl Property {
             Self::PageSize(_) => Self::PageSize(page.size),
             Self::PageLocked(_) => Self::PageLocked(page.locked),
             Self::PageHidden(_) => Self::PageHidden(page.hidden),
+            Self::Bleed(_) => Self::Bleed(page.bleed),
+            Self::Margins(_) => Self::Margins(page.margins),
+            Self::Guides(_) => Self::Guides(page.guides.clone()),
+            Self::Grid(_) => Self::Grid(page.grid),
             _ => return None,
         })
     }
@@ -149,9 +172,27 @@ impl Property {
             Self::PageSize(v) => page.size = *v,
             Self::PageLocked(v) => page.locked = *v,
             Self::PageHidden(v) => page.hidden = *v,
+            Self::Bleed(v) => page.bleed = *v,
+            Self::Margins(v) => page.margins = *v,
+            Self::Guides(v) => page.guides.clone_from(v),
+            Self::Grid(v) => page.grid = *v,
             _ => {}
         }
     }
+}
+
+/// The page-layout error `validate()` would raise for `value` at `dpi`;
+/// `Ok` for every other property.
+fn check_layout(page: PageId, value: &Property, dpi: Dpi) -> Result<(), CommandError> {
+    let checked = match value {
+        Property::Bleed(bleed) => check_bleed(*bleed, dpi),
+        Property::Margins(margins) => margins.check(),
+        Property::Guides(guides) => guides.check(),
+        Property::Grid(grid) => grid.check(),
+        _ => Ok(()),
+    };
+    checked
+        .map_err(|error| CommandError::InvalidDocument(ValidationError::PageLayout { page, error }))
 }
 
 /// The page-size error `validate()` would raise for `size` at `dpi`.
@@ -201,8 +242,8 @@ impl SetProperty {
         }
     }
 
-    /// A command that sets a page field (`PageName`, `PageSize`, `PageLocked`
-    /// or `PageHidden`) of `page`.
+    /// A command that sets a page field (`PageName`, `PageSize`, `PageLocked`,
+    /// `PageHidden`, `Bleed`, `Margins`, `Guides` or `Grid`) of `page`.
     pub fn page(page: PageId, value: Property, gesture: Option<GestureId>) -> Self {
         Self::new(page, Vec::new(), value, gesture)
     }
@@ -264,6 +305,7 @@ impl SetProperty {
         if let Property::PageSize(size) = &self.value {
             check_size(self.page, *size, view.dpi())?;
         }
+        check_layout(self.page, &self.value, view.dpi())?;
         let held = self
             .value
             .read_page(page)
