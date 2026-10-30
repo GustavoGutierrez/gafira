@@ -2,14 +2,14 @@
 
 `layout-core` adds page guides, margins, bleed and grid to `gafira-doc`, then creates `gafira-layout` with the primitives of FD-03..07, FD-09 and FD-11 (D-14). This document also settles the shared decisions that block `gafira-text`, `gafira-raster`, `gafira-audio` and `gafira-segment`, so each can get a Slice card.
 
-Evidence: `spike.md`, `spike-layer2.md`, 02 §2, §3, §4.17, §12.3, 04, D-14 to D-34.
+Evidence: `spike.md`, `spike-layer2.md`, `spike-e.md`, 02 §2, §3, §4.17, §12.3, 04, D-14 to D-34.
 
 ## Quick path
 
 1. ADRs 0005 to 0010 are accepted and the two owner questions are answered (see "Owner decisions").
 2. `specifier` applies "Needs specifier". Items S1 to S6 and S8 block `layout-core`.
 3. `tdd-apply` runs D1 to D7 in order. All are serial.
-4. `explorer` settles "Needs explorer" before the changes that depend on each claim.
+4. E1 to E5 are measured (`spike-e.md`). S16 and S17 now block `gafira-text` and `gafira-audio`.
 
 ## Decisions at a glance
 
@@ -25,7 +25,7 @@ Numbered `L1` to `L10` after the ten items of the request. `D-nn` stays the owne
 | L6 | Five new rows listing transitive crates; every engine may use doc; no `layout -> text`, no `testkit -> raster` | ADR 0007 |
 | L7 | `gafira-text` takes plain structs; `RichText` and `TextPath` wait for a later doc change | ADR 0008 |
 | L8 | Raster owns `Tile`, `TileSet`, `AlphaMask` (8-bit, tightly packed). Goldens are PNG. The pool is a `ClassicSegmenter` constructor argument | ADR 0008, ADR 0010, below |
-| L9 | No `half`, no `rstar` now; own resampler; no direct bidi crate; parley without default features, provisional | below |
+| L9 | No `half`, no `rstar` now; own Kaiser sinc resampler; no direct bidi crate; parley with only `std`; `assert_no_alloc`; Noto Sans Arabic and Noto Emoji subsets | below, `spike-e.md` |
 | L10 | `Lab` (D50, CSS Color 4), ΔE76 and ΔE2000 in `gafira-color`, as a separate value type | below |
 
 ## What exists and what changes
@@ -91,22 +91,32 @@ Short form for what stays in this change. The ADRs hold the cross-cutting ones.
 
 ### L9. Third-party choices
 
-Status: proposed. "Read" means read in the cached crate's `Cargo.toml`, not built.
+Status: proposed; measured in `spike-e.md`. "Read" means read in the cached crate's `Cargo.toml`, not built.
 
-| Need | Choice | Status | Explorer |
-|---|---|---|---|
-| `half` | Not now. ARQ-117 leaves `f16` out; it arrives with `gafira-render-gpu`. `half` 2.7.1 is MIT OR Apache-2.0 | Read | No |
-| Spatial index | No `rstar` in the first slice. Each snap axis is a 1-D nearest search over at most thousands of values: a plain scan, with `bench_snap_1000` as the check. 02:1156 keeps it for selection | Decided | No |
-| Resampler | Own polyphase Kaiser-windowed sinc, `f64`. ARQ-128 fixes an exact output length, and a crate would add FFT dependencies for offline constant-ratio work | Provisional | E3 |
-| Bidi | No direct dependency; use the one inside the text stack. Fallback `unicode-bidi` 0.3.18, MIT OR Apache-2.0 | Provisional | E1 |
-| Text stack | `parley` 0.12 with `default-features = false`. Its default `system` feature pulls `windows`, `objc2` and `yeslogic-fontconfig-sys` through `fontique`, against "fonts arrive as bytes" (02:95). Fallback: own layout on `harfrust`, `skrifa`, `icu_segmenter` | Provisional | E1 |
-| Allocation guard (D-18) | `assert_no_alloc` as a dev-dependency of `gafira-audio`, in its own integration test. Fallback `allocation-counter`. Licence not verified | Provisional | E2 |
-| Arabic/Hebrew font (D-19) | Noto Sans Arabic subset: Arabic exercises joining as well as RTL. `assets/fonts/test/`, one `LICENSES.toml` entry | Provisional | E4 |
-| Emoji subset (D-30) | Noto Emoji (monochrome) subset, with U+1F600 and the sequence of FD-41(a) | Provisional | E4 |
-| Golden encoder | `png` in `gafira-testkit` only (ADR 0010). 0.18.1 is MIT OR Apache-2.0 | Read | E5 |
-| Data parallelism | `rayon` in `gafira-segment` only | 02 §9.2 | No |
-| Ring buffer | `rtrb` waits for `gafira-media`; the ARQ-123 to ARQ-129 slice has no consumer | 02 §9.2 | No |
-| Benchmarks | `criterion` as dev-dependency | 02 §9.2 | No |
+| Need | Choice | Status |
+|---|---|---|
+| `half` | Not now. ARQ-117 leaves `f16` out; it arrives with `gafira-render-gpu`. `half` 2.7.1 is MIT OR Apache-2.0 | Read |
+| Spatial index | No `rstar` in the first slice. Each snap axis is a 1-D nearest search over at most thousands of values: a plain scan, with `bench_snap_1000` as the check. 02:1156 keeps it for selection | Decided |
+| Resampler | Own Kaiser-windowed sinc in `f64`, cutoff 0.95× lower Nyquist, stop edge 1.0×, 108 taps at ratio ≥ 1, scaled by 1/ratio (1080 at speed 10). `rubato` 5.0.1 was rejected: it returns 48 001 of 48 000 samples, and only reaches its figures with the stop band measured from 1.1× | Decided (E3) |
+| Text stack | `parley` 0.12 with `default-features = false, features = ["std"]` | Decided (E1) |
+| Bidi | No direct dependency; parley provides it. FD-41(a) pins the visual order in a test | Decided (E1) |
+| Allocation guard (D-18) | `assert_no_alloc` 1.1.2 as a dev-dependency of `gafira-audio`, in its own integration test | Decided (E2) |
+| Arabic/Hebrew font (D-19) | Noto Sans Arabic subset, 267 KB. Arabic exercises joining as well as RTL. `assets/fonts/test/`, one `LICENSES.toml` entry | Decided (E4) |
+| Emoji subset (D-30) | Noto Emoji (monochrome) subset, 6.9 KB | Decided (E4) |
+| Golden encoder | `png` 0.18.1 in `gafira-testkit` only (ADR 0010) | Decided (E5) |
+| Data parallelism | `rayon` in `gafira-segment` only | 02 §9.2 |
+| Ring buffer | `rtrb` waits for `gafira-media`; the ARQ-123 to ARQ-129 slice has no consumer | 02 §9.2 |
+| Benchmarks | `criterion` as dev-dependency | 02 §9.2 |
+
+Consequences of the measurements:
+
+- **`gafira-text` wrapper.** It detects glyph id 0 for the ARQ-116 flag, subtracts parley's spacing after the last cluster of a line (FD-41(e)), compares advance with box width for cluster overflow, and implements columns itself. It passes the stack order explicitly. The FD-41(e) ligature test uses Manrope, because Inter has no `liga`.
+- **Three-platform determinism stays unmeasured.** ARQ-14 needs the CI golden in `gafira-text`. CI runs on `pull_request` and on `push` to `main` only (`.github/workflows/ci.yml`), and ADR 0003 merges to `develop` without a PR. So the coordinator must run the workflow by `workflow_dispatch` on the branch before verify, or the matrix first sees it at the `develop` -> `main` PR.
+- **Budgets.** The E1 timings have a margin near 10×, but were taken on a warm cache and not on D-03 hardware. ARQ-114 benches are still required.
+- **Guard placement.** The guard test sits behind `#[cfg(debug_assertions)]`, since the default `disable_release` removes `AllocDisabler` in release. The negative control, proving the guard catches an allocation, needs a subprocess because an allocation aborts. `std::process::Command` is banned in domain crates under `--all-targets` (`crates/gafira-geom/clippy.toml`), so that control goes in a `gafira-testkit` integration test: testkit has no `clippy.toml`. It needs no `gafira-audio` edge. Negative probes use `black_box`.
+- **Licence exception.** `deny.toml` gets the `[[licenses.exceptions]]` entry in the first `gafira-audio` delivery. cargo-deny 0.20.2 skips dev-only dependencies of private crates, so the entry is never matched, and `unused-license-exception` defaults to a warning. The check stays green; expect that warning, or set the key to `allow` as `unused-allowed-license` already is.
+- **Goldens.** E5 fits ADR 0010, which compares decoded pixels only, so the encoder needs no pin.
+- **Fonts.** Subsets total 584 KB, in `gafira-testkit` tests only. Manrope's upstream repo returned 404, so its entry cites the `google/fonts` copy.
 
 MSRV: `parley`, `fontique` and `icu_segmenter` declare 1.88, below the pinned 1.93.1 (`rust-toolchain.toml`).
 
@@ -158,18 +168,18 @@ Order follows the dependency, not the suggested order of 02 §4.17, which puts t
 
 | # | Change | Product IDs | Depends on | State |
 |---|---|---|---|---|
-| 1 | `layout-core` | FD-03..07, FD-09, FD-11 (first slice) | S1 to S6, S8, ADRs | Ready after those |
-| 2 | `engine-contracts`: `gafira_doc::contract`, `IRect`, `Message`, `MsgArg`, `ToMessage`; retrofit to `LayoutError` and `PathOpError` | ARQ-102 (engines), ARQ-112 (types) | ADR 0005 | Ready after ADR 0005 |
-| 3 | `color-lab` | ARQ-122 (Lab part), ARQ-131 (ΔE76 part) | L10 | Ready after S11 |
-| 4 | `testkit-golden` | ARQ-113 | ADR 0010, E5 | Ready after E5 |
-| 5 | `gafira-text` | FD-41(a, c to j), FD-43(a), FD-44(a, c, d, e), FD-45(a, c, d, e), FD-46(a, b, c, e, f), ARQ-14 (`FitBox`), ARQ-115, ARQ-116 | 2, E1, E4 | Blocked by E1 and E4 |
-| 6 | `gafira-raster` | ARQ-25, ARQ-117 to ARQ-122, FD-12(c, CPU), FD-26, FD-28(b), FD-33(a, d to h), FD-34(a, b), FD-35(a, d) | 2, 3, 4 | Blocked by 2 to 4. Q-34 does not block |
-| 7 | `gafira-audio` | ARQ-23, ARQ-123 to ARQ-129, CAL-15, FV-04(b), FV-10(a, b, d), FV-20(c, d) | 2, E2, E3 | Blocked by E2 and E3 |
+| 1 | `layout-core` | FD-03..07, FD-09, FD-11 (first slice) | S1 to S6, S8, S19 | Ready after those |
+| 2 | `engine-contracts`: `gafira_doc::contract`, `IRect`, `Message`, `MsgArg`, `ToMessage`; retrofit to `LayoutError` and `PathOpError` | ARQ-102 (engines), ARQ-112 (types) | S7, S14 | Ready after those |
+| 3 | `color-lab` | ARQ-122 (Lab part), ARQ-131 (ΔE76 part) | S11 | Ready after S11 |
+| 4 | `testkit-golden` | ARQ-113 | None | Ready now |
+| 5 | `gafira-text` | FD-41(a, c to j), FD-43(a), FD-44(a, c, d, e), FD-45(a, c, d, e), FD-46(a, b, c, e, f), ARQ-14 (`FitBox`), ARQ-115, ARQ-116 | 2, S16 | Blocked by 2 and S16. Determinism is proved inside the change, by CI golden |
+| 6 | `gafira-raster` | ARQ-25, ARQ-117 to ARQ-122, FD-12(c, CPU), FD-26, FD-28(b), FD-33(a, d to h), FD-34(a, b), FD-35(a, d) | 2, 3, 4 | Blocked by 2 and 3 (4 is ready). Q-34 does not block |
+| 7 | `gafira-audio` | ARQ-23, ARQ-123 to ARQ-129, CAL-15, FV-04(b), FV-10(a, b, d), FV-20(c, d) | 2, S17, S18 | Blocked by 2, S17 and S18 |
 | 8 | `gafira-segment` | ARQ-130 to ARQ-132, ARQ-43, CAL-06, FD-32(e), FD-38(a, b, c) | First raster delivery | Blocked by 6 (buffers and `AlphaMask` only) |
 | 9 | `doc-text-node`: `TextNode`, `RichText`, `TextPath` | FD-41(b), FD-46(d), FD-47, FD-49 | 5, S9 | Later |
 | 10 | `layout-reflow` | FD-53, FD-54, FD-05(c) | 5, 9 | Later (D-14) |
 
-Each engine change needs its own delivery table, but serial deliveries from a Slice card need no `architect` (ADR 0002). Text may need one if E1 rejects parley.
+Each engine change needs its own delivery table, but serial deliveries from a Slice card need no `architect` (ADR 0002). E1 kept parley, so text needs none. `gafira-format`, not yet on this list, carries T2, and T1 is checked when it is planned.
 
 Sketch for change 9, not binding: `RichText` is a list of paragraphs, each with runs (`text`, style fields) and an optional list level. `TextPath` is an enum with one MVP variant, `Arc { bend: f32 }`, so the Fase 2 shape path adds a variant.
 
@@ -194,17 +204,17 @@ Both outlive this change. `archive` moves this file, so the coordinator copies t
 | T1 | Revisit ADR 0009 (page-space group children) against the video design for group keyframes | Before the first saving build; a change after that build needs a migration | Coordinator, when `gafira-format` or the first video change is planned, whichever comes first |
 | T2 | Close schema 1: from the first `.gafira`-writing build that reaches a user, any new user-data field bumps the schema (ADR 0006 rule 2) | Closing task of the `gafira-format` change | `gafira-format` Slice card |
 
-## Needs explorer
+## Explorer results
 
-| # | Claim | Blocks | Decision provisional |
-|---|---|---|---|
-| E1 | parley with `default-features = false`: no system font code in `cargo tree -e features`; fonts load from bytes only; the FD-41 rule "first font covering every code point of the cluster" is expressible; ARQ-116 cluster output and per-cluster tracking; column breaking; bidi order; whether `complex-scripts` is needed for Arabic; `bench_text_fit_500` and `bench_text_columns_5000` feasible; same `FitBox` result on 3 platforms; `cargo deny` passes | `gafira-text` | Text stack, bidi |
-| E2 | `assert_no_alloc`: licence passes `deny.toml`, works in an integration test with no `unsafe` of ours, and `#[global_allocator]` compiles under the workspace `unsafe_code = "deny"` and `forbid` | `gafira-audio` | Guard (D-18: if none passes, back to the owner) |
-| E3 | Own sinc resampler meets ARQ-128 (≥ 80 dB, ±0.1 dB to 0.9 Nyquist, speed 0.1 to 10) at a kernel length that is practical; compare with `rubato` on licence and exact output length | `gafira-audio` | Resampler |
-| E4 | Noto Sans Arabic and Noto Emoji: OFL-1.1, Reserved Font Name clause allows a subset without renaming, monochrome outlines present, sequence of FD-41(a) kept in the subset; same RFN check for Inter and Manrope | `gafira-text` | Fonts |
-| E5 | `png` 0.18 tree passes `cargo deny check`; identity read returns stored bytes unchanged for RGBA8 and Gray8 with premultiplied values | `testkit-golden` | ADR 0010 format |
+All five are measured, in `spike-e.md`. None blocks a change.
 
-Not needing a probe: the V5 rows follow from reading the step, and the always-written wire form was measured in `spike.md` experiment A.
+| # | Verdict | Left over |
+|---|---|---|
+| E1 | parley stays, with `features = ["std"]` and a wrapper | Three-platform determinism, by CI golden in `gafira-text`; `.notdef` rule (S16) |
+| E2 | `assert_no_alloc` stays, with the owner's exception | Spec wording (S18) |
+| E3 | Own Kaiser sinc | Tie rule (S17) |
+| E4 | Fonts stay; all OFL 1.1 with no Reserved Font Name | Hebrew not tested, which D-19 does not require |
+| E5 | `png` stays | None |
 
 ## Needs specifier
 
@@ -223,11 +233,17 @@ These edit product specs; this design does not.
 | S9 | 02 §3.2 | Define `RichText`, `TextPath`, `TextAlign`, `VAnchor`, `TextSizing`, `StyleRef` | `doc-text-node` |
 | S10 | 02:503, 04 FD-39, FD-54 | `PaintMask` swaps a `TileSetRef`; `ResizeDesign` receives the reflow result; `gafira-layout::reflow` takes an injected measure function | Later changes |
 | S11 | 02 ARQ-122 | State the Lab white (D50, CSS Color 4) and the ΔE2000 reference pairs | `color-lab` |
-| S12 | 02 §9.2 | Add `png` for testkit, the guard, the test fonts; resampler "propio"; parley with `default-features = false`; `half` deferred | After E1 to E5 |
+| S12 | 02 §9.2 | Add `png` for testkit, `assert_no_alloc`, the test fonts; resampler "propio"; parley with `default-features = false, features = ["std"]`; `half` deferred | `gafira-text`, `gafira-audio` (not blocking) |
 | S13 | 02 §4.7, §6.3 | Pool is a constructor argument of `ClassicSegmenter`; effects run single-threaded per call | `gafira-segment` |
 | S14 | 02 ARQ-102, §14.2 | `gafira-doc::msg` holds only `MessageKey` today: no `Message`, `MsgArg` or `ToMessage`, and no error implements it. Say when existing crates comply | `engine-contracts` |
 | S15 | 02:84 | MSRV says 1.95; `rust-toolchain.toml` pins 1.93.1 and `Cargo.toml` says 1.93 | None |
+| S16 | 04 FD-41, ARQ-116 | Say which font supplies `.notdef` when no font covers a cluster. Proposed, matching parley: the font with the most coverage, ties to the earliest in the stack; uncovered code points use its `.notdef`, and the output flags them | `gafira-text` |
+| S17 | 02 ARQ-128 | The length formula is ambiguous at ties: with `f64` speed it differs from exact in 183 of 8 386 147 grid cases. Proposed: the formula evaluated in `f64` is normative, which is deterministic and needs only IEEE operations | `gafira-audio` |
+| S18 | 02:664, 02 ARQ-23 | The guard aborts on an allocation; it does not `panic`. State that, the debug-only scope, and that the negative control lives in `gafira-testkit` | `gafira-audio` |
+| S19 | 04 FD-05, 02 §4.17.2 | Safe-zone default is fixed at 5 % per side: drop PROPUESTA, which D-34 had left out. `safe_rect` still takes the percentage as an input | `layout-core` D3 |
+| S20 | 02 §9.1, D-18 | Add the BSD-1-Clause exception for `assert_no_alloc`. Correct "toda dependencia nueva pasa `cargo deny`": dev-only dependencies of private crates are not licence-checked, which also covers `png` in testkit, `proptest`, `criterion` and `trybuild` | None |
+| S21 | `00-decisiones.md` | Record the owner decisions of this design as new entries: group children, end of the open schema, the BSD-1-Clause exception, safe zone. This file is the owner's, so the coordinator decides who writes it | None |
 
 ## Next
 
-Run `specifier` for S1 to S6 and S8; then `tdd-apply` for D1. Run `explorer` for E1 to E5 in parallel with that: nothing in `layout-core` depends on them.
+Run `specifier` for S1 to S6, S8 and S19; then `tdd-apply` for D1. `testkit-golden` is ready now and is independent of `layout-core`.
