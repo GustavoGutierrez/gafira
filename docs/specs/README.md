@@ -31,7 +31,7 @@ Desde 2026-10-29 los documentos se ejecutan por la vía rápida (ADR 0002): sin 
 
 ## Pending follow-ups
 
-Recorded 2026-10-26; items 6-9 recorded 2026-10-30. Open items that belong to no active change. Remove an item when done.
+Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30. Open items that belong to no active change. Remove an item when done.
 
 1. **Flaky test** `crates/gafira-testkit/tests/harness.rs::each_broken_law_is_named_with_a_counterexample`. Why: it fails about half the runs with `PROPTEST_CASES=1` (passes unset); accepted as out of scope in the archived change `testkit-oracle` (decision C6). Start: a small test-only change (for example make the broken-law case deterministic or pin its seed/case count), then run it repeatedly with `PROPTEST_CASES=1`.
 2. **Re-enable CI.** Why: workflow `CI` was disabled manually because jobs failed to start (billing). Start: `gh workflow enable 395407504`, then observe the first runs. Unobserved since D5 (owner accepted the risk, decision W2=B): the Windows and macOS matrix and the trybuild `.stderr` fixtures (ARQ-30, R3). Fix whatever fails.
@@ -45,6 +45,12 @@ Recorded 2026-10-26; items 6-9 recorded 2026-10-30. Open items that belong to no
 7. **CI: grep contra `mul_add` en `gafira-anim`.** Why: el determinismo entre plataformas depende de no usar `mul_add`; hoy solo se comprueba a mano. Start: añadir al CI un paso que falle si aparece `mul_add` en `crates/gafira-anim`.
 8. **Test puntual de ARQ-17 con el valor exacto 0.125.** Why: el test de referencia de ARQ-17 usa la misma bisección f64 que el solver, así que comparte su error (unos 4.7e-6 en la raíz triple) y no lo detecta. Start: añadir `CubicBezier { x1: 1, y1: -1, x2: 0, y2: 1 }.apply(0.5)` comparado con 0.125 y tolerancia 1e-5.
 9. **Golden cross-plataforma de `gafira-anim` (ARQ-12) solo en Linux.** Why: `tests/golden/sample.json` solo se ejecuta en local, en Linux, mientras CI está desactivado; Windows y macOS no lo comprueban. Start: cubierto por el follow-up 2 (re-activar CI); no duplicar.
+10. **Contradicción de enmienda del Light spec.** Why: `coordinator.md` prohíbe enmendar el Light spec tras empezar la implementación, mientras `verify.md` (paso 3b) y `coordinator.md` para la Slice card permiten una enmienda en commit aparte. Start: alinear la regla del Light spec con la de la Slice card.
+11. **`verification.json` sin campo `follow-up`.** Why: el coordinador debe pasar esos avisos a `archive`, pero el esquema no tiene el campo. Start: añadir el campo al esquema de `verify.md`.
+12. **La lista de mutantes a mano no se hace cumplir.** Why: nada falla si llega código crítico sin lista. Start: decidir una comprobación en G3 o en `verify`.
+13. **T4 de los paquetes light no cubierto por G5.** Why: el T4 de los paquetes light (corrección de bug, refactor) no está cubierto por G5, y `AGENTS.md` omite `mutants` en la tabla del modo light. Start: alinear G5 y la tabla.
+14. **Ruta de un arreglo de T4 cuando la entrega ya está en `develop`.** Why: no se indica qué rama usar. Start: fijarla en la ruta del coordinador.
+15. **`CARGO_INCREMENTAL=0` eliminado de `mutants.md` sin medir.** Why: se quitó sin medir el efecto. Start: comprobar si las compilaciones por trabajo son incrementales.
 
 ## Promover un documento del backlog
 
