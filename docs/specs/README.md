@@ -14,7 +14,7 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 | `00-decisiones.md` | Vigente (no ejecutable) | Registro de decisiones del titular; prevalece sobre 01-05. No se promueve ni se archiva. |
 | `backlog/01-producto-y-calidad.md` | Backlog | Producto, calidad y criterios de aceptación. |
 | `backlog/03-diseno-visual-e-interaccion.md` | Backlog | Tokens, modo oscuro, glosario ES+EN, wireframes. |
-| `backlog/04-funcionalidad-diseno-imagen-exportacion.md` | Backlog | Diseño, imagen y exportación. |
+| `04-funcionalidad-diseno-imagen-exportacion.md` | En curso | Diseño, imagen y exportación. Promovido porque la capa 2 de 02 lo necesita: 02 no tiene criterios de aceptación para `gafira-layout` y sí los tiene 04 (FD-03 a FD-07, FD-09, FD-11, FD-53, FD-54). |
 | `backlog/05-funcionalidad-video-y-distribucion.md` | Backlog | Video y distribución. |
 | `backlog/06-licencia-y-activacion.md` | Backlog | Licencia y activación. |
 | `archive/` | Archivados | Ninguno todavía. |
