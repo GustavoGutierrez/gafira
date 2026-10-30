@@ -82,8 +82,9 @@ mod tests {
 
     use crate::document::test_document;
     use crate::{
-        Document, Dpi, ElementBase, ExtensionNode, GroupNode, LoadError, Node, NodeId, NodeKind,
-        Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode, ValidationError,
+        Document, Dpi, ElementBase, ExtensionNode, GridStyle, GroupNode, Guide, GuideAxis,
+        GuideSet, LoadError, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement,
+        ShapeGeometry, ShapeNode, ValidationError,
     };
 
     fn px(w: f64, h: f64) -> PageSize {
@@ -121,6 +122,11 @@ mod tests {
             concat!(
                 r#"{"schema_version":1,"next_id":3,"dpi":96,"pages":[{"id":1,"name":"P","#,
                 r#""size":{"width":{"value":100.0,"unit":"px"},"height":{"value":200.0,"unit":"px"}},"#,
+                r#""bleed":{"value":0.0,"unit":"mm"},"margins":{"top":{"value":0.0,"unit":"px"},"#,
+                r#""right":{"value":0.0,"unit":"px"},"bottom":{"value":0.0,"unit":"px"},"#,
+                r#""left":{"value":0.0,"unit":"px"},"linked":true},"guides":[],"#,
+                r#""grid":{"visible":false,"step":{"value":10.0,"unit":"px"},"subdivisions":1,"#,
+                r#""style":"lines","snap":true},"#,
                 r#""locked":false,"hidden":false,"roots":[],"nodes":[]}]}"#
             )
         );
@@ -291,6 +297,24 @@ mod tests {
             payload: serde_json::json!({"b": [1, 2.5, null], "a": "é"}),
         };
         let mut page = Page::new(PageId::new(1), "Cover".to_string(), px(100.0, 200.0));
+        page.bleed = Length::new(3.0, Unit::Mm);
+        page.margins.linked = false;
+        page.margins.left = Length::new(12.5, Unit::Mm);
+        page.guides = GuideSet(vec![
+            Guide {
+                axis: GuideAxis::Vertical,
+                position: Length::new(50.0, Unit::Px),
+                locked: false,
+            },
+            Guide {
+                axis: GuideAxis::Horizontal,
+                position: Length::new(-2.5, Unit::Cm),
+                locked: true,
+            },
+        ]);
+        page.grid.visible = true;
+        page.grid.style = GridStyle::Dots;
+        page.grid.subdivisions = 4;
         let nodes = [
             Arc::new(group),
             Arc::new(shaded),
