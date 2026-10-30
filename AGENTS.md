@@ -53,7 +53,7 @@ After two consecutive FAILs of the same class on one delivery the coordinator st
 | Build one delivery with strict TDD | `tdd-apply` (Sonnet) | commits + `openspec/changes/<change>/apply-progress.md` |
 | Mutation-test per the Flow line's `mutation` (default: whole crate at change close; per delivery only with `delivery`); report surviving mutants (read-only) | `mutants` (Sonnet) | report in the session scratchpad, outside the repo |
 | Check gates and every requirement/scenario | `verify` (Opus) | `openspec/changes/<change>/verify-report.md`, PASS or FAIL |
-| Close the change (PASS and all deliveries done) | `archive` (Haiku) | change moved to `openspec/changes/archive/`; fast lane: status table in `docs/specs/README.md` updated with the covered IDs; delta specs (when present) merged into `openspec/specs/` |
+| Close the change (PASS and all deliveries done) | `archive` (Haiku) | change moved to `openspec/changes/archive/`; fast lane: status table in `docs/specs/README.md` updated with the covered IDs; delta specs (when present) merged into `openspec/specs/`; any mode: follow-up WARNINGs appended to the follow-up list of `docs/specs/README.md` |
 | Update, extend or regenerate the technical manual (`docs/manuals/tecnico/`), English first with a Spanish mirror | `manual-writer` (Sonnet) | edited chapters in both languages, `manual.py check` and `build` evidence, `docs(manual)` commits |
 
 When deliveries remain, go back to `tdd-apply`. On FAIL, the coordinator routes each finding by its `class:` (see the feedback loop above and `.agents/agents/coordinator.md`).
