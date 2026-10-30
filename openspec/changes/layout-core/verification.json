@@ -1,31 +1,17 @@
-{ "schema": 1, "change": "layout-core", "delivery": "D1", "rounds": [
+{ "schema": 1, "change": "layout-core", "delivery": "D2", "rounds": [
   {
-  "round": 1, "commit": "9bff7a0", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply",
-  "counts": {"critical": 2, "warning": 3, "suggestion": 1},
+  "round": 1, "commit": "ad865cc", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "specifier, tdd-apply",
+  "counts": {"critical": 3, "warning": 1, "suggestion": 2},
   "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/layout.rs:GridSettings.style", "summary": "ADR 0006 rule 4: a grid without style fails to load (missing field) instead of reading as Lines"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/layout.rs:GridStyle", "summary": "Hand mutant H3 survives: no test pins that an unknown GridStyle fails to load (ADR 0006 rule 4)"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/src/layout.rs", "summary": "Other nested fields with stated defaults (grid fields, margins.linked, guide.locked) fail when absent (02 3.5, L1)"},
-    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/tests/layout.rs", "summary": "Old-bytes test checks only that output contains bleed, not the canonical re-save ADR 0006 asks for; behaviour is correct"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-edit/src/budget.rs:page_bytes", "summary": "Follow-up to D2: history estimate ignores guides (304 bytes with 0 or 10 000 guides)"}
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-edit/src/set_property.rs:check_pages", "summary": "Property::Dpi skips the bleed check: 100 px bleed, 300 to 96 DPI leaves an invalid document that from_json refuses (ARQ-13)"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/validate.rs:check_pages", "summary": "Hand mutant H2 survives: layout validated on the first page only; no multi-page test"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/validate.rs:check_pages", "summary": "Hand mutant H1 survives: layout step before page sizes; L1 order has no test"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "FD-05(d), 02 4.17.2", "summary": "10 mm in px rejected at 550 of 10000 DPIs by rounding, none common; spec states no tolerance for a converted value"}
   ],
   "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
   "mutation": null,
-  "hand_mutants": {"run": 4, "killed": 3},
-  "criteria": {"total": 13, "covered": 11},
-  "size": {"lines": 505, "forecast": 460},
-  "report": "verify-report.md" },
-  {
-  "round": 2, "commit": "25a2b63", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "PASS", "next": "tdd-apply",
-  "counts": {"critical": 0, "warning": 1, "suggestion": 1},
-  "findings": [
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-edit/src/budget.rs:page_bytes", "summary": "Open, follow-up deferred to D2: history estimate ignores guides"}
-  ],
-  "closed": ["C1", "C2", "W1", "W2"],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 1, "killed": 1},
-  "criteria": {"total": 13, "covered": 13},
-  "size": {"lines": 601, "raw_lines": 713, "forecast": 460},
+  "hand_mutants": {"run": 4, "killed": 2},
+  "criteria": {"total": 15, "covered": 12},
+  "size": {"lines": 1157, "forecast": 420},
   "report": "verify-report.md" }
 ] }
