@@ -134,7 +134,8 @@ gafira-color ┘                     │
         gafira-pathops  gafira-text  gafira-layout  gafira-raster  gafira-audio  gafira-segment
                  (cada motor puede depender de geom, color y doc; audio, también de time; ADR 0007.
                   Únicas aristas entre motores: text → pathops y segment → raster.
-                  Sin layout → text, testkit → raster, doc → time, audio → anim ni raster → anim)
+                  Sin layout → text, testkit → raster, doc → time, audio → anim ni raster → anim.
+                  Aquí a → b significa que a depende de b. Hoy gafira-doc solo depende de geom y color)
                                    │
                                    ▼
                               gafira-ports  ◄── todos los adaptadores
@@ -1518,7 +1519,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | proptest, criterion, insta | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas | — |
 | trybuild | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas de compilación de ARQ-30 en `gafira-edit` | — |
 | assert_no_alloc | 1.1.2 | BSD-1-Clause | VERIFICADA a mano, con excepción por crate (§9.1, D-37). Solo `dev-dependency`; `cargo-deny` no la comprueba | Guardia de asignación (ARQ-23) | — |
-| png | 0.18 | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | Golden de píxeles, solo en `gafira-testkit` (ADR 0010) | — |
+| png | 0.18 | MIT/Apache-2.0 | Pasa `cargo deny` (spike E5); ver la nota de dependencias de desarrollo de §9.1 | Golden de píxeles, solo en `gafira-testkit` (ADR 0010) | — |
 | Fuentes de prueba: subconjuntos de Inter, Manrope, Noto Sans Arabic y Noto Emoji | — | OFL-1.1, sin nombre de fuente reservado | VERIFICADA (spike E4 de `layout-core`). Se registran en `assets/LICENSES.toml` (ARQ-115) | Pruebas de `gafira-text` | — |
 | half | — | MIT OR Apache-2.0 | Diferido: llega con `gafira-render-gpu`, porque ARQ-117 deja `f16` fuera | Búferes `f16` | — |
 | Remuestreador | — | Propio | Sinc con ventana de Kaiser, sin tercero (spike E3) | ARQ-128 | — |
