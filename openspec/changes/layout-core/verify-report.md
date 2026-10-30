@@ -1,8 +1,12 @@
 # Verify report: layout-core D1
 
-Change `layout-core`, delivery D1, round 1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding). Commit verified: `9bff7a0`. Verdict: **FAIL**.
+Change `layout-core`, delivery D1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
 
-Counts: 2 CRITICAL, 3 WARNING, 1 SUGGESTION. Per class: implementation 5 (2 CRITICAL, 3 WARNING); architecture 0; ambiguity 0; claim 0.
+Current state: round 2 at `25a2b63`, **D1 PASS**, with D2 to D7 remaining, so the change is not done. 0 CRITICAL, 1 WARNING (W3, deferred to D2), 1 SUGGESTION (S1, deferred to D2). See "Round 2" at the end.
+
+## Round 1
+
+Commit verified: `9bff7a0`. Verdict: **FAIL**. Counts: 2 CRITICAL, 3 WARNING, 1 SUGGESTION. Per class: implementation 5 (2 CRITICAL, 3 WARNING); architecture 0; ambiguity 0; claim 0. The sections below keep the round 1 record.
 
 ## CRITICAL
 
@@ -83,5 +87,42 @@ Run 4, killed 3.
 ## Probes (step 1c)
 
 Written from the specs before reading the implementer's tests. 11 probes: 10 pass, 1 fails (C1). They cover old documents, each field absent alone, nested partial objects, closed enums and malformed values, unknown keys dropped inside the new types, key order and wire shape, exact bits in every unit, order and duplicates, fixture re-save, and out-of-range values kept.
+
+## Round 2 (closure)
+
+Commit verified: `25a2b63`. Verdict: **D1 PASS**. Counts: 0 CRITICAL, 1 WARNING, 1 SUGGESTION. Per class: implementation 1 (WARNING); architecture 0; ambiguity 0; claim 0. No new finding. No new probes or independent mutants; only the round 1 probe file and H3 were re-run, to prove closure.
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 | Closed | `adr_0006_rule_4_grid_without_style_loads_as_lines` now passes; the fix adds container-level `#[serde(default)]` on `GridSettings`; `fd_07_each_absent_grid_field_reads_its_default` pins it |
+| C2 | Closed | H3 re-applied: `cargo test -p gafira-doc` fails on `adr_0006_unknown_enum_values_fail_to_load`; `closed_enums_reject_unknown` passes on the fix |
+| W1 | Closed | `grid` without any one field, `grid: {}`, `margins` without `linked` and a guide without `locked` all load. `margins: {}` still fails, as round 1 allowed: the sides have no read default, like `Placement` |
+| W2 | Closed | `adr_0006_old_bytes_resave_in_the_canonical_form` compares minimal and extension bytes with the goldens, and full with its golden except page 1 layout data; the `contains("bleed")` check is gone |
+| W3 | Open, deferred to D2 | class: `implementation`, follow-up. `budget.rs` unchanged; deferred by the coordinator |
+| S1 | Open, deferred to D2 | Deferred by the coordinator |
+
+Criteria: 13 of 13 covered (8 and 9 closed by C1 and C2; 11 no longer weak).
+
+Gates, on a clean clone at `25a2b63`: fmt 0, clippy 0, test 0 (896 passed, 0 failed), CI policy 0, `cargo deny --offline check` 0.
+
+Artifact integrity:
+
+- `f08d005` touches only `apply-progress.md`, and the card block at HEAD is identical to that commit.
+- `828c4e4` touches only `verify-report.md` and `verification.json`.
+- `25a2b63` adds 11 lines to `apply-progress.md` and removes none. It records the correction of "Deviations: none" as an appended note.
+- No `.cargo/mutants.toml` change.
+
+Size, measured with `git diff --numstat develop 25a2b63`:
+
+| Part | Insertions |
+|---|---|
+| `.rs` code and tests | 553 |
+| Goldens and fixtures | 6 |
+| `apply-progress.md` notes | 42 |
+| Slice card | 9 |
+| Verify artifacts | 103 |
+| Total | 713 |
+
+The total of 713 is confirmed, but the verify artifacts are 103 lines, not the 160 in the coordinator's note. Without the verify artifacts and the card the delivery is 601 lines, not 544. It stays under ~700, so the conclusion holds. Against the 460 forecast it is 141 lines over. No finding.
 
 next: tdd-apply

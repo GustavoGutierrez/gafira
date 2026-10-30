@@ -1,4 +1,5 @@
-{ "schema": 1, "change": "layout-core", "delivery": "D1", "rounds": [ {
+{ "schema": 1, "change": "layout-core", "delivery": "D1", "rounds": [
+  {
   "round": 1, "commit": "9bff7a0", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply",
   "counts": {"critical": 2, "warning": 3, "suggestion": 1},
   "findings": [
@@ -13,4 +14,18 @@
   "hand_mutants": {"run": 4, "killed": 3},
   "criteria": {"total": 13, "covered": 11},
   "size": {"lines": 505, "forecast": 460},
-  "report": "verify-report.md" } ] }
+  "report": "verify-report.md" },
+  {
+  "round": 2, "commit": "25a2b63", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 1, "suggestion": 1},
+  "findings": [
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-edit/src/budget.rs:page_bytes", "summary": "Open, follow-up deferred to D2: history estimate ignores guides"}
+  ],
+  "closed": ["C1", "C2", "W1", "W2"],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 1, "killed": 1},
+  "criteria": {"total": 13, "covered": 13},
+  "size": {"lines": 601, "raw_lines": 713, "forecast": 460},
+  "report": "verify-report.md" }
+] }
