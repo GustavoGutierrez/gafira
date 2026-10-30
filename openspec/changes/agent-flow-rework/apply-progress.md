@@ -14,6 +14,13 @@ Acceptance criteria (type = manual: read the named file; command: grep):
 Plan: 1 `tdd-apply.md`; 2 `verify.md`; 3 `specifier.md`; 4 `mutants.md`; 5 `coordinator.md`; 6 `AGENTS.md`; 7 record measured lines under this block. Small, one commit per concern, conventional commits, no AI attribution.
 Risk and reversibility: low, text only, revert by commit.        Owner decisions touched: none (process change approved by the owner on 2026-10-29).
 Escalation triggers watched: ambiguity, public API/format, domain invariant, size, architecture
+Flow-change: light stays light (trigger: verify round 1 ambiguity findings W1, W2, W4 would raise to standard; decided-by: owner on 2026-10-30, resolved below; risk accepted: no `specifier` pass, the owner reviews at merge)
+Amendment (verify round 1 FAIL; why: AC1 was narrowed by the coordinator's brief and the round rules left gaps the owner has now settled):
+  AC1a The hand-mutant list applies to all critical code in any mode; no light-mode exclusion in `coordinator.md`, `tdd-apply.md` or `AGENTS.md`. [manual]
+  AC8 Given a critical T4 survivor fixed after T4, Then the coordinator re-runs T4 on that crate and gives `verify` the new report; closure of a survivor is proved only by that report. [manual]
+  AC9 Given a follow-up WARNING in any mode or mutation value, Then it is recorded in the follow-up list of `docs/specs/README.md` when the change closes; "covered by T4" is no longer a condition for it being non-blocking. [manual]
+  AC10 Given a closure round, Then `verify` still runs the gates and the artifact-integrity checks (Light spec or Slice card commit touches only that file; no implementer commit changed it). [manual]
+  AC11 Given ADR 0001's superseded V2 and T1 hand-mutant budget, Then a new ADR 0004 (status `proposed` until the owner confirms) supersedes those lines, without editing accepted ADRs, and `docs/manuals/tecnico/` (English and Spanish) states the new budget. [manual]
 
 ## Progress
 Commits:
