@@ -215,7 +215,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-48 | Clave de color con tolerancia, supresión de derrame y ajuste de bordes. | RF-08 | F2 | `Effect` | 05 §B |
 | RF-49 | Seguimiento básico y Estabilizar (opcional). | RF-08 | F2 | `Effect` | 05 §B |
 | RF-50 | Corrección de color: LUT `.cube`, Curvas RGB, Ruedas, Balance de blancos, Medidores y comparación antes/después. | RF-08 | F2 | `LutTransform`, `ColorTransform` | 05 §B |
-| RF-51 | Audio avanzado: Mezclador de hasta 16 pistas, Ecualizador de 3 bandas, Puerta de ruido (`NoiseGate`), Compresor, Limitador, Reducir ruido, *time-stretch* (`TimeStretch`), Nivelar y medidor de sonoridad EBU R128. | RF-08 | F2 | ARQ-23, 02 §4.9 | 05 §B |
+| RF-51 | Audio avanzado: Mezclador de hasta 16 pistas, Ecualizador de 3 bandas (procesadores `Eq3Band` y `Pan`: MVP en `gafira-audio`, D-22; su interfaz, F2), Puerta de ruido (`NoiseGate`), Compresor, Limitador, Reducir ruido, *time-stretch* (`TimeStretch`), Nivelar y medidor de sonoridad EBU R128. | RF-08 | F2 | ARQ-23, 02 §4.9 | 05 §B |
 | RF-52 | Importar y exportar SRT y VTT. | §2.3 | F2 | `gafira-captions` | 05 §B |
 | RF-53 | Copias ligeras: generación automática y manual para material de alta resolución; la exportación usa siempre el original. | RF-08 | MVP (motor) / F2 (gestión) | §6.5 de 02 | 05 §B |
 | RF-54 | Exportación con control de códec, bitrate, fps, resolución, rango de color, audio y metadatos. | RF-08, RF-09 | F2 | `EncoderConfig` | 05 §B |
