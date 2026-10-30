@@ -312,6 +312,42 @@ Fecha: 30 de octubre de 2026.
 - **Quedan fuera**: las fórmulas de FD-33 (Q-34) y las cifras que ya eran PROPUESTA antes de esa fecha, como la Zona de seguridad del 5 % de FD-05.
 - Aplicado a 02 (§4.17, §12.2) y 04.
 
+## D-35 Hijos de grupo en espacio de página
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: la `Placement` de todo nodo está en espacio de página, también la de los hijos de un grupo (ADR 0009).
+- **Revisión**: esta decisión se revisa frente al diseño de video antes de la primera build que guarde archivos. Un cambio posterior exige una migración.
+- Aplicado a 02 (§3.2) y 04 (FD-06, FD-13).
+
+## D-36 Fin del esquema 1 abierto
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el esquema 1 sigue abierto hasta que la primera build que escriba `.gafira` llegue a un usuario (ADR 0006). Desde entonces, un campo nuevo con datos de usuario sube el esquema.
+- Aplicado a 02 (§3.1).
+
+## D-37 Excepción de licencia de `assert_no_alloc`
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: `assert_no_alloc` tiene licencia BSD-1-Clause, que no está en la lista permitida. Se admite con una excepción por crate, con su motivo, en `deny.toml`.
+- **Efecto sobre D-18**: resuelve la comprobación de licencia que D-18 dejó como VERIFICAR. `unsafe` sigue prohibido en el código propio.
+- Aplicado a 02 (§9.1, §9.2).
+
+## D-38 Zona de seguridad por defecto
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: la Zona de seguridad por defecto es del 5 % por lado. Las zonas de video vertical por plataforma siguen en VERIFICAR.
+- Aplicado a 02 (§4.17.2) y 04 (FD-05).
+
+## D-39 ADR 0005 a 0010
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: el titular acepta los ADR 0005 a 0010 (`docs/adr/`).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
