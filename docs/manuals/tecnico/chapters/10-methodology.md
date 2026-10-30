@@ -7,7 +7,7 @@
 | Flow modes, packs, gates G0 to G5, verify depths V0 to V3, mutation tiers T0 to T4 | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0001-flow-modes-and-packs.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | Fast lane: spec-direct execution with a Slice card, the `mutation` toggle, V1/V2 verify defaults | **Implemented** (accepted decision; supersedes parts of ADR 0001) | `docs/adr/0002-fast-lane.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | `verification.json` | **Implemented** as a pilot; the review point is the archive of the next change that uses it | ADR 0001 decision record 5, `.agents/agents/verify.md` |
-| Hand-mutant split between `tdd-apply` and `verify`, closure rounds, T4 survivor closure | **Implemented** in the agent definitions; the decision record is **proposed** | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
+| Hand-mutant split between `tdd-apply` and `verify`, closure rounds, T4 survivor closure | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archive of a light or fast-lane run without delta merge | **Implemented** | ADR 0001 decision record 6, ADR 0002 section 6, `.agents/agents/archive.md` |
 
 ## Lite SDD

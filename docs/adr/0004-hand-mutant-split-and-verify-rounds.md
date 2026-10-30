@@ -1,7 +1,7 @@
 # 0004. Hand-mutant split and bounded verify rounds
 
-- Status: proposed
-- Date: 2026-10-30
+- Status: accepted
+- Date: 2026-10-30 (proposed and accepted the same day)
 - Related: ADR 0001 (supersedes the lines named below), ADR 0002 (extends section 1), `.agents/agents/`, `AGENTS.md`, changes `anim-core`, `agent-flow-rework`
 
 ## Context
