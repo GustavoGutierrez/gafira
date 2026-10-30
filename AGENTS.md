@@ -84,7 +84,7 @@ cargo test --workspace --locked
 
 ## Delivery rules
 
-- Measure each delivery with `git diff --shortstat`; the ceiling is ~700 lines, and above it needs the owner's explicit OK. Estimates undershoot (measured x1.4 to x1.9 over forecast, mostly tests): apply x1.4 to forecasts; a forecast x1.4 above ~300 lines leaves light mode. At most three verify rounds per delivery, and a stop after two consecutive FAILs of the same class; round 1 is the only one with independent probes and mutants, later rounds check closure of earlier findings (`verify`). These are signals for the coordinator to stop and ask, not hard blocks.
+- Measure each delivery with `git diff --shortstat`; the ceiling is ~700 lines, and above it needs the owner's explicit OK. Estimates undershoot (measured x1.4 to x1.9 over forecast, mostly tests): apply x1.4 to forecasts; a forecast x1.4 above ~300 lines leaves light mode. At most three verify rounds per delivery, and a stop after two consecutive FAILs of the same class; round 1 is the only one with independent probes and mutants, later rounds run the gates and artifact-integrity checks and check closure of earlier findings (`verify`). These are signals for the coordinator to stop and ask, not hard blocks.
 - Deliveries cut at commit boundaries; each prefix passes the gates alone.
 - Conventional commits, no AI attribution lines.
 - Branches (ADR 0003): `main` is released and stable; `develop`, created from `main`, is the integration branch. They are the only long-lived branches. Every change and delivery is a short-lived branch cut from `develop` (`feat/<change>-<delivery>`, `docs/...`, `chore/...`).
