@@ -7,6 +7,7 @@
 | Flow modes, packs, gates G0 to G5, verify depths V0 to V3, mutation tiers T0 to T4 | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0001-flow-modes-and-packs.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | Fast lane: spec-direct execution with a Slice card, the `mutation` toggle, V1/V2 verify defaults | **Implemented** (accepted decision; supersedes parts of ADR 0001) | `docs/adr/0002-fast-lane.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | `verification.json` | **Implemented** as a pilot; the review point is the archive of the next change that uses it | ADR 0001 decision record 5, `.agents/agents/verify.md` |
+| Hand-mutant split between `tdd-apply` and `verify`, closure rounds, T4 survivor closure | **Implemented** in the agent definitions; the decision record is **proposed** | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archive of a light or fast-lane run without delta merge | **Implemented** | ADR 0001 decision record 6, ADR 0002 section 6, `.agents/agents/archive.md` |
 
 ## Lite SDD
@@ -32,7 +33,7 @@ The mode of a request (next section) decides which stages run. `mutants` runs ac
 | Close the change after PASS and all deliveries done | `archive` | Change moved to `openspec/changes/archive/`; fast lane: status table in `docs/specs/README.md` updated with the covered IDs; delta specs, when present, merged into `openspec/specs/` |
 | Edit the technical manual, English first with a Spanish mirror | `manual-writer` | Chapters in both languages, `manual.py check` and `build` evidence |
 
-`verify` runs the local gates, maps every criterion to a test or a command, reads the mutant report when a run happened and writes a verdict with numbered findings (critical, warning, suggestion). A FAIL opens a fix round: `tdd-apply` writes the tests first and records the round in `apply-progress.md`, then `verify` runs again.
+`verify` runs the local gates, maps every criterion to a test or a command, reads the mutant report when a run happened and writes a verdict with numbered findings (critical, warning, suggestion). A FAIL opens a fix round: `tdd-apply` writes the tests first and records the round in `apply-progress.md`, then `verify` runs again. Round 1 is the only round with independent probes and hand mutants; later rounds are closure rounds (see [Verify rounds](#verify-rounds)).
 
 ## Flow modes and packs
 
@@ -166,8 +167,22 @@ The depth sets how much independent work `verify` does. `verify` never edits sou
 |---|---|
 | V0 | No agent. The coordinator runs the deterministic checks of the pack (links, `manual.py check`, `cargo fmt --check`, `git diff --stat`) and reports them verbatim |
 | V1 | Gates at HEAD; each acceptance criterion mapped to a test or a command; PASS or FAIL |
-| V2 | V1, plus probe checks derived from the criteria before reading the implementer's tests, hand mutants (at most 5, at most 3 in light mode) on a scratch export, findings classified by `class:` |
+| V2 | V1, plus probe checks derived from the criteria before reading the implementer's tests, round 1 only: one spot-check of the `tdd-apply` hand-mutant list plus 2 to 3 independent hand mutants on a scratch export (see [Hand mutants](#hand-mutants)), findings classified by `class:` |
 | V3 | Only on owner request: V2, plus per-commit gates on clean exports, negative runs for CI policy and the full requirement and scenario matrix |
+
+### Verify rounds
+
+Round 1 is the first `verify` of a delivery and the only round that runs the independent probes and the independent hand mutants. Rounds 2 and later are closure rounds.
+
+| Round | What `verify` does |
+|---|---|
+| 1 | Gates, criteria map, independent probes and hand mutants (V2 and V3) |
+| 2+ (closure) | Gates, artifact-integrity checks and closure of earlier findings only; no independent-mutant budget |
+
+- A `verify` after a fix round, after a T4 fix round, or the change-level final `verify` is a closure round, unless the coordinator says it is the first verify of that code.
+- A new test gap found after round 1 is a WARNING of class `implementation` marked `follow-up`. It does not block, in any mode and whatever the `mutation` value, and costs no round. The coordinator lists it for the owner and `archive` appends it to the follow-up list of `docs/specs/README.md`.
+- A real code defect shown by a probe, a gate failure and a critical survivor in the newest `mutants` report are CRITICAL in any round.
+- A critical T4 survivor goes to `tdd-apply`, then T4 runs again on that crate, then a closure-round `verify` reads the new report. Only that new report proves closure; a stale report leaves the survivor CRITICAL.
 
 ### verification.json
 
@@ -182,7 +197,7 @@ Tiers set how much of the code `mutants` and `verify` mutate. The [tooling chapt
 | Tier | Scope | Applies to |
 |---|---|---|
 | T0 | None | No Rust source touched |
-| T1 | Hand mutants by `verify` only, at most 3 to 5 | Tiny changes on non-critical code |
+| T1 | Hand mutants by `verify` only: 2 to 3 independent mutants | Tiny changes on non-critical code |
 | T2 | `cargo mutants --in-diff`: changed lines | `mutation: delivery`, deliveries that change Rust |
 | T3 | `--file` per changed non-test source file | `mutation: delivery`; deliveries that edit an existing critical file |
 | T4 | Whole crate | Change close, before archive, for every crate the change touched; the default (`mutation: archive`) |
@@ -195,9 +210,21 @@ The `mutation` field of the `Flow:` line selects when `cargo-mutants` runs (ADR 
 
 | Value | Effect |
 |---|---|
-| `archive` (default) | No per-delivery run. One T4 run per touched crate when the change closes, before archive. A critical survivor goes back to `tdd-apply`, then the final `verify` |
+| `archive` (default) | No per-delivery run. One T4 run per touched crate when the change closes, before archive. A critical survivor goes back to `tdd-apply`, then T4 runs again on that crate, then a closure-round `verify` reads the new report |
 | `delivery` | T2 or T3 per delivery (`--iterate` on test-only fix rounds), plus T4 at close. Only on owner request, or when the coordinator flags a new rule on critical code |
-| `off` | No `cargo-mutants`. The hand mutants of `verify` at V2 still apply |
+| `off` | No `cargo-mutants`. The hand mutants of `tdd-apply` and `verify` still apply |
+
+### Hand mutants
+
+Hand mutants show that a test can fail. Their budget is split between the two agents, in any mode and whatever the `mutation` value. Neither part replaces T4.
+
+| Agent | Hand-mutant work |
+|---|---|
+| `coordinator` | On critical code, gives `tdd-apply` a rule-level list: each item names a spec rule and its wrong behavior, with no code |
+| `tdd-apply` | Applies each item, confirms a test fails, reverts it and records the item and its killing test in `apply-progress.md`; a survivor needs a new test, an item that cannot be applied is `blocked`, and `done` needs every item killed |
+| `verify` (V2 and V3, round 1) | Does not repeat the list. Spot-checks one item by applying it and confirming the recorded test fails, then adds 2 to 3 independent hand mutants chosen from the spec rules |
+
+With no recorded list there is no spot-check, and the 2 to 3 independent mutants still apply. Tier T1 relies on them alone. A hand-mutant survivor is class `implementation`, and CRITICAL in critical code.
 
 ## Control of the cycle
 
@@ -217,7 +244,7 @@ A mixed report goes upstream first: ambiguity, then architecture, then implement
 ### Loop limits
 
 - After two consecutive FAILs of the same class on one delivery, the coordinator stops and asks the owner, with one question and a recommendation.
-- A delivery has at most three verify rounds across classes. A fourth round is an owner decision.
+- A delivery has at most three verify rounds across classes. A fourth round is an owner decision. A T4 fix cycle counts as one verify round of the change's last delivery.
 - In light mode the second FAIL of any class upgrades the mode instead.
 - The coordinator never self-approves a FAIL, waives a finding or raises a cap silently. Owner-only items (decisions in `docs/specs/00-decisiones.md`, merges, pricing, license, scope) are never routed to an agent.
 

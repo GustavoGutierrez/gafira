@@ -7,6 +7,7 @@
 | Modos de flujo, packs, puertas G0 a G5, profundidades de verify V0 a V3, niveles de mutación T0 a T4 | **Implementado** (decisión aceptada; las definiciones de los agentes la siguen) | `docs/adr/0001-flow-modes-and-packs.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | Carril rápido: ejecución directa de la spec con Slice card, el interruptor `mutation`, valores por defecto V1/V2 de verify | **Implementado** (decisión aceptada; sustituye partes del ADR 0001) | `docs/adr/0002-fast-lane.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | `verification.json` | **Implementado** como piloto; el punto de revisión es el archivado del siguiente change que lo use | ADR 0001 registro de decisiones 5, `.agents/agents/verify.md` |
+| Reparto de mutantes manuales entre `tdd-apply` y `verify`, rondas de cierre, cierre de supervivientes de T4 | **Implementado** en las definiciones de los agentes; el registro de decisión está **propuesto** | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archivado de una ejecución ligera o de carril rápido sin fusión de deltas | **Implementado** | ADR 0001 registro de decisiones 6, ADR 0002 sección 6, `.agents/agents/archive.md` |
 
 ## SDD ligero
@@ -32,7 +33,7 @@ El modo de una solicitud (sección siguiente) decide qué etapas se ejecutan. `m
 | Cerrar el change tras PASS y con todas las entregas hechas | `archive` | El change pasa a `openspec/changes/archive/`; carril rápido: tabla de estado de `docs/specs/README.md` actualizada con los IDs cubiertos; las delta specs, si existen, se fusionan en `openspec/specs/` |
 | Editar el manual técnico, primero en inglés y con espejo en español | `manual-writer` | Capítulos en ambos idiomas, evidencia de `manual.py check` y `build` |
 
-`verify` ejecuta las puertas locales, asocia cada criterio a una prueba o un comando, lee el informe de mutantes cuando hubo una ejecución y escribe un veredicto con hallazgos numerados (críticos, advertencias, sugerencias). Un FAIL abre una ronda de corrección: `tdd-apply` escribe primero las pruebas y registra la ronda en `apply-progress.md`, después `verify` se ejecuta de nuevo.
+`verify` ejecuta las puertas locales, asocia cada criterio a una prueba o un comando, lee el informe de mutantes cuando hubo una ejecución y escribe un veredicto con hallazgos numerados (críticos, advertencias, sugerencias). Un FAIL abre una ronda de corrección: `tdd-apply` escribe primero las pruebas y registra la ronda en `apply-progress.md`, después `verify` se ejecuta de nuevo. La ronda 1 es la única con sondeos y mutantes manuales independientes; las siguientes son rondas de cierre (véase [Rondas de verify](#rondas-de-verify)).
 
 ## Modos de flujo y packs
 
@@ -166,8 +167,22 @@ La profundidad fija cuánto trabajo independiente hace `verify`. `verify` nunca 
 |---|---|
 | V0 | Sin agente. El coordinador ejecuta las comprobaciones deterministas del pack (enlaces, `manual.py check`, `cargo fmt --check`, `git diff --stat`) y las reporta tal cual |
 | V1 | Puertas en HEAD; cada criterio de aceptación asociado a una prueba o un comando; PASS o FAIL |
-| V2 | V1, más comprobaciones de sondeo derivadas de los criterios antes de leer las pruebas del implementador, mutantes manuales (5 como máximo, 3 en modo light) sobre una exportación temporal, hallazgos clasificados por `class:` |
+| V2 | V1, más comprobaciones de sondeo derivadas de los criterios antes de leer las pruebas del implementador, solo en la ronda 1: una comprobación puntual de la lista de mutantes manuales de `tdd-apply` más 2 a 3 mutantes manuales independientes sobre una exportación temporal (véase [Mutantes manuales](#mutantes-manuales)), hallazgos clasificados por `class:` |
 | V3 | Solo a petición del titular: V2, más puertas por commit sobre exportaciones limpias, ejecuciones negativas de la política de CI y la matriz completa de requisitos y escenarios |
+
+### Rondas de verify
+
+La ronda 1 es el primer `verify` de una entrega y la única ronda que ejecuta los sondeos y los mutantes manuales independientes. Las rondas 2 y posteriores son rondas de cierre.
+
+| Ronda | Qué hace `verify` |
+|---|---|
+| 1 | Puertas, mapa de criterios, sondeos y mutantes manuales independientes (V2 y V3) |
+| 2+ (cierre) | Solo puertas, comprobaciones de integridad de artefactos y cierre de hallazgos anteriores; sin presupuesto de mutantes independientes |
+
+- Un `verify` posterior a una ronda de corrección, a una ronda de corrección de T4, o el `verify` final del change, es una ronda de cierre, salvo que el coordinador indique que es el primer verify de ese código.
+- Una laguna de pruebas nueva hallada después de la ronda 1 es una advertencia (WARNING) de clase `implementation` marcada `follow-up`. No bloquea, en ningún modo ni con ningún valor de `mutation`, y no cuesta una ronda. El coordinador la lista para el titular y `archive` la añade a la lista de seguimiento de `docs/specs/README.md`.
+- Un defecto real de código mostrado por un sondeo, un fallo de puerta y un superviviente crítico en el informe más reciente de `mutants` son CRITICAL en cualquier ronda.
+- Un superviviente crítico de T4 va a `tdd-apply`, después T4 se ejecuta de nuevo sobre ese crate, y luego un `verify` de ronda de cierre lee el informe nuevo. Solo ese informe nuevo prueba el cierre; un informe antiguo deja el superviviente como CRITICAL.
 
 ### verification.json
 
@@ -182,7 +197,7 @@ Los niveles fijan cuánto código mutan `mutants` y `verify`. El [capítulo de h
 | Nivel | Alcance | Se aplica a |
 |---|---|---|
 | T0 | Ninguno | No se toca código Rust |
-| T1 | Solo mutantes manuales de `verify`, de 3 a 5 como máximo | Cambios mínimos en código no crítico |
+| T1 | Solo mutantes manuales de `verify`: de 2 a 3 mutantes independientes | Cambios mínimos en código no crítico |
 | T2 | `cargo mutants --in-diff`: líneas cambiadas | `mutation: delivery`, entregas que cambian Rust |
 | T3 | `--file` por cada archivo fuente no de prueba cambiado | `mutation: delivery`; entregas que editan un archivo crítico existente |
 | T4 | Crate completo | Cierre del change, antes de archivar, en cada crate que toca el change; el valor por defecto (`mutation: archive`) |
@@ -195,9 +210,21 @@ El campo `mutation` de la línea `Flow:` elige cuándo se ejecuta `cargo-mutants
 
 | Valor | Efecto |
 |---|---|
-| `archive` (por defecto) | Sin ejecución por entrega. Una ejecución T4 por crate tocado al cerrar el change, antes de archivar. Un superviviente crítico vuelve a `tdd-apply` y después al `verify` final |
+| `archive` (por defecto) | Sin ejecución por entrega. Una ejecución T4 por crate tocado al cerrar el change, antes de archivar. Un superviviente crítico vuelve a `tdd-apply`, después T4 se ejecuta de nuevo sobre ese crate y luego un `verify` de ronda de cierre lee el informe nuevo |
 | `delivery` | T2 o T3 por entrega (`--iterate` en rondas de corrección solo de pruebas), más T4 al cerrar. Solo a petición del titular, o cuando el coordinador señala una regla nueva sobre código crítico |
-| `off` | Sin `cargo-mutants`. Los mutantes manuales de `verify` en V2 siguen aplicándose |
+| `off` | Sin `cargo-mutants`. Los mutantes manuales de `tdd-apply` y `verify` siguen aplicándose |
+
+### Mutantes manuales
+
+Los mutantes manuales muestran que una prueba puede fallar. Su presupuesto se reparte entre los dos agentes, en cualquier modo y con cualquier valor de `mutation`. Ninguna parte sustituye a T4.
+
+| Agente | Trabajo con mutantes manuales |
+|---|---|
+| `coordinator` | En código crítico, entrega a `tdd-apply` una lista a nivel de regla: cada elemento nombra una regla de la spec y su comportamiento erróneo, sin código |
+| `tdd-apply` | Aplica cada elemento, confirma que una prueba falla, lo revierte y registra el elemento y su prueba que lo mata en `apply-progress.md`; un superviviente exige una prueba nueva, un elemento que no se puede aplicar queda `blocked` y `done` exige todos muertos |
+| `verify` (V2 y V3, ronda 1) | No repite la lista. Comprueba un elemento aplicándolo y confirmando que falla la prueba registrada, y añade de 2 a 3 mutantes manuales independientes elegidos a partir de las reglas de la spec |
+
+Sin lista registrada no hay comprobación puntual, y los 2 a 3 mutantes independientes siguen aplicándose. El nivel T1 depende solo de ellos. Un mutante manual superviviente es de clase `implementation`, y CRITICAL en código crítico.
 
 ## Control del ciclo
 
@@ -217,7 +244,7 @@ Un informe mixto se enruta primero hacia arriba: ambigüedad, después arquitect
 ### Límites del bucle
 
 - Tras dos FAIL consecutivos de la misma clase en una entrega, el coordinador se detiene y pregunta al titular, con una pregunta y una recomendación.
-- Una entrega tiene como máximo tres rondas de verify entre todas las clases. Una cuarta ronda es una decisión del titular.
+- Una entrega tiene como máximo tres rondas de verify entre todas las clases. Una cuarta ronda es una decisión del titular. Un ciclo de corrección de T4 cuenta como una ronda de verify de la última entrega del change.
 - En modo light, el segundo FAIL de cualquier clase sube el modo en su lugar.
 - El coordinador nunca aprueba por sí mismo un FAIL, dispensa un hallazgo ni sube un tope en silencio. Los asuntos exclusivos del titular (decisiones de `docs/specs/00-decisiones.md`, fusiones, precios, licencia, alcance) nunca se enrutan a un agente.
 
