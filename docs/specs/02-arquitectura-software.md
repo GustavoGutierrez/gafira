@@ -5,7 +5,7 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-34 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-39 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
@@ -132,8 +132,9 @@ gafira-geom ─┼─► gafira-anim ─► gafira-doc ─► gafira-edit
 gafira-color ┘                     │
                                    ▼
         gafira-pathops  gafira-text  gafira-layout  gafira-raster  gafira-audio  gafira-segment
-                 (dependen de geom/color/time/doc según necesidad; nunca entre sí en ciclo:
-                  text → pathops; layout → geom, doc; raster → color, geom; segment → raster)
+                 (cada motor puede depender de geom, color y doc; audio, también de time; ADR 0007.
+                  Únicas aristas entre motores: text → pathops y segment → raster.
+                  Sin layout → text, testkit → raster, doc → time, audio → anim ni raster → anim)
                                    │
                                    ▼
                               gafira-ports  ◄── todos los adaptadores
@@ -167,7 +168,7 @@ Se crea un crate nuevo solo si cumple al menos uno de estos criterios:
 1. **Frontera de capa**: separa dominio de I/O (por ejemplo, `gafira-doc` frente a `gafira-format`).
 2. **Feature opcional o exposición legal**: aísla código con patentes o nativo (`gafira-codec-os`, la feature `onnx` de `gafira-segment`) para poder excluirlo del build.
 3. **Compilación incremental**: código grande y estable que cambia poco (códecs, contenedores) y que, separado, evita recompilar el resto.
-4. **Reutilización por varios consumidores** con API estrecha (`gafira-text` lo usan render, exportación SVG/PDF y layout).
+4. **Reutilización por varios consumidores** con API estrecha (`gafira-text` lo usan render y exportación SVG/PDF).
 
 No se divide cuando solo hay organización interna: se usan módulos.
 
@@ -189,9 +190,11 @@ Project
  ├─ styles: StyleSheet                        (estilos de texto, de relleno y de efecto con nombre)
  ├─ assets: AssetTable                        (AssetRef → ContentHash + metadatos + AssetStorage::{Embedded | Linked})
  ├─ pages: Vec<Page>                          (lienzos; en video, cada escena es una Page con duración)
- │    └─ Page { id, name, size: PageSize, bleed, margins, guides, grid: GridSettings, notes: String,
+ │    └─ Page { id, name, size: PageSize, bleed: Length, margins: Margins, guides: GuideSet, grid: GridSettings, notes: String,
  │              background, duration: Option<Flicks>, locked, hidden, roots: Vec<NodeId>, nodes: NodeArena }
  │         GridSettings { visible: bool, step: Length, subdivisions: u8, style: GridStyle, snap: bool }   (Cuadrícula de 03 §2.6)
+         Margins { top, right, bottom, left: Length, linked: bool }
+         GuideSet = lista de Guide { axis: GuideAxis, position: Length, locked: bool }; GuideAxis = Vertical | Horizontal
  └─ sequences: Vec<Sequence>                  (timelines)
       └─ Sequence { id, fps: FrameRate, size, sample_rate, tracks: Vec<Track>, markers }
            └─ Track { id, kind: Video|Overlay|Audio|Caption, muted, locked, solo, clips: Vec<Clip> }
@@ -207,6 +210,9 @@ Project
 `NodeArena` es un `HashMap<NodeId, Arc<Node>>` con hijos por `NodeId`. Así se comparte estructura entre versiones (§5.1) y se hace *lookup* O(1).
 
 - **Cuadrícula** (`Page::grid`): rejilla de fondo con paso configurable (`step` en su propia unidad, de 1 a 500; `subdivisions` internas, de 1 a 10) y estilo `Lines | Dots` (04 FD-07). Es un dato de la página, se guarda con ella y la usa `gafira-layout::snap` cuando el Imán está activo. Nunca se exporta.
+- **Datos de maquetación de la página** (ADR 0008): `bleed` vale para los cuatro lados, 0 mm por defecto. `Margins` es 0 px en los cuatro lados y `linked` es verdadero por defecto. Son tipos de `gafira-doc`; `gafira-layout` opera sobre ellos.
+- **Validación al cargar** (`Document::validate`): posiciones de guía y márgenes finitos, márgenes ≥ 0, sangrado de 0 a 10 mm, `step` de 1 a 500 en su unidad y `subdivisions` de 1 a 10. Nada se recorta. Unos márgenes que dejan la página sin área no son un error de carga, porque la página puede cambiar de tamaño; lo informa `gafira-layout` (04 FD-05).
+- **Campos nuevos** (D-36): el esquema 1 sigue abierto hasta que la primera build que escriba `.gafira` llegue a un usuario. Desde entonces, un campo nuevo con datos de usuario sube el esquema (ADR 0006).
 - **Notas** (`Page::notes`): texto plano por página que se edita en la Barra inferior (03 §2.6). No se renderiza en el lienzo ni en ninguna exportación de imagen o video. Si un exportador ofrece incluirlas (por ejemplo, como anotaciones de PDF), lo declara en su `ExportCaps` y la opción está desactivada por defecto.
 
 ### 3.2 `ElementBase` y nodos
@@ -261,6 +267,7 @@ pub struct TextNode {
 - **Fijar tipografía**: los comandos que cambian estilos de forma masiva (`SetSwatch` sobre fuentes de la identidad, aplicar una identidad o plantilla, `ResizeDesign` con reflujo) no modifican las propiedades marcadas en `type_lock`. Las ediciones directas del usuario sobre ese texto sí se aplican. `type_lock.size` prevalece sobre `FitBox`: el tamaño no cambia (D-25).
 
 - **Marco con contenido recortado** (`FrameNode`): tiene `clip_shape: ShapeGeometry` y `content: Option<NodeId>` con `content_offset`, `content_scale` y `fit: Fill|Fit|Stretch|None`. Al soltar una imagen sobre un marco se aplica un `Command` que asigna el contenido. Reemplazarla conserva la forma.
+- **Grupos en espacio de página** (D-35, ADR 0009): la `Placement` de todo nodo está en espacio de página, también la de los hijos de un grupo. La `Placement` de un grupo no mueve a sus hijos. La caja de un grupo es la unión de las cajas de sus hijos; solo un grupo vacío usa su propia caja. Mover un grupo mueve cada descendiente, y girarlo o redimensionarlo reescribe la `Placement` de cada uno.
 - **Fuera de página**: los nodos fuera del área se conservan y solo se recortan al renderizar. La selección informa del exceso con `layout::overflow(bounds, page)`.
 - **Máscaras no destructivas**: `Mask { source: MaskSource::{Node(NodeId) | Alpha(AssetRef) | Painted(TileSetRef)}, mode: Alpha|Luma, invert, feather: Animatable<f32> }`. Al aislar un sujeto se genera una `Mask::Alpha` editable con pincel Borrar/Restaurar (tiles con COW). El píxel original nunca se modifica.
 - **Capas de ajuste**: `AdjustmentNode` aplica su `effects` al compuesto de los hermanos inferiores, acotado por su máscara.
@@ -836,7 +843,7 @@ pub trait Translator: Send + Sync {                                       // gaf
 
 Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las fichas de 04 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
 
-Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Entre estos crates, §2.2 solo declara `segment → raster`. La contradicción entre ADR-01 y §2.2 sobre `layout` y `text` queda para el diseño del change.
+Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007).
 
 Quedan fuera de esta sección, para el diseño del change: dónde viven los tipos compartidos, qué aristas nuevas se añaden a §2.2 y qué terceros se eligen. Los nombres de tipo que aparecen aquí identifican un concepto, no una ubicación.
 
@@ -869,7 +876,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | Empate del Imán | Comparación exacta de `f64`, sin tolerancia. | FD-06 |
 | Ancho de columna | `c ≥ 1 px`; `c = 1` vale. | FD-04 |
 | Aviso de zona de seguridad | Exceso `> 0`, sin tolerancia; el borde sobre el límite no avisa. | FD-05 |
-| Porcentaje de zona de seguridad | En `[0, 50)`; 50 deja un rectángulo sin área y da `Err`. | FD-05 |
+| Porcentaje de zona de seguridad | Entrada; por defecto 5 % (D-38). En `[0, 50)`; 50 deja un rectángulo sin área y da `Err`. | FD-05 |
 | Sangrado | En `[0, 10]` mm, extremos incluidos. | FD-05 |
 | Tolerancia de las pruebas | Posiciones generadas y resultados de alinear y distribuir: ±0,01 unidades (FD-11) y 1e-9 cuando la ficha lo indica. | FD-04, FD-06, FD-11 |
 
@@ -1179,7 +1186,7 @@ Otras cifras (FIJADAS, D-03):
 | Ajustar al cuadro < 16 ms con 500 caracteres (04 FD-46) | Bisección sobre la rejilla de tamaños | `bench_text_fit_500`: p99 < 16 ms |
 | Vista previa del Generador de guías < 16 ms (04 FD-04) | Función pura sin tocar el documento | `bench_guides_generate`: < 16 ms por cambio de valor |
 | Márgenes, sangrado y zona de seguridad < 1 ms por página (04 FD-05) | Función pura | `bench_layout_rects`: < 1 ms |
-| Imán < 2 ms con 1 000 nodos (04 FD-06) | Índice espacial por página (`rstar`, §9.2) | `bench_snap_1000`: p99 < 2 ms |
+| Imán < 2 ms con 1 000 nodos (04 FD-06) | Búsqueda del destino más cercano por eje | `bench_snap_1000`: p99 < 2 ms |
 | Cuadrícula < 1 ms (04 FD-07) | Solo se calculan las líneas del *viewport*; se dibuja como overlay | `bench_grid_lines`: < 1 ms |
 | Reel de 60 s 1080p en < 3 min (PRD) | Exportación encadenada en paralelo (composición y codificación en hilos distintos); codificador por hardware del SO o AV1 en preset rápido | `bench_export_reel_60s`: < 180 s (requiere ≥ 10 fps de extremo a extremo a 30 fps) |
 | Exportaciones sin intervención ≥ 98 % (PRD) | Validación previa, reintentos transitorios, alternativa de códec, escritura atómica | Suite `export_matrix` (≥ 200 combinaciones formato × opción × documento) con ≥ 98 % de éxito; meta interna 100 % |
