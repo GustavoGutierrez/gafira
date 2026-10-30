@@ -38,3 +38,14 @@ All items killed; no survivors.
 Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` all pass.
 
 Deviations: none. Note for D2: the generators already stay inside the L1 ranges.
+
+### D1 fix round 1 (verify FAIL: C1, C2, W1, W2)
+
+Correction: the D1 statement "Deviations: none" was wrong. `GridSettings.style` had no read default (ADR 0006 rule 4), and the nested fields below had none either; fixed here.
+
+- C1 / W1: `GridSettings` now has container-level `#[serde(default)]` (every field reads its `Default`: visible false, step 10 px, subdivisions 1, style lines, snap true); `Margins.linked` reads true; `Guide.locked` reads false. Margin sides, guide `axis` and `position` stay required (no stated default).
+- C2: test that an unknown `GridStyle` and an unknown `GuideAxis` fail to load.
+- W2: `adr_0006_old_bytes_resave_in_the_canonical_form` compares the re-saved old minimal and extension bytes with the current goldens, and old full with the current golden (page 1 layout data aside), and checks the result is stable.
+- RED: `fd_07_each_absent_grid_field_reads_its_default` failed with `missing field visible` (unwrap on the load error); `fd_05_absent_linked_and_locked_read_their_defaults` failed with `missing field linked`. The W2 and C2 tests passed on the existing code (they strengthen coverage); C2 is proved by its mutant.
+- Hand mutants (reverted, not committed): `#[serde(other)] Unknown` variant on `GridStyle` -> killed by `adr_0006_unknown_enum_values_fail_to_load`; grid container default removed -> `fd_07_each_absent_grid_field_reads_its_default`; `linked` default removed, `default_linked` returning false, `locked` default removed -> `fd_05_absent_linked_and_locked_read_their_defaults`.
+- Not in this round: W3 (`budget.rs`) and S1 go to D2.

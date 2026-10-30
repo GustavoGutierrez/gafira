@@ -20,7 +20,8 @@ pub struct Margins {
     pub bottom: Length,
     /// Left margin.
     pub left: Length,
-    /// Whether the four sides are edited together.
+    /// Whether the four sides are edited together. Reads true when absent.
+    #[serde(default = "default_linked")]
     pub linked: bool,
 }
 
@@ -57,7 +58,8 @@ pub struct Guide {
     pub axis: GuideAxis,
     /// Distance from the page's top-left corner. May lie outside the page.
     pub position: Length,
-    /// Whether the guide is protected from dragging.
+    /// Whether the guide is protected from dragging. Reads false when absent.
+    #[serde(default)]
     pub locked: bool,
 }
 
@@ -78,7 +80,10 @@ pub enum GridStyle {
 }
 
 /// The background grid of a page. Never exported.
+///
+/// Every field reads its [`Default`] value when absent (ADR 0006).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GridSettings {
     /// Whether the grid is drawn.
     pub visible: bool,
@@ -103,6 +108,10 @@ impl Default for GridSettings {
             snap: true,
         }
     }
+}
+
+fn default_linked() -> bool {
+    true
 }
 
 /// The default page bleed: 0 mm.

@@ -65,9 +65,94 @@ fn fd_05_documents_without_layout_fields_load_with_defaults() {
             assert!(p.guides.0.is_empty(), "{name} guides");
             assert_eq!(p.grid, GridSettings::default(), "{name} grid");
         }
-        // Saving writes the new fields.
-        assert!(doc.to_json().unwrap().contains(r#""bleed""#), "{name}");
     }
+}
+
+// ADR 0006 consequences: the old bytes load and re-save in the new canonical
+// form, which is the current golden.
+#[test]
+fn adr_0006_old_bytes_resave_in_the_canonical_form() {
+    let resave = |t: &str| {
+        Document::from_json(t.as_bytes())
+            .unwrap()
+            .to_json()
+            .unwrap()
+    };
+    assert_eq!(resave(PRE_MINIMAL), include_str!("golden/minimal.json"));
+    assert_eq!(resave(PRE_EXTENSION), include_str!("golden/extension.json"));
+    // `full.json` now carries layout data on page 1; page 2 has none.
+    let full = resave(PRE_FULL);
+    let mut want: serde_json::Value =
+        serde_json::from_str(include_str!("golden/full.json")).unwrap();
+    let got: serde_json::Value = serde_json::from_str(&full).unwrap();
+    let fresh = &got["pages"][0];
+    for key in ["bleed", "margins", "guides", "grid"] {
+        want["pages"][0][key] = fresh[key].clone();
+    }
+    assert_eq!(got, want);
+    assert_eq!(resave(&full), full);
+}
+
+fn page_with(extra: &str) -> Result<Page, serde_json::Error> {
+    let size = r#""size":{"width":{"value":1,"unit":"px"},"height":{"value":2,"unit":"px"}}"#;
+    serde_json::from_str(&format!(r#"{{"id":1,{size}{extra}}}"#))
+}
+
+// ADR 0006 rule 4, FD-07: every grid field reads its default when absent.
+#[test]
+fn fd_07_each_absent_grid_field_reads_its_default() {
+    let full = [
+        r#""visible":true"#,
+        r#""step":{"value":2.0,"unit":"mm"}"#,
+        r#""subdivisions":4"#,
+        r#""style":"dots""#,
+        r#""snap":false"#,
+    ];
+    let d = GridSettings::default();
+    for skip in 0..full.len() {
+        let kept: Vec<&str> = full
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != skip)
+            .map(|(_, f)| *f)
+            .collect();
+        let p = page_with(&format!(r#","grid":{{{}}}"#, kept.join(","))).unwrap();
+        let g = p.grid;
+        let want = GridSettings {
+            visible: if skip == 0 { d.visible } else { true },
+            step: if skip == 1 {
+                d.step
+            } else {
+                Length::new(2.0, Unit::Mm)
+            },
+            subdivisions: if skip == 2 { d.subdivisions } else { 4 },
+            style: if skip == 3 { d.style } else { GridStyle::Dots },
+            snap: if skip == 4 { d.snap } else { false },
+        };
+        assert_eq!(g, want, "without {}", full[skip]);
+    }
+    assert_eq!(page_with(r#","grid":{}"#).unwrap().grid, d);
+}
+
+// FD-05: `linked` reads true when absent; FD-03: `locked` reads false.
+#[test]
+fn fd_05_absent_linked_and_locked_read_their_defaults() {
+    let z = r#"{"value":0.0,"unit":"px"}"#;
+    let m = format!(r#","margins":{{"top":{z},"right":{z},"bottom":{z},"left":{z}}}"#);
+    assert!(page_with(&m).unwrap().margins.linked);
+    let g = format!(r#","guides":[{{"axis":"vertical","position":{z}}}]"#);
+    let guides = page_with(&g).unwrap().guides;
+    assert_eq!(guides.0.len(), 1);
+    assert!(!guides.0[0].locked);
+}
+
+// ADR 0006 rule 4: GridStyle and GuideAxis are closed; unknown values fail.
+#[test]
+fn adr_0006_unknown_enum_values_fail_to_load() {
+    assert!(page_with(r#","grid":{"style":"cross"}"#).is_err());
+    let z = r#"{"value":0.0,"unit":"px"}"#;
+    let g = format!(r#","guides":[{{"axis":"diagonal","position":{z},"locked":false}}]"#);
+    assert!(page_with(&g).is_err());
 }
 
 // FD-05, FD-07: the defaults the spec states.
