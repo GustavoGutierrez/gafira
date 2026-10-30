@@ -20,8 +20,9 @@ Steps
    Warn (and stop) before any destructive delta.
 2. `git mv openspec/changes/<change> openspec/changes/archive/<YYYY-MM-DD>-<change>`.
 2b. Fast lane (Slice card): update the "Detalle" cell of the product document's row in `docs/specs/README.md` (Spanish, the existing style): `Hecho: C<n> <change> (<covered IDs>, archivado en openspec/changes/archive/<YYYY-MM-DD>-<change>/)`, using the covered IDs from the Slice card and `verify-report.md`. Show the `diff` of the table.
+2c. Append each follow-up WARNING the coordinator passes to the numbered "Pending follow-ups" list of `docs/specs/README.md`, in its `**Title.** Why: ... Start: ...` form.
 3. Commit with a conventional message, no AI attribution. Never push.
 
 Return the result to the coordinator; never invoke another stage. If anything blocks the archive, report `blocked` instead of working around it.
 
-Result: merged capabilities (or none), verbatim `diff` output per spec or of the status table, archived path, `next: none`.
+Result: merged capabilities (or none), verbatim `diff` output per spec, of the status table or of the follow-up list, archived path, `next: none`.

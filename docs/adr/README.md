@@ -21,9 +21,10 @@ Where a decision lives:
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted, partly superseded by 0002 |
-| [0002](0002-fast-lane.md) | Fast lane: spec-direct execution, mutation toggle, lighter defaults | accepted |
+| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted, partly superseded by 0002 and 0004 |
+| [0002](0002-fast-lane.md) | Fast lane: spec-direct execution, mutation toggle, lighter defaults | accepted, extended by 0004 |
 | [0003](0003-develop-integration-branch.md) | Develop integration branch, PR to main on request | accepted |
+| [0004](0004-hand-mutant-split-and-verify-rounds.md) | Hand-mutant split and bounded verify rounds | accepted |
 
 ## Template
 
