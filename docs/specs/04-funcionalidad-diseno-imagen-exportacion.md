@@ -441,7 +441,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *Propósito*: corregir la máscara a mano.
 - *Comportamiento y reglas*: tras Aislar sujeto aparece la barra de retoque con **Pincel Quitar** (borra de la máscara; `B`) y **Pincel Devolver** (restaura; `Shift+B`), tamaño 1–500 px (`[` y `]`), dureza 0–100 %, vista previa del resultado y **Comparar**. Cada trazo es una entrada de historial y puede deshacerse. La máscara se guarda como tiles con copia al escribir (02 §3.2) y persiste en `masks/` del `.gafira`.
 - *UI*: barra de retoque sobre el lienzo; herramientas B y Shift+B.
-- *Técnica*: `Tool` Pincel de máscara (02 §4.2), `Command` `PaintMask`, tiles `Arc<Tile>`.
+- *Técnica*: `Tool` Pincel de máscara (02 §4.2), `Command` `PaintMask`, que cambia una `TileSetRef` por otra; la copia al escribir de los tiles `Arc<Tile>` ocurre fuera del comando (ADR 0008).
 - *Presupuesto*: latencia de trazo < 16 ms (CAL-01).
 - *Aceptación*: (a) un trazo solo copia los tiles tocados (prueba de memoria); (b) Quitar y Devolver son inversos en el golden con dureza 100 %; (c) la máscara sobrevive a guardar y abrir.
 
@@ -621,7 +621,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 - *Propósito*: producir versiones en otros tamaños conservando la jerarquía visual. Llega en un change posterior a `gafira-text` (D-14).
 - *Comportamiento y reglas*: **Duplicar y adaptar** crea una página nueva por cada destino elegido y conserva el original; **Adaptar este diseño** cambia el tamaño de la página actual (Deshacer lo revierte). El reflujo: escala uniforme de la composición al área útil, reposiciona los elementos por anclajes (esquinas, centro, bordes) y proporciones, mantiene el orden de lectura, respeta Márgenes y Zona de seguridad, reajusta cuadros de texto (con Ajustar al cuadro) y no toca tipografías fijadas. Tras adaptar, el ajuste manual es posible. Criterio del PRD: pasar de 1080×1920 a 1080×1080 conserva textos, imágenes principales y jerarquía.
 - *UI*: Cambiar tamaño (los dos botones).
-- *Técnica*: `Command` `ResizeDesign` (composite) con `gafira-layout::reflow`.
+- *Técnica*: `Command` `ResizeDesign` (composite), que recibe el resultado de `gafira-layout::reflow`. `reflow` recibe una función de medida inyectada, porque `gafira-layout` no depende de `gafira-text` (ADR 0007).
 - *Presupuesto*: adaptar un diseño de 50 elementos a 5 destinos < 1 s (PROPUESTA).
 - *Aceptación*: (a) en el conjunto de prueba (20 plantillas), ningún texto queda fuera de la Zona de seguridad tras adaptar 1080×1920 → 1080×1080; (b) el orden de lectura se conserva; (c) Duplicar y adaptar no modifica el original (hash idéntico); (d) un solo Deshacer revierte la adaptación.
 
