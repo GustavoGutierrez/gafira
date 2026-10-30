@@ -256,9 +256,9 @@ pub struct TextNode {
 }
 ```
 
-- **Columnas**: `gafira-text` reparte el flujo en `count` columnas de igual ancho dentro de la caja, separadas por `gap`. Con `balance`, las columnas terminan a alturas similares. Solo aplica con `sizing = Fixed` o `AutoHeight`.
-- **Ajustar al cuadro**: con `Autofit::FitBox`, `gafira-text` busca por bisección el mayor tamaño de fuente en `[min_size, max_size]` con el que el texto cabe en la caja. El tamaño resultante es un valor derivado (no se guarda como dato del usuario) y es determinista para las mismas fuentes.
-- **Fijar tipografía**: los comandos que cambian estilos de forma masiva (`SetSwatch` sobre fuentes de la identidad, aplicar una identidad o plantilla, `ResizeDesign` con reflujo) no modifican las propiedades marcadas en `type_lock`. Las ediciones directas del usuario sobre ese texto sí se aplican.
+- **Columnas**: `gafira-text` reparte el flujo en `count` columnas de igual ancho dentro de la caja, separadas por `gap`. Con `balance`, las columnas terminan a alturas similares. Solo aplica con `sizing = Fixed` o `AutoHeight` (reglas en 04 FD-45).
+- **Ajustar al cuadro**: con `Autofit::FitBox`, `gafira-text` busca por bisección, en `[min_size, max_size]`, un tamaño con el que el texto cabe y con el que el siguiente de la rejilla ya no cabe (regla exacta en 04 FD-46). El tamaño resultante es un valor derivado (no se guarda como dato del usuario) y es determinista para las mismas fuentes.
+- **Fijar tipografía**: los comandos que cambian estilos de forma masiva (`SetSwatch` sobre fuentes de la identidad, aplicar una identidad o plantilla, `ResizeDesign` con reflujo) no modifican las propiedades marcadas en `type_lock`. Las ediciones directas del usuario sobre ese texto sí se aplican. `type_lock.size` prevalece sobre `FitBox`: el tamaño no cambia (D-25).
 
 - **Marco con contenido recortado** (`FrameNode`): tiene `clip_shape: ShapeGeometry` y `content: Option<NodeId>` con `content_offset`, `content_scale` y `fit: Fill|Fit|Stretch|None`. Al soltar una imagen sobre un marco se aplica un `Command` que asigna el contenido. Reemplazarla conserva la forma.
 - **Fuera de página**: los nodos fuera del área se conservan y solo se recortan al renderizar. La selección informa del exceso con `layout::overflow(bounds, page)`.
@@ -871,6 +871,30 @@ Quedan fuera de esta sección, para el diseño del change: dónde viven los tipo
 | Sangrado | En `[0, 10]` mm, extremos incluidos. | FD-05 |
 | Tolerancia de las pruebas | Posiciones generadas y resultados de alinear y distribuir: ±0,01 unidades (FD-11) y 1e-9 cuando la ficha lo indica. | FD-04, FD-06, FD-11 |
 
+#### 4.17.3 `gafira-text`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| FD-41 (a, c a j), FD-43 (a), FD-44 (a, c, d, e), FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`), ARQ-115, ARQ-116 | Comandos y estilos: FD-41 (b), FD-47, FD-49. Interfaz: FD-42, FD-46 (d). Exportación: FD-43 (b, c), FD-44 (b). `gafira-engine` y `gafira-platform`: FD-48. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-115 | **Fuentes de prueba** (D-19): las pruebas usan subconjuntos de Inter y Manrope y una fuente OFL con árabe o hebreo. Toda fuente de prueba tiene entrada en `assets/LICENSES.toml` (ARQ-75), esté donde esté. | Una prueba o comprobación de CI recorre las fuentes de prueba y falla si alguna no tiene entrada de licencia. |
+| ARQ-116 | **Salida de la maquetación.** La maquetación da, sin píxeles: las líneas con su base y su avance, y cada clúster de grafemas con su índice en el texto, su posición y su avance. Indica además el desborde y los glifos sin cobertura. Así FV-07 anima letra a letra y FV-08 cuenta líneas y caracteres por línea. | Con Inter: un texto de 3 líneas forzadas da 3 líneas; concatenar los clústeres en orden lógico da el texto de entrada; `é` compuesta (U+0065 U+0301) es 1 clúster; un texto que excede una caja `Fixed` indica desborde y conserva todo el texto. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| NaN o `±∞` en tamaños, medidas o caja | `Err`. | ARQ-110 |
+| Tamaño | `[1, 1000]` pt, extremos incluidos; fuera, `Err`. | FD-41 |
+| Interletrado | `[−100, 500]` milésimas de em, extremos incluidos. | FD-41 |
+| Interlineado | `[0,5; 4,0]`, extremos incluidos. | FD-41 |
+| Fuente sin métricas | Altura natural ≤ 0: `Err` de fuente inválida. | FD-41 |
+| Caja de tamaño 0 | Sin error; hay desborde si el texto no está vacío. | FD-45 |
+| Columnas | `count` en 1–8; `gap` en `[0, 200]`; ancho de columna ≥ 1 px. | FD-45 |
+| `FitBox` | `min_size ≤ max_size`, los dos en `[1, 1000]`; el límite «cabe» incluye la igualdad; rejilla de 0,25 pt. | FD-46 |
+| Curvar | `[−100, 100]`, extremos incluidos; 0 no calcula radio; avance 0 no hace nada. | FD-44 |
+| Tolerancia de las pruebas | Identidades, bit a bit; medidas en px, ±0,01. | FD-41, FD-44 |
+
 ---
 
 ## 5. Patrones transversales
@@ -1063,6 +1087,10 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
+| Escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (04 FD-41) | La fija el diseño del change | `bench_text_type_5000`: p99 < 16 ms |
+| Actualizar Curvar < 16 ms con 100 caracteres (04 FD-44) | La fija el diseño del change | `bench_text_curve_100`: p99 < 16 ms |
+| Re-maquetar 5 000 caracteres en 4 columnas < 16 ms (04 FD-45) | La fija el diseño del change | `bench_text_columns_5000`: p99 < 16 ms |
+| Ajustar al cuadro < 16 ms con 500 caracteres (04 FD-46) | Bisección sobre la rejilla de tamaños | `bench_text_fit_500`: p99 < 16 ms |
 | Vista previa del Generador de guías < 16 ms (04 FD-04) | Función pura sin tocar el documento | `bench_guides_generate`: < 16 ms por cambio de valor |
 | Márgenes, sangrado y zona de seguridad < 1 ms por página (04 FD-05) | Función pura | `bench_layout_rects`: < 1 ms |
 | Imán < 2 ms con 1 000 nodos (04 FD-06) | Índice espacial por página (`rstar`, §9.2) | `bench_snap_1000`: p99 < 2 ms |

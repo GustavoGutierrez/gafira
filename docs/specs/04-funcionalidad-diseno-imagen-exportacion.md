@@ -429,15 +429,26 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 
 ## 10. Texto
 
-Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las bibliotecas de 02 §9.2, VERIFICAR licencias) con fuentes embebidas Inter y Manrope y las fuentes del sistema. La edición es directa sobre el lienzo con la Barra contextual y la pestaña **Texto** del Inspector.
+Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las bibliotecas de 02 §9.2, licencias VERIFICADAS) con fuentes embebidas Inter y Manrope y las fuentes del sistema. La edición es directa sobre el lienzo con la Barra contextual y la pestaña **Texto** del Inspector.
 
 **FD-41 · Texto básico, estilos y listas** (RF-24)
 - *Propósito*: componer texto cómodo y exacto.
 - *Comportamiento y reglas*: fuente, tamaño (1–1000 pt), peso, **B/I/U/tachado**, mayúsculas, alineación (izquierda, centro, derecha, justificada), anclaje vertical del cuadro, **interletrado** (−100–500, en milésimas de em), **interlineado** (0,5–4,0), **kerning** y ligaduras activables, y **Listas** con viñetas y numeradas (con sangría por nivel). Estilos reutilizables (Título, Subtítulo, Cuerpo, Pie, Llamada) enlazados a **Estilos** de la Identidad; cambiar un estilo actualiza todo. Doble clic crea o edita texto.
+  - **Tamaño**: se escribe en pt; `px = pt × DPI / 72`, con el DPI como entrada.
+  - **Interlineado**: la distancia entre líneas base es `interlineado × altura natural`. La altura natural de una línea es la mayor, entre sus tramos, de `ascendente − descendente + espacio entre líneas` de la fuente al tamaño del tramo. Las métricas salen de `OS/2` si la fuente activa `USE_TYPO_METRICS` y, si no, de `hhea`. Es la referencia de `line-height: normal` de CSS.
+  - **Interletrado**: añade `interletrado / 1000 × tamaño` tras cada clúster de grafemas, salvo el último de la línea. Si es distinto de 0 se apagan las ligaduras opcionales, como en CSS; las obligatorias de una escritura se mantienen.
+  - **Saltos**: una palabra más ancha que la caja se parte por clústeres. Un solo clúster más ancho que la caja se deja en su línea y cuenta como desborde.
+  - **Justificado**: reparte el sobrante entre palabras. La última línea de un párrafo y la línea con salto forzado no se estiran, ni la línea de una sola palabra.
+  - **Mayúsculas**: conversión Unicode completa sin idioma (`ß` da `SS`; ARQ-107).
+  - **Subrayado y tachado**: posición y grosor salen de las tablas `post` y `OS/2`; con grosor 0 o ausente, 0,05 em (PROPUESTA).
+  - **Listas**: numeradas con `1.` y con viñetas `•`, `◦` y `▪` por nivel, en ciclo; hasta 4 niveles; sangría de 1,5 em por nivel (PROPUESTA).
+  - **Fuentes de reserva** (D-19): quien llama da una lista ordenada de fuentes en bytes. Cada clúster usa la primera fuente que cubre todos sus puntos de código. Si ninguna lo cubre, usa `.notdef` y la salida lo indica; no es un error.
+  - **Emoji** (D-19): en el MVP son contornos de esas fuentes de reserva. Una fuente que solo tiene emoji en color no cubre el clúster. El emoji en color es de Fase 2.
+  - **Hinting**: posiciones y avances no dependen del hinting (ARQ-42). Los contornos reciben el modo como entrada y los golden van sin hinting.
 - *UI*: herramienta Texto (T); Panel lateral → Texto; Inspector → Texto.
 - *Técnica*: `gafira-text` (`shape`, `layout_box`), `TextNode`, `StyleRef`; `Command` `SetProperty` con `merge_key` para sliders.
-- *Presupuesto*: escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (CAL-01); abrir un documento de 100 capas con texto < 500 ms (CAL-10, texto maquetado de forma perezosa).
-- *Aceptación*: (a) el texto con tildes, bidi y emojis se maqueta correctamente en los golden; (b) cambiar un Estilo actualiza todos los textos vinculados con un solo `Command`; (c) interletrado 0 y interlineado 1,0 son la identidad.
+- *Presupuesto*: escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (02 §6.7, `bench_text_type_5000`); abrir un documento de 100 capas con texto < 500 ms (CAL-10, texto maquetado de forma perezosa).
+- *Aceptación*: (a) el texto con tildes, bidi y emojis se maqueta correctamente en golden de geometría, sin píxeles: orden visual según el algoritmo bidi de Unicode y clústeres correctos, con `👩‍💻` como 1 clúster; (b) cambiar un Estilo actualiza todos los textos vinculados con un solo `Command`; (c) interletrado 0 e interlineado 1,0 son la identidad: las posiciones coinciden bit a bit con las de un texto sin esos ajustes; (d) los extremos de tamaño, interletrado e interlineado valen, y 0,99 y 1000,01 pt, −100,01 y 500,01, 0,49 y 4,01 dan error; (e) una línea de `N` clústeres con interletrado `t` mide lo mismo que sin él más `(N − 1) × t / 1000 × tamaño`, ±0,01 px; con `t` distinto de 0 no se forma la ligadura opcional que sí se forma con 0; (f) con interlineado 2,0, la distancia entre líneas base es el doble que con 1,0, ±0,01 px; (g) con Inter como primaria y la fuente OFL de árabe o hebreo como reserva, un texto mixto usa cada fuente en sus clústeres; sin reserva, usa `.notdef` y lo indica; (h) `straße` en mayúsculas da `STRASSE` con cualquier configuración regional; (i) una línea justificada termina en el borde de la caja, ±0,01 px, y la última línea del párrafo no se estira; (j) una lista de 3 niveles sangra 1,5 em por nivel, ±0,01 px, y numera 1, 2, 3 en el mismo nivel.
 
 **FD-42 · Color y degradado de texto** (RF-24)
 - *Propósito*: colorear con coherencia.
@@ -458,26 +469,34 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 **FD-44 · Curvar** (RF-25)
 - *Propósito*: texto sobre arco o curva.
 - *Comportamiento y reglas*: slider **Curvar** de −100 a 100 (0 = recto) para arcos; en Fase 2, texto sobre una forma vectorial elegida y texto vertical (PROPUESTA). El texto sigue editable; la curva afecta a la geometría de pintado, no al contenido.
+  - **Escala** (D-26): `θ = valor × 1,8°`, de modo que ±100 son ±180° de arco. Un valor positivo da un arco abierto hacia abajo (∩) y uno negativo, abierto hacia arriba (∪) (PROPUESTA).
+  - **Geometría**: la longitud del arco es el avance `L` de la línea, así que `radio = L / |θ|` con `θ` en radianes. El arco se centra en el ancho de la caja. Cada glifo se coloca por el centro de su avance y gira según la tangente. Varias líneas usan arcos concéntricos con el mismo `θ` (PROPUESTA).
 - *UI*: Inspector → Texto → Curvar.
 - *Técnica*: `gafira-text` (texto en curva y conversión a contornos), `gafira-pathops`.
-- *Presupuesto*: actualizar el slider < 16 ms por evento con 100 caracteres.
-- *Aceptación*: (a) Curvar 0 equivale al texto recto (diferencia 0); (b) la exportación SVG convierte a contornos y mantiene la forma; (c) al cambiar el texto se rehace la curva.
+- *Presupuesto*: actualizar el slider < 16 ms por evento con 100 caracteres (02 §6.7, `bench_text_curve_100`).
+- *Aceptación*: (a) Curvar 0 equivale al texto recto (diferencia 0); (b) la exportación SVG convierte a contornos y mantiene la forma; (c) al cambiar el texto se rehace la curva; (d) con ±100 y avance `L`, la cuerda del arco mide `2L / π`, ±0,01 px, y un glifo cuyo centro está en la posición `s` del avance gira `(s / L − 0,5) × θ`, ±1e-6 rad; con +50 y −50 las rotaciones son opuestas; (e) ±100,01 dan error; una línea vacía no cambia nada; con 0,01 toda posición es finita.
 
 **FD-45 · Columnas** (RF-26)
 - *Propósito*: repartir un texto largo en varias columnas dentro de un cuadro.
-- *Comportamiento y reglas*: función propia. `TextNode.columns: TextColumns { count, gap, balance }` (02 §3.2): **1–8 columnas** (`count = 1` es sin columnas), espacio entre columnas `gap` (0–200 unidades), opción `balance` de columnas equilibradas y reparto automático por altura del cuadro; las columnas son de igual ancho. Solo aplica con tamaño de cuadro fijo o de alto automático. Salto de columna manual: PROPUESTA. Funciona con Listas y con justificado. Si el contenido no cabe, el cuadro muestra un indicador de desborde (no se pierde texto).
+- *Comportamiento y reglas*: función propia. `TextNode.columns: TextColumns { count, gap, balance }` (02 §3.2): **1–8 columnas** (`count = 1` es sin columnas y `gap` se ignora), espacio entre columnas `gap` (0–200 unidades), opción `balance` de columnas equilibradas y reparto automático por altura del cuadro; las columnas son de igual ancho: `(ancho − (count − 1) × gap) / count`, que debe ser ≥ 1 px. Solo aplica con tamaño de cuadro fijo o de alto automático. Salto de columna manual: Fase 2 (D-24). Funciona con Listas y con justificado. Si el contenido no cabe, el cuadro muestra un indicador de desborde (no se pierde texto).
+  - **Reparto**: con `balance` apagado y tamaño fijo, cada columna se llena hasta el alto del cuadro y sigue en la siguiente. Con `balance`, el texto se reparte para minimizar la diferencia de alturas. Con alto automático, las columnas siempre se equilibran y el alto del cuadro sale del resultado.
+  - **Tamaño automático de ancho**: las columnas no aplican y `count` cuenta como 1.
 - *UI*: Inspector → Texto → Columnas.
 - *Técnica*: `gafira-text::layout_box` con `TextColumns` (campo `columns` de `TextNode`, 02 §3.2).
-- *Presupuesto*: re-maquetar 5 000 caracteres en 4 columnas < 16 ms.
-- *Aceptación*: (a) con 3 columnas y texto de 3 000 caracteres, la altura de las columnas difiere ≤ 1 línea al equilibrar; (b) el salto manual mueve el texto siguiente a la próxima columna; (c) el indicador de desborde aparece cuando corresponde.
+- *Presupuesto*: re-maquetar 5 000 caracteres en 4 columnas < 16 ms (02 §6.7, `bench_text_columns_5000`).
+- *Aceptación*: (a) con 3 columnas y texto de 3 000 caracteres, la altura de las columnas difiere ≤ 1 línea al equilibrar; (b) sin criterio en el MVP: el salto manual es de Fase 2 (D-24); (c) el indicador de desborde aparece cuando corresponde; (d) `count` 0 o 9, `gap` negativo o mayor que 200, y un ancho de columna < 1 px dan error; (e) `count = 1` da la misma maquetación bit a bit que sin columnas, con cualquier `gap`.
 
 **FD-46 · Ajustar al cuadro** (RF-26)
 - *Propósito*: que el texto llene su cuadro sin desbordar.
-- *Comportamiento y reglas*: función propia. Con `TextNode.autofit = Autofit::FitBox { min_size, max_size }` (02 §3.2), `gafira-text` busca por bisección el mayor tamaño de fuente en el intervalo (por defecto 6–400 pt) con el que el texto cabe en el cuadro. El tamaño resultante es un **valor derivado**: no se guarda como dato del usuario y es determinista para las mismas fuentes. Si no cabe ni al mínimo, muestra el indicador de desborde. Se desactiva al cambiar el tamaño a mano. Con `type_lock.size` activo (FD-47), el modo no cambia el tamaño (PROPUESTA).
+- *Comportamiento y reglas*: función propia. Con `TextNode.autofit = Autofit::FitBox { min_size, max_size }` (02 §3.2), `gafira-text` busca por bisección en el intervalo (por defecto 6–400 pt), sobre una rejilla formada por los múltiplos de 0,25 pt, `min_size` y `max_size`. Busca un tamaño `r` que cabe y cuyo siguiente en la rejilla no cabe, o `r = max_size`. El tamaño resultante es un **valor derivado**: no se guarda como dato del usuario y es determinista para las mismas fuentes. Si no cabe ni al mínimo, `r = min_size` y muestra el indicador de desborde. Se desactiva al cambiar el tamaño a mano.
+  - **Cabe**: la altura maquetada es ≤ el alto del cuadro (la igualdad cabe) y no hay desborde de clúster (FD-41). El ajuste de palabras no es monótono, así que `r` es un máximo local de la rejilla, no siempre el mayor absoluto.
+  - **Tramos de varios tamaños**: `r` es el tamaño del tramo mayor; los demás escalan en la misma proporción.
+  - **Tamaño del cuadro**: solo aplica con tamaño fijo; con ancho o alto automático el tamaño no cambia.
+  - **Fijar tipografía** (D-25): con `type_lock.size` activo (FD-47), el tamaño no cambia y el interruptor se atenúa con el motivo «Con el tamaño fijado no se puede ajustar al cuadro.».
 - *UI*: Inspector → Texto → Ajustar al cuadro (interruptor).
 - *Técnica*: `gafira-text` (medición y bisección); el cambio de modo es un `Command` `SetProperty<Autofit>`; el tamaño derivado no genera `Command`.
-- *Presupuesto*: < 16 ms por recálculo en cuadros de 500 caracteres.
-- *Aceptación*: (a) al agrandar el cuadro, el texto crece hasta tocar el borde con tolerancia de 1 línea; (b) con texto vacío, no cambia; (c) respeta el mínimo y el máximo.
+- *Presupuesto*: < 16 ms por recálculo en cuadros de 500 caracteres (02 §6.7, `bench_text_fit_500`).
+- *Aceptación*: (a) prueba de propiedad: `r` cabe y el siguiente de la rejilla no cabe, salvo `r = max_size`; (b) con texto vacío, no cambia ni hay desborde; (c) respeta el mínimo y el máximo: `r` está en el intervalo, un texto que no cabe da `min_size` con desborde y uno que siempre cabe da `max_size`; (d) con `type_lock.size`, el tamaño no cambia y el interruptor se atenúa con el motivo; (e) `min_size = max_size` da ese tamaño; `min_size > max_size` o fuera de 1–1000 dan error; (f) con dos tramos de 10 y 20 pt, el resultado conserva la relación 1:2.
 
 **FD-47 · Fijar tipografía** (RF-26)
 - *Propósito*: evitar que fuente, tamaño o estilo cambien por accidente.
@@ -491,7 +510,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 - *Propósito*: abrir proyectos sin romper el diseño cuando falta una fuente.
 - *Comportamiento y reglas*: Gafira detecta las fuentes del sistema en segundo plano (nunca en el arranque; 02 §6.7). Si falta una fuente al abrir, propone **sustitutos compatibles** (misma clase y métricas similares), conserva el layout y **recuerda la fuente original** para volver a usarla si se instala. «Sustitución masiva» cambia una fuente por otra en todo el proyecto. Fuentes del usuario: advertencia de licencia y compatibilidad al usarlas («Esta fuente no está incluida. Comprueba que su licencia permite tu uso.»); empaquetar fuentes en el `.gafira` solo si la licencia lo permite (Q-10, PROPUESTA).
 - *UI*: Texto → Fuentes; diálogo al abrir; Archivo → Empaquetar fuentes (PROPUESTA).
-- *Técnica*: `gafira-platform` (enumeración), `gafira-text` (métricas), `FontCollector` (Visitor, 02 §4.1).
+- *Técnica*: `gafira-platform` (enumeración), `gafira-text` (métricas y clase de la fuente), `gafira-engine` (elige el sustituto), `FontCollector` (Visitor, 02 §4.1).
 - *Presupuesto*: la detección completa no bloquea el arranque (CAL-08).
 - *Aceptación*: (a) abrir un proyecto con una fuente ausente propone sustituto y no desplaza más de 2 % las cajas de texto; (b) al instalar la fuente original, se restaura sin edición; (c) las fuentes de egui por defecto no se incluyen (ARQ-62).
 
@@ -749,6 +768,6 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
-| R-B | Licencia de krilla, hayro, qrcode y del crate de texto | VERIFICAR con `cargo-deny` (02 §9.2) |
+| R-B | Licencia de krilla, hayro y qrcode | VERIFICAR con `cargo-deny` (02 §9.2) |
 | R-C | Medidas de Destinos por plataforma | VERIFICAR al publicar cada versión (FD-53) |
 | R-D | Calidad del reflujo al Adaptar con diseños atípicos | Mitigar con el conjunto de 20 plantillas y ajuste manual (FD-54) |
