@@ -44,3 +44,24 @@ How each AC is met:
 Deviations:
 - `mutants.md` lost its `CARGO_INCREMENTAL=0` guidance and its `cargo clean --target-dir` line, which only made sense with a set target dir. cargo-mutants 27.1.0 deletes its scratch dirs unless `--leak-dirs` is passed (`--help`).
 - `verify.md` step 4 split into 4 and 4b, because hand mutants do not depend on a `mutants` run.
+
+### Amendment fixes (verify round 1: C1, W1, W2, W4)
+Commits:
+- 352f325 docs(agents): require the hand-mutant list on critical code in any mode
+- 00e6f59 docs(agents): prove T4 survivor closure with a re-run report
+- d948b94 docs(agents): track follow-up warnings through archive
+- edc7d62 docs(agents): keep gates and artifact checks in closure rounds
+- docs(agent-flow-rework): record amendment progress (this section)
+
+Measured lines for the four fix commits (`git diff --shortstat db18553 edc7d62`): 5 files changed, 18 insertions(+), 17 deletions(-)
+
+How each AC is met:
+- AC1a: `coordinator.md` route step 2 and `AGENTS.md` testing policy drop the light-mode exclusion and say any mode; only "no critical code" means no list. `coordinator.md` "Light mode: the Light spec" now lets the implementer receive the list. This replaces the AC1 note above that light mode gets no list. `tdd-apply.md` had no exclusion and is unchanged.
+- AC8: `coordinator.md` route step 3 sends a critical T4 survivor to `tdd-apply`, then a T4 re-run on that crate, then a closure-round `verify` with the new report; the loop limits count each cycle as one verify round of the change's last delivery, and G5 reads each crate's latest report. `verify.md` "Rounds" and step 1b prove closure only by the new report; a stale report is not evidence. `mutants.md` allows the re-run and adds `commit` to its result. `AGENTS.md` no longer says once.
+- AC9: `verify.md` "Rounds" drops "T4 covers it at close"; a follow-up WARNING does not block in any mode or `mutation` value. `coordinator.md` passes each one to `archive`; `archive.md` step 2c appends them to "Pending follow-ups" in `docs/specs/README.md`; the `AGENTS.md` step table agrees.
+- AC10: `verify.md` "Rounds" keeps the gates (step 2) and the integrity checks of steps 3, 3b and 3c in closure rounds; `AGENTS.md` delivery rules agree.
+- AC11: not in this work (separate agent).
+
+Deviations:
+- `mutants.md` result gained a `commit` field (not in the brief), so `verify` can tell a stale report from a new one.
+- `mutants.md` and `AGENTS.md` wording on T4 "once" also changed, because AC8 makes it false; `AGENTS.md` step table gained a follow-up clause for AC9.
