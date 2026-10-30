@@ -5,7 +5,7 @@
 | Documento | Especificación 04 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-07, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
+| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-28, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
 | Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA** y **VERIFICAR** como en 01 |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o PROPUESTA) · *Aceptación* (criterios verificables) · *RF*.
@@ -61,43 +61,58 @@
 
 **FD-03 · Reglas y Guías** (RF-07)
 - *Propósito*: alinear con precisión usando referencias visuales.
-- *Comportamiento y reglas*: **Reglas** horizontal y vertical en la unidad del proyecto, con el origen en la esquina de la página activa. Las **Guías** se arrastran desde la regla; un doble clic sobre la guía permite escribir su posición numérica; se pueden bloquear y borrar arrastrándolas fuera. Las guías son por página y se guardan en el documento (`Page.guides`). No se exportan. Visibilidad con `Ctrl+Shift+R` (Reglas) y `Ctrl+;` (Guías).
+- *Comportamiento y reglas*: **Reglas** horizontal y vertical en la unidad del proyecto, con el origen en la esquina de la página activa. Las **Guías** se arrastran desde la regla; un doble clic sobre la guía permite escribir su posición numérica; se pueden bloquear y borrar arrastrándolas fuera. Las guías son por página y se guardan en el documento (`Page.guides`). Una guía tiene eje (vertical u horizontal), posición y bloqueo. La posición se mide desde la esquina superior izquierda de la página, en la unidad en que se escribió, y se guarda sin redondear. Puede quedar fuera de la página, como un nodo (02 §3.2). No se exportan. Visibilidad con `Ctrl+Shift+R` (Reglas) y `Ctrl+;` (Guías).
 - *UI*: Ver → Reglas, Guías; arrastre desde las reglas.
-- *Técnica*: `gafira-layout` (`Guide`, `GuideSet`), overlay de `Tool::overlay` (02 §6.1: no invalida tiles).
+- *Técnica*: `gafira-layout` (operaciones sobre guías), overlay de `Tool::overlay` (02 §6.1: no invalida tiles). Los datos están en `Page.guides` (02 §3.1). `gafira-doc` no puede depender de `gafira-layout`, así que el diseño del change decide dónde se definen `Guide` y `GuideSet`.
 - *Presupuesto*: arrastrar una guía a 60 fps (CAL-02).
-- *Aceptación*: (a) la posición escrita se aplica con precisión de 0,01 unidades; (b) las guías sobreviven a guardar y abrir; (c) el Imán (FD-06) se engancha a ellas dentro de su umbral.
+- *Aceptación*: (a) la posición escrita se guarda sin redondear y, convertida a la unidad de la regla, difiere ≤ 0,01 unidades de lo escrito con cualquier DPI válido (1–10 000); (b) las guías sobreviven a guardar y abrir; (c) el Imán (FD-06) se engancha a ellas dentro de su umbral; (d) una posición NaN o `±∞` se rechaza y `Page.guides` no cambia (ARQ-110).
 
 **FD-04 · Generador de guías** (RF-07)
 - *Propósito*: crear rejillas de guías sin dibujarlas una a una.
-- *Comportamiento y reglas*: ajustes predefinidos «12 columnas», «3 columnas», «Rejilla 3×3» y «Personalizada» (columnas, filas, espacio entre guías y margen). La **vista previa** se actualiza en vivo sobre la página al cambiar cada valor; «Aplicar» crea las guías como un único `Command` y «Reemplazar guías existentes» es una casilla. Valida que `columnas × ancho + (columnas−1) × espacio` quepa en el área útil.
+- *Comportamiento y reglas*: ajustes predefinidos «12 columnas» (12 columnas, sin filas), «3 columnas» (3 columnas, sin filas), «Rejilla 3×3» (3 columnas y 3 filas), todos con espacio de 24 px y margen de 24 px (PROPUESTA), y «Personalizada» (columnas, filas, espacio y margen). La **vista previa** se actualiza en vivo sobre la página al cambiar cada valor; «Aplicar» crea las guías como un único `Command` y «Reemplazar guías existentes» es una casilla.
+  - **Cálculo** (D-15): en cada eje con `n ≥ 1` divisiones, el área útil mide `A = lado − 2 × margen` y cada columna o fila mide `c = (A − (n − 1) × espacio) / n`. Se generan 2 guías de margen, en `margen` y en `lado − margen`, y 2 guías por cada espacio, en `margen + i × c + (i − 1) × espacio` y en `margen + i × (c + espacio)`, para `i = 1..n−1`. El total por eje es `2n`. Las columnas usan el ancho y las filas el alto. Con `n = 0`, ese eje no genera guías.
+  - **Reglas**: las posiciones no se redondean. Con margen 0, las 2 guías de margen se generan igual, sobre los bordes de la página. Dos guías de un eje en la misma posición exacta se emiten una vez (PROPUESTA): pasa con espacio 0. La salida da primero las verticales y luego las horizontales, cada grupo en orden ascendente.
+  - **Validación**: `c ≥ 1 px`, el mismo mínimo que el lado de una página (`PageSize::MIN_PX`). Si no se cumple, hay error y ninguna guía. Espacio y margen son finitos y ≥ 0; columnas y filas son enteros ≥ 0. El margen es una entrada del generador: no lee ni cambia `Page.margins`. El DPI que convierte las unidades también es una entrada.
 - *UI*: Ver → Generador de guías (diálogo con vista previa).
 - *Técnica*: `gafira-layout::guides::generate(spec, page)` es función pura; `Command` `SetGuides`.
-- *Presupuesto*: vista previa < 16 ms por cambio de valor (CAL-01).
-- *Aceptación*: (a) «12 columnas» con espacio 24 px en 1080 px genera 11 guías de separación y 2 de margen coherentes; (b) cancelar no modifica el documento; (c) aplicar y deshacer restaura exactamente el conjunto anterior.
+- *Presupuesto*: vista previa < 16 ms por cambio de valor (02 §6.7, `bench_guides_generate`).
+- *Aceptación*: (a) «12 columnas» con espacio de 24 px y margen de 24 px en un lado de 1080 px da 24 guías verticales, 22 de columna y 2 de margen, con columnas de 64 px: 24, 88, 112, 176, 200 … 968, 992, 1056. Con margen 0 las columnas miden 68 px y las primeras guías son 0, 68 y 92. Con margen 40, `12 × c + 11 × 24 = 1000` con error ≤ 1e-9 y `c` no se redondea; (b) cancelar no modifica el documento; (c) aplicar y deshacer restaura exactamente el conjunto anterior; (d) 2 columnas, espacio 8 y margen 0 en un lado de 10 px dan `c = 1` y generan guías; en un lado de 9,999 px dan error y ninguna guía; (e) «Rejilla 3×3» en 1080×1080 da 12 guías, con 24, 352, 376, 704, 728 y 1056 en cada eje; (f) espacio o margen negativos dan error; espacio 0 con 3 columnas y margen 0 en 900 px da 4 guías (0, 300, 600, 900).
 
 **FD-05 · Márgenes, Sangrado y Zona de seguridad** (RF-07)
 - *Propósito*: preparar piezas para impresión y para plataformas que recortan bordes.
-- *Comportamiento y reglas*: **Márgenes** por página (cuatro lados, ligados o independientes). **Sangrado** de 0–10 mm (por defecto 3 mm en Impresión) que se dibuja como borde exterior (`canvas.bleed`) y se incluye al exportar PDF con marcas de corte. **Zona de seguridad**: área interior (por defecto 5 % por lado, PROPUESTA) y en video vertical zonas que cubren las interfaces de plataformas (PROPUESTA; valores VERIFICAR por plataforma). Un contenido que sobresale de la Zona de seguridad dispara el aviso «Parte del contenido queda fuera de la zona de seguridad.» (no bloquea).
+- *Comportamiento y reglas*: **Márgenes** por página (cuatro lados, ligados o independientes; 0 por defecto). **Sangrado** de 0–10 mm (por defecto 0; 3 mm en Impresión) que se dibuja como borde exterior (`canvas.bleed`) y se incluye al exportar PDF con marcas de corte. **Zona de seguridad**: área interior (por defecto 5 % por lado, PROPUESTA) y en video vertical zonas que cubren las interfaces de plataformas (PROPUESTA; valores VERIFICAR por plataforma). Un contenido que sobresale de la Zona de seguridad dispara el aviso «Parte del contenido queda fuera de la zona de seguridad.» (no bloquea).
+  - **Cálculo**: `bleed_rect` amplía el rectángulo de la página por el sangrado en los cuatro lados. `safe_rect` lo reduce un porcentaje de su ancho a izquierda y derecha, y de su alto arriba y abajo. El rectángulo de márgenes lo reduce por cada margen. El DPI que convierte mm a px es una entrada.
+  - **`overflow(bounds, rect)`**: da el exceso ≥ 0 por lado e indica si la caja queda totalmente fuera. Un borde sobre el límite no sobresale. La caja está totalmente fuera si no comparte área con `rect`: `bounds.x0 ≥ rect.x1`, `bounds.x1 ≤ rect.x0`, y lo mismo en `y`. El aviso aparece si algún exceso es `> 0`.
+  - **Validación**: dan error un sangrado fuera de 0–10 mm, unos márgenes que dejan el rectángulo sin área y un porcentaje fuera de `[0, 50)`.
 - *UI*: Ver → Márgenes; Cambiar tamaño (Impresión); Exportar → Avanzado.
 - *Técnica*: `gafira-layout` (`bleed_rect`, `safe_rect`, `overflow`), `Page.bleed`, `Page.margins`.
-- *Presupuesto*: cálculo < 1 ms por página.
-- *Aceptación*: (a) con sangrado de 3 mm, el PDF exportado tiene `TrimBox` y `BleedBox` correctos (validación estructural); (b) el aviso aparece al mover un elemento fuera de la zona y desaparece al regresar; (c) los márgenes se respetan en la plantilla al Adaptar (FD-54).
+- *Presupuesto*: cálculo < 1 ms por página (02 §6.7, `bench_layout_rects`).
+- *Aceptación*: (a) con sangrado de 3 mm, el PDF exportado tiene `TrimBox` y `BleedBox` correctos (validación estructural); (b) en 1080×1080 con zona del 5 % (de 54 a 1026), un elemento de 100×100 en x = 926 no avisa y en x = 926,01 avisa con exceso de 0,01 ±1e-9 a la derecha; (c) los márgenes se respetan en la plantilla al Adaptar (FD-54); (d) 3 mm a 300 DPI amplían 35,43 ±0,01 px por lado; sangrado 0 da el rectángulo de la página; 10 mm valen y 10,01 mm dan error; (e) `safe_rect` del 5 % en 1080×1920 da de (54, 96) a (1026, 1824); (f) márgenes izquierdo y derecho que suman el ancho dan error; una caja que toca `rect` solo por un borde está totalmente fuera; una caja de tamaño 0 dentro de `rect` tiene exceso 0.
 
 **FD-06 · Imán (snap)** (RF-08)
 - *Propósito*: alinear con precisión al arrastrar sin medir.
-- *Comportamiento y reglas*: Imán es una función propia, activable con `Ctrl+Shift+'`. Se engancha a: Guías, bordes y centro de la página, Márgenes, Cuadrícula, y bordes y centros de otros elementos, con **umbral de 6 px de pantalla** (configurable de 2 a 16 px, PROPUESTA). Al engancharse dibuja una línea guía temporal con el valor de distancia a los vecinos; mantener `Alt` lo desactiva mientras se arrastra. Los ángulos se ajustan a 15° con `Shift` al girar. El Imán no cambia el modelo: solo corrige la posición final del `Command`.
+- *Comportamiento y reglas*: Imán es una función propia, activa por defecto (D-28) y activable con `Ctrl+Shift+'`. Se engancha a: Guías, bordes y centro de la página, Márgenes, Cuadrícula, y bordes y centros de otros elementos, con **umbral de 6 px de pantalla** (configurable de 2 a 16 px; D-28). Al engancharse dibuja una línea guía temporal con el valor de distancia a los vecinos; mantener `Alt` lo desactiva mientras se arrastra. El Imán no cambia el modelo: solo corrige la posición final del `Command`.
+  - **Regla** (D-16): cada eje se resuelve por separado. En `x` se comparan el borde izquierdo, el centro y el borde derecho de la caja en movimiento con los destinos verticales; en `y`, el borde superior, el centro y el inferior con los horizontales. Gana el destino más cercano con distancia ≤ umbral. En un empate exacto, la prioridad es Guía > Margen > Página > Elemento > Cuadrícula. Si sigue el empate, gana la menor coordenada de destino y, después, la referencia izquierda o superior antes que el centro, y el centro antes que la derecha o inferior.
+  - **Unidades**: `umbral en página = umbral en px / zoom`. El zoom es una entrada, en píxeles de pantalla por unidad de página (1,0 = 100 %; rango de FD-08). Las guías en otra unidad se convierten con el DPI, que también es una entrada.
+  - **Cajas**: todas son rectángulos alineados a los ejes en coordenadas de página. Un nodo girado usa su caja alineada a los ejes (D-28).
+  - **Quién no atrae**: la selección que se mueve y sus descendientes, los elementos ocultos o bloqueados, las Guías si su visibilidad está apagada y la Cuadrícula si `visible` o `snap` son falsos. La Cuadrícula atrae a las líneas que FD-07 muestra con el zoom actual.
+  - **Resultado**: el desplazamiento y el destino elegido en cada eje. Sin destino, el desplazamiento de ese eje es 0.
+  - **Giro**: con `Shift`, el ángulo va al múltiplo de 15° más cercano; a medio camino, al mayor.
 - *UI*: Ver → Imán; Ajustes → General (umbral).
-- *Técnica*: `gafira-layout::snap` (índice espacial `rstar`, VERIFICAR licencia); resultados aplicados por el `Command` de mover; overlay por `Tool::overlay`.
-- *Presupuesto*: cálculo de snap < 2 ms con 1 000 nodos; el arrastre mantiene 60 fps (CAL-02).
-- *Aceptación*: (a) arrastrar un elemento a 5 px de una Guía lo deja exactamente sobre ella; (b) con `Alt` no se engancha; (c) la función respeta la visibilidad: elementos ocultos o bloqueados no atraen; (d) prueba de propiedad: el resultado nunca desplaza más que el umbral.
+- *Técnica*: `gafira-layout::snap` (índice espacial `rstar`, licencia VERIFICADA en 02 §9.2); resultados aplicados por el `Command` de mover; overlay por `Tool::overlay`.
+- *Presupuesto*: cálculo de snap < 2 ms con 1 000 nodos (02 §6.7, `bench_snap_1000`); el arrastre mantiene 60 fps (CAL-02).
+- *Aceptación*: (a) arrastrar un elemento a 5 px de una Guía, con zoom 100 % y umbral 6, deja su borde sobre ella con error ≤ 1e-9; (b) con `Alt` no se engancha; (c) la función respeta la visibilidad: elementos ocultos o bloqueados no atraen, ni la selección movida ni sus descendientes; (d) prueba de propiedad: el resultado nunca desplaza más que el umbral en ningún eje; (e) a distancia 6 engancha y a 6,01 no; con zoom 200 %, a distancia 3 engancha y a 3,01 no; (f) con una Guía y el borde de página a la misma distancia gana la Guía, y cada par vecino de la prioridad se prueba igual; con la Cuadrícula a 2 y una Guía a 3 gana la Cuadrícula, porque está más cerca; (g) cada eje es independiente: `x` puede engancharse a una Guía e `y` a un elemento en el mismo movimiento; (h) sin destinos, el desplazamiento es (0, 0); (i) con `Shift`, 7,4° da 0° y 7,5° da 15°.
 
 **FD-07 · Cuadrícula** (RF-08)
 - *Propósito*: referencia regular de fondo para composición.
-- *Comportamiento y reglas*: Cuadrícula es una función propia, activable con `Ctrl+'`. Paso configurable (1–500 unidades; por defecto 10), subdivisiones (1–10) y estilo (líneas o puntos). Es independiente de las Guías, vive en la página (`Page.grid: GridSettings { visible, step, subdivisions, snap }`, 02 §3.1) y no se exporta (ARQ-15). A zoom bajo (< 25 %) se muestra solo la cuadrícula mayor para no saturar. Con Imán activo, los elementos se enganchan a las intersecciones.
+- *Comportamiento y reglas*: Cuadrícula es una función propia, activable con `Ctrl+'`. Paso configurable (1–500 en la unidad del paso; por defecto 10 px), subdivisiones (1–10; por defecto 1, PROPUESTA) y estilo (líneas o puntos; por defecto líneas). Es independiente de las Guías, vive en la página (`Page.grid: GridSettings { visible, step, subdivisions, style, snap }`, 02 §3.1) y no se exporta (ARQ-15). Por defecto, `visible` es falso y `snap` verdadero (PROPUESTA).
+  - **Líneas**: el origen es la esquina superior izquierda de la página. La **cuadrícula mayor** tiene líneas cada `paso` y la **menor** cada `paso / subdivisiones`.
+  - **Qué se muestra**: a zoom < 25 % solo la cuadrícula mayor. A 25 % o más, también la menor. Si la separación en pantalla de un nivel es < 6 px (PROPUESTA), ese nivel no se muestra. Si tampoco cabe la mayor, se usa el menor múltiplo `paso × 2^k` con separación ≥ 6 px.
+  - **Imán**: con Imán activo, cada eje se engancha a la línea mostrada más cercana, así que los elementos caen en las intersecciones (regla de FD-06).
 - *UI*: Ver → Cuadrícula; Barra contextual del lienzo.
 - *Técnica*: `gafira-layout::grid`; dibujo como overlay.
-- *Presupuesto*: dibujo < 1 ms (no invalida tiles).
-- *Aceptación*: (a) el paso se respeta en cualquier unidad; (b) activar y desactivar no cambia el documento exportado; (c) a 3200 % de zoom no se dibujan más de 2 000 líneas.
+- *Presupuesto*: dibujo < 1 ms (no invalida tiles; 02 §6.7, `bench_grid_lines`).
+- *Aceptación*: (a) el paso se respeta en cualquier unidad: las líneas caen en `k × paso` convertido con el DPI, ±0,01 px; (b) activar y desactivar no cambia el documento exportado; (c) con cualquier zoom de 5 % a 3200 % y un *viewport* de hasta 3840×2160 px no se generan más de 2 000 líneas; (d) con paso 10 px y 5 subdivisiones hay líneas cada 40 px a 24,9 %, cada 10 px y no cada 2 px a 100 %, y cada 2 px a 500 %; (e) paso 0,99 o 500,01, subdivisiones 0 u 11, y zoom fuera de 5–3200 % dan error.
 
 **FD-08 · Zoom y vista** (RF-09)
 - *Propósito*: acercar y alejar con precisión desde 5 % a 3200 %.
@@ -113,7 +128,7 @@
 - *UI*: lienzo, Capas.
 - *Técnica*: recorte al renderizar por `RenderGraph`; `layout::overflow(bounds, page)` (02 §3.2).
 - *Presupuesto*: sin coste medible (CAL-02).
-- *Aceptación*: (a) la exportación PNG no contiene píxeles fuera de la página; (b) al mover el elemento dentro, aparece completo; (c) el documento guardado conserva el elemento intacto.
+- *Aceptación*: (a) la exportación PNG no contiene píxeles fuera de la página; (b) al mover el elemento dentro, aparece completo; (c) el documento guardado conserva el elemento intacto; (d) en una página de 1080 px, un elemento con x = 1000 y ancho 104 da `overflow` de 24 px a la derecha y 0 en el resto, y con x = 1080 está totalmente fuera.
 
 ---
 
@@ -129,11 +144,16 @@
 
 **FD-11 · Alinear y distribuir** (RF-10)
 - *Propósito*: ordenar elementos en un solo gesto.
-- *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la selección (varios); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (2 o más elementos para alinear, 3 para distribuir). Los elementos bloqueados no se mueven. Atajos: `Ctrl+Alt+L/C/R`.
+- *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la caja de la selección (dos o más); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (el modo es una entrada; por defecto, espacio igual). Los elementos bloqueados no se mueven. Atajos: `Ctrl+Alt+L/C/R`.
+  - **Cajas**: rectángulos alineados a los ejes en coordenadas de página; un nodo girado usa su caja alineada a los ejes (D-28).
+  - **Alinear con bloqueados**: la caja de la selección incluye los elementos bloqueados (PROPUESTA, Q-35). Alinear no cambia el otro eje.
+  - **Distribuir** (D-17, D-28): solo cuentan los elementos libres. Se ordenan por su posición en el eje: borde inicial con espacio igual y centro con centros; un empate conserva el orden de entrada. El primero y el último no se mueven. Con menos de 3 libres no hace nada. Un elemento libre puede quedar sobre uno bloqueado.
+  - **Espacio igual**: `espacio = (inicio del último − fin del primero − suma de los tamaños intermedios) / (n − 1)`. Si los elementos no caben, `espacio` es negativo y se solapan por igual; no es un error.
+  - **Entre centros**: los centros quedan a la misma distancia entre el centro del primero y el del último.
 - *UI*: Inspector → Posición → Alinear; Barra contextual; menú contextual.
 - *Técnica*: `gafira-layout::align`, `gafira-layout::distribute` (devuelven resultados; el `Command` los aplica).
 - *Presupuesto*: < 100 ms con 100 elementos (CAL-05).
-- *Aceptación*: (a) alinear a la izquierda deja todos los bordes izquierdos dentro de ±0,01 unidades; (b) distribuir produce espacios iguales ±0,01; (c) una sola acción de Deshacer revierte toda la operación.
+- *Aceptación*: (a) alinear a la izquierda deja todos los bordes izquierdos libres dentro de ±0,01 unidades y no cambia `y`; (b) distribuir produce espacios iguales ±0,01 y el primero y el último no se mueven; (c) una sola acción de Deshacer revierte toda la operación; (d) con 4 elementos, 1 de ellos bloqueado, se distribuyen los 3 libres y el bloqueado no se mueve; con 3 elementos y 1 bloqueado, nada cambia; (e) tres cajas de ancho 100 en un tramo de 250 dan espacio −25, sin error; (f) con un elemento, se alinea a la página; una caja girada 45° se alinea por su caja alineada a los ejes; con la selección vacía o un solo elemento bloqueado, nada cambia.
 
 **FD-12 · Orden de apilado y Capas** (RF-11)
 - *Propósito*: controlar qué queda delante y gestionar la estructura.
@@ -516,7 +536,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 ## 12. Cambiar tamaño
 
 **FD-53 · Cambiar tamaño: Destinos y vista previa** (RF-30)
-- *Propósito*: preparar el mismo diseño para varios destinos.
+- *Propósito*: preparar el mismo diseño para varios destinos. Llega en un change posterior a `gafira-text` (D-14).
 - *Comportamiento y reglas*: el panel (03 §7.6) ofrece búsqueda, sugerencias (según el formato actual) y **Destinos**: Redes, Impresión, Presentaciones, Video, Web y Personalizado; selección múltiple de tamaños; **tamaño personalizado** (Ancho, Alto, unidades, candado de proporción, orientación). La vista previa muestra, por cada destino, cómo quedaría la composición antes de aplicar. Los tamaños exactos en píxeles están en la tabla siguiente. **Las medidas de plataformas cambian: VERIFICAR contra la plataforma vigente al publicar.**
 
 | Destino | Tamaño | Px (ancho × alto) |
@@ -551,7 +571,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 - *Aceptación*: (a) cada tamaño de la tabla se crea con las dimensiones exactas; (b) la vista previa coincide con el resultado final en ≤ 1/255; (c) el tamaño personalizado respeta unidades y proporción.
 
 **FD-54 · Duplicar y adaptar / Adaptar este diseño** (RF-30)
-- *Propósito*: producir versiones en otros tamaños conservando la jerarquía visual.
+- *Propósito*: producir versiones en otros tamaños conservando la jerarquía visual. Llega en un change posterior a `gafira-text` (D-14).
 - *Comportamiento y reglas*: **Duplicar y adaptar** crea una página nueva por cada destino elegido y conserva el original; **Adaptar este diseño** cambia el tamaño de la página actual (Deshacer lo revierte). El reflujo: escala uniforme de la composición al área útil, reposiciona los elementos por anclajes (esquinas, centro, bordes) y proporciones, mantiene el orden de lectura, respeta Márgenes y Zona de seguridad, reajusta cuadros de texto (con Ajustar al cuadro) y no toca tipografías fijadas. Tras adaptar, el ajuste manual es posible. Criterio del PRD: pasar de 1080×1920 a 1080×1080 conserva textos, imágenes principales y jerarquía.
 - *UI*: Cambiar tamaño (los dos botones).
 - *Técnica*: `Command` `ResizeDesign` (composite) con `gafira-layout::reflow`.

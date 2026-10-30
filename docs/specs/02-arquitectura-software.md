@@ -7,7 +7,7 @@
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
 | Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4) |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -191,7 +191,7 @@ Project
  ├─ pages: Vec<Page>                          (lienzos; en video, cada escena es una Page con duración)
  │    └─ Page { id, name, size: PageSize, bleed, margins, guides, grid: GridSettings, notes: String,
  │              background, duration: Option<Flicks>, locked, hidden, roots: Vec<NodeId>, nodes: NodeArena }
- │         GridSettings { visible: bool, step: Length, subdivisions: u8, snap: bool }   (Cuadrícula de 03 §2.6)
+ │         GridSettings { visible: bool, step: Length, subdivisions: u8, style: GridStyle, snap: bool }   (Cuadrícula de 03 §2.6)
  └─ sequences: Vec<Sequence>                  (timelines)
       └─ Sequence { id, fps: FrameRate, size, sample_rate, tracks: Vec<Track>, markers }
            └─ Track { id, kind: Video|Overlay|Audio|Caption, muted, locked, solo, clips: Vec<Clip> }
@@ -206,7 +206,7 @@ Project
 
 `NodeArena` es un `HashMap<NodeId, Arc<Node>>` con hijos por `NodeId`. Así se comparte estructura entre versiones (§5.1) y se hace *lookup* O(1).
 
-- **Cuadrícula** (`Page::grid`): rejilla de fondo con paso configurable (`step` en unidades de la página, `subdivisions` internas). Es un dato de la página, se guarda con ella y la usa `gafira-layout::snap` cuando el Imán está activo. Nunca se exporta.
+- **Cuadrícula** (`Page::grid`): rejilla de fondo con paso configurable (`step` en su propia unidad, de 1 a 500; `subdivisions` internas, de 1 a 10) y estilo `Lines | Dots` (04 FD-07). Es un dato de la página, se guarda con ella y la usa `gafira-layout::snap` cuando el Imán está activo. Nunca se exporta.
 - **Notas** (`Page::notes`): texto plano por página que se edita en la Barra inferior (03 §2.6). No se renderiza en el lienzo ni en ninguna exportación de imagen o video. Si un exportador ofrece incluirlas (por ejemplo, como anotaciones de PDF), lo declara en su `ExportCaps` y la opción está desactivada por defecto.
 
 ### 3.2 `ElementBase` y nodos
@@ -832,6 +832,45 @@ pub trait Translator: Send + Sync {                                       // gaf
 - **Sin estado global**: el idioma activo es un `Locale` (`Copy`) que guarda quien pinta (la UI o la CLI) y que se pasa en cada llamada. No hay `set_locale` global (ARQ-31).
 - **Dobles de prueba**: `FakeSystemLocaleSource` (etiquetas fijas) en `gafira-testkit`; `PseudoTranslator` (feature `pseudo` de `gafira-i18n`, solo desarrollo y pruebas, §14.6).
 
+### 4.17 Contratos de los motores de capa 2
+
+Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las fichas de 04 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
+
+Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Solo `gafira-segment` depende de otro de estos crates (`gafira-raster`).
+
+Quedan fuera de esta sección, para el diseño del change: dónde viven los tipos compartidos, qué aristas nuevas se añaden a §2.2 y qué terceros se eligen. Los nombres de tipo que aparecen aquí identifican un concepto, no una ubicación.
+
+#### 4.17.1 Reglas comunes
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-110 | **Entrada no finita.** Toda función pública de un motor de capa 2 comprueba sus números antes de calcular. Un NaN, un `±∞` o un resultado intermedio no finito dan un `Err` tipado que nombra el campo. No hay `panic`, salida parcial ni un no finito en la salida. Los constructores y los datos planos no validan, como en `gafira-geom` y `gafira-doc`. Única excepción: `AudioProcessor::process` (ARQ-123). | Prueba de tabla por función pública: NaN, `+∞` y `−∞` en cada parámetro numérico dan `Err` con ese campo, y el búfer de destino, si lo hay, queda idéntico byte a byte. Prueba de propiedad: con entrada finita dentro del dominio, toda salida numérica es finita. |
+| ARQ-111 | **Determinismo.** La misma entrada produce los mismos bytes. El resultado no depende del número de hilos ni de ninguna fuente de entropía. Un generador pseudoaleatorio, si existe, usa una semilla fija. | Cada crate ejecuta dos veces cada operación de su primer corte y compara los bytes. Los crates con `rayon` comparan además pools de 1, 2 y 4 hilos. |
+| ARQ-112 | **Cancelación y progreso sin reloj.** Una operación larga con `CancelToken` emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. Comprueba el token al menos una vez por informe. Al ver la cancelación devuelve `Err` de cancelado, no entrega salida y no emite más progreso. La estimación de tiempo no se calcula en capa 2 (ARQ-02): la calcula `gafira-engine` con su `Clock` a partir de la fracción. | Prueba con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo): la llamada devuelve cancelado y hay como mucho 1 informe después del `k`. Sobre la entrada de referencia de la operación, la fracción sube ≤ 0,02 entre dos informes seguidos. Sin medidas de tiempo en `cargo test`. La cifra de ≤ 100 ms (ARQ-43) se mide en §6.7. |
+| ARQ-113 | **Golden de capa 2.** Un criterio de píxel usa primero un valor analítico. Un golden guardado se genera en `x86_64-unknown-linux-gnu`, usa un formato sin pérdida y solo se regenera con una acción explícita: ninguna prueba reescribe su referencia. La tolerancia es la de §10. | Prueba del comparador: una referencia con 1 byte alterado falla en la misma plataforma. Entre plataformas, con 1 000 píxeles, 1 píxel a 2/255 pasa (99,9 %), 2 píxeles a 2/255 fallan, y todos a 1/255 pasan. |
+| ARQ-114 | **Presupuestos.** Las cifras de capa 2 viven en §6.7 y las mide un *benchmark* (ARQ-40). No son una puerta de `cargo test`. | Cada cifra de §6.7 citada por una ficha de capa 2 tiene un *benchmark* con el nombre de esa fila. |
+
+#### 4.17.2 `gafira-layout`
+
+| Primer corte (D-14) | Fuera del corte |
+|---|---|
+| FD-03 (a, c, d), FD-04 (a, d, e, f), FD-05 (b, d, e, f), FD-06 (a a i), FD-07 (a, c, d, e), FD-09 (d), FD-11 (a, b, d, e, f) | Datos y comandos en otros crates: FD-03 (b), FD-04 (b, c), FD-11 (c). Exportación o interfaz: FD-05 (a), FD-07 (b), FD-09 (a, b, c). Con FD-54: FD-05 (c). Change posterior a `gafira-text`: FD-53, FD-54. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| NaN o `±∞` en cualquier entrada | `Err` de toda la llamada; ningún resultado parcial. | ARQ-110 |
+| Suma que desborda (`x + w` con valores enormes) | `Err` por resultado no finito. | ARQ-110 |
+| Caja con `x1 < x0` o `y1 < y0` | `Err`. | FD-05, FD-06, FD-11 |
+| Caja de tamaño 0 | Válida: `gafira-doc` admite `w = 0` y `h = 0`. Sus bordes y su centro coinciden. | FD-05, FD-06, FD-11 |
+| Umbral del Imán | Finito y > 0. La distancia igual al umbral engancha; por encima, no. El rango 2–16 lo aplica Ajustes. | FD-06 |
+| Zoom | Finito en `[0,05; 32]`; fuera, `Err`. | FD-06, FD-07 |
+| Empate del Imán | Comparación exacta de `f64`, sin tolerancia. | FD-06 |
+| Ancho de columna | `c ≥ 1 px`; `c = 1` vale. | FD-04 |
+| Aviso de zona de seguridad | Exceso `> 0`, sin tolerancia; el borde sobre el límite no avisa. | FD-05 |
+| Porcentaje de zona de seguridad | En `[0, 50)`; 50 deja un rectángulo sin área y da `Err`. | FD-05 |
+| Sangrado | En `[0, 10]` mm, extremos incluidos. | FD-05 |
+| Tolerancia de las pruebas | Posiciones generadas y resultados de alinear y distribuir: ±0,01 unidades (FD-11) y 1e-9 cuando la ficha lo indica. | FD-04, FD-06, FD-11 |
+
 ---
 
 ## 5. Patrones transversales
@@ -1024,6 +1063,10 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
+| Vista previa del Generador de guías < 16 ms (04 FD-04) | Función pura sin tocar el documento | `bench_guides_generate`: < 16 ms por cambio de valor |
+| Márgenes, sangrado y zona de seguridad < 1 ms por página (04 FD-05) | Función pura | `bench_layout_rects`: < 1 ms |
+| Imán < 2 ms con 1 000 nodos (04 FD-06) | Índice espacial por página (`rstar`, §9.2) | `bench_snap_1000`: p99 < 2 ms |
+| Cuadrícula < 1 ms (04 FD-07) | Solo se calculan las líneas del *viewport*; se dibuja como overlay | `bench_grid_lines`: < 1 ms |
 | Reel de 60 s 1080p en < 3 min (PRD) | Exportación encadenada en paralelo (composición y codificación en hilos distintos); codificador por hardware del SO o AV1 en preset rápido | `bench_export_reel_60s`: < 180 s (requiere ≥ 10 fps de extremo a extremo a 30 fps) |
 | Exportaciones sin intervención ≥ 98 % (PRD) | Validación previa, reintentos transitorios, alternativa de códec, escritura atómica | Suite `export_matrix` (≥ 200 combinaciones formato × opción × documento) con ≥ 98 % de éxito; meta interna 100 % |
 | Autoguardado cada 5–15 s, pérdida ≤ 15 s, recuperación 100 % (PRD) | §7.2 | Prueba de *kill* aleatorio (`SIGKILL` / `TerminateProcess`) 500 veces: siempre recuperable y pérdida ≤ intervalo configurado |
