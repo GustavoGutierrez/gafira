@@ -119,7 +119,7 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 4 Adaptadores | `gafira-ui` | Interfaz egui/eframe: shell, paneles, lienzo, timeline, herramientas (`Tool`), widgets accesibles y traducción de eventos. Pantalla de arranque con sus recursos incrustados (§8.4, D-09). Todo texto visible sale de `Translator` por clave (ARQ-97). | Mutar el documento sin `Command`, o hacer I/O directo. Contener texto literal visible. | MVP |
 | 4 Adaptadores | `gafira-captions` | Lectura y escritura de SRT y WebVTT, estilos de subtítulo. | — | Fase 2 |
 | 4 Adaptadores | `gafira-plugin` | `PluginHost` con wasmi (sandbox, combustible, capacidades), manifiesto de extensión. | Dar acceso a red o disco no concedido. | Fase 3 |
-| Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
+| Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas), escenas sintéticas con máscara exacta (ARQ-132). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
 | Soporte | `xtask` | Comprobación de capas, empaquetado (MSI; `.deb`, `.rpm` y `.tar.gz` para Linux x86_64; DMG), generación de iconos, auditoría de licencias y generación de `THIRD_PARTY_NOTICES.md`. | Distribuirse. | MVP |
 | Binario | `gafira` (`apps/gafira`) | App de escritorio: composición, registros e inyección. | Contener lógica. | MVP |
 | Binario | `gafira-cli` (`apps/gafira-cli`) | Exportación por lotes (`gafira-cli export proyecto.gafira --format png --pages 1-5`), validación de proyectos, *benchmarks* de escenario (`gafira-cli bench`), regeneración de golden. Mensajes en inglés por defecto; `--lang` para cambiarlo (ARQ-104). | Depender de `gafira-ui`. | MVP |
@@ -589,7 +589,7 @@ pub trait RenderBackend: Send {
 ```rust
 pub trait Segmenter: Describe + Send + Sync {
     fn requirements(&self) -> SegReq;            // CPU/GPU, RAM estimada, tamaño máx. de trabajo
-    fn segment(&self, img: ImageView<'_>, hints: &SegHints,  // zona: todo, primer plano, trazo del usuario
+    fn segment(&self, img: ImageView<'_>, hints: &SegHints,  // zona, trazos de semilla y prioridad central (ARQ-130)
                progress: &dyn Progress, cancel: &CancelToken) -> Result<AlphaMask, SegError>;
 }
 ```
@@ -599,7 +599,7 @@ pub trait Segmenter: Describe + Send + Sync {
 - **Patrón**: Strategy + Registry. La UI elige la estrategia por `requirements` y la preferencia del usuario.
 - **Cómo añadir un segmentador**:
   1. Implementar el trait.
-  2. Validar con el conjunto de referencia de `gafira-testkit` (IoU ≥ 0,90 frente a máscaras de verdad en el conjunto de prueba, FIJADA).
+  2. Validar con las escenas sintéticas de `gafira-testkit` (IoU ≥ 0,90 frente a máscaras exactas, prueba bloqueante, D-20, ARQ-132). El IoU sobre fotos reales es solo un aviso hasta que exista un conjunto con licencia.
   3. Registrar.
 
 ### 4.8 Video: `Container`, `Codec`, `Decoder`, `Encoder`
@@ -952,6 +952,30 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 | Sonoridad sin bloques | «Sin medida», nunca −∞. | ARQ-126 |
 | Tolerancias | ±0,5 LU en Nivelar; ±0,1 LU en el medidor; ±0,5 dB en EQ; 1 muestra en desfases. | ARQ-125 a ARQ-129 |
 
+#### 4.17.6 `gafira-segment`
+
+| Primer corte | Fuera del corte |
+|---|---|
+| ARQ-130, ARQ-131, ARQ-132, ARQ-43 (segmentación), CAL-06 (`bench_segment_4000`), FD-32 (e), FD-38 (a, b, c) | Interfaz y comandos: FD-32 (a a d, f), FD-38 (d), FD-39. Fase 3: FD-40, `onnx`. GPU: CAL-07. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
+| ARQ-131 | **Fiabilidad** (D-23). El resultado indica si es fiable: el primer plano ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Un resultado no fiable no es un error. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: no fiable. Las escenas de ARQ-132: fiable. |
+| ARQ-132 | **Puerta de calidad** (D-20). `gafira-testkit` genera escenas sintéticas deterministas con máscara exacta conocida: al menos 12, con fondo plano, degradado y texturizado, sujeto centrado y desplazado, formas cóncavas y con agujero, y contraste bajo. La prueba bloqueante exige IoU ≥ 0,90 por escena, no en media, binarizando con alfa ≥ 128. Con las dos máscaras vacías, el IoU es 1. Sobre fotos reales, el IoU es solo un aviso hasta que el titular aporte un conjunto con licencia (pendiente 9). | La prueba de escenas falla si una sola queda por debajo de 0,90. Prueba del cálculo de IoU: 0,90 pasa y 0,8999 falla. Mientras no exista el conjunto real, ninguna prueba bloqueante depende de él. |
+
+Parámetros de partida de `ClassicSegmenter` (PROPUESTA; se pueden cambiar sin tocar esta spec mientras se cumplan ARQ-132 y CAL-06): unos 1 500 superpíxeles SLIC, 5 componentes por GMM, hasta 5 iteraciones de GrabCut y *guided filter* de radio 8 px.
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Píxel `f32` NaN o `±∞` | `Err`. | ARQ-110 |
+| Imagen de tamaño 0 | `Err`. | ARQ-130 |
+| Imagen de 1×1 o uniforme | `Ok`, no fiable. | ARQ-131 |
+| Tamaño de trabajo | Lado largo > 1024: reduce; = 1024 o menos: no. | ARQ-130 |
+| Umbral de IoU | `≥ 0,90`, igualdad incluida. | ARQ-132 |
+| Límites de área | 1 % y 95 % incluidos. | ARQ-131 |
+| Cancelación | Sin reloj en las pruebas unitarias (ARQ-112). | ARQ-112 |
+
 ---
 
 ## 5. Patrones transversales
@@ -1144,6 +1168,7 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
+| Cancelar una segmentación ≤ 100 ms (ARQ-43) | Comprobación del token por unidad de trabajo (ARQ-112) | `bench_cancel_segment`: ≤ 100 ms |
 | Sombra < 100 ms con radio ≤ 40 px en 1080p (04 FD-35) | Desenfoque gaussiano separable | `bench_shadow_1080`: < 100 ms |
 | Hash perceptual de 12 MP < 100 ms (04 FD-28) | La fija el diseño del change | `bench_dhash_12mp`: < 100 ms |
 | Escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (04 FD-41) | La fija el diseño del change | `bench_text_type_5000`: p99 < 16 ms |

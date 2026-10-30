@@ -342,11 +342,11 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 
 **FD-32 · Zona de edición** (RF-20)
 - *Propósito*: decidir en qué parte de la imagen actúa un ajuste.
-- *Comportamiento y reglas*: selector con seis opciones: **Todo**, **Elemento** (el objeto detectado), **Mano alzada** (se pinta el área con un pincel), **Primer plano**, **Fondo** y **Texto** (detecta regiones de texto raster). Todas generan una máscara que modula el ajuste y es editable. «Elemento», «Primer plano» y «Fondo» usan el `ClassicSegmenter` (FD-38); si no hay resultado fiable, la opción se atenúa con el motivo.
+- *Comportamiento y reglas*: selector con seis opciones: **Todo**, **Elemento** (el objeto detectado), **Mano alzada** (se pinta el área con un pincel), **Primer plano**, **Fondo** y **Texto** (detecta regiones de texto raster). Todas generan una máscara que modula el ajuste y es editable. «Elemento», «Primer plano» y «Fondo» usan el `ClassicSegmenter` (FD-38); «Elemento» añade una pista de prioridad central (D-23). Si el resultado no es fiable (02 ARQ-131), la opción se atenúa con el motivo «No se detectó un resultado fiable en esta imagen.». **Texto** pasa a Fase 2 (D-23): se muestra atenuada con el motivo «Disponible en una versión futura.».
 - *UI*: Inspector → Imagen → Zona de edición.
 - *Técnica*: `Mask::Alpha` / `Painted`, `Segmenter`, `EffectInstance` con máscara.
 - *Presupuesto*: la máscara aproximada < 5 s en CPU para 4000 px (CAL-06), refinamiento en segundo plano; el efecto con máscara ya calculada < 300 ms (CAL-04).
-- *Aceptación*: (a) con «Fondo» el ajuste no afecta al primer plano en el golden; (b) la máscara se puede pintar con Pincel Quitar y Pincel Devolver; (c) «Restablecer» elimina el ajuste y su máscara.
+- *Aceptación*: (a) con «Fondo» el ajuste no afecta al primer plano en el golden; (b) la máscara se puede pintar con Pincel Quitar y Pincel Devolver; (c) «Restablecer» elimina el ajuste y su máscara; (d) «Texto» aparece atenuada con su motivo y no genera máscara; (e) `ClassicSegmenter` cumple ARQ-130 y ARQ-131; (f) en una imagen uniforme, «Elemento», «Primer plano» y «Fondo» se atenúan con el motivo.
 
 **FD-33 · Ajustes de imagen: Ajuste automático, Balance de blancos, Luz, Color y Textura** (RF-20)
 - *Propósito*: corregir y estilizar sin salir del editor.
@@ -428,11 +428,11 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 
 **FD-38 · Aislar sujeto** (RF-22)
 - *Propósito*: separar el sujeto de una imagen sin modelo de IA y sin conexión.
-- *Comportamiento y reglas*: un clic sobre una imagen (Barra contextual → «Aislar sujeto») ejecuta el `ClassicSegmenter` (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC, refinado de bordes con *matting*; 02 §4.7). Trabaja sobre una copia reducida a 1024 px de lado largo y escala con *guided filter* al tamaño completo. Muestra progreso y una **estimación de tiempo** en CPU (requisito del PRD); es cancelable en ≤ 100 ms. El resultado es una **máscara no destructiva** (`Mask::Alpha`) que se muestra sobre un fondo de cuadros; el píxel original no cambia y se puede quitar la máscara con Restablecer. Si hay pistas del usuario (trazo sobre el sujeto o el fondo), se usan como semillas. Sin modelos por defecto (ARQ-76).
+- *Comportamiento y reglas*: un clic sobre una imagen (Barra contextual → «Aislar sujeto») ejecuta el `ClassicSegmenter` (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC, refinado de bordes con *matting*; 02 §4.7). Trabaja sobre una copia reducida a 1024 px de lado largo (una imagen menor no se amplía) y escala con *guided filter* al tamaño completo. Muestra progreso y una **estimación de tiempo** en CPU (requisito del PRD), que calcula `gafira-engine` a partir de la fracción de progreso (02 ARQ-112); es cancelable en ≤ 100 ms. El resultado es una **máscara no destructiva** (`Mask::Alpha`) que se muestra sobre un fondo de cuadros; el píxel original no cambia y se puede quitar la máscara con Restablecer. Si hay pistas del usuario (trazo sobre el sujeto o el fondo), se usan como semillas. Sin modelos por defecto (ARQ-76).
 - *UI*: Barra contextual y Inspector → Imagen → «Aislar sujeto»; menú contextual.
-- *Técnica*: `Segmenter` (`ClassicSegmenter`, `SegHints`, `AlphaMask`) en `gafira-segment`, `Mask`, pool de render (`rayon`).
+- *Técnica*: `Segmenter` (`ClassicSegmenter`, `SegHints`, `AlphaMask`; 02 ARQ-130) en `gafira-segment`, `Mask`, pool de render (`rayon`).
 - *Presupuesto*: imagen de 4000 px **< 5 s en CPU** (CAL-06); **< 2 s con GPU** (CAL-07, VERIFICAR); la UI nunca se bloquea.
-- *Aceptación*: (a) el conjunto de referencia de `gafira-testkit` da IoU ≥ 0,90 (PROPUESTA); (b) `bench_segment_4000` < 5 s en el hardware de gama media; (c) cancelar devuelve el control en ≤ 100 ms y deja el documento intacto; (d) la imagen original se puede recuperar quitando la máscara.
+- *Aceptación*: (a) las escenas sintéticas de `gafira-testkit` dan IoU ≥ 0,90 por escena (prueba bloqueante, D-20, 02 ARQ-132); el IoU sobre fotos reales es solo un aviso hasta que el titular aporte un conjunto con licencia; (b) `bench_segment_4000` < 5 s en el hardware de gama media; (c) cancelar devuelve el control en ≤ 100 ms y deja el documento intacto (prueba por informes de progreso, 02 ARQ-112; la cifra se mide en `bench_cancel_segment`); (d) la imagen original se puede recuperar quitando la máscara.
 
 **FD-39 · Retocar borde (Pincel Quitar y Pincel Devolver)** (RF-22)
 - *Propósito*: corregir la máscara a mano.
