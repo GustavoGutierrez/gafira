@@ -1,6 +1,6 @@
 # 0007. Layer-2 dependency edges and V5 rows
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-30
 - Related: ARQ-01, ARQ-02, ARQ-102, ADR-01 (02 §2.3), 02 §2.2, ADR 0005, changes `layout-core`, `engine-contracts`
 

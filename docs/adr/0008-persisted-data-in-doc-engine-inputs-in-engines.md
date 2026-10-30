@@ -1,6 +1,6 @@
 # 0008. Persisted types live in `gafira-doc`; engines own their inputs
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-30
 - Related: FD-03, FD-05, FD-07, FD-39, FD-41, FD-54, 02 §3.1, 02 §3.2, D-19, change `layout-core`
 

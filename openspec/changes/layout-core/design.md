@@ -6,7 +6,7 @@ Evidence: `spike.md`, `spike-layer2.md`, 02 §2, §3, §4.17, §12.3, 04, D-14 t
 
 ## Quick path
 
-1. Owner accepts ADRs 0005 to 0010 and answers the two open questions.
+1. ADRs 0005 to 0010 are accepted and the two owner questions are answered (see "Owner decisions").
 2. `specifier` applies "Needs specifier". Items S1 to S6 and S8 block `layout-core`.
 3. `tdd-apply` runs D1 to D7 in order. All are serial.
 4. `explorer` settles "Needs explorer" before the changes that depend on each claim.
@@ -47,7 +47,7 @@ Short form for what stays in this change. The ADRs hold the cross-cutting ones.
 
 ### L1. Types stored in `Page`
 
-- Status: proposed (ADR 0008).
+- Status: accepted (ADR 0008).
 - Decision: new module in `gafira-doc`, with `Page` fields in 02 §3.1 order after `size`: `bleed`, `margins`, `guides`, `grid`.
 
 | Type | Shape | Default |
@@ -66,7 +66,7 @@ Short form for what stays in this change. The ADRs hold the cross-cutting ones.
 
 ### L3. `gafira-layout` inputs
 
-- Status: proposed (ADR 0009).
+- Status: accepted (ADR 0009).
 - Context: `MeasureCx` and `local_bounds` do not exist; text and image nodes do not exist (`spike.md` item 4).
 - Decision: `snap`, `align`, `distribute` and `overflow` take `Rect`s, so they never depend on node kinds. One function, `node_bounds(page, id)`, maps a node to its `Rect`: `Placement::to_transform()` then `Affine::transform_rect_bbox` over `[0,w]×[0,h]` for a leaf (D-28), the union of children for a group, its own box for an empty group. Strokes and effects do not count: the box is the logical box.
 - Consequences: FD-11(f), the 45° box, is testable at this level. Text and image nodes reuse the same function when their `Placement` holds their box. A non-finite `Placement` gives `Err` (ARQ-110).
@@ -138,7 +138,7 @@ Forecast is authored lines; "x1.4" is the planning figure. Mode rule: all delive
 
 | Delivery | Scope | Specs covered | Depends on | Mode | Est. lines |
 |---|---|---|---|---|---|
-| D1 | `gafira-doc`: L1 types, `Page` fields, always-written wire form, 7 tests and 3 goldens updated, old bytes kept as input fixture, testkit generators | FD-03(b), ADR 0006 | ADRs accepted, S1 to S3 | serial | 330 (x1.4: 460) |
+| D1 | `gafira-doc`: L1 types, `Page` fields, always-written wire form, 7 tests and 3 goldens updated, old bytes kept as input fixture, testkit generators | FD-03(b), ADR 0006 | S1 to S3 | serial | 330 (x1.4: 460) |
 | D2 | `gafira-doc` validate step; `gafira-edit` `Property::{Bleed, Margins, Guides, Grid}` with ranges and property tests | FD-03(d), FD-04(c), FD-05, FD-07(e) load side | D1, S6 | serial | 300 (x1.4: 420) |
 | D3 | `gafira-layout` crate, V5 row, `clippy.toml`, `error`, `bounds`, `rects` | FD-05(b, d, e, f), FD-09(d), D-28, ARQ-110, ARQ-111 | D2, S8 | serial | 300 (x1.4: 420) |
 | D4 | `guides`, `grid` | FD-03(a, d), FD-04(a, d, e, f), FD-07(a, c, d, e) | D3 | serial | 340 (x1.4: 475) |
@@ -173,18 +173,26 @@ Each engine change needs its own delivery table, but serial deliveries from a Sl
 
 Sketch for change 9, not binding: `RichText` is a list of paragraphs, each with runs (`text`, style fields) and an optional list level. `TextPath` is an enum with one MVP variant, `Arc { bend: f32 }`, so the Fase 2 shape path adds a variant.
 
-## Open questions for the owner
+## Owner decisions
 
-Each also shows up as accepting an ADR. D-14 to D-34 are not reopened.
+D-14 to D-34 are not reopened. These close the questions raised by this design:
 
-1. **Group children and animation (ADR 0009).** Page-space children keep the MVP simple, but keyframing a group cannot move its children by itself.
-   - (a) Page space now, group animation solved later by compiling to child tracks or a delta field. Tradeoff: no cost in the MVP; video needs a design step.
-   - (b) Relative to the group. Tradeoff: animated groups work, but `Placement` is replaced by a general transform, and bounds, `Reparent` and FD-13(a) all get harder before any consumer exists.
-   - Recommendation: (a). Revisit before the first saving build, the last point where a change is free.
-2. **What ends the open schema (ADR 0006).** Without a bump, an older build silently drops new fields when it re-saves.
-   - (a) Schema 1 stays open until the first build that writes `.gafira` reaches a user. Tradeoff: no migration work now; the rule must be remembered when `gafira-format` is planned.
-   - (b) Bump on every additive field starting now. Tradeoff: safest in principle, but it needs a migration chain with no owner crate and no file to migrate.
-   - Recommendation: (a).
+| Topic | Decision |
+|---|---|
+| ADRs 0005 to 0010 | Accepted |
+| Group children | Page-space (ADR 0009, option a), with task T1 |
+| End of the open schema | Schema 1 stays open until the first `.gafira`-writing build reaches a user (ADR 0006, option a), with task T2 |
+| `assert_no_alloc` | BSD-1-Clause is not in `deny.toml`; it gets a per-crate `[[licenses.exceptions]]` entry with a rationale |
+| Safe-zone default | 5 % per side (FD-05) |
+
+## Tracked tasks
+
+Both outlive this change. `archive` moves this file, so the coordinator copies them to the follow-up list of `docs/specs/README.md` when `layout-core` closes.
+
+| # | Task | Closes when | Owner of the check |
+|---|---|---|---|
+| T1 | Revisit ADR 0009 (page-space group children) against the video design for group keyframes | Before the first saving build; a change after that build needs a migration | Coordinator, when `gafira-format` or the first video change is planned, whichever comes first |
+| T2 | Close schema 1: from the first `.gafira`-writing build that reaches a user, any new user-data field bumps the schema (ADR 0006 rule 2) | Closing task of the `gafira-format` change | `gafira-format` Slice card |
 
 ## Needs explorer
 
@@ -222,4 +230,4 @@ These edit product specs; this design does not.
 
 ## Next
 
-Owner answers the two questions and accepts the ADRs; then `specifier` for S1 to S6 and S8; then `tdd-apply` for D1. Run `explorer` for E1 to E5 in parallel with that: nothing in `layout-core` depends on them.
+Run `specifier` for S1 to S6 and S8; then `tdd-apply` for D1. Run `explorer` for E1 to E5 in parallel with that: nothing in `layout-core` depends on them.

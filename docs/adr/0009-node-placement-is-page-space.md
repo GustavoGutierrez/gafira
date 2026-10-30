@@ -1,6 +1,6 @@
 # 0009. Every node's `Placement` is in page space, group children included
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-30
 - Related: FD-05, FD-06, FD-09, FD-11, FD-13, D-28, 02 §3.2, change `layout-core` (spike item 4)
 

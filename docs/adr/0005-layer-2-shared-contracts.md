@@ -1,6 +1,6 @@
 # 0005. Layer-2 shared contracts live in a `gafira-doc` module
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-30
 - Related: ARQ-01, ARQ-98, ARQ-102, ARQ-110 to ARQ-112, ARQ-119, ADR-01 (02 §2.3), changes `layout-core`, `engine-contracts`
 

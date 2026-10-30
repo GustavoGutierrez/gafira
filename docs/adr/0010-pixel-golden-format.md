@@ -1,6 +1,6 @@
 # 0010. Pixel goldens are PNG files compared on raw bytes
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-30
 - Related: ARQ-02, ARQ-113, ARQ-132, 02 §10, ADR 0007, changes `testkit-golden`, `gafira-raster`, `gafira-segment`
 

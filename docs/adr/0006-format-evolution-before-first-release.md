@@ -1,6 +1,6 @@
 # 0006. Schema 1 stays open until a build can save, and every field is written
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-30
 - Related: ARQ-10, ARQ-13, ARQ-53, 02 §3.5, 02 §7.1, change `layout-core` (spike items 1 and D1)
 
