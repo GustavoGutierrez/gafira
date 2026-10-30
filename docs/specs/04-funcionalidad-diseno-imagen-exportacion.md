@@ -5,8 +5,8 @@
 | Documento | Especificación 04 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-28, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
-| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA** y **VERIFICAR** como en 01 |
+| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-34, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
+| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 están confirmadas en bloque (D-34) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o PROPUESTA) · *Aceptación* (criterios verificables) · *RF*.
 
@@ -146,7 +146,7 @@
 - *Propósito*: ordenar elementos en un solo gesto.
 - *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la caja de la selección (dos o más); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (el modo es una entrada; por defecto, espacio igual). Los elementos bloqueados no se mueven. Atajos: `Ctrl+Alt+L/C/R`.
   - **Cajas**: rectángulos alineados a los ejes en coordenadas de página; un nodo girado usa su caja alineada a los ejes (D-28).
-  - **Alinear con bloqueados**: la caja de la selección incluye los elementos bloqueados (PROPUESTA, Q-35). Alinear no cambia el otro eje.
+  - **Alinear con bloqueados**: la caja de la selección incluye los elementos bloqueados (D-29). Alinear no cambia el otro eje.
   - **Distribuir** (D-17, D-28): solo cuentan los elementos libres. Se ordenan por su posición en el eje: borde inicial con espacio igual y centro con centros; un empate conserva el orden de entrada. El primero y el último no se mueven. Con menos de 3 libres no hace nada. Un elemento libre puede quedar sobre uno bloqueado.
   - **Espacio igual**: `espacio = (inicio del último − fin del primero − suma de los tamaños intermedios) / (n − 1)`. Si los elementos no caben, `espacio` es negativo y se solapan por igual; no es un error.
   - **Entre centros**: los centros quedan a la misma distancia entre el centro del primero y el del último.
@@ -382,6 +382,8 @@ Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codifica
 | Viñeta | `c × 2^(k × w(0,5; 1; d))`, con `d` la distancia al centro dividida por media diagonal |
 | Ajuste automático | Se calcula sobre el original, sin la pila de ajustes. `n` y `b` son los percentiles 0,5 y 99,5 de `v_Y`, de los que salen Negros y Blancos. Brillo lleva la mediana de `Y` a 0,18. `T` y `M` salen del cuentagotas con la media de `R`, `G`, `B`. Una imagen negra deja Brillo, `T` y `M` en 0. El resultado se multiplica por Intensidad / 100 y queda en los sliders |
 
+FD-33 no tiene slider de Desenfoque en el MVP (D-33): el desenfoque solo se usa dentro de Sombras, Nitidez y Claridad.
+
 Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, Blancos y Negros), Color (Tono, Saturación, Vitalidad, Invertir, colores detectados) y Textura (Nitidez, Claridad, Viñeta).
 
 
@@ -468,12 +470,12 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
   - **Subrayado y tachado**: posición y grosor salen de las tablas `post` y `OS/2`; con grosor 0 o ausente, 0,05 em (PROPUESTA).
   - **Listas**: numeradas con `1.` y con viñetas `•`, `◦` y `▪` por nivel, en ciclo; hasta 4 niveles; sangría de 1,5 em por nivel (PROPUESTA).
   - **Fuentes de reserva** (D-19): quien llama da una lista ordenada de fuentes en bytes. Cada clúster usa la primera fuente que cubre todos sus puntos de código. Si ninguna lo cubre, usa `.notdef` y la salida lo indica; no es un error.
-  - **Emoji** (D-19): en el MVP son contornos de esas fuentes de reserva. Una fuente que solo tiene emoji en color no cubre el clúster. El emoji en color es de Fase 2.
+  - **Emoji** (D-19, D-30): en el MVP son contornos de esas fuentes de reserva; las pruebas usan un subconjunto OFL monocromo. Una fuente que solo tiene emoji en color no cubre el clúster. El emoji en color es de Fase 2.
   - **Hinting**: posiciones y avances no dependen del hinting (ARQ-42). Los contornos reciben el modo como entrada y los golden van sin hinting.
 - *UI*: herramienta Texto (T); Panel lateral → Texto; Inspector → Texto.
 - *Técnica*: `gafira-text` (`shape`, `layout_box`), `TextNode`, `StyleRef`; `Command` `SetProperty` con `merge_key` para sliders.
 - *Presupuesto*: escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (02 §6.7, `bench_text_type_5000`); abrir un documento de 100 capas con texto < 500 ms (CAL-10, texto maquetado de forma perezosa).
-- *Aceptación*: (a) el texto con tildes, bidi y emojis se maqueta correctamente en golden de geometría, sin píxeles: orden visual según el algoritmo bidi de Unicode y clústeres correctos, con `👩‍💻` como 1 clúster; (b) cambiar un Estilo actualiza todos los textos vinculados con un solo `Command`; (c) interletrado 0 e interlineado 1,0 son la identidad: las posiciones coinciden bit a bit con las de un texto sin esos ajustes; (d) los extremos de tamaño, interletrado e interlineado valen, y 0,99 y 1000,01 pt, −100,01 y 500,01, 0,49 y 4,01 dan error; (e) una línea de `N` clústeres con interletrado `t` mide lo mismo que sin él más `(N − 1) × t / 1000 × tamaño`, ±0,01 px; con `t` distinto de 0 no se forma la ligadura opcional que sí se forma con 0; (f) con interlineado 2,0, la distancia entre líneas base es el doble que con 1,0, ±0,01 px; (g) con Inter como primaria y la fuente OFL de árabe o hebreo como reserva, un texto mixto usa cada fuente en sus clústeres; sin reserva, usa `.notdef` y lo indica; (h) `straße` en mayúsculas da `STRASSE` con cualquier configuración regional; (i) una línea justificada termina en el borde de la caja, ±0,01 px, y la última línea del párrafo no se estira; (j) una lista de 3 niveles sangra 1,5 em por nivel, ±0,01 px, y numera 1, 2, 3 en el mismo nivel.
+- *Aceptación*: (a) el texto con tildes, bidi y emojis se maqueta correctamente en golden de geometría, sin píxeles: orden visual según el algoritmo bidi de Unicode y clústeres correctos, con `👩‍💻` como 1 clúster y, con el subconjunto de emoji como reserva, `😀` con un contorno real no vacío de esa fuente; (b) cambiar un Estilo actualiza todos los textos vinculados con un solo `Command`; (c) interletrado 0 e interlineado 1,0 son la identidad: las posiciones coinciden bit a bit con las de un texto sin esos ajustes; (d) los extremos de tamaño, interletrado e interlineado valen, y 0,99 y 1000,01 pt, −100,01 y 500,01, 0,49 y 4,01 dan error; (e) una línea de `N` clústeres con interletrado `t` mide lo mismo que sin él más `(N − 1) × t / 1000 × tamaño`, ±0,01 px; con `t` distinto de 0 no se forma la ligadura opcional que sí se forma con 0; (f) con interlineado 2,0, la distancia entre líneas base es el doble que con 1,0, ±0,01 px; (g) con Inter como primaria y la fuente OFL de árabe o hebreo como reserva, un texto mixto usa cada fuente en sus clústeres; sin reserva, usa `.notdef` y lo indica; (h) `straße` en mayúsculas da `STRASSE` con cualquier configuración regional; (i) una línea justificada termina en el borde de la caja, ±0,01 px, y la última línea del párrafo no se estira; (j) una lista de 3 niveles sangra 1,5 em por nivel, ±0,01 px, y numera 1, 2, 3 en el mismo nivel.
 
 **FD-42 · Color y degradado de texto** (RF-24)
 - *Propósito*: colorear con coherencia.
@@ -791,7 +793,8 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-10 | Empaquetar fuentes del usuario en `.gafira` | Abierta (FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
-| Q-34..Q-36, Q-39, Q-40 | Decisiones pendientes de capa 2 | Abiertas (02 §12.3) |
+| Q-34 | Aspecto de las fórmulas de FD-33 | Abierta, no bloquea la especificación (02 §12.3) |
+| Q-35, Q-36, Q-39, Q-40 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33 y D-34 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
 | R-B | Licencia de krilla, hayro y qrcode | VERIFICAR con `cargo-deny` (02 §9.2) |

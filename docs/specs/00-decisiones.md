@@ -267,6 +267,51 @@ Fecha: 30 de octubre de 2026.
   - El Imán está activo por defecto, con umbral de 6 px y rango de 2 a 16.
 - Aplicado a 04 (FD-06, FD-11).
 
+## D-29 Alinear con elementos bloqueados
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: los elementos bloqueados cuentan en la caja de referencia al alinear una selección (Q-35).
+- Aplicado a 04 (FD-11).
+
+## D-30 Fuente de prueba de emoji
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: las fuentes de prueba de texto añaden un subconjunto OFL monocromo de emoji, registrado con su licencia (ARQ-75). FD-41(a) comprueba contornos reales de emoji (Q-36).
+- Amplía D-19; el resto de D-19 sigue vigente.
+- Aplicado a 02 (ARQ-115) y 04 (FD-41).
+
+## D-31 Ganancia propia de Nivelar
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: Nivelar tiene su propia ganancia, aparte del Volumen del clip, y la aplica `LoudnessNormalizer` (Q-37). El tope de −1 dBTP de D-21 sigue vigente.
+- Aplicado a 02 (§4.9, ARQ-127) y 05 (FV-10).
+
+## D-32 Lugar de Nivelar en el MVP
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: en el MVP, Nivelar está en Inspector → Clip (Q-38).
+- Aplicado a 05 (FV-10, FV-20).
+
+## D-33 Sin slider de Desenfoque en FD-33
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: FD-33 no tiene slider de Desenfoque en el MVP, ni en Textura ni en otro grupo (Q-39). El desenfoque solo se usa dentro de otros efectos.
+- Aplicado a 04 (FD-33).
+
+## D-34 Cifras PROPUESTA nuevas de capa 2
+
+Fecha: 30 de octubre de 2026.
+
+- **Decisión**: las cifras PROPUESTA añadidas el 30 de octubre de 2026 en 02 §4.17 y en 04 FD-04, FD-07, FD-35, FD-41 y FD-44 quedan confirmadas en bloque (Q-40). Pueden cambiar más adelante con mediciones.
+- **Marcas**: esas cifras conservan su marca PROPUESTA; no se reetiquetan una a una.
+- **Quedan fuera**: las fórmulas de FD-33 (Q-34) y las cifras que ya eran PROPUESTA antes de esa fecha, como la Zona de seguridad del 5 % de FD-05.
+- Aplicado a 02 (§4.17, §12.2) y 04.
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

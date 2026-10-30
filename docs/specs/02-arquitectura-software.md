@@ -5,7 +5,7 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-28 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `docs/specs/00-decisiones.md` (decisiones D-01 a D-34 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
@@ -657,7 +657,7 @@ pub trait AudioProcessor: Describe + Send {
 }
 ```
 
-- **Patrón**: Pipeline/Chain of Responsibility. Cada pista es una `ProcessorChain` (ganancia → EQ de 3 bandas → puerta de ruido → compresor → limitador → panorama, en el orden de 05 FV-20; en el MVP solo ganancia, EQ y panorama) y el bus maestro aplica la nivelación de sonoridad. Los parámetros llegan por un *ring buffer* sin bloqueo (*lock-free*) desde la UI.
+- **Patrón**: Pipeline/Chain of Responsibility. Cada pista es una `ProcessorChain` (ganancia → EQ de 3 bandas → puerta de ruido → compresor → limitador → panorama, en el orden de 05 FV-20; en el MVP solo ganancia, EQ y panorama). `LoudnessNormalizer` aplica la ganancia de Nivelar, aparte del Volumen, en clip, pista o bus maestro (D-31). Los parámetros llegan por un *ring buffer* sin bloqueo (*lock-free*) desde la UI.
 - **Implementa**: `gafira-audio`: `Gain`, `Fade`, `Eq3Band`, `Pan` y `LoudnessNormalizer` (MVP); `NoiseGate` (puerta de ruido: umbral, ataque, retención, liberación), `Compressor`, `Limiter`, `NoiseReducer` y `TimeStretch` (Fase 2).
 - ***Time-stretch***: «mantener tono» al cambiar la velocidad de un clip (05 FV-04) es un `AudioProcessor` con latencia declarada (`latency()`) que cambia la duración sin cambiar el tono. Como su salida no tiene la misma longitud que la entrada, `gafira-media` lo aplica antes de la mezcla, al leer el clip, y no dentro de la cadena de la pista. Algoritmo propio en Rust (por ejemplo, WSOLA o vocoder de fase) o crate permisivo (VERIFICAR).
 - **Cómo añadir un procesador**:
@@ -840,6 +840,8 @@ Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `
 
 Quedan fuera de esta sección, para el diseño del change: dónde viven los tipos compartidos, qué aristas nuevas se añaden a §2.2 y qué terceros se eligen. Los nombres de tipo que aparecen aquí identifican un concepto, no una ubicación.
 
+Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pueden cambiar con mediciones.
+
 #### 4.17.1 Reglas comunes
 
 | ID | Requisito | Criterio de aceptación |
@@ -879,7 +881,7 @@ Quedan fuera de esta sección, para el diseño del change: dónde viven los tipo
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-115 | **Fuentes de prueba** (D-19): las pruebas usan subconjuntos de Inter y Manrope y una fuente OFL con árabe o hebreo. Toda fuente de prueba tiene entrada en `assets/LICENSES.toml` (ARQ-75), esté donde esté. | Una prueba o comprobación de CI recorre las fuentes de prueba y falla si alguna no tiene entrada de licencia. |
+| ARQ-115 | **Fuentes de prueba** (D-19): las pruebas usan subconjuntos de Inter y Manrope, una fuente OFL con árabe o hebreo y un subconjunto OFL monocromo de emoji (D-30). Toda fuente de prueba tiene entrada en `assets/LICENSES.toml` (ARQ-75), esté donde esté. | Una prueba o comprobación de CI recorre las fuentes de prueba y falla si alguna no tiene entrada de licencia. |
 | ARQ-116 | **Salida de la maquetación.** La maquetación da, sin píxeles: las líneas con su base y su avance, y cada clúster de grafemas con su índice en el texto, su posición y su avance. Indica además el desborde y los glifos sin cobertura. Así FV-07 anima letra a letra y FV-08 cuenta líneas y caracteres por línea. | Con Inter: un texto de 3 líneas forzadas da 3 líneas; concatenar los clústeres en orden lógico da el texto de entrada; `é` compuesta (U+0065 U+0301) es 1 clúster; un texto que excede una caja `Fixed` indica desborde y conserva todo el texto. |
 
 | Caso numérico | Regla | ID |
@@ -936,7 +938,7 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 | ARQ-124 | **Ganancia, fundido y panorama.** Ganancia: `10^(dB / 20)`; −∞ dB es 0 y 200 % es 2,0. Un cambio de ganancia se aplica con una rampa lineal de 10 ms (PROPUESTA). Fundido de clip: rampa lineal de ganancia de 0 a 1 o de 1 a 0 (PROPUESTA); duración 0 no cambia nada. Fundido cruzado `EqualPower`: `cos(π p / 2)` y `sin(π p / 2)`. Panorama en bloques estéreo, con `p` en `[−1, 1]`, `θ = (p + 1) × π / 4`: `L × min(1, √2 cos θ)` y `R × min(1, √2 sin θ)` (ley de −3 dB normalizada a 0 dB en el centro, PROPUESTA). En otros bloques, `Pan` no cambia nada. | +6 dB da 1,9953 ±1e-4. Un salto de ganancia de 0 a 1 a 48 kHz cambia ≤ 1/480 + 1e-6 por muestra. Un fundido de 2 s a 48 kHz sube 1/96 000 + 1e-6 por muestra como máximo, de 0 a 1. `EqualPower`: `g_a² + g_b² = 1`, ±1e-6, en todo `p`. Panorama: `p = 0` deja el bloque igual, ±1e-6; `p = −1` da `R` ≤ 1e-6 y `L` igual; `p = 0,5` da `L × 0,5412` ±1e-4 y `R` igual. |
 | ARQ-125 | **`Eq3Band`** (D-22): tres biquads del *Audio EQ Cookbook* de RBJ: estante de graves en 100 Hz con `S = 1`, campana en 1 kHz con `Q = 1` y estante de agudos en 8 kHz con `S = 1` (PROPUESTA), ±15 dB. La curva teórica de 05 FV-20 es la respuesta digital de esos biquads. Con ganancia 0, la banda no cambia la señal. Una banda con frecuencia ≥ `fs / 2` se omite. | A 44,1, 48 y 96 kHz, con cada banda a ±15 dB y 0 dB: la respuesta medida con barrido o impulso coincide con `H(e^jω)` en ±0,5 dB de 20 Hz a 20 kHz. Con todas a 0 dB, la salida es idéntica bit a bit. Todos los polos tienen módulo < 1. A `fs = 16 000 Hz`, la banda de 8 kHz se omite. |
 | ARQ-126 | **Sonoridad integrada.** Sigue ITU-R BS.1770-4 y EBU R128: ponderación K, bloques de 400 ms con solape del 75 %, puerta absoluta de −70 LUFS y relativa de −10 LU, y pesos 1,0 para L, R y C, 1,41 para Ls y Rs, y sin LFE. Admite 1, 2 y 6 canales; otro número da `Err`. En otras frecuencias, la ponderación K coincide con la de 48 kHz en ±0,1 dB hasta 16 kHz. Una señal sin bloques válidos, por silencio o por durar menos de 400 ms, da un resultado «sin medida», no −∞. | Señales sintéticas de los casos 1 a 5 de EBU Tech 3341, sin guardar sus archivos: ±0,1 LU. Seno estéreo de 997 Hz a −23 dBFS: −23,0 ±0,1 LUFS a 44,1, 48 y 96 kHz. Silencio y una señal de 399 ms: «sin medida». 3 canales: `Err`. |
-| ARQ-127 | **Nivelar** (D-21). La ganancia pedida es `objetivo − sonoridad medida`. El tope es `−1 dBTP − pico real medido`. La ganancia aplicada es la menor de las dos, y el resultado indica si se alcanzó el objetivo; la igualdad lo alcanza. El pico real sigue el anexo 2 de BS.1770 con sobremuestreo ×4 a 48 kHz o menos. La ganancia es constante en toda la señal. Sin medida, la ganancia es 0 y no se alcanza el objetivo. | Señal de −20 LUFS con pico holgado y objetivo −14: −14 ±0,5 LU y objetivo alcanzado. Señal de −30 LUFS y −3 dBTP con objetivo −14: ganancia +2 dB ±0,01, pico real ≤ −1 dBTP, −28 ±0,5 LU y objetivo no alcanzado. Silencio: ganancia 0 y objetivo no alcanzado. |
+| ARQ-127 | **Nivelar** (D-21, D-31). Nivelar tiene su propia ganancia, aparte del Volumen del clip, y la aplica `LoudnessNormalizer`. La ganancia pedida es `objetivo − sonoridad medida`. El tope es `−1 dBTP − pico real medido`. La ganancia aplicada es la menor de las dos, y el resultado indica si se alcanzó el objetivo; la igualdad lo alcanza. El pico real sigue el anexo 2 de BS.1770 con sobremuestreo ×4 a 48 kHz o menos. La ganancia es constante en toda la señal. Sin medida, la ganancia es 0 y no se alcanza el objetivo. | Señal de −20 LUFS con pico holgado y objetivo −14: −14 ±0,5 LU y objetivo alcanzado. Señal de −30 LUFS y −3 dBTP con objetivo −14: ganancia +2 dB ±0,01, pico real ≤ −1 dBTP, −28 ±0,5 LU y objetivo no alcanzado. Silencio: ganancia 0 y objetivo no alcanzado. Una ganancia de +16 dB se aplica con el Volumen al 100 %, sin cambiarlo. |
 | ARQ-128 | **Remuestreo.** Admite una razón constante entre cualquier par de frecuencias de `SampleRate`, con Velocidad de 0,1 a 10. La longitud de salida es `redondeo(n × fs_salida / (fs_entrada × velocidad))`. Banda pasante ±0,1 dB hasta 0,9 veces el Nyquist menor y atenuación ≥ 80 dB en banda eliminada (PROPUESTA). La latencia se declara. | 44 100 muestras de 44,1 a 48 kHz dan 48 000; 96 000 muestras a 2,0× dan 48 000. Seno de 1 kHz de 44,1 a 48 kHz: SNR ≥ 80 dB. Un impulso sale en la latencia declarada, ±1 muestra. Entrada vacía: salida vacía. Velocidad 0, negativa, 0,09 o 10,1: `Err`. |
 | ARQ-129 | **Cadena, mezcla y desfase.** `ProcessorChain` aplica los procesadores en orden y su `latency()` es la suma. La mezcla suma las muestras de las pistas no silenciadas. No hay límite de pistas en el motor: 16 es la cifra del Mezclador. Un desfase en *flicks* pasa a muestras con `redondeo(desfase × fs / 705 600 000)`, medio se aleja de 0, en aritmética entera sin desbordamiento. | Una cadena con latencias 3 y 5 declara 8. Sumar 16 pistas coincide con la suma manual ±1e-6. Una pista silenciada no aporta. +1 ms a 44,1 kHz da 44 muestras y a 48 kHz, 48. Con `i64::MAX` *flicks*, sin `panic`. |
 
@@ -1680,7 +1682,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4.
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-40 constan en `00-decisiones.md` (D-29 a D-34).
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1705,6 +1707,12 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-31 | ¿Qué da `Color::interpolate` cuando el alfa resultante es ≤ 0 (ARQ-19, Q-27 A)? | Titular: A. Con `a ≤ 0` se interpolan `r`, `g`, `b` en recto, sin premultiplicar, y `a` queda sin recortar; el consumidor recorta `a` al componer (§3.4, ARQ-19). |
 | Q-32 | ¿Qué hace `f32::interpolate` (y `Vec2`, en `f64`) con extremos finitos cuya diferencia desborda, por ejemplo de `3e38` a `−3e38` con `t = 0,5` (ARQ-19)? | Titular: A. Se mantiene `a + (b − a) · t`. El rango de contrato es `b − a` finito en cada componente; fuera de él el resultado puede ser `±∞` y queda fuera de contrato. Las pruebas de propiedad usan el dominio `[−MAX/2, MAX/2]` de su tipo. No cambian el código ni los resultados bit a bit (Q-29) (§3.4, ARQ-19). |
 | Q-33 | ¿Cómo se decide en coma flotante que un extremo de `Transform2D` es degenerado (§3.4, ARQ-19, Q-28 B)? | Titular: B, umbral relativo. Con la parte lineal `[a, b, c, d]`, columnas `c1 = (a, b)` y `c2 = (c, d)` y `det = a·d − b·c` en `f64`, un extremo de coeficientes finitos es degenerado si `det` o `|c1| · |c2|` no es finito, o si `|det| ≤ 1e-12 · |c1| · |c2|`. No depende de la escala, trata como rango 1 lo que solo lo es por redondeo y da el mismo resultado en las 3 plataformas (Q-29). Justo por encima del umbral el sesgo crece como el inverso del cociente; se acepta como comportamiento conocido. Ningún preset cambia: todos producen ceros exactos (§3.4, ARQ-19). |
+| Q-35 | Al alinear una selección con elementos bloqueados, ¿la caja de referencia los incluye (04 FD-11)? | D-29: sí. |
+| Q-36 | ¿Cómo se prueba el emoji de 04 FD-41 (a), si las fuentes de D-19 no lo tienen? | D-30: se añade un subconjunto OFL monocromo y se comprueban contornos reales. |
+| Q-37 | ¿Cómo aplica Nivelar más de +6 dB si el Volumen de clip llega a 200 % (05 FV-10)? | D-31: con una ganancia propia, aparte del Volumen, aplicada por `LoudnessNormalizer`. El tope de −1 dBTP de D-21 sigue vigente. |
+| Q-38 | ¿Dónde está Nivelar en el MVP, si la interfaz del Mezclador es de Fase 2? | D-32: en Inspector → Clip. |
+| Q-39 | ¿FD-33 tiene un slider de Desenfoque? | D-33: no en el MVP. |
+| Q-40 | ¿Se confirman en bloque las cifras PROPUESTA nuevas de capa 2? | D-34: sí, y pueden cambiar con mediciones. Conservan su marca. |
 
 ### 12.3 Preguntas abiertas
 
@@ -1719,13 +1727,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
-| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. Recomendación: revisarlas sobre imágenes de muestra cuando exista el corte de efectos, antes de cerrar FD-33; alternativa: aprobarlas ya y ajustar después con nuevas referencias. | Titular |
-| Q-35 | Al alinear una selección con elementos bloqueados, ¿la caja de referencia los incluye (04 FD-11)? Recomendación: sí, porque el bloqueado queda como ancla visible. Alternativa: solo elementos libres, igual que distribuir (D-17), con el coste de que dos reglas parecidas den resultados distintos. | Titular |
-| Q-36 | FD-41 (a) pide emoji, pero las fuentes de D-19 no tienen emoji. Recomendación: añadir un subconjunto OFL monocromo. Alternativa: probar solo clústeres y el mecanismo de reserva con otra escritura, con el coste de no comprobar ningún contorno de emoji. | Titular |
-| Q-37 | Nivelar puede pedir más de +6 dB y el Volumen de clip llega a 200 % (05 FV-10). Recomendación: una ganancia aparte del Volumen, aplicada por `LoudnessNormalizer`, para no recortar el objetivo. Alternativa: limitar Nivelar al Volumen, con el coste de no alcanzar el objetivo en audio bajo. | Titular |
-| Q-38 | 05 FV-10 pone Nivelar en Inspector → Mezclador, pero la interfaz del Mezclador es de Fase 2. Recomendación: en el MVP, Nivelar va en Inspector → Clip. Alternativa: adelantar una parte del Mezclador al MVP, con más alcance de interfaz. | Titular |
-| Q-39 | 02 §2.1 lista el desenfoque como efecto, pero 04 FD-33 no tiene ese slider. Recomendación: en el MVP solo se usa dentro de Sombras y Nitidez. Alternativa: añadir un slider Desenfoque a Textura, con más alcance y pruebas. | Titular |
-| Q-40 | ¿Se confirman en bloque las cifras PROPUESTA nuevas de capa 2 (04 FD-04, FD-05, FD-07, FD-35, FD-41, FD-44; 02 §4.17)? Recomendación: sí, porque se pueden cambiar sin tocar el contrato. Alternativa: revisarlas una a una al abrir cada change. | Titular |
+| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos. No bloquea la especificación. | Titular |
 
 ---
 

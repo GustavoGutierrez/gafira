@@ -130,10 +130,10 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
   - **Volumen** por clip (0–200 %, con gráfica de volumen editable en el clip) y por pista; **Silenciar** (`Ctrl+Shift+M`).
   - **Fundidos** de entrada y salida en segundos con asas en el clip: rampa lineal de ganancia (02 ARQ-124).
   - **Separar audio**: extrae el audio de un clip de video a su propia pista enlazada (mover juntos, desenlazar opcional).
-  - **Nivelar**: ajusta el volumen del clip, de la pista o de todo a una sonoridad objetivo (por defecto −14 LUFS; opciones −16 y −23 LUFS). Limita la ganancia para que el pico real quede en −1 dBTP o por debajo e informa si no alcanzó el objetivo (D-21, 02 ARQ-127).
+  - **Nivelar**: lleva el clip, la pista o todo a una sonoridad objetivo con una ganancia propia, aparte del Volumen (D-31) (por defecto −14 LUFS; opciones −16 y −23 LUFS). Limita la ganancia para que el pico real quede en −1 dBTP o por debajo e informa si no alcanzó el objetivo (D-21, 02 ARQ-127).
   - **Sincronización básica**: forma de onda visible en los clips, **desplazar** el audio con ajuste fino (± ms y por fotograma) y **marcadores** (`M`) a los que se pueden atraer los cortes con el Imán. Marcadores de compás automáticos: Fase 2 (PROPUESTA, VERIFICAR algoritmo).
   - **Voz en off** grabada desde el micrófono: Fase 2 (PROPUESTA, Q-15); requiere permiso del SO.
-- *UI*: Inspector → Clip (Volumen, Fundidos); clic derecho (Separar audio); Inspector → Mezclador (Nivelar).
+- *UI*: Inspector → Clip (Volumen, Fundidos, Nivelar; D-32); clic derecho (Separar audio).
 - *Técnica*: `AudioProcessor` (ganancia, fundido, nivelación EBU R128; 02 §4.9); formas de onda precalculadas por `gafira-media`.
 - *Presupuesto*: la reproducción no asigna ni bloquea en el hilo de audio (ARQ-23); la forma de onda de un clip de 10 min se calcula en segundo plano en < 5 s (PROPUESTA).
 - *Aceptación*: (a) un fundido de 2 s reduce la ganancia de 0 a 1 de forma continua (prueba de respuesta); (b) Nivelar lleva un audio de prueba con pico holgado a ±0,5 LU del objetivo; si el tope de pico lo impide, deja el pico real ≤ −1 dBTP e informa de que no lo alcanzó (D-21); (c) Separar audio conserva la sincronía exacta (diferencia 0 muestras); (d) el desfase fino de 1 ms se aplica con precisión de 1 muestra (02 ARQ-129).
@@ -315,7 +315,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
   - **Puerta de ruido** (`NoiseGate`, Fase 2): umbral, ataque, retención y liberación.
   - **Limitador**: techo (por defecto −1 dBTP) y liberación.
   - **Reducir ruido** con previsualización A/B: aprende el perfil del ruido de un fragmento seleccionado y aplica una reducción espectral de 0 a 30 dB.
-  - **Nivelar** (normalización de sonoridad) y **medidor de sonoridad**: LUFS momentáneo, a corto plazo e integrado, rango de sonoridad (LRA) y pico real (dBTP) según EBU R128 / ITU-R BS.1770 (parámetros en 02 ARQ-126). Nivelar es del MVP (FV-10); los medidores en vivo son de Fase 2. Objetivos de Nivelar: −14, −16 y −23 LUFS.
+  - **Nivelar** (normalización de sonoridad) y **medidor de sonoridad**: LUFS momentáneo, a corto plazo e integrado, rango de sonoridad (LRA) y pico real (dBTP) según EBU R128 / ITU-R BS.1770 (parámetros en 02 ARQ-126). Nivelar es del MVP en Inspector → Clip (FV-10, D-32); los medidores en vivo son de Fase 2. Objetivos de Nivelar: −14, −16 y −23 LUFS.
 
 ```text
 ┌─ Mezclador ──────────────────────────────────────────────────────────────────────────────┐
