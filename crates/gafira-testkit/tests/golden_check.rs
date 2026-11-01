@@ -3,7 +3,8 @@
 use std::path::{Component, Path, PathBuf};
 
 use gafira_testkit::golden::{
-    Channels, CheckError, Image, Mismatch, Mode, check, check_in, decode_png, encode_png, quantize,
+    Channels, CheckError, GoldenError, Image, Mismatch, Mode, check, check_in, decode_png,
+    encode_png, quantize,
 };
 
 fn tmp() -> PathBuf {
@@ -116,18 +117,6 @@ fn ac4_a_failing_candidate_write_is_still_a_failure() {
 }
 
 #[test]
-fn ac4_an_unreadable_golden_is_an_error_not_a_pass() {
-    let r = check_in(
-        Mode::CrossPlatform,
-        "ac4_bad",
-        b"not a png",
-        &gray(&[1]),
-        &tmp(),
-    );
-    assert!(matches!(r, Err(CheckError::Golden(_))));
-}
-
-#[test]
 fn ac3_check_uses_the_mode_of_the_build_target() {
     // `check` is the entry for tests: exact where the target is exact, tolerant elsewhere.
     let golden = encode_png(&gray(&[10, 10])).unwrap();
@@ -186,4 +175,92 @@ fn ac4_a_size_or_channel_mismatch_still_writes_a_candidate() {
             ..
         }
     ));
+}
+
+#[test]
+fn ac4_candidate_names_are_one_component_of_lowercase_ascii() {
+    let golden = encode_png(&gray(&[1])).unwrap();
+    let actual = gray(&[9]);
+    let dir = tmp();
+    let escape = dir.parent().unwrap().join("ac4_escape.png");
+    let _ = std::fs::remove_file(&escape);
+    for bad in [
+        "",
+        "a/b",
+        "a\\b",
+        "..",
+        ".",
+        "../ac4_escape",
+        "/etc/ac4_x",
+        "A",
+        "aB",
+        "a.b",
+        "a b",
+        "\u{e9}",
+        "a\0b",
+    ] {
+        let r = check_in(Mode::Exact, bad, &golden, &actual, &dir);
+        assert!(
+            matches!(r, Err(CheckError::Golden(GoldenError::BadName))),
+            "{bad:?}"
+        );
+    }
+    assert!(!escape.exists());
+    // The accepted alphabet.
+    let r = check_in(Mode::Exact, "ac4_ok-name9", &golden, &actual, &dir);
+    assert!(matches!(r, Err(CheckError::Mismatch { .. })));
+}
+
+#[test]
+fn ac4_a_name_is_checked_even_when_the_images_match() {
+    let img = gray(&[1]);
+    let golden = encode_png(&img).unwrap();
+    let r = check_in(Mode::Exact, "Bad/Name", &golden, &img, &tmp());
+    assert!(matches!(r, Err(CheckError::Golden(GoldenError::BadName))));
+}
+
+#[test]
+fn ac4_an_empty_or_undecodable_reference_writes_a_candidate() {
+    // First golden: the reference file is empty, the candidate is what to review.
+    let actual = gray(&[1, 2, 3]);
+    for (name, reference) in [
+        ("ac4_empty_ref", &b""[..]),
+        ("ac4_junk_ref", &b"not a png"[..]),
+    ] {
+        let dir = tmp();
+        let _ = std::fs::remove_file(dir.join(format!("{name}.png")));
+        let err = check_in(Mode::CrossPlatform, name, reference, &actual, &dir).unwrap_err();
+        let CheckError::Reference { candidate, .. } = err else {
+            panic!("expected Reference, got {err:?}")
+        };
+        assert_eq!(candidate, dir.join(format!("{name}.png")));
+        assert_eq!(
+            decode_png(&std::fs::read(&candidate).unwrap()).unwrap(),
+            actual
+        );
+    }
+}
+
+#[test]
+fn ac5_an_actual_above_the_size_limit_writes_no_candidate() {
+    let golden = encode_png(&gray(&[1])).unwrap();
+    for (w, h) in [(257u32, 1u32), (1, 257)] {
+        let big = Image::new(w, h, Channels::Gray, &vec![0; (w * h) as usize]).unwrap();
+        let name = format!("ac5_big_{w}x{h}");
+        let dir = tmp();
+        let _ = std::fs::remove_file(dir.join(format!("{name}.png")));
+        let r = check_in(Mode::Exact, &name, &golden, &big, &dir);
+        assert!(
+            matches!(r, Err(CheckError::Golden(GoldenError::BadSize { .. }))),
+            "{w}x{h}"
+        );
+        assert!(!dir.join(format!("{name}.png")).exists());
+        // Also when the reference is unusable.
+        let r = check_in(Mode::Exact, &name, b"", &big, &dir);
+        assert!(
+            matches!(r, Err(CheckError::Golden(GoldenError::BadSize { .. }))),
+            "{w}x{h}"
+        );
+        assert!(!dir.join(format!("{name}.png")).exists());
+    }
 }

@@ -36,6 +36,8 @@ pub enum GoldenError {
     BadLength,
     /// A side is zero or above [`MAX_SIDE`].
     BadSize { width: u32, height: u32 },
+    /// A candidate name is not one non-empty component of `[a-z0-9_-]`.
+    BadName,
     /// The PNG is not 8-bit grayscale or RGBA, or it is malformed.
     BadPng(String),
 }
@@ -47,6 +49,10 @@ impl fmt::Display for GoldenError {
             Self::BadSize { width, height } => {
                 write!(f, "golden size {width}x{height} is outside 1..={MAX_SIDE}")
             }
+            Self::BadName => write!(
+                f,
+                "candidate name must be one non-empty component of [a-z0-9_-]"
+            ),
             Self::BadPng(why) => write!(f, "unsupported or malformed PNG: {why}"),
         }
     }
@@ -231,22 +237,40 @@ pub fn quantize(values: &[f32]) -> Vec<u8> {
 /// Why a golden check failed.
 #[derive(Debug)]
 pub enum CheckError {
-    /// The stored golden or the actual image is unusable.
+    /// The name or the actual image is unusable; nothing was written.
     Golden(GoldenError),
     /// The images differ; the candidate was written to `candidate`.
     Mismatch {
         mismatch: Mismatch,
         candidate: std::path::PathBuf,
     },
-    /// The images differ and the candidate could not be written.
+    /// The reference is empty or undecodable (a first golden); the candidate
+    /// was written to `candidate` for review.
+    Reference {
+        error: GoldenError,
+        candidate: std::path::PathBuf,
+    },
+    /// A candidate had to be written and could not be.
     Io(std::io::Error),
+}
+
+fn check_name(name: &str) -> Result<(), GoldenError> {
+    let ok = !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(GoldenError::BadName)
+    }
 }
 
 /// Checks `actual` against the stored golden `golden_png` in the mode of this target.
 ///
-/// On a mismatch the candidate is written to `<candidate_dir>/<name>.png`;
-/// pass the integration test's `CARGO_TARGET_TMPDIR`. Nothing under
-/// `tests/golden` is ever written: accepting a candidate is a manual copy.
+/// On a failure with a usable `actual` the candidate is written to
+/// `<candidate_dir>/<name>.png`: a pixel, size or channel mismatch, and an
+/// empty or undecodable reference. Accepting a candidate is a manual copy.
 pub fn check(
     name: &str,
     golden_png: &[u8],
@@ -264,15 +288,29 @@ pub fn check_in(
     actual: &Image,
     candidate_dir: &std::path::Path,
 ) -> Result<(), CheckError> {
-    let expected = decode_png(golden_png).map_err(CheckError::Golden)?;
-    let Err(mismatch) = compare(mode, &expected, actual) else {
+    check_name(name).map_err(CheckError::Golden)?;
+    // An actual above the size limit could not be stored: no candidate.
+    check_size(actual.width, actual.height).map_err(CheckError::Golden)?;
+    let outcome = match decode_png(golden_png) {
+        Err(error) => Err(Failure::Reference(error)),
+        Ok(expected) => compare(mode, &expected, actual).map_err(Failure::Mismatch),
+    };
+    let Err(failure) = outcome else {
         return Ok(());
     };
     let candidate = candidate_dir.join(format!("{name}.png"));
     let png = encode_png(actual).map_err(CheckError::Golden)?;
     std::fs::write(&candidate, png).map_err(CheckError::Io)?;
-    Err(CheckError::Mismatch {
-        mismatch,
-        candidate,
+    Err(match failure {
+        Failure::Mismatch(mismatch) => CheckError::Mismatch {
+            mismatch,
+            candidate,
+        },
+        Failure::Reference(error) => CheckError::Reference { error, candidate },
     })
+}
+
+enum Failure {
+    Mismatch(Mismatch),
+    Reference(GoldenError),
 }
