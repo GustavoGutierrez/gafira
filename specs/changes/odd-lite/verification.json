@@ -165,5 +165,41 @@
         "forecast": null
       },
       "report": "verify-report.md"
+    },
+    {
+      "delivery": "chore/specs-consolidation",
+      "round": 2, "commit": "645bcfd", "mode": "light", "tier": "T0", "depth": "V1",
+      "verdict": "PASS", "next": "archive",
+      "counts": {"critical": 0, "warning": 0, "suggestion": 5},
+      "findings": [
+        {"id": "C1", "severity": "CRITICAL", "class": "implementation",
+         "ref": "AC19, specs/changes/odd-lite/apply-progress.md",
+         "summary": "Delivery notes now hold AC15-AC20 evidence, size, deviations and a hit table that matches HEAD exactly",
+         "follow_up": false, "status": "closed"},
+        {"id": "W10", "severity": "WARNING", "class": "implementation",
+         "ref": "specs/changes/odd-lite/apply-progress.md:65",
+         "summary": "Owner OK for the size recorded in the expected wording",
+         "follow_up": false, "status": "closed"},
+        {"id": "W11", "severity": "WARNING", "class": "implementation",
+         "ref": "docs/manuals/tecnico/chapters/10-methodology.md:213",
+         "summary": "English Slice card template has level: L<n>",
+         "follow_up": false, "status": "closed"},
+        {"id": "W12", "severity": "WARNING", "class": "implementation",
+         "ref": "docs/manuals/tecnico/chapters/10-methodology.md:123",
+         "summary": "Pack default sentence states the mutation: off exception in EN and ES",
+         "follow_up": false, "status": "closed"},
+        {"id": "W13", "severity": "WARNING", "class": "implementation",
+         "ref": "docs/adr/0011-odd-lite.md:92,147",
+         "summary": "ADR no longer says the README and manual lag",
+         "follow_up": false, "status": "closed"}
+      ],
+      "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": "n/a", "ci_policy": "n/a",
+                "sync_agents": 0, "agent_sync_tests": 0, "state_json": 0,
+                "manual_check": 0, "manual_build_en": 0, "manual_build_es": 0},
+      "mutation": null,
+      "hand_mutants": {"run": 0, "killed": 0},
+      "criteria": {"total": 6, "covered": 6},
+      "size": {"lines": 754, "forecast": null},
+      "report": "verify-report.md"
     }
   ] }

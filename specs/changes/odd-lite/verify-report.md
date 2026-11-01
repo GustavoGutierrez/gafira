@@ -439,3 +439,78 @@ EN and ES read in full against `AGENTS.md`. Levels, entry fields, the `verify` f
 V1, `mutation: off`: none run, no report, not a finding.
 
 next: tdd-apply
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`, closure
+
+## Round 2
+
+Commit 645bcfd, branch `chore/specs-consolidation`, base `develop`. Closure round, mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: C1, W10 to W13, the commits 7911eb3, 6b98826 and 645bcfd. BLOCKED did not arise: every critical check ran.
+
+Verdict: PASS. CRITICAL 0, WARNING 0, SUGGESTION 5. Per class: none. C1 and W10 to W13 are closed. S17 to S20 are carried from round 1.
+
+Read-only gates ran in the worktree with a scratch target dir; the manual builds ran on a scratch export of HEAD.
+
+## CRITICAL
+
+None.
+
+## Closure of the earlier findings
+
+| Finding | State | Evidence |
+|---|---|---|
+| C1 | closed | `apply-progress.md` "Apply: specs consolidation" has AC15 to AC20 evidence, measured lines and deviations. Its hit table matches the case-insensitive search at HEAD exactly, file by file and line by line: ADR 0011 (104, 108-111, 113, 115), `apply-progress.md` (9 lines), `verify-report.md` (16 lines), `verification.json` (100), `CHANGELOG.md` (11, 24), the brief (35). `docs/manuals/` has none. No live rule, skill, manual or tool is among them. This round's appended text adds no hit, and the list stays valid because it appends below those lines |
+| W10 | closed | `apply-progress.md:65` records the 744 lines, 706 without `.opencode`, and the owner's OK with the expected wording: "me importa completarlas, no el tamaño del commit". The fix commits add 10 lines outside the report and notes (754) |
+| W11 | closed | `chapters/10-methodology.md:213` now has `level: L<n>`, identical to the Spanish line 213 and `coordinator.md:115` |
+| W12 | closed | Line 123 now states the exception in EN and ES. It agrees with line 56, `AGENTS.md:24,28` and `coordinator.md:20,34` |
+| W13 | closed | `docs/adr/0011-odd-lite.md:92` no longer lists the docs as pending and names the delivery; line 147 is marked resolved. No other "lag" or "still describe" text remains. The ADR stays `proposed` |
+
+## WARNING
+
+None.
+
+## SUGGESTION
+
+- **S21** `apply-progress.md:70` says only ADR 0011 still cites the deleted config file. The Light spec (line 24) and the verify report (lines 88, 335, 393, 409, 419) cite it too. All of those are named deliberate in the hit table of the same section, so AC16 and AC19 hold; only the sentence is too narrow. It can be left as is.
+- S17 to S20 are unchanged from round 1; none is closed by these commits.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1107 passed, 0 failed |
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 -m pytest tests/test_agent_sync.py -q` | 0 | 16 passed |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `manual.py check` | 0 | 11 chapters, mirrors match, links resolve |
+| `manual.py build` | 0 | `Gafira_Technical_Manual.pdf`, 192538 bytes |
+| `manual.py build --lang es` | 0 | `Gafira_Manual_Tecnico.pdf`, 202410 bytes |
+
+`cargo deny` and the CI policy steps do not apply: the diff touches no file under `crates/`, `apps/`, `.github/` or `.cargo/`, nor `Cargo.toml`, `Cargo.lock` or `deny.toml`. The two builds go beyond the requested list because the manual changed since round 1 and AC20 requires them.
+
+## Artifact integrity (step 3b)
+
+- a28e1fd touches only `apply-progress.md` and precedes every delivery commit.
+- Lines 1 to 32 of `apply-progress.md` at HEAD are byte-identical to a28e1fd. Since then only f792bdf (rename) and 6b98826 (appended section) touched the file.
+- No AI attribution line in the nine commit messages.
+- No absolute or user path in added lines; the only pattern matches are the word "scratchpad" in rule text. No `crates/` or `apps/` file changed. `.odd/state.json` is not in the diff.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered | Round 1 evidence stands; the new commits move nothing |
+| AC16 | covered | Remaining citations are all named deliberate (S21 on the wording) |
+| AC17 | covered | Round 1 evidence stands; the new commits do not touch those rules |
+| AC18 | covered | Round 1 evidence stands; the new commits touch no exempt path |
+| AC19 | covered | C1 closed; the pending-ID text is unchanged since round 1 |
+| AC20 | covered | Gates above |
+
+## Hand mutants and mutation
+
+V1, closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive
