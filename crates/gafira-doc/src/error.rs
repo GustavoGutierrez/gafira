@@ -329,4 +329,18 @@ mod tests {
         assert!(ValidationError::Cycle { node: node(1) }.source().is_none());
         assert!(ValidationError::InvalidDpi { dpi: 0 }.source().is_none());
     }
+
+    #[test]
+    fn a_page_layout_error_exposes_its_cause() {
+        let cause = PageLayoutError::OutOfRange {
+            field: PageField::Bleed,
+            value: 11.0,
+        };
+        let e = ValidationError::PageLayout {
+            page: page(1),
+            error: cause,
+        };
+        let dynamic: &dyn Error = &e;
+        assert_eq!(dynamic.source().unwrap().to_string(), cause.to_string());
+    }
 }
