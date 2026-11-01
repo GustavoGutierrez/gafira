@@ -38,8 +38,10 @@ const MIN_SPACING_PX: f64 = 6.0;
 
 /// Largest view on screen, in px (width, height): the FD-07 (c) domain.
 const MAX_VIEW_PX: (f64, f64) = (3840.0, 2160.0);
+/// Screen px added to each limit, so a view computed as `screen / zoom` still fits.
+const VIEW_EPSILON_PX: f64 = 1e-6;
 
-/// The lines `k * unit / div` inside `lo..=hi`; every `every`-th is major.
+/// The lines `k * unit / div` inside `lo..=hi`, both ends included; every `every`-th is major.
 fn axis_lines(
     field: &'static str,
     (lo, hi): (f64, f64),
@@ -48,8 +50,9 @@ fn axis_lines(
     every: i64,
 ) -> Result<Vec<GridLine>, LayoutError> {
     let spacing = finite(field, unit / div)?;
-    let first = finite(field, (lo / spacing).ceil())? as i64;
-    let last = finite(field, (hi / spacing).floor())? as i64;
+    // The quotients round, so each bound is widened by one line and `contains` decides.
+    let first = finite(field, (lo / spacing).floor())? as i64;
+    let last = finite(field, (hi / spacing).ceil())? as i64;
     let mut lines = Vec::new();
     for k in first..=last {
         let position = finite(field, k as f64 * unit / div)?;
@@ -73,8 +76,13 @@ fn axis_lines(
 /// fit either, the lines are the smallest `step * 2^k` with a spacing of at
 /// least 6 px, all major.
 ///
+/// `view` may extend past the page on any side: the lines go on at negative
+/// `k`, and a line on a whole multiple of the step used is major, also for
+/// negative `k`. Positions are in page px whatever the unit of the step.
+///
 /// `view` may be at most 3840 x 2160 px on screen (`width * zoom`, `height * zoom`),
-/// compared exactly per axis.
+/// compared per axis with a tolerance of 1e-6 px, which absorbs the rounding of a
+/// view computed as `screen / zoom`. Both edges of `view` are inside it.
 ///
 /// `grid.step` must lie in 1 to 500 in its own unit and `grid.subdivisions` in
 /// 1 to 10; `visible`, `style` and `snap` are not read. Any error returns no lines.
@@ -88,13 +96,18 @@ pub fn grid_lines(
     finite("zoom", zoom)?;
     finite("dpi", dpi)?;
     finite("step", grid.step.value())?;
+    if dpi <= 0.0 {
+        return Err(LayoutError::OutOfRange { field: "dpi" });
+    }
     if !ZOOM_RANGE.contains(&zoom) {
         return Err(LayoutError::OutOfRange { field: "zoom" });
     }
-    // Screen size per axis, exact: the FD-07 (c) domain. A product that overflows is non-finite.
+    // Screen size per axis: the FD-07 (c) domain. A product that overflows is non-finite.
     let on_screen_w = finite("view", view.width() * zoom)?;
     let on_screen_h = finite("view", view.height() * zoom)?;
-    if on_screen_w > MAX_VIEW_PX.0 || on_screen_h > MAX_VIEW_PX.1 {
+    if on_screen_w > MAX_VIEW_PX.0 + VIEW_EPSILON_PX
+        || on_screen_h > MAX_VIEW_PX.1 + VIEW_EPSILON_PX
+    {
         return Err(LayoutError::OutOfRange { field: "view" });
     }
     if !STEP_RANGE.contains(&grid.step.value()) {

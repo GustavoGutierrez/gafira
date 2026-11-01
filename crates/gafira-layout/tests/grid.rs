@@ -1,8 +1,7 @@
 //! FD-07 (a, c, d, e), ARQ-110, ARQ-111 for the visible grid lines.
 
-use gafira_layout::{
-    GridLine, GridSettings, GridStyle, LayoutError, Length, Rect, Unit, grid_lines,
-};
+use gafira_layout::grid::grid_lines;
+use gafira_layout::{GridLine, GridSettings, GridStyle, LayoutError, Length, Rect, Unit};
 use proptest::prelude::*;
 
 const BAD: [f64; 3] = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
@@ -39,14 +38,7 @@ fn near(a: f64, b: f64) -> bool {
 
 /// The view that a 3840 x 2160 screen shows at `zoom`, from `(x, y)`.
 fn screen(x: f64, y: f64, zoom: f64) -> Rect {
-    let fit = |from: f64, size: f64| {
-        let mut to = from + size / zoom;
-        while (to - from) * zoom > size {
-            to = to.next_down();
-        }
-        to
-    };
-    view(x, y, fit(x, 3840.0), fit(y, 2160.0))
+    view(x, y, x + 3840.0 / zoom, y + 2160.0 / zoom)
 }
 
 #[test]
@@ -106,21 +98,23 @@ fn fd_07_lines_cover_a_view_that_starts_off_the_page() {
 }
 
 proptest! {
-    // FD-07 (a): lines fall on k x step converted with the DPI, in any unit.
+    // FD-07 (a), exact oracle in integers: both view edges lie on lines, so every line from
+    // `j0 * step` to `(j0 + m) * step` must be there, the edges included.
     #[test]
-    fn fd_07_a_lines_fall_on_multiples_of_the_converted_step(
-        step in 1.0..=500.0f64, unit in prop::sample::select(Unit::ALL.to_vec()),
-        dpi in 1.0..=10_000.0f64, zoom in 0.05..=32.0f64, hi in 100.0..3000.0f64,
+    fn fd_07_a_every_line_between_two_edge_lines_is_kept(
+        step in 6u32..=500, sub in 1u8..=10, zoom in prop::sample::select(vec![1u32, 2, 4, 8, 16, 32]),
+        j0 in -20i64..=20, m in 0u32..=640,
     ) {
-        let hi = hi.min(3800.0 / zoom);
-        let g = grid(step, unit, 1);
-        let step_px = g.step.to_px(dpi).unwrap();
-        prop_assume!(step_px * zoom >= 6.0 && (hi / step_px).fract() > 1e-6 && hi / step_px < 1e5);
-        let lines = grid_lines(&g, view(0.0, 0.0, hi, 1.0), zoom, dpi).unwrap().vertical;
-        prop_assert_eq!(lines.len(), (hi / step_px).floor() as usize + 1);
-        for (k, l) in lines.iter().enumerate() {
-            prop_assert!((l.position - k as f64 * step_px).abs() <= 0.01);
-            prop_assert!(l.major);
+        let (s, d, z) = (i64::from(step), i64::from(sub), i64::from(zoom));
+        let m = i64::from(m) % (3840 / (s * z) + 1);
+        let at = vertical(&px(f64::from(step), sub), view((j0 * s) as f64, 0.0, ((j0 + m) * s) as f64, 1.0), f64::from(zoom));
+        // the minor grid shows when its screen spacing is at least 6 px
+        let per = if s * z >= 6 * d { d } else { 1 };
+        prop_assert_eq!(at.len() as i64, m * per + 1);
+        for (i, l) in at.iter().enumerate() {
+            let k = j0 * per + i as i64;
+            prop_assert!((l.position - (k * s) as f64 / per as f64).abs() <= 1e-9);
+            prop_assert_eq!(l.major, k % per == 0);
         }
     }
 
@@ -147,7 +141,7 @@ proptest! {
     fn fd_07_c_at_most_2000_lines_at_any_zoom_on_a_4k_screen(
         step in 1.0..=500.0f64, unit in prop::sample::select(Unit::ALL.to_vec()),
         dpi in 1.0..=10_000.0f64, zoom in 0.05..=32.0f64, sub in 1u8..=10,
-        x in -5000.0..5000.0f64, y in -5000.0..5000.0f64,
+        x in -16_384.0..=16_384.0f64, y in -16_384.0..=16_384.0f64,
     ) {
         let v = screen(x, y, zoom);
         let g = grid_lines(&grid(step, unit, sub), v, zoom, dpi).unwrap();
@@ -160,13 +154,75 @@ proptest! {
 }
 
 #[test]
-fn fd_07_c_a_small_step_at_a_high_zoom_stays_under_the_limit() {
-    let g = grid_lines(&px(1.0, 10), screen(0.0, 0.0, 32.0), 32.0, 96.0).unwrap();
-    assert!(g.vertical.len() + g.horizontal.len() <= 2000);
-    assert!(g.vertical.len() > 100);
-    // the densest case: 6 px spacing on both axes
-    let g = grid_lines(&px(12.0, 2), screen(0.0, 0.0, 1.0), 1.0, 96.0).unwrap();
-    assert_eq!((g.vertical.len(), g.horizontal.len()), (641, 361));
+fn fd_07_c_the_densest_cases_stay_under_the_limit() {
+    // (step px, subdivisions, zoom, vertical, horizontal): the fallback, a hidden minor grid, the 6 px spacing
+    for (step, sub, zoom, want) in [
+        (1.0, 1, 0.05, (601, 338)),
+        (1.0, 10, 1.0, (481, 271)),
+        (1.0, 10, 32.0, (121, 68)),
+        (6.0, 1, 1.0, (641, 361)),
+    ] {
+        let g = grid_lines(&px(step, sub), screen(0.0, 0.0, zoom), zoom, 96.0).unwrap();
+        assert_eq!(
+            (g.vertical.len(), g.horizontal.len()),
+            want,
+            "{step} {sub} {zoom}"
+        );
+    }
+}
+
+#[test]
+fn fd_07_a_mm_steps_keep_a_line_on_either_view_edge() {
+    // the report's case: 1 mm at 150 dpi doubles to 11.81 px; its line k = 13 ends the view
+    let unit = 2.0 * Length::new(1.0, Unit::Mm).to_px(150.0).unwrap();
+    let r = view(0.0, 0.0, 13.0 * unit, 1.0);
+    let at = grid_lines(&grid(1.0, Unit::Mm, 1), r, 1.0, 150.0)
+        .unwrap()
+        .vertical;
+    assert_eq!(at.len(), 14);
+    for dpi in [150.0, 300.0, 600.0] {
+        for mm in 2..=20 {
+            let step = Length::new(f64::from(mm), Unit::Mm).to_px(dpi).unwrap();
+            for (k0, k1) in (0..=13).flat_map(|a| (0..=13).map(move |b| (a, b))) {
+                let (lo, hi) = (-f64::from(k0) * step, f64::from(k1) * step);
+                if hi - lo > 3840.0 {
+                    continue;
+                }
+                let at = grid_lines(
+                    &grid(f64::from(mm), Unit::Mm, 1),
+                    view(lo, 0.0, hi, 1.0),
+                    1.0,
+                    dpi,
+                );
+                let at = at.unwrap().vertical;
+                assert_eq!(
+                    at.len(),
+                    (k0 + k1 + 1) as usize,
+                    "{mm} mm, {dpi} dpi, {k0}..{k1}"
+                );
+                assert!(at[0].position == lo && at[at.len() - 1].position == hi);
+            }
+        }
+    }
+}
+
+#[test]
+fn fd_07_lines_at_negative_positions_are_major_on_whole_multiples_of_the_step() {
+    // step 10, 5 subdivisions: every 2 px, and only -10, 0 and 10 are major
+    let at = vertical(&px(10.0, 5), view(-10.0, 0.0, 10.0, 10.0), 5.0);
+    assert_eq!(
+        xs(&at),
+        [-10.0, -8.0, -6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+    );
+    assert_eq!(at.iter().filter(|l| l.major).count(), 3);
+    assert!([0, 5, 10].iter().all(|&i| at[i].major));
+    // any unit: 1 in at 96 dpi
+    let at = vertical(&grid(1.0, Unit::In, 1), view(-96.0, 0.0, 96.0, 10.0), 1.0);
+    assert_eq!(xs(&at), [-96.0, 0.0, 96.0]);
+    // only 3 x 2^k fits: the same rule with the doubled step, all major
+    let at = vertical(&px(3.0, 1), view(-12.0, 0.0, 12.0, 1.0), 1.0);
+    assert_eq!(xs(&at), [-12.0, -6.0, 0.0, 6.0, 12.0]);
+    assert!(at.iter().all(|l| l.major));
 }
 
 #[test]
@@ -178,8 +234,8 @@ fn fd_07_e_ranges_include_both_ends_and_reject_just_outside() {
         assert!(run(&px(ok, 1), 1.0).is_ok());
     }
     assert!(run(&grid(500.0, Unit::In, 1), 1.0).is_ok());
-    assert_eq!(run(&px(0.99, 1), 1.0), out("step"));
-    assert_eq!(run(&px(500.01, 1), 1.0), out("step"));
+    assert_eq!(run(&px(1.0f64.next_down(), 1), 1.0), out("step"));
+    assert_eq!(run(&px(500.0f64.next_up(), 1), 1.0), out("step"));
     assert_eq!(run(&grid(0.99, Unit::Mm, 1), 1.0), out("step"));
     for ok in [1, 10] {
         assert!(run(&px(10.0, ok), 1.0).is_ok());
@@ -189,9 +245,8 @@ fn fd_07_e_ranges_include_both_ends_and_reject_just_outside() {
     for ok in [0.05, 32.0] {
         assert!(run(&px(10.0, 1), ok).is_ok());
     }
-    assert_eq!(run(&px(10.0, 1), 0.049_9), out("zoom"));
-    assert_eq!(run(&px(10.0, 1), 32.000_1), out("zoom"));
-    assert_eq!(grid_lines(&px(10.0, 1), v, 1.0, 0.0), out("dpi"));
+    assert_eq!(run(&px(10.0, 1), 0.05f64.next_down()), out("zoom"));
+    assert_eq!(run(&px(10.0, 1), 32.0f64.next_up()), out("zoom"));
 }
 
 #[test]
@@ -248,38 +303,70 @@ fn arq_111_the_same_input_gives_the_same_bytes_with_axes_that_differ() {
 }
 
 #[test]
-fn fd_07_view_screen_size_is_limited_per_axis_with_exact_comparison() {
+fn fd_07_view_screen_size_is_limited_per_axis_with_a_tolerance_of_a_millionth() {
     let out = |field| Err(LayoutError::OutOfRange { field });
-    let run =
-        |w: f64, h: f64, zoom: f64| grid_lines(&px(12.0, 2), view(0.0, 0.0, w, h), zoom, 96.0);
+    let at = |x: f64, y: f64, w: f64, h: f64, zoom: f64| {
+        grid_lines(&px(6.0, 1), view(x, y, x + w, y + h), zoom, 96.0)
+    };
     // the limit itself is valid, at zoom 1 and scaled by the zoom
-    assert!(run(3840.0, 2160.0, 1.0).is_ok());
-    assert!(run(1920.0, 1080.0, 2.0).is_ok());
-    assert!(run(7680.0, 4320.0, 0.5).is_ok());
-    // just above on one axis, no tolerance; width and height are not swapped
-    assert_eq!(run(1920.01, 1080.0, 2.0), out("view"));
-    assert_eq!(run(1920.0, 1080.01, 2.0), out("view"));
-    assert_eq!(run(2160.0, 3840.0, 1.0), out("view"));
-    assert_eq!(run(3840.01, 100.0, 1.0), out("view"));
-    assert_eq!(run(100.0, 2160.01, 1.0), out("view"));
+    assert!(at(0.0, 0.0, 3840.0, 2160.0, 1.0).is_ok());
+    assert!(at(0.0, 0.0, 1920.0, 1080.0, 2.0).is_ok());
+    assert!(at(0.0, 0.0, 7680.0, 4320.0, 0.5).is_ok());
+    // just above on one axis; width and height are not swapped
+    assert_eq!(at(0.0, 0.0, 1920.01, 1080.0, 2.0), out("view"));
+    assert_eq!(at(0.0, 0.0, 1920.0, 1080.01, 2.0), out("view"));
+    assert_eq!(at(0.0, 0.0, 2160.0, 3840.0, 1.0), out("view"));
+    // epsilon = 1e-6 px on screen, per axis: 9e-7 is inside, 1.1e-6 is not
+    assert!(at(0.0, 0.0, 3_840.000_000_9, 2160.0, 1.0).is_ok());
+    assert!(at(0.0, 0.0, 3840.0, 2_160.000_000_9, 1.0).is_ok());
+    assert_eq!(at(0.0, 0.0, 3_840.000_001_1, 2160.0, 1.0), out("view"));
+    assert_eq!(at(0.0, 0.0, 3840.0, 2_160.000_001_1, 1.0), out("view"));
+    // the limit plus epsilon is valid, the next f64 above it is not
+    let (w, h) = (3840.0 + 1e-6, 2160.0 + 1e-6);
+    assert!(at(0.0, 0.0, w, 2160.0, 1.0).is_ok() && at(0.0, 0.0, 3840.0, h, 1.0).is_ok());
+    assert_eq!(at(0.0, 0.0, w.next_up(), 2160.0, 1.0), out("view"));
+    assert_eq!(at(0.0, 0.0, 3840.0, h.next_up(), 1.0), out("view"));
+    // a view computed as screen / zoom rounds: 3840 / 0.9 * 0.9 is above 3840
+    for corner in [0.0, 1000.5] {
+        assert!(at(corner, corner, 3840.0 / 0.9, 2160.0 / 0.9, 0.9).is_ok());
+    }
+    // the tolerance adds no line: 641 x 361 at the limit and at 9e-7 above it
+    for extra in [0.0, 0.000_000_9] {
+        let g = at(0.0, 0.0, 3840.0 + extra, 2160.0 + extra, 1.0).unwrap();
+        assert_eq!((g.vertical.len(), g.horizontal.len()), (641, 361));
+    }
 }
 
 #[test]
-fn fd_07_view_is_checked_after_non_finite_and_the_zoom_range() {
-    let big = view(0.0, 0.0, 100_000.0, 100_000.0);
+fn fd_07_dpi_is_checked_after_non_finite_and_before_every_range_rule() {
+    let v = view(0.0, 0.0, 50.0, 50.0);
+    for dpi in [0.0, -96.0] {
+        for (g, v, zoom) in [
+            (px(10.0, 1), v, 33.0),
+            (px(10.0, 1), view(0.0, 0.0, 100_000.0, 1.0), 1.0),
+            (px(0.5, 1), v, 1.0),
+            (px(10.0, 0), v, 1.0),
+            (px(10.0, 1), v, 1.0),
+        ] {
+            assert_eq!(
+                grid_lines(&g, v, zoom, dpi),
+                Err(LayoutError::OutOfRange { field: "dpi" })
+            );
+        }
+    }
+    assert_eq!(
+        grid_lines(&px(f64::NAN, 1), v, 1.0, 0.0),
+        Err(LayoutError::NonFinite { field: "step" })
+    );
+}
+
+#[test]
+fn fd_07_view_is_checked_after_the_zoom_range_and_a_product_that_overflows_is_non_finite() {
+    let big = view(0.0, 0.0, 1000.0, 1000.0);
     assert_eq!(
         grid_lines(&px(10.0, 1), big, 33.0, 96.0),
         Err(LayoutError::OutOfRange { field: "zoom" })
     );
-    assert_eq!(
-        grid_lines(&px(10.0, 1), big, f64::NAN, 96.0),
-        Err(LayoutError::NonFinite { field: "zoom" })
-    );
-    assert_eq!(
-        grid_lines(&px(10.0, 1), view(0.0, 0.0, f64::NAN, 1.0), 1.0, 96.0),
-        Err(LayoutError::NonFinite { field: "view" })
-    );
-    // a product that overflows is the non-finite rule
     assert_eq!(
         grid_lines(&px(10.0, 1), view(0.0, 0.0, f64::MAX, 1.0), 32.0, 96.0),
         Err(LayoutError::NonFinite { field: "view" })
