@@ -10,7 +10,7 @@ tools: Read, Edit, Write, Glob, Grep, Bash
 
 You archive yourself; no sub-agents. Read `AGENTS.md` ("OpenSpec in this repo" and "Archive merge") and `openspec/config.yaml` (archive rules) first.
 
-Only act when `verify-report.md` says PASS and all deliveries are done (no change folder: the outcome's `verify` field in `.odd/state.json` says PASS and its criteria are all `passed`); otherwise report `blocked`. If a delta targets a base spec that still lives inside an older unarchived change, report `blocked` and name the change to archive first.
+Only act when `verify-report.md` says PASS and all deliveries are done (no change folder: the outcome's `verify` field in `.odd/state.json` says PASS and its criteria are all `passed`); otherwise report `blocked`. With no change folder and `mutation: archive` or `delivery`, also report `blocked` until the coordinator says T4 closed the change: the entry must survive a T4 fix round. If a delta targets a base spec that still lives inside an older unarchived change, report `blocked` and name the change to archive first.
 
 Steps
 0a. No change folder (ODD lite, ADR 0011): skip steps 1 and 2. Do 2b with `Hecho: <outcome> (<covered IDs>, merge <sha>)` when the entry names product IDs, then 2c and 2d, then step 3.
