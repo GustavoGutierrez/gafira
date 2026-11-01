@@ -605,7 +605,7 @@ fn arq_110_an_inactive_magnet_computes_no_centre_quotient_guide_or_distance() {
     // Row "Entradas del Imán": each input below is finite and in range. The magnet off gives
     // (0, 0) without an error; the same input with the magnet on is a non-finite result.
     type Make = fn() -> Case;
-    let cases: [(&str, Make, &str); 4] = [
+    let cases: [(&str, Make, &str); 5] = [
         (
             "a moving box of size 0 at 1e308: its centre overflows",
             || {
@@ -643,6 +643,19 @@ fn arq_110_an_inactive_magnet_computes_no_centre_quotient_guide_or_distance() {
                 c
             },
             "distance",
+        ),
+        (
+            "a guide of MAX in whose px value overflows",
+            || {
+                let mut c = Case::new();
+                c.guides = vec![Guide {
+                    axis: GuideAxis::Vertical,
+                    position: Length::new(f64::MAX, Unit::In),
+                    locked: false,
+                }];
+                c
+            },
+            "guide",
         ),
     ];
     for (what, make, field) in cases {
