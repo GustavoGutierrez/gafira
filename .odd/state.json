@@ -21,17 +21,17 @@
       "spec_id": "odd-ligero-migracion",
       "status": "verifying",
       "criteria": [
-        {"id": "AC1", "status": "pending"},
-        {"id": "AC2", "status": "pending"},
-        {"id": "AC3", "status": "pending"},
-        {"id": "AC4", "status": "pending"},
-        {"id": "AC5", "status": "pending"},
-        {"id": "AC6", "status": "pending"},
-        {"id": "AC7", "status": "pending"},
-        {"id": "AC8", "status": "pending"},
-        {"id": "AC9", "status": "pending"}
+        {"id": "AC1", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC2", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC3", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC4", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC5", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC6", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC7", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC8", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC9", "status": "passed", "evidence": "verify round 1 at 5fc7659"}
       ],
-      "next_action": "Run verify V1 on chore/odd-lite"
+      "next_action": "Run the D3 pilot of layout-core (ADR 0011, phase C)"
     }
   ]
 }

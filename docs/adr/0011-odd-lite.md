@@ -29,13 +29,13 @@ Add ODD lite on top of the existing machinery, and change no safety rule. Phases
 | Current flow | Fast lane by default (ADR 0002): Slice card, `tdd-apply`, `verify` V2, T4 per touched crate, `archive`. Light spec for other requests. Full adds `architect`. `proposal.md`, `tasks.md` and delta specs are already off by default |
 | Docs | `docs/specs/` (one active set, `backlog/`, `archive/`; owner decisions in `00-decisiones.md`), `docs/adr/`, `openspec/specs/` (record of past changes, no longer grows), `openspec/changes/` and its archive. The duplication left is the change folder itself |
 | Execution | Agent tool with one writer at a time; worktrees only for parallel deliveries. `.claude/settings.json` holds permissions and no hooks. State was the change folder and git. Scripts: `refresh.sh`, `manual.py`, `generar_manual.py` |
-| Tests | 8 crates and 1 app; 911 `#[test]` attributes in 85 files (`grep -rhE '#\[test\]' crates apps --include=*.rs`). `cargo fmt`, clippy, `cargo test`; CI jobs `test`, `policy` (V5, V12, V13, V14) and `cargo-deny`; CI is disabled for now (follow-up 2). `cargo-mutants` is local and not a CI gate. No CI step scans docs, so `.odd/` meets no policy check |
+| Tests | 8 crates and 1 app; 911 `#[test]` attributes in 85 files (`grep -rhE '#\[test\]' crates apps --include=*.rs`). `cargo fmt`, clippy, `cargo test`; CI jobs `test` and `policy` (V5, V12, V13, V14; `cargo-deny` is a step of `policy`); CI is disabled for now (follow-up 2). `cargo-mutants` is local and not a CI gate. No CI step scans docs, so `.odd/` meets no policy check |
 
 ### Disposition
 
 | Component | Action | Reason | Impact | Check |
 |---|---|---|---|---|
-| `coordinator` | adapt | single point of decision; needs L0-L3 and the state rule | new router and resume steps; floors, gates and owner stops unchanged | read the floors and gates tables against `develop` |
+| `coordinator` | adapt | single point of decision; needs L0-L3 and the state rule | new router and resume steps; floors and owner stops unchanged; gates G0 and G4 gain text additively | read the floors and gates tables against `develop` |
 | `specifier` + skill `product-specs` | adapt | is the brief's `odd-spec` | runs when requirements change; acceptance source wording | `git diff develop -- .agents/agents/specifier.md` |
 | `tdd-apply` | keep, small edit | is the implementer of `odd-run` | acceptance source and notes without a folder | "no improvising" lines still present |
 | `verify` | adapt | is `odd-verify`; needs BLOCKED | new verdict, `blocked` field, entry checks | old `verification.json` files stay valid |
@@ -43,7 +43,7 @@ Add ODD lite on top of the existing machinery, and change no safety rule. Phases
 | `archive` | adapt | must close an outcome with no folder | new no-folder path | steps 1 and 2 unchanged |
 | `explorer` | keep, small edit | `spike.md` needs a folder | no-folder runs return the result only | one line |
 | `architect`, `manual-writer` | keep | unaffected; full mode keeps its folder | none | no diff |
-| Modes, packs, floors, gates, tiers, depths | keep | they already do what the brief asks | level sits above them | tables unchanged |
+| Modes, packs, floors, gates, tiers, depths | keep, additive edits | they already do what the brief asks | level sits above them; G0 accepts an outcome entry, G4 rejects BLOCKED, and the Spec and Runs cells of the `AGENTS.md` modes table name the outcome entry | floors and packs tables have no diff; the gates table and the `AGENTS.md` modes table changed additively, with nothing removed |
 | Slice card and Light spec | keep, default narrowed | still the form for folders in progress, L3, uncovered work and legacy | fields move to the entry on covered work | `flow: legacy` restores them |
 | `openspec/changes/<change>/` | adapt | the document the brief removes by default | optional on covered work | AC4 |
 | `.odd/state.json` | add | no resumable record existed outside a folder | one tracked file | `python3 -m json.tool .odd/state.json` |
@@ -90,6 +90,27 @@ Consolidate only when all hold, by owner decision:
 - FAIL counts and rounds are no worse than comparable deliveries (D1 two rounds, D2 three).
 
 Then accept this ADR, update ADR statuses, mark what proves redundant as legacy, and bring the docs this change could not touch into line: "Cómo continuar el documento en curso" in `docs/specs/README.md` and `docs/manuals/tecnico/chapters*/10-methodology.md` still describe the Slice card route. History is not deleted without the owner's OK.
+
+### Phase D: requirements
+
+From `verify-report.md`, round 1 of `odd-lite`.
+
+- W1, required before the first folderless outcome runs: verify findings and their classes must survive a session. Today the report stays in the scratchpad and the entry holds only `{round, commit, verdict, next}`, so a later session cannot check that earlier findings closed, route them, or apply the stop on two consecutive FAILs of the same class. Until W1 is resolved, new work keeps a change folder or runs under `flow: legacy`.
+- W2, open item to align: `coordinator.md` says a level never lowers a pack default, yet lets the coordinator set `mutation: off` where the pack says `archive`, and the "heaviest of" rule names only the mode, not depth or agents.
+- W3, open item to align: on the outcome entry path, `verify` step 3d must name the product ID check and the finding classes that step 3c holds for the fast lane.
+
+### Phase D: consolidate into `specs/`
+
+Owner request, 2026-11-01. After `layout-core` is archived, on its own branch, consolidate into one root `specs/` folder and remove `openspec/`.
+
+| From | To |
+|---|---|
+| `docs/specs/*`, with `backlog/` and `archive/` | `specs/` |
+| `openspec/specs/` | `specs/capabilities/` |
+| `openspec/changes/archive/` | `specs/history/` |
+| `openspec/config.yaml` content | `AGENTS.md`, or `.odd/` if it does not fit |
+
+Use `git mv` to keep history. References to update, at the time of writing and outside the two folders being moved: 29 files cite `openspec/` and 30 cite `docs/specs`, including `AGENTS.md`, agents, skills and the technical manual. `verify` checks that no broken reference remains. No file under `crates/`, `apps/` or `.github/` cites these paths. This task also covers the stale "Cómo continuar el documento en curso" section and the manual chapters named above.
 
 ### Rollback
 
