@@ -17,7 +17,7 @@
 | `EditService`, `Session`, `SelectionService`, bus de eventos | **Planificado**: capa 3, `gafira-engine` |
 | `Selection`, `HitTester`, `Tool` | **Planificado** |
 
-El crate es código de dominio de la capa 1: sin I/O, sin relojes, sin `unsafe`. Depende de `gafira-geom`, `gafira-color`, `gafira-doc` y, para dimensionar cargas de extensión, de `serde_json`. Sus elementos públicos son `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage` y `RemovePage`. No debe reexportar públicamente `EditToken` (CI V13). Las fuentes de verdad de este capítulo son el código bajo `crates/gafira-edit/`, y las specs principales `openspec/specs/edit-commands/` y `openspec/specs/edit-history/`. El change `edit-history` está archivado.
+El crate es código de dominio de la capa 1: sin I/O, sin relojes, sin `unsafe`. Depende de `gafira-geom`, `gafira-color`, `gafira-doc` y, para dimensionar cargas de extensión, de `serde_json`. Sus elementos públicos son `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage` y `RemovePage`. No debe reexportar públicamente `EditToken` (CI V13). Las fuentes de verdad de este capítulo son el código bajo `crates/gafira-edit/`, y las specs principales `specs/capabilities/edit-commands/` y `specs/capabilities/edit-history/`. El change `edit-history` está archivado.
 
 ## El contrato Command
 

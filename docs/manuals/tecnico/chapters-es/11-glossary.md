@@ -10,7 +10,7 @@
 | Compactación | Descartar las instantáneas de las entradas más antiguas del historial que superan el presupuesto; la entrada conserva su comando y se deshace con `revert` |
 | Command | Una edición deshacible de un documento; el trait `Command` de `gafira-edit` |
 | Copia al escribir | Mutación mediante `Arc::make_mut`, que copia solo los elementos compartidos a lo largo del camino editado |
-| D-nn | Una decisión del titular en `docs/specs/00-decisiones.md`; prevalece sobre las demás specs |
+| D-nn | Una decisión del titular en `specs/00-decisiones.md`; prevalece sobre las demás specs |
 | Ronda de corrección | Una vuelta a `tdd-apply` tras un FAIL de verify, con las pruebas primero y una nueva verificación |
 | Entrega | Una porción revisable de un change (`D1`, `D2a`...), construida con TDD estricto |
 | DirtySet | Las páginas y nodos que un comando cambia, usado para invalidar cachés |
@@ -25,7 +25,7 @@
 | History | El dueño del `Arc<Document>` de la sesión y de sus pilas de deshacer y rehacer (`gafira-edit`) |
 | Ley | Una de las seis propiedades que `prop_command` comprueba para un comando |
 | SDD ligero | El flujo spec, apply, verify, archive de este repositorio |
-| Carril rápido | La ruta por defecto (ADR 0002): una spec de producto se ejecuta directamente desde sus IDs de requisitos mediante una Slice card, sin propuesta, diseño ni delta specs |
+| Carril rápido | La ruta del ADR 0002 (en el trabajo cubierto, la entrada de outcome recoge ahora los campos de la tarjeta): una spec de producto se ejecuta directamente desde sus IDs de requisitos mediante una Slice card, sin propuesta, diseño ni delta specs |
 | Clase de hallazgo | El `class:` de un hallazgo de verify (`implementation`, `architecture`, `ambiguity`, `claim`); el coordinador enruta según ella |
 | Modo de flujo | Light, standard o full: el conjunto de agentes, puertas y comprobaciones que ejecuta una solicitud; lo elige el coordinador |
 | Puerta (G0 a G5) | Una comprobación que hace el coordinador entre fases de un flujo; no es lo mismo que las puertas locales (`fmt`, `clippy`, `test`) |
@@ -39,7 +39,11 @@
 | MergeKey | La clave bajo la que dos comandos pueden fusionarse en una sola entrada de historial |
 | Mutante | Un pequeño cambio deliberado de código hecho por `cargo-mutants`; un mutante superviviente indica una laguna de pruebas |
 | NodeSpec | Un nodo descrito sin ids, la entrada de `InsertNodes` |
-| OpenSpec | La organización de specs principales y carpetas de changes bajo `openspec/` |
+| BLOCKED | Un veredicto de `verify`: una comprobación crítica no pudo ejecutarse; va al titular, nunca cuenta como PASS y no cuesta una ronda |
+| Carpeta de change | La carpeta `specs/changes/<change>/` con los artefactos de un change; se cierra en `specs/history/` |
+| ODD lite | Enrutamiento por resultados sobre los modos de flujo (ADR 0011, propuesto): niveles de riesgo, entradas de outcome y BLOCKED |
+| Entrada de outcome | El objeto de `.odd/state.json` que registra criterios, estado y siguiente acción de un outcome activo |
+| Nivel de riesgo (L0 a L3) | La clase que el coordinador asigna a una solicitud por impacto, incertidumbre y reversibilidad; puede subir el modo de flujo y nunca baja un suelo |
 | P1 a P6 | Las pasadas ordenadas de `Document::validate` |
 | Planificado | Especificado pero aún no implementado en el repositorio |
 | Puerto | Un trait definido por la capa de aplicación que implementan los adaptadores (**Planificado**, `gafira-ports`) |

@@ -10,7 +10,7 @@
 | Compaction | Dropping the snapshots of the oldest history entries over the budget; the entry keeps its command and is undone with `revert` |
 | Command | An undoable edit of a document; the `Command` trait in `gafira-edit` |
 | Copy on write | Mutation through `Arc::make_mut`, which copies only the shared items along the edited path |
-| D-nn | An owner decision in `docs/specs/00-decisiones.md`; it overrides other specs |
+| D-nn | An owner decision in `specs/00-decisiones.md`; it overrides other specs |
 | Delivery | One reviewable slice of a change (`D1`, `D2a`...), built with strict TDD |
 | DirtySet | The pages and nodes a command changes, used for cache invalidation |
 | `DocMut` | The exclusive editing view of a `Document`, obtained with an `EditToken` |
@@ -25,7 +25,7 @@
 | History | The owner of the session `Arc<Document>` and its undo and redo stacks (`gafira-edit`) |
 | Law | One of the six properties `prop_command` checks for a command |
 | Lite SDD | The spec, apply, verify, archive flow of this repository |
-| Fast lane | The default route (ADR 0002): a product spec runs directly from its requirement IDs through a Slice card, with no proposal, design or delta specs |
+| Fast lane | The route of ADR 0002 (on covered work the outcome entry now holds the card fields): a product spec runs directly from its requirement IDs through a Slice card, with no proposal, design or delta specs |
 | Finding class | The `class:` of a verify finding (`implementation`, `architecture`, `ambiguity`, `claim`); the coordinator routes by it |
 | Flow mode | Light, standard or full: the set of agents, gates and checks a request runs; chosen by the coordinator |
 | Gate (G0 to G5) | A check the coordinator makes between phases of a flow; not the same as the local gates (`fmt`, `clippy`, `test`) |
@@ -39,7 +39,11 @@
 | MergeKey | The key under which two commands may be merged into one history entry |
 | Mutant | A small deliberate code change made by `cargo-mutants`; a surviving mutant means a test gap |
 | NodeSpec | A node described without ids, the input of `InsertNodes` |
-| OpenSpec | The layout of main specs and change folders under `openspec/` |
+| BLOCKED | A `verify` verdict: a critical check could not run; it goes to the owner, never counts as PASS and costs no round |
+| Change folder | The folder `specs/changes/<change>/` that holds the artifacts of one change; it closes into `specs/history/` |
+| ODD lite | Outcome-driven routing on top of the flow modes (ADR 0011, proposed): risk levels, outcome entries and BLOCKED |
+| Outcome entry | The object in `.odd/state.json` that records the criteria, status and next action of one active outcome |
+| Risk level (L0 to L3) | The class the coordinator gives a request by impact, uncertainty and reversibility; it can raise the flow mode and never lowers a floor |
 | P1 to P6 | The ordered passes of `Document::validate` |
 | Planned | Specified but not implemented in the repository yet |
 | Port | A trait defined by the application layer that adapters implement (**Planned**, `gafira-ports`) |

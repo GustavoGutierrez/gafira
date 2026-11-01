@@ -33,7 +33,7 @@ Dependencias externas declaradas en el workspace: `kurbo` (geometría, con `serd
 
 ## Crates gafira-time y gafira-pathops
 
-Ambos son crates puros con un `clippy.toml` y una fila V5. Fuentes: `openspec/specs/time-model/`, `openspec/specs/timecode/`, `openspec/specs/path-operations/` y el código de cada crate.
+Ambos son crates puros con un `clippy.toml` y una fila V5. Fuentes: `specs/capabilities/time-model/`, `specs/capabilities/timecode/`, `specs/capabilities/path-operations/` y el código de cada crate.
 
 ### gafira-time
 
@@ -70,7 +70,7 @@ La especificación enumera más crates que aún no están en el repositorio. Est
 - Capa 4 (adaptadores): `gafira-format`, `gafira-assets`, `gafira-io-*`, `gafira-mux`, `gafira-codec-*`, `gafira-render-cpu`, `gafira-render-gpu`, `gafira-platform`, `gafira-i18n`, `gafira-theme`, `gafira-license`, `gafira-ui`, `gafira-captions`, `gafira-plugin`.
 - Soporte: `xtask`.
 
-La tabla autoritativa, con la responsabilidad y las prohibiciones de cada crate, es la sección 2.1 de `docs/specs/02-arquitectura-software.md`.
+La tabla autoritativa, con la responsabilidad y las prohibiciones de cada crate, es la sección 2.1 de `specs/02-arquitectura-software.md`.
 
 Un crate nuevo debe cumplir un criterio de ADR-01: una frontera de capa, una feature opcional o exposición legal, tiempo de compilación incremental, o reutilización por varios consumidores. La mera organización interna es un módulo, no un crate.
 
