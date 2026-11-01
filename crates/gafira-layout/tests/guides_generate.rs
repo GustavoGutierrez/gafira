@@ -201,7 +201,7 @@ fn arq_110_every_float_input_is_checked_even_when_unused() {
         Err(LayoutError::NonFinite { .. })
     ));
     assert!(matches!(
-        huge(spec(3, 0, max, 0.0), page(max, 1.0)),
+        huge(spec(3, 0, max, 0.0), page(1000.0, 1.0)),
         Err(LayoutError::NonFinite { .. })
     ));
     assert!(matches!(
@@ -273,5 +273,76 @@ proptest! {
         let side = 2.0 * margin + 20.0 * (1.0 + gap) + 1.0;
         let g = generate(&spec(cols, rows, gap, margin), page(side, side), 96.0).unwrap();
         prop_assert!(g.iter().all(|g| g.position.value().is_finite()));
+    }
+}
+
+/// The `page` side limit, in px (ARQ-110, FD-04).
+const MAX_SIDE: f64 = 16_384.0;
+
+#[test]
+fn fd_04_page_side_limit_is_inclusive_and_checked_per_side() {
+    let out = |field| Err(LayoutError::OutOfRange { field });
+    let gen_ = |s: &GuideSpec, w: f64, h: f64| generate(s, page(w, h), 96.0);
+    // the maximum is valid: 16 384 columns of 1 px give 16 385 distinct positions
+    let g = run(&spec(MAX_SIDE as u32, 0, 0.0, 0.0), MAX_SIDE, MAX_SIDE);
+    assert_eq!(on(GuideAxis::Vertical, &g).len(), 16_385);
+    assert!(gen_(&spec(0, 1, 0.0, 0.0), 1.0, MAX_SIDE).is_ok());
+    // just above, on each side alone, also when that axis has n = 0
+    assert_eq!(gen_(&spec(1, 0, 0.0, 0.0), 16_384.01, 1.0), out("page"));
+    assert_eq!(gen_(&spec(1, 0, 0.0, 0.0), 1.0, 16_385.0), out("page"));
+    assert_eq!(gen_(&spec(0, 1, 0.0, 0.0), 16_385.0, 1.0), out("page"));
+    assert_eq!(gen_(&spec(0, 0, 0.0, 0.0), 16_385.0, 1.0), out("page"));
+    assert_eq!(gen_(&spec(0, 0, 0.0, 0.0), 1.0, 16_385.0), out("page"));
+}
+
+#[test]
+fn fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width() {
+    let out = |field| Err(LayoutError::OutOfRange { field });
+    let big = page(16_385.0, 16_385.0);
+    let ok = page(MAX_SIDE, MAX_SIDE);
+    // a valid side: an enormous n is the column width rule
+    assert_eq!(
+        generate(&spec(u32::MAX, 0, 0.0, 0.0), ok, 96.0),
+        out("columns")
+    );
+    assert_eq!(
+        generate(&spec(0, u32::MAX, 0.0, 0.0), ok, 96.0),
+        out("rows")
+    );
+    // a side out of range: the same n is the page rule
+    assert_eq!(
+        generate(&spec(u32::MAX, 0, 0.0, 0.0), big, 96.0),
+        out("page")
+    );
+    // non-finite inputs win over the side limit
+    assert_eq!(
+        generate(&spec(1, 1, 0.0, 0.0), big, f64::NAN),
+        Err(LayoutError::NonFinite { field: "dpi" })
+    );
+    assert_eq!(
+        generate(&spec(1, 1, f64::NAN, 0.0), big, 96.0),
+        Err(LayoutError::NonFinite { field: "gap" })
+    );
+    assert_eq!(
+        generate(&spec(1, 1, 0.0, 0.0), page(f64::NAN, 20_000.0), 96.0),
+        Err(LayoutError::NonFinite { field: "page" })
+    );
+}
+
+proptest! {
+    // FD-04 bound: with c >= 1 px, n <= 16 384, so every Ok has at most 32 768 guides per axis.
+    #[test]
+    fn fd_04_every_ok_has_at_most_32768_guides_per_axis(
+        cols in prop_oneof![0u32..40, 16_000u32..17_000, Just(u32::MAX)],
+        rows in prop_oneof![0u32..40, 16_000u32..17_000, Just(u32::MAX)],
+        w in prop_oneof![1.0..100.0f64, 16_000.0..16_400.0f64],
+        h in prop_oneof![1.0..100.0f64, 16_000.0..16_400.0f64],
+        margin in prop_oneof![Just(0.0), 0.0..10.0f64],
+    ) {
+        if let Ok(g) = generate(&spec(cols, rows, 0.0, margin), page(w, h), 96.0) {
+            for axis in [GuideAxis::Vertical, GuideAxis::Horizontal] {
+                prop_assert!(on(axis, &g).len() <= 32_768);
+            }
+        }
     }
 }

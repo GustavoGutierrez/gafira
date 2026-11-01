@@ -1,6 +1,6 @@
 //! Guide positions and the guide generator (FD-03, FD-04).
 
-use gafira_doc::{Guide, GuideAxis};
+use gafira_doc::{Guide, GuideAxis, PageSize};
 use gafira_geom::{Length, Rect, Unit};
 
 use crate::LayoutError;
@@ -85,6 +85,9 @@ fn axis_positions(
 /// height; `n = 0` gives no guides on that axis. Output lists the vertical
 /// guides first, then the horizontal ones, each group ascending.
 ///
+/// Both page sides must be at most `PageSize::MAX_PX` (16 384 px), which keeps
+/// each axis to at most 32 768 guides.
+///
 /// `gap` and `margin` must be finite and `>= 0`; both, `dpi` and the page are
 /// checked even when no axis uses them. Page margins are not read. Any error
 /// returns no guides.
@@ -104,6 +107,10 @@ pub fn generate(spec: &GuideSpec, page: Rect, dpi: f64) -> Result<Vec<Guide>, La
     let (gap, margin) = (gap + 0.0, margin + 0.0);
     let width = finite("page", page.width())?;
     let height = finite("page", page.height())?;
+    // Both sides, even when an axis has `n = 0`; before any column width rule.
+    if width > PageSize::MAX_PX || height > PageSize::MAX_PX {
+        return Err(LayoutError::OutOfRange { field: "page" });
+    }
     let columns = axis_positions("columns", spec.columns, width, gap, margin)?;
     let rows = axis_positions("rows", spec.rows, height, gap, margin)?;
     let guide = |axis| {
