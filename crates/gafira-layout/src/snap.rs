@@ -284,3 +284,25 @@ pub fn snap(input: &SnapInput<'_>) -> Result<SnapResult, LayoutError> {
         y: resolve(moving_y, &ys, limit)?,
     })
 }
+
+/// The multiple of 15 degrees nearest to `angle`, for a rotation with `Shift` (FD-06).
+///
+/// `angle` is in degrees, finite, with no range: the result is not normalized
+/// to one turn. The two multiples around `angle` are compared by their exact
+/// `f64` distances, and halfway the larger value in number wins, also below
+/// zero (`-7.5` gives `0`). A zero result is `+0.0`. A value that overflows is
+/// `NonFinite` naming `angle`.
+pub fn snap_rotation(angle: f64) -> Result<f64, LayoutError> {
+    let k = (angle / 15.0).floor();
+    // A NaN or an infinity, and a multiple that rounds past `f64::MAX`, stop here.
+    let below = finite("angle", k * 15.0)?;
+    // Once `k + 1` differs from `k`, `k` is far below the overflow, so this is finite.
+    let above = (k + 1.0) * 15.0;
+    let nearer = if above - angle <= angle - below {
+        above
+    } else {
+        below
+    };
+    // `+ 0.0` turns a -0.0 into 0.0.
+    Ok(nearer + 0.0)
+}
