@@ -324,6 +324,27 @@ fn arq_110_a_nan_outside_the_attracting_nodes_changes_nothing() {
 }
 
 #[test]
+fn arq_110_a_hidden_or_locked_child_of_an_attracting_group_is_read_and_one_outside_is_not() {
+    // Row "Elementos que atraen": E (in B, in A) is hidden or locked and has a NaN `x`.
+    let nan_x = |p: &mut Page| edit(p, 5, |n| n.base.placement.x = f64::NAN);
+    let err = Err(LayoutError::NonFinite { field: "x" });
+    for flag in [hide as fn(&mut Page, u64), lock] {
+        let mut p = abcde();
+        flag(&mut p, 5);
+        nan_x(&mut p);
+        // moving C: B attracts and holds E, which is read though it does not attract
+        assert_eq!(run(&p, &[3]), err);
+        // nothing moves: A and B attract
+        assert_eq!(run(&p, &[]), err);
+        // moving D: A and B are ancestors, E is in no attracting subtree, so only C is left
+        assert_eq!(run(&p, &[4]), Ok(vec![r(C)]));
+        // moving B or A takes E's whole branch out
+        assert_eq!(run(&p, &[2]), Ok(vec![r(C)]));
+        assert_eq!(run(&p, &[1]), Ok(vec![]));
+    }
+}
+
+#[test]
 fn arq_110_a_bad_number_in_an_attracting_node_names_its_field() {
     let names = ["x", "y", "w", "h", "rotation_deg", "skew"];
     let setters: [fn(&mut Placement, f64); 6] = [

@@ -33,8 +33,10 @@ enum Step {
 /// Page flags are not read. A group that attracts does so by the union of all its
 /// children, including those that do not attract.
 ///
-/// The nodes read are the ones that attract: placements elsewhere are not
-/// checked, so a NaN in a node that is left out changes nothing. A selected id
+/// The nodes read are the ones that attract and all their descendants, hidden and
+/// locked ones included, as in [`crate::node_bounds`]: a NaN in a child of an
+/// attracting group is an error though that child does not attract. A node in no
+/// attracting subtree is not read, so a NaN there changes nothing. A selected id
 /// that is not in the page is `UnknownNode`, as is a root or child missing from
 /// it; a group that contains itself is `Cycle`. The tree is walked with an
 /// explicit stack, so any depth is fine, and each node is measured once.

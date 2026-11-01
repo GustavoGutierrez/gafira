@@ -178,6 +178,20 @@ fn fd_06_a_five_px_from_a_guide_the_edge_lands_on_it() {
     assert_eq!(r.y.target, target(85.0, SnapKind::Guide));
 }
 
+// FD-03 (c)
+#[test]
+fn fd_03_c_the_magnet_snaps_to_a_guide_within_the_threshold_and_not_beyond() {
+    let mut c = Case::at(94.0);
+    c.guides = vec![vg(100.0)];
+    let r = c.solve();
+    assert_eq!(r.target, target(100.0, SnapKind::Guide));
+    assert_eq!(r.offset, 6.0);
+    // 6.5 px away is outside the threshold of 6 screen px at zoom 1
+    let mut c = Case::at(93.5);
+    c.guides = vec![vg(100.0)];
+    assert_eq!(c.solve(), NONE);
+}
+
 #[test]
 fn fd_06_b_an_inactive_magnet_gives_no_offset_but_still_checks_its_input() {
     let mut c = Case::new();
@@ -384,6 +398,30 @@ fn the_order_of_checks_is_numbers_and_boxes_then_dpi_then_ranges() {
         let mut c = dpi0();
         set(&mut c);
         assert_eq!(c.run(), Err(LayoutError::OutOfRange { field: "dpi" }));
+    }
+}
+
+#[test]
+fn the_box_of_every_input_is_checked_before_the_dpi_rule() {
+    // Row "DPI": with `dpi = 0` a box with `x1 < x0` or `y1 < y0` gives the box error, not `dpi`.
+    let bad = [Rect::new(1.0, 0.0, 0.0, 0.0), Rect::new(0.0, 1.0, 0.0, 0.0)];
+    type Put = fn(&mut Case, Rect);
+    let puts: [(&str, Put); 4] = [
+        ("moving", |c, r| c.moving = r),
+        ("page", |c, r| c.page = r),
+        ("margins", |c, r| c.margins = Some(r)),
+        ("element", |c, r| c.elements = vec![r]),
+    ];
+    for (field, put) in puts {
+        for r in bad {
+            let mut c = Case::new();
+            c.dpi = 0.0;
+            put(&mut c, r);
+            assert_eq!(c.run(), Err(LayoutError::InvalidBox { field }), "{field}");
+            // the same box with a valid DPI gives the same error, so the DPI is not what is read
+            c.dpi = 96.0;
+            assert_eq!(c.run(), Err(LayoutError::InvalidBox { field }), "{field}");
+        }
     }
 }
 
