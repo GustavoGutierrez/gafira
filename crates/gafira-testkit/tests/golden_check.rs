@@ -16,6 +16,10 @@ fn gray(bytes: &[u8]) -> Image {
 
 #[test]
 fn ac6_quantize_rounds_to_nearest() {
+    // Every byte value maps back to itself, so a scale other than 255 shows.
+    let all: Vec<u8> = (0..=255).collect();
+    let floats: Vec<f32> = all.iter().map(|&b| f32::from(b) / 255.0).collect();
+    assert_eq!(quantize(&floats), all);
     // c = 0.5/255 + epsilon rounds up; just below it rounds down.
     assert_eq!(
         quantize(&[0.0, 1.0, 0.5, 1.0 / 255.0]),

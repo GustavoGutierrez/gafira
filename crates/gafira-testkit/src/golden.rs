@@ -224,11 +224,8 @@ pub fn compare(mode: Mode, expected: &Image, actual: &Image) -> Result<(), Misma
 
 /// Quantizes `f32` channels to bytes with `round(c * 255)` on `[0, 1]`.
 pub fn quantize(values: &[f32]) -> Vec<u8> {
-    // The clamp comes first; NaN casts to 0.
-    values
-        .iter()
-        .map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
-        .collect()
+    // The saturating `as u8` bounds to [0, 1] (0..=255) and maps NaN to 0.
+    values.iter().map(|c| (c * 255.0).round() as u8).collect()
 }
 
 /// Why a golden check failed.
