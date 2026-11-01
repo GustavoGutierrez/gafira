@@ -1,403 +1,198 @@
-# Verify report: layout-core D4
+# Verify report: layout-core D5-D7
 
-Current state: round 3 at `553aaf3`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report): **PASS** for D4, D5 to D7 remaining. 0 CRITICAL, 1 WARNING, 2 SUGGESTION. Per class: implementation 1 (WARNING); architecture 0; ambiguity 0; claim 0. Next: `tdd-apply`. C4, W5 (by the owner), W6 and S4 are closed. W7 (`follow-up`) records two commits that fail clippy alone; the owner decides on it.
+Current state: round 1 at `a77292d`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report, so no mutation finding): **FAIL**. 4 CRITICAL, 4 WARNING, 4 SUGGESTION. Per class: implementation 6 (3 CRITICAL, 3 WARNING); ambiguity 2 (1 CRITICAL, 1 WARNING); architecture 0; claim 0. Next: `specifier`, then `tdd-apply`.
 
-## Round 3
-
-Closure round, the last allowed for D4. Commit `553aaf3`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report, so no mutation finding). Gates ran on a clean clone and probes on clean exports, outside the repo. No new independent mutants.
-
-### WARNING
-
-**W7. Two commits do not pass clippy alone.** class: `implementation`, `follow-up`. Ref: `AGENTS.md` "Strict TDD", `9ab2e9f`, `8c261f3`, `crates/gafira-layout/tests/grid.rs:401-402`.
-The fact is confirmed on clean exports (table below). Both fail `clippy::manual_is_multiple_of` in a test, and `6943995` fixes it. This breaks "every commit must pass alone", and only the owner can waive it or decide to rewrite history.
-It is a WARNING and not a gate failure because V2 gates run at HEAD, per-commit gates belong to V3, and the rules class this as commit hygiene. fmt and tests pass on both commits, and the source fix is not what fails. The cost is two red clippy points in `develop` history once merged, which matters only to a bisect that runs clippy.
-Two related points:
-- `grid.proptest-regressions` was added in `8c261f3` and removed in `6943995`. It leaves no trace at HEAD.
-- The notes say the implementer's gate script passed while clippy failed. That script hid a failure, so check it before D5. Every verdict here comes from exit codes taken directly.
-
-| Commit | fmt | clippy | test |
-|---|---|---|---|
-| `9ab2e9f` | 0 | **101** | 0; 992 passed |
-| `8c261f3` | 0 | **101** | 0; 994 passed |
-| `6943995` | 0 | 0 | 0; 994 passed |
-| `553aaf3` (HEAD) | 0 | 0 | 0; 994 passed |
-
-### SUGGESTION
-
-**S2, open, `follow-up`.** V10 still survives; no change since round 2.
-
-**S5. Round 2 understated the trade-off of the C4 fix.** Ref: `crates/gafira-layout/src/grid.rs:60-61`, D5 snap.
-A caller that writes a major edge as `k × step / subdivisions` loses that line. Round 2's 1.0 % is reproduced exactly (23 303 of 2 230 255), but that denominator includes minor edges, which never lose a line. Over major edges alone the figure is 55 190 of 842 229 views (6.6 %). The row gives `k × paso` for a major line, so the code is right. D5 and any caller should compute major edges that way.
-
-### Closure
-
-| Finding | State | Evidence |
-|---|---|---|
-| C4 | **closed** | See below. |
-| W5 | closed by the owner | Size accepted, 2026-11-01. Figures under "Size". |
-| W6 | closed | `fd_03_d_non_finite_position_is_reported_at_dpi_zero` and `arq_110_a_nan_margin_is_non_finite_at_dpi_zero` use the row's values and assert the exact field. Not mutated, per the closure scope. The other row examples at `dpi = 0` were already tested. |
-| S4 | closed | The notes now say src 25, tests 210, and that the old 1 370 counted the verify artifacts. Their 1 235 is off by one against round 2's table, which is immaterial. |
-| S2 | open, `follow-up` | See above. |
-
-The owner's "W8, S2" follow-ups: W8 is a D3 finding (10 mm in px refused at some DPIs), not a D4 one, so it is not counted here. S2 has two meanings: the D3 S2 (no code holds the 5 % default of D-38) and the D4 S2 (V10). Both stay `follow-up`, so the reading does not change this verdict. `archive` must carry both.
-
-### C4
-
-Reproduction (step 4.8 px, 3 subdivisions, zoom 4, view 0 to 52.8): 34 lines, the last a major at exactly 52.8. The mirror view from −52.8 to 0 gives 34 lines, the first a major at exactly −52.8.
-
-Round 2's five sweeps. View counts match round 2 exactly. The mutant column restores `k × step / subdivisions` for majors and gives round 2's figures back line for line.
-
-| Steps | Views | Lost, HEAD | Lost, mutant |
-|---|---|---|---|
-| 1 to 500 px, in tenths | 1 258 641 | 0 | 80 237 |
-| mm at 96 dpi | 49 851 | 0 | 3 909 |
-| mm at 300 dpi | 17 474 | 0 | 1 294 |
-| in at 96 dpi, in tenths | 16 101 | 0 | 1 182 |
-| pt at 96 dpi | 105 825 | 0 | 5 617 |
-
-Mutant against the crate's tests: killed by exactly the two new tests, `fd_07_a_major_line_on_a_view_edge_is_kept_for_a_non_integer_step_with_subdivisions` and `fd_07_a_majors_sit_exactly_on_multiples_of_the_step`. It is the only source change on that export. Hand mutants: 1 run, 1 killed.
-
-### Minor lines and duplicates
-
-| Check | Scope | Result |
-|---|---|---|
-| Same minor lines as before the fix | 600 000 random views, 7 741 538 minor lines, digest of their bits | identical at `ba6c91d` and HEAD (`2eb1dd304dafef1e`) |
-| Every line in the five sweeps | 1 447 892 views | 0 wrong bits, wrong `major` flags, duplicates or order faults |
-| Independent scan | the same random views: negative positions, the `2^k` fallback, four units, edges on lines | 0 missing, 0 extra, 0 wrong flags, 0 duplicates, 0 out of order |
-| Minor line on a view edge | 1 799 131 views | 0 lost, at both commits |
-
-The same scan on `ba6c91d` reports 260 971 missing and 246 865 extra: those are the majors one ulp off, so the oracle does see the old defect.
-
-The two inputs the removed regressions file shrank to pass on the public API at HEAD, and with that file restored on the export `tests/grid.rs` stays green. `tests/grid.rs` at 500 000 cases per property passes. At 20 000 cases `fd_07_fallback_...` first stopped at proptest's limit of 1 024 rejected inputs, with no failing input; with the limit raised it passes. That is the harness, on an unchanged test, and the default 256 cases stay far from the limit, so it is not a finding.
-
-### Size against `develop`
-
-| Part | Insertions | Deletions |
-|---|---|---|
-| Source | 288 | 1 |
-| Tests | 940 | 0 |
-| Notes | 82 | 0 |
-| Spec | 4 | 1 |
-| Verify artifacts at `553aaf3` | 228 | 480 |
-| Total | 1 542 | 482 |
-
-This round added 66 insertions and 5 deletions in `crates`. Accepted by the owner.
-
-### Acceptance map
-
-16 criteria, 16 covered. Changes since round 2: FD-07 (a) and row "Líneas" are covered (C4 closed), and row "DPI" is covered (W6 closed). The rest are unchanged. Left out on purpose, as in round 1: FD-03 (c), FD-06 (D5); FD-05, FD-09 (D3); FD-11 (D6); ARQ-114 (D7).
-
-### Gates and integrity
-
-Run on a clean clone at `553aaf3`. The tree stayed clean after the run. Linux only: the Windows and macOS CI jobs did not run here, as in earlier rounds.
-
-| Check | Result |
-|---|---|
-| `cargo fmt --check` | 0 |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0; 994 passed, 0 failed |
-| `cargo test -p gafira-layout --locked --release` | 0 |
-| `cargo deny check` | 0 |
-| CI policy: format, ARQ-07, forbid unsafe, V5, V12, V13, V14 | all 0, run from `ci.yml` |
-
-- Slice card: `f08d005` touches only `apply-progress.md`, and nothing above the D4 section changed.
-- Spec: no fix commit touched `docs/specs`. Its only D4 commits are still `33ab1c5`, `463b777` and `b7738c0`.
-- Regressions files: no `*.proptest-regressions` differs from `develop` at HEAD (9 on both sides, none in `gafira-layout`).
-- Branch: `ci.yml`, `.cargo`, `Cargo.toml`, `Cargo.lock` and `deny.toml` unchanged; no absolute path added; no attribution lines; nothing changed outside `gafira-layout`, `docs/specs` and the change folder.
-
----
-
-## Round 2
-
-Closure round. No new independent-mutant budget. All probes ran on scratch copies outside the repo.
-
-### CRITICAL
-
-**C4. Residual of C1: a major line on a view edge is still lost when subdivisions show and the step is not an integer.** class: `implementation`. Ref: `crates/gafira-layout/src/grid.rs:58`, FD-07 (a), row "Líneas de `grid_lines`".
-The row places lines at `k × paso` and at `k × paso / subdivisiones`, and it includes both view edges. The code computes every line as `k × paso / subdivisiones`, majors too. Multiplying before dividing can land one ulp away from `k × paso`, and the exact `contains` filter then drops the line.
-
-Reproduction on the public API: step 4.8 px, 3 subdivisions, zoom 4, view from 0 to 52.8. `11 × 4.8` is `52.8`, a major line on the edge. The code computes `33 × 4.8 / 3 = 52.800000000000004`, so 33 lines come back, not 34, and the last is the minor line at 51.2.
-
-Views from 0 to `j × step`, with the minor grid showing:
-
-| Steps | Views | Lost a line |
-|---|---|---|
-| 1 to 500 px, in tenths | 1 258 641 | 80 237 (6.4 %) |
-| mm at 96 dpi | 49 851 | 3 909 (7.8 %) |
-| mm at 300 dpi | 17 474 | 1 294 (7.4 %) |
-| in at 96 dpi, in tenths | 16 101 | 1 182 (7.3 %) |
-| pt at 96 dpi | 105 825 | 5 617 (5.3 %) |
-
-Why the tests miss it: `fd_07_a_every_line_...` uses integer steps, where `k × s` is exact, and `fd_07_a_mm_steps_...` uses 1 subdivision, where the two formulas are the same.
-
-Trial fix, not committed: `(k / every) as f64 * unit` when `k % every == 0`. All five sweeps above drop to 0 lost and the crate suite stays green. One trade-off: a caller that computes a major edge as `k × step / subdivisions` instead of `k × step` then misses that line in 23 303 of 2 230 255 views (1.0 %). That formula is not the one the row gives for a major line. A new test needs a non-integer step with subdivisions.
-
-### WARNING
-
-**W5. Size, still open.** class: `implementation`. The owner decides; not a blocker. Figures are under "Size".
-
-**W6. Two acceptance examples of the DPI row have no test.** class: `implementation`, `follow-up`. Ref: row "DPI de `bleed_rect`, ...", `tests/guides_position.rs:36`, `tests/rects.rs:253`.
-With `dpi = 0`, the row requires `Err` of non-finite for a NaN position in `place_guide` and a NaN margin in `margin_rect`. The tests use those NaN values only at 96 dpi. The code is right: the probe on the public API passes all five functions, including an inverted box at `dpi = 0`.
-
-### SUGGESTION
-
-**S2, stays open.** V10 still survives. The round 3 notes leave it as is and no spec rule covers it; no action needed.
-
-**S4.** The round 3 notes split the 235 inserted lines as src 34, tests 201; `git diff --numstat` gives src 25, tests 210. Their "1 370 insertions with these notes" also counts the 135 lines of the verify artifacts.
-
-### Closure
-
-| Finding | State | Evidence |
-|---|---|---|
-| C1 | **closed for its reproductions; rule still open, C4** | Step 7, 3 subdivisions, zoom 4, view 0 to 35 gives 16 lines, the last a major at 35. Integer steps with whole-multiple views: 0 lost of 1 264 176. A mm step (no subdivisions) with an edge on the line: 0 lost of 830 574. |
-| C2 | closed | V1, V2 and V5 killed. V4 as written is no longer a mutant; the tolerance itself is pinned, see below. |
-| C3 | closed | V3 killed, on both axes and on the x axis alone. |
-| W1 | closed | Notes corrected. V11 killed. Removing the raw `finite(gap)` or `finite(margin)` is killed by `fd_04_dpi_is_checked_...`. Removing the dpi check in `grid_lines` is killed by `fd_07_dpi_is_checked_...`. |
-| W2 | closed | `fd_07_c*` alone now fails 5 of 5 under V6 and 5 of 5 under V7 (it was 2 of 5 and 0 of 5), through `fd_07_c_the_densest_cases_stay_under_the_limit`. The property test for the `2^k` fallback did not change, and the direct case replaces it. |
-| W3 | closed | 31 951 zooms, the view computed as `screen / zoom`: 0 `Err` at the origin, 0 at three panned corners. Worst excess 5.8e-11 px, well under `ε`. The tolerance adds no line: 1 002 at most, also with offset views. |
-| W4 | closed | Modules public; rows "DPI", "Líneas" and "Lado de página" state the rest; V9 killed. |
-| S1 | closed | Both tests use the row's literal values. |
-| S2 | open, accepted | See above. |
-| S3 | closed | Status and notes current; S4 is a new, smaller slip. |
-
-### Hand mutants
-
-20 run on the export, all reverted: 19 killed, V10 survived.
-
-| Mutant | Result |
-|---|---|
-| Spot-check, item (5), `c > 1` | killed: `fd_04_d_...`, `fd_04_page_side_limit_...` |
-| V1 | killed: `fd_04_d_...` |
-| V2 | killed: `fd_04_f_zero_gap_...` |
-| V3 both axes, V3 x only | killed: `fd_03_guides_are_measured_...` |
-| Replaces V4: `ε` at 1e-5, 1e-7 | killed: `fd_07_view_screen_size_...` |
-| Replaces V4: `ε` at 0 | killed: the same test and `fd_07_c_at_most_2000_...` |
-| V5 | killed: `fd_04_page_side_limit_...` |
-| V6 | killed: 4 tests |
-| V7 | killed: 6 tests |
-| V8 | killed: `arq_110_finite_input_...` and 8 more |
-| V9 | killed: `fd_07_lines_at_negative_...`, `fd_07_a_every_line_...` |
-| V10 | survived, S2 |
-| V11 both, first bound, last bound | killed: both `fd_07_a_*` tests |
-| Raw `finite(gap)`, raw `finite(margin)` removed | killed: `fd_04_dpi_is_checked_...` |
-| dpi check removed in `grid_lines` | killed: `fd_07_dpi_is_checked_...` |
-
-### RED of round 3
-
-Reproduced by running the HEAD tests on older source.
-- On `17ad901` source: E0603 on `grid` and on `guides`. The other compile errors (E0277, E0282, E0689) follow from those unresolved imports.
-- On `bde75e9` source (modules public, old code): 6 tests fail, the 6 the notes name.
-
-W4 is the only compile-error RED. One nuance: the notes head this list "assertion failures", but `fd_07_c_at_most_2000_...` fails through `unwrap()` on `Err(view)`. That is still a runtime failure on behaviour, so it is not a second case of W4's kind. The other 5 fail on assertions, with the values the notes record where they give any.
-
-### Root re-exports
-
-Fine, note only. `grid` and `guides` being public makes the spec paths real. The root re-exports duplicate them but match the crate's other functions, and the tests use both forms.
-
-### Size against `develop`
-
-| Part | Insertions | Deletions |
-|---|---|---|
-| Source | 285 | 1 |
-| Tests | 882 | 0 |
-| Notes | 65 | 0 |
-| Spec | 4 | 1 |
-| Verify artifacts | 135 | 517 |
-| Total | 1 371 | 519 |
-
-Source and tests come to 1 167 insertions, against the ~700 ceiling and a forecast of 340 (475 at x1.4). Tests alone pass the ceiling. The owner decides; not a blocker. The verify artifacts' deletions are the D3 report this file replaced.
-
-### Acceptance map, changes since round 1
-
-16 criteria, now counting the rows "Líneas" and "DPI": 13 covered, 3 partial.
-
-| Criterion | State | Proof |
-|---|---|---|
-| FD-07 (a) | partial | C4 |
-| Row "Líneas de `grid_lines`" | partial | C4; its two literal examples are tested |
-| Row "DPI" | partial, code right | W6 |
-| FD-04 (d), FD-04 (f), FD-07 (c), rows "Lado de página" and "Vista" | covered | C2, W2 and W3 closed; the row "Vista" literal examples and its property are tested |
-
-The other criteria are unchanged from round 1.
-
-### Gates and integrity
-
-Run on a clean clone at `ba6c91d`. The tree stayed clean after the run.
-
-| Check | Result |
-|---|---|
-| `cargo fmt --check` | 0 |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0; 990 passed, 0 failed |
-| `cargo test -p gafira-layout --locked --release` | 0 |
-| `cargo deny check` | 0 |
-| CI policy: format, ARQ-07, forbid unsafe, V5, V12, V13, V14 | all 0, run from `ci.yml` |
-
-- Slice card: `f08d005` touches only `apply-progress.md`, and nothing above the D4 section changed.
-- Spec: since D4 began, `docs/specs` was changed only by `33ab1c5` (round 1 record), `463b777` and `b7738c0`, each touching only `02-arquitectura-software.md`. No fix commit touched it.
-- Branch: `ci.yml`, `.cargo`, `Cargo.toml` and `Cargo.lock` unchanged; no `*.proptest-regressions` change (9 on both sides); no absolute path added; no attribution lines; nothing changed outside `gafira-layout`, `docs/specs` and the change folder.
-
-The next round is the third and last of D4 under the three-round rule.
-
----
+The D4 report is in git history at `9383597`; this file now covers D5-D7, one delivery by owner decision (Slice card amend `a584943`). Open D4 follow-ups (W7, S2, S5) and earlier ones stay with `archive`.
 
 ## Round 1
 
-Change `layout-core`, delivery D4, round 1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
-
-Commit verified: `47617dc`, the tip of `feat/layout-core-d4`. Verdict: **FAIL**. Counts: 3 CRITICAL, 5 WARNING, 3 SUGGESTION. Per class: implementation 6 (3 CRITICAL, 3 WARNING); ambiguity 2 (WARNING); architecture 0; claim 0. `next`: `specifier`, then `tdd-apply`.
-
-The D3 report is in git history at `d608bbd`; this file now covers D4.
+Gates ran on a clean clone. Probes and hand mutants ran on clean exports, outside the repo. Probes were written from the specs, before the implementer's tests were opened.
 
 ## CRITICAL
 
-**C1. `grid_lines` drops a line that lies exactly on the view edge.** class: `implementation`. Ref: `crates/gafira-layout/src/grid.rs:51-52`, FD-07 (a), row "Vista de `grid_lines`".
-`axis_lines` bounds `k` with `(lo / spacing).ceil()` and `(hi / spacing).floor()`. That quotient rounds, so it can land just past the integer, and the line at `k` is never tried. The edge is inclusive: the row's own example (641 lines from 0 to 3840) counts it, and the function's doc says `lo..=hi`.
+**C1. A reference of `-0.0` gives a grid target of `-0.0`.** class: `implementation`. Ref: `crates/gafira-layout/src/snap.rs:164-167`, `src/grid.rs:62-71`, row "Destino en la Cuadrícula".
+With reference `-0.0`, `(at / spacing).floor()` is `-0.0`, so line `k` sits at `-0.0`. `grid_lines` casts `k` through `i64` and gives `+0.0`. The row's property requires the same bits.
+- Probe: step 10, reference `-0.0`: coordinate bits `8000000000000000`, `grid_lines` bits `0`. The offset is right.
+- Sweep against `grid_lines`: 2 310 300 cases (1 133 042 negative, 189 415 ties), 8 differ, and all 8 have a reference of exactly `-0.0`. Every other case matches bit for bit.
+- It is reachable: `(-0.3_f64).round()` is `-0.0`.
+- The impact is one sign bit, and the value compares equal. It is CRITICAL because it fails a stated acceptance property. The test property draws `around` from `-5000..5000`, which never yields `-0.0`.
 
-| Input | Expected | Got | Why |
-|---|---|---|---|
-| step 7 px, 3 subdivisions, zoom 4, view 0 to 35 | major line at 35 (`5 × step`) | missing | `35 / (7/3)` is `14.999999999999998`, floor 14 |
-| step 1 mm, 150 dpi, zoom 1, view ending on line `k = 13` (153.5433 px, spacing 11.81 px) | that line | missing | quotient `12.999999999999998`, with no subdivisions at all |
+**C2. `n < 2` for `n < 3` is not equivalent, and it survives.** class: `implementation`. Ref: `src/distribute.rs:63`, FD-11 / D-17 "con menos de 3 libres no hace nada", `apply-progress.md` D5 item 16.
+The code is right; the claim and the test are not. With two free boxes the mutant computes the gap, which can overflow when wide boxes overlap, because `first_end` can be `+MAX` while `last_start` is negative.
+- `[(-MAX, MAX), (-MAX, MAX)]`: HEAD gives two zero offsets; the mutant gives `Err(NonFinite { field: "gap" })`. The same holds with a locked box between them.
+- Adversarial comparison with HEAD: 39 698 of 3 000 000 results differ.
+- All 156 tests of the crate pass on the mutant.
 
-Measured: integer px steps 1 to 500, whole-multiple views: 9 329 major lines lost over 387 235 views. Steps in mm: 3 980 of 76 360 views lost a line. A view edge exactly on a line: 21 798 of 152 721 tries lost it. Interior lines are right: 300 000 random views matched an independent scan with 0 differences.
-The impact grows in D5: FD-07 snaps to "la línea mostrada más cercana", so a lost line is also a lost snap target.
-Why the tests missed it: `fd_07_a` (`tests/grid.rs:118`) has `prop_assume!((hi / step_px).fract() > 1e-6 ...)`, which throws away exact multiples, and its oracle at line 120 is `floor(hi / step) + 1`, the same formula as the code.
-Fix hint: widen the loop bounds (`floor` for `first`, `ceil` for `last`) and let the existing `contains` filter decide. On the export that gives 0 lost lines in all three measurements and the whole crate suite stays green. It needs a test that keeps exact multiples.
+**C3. Box checks of margins and elements after the DPI rule survive.** class: `implementation`. Ref: `src/snap.rs:140-148`, row "DPI", `tests/snap.rs:346`.
+The code is right: on HEAD, `dpi = 0` with `x1 < x0` gives `InvalidBox` for `moving`, `page`, `margins` and `element`. The row orders all box checks before the DPI rule, but the test proves it for `moving` only. Moving the `margins` and `element` checks after the DPI rule passes all 156 tests.
 
-**C2. The exact rules are not proved; four hand mutants survive.** class: `implementation`. Ref: `crates/gafira-layout/tests/{grid,guides_generate}.rs`, FD-04, rows "Lado de página de `generate`", "Vista de `grid_lines`".
-The code is right here: probes P3 and P7 use `next_up` and `next_down` and pass. The tests stand far enough from each limit that a tolerance goes unseen.
+**C4. A hidden or locked child of an attracting group: the row contradicts itself.** class: `ambiguity`. Ref: 02 row "Elementos que atraen", `src/attractors.rs:33-34`, `tests/attractors.rs:357`.
+Answer to the question asked: the row's literal text does not allow what the code does, and it does not allow the alternative either.
+- "Quedan fuera ... los nodos ocultos o bloqueados" and "un NaN en un nodo que queda fuera no cambia el resultado" say the NaN must not matter.
+- "Cada caja es la de `node_bounds`" and "el grupo ... por la unión de sus hijos" make the group read that child, and `node_bounds` gives `Err` on it.
+- Probe: A holds B and C, B holds D and E, E is hidden with a NaN `x`. Empty selection gives `Err(NonFinite { field: "x" })`. Selecting C gives the same error. A locked E gives the same error. Selecting D gives `Ok`, because A and B are out.
+- One hidden corrupt child stops the magnet for the whole page. The acceptance examples only cover NaN in the selection and its ancestors, and the implementer pinned one reading in a test.
 
-| Mutant | Spec | Closest test | Result |
-|---|---|---|---|
-| V1 `cell < 1.0 - 1e-9` | `c ≥ 1 px` | 9.999 px, so `c = 0.9995` | survived |
-| V2 dedup within `1e-6` | "misma posición exacta", gaps can be tiny | property uses `gap >= 0.5` | survived |
-| V4 view limit `+ 1e-6` on both axes | "`f64` exacto y sin tolerancia" | `..._with_exact_comparison` stops at +0.01 | survived |
-| V5 page side `+ 1e-6` | `≤ MAX_PX`, "por encima, `Err`" | 16 384.01 | survived |
-
-All of this is critical code (size limits, spec rules with an invariant). Tests need `next_up` and `next_down` at each limit, and a pair of guides less than `1e-6` apart that stays two guides.
-
-**C3. No test places a page away from the origin; mutant V3 survives.** class: `implementation`. Ref: `crates/gafira-layout/src/guides.rs:114-115`, FD-03 ("se mide desde la esquina superior izquierda de la página").
-`generate` takes a `Rect` and every test uses `x0 = y0 = 0`, apart from overflow cases. V3 adds `page.x0` and `page.y0` to every position and no test fails. The code is right (P12), so one offset-page case closes it.
+The specifier must choose one:
+- Keep `node_bounds` and state the exception.
+- Have the group's box skip nodes that are left out, which also changes finite cases: a hidden child at 500 today widens the box to `x1 = 501`.
 
 ## WARNING
 
-**W1. Two equivalence claims in the notes are false.** class: `implementation`. Ref: `apply-progress.md` D4 "Equivalent", `crates/gafira-layout/src/guides.rs:98`.
-- `ceil`/`floor` swapped: not equivalent. It is the fix for C1, see the table below.
-- Raw `finite(gap)` and `finite(margin)` removed: not equivalent. `Length::convert` checks the DPI first, so `generate` with a NaN gap and `dpi = 0` gives `OutOfRange { dpi }` where every other function of the crate gives `NonFinite` for the number. `bleed_rect` and `margin_rect` keep those raw checks, and D3 added ordering tests for exactly this. ARQ-110's table has one bad input at a time, so this is an inconsistency and not a broken criterion. The fix is two lines and one test.
+**W1. Which computed checks run with the magnet off is invented.** class: `ambiguity`. Ref: `src/snap.rs:240-266`, row "Entradas del Imán".
+The row says that an inactive magnet does "las comprobaciones de entrada y de rango" and gives (0, 0). HEAD also runs some computed checks. All inputs here are finite and in range:
 
-**W2. The FD-07 (c) tests do not reach the worst case.** class: `implementation`. Ref: `tests/grid.rs:147`, `tests/grid.rs:163`.
-Judged per the request, because this criterion passed vacuously at the stub. On their own the `fd_07_c_*` tests failed 0 of 5 runs with the `2^k` fallback removed (V7), and 2 of 5 with the 6 px minor check removed (V6). Random steps are mostly large and the fixed cases use zoom 32 and zoom 1, so small steps at low zoom are never tried. The behaviour is protected, because `fd_07_d`, `fd_07_minor_*` and `fd_07_fallback_*` kill both mutants. The bound itself holds: P7 swept 3 201 zooms with dense steps, maximum 1 002 lines. Add step 1 px at zoom 0.05.
+| Magnet off | HEAD |
+|---|---|
+| Moving box at `x = 1e308`, centre overflows | `Err(moving)` |
+| Element box at `x = 1e308`, centre overflows | `Err(element)` |
+| Threshold `1e308` at zoom 0.05 | `Err(threshold)` |
+| Distance that would overflow | `Ok`, not computed |
 
-**W3. The exact view limit rejects the natural 4K view.** class: `ambiguity`. Ref: `02` row "Vista de `grid_lines`", `tests/grid.rs:41-50`, FD-07 (c).
-This is the answer on the `next_down` trim. A UI computes `view = screen / zoom`, and that rounds. With 3840×2160, over 31 951 zooms from 0.05 to 32 in steps of 0.001: `Err(view)` at 3 682 zooms (11.5 %) with the view at the origin, and at 13 245 (41.5 %) with a pan offset. The round zoom 0.9 is one: `3840 / 0.9 * 0.9` is `3840.0000000000005`. The code follows the row as written, so this is not an implementation defect, and it is not the owner-accepted case: the screen here is exactly 3840×2160, not larger. On that screen the grid would vanish at those zooms. The trim in `screen()` is needed for the tests to pass and hides this. The cap `3800 / zoom` in `fd_07_a` hides nothing further about the bound, since `fd_07_c` runs up to the limit. Owner or specifier decision: keep it exact and tell the caller to trim, or define the limit another way.
+Row "Suma que desborda" can be read either way, so the row should state it. `align` and `distribute` have no such problem: their row applies the rules "si la caja no interviene".
 
-**W4. API points the spec does not state.** class: `ambiguity`. Ref: FD-03, FD-04, `02` §4.17.2, `crates/gafira-layout/src/lib.rs:10-13`.
-- FD-04 names `gafira-layout::guides::generate`, and FD-07 `gafira-layout::grid`; both modules are private, and the path is `gafira_layout::generate`. Either the modules or the spec should change.
-- `dpi ≤ 0` is `Err` in `place_guide`, `generate` and `grid_lines`, but the DPI row covers only `bleed_rect` and `margin_rect`, and "Rangos" says an engine checks only ranges with a row. The check comes from `Length::convert` and is sensible; the row is missing.
-- Lines at negative positions, pinned by `fd_07_lines_cover_a_view_that_starts_off_the_page`, while the row calls `view` "una región de la página". The `major` flag on them is unproved: V9 (`k >= 0 && ...`) survives.
-- `generate` always returns px whatever unit `gap` and `margin` use. FD-03 keeps "la unidad en que se escribió" for typed guides and says nothing on generated ones.
-- `place_guide` and its tuple return are invented shape, consistent with FD-03(a), with no conflict. `GuideSpec`, the added `dpi` (FD-04 states it as an input), `grid_lines` (named by the row), `GridLine`/`GridLines` and `pub(crate) convert` raise no objection.
+**W2. Grid neighbours `[k, k+1]`: the equivalence claim is false.** class: `implementation`, `follow-up`. Ref: `src/snap.rs:166`, `apply-progress.md` D5 item 14.
+The mutant passes all tests but differs from HEAD in 73 of 1 500 000 adversarial cases, the smallest at reference `5.47e14` px, so the neighbours do change the result. It is a WARNING because that is about 3e10 times the largest page, and no difference appeared below it. HEAD itself stops being the nearest line from about `2^51` (2 of 200 000 cases there, 2 064 at `2^55`).
 
-**W5. Size.** class: `implementation`. Ref: AGENTS.md Delivery rules. 1 057 insertions against `develop`, ~700 ceiling, forecast 340 (475 at x1.4): source 269, tests 747, notes 39, spec 2. The ceiling is passed by the tests alone. Redundant test lines are few, about 25: `fd_03_a_typed_value_survives_the_extreme_dpis` (11, the property covers it) and the zoom and view NaN cases in `fd_07_view_is_checked_after_...` (about 8). Trimming will not reach the ceiling, and the fixes above add lines. Owner decides; not a blocker on its own.
+**W3. A `-0.0` offset is reachable in `distribute`.** class: `implementation`. Ref: `src/distribute.rs:83-85`, `apply-progress.md` "Zero offsets are `+0.0` in all four functions".
+Boxes `(-1, -0.0)`, `(0, 5e-324)`, `(0, 1)` in equal-gap mode give `dx = -0.0` on the middle box. The gap underflows to `-0.0`. The spec only says 0, so behaviour is acceptable, but the comment and the note are false, and the `+ 0.0` was removed as unreachable.
+
+**W4. Two criteria have no test that names them.** class: `implementation`. Ref: Slice card, `AGENTS.md` testing policy.
+FD-03(c) and FD-11(d) are covered in substance by `fd_06_a_five_px_from_a_guide_the_edge_lands_on_it` and `d_17_locked_elements_do_not_count_and_do_not_move`, and the IDs FD-03 and FD-11 are named elsewhere. No test or comment names these two criteria, so a search on them finds nothing. It is not the CRITICAL of step 3c, which applies per ID.
 
 ## SUGGESTION
 
-**S1.** Two row examples are tested in another form: 641 + 361 uses step 12 with 2 subdivisions, not step 6 with 1, and the zoom 33 case uses 100 000 px, not 1000×1000. Both pass on P7. Using the row's literal values costs no lines.
+**S1.** `snap_rotation` is not the nearest multiple from `9.0e15` degrees (`2^53`): 37 704 of about 4 000 000 oracle cases, for example 7e16 gives `7.000000000000001e16`, 16 from the angle. No test reaches this, and below that magnitude the exact oracle has no difference. The row has no range, so a sentence in the spec would settle it. `f64::MAX` gives `Err(angle)`, which fits the intermediate overflow rule.
 
-**S2.** Removing the `major_on_screen <= 0.0` guard (V10) survives. It is reachable only with a subnormal `dpi`, there is `Err` either way and only the field kind changes, and no spec rule covers it. Not treated as a critical survivor.
+**S2.** `grid_lines` differs from D4 only at `|x0| >= 1e15`, past `2^53` lines: 7 040 of 1 500 000 inputs, in the `major` flag among positions that already repeat. See "D4 behaviour".
 
-**S3.** The D4 notes are stale: "Status: partial", "one open question" and 879 inserted lines predate round 2, and round 2 has no gates line.
+**S3.** `benches/layout.rs:4` says a nightly job checks the budgets. No such workflow or `perf-budgets.toml` exists, and criterion gives no p99 for the `bench_snap_1000` row. ARQ-40 is outside this slice and ARQ-114 only asks for the names; the comment should not imply the job exists.
+
+**S4.** The row example "caja en `x = −MAX`" gives its reason as the distance. A zero-size box fails earlier at the centre, naming `moving`. `Rect(-MAX, 0, 0, 0)` gives `distance`. Both are non-finite errors, so only the wording differs.
 
 ## Independent checks asked for
 
-**Strict TDD.** Credible, not provable from history. Each feature commit holds tests and code together, so git cannot show the order. Reproduced on an export: `f5a11e0` tests on `33ab1c5` source fail exactly the two named tests, and the property passes as noted; `5333284` tests on `f5a11e0` source fail `fd_07_view_screen_size_...` alone, as noted. With the notes' stub on all three functions, every D4 test the notes list fails, and the only D4 tests that pass are `fd_07_c_at_most_2000_...` and `arq_110_finite_input_gives_finite_output`, the two the notes declare vacuous. The notes are honest here. The weakness is elsewhere: see C1 on the `prop_assume`.
+**Per-commit gates:** all pass on clean exports (table under "Gates and integrity").
 
-**Vacuous at the stub.** `arq_110_finite_input_gives_finite_output` is proved: V8 is killed by it. `fd_07_c_at_most_2000_...` is only partly proved: see W2.
+**Priority and ties (D-16):** all four adjacent pairs and the exact comparison hold on probe. The spot-check is killed.
 
-**General rules beyond the examples.** All correct in the code unless listed; probes P2 (200 000 cases against an independently written reference), P3, P5, P7, P9.
+**Grid target against `grid_lines`:** every row example passes; non-integer steps, negative `k`, mm, in, pt, cm and the shared level all hold bit for bit, except C1. There is no view limit.
 
-| Rule | Code | Tests |
+**D4 behaviour:**
+- `grid_lines` against the D4 code in process: 653 137 Ok pairs and 846 863 Err pairs, with 7 040 differences, all at `|x0| >= 1e15` (S2). Error kinds and order match.
+- `node_bounds` against D4 on 400 000 random graphs with cycles, dangling children, shared nodes and bad numbers: 0 differences.
+
+**Cache:** no stale or wrong entry. An independent tree oracle over 300 000 `attractors` calls, 21 844 of them with errors, gives 0 differences. The cache only lives inside one call.
+
+**`attractors`, 100 000 levels:**
+
+| Case | Debug | Release |
 |---|---|---|
-| `2n` per axis | ok | ok |
-| Dedup within an axis, not across | ok | across ok; exactness: C2 |
-| Order, vertical first | ok | ok |
-| No rounding | ok | ok |
-| `c ≥ 1` | ok | C2 |
-| 25 % and 6 px | ok | ok |
-| `2^k` fallback | ok | ok |
-| Bound of lines | ok, 1 002 at most | W2 |
-| View and page limits | ok | C2 |
-| Lines at the view edge | **C1** | **C1** |
+| Chain, empty selection | 616 ms | 79 ms |
+| Chain, selection deep, root or middle | 281 to 291 ms | 32 to 34 ms |
+| Chain closed into a loop, gives `Cycle` | 224 ms | 30 ms |
+| Comb of 50 000 levels (99 999 boxes) | 581 ms | 74 ms |
 
-**Equivalent mutants in the notes.**
+Ancestors of the selection hold, including the row's A, B, C, D, E case and NaN in D or A.
+
+**`distribute`:** the stable sort ties `-0.0` and `0.0` in input order. An oracle over 300 000 random calls gives a gap spread of `8.5e-13`. Offset overflow gives `Err`. See C2 and W3.
+
+**Equivalence claims:**
 
 | Claim | Result |
 |---|---|
-| `ceil`/`floor` swapped | **False**, W1 |
-| Raw `finite(gap)` / `finite(margin)` | **False**, W1 |
-| `(count - 1) * gap` finite check | True: `usable - inf` fails on `cell` with the same field |
-| `major < 6` to `<= 6` | True: the fallback at multiple 1 gives the same lines |
-| Fallback multiple from 2 | True: that branch never fits at 1 |
-| (15) accumulated positions | Accepted: bytes differ, within the ±0.01 tolerance |
+| `n < 2` for `n < 3` | **False**, C2 |
+| Grid neighbours `[k, k+1]` | **False** at `>= 5.47e14` px, W2 |
+| Reference order before coordinate | Holds: 0 of 1 500 000 adversarial cases differ. The proof holds generally: the later reference is itself closer to the larger target, whether or not a centre lies between them |
+
+**Implementer's choices:**
+
+| Choice | Finding |
+|---|---|
+| Check order, threshold before zoom | Note: unspecified detail; the DPI row is respected |
+| Centres always checked | `align`, `distribute`: allowed. `snap` with the magnet off: W1 |
+| Inactive magnet computes no distance | Allowed by the row; part of W1 |
+| Zero offsets `+0.0` | Note: spec says 0; the claim is false, W3 |
+| `attractors` in document order | Note: unspecified, deterministic |
+| `margins: None` left to the caller | Note: the row makes it optional, and `snap` reads no document |
+| Cycle or dangling child in a node left out gives `Err` | Note: the row speaks only of NaN; such a tree fails validation |
+| Selected id in the arena but unreachable | Note: not an error; only a missing id is |
+
+**Benches:** the four names match §6.7, each registered once. Quick run: `bench_guides_generate` 360 µs, `bench_layout_rects` 25 ns, `bench_snap_1000` 30 µs, `bench_grid_lines` 7.8 µs; each is under its figure on this machine, which is not the reference one. `criterion` 0.8 has `default-features = false`.
+
+**`Cargo.lock`:** +33 entries (32 new names, 1 new version), none removed. `criterion`, `half`, `ciborium`, `rayon` and `plotters` do not appear in the normal or build graph of the workspace. §9.2 lists `criterion` as dev. The V5 row needs no change.
 
 ## Hand mutants
 
-Run on a scratch export, all reverted. 12 run, 4 killed.
+Run 4, killed 3. No recorded list was repeated.
 
-| ID | Mutant | Result |
+| Mutant | Type | Result |
 |---|---|---|
-| Spot-check | item (5) `c >= 1` to `c > 1` | killed: `fd_04_d_...`, `fd_04_page_side_limit_...` |
-| V1, V2, V4, V5 | tolerances | survived, C2 |
-| V3 | positions offset by the page origin | survived, C3 |
-| V6 | minor shown with no 6 px check | killed: `fd_07_d_...`, `fd_07_minor_...` |
-| V7 | fallback removed | killed: `fd_07_d_...`, `fd_07_fallback_...`, `fd_07_minor_...` |
-| V8 | non-finite guide | killed: `arq_110_finite_input_...`, 2 more |
-| V9 | no major flag on negative `k` | survived, W4 (spec silent) |
-| V10 | zero-step guard removed | survived, S2 |
-| V11 | `ceil`/`floor` swapped | survived, and it fixes C1 |
+| Page and Element swapped in priority (item 2) | Spot-check | Killed by the recorded `fd_06_f_at_equal_distance_each_kind_beats_every_lower_one` |
+| `snap` centre as `lo + (hi - lo) / 2` | Independent | Killed by `arq_110_a_result_that_is_not_finite_is_an_error_even_if_the_value_would_be_finite` |
+| Centres mode sorted by start edge | Independent | Killed by 3 tests |
+| Margin and element box checks after DPI | Independent | **Survives**, C3 |
+
+The three equivalence spot-checks are counted separately above.
 
 ## Acceptance map
 
-14 criteria: 8 covered, 4 partial, 1 weak, 1 failing.
-
-| Criterion | State | Proof |
+| Item | State | Proof |
 |---|---|---|
-| FD-03 (a) | covered | `fd_03_a_*`; P1, every DPI 1 to 10 000, worst round trip 7.3e-12 |
-| FD-03 (d) | covered | `fd_03_d_*`; `Page.guides` itself: D2 |
-| FD-04 (a) | covered | `fd_04_a_twelve_columns_in_1080` |
-| FD-04 (d) | partial | `fd_04_d_...`; C2 V1 |
-| FD-04 (e) | covered | `fd_04_e_three_by_three_in_1080` |
-| FD-04 (f) | partial | `fd_04_f_*`; C2 V2 |
-| FD-07 (a) | **failing** | C1 |
-| FD-07 (c) | weak | `fd_07_c_*`; W2 |
-| FD-07 (d) | covered | `fd_07_d_...` |
-| FD-07 (e) | covered | `fd_07_e_...` |
-| Row "Lado de página" | partial | `fd_04_page_side_*`, `fd_04_every_ok_...`; C2 V5 |
-| Row "Vista" | partial | `fd_07_view_*`; C2 V4 |
-| ARQ-110 | covered | `arq_110_*`, `fd_03_d_*`, P8, P10 (400 000 raw-bit inputs: no panic, no non-finite output) |
-| ARQ-111 | covered | `arq_111_*`, one per function, bytes compared; P9 |
+| FD-03(c) | covered, W4 | `fd_06_a_five_px_from_a_guide_the_edge_lands_on_it` |
+| FD-06(a) to (i) | covered | `fd_06_a_*` to `fd_06_i_*`, probes |
+| FD-06(c) | covered, see C4 for the row | `fd_06_c_*`, oracle |
+| FD-11(a), (b), (e), (f) | covered | `fd_11_*` |
+| FD-11(d) | covered, W4 | `d_17_locked_elements_do_not_count_and_do_not_move` |
+| Row Umbral | covered | `fd_06_the_threshold_is_compared_exactly_and_divided_by_the_zoom`, `threshold_must_be_finite_and_above_zero` |
+| Row Zoom | covered | `zoom_range_is_closed_and_checked_without_targets_and_with_the_magnet_off` |
+| Row Empate | covered | `fd_06_after_the_kind_the_smaller_coordinate_wins`, `d_16_*` |
+| Row DPI | **weak**, C3 | `dpi_must_be_above_zero_even_when_nothing_uses_it`, `the_order_of_checks_*` |
+| Row Entradas del Imán | covered, W1 | `arq_110_*`, `d_16_zero_margins_*`, `guides_convert_*` |
+| Row Elementos que atraen | **contradictory**, C4 | `arq_110_a_nan_outside_the_attracting_nodes_changes_nothing` |
+| Row Destino en la Cuadrícula | **failing**, C1 | `fd_06_the_grid_*`, `fd_06_a_major_line_is_exactly_k_times_the_step` |
+| Row Giro del Imán | covered, S1 | `fd_06_i_*` |
+| Row Entradas de alinear y distribuir | covered | `fd_11_the_result_has_one_offset_per_box_in_the_input_order`, `d_29_*`, `arq_110_*` |
+| Row Tolerancia | covered | `fd_11_a_*`, `fd_11_b_*`, oracle |
+| ARQ-110 | covered | `arq_110_*` in five test files |
+| ARQ-111 | covered | `arq_111_*` in five test files |
+| ARQ-114, §6.7 rows | covered | `arq_114_each_layout_figure_has_a_benchmark_named_after_its_row` |
+| D-16 | covered | `d_16_*`, `fd_06_f_*` |
+| D-17 | **weak**, C2 | `d_17_*` |
+| D-28 | covered | `d_28_*`, `fd_06_c_a_rotated_node_*` |
+| D-29 | covered | `d_29_locked_elements_count_in_the_box_but_never_move` |
 
-Slice card IDs left out on purpose: FD-03 (c) and FD-06 are D5; FD-05, FD-09 D3; FD-11 D6; ARQ-114 D7.
+Criteria: 32 counted with FD letters and rows one by one; 28 covered, 4 not (the two weak rules, one failing, one contradictory). FD-11(c) is out of this crate (row "Primer corte").
 
 ## Gates and integrity
 
-| Check | Result |
-|---|---|
-| `cargo fmt --check` | 0 |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0; 986 passed, 0 failed |
-| `cargo test -p gafira-layout --locked --release` | 0 |
-| `cargo deny check` | 0 |
-| CI policy: format, ARQ-07, forbid unsafe, V5, V12, V13, V14 | all 0, run from `ci.yml` on a clean clone |
+Gates at HEAD: `cargo fmt --check` 0; clippy 0; `cargo test --workspace --locked` 0 (1 087 passed, 0 failed); `cargo deny --offline check` 0 (advisories, bans, licenses, sources ok, no warnings). Disk: 60 GB free at the start, 56 GB after the builds.
 
-Slice card: commit `f08d005` touches only `apply-progress.md` and precedes the first implementation commit; nothing above the D4 section changed. `33ab1c5` touches only `docs/specs/02-arquitectura-software.md`. No tracked file deleted, no `*.proptest-regressions` added or changed (9 on both sides), `ci.yml` unchanged, no absolute path added, no attribution lines. The commits of this delivery changed no behaviour outside `gafira-layout`.
+CI policy, all 0: ARQ-07, `forbid(unsafe_code)`, V5, V12, V13, V14.
 
-## Notes for the record
+Per commit on clean exports:
 
-Owner-known and accepted, not findings: the per-axis view limit with no orientation swap; a view above 3840×2160 gives `Err` (rotated or 5K screens); extreme view positions above 2^52 px leave the 2 000 bound unproved.
+| Commit | Clippy | fmt |
+|---|---|---|
+| `4a99a1a` | 0 | 0 |
+| `117c1dc` | 0 | 0 |
+| `866b8b6` | 0 | 0 |
+| `761a2ef` | 0 | 0 |
+| `7a1b454` | 0 | 0 |
+| `65217bc` | 0 | 0 |
+| `b947b02` | 0 | 0 |
+| `594f304` | 0 | 0 |
+| `0c686e2` | 0 | 0 |
+| `a77292d` (notes only) | 0 | 0 |
 
-For D5, from the specifier, not a D4 finding: FD-06 snap cannot call `grid_lines` over a whole page at high zoom. C1 also matters there.
+`cargo test` was not repeated per commit; that belongs to V3.
 
-Round 1 next: specifier, tdd-apply
+Integrity:
+- No tracked file deleted, and no `*.proptest-regressions` added or changed; the test run left the clone clean.
+- `a584943` touches only `apply-progress.md` and states why. The Slice card is unchanged since then: the later diff of that file has 0 removed lines.
+- No implementer commit touched `docs/specs`; only `dc6e4d6` and `7aa7aa5` did, and both precede the first implementation commit.
+- No absolute paths in the tracked files checked, no `#[allow]`, no `.cargo/mutants.toml` change, no AI attribution in commit bodies.
 
-next: tdd-apply
+Size, figures only (no ceiling, owner decision), matching the implementer's: `git diff --shortstat develop -- crates Cargo.toml Cargo.lock` gives 17 files, 4 026 insertions, 43 deletions. Source +804 -42, tests and bench +2 918, `Cargo.lock` +299. Forecast 935 (475 + 335 + 125).
+
+next: specifier (C4, W1), then tdd-apply (C1, C2, C3, W2, W3, W4)
