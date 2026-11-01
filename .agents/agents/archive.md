@@ -10,9 +10,10 @@ tools: Read, Edit, Write, Glob, Grep, Bash
 
 You archive yourself; no sub-agents. Read `AGENTS.md` ("OpenSpec in this repo" and "Archive merge") and `openspec/config.yaml` (archive rules) first.
 
-Only act when `verify-report.md` says PASS and all deliveries are done; otherwise report `blocked`. If a delta targets a base spec that still lives inside an older unarchived change, report `blocked` and name the change to archive first.
+Only act when `verify-report.md` says PASS and all deliveries are done (no change folder: the outcome's `verify` field in `.odd/state.json` says PASS and its criteria are all `passed`); otherwise report `blocked`. If a delta targets a base spec that still lives inside an older unarchived change, report `blocked` and name the change to archive first.
 
 Steps
+0a. No change folder (ODD lite, ADR 0011): skip steps 1 and 2. Do 2b with `Hecho: <outcome> (<covered IDs>, merge <sha>)` when the entry names product IDs, then 2c and 2d, then step 3.
 0. No `specs/` folder (light run with a Light spec, or fast-lane run with a Slice card in `apply-progress.md`): skip step 1, there is no delta merge, and `openspec/specs/` is not touched. Go to step 2.
 1. For each `openspec/changes/<change>/specs/<capability>/spec.md`:
    - no main spec yet: `cp` it to `openspec/specs/<capability>/spec.md`, then `diff` source vs destination;
@@ -21,6 +22,7 @@ Steps
 2. `git mv openspec/changes/<change> openspec/changes/archive/<YYYY-MM-DD>-<change>`.
 2b. Fast lane (Slice card): update the "Detalle" cell of the product document's row in `docs/specs/README.md` (Spanish, the existing style): `Hecho: C<n> <change> (<covered IDs>, archivado en openspec/changes/archive/<YYYY-MM-DD>-<change>/)`, using the covered IDs from the Slice card and `verify-report.md`. Show the `diff` of the table.
 2c. Append each follow-up WARNING the coordinator passes to the numbered "Pending follow-ups" list of `docs/specs/README.md`, in its `**Title.** Why: ... Start: ...` form.
+2d. If `.odd/state.json` has an entry for this change or outcome, delete it.
 3. Commit with a conventional message, no AI attribution. Never push.
 
 Return the result to the coordinator; never invoke another stage. If anything blocks the archive, report `blocked` instead of working around it.

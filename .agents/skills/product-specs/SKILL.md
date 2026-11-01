@@ -52,6 +52,7 @@ Spanish, neutral, short sentences. Check the real documents before inventing any
 
 Default: fast lane (ADR 0002). The product document IS the acceptance source; it is not rewritten.
 - The coordinator writes a Slice card at the top of `openspec/changes/<change>/apply-progress.md` (fields in `.agents/agents/coordinator.md`: product IDs, scope, non-goals, deliveries if more than one, plan, Flow line), committed as `docs(<change>): slice card`. No `proposal.md`, `design.md` or delta specs.
+- ODD lite (ADR 0011): on a capability an existing spec covers, these fields go in the outcome's entry in `.odd/state.json` instead, with no change folder. The Slice card stays for full mode, L3, folders in progress and `flow: legacy`.
 - Pick a coherent slice and name the change as in steps 1 and 2 below (the Change Chain row goes in the status table "Detalle" at archive instead of a proposal).
 - Each ID in the card must have a testable "Criterio de aceptación". If one does not, or `tdd-apply`/`verify` report an ambiguity, fix the product document row here (Spanish, same ID, or the next free ID), in its own `docs(specs)` commit; never write a delta spec for it unless the owner asks.
 - Tests name the ID they prove (test name or a one-line comment), so `git grep ARQ-nn` finds them.
