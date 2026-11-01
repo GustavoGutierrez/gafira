@@ -109,3 +109,115 @@ Valid JSON, 1261 bytes, 37 lines. All field values fit the `AGENTS.md` schema. `
 V1, `mutation: off`: none run, no report, not a finding.
 
 next: archive
+
+# Verify report: odd-lite, delivery `chore/odd-lite-phase-d`
+
+## Round 1
+
+Commit 235d0ce, branch `chore/odd-lite-phase-d`, base `develop` (d3148bf). Mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Acceptance source: Light spec, AC10 to AC14, with AC2 to AC9 checked for regression. BLOCKED did not arise: every critical check ran.
+
+Verdict: PASS. CRITICAL 0, WARNING 4, SUGGESTION 7. Per class: implementation 4.
+
+Finding ids continue from the phases A and B round, so W1 to W4 keep their meaning.
+
+## CRITICAL
+
+None.
+
+## WARNING
+
+All four are gaps in rule text that the first folderless run will hit. None breaks an AC as written, and none weakens a mode, gate, floor or owner stop.
+
+- W5. class: `implementation`. `verification.json` cannot carry what the entry must copy from it. `coordinator.md:85` and `AGENTS.md:68` copy `follow_up` from that file and close findings by the closure verdict, and `coordinator.md:151` says to read that file, not the long report. Its schema (`verify.md:44-57`) has no follow-up mark and no per-id closed or open result; `verify.md:16` only says to "report" them. Worse, no rule says whether a finding still open in a closure round is re-listed in that round. `findings` ids must be unique across rounds and `classes` holds the classes of "its" findings, so a round 2 FAIL with only a still-open C1 can yield a row with no class, and the two-FAIL stop would not fire from `rounds`. Within a session the coordinator can read the report; after a session loss the row stays wrong. Suggested fix: add optional `follow_up` to findings and a `closure` list of `{id, status}` to the round (schema stays 1), and count still-open findings in `classes`.
+- W6. class: `implementation`. Resume needs an id that a new session may not hold. G0 commits the entry on the outcome's branch (`coordinator.md:83`) and a FAIL never reaches `develop`, so `.odd/state.json` on `develop` has no such entry. `coordinator.md:17` and `AGENTS.md:73` start from "branches matching the outcome id". A session started on `develop` and told only "continue" has no rule that yields the id. The match is also a substring: outcome `foo` matches `feat/foo-bar-d1`, and "newest commit touching that file" can then pick another outcome's branch. AC11 holds for a named outcome. Suggested fix: list all unmerged branches when no id is given, and pick the branch whose `.odd/state.json` holds the id.
+- W7. class: `implementation`. Raises S3 of the phases A and B round, since the entry now carries the stops. `coordinator.md:125` deletes an entry with no covered IDs or follow-ups "on the last branch before its merge", and `coordinator.md:151` runs T4 after that merge. An L1 fix on critical code has mandatory T4 and can have no product IDs. If T4 finds a survivor, the fix round has no entry: `rounds` is gone, so the "T4 fix cycle counts as one verify round" rule has no input, and the closure `verify` meets "a missing outcome entry" (`verify.md:29`), a CRITICAL. Suggested fix: delete the entry after T4, in its own commit on a short branch.
+- W8. class: `implementation`. The L0 row was only partly aligned with W2. `coordinator.md:24` and `AGENTS.md:28` now give the pack's depth, but still say `one writer` and `mutation: off` with no qualifier. A style change in critical code is L0 by its signals and Small refactor by its pack (`tdd-apply`, `verify`, T4). The row then reads wider than the exception at `coordinator.md:20`. `coordinator.md:63` and `AGENTS.md:99` settle it correctly, so the outcome is right if read in full, and the exception itself is not wider than before. Suggested fix: "one writer or the pack's agents" and "`mutation: off` when no critical code is touched".
+
+## SUGGESTION
+
+- S7. `coordinator.md:84` says "after each `verify`" with no folder condition, while `AGENTS.md:62` keeps `verify` for entries that are the G0 artifact. A folder change with an entry (this one) gets contradictory instructions. The wording predates this delivery; it now also covers FAIL and BLOCKED and the findings. Add "with no folder".
+- S8. Id collisions. `coordinator.md:85` wants "the same ids" and ids "unique". Round 1 of a next delivery gets no open findings as input, so its W1 can collide with a kept follow-up. A BLOCKED re-run can do the same with findings of its replaced row. Tell `verify` to read the entry on every folderless round.
+- S9. `verify.md:12` round fallback: rows reset only at the first update on the next delivery's branch, so a missing round before that gives 3 instead of 1. The coordinator normally passes the round, so this applies only when it does not.
+- S10. `coordinator.md:20` says "pack row of the chosen mode", but a pack row is picked by request type. For L2 on a light pack the depth comes from "Mode defaults" (`coordinator.md:65`). `AGENTS.md:24` repeats it.
+- S11. `product-specs/SKILL.md:72` still expects a `verify-report.md` listing covered IDs. Step 3d now requires the list, but with no folder it stays in the scratchpad and the entry does not hold it. W1 of the first round named this line.
+- S12. The amended Light spec plan has 11 steps; the template says at most 7 (`coordinator.md:100`). No effect on any AC.
+- S13. No phase D section in `apply-progress.md`, so there is no recorded AC evidence or measured size. G3 applies to code modes, so this is not a gate failure; this report's table fills the gap.
+
+Still open from the first round: S1 (L0 `passed` with V0), S2, S4, S5, S6 first part. S3 became W7. S6's second part is resolved for the fix-round case by "last implementer commit".
+
+## Note, not a finding
+
+- Size: 56 insertions, 38 deletions, 11 files from d3148bf; 41 and 29 without `.opencode` and `openspec`. Below the ~300 signal.
+- `layout-core` is archived, yet ADR 0011 says `proposed` until its D3 pilot ends, and `AGENTS.md:44` and `coordinator.md:29` still call it in progress. AC14 asks to stay `proposed`, so this is the owner's call at acceptance.
+- The entry's `next_action` still reads "W1 first", and AC10 to AC14 are not in its criteria. Both are the coordinator's to update.
+- The `specs/` consolidation stays in the ADR and `next_action` but has no AC in the Light spec, so it does not count as a remaining delivery here. `next: archive` follows the acceptance source; if the owner wants it inside `odd-lite`, it needs a Light spec amend first.
+
+## Gates
+
+No file in `git diff --name-only d3148bf HEAD` matches `.rs`, `Cargo`, `.toml`, `.cargo`, `deny` or `.github` (grep exit 1).
+
+| Gate | Result |
+|---|---|
+| `cargo fmt`, clippy, test | not applicable, no Rust or Cargo file changed |
+| `cargo deny` | not applicable, same reason |
+| CI policy | not applicable, no step scans the changed paths |
+| `python3 tools/sync_agents.py --check` | exit 0 |
+| `python3 -m json.tool .odd/state.json` | exit 0 |
+| Disk | 49 GB free; nothing built |
+
+## Artifact integrity (step 3b)
+
+- `50f59cb` (`docs(odd-lite): light spec amend`) touches only `openspec/changes/odd-lite/apply-progress.md`, is coordinator-owned, states why in its body and precedes 4321915.
+- It adds AC10 to AC14 and extends the Plan line; AC1 to AC9 are unchanged.
+- `git diff 50f59cb HEAD -- openspec/changes/odd-lite/` is empty, so no later commit changed the block.
+- No commit in the range carries AI attribution. Commit titles are conventional.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC10 | covered | `AGENTS.md:64-71`, `coordinator.md:84-85`; schema has all seven fields and `{round, verdict, classes}`; commit before routing on PASS, FAIL and BLOCKED. Weak spot W5 |
+| AC11 | covered | Read location `coordinator.md:17`, `AGENTS.md:73`; routing and stops `coordinator.md:87`, `:169`; closure input `verify.md:12`, `:16`; follow-ups `archive.md:24`. Weak spot W6 |
+| AC12 | covered | `coordinator.md:20`, `:34`, `:63`; `AGENTS.md:24`, `:99`. Weak spot W8 |
+| AC13 | covered | `verify.md:32` names the `git grep <ID>` check and classes |
+| AC14 | covered | sync exit 0; json.tool exit 0; `schema` 1 and the file has no diff; fields optional (`AGENTS.md:64`) and the current entry has no `verify` field; ADR "Phase D: requirements" marks W1 to W3 resolved; ADR and index stay `proposed` |
+| AC2 | no regression | Word diff of `AGENTS.md`: each removed fragment is reworded in place; no rule line deleted |
+| AC3 | no regression | Floors and gates tables have no diff; the only table edit is the L0 Path cell, which raises depth |
+| AC4, AC5 | no regression | Folder rule unchanged; `.odd/state.json` tracked, not ignored, no diff |
+| AC6 | no regression | BLOCKED text unchanged, gains the stored row and the commit before routing |
+| AC7, AC8 | no regression | 9 agent files; ADR brief names, retained flows, rollback and metrics intact; T4 rule unchanged |
+| AC9 | no regression | Forbidden-path grep exit 1; no absolute or user path in added lines (grep exit 1) |
+
+## Consistency across the six files
+
+| Topic | Result |
+|---|---|
+| Modes, gates, floors, owner stops | none weakened. G5, loop limits, "a FAIL never reaches `develop`" unchanged; the before-routing commit is stricter than the old before-merge one |
+| W2 exception | same scope as before in `coordinator.md`, `AGENTS.md` and the ADR: L0 and L1, no critical code. Now also named in the general rule. See W8 for the row |
+| Depth and agents | a level raises only, in all three; L0 depth fixed; `one writer` left (W8) |
+| Entry schema | `AGENTS.md` and `coordinator.md` agree on fields, follow-up rule, BLOCKED rows and reset. `verify.md` lacks the fields to feed them (W5) |
+| Folderless notes | `AGENTS.md`, `coordinator.md`, `tdd-apply.md`, `verify.md` and the ADR all say "last implementer commit" |
+| ADR | removed "new work keeps a folder until W1 is resolved", correct now it is resolved; audit trail risk updated |
+
+## Simulated folderless outcome
+
+Outcome `foo`, L1, light, V2, `mutation: off`, branch `fix/foo`, using rule text only.
+
+| Step | Rule | Answered |
+|---|---|---|
+| Round 1 FAIL, C1 and W1 | `coordinator.md:84-85`: commit findings and one row before routing | yes; the follow-up mark has no source in the file (W5) |
+| Session lost, scratchpad empty | `coordinator.md:17`: read the entry on the branch | yes for a named outcome or a checkout on the branch; no for "continue" on `develop` (W6) |
+| Session lost before the record | entry shows the prior round; `verify` re-runs with the same number | yes |
+| Route after resume | `coordinator.md:87`, `:168`: class of open findings, upstream first | yes |
+| Fix, then round 2 | `verify.md:12`, `:16`: open findings as input, no earlier report needed | yes |
+| Round 2 FAIL, C1 still open | same-class stop from `rounds` | partly: does C1 count for round 2? (W5) |
+| Second FAIL in light | upgrade one mode, recorded by `outcome amend` | yes |
+| BLOCKED during a round | row kept, not counted, re-run replaces it | yes |
+| Round PASS | open WARNINGs become follow-ups, entry committed, merge | yes |
+| Archive | `coordinator.md:125`, `archive.md:13`, `:16`, `:24-25`: follow-ups, then delete; no follow-ups means delete before merge | yes with `mutation: off`; with T4, W7 |
+
+## Hand mutants and mutation
+
+V1, `mutation: off`: none run, no report, not a finding.
+
+next: archive

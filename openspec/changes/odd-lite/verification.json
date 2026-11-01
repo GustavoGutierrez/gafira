@@ -20,4 +20,28 @@
   "mutation": null,
   "hand_mutants": {"run": 0, "killed": 0},
   "criteria": {"total": 9, "covered": 9},
-  "size": {"lines": 311, "forecast": null}, "report": "verify-report.md" } ] }
+  "size": {"lines": 311, "forecast": null}, "report": "verify-report.md" }, {
+  "delivery": "chore/odd-lite-phase-d",
+  "round": 1, "commit": "235d0ce", "mode": "light", "tier": "T0", "depth": "V1",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 7},
+  "findings": [
+    {"id": "W5", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/verify.md:44",
+     "summary": "verification.json has no follow-up mark or per-id closure, and a still-open finding has no stated row, so the entry copy and the same-class stop can miss it"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/coordinator.md:17",
+     "summary": "Resume needs the outcome id, but a mid-delivery entry is absent on develop; the substring branch match can also pick another outcome's branch"},
+    {"id": "W7", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/coordinator.md:125",
+     "summary": "No-archive outcome deletes its entry before merge, T4 runs after it; a T4 fix loses rounds and its closure verify hits missing entry CRITICAL"},
+    {"id": "W8", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/coordinator.md:24",
+     "summary": "L0 row still gives one writer and mutation off unqualified, beyond the named no-critical-code exception and the pack-row rule; AGENTS.md:28 too"}
+  ],
+  "gates": {"fmt": "n/a", "clippy": "n/a", "test": "n/a", "deny": "n/a", "ci_policy": "n/a",
+            "sync_agents": 0, "state_json": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "criteria": {"total": 13, "covered": 13},
+  "size": {"lines": 56, "forecast": null}, "report": "verify-report.md" } ] }
