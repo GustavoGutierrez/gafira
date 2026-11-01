@@ -216,19 +216,19 @@
           "type": "command"
         }
       ],
-      "next_action": "ADR 0010 amendment for W1, W3, W4 (architect), then tdd-apply for the rest, then closure verify",
+      "next_action": "Owner stop: second consecutive FAIL of class implementation; round 3 is the last within the cap. Size OK given by the owner 2026-11-01",
       "verify": {
-        "round": 1,
-        "commit": "e03de9f792ef9ce847e0f06d81dbecb5d140fadc",
+        "round": 2,
+        "commit": "78c4369",
         "verdict": "FAIL",
-        "next": "specifier",
+        "next": "tdd-apply",
         "findings": [
           {
             "id": "C1",
             "severity": "CRITICAL",
             "class": "implementation",
-            "ref": "golden.rs check_in; AC4, ARQ-113",
-            "summary": "Unvalidated name or candidate_dir lets a failing check overwrite a stored golden (relative, absolute, tests/golden dir); the rerun then passes",
+            "ref": "golden.rs:347 check_in; AC4, ARQ-113",
+            "summary": "Names and directories closed; a symlink or hard link already at <dir>/<name>.png still lets a failing check overwrite the reference, and the rerun passes",
             "follow_up": false,
             "status": "open"
           },
@@ -239,7 +239,7 @@
             "ref": "golden.rs check; AC3, AC4",
             "summary": "No test calls check: M1 (ignores target mode) and M2 (always Ok) survive",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "C3",
@@ -248,7 +248,7 @@
             "ref": "golden.rs compare; AC2, ARQ-113",
             "summary": "M3 survives: allowance from bytes, not pixels, allows 4 on 1000 RGBA pixels; allowance tests are Gray only",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "C4",
@@ -257,7 +257,7 @@
             "ref": "golden.rs check_in; AC4",
             "summary": "M4 survives: a size or channel mismatch may write no candidate; tests cover pixel mismatch only",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W1",
@@ -266,7 +266,7 @@
             "ref": "golden.rs quantize; ADR 0010",
             "summary": "NaN to 0 and saturation outside [0, 1] are not stated in the ADR; NaN can hide as a black pixel",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W2",
@@ -275,7 +275,7 @@
             "ref": "f355261 body; tests/golden_check.rs",
             "summary": "Commit body says the bounds test covers NaN; no test mentions NaN, and M5 (NaN to 255) survives",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W3",
@@ -284,7 +284,7 @@
             "ref": "check_in; ADR 0010 Regeneration",
             "summary": "Undecodable golden or oversized actual fails with no candidate; the ADR does not say how a first golden is made",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W4",
@@ -293,7 +293,7 @@
             "ref": "golden.rs compare; ADR 0010",
             "summary": "Public compare fails with no candidate; docs do not name check as the entry; the ADR does not say which is the test API",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W5",
@@ -302,15 +302,24 @@
             "ref": "4cad5f3, 1c2866f, 6b69953",
             "summary": "RED not provable: source and tests share commits one minute apart; only a proptest seed supports AC1; stubs, if any, are in no commit",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W6",
             "severity": "WARNING",
             "class": "implementation",
-            "ref": "git diff --shortstat develop...",
-            "summary": "837 lines (771 without state.json, 690 also without Cargo.lock), above the ~700 signal with no owner OK recorded",
-            "follow_up": false,
+            "ref": "git diff --shortstat f3b9eaf HEAD",
+            "summary": "Owner's OK reported by the coordinator, not yet on record at 78c4369; size is now 1329 lines (1074 without state and lock)",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "W7",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "77bf09c, 78c4369 bodies",
+            "summary": "Notes off: ac5 test was RED on 02e8b6a (second half fails), and removing the encode_png guard is killed, not equivalent; correct in the next fix body",
+            "follow_up": true,
             "status": "open"
           }
         ],
@@ -320,6 +329,13 @@
             "verdict": "FAIL",
             "classes": [
               "ambiguity",
+              "implementation"
+            ]
+          },
+          {
+            "round": 2,
+            "verdict": "FAIL",
+            "classes": [
               "implementation"
             ]
           }
