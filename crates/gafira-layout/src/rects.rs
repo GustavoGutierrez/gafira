@@ -18,6 +18,18 @@ fn convert(field: &'static str, len: Length, to: Unit, dpi: f64) -> Result<f64, 
         })
 }
 
+/// Checks a computed rectangle: every corner finite, then no axis of `page`
+/// with a size above 0 left with a size of 0 or less after rounding.
+fn shrunk(field: &'static str, page: Rect, r: Rect) -> Result<Rect, LayoutError> {
+    for v in [r.x0, r.y0, r.x1, r.y1] {
+        finite(field, v)?;
+    }
+    if (page.width() > 0.0 && r.x1 <= r.x0) || (page.height() > 0.0 && r.y1 <= r.y0) {
+        return Err(LayoutError::NoArea);
+    }
+    Ok(r)
+}
+
 /// The page rectangle grown by the bleed on all four sides.
 ///
 /// The bleed must lie in 0 to 10 mm, both ends included. `dpi` converts the
@@ -47,16 +59,17 @@ pub fn safe_rect(page: Rect, percent: f64) -> Result<Rect, LayoutError> {
     }
     let dx = page.width() * percent / 100.0;
     let dy = page.height() * percent / 100.0;
-    check_rect(
+    shrunk(
         "percent",
+        page,
         Rect::new(page.x0 + dx, page.y0 + dy, page.x1 - dx, page.y1 - dy),
     )
 }
 
 /// The page rectangle shrunk by each margin. `dpi` converts margins to px.
 ///
-/// Errors with [`LayoutError::NoArea`] when left plus right reach the width, or
-/// top plus bottom reach the height.
+/// Per axis, errors with [`LayoutError::NoArea`] when the two margins add up to
+/// more than 0 and reach the size; a sum of 0 keeps the box, also at size 0.
 pub fn margin_rect(page: Rect, margins: &Margins, dpi: f64) -> Result<Rect, LayoutError> {
     check_rect("page", page)?;
     finite("dpi", dpi)?;
@@ -77,11 +90,20 @@ pub fn margin_rect(page: Rect, margins: &Margins, dpi: f64) -> Result<Rect, Layo
         }
     }
     let [top, right, bottom, left] = px;
-    if left + right >= page.width() || top + bottom >= page.height() {
+    let (width, height) = (
+        finite("page", page.width())?,
+        finite("page", page.height())?,
+    );
+    let (across, down) = (
+        finite("margins", left + right)?,
+        finite("margins", top + bottom)?,
+    );
+    if (across > 0.0 && across >= width) || (down > 0.0 && down >= height) {
         return Err(LayoutError::NoArea);
     }
-    check_rect(
+    shrunk(
         "margins",
+        page,
         Rect::new(
             page.x0 + left,
             page.y0 + top,
@@ -121,19 +143,19 @@ impl Overflow {
 pub fn overflow(bounds: Rect, rect: Rect) -> Result<Overflow, LayoutError> {
     check_rect("bounds", bounds)?;
     check_rect("rect", rect)?;
+    // Check each difference before it is clamped: `-inf` must not turn into 0.
+    let edge = |v: f64| finite("overflow", v);
+    let (left, top) = (edge(rect.x0 - bounds.x0)?, edge(rect.y0 - bounds.y0)?);
+    let (right, bottom) = (edge(bounds.x1 - rect.x1)?, edge(bounds.y1 - rect.y1)?);
     let excess = |v: f64| if v > 0.0 { v } else { 0.0 };
-    let out = Overflow {
-        left: excess(rect.x0 - bounds.x0),
-        top: excess(rect.y0 - bounds.y0),
-        right: excess(bounds.x1 - rect.x1),
-        bottom: excess(bounds.y1 - rect.y1),
+    Ok(Overflow {
+        left: excess(left),
+        top: excess(top),
+        right: excess(right),
+        bottom: excess(bottom),
         fully_outside: bounds.x0 >= rect.x1
             || bounds.x1 <= rect.x0
             || bounds.y0 >= rect.y1
             || bounds.y1 <= rect.y0,
-    };
-    for v in [out.left, out.top, out.right, out.bottom] {
-        finite("overflow", v)?;
-    }
-    Ok(out)
+    })
 }

@@ -261,37 +261,163 @@ fn arq_110_every_numeric_input_rejects_non_finite_values() {
         bleed_rect(ok, px(f64::NAN), 0.0),
         Err(LayoutError::NonFinite { field: "bleed" })
     );
-    // A sum that overflows is an error, not an infinite rectangle.
-    let huge = Rect::new(0.0, 0.0, f64::MAX, f64::MAX);
-    assert!(bleed_rect(huge, px(f64::MAX), 96.0).is_err());
-    assert!(bleed_rect(huge, Length::new(10.0, Unit::Mm), 96.0).is_ok());
-    assert!(
-        overflow(
-            Rect::new(-f64::MAX, 0.0, 0.0, 1.0),
-            Rect::new(f64::MAX, 0.0, f64::MAX, 1.0)
-        )
-        .is_err()
+}
+
+const MAX: f64 = f64::MAX;
+
+fn is_non_finite<T: std::fmt::Debug>(r: Result<T, LayoutError>) {
+    assert!(matches!(r, Err(LayoutError::NonFinite { .. })), "{r:?}");
+}
+
+#[test]
+fn arq_110_a_computed_non_finite_value_is_an_error_even_when_the_result_looks_finite() {
+    // Bleed: the sum `x1 + bleed` overflows (the bleed itself is in range).
+    let page = Rect::new(0.0, 0.0, MAX, MAX);
+    is_non_finite(bleed_rect(page, Length::new(10.0, Unit::Mm), 1e306));
+    // Safe zone: the width `+inf` reaches the sum.
+    is_non_finite(safe_rect(Rect::new(-MAX, 0.0, MAX, 100.0), 5.0));
+    // Margin rectangle: a width or a margin sum that is `+inf`.
+    let wide = Rect::new(-MAX, 0.0, MAX, 100.0);
+    is_non_finite(margin_rect(wide, &margins(10.0, 10.0, 10.0, 10.0), 96.0));
+    let tall = Rect::new(0.0, -MAX, 100.0, MAX);
+    is_non_finite(margin_rect(tall, &margins(10.0, 10.0, 10.0, 10.0), 96.0));
+    let small = square(100.0);
+    is_non_finite(margin_rect(small, &margins(0.0, MAX, 0.0, MAX), 96.0));
+    is_non_finite(margin_rect(small, &margins(MAX, 0.0, MAX, 0.0), 96.0));
+    // Overflow: every side, `+inf` and `-inf`, with the other sides finite.
+    // Each case is (bounds, rect) on one axis, as (lo, hi) pairs.
+    let axis = [
+        ((-MAX, 0.0), (MAX, MAX)),
+        ((MAX, MAX), (-MAX, 0.0)),
+        ((0.0, MAX), (-MAX, -MAX)),
+        ((-MAX, -MAX), (0.0, MAX)),
+    ];
+    for ((b0, b1), (r0, r1)) in axis {
+        is_non_finite(overflow(
+            Rect::new(b0, 0.0, b1, 1.0),
+            Rect::new(r0, 0.0, r1, 1.0),
+        ));
+        is_non_finite(overflow(
+            Rect::new(0.0, b0, 1.0, b1),
+            Rect::new(0.0, r0, 1.0, r1),
+        ));
+    }
+}
+
+#[test]
+fn fd_05_f_rounding_that_erases_an_axis_is_no_area() {
+    // Above 2^53 a px has no resolution: `x0 + 3` rounds to `x1`.
+    let page = Rect::new(1e16, 0.0, 1e16 + 4.0, 100.0);
+    assert_eq!(
+        margin_rect(page, &margins(0.0, 0.0, 0.0, 3.0), 96.0),
+        Err(LayoutError::NoArea)
     );
+    assert_eq!(safe_rect(page, 49.0), Err(LayoutError::NoArea));
+    let tall = Rect::new(0.0, 1e16, 100.0, 1e16 + 4.0);
+    assert_eq!(
+        margin_rect(tall, &margins(3.0, 0.0, 0.0, 0.0), 96.0),
+        Err(LayoutError::NoArea)
+    );
+    assert_eq!(safe_rect(tall, 49.0), Err(LayoutError::NoArea));
+}
+
+#[test]
+fn fd_05_f_margins_are_decided_per_axis_and_a_zero_sum_keeps_the_box() {
+    let flat = Rect::new(0.0, 0.0, 0.0, 100.0);
+    assert_eq!(
+        margin_rect(flat, &margins(0.0, 0.0, 0.0, 0.0), 96.0),
+        Ok(flat)
+    );
+    assert_eq!(
+        margin_rect(flat, &margins(0.0, 0.0, 0.0, 5.0), 96.0),
+        Err(LayoutError::NoArea)
+    );
+    let flat_y = Rect::new(0.0, 0.0, 100.0, 0.0);
+    assert_eq!(
+        margin_rect(flat_y, &margins(0.0, 5.0, 0.0, 0.0), 96.0)
+            .unwrap()
+            .y1,
+        0.0
+    );
+    assert_eq!(
+        margin_rect(flat_y, &margins(5.0, 0.0, 0.0, 0.0), 96.0),
+        Err(LayoutError::NoArea)
+    );
+    // A zero sum on one axis does not hide a sum that reaches the size on the other.
+    let page = Rect::new(0.0, 0.0, 100.0, 80.0);
+    assert_eq!(
+        margin_rect(page, &margins(0.0, 100.0, 0.0, 0.0), 96.0),
+        Err(LayoutError::NoArea)
+    );
+    assert_eq!(
+        margin_rect(page, &margins(40.0, 0.0, 40.0, 0.0), 96.0),
+        Err(LayoutError::NoArea)
+    );
+    assert_eq!(
+        margin_rect(page, &margins(0.0, 99.0, 0.0, 0.0), 96.0)
+            .unwrap()
+            .x1,
+        1.0
+    );
+    // A margin of 0 on the top is in range, one below 0 names the field.
+    assert!(margin_rect(page, &margins(0.0, 1.0, 1.0, 1.0), 96.0).is_ok());
+    assert_eq!(
+        margin_rect(page, &margins(-0.5, 1.0, 1.0, 1.0), 96.0),
+        Err(LayoutError::OutOfRange {
+            field: "margins.top"
+        })
+    );
+}
+
+#[test]
+fn fd_05_a_dpi_that_is_not_positive_is_out_of_range_even_for_px() {
+    let dpi = Err(LayoutError::OutOfRange { field: "dpi" });
+    for d in [0.0, -96.0] {
+        assert_eq!(bleed_rect(square(100.0), px(1.0), d), dpi);
+        assert_eq!(
+            margin_rect(square(100.0), &margins(1.0, 1.0, 1.0, 1.0), d),
+            dpi
+        );
+    }
+}
+
+fn corners(r: Rect) -> Vec<f64> {
+    vec![r.x0, r.y0, r.x1, r.y1]
+}
+
+fn sides(o: Overflow) -> Vec<f64> {
+    vec![
+        o.left,
+        o.top,
+        o.right,
+        o.bottom,
+        f64::from(u8::from(o.fully_outside)),
+    ]
 }
 
 proptest! {
     // ARQ-110 (property) and ARQ-111: finite input in the domain gives finite output,
-    // and a second run gives the same bytes.
+    // and a second run of each operation gives the same bytes (`-0.0` and `0.0` differ).
     #[test]
     fn arq_110_arq_111_finite_input_gives_finite_repeatable_output(
         x in -1e6..1e6f64, y in -1e6..1e6f64, w in 0.0..1e6f64, h in 0.0..1e6f64,
         pct in 0.0..49.9f64, mm in 0.0..10.0f64, dpi in 1.0..10_000.0f64,
+        fa in 0.0..0.49f64, fb in 0.0..0.49f64,
     ) {
         let page = Rect::new(x, y, x + w, y + h);
-        let run = || (
-            safe_rect(page, pct).unwrap(),
-            bleed_rect(page, Length::new(mm, Unit::Mm), dpi).unwrap(),
-            overflow(page, safe_rect(page, pct).unwrap()).unwrap(),
-        );
-        let (a, b) = (run(), run());
-        prop_assert_eq!(a, b);
-        for v in [a.0.x0, a.0.y0, a.0.x1, a.0.y1, a.1.x0, a.1.y1, a.2.left, a.2.right] {
-            prop_assert!(v.is_finite());
+        let m = margins(h * fa, w * fb, h * fb, w * fa);
+        let safe = safe_rect(page, pct).unwrap();
+        let ops: [&dyn Fn() -> Vec<f64>; 5] = [
+            &|| corners(safe_rect(page, pct).unwrap()),
+            &|| corners(bleed_rect(page, Length::new(mm, Unit::Mm), dpi).unwrap()),
+            &|| corners(margin_rect(page, &m, dpi).unwrap()),
+            &|| sides(overflow(page, safe).unwrap()),
+            &|| sides(overflow(safe, page).unwrap()),
+        ];
+        for op in ops {
+            let (a, b) = (op(), op());
+            prop_assert_eq!(a.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), b.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+            prop_assert!(a.iter().all(|v| v.is_finite()));
         }
     }
 }
