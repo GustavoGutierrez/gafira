@@ -37,6 +37,18 @@ fn run(s: &GuideSpec, w: f64, h: f64) -> Vec<gafira_layout::Guide> {
 }
 
 #[test]
+fn fd_04_a_gap_of_negative_zero_is_a_gap_of_zero() {
+    for (columns, rows) in [(1, 1), (3, 2)] {
+        let neg = run(&spec(columns, rows, -0.0, 10.0), 300.0, 200.0);
+        let zero = run(&spec(columns, rows, 0.0, 10.0), 300.0, 200.0);
+        let bits = |g: &[gafira_layout::Guide]| -> Vec<u64> {
+            g.iter().map(|g| g.position.value().to_bits()).collect()
+        };
+        assert_eq!(bits(&neg), bits(&zero));
+    }
+}
+
+#[test]
 fn fd_04_a_twelve_columns_in_1080() {
     let g = run(&spec(12, 0, 24.0, 24.0), 1080.0, 1080.0);
     let v = on(GuideAxis::Vertical, &g);

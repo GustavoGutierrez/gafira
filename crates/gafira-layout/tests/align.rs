@@ -346,6 +346,21 @@ fn arq_110_a_centre_or_an_offset_that_overflows_is_an_error_even_if_the_action_i
     );
 }
 
+#[test]
+fn arq_110_a_centre_that_is_finite_is_not_an_error_however_large_the_box() {
+    // The sum of the two edges lies between MAX / 2 and MAX: the centre is finite, but twice
+    // the sum is not. Checked on each axis and on every action.
+    let big = (0.3 * f64::MAX, 0.4 * f64::MAX);
+    let x = Rect::new(big.0, 0.0, big.1, 1.0);
+    let y = Rect::new(0.0, big.0, 1.0, big.1);
+    for action in ACTIONS {
+        for rect in [x, y] {
+            let items = [Item { rect, locked: true }];
+            assert!(align(action, page(), &items).is_ok(), "{action:?} {rect:?}");
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ARQ-111 and the property
 
