@@ -120,7 +120,7 @@ The `coordinator` classifies each request before it routes. It sets the risk lev
 
 ### Hard floors
 
-The first matching row sets the minimum mode and the higher mode always wins. The coordinator never lowers a mode below a floor. Only the owner can lower a pack default.
+The first matching row sets the minimum mode and the higher mode always wins. The coordinator never lowers a mode below a floor. Only the owner can lower a pack default, except `mutation: off` for L0 and L1 work that touches no critical code.
 
 | Signal | Minimum mode |
 |---|---|
@@ -210,7 +210,7 @@ The fast lane executes a product spec directly (ADR 0002, section 3). When the o
 
 ```
 ## Slice card
-Flow: <mode> | pack: <pack> | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator|owner | reason: <one line>
+Flow: <mode> | level: L<n> | pack: <pack> | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator|owner | reason: <one line>
 Product IDs: <ARQ-nn, RF-nn ...> (source: specs/<NN-doc>.md §x)
 Scope: <1 to 3 lines>      Non-goals: <list>
 Deliveries: <only if more than one: D1 <scope, ~lines>, D2 ...; serial>

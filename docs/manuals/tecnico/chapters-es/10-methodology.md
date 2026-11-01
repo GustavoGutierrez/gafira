@@ -120,7 +120,7 @@ El `coordinator` clasifica cada solicitud antes de enrutarla. Fija el nivel de r
 
 ### Mínimos obligatorios
 
-La primera fila que coincide fija el modo mínimo y siempre prevalece el modo más alto. El coordinador nunca baja un modo por debajo de un mínimo. Solo el titular puede bajar el valor por defecto de un pack.
+La primera fila que coincide fija el modo mínimo y siempre prevalece el modo más alto. El coordinador nunca baja un modo por debajo de un mínimo. Solo el titular puede bajar el valor por defecto de un pack, salvo `mutation: off` en trabajo L0 y L1 que no toca código crítico.
 
 | Señal | Modo mínimo |
 |---|---|
