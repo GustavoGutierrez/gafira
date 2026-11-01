@@ -243,3 +243,61 @@ Hand mutants (applied, failed, reverted, not committed)
 Deviations
 - The second commit passed my gate script although clippy failed on `grid.rs` (`manual_is_multiple_of`), and it also committed `grid.proptest-regressions` made by the RED run. No amend, so a third commit fixes both; the first two commits do not pass clippy alone.
 - S4: corrected above (src 25, tests 210).
+
+## D5 + D6 + D7: snap, align, distribute, benches (`feat/layout-core-d5`)
+
+Status: done. One delivery by owner decision (Slice card amendment `a584943`). Files, all in `gafira-layout` unless noted: `src/{snap,attractors,align,distribute}.rs` (new), `src/{grid,bounds,lib}.rs`, `tests/{snap,snap_rotation,attractors,align,distribute,benches}.rs` (new), `benches/layout.rs` (new), `Cargo.toml`, `Cargo.lock`, `crates/gafira-layout/Cargo.toml`.
+
+Commits (each passed `cargo fmt --check`, `clippy --workspace --all-targets --locked -D warnings`, `cargo test --workspace --locked` alone; exit codes read one by one, no pipe on the gate)
+1. `4a99a1a` refactor: `grid::level` and `Level` shared by `grid_lines` and the magnet (no new rule; the 17 grid tests are the guard).
+2. `117c1dc` snap: kinds, threshold, zoom, DPI, ARQ-110/111, priority, ties, guides, margins, page, elements.
+3. `866b8b6` snap to the grid lines of `grid_lines`.
+4. `761a2ef` refactor: `bounds_with` keeps a cache so many `node_bounds` calls walk each node once.
+5. `7a1b454` `attractors` (FD-06 c).
+6. `65217bc` `snap_rotation` (FD-06 i).
+7. `b947b02` `align` (FD-11 a, d, f; D-29).
+8. `594f304` `distribute` (FD-11 b, d, e; D-17).
+9. `0c686e2` `criterion` and the four benches (ARQ-114).
+
+API: `snap(&SnapInput) -> Result<SnapResult>` with `SnapKind {Guide, Margin, Page, Element, Grid}` (declared in priority order), `SnapTarget {coordinate, kind}`, `AxisSnap {offset, target}`; `snap_rotation(angle)`; `attractors(&Page, &[NodeId]) -> Result<Vec<Rect>>`; `align(AlignAction, page, &[Item])`, `distribute(DistributeAxis, DistributeMode, &[Item])` with `Item {rect, locked}` and `Offset {dx, dy}`.
+
+RED (each test written first, run against a compiling stub, failing on an assertion; the stubs returned "no snap", `Ok(vec![])`, the input angle, zero offsets)
+- FD-06 a, d(property), e, f, g, h; D-16; ARQ-110/111 (commit 2): 25 of 28 tests failed (`left: None right: Some(SnapTarget {..})`, `Ok(..)` where `Err(NonFinite {field})` expected). Passed at the stub: `fd_06_h_*`, `arq_111_*`, both property tests on finiteness and on the threshold (constant output); they are proved by the mutants below.
+- Grid target (commit 3): 8 of 8 new tests failed (`left: None right: Some(10.0)`; `Some(SnapTarget Guide)` where Grid expected for "grid at 2, guide at 3"; the grid_lines property `expect("a line within the threshold")`).
+- `attractors` (commit 5): 15 of 17 failed (`left: [] right: [boxes]`, `Ok([])` where `UnknownNode(99)` or `NonFinite{x}` expected). `arq_111` passed at the stub; the NaN-outside test got an `assert_eq!(want.len(), 2)` so it fails at the stub too.
+- Rotation (commit 6): 7 of 10 failed (`Ok(7.4)` where `Ok(0.0)`, `Ok(NaN)` where `Err(NonFinite{angle})`, `-0.0` bits where `0.0`).
+- `align` (commit 7): 9 of 12 failed (`dx 0.0` where `-50.0`, `Ok([])` where `Err(NonFinite{page})`). The `-0.0` zero test and the empty/single-locked test passed at the stub.
+- `distribute` (commit 8): 12 of 16 failed (`[0.0; 4]` where `[0.0, 30.0, 65.0, 0.0]`). My first implementation sorted with `total_cmp`; `d_28_equal_positions_keep_the_input_order` caught it (`-0.0` ties).
+- ARQ-114 (commit 9): `arq_114_each_layout_figure_has_a_benchmark_named_after_its_row` failed with "`bench_guides_generate` must be registered once" against an empty `main`.
+
+Hand mutants (each applied, a test failed, reverted, never committed; `cargo test --no-fail-fast` since cargo stops at the first failing binary)
+1. `<` for `<=`; zoom division removed; threshold times zoom: `fd_06_the_threshold_is_compared_exactly_and_divided_by_the_zoom`, `fd_06_e_distance_6_snaps_and_6_01_does_not`, `threshold_must_be_finite_and_above_zero`, `d_16_the_winner_is_*`.
+2. Each adjacent pair swapped (Guide/Margin, Margin/Page, Page/Element, Element/Grid): `fd_06_f_at_equal_distance_each_kind_beats_every_lower_one` (Element/Grid also `fd_06_f_the_grid_loses_a_tie_*`).
+3. Priority before distance: `fd_06_f_a_nearer_target_of_a_lower_kind_beats_a_farther_higher_one`, `d_16_the_winner_is_*`.
+4. Larger coordinate, coordinate ignored: `fd_06_after_the_kind_the_smaller_coordinate_wins`; later reference: `fd_06_after_the_coordinate_the_reference_order_is_left_centre_right`. Reference order before coordinate survives: equivalent. If two targets are tied at the minimal distance from two different references `a < b` and the later reference has the smaller coordinate, then `a + d > b - d`, so the centre reference lies strictly closer than `d` to one of them. A tie in which the order differs from the coordinate order cannot be the minimum.
+5. Axes coupled (y uses x references, x uses y targets, guide axis swapped): `an_element_attracts_*`, `fd_06_g_each_axis_is_resolved_on_its_own`, `d_16_*`.
+6. Left, centre and right reference each dropped (x only, y only; replaced by a copy of another reference, so the error path does not kill it): `fd_06_each_reference_reaches_targets_on_its_own`, `fd_06_the_grid_is_reached_from_each_reference_of_the_box`. A first run used `INFINITY` and was killed only by the distance error; redone.
+7. Centre dropped for page and for element, x and y; margin centre added; margin edge dropped: `the_page_attracts_*`, `an_element_attracts_*`, `the_margin_rectangle_attracts_*`.
+8. Grid attracts without `visible`, without `snap`, `||`; ranges skipped when it does not attract: `fd_06_the_grid_attracts_only_when_visible_and_set_to_snap`, `grid_ranges_are_checked_also_when_the_grid_does_not_attract`.
+9. Inactive skips checks / moves: `fd_06_b_an_inactive_magnet_*`, `arq_110_every_float_input_*`.
+10. Hidden guide attracts / skips finite / skips conversion: `guides_convert_to_px_*`, `the_order_of_checks_*`, `arq_110_a_result_that_is_not_finite_*`.
+11. Margin as Page kind, margins None treated as Err: `d_16_zero_margins_give_the_margin_kind_*`.
+12. Attractors: selection descendant kept, selected node kept (equivalent: the ancestor pass also clears it), ancestor kept, hidden/locked ancestor not inherited, group box its own placement, sibling dropped, bounds of every node read (NaN in an excluded node), hidden ignored, locked ignored, unknown selection ignored, output reversed, selection not bubbled, selection at a root ignored: `fd_06_c_*`, `arq_110_a_nan_outside_*`. The cache removed in `attractors` (quadratic) is killed by timeout: the 100 000 chain does not finish in 60 s against 0.2 s.
+13. Rotation `floor(a/15 + 0.5)`, `round`, `round_ties_even`, tie to the lower value, normalized with `rem_euclid(360)` and `%`, `-0.0` kept, overflow check removed: `fd_06_i_*` and `arq_110_a_result_that_overflows_*`.
+14. Major as `k * step / subdivisions` (in `grid::Level::line`): `fd_06_a_major_line_is_exactly_k_times_the_step` and the grid tests; candidates `[k]`, `[k-1,k]`, `[k+1,k+2]`, tie up, `ceil`, `round`: `fd_06_the_grid_*`. Survivors, equivalent: candidates `[k, k+1]` (the extra neighbours only matter when the quotient rounds across an integer, where the nearer line is still in `{k, k+1}`; kept as a guard for huge references), and "first found wins a tie" (candidates are scanned in ascending order).
+15. Align: other axis moved (Left, Top, Middle), locked excluded from the union, locked box moves, one free uses its own box, one free with one locked uses the page, single locked moves, `-0.0` kept, offset check removed, order before numbers, page/locked/centre unchecked, output shorter: `fd_11_*`, `d_29_*`, `arq_110_*`. Two shortcuts (single locked, all locked) were equivalent mutants and are deleted.
+16. Distribute: first or last moves, locked counted, 4 free needed, unstable sort, `total_cmp`, ties reversed, negative gap rejected or clamped, centres mode using edges, gap mode sorting by centre, `n` for `n - 1`, cursor ignoring size, axis swapped, output reversed or shorter, gap/offset check removed: `fd_11_*`, `d_17_*`, `d_28_*` (the unstable sort first survived on already-sorted input; `d_28_a_long_shuffled_run_*` kills it). `n < 2` for `n < 3` survives: equivalent (two free boxes have no middle). The `+ 0.0` on offsets and inner `finite` checks of distribute were unreachable (survived as mutants) and are removed with a comment; an offset overflow is reachable and tested (`[-MAX, MAX]`, `[-MAX/2]`, `[MAX/8]`).
+17. Benches: each name renamed, registered twice, `criterion_main!` removed: `arq_114_*`.
+
+Checks and choices the specs leave open (no spec gap blocked the work)
+- Order of checks in `snap`, `align`, `distribute`: all numbers of all inputs, then all `x1 < x0` boxes, then DPI (`snap`), then threshold, zoom, grid ranges, then computed values. Fields: `moving`, `page`, `margins`, `element`, `guide`, `step`, `zoom`, `threshold`, `dpi`, `distance`, `item`, `gap`, `offset`, `angle`.
+- Every centre is checked (moving, page, element, item) with the magnet off and for an align action that ignores it. The spec's `x = -MAX` example with a zero-size box fails at the centre (`moving`); the `distance` error is tested with `Rect(-MAX, 0, 0, 0)`. An inactive magnet computes no distances.
+- The caller passes `margins: None` when `margin_rect` gives `NoArea`; the crate has no helper for it.
+- `attractors` returns boxes in document order (roots as listed, parent before children). A group that attracts reads every descendant through `node_bounds`, hidden ones included, so a NaN in a hidden child of an attracting group is an error. A cycle anywhere in the tree is `Cycle`, also under a selected node. Only nodes reachable from the roots are returned.
+- Zero offsets are `+0.0` in all four functions (snap and align normalize; distribute cannot produce `-0.0`).
+
+Gates and checks: the three gates pass at every commit (final: 1 087 tests); `cargo test -p gafira-layout --release` passes (100 000 level chain in debug and release); `cargo deny --offline check` passes with `criterion` (advisories, bans, licenses, sources ok), `deny.toml`, the V5 row (`cargo tree -e normal,build` still lists color, doc, geom) and `clippy.toml` need no change. `criterion` is a workspace dev-dependency with `default-features = false, features = ["cargo_bench_support"]`: no rayon, no plotters, no reports. `Cargo.lock` gains 33 packages (dev-only; `half` comes in through `ciborium`, so ARQ-117's "no `half`" still holds for normal builds). No CI step runs the benches. Seed files written by mutant runs were removed; `git diff --name-status develop` shows no deleted file.
+
+Bench figures, this machine, worst-case inputs, not the D-03 reference: `bench_guides_generate` 353 µs (16 384 x 16 384 divisions), `bench_layout_rects` 25 ns, `bench_snap_1000` 31 µs, `bench_grid_lines` 7.9 µs.
+
+Measured (`git diff --shortstat develop -- crates Cargo.toml Cargo.lock`): 17 files, 4 026 insertions, 43 deletions: source +804 -42, tests and bench +2 918, `Cargo.lock` +299. Over the ~700 reference by far; the owner waived the ceiling for this delivery. Deviations: none from the Slice card. Next: verify.
