@@ -225,4 +225,21 @@ Changes by item
 - W5: removed `fd_03_a_typed_value_survives_the_extreme_dpis` (the property covers it) and the zoom and view NaN cases of the order test (`arq_110_every_float_input_is_checked` has them).
 - Not done: S2 (V10 is unreachable, no spec rule); W2 property for the `2^k` fallback stays as is.
 
-- Size: round 3 adds 235 insertions and 84 deletions in `crates` (src 34 inserted, tests 201). Against `develop` the branch is now 1 370 insertions with these notes; well over the ~700 ceiling, as already flagged in W5.
+- Size: round 3 adds 235 insertions and 84 deletions in `crates` (src 25 inserted, tests 210). Against `develop` the branch was 1 235 insertions in `crates` plus notes (the earlier 1 370 also counted 135 lines of verify artifacts); well over the ~700 ceiling, as already flagged in W5.
+
+## D4 fix round 2: verify round 2 (C4, W6, S4)
+
+Commits: `9ab2e9f` (majors), `8c261f3` (W6 tests), one follow-up clippy fix (see deviations), then these notes. Final tree passes fmt, clippy, workspace tests.
+
+RED
+- C4 `fd_07_a_major_line_on_a_view_edge_is_kept_for_a_non_integer_step_with_subdivisions`: `left 33, right 34`. `fd_07_a_majors_sit_exactly_on_multiples_of_the_step` (oracle: `m * n + 1` lines, major at `i % n == 0` equal to `(i / n) as f64 * step`, minor within 1e-9 of `i * step / n`): `left 20.499999999999996, right 20.5`.
+- W6: no RED, the code was right (`fd_03_d_non_finite_position_is_reported_at_dpi_zero`, `arq_110_a_nan_margin_is_non_finite_at_dpi_zero`).
+
+Fix: a major line is `(k / every) as f64 * unit`; minor lines stay `k * unit / div`. The fallback (every 1) is the same value as before.
+
+Hand mutants (applied, failed, reverted, not committed)
+- Majors as `k * unit / div` -> the two C4 tests. Major test `k % every == 1` -> 8 grid tests, among them both C4 tests. Duplicate emission at a major position -> 13 grid tests, among them both C4 tests.
+
+Deviations
+- The second commit passed my gate script although clippy failed on `grid.rs` (`manual_is_multiple_of`), and it also committed `grid.proptest-regressions` made by the RED run. No amend, so a third commit fixes both; the first two commits do not pass clippy alone.
+- S4: corrected above (src 25, tests 210).
