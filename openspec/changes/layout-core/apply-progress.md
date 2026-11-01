@@ -100,3 +100,34 @@ Deviations: none. Notes: (a) the bleed is compared after conversion to mm with `
 - Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` all pass (931 passed, 0 failed). The test run created no new or changed `*.proptest-regressions` files.
 - Correction: the previous fix round (round 1) did not declare this deletion in its notes; it was an unintended side effect of the round.
 - No behaviour change: no RED step, no hand mutants. W1 and S2 remain follow-ups, untouched.
+
+## D3: crate, V5 row, bounds, rects (`feat/layout-core-d3`)
+
+Status: done. Files: `crates/gafira-layout/{Cargo.toml,clippy.toml,src/{lib,error,bounds,rects}.rs,tests/{bounds,rects}.rs}` (new), `Cargo.toml`, `Cargo.lock`, `.github/workflows/ci.yml` (V5 row `gafira-layout gafira-geom gafira-color gafira-doc`, as ADR 0007; checked with `cargo tree`).
+
+Done
+- `clippy.toml` is a byte copy of the canonical `gafira-geom` one (V12). No serde, nothing mutated, `#![forbid(unsafe_code)]`.
+- `LayoutError { NonFinite, InvalidBox, OutOfRange { field }, NoArea, UnknownNode, Cycle }`.
+- `bleed_rect(page, Length, dpi)`, `safe_rect(page, percent)` (5.0 is 5 %, range `[0, 50)`), `margin_rect(page, &Margins, dpi)`, `overflow(bounds, rect) -> Overflow { left, top, right, bottom, fully_outside }` with `exceeds()`, `node_bounds(page, id)`. Every function checks finiteness of all inputs first, then ranges.
+- `node_bounds`: leaf by `to_transform().transform_rect_bbox`, group by union of children, empty group by its own box; a missing child gives `UnknownNode`, a cycle gives `Cycle`; negative `w`/`h` give `InvalidBox`.
+
+RED evidence (stub bodies returning the input / zero; the implementation was written first and the stub applied afterwards, see deviations)
+- FD-05(b) `fd_05_b_overflow_at_the_safe_edge_boundary`: safe rect equals the page instead of (54..1026); FD-05(d) `fd_05_d_bleed_expands_all_four_sides_from_the_dpi_input`, `fd_05_d_bleed_range_is_zero_to_ten_mm_inclusive`: `Ok(page)` where `Err(OutOfRange bleed)` expected; FD-05(e) `fd_05_e_safe_rect_insets_each_axis_by_its_own_size`; FD-05(f) `fd_05_f_margins_that_reach_the_size_leave_no_area`, `fd_05_f_fd_09_d_overflow_edges_and_outside_rule`: right 0 where 24 expected; D-28 `d_28_a_leaf_uses_the_box_aligned_to_the_axes`, ADR 0009 `adr_0009_a_group_is_the_union_...`: zero rect returned; ARQ-110 `arq_110_every_numeric_input_rejects_non_finite_values` (`Ok` with NaN x0 where `NonFinite page` expected), `arq_110_inverted_boxes_are_errors`, `arq_110_bad_placements_and_broken_trees_are_errors` (`Ok` where `NonFinite x`).
+- ARQ-111 `arq_111_the_same_input_gives_the_same_bounds` and the property test pass at the stub (determinism holds for constant output); proved only as a regression guard.
+
+Hand mutants (each applied, a test failed, reverted, not committed)
+1. Overflow boundary: right excess shifted by 0.5, `exceeds` with `>=` -> `fd_05_b_overflow_at_the_safe_edge_boundary` (+ `fd_05_f_fd_09_d_...`). Survivor: `excess` using `v >= 0.0` is an equivalent mutant (returns 0 either way).
+2. `safe_rect`: horizontal inset from the height, vertical from the width, one side per axis not inset (x1, y0) -> `fd_05_e_safe_rect_insets_each_axis_by_its_own_size`.
+3. `bleed_rect`: one side not expanded (x0, then y1), DPI fixed at 96, range `0..10` exclusive, upper bound 10.02, lower bound 0.001 -> `fd_05_d_bleed_expands_...` or `fd_05_d_bleed_range_...`.
+4. Margins: `>` instead of `>=` for width and for height, either check removed -> `fd_05_f_margins_that_reach_the_size_leave_no_area`.
+5. Overflow: each of the four "fully outside" comparisons made strict, left/top excess as `abs` -> `fd_05_f_fd_09_d_overflow_edges_and_outside_rule`.
+6. Finiteness: each check removed one at a time (percent, dpi, margins sides, `rect`, `bleed`, the placement `skew`, the result check of `node_bounds`) -> `arq_110_*` tests. Two (bleed value, margin sides) first survived because `Length::convert` also rejects them; killed by adding ordering assertions (a NaN after a bad range, a NaN bleed with dpi 0): finiteness first, whole call.
+7. `node_bounds`: rotation ignored, last child dropped, union replaced by the last or first child, empty-group fallback removed -> `d_28_...`, `adr_0009_...`; cycle guard removed -> test process aborts with stack overflow in `arq_110_bad_placements_and_broken_trees_are_errors`.
+8. FD-09(d): left and right excess swapped -> `fd_05_b_...`, `fd_05_f_fd_09_d_...`; `>` for the x = 1080 rule -> `fd_05_f_fd_09_d_...`.
+All killed except the equivalent one noted in item 1.
+
+Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` (944 passed, 0 failed). A seed file written by a mutant run was removed before the commit; no `*.proptest-regressions` is committed. V5 row checked by hand with `cargo tree -p gafira-layout`: gafira-color gafira-doc gafira-geom.
+
+Measured: ~277 source lines, ~490 test lines, 17 Cargo.toml, clippy.toml copy; over the ~700 ceiling counting the clippy.toml copy.
+
+Deviations: (a) the implementation preceded the tests; RED was produced afterwards by stubbing the bodies. (b) `percent` is "5.0 = 5 %" (spec text says 5 %, `[0, 50)`); margins take `&Margins` plus a dpi (not four px) because FD-05 stores them as `Length` in any unit. (c) `Overflow::exceeds` is an addition for the warning rule.
