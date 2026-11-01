@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod attractors;
 mod bounds;
 mod error;
 pub mod grid;
@@ -13,6 +14,7 @@ pub mod guides;
 mod rects;
 pub mod snap;
 
+pub use attractors::attractors;
 pub use bounds::node_bounds;
 pub use error::LayoutError;
 pub use grid::{GridLine, GridLines, grid_lines};
