@@ -514,3 +514,80 @@ Each exit read separately.
 V1, closure round, `mutation: off`: none run, no report, not a finding.
 
 next: archive
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`, closure after the merge
+
+## Round 3
+
+Commit 4082d84 (parents 5808ad0 and 67a2826), branch `chore/specs-consolidation`, base `develop` at 67a2826. Closure round, mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: the merge commit and its effect on AC15, AC19 and AC20. BLOCKED did not arise: every critical check ran. No earlier finding was open, so nothing needed closing.
+
+Verdict: PASS. CRITICAL 0, WARNING 1, SUGGESTION 6. Per class: implementation 1 (W14). S17 to S21 are carried; S22 is new.
+
+W14 is the one point of this round that rests on judgment; see its text.
+
+Read-only gates ran in the worktree with a scratch target dir, freed afterwards. Probes ran on a scratch clone.
+
+## CRITICAL
+
+None.
+
+## WARNING
+
+- **W14** (`class: implementation`, open, not a follow-up) `ref: AC15, specs/changes/pi-agent-sync/`. Plain `git log --follow` does not cross the move of the three files of `specs/changes/pi-agent-sync/`. It prints nothing for `verify-report.md`, and 0 commits for `apply-progress.md`. The move sits inside merge commit 4082d84, where the path is absent from the first parent. `git log -m --follow` does cross it, reaching 5797c3c, and against the second parent the three show R100, so history is reachable and the bytes are intact. AC15 says every move lets `git log --follow` cross it, so its literal clause holds only with `-m` for these 3 files; the other 109 moves are unaffected. It is a WARNING and not CRITICAL because no code, gate or rule is affected, the closure rule keeps CRITICAL for code defects and gates, and the record is recoverable. If the owner reads AC15 strictly, this is a failed criterion and the verdict would be FAIL. Probe on a scratch clone: redoing the merge with the folder left at its old path, then moving it in its own commit, makes plain `--follow` reach 5797c3c. 4082d84 is already on `origin`, so that fix rewrites a pushed branch and needs the owner's decision. It stops being cheap once the branch merges into `develop`, so decide before that merge. Redoing it needs a fourth verify round on this delivery, past the three-round cap, which is another reason it goes to the owner. The alternative is to accept it and record `-m` as the way to read these three files.
+
+## SUGGESTION
+
+- **S22** `specs/README.md:75`, pending item 34, says `.pi/agents/verify.md` lacks the hanging-mutants rule. With this merge that file is a generated pointer that tells Pi to read `.agents/agents/verify.md`, so the item looks stale. The item predates this delivery.
+- S17 to S21 are unchanged; the merge closes none of them.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1107 passed, 0 failed |
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 tools/sync_pi_agents.py --check` | 0 | up to date; a tampered `.pi/agents/verify.md` on the scratch clone gives exit 2 |
+| `python3 -m pytest tests -q` | 0 | 44 passed, 1 skipped (needs the OpenCode API, opt-in by environment variable) |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `manual.py check` | 0 | en and es: 11 chapters, mirrors match, links resolve |
+
+The cargo gates go beyond the requested list because AC20 names them; `crates/`, `apps/`, `Cargo.toml`, `Cargo.lock`, `.cargo/` and `rust-toolchain.toml` are identical to 645bcfd anyway. `manual.py build` was not run: `docs/manuals/` has the same tree hash as 645bcfd, where round 2 built both PDFs. `cargo deny` and the CI policy steps do not apply: `.github/`, `deny.toml` and the Rust trees are unchanged against 67a2826.
+
+## Requested checks
+
+| Check | Result |
+|---|---|
+| No tracked file under the old roots | 0 files; neither directory exists on disk |
+| Change folder blobs | the 3 blobs of `specs/changes/pi-agent-sync/` equal those of the old folder at 67a2826 |
+| `.pi/agents/*` generated, no old paths | `--check` exit 0, 0 old-name hits in `.pi`, `tools/sync_pi_agents.py` and `tests/test_pi_agent_sync.py`. Only `archive.md` and `specifier.md` differ from 67a2826: the description, its hash and the source revision |
+| `.odd/state.json` | identical to 5808ad0. Against 67a2826: same single outcome, criteria 14 to 20, W9 still open |
+| Hit table | matches the requested search at HEAD exactly, 43 hits in 8 files, line by line, before this round's text. This round adds no hit and appends below the listed lines |
+| No `crates/`, `apps/`, Cargo change against 67a2826 | none (grep exit 1) |
+| Develop content kept | all 113 tracked files of the old roots at 67a2826 map to their new path, except the deleted config file (AC16); all 16 files added by `develop` since the merge base are present |
+
+## Artifact integrity (step 3b)
+
+- The merge touches only the hit table in `apply-progress.md`, adding two rows at lines 85 and 86. The Light spec block is unchanged.
+- The merge changes no ADR, `.odd/state.json` or rule file against 5808ad0: its 17 changed files are the Pi delivery, the moved folder and that table.
+- No AI attribution line in the merge message. The only `/home/` in added lines is a home-directory marker quoted in `specs/changes/pi-agent-sync/verify-report.md`, not a path.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered, one exception | Layout holds. W14: `--follow` crosses the merge move only with `-m`, 3 files |
+| AC16 | covered | Unchanged by the merge |
+| AC17 | covered | Unchanged by the merge |
+| AC18 | covered | The merge touches no exempt path |
+| AC19 | covered | Hit table matches; every repo path cited in `.pi/README.md`, `.pi/prompts/coordinator.md`, `.pi/agents/verify.md` and `tools/sync_pi_agents.py` exists (the remaining matches are model ids) |
+| AC20 | covered | Gates above |
+
+## Hand mutants and mutation
+
+V1, closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive

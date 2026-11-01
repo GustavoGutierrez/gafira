@@ -201,5 +201,26 @@
       "criteria": {"total": 6, "covered": 6},
       "size": {"lines": 754, "forecast": null},
       "report": "verify-report.md"
+    },
+    {
+      "delivery": "chore/specs-consolidation",
+      "round": 3, "commit": "4082d84", "mode": "light", "tier": "T0", "depth": "V1",
+      "verdict": "PASS", "next": "archive",
+      "counts": {"critical": 0, "warning": 1, "suggestion": 6},
+      "classes": ["implementation"],
+      "findings": [
+        {"id": "W14", "severity": "WARNING", "class": "implementation",
+         "ref": "AC15, specs/changes/pi-agent-sync/",
+         "summary": "Plain git log --follow does not cross the merge move of 3 files; -m does and they are R100. Fix rewrites a pushed branch: owner decides before the merge to develop",
+         "follow_up": false, "status": "open"}
+      ],
+      "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": "n/a", "ci_policy": "n/a",
+                "sync_agents": 0, "sync_pi_agents": 0, "pytest_tests": 0, "state_json": 0,
+                "manual_check": 0},
+      "mutation": null,
+      "hand_mutants": {"run": 0, "killed": 0},
+      "criteria": {"total": 6, "covered": 6},
+      "size": {"lines": 754, "forecast": null},
+      "report": "verify-report.md"
     }
   ] }
