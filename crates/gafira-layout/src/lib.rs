@@ -13,8 +13,8 @@ mod rects;
 
 pub use bounds::node_bounds;
 pub use error::LayoutError;
-pub use guides::place_guide;
+pub use guides::{GuideSpec, generate, place_guide};
 pub use rects::{Overflow, bleed_rect, margin_rect, overflow, safe_rect};
 
-pub use gafira_doc::GuideAxis;
+pub use gafira_doc::{Guide, GuideAxis};
 pub use gafira_geom::{Length, Rect, Unit};
