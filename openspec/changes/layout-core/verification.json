@@ -1,45 +1,25 @@
-{ "schema": 1, "change": "layout-core", "delivery": "D2", "rounds": [
+{ "schema": 1, "change": "layout-core", "delivery": "D3", "rounds": [
   {
-  "round": 1, "commit": "ad865cc", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "specifier, tdd-apply",
-  "counts": {"critical": 3, "warning": 1, "suggestion": 2},
+  "round": 1, "commit": "f2dafd1", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "specifier, tdd-apply",
+  "counts": {"critical": 4, "warning": 8, "suggestion": 2},
   "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-edit/src/set_property.rs:check_pages", "summary": "Property::Dpi skips the bleed check: 100 px bleed, 300 to 96 DPI leaves an invalid document that from_json refuses (ARQ-13)"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/validate.rs:check_pages", "summary": "Hand mutant H2 survives: layout validated on the first page only; no multi-page test"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/validate.rs:check_pages", "summary": "Hand mutant H1 survives: layout step before page sizes; L1 order has no test"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "FD-05(d), 02 4.17.2", "summary": "10 mm in px rejected at 550 of 10000 DPIs by rounding, none common; spec states no tolerance for a converted value"}
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-layout/src/bounds.rs:18", "summary": "Recursive walk aborts with stack overflow on a chain that from_json and validate accept: debug from depth 3000, release at 20000"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-111, tests/rects.rs:281", "summary": "ARQ-111 not proved: margin_rect never run twice, property compares with == not bytes; mutants M1 and M2 survive"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-layout/src/rects.rs:124, rects.rs:80", "summary": "overflow clamps -inf to 0 and margin_rect swallows an infinite width: both return Ok, against ARQ-110 and the sum row"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-110, tests/rects.rs:264", "summary": "Mutants M3a, M3b, M3c of the sum row survive; the sum test hits the range check; property omits margin_rect and node_bounds"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Strict TDD, G3", "summary": "Code before tests, RED by stubbing afterwards; no RED for ARQ-111"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "f2dafd1, ADR 0007", "summary": "One 871-line commit; ADR 0007 needs only row, clippy.toml and Cargo entries together"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules", "summary": "871 lines, 784 authored, over the ~700 ceiling with no owner OK recorded; owner decides"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-layout/src/rects.rs:80, FD-05", "summary": "Rounding gives Ok with no area in margin_rect and safe_rect above 2^53"},
+    {"id": "W5", "severity": "WARNING", "class": "ambiguity", "ref": "02 4.17.2, ADR 0009 rule 3", "summary": "Non-empty group with NaN in its own placement returns Ok; any-input rule and unread-box rule disagree"},
+    {"id": "W6", "severity": "WARNING", "class": "ambiguity", "ref": "bounds.rs, ARQ-110", "summary": "Skew at or past 90 gives a finite noise box; 02 does not say if engines re-check finite ranges"},
+    {"id": "W7", "severity": "WARNING", "class": "ambiguity", "ref": "rects.rs:80, 02 4.17.2, FD-05", "summary": "Size 0 box with zero margins is NoArea while the size 0 row says valid"},
+    {"id": "W8", "severity": "WARNING", "class": "ambiguity", "follow-up": true, "ref": "FD-05(d), 02 4.17.2", "summary": "D2 W1 carried: 10 mm in px refused at 550 of 10000 DPIs"}
   ],
   "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
   "mutation": null,
-  "hand_mutants": {"run": 4, "killed": 2},
-  "criteria": {"total": 15, "covered": 12},
-  "size": {"lines": 1157, "forecast": 420},
-  "report": "verify-report.md" },
-  {
-  "round": 2, "commit": "5e4e3f2", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply",
-  "counts": {"critical": 1, "warning": 1, "suggestion": 1},
-  "findings": [
-    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "c1551a2", "summary": "Fix commit deleted 9 tracked proptest-regressions files (17 seeds) of anim, pathops and time, undeclared and out of scope; restored seeds pass"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "FD-05(d), 02 4.17.2", "summary": "Open, held for owner or specifier: no tolerance stated for 10 mm in px"}
-  ],
-  "closed": ["C1", "C2", "C3", "S1"],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 2, "killed": 2},
-  "criteria": {"total": 15, "covered": 15},
-  "size": {"lines": 1416, "raw_lines": 1505, "forecast": 420},
-  "report": "verify-report.md" },
-  {
-  "round": 3, "commit": "9f093a3", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "PASS", "next": "tdd-apply",
-  "counts": {"critical": 0, "warning": 1, "suggestion": 1},
-  "findings": [
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "follow-up": true, "ref": "FD-05(d), 02 4.17.2", "summary": "Owner decision 2026-11-01: not a blocker, record at archive. No tolerance stated for 10 mm in px"},
-    {"id": "S2", "severity": "SUGGESTION", "follow-up": true, "ref": "verify-report.md Size", "summary": "Owner decision 2026-11-01: not a blocker, record at archive. Test redundancy"}
-  ],
-  "closed": ["C1", "C2", "C3", "C4", "S1"],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 0, "killed": 0},
-  "criteria": {"total": 15, "covered": 15},
-  "size": {"lines": 1424, "raw_lines": 1579, "forecast": 420},
+  "hand_mutants": {"run": 6, "killed": 1},
+  "criteria": {"total": 18, "covered": 15},
+  "size": {"lines": 871, "authored_lines": 784, "forecast": 420},
   "report": "verify-report.md" }
 ] }
