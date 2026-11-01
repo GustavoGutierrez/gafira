@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod golden;
 mod harness;
 
 pub use harness::{LawViolation, prop_command, try_prop_command};

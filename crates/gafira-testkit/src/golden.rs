@@ -1,0 +1,392 @@
+//! Pixel goldens (ARQ-113, ADR 0010): PNG read and write, a pure comparator and
+//! the candidate output used when a golden fails.
+//!
+//! A pixel criterion uses an analytic value first. A stored golden is the
+//! second choice, used only when no closed form exists. For `f32` output,
+//! [`quantize`] first turns the buffer into bytes with `round(c * 255)` on
+//! `[0, 1]`.
+
+use std::fmt;
+
+/// Largest stored golden, per axis, in pixels.
+pub const MAX_SIDE: u32 = 256;
+
+/// Bytes per pixel of a golden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channels {
+    /// One 8-bit channel (a mask).
+    Gray,
+    /// Four 8-bit channels, stored verbatim (premultiplied values included).
+    Rgba,
+}
+
+/// An 8-bit image buffer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Image {
+    width: u32,
+    height: u32,
+    channels: Channels,
+    bytes: Vec<u8>,
+}
+
+/// Why a golden operation failed.
+#[derive(Debug)]
+pub enum GoldenError {
+    /// The byte length does not match `width * height * channels`.
+    BadLength,
+    /// A side is zero or above [`MAX_SIDE`].
+    BadSize { width: u32, height: u32 },
+    /// An `f32` channel is NaN or infinite.
+    NonFinite,
+    /// A candidate name is not one non-empty component of `[a-z0-9_-]`.
+    BadName,
+    /// A candidate directory is, or resolves into, a `tests/golden` folder.
+    BadDir,
+    /// The PNG is not 8-bit grayscale or RGBA, or it is malformed.
+    BadPng(String),
+}
+
+impl fmt::Display for GoldenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BadLength => write!(f, "buffer length does not match the dimensions"),
+            Self::BadSize { width, height } => {
+                write!(f, "golden size {width}x{height} is outside 1..={MAX_SIDE}")
+            }
+            Self::NonFinite => write!(f, "non-finite f32 channel"),
+            Self::BadName => write!(
+                f,
+                "candidate name must be one non-empty component of [a-z0-9_-]"
+            ),
+            Self::BadDir => write!(f, "candidate directory must not be a tests/golden folder"),
+            Self::BadPng(why) => write!(f, "unsupported or malformed PNG: {why}"),
+        }
+    }
+}
+
+impl std::error::Error for GoldenError {}
+
+impl Channels {
+    const fn count(self) -> usize {
+        match self {
+            Self::Gray => 1,
+            Self::Rgba => 4,
+        }
+    }
+}
+
+fn check_size(width: u32, height: u32) -> Result<(), GoldenError> {
+    if (1..=MAX_SIDE).contains(&width) && (1..=MAX_SIDE).contains(&height) {
+        Ok(())
+    } else {
+        Err(GoldenError::BadSize { width, height })
+    }
+}
+
+impl Image {
+    /// Builds an image from `width`, `height`, `channels` and the bytes.
+    pub fn new(
+        width: u32,
+        height: u32,
+        channels: Channels,
+        bytes: &[u8],
+    ) -> Result<Self, GoldenError> {
+        let pixels = u64::from(width) * u64::from(height);
+        if u64::try_from(bytes.len()) != Ok(pixels * channels.count() as u64) {
+            return Err(GoldenError::BadLength);
+        }
+        Ok(Self {
+            width,
+            height,
+            channels,
+            bytes: bytes.to_vec(),
+        })
+    }
+
+    /// Width in pixels.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Height in pixels.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Channel layout.
+    pub fn channels(&self) -> Channels {
+        self.channels
+    }
+
+    /// The channel bytes, row-major, as stored.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Encodes an image as an 8-bit PNG with no colour chunks.
+pub fn encode_png(image: &Image) -> Result<Vec<u8>, GoldenError> {
+    check_size(image.width, image.height)?;
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, image.width, image.height);
+    encoder.set_color(match image.channels {
+        Channels::Gray => png::ColorType::Grayscale,
+        Channels::Rgba => png::ColorType::Rgba,
+    });
+    encoder.set_depth(png::BitDepth::Eight);
+    let bad = |e: png::EncodingError| GoldenError::BadPng(e.to_string());
+    let mut writer = encoder.write_header().map_err(bad)?;
+    writer.write_image_data(&image.bytes).map_err(bad)?;
+    writer.finish().map_err(bad)?;
+    Ok(out)
+}
+
+/// Decodes an 8-bit grayscale or RGBA PNG without any transformation.
+pub fn decode_png(png: &[u8]) -> Result<Image, GoldenError> {
+    let bad = |e: png::DecodingError| GoldenError::BadPng(e.to_string());
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
+    decoder.set_transformations(png::Transformations::IDENTITY);
+    let mut reader = decoder.read_info().map_err(bad)?;
+    let info = reader.info();
+    let (width, height) = (info.width, info.height);
+    check_size(width, height)?;
+    let channels = match (info.color_type, info.bit_depth) {
+        (png::ColorType::Grayscale, png::BitDepth::Eight) => Channels::Gray,
+        (png::ColorType::Rgba, png::BitDepth::Eight) => Channels::Rgba,
+        (color, depth) => return Err(GoldenError::BadPng(format!("{color:?} at {depth:?}"))),
+    };
+    let mut bytes = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .ok_or_else(|| GoldenError::BadPng("size overflow".into()))?
+    ];
+    let frame = reader.next_frame(&mut bytes).map_err(bad)?;
+    bytes.truncate(frame.buffer_size());
+    Image::new(width, height, channels, &bytes)
+}
+
+/// How strict a comparison is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Every byte equal.
+    Exact,
+    /// At most `floor(pixels / 1000)` pixels differ by more than 1/255 on any channel.
+    CrossPlatform,
+}
+
+/// Why two images do not match.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mismatch {
+    /// Width or height differ.
+    Size,
+    /// The channel layout differs.
+    Channels,
+    /// Pixels differ beyond what the mode allows.
+    Pixels { differing: usize, allowed: usize },
+}
+
+/// The mode for a target: exact on `x86_64-unknown-linux-gnu`, tolerant elsewhere.
+pub fn mode_for(arch: &str, os: &str, env: &str) -> Mode {
+    if (arch, os, env) == ("x86_64", "linux", "gnu") {
+        Mode::Exact
+    } else {
+        Mode::CrossPlatform
+    }
+}
+
+/// The mode for the target this crate was built for.
+pub fn current_mode() -> Mode {
+    let env = if cfg!(target_env = "gnu") {
+        "gnu"
+    } else {
+        "other"
+    };
+    mode_for(std::env::consts::ARCH, std::env::consts::OS, env)
+}
+
+/// Compares `actual` with the `expected` golden under `mode`.
+pub fn compare(mode: Mode, expected: &Image, actual: &Image) -> Result<(), Mismatch> {
+    if (expected.width, expected.height) != (actual.width, actual.height) {
+        return Err(Mismatch::Size);
+    }
+    if expected.channels != actual.channels {
+        return Err(Mismatch::Channels);
+    }
+    let step = expected.channels.count();
+    let pixels = expected
+        .bytes
+        .chunks_exact(step)
+        .zip(actual.bytes.chunks_exact(step));
+    let (differing, allowed) = match mode {
+        Mode::Exact => (pixels.filter(|(e, a)| e != a).count(), 0),
+        Mode::CrossPlatform => (
+            pixels
+                .filter(|(e, a)| e.iter().zip(*a).any(|(x, y)| x.abs_diff(*y) > 1))
+                .count(),
+            expected.bytes.len() / step / 1000,
+        ),
+    };
+    if differing > allowed {
+        Err(Mismatch::Pixels { differing, allowed })
+    } else {
+        Ok(())
+    }
+}
+
+/// Quantizes `f32` channels to bytes with `round(c * 255)` on `[0, 1]`.
+///
+/// Finite values outside `[0, 1]` saturate; NaN and infinities are an error,
+/// never a pixel.
+pub fn quantize(values: &[f32]) -> Result<Vec<u8>, GoldenError> {
+    if values.iter().any(|c| !c.is_finite()) {
+        return Err(GoldenError::NonFinite);
+    }
+    // The saturating `as u8` bounds to [0, 1] (0..=255).
+    Ok(values.iter().map(|c| (c * 255.0).round() as u8).collect())
+}
+
+/// Why a golden check failed.
+#[derive(Debug)]
+pub enum CheckError {
+    /// The name or the actual image is unusable; nothing was written.
+    Golden(GoldenError),
+    /// The images differ; the candidate was written to `candidate`.
+    Mismatch {
+        mismatch: Mismatch,
+        candidate: std::path::PathBuf,
+    },
+    /// The reference is empty or undecodable (a first golden); the candidate
+    /// was written to `candidate` for review.
+    Reference {
+        error: GoldenError,
+        candidate: std::path::PathBuf,
+    },
+    /// A candidate had to be written and could not be.
+    Io(std::io::Error),
+}
+
+/// Whether two adjacent components of `path` are `tests` and `golden`, ignoring ASCII case.
+fn is_tests_golden(path: &std::path::Path) -> bool {
+    let parts: Vec<Option<&str>> = path
+        .components()
+        .map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+    parts.windows(2).any(|w| {
+        matches!(w, [Some(a), Some(b)] if a.eq_ignore_ascii_case("tests") && b.eq_ignore_ascii_case("golden"))
+    })
+}
+
+/// Creates `dir` and rejects it when its resolved path is a `tests/golden` folder.
+fn prepare_dir(dir: &std::path::Path) -> Result<std::path::PathBuf, CheckError> {
+    std::fs::create_dir_all(dir).map_err(CheckError::Io)?;
+    let real = dir.canonicalize().map_err(CheckError::Io)?;
+    if is_tests_golden(&real) {
+        return Err(CheckError::Golden(GoldenError::BadDir));
+    }
+    Ok(real)
+}
+
+fn check_name(name: &str) -> Result<(), GoldenError> {
+    let ok = !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(GoldenError::BadName)
+    }
+}
+
+/// Checks `actual` against the stored golden `golden_png` in the mode of this target.
+///
+/// This is the entry for tests, normally through [`assert_golden!`]. On a
+/// failure with a usable `actual` the candidate is written to
+/// `<candidate_dir>/<name>.png`: a pixel, size or channel mismatch, and an
+/// empty or undecodable reference. A `candidate_dir` that is, or resolves
+/// into, a `tests/golden` folder is rejected (adjacent components, ASCII case
+/// ignored), and an existing entry at `<candidate_dir>/<name>.png` (file,
+/// symlink or hard link) is removed first, so the candidate is always a new
+/// file and is never written through a link. Not covered: a directory or
+/// symlink swapped between the check and the write, and non-ASCII or 8.3
+/// aliases of `tests` and `golden`. Accepting a candidate is a manual copy.
+/// [`compare`] stays the pure comparator and writes nothing.
+pub fn check(
+    name: &str,
+    golden_png: &[u8],
+    actual: &Image,
+    candidate_dir: &std::path::Path,
+) -> Result<(), CheckError> {
+    check_in(current_mode(), name, golden_png, actual, candidate_dir)
+}
+
+/// [`check`] with an explicit `mode`.
+pub fn check_in(
+    mode: Mode,
+    name: &str,
+    golden_png: &[u8],
+    actual: &Image,
+    candidate_dir: &std::path::Path,
+) -> Result<(), CheckError> {
+    check_name(name).map_err(CheckError::Golden)?;
+    if is_tests_golden(candidate_dir) {
+        return Err(CheckError::Golden(GoldenError::BadDir));
+    }
+    // An actual above the size limit could not be stored: no candidate.
+    check_size(actual.width, actual.height).map_err(CheckError::Golden)?;
+    let outcome = match decode_png(golden_png) {
+        Err(error) => Err(Failure::Reference(error)),
+        Ok(expected) => compare(mode, &expected, actual).map_err(Failure::Mismatch),
+    };
+    let Err(failure) = outcome else {
+        return Ok(());
+    };
+    let candidate = prepare_dir(candidate_dir)?.join(format!("{name}.png"));
+    let png = encode_png(actual).map_err(CheckError::Golden)?;
+    // Replace any entry at the path (symlink, hard link, file): never write through it.
+    match std::fs::remove_file(&candidate) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(CheckError::Io(e)),
+    }
+    std::fs::write(&candidate, png).map_err(CheckError::Io)?;
+    Err(match failure {
+        Failure::Mismatch(mismatch) => CheckError::Mismatch {
+            mismatch,
+            candidate,
+        },
+        Failure::Reference(error) => CheckError::Reference { error, candidate },
+    })
+}
+
+enum Failure {
+    Mismatch(Mismatch),
+    Reference(GoldenError),
+}
+
+/// Checks an image against a stored golden and panics on failure.
+///
+/// `assert_golden!(name, golden_png, &image)` expands `CARGO_TARGET_TMPDIR`
+/// in the calling crate, so the caller never picks the candidate directory.
+/// It compiles only in an integration test (`tests/*.rs`): in unit tests and
+/// doctests Cargo does not define `CARGO_TARGET_TMPDIR`. Load the reference
+/// with `include_bytes!`; for a first golden create an empty file, run the
+/// test, review the candidate and copy it by hand on
+/// `x86_64-unknown-linux-gnu`.
+#[macro_export]
+macro_rules! assert_golden {
+    ($name:expr, $golden_png:expr, $actual:expr) => {
+        if let ::std::result::Result::Err(e) = $crate::golden::check(
+            $name,
+            $golden_png,
+            $actual,
+            ::std::path::Path::new(env!("CARGO_TARGET_TMPDIR")),
+        ) {
+            ::std::panic!("golden `{}` failed: {:?}", $name, e);
+        }
+    };
+}

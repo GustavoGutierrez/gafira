@@ -151,6 +151,209 @@
           }
         ]
       }
+    },
+    {
+      "outcome_id": "testkit-golden",
+      "spec_id": "02-arquitectura-software",
+      "status": "verifying",
+      "flow": "Flow: standard | level: L2 | pack: new function | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator | reason: new module in an existing crate, covered by ARQ-113 and accepted ADR 0010; the comparator is a rule with an invariant (critical), the png edge is already stated in 02 section 9.2 and ADR 0010; no floor to full hit",
+      "scope": "gafira_testkit::golden per ADR 0010: PNG golden read and write, pure comparator with Exact and CrossPlatform modes, target-selected mode, candidate output under CARGO_TARGET_TMPDIR, f32 quantization helper. Single delivery.",
+      "non_goals": [
+        "gafira-raster or any renderer",
+        "gafira-cli regeneration command",
+        "any stored production golden beyond test fixtures",
+        "GPU tolerance of 02 section 10",
+        "a dependency from gafira-testkit on gafira-raster",
+        "follow-up 1 (flaky harness test)"
+      ],
+      "criteria": [
+        {
+          "id": "ARQ-113",
+          "status": "passed",
+          "text": "A reference with 1 altered byte fails on the same platform; across platforms with 1000 pixels, 1 pixel at 2/255 passes, 2 pixels at 2/255 fail, all at 1/255 pass; no test rewrites its reference",
+          "type": "property",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC1",
+          "status": "passed",
+          "text": "ADR 0010 format: Given a buffer of 8-bit RGBA (premultiplied values included) or one-channel grayscale, When encoded and decoded as PNG, Then every byte returns verbatim, with no colour chunks written",
+          "type": "property",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC2",
+          "status": "passed",
+          "text": "ADR 0010 comparator: CrossPlatform allows at most floor(pixels / 1000) pixels differing by more than 1/255 on any channel; Exact requires every byte equal; a size or channel mismatch fails in both modes",
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC3",
+          "status": "passed",
+          "text": "ADR 0010 mode: exact on x86_64-unknown-linux-gnu, tolerant on every other target",
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC4",
+          "status": "passed",
+          "text": "ADR 0010 regeneration: a failing golden writes the candidate under the integration test's CARGO_TARGET_TMPDIR and never under tests/golden",
+          "type": "integration",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC5",
+          "status": "passed",
+          "text": "ADR 0010 size: a stored golden above 256x256 px is rejected, 256x256 is accepted",
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC6",
+          "status": "passed",
+          "text": "ADR 0010 f32: quantization is round(c x 255) on [0, 1] and an analytic check stays the first choice in the module docs",
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
+        },
+        {
+          "id": "AC7",
+          "status": "passed",
+          "text": "ADR 0010 dependency: png is a normal dependency of gafira-testkit only, and cargo deny passes",
+          "type": "command",
+          "evidence": "verify round 3 at faefea6"
+        }
+      ],
+      "next_action": "T4 on gafira-testkit, then close",
+      "verify": {
+        "round": 3,
+        "commit": "faefea6",
+        "verdict": "PASS",
+        "next": "archive",
+        "findings": [
+          {
+            "id": "C1",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "golden.rs:347 check_in; AC4, ARQ-113",
+            "summary": "Names and directories closed; a symlink or hard link already at <dir>/<name>.png still lets a failing check overwrite the reference, and the rerun passes",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "C2",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "golden.rs check; AC3, AC4",
+            "summary": "No test calls check: M1 (ignores target mode) and M2 (always Ok) survive",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "C3",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "golden.rs compare; AC2, ARQ-113",
+            "summary": "M3 survives: allowance from bytes, not pixels, allows 4 on 1000 RGBA pixels; allowance tests are Gray only",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "C4",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "golden.rs check_in; AC4",
+            "summary": "M4 survives: a size or channel mismatch may write no candidate; tests cover pixel mismatch only",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "W1",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "golden.rs quantize; ADR 0010",
+            "summary": "NaN to 0 and saturation outside [0, 1] are not stated in the ADR; NaN can hide as a black pixel",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "W2",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "f355261 body; tests/golden_check.rs",
+            "summary": "Commit body says the bounds test covers NaN; no test mentions NaN, and M5 (NaN to 255) survives",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "W3",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "check_in; ADR 0010 Regeneration",
+            "summary": "Undecodable golden or oversized actual fails with no candidate; the ADR does not say how a first golden is made",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "W4",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "golden.rs compare; ADR 0010",
+            "summary": "Public compare fails with no candidate; docs do not name check as the entry; the ADR does not say which is the test API",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "W5",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "4cad5f3, 1c2866f, 6b69953",
+            "summary": "RED not provable: source and tests share commits one minute apart; only a proptest seed supports AC1; stubs, if any, are in no commit",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "W6",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "git diff --shortstat f3b9eaf HEAD",
+            "summary": "Owner's OK reported by the coordinator, not yet on record at 78c4369; size is now 1329 lines (1074 without state and lock)",
+            "follow_up": true,
+            "status": "closed"
+          },
+          {
+            "id": "W7",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "77bf09c, 78c4369 bodies",
+            "summary": "Notes off: ac5 test was RED on 02e8b6a (second half fails), and removing the encode_png guard is killed, not equivalent; correct in the next fix body",
+            "follow_up": true,
+            "status": "closed"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "FAIL",
+            "classes": [
+              "ambiguity",
+              "implementation"
+            ]
+          },
+          {
+            "round": 2,
+            "verdict": "FAIL",
+            "classes": [
+              "implementation"
+            ]
+          },
+          {
+            "round": 3,
+            "verdict": "PASS",
+            "classes": []
+          }
+        ]
+      }
     }
   ]
 }

@@ -32,3 +32,13 @@ ARQ-113 requires an analytic value first, then a lossless stored golden generate
 - **`insta` snapshots.** Right for text formats (02 §10), wrong for pixels: no per-pixel tolerance.
 - **Hashes only.** Cannot express the cross-platform tolerance.
 - **`#[ignore]` test that rewrites references.** ARQ-113 forbids any test rewriting its reference.
+
+## Amendment (owner decision, 2026-11-01)
+
+Findings of `testkit-golden` verify round 1 (W1, W3, W4, C1). The decisions above stand; these rules complete them.
+
+- **`f32` input.** Non-finite input is an error, never a pixel. Finite values outside `[0, 1]` saturate.
+- **Test entry.** `check` is the entry for tests. `compare` stays public as the pure comparator and writes nothing. A macro in the calling test crate supplies `CARGO_TARGET_TMPDIR`, so the caller does not choose the directory. Only that entry is for stored goldens.
+- **Candidate names.** A name is one path component of `[a-z0-9_-]`, with no separators. A candidate directory that resolves into a `tests/golden` folder is rejected.
+- **When a candidate is written.** On any failure with a usable actual buffer: pixel mismatch, size or channel mismatch, and an empty or undecodable reference. An actual buffer above the size limit fails with no candidate, because it could not be stored.
+- **First golden.** Create an empty file so `include_bytes!` compiles, run the test, review the candidate, and copy it by hand on `x86_64-unknown-linux-gnu`. Only the accepted PNG is committed, in a commit that says why.
