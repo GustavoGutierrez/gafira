@@ -92,3 +92,11 @@ Deviations: none. Notes: (a) the bleed is compared after conversion to mm with `
 - S1: module comment of `layout.rs` corrected.
 - New mutants (reverted): validate layout on the first page only -> `fd_05_fd_07_a_bad_value_on_a_later_page_is_found`, `fd_05_a_later_page_with_a_bad_value_is_rejected_on_load`; layout step before page sizes in `validate` -> `design_l1_page_sizes_are_reported_before_layout_data`; DPI path layout on first page only, or no layout loop -> `arq_13_a_dpi_change_that_breaks_a_bleed_is_refused`; DPI path layout before sizes -> `arq_13_a_dpi_change_reports_page_sizes_before_layout` (the first version of this test survived because no bleed broke at the chosen DPI; rewritten so both a size and a bleed break). All killed.
 - Not done: W1 (exact 10 mm comparison unchanged), S2 (no trimming).
+
+### D2 fix round 2 (verify round 2, C4)
+
+- C4: commit `c1551a2` deleted 9 tracked regression-seed files, out of scope. Restored byte for byte from `develop` with `git checkout develop -- <paths>`: `gafira-anim/tests/{color,easing,interpolate,sampling}.proptest-regressions`, `gafira-pathops/tests/prop_boolean.proptest-regressions`, `gafira-time/tests/{flicks,ranges,rates,timecode}.proptest-regressions`.
+- Check: `git diff --name-status develop HEAD -- '*.proptest-regressions'` is empty after the commit.
+- Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` all pass (931 passed, 0 failed). The test run created no new or changed `*.proptest-regressions` files.
+- Correction: the previous fix round (round 1) did not declare this deletion in its notes; it was an unintended side effect of the round.
+- No behaviour change: no RED step, no hand mutants. W1 and S2 remain follow-ups, untouched.
