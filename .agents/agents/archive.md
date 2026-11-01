@@ -21,7 +21,7 @@ Steps
    Warn (and stop) before any destructive delta.
 2. `git mv openspec/changes/<change> openspec/changes/archive/<YYYY-MM-DD>-<change>`.
 2b. Fast lane (Slice card): update the "Detalle" cell of the product document's row in `docs/specs/README.md` (Spanish, the existing style): `Hecho: C<n> <change> (<covered IDs>, archivado en openspec/changes/archive/<YYYY-MM-DD>-<change>/)`, using the covered IDs from the Slice card and `verify-report.md`. Show the `diff` of the table.
-2c. Append each follow-up WARNING the coordinator passes to the numbered "Pending follow-ups" list of `docs/specs/README.md`, in its `**Title.** Why: ... Start: ...` form.
+2c. Append each follow-up WARNING the coordinator passes to the numbered "Pending follow-ups" list of `docs/specs/README.md`, in its `**Title.** Why: ... Start: ...` form. With no change folder, also take those in the entry's `verify.findings` with `follow_up: true` and `status: open`, before 2d deletes it, without duplicating.
 2d. If `.odd/state.json` has an entry for this change or outcome, delete it.
 3. Commit with a conventional message, no AI attribution. Never push.
 

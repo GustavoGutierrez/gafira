@@ -43,7 +43,7 @@ ODD changes the default: new work on a capability an existing spec covers needs 
 
 `layout-core` is such a folder: its remaining deliveries D3 to D7 run with minimal notes (the evidence G3 and `verify` need, no narrative).
 
-With no folder, `tdd-apply` records its progress notes in the body of the delivery's last commit; `verify` writes `verify-report.md` and `verification.json` to the scratchpad path the coordinator gives it; `explorer` returns its result without a `spike.md`.
+With no folder, `tdd-apply` records its progress notes in the body of the delivery's last commit; `verify` writes `verify-report.md` and `verification.json` to the scratchpad path the coordinator gives it, and the coordinator keeps what must survive a session in the entry's `verify` field (`round`, `commit`, `verdict`, `next`, `findings`, `rounds`); `explorer` returns its result without a `spike.md`.
 
 The old path stays available until phase D of ADR 0011: when the owner says `flow: legacy`, the change runs with its folder and no level, and the Flow line ends in `| flow: legacy`.
 
@@ -59,9 +59,18 @@ The old path stays available until phase D of ADR 0011: when the owner says `flo
 | `criteria` | list of `{id, status, evidence}`: `id` is a product ID, delivery or AC; `status` is `pending`, `passed`, `failed` or `blocked`; `evidence` is a test, command or commit, omitted while pending |
 | `next_action` | one line |
 
-Only when the entry is the G0 artifact (no Slice card or Light spec holds these): `flow` (the Flow line), `scope` (with the serial delivery list when there is more than one), `non_goals`, `text` and `type` on a criterion the spec does not state, and `verify` (`{round, commit, verdict, next}` of the last run). Do not copy what git or the Slice card already hold.
+Only when the entry is the G0 artifact (no Slice card or Light spec holds these): `flow` (the Flow line), `scope` (with the serial delivery list when there is more than one), `non_goals`, `text` and `type` on a criterion the spec does not state, and `verify` (below). Do not copy what git or the Slice card already hold.
 
-Resume: check the branch, `git status`, the diff against `develop` and the tests before continuing. The entry is a pointer, not the truth: when it disagrees with git, git wins and the entry is corrected. Be idempotent: repeating a step must not duplicate a spec row or a commit, or overwrite correct code, and a resumed run does not redraft the plan.
+`verify` is `{round, commit, verdict, next, findings, rounds}`: the first four describe the last run; `findings` and `rounds` are optional, so older entries stay valid and `schema` stays 1.
+
+| Field | Content |
+|---|---|
+| `findings` | every CRITICAL and WARNING of any run, as `{id, severity, class, ref, summary, follow_up, status}` copied from `verification.json` (same ids, each unique across the entry's rounds; `summary` <=200 chars). `follow_up` is true for a WARNING marked follow-up. `status` is `open` or `closed`; a closure round's verdict closes a finding. SUGGESTIONs are not stored |
+| `rounds` | one `{round, verdict, classes}` row per verify run of the current delivery; `classes` holds the distinct classes of its CRITICAL and WARNING findings that are not follow-ups. A BLOCKED row is kept and does not count toward the stops; its re-run has the same round number and replaces the row |
+
+The coordinator commits this update on the delivery branch before routing, on PASS, FAIL and BLOCKED alike, because the scratchpad does not survive a session. When the next delivery of the same outcome starts after a PASS, it resets `rounds` and drops closed findings; open follow-ups stay until `archive` consumes them.
+
+Resume: check the branch, `git status`, the diff against `develop` and the tests before continuing. An outcome mid-delivery may be ahead of `develop`: list the unmerged branches matching the outcome id and trust the entry on the delivery branch. The entry is a pointer, not the truth: when it disagrees with git, git wins and the entry is corrected. Be idempotent: repeating a step must not duplicate a spec row or a commit, or overwrite correct code, and a resumed run does not redraft the plan.
 
 ## Flow (lite SDD)
 
