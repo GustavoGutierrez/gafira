@@ -153,3 +153,71 @@ pub fn decode_png(png: &[u8]) -> Result<Image, GoldenError> {
     bytes.truncate(frame.buffer_size());
     Image::new(width, height, channels, &bytes)
 }
+
+/// How strict a comparison is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Every byte equal.
+    Exact,
+    /// At most `floor(pixels / 1000)` pixels differ by more than 1/255 on any channel.
+    CrossPlatform,
+}
+
+/// Why two images do not match.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mismatch {
+    /// Width or height differ.
+    Size,
+    /// The channel layout differs.
+    Channels,
+    /// Pixels differ beyond what the mode allows.
+    Pixels { differing: usize, allowed: usize },
+}
+
+/// The mode for a target: exact on `x86_64-unknown-linux-gnu`, tolerant elsewhere.
+pub fn mode_for(arch: &str, os: &str, env: &str) -> Mode {
+    if (arch, os, env) == ("x86_64", "linux", "gnu") {
+        Mode::Exact
+    } else {
+        Mode::CrossPlatform
+    }
+}
+
+/// The mode for the target this crate was built for.
+pub fn current_mode() -> Mode {
+    let env = if cfg!(target_env = "gnu") {
+        "gnu"
+    } else {
+        "other"
+    };
+    mode_for(std::env::consts::ARCH, std::env::consts::OS, env)
+}
+
+/// Compares `actual` with the `expected` golden under `mode`.
+pub fn compare(mode: Mode, expected: &Image, actual: &Image) -> Result<(), Mismatch> {
+    if (expected.width, expected.height) != (actual.width, actual.height) {
+        return Err(Mismatch::Size);
+    }
+    if expected.channels != actual.channels {
+        return Err(Mismatch::Channels);
+    }
+    let step = expected.channels.count();
+    let pixels = expected
+        .bytes
+        .chunks_exact(step)
+        .zip(actual.bytes.chunks_exact(step));
+    let (differing, allowed) = match mode {
+        Mode::Exact => (pixels.filter(|(e, a)| e != a).count(), 0),
+        Mode::CrossPlatform => (
+            pixels
+                .filter(|(e, a)| e.iter().zip(*a).any(|(x, y)| x.abs_diff(*y) > 1))
+                .count(),
+            expected.bytes.len() / step / 1000,
+        ),
+    };
+    if differing > allowed {
+        Err(Mismatch::Pixels { differing, allowed })
+    } else {
+        Ok(())
+    }
+}
