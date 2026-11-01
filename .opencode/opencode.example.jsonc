@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Copy to .opencode/opencode.jsonc only if that file does not exist.
+  // Otherwise merge these entries into the existing project config.
+  // Replace placeholders with models available to you; remove // to enable.
+  "agents": {
+    // "coordinator": { "model": "provider/model" },
+    // "explorer": { "model": "provider/model#variant" },
+    // "verify": { "model": "provider/model" }
+  }
+}

@@ -1,0 +1,15 @@
+{ "schema": 1, "change": "agent-sync", "delivery": "agent-sync", "rounds": [
+  {"round": 1, "commit": "7cd2477d76a708bf78aa3e51b569d9dc019996b0", "mode": "light", "tier": "T0", "depth": "V1", "verdict": "FAIL", "next": "tdd-apply", "counts": {"critical": 4, "warning": 0, "suggestion": 0}, "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "tools/sync_agents.py:60-82", "summary": "Generated permissions broaden Claude source tool restrictions."},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "tools/sync_agents.py:132-139", "summary": "Write failures can truncate adapters or leave partial updates."},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "tools/sync_agents.py:126-129", "summary": "Stale symlink adapters escape synchronization and check."},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "openspec/changes/agent-sync/apply-progress.md:3", "summary": "Light/L1 flow needs escalation after size and safety findings."}
+  ], "gates": {"fmt": null, "clippy": null, "test": null, "deny": "n/a", "ci_policy": "n/a"}, "mutation": null, "hand_mutants": {"run": 0, "killed": 0}, "criteria": {"total": 5, "covered": 4}, "size": {"lines": 455, "forecast": null}, "report": "verify-report.md"},
+  {"round": 2, "commit": "39ab42b8a222d4fc616643bcbcaab45888910779", "mode": "standard", "tier": "T0", "depth": "V1", "verdict": "FAIL", "next": "tdd-apply", "counts": {"critical": 1, "warning": 0, "suggestion": 0}, "closed": ["C1", "C2", "C3"], "findings": [
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "openspec/changes/agent-sync/apply-progress.md:4", "summary": "L2 flow still records coordinator-selected mutation off, contrary to AGENTS.md."}
+  ], "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": "n/a", "ci_policy": "n/a"}, "mutation": null, "hand_mutants": {"run": 0, "killed": 0}, "criteria": {"total": 5, "covered": 5}, "size": {"lines": 644, "forecast": null}, "report": "verify-report.md"},
+  {"round": 3, "commit": "bc0ef6893d52619c4f6adae4bbbbb5b4d73fd6e9", "mode": "standard", "tier": "T0", "depth": "V1", "verdict": "PASS", "next": "archive", "counts": {"critical": 0, "warning": 2, "suggestion": 0}, "closed": ["C4"], "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md:148", "summary": "follow-up: combined net diff is 767 lines; assess or preserve individual delivery boundaries."},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": ".agents/agents/coordinator.md:101", "summary": "follow-up: separate AC6 amendment commit does not use the prescribed light spec amend subject."}
+  ], "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": "n/a", "ci_policy": "n/a"}, "mutation": null, "hand_mutants": {"run": 0, "killed": 0}, "criteria": {"total": 6, "covered": 6}, "size": {"lines": 767, "forecast": null}, "report": "verify-report.md"}
+] }

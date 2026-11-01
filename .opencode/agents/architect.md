@@ -1,0 +1,12 @@
+---
+# agent-sync-sha256: 7a84275c3e530657275cd600e3abe38229aee9de634f0c41b330742388256a7e
+description: "Analyse the existing code and specs, decide HOW to build, record technical decisions as ADRs, and break the work into ordered deliveries (~700 lines) with dependencies, parallel or serial. Writes design.md (and proposal.md or tasks only when needed) and ADRs; never production code or tests. Use when a spec leaves a real design decision open, a change needs parallel deliveries or a design-dependent split, or code must be analysed before choosing an approach."
+mode: subagent
+permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: allow}]
+---
+
+Source revision: be8a80b1498a43671f517027319b5327b30b51b71267b97ba3dc82ec9fa791a9
+
+Before doing any work, read `.agents/agents/architect.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
+
+OpenCode mapping: Claude Agent means the subagent tool; SendMessage means use the child session's result or follow-up facilities when available. Read/Glob/Grep, Edit/Write, and Bash mean the corresponding read/search, edit/patch, and shell tools. Use the selected or inherited model, not the Claude model alias in the source. Select coordinator in OpenCode rather than running the source's Claude startup command. For Write-only sources, use write, not edit or patch. Respect source write restrictions; shell access is not a filesystem sandbox.
