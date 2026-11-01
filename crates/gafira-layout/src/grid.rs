@@ -41,32 +41,98 @@ const MAX_VIEW_PX: (f64, f64) = (3840.0, 2160.0);
 /// Screen px added to each limit, so a view computed as `screen / zoom` still fits.
 const VIEW_EPSILON_PX: f64 = 1e-6;
 
+/// The line level that shows at a zoom: lines `k * unit / div`, every `every`-th major.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Level {
+    pub(crate) unit: f64,
+    pub(crate) div: f64,
+    pub(crate) every: i64,
+}
+
+impl Level {
+    /// The distance between two neighbouring lines.
+    pub(crate) fn spacing(self, field: &'static str) -> Result<f64, LayoutError> {
+        finite(field, self.unit / self.div)
+    }
+
+    /// Where line `k` sits, and whether it is major.
+    ///
+    /// A major line is `j * unit` exactly; multiplying before dividing can miss it by an ulp.
+    /// `k` is integer-valued, also negative.
+    pub(crate) fn line(self, field: &'static str, k: f64) -> Result<GridLine, LayoutError> {
+        let every = self.every as f64;
+        let major = k % every == 0.0;
+        let position = if major {
+            finite(field, (k / every) * self.unit)?
+        } else {
+            finite(field, k * self.unit / self.div)?
+        };
+        Ok(GridLine { position, major })
+    }
+}
+
 /// The lines `k * unit / div` inside `lo..=hi`, both ends included; every `every`-th is major.
 fn axis_lines(
     field: &'static str,
     (lo, hi): (f64, f64),
-    unit: f64,
-    div: f64,
-    every: i64,
+    level: Level,
 ) -> Result<Vec<GridLine>, LayoutError> {
-    let spacing = finite(field, unit / div)?;
+    let spacing = level.spacing(field)?;
     // The quotients round, so each bound is widened by one line and `contains` decides.
     let first = finite(field, (lo / spacing).floor())? as i64;
     let last = finite(field, (hi / spacing).ceil())? as i64;
     let mut lines = Vec::new();
     for k in first..=last {
-        let major = k % every == 0;
-        // A major line is `j * unit` exactly; multiplying before dividing can miss it by an ulp.
-        let position = if major {
-            finite(field, (k / every) as f64 * unit)?
-        } else {
-            finite(field, k as f64 * unit / div)?
-        };
-        if (lo..=hi).contains(&position) {
-            lines.push(GridLine { position, major });
+        let line = level.line(field, k as f64)?;
+        if (lo..=hi).contains(&line.position) {
+            lines.push(line);
         }
     }
     Ok(lines)
+}
+
+/// The level shown at `zoom` for `grid`, after the step and subdivision ranges.
+///
+/// `dpi` and `zoom` must already be finite, `dpi > 0` and `zoom` in range. The
+/// level is the one `grid_lines` draws, so snapping and drawing never differ.
+pub(crate) fn level(grid: &GridSettings, zoom: f64, dpi: f64) -> Result<Level, LayoutError> {
+    if !STEP_RANGE.contains(&grid.step.value()) {
+        return Err(LayoutError::OutOfRange { field: "step" });
+    }
+    if !SUBDIVISION_RANGE.contains(&grid.subdivisions) {
+        return Err(LayoutError::OutOfRange {
+            field: "subdivisions",
+        });
+    }
+    let step = convert("step", grid.step, Unit::Px, dpi)?;
+    let subdivisions = f64::from(grid.subdivisions);
+    let major_on_screen = finite("step", step * zoom)?;
+    if major_on_screen <= 0.0 {
+        return Err(LayoutError::OutOfRange { field: "step" });
+    }
+    Ok(if major_on_screen < MIN_SPACING_PX {
+        let mut multiple = 1.0;
+        while major_on_screen * multiple < MIN_SPACING_PX {
+            multiple *= 2.0;
+        }
+        Level {
+            unit: finite("step", step * multiple)?,
+            div: 1.0,
+            every: 1,
+        }
+    } else if zoom >= MINOR_MIN_ZOOM && major_on_screen / subdivisions >= MIN_SPACING_PX {
+        Level {
+            unit: step,
+            div: subdivisions,
+            every: i64::from(grid.subdivisions),
+        }
+    } else {
+        Level {
+            unit: step,
+            div: 1.0,
+            every: 1,
+        }
+    })
 }
 
 /// The grid lines to draw over `view`, a region of the page in px.
@@ -113,34 +179,9 @@ pub fn grid_lines(
     {
         return Err(LayoutError::OutOfRange { field: "view" });
     }
-    if !STEP_RANGE.contains(&grid.step.value()) {
-        return Err(LayoutError::OutOfRange { field: "step" });
-    }
-    if !SUBDIVISION_RANGE.contains(&grid.subdivisions) {
-        return Err(LayoutError::OutOfRange {
-            field: "subdivisions",
-        });
-    }
-    let step = convert("step", grid.step, Unit::Px, dpi)?;
-    let subdivisions = f64::from(grid.subdivisions);
-    let major_on_screen = finite("step", step * zoom)?;
-    if major_on_screen <= 0.0 {
-        return Err(LayoutError::OutOfRange { field: "step" });
-    }
-    // (line spacing numerator, divisor, major every n lines)
-    let (unit, div, every) = if major_on_screen < MIN_SPACING_PX {
-        let mut multiple = 1.0;
-        while major_on_screen * multiple < MIN_SPACING_PX {
-            multiple *= 2.0;
-        }
-        (finite("step", step * multiple)?, 1.0, 1)
-    } else if zoom >= MINOR_MIN_ZOOM && major_on_screen / subdivisions >= MIN_SPACING_PX {
-        (step, subdivisions, i64::from(grid.subdivisions))
-    } else {
-        (step, 1.0, 1)
-    };
+    let level = level(grid, zoom, dpi)?;
     Ok(GridLines {
-        vertical: axis_lines("view", (view.x0, view.x1), unit, div, every)?,
-        horizontal: axis_lines("view", (view.y0, view.y1), unit, div, every)?,
+        vertical: axis_lines("view", (view.x0, view.x1), level)?,
+        horizontal: axis_lines("view", (view.y0, view.y1), level)?,
     })
 }
