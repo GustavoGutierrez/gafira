@@ -1,13 +1,13 @@
 ---
-# pi-agent-sync-sha256: 22a51e2664754a06f0e7df485c5dbede52c914d93385c755e7a4d83d87662c75
+# pi-agent-sync-sha256: 7429f40290cae9d6a570235b947395c6efa815abb36106c4c757ebcb6645252d
 name: archive
-description: "Close a change after a PASS verdict: move the change folder to the archive; fast-lane changes update the docs/specs/README.md status table with the covered IDs; changes with delta specs merge them into openspec/specs."
+description: "Close a change after a PASS verdict: move the change folder to the archive; fast-lane changes update the specs/README.md status table with the covered IDs; changes with delta specs merge them into specs/capabilities."
 tools: read, edit, write, find, grep, bash
 ---
 
 # Pi agent: archive
 
-Source frontmatter revision: 9b59c6896c398ed41bbe24051b2449d207649f65e352a421a26c54a0d90e85b9
+Source frontmatter revision: e79e4fe80b3526cb802b04aa4df33a1cac1bf27cc7fb5cd9e6d397e0c6213a1e
 
 Before doing any work, read `.agents/agents/archive.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this definition supplies Pi's tool names and the model from `.pi/subagents.json`. The source is the single source of truth: read it again if it changed since this definition was generated.
 

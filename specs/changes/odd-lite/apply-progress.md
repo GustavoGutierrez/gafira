@@ -82,10 +82,14 @@ Remaining hits of the old names, all deliberate (case-insensitive for the tool n
 | `specs/changes/odd-lite/verify-report.md` | 34, 49, 88, 150, 170, 172, 280, 285 | past verify rounds, dated evidence |
 | `specs/changes/odd-lite/verify-report.md` | 335, 342, 353, 386, 393, 409, 418, 419 | the report of verify round 1 of this delivery, which quotes the old names |
 | `specs/changes/odd-lite/verification.json` | 100 | finding summary of that same round |
+| `specs/changes/pi-agent-sync/apply-progress.md` | 11, 56 | that change's AC6 and its evidence, moved byte for byte |
+| `specs/changes/pi-agent-sync/verify-report.md` | 6, 7, 41, 43, 56 | that change's verify report, dated evidence, moved byte for byte |
 | `CHANGELOG.md` | 11, 24 | past release text, capitalised tool name |
 | `docs/methodology/odd-ligero-migracion.md` | 35 | owner's brief, names the third-party tool |
 
 This section names those hits without quoting them, so it adds none.
+
+W14 (verify round 3): the first merge of `develop` moved the `pi-agent-sync` folder inside merge commit `4082d84`, so plain `git log --follow` did not cross that move, only `-m` did. Owner decision, 2026-11-01: redo the merge on a new branch, `chore/specs-consolidation-2` cut from `5808ad0`, with no history rewrite: a plain merge, the rename alone in its own commit (R100), then the regenerated `.pi/agents/*` and these notes. `chore/specs-consolidation` stays at `4082d84` as the backup.
 
 Deviations
 - `.gitignore` gained `__pycache__/` (coordinator request): the sync tests left untracked bytecode.
