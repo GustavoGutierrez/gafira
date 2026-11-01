@@ -4,8 +4,10 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -54,20 +56,38 @@ def parse_source(path):
 
 
 def rule(action, resource, effect):
+    if action == "*":
+        action = '"*"'
     return f'  - {{action: {action}, resource: {json.dumps(resource)}, effect: {effect}}}\n'
 
 
 def render(fields, tools, source_hash, names):
     name = fields["name"]
     body = f'description: {json.dumps(fields["description"], ensure_ascii=False)}\n'
-    body += f'mode: {"primary" if name == "coordinator" else "subagent"}\npermissions:\n'
-    body += rule("subagent", "*", "deny")
+    body += f'mode: {"primary" if name == "coordinator" else "subagent"}\n'
+    rules = [rule("*", "*", "deny"), rule("external_directory", "*", "ask"),
+             rule("subagent", "*", "deny")]
+    for tool, action in (("Read", "read"), ("Glob", "glob"), ("Grep", "grep")):
+        if tool in tools:
+            rules.append(rule(action, "*", "allow"))
+    if "Read" in tools:
+        for pattern in ("*.env", "*.env.*", "**/.env", "**/.env.*", "**/*.key", "**/*.pem",
+                        "**/.ssh/**", "**/.aws/credentials", "**/.config/gh/hosts.yml",
+                        "**/.credentials/**", "**/credentials.json", "**/secrets/**", "**/Library/Keychains/**"):
+            rules.append(rule("read", pattern, "deny"))
+    if "Bash" in tools:
+        rules.append(rule("shell", "*", "ask"))
+    if {"Edit", "Write"} & set(tools):
+        target = "openspec/changes/*/spike.md" if name == "explorer" else "*"
+        rules.append(rule("edit", target, "allow"))
+    else:
+        rules.append(rule("edit", "*", "deny"))
     if name == "coordinator":
+        rules.append(rule("question", "*", "allow"))
         for child in sorted(set(names) | {"general"}):
             if child != name:
-                body += rule("subagent", child, "allow")
-    if not ({"Edit", "Write"} & set(tools)):
-        body += rule("edit", "*", "deny")
+                rules.append(rule("subagent", child, "allow"))
+    body += "permissions: [" + ", ".join(r.strip()[2:] for r in rules) + "]\n"
     body += "---\n\n"
     body += f"Source revision: {source_hash}\n\n"
     body += (f"Before doing any work, read `.agents/agents/{name}.md` and follow its entire "
@@ -78,7 +98,8 @@ def render(fields, tools, source_hash, names):
              "Read/Glob/Grep, Edit/Write, and Bash mean the corresponding read/search, "
              "edit/patch, and shell tools. Use the selected or inherited model, not the "
              "Claude model alias in the source. Select coordinator in OpenCode rather "
-             "than running the source's Claude startup command. Respect source write restrictions; shell "
+             "than running the source's Claude startup command. For Write-only sources, use write, "
+             "not edit or patch. Respect source write restrictions; shell "
              "access is not a filesystem sandbox.\n")
     return "---\n" + MARKER + digest(body) + "\n" + body
 
@@ -89,6 +110,46 @@ def managed(text):
         return False
     line, sep, body = text[len(prefix):].partition("\n")
     return bool(sep and re.fullmatch(r"[a-f0-9]{64}", line) and line == digest(body))
+
+
+def install(dest, expected, changes, existing):
+    dest.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".agent-sync-", dir=dest.parent))
+    installed = []
+    preserve = False
+    try:
+        for index, name in enumerate(changes):
+            target = dest / name
+            if name in existing:
+                os.link(target, stage / f"old-{index}")
+            with (stage / f"new-{index}").open("wb") as file:
+                file.write(expected[name].encode("utf-8"))
+                file.flush()
+                os.fsync(file.fileno())
+            if name in existing:
+                os.chmod(stage / f"new-{index}", target.stat().st_mode & 0o777)
+        for index, name in enumerate(changes):
+            os.replace(stage / f"new-{index}", dest / name)
+            installed.append((index, name))
+    except OSError as error:
+        failures = []
+        for index, name in reversed(installed):
+            try:
+                if name in existing:
+                    os.replace(stage / f"old-{index}", dest / name)
+                else:
+                    (dest / name).unlink()
+            except OSError as rollback_error:
+                failures.append(f"{name}: {rollback_error}")
+        if failures:
+            preserve = True
+            raise OSError(f"{error}; rollback failed: {', '.join(failures)}; backups: {stage}") from error
+        raise
+    finally:
+        if not preserve:
+            for path in stage.iterdir():
+                path.unlink()
+            stage.rmdir()
 
 
 def sync(root, check):
@@ -109,7 +170,7 @@ def sync(root, check):
         raise ValueError("missing coordinator or delegation capability")
     expected = {name + ".md": render(*agent, sorted(agents)) for name, agent in agents.items()}
     existing = {p.name: p for p in dest.iterdir()} if dest.exists() else {}
-    conflicts = []
+    conflicts = [f"unsafe destination symlink: {path}" for path in existing.values() if path.is_symlink()]
     changes = []
     for name, content in expected.items():
         path = existing.get(name)
@@ -134,9 +195,7 @@ def sync(root, check):
     if check:
         return 1 if changes else 0
     if changes:
-        dest.mkdir(parents=True, exist_ok=True)
-        for name in changes:
-            (dest / name).write_text(expected[name], encoding="utf-8")
+        install(dest, expected, changes, existing)
     return 0
 
 

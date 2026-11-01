@@ -1,12 +1,19 @@
 import hashlib
+import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from fnmatch import fnmatchcase
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "sync_agents.py"
+spec = importlib.util.spec_from_file_location("sync_agents", SCRIPT)
+sync_agents = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sync_agents)
 
 
 class AgentSyncTests(unittest.TestCase):
@@ -40,6 +47,7 @@ class AgentSyncTests(unittest.TestCase):
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.dest.iterdir()})
         coordinator = before["coordinator.md"].decode()
         verify = before["verify.md"].decode()
+        self.assertIn('action: "*"', coordinator)
         self.assertIn("mode: primary", coordinator)
         self.assertIn('resource: "verify"', coordinator)
         self.assertIn('resource: "general"', coordinator)
@@ -121,6 +129,111 @@ class AgentSyncTests(unittest.TestCase):
         (self.source / "verify.md").symlink_to(self.source / "coordinator.md")
         self.assertNotEqual(self.run_sync().returncode, 0)
         self.assertFalse(self.dest.exists())
+
+    def test_permissions_use_allowlist_with_explorer_write_scope(self):
+        self.write_agent("explorer", "Read, Grep, Glob, Bash, Write")
+        self.assertEqual(self.run_sync().returncode, 0)
+        import re
+        def effect(name, action, resource="*"):
+            text = (self.dest / f"{name}.md").read_text()
+            rules = re.findall(r'\{action: "?([\w*]+)"?, resource: "([^"]+)", effect: (\w+)\}', text)
+            return [e for a, r, e in rules if fnmatchcase(action, a) and fnmatchcase(resource, r)][-1]
+        self.assertEqual(effect("coordinator", "question"), "allow")
+        self.assertEqual(effect("coordinator", "subagent", "verify"), "allow")
+        self.assertEqual(effect("coordinator", "read", "/home/user/.ssh/id_rsa"), "deny")
+        for action in ("execute", "skill", "webfetch", "example_mcp_tool"):
+            self.assertEqual(effect("coordinator", action), "deny")
+        self.assertEqual(effect("verify", "subagent", "explorer"), "deny")
+        self.assertEqual(effect("verify", "edit", "src/lib.rs"), "deny")
+        self.assertNotEqual(effect("verify", "shell"), "deny")
+        self.assertEqual(effect("explorer", "edit", "src/lib.rs"), "deny")
+        self.assertEqual(effect("explorer", "edit", "openspec/changes/demo/spike.md"), "allow")
+
+    def test_stale_and_unrelated_destination_symlinks_are_rejected(self):
+        self.assertEqual(self.run_sync().returncode, 0)
+        (self.source / "verify.md").unlink()
+        (self.dest / "verify.md").unlink()
+        (self.dest / "verify.md").symlink_to(self.root / "missing")
+        before = (self.dest / "coordinator.md").read_bytes()
+        result = self.run_sync()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("verify.md", result.stderr)
+        self.assertEqual(before, (self.dest / "coordinator.md").read_bytes())
+        self.assertTrue((self.dest / "verify.md").is_symlink())
+        (self.dest / "verify.md").unlink()
+        (self.dest / "custom.md").symlink_to(self.root / "missing")
+        self.assertNotEqual(self.run_sync("--check").returncode, 0)
+        self.assertTrue((self.dest / "custom.md").is_symlink())
+
+    def test_staging_failure_never_changes_existing_files(self):
+        self.assertEqual(self.run_sync().returncode, 0)
+        before = {p.name: p.read_bytes() for p in self.dest.iterdir()}
+        self.write_agent("verify", "Read, Grep, Glob, Bash", "Changed instructions.\n")
+        with patch.object(sync_agents.os, "fsync", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                sync_agents.sync(self.root, False)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.dest.iterdir()})
+
+    def test_replace_failure_rolls_back_old_files_and_new_files(self):
+        self.assertEqual(self.run_sync().returncode, 0)
+        before = {p.name: p.read_bytes() for p in self.dest.iterdir()}
+        self.write_agent("coordinator", "Agent, SendMessage, Read, Edit, Write, Glob, Grep, Bash", "New body\n")
+        self.write_agent("explorer", "Read, Grep, Glob, Bash, Write")
+        self.write_agent("verify", "Read, Grep, Glob, Bash", "New body\n")
+        real_replace = os.replace
+        calls = 0
+        def fail_third(source, dest):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise OSError("replace failed")
+            return real_replace(source, dest)
+        with patch.object(sync_agents.os, "replace", side_effect=fail_third):
+            with self.assertRaises(OSError):
+                sync_agents.sync(self.root, False)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.dest.iterdir()})
+
+    def test_partial_stage_write_failure_leaves_destinations_unchanged(self):
+        self.assertEqual(self.run_sync().returncode, 0)
+        before = {p.name: p.read_bytes() for p in self.dest.iterdir()}
+        self.write_agent("verify", "Read, Grep, Glob, Bash", "New body\n")
+        real_open = Path.open
+        class BrokenWrite:
+            def __init__(self, path):
+                self.file = real_open(path, "wb")
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.file.close()
+            def write(self, data):
+                self.file.write(data[:8])
+                raise OSError("disk full")
+        def open_file(path, *args, **kwargs):
+            return BrokenWrite(path) if path.name.startswith("new-") else real_open(path, *args, **kwargs)
+        with patch.object(Path, "open", open_file):
+            with self.assertRaises(OSError):
+                sync_agents.sync(self.root, False)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.dest.iterdir()})
+
+    def test_failed_rollback_retains_backups(self):
+        self.assertEqual(self.run_sync().returncode, 0)
+        original = (self.dest / "coordinator.md").read_bytes()
+        self.write_agent("coordinator", "Agent, SendMessage, Read, Edit, Write, Glob, Grep, Bash", "New body\n")
+        self.write_agent("verify", "Read, Grep, Glob, Bash", "New body\n")
+        real_replace = os.replace
+        calls = 0
+        def fail_from_second(source, dest):
+            nonlocal calls
+            calls += 1
+            if calls >= 2:
+                raise OSError("replace failed")
+            return real_replace(source, dest)
+        with patch.object(sync_agents.os, "replace", side_effect=fail_from_second):
+            with self.assertRaisesRegex(OSError, "rollback failed.*backups:"):
+                sync_agents.sync(self.root, False)
+        stages = list(self.dest.parent.glob(".agent-sync-*"))
+        self.assertEqual(len(stages), 1)
+        self.assertEqual((stages[0] / "old-0").read_bytes(), original)
 
 
 if __name__ == "__main__":

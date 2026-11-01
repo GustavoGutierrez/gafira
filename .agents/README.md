@@ -17,6 +17,15 @@ and remove obsolete adapters yourself, then rerun. Unrelated user agents are
 left alone. Do not edit generated files; edit their sources instead. The marker
 detects accidental edits, not malicious tampering.
 
+Synchronization stages and flushes complete new files and keeps hard-linked
+backups before replacing any target. On a write or replace error it rolls back
+installed files; if rollback itself fails it reports the backup directory for
+manual recovery. Filesystem support for hard links is required. Do not run
+concurrent syncs or edit destinations during a sync. A process crash, power loss,
+or rollback failure can leave a mixed generation and staging files; inspect the
+reported/stale `.opencode/.agent-sync-*` directory and recover manually. This is
+not a crash-atomic multi-file transaction.
+
 ## Use the coordinator
 
 In OpenCode's agent selector, choose `coordinator` as the primary agent, or run:
@@ -33,12 +42,22 @@ Claude-specific Agent, SendMessage and tool names are mapped to OpenCode's
 subagent, child-result and corresponding tools in the adapter.
 
 The coordinator can call the named project subagents and OpenCode's `general`
-agent for the existing agent-definition workflow. Project subagents cannot
-launch children. `mutants` and `verify` deny OpenCode edit tools, but keep
-shell access for their specified work; `verify` needs shell to write reports.
-These are workflow restrictions, **not a shell sandbox**. Global or managed
-hard-deny policies can still block actions. Actual model-driven delegation and
-source reading depend on the runtime and have not been verified by the sync
-script itself. Use `/reload` if OpenCode has cached old definitions.
+agent for the existing agent-definition workflow. Adapters deny unspecified
+actions, including MCP, `execute`, `skill`, web and child delegation; only the
+coordinator may ask questions or delegate. Agents read skill files directly as
+their sources specify. Shell and external-directory access require approval;
+`verify` uses shell to write its reports. `mutants` and `verify` deny edit tools.
+
+OpenCode combines Write, Edit and patch under `edit`: explorer's edit permission
+is limited to `openspec/changes/*/spike.md`, but cannot enforce Write-only
+within that path. Its experiments use shell for scratch files. Shell is **not a
+sandbox**, so path rules do not prevent shell writes. Agent permission rules
+are evaluated after global permission rules: the explicit read/other allowances
+can override global denies; use hard-deny policies for non-overridable limits.
+The adapters deny common environment/key reads, but cannot reproduce arbitrary
+user-specific global read rules. If global instructions require MCP or skills,
+these adapters deny those tools and the workflow must be adjusted explicitly.
+Actual model-driven delegation and source reading depend on the runtime; the
+sync script does not verify them. Use `/reload` if definitions are cached.
 
 Tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_agent_sync.py -v`.

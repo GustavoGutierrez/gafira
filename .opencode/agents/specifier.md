@@ -1,13 +1,12 @@
 ---
-# agent-sync-sha256: 9eb27bdd80357324adcc930b4c4880da814eb91abcfd04b5df487037aac332a9
+# agent-sync-sha256: 175c6b78515f663fce51364d6b4b8d7d7bb81fe114f1e68e6c085f6f4d5ab262
 description: "Turn an owner request into clear specifications: scope, requirements with Given/When/Then scenarios, acceptance criteria, constraints, edge cases, non-goals and open questions. Defines WHAT to build, never HOW. In the fast lane fixes the product spec in docs/specs when tdd-apply or verify report an ambiguity; otherwise writes OpenSpec delta specs, or product specs when the owner asks. Use for a new request, or when a spec is missing or ambiguous."
 mode: subagent
-permissions:
-  - {action: subagent, resource: "*", effect: deny}
+permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: allow}]
 ---
 
 Source revision: b7152a1f827ab09ff3cbfda8e06cdac8e134d17692f4940ab4b35e075758732c
 
 Before doing any work, read `.agents/agents/specifier.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
 
-OpenCode mapping: Claude Agent means the subagent tool; SendMessage means use the child session's result or follow-up facilities when available. Read/Glob/Grep, Edit/Write, and Bash mean the corresponding read/search, edit/patch, and shell tools. Use the selected or inherited model, not the Claude model alias in the source. Select coordinator in OpenCode rather than running the source's Claude startup command. Respect source write restrictions; shell access is not a filesystem sandbox.
+OpenCode mapping: Claude Agent means the subagent tool; SendMessage means use the child session's result or follow-up facilities when available. Read/Glob/Grep, Edit/Write, and Bash mean the corresponding read/search, edit/patch, and shell tools. Use the selected or inherited model, not the Claude model alias in the source. Select coordinator in OpenCode rather than running the source's Claude startup command. For Write-only sources, use write, not edit or patch. Respect source write restrictions; shell access is not a filesystem sandbox.
