@@ -43,8 +43,6 @@ ODD changes the default: new work on a capability an existing spec covers needs 
 
 A change folder lives in `specs/changes/<change>/`, whether it comes from full mode, L3, work no spec covers or `flow: legacy`; it closes into `specs/history/<date>-<change>/`.
 
-`layout-core` is such a folder: its remaining deliveries D3 to D7 run with minimal notes (the evidence G3 and `verify` need, no narrative).
-
 With no folder, `tdd-apply` records its progress notes in the body of the last implementer commit of the delivery (skipping coordinator commits that touch only `.odd/state.json`); `verify` writes `verify-report.md` and `verification.json` to the scratchpad path the coordinator gives it, and the coordinator keeps what must survive a session in the entry's `verify` field (`round`, `commit`, `verdict`, `next`, `findings`, `rounds`); `explorer` returns its result without a `spike.md`.
 
 The old path stays available until phase D of ADR 0011: when the owner says `flow: legacy`, the change runs with its folder and no level, and the Flow line ends in `| flow: legacy`.
@@ -201,10 +199,8 @@ Delta specs use `## ADDED Requirements`, `## MODIFIED Requirements` (replaces th
 Archive merge (the only step that edits main specs; only for changes with delta specs; fast-lane changes have none, and `specs/capabilities/` stays as the record of past changes):
 - No main spec for the capability yet: copy the delta with `cp`, then `diff` it.
 - Main spec exists: apply the delta block by block (append ADDED, replace MODIFIED, delete REMOVED), keep every other requirement untouched, then show a `diff` of the result.
-- A delta that targets a base spec still inside an unarchived change (see the note at the top of `domain-color/specs/workspace-tooling` and `domain-doc/specs/workspace-tooling`) means archive the older change first: `workspace-scaffold`, then `domain-color`, then `domain-doc`.
+- A delta that targets a base spec still inside an unarchived change means archive the older change first.
 - Warn before any destructive delta (REMOVED, or MODIFIED that drops scenarios).
-
-`workspace-scaffold` and `domain-color` are merged to `main` but not archived yet; archive them with the flow above before `domain-doc`.
 
 ## Skills
 
