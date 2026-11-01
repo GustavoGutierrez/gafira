@@ -358,3 +358,8 @@ Measured (`git diff --shortstat 78906a8 HEAD`): see the result of the round; abo
 
 - `.cargo/mutants.toml`: the `grid.rs` entry is now `grid\.rs:113:27: ... in level$` and the `snap.rs` entry `snap\.rs:98:13: ... in Candidate::beats$`; each matches one mutant (`grid.rs:115:42 < -> <=`, the doubling loop, is not excluded; `beats` has a single `<` after the tuple rewrite).
 - `cargo mutants -p gafira-layout` on `grid.rs` and `snap.rs`: 126 tested, 116 caught, 6 unviable, 4 timeouts (caught), 0 survivors; no new test needed.
+
+## Fix round T4 (verify Round 3: C5, W6)
+
+- C5: `fd_07_a_mm_steps_keep_a_line_on_either_view_edge` and `fd_07_c_at_most_2000_lines_at_any_zoom_on_a_4k_screen` moved unchanged to `tests/grid_huge.rs` (sorts after `grid`). Mutants `grid.rs:82:35` and `83:34` (`/` to `*`): the `grid` binary now fails on assertions (`fd_07_a_every_line_between_two_edge_lines_is_kept`, plus `arq_111_...` / `fd_07_a_majors_sit_exactly_on_multiples_of_the_step`) and `cargo test` stops about 2 to 3 s after start (incl. earlier binaries). Both reverted, not committed. No production code changed.
+- W6: `.cargo/mutants.toml` reason for `snap.rs:98:13` now says the tied candidates differ at most in the sign of a zero, which the spec treats as one target.
