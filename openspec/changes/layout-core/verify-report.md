@@ -2,7 +2,7 @@
 
 Change `layout-core`, delivery D2, round 1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
 
-Current state: round 2 at `5e4e3f2`, **FAIL**. 1 CRITICAL (C4), 1 WARNING (W1, held), 1 SUGGESTION (S2, with the owner). C1, C2, C3 and S1 are closed. See "Round 2" at the end.
+Current state: round 3 at `9f093a3`, **PASS** for D2. 0 CRITICAL, 1 WARNING (W1, `follow-up`), 1 SUGGESTION (S2, `follow-up`). C1, C2, C3, C4 and S1 are closed. D3 to D7 remain. See "Round 3" at the end.
 
 ## Round 1
 
@@ -193,4 +193,68 @@ Without the verify artifacts: 1 416 insertions. There are 199 deletions, 71 of t
 
 A guard-less script of mine failed to `cd` into its scratch export and ran in the repo. It wrote hand mutants H1 and H2 to the tracked file `crates/gafira-doc/src/validate.rs` and ran tests there. I saw it in `git status`, ran `git restore` on that one file, and confirmed its hash equals `HEAD` (`09893d3`). No other file changed, no seed file or probe stayed behind, and nothing was committed. All results of that run were discarded; every figure above comes from a re-run on clean exports.
 
-next: tdd-apply (implementation); W1 (ambiguity) held for the owner or `specifier`
+## Round 3 (closure)
+
+Commit verified: `9f093a3`. Verdict: **PASS** for D2. Counts: 0 CRITICAL, 1 WARNING, 1 SUGGESTION. Per class: ambiguity 1 (WARNING, `follow-up`); implementation 0; architecture 0; claim 0. `mutation: archive`, so no `mutants` report and no mutation finding. No new probes and no hand mutants, as this is a closure round.
+
+The work ran on a clean export and a scratch clone, each entered through a guarded `cd`. No command built or tested in the repo.
+
+### Earlier findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C4 | Closed | See below |
+| C1, C2, C3, S1 | Closed in round 2, still closed | No `*.rs`, `*.toml` or `Cargo.lock` file changed between `5e4e3f2` and `9f093a3`, so the round 2 evidence still holds |
+| W1 | `follow-up`, not a blocker | class: `ambiguity`. Owner decision, 2026-11-01. Exact comparison unchanged. To be recorded at archive |
+| S2 | `follow-up`, not a blocker | Owner decision, 2026-11-01. To be recorded at archive |
+
+C4 evidence:
+
+- All 9 `*.proptest-regressions` files have the same blob hash at `develop` and at HEAD, and `git diff --quiet develop HEAD` on them exits 0. They hold 17 pinned cases, as before.
+- The test run left them unchanged: all 9 hashes in the export still match HEAD, and it created no tenth file. Replay of each seed was not observed directly.
+- `git diff --diff-filter=D develop HEAD` lists no file. No tracked file is deleted at HEAD.
+- `git diff --name-status develop HEAD` lists 12 files, all in D2 scope: 7 in `crates/gafira-doc/src` and `crates/gafira-edit/src` modified, 2 test files added, and `apply-progress.md`, `verify-report.md` and `verification.json` modified.
+- `cd75c5c` touches only the 9 seed files. The deletions of `c1551a2` remain in the branch history; a squash is not needed, as the tree is what merges.
+
+Criteria: 15 of 15 covered, unchanged from round 2 because no code or test changed.
+
+### Gates
+
+Clean export of `9f093a3`, own target dir, `CARGO_INCREMENTAL=0`.
+
+| Gate | Exit | Note |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 931 passed, 0 failed, 0 ignored |
+| `cargo deny --offline check` | 0 | Offline, so the advisory DB was not refreshed |
+| CI policy (ARQ-07, unsafe, V5, V12, V13, V14) | 0 | Steps taken from `ci.yml`; run on a scratch clone at `9f093a3`, not in the repo |
+
+### Artifact integrity
+
+- The card block at HEAD is identical to `f08d005`, and that commit touches only `apply-progress.md`. No `slice card amend` commit exists on this branch.
+- `5e4e3f2` and `9f093a3` touch only `apply-progress.md`, and `9f093a3` only appends (8 insertions, none removed).
+- `fb58135` and `e6cbd81` touch only `verify-report.md` and `verification.json`.
+- No change against `develop` in `.cargo/`, `deny.toml`, `Cargo.toml`, `Cargo.lock`, `.github/`, `docs/`, `design.md` or the spike files.
+
+### Size
+
+Reported only; the owner has seen it and asked to close D2. No finding. `git diff --numstat develop 9f093a3`, insertions:
+
+| Part | Lines |
+|---|---|
+| Code (`src/`) | 267 |
+| Tests | 1 106 |
+| Notes (`apply-progress.md`) | 51 |
+| Subtotal, without verify artifacts | 1 424 |
+| Verify artifacts | 155 |
+| Total | 1 579 |
+
+Forecast 420. The 1 416 the owner saw is the round 2 figure; the 8 extra lines are the notes of `9f093a3`, and code and tests did not change. The seed files add nothing net: the 71 lines are gone and back.
+
+### Follow-ups for archive
+
+- W1 (`ambiguity`): no stated tolerance for a bleed of exactly 10 mm converted to px.
+- S2: test redundancy, about 130 to 150 lines by the round 1 estimate.
+
+next: tdd-apply (next delivery, D3)

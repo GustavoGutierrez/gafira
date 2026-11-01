@@ -27,5 +27,19 @@
   "hand_mutants": {"run": 2, "killed": 2},
   "criteria": {"total": 15, "covered": 15},
   "size": {"lines": 1416, "raw_lines": 1505, "forecast": 420},
+  "report": "verify-report.md" },
+  {
+  "round": 3, "commit": "9f093a3", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 1, "suggestion": 1},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "follow-up": true, "ref": "FD-05(d), 02 4.17.2", "summary": "Owner decision 2026-11-01: not a blocker, record at archive. No tolerance stated for 10 mm in px"},
+    {"id": "S2", "severity": "SUGGESTION", "follow-up": true, "ref": "verify-report.md Size", "summary": "Owner decision 2026-11-01: not a blocker, record at archive. Test redundancy"}
+  ],
+  "closed": ["C1", "C2", "C3", "C4", "S1"],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "criteria": {"total": 15, "covered": 15},
+  "size": {"lines": 1424, "raw_lines": 1579, "forecast": 420},
   "report": "verify-report.md" }
 ] }
