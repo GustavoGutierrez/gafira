@@ -113,14 +113,16 @@ impl Case {
         c
     }
 
-    /// The x axis of this case, which must equal the y axis of the flipped case; the
-    /// other axis must have no target in both.
+    /// The x axis of this case, which must equal the y axis of the flipped case. Unless the
+    /// grid attracts (it has lines on both axes), the other axis has no target.
     fn solve(&self) -> AxisSnap {
         let a = self.run().unwrap();
         let b = self.flipped().run().unwrap();
         assert_eq!(a.x, b.y, "x of the case differs from y of the flipped case");
-        assert_eq!(a.y, NONE, "the y axis has no target in this case");
-        assert_eq!(b.x, NONE, "the x axis of the flipped case has no target");
+        assert_eq!(a.y, b.x, "y of the case differs from x of the flipped case");
+        if !(self.grid.visible && self.grid.snap) {
+            assert_eq!(a.y, NONE, "the y axis has no target in this case");
+        }
         a.x
     }
 
@@ -644,7 +646,15 @@ fn arq_111_the_same_input_gives_the_same_bytes() {
 // D-16: which target wins
 
 /// The kinds in D-16 priority order, best first.
-const ORDER: [SnapKind; 4] = [
+const ORDER: [SnapKind; 5] = [
+    SnapKind::Guide,
+    SnapKind::Margin,
+    SnapKind::Page,
+    SnapKind::Element,
+    SnapKind::Grid,
+];
+/// The kinds that are boxes or lines of the page, which can sit anywhere.
+const FREE: [SnapKind; 4] = [
     SnapKind::Guide,
     SnapKind::Margin,
     SnapKind::Page,
@@ -686,8 +696,8 @@ fn fd_06_f_at_equal_distance_each_kind_beats_every_lower_one() {
 
 #[test]
 fn fd_06_f_a_nearer_target_of_a_lower_kind_beats_a_farther_higher_one() {
-    for (i, &hi) in ORDER.iter().enumerate() {
-        for &lo in &ORDER[i + 1..] {
+    for (i, &hi) in FREE.iter().enumerate() {
+        for &lo in &FREE[i + 1..] {
             for base in [-2000.0, 0.0, 12340.0] {
                 for dir in [1.0, -1.0] {
                     let mut c = Case::at(base);
@@ -704,7 +714,7 @@ fn fd_06_f_a_nearer_target_of_a_lower_kind_beats_a_farther_higher_one() {
 
 #[test]
 fn fd_06_after_the_kind_the_smaller_coordinate_wins() {
-    for kind in ORDER {
+    for kind in FREE {
         for base in [-2000.0, 0.0, 12340.0] {
             let mut c = Case::at(base);
             // the same kind on both sides at the same distance: the smaller coordinate
@@ -1000,4 +1010,252 @@ proptest! {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The grid as a target (FD-06, FD-07, "Destino en la Cuadrícula")
+
+fn with_grid(step: f64, sub: u8, zoom: f64, at: f64) -> Case {
+    let mut c = Case::at(at);
+    c.grid = grid(true, true, step, sub);
+    c.zoom = zoom;
+    c
+}
+
+/// The grid target of a zero-size box at `at`, or `None`.
+fn grid_hit(step: f64, sub: u8, zoom: f64, at: f64) -> Option<f64> {
+    let got = with_grid(step, sub, zoom, at).solve();
+    got.target.map(|t| {
+        assert_eq!(t.kind, SnapKind::Grid);
+        assert_eq!(got.offset, t.coordinate - at);
+        t.coordinate
+    })
+}
+
+#[test]
+fn fd_06_the_grid_attracts_to_the_nearest_line_on_either_side_and_a_tie_goes_down() {
+    assert_eq!(grid_hit(10.0, 1, 1.0, 14.0), Some(10.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, 15.0), Some(10.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, -14.0), Some(-10.0));
+    // the line above
+    assert_eq!(grid_hit(10.0, 1, 1.0, 16.0), Some(20.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, 18.0), Some(20.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, -16.0), Some(-20.0));
+    // negative ties go to the smaller, more negative line
+    assert_eq!(grid_hit(10.0, 1, 1.0, -15.0), Some(-20.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, -25.0), Some(-30.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, 25.0), Some(20.0));
+    // on a line, and next to it, away from the origin
+    assert_eq!(grid_hit(10.0, 1, 1.0, 5000.0), Some(5000.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, 5004.5), Some(5000.0));
+    assert_eq!(grid_hit(10.0, 1, 1.0, -5004.5), Some(-5000.0));
+    // beyond the threshold of 6 screen px there is no snap
+    assert_eq!(grid_hit(20.0, 1, 1.0, 7.0), None);
+    assert_eq!(grid_hit(20.0, 1, 1.0, 6.0), Some(0.0));
+    // -0.0 is a reference on the line 0
+    let got = with_grid(10.0, 1, 1.0, -0.0).solve();
+    assert_eq!(got.offset.to_bits(), 0.0f64.to_bits());
+}
+
+#[test]
+fn fd_06_the_grid_follows_the_levels_that_grid_lines_shows() {
+    // five subdivisions: at 100 % only the major lines, so 13 is 3 from 10 and not 1 from 12
+    assert_eq!(grid_hit(10.0, 5, 1.0, 13.0), Some(10.0));
+    // at 500 % the minor lines show every 2 px; the threshold is 1.2 page units
+    assert_eq!(grid_hit(10.0, 5, 5.0, 3.2), Some(4.0));
+    assert_eq!(grid_hit(10.0, 5, 5.0, 1.1), Some(2.0));
+    assert_eq!(grid_hit(10.0, 5, 5.0, 0.9), Some(0.0));
+    // 5 is as far from 4 as from 6: the smaller line
+    assert_eq!(grid_hit(10.0, 5, 5.0, 5.0), Some(4.0));
+    // 24.9 %: neither level fits, the step becomes 10 * 2^2 = 40
+    assert_eq!(grid_hit(10.0, 5, 0.249, 25.0), Some(40.0));
+    // a zoom under 25 % shows no minor lines even if they would fit
+    assert_eq!(grid_hit(500.0, 10, 0.2, 40.0), None);
+    assert_eq!(grid_hit(500.0, 10, 0.2, 480.0), Some(500.0));
+    // the first zoom with minor lines
+    assert_eq!(grid_hit(100.0, 2, 0.25, 40.0), Some(50.0));
+    assert_eq!(grid_hit(100.0, 2, 0.2499, 40.0), None);
+    // very fine grid at the largest page: no error, no view limit
+    let mut c = with_grid(1.0, 1, 32.0, 16000.01);
+    c.page = Rect::new(0.0, 0.0, 16384.0, 16384.0);
+    assert_eq!(c.solve().target, target(16000.0, SnapKind::Grid));
+}
+
+#[test]
+fn fd_06_a_major_line_is_exactly_k_times_the_step() {
+    // 11 * 4.8 has its own bits; 33 * 4.8 / 3 can differ
+    let want: f64 = 11.0 * 4.8;
+    let got = grid_hit(4.8, 3, 4.0, 52.81).unwrap();
+    assert_eq!(got.to_bits(), want.to_bits());
+    // minor lines are k * step / subdivisions
+    let minor = grid_hit(4.8, 3, 4.0, 3.3).unwrap();
+    assert_eq!(minor.to_bits(), (2.0f64 * 4.8 / 3.0).to_bits());
+    // negative k
+    let neg = grid_hit(4.8, 3, 4.0, -52.81).unwrap();
+    assert_eq!(neg.to_bits(), (-11.0f64 * 4.8).to_bits());
+}
+
+#[test]
+fn fd_06_the_grid_step_is_converted_with_the_dpi() {
+    let mut c = with_grid(1.0, 1, 1.0, 100.0);
+    c.grid.step = Length::new(1.0, Unit::In);
+    assert_eq!(c.solve().target, target(96.0, SnapKind::Grid));
+    c.dpi = 72.0;
+    c.moving = Rect::new(70.0, 0.0, 70.0, 0.0);
+    assert_eq!(c.solve().target, target(72.0, SnapKind::Grid));
+    // millimetres
+    let mut c = with_grid(1.0, 1, 1.0, 0.0);
+    c.grid.step = Length::new(25.4, Unit::Mm);
+    c.moving = Rect::new(97.0, 0.0, 97.0, 0.0);
+    assert_eq!(c.solve().target.unwrap().kind, SnapKind::Grid);
+}
+
+#[test]
+fn fd_06_the_grid_attracts_only_when_visible_and_set_to_snap() {
+    for (visible, snap_on, active, want) in [
+        (true, true, true, true),
+        (false, true, true, false),
+        (true, false, true, false),
+        (false, false, true, false),
+        (true, true, false, false),
+    ] {
+        let mut c = with_grid(10.0, 1, 1.0, 14.0);
+        c.grid.visible = visible;
+        c.grid.snap = snap_on;
+        c.active = active;
+        let got = c.run().unwrap().x.target;
+        assert_eq!(got.is_some(), want, "{visible} {snap_on} {active}");
+    }
+}
+
+#[test]
+fn fd_06_f_the_grid_loses_a_tie_to_every_other_kind_and_wins_when_nearer() {
+    for hi in FREE {
+        for base in [-2000.0, 0.0, 12340.0] {
+            for dir in [1.0, -1.0] {
+                // equal distance: the grid line on `base`, the other target 6 away on the far side
+                let mut c = Case::at(base + dir * 3.0);
+                c.put(SnapKind::Grid, base);
+                c.put(hi, base + dir * 6.0);
+                let got = c.solve();
+                assert_eq!(got.target, target(base + dir * 6.0, hi), "{hi:?}");
+                // the grid 2 away, the other 3 away: the grid is nearer and wins
+                let mut c = Case::at(base + dir * 2.0);
+                c.put(SnapKind::Grid, base);
+                c.put(hi, base + dir * 5.0);
+                let got = c.solve();
+                assert_eq!(got.target, target(base, SnapKind::Grid), "{hi:?}");
+                assert_eq!(got.offset, -dir * 2.0);
+            }
+        }
+    }
+}
+
+#[test]
+fn fd_06_the_grid_is_reached_from_each_reference_of_the_box() {
+    // lines every 10; the reference nearest to any line moves, whichever it is
+    for base in [-2000.0, 0.0, 12340.0] {
+        for (x0, x1, offset, line) in [
+            (13.0, 19.0, 1.0, 20.0),  // the right edge is 1 from 20
+            (3.0, 17.0, 0.0, 10.0),   // the centre is on 10
+            (11.0, 17.0, -1.0, 10.0), // the left edge is 1 from 10
+            (13.0, 25.0, 1.0, 20.0),  // the centre 19 is 1 from 20 and the left 13 is 3 from 10
+            (11.0, 25.0, -1.0, 10.0), // the left edge is 1 from 10, the centre 18 is 2 from 20
+        ] {
+            let mut c = with_grid(10.0, 1, 1.0, 0.0);
+            c.moving = Rect::new(base + x0, 0.0, base + x1, 0.0);
+            let got = c.solve();
+            assert_eq!(got.offset, offset, "{x0} {x1}");
+            assert_eq!(got.target, target(base + line, SnapKind::Grid));
+        }
+    }
+}
+
+/// The nearest line of the grid_lines output around `at`, with a tie going down.
+fn nearest_in_view(g: &GridSettings, zoom: f64, at: f64) -> Option<f64> {
+    let half = 1920.0 / zoom;
+    let view = Rect::new(at - half, 0.0, at + half, 1.0);
+    let lines = gafira_layout::grid::grid_lines(g, view, zoom, 96.0)
+        .unwrap()
+        .vertical;
+    let below = lines
+        .iter()
+        .map(|l| l.position)
+        .filter(|&p| p <= at)
+        .fold(None, |m: Option<f64>, p| Some(m.map_or(p, |m| m.max(p))));
+    let above = lines
+        .iter()
+        .map(|l| l.position)
+        .filter(|&p| p >= at)
+        .fold(None, |m: Option<f64>, p| Some(m.map_or(p, |m| m.min(p))));
+    match (below, above) {
+        (Some(b), Some(a)) => Some(if at - b <= a - at { b } else { a }),
+        // A line on one side only: any line on the other side is more than half a view away.
+        (Some(p), None) | (None, Some(p)) => Some(p),
+        (None, None) => None,
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1024))]
+
+    /// The snap target is the line grid_lines would draw nearest to the reference.
+    #[test]
+    fn fd_06_the_grid_target_has_the_bits_of_the_nearest_line_of_grid_lines(
+        step in prop_oneof![(1u32..=500).prop_map(f64::from), 1.0f64..500.0],
+        sub in 1u8..=10,
+        zoom in prop_oneof![
+            0.05f64..32.0,
+            Just(0.25), Just(0.2499), Just(0.249), Just(1.0), Just(32.0), Just(0.05),
+        ],
+        around in -5000.0f64..5000.0,
+        midpoint in any::<bool>(),
+        threshold in 2.0f64..16.0,
+    ) {
+        let g = grid(true, true, step, sub);
+        // half the cases put the reference exactly between two drawn lines, to hit ties
+        let at = if midpoint {
+            let half = 1920.0 / zoom;
+            let lines = gafira_layout::grid::grid_lines(&g, Rect::new(around - half, 0.0, around + half, 1.0), zoom, 96.0).unwrap().vertical;
+            match lines.windows(2).nth(lines.len().saturating_sub(2) / 2) {
+                Some(w) => (w[0].position + w[1].position) / 2.0,
+                None => around,
+            }
+        } else {
+            around
+        };
+        let mut c = Case::at(at);
+        c.grid = g;
+        c.zoom = zoom;
+        c.threshold = threshold;
+        let got = c.run().unwrap().x;
+        let limit = threshold / zoom;
+        match nearest_in_view(&g, zoom, at) {
+            Some(n) if (n - at).abs() <= limit => {
+                let t = got.target.expect("a line within the threshold");
+                prop_assert_eq!(t.kind, SnapKind::Grid);
+                prop_assert_eq!(t.coordinate.to_bits(), n.to_bits());
+            }
+            _ => prop_assert_eq!(got.target, None),
+        }
+    }
+}
+
+#[test]
+fn arq_110_the_grid_does_not_loop_over_a_huge_reference() {
+    // the reference is far out; the target is computed, not searched for
+    let mut c = Case::at(8e307);
+    let r = c.run().unwrap();
+    assert!(r.x.offset.is_finite());
+    c.grid = grid(true, true, 10.0, 1);
+    let r = c.run().unwrap();
+    assert!(r.x.offset.is_finite());
+    // a quotient that overflows is a non-finite result: 8.9e307 / 0.2
+    let mut c = Case::at(8.9e307);
+    c.grid = grid(true, true, 2.0, 10);
+    c.zoom = 32.0;
+    assert_eq!(c.run(), Err(LayoutError::NonFinite { field: "step" }));
+    // the same reference with a grid that does not attract is not computed
+    c.grid.visible = false;
+    assert!(c.run().is_ok());
 }

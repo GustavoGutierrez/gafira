@@ -5,7 +5,7 @@ use gafira_geom::{Rect, Unit};
 
 use crate::LayoutError;
 use crate::error::{check_rect, finite};
-use crate::grid::level;
+use crate::grid::{Level, level};
 use crate::rects::convert;
 
 /// What a snap target is. Declared in priority order: the first wins a tie (D-16).
@@ -152,8 +152,26 @@ fn check(input: &SnapInput<'_>) -> Result<(), LayoutError> {
     if !ZOOM_RANGE.contains(&input.zoom) {
         return Err(LayoutError::OutOfRange { field: "zoom" });
     }
-    level(input.grid, input.zoom, input.dpi)?;
     Ok(())
+}
+
+/// The line of `level` nearest to `at`; of two equally near lines, the smaller.
+///
+/// The quotient `at / spacing` rounds, so the two lines around `at` are looked for
+/// among four neighbours. No loop depends on the size of `at`.
+fn grid_target(level: Level, at: f64) -> Result<f64, LayoutError> {
+    let spacing = level.spacing("step")?;
+    let k = finite("step", at / spacing)?.floor();
+    let mut best: Option<(f64, f64)> = None;
+    for k in [k - 1.0, k, k + 1.0, k + 2.0] {
+        let line = level.line("step", k)?.position;
+        let distance = finite("step", (line - at).abs())?;
+        if best.is_none_or(|(d, p)| distance < d || (distance == d && line < p)) {
+            best = Some((distance, line));
+        }
+    }
+    best.map(|(_, line)| line)
+        .ok_or(LayoutError::NonFinite { field: "step" })
 }
 
 /// The best candidate of one axis, if any lies within `limit`.
@@ -204,10 +222,11 @@ fn resolve(
 /// centre before right). All comparisons are exact `f64`.
 ///
 /// Targets of an axis: the guides of that axis in px (when `guides_visible`),
-/// the two edges of `margins`, and the two edges and the centre of `page` and of
-/// each box of `elements`. An inactive magnet (`active` false) gives the offset
-/// 0 and no target, after the same checks. A guide that does not attract is
-/// still checked.
+/// the two edges of `margins`, the two edges and the centre of `page` and of
+/// each box of `elements`, and, when the grid is visible and set to snap, the
+/// drawn grid line nearest to each reference (see [`crate::grid::grid_lines`]).
+/// An inactive magnet (`active` false) gives the offset 0 and no target, after
+/// the same checks. A guide that does not attract is still checked.
 ///
 /// `threshold` must be finite and above 0 (the 2 to 16 range belongs to the
 /// settings), `zoom` in `[0.05, 32]`, `dpi` above 0 and the grid step and
@@ -217,6 +236,7 @@ fn resolve(
 /// every distance). Any error returns no result.
 pub fn snap(input: &SnapInput<'_>) -> Result<SnapResult, LayoutError> {
     check(input)?;
+    let level = level(input.grid, input.zoom, input.dpi)?;
     let limit = finite("threshold", input.threshold / input.zoom)?;
     let moving_x = span("moving", input.moving.x0, input.moving.x1)?;
     let moving_y = span("moving", input.moving.y0, input.moving.y1)?;
@@ -249,6 +269,15 @@ pub fn snap(input: &SnapInput<'_>) -> Result<SnapResult, LayoutError> {
             target: None,
         };
         return Ok(SnapResult { x: none, y: none });
+    }
+    if input.grid.visible && input.grid.snap {
+        // Each reference gets its nearest drawn line, which competes like any target.
+        for at in moving_x {
+            xs.push((grid_target(level, at)?, SnapKind::Grid));
+        }
+        for at in moving_y {
+            ys.push((grid_target(level, at)?, SnapKind::Grid));
+        }
     }
     Ok(SnapResult {
         x: resolve(moving_x, &xs, limit)?,
