@@ -1,6 +1,7 @@
 ## Light spec
 
 Flow: light | level: L1 | pack: agent/skill definitions | mutation: off | tier: T0 | verify: V1 | decided-by: coordinator | reason: Bounded developer tooling; no product or critical-code change.
+Flow-change: light -> standard | level: L2 | pack: agent/skill definitions | mutation: off | tier: T0 | verify: V1 | decided-by: coordinator | reason: Independent review found permission and partial-write safety gaps; the delivery exceeds the ~300-line standard-mode signal.
 
 Scope: Make `.agents/agents/` the source of truth for Claude Code and OpenCode agent definitions, with a repeatable synchronization tool and usage documentation.
 Non-goals: Migrate arbitrary external runtimes, change product behavior, change global OpenCode configuration, or prescribe user model choices.
