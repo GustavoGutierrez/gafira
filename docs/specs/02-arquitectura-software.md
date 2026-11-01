@@ -891,6 +891,8 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | Aviso de zona de seguridad | Exceso `> 0`, sin tolerancia; el borde sobre el límite no avisa. | FD-05 |
 | Porcentaje de zona de seguridad | Entrada; por defecto 5 % (D-38). En `[0, 50)`; 50 deja un rectángulo sin área y da `Err`. | FD-05 |
 | Sangrado | En `[0, 10]` mm, extremos incluidos. | FD-05 |
+| Márgenes | Cada lado `≥ 0`, la misma regla que al cargar (§3). Un lado por debajo de 0 da `Err` de fuera de rango que nombra ese lado. Aceptación: `margin_rect` con margen superior −1 da `Err` de fuera de rango con el campo `margins.top`; con margen superior 0 no da ese `Err`. | FD-05 |
+| DPI de `bleed_rect` y `margin_rect` | `dpi > 0`. `dpi ≤ 0` da `Err` de fuera de rango con el campo `dpi`, también si las longitudes ya están en px. Aceptación: `dpi = 0` y `dpi = −96` dan ese `Err` en las dos funciones, con longitudes en px. | FD-05 |
 | Tolerancia de las pruebas | Posiciones generadas y resultados de alinear y distribuir: ±0,01 unidades (FD-11) y 1e-9 cuando la ficha lo indica. | FD-04, FD-06, FD-11 |
 
 #### 4.17.3 `gafira-text`
