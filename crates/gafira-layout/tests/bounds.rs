@@ -31,6 +31,20 @@ fn add(page: &mut Page, id: u64, placement: Placement, group: bool, children: &[
     page.nodes.insert(NodeId::new(id), Arc::new(node));
 }
 
+fn leaf(page: &mut Page, id: u64, b: [f64; 4]) {
+    add(page, id, Placement::new(b[0], b[1], b[2], b[3]), false, &[]);
+}
+
+fn group(page: &mut Page, id: u64, b: [f64; 4], children: &[u64]) {
+    add(
+        page,
+        id,
+        Placement::new(b[0], b[1], b[2], b[3]),
+        true,
+        children,
+    );
+}
+
 fn near(a: Rect, b: Rect) {
     for (x, y) in [(a.x0, b.x0), (a.y0, b.y0), (a.x1, b.x1), (a.y1, b.y1)] {
         assert!((x - y).abs() <= 1e-9, "{a:?} vs {b:?}");
@@ -40,13 +54,7 @@ fn near(a: Rect, b: Rect) {
 #[test]
 fn d_28_a_leaf_uses_the_box_aligned_to_the_axes() {
     let mut p = page();
-    add(
-        &mut p,
-        1,
-        Placement::new(10.0, 20.0, 100.0, 50.0),
-        false,
-        &[],
-    );
+    leaf(&mut p, 1, [10.0, 20.0, 100.0, 50.0]);
     assert_eq!(
         node_bounds(&p, NodeId::new(1)),
         Ok(Rect::new(10.0, 20.0, 110.0, 70.0))
@@ -73,28 +81,10 @@ fn d_28_a_leaf_uses_the_box_aligned_to_the_axes() {
 #[test]
 fn adr_0009_a_group_is_the_union_of_all_its_children_and_ignores_its_own_box() {
     let mut p = page();
-    add(&mut p, 1, Placement::new(0.0, 0.0, 10.0, 10.0), false, &[]);
-    add(
-        &mut p,
-        2,
-        Placement::new(500.0, 40.0, 10.0, 10.0),
-        false,
-        &[],
-    );
-    add(
-        &mut p,
-        3,
-        Placement::new(-30.0, 900.0, 10.0, 10.0),
-        false,
-        &[],
-    );
-    add(
-        &mut p,
-        9,
-        Placement::new(1.0, 1.0, 2.0, 2.0),
-        true,
-        &[1, 2, 3],
-    );
+    leaf(&mut p, 1, [0.0, 0.0, 10.0, 10.0]);
+    leaf(&mut p, 2, [500.0, 40.0, 10.0, 10.0]);
+    leaf(&mut p, 3, [-30.0, 900.0, 10.0, 10.0]);
+    group(&mut p, 9, [1.0, 1.0, 2.0, 2.0], &[1, 2, 3]);
     assert_eq!(
         node_bounds(&p, NodeId::new(9)),
         Ok(Rect::new(-30.0, 0.0, 510.0, 910.0))
@@ -103,12 +93,12 @@ fn adr_0009_a_group_is_the_union_of_all_its_children_and_ignores_its_own_box() {
     let mut r = Placement::new(2000.0, 0.0, 100.0, 100.0);
     r.rotation_deg = 45.0;
     add(&mut p, 4, r, false, &[]);
-    add(&mut p, 8, Placement::new(0.0, 0.0, 0.0, 0.0), true, &[4, 9]);
+    group(&mut p, 8, [0.0; 4], &[4, 9]);
     let outer = node_bounds(&p, NodeId::new(8)).unwrap();
     let half = 100.0 * 2f64.sqrt() / 2.0;
     near(outer, Rect::new(-30.0, 50.0 - half, 2050.0 + half, 910.0));
     // An empty group falls back to its own box.
-    add(&mut p, 7, Placement::new(5.0, 6.0, 7.0, 8.0), true, &[]);
+    group(&mut p, 7, [5.0, 6.0, 7.0, 8.0], &[]);
     assert_eq!(
         node_bounds(&p, NodeId::new(7)),
         Ok(Rect::new(5.0, 6.0, 12.0, 14.0))
@@ -132,41 +122,29 @@ fn arq_110_bad_placements_and_broken_trees_are_errors() {
             let mut pl = Placement::new(0.0, 0.0, 10.0, 10.0);
             set(&mut pl, v);
             add(&mut p, 1, pl, false, &[]);
-            add(&mut p, 2, Placement::new(0.0, 0.0, 1.0, 1.0), false, &[]);
+            leaf(&mut p, 2, [0.0, 0.0, 1.0, 1.0]);
             // Also bad inside a group: the whole call fails, with no partial union.
-            add(&mut p, 3, Placement::new(0.0, 0.0, 1.0, 1.0), true, &[2, 1]);
+            group(&mut p, 3, [0.0, 0.0, 1.0, 1.0], &[2, 1]);
             let nf = Err(LayoutError::NonFinite { field: name });
             assert_eq!(node_bounds(&p, NodeId::new(1)), nf, "{name} {v}");
             assert_eq!(node_bounds(&p, NodeId::new(3)), nf, "{name} {v} in a group");
         }
     }
-    add(
-        &mut p,
-        1,
-        Placement::new(f64::MAX, 0.0, f64::MAX, 1.0),
-        false,
-        &[],
-    );
+    leaf(&mut p, 1, [f64::MAX, 0.0, f64::MAX, 1.0]);
     assert!(node_bounds(&p, NodeId::new(1)).is_err());
-    add(&mut p, 1, Placement::new(0.0, 0.0, -1.0, 1.0), false, &[]);
+    leaf(&mut p, 1, [0.0, 0.0, -1.0, 1.0]);
     assert!(node_bounds(&p, NodeId::new(1)).is_err());
     assert_eq!(
         node_bounds(&p, NodeId::new(42)),
         Err(LayoutError::UnknownNode(NodeId::new(42)))
     );
-    add(
-        &mut p,
-        5,
-        Placement::new(0.0, 0.0, 1.0, 1.0),
-        true,
-        &[6, 77],
-    );
+    group(&mut p, 5, [0.0, 0.0, 1.0, 1.0], &[6, 77]);
     assert_eq!(
         node_bounds(&p, NodeId::new(5)),
         Err(LayoutError::UnknownNode(NodeId::new(6)))
     );
-    add(&mut p, 5, Placement::new(0.0, 0.0, 1.0, 1.0), true, &[6]);
-    add(&mut p, 6, Placement::new(0.0, 0.0, 1.0, 1.0), true, &[5]);
+    group(&mut p, 5, [0.0, 0.0, 1.0, 1.0], &[6]);
+    group(&mut p, 6, [0.0, 0.0, 1.0, 1.0], &[5]);
     assert_eq!(
         node_bounds(&p, NodeId::new(5)),
         Err(LayoutError::Cycle(NodeId::new(5)))
