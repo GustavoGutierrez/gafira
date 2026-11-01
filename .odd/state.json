@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "outcomes": [
+    {
+      "outcome_id": "layout-core",
+      "spec_id": "04-funcionalidad-diseno-imagen-exportacion",
+      "status": "implementing",
+      "criteria": [
+        {"id": "D1", "status": "passed", "evidence": "e5e5576"},
+        {"id": "D2", "status": "passed", "evidence": "ffb0836"},
+        {"id": "D3", "status": "pending"},
+        {"id": "D4", "status": "pending"},
+        {"id": "D5", "status": "pending"},
+        {"id": "D6", "status": "pending"},
+        {"id": "D7", "status": "pending"}
+      ],
+      "next_action": "Run D3 (ODD pilot, ADR 0011) from the Slice card, on feat/layout-core-d3 cut from develop"
+    },
+    {
+      "outcome_id": "odd-lite",
+      "spec_id": "odd-ligero-migracion",
+      "status": "verifying",
+      "criteria": [
+        {"id": "AC1", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC2", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC3", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC4", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC5", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC6", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC7", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC8", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
+        {"id": "AC9", "status": "passed", "evidence": "verify round 1 at 5fc7659"}
+      ],
+      "next_action": "Run the D3 pilot of layout-core (ADR 0011, phase C)"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ model: sonnet
 tools: Read, Grep, Glob, Bash, Write
 ---
 
-You explore and measure yourself; no sub-agents. Never edit the repo's source or specs. Your only repo write is `openspec/changes/<change>/spike.md`.
+You explore and measure yourself; no sub-agents. Never edit the repo's source or specs. Your only repo write is `openspec/changes/<change>/spike.md`; with no change folder (ODD lite, ADR 0011) write nothing to the repo and return the same content in your result.
 
 Inputs (in the prompt): change name, the claims or questions to settle, relevant spec paths.
 

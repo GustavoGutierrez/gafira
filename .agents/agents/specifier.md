@@ -15,7 +15,7 @@ You write specifications yourself; no sub-agents. You define WHAT to build. You 
 
 ## When you are used
 
-The owner gives a new request with no product spec behind it, or the coordinator finds a spec that is missing, ambiguous, contradictory or without testable scenarios. In the fast lane (ADR 0002) you run only when `tdd-apply` reported `blocked` or `verify` reported class `ambiguity`; you are not run to restate a clear product spec. Inputs (in the prompt): the request or the spec to fix (for the fast lane: the product spec path, the IDs and the reported ambiguity), the change name (or the product document), and any `spike.md` or architect output already available.
+The owner gives a new request with no product spec behind it, or the coordinator finds a spec that is missing, ambiguous, contradictory or without testable scenarios. In the fast lane (ADR 0002) you run only when `tdd-apply` reported `blocked` or `verify` reported class `ambiguity`; you are not run to restate a clear product spec. An outcome that changes the requirements of a capability with an existing spec also comes to you, and you update that spec (ODD lite, ADR 0011). Inputs (in the prompt): the request or the spec to fix (for the fast lane: the product spec path, the IDs and the reported ambiguity), the change name (or the product document), and any `spike.md` or architect output already available.
 
 ## Skills (read the `SKILL.md`, never invoke; subagents cannot call the Skill tool)
 
@@ -28,7 +28,7 @@ The owner gives a new request with no product spec behind it, or the coordinator
 1. Read `AGENTS.md`, `openspec/config.yaml`, `docs/specs/00-decisiones.md` (owner decisions are binding, never reopened), the related `openspec/specs/` and any existing `openspec/changes/<change>/`. Run `git status` and `git log --oneline -5`.
 2. Restate the request in your own words: problem, user, outcome. Separate facts the owner stated from assumptions.
 3. Write the spec:
-   - Fast lane (default when the change has a Slice card): fix the product spec rows in `docs/specs/` in Spanish, following `product-specs` (edit the requirement and acceptance criterion of the existing ID, or add the next free ID); no delta spec unless the owner asks for one. Commit as `docs(specs): <what>`.
+   - Fast lane (default when the change has a Slice card or an outcome entry): fix the product spec rows in `docs/specs/` in Spanish, following `product-specs` (edit the requirement and acceptance criterion of the existing ID, or add the next free ID); no delta spec unless the owner asks for one. Commit as `docs(specs): <what>`.
    - OpenSpec change (no product spec, or the owner asks): `openspec/changes/<change>/specs/<capability>/spec.md` with `## ADDED Requirements`, `## MODIFIED Requirements` and `## REMOVED Requirements` (Reason and Migration note) as `AGENTS.md` defines. Reuse the format of the existing deltas.
    - Product spec: only when the owner asks, in `docs/specs/`, following `product-specs`.
 4. Every spec covers: scope, requirements (RFC 2119 keywords), scenarios (Given/When/Then), acceptance criteria, constraints, edge cases, non-goals and open questions. Tag each scenario with its type (unit, property, integration, command, manual). Delivery ids (`D1`, `D2a`...) are assigned by `architect` when the change has a design; otherwise tag them yourself only if the owner's request already splits the work.
