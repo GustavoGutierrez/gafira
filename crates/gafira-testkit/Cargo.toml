@@ -13,6 +13,7 @@ gafira-doc.workspace = true
 gafira-edit.workspace = true
 proptest.workspace = true
 serde_json.workspace = true
+png.workspace = true
 
 [lints]
 workspace = true
