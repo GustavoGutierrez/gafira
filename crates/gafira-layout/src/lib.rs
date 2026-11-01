@@ -9,6 +9,7 @@
 mod align;
 mod attractors;
 mod bounds;
+mod distribute;
 mod error;
 pub mod grid;
 pub mod guides;
@@ -18,6 +19,7 @@ pub mod snap;
 pub use align::{AlignAction, Item, Offset, align};
 pub use attractors::attractors;
 pub use bounds::node_bounds;
+pub use distribute::{DistributeAxis, DistributeMode, distribute};
 pub use error::LayoutError;
 pub use grid::{GridLine, GridLines, grid_lines};
 pub use guides::{GuideSpec, generate, place_guide};
