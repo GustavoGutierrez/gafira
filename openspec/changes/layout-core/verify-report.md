@@ -1,6 +1,111 @@
 # Verify report: layout-core D4
 
-Current state: round 2 at `ba6c91d`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report): **FAIL**. 1 CRITICAL, 2 WARNING, 2 SUGGESTION. Per class: implementation 3 (1 CRITICAL, 2 WARNING); architecture 0; ambiguity 0; claim 0. Next: `tdd-apply`. This is the second consecutive FAIL of class `implementation` on D4, so the coordinator's stop-and-ask rule applies.
+Current state: round 3 at `553aaf3`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report): **PASS** for D4, D5 to D7 remaining. 0 CRITICAL, 1 WARNING, 2 SUGGESTION. Per class: implementation 1 (WARNING); architecture 0; ambiguity 0; claim 0. Next: `tdd-apply`. C4, W5 (by the owner), W6 and S4 are closed. W7 (`follow-up`) records two commits that fail clippy alone; the owner decides on it.
+
+## Round 3
+
+Closure round, the last allowed for D4. Commit `553aaf3`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report, so no mutation finding). Gates ran on a clean clone and probes on clean exports, outside the repo. No new independent mutants.
+
+### WARNING
+
+**W7. Two commits do not pass clippy alone.** class: `implementation`, `follow-up`. Ref: `AGENTS.md` "Strict TDD", `9ab2e9f`, `8c261f3`, `crates/gafira-layout/tests/grid.rs:401-402`.
+The fact is confirmed on clean exports (table below). Both fail `clippy::manual_is_multiple_of` in a test, and `6943995` fixes it. This breaks "every commit must pass alone", and only the owner can waive it or decide to rewrite history.
+It is a WARNING and not a gate failure because V2 gates run at HEAD, per-commit gates belong to V3, and the rules class this as commit hygiene. fmt and tests pass on both commits, and the source fix is not what fails. The cost is two red clippy points in `develop` history once merged, which matters only to a bisect that runs clippy.
+Two related points:
+- `grid.proptest-regressions` was added in `8c261f3` and removed in `6943995`. It leaves no trace at HEAD.
+- The notes say the implementer's gate script passed while clippy failed. That script hid a failure, so check it before D5. Every verdict here comes from exit codes taken directly.
+
+| Commit | fmt | clippy | test |
+|---|---|---|---|
+| `9ab2e9f` | 0 | **101** | 0; 992 passed |
+| `8c261f3` | 0 | **101** | 0; 994 passed |
+| `6943995` | 0 | 0 | 0; 994 passed |
+| `553aaf3` (HEAD) | 0 | 0 | 0; 994 passed |
+
+### SUGGESTION
+
+**S2, open, `follow-up`.** V10 still survives; no change since round 2.
+
+**S5. Round 2 understated the trade-off of the C4 fix.** Ref: `crates/gafira-layout/src/grid.rs:60-61`, D5 snap.
+A caller that writes a major edge as `k × step / subdivisions` loses that line. Round 2's 1.0 % is reproduced exactly (23 303 of 2 230 255), but that denominator includes minor edges, which never lose a line. Over major edges alone the figure is 55 190 of 842 229 views (6.6 %). The row gives `k × paso` for a major line, so the code is right. D5 and any caller should compute major edges that way.
+
+### Closure
+
+| Finding | State | Evidence |
+|---|---|---|
+| C4 | **closed** | See below. |
+| W5 | closed by the owner | Size accepted, 2026-11-01. Figures under "Size". |
+| W6 | closed | `fd_03_d_non_finite_position_is_reported_at_dpi_zero` and `arq_110_a_nan_margin_is_non_finite_at_dpi_zero` use the row's values and assert the exact field. Not mutated, per the closure scope. The other row examples at `dpi = 0` were already tested. |
+| S4 | closed | The notes now say src 25, tests 210, and that the old 1 370 counted the verify artifacts. Their 1 235 is off by one against round 2's table, which is immaterial. |
+| S2 | open, `follow-up` | See above. |
+
+The owner's "W8, S2" follow-ups: W8 is a D3 finding (10 mm in px refused at some DPIs), not a D4 one, so it is not counted here. S2 has two meanings: the D3 S2 (no code holds the 5 % default of D-38) and the D4 S2 (V10). Both stay `follow-up`, so the reading does not change this verdict. `archive` must carry both.
+
+### C4
+
+Reproduction (step 4.8 px, 3 subdivisions, zoom 4, view 0 to 52.8): 34 lines, the last a major at exactly 52.8. The mirror view from −52.8 to 0 gives 34 lines, the first a major at exactly −52.8.
+
+Round 2's five sweeps. View counts match round 2 exactly. The mutant column restores `k × step / subdivisions` for majors and gives round 2's figures back line for line.
+
+| Steps | Views | Lost, HEAD | Lost, mutant |
+|---|---|---|---|
+| 1 to 500 px, in tenths | 1 258 641 | 0 | 80 237 |
+| mm at 96 dpi | 49 851 | 0 | 3 909 |
+| mm at 300 dpi | 17 474 | 0 | 1 294 |
+| in at 96 dpi, in tenths | 16 101 | 0 | 1 182 |
+| pt at 96 dpi | 105 825 | 0 | 5 617 |
+
+Mutant against the crate's tests: killed by exactly the two new tests, `fd_07_a_major_line_on_a_view_edge_is_kept_for_a_non_integer_step_with_subdivisions` and `fd_07_a_majors_sit_exactly_on_multiples_of_the_step`. It is the only source change on that export. Hand mutants: 1 run, 1 killed.
+
+### Minor lines and duplicates
+
+| Check | Scope | Result |
+|---|---|---|
+| Same minor lines as before the fix | 600 000 random views, 7 741 538 minor lines, digest of their bits | identical at `ba6c91d` and HEAD (`2eb1dd304dafef1e`) |
+| Every line in the five sweeps | 1 447 892 views | 0 wrong bits, wrong `major` flags, duplicates or order faults |
+| Independent scan | the same random views: negative positions, the `2^k` fallback, four units, edges on lines | 0 missing, 0 extra, 0 wrong flags, 0 duplicates, 0 out of order |
+| Minor line on a view edge | 1 799 131 views | 0 lost, at both commits |
+
+The same scan on `ba6c91d` reports 260 971 missing and 246 865 extra: those are the majors one ulp off, so the oracle does see the old defect.
+
+The two inputs the removed regressions file shrank to pass on the public API at HEAD, and with that file restored on the export `tests/grid.rs` stays green. `tests/grid.rs` at 500 000 cases per property passes. At 20 000 cases `fd_07_fallback_...` first stopped at proptest's limit of 1 024 rejected inputs, with no failing input; with the limit raised it passes. That is the harness, on an unchanged test, and the default 256 cases stay far from the limit, so it is not a finding.
+
+### Size against `develop`
+
+| Part | Insertions | Deletions |
+|---|---|---|
+| Source | 288 | 1 |
+| Tests | 940 | 0 |
+| Notes | 82 | 0 |
+| Spec | 4 | 1 |
+| Verify artifacts at `553aaf3` | 228 | 480 |
+| Total | 1 542 | 482 |
+
+This round added 66 insertions and 5 deletions in `crates`. Accepted by the owner.
+
+### Acceptance map
+
+16 criteria, 16 covered. Changes since round 2: FD-07 (a) and row "Líneas" are covered (C4 closed), and row "DPI" is covered (W6 closed). The rest are unchanged. Left out on purpose, as in round 1: FD-03 (c), FD-06 (D5); FD-05, FD-09 (D3); FD-11 (D6); ARQ-114 (D7).
+
+### Gates and integrity
+
+Run on a clean clone at `553aaf3`. The tree stayed clean after the run. Linux only: the Windows and macOS CI jobs did not run here, as in earlier rounds.
+
+| Check | Result |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0; 994 passed, 0 failed |
+| `cargo test -p gafira-layout --locked --release` | 0 |
+| `cargo deny check` | 0 |
+| CI policy: format, ARQ-07, forbid unsafe, V5, V12, V13, V14 | all 0, run from `ci.yml` |
+
+- Slice card: `f08d005` touches only `apply-progress.md`, and nothing above the D4 section changed.
+- Spec: no fix commit touched `docs/specs`. Its only D4 commits are still `33ab1c5`, `463b777` and `b7738c0`.
+- Regressions files: no `*.proptest-regressions` differs from `develop` at HEAD (9 on both sides, none in `gafira-layout`).
+- Branch: `ci.yml`, `.cargo`, `Cargo.toml`, `Cargo.lock` and `deny.toml` unchanged; no absolute path added; no attribution lines; nothing changed outside `gafira-layout`, `docs/specs` and the change folder.
+
+---
 
 ## Round 2
 
