@@ -167,3 +167,67 @@ fn arq_111_the_same_input_gives_the_same_bounds() {
         [b.x0, b.y0, b.x1, b.y1].map(f64::to_bits)
     );
 }
+
+#[test]
+fn arq_110_a_very_deep_chain_gives_a_result_not_a_stack_overflow() {
+    // The depth that `validate` accepts and that overflowed the recursive walk.
+    const DEPTH: u64 = 100_000;
+    let mut p = page();
+    leaf(&mut p, DEPTH, [3.0, 4.0, 5.0, 6.0]);
+    for id in 1..DEPTH {
+        group(&mut p, id, [0.0; 4], &[id + 1]);
+    }
+    let want = Ok(Rect::new(3.0, 4.0, 8.0, 10.0));
+    assert_eq!(node_bounds(&p, NodeId::new(1)), want);
+    // The same chain closed into a loop is still an error, not an abort.
+    group(&mut p, DEPTH, [0.0; 4], &[1]);
+    assert_eq!(
+        node_bounds(&p, NodeId::new(1)),
+        Err(LayoutError::Cycle(NodeId::new(1)))
+    );
+}
+
+#[test]
+fn arq_110_a_group_checks_its_own_placement_but_not_nodes_outside_the_subtree() {
+    let mut p = page();
+    leaf(&mut p, 1, [0.0, 0.0, 10.0, 10.0]);
+    group(&mut p, 2, [f64::NAN, 0.0, 1.0, 1.0], &[1]);
+    assert_eq!(
+        node_bounds(&p, NodeId::new(2)),
+        Err(LayoutError::NonFinite { field: "x" })
+    );
+    // A finite, stale box changes nothing; a NaN elsewhere in the page changes nothing.
+    group(&mut p, 2, [900.0, 0.0, 1.0, 1.0], &[1]);
+    leaf(&mut p, 3, [f64::NAN, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        node_bounds(&p, NodeId::new(2)),
+        Ok(Rect::new(0.0, 0.0, 10.0, 10.0))
+    );
+}
+
+#[test]
+fn range_rule_a_skew_of_90_is_not_a_range_error() {
+    let mut p = page();
+    let mut s = Placement::new(0.0, 0.0, 100.0, 100.0);
+    s.skew = 90.0;
+    add(&mut p, 1, s, false, &[]);
+    // The value is unspecified on purpose: only the absence of a range error is checked.
+    assert!(!matches!(
+        node_bounds(&p, NodeId::new(1)),
+        Err(LayoutError::OutOfRange { .. })
+    ));
+}
+
+#[test]
+fn adr_0009_a_group_shared_by_two_groups_is_not_a_cycle() {
+    let mut p = page();
+    leaf(&mut p, 1, [0.0, 0.0, 10.0, 10.0]);
+    leaf(&mut p, 2, [50.0, 0.0, 10.0, 10.0]);
+    group(&mut p, 11, [0.0; 4], &[1]);
+    group(&mut p, 12, [0.0; 4], &[11, 2]);
+    group(&mut p, 10, [0.0; 4], &[11, 12]);
+    assert_eq!(
+        node_bounds(&p, NodeId::new(10)),
+        Ok(Rect::new(0.0, 0.0, 60.0, 10.0))
+    );
+}
