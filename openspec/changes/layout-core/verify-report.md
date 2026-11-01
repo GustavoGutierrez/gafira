@@ -2,9 +2,129 @@
 
 ## Current state
 
-Round 3 at `4acfffb`, closure round after the T4 fix cycle, depth V2, mode full, tier T4 (`mutation: archive`): **FAIL**. 2 CRITICAL (7 timeout mutants in critical code), 3 WARNING (all `follow-up`), 6 SUGGESTION. Per class: implementation 5 (2 CRITICAL, 3 WARNING); ambiguity 0; architecture 0; claim 0. All deliveries are done, and the code has no defect: every gate, per-commit gate and removed-code probe passes. The FAIL comes from the mutation rule alone. Next: `tdd-apply`. This is the third verify round of this delivery, so the coordinator stops and asks the owner first (`AGENTS.md`, Delivery rules). C6 holds the owner's choice.
+Round 4 at `710c0b9`, closure round by owner authorization after the rule amendment, depth V2, mode full, tier T4 (`mutation: archive`): **PASS**. 0 CRITICAL, 3 WARNING (all `follow-up`), 7 SUGGESTION. Per class: implementation 2 (2 WARNING); ambiguity 1 (1 WARNING); architecture 0; claim 0. All deliveries are done. C5, C6 and W6 are closed. One call is mine and the owner may want to confirm it: `rects.rs:32:63` is not CRITICAL (W7). Next: `archive`.
 
 The D4 report is in git history at `9383597`; this file covers D5-D7, one delivery by owner decision (Slice card amend `a584943`). The follow-ups of every delivery are listed under "Follow-ups for archive".
+
+## Round 4
+
+Closure only, by owner authorization of 2026-11-01 (rule amended, close the change). No independent hand mutants. Gates ran on a clean clone, the commit gate and the probes on clean exports, outside the repo. The worktree stayed at `710c0b9` and clean, but for these two files.
+
+### Closure
+
+| Item | Status | Evidence |
+|---|---|---|
+| C5 | **Closed** | `grid.rs:82:35` and `83:34` `/` to `*` are in `caught.txt` of the new report at `710c0b9`. Logs: exit 101 in the `grid` binary, in 4.4 s and 4.7 s, on named assertions. `grid_huge` is not reached |
+| C6 | **Closed under the amended rule** | The five are confirmed hanging mutants; see below |
+| W6 | **Closed** | The reason is now true; see below |
+| Rule amendment `710c0b9` | **Consistent** | See below |
+| `grid_huge.rs` coverage | **Kept** | 172 test names in `crates/gafira-layout/tests` at `53d7111` and at HEAD: none lost, none new, 2 moved. Every line removed from `grid.rs` is in `grid_huge.rs` unchanged. Runtime count unchanged, 1 107 at HEAD. `gafira-layout` has no `.proptest-regressions` file, so no seed was lost |
+
+### C6: the five under the rule
+
+Each mutant was re-run at `710c0b9` by `cargo-mutants` with `--timeout` 300 s (`rt-1` to `rt-5`), against 20 s in the full run and a 3 s suite. Each log shows the mutated line, a rebuild of the crate and `result: Timeout`.
+
+| Mutant | Function | Re-run at 300 s | Why it cannot end | Each test alone at HEAD: pass, fail, do not finish |
+|---|---|---|---|---|
+| `attractors.rs:61:34` `+=` to `*=` | `attractors` | Timeout, `rt-1` | `top.next` stays 0, so the first child is taken for ever | 162, **0**, 13 |
+| `attractors.rs:69:31` `+=` to `*=` | `attractors` | Timeout, `rt-2` | `next_root` stays 0, and only a past-the-end root breaks the loop | 158, **0**, 17 |
+| `bounds.rs:59:23` `+=` to `*=` | `bounds_with` | Timeout, `rt-3` | The child index stays 0 | 158, **0**, 17 |
+| `grid.rs:115:31` `*` to `/` | `level` | Timeout, `rt-4` | The quotient only falls, and `multiple` ends at infinity | 158, **0**, 17 |
+| `grid.rs:116:22` `*=` to `/=` | `level` | Timeout, `rt-5` | `multiple` ends at 0, so the product is 0 | 158, **0**, 17 |
+
+The open point holds. Rerun for this round, every test of the crate alone on a clean export of each mutant, limit 20 s, 6 GB memory cap, exit codes read: baseline 175 of 175 pass, and on all five the only outcomes are pass and killed at the limit. None fails, none aborts. The crate has 0 doctests. So no test can fail on an assertion first, and there is nothing to reorder or split. Each `grid` row has 17 where round 3 had 16; the sets for the two mutants are identical and it does not change the result.
+
+A long limit alone does not prove non-termination; the code does, and the runs agree with it.
+
+### `rects.rs:32:63`: caught, and W7
+
+`replace > with < in shrunk` timed out in the full run and is critical code. I do not count it as a hanging mutant, and I do not count it as CRITICAL:
+- `rt-6`, same commit: caught, 1.2 s build and 11.3 s test, while five hanging mutants ran beside it.
+- Three more runs on a clean export: exit 101 in 2.4 to 3.3 s, each on `fd_05_f_rounding_that_erases_an_axis_is_no_area`.
+- The full-run log ends at the `benches` binary, whose one test reads a file embedded at build time and calls no layout code. The mutant cannot be what held it. A neighbour in the same early batch took 15.1 s of the 20 s limit.
+- The round 3 full run caught it, with the same source.
+
+So load explains it, and the mutant is detected by an assertion. See W7 for the wording.
+
+### Rule amendment `710c0b9`
+
+- `AGENTS.md`, `verify.md`, `mutants.md`, `coordinator.md` (G5 and route step 3) and ADR 0004 state the same condition: re-run with a longer limit, confirmed non-termination or an unfinishable range, listed by file and line, split where an assertion can fail first.
+- No policy lost: every removed line reappears with only the exception added. Missed mutants, the definition of critical code, the T4 duty, `--jobs` and the `verification.json` schema are unchanged. `mutants` gains a duty, the re-run, and still may not reclassify a timeout on its own.
+- The one relaxation is what the owner decided. It covers a confirmed hanging timeout in critical code and nothing else.
+- No other policy text describes timeouts: `git grep` finds only these files and example JSON.
+- ADR 0004 is an accepted ADR edited inline, under a dated owner-decision heading, as the repo's precedent allows. Noted only.
+- The commit touches those 5 files only.
+
+### W6: closed
+
+The comment now says tied candidates differ at most in the sign of a zero, and that the spec treats them as one target. The row "Entradas del Imán" says: "dos destinos con la misma coordenada y el mismo tipo son uno", and "Empate del Imán" fixes exact `f64` comparison, under which `0.0` and `-0.0` are equal. "Same offset" holds: `snap` normalizes the offset with `+ 0.0`. This matches the 47 508 differences of round 3, all that sign alone. `snap.rs` is unchanged since round 3, and the exclusion is still needed and still matches one mutant.
+
+### WARNING
+
+**W7. The rule does not say what a load timeout that a re-run catches is.** class: `ambiguity`, `follow-up`. Ref: `.agents/agents/verify.md` step 4, `.agents/agents/coordinator.md` route step 3, `AGENTS.md` "Hanging mutants".
+Read to the letter, `verify.md` keeps a timeout that load explains CRITICAL, and `coordinator.md` sends "any other critical timeout" back to `tdd-apply`, so `rects.rs:32:63` would block the close with nothing to fix. I read those sentences as limits on the hanging exception: load cannot be passed off as a hang, and the mutant's outcome is its newest run, `rt-6`, caught. That is my reading, not text in the rule. One clause would settle it: a timeout that a re-run at the same commit catches on an assertion counts as caught and goes in `load_timeouts`. The owner may want to confirm it.
+
+**W2. Grid target past about 1e15 px.** class: `implementation`, `follow-up`. Unchanged.
+
+**W5. No test pins the page centre with the magnet off.** class: `implementation`, `follow-up`. Unchanged.
+
+### SUGGESTION
+
+**S1, S2, S3, S5, S6.** Open as in round 3.
+
+**S7.** Still open. `apply-progress.md:352`, `:333`, `:360` keep the refuted claims. `:352` also lists `grid.rs:82` and `83` as hangs, which C5 settled the other way. The file's later entry corrects them.
+
+**S8. A hanging regression has no clock in CI.** The amendment accepts a hang as detected, and `ci.yml` sets no `timeout-minutes`, so such a change would hold a CI job until the host's own limit. A `timeout-minutes` on the `test` job would give it an end.
+
+### Mutation reports
+
+| Crate | At | Found | Caught | Missed | Timeout | Unviable | Against HEAD |
+|---|---|---|---|---|---|---|---|
+| `gafira-layout` | `710c0b9` | 453 | 436 (437 after `rt-6`) | 0 | 6 (5 after `rt-6`) | 11 | Same 453 names; started 23 s after the commit |
+| `gafira-doc` | `778f6b9` | 163 | 133 | 0 | 0 | 30 | Same 163 names; no source change since |
+| `gafira-edit` | `78906a8` | 295 | 247 | 0 | 0 | 48 | Same 295 names; no change since |
+
+`critical_missed` 0. Critical timeouts: 5, all confirmed hanging. `load_timeouts` 1, so the coordinator's rule applies: recommend lowering `--jobs` by 2, an owner decision. The auto limit of 20 s is what load crossed. Exclusions: 1 929 mutants without the file and 1 921 with it, as in round 3, and the only change to the file is the W6 comment.
+
+### Gates and integrity
+
+Gates at `710c0b9` on a clean clone: `cargo fmt --check` 0; clippy 0; `cargo test --workspace --locked` 0 (1 107 passed, 0 failed); `cargo deny --offline check` 0 (advisories, bans, licenses, sources). CI policy, all 0, run from `ci.yml`: Format, ARQ-07, `forbid(unsafe_code)`, V5, V12, V13, V14. The clone stayed clean.
+
+Per commit: `43499e6` on a clean export: fmt 0, clippy 0, test 0, 1 107 passed. It is the only new code commit; `3b3ed77` changes a comment in `.cargo/mutants.toml`, and `848bfd9` and `710c0b9` touch only docs and agent files.
+
+Integrity since `53d7111`:
+- Slice card: lines 1 to 10 of `apply-progress.md` hash the same at `78906a8` and HEAD; that file has 0 removed lines.
+- No tracked file deleted; `*.proptest-regressions` still 9.
+- No source change in `crates/*/src`; `crates` diff is the two test files.
+- Against `78906a8`, `docs/` changes only in ADR 0004 (`710c0b9`). No change in `.github`, `deny.toml`, `Cargo.toml`, `Cargo.lock` or `design.md`.
+- No absolute path, `#[allow]`, `unsafe` or `mutants::skip` added, and no AI attribution in commit bodies.
+
+Size: 9 files, +97 -58; `crates` alone 2 files, +80 -51. Disk: 48 GB free at the start, 42 GB at the lowest; build folders freed.
+
+### Follow-ups for archive
+
+| From | Item | Class |
+|---|---|---|
+| D2 W1, D3 W8 | 10 mm in px is refused at 550 of 10 000 integer DPIs | ambiguity |
+| D2 S2 | Test redundancy, about 130 to 150 lines | suggestion |
+| D3 S2 | No code holds the 5 % default of D-38 | suggestion |
+| D3 S3 | `error.rs` wording on `field` and `NoArea` | suggestion |
+| D4 W7 | `9ab2e9f` and `8c261f3` fail clippy alone; only the owner can waive it | implementation |
+| D4 S2 | V10: the `major_on_screen <= 0.0` guard survives | suggestion |
+| D4 S5 | A major edge written as `k × step / subdivisions` loses its line; callers must use `k × step` | suggestion |
+| D5-D7 W2 | Grid target past about 1e15 px; the note's figures are off | implementation |
+| D5-D7 W5 | No test for the page centre with the magnet off | implementation |
+| D5-D7 W7 | The rule is silent on a load timeout that a re-run catches | ambiguity |
+| D5-D7 S1 | `snap_rotation` past 2^53 degrees; the row has no range | suggestion |
+| D5-D7 S2 | `grid_lines` against D4 at `\|x0\| >= 1e15` | suggestion |
+| D5-D7 S3 | `benches/layout.rs:4` names a nightly job that does not exist | suggestion |
+| D5-D7 S5, S7 | Stale text in `apply-progress.md` and `tests/snap.rs` | suggestion |
+| D5-D7 S6 | `.cargo/mutants.toml:6` says one mutant per regex | suggestion |
+| D5-D7 S8 | `ci.yml` has no `timeout-minutes` for a hanging regression | suggestion |
+| Round 4 | `--jobs` recommendation: `load_timeouts` 1 | owner |
+| Slice card | Tasks T1 and T2 of `design.md` | task |
+
+next: archive
 
 ## Round 3
 
@@ -155,24 +275,7 @@ Size: 13 files, +235 -29; `crates` alone 11 files, +198 -29.
 
 ### Follow-ups for archive
 
-| From | Item | Class |
-|---|---|---|
-| D2 W1, D3 W8 | 10 mm in px is refused at 550 of 10 000 integer DPIs | ambiguity |
-| D2 S2 | Test redundancy, about 130 to 150 lines | suggestion |
-| D3 S2 | No code holds the 5 % default of D-38 | suggestion |
-| D3 S3 | `error.rs` wording on `field` and `NoArea` | suggestion |
-| D4 W7 | `9ab2e9f` and `8c261f3` fail clippy alone; only the owner can waive it | implementation |
-| D4 S2 | V10: the `major_on_screen <= 0.0` guard survives | suggestion |
-| D4 S5 | A major edge written as `k × step / subdivisions` loses its line; callers must use `k × step` | suggestion |
-| D5-D7 W2 | Grid target past about 1e15 px; the note's figures are off | implementation |
-| D5-D7 W5 | No test for the page centre with the magnet off | implementation |
-| D5-D7 W6 | `snap.rs:98:13` exclusion, if not fixed with C5 | implementation |
-| D5-D7 S1 | `snap_rotation` past 2^53 degrees; the row has no range | suggestion |
-| D5-D7 S2 | `grid_lines` against D4 at `\|x0\| >= 1e15` | suggestion |
-| D5-D7 S3 | `benches/layout.rs:4` names a nightly job that does not exist | suggestion |
-| D5-D7 S5, S7 | Stale text in `apply-progress.md` and `tests/snap.rs` | suggestion |
-| D5-D7 S6 | `.cargo/mutants.toml:6` says one mutant per regex | suggestion |
-| Slice card | Tasks T1 and T2 of `design.md` | task |
+The current list is in Round 4.
 
 Round 3 next: tdd-apply (C5, C6, W6 with them), after the owner's answer on C6, then `mutants` T4 on `gafira-layout` and a closure verify. Closure of C5 and C6 needs a new T4 report that contains the fix.
 
