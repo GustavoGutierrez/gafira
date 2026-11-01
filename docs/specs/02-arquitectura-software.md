@@ -877,10 +877,11 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 
 | Caso numérico | Regla | ID |
 |---|---|---|
-| NaN o `±∞` en cualquier entrada | `Err` de toda la llamada; ningún resultado parcial. | ARQ-110 |
-| Suma que desborda (`x + w` con valores enormes) | `Err` por resultado no finito. | ARQ-110 |
+| NaN o `±∞` en cualquier entrada | `Err` de toda la llamada; ningún resultado parcial. Se comprueban todas las entradas, también las que no intervienen en el cálculo. En `node_bounds`, son entrada los campos numéricos del `Placement` del nodo pedido y de todos sus descendientes, grupos con hijos incluidos. La caja de un grupo con hijos se comprueba, pero no se usa para calcular (ADR 0009): si es finita, no cambia el resultado. Aceptación: un grupo con hijos válidos y NaN en la `x` de su propio `Placement` da `Err` con ese campo; con una `x` finita y una caja desfasada da la unión de sus hijos; un NaN en un nodo fuera del subárbol pedido no cambia el resultado. | ARQ-110 |
+| Suma que desborda (`x + w` con valores enormes) u otro resultado calculado no finito | `Err` de toda la llamada por resultado no finito, también si es intermedio y el valor devuelto sería finito. Aceptación: `overflow` de `Rect(MAX, 0, MAX, 1)` sobre `Rect(−MAX, 0, 0, 1)` da `Err`, porque `−MAX − MAX` es `−∞`; el rectángulo de márgenes de `Rect(−MAX, 0, MAX, 100)` da `Err`, porque su ancho es `+∞`. | ARQ-110 |
 | Caja con `x1 < x0` o `y1 < y0` | `Err`. | FD-05, FD-06, FD-11 |
 | Caja de tamaño 0 | Válida: `gafira-doc` admite `w = 0` y `h = 0`. Sus bordes y su centro coinciden. | FD-05, FD-06, FD-11 |
+| Rectángulo sin área | Se decide por eje. El rectángulo de márgenes (`margin_rect`) da `Err` si los dos márgenes del eje suman `> 0` y `≥` el tamaño de la caja; con suma 0 conserva la caja en ese eje, también con tamaño 0. Si la suma o el tamaño no son finitos, se aplica «Suma que desborda». `margin_rect` y `safe_rect` dan `Err` si un eje de tamaño `> 0` queda con tamaño ≤ 0 tras redondear. Aceptación: en un ancho de 100, márgenes 50 y 50 dan `Err`, y 49,99 y 50 no; `Rect(0, 0, 0, 100)` con márgenes 0 devuelve la misma caja, y con margen izquierdo 5 da `Err`; en `Rect(1e16, 0, 1e16 + 4, 100)`, un margen izquierdo de 3 y un `safe_rect` del 49 % dan `Err`. | FD-05 |
 | Umbral del Imán | Finito y > 0. La distancia igual al umbral engancha; por encima, no. El rango 2–16 lo aplica Ajustes. | FD-06 |
 | Zoom | Finito en `[0,05; 32]`; fuera, `Err`. | FD-06, FD-07 |
 | Empate del Imán | Comparación exacta de `f64`, sin tolerancia. | FD-06 |
