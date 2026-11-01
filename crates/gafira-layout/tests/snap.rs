@@ -563,6 +563,99 @@ fn arq_110_a_result_that_is_not_finite_is_an_error_even_if_the_value_would_be_fi
 }
 
 #[test]
+fn arq_110_an_inactive_magnet_computes_no_centre_quotient_guide_or_distance() {
+    // Row "Entradas del Imán": each input below is finite and in range. The magnet off gives
+    // (0, 0) without an error; the same input with the magnet on is a non-finite result.
+    type Make = fn() -> Case;
+    let cases: [(&str, Make, &str); 4] = [
+        (
+            "a moving box of size 0 at 1e308: its centre overflows",
+            || {
+                let mut c = Case::new();
+                c.moving = Rect::new(1e308, 0.0, 1e308, 0.0);
+                c
+            },
+            "moving",
+        ),
+        (
+            "an element box of size 0 at 1e308: its centre overflows",
+            || {
+                let mut c = Case::new();
+                c.elements = vec![Rect::new(1e308, 0.0, 1e308, 0.0)];
+                c
+            },
+            "element",
+        ),
+        (
+            "threshold 1e308 at zoom 0.05: the quotient overflows",
+            || {
+                let mut c = Case::new();
+                c.threshold = 1e308;
+                c.zoom = 0.05;
+                c
+            },
+            "threshold",
+        ),
+        (
+            "x0 = -MAX to x1 = 0 and a guide at MAX: the distance overflows",
+            || {
+                let mut c = Case::new();
+                c.moving = Rect::new(-f64::MAX, 0.0, 0.0, 0.0);
+                c.guides = vec![vg(f64::MAX)];
+                c
+            },
+            "distance",
+        ),
+    ];
+    for (what, make, field) in cases {
+        let mut c = make();
+        c.active = true;
+        assert_eq!(c.run(), Err(LayoutError::NonFinite { field }), "{what}");
+        c.active = false;
+        assert_eq!(c.run(), Ok(SnapResult { x: NONE, y: NONE }), "{what}");
+    }
+    // the guide of the last case, hidden: it does not attract with the magnet on either
+    let mut c = cases[3].1();
+    c.guides_visible = false;
+    assert_eq!(c.run(), Ok(SnapResult { x: NONE, y: NONE }));
+}
+
+#[test]
+fn arq_110_an_inactive_magnet_still_computes_the_step_on_screen() {
+    // The step on screen is part of a range check: 500 in at dpi 3e305 is finite in px
+    // and `+inf` on screen at zoom 32.
+    for active in [true, false] {
+        let mut c = Case::new();
+        c.grid.step = Length::new(500.0, Unit::In);
+        c.dpi = 3e305;
+        c.zoom = 32.0;
+        c.active = active;
+        assert_eq!(c.run(), Err(LayoutError::NonFinite { field: "step" }));
+    }
+}
+
+#[test]
+fn arq_110_an_inactive_magnet_still_checks_the_inputs_that_do_not_attract() {
+    for active in [true, false] {
+        // a hidden guide with NaN, and a guide with NaN
+        for visible in [true, false] {
+            let mut c = Case::new();
+            c.active = active;
+            c.guides_visible = visible;
+            c.guides = vec![vg(f64::NAN)];
+            assert_eq!(c.run(), Err(LayoutError::NonFinite { field: "guide" }));
+        }
+        // an element box with NaN, and one with x1 < x0
+        let mut c = Case::new();
+        c.active = active;
+        c.elements = vec![Rect::new(f64::NAN, 0.0, 0.0, 0.0)];
+        assert_eq!(c.run(), Err(LayoutError::NonFinite { field: "element" }));
+        c.elements = vec![Rect::new(1.0, 0.0, 0.0, 0.0)];
+        assert_eq!(c.run(), Err(LayoutError::InvalidBox { field: "element" }));
+    }
+}
+
+#[test]
 fn arq_110_boxes_with_a_negative_size_are_errors_and_a_size_of_zero_is_valid() {
     let cases: [(&str, Setter); 4] = [
         ("moving", |c, _| c.moving = Rect::new(2.0, 0.0, 1.0, 0.0)),
@@ -1093,6 +1186,77 @@ fn fd_06_a_major_line_is_exactly_k_times_the_step() {
     // negative k
     let neg = grid_hit(4.8, 3, 4.0, -52.81).unwrap();
     assert_eq!(neg.to_bits(), (-11.0f64 * 4.8).to_bits());
+}
+
+#[test]
+fn fd_06_a_grid_target_is_never_negative_zero_on_any_level() {
+    // The row: the target has the bits of the `grid_lines` line, which is `+0.0` at k = 0.
+    // `(-0.3).round()` is `-0.0`, so a rounded reference reaches it.
+    let rounded = (-0.3_f64).round();
+    assert_eq!(rounded.to_bits(), (-0.0_f64).to_bits());
+    // major and minor level, major only, and the `step * 2^k` level
+    let levels = [
+        (10.0, 1, 1.0),
+        (4.8, 3, 4.0),
+        (10.0, 5, 0.1),
+        (1.0, 1, 0.05),
+    ];
+    for (step, sub, zoom) in levels {
+        for at in [-0.0, rounded] {
+            let got = with_grid(step, sub, zoom, at).solve();
+            let t = got.target.expect("the line 0 is on the reference");
+            assert_eq!(t.kind, SnapKind::Grid);
+            assert_eq!(
+                t.coordinate.to_bits(),
+                0.0f64.to_bits(),
+                "{step} {sub} {zoom}"
+            );
+            assert_eq!(got.offset.to_bits(), 0.0f64.to_bits());
+        }
+    }
+}
+
+/// The nearest line among the 129 around `at`, every line computed as in the row; a tie goes down.
+fn brute_nearest(step: f64, sub: f64, at: f64) -> f64 {
+    let k0 = (at / (step / sub)).floor();
+    let mut best = (f64::INFINITY, 0.0);
+    for d in -64..=64 {
+        let k = k0 + f64::from(d);
+        let line = if k % sub == 0.0 {
+            (k / sub) * step
+        } else {
+            k * step / sub
+        };
+        let dist = (line - at).abs();
+        if dist < best.0 || (dist == best.0 && line < best.1) {
+            best = (dist, line);
+        }
+    }
+    best.1
+}
+
+#[test]
+fn fd_06_the_grid_target_is_the_nearest_line_also_where_the_quotient_rounds() {
+    // From about 6e14 px the quotient `at / spacing` is off by a line, so the neighbours on
+    // both sides are needed (spacing 0.23 px, 1 line in 4 is far from the quotient's guess).
+    // Up to 1e15 px the target is the nearest line; past about 2^51 px no fixed window is.
+    let cases = [
+        (2.3, 6.195547461130401e14),
+        (2.3, 6.240825351693131e14),
+        (2.3, 9.289947028071791e14),
+        (3.7, 9.50307987306895e14),
+        (3.7, 9.00731436871433e14),
+    ];
+    for (step, at) in cases {
+        let mut c = with_grid(step, 10, 32.0, at);
+        c.threshold = 16.0;
+        let got = c.solve().target.unwrap();
+        assert_eq!(got.kind, SnapKind::Grid);
+        assert_eq!(
+            got.coordinate.to_bits(),
+            brute_nearest(step, 10.0, at).to_bits()
+        );
+    }
 }
 
 #[test]

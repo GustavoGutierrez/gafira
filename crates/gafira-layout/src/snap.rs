@@ -158,10 +158,13 @@ fn check(input: &SnapInput<'_>) -> Result<(), LayoutError> {
 /// The line of `level` nearest to `at`; of two equally near lines, the smaller.
 ///
 /// The quotient `at / spacing` rounds, so the two lines around `at` are looked for
-/// among four neighbours. No loop depends on the size of `at`.
+/// among four neighbours. No loop depends on the size of `at`, so this is the nearest
+/// line up to about 1e15 px; beyond about 2^51 px no fixed window is (the lines
+/// themselves collapse onto the same `f64` positions).
 fn grid_target(level: Level, at: f64) -> Result<f64, LayoutError> {
     let spacing = level.spacing("step")?;
-    let k = finite("step", at / spacing)?.floor();
+    // `+ 0.0` turns a `-0.0` into 0.0: line 0 is `+0.0` in `grid_lines`, which counts in `i64`.
+    let k = finite("step", at / spacing)?.floor() + 0.0;
     let mut best: Option<(f64, f64)> = None;
     for k in [k - 1.0, k, k + 1.0, k + 2.0] {
         let line = level.line("step", k)?.position;
@@ -225,18 +228,30 @@ fn resolve(
 /// the two edges of `margins`, the two edges and the centre of `page` and of
 /// each box of `elements`, and, when the grid is visible and set to snap, the
 /// drawn grid line nearest to each reference (see [`crate::grid::grid_lines`]).
-/// An inactive magnet (`active` false) gives the offset 0 and no target, after
-/// the same checks. A guide that does not attract is still checked.
+/// An inactive magnet (`active` false) gives the offset 0 and no target after the
+/// input and range checks and the step on screen (a range check), and computes
+/// nothing else: no centre, threshold quotient, guide in px or distance, so none
+/// of them is an error. A guide that does not attract is still checked.
 ///
 /// `threshold` must be finite and above 0 (the 2 to 16 range belongs to the
 /// settings), `zoom` in `[0.05, 32]`, `dpi` above 0 and the grid step and
 /// subdivisions in the ranges of `grid_lines`. The order of checks is: all
-/// numbers, then the boxes, then the DPI, then the other ranges, then the
-/// computed values (`threshold / zoom`, every centre, every guide in px and
-/// every distance). Any error returns no result.
+/// numbers, then the boxes, then the DPI, then the other ranges (the step on
+/// screen included), then, with the magnet active, the computed values
+/// (`threshold / zoom`, every centre, every guide in px and every distance).
+/// Any error returns no result.
 pub fn snap(input: &SnapInput<'_>) -> Result<SnapResult, LayoutError> {
     check(input)?;
+    // The step on screen is part of the range check, so it is computed also when inactive.
     let level = level(input.grid, input.zoom, input.dpi)?;
+    if !input.active {
+        // Nothing else is computed: no centre, threshold quotient, guide in px or distance.
+        let none = AxisSnap {
+            offset: 0.0,
+            target: None,
+        };
+        return Ok(SnapResult { x: none, y: none });
+    }
     let limit = finite("threshold", input.threshold / input.zoom)?;
     let moving_x = span("moving", input.moving.x0, input.moving.x1)?;
     let moving_y = span("moving", input.moving.y0, input.moving.y1)?;
@@ -262,13 +277,6 @@ pub fn snap(input: &SnapInput<'_>) -> Result<SnapResult, LayoutError> {
     for e in input.elements {
         xs.extend(span("element", e.x0, e.x1)?.map(|v| (v, SnapKind::Element)));
         ys.extend(span("element", e.y0, e.y1)?.map(|v| (v, SnapKind::Element)));
-    }
-    if !input.active {
-        let none = AxisSnap {
-            offset: 0.0,
-            target: None,
-        };
-        return Ok(SnapResult { x: none, y: none });
     }
     if input.grid.visible && input.grid.snap {
         // Each reference gets its nearest drawn line, which competes like any target.
