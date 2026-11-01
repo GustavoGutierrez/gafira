@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod align;
 mod attractors;
 mod bounds;
 mod error;
@@ -14,6 +15,7 @@ pub mod guides;
 mod rects;
 pub mod snap;
 
+pub use align::{AlignAction, Item, Offset, align};
 pub use attractors::attractors;
 pub use bounds::node_bounds;
 pub use error::LayoutError;
