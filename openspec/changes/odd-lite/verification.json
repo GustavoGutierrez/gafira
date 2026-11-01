@@ -1,0 +1,23 @@
+{ "schema": 1, "change": "odd-lite", "delivery": "phases A and B", "rounds": [ {
+  "round": 1, "commit": "5fc7659", "mode": "light", "tier": "T0", "depth": "V1",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 6},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/coordinator.md:84",
+     "summary": "Folderless FAIL findings and classes live only in the scratchpad; closure rounds and the same-class stop cannot work after a new session"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/coordinator.md:20",
+     "summary": "'never lower a pack default' collides with mutation off at line 63; L0 V0 and one writer are unresolved against pack depth and agents"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation",
+     "ref": ".agents/agents/verify.md:32",
+     "summary": "Step 3d does not clearly carry the product ID git grep check and finding classes of 3c onto outcome entries"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation",
+     "ref": "docs/adr/0011-odd-lite.md:46",
+     "summary": "ADR says gates and modes tables unchanged; G0, G4 and the AGENTS.md modes table changed additively"}
+  ],
+  "gates": {"fmt": "n/a", "clippy": "n/a", "test": "n/a", "deny": "n/a", "ci_policy": "n/a"},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "criteria": {"total": 9, "covered": 9},
+  "size": {"lines": 311, "forecast": null}, "report": "verify-report.md" } ] }
