@@ -353,3 +353,8 @@ Timeouts (15 in the earlier run, re-run with `--timeout 150`)
 - Not hangs, only slow (the `u32::MAX` count walked 4 billion times): `guides.rs` 63:46 `%`, 63:46 `*`, 64:13 `>`, 64:13 `==`, 70:42 `/` and `+`, 70:38 `*`, 70:61 `+`. They were already caught by quick assertions, but the test binary waited for the slow tests. The `u32::MAX` assertions now live in `tests/guides_huge.rs` (sorted after `guides_generate`, so cargo stops at the first failing binary); `guides_generate` uses a count of 100 000. Re-run: all caught, none times out.
 
 Measured (`git diff --shortstat 78906a8 HEAD`): see the result of the round; about 230 lines, mostly tests. Under 700.
+
+## T4 fix: mutation exclusions narrowed
+
+- `.cargo/mutants.toml`: the `grid.rs` entry is now `grid\.rs:113:27: ... in level$` and the `snap.rs` entry `snap\.rs:98:13: ... in Candidate::beats$`; each matches one mutant (`grid.rs:115:42 < -> <=`, the doubling loop, is not excluded; `beats` has a single `<` after the tuple rewrite).
+- `cargo mutants -p gafira-layout` on `grid.rs` and `snap.rs`: 126 tested, 116 caught, 6 unviable, 4 timeouts (caught), 0 survivors; no new test needed.
