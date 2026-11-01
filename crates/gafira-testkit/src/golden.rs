@@ -221,3 +221,61 @@ pub fn compare(mode: Mode, expected: &Image, actual: &Image) -> Result<(), Misma
         Ok(())
     }
 }
+
+/// Quantizes `f32` channels to bytes with `round(c * 255)` on `[0, 1]`.
+pub fn quantize(values: &[f32]) -> Vec<u8> {
+    // The clamp comes first; NaN casts to 0.
+    values
+        .iter()
+        .map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect()
+}
+
+/// Why a golden check failed.
+#[derive(Debug)]
+pub enum CheckError {
+    /// The stored golden or the actual image is unusable.
+    Golden(GoldenError),
+    /// The images differ; the candidate was written to `candidate`.
+    Mismatch {
+        mismatch: Mismatch,
+        candidate: std::path::PathBuf,
+    },
+    /// The images differ and the candidate could not be written.
+    Io(std::io::Error),
+}
+
+/// Checks `actual` against the stored golden `golden_png` in the mode of this target.
+///
+/// On a mismatch the candidate is written to `<candidate_dir>/<name>.png`;
+/// pass the integration test's `CARGO_TARGET_TMPDIR`. Nothing under
+/// `tests/golden` is ever written: accepting a candidate is a manual copy.
+pub fn check(
+    name: &str,
+    golden_png: &[u8],
+    actual: &Image,
+    candidate_dir: &std::path::Path,
+) -> Result<(), CheckError> {
+    check_in(current_mode(), name, golden_png, actual, candidate_dir)
+}
+
+/// [`check`] with an explicit `mode`.
+pub fn check_in(
+    mode: Mode,
+    name: &str,
+    golden_png: &[u8],
+    actual: &Image,
+    candidate_dir: &std::path::Path,
+) -> Result<(), CheckError> {
+    let expected = decode_png(golden_png).map_err(CheckError::Golden)?;
+    let Err(mismatch) = compare(mode, &expected, actual) else {
+        return Ok(());
+    };
+    let candidate = candidate_dir.join(format!("{name}.png"));
+    let png = encode_png(actual).map_err(CheckError::Golden)?;
+    std::fs::write(&candidate, png).map_err(CheckError::Io)?;
+    Err(CheckError::Mismatch {
+        mismatch,
+        candidate,
+    })
+}
