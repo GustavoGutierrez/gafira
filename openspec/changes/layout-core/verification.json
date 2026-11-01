@@ -21,5 +21,23 @@
   "hand_mutants": {"run": 6, "killed": 1},
   "criteria": {"total": 18, "covered": 15},
   "size": {"lines": 871, "authored_lines": 784, "forecast": 420},
+  "report": "verify-report.md" },
+  {
+  "round": 2, "commit": "769c9c0", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 2, "warning": 2, "suggestion": 2},
+  "findings": [
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "tests/rects.rs:402, ARQ-111", "summary": "Narrowed: M1 killed, bytes compared, but round 1 M2 survives 6 of 7 runs: overflow inputs have an even count of zero excesses"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "tests/bounds.rs, ARQ-110", "summary": "Narrowed: M3a to M3c killed, 12 of 12 values checked, but the ARQ-110 property still omits node_bounds"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules", "summary": "1012 authored lines, 1123 with config, copy and notes, against ~700; owner decides"},
+    {"id": "W8", "severity": "WARNING", "class": "ambiguity", "follow-up": true, "ref": "FD-05(d), 02 4.17.2", "summary": "Owner decision: follow-up. 10 mm in px refused at 550 of 10000 DPIs"},
+    {"id": "S2", "severity": "SUGGESTION", "ref": "design.md S19, D-38", "summary": "Open note: no code holds the 5 % default"},
+    {"id": "S3", "severity": "SUGGESTION", "ref": "crates/gafira-layout/src/error.rs", "summary": "field doc says input, but overflow names a computation; NoArea text says margins, and safe_rect returns it too"}
+  ],
+  "closed": ["C1", "C3", "W1", "W2", "W4", "W5", "W6", "W7", "S1"],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 25, "killed": 24},
+  "criteria": {"total": 22, "covered": 20},
+  "size": {"lines": 1123, "authored_lines": 1012, "src": 337, "tests": 656, "config": 28, "clippy_copy": 47, "notes": 55, "forecast": 420},
   "report": "verify-report.md" }
 ] }

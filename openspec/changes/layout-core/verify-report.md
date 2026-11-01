@@ -2,7 +2,11 @@
 
 Change `layout-core`, delivery D3, round 1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
 
-Commit verified: `f2dafd1`, the tip of `feat/layout-core-d3`. Verdict: **FAIL**. Counts: 4 CRITICAL, 8 WARNING, 2 SUGGESTION. Per class: implementation 8 (4 CRITICAL, 4 WARNING); ambiguity 4 (WARNING); architecture 0; claim 0.
+Current state: round 2 at `769c9c0`, **FAIL** for D3. 2 CRITICAL (C2, C4, both narrowed, both still open), 2 WARNING (W3 for the owner, W8 `follow-up`), 2 SUGGESTION (S2 open, S3 new). C1, C3, W1, W2, W4, W5, W6, W7 and S1 are closed. See "Round 2 (closure)" at the end.
+
+## Round 1
+
+Commit verified: `f2dafd1`, the tip of `feat/layout-core-d3`. Verdict: **FAIL**. Counts: 4 CRITICAL, 8 WARNING, 2 SUGGESTION. Per class: implementation 8 (4 CRITICAL, 4 WARNING); ambiguity 4 (WARNING); architecture 0; claim 0. The sections below keep the round 1 record.
 
 The D2 report is in git history at `1c68734`; this file now covers D3.
 
@@ -207,4 +211,186 @@ Verdict: **FAIL**. 4 CRITICAL, 8 WARNING, 2 SUGGESTION. implementation 8, ambigu
 
 W5 to W7 decide what `node_bounds` and `margin_rect` must return, so they go first; C1 to C4 and W2 to W4 follow. No check was blocked.
 
-next: specifier, tdd-apply
+Round 1 routed to `specifier`, then `tdd-apply`.
+
+## Round 2 (closure)
+
+Commit verified: `769c9c0`, the tip of `feat/layout-core-d3`, closure round, depth V2. Verdict: **FAIL**. Counts: 2 CRITICAL, 2 WARNING, 2 SUGGESTION. Per class: implementation 3 (2 CRITICAL, 1 WARNING); ambiguity 1 (WARNING, `follow-up`); architecture 0; claim 0. No check was blocked. No new independent-mutant budget was spent.
+
+The code holds up: no real defect was found, and every gate passes. Both CRITICAL items are parts of round 1 findings that the fix round left open, each a small test addition. They are not new gaps, so they keep their round 1 severity.
+
+### CRITICAL
+
+**C2. ARQ-111: the bytes are now compared on every operation, but mutant M2 still survives.** class: `implementation`. Ref: `crates/gafira-layout/tests/rects.rs:402`, ARQ-111, notes line 148.
+The fix is real: every operation now runs twice on its own and compares `to_bits`, `margin_rect` included, and M1 dies. The round 1 M2 does not. Run with the same text as round 1 (the sign flips on every second zero excess, counted per excess, not per call), it survived 6 of 7 runs and died once on a rare rounding case.
+
+The cause is the inputs. `overflow(page, safe)` and `overflow(safe, page)` almost always have 0, 2 or 4 zero excesses, so a flip with period 2 lands on the same signs in both runs. The notes say M2 is killed, which holds for other forms only:
+
+| Form | Result |
+|---|---|
+| Round 1 text, per zero excess | **Survived 6 of 7 runs** |
+| Per call, all zero excesses of a call flip | Killed |
+| Per excess, on `left` only | Killed |
+| Round 1 text, with one extra property operation on a box that overflows on one side only (3 zero excesses) | Killed, 1 of 1 run, on the scratch export only |
+
+The last row shows the size of the fix: one operation whose count of zero excesses is odd.
+
+**C4. The ARQ-110 property still omits `node_bounds`.** class: `implementation`. Ref: `crates/gafira-layout/tests/bounds.rs`, ARQ-110, round 1 C4 third bullet.
+Round 1 said the property omits `margin_rect` and `node_bounds` and checks 8 of 12 values. `margin_rect` was added and every value is checked now, and the real sum case exists. M3a, M3b and all five M3c forms die. `node_bounds` has no property: `tests/bounds.rs` has no `proptest!` block and `crates/gafira-layout/src` has no tests. ARQ-110 asks for "toda salida numérica es finita" on finite input in the domain, and `node_bounds` is a public function of the first slice.
+
+The behaviour itself passes: my probe `node_bounds_in_domain`, 5 000 cases of up to 7 leaves, flat or nested, with rotation and skew, in debug and in release, found finite output and identical bytes on two runs. Only the implementer's test is missing. That probe is at `/tmp/claude-1000/-home-meridian-Documentos-Proyectos-Personal-gafira/3a54b45c-c902-4fc0-a117-20f3f1d7d4dd/scratchpad/d3-verify-r2/probes-src/probe_r2.rs` until the scratchpad goes.
+
+### WARNING
+
+**W3. Size is further above the ceiling.** class: `implementation`. Open for the owner, not a blocker. See "Size" below.
+
+**W8. 10 mm in px is refused at some DPIs.** class: `ambiguity`, `follow-up` by owner decision. Unchanged: 550 of 10 000 integer DPIs, first at 13, 21, 26.
+
+### SUGGESTION
+
+**S2.** Stays open as a note: no code holds the 5 % default of D-38.
+
+**S3. New, non-critical text.** `crates/gafira-layout/src/error.rs` says `field` names "the input at fault", but `overflow` names a computation and `margins` a sum. `NoArea` and its `Display` text say "the margins leave no area", and `safe_rect` now returns it too.
+
+### Earlier findings
+
+| ID | State | Evidence |
+|---|---|---|
+| C1 | **Closed** | See below |
+| C2 | **Open, narrowed** | `margin_rect` and bytes fixed; M1 killed; M2 survives |
+| C3 | **Closed** | Both acceptance rows give `Err` with margins 0 and 10; `left + right` overflow now `NonFinite`; each new check removed one at a time is killed (4 of 4), and all four `overflow` sides (M3c forms) |
+| C4 | **Open, narrowed** | Sum case real, 12 of 12 values checked, M3a to M3c killed; `node_bounds` property missing |
+| W1 | Closed | See "Strict TDD". The order of `f2dafd1` cannot be repaired |
+| W2 | Closed as history | The fix round has four units; `f2dafd1` stays one commit, not amended, as asked |
+| W3 | Open | For the owner |
+| W4 | Closed | Row examples give `NoArea`; mutants on each axis killed |
+| W5 | Closed | Spec row in `a5b694d`; code and test follow it, nested group too; mutant killed |
+| W6 | Closed | Owner option A, `d1232b5`; `range_rule_a_skew_of_90_is_not_a_range_error` fixes no value; range-check mutant killed |
+| W7 | Closed | Spec row and FD-05(f); `Rect(0, 0, 0, 100)` keeps the box with margins 0, `NoArea` with left 5; guard mutants on each axis killed |
+| W8 | Open, `follow-up` | Owner decision |
+| S1 | Closed | `leaf` and `group` helpers in `2e2993a`, 22 net lines fewer |
+| S2 | Open | Note |
+
+**C1 evidence.** On a 2 MiB test thread, debug and release:
+
+| Check | Result |
+|---|---|
+| Implementer's test, depth 100 000 | Pass in both |
+| Crafted file, 20 000 and 100 000 levels: `from_json`, `validate()`, `node_bounds` | `Ok` with the exact box. At 100 000 the `node_bounds` call took 352 ms in debug, 81 ms in release |
+| Round 1 deep probes, 1 000 to 100 000 | Pass |
+| Loop closed at 2, 3, 1 000 and 100 000 levels; self-loop; loop starting at 50 000 below an acyclic prefix; loop behind a finished sibling | `Err(Cycle)` naming the right group |
+| Depth 100 000 ending in a missing child, a NaN leaf, or an infinite group box halfway | `Err(UnknownNode)` and `Err(NonFinite)` |
+| Empty group, unknown id | Own box, `Err(UnknownNode)` |
+| Diamond of 80 levels (2^80 paths), group of 200 000 children | Exact box; the diamond under 2 s in both builds |
+
+`RUST_MIN_STACK=65536` also passes the crafted-file, loop and broken-tree probes, so nothing depends on stack size. Before the fix, the same test aborts with "has overflowed its stack" at `f2dafd1`'s sources. The round 1 concern about `path.contains` is gone: `open` is a `BTreeSet`.
+
+### Strict TDD in this fix round
+
+RED is credible. Git cannot show it, because each test sits in the same commit as its code, so I ran the HEAD tests against the sources of `f2dafd1`. Of the 9 new or rewritten tests:
+
+| Test | At old sources | Matches the notes |
+|---|---|---|
+| `arq_110_a_very_deep_chain_...` | SIGABRT, stack overflow | Yes |
+| `arq_110_a_group_checks_...` | `Ok` where `Err(NonFinite x)` | Yes |
+| `arq_110_a_computed_non_finite_value_...` | Fails | Yes |
+| `fd_05_f_rounding_...` | `Ok` with `x0 == x1 == 1.0000000000000004e16` | Yes, same value |
+| `fd_05_f_margins_are_decided_per_axis_...` | `Err(NoArea)` where `Ok` | Yes |
+| `range_rule_a_skew_of_90_...` | Passes | Yes, states it |
+| `fd_05_a_dpi_that_is_not_positive_...` | Passes | Yes, states it |
+| `adr_0009_a_group_shared_by_two_groups_...` | Passes | Yes, states it |
+| `arq_110_arq_111_...` | Passes | Yes, states it |
+
+This proves the tests fail on the old code. It cannot prove the order they were written in. The four that passed rest on mutants: skew range check, positive-dpi check and open-set clearing are all killed, and the fourth is C2, where M1 is killed and M2 is not. So three of the four stand as stated, and the fourth stands for M1 only.
+
+### Field names of the new `NonFinite` errors
+
+Unspecified detail, not invented behaviour. ARQ-110 requires a typed `Err` that names the field, and its table covers input parameters; 02 §4.17.2 gives no name for a computed value. The behaviour (an `Err`) is specified, and the names `overflow`, `page` and `margins` fill a gap. They match the round 1 practice of `bleed` and `percent` for computed results, and the tests assert only the variant. Only the wording of the doc comment disagrees (S3).
+
+### Gates
+
+Run at `769c9c0` on a fresh clone in the scratchpad, `CARGO_INCREMENTAL=0`, own target dir. Free disk at start: 67 GB. The repo tree stayed clean.
+
+| Gate | Exit | Note |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 952 passed, 0 failed, 0 ignored |
+| ARQ-07, forbid unsafe, V5, V12, V13, V14 | 0 | Each extracted from `ci.yml` and run as written |
+| `cargo deny check` | 0 | advisories, bans, licenses, sources ok |
+
+Linux only; the Windows and macOS matrix jobs did not run here. Per-commit gates are V3 and did not run; the notes state them.
+
+### Artifact integrity (step 3c)
+
+- `f08d005` touches only `apply-progress.md`. Slice card lines 1 to 9 are byte-identical at HEAD. No `slice card amend` commit for this change.
+- `a5b694d`, `d1232b5` and `503ebde` touch only `docs/specs` and are the only commits since `f2dafd1` that do. The implementer's commits `2e2993a`, `9ec851b`, `8c724f5` and `769c9c0` touch only the crate's `src` and `tests`, and the notes.
+- Notes: 24 lines added, 0 removed.
+- `f2dafd1` not amended: same SHA, ancestor of HEAD, parent of `067fe56`.
+- Deleted tracked files against `develop`: 0.
+- `*.proptest-regressions`: 0 changed against `develop`, 0 against `f2dafd1`, none in the tree, tracked, untracked or ignored.
+- `.cargo/mutants.toml` unchanged, so no exclusion to review.
+
+### Criteria
+
+Round 1 rows 1 to 9 and 13 to 18 stay covered. Changes:
+
+| # | Criterion | State | Proof |
+|---|---|---|---|
+| 10 | ARQ-110 intermediate non-finite, sum row | covered | `arq_110_a_computed_non_finite_value_...`, probe `c3_rows` |
+| 11 | ARQ-110 property, no panic | **failing** | No panic proved (C1); `node_bounds` property missing (C4) |
+| 12 | ARQ-111 | **failing** | M2 survives (C2) |
+| 19 | §4.17.1 Rangos | covered | `range_rule_*` |
+| 20 | §4.17.2 Rectángulo sin área | covered | `fd_05_f_rounding_*`, `fd_05_f_margins_are_decided_*` |
+| 21 | §4.17.2 Márgenes | covered | `fd_05_f_margins_are_decided_*` |
+| 22 | §4.17.2 DPI | covered | `fd_05_a_dpi_that_is_not_positive_*` |
+
+20 of 22 covered. The NaN row is covered too, with its three acceptance cases in `arq_110_a_group_checks_*`.
+
+### Hand mutants
+
+No independent budget. Round 1 mutants, plus one per closed item, on a scratch export with `cargo test -p gafira-layout --test bounds --test rects`: 25 forms, 24 killed.
+
+| Mutants | Result |
+|---|---|
+| M1 (round 1 text), M1b (relative, not absorbed at 1e6) | Killed |
+| M2 round 1 text | **Survived** (6 of 7 runs) |
+| M2 per call, M2 on `left` only | Killed |
+| M3a, M3b, M3c left only, each of the four sides dropped | Killed |
+| C3: width, height, across and down checks removed | Killed |
+| W4 on x and y, W7 on x and y, W5 group check | Killed |
+| C1: cycle guard, open set not cleared | Killed |
+| Notes: skew range check, dpi skipped for same unit | Killed |
+
+The round 1 script was adapted only where the code moved. The cycle-guard mutant first failed to compile and was corrected; it is counted once.
+
+### Probes
+
+Re-run on a clean export with the round 1 probes, debug and release: 15 in `probe_d3` and 7 in `probe_deep` pass, the 20 000 cases per property confirmed by a counter. The stack threshold sweep was left out, since it has no meaning now. New closure probes in `probe_r2`: 9 pass. One of mine first failed: I expected `Err` from a 10 mm bleed at `dpi = MAX`, but that is 0.39 of `MAX`, finite, so `Ok` is correct. The probe was wrong, not the code.
+
+### Size
+
+`git diff --numstat develop HEAD`, leaving out spec and verify files:
+
+| Group | Lines |
+|---|---|
+| Source (`src/`) | 337 |
+| Tests (`tests/`) | 656 |
+| Config: crate `Cargo.toml` 17, `Cargo.lock` 9, root `Cargo.toml` 1, `ci.yml` 1 | 28 |
+| `clippy.toml` byte copy | 47 |
+| Notes (`apply-progress.md`) | 55 |
+| Total | 1 123 |
+
+- On the round 1 "authored" basis (source, tests, crate and root manifests, `ci.yml`): 1 012 lines, against 784 in round 1.
+- Forecast 420: measured 2.41 times over on 1 012, 2.67 times on 1 123. Ceiling ~700.
+- Fix round in `crates/`: 331 insertions, 103 deletions, matching the notes.
+- Tests to source: 1.95 to 1.
+- The owner decides; W3 is not a blocker.
+
+### Result
+
+Verdict: **FAIL**. 2 CRITICAL, 2 WARNING, 2 SUGGESTION. implementation 3, ambiguity 1, architecture 0, claim 0.
+
+This is the second consecutive FAIL of class `implementation` on D3, and round 3 is the last under the delivery rule.
+
+next: tdd-apply
