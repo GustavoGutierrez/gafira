@@ -869,6 +869,8 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | ARQ-113 | **Golden de capa 2.** Un criterio de píxel usa primero un valor analítico. Un golden guardado se genera en `x86_64-unknown-linux-gnu`, usa un formato sin pérdida y solo se regenera con una acción explícita: ninguna prueba reescribe su referencia. La tolerancia es la de §10. | Prueba del comparador: una referencia con 1 byte alterado falla en la misma plataforma. Entre plataformas, con 1 000 píxeles, 1 píxel a 2/255 pasa (99,9 %), 2 píxeles a 2/255 fallan, y todos a 1/255 pasan. |
 | ARQ-114 | **Presupuestos.** Las cifras de capa 2 viven en §6.7 y las mide un *benchmark* (ARQ-40). No son una puerta de `cargo test`. | Cada cifra de §6.7 citada por una ficha de capa 2 tiene un *benchmark* con el nombre de esa fila. |
 
+**Rangos.** Un motor comprueba solo los rangos que indican sus filas de §4.17 o sus filas `FD-`. Un valor finito fuera de un rango sin fila, como `skew = 90` en `node_bounds`, no se vuelve a comprobar: queda fuera del dominio de ARQ-110 y, si da un resultado finito, ese valor no está especificado a propósito. Un no finito, de entrada o calculado, sigue dando `Err` (ARQ-110). Aceptación: `node_bounds` de una caja de 100 px con `skew = 90` no da `Err` de rango, y ninguna prueba fija el valor devuelto.
+
 #### 4.17.2 `gafira-layout`
 
 | Primer corte (D-14) | Fuera del corte |
