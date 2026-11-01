@@ -37,6 +37,18 @@ fn run(s: &GuideSpec, w: f64, h: f64) -> Vec<gafira_layout::Guide> {
 }
 
 #[test]
+fn fd_04_a_gap_of_negative_zero_is_a_gap_of_zero() {
+    for (columns, rows) in [(1, 1), (3, 2)] {
+        let neg = run(&spec(columns, rows, -0.0, 10.0), 300.0, 200.0);
+        let zero = run(&spec(columns, rows, 0.0, 10.0), 300.0, 200.0);
+        let bits = |g: &[gafira_layout::Guide]| -> Vec<u64> {
+            g.iter().map(|g| g.position.value().to_bits()).collect()
+        };
+        assert_eq!(bits(&neg), bits(&zero));
+    }
+}
+
+#[test]
 fn fd_04_a_twelve_columns_in_1080() {
     let g = run(&spec(12, 0, 24.0, 24.0), 1080.0, 1080.0);
     let v = on(GuideAxis::Vertical, &g);
@@ -312,6 +324,9 @@ proptest! {
     }
 }
 
+/// A count far above the 16 384 that fit; `u32::MAX` itself is in `guides_huge`.
+const HUGE: u32 = 100_000;
+
 /// The `page` side limit, in px (ARQ-110, FD-04).
 const MAX_SIDE: f64 = 16_384.0;
 
@@ -343,19 +358,10 @@ fn fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width() {
     let big = page(16_385.0, 16_385.0);
     let ok = page(MAX_SIDE, MAX_SIDE);
     // a valid side: an enormous n is the column width rule
-    assert_eq!(
-        generate(&spec(u32::MAX, 0, 0.0, 0.0), ok, 96.0),
-        out("columns")
-    );
-    assert_eq!(
-        generate(&spec(0, u32::MAX, 0.0, 0.0), ok, 96.0),
-        out("rows")
-    );
+    assert_eq!(generate(&spec(HUGE, 0, 0.0, 0.0), ok, 96.0), out("columns"));
+    assert_eq!(generate(&spec(0, HUGE, 0.0, 0.0), ok, 96.0), out("rows"));
     // a side out of range: the same n is the page rule
-    assert_eq!(
-        generate(&spec(u32::MAX, 0, 0.0, 0.0), big, 96.0),
-        out("page")
-    );
+    assert_eq!(generate(&spec(HUGE, 0, 0.0, 0.0), big, 96.0), out("page"));
     // non-finite inputs win over the side limit
     assert_eq!(
         generate(&spec(1, 1, 0.0, 0.0), big, f64::NAN),
@@ -393,8 +399,8 @@ proptest! {
     // FD-04 bound: with c >= 1 px, n <= 16 384, so every Ok has at most 32 768 guides per axis.
     #[test]
     fn fd_04_every_ok_has_at_most_32768_guides_per_axis(
-        cols in prop_oneof![0u32..40, 16_000u32..17_000, Just(u32::MAX)],
-        rows in prop_oneof![0u32..40, 16_000u32..17_000, Just(u32::MAX)],
+        cols in prop_oneof![0u32..40, 16_000u32..17_000, Just(HUGE)],
+        rows in prop_oneof![0u32..40, 16_000u32..17_000, Just(HUGE)],
         w in prop_oneof![1.0..100.0f64, 16_000.0..16_400.0f64],
         h in prop_oneof![1.0..100.0f64, 16_000.0..16_400.0f64],
         margin in prop_oneof![Just(0.0), 0.0..10.0f64],

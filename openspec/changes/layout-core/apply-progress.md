@@ -327,3 +327,39 @@ Hand mutants (applied, failed, reverted, never committed)
 - `attractors` reading every node and not only the attracting ones: `arq_110_a_nan_outside_the_attracting_nodes_changes_nothing` and the new C4 test.
 
 Measured (`git diff --shortstat 971d7c4 -- crates`, before this note): 6 files, 312 insertions, 19 deletions. Under 700. Deviations: `0554dfa` has no standalone gate run (above); W2 is a corrected claim and a documented limit, not a code change; S3 and S4 not done.
+
+## T4 fix round (mutants of `gafira-layout` and `gafira-doc`)
+
+Status: done. Owner instruction: close the gaps; only a truly equivalent mutant stays. Rows read: `02-arquitectura-software.md` 4.17.2, FD-05, FD-06, FD-11. Final T4 of `gafira-layout`: 452 mutants, 434 caught, 11 unviable, 7 timeouts (all intrinsic hangs, below), 0 missed. `gafira-doc` `error.rs`: 5 caught, 1 unviable.
+
+Commits: `9bc73d5`, `ba75462`, `1087905`, `80b77b9`, then the `grid_target` / `beats` simplifications and the test split, then the `mutants.toml` entries. Gates (fmt, clippy, test, exit codes read one by one) were run on the green working tree before each commit; the first four commits are subsets of it and have no standalone run. The later ones ran on their own tree.
+
+Outcome per survivor
+- `align.rs` `check_boxes` 62:37 `/`->`%`, 63:37 `/`->`%`: equivalent. The check only asks if the centre is finite; for finite `x`, `x/2` and `x%2` are finite, for an infinite sum both are not (NaN cannot arise after the number check). Excluded in `.cargo/mutants.toml`. 63:37 `/`->`*` was a real gap (y centre): `arq_110_a_centre_that_is_finite_is_not_an_error_however_large_the_box` (sum between MAX/2 and MAX, both axes).
+- `align.rs:107` `[]` arm: removed (the general path gives the same result).
+- `attractors.rs:83` `|=`->`&=`: `fd_06_c_a_node_reached_by_two_parents_takes_both_out_when_it_holds_the_selection`.
+- `error.rs:36` `Display`: `arq_110_every_error_says_what_failed_and_names_its_input` (the message holds the field or the id; no text fixed).
+- `grid.rs:113` `<`->`<=` in `level`: equivalent. At exactly 6 px the doubling loop runs zero times and yields `unit = step, div = 1, every = 1`, which the other branches give too (the minor branch needs subdivisions 1 at that spacing). Excluded.
+- `guides.rs:110` `gap + 0.0`->`-`: the sign of the gap never reaches a position (it is never the first or only term and `cell >= 1`); the normalization is removed and `fd_04_a_gap_of_negative_zero_is_a_gap_of_zero` pins it bitwise. The margin keeps `+ 0.0`.
+- `rects.rs:140` (four): `fd_05_the_warning_is_raised_by_any_one_side_alone` (each side alone, all zero, and as `overflow` reports it). Negative excess is unreachable (`overflow` clamps).
+- `rects.rs:155` `>`->`>=`: not equivalent, `-0.0 - 0.0` is `-0.0`: `fd_05_an_edge_on_the_limit_has_an_excess_of_positive_zero`.
+- `snap.rs` `Candidate::beats` 98, 101, 104, 106 (x2): equivalent as written, because each `<` sits after a `!=` guard (and references arrive ascending). Brute force over 3M random candidate sets (every field of the winner compared): 0 differences for all five. The function is now one tuple comparison `(distance, kind, coordinate, reference) <`, which leaves one equivalent mutant (`<`->`<=`: equal tuples are the same candidate), excluded; `==`, `>` are killed by the D-16 tests.
+- `snap.rs` `grid_target` 172:63, 172:76 (x2): the tie clause `(distance == d && line < p)` never fired in the ascending scan. Brute force over 60M cases (units up to 1e9, references up to 1e25, half-spacing ties): 0 differences with and without it. Removed; ascending order and a strict `distance < d` keep the smaller of two equal lines (`fd_06_the_grid_attracts_to_the_nearest_line_on_either_side_and_a_tie_goes_down` kills `<=`).
+- `snap.rs` `grid_target` 169:38 (`k + 2.0` `+`->`-`, `+`->`*`): claim "equivalent" is FALSE past 2^51 px. Brute force (24M cases, spacing >= 0.1875 px): 0 differences with a 3-neighbour window up to 2e15, 656 differences from 7e16 (e.g. step 58.227, 10 subdivisions, reference -72684900000000000: three neighbours give a line 20 px off, four give the reference itself). Test `fd_06_past_2_pow_51_the_target_is_a_line_that_grid_lines_draws_nearest` (3 cases, oracle: nearest line of `grid_lines`). Deviation: this pins behaviour in the range the doc declines to guarantee (the doc limit stays true in general); the owner may drop the test if "nearest" past 2^51 is out of scope.
+- `gafira-doc` `error.rs:181`: `a_page_layout_error_exposes_its_cause`.
+
+Timeouts (15 in the earlier run, re-run with `--timeout 150`)
+- Hangs, detected by non-termination (still running at 150 s; the suite takes about 3 s): `attractors.rs:61:34`, `69:31` and `bounds.rs:59:23` (`+=`->`*=` on the child index: stays 0, the walk never ends), `grid.rs:82:35`, `83:34` (`/`->`*` in `axis_lines`: a loop over a range of astronomical size), `grid.rs:115:31`, `116:22` (the doubling loop of `level` never reaches 6 px). No assertion can fail first: the loop sits in the first call of nearly every test.
+- Not hangs, only slow (the `u32::MAX` count walked 4 billion times): `guides.rs` 63:46 `%`, 63:46 `*`, 64:13 `>`, 64:13 `==`, 70:42 `/` and `+`, 70:38 `*`, 70:61 `+`. They were already caught by quick assertions, but the test binary waited for the slow tests. The `u32::MAX` assertions now live in `tests/guides_huge.rs` (sorted after `guides_generate`, so cargo stops at the first failing binary); `guides_generate` uses a count of 100 000. Re-run: all caught, none times out.
+
+Measured (`git diff --shortstat 78906a8 HEAD`): see the result of the round; about 230 lines, mostly tests. Under 700.
+
+## T4 fix: mutation exclusions narrowed
+
+- `.cargo/mutants.toml`: the `grid.rs` entry is now `grid\.rs:113:27: ... in level$` and the `snap.rs` entry `snap\.rs:98:13: ... in Candidate::beats$`; each matches one mutant (`grid.rs:115:42 < -> <=`, the doubling loop, is not excluded; `beats` has a single `<` after the tuple rewrite).
+- `cargo mutants -p gafira-layout` on `grid.rs` and `snap.rs`: 126 tested, 116 caught, 6 unviable, 4 timeouts (caught), 0 survivors; no new test needed.
+
+## Fix round T4 (verify Round 3: C5, W6)
+
+- C5: `fd_07_a_mm_steps_keep_a_line_on_either_view_edge` and `fd_07_c_at_most_2000_lines_at_any_zoom_on_a_4k_screen` moved unchanged to `tests/grid_huge.rs` (sorts after `grid`). Mutants `grid.rs:82:35` and `83:34` (`/` to `*`): the `grid` binary now fails on assertions (`fd_07_a_every_line_between_two_edge_lines_is_kept`, plus `arq_111_...` / `fd_07_a_majors_sit_exactly_on_multiples_of_the_step`) and `cargo test` stops about 2 to 3 s after start (incl. earlier binaries). Both reverted, not committed. No production code changed.
+- W6: `.cargo/mutants.toml` reason for `snap.rs:98:13` now says the tied candidates differ at most in the sign of a zero, which the spec treats as one target.

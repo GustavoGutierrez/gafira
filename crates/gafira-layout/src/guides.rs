@@ -106,8 +106,9 @@ pub fn generate(spec: &GuideSpec, page: Rect, dpi: f64) -> Result<Vec<Guide>, La
     if margin < 0.0 {
         return Err(LayoutError::OutOfRange { field: "margin" });
     }
-    // `+ 0.0` turns a stored -0.0 into 0.0.
-    let (gap, margin) = (gap + 0.0, margin + 0.0);
+    // `+ 0.0` turns a stored -0.0 into 0.0. The gap needs none: it is never the first
+    // or the only term of a position, so its sign never reaches the output.
+    let margin = margin + 0.0;
     let width = finite("page", page.width())?;
     let height = finite("page", page.height())?;
     // Both sides, even when an axis has `n = 0`; before any column width rule.

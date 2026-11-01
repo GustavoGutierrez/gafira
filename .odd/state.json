@@ -14,7 +14,7 @@
         {"id": "D6", "status": "passed", "evidence": "verify round 2 at 517c3cc"},
         {"id": "D7", "status": "passed", "evidence": "verify round 2 at 517c3cc"}
       ],
-      "next_action": "T4 mutants on gafira-doc, gafira-edit, gafira-layout, then archive"
+      "next_action": "Archive the change"
     },
     {
       "outcome_id": "odd-lite",

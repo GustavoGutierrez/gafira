@@ -13,4 +13,10 @@ exclude_re = [
     'hittest\.rs:\d+:\d+: replace < with <= in Path::distance_to_perimeter$',
     # interpolate.rs (T4 fix round). Redundant term: `!det.is_finite()` implies `!area.is_finite()` (Hadamard, |a*d| <= |c1||c2|) and a finite `det` with an infinite `area` is degenerate through the last term anyway, so `A || B || C || D` and `A || (B && C) || D` agree on every input.
     'interpolate\.rs:157:48: replace \|\| with && in Parts::decompose$',
+    # layout (T4 fix round). Equivalent: the check only asks whether the centre is finite, and `x % 2.0` is finite exactly when `x / 2.0` is (both are non-finite for an infinite sum; NaN cannot arise after the number check).
+    'align\.rs:(62|63):37: replace / with % in check_boxes$',
+    # Equivalent: at a screen spacing of exactly 6 px the doubling loop runs zero times and gives `unit = step, div = 1, every = 1`, which is what the plain level (and the minor level when subdivisions = 1) gives.
+    'grid\.rs:113:27: replace < with <= in level$',
+    # Equivalent: two candidates that tie on distance, kind, coordinate and reference differ at most in the sign of a zero (0.0 and -0.0 tie), which the spec treats as the same target (same offset), so replacing one by the other changes nothing.
+    'snap\.rs:98:13: replace < with <= in Candidate::beats$',
 ]

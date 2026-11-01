@@ -104,10 +104,10 @@ pub fn align(action: AlignAction, page: Rect, items: &[Item]) -> Result<Vec<Offs
     check_boxes(Some(page), items)?;
     let mut out = vec![Offset { dx: 0.0, dy: 0.0 }; items.len()];
     let reference = match items {
-        [] => return Ok(out),
         [_] => page,
         _ => match union(items) {
             Some(u) => u,
+            // No box: nothing to align.
             None => return Ok(out),
         },
     };

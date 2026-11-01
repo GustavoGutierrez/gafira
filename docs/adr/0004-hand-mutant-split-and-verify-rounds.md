@@ -33,6 +33,10 @@ A critical T4 survivor goes to `tdd-apply`, then T4 re-runs on that crate, then 
 
 For a numeric crate (floats, tolerances, integer overflow), when upstream stages are needed, `explorer` runs before `specifier` and hands it `spike.md`. `specifier` checks each requirement against NaN, infinities, overflow, thresholds, ties and boundary operators.
 
+### Hanging mutants (owner decision, 2026-11-01)
+
+A timeout mutant in critical code was always CRITICAL, yet some mutants cannot end a run any other way. It now counts as detected only when a re-run with a longer limit confirms it does not terminate (or iterates a range no test run could finish) and the report lists it by file and line with that evidence. Any other timeout, or one load explains, stays a finding. Where a test can fail on an assertion first, it must be reordered or split so it does, so a hang is a last resort. `mutants` reports the evidence and never reclassifies such a timeout as non-critical on its own. Missed mutants and the `verification.json` schema do not change.
+
 ### What this supersedes
 
 - ADR 0001 line 82 (depth V2): the cap "at most 5; at most 3 in light mode". Replaced by section 1. The rest of the V2 row stays.
