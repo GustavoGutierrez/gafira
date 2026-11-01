@@ -6,9 +6,9 @@ Where a decision lives:
 
 | Kind | Location |
 |---|---|
-| Owner decisions | `docs/specs/00-decisiones.md` (never reopened by the architect) |
+| Owner decisions | `specs/00-decisiones.md` (never reopened by the architect) |
 | Cross-cutting technical decisions | `docs/adr/NNNN-short-title.md` (this folder) |
-| Decisions scoped to one change | `openspec/changes/<change>/design.md`, section "Decisions" |
+| Decisions scoped to one change | `specs/changes/<change>/design.md`, section "Decisions" |
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # Gafira: development methodology
 
-Gafira is a local-first design, image and video editor written in Rust (Cargo workspace of `gafira-*` crates). Product and architecture live in `docs/specs/` (see its `README.md` for the status table): only `00-decisiones.md` (owner decisions) and the document in progress sit there; a completed document moves with `git mv` to `docs/specs/archive/` (never `00-decisiones.md`) before the next one is promoted; the rest (01 product and quality, 03 visual design, 04 image/export, 05 video/distribution, 06 license) wait in `docs/specs/backlog/`. When the document in progress is completed, the coordinator promotes the next one from the backlog (`git mv` into `docs/specs/`, in its own commit) and keeps the status table current. Owner decisions in `00-decisiones.md` are not reopened without the owner.
+Gafira is a local-first design, image and video editor written in Rust (Cargo workspace of `gafira-*` crates). Product and architecture live in `specs/` (see its `README.md` for the status table): only `00-decisiones.md` (owner decisions) and the document in progress sit there; a completed document moves with `git mv` to `specs/archive/` (never `00-decisiones.md`) before the next one is promoted; the rest (01 product and quality, 03 visual design, 04 image/export, 05 video/distribution, 06 license) wait in `specs/backlog/`. When the document in progress is completed, the coordinator promotes the next one from the backlog (`git mv` into `specs/`, in its own commit) and keeps the status table current. Owner decisions in `00-decisiones.md` are not reopened without the owner.
 
 ## ODD lite
 
@@ -32,7 +32,7 @@ The level comes from impact, uncertainty and reversibility, never from the file 
 
 ### Change folder rule
 
-ODD changes the default: new work on a capability an existing spec covers needs no `openspec/changes/<change>/`, proposal, design or tasks file. Its acceptance criteria are the outcome's entry in `.odd/state.json`, or the spec row when requirements change, and a committed entry satisfies G0. The outcome id takes the place of `<change>` in branch names, commit scopes and agent inputs.
+ODD changes the default: new work on a capability an existing spec covers needs no `specs/changes/<change>/`, proposal, design or tasks file. Its acceptance criteria are the outcome's entry in `.odd/state.json`, or the spec row when requirements change, and a committed entry satisfies G0. The outcome id takes the place of `<change>` in branch names, commit scopes and agent inputs.
 
 | Work | Acceptance record | Folder |
 |---|---|---|
@@ -40,6 +40,8 @@ ODD changes the default: new work on a capability an existing spec covers needs 
 | No spec covers it (tooling, agent definitions, a new capability) | Light spec or delta spec | yes |
 | Full mode or L3 | Slice card or delta spec | yes, with `design.md` and an ADR when cross-cutting |
 | A folder already in progress | what it has | keeps folder, card and design until archive |
+
+A change folder lives in `specs/changes/<change>/`, whether it comes from full mode, L3, work no spec covers or `flow: legacy`; it closes into `specs/history/<date>-<change>/`.
 
 `layout-core` is such a folder: its remaining deliveries D3 to D7 run with minimal notes (the evidence G3 and `verify` need, no narrative).
 
@@ -76,7 +78,7 @@ Resume: check the branch, `git status`, the diff against `develop` and the tests
 
 Specs already say what to build, so there is no separate proposal, design or tasks phase by default. Two optional upstream stages exist: `specify` when the spec is missing or ambiguous, and `architect` when a real design decision is open or deliveries must run in parallel (serial deliveries listed in a Slice card need no `architect`, ADR 0002).
 
-Fast lane (default, `docs/adr/0002-fast-lane.md`): when the owner asks to execute a product spec in `docs/specs/` (or a section or ID range of it), the coordinator writes a Slice card (ODD lite: on covered work, the outcome entry with the same fields) and `tdd-apply` works straight from the product requirement IDs; no proposal, design or delta specs.
+Fast lane (default, `docs/adr/0002-fast-lane.md`): when the owner asks to execute a product spec in `specs/` (or a section or ID range of it), the coordinator writes a Slice card (ODD lite: on covered work, the outcome entry with the same fields) and `tdd-apply` works straight from the product requirement IDs; no proposal, design or delta specs.
 
 ```
 (specify)  ->  spec  ->  (architect)  ->  (explorer, only when a claim is risky)  ->  tdd-apply  ->  verify  ->  (mutants T4 per touched crate)  ->  archive
@@ -100,7 +102,7 @@ Mutation (`mutation:` in the Flow line): `archive` (default) runs no per-deliver
 
 Delivery size: ~700 lines per delivery stays a signal to stop and ask. One change may run several deliveries serially without `architect` when the Slice card lists them; `architect` runs only for an open design decision or a dependency table with parallel deliveries.
 
-Packs: docs, manual, agent/skill definitions, bumps, bug fix, refactor, new function, new capability, spec-only, release, spike, CI hotfix, test-only round (table in ADR 0001, defaults amended by ADR 0002, and in `coordinator.md`). Agent and skill definitions are written by a general-purpose agent in a worktree, delegated by the coordinator; the owner reviews them, at the latest in the `develop` -> `main` PR. Light and fast-lane runs are archived without delta merge (archive moves the folder and, for a fast-lane change, updates the `docs/specs/README.md` status table with the covered IDs). An outcome with no folder has nothing to move: `archive` runs only for covered IDs or follow-ups, and the entry is deleted. With `mutation: archive` or `delivery` the entry stays until T4 closes the change: if `archive` does not run, the coordinator deletes it after T4 on a short branch merged like any other; only with `off` does it go on the last branch before its merge.
+Packs: docs, manual, agent/skill definitions, bumps, bug fix, refactor, new function, new capability, spec-only, release, spike, CI hotfix, test-only round (table in ADR 0001, defaults amended by ADR 0002, and in `coordinator.md`). Agent and skill definitions are written by a general-purpose agent in a worktree, delegated by the coordinator; the owner reviews them, at the latest in the `develop` -> `main` PR. Light and fast-lane runs are archived without delta merge (archive moves the folder and, for a fast-lane change, updates the `specs/README.md` status table with the covered IDs). An outcome with no folder has nothing to move: `archive` runs only for covered IDs or follow-ups, and the entry is deleted. With `mutation: archive` or `delivery` the entry stays until T4 closes the change: if `archive` does not run, the coordinator deletes it after T4 on a short branch merged like any other; only with `off` does it go on the last branch before its merge.
 
 Feedback loop: the coordinator keeps control of the whole cycle; every agent returns to it and none calls another. `verify` classifies each finding, and the coordinator routes it back to the matching stage:
 
@@ -117,20 +119,20 @@ After two consecutive FAILs of the same class on one delivery the coordinator st
 
 | Step | Agent (`.agents/agents/`) | Output |
 |---|---|---|
-| Turn an owner request into specs (scope, requirements, Given/When/Then scenarios, acceptance criteria, edge cases, non-goals, open questions); defines WHAT, never HOW | `specifier` (Opus) | fast lane: only on a reported ambiguity, and it fixes the product spec in `docs/specs/`; otherwise delta specs in `openspec/changes/<change>/specs/` (no product spec, or the owner asks) |
-| Decide HOW when a spec leaves a design decision open; analyse the code; break the work into deliveries (~700 lines) with a dependency table (parallel or serial) | `architect` (Opus) | `openspec/changes/<change>/design.md` (proposal/tasks only if needed), cross-cutting ADRs in `docs/adr/` |
-| Measure risky claims in `/tmp` (serde limits, clippy per commit, CI regexes, delivery prefixes) and cross-check numbers across docs | `explorer` (Sonnet) | `openspec/changes/<change>/spike.md` with command, output, verdict (no folder: in its result) |
-| Build one delivery with strict TDD | `tdd-apply` (Sonnet) | commits + `openspec/changes/<change>/apply-progress.md` (no folder: notes in the body of the last implementer commit) |
+| Turn an owner request into specs (scope, requirements, Given/When/Then scenarios, acceptance criteria, edge cases, non-goals, open questions); defines WHAT, never HOW | `specifier` (Opus) | fast lane: only on a reported ambiguity, and it fixes the product spec in `specs/`; otherwise delta specs in `specs/changes/<change>/specs/` (no product spec, or the owner asks) |
+| Decide HOW when a spec leaves a design decision open; analyse the code; break the work into deliveries (~700 lines) with a dependency table (parallel or serial) | `architect` (Opus) | `specs/changes/<change>/design.md` (proposal/tasks only if needed), cross-cutting ADRs in `docs/adr/` |
+| Measure risky claims in `/tmp` (serde limits, clippy per commit, CI regexes, delivery prefixes) and cross-check numbers across docs | `explorer` (Sonnet) | `specs/changes/<change>/spike.md` with command, output, verdict (no folder: in its result) |
+| Build one delivery with strict TDD | `tdd-apply` (Sonnet) | commits + `specs/changes/<change>/apply-progress.md` (no folder: notes in the body of the last implementer commit) |
 | Mutation-test per the Flow line's `mutation` (default: whole crate at change close; per delivery only with `delivery`); report surviving mutants (read-only) | `mutants` (Sonnet) | report in the session scratchpad, outside the repo |
-| Check gates and every requirement/scenario | `verify` (Opus) | `openspec/changes/<change>/verify-report.md` (no folder: under the scratchpad), PASS, FAIL or BLOCKED |
-| Close the change (PASS and all deliveries done) | `archive` (Haiku) | change moved to `openspec/changes/archive/` (no folder: nothing to move, entry deleted); fast lane: status table in `docs/specs/README.md` updated with the covered IDs; delta specs (when present) merged into `openspec/specs/`; any mode: follow-up WARNINGs appended to the follow-up list of `docs/specs/README.md` |
+| Check gates and every requirement/scenario | `verify` (Opus) | `specs/changes/<change>/verify-report.md` (no folder: under the scratchpad), PASS, FAIL or BLOCKED |
+| Close the change (PASS and all deliveries done) | `archive` (Haiku) | change moved to `specs/history/` (no folder: nothing to move, entry deleted); fast lane: status table in `specs/README.md` updated with the covered IDs; delta specs (when present) merged into `specs/capabilities/`; any mode: follow-up WARNINGs appended to the follow-up list of `specs/README.md` |
 | Update, extend or regenerate the technical manual (`docs/manuals/tecnico/`), English first with a Spanish mirror | `manual-writer` (Sonnet) | edited chapters in both languages, `manual.py check` and `build` evidence, `docs(manual)` commits |
 
 When deliveries remain, go back to `tdd-apply`. On FAIL, the coordinator routes each finding by its `class:` (see the feedback loop above and `.agents/agents/coordinator.md`).
 
 `coordinator` (Opus) runs the whole flow: it reads the repo state, picks the next step, delegates to the agents above (one writer at a time), rejects `done` without evidence and stops for owner decisions and merges. Subagents cannot launch other subagents, so the coordinator must be the main-thread agent: start the session with `claude --agent coordinator` (supported by the installed Claude Code CLI). If an older CLI lacks the flag, ask the main session to follow `.agents/agents/coordinator.md`. `mutants` (Sonnet) runs `cargo-mutants`: by default per touched crate at change close (T4), or per delivery in parallel with `verify` with `mutation: delivery`. `manual-writer` (Sonnet) sits outside the spec flow: the coordinator delegates to it whenever the owner asks to change the technical manual; it needs the `technical-manual` and `skill-registry` skills and stops if `technical-manual` is unavailable. `.claude/agents` is a symlink to `.agents/agents`.
 
-A design note (`architect`) is written only when a spec leaves a real decision open, a change needs parallel deliveries or a split that depends on a design decision, or code must be analysed before choosing an approach, and only for that decision. `specifier` and `architect` cannot launch agents: they list open questions and risky claims, and the coordinator asks the owner (one question at a time, with a recommendation) or runs `explorer`. ADR convention: cross-cutting decisions go in `docs/adr/NNNN-short-title.md` (index and template in `docs/adr/README.md`), change-scoped decisions in the change's `design.md`, owner decisions stay in `docs/specs/00-decisiones.md` and are never reopened by the architect. If a test or CI claim is risky, `explorer` settles it with a real experiment before specs or code rely on it; refuted claims are fixed in the specs first. For a numeric crate (floats, tolerances, integer overflow), when upstream stages are needed, `explorer` runs before `specifier`.
+A design note (`architect`) is written only when a spec leaves a real decision open, a change needs parallel deliveries or a split that depends on a design decision, or code must be analysed before choosing an approach, and only for that decision. `specifier` and `architect` cannot launch agents: they list open questions and risky claims, and the coordinator asks the owner (one question at a time, with a recommendation) or runs `explorer`. ADR convention: cross-cutting decisions go in `docs/adr/NNNN-short-title.md` (index and template in `docs/adr/README.md`), change-scoped decisions in the change's `design.md`, owner decisions stay in `specs/00-decisiones.md` and are never reopened by the architect. If a test or CI claim is risky, `explorer` settles it with a real experiment before specs or code rely on it; refuted claims are fixed in the specs first. For a numeric crate (floats, tolerances, integer overflow), when upstream stages are needed, `explorer` runs before `specifier`.
 
 ## Strict TDD
 
@@ -141,6 +143,8 @@ cargo fmt --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
+
+`cargo check --workspace --all-targets` is the build check. Tests are unit and integration (in each crate's `tests/`); there is no e2e layer, no coverage tool is installed and there is no coverage threshold.
 
 ## Testing and mutation policy
 
@@ -169,29 +173,32 @@ cargo test --workspace --locked
 - Hexagonal layering enforced by the CI layer table (V5); domain crates use `BTreeMap`/`BTreeSet`, never `HashMap`/`HashSet` (clippy ban).
 - Permissive third-party licenses only (`deny.toml`); the product itself is proprietary.
 - Action pins in CI are 40-hex SHAs.
-- Artifacts (code, comments, docs, specs, commits) are in English; user-facing UI text is Spanish and English (D-08).
+- Artifacts (code, comments, docs, specs, commits) are in English; user-facing UI text is Spanish and English (D-08). Conversation with the owner is in neutral Spanish.
+- Targets: Windows (MSI), Linux x86_64, macOS 12+ aarch64. The product runs fully local and needs no external binaries.
 
-## OpenSpec in this repo
+## Specs in this repo
 
-Layout (`openspec/config.yaml` has the test, lint and format commands and per-phase rules; read it first). A change folder exists only when "ODD lite" calls for one:
+Layout. A change folder exists only when "ODD lite" calls for one:
 
 ```
-openspec/config.yaml                       project context, strict_tdd, commands, rules
-openspec/specs/<capability>/spec.md        main specs (source of truth; filled by archive)
-openspec/changes/<change>/
+specs/                                     product documents (`README.md`, in progress, `backlog/`, `archive/`)
+specs/capabilities/<capability>/spec.md    main specs (source of truth; filled by archive)
+specs/changes/<change>/                    active change folders
   proposal.md  design.md  tasks.md         optional; existing changes already have them
   specs/<capability>/spec.md               delta specs for this change (none in the fast lane or light mode)
   apply-progress.md                        written by tdd-apply (existing name, keep it); starts with the `Flow:` line, or with the block written by the coordinator: Light spec (light mode) or Slice card (fast lane: product IDs, scope, non-goals, deliveries, plan, Flow line)
   verify-report.md                         written by verify
   verification.json                        written by verify beside the report (pilot, every depth above V0; see ADR 0001)
-openspec/changes/archive/<date>-<change>/  closed changes
+specs/history/<date>-<change>/             closed changes
 ```
+
+Artifact rules: a proposal has a rollback plan for risky changes and respects the permissive-license, local-only and no-external-binaries constraints; a design records each architecture decision with its rationale and accounts for the three target platforms; tasks group by phase with hierarchical numbering, each completable in one session. Review budget: 800 changed lines, ask on risk.
 
 Spec format: RFC 2119 keywords, scenarios as Given/When/Then, each requirement tagged with its delivery (`D1`, `D2a`...) and each scenario with its type (unit, property, integration, command, manual). Product-facing docs are Spanish; spec files in changes follow the language already used in that change.
 
 Delta specs use `## ADDED Requirements`, `## MODIFIED Requirements` (replaces the requirement of the same name), `## REMOVED Requirements` (needs a Reason and a Migration note) and `## RENAMED Requirements`.
 
-Archive merge (the only step that edits main specs; only for changes with delta specs; fast-lane changes have none, and `openspec/specs/` stays as the record of past changes):
+Archive merge (the only step that edits main specs; only for changes with delta specs; fast-lane changes have none, and `specs/capabilities/` stays as the record of past changes):
 - No main spec for the capability yet: copy the delta with `cp`, then `diff` it.
 - Main spec exists: apply the delta block by block (append ADDED, replace MODIFIED, delete REMOVED), keep every other requirement untouched, then show a `diff` of the result.
 - A delta that targets a base spec still inside an unarchived change (see the note at the top of `domain-color/specs/workspace-tooling` and `domain-doc/specs/workspace-tooling`) means archive the older change first: `workspace-scaffold`, then `domain-color`, then `domain-doc`.
@@ -214,10 +221,10 @@ Skills are read, not invoked: subagents cannot call the Skill tool. The coordina
 | Committing, branching, pushing, PRs, releases | `git-workflow-and-versioning` |
 | Delivery over ~400 lines, review slices | `chained-pr` |
 | Preparing the `develop` -> `main` PR (coordinator opens it, owner merges) | `branch-pr` |
-| Creating, promoting or archiving product specs; deriving OpenSpec changes | `product-specs` |
+| Creating, promoting or archiving product specs; deriving changes | `product-specs` |
 | Writing specs, guides, README, review-facing docs | `cognitive-doc-design` |
 | PR and issue comments | `comment-writer` |
 | Creating, refreshing or reading the skill registry | `skill-registry` |
 | Updating, finding a chapter in, or building the PDFs of the technical manual | `technical-manual` |
 
-No Rust-specific skill is installed; the Rust rules are the ones above and in `openspec/config.yaml`. The user-level `CLAUDE.md` still applies to the main conversation (language, no AI attribution in commits).
+No Rust-specific skill is installed; the Rust rules are the ones above. The user-level `CLAUDE.md` still applies to the main conversation (language, no AI attribution in commits).

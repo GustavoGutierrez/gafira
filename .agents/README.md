@@ -64,7 +64,7 @@ their sources specify. Shell and external-directory access require approval;
 `verify` uses shell to write its reports. `mutants` and `verify` deny edit tools.
 
 OpenCode combines Write, Edit and patch under `edit`: explorer's edit permission
-is limited to `openspec/changes/*/spike.md`, but cannot enforce Write-only
+is limited to `specs/changes/*/spike.md`, but cannot enforce Write-only
 within that path. Its experiments use shell for scratch files. Shell is **not a
 sandbox**, so path rules do not prevent shell writes. Agent permission rules
 are evaluated after global permission rules: the explicit read/other allowances

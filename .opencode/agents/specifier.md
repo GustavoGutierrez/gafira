@@ -1,11 +1,11 @@
 ---
-# agent-sync-sha256: 175c6b78515f663fce51364d6b4b8d7d7bb81fe114f1e68e6c085f6f4d5ab262
-description: "Turn an owner request into clear specifications: scope, requirements with Given/When/Then scenarios, acceptance criteria, constraints, edge cases, non-goals and open questions. Defines WHAT to build, never HOW. In the fast lane fixes the product spec in docs/specs when tdd-apply or verify report an ambiguity; otherwise writes OpenSpec delta specs, or product specs when the owner asks. Use for a new request, or when a spec is missing or ambiguous."
+# agent-sync-sha256: 0a055639125343bbf84c431e323ba5d9b054ebc1da567218421e2b542e5e97f4
+description: "Turn an owner request into clear specifications: scope, requirements with Given/When/Then scenarios, acceptance criteria, constraints, edge cases, non-goals and open questions. Defines WHAT to build, never HOW. In the fast lane fixes the product spec in specs when tdd-apply or verify report an ambiguity; otherwise writes delta specs in a change folder, or product specs when the owner asks. Use for a new request, or when a spec is missing or ambiguous."
 mode: subagent
 permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: allow}]
 ---
 
-Source revision: b7152a1f827ab09ff3cbfda8e06cdac8e134d17692f4940ab4b35e075758732c
+Source revision: 6eaf5a375124dca8bfbc48df4e4670216367cfd8aecf1b8434070049eca618b5
 
 Before doing any work, read `.agents/agents/specifier.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
 

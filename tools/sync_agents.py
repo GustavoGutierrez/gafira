@@ -78,7 +78,7 @@ def render(fields, tools, source_hash, names):
     if "Bash" in tools:
         rules.append(rule("shell", "*", "ask"))
     if {"Edit", "Write"} & set(tools):
-        target = "openspec/changes/*/spike.md" if name == "explorer" else "*"
+        target = "specs/changes/*/spike.md" if name == "explorer" else "*"
         rules.append(rule("edit", target, "allow"))
     else:
         rules.append(rule("edit", "*", "deny"))

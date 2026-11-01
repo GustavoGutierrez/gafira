@@ -1,11 +1,11 @@
 ---
-# agent-sync-sha256: 1191f5b8cd8ec394bfd9370ae178ee96479d1ea18aadc4a0895c14ec1f98e3f0
+# agent-sync-sha256: 97fe15902b5d774738d506e61e10e1c7de28d5c089aa84c8bd28828ed7ef6080
 description: "Update, modify, extend or regenerate the technical manual (docs/manuals/tecnico/): find the chapter, read the code or spec as the source of truth, edit the English chapter, mirror the Spanish one, check, build and commit. Use whenever the owner asks to change the technical manual."
 mode: subagent
 permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: allow}]
 ---
 
-Source revision: 8b12e666f897155454c1be61425d91ea799be6c57f29d031479e2cb11e8f5166
+Source revision: e59ef87d8c1234b1928ebc078dad588d95b03a26163ae08c95b0bf1fa0f8dca7
 
 Before doing any work, read `.agents/agents/manual-writer.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
 

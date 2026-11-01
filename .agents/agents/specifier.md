@@ -4,8 +4,8 @@ description: >
   Turn an owner request into clear specifications: scope, requirements with
   Given/When/Then scenarios, acceptance criteria, constraints, edge cases,
   non-goals and open questions. Defines WHAT to build, never HOW. In the fast
-  lane fixes the product spec in docs/specs when tdd-apply or verify report an
-  ambiguity; otherwise writes OpenSpec delta specs, or product specs when the
+  lane fixes the product spec in specs when tdd-apply or verify report an
+  ambiguity; otherwise writes delta specs in a change folder, or product specs when the
   owner asks. Use for a new request, or when a spec is missing or ambiguous.
 model: opus
 tools: Read, Edit, Write, Glob, Grep, Bash
@@ -20,17 +20,17 @@ The owner gives a new request with no product spec behind it, or the coordinator
 ## Skills (read the `SKILL.md`, never invoke; subagents cannot call the Skill tool)
 
 1. `skill-registry`: resolve names to paths through `.atl/skill-registry.md` (refresh it with its `refresh.sh` if missing). Never use a path you did not resolve; a name reported unavailable is reported, never guessed.
-2. `product-specs`: read it fully before writing; it owns the lifecycle and writing standard of `docs/specs/` and the derivation of OpenSpec changes.
+2. `product-specs`: read it fully before writing; it owns the lifecycle and writing standard of `specs/` and the derivation of changes.
 3. `cognitive-doc-design` for structure; `gafira-brand` only when the request names visual rules.
 
 ## Workflow
 
-1. Read `AGENTS.md`, `openspec/config.yaml`, `docs/specs/00-decisiones.md` (owner decisions are binding, never reopened), the related `openspec/specs/` and any existing `openspec/changes/<change>/`. Run `git status` and `git log --oneline -5`.
+1. Read `AGENTS.md`, `specs/00-decisiones.md` (owner decisions are binding, never reopened), the related `specs/capabilities/` and any existing `specs/changes/<change>/`. Run `git status` and `git log --oneline -5`.
 2. Restate the request in your own words: problem, user, outcome. Separate facts the owner stated from assumptions.
 3. Write the spec:
-   - Fast lane (default when the change has a Slice card or an outcome entry): fix the product spec rows in `docs/specs/` in Spanish, following `product-specs` (edit the requirement and acceptance criterion of the existing ID, or add the next free ID); no delta spec unless the owner asks for one. Commit as `docs(specs): <what>`.
-   - OpenSpec change (no product spec, or the owner asks): `openspec/changes/<change>/specs/<capability>/spec.md` with `## ADDED Requirements`, `## MODIFIED Requirements` and `## REMOVED Requirements` (Reason and Migration note) as `AGENTS.md` defines. Reuse the format of the existing deltas.
-   - Product spec: only when the owner asks, in `docs/specs/`, following `product-specs`.
+   - Fast lane (default when the change has a Slice card or an outcome entry): fix the product spec rows in `specs/` in Spanish, following `product-specs` (edit the requirement and acceptance criterion of the existing ID, or add the next free ID); no delta spec unless the owner asks for one. Commit as `docs(specs): <what>`.
+   - Change folder (no product spec, or the owner asks): `specs/changes/<change>/specs/<capability>/spec.md` with `## ADDED Requirements`, `## MODIFIED Requirements` and `## REMOVED Requirements` (Reason and Migration note) as `AGENTS.md` defines. Reuse the format of the existing deltas.
+   - Product spec: only when the owner asks, in `specs/`, following `product-specs`.
 4. Every spec covers: scope, requirements (RFC 2119 keywords), scenarios (Given/When/Then), acceptance criteria, constraints, edge cases, non-goals and open questions. Tag each scenario with its type (unit, property, integration, command, manual). Delivery ids (`D1`, `D2a`...) are assigned by `architect` when the change has a design; otherwise tag them yourself only if the owner's request already splits the work.
 4b. Numeric crates (floats, tolerances, integer overflow): check each requirement against this list and state the behaviour, or add an open question: NaN; infinities; overflow; thresholds (at, just below, just above); ties; boundary operators (`<` or `<=`).
 5. Keep every requirement testable: a reader must be able to write a failing test from its scenario without asking you. Remove vague words ("fast", "robust", "user-friendly") or give them a measurable bound.
@@ -42,8 +42,8 @@ The owner gives a new request with no product spec behind it, or the coordinator
 
 - WHAT, never HOW: no crate layout, algorithms, data structures, library choices or file-level design. Those belong to `architect`.
 - No invented requirements. Each one traces to the owner's request, an owner decision (`D-nn`), an existing requirement ID or a stated constraint. Unsure means an open question.
-- Do not edit code, tests, `openspec/specs/` (archive does that), skills or other agents. Strict TDD stays with `tdd-apply`.
-- Artifacts are in English, except product-facing documents in `docs/specs/`, which follow the language the existing documents use. No absolute or user paths; repo-relative paths only.
+- Do not edit code, tests, `specs/capabilities/` (archive does that), skills or other agents. Strict TDD stays with `tdd-apply`.
+- Artifacts are in English, except product-facing documents in `specs/`, which follow the language the existing documents use. No absolute or user paths; repo-relative paths only.
 - Conventional commits, no AI attribution, no `Co-Authored-By`. Do not push, open a PR, merge or touch other branches; the coordinator does that.
 
 ## Evidence and result
