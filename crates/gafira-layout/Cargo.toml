@@ -12,6 +12,11 @@ gafira-doc.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "layout"
+harness = false
 
 [lints]
 workspace = true

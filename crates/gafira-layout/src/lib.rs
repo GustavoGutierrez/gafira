@@ -6,17 +6,25 @@
 
 #![forbid(unsafe_code)]
 
+mod align;
+mod attractors;
 mod bounds;
+mod distribute;
 mod error;
 pub mod grid;
 pub mod guides;
 mod rects;
+pub mod snap;
 
+pub use align::{AlignAction, Item, Offset, align};
+pub use attractors::attractors;
 pub use bounds::node_bounds;
+pub use distribute::{DistributeAxis, DistributeMode, distribute};
 pub use error::LayoutError;
 pub use grid::{GridLine, GridLines, grid_lines};
 pub use guides::{GuideSpec, generate, place_guide};
 pub use rects::{Overflow, bleed_rect, margin_rect, overflow, safe_rect};
+pub use snap::{AxisSnap, SnapInput, SnapKind, SnapResult, SnapTarget, snap, snap_rotation};
 
 pub use gafira_doc::{GridSettings, GridStyle, Guide, GuideAxis};
 pub use gafira_geom::{Length, Rect, Unit};
