@@ -2,21 +2,6 @@
   "schema": 1,
   "outcomes": [
     {
-      "outcome_id": "layout-core",
-      "spec_id": "04-funcionalidad-diseno-imagen-exportacion",
-      "status": "implementing",
-      "criteria": [
-        {"id": "D1", "status": "passed", "evidence": "e5e5576"},
-        {"id": "D2", "status": "passed", "evidence": "ffb0836"},
-        {"id": "D3", "status": "passed", "evidence": "verify round 3 at 2377174"},
-        {"id": "D4", "status": "passed", "evidence": "verify round 3, tree fe4fe23"},
-        {"id": "D5", "status": "passed", "evidence": "verify round 2 at 517c3cc"},
-        {"id": "D6", "status": "passed", "evidence": "verify round 2 at 517c3cc"},
-        {"id": "D7", "status": "passed", "evidence": "verify round 2 at 517c3cc"}
-      ],
-      "next_action": "Archive the change"
-    },
-    {
       "outcome_id": "odd-lite",
       "spec_id": "odd-ligero-migracion",
       "status": "verifying",
@@ -31,7 +16,7 @@
         {"id": "AC8", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
         {"id": "AC9", "status": "passed", "evidence": "verify round 1 at 5fc7659"}
       ],
-      "next_action": "Owner reviews the D3 pilot; confirm ADR 0011, then phase D"
+      "next_action": "Phase D: W1 first (open findings and their classes in the entry's verify field), then the specs/ consolidation"
     }
   ]
 }
