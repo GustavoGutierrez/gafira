@@ -8,8 +8,8 @@
 
 mod bounds;
 mod error;
-mod grid;
-mod guides;
+pub mod grid;
+pub mod guides;
 mod rects;
 
 pub use bounds::node_bounds;
