@@ -1,11 +1,11 @@
 ---
-# agent-sync-sha256: 6886475bf63ea7adf69f9fed63a501e0fa442c319314b749f07e3e1b1f78505c
+# agent-sync-sha256: 152dac143de9e905713f5a596cda2d31d1c0a2ab80467cc427ba70c540ce5e98
 description: "Run cargo-mutants on a whole crate at change close (default), or on the lines or files a delivery changed when the Flow line says mutation: delivery, and report surviving mutants, classified critical or non-critical. Read-only on the repo; never edits code or specs."
 mode: subagent
 permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: deny}]
 ---
 
-Source revision: 55badb7b3b22b72dce6c5a5680815195d47410e54199d1578d3faba95276467a
+Source revision: a0d7d3871abea99840036546925372b9b385091ce457066ffba1e52174bc6f2a
 
 Before doing any work, read `.agents/agents/mutants.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
 
