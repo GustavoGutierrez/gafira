@@ -1,0 +1,14 @@
+## Light spec
+Flow: light | level: L1 | pack: agent/skill definitions | mutation: off | tier: T0 | verify: V1 | decided-by: coordinator | reason: Bounded developer tooling for one runtime; no Rust, no product behavior, no format change.
+Scope: Make the project agents of `.agents/agents/` usable in Pi, with a project-local synchronization tool and a project-local per-agent model selection. The sources stay the single source of truth for every runtime.
+Non-goals: Changing `.agents/agents/` sources, changing global Pi configuration, unifying this tool with the OpenCode adapter, changing product specs, ADRs, or the Rust workspace.
+Acceptance criteria:
+  AC1 Given the project agent sources, When `python3 tools/sync_pi_agents.py` runs from the project root, Then it writes `.pi/agents/*.md` for every non-coordinator agent and `.pi/prompts/coordinator.md` for the coordinator, and it reads and writes only inside the project. [command]
+  AC2 Given the generated definitions, When Pi discovers the project agents, Then each agent exposes Pi tool names (`read`, `edit`, `write`, `find`, `grep`, `bash`), points at its source file so the agent follows the current source instructions, and `verify` and `mutants` keep read-only tool sets. [command]
+  AC3 Given a changed source, When `python3 tools/sync_pi_agents.py --check` runs, Then it reports the drift and exits nonzero without writing; a changed source frontmatter is drift that needs a resynchronization, a changed source body is not, because the definition points at the source; a destination that was edited by hand is reported as a conflict and never overwritten. [command]
+  AC4 Given `.pi/subagents.json`, When Pi resolves an agent's profile, Then each project agent gets the model and effort configured for it, the file is project local, and no global agent directory is read or written. [command]
+  AC5 Given the coordinator, When a Pi session in this project runs it, Then it is available on the main thread as `/coordinator` and can delegate to the other project agents by name. [manual]
+  AC6 Given the diff, Then it touches no `crates/`, `apps/`, `docs/specs/` or `openspec/changes/archive/` path, and it introduces no absolute or user path of its own: the paths it writes are the repository-relative source and configuration paths it references, and a path that a source file already contains stays the source's own text. [command]
+Plan: Write the failing tests, implement the synchronization script and the model configuration, generate the definitions, document the usage, then verify the acceptance criteria independently.
+Risk and reversibility: Local tooling only; delete `.pi/`, `tools/sync_pi_agents.py` and the test file to revert. Owner decisions touched: none.
+Escalation triggers watched: source format ambiguity, a model that cannot be resolved in the Pi catalog, or a delivery size beyond the light-mode signal.
