@@ -92,18 +92,15 @@ struct Candidate {
 
 impl Candidate {
     /// Smaller distance, then higher priority, then smaller coordinate, then earlier reference.
-    /// All comparisons are exact.
+    /// All comparisons are exact; every number is finite, so none is unordered.
     fn beats(&self, other: &Candidate) -> bool {
-        if self.distance != other.distance {
-            return self.distance < other.distance;
-        }
-        if self.kind != other.kind {
-            return self.kind < other.kind;
-        }
-        if self.coordinate != other.coordinate {
-            return self.coordinate < other.coordinate;
-        }
-        self.reference < other.reference
+        (self.distance, self.kind, self.coordinate, self.reference)
+            < (
+                other.distance,
+                other.kind,
+                other.coordinate,
+                other.reference,
+            )
     }
 }
 
