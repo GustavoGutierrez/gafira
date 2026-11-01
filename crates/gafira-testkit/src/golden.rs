@@ -38,6 +38,8 @@ pub enum GoldenError {
     BadSize { width: u32, height: u32 },
     /// A candidate name is not one non-empty component of `[a-z0-9_-]`.
     BadName,
+    /// A candidate directory is, or resolves into, a `tests/golden` folder.
+    BadDir,
     /// The PNG is not 8-bit grayscale or RGBA, or it is malformed.
     BadPng(String),
 }
@@ -53,6 +55,7 @@ impl fmt::Display for GoldenError {
                 f,
                 "candidate name must be one non-empty component of [a-z0-9_-]"
             ),
+            Self::BadDir => write!(f, "candidate directory must not be a tests/golden folder"),
             Self::BadPng(why) => write!(f, "unsupported or malformed PNG: {why}"),
         }
     }
@@ -254,6 +257,30 @@ pub enum CheckError {
     Io(std::io::Error),
 }
 
+/// Whether two adjacent components of `path` are `tests` and `golden`, ignoring ASCII case.
+fn is_tests_golden(path: &std::path::Path) -> bool {
+    let parts: Vec<Option<&str>> = path
+        .components()
+        .map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+    parts.windows(2).any(|w| {
+        matches!(w, [Some(a), Some(b)] if a.eq_ignore_ascii_case("tests") && b.eq_ignore_ascii_case("golden"))
+    })
+}
+
+/// Creates `dir` and rejects it when its resolved path is a `tests/golden` folder.
+fn prepare_dir(dir: &std::path::Path) -> Result<std::path::PathBuf, CheckError> {
+    std::fs::create_dir_all(dir).map_err(CheckError::Io)?;
+    let real = dir.canonicalize().map_err(CheckError::Io)?;
+    if is_tests_golden(&real) {
+        return Err(CheckError::Golden(GoldenError::BadDir));
+    }
+    Ok(real)
+}
+
 fn check_name(name: &str) -> Result<(), GoldenError> {
     let ok = !name.is_empty()
         && name
@@ -268,9 +295,14 @@ fn check_name(name: &str) -> Result<(), GoldenError> {
 
 /// Checks `actual` against the stored golden `golden_png` in the mode of this target.
 ///
-/// On a failure with a usable `actual` the candidate is written to
+/// This is the entry for tests, normally through [`assert_golden!`]. On a
+/// failure with a usable `actual` the candidate is written to
 /// `<candidate_dir>/<name>.png`: a pixel, size or channel mismatch, and an
-/// empty or undecodable reference. Accepting a candidate is a manual copy.
+/// empty or undecodable reference. A `candidate_dir` that is, or resolves
+/// into, a `tests/golden` folder is rejected (adjacent components, ASCII case
+/// ignored). The guard does not cover a symlink swapped after the check, nor
+/// non-ASCII or 8.3 aliases of the names. Accepting a candidate is a manual
+/// copy. [`compare`] stays the pure comparator and writes nothing.
 pub fn check(
     name: &str,
     golden_png: &[u8],
@@ -289,6 +321,9 @@ pub fn check_in(
     candidate_dir: &std::path::Path,
 ) -> Result<(), CheckError> {
     check_name(name).map_err(CheckError::Golden)?;
+    if is_tests_golden(candidate_dir) {
+        return Err(CheckError::Golden(GoldenError::BadDir));
+    }
     // An actual above the size limit could not be stored: no candidate.
     check_size(actual.width, actual.height).map_err(CheckError::Golden)?;
     let outcome = match decode_png(golden_png) {
@@ -298,7 +333,7 @@ pub fn check_in(
     let Err(failure) = outcome else {
         return Ok(());
     };
-    let candidate = candidate_dir.join(format!("{name}.png"));
+    let candidate = prepare_dir(candidate_dir)?.join(format!("{name}.png"));
     let png = encode_png(actual).map_err(CheckError::Golden)?;
     std::fs::write(&candidate, png).map_err(CheckError::Io)?;
     Err(match failure {
@@ -313,4 +348,27 @@ pub fn check_in(
 enum Failure {
     Mismatch(Mismatch),
     Reference(GoldenError),
+}
+
+/// Checks an image against a stored golden and panics on failure.
+///
+/// `assert_golden!(name, golden_png, &image)` expands `CARGO_TARGET_TMPDIR`
+/// in the calling crate, so the caller never picks the candidate directory.
+/// It compiles only in an integration test (`tests/*.rs`): in unit tests and
+/// doctests Cargo does not define `CARGO_TARGET_TMPDIR`. Load the reference
+/// with `include_bytes!`; for a first golden create an empty file, run the
+/// test, review the candidate and copy it by hand on
+/// `x86_64-unknown-linux-gnu`.
+#[macro_export]
+macro_rules! assert_golden {
+    ($name:expr, $golden_png:expr, $actual:expr) => {
+        if let ::std::result::Result::Err(e) = $crate::golden::check(
+            $name,
+            $golden_png,
+            $actual,
+            ::std::path::Path::new(env!("CARGO_TARGET_TMPDIR")),
+        ) {
+            ::std::panic!("golden `{}` failed: {:?}", $name, e);
+        }
+    };
 }

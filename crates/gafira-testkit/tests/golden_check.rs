@@ -110,9 +110,17 @@ fn arq_113_a_tolerated_difference_passes_only_in_cross_platform_mode() {
 
 #[test]
 fn ac4_a_failing_candidate_write_is_still_a_failure() {
+    // The directory cannot be created: its parent is a file.
     let golden = encode_png(&gray(&[1])).unwrap();
-    let missing = tmp().join("no-such-dir").join("deeper");
-    let r = check_in(Mode::Exact, "ac4_io", &golden, &gray(&[2]), &missing);
+    let file = tmp().join("ac4_io_is_a_file");
+    std::fs::write(&file, b"x").unwrap();
+    let r = check_in(
+        Mode::Exact,
+        "ac4_io",
+        &golden,
+        &gray(&[2]),
+        &file.join("deeper"),
+    );
     assert!(matches!(r, Err(CheckError::Io(_))));
 }
 
@@ -263,4 +271,91 @@ fn ac5_an_actual_above_the_size_limit_writes_no_candidate() {
         );
         assert!(!dir.join(format!("{name}.png")).exists());
     }
+}
+
+fn fresh(sub: &str) -> PathBuf {
+    let d = tmp().join(sub);
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+fn bad_dir(dir: &Path) -> bool {
+    let golden = encode_png(&gray(&[1])).unwrap();
+    let r = check_in(Mode::Exact, "ac4_dir", &golden, &gray(&[9]), dir);
+    matches!(r, Err(CheckError::Golden(GoldenError::BadDir)))
+}
+
+#[test]
+fn ac4_a_lexical_tests_golden_directory_is_rejected_and_not_created() {
+    let root = fresh("ac4_lexical");
+    for rel in [
+        "tests/golden",
+        "a/tests/golden/b",
+        "Tests/Golden",
+        "TESTS/golden",
+        "tests/GOLDEN/x",
+    ] {
+        let dir = root.join(rel);
+        assert!(bad_dir(&dir), "{rel}");
+        assert!(
+            !root.join(rel.split('/').next().unwrap()).exists(),
+            "{rel} was created"
+        );
+    }
+}
+
+#[test]
+fn ac4_only_adjacent_tests_golden_components_are_rejected() {
+    let root = fresh("ac4_adjacent");
+    for rel in [
+        "tests/other",
+        "golden/tests",
+        "tests/x/golden",
+        "golden",
+        "tests",
+    ] {
+        assert!(!bad_dir(&root.join(rel)), "{rel}");
+        assert!(root.join(rel).join("ac4_dir.png").exists(), "{rel}");
+    }
+}
+
+#[test]
+fn ac4_a_directory_that_resolves_into_tests_golden_is_rejected() {
+    // `..` hides the pair from the lexical check; the canonical path shows it.
+    let root = fresh("ac4_dotdot");
+    let dir = root.join("a/tests/x/../golden");
+    assert!(bad_dir(&dir));
+    assert!(!dir.join("ac4_dir.png").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn ac4_a_symlink_into_tests_golden_is_rejected_whatever_the_case() {
+    let root = fresh("ac4_symlink");
+    for (i, real) in ["tests/golden", "Tests/Golden"].into_iter().enumerate() {
+        let target = root.join(real);
+        std::fs::create_dir_all(&target).unwrap();
+        let link = root.join(format!("link{i}"));
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(bad_dir(&link), "{real}");
+        assert!(!target.join("ac4_dir.png").exists(), "{real}");
+    }
+}
+
+#[test]
+fn ac4_the_macro_checks_against_the_target_tmpdir_and_panics_on_failure() {
+    let img = gray(&[1, 2]);
+    let golden = encode_png(&img).unwrap();
+    gafira_testkit::assert_golden!("ac4_macro_ok", &golden, &img);
+    let other = gray(&[1, 99]);
+    let _ = std::fs::remove_file(tmp().join("ac4_macro_bad.png"));
+    let r = std::panic::catch_unwind(|| {
+        gafira_testkit::assert_golden!("ac4_macro_bad", &golden, &other);
+    });
+    assert!(r.is_err());
+    assert_eq!(
+        decode_png(&std::fs::read(tmp().join("ac4_macro_bad.png")).unwrap()).unwrap(),
+        other
+    );
 }
