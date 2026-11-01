@@ -221,3 +221,103 @@ Outcome `foo`, L1, light, V2, `mutation: off`, branch `fix/foo`, using rule text
 V1, `mutation: off`: none run, no report, not a finding.
 
 next: archive
+
+# Verify report: odd-lite, delivery `chore/odd-lite-phase-d`, closure
+
+## Round 2
+
+Commit d21847e, branch `chore/odd-lite-phase-d`, base `develop` (d3148bf). Closure round, mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: W5 to W8, the commits e533750, 1a539d7 and d21847e, and the simulation points round 1 could not answer. BLOCKED did not arise: every critical check ran.
+
+Verdict: PASS. CRITICAL 0, WARNING 1 (new, follow-up), SUGGESTION 3. Per class: implementation 1. W5 to W8 are closed.
+
+## CRITICAL
+
+None.
+
+## Closure of the earlier findings
+
+| Id | Status | Evidence |
+|---|---|---|
+| W5 | closed | `verify.md` schema gains optional `follow_up` and `status`; `verify.md:60` makes a closure round list each earlier finding by id and count a still-open one for that round. `coordinator.md:85` and `AGENTS.md:68-69` take `status` from that list and include still-open findings in `classes` |
+| W6 | closed | `coordinator.md:17`, `AGENTS.md:73`: unmerged local branches and `develop` are all read, a branch matches by exact `outcome_id`, and with no outcome named and more than one active the owner is asked. Commands checked on this repo and in a scratch repo. A gap the fix opened is W9 |
+| W7 | closed | `coordinator.md:125`, `AGENTS.md:103`: with `archive` or `delivery` the entry stays until T4 closes the change, and only `off` deletes it before the merge. `archive.md:13` reports `blocked` until then. The entry is on `develop` after the merge, so a resume during T4 finds it |
+| W8 | closed | `coordinator.md:24`, `AGENTS.md:28`: "one writer (or the pack's agents)" and "`mutation: off` where allowed (no critical code)". The row is no wider than the exception at `coordinator.md:20` |
+
+S3 of the first round closes with W7.
+
+## WARNING
+
+- W9. class: `implementation`, `follow_up: true`, status open. New in the W6 fix. An inherited copy of an entry can look active. Resume now reads every unmerged branch by file content, and 1a539d7 filters inherited copies only "with several branches for one outcome". Two cases pass that filter (scratch repo, rule text applied by hand). Case 1: outcome X is closed on `develop` and an unmerged branch cut earlier still holds its entry. X is then the only active entry, the "more than one active" question does not fire, and a bare "continue" resumes a closed outcome. Case 2: X has advanced on `develop` and the only unmerged branch holds an older copy. `AGENTS.md:73` says to trust "the delivery branch", and `coordinator.md:17` does not say whether `develop` joins the comparison, so the older copy can win. This is not hypothetical here: `chore/pi-agent-sync` and `backup/pi-agent-sync-preverify` hold `odd-lite` today with no scoped commit, so case 1 applies once `odd-lite` closes if they remain unmerged. "If it disagrees with git, git wins" limits the harm but names no check. Suggested fix: include `develop` in the comparison, and treat an entry as inherited when the branch has no scoped commit of its own beyond `develop` (`git log develop..<branch> --grep='(<outcome>)' -- .odd/state.json` is empty).
+
+## SUGGESTION
+
+- S14. `verify.md:60` leaves two details open. It does not say whether `counts` covers a listed `closed` finding, and "PASS only with zero CRITICAL" could be misread against a closed CRITICAL that is listed. This round counts open findings only. It also says "the round's `classes`", but `classes` exists only in the entry, and the coordinator derives it.
+- S15. The resume list went from `git branch -a` to `refs/heads`, so a pushed delivery branch is missed on another clone. A session in the same clone is unaffected, and AC11 holds.
+- S16. State commits from before 1a539d7 use `chore(odd)`, so the scoped lookup returns nothing for them (`develop` has no `(odd-lite)` commit today, nor do `chore/pi-agent-sync` or `backup/pi-agent-sync-preverify`). No rule says how an empty result compares. Also, `--grep` matches the commit body as well as the subject. Neither changes the answer on this repo today: `chore/odd-lite-phase-d` is the only branch with a scoped commit.
+
+Still open from earlier rounds, unchanged by these commits: S1, S2, S4, S5, the first part of S6, and S7 to S13. S8 and S9 were not touched by the new rules, and `coordinator.md:84` still has no folder condition (S7).
+
+## Note, not a finding
+
+- Size: 22 insertions, 21 deletions, 7 files from 8bc9a76 to 1a539d7; 16 and 15 without `.opencode`.
+- The `.opencode` files are thin adapters holding source hashes, so a grep for the new rule text finds nothing there, as expected. `sync_agents.py --check` compares those hashes.
+- d21847e reformats `.odd/state.json` with `json.tool`, so its 76-line diff looks larger than it is. The only data changes are AC10 to AC14 as `pending` and `next_action`.
+- AC10 to AC14 can now move to `passed`, which is the coordinator's update.
+- As in round 1, `next: archive` follows the acceptance source. `next_action` names the `specs/` consolidation, which has no AC in the Light spec; if it belongs inside `odd-lite`, it needs a Light spec amend first.
+- W1 to W4 belong to the phases A and B delivery and are not re-listed here. ADR 0011 records W1 to W3 as resolved.
+
+## Gates
+
+No file in `git diff --name-only d3148bf HEAD` matches `.rs`, `Cargo`, `.toml`, `.cargo`, `deny` or `.github` (grep exit 1).
+
+| Gate | Result |
+|---|---|
+| `cargo fmt`, clippy, test | not applicable, no Rust or Cargo file changed |
+| `cargo deny` | not applicable, same reason |
+| CI policy | not applicable, no step scans the changed paths |
+| `python3 tools/sync_agents.py --check` | exit 0 |
+| `python3 -m json.tool .odd/state.json` | exit 0 |
+| Path check (AC9) | no `crates/`, `apps/`, `docs/specs/` or `openspec/changes/archive/` path (grep exit 1); no absolute or user path in added lines (grep exit 1) |
+| Disk | 49 GB free; nothing built |
+
+## Artifact integrity (step 3b)
+
+- `git log d3148bf..HEAD -- openspec/changes/odd-lite/apply-progress.md` lists only `50f59cb`, and `git diff 50f59cb HEAD` on that file is empty, so the Light spec block is intact.
+- d21847e touches only `.odd/state.json`, carries the outcome scope and keeps `schema: 1`.
+- No commit in the range carries AI attribution. Commit titles are conventional.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC10 | covered | Schema unchanged in its fields; W5 gives `verification.json` the source for them; commit before routing unchanged |
+| AC11 | covered | `coordinator.md:17`, `:87`, `:169`; `verify.md:16`; `archive.md` 2c. Weak spot W9, where the outcome is not named |
+| AC12 | covered | `coordinator.md:20`, `:24`, `:63`; `AGENTS.md:24`, `:28` |
+| AC13 | covered | Step 3d has no diff since round 1 |
+| AC14 | covered | Both commands exit 0; `schema: 1`; new `verification.json` fields are optional; ADR W1 to W3 resolved and status `proposed`, no diff since round 1 |
+| AC2 to AC9 | no regression | Sentence diff below; 9 agent files; path check above |
+
+## No mode, gate, floor or owner stop weakened
+
+- Every line removed from `AGENTS.md`, `coordinator.md`, `verify.md` and `archive.md` since 235d0ce was read. No gate row, floor row, pack row or loop-limit line is among them.
+- The only table cells changed are the two L0 rows and the two state field rows. The L0 change narrows `mutation: off` and allows the pack's agents.
+- `archive` gained a `blocked` condition, and the entry now lives longer, so both changes are stricter.
+- "Report each by its id" left `verify.md:16` and now lives, more strictly, in the schema text at `verify.md:60`.
+- A FAIL still never reaches `develop`, G5 is unchanged, and BLOCKED still costs no round.
+
+## Simulation re-walk
+
+Outcome `foo`, L1, light, V2, using rule text only. Points 2 and 3 were also run in a scratch git repo.
+
+| Point left open in round 1 | Rule now | Answered |
+|---|---|---|
+| 1. Follow-up mark has no source in the file | `follow_up` in the `verification.json` schema, copied at `coordinator.md:85` | yes |
+| 2. Round 2 FAIL with C1 still open: does it count? | C1 is re-listed `open` (`verify.md:60`), its class joins that row's `classes` (`coordinator.md:85`), so the two-FAIL stop fires from `rounds` | yes |
+| 3. "Continue" on `develop` with an empty scratchpad | The list finds `fix/foo` by exact id; `feat/foo-bar-d1`, holding only `bar`, no longer matches `foo`; two active means ask the owner | yes, except W9 |
+| Archive with T4 (the fourth partial row) | Entry stays through T4; the fix round has `rounds`, and closure `verify` finds its entry | yes |
+
+## Hand mutants and mutation
+
+V1 closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive
