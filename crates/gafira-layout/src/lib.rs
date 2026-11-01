@@ -8,13 +8,15 @@
 
 mod bounds;
 mod error;
+mod grid;
 mod guides;
 mod rects;
 
 pub use bounds::node_bounds;
 pub use error::LayoutError;
+pub use grid::{GridLine, GridLines, grid_lines};
 pub use guides::{GuideSpec, generate, place_guide};
 pub use rects::{Overflow, bleed_rect, margin_rect, overflow, safe_rect};
 
-pub use gafira_doc::{Guide, GuideAxis};
+pub use gafira_doc::{GridSettings, GridStyle, Guide, GuideAxis};
 pub use gafira_geom::{Length, Rect, Unit};
