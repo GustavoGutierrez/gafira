@@ -591,3 +591,85 @@ The cargo gates go beyond the requested list because AC20 names them; `crates/`,
 V1, closure round, `mutation: off`: none run, no report, not a finding.
 
 next: archive
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`, closure of W14
+
+## Round 4
+
+Commit 24f79ea, branch `chore/specs-consolidation-2`, base `develop` at 67a2826. Closure round past the three-round cap, approved by the owner per the coordinator; mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: W14 only, plus the gates and step 3b. `chore/specs-consolidation` at 4082d84 is a backup and was not verified. BLOCKED did not arise: every critical check ran.
+
+Verdict: PASS. CRITICAL 0, WARNING 0, SUGGESTION 6. Per class: none. W14 is closed. S17 to S22 are carried; none of the commits since 4082d84 touches their files or lines, except the appended note and the hit-table reason in `apply-progress.md`.
+
+All gates and the merge probe ran on scratch clones at the verified commits, with a scratch target dir, freed afterwards.
+
+## CRITICAL
+
+None.
+
+## Closure of the earlier findings
+
+| Finding | State | Evidence |
+|---|---|---|
+| W14 | closed | Plain `git log --follow` at 24f79ea crosses the move on all three files of `specs/changes/pi-agent-sync/`: `apply-progress.md` lists afb5d6b, 696c0e9, f5d7cdd; `verification.json` and `verify-report.md` list afb5d6b, 5797c3c. Below afb5d6b each list equals the log of the old path at 67a2826. The log reports R100 on the rename. AC15 now holds as written, with no `-m` |
+
+## Requested checks
+
+| Check | Result |
+|---|---|
+| afb5d6b is pure renames | `git diff-tree -r -M100%` lists 3 entries, all R100; 0 insertions, 0 deletions; the 3 blobs equal those of 67a2826 at the old path |
+| b56ad2b is a plain merge | Parents 5808ad0 and 67a2826. The same merge redone on a scratch clone exits 0 with no conflict and gives the identical tree, 1990638f. So it holds no manual edit, and the move is not inside it: no rename against the first parent, and the 3 files stay at the old path in its tree |
+| `git diff 4082d84 HEAD` | 3 files, all under `specs/changes/odd-lite/`: `apply-progress.md` (the reason text of hit-table row 85 and the W14 note at line 92), `verification.json` and `verify-report.md` (round 3 restored, 98 lines). No rule, tool, test, `.pi`, manual or `.odd/state.json` difference |
+| Light spec block | Lines 1 to 32 of `apply-progress.md` at HEAD are byte-identical to a28e1fd (same SHA-256). 6f33802 appended below them and changed one table row |
+| Hit table | Matches the search at HEAD exactly, 43 hits in 8 files, line by line. This round adds no hit and appends below the listed lines |
+| Fast-forward | 67a2826 is an ancestor of HEAD |
+
+## Correction to round 3
+
+Round 3 said 4082d84 was already on `origin`, and that the W14 fix rewrites a pushed branch; the `verification.json` summary repeats it. `git ls-remote origin` does not support that today. It lists no `chore/specs-consolidation` or `chore/specs-consolidation-2`, none of its refs equals 4082d84, 24f79ea, b56ad2b, 5808ad0, 645bcfd or a28e1fd, and none contains 4082d84. No reflog records a push, so whether it was ever pushed and later deleted cannot be told from here. The round 3 text stays as the record. Two consequences: the owner's decision was taken on that premise, though the redo rewrites nothing and stands either way; and both branches of this delivery exist only locally, so the backup at 4082d84 has no remote copy.
+
+## WARNING
+
+None.
+
+## SUGGESTION
+
+S17 to S22 are unchanged.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 tools/sync_pi_agents.py --check` | 0 | up to date |
+| `python3 -m pytest tests -q` | 0 | 44 passed, 1 skipped |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1107 passed, 0 failed |
+
+`cargo deny` and the CI policy steps do not apply: the diff against 67a2826 touches no file under `crates/`, `apps/`, `.github/` or `.cargo/`, nor `Cargo.toml`, `Cargo.lock`, `deny.toml` or `rust-toolchain.toml` (grep exit 1). `manual.py` was not run: `docs/manuals/` is identical to 4082d84, whose tree equals the one round 2 built.
+
+## Artifact integrity (step 3b)
+
+- The Light spec block is unchanged, as above; no `light spec amend` since a28e1fd.
+- No AI attribution line in the messages of b56ad2b, afb5d6b, 6f33802 or 24f79ea.
+- No absolute or user path in added lines since 5808ad0: the only two pattern matches are text in the reports, a home-directory marker and the sentence that names it.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered | W14 closed; 0 tracked files under the old roots at HEAD |
+| AC16 | covered | No rule or doc difference from 4082d84 |
+| AC17 | covered | No rule or doc difference from 4082d84 |
+| AC18 | covered | No exempt path in the diff from 4082d84 |
+| AC19 | covered | Hit table matches |
+| AC20 | covered | Gates above; manual as stated there |
+
+## Hand mutants and mutation
+
+V1, closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive
