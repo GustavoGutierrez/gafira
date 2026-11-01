@@ -13,5 +13,19 @@
   "hand_mutants": {"run": 4, "killed": 2},
   "criteria": {"total": 15, "covered": 12},
   "size": {"lines": 1157, "forecast": 420},
+  "report": "verify-report.md" },
+  {
+  "round": 2, "commit": "5e4e3f2", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 1, "warning": 1, "suggestion": 1},
+  "findings": [
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "c1551a2", "summary": "Fix commit deleted 9 tracked proptest-regressions files (17 seeds) of anim, pathops and time, undeclared and out of scope; restored seeds pass"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "FD-05(d), 02 4.17.2", "summary": "Open, held for owner or specifier: no tolerance stated for 10 mm in px"}
+  ],
+  "closed": ["C1", "C2", "C3", "S1"],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 2, "killed": 2},
+  "criteria": {"total": 15, "covered": 15},
+  "size": {"lines": 1416, "raw_lines": 1505, "forecast": 420},
   "report": "verify-report.md" }
 ] }
