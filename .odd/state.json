@@ -155,7 +155,7 @@
     {
       "outcome_id": "testkit-golden",
       "spec_id": "02-arquitectura-software",
-      "status": "implementing",
+      "status": "verifying",
       "flow": "Flow: standard | level: L2 | pack: new function | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator | reason: new module in an existing crate, covered by ARQ-113 and accepted ADR 0010; the comparator is a rule with an invariant (critical), the png edge is already stated in 02 section 9.2 and ADR 0010; no floor to full hit",
       "scope": "gafira_testkit::golden per ADR 0010: PNG golden read and write, pure comparator with Exact and CrossPlatform modes, target-selected mode, candidate output under CARGO_TARGET_TMPDIR, f32 quantization helper. Single delivery.",
       "non_goals": [
@@ -169,59 +169,67 @@
       "criteria": [
         {
           "id": "ARQ-113",
-          "status": "pending",
+          "status": "passed",
           "text": "A reference with 1 altered byte fails on the same platform; across platforms with 1000 pixels, 1 pixel at 2/255 passes, 2 pixels at 2/255 fail, all at 1/255 pass; no test rewrites its reference",
-          "type": "property"
+          "type": "property",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC1",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 format: Given a buffer of 8-bit RGBA (premultiplied values included) or one-channel grayscale, When encoded and decoded as PNG, Then every byte returns verbatim, with no colour chunks written",
-          "type": "property"
+          "type": "property",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC2",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 comparator: CrossPlatform allows at most floor(pixels / 1000) pixels differing by more than 1/255 on any channel; Exact requires every byte equal; a size or channel mismatch fails in both modes",
-          "type": "unit"
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC3",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 mode: exact on x86_64-unknown-linux-gnu, tolerant on every other target",
-          "type": "unit"
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC4",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 regeneration: a failing golden writes the candidate under the integration test's CARGO_TARGET_TMPDIR and never under tests/golden",
-          "type": "integration"
+          "type": "integration",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC5",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 size: a stored golden above 256x256 px is rejected, 256x256 is accepted",
-          "type": "unit"
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC6",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 f32: quantization is round(c x 255) on [0, 1] and an analytic check stays the first choice in the module docs",
-          "type": "unit"
+          "type": "unit",
+          "evidence": "verify round 3 at faefea6"
         },
         {
           "id": "AC7",
-          "status": "pending",
+          "status": "passed",
           "text": "ADR 0010 dependency: png is a normal dependency of gafira-testkit only, and cargo deny passes",
-          "type": "command"
+          "type": "command",
+          "evidence": "verify round 3 at faefea6"
         }
       ],
-      "next_action": "Owner stop: second consecutive FAIL of class implementation; round 3 is the last within the cap. Size OK given by the owner 2026-11-01",
+      "next_action": "T4 on gafira-testkit, then close",
       "verify": {
-        "round": 2,
-        "commit": "78c4369",
-        "verdict": "FAIL",
-        "next": "tdd-apply",
+        "round": 3,
+        "commit": "faefea6",
+        "verdict": "PASS",
+        "next": "archive",
         "findings": [
           {
             "id": "C1",
@@ -230,7 +238,7 @@
             "ref": "golden.rs:347 check_in; AC4, ARQ-113",
             "summary": "Names and directories closed; a symlink or hard link already at <dir>/<name>.png still lets a failing check overwrite the reference, and the rerun passes",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "C2",
@@ -311,7 +319,7 @@
             "ref": "git diff --shortstat f3b9eaf HEAD",
             "summary": "Owner's OK reported by the coordinator, not yet on record at 78c4369; size is now 1329 lines (1074 without state and lock)",
             "follow_up": true,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W7",
@@ -320,7 +328,7 @@
             "ref": "77bf09c, 78c4369 bodies",
             "summary": "Notes off: ac5 test was RED on 02e8b6a (second half fails), and removing the encode_png guard is killed, not equivalent; correct in the next fix body",
             "follow_up": true,
-            "status": "open"
+            "status": "closed"
           }
         ],
         "rounds": [
@@ -338,6 +346,11 @@
             "classes": [
               "implementation"
             ]
+          },
+          {
+            "round": 3,
+            "verdict": "PASS",
+            "classes": []
           }
         ]
       }
