@@ -49,7 +49,7 @@ The old path stays available until phase D of ADR 0011: when the owner says `flo
 
 ### Outcome state
 
-`.odd/state.json` is tracked and small: `{ "schema": 1, "outcomes": [ ... ] }`, one object per active outcome. The coordinator updates it at boundaries (criteria recorded, delivery verified, next action changed) in a commit that touches only that file; `tdd-apply` never does. An entry is deleted when its outcome closes; git keeps the history.
+`.odd/state.json` is tracked and small: `{ "schema": 1, "outcomes": [ ... ] }`, one object per active outcome. The coordinator updates it at boundaries (criteria recorded, delivery verified, next action changed) in a commit that touches only that file, with the outcome as scope (`docs(<outcome>): ...`); `tdd-apply` never does. An entry is deleted when its outcome closes; git keeps the history.
 
 | Field | Content |
 |---|---|
@@ -70,7 +70,7 @@ Only when the entry is the G0 artifact (no Slice card or Light spec holds these)
 
 The coordinator commits this update on the delivery branch before routing, on PASS, FAIL and BLOCKED alike, because the scratchpad does not survive a session. A PASS does not route WARNINGs, so on a delivery PASS every still-open WARNING that is not a follow-up becomes `follow_up: true` and reaches `archive`. When the next delivery of the same outcome starts, the coordinator resets `rounds` and drops closed findings; open follow-ups stay until `archive` consumes them.
 
-Resume: check the branch, `git status`, the diff against `develop` and the tests before continuing. An outcome mid-delivery may be ahead of `develop`: list the unmerged local branches, read `.odd/state.json` on each and on `develop`, and collect the active entries. A branch matches an outcome by the exact `outcome_id` in its file, never by a substring of its name. With no outcome named and more than one active, ask the owner which. Trust the entry on the delivery branch; with several, the one with the newest commit touching that file. The entry is a pointer, not the truth: when it disagrees with git, git wins and the entry is corrected. Be idempotent: repeating a step must not duplicate a spec row or a commit, or overwrite correct code, and a resumed run does not redraft the plan.
+Resume: check the branch, `git status`, the diff against `develop` and the tests before continuing. An outcome mid-delivery may be ahead of `develop`: list the unmerged local branches, read `.odd/state.json` on each and on `develop`, and collect the active entries. A branch matches an outcome by the exact `outcome_id` in its file, never by a substring of its name. With no outcome named and more than one active, ask the owner which. Trust the entry on the delivery branch; with several, the one with the newest commit on that file scoped to that outcome (a branch cut from `develop` inherits other outcomes' entries). The entry is a pointer, not the truth: when it disagrees with git, git wins and the entry is corrected. Be idempotent: repeating a step must not duplicate a spec row or a commit, or overwrite correct code, and a resumed run does not redraft the plan.
 
 ## Flow (lite SDD)
 

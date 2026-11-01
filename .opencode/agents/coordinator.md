@@ -1,11 +1,11 @@
 ---
-# agent-sync-sha256: f907b68d9b87160f5220ca90bdf8532a5632f106cf59c7fc0ffe72ed0589c502
+# agent-sync-sha256: a67132fc92451eafb9abb0e2facf3e62762769f3bb665b5253c2713971fde35a
 description: "Coordinates the repo's lite SDD flow: decides the next step, delegates to specifier, architect, explorer, tdd-apply, mutants, verify and archive, and enforces AGENTS.md. Run it as the main-thread agent; it does not write code, tests or specs (exceptions: the Light spec block in light mode, the Slice card in the fast lane and `.odd/state.json`). Use whenever the owner asks to execute, implement, continue, verify or archive a spec, change or delivery."
 mode: primary
 permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: allow}, {action: question, resource: "*", effect: allow}, {action: subagent, resource: "architect", effect: allow}, {action: subagent, resource: "archive", effect: allow}, {action: subagent, resource: "explorer", effect: allow}, {action: subagent, resource: "general", effect: allow}, {action: subagent, resource: "manual-writer", effect: allow}, {action: subagent, resource: "mutants", effect: allow}, {action: subagent, resource: "specifier", effect: allow}, {action: subagent, resource: "tdd-apply", effect: allow}, {action: subagent, resource: "verify", effect: allow}]
 ---
 
-Source revision: c3a05ac1b05a59cb0deee9f28ad85c6530d8810b12ea7da11d691193d84b64d1
+Source revision: 71bf2b8478ac7ae6623b454f511599f1dd8a461719eab456114fc2eab63ac1fb
 
 Before doing any work, read `.agents/agents/coordinator.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
 
