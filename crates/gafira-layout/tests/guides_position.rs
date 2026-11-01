@@ -98,3 +98,16 @@ fn arq_111_placing_twice_gives_the_same_bytes() {
     assert_eq!(a.1.value().to_bits(), b.1.value().to_bits());
     assert_eq!(a.0.axis, GuideAxis::Horizontal);
 }
+
+#[test]
+fn fd_03_d_non_finite_position_is_reported_at_dpi_zero() {
+    assert_eq!(
+        place_guide(
+            GuideAxis::Vertical,
+            Length::new(f64::NAN, Unit::Px),
+            Unit::Mm,
+            0.0
+        ),
+        Err(LayoutError::NonFinite { field: "position" })
+    );
+}

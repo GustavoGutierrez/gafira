@@ -372,3 +372,38 @@ fn fd_07_view_is_checked_after_the_zoom_range_and_a_product_that_overflows_is_no
         Err(LayoutError::NonFinite { field: "view" })
     );
 }
+
+#[test]
+fn fd_07_a_major_line_on_a_view_edge_is_kept_for_a_non_integer_step_with_subdivisions() {
+    // Step 4.8 px, 3 subdivisions, zoom 4: 11 * 4.8 = 52.8 is a major line on the edge.
+    let at = vertical(&px(4.8, 3), view(0.0, 0.0, 52.8, 10.0), 4.0);
+    assert_eq!(at.len(), 34);
+    let last = at[33];
+    assert!(last.major && last.position == 52.8, "{last:?}");
+}
+
+proptest! {
+    /// Views from 0 to `m * step`, with the minor grid showing: oracle built apart from the code.
+    #[test]
+    fn fd_07_a_majors_sit_exactly_on_multiples_of_the_step(
+        tenths in 20_u32..=1200,
+        subdivisions in 1_u8..=10,
+        m_raw in 1_u32..=60,
+    ) {
+        let step = f64::from(tenths) / 10.0;
+        let m = 1 + m_raw % ((120.0 / step) as u32).max(1);
+        let n = u32::from(subdivisions);
+        // Zoom 32: the minor spacing is step * 32 / n >= 6 px.
+        let at = vertical(&px(step, subdivisions), view(0.0, 0.0, f64::from(m) * step, 5.0), 32.0);
+        prop_assert_eq!(at.len() as u32, m * n + 1);
+        for (i, line) in at.iter().enumerate() {
+            let i = i as u32;
+            prop_assert_eq!(line.major, i.is_multiple_of(n));
+            if i.is_multiple_of(n) {
+                prop_assert_eq!(line.position, f64::from(i / n) * step);
+            } else {
+                prop_assert!((line.position - f64::from(i) * step / f64::from(n)).abs() <= 1e-9);
+            }
+        }
+    }
+}

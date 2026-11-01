@@ -55,12 +55,15 @@ fn axis_lines(
     let last = finite(field, (hi / spacing).ceil())? as i64;
     let mut lines = Vec::new();
     for k in first..=last {
-        let position = finite(field, k as f64 * unit / div)?;
+        let major = k % every == 0;
+        // A major line is `j * unit` exactly; multiplying before dividing can miss it by an ulp.
+        let position = if major {
+            finite(field, (k / every) as f64 * unit)?
+        } else {
+            finite(field, k as f64 * unit / div)?
+        };
         if (lo..=hi).contains(&position) {
-            lines.push(GridLine {
-                position,
-                major: k % every == 0,
-            });
+            lines.push(GridLine { position, major });
         }
     }
     Ok(lines)
