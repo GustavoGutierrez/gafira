@@ -1411,6 +1411,30 @@ fn nearest_in_view(g: &GridSettings, zoom: f64, at: f64) -> Option<f64> {
     }
 }
 
+#[test]
+fn fd_06_past_2_pow_51_the_target_is_a_line_that_grid_lines_draws_nearest() {
+    // The lines collapse onto the same f64 positions here (spacing 5.8 px, ulp 16 px), so a
+    // window of three neighbours picks a line 20 px off while the reference is on a drawn line.
+    let cases = [
+        (58.227, -72684900000000000.0),
+        (30.026, 85842800000000000.0),
+        (20.222, 99061100000000000.0),
+    ];
+    for (step, at) in cases {
+        let g = grid(true, true, step, 10);
+        let mut c = Case::at(at);
+        c.grid = g;
+        c.zoom = 2.0;
+        c.threshold = 16.0;
+        let t = c.solve().target.expect("a line within the threshold");
+        assert_eq!(t.kind, SnapKind::Grid);
+        assert_eq!(
+            t.coordinate.to_bits(),
+            nearest_in_view(&g, 2.0, at).unwrap().to_bits()
+        );
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1024))]
 

@@ -166,7 +166,8 @@ fn grid_target(level: Level, at: f64) -> Result<f64, LayoutError> {
     // `+ 0.0` turns a `-0.0` into 0.0: line 0 is `+0.0` in `grid_lines`, which counts in `i64`.
     let k = finite("step", at / spacing)?.floor() + 0.0;
     let mut best: Option<(f64, f64)> = None;
-    for k in [k - 1.0, k, k + 1.0, k + 2.0] {
+    // From the top down, so the tie rule below is decided by the comparison, not by the order.
+    for k in [k + 2.0, k + 1.0, k, k - 1.0] {
         let line = level.line("step", k)?.position;
         let distance = finite("step", (line - at).abs())?;
         if best.is_none_or(|(d, p)| distance < d || (distance == d && line < p)) {
