@@ -1,14 +1,5 @@
-{ "schema": 1, "change": "layout-core", "delivery": "D4", "rounds": [
-  {
-  "round": 1,
-  "commit": "47617dc",
-  "mode": "full",
-  "tier": "T4",
-  "depth": "V2",
-  "verdict": "FAIL",
-  "next": "specifier, tdd-apply",
-  "counts": {"critical": 3, "warning": 5, "suggestion": 3},
-  "findings": [
+{"schema": 1, "change": "layout-core", "delivery": "D4", "rounds": [
+  {"round": 1, "commit": "47617dc", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "specifier, tdd-apply", "counts": {"critical": 3, "warning": 5, "suggestion": 3}, "findings": [
     {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-layout/src/grid.rs:51, FD-07 (a)", "summary": "Line exactly on the view edge is lost to rounding: step 7 sub 3 zoom 4 view 0..35 loses major line 35; fd_07_a filters exact multiples out"},
     {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "tests/grid.rs, tests/guides_generate.rs", "summary": "Exact rules unproved: tolerance mutants V1, V2, V4, V5 survive on c >= 1, dedup, view limit and page side; code is right"},
     {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "src/guides.rs:114, FD-03", "summary": "No test uses a page away from the origin: V3, positions offset by the page corner, survives; code is right"},
@@ -19,12 +10,11 @@
     {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules", "summary": "1057 inserted against ~700: src 269, tests 747, notes 39, spec 2; about 25 redundant test lines; owner decides"},
     {"id": "S1", "severity": "SUGGESTION", "ref": "02 row Vista de grid_lines", "summary": "Two row examples tested with other values"},
     {"id": "S2", "severity": "SUGGESTION", "ref": "src/grid.rs:111", "summary": "Zero-step guard removal (V10) survives; subnormal dpi only, Err either way, no spec rule"},
-    {"id": "S3", "severity": "SUGGESTION", "ref": "apply-progress.md D4", "summary": "Notes stale: status partial, open question, 879 lines; round 2 has no gates line"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 12, "killed": 4},
-  "criteria": {"total": 14, "covered": 8},
-  "size": {"lines": 1057, "src": 269, "tests": 747, "notes": 39, "spec": 2, "forecast": 340},
-  "report": "verify-report.md" }
-] }
+    {"id": "S3", "severity": "SUGGESTION", "ref": "apply-progress.md D4", "summary": "Notes stale: status partial, open question, 879 lines; round 2 has no gates line"}], "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0}, "mutation": null, "hand_mutants": {"run": 12, "killed": 4}, "criteria": {"total": 14, "covered": 8}, "size": {"lines": 1057, "src": 269, "tests": 747, "notes": 39, "spec": 2, "forecast": 340}, "report": "verify-report.md"},
+  {"round": 2, "commit": "ba6c91d", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply", "counts": {"critical": 1, "warning": 2, "suggestion": 2}, "findings": [
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-layout/src/grid.rs:58, FD-07 (a)", "summary": "Residual of C1: major line computed as k*step/sub, 1 ulp off k*step; step 4.8 sub 3 zoom 4 view 0..52.8 loses it; 5 to 8 % of such views, non-integer steps"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules", "summary": "1371 inserted against ~700: src 285, tests 882, notes 65, spec 4, verify 135; owner decides"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "row DPI, tests/guides_position.rs:36, tests/rects.rs:253", "summary": "follow-up: NaN place_guide position and NaN margin at dpi 0 are untested; code is right on probe"},
+    {"id": "S2", "severity": "SUGGESTION", "ref": "src/grid.rs:124", "summary": "V10 still survives; accepted, no spec rule"},
+    {"id": "S4", "severity": "SUGGESTION", "ref": "apply-progress.md D4 round 3", "summary": "Notes split 235 lines as src 34, tests 201; numstat gives 25, 210; 1370 includes verify artifacts"}],
+  "closed": ["C2", "C3", "W1", "W2", "W3", "W4", "S1", "S3"], "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0}, "mutation": null, "hand_mutants": {"run": 20, "killed": 19}, "criteria": {"total": 16, "covered": 13}, "size": {"lines": 1371, "src": 285, "tests": 882, "notes": 65, "spec": 4, "verify": 135, "forecast": 340}, "report": "verify-report.md"}]}
