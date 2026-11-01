@@ -14,9 +14,18 @@ use crate::error::{check_rect, finite};
 /// included). A group is the union of its children's bounds; an empty group
 /// uses its own box. Strokes and effects do not count.
 pub fn node_bounds(page: &Page, id: NodeId) -> Result<Rect, LayoutError> {
+    bounds_with(page, id, &mut BTreeMap::new())
+}
+
+/// [`node_bounds`] that keeps the boxes of the nodes it finishes in `done`, so
+/// asking for many nodes of one page costs one walk of each node in all.
+pub(crate) fn bounds_with(
+    page: &Page,
+    id: NodeId,
+    done: &mut BTreeMap<NodeId, Rect>,
+) -> Result<Rect, LayoutError> {
     // One frame per group on the path: the group, its next child, the union so far.
     // An explicit stack keeps any nesting depth off the call stack.
-    let mut done: BTreeMap<NodeId, Rect> = BTreeMap::new();
     let mut open: BTreeSet<NodeId> = BTreeSet::new();
     let mut stack: Vec<(NodeId, usize, Option<Rect>)> = Vec::new();
     let mut next = Some(id);
