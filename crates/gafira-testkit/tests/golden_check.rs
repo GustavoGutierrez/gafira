@@ -3,7 +3,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use gafira_testkit::golden::{
-    Channels, CheckError, Image, Mismatch, Mode, check_in, decode_png, encode_png, quantize,
+    Channels, CheckError, Image, Mismatch, Mode, check, check_in, decode_png, encode_png, quantize,
 };
 
 fn tmp() -> PathBuf {
@@ -125,4 +125,65 @@ fn ac4_an_unreadable_golden_is_an_error_not_a_pass() {
         &tmp(),
     );
     assert!(matches!(r, Err(CheckError::Golden(_))));
+}
+
+#[test]
+fn ac3_check_uses_the_mode_of_the_build_target() {
+    // `check` is the entry for tests: exact where the target is exact, tolerant elsewhere.
+    let golden = encode_png(&gray(&[10, 10])).unwrap();
+    let off_by_one = gray(&[11, 10]);
+    let r = check("ac3_target_mode", &golden, &off_by_one, &tmp());
+    if cfg!(all(
+        target_arch = "x86_64",
+        target_os = "linux",
+        target_env = "gnu"
+    )) {
+        assert!(matches!(r, Err(CheckError::Mismatch { .. })));
+    } else {
+        assert!(r.is_ok());
+    }
+}
+
+#[test]
+fn ac4_check_rejects_a_different_image_and_accepts_the_same_one() {
+    let golden = encode_png(&gray(&[10, 10])).unwrap();
+    assert!(check("ac4_check_same", &golden, &gray(&[10, 10]), &tmp()).is_ok());
+    assert!(check("ac4_check_diff", &golden, &gray(&[10, 50]), &tmp()).is_err());
+}
+
+#[test]
+fn ac4_a_size_or_channel_mismatch_still_writes_a_candidate() {
+    let golden = encode_png(&gray(&[1, 2, 3, 4])).unwrap();
+    let rgba = Image::new(1, 1, Channels::Rgba, &[1, 2, 3, 4]).unwrap();
+    for (name, actual, expected) in [
+        ("ac4_size", gray(&[1, 2, 3]), Mismatch::Size),
+        ("ac4_chan", rgba, Mismatch::Size),
+    ] {
+        let dir = tmp();
+        let _ = std::fs::remove_file(dir.join(format!("{name}.png")));
+        let err = check_in(Mode::Exact, name, &golden, &actual, &dir).unwrap_err();
+        let CheckError::Mismatch {
+            mismatch,
+            candidate,
+        } = err
+        else {
+            panic!("expected a mismatch")
+        };
+        assert_eq!(mismatch, expected);
+        assert_eq!(
+            decode_png(&std::fs::read(&candidate).unwrap()).unwrap(),
+            actual
+        );
+    }
+    // Same dimensions, other channel layout.
+    let golden = encode_png(&Image::new(1, 1, Channels::Gray, &[1]).unwrap()).unwrap();
+    let actual = Image::new(1, 1, Channels::Rgba, &[1, 1, 1, 1]).unwrap();
+    let err = check_in(Mode::Exact, "ac4_layout", &golden, &actual, &tmp()).unwrap_err();
+    assert!(matches!(
+        err,
+        CheckError::Mismatch {
+            mismatch: Mismatch::Channels,
+            ..
+        }
+    ));
 }

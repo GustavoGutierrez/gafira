@@ -169,3 +169,26 @@ fn ac3_current_mode_follows_the_build_target() {
     };
     assert_eq!(current_mode(), expected);
 }
+
+#[test]
+fn arq_113_cross_platform_allowance_counts_pixels_not_bytes_on_rgba() {
+    // 1000 RGBA pixels: the allowance is 1 pixel, not 4 (a byte count would give 4).
+    let base = rgba(40, 25, &[100; 4000]);
+    let with = |pixels: usize| {
+        let mut v = vec![100u8; 4000];
+        for p in 0..pixels {
+            v[p * 4 + 3] = 102;
+        }
+        rgba(40, 25, &v)
+    };
+    assert!(compare(Mode::CrossPlatform, &base, &with(1)).is_ok());
+    assert!(compare(Mode::CrossPlatform, &base, &with(2)).is_err());
+    // 2000 RGBA pixels: allowance 2.
+    let big = rgba(2000, 1, &vec![100; 8000]);
+    let mut v = vec![100u8; 8000];
+    v[0] = 102;
+    v[4] = 102;
+    assert!(compare(Mode::CrossPlatform, &big, &rgba(2000, 1, &v)).is_ok());
+    v[8] = 102;
+    assert!(compare(Mode::CrossPlatform, &big, &rgba(2000, 1, &v)).is_err());
+}
