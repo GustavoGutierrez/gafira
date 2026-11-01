@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "change": "pi-agent-sync",
+  "delivery": "whole branch chore/pi-agent-sync",
+  "rounds": [
+    {"round": 1, "commit": "f954e6c8c6ea79bda3395368bdcd96d518bd81b4", "mode": "light", "tier": "T0", "depth": "V1", "verdict": "FAIL", "next": "specifier", "counts": {"critical": 1, "warning": 3, "suggestion": 4}, "findings": [{"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": ".pi/README.md:67 / Light spec AC6", "summary": "AC6 unmet: a user path (~/.pi/agent/subagents.json) enters a tracked file; documentation only, one-line fix."}, {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "git diff --shortstat develop..HEAD", "summary": "1292 insertions vs the ~700-line ceiling with no owner OK recorded; ~900 lines are verbatim source copies."}, {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "ed5a4ee", "summary": "Feat commit does not pass the gate alone: sync_pi_agents.py --check exits 1 on its tree (3 stale destinations) after the rebase; repaired only in f954e6c."}, {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "Light spec AC6 vs AC2", "summary": "AC6 (no absolute path in a tracked file) is unsatisfiable with AC2: source explorer.md holds /tmp, copied verbatim into .pi/agents/explorer.md; criterion needs a scope."}], "gates": {"fmt": null, "clippy": null, "test": null, "deny": null, "ci_policy": null}, "mutation": null, "hand_mutants": null, "criteria": {"total": 6, "covered": 5}, "size": {"lines": 1292, "forecast": null}, "report": "verify-report.md"},
+    {
+      "round": 2, "commit": "696c0e9afbaf13b09de8ddab0364bec2c487064f",
+      "mode": "light", "tier": "T0", "depth": "V1", "verdict": "PASS", "next": "archive",
+      "counts": {"critical": 0, "warning": 1, "suggestion": 6},
+      "findings": [
+        {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "git diff --shortstat develop...HEAD",
+         "summary": "Carried residual: 910 insertions vs the ~700 signal after the copies were removed; no owner OK recorded. Follow-up."} ],
+      "closure": [
+        {"id": "C1", "status": "closed", "proof": ".pi/README.md:66-68 names no user path; path scan over the 14 delivered files clean"},
+        {"id": "W1", "status": "open-residual", "proof": "1292 -> 910 insertions; copies gone, still above the signal"},
+        {"id": "W2", "status": "closed", "proof": "clean export of 696c0e9: --check exit 0, 26 tests OK, ruff clean"},
+        {"id": "W3", "status": "closed", "proof": "committed Light spec: AC2 points at the source, AC6 scopes the path rule"} ],
+      "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": null},
+      "mutation": null, "hand_mutants": null,
+      "criteria": {"total": 6, "covered": 6},
+      "size": {"lines": 910, "forecast": null},
+      "report": "verify-report.md"
+    }
+  ]
+}
