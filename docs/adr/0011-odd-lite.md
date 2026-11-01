@@ -93,11 +93,11 @@ Then accept this ADR, update ADR statuses, mark what proves redundant as legacy,
 
 ### Phase D: requirements
 
-From `verify-report.md`, round 1 of `odd-lite`.
+From `verify-report.md`, round 1 of `odd-lite`. All three resolved by delivery `chore/odd-lite-phase-d`.
 
-- W1, required before the first folderless outcome runs: verify findings and their classes must survive a session. Today the report stays in the scratchpad and the entry holds only `{round, commit, verdict, next}`, so a later session cannot check that earlier findings closed, route them, or apply the stop on two consecutive FAILs of the same class. Until W1 is resolved, new work keeps a change folder or runs under `flow: legacy`.
-- W2, open item to align: `coordinator.md` says a level never lowers a pack default, yet lets the coordinator set `mutation: off` where the pack says `archive`, and the "heaviest of" rule names only the mode, not depth or agents.
-- W3, open item to align: on the outcome entry path, `verify` step 3d must name the product ID check and the finding classes that step 3c holds for the fast lane.
+- W1, resolved: the entry's `verify` field stores findings with their classes and one row per run, committed on the delivery branch before routing, so a later session can check closure, route and apply the stops.
+- W2, resolved: `mutation: off` for L0 and L1 with no critical code is the named exception to "never lowers a pack default", and "heaviest of" fixes the mode only; depth and agents come from the pack row and a level only raises them.
+- W3, resolved: `verify` step 3d names the product ID check and the finding classes of step 3c.
 
 ### Phase D: consolidate into `specs/`
 
@@ -139,7 +139,7 @@ Easier:
 
 Harder and risks:
 - `.odd/state.json` can drift from reality. Mitigation: the resume rule; git wins.
-- Folderless work has no tracked `verify-report.md`. The verdict, round and commit stay in the entry until close and the report in the session scratchpad, so the audit trail is thinner. Mitigation: full mode and L3 keep folders; the pilot checks whether it is enough.
+- Folderless work has no tracked `verify-report.md`. The entry keeps the findings, classes and rounds until close and git keeps them after it, while the full report stays in the session scratchpad and is lost with it. Mitigation: full mode and L3 keep folders.
 - Misclassified levels. Mitigation: floors win, and escalation raises at any time.
 - Two paths exist until phase D. Mitigation: `flow: legacy` is explicit and recorded.
 - `docs/specs/README.md` and the manual lag until phase D (see above).

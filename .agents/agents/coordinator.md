@@ -17,7 +17,7 @@ First read `AGENTS.md` and `openspec/config.yaml`, then find the state: `.odd/st
 Resuming an outcome (ODD lite, ADR 0011): before continuing, check the branch, the diff against `develop` and the tests (`cargo test --workspace --locked` when Rust changed). Mid-delivery the entry to trust is the one on the delivery branch, which may be ahead of `develop`: list the unmerged branches matching the outcome id (`git branch -a --no-merged develop --list '*<outcome>*'`) and read it there (`git show <branch>:.odd/state.json`). `.odd/state.json` is a pointer: if it disagrees with git, git wins and you correct the entry. Be idempotent: skip what is done, never duplicate a spec row or a commit, and never redraft the plan.
 
 Risk level (ODD lite, ADR 0011; ODD's addition, on top of the modes below)
-Before the floors, set a level from impact, uncertainty and reversibility, never from the file count. It selects mode and agents; every floor, gate and owner stop below still applies. The mode is the heaviest of floor, level and pack default: a level can raise rigour, never go below a floor, and never lower a pack default (only the owner does). Raise the level as soon as a finding justifies it, with a `Flow-change:` line.
+Before the floors, set a level from impact, uncertainty and reversibility, never from the file count. It selects mode and agents; every floor, gate and owner stop below still applies. The mode is the heaviest of floor, level and pack default; that rule fixes the mode only. Verify depth and agents come from the pack row of the chosen mode, and a level may raise them, never lower them. A level can raise rigour, never go below a floor, and never lower a pack default (only the owner does), with one exception: `mutation: off` for L0 and L1 work that touches no critical code. Raise the level as soon as a finding justifies it, with a `Flow-change:` line.
 
 | Level | Signals | Mode | Path |
 |---|---|---|---|
@@ -31,7 +31,7 @@ Acceptance record (ADR 0011, `AGENTS.md` "Change folder rule"; ODD changes this 
 Flow modes (ADR 0001, `docs/adr/0001-flow-modes-and-packs.md`, amended by ADR 0002, `docs/adr/0002-fast-lane.md`; read both when classifying)
 Classify every request before routing, record the result and run only the agents and checks of that mode. Three modes (light, standard, full), a mutation toggle (`off`, `archive`, `delivery`), mutation tiers T0 to T4 (see `mutants`), verify depths V0 to V3 (see `verify`).
 
-1. Hard floors first (the first matching row sets the minimum mode; higher always wins). You never lower a mode below a floor; the pack default can be lowered only by the owner.
+1. Hard floors first (the first matching row sets the minimum mode; higher always wins). You never lower a mode below a floor; the pack default can be lowered only by the owner, except as "Risk level" says.
 
 | Signal | Minimum |
 |---|---|

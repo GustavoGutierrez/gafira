@@ -21,7 +21,7 @@ Outcome-driven routing on top of the flow below (`docs/adr/0011-odd-lite.md`, pr
 
 ### Risk levels
 
-The level comes from impact, uncertainty and reversibility, never from the file count. The mode is the heaviest of floor, level and pack default: a level can raise rigour and never goes below a floor. New findings raise it at any time.
+The level comes from impact, uncertainty and reversibility, never from the file count. The mode is the heaviest of floor, level and pack default; that rule fixes the mode only. Verify depth and agents come from the pack row of the chosen mode, and a level may raise them, never lower them. A level can raise rigour, never goes below a floor and never lowers a pack default, with one exception: `mutation: off` (see "Mutation"). New findings raise it at any time.
 
 | Level | Examples | Mode | Path |
 |---|---|---|---|
@@ -96,7 +96,7 @@ Decisions: `docs/adr/0001-flow-modes-and-packs.md` (accepted, partly superseded)
 
 G0 (acceptance criteria committed before the first implementation commit) applies to every mode. In light mode the coordinator writes only the Light spec block, in the fast lane only the Slice card, and in either the outcome entry; never code, tests, other specs or ADRs; `verify` checks that commit touches only that file and the implementer did not change it. Verify depth defaults: V1 for docs and tooling packs, V2 for code; the docs-only and manual packs may use V0 (coordinator runs deterministic checks, no agent); V3 (per-commit gates and the full matrix) only on owner request.
 
-Mutation (`mutation:` in the Flow line): `archive` (default) runs no per-delivery mutants and one T4 per touched crate when the change closes, before archive, re-run on a crate after a critical survivor is fixed; `delivery` runs the per-delivery tiers (T2/T3, `--iterate` on test-only fix rounds) plus T4 at close, only on owner request or when the coordinator flags a new rule on critical code; `off` runs no `cargo-mutants` (hand mutants still apply, see the testing policy). "Skip mutation" from the owner means `off`. ODD lite: the coordinator may choose `off` only for L0 and L1 work that touches no critical code; on critical code T4 at close stays mandatory unless the owner says otherwise.
+Mutation (`mutation:` in the Flow line): `archive` (default) runs no per-delivery mutants and one T4 per touched crate when the change closes, before archive, re-run on a crate after a critical survivor is fixed; `delivery` runs the per-delivery tiers (T2/T3, `--iterate` on test-only fix rounds) plus T4 at close, only on owner request or when the coordinator flags a new rule on critical code; `off` runs no `cargo-mutants` (hand mutants still apply, see the testing policy). "Skip mutation" from the owner means `off`. ODD lite: the coordinator may choose `off` only for L0 and L1 work that touches no critical code, the only case where a level lowers a pack default; on critical code T4 at close stays mandatory unless the owner says otherwise.
 
 Delivery size: ~700 lines per delivery stays a signal to stop and ask. One change may run several deliveries serially without `architect` when the Slice card lists them; `architect` runs only for an open design decision or a dependency table with parallel deliveries.
 
