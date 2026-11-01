@@ -202,6 +202,23 @@ fn d_17_locked_elements_do_not_count_and_do_not_move() {
     assert_eq!(covered, [0.0, 0.0, 70.0, 0.0]);
 }
 
+// FD-11 (d)
+#[test]
+fn fd_11_d_four_elements_with_one_locked_distribute_the_three_free_ones() {
+    let a = span(0.0, 10.0);
+    let b = span(20.0, 50.0);
+    let c = span(200.0, 230.0);
+    let l = lock(span(60.0, 70.0));
+    // the locked element is not counted and does not move, wherever it sits in the input
+    assert_eq!(gap(&[a, l, b, c]), [0.0, 0.0, 70.0, 0.0]);
+    assert_eq!(gap(&[l, a, b, c]), [0.0, 0.0, 70.0, 0.0]);
+    assert_eq!(gap(&[a, b, c, l]), [0.0, 70.0, 0.0, 0.0]);
+    // three elements with one locked: two free ones, nothing changes
+    for mode in MODES {
+        assert_eq!(run(mode, &[a, l, c]), [0.0; 3]);
+    }
+}
+
 #[test]
 fn d_17_with_fewer_than_three_free_elements_nothing_moves() {
     let a = span(0.0, 10.0);
@@ -215,6 +232,37 @@ fn d_17_with_fewer_than_three_free_elements_nothing_moves() {
         assert_eq!(run(mode, &[a, lock(b), lock(c), lock(a), c]), [0.0; 5]);
         // 3 locked and nothing else
         assert_eq!(run(mode, &[lock(a), lock(b), lock(c)]), [0.0; 3]);
+    }
+}
+
+#[test]
+fn d_17_two_wide_overlapping_free_elements_give_no_error_and_no_movement() {
+    // With two free boxes the gap is never computed: here it would be
+    // `(-MAX - MAX - 0) / 1`, which overflows. A third box is locked, or the two are all.
+    let wide = span(-f64::MAX, f64::MAX);
+    let locked = lock(span(-f64::MAX, f64::MAX));
+    for mode in MODES {
+        assert_eq!(run(mode, &[wide, wide]), [0.0, 0.0]);
+        assert_eq!(run(mode, &[wide, locked, wide]), [0.0; 3]);
+        assert_eq!(run(mode, &[locked, wide, wide]), [0.0; 3]);
+    }
+}
+
+#[test]
+fn fd_11_a_zero_offset_is_positive_zero_also_when_the_gap_underflows() {
+    // The gap is `-5e-324 / 2 = -0.0`, so the middle box lands on `-0.0 + -0.0`, and
+    // `-0.0 - 0.0` would be `-0.0`.
+    let items = [span(-1.0, -0.0), span(0.0, 5e-324), span(0.0, 1.0)];
+    for mode in MODES {
+        for offsets in [
+            distribute(DistributeAxis::Horizontal, mode, &items).unwrap(),
+            distribute(DistributeAxis::Vertical, mode, &items.map(flip)).unwrap(),
+        ] {
+            for o in offsets {
+                assert_eq!(o.dx.to_bits(), 0.0f64.to_bits(), "{mode:?}");
+                assert_eq!(o.dy.to_bits(), 0.0f64.to_bits(), "{mode:?}");
+            }
+        }
     }
 }
 

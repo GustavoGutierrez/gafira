@@ -80,9 +80,8 @@ pub fn distribute(
     let (_, first_end, first_centre) = along(axis, &items[first]);
     let (last_start, _, last_centre) = along(axis, &items[last]);
     let spans = (n - 1) as f64;
-    // A zero offset here is always `+0.0`: a difference is `-0.0` only for `-0.0 - 0.0`, and
-    // no target position is `-0.0` (a sum with a `+0.0`, or `x - x`, is `+0.0`).
-    let moved = |v: f64| finite("offset", v);
+    // `+ 0.0` turns a -0.0 into 0.0: `-0.0 - 0.0` is `-0.0`, and a gap that underflows is `-0.0`.
+    let moved = |v: f64| finite("offset", v).map(|v| v + 0.0);
     let middle = &free[1..n - 1];
     match mode {
         DistributeMode::EqualGap => {
