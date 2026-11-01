@@ -53,26 +53,62 @@
         },
         {
           "id": "AC10",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "verify round 2 at d21847e"
         },
         {
           "id": "AC11",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "verify round 2 at d21847e"
         },
         {
           "id": "AC12",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "verify round 2 at d21847e"
         },
         {
           "id": "AC13",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "verify round 2 at d21847e"
         },
         {
           "id": "AC14",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "verify round 2 at d21847e"
         }
       ],
-      "next_action": "Closure verify of chore/odd-lite-phase-d, merge, then the specs/ consolidation"
+      "next_action": "Light spec amend for the specs/ consolidation, then the move on its own branch",
+      "verify": {
+        "round": 2,
+        "commit": "d21847e",
+        "verdict": "PASS",
+        "next": "archive",
+        "findings": [
+          {
+            "id": "W9",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": ".agents/agents/coordinator.md resume rule",
+            "summary": "An entry inherited by an older unmerged branch can look active after its outcome closed, and develop is not named in the comparison",
+            "follow_up": true,
+            "status": "open"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "PASS",
+            "classes": [
+              "implementation"
+            ]
+          },
+          {
+            "round": 2,
+            "verdict": "PASS",
+            "classes": []
+          }
+        ]
+      }
     }
   ]
 }
