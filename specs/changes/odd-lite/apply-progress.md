@@ -55,3 +55,41 @@ Deviations
 - The entry gains optional G0 fields beyond brief §10 (`flow`, `scope`, `non_goals`, criterion `text` and `type`, `verify`), used only when it is the G0 artifact. The two seeds use the §10 fields alone.
 - `layout-core` `spec_id` names `04`, the source of most of its IDs; the Slice card also cites `02`.
 - Left stale, outside AC9 or this scope, listed in the ADR for phase D: "Cómo continuar" in `docs/specs/README.md` and the manual's `10-methodology` chapters.
+
+## Apply: specs consolidation
+
+Status: done, verify round 1 FAIL on C1 and W13, closed by this section and the ADR 0011 fix. Branch `chore/specs-consolidation`. No Rust touched.
+
+Commits: `f792bdf` renames only (109, all R100); `633e063` references, rules, tool, test, `.opencode`; `4e51eff` stale archive claims, `.gitignore` entry `__pycache__/`; `6c2b2ee` and `70c5c09` manual, by `manual-writer`.
+
+Measured lines: 428 insertions, 316 deletions, 744 changed lines, 706 without `.opencode` (`git diff --shortstat develop...70c5c09`, before the verify report). This is above the ~700 signal. Owner OK given 2026-11-01: "me importa completarlas, no el tamaño del commit".
+
+| AC | Evidence |
+|---|---|
+| AC15 | `f792bdf`: 109 renames, R100. `git ls-tree -d HEAD` finds neither old root. `git log --follow --oneline specs/02-arquitectura-software.md` lists 44 commits at `633e063`, crossing the move |
+| AC16 | The deleted config file's rules live in `AGENTS.md` ("Strict TDD", "Code rules", "Specs in this repo"). Its stale statements and tool versions were dropped. Only ADR 0011 still cites it (lines 111 and 115) |
+| AC17 | `AGENTS.md` "Change folder rule" and layout tree: `specs/changes/<change>/`, closing into `specs/history/<date>-<change>/` |
+| AC18 | `git diff -M --numstat develop...HEAD` on the exempt paths: 96 files, 0 insertions, 0 deletions; ADRs 0001 to 0010 are not in the diff. ADR 0011 keeps its From column, gains the resolved note (line 115), stays `proposed` |
+| AC19 | Hits below. Path script: 402 paths in 47 live files, 56 missing, none caused by the move (planned or generated files, templates, crate-relative paths). `specs/README.md` "Cómo continuar" describes the outcome route; its pending-ID command runs and returns 69 of 122 ARQ IDs on `02`. Searching all of `specs` returns 0, which is why product documents stay out. `coordinator.md` carries the same fix |
+| AC20 | `python3 tools/sync_agents.py --check` 0; `python3 -m pytest tests/test_agent_sync.py -q` 16 passed (RED first: 1 failed, `deny` against `allow`); no `crates/` or `apps/` change; no absolute path in added lines (grep exit 1). This writer ran no cargo gate; `verify` round 1 ran them (exit 0, 1107 passed) and `manual.py check` and `build` (exit 0) |
+
+Remaining hits of the old names, all deliberate (case-insensitive for the tool name, same exemptions as AC19; `docs/manuals/` has none):
+
+| Where | Lines | Reason |
+|---|---|---|
+| `docs/adr/0011-odd-lite.md` | 104, 108-111, 113, 115 | the mapping: its From column, the section around it and the resolved note, kept as the record |
+| `specs/changes/odd-lite/apply-progress.md` | 5, 10, 15, 22, 23, 24, 27, 47, 57 | Light spec block and earlier notes, dated record; the block is not edited |
+| `specs/changes/odd-lite/verify-report.md` | 34, 49, 88, 150, 170, 172, 280, 285 | past verify rounds, dated evidence |
+| `specs/changes/odd-lite/verify-report.md` | 335, 342, 353, 386, 393, 409, 418, 419 | the report of verify round 1 of this delivery, which quotes the old names |
+| `specs/changes/odd-lite/verification.json` | 100 | finding summary of that same round |
+| `CHANGELOG.md` | 11, 24 | past release text, capitalised tool name |
+| `docs/methodology/odd-ligero-migracion.md` | 35 | owner's brief, names the third-party tool |
+
+This section names those hits without quoting them, so it adds none.
+
+Deviations
+- `.gitignore` gained `__pycache__/` (coordinator request): the sync tests left untracked bytecode.
+- `specs/README.md`: the Detalle row's "Slice card" became the outcome entry, and the intro gained a paragraph on `capabilities/`, `changes/` and `history/`.
+- `AGENTS.md` gained "Conversation with the owner is in neutral Spanish" from the config file.
+- ADR 0011: lines outside the mapping section moved to the new paths, including the inventory.
+- `AGENTS.md` archive merge: the generic rule on a delta against an unarchived base stays; only its named changes and order went (`4e51eff`).

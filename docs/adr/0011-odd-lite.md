@@ -89,7 +89,7 @@ Consolidate only when all hold, by owner decision:
 - A session resumed from `.odd/state.json` with no duplicated artifact.
 - FAIL counts and rounds are no worse than comparable deliveries (D1 two rounds, D2 three).
 
-Then accept this ADR, update ADR statuses, mark what proves redundant as legacy, and bring the docs this change could not touch into line: "Cómo continuar el documento en curso" in `specs/README.md` and `docs/manuals/tecnico/chapters*/10-methodology.md` still describe the Slice card route. History is not deleted without the owner's OK.
+Then accept this ADR, update ADR statuses, and mark what proves redundant as legacy. Delivery `chore/specs-consolidation` brought "Cómo continuar el documento en curso" in `specs/README.md` and `docs/manuals/tecnico/chapters*/10-methodology.md` into line with the outcome route. History is not deleted without the owner's OK.
 
 ### Phase D: requirements
 
@@ -144,7 +144,7 @@ Harder and risks:
 - Folderless work has no tracked `verify-report.md`. The entry keeps the findings, classes and rounds until close and git keeps them after it, while the full report stays in the session scratchpad and is lost with it. Mitigation: full mode and L3 keep folders.
 - Misclassified levels. Mitigation: floors win, and escalation raises at any time.
 - Two paths exist until phase D. Mitigation: `flow: legacy` is explicit and recorded.
-- `specs/README.md` and the manual lag until phase D (see above).
+- Resolved: delivery `chore/specs-consolidation` brought `specs/README.md` and the manual into line (see above).
 
 ## Alternatives considered
 
