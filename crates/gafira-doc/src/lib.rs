@@ -30,7 +30,10 @@ pub use element::ElementBase;
 pub use error::{NodeField, ValidationError};
 pub use ids::{IdSpaceExhausted, NodeId, PageId};
 pub use json::LoadError;
-pub use layout::{GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins};
+pub use layout::{
+    GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,
+    check_bleed,
+};
 pub use node::{
     ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, ShapeGeometry, ShapeNode,
 };

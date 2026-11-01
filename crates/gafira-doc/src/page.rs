@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use gafira_geom::Length;
 
-use crate::layout::default_bleed;
-use crate::{GridSettings, GuideSet, Margins, Node, NodeId, PageId, PageSize};
+use crate::layout::{check_bleed, default_bleed};
+use crate::{
+    Dpi, GridSettings, GuideSet, Margins, Node, NodeId, PageId, PageLayoutError, PageSize,
+};
 
 /// One page: its size, flags, root order and the arena that owns its nodes.
 ///
@@ -51,6 +53,15 @@ pub struct Page {
 }
 
 impl Page {
+    /// Checks the layout data against its ranges: bleed, margins, guides,
+    /// then grid. The first failure is returned; nothing is changed.
+    pub fn check_layout(&self, dpi: Dpi) -> Result<(), PageLayoutError> {
+        check_bleed(self.bleed, dpi)?;
+        self.margins.check()?;
+        self.guides.check()?;
+        self.grid.check()
+    }
+
     /// An unlocked, visible page with no nodes.
     pub fn new(id: PageId, name: String, size: PageSize) -> Self {
         Self {

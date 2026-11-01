@@ -66,11 +66,18 @@ impl Document {
         }
     }
 
-    /// P3: page sizes, then roots that do not exist, then repeated roots.
+    /// P3: page sizes, then page layout data, then roots that do not exist, then repeated roots.
     fn check_pages(&self) -> Result<(), ValidationError> {
         for page in &self.pages {
             let size = page.size.check(self.dpi);
             size.map_err(|error| ValidationError::PageSize {
+                page: page.id,
+                error,
+            })?;
+        }
+        for page in &self.pages {
+            let layout = page.check_layout(self.dpi);
+            layout.map_err(|error| ValidationError::PageLayout {
                 page: page.id,
                 error,
             })?;

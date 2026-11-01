@@ -3,7 +3,7 @@
 use std::fmt;
 
 use crate::node::MAX_EXTENSION_DEPTH;
-use crate::{Document, Dpi, NodeId, PageId, PageSizeError};
+use crate::{Document, Dpi, NodeId, PageId, PageLayoutError, PageSizeError};
 
 /// A numeric field of a node, named in value errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,7 +58,7 @@ impl fmt::Display for NodeField {
 ///     match e {
 ///         UnsupportedSchemaVersion { .. } | InvalidDpi { .. } | DuplicateId { .. }
 ///         | ArenaKeyMismatch { .. } | NextIdNotAboveMax { .. } | PageSize { .. }
-///         | DanglingRoot { .. } | DuplicateRoot { .. } | NonFinite { .. }
+///         | PageLayout { .. } | DanglingRoot { .. } | DuplicateRoot { .. } | NonFinite { .. }
 ///         | OutOfRange { .. } | EmptyExtensionTypeId { .. } | ExtensionTooDeep { .. }
 ///         | ChildrenOnLeaf { .. } | DanglingChild { .. } | MultipleParents { .. }
 ///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } => {}
@@ -84,6 +84,11 @@ pub enum ValidationError {
     NextIdNotAboveMax { next_id: u64, max_id: u64 },
     /// P3: a page side is outside the pixel limits at the document DPI.
     PageSize { page: PageId, error: PageSizeError },
+    /// P3: bleed, margins, guides or grid of a page break their ranges.
+    PageLayout {
+        page: PageId,
+        error: PageLayoutError,
+    },
     /// P3: a root id is not in its page's arena.
     DanglingRoot { page: PageId, node: NodeId },
     /// P3: a root id is listed twice.
@@ -135,6 +140,7 @@ impl fmt::Display for ValidationError {
             Self::PageSize { page, error } => {
                 write!(f, "page {page} has an invalid size: {error}")
             }
+            Self::PageLayout { page, error } => write!(f, "page {page}: {error}"),
             Self::DanglingRoot { page, node } => {
                 write!(f, "page {page}: root {node} is not in the page")
             }
@@ -172,6 +178,7 @@ impl std::error::Error for ValidationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::PageSize { error, .. } => Some(error),
+            Self::PageLayout { error, .. } => Some(error),
             _ => None,
         }
     }
@@ -182,7 +189,7 @@ mod tests {
     use std::error::Error;
 
     use super::*;
-    use crate::{Axis, NodeId, PageId, PageSizeError};
+    use crate::{Axis, NodeId, PageField, PageId, PageSizeError};
 
     fn node(v: u64) -> NodeId {
         NodeId::new(v)
@@ -220,6 +227,13 @@ mod tests {
                 page: page(1),
                 error: too_tall(),
             },
+            PageLayout {
+                page: page(1),
+                error: PageLayoutError::OutOfRange {
+                    field: PageField::Bleed,
+                    value: 11.0,
+                },
+            },
             DanglingRoot {
                 page: page(1),
                 node: node(2),
@@ -256,6 +270,7 @@ mod tests {
             "page 1: arena key 5 holds node 6",
             "next_id 3 is not above the largest id 9",
             "page 1 has an invalid size: page height is 20000.5 px, outside 1..=16384 px",
+            "page 1: bleed is 11, out of range",
             "page 1: root 2 is not in the page",
             "page 1: root 2 is listed twice",
             "node 4: opacity is not finite",
@@ -276,7 +291,7 @@ mod tests {
             assert!(!kinds.contains(&kind), "{e:?} repeats a variant");
             kinds.push(kind);
         }
-        assert_eq!(kinds.len(), 18);
+        assert_eq!(kinds.len(), 19);
     }
 
     #[test]

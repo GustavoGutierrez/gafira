@@ -49,3 +49,54 @@ Correction: the D1 statement "Deviations: none" was wrong. `GridSettings.style` 
 - RED: `fd_07_each_absent_grid_field_reads_its_default` failed with `missing field visible` (unwrap on the load error); `fd_05_absent_linked_and_locked_read_their_defaults` failed with `missing field linked`. The W2 and C2 tests passed on the existing code (they strengthen coverage); C2 is proved by its mutant.
 - Hand mutants (reverted, not committed): `#[serde(other)] Unknown` variant on `GridStyle` -> killed by `adr_0006_unknown_enum_values_fail_to_load`; grid container default removed -> `fd_07_each_absent_grid_field_reads_its_default`; `linked` default removed, `default_linked` returning false, `locked` default removed -> `fd_05_absent_linked_and_locked_read_their_defaults`.
 - Not in this round: W3 (`budget.rs`) and S1 go to D2.
+
+## D2: validation and edit properties (`feat/layout-core-d2`)
+
+Status: done. Files: `crates/gafira-doc/src/{layout,page,error,validate,lib}.rs`, `crates/gafira-doc/tests/layout_validation.rs` (new), `crates/gafira-edit/src/{set_property,budget}.rs`, `crates/gafira-edit/tests/layout_commands.rs` (new).
+
+Done
+- `gafira-doc`: `PageField`, `PageLayoutError { NonFinite, OutOfRange }`, `check_bleed(Length, Dpi)`, `Margins::check`, `GuideSet::check`, `GridSettings::check`, `Page::check_layout(dpi)`; new `ValidationError::PageLayout { page, error }`; P3 runs it after page sizes, over all pages, before the root checks. Order inside: bleed, margins (top, right, bottom, left), guides (in order), grid step, subdivisions. Nothing is clamped.
+- Ranges (L1): bleed 0 to 10 mm after conversion at the document DPI; margins finite and >= 0 in their own unit, no upper bound; guide position finite only (may lie off the page); grid step 1 to 500 on the stored number in its own unit; subdivisions 1 to 10. All ends inclusive.
+- `gafira-edit`: `Property::{Bleed, Margins, Guides, Grid}` (page scope, `SetProperty::page`), merge kinds `set_property.{bleed,margins,guides,grid}`, same checks as `validate()` before any write, error `CommandError::InvalidDocument(ValidationError::PageLayout)`. Undo writes back the exact value captured by `apply`.
+- W3: `budget::page_bytes` adds `guides * size_of::<Guide>()`.
+- S1: load tests use out-of-range values (bleed 99 and -1 mm, margin -5, step 0 and 501, subdivisions 0 and 11) and assert the validation error, not a clamp.
+
+RED evidence (stubs: checks returning `Ok(())`; edit variants without read/write)
+- FD-05(d) `fd_05_bleed_bounds_are_inclusive_on_both_ends`: `Ok(())` where `OutOfRange { Bleed, 10.01 }` expected; `fd_05_bleed_range_is_in_millimetres_for_any_unit`: 0.4 in accepted.
+- FD-05 margins `fd_05_margin_bounds_are_inclusive_on_the_zero_end`, `fd_05_margins_report_the_first_bad_side`: `Ok(())` for -0.01 / -1.
+- FD-07(e) `fd_07_grid_step_bounds_are_inclusive_on_both_ends`, `fd_07_subdivision_bounds_are_inclusive_on_both_ends`: `Ok(())` for 0.99, 500.01, 0, 11.
+- FD-03(d), ARQ-110 `arq_110_non_finite_values_are_rejected_in_every_new_field`, `fd_03_a_bad_guide_in_any_position_fails`: `Ok(())` for NaN.
+- S1 `fd_05_fd_07_out_of_range_values_on_load_are_rejected_not_clamped`: document loaded with bleed 99 mm instead of `LoadError::Invalid`.
+- Edit: `fd_05_every_layout_property_is_set_and_restored`, `fd_05_the_same_layout_value_is_unchanged_and_shares_the_page`, `fd_04_c_*`, `arq_110_invalid_layout_values_fail_and_change_nothing`: `Err(InvalidValue("a node property on a page"))` where `Changed`, `Unchanged` or `PageLayout` was expected.
+- W3 `fd_04_the_history_estimate_grows_with_the_guide_count`: grown estimate 0, expected 24 for one guide.
+- Passed at the stub (strengthen coverage, proved by mutants): `fd_03_guide_positions_are_finite_only`, `fd_05_ten_millimetres_in_inches_is_valid`, `fd_05_fd_07_range_ends_on_load_are_kept_as_written`, `layout_properties_have_distinct_merge_keys`.
+
+Hand mutants (each applied, a test failed, reverted, not committed)
+1. Bounds, one end at a time, every field: bleed low and high exclusive -> `fd_05_bleed_bounds_are_inclusive_on_both_ends`; margin low -> `fd_05_margin_bounds_are_inclusive_on_the_zero_end`; step low and high -> `fd_07_grid_step_bounds_are_inclusive_on_both_ends`; subdivisions low and high -> `fd_07_subdivision_bounds_are_inclusive_on_both_ends`. The shared range helper made exclusive on either end also fails `fd_05_fd_07_range_ends_are_accepted` and `layout_properties_obey_the_command_laws` in `gafira-edit`. Margins have no upper bound and guide positions have no bound at all, so those have no end to flip.
+2. Non-finite accepted: infinity only (`!is_nan`) -> `arq_110_non_finite_values_are_rejected_in_every_new_field`; `finite()` always `Ok` -> same test, `fd_03_a_bad_guide_in_any_position_fails`, `layout_checks_run_in_a_fixed_order`; bleed conversion failure treated as 0 mm -> `arq_110_non_finite_values_are_rejected_in_every_new_field`.
+3. Skipped step: bleed, margins, guides, grid, grid step alone, subdivisions alone, the whole page-layout step in `validate` -> the range, `arq_110_*` and `fd_05_fd_07_out_of_range_values_on_load_are_rejected_not_clamped` tests of `layout_validation.rs`; in `gafira-edit`, skipping all checks or each property's check -> `arq_110_invalid_layout_values_fail_and_change_nothing`, `layout_properties_obey_the_command_laws` (bleed also `fd_05_bleed_is_checked_in_millimetres_at_the_document_dpi`; ignoring the document DPI is killed by the same test).
+4. Clamp on load (bleed, step, subdivisions, margins clamped in `DocumentWire` conversion) -> `fd_05_fd_07_out_of_range_values_on_load_are_rejected_not_clamped`.
+5. Undo: previous value read as the default for guides, bleed, margins and grid -> `fd_04_c_applying_guides_and_undoing_restores_the_exact_previous_set`, `fd_04_c_revert_gives_back_the_set_the_last_apply_replaced`, `fd_05_every_layout_property_is_set_and_restored`, `layout_properties_obey_the_command_laws`; guide order sorted or reversed -> the same `fd_04_c_*` tests; duplicates removed -> `fd_04_c_any_guide_set_reverts_to_the_previous_one`, `layout_properties_obey_the_command_laws`. The `fd_04_c_applying_*` test runs with an unlimited budget (snapshot path) and budget 0 (compacted entry, so undo calls `revert`).
+6. Budget ignores guides, or counts 1 byte per guide -> `fd_04_the_history_estimate_grows_with_the_guide_count`.
+All items killed; no survivors.
+
+Gates (before each commit): `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` (924 passed, 0 failed).
+
+Deviations: none. Notes: (a) the bleed is compared after conversion to mm with `Length::convert`, so a bleed written in another unit sits on floating-point rounding at exactly 10 mm; 10 mm written as `10/25.4 in` passes (tested), other units were not probed. (b) Out-of-range guide positions do not exist (finite only), so FD-03(d) is covered by the non-finite tests. (c) `gafira-layout` is untouched (D3).
+
+### D2 fix round 1 (verify FAIL: C1, C2, C3, S1)
+
+- C1: `check_pages` (DPI path of `SetProperty`) now checks every page size, then every page's layout data via `Page::check_layout(dpi)`, same order as `validate()`; a refused change returns `InvalidDocument(PageLayout)` and changes nothing. RED: `arq_13_a_dpi_change_that_breaks_a_bleed_is_refused` (300 to 96 dpi with a 100 px bleed on page 2): `unwrap_err` on `Ok(Changed)`. Companion tests `arq_13_a_dpi_change_that_keeps_bleeds_in_range_applies_and_reverts`, `arq_13_a_dpi_change_reports_page_sizes_before_layout`.
+- C2: `fd_05_fd_07_a_bad_value_on_a_later_page_is_found` (one bad field per case on page 2), `fd_05_a_later_page_with_a_bad_value_is_rejected_on_load`, `fd_05_a_layout_value_is_checked_on_the_page_it_targets`. They passed on existing code (coverage gap); proved by mutants.
+- C3: `design_l1_page_sizes_are_reported_before_layout_data` (same page, and layout error on page 1 with size error on page 2). Passed on existing code; proved by mutant.
+- S1: module comment of `layout.rs` corrected.
+- New mutants (reverted): validate layout on the first page only -> `fd_05_fd_07_a_bad_value_on_a_later_page_is_found`, `fd_05_a_later_page_with_a_bad_value_is_rejected_on_load`; layout step before page sizes in `validate` -> `design_l1_page_sizes_are_reported_before_layout_data`; DPI path layout on first page only, or no layout loop -> `arq_13_a_dpi_change_that_breaks_a_bleed_is_refused`; DPI path layout before sizes -> `arq_13_a_dpi_change_reports_page_sizes_before_layout` (the first version of this test survived because no bleed broke at the chosen DPI; rewritten so both a size and a bleed break). All killed.
+- Not done: W1 (exact 10 mm comparison unchanged), S2 (no trimming).
+
+### D2 fix round 2 (verify round 2, C4)
+
+- C4: commit `c1551a2` deleted 9 tracked regression-seed files, out of scope. Restored byte for byte from `develop` with `git checkout develop -- <paths>`: `gafira-anim/tests/{color,easing,interpolate,sampling}.proptest-regressions`, `gafira-pathops/tests/prop_boolean.proptest-regressions`, `gafira-time/tests/{flicks,ranges,rates,timecode}.proptest-regressions`.
+- Check: `git diff --name-status develop HEAD -- '*.proptest-regressions'` is empty after the commit.
+- Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` all pass (931 passed, 0 failed). The test run created no new or changed `*.proptest-regressions` files.
+- Correction: the previous fix round (round 1) did not declare this deletion in its notes; it was an unintended side effect of the round.
+- No behaviour change: no RED step, no hand mutants. W1 and S2 remain follow-ups, untouched.

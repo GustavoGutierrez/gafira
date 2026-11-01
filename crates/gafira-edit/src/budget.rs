@@ -4,13 +4,13 @@
 use std::mem::size_of;
 use std::sync::Arc;
 
-use gafira_doc::{Document, Node, NodeId, NodeKind, Page};
+use gafira_doc::{Document, Guide, Node, NodeId, NodeKind, Page};
 use serde_json::Value;
 
 /// Bytes of `old` that `newer` does not share by `Arc` identity.
 ///
 /// A fixed size model, not real heap: record sizes plus the heap length of
-/// strings and extension payloads. Pages and nodes that are pointer-equal in
+/// strings, guides and extension payloads. Pages and nodes that are pointer-equal in
 /// `newer` count nothing.
 pub(crate) fn unshared_bytes(old: &Document, newer: &Document) -> usize {
     let record = size_of::<Document>() + size_of_val(old.pages());
@@ -33,6 +33,7 @@ fn page_bytes(page: &Page, newer: Option<&Page>) -> usize {
     let record = size_of::<Page>()
         + page.name.len()
         + page.roots.len() * size_of::<NodeId>()
+        + page.guides.0.len() * size_of::<Guide>()
         + page.nodes.len() * (size_of::<NodeId>() + size_of::<Arc<Node>>());
     let nodes: usize = page
         .nodes

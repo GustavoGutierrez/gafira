@@ -1,128 +1,260 @@
-# Verify report: layout-core D1
+# Verify report: layout-core D2
 
-Change `layout-core`, delivery D1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
+Change `layout-core`, delivery D2, round 1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
 
-Current state: round 2 at `25a2b63`, **D1 PASS**, with D2 to D7 remaining, so the change is not done. 0 CRITICAL, 1 WARNING (W3, deferred to D2), 1 SUGGESTION (S1, deferred to D2). See "Round 2" at the end.
+Current state: round 3 at `9f093a3`, **PASS** for D2. 0 CRITICAL, 1 WARNING (W1, `follow-up`), 1 SUGGESTION (S2, `follow-up`). C1, C2, C3, C4 and S1 are closed. D3 to D7 remain. See "Round 3" at the end.
 
 ## Round 1
 
-Commit verified: `9bff7a0`. Verdict: **FAIL**. Counts: 2 CRITICAL, 3 WARNING, 1 SUGGESTION. Per class: implementation 5 (2 CRITICAL, 3 WARNING); architecture 0; ambiguity 0; claim 0. The sections below keep the round 1 record.
+Commit verified: `ad865cc`. Verdict: **FAIL**. Counts: 3 CRITICAL, 1 WARNING, 2 SUGGESTION. Per class: implementation 3 (3 CRITICAL); ambiguity 1 (WARNING); architecture 0; claim 0. The sections below keep the round 1 record.
+
+The D1 report is in git history at `b8b600a`; this file now covers D2.
 
 ## CRITICAL
 
-**C1. A `grid` without `style` fails to load.** class: `implementation`. Ref: `crates/gafira-doc/src/layout.rs:90`, ADR 0006 rule 4.
-ADR 0006 rule 4 says `GridSettings.style` is always written and its `#[serde(default)]` is `Lines`. The field has no attribute, and only a whole missing `grid` gets defaults. Probe `adr_0006_rule_4_grid_without_style_loads_as_lines` gives `Json(Error("missing field `style`"))`. JSON load is critical code. `tests/layout.rs` has no case for it, and the implementer's "Deviations: none" is therefore wrong. No saved file is affected today, but the accepted rule is not implemented.
+**C1. A DPI change can leave the document invalid and impossible to reopen.** class: `implementation`. Ref: `crates/gafira-edit/src/set_property.rs:205` (`check_pages`), ARQ-13, FD-05, 02 §3.1.
+`validate()` now depends on the DPI through the bleed, but `apply_dpi` and `revert_dpi` run only the page-size check. Probe: 100 px bleed at 300 DPI (8.47 mm, accepted), then `Property::Dpi(96)`.
 
-**C2. The closed-enum rule for `GridStyle` has no test; hand mutant H3 survives.** class: `implementation`. Ref: `crates/gafira-doc/src/layout.rs:72`, ADR 0006 rule 4.
-The code is correct today: an unknown style is a load error. But adding a `#[serde(other)]` variant, so that `"style":"cross"` loads silently, leaves `cargo test -p gafira-doc` green. My probe `closed_enums_reject_unknown` fails on the same mutant, so the mutant is not equivalent. A survivor in critical code is CRITICAL.
+- Debug build: `history.rs:310` panics with `left the document invalid ... OutOfRange { field: Bleed, value: 26.458333333333332 }`.
+- Release build: the command returns `Ok(Changed)`, `to_json` writes the file, and `from_json` fails with `LoadError::Invalid(PageLayout ...)`. The user's saved document does not open.
+
+`CommandError::InvalidDocument` exists for this case, and `a_dpi_that_pushes_a_page_over_the_limit_is_refused` sets the precedent for page sizes. No test combines the two: `bleed()` in `gafira-testkit` generates only `Unit::Mm`, and `layout_properties_obey_the_command_laws` never issues a DPI command. The fix needs a check of every page's bleed in both DPI paths, a test, and a generator that also yields px bleed.
+
+**C2. Hand mutant H2 survives: validation of only the first page.** class: `implementation`. Ref: `crates/gafira-doc/src/validate.rs:78`, design L1.
+With `self.pages.iter().take(1)`, `cargo test -p gafira-doc -p gafira-edit -p gafira-testkit` stays green (398 passed). Every fixture in `layout_validation.rs` has one page, and generated documents are in range. A bad page 2 would load. My probe `second_page_named_and_order_in_p3` fails on the mutant, so it is not equivalent. The code is correct today; the test is missing.
+
+**C3. Hand mutant H1 survives: rule order in P3.** class: `implementation`. Ref: `crates/gafira-doc/src/validate.rs:70`, design L1 ("after page sizes").
+Running the layout step before the page sizes leaves all tests green (398 passed). No test has a bad size and a bad layout together, nor a bad layout and a dangling root. The same probe fails on the mutant. The code is correct today.
 
 ## WARNING
 
-**W1. Other new nested fields have no read default.** class: `implementation`. Ref: `crates/gafira-doc/src/layout.rs`, 02 §3.5, design.md L1.
-A `grid` without `visible`, `step`, `subdivisions` or `snap`, `margins` without `linked`, and a guide without `locked` all fail with "missing field". 02 §3.5 asks for `#[serde(default)]` fields, the L1 table gives these defaults, and the repo puts field-level defaults on flags (`Flip`, `ElementBase.locked`, `Page.locked`). Only `style` is named by an ADR, so this is a WARNING. Required `Length` sides of `Margins`, and guide `axis` and `position`, have no stated default of their own and match `Placement`.
+**W1. No tolerance is stated for a bleed at exactly 10 mm in pixels.** class: `ambiguity`. Ref: `crates/gafira-doc/src/layout.rs:220`, FD-05(d), 02 §4.17.2 row "Sangrado".
+Measured over every valid DPI, 1 to 10 000:
 
-**W2. The old-bytes test does not prove canonical re-save.** class: `implementation`. Ref: `crates/gafira-doc/tests/layout.rs:68`, ADR 0006 Consequences.
-ADR 0006 says the fixture must load and re-save in the new canonical form, "a stronger test than the old byte equality". The test only checks that the output contains `"bleed"`. Behaviour is correct: my probe shows `pre_layout/minimal` and `extension` re-save byte-equal to the current goldens, and `full` differs only in the page 1 layout data. Weak test only.
+| Value | Result |
+|---|---|
+| `10 mm`, `1 cm`, `10/25.4 in`, `720/25.4 pt`, and `10 mm` converted to in, cm, pt | Accepted; independent of the DPI |
+| `10 mm` converted to px by `Length::convert` | Rejected at 550 of 10 000 DPIs; first is 13 DPI, 10.000000000000002 mm |
+| Literal `10 * dpi / 25.4` px | Rejected at 528 of 10 000 DPIs |
+| 30 common DPIs (72, 96, 150, 300, 600, 1200, 2400 and others) | Literal form accepted at all of them |
 
-**W3. The history memory estimate ignores guides.** class: `implementation`, follow-up to D2. Ref: `crates/gafira-edit/src/budget.rs:32`.
-`page_bytes` counts the heap of `name`, `roots` and `nodes` but not `guides`. Measured with a scratch test: `unshared_bytes` gives 304 for 0 guides and 304 for 10 000. D1 did not touch this file, but `Page` now owns a heap list, and D2's `Property::Guides` makes it reachable by every edit.
+Each of the 528 rejected values is above 10 mm in exact arithmetic, by rounding (exact rational check). So is each of 8 167 accepted values, because the conversion rounds both ways. The behaviour is deterministic, and 10.01 mm and -0.01 mm stay rejected in every unit. FD-05(d) and the 02 row say the end is included and name no tolerance for a converted value. Owner or `specifier` decides: keep the exact comparison, or state a tolerance well below 0.01 mm. The same question reaches `bleed_rect` in D3 only if a tolerance is chosen.
 
 ## SUGGESTION
 
-**S1. Pin "nothing is clamped" in D2.** The generators stay inside the spec ranges, so a clamp on read would pass them. D2 load tests should include out-of-range values. Today, bleed 99 mm, step 0 and subdivisions 0 load unchanged, as D1 intends (probe); subdivisions 256 is a JSON error.
+**S1. Stale module comment.** `crates/gafira-doc/src/layout.rs:3` still says "nothing here validates", while the file now holds the checks.
+
+**S2. Test redundancy** (see "Size"). About 130 to 150 of the 874 test lines could go without losing a criterion.
+
+## Probe answers
+
+**Do the `Property` checks and `validate()` share one source of truth?** For a value being set, yes. Both call `check_bleed`, `Margins::check`, `GuideSet::check` and `GridSettings::check`; the constants exist once. My probe `bad_values_give_the_same_error_as_validate` compares the two errors for five bad values: equal. The rule does not hold for the DPI, a second input of the bleed check: `check_pages` in `set_property.rs` is a partial copy of the P3 loop. That is C1.
+
+**FD-03(d) covered only by finiteness?** That is correct: the criterion names only NaN and ±∞, and FD-03 lets a guide sit off the page. Both sides are tested: on load, every sign and any position in the set; on command, a bad second guide leaves the page pointer-equal.
 
 ## Gates
 
-Run on a clean clone at `9bff7a0`, own target dir, `CARGO_INCREMENTAL=0`.
+Run on a clean export of `ad865cc`, own target dir, `CARGO_INCREMENTAL=0`.
 
 | Gate | Exit | Note |
 |---|---|---|
 | `cargo fmt --check` | 0 | |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
-| `cargo test --workspace --locked` | 0 | 892 passed, 0 failed |
-| CI policy (ARQ-07, unsafe, V5, V12, V13, V14) | 0 | Steps taken from `ci.yml` |
+| `cargo test --workspace --locked` | 0 | 924 passed, 0 failed |
+| CI policy (ARQ-07, unsafe, V5, V12, V13, V14) | 0 | Steps run from `ci.yml`, at the repo HEAD |
 | `cargo deny --offline check` | 0 | Offline, so the advisory DB was not refreshed |
 
 ## Artifact integrity (step 3c)
 
-- `f08d005` touches only `openspec/changes/layout-core/apply-progress.md` (9 insertions).
-- `9bff7a0` adds 31 lines to that file and removes none, so the card block is unchanged. No `slice card amend` commit exists.
-- There is no `.cargo/mutants.toml` change.
-- `pre_layout/{minimal,full,extension}.json` are byte-identical to the `develop` goldens.
-- Size: 505 insertions over `develop`, confirmed, against the 460 forecast and the ~700 ceiling. That figure includes the 9 card lines; `9bff7a0` alone is 496, of which 459 are `.rs`. No finding.
+- `f08d005` touches only `apply-progress.md`, and the card block at HEAD is identical to that commit.
+- `ad865cc` touches only `apply-progress.md`: 34 insertions, none removed.
+- No `slice card amend` commit exists. `.cargo/`, `deny.toml`, `Cargo.toml`, `Cargo.lock` and `ci.yml` are unchanged.
 
 ## Criteria
 
 | # | Criterion | Status | Proof |
 |---|---|---|---|
-| 1 | FD-03(b) guides survive save and open | covered | `fd_03_every_guide_field_survives_save_and_open`, `fd_03_guide_order_and_duplicates_survive`, `layout_data_round_trips`; probe: 99 951 values, 0 bit mismatches |
-| 2 | FD-03 guide shape: axis, position, lock; unrounded, own unit, off-page allowed | covered | Same tests; `-3.0 in`, `1e9 pt` |
-| 3 | FD-05 data: `bleed`, `Margins`, `linked`, defaults | covered | `fd_05_fd_07_defaults_match_the_spec`, `fd_05_documents_without_layout_fields_load_with_defaults`, `fd_05_fd_07_layout_fields_survive_save_and_open` |
-| 4 | FD-07 data side: `GridSettings` fields and defaults | covered | Same tests; `grid_style_and_guide_axis_use_snake_case_on_the_wire` |
-| 5 | 02 §3.1 fields and order after `size` | covered | `adr_0006_default_valued_layout_fields_are_written`; H1 killed |
-| 6 | ADR 0006 rule 1, D-36: schema stays 1, old documents load | covered | `fd_05_documents_without_layout_fields_load_with_defaults`; each field absent alone (probe) |
-| 7 | ADR 0006 rule 3: every field written, no `skip_serializing_if` | covered | Same test, `minimal_document_has_exact_bytes`, `page_wire_form_writes_every_field`; `grep` finds none in `crates/` |
-| 8 | ADR 0006 rule 4: `style` reads as `Lines` when absent | **failing** | C1 |
-| 9 | ADR 0006 rule 4: `GridStyle` closed, unknown variant fails | **missing test** | C2 |
-| 10 | ADR 0008: types in `gafira-doc`, exported at the root, `bleed` is `Length` | covered | `lib.rs`; `tests/layout.rs` imports from the root |
-| 11 | Design D1: 7 tests and 3 goldens updated, old bytes kept as fixture | covered, weak | Fixture used by `tests/layout.rs`; see W2 |
-| 12 | Design D1: testkit generators fill every page | covered | `document()` assigns the layout; `generated_documents_validate`, `round_trip_is_idempotent_and_bit_identical` |
-| 13 | L5, Slice card non-goals: no `notes`, `duration`, `background`, no validation | covered | `page.rs` has none; out-of-range probe |
+| 1 | FD-03(d): NaN or ±∞ refused, `Page.guides` unchanged | covered | `arq_110_invalid_layout_values_fail_and_change_nothing`, `arq_110_non_finite_values_are_rejected_in_every_new_field`, `fd_03_a_bad_guide_in_any_position_fails` |
+| 2 | FD-03: a finite guide may lie off the page | covered | `fd_03_guide_positions_are_finite_only` |
+| 3 | FD-04(c): apply and undo restore the exact set | covered | `fd_04_c_applying_guides_and_undoing_restores_the_exact_previous_set` (snapshot and compacted), `fd_04_c_any_guide_set_reverts_to_the_previous_one` |
+| 4 | FD-05(d) load side: bleed ends included, 10.01 mm an error | covered | `fd_05_bleed_bounds_are_inclusive_on_both_ends`; see W1 for px |
+| 5 | FD-05: range in mm for any unit at the document DPI | covered | `fd_05_bleed_range_is_in_millimetres_for_any_unit`, `fd_05_bleed_is_checked_in_millimetres_at_the_document_dpi` |
+| 6 | FD-05, L1: margins finite and not negative; no area is not a load error | covered | `fd_05_margin_bounds_are_inclusive_on_the_zero_end`, `fd_05_any_negative_margin_is_rejected` |
+| 7 | FD-07(e): step 1 to 500 in its own unit | covered | `fd_07_grid_step_bounds_are_inclusive_on_both_ends` |
+| 8 | FD-07(e): subdivisions 1 to 10 | covered | `fd_07_subdivision_bounds_are_inclusive_on_both_ends` |
+| 9 | L1, D1 S1: nothing is clamped on load | covered | `fd_05_fd_07_out_of_range_values_on_load_are_rejected_not_clamped`, `fd_05_fd_07_range_ends_on_load_are_kept_as_written` |
+| 10 | ARQ-110: typed error naming the field | covered | The `arq_110_*` tests; my probe adds each sign in each field |
+| 11 | Design D2, S6: four `Property` variants with ranges and property tests | covered | `layout_properties_obey_the_command_laws`, `fd_05_every_layout_property_is_set_and_restored` |
+| 12 | D1 W3: history estimate counts guides | covered | `fd_04_the_history_estimate_grows_with_the_guide_count`; probe: 240 610 bytes for 10 000 guides, 634 for 1 |
+| 13 | L1: layout step after page sizes | **missing test** | C3 |
+| 14 | L1: every page is validated | **missing test** | C2 |
+| 15 | ARQ-13: a command leaves a valid document, DPI included | **failing** | C1 |
 
-Total 13, covered 11. D-35, D-37 and D-38 have no D1 surface. ADR 0006 rule 2 applies only after the first saving build. FD-03(a, c, d) and the FD-05 and FD-07 ranges and rectangles belong to D2 to D5. Every test in `tests/layout.rs` that proves an ID names it, except `grid_style_and_guide_axis_use_snake_case_on_the_wire`, which names no ID; it is a wire-form test and FD-07 is proved by the named tests.
+Total 15, covered 12. D1's W3 and S1 are closed.
+
+Product IDs of the card left to later deliveries: FD-03(a, c), FD-04(a, d, e, f), FD-05(b, e, f and the rectangle part of d), FD-06, FD-07(a, c, d and the zoom part of e), FD-09(d), FD-11, ARQ-111, ARQ-114. FD-03(b) was D1. Out of this change per 02 §4.17.2: FD-04(b), FD-05(a, c), FD-07(b), FD-09(a, b, c). Each proving test names its ID; `layout_properties_have_distinct_merge_keys` and `layout_checks_run_in_a_fixed_order` name none, and no criterion rests on them alone.
 
 ## Hand mutants
 
-Run on a scratch export, never in the repo.
+Run on a scratch export, never in the repo. `apply-progress.md` records all six items killed.
 
 | Mutant | Rule | Result | Killed by |
 |---|---|---|---|
-| Spot-check, item 3: `skip_serializing_if` empty on `guides` | ADR 0006 rule 3 | Killed; recorded tests confirmed | `adr_0006_default_valued_layout_fields_are_written`, `minimal_document_has_exact_bytes` and 5 more |
-| H1: `guides` before `margins` on the wire | 02 §3.1 order | Killed | `adr_0006_default_valued_layout_fields_are_written`, goldens |
-| H2: `left` and `right` margins swapped on read only | FD-05 four sides | Killed | `fd_05_fd_07_layout_fields_survive_save_and_open`, `layout_data_round_trips`, goldens |
-| H3: unknown `GridStyle` accepted through `#[serde(other)]` | ADR 0006 rule 4 | **Survived** | None (C2) |
+| Spot-check, item 5: previous guides captured reversed | FD-04(c) | Killed; recorded tests confirmed | 7 tests, including the `fd_04_c_*` tests and `layout_properties_obey_the_command_laws` |
+| H1: layout step before page sizes | L1 order | **Survived** | None (C3) |
+| H2: layout checked on the first page only | L1, all pages | **Survived** | None (C2) |
+| H3: check after the write in `apply_page` | FD-03(d), `Page.guides` unchanged | Killed | `arq_110_invalid_layout_values_fail_and_change_nothing`, `layout_properties_obey_the_command_laws` |
 
-Run 4, killed 3.
+Run 4, killed 2.
 
 ## Probes (step 1c)
 
-Written from the specs before reading the implementer's tests. 11 probes: 10 pass, 1 fails (C1). They cover old documents, each field absent alone, nested partial objects, closed enums and malformed values, unknown keys dropped inside the new types, key order and wire shape, exact bits in every unit, order and duplicates, fixture re-save, and out-of-range values kept.
+Written from the specs before reading the implementer's tests. 15 probes: 14 pass, 1 fails (C1). `second_page_named_and_order_in_p3` passes on the real code and is the probe that fails on H1 and H2. Covered: the 10 mm boundary in each unit at every DPI, each non-finite value in each field, page order in P3, own-unit ranges, margins with no area, load errors, undo and redo in both history modes, gestures with a refused step, transactions, scope misuse, error equality with `validate()`, the estimate, and the DPI change.
+
+Edges seen, no finding: `-0.0` bleed passes; `-1e-320 px` at 10 000 DPI underflows to `-0.0` mm and passes; `1e308 in` gives `NonFinite` (ARQ-110, intermediate result), `1e308 mm` gives `OutOfRange`; subdivisions 256 is a JSON error.
+
+## Size
+
+`git diff --shortstat develop`: 1 157 insertions, 19 deletions, confirmed. Measured with `--numstat`: 249 in `src/` (about 10 of them test lines inside `error.rs`), 874 in the two test files, 34 notes. Forecast 420. Reported for the owner's decision; no finding.
+
+Redundancy, an estimate from reading the tests (no reduced suite was run): about 130 to 150 test lines could go.
+
+| File | Candidate | Lines |
+|---|---|---|
+| `layout_commands.rs` | `arq_110_invalid_layout_values_fail_and_change_nothing`: one good and one bad row per property, as the leaf ranges are proved in `gafira-doc` | ~30 |
+| `layout_commands.rs` | `fd_05_fd_07_range_ends_are_accepted`: same reason | ~12 |
+| `layout_commands.rs` | `fd_05_every_layout_property_is_set_and_restored`: the four `expect` blocks become one page comparison | ~12 |
+| `layout_commands.rs` | `fd_04_c_revert_gives_back_the_set_the_last_apply_replaced` and `fd_04_a_guide_drag_merges_and_reverts_to_the_origin`: overlap the law test and the guide-set property | ~35 |
+| `layout_validation.rs` | Merge the two bleed tables and the inches test; fold the first-bad-side test into `layout_checks_run_in_a_fixed_order`; a helper for the load rows | ~40 |
+
+That does not reach ~700: about 1 000 would remain, before the lines that C1 to C3 add. The main weight is source plus table-style tests across two layers, not duplication alone.
 
 ## Round 2 (closure)
 
-Commit verified: `25a2b63`. Verdict: **D1 PASS**. Counts: 0 CRITICAL, 1 WARNING, 1 SUGGESTION. Per class: implementation 1 (WARNING); architecture 0; ambiguity 0; claim 0. No new finding. No new probes or independent mutants; only the round 1 probe file and H3 were re-run, to prove closure.
+Commit verified: `5e4e3f2`. Verdict: **FAIL**. Counts: 1 CRITICAL, 1 WARNING, 1 SUGGESTION. Per class: implementation 1 (CRITICAL); ambiguity 1 (WARNING); architecture 0; claim 0. No new probes or independent mutants; only H1, H2 and the C1 probe were re-run.
+
+### CRITICAL
+
+**C4. The fix commit deleted 9 tracked regression-seed files from other crates.** class: `implementation`. Ref: `c1551a2`.
+`c1551a2` removes every `*.proptest-regressions` file in the repo: `gafira-anim` (`color`, `easing`, `interpolate`, `sampling`), `gafira-pathops` (`prop_boolean`), `gafira-time` (`flicks`, `ranges`, `rates`, `timecode`). That is 71 lines and 17 pinned cases. Neither the commit message nor `apply-progress.md` mentions it, and those crates are outside D2. Several seeds arrived with real fixes (`0a2f336` bezier solver, `1c56418` Color alpha, `9c0d95d` boolean fill rule), and proptest replays them first on every run. After the merge, a return of those bugs would only be caught by chance.
+
+Nothing is broken today: with the 9 files restored on a scratch export, `gafira-anim`, `gafira-time` and `gafira-pathops` pass (362 passed, 0 failed). The cause is not proved; earlier changes record deleting `proptest-regressions` files generated by mutation runs, so a cleanup that also caught tracked files is likely.
+
+Why CRITICAL and not the follow-up WARNING for a new test gap: that rule covers a gap found in the code under review. This is an undeclared removal of existing protection, outside the delivery, that merging would make permanent. The fix is one commit: `git checkout develop -- <the 9 files>`, with no change to the rest.
+
+### Earlier findings
 
 | Finding | Status | Evidence |
 |---|---|---|
-| C1 | Closed | `adr_0006_rule_4_grid_without_style_loads_as_lines` now passes; the fix adds container-level `#[serde(default)]` on `GridSettings`; `fd_07_each_absent_grid_field_reads_its_default` pins it |
-| C2 | Closed | H3 re-applied: `cargo test -p gafira-doc` fails on `adr_0006_unknown_enum_values_fail_to_load`; `closed_enums_reject_unknown` passes on the fix |
-| W1 | Closed | `grid` without any one field, `grid: {}`, `margins` without `linked` and a guide without `locked` all load. `margins: {}` still fails, as round 1 allowed: the sides have no read default, like `Placement` |
-| W2 | Closed | `adr_0006_old_bytes_resave_in_the_canonical_form` compares minimal and extension bytes with the goldens, and full with its golden except page 1 layout data; the `contains("bleed")` check is gone |
-| W3 | Open, deferred to D2 | class: `implementation`, follow-up. `budget.rs` unchanged; deferred by the coordinator |
-| S1 | Open, deferred to D2 | Deferred by the coordinator |
+| C1 | Closed | Same probe, debug and release: `Err(InvalidDocument(PageLayout ... 26.458333333333332))`, DPI stays 300, `validate` is `Ok`, reload is `Ok`. `check_pages` now runs all sizes, then `Page::check_layout` on all pages, and serves both `apply_dpi` and `revert_dpi`. `arq_13_*` tests pin it |
+| C2 | Closed | H2 re-applied: `fd_05_fd_07_a_bad_value_on_a_later_page_is_found` and `fd_05_a_later_page_with_a_bad_value_is_rejected_on_load` fail |
+| C3 | Closed | H1 re-applied: `design_l1_page_sizes_are_reported_before_layout_data` fails |
+| S1 | Closed | Module comment of `layout.rs` corrected |
+| W1 | Open, held | class: `ambiguity`. Exact comparison unchanged; held for the owner or `specifier` by the coordinator. It does not need to block: no common DPI is affected and the behaviour is deterministic |
+| S2 | Open | Owner's size question |
 
-Criteria: 13 of 13 covered (8 and 9 closed by C1 and C2; 11 no longer weak).
+Note on C1: `bleed()` in `gafira-testkit` still generates only mm, so the DPI property test never meets a px bleed. The explicit `arq_13_*` tests and the implementer's mutants prove the fix, so no finding.
 
-Gates, on a clean clone at `25a2b63`: fmt 0, clippy 0, test 0 (896 passed, 0 failed), CI policy 0, `cargo deny --offline check` 0.
+Criteria: 15 of 15 covered (13, 14 and 15 closed by C3, C2 and C1).
 
-Artifact integrity:
+Gates, on a clean export of `5e4e3f2`: fmt 0, clippy 0, test 0 (931 passed, 0 failed), `cargo deny --offline check` 0. CI policy 0 (ARQ-07, unsafe, V5, V12, V13, V14), run at the repo HEAD.
 
-- `f08d005` touches only `apply-progress.md`, and the card block at HEAD is identical to that commit.
-- `828c4e4` touches only `verify-report.md` and `verification.json`.
-- `25a2b63` adds 11 lines to `apply-progress.md` and removes none. It records the correction of "Deviations: none" as an appended note.
-- No `.cargo/mutants.toml` change.
+### Artifact integrity
 
-Size, measured with `git diff --numstat develop 25a2b63`:
+- The card block at HEAD is identical to `f08d005`.
+- `5e4e3f2` touches only `apply-progress.md`: 9 insertions, none removed.
+- `fb58135` touches only `verify-report.md` and `verification.json`.
+- No change to `.cargo/`, `deny.toml`, `Cargo.toml`, `Cargo.lock`, `ci.yml` or `docs/`.
 
-| Part | Insertions |
+### The 16 files of `git diff --shortstat ad865cc`
+
+| Files | Count | Expected |
+|---|---|---|
+| `layout.rs`, `set_property.rs`, `layout_validation.rs`, `layout_commands.rs` | 4 | Yes |
+| `apply-progress.md` | 1 | Yes |
+| `verify-report.md`, `verification.json` | 2 | Yes |
+| `*.proptest-regressions` deletions | 9 | **No** (C4) |
+
+### Size
+
+`git diff --numstat develop 5e4e3f2`, insertions:
+
+| Part | Lines |
 |---|---|
-| `.rs` code and tests | 553 |
-| Goldens and fixtures | 6 |
-| `apply-progress.md` notes | 42 |
-| Slice card | 9 |
-| Verify artifacts | 103 |
-| Total | 713 |
+| Code (`src/`, about 10 of them test lines in `error.rs`) | 267 |
+| Tests | 1 106 |
+| Notes (`apply-progress.md`) | 43 |
+| Verify artifacts | 89 |
+| Total | 1 505 |
 
-The total of 713 is confirmed, but the verify artifacts are 103 lines, not the 160 in the coordinator's note. Without the verify artifacts and the card the delivery is 601 lines, not 544. It stays under ~700, so the conclusion holds. Against the 460 forecast it is 141 lines over. No finding.
+Without the verify artifacts: 1 416 insertions. There are 199 deletions, 71 of them the seed files. Forecast 420. The fix round added 232 test lines and 18 code lines. Reported for the owner's decision; no finding.
 
-next: tdd-apply
+### Incident during this round
+
+A guard-less script of mine failed to `cd` into its scratch export and ran in the repo. It wrote hand mutants H1 and H2 to the tracked file `crates/gafira-doc/src/validate.rs` and ran tests there. I saw it in `git status`, ran `git restore` on that one file, and confirmed its hash equals `HEAD` (`09893d3`). No other file changed, no seed file or probe stayed behind, and nothing was committed. All results of that run were discarded; every figure above comes from a re-run on clean exports.
+
+## Round 3 (closure)
+
+Commit verified: `9f093a3`. Verdict: **PASS** for D2. Counts: 0 CRITICAL, 1 WARNING, 1 SUGGESTION. Per class: ambiguity 1 (WARNING, `follow-up`); implementation 0; architecture 0; claim 0. `mutation: archive`, so no `mutants` report and no mutation finding. No new probes and no hand mutants, as this is a closure round.
+
+The work ran on a clean export and a scratch clone, each entered through a guarded `cd`. No command built or tested in the repo.
+
+### Earlier findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C4 | Closed | See below |
+| C1, C2, C3, S1 | Closed in round 2, still closed | No `*.rs`, `*.toml` or `Cargo.lock` file changed between `5e4e3f2` and `9f093a3`, so the round 2 evidence still holds |
+| W1 | `follow-up`, not a blocker | class: `ambiguity`. Owner decision, 2026-11-01. Exact comparison unchanged. To be recorded at archive |
+| S2 | `follow-up`, not a blocker | Owner decision, 2026-11-01. To be recorded at archive |
+
+C4 evidence:
+
+- All 9 `*.proptest-regressions` files have the same blob hash at `develop` and at HEAD, and `git diff --quiet develop HEAD` on them exits 0. They hold 17 pinned cases, as before.
+- The test run left them unchanged: all 9 hashes in the export still match HEAD, and it created no tenth file. Replay of each seed was not observed directly.
+- `git diff --diff-filter=D develop HEAD` lists no file. No tracked file is deleted at HEAD.
+- `git diff --name-status develop HEAD` lists 12 files, all in D2 scope: 7 in `crates/gafira-doc/src` and `crates/gafira-edit/src` modified, 2 test files added, and `apply-progress.md`, `verify-report.md` and `verification.json` modified.
+- `cd75c5c` touches only the 9 seed files. The deletions of `c1551a2` remain in the branch history; a squash is not needed, as the tree is what merges.
+
+Criteria: 15 of 15 covered, unchanged from round 2 because no code or test changed.
+
+### Gates
+
+Clean export of `9f093a3`, own target dir, `CARGO_INCREMENTAL=0`.
+
+| Gate | Exit | Note |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 931 passed, 0 failed, 0 ignored |
+| `cargo deny --offline check` | 0 | Offline, so the advisory DB was not refreshed |
+| CI policy (ARQ-07, unsafe, V5, V12, V13, V14) | 0 | Steps taken from `ci.yml`; run on a scratch clone at `9f093a3`, not in the repo |
+
+### Artifact integrity
+
+- The card block at HEAD is identical to `f08d005`, and that commit touches only `apply-progress.md`. No `slice card amend` commit exists on this branch.
+- `5e4e3f2` and `9f093a3` touch only `apply-progress.md`, and `9f093a3` only appends (8 insertions, none removed).
+- `fb58135` and `e6cbd81` touch only `verify-report.md` and `verification.json`.
+- No change against `develop` in `.cargo/`, `deny.toml`, `Cargo.toml`, `Cargo.lock`, `.github/`, `docs/`, `design.md` or the spike files.
+
+### Size
+
+Reported only; the owner has seen it and asked to close D2. No finding. `git diff --numstat develop 9f093a3`, insertions:
+
+| Part | Lines |
+|---|---|
+| Code (`src/`) | 267 |
+| Tests | 1 106 |
+| Notes (`apply-progress.md`) | 51 |
+| Subtotal, without verify artifacts | 1 424 |
+| Verify artifacts | 155 |
+| Total | 1 579 |
+
+Forecast 420. The 1 416 the owner saw is the round 2 figure; the 8 extra lines are the notes of `9f093a3`, and code and tests did not change. The seed files add nothing net: the 71 lines are gone and back.
+
+### Follow-ups for archive
+
+- W1 (`ambiguity`): no stated tolerance for a bleed of exactly 10 mm converted to px.
+- S2: test redundancy, about 130 to 150 lines by the round 1 estimate.
+
+next: tdd-apply (next delivery, D3)
