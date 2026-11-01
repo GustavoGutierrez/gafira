@@ -6,17 +6,73 @@
       "spec_id": "odd-ligero-migracion",
       "status": "verifying",
       "criteria": [
-        {"id": "AC1", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC2", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC3", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC4", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC5", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC6", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC7", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC8", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
-        {"id": "AC9", "status": "passed", "evidence": "verify round 1 at 5fc7659"}
+        {
+          "id": "AC1",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC2",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC3",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC4",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC5",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC6",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC7",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC8",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC9",
+          "status": "passed",
+          "evidence": "verify round 1 at 5fc7659"
+        },
+        {
+          "id": "AC10",
+          "status": "pending"
+        },
+        {
+          "id": "AC11",
+          "status": "pending"
+        },
+        {
+          "id": "AC12",
+          "status": "pending"
+        },
+        {
+          "id": "AC13",
+          "status": "pending"
+        },
+        {
+          "id": "AC14",
+          "status": "pending"
+        }
       ],
-      "next_action": "Phase D: W1 first (open findings and their classes in the entry's verify field), then the specs/ consolidation"
+      "next_action": "Closure verify of chore/odd-lite-phase-d, merge, then the specs/ consolidation"
     }
   ]
 }
