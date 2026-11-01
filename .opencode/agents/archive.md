@@ -1,11 +1,11 @@
 ---
-# agent-sync-sha256: f7f336b9af6f34e553c82c8523bc2a2483c5002926104c04b18c2c413fa26731
-description: "Close a change after a PASS verdict: move the change folder to the archive; fast-lane changes update the docs/specs/README.md status table with the covered IDs; changes with delta specs merge them into openspec/specs."
+# agent-sync-sha256: 7c4a3fda60bd18e1b070400892da76d14345a6183971bfa8647bdeda9234d690
+description: "Close a change after a PASS verdict: move the change folder to the archive; fast-lane changes update the specs/README.md status table with the covered IDs; changes with delta specs merge them into specs/capabilities."
 mode: subagent
 permissions: [{action: "*", resource: "*", effect: deny}, {action: external_directory, resource: "*", effect: ask}, {action: subagent, resource: "*", effect: deny}, {action: read, resource: "*", effect: allow}, {action: glob, resource: "*", effect: allow}, {action: grep, resource: "*", effect: allow}, {action: read, resource: "*.env", effect: deny}, {action: read, resource: "*.env.*", effect: deny}, {action: read, resource: "**/.env", effect: deny}, {action: read, resource: "**/.env.*", effect: deny}, {action: read, resource: "**/*.key", effect: deny}, {action: read, resource: "**/*.pem", effect: deny}, {action: read, resource: "**/.ssh/**", effect: deny}, {action: read, resource: "**/.aws/credentials", effect: deny}, {action: read, resource: "**/.config/gh/hosts.yml", effect: deny}, {action: read, resource: "**/.credentials/**", effect: deny}, {action: read, resource: "**/credentials.json", effect: deny}, {action: read, resource: "**/secrets/**", effect: deny}, {action: read, resource: "**/Library/Keychains/**", effect: deny}, {action: shell, resource: "*", effect: ask}, {action: edit, resource: "*", effect: allow}]
 ---
 
-Source revision: 61f69bbc0ead7e1977b8047b6e028234237bde81957bcbb1f7d08c5eb65ea8c0
+Source revision: 1ba09ea3b568def5754b0ee70c8284e181b61f317b154d863eff21dacf604635
 
 Before doing any work, read `.agents/agents/archive.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this adapter supplies OpenCode mode and permissions.
 

@@ -24,12 +24,12 @@ Output is `NN  Title  (NN-slug.md)`. The index files (`docs/manuals/tecnico/inde
 | Validation passes and where validation runs; spec `document-validation` | `07-validation.md` |
 | `crates/gafira-edit` (Command, Transaction, History, commands), `crates/gafira-testkit`; spec `edit-capability`; change `edit-history` | `08-edit-command-history.md` |
 | CI, local gates, lints, release profile, license and dependency policy, mutation testing; specs `workspace-tooling`, `cli-entrypoint` | `09-tooling-and-quality.md` |
-| Lite SDD, TDD, commits, branches, PRs, `AGENTS.md`, the `openspec/` flow | `10-methodology.md` |
+| Lite SDD, TDD, commits, branches, PRs, `AGENTS.md`, the `specs/` flow | `10-methodology.md` |
 | Terms and acronyms | `11-glossary.md` |
 | A crate with no row (new crate) | Add a chapter or a section, and update `02-architecture.md` and the state table in `01-overview.md` |
-| Product intent in `docs/specs/` (00 decisions, 02 architecture, backlog 01 and 03 to 06) | Intent is not documented; only the built part appears in the matching chapter, the rest as **Planned** |
+| Product intent in `specs/` (00 decisions, 02 architecture, backlog 01 and 03 to 06) | Intent is not documented; only the built part appears in the matching chapter, the rest as **Planned** |
 
-Spec names are folders in `openspec/specs/`; open changes are folders in `openspec/changes/`. Refresh the picture with `ls crates openspec/specs openspec/changes`.
+Spec names are folders in `specs/capabilities/`; open changes are folders in `specs/changes/`. Refresh the picture with `ls crates specs/capabilities specs/changes`.
 
 ## Grep recipes
 

@@ -1,13 +1,13 @@
 ---
-# pi-agent-sync-sha256: 43119445e5f1dbd60d84fd923eb7cb8b6306960d85faec7025391d598722411d
+# pi-agent-sync-sha256: 015ab156a6babf77b7d964f0785b996d1c43084dda68d552fe72e85cfb63dcc1
 name: specifier
-description: "Turn an owner request into clear specifications: scope, requirements with Given/When/Then scenarios, acceptance criteria, constraints, edge cases, non-goals and open questions. Defines WHAT to build, never HOW. In the fast lane fixes the product spec in docs/specs when tdd-apply or verify report an ambiguity; otherwise writes OpenSpec delta specs, or product specs when the owner asks. Use for a new request, or when a spec is missing or ambiguous."
+description: "Turn an owner request into clear specifications: scope, requirements with Given/When/Then scenarios, acceptance criteria, constraints, edge cases, non-goals and open questions. Defines WHAT to build, never HOW. In the fast lane fixes the product spec in specs when tdd-apply or verify report an ambiguity; otherwise writes delta specs in a change folder, or product specs when the owner asks. Use for a new request, or when a spec is missing or ambiguous."
 tools: read, edit, write, find, grep, bash
 ---
 
 # Pi agent: specifier
 
-Source frontmatter revision: 3194bb9e8f0b942800da4ebf57076eedc8fbb574ca80e59528dfc71d4ab8a9b7
+Source frontmatter revision: 714f598f8e794138ff6fc32f7e5d8817b0c04dba06fe4f00e3725a4d9d9085eb
 
 Before doing any work, read `.agents/agents/specifier.md` and follow its entire Markdown body as your instructions. The source frontmatter is for Claude Code; this definition supplies Pi's tool names and the model from `.pi/subagents.json`. The source is the single source of truth: read it again if it changed since this definition was generated.
 

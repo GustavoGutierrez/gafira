@@ -33,7 +33,7 @@ External dependencies declared in the workspace: `kurbo` (geometry, with `serde`
 
 ## Crates gafira-time and gafira-pathops
 
-Both are pure crates with a `clippy.toml` and a V5 row. Sources: `openspec/specs/time-model/`, `openspec/specs/timecode/`, `openspec/specs/path-operations/` and the crate code.
+Both are pure crates with a `clippy.toml` and a V5 row. Sources: `specs/capabilities/time-model/`, `specs/capabilities/timecode/`, `specs/capabilities/path-operations/` and the crate code.
 
 ### gafira-time
 
@@ -70,7 +70,7 @@ The spec lists further crates that are not in the repository yet. They are **Pla
 - Layer 4 (adapters): `gafira-format`, `gafira-assets`, `gafira-io-*`, `gafira-mux`, `gafira-codec-*`, `gafira-render-cpu`, `gafira-render-gpu`, `gafira-platform`, `gafira-i18n`, `gafira-theme`, `gafira-license`, `gafira-ui`, `gafira-captions`, `gafira-plugin`.
 - Support: `xtask`.
 
-The authoritative table with each crate's responsibility and prohibitions is section 2.1 of `docs/specs/02-arquitectura-software.md`.
+The authoritative table with each crate's responsibility and prohibitions is section 2.1 of `specs/02-arquitectura-software.md`.
 
 A new crate must satisfy one ADR-01 criterion: a layer boundary, an optional feature or legal exposure, incremental compile time, or reuse by several consumers. Internal organization alone is a module, not a crate.
 

@@ -75,12 +75,42 @@
           "id": "AC14",
           "status": "passed",
           "evidence": "verify round 2 at d21847e"
+        },
+        {
+          "id": "AC15",
+          "status": "passed",
+          "evidence": "verify round 2 at 645bcfd"
+        },
+        {
+          "id": "AC16",
+          "status": "passed",
+          "evidence": "verify round 2 at 645bcfd"
+        },
+        {
+          "id": "AC17",
+          "status": "passed",
+          "evidence": "verify round 2 at 645bcfd"
+        },
+        {
+          "id": "AC18",
+          "status": "passed",
+          "evidence": "verify round 2 at 645bcfd"
+        },
+        {
+          "id": "AC19",
+          "status": "passed",
+          "evidence": "verify round 2 at 645bcfd"
+        },
+        {
+          "id": "AC20",
+          "status": "passed",
+          "evidence": "verify round 2 at 645bcfd"
         }
       ],
-      "next_action": "Light spec amend for the specs/ consolidation, then the move on its own branch",
+      "next_action": "First folderless outcome testkit-golden, then ask the owner to confirm ADR 0011 and archive odd-lite",
       "verify": {
-        "round": 2,
-        "commit": "d21847e",
+        "round": 4,
+        "commit": "24f79ea",
         "verdict": "PASS",
         "next": "archive",
         "findings": [
@@ -97,13 +127,25 @@
         "rounds": [
           {
             "round": 1,
-            "verdict": "PASS",
+            "verdict": "FAIL",
             "classes": [
               "implementation"
             ]
           },
           {
             "round": 2,
+            "verdict": "PASS",
+            "classes": []
+          },
+          {
+            "round": 3,
+            "verdict": "PASS",
+            "classes": [
+              "implementation"
+            ]
+          },
+          {
+            "round": 4,
             "verdict": "PASS",
             "classes": []
           }

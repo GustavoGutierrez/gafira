@@ -321,3 +321,355 @@ Outcome `foo`, L1, light, V2, using rule text only. Points 2 and 3 were also run
 V1 closure round, `mutation: off`: none run, no report, not a finding.
 
 next: archive
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`
+
+## Round 1
+
+Commit 70c5c09, branch `chore/specs-consolidation`, base `develop` (26e3071). Mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Acceptance source: Light spec, AC15 to AC20 (amend a28e1fd).
+
+Verdict: FAIL. CRITICAL 1, WARNING 4, SUGGESTION 4. Per class: implementation 5.
+
+Finding ids continue from the earlier rounds of this file. Read-only build, test and manual runs used a scratch export of 70c5c09, with its own target dir, since cleaned.
+
+Note, not a finding: the `verify` prompt of this run still named `openspec/config.yaml`, because agent definitions load from the primary checkout (`chore/pi-agent-sync`), not this worktree. `.agents/agents/verify.md` on this branch no longer cites it. The gate commands came from `AGENTS.md` "Strict TDD".
+
+## CRITICAL
+
+- **C1** class: implementation. ref: AC19, `specs/changes/odd-lite/apply-progress.md`. AC19 needs every remaining hit "named in the delivery notes as deliberate", and no such notes exist. `apply-progress.md` is byte-identical from a28e1fd to HEAD, its last section is "Apply: phases A and B", and no commit body names the hits. The file also has no evidence table for AC15 to AC20, measured lines or deviations, such as the `.gitignore` edit. Fix: append a section below the Light spec block; do not reword the hits. Hits to name:
+  - `docs/adr/0011-odd-lite.md:104,108-111,113,115`, the case AC19 expects (mapping and its record).
+  - `specs/changes/odd-lite/apply-progress.md` (9 lines: 5, 10, 15, 22, 23, 24, 27, 47, 57) and `specs/changes/odd-lite/verify-report.md` (8 lines: 34, 49, 88, 150, 170, 172, 280, 285). These are the protected Light spec and earlier reports of an active folder. AC19 neither names nor exempts them; they become exempt at archive.
+  - `CHANGELOG.md:11,24` and `docs/methodology/odd-ligero-migracion.md:35`: capitalized `OpenSpec`, past release text and the owner's brief. AC19's own regex is case-sensitive and misses them; the wider regex of this verify request finds them.
+
+## WARNING
+
+- **W10** class: implementation. ref: `AGENTS.md` "Delivery rules". `git diff --shortstat develop..HEAD` gives 428 insertions and 316 deletions, 744 lines (706 without `.opencode`), above the ~700 signal, which needs the owner's explicit OK. None is recorded. Most of it is mechanical path rewriting; the manual rewrite is 282 lines. Record the OK in the delivery notes of C1.
+- **W11** class: implementation. ref: `docs/manuals/tecnico/chapters/10-methodology.md:213`. The English Slice card template lacks `level: L<n>`; the Spanish mirror (line 213) and `.agents/agents/coordinator.md:115` have it. English is the source, and `manual.py check` does not see inside code fences.
+- **W12** class: implementation. ref: `docs/manuals/tecnico/chapters/10-methodology.md:123` and `chapters-es/10-methodology.md:123`. "Only the owner can lower a pack default" contradicts line 56 of the same chapter, `AGENTS.md` "Mutation" and `coordinator.md:34`, which allow `mutation: off` for L0 and L1 with no critical code. The sentence predates this delivery, but the rewrite added the exception without aligning it.
+- **W13** class: implementation. ref: `docs/adr/0011-odd-lite.md:92,147`. Line 92 still says `specs/README.md` and the manual chapters "still describe the Slice card route", and line 147 says they "lag until phase D". This delivery fixed both. The "Resolved by" paragraph (line 115) does not close them.
+
+## SUGGESTION
+
+- **S17** `chore/pi-agent-sync` branched before the move: 2 files under `.pi/` cite the old paths and its change folder sits in `openspec/changes/`. Move both when it is rebased. `specs/README.md:75` (item 34) cites `.pi/agents/verify.md`, which only that branch holds; this predates the delivery.
+- **S18** `AGENTS.md:3` lists 04 as waiting in `specs/backlog/`, but it is in `specs/`. Unchanged from `develop`.
+- **S19** The Light spec plan has 15 steps; `coordinator.md:100` allows at most 7.
+- **S20** `docs/adr/0011-odd-lite.md`, inventory row "Docs", reads "`specs/changes/` and its archive"; the mechanical rewrite left the old shape, and closed changes are in `specs/history/`.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 81 test binaries, 1107 passed, 0 failed, 0 ignored |
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 -m pytest tests/test_agent_sync.py -q` | 0 | 16 passed |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `manual.py check` | 0 | 11 chapters, mirrors match, links resolve |
+| `manual.py build` | 0 | `Gafira_Technical_Manual.pdf`, 192258 bytes |
+| `manual.py build --lang es` | 0 | `Gafira_Manual_Tecnico.pdf`, 202298 bytes |
+
+`cargo deny` and the CI policy steps do not apply: the diff touches no file under `crates/`, `apps/`, `.github/` or `.cargo/`, nor `Cargo.toml`, `Cargo.lock` or `deny.toml`.
+
+## Artifact integrity (step 3b)
+
+- a28e1fd (`docs(odd-lite): light spec amend`) touches only `apply-progress.md`, states why in its body and precedes every delivery commit.
+- `git diff a28e1fd HEAD` on the folder shows only renames with 0 lines changed, so no later commit changed the block.
+- No AI attribution line in the six commit messages.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered | f792bdf: 109 renames, all R100, 0 lines. 9 from `docs/specs`, 16 from `openspec/specs`, 80 from the archive, 4 from active folders. `openspec/` and `docs/specs/` have 0 tracked files and are gone. `git log --follow` crosses f792bdf on 5 sampled files, one per area |
+| AC16 | covered | Every key of the deleted file checked against `AGENTS.md` (table below). Citations remain only in the places C1 lists |
+| AC17 | covered | `AGENTS.md:44`, `specs/README.md` intro and "Cómo continuar", `coordinator.md:29,106`, manual chapter "Specs" |
+| AC18 | covered | Blob hashes against `develop`: `specs/history` 80 of 80, `specs/capabilities` 16 of 16, ADRs 0001 to 0010 10 of 10, all identical. ADR 0011 keeps the From column (lines 106-111) and states the exemption (line 115) |
+| AC19 | failing | Paths resolve and the pending-ID command works, but no notes name the hits (C1) |
+| AC20 | covered | Gates above. `git diff --name-only develop..HEAD -- crates apps` is empty. No `/home/`, `/Users/`, `C:\`, user name, `~/.` or scratchpad path in added lines |
+
+### Rules of the deleted `openspec/config.yaml`
+
+| Rule | Now in `AGENTS.md` |
+|---|---|
+| strict TDD, unit and integration layers, no e2e, no coverage, threshold 0 | "Strict TDD" (line 145) |
+| test, lint, format, build commands | "Strict TDD"; test and lint are stricter (`--locked`) |
+| platforms, permissive licenses, local, no external binaries | "Code rules" |
+| language of conversation, code and commits; conventional commits; no AI attribution | "Code rules", "Delivery rules" |
+| proposal, design and tasks rules, review budget 800, ask on risk | "Artifact rules" (line 193) |
+| RFC 2119, Given/When/Then, product documents in Spanish | "Spec format" |
+| warn before destructive deltas | "Archive merge" |
+
+Dropped as facts, not rules: "no code yet", `schema: spec-driven`, tool versions, the GUI stack and binary names. The last two remain in `specs/02-arquitectura-software.md`.
+
+### `AGENTS.md` lost no rule
+
+Every removed line of the diff was read. Besides path rewrites, four things went, all stale: the `layout-core` D3 to D7 line, the `workspace-scaffold` and `domain-color` archive note, the named archive order (the generic rule stays), and the pointers to `openspec/config.yaml`. All three changes are in `specs/history/`, and no live file under `AGENTS.md` or `.agents/` names `workspace-scaffold` or `domain-color`.
+
+## Broken references
+
+Own script, not the writers': it extracts path-like tokens from the live files, also `.github`, `specs/*.md` and `specs/backlog`, resolves them against the tree of each commit (repo-relative and file-relative), and compares HEAD with `develop`.
+
+- New unresolved tokens versus `develop`: ADR 0011's mapping (6 tokens, deliberate), `specs/NN-*.md` (a placeholder), `specs/changes/demo/spike.md` (a test fixture). No real new break.
+- The rest predates the delivery: planned assets (`assets/LICENSES.toml`, `assets/i18n/`), gitignored local files (`.atl/`, `.opencode/opencode.jsonc`, manual `build/`), crate-relative paths and `.pi/agents/verify.md` (S17).
+- No relative Markdown link in the moved documents or live files, so the depth change breaks none.
+- Sed collateral: no `specs/specs`, `specs/changes/archive` or similar. Every `specs/archive/` mention means product documents, not closed changes. `openspec/specs` became `specs/capabilities` and closed changes `specs/history` in `archive.md`, `specifier.md` and skill `product-specs`.
+- No agent or skill tells anyone to read a removed file: `tdd-apply.md` and `verify.md` dropped `openspec/config.yaml`, and `verify.md` points at "Strict TDD".
+
+## Pending-ID command
+
+Run from `specs/README.md:30`; `coordinator.md:126` is the same command with a placeholder. It needs bash (process substitution).
+
+| Variant | Pending |
+|---|---|
+| As written, ARQ on 02 | 69, exit 0 |
+| `develop` version | 69 |
+| With `specs/capabilities` added | 69 |
+| Searching all of `specs` (no exclusion) | 0, the failure the exclusion prevents |
+| As written, FD on 04 | 32, exit 0 |
+
+## Methodology chapter
+
+EN and ES read in full against `AGENTS.md`. Levels, entry fields, the `verify` field, resume and BLOCKED agree, and both call ADR 0011 proposed (lines 12 and 41). The chapter shortens resume and leaves out the unmerged-branch search, without contradicting it. The mismatches are W11 and W12.
+
+## Hand mutants and mutation
+
+V1, `mutation: off`: none run, no report, not a finding.
+
+next: tdd-apply
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`, closure
+
+## Round 2
+
+Commit 645bcfd, branch `chore/specs-consolidation`, base `develop`. Closure round, mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: C1, W10 to W13, the commits 7911eb3, 6b98826 and 645bcfd. BLOCKED did not arise: every critical check ran.
+
+Verdict: PASS. CRITICAL 0, WARNING 0, SUGGESTION 5. Per class: none. C1 and W10 to W13 are closed. S17 to S20 are carried from round 1.
+
+Read-only gates ran in the worktree with a scratch target dir; the manual builds ran on a scratch export of HEAD.
+
+## CRITICAL
+
+None.
+
+## Closure of the earlier findings
+
+| Finding | State | Evidence |
+|---|---|---|
+| C1 | closed | `apply-progress.md` "Apply: specs consolidation" has AC15 to AC20 evidence, measured lines and deviations. Its hit table matches the case-insensitive search at HEAD exactly, file by file and line by line: ADR 0011 (104, 108-111, 113, 115), `apply-progress.md` (9 lines), `verify-report.md` (16 lines), `verification.json` (100), `CHANGELOG.md` (11, 24), the brief (35). `docs/manuals/` has none. No live rule, skill, manual or tool is among them. This round's appended text adds no hit, and the list stays valid because it appends below those lines |
+| W10 | closed | `apply-progress.md:65` records the 744 lines, 706 without `.opencode`, and the owner's OK with the expected wording: "me importa completarlas, no el tamaño del commit". The fix commits add 10 lines outside the report and notes (754) |
+| W11 | closed | `chapters/10-methodology.md:213` now has `level: L<n>`, identical to the Spanish line 213 and `coordinator.md:115` |
+| W12 | closed | Line 123 now states the exception in EN and ES. It agrees with line 56, `AGENTS.md:24,28` and `coordinator.md:20,34` |
+| W13 | closed | `docs/adr/0011-odd-lite.md:92` no longer lists the docs as pending and names the delivery; line 147 is marked resolved. No other "lag" or "still describe" text remains. The ADR stays `proposed` |
+
+## WARNING
+
+None.
+
+## SUGGESTION
+
+- **S21** `apply-progress.md:70` says only ADR 0011 still cites the deleted config file. The Light spec (line 24) and the verify report (lines 88, 335, 393, 409, 419) cite it too. All of those are named deliberate in the hit table of the same section, so AC16 and AC19 hold; only the sentence is too narrow. It can be left as is.
+- S17 to S20 are unchanged from round 1; none is closed by these commits.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1107 passed, 0 failed |
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 -m pytest tests/test_agent_sync.py -q` | 0 | 16 passed |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `manual.py check` | 0 | 11 chapters, mirrors match, links resolve |
+| `manual.py build` | 0 | `Gafira_Technical_Manual.pdf`, 192538 bytes |
+| `manual.py build --lang es` | 0 | `Gafira_Manual_Tecnico.pdf`, 202410 bytes |
+
+`cargo deny` and the CI policy steps do not apply: the diff touches no file under `crates/`, `apps/`, `.github/` or `.cargo/`, nor `Cargo.toml`, `Cargo.lock` or `deny.toml`. The two builds go beyond the requested list because the manual changed since round 1 and AC20 requires them.
+
+## Artifact integrity (step 3b)
+
+- a28e1fd touches only `apply-progress.md` and precedes every delivery commit.
+- Lines 1 to 32 of `apply-progress.md` at HEAD are byte-identical to a28e1fd. Since then only f792bdf (rename) and 6b98826 (appended section) touched the file.
+- No AI attribution line in the nine commit messages.
+- No absolute or user path in added lines; the only pattern matches are the word "scratchpad" in rule text. No `crates/` or `apps/` file changed. `.odd/state.json` is not in the diff.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered | Round 1 evidence stands; the new commits move nothing |
+| AC16 | covered | Remaining citations are all named deliberate (S21 on the wording) |
+| AC17 | covered | Round 1 evidence stands; the new commits do not touch those rules |
+| AC18 | covered | Round 1 evidence stands; the new commits touch no exempt path |
+| AC19 | covered | C1 closed; the pending-ID text is unchanged since round 1 |
+| AC20 | covered | Gates above |
+
+## Hand mutants and mutation
+
+V1, closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`, closure after the merge
+
+## Round 3
+
+Commit 4082d84 (parents 5808ad0 and 67a2826), branch `chore/specs-consolidation`, base `develop` at 67a2826. Closure round, mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: the merge commit and its effect on AC15, AC19 and AC20. BLOCKED did not arise: every critical check ran. No earlier finding was open, so nothing needed closing.
+
+Verdict: PASS. CRITICAL 0, WARNING 1, SUGGESTION 6. Per class: implementation 1 (W14). S17 to S21 are carried; S22 is new.
+
+W14 is the one point of this round that rests on judgment; see its text.
+
+Read-only gates ran in the worktree with a scratch target dir, freed afterwards. Probes ran on a scratch clone.
+
+## CRITICAL
+
+None.
+
+## WARNING
+
+- **W14** (`class: implementation`, open, not a follow-up) `ref: AC15, specs/changes/pi-agent-sync/`. Plain `git log --follow` does not cross the move of the three files of `specs/changes/pi-agent-sync/`. It prints nothing for `verify-report.md`, and 0 commits for `apply-progress.md`. The move sits inside merge commit 4082d84, where the path is absent from the first parent. `git log -m --follow` does cross it, reaching 5797c3c, and against the second parent the three show R100, so history is reachable and the bytes are intact. AC15 says every move lets `git log --follow` cross it, so its literal clause holds only with `-m` for these 3 files; the other 109 moves are unaffected. It is a WARNING and not CRITICAL because no code, gate or rule is affected, the closure rule keeps CRITICAL for code defects and gates, and the record is recoverable. If the owner reads AC15 strictly, this is a failed criterion and the verdict would be FAIL. Probe on a scratch clone: redoing the merge with the folder left at its old path, then moving it in its own commit, makes plain `--follow` reach 5797c3c. 4082d84 is already on `origin`, so that fix rewrites a pushed branch and needs the owner's decision. It stops being cheap once the branch merges into `develop`, so decide before that merge. Redoing it needs a fourth verify round on this delivery, past the three-round cap, which is another reason it goes to the owner. The alternative is to accept it and record `-m` as the way to read these three files.
+
+## SUGGESTION
+
+- **S22** `specs/README.md:75`, pending item 34, says `.pi/agents/verify.md` lacks the hanging-mutants rule. With this merge that file is a generated pointer that tells Pi to read `.agents/agents/verify.md`, so the item looks stale. The item predates this delivery.
+- S17 to S21 are unchanged; the merge closes none of them.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1107 passed, 0 failed |
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 tools/sync_pi_agents.py --check` | 0 | up to date; a tampered `.pi/agents/verify.md` on the scratch clone gives exit 2 |
+| `python3 -m pytest tests -q` | 0 | 44 passed, 1 skipped (needs the OpenCode API, opt-in by environment variable) |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `manual.py check` | 0 | en and es: 11 chapters, mirrors match, links resolve |
+
+The cargo gates go beyond the requested list because AC20 names them; `crates/`, `apps/`, `Cargo.toml`, `Cargo.lock`, `.cargo/` and `rust-toolchain.toml` are identical to 645bcfd anyway. `manual.py build` was not run: `docs/manuals/` has the same tree hash as 645bcfd, where round 2 built both PDFs. `cargo deny` and the CI policy steps do not apply: `.github/`, `deny.toml` and the Rust trees are unchanged against 67a2826.
+
+## Requested checks
+
+| Check | Result |
+|---|---|
+| No tracked file under the old roots | 0 files; neither directory exists on disk |
+| Change folder blobs | the 3 blobs of `specs/changes/pi-agent-sync/` equal those of the old folder at 67a2826 |
+| `.pi/agents/*` generated, no old paths | `--check` exit 0, 0 old-name hits in `.pi`, `tools/sync_pi_agents.py` and `tests/test_pi_agent_sync.py`. Only `archive.md` and `specifier.md` differ from 67a2826: the description, its hash and the source revision |
+| `.odd/state.json` | identical to 5808ad0. Against 67a2826: same single outcome, criteria 14 to 20, W9 still open |
+| Hit table | matches the requested search at HEAD exactly, 43 hits in 8 files, line by line, before this round's text. This round adds no hit and appends below the listed lines |
+| No `crates/`, `apps/`, Cargo change against 67a2826 | none (grep exit 1) |
+| Develop content kept | all 113 tracked files of the old roots at 67a2826 map to their new path, except the deleted config file (AC16); all 16 files added by `develop` since the merge base are present |
+
+## Artifact integrity (step 3b)
+
+- The merge touches only the hit table in `apply-progress.md`, adding two rows at lines 85 and 86. The Light spec block is unchanged.
+- The merge changes no ADR, `.odd/state.json` or rule file against 5808ad0: its 17 changed files are the Pi delivery, the moved folder and that table.
+- No AI attribution line in the merge message. The only `/home/` in added lines is a home-directory marker quoted in `specs/changes/pi-agent-sync/verify-report.md`, not a path.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered, one exception | Layout holds. W14: `--follow` crosses the merge move only with `-m`, 3 files |
+| AC16 | covered | Unchanged by the merge |
+| AC17 | covered | Unchanged by the merge |
+| AC18 | covered | The merge touches no exempt path |
+| AC19 | covered | Hit table matches; every repo path cited in `.pi/README.md`, `.pi/prompts/coordinator.md`, `.pi/agents/verify.md` and `tools/sync_pi_agents.py` exists (the remaining matches are model ids) |
+| AC20 | covered | Gates above |
+
+## Hand mutants and mutation
+
+V1, closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`, closure of W14
+
+## Round 4
+
+Commit 24f79ea, branch `chore/specs-consolidation-2`, base `develop` at 67a2826. Closure round past the three-round cap, approved by the owner per the coordinator; mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Scope: W14 only, plus the gates and step 3b. `chore/specs-consolidation` at 4082d84 is a backup and was not verified. BLOCKED did not arise: every critical check ran.
+
+Verdict: PASS. CRITICAL 0, WARNING 0, SUGGESTION 6. Per class: none. W14 is closed. S17 to S22 are carried; none of the commits since 4082d84 touches their files or lines, except the appended note and the hit-table reason in `apply-progress.md`.
+
+All gates and the merge probe ran on scratch clones at the verified commits, with a scratch target dir, freed afterwards.
+
+## CRITICAL
+
+None.
+
+## Closure of the earlier findings
+
+| Finding | State | Evidence |
+|---|---|---|
+| W14 | closed | Plain `git log --follow` at 24f79ea crosses the move on all three files of `specs/changes/pi-agent-sync/`: `apply-progress.md` lists afb5d6b, 696c0e9, f5d7cdd; `verification.json` and `verify-report.md` list afb5d6b, 5797c3c. Below afb5d6b each list equals the log of the old path at 67a2826. The log reports R100 on the rename. AC15 now holds as written, with no `-m` |
+
+## Requested checks
+
+| Check | Result |
+|---|---|
+| afb5d6b is pure renames | `git diff-tree -r -M100%` lists 3 entries, all R100; 0 insertions, 0 deletions; the 3 blobs equal those of 67a2826 at the old path |
+| b56ad2b is a plain merge | Parents 5808ad0 and 67a2826. The same merge redone on a scratch clone exits 0 with no conflict and gives the identical tree, 1990638f. So it holds no manual edit, and the move is not inside it: no rename against the first parent, and the 3 files stay at the old path in its tree |
+| `git diff 4082d84 HEAD` | 3 files, all under `specs/changes/odd-lite/`: `apply-progress.md` (the reason text of hit-table row 85 and the W14 note at line 92), `verification.json` and `verify-report.md` (round 3 restored, 98 lines). No rule, tool, test, `.pi`, manual or `.odd/state.json` difference |
+| Light spec block | Lines 1 to 32 of `apply-progress.md` at HEAD are byte-identical to a28e1fd (same SHA-256). 6f33802 appended below them and changed one table row |
+| Hit table | Matches the search at HEAD exactly, 43 hits in 8 files, line by line. This round adds no hit and appends below the listed lines |
+| Fast-forward | 67a2826 is an ancestor of HEAD |
+
+## Correction to round 3
+
+Round 3 said 4082d84 was already on `origin`, and that the W14 fix rewrites a pushed branch; the `verification.json` summary repeats it. `git ls-remote origin` does not support that today. It lists no `chore/specs-consolidation` or `chore/specs-consolidation-2`, none of its refs equals 4082d84, 24f79ea, b56ad2b, 5808ad0, 645bcfd or a28e1fd, and none contains 4082d84. No reflog records a push, so whether it was ever pushed and later deleted cannot be told from here. The round 3 text stays as the record. Two consequences: the owner's decision was taken on that premise, though the redo rewrites nothing and stands either way; and both branches of this delivery exist only locally, so the backup at 4082d84 has no remote copy.
+
+## WARNING
+
+None.
+
+## SUGGESTION
+
+S17 to S22 are unchanged.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 tools/sync_pi_agents.py --check` | 0 | up to date |
+| `python3 -m pytest tests -q` | 0 | 44 passed, 1 skipped |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1107 passed, 0 failed |
+
+`cargo deny` and the CI policy steps do not apply: the diff against 67a2826 touches no file under `crates/`, `apps/`, `.github/` or `.cargo/`, nor `Cargo.toml`, `Cargo.lock`, `deny.toml` or `rust-toolchain.toml` (grep exit 1). `manual.py` was not run: `docs/manuals/` is identical to 4082d84, whose tree equals the one round 2 built.
+
+## Artifact integrity (step 3b)
+
+- The Light spec block is unchanged, as above; no `light spec amend` since a28e1fd.
+- No AI attribution line in the messages of b56ad2b, afb5d6b, 6f33802 or 24f79ea.
+- No absolute or user path in added lines since 5808ad0: the only two pattern matches are text in the reports, a home-directory marker and the sentence that names it.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered | W14 closed; 0 tracked files under the old roots at HEAD |
+| AC16 | covered | No rule or doc difference from 4082d84 |
+| AC17 | covered | No rule or doc difference from 4082d84 |
+| AC18 | covered | No exempt path in the diff from 4082d84 |
+| AC19 | covered | Hit table matches |
+| AC20 | covered | Gates above; manual as stated there |
+
+## Hand mutants and mutation
+
+V1, closure round, `mutation: off`: none run, no report, not a finding.
+
+next: archive

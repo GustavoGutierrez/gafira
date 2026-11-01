@@ -1,6 +1,6 @@
 # Gafira technical manual
 
-Technical documentation of what is implemented in the repository today, in English (source) and Spanish. Anything specified but not built is marked **Planned** (**Planificado** in Spanish). The product intent stays in `docs/specs/`; if the two disagree, the spec and the owner decisions win.
+Technical documentation of what is implemented in the repository today, in English (source) and Spanish. Anything specified but not built is marked **Planned** (**Planificado** in Spanish). The product intent stays in `specs/`; if the two disagree, the spec and the owner decisions win.
 
 ```
 docs/manuals/tecnico/

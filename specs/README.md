@@ -1,16 +1,18 @@
 # Especificaciones de producto
 
-Aquí solo viven los documentos **en curso**. Todo lo demás espera en `backlog/`. Al completar el documento en curso, se promueve el siguiente desde el backlog.
+Aquí viven los documentos **en curso**. Los demás esperan en `backlog/`. Al completar el documento en curso, se promueve el siguiente desde el backlog.
 
-Ciclo de vida: `backlog/` -> en curso (`docs/specs/`) -> `archive/` (completado).
+Ciclo de vida: `backlog/` -> en curso (`specs/`) -> `archive/` (completado).
 
-El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de vida, el formato de los documentos y cómo derivar changes de OpenSpec.
+El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de vida, el formato de los documentos y cómo derivar changes.
+
+Junto a los documentos: `capabilities/` guarda las specs principales (registro de los changes con delta specs), `changes/` las carpetas activas (L3, modo full, trabajo sin spec que lo cubra y `flow: legacy`) y `history/` los changes cerrados (`<fecha>-<change>/`).
 
 ## Estado
 
 | Doc | Estado | Detalle |
 |---|---|---|
-| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-01 parcial, ARQ-02, ARQ-03, ARQ-07, ARQ-70, ARQ-71, ARQ-80 parcial: la puerta de merge está diferida por el 403 de GitHub), C2a `domain-color` (ARQ-02, ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-13, ARQ-30) (archivados), C3 `edit-history` (`gafira-edit`, entregas D1-D11, archivado en `openspec/changes/archive/2026-10-25-edit-history/`), C2c `domain-time` (`gafira-time`, capa 0, entregas D0-D4, archivado en `openspec/changes/archive/2026-10-25-domain-time/`). C4 `engine-pathops` (`gafira-pathops`, capa 2, entregas D1-D4, archivado en `openspec/changes/archive/2026-10-26-engine-pathops/`). C5 `anim-core` (`gafira-anim`, capa 1, entregas D1, D2a, D2b, D3a, D3b, D3c, archivado en `openspec/changes/archive/2026-10-30-anim-core/`), cubre ARQ-12 parcial (estructural; el benchmark queda con ARQ-40), ARQ-16, ARQ-17, ARQ-18, ARQ-19. C6 `layout-core` (`gafira-layout`, capa 2, entregas D1 a D7, archivado en `openspec/changes/archive/2026-11-01-layout-core/`), cubre FD-03, FD-04, FD-05, FD-06, FD-07, FD-09, FD-11 (primer corte), ARQ-110, ARQ-111, ARQ-114. Activo: el resto del trabajo de 02. Siguiente, de abajo arriba por capas (§2.1): capa 1 `gafira-anim` y `gafira-layout` de la capa 2 hechas; quedan en capa 2 `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Antes: `engine-contracts` (ARQ-102, ARQ-112) y `testkit-golden` (ARQ-113, sin dependencias, listo ahora), luego `color-lab`; cada uno con su Slice card. Capa 3 `gafira-ports` y el resto; capa 4 adaptadores (`gafira-format` necesita `gafira-ports`). |
+| `02-arquitectura-software.md` | En curso | Hecho: C1 `workspace-scaffold` (ARQ-01 parcial, ARQ-02, ARQ-03, ARQ-07, ARQ-70, ARQ-71, ARQ-80 parcial: la puerta de merge está diferida por el 403 de GitHub), C2a `domain-color` (ARQ-02, ARQ-03, ARQ-10), C2b `domain-doc` (ARQ-03, ARQ-10, ARQ-11, ARQ-13, ARQ-30) (archivados), C3 `edit-history` (`gafira-edit`, entregas D1-D11, archivado en `specs/history/2026-10-25-edit-history/`), C2c `domain-time` (`gafira-time`, capa 0, entregas D0-D4, archivado en `specs/history/2026-10-25-domain-time/`). C4 `engine-pathops` (`gafira-pathops`, capa 2, entregas D1-D4, archivado en `specs/history/2026-10-26-engine-pathops/`). C5 `anim-core` (`gafira-anim`, capa 1, entregas D1, D2a, D2b, D3a, D3b, D3c, archivado en `specs/history/2026-10-30-anim-core/`), cubre ARQ-12 parcial (estructural; el benchmark queda con ARQ-40), ARQ-16, ARQ-17, ARQ-18, ARQ-19. C6 `layout-core` (`gafira-layout`, capa 2, entregas D1 a D7, archivado en `specs/history/2026-11-01-layout-core/`), cubre FD-03, FD-04, FD-05, FD-06, FD-07, FD-09, FD-11 (primer corte), ARQ-110, ARQ-111, ARQ-114. Activo: el resto del trabajo de 02. Siguiente, de abajo arriba por capas (§2.1): capa 1 `gafira-anim` y `gafira-layout` de la capa 2 hechas; quedan en capa 2 `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Antes: `engine-contracts` (ARQ-102, ARQ-112) y `testkit-golden` (ARQ-113, sin dependencias, listo ahora), luego `color-lab`; cada uno con su entrada en `.odd/state.json`. Capa 3 `gafira-ports` y el resto; capa 4 adaptadores (`gafira-format` necesita `gafira-ports`). |
 | `00-decisiones.md` | Vigente (no ejecutable) | Registro de decisiones del titular; prevalece sobre 01-05. No se promueve ni se archiva. |
 | `backlog/01-producto-y-calidad.md` | Backlog | Producto, calidad y criterios de aceptación. |
 | `backlog/03-diseno-visual-e-interaccion.md` | Backlog | Tokens, modo oscuro, glosario ES+EN, wireframes. |
@@ -21,13 +23,14 @@ El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de 
 
 ## Cómo continuar el documento en curso
 
-Desde 2026-10-29 los documentos se ejecutan por la vía rápida (ADR 0002): sin propuesta ni delta specs, con una Slice card en `openspec/changes/<change>/apply-progress.md` que cita los IDs del documento. Los changes ya archivados (delta specs en `openspec/specs/`) no se tocan.
+Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabajo que una spec ya cubre no abre carpeta y sus criterios viven en la entrada del resultado en `.odd/state.json`, que cita los IDs del documento. L3, modo full, trabajo sin spec que lo cubra y `flow: legacy` usan una carpeta en `specs/changes/<change>/`. Los changes cerrados (`specs/history/`, `specs/capabilities/`) no se tocan.
 
-1. Arrancar `claude --agent coordinator` en `main` y pedir: "ejecuta docs/specs/02-arquitectura-software.md".
-2. El coordinador calcula los IDs pendientes (los que ningún change ni test nombra todavía):
-   `comm -23 <(grep -oE 'ARQ-[0-9]+' docs/specs/02-arquitectura-software.md | sort -u) <(git grep -hoE 'ARQ-[0-9]+' -- openspec crates apps | sort -u)`
-3. Elige el siguiente bloque de abajo arriba por capas (§2.1 de 02): la capa más baja con crates pendientes cuyas dependencias ya existan (próximo: capa 2), escribe su Slice card y sigue con `tdd-apply` -> `verify`; la mutación corre una vez (T4) al cerrar.
-4. Cada change cerrado actualiza "Detalle" arriba. Cuando no quedan IDs pendientes, el documento se archiva (sección de abajo).
+1. Arrancar `claude --agent coordinator` desde `develop` y pedir: "ejecuta specs/02-arquitectura-software.md".
+2. El coordinador termina antes cualquier carpeta en `specs/changes/` y cualquier resultado activo en `.odd/state.json`. Después calcula los IDs pendientes, los que ningún change ni test nombra todavía (con el prefijo del documento; la búsqueda deja fuera los documentos de producto, que nombran todos los IDs) y los coteja con "Detalle":
+   `comm -23 <(grep -oE 'ARQ-[0-9]+' specs/02-arquitectura-software.md | sort -u) <(git grep -hoE 'ARQ-[0-9]+' -- specs/history specs/changes crates apps | sort -u)`
+3. Elige el siguiente bloque de abajo arriba por capas (§2.1 de 02): la capa más baja con crates pendientes cuyas dependencias ya existan (próximo: capa 2). Corta una rama desde `develop` y escribe la entrada del resultado en `.odd/state.json`.
+4. Sigue con `tdd-apply` -> `verify`, y corre la mutación T4 por crate tocado al cerrar. La integración en `develop` tras PASS es del coordinador.
+5. Cada resultado cerrado actualiza "Detalle" arriba. Cuando no quedan IDs pendientes, el documento se archiva (sección de abajo).
 
 ## Pending follow-ups
 
@@ -35,7 +38,7 @@ Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 record
 
 1. **Flaky test** `crates/gafira-testkit/tests/harness.rs::each_broken_law_is_named_with_a_counterexample`. Why: it fails about half the runs with `PROPTEST_CASES=1` (passes unset); accepted as out of scope in the archived change `testkit-oracle` (decision C6). Start: a small test-only change (for example make the broken-law case deterministic or pin its seed/case count), then run it repeatedly with `PROPTEST_CASES=1`.
 2. **Re-enable CI.** Why: workflow `CI` was disabled manually because jobs failed to start (billing). Start: `gh workflow enable 395407504`, then observe the first runs. Unobserved since D5 (owner accepted the risk, decision W2=B): the Windows and macOS matrix and the trybuild `.stderr` fixtures (ARQ-30, R3). Fix whatever fails.
-3. **Spec gaps recorded at archive** (`openspec/changes/archive/2026-10-26-engine-pathops/`, crate `gafira-pathops`). Start: decide each with the owner, then specify via `specifier` and test first.
+3. **Spec gaps recorded at archive** (`specs/history/2026-10-26-engine-pathops/`, crate `gafira-pathops`). Start: decide each with the owner, then specify via `specifier` and test first.
    - A path with no initial `MoveTo`: the spec is silent (it is not a valid `BezPath`).
    - Infinite distance on an empty path and the wording of the "path has" error (accepted suggestions S3/S4 of `engine-pathops`).
    - `simplify` collapses `Z Z` (coordinator choice, not in the spec).
@@ -70,21 +73,21 @@ Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 record
 32. **T1 de `design.md`: revisar ADR 0009 frente al diseño de vídeo.** Why: los hijos de grupo están en espacio de página (ADR 0009) y el diseño de vídeo de keyframes de grupo puede exigir cambiarlo. Start: antes del primer build que guarde, o al planear `gafira-format` o el primer change de vídeo, lo que antes llegue; un cambio posterior exige migración. Responsable: coordinador.
 33. **T2 de `design.md`: cerrar el esquema 1.** Why: desde el primer build que escriba `.gafira` y llegue a un usuario, cada campo nuevo de datos de usuario sube el esquema (ADR 0006, regla 2). Start: cerrarlo en la tarea de cierre del change de `gafira-format`.
 34. **`.pi/agents/verify.md` en `chore/pi-agent-sync` sin la regla de mutantes colgados.** Why: esa copia no tiene la regla de ADR 0004 que sí tiene `.agents/agents/verify.md`. Tooling. Start: resincronizar `.pi/agents/verify.md` con `.agents/agents/verify.md` en `chore/pi-agent-sync`.
-35. **W1 de `agent-sync`: tamaño combinado de la entrega.** Why: sus dos unidades de trabajo están por debajo de unas 700 líneas, pero el diff neto combinado es de 767 líneas (`openspec/changes/archive/2026-11-01-agent-sync/verify-report.md`, W1; `AGENTS.md`, tamaño de entrega). Start: ya integrado en `develop` (82d5187), no bloquea; en el próximo cambio de tamaño parecido, el coordinador evalúa la frontera de entregas antes de integrar.
+35. **W1 de `agent-sync`: tamaño combinado de la entrega.** Why: sus dos unidades de trabajo están por debajo de unas 700 líneas, pero el diff neto combinado es de 767 líneas (`specs/history/2026-11-01-agent-sync/verify-report.md`, W1; `AGENTS.md`, tamaño de entrega). Start: ya integrado en `develop` (82d5187), no bloquea; en el próximo cambio de tamaño parecido, el coordinador evalúa la frontera de entregas antes de integrar.
 36. **W2 de `agent-sync`: asunto del commit de enmienda del Light spec.** Why: el commit `69a82aa` usa `docs(agent-sync): specify project-local model selection` y no el asunto prescrito `docs(agent-sync): light spec amend` (`.agents/agents/coordinator.md`, línea 101). Start: no reescribir historia; alinear la regla de `coordinator.md` con el asunto que se usa, o fijarlo en la próxima enmienda (relacionado con el item 10).
 37. **Adaptadores de OpenCode sin comprobación en CI.** Why: los adaptadores de OpenCode se generan desde `.agents/agents/`; hay que regenerarlos con `python3 tools/sync_agents.py` cada vez que cambie `.agents/agents/`, y hoy nada lo exige en CI. Start: añadir `python3 tools/sync_agents.py --check` a CI al reactivarla (item 2); hasta entonces, quien cambie `.agents/agents/` regenera los adaptadores en el mismo commit.
 
 ## Promover un documento del backlog
 
-1. `git mv docs/specs/backlog/<NN-doc>.md docs/specs/`
+1. `git mv specs/backlog/<NN-doc>.md specs/`
 2. Actualizar la tabla de arriba y las referencias de ruta (`git grep "backlog/<NN>"`).
 3. Hacerlo en su propio commit.
 
 ## Archivar un documento completado
 
-Criterio: cada requisito del documento está cubierto por changes de OpenSpec archivados y la tabla de estado lo dice. `00-decisiones.md` no se archiva nunca.
+Criterio: cada requisito del documento está cubierto por changes archivados o resultados cerrados y la tabla de estado lo dice. `00-decisiones.md` no se archiva nunca.
 
-1. `git mv docs/specs/<NN-doc>.md docs/specs/archive/` (mismo nombre de archivo).
+1. `git mv specs/<NN-doc>.md specs/archive/` (mismo nombre de archivo).
 2. Actualizar la tabla de arriba y las referencias de ruta (`git grep "<NN-doc>"`).
 3. Promover el siguiente documento desde `backlog/` (sección anterior).
 4. Hacerlo en su propio commit.

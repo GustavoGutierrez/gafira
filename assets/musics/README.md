@@ -165,4 +165,4 @@ Recorta la cola, o dale la vuelta, para que cierre limpio.
 | Runtime | [audio.cpp](https://github.com/0xShug0/audio.cpp), Apache-2.0 |
 | Licencia del modelo | MiniMax-Music3 Community License: revisa los términos antes de una publicación comercial |
 | Audio | Generado solo a partir de prompts de texto. No se usó material de origen con licencia ni material protegido |
-| Excepción de Gafira | D-10 en `docs/specs/00-decisiones.md`. Detalle en `LICENSE.md` |
+| Excepción de Gafira | D-10 en `specs/00-decisiones.md`. Detalle en `LICENSE.md` |

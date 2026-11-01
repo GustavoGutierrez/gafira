@@ -19,7 +19,14 @@ Acceptance criteria:
   AC12 (W2) Given `coordinator.md`, When read, Then the "never lowers a pack default" rule names `mutation: off` for L0 and L1 with no critical code as its only exception, and the "heaviest of" rule states what it fixes (mode) and where verify depth and agents come from; `AGENTS.md` agrees. [manual]
   AC13 (W3) Given `verify.md` step 3d, When read, Then it names the product ID check and the finding classes of step 3c for the outcome entry path. [manual]
   AC14 Given the diff, Then `python3 tools/sync_agents.py --check` exits 0, `python3 -m json.tool .odd/state.json` exits 0, an entry without the new fields stays valid, the ADR records W1 to W3 as resolved and stays `proposed`, and `.odd/state.json` keeps `schema: 1`. [command]
-Plan: 1 audit and ADR 0011; 2 `AGENTS.md` and `CLAUDE.md`; 3 `coordinator.md` router and state; 4 `verify.md` BLOCKED; 5 `specifier.md` and `tdd-apply.md` only if the state or spec rule needs it; 6 `.odd/state.json`; 7 ADR index. Phase D: 8 W1 in `AGENTS.md`, `coordinator.md`, `verify.md`, `archive.md`; 9 W2 and W3; 10 `.opencode` regenerated; 11 ADR notes.
+  Amended for the `specs/` consolidation (owner request, 2026-11-01; ADR 0011 "consolidate into `specs/`", delivery `chore/specs-consolidation`). AC9's `docs/specs/` and `openspec/changes/archive/` limits do not apply to it; its limits are AC15 to AC20.
+  AC15 Given the tree, Then `docs/specs/` content (with `backlog/` and `archive/`) is in `specs/`, `openspec/specs/` in `specs/capabilities/`, `openspec/changes/archive/` in `specs/history/`, active folders in `specs/changes/`, every move done with `git mv` so `git log --follow` crosses it, and `openspec/` and `docs/specs/` no longer exist. [command]
+  AC16 Given `openspec/config.yaml`, Then every rule still in force lives in `AGENTS.md` and nothing cites the file; its stale statements (no code yet) are dropped. [command]
+  AC17 Given L3 and `flow: legacy` work, Then the rules state that a change folder lives in `specs/changes/<change>/` and closes into `specs/history/<date>-<change>/`. [manual]
+  AC18 Given the historical record, Then `specs/history/`, `specs/capabilities/` and ADRs 0001 to 0010 keep their text byte for byte (only renames) and are exempt from the reference check; ADR 0011 keeps its From column and states this exemption. [command]
+  AC19 Given every other tracked file, When `git grep -nE 'openspec|docs/specs'` runs with those exemptions, Then the only hits are named in the delivery notes as deliberate (ADR 0011's mapping; the `openspec` schema word in nothing else), and every path a rule, skill, manual or tool cites exists; `specs/README.md` "Como continuar" describes the outcome route, its pending-ID command runs and excludes product documents. [command]
+  AC20 Given the diff, Then `python3 tools/sync_agents.py --check` exits 0, the agent sync tests pass, `manual.py check` and `build` exit 0, no `crates/` or `apps/` file changes, no absolute or user path enters a tracked file, and the cargo gates pass. [command]
+Plan: 1 audit and ADR 0011; 2 `AGENTS.md` and `CLAUDE.md`; 3 `coordinator.md` router and state; 4 `verify.md` BLOCKED; 5 `specifier.md` and `tdd-apply.md` only if the state or spec rule needs it; 6 `.odd/state.json`; 7 ADR index. Phase D: 8 W1 in `AGENTS.md`, `coordinator.md`, `verify.md`, `archive.md`; 9 W2 and W3; 10 `.opencode` regenerated; 11 ADR notes. Consolidation: 12 `git mv` alone; 13 references and rules; 14 `.opencode`; 15 manual with `manual-writer`.
 Risk and reversibility: low; instructions only, one revert restores the flow.        Owner decisions touched: none (D-nn are product decisions; ADR 0001 to 0004 amended, not removed).
 Escalation triggers watched: ambiguity, public API/format, domain invariant, size, architecture
 
@@ -48,3 +55,45 @@ Deviations
 - The entry gains optional G0 fields beyond brief §10 (`flow`, `scope`, `non_goals`, criterion `text` and `type`, `verify`), used only when it is the G0 artifact. The two seeds use the §10 fields alone.
 - `layout-core` `spec_id` names `04`, the source of most of its IDs; the Slice card also cites `02`.
 - Left stale, outside AC9 or this scope, listed in the ADR for phase D: "Cómo continuar" in `docs/specs/README.md` and the manual's `10-methodology` chapters.
+
+## Apply: specs consolidation
+
+Status: done, verify round 1 FAIL on C1 and W13, closed by this section and the ADR 0011 fix. Branch `chore/specs-consolidation`. No Rust touched.
+
+Commits: `f792bdf` renames only (109, all R100); `633e063` references, rules, tool, test, `.opencode`; `4e51eff` stale archive claims, `.gitignore` entry `__pycache__/`; `6c2b2ee` and `70c5c09` manual, by `manual-writer`.
+
+Measured lines: 428 insertions, 316 deletions, 744 changed lines, 706 without `.opencode` (`git diff --shortstat develop...70c5c09`, before the verify report). This is above the ~700 signal. Owner OK given 2026-11-01: "me importa completarlas, no el tamaño del commit".
+
+| AC | Evidence |
+|---|---|
+| AC15 | `f792bdf`: 109 renames, R100. `git ls-tree -d HEAD` finds neither old root. `git log --follow --oneline specs/02-arquitectura-software.md` lists 44 commits at `633e063`, crossing the move |
+| AC16 | The deleted config file's rules live in `AGENTS.md` ("Strict TDD", "Code rules", "Specs in this repo"). Its stale statements and tool versions were dropped. Only ADR 0011 still cites it (lines 111 and 115) |
+| AC17 | `AGENTS.md` "Change folder rule" and layout tree: `specs/changes/<change>/`, closing into `specs/history/<date>-<change>/` |
+| AC18 | `git diff -M --numstat develop...HEAD` on the exempt paths: 96 files, 0 insertions, 0 deletions; ADRs 0001 to 0010 are not in the diff. ADR 0011 keeps its From column, gains the resolved note (line 115), stays `proposed` |
+| AC19 | Hits below. Path script: 402 paths in 47 live files, 56 missing, none caused by the move (planned or generated files, templates, crate-relative paths). `specs/README.md` "Cómo continuar" describes the outcome route; its pending-ID command runs and returns 69 of 122 ARQ IDs on `02`. Searching all of `specs` returns 0, which is why product documents stay out. `coordinator.md` carries the same fix |
+| AC20 | `python3 tools/sync_agents.py --check` 0; `python3 -m pytest tests/test_agent_sync.py -q` 16 passed (RED first: 1 failed, `deny` against `allow`); no `crates/` or `apps/` change; no absolute path in added lines (grep exit 1). This writer ran no cargo gate; `verify` round 1 ran them (exit 0, 1107 passed) and `manual.py check` and `build` (exit 0) |
+
+Remaining hits of the old names, all deliberate (case-insensitive for the tool name, same exemptions as AC19; `docs/manuals/` has none):
+
+| Where | Lines | Reason |
+|---|---|---|
+| `docs/adr/0011-odd-lite.md` | 104, 108-111, 113, 115 | the mapping: its From column, the section around it and the resolved note, kept as the record |
+| `specs/changes/odd-lite/apply-progress.md` | 5, 10, 15, 22, 23, 24, 27, 47, 57 | Light spec block and earlier notes, dated record; the block is not edited |
+| `specs/changes/odd-lite/verify-report.md` | 34, 49, 88, 150, 170, 172, 280, 285 | past verify rounds, dated evidence |
+| `specs/changes/odd-lite/verify-report.md` | 335, 342, 353, 386, 393, 409, 418, 419 | the report of verify round 1 of this delivery, which quotes the old names |
+| `specs/changes/odd-lite/verification.json` | 100 | finding summary of that same round |
+| `specs/changes/pi-agent-sync/apply-progress.md` | 11, 56 | that change's AC6 and its evidence, moved byte for byte |
+| `specs/changes/pi-agent-sync/verify-report.md` | 6, 7, 41, 43, 56 | that change's verify report, dated evidence, moved byte for byte |
+| `CHANGELOG.md` | 11, 24 | past release text, capitalised tool name |
+| `docs/methodology/odd-ligero-migracion.md` | 35 | owner's brief, names the third-party tool |
+
+This section names those hits without quoting them, so it adds none.
+
+W14 (verify round 3): the first merge of `develop` moved the `pi-agent-sync` folder inside merge commit `4082d84`, so plain `git log --follow` did not cross that move, only `-m` did. Owner decision, 2026-11-01: redo the merge on a new branch, `chore/specs-consolidation-2` cut from `5808ad0`, with no history rewrite: a plain merge, the rename alone in its own commit (R100), then the regenerated `.pi/agents/*` and these notes. `chore/specs-consolidation` stays at `4082d84` as the backup.
+
+Deviations
+- `.gitignore` gained `__pycache__/` (coordinator request): the sync tests left untracked bytecode.
+- `specs/README.md`: the Detalle row's "Slice card" became the outcome entry, and the intro gained a paragraph on `capabilities/`, `changes/` and `history/`.
+- `AGENTS.md` gained "Conversation with the owner is in neutral Spanish" from the config file.
+- ADR 0011: lines outside the mapping section moved to the new paths, including the inventory.
+- `AGENTS.md` archive merge: the generic rule on a delta against an unarchived base stays; only its named changes and order went (`4e51eff`).

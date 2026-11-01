@@ -147,7 +147,7 @@ class AgentSyncTests(unittest.TestCase):
         self.assertEqual(effect("verify", "edit", "src/lib.rs"), "deny")
         self.assertNotEqual(effect("verify", "shell"), "deny")
         self.assertEqual(effect("explorer", "edit", "src/lib.rs"), "deny")
-        self.assertEqual(effect("explorer", "edit", "openspec/changes/demo/spike.md"), "allow")
+        self.assertEqual(effect("explorer", "edit", "specs/changes/demo/spike.md"), "allow")
 
     def test_stale_and_unrelated_destination_symlinks_are_rejected(self):
         self.assertEqual(self.run_sync().returncode, 0)

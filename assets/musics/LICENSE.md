@@ -1,6 +1,6 @@
 # Música generada con MiniMax-Music3
 
-Los WAV de esta carpeta los generó el titular en local con el modelo MiniMax-Music3. Se distribuyen bajo una **excepción** a la regla de assets permisivos de Gafira (decisión D-10 en `docs/specs/00-decisiones.md`). Los WAV **no están en git**; solo este archivo.
+Los WAV de esta carpeta los generó el titular en local con el modelo MiniMax-Music3. Se distribuyen bajo una **excepción** a la regla de assets permisivos de Gafira (decisión D-10 en `specs/00-decisiones.md`). Los WAV **no están en git**; solo este archivo.
 
 ## Origen
 

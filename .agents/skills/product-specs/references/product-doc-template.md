@@ -1,6 +1,6 @@
 # Product document skeleton (Spanish)
 
-Copy the structure; fill from the real sources. Match the header fields of the nearest existing document (`docs/specs/02-arquitectura-software.md`, `docs/specs/backlog/03-diseno-visual-e-interaccion.md`).
+Copy the structure; fill from the real sources. Match the header fields of the nearest existing document (`specs/02-arquitectura-software.md`, `specs/backlog/03-diseno-visual-e-interaccion.md`).
 
 ```markdown
 # NN — <Nombre del documento> de Gafira
