@@ -407,12 +407,16 @@ proptest! {
         let page = Rect::new(x, y, x + w, y + h);
         let m = margins(h * fa, w * fb, h * fb, w * fa);
         let safe = safe_rect(page, pct).unwrap();
-        let ops: [&dyn Fn() -> Vec<f64>; 5] = [
+        // One side overflows, three excesses are zero: an odd count, so a sign that
+        // flips per zero excess cannot land on the same bytes in both runs.
+        let one_side = Rect::new(x - 1.0, y, x + w, y + h);
+        let ops: [&dyn Fn() -> Vec<f64>; 6] = [
             &|| corners(safe_rect(page, pct).unwrap()),
             &|| corners(bleed_rect(page, Length::new(mm, Unit::Mm), dpi).unwrap()),
             &|| corners(margin_rect(page, &m, dpi).unwrap()),
             &|| sides(overflow(page, safe).unwrap()),
             &|| sides(overflow(safe, page).unwrap()),
+            &|| sides(overflow(one_side, page).unwrap()),
         ];
         for op in ops {
             let (a, b) = (op(), op());

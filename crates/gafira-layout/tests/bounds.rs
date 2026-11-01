@@ -7,6 +7,7 @@ use gafira_doc::{
     ShapeGeometry, ShapeNode,
 };
 use gafira_layout::{LayoutError, Length, Rect, Unit, node_bounds};
+use proptest::prelude::*;
 
 fn page() -> Page {
     let side = Length::new(1000.0, Unit::Px);
@@ -230,4 +231,57 @@ fn adr_0009_a_group_shared_by_two_groups_is_not_a_cycle() {
         node_bounds(&p, NodeId::new(10)),
         Ok(Rect::new(0.0, 0.0, 60.0, 10.0))
     );
+}
+
+fn bits(r: Rect) -> [u64; 4] {
+    [r.x0, r.y0, r.x1, r.y1].map(f64::to_bits)
+}
+
+proptest! {
+    // ARQ-110 (property) and ARQ-111 for `node_bounds`: finite placements in the
+    // domain give a finite box, and a second run gives the same bytes.
+    #[test]
+    fn arq_110_arq_111_node_bounds_is_finite_and_repeatable(
+        cells in prop::collection::vec(
+            (-1e6..1e6f64, -1e6..1e6f64, 0.0..1e6f64, 0.0..1e6f64, -720.0..720.0f64, -80.0..80.0f64),
+            1..8,
+        ),
+        nested in any::<bool>(),
+    ) {
+        let mut p = page();
+        let ids: Vec<u64> = (10..10 + cells.len() as u64).collect();
+        for (id, c) in ids.iter().zip(&cells) {
+            let mut pl = Placement::new(c.0, c.1, c.2, c.3);
+            pl.rotation_deg = c.4;
+            pl.skew = c.5;
+            add(&mut p, *id, pl, false, &[]);
+        }
+        group(&mut p, 3, [0.0, 0.0, 1.0, 1.0], &ids);
+        group(&mut p, 2, [0.0, 0.0, 1.0, 1.0], if nested { &[3] } else { &ids });
+        let a = node_bounds(&p, NodeId::new(2)).unwrap();
+        let b = node_bounds(&p, NodeId::new(2)).unwrap();
+        prop_assert!([a.x0, a.y0, a.x1, a.y1].iter().all(|v| v.is_finite()));
+        prop_assert_eq!(bits(a), bits(b));
+    }
+
+    // ARQ-110 (property), the other side: one non-finite field anywhere in the
+    // placement is a typed error that names it, never a number.
+    #[test]
+    fn arq_110_node_bounds_names_any_non_finite_field(
+        field in 0usize..6,
+        bad in prop::sample::select(vec![f64::NAN, f64::INFINITY, f64::NEG_INFINITY]),
+    ) {
+        let names = ["x", "y", "w", "h", "rotation_deg", "skew"];
+        let mut v = [1.0, 2.0, 30.0, 40.0, 15.0, 5.0];
+        v[field] = bad;
+        let mut pl = Placement::new(v[0], v[1], v[2], v[3]);
+        pl.rotation_deg = v[4];
+        pl.skew = v[5];
+        let mut p = page();
+        add(&mut p, 1, pl, false, &[]);
+        prop_assert_eq!(
+            node_bounds(&p, NodeId::new(1)),
+            Err(LayoutError::NonFinite { field: names[field] })
+        );
+    }
 }
