@@ -131,3 +131,27 @@ Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- 
 Measured: ~277 source lines, ~490 test lines, 17 Cargo.toml, clippy.toml copy; over the ~700 ceiling counting the clippy.toml copy.
 
 Deviations: (a) the implementation preceded the tests; RED was produced afterwards by stubbing the bodies. (b) `percent` is "5.0 = 5 %" (spec text says 5 %, `[0, 50)`); margins take `&Margins` plus a dpi (not four px) because FD-05 stores them as `Length` in any unit. (c) `Overflow::exceeds` is an addition for the warning rule.
+
+### D3 fix round 1 (verify round 1)
+
+Order: every item had its test written and run before the code (W1 answered; the first round's stub RED is replaced by real RED below). Commits: `2e2993a` (S1), `9ec851b` (C1, W5, range rule), then the rects commit (C2 to C4, W4, W7, DPI, margins). `f2dafd1` untouched (W2).
+
+RED (failing run before the code change)
+- C1 `arq_110_a_very_deep_chain_gives_a_result_not_a_stack_overflow` (100 000 levels, debug): "has overflowed its stack", SIGABRT. Green in debug and in release. Iterative walk with a frame stack, `BTreeMap` of finished boxes and `BTreeSet` of open groups (ARQ-10 bans hash types); no nesting limit; a closed loop at depth 100 000 gives `Err(Cycle)`.
+- W5 `arq_110_a_group_checks_its_own_placement_but_not_nodes_outside_the_subtree`: `Ok` where `Err(NonFinite { field: "x" })` expected.
+- C3 `arq_110_a_computed_non_finite_value_...`: `margin_rect(Rect(-MAX, 0, MAX, 100))` gave `Ok(Rect(-MAX, 10, MAX, 90))`; overflow `-inf` cases gave `Ok`.
+- W4 `fd_05_f_rounding_that_erases_an_axis_is_no_area`: `Ok` with `x0 == x1 == 1.0000000000000004e16`. W7/margins per axis `fd_05_f_margins_are_decided_per_axis_...`: `Err(NoArea)` where the flat box with zero margins must stay `Ok`.
+- Passed on existing code, proved by mutants only (no RED possible): ARQ-111 bytes (`arq_110_arq_111_finite_input_...`: M1, M2), `range_rule_a_skew_of_90_...` (mutant: range check on skew), `fd_05_a_dpi_that_is_not_positive_...` (dpi 0 and -96, both functions), `adr_0009_a_group_shared_by_two_groups_...`.
+
+Hand mutants (applied, reverted, not committed)
+- bounds: skip first child, last child wins (union replaced), group placement unchecked, open set not cleared after a group (false cycle on a shared group, survived until the shared-group test used a group), skew range check: killed by `adr_0009_*`, `arq_110_a_group_checks_*`, `adr_0009_a_group_shared_*`, `range_rule_*`.
+- M1 `margin_rect` differs on every second call, M2 `overflow` flips the sign of a zero excess: killed by `arq_110_arq_111_...` (M2 first survived because the property ran two different overflows per case, so the call parity matched; each operation is now run twice on its own).
+- M3a `bleed_rect` result check removed, M3b `safe_rect` result check removed, M3c check on one side only (four variants), intermediate infinity clamped again, margin width or sum check removed: killed by `arq_110_a_computed_non_finite_value_...`; M3b also by `fd_05_f_rounding_...`.
+- Rounding check removed in `safe_rect`, in `margin_rect`, ignored on one axis: `fd_05_f_rounding_...`. Rounding applied on a zero-size axis, zero-size box with zero margins rejected, margins decided on the x axis only: `fd_05_f_margins_are_decided_per_axis_...` (the y-axis zero-size case was added after the per-axis mutant survived).
+- Equivalent: none.
+
+Gates: fmt, clippy `-D warnings`, `cargo test --workspace --locked` all pass at each commit; layout tests also pass with `--release`. Mutant runs wrote a `rects.proptest-regressions`; removed each time (all from mutants, none from real code).
+
+Spec reading: field names of the new `NonFinite` errors are not specified; the code uses `overflow`, `page` (width, height) and `margins` (sums). `Rect(…)` with an inverted box after rounding cannot occur: `NoArea` comes first.
+
+Measured: round delta over `f2dafd1` in `crates/`: 4 files, 331 insertions, 103 deletions (+228 net); the crate against `develop`: 1057 insertions. Not in scope: W3, W8, S2.
