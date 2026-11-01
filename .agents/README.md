@@ -34,9 +34,24 @@ In OpenCode's agent selector, choose `coordinator` as the primary agent, or run:
 opencode run --agent coordinator "Continue the current Gafira delivery"
 ```
 
-OpenCode keeps the selected session model; subagents inherit it unless a user
-configures an override. The adapters do not use Claude model aliases. Each
-adapter instructs its agent to read the corresponding source body before work;
+## Choose project-local models
+
+No model is selected by this repository by default. To assign models to individual
+subagents, use `.opencode/opencode.example.jsonc` as a template for the
+project-local `.opencode/opencode.jsonc`. If that file already exists, merge the
+`agents` entries into it instead of replacing it. Uncomment the examples, replace
+their placeholders with available `provider/model` or `provider/model#variant`
+IDs, and add entries for any other project subagents as needed. Select models
+available to your project with `/models`; the variant must exist for that model.
+The sync script does not read or overwrite this configuration. Omit an agent's
+model to inherit its parent's session model.
+
+OpenCode stores the primary session model separately: selecting `coordinator` by
+agent ID does **not** switch the session model, even if an agent model is set.
+Choose the coordinator session model with `/models`, or for one CLI run use
+`opencode run --agent coordinator --model provider/model#variant "..."`.
+The adapters do not use Claude model aliases. Each adapter instructs its agent to
+read the corresponding source body before work;
 this relies on the model following that instruction and on source read access.
 Claude-specific Agent, SendMessage and tool names are mapped to OpenCode's
 subagent, child-result and corresponding tools in the adapter.
@@ -60,4 +75,5 @@ these adapters deny those tools and the workflow must be adjusted explicitly.
 Actual model-driven delegation and source reading depend on the runtime; the
 sync script does not verify them. Use `/reload` if definitions are cached.
 
-Tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p test_agent_sync.py -v`.
+Tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_agent*.py' -v`.
+Set `GAFIRA_TEST_OPENCODE=1` to also run the scratch-project OpenCode API test.
