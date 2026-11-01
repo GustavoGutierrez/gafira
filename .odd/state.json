@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "outcomes": [
+    {
+      "outcome_id": "layout-core",
+      "spec_id": "04-funcionalidad-diseno-imagen-exportacion",
+      "status": "implementing",
+      "criteria": [
+        {"id": "D1", "status": "passed", "evidence": "e5e5576"},
+        {"id": "D2", "status": "passed", "evidence": "ffb0836"},
+        {"id": "D3", "status": "pending"},
+        {"id": "D4", "status": "pending"},
+        {"id": "D5", "status": "pending"},
+        {"id": "D6", "status": "pending"},
+        {"id": "D7", "status": "pending"}
+      ],
+      "next_action": "Run D3 (ODD pilot, ADR 0011) from the Slice card, on feat/layout-core-d3 cut from develop"
+    },
+    {
+      "outcome_id": "odd-lite",
+      "spec_id": "odd-ligero-migracion",
+      "status": "verifying",
+      "criteria": [
+        {"id": "AC1", "status": "pending"},
+        {"id": "AC2", "status": "pending"},
+        {"id": "AC3", "status": "pending"},
+        {"id": "AC4", "status": "pending"},
+        {"id": "AC5", "status": "pending"},
+        {"id": "AC6", "status": "pending"},
+        {"id": "AC7", "status": "pending"},
+        {"id": "AC8", "status": "pending"},
+        {"id": "AC9", "status": "pending"}
+      ],
+      "next_action": "Run verify V1 on chore/odd-lite"
+    }
+  ]
+}
