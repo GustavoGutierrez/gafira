@@ -115,6 +115,20 @@ fn fd_06_c_moving_d_leaves_c_and_e_but_not_a_or_b() {
 }
 
 #[test]
+fn fd_06_c_a_node_reached_by_two_parents_takes_both_out_when_it_holds_the_selection() {
+    // X (4) holds the selected leaf (5) and hangs under both P1 (2) and P2 (3): each is an
+    // ancestor of a selected node, so neither attracts.
+    let mut p = page();
+    leaf(&mut p, 1, PROBE);
+    leaf(&mut p, 5, [20.0, 20.0, 5.0, 5.0]);
+    group(&mut p, 4, [0.0; 4], &[5]);
+    group(&mut p, 2, [0.0; 4], &[4]);
+    group(&mut p, 3, [0.0; 4], &[4]);
+    roots(&mut p, &[1, 2, 3]);
+    assert_eq!(run(&p, &[5]).unwrap(), [r(PROBE)]);
+}
+
+#[test]
 fn fd_06_c_the_selection_and_its_descendants_do_not_attract() {
     let mut p = page();
     leaf(&mut p, 1, PROBE);

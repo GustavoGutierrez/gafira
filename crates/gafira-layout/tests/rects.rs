@@ -138,6 +138,52 @@ fn fd_05_f_margins_that_reach_the_size_leave_no_area() {
 }
 
 #[test]
+fn fd_05_the_warning_is_raised_by_any_one_side_alone() {
+    let none = Overflow {
+        left: 0.0,
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        fully_outside: false,
+    };
+    assert!(!none.exceeds());
+    let sides: [fn(&mut Overflow); 4] = [
+        |o| o.left = 0.5,
+        |o| o.top = 0.5,
+        |o| o.right = 0.5,
+        |o| o.bottom = 0.5,
+    ];
+    for set in sides {
+        let mut o = none;
+        set(&mut o);
+        assert!(o.exceeds(), "{o:?}");
+    }
+    // as `overflow` reports it
+    let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+    assert!(
+        !overflow(Rect::new(0.0, 0.0, 100.0, 100.0), rect)
+            .unwrap()
+            .exceeds()
+    );
+    assert!(
+        overflow(Rect::new(0.0, 0.0, 100.5, 100.0), rect)
+            .unwrap()
+            .exceeds()
+    );
+}
+
+#[test]
+fn fd_05_an_edge_on_the_limit_has_an_excess_of_positive_zero() {
+    // `-0.0 - 0.0` is `-0.0`: the edges are on the limit, so the excess is a plain zero.
+    let rect = Rect::new(-0.0, -0.0, 0.0, 0.0);
+    let bounds = Rect::new(0.0, 0.0, -0.0, -0.0);
+    let o = overflow(bounds, rect).unwrap();
+    for v in [o.left, o.top, o.right, o.bottom] {
+        assert_eq!(v.to_bits(), 0.0f64.to_bits());
+    }
+}
+
+#[test]
 fn fd_05_f_fd_09_d_overflow_edges_and_outside_rule() {
     let rect = Rect::new(0.0, 0.0, 1080.0, 1080.0);
     // FD-09(d): x = 1000, width 104 on a 1080 page.
