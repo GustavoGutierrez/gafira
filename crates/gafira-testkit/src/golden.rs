@@ -309,9 +309,12 @@ fn check_name(name: &str) -> Result<(), GoldenError> {
 /// `<candidate_dir>/<name>.png`: a pixel, size or channel mismatch, and an
 /// empty or undecodable reference. A `candidate_dir` that is, or resolves
 /// into, a `tests/golden` folder is rejected (adjacent components, ASCII case
-/// ignored). The guard does not cover a symlink swapped after the check, nor
-/// non-ASCII or 8.3 aliases of the names. Accepting a candidate is a manual
-/// copy. [`compare`] stays the pure comparator and writes nothing.
+/// ignored), and an existing entry at `<candidate_dir>/<name>.png` (file,
+/// symlink or hard link) is removed first, so the candidate is always a new
+/// file and is never written through a link. Not covered: a directory or
+/// symlink swapped between the check and the write, and non-ASCII or 8.3
+/// aliases of `tests` and `golden`. Accepting a candidate is a manual copy.
+/// [`compare`] stays the pure comparator and writes nothing.
 pub fn check(
     name: &str,
     golden_png: &[u8],
@@ -344,6 +347,12 @@ pub fn check_in(
     };
     let candidate = prepare_dir(candidate_dir)?.join(format!("{name}.png"));
     let png = encode_png(actual).map_err(CheckError::Golden)?;
+    // Replace any entry at the path (symlink, hard link, file): never write through it.
+    match std::fs::remove_file(&candidate) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(CheckError::Io(e)),
+    }
     std::fs::write(&candidate, png).map_err(CheckError::Io)?;
     Err(match failure {
         Failure::Mismatch(mismatch) => CheckError::Mismatch {

@@ -372,3 +372,78 @@ fn ac4_the_macro_checks_against_the_target_tmpdir_and_panics_on_failure() {
         other
     );
 }
+
+/// Runs a failing check whose candidate path already holds `make_entry`'s link
+/// to a reference file; the reference must survive and the candidate be a new regular file.
+fn candidate_over_link(sub: &str, make_entry: impl Fn(&Path, &Path)) {
+    let dir = fresh(sub);
+    let reference = dir.join("reference.png");
+    let stored = encode_png(&gray(&[1, 2, 3])).unwrap();
+    std::fs::write(&reference, &stored).unwrap();
+    let entry = dir.join("ac4_linked.png");
+    make_entry(&reference, &entry);
+    let actual = gray(&[9, 9, 9]);
+    let err = check_in(Mode::Exact, "ac4_linked", &stored, &actual, &dir).unwrap_err();
+    assert!(matches!(err, CheckError::Mismatch { .. }));
+    assert_eq!(
+        std::fs::read(&reference).unwrap(),
+        stored,
+        "the reference was written through"
+    );
+    let meta = std::fs::symlink_metadata(&entry).unwrap();
+    assert!(
+        meta.is_file() && !meta.file_type().is_symlink(),
+        "candidate is not a new regular file"
+    );
+    assert_eq!(decode_png(&std::fs::read(&entry).unwrap()).unwrap(), actual);
+}
+
+#[cfg(unix)]
+#[test]
+fn ac4_a_symlink_at_the_candidate_path_is_replaced_not_written_through() {
+    candidate_over_link("ac4_entry_symlink", |reference, entry| {
+        std::os::unix::fs::symlink(reference, entry).unwrap();
+    });
+}
+
+#[test]
+fn ac4_a_hard_link_at_the_candidate_path_is_replaced_not_written_through() {
+    candidate_over_link("ac4_entry_hardlink", |reference, entry| {
+        std::fs::hard_link(reference, entry).unwrap();
+    });
+}
+
+#[test]
+fn ac4_an_entry_that_cannot_be_removed_fails_the_check() {
+    // A directory sits at the candidate path.
+    let dir = fresh("ac4_entry_dir");
+    std::fs::create_dir(dir.join("ac4_dirpath.png")).unwrap();
+    let golden = encode_png(&gray(&[1])).unwrap();
+    let r = check_in(Mode::Exact, "ac4_dirpath", &golden, &gray(&[2]), &dir);
+    assert!(matches!(r, Err(CheckError::Io(_))));
+}
+
+#[cfg(unix)]
+#[test]
+fn ac4_a_link_that_cannot_be_removed_is_not_written_through() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = fresh("ac4_entry_locked");
+    let outside = fresh("ac4_entry_locked_ref").join("reference.png");
+    let stored = encode_png(&gray(&[1, 2, 3])).unwrap();
+    std::fs::write(&outside, &stored).unwrap();
+    std::os::unix::fs::symlink(&outside, dir.join("ac4_locked.png")).unwrap();
+    // A read-only directory: the link cannot be removed, the target stays writable.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let probe = std::fs::write(dir.join("probe"), b"");
+    let r = check_in(Mode::Exact, "ac4_locked", &stored, &gray(&[9, 9, 9]), &dir);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if probe.is_ok() {
+        return; // running with privileges that ignore directory permissions
+    }
+    assert!(matches!(r, Err(CheckError::Io(_))));
+    assert_eq!(
+        std::fs::read(&outside).unwrap(),
+        stored,
+        "the reference was written through"
+    );
+}
