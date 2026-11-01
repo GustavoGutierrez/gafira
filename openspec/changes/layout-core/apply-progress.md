@@ -185,3 +185,18 @@ Deviations / findings
 - `.github/workflows/ci.yml` and the V5 row need no change.
 
 Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` pass on each commit.
+
+## D4 round 2: bounded guide and grid output (rows "Lado de página de `generate`" and "Vista de `grid_lines`")
+
+Commits: `generate` page side limit (`src/guides.rs`, `tests/guides_generate.rs`); `grid_lines` view limit (`src/grid.rs`, `tests/grid.rs`). The earlier open question is answered by these rows.
+
+RED (before the code change, assertion failures)
+- Page side: `fd_04_page_side_limit_is_inclusive_and_checked_per_side` (`left Ok([.. 16384.01 ..])`, `right Err(OutOfRange page)`); `fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width` (`left Err(OutOfRange columns)`, `right Err(OutOfRange page)`). The property `fd_04_every_ok_has_at_most_32768_guides_per_axis` passed on the old code (c >= 1 px already implies n <= side); no mutant that drops the side check is killed by it alone, the example tests carry the proof.
+- View: `fd_07_view_screen_size_is_limited_per_axis_with_exact_comparison` (`Ok` where `Err(OutOfRange view)` was expected); `fd_07_view_is_checked_after_non_finite_and_the_zoom_range` already passed in its zoom and NaN parts and failed only on the overflow-product case once the check existed (mutant below), so its order proof is the mutants.
+
+Existing tests adjusted (views or pages above the new limits): `guides_generate.rs` gap-overflow case uses `page(1000.0, 1.0)`; `grid.rs` `screen()` now trims the far edge so `width * zoom <= 3840` holds exactly, `fd_07_a` caps `hi` at `3800 / zoom`, `fd_07_e` uses a 50 x 50 view (100 x 100 at zoom 32 is 3200 px high).
+
+Hand mutants (applied, failed, reverted, not committed)
+- `>=` on the side: `fd_04_page_side_limit_is_inclusive_...`, `..._after_non_finite_and_before_...`. Skipped when n = 0: `fd_04_page_side_limit_is_inclusive_...`. Only width / only height: same test. Check after the column-width rule: `fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width`.
+- View `>=` on both axes, on width only, on height only: `fd_07_view_screen_size_is_limited_per_axis_with_exact_comparison`, `fd_07_c_*`. Ignores zoom: same test and `fd_07_c_at_most_2000_...`. Width and height swapped, either accepted (`&&`), only width, only height: `fd_07_view_screen_size_is_limited_per_axis_...`. Check before the zoom range: `fd_07_view_is_checked_after_non_finite_and_the_zoom_range`, `arq_110_every_float_input_is_checked`. Product overflow reported as the range rule: `fd_07_view_is_checked_after_non_finite_and_the_zoom_range`.
+- No `*.proptest-regressions` kept in the layout crate.
