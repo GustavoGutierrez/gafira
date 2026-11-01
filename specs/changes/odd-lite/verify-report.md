@@ -321,3 +321,121 @@ Outcome `foo`, L1, light, V2, using rule text only. Points 2 and 3 were also run
 V1 closure round, `mutation: off`: none run, no report, not a finding.
 
 next: archive
+
+# Verify report: odd-lite, delivery `chore/specs-consolidation`
+
+## Round 1
+
+Commit 70c5c09, branch `chore/specs-consolidation`, base `develop` (26e3071). Mode light, depth V1, `mutation: off`, tier T0, no `mutants` report. Acceptance source: Light spec, AC15 to AC20 (amend a28e1fd).
+
+Verdict: FAIL. CRITICAL 1, WARNING 4, SUGGESTION 4. Per class: implementation 5.
+
+Finding ids continue from the earlier rounds of this file. Read-only build, test and manual runs used a scratch export of 70c5c09, with its own target dir, since cleaned.
+
+Note, not a finding: the `verify` prompt of this run still named `openspec/config.yaml`, because agent definitions load from the primary checkout (`chore/pi-agent-sync`), not this worktree. `.agents/agents/verify.md` on this branch no longer cites it. The gate commands came from `AGENTS.md` "Strict TDD".
+
+## CRITICAL
+
+- **C1** class: implementation. ref: AC19, `specs/changes/odd-lite/apply-progress.md`. AC19 needs every remaining hit "named in the delivery notes as deliberate", and no such notes exist. `apply-progress.md` is byte-identical from a28e1fd to HEAD, its last section is "Apply: phases A and B", and no commit body names the hits. The file also has no evidence table for AC15 to AC20, measured lines or deviations, such as the `.gitignore` edit. Fix: append a section below the Light spec block; do not reword the hits. Hits to name:
+  - `docs/adr/0011-odd-lite.md:104,108-111,113,115`, the case AC19 expects (mapping and its record).
+  - `specs/changes/odd-lite/apply-progress.md` (9 lines: 5, 10, 15, 22, 23, 24, 27, 47, 57) and `specs/changes/odd-lite/verify-report.md` (8 lines: 34, 49, 88, 150, 170, 172, 280, 285). These are the protected Light spec and earlier reports of an active folder. AC19 neither names nor exempts them; they become exempt at archive.
+  - `CHANGELOG.md:11,24` and `docs/methodology/odd-ligero-migracion.md:35`: capitalized `OpenSpec`, past release text and the owner's brief. AC19's own regex is case-sensitive and misses them; the wider regex of this verify request finds them.
+
+## WARNING
+
+- **W10** class: implementation. ref: `AGENTS.md` "Delivery rules". `git diff --shortstat develop..HEAD` gives 428 insertions and 316 deletions, 744 lines (706 without `.opencode`), above the ~700 signal, which needs the owner's explicit OK. None is recorded. Most of it is mechanical path rewriting; the manual rewrite is 282 lines. Record the OK in the delivery notes of C1.
+- **W11** class: implementation. ref: `docs/manuals/tecnico/chapters/10-methodology.md:213`. The English Slice card template lacks `level: L<n>`; the Spanish mirror (line 213) and `.agents/agents/coordinator.md:115` have it. English is the source, and `manual.py check` does not see inside code fences.
+- **W12** class: implementation. ref: `docs/manuals/tecnico/chapters/10-methodology.md:123` and `chapters-es/10-methodology.md:123`. "Only the owner can lower a pack default" contradicts line 56 of the same chapter, `AGENTS.md` "Mutation" and `coordinator.md:34`, which allow `mutation: off` for L0 and L1 with no critical code. The sentence predates this delivery, but the rewrite added the exception without aligning it.
+- **W13** class: implementation. ref: `docs/adr/0011-odd-lite.md:92,147`. Line 92 still says `specs/README.md` and the manual chapters "still describe the Slice card route", and line 147 says they "lag until phase D". This delivery fixed both. The "Resolved by" paragraph (line 115) does not close them.
+
+## SUGGESTION
+
+- **S17** `chore/pi-agent-sync` branched before the move: 2 files under `.pi/` cite the old paths and its change folder sits in `openspec/changes/`. Move both when it is rebased. `specs/README.md:75` (item 34) cites `.pi/agents/verify.md`, which only that branch holds; this predates the delivery.
+- **S18** `AGENTS.md:3` lists 04 as waiting in `specs/backlog/`, but it is in `specs/`. Unchanged from `develop`.
+- **S19** The Light spec plan has 15 steps; `coordinator.md:100` allows at most 7.
+- **S20** `docs/adr/0011-odd-lite.md`, inventory row "Docs", reads "`specs/changes/` and its archive"; the mechanical rewrite left the old shape, and closed changes are in `specs/history/`.
+
+## Gates
+
+Each exit read separately.
+
+| Check | Exit | Output |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 81 test binaries, 1107 passed, 0 failed, 0 ignored |
+| `python3 tools/sync_agents.py --check` | 0 | |
+| `python3 -m pytest tests/test_agent_sync.py -q` | 0 | 16 passed |
+| `python3 -m json.tool .odd/state.json` | 0 | |
+| `manual.py check` | 0 | 11 chapters, mirrors match, links resolve |
+| `manual.py build` | 0 | `Gafira_Technical_Manual.pdf`, 192258 bytes |
+| `manual.py build --lang es` | 0 | `Gafira_Manual_Tecnico.pdf`, 202298 bytes |
+
+`cargo deny` and the CI policy steps do not apply: the diff touches no file under `crates/`, `apps/`, `.github/` or `.cargo/`, nor `Cargo.toml`, `Cargo.lock` or `deny.toml`.
+
+## Artifact integrity (step 3b)
+
+- a28e1fd (`docs(odd-lite): light spec amend`) touches only `apply-progress.md`, states why in its body and precedes every delivery commit.
+- `git diff a28e1fd HEAD` on the folder shows only renames with 0 lines changed, so no later commit changed the block.
+- No AI attribution line in the six commit messages.
+
+## Criteria
+
+| AC | State | Evidence |
+|---|---|---|
+| AC15 | covered | f792bdf: 109 renames, all R100, 0 lines. 9 from `docs/specs`, 16 from `openspec/specs`, 80 from the archive, 4 from active folders. `openspec/` and `docs/specs/` have 0 tracked files and are gone. `git log --follow` crosses f792bdf on 5 sampled files, one per area |
+| AC16 | covered | Every key of the deleted file checked against `AGENTS.md` (table below). Citations remain only in the places C1 lists |
+| AC17 | covered | `AGENTS.md:44`, `specs/README.md` intro and "Cómo continuar", `coordinator.md:29,106`, manual chapter "Specs" |
+| AC18 | covered | Blob hashes against `develop`: `specs/history` 80 of 80, `specs/capabilities` 16 of 16, ADRs 0001 to 0010 10 of 10, all identical. ADR 0011 keeps the From column (lines 106-111) and states the exemption (line 115) |
+| AC19 | failing | Paths resolve and the pending-ID command works, but no notes name the hits (C1) |
+| AC20 | covered | Gates above. `git diff --name-only develop..HEAD -- crates apps` is empty. No `/home/`, `/Users/`, `C:\`, user name, `~/.` or scratchpad path in added lines |
+
+### Rules of the deleted `openspec/config.yaml`
+
+| Rule | Now in `AGENTS.md` |
+|---|---|
+| strict TDD, unit and integration layers, no e2e, no coverage, threshold 0 | "Strict TDD" (line 145) |
+| test, lint, format, build commands | "Strict TDD"; test and lint are stricter (`--locked`) |
+| platforms, permissive licenses, local, no external binaries | "Code rules" |
+| language of conversation, code and commits; conventional commits; no AI attribution | "Code rules", "Delivery rules" |
+| proposal, design and tasks rules, review budget 800, ask on risk | "Artifact rules" (line 193) |
+| RFC 2119, Given/When/Then, product documents in Spanish | "Spec format" |
+| warn before destructive deltas | "Archive merge" |
+
+Dropped as facts, not rules: "no code yet", `schema: spec-driven`, tool versions, the GUI stack and binary names. The last two remain in `specs/02-arquitectura-software.md`.
+
+### `AGENTS.md` lost no rule
+
+Every removed line of the diff was read. Besides path rewrites, four things went, all stale: the `layout-core` D3 to D7 line, the `workspace-scaffold` and `domain-color` archive note, the named archive order (the generic rule stays), and the pointers to `openspec/config.yaml`. All three changes are in `specs/history/`, and no live file under `AGENTS.md` or `.agents/` names `workspace-scaffold` or `domain-color`.
+
+## Broken references
+
+Own script, not the writers': it extracts path-like tokens from the live files, also `.github`, `specs/*.md` and `specs/backlog`, resolves them against the tree of each commit (repo-relative and file-relative), and compares HEAD with `develop`.
+
+- New unresolved tokens versus `develop`: ADR 0011's mapping (6 tokens, deliberate), `specs/NN-*.md` (a placeholder), `specs/changes/demo/spike.md` (a test fixture). No real new break.
+- The rest predates the delivery: planned assets (`assets/LICENSES.toml`, `assets/i18n/`), gitignored local files (`.atl/`, `.opencode/opencode.jsonc`, manual `build/`), crate-relative paths and `.pi/agents/verify.md` (S17).
+- No relative Markdown link in the moved documents or live files, so the depth change breaks none.
+- Sed collateral: no `specs/specs`, `specs/changes/archive` or similar. Every `specs/archive/` mention means product documents, not closed changes. `openspec/specs` became `specs/capabilities` and closed changes `specs/history` in `archive.md`, `specifier.md` and skill `product-specs`.
+- No agent or skill tells anyone to read a removed file: `tdd-apply.md` and `verify.md` dropped `openspec/config.yaml`, and `verify.md` points at "Strict TDD".
+
+## Pending-ID command
+
+Run from `specs/README.md:30`; `coordinator.md:126` is the same command with a placeholder. It needs bash (process substitution).
+
+| Variant | Pending |
+|---|---|
+| As written, ARQ on 02 | 69, exit 0 |
+| `develop` version | 69 |
+| With `specs/capabilities` added | 69 |
+| Searching all of `specs` (no exclusion) | 0, the failure the exclusion prevents |
+| As written, FD on 04 | 32, exit 0 |
+
+## Methodology chapter
+
+EN and ES read in full against `AGENTS.md`. Levels, entry fields, the `verify` field, resume and BLOCKED agree, and both call ADR 0011 proposed (lines 12 and 41). The chapter shortens resume and leaves out the unmerged-branch search, without contradicting it. The mismatches are W11 and W12.
+
+## Hand mutants and mutation
+
+V1, `mutation: off`: none run, no report, not a finding.
+
+next: tdd-apply

@@ -76,4 +76,94 @@
   "mutation": null,
   "hand_mutants": {"run": 0, "killed": 0},
   "criteria": {"total": 13, "covered": 13},
-  "size": {"lines": 22, "forecast": null}, "report": "verify-report.md" } ] }
+  "size": {"lines": 22, "forecast": null}, "report": "verify-report.md" },
+    {
+      "delivery": "chore/specs-consolidation",
+      "round": 1,
+      "commit": "70c5c09",
+      "mode": "light",
+      "tier": "T0",
+      "depth": "V1",
+      "verdict": "FAIL",
+      "next": "tdd-apply",
+      "counts": {
+        "critical": 1,
+        "warning": 4,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "AC19, specs/changes/odd-lite/apply-progress.md",
+          "summary": "No delivery notes exist, so the remaining openspec and docs/specs hits are not named as AC19 requires; no AC15-AC20 evidence, size or deviations recorded",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W10",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "AGENTS.md Delivery rules",
+          "summary": "744 changed lines (706 without .opencode), above the ~700 signal, with no owner OK recorded",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W11",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "docs/manuals/tecnico/chapters/10-methodology.md:213",
+          "summary": "English Slice card template lacks level: L<n>; the Spanish mirror and coordinator.md:115 have it",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W12",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "docs/manuals/tecnico/chapters/10-methodology.md:123",
+          "summary": "'Only the owner can lower a pack default' contradicts line 56, AGENTS.md and coordinator.md:34 on mutation: off (EN and ES)",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W13",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "docs/adr/0011-odd-lite.md:92,147",
+          "summary": "ADR still says specs/README.md and the manual lag or describe the Slice card route; this delivery fixed both",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": "n/a",
+        "ci_policy": "n/a",
+        "sync_agents": 0,
+        "agent_sync_tests": 0,
+        "state_json": 0,
+        "manual_check": 0,
+        "manual_build_en": 0,
+        "manual_build_es": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 0,
+        "killed": 0
+      },
+      "criteria": {
+        "total": 6,
+        "covered": 5
+      },
+      "size": {
+        "lines": 744,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    }
+  ] }
