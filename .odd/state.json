@@ -155,7 +155,7 @@
     {
       "outcome_id": "testkit-golden",
       "spec_id": "02-arquitectura-software",
-      "status": "implementing",
+      "status": "verifying",
       "flow": "Flow: standard | level: L2 | pack: new function | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator | reason: new module in an existing crate, covered by ARQ-113 and accepted ADR 0010; the comparator is a rule with an invariant (critical), the png edge is already stated in 02 section 9.2 and ADR 0010; no floor to full hit",
       "scope": "gafira_testkit::golden per ADR 0010: PNG golden read and write, pure comparator with Exact and CrossPlatform modes, target-selected mode, candidate output under CARGO_TARGET_TMPDIR, f32 quantization helper. Single delivery.",
       "non_goals": [
@@ -216,7 +216,7 @@
           "type": "command"
         }
       ],
-      "next_action": "tdd-apply on feat/testkit-golden"
+      "next_action": "verify round 1 V2"
     }
   ]
 }
