@@ -145,7 +145,7 @@ RED (failing run before the code change)
 
 Hand mutants (applied, reverted, not committed)
 - bounds: skip first child, last child wins (union replaced), group placement unchecked, open set not cleared after a group (false cycle on a shared group, survived until the shared-group test used a group), skew range check: killed by `adr_0009_*`, `arq_110_a_group_checks_*`, `adr_0009_a_group_shared_*`, `range_rule_*`.
-- M1 `margin_rect` differs on every second call, M2 `overflow` flips the sign of a zero excess: killed by `arq_110_arq_111_...` (M2 first survived because the property ran two different overflows per case, so the call parity matched; each operation is now run twice on its own).
+- M1 `margin_rect` differs on every second call: killed by `arq_110_arq_111_...`. CORRECTION (round 2): the earlier note that M2 was killed was wrong; verify measured the round 1 M2 text (sign flips on every second zero excess, counted per excess) surviving 6 of 7 runs, because the operations had 0, 2 or 4 zero excesses and the period-2 flip repeated.
 - M3a `bleed_rect` result check removed, M3b `safe_rect` result check removed, M3c check on one side only (four variants), intermediate infinity clamped again, margin width or sum check removed: killed by `arq_110_a_computed_non_finite_value_...`; M3b also by `fd_05_f_rounding_...`.
 - Rounding check removed in `safe_rect`, in `margin_rect`, ignored on one axis: `fd_05_f_rounding_...`. Rounding applied on a zero-size axis, zero-size box with zero margins rejected, margins decided on the x axis only: `fd_05_f_margins_are_decided_per_axis_...` (the y-axis zero-size case was added after the per-axis mutant survived).
 - Equivalent: none.
@@ -155,3 +155,9 @@ Gates: fmt, clippy `-D warnings`, `cargo test --workspace --locked` all pass at 
 Spec reading: field names of the new `NonFinite` errors are not specified; the code uses `overflow`, `page` (width, height) and `margins` (sums). `Rect(…)` with an inverted box after rounding cannot occur: `NoArea` comes first.
 
 Measured: round delta over `f2dafd1` in `crates/`: 4 files, 331 insertions, 103 deletions (+228 net); the crate against `develop`: 1057 insertions. Not in scope: W3, W8, S2.
+
+## D3 fix round 2 (tests only)
+- C2: the bytes property in `tests/rects.rs` gains `overflow(Rect(x-1, y, x+w, y+h), page)`, one overflowing side and three zero excesses (odd). M2 as written in round 1 (static counter, sign of every second zero excess flipped): killed in 10 of 10 runs of `arq_110_arq_111_finite_input_gives_finite_repeatable_output`.
+- C4: `tests/bounds.rs` gains `arq_110_arq_111_node_bounds_is_finite_and_repeatable` (finite output, `to_bits` equal over two runs, flat and nested groups, rotation and skew) and `arq_110_node_bounds_names_any_non_finite_field` (any of the six placement fields set to NaN or an infinity gives `NonFinite` naming it). The first passes on existing code and cannot see an input check removed, because its inputs are in the domain; the second is the one that kills: dropping each of `x`, `y`, `w`, `h`, `rotation_deg`, `skew` from `check_placement` fails it, 6 of 6 (reverted).
+- Passed on existing code, no RED possible; proof is the mutants above. Mutants reverted, not committed; no `*.proptest-regressions` left.
+- S3 left as is (not a one-word comment change).
