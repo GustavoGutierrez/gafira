@@ -869,6 +869,8 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | ARQ-113 | **Golden de capa 2.** Un criterio de píxel usa primero un valor analítico. Un golden guardado se genera en `x86_64-unknown-linux-gnu`, usa un formato sin pérdida y solo se regenera con una acción explícita: ninguna prueba reescribe su referencia. La tolerancia es la de §10. | Prueba del comparador: una referencia con 1 byte alterado falla en la misma plataforma. Entre plataformas, con 1 000 píxeles, 1 píxel a 2/255 pasa (99,9 %), 2 píxeles a 2/255 fallan, y todos a 1/255 pasan. |
 | ARQ-114 | **Presupuestos.** Las cifras de capa 2 viven en §6.7 y las mide un *benchmark* (ARQ-40). No son una puerta de `cargo test`. | Cada cifra de §6.7 citada por una ficha de capa 2 tiene un *benchmark* con el nombre de esa fila. |
 
+**Rangos.** Un motor comprueba solo los rangos que indican sus filas de §4.17 o sus filas `FD-`. Un valor finito fuera de un rango sin fila, como `skew = 90` en `node_bounds`, no se vuelve a comprobar: queda fuera del dominio de ARQ-110 y, si da un resultado finito, ese valor no está especificado a propósito. Un no finito, de entrada o calculado, sigue dando `Err` (ARQ-110). Aceptación: `node_bounds` de una caja de 100 px con `skew = 90` no da `Err` de rango, y ninguna prueba fija el valor devuelto.
+
 #### 4.17.2 `gafira-layout`
 
 | Primer corte (D-14) | Fuera del corte |
@@ -877,10 +879,11 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 
 | Caso numérico | Regla | ID |
 |---|---|---|
-| NaN o `±∞` en cualquier entrada | `Err` de toda la llamada; ningún resultado parcial. | ARQ-110 |
-| Suma que desborda (`x + w` con valores enormes) | `Err` por resultado no finito. | ARQ-110 |
+| NaN o `±∞` en cualquier entrada | `Err` de toda la llamada; ningún resultado parcial. Se comprueban todas las entradas, también las que no intervienen en el cálculo. En `node_bounds`, son entrada los campos numéricos del `Placement` del nodo pedido y de todos sus descendientes, grupos con hijos incluidos. La caja de un grupo con hijos se comprueba, pero no se usa para calcular (ADR 0009): si es finita, no cambia el resultado. Aceptación: un grupo con hijos válidos y NaN en la `x` de su propio `Placement` da `Err` con ese campo; con una `x` finita y una caja desfasada da la unión de sus hijos; un NaN en un nodo fuera del subárbol pedido no cambia el resultado. | ARQ-110 |
+| Suma que desborda (`x + w` con valores enormes) u otro resultado calculado no finito | `Err` de toda la llamada por resultado no finito, también si es intermedio y el valor devuelto sería finito. Aceptación: `overflow` de `Rect(MAX, 0, MAX, 1)` sobre `Rect(−MAX, 0, 0, 1)` da `Err`, porque `−MAX − MAX` es `−∞`; el rectángulo de márgenes de `Rect(−MAX, 0, MAX, 100)` da `Err`, porque su ancho es `+∞`. | ARQ-110 |
 | Caja con `x1 < x0` o `y1 < y0` | `Err`. | FD-05, FD-06, FD-11 |
 | Caja de tamaño 0 | Válida: `gafira-doc` admite `w = 0` y `h = 0`. Sus bordes y su centro coinciden. | FD-05, FD-06, FD-11 |
+| Rectángulo sin área | Se decide por eje. El rectángulo de márgenes (`margin_rect`) da `Err` si los dos márgenes del eje suman `> 0` y `≥` el tamaño de la caja; con suma 0 conserva la caja en ese eje, también con tamaño 0. Si la suma o el tamaño no son finitos, se aplica «Suma que desborda». `margin_rect` y `safe_rect` dan `Err` si un eje de tamaño `> 0` queda con tamaño ≤ 0 tras redondear. Aceptación: en un ancho de 100, márgenes 50 y 50 dan `Err`, y 49,99 y 50 no; `Rect(0, 0, 0, 100)` con márgenes 0 devuelve la misma caja, y con margen izquierdo 5 da `Err`; en `Rect(1e16, 0, 1e16 + 4, 100)`, un margen izquierdo de 3 y un `safe_rect` del 49 % dan `Err`. | FD-05 |
 | Umbral del Imán | Finito y > 0. La distancia igual al umbral engancha; por encima, no. El rango 2–16 lo aplica Ajustes. | FD-06 |
 | Zoom | Finito en `[0,05; 32]`; fuera, `Err`. | FD-06, FD-07 |
 | Empate del Imán | Comparación exacta de `f64`, sin tolerancia. | FD-06 |
@@ -888,6 +891,8 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | Aviso de zona de seguridad | Exceso `> 0`, sin tolerancia; el borde sobre el límite no avisa. | FD-05 |
 | Porcentaje de zona de seguridad | Entrada; por defecto 5 % (D-38). En `[0, 50)`; 50 deja un rectángulo sin área y da `Err`. | FD-05 |
 | Sangrado | En `[0, 10]` mm, extremos incluidos. | FD-05 |
+| Márgenes | Cada lado `≥ 0`, la misma regla que al cargar (§3). Un lado por debajo de 0 da `Err` de fuera de rango que nombra ese lado. Aceptación: `margin_rect` con margen superior −1 da `Err` de fuera de rango con el campo `margins.top`; con margen superior 0 no da ese `Err`. | FD-05 |
+| DPI de `bleed_rect` y `margin_rect` | `dpi > 0`. `dpi ≤ 0` da `Err` de fuera de rango con el campo `dpi`, también si las longitudes ya están en px. Aceptación: `dpi = 0` y `dpi = −96` dan ese `Err` en las dos funciones, con longitudes en px. | FD-05 |
 | Tolerancia de las pruebas | Posiciones generadas y resultados de alinear y distribuir: ±0,01 unidades (FD-11) y 1e-9 cuando la ficha lo indica. | FD-04, FD-06, FD-11 |
 
 #### 4.17.3 `gafira-text`

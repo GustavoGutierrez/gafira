@@ -8,13 +8,13 @@
       "criteria": [
         {"id": "D1", "status": "passed", "evidence": "e5e5576"},
         {"id": "D2", "status": "passed", "evidence": "ffb0836"},
-        {"id": "D3", "status": "pending"},
+        {"id": "D3", "status": "passed", "evidence": "verify round 3 at 2377174"},
         {"id": "D4", "status": "pending"},
         {"id": "D5", "status": "pending"},
         {"id": "D6", "status": "pending"},
         {"id": "D7", "status": "pending"}
       ],
-      "next_action": "Run D3 (ODD pilot, ADR 0011) from the Slice card, on feat/layout-core-d3 cut from develop"
+      "next_action": "Run D4 from the Slice card, on feat/layout-core-d4 cut from develop"
     },
     {
       "outcome_id": "odd-lite",
@@ -31,7 +31,7 @@
         {"id": "AC8", "status": "passed", "evidence": "verify round 1 at 5fc7659"},
         {"id": "AC9", "status": "passed", "evidence": "verify round 1 at 5fc7659"}
       ],
-      "next_action": "Run the D3 pilot of layout-core (ADR 0011, phase C)"
+      "next_action": "Owner reviews the D3 pilot; confirm ADR 0011, then phase D"
     }
   ]
 }
