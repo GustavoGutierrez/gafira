@@ -39,5 +39,20 @@
   "hand_mutants": {"run": 25, "killed": 24},
   "criteria": {"total": 22, "covered": 20},
   "size": {"lines": 1123, "authored_lines": 1012, "src": 337, "tests": 656, "config": 28, "clippy_copy": 47, "notes": 55, "forecast": 420},
+  "report": "verify-report.md" },
+  {
+  "round": 3, "commit": "2377174", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 1, "suggestion": 2},
+  "findings": [
+    {"id": "W8", "severity": "WARNING", "class": "ambiguity", "follow-up": true, "ref": "FD-05(d), 02 4.17.2", "summary": "Owner decision: follow-up. 10 mm in px refused at some DPIs; source unchanged since round 2"},
+    {"id": "S2", "severity": "SUGGESTION", "follow-up": true, "ref": "design.md S19, D-38", "summary": "Owner decision: follow-up. No code holds the 5 % default"},
+    {"id": "S3", "severity": "SUGGESTION", "ref": "crates/gafira-layout/src/error.rs", "summary": "Unchanged: field doc says input, but overflow names a computation; NoArea text says margins, and safe_rect returns it too"}
+  ],
+  "closed": ["C2", "C4", "W3"],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 7, "killed": 7},
+  "criteria": {"total": 22, "covered": 22},
+  "size": {"lines": 1187, "authored_lines": 1070, "src": 337, "tests": 714, "config": 28, "clippy_copy": 47, "notes": 61, "forecast": 420},
   "report": "verify-report.md" }
 ] }

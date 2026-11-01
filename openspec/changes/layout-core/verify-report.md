@@ -2,7 +2,7 @@
 
 Change `layout-core`, delivery D3, round 1, depth V2, mode full, tier T4 (`mutation: archive`, so no `mutants` report and no mutation finding).
 
-Current state: round 2 at `769c9c0`, **FAIL** for D3. 2 CRITICAL (C2, C4, both narrowed, both still open), 2 WARNING (W3 for the owner, W8 `follow-up`), 2 SUGGESTION (S2 open, S3 new). C1, C3, W1, W2, W4, W5, W6, W7 and S1 are closed. See "Round 2 (closure)" at the end.
+Current state: round 3 at `2377174`, **PASS** for D3, D4 to D7 remaining. 0 CRITICAL, 1 WARNING (W8 `follow-up`), 2 SUGGESTION (S2 `follow-up`, S3). C2 and C4 are closed; W3 is closed by the owner. See "Round 3 (closure)" at the end.
 
 ## Round 1
 
@@ -238,7 +238,7 @@ The last row shows the size of the fix: one operation whose count of zero excess
 **C4. The ARQ-110 property still omits `node_bounds`.** class: `implementation`. Ref: `crates/gafira-layout/tests/bounds.rs`, ARQ-110, round 1 C4 third bullet.
 Round 1 said the property omits `margin_rect` and `node_bounds` and checks 8 of 12 values. `margin_rect` was added and every value is checked now, and the real sum case exists. M3a, M3b and all five M3c forms die. `node_bounds` has no property: `tests/bounds.rs` has no `proptest!` block and `crates/gafira-layout/src` has no tests. ARQ-110 asks for "toda salida numérica es finita" on finite input in the domain, and `node_bounds` is a public function of the first slice.
 
-The behaviour itself passes: my probe `node_bounds_in_domain`, 5 000 cases of up to 7 leaves, flat or nested, with rotation and skew, in debug and in release, found finite output and identical bytes on two runs. Only the implementer's test is missing. That probe is at `/tmp/claude-1000/-home-meridian-Documentos-Proyectos-Personal-gafira/3a54b45c-c902-4fc0-a117-20f3f1d7d4dd/scratchpad/d3-verify-r2/probes-src/probe_r2.rs` until the scratchpad goes.
+The behaviour itself passes: my probe `node_bounds_in_domain`, 5 000 cases of up to 7 leaves, flat or nested, with rotation and skew, in debug and in release, found finite output and identical bytes on two runs. Only the implementer's test is missing. That probe sat in the round 2 scratchpad, which is not kept.
 
 ### WARNING
 
@@ -392,5 +392,121 @@ Re-run on a clean export with the round 1 probes, debug and release: 15 in `prob
 Verdict: **FAIL**. 2 CRITICAL, 2 WARNING, 2 SUGGESTION. implementation 3, ambiguity 1, architecture 0, claim 0.
 
 This is the second consecutive FAIL of class `implementation` on D3, and round 3 is the last under the delivery rule.
+
+next: tdd-apply
+
+## Round 3 (closure)
+
+Commit verified: `2377174`, the tip of `feat/layout-core-d3`, closure round, depth V2, the last round allowed. Verdict: **PASS** for D3, with D4 to D7 remaining, as in earlier deliveries; the change itself is not done. Counts: 0 CRITICAL, 1 WARNING, 2 SUGGESTION. Per class: ambiguity 1 (WARNING, `follow-up`); implementation 0; architecture 0; claim 0. No check was blocked. `mutation: archive`, so there is no `mutants` report and no mutation finding; T4 on the crate stays due at change close. No independent-mutant budget was spent.
+
+### Findings
+
+**W8. 10 mm in px is refused at some DPIs.** class: `ambiguity`, `follow-up` by owner decision. Source unchanged since round 2, so the figures stand.
+
+**S2.** `follow-up` by owner decision: no code holds the 5 % default of D-38.
+
+**S3.** Stays a suggestion, by owner decision: the wording of `crates/gafira-layout/src/error.rs` is unchanged.
+
+### Earlier findings
+
+| ID | State | Evidence |
+|---|---|---|
+| C2 | **Closed** | See below |
+| C4 | **Closed** | See below |
+| W3 | Closed by the owner | Decision of 2026-11-01. Figures under "Size" |
+| W8 | Open, `follow-up` | Owner decision |
+| S2 | Open, `follow-up` | Owner decision |
+| S3 | Open | Suggestion |
+
+C1, C3, W1, W2, W4 to W7 and S1 were closed in round 2. No file in `crates/gafira-layout/src` changed since, so those closures hold.
+
+**C2 evidence.** Mutant M2 in the round 1 form (a static counter, the sign flips on every second zero excess, counted per excess), on a clean export:
+
+| Run | Killed by `arq_110_arq_111_finite_input_gives_finite_repeatable_output` |
+|---|---|
+| Whole `rects` test binary, 12 fresh runs | 12 of 12 |
+| Only the `arq_110_arq_111` tests, one thread, 7 fresh runs | 7 of 7 |
+
+Seed files were deleted before every run, so no failure replayed a stored seed. Round 2 measured 6 survivors in 7 runs on the same mutant. The cause is gone as the test comment says: `overflow(one_side, page)` has one overflowing side and three zero excesses, and `x - 1.0` stays distinct from `x` across the range `-1e6..1e6`, so the count is odd on every case. `node_bounds` now compares bytes in a property as well.
+
+**C4 evidence.** `tests/bounds.rs` now holds two properties.
+
+- `arq_110_arq_111_node_bounds_is_finite_and_repeatable`: flat and nested groups of up to 7 leaves, with rotation and skew in the domain, finite output, `to_bits` equal over two runs.
+- `arq_110_node_bounds_names_any_non_finite_field`: each of the six placement fields set to NaN or an infinity gives `NonFinite` naming it.
+
+Asked for one dropped finiteness field; all six were run. Each one fails `arq_110_node_bounds_names_any_non_finite_field`, 6 of 6, which agrees with the notes.
+
+Limit of this proof: no mutant was run against `arq_110_arq_111_node_bounds_is_finite_and_repeatable`, because the round allows no new one, and the notes state it cannot see a dropped input check. Its assertions were read and are real, and the behaviour was measured by the round 2 probe. T4 at close will exercise it.
+
+### Gates
+
+Run at `2377174` on a fresh clone in the scratchpad, `CARGO_INCREMENTAL=0`, own target dir. Free disk at start: 67 GB. The repo tree stayed clean.
+
+| Gate | Exit | Note |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 954 passed, 0 failed, 0 ignored; 952 in round 2 plus the 2 new properties |
+| ARQ-07, forbid unsafe, V5, V12, V13, V14 | 0 | Each extracted from `ci.yml` and run as written |
+| `cargo deny check` | 0 | advisories, bans, licenses, sources ok |
+
+Linux only; the Windows and macOS matrix jobs did not run here. Per-commit gates are V3 and did not run.
+
+### Artifact integrity (step 3c)
+
+- `f08d005` touches only `apply-progress.md`. Slice card lines 1 to 9 are byte-identical at HEAD. No `slice card amend` commit for this change.
+- Commits after the round 2 report: `0235033` touches only `crates/gafira-layout/tests/bounds.rs` and `tests/rects.rs`; `2377174` touches only `apply-progress.md`. That is the scope asked for.
+- Against `769c9c0`: no change in `crates/gafira-layout/src`, `docs`, `.github`, `.cargo`, `Cargo.toml` or `Cargo.lock`.
+- Notes: 7 lines added, 1 removed. The removed line is the wrong M2 claim, replaced by a marked correction outside the card.
+- `f2dafd1` not amended: ancestor of HEAD.
+- Deleted tracked files against `develop`: 0.
+- `*.proptest-regressions`: 0 changed against `develop`, none for this crate in the tree, tracked or ignored.
+- `.cargo/mutants.toml` unchanged, so no exclusion to review.
+- Fixed in this report: line 241 of the round 2 section held an absolute scratchpad path, against the rule on tracked files. The sentence now names no path.
+
+### Criteria
+
+Rows 1 to 10 and 13 to 22 stay covered. Changes:
+
+| # | Criterion | State | Proof |
+|---|---|---|---|
+| 11 | ARQ-110 property, no panic | covered | `arq_110_arq_111_finite_input_*`, `arq_110_arq_111_node_bounds_*`, `arq_110_node_bounds_names_*`, `arq_110_a_very_deep_chain_*` |
+| 12 | ARQ-111 | covered | `arq_110_arq_111_finite_input_*`, `arq_110_arq_111_node_bounds_*`; M1 (round 2) and M2 killed |
+
+22 of 22 covered. The product IDs of the card that are left out of D3 are unchanged: D4 to D7 cover them.
+
+### Hand mutants
+
+No new independent mutant; both forms come from earlier rounds or the notes. On a clean export with its own target dir, one at a time, each reverted, and both test binaries green before and after.
+
+| Mutant | Result |
+|---|---|
+| M2, round 1 form | Killed, 19 of 19 runs |
+| `check_placement` without `x`, `y`, `w`, `h`, `rotation_deg`, `skew`, one at a time | Killed, 6 of 6 |
+
+Total: 7 mutants, 7 killed.
+
+### Size
+
+`git diff --numstat develop HEAD`, leaving out spec and verify files:
+
+| Group | Lines |
+|---|---|
+| Source (`src/`) | 337 |
+| Tests (`tests/`) | 714 |
+| Config: crate `Cargo.toml` 17, `Cargo.lock` 9, root `Cargo.toml` 1, `ci.yml` 1 | 28 |
+| `clippy.toml` byte copy | 47 |
+| Notes (`apply-progress.md`, D3 part) | 61 |
+| Total | 1 187 |
+
+Against round 2: 64 lines more, 58 in tests and 6 in notes. Accepted by the owner: 1 123 lines plus this round. On the round 1 "authored" basis: 1 070 lines. Forecast 420: 2.55 times over on 1 070, 2.83 times on 1 187. Tests to source: 2.12 to 1.
+
+### ODD lite pilot
+
+D3 closes PASS on round 3, the last allowed, after two FAILs of class `implementation`. No planning artifact was added. T4 on `gafira-layout` is still owed at change close.
+
+### Result
+
+Verdict: **PASS** for D3, D4 to D7 remaining. 0 CRITICAL, 1 WARNING, 2 SUGGESTION. implementation 0, ambiguity 1, architecture 0, claim 0.
 
 next: tdd-apply
