@@ -161,3 +161,85 @@ Measured: round delta over `f2dafd1` in `crates/`: 4 files, 331 insertions, 103 
 - C4: `tests/bounds.rs` gains `arq_110_arq_111_node_bounds_is_finite_and_repeatable` (finite output, `to_bits` equal over two runs, flat and nested groups, rotation and skew) and `arq_110_node_bounds_names_any_non_finite_field` (any of the six placement fields set to NaN or an infinity gives `NonFinite` naming it). The first passes on existing code and cannot see an input check removed, because its inputs are in the domain; the second is the one that kills: dropping each of `x`, `y`, `w`, `h`, `rotation_deg`, `skew` from `check_placement` fails it, 6 of 6 (reverted).
 - Passed on existing code, no RED possible; proof is the mutants above. Mutants reverted, not committed; no `*.proptest-regressions` left.
 - S3 left as is (not a one-word comment change).
+
+## D4: guides and grid (`feat/layout-core-d4`)
+
+Status: done after round 3 (the open question below was answered in round 2). Files: `crates/gafira-layout/src/{guides,grid,lib,rects}.rs`, `tests/{guides_position,guides_generate,grid}.rs`.
+
+API (the spec names only `generate(spec, page)`): `place_guide(axis, written, ruler, dpi) -> (Guide, Length)`; `GuideSpec { columns, rows, gap, margin }` and `generate(&spec, page: Rect, dpi) -> Vec<Guide>` (px, vertical first); `grid_lines(&GridSettings, view: Rect /* page px */, zoom /* ratio, 0.05 to 32 */, dpi) -> GridLines { vertical, horizontal }` of `GridLine { position, major }`. `rects::convert` is now `pub(crate)`. Errors: `columns` / `rows` for `c < 1`, `gap`, `margin`, `step`, `subdivisions`, `zoom`, `dpi` out of range; `NonFinite` names `position`, `gap`, `margin`, `dpi`, `page`, `view`, `zoom`, `step`.
+
+RED (stub that compiles; each failed on an assertion unless noted)
+- FD-03(a) `fd_03_a_position_is_stored_unrounded_and_shown_within_a_hundredth`, `fd_03_a_typed_value_survives_the_extreme_dpis` (stub `Err(NoArea)`, failed at the `unwrap`). FD-03(d) `fd_03_d_non_finite_position_or_dpi_is_rejected_by_field`: `left Err(NoArea)`, `right Err(NonFinite{position})`; overflow case likewise.
+- FD-04(a) `fd_04_a_twelve_columns_in_1080`: `left 0, right 24`; (d) `fd_04_d_column_width_boundary_is_one_px_inclusive`: `left [], right [0,1,9,10]`; (e) `fd_04_e_three_by_three_in_1080`: `left 0, right 12`; (f) `fd_04_f_zero_gap_...`, `fd_04_f_negative_gap_or_margin_...`: `Ok([])` vs `Err(OutOfRange gap)`; `fd_04_zero_divisions_...`, `fd_04_columns_use_the_width_and_rows_the_height`, `fd_04_gap_and_margin_follow_the_dpi_input`, property `fd_04_every_axis_has_2n_ordered_mirrored_guides`, `arq_110_every_float_input_is_checked_even_when_unused`, `arq_111_generating_twice_...`: all `Ok([])` against expected guides or errors. `arq_110_finite_input_gives_finite_output` passed vacuously at the stub.
+- FD-07 (a) `fd_07_a_lines_fall_on_multiples_of_the_converted_step`: `left 0, right 2545`; (d) `fd_07_d_ten_px_step_with_five_subdivisions`: `left [], right [0,40,...,200]`; (e) `fd_07_e_ranges_...`: `Ok` vs `Err(OutOfRange step)`; fallback, 6 px / 25 % table, off-page view, ARQ-110, ARQ-111, small-step test: empty lines. `fd_07_c_at_most_2000_lines_...` passed vacuously at the stub (empty output); it is proved by the mutants and by `fd_07_c_a_small_step_at_a_high_zoom_stays_under_the_limit` (641 + 361 lines in the densest case).
+
+Hand mutants (applied, tests failed, reverted, not committed)
+- Guides: (1) `i * (cell + gap)` to `i * cell`, `(i - 1) * gap` to `i * gap` -> `fd_04_a_twelve_columns_in_1080`, `fd_04_e_...`; (2) margin guide dropped at margin 0 -> `fd_04_columns_use_the_width_and_rows_the_height`, `fd_04_a_...`; (3) dedup removed -> `fd_04_f_zero_gap_emits_each_position_once_per_axis`; dedup across axes (seen-set over both) -> `fd_04_e_three_by_three_in_1080`; (4) horizontal first -> `fd_04_f_zero_gap_...`; sort removed or reversed -> `fd_04_a_...`; (5) `c >= 1` to `c > 1` -> `fd_04_d_column_width_boundary_is_one_px_inclusive`; (6) columns use the height -> `fd_04_columns_use_the_width_and_rows_the_height`; (7) rounding to 0.01 -> `fd_04_a_...`, property; (8) `n = 0` emits -> `fd_04_a_...`, `fd_04_f_negative_...`; (14) `dpi` check dropped -> `arq_110_every_float_input_is_checked_even_when_unused`.
+- Grid: (9) 25 % `>=` to `>` -> `fd_07_minor_grid_needs_25_percent_zoom_and_6_px_spacing`; (10) minor `>=` to `>` same test, and the doubling `<` to `<=` (survived once, killed by the added `px(3.0)` case: 3 px doubles to exactly 6); (11) fallback by `+= 1` instead of doubling -> `fd_07_fallback_is_the_smallest_power_of_two_multiple`; (12) minor shown without the 6 px check -> `fd_07_d_...`; (13) zoom, step and subdivision ends made exclusive, each side -> `fd_07_e_ranges_include_both_ends_and_reject_just_outside`; (14) finiteness drops for `zoom`, `step`, `dpi`, `view` -> `arq_110_every_float_input_is_checked`; major flag inverted, minor flag ignored, y range used for x -> `fd_07_d_...`, `arq_111_...`.
+- Equivalent (no test can tell, noted rather than killed; the `ceil`/`floor` swap and the raw `finite(gap)` / `finite(margin)` checks were claimed here and are NOT equivalent, see round 3): `(count - 1) * gap` finite check (the next check on `cell` fails identically); `major < 6` to `<= 6` (the fallback with multiple 1 gives the same lines); fallback multiple starting at 2 (the major level never fits at 1); (15) accumulating positions by repeated addition (drift below 1e-9 px over the lines of a screen; the tolerance is 0.01 px).
+
+Deviations / findings
+- FD-03(a): `Length::convert` has no limit that bites in 1 to 10 000 DPI; it returns `NonFiniteResult` only on overflow, and `place_guide` maps that to `NonFinite { position }`.
+- OPEN QUESTION (ARQ-110, spec silent): the number of guides or lines is not bounded for inputs outside the stated domain. `generate` with a very large page side and a large `columns` (a `u32`) allocates up to 2n guides; `grid_lines` over a view far larger than 3840 x 2160 screen px loops over every line. FD-07(c) bounds the count only for a viewport up to 3840 x 2160. No limit was invented. Question for the owner: should `generate` and `grid_lines` return `Err(OutOfRange)` above a stated maximum (for example the page side maximum 16 384 px for `generate`, a view of 3840 x 2160 screen px for `grid_lines`), or is the caller trusted? Every `Vec` is built before return, so no partial result exists either way.
+- Size: `git diff --shortstat develop -- crates` gives 879 insertions: about 190 source lines and 690 test lines. Over the ~700 ceiling in total; the source part is under the 340 forecast.
+- `.github/workflows/ci.yml` and the V5 row need no change.
+
+Gates: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` pass on each commit.
+
+## D4 round 2: bounded guide and grid output (rows "Lado de página de `generate`" and "Vista de `grid_lines`")
+
+Commits: `generate` page side limit (`src/guides.rs`, `tests/guides_generate.rs`); `grid_lines` view limit (`src/grid.rs`, `tests/grid.rs`). The earlier open question is answered by these rows.
+
+RED (before the code change, assertion failures)
+- Page side: `fd_04_page_side_limit_is_inclusive_and_checked_per_side` (`left Ok([.. 16384.01 ..])`, `right Err(OutOfRange page)`); `fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width` (`left Err(OutOfRange columns)`, `right Err(OutOfRange page)`). The property `fd_04_every_ok_has_at_most_32768_guides_per_axis` passed on the old code (c >= 1 px already implies n <= side); no mutant that drops the side check is killed by it alone, the example tests carry the proof.
+- View: `fd_07_view_screen_size_is_limited_per_axis_with_exact_comparison` (`Ok` where `Err(OutOfRange view)` was expected); `fd_07_view_is_checked_after_non_finite_and_the_zoom_range` already passed in its zoom and NaN parts and failed only on the overflow-product case once the check existed (mutant below), so its order proof is the mutants.
+
+Existing tests adjusted (views or pages above the new limits): `guides_generate.rs` gap-overflow case uses `page(1000.0, 1.0)`; `grid.rs` `screen()` now trims the far edge so `width * zoom <= 3840` holds exactly, `fd_07_a` caps `hi` at `3800 / zoom`, `fd_07_e` uses a 50 x 50 view (100 x 100 at zoom 32 is 3200 px high).
+
+Hand mutants (applied, failed, reverted, not committed)
+- `>=` on the side: `fd_04_page_side_limit_is_inclusive_...`, `..._after_non_finite_and_before_...`. Skipped when n = 0: `fd_04_page_side_limit_is_inclusive_...`. Only width / only height: same test. Check after the column-width rule: `fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width`.
+- View `>=` on both axes, on width only, on height only: `fd_07_view_screen_size_is_limited_per_axis_with_exact_comparison`, `fd_07_c_*`. Ignores zoom: same test and `fd_07_c_at_most_2000_...`. Width and height swapped, either accepted (`&&`), only width, only height: `fd_07_view_screen_size_is_limited_per_axis_...`. Check before the zoom range: `fd_07_view_is_checked_after_non_finite_and_the_zoom_range`, `arq_110_every_float_input_is_checked`. Product overflow reported as the range rule: `fd_07_view_is_checked_after_non_finite_and_the_zoom_range`.
+- No `*.proptest-regressions` kept in the layout crate.
+
+## D4 round 3: verify round 1 fixes (C1, C2, C3, W1 to W4)
+
+Commits: `bde75e9` (public `grid` and `guides` modules), `b46d0b8` (grid), `ab93c04` (generate). Gates pass on each: fmt, clippy, workspace tests.
+
+RED (assertion failures before the code change)
+- C1 `fd_07_a_every_line_between_two_edge_lines_is_kept` (exact integer oracle, no `prop_assume!`): `left 0, right 1` lines; `fd_07_a_mm_steps_keep_a_line_on_either_view_edge`: `left 13, right 14` (1 mm at 150 dpi, k = 13).
+- Epsilon and W3 `fd_07_view_screen_size_is_limited_per_axis_with_a_tolerance_of_a_millionth` (3840.0000009 gave `Err(view)`); `fd_07_c_at_most_2000_...` fails on the plain `x + 3840 / zoom` view (`screen()` has no `next_down` trim now, corners to 16 384).
+- W1 `fd_07_dpi_is_checked_after_non_finite_and_before_every_range_rule`: `left Err(zoom), right Err(dpi)`; `fd_04_dpi_is_checked_after_non_finite_and_before_the_other_range_rules`: `left Err(dpi), right Err(NonFinite gap)`.
+- W4 modules: the tests import `gafira_layout::{grid, guides}`; RED was the compile error E0603 (private module), the only form a visibility fix can take.
+- No RED possible, the code was right (proof is the mutants below): C2 values beside the limits, C3 `fd_03_guides_are_measured_from_the_top_left_corner_of_the_page`, W2 `fd_07_c_the_densest_cases_stay_under_the_limit`, W4 `fd_07_lines_at_negative_positions_are_major_...`.
+
+Hand mutants (applied, failed, reverted, not committed)
+- V1 `cell < 1 - 1e-9` -> `fd_04_d_column_width_boundary_is_one_px_inclusive`. V2 dedup within 1e-6 -> `fd_04_f_zero_gap_emits_each_position_once_per_axis`. V3 positions offset by the page corner, columns and rows each -> `fd_03_guides_are_measured_from_the_top_left_corner_of_the_page`. V5 page side `+ 1e-6`, width and height each -> `fd_04_page_side_limit_is_inclusive_and_checked_per_side`.
+- V4 view epsilon 1e-7, 1e-5, 0, on one axis only (each) and `>=` at the limit (each axis) -> `fd_07_view_screen_size_is_limited_per_axis_with_a_tolerance_of_a_millionth` (epsilon 0 and one axis also `fd_07_c_at_most_2000_...`).
+- V11 `ceil`/`floor` swapped (the original code, first and last bound each) -> `fd_07_a_every_line_between_two_edge_lines_is_kept`, `fd_07_a_mm_steps_keep_a_line_on_either_view_edge`. V9 no major flag on negative `k` -> `fd_07_lines_at_negative_positions_are_major_...`, `fd_07_a_every_line_...`.
+- V6 minor without the 6 px check -> `fd_07_c_the_densest_cases_stay_under_the_limit` (1, 10 subdivisions, zoom 32: 121 lines, not more) and 3 more. V7 fallback removed -> `fd_07_c_the_densest_cases_...` (step 1 at zoom 0.05) and 5 more. Both now die from the direct test, not from chance.
+- dpi check removed or after the zoom check in `grid_lines` -> `fd_07_dpi_is_checked_after_...`. Raw `finite(gap)` / `finite(margin)` removed in `generate` -> `fd_04_dpi_is_checked_after_...`.
+- Inclusive filter made exclusive at either view edge -> 7 grid tests.
+
+Changes by item
+- C1: first and last `k` widened by one line, the `contains` filter decides. W3: epsilon `1e-6` px on each axis of the view limit; docs say so; `screen()` has no trim; the `3800 / zoom` cap went with `fd_07_a`, now an exact integer property. W1: dpi first in `grid_lines` after the non-finite checks; non-finite `gap` and `margin` before `convert` in `generate`. W4: `pub mod grid`, `pub mod guides`; root re-exports kept. S1: the 641 x 361 case uses step 6, 1 subdivision, and zoom 33 uses 1000 x 1000; S3: this section and the status line.
+- W5: removed `fd_03_a_typed_value_survives_the_extreme_dpis` (the property covers it) and the zoom and view NaN cases of the order test (`arq_110_every_float_input_is_checked` has them).
+- Not done: S2 (V10 is unreachable, no spec rule); W2 property for the `2^k` fallback stays as is.
+
+- Size: round 3 adds 235 insertions and 84 deletions in `crates` (src 25 inserted, tests 210). Against `develop` the branch was 1 235 insertions in `crates` plus notes (the earlier 1 370 also counted 135 lines of verify artifacts); well over the ~700 ceiling, as already flagged in W5.
+
+## D4 fix round 2: verify round 2 (C4, W6, S4)
+
+Commits: `9ab2e9f` (majors), `8c261f3` (W6 tests), one follow-up clippy fix (see deviations), then these notes. Final tree passes fmt, clippy, workspace tests.
+
+RED
+- C4 `fd_07_a_major_line_on_a_view_edge_is_kept_for_a_non_integer_step_with_subdivisions`: `left 33, right 34`. `fd_07_a_majors_sit_exactly_on_multiples_of_the_step` (oracle: `m * n + 1` lines, major at `i % n == 0` equal to `(i / n) as f64 * step`, minor within 1e-9 of `i * step / n`): `left 20.499999999999996, right 20.5`.
+- W6: no RED, the code was right (`fd_03_d_non_finite_position_is_reported_at_dpi_zero`, `arq_110_a_nan_margin_is_non_finite_at_dpi_zero`).
+
+Fix: a major line is `(k / every) as f64 * unit`; minor lines stay `k * unit / div`. The fallback (every 1) is the same value as before.
+
+Hand mutants (applied, failed, reverted, not committed)
+- Majors as `k * unit / div` -> the two C4 tests. Major test `k % every == 1` -> 8 grid tests, among them both C4 tests. Duplicate emission at a major position -> 13 grid tests, among them both C4 tests.
+
+Deviations
+- The second commit passed my gate script although clippy failed on `grid.rs` (`manual_is_multiple_of`), and it also committed `grid.proptest-regressions` made by the RED run. No amend, so a third commit fixes both; the first two commits do not pass clippy alone.
+- S4: corrected above (src 25, tests 210).

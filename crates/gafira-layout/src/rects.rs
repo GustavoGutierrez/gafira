@@ -9,7 +9,12 @@ use crate::error::{check_rect, finite};
 /// Largest bleed, in millimetres (FD-05).
 const MAX_BLEED_MM: f64 = 10.0;
 
-fn convert(field: &'static str, len: Length, to: Unit, dpi: f64) -> Result<f64, LayoutError> {
+pub(crate) fn convert(
+    field: &'static str,
+    len: Length,
+    to: Unit,
+    dpi: f64,
+) -> Result<f64, LayoutError> {
     len.convert(to, dpi)
         .map(Length::value)
         .map_err(|e| match e {

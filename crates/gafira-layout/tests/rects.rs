@@ -425,3 +425,13 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn arq_110_a_nan_margin_is_non_finite_at_dpi_zero() {
+    assert_eq!(
+        margin_rect(square(100.0), &margins(f64::NAN, 0.0, 0.0, 0.0), 0.0),
+        Err(LayoutError::NonFinite {
+            field: "margins.top"
+        })
+    );
+}
