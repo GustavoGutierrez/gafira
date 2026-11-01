@@ -20,24 +20,37 @@ fn ac6_quantize_rounds_to_nearest() {
     // Every byte value maps back to itself, so a scale other than 255 shows.
     let all: Vec<u8> = (0..=255).collect();
     let floats: Vec<f32> = all.iter().map(|&b| f32::from(b) / 255.0).collect();
-    assert_eq!(quantize(&floats), all);
+    assert_eq!(quantize(&floats).unwrap(), all);
     // c = 0.5/255 + epsilon rounds up; just below it rounds down.
     assert_eq!(
-        quantize(&[0.0, 1.0, 0.5, 1.0 / 255.0]),
+        quantize(&[0.0, 1.0, 0.5, 1.0 / 255.0]).unwrap(),
         vec![0, 255, 128, 1]
     );
     assert_eq!(
-        quantize(&[0.51 / 255.0, 0.49 / 255.0, 1.51 / 255.0, 254.6 / 255.0]),
+        quantize(&[0.51 / 255.0, 0.49 / 255.0, 1.51 / 255.0, 254.6 / 255.0]).unwrap(),
         vec![1, 0, 2, 255]
     );
 }
 
 #[test]
-fn ac6_quantize_bounds_to_zero_one() {
-    assert_eq!(
-        quantize(&[-1.0, -0.001, 1.001, 2.0, f32::INFINITY, f32::NEG_INFINITY]),
-        vec![0, 0, 255, 255, 255, 0]
-    );
+fn ac6_finite_values_outside_zero_one_saturate() {
+    let out = quantize(&[-1.0, -0.001, 1.001, 2.0, f32::MAX, f32::MIN]).unwrap();
+    assert_eq!(out, vec![0, 0, 255, 255, 255, 0]);
+}
+
+#[test]
+fn ac6_non_finite_input_is_an_error_never_a_pixel() {
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(
+            matches!(quantize(&[0.5, bad, 0.5]), Err(GoldenError::NonFinite)),
+            "{bad}"
+        );
+        assert!(
+            matches!(quantize(&[bad]), Err(GoldenError::NonFinite)),
+            "{bad}"
+        );
+    }
+    assert_eq!(quantize(&[]).unwrap(), Vec::<u8>::new());
 }
 
 fn has_component(p: &Path, parts: [&str; 2]) -> bool {

@@ -36,6 +36,8 @@ pub enum GoldenError {
     BadLength,
     /// A side is zero or above [`MAX_SIDE`].
     BadSize { width: u32, height: u32 },
+    /// An `f32` channel is NaN or infinite.
+    NonFinite,
     /// A candidate name is not one non-empty component of `[a-z0-9_-]`.
     BadName,
     /// A candidate directory is, or resolves into, a `tests/golden` folder.
@@ -51,6 +53,7 @@ impl fmt::Display for GoldenError {
             Self::BadSize { width, height } => {
                 write!(f, "golden size {width}x{height} is outside 1..={MAX_SIDE}")
             }
+            Self::NonFinite => write!(f, "non-finite f32 channel"),
             Self::BadName => write!(
                 f,
                 "candidate name must be one non-empty component of [a-z0-9_-]"
@@ -232,9 +235,15 @@ pub fn compare(mode: Mode, expected: &Image, actual: &Image) -> Result<(), Misma
 }
 
 /// Quantizes `f32` channels to bytes with `round(c * 255)` on `[0, 1]`.
-pub fn quantize(values: &[f32]) -> Vec<u8> {
-    // The saturating `as u8` bounds to [0, 1] (0..=255) and maps NaN to 0.
-    values.iter().map(|c| (c * 255.0).round() as u8).collect()
+///
+/// Finite values outside `[0, 1]` saturate; NaN and infinities are an error,
+/// never a pixel.
+pub fn quantize(values: &[f32]) -> Result<Vec<u8>, GoldenError> {
+    if values.iter().any(|c| !c.is_finite()) {
+        return Err(GoldenError::NonFinite);
+    }
+    // The saturating `as u8` bounds to [0, 1] (0..=255).
+    Ok(values.iter().map(|c| (c * 255.0).round() as u8).collect())
 }
 
 /// Why a golden check failed.
