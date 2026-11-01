@@ -31,7 +31,7 @@ Desde 2026-10-29 los documentos se ejecutan por la vía rápida (ADR 0002): sin 
 
 ## Pending follow-ups
 
-Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 recorded 2026-11-01 at the archive of `layout-core`. Open items that belong to no active change. Remove an item when done.
+Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 recorded 2026-11-01 at the archive of `layout-core`; items 35-37 recorded 2026-11-01 at the archive of `agent-sync`. Open items that belong to no active change. Remove an item when done.
 
 1. **Flaky test** `crates/gafira-testkit/tests/harness.rs::each_broken_law_is_named_with_a_counterexample`. Why: it fails about half the runs with `PROPTEST_CASES=1` (passes unset); accepted as out of scope in the archived change `testkit-oracle` (decision C6). Start: a small test-only change (for example make the broken-law case deterministic or pin its seed/case count), then run it repeatedly with `PROPTEST_CASES=1`.
 2. **Re-enable CI.** Why: workflow `CI` was disabled manually because jobs failed to start (billing). Start: `gh workflow enable 395407504`, then observe the first runs. Unobserved since D5 (owner accepted the risk, decision W2=B): the Windows and macOS matrix and the trybuild `.stderr` fixtures (ARQ-30, R3). Fix whatever fails.
@@ -70,6 +70,9 @@ Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 record
 32. **T1 de `design.md`: revisar ADR 0009 frente al diseño de vídeo.** Why: los hijos de grupo están en espacio de página (ADR 0009) y el diseño de vídeo de keyframes de grupo puede exigir cambiarlo. Start: antes del primer build que guarde, o al planear `gafira-format` o el primer change de vídeo, lo que antes llegue; un cambio posterior exige migración. Responsable: coordinador.
 33. **T2 de `design.md`: cerrar el esquema 1.** Why: desde el primer build que escriba `.gafira` y llegue a un usuario, cada campo nuevo de datos de usuario sube el esquema (ADR 0006, regla 2). Start: cerrarlo en la tarea de cierre del change de `gafira-format`.
 34. **`.pi/agents/verify.md` en `chore/pi-agent-sync` sin la regla de mutantes colgados.** Why: esa copia no tiene la regla de ADR 0004 que sí tiene `.agents/agents/verify.md`. Tooling. Start: resincronizar `.pi/agents/verify.md` con `.agents/agents/verify.md` en `chore/pi-agent-sync`.
+35. **W1 de `agent-sync`: tamaño combinado de la entrega.** Why: sus dos unidades de trabajo están por debajo de unas 700 líneas, pero el diff neto combinado es de 767 líneas (`openspec/changes/archive/2026-11-01-agent-sync/verify-report.md`, W1; `AGENTS.md`, tamaño de entrega). Start: ya integrado en `develop` (82d5187), no bloquea; en el próximo cambio de tamaño parecido, el coordinador evalúa la frontera de entregas antes de integrar.
+36. **W2 de `agent-sync`: asunto del commit de enmienda del Light spec.** Why: el commit `69a82aa` usa `docs(agent-sync): specify project-local model selection` y no el asunto prescrito `docs(agent-sync): light spec amend` (`.agents/agents/coordinator.md`, línea 101). Start: no reescribir historia; alinear la regla de `coordinator.md` con el asunto que se usa, o fijarlo en la próxima enmienda (relacionado con el item 10).
+37. **Adaptadores de OpenCode sin comprobación en CI.** Why: los adaptadores de OpenCode se generan desde `.agents/agents/`; hay que regenerarlos con `python3 tools/sync_agents.py` cada vez que cambie `.agents/agents/`, y hoy nada lo exige en CI. Start: añadir `python3 tools/sync_agents.py --check` a CI al reactivarla (item 2); hasta entonces, quien cambie `.agents/agents/` regenera los adaptadores en el mismo commit.
 
 ## Promover un documento del backlog
 
