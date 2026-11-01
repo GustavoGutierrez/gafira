@@ -1,6 +1,7 @@
 //! FD-04 (a, d, e, f), ARQ-110, ARQ-111 for the guide generator.
 
-use gafira_layout::{GuideAxis, GuideSpec, LayoutError, Length, Rect, Unit, generate};
+use gafira_layout::guides::generate;
+use gafira_layout::{GuideAxis, GuideSpec, LayoutError, Length, Rect, Unit};
 use proptest::prelude::*;
 
 const BAD: [f64; 3] = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
@@ -76,6 +77,8 @@ fn fd_04_f_zero_gap_emits_each_position_once_per_axis() {
     let g = run(&spec(3, 0, 0.0, 0.0), 900.0, 900.0);
     assert_eq!(on(GuideAxis::Vertical, &g), [0.0, 300.0, 600.0, 900.0]);
     assert_eq!(g.len(), 4);
+    // equal means the same f64: two guides 1e-7 px apart stay two guides
+    assert_eq!(run(&spec(2, 0, 1e-7, 0.0), 100.0, 100.0).len(), 4);
     // the same positions on the other axis are not merged with these
     let both = run(&spec(3, 3, 0.0, 0.0), 900.0, 900.0);
     assert_eq!(both.len(), 8);
@@ -98,6 +101,17 @@ fn fd_04_d_column_width_boundary_is_one_px_inclusive() {
         Err(LayoutError::OutOfRange { field: "rows" })
     );
     assert!(short(99.0, 10.0, 0, 2).is_ok());
+    // the value right below 1 px is an error, 1 px itself is not
+    let one = |w: f64| generate(&spec(1, 0, 0.0, 0.0), page(w, 1.0), 96.0);
+    assert_eq!(
+        one(1.0f64.next_down()),
+        Err(LayoutError::OutOfRange { field: "columns" })
+    );
+    assert!(one(1.0).is_ok());
+    assert_eq!(
+        short(10.0f64.next_down(), 99.0, 2, 0),
+        Err(LayoutError::OutOfRange { field: "columns" })
+    );
     // a margin that eats the whole side is the same error, not a silent empty result
     assert_eq!(
         generate(&spec(1, 0, 0.0, 50.0), page(100.0, 100.0), 96.0),
@@ -123,6 +137,17 @@ fn fd_04_columns_use_the_width_and_rows_the_height() {
 }
 
 #[test]
+fn fd_03_guides_are_measured_from_the_top_left_corner_of_the_page() {
+    // the same 1080 x 1080 page at the origin and away from it: same positions
+    let s = spec(3, 3, 24.0, 24.0);
+    let origin = generate(&s, page(1080.0, 1080.0), 96.0).unwrap();
+    for corner in [(500.0, -300.0), (-2000.0, 4000.0), (0.0, 7.0)] {
+        let p = Rect::new(corner.0, corner.1, corner.0 + 1080.0, corner.1 + 1080.0);
+        assert_eq!(generate(&s, p, 96.0).unwrap(), origin);
+    }
+}
+
+#[test]
 fn fd_04_gap_and_margin_follow_the_dpi_input() {
     let s = GuideSpec {
         columns: 1,
@@ -140,6 +165,17 @@ fn fd_04_gap_and_margin_follow_the_dpi_input() {
     };
     let g = generate(&mm, page(1000.0, 1000.0), 96.0).unwrap();
     assert!((on(GuideAxis::Vertical, &g)[0] - 96.0).abs() <= 1e-9);
+    // positions are px whatever the unit of gap and margin: 2 columns, 1 in each, 960 px at 96 dpi
+    let inch = Length::new(1.0, Unit::In);
+    let two = GuideSpec {
+        columns: 2,
+        gap: inch,
+        margin: inch,
+        ..s
+    };
+    let g = generate(&two, page(960.0, 960.0), 96.0).unwrap();
+    assert_eq!(on(GuideAxis::Vertical, &g), [96.0, 432.0, 528.0, 864.0]);
+    assert!(g.iter().all(|g| g.position.unit() == Unit::Px));
 }
 
 #[test]
@@ -288,8 +324,14 @@ fn fd_04_page_side_limit_is_inclusive_and_checked_per_side() {
     assert_eq!(on(GuideAxis::Vertical, &g).len(), 16_385);
     assert!(gen_(&spec(0, 1, 0.0, 0.0), 1.0, MAX_SIDE).is_ok());
     // just above, on each side alone, also when that axis has n = 0
-    assert_eq!(gen_(&spec(1, 0, 0.0, 0.0), 16_384.01, 1.0), out("page"));
-    assert_eq!(gen_(&spec(1, 0, 0.0, 0.0), 1.0, 16_385.0), out("page"));
+    assert_eq!(
+        gen_(&spec(1, 0, 0.0, 0.0), MAX_SIDE.next_up(), 1.0),
+        out("page")
+    );
+    assert_eq!(
+        gen_(&spec(1, 0, 0.0, 0.0), 1.0, MAX_SIDE.next_up()),
+        out("page")
+    );
     assert_eq!(gen_(&spec(0, 1, 0.0, 0.0), 16_385.0, 1.0), out("page"));
     assert_eq!(gen_(&spec(0, 0, 0.0, 0.0), 16_385.0, 1.0), out("page"));
     assert_eq!(gen_(&spec(0, 0, 0.0, 0.0), 1.0, 16_385.0), out("page"));
@@ -327,6 +369,24 @@ fn fd_04_page_side_is_checked_after_non_finite_and_before_the_column_width() {
         generate(&spec(1, 1, 0.0, 0.0), page(f64::NAN, 20_000.0), 96.0),
         Err(LayoutError::NonFinite { field: "page" })
     );
+}
+
+#[test]
+fn fd_04_dpi_is_checked_after_non_finite_and_before_the_other_range_rules() {
+    let dpi = Err(LayoutError::OutOfRange { field: "dpi" });
+    let p = page(1080.0, 1080.0);
+    for d in [0.0, -96.0] {
+        assert_eq!(generate(&spec(0, 0, 0.0, 0.0), p, d), dpi);
+        assert_eq!(generate(&spec(1, 1, -1.0, 0.0), p, d), dpi);
+        assert_eq!(generate(&spec(1, 1, 0.0, -1.0), p, d), dpi);
+        assert_eq!(generate(&spec(1, 1, 0.0, 0.0), page(16_385.0, 1.0), d), dpi);
+    }
+    for (gap, margin, field) in [(f64::NAN, 0.0, "gap"), (0.0, f64::NAN, "margin")] {
+        assert_eq!(
+            generate(&spec(1, 1, gap, margin), p, 0.0),
+            Err(LayoutError::NonFinite { field })
+        );
+    }
 }
 
 proptest! {

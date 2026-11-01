@@ -88,13 +88,16 @@ fn axis_positions(
 /// Both page sides must be at most `PageSize::MAX_PX` (16 384 px), which keeps
 /// each axis to at most 32 768 guides.
 ///
+/// Positions are in px, whatever the unit of `gap` and `margin`.
+///
 /// `gap` and `margin` must be finite and `>= 0`; both, `dpi` and the page are
 /// checked even when no axis uses them. Page margins are not read. Any error
 /// returns no guides.
 pub fn generate(spec: &GuideSpec, page: Rect, dpi: f64) -> Result<Vec<Guide>, LayoutError> {
     check_rect("page", page)?;
     finite("dpi", dpi)?;
-    // `convert` rejects a non-finite gap or margin, naming the field.
+    finite("gap", spec.gap.value())?;
+    finite("margin", spec.margin.value())?;
     let gap = convert("gap", spec.gap, Unit::Px, dpi)?;
     let margin = convert("margin", spec.margin, Unit::Px, dpi)?;
     if gap < 0.0 {

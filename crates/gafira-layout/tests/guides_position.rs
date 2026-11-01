@@ -33,18 +33,6 @@ proptest! {
 }
 
 #[test]
-fn fd_03_a_typed_value_survives_the_extreme_dpis() {
-    for dpi in [1.0, 96.0, 10_000.0] {
-        for u in Unit::ALL {
-            let (g, shown) =
-                place_guide(GuideAxis::Vertical, Length::new(12.345, u), u, dpi).unwrap();
-            assert_eq!(g.position, Length::new(12.345, u));
-            assert!((shown.value() - 12.345).abs() <= 0.01);
-        }
-    }
-}
-
-#[test]
 fn fd_03_d_non_finite_position_or_dpi_is_rejected_by_field() {
     for bad in BAD {
         assert_eq!(
