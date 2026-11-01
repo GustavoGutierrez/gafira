@@ -36,6 +36,9 @@ const MINOR_MIN_ZOOM: f64 = 0.25;
 /// A level closer than this on screen, in px, is not shown.
 const MIN_SPACING_PX: f64 = 6.0;
 
+/// Largest view on screen, in px (width, height): the FD-07 (c) domain.
+const MAX_VIEW_PX: (f64, f64) = (3840.0, 2160.0);
+
 /// The lines `k * unit / div` inside `lo..=hi`; every `every`-th is major.
 fn axis_lines(
     field: &'static str,
@@ -70,6 +73,9 @@ fn axis_lines(
 /// fit either, the lines are the smallest `step * 2^k` with a spacing of at
 /// least 6 px, all major.
 ///
+/// `view` may be at most 3840 x 2160 px on screen (`width * zoom`, `height * zoom`),
+/// compared exactly per axis.
+///
 /// `grid.step` must lie in 1 to 500 in its own unit and `grid.subdivisions` in
 /// 1 to 10; `visible`, `style` and `snap` are not read. Any error returns no lines.
 pub fn grid_lines(
@@ -84,6 +90,12 @@ pub fn grid_lines(
     finite("step", grid.step.value())?;
     if !ZOOM_RANGE.contains(&zoom) {
         return Err(LayoutError::OutOfRange { field: "zoom" });
+    }
+    // Screen size per axis, exact: the FD-07 (c) domain. A product that overflows is non-finite.
+    let on_screen_w = finite("view", view.width() * zoom)?;
+    let on_screen_h = finite("view", view.height() * zoom)?;
+    if on_screen_w > MAX_VIEW_PX.0 || on_screen_h > MAX_VIEW_PX.1 {
+        return Err(LayoutError::OutOfRange { field: "view" });
     }
     if !STEP_RANGE.contains(&grid.step.value()) {
         return Err(LayoutError::OutOfRange { field: "step" });

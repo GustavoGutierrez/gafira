@@ -39,7 +39,14 @@ fn near(a: f64, b: f64) -> bool {
 
 /// The view that a 3840 x 2160 screen shows at `zoom`, from `(x, y)`.
 fn screen(x: f64, y: f64, zoom: f64) -> Rect {
-    view(x, y, x + 3840.0 / zoom, y + 2160.0 / zoom)
+    let fit = |from: f64, size: f64| {
+        let mut to = from + size / zoom;
+        while (to - from) * zoom > size {
+            to = to.next_down();
+        }
+        to
+    };
+    view(x, y, fit(x, 3840.0), fit(y, 2160.0))
 }
 
 #[test]
@@ -105,6 +112,7 @@ proptest! {
         step in 1.0..=500.0f64, unit in prop::sample::select(Unit::ALL.to_vec()),
         dpi in 1.0..=10_000.0f64, zoom in 0.05..=32.0f64, hi in 100.0..3000.0f64,
     ) {
+        let hi = hi.min(3800.0 / zoom);
         let g = grid(step, unit, 1);
         let step_px = g.step.to_px(dpi).unwrap();
         prop_assume!(step_px * zoom >= 6.0 && (hi / step_px).fract() > 1e-6 && hi / step_px < 1e5);
@@ -163,7 +171,7 @@ fn fd_07_c_a_small_step_at_a_high_zoom_stays_under_the_limit() {
 
 #[test]
 fn fd_07_e_ranges_include_both_ends_and_reject_just_outside() {
-    let v = view(0.0, 0.0, 100.0, 100.0);
+    let v = view(0.0, 0.0, 50.0, 50.0);
     let run = |g: &GridSettings, zoom: f64| grid_lines(g, v, zoom, 96.0);
     let out = |field| Err(LayoutError::OutOfRange { field });
     for ok in [1.0, 500.0] {
@@ -237,4 +245,43 @@ fn arq_111_the_same_input_gives_the_same_bytes_with_axes_that_differ() {
     assert_ne!(a.vertical.len(), a.horizontal.len());
     assert!(a.vertical[0].position < 0.0 && a.horizontal[0].position > 0.0);
     assert!(a.vertical.windows(2).all(|p| p[0].position < p[1].position));
+}
+
+#[test]
+fn fd_07_view_screen_size_is_limited_per_axis_with_exact_comparison() {
+    let out = |field| Err(LayoutError::OutOfRange { field });
+    let run =
+        |w: f64, h: f64, zoom: f64| grid_lines(&px(12.0, 2), view(0.0, 0.0, w, h), zoom, 96.0);
+    // the limit itself is valid, at zoom 1 and scaled by the zoom
+    assert!(run(3840.0, 2160.0, 1.0).is_ok());
+    assert!(run(1920.0, 1080.0, 2.0).is_ok());
+    assert!(run(7680.0, 4320.0, 0.5).is_ok());
+    // just above on one axis, no tolerance; width and height are not swapped
+    assert_eq!(run(1920.01, 1080.0, 2.0), out("view"));
+    assert_eq!(run(1920.0, 1080.01, 2.0), out("view"));
+    assert_eq!(run(2160.0, 3840.0, 1.0), out("view"));
+    assert_eq!(run(3840.01, 100.0, 1.0), out("view"));
+    assert_eq!(run(100.0, 2160.01, 1.0), out("view"));
+}
+
+#[test]
+fn fd_07_view_is_checked_after_non_finite_and_the_zoom_range() {
+    let big = view(0.0, 0.0, 100_000.0, 100_000.0);
+    assert_eq!(
+        grid_lines(&px(10.0, 1), big, 33.0, 96.0),
+        Err(LayoutError::OutOfRange { field: "zoom" })
+    );
+    assert_eq!(
+        grid_lines(&px(10.0, 1), big, f64::NAN, 96.0),
+        Err(LayoutError::NonFinite { field: "zoom" })
+    );
+    assert_eq!(
+        grid_lines(&px(10.0, 1), view(0.0, 0.0, f64::NAN, 1.0), 1.0, 96.0),
+        Err(LayoutError::NonFinite { field: "view" })
+    );
+    // a product that overflows is the non-finite rule
+    assert_eq!(
+        grid_lines(&px(10.0, 1), view(0.0, 0.0, f64::MAX, 1.0), 32.0, 96.0),
+        Err(LayoutError::NonFinite { field: "view" })
+    );
 }
