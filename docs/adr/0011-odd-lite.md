@@ -71,7 +71,7 @@ On acceptance these ADRs change only their status and index entry, as ADR 0004 d
 | 0001 | modes, packs, tiers, depths, gates, `verification.json`, retry caps, coordinator limits | decision record item 3: T4 "in every mode" now excepts L0 and L1 work with no critical code. Section 6: artifacts may live outside a folder. Coordinator write authority extends to `.odd/state.json`. Verdict list gains BLOCKED |
 | 0002 | Flow line, mutation toggle, cargo-mutants speed, floors, verify defaults | section 3: on covered work the Slice card fields go in the outcome entry. Section 6: an outcome with no folder has nothing to move. The Flow line gains an optional `level` and `flow: legacy` |
 | 0003 | all of it; branches and integration use the outcome id as `<change>` | nothing |
-| 0004 | all of it | where `apply-progress.md` is named, a folderless delivery records the same items in its last commit's body. A BLOCKED verify is not a round |
+| 0004 | all of it | where `apply-progress.md` is named, a folderless delivery records the same items in the body of its last implementer commit. A BLOCKED verify is not a round |
 
 ### Retained flows
 
