@@ -1,14 +1,129 @@
 # Verify report: layout-core D5-D7
 
-Current state: round 1 at `a77292d`, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report, so no mutation finding): **FAIL**. 4 CRITICAL, 4 WARNING, 4 SUGGESTION. Per class: implementation 6 (3 CRITICAL, 3 WARNING); ambiguity 2 (1 CRITICAL, 1 WARNING); architecture 0; claim 0. Next: `specifier`, then `tdd-apply`.
+## Current state
 
-The D4 report is in git history at `9383597`; this file now covers D5-D7, one delivery by owner decision (Slice card amend `a584943`). Open D4 follow-ups (W7, S2, S5) and earlier ones stay with `archive`.
+Round 2 at `517c3cc`, closure round, depth V2, mode full, tier T4 (`mutation: archive`, no `mutants` report, so no mutation finding): **PASS**. 0 CRITICAL, 2 WARNING (both `follow-up`), 4 SUGGESTION. Per class: implementation 2 (0 CRITICAL, 2 WARNING); ambiguity 0; architecture 0; claim 0. All deliveries of the change are done. Next: `mutants` T4 at change close on `gafira-doc`, `gafira-edit` and `gafira-layout`, then `archive`.
+
+The D4 report is in git history at `9383597`; this file covers D5-D7, one delivery by owner decision (Slice card amend `a584943`). Open D4 follow-ups (W7, S2, S5) and earlier ones stay with `archive`.
+
+## Round 2
+
+Closure only: gates, artifact integrity, closure of C1 to C4, W1, W3, W4, and the W2 decision. No new independent mutants. Every probe and mutant ran on clean exports, outside the repo.
+
+### Closure
+
+| Finding | State | Proof |
+|---|---|---|
+| C1 grid target `-0.0` | **Closed** | `floor() + 0.0` in `grid_target`. The round 1 sweep gives 0 of 2 310 300 differing bits against `grid_lines` (was 8), with 1 133 042 negative and 189 415 ties; reference `-0.0` gives coordinate bits `0`. Mutant without `+ 0.0`: killed by `fd_06_a_grid_target_is_never_negative_zero_on_any_level` |
+| C2 `n < 2` | **Closed** | Survivor killed by `d_17_two_wide_overlapping_free_elements_give_no_error_and_no_movement`. It still differs from HEAD in 39 698 of 3 000 000 results, same as round 1, so the test is what changed. Two free boxes: 0 errors in 2 000 000 random calls |
+| C3 box checks after DPI | **Closed** | Survivor killed by `the_box_of_every_input_is_checked_before_the_dpi_rule`. The moving and page variants are killed too. Probe: each of the four boxes gives its `InvalidBox` at `dpi = 0` |
+| C4 row contradiction | **Closed** | `ab3cd7a` makes attracting nodes and all their descendants the input and states the example in the same A to E tree. The row no longer contradicts itself, and it names the `node_bounds` row. Code unchanged and matches: E hidden or locked with NaN gives `Err x` moving C or with nothing selected, and `Ok` moving D, B or A. Pinned by `arq_110_a_hidden_or_locked_child_of_an_attracting_group_is_read_and_one_outside_is_not`. The tree oracle gives 0 differences |
+| W1 magnet off | **Closed** | `ab3cd7a` and `971d7c4` state it; `snap` returns right after the ranges and the step on screen. All four examples of the row give (0, 0) inactive and `Err` active. Probe: 2 000 000 inactive calls with extreme finite boxes, guides, thresholds and DPIs, all `Ok` with `+0.0` and no target. Moving the return back to its old place is killed by `arq_110_an_inactive_magnet_computes_no_centre_quotient_guide_or_distance`. One gap: W5 |
+| W3 `-0.0` in `distribute` | **Closed** | `+ 0.0` in `moved`; the note and comment now hold. The round 1 case gives bits `0`; 0 of 4 000 000 random calls give `-0.0`. Mutant killed by `fd_11_a_zero_offset_is_positive_zero_also_when_the_gap_underflows` |
+| W4 unnamed criteria | **Closed** | `fd_03_c_the_magnet_snaps_to_a_guide_within_the_threshold_and_not_beyond` and `fd_11_d_four_elements_with_one_locked_distribute_the_three_free_ones`; both assert the criterion |
+| S4 row wording | Closed by the spec | `971d7c4` rewrites the example to `x0 = -MAX`, `x1 = 0`. `apply-progress.md` still lists S4 as not done (S5) |
+
+### W2: confirmed limit
+
+Coordinator decision: accepted, `follow-up`, not open. Probe: `snap` against the row's own oracle, a `grid_lines` view around the reference, at the smallest spacing the zoom allows (about 0.19 px), with all subdivisions, units and DPIs.
+
+| Reference, px | Cases | Wrong distance | Bits differ from the oracle |
+|---|---|---|---|
+| 1e14 to 1e15 | 17 211 019 | 0 | 0 |
+| 1e15 to 1.6e15 | 24 090 797 | 0 | 89, the first at 1.02e15, each a tie that takes the larger line |
+| 1.6e15 to 1.7e15 | 3 441 600 | 16, the first at 1.69e15 | 195 |
+| 2^51 to 2^52 (first sweep, wider steps) | 588 128 | 13 266 | 30 111 |
+
+- **The doc comment of `grid_target` is true.** It is the nearest line up to about 1e15 px, and past about 2^51 no fixed window is.
+- **The corrected claims in `apply-progress.md` are true.** Item 14: `[k, k+1]` is not equivalent and is killed by the named test. The mutant first differs at `5.47e14` here (73 of 1 500 000), so "about 6e14" is loose but fair. Item 16: `n < 2` is corrected and the mutant is killed.
+- **The W2 line of "Fix round 1" has two wrong figures and one omission. None changes the decision:**
+  - "From about 1.3e15 (about 2^51)": those two numbers are not the same point. 2^51 is 2.25e15, and 1.3e15 is about 2^50.2. I found no wrong distance at 1.3e15; the first is at 1.69e15, about `2^53 * 0.1875`, where the quotient stops being exact at the smallest spacing. The band `[2^50, 2^51)` is the likely source of the 2^51 label.
+  - The tie rule fails a little earlier than the distance: from 1.02e15 a tie can take the larger line, just above the stated 1e15. The note gives no figure for this.
+  - "4.5e10 times the largest page": with `MAX_PX` 16 384, 1e15 is 6.1e10 times the page and 1.3e15 is 7.9e10. 4.5e10 would be 7.4e14.
+
+### WARNING
+
+**W2. Grid target past about 1e15 px.** class: `implementation`, `follow-up`. Ref: `src/snap.rs:158`, `apply-progress.md` "Fix round 1". Accepted limit, stated in the doc comment; see above. The note can be corrected at archive. If the owner wants exactness past the limit, the row needs a range first.
+
+**W5. No test pins the page centre with the magnet off.** class: `implementation`, `follow-up`. Ref: `tests/snap.rs` `arq_110_an_inactive_magnet_computes_no_centre_quotient_guide_or_distance`, row "Entradas del Imán" ("ni centros"). The test covers moving, element, threshold, distance and guide, but no page box whose centre overflows. The code is right: the return comes before every centre, and the probe above includes such pages. Found by reading the test; no mutant was run for it, per the closure limit. New test gap after round 1, so not FAIL.
+
+### SUGGESTION
+
+**S1, S2, S3.** Open as in round 1, unchanged. The implementer left them for the spec, follow-up or owner.
+
+**S5. Stale text left by the fixes.**
+- `apply-progress.md:294` still says every centre is checked "with the magnet off" and that the spec's example is a zero-size box. Both are out of date after W1 and `971d7c4`. Line 319 still lists S4 as not done.
+- `apply-progress.md:287`, item 14, ends in a leftover "And, old text: ...".
+- `tests/snap.rs` says "the guide of the last case" but reads `cases[3]`, which stopped being the last case in `00b1bcd`.
+
+### Mutants re-run
+
+Run 8, killed 8. These are closure re-runs, no new independent ones. Baseline: 167 tests of the crate pass.
+
+| Mutant | Origin | Killed by |
+|---|---|---|
+| `n < 2` for `n < 3` | Survivor, C2 | `d_17_two_wide_*` |
+| Margin and element box checks after DPI | Survivor, C3 | `the_box_of_every_input_*` |
+| Moving box check after DPI | C3 | `the_box_of_every_input_*`, `the_order_of_checks_*` |
+| Page box check after DPI | C3 | `the_box_of_every_input_*` |
+| Neighbours `[k, k+1]` | Survivor, W2 | `fd_06_the_grid_target_is_the_nearest_line_*` |
+| `grid_target` without `+ 0.0` | Reverts C1 | `fd_06_a_grid_target_is_never_negative_zero_*` |
+| `moved` without `+ 0.0` | Reverts W3 | `fd_11_a_zero_offset_*` |
+| Inactive return back after the computed values | Reverts W1 | `arq_110_an_inactive_magnet_computes_no_*` |
+
+### Round 1 probes
+
+All re-run at `517c3cc` with the same seeds; nothing regressed.
+- FD-06, D-16, FD-11, rotation, determinism, the row examples, attractors and the 100 000 level chains: all pass (empty selection 91 ms in release).
+- `node_bounds` against D4: 0 differences.
+- `grid_lines` against D4: 7 040 differences, all at `|x0| >= 1e15`, the same as S2. That probe's own `assert_eq!(bad, 0)` fails by design, as it did in round 1.
+- Past `2^51`, `grid_huge_references` gives the same counts as round 1.
+
+### Acceptance map
+
+Criteria: 32 of 32 covered; FD-11(c) stays out of this crate (row "Primer corte"). Changes from round 1:
+
+| Item | Round 1 | Round 2 |
+|---|---|---|
+| Row DPI | weak, C3 | covered, `the_box_of_every_input_is_checked_before_the_dpi_rule` |
+| D-17 | weak, C2 | covered, `d_17_two_wide_*` |
+| Row Destino en la Cuadrícula | failing, C1 | covered up to the W2 limit, `fd_06_a_grid_target_is_never_negative_zero_*`, `fd_06_the_grid_target_is_the_nearest_line_*` |
+| Row Elementos que atraen | contradictory, C4 | covered, `arq_110_a_hidden_or_locked_child_*` |
+| Row Entradas del Imán | covered, W1 | covered, `arq_110_an_inactive_magnet_*`, W5 |
+| FD-03(c), FD-11(d) | covered, W4 | covered and named |
+
+### Gates and integrity
+
+Gates at `517c3cc` on a clean clone: `cargo fmt --check` 0; clippy 0; `cargo test --workspace --locked` 0 (1 098 passed, 0 failed); `cargo deny --offline check` 0 (advisories, bans, licenses, sources ok). The clone stayed clean. Disk: 55 GB free at the start, 54 GB at the end; build folders freed.
+
+CI policy, all 0, read from `ci.yml` on the clean clone: Format, ARQ-07, `forbid(unsafe_code)`, V5, V12, V13, V14.
+
+Per commit on clean exports:
+
+| Commit | fmt | Clippy | Test | Passed |
+|---|---|---|---|---|
+| `d19a59a` | 0 | 0 | 0 | 1 092 |
+| `0554dfa` | 0 | 0 | 0 | 1 095 |
+| `3ee32de` | 0 | 0 | 0 | 1 098 |
+| `00b1bcd` | 0 | 0 | 0 | 1 098 |
+
+`0554dfa` passes alone, so the deviation in `apply-progress.md` has no effect. `517c3cc` changes notes only and is the clean clone above.
+
+Integrity:
+- Slice card: lines 1 to 10 of `apply-progress.md` hash the same at `a584943` and HEAD.
+- `docs/specs`: since the first implementation commit, only `ab3cd7a` and `971d7c4` touched it. Both touch only `02-arquitectura-software.md`, and no implementer commit touched it.
+- No tracked file deleted, no `*.proptest-regressions`, and no change in `.cargo`, `.github`, `deny.toml`, `Cargo.toml` or `Cargo.lock` since round 1.
+- No absolute paths, `#[allow]` or `unsafe` added, and no AI attribution in commit bodies.
+
+Size, figures only: `git diff --shortstat develop -- crates Cargo.toml Cargo.lock` gives 17 files, 4 319 insertions, 43 deletions. Fix round: 6 files, +312 -19 (source +28 -19, tests +284), matching the implementer's.
 
 ## Round 1
 
+Round 1 at `a77292d`: **FAIL**, 4 CRITICAL, 4 WARNING, 4 SUGGESTION. Kept as the record of what round 2 closed.
+
 Gates ran on a clean clone. Probes and hand mutants ran on clean exports, outside the repo. Probes were written from the specs, before the implementer's tests were opened.
 
-## CRITICAL
+### CRITICAL
 
 **C1. A reference of `-0.0` gives a grid target of `-0.0`.** class: `implementation`. Ref: `crates/gafira-layout/src/snap.rs:164-167`, `src/grid.rs:62-71`, row "Destino en la Cuadrícula".
 With reference `-0.0`, `(at / spacing).floor()` is `-0.0`, so line `k` sits at `-0.0`. `grid_lines` casts `k` through `i64` and gives `+0.0`. The row's property requires the same bits.
@@ -37,7 +152,7 @@ The specifier must choose one:
 - Keep `node_bounds` and state the exception.
 - Have the group's box skip nodes that are left out, which also changes finite cases: a hidden child at 500 today widens the box to `x1 = 501`.
 
-## WARNING
+### WARNING
 
 **W1. Which computed checks run with the magnet off is invented.** class: `ambiguity`. Ref: `src/snap.rs:240-266`, row "Entradas del Imán".
 The row says that an inactive magnet does "las comprobaciones de entrada y de rango" and gives (0, 0). HEAD also runs some computed checks. All inputs here are finite and in range:
@@ -60,7 +175,7 @@ Boxes `(-1, -0.0)`, `(0, 5e-324)`, `(0, 1)` in equal-gap mode give `dx = -0.0` o
 **W4. Two criteria have no test that names them.** class: `implementation`. Ref: Slice card, `AGENTS.md` testing policy.
 FD-03(c) and FD-11(d) are covered in substance by `fd_06_a_five_px_from_a_guide_the_edge_lands_on_it` and `d_17_locked_elements_do_not_count_and_do_not_move`, and the IDs FD-03 and FD-11 are named elsewhere. No test or comment names these two criteria, so a search on them finds nothing. It is not the CRITICAL of step 3c, which applies per ID.
 
-## SUGGESTION
+### SUGGESTION
 
 **S1.** `snap_rotation` is not the nearest multiple from `9.0e15` degrees (`2^53`): 37 704 of about 4 000 000 oracle cases, for example 7e16 gives `7.000000000000001e16`, 16 from the angle. No test reaches this, and below that magnitude the exact oracle has no difference. The row has no range, so a sentence in the spec would settle it. `f64::MAX` gives `Err(angle)`, which fits the intermediate overflow rule.
 
@@ -70,7 +185,7 @@ FD-03(c) and FD-11(d) are covered in substance by `fd_06_a_five_px_from_a_guide_
 
 **S4.** The row example "caja en `x = −MAX`" gives its reason as the distance. A zero-size box fails earlier at the centre, naming `moving`. `Rect(-MAX, 0, 0, 0)` gives `distance`. Both are non-finite errors, so only the wording differs.
 
-## Independent checks asked for
+### Independent checks asked for
 
 **Per-commit gates:** all pass on clean exports (table under "Gates and integrity").
 
@@ -122,7 +237,7 @@ Ancestors of the selection hold, including the row's A, B, C, D, E case and NaN 
 
 **`Cargo.lock`:** +33 entries (32 new names, 1 new version), none removed. `criterion`, `half`, `ciborium`, `rayon` and `plotters` do not appear in the normal or build graph of the workspace. §9.2 lists `criterion` as dev. The V5 row needs no change.
 
-## Hand mutants
+### Hand mutants
 
 Run 4, killed 3. No recorded list was repeated.
 
@@ -135,7 +250,7 @@ Run 4, killed 3. No recorded list was repeated.
 
 The three equivalence spot-checks are counted separately above.
 
-## Acceptance map
+### Acceptance map
 
 | Item | State | Proof |
 |---|---|---|
@@ -164,7 +279,7 @@ The three equivalence spot-checks are counted separately above.
 
 Criteria: 32 counted with FD letters and rows one by one; 28 covered, 4 not (the two weak rules, one failing, one contradictory). FD-11(c) is out of this crate (row "Primer corte").
 
-## Gates and integrity
+### Gates and integrity
 
 Gates at HEAD: `cargo fmt --check` 0; clippy 0; `cargo test --workspace --locked` 0 (1 087 passed, 0 failed); `cargo deny --offline check` 0 (advisories, bans, licenses, sources ok, no warnings). Disk: 60 GB free at the start, 56 GB after the builds.
 
@@ -195,4 +310,7 @@ Integrity:
 
 Size, figures only (no ceiling, owner decision), matching the implementer's: `git diff --shortstat develop -- crates Cargo.toml Cargo.lock` gives 17 files, 4 026 insertions, 43 deletions. Source +804 -42, tests and bench +2 918, `Cargo.lock` +299. Forecast 935 (475 + 335 + 125).
 
-next: specifier (C4, W1), then tdd-apply (C1, C2, C3, W2, W3, W4)
+Round 1 next: specifier (C4, W1), then tdd-apply (C1, C2, C3, W2, W3, W4)
+
+next: mutants (T4 at change close on `gafira-doc`, `gafira-edit`, `gafira-layout`), then archive
+

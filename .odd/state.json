@@ -10,11 +10,11 @@
         {"id": "D2", "status": "passed", "evidence": "ffb0836"},
         {"id": "D3", "status": "passed", "evidence": "verify round 3 at 2377174"},
         {"id": "D4", "status": "passed", "evidence": "verify round 3, tree fe4fe23"},
-        {"id": "D5", "status": "pending"},
-        {"id": "D6", "status": "pending"},
-        {"id": "D7", "status": "pending"}
+        {"id": "D5", "status": "passed", "evidence": "verify round 2 at 517c3cc"},
+        {"id": "D6", "status": "passed", "evidence": "verify round 2 at 517c3cc"},
+        {"id": "D7", "status": "passed", "evidence": "verify round 2 at 517c3cc"}
       ],
-      "next_action": "Run D5 to D7 as one delivery, on feat/layout-core-d5 cut from develop"
+      "next_action": "T4 mutants on gafira-doc, gafira-edit, gafira-layout, then archive"
     },
     {
       "outcome_id": "odd-lite",
