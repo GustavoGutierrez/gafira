@@ -1,4 +1,5 @@
-//! A preallocated open-addressing table of `u64` pair keys (XP11, ARQ-111).
+//! A preallocated open-addressing table of `u64` pair keys with a count per
+//! pair (XP11, ARQ-111, ARQ-133).
 //!
 //! `std::collections::HashMap` is banned in domain crates. The table never
 //! grows: the caller states the largest number of distinct pairs up front,
@@ -8,6 +9,7 @@ const EMPTY: u64 = u64::MAX;
 
 pub(crate) struct PairTable {
     slots: Vec<u64>,
+    counts: Vec<u32>,
     mask: usize,
 }
 
@@ -17,6 +19,7 @@ impl PairTable {
         let capacity = (max_pairs.max(8) * 2).next_power_of_two();
         Self {
             slots: vec![EMPTY; capacity],
+            counts: vec![0; capacity],
             mask: capacity - 1,
         }
     }
@@ -31,8 +34,8 @@ impl PairTable {
         (u64::from(lo) << 32) | u64::from(hi)
     }
 
-    /// Adds the unordered pair `{a, b}` once. A pair beyond the stated bound
-    /// that finds no free slot is dropped: the caller's bound makes that
+    /// Counts the unordered pair `{a, b}` once more. A pair beyond the stated
+    /// bound that finds no free slot is dropped: the caller's bound makes that
     /// unreachable, and the table never reallocates.
     pub(crate) fn insert(&mut self, a: u32, b: u32) {
         let key = Self::key(a, b);
@@ -40,22 +43,30 @@ impl PairTable {
         for _ in 0..self.slots.len() {
             let found = self.slots[slot];
             if found == key {
+                self.counts[slot] += 1;
                 return;
             }
             if found == EMPTY {
                 self.slots[slot] = key;
+                self.counts[slot] = 1;
                 return;
             }
             slot = (slot + 1) & self.mask;
         }
     }
 
-    /// Every pair, `(low, high)`, ascending.
-    pub(crate) fn drain_sorted(self) -> Vec<(u32, u32)> {
-        let mut keys: Vec<u64> = self.slots.into_iter().filter(|&k| k != EMPTY).collect();
-        keys.sort_unstable();
-        keys.into_iter()
-            .map(|k| ((k >> 32) as u32, (k & 0xFFFF_FFFF) as u32))
+    /// Every pair with its count, `(low, high, count)`, ascending.
+    pub(crate) fn drain_sorted(self) -> Vec<(u32, u32, u32)> {
+        let mut pairs: Vec<(u64, u32)> = self
+            .slots
+            .into_iter()
+            .zip(self.counts)
+            .filter(|&(key, _)| key != EMPTY)
+            .collect();
+        pairs.sort_unstable();
+        pairs
+            .into_iter()
+            .map(|(key, n)| ((key >> 32) as u32, (key & 0xFFFF_FFFF) as u32, n))
             .collect()
     }
 }
@@ -85,6 +96,17 @@ mod tests {
         let (f, b) = (forward.drain_sorted(), backward.drain_sorted());
         assert_eq!(f, b);
         assert!(f.windows(2).all(|w| w[0] < w[1]), "ascending, no repeats");
+    }
+
+    // ARQ-133: the count of a pair is how many times it was inserted, in either
+    // order.
+    #[test]
+    fn arq_133_a_pair_counts_its_insertions() {
+        let mut table = PairTable::with_bound(4);
+        for (a, b) in [(1, 2), (2, 1), (3, 4), (1, 2)] {
+            table.insert(a, b);
+        }
+        assert_eq!(table.drain_sorted(), [(1, 2, 3), (3, 4, 1)]);
     }
 
     // XP11: the table never grows; inserting up to the stated bound keeps its size.

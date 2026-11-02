@@ -224,13 +224,15 @@ fn connect(
     })
 }
 
-/// Distinct pairs of touching superpixels, sorted. A planar graph of `k`
-/// connected regions has at most `3k` edges, which sizes the table (XP11).
+/// Distinct pairs of touching superpixels with the length of their shared border,
+/// the number of 4-neighbour pixel pairs with a pixel in each (ARQ-133), sorted.
+/// A planar graph of `k` connected regions has at most `3k` edges, which sizes
+/// the table (XP11).
 pub(crate) fn adjacency(
     sp: &Superpixels,
     (w, h): (usize, usize),
     meter: &Meter<'_>,
-) -> Result<Vec<(u32, u32)>, Cancelled> {
+) -> Result<Vec<(u32, u32, u32)>, Cancelled> {
     let mut table = PairTable::with_bound(3 * sp.count);
     for y0 in (0..h).step_by(CHUNK_ROWS) {
         let y1 = (y0 + CHUNK_ROWS).min(h);
@@ -249,4 +251,27 @@ pub(crate) fn adjacency(
         }
     }
     Ok(table.drain_sorted())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gafira_doc::contract::{CancelToken, NoProgress};
+
+    // ARQ-133: the length of a shared border is the number of 4-neighbour pixel
+    // pairs with a pixel in each superpixel.
+    #[test]
+    fn arq_133_the_shared_border_counts_pixel_pairs() {
+        // 0 0 1
+        // 0 2 1
+        // 2 2 1
+        let sp = Superpixels {
+            labels: vec![0, 0, 1, 0, 2, 1, 2, 2, 1],
+            count: 3,
+        };
+        let (progress, cancel) = (NoProgress, CancelToken::new());
+        let meter = Meter::new(&progress, &cancel, 1 << 30);
+        let edges = adjacency(&sp, (3, 3), &meter).unwrap();
+        assert_eq!(edges, [(0, 1, 1), (0, 2, 3), (1, 2, 2)]);
+    }
 }

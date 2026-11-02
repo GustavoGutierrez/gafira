@@ -356,6 +356,29 @@ fn arq_130_requirements_estimate_ram_from_the_measured_peak() {
     }
 }
 
+// ARQ-133 / ARQ-131: an image small enough for the band to pin every superpixel
+// gives `Ok`, no foreground pixel, and not reliable.
+#[test]
+fn arq_133_all_pinned_is_ok_empty_and_unreliable() {
+    let data: Vec<u8> = (0..16)
+        .flat_map(|i| [i * 15, 90, 200 - i * 9, 255])
+        .collect();
+    let view = ImageView::new(4, 4, PixelData::Rgba8(&data)).unwrap();
+    let hints = SegHints {
+        zone: SegZone::Foreground,
+        ..SegHints::default()
+    };
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+    let out = ClassicSegmenter::new(std::sync::Arc::new(pool))
+        .segment(view, &hints, &NoProgress, &CancelToken::new())
+        .unwrap();
+    assert!(out.mask.data().iter().all(|&a| a < 128), "no foreground");
+    assert!(!out.reliable);
+}
+
 // ARQ-130 / 02 §4.7: a `Segmenter` is a `Describe`, so a registry can hold it.
 #[test]
 fn arq_130_segmenter_describes_itself() {
