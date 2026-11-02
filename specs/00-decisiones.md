@@ -371,6 +371,13 @@ Fecha: 1 de noviembre de 2026.
 - **Decisión**: los tipos Brillo y Contorno de FD-35 salen del primer corte de `gafira-raster` hasta que se aprueben sus fórmulas (Q-42). Paralela sigue en el corte.
 - Aplicado a 02 (§4.17.4, §12.2) y 04 (FD-35).
 
+## D-43 Cancelación de sonoridad, Nivelar y remuestreo
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: medir la sonoridad, Nivelar y remuestrear quedan fuera de ARQ-112 en este corte (Q-43). `gafira-engine` los cancelará entre bloques más adelante.
+- Aplicado a 02 (ARQ-112, §12.2).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
