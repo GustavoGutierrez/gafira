@@ -3,11 +3,24 @@
 
 #![forbid(unsafe_code)]
 
+mod cut;
 mod error;
+mod flow;
+mod gmm;
 mod hints;
+mod meter;
+mod refine;
+mod slic;
+mod table;
+mod work;
+
+use std::sync::Arc;
 
 use gafira_doc::contract::{CancelToken, Progress};
 use gafira_raster::{AlphaMask, BufferError, ImageView, PixelData};
+
+use meter::Meter;
+use work::{Source, WorkImage};
 
 pub use error::SegError;
 pub use hints::{SeedStroke, SegHints, SegZone};
@@ -49,9 +62,20 @@ pub trait Segmenter: Send + Sync {
     ) -> Result<Segmentation, SegError>;
 }
 
-/// The colour-only segmenter of the MVP (D-45).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ClassicSegmenter;
+/// The colour-only segmenter of the MVP (D-45). It runs its parallel passes on
+/// the pool it is given, so the trait does not depend on `rayon`.
+#[derive(Clone)]
+pub struct ClassicSegmenter {
+    pool: Arc<rayon::ThreadPool>,
+}
+
+impl ClassicSegmenter {
+    /// A segmenter that runs on `pool`.
+    #[must_use]
+    pub fn new(pool: Arc<rayon::ThreadPool>) -> Self {
+        Self { pool }
+    }
+}
 
 impl Segmenter for ClassicSegmenter {
     fn requirements(&self) -> SegReq {
@@ -65,8 +89,8 @@ impl Segmenter for ClassicSegmenter {
         &self,
         img: ImageView<'_>,
         hints: &SegHints,
-        _progress: &dyn Progress,
-        _cancel: &CancelToken,
+        progress: &dyn Progress,
+        cancel: &CancelToken,
     ) -> Result<Segmentation, SegError> {
         let (width, height) = (img.width(), img.height());
         if width == 0 || height == 0 {
@@ -79,8 +103,25 @@ impl Segmenter for ClassicSegmenter {
         }
         hints.check_finite()?;
         check_pixels(&img)?;
-        let len = usize::try_from(u64::from(width) * u64::from(height)).unwrap_or(0);
-        let mask = AlphaMask::new(width, height, vec![0; len])?;
+        let src = Source::new(&img);
+        let (w, h) = (src.width, src.height);
+        let planned =
+            (w * h) as u64 + slic::planned(w, h) + cut::planned(w, h) + refine::planned(w, h);
+        let meter = Meter::new(progress, cancel, planned);
+        let work = WorkImage::copy(&src, &meter)?;
+        let sp = slic::slic(&work, &self.pool, &meter)?;
+        let nodes = cut::nodes(&work, &sp, &meter)?;
+        let edges = slic::adjacency(&sp, (w, h), &meter)?;
+        let foreground = cut::grabcut(&nodes, &edges, &meter, cut::round_units(w, h))?;
+        let coarse: Vec<u8> = sp
+            .labels
+            .iter()
+            .map(|&l| if foreground[l as usize] { 255 } else { 0 })
+            .collect();
+        drop((sp, work));
+        let data = refine::upscale(&src, &coarse, (w, h), &self.pool, &meter)?;
+        meter.finish()?;
+        let mask = AlphaMask::new(width, height, data)?;
         Ok(Segmentation {
             mask,
             reliable: false,

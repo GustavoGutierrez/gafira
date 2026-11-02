@@ -5,6 +5,14 @@ use gafira_raster::{BufferError, ImageView, PixelData, PixelFormat};
 use gafira_segment::{ClassicSegmenter, SeedStroke, SegError, SegHints, SegZone, Segmenter};
 use gafira_testkit::progress::ProgressLog;
 
+fn seg() -> ClassicSegmenter {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(2)
+        .build()
+        .unwrap();
+    ClassicSegmenter::new(std::sync::Arc::new(pool))
+}
+
 fn rgba8(w: u32, h: u32) -> Vec<u8> {
     let mut v = Vec::with_capacity(w as usize * h as usize * 4);
     for i in 0..(w as usize * h as usize) {
@@ -17,7 +25,7 @@ fn rgba8(w: u32, h: u32) -> Vec<u8> {
 fn run(w: u32, h: u32) -> gafira_segment::Segmentation {
     let data = rgba8(w, h);
     let view = ImageView::new(w, h, PixelData::Rgba8(&data)).unwrap();
-    ClassicSegmenter
+    seg()
         .segment(view, &SegHints::default(), &NoProgress, &CancelToken::new())
         .unwrap()
 }
@@ -37,8 +45,7 @@ fn arq_130_mask_has_the_input_dimensions() {
 fn arq_130_zero_size_is_err() {
     for (w, h) in [(0, 5), (5, 0), (0, 0)] {
         let view = ImageView::new(w, h, PixelData::Rgba8(&[])).unwrap();
-        let r =
-            ClassicSegmenter.segment(view, &SegHints::default(), &NoProgress, &CancelToken::new());
+        let r = seg().segment(view, &SegHints::default(), &NoProgress, &CancelToken::new());
         assert_eq!(
             r.unwrap_err(),
             SegError::EmptyImage {
@@ -54,7 +61,7 @@ fn arq_130_zero_size_is_err() {
 fn arq_130_alpha8_is_unsupported() {
     let a = [0u8; 4];
     let view = ImageView::new(2, 2, PixelData::Alpha8(&a)).unwrap();
-    let r = ClassicSegmenter.segment(view, &SegHints::default(), &NoProgress, &CancelToken::new());
+    let r = seg().segment(view, &SegHints::default(), &NoProgress, &CancelToken::new());
     assert_eq!(
         r.unwrap_err(),
         SegError::UnsupportedFormat {
@@ -71,7 +78,7 @@ fn arq_110_non_finite_pixel_is_err() {
         px[9] = bad;
         let view = ImageView::new(3, 2, PixelData::RgbaF32(&px)).unwrap();
         let log = ProgressLog::new();
-        let r = ClassicSegmenter.segment(view, &SegHints::default(), &log, &CancelToken::new());
+        let r = seg().segment(view, &SegHints::default(), &log, &CancelToken::new());
         assert_eq!(
             r.unwrap_err(),
             SegError::Buffer(BufferError::NonFinite {
@@ -142,7 +149,7 @@ fn arq_110_non_finite_hint_is_err_before_any_work() {
             let token = CancelToken::new();
             token.cancel();
             let log = ProgressLog::new();
-            let r = ClassicSegmenter.segment(view, &hints, &log, &token);
+            let r = seg().segment(view, &hints, &log, &token);
             assert_eq!(
                 r.unwrap_err(),
                 SegError::Buffer(BufferError::NonFinite { field, index: 1 }),
@@ -156,7 +163,7 @@ fn arq_110_non_finite_hint_is_err_before_any_work() {
 // ARQ-130: the requirements state the working size of D-45.
 #[test]
 fn arq_130_requirements_state_the_working_size() {
-    let r = ClassicSegmenter.requirements();
+    let r = seg().requirements();
     assert_eq!(r.max_work_side, 2048);
     assert!(!r.gpu);
 }
