@@ -78,3 +78,106 @@ None. `git grep Locale -- crates/gafira-doc` finds nothing. Out of scope and unt
 - S2: the merged RED row is split (above).
 - W2: RED recorded (Deviations).
 - Not touched: C1 and W1 (coordinator and owner).
+
+## D2a (branch `feat/engine-contracts-d2a`, from `develop` 9faa98e)
+
+Done: `gafira_doc::contract` with `Describe`, `Descriptor`, `AudioCrossfade`, `ParamChoice`, `ParamKind`, `ParamDef`, `ParamSchema` (`new`, `params`, `get`, `defaults`, `validate_definition`, `check_values`, `resolve`), `ParamValue`, `ParamValues`, `ParamError` with `Display`, `Error` and `ToMessage` (ARQ-98 labels, ARQ-110 params, ARQ-102 for `ParamError`, ARQ-111 order). Out of scope and untouched: `CancelToken`, `Progress`, `checkpoint`, testkit, `cancel.rs`.
+
+Commits (each passes the three gates alone, exit codes read separately: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0):
+
+1. `a5aa493` feat(doc): add Describe, Descriptor and AudioCrossfade
+2. `ee01e9d` feat(doc): add ParamValue and ParamValues
+3. `7672c92` feat(doc): add the ParamSchema types, new, get and defaults
+4. `4fe1420` feat(doc): add ParamError and ParamSchema::validate_definition
+5. `a7dea1e` feat(doc): add ParamSchema::check_values
+6. `378dc7a` feat(doc): add ParamSchema::resolve
+7. `75b150d` test(doc): cover every accessor against every other kind
+8. `56f3c71` feat(doc): implement ToMessage for ParamError
+9. `a2b4c13` test(doc): check the import rule of gafira_doc::contract
+
+Each commit body holds its RED output. RED is a failing assertion against a compile stub in every case; no RED was a compile error.
+
+### RED evidence
+
+| Criterion | Test (`crates/gafira-doc/tests/`) | RED assertion (against the stub) |
+|---|---|---|
+| Descriptor keeps id, label key, version (ARQ-98) | `contract_describe::arq_98_a_descriptor_keeps_id_label_key_and_version_behind_describe` | `new` returned an empty descriptor: `left: ""`, `right: "blur.gaussian"` |
+| `ParamValues` set, get, replaced value (ARQ-110) | `contract_param_values::arq_110_set_stores_without_validating_and_returns_the_replaced_value` | `left: None`, `right: Some(Float(2.0))` |
+| `ParamValues` iteration order (ARQ-111) | `contract_param_values::arq_111_iter_follows_id_order_not_insertion_order` | `left: []`, `right: [("alpha", Int(1)), ...]` |
+| Accessors, no conversion (ARQ-110) | `contract_param_values::arq_110_accessors_return_only_their_own_kind_and_never_convert` | `left: None`, `right: Some(1.5)`; rewritten as a 5 x 5 table in commit 7, see below |
+| `new` plain data (ARQ-110) | `contract_param_schema::arq_110_new_keeps_the_definitions_in_order_and_validates_nothing` | `new` dropped its input: `left: []` |
+| `get` first match (ARQ-98) | `contract_param_schema::arq_98_get_finds_the_first_definition_with_the_id` | `left: None`, `right: Some("a")` |
+| `defaults` per kind (ARQ-110) | `contract_param_schema::arq_110_defaults_gives_each_parameter_its_default_in_its_own_kind` | `left: ParamValues { values: {} }` |
+| `validate_definition`: repeated id | `arq_110_a_repeated_id_is_a_bad_definition` | `left: Ok(())`, `right: Err(BadDefinition { param: "a" })` |
+| non-finite bound or default, 10 rows | `arq_110_a_non_finite_bound_or_default_is_a_bad_definition` | row "min NaN": `left: Ok(())` |
+| `min > max`, `min == max` | `arq_110_min_above_max_is_bad_and_min_equal_to_max_is_valid` | `Float { min: 2.0, max: 1.0 }`: `left: Ok(())` |
+| default outside, at each bound | `arq_110_a_default_outside_the_range_is_bad_and_a_bound_is_inside` | `default: -5e-324`: `left: Ok(())` |
+| Choice default and option ids | `arq_110_a_choice_default_must_be_an_option_and_option_ids_must_differ` | default `"diagonal"`: `left: Ok(())` |
+| non-finite Color default | `arq_110_a_non_finite_color_default_is_a_bad_definition` | `Srgb` NaN red: `left: Ok(())` |
+| first fault in order | `arq_110_validate_definition_reports_the_first_fault_in_definition_order` | `left: Ok(())`, `right: Err(BadDefinition { param: "z" })` |
+| `check_values`: range edges | `arq_110_check_values_rejects_a_number_just_outside_the_range` | `f = Float(-5e-324)`: `left: Ok(())` |
+| NonFinite before range | `arq_110_check_values_reports_non_finite_before_the_range` | NaN: `left: Ok(())`, `right: Err(NonFinite { param: "f" })` |
+| Choice not in options | `arq_110_check_values_rejects_a_choice_that_is_not_an_option` | `"diagonal"`: `left: Ok(())` |
+| WrongType, no conversion | `arq_110_check_values_rejects_every_other_kind_without_converting` | `softness = Int(3)`: `left: Ok(())`, `right: Err(WrongType { param: "softness" })` |
+| first fault in schema order | `arq_110_check_values_reports_the_first_fault_in_definition_order` | `left: Ok(())`, `right: Err(OutOfRange { param: "z" })` |
+| `resolve` fills, keeps given and unknown | `arq_110_resolve_fills_missing_ids_and_keeps_given_and_unknown_values` | the three defaults missing from the result |
+| `resolve` returns the check error | `arq_110_resolve_returns_the_error_of_check_values` | `left: Ok(.. NaN ..)`, `right: Err(NonFinite { param: "softness" })` |
+| `resolve` checks before filling | `arq_110_resolve_checks_the_given_values_before_filling_defaults` | `left: None`, `right: Some(5.0)` |
+| `ParamError` keys and argument | `contract_param_error::arq_102_each_param_error_gives_its_key_and_the_param_argument` | `key: "error.param.stub"`, `args: []` |
+| keys valid and distinct | `contract_param_error::arq_102_param_error_keys_are_valid_and_distinct` | the stub key repeats |
+| `param` argument follows the id | `contract_param_error::arq_102_the_param_argument_follows_the_parameter_id` | `left: []`, `right: [("param", Text("softness"))]` |
+
+Not RED, they pass against the stub, and each is proved by a hand mutant: `arq_110_a_consistent_schema_is_a_valid_definition` (accepting side), `arq_110_check_values_accepts_values_inside_the_schema_and_bounds_are_inclusive` (killed by mutants 8), `arq_110_a_missing_id_passes_and_an_unknown_id_is_ignored` (mutants 12, 13), the accessor table of commit 7 (mutants 15), and `contract_imports` (mutant 17). `AudioCrossfade` has no test: a derive-only enum with one variant.
+
+### Hand mutants
+
+Each applied by hand to the code, tests run, then restored; none committed. "Killed" names a failing test.
+
+| # | Mutant | Killing test(s) | Result |
+|---|---|---|---|
+| 1 | repeated id accepted | `arq_110_a_repeated_id_is_a_bad_definition`, `arq_110_validate_definition_reports_the_first_fault_in_definition_order` | killed |
+| 2 | `min` non-finite accepted (NaN, -inf) | `arq_110_a_non_finite_bound_or_default_is_a_bad_definition` | killed |
+| 2 | `max` non-finite accepted (NaN, +inf) | same | killed |
+| 2 | `default` non-finite accepted (NaN; infinity), as `!(d < min \|\| d > max)` and as `\|\| default.is_infinite()` | same | killed |
+| 3 | `min > max` accepted, Float and Int | `arq_110_min_above_max_is_bad_and_min_equal_to_max_is_valid` | killed |
+| 3 | `min == max` rejected, Float and Int | same | killed |
+| 4 | default below `min` accepted; above `max` accepted; equal to a bound rejected; Float and Int each | `arq_110_a_default_outside_the_range_is_bad_and_a_bound_is_inside`, `arq_110_min_above_max_is_bad_and_min_equal_to_max_is_valid` | killed (6 of 6) |
+| 5 | `Choice` default not in options accepted | `arq_110_a_choice_default_must_be_an_option_and_option_ids_must_differ` | killed |
+| 5 | repeated option id accepted | same | killed |
+| 6 | non-finite `Color` default accepted | `arq_110_a_non_finite_color_default_is_a_bad_definition` | killed |
+| 7 | `validate_definition` reports the last fault; or the duplicate pass runs before the consistency pass; or after it | `arq_110_validate_definition_reports_the_first_fault_in_definition_order` | killed (3 of 3) |
+| 7 | `check_values` walks the values (id order) instead of the schema | `arq_110_check_values_reports_the_first_fault_in_definition_order` | killed |
+| 8 | Float max exclusive; Float min exclusive; Int max exclusive; Int min exclusive | `arq_110_check_values_accepts_values_inside_the_schema_and_bounds_are_inclusive` | killed (4 of 4) |
+| 9 | range before non-finite (NaN gives `OutOfRange`); range before non-finite with NaN passing the range; Float non-finite not checked; Color non-finite not checked | `arq_110_check_values_reports_non_finite_before_the_range` | killed (4 of 4) |
+| 10 | kind mismatch accepted; `Int` converted to `Float`; `Float` converted to `Int` | `arq_110_check_values_rejects_every_other_kind_without_converting` | killed (3 of 3) |
+| 11 | `Choice` not in options accepted | `arq_110_check_values_rejects_a_choice_that_is_not_an_option` | killed |
+| 12 | missing id rejected by `check_values` | `arq_110_a_missing_id_passes_and_an_unknown_id_is_ignored` and five more | killed |
+| 13 | unknown id rejected by `check_values` | `arq_110_a_missing_id_passes_and_an_unknown_id_is_ignored` | killed |
+| 13 | unknown id dropped by `resolve`; unknown id rejected by `resolve` | `arq_110_resolve_fills_missing_ids_and_keeps_given_and_unknown_values` | killed (2 of 2) |
+| 14 | `resolve` fills before checking | `arq_110_resolve_checks_the_given_values_before_filling_defaults` | killed |
+| 14 | `resolve` overwrites a given value; drops the given values; skips the check | `arq_110_resolve_fills_missing_ids_and_keeps_given_and_unknown_values`, `arq_110_resolve_returns_the_error_of_check_values` | killed (3 of 3) |
+| 15 | `float()` converts `Int`; `int()` converts `Float` | `arq_110_accessors_return_only_their_own_kind_and_never_convert` | killed |
+| 15 | `float()` accepts `Bool`; `choice()` accepts `Color` | same, after commit 7 | survived the first test, killed after the 5 x 5 table |
+| 15 | `bool()` or `int()` of an absent id is a value; `set` returns `None`; `iter` reversed | accessors test; `arq_110_set_stores_without_validating_and_returns_the_replaced_value`; `arq_111_iter_follows_id_order_not_insertion_order` | killed |
+| 16 | `to_message` key swapped between two variants; key typo (two variants); wrong argument name; argument is `Count` not `Text`; fixed argument value; no argument | `arq_102_each_param_error_gives_its_key_and_the_param_argument`, `arq_102_the_param_argument_follows_the_parameter_id`, `arq_102_param_error_keys_are_valid_and_distinct` | killed (8 of 8) |
+| 17 | `contract` imports `crate::Document`, `crate::document::Document`, `gafira_geom`, `serde_json`, a multi-line `crate::{.., Page}`, or a `crate::Node` path | `contract_imports::adr_0005_contract_imports_only_msg_color_serde_and_std` | killed (6 of 6); a test can state the rule, so the check was added |
+
+Two surviving mutants led to a code change, not a test change. Equivalent mutants found while doing items 2 and 3: with `(min..=max).contains(&default)`, a separate `min <= max` check and a separate `default.is_finite()` check are redundant (an inverted range is empty; a finite range holds no NaN or infinity), so the code does not have them and the mutants "min > max accepted" and "non-finite default accepted" were applied to the range test itself (rows 2 and 3 above). Only the Float bounds need `is_finite`, because `-inf..=inf` would contain every finite default.
+
+### Measured lines
+
+`git diff --shortstat 9faa98e HEAD` (before this section): 9 files changed, 1352 insertions(+). Source 394, tests 958. Forecast 360 (x1.4: 505). **Over ~700: the coordinator decides.** The excess is tests: the table-driven fixtures per fault and per bound that "Acceptance" asks for (`contract_param_schema.rs` 612 lines) and the import checker (174).
+
+### Deviations
+
+- No `Locale`, serde or `Display` test; `Display` text is not tested (not specified).
+- `validate_definition` has no explicit `min > max` or default-finite branch, see the equivalent mutants above. Behaviour is the table's.
+- `ParamKind::check` and `default_value` are private helpers on `ParamKind` (free by "private helpers are free").
+- `include_str!` is used in `contract_imports.rs` because `std::fs::read_to_string` is disallowed by the crate's `clippy.toml`. The list `SOURCES` is explicit.
+
+### Findings for other stages
+
+- Ambiguity, minor, not tested: the design table does not say what `check_values` returns for a `Float` value on an `Int` parameter that is also NaN. The code matches the kind first, so it is `WrongType`; no test fixes it.
+- Ambiguity, minor, not tested: duplicate ids in a schema (a bad definition) make `get` return the first and `defaults` the last. `check_values` is defined only for schemas that pass `validate_definition`.
+- D2b: add `cancel.rs` to `SOURCES` in `crates/gafira-doc/tests/contract_imports.rs` when it exists, and `pub mod`/`mod cancel;` to `contract/mod.rs`. D2b also edits `mod.rs` and `lib.rs` is already done.
+- Spec edit for the specifier (not done here): ARQ-98 lists `ParamSchema` labels among the keys `check-i18n` extracts; `ParamChoice.label` is a second source of keys in the same struct and should be named there.
