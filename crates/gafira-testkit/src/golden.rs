@@ -281,6 +281,9 @@ fn is_tests_golden(path: &std::path::Path) -> bool {
 }
 
 /// Creates `dir` and rejects it when its resolved path is a `tests/golden` folder.
+///
+/// Returns the resolved path, where the write happens (so a link swapped
+/// later cannot redirect it); the caller reports the path as given.
 fn prepare_dir(dir: &std::path::Path) -> Result<std::path::PathBuf, CheckError> {
     std::fs::create_dir_all(dir).map_err(CheckError::Io)?;
     let real = dir.canonicalize().map_err(CheckError::Io)?;
@@ -345,15 +348,18 @@ pub fn check_in(
     let Err(failure) = outcome else {
         return Ok(());
     };
-    let candidate = prepare_dir(candidate_dir)?.join(format!("{name}.png"));
+    let file = format!("{name}.png");
+    // Write through the resolved dir, report the dir as given (no `\\?\` form on Windows).
+    let target = prepare_dir(candidate_dir)?.join(&file);
+    let candidate = candidate_dir.join(&file);
     let png = encode_png(actual).map_err(CheckError::Golden)?;
     // Replace any entry at the path (symlink, hard link, file): never write through it.
-    match std::fs::remove_file(&candidate) {
+    match std::fs::remove_file(&target) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(CheckError::Io(e)),
     }
-    std::fs::write(&candidate, png).map_err(CheckError::Io)?;
+    std::fs::write(&target, png).map_err(CheckError::Io)?;
     Err(match failure {
         Failure::Mismatch(mismatch) => CheckError::Mismatch {
             mismatch,

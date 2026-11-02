@@ -447,3 +447,25 @@ fn ac4_a_link_that_cannot_be_removed_is_not_written_through() {
         "the reference was written through"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn ac1_the_candidate_path_is_the_given_dir_joined_with_the_name_through_a_symlink() {
+    let root = fresh("ac1_symlink");
+    let real = root.join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    let link = root.join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let golden = encode_png(&gray(&[1])).unwrap();
+    let actual = gray(&[9]);
+    let err = check_in(Mode::Exact, "ac1_name", &golden, &actual, &link).unwrap_err();
+    let CheckError::Mismatch { candidate, .. } = err else {
+        panic!("expected a mismatch")
+    };
+    assert_eq!(candidate, link.join("ac1_name.png"));
+    assert_eq!(
+        decode_png(&std::fs::read(&candidate).unwrap()).unwrap(),
+        actual
+    );
+    assert!(real.join("ac1_name.png").is_file());
+}
