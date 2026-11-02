@@ -1,6 +1,6 @@
 //! The one place where pixels are mixed (P15 item 8, item 9).
 
-use crate::transfer::transfer;
+use crate::transfer::Transfer;
 
 /// The space in which weighted pixels are mixed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,14 +22,16 @@ impl MixSpace {
 pub(crate) const MIX_SPACE: MixSpace = MixSpace::Linear;
 
 /// Weighted sum of premultiplied `Rgba8` pixels. The weights sum to 1.
-pub(crate) fn weighted_u8(samples: &[([u8; 4], f64)]) -> [u8; 4] {
+pub(crate) fn weighted_u8(t: &Transfer, samples: &[([u8; 4], f64)]) -> [u8; 4] {
+    // Honest note: the other answers to O5 are built only by the tests and by this line, so
+    // that their arms stay compiled and constructed without an `#[allow]`. Nothing else needs it.
     debug_assert!(MixSpace::ALL.contains(&MIX_SPACE));
-    weighted_u8_in(MIX_SPACE, samples)
+    weighted_u8_in(t, MIX_SPACE, samples)
 }
 
 /// Weighted sum of premultiplied `RgbaF32` pixels. The weights sum to 1.
-pub(crate) fn weighted_f32(samples: &[([f32; 4], f64)]) -> [f32; 4] {
-    weighted_f32_in(MIX_SPACE, samples)
+pub(crate) fn weighted_f32(t: &Transfer, samples: &[([f32; 4], f64)]) -> [f32; 4] {
+    weighted_f32_in(t, MIX_SPACE, samples)
 }
 
 /// A pixel with `a = 0` adds no colour, whatever bytes it holds.
@@ -46,7 +48,7 @@ fn to_byte(v: f64) -> u8 {
     (v + 0.5).floor().clamp(0.0, 255.0) as u8
 }
 
-pub(crate) fn weighted_u8_in(space: MixSpace, samples: &[([u8; 4], f64)]) -> [u8; 4] {
+pub(crate) fn weighted_u8_in(t: &Transfer, space: MixSpace, samples: &[([u8; 4], f64)]) -> [u8; 4] {
     if let Some((px, _)) = samples.iter().find(|(_, w)| *w == 1.0) {
         return *px;
     }
@@ -62,7 +64,6 @@ pub(crate) fn weighted_u8_in(space: MixSpace, samples: &[([u8; 4], f64)]) -> [u8
             sum.map(to_byte)
         }
         MixSpace::Linear => {
-            let t = transfer();
             // Linear premultiplied colour and alpha, both in [0, 1].
             let mut colour = [0.0f64; 3];
             let mut alpha = 0.0f64;
@@ -92,7 +93,11 @@ pub(crate) fn weighted_u8_in(space: MixSpace, samples: &[([u8; 4], f64)]) -> [u8
     }
 }
 
-pub(crate) fn weighted_f32_in(space: MixSpace, samples: &[([f32; 4], f64)]) -> [f32; 4] {
+pub(crate) fn weighted_f32_in(
+    t: &Transfer,
+    space: MixSpace,
+    samples: &[([f32; 4], f64)],
+) -> [f32; 4] {
     if let Some((px, _)) = samples.iter().find(|(_, w)| *w == 1.0) {
         return *px;
     }
@@ -107,31 +112,32 @@ pub(crate) fn weighted_f32_in(space: MixSpace, samples: &[([f32; 4], f64)]) -> [
             }
         }
         MixSpace::Encoded => {
-            let t = transfer();
+            // In f64 throughout: a straight colour under a tiny alpha is astronomically large
+            // and would overflow `f32`.
             for (px, w) in samples {
                 let px = clean_f32(*px);
-                let a = px[3];
+                let a = f64::from(px[3]);
                 if a == 0.0 {
                     continue;
                 }
                 // Encode the straight colour, premultiply again, mix.
-                let enc = t.encode_f32([px[0] / a, px[1] / a, px[2] / a]);
                 for k in 0..3 {
-                    sum[k] += w * f64::from(enc[k]) * f64::from(a);
+                    sum[k] += w * t.encode_f64(f64::from(px[k]) / a) * a;
                 }
-                sum[3] += w * f64::from(a);
+                sum[3] += w * a;
             }
             let alpha = sum[3];
-            if alpha != 0.0 {
-                let straight = [0, 1, 2].map(|k| (sum[k] / alpha) as f32);
-                let lin = t.decode_f32(straight);
-                for k in 0..3 {
-                    sum[k] = f64::from(lin[k]) * alpha;
-                }
+            for v in &mut sum[..3] {
+                *v = if alpha == 0.0 {
+                    0.0
+                } else {
+                    t.decode_f64(*v / alpha) * alpha
+                };
             }
         }
     }
-    sum.map(|v| v as f32)
+    // A convex sum cannot leave the `f32` range, but rounding in `f64` may touch its edge.
+    sum.map(|v| v.clamp(f64::from(f32::MIN), f64::from(f32::MAX)) as f32)
 }
 
 #[cfg(test)]
@@ -149,11 +155,14 @@ mod tests {
     fn mix_space_is_linear_until_the_owner_answers() {
         assert_eq!(MIX_SPACE, MixSpace::Linear);
         let s = [([0u8, 0, 0, 255], 0.5), ([255, 255, 255, 255], 0.5)];
-        assert_eq!(weighted_u8(&s), weighted_u8_in(MixSpace::Linear, &s));
+        assert_eq!(
+            weighted_u8(&Transfer::new(), &s),
+            weighted_u8_in(&Transfer::new(), MixSpace::Linear, &s)
+        );
         let s = [([0.0f32, 0.0, 0.0, 1.0], 0.5), ([1.0, 1.0, 1.0, 1.0], 0.5)];
         assert_eq!(
-            bits(weighted_f32(&s)),
-            bits(weighted_f32_in(MixSpace::Linear, &s))
+            bits(weighted_f32(&Transfer::new(), &s)),
+            bits(weighted_f32_in(&Transfer::new(), MixSpace::Linear, &s))
         );
     }
 
@@ -162,15 +171,21 @@ mod tests {
     fn a_sample_of_weight_one_is_returned_as_it_is() {
         for space in SPACES {
             for px in [[200u8, 10, 5, 0], [1, 2, 3, 255], [255, 255, 255, 1]] {
-                assert_eq!(weighted_u8_in(space, &[([9, 9, 9, 9], 0.0), (px, 1.0)]), px);
-                assert_eq!(weighted_u8_in(space, &[(px, 1.0), ([9, 9, 9, 9], 0.0)]), px);
+                assert_eq!(
+                    weighted_u8_in(&Transfer::new(), space, &[([9, 9, 9, 9], 0.0), (px, 1.0)]),
+                    px
+                );
+                assert_eq!(
+                    weighted_u8_in(&Transfer::new(), space, &[(px, 1.0), ([9, 9, 9, 9], 0.0)]),
+                    px
+                );
             }
             for px in [
                 [-0.0f32, 1.5, 1e-30, 0.0],
                 [2.0, -1.0, 0.3, -0.25],
                 [0.7, 0.1, 0.1, 1.0],
             ] {
-                let got = weighted_f32_in(space, &[(px, 1.0), ([0.5; 4], 0.0)]);
+                let got = weighted_f32_in(&Transfer::new(), space, &[(px, 1.0), ([0.5; 4], 0.0)]);
                 assert_eq!(bits(got), bits(px), "{space:?}");
             }
         }
@@ -186,7 +201,11 @@ mod tests {
             (MixSpace::AsStored, 128),
         ];
         for (space, want) in u8_rows {
-            let got = weighted_u8_in(space, &[([0, 0, 0, 255], 0.5), ([255, 255, 255, 255], 0.5)]);
+            let got = weighted_u8_in(
+                &Transfer::new(),
+                space,
+                &[([0, 0, 0, 255], 0.5), ([255, 255, 255, 255], 0.5)],
+            );
             assert_eq!(got, [want, want, want, 255], "{space:?}");
         }
         let f32_rows: [(MixSpace, f32); 3] = [
@@ -196,6 +215,7 @@ mod tests {
         ];
         for (space, want) in f32_rows {
             let got = weighted_f32_in(
+                &Transfer::new(),
                 space,
                 &[([0.0, 0.0, 0.0, 1.0], 0.5), ([1.0, 1.0, 1.0, 1.0], 0.5)],
             );
@@ -210,17 +230,24 @@ mod tests {
     #[test]
     fn rgba8_rounds_half_up_and_clamps() {
         for space in [MixSpace::Encoded, MixSpace::AsStored] {
-            let h = |a: [u8; 4], b: [u8; 4]| weighted_u8_in(space, &[(a, 0.5), (b, 0.5)]);
+            let h = |a: [u8; 4], b: [u8; 4]| {
+                weighted_u8_in(&Transfer::new(), space, &[(a, 0.5), (b, 0.5)])
+            };
             assert_eq!(h([1, 1, 1, 3], [2, 2, 2, 4]), [2, 2, 2, 4], "{space:?}");
             assert_eq!(h([0, 0, 0, 0], [1, 1, 1, 1]), [1, 1, 1, 1]);
             assert_eq!(h([1, 1, 1, 1], [1, 1, 1, 2]), [1, 1, 1, 2]);
             // 0.4999 stays down; weights that overshoot 1 clamp at 255.
             assert_eq!(
-                weighted_u8_in(space, &[([1, 1, 1, 1], 0.4999), ([0, 0, 0, 0], 0.5001)]),
+                weighted_u8_in(
+                    &Transfer::new(),
+                    space,
+                    &[([1, 1, 1, 1], 0.4999), ([0, 0, 0, 0], 0.5001)]
+                ),
                 [0, 0, 0, 0]
             );
             assert_eq!(
                 weighted_u8_in(
+                    &Transfer::new(),
                     space,
                     &[([255, 255, 255, 255], 0.6), ([255, 255, 255, 255], 0.6)]
                 ),
@@ -229,12 +256,14 @@ mod tests {
         }
         // Linear: alpha rounds the same way; white over nothing at one half is 128.
         let got = weighted_u8_in(
+            &Transfer::new(),
             MixSpace::Linear,
             &[([0, 0, 0, 0], 0.5), ([255, 255, 255, 255], 0.5)],
         );
         assert_eq!(got, [128, 128, 128, 128]);
         assert_eq!(
             weighted_u8_in(
+                &Transfer::new(),
                 MixSpace::Linear,
                 &[([0, 0, 0, 0], 0.5), ([0, 0, 0, 0], 0.5)]
             ),
@@ -246,9 +275,14 @@ mod tests {
     #[test]
     fn a_transparent_pixel_adds_no_colour() {
         for space in SPACES {
-            let got = weighted_u8_in(space, &[([200, 10, 5, 0], 0.5), ([0, 0, 0, 255], 0.5)]);
+            let got = weighted_u8_in(
+                &Transfer::new(),
+                space,
+                &[([200, 10, 5, 0], 0.5), ([0, 0, 0, 255], 0.5)],
+            );
             assert_eq!(got, [0, 0, 0, 128], "{space:?}");
             let got = weighted_f32_in(
+                &Transfer::new(),
                 space,
                 &[([9.0, 9.0, 9.0, 0.0], 0.5), ([0.0, 0.0, 0.0, 1.0], 0.5)],
             );
@@ -268,15 +302,58 @@ mod tests {
                     [7, 9, 3, 10],
                 ] {
                     assert_eq!(
-                        weighted_u8_in(space, &[(px, 1.0 - w), (px, w)]),
+                        weighted_u8_in(&Transfer::new(), space, &[(px, 1.0 - w), (px, w)]),
                         px,
                         "{space:?} {w}"
                     );
                 }
                 let px = [0.2f32, 0.1, 0.05, 0.4];
-                let got = weighted_f32_in(space, &[(px, 1.0 - w), (px, w)]);
+                let got = weighted_f32_in(&Transfer::new(), space, &[(px, 1.0 - w), (px, w)]);
                 for k in 0..4 {
                     assert!((got[k] - px[k]).abs() < 1e-6, "{space:?} {got:?}");
+                }
+            }
+        }
+    }
+
+    // 02 §4.17.4: channels below 0 or above 1 are admitted; mixing a pixel with itself keeps it.
+    #[test]
+    fn out_of_range_colours_keep_their_sign_in_every_space() {
+        let px = [-0.25f32, 1.5, -2.0, 1.0];
+        for space in SPACES {
+            for w in [0.3f64, 0.5, 0.9] {
+                let got = weighted_f32_in(&Transfer::new(), space, &[(px, 1.0 - w), (px, w)]);
+                for k in 0..4 {
+                    assert!((got[k] - px[k]).abs() < 1e-5, "{space:?} w={w}: {got:?}");
+                }
+            }
+        }
+    }
+
+    // ARQ-110: in every space, finite pixels give finite output, also an out-of-range colour
+    // under a tiny alpha, where the straight colour is astronomically large.
+    #[test]
+    fn every_space_stays_finite_on_finite_pixels() {
+        let rows: [([f32; 4], [f32; 4]); 4] = [
+            ([1.0e30, 0.0, 0.0, 1.0e-40], [1.5e38, 0.0, 0.0, 1.0e-3]),
+            (
+                [f32::MAX, -f32::MAX, f32::MAX, 1.0e-45],
+                [f32::MAX, f32::MAX, -f32::MAX, 1.0],
+            ),
+            (
+                [1.0e30, 1.0e30, 1.0e30, 1.0e-30],
+                [-1.0e30, 0.0, 1.0e30, 2.0e-30],
+            ),
+            ([0.5, 0.5, 0.5, -1.0e-30], [0.5, 0.5, 0.5, 1.0e-30]),
+        ];
+        for space in SPACES {
+            for (a, b) in rows {
+                for w in [0.5f64, 0.25, 1.0e-9, 0.999_999] {
+                    let out = weighted_f32_in(&Transfer::new(), space, &[(a, 1.0 - w), (b, w)]);
+                    assert!(
+                        out.iter().all(|v| v.is_finite()),
+                        "{space:?} {a:?} {b:?} w={w}: {out:?}"
+                    );
                 }
             }
         }
@@ -300,8 +377,20 @@ mod tests {
                     crate::premultiply_u8(c[2], a), a,
                 ];
                 for space in SPACES {
-                    let out = weighted_u8_in(space, &[(px(c1, a1), 1.0 - w), (px(c2, a2), w)]);
+                    let out = weighted_u8_in(&Transfer::new(), space, &[(px(c1, a1), 1.0 - w), (px(c2, a2), w)]);
                     prop_assert!(out[..3].iter().all(|c| *c <= out[3]), "{space:?} {out:?}");
+                }
+            }
+
+            #[test]
+            fn f32_result_is_finite_in_every_space(
+                a in prop::array::uniform4(prop_oneof![-1.0e38f32..1.0e38, -1.0e-30f32..1.0e-30, -2.0f32..2.0]),
+                b in prop::array::uniform4(prop_oneof![-1.0e38f32..1.0e38, -1.0e-30f32..1.0e-30, -2.0f32..2.0]),
+                w in 0.0f64..=1.0,
+            ) {
+                for space in SPACES {
+                    let out = weighted_f32_in(&Transfer::new(), space, &[(a, 1.0 - w), (b, w)]);
+                    prop_assert!(out.iter().all(|v| v.is_finite()), "{space:?} {out:?}");
                 }
             }
 
@@ -312,7 +401,7 @@ mod tests {
                 w in 0.0f64..=1.0,
             ) {
                 for space in [MixSpace::Linear, MixSpace::AsStored] {
-                    let out = weighted_f32_in(space, &[(a, 1.0 - w), (b, w)]);
+                    let out = weighted_f32_in(&Transfer::new(), space, &[(a, 1.0 - w), (b, w)]);
                     for k in 0..4 {
                         let ak = if a[3] == 0.0 && k < 3 { 0.0 } else { a[k] };
                         let bk = if b[3] == 0.0 && k < 3 { 0.0 } else { b[k] };

@@ -6,6 +6,7 @@ use gafira_doc::msg::MessageKey;
 use super::guard::{Plan, copy, map_pixels, plan};
 use super::mix::{weighted_f32, weighted_u8};
 use super::{HandleReq, Transition};
+use crate::transfer::Transfer;
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
 
 /// The cross dissolve.
@@ -64,13 +65,16 @@ impl Transition for Dissolve {
             Plan::Done => {}
             Plan::CopyFrom => copy(&mut dst, &from),
             Plan::CopyTo => copy(&mut dst, &to),
-            Plan::Mix { p, .. } => map_pixels(
-                &from,
-                &to,
-                &mut dst,
-                |_, a, b| weighted_u8(&[(a, 1.0 - p), (b, p)]),
-                |_, a, b| weighted_f32(&[(a, 1.0 - p), (b, p)]),
-            ),
+            Plan::Mix { p, .. } => {
+                let tr = Transfer::new();
+                map_pixels(
+                    &from,
+                    &to,
+                    &mut dst,
+                    |_, a, b| weighted_u8(&tr, &[(a, 1.0 - p), (b, p)]),
+                    |_, a, b| weighted_f32(&tr, &[(a, 1.0 - p), (b, p)]),
+                );
+            }
         }
         Ok(())
     }

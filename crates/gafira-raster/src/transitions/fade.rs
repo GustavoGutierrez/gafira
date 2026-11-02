@@ -7,6 +7,7 @@ use gafira_doc::msg::MessageKey;
 use super::guard::{Plan, copy, map_pixels, plan};
 use super::mix::{weighted_f32, weighted_u8};
 use super::{HandleReq, Transition};
+use crate::transfer::Transfer;
 use crate::{
     BufferError, EffectCx, EffectError, ImageView, ImageViewMut, PixelFormat, premultiply_u8,
 };
@@ -85,6 +86,7 @@ impl Transition for Fade {
                 };
                 // `from` goes to the colour with 2p; the colour goes to `to` with 2p - 1.
                 // At exactly one half the second branch gives the colour alone.
+                let tr = Transfer::new();
                 let first = p < 0.5;
                 let t = if first { 2.0 * p } else { 2.0 * p - 1.0 };
                 map_pixels(
@@ -93,16 +95,16 @@ impl Transition for Fade {
                     &mut dst,
                     |_, a, b| {
                         if first {
-                            weighted_u8(&[(a, 1.0 - t), (c8, t)])
+                            weighted_u8(&tr, &[(a, 1.0 - t), (c8, t)])
                         } else {
-                            weighted_u8(&[(c8, 1.0 - t), (b, t)])
+                            weighted_u8(&tr, &[(c8, 1.0 - t), (b, t)])
                         }
                     },
                     |_, a, b| {
                         if first {
-                            weighted_f32(&[(a, 1.0 - t), (cf, t)])
+                            weighted_f32(&tr, &[(a, 1.0 - t), (cf, t)])
                         } else {
-                            weighted_f32(&[(cf, 1.0 - t), (b, t)])
+                            weighted_f32(&tr, &[(cf, 1.0 - t), (b, t)])
                         }
                     },
                 );
