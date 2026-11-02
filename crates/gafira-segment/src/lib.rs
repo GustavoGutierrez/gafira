@@ -34,22 +34,24 @@ pub struct SegReq {
     pub gpu: bool,
     /// Longest side of the working copy, in pixels (D-45).
     pub max_work_side: u32,
-    /// Estimated peak memory of one run at the longest working copy, in bytes.
-    /// A first estimate; SG3 calibrates it against a measurement (Q-48).
+    /// Estimated peak memory of one run on a 4000x3000 image with this
+    /// segmenter's pool, in bytes, calibrated on a measurement (Q-48).
     pub ram_bytes: u64,
 }
 
-/// Bytes per pixel of the working copy: colour, labels, SLIC distances, masks
-/// and the node data, rounded up.
-const BYTES_PER_WORK_PIXEL: u64 = 16;
-/// Rows of one guided-filter band with its margins, and the `f32` buffers it keeps.
-const FILTER_ROWS: u64 = 282;
-const FILTER_BUFFERS: u64 = 8;
+/// Fixed part of the peak of one run on a 4000x3000 image, in bytes: the
+/// full-size mask, the working copy, the labels and the graph (Q-48).
+const RAM_FIXED: u64 = 30_000_000;
+/// One guided-filter band per pool thread: eight `f32` buffers of an 80-row band
+/// and its 32-row margin, on the 4000 pixel width of the reference image.
+const RAM_PER_THREAD: u64 = 8 * 4 * 112 * 4000;
 
-/// Estimated peak memory for a working copy whose longest side is `side`
-/// (the square is the worst case); SG3 calibrates it (Q-48).
-fn ram_estimate(side: u64) -> u64 {
-    side * side * BYTES_PER_WORK_PIXEL + FILTER_BUFFERS * 4 * FILTER_ROWS * side
+/// Peak memory of one run on the 4000x3000 reference image with `threads` pool
+/// threads. Calibrated on a measurement (release, resident set minus the
+/// scene): 34, 71, 127 and 293 MB with 1, 4, 8 and 20 threads; this is above
+/// each (Q-48, CAL-26).
+fn ram_estimate(threads: usize) -> u64 {
+    RAM_FIXED + RAM_PER_THREAD * threads as u64
 }
 
 /// A mask and whether the person can trust it (ARQ-130, ARQ-131).
@@ -109,7 +111,7 @@ impl Segmenter for ClassicSegmenter {
         SegReq {
             gpu: false,
             max_work_side: 2048,
-            ram_bytes: ram_estimate(work::WORK_SIDE as u64),
+            ram_bytes: ram_estimate(self.pool.current_num_threads()),
         }
     }
 

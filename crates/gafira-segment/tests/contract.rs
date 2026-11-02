@@ -326,15 +326,34 @@ fn arq_130_requirements_state_the_working_size() {
     assert!(!r.gpu);
 }
 
-// ARQ-130 / 02 §4.7: the requirements state an estimated RAM, from the working
-// size: 16 bytes per pixel of a 2048 x 2048 copy, plus the guided filter's eight
-// `f32` buffers of 282 rows (a 250-row band and its 32-row margin) of 2048.
+// ARQ-130 / CAL-26 / Q-48: the requirements state the RAM measured for a
+// 4000x3000 image: a fixed part (the full-size mask, the working copy and the
+// graph) of 30 MB, and one guided-filter band per pool thread: eight `f32`
+// buffers of 112 rows (an 80-row band and its 32-row margin) of 4000 pixels.
+// Measured peak (release, resident set minus the scene): 34, 71, 127 and 293 MB
+// with 1, 4, 8 and 20 threads; the estimate is above each.
+// Mutant: the per-thread part dropped, or the fixed part lowered below the
+// measurement.
 #[test]
-fn arq_130_requirements_estimate_ram_from_the_working_size() {
-    let r = seg().requirements();
-    let side = u64::from(r.max_work_side);
-    assert_eq!(r.ram_bytes, side * side * 16 + 8 * 4 * 282 * side);
-    assert_eq!(r.ram_bytes, 85_590_016);
+fn arq_130_requirements_estimate_ram_from_the_measured_peak() {
+    let pool = |n: usize| {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .unwrap();
+        ClassicSegmenter::new(std::sync::Arc::new(pool))
+    };
+    let band = 8 * 4 * 112 * 4000u64;
+    for (threads, measured) in [
+        (1u64, 34_000_000u64),
+        (4, 71_000_000),
+        (8, 127_000_000),
+        (20, 293_000_000),
+    ] {
+        let ram = pool(threads as usize).requirements().ram_bytes;
+        assert_eq!(ram, 30_000_000 + threads * band, "{threads} threads");
+        assert!(ram >= measured, "{threads} threads: {ram} < {measured}");
+    }
 }
 
 // ARQ-130 / 02 §4.7: a `Segmenter` is a `Describe`, so a registry can hold it.
