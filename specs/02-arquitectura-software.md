@@ -929,7 +929,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | Tamaño | `[1, 1000]` pt, extremos incluidos; fuera, `Err`. | FD-41 |
 | Interletrado | `[−100, 500]` milésimas de em, extremos incluidos. | FD-41 |
 | Interlineado | `[0,5; 4,0]`, extremos incluidos. | FD-41 |
-| Fuente sin métricas | Altura natural ≤ 0: `Err` de fuente inválida. | FD-41 |
+| Fuente sin métricas | Altura natural ≤ 0 en una fuente que da forma a algún clúster, o en la primera de la lista con texto vacío: `Err` de fuente inválida. Una fuente que nada usa no se comprueba. Aceptación: con una fuente de métricas 0, sola, `"abc"` y `""` dan ese `Err`; detrás de Inter, `"abc"` da `Ok`. | FD-41 |
 | Lista de fuentes vacía | `Err` sin fuente, también con texto vacío, tras las comprobaciones de ARQ-110. Aceptación: `"abc"` y `""` con la lista vacía dan ese `Err`, distinto del de fuente inválida; con NaN en el DPI, el `Err` es el de no finito. | FD-41 |
 | Caja de tamaño 0 | Sin error; hay desborde si el texto tiene algún clúster que no sea espacio en blanco (`White_Space` de Unicode). Aceptación: `" "`, `"   "`, `"\t"`, `"\n"` y `"\r\n"` no dan desborde; `"a"` y `" a"` lo dan. | FD-41, FD-45 |
 | Columnas | `count` en 1–8; `gap` en `[0, 200]`; ancho de columna ≥ 1 px. | FD-45 |
