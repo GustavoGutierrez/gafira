@@ -118,6 +118,12 @@ pub struct Cluster {
     pub strikethrough: Option<Decoration>,
 }
 
+/// Relative slack of the fit. Parley sums the advances of a line in its own order and the
+/// output sums them again without the last spacing, so a box equal to the advance the output
+/// reports can be a few f32 ulps short for parley. 4e-6 is 0.0004 px at 100 px, far under the
+/// 0.01 px of the spec, and above the 7e-7 measured.
+const FIT_TOLERANCE: f64 = 4e-6;
+
 /// Lays `text` out in a box of `bounds` px.
 ///
 /// `fonts` is the ordered font stack, as file bytes; each cluster uses the font
@@ -200,7 +206,7 @@ pub fn layout_box(
     let width = bounds.width().max(0.0);
     // Parley adds the spacing after every cluster, the last one of a line too; the output
     // does not keep that one, so the box is that much wider for the fit.
-    let fit = (width + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
+    let fit = ((width + spacing) * (1.0 + FIT_TOLERANCE)).clamp(0.0, f64::from(f32::MAX)) as f32;
     laid.break_all_lines(Some(fit));
 
     let spacing = spacing as f32;

@@ -396,13 +396,61 @@ fn one_line(text: &str, t: f64) -> f64 {
     f64::from(l.lines[0].advance)
 }
 
+const FIT_TEXTS: [&str; 4] = [
+    "Hello",
+    "Hello world",
+    "ab cd ef",
+    "\u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648}",
+];
+const FIT_SIZES_PT: [f64; 9] = [8.0, 9.5, 12.0, 16.0, 24.0, 33.0, 50.0, 100.0, 300.0];
+const FIT_SPACINGS: [f64; 7] = [-100.0, -50.0, -1.0, 0.0, 0.5, 100.0, 500.0];
+
+/// The one line of `text` in a very wide box, as the output gives it.
+fn natural_line(text: &str, s: &TextStyle) -> f64 {
+    let l = lay(text, &[INTER, ARABIC], s, 100_000.0);
+    assert_eq!(l.lines.len(), 1);
+    f64::from(l.lines[0].advance)
+}
+
 #[test]
-fn fd_41_e_a_word_fits_a_box_as_wide_as_its_line_with_any_spacing() {
-    for t in [500.0, 100.0, 37.5, -50.0, -100.0] {
-        let advance = one_line("Hello", t);
-        let fits = lay("Hello", &[INTER], &style(t, 1.0), advance + 0.001);
-        assert_eq!(fits.lines.len(), 1, "t={t}");
-        assert!(!fits.overflow, "t={t}");
+fn fd_41_e_a_box_as_wide_as_its_line_with_any_spacing_does_not_split_it() {
+    // The box is the exact advance the output reports: no margin.
+    for text in FIT_TEXTS {
+        for size_pt in FIT_SIZES_PT {
+            for t in FIT_SPACINGS {
+                let s = TextStyle {
+                    size_pt,
+                    letter_spacing: t,
+                    ..TextStyle::default()
+                };
+                let advance = natural_line(text, &s);
+                let fits = lay(text, &[INTER, ARABIC], &s, advance);
+                assert_eq!(
+                    fits.lines.len(),
+                    1,
+                    "{text:?} {size_pt} pt t={t}: box {advance}"
+                );
+                assert!(!fits.overflow, "{text:?} {size_pt} pt t={t}");
+            }
+        }
+    }
+}
+
+#[test]
+fn fd_41_e_a_box_narrower_than_its_word_breaks_it_by_cluster() {
+    // The fit is not loose: 0.02 px short of the advance splits the word.
+    for size_pt in FIT_SIZES_PT {
+        for t in FIT_SPACINGS {
+            let s = TextStyle {
+                size_pt,
+                letter_spacing: t,
+                ..TextStyle::default()
+            };
+            let advance = natural_line("Hello", &s);
+            let short = lay("Hello", &[INTER], &s, advance - 0.02);
+            assert!(short.lines.len() >= 2, "{size_pt} pt t={t}");
+            assert!(!short.overflow, "{size_pt} pt t={t}");
+        }
     }
 }
 
