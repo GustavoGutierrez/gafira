@@ -282,3 +282,176 @@ None.
 1 877 lines added in `crates/gafira-raster` against `fadac62`, 69 of them in this fix round, against a forecast of 450 (630). Noted, no finding, per the owner.
 
 next: tdd-apply (next delivery, RS4). W5 (ambiguity) is a follow-up, not routed. T4 is owed at close.
+
+# Verify report: gafira-raster, RS4, round 1
+
+- Commit: `c063a3b` (branch `feat/gafira-raster`), base `07ba7d3`. Implementation commits: `3d400cd`, `e2358e1`, `5243b16`; notes `c063a3b`.
+- First verify of RS4, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
+- This report replaces RS3b round 3, which stays in git at `144e888`.
+- Acceptance source: Slice card in `apply-progress.md`; ARQ-120, ARQ-114 (`bench_shadow_1080`), ARQ-110, ARQ-111 in `specs/02-arquitectura-software.md` with `07ba7d3`; FD-35 (a, d; Paralela only, D-42) in `specs/04`; P11 in `specs/changes/layer-2/design.md`.
+- Probes ran on a scratch export before the implementer's tests were read. The worktree was not changed.
+
+**Verdict: FAIL.** 3 CRITICAL, 5 WARNING, 3 SUGGESTION.
+Per class: implementation 6 (3 CRITICAL, 3 WARNING), ambiguity 2 (2 WARNING), architecture 0, claim 0.
+
+The shadow is sound in the main domain: tiles match bit for bit, FD-35 (d) holds, every ARQ-110 table entry holds, and the budget is met. All three CRITICALs have small fixes. One (C1) is a real accuracy gap at blur radii a user can set.
+
+## Gates
+
+Each run alone, exit code read directly, `CARGO_TARGET_DIR` not passed.
+
+| Gate | Exit | Note |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | 1 484 passed, 0 failed, 0 ignored |
+| `cargo deny check` | 0 | advisories, bans, licenses and sources ok |
+| CI policy (7 steps of the `policy` job besides Format, read from `ci.yml` with a YAML parser) | 0 | ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 |
+
+`git status` at the end: only `crates/gafira-raster/proptest-regressions/` untracked (known pending). The worktree holds the seed `effects/shadow.txt` and the gates replay it; a clean export has no seeds and the `effects::` tests pass there too.
+
+## Artifact integrity
+
+- The Slice card was not changed in RS4: `07ba7d3..c063a3b` removes no line of `apply-progress.md`, it only appends `## RS4`.
+- `07ba7d3` touches only `specs/02-arquitectura-software.md` (the coordinator's amend giving `roi` and `cost_hint` a `cx`) and precedes the first implementation commit. No implementer commit touches `specs/` other than `apply-progress.md`.
+- The code matches the amended signatures in 02 §4.4.
+
+## Independent probes (step 1c)
+
+Public API only, f32 impulse with the shadow offset clear of the element.
+
+**Impulse sigma (ARQ-120, ±2 %).**
+
+| Radius × scale | Measured σ | Wanted | Error |
+|---|---|---|---|
+| 0.1, 0.25 | 0 | 0.05, 0.125 | −100 % |
+| 0.5 | 0.0259 | 0.25 | −89.6 % |
+| 0.75 | 0.2325 | 0.375 | −38.0 % |
+| **1.0** | 0.4637 | 0.5 | **−7.26 %** |
+| 1.1 | 0.5331 | 0.55 | −3.08 % |
+| 1.2 | 0.5929 | 0.6 | −1.18 % |
+| 1.5, 2, 3, 5 | | | −0.03 %, −0.20 %, −0.14 %, −0.40 % |
+| 10, 40, 100 | | | −1.01 %, −1.25 %, −1.31 % |
+| 2000, 2700 | | | −1.32 %, −1.33 % |
+| 2800, 2900, 3000 | | | −1.62 %, −2.10 %, −2.66 % (cap 4096) |
+| 3200, 4000 | | | −3.96 %, −11.06 % (cap 4096) |
+
+Scale goes through the same path: radius 2 at scale 0.5 gives −7.26 %, and radius 1 at scale 0.5 gives −89.6 %.
+
+**Other probes.**
+
+| Probe | Result |
+|---|---|
+| Tiny blur | Blur `1e-162`, `2e-162`, `1e-170` and down to `5e-324`, and `1e-160` at scale `1e-30`: `RgbaF32` gives `Err(NonFinite { field: "backdrop" })`; `Rgba8` gives `Ok` with the shadow gone (differs from blur 0). Blur `3e-162` and above are right. |
+| Tiles with `roi` | 3 scales × 6 parameter sets × 5 tiles, including offsets 101, −20, 30, 0.5, 1.5: max diff 0 in `Rgba8` and in `RgbaF32`. |
+| Half image, offset 0, noisy 2×2 blocks, margin clear of the edges | r 40: 0.50/255; r 16: 1.00; r 8: 1.50; r 6: 1.75; r 5: 2.25; r 4: 3.00; r 3: 5.75; r 2: 16.25; r 1: 17.50. |
+| Half image, even offset | (4, 6) blur 16: 1.00/255; blur 0: 0. |
+| Half image, odd offset | (3, 3) blur 16: 5.75/255; blur 8: 17.00; blur 0: 134.25; (1, 1) blur 8: 17.00. |
+| Constant opaque, over 3σ inside | r 2 to 40: at most 4.6e-5/255 off. |
+| FD-35 (a), `Rgba8`, blur 0, `floor(a·op/100 + 0.5)` in integers | 20 of 51 456 mismatches on opacities in steps of 0.5, all one byte low at an exact tie: a 50 op 29 gives 14, not 15; a 90 op 35 gives 31, not 32; a 100 op 14.5 gives 14, not 15. |
+| ARQ-110 | NaN, ±∞ in each parameter, the colour and `cx.scale` are `Err` naming it; NaN colour under alpha 0 is `Err`; an unknown id with NaN is ignored; ±0.01 outside a range is `Err`. `offset_x = -0.01` is `Ok`, as its range allows. Overflow in the composite is `Err` and `dst` stays intact. Scale −1, 0, `MIN_POSITIVE`, `±MAX`: no panic in `run_cpu`, `roi` or `cost_hint`. |
+| FD-35 (d) | Extremes pass, outside is `Err`; opacity 0 is byte-exact. |
+| `roi` at scale 2, offset 0 | Contains `out` grown by `⌈2r⌉` for r 1, 10, 100. With offset (100, −100) and r 1 the far side is not grown (S2). |
+| Premultiplied `Rgba8` | 0 channels above alpha on valid input. |
+| Offset rounding | 0.5 → 1, −0.5 → −1, 0.49 → 0; 3 at scale 0.5 → 2; −3 at scale 0.5 → −2. |
+
+**Budget (ARQ-114).** `bench_shadow_1080` exists under that name. Timings below are on this machine with concurrent `rustc` jobs, so they are not reference figures.
+
+| Case, 1080p, single thread | `Rgba8` | `RgbaF32` |
+|---|---|---|
+| r 40, opacity 60, median of 9, lower load | 81.8 ms | 83.9 ms |
+| r 40, opacity 100, median of 9, lower load | 80.9 ms | 82.2 ms |
+| r 40, opacity 60, load average about 15 | 122.2 ms | 148.2 ms |
+| `cargo bench`, load average 15 to 21 | 107.9 to 147.9 ms | |
+
+The < 100 ms figure and the implementer's 78.8 ms are credible at low load. It is not a `cargo test` gate. `RgbaF32`, which P11 left unmeasured, is within 3 % of `Rgba8`. Non-x86 stays unmeasured.
+
+## Comparison with the implementer's tests
+
+- `arq_120_impulse_response_has_sigma_of_half_the_radius` tests only radii 7, 10, 16 and 40, so it never reaches the band where the rule fails (C1). The reference-kernel test compares against the same sampled Gaussian, so it cannot catch it.
+- `arq_110_finite_input_gives_finite_output` draws `blur` uniformly in `0..=100`, which never gets near `1e-162` (C2).
+- No test reaches the composite overflow in `RgbaF32` (C3).
+- `arq_120_a_half_size_image_at_half_scale_matches_after_rescaling` uses one block, r 24, offset 0, alpha only. It passes, but it does not show the limits in W1 and W2.
+- `fd_35_a_*` uses opacities 100, 50, 30 and 1, with no tie that the `f64` factor gets wrong (W4).
+
+## Hand mutants (step 4b)
+
+| Mutant | Rule | Result |
+|---|---|---|
+| Spot-check: colour alpha ignored in `Rgba8` (recorded) | deviation 5 | Killed: `fd_35_the_colour_tints_the_shadow_and_its_alpha_scales_it` |
+| M1: `RgbaF32` composite written straight into `dst` | ARQ-110, `Err` before anything is written | **SURVIVES**. Non-equivalent: on `s = [0.5,0,0,0.5, 3.3e38,0,0,0.5]` with colour r `1e16`, HEAD leaves `dst` at its sentinel and the mutant leaves pixel 0 written, both with `Err` |
+| M2: offset rounded half up, `floor(v + 0.5)` instead of half away from zero | deviation 1, FD-35 sign symmetry | **SURVIVES**. −0.5 moves 0 px instead of −1 |
+| M3: `Rgba8` tint from linear light instead of sRGB bytes | deviation 5, same rule as Fade | Killed: `fd_35_the_colour_tints_the_shadow_and_its_alpha_scales_it` |
+
+## Rulings
+
+**The nine recorded deviations.**
+
+| # | Deviation | Ruling |
+|---|---|---|
+| 1 | Offsets × `cx.scale`, rounded half away from zero | Multiplying: accepted, the tile and half-size criteria force it, and `roi` and pixels share it. Rounding to whole device pixels: accepted for now, its limit is W1, and the rule is untested (W3). |
+| 2 | Defaults, animatable, ids and label keys | Accepted. The keys follow the `glossary.transition_*` and `transition.<name>.<param>` convention. |
+| 3 | Cap of 4096 taps | Accepted, with S1. `roi`, cost and pixels agree. σ stays within ±2 % up to radius × scale of about 2 880 (blur 100 at scale about 28.8). Above that, accuracy falls: −3.96 % at 3 200, −11.06 % at 4 000. Only blur near 100 at scale near 29 or more reaches it. No test proves the accuracy near the cap, only the `f64::MAX` clamp. |
+| 4 | Zero shadow keeps the element; transparent element gives the shadow | Accepted. FD-35 (d) needs the first, and ARQ-119 (alpha 0 source leaves the backdrop) gives the second. |
+| 5 | Colour alpha scales the shadow; sRGB bytes in `Rgba8`, linear in `RgbaF32` | Accepted. Same conversions as Fade (`fade.rs:128`, `fade.rs:146`). An out-of-gamut colour stays unclipped in `RgbaF32`, also as in Fade (colour r 1.5 gave channel 1.27 at alpha 0.5). |
+| 6 | `Rgba8` alpha blurred in 0..255 | Accepted; blur 0 is exact in the plane. The tie error of W4 comes later, from the opacity factor. |
+| 7 | `roi` and `cost_hint` read bad numbers as 0 | Accepted: ARQ-110 leaves that value unspecified. |
+| 8 | Scale check after computing is an equivalent mutant | Accepted: `run_cpu` computes nothing observable before writing, and the implementer's test pins the scale check before the parameters. |
+| 9 | `proptest-regressions/` untracked | Known pending, no finding. |
+
+**RED record.** Tests did not precede all code, so this is W5. The record says a stub was written first (`schema` empty, `run_cpu` `Ok(())`, `roi` returning `out`, cost 0), and also a stub `over_u8`, and that the tests ran RED against it. The stub is signatures with empty bodies, so the logic came after those tests. But `e2358e1` holds tests and code together, so git cannot show the order. The record itself lists five groups not seen RED, one of them `fd_35_the_colour_tints_*`, added after the code for a surviving mutant. No stub remains at HEAD.
+
+**Size.** 1 660 lines against forecast 420 (590). Not a finding, on the owner's explicit decision.
+
+## Criteria
+
+| Criterion | Evidence | State |
+|---|---|---|
+| ARQ-120 impulse σ ±2 % | Probe, table above | **Failing** for radius × scale below about 1.16 (C1), and at about 2 880 or more (S1) |
+| ARQ-120 constant opaque beyond 3σ | `arq_120_constant_image_keeps_*`, probe | Covered |
+| ARQ-120 half image at scale 0.5 | `arq_120_a_half_size_*` | Covered for the case tested; limits in W1, W2 |
+| ARQ-120 `roi` at scale 2 | `arq_120_roi_grows_*`, probe | Covered |
+| ARQ-120 tiles at scale 1, 0.5, 2 | `arq_120_a_tile_*`, probe | Covered, bit-exact |
+| ARQ-120 radius 0 identity | `arq_120_radius_zero_is_the_identity` | Covered |
+| ARQ-120 transparent outside | `arq_120_matches_the_reference_gaussian_*`, `arq_120_shifted_origin_*` | Covered |
+| ARQ-120 radius × scale | `arq_120_radius_and_offset_*` | Covered |
+| FD-35 (a) | `fd_35_a_*`, probe | Covered; tie rounding in W4 |
+| FD-35 (d) opacity 0 | `fd_35_d_opacity_zero_*` | Covered |
+| FD-35 (d) ranges | `fd_35_d_extremes_*` | Covered |
+| ARQ-110 table, write nothing | `arq_110_*`, probe | Covered; composite overflow unguarded (C3) |
+| ARQ-110 intermediate non-finite | Probe | **Failing** (C2) |
+| ARQ-110 `roi`, `cost_hint` no panic | `arq_110_roi_and_cost_hint_*`, probe | Covered |
+| §4.17 `Cost` monotonic in pixels | `arq_110_cost_hint_never_falls_*` | Covered |
+| ARQ-111 | `arq_111_two_runs_*`; no threads, no entropy | Covered |
+| ARQ-114 `bench_shadow_1080` | `benches/shadow.rs`, run | Covered |
+| P11 kernel, 3σ, `roi` | `blur.rs`, `arq_120_half_width_*` | Covered |
+
+Every ID has tests naming it: ARQ-120, FD-35, ARQ-110, ARQ-111 in `src/effects/`; ARQ-114 in `benches/shadow.rs`. Left out by the Slice card: FD-35 (b), (c), Brillo and Contorno (D-42).
+
+## Findings
+
+### CRITICAL
+
+- **C1**, class: `implementation`. `crates/gafira-raster/src/effects/blur.rs:23` (`kernel`), ARQ-120. σ misses ±2 % below radius × scale of about 1.16: −7.26 % at 1 px, −38 % at 0.75, −89.6 % at 0.5, and 0 below that. It is reachable: blur 1 in the Inspector, or blur 2 at scale 0.5. *Root cause:* sampling a Gaussian at integer taps gives less variance than σ² once σ falls under about 0.6, because tail weights fall much faster than σ². *Fix:* for `sigma < 0.6` use the exact-variance kernel `[σ²/2, 1 − σ², σ²/2]` on taps −1, 0, +1, with any outer taps 0 so `half_width`, `roi` and cost do not change; at σ 0.6 the two forms differ by 1.18 % in σ. Extend the sigma test to radii 0.25, 0.5, 0.75, 1, 1.1, 1.2, 1.5, 2, 3, 5, and to scale 0.5 and 2 through `run_cpu`. If the owner prefers to keep the plain sampled Gaussian, the alternative is a spec bound on this criterion (radius × scale ≥ 1.2).
+- **C2**, class: `implementation`. `blur.rs:9` (`half_width`) and `blur.rs:23`, ARQ-110, "un resultado intermedio no finito da `Err` que nombra el campo". For a blur in range below about `3e-162`, `sigma * sigma` underflows to 0, so the centre weight is `0/0`, NaN, and the whole kernel is NaN. `Rgba8` returns `Ok` and silently loses the shadow, because `NaN as u8` is 0. `RgbaF32` returns `Err` naming `backdrop`, not `blur`. Input is extreme, but it sits inside FD-35's range and breaks an explicit sentence, the same class as the tiny-softness Wipe fix in RS3b. *Fix:* one line in `half_width`: return 0 unless `radius_px * radius_px > 0.0`, which also covers NaN and gives the identity. Test blur `1e-200` and `5e-324`, and `1e-160` at scale `1e-30`, in both formats, equal to blur 0.
+- **C3**, class: `implementation`. `crates/gafira-raster/src/effects/shadow.rs:241`, ARQ-110. Survivor M1: the code is correct today, but no test proves that a composite overflow leaves `dst` intact. *Fix:* a test with the input of M1, asserting `Err` and `dst` equal to its sentinel bit for bit.
+
+### WARNING
+
+- **W1**, class: `ambiguity`. FD-35, ARQ-120, deviation 1. The spec does not say whether offsets are sub-pixel. Rounding to whole device pixels makes an odd offset miss the half-size criterion: 17/255 at (1, 1) blur 8 and 134/255 at (3, 3) blur 0. Animated offsets also step by whole pixels. *Fix:* the specifier decides either "offsets round to whole device pixels and the half-size criterion applies to offsets that are whole at that scale" (no code), or sub-pixel offsets (a fractional kernel phase, linear at blur 0).
+- **W2**, class: `ambiguity`. ARQ-120, "una imagen y su mitad". No image or radius is named. On noisy 2×2 blocks at offset 0 it holds for r ≥ 16 and misses at r 8 (1.50/255). r 2 to 5 give 2.25 to 16.25, and r 1 gives 17.50. By analysis, not measured, no Gaussian can meet it on hard edges at small radii: the 2×2 mean adds variance that the half-size run does not have. C1's fix may help at r 1 to 2; re-measure after it. *Fix:* the specifier names the test image (smooth, or blocks) and a lower radius, for example `r × scale ≥ 8` at the lower scale.
+- **W3**, class: `implementation`. `shadow.rs:107`, deviation 1. Survivor M2: half away from zero is untested. Not critical, because this is the implementer's rule and the spec is silent, and it depends on W1. *Fix:* assert that offsets −0.5 and −1.5 at scale 1 move 1 and 2 px left.
+- **W4**, class: `implementation`. `shadow.rs:212` and `:220`, FD-35 (a), deviation 6. `factor = opacity / 100` is inexact, so 20 of 51 456 pairs land one byte low at an exact tie (a 50, opacity 29 gives 14, not 15). Each is a nearest value, so "exacto" is not clearly broken, but the implementer's own rule is: the same tie rounds both ways. *Fix:* compute `cover * opacity * tint.alpha / 100.0`, which is exact at those ties. Add a table of the 13 integer pairs (alpha, opacity): (50, 29), (90, 35), (170, 35), (150, 41), (50, 57), (150, 57), (25, 58), (150, 69), (45, 70), (85, 70), (165, 70), (175, 70), (75, 82).
+- **W5**, class: `implementation`. `apply-progress.md` RS4 RED record. Not test-first throughout, against the owner's rule: see "RED record" above. Tests that are already green cannot be re-ordered, so *fix:* in the fix rounds, write each new test, run it RED against the code as it stands, record that, and add no stub.
+
+### SUGGESTION
+
+- **S1**, class: `ambiguity`. `blur.rs:5`, deviation 3. Set `MAX_HALF_WIDTH` to 4800 (1.5 × blur 100 × FD-07 maximum zoom 32) so the cap has a reason and 3σ holds if `scale` follows the zoom. Or give `cx.scale` an upper bound in the spec. Add a test of σ at the cap.
+- **S2**, class: `ambiguity`. ARQ-120, `roi` criterion. With an offset larger than the kernel, `roi` does not grow the far side, and it does not need to, so tiles stay exact. Read literally, the criterion covers offset 0. A note in the row would close it.
+- **S3**, class: `claim`. `benches/shadow.rs:4` says a nightly job reads the figure, and only `ci.yml` exists; `benches/transitions.rs` says the same. Either add the job or reword both. Non-x86 stays unmeasured, as P11 expected.
+
+## Next
+
+Fix order: W1 and W2 in the spec first, since they settle what C1's test must cover at half scale. Then C1, C2, C3, W3, W4 in code, with new tests RED first (W5). Round 2 re-checks these only; T4 stays owed at close.
+
+next: specifier (ambiguity: W1, W2), then tdd-apply (implementation: C1, C2, C3, W3, W4, W5)

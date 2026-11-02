@@ -1,4 +1,4 @@
-{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2, RS3a, RS3b", "rounds": [ {
+{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2, RS3a, RS3b, RS4", "rounds": [ {
   "delivery": "RS1", "round": 1, "commit": "10f328b10d520a2e17cf2565db4b4fc478b40a00", "mode": "full", "tier": "T4", "depth": "V2",
   "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
   "counts": {"critical": 5, "warning": 3, "suggestion": 4},
@@ -165,4 +165,22 @@
   "mutation": null,
   "hand_mutants": {"run": 5, "killed": 4},
   "criteria": {"total": 19, "covered": 19},
-  "size": {"lines": 1877, "forecast": 450}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1877, "forecast": 450}, "report": "verify-report.md" }, {
+  "delivery": "RS4", "round": 1, "commit": "c063a3be2feddb6587d463f5961584794614a6db", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
+  "counts": {"critical": 3, "warning": 5, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/effects/blur.rs:23", "summary": "Impulse sigma misses +-2 % below radius x scale about 1.16: -7.26 % at 1, -38 % at 0.75, -89.6 % at 0.5. Sampled Gaussian loses variance. Fix: [s2/2, 1-s2, s2/2] under sigma 0.6.", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/effects/blur.rs:9", "summary": "Blur under about 3e-162: sigma squared is 0, kernel NaN. Rgba8 gives Ok with no shadow; RgbaF32 Err names backdrop. ARQ-110. Fix: half_width 0 unless radius squared > 0.", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/effects/shadow.rs:241", "summary": "Survivor M1: composite written straight into dst passes all tests; non-equivalent, leaves dst part written with Err. ARQ-110. Code correct today. Fix: add a test.", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "FD-35, ARQ-120", "summary": "Sub-pixel offsets unspecified. Whole-pixel rounding misses the half-size criterion at odd offsets: 17/255 at (1,1) blur 8, 134/255 at (3,3) blur 0. Specifier decides.", "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-120", "summary": "Half-size criterion names no image or radius. Noisy 2x2 blocks at offset 0: holds at r >= 16, 1.50/255 at r 8, 3.00 at r 4, 17.50 at r 1. By analysis, inherent to a Gaussian; name a domain.", "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/effects/shadow.rs:107", "summary": "Survivor M2: half away from zero on offsets untested; spec silent, so not critical. Fix: assert -0.5 and -1.5 move 1 and 2 px left.", "follow_up": false, "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/effects/shadow.rs:220", "summary": "opacity / 100 inexact: 20 of 51456 pairs one byte low at exact ties (a 50, op 29 gives 14, not 15). Fix: cover * opacity * tint.alpha / 100.", "follow_up": false, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md RS4", "summary": "Not test-first throughout: stub bodies preceded RED, some tests came after code or never ran RED; e2358e1 holds both. No stub at HEAD. Fix: RED first in fix rounds, no stub.", "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 2},
+  "criteria": {"total": 18, "covered": 16},
+  "size": {"lines": 1660, "forecast": 420}, "report": "verify-report.md" } ] }
