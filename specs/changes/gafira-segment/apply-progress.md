@@ -41,4 +41,35 @@ Deviations and notes:
 - No separate edge "matting" pass: the guided filter is the edge refinement (P12 lists no other step).
 - Colour is read as sRGB bytes over black (premultiplied); the guided-filter guide is luma.
 - Per-band guided-filter memory is eight `f32` buffers of (250 + 32) rows x width. Q-48 measures it in SG3.
-- The 4000x3000 row of the ARQ-130 size table is added in SG2 with the reduction (at full resolution in debug it takes minutes).
+- The 4000x3000 row of the ARQ-130 size table is added in SG2 with the reduction (it was left out of SG1 to keep that delivery's tests fast; with the reduction a 4000x3000 run takes about 9 s in a debug build).
+
+## SG2: seeds, zones, reduction (ARQ-130 seeds and zones; FD-38 reduction)
+
+Commits: 8074a59 (reduction), 4310103 (seeds, zones, central priority), 1b38654 and eb5fd00 (tests added after mutants showed gaps).
+Measured: 577 insertions, 30 deletions in `crates/gafira-segment` (`git diff --shortstat a0a6188..HEAD`). Under 700.
+
+Process note (coordinator's correction): SG1 had RED by removal for several tests, recorded above. In SG2 every behaviour was written test first against code without it:
+- reduction: `work::tests::fd_38_working_size_reduces_only_above_2048` failed with `left: (4000, 3000) right: (2048, 1536)` against an identity `working_size`; `fd_38_reduction_averages_source_blocks` failed with `left: (4096, 2) right: (2048, 1)` against a `build` that only copied. Code written after.
+- zones, seeds, central priority: all four tests of `tests/hints.rs` failed first (`foreground seed on grey: 0`, `side object dropped: 253`, the `255 - alpha` assertion, the decoy test) against code that ignored hints. Code written after.
+- pin plumbing: `cut::tests::arq_130_pins_are_hard_constraints_of_the_cut` failed with `red node pinned to background` against a `grabcut` that accepted pins and ignored them (I had written the pin code first, then put it aside, wrote the test, saw it fail, and restored the code; the order of the final text is test, then code).
+- Two tests were added after the code, because a mutant survived (below): `arq_130_a_background_seed_steers_the_cut` was first written with a premise that did not hold (a distant dot does not steer a whole decoy; the test failed on its assertion, was corrected using a throwaway measurement, and now holds), and `arq_130_a_single_pixel_seed_still_decides_its_pixel`.
+
+Done: working copy by area average with `working_size` (long side above 2048 reduced, never enlarged); seed strokes scaled to the working copy and counted per superpixel (majority pins it, a tie leaves it free), pins are infinite t-links, then stamped on the full-size mask (foreground wins an overlap); zones: All is solid 255 (no pipeline, one token check), Foreground, Background is `255 - alpha`, Element keeps the foreground region whose superpixel is nearest the image centre plus any region holding a foreground pin.
+
+Hand mutants (all killed):
+- long side exactly 2048 reduced (target 2047): `fd_38_working_size_reduces_only_above_2048`, `fd_38_reduction_averages_source_blocks`. The comparison alone (`<` for `<=`) is an equivalent mutant: reducing 2048 to 2048 is the identity, so it was applied with a changed target.
+- 2049 not reduced: `fd_38_working_size_reduces_only_above_2048`.
+- smaller than 2048 upscaled: `fd_38_working_size_reduces_only_above_2048` (800x600 row).
+- seed stamps ignored: first SURVIVED (radius-4 dots were enough through the pins and the filter); killed by `arq_130_a_single_pixel_seed_still_decides_its_pixel`.
+- seed pins ignored: `arq_130_a_background_seed_steers_the_cut`.
+- foreground and background stamps swapped: `arq_130_seed_strokes_set_the_alpha_under_them`; pin sides swapped: `arq_130_a_background_seed_steers_the_cut`.
+- zones Primer plano and Fondo swapped: `arq_130_background_is_the_complement_and_all_is_solid` is not what failed; it was `arq_130_seed_strokes_set_the_alpha_under_them`, `arq_130_a_background_seed_steers_the_cut` and `arq_130_element_picks_the_object_at_the_centre` (the swap applied to the inversion test turns Foreground into 255 - alpha).
+- central priority with no Elemento hint (applied to every zone except All): `arq_130_element_picks_the_object_at_the_centre` (Foreground must keep both objects) and the steering test.
+- SG1 items (size 0, non-finite hints, mask dimensions, position term, table regrow, insertion-order output) were killed in SG1; they still hold at the end of SG2.
+
+Adversarial sweep (throwaway test, not committed, run in release and in debug): 1736 combinations of 13 sizes (1x1, 1xN, Nx1, 3x5, 2047/2048/2049 by 9 in both orientations, 2049x1537), uniform, noise and subject images (heavy sizes with the subject only), 4 zones, 6 stroke kinds (none, empty points, radius 1e9, negative radius, coordinates at 1e30, a diagonal radius-0 stroke) on the foreground and on the background list. Every call returned `Ok` with the input's dimensions and non-decreasing progress ending in a single 1.0; All is solid; a full foreground stroke gives alpha >= 243 everywhere and a full background stroke <= 12; plus 6 inputs run with pools of 1, 2, 4 and 7 threads and twice: identical masks; Foreground and Background are exact complements; an `RgbaF32` input works; a pre-cancelled token gives `Cancelled` with no report. It found nothing, so no fix was made.
+
+Deviations and notes:
+- A seed that is a tie between foreground and background pixels in a superpixel leaves it free; the final stamp still decides the pixels.
+- Under zone Background the seeds keep their meaning for the subject, so the mask under a foreground stroke is <= 12 (the mask is inverted).
+- Not covered here and left to SG3: `reliable`, the IoU gate, the ARQ-112 cancel-at-k and 0.02 step tests, the benches, and tuning of gamma, regularisation, compactness and the guided-filter epsilon on the gate scenes. The border band is a hard background for every superpixel touching it unless pinned; SG3 may need to soften that for subjects near the border.
