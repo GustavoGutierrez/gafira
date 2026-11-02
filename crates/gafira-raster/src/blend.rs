@@ -137,8 +137,10 @@ fn composite(mode: BlendMode, b: [f64; 4], s: [f64; 4]) -> [f64; 4] {
         return out;
     }
     let (cb, cs) = (straight(b), straight(s));
+    // W3C section 10: the result of the mixing function is clamped to [0, 1].
     let blended = non_separable(mode, cb, cs)
-        .unwrap_or_else(|| [0, 1, 2].map(|i| separable(mode, cb[i], cs[i])));
+        .unwrap_or_else(|| [0, 1, 2].map(|i| separable(mode, cb[i], cs[i])))
+        .map(|v| v.clamp(0.0, 1.0));
     for i in 0..3 {
         // αs (1 − αb) Cs + αs αb B(Cb, Cs) + (1 − αs) αb Cb
         out[i] = s[i] * (1.0 - ab) + a_s * ab * blended[i] + b[i] * (1.0 - a_s);
@@ -157,7 +159,7 @@ fn clip(p: [f32; 4]) -> [f64; 4] {
 ///
 /// Before any mode but `Normal`, all eight inputs are clipped to `[0, 1]`, and
 /// a colour channel above its alpha is clipped to the alpha. A pixel with `a = 0` counts as
-/// transparent black.
+/// transparent black, except a source with `a = 0`, which returns the backdrop untouched.
 ///
 /// # Errors
 ///
@@ -172,6 +174,10 @@ pub fn blend_f32(
         if let Some(index) = p.iter().position(|v| !v.is_finite()) {
             return Err(BufferError::NonFinite { field, index });
         }
+    }
+    // A source with a = 0 paints nothing: the backdrop stays as it is, bit for bit.
+    if source[3] == 0.0 {
+        return Ok(backdrop);
     }
     let (b, s) = if mode == BlendMode::Normal {
         (backdrop.map(f64::from), source.map(f64::from))
@@ -192,6 +198,9 @@ pub fn blend_f32(
 /// A channel above its alpha is clipped to the alpha before a mode but `Normal`.
 #[must_use]
 pub fn blend_u8(mode: BlendMode, backdrop: [u8; 4], source: [u8; 4]) -> [u8; 4] {
+    if source[3] == 0 {
+        return backdrop;
+    }
     let wide = |p: [u8; 4]| {
         let a = f64::from(p[3]) / 255.0;
         let c = |i: usize| {
@@ -404,7 +413,8 @@ mod tests {
             .fold(0.0, f64::max)
     }
 
-    // ARQ-119: every mode against the W3C reference, at least 256 triples, f32 <= 1e-5.
+    // ARQ-119 (FD-12 c, CPU): every mode against the W3C reference, at least 256 triples,
+    // f32 <= 1e-5.
     #[test]
     fn arq_119_every_mode_matches_the_reference_in_f32() {
         let t = triples();
@@ -425,7 +435,8 @@ mod tests {
         }
     }
 
-    // ARQ-119: every mode in 8 bits, error <= 1/255, and the result is the nearest byte.
+    // ARQ-119 (FD-12 c, CPU): every mode in 8 bits, error <= 1/255, and the result is the
+    // nearest byte.
     #[test]
     fn arq_119_every_mode_matches_the_reference_in_8_bits() {
         let to_u8 = |c: [f64; 3], a: f64| {
@@ -558,31 +569,37 @@ mod tests {
         }
     }
 
-    // ARQ-119: a backdrop with a = 0 gives the source, exactly.
+    // ARQ-119 (FD-12 c, CPU): a backdrop with a = 0 gives the source, bit for bit: difference 0.
+    // A source with a = 0 is the other rule and is tested apart.
     #[test]
     fn arq_119_transparent_backdrop_gives_source() {
-        let sources = [
+        let mut seed = 5u32;
+        let mut sources = vec![
             [0.2f32, 0.4, 0.1, 0.5],
             [0.3, 0.3, 0.3, 1.0],
-            [0.0, 0.0, 0.0, 0.0],
+            [1.0e-21, 0.0, 1.0e-30, 1.0e-20],
         ];
+        for _ in 0..1500 {
+            // Colours whose c / a is not exact in f32.
+            let a = (lcg(&mut seed) as f32).max(1e-6);
+            sources.push([
+                lcg(&mut seed) as f32 * a,
+                lcg(&mut seed) as f32 * a,
+                lcg(&mut seed) as f32 * a,
+                a,
+            ]);
+        }
         let backdrops = [[0.0f32; 4], [0.9, 0.1, 0.5, 0.0], [1.0, 1.0, 1.0, -0.0]];
         for mode in BlendMode::ALL {
-            for s in sources {
+            for s in &sources {
                 for b in backdrops {
-                    let got = blend_f32(mode, b, s).unwrap();
-                    for i in 0..4 {
-                        assert!(
-                            (got[i] - s[i]).abs() <= 1e-6,
-                            "{mode:?} {b:?} {s:?}: {got:?}"
-                        );
-                    }
+                    let got = blend_f32(mode, b, *s).unwrap();
+                    assert_eq!(bits(got), bits(*s), "{mode:?} {b:?} {s:?}");
                 }
             }
-            assert_eq!(
-                blend_u8(mode, [200, 9, 7, 0], [10, 20, 5, 100]),
-                [10, 20, 5, 100]
-            );
+            for s in [[10u8, 20, 5, 100], [255, 255, 255, 255], [1, 0, 0, 1]] {
+                assert_eq!(blend_u8(mode, [200, 9, 7, 0], s), s);
+            }
         }
     }
 
@@ -793,6 +810,109 @@ mod tests {
             out
         };
         assert_eq!(run(), run());
+    }
+
+    // ARQ-119 (amended): a source with a = 0 leaves the backdrop bit for bit, in every mode,
+    // with no clip, even for a backdrop outside [0, 1] or with -0.0.
+    #[test]
+    fn arq_119_transparent_source_leaves_the_backdrop_bit_for_bit() {
+        let backdrops = [
+            [1.5f32, 0.5, 0.2, 1.0],
+            [-0.0, 0.5, -0.25, 1.0],
+            [0.9, 0.1, 0.4, 0.5],
+            [2.0, -1.0, 3.0, 7.0],
+            [0.3, 0.3, 0.3, -0.0],
+        ];
+        let sources = [
+            [0.0f32; 4],
+            [0.9, 0.1, 0.5, 0.0],
+            [1.5, -3.0, 9.0, -0.0],
+            [0.0, -0.0, 0.0, 0.0],
+        ];
+        for mode in BlendMode::ALL {
+            for b in backdrops {
+                for s in sources {
+                    let got = blend_f32(mode, b, s).unwrap();
+                    assert_eq!(bits(got), bits(b), "{mode:?} {b:?} {s:?}");
+                }
+            }
+            // 8 bits: a backdrop channel above its alpha is returned as it is, too.
+            assert_eq!(
+                blend_u8(mode, [200, 9, 7, 100], [1, 2, 3, 0]),
+                [200, 9, 7, 100]
+            );
+        }
+    }
+
+    // ARQ-119 (amended): a NaN or infinity still gives Err when the source has a = 0.
+    #[test]
+    fn arq_119_transparent_source_still_checks_for_non_finite() {
+        for mode in BlendMode::ALL {
+            for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                let err = blend_f32(mode, [0.2, 0.2, 0.2, 1.0], [bad, 0.0, 0.0, 0.0]).unwrap_err();
+                assert_eq!(
+                    err,
+                    BufferError::NonFinite {
+                        field: "source",
+                        index: 0
+                    }
+                );
+                let err = blend_f32(mode, [0.2, bad, 0.2, 1.0], [0.0; 4]).unwrap_err();
+                assert_eq!(
+                    err,
+                    BufferError::NonFinite {
+                        field: "backdrop",
+                        index: 1
+                    }
+                );
+                let err = blend_f32(mode, [0.2; 4], [0.0, 0.0, 0.0, bad]).unwrap_err();
+                assert_eq!(
+                    err,
+                    BufferError::NonFinite {
+                        field: "source",
+                        index: 3
+                    }
+                );
+            }
+        }
+    }
+
+    // ARQ-119, W3C section 10: the mixing result is clamped, so valid input never gives a
+    // negative channel (the non-separable modes reach -4e-16 without the clamp).
+    #[test]
+    fn arq_119_mixing_result_is_clamped() {
+        let got = blend_f32(
+            BlendMode::Saturation,
+            [0.723_585_6, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+        )
+        .unwrap();
+        assert!(got.iter().all(|v| *v >= 0.0), "{got:?}");
+        let mut seed = 7u32;
+        for mode in [
+            BlendMode::Hue,
+            BlendMode::Saturation,
+            BlendMode::Color,
+            BlendMode::Luminosity,
+        ] {
+            for _ in 0..20_000 {
+                let mut px = || {
+                    let a = lcg(&mut seed) as f32;
+                    [
+                        lcg(&mut seed) as f32 * a,
+                        lcg(&mut seed) as f32 * a,
+                        lcg(&mut seed) as f32 * a,
+                        a,
+                    ]
+                };
+                let (b, s) = (px(), px());
+                let got = blend_f32(mode, b, s).unwrap();
+                assert!(
+                    got.iter().all(|v| (0.0..=1.0).contains(v)),
+                    "{mode:?} {b:?} {s:?}: {got:?}"
+                );
+            }
+        }
     }
 
     mod property {
