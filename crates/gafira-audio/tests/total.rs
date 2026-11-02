@@ -2,7 +2,7 @@
 
 use gafira_audio::{
     AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_PAN, PARAM_VOLUME,
-    Pan, ParamSnapshot,
+    Pan, ParamSnapshot, ProcessorChain,
 };
 
 type Maker = fn() -> Box<dyn AudioProcessor>;
@@ -13,6 +13,13 @@ fn makers() -> Vec<(&'static str, Maker)> {
         ("fade_in", || Box::new(Fade::new(FadeDirection::In))),
         ("fade_out", || Box::new(Fade::new(FadeDirection::Out))),
         ("pan", || Box::new(Pan::new())),
+        ("chain", || {
+            let mut chain = ProcessorChain::new();
+            chain.push(Box::new(Gain::new()));
+            chain.push(Box::new(Fade::new(FadeDirection::In)));
+            chain.push(Box::new(Pan::new()));
+            Box::new(chain)
+        }),
     ]
 }
 
