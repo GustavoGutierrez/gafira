@@ -18,5 +18,9 @@ criterion.workspace = true
 gafira-testkit.workspace = true
 assert_no_alloc.workspace = true
 
+[[bench]]
+name = "mix"
+harness = false
+
 [lints]
 workspace = true
