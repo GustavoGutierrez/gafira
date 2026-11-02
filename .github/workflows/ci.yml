@@ -83,7 +83,7 @@ jobs:
           gafira-doc   gafira-geom gafira-color
           gafira-edit  gafira-geom gafira-color gafira-doc
           gafira-testkit gafira-geom gafira-color gafira-doc gafira-edit
-          gafira-pathops gafira-geom
+          gafira-pathops gafira-geom gafira-color gafira-doc
           gafira-layout gafira-geom gafira-color gafira-doc
           gafira-anim   gafira-time gafira-geom gafira-color
           '

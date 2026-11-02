@@ -3,6 +3,8 @@
 use std::fmt;
 
 use gafira_doc::NodeId;
+use gafira_doc::msg;
+use gafira_doc::msg::{Message, ToMessage};
 use gafira_geom::Rect;
 
 /// Why a layout call failed. `field` names the input at fault.
@@ -45,6 +47,25 @@ impl fmt::Display for LayoutError {
 }
 
 impl std::error::Error for LayoutError {}
+
+impl ToMessage for LayoutError {
+    fn to_message(&self) -> Message {
+        match self {
+            Self::NonFinite { field } => {
+                msg!("error.layout.non_finite", field = Text(field.to_string()))
+            }
+            Self::InvalidBox { field } => {
+                msg!("error.layout.invalid_box", field = Text(field.to_string()))
+            }
+            Self::OutOfRange { field } => {
+                msg!("error.layout.out_of_range", field = Text(field.to_string()))
+            }
+            Self::NoArea => msg!("error.layout.no_area"),
+            Self::UnknownNode(id) => msg!("error.layout.unknown_node", node = Text(id.to_string())),
+            Self::Cycle(id) => msg!("error.layout.cycle", node = Text(id.to_string())),
+        }
+    }
+}
 
 /// `Ok(value)` when finite.
 pub(crate) fn finite(field: &'static str, value: f64) -> Result<f64, LayoutError> {
