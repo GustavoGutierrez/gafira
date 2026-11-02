@@ -7,8 +7,8 @@ use std::sync::Arc;
 use gafira_geom::Size;
 use parley::fontique::Blob;
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontFamily, FontFamilyName, FontFeatures,
-    LayoutContext, LineHeight, OverflowWrap, StyleProperty,
+    FontContext, FontFamily, FontFamilyName, FontFeatures, LayoutContext, LineHeight, OverflowWrap,
+    StyleProperty,
 };
 
 use crate::TextError;
@@ -210,22 +210,15 @@ pub fn layout_box(
     laid.break_all_lines(Some(fit));
 
     let spacing = spacing as f32;
-    let mut lines = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
-    // Overflow is read before aligning: justify stretches the spaces of a line up to the box.
+    let (mut lines, forced) = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
     let overflow = lines
         .iter()
         .any(|l| f64::from(content_advance(text, &l.clusters)) > width);
-    match style.align {
-        TextAlign::Left => {}
-        TextAlign::Justify => {
-            laid.align(Alignment::Justify, AlignmentOptions::default());
-            lines = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
-        }
-        TextAlign::Center | TextAlign::Right => {
-            for line in &mut lines {
-                shift_line(line, text, width, style.align == TextAlign::Center);
-            }
-        }
+    let rtl = laid.is_rtl();
+    let last = lines.len().saturating_sub(1);
+    for (i, line) in lines.iter_mut().enumerate() {
+        let stretch = i != last && !forced[i];
+        align_line(line, text, style.align, rtl, width, stretch);
     }
     // Ranges index the input text: after upper case, the clusters that come from one
     // character share its range.
@@ -245,8 +238,9 @@ pub fn layout_box(
     Ok(out)
 }
 
-/// The lines of a parley layout as output lines. `spacing` is the letter spacing in px
-/// that parley added after every cluster.
+/// The lines of a parley layout as output lines, all starting at x = 0, and whether each one
+/// ends in a forced break. `spacing` is the letter spacing in px that parley added after
+/// every cluster.
 fn read_lines(
     laid: &parley::Layout<()>,
     blob_ids: &[u64],
@@ -254,8 +248,9 @@ fn read_lines(
     spacing: f32,
     style: &TextStyle,
     size_px: f32,
-) -> Result<Vec<Line>, TextError> {
+) -> Result<(Vec<Line>, Vec<bool>), TextError> {
     let mut lines = Vec::new();
+    let mut forced = Vec::new();
     for line in laid.lines() {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
@@ -319,7 +314,8 @@ fn read_lines(
                 }
             }
         }
-        let mut x = metrics.offset;
+        forced.push(hard_breaks.contains(&true));
+        let mut x = 0.0;
         for c in &mut clusters {
             c.x = x;
             x += c.advance;
@@ -331,7 +327,7 @@ fn read_lines(
             clusters,
         });
     }
-    Ok(lines)
+    Ok((lines, forced))
 }
 
 /// Where each piece of the converted text came from in the input.
@@ -400,23 +396,30 @@ fn decoration(offset: f32, thickness: f32, size_px: f32) -> Decoration {
     Decoration { offset, thickness }
 }
 
-/// Which clusters are the white space at the end of the logical text of the line. That
-/// space hangs past the box, also inside a right-to-left run, where it is not at the
-/// visual end of the line.
-fn hanging_mask(text: &str, clusters: &[Cluster]) -> Vec<bool> {
+/// Which clusters are the white space at the logical end of the line. The rules of break,
+/// letter spacing and overflow treat all of it as hanging. With `paragraph_rtl`, only the
+/// white space whose run has the direction of the paragraph is kept: that space is at the
+/// edge of the line and really hangs. Parley does not apply UAX #9 L1 (FD-41, accepted
+/// limit), so the white space of a run of the other direction stays where bidi puts it.
+fn trailing_space(text: &str, clusters: &[Cluster], paragraph_rtl: Option<bool>) -> Vec<bool> {
     let mut logical: Vec<usize> = (0..clusters.len()).collect();
     logical.sort_by_key(|i| clusters[*i].range.start);
-    let is_space = |i: &usize| {
+    let hangs = |i: &usize| {
         text[clusters[*i].range.clone()]
             .chars()
             .all(char::is_whitespace)
+            && paragraph_rtl.is_none_or(|rtl| clusters[*i].rtl == rtl)
     };
-    let hanging = logical.iter().rev().take_while(|i| is_space(i)).count();
+    let hanging = logical.iter().rev().take_while(|i| hangs(i)).count();
     let mut mask = vec![false; clusters.len()];
     for i in &logical[logical.len() - hanging..] {
         mask[*i] = true;
     }
     mask
+}
+
+fn hanging_mask(text: &str, clusters: &[Cluster]) -> Vec<bool> {
+    trailing_space(text, clusters, None)
 }
 
 /// The advance of a line without the white space that hangs.
@@ -428,6 +431,71 @@ fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
         .filter(|(_, h)| !**h)
         .map(|(c, _)| c.advance)
         .sum()
+}
+
+/// Places the clusters of a line, which start at x = 0, in the box.
+///
+/// The white space at the end of the line whose run has the direction of the paragraph
+/// hangs: it is outside the alignment, on the right of a left-to-right paragraph and on the
+/// left (negative x) of a right-to-left one. `Left` puts the rest at the left edge, so a
+/// space of the other direction that stays inside the line keeps its place. `Center` and
+/// `Right` align the content without any of the trailing white space. `Justify` shares
+/// the spare room among the spaces that are not trailing white space; a line with none, the
+/// last line and a line with a forced break (`stretch` false) start where the paragraph
+/// starts: at the left in a left-to-right paragraph and at the right in a right-to-left one.
+/// A line wider than the box stays on the left, except under `Justify` in a right-to-left
+/// paragraph.
+fn align_line(line: &mut Line, text: &str, align: TextAlign, rtl: bool, width: f64, stretch: bool) {
+    let hung = trailing_space(text, &line.clusters, Some(rtl));
+    let hung_width: f64 = zip_sum(&line.clusters, &hung);
+    let hang_shift = if rtl { -hung_width } else { 0.0 };
+    match align {
+        TextAlign::Left => shift(line, hang_shift),
+        TextAlign::Center | TextAlign::Right => {
+            shift_line(line, text, width, align == TextAlign::Center);
+        }
+        TextAlign::Justify => {
+            let trailing = trailing_space(text, &line.clusters, None);
+            let separators: Vec<usize> = (0..line.clusters.len())
+                .filter(|i| {
+                    !trailing[*i]
+                        && matches!(&text[line.clusters[*i].range.clone()], " " | "\u{a0}")
+                })
+                .collect();
+            let total: f64 = line.clusters.iter().map(|c| f64::from(c.advance)).sum();
+            let room = width - (total - hung_width);
+            if stretch && !separators.is_empty() && room > 0.0 {
+                let each = (room / separators.len() as f64) as f32;
+                for i in &separators {
+                    line.clusters[*i].advance += each;
+                }
+                let mut x = 0.0;
+                for c in &mut line.clusters {
+                    c.x = x;
+                    x += c.advance;
+                }
+                line.advance = x;
+                shift(line, hang_shift);
+            } else if rtl {
+                shift(line, width - total);
+            }
+        }
+    }
+}
+
+fn zip_sum(clusters: &[Cluster], mask: &[bool]) -> f64 {
+    clusters
+        .iter()
+        .zip(mask)
+        .filter(|(_, m)| **m)
+        .map(|(c, _)| f64::from(c.advance))
+        .sum()
+}
+
+fn shift(line: &mut Line, by: f64) {
+    for c in &mut line.clusters {
+        c.x += by as f32;
+    }
 }
 
 /// Centres or right-aligns the content of a line in the box; the hanging white space is
@@ -447,10 +515,7 @@ fn shift_line(line: &mut Line, text: &str, width: f64, centre: bool) {
         return;
     }
     let target = if centre { room / 2.0 } else { room };
-    let shift = (target - f64::from(left)) as f32;
-    for c in &mut line.clusters {
-        c.x += shift;
-    }
+    shift(line, target - f64::from(left));
 }
 
 /// ARQ-110: a non-finite result is an `Err`, never an output.

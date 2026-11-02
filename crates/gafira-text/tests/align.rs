@@ -7,6 +7,7 @@ use gafira_testkit::fonts;
 use gafira_text::{Line, TextAlign, TextLayout, TextStyle, layout_box};
 
 const INTER: &[u8] = fonts::INTER.bytes;
+const ARABIC: &[u8] = fonts::NOTO_SANS_ARABIC.bytes;
 const WIDTH: f64 = 200.0;
 
 fn lay(text: &str, align: TextAlign, width: f64) -> TextLayout {
@@ -21,6 +22,24 @@ fn lay_t(text: &str, align: TextAlign, width: f64, letter_spacing: f64) -> TextL
         ..TextStyle::default()
     };
     layout_box(text, &[INTER], &s, 96.0, Size::new(width, 1000.0)).expect("valid input")
+}
+
+/// `text` laid out with a font stack, at 96 dpi.
+fn lay_with(
+    text: &str,
+    stack: &[&[u8]],
+    size_pt: f64,
+    align: TextAlign,
+    width: f64,
+    letter_spacing: f64,
+) -> TextLayout {
+    let s = TextStyle {
+        size_pt,
+        align,
+        letter_spacing,
+        ..TextStyle::default()
+    };
+    layout_box(text, stack, &s, 96.0, Size::new(width, 1000.0)).expect("valid input")
 }
 
 /// Left and right edge of the content of a line: the clusters that are not white space.
@@ -207,4 +226,159 @@ fn fd_41_a_line_wider_than_the_box_stays_on_the_left_in_any_alignment() {
         let layout = lay("W", align, 3.0);
         assert_eq!(layout.lines[0].clusters[0].x, 0.0, "{align:?}");
     }
+}
+
+// ---- right-to-left paragraphs: the white space at the end hangs on the left ------------------
+
+/// Arabic words, so the paragraph is right-to-left.
+const ARABIC_PARAGRAPH: &str = "\u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} \u{648}\u{647}\u{62f} \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} \u{648}\u{647}\u{62f} \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} \u{648}\u{647}\u{62f}";
+
+#[test]
+fn fd_41_i_a_right_to_left_justified_line_ends_at_the_edge_with_any_spacing() {
+    let stack = [ARABIC, INTER];
+    for t in [0.0, -100.0, 100.0, 250.0, 500.0] {
+        for step in 40..=200 {
+            let width = f64::from(step);
+            let layout = lay_with(ARABIC_PARAGRAPH, &stack, 12.0, TextAlign::Justify, width, t);
+            let (_, rest) = layout.lines.split_last().expect("lines");
+            for line in rest {
+                let spaces = line
+                    .clusters
+                    .iter()
+                    .filter(|c| ARABIC_PARAGRAPH[c.range.clone()] == *" ")
+                    .count();
+                if spaces < 2 {
+                    continue; // one word and its hanging space
+                }
+                let (left, right) = edges(ARABIC_PARAGRAPH, line);
+                assert!(left.abs() <= 0.01, "t={t} w={width}: starts at {left}");
+                assert!(
+                    (right - width).abs() <= 0.01,
+                    "t={t} w={width}: ends at {right}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn fd_41_hanging_space_of_a_right_to_left_paragraph_is_outside_the_ink_with_left() {
+    let stack = [ARABIC, INTER];
+    let word = "\u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648}";
+    for t in [0.0, 100.0, 500.0] {
+        let plain = lay_with(word, &stack, 12.0, TextAlign::Left, 200.0, t);
+        let (plain_left, plain_right) = edges(word, &plain.lines[0]);
+        for tail in ["  ", " \n", "  \nabc"] {
+            let text = format!("{word}{tail}");
+            let layout = lay_with(&text, &stack, 12.0, TextAlign::Left, 200.0, t);
+            let (left, right) = edges(&text, &layout.lines[0]);
+            assert!(left.abs() <= 0.01, "t={t} {tail:?}: ink starts at {left}");
+            assert!(
+                (right - left - (plain_right - plain_left)).abs() <= 0.01,
+                "t={t} {tail:?}: ink {left}..{right}"
+            );
+            assert!(plain_left.abs() <= 0.01);
+        }
+    }
+}
+
+#[test]
+fn fd_41_a_wrapped_right_to_left_paragraph_with_left_keeps_its_ink_in_the_box() {
+    let stack = [ARABIC, INTER];
+    for t in [0.0, 100.0] {
+        for step in 30..=120 {
+            let width = f64::from(step);
+            let layout = lay_with(ARABIC_PARAGRAPH, &stack, 12.0, TextAlign::Left, width, t);
+            assert!(!layout.overflow, "t={t} w={width}");
+            for line in &layout.lines {
+                let (left, right) = edges(ARABIC_PARAGRAPH, line);
+                assert!(left.abs() <= 0.01, "t={t} w={width}: starts at {left}");
+                assert!(right <= width + 0.01, "t={t} w={width}: ends at {right}");
+            }
+        }
+    }
+}
+
+// ---- the accepted limit: a trailing space of another bidi level (FD-41 m) --------------------
+
+#[test]
+fn fd_41_m_a_trailing_space_of_the_other_level_starts_the_line_at_the_edge() {
+    let text = "abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def";
+    let layout = lay_with(text, &[INTER, ARABIC], 12.0, TextAlign::Left, 40.0, 0.0);
+    assert!(!layout.overflow);
+    let second = &layout.lines[1];
+    let first = &second.clusters[0];
+    assert_eq!(&text[first.range.clone()], " ");
+    assert!(first.x.abs() <= 0.01, "the space is at {}", first.x);
+    let (left, _) = edges(text, second);
+    assert!((left - 4.50).abs() <= 0.01, "the content starts at {left}");
+}
+
+#[test]
+fn fd_41_m_content_of_the_other_level_can_end_past_the_box_without_overflow() {
+    let text = "abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def";
+    let layout = lay_with(text, &[INTER, ARABIC], 9.0, TextAlign::Left, 39.3, 0.0);
+    assert!(!layout.overflow);
+    let (_, right) = edges(text, &layout.lines[0]);
+    assert!((right - 41.56).abs() <= 0.01, "the content ends at {right}");
+    assert!((right - 39.3 - 2.26).abs() <= 0.01);
+}
+
+#[test]
+fn fd_41_m_a_trailing_space_of_the_paragraph_level_stays_behind_the_content() {
+    let text = "abc \u{627}\u{628}\u{62c} def";
+    let layout = lay_with(text, &[INTER, ARABIC], 9.0, TextAlign::Left, 39.3, 0.0);
+    assert!(!layout.overflow);
+    let line = &layout.lines[0];
+    let (_, right) = edges(text, line);
+    assert!((right - 38.19).abs() <= 0.01, "the content ends at {right}");
+    let space = line.clusters.last().expect("clusters");
+    assert_eq!(&text[space.range.clone()], " ");
+    assert!((f64::from(space.x) - right).abs() <= 0.01);
+}
+
+#[test]
+fn fd_41_i_a_one_word_line_behind_an_opposite_level_space_is_not_stretched() {
+    // The second line is the Arabic word and its trailing space, which is not at the
+    // paragraph level: the line has one word, so Justify leaves it as Left does.
+    let text = "abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def";
+    let stack = [INTER, ARABIC];
+    let justified = lay_with(text, &stack, 12.0, TextAlign::Justify, 40.0, 0.0);
+    let plain = lay_with(text, &stack, 12.0, TextAlign::Left, 40.0, 0.0);
+    assert_eq!(justified.lines[1], plain.lines[1]);
+    let (left, right) = edges(text, &justified.lines[1]);
+    assert!((left - 4.50).abs() <= 0.01 && (right - 23.00).abs() <= 0.01);
+}
+
+#[test]
+fn fd_41_a_space_of_the_other_level_in_a_right_to_left_paragraph_does_not_hang_with_left() {
+    // Only white space with the level of the paragraph hangs. A Latin word and its trailing
+    // space at the end of an Arabic paragraph stay inside the line at the left edge.
+    let text = "\u{627}\u{628}\u{62c} abc def ghi \u{62f}\u{647}\u{648}";
+    let stack = [ARABIC, INTER];
+    let mut other_level_spaces = 0;
+    for step in 20..=140 {
+        let layout = lay_with(text, &stack, 12.0, TextAlign::Left, f64::from(step), 0.0);
+        for line in &layout.lines {
+            let ends_in_latin_space = line
+                .clusters
+                .iter()
+                .any(|c| !c.rtl && text[c.range.clone()] == *" " && c.range.end == line_end(line));
+            other_level_spaces += usize::from(ends_in_latin_space);
+            for c in &line.clusters {
+                assert!(
+                    c.x >= -0.01 || (c.rtl && text[c.range.clone()].trim().is_empty()),
+                    "w={step}: {:?} at {}",
+                    &text[c.range.clone()],
+                    c.x
+                );
+            }
+        }
+    }
+    assert!(other_level_spaces > 0, "the sweep never ends a line there");
+}
+
+/// Logical end of a line: the largest end of its clusters.
+fn line_end(line: &Line) -> usize {
+    line.clusters.iter().map(|c| c.range.end).max().unwrap_or(0)
 }
