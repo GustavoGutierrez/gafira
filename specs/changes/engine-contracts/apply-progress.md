@@ -348,10 +348,10 @@ Not RED (the code already met them), proved by mutants:
 | C1 | `arq_112_racing_next_generation_calls_leave_exactly_one_live_token` (8 threads, `Barrier`, 2000 rounds) | `next_generation` as `load` plus `store`: killed, 20 of 20 runs |
 | C2 | `arq_112_cancelling_while_generations_advance_never_revives_an_older_token` (3 cancellers on the newest published token, 200 000 steps) | `cancel` as `if load <= issued { store(issued + 1) }`: killed 20 of 20; the `==` variant killed on every run seen |
 
-Stress result: both concurrency tests and the parallel checker test pass 20 of 20 runs on HEAD; whole-binary `contract_cancel` 20 of 20, about 0.2 s. The design of C2 differs from the report's handshake: the handshake needs about 3 000 000 rounds to hit once in 70 000 in release and missed in debug (100 000 rounds, 5 runs). Hammering the newest token while the counter advances is a race with no gap to find, and hit on every run.
+Stress result: both concurrency tests and the parallel checker test pass 20 of 20 runs on HEAD; whole-binary `contract_cancel` 20 of 20, about 0.2 s. The design of C2 differs from the report's handshake: the handshake hit 44 times in 3 000 000 rounds in release (verify report) and missed the mutant in debug (100 000 rounds, 5 runs, both load-and-store variants). Hammering the newest token while the counter advances is a race with no gap to find, and hit on every run.
 
 S1: dbd6997 says "18 of 20 tests". At the RED run the file had 20 tests, 18 failed; `arq_112_even_steps_are_measured_in_f32_with_no_tolerance` was added after it, so the commit holds 21. Correct figure: 18 of 20 at RED, 21 tests in the commit. After this round the file holds 26.
 
 Deviations: the racing-`cancel` test is probabilistic in what it can catch (it never fails on correct code); there is no `loom`, as asked. The W1 `Ok(false)` fewer-than-`k` cases are now pinned, which closes the open point under "Deviations and judgments" above.
 
-Measured: `git diff --shortstat bf66b2a HEAD -- crates`: 4 files changed, 346 insertions(+), 14 deletions(-); `progress.rs` source 29 lines changed, the rest tests.
+Measured: `git diff --shortstat bf66b2a HEAD -- crates`: 3 files changed, 248 insertions(+), 10 deletions(-); `progress.rs` source 29 lines changed, the rest tests.
