@@ -4,7 +4,7 @@
     {
       "outcome_id": "segment-strays-reliable",
       "spec_id": "02-arquitectura-software",
-      "status": "specifying",
+      "status": "implementing",
       "flow": "Flow: standard | level: L2 | pack: bug fix | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: rule on critical code the spec does not state (finding SG3-W7), owner chose to keep it and clear reliable when it acts",
       "scope": "Record in ARQ-131 and ARQ-133 the rule that keeps a minority band colour out of the background model, and make reliable false when that rule moves a real colour region out of the background.",
       "non_goals": [
@@ -18,13 +18,13 @@
           "id": "AC1",
           "status": "pending",
           "type": "unit",
-          "text": "A background of two flat colours, whatever the horizon, gives Ok with reliable false when the stray rule acts on the smaller colour."
+          "text": "A background of two flat colours with horizon 50 to 90 % gives Ok with reliable false in Primer plano, Elemento and Fondo (D-47, ARQ-131)."
         },
         {
           "id": "AC2",
           "status": "pending",
           "type": "unit",
-          "text": "A subject touching the border keeps its inner part, as today, and reports reliable false."
+          "text": "A subject touching the border with a contact of at least 5 % of the band keeps its inner part and reports reliable false; a smaller contact keeps reliable as before (D-47, ARQ-131, ARQ-133)."
         },
         {
           "id": "AC3",
@@ -39,7 +39,7 @@
           "text": "The mask is bit-identical to the current one on the same input; only reliable changes. Foreground and Background still agree."
         }
       ],
-      "next_action": "specifier records the rule and its trigger in specs/02, then tdd-apply"
+      "next_action": "tdd-apply implements D-47, then verify"
     }
   ]
 }
