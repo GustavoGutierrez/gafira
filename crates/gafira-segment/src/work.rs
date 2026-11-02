@@ -118,12 +118,14 @@ mod tests {
     fn fd_38_reduction_averages_source_blocks() {
         use gafira_doc::contract::{CancelToken, NoProgress};
         use gafira_raster::{ImageView, PixelData};
-        // 4096x2: columns alternate 0 and 255; a 2048x1 copy averages pairs and rows.
+        // 4096x2: only every second pixel of row 1 is white, so rows and columns
+        // differ inside every 2x2 block; the mean is 64 (255 / 4), which no single
+        // sample, row or column gives.
         let (w, h) = (4096usize, 2usize);
         let mut px = Vec::new();
-        for _ in 0..h {
+        for y in 0..h {
             for x in 0..w {
-                let v = if x % 4 < 2 { 0 } else { 255 };
+                let v = if y == 1 && x % 2 == 1 { 255 } else { 0 };
                 px.extend_from_slice(&[v, v, v, 255]);
             }
         }
@@ -132,9 +134,7 @@ mod tests {
         let meter = Meter::new(&progress, &cancel, 1 << 30);
         let work = WorkImage::build(&Source::new(&view), &meter).unwrap();
         assert_eq!((work.width, work.height), (2048, 1));
-        // Pairs (0,1) are black and pairs (2,3) white: work pixels alternate 0, 255.
-        assert_eq!(work.rgb[0], [0, 0, 0]);
-        assert_eq!(work.rgb[1], [255, 255, 255]);
+        assert!(work.rgb.iter().all(|&p| p == [64, 64, 64]));
     }
 
     // FD-38 / ARQ-130: a long side above 2048 is reduced to it; 2048 or less is kept.
