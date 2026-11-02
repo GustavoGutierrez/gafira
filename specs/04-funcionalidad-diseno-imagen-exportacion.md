@@ -471,7 +471,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
   - **Interletrado**: añade `interletrado / 1000 × tamaño` tras cada clúster de grafemas, salvo el último de la línea. Si es distinto de 0 se apagan las ligaduras opcionales, como en CSS; las obligatorias de una escritura se mantienen.
   - **Saltos**: una palabra más ancha que la caja se parte por clústeres. Un solo clúster más ancho que la caja se deja en su línea y cuenta como desborde.
   - **Justificado**: reparte el sobrante entre palabras. La última línea de un párrafo y la línea con salto forzado no se estiran, ni la línea de una sola palabra.
-  - **Mayúsculas**: conversión Unicode completa sin idioma (`ß` da `SS`; ARQ-107).
+  - **Mayúsculas**: conversión Unicode completa sin idioma (`ß` da `SS`; ARQ-107). Los rangos de la salida indican el texto de entrada (02 ARQ-116).
   - **Subrayado y tachado**: posición y grosor salen de las tablas `post` y `OS/2`; con grosor 0 o ausente, 0,05 em (PROPUESTA).
   - **Listas**: numeradas con `1.` y con viñetas `•`, `◦` y `▪` por nivel, en ciclo; hasta 4 niveles; sangría de 1,5 em por nivel (PROPUESTA).
   - **Fuentes de reserva** (D-19): quien llama da una lista ordenada de fuentes en bytes, con al menos una; una lista vacía da `Err`, porque el texto se perdería sin aviso. Cada clúster usa la primera fuente que cubre todos sus puntos de código. Si ninguna lo cubre, usa la fuente que cubre más puntos de código del clúster, y en un empate la primera de la lista. Los puntos sin cobertura usan su `.notdef` y la salida lo indica; no es un error.
