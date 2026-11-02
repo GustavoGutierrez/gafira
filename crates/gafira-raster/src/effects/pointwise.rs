@@ -19,8 +19,11 @@ pub(super) fn slider(
     }
 }
 
-/// Smoothstep from `a` to `b`, `a < b` (FD-33 `w(a, b, x)`).
+/// Smoothstep from `a` to `b` (FD-33 `w(a, b, x)`). With `b <= a` there is no ramp: a step at `a`.
 pub(super) fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
+    if b <= a {
+        return if x < a { 0.0 } else { 1.0 };
+    }
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
@@ -150,5 +153,25 @@ where
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // FD-33 `w(a, b, x)`: smoothstep from `a` to `b`; with equal edges it is a step at `a`.
+    #[test]
+    fn fd_33_smoothstep_values_and_the_step_of_equal_edges() {
+        assert_eq!(smoothstep(0.0, 1.0, -1.0), 0.0);
+        assert_eq!(smoothstep(0.0, 1.0, 0.0), 0.0);
+        assert_eq!(smoothstep(0.0, 1.0, 0.5), 0.5);
+        assert_eq!(smoothstep(0.0, 1.0, 1.0), 1.0);
+        assert_eq!(smoothstep(0.0, 1.0, 7.0), 1.0);
+        assert!((smoothstep(2.0, 4.0, 2.5) - 0.15625).abs() < 1e-12);
+        assert_eq!(smoothstep(3.0, 3.0, 2.999), 0.0);
+        assert_eq!(smoothstep(3.0, 3.0, 3.0), 1.0);
+        assert_eq!(smoothstep(0.0, 0.0, 0.0), 1.0);
+        assert_eq!(smoothstep(0.0, 0.0, 12.0), 1.0);
     }
 }

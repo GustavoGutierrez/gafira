@@ -3,6 +3,7 @@
 mod auto_adjust;
 mod blur;
 mod color_adjust;
+mod detected;
 mod light;
 mod pointwise;
 mod shadow;
@@ -16,6 +17,7 @@ use gafira_geom::IRect;
 
 pub use auto_adjust::{AutoAdjust, auto_adjust};
 pub use color_adjust::ColorAdjust;
+pub use detected::{DETECTED_SLOTS, DetectedColors};
 pub use light::Light;
 pub use shadow::ParallelShadow;
 pub use texture::Texture;

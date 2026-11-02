@@ -53,10 +53,10 @@ impl Describe for ColorAdjust {
     }
 }
 
-type Matrix = [[f64; 3]; 3];
+pub(super) type Matrix = [[f64; 3]; 3];
 
 /// W3C *Filter Effects* `hue-rotate(degrees)`.
-fn hue_matrix(degrees: f64) -> Matrix {
+pub(super) fn hue_matrix(degrees: f64) -> Matrix {
     let (s, k) = degrees.to_radians().sin_cos();
     [
         [
@@ -78,7 +78,7 @@ fn hue_matrix(degrees: f64) -> Matrix {
 }
 
 /// W3C *Filter Effects* `saturate(s)`.
-fn saturate_matrix(s: f64) -> Matrix {
+pub(super) fn saturate_matrix(s: f64) -> Matrix {
     [
         [0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s],
         [0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
@@ -86,7 +86,7 @@ fn saturate_matrix(s: f64) -> Matrix {
     ]
 }
 
-fn apply(m: &Matrix, c: [f64; 3]) -> [f64; 3] {
+pub(super) fn apply(m: &Matrix, c: [f64; 3]) -> [f64; 3] {
     m.map(|r| r[0] * c[0] + r[1] * c[1] + r[2] * c[2])
 }
 
