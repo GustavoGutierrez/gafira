@@ -173,3 +173,80 @@ fn arq_102_cancelled_is_the_job_key_with_no_arguments() {
     );
     assert!(is_valid_key(m.key.0));
 }
+
+// Concurrency. These pass on the code as written and are not RED: they hold
+// the token rules (`fetch_add`, `fetch_max`) against a non-atomic version.
+
+// ARQ-112
+#[test]
+fn arq_112_racing_next_generation_calls_leave_exactly_one_live_token() {
+    use std::sync::{Barrier, Mutex};
+    const THREADS: usize = 8;
+    const ROUNDS: usize = 2000;
+    let bases: Vec<CancelToken> = (0..ROUNDS).map(|_| CancelToken::new()).collect();
+    let results: Vec<Mutex<Vec<CancelToken>>> =
+        (0..ROUNDS).map(|_| Mutex::new(Vec::new())).collect();
+    let barrier = Barrier::new(THREADS);
+    std::thread::scope(|s| {
+        for _ in 0..THREADS {
+            s.spawn(|| {
+                for round in 0..ROUNDS {
+                    barrier.wait();
+                    let t = bases[round].next_generation();
+                    results[round].lock().unwrap().push(t);
+                }
+            });
+        }
+    });
+    for (round, tokens) in results.iter().enumerate() {
+        let tokens = tokens.lock().unwrap();
+        assert_eq!(tokens.len(), THREADS);
+        let live = tokens.iter().filter(|t| !t.is_cancelled()).count();
+        assert_eq!(live, 1, "round {round}");
+        assert!(bases[round].is_cancelled());
+    }
+}
+
+// ARQ-112
+#[test]
+fn arq_112_cancelling_while_generations_advance_never_revives_an_older_token() {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    const CANCELLERS: usize = 3;
+    const STEPS: usize = 200_000;
+    const WINDOW: usize = 4;
+    let slot = Mutex::new(CancelToken::new());
+    let stop = AtomicBool::new(false);
+    let mut revived = None;
+    std::thread::scope(|s| {
+        for _ in 0..CANCELLERS {
+            s.spawn(|| {
+                while !stop.load(Ordering::Acquire) {
+                    // The newest published token: current when it is taken,
+                    // stale a moment later.
+                    let t = slot.lock().unwrap().clone();
+                    t.cancel();
+                }
+            });
+        }
+        let mut recent: VecDeque<CancelToken> = VecDeque::new();
+        let mut current = slot.lock().unwrap().clone();
+        for step in 0..STEPS {
+            let next = current.next_generation();
+            // Every token older than `next` is cancelled, and stays so.
+            if !current.is_cancelled() || recent.iter().any(|t| !t.is_cancelled()) {
+                revived = Some(step);
+                break;
+            }
+            if recent.len() == WINDOW {
+                recent.pop_front();
+            }
+            recent.push_back(current);
+            *slot.lock().unwrap() = next.clone();
+            current = next;
+        }
+        stop.store(true, Ordering::Release);
+    });
+    assert_eq!(revived, None, "an older token is live again");
+}
