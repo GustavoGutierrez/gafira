@@ -22,7 +22,9 @@ pub use eq::{Eq3Band, PARAM_HIGH, PARAM_LOW, PARAM_MID};
 pub use error::AudioError;
 pub use fade::{Fade, FadeDirection, PARAM_DURATION};
 pub use gain::{Gain, PARAM_VOLUME, db_to_gain, percent_to_gain};
-pub use loudness::{integrated_from_blocks, integrated_loudness};
+pub use loudness::{
+    Leveling, integrated_from_blocks, integrated_loudness, level, plan_leveling, true_peak,
+};
 pub use mix::{MixTrack, mix};
 pub use offset::flicks_to_samples;
 pub use pan::{PARAM_PAN, Pan, crossfade_gains};

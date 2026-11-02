@@ -1,4 +1,4 @@
-//! Integrated loudness (ARQ-126).
+//! Integrated loudness, true peak and the Nivelar gain (ARQ-126, ARQ-127).
 //!
 //! These are analysis functions over whole signals; none of them takes a
 //! cancellation token (ARQ-112, D-43). They take planar slices: 1, 2 or 6
@@ -178,4 +178,157 @@ fn louder_than(energies: &[f64], gate: f64) -> Vec<f64> {
 /// Mean of the energies, if there are any.
 fn mean(energies: &[f64]) -> Option<f64> {
     (!energies.is_empty()).then(|| energies.iter().sum::<f64>() / energies.len() as f64)
+}
+
+/// Half the taps of one interpolation phase (24 taps per phase).
+const PEAK_HALF_TAPS: usize = 12;
+/// Kaiser parameter of the interpolation window.
+const PEAK_KAISER_BETA: f64 = 8.0;
+/// The ceiling Nivelar keeps the true peak under, in dBTP.
+const PEAK_CEILING_DBTP: f64 = -1.0;
+
+/// Modified Bessel function of the first kind, order 0.
+fn bessel_i0(x: f64) -> f64 {
+    let (mut term, mut sum) = (1.0_f64, 1.0_f64);
+    let quarter = x * x / 4.0;
+    for k in 1..60 {
+        let k = f64::from(k);
+        term *= quarter / (k * k);
+        sum += term;
+        if term < sum * 1e-17 {
+            break;
+        }
+    }
+    sum
+}
+
+/// Windowed-sinc taps that read the signal `phase / factor` of a sample after
+/// `x[n]`, for `x[n - HALF + 1 ..= n + HALF]`; their sum is 1.
+fn interpolation_taps(phase: usize, factor: usize) -> Vec<f64> {
+    let frac = phase as f64 / factor as f64;
+    let half = PEAK_HALF_TAPS as f64;
+    let norm = bessel_i0(PEAK_KAISER_BETA);
+    let mut taps: Vec<f64> = (0..2 * PEAK_HALF_TAPS)
+        .map(|j| {
+            let t = j as f64 - half + 1.0 - frac;
+            let sinc = (std::f64::consts::PI * t).sin() / (std::f64::consts::PI * t);
+            let window = bessel_i0(PEAK_KAISER_BETA * (1.0 - (t / half).powi(2)).sqrt()) / norm;
+            sinc * window
+        })
+        .collect();
+    let sum: f64 = taps.iter().sum();
+    for tap in &mut taps {
+        *tap /= sum;
+    }
+    taps
+}
+
+/// Oversampling factor of BS.1770-4 Annex 2: 4 up to 48 kHz, 2 up to 96 kHz,
+/// none above.
+fn oversampling(hz: u32) -> usize {
+    match hz {
+        0..=48_000 => 4,
+        48_001..=96_000 => 2,
+        _ => 1,
+    }
+}
+
+/// True peak of the whole signal, linear, over all channels (LFE included):
+/// the largest absolute value of the signal oversampled as BS.1770-4 Annex 2
+/// asks: x4 up to 48 kHz (the rule of ARQ-127), x2 up to 96 kHz and none
+/// above. The signal is taken as zero outside its ends.
+///
+/// # Errors
+///
+/// As [`integrated_loudness`].
+pub fn true_peak(channels: &[&[f32]], rate: SampleRate) -> Result<f64, AudioError> {
+    let frames = check(channels)?;
+    let factor = oversampling(rate.hz());
+    let taps: Vec<Vec<f64>> = (1..factor).map(|p| interpolation_taps(p, factor)).collect();
+    let mut peak = 0.0_f64;
+    for samples in channels {
+        for (n, &x) in samples.iter().enumerate() {
+            peak = peak.max(f64::from(x).abs());
+            for phase in &taps {
+                let mut y = 0.0;
+                for (j, &tap) in phase.iter().enumerate() {
+                    // x[n + j - HALF + 1], zero outside the signal.
+                    let at = (n + j + 1).checked_sub(PEAK_HALF_TAPS);
+                    if let Some(v) = at.filter(|&i| i < frames).map(|i| samples[i]) {
+                        y += tap * f64::from(v);
+                    }
+                }
+                peak = peak.max(y.abs());
+            }
+        }
+    }
+    Ok(peak)
+}
+
+/// The gain Nivelar applies and whether it reached the target (ARQ-127).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Leveling {
+    /// Constant gain to apply to the whole signal, in dB.
+    pub gain_db: f64,
+    /// True when the target was reached. The ceiling equal to the request
+    /// reaches it.
+    pub reached: bool,
+}
+
+/// The Nivelar gain from the measures: the request is `target − measured`,
+/// the ceiling is `−1 dBTP − peak`, and the gain is the smaller of the two.
+/// Without a measure the gain is 0 and the target is not reached; without a
+/// peak there is no ceiling.
+///
+/// # Errors
+///
+/// [`AudioError::NonFinite`] naming `target`, `measured` or `peak`, or `gain`
+/// when the request overflows.
+pub fn plan_leveling(
+    target_lufs: f64,
+    measured_lufs: Option<f64>,
+    true_peak_dbtp: Option<f64>,
+) -> Result<Leveling, AudioError> {
+    finite("target", target_lufs)?;
+    if let Some(m) = measured_lufs {
+        finite("measured", m)?;
+    }
+    if let Some(p) = true_peak_dbtp {
+        finite("peak", p)?;
+    }
+    let Some(measured) = measured_lufs else {
+        return Ok(Leveling {
+            gain_db: 0.0,
+            reached: false,
+        });
+    };
+    let request = finite("gain", target_lufs - measured)?;
+    let Some(peak) = true_peak_dbtp else {
+        return Ok(Leveling {
+            gain_db: request,
+            reached: true,
+        });
+    };
+    let ceiling = finite("gain", PEAK_CEILING_DBTP - peak)?;
+    Ok(Leveling {
+        gain_db: request.min(ceiling),
+        reached: request <= ceiling,
+    })
+}
+
+/// Measures the signal and plans its Nivelar gain.
+///
+/// # Errors
+///
+/// As [`integrated_loudness`], and [`AudioError::NonFinite`] naming `target`.
+pub fn level(
+    channels: &[&[f32]],
+    rate: SampleRate,
+    target_lufs: f64,
+) -> Result<Leveling, AudioError> {
+    finite("target", target_lufs)?;
+    let measured = integrated_loudness(channels, rate)?;
+    let peak = true_peak(channels, rate)?;
+    let peak_db = (peak > 0.0).then(|| 20.0 * peak.log10());
+    plan_leveling(target_lufs, measured, peak_db)
 }

@@ -301,3 +301,45 @@ Decisions the specs leave open (unit 1):
 - Channels of unequal length are an `Err`, not measured over the shortest.
 - A rate whose 100 ms is not a whole number of samples rounds it to the nearest sample (`(fs + 5) / 10`), and the block is 4 hops. For 44.1, 48 and 96 kHz it is exact.
 - EBU Tech 3341 cases 1 to 5 are synthesised from the published description as I know it: 1 and 2 are single levels (-23, -33 LUFS); 3 is -36, -23, -36 (10, 60, 10 s); 4 and 5 are my own sequences that exercise the gates (4: -72, -40, -23, -40, -72 for 10, 10, 40, 10, 10 s; 5: -26 for 20 s then -20 for 10 s), each with the expected value worked out from the gates. The files were not at hand, so 4 and 5 may differ from the EBU originals.
+
+### Unit 2: true peak and the Nivelar gain (ARQ-127, FV-10 b, ARQ-110, ARQ-111)
+
+RED, stub `true_peak -> Ok(0.0)`, `plan_leveling` and `level -> Ok(Leveling { gain_db: 0.0, reached: false })` (`tests/leveling.rs`; 11 of 16 failed):
+
+| Criterion | Failing line |
+|---|---|
+| fs/4 sine peaks at full scale between samples | `arq_127_a_sine_at_a_quarter_of_the_rate_*`: `8000 Hz: ... dBFS` assertion (the stub gave 0) |
+| peak never under the sample peak, sees every channel | `arq_127_the_true_peak_is_never_under_the_sample_peak_*` |
+| a lone sample peaks at itself | `arq_127_a_lone_sample_peaks_at_itself`: `got 0, want 0.5 +-0.000001` |
+| smaller of request and ceiling | `arq_127_the_applied_gain_is_the_smaller_*`: `left: (0.0, false) right: (2.0, false)` |
+| equality reaches the target | `arq_127_a_request_equal_to_the_ceiling_*`: `left: (0.0, false) right: (6.0, true)` |
+| Nivelar example, -30 LUFS and -3 dBTP | `fv_10_b_a_quiet_signal_with_a_high_peak_*`: `got 0, want 2 +-0.01` |
+| Nivelar example, -20 LUFS with headroom | `fv_10_b_a_signal_at_minus_20_lufs_*`: assertion `p.reached` |
+| channel count and samples of the peak | `arq_110_the_peak_takes_the_same_channel_counts_*`: `left: Ok(0.0) right: Err(ChannelCount { channels: 0 })` |
+| plan names its input | `arq_110_the_plan_names_the_non_finite_input`: `left: Ok(Leveling {..}) right: Err(NonFinite { field: "target" })` |
+| request overflow | `arq_110_a_request_that_overflows_is_an_error`: `right: Err(NonFinite { field: "gain" })` |
+| `level` checks its input | `arq_110_level_checks_the_target_and_the_signal` |
+
+Passed from the start (the stub answer is the right one), each proved by a mutant: `arq_127_silence_and_an_empty_signal_have_a_peak_of_zero`, `arq_127_without_a_measure_the_gain_is_zero_*`, `arq_127_silence_and_a_signal_under_400_ms_*`, `arq_111_the_peak_gives_the_same_bytes_twice`, `arq_111_level_gives_the_same_bytes_twice`.
+
+Hand mutants (applied, killed, reverted):
+
+| Mutant | Killed by |
+|---|---|
+| True peak without oversampling at 48 kHz or less (x1) | `arq_127_a_sine_at_a_quarter_of_the_rate_*` |
+| x2 at 48 kHz or less | the same test; it survived the first version (only the 45 degree phase, which x2 also sees) and the phases 67.5 and 22.5 degrees now kill it |
+| x8 at 48 kHz or less | survives, equivalent: x8 only measures a higher crest by a hair |
+| Applied gain the larger of request and ceiling | `arq_127_the_applied_gain_is_the_smaller_*`, both `fv_10_b_*` |
+| Equality does not reach the target (`<` for `<=`) | `arq_127_a_request_equal_to_the_ceiling_*` |
+| Ceiling -2 dBTP | `arq_127_a_request_equal_to_the_ceiling_*`, `fv_10_b_a_quiet_signal_*` |
+| No measure: gain 1; reached true | `arq_127_without_a_measure_*`, `arq_127_silence_and_a_signal_under_400_ms_*` |
+| LFE left out of the peak | `arq_127_the_true_peak_is_never_under_the_sample_peak_*` |
+| Silence peak 1e-9 | `arq_127_silence_and_an_empty_signal_*` |
+| Counter added to the peak; to the target of `level` | `arq_111_the_peak_gives_*`; `arq_111_level_gives_*` |
+| `level` ignores the peak | `fv_10_b_a_quiet_signal_with_a_high_peak_*` |
+
+Decisions the specs leave open (unit 2):
+- API: `true_peak` (linear, all channels, LFE included), `plan_leveling(target, measured: Option, peak_dbtp: Option) -> Leveling { gain_db, reached }` (the pure decision, so the equality is testable) and `level(channels, rate, target)`, which measures and plans. A missing peak means no ceiling.
+- The interpolation is a Kaiser-windowed sinc of 24 taps per phase (beta 8), each phase normalised to sum 1; not the 48-tap table of Annex 2, whose coefficients are not reproduced here. Its error on a sine crest is under 0.01 dB (the test asks for 0.01). The signal is zero outside its ends, so an abrupt start or end overshoots; that is part of the peak.
+- Above 48 kHz: x2 up to 96 kHz, none above (Annex 2). ARQ-127 pins only x4 at 48 kHz or less.
+- The "peak <= -1 dBTP" check after applying the gain allows 1e-3 dB, for the rounding of the `f32` samples.
