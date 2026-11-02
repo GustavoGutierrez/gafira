@@ -191,3 +191,46 @@ Gates on every code commit, each alone on the staged tree: `cargo fmt --check` 0
 - Two commits outside the delivery's files: the root `Cargo.toml` dev profile (1444da9) and tests touched in `tests/hints.rs` (the stroke test counted 5 chunks of 256 rows, now 17 of 64).
 - Q-48: CAL-06, CAL-26 and ARQ-43 hold on this machine; nothing goes to the owner.
 - Disk: the sweep and benches used the worktree `target`; scratch scripts live in the session scratch folder `sg3sweep`.
+
+## SG3 fix round after verify round 1 (ARQ-131, ARQ-132, ARQ-133; spec commit e04ea34)
+
+Commits: fd4b99f (scenes), 8ca7fb4 (cut), 8d0a3b5 (reliable, warning, W5, W6).
+Measured: `git diff --shortstat 3ff2279..HEAD`: 18 files, 1586 insertions, 494 deletions, spec commit e04ea34 included; `src` only, 944 and 405. Over the ~700 line mark: the coordinator decides.
+Gates, each exit code alone: fd4b99f fmt 0, clippy 0, test 0 (1812 passed); 8d0a3b5 fmt 0, clippy 0, test 0 (1826 passed). 8ca7fb4: fmt 0, test 0 (1824 passed), clippy 101 on a type in `tests/pipeline.rs`; after the type alias, clippy 0 and the `pipeline` test file re-run. The full test gate was not repeated on that exact tree.
+
+### Quality, 4000x3000, zone Foreground
+- Gate (table of 02 §4.17): 16/16, min 0.9679. IoU 01 to 16: 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9997, 1.0000, 1.0000, 1.0000, 1.0000, 0.9999, 1.0000, 0.9679, 1.0000, 1.0000.
+- Fresh set, after the last parameter change: **11/12**. IoU: 0.9965, 0.9751, **0.0000 fresh-texture-frame-soft (dE76 7 to 8)**, 1.0000, 0.9988, 0.9933, 0.9995, 1.0000, 0.9930, 0.9881, 0.9972, 1.0000. Caution: the recipes are mine and their subjects are flat like the gate's, so this count is easier than the two below and is not comparable with 9 of 12.
+- XP5 fresh, the verifier's port: **9/12**, the D-45 figure. F7, F9 and F12, all textured, give an empty mask, not reliable.
+- Verifier's hard set: **22/24**, min 0.5315. V07, hue gradient at dE76 14, hard and soft: IoU 0.53, foreground 28.8 %, reported reliable.
+- Nothing was tuned on these three sets. The verifier's logs on them, with their counts per parameter pair, were in hand before this round, so the choice of reg 25 and gamma 500 was not blind to them; ARQ-133 fixes both values anyway.
+
+### Parameters
+- Regularisation 25, gamma 500, inside ARQ-133. On the XP5 gate, gamma 500, 1500 and 5000 all gave 16/16.
+- Band width: min side / 64, unchanged. /64, /37 (about 2 % of the long side) and /32 gave identical IoU on all 16 gate scenes, so the gate gives no reason to change it.
+
+### Border-touching subject: a rule the spec does not name
+The band pin alone gave an empty mask on all 8 border scenes tried: the subject's colours in the band train the background model. Pins are unchanged, as ARQ-133 requires. Band colours are grouped by nearness (dE76 6, 4 neighbours); the largest group is the background; a smaller group under half of the band, and isolated colours, stay out of the background GMM (`strays` in `cut.rs`). A subject on an edge, a corner or a whole side now keeps its inner part (`arq_133_a_subject_touching_the_border_does_not_vanish`). Chosen on border scenes of mine, not on the three sets. Limits: a subject over half of the band still vanishes, not reliable, and a seed recovers it. A low-contrast subject touching the border was not tried with the final rule. A background of two colours whose smaller one is under half of the band can now go to the foreground: not measured, no such scene exists. Specifier to record or reject.
+
+### RED (failing line, on the code before the fix)
+- Scenes, stub `Recipe` on the old generator: `arq_132_the_fixed_set_is_the_table_of_the_spec` `scene 01 left: (Flat, [], [], Centred, 0.0) right: (Flat, [Ellipse(0.667, 0.5, 0.34, 0.25)], [], Centred, 40.0)`; `arq_132_each_set_has_every_class` `concave`; `arq_132_shape_classes_hold_in_the_masks` `flat-ring-centred: hole left: true right: false`; `arq_132_fresh_scenes_cover_the_whole_range` `small subject`; `arq_132_texture_is_per_pixel` `textured-ellipse-centred: 0.0832`; `arq_132_no_fresh_mask_is_a_fixed_mask` `flat-ellipse-low-contrast and flat-ellipse-centred: 0.9600`.
+- Cut: `arq_133_parameters_are_in_their_ranges` `regularisation 400`; `arq_133_twice_the_border_is_twice_the_capacity` `0 7: 8000 8000`; `arq_133_a_longer_border_pulls_the_cut` `long on the background`; `arq_133_pinned_nodes_stay_background_unless_seeded` `pinned red node`; `arq_133_a_subject_touching_the_border_does_not_vanish` `left edge: kept 0.0000`.
+- Reliable: `arq_131_background_gives_the_reliable_of_foreground` `2 %: Background`.
+- Green from the start: `arq_131_area_counts_pixels_not_alpha` (H5 kills it); `arq_133_half_of_the_pixels_in_the_band_pins`, `arq_133_all_pinned_gives_no_foreground`, `arq_133_all_pinned_is_ok_empty_and_unreliable`, `arq_133_a_seed_on_the_band_leaves_it_in_the_foreground` (no mutant of their own). `arq_133_a_gradient_does_not_swallow_the_image` also passed on the old code, so it proves nothing about this fix.
+- Written with the plumbing, not before it: `arq_133_a_pair_counts_its_insertions`, `arq_133_the_shared_border_counts_pixel_pairs`.
+- C6: no test. A plain `cargo test` log now holds `WARNING: fresh scenes at IoU >= 0.90: 11/12 (a warning, not a gate)`. No `ci.yml` change.
+
+### Hand mutants (applied, run, reverted, none committed)
+H1 `arq_132_the_fixed_set_is_the_table_of_the_spec`, and with every gradient gone `arq_132_each_set_has_every_class`; H2 `arq_132_each_set_has_every_class`, `arq_132_shape_classes_hold_in_the_masks`; H3 `arq_132_low_contrast_is_flat_on_both_sides`; H4 `arq_131_background_gives_the_reliable_of_foreground`; H5 `reliable::tests::arq_131_area_counts_pixels_not_alpha`; H6 `arq_112_progress_and_cancellation_on_the_reference_input`; border weight off `arq_133_a_longer_border_pulls_the_cut`, `arq_133_twice_the_border_is_twice_the_capacity`; band pin off `arq_133_pinned_nodes_stay_background_unless_seeded`; stray rule off `arq_133_a_subject_touching_the_border_does_not_vanish`. The mutant run covered only the test files named; each was edited in place, so no stale build.
+
+### Budgets, indicative (i7-12700H under load, not D-03; Q-48 stays open)
+- CAL-06: `bench_segment_4000` 1.02 s on 4 threads. Worst input on 1 thread: 1784 ms in a quieter run, **3468 ms** in a run sharing the machine with this round's own builds. Round 1 measured 1055 ms. Margin to 5 s: 2.8x, or 1.4x contended.
+- ARQ-43: `bench_cancel_segment` 27.9 ms. Worst gap on 1 thread: 25.4 ms quieter, **96.8 ms** contended, against 100 ms. Round 1 measured 43.2 ms. 4 threads: 30 ms or less.
+- CAL-26: heap peak 34.7, 72.8, 130.3, 302.3 MB for 1, 4, 8, 20 threads, unchanged. Segmenter's share only.
+
+### Deviations and notes
+- `Scene` lost `low_contrast` and `textured`; they are on `Recipe`, with the class fields. The 16 per-scene area tests became one test over both sets at 4000x3000.
+- `ram_bytes` states its limit (W5) and does not scale: 44 MB against 96 MB measured at 8000x6000.
+- The fresh test runs in every gate; its count was first read after the last parameter change, then read again from the same deterministic run for the per-scene figures.
+- Scenes repeat run to run. `powf` and the Lab conversions remain, so identity across platforms is not claimed. Shapes and texture use a polynomial sine and T5, not `sin` and `atan2`.
+- Sweep and S3, S5 not done: owner's order to finish.
