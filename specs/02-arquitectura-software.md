@@ -919,7 +919,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
 | ARQ-115 | **Fuentes de prueba** (D-19): las pruebas usan subconjuntos de Inter y Manrope, una fuente OFL con árabe o hebreo y un subconjunto OFL monocromo de emoji (D-30). La prueba de ligadura opcional de FD-41 (e) usa Manrope, porque Inter no tiene `liga`. Toda fuente de prueba tiene entrada en `assets/LICENSES.toml` (ARQ-75), esté donde esté. | Una prueba o comprobación de CI recorre las fuentes de prueba y falla si alguna no tiene entrada de licencia. |
-| ARQ-116 | **Salida de la maquetación.** La maquetación da, sin píxeles: las líneas con su base y su avance, y cada clúster de grafemas con su índice en el texto, su posición y su avance. Indica además el desborde, que sale de comparar el avance con el ancho de la caja, y los glifos sin cobertura, es decir, los `.notdef` de 04 FD-41. Así FV-07 anima letra a letra y FV-08 cuenta líneas y caracteres por línea. | Con Inter: un texto de 3 líneas forzadas da 3 líneas; concatenar los clústeres en orden lógico da el texto de entrada; `é` compuesta (U+0065 U+0301) es 1 clúster; un texto que excede una caja `Fixed` indica desborde y conserva todo el texto. |
+| ARQ-116 | **Salida de la maquetación.** La maquetación da, sin píxeles: las líneas con su base y su avance, y cada clúster de grafemas con su índice en el texto, su posición y su avance. Indica además el desborde, que sale de comparar el avance con el ancho de la caja, sin contar el espacio en blanco que cuelga al final de una línea, y los glifos sin cobertura, es decir, los `.notdef` de 04 FD-41. Así FV-07 anima letra a letra y FV-08 cuenta líneas y caracteres por línea. | Con Inter: un texto de 3 líneas forzadas da 3 líneas; concatenar los clústeres en orden lógico da el texto de entrada; `é` compuesta (U+0065 U+0301) es 1 clúster; un texto que excede una caja `Fixed` indica desborde y conserva todo el texto. |
 
 | Caso numérico | Regla | ID |
 |---|---|---|
@@ -928,7 +928,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | Interletrado | `[−100, 500]` milésimas de em, extremos incluidos. | FD-41 |
 | Interlineado | `[0,5; 4,0]`, extremos incluidos. | FD-41 |
 | Fuente sin métricas | Altura natural ≤ 0: `Err` de fuente inválida. | FD-41 |
-| Caja de tamaño 0 | Sin error; hay desborde si el texto no está vacío. | FD-45 |
+| Caja de tamaño 0 | Sin error; hay desborde si el texto tiene algún clúster que no sea espacio en blanco (`White_Space` de Unicode). Aceptación: `" "`, `"   "`, `"\t"`, `"\n"` y `"\r\n"` no dan desborde; `"a"` y `" a"` lo dan. | FD-41, FD-45 |
 | Columnas | `count` en 1–8; `gap` en `[0, 200]`; ancho de columna ≥ 1 px. | FD-45 |
 | `FitBox` | `min_size ≤ max_size`, los dos en `[1, 1000]`; el límite «cabe» incluye la igualdad; rejilla de 0,25 pt. | FD-46 |
 | Curvar | `[−100, 100]`, extremos incluidos; 0 no calcula radio; avance 0 no hace nada. | FD-44 |
