@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use gafira_geom::Size;
 use parley::fontique::Blob;
-use parley::{FontContext, FontFamily, FontFamilyName, LayoutContext, OverflowWrap, StyleProperty};
+use parley::{
+    FontContext, FontFamily, FontFamilyName, FontFeatures, LayoutContext, LineHeight, OverflowWrap,
+    StyleProperty,
+};
 
 use crate::TextError;
 
@@ -19,6 +22,17 @@ pub struct TextStyle {
     pub letter_spacing: f64,
     /// Line height multiplier, in `[0.5, 4.0]`.
     pub line_height: f64,
+}
+
+impl Default for TextStyle {
+    /// 16 pt, no letter spacing, line height 1.0.
+    fn default() -> Self {
+        Self {
+            size_pt: 16.0,
+            letter_spacing: 0.0,
+            line_height: 1.0,
+        }
+    }
 }
 
 /// The laid out text, without pixels (ARQ-116).
@@ -67,8 +81,11 @@ pub struct Cluster {
 /// flagged. All numbers are checked before any work: a NaN or an infinity (also
 /// a computed one, in the input or the output) gives `Err(NonFinite)` and a style
 /// value outside its range gives `Err(OutOfRange)`, each naming the field
-/// (ARQ-110, FD-41). `style.letter_spacing` and `style.line_height` are checked
-/// here and applied from the next delivery.
+/// (ARQ-110, FD-41). `style.letter_spacing` adds its share after each cluster of a
+/// line but the last, and turns off the optional ligatures when it is not 0;
+/// `style.line_height` multiplies the natural height of the line, the largest among
+/// its fonts. A font with a natural height of 0 or less that shapes a cluster gives
+/// `Err(InvalidFont)`.
 ///
 /// An empty font stack gives `Err(NoFont)`, after the number checks and also for
 /// an empty text. The white space at the logical end of a line does not count
@@ -112,34 +129,66 @@ pub fn layout_box(
         names,
     ))));
     builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
+    builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
+        style.line_height as f32,
+    )));
+    let spacing = style.letter_spacing / 1000.0 * f64::from(size_px);
+    if spacing != 0.0 {
+        builder.push_default(StyleProperty::LetterSpacing(spacing as f32));
+        // CSS: optional ligatures are off with any spacing (parley ignores a tiny one);
+        // the required ligatures and joining forms of a script stay.
+        builder.push_default(StyleProperty::FontFeatures(FontFeatures::from(
+            "\"liga\" 0, \"clig\" 0, \"dlig\" 0, \"hlig\" 0",
+        )));
+    }
     let mut laid = builder.build(text);
     let width = bounds.width().max(0.0);
     laid.break_all_lines(Some(width.min(f64::from(f32::MAX)) as f32));
 
+    let spacing = spacing as f32;
     let mut out = TextLayout::default();
     for line in laid.lines() {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
-        let mut x = metrics.offset;
+        let mut hard_breaks = Vec::new();
         for run in line.runs() {
             let font = blob_ids
                 .iter()
                 .position(|id| *id == run.font().data.id())
                 .unwrap_or(0);
+            let m = run.font_metrics();
+            let natural = m.ascent + m.descent + m.leading;
+            if natural.is_nan() || natural <= 0.0 {
+                return Err(TextError::InvalidFont { index: font });
+            }
             for c in run.visual_clusters() {
                 let glyphs: Vec<u32> = c.glyphs().map(|g| g.id).collect();
-                let advance = c.advance();
+                hard_breaks.push(c.is_hard_line_break());
                 clusters.push(Cluster {
                     range: c.text_range(),
-                    x,
-                    advance,
+                    x: 0.0,
+                    advance: c.advance(),
                     rtl: c.is_rtl(),
                     notdef: glyphs.contains(&0),
                     font,
                     glyphs,
                 });
-                x += advance;
             }
+        }
+        if spacing != 0.0 {
+            // The spacing goes after each cluster but the last one of the line. A forced
+            // break gets none from parley and is not a cluster for this rule.
+            let last = (0..clusters.len())
+                .filter(|i| !hard_breaks[*i])
+                .max_by_key(|i| clusters[*i].range.start);
+            if let Some(i) = last {
+                clusters[i].advance -= spacing;
+            }
+        }
+        let mut x = metrics.offset;
+        for c in &mut clusters {
+            c.x = x;
+            x += c.advance;
         }
         let advance: f32 = clusters.iter().map(|c| c.advance).sum();
         let content = content_advance(text, &clusters);
