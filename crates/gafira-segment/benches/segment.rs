@@ -12,9 +12,9 @@ use gafira_raster::{ImageView, PixelData};
 use gafira_segment::{ClassicSegmenter, SegHints, SegZone, Segmenter};
 use gafira_testkit::scenes::{Scene, fixed_scene};
 
-/// A textured scene with a concave subject, 4000x3000: a long side of 4000 px.
+/// A textured scene with a holed subject, 4000x3000: a long side of 4000 px.
 fn scene() -> Scene {
-    fixed_scene(12, 4000, 3000)
+    fixed_scene(9, 4000, 3000)
 }
 
 /// A segmenter on a pool of 4 threads, the mid-range machine of CAL-06.
