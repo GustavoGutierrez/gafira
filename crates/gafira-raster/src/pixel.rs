@@ -50,9 +50,6 @@ fn convert(dst: &mut ImageViewMut<'_>, dir: Direction) -> Result<(), BufferError
                         Direction::Unpremultiply => unpremultiply_u8(*c, a),
                     };
                 }
-                if a == 0 {
-                    p[3] = 0;
-                }
             }
             Ok(())
         }
@@ -244,5 +241,114 @@ mod tests {
             bits(&px)
         };
         assert_eq!(run(), run());
+    }
+
+    // ARQ-110: a non-finite colour in an a = 0 pixel is Err, not silently zeroed.
+    #[test]
+    fn arq_110_non_finite_colour_in_transparent_pixel_is_err() {
+        for b in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            for ch in 0..3 {
+                for op in [premultiply, unpremultiply] {
+                    for alpha in [0.0f32, -0.0] {
+                        let mut px = [0.5f32, 0.5, 0.5, 0.5, 0.1, 0.1, 0.1, alpha];
+                        px[4 + ch] = b;
+                        let before = bits(&px);
+                        let mut v =
+                            ImageViewMut::new(2, 1, PixelDataMut::RgbaF32(&mut px)).unwrap();
+                        assert_eq!(
+                            op(&mut v).unwrap_err(),
+                            BufferError::NonFinite {
+                                field: "pixels",
+                                index: 4 + ch
+                            }
+                        );
+                        assert_eq!(bits(&px), before);
+                    }
+                }
+            }
+        }
+    }
+
+    // ARQ-111: every conversion, in both formats, run twice gives the same bytes.
+    #[test]
+    fn arq_111_every_conversion_is_deterministic() {
+        let f: Vec<f32> = (0..64)
+            .map(|i| ((i * 7) % 11) as f32 * 0.09 + 0.01)
+            .collect();
+        let b: Vec<u8> = (0..64).map(|i| (i * 37 % 256) as u8).collect();
+        for op in [premultiply, unpremultiply] {
+            let run_f = || {
+                let mut px = f.clone();
+                let mut v = ImageViewMut::new(4, 4, PixelDataMut::RgbaF32(&mut px)).unwrap();
+                op(&mut v).unwrap();
+                bits(&px)
+            };
+            let run_b = || {
+                let mut px = b.clone();
+                let mut v = ImageViewMut::new(4, 4, PixelDataMut::Rgba8(&mut px)).unwrap();
+                op(&mut v).unwrap();
+                px
+            };
+            assert_eq!(run_f(), run_f());
+            assert_eq!(run_b(), run_b());
+            assert_ne!(run_b(), b, "the conversion must do something");
+        }
+    }
+
+    mod property {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn pixels() -> impl Strategy<Value = Vec<f32>> {
+            prop::collection::vec(-1.0e6f32..1.0e6, 0..8).prop_map(|mut v| {
+                v.truncate(v.len() / 4 * 4);
+                v
+            })
+        }
+
+        proptest! {
+            // ARQ-110: finite input in the domain gives finite output, or Err and no change.
+            #[test]
+            fn arq_110_finite_input_gives_finite_output(px in pixels()) {
+                for op in [premultiply, unpremultiply] {
+                    let mut buf = px.clone();
+                    let n = (buf.len() / 4) as u32;
+                    let mut v = ImageViewMut::new(n, 1, PixelDataMut::RgbaF32(&mut buf)).unwrap();
+                    match op(&mut v) {
+                        Ok(()) => prop_assert!(buf.iter().all(|x| x.is_finite())),
+                        Err(_) => prop_assert_eq!(bits(&buf), bits(&px)),
+                    }
+                }
+            }
+
+            // ARQ-110: alpha in [0, 1] and colour in [0, 1] always premultiply to finite values.
+            #[test]
+            fn arq_110_unit_range_premultiply_is_ok_and_finite(
+                px in prop::collection::vec(0.0f32..=1.0, 0..8)
+            ) {
+                let mut buf = px.clone();
+                buf.truncate(buf.len() / 4 * 4);
+                let n = (buf.len() / 4) as u32;
+                let mut v = ImageViewMut::new(n, 1, PixelDataMut::RgbaF32(&mut buf)).unwrap();
+                prop_assert!(premultiply(&mut v).is_ok());
+                prop_assert!(buf.iter().all(|x| x.is_finite()));
+            }
+
+            // ARQ-110: mip levels of finite input are finite.
+            #[test]
+            fn arq_110_finite_mips_are_finite(
+                w in 1u32..6, h in 1u32..6,
+                seed in prop::collection::vec(-1.0e6f32..1.0e6, 100)
+            ) {
+                let px: Vec<f32> = seed.iter().copied().cycle().take((w * h * 4) as usize).collect();
+                let view = crate::ImageView::new(w, h, crate::PixelData::RgbaF32(&px)).unwrap();
+                for level in crate::build_mips(view).unwrap() {
+                    match level.data() {
+                        crate::PixelBuf::RgbaF32(d) => prop_assert!(d.iter().all(|x| x.is_finite())),
+                        _ => prop_assert!(false),
+                    }
+                }
+            }
+        }
     }
 }
