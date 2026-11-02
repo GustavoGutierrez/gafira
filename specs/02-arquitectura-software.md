@@ -537,8 +537,9 @@ pub trait GpuEffect: Send + Sync { fn wgsl(&self) -> &'static str; fn bind(&self
 - **Cómo añadir un efecto**:
   1. Implementar `Effect` (y opcionalmente `GpuEffect`).
   2. Añadir una prueba golden CPU y, si hay GPU, otra que compare GPU con CPU dentro de la tolerancia (§10).
-  3. Registrar.
-  4. El inspector se genera solo desde `ParamSchema`.
+  3. Añadir una prueba de que `params()` pasa `ParamSchema::validate_definition`.
+  4. Registrar.
+  5. El inspector se genera solo desde `ParamSchema`.
 
 ### 4.5 `Importer` y `Exporter` (Strategy + Factory/Registry)
 
@@ -570,7 +571,7 @@ pub trait Exporter: Send + Sync {
 - **Cómo añadir un formato**:
   1. Implementar `Importer` o `Exporter` en un crate adaptador.
   2. Añadir el fuzz target del importador (§10).
-  3. Añadir golden del exportador.
+  3. Añadir golden del exportador y una prueba de que `options_schema()` pasa `ParamSchema::validate_definition`.
   4. Registrar en el binario.
   5. Si `legal != RoyaltyFree`, ponerlo detrás de una feature.
 
@@ -728,8 +729,8 @@ pub trait PluginHost: Send {
 - **Implementación**: wasmi (MIT/Apache-2.0) con límite de combustible y memoria. Las capacidades se declaran en el manifiesto y no hay acceso a red. Al disco solo accede por *handles* que concede el usuario.
 - **Cómo añadir un tipo de contribución**:
   1. Definir la ABI en `gafira-plugin::abi` (versión semántica).
-  2. Escribir el adaptador hacia el trait nativo.
-  3. Añadir pruebas de aislamiento (bucle infinito → `FuelExhausted`; acceso no concedido → error).
+  2. Escribir el adaptador hacia el trait nativo. Si la contribución trae un `ParamSchema`, el adaptador lo comprueba con `ParamSchema::validate_definition` una vez, antes de registrarla; si falla, el plugin se desactiva y el documento queda intacto (§7.3).
+  3. Añadir pruebas de aislamiento (bucle infinito → `FuelExhausted`; acceso no concedido → error) y una de un `ParamSchema` no válido.
 
 ### 4.13 `Transition` (efecto de dos entradas)
 
@@ -756,7 +757,7 @@ pub struct TransitionInstance {                        // dato del documento, en
 - **Registro**: `TransitionRegistry`, construido en el *composition root*.
 - **Cómo añadir una transición**:
   1. Implementar `Transition` (y opcionalmente `GpuTransition`) en `gafira-raster::transitions` o en un crate adaptador.
-  2. Declarar `handles` y los parámetros en `ParamSchema`; el Inspector → Clip → Transición se genera solo.
+  2. Declarar `handles` y los parámetros en `ParamSchema`, con una prueba de que `params()` pasa `ParamSchema::validate_definition`; el Inspector → Clip → Transición se genera solo.
   3. Añadir pruebas golden en `progress` = 0, 0,5 y 1. En 0 la salida es idéntica a «desde» y en 1 idéntica a «hacia» (reglas del núcleo en ARQ-118).
   4. Si tiene variante GPU, compararla con la CPU dentro de la tolerancia de §10.
   5. Registrar en `TransitionRegistry` con su nombre del glosario y su miniatura de vista previa. El núcleo no cambia.
