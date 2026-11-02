@@ -14,9 +14,9 @@ pub(crate) struct Setup {
 impl Setup {
     /// True when the block may be processed. A `prepare` with a 0, a block
     /// above `max_block` or channels of different lengths leave it intact.
+    /// With `max_block == 0` every non-empty block is above it.
     pub fn accepts(&self, block: &AudioBlock<'_>) -> bool {
         self.sample_rate != 0
-            && self.max_block != 0
             && self.channels != 0
             && block.is_uniform()
             && block.frames() <= self.max_block

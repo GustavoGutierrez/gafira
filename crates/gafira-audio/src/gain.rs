@@ -50,9 +50,10 @@ pub struct Gain {
     ramp_len: u32,
 }
 
-/// 10 ms (PROPUESTA, ARQ-124), in samples; at least 1.
+/// 10 ms (PROPUESTA, ARQ-124) in whole samples: `sample_rate / 100`, at least 1.
+/// Exact for 44.1, 48 and 96 kHz.
 fn ramp_samples(sample_rate: u32) -> u32 {
-    (f64::from(sample_rate) * 0.010).round().max(1.0) as u32
+    (sample_rate / 100).max(1)
 }
 
 impl Gain {
