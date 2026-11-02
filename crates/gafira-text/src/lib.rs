@@ -6,10 +6,12 @@
 
 #![forbid(unsafe_code)]
 
+mod columns;
 mod error;
 mod layout;
 mod list;
 
+pub use columns::{Column, ColumnSizing, ColumnsLayout, TextColumns, layout_columns};
 pub use error::TextError;
 pub use layout::{Cluster, Decoration, Line, TextAlign, TextLayout, TextStyle, layout_box};
 pub use list::{ListEntry, ListItem, ListKind, layout_list};

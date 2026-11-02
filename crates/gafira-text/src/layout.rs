@@ -92,6 +92,9 @@ pub struct Line {
     pub baseline: f32,
     /// The sum of the advances of its clusters, in px.
     pub advance: f32,
+    /// Height of the line, in px: the baseline distance of lines of one font, times the
+    /// line height. The heights of all the lines add up to [`TextLayout::height`].
+    pub height: f32,
     /// The grapheme clusters, in visual order (left to right).
     pub clusters: Vec<Cluster>,
 }
@@ -389,6 +392,7 @@ fn read_lines(
         lines.push(Line {
             baseline: metrics.baseline,
             advance,
+            height: metrics.line_height,
             clusters,
         });
     }
@@ -637,7 +641,7 @@ const SIZE_PT: (f64, f64) = (1.0, 1000.0);
 const LETTER_SPACING: (f64, f64) = (-100.0, 500.0);
 const LINE_HEIGHT: (f64, f64) = (0.5, 4.0);
 
-fn finite(field: &'static str, value: f64) -> Result<f64, TextError> {
+pub(crate) fn finite(field: &'static str, value: f64) -> Result<f64, TextError> {
     if value.is_finite() {
         Ok(value)
     } else {
@@ -645,7 +649,11 @@ fn finite(field: &'static str, value: f64) -> Result<f64, TextError> {
     }
 }
 
-fn in_range(field: &'static str, value: f64, (lo, hi): (f64, f64)) -> Result<(), TextError> {
+pub(crate) fn in_range(
+    field: &'static str,
+    value: f64,
+    (lo, hi): (f64, f64),
+) -> Result<(), TextError> {
     if (lo..=hi).contains(&value) {
         Ok(())
     } else {
@@ -656,12 +664,26 @@ fn in_range(field: &'static str, value: f64, (lo, hi): (f64, f64)) -> Result<(),
 /// Non-finite checks of every input first, then the ranges, then the computed size.
 /// Returns the font size in px.
 pub(crate) fn check_input(style: &TextStyle, dpi: f64, bounds: Size) -> Result<f32, TextError> {
+    check_input_with(style, dpi, bounds, &[])
+}
+
+/// As [`check_input`], with the numbers of a caller (`extra`) checked for NaN and infinity
+/// after the common ones and before any range.
+pub(crate) fn check_input_with(
+    style: &TextStyle,
+    dpi: f64,
+    bounds: Size,
+    extra: &[(&'static str, f64)],
+) -> Result<f32, TextError> {
     let size_pt = finite("style.size_pt", style.size_pt)?;
     let spacing = finite("style.letter_spacing", style.letter_spacing)?;
     let line_height = finite("style.line_height", style.line_height)?;
     finite("dpi", dpi)?;
     finite("bounds.width", bounds.width())?;
     finite("bounds.height", bounds.height())?;
+    for (field, value) in extra {
+        finite(field, *value)?;
+    }
     in_range("style.size_pt", size_pt, SIZE_PT)?;
     in_range("style.letter_spacing", spacing, LETTER_SPACING)?;
     in_range("style.line_height", line_height, LINE_HEIGHT)?;
