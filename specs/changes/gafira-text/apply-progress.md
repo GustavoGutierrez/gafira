@@ -256,3 +256,17 @@ Hand mutants (all restored): slack on the break only, killed by `fd_41_c_a_box_w
 Adversarial sweep (throwaway, not committed): 5 120 layouts (8 texts incl. LTR, RTL, mixed, one word and explicit breaks, 5 leading/trailing space combinations, spacing 0, -100, 100, 500, 8 boxes: exact advance, +-1 ulp, +-0.0002, 90, 4 000, 16 000, 4 alignments). Checks: ink inside the box unless a cluster is wider, justified lines end at the edge (+-0.01), overflow only with a cluster wider than the box, limit (m) excepted. Result: 0 violations after the fix. It first flagged 26 justified RTL lines with a leading space; they were the leading space at the right edge, not a defect of the placement (see open point).
 
 Open point: in a right-to-left paragraph a leading space sits at the right edge, so the ink of a justified line ends one space before it (the line, spaces included, ends at the edge). FD-41 says nothing about leading white space, so which edge the ink or the space takes is not decided here; returned to the coordinator.
+
+### TX2 fix round 5
+
+Verify round 4 findings C18 (wide boxes) and C22, with the fix proven on scratch: `overflow` reads the widest content cluster (`widest_content(..) > limit`), Justify stretches when `room > -width * 1e-4`, `Line.advance` of an unstretched line is summed in f64, and the `FIT_TOLERANCE` comment no longer states a limit.
+
+| Finding | RED (run on the code of round 4) |
+|---|---|
+| C18, overflow | `fd_41_i_a_wide_box_reports_overflow_only_for_a_cluster_wider_than_it`: `w=3073.86: overflow with widest cluster 14.4156` (Left, 16 pt, 72 DPI, t=25; 7 boxes found by a sweep) |
+| C18, edge | `fd_41_i_a_wide_justified_line_ends_at_the_edge_when_parley_keeps_it_over_the_box`: `w=3073.86 t=25: ends at 3073.8701171875` |
+| C22 | `fd_41_e_the_advance_of_a_wide_unstretched_line_is_the_sum_of_its_clusters`: `pt=9 t=-100: advance 15986.401 vs 15986.892516374588` |
+
+Hand mutants (all restored): overflow from the running sum of the line, killed by `fd_41_i_a_wide_box_reports_overflow_only_...`; `Line.advance` summed in f32, killed by `fd_41_e_the_advance_of_a_wide_unstretched_line_...`.
+
+Throwaway sweep (not committed, release): 4 320 layouts, 3 texts (Latin, mixed bidi, Arabic), 4 size/DPI pairs, t -100 to 500, Left/Right/Justify, boxes 3 008, 4 012, 16 000, 3 073.86, 3 705.08, 3 753.55, 5 000, 9 000 each +-0.0002: 77 103 lines, 0 false overflow, 0 advance error over 0.01, 0 justified lines off the edge over 0.01, worst 0.00046 px.
