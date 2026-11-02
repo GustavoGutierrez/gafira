@@ -116,6 +116,11 @@ pub struct Cluster {
     pub font: usize,
     /// Glyph ids of the cluster in the font; none for a forced break.
     pub glyphs: Vec<u32>,
+    /// Where each glyph of `glyphs` starts: the distance from the left edge of the cluster and
+    /// from the baseline (positive is down), in px.
+    pub glyph_offsets: Vec<(f32, f32)>,
+    /// Font size of the cluster, in px.
+    pub size_px: f32,
     /// The underline of the cluster, when the style asks for one.
     pub underline: Option<Decoration>,
     /// The strikethrough of the cluster, when the style asks for one.
@@ -446,6 +451,12 @@ fn read_lines(
             });
             for c in run.visual_clusters() {
                 let glyphs: Vec<u32> = c.glyphs().map(|g| g.id).collect();
+                let mut pen = 0.0_f32;
+                let mut offsets = Vec::with_capacity(glyphs.len());
+                for g in c.glyphs() {
+                    offsets.push((pen + g.x, g.y));
+                    pen += g.advance;
+                }
                 hard_breaks.push(c.is_hard_line_break());
                 clusters.push(Cluster {
                     range: c.text_range(),
@@ -455,6 +466,8 @@ fn read_lines(
                     notdef: glyphs.contains(&0),
                     font,
                     glyphs,
+                    glyph_offsets: offsets,
+                    size_px,
                     underline,
                     strikethrough,
                 });
