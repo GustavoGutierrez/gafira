@@ -53,3 +53,27 @@ Gates (exit codes, each alone): `cargo fmt --check` 0, `cargo clippy --workspace
 Measured: `git diff --shortstat develop...HEAD` before this notes commit: 4 files changed, 335 insertions.
 
 Deviations: none from the Slice card. Mutants 3 (boundary) and 6 are equivalent, reported above.
+
+## Fix round 1 (verify round 1: C1, C2, C3, C4, W5 reason)
+
+Tests only; production is unchanged. These tests close gaps and are not RED: each passes on the existing code, and each was proved by applying the surviving mutants of the verify report, seeing a test fail, and restoring.
+
+Correction of the mutant 4 line above ("the published pairs are one-directional"): pairs 11 and 12 do reach `dh < -180`, but they have `dC` about 0 and the sign of `dH'` reaches the result only through `R_T * tc * th`, so there is no effect. Only pairs 16, 17 and 19, reversed, have a visible effect, and they are now checked against the published values.
+
+| Id | Mutant | Killed by |
+|---|---|---|
+| W5 | `dh < -180` to `< -170` | `arq_122_hue_difference_wraps_above_minus_180`, `..._of_exactly_180_is_not_wrapped` |
+| W7 | `dh > 180` to `> 170` | `arq_122_hue_difference_wraps_below_180`, `..._of_exactly_180_is_not_wrapped` |
+| W12 | both thresholds 170 | the three hue-difference tests |
+| W3 | `<` to `<=` at -180 | `arq_122_hue_difference_of_exactly_180_is_not_wrapped` |
+| W2 | `>` to `>=` at 180 | `arq_122_hue_difference_of_exactly_180_is_not_wrapped` |
+| H7 | `h < 0` to `<= 0` | `arq_122_hue_of_the_a_axis_is_0_or_180` |
+| H2 | `h1 + h2 < 360` to `<=` | `arq_122_mean_hue_adjusts_for_a_sum_below_360` |
+| A1 | rgb multiplied by alpha | `arq_122_alpha_is_ignored` (alpha 0, 0.25, 0.5, 0.999) |
+| A9 | `f` narrowed to `f32` | `arq_122_mid_range_color_matches_the_reference_pipeline` (now 1e-9) |
+| A2 | `EPSILON` = 0.008856 | `arq_122_epsilon_is_exactly_216_over_24389` (grey 0.008856226 (f32), L 7.99979592708, 1e-10) |
+| S2 | each wrap removed, symmetry aside | `arq_122_delta_e2000_matches_the_reversed_sharma_pairs` (dh < -180 arm), the 34-pair test (dh > 180 arm) |
+
+Expected values: from the verify report (two independent implementations, 7 decimals; tolerance 1e-6); the mid-range and grey Lab were also recomputed in f64 from the crate's matrices (12 digits).
+
+Not done: W1 (`.cargo/mutants.toml`) is follow-up for T4 at close. S2 of the report (`hue_degrees` doc) touches production and is left out.
