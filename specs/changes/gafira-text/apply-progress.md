@@ -310,3 +310,97 @@ Deviations and open points:
 1. A blank paragraph after an Arabic one now takes its line metrics alone. The final empty line and the middle break already used Inter, so no measured height changed; heights are not fixed by (n).
 2. U+000B, U+000C, U+0085 and U+001C to U+001E keep what parley does with them (one cluster with the font's glyph, not a break).
 
+
+## TX2 follow-ups (W31, W32, S13)
+
+Commits: 533e6e6 (test only), d386830 (refactor). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+| Item | Change | Proof |
+|---|---|---|
+| W31 | `("123 \u{627}", true)` in the direction table of `fd_41_a_a_paragraph_takes_its_direction_from_its_first_strong_character` | Not RED (HEAD is correct). Mutant: direction from the first logical cluster instead of `laid.is_rtl()` (`layout.rs` `let rtl`): killed by that test (`"123 ا"` laid left to right); the table without the new row passes the mutant (16 of 16), so the row is what kills it |
+| W32 | `ابج  \nabc` under Justify, added to `fd_41_n_justify_starts_a_line_where_its_paragraph_starts`: the ink ends at the edge (100 ±0.01) | Not RED. Mutant: `offset = width - total + hung_width` (the hang left out of the Justify RTL offset): killed by that test |
+| S13 | `read_lines` no longer returns the per-line "forced break" flag; `stretch = i != last` | Refactor, tests green. Only the last line of a paragraph can end in a forced break, because the break closes its paragraph |
+
+## TX3
+
+Branch `feat/gafira-text`, from `develop` da288d6. Commits: 17fc089 (columns, `Line::height`), 590cacd (font stack registered once, refactor), f69c486 (fit to the box, `ARQ-14` golden). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. No dependency, `Cargo.toml` or `Cargo.lock` change. `Locale` has 0 matches in `crates/gafira-text`.
+
+Measured (`git diff --shortstat d386830 HEAD`): 2 097 lines added, 34 deleted; 614 in `src/` (`columns.rs` 248, `fit.rs` 200, `layout.rs` 162, `lib.rs` 4) and 1 483 in `tests/` (`columns.rs` 687, `fit.rs` 644, `golden_fit.rs` 152). Over the ~700 mark by a factor of three; the forecast was 400 (560). The tests carry it: two brute-force oracles (all splits of the lines, all 128 sequences of 7 lines) and the rustfmt expansion of tables.
+
+### Done
+
+| ID | Proof |
+|---|---|
+| FD-45 (a) | `columns.rs`: 3 columns of 3 000 characters at 40 widths (all three residues of the line count mod 3) differ by at most one line; balance equals the best split found by trying every split (all 128 sequences of 7 lines, 2 to 4 columns, in a roomy box, in the least box that holds the text, and with auto height, plus 3 sequences of 9 where the best split is taller than the least box) |
+| FD-45 (c) | overflow shows when a column is taller than a fixed box (equality fits), when a cluster is wider than its column, and not before; auto height never overflows by height; no text lost (ranges cover the input once, in reading order) |
+| FD-45 (d) | `count` 0, 9, `u32::MAX`; `gap` -0.01, 200.01 (also with one column); column width 1 px is in, 22.99 px box for 3 columns and gap 10 is out; NaN and infinities first; order count, gap, width, then the font stack |
+| FD-45 (e) | one column equals `layout_box` bit for bit (Debug text of the lines, `to_bits` of the heights), for gaps 0, 0.5, 37, 200, balance on and off, both sizings, 4 texts incl. bidi and paragraphs, widths 0, 30, 300, Left and Justify |
+| FD-45 Reparto | columns of equal width `(w - (n-1) gap) / n`, `x = j (width + gap)`, wraps equal to `layout_box` at that width; fill by height; leftover to the last column; auto height balances always and takes its height from the columns; Justify works inside a column |
+| `Line::height` | new field, the height of each line; the heights add up to `TextLayout::height` and, for one font, to the baseline distance |
+| FD-46 (a) | 12 cases (bidi, paragraphs, odd ends, wrap by cluster, always and never fits): the result fits, the next size of the grid does not, unless it is `max_size`; `overflow` equals "does not fit"; the layout is the one `layout_box` gives at that size; equality of the height fits, a hair less does not; a cluster wider than the box does not fit |
+| FD-46 (b) | empty text or no run: sizes unchanged, no overflow, whatever the box and the range |
+| FD-46 (c) | the result is inside `[min, max]` and on the grid (multiples of 0.25, `min`, `max`); always fits gives `max`; never fits gives `min` with overflow; ranges with no multiple inside; the last multiple below a `max` that is not one |
+| FD-46 (e) | `min = max` gives that size (1, 6.1, 13, 1000); `min > max`, outside 1 to 1000, NaN, infinities give `Err` naming the field; the size of a run is checked too |
+| FD-46 (f) | runs of 10 and 20 pt give exactly 1:2 (also 5, 20, 10 give `r/4, r, r/2`) and their glyphs are laid out at those sizes; letter spacing is in em of each run; upper case and forced breaks keep the runs on their text |
+| ARQ-14 (`FitBox`) | `golden_fit.rs`: 7 cases with literal sizes (18.5, 62.5, 24.75, 30.75, 10.0, 12.0 with overflow, 48.0), each also checked for "fits and the next does not". **Needs the `workflow_dispatch` run on 3 platforms during verify** |
+| ARQ-110 | a size whose layout is not finite is too big for the search; if the minimum has none, `Err(NonFinite)` |
+
+### RED evidence
+
+Every RED was run on the code that existed, with a stub that compiles and does not do the behaviour (`layout_columns` laid the text out in one column at the full width; `fit_box` laid the text out at the size of `style`), before the code of the criterion. Real assertions, no compile error.
+
+| Criterion | Failing test and assertion |
+|---|---|
+| `Line::height` | `fd_45_a_the_height_of_a_line_is_exposed_and_adds_up`: `heights [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` (the field was 0.0) |
+| FD-45 (a) | `fd_45_a_three_columns_of_3000_characters_...`: left 1, right 3; `fd_45_a_balance_minimises_...`: `k=2 [...] AutoHeight`, left `[9]`, right `[5, 4]` |
+| FD-45 Reparto | `fd_45_a_text_split_by_height_fills_each_column_to_the_box`: left `[14]`, right `[5, 5, 4]`; `fd_45_a_line_taller_than_the_box_...`: left `[3]`, right `[1, 2]`; `fd_45_columns_are_equal_in_width_...`: `(col.width - cw).abs() <= 0.01`; `fd_45_columns_work_with_justify`: `column 0 line 0 ends at 210` |
+| FD-45 (c) | `fd_45_c_overflow_shows_when_...`: `fits(five - 1e-6, 2, false)` |
+| FD-45 (d) | `fd_45_d_the_numbers_are_checked`: left `None`, right `Some(OutOfRange { field: "columns.count" })` |
+| FD-46 (a) | `fd_46_a_the_result_fits_and_the_next_size_of_the_grid_does_not`: `"gafira fit dolor ...": 12.25 fits`; `fd_46_a_a_height_equal_to_the_box_fits`: left 12.0, right 20.0 (`equality fits`); `fd_46_a_a_cluster_wider_than_the_box_does_not_fit`: `the next size overflows` |
+| FD-46 (b) | `fd_46_b_empty_text_does_not_change_...`: `the size of the run stays`, left 12.0, right 16.0 |
+| FD-46 (c) | `fd_46_c_the_result_stays_between_...`: left `(12.0, false)`, right `(40.0, false)` |
+| FD-46 (e) | `fd_46_e_equal_minimum_and_maximum_...`: left 12.0, right 1.0; `fd_46_e_a_minimum_over_the_maximum_...`: left `None`, right `Some(OutOfRange { field: "fit.min_size" })` |
+| FD-46 (f) | `fd_46_f_runs_of_10_and_20_...`: `the largest run decides`, left 12.0, right 20.0; `fd_46_f_the_largest_run_decides_...`: left `[5.0, 20.0, 10.0]`, right `[3.0, 12.0, 6.0]` |
+
+Not RED, proved by mutant (they pass on the code that existed, or were written with it): `fd_45_e_*` (the stub is one column too), `fd_45_auto_height_*` (vacuous on the stub, strengthened with `columns.len() == 3` before the code), `fd_45_a_with_fewer_lines_than_columns_...`, `fd_46_a_the_same_input_gives_the_same_result` (determinism has no natural RED), the six `fd_46_c_*`/`fd_46_f_*` tests added in the mutant round (`last multiple below max`, `no multiple inside`, `letter spacing in em of each run`, `upper case and forced breaks`, `non-finite layout`), and `golden_fit.rs` (the literals were measured on the code, then checked by the "fits, next does not" oracle).
+
+### Hand mutants
+
+| # | Wrong behaviour | Killed by |
+|---|---|---|
+| 1 | column width with `count` gaps instead of `count - 1`; gap left out of `x`; last column off by one | `fd_45_columns_are_equal_in_width_...`, `fd_45_d_*`, `fd_45_e_*`, `fd_45_columns_work_with_justify` |
+| 2 | fill with `<` instead of `<=`; a column that may stay empty with a taller line | `fd_45_a_text_split_by_height_fills_...`, `fd_45_c_overflow_...`, `fd_45_a_line_taller_than_the_box_...` |
+| 3 | vertical overflow with `>=`; cluster overflow dropped; auto height does not balance; balance only with `balance` | `fd_45_c_*`, `fd_45_e_*`, `fd_45_a_balance_minimises_...`, `fd_45_auto_height_*` |
+| 4 | count range `1..8`, `0..=8`; gap bounds 199.99, 0.001; width `<= 1` | `fd_45_d_the_numbers_are_checked` (and `fd_45_e_*` for the gap lower bound) |
+| 5 | objective is the tallest column, not the difference; tie goes to the smaller ends; `d < best + TIE`; `h < limit` in the search (equality binds); last column not checked against the box (`if true`); mean pruning with the wrong divisor; `bound - 0.5` on the spread | `fd_45_a_balance_minimises_the_difference_of_heights_when_lines_differ` (the first four after the 7-line and 9-line sequences were added; the last two only by the 3 sequences of 9 where the best split is taller than the least box) |
+| 6 | `top += height` replaced by `top = height`; box height ignored (`INFINITY`); baselines not reset; `x: 0.0`; `width` of the box in `Column::width`; tallest column as the minimum | `fd_45_a_text_split_...`, `fd_45_a_line_taller_...`, `fd_45_c_*`, `fd_45_columns_are_equal_...`, `fd_45_e_*` |
+| 7 | grid step 0.5 and 0.125; grid without `min`; `max - 0.01`; `ceil` to `floor` at the top; `last > 1`; `>= ` for min=max; scale `r / 2`, inverted ratio; ranges 999.99 and 1.01; size of `grid[last]` | `fd_46_a_*`, `fd_46_c_*`, `fd_46_e_*`, `fd_46_f_*` |
+| 8 | `<` for `<=` in "fits"; "fits" without the cluster overflow; "fits" without the height; bisection side swapped; `hi - lo > 2`; overflow forced to false and to `index == last`; empty text threshold `< 2` | `fd_46_a_a_height_equal_to_the_box_fits`, `fd_46_a_*`, `fd_46_c_*`, `fd_46_e_*`, `fd_46_b_*` |
+| 9 | the non-finite layout of a candidate size propagated as `Err`; the fallback for the minimum returns an empty layout | `arq_110_a_size_whose_layout_is_not_finite_is_too_big_and_the_minimum_is_an_error` |
+| 10 | runs: no conversion to the upper case text; last run ends at 0; ranges of a run not relative to its paragraph; spacing of the base size for every run; `font_size()` fixed at 16 | `fd_46_f_runs_follow_the_upper_case_expansion_and_the_forced_breaks`, `fd_46_f_letter_spacing_is_in_em_of_each_run` |
+
+Survivors, each with its proof, none needs a test:
+
+| Mutant | Why it is equivalent |
+|---|---|
+| `TIE` removed or the order of the candidates reversed (`columns.rs`), `bound - 0.5` on the mean (`off <= bound - 0.5`) | The search keeps every state whose spread can tie the best, so the result does not depend on the order. Heights are sums of f32 values in f64, exact, so ties are exact. The mean bound `off <= D` is looser than the true one by `D / count`, which is at least 3.6 px here; a perturbation under that slack discards nothing |
+| `from <= to` for `from < to` (`layout.rs`) | Pushing a style for an empty range changes nothing |
+| `floor + 1` to `ceil` at the bottom of the grid (`fit.rs`) | Differs only when `min` is a multiple of 0.25: `min` appears twice. The bisection keeps `fits(lo)` and `!fits(hi)`, so a duplicate of `min` is never the bracket |
+| `if !fits && last > 0` to `if !fits` | With `last == 0` the minimum is probed again and gives the same answer |
+| `(lo + hi + 1) / 2` for the midpoint | For a predicate that is monotone in the size the result does not depend on the probes; the same 798 boxes gave the same sizes with the other midpoint, and 65 100 layouts (5 texts, 60 widths, 6 to 60 pt in steps of 0.25) gave no case of a height that falls as the size grows. FD-46 says any local maximum is valid |
+| `run.size_pt == largest` guard | Removed from the code: `r * (s / s)` is `r` exactly |
+
+### Adversarial sweep (throwaway, release, not committed)
+
+Columns: 86 400 layouts (9 texts: empty, white space, one cluster, a word wider than any column, 1 500 characters of Latin, Arabic, Latin + Arabic + emoji, paragraphs with `\n`, `\r\n`, U+2029; boxes 0 to 16 000 px in width and height; counts 1, 2, 3, 5, 8; gaps 0, 0.5, 200; balance on and off; both sizings; Left, Justify with spacing 100, Right at 1 pt upper case spacing -100, Center at 1 000 pt spacing 500; underline). Checks: no panic; the only `Err` is `columns.width`, and only when the column is under 1 px; finite output; the right number of columns; clusters cover the input once, in reading order; the height is the tallest column; columns left to right; no overflow flag with a column taller than the box; baselines increase; one column equals `layout_box`; deterministic. 0 problems.
+
+Fit: 15 120 calls (8 texts as one run, a 10/20 pair, a 1/500 (empty)/1000/3 mix, all-empty runs; boxes 0 to 16 000; ranges (1, 1000), (6, 400), (1, 1), (1000, 1000), (6.1, 6.3), (999.9, 1000), (12, 12.25); DPI 1, 96, 300; Left and Justify with spacing 250 and upper case). Checks: `Ok`, result inside the range and on the grid, run proportions, the layout finite, `overflow` equal to the re-fit at that size, the next size of the grid does not fit, deterministic. 0 problems in 22.6 s.
+
+### Deviations and open points
+
+1. **API shape (not fixed by the spec; `TextColumns` and `Autofit` do not exist in `gafira-doc`).** `layout_columns(text, fonts, style, dpi, bounds, &TextColumns, ColumnSizing) -> ColumnsLayout { columns: Vec<Column { x, width, height, lines }>, height, overflow }`; `fit_box(runs: &[FitRun { text, size_pt }], fonts, style, dpi, bounds, &FitBox { min_size, max_size }) -> FitResult { sizes_pt, size_pt, layout, overflow }` (`FitBox::default()` is 6 to 400). `ColumnSizing::{Fixed, AutoHeight}` carries the "alto automático" rule; "ancho automático" (count counts as 1) is the caller's, so it is not built.
+2. **Mixed sizes.** FD-46 (f) needs runs of different size, and `layout_box` took one style. The core now takes crate-private `SizeRun`s (byte range of the input, size in px); `layout_box` passes none and is bit for bit what it was (every existing test passes). Letter spacing is in em of each run; the break uses the one of the largest size (parley takes one width), so with spacing and mixed sizes a line whose last cluster is in a smaller run is allowed up to the difference. No FD-41 or FD-46 clause asks more.
+3. **Spec gaps, decided and recorded, no stop:** (a) `gap` is validated also with `count = 1` ("se ignora" is read as "no effect on the layout"); (b) the width check of a column applies with `count > 1`, a single column has no such limit (a box of size 0 is not an error, 02 §4.17.3); (c) a column fills while the heights add up to at most the box (equality fits, as FD-46), a column always takes one line, the leftover goes to the last column and flags overflow; (d) balance minimises tallest minus shortest over every split into contiguous runs of lines, empty columns allowed, ties to the split with more lines in the earlier columns, found by branch and bound from the filled split; a fixed box that cannot hold the text is filled and flagged; (e) `overflow` is the OR of a cluster wider than its column and, in a fixed box, a taller column; (f) for empty text FD-46 (b) "no cambia" returns the sizes of the runs (the largest, or `style.size_pt` with no run), not clamped to `[min, max]`; (g) `min > max` names `fit.min_size`, and the two ranges are checked first; (h) a candidate whose layout is not finite is too big; (i) FD-46 "Cabe" is the height of the layout (the sum of the line heights) against the box and `!overflow` of FD-41.
+4. **Not built, outside the TX3 IDs:** columns with lists (`layout_list` lays each item with `layout_box`), the manual column break (D-24), FD-46 (d) and the type lock, FD-46 with columns (the two are independent here).
+5. **Performance.** The font stack is registered once per search (`Stack`), not once per probe. The benchmarks `bench_text_columns_5000` and `bench_text_fit_500` belong to ARQ-114 (TX4).
+6. **ARQ-14.** The literals were measured on Linux x86_64 with the embedded fonts. The three platforms are proved only by the `workflow_dispatch` run of the coordinator on this branch; until then the test passes on one.
