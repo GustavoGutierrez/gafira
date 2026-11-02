@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "change": "gafira-audio",
- "delivery": "AU1",
+ "delivery": "AU2",
  "rounds": [
   {
    "round": 1,
@@ -132,7 +132,8 @@
     "lines": 2094,
     "forecast": 670
    },
-   "report": "verify-report.md"
+   "report": "verify-report.md",
+   "delivery": "AU1"
   },
   {
    "round": 2,
@@ -249,7 +250,8 @@
     "lines": 2643,
     "forecast": 670
    },
-   "report": "verify-report.md"
+   "report": "verify-report.md",
+   "delivery": "AU1"
   },
   {
    "round": 3,
@@ -383,6 +385,110 @@
    "size": {
     "lines": 2836,
     "forecast": 670
+   },
+   "report": "verify-report.md",
+   "delivery": "AU1"
+  },
+  {
+   "delivery": "AU2",
+   "round": 1,
+   "commit": "c4946a2",
+   "mode": "full",
+   "tier": "T4",
+   "depth": "V2",
+   "verdict": "FAIL",
+   "next": "specifier",
+   "counts": {
+    "critical": 3,
+    "warning": 2,
+    "suggestion": 4
+   },
+   "classes": [
+    "ambiguity",
+    "implementation"
+   ],
+   "findings": [
+    {
+     "id": "C6",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/eq.rs:250",
+     "summary": "Hand mutant M1 survives: without clean_input NaN stays in the history and the track goes silent; total.rs checks only finiteness. Code correct",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "C7",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/eq.rs:232",
+     "summary": "Hand mutant M2 survives: prepare without redesign keeps coefficients of the old rate; no test re-prepares at another rate without resending gains. Code correct",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "C8",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/eq.rs:260",
+     "summary": "Hand mutant M3 survives: reset forgetting the last valid gains; no Eq3Band test runs a block with no parameters after reset. Code correct",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W14",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/processor.rs:29",
+     "summary": "Eq3Band tail() is 0 but the trait comment says ring-down (-120 dB after 37 ms at 44.1 kHz); 02 does not define tail. Spec must decide",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W15",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "0f7d798, c4946a2",
+     "summary": "RED not provable from git: no stub commit, record reproduced on a rebuilt stub; ARQ-23 tests landed after the code, as recorded",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W10",
+     "status": "closed"
+    },
+    {
+     "id": "W11",
+     "status": "closed"
+    },
+    {
+     "id": "W12",
+     "status": "closed"
+    },
+    {
+     "id": "W13",
+     "status": "closed"
+    }
+   ],
+   "gates": {
+    "fmt": 0,
+    "clippy": 0,
+    "test": 0,
+    "deny": 0,
+    "ci_policy": 0
+   },
+   "mutation": null,
+   "hand_mutants": {
+    "run": 6,
+    "killed": 3
+   },
+   "criteria": {
+    "total": 14,
+    "covered": 12
+   },
+   "size": {
+    "lines": 1446,
+    "forecast": 400
    },
    "report": "verify-report.md"
   }

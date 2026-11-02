@@ -536,3 +536,167 @@ E7 (a one-frame block refused) is killed by a single test, `arq_123_a_non_finite
 - Size: 2 836 insertions under `crates/` since the card, against a 670 forecast; this round added 230 lines in all. The owner said size does not concern him: noted, no finding.
 
 next: tdd-apply (next delivery, AU2)
+
+# Verify report: gafira-audio, AU2, round 1
+
+| Field | Value |
+|---|---|
+| Commit | `c4946a2`, branch `feat/gafira-audio`, base `develop` `d437b8a` |
+| Depth, mode, tier | V2, full, T4 at close; `mutation: archive`, no `mutants` report (not a finding) |
+| Verdict | **FAIL** |
+| Counts | 3 CRITICAL, 2 WARNING, 4 SUGGESTION |
+| Per class (CRITICAL + WARNING) | implementation 4, ambiguity 1, architecture 0, claim 0 |
+
+The production code passed every probe: no code defect was found. All three CRITICAL items are surviving hand mutants, so the missing piece is three tests, given below. They are CRITICAL because step 4b says a survivor in critical code is.
+
+## Gates
+
+Each command ran alone in the worktree, with no `CARGO_TARGET_DIR`. `df -h /` showed 31 GB free at the start and 21 GB at the end.
+
+| Gate | Exit code |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 577 passed, 0 failed, 0 ignored) |
+| `cargo deny --all-features --locked check` | 0 |
+| CI policy (ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14) | 0 on each |
+
+## Slice card integrity (step 3c)
+
+- `9bfba1c` (`docs(gafira-audio): slice card`) touches only `apply-progress.md`.
+- Lines 1 to 7 of `apply-progress.md` are identical at `d437b8a` and `c4946a2`, so no implementer commit changed the card.
+- Files outside `crates/gafira-audio/` are one testkit test (`crates/gafira-testkit/tests/alloc_guard.rs`), which the design assigns to AU2.
+- No exclusion was added to `.cargo/mutants.toml`.
+
+## CRITICAL
+
+### C6. Hand mutant M1 survives: NaN enters the biquad history
+
+- class: implementation
+- ref: `crates/gafira-audio/src/eq.rs:250`, `crates/gafira-audio/tests/total.rs:74`
+- Rule: ARQ-123, a NaN or `±∞` sample counts as 0.
+- Mutation: `f64::from(*sample)` in place of `f64::from(clean_input(*sample))`. `cargo test -p gafira-audio` exits 0.
+- Root cause: `tests/total.rs` asserts only that the output is finite. Under the mutant the history holds NaN for ever and every later sample comes out as 0, which is finite. The track goes silent for good and no test sees it. The code at HEAD is correct.
+- Fix: compare with a run where the bad sample is 0, including the following block. The scratch test `k1` passes at HEAD and kills M1:
+
+```rust
+// Same input, once with `bad` at index 100 and once with 0.0, gains [5, -7, 9]:
+// both output blocks and the next block must be equal, and the next one non-zero.
+```
+
+### C7. Hand mutant M2 survives: `prepare` at another rate keeps the old coefficients
+
+- class: implementation
+- ref: `crates/gafira-audio/src/eq.rs:232`, `crates/gafira-audio/tests/refused.rs` (`arq_124_the_last_valid_value_survives_prepare`)
+- Rule: ARQ-125, the response is the design at the prepared `fs`, and a band at or above `fs / 2` is omitted.
+- Mutation: the `band.design(sample_rate)` loop removed from `prepare`. The suite exits 0.
+- Root cause: every test re-prepares at the same rate, or sends the gains again after `prepare`. A processor kept with its gains and re-prepared at another rate is never tested, so a stale filter would go unnoticed. The code at HEAD is correct.
+- Fix: after a block with gains at 48 kHz, `prepare(96_000, ..)` and a block with no parameters must equal a fresh 96 kHz run with those gains. Also, `high = 15` then `prepare(16_000, ..)` must pass the signal unchanged. The scratch test `k2` does this and kills M2.
+
+### C8. Hand mutant M3 survives: `reset` forgets the last valid gains
+
+- class: implementation
+- ref: `crates/gafira-audio/src/eq.rs:260`, `crates/gafira-audio/src/processor.rs:33`
+- Rule: ARQ-123 (the last valid value stays), and the trait contract "parameters and stream shape stay".
+- Mutation: `reset` puts each band's `Param` back to its default. The suite exits 0.
+- Root cause: W13 pinned the last valid value across `prepare` for every maker, and the Eq `reset` tests send the gains again. Nothing tests a block with no parameters after `reset` on `Eq3Band`. The code at HEAD is correct.
+- Fix: run a block with gains, `reset`, run a block with no parameters, and compare with a fresh run with those gains. The scratch test `k3` does this and kills M3. Adding a `reset` twin of `arq_124_the_last_valid_value_survives_prepare` over `makers()` covers every processor at once.
+
+## WARNING
+
+### W14. `Eq3Band::tail()` is 0, but the trait says it is the ring-down
+
+- class: ambiguity
+- ref: `crates/gafira-audio/src/processor.rs:29`, 02 ARQ-125, ARQ-129
+- The trait comment says `tail` is "Samples the output keeps ringing after the input ends". An IIR filter rings, and 02 never says what `tail` measures. ARQ-125 declares none.
+- Measured after a unit impulse, worst of 11 settings at each rate:
+
+| fs | Falls below −60 dB after | Falls below −120 dB after | Last non-zero sample |
+|---|---|---|---|
+| 44.1 kHz | 393 samples | 1 653 samples (37 ms) | 14 423 |
+| 48 kHz | 424 samples | 1 786 samples (37 ms) | 16 045 |
+| 96 kHz | 785 samples | 2 935 samples (31 ms) | 28 084 |
+
+- Effect: no consumer exists yet. When `gafira-media` cuts at the clip end by `tail()`, it will drop up to about 40 ms of ring-down.
+- Fix, for the specifier to choose: either state in ARQ-125 that `tail()` is `ceil(0.04 × fs)` with a band active and 0 otherwise (−120 dB, the default I recommend, and it is a few lines in `eq.rs`), or define `tail` as declared only for processors whose ring-down must be kept, and reword the trait comment.
+
+### W15. RED is recorded, not provable from git, and ARQ-23 came after the code
+
+- class: implementation
+- ref: `0f7d798`, `c4946a2`, `apply-progress.md` AU2 RED table
+- No stub commit exists: `0f7d798` holds `eq.rs` and its tests together, so git cannot show that the tests came first.
+- I rebuilt the described stub (a `process` that only cleans the block). Five tests fail, and the three messages I could compare match the record exactly: `fs 44100 gains [15.0, 0.0, 0.0] f 20.0: got 0.000 dB, want 14.962 dB`, `f 20: got -0.000 dB, want 8.976 dB`, and the `!run_pair(16_001, ...)` assertion. The record is credible.
+- ARQ-23 did not go through RED: the guard test landed one commit after the code it checks, and `apply-progress.md` says so. Its bit-identical, pole, `reset` and `prepare` tests also passed on the stub by construction, again as recorded. Those are proved by mutants, and C6 to C8 show that this proof had gaps.
+- W10 to W13 are test-only, pinned existing behaviour, and are recorded as such.
+- Fix: for later deliveries, commit the stub and tests first, or keep the RED log in the scratchpad and cite it. Nothing to change in this code.
+
+## SUGGESTION
+
+- S5. Say in ARQ-125 that a band gain change has no ramp and applies from the next block, so ARQ-124's 10 ms ramp clearly stays with `Gain`. See the ruling below.
+- S6. `arq_125_every_pole_is_inside_the_unit_circle` proves stability from outside, by ring-down, and asks only for half the amplitude per 16 384 samples. A `#[cfg(test)]` unit test on `Coefficients` could check `|p| < 1` directly.
+- S7. CAL-15 was read on the developer machine, not a mid-range reference one, and `cargo test` checks no threshold. The margin is about 12 times, so the risk is low. Read it once on the reference machine at change close.
+- S8. The `AudioProcessor` doc comment (`processor.rs`, lines 11 to 16) lists the blocks that are not processed but omits the empty block, which ARQ-123 now includes.
+
+## Rulings on the recorded deviations
+
+| Deviation | Ruling | Evidence |
+|---|---|---|
+| Gain change with no ramp, from the next block | Accepted | ARQ-124's ramp belongs to `Gain` (`volume`); ARQ-125 is silent and the bands are not animatable. Direct form I keeps the history through the change. Measured on a tone of amplitude 0.5: a step of at most 0.49, the same order as the tone's own step at 8 kHz, and at most 0.08 at 1 kHz for 0 to +15 dB. Switching every band between +15 and −15 dB every 64 samples on full-scale noise stays bounded (peak 10.4 at 48 kHz, 17.6 at 96 kHz). Worth reviewing when the Mixer moves the EQ live (F2). See S5 |
+| History flushed below `f32::MIN_POSITIVE` | Accepted | It serves ARQ-123 and acts about 750 dB below full scale. On noise at seven rates and split into blocks of 1, 7, 500 and 20 000, the output is bit-identical to an unflushed reference. No subnormal after 1 s of signal, then zeros, then a 1e-40 input |
+| `tail() == 0` | Accepted against the text of 02, but it contradicts the trait comment | See W14 |
+
+## Closure of the AU1 follow-ups
+
+| Finding | Status | Evidence |
+|---|---|---|
+| W10 | Closed | `arq_124_a_refused_block_does_not_consume_the_first_block_of_a_gain` kills F2 (spot-checked) |
+| W11 | Closed | `arq_123_a_refused_block_after_a_prepare_with_a_zero_reads_no_parameter`, read and run |
+| W12 | Closed | `arq_123_a_refused_block_during_a_running_state_leaves_the_next_samples_as_they_were`, read and run, with `eq3band` in its makers |
+| W13 | Closed | `arq_124_the_last_valid_value_survives_prepare`, read and run. The `reset` side for `Eq3Band` is C8 |
+
+## Acceptance map
+
+| Criterion | Status | Proof |
+|---|---|---|
+| ARQ-125 response ±0.5 dB, three rates | Covered | `arq_125_the_impulse_response_matches_h_*`, with a bilinear analogue oracle independent of `eq.rs`. Probe: worst error 5e-6 dB |
+| FV-20 (c) | Covered | `fv_20_c_a_sine_sweep_follows_the_theoretical_curve`. Probe with 13 tones, 11 settings, 3 rates: worst error 5e-5 dB |
+| Bit-identical at 0 dB | Covered | `arq_125_with_every_band_at_0_db_*`. Probe: random finite bit patterns, 0, −0, no value, and back to 0 after a non-zero run |
+| Poles < 1 | Covered | `arq_125_every_pole_*` (indirect, S6). Probe: output sample-exact to an independent RBJ cascade, whose poles were computed directly on a ±15 dB grid and 14 rates, largest 0.9999996 |
+| Omission at `fs / 2` | Covered | `arq_125_a_band_at_or_above_*`. Probe: each band at `fs − 1`, `fs`, `fs + 1` |
+| Row of 4.17.5 | Covered | `p13_the_schema_has_the_three_bands_of_the_table`, `tests/eq_contract.rs` |
+| ARQ-23 | Covered | `arq_23_sixteen_tracks_*`, `arq_23_an_allocation_inside_the_guard_*`. Own probe with 64 rounds of changing gains. No lock in `src/`. Spot-check: `vec!` in `process` gives SIGABRT |
+| CAL-15 | Covered | `cargo bench`: 209 µs per block (208 to 210) against 2 667 µs, 2.0 % of a core, recorded 255 µs. All bands were active and stereo, and my own timing gave 243 µs. See S7 |
+| W10 to W13 (4 rows) | Covered | Above |
+| ARQ-123 on `Eq3Band` | Weak | C6, C8 |
+| ARQ-125 after `prepare` at another rate | Weak | C7 |
+
+12 of 14 covered. Product IDs: ARQ-125, ARQ-23 and FV-20 (c) are named in tests, and CAL-15 in `benches/mix.rs`. None was left out.
+
+## Hand mutants
+
+| Mutant | Source | Result |
+|---|---|---|
+| History flushed at the `f64` threshold | Spot-check of the recorded list | Killed by `arq_123_the_history_is_flushed_below_the_smallest_normal_sample` |
+| F2, a refused block consumes the Gain first block | Spot-check of W10 | Killed by `arq_124_a_refused_block_does_not_consume_the_first_block_of_a_gain` |
+| `vec!` in `Eq3Band::process` | Spot-check of ARQ-23 | Killed, process aborts with SIGABRT |
+| M1, no `clean_input` | Independent, ARQ-123 | **Survives** (C6) |
+| M2, no redesign in `prepare` | Independent, ARQ-125 | **Survives** (C7) |
+| M3, `reset` forgets the gains | Independent, ARQ-123 | **Survives** (C8) |
+
+Each survivor is not equivalent: the scratch tests `k1`, `k2` and `k3` pass at HEAD and each fails on its mutant.
+
+## Probes
+
+Scratch export of `c4946a2`, with a 15-test probe file written before the implementer's tests were read. All pass. It also covers refused and empty blocks with hostile values, parameter clipping, unknown ids, stereo histories, and block-split invariance.
+
+Extreme rates (201 Hz to `u32::MAX`) were stable at +15 dB on every band, so there is no finding.
+
+## Size
+
+`git diff --shortstat d437b8a c4946a2`: 15 files, 1 446 insertions, 10 deletions, against a 400 forecast (560 at x1.4). The owner judges serial deliveries by completion, so this is not a finding.
+
+## Result
+
+Verdict **FAIL**: 3 CRITICAL, 2 WARNING, 4 SUGGESTION. Per class: implementation 4 (C6, C7, C8, W15), ambiguity 1 (W14).
+
+next: specifier (ambiguity: W14), then tdd-apply (implementation: C6, C7, C8, W15)
