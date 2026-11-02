@@ -407,7 +407,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 
 **FD-35 · Sombras** (RF-21)
 - *Propósito*: dar profundidad a imágenes, formas y texto.
-- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27). **Brillo** y **Contorno** salen del primer corte hasta que se aprueben sus fórmulas (D-42).
+- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. El desplazamiento escala con la imagen y se redondea a píxeles enteros, también según ARQ-120. **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27). **Brillo** y **Contorno** salen del primer corte hasta que se aprueben sus fórmulas (D-42).
 - *UI*: Inspector → Imagen → Sombras; Efectos de texto.
 - *Técnica*: `Effect` de sombra en `gafira-raster` (desenfoque gaussiano separable).
 - *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p (02 §6.7, `bench_shadow_1080`).

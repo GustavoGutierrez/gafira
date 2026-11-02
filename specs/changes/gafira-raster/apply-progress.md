@@ -317,3 +317,100 @@ Commit: the Wipe fix with its tests (one commit, tests written and seen RED firs
 - RED (before the production change): `arq_118_wipe_circular_exact_edge_pixels_keep_the_rule`, "hard 8x8 p 0.875 pixel (0,0)", left 1.0, right 0.0; `arq_118_wipe_circular_exact_edge_on_1080_square`, "hard i=276979", left 1.0, right 0.0. The first also scans every exact-edge pixel on squares 4 to 64 (found by `i128` arithmetic, at least 88) for hard 0 and soft (`s` 1e-16) `p`, and the 8x8 hand case for `s` 1e-16 to 1e-3. The second covers C3 at 1080x1080, p 3/8.
 - Hand mutants: `u <= p` in the hard Wipe, killed by `arq_118_wipe_defaults_are_right_and_hard`, `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre` and both new tests; two-`hypot` quotient restored, killed by both new tests; ramp quotient taken regardless of `|p - u| <= s`, SURVIVES: equivalent at the output (the quotient is then at worst infinite, `p + inf` or `p - inf` is clamped to 1 or 0, never NaN since `gap` is finite), as recorded in round 1 for W1; clamp removed, killed by `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness`, `arq_118_wipe_soft_edge_values`, `arq_118_wipe_matches_the_criterion_for_every_direction`.
 - W5 not touched (follow-up). `proptest-regressions/` not committed. Deviations: none. Lines: `git diff --shortstat HEAD~2..HEAD -- crates/gafira-raster` (69 insertions, 2 deletions in `wipe.rs`).
+
+## RS4
+
+Branch `feat/gafira-raster`, from 07ba7d3 (the amend of ARQ-110 and ARQ-120 that gives `Effect::roi` and `cost_hint` a `cx`). Commits: 3d400cd (`Effect`, `GpuEffect`, `Cost`), e2358e1 (blur and Paralela, with tests), 5243b16 (`bench_shadow_1080`). Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone. Effects get no `CancelToken` (ARQ-112): no cancel checkpoint.
+
+Size: 1 660 lines added in 6 files (`git diff --shortstat 07ba7d3..HEAD -- crates`), of which about 1 590 in `src/effects/` and about 1 000 are tests (rustfmt expands the test tables). Forecast was 420 (590): over the ~700 mark; the coordinator decides.
+
+### Done
+
+`effects::{Effect, GpuEffect, Cost, ParallelShadow}`. `GpuEffect` copies the spec signature (no `cx` in `bind`: recorded follow-up). `Cost { units: u64 }`. `ParallelShadow` (id `effect.shadow.parallel`): `offset_x`, `offset_y` (-500..500), `blur` (0..100), `opacity` (0..100), `color`; output is the element over the shadow, `Rgba8` and `RgbaF32`; `Alpha8` gives `UnsupportedFormat`. Blur: direct separable kernel, tap-outer loops over rows, truncated at `ceil(3 sigma)` with `sigma = radius / 2`, normalised, zero outside, no per-pixel allocation (P11). `roi` = `out` joined with `out` moved by minus the offset and grown by the taps. Check order in `run_cpu`: `cx.scale`, parameters, formats, sizes, `f32` pixels, colour overflow, size 0.
+
+### RED per criterion (stub: schema empty, `run_cpu` returned `Ok(())`, `roi` returned `out`, cost 0)
+
+| Criterion | Failing test |
+|---|---|
+| ARQ-120 sigma, edges, identity, 3 sigma | blur: `arq_120_impulse_response_has_sigma_of_half_the_radius` ("sigma NaN, want 5"), `arq_120_matches_the_reference_gaussian_with_transparent_outside` ("0 vs 0.1065"), `arq_120_constant_image_keeps_its_value_inside_and_fades_at_the_edge`, `arq_120_radius_zero_is_the_identity`, `arq_120_half_width_is_three_sigma_rounded_up` ("radius 10", left 0, right 15) |
+| ARQ-120 roi | `arq_120_roi_grows_the_output_by_the_scaled_kernel` (left = out, right = out grown) |
+| ARQ-120 scale, tiles | `arq_120_radius_and_offset_are_multiplied_by_the_scale`, `arq_120_a_tile_with_its_roi_matches_the_whole_image` (the stub left the sentinel; guard added) |
+| FD-35 (a) | `fd_35_a_blur_zero_shadow_is_the_moved_alpha_times_opacity`, `fd_35_offset_signs_move_the_shadow_right_and_down`, `fd_35_the_element_is_composited_over_the_shadow` |
+| FD-35 (d) | `fd_35_d_extremes_pass_and_just_outside_is_err` (`Ok` instead of `Err`), `fd_35_d_opacity_zero_does_not_change_the_image` (sentinel left), `fd_35_schema_has_the_parameters_ranges_and_a_valid_definition` (panics on the empty schema) |
+| ARQ-110 | `arq_110_non_finite_parameter_is_err_naming_it_and_writes_nothing`, `arq_110_non_finite_scale_is_checked_first_and_writes_nothing`, `arq_110_checks_run_in_order_params_formats_sizes_pixels`, `arq_110_non_finite_source_pixel_is_err_and_writes_nothing`, `arq_110_cost_hint_never_falls_with_twice_the_pixels`, `arq_110_finite_input_gives_finite_output` |
+| ARQ-111 | `arq_111_two_runs_give_the_same_bytes` (after the sentinel guard) |
+| 8-bit composite | `fd_35_the_8_bit_composite_equals_the_normal_blend` ("[0,0,255,0] under [0,0,0,5]"), RED against a stub `over_u8` |
+
+Not RED, proved by mutants: `arq_110_unknown_ids_are_ignored` (before its guard), `arq_110_roi_and_cost_hint_do_not_panic_at_the_extremes` (a no-panic property), `arq_120_a_half_size_image_at_half_scale_matches_after_rescaling` (after the guard it fails on the stub), the blur `shifted_origin` and `tile` tests, `fd_35_the_colour_tints_the_shadow_and_its_alpha_scales_it` (added for a surviving mutant).
+
+### Hand mutants (all killed)
+
+| Mutant | Killed by |
+|---|---|
+| sigma = radius | `arq_120_impulse_response_has_sigma_of_half_the_radius`, `arq_120_matches_the_reference_gaussian_*` |
+| radius 0 not the identity (one tap) | `arq_120_radius_zero_is_the_identity`, `arq_120_half_width_*`, `arq_120_shifted_origin_*` |
+| outside is the clamped edge | `arq_120_matches_the_reference_gaussian_*`, `arq_120_constant_image_keeps_its_value_*` |
+| radius not multiplied by scale | `arq_120_radius_and_offset_are_multiplied_by_the_scale`, `arq_120_roi_grows_*` |
+| `roi` short by one tap; one side short | `arq_120_roi_grows_*`, `arq_120_a_tile_with_its_roi_matches_the_whole_image` |
+| `roi` ignores scale | same two |
+| offset sign flipped (run, roi x, roi y) | `fd_35_offset_signs_*`, `fd_35_a_*`, `arq_120_roi_grows_*`, the tile test |
+| shadow over the element, `u8` and `f32` | `fd_35_the_element_is_composited_over_the_shadow` |
+| scale check after params / after format / not at all | `arq_110_non_finite_scale_is_checked_first_and_writes_nothing` |
+| params resolved after the format check / after sizes | `arq_110_checks_run_in_order_params_formats_sizes_pixels` and the parameter table |
+| `f32` pixel check removed / NaN only | `arq_110_non_finite_source_pixel_is_err_and_writes_nothing` |
+| others: Alpha8 accepted, unknown id read, 2 sigma, floor, no normalisation, opacity not /100, `roi` without `out`, offset not scaled, cost ignores kernel, no transparent-shadow skip, colour alpha ignored (first survivor), colour not linear in `f32`, five `over_u8` variants | named tests above |
+
+### Sweep (throwaway test, not committed)
+
+2 895 configurations: sizes 1x1, 1x5, 5x1, 2x2, 3x7, 17x13, 64x3, 40x31; scales 0.5, 1, 2; offsets 0, +-500, +-1, 499.99, mixed; blur 0, 0.01, 1, 7.5, 100; opacity 0, 1, 50, 100; both formats. Each: finite `f32` output, two runs equal, `u8` and `f32` alpha within 2.5/255, opacity 0 identity, integer reference for blur 0 at scale 1, five tile splits per configuration (bit-exact in `f32`, <= 1 in `u8`), `roi` contains `out`; plus constant opaque images unchanged. No finding.
+
+### Bench
+
+`bench_shadow_1080` (`benches/shadow.rs`, `Rgba8` 1920x1080, radius 40 px, offset 8): 78.8 ms (78.3 to 79.2) single thread on the prototype machine, budget < 100 ms. The blur alone measured 47 ms. The first version, using `blend_u8` per pixel, took 117 ms, so the 8-bit composite is `over_u8`, proved equal to `blend_u8(Normal)` by test. Not measured: non-x86.
+
+### Deviations and assumptions (spec silent; verify may check)
+
+1. Offsets are in logical px and are multiplied by `cx.scale`, rounded half away from zero to whole device pixels.
+2. Defaults: offset 4, 4; blur 8; opacity 50; colour black. All five parameters animatable. Ids of the descriptor and label keys are mine.
+3. The kernel half width is capped at 4096 taps (`MAX_HALF_WIDTH`), so a huge `cx.scale` cannot ask for a huge allocation; `roi`, cost and pixels use the same cap.
+4. Where the shadow is zero the pixel is the element as it is (so opacity 0 is byte-exact, ghost colour of a transparent pixel included); where the element is transparent and the shadow is not, the result is the shadow.
+5. The colour parameter's alpha scales the shadow. `Rgba8` uses the sRGB bytes of the colour, `RgbaF32` linear light.
+6. For `Rgba8` the alpha plane is blurred in 0..255 units so that blur 0 is exact.
+7. `roi`, `cost_hint` read missing, wrong-typed or non-finite numbers as 0 and a non-finite scale as 0; no value is pinned for them.
+8. A non-finite value cannot be seen by a mutant that checks `cx.scale` after computing but before writing (nothing differs in output): equivalent.
+9. `proptest-regressions/` untracked and not committed.
+
+### RS4 fix round 1 (verify round 1: C1, C2, C3, W3, W4, W5, S1, S3, W1 and W2 test)
+
+Commits: d499754 (bench headers, S3), cd16756 (code and tests), plus a test-only commit for the amended scale 0.5 offsets (3 and -3 move 2 and -2 px, spec commit 249789a). Gates (fmt, clippy `-D warnings`, test `--workspace --locked`), each exit code read alone, are 0 on each commit. Lines: `git diff --shortstat 271f7c6..HEAD -- crates` is about 240 insertions and 40 deletions, mostly tests.
+
+Changes: C1 `kernel` uses `[s2/2, 1 - s2, s2/2]` (s2 = sigma squared) for sigma < 0.6, outer taps 0, `half_width`, `roi` and cost unchanged. C2 `half_width` returns 0 unless `radius * radius > 0`. S1 `MAX_HALF_WIDTH` is 4800 (1.5 x blur 100 x zoom 32). W4 `cover * opacity * tint.alpha / 100.0` in both formats. S3 the two bench headers no longer mention a nightly job.
+
+#### RED (W5: every new test written first, run against the code as it stood, no stub)
+
+| Item | Test | Result before the fix |
+|---|---|---|
+| C1 | `arq_120_sigma_holds_for_small_radius_times_scale` | FAILED: "radius 0.25: sigma 1.59e-7, want 0.125" |
+| C2 | `arq_110_a_radius_whose_square_underflows_is_the_identity` | FAILED: `half_width(1e-170)` left 1, right 0 |
+| C2 | `arq_110_a_blur_too_small_to_square_is_the_same_as_blur_zero` | FAILED: `Rgba8` differs from blur 0 (shadow lost) |
+| S1 | `arq_120_the_cap_covers_blur_100_at_zoom_32` | FAILED: left 4096, right 4800 |
+| W4 | `fd_35_a_opacity_ties_round_up_exactly` | FAILED: "alpha 50 opacity 29" left 14, right 15 |
+| C3 | `arq_110_composite_overflow_is_err_and_dst_is_untouched` | Green at HEAD (the code was right; missing test). Killed by mutant M3 below. First draft failed on `r.is_err()` because the default `offset_y` 4 moved the shadow off the image; fixed in the test, not the code. |
+| W3 | `fd_35_offsets_round_half_away_from_zero` | Green at HEAD (rule already implemented). Killed by M4. |
+| W1, W2 | `arq_120_a_half_size_image_at_half_scale_matches_after_rescaling` (smooth raised-cosine bump, blur 16, 24, 32, even offsets) | Green at HEAD and after; rewritten to the amended criterion. |
+
+One existing test changed: `arq_120_radius_zero_is_the_identity` asserted bit identity for radius 1e-12. The variance-preserving kernel keeps variance 2.5e-25, so it now asserts the identity within 1e-6. Spec says only radius 0 is the identity. Deviation, recorded.
+
+#### Hand mutants (each reverted, none committed)
+
+| Mutant | Killed by |
+|---|---|
+| kernel side taps `sigma^2` instead of `sigma^2 / 2` | `arq_120_sigma_holds_for_small_radius_times_scale` |
+| radius squared guard removed | `arq_110_a_radius_whose_square_underflows_is_the_identity` (`half_width(1e-170)`). The shadow-level C2 test does not catch it any more, because the new kernel is NaN free (sides underflow to 0): the guard is now only the identity shortcut. |
+| `RgbaF32` composite written straight into `dst` | `arq_110_composite_overflow_is_err_and_dst_is_untouched` |
+| offset rounded toward zero (`trunc`) | `fd_35_offsets_round_half_away_from_zero` |
+| `opacity / 100` factor restored | `fd_35_a_opacity_ties_round_up_exactly` |
+
+#### Sweep (throwaway test, deleted)
+
+Radius x scale from 1e-170 to 3200 (blur up to 100, scale = target / blur): 1e-170, 1e-160, 1e-30, 1e-8, 1e-3, then a 1.37 geometric grid from 0.05 to 3000 plus 0.5, 0.75, 1, 1.16, 1.19999, 1.2, 2, 2880, 3000, 3200. One-row images (the vertical pass reads only the centre tap, so sigma is along x), alpha impulse 0.01, `RgbaF32`: sigma from the shadow response. Also `Rgba8` against `RgbaF32` alpha on non-centre pixels, and a tile (7 px with its `roi`) against the whole row, bit-exact in `f32`. Results: no `Err` anywhere; tiles identical at all radii; `Rgba8` within 0.5/255 of `RgbaF32` (impulse of 255 against 1); sigma error 0.000 % up to 1.2, -1.18 % at 1.2 (Gaussian branch), -0.2 % at 2, -1.0 % at 20, -1.34 % from 100 to 3200 (the 3 sigma truncation, expected 1.35 %), so ARQ-120 holds across the sweep, also at the cap 4800. Not a fix: for blur x scale below about 1e-21 (sigma squared under the smallest `f32`) the response cannot be stored in `f32` and the output is the identity (measured sigma 0 at 1e-30 and 1e-160). A 2 % criterion has no meaning there, and the result is the identity, not NaN or `Err`.

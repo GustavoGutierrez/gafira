@@ -1,6 +1,5 @@
 //! Benchmarks of the transitions (XP13 of `specs/changes/layer-2/design.md`, RS3a).
 //!
-//! The figure is read by the nightly job on the reference machine, not by `cargo test`.
 //! XP13 asks whether an `Rgba8` Dissolve at 1080p fits the 8 ms render share of 02 §6.2
 //! while `MIX_SPACE` is linear light (O5 (a)).
 
