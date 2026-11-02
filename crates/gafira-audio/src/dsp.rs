@@ -111,3 +111,18 @@ impl Param {
         self.value
     }
 }
+
+/// Modified Bessel function of the first kind, order 0.
+pub(crate) fn bessel_i0(x: f64) -> f64 {
+    let (mut term, mut sum) = (1.0_f64, 1.0_f64);
+    let quarter = x * x / 4.0;
+    for k in 1..200 {
+        let k = f64::from(k);
+        term *= quarter / (k * k);
+        sum += term;
+        if term < sum * 1e-17 {
+            break;
+        }
+    }
+    sum
+}

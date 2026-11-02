@@ -13,12 +13,27 @@ pub enum AudioError {
         /// The offending input.
         field: &'static str,
     },
+    /// A finite input outside its documented range, or a block shape the
+    /// call cannot use (channels of different lengths).
+    OutOfRange {
+        /// The offending input.
+        field: &'static str,
+    },
+    /// A loudness or peak measure takes 1, 2 or 6 channels (ARQ-126).
+    ChannelCount {
+        /// How many channels the call got.
+        channels: usize,
+    },
 }
 
 impl fmt::Display for AudioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFinite { field } => write!(f, "{field} is not finite"),
+            Self::OutOfRange { field } => write!(f, "{field} is out of range"),
+            Self::ChannelCount { channels } => {
+                write!(f, "{channels} channels: only 1, 2 or 6 are supported")
+            }
         }
     }
 }
@@ -30,6 +45,15 @@ impl ToMessage for AudioError {
         match self {
             Self::NonFinite { field } => {
                 msg!("error.audio.non_finite", field = Text(field.to_string()))
+            }
+            Self::OutOfRange { field } => {
+                msg!("error.audio.out_of_range", field = Text(field.to_string()))
+            }
+            Self::ChannelCount { channels } => {
+                msg!(
+                    "error.audio.channel_count",
+                    channels = Count(*channels as u64)
+                )
             }
         }
     }

@@ -2,8 +2,8 @@
 //! through `dyn AudioProcessor`.
 
 use gafira_audio::{
-    AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_PAN, PARAM_VOLUME,
-    Pan, ParamSnapshot, ProcessorChain,
+    AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, LoudnessNormalizer, PARAM_DURATION,
+    PARAM_GAIN, PARAM_PAN, PARAM_VOLUME, Pan, ParamSnapshot, ProcessorChain,
 };
 use gafira_doc::contract::{ParamKind, ParamSchema};
 use gafira_doc::msg::MessageKey;
@@ -61,6 +61,16 @@ fn table() -> Vec<Row> {
             animatable: false,
             label: "audio.pan.pan",
         },
+        Row {
+            name: "loudness_normalizer",
+            make: || Box::new(LoudnessNormalizer::new()),
+            id: "gain",
+            min: -f64::MAX,
+            max: f64::MAX,
+            default: 0.0,
+            animatable: false,
+            label: "audio.loudness_normalizer.gain",
+        },
     ]
 }
 
@@ -91,8 +101,8 @@ fn p13_every_processor_schema_passes_validate_definition_and_matches_the_table()
 #[test]
 fn p13_the_ids_are_the_public_constants() {
     assert_eq!(
-        (PARAM_VOLUME, PARAM_DURATION, PARAM_PAN),
-        ("volume", "duration", "pan")
+        (PARAM_VOLUME, PARAM_DURATION, PARAM_PAN, PARAM_GAIN),
+        ("volume", "duration", "pan", "gain")
     );
 }
 
