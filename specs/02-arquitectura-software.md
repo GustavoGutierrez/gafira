@@ -524,7 +524,7 @@ pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
 pub trait Effect: Describe + Send + Sync {
     fn params(&self) -> &ParamSchema;                          // tipos, rangos, defaults, animables
     fn roi(&self, p: &ParamValues, out: IRect) -> IRect;       // región de entrada necesaria
-    fn cost_hint(&self, p: &ParamValues, px: u64) -> Cost;     // para planificación y presupuesto
+    fn cost_hint(&self, p: &ParamValues, px: u64) -> Cost;     // para planificación y presupuesto, sin tiempo (§4.17)
     fn run_cpu(&self, cx: &EffectCx, p: &ParamValues, src: ImageView<'_>, dst: ImageViewMut<'_>)
         -> Result<(), EffectError>;
     fn gpu(&self) -> Option<&dyn GpuEffect> { None }           // variante WGSL opcional
@@ -856,10 +856,12 @@ Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 |---|---|
 | `Describe`, `Descriptor`, `ParamSchema`, `ParamValues`, `CancelToken`, `Progress`, `AudioCrossfade` | `gafira_doc::contract` |
 | `IRect` | `gafira-geom` |
-| `ImageView`, `ImageViewMut`, `EffectCx`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
+| `ImageView`, `ImageViewMut`, `EffectCx`, `Cost`, `HandleReq`, `GpuEffect`, `GpuTransition`, `UniformBlock`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
 | `AudioBlock`, `ParamSnapshot` | `gafira-audio` |
-| `Segmentation` | `gafira-segment` |
+| `Segmentation`, `SegHints`, `SegReq`, `SegError` | `gafira-segment` |
 | `Registry<T>` | `gafira-ports` |
+
+`Cost` da unidades de trabajo abstractas, calculadas con los píxeles y el tamaño del núcleo, sin tiempo (ARQ-02). Aceptación: con los mismos parámetros, `cost_hint` no da menos trabajo para el doble de píxeles.
 
 Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pueden cambiar con mediciones.
 
