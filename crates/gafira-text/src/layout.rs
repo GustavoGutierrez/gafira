@@ -227,7 +227,7 @@ pub fn layout_box(
         // Parley ends a text with a forced break in one more, empty line; here that line is
         // the next paragraph, which `bidi_paragraphs` always gives.
         let kept = laid.len() - usize::from(paragraph.ends_with(is_forced_break));
-        let (mut read, forced) = read_lines(
+        let mut read = read_lines(
             &laid,
             kept,
             &blob_ids,
@@ -243,7 +243,8 @@ pub fn layout_box(
         let rtl = laid.is_rtl();
         let last = read.len().saturating_sub(1);
         for (i, line) in read.iter_mut().enumerate() {
-            let stretch = i != last && !forced[i];
+            // A forced break closes its paragraph, so only the last line can end in one.
+            let stretch = i != last;
             align_line(line, paragraph, style.align, rtl, width, stretch);
             line.baseline = (top + f64::from(line.baseline)) as f32;
             for c in &mut line.clusters {
@@ -303,8 +304,8 @@ fn bidi_paragraphs(text: &str) -> Vec<Range<usize>> {
     paragraphs
 }
 
-/// The first `kept` lines of the layout of a paragraph as output lines, all starting at x = 0,
-/// and whether each one ends in a forced break. `spacing` is the letter spacing in px that
+/// The first `kept` lines of the layout of a paragraph as output lines, all starting at x = 0.
+/// `spacing` is the letter spacing in px that
 /// parley added after every cluster. Baselines and ranges are the ones of the paragraph.
 fn read_lines(
     laid: &parley::Layout<()>,
@@ -314,9 +315,8 @@ fn read_lines(
     spacing: f32,
     style: &TextStyle,
     size_px: f32,
-) -> Result<(Vec<Line>, Vec<bool>), TextError> {
+) -> Result<Vec<Line>, TextError> {
     let mut lines = Vec::new();
-    let mut forced = Vec::new();
     for line in laid.lines().take(kept) {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
@@ -380,7 +380,6 @@ fn read_lines(
                 }
             }
         }
-        forced.push(hard_breaks.contains(&true));
         let mut x = 0.0;
         for c in &mut clusters {
             c.x = x;
@@ -393,7 +392,7 @@ fn read_lines(
             clusters,
         });
     }
-    Ok((lines, forced))
+    Ok(lines)
 }
 
 /// Where each piece of the converted text came from in the input.
