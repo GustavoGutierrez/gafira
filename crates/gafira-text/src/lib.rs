@@ -7,12 +7,14 @@
 #![forbid(unsafe_code)]
 
 mod columns;
+mod curve;
 mod error;
 mod fit;
 mod layout;
 mod list;
 
 pub use columns::{Column, ColumnSizing, ColumnsLayout, TextColumns, layout_columns};
+pub use curve::{Arc, CurvedCluster, CurvedLine, CurvedText, curve_layout, layout_curved};
 pub use error::TextError;
 pub use fit::{FitBox, FitResult, FitRun, fit_box};
 pub use layout::{Cluster, Decoration, Line, TextAlign, TextLayout, TextStyle, layout_box};
