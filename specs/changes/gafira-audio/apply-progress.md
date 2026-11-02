@@ -486,7 +486,7 @@ Hand mutants (applied, tests run, reverted; none committed):
 
 Survivors, judged equivalent under the spec (no behaviour test added, because none is a spec rule):
 
-- `L = floor(32 000 / fs)` instead of `ceil`: still within the 0.1 dB of ARQ-126 on every rate of the criterion (worst 24 kHz, 0.068 dB). The `ceil` is the verifier's design for margin (0.03 dB); the spec says only +-0.1.
+- `L = floor(32 000 / fs)` instead of `ceil`: NOT equivalent (verify round 2, W20). ARQ-126 binds every rate; 16.128 kHz to 19.6 kHz read over 0.1 dB with `floor`. The sweep now has 17 640 Hz and kills it (see the round 2 note below).
 - Kaiser beta 3 for the interpolator: the stopband is worse, the measured deviation is still inside 0.1 dB.
 - `LoudnessNormalizer` skipping a block shorter than 512 frames in the FV-10 (b) tests: 256 frames of 480 000 do not move the readings beyond their tolerance.
 - The second `?` in `mean(&kept)` cannot fire: `kept` sums to no more than `passed`, which was checked.
@@ -504,3 +504,29 @@ Deviations:
 Gates, each alone, at `c0aa391`: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. The same three at `067e69b` (with `tests/leveling.rs` and the x4/margin code of the next commit held back): 0, 0, 0. `c95c006` only changes `tests/resample.rs`; its tests were run in both full runs.
 
 Size of the fix round: `git diff --shortstat 59c72b0 HEAD` before this note: 7 files, 279 insertions, 110 deletions.
+
+### Fix round 2 (C15, W20, W21)
+
+Spec commit `c9e8f0f` read first: block = `ceil(0.4 fs)` frames, step = `ceil(0.1 fs)` frames, block `k` starts at `k * step` and counts only if it fits whole; `frames * 10 < 4 * fs` gives no measure.
+
+RED (before the code), failing line:
+
+| Item | Test | Failing line |
+|---|---|---|
+| W21 | `arq_126_400_ms_in_frames_has_a_measure_and_one_frame_less_has_none_at_every_rate` | `assertion failed: measure(&[tone(4_410)], 11_025).expect("ok").is_some()` |
+| C15 | same test, with the 4 410 row out | `left: Ok(Some(-21.27371662790326))  right: Ok(None)` (100 frames at 252 Hz) |
+| W20 | sweep test with the 17 640 Hz row | passes on `ceil` by construction (code was right); proved by the `floor` mutant |
+
+Change: `integrated_loudness` keeps the energy of every frame and sums the frames of each block; the early return is `frames * 10 < 4 * fs`. The new test also runs every valid rate up to 192 kHz (all divisors of 705 600 000 in that range): `ceil(0.4 fs)` frames give a measure, one less none. Rates above 192 kHz (up to 705.6 MHz) were not run: the signal would be up to 282 million frames.
+
+Hand mutants (applied, reverted, none committed):
+
+| Mutant | Killed by |
+|---|---|
+| floor for `L` (W20) | `arq_126_the_k_weighting_at_other_rates_*`: `17640 Hz at 2500 Hz: -13.97 against -14.10` |
+| guard `<=` for `<` | `arq_126_400_ms_in_frames_*` (4 410 at 11 025), `arq_126_a_signal_under_400_ms_*`, `arq_126_the_first_and_the_last_block_*` |
+| block fit `<` for `<=` | the same three |
+| block fit `<= frames + 1` | the same three (index out of range) |
+| guard `+ 1 < 4 fs` | survives: equivalent, `4 fs - 1` is never a multiple of 10 |
+| guard `+ 10 < 4 fs` | survives: the block-fit check returns `None` on the same inputs, the guard is only an early exit |
+| step rounded to nearest instead of `ceil` | survives: no test fixes the block starts by value; it is not in the requested list and needs an oracle of the K-weighted energy |
