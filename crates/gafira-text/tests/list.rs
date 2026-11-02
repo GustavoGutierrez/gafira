@@ -4,7 +4,9 @@
 
 use gafira_geom::Size;
 use gafira_testkit::fonts;
-use gafira_text::{ListEntry, ListItem, ListKind, TextError, TextStyle, layout_box, layout_list};
+use gafira_text::{
+    ListEntry, ListItem, ListKind, TextAlign, TextError, TextStyle, layout_box, layout_list,
+};
 
 const INTER: &[u8] = fonts::INTER.bytes;
 /// 24 pt at 96 dpi.
@@ -302,4 +304,72 @@ fn fd_41_an_empty_font_list_is_an_error_for_a_list_with_no_items_too() {
         layout_list(&[], &[INTER], &style(), 96.0, size).expect("empty"),
         vec![]
     );
+}
+
+// ---- the hang does not depend on the alignment or on a box --------------------------------
+
+const ITEM_TEXT: &str = "aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo pp qq rr";
+
+fn aligned(align: TextAlign, width: f64) -> Vec<ListEntry> {
+    let s = TextStyle { align, ..style() };
+    layout_list(
+        &[item(ITEM_TEXT, 1, Numbered), item(ITEM_TEXT, 2, Bullet)],
+        &[INTER],
+        &s,
+        96.0,
+        Size::new(width, 1000.0),
+    )
+    .expect("valid list")
+}
+
+#[test]
+fn fd_41_j_the_alignment_of_the_list_does_not_change_where_the_text_starts_or_its_room() {
+    let width = 420.0;
+    let left = aligned(TextAlign::Left, width);
+    for align in [TextAlign::Center, TextAlign::Right, TextAlign::Justify] {
+        let other = aligned(align, width);
+        for (l, o) in left.iter().zip(&other) {
+            let start = text_x(l);
+            assert_eq!(
+                o.layout.lines.len(),
+                l.layout.lines.len(),
+                "{align:?}: the room of the item"
+            );
+            assert!(!o.layout.overflow, "{align:?}");
+            // The white space at the end of a line hangs past the box: only ink is checked.
+            let ink = o.layout.lines.iter().flat_map(|line| &line.clusters);
+            for c in ink.filter(|c| !ITEM_TEXT[c.range.clone()].trim().is_empty()) {
+                assert!(
+                    f64::from(c.x) >= start - 0.01 && f64::from(c.x + c.advance) <= width + 0.01,
+                    "{align:?}: a cluster at {} past the hang {start}",
+                    c.x
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn fd_41_j_the_hang_is_in_proportion_to_the_dpi_at_any_dpi() {
+    let hang = |dpi: f64| {
+        let entries = layout_list(
+            &[item("a", 1, Numbered)],
+            &[INTER],
+            &style(),
+            dpi,
+            Size::new(1e15, 1e15),
+        )
+        .expect("valid list");
+        text_x(&entries[0])
+    };
+    let base = hang(96.0);
+    assert!(base > 0.0);
+    for dpi in [960.0, 1e6, 1e10] {
+        let scaled = hang(dpi);
+        let expected = base * dpi / 96.0;
+        assert!(
+            (scaled - expected).abs() <= expected * 1e-4,
+            "dpi {dpi}: hang {scaled}, expected {expected}"
+        );
+    }
 }

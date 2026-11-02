@@ -3,7 +3,7 @@
 use gafira_geom::Size;
 
 use crate::layout::{check_input, check_output};
-use crate::{TextError, TextLayout, TextStyle, layout_box};
+use crate::{TextAlign, TextError, TextLayout, TextStyle, layout_box};
 
 /// Deepest level of a list.
 const MAX_LEVEL: u8 = 4;
@@ -131,7 +131,9 @@ pub fn layout_list(
 }
 
 /// Where the text starts after a marker and a space, in px from the marker: the `x` of a
-/// letter put after them, so the spacing and the kerning of the style are counted.
+/// letter put after them, so the spacing and the kerning of the style are counted. The
+/// probe is aligned to the left in a box as wide as the layout allows, so neither the
+/// alignment of the list nor the size of a box moves the measure.
 fn text_start(
     marker: &str,
     fonts: &[&[u8]],
@@ -139,8 +141,12 @@ fn text_start(
     dpi: f64,
 ) -> Result<f32, TextError> {
     let probe = format!("{marker} x");
-    let wide = Size::new(1e9, 1e9);
-    let laid = layout_box(&probe, fonts, style, dpi, wide)?;
+    let wide = Size::new(f64::from(f32::MAX), f64::from(f32::MAX));
+    let left = TextStyle {
+        align: TextAlign::Left,
+        ..*style
+    };
+    let laid = layout_box(&probe, fonts, &left, dpi, wide)?;
     Ok(laid
         .lines
         .first()
