@@ -61,3 +61,21 @@ Odd-side mutant (last row or column included): killed by `arq_121_odd_side_uses_
 5. `BufferError` carries `NonFinite { field, index }` besides the two constructor variants of P4, so one enum serves ARQ-110 for RS1. `field` is `"pixels"`.
 6. `TileGrid { columns, rows }` and `tile_grid` are the minimum for "257×1 is 2 tiles"; `Tile` and `TileSet` of 02 §4.17 are not RS1.
 7. The 8-bit mip decodes and encodes through `gafira_color::AnalyticTransform`, ignoring its impossible `Err` (a four-channel buffer is always whole).
+
+### Fix round 1 (verify round 1: C1 to C5, W1 to W3, S1, S2)
+
+Commits: cfdd474 (mips: C1, W1, W3 mips part, S2), then the test commit for C2 to C5 and S1. Gates exit 0 on each (fmt, clippy `-D warnings`, test `--workspace --locked`, read alone). Test count in `gafira-raster`: 29 to 41.
+
+- C1: an `RgbaF32` pixel with `a = 0` now adds no colour. RED: `arq_121_f32_transparent_pixel_adds_no_colour`.
+- W1 (amended ARQ-121): every source pixel counts. Each level pixel is the equal-weight mean of the original pixels it covers; an odd side joins its last row or column to the last box; a side of 1 does not divide. RED on the old code: `arq_121_odd_side_counts_every_pixel_alpha8` (3x1 gave 0, not 85), `arq_121_odd_side_counts_every_pixel_rgba8` (3x1 gave 0, not 156), `arq_121_wide_image_top_level_is_the_exact_mean` (1x1 gave 0, not 185). The test of the old rule (`arq_121_odd_side_uses_the_first_even_part`) is replaced.
+- Choice on rounding: levels are not rebuilt from level 0 pixel by pixel (that costs a pass over the source per level). Each level is built from the unrounded f64 sums of the level above, which started from level 0, so a level equals the exact mean of the originals it covers and no rounding builds up. Cost: 32 bytes per source pixel while building (about 380 MB for 12 MP), then a quarter of that. If a speed or memory test needs less, level 1 could be computed straight from the 8-bit source; not done now.
+- W2: `EffectError` does not exist in RS1 (no `Effect` or `Transition`), so there is nothing to wrap. Reported: RS3 or RS4, whichever adds `EffectError` first, must add a variant wrapping `BufferError` with `From`, with `to_message` delegating (02:1308).
+- C2, C3: `arq_110_non_finite_colour_in_transparent_pixel_is_err` (pixel.rs, for `premultiply` and `unpremultiply`, alpha 0 and -0.0, NaN and both infinities, buffer unchanged) and the same name in mip.rs for `build_mips`. Not RED; proved by V1 and V2.
+- C4: `arq_111_every_conversion_is_deterministic` runs `premultiply` and `unpremultiply` twice on `f32` and `Rgba8`. Not RED; proved by V3.
+- C5: `proptest!` blocks `arq_110_finite_input_gives_finite_output`, `arq_110_unit_range_premultiply_is_ok_and_finite`, `arq_110_finite_mips_are_finite`. Not RED.
+- W3: `arq_121_constant_image_all_formats` (f32 and Alpha8, odd sizes), plus the odd-row case in the Alpha8 and Rgba8 odd-side tests (1x3 and 3x3). S2: `arq_121_zero_side_images_have_no_levels` (0xN, Nx0, 0x0, all formats), and `arq_121_one_by_one_has_one_level_equal_to_input`. S1: dead code removed.
+
+Mutants of this round (all killed): V1 (input check skips `a = 0` pixels in `convert`) by `arq_110_non_finite_colour_in_transparent_pixel_is_err`; V2 (same in `build_mips`) by the mip test of that name; V3 (`RandomState` entropy in `unpremultiply` f32, in 8-bit premultiply and in 8-bit unpremultiply) by `arq_111_every_conversion_is_deterministic`; f32 `a = 0` colour by `arq_121_f32_transparent_pixel_adds_no_colour`; last box not widened (odd side dropped), area ignored, cover sum wrong, sRGB mean, equal weights, Rgba8 `a = 0` raw colour, alpha rounding down, unchecked overflow result: all by the ARQ-121 and ARQ-110 tests above.
+
+Deviations: a mutant run left an untracked `crates/gafira-raster/proptest-regressions/` folder (proptest's failure seeds). I could not delete it here (the `rm` was denied) and did not commit it; delete it before merge. S3 and S4 need no code. Lines for the round: see `git diff --shortstat 10f328b..HEAD -- crates/`.
+
