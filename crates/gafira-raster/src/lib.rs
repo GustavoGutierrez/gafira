@@ -4,9 +4,11 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod pixel;
 mod view;
 
 pub use error::BufferError;
+pub use pixel::{premultiply, premultiply_u8, unpremultiply, unpremultiply_u8};
 pub use view::{
     AlphaMask, EffectCx, ImageBuf, ImageView, ImageViewMut, PixelBuf, PixelData, PixelDataMut,
     PixelFormat,
