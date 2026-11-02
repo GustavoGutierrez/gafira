@@ -1,3 +1,205 @@
+# Verify report: gafira-text, TX3 and TX4 together, round 1
+
+Commit 3309b86 of `feat/gafira-text`, base `develop` (merge base da288d6). Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding.
+
+**Verdict: FAIL.** 5 CRITICAL, 4 WARNING, 5 SUGGESTION. Classes: implementation 7 (4 CRITICAL, 3 WARNING), ambiguity 2 (1 CRITICAL, 1 WARNING). All gates are 0, and ARQ-14 is proved on the three platforms. One code defect, one spec gap with unreadable output, and three test gaps that hand mutants expose.
+
+next: specifier (ambiguity: C24, W34), then tdd-apply (implementation: C23, C25, C26, C27, W35, W36, W37)
+
+## Gates
+
+`df -h /`: 30 GB free at the start, 23 GB at the end. Each gate ran alone in the worktree, with `CARGO_TARGET_DIR` unset, and each exit code was read alone from its own file.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 787 passed, 0 failed, 144 binaries) |
+| `cargo deny check` | 0 (advisories, bans, licenses, sources ok) |
+| CI policy | 0: job `policy` of run 41467352537 passed at this commit |
+
+### ARQ-14, `workflow_dispatch` run 41467352537
+
+Finished, `success`, `headSha` 3309b86, the commit verified. `test` passed on `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu` and `aarch64-apple-darwin`, so `golden_fit.rs` holds its literal sizes on all three. ARQ-14 (`FitBox`) is covered.
+
+### Benchmarks
+
+Times of a scratch export, release, not D-03 hardware, 3 s of measure: `bench_text_type_5000` 2.39 ms, `bench_text_curve_100` 0.084 ms, `bench_text_columns_5000` 2.16 ms, `bench_text_fit_500` 3.32 ms. All under 16 ms. The nightly job decides; `perf-budgets.toml` (ARQ-40) does not exist yet and is not part of ARQ-114's criterion.
+
+## Integrity
+
+| Check | Result |
+|---|---|
+| Slice card | No commit changed it after the amend 7bf52f2; the diff from there starts at line 270 of `apply-progress.md` |
+| Specs | `specs/02`, `specs/04` and `specs/01`: no change on the branch since the merge base |
+| Skrifa commit 3f495ed | `Cargo.lock` one line (`"skrifa"` in `gafira-text`), no new package, across the whole branch too; root `Cargo.toml` exactly the P14 line; `crates/gafira-text/Cargo.toml` `skrifa.workspace = true` |
+| `deny` | Clean |
+| V5 | The `gafira-text` row is unchanged and enough: the row limits internal crates only, `skrifa` is not one, and the `policy` job passed. `skrifa` is already in 02 §9. `StyleProperty::Locale`: 0 matches |
+| TX2 follow-ups | W31: row `("123 \u{627}", true)` in `tests/paragraph.rs:230`. W32 and S13: the Justify test and `stretch = i != last` are in place |
+
+### Did a mutant stay in `src`?
+
+No. The worktree is clean (`git status` empty), `crates/` equals HEAD, and every commit after da3901d touches only `apply-progress.md`. I read all of `curve.rs`, `outline.rs`, `fit.rs`, `columns.rs` and the `layout.rs` diff, and found no planted value. Each recorded survivor is at its recorded form (`TIE`, `(lo + hi) / 2`, `last > 0`, `floor + 1`, the pruning guards). The independent oracles below agree with the code, so a committed wrong value would have to be one none of them sees.
+
+## Rulings on the deviations
+
+| Deviation | Ruling |
+|---|---|
+| Multi-line radius from the longest line | The choice is reasonable and the concentric geometry is exact (independent checks of circle, tangent, apex). The spec is silent on it: C24 |
+| Inner radius <= 0 | Not acceptable as output, though not the implementer's error: lines read backwards in ordinary boxes. Class `ambiguity`, C24, with a rule to adopt |
+| Crate-private size runs | Accepted. `SizeRun` is `pub(crate)`, `layout_box` passes none, and every test of `layout_box` still holds. One side effect: W35 |
+| FD-45 small decisions (a) to (i) | Accepted, each checked: the 1 382 oracle cases agree with (c) and (d) on ties and on the box; (b) and (e) as in the code; S16 and S18 ask for one spec sentence |
+| FD-43 (a) as a property | Accepted. The layout has no outline input (`&TextLayout` in), so no stroke can move it, and the 4 px stroke test shows the effect is real. Its RED and mutants are honest |
+| Size of the deliveries | Not a finding, as ruled |
+
+## Coverage
+
+| Criterion | Status | Proof |
+|---|---|---|
+| FD-45 (a) | covered | `fd_45_a_three_columns_*`, `fd_45_a_balance_minimises_*`. Probe: 3 000 characters, Latin and Arabic, 4 sizes, both sizings; my own brute force over 1 382 mixed-height cases gives the same ends, ties included |
+| FD-45 (c) | covered | `fd_45_c_*`. Probe: no text lost, in reading order. Gap on the auto height: C26 |
+| FD-45 (d) | covered | `fd_45_d_the_numbers_are_checked`. Probe: 1 408 px at 8 columns and gap 200 is in, 1 407.9 is out |
+| FD-45 (e) | covered | `fd_45_e_*`. Probe: Debug text and height bits equal over 7 texts, 4 widths, 4 alignments, 2 spacings, both sizings; no `-0.0` x appeared |
+| FD-46 (a) | covered | `fd_46_a_*`. Probe: 1 600 random cases, one run and 10/20 runs, oracle by a separate call at `min = max = r`. Gap on white space text: C27 |
+| FD-46 (b), (c), (e), (f) | covered | `fd_46_b_*`, `fd_46_c_*`, `fd_46_e_*`, `fd_46_f_*`; the same probe |
+| ARQ-14 (`FitBox`) | covered | `golden_fit.rs`, run 41467352537 on 3 platforms |
+| FD-44 (a) | covered | `fd_44_a_*`. Probe bit for bit with bidi and two lines |
+| FD-44 (c) | covered | `fd_44_c_a_new_text_makes_a_new_curve` |
+| FD-44 (d) | covered for one line | `fd_44_d_*`. Probe: chord, radius, rotation, circle and tangent by an independent formula, 4 texts, 6 bends, 3 alignments. Other lines: C24, W34 |
+| FD-44 (e) | covered | `fd_44_e_*`. Probe: 100.00000001 is an error, 5 000 characters at 0.01 finite, `a\n\nb\n` leaves empty lines straight |
+| FD-43 (a) | covered | `fd_43_a_a_4_px_stroke_*`, see the ruling. Curve fidelity: C25. Right-to-left spacing: C23 |
+| ARQ-114 (text) | covered | `arq_114_*`, four names equal to the four rows of §6.7. Registration: W36 |
+
+16 of 16 criteria have proof. Non-goals respected: FD-41 (b), FD-46 (d), FD-44 (b), FD-43 (b, c), `Locale`.
+
+Glyph positions were compared with `parley`'s own `positioned_glyphs`: 102 glyphs, 16 multi-glyph clusters. `glyph_offsets` is exact in left-to-right text and in right-to-left text with spacing 0. Every gap found is the one of C23.
+
+Balance time, 3 000 to 6 000 lines of mixed heights, 5 to 8 columns: under 120 ms in all, most of it the layout. No exponential case.
+
+## CRITICAL
+
+### C23, class: implementation. Right-to-left letter spacing is on the wrong side of the glyph
+
+`crates/gafira-text/src/layout.rs`, `read_lines`; FD-41 Interletrado, visible through `outline_text` (FD-43 (a)).
+
+FD-41: the spacing goes after each cluster but the last of the line. After, in a right-to-left run, is on the left of the cluster. Parley puts it in the advance with the glyph at the left edge, so on the right. The crate then removes the spacing of the last logical cluster, which is the leftmost. Measured from the outlines of `داراز`, 100 px, t = 100, gain over t = 0 of each gap, left to right:
+
+| Text | Gaps | Ink end, Right, box 600 |
+|---|---|---|
+| `داراز` | 0, 10, 10, 10 | 585.50 (595.50 at t = 0) |
+| `HIHIH` (control) | 10, 10, 10, 10 | 591.21 (591.21 at t = 0) |
+
+So the gap between the last two clusters gets nothing, and 10 px of spacing sit past the first cluster, which pulls the ink off a right edge, also in a justified line. TX2's tests read `Cluster::advance`, which is correct; only a drawing shows it, and `outline_text` is the first drawing.
+
+Fix, proved on scratch: in `read_lines`, for an `rtl` cluster that keeps its spacing and is not a forced break, add `spacing(c.range.start)` to the x of every entry of `glyph_offsets`. `x` and `advance` stay. Gaps become 10, 10, 10, 10, the ink ends at 595.50, and all 200 tests of the crate still pass, so **no test covers this**: the fix needs one that reads ink gaps from the outlines.
+
+### C24, class: ambiguity. Inner lines of an arch mirror through the centre in ordinary boxes
+
+`crates/gafira-text/src/curve.rs`, `radius`; FD-44 Geometría, «Varias líneas usan arcos concéntricos con el mismo θ» (PROPUESTA).
+
+600 characters, 12 pt, 96 DPI, in a box of ordinary size:
+
+| Box | Bend | Lines | Radius <= 0 | First such line | Lines read backwards |
+|---|---|---|---|---|---|
+| 300 px | 100 | 17 | 9 | 9th | 9 |
+| 300 px | 60 | 17 | 5 | 13th | 5 |
+| 150 px | 100 | 37 | 34 | 4th | 34 |
+| 600 px | 100 | 8 | 0 | | 0 |
+| 150 px | -100 | 37 | 0 | | 0 |
+
+The output is finite and matches the documented formula, but the text on those lines runs right to left, upright, on the wrong side of the centre: unreadable. Lines just outside that point are packed until the glyphs overlap, since a line of length `L_i` gets `R_i |θ|` of arc. The spec fixes `radio = L / |θ|` for one line and is silent on which line sets it, on the others, and on `R <= 0`. (d) cannot hold for every line: a second line of 24.8 px at bend 100 has a chord of 52.05 px against `2L/π` = 24.83 px.
+
+The implementer decided and asked; this needs the owner's or `specifier`'s rule before TX4 merges.
+
+Recommendation for FD-44: no line is packed below its own advance, and a single line is unchanged:
+
+`R_ref = max over the lines i of (L_i / |θ| + σ (b_i - b_ref))`, with `σ = sign θ`, `R_i = R_ref - σ (b_i - b_ref)`.
+
+Then `R_i |θ| >= L_i` for every line, every radius is positive, and one centre and one `θ` stay. With one line it is `L / |θ|`, so (d) holds as written; state that (d) applies to a single line, or to the line that sets the radius. The cost: a tall arch grows wide. Alternative: keep the longest line as the reference and return an error above some depth; that blocks a slider mid-drag, so I do not recommend it.
+
+### C25, class: implementation. A hand mutant turns every glyph curve into a straight line and no test sees it
+
+`crates/gafira-text/src/outline.rs`, `quad_to`; `crates/gafira-text/tests/outline.rs`.
+
+Mutant T4-2: `quad_to` becomes `line_to` to its end point. All tests pass. `O` would be a polygon of its on-curve points. FD-43 (a) needs the real outline, and the tests read boxes and contour counts of `H`, `A`, `B`, which this barely moves.
+
+Fix: a test that compares a round glyph with its font, for example `path.area()` of `O` against the area from `skrifa`'s own pen at the same size, or an element count check that requires `QuadTo` elements.
+
+### C26, class: implementation. A hand mutant takes the total height from the first column and survives
+
+`crates/gafira-text/src/columns.rs`, `let height`; FD-45 «el alto del cuadro sale del resultado».
+
+Mutant T3-1: `ColumnsLayout::height` is `out[0].height`. All tests pass. The code at HEAD is right, and a balanced split with mixed line heights can have a shorter first column (`[9113.6, 9104.6, 9112.2, 9123.4, ...]` in the probe).
+
+Fix: in `fd_45_auto_height_*`, assert `height` equals the tallest of the columns, on a fixture of mixed line heights where the tallest is not the first.
+
+### C27, class: implementation. A hand mutant treats white space as empty text and survives
+
+`crates/gafira-text/src/fit.rs`, `text.is_empty()`; FD-46 (a), (b).
+
+Mutant T3-2: `text.trim().is_empty()`. All tests pass. (b) speaks of empty text; three spaces are a text with a height, and at HEAD they fit up to 123.75 pt in a box of 200 px high. The mutant returns the size unchanged.
+
+Fix: one case of FD-46 (a) with `"   "`, asserting the result is above the size of the run.
+
+## WARNING
+
+### W34, class: ambiguity. The white space that hangs counts in `L`, so wrapped text is off centre on the arc
+
+`crates/gafira-text/src/curve.rs`, `length`, `start`, `reference`; FD-44 Geometría; `Line::advance`.
+
+`L` is the sum of all clusters, with the trailing space of a wrapped line, which FD-41 puts outside the alignment. At bend 100 in a 200 px box, the midpoint of the ink turns -0.041, -0.021 rad in Latin and +0.064, +0.036 rad in Arabic, and sits up to 0.8 px off the centre of the box. `Hello` starts at -1.0864 rad and `Hello ` at -1.1371. (d) holds for `L` as defined, so this is the spec's word «avance».
+
+Recommendation: state that `L` is the advance without the white space that hangs, `s` counts from the start of that content, and a hanging space has no place on the arc. Then the code needs the mask `hanging_mask` already computes.
+
+### W35, class: implementation. With mixed sizes and spacing a line passes the box and no flag says so
+
+`crates/gafira-text/src/layout.rs`, `layout_with`, `fit`.
+
+The break adds the spacing of the largest run, while the last cluster of a line may be of a smaller one (recorded as deviation 2 of TX3). Worst measured: 5.98 px past a box of 231 px at t = 500, runs of 10 and 20 pt, `overflow` false, and `fit_box` calls that a fit. The bound is `t/1000 x (largest - smallest)`: 1.33 px at t = 100. FD-46's purpose is no overflow, though no criterion measures the line.
+
+Fix: use the spacing of the smallest run in `fit` when the sizes differ. No line passes the box; a line that ends in a large run may break early by that same difference.
+
+### W36, class: implementation. `arq_114_*` does not check that a benchmark runs
+
+`crates/gafira-text/tests/benches.rs`. Mutant T4-5 takes `bench_text_fit_500` out of `criterion_group!` and survives: the test counts the quoted name in `bench_function`, so the assertion message «registered once» is not what it proves. Non-critical code. Fix: also look for the name in the text of `criterion_group!`, with one more assertion.
+
+### W37, class: implementation, follow-up. FD-45 «Funciona con Listas» is not built
+
+`crates/gafira-text/src/columns.rs`. Recorded as deviation 4 of TX3: `layout_list` and `layout_columns` do not meet. Outside the card's (a, c, d, e), so it does not block; it must not be lost at archive.
+
+## SUGGESTION
+
+- **S14.** An empty run that is the largest sets `r`. `[("", 100), ("Hello", 10)]` gives `Hello` 12.375 pt where it alone gets 93.25 pt. Fix in `fit.rs`: take `largest` from the runs with text.
+- **S15.** A run may scale below the 1 pt of FD-41: 1:1000 gives 0.0165 pt. It lays out without error. FD-46 could state that the range binds the largest run only.
+- **S16.** FD-45 says `gap` «se ignora» with `count = 1` and (e) «con cualquier `gap`», while the code gives `Err` for gap 300 or -1 with one column. Reading (d) as unconditional is fine; one spec sentence removes the doubt.
+- **S17.** No embedded font has cubic outlines, so `Pen::curve_to` never runs in a test. Also, the doc comment of `TextLayout::overflow` still says «a line ... wider than the box»; since fix round 5 it is a cluster.
+- **S18.** One column in a fixed box has `overflow` true when the text is taller than the box, where `layout_box` has false. It fits (c), and (e) is about the layout, not the flag. One spec sentence would settle it.
+
+Commit 3f495ed was made with its gates failing on an untracked throwaway file, as `apply-progress.md` says. The commit holds only manifests and HEAD passes, so this is no finding; a chained command should not commit past a gate.
+
+## Hand mutants (scratch export, restored and compared with HEAD)
+
+| # | Wrong behaviour | Result |
+|---|---|---|
+| spot TX3 | item 2, fill with `<` | killed by `fd_45_a_text_split_*`, `fd_45_c_*`, `fd_45_a_balance_*` |
+| spot TX4 | item 3, sigma always 1 | killed by `fd_44_d_plus_and_minus_*` and 3 more |
+| T3-1 | total height is the first column | **survived**, C26 |
+| T3-2 | white space text counts as empty | **survived**, C27 |
+| T3-3 | run boundary in the upper case text off by one | killed by `fd_46_f_runs_follow_*` |
+| T3-4 | last cluster loses the base spacing, not its run's | killed by `fd_46_f_letter_spacing_*` |
+| T3-5 | auto height flags the box height | killed by `fd_45_auto_height_*` and 1 more |
+| T4-1 | `Arc::start` by `|theta|`, reversed in a cup | killed by `fd_44_d_the_chord_*` |
+| T4-2 | quadratic curves become lines | **survived**, C25 |
+| T4-3 | contours left open | killed by `fd_43_a_a_4_px_stroke_*` |
+| T4-4 | `s` measured 1 px off the start of the line | killed by `fd_44_d_a_cluster_at_s_*` and 2 more |
+| T4-5 | a benchmark out of the group | **survived**, W36 |
+
+12 run, 8 killed. Probes and mutant script: `probes/zz_tx34_probe.rs`, `tx34r1_mutants.py` and `mutants-result.json` beside this report.
+
+next: specifier (ambiguity: C24, W34), then tdd-apply (implementation: C23, C25, C26, C27, W35, W36, W37)
+
+---
+
 # Verify report: gafira-text, TX2, round 5 (closure)
 
 Commit 39607ef of `feat/gafira-text`, base `develop`. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Scope as the coordinator set it: C18, C22, bidi paragraphs against FD-41, hand mutants on the paragraph split. W30, C16 and C17 are not re-attacked.
