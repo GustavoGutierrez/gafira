@@ -55,4 +55,25 @@
   "mutation": null,
   "hand_mutants": {"run": 5, "killed": 1},
   "criteria": {"total": 15, "covered": 11},
-  "size": {"lines": 842, "forecast": 340}, "report": "verify-report.md" } ] }
+  "size": {"lines": 842, "forecast": 340}, "report": "verify-report.md" }, {
+  "delivery": "RS2", "round": 2, "commit": "068f17bbc749c8b9baa648b8f2e0d66d790cba7a", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply", "classes": [],
+  "counts": {"critical": 0, "warning": 3, "suggestion": 4},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:575", "summary": "Closed: bit comparison on 3 000 inexact sources; M1 killed.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:922", "summary": "Closed: M2a and M2b killed by arq_119_source_colour_is_capped_to_its_alpha.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:949", "summary": "Closed: M3 killed by arq_110_overflowing_alpha_is_err.", "follow_up": false, "status": "closed"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:967", "summary": "Closed: guard mutant killed by the -0.0 test; claim (b) withdrawn.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-119, 02 6.2", "summary": "Open owner question: blending colour space. Rule before gafira-render-cpu. Follow-up per coordinator.", "follow_up": true, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-119, 02 table", "summary": "Closed: amended ARQ-119 says the transparent source wins; code and tests match. Both transparent returns the backdrop: ruled derivable.", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:143", "summary": "Closed: mixing result clamped; clamp mutant killed; reference tables still pass.", "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:1010", "summary": "Closed: interior and tiny draws added. Edge of the assertion in W7.", "follow_up": false, "status": "closed"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "FD-12 (c), 02:944", "summary": "Closed: three comments name FD-12.", "follow_up": false, "status": "closed"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:201", "summary": "8-bit both-transparent case untested: B3 and B4 pass all 63 tests, killed by probe r3. Code right today. New test gap.", "follow_up": true, "status": "open"},
+    {"id": "W7", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:1001", "summary": "Two properties assert [0, 1], false at source alpha exactly 0 with an out-of-range backdrop. Not seen in 20 M cases; possible rare false failure.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 13, "killed": 11},
+  "criteria": {"total": 16, "covered": 16},
+  "size": {"lines": 1068, "forecast": 340}, "report": "verify-report.md" } ] }
