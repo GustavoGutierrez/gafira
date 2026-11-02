@@ -426,8 +426,10 @@ impl<T: ?Sized + Describe> Registry<T> {
     pub fn get(&self, id: &str) -> Option<&Arc<T>>;
     pub fn iter(&self) -> impl Iterator<Item = &Arc<T>>;
 }
-pub trait Describe { fn descriptor(&self) -> &Descriptor; } // id estable, nombre, versión, capacidades
+pub trait Describe { fn descriptor(&self) -> &Descriptor; } // id estable, nombre, versión
 ```
+
+`Descriptor` tiene `id`, `name` (`MessageKey`) y `version`. Las capacidades no van en él: cada trait expone las suyas en forma tipada (`Effect::gpu`, `Segmenter::requirements`, `RenderBackend::caps`, `Exporter::capabilities`). Aceptación: `Descriptor` se construye con esos tres campos, y ningún consumidor lee capacidades de él.
 
 Los registros se construyen en el *composition root* (binarios). Están prohibidos los registros globales mutables (`static mut`, `inventory`) (ver ARQ-31).
 
