@@ -662,6 +662,7 @@ pub trait Encoder: Send {
 
 ```rust
 pub trait AudioProcessor: Describe + Send {
+    fn params(&self) -> &ParamSchema;                          // sin valor por defecto (§4.17.5)
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16);
     fn process(&mut self, block: &mut AudioBlock<'_>, params: &ParamSnapshot); // sin asignaciones ni bloqueos
     fn latency(&self) -> u32 { 0 }
@@ -676,7 +677,8 @@ pub trait AudioProcessor: Describe + Send {
 - **Cómo añadir un procesador**:
   1. Implementar el trait sin asignar en `process`. Se verifica con una guardia de asignación: `assert_no_alloc`, solo como `dev-dependency` (§9.2, D-18), que aborta el proceso si `process` asigna; no hace `panic`. Solo actúa en builds de depuración. El control negativo que demuestra que la guardia detecta una asignación vive en `gafira-testkit` y corre en un subproceso. `unsafe` sigue prohibido en el código propio.
   2. Añadir prueba de respuesta (impulso o barrido) contra la referencia.
-  3. Registrar.
+  3. Añadir una prueba de que `params()` pasa `ParamSchema::validate_definition`.
+  4. Registrar.
 
 ### 4.10 `ColorTransform`
 
