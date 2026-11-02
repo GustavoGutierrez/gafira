@@ -177,6 +177,14 @@ fn fd_41_n_justify_starts_a_line_where_its_paragraph_starts() {
         near(f64::from(cluster(&text, &out.lines[1], "1").x), 0.0),
         "no strong character: left to right"
     );
+
+    // White space before the break hangs outside the edge, so the ink still ends at it.
+    let text = format!("{ABJ}  \nabc");
+    let out = lay(&text, TextAlign::Justify);
+    assert!(
+        near(ink(&text, &out.lines[0]).1, 100.0),
+        "a line with hanging white space ends at the edge, not past it"
+    );
 }
 
 #[test]
@@ -218,6 +226,8 @@ fn fd_41_a_paragraph_takes_its_direction_from_its_first_strong_character() {
         ("123 abc", false),
         ("123", false),
         ("... \u{627}", true),
+        // Digits before the first strong character do not decide it.
+        ("123 \u{627}", true),
         ("\u{200f}abc", true),
         ("\u{200e}\u{627}", false),
         // Inside an isolate it does not count, closed or left open.
