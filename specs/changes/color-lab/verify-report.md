@@ -103,3 +103,96 @@ The recorded survivor line is right, but its reason is not. Pairs 11 and 12 do r
 Checks that could not run: none. Per-commit gates are V3 and were not run.
 
 next: tdd-apply
+
+---
+
+# Verify report: color-lab, delivery CL1, round 2 (closure)
+
+Commit verified: `b43f439` (`feat/color-lab`, base `fdccea2`). Depth V2, mode full, tier T4, `mutation: archive` (no `mutants` report before close, not a finding).
+
+**Verdict: PASS.** C1 to C4 are closed: every surviving mutant of round 1 now fails a test. T4 at close is still owed.
+
+CRITICAL 0, WARNING 2 (both follow-up), SUGGESTION 3. Classes: implementation 2.
+
+## Gates (each exit code read alone, on a clean export of `b43f439`)
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1180 passed, 0 failed) |
+| `cargo deny check` | 0 |
+| CI policy steps, one by one (ARQ-07, forbid unsafe, V5, V12, V13, V14) | 0 each |
+
+These ran on Linux only. The Windows and macOS jobs of the CI matrix did not run (see WF2).
+
+## Artifact integrity (steps 3, 3c)
+
+- Slice card: `6202244` touches only `apply-progress.md`. From there to HEAD the file has 0 deleted lines, so no implementer commit changed the card.
+- `ea62347` touches only `crates/gafira-color/tests/lab.rs`. Production code is byte-identical to round 1.
+- `.cargo/mutants.toml` is unchanged, so there are no new exclusions to re-check.
+- `ea62347` replaced one existing expectation: the mid-range test went from tolerance 1e-5 to 1e-9 with more digits, which tightens it.
+- Criteria: 7 of 7 covered. P6 alpha and the ARQ-122 exact ε and `f64` rule, missing or partial in round 1, are now covered. Left out as the card says: palette and dHash (`RS6`).
+- Size: 436 lines under `crates/` (641 with docs), under the ~700 ceiling.
+
+## Closure of findings (mutants reapplied, scratch export, full `tests/lab.rs` run for each)
+
+No-op control: 17 passed, exit 0.
+
+| Finding | Mutant | Result | Killed by |
+|---|---|---|---|
+| C1 | W5 `< -170` | killed | the three hue-difference tests |
+| C1 | W7 `> 170` | killed | the three hue-difference tests |
+| C1 | W12 both 170 | killed | the three hue-difference tests |
+| C1 | W3 `<=` at -180 | killed | `arq_122_hue_difference_of_exactly_180_is_not_wrapped` |
+| C1 | W2 `>=` at 180 | killed | `arq_122_hue_difference_of_exactly_180_is_not_wrapped` |
+| C1 | S2 `dh < -180` arm removed, symmetry test skipped | killed | `arq_122_delta_e2000_matches_the_reversed_sharma_pairs` |
+| C1 | S2 `dh > 180` arm removed, symmetry test skipped | killed | `arq_122_delta_e2000_matches_the_34_sharma_pairs` |
+| C2 | A1 rgb multiplied by alpha | killed | `arq_122_alpha_is_ignored` |
+| C3 | H7 `h <= 0` | killed | `arq_122_hue_of_the_a_axis_is_0_or_180` |
+| C3 | H2 `h1 + h2 <= 360` | killed | `arq_122_mean_hue_adjusts_for_a_sum_below_360` |
+| C4 | A9 `f` input narrowed to `f32` | killed | `arq_122_mid_range_color_matches_the_reference_pipeline` |
+| C4 | A9 variant, only `cbrt` in `f32` | killed | `arq_122_mid_range_color_matches_the_reference_pipeline` |
+| C4 | A2 `EPSILON` = 0.008856 | killed | `arq_122_epsilon_is_exactly_216_over_24389` |
+
+13 of 13 killed. The killers match the table in `apply-progress.md`, except that W5 and W7 also fail one more hue-difference test than it records. These are reapplied round 1 survivors, so no independent-mutant budget was spent.
+
+Closed: C1, C2, C3, C4.
+
+## Limited probe: are the exact-boundary cases really exact?
+
+On this Linux build, the exact ±180 cases give `dh` of exactly -180.0 and 180.0, and the sum-360 case gives `h1 + h2 - 360` of exactly 0. So W2, W3 and H2 are killed for the stated reason.
+
+Each hue in the ±180 cases and in pair 14 comes from a non-trivial `atan2`, which Rust takes from the system libm. A 1 ulp change to `atan2` (scratch export only) has these effects:
+
+| Change | Result |
+|---|---|
+| all results down 1 ulp | exact-180 test fails, got 79.98, expected 86.67 |
+| positive results below 3.0 down 1 ulp | published pair 14 fails, got 4.7461, published 4.8045 |
+| all results up 1 ulp | a-axis test fails, but it perturbs `atan2(0, -x)`, whose value is fixed at pi, so it is artificial |
+| positive up, negative up, negative down | all pass |
+
+This is the known discontinuity of CIEDE2000 at 180 degrees, not a code defect. No real libm difference was observed: the only installed target is `x86_64-unknown-linux-gnu`, so no other libm was tried.
+
+## CRITICAL
+
+None open.
+
+## WARNING
+
+- **W1** class: implementation, `follow-up`, open, unchanged from round 1. `.cargo/mutants.toml`. T4 at close will report the verified equivalents on critical code, and each needs an exclusion with its reason.
+- **WF2** class: implementation, `follow-up`, new. `crates/gafira-color/tests/lab.rs`, exact-180 test and Sharma pair 14. These cases depend on the exact bits of the system `atan2`, and 1 ulp flips the result by up to 6.7 dE. Pair 14 was already exposed before the fix. Whether they pass on Windows and macOS is unproven. Read those two CI jobs on the first run. If one fails, the expected value needs a platform-safe case, not a change to the code.
+
+## SUGGESTION
+
+- S2 of round 1, still open. The `hue_degrees` doc says `[0, 360)`, which is not exact for a tiny negative hue.
+- S4. `tests/lab.rs`, comment on the reversed pairs says they reach "the +180 wrap". They reach the `dh < -180` arm, as `apply-progress.md` says and the S2 mutant confirms.
+- S5. `tests/lab.rs`, comment on `arq_122_mean_hue_adjusts_for_a_sum_below_360` says the sum is "just under 360", and the test name says below. The sum is exactly 360, which is why it kills H2.
+
+S1 is done (correction recorded in `apply-progress.md`). S3 is done (one named test per rule).
+
+Checks that could not run: the Windows and macOS CI jobs (not a gate of this depth, see WF2). Per-commit gates are V3 and were not run.
+
+Owed at close: T4 `mutants` on `gafira-color` before archive, with `W1` settled first, then a closure verify only if T4 leaves a critical survivor.
+
+next: archive
