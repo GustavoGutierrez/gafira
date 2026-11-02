@@ -143,7 +143,9 @@ impl Segmenter for ClassicSegmenter {
             let planned = (w * h) as u64
                 + slic::planned(ww, wh)
                 + cut::planned(ww, wh)
-                + refine::planned(w, h);
+                + refine::planned(w, h)
+                + hints.stroke_cost(work_scale(w, h, (ww, wh)), (ww, wh))
+                + hints.stroke_cost((1.0, 1.0), (w, h));
             let meter = Meter::new(progress, cancel, planned);
             let mut data = self.subject(&src, hints, (ww, wh), &meter)?;
             if hints.zone == SegZone::Background {
@@ -177,17 +179,21 @@ impl ClassicSegmenter {
         let nodes = cut::nodes(&work, &sp, meter)?;
         let edges = slic::adjacency(&sp, (ww, wh), meter)?;
         // Seeds reach the graph through the superpixels most of their pixels fall in.
-        let scale = ww as f32 / w as f32;
+        let scale = work_scale(w, h, (ww, wh));
         let mut hits = vec![[0u32; 2]; nodes.len()];
         for (side, strokes) in [&hints.foreground, &hints.background]
             .into_iter()
             .enumerate()
         {
             for stroke in strokes {
-                meter.check()?;
-                stroke.for_covered(scale, (ww, wh), |x, y| {
-                    hits[sp.labels[y * ww + x] as usize][side] += 1;
-                });
+                stroke.for_covered(
+                    scale,
+                    (ww, wh),
+                    |units| meter.step(units),
+                    |x, y| {
+                        hits[sp.labels[y * ww + x] as usize][side] += 1;
+                    },
+                )?;
             }
         }
         let pins: Vec<cut::Pin> = hits
@@ -212,12 +218,24 @@ impl ClassicSegmenter {
         // Under a stroke the person's word is final; foreground wins an overlap.
         for (value, strokes) in [(0, &hints.background), (255, &hints.foreground)] {
             for stroke in strokes {
-                meter.check()?;
-                stroke.for_covered(1.0, (w, h), |x, y| data[y * w + x] = value);
+                stroke.for_covered(
+                    (1.0, 1.0),
+                    (w, h),
+                    |units| meter.step(units),
+                    |x, y| {
+                        data[y * w + x] = value;
+                    },
+                )?;
             }
         }
         Ok(data)
     }
+}
+
+/// The per-axis scale from the source to the working copy (the block mapping of
+/// `work`).
+fn work_scale(w: usize, h: usize, (ww, wh): (usize, usize)) -> (f64, f64) {
+    (ww as f64 / w as f64, wh as f64 / h as f64)
 }
 
 /// Every `f32` pixel value is finite (ARQ-110); the index is the element's.
