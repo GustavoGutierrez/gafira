@@ -105,28 +105,91 @@ impl Segmenter for ClassicSegmenter {
         check_pixels(&img)?;
         let src = Source::new(&img);
         let (w, h) = (src.width, src.height);
-        let (ww, wh) = work::working_size(w, h);
-        let planned =
-            (w * h) as u64 + slic::planned(ww, wh) + cut::planned(ww, wh) + refine::planned(w, h);
-        let meter = Meter::new(progress, cancel, planned);
-        let work = WorkImage::build(&src, &meter)?;
-        let sp = slic::slic(&work, &self.pool, &meter)?;
-        let nodes = cut::nodes(&work, &sp, &meter)?;
-        let edges = slic::adjacency(&sp, (ww, wh), &meter)?;
-        let foreground = cut::grabcut(&nodes, &edges, &meter, cut::round_units(ww, wh))?;
+        let data = if hints.zone == SegZone::All {
+            // Nothing to separate: the whole image, after one look at the token.
+            let meter = Meter::new(progress, cancel, 1);
+            meter.step(1)?;
+            meter.finish()?;
+            vec![255; w * h]
+        } else {
+            let (ww, wh) = work::working_size(w, h);
+            let planned = (w * h) as u64
+                + slic::planned(ww, wh)
+                + cut::planned(ww, wh)
+                + refine::planned(w, h);
+            let meter = Meter::new(progress, cancel, planned);
+            let mut data = self.subject(&src, hints, (ww, wh), &meter)?;
+            if hints.zone == SegZone::Background {
+                for a in &mut data {
+                    *a = 255 - *a;
+                }
+            }
+            meter.finish()?;
+            data
+        };
+        let mask = AlphaMask::new(width, height, data)?;
+        Ok(Segmentation {
+            mask,
+            reliable: false,
+        })
+    }
+}
+
+impl ClassicSegmenter {
+    /// The foreground coverage of the whole image, seeds and «Elemento» applied.
+    fn subject(
+        &self,
+        src: &Source<'_>,
+        hints: &SegHints,
+        (ww, wh): (usize, usize),
+        meter: &Meter<'_>,
+    ) -> Result<Vec<u8>, gafira_doc::contract::Cancelled> {
+        let (w, h) = (src.width, src.height);
+        let work = WorkImage::build(src, meter)?;
+        let sp = slic::slic(&work, &self.pool, meter)?;
+        let nodes = cut::nodes(&work, &sp, meter)?;
+        let edges = slic::adjacency(&sp, (ww, wh), meter)?;
+        // Seeds reach the graph through the superpixels most of their pixels fall in.
+        let scale = ww as f32 / w as f32;
+        let mut hits = vec![[0u32; 2]; nodes.len()];
+        for (side, strokes) in [&hints.foreground, &hints.background]
+            .into_iter()
+            .enumerate()
+        {
+            for stroke in strokes {
+                meter.check()?;
+                stroke.for_covered(scale, (ww, wh), |x, y| {
+                    hits[sp.labels[y * ww + x] as usize][side] += 1;
+                });
+            }
+        }
+        let pins: Vec<cut::Pin> = hits
+            .iter()
+            .map(|&[fg, bg]| match fg.cmp(&bg) {
+                std::cmp::Ordering::Greater => cut::Pin::Foreground,
+                std::cmp::Ordering::Less => cut::Pin::Background,
+                std::cmp::Ordering::Equal => cut::Pin::Free,
+            })
+            .collect();
+        let mut foreground = cut::grabcut(&nodes, &edges, &pins, meter, cut::round_units(ww, wh))?;
+        if hints.zone == SegZone::Element {
+            foreground = cut::central(&nodes, &edges, &foreground, &pins, (ww, wh));
+        }
         let coarse: Vec<u8> = sp
             .labels
             .iter()
             .map(|&l| if foreground[l as usize] { 255 } else { 0 })
             .collect();
         drop((sp, work));
-        let data = refine::upscale(&src, &coarse, (ww, wh), &self.pool, &meter)?;
-        meter.finish()?;
-        let mask = AlphaMask::new(width, height, data)?;
-        Ok(Segmentation {
-            mask,
-            reliable: false,
-        })
+        let mut data = refine::upscale(src, &coarse, (ww, wh), &self.pool, meter)?;
+        // Under a stroke the person's word is final; foreground wins an overlap.
+        for (value, strokes) in [(0, &hints.background), (255, &hints.foreground)] {
+            for stroke in strokes {
+                meter.check()?;
+                stroke.for_covered(1.0, (w, h), |x, y| data[y * w + x] = value);
+            }
+        }
+        Ok(data)
     }
 }
 

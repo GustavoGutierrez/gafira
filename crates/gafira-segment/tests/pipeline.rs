@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use gafira_doc::contract::{CancelToken, NoProgress};
 use gafira_raster::{ImageView, PixelData};
-use gafira_segment::{ClassicSegmenter, SegHints, Segmenter};
+use gafira_segment::{ClassicSegmenter, SegHints, SegZone, Segmenter};
 
 fn seg() -> ClassicSegmenter {
     let pool = rayon::ThreadPoolBuilder::new()
@@ -32,14 +32,18 @@ fn scene(w: u32, h: u32, frac: f32) -> Vec<u8> {
     v
 }
 
-// ARQ-130: with no hints the subject gets alpha >= 128 and the background < 128.
+// ARQ-130: with no seeds the subject gets alpha >= 128 and the background < 128.
 #[test]
 fn arq_130_isolates_a_centred_subject_without_hints() {
     for (w, h) in [(64, 48), (200, 150), (800, 600), (4000, 3000)] {
         let data = scene(w, h, 0.4);
+        let hints = SegHints {
+            zone: SegZone::Foreground,
+            ..SegHints::default()
+        };
         let view = ImageView::new(w, h, PixelData::Rgba8(&data)).unwrap();
         let out = seg()
-            .segment(view, &SegHints::default(), &NoProgress, &CancelToken::new())
+            .segment(view, &hints, &NoProgress, &CancelToken::new())
             .unwrap();
         let at = |x: u32, y: u32| out.mask.data()[(y * w + x) as usize];
         assert!(
