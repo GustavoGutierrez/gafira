@@ -41,7 +41,7 @@ Workspace version: `0.1.0-beta.1`. Edition 2024, toolchain `1.93.1` pinned in `r
 | `.agents/agents/` | Agents of the development flow (`.claude/agents` is a symlink) |
 | `.github/workflows/ci.yml` | CI: tests, policy checks, `cargo-deny` |
 | `deny.toml`, `.cargo/mutants.toml` | License and source policy; mutation-testing settings (the `mutants` profile is in `Cargo.toml`) |
-| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane, ADR 0011 ODD lite, proposed) |
+| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane, ADR 0011 ODD lite, accepted) |
 
 ## Reading order
 

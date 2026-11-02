@@ -9,7 +9,7 @@
 | `verification.json` | **Implementado** como piloto; el punto de revisión es el archivado del siguiente change que lo use | ADR 0001 registro de decisiones 5, `.agents/agents/verify.md` |
 | Reparto de mutantes manuales entre `tdd-apply` y `verify`, rondas de cierre, cierre de supervivientes de T4 | **Implementado** (decisión aceptada; las definiciones de los agentes la siguen) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archivado de una ejecución ligera o de carril rápido sin fusión de deltas | **Implementado** | ADR 0001 registro de decisiones 6, ADR 0002 sección 6, `.agents/agents/archive.md` |
-| ODD lite: niveles de riesgo L0 a L3, entradas de outcome en `.odd/state.json`, carpetas solo cuando hacen falta, hallazgos de verify en la entrada, veredicto BLOCKED | **Implementado** en los archivos de proceso; su ADR está **propuesto** hasta que termine el piloto D3 de `layout-core` | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
+| ODD lite: niveles de riesgo L0 a L3, entradas de outcome en `.odd/state.json`, carpetas solo cuando hacen falta, hallazgos de verify en la entrada, veredicto BLOCKED | **Implementado** (decisión aceptada; los archivos de proceso la siguen) | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
 
 ## SDD ligero
 
@@ -38,7 +38,7 @@ El modo de una solicitud (sección siguiente) decide qué etapas se ejecutan. `m
 
 ## ODD lite
 
-ODD lite enruta una solicitud según el riesgo y registra su avance fuera de una carpeta de change. Se apoya en los modos de flujo y no elimina ninguna puerta, mínimo obligatorio ni parada del titular. La decisión es `docs/adr/0011-odd-lite.md`, con estado **propuesto** hasta que termine el piloto D3 de `layout-core`. Los archivos de proceso (`AGENTS.md`, las definiciones de los agentes) ya la aplican.
+ODD lite enruta una solicitud según el riesgo y registra su avance fuera de una carpeta de change. Se apoya en los modos de flujo y no elimina ninguna puerta, mínimo obligatorio ni parada del titular. La decisión es `docs/adr/0011-odd-lite.md`, con estado **aceptado**. Los archivos de proceso (`AGENTS.md`, las definiciones de los agentes) ya la aplican.
 
 Las solicitudes en lenguaje natural siguen siendo el punto de entrada; no hay comandos ODD. El `odd-spec` del brief es `specifier` con el skill `product-specs`, `odd-run` es `coordinator` con `tdd-apply` y `odd-verify` es `verify`. Un outcome es un resultado observable, una spec describe una capacidad estable y una tarea es trabajo ejecutable.
 
@@ -65,8 +65,6 @@ El trabajo nuevo sobre una capacidad que una spec existente cubre no necesita ca
 | Ninguna spec lo cubre (herramientas, definiciones de agentes, una capacidad nueva) | Light spec o delta spec | `specs/changes/<change>/` |
 | Modo full o L3 | Slice card o delta spec | `specs/changes/<change>/`, con `design.md` y un ADR cuando la decisión es transversal |
 | Una carpeta ya en curso | Lo que tenga | Conserva carpeta, tarjeta y diseño hasta el archivado |
-
-Cuando el titular dice `flow: legacy`, el change se ejecuta con su carpeta y sin nivel, y la línea `Flow:` termina en `| flow: legacy`. Esta ruta sigue disponible hasta que se cierre la fase D del ADR 0011.
 
 Sin carpeta, los demás artefactos cambian de lugar:
 
@@ -161,7 +159,7 @@ El coordinador escribe una línea en la cabecera de `apply-progress.md` (dentro 
 Flow: <mode> | level: L<n> | pack: <pack> | mutation: off|archive|delivery | tier: T<n> | verify: V<n> | decided-by: coordinator|owner | reason: <one line>
 ```
 
-Las líneas `Flow:` sin `level` siguen siendo válidas, y una ejecución legacy termina la línea en `| flow: legacy`. En el carril rápido la línea va dentro de la Slice card. El campo `tier` indica el nivel por entrega con `mutation: delivery`, `T4` con `archive` y `T0` con `off`.
+Las líneas `Flow:` sin `level` siguen siendo válidas. En el carril rápido la línea va dentro de la Slice card. El campo `tier` indica el nivel por entrega con `mutation: delivery`, `T4` con `archive` y `T0` con `off`.
 
 Cada cambio de modo se añade como `Flow-change: light -> standard (trigger: ambiguity, after verify round 1)`. El coordinador comunica al titular el modo elegido en su primer informe.
 
@@ -331,7 +329,7 @@ RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REF
 | `specs/00-decisiones.md` | Decisiones del titular (D-nn). Prevalecen sobre las demás specs y no se reabren sin el titular |
 | `specs/NN-*.md` | El documento en curso; los completados pasan a `specs/archive/` con `git mv`, los que esperan están en `specs/backlog/` |
 | `specs/capabilities/<capability>/spec.md` | Specs principales por capacidad, la fuente de verdad, completadas al archivar |
-| `specs/changes/<change>/` | Carpeta de change activa, solo para L3, modo full, trabajo que ninguna spec cubre y `flow: legacy`: `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md`, `verification.json` |
+| `specs/changes/<change>/` | Carpeta de change activa, solo para L3, modo full, trabajo que ninguna spec cubre y carpetas ya en curso: `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md`, `verification.json` |
 | `specs/history/<date>-<change>/` | Carpetas de change cerradas |
 | `.odd/state.json` | Entradas de outcome de los outcomes activos (véase [ODD lite](#odd-lite)) |
 

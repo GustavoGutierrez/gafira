@@ -6,7 +6,7 @@ Ciclo de vida: `backlog/` -> en curso (`specs/`) -> `archive/` (completado).
 
 El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de vida, el formato de los documentos y cómo derivar changes.
 
-Junto a los documentos: `capabilities/` guarda las specs principales (registro de los changes con delta specs), `changes/` las carpetas activas (L3, modo full, trabajo sin spec que lo cubra y `flow: legacy`) y `history/` los changes cerrados (`<fecha>-<change>/`).
+Junto a los documentos: `capabilities/` guarda las specs principales (registro de los changes con delta specs), `changes/` las carpetas activas (L3, modo full, trabajo sin spec que lo cubra y carpetas ya en curso) y `history/` los changes cerrados (`<fecha>-<change>/`).
 
 ## Estado
 
@@ -23,7 +23,7 @@ Junto a los documentos: `capabilities/` guarda las specs principales (registro d
 
 ## Cómo continuar el documento en curso
 
-Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabajo que una spec ya cubre no abre carpeta y sus criterios viven en la entrada del resultado en `.odd/state.json`, que cita los IDs del documento. L3, modo full, trabajo sin spec que lo cubra y `flow: legacy` usan una carpeta en `specs/changes/<change>/`. Los changes cerrados (`specs/history/`, `specs/capabilities/`) no se tocan.
+Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabajo que una spec ya cubre no abre carpeta y sus criterios viven en la entrada del resultado en `.odd/state.json`, que cita los IDs del documento. L3, modo full y trabajo sin spec que lo cubra usan una carpeta en `specs/changes/<change>/`; una carpeta ya en curso sigue ahí hasta su archivo. Los changes cerrados (`specs/history/`, `specs/capabilities/`) no se tocan.
 
 1. Arrancar `claude --agent coordinator` desde `develop` y pedir: "ejecuta specs/02-arquitectura-software.md".
 2. El coordinador termina antes cualquier carpeta en `specs/changes/` y cualquier resultado activo en `.odd/state.json`. Después calcula los IDs pendientes, los que ningún change ni test nombra todavía (con el prefijo del documento; la búsqueda deja fuera los documentos de producto, que nombran todos los IDs) y los coteja con "Detalle":
@@ -34,7 +34,7 @@ Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabaj
 
 ## Pending follow-ups
 
-Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 recorded 2026-11-01 at the archive of `layout-core`; items 35-37 recorded 2026-11-01 at the archive of `agent-sync`; item 38 recorded 2026-11-01 at the archive of `testkit-golden`. Open items that belong to no active change. Remove an item when done.
+Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 recorded 2026-11-01 at the archive of `layout-core`; items 35-37 recorded 2026-11-01 at the archive of `agent-sync`; item 38 recorded 2026-11-01 at the archive of `testkit-golden`; item 39 recorded 2026-11-01 at the archive of `odd-lite`. Open items that belong to no active change. Remove an item when done.
 
 1. **Flaky test** `crates/gafira-testkit/tests/harness.rs::each_broken_law_is_named_with_a_counterexample`. Why: it fails about half the runs with `PROPTEST_CASES=1` (passes unset); accepted as out of scope in the archived change `testkit-oracle` (decision C6). Start: a small test-only change (for example make the broken-law case deterministic or pin its seed/case count), then run it repeatedly with `PROPTEST_CASES=1`.
 2. **Re-enable CI.** Why: workflow `CI` was disabled manually because jobs failed to start (billing). Start: `gh workflow enable 395407504`, then observe the first runs. Unobserved since D5 (owner accepted the risk, decision W2=B): the Windows and macOS matrix and the trybuild `.stderr` fixtures (ARQ-30, R3). Fix whatever fails.
@@ -77,6 +77,7 @@ Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 record
 36. **W2 de `agent-sync`: asunto del commit de enmienda del Light spec.** Why: el commit `69a82aa` usa `docs(agent-sync): specify project-local model selection` y no el asunto prescrito `docs(agent-sync): light spec amend` (`.agents/agents/coordinator.md`, línea 101). Start: no reescribir historia; alinear la regla de `coordinator.md` con el asunto que se usa, o fijarlo en la próxima enmienda (relacionado con el item 10).
 37. **Adaptadores de OpenCode sin comprobación en CI.** Why: los adaptadores de OpenCode se generan desde `.agents/agents/`; hay que regenerarlos con `python3 tools/sync_agents.py` cada vez que cambie `.agents/agents/`, y hoy nada lo exige en CI. Start: añadir `python3 tools/sync_agents.py --check` a CI al reactivarla (item 2); hasta entonces, quien cambie `.agents/agents/` regenera los adaptadores en el mismo commit.
 38. **Accesores de `Image` sin test.** Why: el T4 de `testkit-golden` deja vivos `Image::width`, `height` y `bytes`, y `Display` de `GoldenError` (`crates/gafira-testkit/src/golden.rs`); no son críticos. Start: añadir un test de una línea por accesor cuando un crate los use.
+39. **Resume con entradas heredadas en ramas sin fusionar (W9 de `odd-lite`).** Why: una rama sin fusionar cortada antes del cierre conserva la entrada de un outcome ya cerrado; con un `continue` sin outcome, el resume la toma como activa (caso 1), y una copia vieja gana si `develop` ya avanzó (caso 2). `AGENTS.md:71` dice "la rama de entrega" y `.agents/agents/coordinator.md:17` no dice si `develop` entra en la comparación. Hoy `chore/pi-agent-sync` está fusionada y 0 commits por delante de `develop`, así que no aplica; `backup/pi-agent-sync-preverify` sigue 3 commits por delante, con la entrada `odd-lite` heredada y sin commit propio, así que el caso 1 le aplica si sigue sin fusionar. Start: incluir `develop` en la comparación y tratar una entrada como heredada cuando la rama no tiene commit propio sobre `develop` (`git log develop..<rama> --grep='(<outcome>)' -- .odd/state.json` vacío); aplicarlo en la regla de resume de `.agents/agents/coordinator.md` (línea 17) y en `AGENTS.md:71`.
 
 ## Promover un documento del backlog
 

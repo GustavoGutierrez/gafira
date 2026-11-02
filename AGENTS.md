@@ -4,7 +4,7 @@ Gafira is a local-first design, image and video editor written in Rust (Cargo wo
 
 ## ODD lite
 
-Outcome-driven routing on top of the flow below (`docs/adr/0011-odd-lite.md`, proposed until the `layout-core` D3 pilot ends). It selects mode and agents; it removes no gate, floor or owner stop. An outcome is an observable result, a spec describes a stable capability, a task is executable work: three different things. Natural-language requests stay the entry point; there are no ODD commands (`odd-spec` is `specifier` with skill `product-specs`, `odd-run` is `coordinator` with `tdd-apply`, `odd-verify` is `verify`).
+Outcome-driven routing on top of the flow below (`docs/adr/0011-odd-lite.md`, accepted). It selects mode and agents; it removes no gate, floor or owner stop. An outcome is an observable result, a spec describes a stable capability, a task is executable work: three different things. Natural-language requests stay the entry point; there are no ODD commands (`odd-spec` is `specifier` with skill `product-specs`, `odd-run` is `coordinator` with `tdd-apply`, `odd-verify` is `verify`).
 
 - Put verifiable results and code changes before ceremonial artifacts.
 - Read the code and the relevant spec first; do not load every spec.
@@ -41,11 +41,9 @@ ODD changes the default: new work on a capability an existing spec covers needs 
 | Full mode or L3 | Slice card or delta spec | yes, with `design.md` and an ADR when cross-cutting |
 | A folder already in progress | what it has | keeps folder, card and design until archive |
 
-A change folder lives in `specs/changes/<change>/`, whether it comes from full mode, L3, work no spec covers or `flow: legacy`; it closes into `specs/history/<date>-<change>/`.
+A change folder lives in `specs/changes/<change>/`, whether it comes from full mode, L3 or work no spec covers; it closes into `specs/history/<date>-<change>/`.
 
 With no folder, `tdd-apply` records its progress notes in the body of the last implementer commit of the delivery (skipping coordinator commits that touch only `.odd/state.json`); `verify` writes `verify-report.md` and `verification.json` to the scratchpad path the coordinator gives it, and the coordinator keeps what must survive a session in the entry's `verify` field (`round`, `commit`, `verdict`, `next`, `findings`, `rounds`); `explorer` returns its result without a `spike.md`.
-
-The old path stays available until phase D of ADR 0011: when the owner says `flow: legacy`, the change runs with its folder and no level, and the Flow line ends in `| flow: legacy`.
 
 ### Outcome state
 

@@ -26,7 +26,7 @@ Before the floors, set a level from impact, uncertainty and reversibility, never
 | L2 functional | new behaviour on a capability a spec covers | standard | `specifier` updates the existing spec when requirements change; serial batches, `verify`, T4 at close |
 | L3 critical | hard to undo, or data, security, licensing or the project format at stake | full | `architect`, folder with design and ADR, migration plan if any, broad tests, `verify`, owner approval where it applies |
 
-Acceptance record (ADR 0011, `AGENTS.md` "Change folder rule"; ODD changes this default). New work on a capability an existing spec covers gets no `specs/changes/<change>/`: write its outcome entry instead (see "Outcome state"), and use the outcome id as `<change>` everywhere. Work no spec covers uses the Light spec or delta specs, full mode and L3 keep a folder, and a folder in progress keeps its folder, card and design until archive. When the owner says `flow: legacy`, run the change with its folder and no level, and end the Flow line with `| flow: legacy`; this option lasts until phase D of ADR 0011.
+Acceptance record (ADR 0011, `AGENTS.md` "Change folder rule"; ODD changes this default). New work on a capability an existing spec covers gets no `specs/changes/<change>/`: write its outcome entry instead (see "Outcome state"), and use the outcome id as `<change>` everywhere. Work no spec covers uses the Light spec or delta specs, full mode and L3 keep a folder, and a folder in progress keeps its folder, card and design until archive.
 
 Flow modes (ADR 0001, `docs/adr/0001-flow-modes-and-packs.md`, amended by ADR 0002, `docs/adr/0002-fast-lane.md`; read both when classifying)
 Classify every request before routing, record the result and run only the agents and checks of that mode. Three modes (light, standard, full), a mutation toggle (`off`, `archive`, `delivery`), mutation tiers T0 to T4 (see `mutants`), verify depths V0 to V3 (see `verify`).
@@ -107,7 +107,7 @@ Escalation triggers watched: ambiguity, public API/format, domain invariant, siz
 - The Light spec is for requests that are not product-spec slices; a product-spec slice uses the Slice card. ODD lite: on a capability an existing spec covers, the outcome entry takes the place of both.
 
 Fast lane: the Slice card (ADR 0002)
-- ODD lite: on covered work the fields below go in the outcome entry and the rules of this section apply to it. The card stays for full mode, L3, folders in progress and `flow: legacy`.
+- ODD lite: on covered work the fields below go in the outcome entry and the rules of this section apply to it. The card stays for full mode, L3 and folders in progress.
 - When the owner asks to execute a product spec in `specs/` (or a section or ID range of it), write a "Slice card" at the top of `specs/changes/<change>/apply-progress.md`, committed as `docs(<change>): slice card` BEFORE any implementation. It satisfies G0. No `proposal.md`, no `design.md`, no delta specs. Fields:
 
 ```

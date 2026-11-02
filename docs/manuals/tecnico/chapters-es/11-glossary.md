@@ -41,7 +41,7 @@
 | NodeSpec | Un nodo descrito sin ids, la entrada de `InsertNodes` |
 | BLOCKED | Un veredicto de `verify`: una comprobación crítica no pudo ejecutarse; va al titular, nunca cuenta como PASS y no cuesta una ronda |
 | Carpeta de change | La carpeta `specs/changes/<change>/` con los artefactos de un change; se cierra en `specs/history/` |
-| ODD lite | Enrutamiento por resultados sobre los modos de flujo (ADR 0011, propuesto): niveles de riesgo, entradas de outcome y BLOCKED |
+| ODD lite | Enrutamiento por resultados sobre los modos de flujo (ADR 0011, aceptado): niveles de riesgo, entradas de outcome y BLOCKED |
 | Entrada de outcome | El objeto de `.odd/state.json` que registra criterios, estado y siguiente acción de un outcome activo |
 | Nivel de riesgo (L0 a L3) | La clase que el coordinador asigna a una solicitud por impacto, incertidumbre y reversibilidad; puede subir el modo de flujo y nunca baja un suelo |
 | P1 a P6 | Las pasadas ordenadas de `Document::validate` |

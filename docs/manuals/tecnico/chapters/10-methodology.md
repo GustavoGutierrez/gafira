@@ -9,7 +9,7 @@
 | `verification.json` | **Implemented** as a pilot; the review point is the archive of the next change that uses it | ADR 0001 decision record 5, `.agents/agents/verify.md` |
 | Hand-mutant split between `tdd-apply` and `verify`, closure rounds, T4 survivor closure | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archive of a light or fast-lane run without delta merge | **Implemented** | ADR 0001 decision record 6, ADR 0002 section 6, `.agents/agents/archive.md` |
-| ODD lite: risk levels L0 to L3, outcome entries in `.odd/state.json`, folders only when needed, verify findings in the entry, the BLOCKED verdict | **Implemented** in the process files; its ADR is **proposed** until the `layout-core` D3 pilot ends | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
+| ODD lite: risk levels L0 to L3, outcome entries in `.odd/state.json`, folders only when needed, verify findings in the entry, the BLOCKED verdict | **Implemented** (accepted decision; the process files follow it) | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
 
 ## Lite SDD
 
@@ -38,7 +38,7 @@ The mode of a request (next section) decides which stages run. `mutants` runs ac
 
 ## ODD lite
 
-ODD lite routes a request by risk and records its progress outside a change folder. It sits on top of the flow modes and removes no gate, floor or owner stop. The decision is `docs/adr/0011-odd-lite.md`, status **proposed** until the `layout-core` D3 pilot ends. The process files (`AGENTS.md`, the agent definitions) already apply it.
+ODD lite routes a request by risk and records its progress outside a change folder. It sits on top of the flow modes and removes no gate, floor or owner stop. The decision is `docs/adr/0011-odd-lite.md`, status **accepted**. The process files (`AGENTS.md`, the agent definitions) already apply it.
 
 Natural-language requests remain the entry point; there are no ODD commands. The brief's `odd-spec` is `specifier` with the `product-specs` skill, `odd-run` is `coordinator` with `tdd-apply`, and `odd-verify` is `verify`. An outcome is an observable result, a spec describes a stable capability and a task is executable work.
 
@@ -65,8 +65,6 @@ New work on a capability that an existing spec covers needs no folder under `spe
 | No spec covers it (tooling, agent definitions, a new capability) | Light spec or delta spec | `specs/changes/<change>/` |
 | Full mode or L3 | Slice card or delta spec | `specs/changes/<change>/`, with `design.md` and an ADR when the decision is cross-cutting |
 | A folder already in progress | What it has | Keeps folder, card and design until archive |
-
-When the owner says `flow: legacy`, the change runs with its folder and no level, and the `Flow:` line ends in `| flow: legacy`. This path stays available until phase D of ADR 0011 closes.
 
 With no folder, the other artifacts move:
 
@@ -161,7 +159,7 @@ The coordinator writes one line in the header of `apply-progress.md` (inside the
 Flow: <mode> | level: L<n> | pack: <pack> | mutation: off|archive|delivery | tier: T<n> | verify: V<n> | decided-by: coordinator|owner | reason: <one line>
 ```
 
-Flow lines without `level` stay valid, and a legacy run ends the line in `| flow: legacy`. In the fast lane the line sits inside the Slice card. The `tier` field names the per-delivery tier with `mutation: delivery`, `T4` with `archive` and `T0` with `off`.
+Flow lines without `level` stay valid. In the fast lane the line sits inside the Slice card. The `tier` field names the per-delivery tier with `mutation: delivery`, `T4` with `archive` and `T0` with `off`.
 
 Each change of mode is appended as `Flow-change: light -> standard (trigger: ambiguity, after verify round 1)`. The coordinator reports the chosen mode to the owner in its first report.
 
@@ -331,7 +329,7 @@ RED (write the test, run it, see it fail), GREEN (minimal code), REFACTOR (tests
 | `specs/00-decisiones.md` | Owner decisions (D-nn). They override other specs and are not reopened without the owner |
 | `specs/NN-*.md` | The document in progress; completed ones move to `specs/archive/` with `git mv`, waiting ones sit in `specs/backlog/` |
 | `specs/capabilities/<capability>/spec.md` | Main specs per capability, the source of truth, filled by archive |
-| `specs/changes/<change>/` | Active change folder, only for L3, full mode, work no spec covers and `flow: legacy`: `proposal.md`, `design.md`, `tasks.md` (optional), `specs/<capability>/spec.md` (delta specs; none in a light or fast-lane run), `apply-progress.md` (starts with the Light spec or the Slice card), `verify-report.md`, `verification.json` |
+| `specs/changes/<change>/` | Active change folder, only for L3, full mode, work no spec covers and folders already in progress: `proposal.md`, `design.md`, `tasks.md` (optional), `specs/<capability>/spec.md` (delta specs; none in a light or fast-lane run), `apply-progress.md` (starts with the Light spec or the Slice card), `verify-report.md`, `verification.json` |
 | `specs/history/<date>-<change>/` | Closed change folders |
 | `.odd/state.json` | Outcome entries of active outcomes (see [ODD lite](#odd-lite)) |
 
