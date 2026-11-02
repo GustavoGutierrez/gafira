@@ -75,7 +75,7 @@ On acceptance these ADRs change only their status and index entry, as ADR 0004 d
 
 ### Retained flows
 
-The old path stayed available as an explicit option until phase D: the owner said `flow: legacy` and the change ran with its folder, Slice card or Light spec and no level. `flow: legacy` was retired at acceptance (2026-11-01). Folders stay for L3, full mode, work no spec covers and folders in progress. Delta specs, `proposal.md` and `design.md` stay available in full mode or on request. `layout-core` keeps its folder, card and design until archive, and its deliveries D3 to D7 run with minimal notes.
+The old path stayed available as an explicit option until phase D: the owner said `flow: legacy` and the change ran with its folder, Slice card or Light spec and no level. `flow: legacy` was retired at acceptance (2026-11-01). Folders stay for L3, full mode, work no spec covers and folders in progress. Delta specs, `proposal.md` and `design.md` stay available in full mode or on request. `layout-core` kept its folder, card and design until archive, and its deliveries D3 to D7 ran with minimal notes.
 
 ### Phase C: pilot
 
@@ -97,8 +97,8 @@ Record at acceptance (owner confirmation 2026-11-01):
 |---|---|
 | D3 closed PASS | `verify` FAIL, FAIL, PASS; round 3 at `2377174`, merged in `b36a8d4`. Rule gaps on record: W1 to W3 under "Phase D: requirements", resolved by `chore/odd-lite-phase-d` (`26e3071`) |
 | One outcome with no folder | `testkit-golden`: entry `c56954f`, `verify` round 3 PASS at `faefea6`, merged in `fa6778e`, T4 on `gafira-testkit` run (its non-critical survivors are follow-up 38 in `specs/README.md`), closed `e1de0b8`. No commit ever held a `specs/changes/testkit-golden/` folder |
-| Session resumed from `.odd/state.json` | `<RESUME-EVIDENCE>` |
-| FAIL counts and rounds | D3 and `testkit-golden` each took two FAILs and three rounds: the same as D2 (FAIL, FAIL, PASS), one FAIL and one round more than D1 (FAIL, PASS) |
+| Session resumed from `.odd/state.json` | Partially shown, not fully proven. `testkit-golden` started in another session from the `next_action` of the `odd-lite` entry in `.odd/state.json` and no artifact was duplicated, but no new session resumed a delivery midway. The owner accepted this ADR on 2026-11-01 knowing this; the first real mid-delivery resume should confirm it |
+| FAIL counts and rounds | D3 and `testkit-golden` each took two FAILs and three rounds. That matches D2 (FAIL, FAIL, PASS) and is worse than D1 (FAIL, PASS) by one FAIL and one round. The owner accepted on that basis |
 
 ### Phase D: requirements
 
@@ -152,7 +152,7 @@ Harder and risks:
 - `.odd/state.json` can drift from reality. Mitigation: the resume rule; git wins.
 - Folderless work has no tracked `verify-report.md`. The entry keeps the findings, classes and rounds until close and git keeps them after it, while the full report stays in the session scratchpad and is lost with it. Mitigation: full mode and L3 keep folders.
 - Misclassified levels. Mitigation: floors win, and escalation raises at any time.
-- Two paths exist until phase D. Mitigation: `flow: legacy` is explicit and recorded.
+- Two paths existed until phase D. Mitigation: `flow: legacy` was explicit and recorded, and it was retired at acceptance.
 - Resolved: delivery `chore/specs-consolidation` brought `specs/README.md` and the manual into line (see above).
 
 ## Alternatives considered
