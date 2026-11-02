@@ -999,3 +999,153 @@ Size: 2 232 insertions against a forecast of 830, not a finding, as instructed.
 Disk: 30 GB free at the start, 28 GB at the end. Scratch build folders were freed with `cargo clean`.
 
 next: specifier (W18, ambiguity), then tdd-apply (C9 to C14, W16, W17, implementation)
+
+# Verify report: gafira-audio, AU3 and AU4, round 2 (closure)
+
+| Field | Value |
+|---|---|
+| Commit | `5ed0f13`, branch `feat/gafira-audio`, base `develop` |
+| Depth, mode, tier | V2, full, T4 at close; `mutation: archive`, no `mutants` report (not a finding) |
+| Verdict | **FAIL** |
+| Counts | 1 CRITICAL, 3 WARNING (all follow-up), 2 SUGGESTION (carried) |
+| Per class (CRITICAL + WARNING) | implementation 2, ambiguity 2, architecture 0, claim 0 |
+| Criteria | 8 of 9 covered; ARQ-126 fails only on C15 |
+| Closed | C9 to C14, W16, W17, W18, S10, S11, S14: all 12 |
+
+## Gates
+
+Worktree at `5ed0f13`, no `CARGO_TARGET_DIR`, each exit code read alone.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (132 result lines, all ok) |
+| `cargo deny check` | 0 |
+| CI policy (ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14) | 0, each step |
+
+## Artifact integrity (step 3c)
+
+`git diff 9bfba1c HEAD` on `apply-progress.md` has 0 removed lines and only adds text after the card. No `slice card amend` was needed. Commits `c95c006`, `067e69b`, `c0aa391` and `5ed0f13` touch no product spec. `01d2000` touches only `specs/02-arquitectura-software.md`, one row.
+
+## Closure of round 1
+
+| Item | State | Evidence |
+|---|---|---|
+| C9 | Closed | Every row of the criterion is within ±0.1 dB. Worst up to 0.98 Nyquist on the 17 rates of the band probe: 0.038 dB, four phases. All 401 valid rates to 376.32 kHz, 2 kHz and above: worst 0.046 dB. Stationary tones at 8 to 1 000 Hz: ≤ 0.023 dB. 1 Hz: no `Err`, -0.009 dB at 0.49 Hz (see the note) |
+| C10 | Closed | Tests hold the published pieces of Table 1 for cases 4 and 5, want -23.0 |
+| C11 | Closed | 1 500 signals, 1, 2 and 6 channels, 8 to 352.8 kHz, amplitudes 1e-4 to 1.5, noise and near fs/4 tones, through `LoudnessNormalizer` in blocks: 0 over, worst -1.0000096 dBTP. Test bound is `<= -1.0`. Margin 0 killed |
+| C12 | Closed | `arq_110_a_sum_of_energies_that_overflows_*` pins both inputs and the `[1e308]` control. `integrated_from_blocks` checks both means |
+| C13 | Closed | `am1` reapplied, killed by `arq_126_the_relative_gate_counts_only_the_blocks_over_the_absolute_gate` |
+| C14 | Closed | `rm5` reapplied, killed by `arq_128_the_stopband_from_the_lower_nyquist_*`; rows 1.005, 1.01, four phases, 48 to 8 kHz added |
+| W16 | Closed | x2 is gone. `am2` reapplied, killed by the 96 kHz rows of `arq_127_a_sine_at_a_quarter_*` |
+| W17 | Closed | Both FV-10 (b) tests and the ceiling test go through `LoudnessNormalizer` in blocks |
+| W18 | Closed | `01d2000` states every `SampleRate`, no floor, and the band `min(16 kHz, Nyquist)`. Two residues: W19, W21 |
+| S10 | Closed | Ruling below |
+| S11 | Closed | No `"rate"` field remains, and no guard text. "As `integrated_loudness`" on `true_peak` is now right |
+| S14 | Closed | One `bessel_i0`, `dsp.rs:116` |
+
+Note on the lowest rates. Short tones at 1 to 100 Hz showed up to 11 dB in the first sweep. These were artefacts of the probe. Under about 3 Hz a tone sits below the -70 LUFS gate at amplitude 0.2, so the start transient was being measured. Below about 100 Hz, 120 samples are too few for a tone near Nyquist. With 3 000 stationary samples (14 Hz and up), or faded tones at amplitude 5 000 (1 to 8 Hz), deviation is ≤ 0.023 dB. One row is excepted: 1 Hz at 0.245 Hz reads -0.34 dB, where the 48 kHz reference is the one off. The series falls 12 dB per octave to the expected -17.5, and the reference is raised by `f32` rounding noise at that amplitude. This reading is inferred from that pattern, not separately measured.
+
+## Rulings
+
+### Recorded survivors judged equivalent
+
+| Survivor | Ruling | Why |
+|---|---|---|
+| `floor(32 000 / fs)` for `ceil` | **Not equivalent** (W20) | ARQ-126 binds every rate, not only the criterion rows. All tests pass, yet 16.128 kHz reads 0.150 dB off and every valid rate from 16.128 to 19.6 kHz is over 0.1 dB. The recorded worst case (24 kHz, 0.068 dB) looked only at the listed rates. The code uses `ceil` and is right, so this is a test gap, not a defect |
+| Kaiser beta 3 | Equivalent under the spec | Worst over all 401 rates at 2 kHz and above: 0.088 dB, 31.5 kHz at 15.435 kHz. Inside 0.1 dB, with 0.012 dB left. Survives all tests |
+| Normalizer skipping a short block | Not a survivor | It survives only the FV-10 (b) tests. Over the crate, both forms tried fail: under 512 frames, and any partial block. Killed by `arq_127_the_gain_is_constant_over_the_whole_signal_across_blocks` and others |
+| Second `?` in `mean(&kept)` | Equivalent | `kept` is a subsequence of `passed`, values are non-negative and rounding is monotonic, so its sum cannot exceed a sum already checked finite |
+
+### S10: x4 to 192 kHz, x1 above
+
+Compatible. ARQ-127 fixes x4 only at 48 kHz or less and otherwise says to follow Annex 2. x4 at 96 and 192 kHz reads at least as much of the peak, and x1 above 192 kHz keeps a grid of 192 kHz or more. Measured worst read against the crest:
+
+| Rate | 20 kHz tone | fs/4 tone |
+|---|---|---|
+| 192 kHz | 0.000 dB | -0.168 dB |
+| 196 kHz | -0.004 dB | -3.010 dB |
+| 201.6 kHz | -0.001 dB | -3.010 dB |
+| 352.8 kHz | 0.000 dB | -3.010 dB |
+
+The step at 192 kHz only matters for ultrasonic content near fs/4; across the audio band the read is within 0.004 dB. Accepted as implemented. No test pins x1 above 192 kHz, and no spec rule asks for it.
+
+### C11 deviation: gain 1e-5 dB under the exact minimum
+
+Accepted. This is the fix round 1 asked for. `plan_leveling` stays exact, and "+2 dB ±0.01" holds.
+
+## CRITICAL
+
+### C15. A signal shorter than 400 ms gets a measure at valid rates
+- class: `implementation`
+- ref: `crates/gafira-audio/src/loudness.rs:187`, `:189`, ARQ-126
+- Rule: "Una señal sin bloques válidos, por silencio o por durar menos de 400 ms, da un resultado «sin medida»", and the criterion "una señal de 399 ms: «sin medida»". Since `01d2000`, ARQ-126 admits "toda frecuencia de muestreo de `SampleRate`, sin mínimo".
+- Evidence, real meter on all divisors of 705 600 000 up to 192 kHz, a tone at 0.21 of the rate, amplitude 0.2: the longest signal under 400 ms gets a measure at **41 valid rates**, and a literal 399 ms signal at **23** of them.
+
+| Rate | Frames | Duration | Result |
+|---|---|---|---|
+| 12 Hz | 4 | 333.3 ms | measure |
+| 252 Hz | 100 | 396.8 ms | measure |
+| 1 344 Hz | 537 | 399.6 ms | measure |
+| 28 224 Hz | 11 289 | 399.97 ms | measure |
+
+- Root cause: the guard is `chunks < 4`, with `step` rounded to the nearest sample. When 100 ms rounds down, four steps last under 400 ms, so the block is too short and the guard lets it through. The C9 fix opened rates that gave `Err` before; the same rounding already existed at some rates above 3 364 Hz.
+- No listed rate fails, and no common audio rate either. It is CRITICAL because it meets the bar set for this round: an explicit criterion, inside the stated domain, with a known root cause and a concrete fix.
+- Fix, proved on the export: before `upsampling`, in `integrated_loudness`,
+
+```rust
+if (frames as u64) * 10 < 4 * u64::from(rate.hz()) {
+    return Ok(None);
+}
+```
+
+  With it, 0 of those rates give a measure and all `gafira-audio` tests still pass. Add a test with one rate, for example 252 Hz with 100 frames, want `None`.
+
+## WARNING
+
+### W19. The ARQ-126 rule goes further than its criterion (follow-up)
+- class: `ambiguity`
+- ref: specs/02 ARQ-126
+- The rule says "todo tono hasta `min(16 kHz, Nyquist)`"; the criterion stops at `0,98 × Nyquist`. The code meets the criterion. Above it, on all interpolated rates: -0.15 dB at 0.985, -0.82 dB at 0.99, -3.8 dB at Nyquist, where a tone is also phase-dependent, so it cannot be met there by any filter. Not CRITICAL: the criterion is explicit and met, and the rule cannot be met literally.
+- Fix: change the rule text to `min(16 kHz, 0,98 × Nyquist)`.
+
+### W20. No rate between 16 and 22 kHz in the K weighting sweep (follow-up)
+- class: `implementation`
+- ref: `crates/gafira-audio/tests/loudness.rs:202`
+- See the ruling. New test gap; the code is right.
+- Fix: add 17 640 Hz to the sweep. Correct the survivor note in `apply-progress.md`.
+
+### W21. ARQ-126 does not state how a block rounds (follow-up)
+- class: `ambiguity`
+- ref: specs/02 ARQ-126
+- When 100 ms rounds up, a signal of 400 ms or the next frame above gets no measure, at 67 valid rates, 11.025 kHz among them (4 410 frames, exactly 400 ms; the block is 4 412). No criterion forbids it, so it is not CRITICAL. The same gap sits behind C15.
+- Fix: one line in ARQ-126 on the block length at rates where 100 ms is not a whole number of samples.
+
+## SUGGESTION
+
+S12 and S13 are carried, unchanged, outside this scope.
+
+## Requirement matrix
+
+| Criterion | State | Proof |
+|---|---|---|
+| ARQ-126 cases 1 to 5 | Covered | C10 |
+| ARQ-126 997 Hz at 44.1, 48, 96 kHz | Covered | Round 1, test unchanged |
+| ARQ-126 K weighting at other rates, 1 Hz | Covered | C9 |
+| ARQ-126 silence, 399 ms | **Failing at some rates** | C15 |
+| ARQ-126 gates | Covered | C13 |
+| ARQ-127 ceiling | Covered | C11 |
+| FV-10 (b), FV-20 (d) | Covered | W17 |
+| ARQ-128 stopband | Covered | C14 |
+| ARQ-110 | Covered | C12 |
+
+## Mutants run for closure
+
+On the scratch export, all reverted. No independent budget spent: these reapply findings and rule on recorded survivors. Run 8, killed 6: `am1`, `am2`, `rm5`, margin 0, short block, partial block. Survived 2: `floor` (W20), beta 3 (equivalent).
+
+Mutation: `mutation: archive`, so no report at this round and no finding. T4 stays owed at close.
+
+Interpolator cost is not a finding, as instructed. The repo was not touched.
+
+next: tdd-apply (C15, implementation; W19, W20, W21 are follow-ups)

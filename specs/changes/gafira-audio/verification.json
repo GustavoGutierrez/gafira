@@ -746,6 +746,204 @@
         "forecast": 830
       },
       "report": "verify-report.md"
+    },
+    {
+      "delivery": "AU3+AU4",
+      "round": 2,
+      "commit": "5ed0f13",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "tdd-apply",
+      "counts": {
+        "critical": 1,
+        "warning": 3,
+        "suggestion": 2
+      },
+      "classes": [
+        "implementation"
+      ],
+      "findings": [
+        {
+          "id": "C9",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/src/loudness.rs:43",
+          "summary": "Closed: every criterion row within 0.05 dB; all 401 valid rates to 384 kHz within 0.1 dB up to 0.98 Nyquist on stationary tones",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "C10",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/tests/loudness.rs:77",
+          "summary": "Closed: cases 4 and 5 now use the published EBU Tech 3341 pieces",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "C11",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/src/loudness.rs:402",
+          "summary": "Closed: 0 of 1 500 signals over -1 dBTP through LoudnessNormalizer, worst -1.0000096; test has no tolerance; margin 0 killed",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "C12",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/src/loudness.rs:256",
+          "summary": "Closed: overflowing sum gives NonFinite and a test pins it",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "C13",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/src/loudness.rs:237",
+          "summary": "Closed: am1 reapplied, killed by arq_126_the_relative_gate_counts_only_the_blocks_over_the_absolute_gate",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "C14",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/tests/resample.rs:262",
+          "summary": "Closed: rm5 reapplied, killed by the multi-phase stopband test",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "C15",
+          "severity": "CRITICAL",
+          "ref": "crates/gafira-audio/src/loudness.rs:187",
+          "summary": "Signal under 400 ms gets a measure at 41 valid rates (399 ms at 23), against ARQ-126; hop rounds down; one-line duration guard proved",
+          "follow_up": false,
+          "status": "open",
+          "class": "implementation"
+        },
+        {
+          "id": "W16",
+          "severity": "WARNING",
+          "ref": "crates/gafira-audio/src/loudness.rs:295",
+          "summary": "Closed: x2 removed; am2 reapplied, killed by the 96 kHz rows",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "W17",
+          "severity": "WARNING",
+          "ref": "crates/gafira-audio/tests/leveling.rs:46",
+          "summary": "Closed: both FV-10 (b) tests run through LoudnessNormalizer in blocks",
+          "follow_up": false,
+          "status": "closed",
+          "class": "implementation"
+        },
+        {
+          "id": "W18",
+          "severity": "WARNING",
+          "ref": "specs/02 ARQ-126",
+          "summary": "Closed by 01d2000: band and no floor settled; residue in W19 and W21",
+          "follow_up": false,
+          "status": "closed",
+          "class": "ambiguity"
+        },
+        {
+          "id": "W19",
+          "severity": "WARNING",
+          "ref": "specs/02 ARQ-126",
+          "summary": "Rule says every tone up to Nyquist, its criterion stops at 0.98: -0.82 dB at 0.99, -3.8 at Nyquist; align the rule text",
+          "follow_up": true,
+          "status": "open",
+          "class": "ambiguity"
+        },
+        {
+          "id": "W20",
+          "severity": "WARNING",
+          "ref": "crates/gafira-audio/tests/loudness.rs:202",
+          "summary": "Recorded floor survivor is not equivalent: 0.15 dB at 16.128 kHz, over 0.1 from 16.128 to 19.6 kHz; add a 17.64 kHz row",
+          "follow_up": true,
+          "status": "open",
+          "class": "implementation"
+        },
+        {
+          "id": "W21",
+          "severity": "WARNING",
+          "ref": "specs/02 ARQ-126",
+          "summary": "Block length rounding is unstated: exactly 400 ms gives no measure at 67 rates, 11.025 kHz among them",
+          "follow_up": true,
+          "status": "open",
+          "class": "ambiguity"
+        },
+        {
+          "id": "S10",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/loudness.rs:295",
+          "summary": "Closed: x4 to 192 kHz, x1 above is compatible with ARQ-127",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S11",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/loudness.rs",
+          "summary": "Closed: doc comments match the code",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S12",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/resample.rs:158",
+          "summary": "Carried, out of this scope",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S13",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/resample.rs:178",
+          "summary": "Carried, out of this scope",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S14",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/dsp.rs:116",
+          "summary": "Closed: one bessel_i0",
+          "follow_up": false,
+          "status": "closed"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 8,
+        "killed": 6
+      },
+      "criteria": {
+        "total": 9,
+        "covered": 8
+      },
+      "size": {
+        "lines": 279,
+        "forecast": null
+      },
+      "report": "verify-report.md"
     }
   ]
 }
