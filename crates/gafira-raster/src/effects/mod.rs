@@ -7,6 +7,7 @@ mod pointwise;
 mod shadow;
 #[cfg(test)]
 mod testing;
+mod texture;
 mod white_balance;
 
 use gafira_doc::contract::{Describe, ParamSchema, ParamValues};
@@ -15,6 +16,7 @@ use gafira_geom::IRect;
 pub use color_adjust::ColorAdjust;
 pub use light::Light;
 pub use shadow::ParallelShadow;
+pub use texture::Texture;
 pub use white_balance::{TemperatureTint, WhiteBalance, eyedropper};
 
 use crate::transitions::UniformBlock;
