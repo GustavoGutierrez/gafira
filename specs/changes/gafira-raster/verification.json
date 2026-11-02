@@ -1,4 +1,4 @@
-{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2", "rounds": [ {
+{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2, RS3a", "rounds": [ {
   "delivery": "RS1", "round": 1, "commit": "10f328b10d520a2e17cf2565db4b4fc478b40a00", "mode": "full", "tier": "T4", "depth": "V2",
   "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
   "counts": {"critical": 5, "warning": 3, "suggestion": 4},
@@ -76,4 +76,22 @@
   "mutation": null,
   "hand_mutants": {"run": 13, "killed": 11},
   "criteria": {"total": 16, "covered": 16},
-  "size": {"lines": 1068, "forecast": 340}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1068, "forecast": 340}, "report": "verify-report.md" }, {
+  "delivery": "RS3a", "round": 1, "commit": "dc6fced05cc640b33f83083100e9e50c3003c7e9", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
+  "counts": {"critical": 3, "warning": 5, "suggestion": 5},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:125", "summary": "Fade with a huge finite color writes inf or NaN to an RgbaF32 dst with Ok; Rgba8 gives Ok too. ARQ-110 requires Err for a computed non-finite.", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/guard.rs:30", "summary": "P15 order unproved: hand mutants I1, I2, I3 survive (progress after resolve, resolve after sizes, pixels before sizes). Code right today.", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:82", "summary": "Fade thresholds 0.4999 and 0.5001 survive and are observable; the recorded equivalent claim is false.", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/layer-2/design.md XP13", "summary": "XP13 bench of RS3a skipped; the stated reason is wrong. Measured 154 ms per 1080p Rgba8 Dissolve against 8 ms. For the owner with O5.", "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:127", "summary": "f32 colour alpha clip untested: I5, I5b survive. The equivalent claim holds for bytes only. No spec rule fixes this range.", "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mix.rs:314", "summary": "Dormant Encoded arm gives inf on finite pixels (px / a) and the property excludes it. O5 (b) would need more than the constant and rows.", "follow_up": false, "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-110, P15 order", "summary": "cx.scale NaN gives Ok: ARQ-110 checks every number, P15's closed order has no such step. Rule it; RS4 meets the same question.", "follow_up": false, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "54d8e7b, 8059490, 09847aa", "summary": "RED replay: 22 of 24 recorded failures reproduce, order not contradicted; two need unstated stubs, height-alone came after the code, ARQ-111 record differs.", "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 12, "killed": 3},
+  "criteria": {"total": 16, "covered": 12},
+  "size": {"lines": 1992, "forecast": 420}, "report": "verify-report.md" } ] }
