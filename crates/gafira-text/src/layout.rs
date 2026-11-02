@@ -7,8 +7,8 @@ use std::sync::Arc;
 use gafira_geom::Size;
 use parley::fontique::Blob;
 use parley::{
-    FontContext, FontFamily, FontFamilyName, FontFeatures, LayoutContext, LineHeight, OverflowWrap,
-    StyleProperty,
+    Alignment, AlignmentOptions, FontContext, FontFamily, FontFamilyName, FontFeatures,
+    LayoutContext, LineHeight, OverflowWrap, StyleProperty,
 };
 
 use crate::TextError;
@@ -25,6 +25,23 @@ pub struct TextStyle {
     /// Full Unicode upper case, with no language (`ß` gives `SS`). The ranges of
     /// the output then index [`TextLayout::text`], not the input.
     pub uppercase: bool,
+    /// Where the lines of the box sit across its width.
+    pub align: TextAlign,
+}
+
+/// Horizontal alignment of the lines in the box (FD-41).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    /// Against the left edge.
+    #[default]
+    Left,
+    /// Centred in the box.
+    Center,
+    /// Against the right edge.
+    Right,
+    /// Both edges: the spare room goes between words. The last line of a paragraph, a
+    /// line that ends in a forced break and a line of one word are not stretched.
+    Justify,
 }
 
 impl Default for TextStyle {
@@ -35,6 +52,7 @@ impl Default for TextStyle {
             letter_spacing: 0.0,
             line_height: 1.0,
             uppercase: false,
+            align: TextAlign::Left,
         }
     }
 }
@@ -160,10 +178,38 @@ pub fn layout_box(
     laid.break_all_lines(Some(width.min(f64::from(f32::MAX)) as f32));
 
     let spacing = spacing as f32;
-    let mut out = TextLayout {
-        text: text.to_string(),
-        ..TextLayout::default()
+    let mut lines = read_lines(&laid, &blob_ids, spacing)?;
+    // Overflow is read before aligning: justify stretches the spaces of a line up to the box.
+    let overflow = lines
+        .iter()
+        .any(|l| f64::from(content_advance(text, &l.clusters)) > width);
+    let alignment = match style.align {
+        TextAlign::Left => None,
+        TextAlign::Center => Some(Alignment::Center),
+        TextAlign::Right => Some(Alignment::Right),
+        TextAlign::Justify => Some(Alignment::Justify),
     };
+    if let Some(alignment) = alignment {
+        laid.align(alignment, AlignmentOptions::default());
+        lines = read_lines(&laid, &blob_ids, spacing)?;
+    }
+    let out = TextLayout {
+        text: text.to_string(),
+        lines,
+        overflow,
+    };
+    check_output(&out)?;
+    Ok(out)
+}
+
+/// The lines of a parley layout as output lines. `spacing` is the letter spacing in px
+/// that parley added after every cluster.
+fn read_lines(
+    laid: &parley::Layout<()>,
+    blob_ids: &[u64],
+    spacing: f32,
+) -> Result<Vec<Line>, TextError> {
+    let mut lines = Vec::new();
     for line in laid.lines() {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
@@ -208,16 +254,13 @@ pub fn layout_box(
             x += c.advance;
         }
         let advance: f32 = clusters.iter().map(|c| c.advance).sum();
-        let content = content_advance(text, &clusters);
-        out.overflow |= f64::from(content) > width;
-        out.lines.push(Line {
+        lines.push(Line {
             baseline: metrics.baseline,
             advance,
             clusters,
         });
     }
-    check_output(&out)?;
-    Ok(out)
+    Ok(lines)
 }
 
 /// The advance of a line without the white space at the end of its logical
