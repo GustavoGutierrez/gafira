@@ -32,6 +32,7 @@ Where a decision lives:
 | [0009](0009-node-placement-is-page-space.md) | Every node's `Placement` is in page space, group children included | accepted |
 | [0010](0010-pixel-golden-format.md) | Pixel goldens are PNG files compared on raw bytes | accepted |
 | [0011](0011-odd-lite.md) | ODD lite: outcome-first routing on top of the existing flow | accepted |
+| [0012](0012-engine-error-messages-and-cancellation.md) | Engine errors share one key rule and one cancelled value | accepted |
 
 ## Template
 
