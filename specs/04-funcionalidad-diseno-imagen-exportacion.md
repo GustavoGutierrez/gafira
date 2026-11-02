@@ -162,7 +162,7 @@
 - *UI*: Inspector → Capas y Posición.
 - *Técnica*: `NodeKind`, `ElementBase.blend`, `Reorder`/`Reparent` (02 §4.3); modos de mezcla en `gafira-raster` (ARQ-119) y WGSL.
 - *Presupuesto*: reordenar < 100 ms; las Capas con 100 elementos se dibujan sin superar 16 ms de frame (CAL-02).
-- *Aceptación*: (a) el orden de la lista equivale al orden de pintado; (b) arrastrar una fila muestra la línea de inserción y es un solo `Command`; (c) los 16 modos coinciden entre CPU y GPU en los golden (≤ 2/255).
+- *Aceptación*: (a) el orden de la lista equivale al orden de pintado; (b) arrastrar una fila muestra la línea de inserción y es un solo `Command`; (c) los 16 modos coinciden entre CPU y GPU en los golden (≤ 2/255); la mitad CPU es el criterio de ARQ-119.
 
 **FD-13 · Agrupar, bloquear, ocultar y Duplicar** (RF-10)
 - *Propósito*: tratar varios elementos como uno y evitar cambios accidentales.

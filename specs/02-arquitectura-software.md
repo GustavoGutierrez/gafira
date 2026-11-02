@@ -935,7 +935,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 
 | Primer corte | Fuera del corte |
 |---|---|
-| ARQ-25 (extremos), ARQ-117 a ARQ-122, FD-12 (c, mitad CPU), FD-26 (paleta), FD-28 (b, hash), FD-33 (a, d a h), FD-34 (a, b), FD-35 (a, d) | GPU y escenario de `extension-demo`: FD-33 (b), FD-12 (c, mitad GPU), FV-06 (b). Interfaz: FD-32, FD-33 (c), FD-37. Exportación y rendimiento de lienzo: FD-35 (b, c). Scopes, *chroma key*, LUT y seguimiento: Fase 2. |
+| ARQ-25 (extremos), ARQ-117 a ARQ-122, FD-12 (c, mitad CPU, que es ARQ-119), FD-26 (paleta), FD-28 (b, hash), FD-33 (a, d a h), FD-34 (a, b), FD-35 (a, d) | GPU y escenario de `extension-demo`: FD-33 (b), FD-12 (c, mitad GPU), FV-06 (b). Interfaz: FD-32, FD-33 (c), FD-37. Exportación y rendimiento de lienzo: FD-35 (b, c). Scopes, *chroma key*, LUT y seguimiento: Fase 2. |
 
 Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), que hoy no existen.
 
