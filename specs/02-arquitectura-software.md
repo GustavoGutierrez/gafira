@@ -523,8 +523,8 @@ pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
 ```rust
 pub trait Effect: Describe + Send + Sync {
     fn params(&self) -> &ParamSchema;                          // tipos, rangos, defaults, animables
-    fn roi(&self, p: &ParamValues, out: IRect) -> IRect;       // región de entrada necesaria
-    fn cost_hint(&self, p: &ParamValues, px: u64) -> Cost;     // para planificación y presupuesto, sin tiempo (§4.17)
+    fn roi(&self, p: &ParamValues, out: IRect) -> IRect;       // región de entrada necesaria; `p` ya resuelto (ARQ-110)
+    fn cost_hint(&self, p: &ParamValues, px: u64) -> Cost;     // para planificación y presupuesto, sin tiempo (§4.17); `p` ya resuelto (ARQ-110)
     fn run_cpu(&self, cx: &EffectCx, p: &ParamValues, src: ImageView<'_>, dst: ImageViewMut<'_>)
         -> Result<(), EffectError>;
     fn gpu(&self) -> Option<&dyn GpuEffect> { None }           // variante WGSL opcional
@@ -537,8 +537,9 @@ pub trait GpuEffect: Send + Sync { fn wgsl(&self) -> &'static str; fn bind(&self
 - **Cómo añadir un efecto**:
   1. Implementar `Effect` (y opcionalmente `GpuEffect`).
   2. Añadir una prueba golden CPU y, si hay GPU, otra que compare GPU con CPU dentro de la tolerancia (§10).
-  3. Registrar.
-  4. El inspector se genera solo desde `ParamSchema`.
+  3. Añadir una prueba de que `params()` pasa `ParamSchema::validate_definition`.
+  4. Registrar.
+  5. El inspector se genera solo desde `ParamSchema`.
 
 ### 4.5 `Importer` y `Exporter` (Strategy + Factory/Registry)
 
@@ -570,7 +571,7 @@ pub trait Exporter: Send + Sync {
 - **Cómo añadir un formato**:
   1. Implementar `Importer` o `Exporter` en un crate adaptador.
   2. Añadir el fuzz target del importador (§10).
-  3. Añadir golden del exportador.
+  3. Añadir golden del exportador y una prueba de que `options_schema()` pasa `ParamSchema::validate_definition`.
   4. Registrar en el binario.
   5. Si `legal != RoyaltyFree`, ponerlo detrás de una feature.
 
@@ -728,8 +729,8 @@ pub trait PluginHost: Send {
 - **Implementación**: wasmi (MIT/Apache-2.0) con límite de combustible y memoria. Las capacidades se declaran en el manifiesto y no hay acceso a red. Al disco solo accede por *handles* que concede el usuario.
 - **Cómo añadir un tipo de contribución**:
   1. Definir la ABI en `gafira-plugin::abi` (versión semántica).
-  2. Escribir el adaptador hacia el trait nativo.
-  3. Añadir pruebas de aislamiento (bucle infinito → `FuelExhausted`; acceso no concedido → error).
+  2. Escribir el adaptador hacia el trait nativo. Si la contribución trae un `ParamSchema`, el adaptador lo comprueba con `ParamSchema::validate_definition` una vez, antes de registrarla; si falla, el plugin se desactiva y el documento queda intacto (§7.3).
+  3. Añadir pruebas de aislamiento (bucle infinito → `FuelExhausted`; acceso no concedido → error) y una de un `ParamSchema` no válido.
 
 ### 4.13 `Transition` (efecto de dos entradas)
 
@@ -756,7 +757,7 @@ pub struct TransitionInstance {                        // dato del documento, en
 - **Registro**: `TransitionRegistry`, construido en el *composition root*.
 - **Cómo añadir una transición**:
   1. Implementar `Transition` (y opcionalmente `GpuTransition`) en `gafira-raster::transitions` o en un crate adaptador.
-  2. Declarar `handles` y los parámetros en `ParamSchema`; el Inspector → Clip → Transición se genera solo.
+  2. Declarar `handles` y los parámetros en `ParamSchema`, con una prueba de que `params()` pasa `ParamSchema::validate_definition`; el Inspector → Clip → Transición se genera solo.
   3. Añadir pruebas golden en `progress` = 0, 0,5 y 1. En 0 la salida es idéntica a «desde» y en 1 idéntica a «hacia» (reglas del núcleo en ARQ-118).
   4. Si tiene variante GPU, compararla con la CPU dentro de la tolerancia de §10.
   5. Registrar en `TransitionRegistry` con su nombre del glosario y su miniatura de vista previa. El núcleo no cambia.
@@ -869,7 +870,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-110 | **Entrada no finita.** Toda función pública de un motor de capa 2 comprueba sus números antes de calcular. Un NaN, un `±∞` o un resultado intermedio no finito dan un `Err` tipado que nombra el campo. No hay `panic`, salida parcial ni un no finito en la salida. Los constructores y los datos planos no validan, como en `gafira-geom` y `gafira-doc`. Única excepción: `AudioProcessor::process` (ARQ-123). | Prueba de tabla por función pública: NaN, `+∞` y `−∞` en cada parámetro numérico dan `Err` con ese campo, y el búfer de destino, si lo hay, queda idéntico byte a byte. Prueba de propiedad: con entrada finita dentro del dominio, toda salida numérica es finita. |
+| ARQ-110 | **Entrada no finita.** Toda función pública de un motor de capa 2 comprueba sus números antes de calcular. Un id que el `ParamSchema` del motor no conoce no es uno de sus números: se conserva intacto y el motor nunca lo lee. Un NaN, un `±∞` o un resultado intermedio no finito dan un `Err` tipado que nombra el campo. No hay `panic`, salida parcial ni un no finito en la salida. Los constructores y los datos planos no validan, como en `gafira-geom` y `gafira-doc`. Excepciones: `AudioProcessor::process` (ARQ-123) y cuatro funciones sin `Result`: `Effect::roi`, `Effect::cost_hint`, `GpuEffect::bind` y `GpuTransition::bind`. Estas cuatro exigen valores que ya pasaron `ParamSchema::resolve`, y `GpuTransition::bind` exige además `progress` finito y ya recortado (ARQ-118). Lo garantiza quien llama. Con otra entrada no hay `panic` y el resultado no está especificado. | Prueba de tabla por función pública: NaN, `+∞` y `−∞` en cada parámetro numérico dan `Err` con ese campo, y el búfer de destino, si lo hay, queda idéntico byte a byte. Un id desconocido con NaN o `±∞` en `ParamValues` no da `Err`, y la salida es idéntica byte a byte a la que se obtiene sin ese id. Prueba de propiedad: con entrada finita dentro del dominio, toda salida numérica es finita. Por efecto y transición, con valores de `resolve`, cada parámetro en su mínimo y en su máximo: `roi`, `cost_hint` y `bind` no hacen `panic`. `cost_hint` con `px = u64::MAX` y `roi` con `out` en los extremos de `i32` no desbordan. Con valores sin `resolve`, NaN incluido, tampoco hacen `panic`, y ninguna prueba fija el valor devuelto. |
 | ARQ-111 | **Determinismo.** La misma entrada produce los mismos bytes. El resultado no depende del número de hilos ni de ninguna fuente de entropía. Un generador pseudoaleatorio, si existe, usa una semilla fija. | Cada crate ejecuta dos veces cada operación de su primer corte y compara los bytes. Los crates con `rayon` comparan además pools de 1, 2 y 4 hilos. |
 | ARQ-112 | **Cancelación y progreso sin reloj.** Una operación es larga si su firma recibe `CancelToken` y `Progress`. En capa 2, la única es `Segmenter::segment` (§4.7). `AudioProcessor`, `Effect`, `Transition`, la sonoridad (ARQ-126), Nivelar (ARQ-127) y el remuestreo (ARQ-128) no reciben token y quedan fuera de esta fila; `gafira-engine` cancelará esos tres últimos entre bloques más adelante (D-43). Una operación larga emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. La fracción sigue un modelo de trabajo, las unidades hechas sobre las previstas, y no la parte del tiempo transcurrido. Comprueba el token al menos una vez por informe. Al ver la cancelación devuelve `Err` de cancelado, no entrega salida y no emite más progreso. La estimación de tiempo no se calcula en capa 2 (ARQ-02): la calcula `gafira-engine` con su `Clock` a partir de la fracción. | Prueba con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo): la llamada devuelve cancelado y hay como mucho 1 informe después del `k`. Sobre la entrada de referencia, la fracción sube ≤ 0,02 entre dos informes seguidos; ese límite se comprueba sobre las fracciones emitidas, no sobre el tiempo de cada tramo. Con un pool de 1 hilo, dos ejecuciones dan la misma secuencia de fracciones. La entrada de referencia de `segment` es la escena de ARQ-132 con fondo plano y sujeto centrado, a 1024×768 px. Sin medidas de tiempo en `cargo test`. La cifra de ≤ 100 ms (ARQ-43) se mide en §6.7. |
 | ARQ-113 | **Golden de capa 2.** Un criterio de píxel usa primero un valor analítico. Un golden guardado se genera en `x86_64-unknown-linux-gnu`, usa un formato sin pérdida y solo se regenera con una acción explícita: ninguna prueba reescribe su referencia. La tolerancia es la de §10. | Prueba del comparador: una referencia con 1 byte alterado falla en la misma plataforma. Entre plataformas, con 1 000 píxeles, 1 píxel a 2/255 pasa (99,9 %), 2 píxeles a 2/255 fallan, y todos a 1/255 pasan. |
@@ -2018,7 +2019,7 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
 | ARQ-97 | **Sin texto literal visible en la UI.** Todo texto visible y todo nombre accesible de `gafira-ui` sale del `Translator` por clave. | (1) Los widgets de `gafira-ui` solo aceptan `UiText`, cuyo constructor es privado del módulo `text.rs` y solo lo crea el `Translator`; un test `trybuild` muestra que pasar `"Hola"` a esos widgets no compila. (2) `clippy.toml` declara `disallowed_methods` para `egui::Ui::{label, button, heading, small, checkbox, radio, selectable_label, hyperlink_to}`, `egui::RichText::new` y `egui::WidgetText::from` fuera de `text.rs`: 0 avisos. (3) `xtask check-ui-literals` (análisis con `syn`) encuentra 0 literales con letras en llamadas de UI fuera de `assets/i18n/literal-allowlist.toml` (símbolos como `×` o `•` y la marca «Gafira»). |
-| ARQ-98 | **Cobertura del 100 % en español e inglés.** | `xtask check-i18n` extrae todas las claves (`msg!`, `Command::label`, `Descriptor`, `ParamSchema`, `options_schema`, `sizes.toml`, glosario) y falla si una clave falta o está vacía en `es` o en `en`, si los dos idiomas usan conjuntos de `{parámetros}` distintos o si un plural no tiene las categorías CLDR que exige su idioma. Una prueba de `gafira-i18n` repite la comprobación sobre las tablas generadas. Es condición de merge (ARQ-80). Las claves huérfanas dan aviso. |
+| ARQ-98 | **Cobertura del 100 % en español e inglés.** | `xtask check-i18n` extrae todas las claves (`msg!`, `Command::label`, `Descriptor`, `ParamSchema` con `ParamDef.label` y `ParamChoice.label`, `options_schema`, `sizes.toml`, glosario) y falla si una clave falta o está vacía en `es` o en `en`, si los dos idiomas usan conjuntos de `{parámetros}` distintos o si un plural no tiene las categorías CLDR que exige su idioma. Una prueba de `gafira-i18n` repite la comprobación sobre las tablas generadas. Es condición de merge (ARQ-80). Las claves huérfanas dan aviso. |
 | ARQ-99 | **Cadena de respaldo**: idioma pedido → inglés → clave visible solo en desarrollo. | Pruebas con un catálogo de prueba incompleto: falta en `es` → texto inglés; falta en los dos → `⟦clave⟧` en desarrollo y, compilado con la configuración de `dist`, el texto del otro idioma o `…`; ninguna salida de release coincide con el patrón de clave `^[a-z0-9_]+(\.[a-z0-9_]+)+$`. |
 | ARQ-100 | **Regla de D-08 exacta.** | Prueba de tabla con `FakeSystemLocaleSource` y todas las etiquetas de §14.4 (≥ 30): cualquier `es*` → `Es`; `en*` y cualquier otro idioma → `En`; sin dato o `C`/`POSIX` → `En` con `Fallback`; `Es` y `En` manuales ignoran el sistema. En Linux, una prueba en subproceso cubre la precedencia `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG`. En cada SO de la CI, `gafira-platform` devuelve una etiqueta no vacía. |
 | ARQ-101 | **Cambio de idioma sin reiniciar**, en ≤ 100 ms. | Prueba E2E: cambiar Ajustes → General → Idioma con un proyecto abierto deja todo el texto visible, los menús y los nombres de AccessKit en el idioma nuevo en el siguiente frame, sin cerrar el proyecto ni tocar el historial (`history.len()` igual) ni la selección. `bench_locale_switch`: del cambio al primer frame completo en el idioma nuevo ≤ 100 ms (p99) en el hardware de gama media (§6.6). |
