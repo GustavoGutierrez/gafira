@@ -1,0 +1,390 @@
+{
+ "schema": 1,
+ "change": "gafira-audio",
+ "delivery": "AU1",
+ "rounds": [
+  {
+   "round": 1,
+   "commit": "e1afac9",
+   "mode": "full",
+   "tier": "T4",
+   "depth": "V2",
+   "verdict": "FAIL",
+   "next": "specifier",
+   "counts": {
+    "critical": 4,
+    "warning": 6,
+    "suggestion": 2
+   },
+   "classes": [
+    "ambiguity",
+    "implementation"
+   ],
+   "findings": [
+    {
+     "id": "C1",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/chain.rs:55",
+     "summary": "Prepared empty ProcessorChain passes NaN, infinities and subnormals, against ARQ-123; a test pins it",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "C2",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/fade.rs:84",
+     "summary": "Hand mutant survives: fade clock per channel sample doubles stereo speed; fade tests are mono only (ARQ-124)",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "C3",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/gain.rs:110",
+     "summary": "Hand mutant survives: step from old target jumps 0.498 on a mid-ramp change; no test retargets a running ramp (ARQ-124)",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "C4",
+     "severity": "CRITICAL",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/mix.rs:20",
+     "summary": "mix has no Result and is not an ARQ-110 exception, yet 02 ties mix overflow to ARQ-123; spec must settle the signature",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W1",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/gain.rs:70",
+     "summary": "First gain change ramps from 1.0: a 0 % track starts at 0.998 for 10 ms; ARQ-124 is silent",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W2",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/gain.rs:11",
+     "summary": "Parameter ids volume, duration and pan are in no spec or ParamSchema",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W3",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/fade.rs:71",
+     "summary": "Fade start unspecified: clock runs at duration 0, duration change jumps, in and out share one duration (peak 0.25 in a chain)",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W4",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/dsp.rs:18",
+     "summary": "Unequal channels stay intact, so NaN can leave process; channel count against prepare is unchecked; spec is silent",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W5",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/chain.rs:48",
+     "summary": "ProcessorChain::tail returns 0 with children of tail 7 and 11; fix before Eq3Band in AU2",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W6",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/",
+     "summary": "ARQ-111 double run missing for db_to_gain, percent_to_gain, crossfade_gains and flicks_to_samples",
+     "follow_up": false,
+     "status": "open"
+    }
+   ],
+   "gates": {
+    "fmt": 0,
+    "clippy": 0,
+    "test": 0,
+    "deny": 0,
+    "ci_policy": 0
+   },
+   "mutation": null,
+   "hand_mutants": {
+    "run": 4,
+    "killed": 2
+   },
+   "criteria": {
+    "total": 7,
+    "covered": 3
+   },
+   "size": {
+    "lines": 2094,
+    "forecast": 670
+   },
+   "report": "verify-report.md"
+  },
+  {
+   "round": 2,
+   "commit": "d9581ba",
+   "mode": "full",
+   "tier": "T4",
+   "depth": "V2",
+   "verdict": "FAIL",
+   "next": "specifier",
+   "counts": {
+    "critical": 1,
+    "warning": 3,
+    "suggestion": 2
+   },
+   "classes": [
+    "ambiguity",
+    "implementation"
+   ],
+   "findings": [
+    {
+     "id": "C1",
+     "status": "closed"
+    },
+    {
+     "id": "C2",
+     "status": "closed"
+    },
+    {
+     "id": "C3",
+     "status": "closed"
+    },
+    {
+     "id": "C4",
+     "status": "closed"
+    },
+    {
+     "id": "W1",
+     "status": "closed"
+    },
+    {
+     "id": "W2",
+     "status": "closed"
+    },
+    {
+     "id": "W3",
+     "status": "closed"
+    },
+    {
+     "id": "W4",
+     "status": "closed"
+    },
+    {
+     "id": "W5",
+     "status": "closed"
+    },
+    {
+     "id": "W6",
+     "status": "closed"
+    },
+    {
+     "id": "C5",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/src/dsp.rs:23",
+     "summary": "Empty block after prepare with max_block or channels 0 is accepted and reads parameters; a later prepare keeps them, against ARQ-123",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W7",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/fade.rs:83",
+     "summary": "ARQ-124 'se lee en el primer bloque' and 'rige en el siguiente reset' differ when the first block has no value; code follows the second",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W8",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "crates/gafira-audio/src/dsp.rs:23",
+     "summary": "Unstated whether an empty block is the first block: it consumes the first value and latches the fade length, so a fade can be lost",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "W9",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/fade.rs",
+     "summary": "Mutant reading duration only at the latch survives; no test pins the mid-ramp read",
+     "follow_up": true,
+     "status": "open"
+    }
+   ],
+   "gates": {
+    "fmt": 0,
+    "clippy": 0,
+    "test": 0,
+    "deny": 0,
+    "ci_policy": 0
+   },
+   "mutation": null,
+   "hand_mutants": {
+    "run": 12,
+    "killed": 11
+   },
+   "criteria": {
+    "total": 8,
+    "covered": 7
+   },
+   "size": {
+    "lines": 2643,
+    "forecast": 670
+   },
+   "report": "verify-report.md"
+  },
+  {
+   "round": 3,
+   "commit": "a605fe7",
+   "mode": "full",
+   "tier": "T4",
+   "depth": "V2",
+   "verdict": "PASS",
+   "next": "tdd-apply",
+   "counts": {
+    "critical": 0,
+    "warning": 4,
+    "suggestion": 2
+   },
+   "classes": [],
+   "findings": [
+    {
+     "id": "C1",
+     "status": "closed"
+    },
+    {
+     "id": "C2",
+     "status": "closed"
+    },
+    {
+     "id": "C3",
+     "status": "closed"
+    },
+    {
+     "id": "C4",
+     "status": "closed"
+    },
+    {
+     "id": "C5",
+     "status": "closed"
+    },
+    {
+     "id": "W1",
+     "status": "closed"
+    },
+    {
+     "id": "W2",
+     "status": "closed"
+    },
+    {
+     "id": "W3",
+     "status": "closed"
+    },
+    {
+     "id": "W4",
+     "status": "closed"
+    },
+    {
+     "id": "W5",
+     "status": "closed"
+    },
+    {
+     "id": "W6",
+     "status": "closed"
+    },
+    {
+     "id": "W7",
+     "status": "closed"
+    },
+    {
+     "id": "W8",
+     "status": "closed"
+    },
+    {
+     "id": "W9",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/empty.rs",
+     "summary": "Mutant reading duration only at the latch is now killed",
+     "follow_up": true,
+     "status": "closed"
+    },
+    {
+     "id": "W10",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/total.rs:214",
+     "summary": "Mutant F2 survives: refused non-empty block consumes the Gain first block; comment at total.rs:216 claims it would show. Code correct",
+     "follow_up": true,
+     "status": "open"
+    },
+    {
+     "id": "W11",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/total.rs:223",
+     "summary": "Mutant R4 survives on Fade and Pan: non-empty block after prepare with a 0 reads a parameter; rows skipped by .skip(3). Code correct",
+     "follow_up": true,
+     "status": "open"
+    },
+    {
+     "id": "W12",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/empty.rs",
+     "summary": "Mutants F3 to F5, L3 to L5 survive: no test sends a refused block during a running ramp and checks the next samples. Code correct",
+     "follow_up": true,
+     "status": "open"
+    },
+    {
+     "id": "W13",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-audio/tests/fade.rs:210",
+     "summary": "Mutants D4, V1, V3 survive: last valid value across prepare is pinned only across reset. Code correct",
+     "follow_up": true,
+     "status": "open"
+    }
+   ],
+   "gates": {
+    "fmt": 0,
+    "clippy": 0,
+    "test": 0,
+    "deny": 0,
+    "ci_policy": 0
+   },
+   "mutation": null,
+   "hand_mutants": {
+    "run": 45,
+    "killed": 33
+   },
+   "criteria": {
+    "total": 8,
+    "covered": 8
+   },
+   "size": {
+    "lines": 2836,
+    "forecast": 670
+   },
+   "report": "verify-report.md"
+  }
+ ]
+}
