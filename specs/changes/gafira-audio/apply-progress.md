@@ -78,3 +78,47 @@ Round-0 survivors, fixed before the last commit: a `max_block != 0` clause that 
 ### Size
 
 `git diff --shortstat 9bfba1c..HEAD` before this note: 21 files, 2 022 insertions, of which `src/` is 714 lines and `tests/` about 1 300. Source is over the 670 forecast at x1.4 and the delivery is over ~700 lines in total; the coordinator decides.
+
+### AU1 fix round 1 (verify round 1 FAIL)
+
+Commits: `3c9481d` (unprocessed blocks, empty chain, chain tail), `f5b9bd8` (first gain value, `Fade` latch, C2, C3), `3e6cc3b` (`params()`, P13), `29c620d` (W6, mix 2 onto 3), `ca5bfbb` (prepare re-arm), plus this note. Base for the amended rules: `develop` merged at `a96494a`. Every code commit passed `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked`, each alone with exit code 0.
+
+| Finding | Fix | Evidence |
+|---|---|---|
+| C1 | An empty `ProcessorChain` cleans the block; a non-empty one lets each stage clean | RED `arq_123_an_empty_chain_cleans_the_block_and_keeps_normal_samples`: `[NaN, inf, -inf, 5.88e-39, ...]` where `[0.0, 0.0, 0.0, 0.0, ...]` was wanted. The old `arq_129_an_empty_chain_changes_nothing` (pinned `is_nan()`) is rewritten |
+| ARQ-123 amended | The four unprocessed cases (and never prepared) only clean, per channel over its own length, and leave the state untouched; `Setup::accepts` also checks the channel count | RED `arq_123_an_unprocessed_block_is_only_cleaned` (`gain 0 64 2 2`), `arq_123_an_unprocessed_block_leaves_no_trace_in_the_state`, `arq_123_channels_of_different_lengths_are_cleaned_by_their_own_length`, `arq_123_a_processor_that_was_never_prepared_only_cleans_the_block` |
+| ARQ-124 first value (W1) | First accepted block after `prepare` or `reset` applies its value from sample 0; no value means last valid or default; a refused block does not consume it | RED `arq_124_the_first_value_applies_from_sample_zero_without_a_ramp`, `arq_124_after_reset_the_next_value_applies_at_once_too`. Not RED: `arq_124_a_first_block_without_a_value_uses_the_last_valid_one`, `arq_124_a_first_block_without_a_value_then_a_zero_ramps` (the old code did the same through `reset`) |
+| ARQ-124 `Fade` (W3) | `duration` latched with the first accepted block of a ramp until `reset`; In and Out are separate instances; fades moved out of the chains in `total.rs` and `property.rs` | RED `arq_124_the_duration_is_read_once_per_ramp_and_a_change_waits_for_reset`, `arq_124_going_from_duration_zero_to_two_seconds_waits_for_reset_too`. Not RED: `fv_10_the_fade_in_and_the_fade_out_have_independent_durations` |
+| P13 (W2) | `params()` required on the trait; `schema: ParamSchema` field built in `new` from `dsp::Param::def` (range and default exist once); chain returns an empty schema; `new` of `Gain`, `Fade`, `Pan` no longer `const` | RED (compile stub with an empty schema) `p13_every_processor_schema_passes_validate_definition_and_matches_the_table`: `params().len()` 0, want 1. Not RED: `p13_a_chain_has_an_empty_schema_whatever_it_holds` (proved by mutant P1), `arq_123_values_beyond_the_schema_bounds_are_clipped_to_them` |
+| C2 | Stereo fade tests, In and Out, 2 s, slope and ends | Not RED, mutant H1 |
+| C3 | Mid-ramp target change tests, and a repeated same target | Not RED, mutant H2 |
+| W5 | `ProcessorChain::tail()` is the saturating sum of its stages | RED `arq_129_the_tail_of_a_chain_is_the_sum_and_saturates`: left 0, right 18 |
+| W6 | Double-run tests for `db_to_gain`, `percent_to_gain`, `crossfade_gains`, `flicks_to_samples` | Not RED; pure functions, determinism holds by construction, no mutant targets them |
+| C4, mix | No code change: the amended ARQ-129 makes `mix` total. Added `arq_129_a_two_channel_track_on_a_three_channel_destination_feeds_the_first_two` | Not RED (already true) |
+
+### Mutants of the report and of the new rules (killed, then reverted)
+
+| Mutation | Killed by |
+|---|---|
+| H1 fade clock advances per channel sample | `fv_10_a_stereo_fade_runs_at_the_same_speed_on_both_channels` |
+| H2 ramp step from the old target | `arq_124_a_change_during_a_ramp_continues_from_the_current_gain`, `arq_124_a_downward_change_ramps_too` |
+| H3 saturation loses its sign | `arq_123_the_mix_stays_finite_when_the_sum_overflows_f32`, `arq_123_there_is_no_clipping_at_zero_dbfs` |
+| Empty chain not cleaned; `clean_block` a no-op | `arq_123_an_empty_chain_cleans_the_block_and_keeps_normal_samples`, `arq_123_a_non_finite_sample_counts_as_zero` |
+| Unprocessed block not cleaned (gain, fade, pan); only the first channel cleaned | `arq_123_an_unprocessed_block_is_only_cleaned`, `arq_123_channels_of_different_lengths_are_cleaned_by_their_own_length` |
+| Channel count not checked; `channels == 0` accepted; `sample_rate` 0 processed | `arq_123_an_unprocessed_block_is_only_cleaned`, `arq_123_an_unprocessed_block_leaves_no_trace_in_the_state` |
+| Parameter read before the accept check | `arq_123_an_unprocessed_block_leaves_no_trace_in_the_state` |
+| Refused block advances the fade clock | `arq_123_a_refused_block_does_not_advance_the_fade` |
+| Chain tail 0, `max`, wrapping | `arq_129_the_tail_of_a_chain_is_the_sum_and_saturates` |
+| First value ramps; `reset` or `prepare` does not re-arm | `arq_124_the_first_value_applies_from_sample_zero_without_a_ramp`, `arq_124_after_reset_the_next_value_applies_at_once_too`, `arq_124_prepare_again_makes_the_next_value_a_first_one` |
+| Duration re-read each block; `reset` or `prepare` keeps the latched length | `arq_124_the_duration_is_read_once_per_ramp_and_a_change_waits_for_reset`, `arq_124_going_from_duration_zero_to_two_seconds_waits_for_reset_too`, `arq_124_prepare_again_reads_the_duration_afresh` |
+| Chain returns a stage schema; `animatable` flipped (gain, pan, fade); id, label, min, max or default changed in `def`; gain range changed at the source | `p13_a_chain_has_an_empty_schema_whatever_it_holds`, `p13_every_processor_schema_passes_validate_definition_and_matches_the_table`, `arq_123_parameter_out_of_range_is_clipped` |
+
+The 12 round-0 mutants (list 1 to 12) were re-applied on this code and all stay killed, except the one equivalent noted before: `clean_output` leaving NaN, still unreachable through the public API. The `channels != 0` clause was equivalent after the channel-count check and is removed.
+
+### Deviations and decisions in this round
+
+- `ProcessorChain::tail()` is a saturating sum, like `latency()`. No spec says sum or max; a sum is the safe upper bound for stages in series.
+- `Fade` reads `duration` on every accepted block (to keep the last valid value current) but latches the length on the first one after `prepare` or `reset`.
+- A refused block does not read parameters, so it cannot change the last valid value.
+- The `Op` double in `tests/chain.rs` has an empty schema.
+- Size of this round: `git diff --shortstat e1afac9..ca5bfbb`: 22 files, 1 036 insertions, 104 deletions, mostly tests. The AU1 total stays over the ~700 line signal.
