@@ -535,7 +535,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 ```
 
   - Pantalla del acuerdo de licencia con el EULA basado en el de Tracewright (ver spec 06, pendiente) y enlace a **`THIRD_PARTY_NOTICES.md`**.
-  - DMG: fondo `#FAFAF7`, logo apilado y flecha hacia Aplicaciones. `.deb`, `.rpm` y `.tar.gz`: sin asistente; el primer arranque muestra Inicio.
+  - DMG: fondo `#FAFAF7`, logo apilado y flecha hacia Aplicaciones. `.deb`, `.rpm` y `.tar.gz`: sin asistente; el primer arranque muestra la Pantalla de arranque y después Inicio.
 - *UI*: asistente del MSI; ventana del DMG.
 - *Técnica*: temas de WiX (`WixUI` personalizado) y plantilla del DMG en `xtask`.
 - *Presupuesto*: sin impacto en el tamaño (< 1 MB de recursos gráficos).

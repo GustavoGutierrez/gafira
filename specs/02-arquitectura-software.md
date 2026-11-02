@@ -5,7 +5,7 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-39 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-44 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
@@ -426,8 +426,10 @@ impl<T: ?Sized + Describe> Registry<T> {
     pub fn get(&self, id: &str) -> Option<&Arc<T>>;
     pub fn iter(&self) -> impl Iterator<Item = &Arc<T>>;
 }
-pub trait Describe { fn descriptor(&self) -> &Descriptor; } // id estable, nombre, versión, capacidades
+pub trait Describe { fn descriptor(&self) -> &Descriptor; } // id estable, nombre, versión
 ```
+
+`Descriptor` tiene `id`, `name` (`MessageKey`) y `version`. Las capacidades no van en él: cada trait expone las suyas en forma tipada (`Effect::gpu`, `Segmenter::requirements`, `RenderBackend::caps`, `Exporter::capabilities`). Aceptación: `Descriptor` se construye con esos tres campos, y ningún consumidor lee capacidades de él.
 
 Los registros se construyen en el *composition root* (binarios). Están prohibidos los registros globales mutables (`static mut`, `inventory`) (ver ARQ-31).
 
@@ -522,7 +524,7 @@ pub trait Command: std::any::Any + Send + Sync + std::fmt::Debug {
 pub trait Effect: Describe + Send + Sync {
     fn params(&self) -> &ParamSchema;                          // tipos, rangos, defaults, animables
     fn roi(&self, p: &ParamValues, out: IRect) -> IRect;       // región de entrada necesaria
-    fn cost_hint(&self, p: &ParamValues, px: u64) -> Cost;     // para planificación y presupuesto
+    fn cost_hint(&self, p: &ParamValues, px: u64) -> Cost;     // para planificación y presupuesto, sin tiempo (§4.17)
     fn run_cpu(&self, cx: &EffectCx, p: &ParamValues, src: ImageView<'_>, dst: ImageViewMut<'_>)
         -> Result<(), EffectError>;
     fn gpu(&self) -> Option<&dyn GpuEffect> { None }           // variante WGSL opcional
@@ -599,8 +601,9 @@ pub trait RenderBackend: Send {
 pub trait Segmenter: Describe + Send + Sync {
     fn requirements(&self) -> SegReq;            // CPU/GPU, RAM estimada, tamaño máx. de trabajo
     fn segment(&self, img: ImageView<'_>, hints: &SegHints,  // zona, trazos de semilla y prioridad central (ARQ-130)
-               progress: &dyn Progress, cancel: &CancelToken) -> Result<AlphaMask, SegError>;
+               progress: &dyn Progress, cancel: &CancelToken) -> Result<Segmentation, SegError>;
 }
+pub struct Segmentation { pub mask: AlphaMask, pub reliable: bool }  // ARQ-130, ARQ-131
 ```
 
 - **Implementación MVP**: `ClassicSegmenter`, que recibe el pool de `rayon` en su constructor, de modo que el trait no depende de `rayon`. Reduce a un lado largo de 1024 px, aplica SLIC, GMM de primer plano y fondo, *max-flow* (GrabCut iterativo), escala con un *guided filter* sobre la imagen completa y hace *matting* de bordes. Paraleliza con rayon.
@@ -853,9 +856,12 @@ Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 |---|---|
 | `Describe`, `Descriptor`, `ParamSchema`, `ParamValues`, `CancelToken`, `Progress`, `AudioCrossfade` | `gafira_doc::contract` |
 | `IRect` | `gafira-geom` |
-| `ImageView`, `ImageViewMut`, `EffectCx`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
+| `ImageView`, `ImageViewMut`, `EffectCx`, `Cost`, `HandleReq`, `GpuEffect`, `GpuTransition`, `UniformBlock`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
 | `AudioBlock`, `ParamSnapshot` | `gafira-audio` |
+| `Segmentation`, `SegHints`, `SegReq`, `SegError` | `gafira-segment` |
 | `Registry<T>` | `gafira-ports` |
+
+`Cost` da unidades de trabajo abstractas, calculadas con los píxeles y el tamaño del núcleo, sin tiempo (ARQ-02). Aceptación: con los mismos parámetros, `cost_hint` no da menos trabajo para el doble de píxeles.
 
 Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pueden cambiar con mediciones.
 
@@ -865,7 +871,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 |---|---|---|
 | ARQ-110 | **Entrada no finita.** Toda función pública de un motor de capa 2 comprueba sus números antes de calcular. Un NaN, un `±∞` o un resultado intermedio no finito dan un `Err` tipado que nombra el campo. No hay `panic`, salida parcial ni un no finito en la salida. Los constructores y los datos planos no validan, como en `gafira-geom` y `gafira-doc`. Única excepción: `AudioProcessor::process` (ARQ-123). | Prueba de tabla por función pública: NaN, `+∞` y `−∞` en cada parámetro numérico dan `Err` con ese campo, y el búfer de destino, si lo hay, queda idéntico byte a byte. Prueba de propiedad: con entrada finita dentro del dominio, toda salida numérica es finita. |
 | ARQ-111 | **Determinismo.** La misma entrada produce los mismos bytes. El resultado no depende del número de hilos ni de ninguna fuente de entropía. Un generador pseudoaleatorio, si existe, usa una semilla fija. | Cada crate ejecuta dos veces cada operación de su primer corte y compara los bytes. Los crates con `rayon` comparan además pools de 1, 2 y 4 hilos. |
-| ARQ-112 | **Cancelación y progreso sin reloj.** Una operación larga con `CancelToken` emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. Comprueba el token al menos una vez por informe. Al ver la cancelación devuelve `Err` de cancelado, no entrega salida y no emite más progreso. La estimación de tiempo no se calcula en capa 2 (ARQ-02): la calcula `gafira-engine` con su `Clock` a partir de la fracción. | Prueba con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo): la llamada devuelve cancelado y hay como mucho 1 informe después del `k`. Sobre la entrada de referencia de la operación, la fracción sube ≤ 0,02 entre dos informes seguidos. Sin medidas de tiempo en `cargo test`. La cifra de ≤ 100 ms (ARQ-43) se mide en §6.7. |
+| ARQ-112 | **Cancelación y progreso sin reloj.** Una operación es larga si su firma recibe `CancelToken` y `Progress`. En capa 2, la única es `Segmenter::segment` (§4.7). `AudioProcessor`, `Effect`, `Transition`, la sonoridad (ARQ-126), Nivelar (ARQ-127) y el remuestreo (ARQ-128) no reciben token y quedan fuera de esta fila; `gafira-engine` cancelará esos tres últimos entre bloques más adelante (D-43). Una operación larga emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. Comprueba el token al menos una vez por informe. Al ver la cancelación devuelve `Err` de cancelado, no entrega salida y no emite más progreso. La estimación de tiempo no se calcula en capa 2 (ARQ-02): la calcula `gafira-engine` con su `Clock` a partir de la fracción. | Prueba con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo): la llamada devuelve cancelado y hay como mucho 1 informe después del `k`. Sobre la entrada de referencia, la fracción sube ≤ 0,02 entre dos informes seguidos. La entrada de referencia de `segment` es la escena de ARQ-132 con fondo plano y sujeto centrado, a 1024×768 px. Sin medidas de tiempo en `cargo test`. La cifra de ≤ 100 ms (ARQ-43) se mide en §6.7. |
 | ARQ-113 | **Golden de capa 2.** Un criterio de píxel usa primero un valor analítico. Un golden guardado se genera en `x86_64-unknown-linux-gnu`, usa un formato sin pérdida y solo se regenera con una acción explícita: ninguna prueba reescribe su referencia. La tolerancia es la de §10. | Prueba del comparador: una referencia con 1 byte alterado falla en la misma plataforma. Entre plataformas, con 1 000 píxeles, 1 píxel a 2/255 pasa (99,9 %), 2 píxeles a 2/255 fallan, y todos a 1/255 pasan. |
 | ARQ-114 | **Presupuestos.** Las cifras de capa 2 viven en §6.7 y las mide un *benchmark* (ARQ-40). No son una puerta de `cargo test`. | Cada cifra de §6.7 citada por una ficha de capa 2 tiene un *benchmark* con el nombre de esa fila. |
 
@@ -931,7 +937,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 
 | Primer corte | Fuera del corte |
 |---|---|
-| ARQ-25 (extremos), ARQ-117 a ARQ-122, FD-12 (c, mitad CPU), FD-26 (paleta), FD-28 (b, hash), FD-33 (a, d a h), FD-34 (a, b), FD-35 (a, d) | GPU y escenario de `extension-demo`: FD-33 (b), FD-12 (c, mitad GPU), FV-06 (b). Interfaz: FD-32, FD-33 (c), FD-37. Exportación y rendimiento de lienzo: FD-35 (b, c). Scopes, *chroma key*, LUT y seguimiento: Fase 2. |
+| ARQ-25 (extremos), ARQ-117 a ARQ-122, FD-12 (c, mitad CPU, que es ARQ-119), FD-26 (paleta), FD-28 (b, hash), FD-33 (a, d a h), FD-34 (a, b), FD-35 (a, d) | GPU y escenario de `extension-demo`: FD-33 (b), FD-12 (c, mitad GPU), FV-06 (b). Interfaz: FD-32, FD-33 (c), FD-37. Exportación y rendimiento de lienzo: FD-35 (b, c). Sin fórmula aprobada: Brillo y Contorno de FD-35 (D-42). Scopes, *chroma key*, LUT y seguimiento: Fase 2. |
 
 Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), que hoy no existen.
 
@@ -942,7 +948,7 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 | ARQ-119 | **Mezcla y composición.** `gafira-raster` contiene las fórmulas de los 16 modos de `BlendMode::ALL` (D-27), según W3C *Compositing and Blending Level 1*, con composición *source-over* premultiplicada. `gafira-render-cpu` las usa, no las redefine. Antes de un modo distinto de `Normal`, los canales `f32` se recortan a `[0, 1]`. | Por modo, tabla de al menos 256 ternas (fondo, fuente, alfa) frente a una referencia en `f64` de la fórmula W3C: error ≤ 1e-5 en `f32` y ≤ 1/255 en 8 bits. Por modo: fuente con alfa 0 deja el fondo igual; fondo con alfa 0 da la fuente; `Normal` con alfa 1 da la fuente. |
 | ARQ-120 | **Desenfoque, bordes y escala.** El desenfoque es gaussiano con `σ = radio / 2`, como `blur()` de CSS, y radio 0 es la identidad. Fuera de la imagen, los píxeles son negro transparente. Los radios se expresan en px lógicos y se multiplican por la `scale` del contexto del efecto. `roi` devuelve la región de entrada necesaria. | Un impulso da una respuesta gaussiana con `σ` medida dentro de ±2 %. Una imagen constante opaca conserva su valor a más de `3σ` del borde. Una imagen y su mitad con `scale` 0,5 coinciden ≤ 1/255 tras reescalar. Ejecutar por tiles con `roi` coincide con la imagen entera ≤ 1/255 en todos los píxeles. |
 | ARQ-121 | **Tiles y mipmaps.** Los tiles miden 256×256 px (FIJADA, §6.1). Cada nivel de mip divide cada lado por 2 con redondeo hacia abajo, con mínimo 1. El nivel promedia caja de 2×2 en luz lineal con alfa premultiplicado. Hay `⌊log2(max(ancho, alto))⌋ + 1` niveles. | Imagen de 1000×600: 10 niveles, el último de 1×1. Imagen constante: todos los niveles iguales. Ajedrez sRGB 0 y 255 opaco: el nivel 1 da 188 ±1. El nivel de un píxel `a = 0` no aporta color. Una imagen de 257×1 se reparte en 2 tiles. |
-| ARQ-122 | **Paleta y hash perceptual.** La paleta da hasta 5 colores dominantes, ordenados por área, e ignora los píxeles con alfa 0. El dHash (PROPUESTA) da 64 bits, y dos imágenes son parecidas si su distancia de Hamming es ≤ 10 (PROPUESTA). Lab y ΔE2000 los aporta `gafira-color`: Lab usa el blanco D50 y la adaptación de CSS Color 4. | Imagen sintética de 5 colores planos con áreas conocidas: los 5 colores con ΔE2000 < 1, en orden de área. Imagen de 2 colores: 2 entradas. Imagen transparente: lista vacía. Una imagen y su versión al 50 %: distancia ≤ 10; dos imágenes de ruido con semillas distintas: > 10. `delta_e2000` reproduce los pares de referencia publicados por Sharma, Wu y Dalal. |
+| ARQ-122 | **Paleta y hash perceptual.** La paleta da hasta 5 colores dominantes, ordenados por área, e ignora los píxeles con alfa 0. El dHash (PROPUESTA) da 64 bits, y dos imágenes son parecidas si su distancia de Hamming es ≤ 10 (PROPUESTA). Lab, ΔE2000 y ΔE76 los aporta `gafira-color`. Lab sigue W3C *CSS Color Module Level 4* (§19): blanco D50 de cromaticidad `(0,3457; 0,3585)`, matriz Bradford de D65 a D50, `ε = 216/24389` y `κ = 24389/27`. ΔE2000 es CIEDE2000 con `kL = kC = kH = 1`. ΔE76 es la distancia euclídea en Lab (CSS Color 4 §20.1). `gafira-color` es capa 0: son datos planos, no valida y ARQ-110 no le aplica; una entrada no finita no está especificada ahí, y el motor que llama comprueba antes sus números. | Imagen sintética de 5 colores planos con áreas conocidas: los 5 colores con ΔE2000 < 1, en orden de área. Imagen de 2 colores: 2 entradas. Imagen transparente: lista vacía. Una imagen y su versión al 50 %: distancia ≤ 10; dos imágenes de ruido con semillas distintas: > 10. `delta_e2000` coincide ±1e-4 con los 34 pares de la tabla I de Sharma, Wu y Dalal (*Color Research and Application*, 30(1), 2005, pp. 21-30), que publica 4 decimales. Lab desde sRGB lineal: blanco `(1, 1, 1)` da `L` 100, `a` 0 y `b` 0, ±1e-3; negro da 0, 0 y 0, ±1e-3; azul `(0, 0, 1)` da 29,567, 68,298 y −112,0294, y amarillo `(1, 1, 0)` da 97,607, −15,753 y 93,388, ±0,02 (valores de CSS Color 4 §9.1; el código de su §19 los reproduce con una diferencia de hasta 0,011). `delta_e76` de `(50, 0, 0)` y `(53, 4, 0)` da 5 ±1e-12. |
 
 | Caso numérico | Regla | ID |
 |---|---|---|
@@ -967,7 +973,7 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 | ARQ-123 | **`process` es total.** `AudioProcessor::process` no devuelve error. Una muestra NaN o `±∞` cuenta como 0, un parámetro no finito se ignora y queda el último válido, y un parámetro fuera de rango se recorta. Ninguna salida es no finita ni subnormal. Si `prepare` recibió `sample_rate`, `channels` o `max_block` iguales a 0, o el bloque supera `max_block`, `process` deja el bloque intacto. `process` no recorta a ±1: una muestra puede superar 0 dBFS en la mezcla. | Por procesador: un bloque con NaN, `+∞` y `−∞` da salida finita y los bloques siguientes también. Tras 1 s de señal a −6 dBFS y 1 s de ceros, ninguna muestra es subnormal. Con `prepare` en 0 y con un bloque mayor que `max_block`, el bloque queda idéntico. |
 | ARQ-124 | **Ganancia, fundido y panorama.** Ganancia: `10^(dB / 20)`; −∞ dB es 0 y 200 % es 2,0. Un cambio de ganancia se aplica con una rampa lineal de 10 ms (PROPUESTA). Fundido de clip: rampa lineal de ganancia de 0 a 1 o de 1 a 0 (PROPUESTA); duración 0 no cambia nada. Fundido cruzado `EqualPower`: `cos(π p / 2)` y `sin(π p / 2)`. Panorama en bloques estéreo, con `p` en `[−1, 1]`, `θ = (p + 1) × π / 4`: `L × min(1, √2 cos θ)` y `R × min(1, √2 sin θ)` (ley de −3 dB normalizada a 0 dB en el centro, PROPUESTA). En otros bloques, `Pan` no cambia nada. | +6 dB da 1,9953 ±1e-4. Un salto de ganancia de 0 a 1 a 48 kHz cambia ≤ 1/480 + 1e-6 por muestra. Un fundido de 2 s a 48 kHz sube 1/96 000 + 1e-6 por muestra como máximo, de 0 a 1. `EqualPower`: `g_a² + g_b² = 1`, ±1e-6, en todo `p`. Panorama: `p = 0` deja el bloque igual, ±1e-6; `p = −1` da `R` ≤ 1e-6 y `L` igual; `p = 0,5` da `L × 0,5412` ±1e-4 y `R` igual. |
 | ARQ-125 | **`Eq3Band`** (D-22): tres biquads del *Audio EQ Cookbook* de RBJ: estante de graves en 100 Hz con `S = 1`, campana en 1 kHz con `Q = 1` y estante de agudos en 8 kHz con `S = 1` (PROPUESTA), ±15 dB. La curva teórica de 05 FV-20 es la respuesta digital de esos biquads. Con ganancia 0, la banda no cambia la señal. Una banda con frecuencia ≥ `fs / 2` se omite. | A 44,1, 48 y 96 kHz, con cada banda a ±15 dB y 0 dB: la respuesta medida con barrido o impulso coincide con `H(e^jω)` en ±0,5 dB de 20 Hz a 20 kHz. Con todas a 0 dB, la salida es idéntica bit a bit. Todos los polos tienen módulo < 1. A `fs = 16 000 Hz`, la banda de 8 kHz se omite. |
-| ARQ-126 | **Sonoridad integrada.** Sigue ITU-R BS.1770-4 y EBU R128: ponderación K, bloques de 400 ms con solape del 75 %, puerta absoluta de −70 LUFS y relativa de −10 LU, y pesos 1,0 para L, R y C, 1,41 para Ls y Rs, y sin LFE. Admite 1, 2 y 6 canales; otro número da `Err`. En otras frecuencias, la ponderación K coincide con la de 48 kHz en ±0,1 dB hasta 16 kHz. Una señal sin bloques válidos, por silencio o por durar menos de 400 ms, da un resultado «sin medida», no −∞. | Señales sintéticas de los casos 1 a 5 de EBU Tech 3341, sin guardar sus archivos: ±0,1 LU. Seno estéreo de 997 Hz a −23 dBFS: −23,0 ±0,1 LUFS a 44,1, 48 y 96 kHz. Silencio y una señal de 399 ms: «sin medida». 3 canales: `Err`. |
+| ARQ-126 | **Sonoridad integrada.** Sigue ITU-R BS.1770-4 y EBU R128: ponderación K, bloques de 400 ms con solape del 75 %, puerta absoluta de −70 LUFS y relativa de −10 LU, y pesos 1,0 para L, R y C, 1,41 para Ls y Rs, y sin LFE. Admite 1, 2 y 6 canales; otro número da `Err`. Con 6 canales, el orden es L, R, C, LFE, Ls, Rs, con índices 0 a 5 (PROPUESTA); un adaptador con otro orden, como Opus (RFC 7845 §5.1.1.2), reordena antes de llamar. En otras frecuencias, la ponderación K coincide con la de 48 kHz en ±0,1 dB hasta 16 kHz. Una señal sin bloques válidos, por silencio o por durar menos de 400 ms, da un resultado «sin medida», no −∞. | Señales sintéticas de los casos 1 a 5 de EBU Tech 3341, sin guardar sus archivos: ±0,1 LU. Seno estéreo de 997 Hz a −23 dBFS: −23,0 ±0,1 LUFS a 44,1, 48 y 96 kHz. Silencio y una señal de 399 ms: «sin medida». 3 canales: `Err`. Con 6 canales y un seno de 997 Hz a −20 dBFS en un solo canal: índices 0, 1 o 2, −23,0 ±0,1 LUFS; índices 4 o 5, −21,5 ±0,1 LUFS; índice 3, «sin medida». |
 | ARQ-127 | **Nivelar** (D-21, D-31). Nivelar tiene su propia ganancia, aparte del Volumen del clip, y la aplica `LoudnessNormalizer`. La ganancia pedida es `objetivo − sonoridad medida`. El tope es `−1 dBTP − pico real medido`. La ganancia aplicada es la menor de las dos, y el resultado indica si se alcanzó el objetivo; la igualdad lo alcanza. El pico real sigue el anexo 2 de BS.1770 con sobremuestreo ×4 a 48 kHz o menos. La ganancia es constante en toda la señal. Sin medida, la ganancia es 0 y no se alcanza el objetivo. | Señal de −20 LUFS con pico holgado y objetivo −14: −14 ±0,5 LU y objetivo alcanzado. Señal de −30 LUFS y −3 dBTP con objetivo −14: ganancia +2 dB ±0,01, pico real ≤ −1 dBTP, −28 ±0,5 LU y objetivo no alcanzado. Silencio: ganancia 0 y objetivo no alcanzado. Una ganancia de +16 dB se aplica con el Volumen al 100 %, sin cambiarlo. |
 | ARQ-128 | **Remuestreo.** Admite una razón constante entre cualquier par de frecuencias de `SampleRate`, con Velocidad de 0,1 a 10. La longitud de salida es `redondeo(n × fs_salida / (fs_entrada × velocidad))`, evaluada en `f64`: esa evaluación es normativa también en los empates. Banda pasante ±0,1 dB hasta 0,9 veces el Nyquist menor y atenuación ≥ 80 dB en banda eliminada, que empieza en 1,0 vez el Nyquist menor (PROPUESTA). La latencia se declara. | 44 100 muestras de 44,1 a 48 kHz dan 48 000; 96 000 muestras a 2,0× dan 48 000. Seno de 1 kHz de 44,1 a 48 kHz: SNR ≥ 80 dB. Un impulso sale en la latencia declarada, ±1 muestra. Entrada vacía: salida vacía. Velocidad 0, negativa, 0,09 o 10,1: `Err`. |
 | ARQ-129 | **Cadena, mezcla y desfase.** `ProcessorChain` aplica los procesadores en orden y su `latency()` es la suma. La mezcla suma las muestras de las pistas no silenciadas. No hay límite de pistas en el motor: 16 es la cifra del Mezclador. Un desfase en *flicks* pasa a muestras con `redondeo(desfase × fs / 705 600 000)`, medio se aleja de 0, en aritmética entera sin desbordamiento. | Una cadena con latencias 3 y 5 declara 8. Sumar 16 pistas coincide con la suma manual ±1e-6. Una pista silenciada no aporta. +1 ms a 44,1 kHz da 44 muestras y a 48 kHz, 48. Con `i64::MAX` *flicks*, sin `panic`. |
@@ -992,9 +998,9 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
-| ARQ-131 | **Fiabilidad** (D-23). El resultado indica si es fiable: el primer plano ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Un resultado no fiable no es un error. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: no fiable. Las escenas de ARQ-132: fiable. |
-| ARQ-132 | **Puerta de calidad** (D-20). `gafira-testkit` genera escenas sintéticas deterministas con máscara exacta conocida: al menos 12, con fondo plano, degradado y texturizado, sujeto centrado y desplazado, formas cóncavas y con agujero, y contraste bajo. La prueba bloqueante exige IoU ≥ 0,90 por escena, no en media, binarizando con alfa ≥ 128. Con las dos máscaras vacías, el IoU es 1. Sobre fotos reales, el IoU es solo un aviso hasta que el titular aporte un conjunto con licencia (pendiente 9). | La prueba de escenas falla si una sola queda por debajo de 0,90. Prueba del cálculo de IoU: 0,90 pasa y 0,8999 falla. Mientras no exista el conjunto real, ninguna prueba bloqueante depende de él. |
+| ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `Segmentation` cuya `mask` es una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
+| ARQ-131 | **Fiabilidad** (D-23). `Segmentation.reliable` es verdadero si el primer plano, los píxeles de `mask` con alfa ≥ 128 como en ARQ-132, ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Esos colores se promedian en luz lineal y después se pasan a Lab (D-44). Un resultado no fiable no es un error: es `Ok` con `reliable` falso y conserva su máscara. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: `Ok` con `reliable` falso y máscara de las dimensiones de la entrada. Regla con máscara y colores dados: 1 % y 95 % son fiables, y 0,99 % y 95,01 % no; ΔE76 5 es fiable, y 4,999 no. Si no hay píxeles de primer plano o de fondo, no es fiable, sin NaN. Un primer plano con la mitad de los píxeles negros y la mitad blancos tiene un color medio de `L` 76,07 ±0,01, no 50. Las escenas de ARQ-132: fiable. |
+| ARQ-132 | **Puerta de calidad** (D-20). `gafira-testkit` genera escenas sintéticas deterministas con máscara exacta conocida: al menos 12, con fondo plano, degradado y texturizado, sujeto centrado y desplazado, formas cóncavas y con agujero, y contraste bajo. En toda escena, el sujeto ocupa entre el 2 % y el 50 % del área y los colores medios exactos de sujeto y fondo están a ΔE76 ≥ 6. Contraste bajo significa sujeto y fondo planos a ΔE76 entre 6 y 10, extremos incluidos (PROPUESTA). Ese margen sale de la puerta: con IoU 0,90, una máscara imperfecta acerca los colores medios hasta un 10,6 % con sujeto ≤ 50 %, y 6 × 0,894 > 5 conserva la fiabilidad de ARQ-131. La prueba bloqueante exige IoU ≥ 0,90 por escena, no en media, binarizando con alfa ≥ 128. Con las dos máscaras vacías, el IoU es 1. Sobre fotos reales, el IoU es solo un aviso hasta que el titular aporte un conjunto con licencia (pendiente 9). | Una prueba recorre las escenas y comprueba el área del sujeto y ΔE76 con su máscara exacta, y que al menos una es de contraste bajo. La prueba de escenas falla si una sola queda por debajo de 0,90. Prueba del cálculo de IoU: 0,90 pasa y 0,8999 falla. Mientras no exista el conjunto real, ninguna prueba bloqueante depende de él. |
 
 Parámetros de partida de `ClassicSegmenter` (PROPUESTA; se pueden cambiar sin tocar esta spec mientras se cumplan ARQ-132 y CAL-06): unos 1 500 superpíxeles SLIC, 5 componentes por GMM, hasta 5 iteraciones de GrabCut y *guided filter* de radio 8 px.
 
@@ -1200,7 +1206,7 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
-| Cancelar una segmentación ≤ 100 ms (ARQ-43) | Comprobación del token por unidad de trabajo (ARQ-112) | `bench_cancel_segment`: ≤ 100 ms |
+| Cancelar una segmentación ≤ 100 ms (ARQ-43) | Comprobación del token por unidad de trabajo (ARQ-112) | `bench_cancel_segment`: tramo más largo entre dos comprobaciones del token ≤ 100 ms |
 | Sombra < 100 ms con radio ≤ 40 px en 1080p (04 FD-35) | Desenfoque gaussiano separable | `bench_shadow_1080`: < 100 ms |
 | Hash perceptual de 12 MP < 100 ms (04 FD-28) | La fija el diseño del change | `bench_dhash_12mp`: < 100 ms |
 | Escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (04 FD-41) | La fija el diseño del change | `bench_text_type_5000`: p99 < 16 ms |
@@ -1224,7 +1230,7 @@ Otras cifras (FIJADAS, D-03):
 | ARQ-40 | Cada cifra de §6.7 tiene un benchmark con umbral en `perf-budgets.toml`. | El job nocturno en la máquina de referencia falla si una métrica empeora por encima de su umbral o un 10 % respecto a la base. |
 | ARQ-41 | El hilo de UI nunca bloquea más de 16 ms por trabajo del engine. | Instrumentación `tracing`: en la suite E2E, 0 spans de más de 16 ms en el hilo principal fuera de diálogos del SO. |
 | ARQ-42 | La vista previa y la exportación comparten el grafo. | La prueba golden compara la vista previa al 100 % en CPU con la exportación con diferencia ≤ 1/255 por canal en el 99,9 % de los píxeles. |
-| ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. |
+| ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. En `gafira-segment` no hay reloj, ni en sus *benchmarks* (ARQ-02): `bench_cancel_segment` mide el tramo de trabajo más largo entre dos comprobaciones del token con una imagen de 4000 px, y ese tiempo acota la respuesta por arriba. |
 | ARQ-44 | Las cachés respetan el `MemoryGovernor`. | Ver la prueba del límite de memoria en §6.7. |
 | ARQ-45..ARQ-49 | Reservados. | — |
 
@@ -1286,18 +1292,19 @@ proyecto.gafira (ZIP)
 ### 7.3 Errores y degradación
 
 ```rust
-#[derive(thiserror::Error, Debug)]
+#[derive(Debug)]
 pub enum FormatError {
-    #[error("archivo dañado: {0}")] Corrupt(String),
-    #[error("versión de formato {found} más nueva que {supported}")] TooNew { found: u32, supported: u32 },
-    #[error(transparent)] Io(#[from] std::io::Error),
-    #[error(transparent)] Migration(#[from] MigrationError),
+    Corrupt(String),
+    TooNew { found: u32, supported: u32 },
+    Io(std::io::Error),
+    Migration(MigrationError),
 }
+// `Display` (solo para el log), `std::error::Error` y `ToMessage` se escriben a mano (ADR 0012).
 ```
 
-- Un enum `thiserror` por crate (`DocError`, `CommandError`, `FormatError`, `ImportError`, `ExportError`, `MediaError`, `RenderError`, `SegError`, `PluginError`). `anyhow` solo en los binarios y en `xtask`.
+- Un enum de error por crate, escrito a mano y sin `thiserror` (ADR 0012) (`DocError`, `CommandError`, `FormatError`, `ImportError`, `ExportError`, `MediaError`, `RenderError`, `SegError`, `PluginError`). `anyhow` solo en los binarios y en `xtask`.
 - `gafira-engine` traduce los errores a `UserError { kind, message: Message, detail, actions: Vec<Message> }`. Cada enum de error implementa `ToMessage` (`gafira-doc::msg`, §14.2) y devuelve una **clave con parámetros** (por ejemplo `error.format.too_new { found, supported }`), nunca un texto ya traducido (ARQ-102). La UI la traduce en el idioma activo; los mensajes visibles siguen el tono de marca («No pudimos completar esta acción. Inténtalo de nuevo.» / «We couldn't complete this action. Try again.») y el detalle técnico va al log local.
-- El texto de `#[error(...)]` (`Display`) es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (PROPUESTA; el extracto anterior conserva su texto original como ejemplo de estructura).
+- El texto de `Display` es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (PROPUESTA; el extracto anterior conserva su texto original como ejemplo de estructura).
 - **Degradación**:
 
 | Fallo | Comportamiento |
@@ -1504,7 +1511,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | miniz_oxide / flate2 | última | MIT/Apache/Zlib | VERIFICADA (`cargo-deny`) | DEFLATE | — |
 | zstd | última | BSD-3-Clause (crate `zstd`); la `libzstd` en C que compila `zstd-sys` no la lee `cargo-deny`: VERIFICAR | VERIFICAR (solo la parte C) | Tiles de máscara | lz4_flex (MIT) |
 | blake3 | 1.x | CC0/Apache-2.0 | VERIFICADA (`cargo-deny`) | Hash de contenido | — |
-| thiserror | 2.x | MIT/Apache | VERIFICADA (`cargo-deny`) | Errores | — |
+| thiserror | 2.x | MIT/Apache | EVITAR | Ningún crate propio la usa: los errores se escriben a mano (ADR 0012) | — |
 | tracing, tracing-subscriber | última | MIT | VERIFICADA (`cargo-deny`) | Logs y spans locales | log |
 | crossbeam-channel | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Canales | std::sync::mpsc |
 | rayon | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Paralelismo de datos | — |
@@ -1585,7 +1592,7 @@ Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el 
 | ARQ-72 | Ningún ejecutable de terceros en el instalador. | `xtask audit-bundle` lista los ejecutables y librerías del paquete: solo `gafira` y `gafira-cli`. Las librerías dinámicas solo pueden ser del SO. |
 | ARQ-73 | Se distribuyen las licencias de terceros. | El instalador contiene `THIRD_PARTY_NOTICES.md` y los `OFL.txt` de las fuentes. «Acerca de → Licencias» lo muestra. |
 | ARQ-74 | Los códecs con patentes son opcionales por feature y la exportación por defecto es AV1 + Opus. | `cargo build --no-default-features --features free-only` compila y exporta WebM y MP4 (AV1/Opus). En el build completo, el preajuste por defecto de Exportar video es AV1 + Opus. |
-| ARQ-75 | Todo asset incluido tiene una licencia registrada. | `assets/LICENSES.toml` cubre el 100 % de los archivos de `assets/`, comprobado por `xtask`. |
+| ARQ-75 | Todo asset incluido tiene una licencia registrada. | `assets/LICENSES.toml` cubre el 100 % de los archivos de `assets/`, comprobado por `xtask`. Hasta que exista `xtask`, el archivo puede ser parcial, con dos entradas obligatorias desde su primer commit: las fuentes de prueba (ARQ-115) y `assets/splash_screen.jpg` (D-09). |
 | ARQ-76 | No se incluyen modelos de ML en el instalador base. | `audit-bundle` no encuentra archivos `.onnx`, `.safetensors` ni `.bin` de pesos. |
 | ARQ-77 | El binario no contiene encoders ni decoders propios de H.264, HEVC o AAC, no exporta HEVC ni MP3, y `encumbered-sw` no tiene código. | `cargo deny` bloquea los crates vetados de §9.1. Una prueba recorre `CodecRegistry` del build completo: ningún `Encoder` con `CodecId::Hevc` o `Mp3`, y los `CodecId::H264`/`Aac` solo los aporta `gafira-codec-os`. Una búsqueda de `encumbered-sw` en el código solo la encuentra en documentación. |
 | ARQ-78 | La app no comprueba versiones nuevas (D-06). | No existe la feature `update-check` ni código de firma de manifiestos de actualización. La prueba de red de ARQ-91 no registra ninguna conexión fuera de las de licencia. |
@@ -1716,7 +1723,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-40 constan en `00-decisiones.md` (D-29 a D-34).
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-44 constan en `00-decisiones.md` (D-29 a D-34 y D-41 a D-44).
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1747,6 +1754,10 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-38 | ¿Dónde está Nivelar en el MVP, si la interfaz del Mezclador es de Fase 2? | D-32: en Inspector → Clip. |
 | Q-39 | ¿FD-33 tiene un slider de Desenfoque? | D-33: no en el MVP. |
 | Q-40 | ¿Se confirman en bloque las cifras PROPUESTA nuevas de capa 2? | D-34: sí, y pueden cambiar con mediciones. Conservan su marca. |
+| Q-41 | ¿Cómo actúa la Intensidad de 04 FD-34 en parámetros `Int`, `Bool`, `Choice` y `Color`? | D-41: `Int` mezcla y redondea, medio se aleja de 0; `Color` mezcla en luz lineal; `Bool` y `Choice` saltan al preset por encima de 0. |
+| Q-42 | ¿Qué fórmula y qué criterio tienen Brillo y Contorno de 04 FD-35, o salen del primer corte de `gafira-raster`? | D-42: salen del corte hasta que se aprueben sus fórmulas. |
+| Q-43 | ¿Medir la sonoridad, Nivelar y remuestrear un clip largo se pueden cancelar y dan progreso? | D-43: quedan fuera de ARQ-112 en este corte; `gafira-engine` los cancela entre bloques más adelante. |
+| Q-44 | ¿En qué espacio se calculan los colores medios de ARQ-131? | D-44: en luz lineal, y después se pasan a Lab. |
 
 ### 12.3 Preguntas abiertas
 
@@ -1761,7 +1772,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
-| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos. No bloquea la especificación. | Titular |
+| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos, y con ellas dará el catálogo de filtros de 04 FD-34 (D-40). No bloquea la especificación. | Titular |
 
 ---
 
@@ -1873,7 +1884,7 @@ pub type CommandLabel = MessageKey;                 // Command::label (§4.3)
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MsgArg {
-    Text(String),              // contenido de la persona (nombre de archivo, de fuente…): nunca se traduce
+    Text(String),              // contenido de la persona (nombre de archivo, de fuente…) o identificador técnico estable (ADR 0012): nunca se traduce
     Count(u64),                // elige la forma de plural
     Int(i64), Decimal(f64),
     Quantity(f64, Unit),       // Unit: Px, Mm, Cm, In, Pt, Percent, Bytes, Seconds, Fps, Db, Lufs, Degrees
@@ -1886,11 +1897,12 @@ pub enum MsgArg {
 pub struct Message { pub key: MessageKey, pub args: Vec<(&'static str, MsgArg)> }
 pub trait ToMessage { fn to_message(&self) -> Message; }
 
-// Única forma de crear claves: xtask check-i18n extrae los literales de msg! y los compara con los catálogos.
+// Forma de crear un Message: xtask check-i18n extrae los literales de msg! y de MessageKey("…") y los compara con los catálogos.
 // msg!("export.pages_selected", count = Count(n))
+// El literal MessageKey("…") sigue siendo válido para etiquetas constantes (CommandLabel, Descriptor, ParamSchema).
 ```
 
-- **Convención de claves**: ASCII en `snake_case` con puntos, `área.objeto[.estado]`. Los nombres del glosario usan `glossary.<id>` y son los mismos en los dos idiomas (03 §2.8).
+- **Convención de claves**: ASCII en `snake_case` con puntos, `área.objeto[.estado]`: 2 o 3 segmentos, cada uno `[a-z][a-z0-9_]*`. Los nombres del glosario usan `glossary.<id>` y son los mismos en los dos idiomas (03 §2.8). Aceptación: valen `edit.set_property`, `error.format.too_new` y `a.b2`; no valen `a`, `.a`, `a.`, `a..b`, `a.b.c.d`, `A.b`, `a.2b` ni `a.é`; `msg!` con una clave no válida no compila.
 - **Todo lo que se muestra lleva clave**: además del texto de `gafira-ui`, los `Descriptor` de los registros (§4), las etiquetas de `ParamSchema` de efectos y transiciones, las opciones de `Exporter::options_schema`, los `Destinos` de `assets/sizes.toml` y las contribuciones de plugins (Fase 3) declaran `MessageKey`, no `&str`.
 - **Qué no se traduce**: el contenido de la persona (textos, nombres de proyecto, capa, archivo o fuente), los nombres de formato (PNG, MP4, AV1), la marca «Gafira», el texto de los logs, los nombres de subcomandos y opciones de la CLI y las claves del formato `.gafira`. Los nombres por defecto de los elementos nuevos («Página 1» / «Page 1») se crean en el idioma activo y desde ese momento son contenido de la persona: cambiar de idioma no los renombra.
 
@@ -2012,7 +2024,7 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | ARQ-104 | **`gafira-cli` imprime en inglés por defecto** y respeta otro idioma solo si se pide. | Con `LANG=es_ES.UTF-8`, `gafira-cli export` imprime en inglés; con `--lang es` (o `GAFIRA_CLI_LANG=es`), en español; `--lang system` aplica la regla de D-08 y `--lang app` la preferencia guardada por la app. La salida `--json` contiene claves y valores, no texto traducido, y es idéntica con cualquier `--lang`. Subcomandos, opciones y códigos de salida no cambian con el idioma. |
 | ARQ-105 | **Las fuentes cubren los dos idiomas.** | Una prueba de `gafira-theme` lee la tabla `cmap` de Inter y Manrope embebidas y comprueba todos los caracteres de `es.toml`, `en.toml` y `glosario.toml` más ¿ ¡ ñ Ñ á é í ó ú ü Á É Í Ó Ú Ü « » “ ” ‘ ’ — – … × °: 0 ausentes. |
 | ARQ-106 | **Formatos por idioma correctos y dentro del presupuesto de tamaño.** | Pruebas golden de `number`, `date`, `relative` y `quantity` para `es`, `es-MX` y `en` con los valores de la tabla de §14.5. `cargo bloat` atribuye a `gafira-i18n`, sus datos ICU4X y los catálogos ≤ 2 MB (PROPUESTA) dentro de los 40 MB del binario (ARQ-83). |
-| ARQ-107 | **El dominio no conoce idiomas.** | `check-layers`: `gafira-i18n` solo depende de `gafira-ports`, `gafira-doc` y crates ICU4X; ningún crate de las capas 0–2 depende de `gafira-i18n` ni de `icu_decimal`, `icu_datetime` o `icu_plurals` (`icu_segmenter` en `gafira-text` sigue permitido). Una búsqueda de `Locale` en las capas 0–2 da 0 coincidencias y `gafira-doc::msg` no contiene literales distintos de claves. |
+| ARQ-107 | **El dominio no conoce idiomas.** | `check-layers`: `gafira-i18n` solo depende de `gafira-ports`, `gafira-doc` y crates ICU4X; ningún crate de las capas 0–2 depende de `gafira-i18n` ni de `icu_decimal`, `icu_datetime` o `icu_plurals` (`icu_segmenter` en `gafira-text` sigue permitido). Una búsqueda de `Locale` en las capas 0–2 da 0 coincidencias y `gafira-doc::msg` no contiene literales distintos de claves. Mientras no exista `check-layers`, un paso de CI hace las comprobaciones de dependencias y de `Locale` de esta fila sobre las dependencias normales de las capas 0–2. Control negativo: añadir `icu_plurals` a un crate de esas capas hace fallar el paso. |
 
 *Decisión sobre la CLI (ARQ-104)*: la CLI sirve para lotes, CI y pruebas golden. Una salida en inglés fijo hace que los scripts, los logs y las comparaciones no dependan del equipo que los ejecuta, y el inglés es además el idioma de respaldo de D-08. La regla de D-08 se aplica a la interfaz de la app; la CLI la aplica solo con `--lang system`. Confirmación del titular: Q-26.
 

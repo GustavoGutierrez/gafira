@@ -5,7 +5,7 @@
 | Documento | Especificación 04 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-39, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
+| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-44, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
 | Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 están confirmadas en bloque (D-34) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o PROPUESTA) · *Aceptación* (criterios verificables) · *RF*.
@@ -162,7 +162,7 @@
 - *UI*: Inspector → Capas y Posición.
 - *Técnica*: `NodeKind`, `ElementBase.blend`, `Reorder`/`Reparent` (02 §4.3); modos de mezcla en `gafira-raster` (ARQ-119) y WGSL.
 - *Presupuesto*: reordenar < 100 ms; las Capas con 100 elementos se dibujan sin superar 16 ms de frame (CAL-02).
-- *Aceptación*: (a) el orden de la lista equivale al orden de pintado; (b) arrastrar una fila muestra la línea de inserción y es un solo `Command`; (c) los 16 modos coinciden entre CPU y GPU en los golden (≤ 2/255).
+- *Aceptación*: (a) el orden de la lista equivale al orden de pintado; (b) arrastrar una fila muestra la línea de inserción y es un solo `Command`; (c) los 16 modos coinciden entre CPU y GPU en los golden (≤ 2/255); la mitad CPU es el criterio de ARQ-119.
 
 **FD-13 · Agrupar, bloquear, ocultar y Duplicar** (RF-10)
 - *Propósito*: tratar varios elementos como uno y evitar cambios accidentales.
@@ -377,7 +377,7 @@ Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codifica
 | Saturación | Matriz `saturate` de W3C *Filter Effects* con `s = 1 + k` |
 | Vitalidad | La misma matriz con `s = 1 + k × (1 − (max − min))`, con `max` y `min` de `R`, `G`, `B` |
 | Invertir | `v' = 1 − v` |
-| Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` en Lab frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
+| Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` el ΔE2000 frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
 | Nitidez | `c + 1,5 × k × e × (c − G)`, con `G` desenfoque de radio 2 px y `e = w(0,02; 0,1; |Y − Y_G|)` |
 | Claridad | Igual que Nitidez, con radio 40 px, peso 0,5 y solo sobre `Y`, sin máscara `e` |
 | Viñeta | `c × 2^(k × w(0,5; 1; d))`, con `d` la distancia al centro dividida por media diagonal |
@@ -396,18 +396,22 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 **FD-34 · Filtros** (RF-21)
 - *Propósito*: aplicar estilos listos con vista previa.
 - *Comportamiento y reglas*: rejilla de filtros con **vista previa sobre la propia imagen** (miniaturas del elemento actual); intensidad 0–100; los filtros son presets de parámetros (`ParamValues` guardados, no código; 02 §4.4) y pueden crearse y guardarse como propios. Los radios escalan con el tamaño de la imagen (ARQ-120), de modo que una miniatura representa el resultado final. En Fase 2 se admiten LUT `.cube` como filtros.
+  - **Primer corte** (D-40): se entrega el mecanismo y un preset de prueba que no se muestra a la persona. El catálogo real, con sus nombres y valores, llega con Q-34.
+  - **Preset**: id estable, nombre (`MessageKey`) y lista ordenada de pares (id de efecto, `ParamValues`). Los efectos se aplican en ese orden. Un parámetro que el preset no nombra queda en su valor por defecto. El preset se valida con el `ParamSchema` de cada efecto. El formato con que se guarda un filtro propio va con el criterio (c).
+  - **Intensidad** (D-40): con `i` en 0–100, extremos incluidos, un parámetro `Float` vale `d × (1 − i/100) + p × i/100`, con `d` su valor por defecto y `p` el del preset. Un `Int` usa esa fórmula, evaluada en `f64`, y redondea al entero más cercano; medio se aleja de 0. Un `Color` se interpola en luz lineal con la regla de `Color` de 02 §3.4, con `t = i/100`. `Bool` y `Choice` valen `d` con `i = 0` y `p` con `i > 0` (D-41). Una intensidad NaN, `±∞` o fuera de rango da `Err` antes de escribir en destino (ARQ-110).
+  - **Miniatura**: es el mismo filtro aplicado a una copia reducida, con `scale` igual a la razón de reducción (ARQ-120).
 - *UI*: Inspector → Imagen → Filtros.
 - *Técnica*: `Effect` con presets en datos; `LutTransform` (Fase 2).
 - *Presupuesto*: generar la rejilla de 12 miniaturas < 300 ms (CAL-04); aplicar < 300 ms.
-- *Aceptación*: (a) la miniatura coincide con el resultado final en ≤ 1/255; (b) intensidad 0 equivale a sin filtro; (c) un filtro propio se guarda y reaplica.
+- *Aceptación*: (a) con el preset de prueba, que usa Contraste y Saturación, y una imagen de bloques constantes de 2×2 px, la miniatura sobre el nivel 1 de mip (ARQ-121) con `scale` 0,5 coincide con el nivel 1 del resultado a tamaño completo en ≤ 1/255 por canal; (b) intensidad 0 equivale a sin filtro, byte a byte, e intensidad 100 da los parámetros del preset, bit a bit; con `d` 0 y `p` 40, intensidad 25 da 10; un `Int` con `d` 0 e intensidad 50 da 3 con `p` 5, −3 con `p` −5 y 2 con `p` 4; un `Color` de negro a blanco, opacos, con intensidad 50 da 0,5 en `r`, `g` y `b` en luz lineal; `Bool` y `Choice` dan `d` con intensidad 0 y `p` con intensidad 0,01 y 100; intensidad NaN, `±∞`, −0,01 o 100,01 da `Err` y deja el destino igual; un preset con un valor fuera de su rango da `Err`; (c) un filtro propio se guarda y reaplica.
 
 **FD-35 · Sombras** (RF-21)
 - *Propósito*: dar profundidad a imágenes, formas y texto.
-- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27).
+- *Comportamiento y reglas*: tipos **Paralela** (desplazamiento −500–500 px por eje, desenfoque 0–100 px, color, opacidad 0–100 %), **Brillo** (halo difuso, radio 0–100 px) y **Contorno** (trazo exterior con grosor 1–100 px) (rangos PROPUESTA); color de la muestra o de la Identidad. Se pueden apilar varias. El desenfoque sigue ARQ-120. **Curva** (sombra deformada bajo el elemento) pasa a Fase 2 (D-27). **Brillo** y **Contorno** salen del primer corte hasta que se aprueben sus fórmulas (D-42).
 - *UI*: Inspector → Imagen → Sombras; Efectos de texto.
 - *Técnica*: `Effect` de sombra en `gafira-raster` (desenfoque gaussiano separable).
 - *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p (02 §6.7, `bench_shadow_1080`).
-- *Aceptación*: (a) la sombra sigue el canal alfa del elemento: con desenfoque 0, el alfa de la sombra es el del elemento desplazado por `opacidad`, exacto; (b) la exportación SVG la rasteriza o la reproduce con filtro, sin pérdida visible > 2/255 (VERIFICAR modo); (c) apilar tres sombras mantiene el arrastre a 60 fps; (d) opacidad 0 no cambia la imagen, y un parámetro fuera de rango da error.
+- *Aceptación*: (a) la sombra sigue el canal alfa del elemento: con desenfoque 0, el alfa de la sombra es el del elemento desplazado por `opacidad`, exacto; (b) la exportación SVG la rasteriza o la reproduce con filtro, sin pérdida visible > 2/255 (VERIFICAR modo); (c) apilar tres sombras mantiene el arrastre a 60 fps; (d) en Paralela, opacidad 0 no cambia la imagen; un parámetro fuera de rango da `Err` y sus extremos valen: desplazamiento ±500 y desenfoque 0 y 100 pasan; ±500,01 y 100,01 dan `Err`. Brillo y Contorno tendrán sus criterios con sus fórmulas (D-42).
 
 **FD-36 · Bordes y esquinas** (RF-21)
 - *Propósito*: enmarcar y redondear.
@@ -433,7 +437,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *Propósito*: separar el sujeto de una imagen sin modelo de IA y sin conexión.
 - *Comportamiento y reglas*: un clic sobre una imagen (Barra contextual → «Aislar sujeto») ejecuta el `ClassicSegmenter` (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC, refinado de bordes con *matting*; 02 §4.7). Trabaja sobre una copia reducida a 1024 px de lado largo (una imagen menor no se amplía) y escala con *guided filter* al tamaño completo. Muestra progreso y una **estimación de tiempo** en CPU (requisito del PRD), que calcula `gafira-engine` a partir de la fracción de progreso (02 ARQ-112); es cancelable en ≤ 100 ms. El resultado es una **máscara no destructiva** (`Mask::Alpha`) que se muestra sobre un fondo de cuadros; el píxel original no cambia y se puede quitar la máscara con Restablecer. Si hay pistas del usuario (trazo sobre el sujeto o el fondo), se usan como semillas. Sin modelos por defecto (ARQ-76).
 - *UI*: Barra contextual y Inspector → Imagen → «Aislar sujeto»; menú contextual.
-- *Técnica*: `Segmenter` (`ClassicSegmenter`, `SegHints`, `AlphaMask`; 02 ARQ-130) en `gafira-segment`, `Mask`, pool de render (`rayon`).
+- *Técnica*: `Segmenter` (`ClassicSegmenter`, `SegHints`, `Segmentation`, `AlphaMask`; 02 ARQ-130) en `gafira-segment`, `Mask`, pool de render (`rayon`).
 - *Presupuesto*: imagen de 4000 px **< 5 s en CPU** (CAL-06); **< 2 s con GPU** (CAL-07, VERIFICAR); la UI nunca se bloquea.
 - *Aceptación*: (a) las escenas sintéticas de `gafira-testkit` dan IoU ≥ 0,90 por escena (prueba bloqueante, D-20, 02 ARQ-132); el IoU sobre fotos reales es solo un aviso hasta que el titular aporte un conjunto con licencia; (b) `bench_segment_4000` < 5 s en el hardware de gama media; (c) cancelar devuelve el control en ≤ 100 ms y deja el documento intacto (prueba por informes de progreso, 02 ARQ-112; la cifra se mide en `bench_cancel_segment`); (d) la imagen original se puede recuperar quitando la máscara.
 
@@ -794,8 +798,8 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-10 | Empaquetar fuentes del usuario en `.gafira` | Abierta (FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
-| Q-34 | Aspecto de las fórmulas de FD-33 | Abierta, no bloquea la especificación (02 §12.3) |
-| Q-35, Q-36, Q-39, Q-40 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33 y D-34 |
+| Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |
+| Q-35, Q-36, Q-39, Q-40, Q-41, Q-42 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33, D-34, D-41 y D-42 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
 | R-B | Licencia de krilla, hayro y qrcode | VERIFICAR con `cargo-deny` (02 §9.2) |

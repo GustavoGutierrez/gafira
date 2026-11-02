@@ -348,6 +348,43 @@ Fecha: 30 de octubre de 2026.
 
 - **Decisión**: el titular acepta los ADR 0005 a 0010 (`docs/adr/`).
 
+## D-40 Filtros en el primer corte de `gafira-raster`
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: el primer corte entrega el mecanismo de filtros de FD-34 y un solo preset de prueba (opción a de la pregunta O3 de `specs/changes/layer-2/design.md`). El catálogo real llega más adelante, con Q-34.
+- **Intensidad**: es una mezcla lineal de cada parámetro desde su valor por defecto hasta el valor del preset.
+- Aplicado a 02 (§12.3) y 04 (FD-34).
+
+## D-41 Intensidad de filtros por tipo de parámetro
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: la Intensidad de FD-34 trata cada tipo de parámetro así (Q-41): `Int` mezcla como `Float` y redondea, y medio se aleja de 0; `Color` mezcla en luz lineal; `Bool` y `Choice` saltan al valor del preset por encima de intensidad 0.
+- Amplía D-40; el resto de D-40 sigue vigente.
+- Aplicado a 02 (§12.2) y 04 (FD-34).
+
+## D-42 Brillo y Contorno fuera del primer corte
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: los tipos Brillo y Contorno de FD-35 salen del primer corte de `gafira-raster` hasta que se aprueben sus fórmulas (Q-42). Paralela sigue en el corte.
+- Aplicado a 02 (§4.17.4, §12.2) y 04 (FD-35).
+
+## D-43 Cancelación de sonoridad, Nivelar y remuestreo
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: medir la sonoridad, Nivelar y remuestrear quedan fuera de ARQ-112 en este corte (Q-43). `gafira-engine` los cancelará entre bloques más adelante.
+- Aplicado a 02 (ARQ-112, §12.2).
+
+## D-44 Colores medios de la fiabilidad
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: los colores medios de ARQ-131 se promedian en luz lineal y después se pasan a Lab (Q-44).
+- Aplicado a 02 (ARQ-131, §12.2).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
