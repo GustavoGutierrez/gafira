@@ -1,0 +1,24 @@
+{ "schema": 1, "change": "engine-contracts", "delivery": "D1", "rounds": [ {
+  "round": 1, "commit": "4e1f742b6c3d6a45135c34a634dc64838ca4c9b5", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier",
+  "classes": ["ambiguity", "implementation"],
+  "counts": {"critical": 2, "warning": 2, "suggestion": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "ambiguity", "ref": ".odd/state.json; design.md:10",
+     "summary": "No G0 record: no outcome entry, Slice card, Light spec or delta spec. design.md precedes the code and is unchanged, but its acceptance list was never recorded.",
+     "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/msg.rs:72",
+     "summary": "Hand mutants survive in is_valid_key: segment class widened to / : ` {. Code is correct; test table lacks bytes next to the 0-9 and a-z ranges.",
+     "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:1; design.md:13",
+     "summary": "Flow line says L3, new function; design says L2, new capability. No Flow-change line. Mode, mutation, tier and depth agree.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "apply-progress.md Deviations",
+     "summary": "Type criterion has no RED and the stated reason fails: a false PartialEq stub on Message fails the test on an assertion.",
+     "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 3},
+  "criteria": {"total": 10, "covered": 9},
+  "size": {"lines": 427, "forecast": 370}, "report": "verify-report.md" } ] }
