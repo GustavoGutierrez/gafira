@@ -77,6 +77,36 @@ pub const fn is_valid_key(key: &str) -> bool {
     !at_start && segments >= 2 && segments <= 3
 }
 
+/// Builds a [`Message`] from a literal key and named arguments, checking the
+/// key grammar ([`is_valid_key`]) at compile time.
+///
+/// ```
+/// use gafira_doc::msg;
+/// use gafira_doc::msg::MsgArg;
+///
+/// let m = msg!("export.pages_selected", count = Count(3));
+/// assert_eq!(m.args, vec![("count", MsgArg::Count(3))]);
+/// ```
+///
+/// An invalid key does not compile:
+///
+/// ```compile_fail
+/// let _ = gafira_doc::msg!("Not A Key");
+/// ```
+#[macro_export]
+macro_rules! msg {
+    ($key:literal $(, $name:ident = $variant:ident ( $($value:expr),* $(,)? ))* $(,)?) => {{
+        const _: () = assert!($crate::msg::is_valid_key($key));
+        $crate::msg::Message {
+            key: $crate::msg::MessageKey($key),
+            args: ::std::vec![$((
+                ::core::stringify!($name),
+                $crate::msg::MsgArg::$variant($($value),*)
+            )),*],
+        }
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
