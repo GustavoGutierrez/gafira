@@ -454,4 +454,4 @@ Not a fault, recorded: a rate under 8 kHz is accepted but K weighting there depa
 
 ### Size
 
-`git diff --shortstat 040ba8e` (merge of AU2) on the whole delivery, tests and apply-progress included: see the result of the run.
+`git diff --shortstat 040ba8e HEAD` (merge of AU2) for AU3 and AU4 together: 15 files, 2 232 insertions, 12 deletions; of them 717 in `crates/gafira-audio/src` (meter, peak and plan 345, normalizer 90, resampler 250, errors and exports), about 1 230 in tests and about 290 in this file. Forecast 830 (480 + 350): over it. Size is not a limit for serial work, so the coordinator decides.
