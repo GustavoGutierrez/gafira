@@ -78,6 +78,47 @@ fn arq_130_seed_strokes_set_the_alpha_under_them() {
     );
 }
 
+// ARQ-130: a seed steers the cut beyond the pixels under it: a blue decoy is
+// foreground without hints, and a background dot in its middle takes pixels
+// of it that lie outside the dot.
+#[test]
+fn arq_130_a_background_seed_steers_the_cut() {
+    let mut data = scene(&[CENTRE]);
+    for y in 60..90 {
+        for x in 20..50 {
+            let i = ((y * W + x) * 4) as usize;
+            data[i..i + 4].copy_from_slice(&[30, 60, 200, 255]);
+        }
+    }
+    let plain = run(
+        &data,
+        &SegHints {
+            zone: SegZone::Foreground,
+            ..SegHints::default()
+        },
+    );
+    assert!(
+        at(&plain, 45, 75) >= 128 && at(&plain, 48, 88) >= 128,
+        "decoy is foreground"
+    );
+    let hints = SegHints {
+        zone: SegZone::Foreground,
+        background: vec![SeedStroke {
+            points: vec![[35.0, 75.0]],
+            radius: 6.0,
+        }],
+        ..SegHints::default()
+    };
+    let seeded = run(&data, &hints);
+    assert!(
+        at(&seeded, 45, 75) < 128,
+        "outside the dot: {}",
+        at(&seeded, 45, 75)
+    );
+    assert!(at(&seeded, 48, 88) < 128, "corner: {}", at(&seeded, 48, 88));
+    assert!(at(&seeded, 100, 75) >= 128, "subject kept");
+}
+
 // ARQ-130: Background is the complement of Foreground, 255 - alpha, +-1; All is solid.
 #[test]
 fn arq_130_background_is_the_complement_and_all_is_solid() {
