@@ -314,16 +314,15 @@ First run of mutants 2 (`store`) survived: the stale-cancel test cancelled the s
 | 8 | `check` returns `Ok` when cancelled | `arq_112_cancel_is_seen_by_the_token_and_by_its_clones` |
 | 9 | per violation: each check removed (range, decreasing, early, step, not completed, not cancelled/output swapped, reports-after, fewer-than-k, early and scan in a cancelled run, step in a cancelled run); cancel points `1`, `n / 2`, `n - 1` shifted by one, `0` and `n` admitted, no dedup, one point dropped; double cancels at `k + 1`, `k - 1`, `> k`; `Err(E)` and baseline `Ok(true)` ignored | `arq_112_*` in `crates/gafira-testkit/tests/progress.rs`; each negative control has its fake |
 | 10 | `<=` for decreasing; early `1.0` allowed or `>= 0.99`; NaN passes; bounds `0`/`1` exclusive, loosened or tightened by one ulp; step `>=`, tolerance, first report against 0 | `arq_112_decreasing_is_strict`, `arq_112_out_of_range_includes_nan_and_is_inclusive_at_0_and_1`, `arq_112_one_before_the_last_report_is_early_completion`, `arq_112_step_too_large_is_strict_without_tolerance`, `arq_112_even_steps_are_measured_in_f32_with_no_tolerance` |
-| 11 | `Cancelled` key or argument | not applied: the test pins the full `Message` (`arq_102_cancelled_is_the_job_key_with_no_arguments`); a wrong key or an argument changes it |
+| 11 | `Cancelled` wrong key; an extra argument | `arq_102_cancelled_is_the_job_key_with_no_arguments` |
 
-44 mutants of item 9 and 10 in all; every one killed.
+44 mutants of items 9 and 10, plus 2 of item 11; every one killed except the equivalent `>` of item 1.
 
 ### Deviations and judgments
 
 - The `design.md` table has "Fewer than k reports" before the rule "the return value is judged before the log". Implemented: `Ok(false)` goes by the `Ok(false)` row (`NotCancelled` if the log ends at `1.0`, else `OutputAfterCancel`, even with fewer than `k` reports); `Ok(true)` checks fewer than `k` first. Tested for `Ok(true)` only; the `Ok(false)` plus fewer-than-`k` case is not pinned.
 - Same index, scan order is range, decreasing, early completion, step, as the table says; pinned by `arq_112_a_scan_fault_comes_before_not_completed_and_in_index_order`.
 - The test double `Probe` in `contract_checkpoint.rs` is local: `gafira-doc` tests cannot use `gafira_testkit::progress` for it without a second commit order; it is five lines.
-- Mutant 11 not applied by hand, see the table.
 
 ### Measured lines
 
