@@ -1,4 +1,4 @@
-{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2, RS3a", "rounds": [ {
+{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2, RS3a, RS3b", "rounds": [ {
   "delivery": "RS1", "round": 1, "commit": "10f328b10d520a2e17cf2565db4b4fc478b40a00", "mode": "full", "tier": "T4", "depth": "V2",
   "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
   "counts": {"critical": 5, "warning": 3, "suggestion": 4},
@@ -113,4 +113,20 @@
   "mutation": null,
   "hand_mutants": {"run": 7, "killed": 7},
   "criteria": {"total": 16, "covered": 16},
-  "size": {"lines": 2498, "forecast": 420}, "report": "verify-report.md" } ] }
+  "size": {"lines": 2498, "forecast": 420}, "report": "verify-report.md" }, {
+  "delivery": "RS3b", "round": 1, "commit": "608b1965d21ef8d829ec76e630d4a16fb41d8adb", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
+  "counts": {"critical": 2, "warning": 4, "suggestion": 4},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:133", "summary": "Wipe mask wrong below softness 3e-12 on u == p: 0 for 0.4375 at s 1e-16, error 0.98 worst, 191/255 in bytes. Rounding amplified by 1/s. No test; mutant I2 survives.", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/slide.rs:101", "summary": "The en f64 rule of Slide has no test: mutant I1 (d in f32) survives all 130 tests. Side 5, p 0.1: d 4 in f64, 5 in f32. The code is right; the test is missing.", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:133", "summary": "Subnormal softness passes through +-inf and returns Ok; ARQ-110 says a non-finite intermediate is Err. Output stays finite. Avoidable with no spec change.", "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:114", "summary": "Generic tests pass empty params: ARQ-111 and premultiplied validity miss circular, soft Wipe, Zoom out; no ARQ-110 finite property through run_cpu. Probes pass.", "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "specs/changes/layer-2/design.md:380", "summary": "P15 step 8 asks 1/255 near the ends for each transition; ARQ-118 lists three. Zoom measures 4/255 on a 16x9 checker at p 0.0001. Align the two texts.", "follow_up": false, "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:285", "summary": "Claim false: tests do not fail without the guard end copies. Mutant I8 passes all 130 and is equivalent for all six (weight-1 shortcut). Correct the note.", "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 10, "killed": 7},
+  "criteria": {"total": 19, "covered": 15},
+  "size": {"lines": 1540, "forecast": 450}, "report": "verify-report.md" } ] }
