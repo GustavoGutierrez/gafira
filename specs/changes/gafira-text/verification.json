@@ -1,0 +1,24 @@
+{ "schema": 1, "change": "gafira-text", "delivery": "TX1", "rounds": [ {
+  "round": 1, "commit": "03b91728bef7a7d51ecde57262ea7b8b30bfe0b8", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier",
+  "counts": {"critical": 6, "warning": 6, "suggestion": 4},
+  "classes": ["ambiguity", "implementation"],
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-text/src/layout.rs:138", "summary": "False overflow in mixed-direction text: parley hangs white space only at the paragraph level. 'a ابج دهو' at width 32 fits and flags overflow", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:139, ARQ-116", "summary": "Hand mutant survived: overflow taken from the last line only", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:130, ARQ-116", "summary": "Hand mutant survived: .notdef read from the first glyph only; q + U+0301 is the uncovered case", "follow_up": false, "status": "open"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:83, layout.rs:188, ARQ-110", "summary": "Hand mutants survived: ranges before non-finite checks, numbers after fonts. No test has two bad inputs", "follow_up": false, "status": "open"},
+    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-text/src/error.rs:50, ADR 0012", "summary": "InvalidFont puts a number in Text; ADR 0012 item 3 requires a numeric argument. tests/message.rs pins the wrong form", "follow_up": false, "status": "open"},
+    {"id": "C6", "severity": "CRITICAL", "class": "implementation", "ref": "assets/LICENSES.toml, splash provenance", "summary": "Entry says the C2PA original is kept outside the repository; pending item 6 (b) of 00 keeps that as VERIFICAR", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "02 section 4.17.3, Caja de tamano 0", "summary": "White-space-only text in a box of 0 gives no overflow; the row says overflow if the text is not empty", "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-116", "summary": "Line count of a final newline and of an empty text is stated nowhere; tests pin it", "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "layout.rs:76, FD-41", "summary": "An empty font stack gives Ok with no clusters, no flag: the text is lost. No row, test or note covers it", "follow_up": false, "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "05 Registro, P7", "summary": "05 asks hash, authorship, attribution and modified per entry; P7 sets other fields", "follow_up": false, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "assets/LICENSES.toml", "summary": "Copyright year differs from the font name table: Inter 2020 vs 2016, Manrope 2018 vs 2019. Record both", "follow_up": false, "status": "open"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "02 section 4.17.3, Fuente sin metricas", "summary": "Zero-metrics font gives Ok, not Err; row belongs with TX2 but the notes omit it. Carry it to TX2", "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 6, "killed": 2},
+  "criteria": {"total": 8, "covered": 4},
+  "size": {"lines": 1258, "forecast": 650}, "report": "verify-report.md" } ] }
