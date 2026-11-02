@@ -1,0 +1,24 @@
+{ "schema": 1, "change": "gafira-segment", "delivery": "SG1+SG2", "rounds": [ {
+  "round": 1, "commit": "e66da3818dd848f83e4745fb9deea50e07de7305", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier",
+  "next_after": ["tdd-apply"],
+  "counts": {"critical": 7, "warning": 4, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/src/lib.rs:47", "summary": "Segmenter lacks the Describe supertrait of 02 4.7; ClassicSegmenter has no descriptor, so it cannot enter a Registry", "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/src/lib.rs:30", "summary": "SegReq has no estimated RAM, which 02 4.7 lists with CPU/GPU and max working size", "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/src/hints.rs:45", "summary": "ARQ-110: finite huge strokes overflow f32 inside for_covered; call returns Ok and silently drops a stroke through the image", "status": "open"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/tests/contract.rs:84", "summary": "ARQ-110 survivors: hints unchecked in zone All; alpha channel of f32 pixels unchecked", "status": "open"},
+    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/tests/contract.rs:25", "summary": "ARQ-130 size test uses default hints (zone All), skips the pipeline; a pipeline panic on 1x1 and width 2048 survives", "status": "open"},
+    {"id": "C6", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/src/lib.rs:153", "summary": "Seed scale untested (scale=1 survives) and wrong on tall narrow images: X-axis ratio used for Y, seed misses its target", "status": "open"},
+    {"id": "C7", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-segment/tests/hints.rs:197", "summary": "ARQ-130 Elemento: mutant keeping the largest region survives; in the test the central object is also the largest", "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "apply-progress.md SG1", "summary": "Process breach already recorded: RED by removal on 5 SG1 tests, plus SG2 pin code written before its test; owner decides", "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-segment/src/work.rs:116", "summary": "fd_38_reduction_averages_source_blocks does not prove averaging: first-pixel sampling survives", "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-130", "summary": "Seed alpha criterion names no zone: it conflicts with the complement rule in Fondo and is unmet in Todo (255 under a background seed)", "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "02 4.7, FD-38, P12", "summary": "Spec says matting of edges; P12 has no such step and the guided filter is the only edge refinement", "status": "open"}
+  ],
+  "classes": ["implementation", "ambiguity"],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 7, "killed": 1},
+  "criteria": {"total": 18, "covered": 11},
+  "size": {"lines": null, "forecast": null}, "report": "verify-report.md" } ] }
