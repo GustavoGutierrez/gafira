@@ -1,0 +1,21 @@
+{ "schema": 1, "change": "color-lab", "delivery": "CL1", "rounds": [ {
+  "round": 1, "commit": "1d6eab3596b9b0164165d5842050261f82593122", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 4, "warning": 1, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:115-117",
+     "summary": "Hue wrap limit unpinned: thresholds 170 and >=, <= at exact 180 survive, error up to 36.6 dE; direct cases needed", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "P6 alpha ignored, lab.rs:69",
+     "summary": "No test varies alpha; premultiplying by alpha survives, L off by up to 100", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:95,129",
+     "summary": "h<=0 in hue_degrees (15.7 dE) and h1+h2<=360 (2e-4) survive; no exact hue boundary case", "follow_up": false, "status": "open"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/tests/lab.rs:46-61",
+     "summary": "Tolerance 1e-5 does not pin f64 (f32 narrowing survives) or exact epsilon (0.008856 survives)", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": ".cargo/mutants.toml",
+     "summary": "Six verified equivalents will appear in T4 on critical code; exclusions with reasons needed before archive", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 54, "killed": 38},
+  "criteria": {"total": 7, "covered": 5},
+  "size": {"lines": 335, "forecast": 280}, "report": "verify-report.md" } ] }
