@@ -15,11 +15,7 @@ struct Input {
 
 fn base() -> Input {
     Input {
-        style: TextStyle {
-            size_pt: 16.0,
-            letter_spacing: 0.0,
-            line_height: 1.0,
-        },
+        style: TextStyle::default(),
         dpi: 96.0,
         width: 300.0,
         height: 200.0,

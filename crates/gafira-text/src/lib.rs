@@ -8,6 +8,8 @@
 
 mod error;
 mod layout;
+mod list;
 
 pub use error::TextError;
-pub use layout::{Cluster, Line, TextLayout, TextStyle, layout_box};
+pub use layout::{Cluster, Decoration, Line, TextAlign, TextLayout, TextStyle, layout_box};
+pub use list::{ListEntry, ListItem, ListKind, layout_list};

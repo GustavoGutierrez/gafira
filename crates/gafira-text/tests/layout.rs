@@ -15,8 +15,7 @@ const EMOJI: &[u8] = fonts::NOTO_EMOJI.bytes;
 fn style() -> TextStyle {
     TextStyle {
         size_pt: 24.0,
-        letter_spacing: 0.0,
-        line_height: 1.0,
+        ..TextStyle::default()
     }
 }
 
@@ -502,6 +501,49 @@ fn fd_41_an_empty_font_list_is_an_error_also_for_an_empty_text() {
     }
 }
 
+#[test]
+fn arq_116_a_final_crlf_or_lf_opens_one_more_empty_line() {
+    let table = [("abc\r\n", 2), ("abc\n", 2), ("\r\n", 2), ("a\r\n\r\nb", 3)];
+    for (text, lines) in table {
+        let layout = lay(text);
+        assert_eq!(layout.lines.len(), lines, "{text:?}");
+        assert_eq!(logical_text(text, &layout), (text.to_string(), true));
+    }
+    assert!(lay("abc\r\n").lines[1].clusters.is_empty());
+}
+
+#[test]
+fn arq_116_in_a_box_of_size_zero_only_a_cluster_that_is_not_white_space_overflows() {
+    // 02 4.17.3, Caja de tamaño 0: White_Space of Unicode does not count.
+    let table = [
+        (" ", false),
+        ("   ", false),
+        ("\t", false),
+        ("\n", false),
+        ("\r\n", false),
+        ("\u{a0}", false),
+        ("\u{2003}", false),
+        ("\u{3000}", false),
+        ("a", true),
+        (" a", true),
+        ("a ", true),
+        ("\n\na", true),
+    ];
+    for (text, overflow) in table {
+        assert_eq!(lay_in(text, &[INTER], 0.0).overflow, overflow, "{text:?}");
+    }
+}
+
+#[test]
+fn arq_116_a_very_long_run_of_trailing_white_space_is_laid_out() {
+    // W12: the cost of the white space at the end of a line is linear.
+    let text = format!("a{}", " ".repeat(100_000));
+    let layout = lay_in(&text, &[INTER], 100_000.0);
+    assert_eq!(layout.lines.len(), 1);
+    assert_eq!(layout.lines[0].clusters.len(), 100_001);
+    assert!(!layout.overflow);
+}
+
 fn pieces() -> impl Strategy<Value = &'static str> {
     prop::sample::select(vec![
         "a",
@@ -532,7 +574,12 @@ proptest! {
         width in 0.0..=100_000.0_f64,
     ) {
         let text = parts.concat();
-        let s = TextStyle { size_pt, letter_spacing: spacing, line_height };
+        let s = TextStyle {
+            size_pt,
+            letter_spacing: spacing,
+            line_height,
+            ..TextStyle::default()
+        };
         let layout = lay_with(&text, &[INTER, ARABIC, EMOJI], &s, dpi, width)
             .expect("input in the domain");
         for line in &layout.lines {

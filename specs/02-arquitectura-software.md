@@ -940,7 +940,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 
 | Primer corte | Fuera del corte |
 |---|---|
-| FD-41 (a, c a j), FD-43 (a), FD-44 (a, c, d, e), FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`), ARQ-115, ARQ-116 | Comandos y estilos: FD-41 (b), FD-47, FD-49. Interfaz: FD-42, FD-46 (d). Exportación: FD-43 (b, c), FD-44 (b). `gafira-engine` y `gafira-platform`: FD-48. |
+| FD-41 (a, c a m), FD-43 (a), FD-44 (a, c, d, e), FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`), ARQ-115, ARQ-116 | Comandos y estilos: FD-41 (b), FD-47, FD-49. Interfaz: FD-42, FD-46 (d). Exportación: FD-43 (b, c), FD-44 (b). `gafira-engine` y `gafira-platform`: FD-48. |
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
