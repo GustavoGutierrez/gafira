@@ -521,3 +521,69 @@ fn fd_38_a_stroke_reports_progress_and_checks_the_token_per_chunk() {
         .unwrap();
     assert_eq!(verdict, Ok(()));
 }
+
+// ARQ-110: an extreme stroke is applied along its whole line, not only near its
+// origin or from where it was cut: at 1e19 one step of an `f64` is 2048 pixels,
+// so the stroke is cut to the image with the cut coordinate exact. Run once as a
+// foreground and once as a background stroke: no pixel can already be both.
+#[test]
+fn arq_110_extreme_strokes_are_applied_along_their_whole_line() {
+    for (w, h) in [
+        (2049u32, 9u32),
+        (9, 2049),
+        (100, 100),
+        (33, 4000),
+        (4000, 33),
+    ] {
+        let mut data = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                let inside = (x as f32 / w as f32 - 0.5).abs() < 0.2
+                    && (y as f32 / h as f32 - 0.5).abs() < 0.2;
+                data.extend_from_slice(if inside {
+                    &[200, 40, 40, 255]
+                } else {
+                    &[120, 120, 120, 255]
+                });
+            }
+        }
+        let view = ImageView::new(w, h, PixelData::Rgba8(&data)).unwrap();
+        let go = |foreground: Vec<SeedStroke>, background: Vec<SeedStroke>| {
+            seg()
+                .segment(
+                    view,
+                    &SegHints {
+                        zone: SegZone::Foreground,
+                        foreground,
+                        background,
+                    },
+                    &NoProgress,
+                    &CancelToken::new(),
+                )
+                .unwrap()
+                .mask
+        };
+        for (a, b) in [(-1.3e19f32, 2.7e19f32), (3e38, -1.7e38)] {
+            for along_x in [true, false] {
+                let points = if along_x {
+                    vec![[a, 1.0], [b, 1.0]]
+                } else {
+                    vec![[1.0, a], [1.0, b]]
+                };
+                let stroke = SeedStroke {
+                    points,
+                    radius: 1.0,
+                };
+                let fg = go(vec![stroke.clone()], vec![]);
+                let bg = go(vec![], vec![stroke]);
+                for l in 0..(if along_x { w } else { h }) {
+                    let (x, y) = if along_x { (l, 1) } else { (1, l) };
+                    let i = (y * w + x) as usize;
+                    let what = format!("{w}x{h} {a} {b} along_x={along_x} at {x},{y}");
+                    assert!(fg.data()[i] >= 243, "{what}: fg {}", fg.data()[i]);
+                    assert!(bg.data()[i] <= 12, "{what}: bg {}", bg.data()[i]);
+                }
+            }
+        }
+    }
+}

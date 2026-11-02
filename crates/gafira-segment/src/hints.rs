@@ -47,6 +47,48 @@ impl Band {
     }
 }
 
+/// The part of the segment `a`-`b` inside the box `[-m, w + m] x [-m, h + m]`,
+/// or `None` when it misses it. Whatever lies outside is farther than `m` from
+/// every pixel centre, so cutting it leaves the covered pixels unchanged; and the
+/// pixel positions are then taken against small numbers, where an `f64` is exact
+/// to the pixel (at 1e19 one step of it is 2048 pixels).
+fn clip(a: [f64; 2], b: [f64; 2], (w, h): (f64, f64), m: f64) -> Option<([f64; 2], [f64; 2])> {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    // The parameter, and the axis and value of the box side that set it.
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    let (mut enter, mut leave) = (None, None);
+    for (axis, limit) in [(0, w), (1, h)] {
+        let (lo, hi) = (-m, limit + m);
+        if d[axis] == 0.0 {
+            if a[axis] < lo || a[axis] > hi {
+                return None;
+            }
+        } else {
+            let (near, far) = if d[axis] > 0.0 { (lo, hi) } else { (hi, lo) };
+            let (u, v) = ((near - a[axis]) / d[axis], (far - a[axis]) / d[axis]);
+            if u > t0 {
+                (t0, enter) = (u, Some((axis, near)));
+            }
+            if v < t1 {
+                (t1, leave) = (v, Some((axis, far)));
+            }
+        }
+    }
+    if t0 > t1 {
+        return None;
+    }
+    // The coordinate across the box side is the side itself, not `a + t * d`,
+    // whose rounding error at 1e19 would be a thousand pixels.
+    let at = |t: f64, side: Option<(usize, f64)>| {
+        let mut p = [a[0] + t * d[0], a[1] + t * d[1]];
+        if let Some((axis, value)) = side {
+            p[axis] = value;
+        }
+        p
+    };
+    Some((at(t0, enter), at(t1, leave)))
+}
+
 /// Pixel range `[lo, hi]` of `limit` that `p..q` widened by `reach` touches.
 fn range(p: f64, q: f64, reach: f64, limit: usize) -> (usize, usize) {
     let lo = ((p.min(q) - reach).floor() as i64).clamp(0, limit as i64 - 1) as usize;
@@ -66,9 +108,13 @@ impl SeedStroke {
         } else {
             self.points.len()
         };
-        (0..n).flat_map(move |i| {
+        let size = (w as f64, h as f64);
+        let cut = (0..n).filter_map(move |i| {
             let a = scaled(self.points[i]);
             let b = self.points.get(i + 1).map_or(a, |&p| scaled(p));
+            clip(a, b, size, reach)
+        });
+        cut.flat_map(move |(a, b)| {
             let x = range(a[0], b[0], reach, w);
             let (y0, y1) = range(a[1], b[1], reach, h);
             (y0..=y1).step_by(CHUNK_ROWS).map(move |top| Band {
