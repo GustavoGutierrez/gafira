@@ -1,6 +1,6 @@
 # 0011. ODD lite: outcome-first routing on top of the existing flow
 
-- Status: accepted (owner confirmation 2026-11-01)
+- Status: accepted (owner confirmation 2026-11-01; confirmed again the same day with two exceptions, see "Phase D: criteria")
 - Date: 2026-11-01
 - Related: ADR 0001, 0002, 0003, 0004 (amended, not removed), `AGENTS.md`, `.agents/agents/`, `docs/methodology/odd-ligero-migracion.md` (owner's brief), changes `odd-lite`, `layout-core`
 
@@ -99,6 +99,8 @@ Record at acceptance (owner confirmation 2026-11-01):
 | One outcome with no folder | `testkit-golden`: entry `c56954f`, `verify` round 3 PASS at `faefea6`, merged in `fa6778e`, T4 on `gafira-testkit` run (its non-critical survivors are follow-up 38 in `specs/README.md`), closed `e1de0b8`. No commit ever held a `specs/changes/testkit-golden/` folder |
 | Session resumed from `.odd/state.json` | Partially shown, not fully proven. `testkit-golden` started in another session from the `next_action` of the `odd-lite` entry in `.odd/state.json` and no artifact was duplicated, but no new session resumed a delivery midway. The owner confirmed on 2026-11-01 after being told this criterion was unchecked; this partial result was reported to the owner after that confirmation. The first real mid-delivery resume should confirm it |
 | FAIL counts and rounds | D3 and `testkit-golden` each took two FAILs and three rounds. That matches D2 (FAIL, FAIL, PASS) and is worse than D1 (FAIL, PASS) by one FAIL and one round. A report to the owner had wrongly said not worse than D1; this comparison was reported to the owner after the confirmation |
+
+After those two reports, the owner confirmed on 2026-11-01 that acceptance stands with two exceptions: the resume criterion is only partially shown, and the FAIL and round counts are worse than D1.
 
 ### Phase D: requirements
 
