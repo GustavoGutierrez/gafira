@@ -1,166 +1,122 @@
-# Verify report: gafira-raster, RS5 and RS6, round 1
+# Verify report: gafira-raster, RS5 and RS6, round 2 (closure)
 
-- Commit: code at `d79f9ea` (branch `feat/gafira-raster`), base `develop`, merge base `d64a41f`.
-- HEAD moved twice during the run, to `72d248e` and `8a8d2f3`. Both only touch specs (Invertir as a switch, D-46). `git diff d79f9ea HEAD -- crates Cargo.toml Cargo.lock` is empty, so the code verified is the code at HEAD, and the spec text read for FD-33 is the current one.
-- Round 1, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
-- Probes ran on a scratch export through the public API, written from the spec rows before the implementer's tests were read. Mutants ran on a second clean export. Build folders are cleaned.
-- Invertir as a switch is out of scope as told, and D-46 has since settled it. Size is not a finding.
+- Commit: `a4ac3ae` (branch `feat/gafira-raster`), base `develop`. Depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding).
+- Scope: C1 to C6 and W1 to W4 of round 1, P16, ARQ-120 and ARQ-122 at `1b159f9`, D-46, commits `b3e7ae8` to `a4ac3ae`.
+- Severity follows the owner's bar: a CRITICAL must break an explicit criterion within its domain, with root cause and a concrete fix. New test gaps are follow-up warnings.
+- Probes and mutants ran on a scratch export through the public API (`rs56r2_probe.rs`, `rs56r2_mutants.py`, next to this report). The repo was not edited; `HEAD` is unchanged.
 
-**Verdict: FAIL.** 6 CRITICAL, 4 WARNING, 7 SUGGESTION.
-Per class (CRITICAL and WARNING): implementation 9 (6 CRITICAL, 3 WARNING), architecture 1 (1 WARNING). SUGGESTION: implementation 5, ambiguity 1, claim 1.
+**Verdict: PASS.** 0 CRITICAL, 5 WARNING (all follow-up), 6 SUGGESTION. All 10 findings of round 1 are closed.
+Per class: ambiguity 2 WARNING, implementation 2 WARNING, claim 1 WARNING. No class blocks.
 
-The value tests are strong: 20 of 20 value mutants died and the formula probes agree to rounding. The defects sit where no test looks: the palette on images that are not flat, a filter on an effect whose defaults are not the identity, the Textura order, colour conversion overflow, and the ARQ-110 tables of the new effects.
+RS5 and RS6 were the last deliveries of the card. T4 is still owed at close (`mutation: archive`).
 
 ## Gates
 
-Each run alone, exit code read directly, `CARGO_TARGET_DIR` not passed.
+Each run alone in the worktree, exit code read directly, `CARGO_TARGET_DIR` not passed.
 
 | Gate | Exit | Note |
 |---|---|---|
 | `cargo fmt --check` | 0 | |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
-| `cargo test --workspace --locked` | 0 | 1 769 passed, 0 failed, 0 ignored; 320 in the `gafira-raster` lib |
+| `cargo test --workspace --locked` | 0 | 1 803 passed, 0 failed, 0 ignored |
 | `cargo deny check` | 0 | advisories, bans, licenses and sources ok |
 | CI policy (7 steps of the `policy` job besides Format, read from `ci.yml` with a YAML parser) | 0 | ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14, each 0 |
 
-`git status` at the end: only `crates/gafira-raster/proptest-regressions/` untracked (S6).
-
 ## Artifact integrity
 
-- Slice card: commits `b64090c` and `75e360d` only. No commit since `d64a41f` removes a line of `apply-progress.md`, so no implementer commit changed the card.
-- Spec commits in the range: `b9a7442`, `72d248e`, `8a8d2f3`. None carries code; each states its purpose in its subject.
-- `.cargo/mutants.toml` is untouched, so there is no exclusion to re-check. `Cargo.lock` is unchanged; `crates/gafira-raster/Cargo.toml` gains only the `dhash` bench target.
-- `develop` is at `65a7bb5`, ahead of the merge base. The branch needs `develop` merged before integration (not a finding).
+- Slice card: `b64090c` and `75e360d` only. `ced4673..HEAD` removes no line of `apply-progress.md`; `a4ac3ae` only appends.
+- Spec commits `0c05f00` and `1b159f9` carry no code. No commit after `1b159f9` touches `specs/` except `apply-progress.md`.
+- `Cargo.lock`, `.cargo` and `crates/gafira-raster/Cargo.toml` are unchanged in the range.
+- `git status`: only `crates/gafira-raster/proptest-regressions/` untracked (S6).
 
-## Rulings on recorded deviations
+## Closure of round 1
+
+| ID | Class | State | Evidence |
+|---|---|---|---|
+| C1 | implementation | **Closed** | Noise ±16 to ±40, 6 000 pixels with 5 flats of 800, 3 seeds each: first entry is the noisy colour at ΔE2000 0.19 to 1.28, 6 000 pixels. Gradient and natural image: entries sum to the whole image (10 000, 750 000). Test kill not reapplied: W9 |
+| C2 | implementation | **Closed** | Two colours at ΔE 2 to 5, five greys 100 to 148, five pastels, and (50,50,50) with (51,50,50): one entry each, ΔE 0.0000, area order, same count in `RgbaF32` |
+| C3 | implementation | **Closed** | `ParallelShadow` step at intensity 0 and -0.0: byte-identical in `Rgba8`, bit-identical in `RgbaF32`. Bad preset value and NaN scale stay `Err`. Copy removed: killed by `fd_34_b_intensity_zero_is_no_filter_*` |
+| C4 | implementation | **Closed** | One run against Nitidez then Claridad in `f32`, 4 images, 4 slider pairs, 3 scales: largest gap 2.38e-7 (was 0.09). `Rgba8` run against the `f32` run of the same pixels: within byte rounding plus 0.5/255. Input luma: killed by 3 tests. `roi` max: killed by `arq_120_texture_roi_grows_by_the_active_kernels` |
+| C5 | implementation | **Closed** | `mix_params` with `Srgb(1e30, ...)` and P3 `(1e30, 1e30, -1e30)` at 50, and at 1e-300: `Err` naming the parameter. `DetectedColors`, each of 8 slots, both colours, hue or saturation active: `Err` |
+| C6 | implementation | **Closed** | G1, G2, G3 reapplied, each killed (`arq_110_texture_roi_and_cost_hint_survive_the_extremes` twice, `arq_110_detected_unknown_ids_are_ignored`) |
+| W1 | implementation | **Closed** | 160x120 translucent, alpha 55 to 255, 120 seeds on each of 4 picture kinds: median 0, worst 1 (was 11). Near-flat noise: median 1, worst 5 |
+| W2 | implementation | **Closed** | At the bounds of `1b159f9`, smooth and 16-cell block pictures: worst 7 with 2x2 means, 4 with nearest or bilinear. 38x30, below the bound: 0 of 40 over 10, worst 2 (was 13 of 40, worst 33). Residue on noise: W6 |
+| W3 | implementation | **Closed** | Against `gafira_anim::Interpolate`, 2 000 000 cases in three spaces with alpha down to 0: 0 differences with `t` strictly inside `(0, 1)`. Ends: S8 |
+| W4 | architecture | **Closed** | 320x240, 5 slider sets, 3 scales, 5 tiles (corner, middle, far corner, strip, 1 px): difference 0 in `u8` and `f32`; without the window 67/255. Origin window equals `None` bit for bit. Exact fit is `Ok`; 1 px over, `u32::MAX` and size 0 give `SizeMismatch` `cx.tile` with `dst` intact. `Light`, `ParallelShadow`, `DetectedColors` ignore a bad window |
+
+Also closed: S2 (`DEFAULT_INTENSITY`, 60) and S7 (`mix_params` keeps unknown ids). P16 matches the code: `TileWindow`, `EffectCx::whole`, `check_tile` before the empty return, sums in `u64`, the doc of `run_cpu`. D-46 holds: `invert` is `ParamKind::Bool { default: false }`, and `fd_33_f_invert_twice_*` covers it.
+
+## Rulings on the deviations
 
 | Deviation | Ruling |
 |---|---|
-| `DetectedColors` with 8 slots as its own effect (RS6 dev. 3) | **Accepted.** The formula holds: 34 698 pixels inside the tolerance match an independent reference within 3e-8, and 65 302 outside are unchanged bit for bit. FD-33 lists it inside the Color group, so the stack order now depends on the caller: S4 |
-| Palette algorithm (RS6 dev. 1) | **Rejected as built.** The algorithm is free, but this one fails ARQ-122: C1 and C2 |
-| dHash algorithm (RS6 dev. 2) | **Accepted**, 9 x 8 cells on stored sRGB values. Distance is at most 7 on 2x2, bilinear and nearest halves from 640 px up, and at most 6 on 2x2 halves from 128 px, the 12 MP bench reads 9.4 ms, noise pairs are 20 to 43 apart. Two repairs: W1, W2 |
-| Local colour blend (RS6 dev. 4) | **Accepted as a local copy**, since V5 does not list `gafira-anim` for raster. It is not the same rule as written, though: W3 |
-| Textura blurs read the input (RS5 dev. 6) | **Rejected.** It is recorded as "spec silent", but FD-33 states the order: C4 |
-| Vignette only on whole images (RS5 dev. 7) | **Open:** W4 |
+| Second merge at ΔE2000 15, cap of 32 clusters | **Accepted.** The radius is the FD-26 search radius. The cap was attacked with 20 to 200 small flats over a noisy mass, 750 runs: the noisy colour came first every time, nearest entry at most ΔE 12.2. The spec does not state what it does above five colours: W5 |
+| Idle slot in `DetectedColors` | **Accepted.** A slot with hue and saturation 0 is not converted, so no intermediate exists, and 1e30 is a finite, valid parameter. Output is the identity; the same slot active gives `Err` |
+| Intensity 0 copy order | **Accepted.** A `cx.tile` that does not fit gives `Ok` with a copy at 0 and `Err` at 50. FD-34 (b) says intensity 0 is no filter, byte for byte, and no effect runs. Preset, scale and buffers are still checked |
+| W1 test margin | **Accepted.** The filter drops only pictures where 8-bit rounding can flip a bit. Measured with no filter: worst 1 on real pictures and 5 on near-flat noise, and no pair stops being similar. The strict equality on the rest is the stronger test |
+
+The dHash bench at 25.8 ms against 100 ms is fine, as told.
 
 ## Findings
 
-### CRITICAL
+No CRITICAL.
 
-- **C1**, class: `implementation`. ARQ-122 ("dominantes, ordenados por área"), FD-26 (a). `palette.rs:124`.
-  - *Measured:* 6 000 pixels of noise around (200, 60, 60) plus 5 flat colours of 800 pixels each: the palette holds the 5 flat colours, and the colour with 60 % of the image is missing, at noise ±16, ±24, ±32 and ±40. A 70 % red-to-blue gradient with five 6 % flats gives only the flats. On a 1000x750 natural image, entries cover 234 740 of 750 000 pixels.
-  - *Root cause:* bins go in fullest first and the list closes at five clusters. A noisy colour spreads over many thin bins, so five small flat colours fill the list first, and every later bin is thrown away. A search by colour (FD-26) cannot find that image.
-  - *Test gap:* `arq_122_a_noisy_large_colour_comes_before_a_small_flat_one` has only one flat colour, so the list never fills.
-  - *Fix:* keep opening clusters, sort by area, cut to five, then add each dropped bin to its nearest kept cluster so the areas are real. Tried on the export without the last step: all 320 tests pass, the noisy colour comes first at ±16, ±24 and ±32, and the gradient now gives five gradient entries. At ±32 the colour splits into three clusters, and at ±40 into four, so the merge threshold needs a look at the same time. Palette time at 12 MP goes from 97 to 193 ms.
-- **C2**, class: `implementation`. ARQ-122 criteria "Imagen de 2 colores: 2 entradas" and "5 colores planos: los 5 colores con ΔE2000 < 1". `palette.rs:12`, `:123`.
-  - *Measured:* two flat colours with ΔE2000 from 2.4 to 4.8 give one entry, for example (200, 60, 60) and (215, 70, 60) give (205, 63, 60). Five greys 100 to 148 give two entries. Five pastels give four. At ΔE 10.1 two entries come back.
-  - *Root cause:* merging below ΔE 10 is the implementer's choice; the criteria have no such bound. Tests use only far-apart colours.
-  - *Fix:* when the image has at most `PALETTE_SIZE` distinct straight colours, return each as its own entry, without binning or merging, and test it with two close colours and the five greys. If the owner prefers near colours to count as one, the criterion must say so; that is a spec amend, not code.
-- **C3**, class: `implementation`. FD-34 (b) "intensidad 0 equivale a sin filtro, byte a byte". `filter.rs:257`.
-  - *Measured:* a preset with one `effect.shadow.parallel` step at intensity 0 changes 596 bytes in `Rgba8` and 768 values in `RgbaF32` of a 32x32 image with `Ok`.
-  - *Root cause:* `apply` runs each effect at its defaults, and `ParallelShadow` defaults are not the identity (offset 4, opacity 50). FD-33 effects are the identity, and the test uses only `test_preset`.
-  - *Fix:* after the checks, when `intensity == 0.0` copy `src` to `dst`. Keep validating the preset first (mutant I10 proves that is tested). Add a test with `ParallelShadow`.
-- **C4**, class: `implementation`. FD-33 "Orden de cálculo: ... Textura (Nitidez, Claridad, Viñeta)". `texture.rs:243`, `:258`.
-  - *Measured:* on a 256x192 image, `Texture` with both sliders against the same sliders run in order differs by up to 63/255 at 100 and 100, with 22 314 of 196 608 values above 1/255, and up to 23/255 at 50 and 50. In `f32` the gap reaches 0.09. Sliders alone match.
-  - *Root cause:* Claridad's `Y` and `Y_G` read the input, not the output of Nitidez. The implementer's reference does the same, so the tests fix the deviation in place, and mutant I2 shows them holding it.
-  - *Fix:* compute Nitidez over the image, build Claridad's blur from that result, then the Viñeta. `roi` must then be the sum of both tap counts, not the larger. Update `reference` in the tests and the note in `apply-progress.md`.
-- **C5**, class: `implementation`. ARQ-110 ("un resultado intermedio no finito", "un no finito en la salida"), same rule as C1 of RS3a. `filter.rs:90`, `detected.rs:189`.
-  - *Measured:* `mix_params` with a preset colour `Srgb(1e30, ...)` at intensity 50 returns `Ok` holding `r: inf`; with Display P3 `(1e30, 1e30, -1e30)` it returns `inf, inf, -inf`. `DetectedColors` with those samples returns `Ok` and hides the overflow: `lab_of` clips it and the colour moves nothing.
-  - *Root cause:* a finite `Color` passes `check_values`, and `to_linear_srgb` then overflows. Neither site checks the result. `apply` is safe only because the next effect rejects the value.
-  - *Fix:* check `is_finite` on the converted colour in `lerp_color` and in the sample, and return `Err` naming the parameter, as Fade does. Add both to the tests.
-- **C6**, class: `implementation`. ARQ-110 acceptance. `white_balance.rs`, `light.rs`, `color_adjust.rs`, `texture.rs`, `detected.rs`, `filter.rs` tests.
-  - *Missing for all five new effects and the filter:* the table with an unknown id holding NaN or `±∞`, `roi` and `cost_hint` at their extremes (`px = u64::MAX`, `out` at the ends of `i32`, `scale = f32::MAX`, unresolved values, NaN scale), and the finite-output property. These exist only for `ParallelShadow` and the transitions. The RS5 and RS6 sweep covered much of this and was deleted.
-  - *Three survivors in critical code:* G1 `px * work` in `Texture::cost_hint`, G2 `assert!` on a finite scale in `Texture::roi`, G3 `DetectedColors` behaving differently for an unknown id.
-  - *The behaviour itself is right:* a probe with overflow checks on passes every `roi` and `cost_hint` case over 86 parameter sets and all 8 scales, and unknown ids leave `Rgba8` and `RgbaF32` output bit-identical.
-  - *Fix:* add generic helpers to `testing.rs` (`assert_unknown_ids_are_ignored`, `assert_roi_and_cost_extremes`) called from each effect, and one `proptest!` per effect, as in `shadow.rs`.
+### WARNING (all follow-up)
 
-### WARNING
-
-- **W1**, class: `implementation`. ARQ-122, FD-28 (b). `dhash.rs:81`.
-  - *Measured:* a translucent image (alpha 55 to 255) in `Rgba8` and the same image in `RgbaF32` are up to 11 apart, median 6, so `is_similar` can say no. Opaque images and uniform alpha give 0.
-  - *Root cause:* bytes are `encode(c) × a`; `f32` hashes `encode(c × a)`. Mutant I12 dies, but no test has varying alpha across formats.
-  - *Fix:* in the `f32` arm, divide by alpha, encode, multiply by alpha.
-- **W2**, class: `implementation`. ARQ-122 "una imagen y su versión al 50 %: distancia ≤ 10". `dhash.rs:16`.
-  - *Measured:* at 2x2 halves with no noise, 38x30 exceeds 10 on 13 of 40 scenes, worst 33; 37x29 on 22 of 40, worst 37; 91x81 on 1 of 40, worst 11. From 128 px up the worst is 6, and multiples of the grid (36x32, 72x64) give at most 2. The tests start at 128x96.
-  - *Root cause:* a side that is not a multiple of the grid gives cells sharing whole border pixels, so cells carry uneven weight. Recording the `floor` split as an equivalent mutant hid this.
-  - *Fix:* weight border pixels by area. A prototype gives 38x30 0 of 40 over 10 (worst 5) and 91x81 worst 10. It does not rescue 37x29 or 17x13, where the half is close to the grid size, so ARQ-122 also needs a minimum size (`specifier`).
-- **W3**, class: `implementation`. FD-34 "regla de `Color` de 02 §3.4", alpha "con la regla de `f32` (bit a bit)". `filter.rs:93`.
-  - *Measured:* against `gafira_anim::Interpolate` with the same `t`, alpha differs in 16.6 % of cases at alpha ≥ 0.1 (up to 10 ulps) and 39 % below 0.1 (up to 140 ulps). RGB is within 4.77e-7 at alpha ≥ 0.1 and reaches 5.5e-6 below 0.01, over the 4.8e-7 of §3.4.
-  - *Root cause:* alpha is computed in `f64` and cut to `f32`, and it divides unrounded; `gafira-anim` computes it in `f32`. The `f64` result is more exact but is not the stated rule.
-  - *Fix:* compute `alpha` in `f32` as `a.a + (b.a - a.a) * t as f32` and divide by that value, with `t` passed as `f32`. Pin it with values taken from `gafira-anim`.
-- **W4**, class: `architecture`. ARQ-120 "Ejecutar por tiles con `roi` coincide con la imagen entera", 02 "Paralelismo de datos" (tiles belong to `gafira-render`). `view.rs:294`, `texture.rs:202`.
-  - *Measured:* the top-left 64x64 tile with Viñeta 80 differs from the whole image by 47/255, because the vignette centres on the tile.
-  - *Root cause:* `EffectCx` holds only `scale`, so an effect cannot know the image or where the tile sits. `Effect::run_cpu` says "on a whole image"; 02 only says so for `Transition` (SP23).
-  - *Fix, a decision:* add the image size and tile origin to `EffectCx`, or state in 02 that a `Texture` with Viñeta runs on whole images. It must be settled before `gafira-render` uses effects.
+- **W5**, class: `ambiguity`, follow-up. ARQ-122, FD-26. `palette.rs:172`.
+  - *Measured:* with more than five colours, a dropped colour moves its host. Five flats and a noisy mass give (177,193,51), a blend of green (30,160,60) and yellow (240,220,40), neither in the image. Six far flats give (91,91,91) from grey and black. Five greys give five entries, but one stray green pixel turns them into (125,125,125) x 5000. Six greys 100 to 160 give one entry.
+  - *Root cause:* no criterion covers more than five colours. The join came from the fix proposed in round 1, so areas are real and colours are not always.
+  - *Fix:* `specifier` states the rule, for example that a dropped colour joins only within ΔE 15 and otherwise leaves the list, with areas no longer adding up. Not a criterion broken today.
+- **W6**, class: `ambiguity`, follow-up. ARQ-122 at `1b159f9`.
+  - *Measured:* the amended bound says any image. On random pixel noise: 2x2 means reach 11 at 131x101 (4 of 40) and 157x139 (2 of 40); `build_mips` reaches 13 to 17 from 128 px on; nearest reaches 31 and bilinear 22 at 640 px and up. A 40-cell block picture via `build_mips` reaches 13 at 157x139 (1 of 40).
+  - *Root cause:* in noise, neighbouring cells have nearly equal means, so bits follow the sampling. No dHash can meet this, and the code is not the cause.
+  - *Fix:* exclude noise and fine random texture from the row, as ARQ-120 does with "suave".
+- **W7**, class: `implementation`, follow-up. New test gap. `dhash.rs:333`.
+  - *Measured:* M3, the `f32` arm without area weights, passes all 354 tests. `arq_122_dhash_rgba_f32_matches_rgba8` uses 36x32, a multiple of the grid. The code is right: W1 ran at 160x120.
+  - *Fix:* run that test at a size that is not a multiple, for example 131x101.
+- **W8**, class: `implementation`, follow-up. New test gap. `palette.rs:17`, `:21`.
+  - *Measured:* M4 (`MAX_CLUSTERS` 6) and M5 (`CLUSTER_DELTA_E` 25) pass all 354 tests. The cap and the upper side of the radius are unpinned.
+  - *Fix:* add a test with more flats than the cap over a noisy mass, and one with two colours at ΔE 20 among more than five.
+- **W9**, class: `claim`, follow-up. Four closure mutants not reapplied.
+  - *Measured:* C5 check removed, C1 dropped bins not joined, W4 vignette ignores `x0`, W1 old `f32` order. The behaviour is proved by the probes above, and `apply-progress.md` records each as killed, so only the kill by the tests is unconfirmed.
+  - *Root cause:* free disk fell from 24G to 19G in `df -h` during the run, mainly from another `gafira-text` build on the machine. The hygiene rule stops builds below 20 GB, so the run was stopped.
+  - *Fix:* covered by the T4 run at close, or reapply them when disk allows.
 
 ### SUGGESTION
 
-- **S1**, class: `implementation`. FD-33 (f). Claridad at 100 on a flat `f32` image changes 428 491 of 614 400 values by up to 2.09e-7, which is blur rounding and well under the ±1e-5 of (e). `Rgba8` is unchanged, and so is `f32` with Nitidez alone.
-- **S2**, class: `implementation`. FD-33 table: Intensidad "por defecto 60" lives nowhere in the crate. Making it not an effect is right, because (a) could not hold otherwise. *Fix:* a public constant.
-- **S3**, class: `implementation`. RS5 dev. 8: the median of an even count is the lower middle value. Two pixels 50 and 200 take 50. This matters only on very small images.
-- **S4**, class: `ambiguity`. FD-33 puts detected colours inside Color, before Textura. As a separate effect, that order is the caller's. *Fix:* one line in 02 §4.17.4, or a stack-order constant.
-- **S5**, class: `claim`. CPU time at 12 MP, one thread: Contraste 2 959 ms, Claridad 1 796 ms, detected colours 2 638 ms with 1 slot and 13 574 ms with 8. The budgets of FD-33 and FD-34 are outside the card, and preview is GPU, so this is information for `gafira-render`, not a miss. `powf` per pixel is the cost.
-- **S6**, class: `implementation`. `crates/gafira-raster/proptest-regressions/` is still untracked. Delete it before the merge.
-- **S7**, class: `implementation`. ARQ-110 says an unknown id "se conserva intacto"; `mix_params` drops it (`filter.rs:168`), unlike `resolve`. Output does not change. *Fix:* copy unknown ids through.
+- **S8**, class: `implementation`. New. `filter.rs:109`. When `t` rounds to 1 in `f32`, from intensity about 99.999997, `gafira-anim` returns the end colour and `lerp_color` computes it, so the space or last bits can differ (279 210 of the probe's cases aimed there). *Fix:* return `to` when `t == 1.0` and `from` when `t == 0.0`.
+- **S1, S3, S4, S5**: unchanged from round 1, open as notes.
+- **S6**: `proptest-regressions/` is still untracked. Delete it before the merge. All its seeds pass at HEAD.
 
-## Criteria
-
-| Criterion | Evidence | State |
-|---|---|---|
-| FD-33 (a) identity, switch off | `fd_33_a_*` (exhaustive over 32 896 pairs), probe | Covered |
-| FD-33 (d) idempotent | `fd_33_d_*`, probe (`Rgba8` and `f32` agree to 3e-6) | Covered; S2, S3 |
-| FD-33 (e) analytic values | `fd_33_e_*`, probe: all exact to 1e-7; random sliders against an `f64` reference within 2.4e-7 | Covered |
-| FD-33 (f) alpha, flat, centre, invert twice | `fd_33_f_*`; probe: every (c, a) inverts back with difference 0, alpha kept | Covered; S1 |
-| FD-33 (g) eyedropper | `fd_33_g_*`; probe: 113 064 greys, 8-bit spread 0 | Covered |
-| FD-33 (h) bad parameters | `fd_33_h_*`, probe | Covered |
-| FD-33 Orden de cálculo, Textura | Tests pin the wrong order | **Failing, C4** |
-| FD-33 detected colours | `fd_33_detected_*`, probe | Covered; S4 |
-| ARQ-122 five flat colours in area order | `arq_122_five_flat_colours_in_order_of_area` | **Failing on close colours, C2** |
-| ARQ-122 two colours, two entries | `arq_122_two_colours_give_two_entries` | **Failing on close colours, C2** |
-| ARQ-122 transparent image | `arq_122_transparent_and_empty_images_give_an_empty_list` | Covered |
-| ARQ-122 dHash half | `arq_122_dhash_an_image_and_its_half_are_similar`, probe | Covered from 128 px; W1, W2 |
-| ARQ-122 dHash noise | `arq_122_dhash_noise_with_different_seeds_is_not_similar`; probe minimum 20 | Covered |
-| FD-26 palette | Tests above | **Failing, C1** |
-| FD-28 (b) resized image | Probe: at most 4 at 73 % and at 25 %, from 640 px up | Covered; W2 |
-| FD-34 (a) thumbnail | `fd_34_a_*`; probe with translucent blocks, intensities 50 and 100, both formats: difference 0 | Covered |
-| FD-34 (b) | `fd_34_b_*` | **Failing at intensity 0, C3**; rest covered; W3 |
-| FD-34 preset mechanism, test preset | `fd_34_the_test_preset_*`, `fd_34_errors_*`; probe: overflow in step 2 and a bad value leave `dst` untouched | Covered |
-| ARQ-114 `bench_dhash_12mp` | `benches/dhash.rs`, run on the export: 9.4 ms against 100 ms | Covered |
-| ARQ-110 | Tables, property, extremes for the new effects | **Missing, C6; failing, C5** |
-| ARQ-111 | `arq_111_*` per operation; no threads in the crate | Covered |
-| W7 of RS4 (`5dca6d4`) | `arq_120_half_size_tinted_rgba_f32_*`, `arq_120_half_size_translucent_tinted_rgba8_*`, against the amended bound of `b9a7442` | Closed |
-| S4 of RS4 (`5dca6d4`) | `blur.rs:4`, `:374` cite FD-08 | Closed |
-
-Product IDs left out, as the card says: FD-33 (b, c), FD-34 (c).
+The `Rgba8` run of Nitidez then Claridad as two separate calls differs from one call by up to 152/255. That is the clip between two 8-bit calls, not the order; the one-call result is what FD-33 asks for, so it is not a finding.
 
 ## Mutants
 
-No `cargo-mutants` run (`mutation: archive`). All on a scratch export. The baseline is 320 passed.
+Closure round, on a scratch export, baseline 354 passed in the `gafira-raster` lib.
 
-**Sample of the recorded list.** 8 drawn at random, seed 20261102, from 22 concrete items that stand for the RS5 and RS6 tables. All 8 are killed by the test the record names or one of its family, so the record holds up: Int `floor`, Contraste without the clip, merge 60, a hue coefficient, Luces edge 0.4, `SIMILAR_DISTANCE` 11, temperature `/ 100`, `alpha < 0`.
+| # | Mutant | Result |
+|---|---|---|
+| M1 | W3 alpha as `a(1 - t) + b t` in `f32` | Killed, `fd_34_b_color_blend_is_the_interpolation_of_02_3_4_bit_for_bit` |
+| M2 | W3 divide by the unrounded `f64` alpha | Killed, same test |
+| M3 | dHash `f32` arm only, no area weights | **Survives, W7** |
+| M4 | Palette `MAX_CLUSTERS` 6 | **Survives, W8** |
+| M5 | Palette `CLUSTER_DELTA_E` 25 | **Survives, W8** |
+| M6 | Palette exact list, smallest area first | Killed, 7 tests |
+| G1, G2, G3 | Round 1 survivors | Killed |
+| C3, C4 (2) | Copy removed, input luma, `roi` max | Killed |
 
-**Independent.**
+12 run, 9 killed, 3 survivors, all new test gaps. 4 not run: W9.
 
-| # | Delivery | Mutant | Result |
-|---|---|---|---|
-| I1 | RS5 | Saturación before Tono | Killed, `fd_33_detected_*` and color tests |
-| I2 | RS5 | Viñeta before Claridad | Killed by the Textura reference tests |
-| I3 | RS5 | Negros from linear `Y`, not `v_Y` | Killed, `fd_33_d_whites_and_blacks_*` |
-| I4 | RS5 | Vitalidad spread read before Tono | Killed by the color reference tests |
-| I5 | RS5 | `check_io` skips the alpha channel | Killed, `arq_110_*_non_finite_scale_and_pixels_are_err` |
-| I6 | RS6 | Every step reads `src`, no chaining | Killed, `fd_34_b_intensity_100_runs_the_preset_in_order` |
-| I7 | RS6 | Empty preset leaves `dst` unwritten | Killed, `fd_34_errors_leave_dst_untouched` |
-| I8 | RS6 | dHash cell areas crossed | Killed, `arq_122_dhash_odd_sizes_*` and two more |
-| I9 | RS6 | Palette check skips alpha 0 pixels | Killed, `arq_110_palette_*` |
-| I10 | RS6 | Preset not validated at intensity 0 | Killed, `fd_34_b_a_preset_value_out_of_range_is_err` |
-| I11 | RS6 | Slot Saturación before Tono | Killed, `fd_33_detected_*` |
-| I12 | RS6 | dHash `f32` without the transfer curve | Killed, `arq_122_dhash_channel_weights` |
-| G1 | RS5 | `px * work` in `Texture::cost_hint` | **Survives, C6** |
-| G2 | RS5 | `assert!` finite scale in `Texture::roi` | **Survives, C6** |
-| G3 | RS6 | `DetectedColors` differs on an unknown id | **Survives, C6** |
+## Criteria
+
+23 of 23 covered at HEAD, the six rows that failed in round 1 included. The dHash half row is covered within the domain W6 proposes. Product IDs left out, as the card says: FD-33 (b, c), FD-34 (c).
+
+## Cleanup
+
+The export's build folder is cleaned. The export's source stays under `exp/` beside this report, because `rm -rf` is denied. Free disk at the end: 19G, in `df -h`, with the other build still running.
 
 ## Next
 
-RS5 and RS6 do not pass; nothing merges. C1 to C6 and W1 to W3 go to `tdd-apply`. W4 needs its decision first, and the minimum size in W2 goes to `specifier` with it. T4 stays owed at close.
+RS5 and RS6 pass and may merge. T4 is owed at close, and W5 to W9 go to the follow-up list.
 
-next: architect (W4), then tdd-apply (implementation)
+next: archive
