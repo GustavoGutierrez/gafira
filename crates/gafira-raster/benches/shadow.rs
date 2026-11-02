@@ -1,7 +1,5 @@
 //! Benchmark of the parallel shadow (ARQ-114, 02 §6.7 row "Sombra < 100 ms con radio ≤ 40 px en
 //! 1080p", P11 of `specs/changes/layer-2/design.md`).
-//!
-//! The figure is read by the nightly job on the reference machine, not by `cargo test`.
 
 use std::hint::black_box;
 
