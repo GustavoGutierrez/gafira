@@ -274,3 +274,130 @@ fn arq_125_a_band_omitted_at_the_new_rate_does_nothing_after_prepare() {
     run(&mut e, &mut out, &ParamSnapshot::new());
     assert_eq!(bits(&out), bits(&[input]));
 }
+
+/// `tail()` after one block that carries the gains.
+fn tail_with(rate: u32, gains: [f64; 3]) -> u32 {
+    let mut e = eq(rate, 64, 1);
+    let mut block = vec![vec![0.0_f32; 8]];
+    run(&mut e, &mut block, &snapshot(gains[0], gains[1], gains[2]));
+    e.tail()
+}
+
+#[test]
+fn arq_125_tail_is_forty_milliseconds_in_frames_with_a_band_active() {
+    for (rate, want) in [
+        (44_100, 1_764),
+        (48_000, 1_920),
+        (96_000, 3_840),
+        (44_101, 1_765),
+        (u32::MAX, 171_798_692),
+    ] {
+        assert_eq!(tail_with(rate, [0.0, 6.0, 0.0]), want, "fs {rate}");
+        assert_eq!(tail_with(rate, [-15.0, 0.0, 0.0]), want, "low, fs {rate}");
+    }
+}
+
+#[test]
+fn arq_125_tail_is_zero_without_an_active_band() {
+    for rate in [44_100, 48_000, 96_000] {
+        assert_eq!(tail_with(rate, [0.0, 0.0, 0.0]), 0, "0 dB, fs {rate}");
+        assert_eq!(tail_with(rate, [-0.0, -0.0, -0.0]), 0, "-0 dB, fs {rate}");
+    }
+    assert_eq!(Eq3Band::new().tail(), 0, "not prepared");
+    assert_eq!(tail_with(0, [6.0, 6.0, 6.0]), 0, "sample_rate 0");
+    assert_eq!(tail_with(16_000, [0.0, 0.0, 6.0]), 0, "only high at 16 kHz");
+    assert_eq!(tail_with(16_001, [0.0, 0.0, 6.0]), 641, "high at 16 001 Hz");
+}
+
+#[test]
+fn arq_125_tail_follows_the_last_valid_gain() {
+    // A snapshot with no value, or a non-finite one, leaves the last valid
+    // gain, and so the tail that gain gives.
+    let mut e = eq(48_000, 64, 1);
+    let mut block = vec![vec![0.0_f32; 8]];
+    run(&mut e, &mut block, &snapshot(0.0, 6.0, 0.0));
+    run(&mut e, &mut block, &ParamSnapshot::new());
+    assert_eq!(e.tail(), 1_920);
+    run(&mut e, &mut block, &snapshot(0.0, f64::NAN, 0.0));
+    assert_eq!(e.tail(), 1_920);
+    run(&mut e, &mut block, &snapshot(0.0, 0.0, 0.0));
+    assert_eq!(e.tail(), 0);
+}
+
+#[test]
+fn arq_125_tail_is_kept_by_reset_prepare_at_the_same_rate_and_a_refused_block() {
+    let mut e = eq(48_000, 64, 1);
+    let mut block = vec![vec![0.0_f32; 8]];
+    run(&mut e, &mut block, &snapshot(0.0, 6.0, 0.0));
+    e.reset();
+    assert_eq!(e.tail(), 1_920, "reset");
+    e.prepare(48_000, 64, 1);
+    assert_eq!(e.tail(), 1_920, "prepare at the same fs");
+    // Refused blocks (above max_block, two channels) carry other gains.
+    let mut big = vec![vec![0.0_f32; 65]];
+    run(&mut e, &mut big, &snapshot(0.0, 0.0, 0.0));
+    let mut two = vec![vec![0.0_f32; 8], vec![0.0_f32; 8]];
+    run(&mut e, &mut two, &snapshot(0.0, 0.0, 0.0));
+    assert_eq!(e.tail(), 1_920, "refused blocks");
+    // A band at 0 dB stays inactive through the same steps.
+    let mut off = eq(48_000, 64, 1);
+    off.reset();
+    off.prepare(48_000, 64, 1);
+    let mut refused = vec![vec![0.0_f32; 65]];
+    run(&mut off, &mut refused, &snapshot(0.0, 6.0, 0.0));
+    assert_eq!(off.tail(), 0, "a refused block does not activate a band");
+}
+
+#[test]
+fn arq_125_after_an_impulse_every_sample_from_tail_is_below_1e_6() {
+    for rate in [44_100_u32, 48_000, 96_000] {
+        for low in [-15.0, 0.0, 15.0] {
+            for mid in [-15.0, 0.0, 15.0] {
+                for high in [-15.0, 0.0, 15.0] {
+                    if low == 0.0 && mid == 0.0 && high == 0.0 {
+                        continue;
+                    }
+                    let mut e = eq(rate, 8_192, 1);
+                    let params = snapshot(low, mid, high);
+                    let mut out = impulse(8_192);
+                    run(&mut e, &mut out, &params);
+                    let tail = e.tail() as usize;
+                    assert!(tail > 0 && tail < 8_192);
+                    let worst = out[0][tail..].iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+                    assert!(
+                        worst < 1e-6,
+                        "fs {rate} gains {low} {mid} {high}: {worst} after frame {tail}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn arq_125_a_gain_change_applies_from_sample_0_of_the_block_that_carries_it() {
+    for rate in [44_100_u32, 48_000, 96_000] {
+        let tone = |from: usize| -> Vec<f32> {
+            (0..256)
+                .map(|i| {
+                    let t = (from + i) as f64 / f64::from(rate);
+                    (0.5 * (2.0 * PI * 1_000.0 * t).sin()) as f32
+                })
+                .collect()
+        };
+        let mut e = eq(rate, 256, 1);
+        let mut reference = Reference::new(f64::from(rate));
+        let mut first = vec![tone(0)];
+        run(&mut e, &mut first, &snapshot(0.0, 0.0, 0.0));
+        reference.process(&tone(0), [0.0, 0.0, 0.0]);
+        let mut second = vec![tone(256)];
+        run(&mut e, &mut second, &snapshot(0.0, 15.0, 0.0));
+        let want = reference.process(&tone(256), [0.0, 15.0, 0.0]);
+        for (i, (g, w)) in second[0].iter().zip(&want).enumerate() {
+            assert!(
+                (f64::from(*g) - w).abs() <= 1e-6,
+                "fs {rate} sample {i}: got {g}, want {w}"
+            );
+        }
+    }
+}

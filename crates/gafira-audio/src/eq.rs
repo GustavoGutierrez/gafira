@@ -157,6 +157,12 @@ impl Band {
         }
     }
 
+    /// True when the band changes the signal at `sample_rate`: its centre is
+    /// below `fs / 2` and the last valid gain is not 0 dB.
+    fn is_active(&self, sample_rate: u32) -> bool {
+        u64::from(self.centre_hz) * 2 < u64::from(sample_rate) && self.gain.value() != 0.0
+    }
+
     fn design(&mut self, sample_rate: u32) {
         self.coefficients =
             Coefficients::design(self.kind, self.centre_hz, sample_rate, self.designed_db);
@@ -253,6 +259,18 @@ impl AudioProcessor for Eq3Band {
                 }
                 *sample = clean_output(v);
             }
+        }
+    }
+
+    /// `ceil(0.04 × fs)` frames with a band active, else 0: the ring-down is
+    /// below −120 dB by then. Integer arithmetic keeps it exact.
+    fn tail(&self) -> u32 {
+        let fs = self.setup.sample_rate;
+        if self.bands.iter().any(|b| b.is_active(fs)) {
+            // fs ≤ u32::MAX, so ceil(4 fs / 100) fits in a u32.
+            u32::try_from((u64::from(fs) * 4).div_ceil(100)).unwrap_or(u32::MAX)
+        } else {
+            0
         }
     }
 
