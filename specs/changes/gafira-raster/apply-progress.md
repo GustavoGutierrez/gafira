@@ -250,3 +250,46 @@ The stubs, in full, and what came after the code:
 
 Deviations of this round: `proptest-regressions/` is untracked again and not committed (S3 is the coordinator's decision); XP13 on this machine reads 161 ms, so the table of O5 stays as the design records it. Lines: `git diff --shortstat dc6fced..HEAD -- crates/gafira-raster`.
 
+## RS3b
+
+Branch `feat/gafira-raster` (merged at fadac62 plus this work). Commits: bbd49c5 (Slide, W6), 3b316f6 (Wipe), f78c829 (Zoom). Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone, and checked before each commit. `gafira-raster` tests: 104 to 130. Order per transition: the stub, the tests, RED, the code. The stub of each is stated exactly in its commit body.
+
+### Done
+
+- `Slide`, `Wipe`, `Zoom` in `gafira_raster::transitions`, each with the id, name key, version and `HandleReq::Both` of the 02 §4.13 table; every schema passes `validate_definition` in its own test (C12) with the ids, kinds, defaults, option labels and `animatable: false` of the table.
+- Slide: `d = round((1 - p) * side)` in `f64` (halves away from zero), `left` shows `to(x - d)` for `x >= d`, `right` shows `to(x + d)` for `x < W - d`, `up` and `down` on `y` with the height; replaces pixels.
+- Wipe: `m = clamp((p (1 + s) - u) / s, 0, 1)`, `u < p` at `s = 0` with no division, `u` at the pixel centre, circular from `(W / 2, H / 2)` over half the diagonal; defaults `right` and `0`.
+- Zoom: `in` (`from` `1 + p`, `to` `(1 + p) / 2`) and `out` (`1 - p / 2`, `2 - p`), pivot `(W / 2, H / 2)`, `s = c + (x + 0.5 - c) / scale - 0.5`, four taps on premultiplied channels, edge clamp, 8 samples in one call of the shared mix.
+- W6: `the_f64_curves_agree_with_the_analytic_transform` sweeps `encode_f64` and `decode_f64` against `AnalyticTransform` from -2 to 3 with the joins inside, plus oddness and round trip.
+- `guard.rs`: `Frames` and `render` for transitions that read pixels at other positions.
+
+### RED per criterion (stubs as in the commit bodies)
+
+| Criterion | Failing test |
+|---|---|
+| Slide table, bad direction, 10x4 acceptance, rounding, replace, f32 bits | `slide_has_the_identity_and_schema_of_the_table`, `arq_110_slide_rejects_an_unknown_direction`, `arq_118_slide_acceptance_rows_on_10_by_4`, `arq_118_slide_offset_rounds_half_away_from_zero`, `arq_118_slide_replaces_and_does_not_composite`, `arq_118_slide_copies_f32_pixels_bit_for_bit` |
+| Wipe | `wipe_has_the_identity_and_schema_of_the_table`, `arq_110_wipe_rejects_bad_parameters_before_writing`, `arq_118_wipe_acceptance_rows_on_4_by_2`, `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre`, `arq_118_wipe_soft_edge_values`, `arq_118_wipe_matches_the_criterion_for_every_direction`, `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_defaults_are_right_and_hard`, `arq_118_wipe_hard_edge_copies_pixels_and_soft_edge_mixes_premultiplied`, `arq_118_wipe_soft_stays_within_1_255_of_the_ends_near_them` |
+| Zoom | `zoom_has_the_identity_and_schema_of_the_table`, `arq_110_zoom_rejects_an_unknown_direction`, `arq_118_zoom_ramp_values_for_in_and_out`, `arq_118_zoom_pivot_is_the_continuous_centre`, `arq_118_zoom_filters_premultiplied_values`, `arq_118_zoom_matches_the_criterion_tap_by_tap`, `arq_118_zoom_out_mirrors_zoom_in` |
+
+Not RED, proved by mutants: the six transitions in the generic tests of `mod.rs` (ends, sizes, formats, pixels, determinism; any copy of `from` satisfies them), `arq_118_wipe_ends_are_exact_with_any_softness`, `arq_118_zoom_constant_images_stay_constant_and_opaque_images_opaque`, and W6.
+
+### Hand mutants (killed unless noted)
+
+| Mutants | Killed by |
+|---|---|
+| Slide: `from` moves; offset floor, ceil, half-even; `(1 - p)` reversed; `d` on the wrong axis (width for all, height for all); `x > d`; `right` off by one; up and down swapped; left and right swapped; default `right`; composite instead of replace | the slide tests above |
+| Wipe: `u` not at the centre; `s = 0` with `<=`; no `s = 0` branch (division by 0, NaN at `u == p`); half diagonal as the full one or the longer side; circular centre off; left, down, up wrong; softness default 0.5; direction default `left`; weights swapped; `(1 + s)` dropped; no low clamp; end copy swapped; entropy | the wipe tests, `arq_118_ends_are_exact_copies_for_every_transition` |
+| Zoom: `in` and `out` ranges reversed; each scale wrong; pivot at the index centre or the origin; no `+ 0.5`; no `- 0.5`; scale multiplied instead of divided; nearest instead of bilinear; tap weights swapped; edge transparent (out-of-range tap) instead of clamp; straight (unpremultiplied) filtering; `from` and `to` weights swapped; default `out`; entropy | the zoom tests; the edge-transparent mutant also fails the generic tests (an out-of-range index panics) |
+| W6: `encode_f64` threshold, decode slope, encode offset | `the_f64_curves_agree_with_the_analytic_transform` |
+
+Equivalent survivor: the decode join `0.04045` moved to `0.04` (the curve is continuous there; the change is below the 1e-5 of the test). Ends: the guard copies at 0 and 1 for all six; Slide and Zoom depend on them (no mix reaches the exact end), and the tests fail if they are removed.
+
+### Deviations and assumptions
+
+1. P15 item 3 leaves open what happens to `to` pixels exactly at `p` near 0 for Zoom (no near-end bound is stated for Zoom, Slide, or hard Wipe, only for Dissolve, Fade and soft Wipe); I tested none. A 1080p frame sampled at `p = 0.0001` moves up to about 0.1 pixel.
+2. The test reference for bytes uses `weighted_u8_in` with the taps written in the test, so it checks geometry and weights, not the mixing space (O5).
+3. `Slide` with `lado` 1 and `p` below 0.5 shows `from` entirely (d = 1), above shows `to` (d = 0).
+4. `proptest-regressions/` is untracked and not committed.
+
+Lines: `git diff --shortstat fadac62..HEAD -- crates/gafira-raster`.
+
