@@ -6,8 +6,8 @@ Evidence: 02 §4.17, §6.3, §7.3, §14.2, ADR 0005, ADR 0007, `crates/gafira-do
 
 ## Quick path
 
-1. Owner confirms ADR 0012 (O1), or D3 and D2b stay provisional.
-2. Coordinator runs `explorer` for XP1, then records the G0 entry with the "Acceptance" list below.
+1. ADR 0012 is accepted (O1, resolved) and XP1 is confirmed.
+2. Coordinator records the G0 entry with the "Acceptance" list below.
 3. `tdd-apply` runs D1. Then D2a and D2b in order, and D3 in parallel in its own worktree.
 
 Flow line: `Flow: full | level: L2 | new capability | mutation: archive | T4 | V2 | decided-by: owner | reason: parallel deliveries in layer 2`.
@@ -26,7 +26,7 @@ Flow line: `Flow: full | level: L2 | new capability | mutation: archive | T4 | V
 
 | # | Open point | Decision |
 |---|---|---|
-| C1 | `msg!` body and check | `macro_rules!` at the crate root; a `const` assertion over `msg::is_valid_key` (provisional, XP1) |
+| C1 | `msg!` body and check | `macro_rules!` at the crate root; a `const` assertion over `msg::is_valid_key` (XP1 confirmed) |
 | C2 | Key grammar | Two or three dot-separated segments, each `[a-z][a-z0-9_]*`, from 02 §14.2 |
 | C3 | `Progress` methods | One method, `report(&self, fraction: f32)`; `Send + Sync` supertraits |
 | C4 | `CancelToken` shape | `Arc<AtomicU64>` plus the generation the handle is bound to |
@@ -385,7 +385,7 @@ Short form. ADR 0012 holds the cross-cutting part of C5 and C11.
 
 ### C1. `msg!` and its check
 
-- Status: provisional until XP1.
+- Status: decided; XP1 confirmed it.
 - Options: (a) `macro_rules!` with a const check; (b) a proc-macro crate; (c) no check, leaving it to `xtask check-i18n`.
 - Decision: (a). It fails at compile time, needs no new crate, and the check is a plain `const fn` that unit tests can call. `xtask` does not exist yet, so (c) checks nothing today. (b) adds a crate, a V5 row and `syn`.
 - `MessageKey("...")` stays public: 21 distinct keys use it today (`git grep` over `crates`), and `const` labels need it. That conflicts with "única forma" in 02:1889 (SP2).
@@ -441,10 +441,10 @@ Mode rule: D2a and D2b share `contract/mod.rs` and `lib.rs`. D3 touches only `ga
 
 | Delivery | Scope | Specs covered | Depends on | Mode | Est. lines |
 |---|---|---|---|---|---|
-| D1 | `msg` types, `is_valid_key`, `msg!`; `IRect` | ARQ-102 (types), ARQ-107 | XP1 | serial | 370 (x1.4: 520) |
+| D1 | `msg` types, `is_valid_key`, `msg!`; `IRect` | ARQ-102 (types), ARQ-107 | None | serial | 370 (x1.4: 520) |
 | D2a | `contract`: `Describe`, `Descriptor`, `AudioCrossfade`, params, `ParamError` | ARQ-98 (labels), ARQ-110 (params) | D1 | serial | 360 (x1.4: 505) |
-| D2b | `CancelToken`, `Cancelled`, `Progress`, `NoProgress`, `checkpoint`, `gafira_testkit::progress` | ARQ-112 (on doubles) | D2a, O1 | serial | 270 (x1.4: 380) |
-| D3 | `ToMessage` for both errors; `gafira-pathops -> gafira-doc`; V5 row `gafira-pathops gafira-geom gafira-color gafira-doc` | ARQ-102 (engines) | D1, O1 | parallel | 200 (x1.4: 280) |
+| D2b | `CancelToken`, `Cancelled`, `Progress`, `NoProgress`, `checkpoint`, `gafira_testkit::progress` | ARQ-112 (on doubles) | D2a | serial | 270 (x1.4: 380) |
+| D3 | `ToMessage` for both errors; `gafira-pathops -> gafira-doc`; V5 row `gafira-pathops gafira-geom gafira-color gafira-doc` | ARQ-102 (engines) | D1 | parallel | 200 (x1.4: 280) |
 
 Total forecast 1 200 lines (x1.4: 1 685). D3 merges in any order relative to D2a and D2b. The V5 row, the `Cargo.toml` line and `Cargo.lock` land in one commit (ADR 0007).
 
@@ -483,13 +483,13 @@ Hand mutants and T4 apply. T4 at close: `gafira-doc`, `gafira-geom`, `gafira-pat
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| O1 | Accept ADR 0012? | (a) Accept. (b) Keep `Text` out of technical identifiers. (c) One unrelated `Cancelled` per enum | (a). It fixes the key rule that every later crate copies, so changing it later touches every error table |
+| O1 | Accept ADR 0012? | (a) Accept. (b) Keep `Text` out of technical identifiers. (c) One unrelated `Cancelled` per enum | Resolved: (a), owner confirmation 2026-11-01 |
 
 ## Needs explorer
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
-| XP1 | `msg!` above compiles from a second crate; a `const _` assertion over `is_valid_key` rejects a bad literal; `use gafira_doc::msg;` brings module and macro; `clippy -D warnings` is clean with 0 arguments; a `compile_fail` doctest runs under `cargo test` | Two-crate scratch workspace on 1.93.1. My own scratch probe was refused by the permission system, so this is unmeasured | D1 (C1 is provisional) |
+| XP1 | `msg!` above compiles from a second crate, and a `const _` assertion over `is_valid_key` rejects a bad literal | Measured and confirmed on rustc 1.93.1: consumer crate build exit 0; a bad key gives E0080, build exit 101; the `compile_fail` doctest passes; clippy with the repo lints exit 0; no author message text in the macro | Nothing |
 
 ## Needs specifier
 
@@ -503,4 +503,4 @@ SP numbers are shared with `specs/changes/layer-2/design.md`.
 
 ## Next
 
-Ask O1, run XP1, then `tdd-apply` for D1.
+`tdd-apply` for D1.
