@@ -166,12 +166,15 @@ fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
             .all(char::is_whitespace)
     };
     let keep = logical.len() - logical.iter().rev().take_while(|i| is_space(i)).count();
-    let trailing = &logical[keep..];
+    let mut trailing = vec![false; clusters.len()];
+    for i in &logical[keep..] {
+        trailing[*i] = true;
+    }
     clusters
         .iter()
-        .enumerate()
-        .filter(|(i, _)| !trailing.contains(i))
-        .map(|(_, c)| c.advance)
+        .zip(&trailing)
+        .filter(|(_, t)| !**t)
+        .map(|(c, _)| c.advance)
         .sum()
 }
 
