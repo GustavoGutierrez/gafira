@@ -12,6 +12,7 @@ static OP: Descriptor = Descriptor::new("test.op", MessageKey("test.op"), 1);
 struct Op {
     double: bool,
     latency: u32,
+    tail: u32,
 }
 
 impl Describe for Op {
@@ -32,11 +33,18 @@ impl AudioProcessor for Op {
     fn latency(&self) -> u32 {
         self.latency
     }
+    fn tail(&self) -> u32 {
+        self.tail
+    }
     fn reset(&mut self) {}
 }
 
 fn op(double: bool, latency: u32) -> Box<dyn AudioProcessor> {
-    Box::new(Op { double, latency })
+    Box::new(Op {
+        double,
+        latency,
+        tail: 0,
+    })
 }
 
 fn run(p: &mut dyn AudioProcessor, chans: &mut [Vec<f32>], params: &ParamSnapshot) {
@@ -80,13 +88,49 @@ fn arq_129_a_latency_sum_that_overflows_saturates_without_panic() {
 }
 
 #[test]
-fn arq_129_an_empty_chain_changes_nothing() {
+fn arq_123_an_empty_chain_cleans_the_block_and_keeps_normal_samples() {
+    // Prepared and not prepared alike: an empty chain is still a processor.
+    for prepared in [true, false] {
+        let mut chain = ProcessorChain::new();
+        assert!(chain.is_empty());
+        if prepared {
+            chain.prepare(48_000, 64, 1);
+        }
+        let tiny = f32::MIN_POSITIVE * 0.5;
+        let mut b = vec![vec![
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            tiny,
+            -tiny,
+            0.5,
+            -0.25,
+        ]];
+        run(&mut chain, &mut b, &ParamSnapshot::new());
+        assert_eq!(
+            b[0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.5, -0.25],
+            "{prepared}"
+        );
+    }
+}
+
+#[test]
+fn arq_129_the_tail_of_a_chain_is_the_sum_and_saturates() {
+    let with_tail = |tail| -> Box<dyn AudioProcessor> {
+        Box::new(Op {
+            double: true,
+            latency: 0,
+            tail,
+        })
+    };
     let mut chain = ProcessorChain::new();
-    assert!(chain.is_empty());
-    chain.prepare(48_000, 64, 1);
-    let mut b = vec![vec![f32::NAN, 0.5]];
-    run(&mut chain, &mut b, &ParamSnapshot::new());
-    assert!(b[0][0].is_nan() && b[0][1] == 0.5);
+    assert_eq!(chain.tail(), 0);
+    chain.push(with_tail(7));
+    chain.push(with_tail(11));
+    assert_eq!(chain.tail(), 18);
+    chain.push(with_tail(u32::MAX));
+    assert_eq!(chain.tail(), u32::MAX);
 }
 
 #[test]
@@ -97,10 +141,10 @@ fn arq_129_prepare_and_reset_reach_every_processor() {
     let mut p = ParamSnapshot::new();
     p.set(PARAM_VOLUME, 0.0);
 
-    // Not prepared: the block stays as it is.
+    // Not prepared: nothing is processed, the block is only cleaned.
     let mut b = vec![vec![f32::NAN; 4], vec![1.0; 4]];
     run(&mut chain, &mut b, &p);
-    assert!(b[0][0].is_nan() && b[1][0] == 1.0);
+    assert!(b[0][0] == 0.0 && b[1][0] == 1.0);
 
     // Prepared: a ramp runs in the gain; reset ends it at its target.
     chain.prepare(48_000, 64, 2);

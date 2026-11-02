@@ -13,13 +13,26 @@ pub(crate) struct Setup {
 
 impl Setup {
     /// True when the block may be processed. A `prepare` with a 0, a block
-    /// above `max_block` or channels of different lengths leave it intact.
+    /// above `max_block`, channels of different lengths or a channel count
+    /// other than the prepared one make `process` only clean it (ARQ-123).
     /// With `max_block == 0` every non-empty block is above it.
     pub fn accepts(&self, block: &AudioBlock<'_>) -> bool {
         self.sample_rate != 0
             && self.channels != 0
+            && block.channels.len() == usize::from(self.channels)
             && block.is_uniform()
             && block.frames() <= self.max_block
+    }
+}
+
+/// What `process` does to a block it does not process: NaN, `±∞` and
+/// subnormals become 0, every other sample stays as it is. Each channel is
+/// cleaned over its own length.
+pub(crate) fn clean_block(block: &mut AudioBlock<'_>) {
+    for channel in block.channels.iter_mut() {
+        for sample in channel.iter_mut() {
+            *sample = clean_output(f64::from(clean_input(*sample)));
+        }
     }
 }
 

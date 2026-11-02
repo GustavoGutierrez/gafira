@@ -3,7 +3,7 @@
 use gafira_doc::contract::{Describe, Descriptor};
 use gafira_doc::msg::MessageKey;
 
-use crate::dsp::{Param, Setup, clean_input, clean_output};
+use crate::dsp::{Param, Setup, clean_block, clean_input, clean_output};
 use crate::error::finite;
 use crate::{AudioBlock, AudioError, AudioProcessor, ParamSnapshot};
 
@@ -101,6 +101,7 @@ impl AudioProcessor for Gain {
 
     fn process(&mut self, block: &mut AudioBlock<'_>, params: &ParamSnapshot) {
         if !self.setup.accepts(block) {
+            clean_block(block);
             return;
         }
         let target = self.volume.read(params) / 100.0;

@@ -5,7 +5,7 @@ use std::f64::consts::{PI, SQRT_2};
 use gafira_doc::contract::{AudioCrossfade, Describe, Descriptor};
 use gafira_doc::msg::MessageKey;
 
-use crate::dsp::{Param, Setup, clean_input, clean_output};
+use crate::dsp::{Param, Setup, clean_block, clean_input, clean_output};
 use crate::error::finite;
 use crate::{AudioBlock, AudioError, AudioProcessor, ParamSnapshot};
 
@@ -75,6 +75,7 @@ impl AudioProcessor for Pan {
 
     fn process(&mut self, block: &mut AudioBlock<'_>, params: &ParamSnapshot) {
         if !self.setup.accepts(block) {
+            clean_block(block);
             return;
         }
         let position = self.pan.read(params);

@@ -3,6 +3,7 @@
 use gafira_doc::contract::{Describe, Descriptor};
 use gafira_doc::msg::MessageKey;
 
+use crate::dsp::clean_block;
 use crate::{AudioBlock, AudioProcessor, ParamSnapshot};
 
 static DESCRIPTOR: Descriptor = Descriptor::new("audio.chain", MessageKey("audio.chain"), 1);
@@ -53,6 +54,10 @@ impl AudioProcessor for ProcessorChain {
     }
 
     fn process(&mut self, block: &mut AudioBlock<'_>, params: &ParamSnapshot) {
+        if self.processors.is_empty() {
+            // An empty chain is still a processor: ARQ-123 holds for it.
+            clean_block(block);
+        }
         for processor in &mut self.processors {
             processor.process(block, params);
         }
@@ -62,6 +67,12 @@ impl AudioProcessor for ProcessorChain {
         self.processors
             .iter()
             .fold(0, |sum, p| sum.saturating_add(p.latency()))
+    }
+
+    fn tail(&self) -> u32 {
+        self.processors
+            .iter()
+            .fold(0, |sum, p| sum.saturating_add(p.tail()))
     }
 
     fn reset(&mut self) {

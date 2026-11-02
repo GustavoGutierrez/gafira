@@ -79,7 +79,7 @@ fn arq_124_pan_follows_the_minus_three_db_law_over_the_whole_range() {
 fn arq_124_pan_changes_nothing_on_a_block_that_is_not_stereo() {
     for channels in [1_usize, 3] {
         let mut p = Pan::new();
-        p.prepare(48_000, 64, 3);
+        p.prepare(48_000, 64, channels as u16);
         let mut b: Vec<Vec<f32>> = (0..channels).map(|c| vec![0.25 + c as f32; 4]).collect();
         let before = b.clone();
         run(&mut p, &mut b, &snap(-1.0));
@@ -105,7 +105,7 @@ fn arq_123_pan_out_of_range_is_clipped_and_non_finite_is_ignored() {
 #[test]
 fn arq_123_pan_cleans_non_finite_samples_on_any_block() {
     let mut p = Pan::new();
-    p.prepare(48_000, 64, 2);
+    p.prepare(48_000, 64, 1);
     let mut mono = vec![vec![f32::NAN, f32::INFINITY, 0.5]];
     run(&mut p, &mut mono, &snap(0.3));
     assert_eq!(mono[0], vec![0.0, 0.0, 0.5]);

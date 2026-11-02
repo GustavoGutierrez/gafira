@@ -6,7 +6,7 @@ pub const MAX_PARAMS: usize = 16;
 /// A planar block: one slice per channel.
 ///
 /// The slices are expected to have equal lengths. A block whose slices differ
-/// is invalid, and every processor leaves it untouched.
+/// is not processed: `process` only cleans it (ARQ-123).
 #[derive(Debug)]
 pub struct AudioBlock<'a> {
     /// One slice per channel.

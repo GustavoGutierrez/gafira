@@ -10,7 +10,10 @@ use crate::{AudioBlock, ParamSnapshot};
 /// never allocates. A NaN or infinite sample counts as 0, a non-finite
 /// parameter is ignored (the last valid one stays), an out-of-range parameter
 /// is clipped, and no output sample is non-finite or subnormal. If `prepare`
-/// got a 0, or the block is larger than `max_block`, the block is left intact.
+/// got a 0, the block is larger than `max_block`, its channels differ in
+/// length or their number is not the prepared one, `process` does not process
+/// the block and its state does not change: it only sets NaN, `±∞` and
+/// subnormals to 0.
 pub trait AudioProcessor: Describe + Send {
     /// Sets the stream shape and clears the processing state.
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16);

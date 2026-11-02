@@ -3,7 +3,7 @@
 use gafira_doc::contract::{Describe, Descriptor};
 use gafira_doc::msg::MessageKey;
 
-use crate::dsp::{Param, Setup, clean_input, clean_output};
+use crate::dsp::{Param, Setup, clean_block, clean_input, clean_output};
 use crate::{AudioBlock, AudioProcessor, ParamSnapshot};
 
 /// Id of the fade length parameter, in seconds.
@@ -66,6 +66,7 @@ impl AudioProcessor for Fade {
 
     fn process(&mut self, block: &mut AudioBlock<'_>, params: &ParamSnapshot) {
         if !self.setup.accepts(block) {
+            clean_block(block);
             return;
         }
         let seconds = self.duration.read(params);

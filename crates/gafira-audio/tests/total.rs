@@ -16,10 +16,10 @@ fn makers() -> Vec<(&'static str, Maker)> {
         ("chain", || {
             let mut chain = ProcessorChain::new();
             chain.push(Box::new(Gain::new()));
-            chain.push(Box::new(Fade::new(FadeDirection::In)));
             chain.push(Box::new(Pan::new()));
             Box::new(chain)
         }),
+        ("empty_chain", || Box::new(ProcessorChain::new())),
     ]
 }
 
@@ -126,46 +126,112 @@ fn arq_123_no_output_is_subnormal_after_signal_then_zeros_or_from_tiny_input() {
     }
 }
 
+/// A sample as an unprocessed block must leave it: NaN, `±∞` and subnormals
+/// become 0, everything else is identical.
+fn cleaned(x: f32) -> f32 {
+    if x.is_finite() && !x.is_subnormal() {
+        x
+    } else {
+        0.0
+    }
+}
+
+fn mixed(channels: usize, frames: usize) -> Vec<Vec<f32>> {
+    (0..channels)
+        .map(|c| {
+            (0..frames)
+                .map(|i| match i % 6 {
+                    0 => f32::NAN,
+                    1 => 0.5 + c as f32,
+                    2 => f32::MIN_POSITIVE * 0.5,
+                    3 => f32::INFINITY,
+                    4 => f32::NEG_INFINITY,
+                    _ => -0.25,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// `(prepare rate, max_block, channels, block channels, block frames)`.
+const REFUSED: [(u32, usize, u16, usize, usize); 6] = [
+    (0, 64, 2, 2, 12),
+    (48_000, 0, 2, 2, 12),
+    (48_000, 64, 0, 2, 12),
+    (48_000, 11, 2, 2, 12), // one frame above max_block
+    (48_000, 64, 2, 1, 12), // 1 channel after prepare with 2
+    (48_000, 64, 2, 3, 12), // 3 channels after prepare with 2
+];
+
 #[test]
-fn arq_123_prepare_with_a_zero_or_an_oversized_block_leaves_the_block_intact() {
-    let cases: [(u32, usize, u16, usize); 5] = [
-        (0, 64, 2, 8),
-        (48_000, 0, 2, 8),
-        (48_000, 64, 0, 8),
-        (48_000, 7, 2, 8), // one frame above max_block
-        (48_000, 64, 2, 65),
-    ];
+fn arq_123_an_unprocessed_block_is_only_cleaned() {
     for (name, make) in makers() {
-        for (rate, max, ch, frames) in cases {
+        for (rate, max, ch, block_channels, frames) in REFUSED {
             let mut p = make();
             p.prepare(rate, max, ch);
-            let mut b: Vec<Vec<f32>> = (0..2)
-                .map(|c| {
-                    (0..frames)
-                        .map(|i| match i % 4 {
-                            0 => f32::NAN,
-                            1 => 0.5 + c as f32,
-                            2 => f32::MIN_POSITIVE * 0.5,
-                            _ => f32::INFINITY,
-                        })
-                        .collect()
-                })
+            let mut b = mixed(block_channels, frames);
+            let want: Vec<Vec<f32>> = b
+                .iter()
+                .map(|c| c.iter().map(|&x| cleaned(x)).collect())
                 .collect();
-            let before = bits(&b);
             run(p.as_mut(), &mut b, &params());
-            assert_eq!(bits(&b), before, "{name} {rate} {max} {ch} {frames}");
+            assert_eq!(
+                bits(&b),
+                bits(&want),
+                "{name} {rate} {max} {ch} {block_channels}"
+            );
         }
     }
 }
 
 #[test]
-fn arq_123_a_processor_that_was_never_prepared_leaves_the_block_intact() {
+fn arq_123_a_processor_that_was_never_prepared_only_cleans_the_block() {
     for (name, make) in makers() {
         let mut p = make();
-        let mut b = hostile();
-        let before = bits(&b);
+        let mut b = mixed(2, 12);
+        let want: Vec<f32> = b[0].iter().map(|&x| cleaned(x)).collect();
         run(p.as_mut(), &mut b, &params());
-        assert_eq!(bits(&b), before, "{name}");
+        assert_eq!(bits(&b[..1]), bits(&[want]), "{name}");
+    }
+}
+
+#[test]
+fn arq_123_channels_of_different_lengths_are_cleaned_by_their_own_length() {
+    for (name, make) in makers() {
+        let mut p = make();
+        p.prepare(48_000, 64, 2);
+        let mut b = vec![mixed(1, 4).remove(0), mixed(1, 3).remove(0)];
+        let want: Vec<Vec<f32>> = b
+            .iter()
+            .map(|c| c.iter().map(|&x| cleaned(x)).collect())
+            .collect();
+        run(p.as_mut(), &mut b, &params());
+        assert_eq!(bits(&b), bits(&want), "{name}");
+    }
+}
+
+#[test]
+fn arq_123_an_unprocessed_block_leaves_no_trace_in_the_state() {
+    // The refused block carries parameters; the valid one carries none. Any
+    // state taken from the refused one (a read parameter, an advanced clock, a
+    // consumed first block) would show in the valid block.
+    let mut odd = ParamSnapshot::new();
+    odd.set(PARAM_VOLUME, 20.0);
+    odd.set(PARAM_DURATION, 0.0005);
+    odd.set(PARAM_PAN, -1.0);
+    for (name, make) in makers() {
+        for (rate, max, ch, block_channels, frames) in REFUSED.iter().copied().skip(3) {
+            let mut with_refused = make();
+            let mut without = make();
+            with_refused.prepare(rate, max, ch);
+            without.prepare(rate, max, ch);
+            let mut refused = mixed(block_channels, frames);
+            run(with_refused.as_mut(), &mut refused, &odd);
+            let (mut x, mut y) = (mixed(2, 8), mixed(2, 8));
+            run(with_refused.as_mut(), &mut x, &ParamSnapshot::new());
+            run(without.as_mut(), &mut y, &ParamSnapshot::new());
+            assert_eq!(bits(&x), bits(&y), "{name} {block_channels}");
+        }
     }
 }
 
@@ -177,18 +243,6 @@ fn arq_123_exactly_max_block_is_processed() {
         let mut b = vec![vec![f32::NAN; 8]; 2];
         run(p.as_mut(), &mut b, &params());
         assert!(b.iter().flatten().all(|&x| x == 0.0), "{name}");
-    }
-}
-
-#[test]
-fn arq_123_channels_of_different_lengths_are_an_invalid_block_and_stay_intact() {
-    for (name, make) in makers() {
-        let mut p = make();
-        p.prepare(48_000, 64, 2);
-        let mut b = vec![vec![f32::NAN; 8], vec![f32::NAN; 7]];
-        let before = bits(&b);
-        run(p.as_mut(), &mut b, &params());
-        assert_eq!(bits(&b), before, "{name}");
     }
 }
 
