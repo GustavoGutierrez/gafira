@@ -208,7 +208,8 @@ struct Search<'a> {
 }
 
 impl Search<'_> {
-    /// Tries the ends of the next column, `column` being its index and `ends` the ones chosen.
+    /// Tries the ends of the next column, which starts at line `start`; `ends` are the ends
+    /// chosen so far and `(low, high)` the shortest and the tallest column among them.
     fn go(&mut self, start: usize, ends: &mut Vec<usize>, (low, high): (f64, f64)) {
         let n = self.prefix.len() - 1;
         let bound = self.best.0 + TIE;
@@ -219,13 +220,20 @@ impl Search<'_> {
             }
             return;
         }
-        let mut candidates: Vec<(f64, usize)> = (start..=n)
-            .filter_map(|e| {
-                let h = self.prefix[e] - self.prefix[start];
-                let spread = high.max(h) - low.min(h);
-                let off = (h - self.mean).abs();
-                (h <= self.limit && off <= bound && spread <= bound).then_some((off, e))
-            })
+        if high - low > bound {
+            return;
+        }
+        // The heights that can still tie or beat the best are an interval: within the bound of
+        // the mean (a split with a smaller spread has every column that close to it), within the
+        // bound of the columns chosen, and not over the limit. Heights grow with the end.
+        let upper = self.limit.min(self.mean + bound).min(low + bound);
+        let lower = (self.mean - bound).max(high - bound);
+        let base = self.prefix[start];
+        let window = &self.prefix[start..=n];
+        let first = start + window.partition_point(|p| p - base < lower);
+        let end = start + window.partition_point(|p| p - base <= upper);
+        let mut candidates: Vec<(f64, usize)> = (first..end)
+            .map(|e| ((self.prefix[e] - base - self.mean).abs(), e))
             .collect();
         candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)));
         for (_, e) in candidates {
