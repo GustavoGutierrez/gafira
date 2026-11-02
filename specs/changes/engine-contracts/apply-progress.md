@@ -327,3 +327,31 @@ First run of mutants 2 (`store`) survived: the stale-cancel test cancelled the s
 ### Measured lines
 
 `git diff --shortstat 3cebb86 HEAD` over code and tests (without specs): source 289 (`cancel.rs` 109, `progress.rs` 177, 3 lines of wiring), tests 756 (`contract_cancel.rs` 175, `contract_checkpoint.rs` 104, `progress.rs` 477). Total about 1 045 against a forecast of 270 (x1.4: 380). **Over ~700: the coordinator decides.** The excess is tests: one fake per violation and per cancel point.
+
+### D2b fix round 1 (verify round 1: C1, C2, C3, W1, W2, S1)
+
+Commits: ff353fa (C3, W1, W2), fb5dc6f (C1, C2). Design as amended in 75a066d. Gates on each commit, each alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+RED:
+- C3: `arq_112_parallel_reports_never_step_over_the_cancel_point` failed on the old code at round 7: left `Err(NotCancelled { k: 40 })`, right `Ok(())`. Two workers report `0.5` without a lock of their own, behind a `Barrier`, 200 rounds. Fix: `CancelAt` keeps one `Mutex<Vec<f32>>`; push, position and cancel are one step.
+- W1: `arq_112_fewer_than_k_reports_is_not_cancelled_whatever_the_return_value` failed: empty log, returned `false`: left `Err(OutputAfterCancel { k: 1 })`, right `Err(NotCancelled { k: 1 })`. Fix: fewer than `k` reports is the first check of `judge_cancelled`, for `Ok(true)` and `Ok(false)`.
+
+Not RED (the code already met them), proved by mutants:
+
+| Item | Test | Mutant, result |
+|---|---|---|
+| W2 C | `arq_112_fewer_than_k_reports_is_not_cancelled_whatever_the_return_value` | fewer-than-`k` only for `Ok(true)`: killed |
+| W2 E | `arq_112_fewer_than_k_reports_comes_before_the_scan` | fewer-than-`k` after the scan (`Ok(true)` and `Ok(false)`): killed. A first attempt that only added a dead second check survived because it was equivalent; the real mutant (first check removed, one after the scan) is killed |
+| W2 D | `arq_112_reports_after_cancel_comes_after_the_scan` | `ReportsAfterCancel` before the scan: killed |
+| W2 J | `arq_112_a_1_in_the_log_that_is_not_last_does_not_make_it_not_cancelled` | `contains(&1.0)` for "ends at `1.0`": killed |
+| C3 | `arq_112_parallel_reports_never_step_over_the_cancel_point` | push and length read under two locks: killed |
+| C1 | `arq_112_racing_next_generation_calls_leave_exactly_one_live_token` (8 threads, `Barrier`, 2000 rounds) | `next_generation` as `load` plus `store`: killed, 20 of 20 runs |
+| C2 | `arq_112_cancelling_while_generations_advance_never_revives_an_older_token` (3 cancellers on the newest published token, 200 000 steps) | `cancel` as `if load <= issued { store(issued + 1) }`: killed 20 of 20; the `==` variant killed on every run seen |
+
+Stress result: both concurrency tests and the parallel checker test pass 20 of 20 runs on HEAD; whole-binary `contract_cancel` 20 of 20, about 0.2 s. The design of C2 differs from the report's handshake: the handshake needs about 3 000 000 rounds to hit once in 70 000 in release and missed in debug (100 000 rounds, 5 runs). Hammering the newest token while the counter advances is a race with no gap to find, and hit on every run.
+
+S1: dbd6997 says "18 of 20 tests". At the RED run the file had 20 tests, 18 failed; `arq_112_even_steps_are_measured_in_f32_with_no_tolerance` was added after it, so the commit holds 21. Correct figure: 18 of 20 at RED, 21 tests in the commit. After this round the file holds 26.
+
+Deviations: the racing-`cancel` test is probabilistic in what it can catch (it never fails on correct code); there is no `loom`, as asked. The W1 `Ok(false)` fewer-than-`k` cases are now pinned, which closes the open point under "Deviations and judgments" above.
+
+Measured: `git diff --shortstat bf66b2a HEAD -- crates`: 4 files changed, 346 insertions(+), 14 deletions(-); `progress.rs` source 29 lines changed, the rest tests.
