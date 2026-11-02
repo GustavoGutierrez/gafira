@@ -8,8 +8,17 @@ use crate::{BufferError, EffectError, ImageView, PixelData, PixelFormat, unpremu
 /// The most colours a palette holds (ARQ-122).
 pub const PALETTE_SIZE: usize = 5;
 
-/// Two bins closer than this in dE2000 are one colour (FD-26 looks for a match within 15).
+/// Two bins closer than this in dE2000 are one colour.
 const MERGE_DELTA_E: f64 = 10.0;
+
+/// Two colours already read closer than this in dE2000 are one colour: the radius within which
+/// FD-26 looks for a match. A noisy colour spreads over more than one bin radius, and its parts
+/// must not take several places of the list.
+const CLUSTER_DELTA_E: f64 = 15.0;
+
+/// How many colours are opened while the bins are read, fullest first. The rest join the nearest
+/// one, so the cost stays at `BINS x MAX_CLUSTERS` colour distances.
+const MAX_CLUSTERS: usize = 32;
 
 /// 5 bits per channel.
 const BINS: usize = 1 << 15;
@@ -80,14 +89,33 @@ pub fn dominant_colors(image: ImageView<'_>) -> Result<Vec<PaletteEntry>, Effect
         return Err(EffectError::UnsupportedFormat { format });
     }
     // Each pixel goes to one of 32 768 bins (5 bits per sRGB channel), where its area and its
-    // linear colour add up.
+    // linear colour add up. The exact colours are kept apart while there are few enough.
     let mut bins = vec![Bin::default(); BINS];
+    let mut exact: Option<Vec<([u8; 3], Bin)>> = Some(Vec::new());
     let t = Transfer::new();
+    let mut add = |straight: [u8; 3], linear: [f64; 3]| {
+        bins[bin_of(straight)].add(linear);
+        let mut too_many = false;
+        if let Some(list) = &mut exact {
+            if let Some(k) = list.iter().position(|(c, _)| *c == straight) {
+                list[k].1.add(linear);
+            } else if list.len() < PALETTE_SIZE {
+                let mut b = Bin::default();
+                b.add(linear);
+                list.push((straight, b));
+            } else {
+                too_many = true;
+            }
+        }
+        if too_many {
+            exact = None;
+        }
+    };
     match image.data() {
         PixelData::Rgba8(s) => {
             for px in s.chunks_exact(4).filter(|px| px[3] != 0) {
                 let straight = [0, 1, 2].map(|k| unpremultiply_u8(px[k], px[3]));
-                bins[bin_of(straight)].add(straight.map(|b| t.decode[usize::from(b)]));
+                add(straight, straight.map(|b| t.decode[usize::from(b)]));
             }
         }
         PixelData::RgbaF32(s) => {
@@ -101,40 +129,121 @@ pub fn dominant_colors(image: ImageView<'_>) -> Result<Vec<PaletteEntry>, Effect
             for px in s.chunks_exact(4).filter(|px| px[3] != 0.0) {
                 let a = f64::from(px[3]);
                 let lin = [0, 1, 2].map(|k| (f64::from(px[k]) / a).clamp(0.0, 1.0));
-                let bytes = t.encode(lin);
-                bins[bin_of(bytes)].add(lin);
+                add(t.encode(lin), lin);
             }
         }
         PixelData::Alpha8(_) => {}
     }
-    // The fullest bins first, the lower bin number first among equals.
+    // At most five colours: each is an entry, however close they are (no binning, no merging).
+    if let Some(mut list) = exact {
+        // The larger area first, the lower bin number first among equals.
+        list.sort_by_key(|(c, b)| (std::cmp::Reverse(b.pixels), bin_of(*c), *c));
+        return Ok(list
+            .iter()
+            .map(|(_, b)| PaletteEntry {
+                color: b.srgb(&t),
+                pixels: b.pixels,
+            })
+            .collect());
+    }
+    // The fullest bins first, the lower bin number first among equals; a bin joins the cluster
+    // it is nearest to when that is closer than `MERGE_DELTA_E`, or opens one.
     let mut order: Vec<usize> = (0..BINS).filter(|i| bins[*i].pixels > 0).collect();
     order.sort_by_key(|i| (std::cmp::Reverse(bins[*i].pixels), *i));
-    let mut clusters: Vec<Bin> = Vec::new();
+    let mut clusters: Vec<Cluster> = Vec::new();
     for i in order {
         let b = bins[i];
         let lab = b.lab();
-        let nearest = clusters
-            .iter()
-            .enumerate()
-            .map(|(k, c)| (k, delta_e2000(c.lab(), lab)))
-            .min_by(|a, b| a.1.total_cmp(&b.1));
-        match nearest {
-            Some((k, d)) if d < MERGE_DELTA_E => clusters[k].merge(&b),
-            _ if clusters.len() < PALETTE_SIZE => clusters.push(b),
-            // Out of room: a colour far from all five is left out.
-            _ => {}
+        match nearest(&clusters, lab) {
+            Some((k, d)) if d < MERGE_DELTA_E || clusters.len() >= MAX_CLUSTERS => {
+                clusters[k].merge(&b, i);
+            }
+            _ => clusters.push(Cluster::new(b, i)),
         }
     }
+    // Parts of a spread-out colour that now sit within the radius of the search are one.
+    while let Some((i, j, d)) = closest_pair(&clusters) {
+        if d >= CLUSTER_DELTA_E {
+            break;
+        }
+        let other = clusters.remove(j);
+        clusters[i].absorb(other);
+    }
+    // The five largest are kept, and every bin of the others joins the nearest of them, so the
+    // areas are the real ones (the list is of dominant colours, not of the image's colours).
     // Stable, so equal areas keep the order they were found in.
-    clusters.sort_by_key(|c| std::cmp::Reverse(c.pixels));
+    clusters.sort_by_key(|c| std::cmp::Reverse(c.bin.pixels));
+    let dropped = clusters.split_off(PALETTE_SIZE.min(clusters.len()));
+    for c in dropped {
+        for i in c.members {
+            let b = bins[i];
+            if let Some((k, _)) = nearest(&clusters, b.lab()) {
+                clusters[k].bin.merge(&b);
+            }
+        }
+    }
+    // The merges above moved the means, not the order of the areas the person sees: the list
+    // is sorted again with the areas it now has.
+    clusters.sort_by_key(|c| std::cmp::Reverse(c.bin.pixels));
     Ok(clusters
         .iter()
         .map(|c| PaletteEntry {
-            color: c.srgb(&t),
-            pixels: c.pixels,
+            color: c.bin.srgb(&t),
+            pixels: c.bin.pixels,
         })
         .collect())
+}
+
+/// Bins that read as one colour: their sum, its Lab (kept up to date) and the bins in it.
+struct Cluster {
+    bin: Bin,
+    lab: Lab,
+    members: Vec<usize>,
+}
+
+impl Cluster {
+    fn new(bin: Bin, index: usize) -> Self {
+        Self {
+            lab: bin.lab(),
+            bin,
+            members: vec![index],
+        }
+    }
+
+    fn absorb(&mut self, other: Cluster) {
+        self.bin.merge(&other.bin);
+        self.lab = self.bin.lab();
+        self.members.extend(other.members);
+    }
+
+    fn merge(&mut self, other: &Bin, index: usize) {
+        self.bin.merge(other);
+        self.lab = self.bin.lab();
+        self.members.push(index);
+    }
+}
+
+/// The two clusters closest to each other, `i < j`, and their dE2000.
+fn closest_pair(clusters: &[Cluster]) -> Option<(usize, usize, f64)> {
+    let mut best: Option<(usize, usize, f64)> = None;
+    for (i, a) in clusters.iter().enumerate() {
+        for (j, b) in clusters.iter().enumerate().skip(i + 1) {
+            let d = delta_e2000(a.lab, b.lab);
+            if best.is_none_or(|(_, _, m)| d < m) {
+                best = Some((i, j, d));
+            }
+        }
+    }
+    best
+}
+
+/// The cluster nearest to `lab` and its dE2000.
+fn nearest(clusters: &[Cluster], lab: Lab) -> Option<(usize, f64)> {
+    clusters
+        .iter()
+        .enumerate()
+        .map(|(k, c)| (k, delta_e2000(c.lab, lab)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
 }
 
 #[cfg(test)]
@@ -261,7 +370,8 @@ mod tests {
         assert!(de(p[0].color, [219, 30, 30]) < 1.0, "{:?}", p[0].color);
     }
 
-    // ARQ-122: no more than five entries; the largest areas win and the rest are left out.
+    // ARQ-122: no more than five entries; the largest areas win, and the pixels of the colours
+    // left out join the nearest colour kept, so the areas add up to the image.
     #[test]
     fn arq_122_at_most_five_entries_the_largest_areas() {
         let (bytes, w) = runs(&[
@@ -278,9 +388,55 @@ mod tests {
         assert_eq!(PALETTE_SIZE, 5);
         let want = [(RED, 90), (GREEN, 70), (BLUE, 50), (YELLOW, 30), (GREY, 10)];
         for (e, (rgb, n)) in p.iter().zip(want) {
-            assert!(de(e.color, rgb) < 1.0, "{rgb:?}");
-            assert_eq!(e.pixels, n);
+            assert!(e.pixels >= n, "{rgb:?}: {}", e.pixels);
         }
+        // The four largest keep their colour; the 8 pixels left out moved the means a little.
+        for (e, (rgb, _)) in p.iter().zip(want).take(4) {
+            assert!(de(e.color, rgb) < 8.0, "{rgb:?}: {:?}", e.color);
+        }
+        assert_eq!(p.iter().map(|e| e.pixels).sum::<u64>(), 258);
+    }
+
+    // ARQ-122: six colours are five entries: the sixth is not a separate one, its pixels join
+    // the colour nearest to it.
+    #[test]
+    fn arq_122_six_colours_are_five_entries() {
+        let runs_: Vec<([u8; 4], usize)> = [RED, GREEN, BLUE, YELLOW, GREY, PURPLE]
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (op(*c), 100 - 10 * i))
+            .collect();
+        let (bytes, w) = runs(&runs_);
+        let p = pal(&bytes, w);
+        assert_eq!(p.len(), 5, "{p:?}");
+        assert_eq!(p.iter().map(|e| e.pixels).sum::<u64>(), 450);
+    }
+
+    // ARQ-122: the list is ordered by the areas it ends with: a colour that took the pixels of
+    // a sixth one can pass a larger one.
+
+    #[test]
+    fn arq_122_the_order_follows_the_areas_after_the_pixels_left_out_join() {
+        let navy = [30, 110, 235];
+        assert!(
+            de(
+                Color::Srgb(Rgba::new(40.0 / 255.0, 60.0 / 255.0, 210.0 / 255.0, 1.0)),
+                navy
+            ) > 15.0
+        );
+        let (bytes, w) = runs(&[
+            (op(RED), 100),
+            (op(BLUE), 90),
+            (op(GREEN), 80),
+            (op(YELLOW), 70),
+            (op(GREY), 60),
+            (op(navy), 45),
+        ]);
+        let p = pal(&bytes, w);
+        assert_eq!(p.len(), 5, "{p:?}");
+        assert_eq!(p.iter().map(|e| e.pixels).sum::<u64>(), 445);
+        assert!(p.windows(2).all(|w| w[0].pixels >= w[1].pixels), "{p:?}");
+        assert!(de(p[0].color, BLUE) < 12.0 && p[0].pixels == 135, "{p:?}");
     }
 
     // ARQ-122: noise around a colour is one colour, not several.
@@ -372,14 +528,130 @@ mod tests {
         assert!(de(p[0].color, BLUE) < 4.0 && de(p[1].color, GREEN) < 1.0);
     }
 
-    // ARQ-122, 4.17.4: a value far beyond 1 in `f32` is a full channel, so a bright red next
-    // to it is the same colour.
+    /// `n` pixels of noise of amplitude `amp` per channel around `base`, opaque.
+    fn noisy(base: [u8; 3], amp: i32, n: usize, seed: u32) -> Vec<u8> {
+        let mut v = Vec::new();
+        for i in 0..n as u32 {
+            let x = (i ^ seed).wrapping_mul(2_654_435_761);
+            let j = |s: u32| ((x >> s) % (2 * amp as u32 + 1)) as i32 - amp;
+            let c = |k: usize, s| (i32::from(base[k]) + j(s)).clamp(0, 255) as u8;
+            v.extend([c(0, 3), c(1, 11), c(2, 19), 255]);
+        }
+        v
+    }
+
+    const FLATS: [[u8; 3]; 5] = [
+        [30, 160, 60],
+        [240, 220, 40],
+        [120, 120, 120],
+        [40, 200, 210],
+        [150, 40, 170],
+    ];
+
+    // ARQ-122, FD-26 (a): the colour with most of the image comes first even when five small
+    // flat colours fill the list, and the entries cover the whole image: every pixel that was
+    // left out joins the nearest colour kept.
+    #[test]
+    fn arq_122_a_large_noisy_colour_beats_five_small_flat_ones() {
+        for amp in [16, 24, 32, 40] {
+            let mut v = noisy([200, 60, 60], amp, 6000, 5);
+            for f in FLATS {
+                for _ in 0..800 {
+                    v.extend(op(f));
+                }
+            }
+            let p = pal(&v, 10_000);
+            assert_eq!(p.len(), 5, "noise {amp}: {p:?}");
+            assert!(
+                de(p[0].color, [200, 60, 60]) < 12.0,
+                "noise {amp}: {:?}",
+                p[0]
+            );
+            assert_eq!(
+                p.iter().map(|e| e.pixels).sum::<u64>(),
+                10_000,
+                "noise {amp}"
+            );
+            assert!(
+                p.windows(2).all(|w| w[0].pixels >= w[1].pixels),
+                "noise {amp}"
+            );
+        }
+    }
+
+    // ARQ-122: a gradient that takes most of the image is not pushed out by five small flats.
+    #[test]
+    fn arq_122_a_gradient_beats_five_small_flat_ones() {
+        let mut v = Vec::new();
+        for i in 0..7000u32 {
+            let t = i as f32 / 6999.0;
+            v.extend([
+                (220.0 * (1.0 - t)) as u8 + 20,
+                30,
+                (220.0 * t) as u8 + 20,
+                255,
+            ]);
+        }
+        for f in FLATS {
+            for _ in 0..600 {
+                v.extend(op(f));
+            }
+        }
+        let p = pal(&v, 10_000);
+        assert_eq!(p.len(), 5);
+        assert!(p[0].pixels > 600, "{p:?}");
+        assert_eq!(p.iter().map(|e| e.pixels).sum::<u64>(), 10_000);
+    }
+
+    // ARQ-122: an image of at most five colours gives one entry per colour, however close they
+    // are: two colours at dE2000 2.4 to 4.8, five greys, five pastels.
+    #[test]
+    fn arq_122_close_colours_are_one_entry_each() {
+        let cases: [&[[u8; 3]]; 4] = [
+            &[[200, 60, 60], [215, 70, 60]],
+            &[
+                [100, 100, 100],
+                [112, 112, 112],
+                [124, 124, 124],
+                [136, 136, 136],
+                [148, 148, 148],
+            ],
+            &[
+                [240, 200, 200],
+                [200, 240, 200],
+                [200, 200, 240],
+                [240, 240, 200],
+                [230, 210, 240],
+            ],
+            &[[200, 60, 60], [205, 62, 60], [210, 64, 60]],
+        ];
+        for colours in cases {
+            let runs_: Vec<([u8; 4], usize)> = colours
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (op(*c), 100 - 10 * i))
+                .collect();
+            let (bytes, w) = runs(&runs_);
+            let p = pal(&bytes, w);
+            assert_eq!(p.len(), colours.len(), "{colours:?}: {p:?}");
+            for (e, (c, (_, n))) in p.iter().zip(colours.iter().zip(&runs_)) {
+                assert!(de(e.color, *c) < 1.0, "{c:?}: {:?}", e.color);
+                assert_eq!(e.pixels, *n as u64);
+            }
+        }
+    }
+
+    // ARQ-122, 4.17.4: a value far beyond 1 in `f32` is a full channel, so a pixel of exactly 1
+    // is the same colour; 0.8 is another one, and each of up to five colours is an entry.
     #[test]
     fn arq_122_f32_values_beyond_the_range_do_not_split_a_colour() {
-        let px = [1.0e30f32, 0.0, 0.0, 1.0, 0.8, 0.0, 0.0, 1.0];
+        let px = [1.0e30f32, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
         let p = dominant_colors(ImageView::new(2, 1, PixelData::RgbaF32(&px)).unwrap()).unwrap();
         assert_eq!(p.len(), 1, "{p:?}");
         assert_eq!(p[0].pixels, 2);
+        let px = [1.0e30f32, 0.0, 0.0, 1.0, 0.8, 0.0, 0.0, 1.0];
+        let p = dominant_colors(ImageView::new(2, 1, PixelData::RgbaF32(&px)).unwrap()).unwrap();
+        assert_eq!(p.len(), 2, "{p:?}");
     }
 
     // ARQ-110 and formats.
