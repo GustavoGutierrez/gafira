@@ -377,7 +377,7 @@ Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codifica
 | Saturación | Matriz `saturate` de W3C *Filter Effects* con `s = 1 + k` |
 | Vitalidad | La misma matriz con `s = 1 + k × (1 − (max − min))`, con `max` y `min` de `R`, `G`, `B` |
 | Invertir | `v' = 1 − v` |
-| Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` en Lab frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
+| Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` el ΔE2000 frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
 | Nitidez | `c + 1,5 × k × e × (c − G)`, con `G` desenfoque de radio 2 px y `e = w(0,02; 0,1; |Y − Y_G|)` |
 | Claridad | Igual que Nitidez, con radio 40 px, peso 0,5 y solo sobre `Y`, sin máscara `e` |
 | Viñeta | `c × 2^(k × w(0,5; 1; d))`, con `d` la distancia al centro dividida por media diagonal |
