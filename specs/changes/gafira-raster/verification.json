@@ -1,0 +1,39 @@
+{ "schema": 1, "change": "gafira-raster", "delivery": "RS1", "rounds": [ {
+  "round": 1, "commit": "10f328b10d520a2e17cf2565db4b4fc478b40a00", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
+  "counts": {"critical": 5, "warning": 3, "suggestion": 4},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs:124", "summary": "RgbaF32 mip: an a = 0 pixel adds colour, against ARQ-121; (1,1,1,0) stays (1,1,1,0). Rgba8 skips it. Test covers Rgba8 only.", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs convert", "summary": "Survivor V1: input check skipping a = 0 pixels passes all tests; unpremultiply of (NaN,0,0,0) would be Ok. ARQ-110. Code correct today.", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs build_mips", "summary": "Survivor V2: same skip in build_mips passes all tests and lets a non-finite value reach output. ARQ-110. Code correct today.", "follow_up": false, "status": "open"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-111", "summary": "Survivor V3: entropy in unpremultiply passes all tests. No test repeats unpremultiply or the Rgba8 conversions. Code correct today.", "follow_up": false, "status": "open"},
+    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-110", "summary": "The property test ARQ-110 names (finite input gives finite output) is missing: no proptest! block in the crate. Probe p18 holds.", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121", "summary": "Odd side undecided. Dropping fits the text but is not stated; 1000x600 top pixel sees 512 of 1000 columns (0 against 185.5). Owner decides.", "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02:1308, 02:529, P4", "summary": "One error enum per crate against BufferError plus EffectError in raster. Settle before the first Effect or Transition.", "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs tests", "summary": "Constant image tested on Rgba8 only; odd-side test covers a column, not a row. Probes hold.", "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 1},
+  "criteria": {"total": 19, "covered": 15},
+  "size": {"lines": 1367, "forecast": 450}, "report": "verify-report.md" }, {
+  "round": 2, "commit": "888f54bc5b8bf37af99e7f72398bd3b94fdd0c2a", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply", "classes": [],
+  "counts": {"critical": 0, "warning": 2, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs:228", "summary": "Closed: f32 a = 0 pixels add no colour; bit-exact against an independent mean.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs convert", "summary": "Closed: V1 killed by arq_110_non_finite_colour_in_transparent_pixel_is_err.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs build_mips", "summary": "Closed: V2 killed by the mip test of the same name.", "follow_up": false, "status": "closed"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-111", "summary": "Closed: V3 killed by arq_111_every_conversion_is_deterministic.", "follow_up": false, "status": "closed"},
+    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-110", "summary": "Closed: three proptest! blocks hold the property. Weakness in W5.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121", "summary": "Closed: amended 02:951 decides the odd side; code matches on all new rows and probes.", "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02:1308", "summary": "Closed: amendment removes the contradiction; deferral accepted. Adding EffectError with From<BufferError> is a duty of RS3 (S5).", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs tests", "summary": "Closed: constant image on all formats, odd rows covered; M4 to M6 killed.", "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121, CAL-26, CAL-22, 04 import limit", "summary": "No bound for build_mips. Peak 551 MiB at 12 MP, within budgets; 12.3 GiB at 16 384 px, the stated maximum, and an abort under a 4 GiB limit. Settle before its first caller.", "follow_up": true, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs:302", "summary": "ARQ-110 pixel property draws 0 or 1 pixel and hardly reaches the Err arm. New test gap.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 6, "killed": 6},
+  "criteria": {"total": 25, "covered": 25},
+  "size": {"lines": 1696, "forecast": 450}, "report": "verify-report.md" } ] }
