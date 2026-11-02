@@ -700,3 +700,99 @@ Extreme rates (201 Hz to `u32::MAX`) were stable at +15 dB on every band, so the
 Verdict **FAIL**: 3 CRITICAL, 2 WARNING, 4 SUGGESTION. Per class: implementation 4 (C6, C7, C8, W15), ambiguity 1 (W14).
 
 next: specifier (ambiguity: W14), then tdd-apply (implementation: C6, C7, C8, W15)
+
+# Verify report: gafira-audio, AU2, round 2 (closure)
+
+| Item | Value |
+|---|---|
+| Commit | `050cd25`, branch `feat/gafira-audio`, base `develop` |
+| Depth, mode, tier | V2, full, T4 |
+| Scope | C6, C7, C8, W14, W15 of AU2 round 1, the ARQ-125 and ARQ-129 text of `b9442ae`, commits `9ecc6c3`, `595487b`, `050cd25` |
+| Mutation | `mutation: archive`, no run yet, not a finding |
+| Verdict | **PASS** for delivery AU2; AU3 and AU4 remain, so `next` is `tdd-apply` |
+
+## Gates
+
+Each command ran alone in the worktree, with no `CARGO_TARGET_DIR`. `df -h /` showed 42 GB free at the start and 41 GB at the end.
+
+| Gate | Exit code |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 587 passed, 0 failed, 0 ignored; 10 more than round 1, the 10 tests of this fix round) |
+| `cargo deny --all-features --locked check` | 0 |
+| CI policy (ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14) | 0 on each |
+| Host matches matrix target | 0, with `x86_64-unknown-linux-gnu` put in place of `${{ matrix.target }}`, which does not resolve outside CI |
+
+## Artifact integrity (step 3c)
+
+- The slice card commit `9bfba1c` touches only `apply-progress.md`. From `d437b8a` to HEAD that file has additions only, at the end, so the card is unchanged and no amend exists.
+- `9ecc6c3` and `595487b` touch only `crates/gafira-audio/`. Only `b9442ae` and `050cd25` touch `specs/`, and they are records, not implementation.
+- `b9442ae` changes three rows of 02: ARQ-125, ARQ-129, and the "Tamaño 0" row, which now says an empty block is cleaned and not processed (ARQ-123, already so in the code).
+
+## Closure of round 1
+
+Mutants ran on a clean export of HEAD, one at a time, with `cargo test -p gafira-audio --locked --no-fail-fast`. Baseline: 130 passed. The source was restored and compared afterwards. These are the round 1 mutants, so no independent budget was spent.
+
+| Finding | Check | Result |
+|---|---|---|
+| C6 | M1, no `clean_input` in `Eq3Band` | **Closed.** Killed by `arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history` |
+| C7 | M2, no redesign in `prepare` | **Closed.** Killed by `arq_125_prepare_at_another_rate_designs_for_the_new_rate_with_the_last_valid_value` and `arq_125_a_band_omitted_at_the_new_rate_does_nothing_after_prepare` |
+| C8 | M3, `reset` forgets the gains | **Closed.** Killed by `arq_124_the_last_valid_value_survives_reset` and `arq_125_tail_is_kept_by_reset_prepare_at_the_same_rate_and_a_refused_block` |
+| W14 | ARQ-125 and ARQ-129 of `b9442ae`, tests of `595487b`, probes below | **Closed** |
+| W15 | RED replay of the W14 tests | **Open, follow-up.** Process only, see below |
+| S5 | ARQ-125 of `b9442ae` | **Closed.** The row now says the change has no ramp and the ramp of ARQ-124 is only for `Gain` |
+
+## Ruling: `tail()` is 0 before the first `process`
+
+**It conforms to the spec. Keep it. It is not a deviation, so the "Deviation" line in `apply-progress.md` needs no action.**
+
+- ARQ-125: a band is active if it is not omitted and "su ganancia vigente, el último valor válido o, sin él, el valor por defecto" is not 0. The gain default is 0 (`Band::new`), so with no valid value yet no band is active, and "0 si no" applies.
+- ARQ-129: `tail()` is the frames the output keeps ringing after the input ends. Probe `p2`: a prepared `Eq3Band` with no value passes an impulse bit for bit, so 0 is also the true ring-down.
+- `tail()` takes no snapshot, so it cannot see a value that has not arrived. The first processed block that carries a gain turns the tail on in that same block: probe `p2` gives 0, then 1 920 at 48 kHz.
+- An empty or refused block carrying a gain leaves it at 0, as ARQ-123 and the criterion "un bloque rechazado no lo cambia" require (`arq_125_tail_is_kept_by_reset_*`, probe `p2`).
+- Consequence for later work: `tail()` is a value of the current state. A consumer that needs it reads it after the last block, not ahead of the first one. This is what ARQ-129 defines, so nothing needs to change.
+
+## W14: criteria of ARQ-125 and ARQ-129
+
+| Criterion | Proof | Status |
+|---|---|---|
+| 1 764, 1 920, 3 840, 1 765, 171 798 692 at `u32::MAX`, no `panic` | `arq_125_tail_is_forty_milliseconds_in_frames_with_a_band_active` | Covered |
+| 0 at 0 dB, −0 dB, `sample_rate` 0, only `high` at 16 000 Hz; 641 at 16 001 Hz | `arq_125_tail_is_zero_without_an_active_band` | Covered |
+| Kept after `reset`, `prepare` at the same `fs` and a refused block | `arq_125_tail_is_kept_by_reset_prepare_at_the_same_rate_and_a_refused_block` | Covered |
+| Below 1e-6 from frame `tail()`, every combination at three rates | `arq_125_after_an_impulse_every_sample_from_tail_is_below_1e_6`; probe `p1` | Covered |
+| 0 to +15 dB in `mid`: ±1e-6 against the new biquads from the prior history | `arq_125_a_gain_change_applies_from_sample_0_of_the_block_that_carries_it`, against the `Reference` in the test file | Covered |
+
+Probes, in the export and not committed (`zz_r2.rs`), all passed:
+
+| Probe | Result |
+|---|---|
+| `p1`, the test's impulse carried on for 12 more blocks of 8 192 frames, 78 cases | Worst sample from `tail()` is 3.3e-7, below 1e-6 |
+| `p2`, before the first `process` | See the ruling |
+| `p3`, `prepare` at another rate with a gain kept | 3 840 at 96 kHz, 0 at `fs` 0, 0 with only `high` at 16 kHz |
+| `p4`, `ProcessorChain` of two `Eq3Band` | 3 840 at 48 kHz, the ARQ-129 sum on real tails |
+| `p5`, active band set to 0 dB after an impulse | `tail()` 0 and the next block is exact zeros, so nothing is cut |
+
+## WARNING
+
+### W15. RED is recorded, not provable from git (carried, follow-up)
+
+- class: implementation
+- follow-up: yes
+- ref: `0f7d798`, `c4946a2`, `595487b`, `apply-progress.md` AU2 fix round 1
+- Round 1 asked later work to commit the stub and tests first, or to cite a RED log. `595487b` again holds the tail code and its tests in one commit, and no log is cited.
+- The record is credible. With `Eq3Band::tail` removed on the export, the same five tests fail, and the messages match the record: `left: 0, right: 1764` at fs 44100, `left: 0, right: 641`, `left: 0, right: 1920`, and the `tail > 0` panic in the impulse test.
+- `9ecc6c3` pins code that was already right, so RED could not apply. Its proof is the mutants above.
+- The commits cannot change and no code needs to. Keep it for AU3 and AU4.
+
+## SUGGESTION
+
+- S9. The `tail` comment in `processor.rs` (line 29) says "Samples"; ARQ-129 and `Eq3Band::tail` say frames. Change the word when the file is next touched, with S8.
+
+S6, S7 and S8 of round 1 are out of this round's scope and were not re-examined.
+
+## Result
+
+Verdict **PASS** for AU2: 0 CRITICAL, 1 WARNING (follow-up), 1 SUGGESTION. Per class: implementation 1 (W15, follow-up); ambiguity 0, architecture 0, claim 0. Criteria 5 of 5 covered. Mutants M1 to M3: 3 run, 3 killed. Size of the fix round: 5 files, 261 insertions.
+
+next: tdd-apply (next delivery, AU3)
