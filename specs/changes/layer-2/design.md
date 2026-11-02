@@ -7,7 +7,7 @@ Evidence: 02 §2, §4.17, §9.2, §10, 04, ADR 0005, ADR 0007, ADR 0008, ADR 001
 ## Quick path
 
 1. Finish `engine-contracts`. `CL1` can run beside it.
-2. Clear the blockers below, one at a time: O2, O3, then `specifier` for SP1, SP5, SP6, SP7, SP9 and SP10, then `explorer` for XP2 to XP5.
+2. Clear the blockers below, one at a time: O2, O3, then `specifier` for SP1, SP5, SP6, SP7, SP9 and SP10, then `explorer` for XP3 to XP5.
 3. Run `SC1` alone.
 4. Open one worktree per stream: `TX`, `RS`, `AU`. Open `SG` when `RS1` is on `develop`.
 5. Merge each delivery after its verify PASS, one at a time. Run T4 per crate at close, one crate at a time.
@@ -20,7 +20,7 @@ Forecast is authored lines, with the x1.4 planning figure in brackets. Every del
 |---|---|---|---|---|---|---|
 | `D1`..`D3` | doc, geom, pathops, layout | ARQ-102, ARQ-112 | see `engine-contracts` | see `engine-contracts` | 1 200 (1 685) | 1 |
 | `CL1` | `gafira-color` | ARQ-122 (Lab, ΔE2000), ARQ-131 (ΔE76) | SP1 | parallel, beside `D1`..`D3` | 280 (390) | any, before `RS6` |
-| `SC1` | all four, testkit, shared files | ARQ-01, ARQ-02, ARQ-70 (rows, lints, licences) | `D3`, XP2 | serial | 150 (210) | 2 |
+| `SC1` | all four, testkit, shared files | ARQ-01, ARQ-02, ARQ-70 (rows, lints, licences) | `D3` | serial | 150 (210) | 2 |
 | `TX1` | `gafira-text` | FD-41 (a, d), ARQ-115, ARQ-116, ARQ-110, ARQ-111 | `SC1`, XP3 | parallel stream `TX` | 450 (630) | any |
 | `TX2` | `gafira-text` | FD-41 (c, e to j) | `TX1` | serial in `TX` | 440 (615) | after `TX1` |
 | `TX3` | `gafira-text` | FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`) | `TX2`, O2 | serial in `TX` | 400 (560) | after `TX2` |
@@ -66,7 +66,7 @@ Total after `engine-contracts`: 7 750 lines (x1.4: 10 850). The largest delivery
 | Workspace entries | Four path entries; `parley = { version = "0.12", default-features = false, features = ["std"] }`; `rayon`; `assert_no_alloc = "1.1"` |
 | Dev-deps | `proptest`, `criterion`, `gafira-testkit` per crate; `assert_no_alloc` in `gafira-audio` and in `gafira-testkit` (L9) |
 | V5 rows | The four rows of ADR 0007 |
-| `deny.toml` | BSD-1-Clause `[[licenses.exceptions]]` for `assert_no_alloc`, and `unused-license-exception` as in the L9 note |
+| `deny.toml` | BSD-1-Clause `[[licenses.exceptions]]` for `assert_no_alloc`, and `unused-license-exception = "allow"`, because cargo-deny never matches that dev-only entry (L9) |
 | testkit stubs | Empty `pub mod fonts;` and `pub mod scenes;` |
 | `Cargo.lock` | Regenerated once, with all of the above |
 
@@ -205,16 +205,16 @@ If XP5 shows ARQ-132 is out of reach, D-20 is the owner's decision, and that bec
 
 ## Needs explorer
 
-Nothing below is measured. `E1` to `E5` are the older spikes.
+XP1, XP2 and XP6 are measured; the rest are not. `E1` to `E5` are the older spikes.
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
-| XP1 | See `engine-contracts` | | D1 |
-| XP2 | The parley 0.12 tree on all three targets passes `cargo deny check`, the V5 forbidden regex and ARQ-107's banned crates, and our code needs no `Locale` identifier. E1 covered parley, not this combined workspace with `rayon` | Throwaway `SC1`, with `cargo tree --target all` | `SC1` |
+| XP1 | Measured, confirmed: see `engine-contracts` | | Nothing |
+| XP2 | Measured: the parley 0.12 tree with `rayon` passes `cargo deny` and the V5 script. ARQ-107 has no CI step; the banned crates are absent by a one-off `cargo tree` grep | `cargo deny` exit 0 on the 3 targets; V5 script exit 0 with the 4 rows; builds on 1.93.1; non-Linux targets not compiled | Nothing |
 | XP3 | E4's subsets can be regenerated with the same results: sizes, advances, Arabic joining, Manrope `liga`. Inputs were not kept, and upstream Manrope returned 404 | `pyftsubset` from pinned upstream files | `TX1` |
 | XP4 | `bench_shadow_1080` < 100 ms single-threaded at radius 40 with a direct kernel. Near 120 taps × 2 passes × 2 M pixels, this looks tight. An IIR blur likely breaks the ARQ-120 tile match; a three-box blur must hold σ within ±2 % | Prototype direct and three-box on one alpha channel; compare σ and time | `RS4` (provisional) |
 | XP5 | Own SLIC, GMM, max-flow and GrabCut reach IoU ≥ 0.90 on every ARQ-132 scene, low contrast included, and 4000 px in < 5 s on D-03 hardware (R-04). This is the largest technical risk of the plan | Prototype on generated scenes, before `SG1` | `SG1` |
-| XP6 | `SC1` with unused dependencies passes every gate, with cargo-deny on 3 targets | Same run as XP2 | `SC1` |
+| XP6 | Measured: `SC1` with unused dependencies is allowed | No unused-dependency rule in the repo; `cargo deny` result as in XP2 | Nothing |
 
 ## Needs specifier
 
@@ -232,9 +232,10 @@ Nothing below is measured. `E1` to `E5` are the older spikes.
 | SP12 | 02 §4.17, §4.4, §4.13 | Add the homes of P5 to the table of shared types. `Cost` has no definition | None |
 | SP13 | ARQ-43 | Its 100 ms cannot be timed in a domain crate's bench (P8). Say what `bench_cancel_segment` measures | None |
 | SP14 | ARQ-115, ARQ-75 | `assets/LICENSES.toml` must cover all of `assets/`, but ARQ-115 needs only fonts now. Say that a partial file is fine until `xtask` exists | None |
+| SP15 | ARQ-107 | Add a CI step for ARQ-107: today it has none (XP2) | None |
 
 Coordinator, not `specifier`: CAL-06 and CAL-15 live in `backlog/01`, and the FV IDs in `backlog/05`. The rule in `specs/README.md` promotes a backlog document when a change of 02 needs it, in its own commit. Do both before `SC1`, on `develop`, so no stream carries the rename.
 
 ## Next
 
-Ask O2, then O3. Run `specifier` for the blocking SP items and `explorer` for XP2 to XP5. `tdd-apply` starts with `D1`.
+Ask O2, then O3. Run `specifier` for the blocking SP items and `explorer` for XP3 to XP5. `tdd-apply` starts with `D1`.
