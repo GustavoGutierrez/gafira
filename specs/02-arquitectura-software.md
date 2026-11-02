@@ -757,6 +757,17 @@ pub struct TransitionInstance {                        // dato del documento, en
 - **Patrón**: Strategy + Registry, igual que `Effect`, pero con dos entradas. `RenderGraphBuilder` inserta un nodo `Transition { from, to }` en el grafo cuando el tiempo `t` cae dentro de la unión de dos clips adyacentes; `progress` se muestrea con `easing`. Si un clip no tiene margen de fotogramas, el builder repite el fotograma del borde y la sesión emite un aviso (05 FV-06).
 - **Implementan** en `gafira-raster::transitions` las transiciones del catálogo de 03 §2.6 y 05 FV-06: `Cut` (Corte), `Fade` (Fundido a color), `Dissolve` (Disolvencia), `Slide` (Deslizar, 4 direcciones), `Zoom` y `Wipe` (Borrado, 4 direcciones y circular). Los plugins pueden aportar más en Fase 3 (solo CPU).
 - **Registro**: `TransitionRegistry`, construido en el *composition root*.
+- **Parámetros** (PROPUESTA): forman el `ParamSchema` de cada transición, y ninguno es animable. Corte y Disolvencia tienen un esquema vacío. Las etiquetas de las opciones son `transition.direction.<id>`. Negro y blanco son valores de `color`, no otra opción. Fundido convierte `color` una vez por llamada, y conserva su alfa: a bytes sRGB premultiplicados en `Rgba8` y a sRGB lineal premultiplicado en `RgbaF32`.
+
+| Transición | Id | Tipo | Por defecto | Etiqueta |
+|---|---|---|---|---|
+| Fundido | `color` | `Color` | Negro opaco | `transition.fade.color` |
+| Deslizar | `direction` | `Choice`: `left`, `right`, `up`, `down` | `left` | `transition.slide.direction` |
+| Zoom | `direction` | `Choice`: `in`, `out` | `in` | `transition.zoom.direction` |
+| Borrado | `direction` | `Choice`: `right`, `left`, `down`, `up`, `circular` | `right` | `transition.wipe.direction` |
+| Borrado | `softness` | `Float` en `[0, 1]` | 0 | `transition.wipe.softness` |
+
+  Aceptación: por transición, `params()` pasa `ParamSchema::validate_definition` y da los ids, tipos, valores por defecto y etiquetas de la tabla, con `animatable` falso; Corte y Disolvencia dan un esquema vacío; Fundido a blanco opaco con `p` 0,5 da 255 en todos los canales de `Rgba8` y 1,0 en `RgbaF32`; `direction` `diagonal` da `Err`.
 - **Cómo añadir una transición**:
   1. Implementar `Transition` (y opcionalmente `GpuTransition`) en `gafira-raster::transitions` o en un crate adaptador.
   2. Declarar `handles` y los parámetros en `ParamSchema`, con una prueba de que `params()` pasa `ParamSchema::validate_definition`; el Inspector → Clip → Transición se genera solo.
