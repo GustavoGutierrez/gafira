@@ -11,7 +11,7 @@ mod tile;
 mod view;
 
 pub use blend::{blend_f32, blend_u8};
-pub use error::BufferError;
+pub use error::{BufferError, EffectError};
 pub use mip::{build_mips, mip_level_count, mip_size};
 pub use pixel::{premultiply, premultiply_u8, unpremultiply, unpremultiply_u8};
 pub use tile::{TILE_SIZE, TileGrid, tile_grid};
