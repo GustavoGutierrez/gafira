@@ -182,3 +182,184 @@ First versions of H1 and H2 were discarded: they failed tests only because they 
 2 094 insertions and 1 deletion in 21 files, 714 in `src/`; the prompt said 2 085. Over the ~700 line signal and the 670 forecast. The owner said size does not concern him: noted, no finding.
 
 next: specifier (ambiguity: C4, W1 to W4), then tdd-apply (implementation: C1 to C3, W5, W6)
+
+
+---
+
+# Verify report: gafira-audio, AU1, round 2 (closure)
+
+Round 1 stays above, unchanged.
+
+| Field | Value |
+|---|---|
+| Commit | `d9581ba`, branch `feat/gafira-audio`, amended specs merged at `a96494a` |
+| Depth, mode, tier | V2, full, T4 at close; `mutation: archive`, no `mutants` report (not a finding) |
+| Verdict | **FAIL** |
+| Counts | 1 CRITICAL, 3 WARNING, 2 SUGGESTION, all new; C1 to C4 and W1 to W6 are closed |
+| Per class (CRITICAL + WARNING) | implementation 2, ambiguity 2, architecture 0, claim 0 |
+
+## Gates
+
+Each command ran alone and its exit code was read directly, on a clean tree at `d9581ba`. Free disk was 30 GB at the start and never below 23 GB.
+
+| Gate | Exit code |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 367 passed, 0 failed, 0 ignored) |
+| `cargo deny --locked check` | 0 |
+| ARQ-07 | 0 |
+| Forbid unsafe | 0 |
+| V5 | 0 |
+| V12 | 0 |
+| ARQ-107 | 0 |
+| V13 | 0 |
+| V14 | 0 |
+
+The policy steps were extracted from `.github/workflows/ci.yml` and run unchanged with `bash --noprofile --norc -eo pipefail`.
+
+## Artifact integrity (step 3c)
+
+- `9bfba1c` touches only `apply-progress.md` and precedes the first implementation commit, `17cdde0`.
+- `git diff 9bfba1c HEAD` on that file removes no line, so the card is unchanged.
+- The fix commits touch only `crates/gafira-audio/`, plus `apply-progress.md` in `d9581ba`.
+- The spec amendment commits touch no file under `crates/`.
+- `.cargo/` is unchanged, so no exclusion needs checking.
+- `params()` is not in the card's ID list. It reaches AU1 through the design table and P13, so this is not a finding.
+
+## Closure of round 1
+
+| Finding | State | Evidence |
+|---|---|---|
+| C1 | Closed | An empty chain cleans the block. Removing the clean step is killed by 8 tests, among them `arq_123_an_empty_chain_cleans_the_block_and_keeps_normal_samples` |
+| C2 | Closed | H1 is killed by `fv_10_a_stereo_fade_runs_at_the_same_speed_on_both_channels`. Probe: stereo fade equals `n / L` exactly, In and Out, blocks of 512 and 7 |
+| C3 | Closed | H2 is killed by `arq_124_a_change_during_a_ramp_continues_from_the_current_gain`. Probe: largest step on a retarget is 0.00208336, within 1/480 + 1e-6 |
+| C4 | Closed | ARQ-110 names `mix` as an exception and ARQ-129 makes it total. Probe: NaN and `±∞` give the sum of the others, two tracks at `f32::MAX` stay finite, 2 channels onto 3 feed the first two |
+| W1 | Closed | ARQ-124 settles the first value. Probe: volume 0 and 50 from sample 0, also after `reset`; no value then 0 ramps. An empty first block is W8 |
+| W2 | Closed | The 02 §4.17.5 table states ids, ranges, defaults, labels and `animatable`; `params()` matches it through `dyn AudioProcessor`. Flipping `animatable` on `Fade` is killed |
+| W3 | Closed | ARQ-124 states the clock and separate instances. Re-reading the length each block is killed by 2 tests. Probe: 0 to 2 s without `reset` changes no sample |
+| W4 | Closed | ARQ-123 states both block shapes. Removing the channel count check is killed by 2 tests. The state rule has a new gap, C5 |
+| W5 | Closed | `tail()` gives 18 for 7 and 11. `max` and wrapping are killed by `arq_129_the_tail_of_a_chain_is_the_sum_and_saturates`. See the ruling below |
+| W6 | Closed | `tests/determinism.rs` covers the four pure functions |
+
+S1 is closed by the new FV-10 wording. S2 is closed by ARQ-129: a track with fewer channels adds what it has.
+
+## CRITICAL
+
+### C5. An empty block after a `prepare` with a 0 changes the state
+
+- class: implementation
+- ref: `crates/gafira-audio/src/dsp.rs:23`, ARQ-123, `crates/gafira-audio/tests/total.rs:223`
+- ARQ-123 says that if `prepare` got a 0, `process` does not process and its state does not change.
+- `accepts` does not refuse an empty block after `prepare` with `max_block` 0 (`0 <= 0`), or a block with no channels after `prepare` with `channels` 0 (`0 == 0`).
+- `process` then reads the parameter. `prepare` keeps the last valid value, so the state survives into the next valid stream.
+- Probe `q3`: `prepare(48 000, 0, 2)`, an empty block with the parameter, `prepare(48 000, 64, 2)`, then a block with no parameter. The rows with `channels` 0 and with both at 0 give the same results.
+
+| Processor | Parameter in the empty block | Output | Control |
+|---|---|---|---|
+| `Gain` | `volume` 50 | 0.5 | 1.0 |
+| `Fade` In | `duration` 0.001 | ramp from 0 | 1.0 |
+| `Pan` | `pan` −1 | right channel 0 | 1.0 |
+
+- `sample_rate` 0 is refused correctly in the same probe.
+- The two clauses were removed as equivalent or unreachable in `apply-progress.md` (round 0 and the fix round). This probe shows they were not equivalent. The doc comment on `accepts` covers only non-empty blocks.
+- `arq_123_an_unprocessed_block_leaves_no_trace_in_the_state` skips the three `prepare` rows (`.skip(3)`), and its blocks are not empty.
+- The reach is narrow: it needs a second `prepare`. It is still a stated rule on critical code, so it counts as a real defect.
+- Tried on the scratch export only: restoring `max_block != 0 && channels != 0` makes all 9 `q3` rows match and the crate's tests pass. Refusing `frames() == 0` does the same and also resolves W8, if `specifier` chooses that reading.
+
+## WARNING
+
+### W7. "Se lee en el primer bloque" does not say which value a later `reset` uses
+
+- class: ambiguity
+- ref: `crates/gafira-audio/src/fade.rs:83`, ARQ-124
+- ARQ-124 has two sentences that differ in one case: a valid value arrives mid-ramp, and the first block after `reset` has none, or a non-finite one.
+- See the ruling below. The code stays; the wording should change.
+
+### W8. Whether an empty block is the "first block" is unstated
+
+- class: ambiguity
+- ref: `crates/gafira-audio/src/dsp.rs:23`, ARQ-124, 02 §4.17.5 row "Tamaño 0"
+- On a valid `prepare`, an empty block is accepted, consumes `first` and latches the length. The row "Bloque vacío" speaks only of samples.
+- Probe `q4`: an empty block with no value, then `volume` 0, gives 0.9979 and ramps, so the burst of W1 returns.
+- Probe `q4`: an empty block with no value, then `duration` 2, gives no fade at all until `reset`.
+- ARQ-124 says the first value rules "desde la muestra 0", and an empty block has no sample 0. Both readings are defensible, so the spec must choose.
+
+### W9. No test pins the mid-ramp read of `duration`
+
+- class: implementation
+- follow-up
+- ref: `crates/gafira-audio/tests/fade.rs`
+- Mutant R1, which reads `duration` only at the latch, survives all tests. Add the test once W7 is settled.
+
+## Rulings
+
+### `ProcessorChain::tail()`: saturating sum, keep it
+
+- Stages run in series. The second stage's input ends only when the first stage's tail ends, so the tails add. They overlap only for parallel stages.
+- Probe `q1`, with real FIR stages that ring exactly their declared tail, on an impulse:
+
+| Tails | `tail()` | Last non-zero sample | `max` would give |
+|---|---|---|---|
+| 7, 11 | 18 | 18 (value 0.25) | 11 |
+| 11, 7 | 18 | 18 | 11 |
+| 7, 11, 3 | 21 | 21 | 11 |
+
+- `max` would cut real output, 7 samples in the first row. The sum is exact here and an upper bound for other stages.
+- A plain sum fails on overflow: it panics in debug and wraps in release to a tail that is too short. Saturating keeps the upper bound and matches `latency()`.
+- No spec states this rule; see S3.
+
+### `Fade`: reading `duration` every block and latching at the start, keep it
+
+- The latch is required: ARQ-124 forbids any change in the samples until the next `reset`. Mutant "re-read the length" is killed.
+- The read on every accepted block meets every acceptance criterion. Probe `q2`: the mid-ramp sample does not change.
+- It is also the only reading under which "un cambio durante la rampa rige en el siguiente `reset`" holds when the first block after `reset` has no value. Probe `q2`: 0.02 s, then 0.005 s mid-ramp, then `reset` and a block with no value or NaN gives slope 1/240. Reading only at the latch would drop the change and give 1/960.
+- It also fits ARQ-123, "queda el último válido". A refused block reads nothing, so ARQ-123 holds there too, apart from C5.
+- The literal "se lee en el primer bloque" points the other way, so W7 asks `specifier` to reword it, for example: the length is fixed in the first block from the last valid value.
+
+## SUGGESTION
+
+- S3. ARQ-129 states only `latency()`. Add that `tail()` is the saturating sum of the stages, in the same row.
+- S4. Stale doc comments: `ProcessorChain::new` says "it changes nothing" (`chain.rs:20`) and `Pan` says "any other block is not changed" (`pan.rs:33`). Both blocks are now cleaned.
+
+## Acceptance map
+
+| Criterion | State | Proof |
+|---|---|---|
+| ARQ-123 | **Failing** | C5. Otherwise `tests/total.rs`, `chain.rs`, `fade.rs` |
+| ARQ-124 | Covered | `tests/gain.rs`, `fade.rs`, `pan.rs`, probes `q2`, `q5`; open wording W7, W8 |
+| ARQ-129 | Covered | `tests/chain.rs`, `mix.rs`, `offset.rs`, probe `q5` |
+| FV-10 (a) | Covered | `fv_10_a_two_second_fade_in_rises_from_zero_to_one_continuously`, `fv_10_a_stereo_fade_runs_at_the_same_speed_on_both_channels`, `fv_10_the_fade_in_and_the_fade_out_have_independent_durations` |
+| FV-10 (d) | Covered | `fv_10_d_one_millisecond_is_44_samples_at_44_1_khz_and_48_at_48_khz` |
+| ARQ-110 | Covered | `arq_110_*` tests; `mix` is an exception, C4 closed |
+| ARQ-111 | Covered | `arq_111_*` tests, `tests/determinism.rs` |
+| P13, 02 §4.17.5 table | Covered | `tests/params.rs`; `duration` at `f64::MAX` stays finite, probe `q5` |
+
+Covered 7 of 8. The AU2 to AU4 IDs of the card are out of this delivery.
+
+## Mutants reapplied
+
+This is a closure round, so there is no independent budget. These repeat the report's list and check closure. All ran on a scratch export of `d9581ba`.
+
+| Mutation | Result |
+|---|---|
+| Spot-check, item 7: no end hold | Killed by 2 tests |
+| H1 fade clock per channel sample | Killed by 1 test |
+| H2 step from the old target | Killed by 1 test |
+| H3 saturation loses its sign | Killed by 2 tests |
+| Empty chain not cleaned | Killed by 8 tests |
+| First value ramps | Killed by 8 tests |
+| Duration re-read each block | Killed by 2 tests |
+| Channel count unchecked | Killed by 2 tests |
+| Tail `max` | Killed by 1 test |
+| Tail wrapping | Killed by 1 test |
+| `Fade` `animatable` flipped | Killed by 1 test |
+| R1 duration read only at the latch | **Survived**, W9 |
+
+## Route
+
+- This is the second consecutive FAIL with `implementation` and with `ambiguity` findings, so the coordinator's stop for the owner applies. One round is left under the cap of three.
+- W7 and W8 go first because the answer to W8 decides the shape of the C5 fix.
+- Size: 2 643 insertions under `crates/` since the card, against a 670 forecast. The owner said size does not concern him: noted, no finding.
+
+next: specifier (ambiguity: W7, W8), then tdd-apply (implementation: C5, W9 as follow-up)

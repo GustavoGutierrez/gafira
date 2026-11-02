@@ -19,4 +19,22 @@
   "mutation": null,
   "hand_mutants": {"run": 4, "killed": 2},
   "criteria": {"total": 7, "covered": 3},
-  "size": {"lines": 2094, "forecast": 670}, "report": "verify-report.md" } ] }
+  "size": {"lines": 2094, "forecast": 670}, "report": "verify-report.md" }, {
+  "round": 2, "commit": "d9581ba", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier",
+  "counts": {"critical": 1, "warning": 3, "suggestion": 2},
+  "classes": ["ambiguity", "implementation"],
+  "findings": [
+    {"id": "C1", "status": "closed"}, {"id": "C2", "status": "closed"}, {"id": "C3", "status": "closed"}, {"id": "C4", "status": "closed"},
+    {"id": "W1", "status": "closed"}, {"id": "W2", "status": "closed"}, {"id": "W3", "status": "closed"},
+    {"id": "W4", "status": "closed"}, {"id": "W5", "status": "closed"}, {"id": "W6", "status": "closed"},
+    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-audio/src/dsp.rs:23", "summary": "Empty block after prepare with max_block or channels 0 is accepted and reads parameters; a later prepare keeps them, against ARQ-123", "follow_up": false, "status": "open"},
+    {"id": "W7", "severity": "WARNING", "class": "ambiguity", "ref": "crates/gafira-audio/src/fade.rs:83", "summary": "ARQ-124 'se lee en el primer bloque' and 'rige en el siguiente reset' differ when the first block has no value; code follows the second", "follow_up": false, "status": "open"},
+    {"id": "W8", "severity": "WARNING", "class": "ambiguity", "ref": "crates/gafira-audio/src/dsp.rs:23", "summary": "Unstated whether an empty block is the first block: it consumes the first value and latches the fade length, so a fade can be lost", "follow_up": false, "status": "open"},
+    {"id": "W9", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-audio/tests/fade.rs", "summary": "Mutant reading duration only at the latch survives; no test pins the mid-ramp read", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 12, "killed": 11},
+  "criteria": {"total": 8, "covered": 7},
+  "size": {"lines": 2643, "forecast": 670}, "report": "verify-report.md" } ] }
