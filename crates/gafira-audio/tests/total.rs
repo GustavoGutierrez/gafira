@@ -1,8 +1,8 @@
 //! ARQ-123: `process` is total, for every processor of the crate.
 
 use gafira_audio::{
-    AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_PAN, PARAM_VOLUME,
-    Pan, ParamSnapshot, ProcessorChain,
+    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_HIGH,
+    PARAM_LOW, PARAM_MID, PARAM_PAN, PARAM_VOLUME, Pan, ParamSnapshot, ProcessorChain,
 };
 
 type Maker = fn() -> Box<dyn AudioProcessor>;
@@ -13,9 +13,11 @@ fn makers() -> Vec<(&'static str, Maker)> {
         ("fade_in", || Box::new(Fade::new(FadeDirection::In))),
         ("fade_out", || Box::new(Fade::new(FadeDirection::Out))),
         ("pan", || Box::new(Pan::new())),
+        ("eq3band", || Box::new(Eq3Band::new())),
         ("chain", || {
             let mut chain = ProcessorChain::new();
             chain.push(Box::new(Gain::new()));
+            chain.push(Box::new(Eq3Band::new()));
             chain.push(Box::new(Pan::new()));
             Box::new(chain)
         }),
@@ -28,6 +30,9 @@ fn params() -> ParamSnapshot {
     s.set(PARAM_VOLUME, 150.0);
     s.set(PARAM_DURATION, 0.001);
     s.set(PARAM_PAN, 0.3);
+    s.set(PARAM_LOW, 5.0);
+    s.set(PARAM_MID, -7.0);
+    s.set(PARAM_HIGH, 9.0);
     s
 }
 
@@ -221,6 +226,9 @@ fn arq_123_an_unprocessed_block_leaves_no_trace_in_the_state() {
     odd.set(PARAM_VOLUME, 20.0);
     odd.set(PARAM_DURATION, 0.0005);
     odd.set(PARAM_PAN, -1.0);
+    odd.set(PARAM_LOW, 15.0);
+    odd.set(PARAM_MID, -15.0);
+    odd.set(PARAM_HIGH, 15.0);
     for (name, make) in makers() {
         for (rate, max, ch, block_channels, frames) in REFUSED.iter().copied().skip(3) {
             let mut with_refused = make();
