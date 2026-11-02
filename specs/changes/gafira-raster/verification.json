@@ -94,4 +94,23 @@
   "mutation": null,
   "hand_mutants": {"run": 12, "killed": 3},
   "criteria": {"total": 16, "covered": 12},
-  "size": {"lines": 1992, "forecast": 420}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1992, "forecast": 420}, "report": "verify-report.md" }, {
+  "delivery": "RS3a", "round": 2, "commit": "6ccebeb04ea67eb933a86c0e15556afe94b1a50c", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply", "classes": [],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 5},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:145", "summary": "Closed: an overflowing conversion is Err naming color before any write; 308 f32 cases and 77 byte cases hold, ends stay copies.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1111", "summary": "Closed: I1, I2, I3 reapplied, each killed by p15_order_of_the_checks_with_two_faults_at_once.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1202", "summary": "Closed: thresholds 0.4999 and 0.5001 reapplied, each killed by arq_118_fade_boundary_is_exactly_one_half.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/benches/transitions.rs", "summary": "Closed: the bench exists and runs, 159.9 ms per frame. XP13 and O5 record the cost; the 8 ms miss stays an owner matter under O5.", "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1229", "summary": "Closed: I5, I5b reapplied, each killed by arq_118_fade_colour_alpha_is_clipped_in_f32.", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mix.rs:114", "summary": "Closed: the Encoded arm works in f64; 584 647 extreme cases stay finite, and the property now covers all three spaces.", "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "design.md P15 step 1", "summary": "Closed: amended P15 rules it; all three return Buffer(NonFinite cx.scale, 0) first, for NaN and both infinities, nothing written.", "follow_up": false, "status": "closed"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:244", "summary": "Closed: replay with the stated stubs gives the recorded failures, the two tests included; height-alone and ARQ-111 corrected.", "follow_up": false, "status": "closed"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transfer.rs:46", "summary": "No test ties the second sRGB curve to gafira-color. Bit-equal today on a sweep of 65 000 values, dormant under MIX_SPACE. New test gap.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 7, "killed": 7},
+  "criteria": {"total": 16, "covered": 16},
+  "size": {"lines": 2498, "forecast": 420}, "report": "verify-report.md" } ] }

@@ -1,23 +1,23 @@
-# Verify report: gafira-raster, RS3a, round 1
+# Verify report: gafira-raster, RS3a, round 2
 
-- Commit: `dc6fced` (branch `feat/gafira-raster`, base `8c0ff09`). Code commits: `54d8e7b`, `8059490`, `09847aa`.
-- Depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
-- This report replaces RS2 round 2, which stays in git at `1909734`. RS2 round 1 stays at `0b563fe`, RS1 round 2 at `e5e1d0e`. All rounds are also in `verification.json`.
+- Commit: `6ccebeb` (branch `feat/gafira-raster`). Fix commits: `219ffb7`, `9d54263`, `2f0480f`; P15 amended by `architect` in `1d5cc3f`.
+- Closure round, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
+- This report replaces RS3a round 1, which stays in git at `107f9d9`. RS2 round 2 stays at `1909734`, RS2 round 1 at `0b563fe`, RS1 round 2 at `e5e1d0e`. All rounds are also in `verification.json`.
 
-**Verdict: FAIL for RS3a.** 3 CRITICAL, 5 WARNING, 5 SUGGESTION.
-Per class: implementation 7 (3 CRITICAL, 4 WARNING), ambiguity 1 (1 WARNING), architecture 0, claim 0.
+**Verdict: PASS for RS3a; RS3b and later deliveries remain.** 0 CRITICAL, 1 WARNING (follow-up), 5 SUGGESTION.
+Per class: implementation 1 (1 WARNING, follow-up), ambiguity 0, architecture 0, claim 0.
 
-The contract, the ends, the error table, Cut, Dissolve and Fade hold on every in-domain probe. The failures are one real defect in Fade (`inf` and NaN in `dst` with no `Err`), and two sets of surviving hand mutants: the P15 check order, and the Fade boundary, which the record calls equivalent and is not.
+All 8 findings of round 1 are closed. Every reapplied mutant dies. One new test gap, as a follow-up.
 
 ## Gates
 
-Each exit code was read alone, on a clean clone of `dc6fced`, with no `proptest-regressions` folder.
+Each exit code was read alone, on a clean clone of `6ccebeb`, with no `proptest-regressions` folder.
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` (1 413 passed, 0 failed, 0 ignored; 95 in `gafira-raster`) | 0 |
+| `cargo test --workspace --locked` (1 422 passed, 0 failed, 0 ignored; 104 in the `gafira-raster` library) | 0 |
 | `cargo deny check` | 0 |
 | policy: ARQ-07 CLI | 0 |
 | policy: forbid unsafe | 0 |
@@ -27,133 +27,76 @@ Each exit code was read alone, on a clean clone of `dc6fced`, with no `proptest-
 | policy: V13 EditToken | 0 |
 | policy: V14 property tests | 0 |
 
-The 14 seeds in the untracked `proptest-regressions/` also pass on the unmutated code, on a scratch copy. The CI test job's Windows and macOS targets were not run here. Disk: 36 GB free at the start, 32 GB at the lowest reading, 36 GB after `cargo clean` of all five build folders.
+The 15 seeds in the untracked `proptest-regressions/` also pass on the unmutated code, on a scratch copy. The CI test job's Windows and macOS targets were not run here. Disk: 36 GB free at the start, 32 GB at the lowest reading, 36 GB after `cargo clean` of all five build folders.
 
 ## Artifact integrity (step 3c)
 
-- The card is `b64090c`, amended by `75e360d`. `dc6fced` only adds lines to `apply-progress.md` (54 added, none removed). No RS3a commit changed the card.
-- `54d8e7b`, `8059490` and `09847aa` touch only `crates/gafira-raster/src/`. No implementer commit touched `specs/02-arquitectura-software.md`, `specs/changes/layer-2/` or `.cargo/`.
-- The card's Deliveries line still says `RS3`; the split is in P15 (S2).
+- `dc6fced..6ccebeb`: `apply-progress.md` changes at lines 72, 159, 169 and 190 (`02:1308` becomes `02 §7.3`, S5) and gains the fix-round sections. The Slice card, lines 1 to 8, is untouched.
+- `specs/02-arquitectura-software.md`, `.cargo/`, `Cargo.lock` and `deny.toml`: no change. `specs/changes/layer-2/design.md`: only `1d5cc3f`, the allowed `architect` amendment, which comes before the fix commits.
+- No exclusion was added to `.cargo/mutants.toml`.
+
+## Closure
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 | closed | `fade.rs:127`, `:145`: the conversion for the format in use is checked before any write. Probe, public API: 11 colours (huge finite, mixed sign, alpha 0, all three spaces) at 7 `progress` values, with extreme pixels. 308 `f32` cases: 168 `Err` naming `color` with `dst` untouched, 140 `Ok` and finite. 77 byte cases: never a bad write. At 0, 1 and clipped values the copy stays `Ok` |
+| C2 | closed | I1, I2, I3 killed, see below. `scale` before `progress` is in the `cx.scale` test |
+| C3 | closed | I4, I4b killed through the public API. The false equivalent claim is withdrawn in the record |
+| W1 | closed | `benches/transitions.rs` builds and runs: 159.85 to 159.91 ms per frame here (5 prior runs of round 1: 154 to 156). XP13 and O5 carry the cost for the owner |
+| W2 | closed | I5, I5b killed |
+| W3 | closed | `mix.rs:114`: `Encoded` works in `f64`. In-crate probe, 584 647 mixes of 17 extreme values (`±MAX`, subnormals, tiny and negative alphas) at 7 weights: all finite. The property covers all three spaces |
+| W4 | closed | Amended P15 steps 1 to 8. See the ruling below |
+| W5 | closed | Replay on exports of the stated stubs: `54d8e7b` gives 3 failing, `effect_error_displays_for_the_log` included; `09847aa` with `Dissolve::handles` `None` fails `dissolve_has_the_identity_and_schema_of_the_table`. The height-alone and ARQ-111 entries are corrected. Lines 177 and 200 keep the old wording, and line 244 supersedes them |
+
+Also closed: S1 (the comment says why), S5 (no `02:1308` left under `crates/`). S4 is settled and was not reopened. For the record, a test pins the code at `mod.rs:234`: `from` `Alpha8` is `UnsupportedFormat` whatever the others are; a mix under a supported `from` is `FormatMismatch`.
+
+## Mutants reapplied
+
+No independent budget spent. Each on a scratch export, `gafira-raster` library tests, 1 of 104 failing.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| I1 | `progress` after `resolve` | `p15_order_of_the_checks_with_two_faults_at_once` |
+| I2 | `resolve` after dimensions | same |
+| I3 | Pixels before dimensions | same |
+| I4 | Fade threshold 0.4999 | `arq_118_fade_boundary_is_exactly_one_half` |
+| I4b | Fade threshold 0.5001 | same |
+| I5 | `colour_f32` alpha clamp to 2 | `arq_118_fade_colour_alpha_is_clipped_in_f32` |
+| I5b | `colour_f32` no lower clip | same |
+
+## Rulings
+
+- **ARQ-31: clean.** No `static`, `OnceLock`, `lazy_static!` or `inventory::` in the crate, tests included; the only `static` matches are `'static` lifetimes. One note: ARQ-31 bans mutable global state for registries, so the old read-only table was probably within the rule. The commit body reads it more strictly than the row does. The result is still fine.
+- **Second sRGB curve in `Transfer`: accepted while dormant, with W6.** It is not a defect. `gafira-color`'s `math::encode` and `decode` are `pub(crate)`, `AnalyticTransform` is `f32` only, and that is what overflowed in W3, so sharing needs a new layer-0 API, out of this delivery. No spec row forbids the copy. The same constants and the same sign rule; a sweep of about 65 000 values in `[-8, 8]` matches `AnalyticTransform` exactly after the cast to `f32`. Only the `Encoded` arm calls it, and `MIX_SPACE` does not select that arm. If O5 goes to (b), this becomes production code and the curve should come from `gafira-color`.
+- **`Transfer::new()` per `run_cpu`: accepted.** Measured in `--release`, 5 runs of 20 000: 10.4 µs, 0.13 % of the 8 ms share and under 0.01 % of today's 160 ms frame. It is also spent on `RgbaF32`, which does not use it under (a); the waste is too small to matter. This holds for whole-frame calls, which is the contract. A caller that splits a frame into many calls would have to look again.
+- **W4's `Err` field: correct.** `Buffer(NonFinite { field: "cx.scale", index: 0 })` matches P15 to the letter for all three transitions, NaN and both infinities, before every other check, with `dst` untouched. It reaches `error.raster.non_finite` with `field` `cx.scale` and `index` 0. A finite `scale` of any sign or size is no error, as P15 says.
+
+C1 note: `Srgb(1e30, ..)` is `Err` on `RgbaF32` and `Ok` with clamped bytes on `Rgba8`, because only the conversion in use is built, and sRGB to sRGB computes nothing. No non-finite value exists on the byte path, so 02 §4.17 "Rangos" leaves the finite result unspecified. No finding.
 
 ## Criteria
 
-| Criterion | Status | Proof |
-|---|---|---|
-| ARQ-118 `progress` clip, ends exact, both formats | covered | `arq_118_ends_are_exact_copies_for_every_transition`; own probe with ghost colour, subnormals, `-0.0`, `f32::MIN`, `f32::MAX` |
-| ARQ-25 (ends) | covered | same test, which names it. `extension-demo` is out of the cut (02 §4.17.4) |
-| ARQ-118 `progress` NaN and `±∞`, named, before writing | covered | `arq_110_non_finite_progress_is_err_and_writes_nothing` |
-| ARQ-118 sizes, formats, `Alpha8`, size 0, before writing | covered | `arq_118_sizes_*`, `arq_118_formats_*`, `arq_118_height_alone_*`, `arq_118_size_zero_*` |
-| ARQ-118 Cut | covered | `arq_118_cut_switches_at_exactly_one_half` |
-| ARQ-118 Dissolve | covered | the 0.25 and 8-bit tests; own probe, 200 000 random pixels against the formula at 1e-5 |
-| ARQ-118 Fade, 0.5 exact, halves | **weak** at the boundary | `arq_118_fade_*`; own probe agrees with the code; C3 |
-| ARQ-118 near the ends, ≤ 1/255 | covered | one pixel pair in the test; own probe, 3 000 000 random premultiplied pairs at `p` 0.0001 and 0.9999: worst 1/255 for both |
-| ARQ-110 pixels, parameters, unknown ids | covered | `arq_110_*` |
-| ARQ-110 no non-finite in the output, computed non-finite is `Err` | **failing** | C1 |
-| ARQ-110 `cx.scale` | **open** | W4 |
-| ARQ-111 determinism | covered | `arq_111_transitions_are_deterministic` (no `rayon` in the crate); own probe also varies the old `dst` |
-| 02 §4.13 identity, schema, handles, trait defaults | covered | `*_has_the_identity_and_schema_of_the_table`, `transition_defaults_*` |
-| 02 §7.3, 02:1308, ADR 0012 | covered | `effect_error_*`; exhaustive `match`, keys, `Count` and `Text` as stated. No `Cancelled` variant: ARQ-112 leaves `Transition` out, correct |
-| P15 order, 7 steps | **weak** | the code follows it; three swaps survive, C2 |
-| P15 shape, items 4 to 9, `Transfer` move | covered | `blend.rs` untouched; `mip.rs` tests pass |
-
-12 of 16 fully covered. Left out on purpose: Slide, Zoom, Wipe (`RS3b`); GPU variants; `TransitionRegistry`; `extension-demo`.
-
-## Independent probes (step 1c)
-
-13 probes on a scratch export, through the public API, written before the tests were read. 12 pass on unmutated code; the failing one is C1. After reading the tests I added 5 more, one per surviving order or boundary mutant, all passing on unmutated code, and one in-crate probe of the `Encoded` arm (W3).
-
-| Probe | Result |
-|---|---|
-| Ends and clip, bit for bit, awkward `f32` | pass |
-| P15 order with several faults at once, `dst` untouched | pass |
-| Bad `color`, `WrongType`, unknown ids with NaN and `∞` | pass |
-| Formula checks, Fade colour exact, default black, translucent bytes | pass |
-| Validity `c ≤ a`, self-mix within 1/255, near the ends | pass |
-| `f32::MAX`, subnormal and mixed-sign pixels stay finite | pass |
-| Fade with a huge finite `color` | **fail**, C1 |
-| Error messages, descriptors, determinism | pass |
-| `EffectCx { scale: NaN }` | `Ok` on all three, W4 |
-
-XP13, timed on a scratch export in `--release`: Dissolve, `Rgba8`, 1080p, `p` 0.37, five runs: 154 to 156 ms per frame. The 8 ms share of 02 §6.2 is missed by a factor of about 19. See W1.
-
-## Hand mutants (step 4b)
-
-Spot-check of the recorded list: item 3, Cut `<=` at 0.5: killed by `arq_118_cut_switches_at_exactly_one_half`.
-
-| # | Mutant | `gafira-raster` tests | Own probe | Result |
-|---|---|---|---|---|
-| I1 | `progress` checked after `resolve` (P15 steps 1, 2) | pass | `kill_i1` fails | **survives**, C2 |
-| I2 | `resolve` after dimensions (P15 steps 2 to 4) | pass | `kill_i2` fails | **survives**, C2 |
-| I3 | Pixels checked before dimensions (P15 steps 4, 5) | pass | `kill_i3` fails | **survives**, C2 |
-| I3b | Dimensions before formats | `arq_118_height_alone_*` fails | | killed |
-| I4 | Fade threshold 0.4999 | pass | `kill_i4` fails | **survives**, C3 |
-| I4b | Fade threshold 0.5001 | pass | `kill_i4` fails | **survives**, C3 |
-| I4c | Fade `p <= 0.5` | pass | pass | equivalent, confirmed |
-| I5 | `colour_f32` alpha clamp to 2 | pass | `kill_i5` fails | **survives**, W2 |
-| I5b | `colour_f32` no lower clip | pass | `kill_i5` fails | **survives**, W2 |
-| I6 | Linear arm drops `* a` | `equal_samples_give_that_sample` fails | | killed |
-| I7 | Guard's `p == 0` and `p == 1` branches removed | pass | | equivalent for these three, confirmed by reading |
-
-Run 12 (spot-check plus 11), killed 3, equivalent 2, survivors 7. The budget of 2 to 3 was exceeded on purpose: the owner asked for each claimed equivalent to be examined.
-
-## Claimed equivalents
-
-| Claim | Finding |
-|---|---|
-| Fade `p <= 0.5` | True. Both give the colour at 0.5 |
-| Fade threshold 0.4999 | **False.** Continuity at 0.5 does not cover `[0.4999, 0.5)`: there `t` is negative and the mix extrapolates. At `p` 0.49995, `from` 1, black colour, `to` 0: 1e-4 expected, and the mutant gives 0. A 1e-5 test sees it. C3 |
-| Fade colour alpha clamp to 2 | True for bytes (`as u8` saturates). **False for `f32`**: `colour_f32` gives alpha 2. W2 |
-| Final byte clamp | True: `as u8` saturates |
-| Guard's `p == 0` and `p == 1` for these three | True: weights `(1, 0)` and `(0, 1)` return the pixel exactly |
-
-## RED order
-
-Git holds only the final commits, so the order itself cannot be read from it. I replayed the stubs each commit body states, on an export of that commit.
-
-| Commit | Body claims | Replay | Reading |
-|---|---|---|---|
-| `54d8e7b` | 3 failing | 2 failing, with the stated `left` and `right` values | `effect_error_displays_for_the_log` passes: it uses neither stub, so it needs a `Display` stub the body does not state |
-| `8059490` | 9 failing; height-alone Not RED | 10 failing | The tenth is height-alone: it fails on any stub returning `Ok`, so it was not in the RED run and came after the code. `arq_111_*` is among the nine, while `apply-progress.md` lists determinism as Not RED |
-| `09847aa` | 12 failing | 11 failing | `dissolve_has_the_identity_and_schema_of_the_table` passes: it needs a stub the body does not state |
-
-The order stubs, tests, RED, code is **not contradicted**: 22 of the 24 recorded failures reproduce, and they fail for the stated reasons. It is **not proved** for three tests: one came after the code, as its own note implies, against the "tests first" summary, and two need an unstated stub. W5.
-
-## Deviations
-
-| # | Finding |
-|---|---|
-| 1, two typed functions | Accepted. Same one place, same weight-1 rule, a slice fits Zoom's 8 samples. P15 can keep its generic wording |
-| 2, colour alpha clipped | Accepted: an out-of-range alpha is finite and has no row, so 02 §4.17 leaves it unspecified. "In both formats" is proved only for bytes, W2. Wide gamut as stated |
-| 3, `debug_assert!` over `MixSpace::ALL` | Works, but it is an always-true assertion that exists to satisfy `dead_code`, close to the spirit of "no `#[allow]` to silence lints". S1 |
-| 4, XP13 not done | **"No bench was asked for" is wrong**: `design.md` XP13 says "in a bench of `RS3a`". W1 |
-| 5, 6 | Accepted. Seeds: S3 |
+16 of 16 covered. The four open in round 1 (Fade boundary, ARQ-110 computed non-finite, ARQ-110 `cx.scale`, P15 order) now have tests, proved above. P15 now has 8 steps. Left out on purpose: Slide, Zoom, Wipe (`RS3b`); GPU variants; `TransitionRegistry`; `extension-demo`.
 
 ## Findings
 
 ### CRITICAL
 
-- **C1. Fade writes `inf` and NaN to `dst` with `Ok`.** class: implementation. `crates/gafira-raster/src/transitions/fade.rs:125`. `colour_f32` overflows on a huge finite colour, and nothing checks the result. Observed, `RgbaF32`: `Srgb(1e30, 0, 0, 1)` at `p` 0.25 gives `[inf, 0.05, 0.05, 0.55]`; `Srgb(1e30, 0, 0, 0)` at 0.5 gives `[NaN, 0, 0, 0]` (`inf × 0`); `DisplayP3(MAX, −MAX, MAX, 1)` gives `±inf`. The same colours give `Ok` on `Rgba8`, with clamped bytes. ARQ-110: a computed non-finite gives `Err`, no non-finite in the output; 02 §4.17 "Rangos": it holds for a value outside any range. Needs a check before any write, naming `color`, and a test. No test reaches this: the finite property sits on `weighted_f32`, not on the transition.
-- **C2. The P15 check order is not proved.** class: implementation. `crates/gafira-raster/src/transitions/guard.rs:30`, `:38`, `:68`. I1, I2 and I3 survive. The code is right today. No test combines a bad `progress` or bad `color` with a later fault, or a size fault with a non-finite pixel, so steps 1, 2 and 5 can move unnoticed. Validation is critical code.
-- **C3. Fade's `p < 0.5` boundary is not proved, and the equivalent claim is false.** class: implementation. `crates/gafira-raster/src/transitions/fade.rs:82`. I4 and I4b survive and are observable through the public API. Add `p` values within 1e-4 of one half on each side, with `from` and `to` different from the colour. ARQ-118 fixes the rule as `2p` if `p < 0,5`.
+None.
 
 ### WARNING
 
-- **W1. XP13 is skipped, and the measurement goes against it.** class: implementation. `specs/changes/layer-2/design.md` XP13. The row asks for a bench in `RS3a`; none exists, and the deviation's reason is wrong. My timing is 154 ms per 1080p frame, against 8 ms. XP13 blocks nothing, but its claim does not hold as built, and the row says a table may be needed. It belongs in front of the owner with O5. This is no finding on `MIX_SPACE`, which is provisional by decision.
-- **W2. `f32` colour alpha clip is untested.** class: implementation. `crates/gafira-raster/src/transitions/fade.rs:127`, test at `mod.rs:923`. I5 and I5b survive. Deviation 2 says both formats; the test holds bytes only. WARNING and not CRITICAL because no spec rule fixes an alpha outside `[0, 1]`.
-- **W3. The dormant `Encoded` arm can give `inf`.** class: implementation. `crates/gafira-raster/src/transitions/mix.rs:314`. Finite pixels `[1e30, 0, 0, 1e-40]` and `[1.5e38, 0, 0, 1e-3]`, mixed at 0.5, give `inf` under `MixSpace::Encoded`, from `px / a`; the property excludes that arm. It does not run today, so this is no defect of the build, but P15 says answer (b) changes only the constant and the midpoint rows, and it would also need this check.
-- **W4. `cx.scale` NaN is accepted, and the specs disagree.** class: ambiguity. ARQ-110 says every public function checks its numbers, and its table test covers "cada parámetro numérico"; P15's closed order has no such step, and the transitions never read `scale`. All three return `Ok` on NaN. Either ARQ-110 excludes `EffectCx`, or the guard gains a step. `RS4` meets the same question with `Effect::run_cpu`.
-- **W5. The RED record does not match the replay.** class: implementation. Commit bodies of `54d8e7b`, `8059490`, `09847aa`, and `apply-progress.md` line 200. See "RED order". State the stubs in full, and say which tests came after the code.
+- **W6. No test ties the second sRGB curve to `gafira-color`.** class: implementation, `follow-up`. `crates/gafira-raster/src/transfer.rs:46`, `:57`. The curves match today, but a change on either side would pass. New test gap: a row comparing `encode_f64` and `decode_f64` against `AnalyticTransform` over a sweep is enough.
 
 ### SUGGESTION
 
-- S1. Replace the `debug_assert!` of deviation 3 with something that does not exist only for a lint, or say so beside it.
-- S2. Amend the Slice card for the split: its Deliveries line and IDs still say `RS3`.
-- S3. `proptest-regressions/` is untracked for the third delivery, now with 14 seeds, and 9 such paths are tracked in other crates. Decide once: commit them or ignore them. The two new seeds pass, and no deterministic test pins their case.
-- S4. `from` `Rgba8` with `to` `Alpha8` gives `FormatMismatch`, and a test pins it. ARQ-118 and P15 do not rank the two rules. Settle it when W4 goes to `specifier`.
-- S5. Comments cite `02:1308`; the rule now sits at line 1349 of `specs/02-arquitectura-software.md`. A section reference (§7.3) would not move.
+- S2. Still open: the Slice card's Deliveries line and IDs say `RS3`. It is the coordinator's card.
+- S3. Still open: `proptest-regressions/` is untracked, now with 15 seeds.
+- S6. `transfer.rs:1` says the curve goes "through the layer-0 transform"; `encode_f64` and `decode_f64` do not.
+- S7. `benches/transitions.rs:3` says the nightly job reads the figure. ARQ-40 specifies that job, but it does not exist yet, and neither does `perf-budgets.toml`. Say "will be". Also, the XP13 row in `design.md` still says `RS3a` owes the bench; it does not now.
+- S8. `6ccebeb` is a `docs` commit about the change folder and also edits a test comment in `error.rs`. Harmless, but it belongs with the S5 fix.
 
 ## Size
 
-1 992 lines added in `crates/gafira-raster`, about 1 100 of them tests, against a forecast of 420 (590). Noted, no finding, as the coordinator said.
+2 498 lines added in `crates/gafira-raster` against `baf5e59`, 594 of them in this fix round, against a forecast of 420 (590). Noted, no finding.
 
-next: specifier (ambiguity: W4), then tdd-apply (implementation: C1, C2, C3, W1, W2, W3, W5)
+next: tdd-apply (RS3b; W6 is a follow-up, no routing)
