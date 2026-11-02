@@ -1,8 +1,8 @@
 //! ARQ-123: `process` is total, for every processor of the crate.
 
 use gafira_audio::{
-    AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_PAN, PARAM_VOLUME,
-    Pan, ParamSnapshot, ProcessorChain,
+    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_HIGH,
+    PARAM_LOW, PARAM_MID, PARAM_PAN, PARAM_VOLUME, Pan, ParamSnapshot, ProcessorChain,
 };
 
 type Maker = fn() -> Box<dyn AudioProcessor>;
@@ -13,9 +13,11 @@ fn makers() -> Vec<(&'static str, Maker)> {
         ("fade_in", || Box::new(Fade::new(FadeDirection::In))),
         ("fade_out", || Box::new(Fade::new(FadeDirection::Out))),
         ("pan", || Box::new(Pan::new())),
+        ("eq3band", || Box::new(Eq3Band::new())),
         ("chain", || {
             let mut chain = ProcessorChain::new();
             chain.push(Box::new(Gain::new()));
+            chain.push(Box::new(Eq3Band::new()));
             chain.push(Box::new(Pan::new()));
             Box::new(chain)
         }),
@@ -28,6 +30,9 @@ fn params() -> ParamSnapshot {
     s.set(PARAM_VOLUME, 150.0);
     s.set(PARAM_DURATION, 0.001);
     s.set(PARAM_PAN, 0.3);
+    s.set(PARAM_LOW, 5.0);
+    s.set(PARAM_MID, -7.0);
+    s.set(PARAM_HIGH, 9.0);
     s
 }
 
@@ -212,13 +217,18 @@ fn arq_123_channels_of_different_lengths_are_cleaned_by_their_own_length() {
 
 #[test]
 fn arq_123_an_unprocessed_block_leaves_no_trace_in_the_state() {
-    // The refused block carries parameters; the valid one carries none. Any
-    // state taken from the refused one (a read parameter, an advanced clock, a
-    // consumed first block) would show in the valid block.
+    // The refused block carries parameters; the valid one carries none. A
+    // parameter read from the refused block, or an advanced clock, would show
+    // in the valid block. A consumed `Gain` first block would not: the valid
+    // block has no value to ramp to (`refused.rs` pins that, and the rows
+    // skipped here, whose `prepare` has a 0, and a refused block mid-ramp).
     let mut odd = ParamSnapshot::new();
     odd.set(PARAM_VOLUME, 20.0);
     odd.set(PARAM_DURATION, 0.0005);
     odd.set(PARAM_PAN, -1.0);
+    odd.set(PARAM_LOW, 15.0);
+    odd.set(PARAM_MID, -15.0);
+    odd.set(PARAM_HIGH, 15.0);
     for (name, make) in makers() {
         for (rate, max, ch, block_channels, frames) in REFUSED.iter().copied().skip(3) {
             let mut with_refused = make();
@@ -289,5 +299,40 @@ fn arq_111_two_runs_give_the_same_bytes_with_and_without_a_reset() {
         };
         assert_eq!(go(false), go(false), "{name}");
         assert_eq!(go(true), go(true), "{name}");
+    }
+}
+
+#[test]
+fn arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history() {
+    // The block with the bad sample and the same block with a 0 there give the
+    // same output, and so do the blocks that follow (a filter keeps history).
+    let p = params();
+    let sig = |n: usize| -> Vec<Vec<f32>> {
+        (0..2)
+            .map(|c| {
+                (0..n)
+                    .map(|i| (((i * 37 + c * 11) % 101) as f32 - 50.0) / 60.0)
+                    .collect()
+            })
+            .collect()
+    };
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for (name, make) in makers() {
+            let (mut a, mut b) = (make(), make());
+            a.prepare(48_000, 256, 2);
+            b.prepare(48_000, 256, 2);
+            let (mut x, mut y) = (sig(256), sig(256));
+            x[0][100] = bad;
+            x[1][3] = bad;
+            y[0][100] = 0.0;
+            y[1][3] = 0.0;
+            run(a.as_mut(), &mut x, &p);
+            run(b.as_mut(), &mut y, &p);
+            assert_eq!(bits(&x), bits(&y), "{name} {bad}");
+            let (mut x, mut y) = (sig(256), sig(256));
+            run(a.as_mut(), &mut x, &p);
+            run(b.as_mut(), &mut y, &p);
+            assert_eq!(bits(&x), bits(&y), "{name} {bad} next block");
+        }
     }
 }

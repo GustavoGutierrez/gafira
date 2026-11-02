@@ -2,8 +2,8 @@
 //! parameter, changes no state, latches nothing and is not the first block.
 
 use gafira_audio::{
-    AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_PAN, PARAM_VOLUME,
-    Pan, ParamSnapshot,
+    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_HIGH,
+    PARAM_LOW, PARAM_MID, PARAM_PAN, PARAM_VOLUME, Pan, ParamSnapshot,
 };
 
 type Maker = fn() -> Box<dyn AudioProcessor>;
@@ -24,6 +24,9 @@ fn loud() -> ParamSnapshot {
     s.set(PARAM_VOLUME, 50.0);
     s.set(PARAM_DURATION, 0.001);
     s.set(PARAM_PAN, -1.0);
+    s.set(PARAM_LOW, 12.0);
+    s.set(PARAM_MID, -12.0);
+    s.set(PARAM_HIGH, 12.0);
     s
 }
 
@@ -40,6 +43,7 @@ fn makers() -> Vec<(&'static str, Maker)> {
         ("fade_in", || Box::new(Fade::new(FadeDirection::In))),
         ("fade_out", || Box::new(Fade::new(FadeDirection::Out))),
         ("pan", || Box::new(Pan::new())),
+        ("eq3band", || Box::new(Eq3Band::new())),
     ]
 }
 

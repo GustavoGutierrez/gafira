@@ -95,6 +95,11 @@ impl Param {
         }
     }
 
+    /// The last valid value, or the default before any.
+    pub const fn value(&self) -> f64 {
+        self.value
+    }
+
     /// Reads the snapshot: a finite value is clipped to `[min, max]` and kept;
     /// a missing or non-finite one leaves the last valid value.
     pub fn read(&mut self, snapshot: &ParamSnapshot) -> f64 {

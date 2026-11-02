@@ -153,3 +153,98 @@ Hand mutants (killed, then reverted; none committed):
 | 6 later processed duration not stored as last valid | same test |
 
 Deviations: none. Size: see `git diff --shortstat` of the round (test file about 175 lines, 4 lines of code); well under 300.
+
+## AU2
+
+Branch `feat/gafira-audio`, from `develop` d437b8a. Commits: `29d4314` (test-only: AU1 follow-ups W10 to W13, S4), `0f7d798` (`Eq3Band`, ARQ-125, FV-20 (c)), and the commit of this note (ARQ-23 guard, testkit negative control, `bench_mix_16`, CAL-15). Gates for each commit, each read alone: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, all exit code 0.
+
+### Follow-ups of AU1 (first commit, tests only)
+
+`tests/refused.rs` (4 tests) pins behaviour that already held; each test passed from the start and was proved by scratch mutants, all killed and reverted:
+
+| Finding | Test | Mutants killed |
+|---|---|---|
+| W10 | `arq_124_a_refused_block_does_not_consume_the_first_block_of_a_gain` (six refused shapes) | F2 (non-empty refused block, and any refused block, sets `first = false`) |
+| W11 | `arq_123_a_refused_block_after_a_prepare_with_a_zero_reads_no_parameter` (the three skipped rows, then a valid `prepare`); comment at `total.rs` corrected | R4 on `Gain`, `Fade`, `Pan` |
+| W12 | `arq_123_a_refused_block_during_a_running_state_leaves_the_next_samples_as_they_were` (running ramp and latch; block 2's duration differs from block 1's so a cleared latch shows) | F3, F4, F5, L3, L4, L4b, L5 |
+| W13 | `arq_124_the_last_valid_value_survives_prepare` | D4, V1, V3 |
+| S4 | doc comments of `ProcessorChain::new` and `Pan` | n/a |
+
+### Done
+
+- `Eq3Band` (`src/eq.rs`): ids `low`, `mid`, `high` (dB, `[-15, 15]`, default 0, not animatable, labels `audio.eq3band.*`); low shelf 100 Hz `S = 1`, peak 1 kHz `Q = 1`, high shelf 8 kHz `S = 1`; RBJ cookbook coefficients and direct form I in `f64`, one history per channel and band; a band at 0 dB, or with `2 * f0 >= fs`, passes the signal.
+- Tests: `tests/eq.rs`, `eq_contract.rs`, `eq_state.rs`, `alloc.rs` (ARQ-23 positive, 16 tracks of Gain, Eq3Band, Pan plus both fades, 512 frames, 8 rounds of changing parameters), `gafira-testkit/tests/alloc_guard.rs` (negative control in a subprocess: a clean child succeeds, an allocating child dies with SIGABRT), `eq3band` added to the makers of `total.rs`, `empty.rs`, `refused.rs`.
+- `benches/mix.rs`, `bench_mix_16` (CAL-15): 16 tracks, Gain, Eq3Band, Pan, 512 frames at 48 kHz, plus the mix. **Figure: 255 us per block (interval 235 to 280 us) against a 2.67 ms budget (25 % of 10.67 ms): about 2.4 % of one core.** Measured with `cargo bench` on the developer machine, not the reference one.
+
+### RED evidence (a stub that only cleans the block, with the right API, existed before the tests)
+
+| Criterion | Test and assertion |
+|---|---|
+| ARQ-125 response | `arq_125_the_impulse_response_matches_h_within_half_a_db_from_20_hz_to_20_khz`: `fs 44100 gains [15.0, 0.0, 0.0] f 20.0: got 0.000 dB, want 14.962 dB` |
+| FV-20 (c) | `fv_20_c_a_sine_sweep_follows_the_theoretical_curve`: `f 20: got -0.000 dB, want 8.976 dB` |
+| ARQ-125 omission | `arq_125_a_band_at_or_above_half_the_sample_rate_is_omitted`: `!run_pair(16_001, ...)` failed (an active band gave the output of 0 dB) |
+| P13, 02 4.17.5 | `p13_the_schema_has_the_three_bands_of_the_table`: `left == right` failed (1 parameter, 3 wanted) |
+| ARQ-123 clip | `arq_123_a_band_beyond_15_db_is_clipped_to_15_and_at_the_extremes_it_is_kept`: `band 0 +15` left != right failed |
+| ARQ-125 gain change | `arq_125_a_gain_change_applies_from_the_next_block_and_keeps_the_history`: `fs 44100 step 1 sample 0: got 3.265037, want 3.571753970696067` |
+| Not RED (pass against the pass-through stub by construction; each proved by the mutants below) | `arq_125_with_every_band_at_0_db_the_output_is_bit_identical`, `arq_125_every_pole_is_inside_the_unit_circle`, `arq_111_reset_*`, `arq_111_prepare_*`, `arq_125_each_channel_has_its_own_history`, `arq_123_the_history_is_flushed_below_the_smallest_normal_sample`, the non-finite and unknown-id tests, the three new makers, `alloc.rs` and the testkit control (the code was already allocation-free; the control is proved by removing the guard) |
+
+### Hand mutants (killed, then reverted; none committed)
+
+| Mutation | Killed by |
+|---|---|
+| Shelf frequencies swapped (low 8 kHz; high 100 Hz); mid at 1.2 kHz | `arq_125_the_impulse_response_*`, `fv_20_c_*`, `arq_125_a_band_at_or_above_*`, `arq_125_a_gain_change_*` |
+| Peak `Q` 2 and 0.5 | `arq_125_the_impulse_response_*`, `fv_20_c_*` |
+| Shelf `S` not 1 (low and high separately; factors 1.0, 1.2, 1.6) | the same two |
+| Range bound strict (`abs < 15`, so +-15 is ignored) | `arq_123_a_band_beyond_15_db_*`, the response tests |
+| History not cleared by `reset`; kept by `prepare` | `arq_111_reset_clears_the_history_of_every_band`; `arq_111_prepare_clears_the_history_of_every_band` |
+| Coefficients only on `prepare` (change ignored); only for the first non-zero gain; change clears the history; change applied one block late | `arq_125_a_gain_change_applies_from_the_next_block_and_keeps_the_history` (and the response tests for the first) |
+| Subnormal history not flushed; flushed at the `f64` threshold | `arq_123_the_history_is_flushed_below_the_smallest_normal_sample` |
+| Channels share one history | `arq_125_each_channel_has_its_own_history` |
+| Refused non-empty block clears the history, or is filtered anyway, or reads parameters | `arq_123_a_refused_block_during_a_running_state_*`, `arq_123_a_refused_block_after_a_prepare_with_a_zero_*`, `arq_123_an_unprocessed_block_leaves_no_trace_in_the_state` |
+| Empty block clears the history, or reads parameters | `arq_123_a_refused_block_during_a_running_state_*`, `arq_123_an_empty_block_after_*` |
+| 0 dB band not bypassed (spec demands identity, so it is checked) | first survived the bit-identical test: with identity coefficients `f64` rounding returns the same `f32`. Fixed with a block of `1e30` followed by small samples, which the cancellation corrupts: now `arq_125_with_every_band_at_0_db_the_output_is_bit_identical`. Also `a_gain_change_*` |
+| Bypass without history; omission `>` for `>=`; `a1` sign; peak `b0` with `alpha / a`; `db / 20` for `db / 40` | `a_gain_change_*`; `arq_125_a_band_at_or_above_*`; the response tests |
+| An allocation (`vec!`, `Box`) in `Eq3Band::process`, `mix`, `Gain::process`, `ProcessorChain::process` | `arq_23_sixteen_tracks_*` (the process aborts with SIGABRT) |
+| Guard removed from the testkit child | `arq_23_an_allocation_inside_the_guard_aborts_the_process` |
+
+### Adversarial sweep (throwaway test, not committed)
+
+155 907 checks over `Gain`, both `Fade`s, `Pan`, `Eq3Band` and a Gain, Eq, Pan chain: six stream shapes (rates 1 Hz to 705.6 MHz, `max_block` 1 to 512, 1 and 2 channels), six parameter sets (0, +-15, 200, 1e300, `f64::MAX`, NaN, infinities, `-0.0`, out of range), block sizes 1, 7 and 500 (output bit-identical whatever the split), five kinds of refused or empty block inserted every third block (output unchanged), `reset` and `prepare` after 1 to 4 blocks (output equals a fresh processor), Eq3Band at rates 1 to 705.6 MHz around the `fs / 2` boundaries, the 0 dB bypass at sizes 1, 7, 500, and the pure functions at extremes. Result: no finding; one failure in the sweep itself (a one-channel "lopsided" block is valid), fixed in the sweep. No code change followed.
+
+### Deviations and decisions the specs leave open
+
+- A gain change of `Eq3Band` applies from the first sample of the next processed block, with no ramp, and the histories carry on (ARQ-125 is silent; the bands are not animatable). A band at 0 dB, or omitted, passes the signal and its history follows it, so a later gain starts from a consistent state.
+- The history is flushed to 0 when its output is below `f32::MIN_POSITIVE` (the same bound as the output rule of ARQ-123); a flushed sample bends the tail by a few samples, so the test starts 100 samples after the ring-down.
+- "All poles inside the unit circle" is proved from outside by the ring-down of the impulse response (a pole on the circle would keep it ringing), because the coefficients are private. At fs = 16 001 Hz the 8 kHz shelf decays slowly, so the test asks for half the amplitude per 16 384 samples.
+- `Eq3Band` has `tail() == 0` (default): ARQ-125 declares none.
+- The `makers` of `total.rs`, `empty.rs`, `refused.rs` now include `eq3band`, and their snapshots carry `low`, `mid`, `high`.
+- Size: `git diff --shortstat d437b8a` on `crates/`: 14 files, 1 380 insertions (268 in `src/`, the rest tests and the bench), before this note. Forecast 400 (560): over it, and over ~700 lines in total; the coordinator decides.
+
+### AU2 fix round 1 (verify round 1: C6, C7, C8, W14; W15 is process-only)
+
+Commits: `9ecc6c3` (tests for C6, C7, C8; no code change) and `595487b` (`Eq3Band::tail`, ARQ-125 as worded in `b9442ae`). Each commit passed `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked`, each exit code 0 and read alone.
+
+Tests added:
+- C6: `arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history` (`total.rs`, over every maker: NaN, +inf, -inf equals a 0, in the block and in the next one).
+- C7: `arq_125_prepare_at_another_rate_designs_for_the_new_rate_with_the_last_valid_value` (`refused.rs`, every maker) and `arq_125_a_band_omitted_at_the_new_rate_does_nothing_after_prepare` (`eq_state.rs`).
+- C8: `arq_124_the_last_valid_value_survives_reset` (`refused.rs`, over `makers()`, twin of the `prepare` test).
+- Same three gaps on Gain, Fade and Pan: C6 on all three was already killed (`arq_123_a_non_finite_sample_counts_as_zero`, `arq_123_pan_cleans_non_finite_samples_on_any_block`); C7 (Gain `ramp_len`, Fade `reset` in `prepare`) already killed (`arq_129_prepare_and_reset_reach_every_processor`, the ramp tests, `arq_124_prepare_again_reads_the_duration_afresh`); Pan has no state to redesign. C8 on Gain, Fade and Pan was only killed incidentally by tests that do not name it; the new reset twin now kills it for all.
+
+RED for W14 (tests before code, `tail()` was the default 0): `arq_125_tail_is_forty_milliseconds_in_frames_with_a_band_active` (`left: 0, right: 1764`, fs 44100), `arq_125_tail_is_zero_without_an_active_band` (`left: 0, right: 641`, high at 16 001 Hz), `arq_125_tail_follows_the_last_valid_gain` (`left: 0, right: 1920`), `arq_125_tail_is_kept_by_reset_prepare_at_the_same_rate_and_a_refused_block` (`left: 0, right: 1920`), `arq_125_after_an_impulse_every_sample_from_tail_is_below_1e_6` (panic at frame 0 of the ring-down). Not RED by construction: `arq_125_a_gain_change_applies_from_sample_0_of_the_block_that_carries_it` (1e-6 against the reference at 44.1, 48 and 96 kHz; behaviour already held).
+
+Tail: active band = centre < fs/2 and last valid gain not 0 dB (`Band::is_active`, `Param::value`); `tail = ceil(4 fs / 100)` in `u64`. Figures checked: 1 764, 1 920, 3 840, 1 765, 171 798 692; 0 for 0 dB, -0 dB, not prepared, fs 0, high only at 16 000 Hz; 641 at 16 001 Hz; below 1e-6 from frame `tail()` over the 26 active combinations at three rates.
+
+Hand mutants (applied, killed, reverted):
+
+| Mutant | Killed by |
+|---|---|
+| C6 `clean_input` removed in `Eq3Band` | `arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history` |
+| C6 removed in Gain, Fade, Pan | the existing non-finite tests, and the new one for Gain and Fade |
+| C7 no redesign in `Eq3Band::prepare` | `arq_125_a_band_omitted_at_the_new_rate_*`, `arq_125_prepare_at_another_rate_*` |
+| C7 Gain `ramp_len` not set in `prepare`; Fade `prepare` without `reset` | `arq_129_prepare_and_reset_reach_every_processor`, ramp tests; `arq_124_prepare_again_reads_the_duration_afresh` |
+| C8 `Eq3Band::reset` forgets the gains; same on Gain, Fade, Pan | `arq_124_the_last_valid_value_survives_reset` (all four) |
+| tail: `floor` instead of `ceil`; band omission removed; `<=` for `<`; 0 dB not excluded; always active | `arq_125_tail_is_forty_milliseconds_*`, `arq_125_tail_is_zero_without_an_active_band`, `arq_125_tail_follows_the_last_valid_gain`, `arq_125_tail_is_kept_by_reset_*` |
+| tail: `reset` forgets the gains | `arq_125_tail_is_kept_by_reset_*`, `arq_124_the_last_valid_value_survives_reset` |
+| tail: `unwrap_or(u32::MAX)` to `unwrap_or(0)` | Survives, equivalent: `4 fs / 100` never exceeds `u32::MAX`, so the branch cannot run |
+
+Deviation: `Eq3Band` tail is read from the last valid gains, so `tail()` before the first `process` is 0 even if a later snapshot will set a band (ARQ-125 says the last valid value, or the default). W15: nothing to change in this code.
