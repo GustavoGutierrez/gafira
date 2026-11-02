@@ -2,7 +2,7 @@
 
 use gafira_geom::Size;
 
-use crate::layout::check_input;
+use crate::layout::{check_input, check_output};
 use crate::{TextError, TextLayout, TextStyle, layout_box};
 
 /// Deepest level of a list.
@@ -92,6 +92,10 @@ pub fn layout_list(
             }
         }
         let height = layout.height;
+        check_output(&layout)?;
+        if !(indent.is_finite() && top.is_finite() && (top + height).is_finite()) {
+            return Err(TextError::NonFinite { field: "output" });
+        }
         entries.push(ListEntry {
             marker,
             indent,

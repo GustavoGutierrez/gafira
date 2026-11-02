@@ -249,12 +249,25 @@ fn read_lines(
             if natural.is_nan() || natural <= 0.0 {
                 return Err(TextError::InvalidFont { index: font });
             }
-            let underline = style
-                .underline
-                .then(|| decoration(m.underline_offset, m.underline_size, size_px));
-            let strikethrough = style
-                .strikethrough
-                .then(|| decoration(m.strikethrough_offset, m.strikethrough_size, size_px));
+            let font_bytes: &[u8] = run.font().data.as_ref();
+            let font_index = run.font().index;
+            // Parley fills a missing table with 1/18 em; the rule here is 0.05 em.
+            let underline = style.underline.then(|| {
+                let size = if has_table(font_bytes, font_index, b"post") {
+                    m.underline_size
+                } else {
+                    0.0
+                };
+                decoration(m.underline_offset, size, size_px)
+            });
+            let strikethrough = style.strikethrough.then(|| {
+                let size = if has_table(font_bytes, font_index, b"OS/2") {
+                    m.strikethrough_size
+                } else {
+                    0.0
+                };
+                decoration(m.strikethrough_offset, size, size_px)
+            });
             for c in run.visual_clusters() {
                 let glyphs: Vec<u32> = c.glyphs().map(|g| g.id).collect();
                 hard_breaks.push(c.is_hard_line_break());
@@ -296,6 +309,30 @@ fn read_lines(
     Ok(lines)
 }
 
+/// Whether the font has the table, read from its table directory (index of a collection).
+fn has_table(font: &[u8], index: u32, tag: &[u8; 4]) -> bool {
+    let be32 = |at: usize| {
+        font.get(at..at + 4)
+            .map(|b| usize::try_from(u32::from_be_bytes([b[0], b[1], b[2], b[3]])).unwrap_or(0))
+    };
+    let start = if font.get(..4) == Some(b"ttcf") {
+        be32(12 + 4 * index as usize)
+    } else {
+        Some(0)
+    };
+    let Some(start) = start else { return false };
+    let Some(count) = font
+        .get(start + 4..start + 6)
+        .map(|b| usize::from(u16::from_be_bytes([b[0], b[1]])))
+    else {
+        return false;
+    };
+    (0..count).any(|i| {
+        let record = start + 12 + 16 * i;
+        font.get(record..record + 4) == Some(tag.as_slice())
+    })
+}
+
 /// A thickness of 0 or none is 0.05 em (PROPUESTA, FD-41).
 fn decoration(offset: f32, thickness: f32, size_px: f32) -> Decoration {
     let thickness = if thickness > 0.0 {
@@ -331,14 +368,20 @@ fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
 }
 
 /// ARQ-110: a non-finite result is an `Err`, never an output.
-fn check_output(layout: &TextLayout) -> Result<(), TextError> {
-    let all_finite = layout.lines.iter().all(|l| {
-        l.baseline.is_finite()
-            && l.advance.is_finite()
-            && l.clusters
-                .iter()
-                .all(|c| c.x.is_finite() && c.advance.is_finite())
-    });
+pub(crate) fn check_output(layout: &TextLayout) -> Result<(), TextError> {
+    let decoration_ok =
+        |d: &Option<Decoration>| d.is_none_or(|d| d.offset.is_finite() && d.thickness.is_finite());
+    let all_finite = layout.height.is_finite()
+        && layout.lines.iter().all(|l| {
+            l.baseline.is_finite()
+                && l.advance.is_finite()
+                && l.clusters.iter().all(|c| {
+                    c.x.is_finite()
+                        && c.advance.is_finite()
+                        && decoration_ok(&c.underline)
+                        && decoration_ok(&c.strikethrough)
+                })
+        });
     if all_finite {
         Ok(())
     } else {
