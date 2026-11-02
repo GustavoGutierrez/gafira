@@ -348,6 +348,14 @@ Fecha: 30 de octubre de 2026.
 
 - **Decisión**: el titular acepta los ADR 0005 a 0010 (`docs/adr/`).
 
+## D-40 Filtros en el primer corte de `gafira-raster`
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: el primer corte entrega el mecanismo de filtros de FD-34 y un solo preset de prueba (opción a de la pregunta O3 de `specs/changes/layer-2/design.md`). El catálogo real llega más adelante, con Q-34.
+- **Intensidad**: es una mezcla lineal de cada parámetro desde su valor por defecto hasta el valor del preset.
+- Aplicado a 02 (§12.3) y 04 (FD-34).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

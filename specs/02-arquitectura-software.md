@@ -5,7 +5,7 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-39 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-40 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
@@ -1765,7 +1765,8 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
 | Q-44 | ¿En qué espacio se calculan los colores medios de ARQ-131: luz lineal, y después Lab, o Lab píxel a píxel? No cambia las escenas de contraste bajo, que son planas. | Titular |
 | Q-43 | ¿Medir la sonoridad, Nivelar y remuestrear un clip largo se pueden cancelar y dan progreso? Ninguna spec lo dice y sus filas no tienen firma con token (ARQ-112). No bloquea el primer corte de `gafira-audio`. | Titular |
-| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos. No bloquea la especificación. | Titular |
+| Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos, y con ellas dará el catálogo de filtros de 04 FD-34 (D-40). No bloquea la especificación. | Titular |
+| Q-41 | ¿Cómo actúa la Intensidad de 04 FD-34 en parámetros `Int`, `Bool`, `Choice` y `Color`? D-40 fija la mezcla lineal; solo `Float` tiene fórmula. | Titular |
 
 ---
 
