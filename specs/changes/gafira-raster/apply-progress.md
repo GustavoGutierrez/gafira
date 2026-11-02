@@ -69,7 +69,7 @@ Commits: cfdd474 (mips: C1, W1, W3 mips part, S2), then the test commit for C2 t
 - C1: an `RgbaF32` pixel with `a = 0` now adds no colour. RED: `arq_121_f32_transparent_pixel_adds_no_colour`.
 - W1 (amended ARQ-121): every source pixel counts. Each level pixel is the equal-weight mean of the original pixels it covers; an odd side joins its last row or column to the last box; a side of 1 does not divide. RED on the old code: `arq_121_odd_side_counts_every_pixel_alpha8` (3x1 gave 0, not 85), `arq_121_odd_side_counts_every_pixel_rgba8` (3x1 gave 0, not 156), `arq_121_wide_image_top_level_is_the_exact_mean` (1x1 gave 0, not 185). The test of the old rule (`arq_121_odd_side_uses_the_first_even_part`) is replaced.
 - Choice on rounding: levels are not rebuilt from level 0 pixel by pixel (that costs a pass over the source per level). Each level is built from the unrounded f64 sums of the level above, which started from level 0, so a level equals the exact mean of the originals it covers and no rounding builds up. Cost: 32 bytes per source pixel while building (about 380 MB for 12 MP), then a quarter of that. If a speed or memory test needs less, level 1 could be computed straight from the 8-bit source; not done now.
-- W2: `EffectError` does not exist in RS1 (no `Effect` or `Transition`), so there is nothing to wrap. Reported: RS3 or RS4, whichever adds `EffectError` first, must add a variant wrapping `BufferError` with `From`, with `to_message` delegating (02:1308).
+- W2: `EffectError` does not exist in RS1 (no `Effect` or `Transition`), so there is nothing to wrap. Reported: RS3 or RS4, whichever adds `EffectError` first, must add a variant wrapping `BufferError` with `From`, with `to_message` delegating (02 §7.3).
 - C2, C3: `arq_110_non_finite_colour_in_transparent_pixel_is_err` (pixel.rs, for `premultiply` and `unpremultiply`, alpha 0 and -0.0, NaN and both infinities, buffer unchanged) and the same name in mip.rs for `build_mips`. Not RED; proved by V1 and V2.
 - C4: `arq_111_every_conversion_is_deterministic` runs `premultiply` and `unpremultiply` twice on `f32` and `Rgba8`. Not RED; proved by V3.
 - C5: `proptest!` blocks `arq_110_finite_input_gives_finite_output`, `arq_110_unit_range_premultiply_is_ok_and_finite`, `arq_110_finite_mips_are_finite`. Not RED.
@@ -156,7 +156,7 @@ Status: partial. W6 and W7 of RS2's report are done (commit fe02abf). The transi
 
 - W6: `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit` holds the 8-bit case of both pixels transparent (ghost colour in the backdrop). W7: `arq_110_finite_input_gives_finite_output` asserts the backdrop bit for bit at source alpha 0 and the range only above it; `arq_110_interior_input_gives_output_in_unit_range` assumes a non-zero source alpha. Not RED (the code was right); mutants: 8-bit early return skipped for a transparent backdrop, same returning the source, `f32` early return returning the clipped backdrop. All killed by the first test above. Gates exit 0.
 
-### Blocked: what ARQ-118, 02 §4.13 and 02:1308 do not state
+### Blocked: what ARQ-118, 02 §4.13 and 02 §7.3 do not state
 
 ARQ-118 gives the maths of `progress`, Cut, Dissolve, Fade, Slide offset, Zoom scales and Wipe mask. It leaves open what a `Transition` needs to exist, and C12 needs a schema per transition:
 
@@ -166,7 +166,7 @@ ARQ-118 gives the maths of `progress`, Cut, Dissolve, Fade, Slide offset, Zoom s
 4. Identifiers and display: `transition_id` strings and `MessageKey` names for the `Descriptor` of each of the six, and their `version`.
 5. `HandleReq` for each transition (`Both`, `From`, `To`, `None`; 02 gives the type, not the values per transition).
 6. Pixel formats: which of `Rgba8`, `RgbaF32`, `Alpha8` each transition accepts, and the error for a mix (from `Rgba8`, to `RgbaF32`, destination `Alpha8`). ARQ-118 tests "por formato".
-7. `EffectError`: 02:1308 states the `BufferError` wrapper only. The typed `Err` variants for a dimension mismatch (ARQ-118) and for a non-finite or invalid `ParamValues` (ARQ-110, `ParamError`) are not named. `BufferError` has no mismatch variant.
+7. `EffectError`: 02 §7.3 states the `BufferError` wrapper only. The typed `Err` variants for a dimension mismatch (ARQ-118) and for a non-finite or invalid `ParamValues` (ARQ-110, `ParamError`) are not named. `BufferError` has no mismatch variant.
 8. Dissolve and Fade on premultiplied values: the formula is stated, and mutant 10 reads "colour operations without premultiplying". Confirm that Dissolve and Fade interpolate the premultiplied RGBA channels directly (the only linear crossfade that keeps alpha), and in which space 8-bit pixels are mixed (stored sRGB bytes, as `blend_u8`, or linear light as the mip levels; W1 of RS2 is the same open question).
 9. `Rgba8` rounding of Dissolve and Fade (round to nearest?).
 
@@ -187,7 +187,7 @@ Branch `feat/gafira-raster` (`develop` merged). Commits: 54d8e7b (`EffectError`)
 
 | Criterion | Failing test |
 |---|---|
-| 02:1308 wrapper, delegation | `effect_error_wraps_buffer_and_param_errors_and_delegates` (left `UnsupportedFormat`, right `Buffer(NonFinite progress)`); `effect_error_new_variants_have_keys_and_arguments` |
+| 02 §7.3 wrapper, delegation | `effect_error_wraps_buffer_and_param_errors_and_delegates` (left `UnsupportedFormat`, right `Buffer(NonFinite progress)`); `effect_error_new_variants_have_keys_and_arguments` |
 | ARQ-118 ends, clip | `arq_118_ends_are_exact_copies_for_every_transition` |
 | ARQ-110 `progress`, pixels, params | `arq_110_non_finite_progress_is_err_and_writes_nothing`, `arq_110_non_finite_pixels_are_err_and_write_nothing`, `arq_110_fade_rejects_a_bad_colour_before_writing` |
 | ARQ-118 formats, sizes, size 0 | `arq_118_formats_are_checked_before_writing`, `arq_118_sizes_are_checked_before_writing`, `arq_118_size_zero_is_ok_after_the_checks` |
@@ -225,4 +225,28 @@ Equivalent survivors: Fade `p <= 0.5` and a threshold at 0.4999 (the function is
 6. `crates/gafira-raster/proptest-regressions/` is untracked again; not committed.
 
 Lines: `git diff --shortstat baf5e59..HEAD -- crates/gafira-raster` (1 992 added, about 1 100 of them tests).
+
+### Fix round 1 (RS3a verify round 1: C1 to C3, W1 to W5, S1, S2, S5, ARQ-31)
+
+Commits: 219ffb7 (cx.scale, order, Fade colour, Fade boundary, alpha clip), 9d54263 (Encoded finite, no global state), 2f0480f (XP13 bench), then this note. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone. The first of them was committed once with a clippy failure (too many arguments in a test helper) and amended before anything else; the final commit passes. `gafira-raster` tests: 95 to 104.
+
+- W4, P15 step 1 (RED first): a non-finite `cx.scale` gives `Buffer(NonFinite { field: "cx.scale", index: 0 })` before every other check; the steps are renumbered as in the amended P15. RED: `arq_110_non_finite_cx_scale_is_err_first_and_writes_nothing` (unwrap_err on Ok). A finite scale of any sign or size is no error.
+- C1 (RED first): Fade converts its colour for the format in use and returns `Buffer(NonFinite { field: "color", index })` if the conversion overflows, before any write. RED: `arq_110_fade_colour_that_overflows_is_err_and_writes_nothing` (`Srgb` 1e30 at 0.25 wrote `[inf, 0.0005, -0.1245, 0.6505]`). The colour is built only when it is used (mid `progress`), so at 0 and 1 the copy is still `Ok`. Bytes: `arq_110_fade_colour_that_overflows_is_err_in_bytes_too` (not RED: the bytes path already clamped; it holds only once the conversion check exists, so it is a gap-closing test for that check, killed by removing it).
+- W3 (RED first): the `Encoded` arm for `f32` works in `f64` and clamps to the `f32` range. RED: `every_space_stays_finite_on_finite_pixels` (gave `inf`) and the property `f32_result_is_finite_in_every_space` (gave `-inf`). The finite property now covers all three spaces.
+- ARQ-31: no `static` is left in the crate. `Transfer::new()` runs once per `run_cpu` that mixes and is passed down (`weighted_u8(&t, ..)`), at the price of building 256 table entries per call. The unused `f32` transform methods are gone; the `Encoded` arm has its own sign-odd `f64` curve in `Transfer` (a second copy of the sRGB formula of `gafira-color`, which keeps its own private).
+- Not RED (gap-closing, proved by mutants): C2 `p15_order_of_the_checks_with_two_faults_at_once`; C3 `arq_118_fade_boundary_is_exactly_one_half` (public API, `[0.4999, 0.5)` and `(0.5, 0.5001]`); W2 `arq_118_fade_colour_alpha_is_clipped_in_f32`; `out_of_range_colours_keep_their_sign_in_every_space` (sign mutants of the `f64` curve survived the first tests).
+- W1: `crates/gafira-raster/benches/transitions.rs`, `bench_dissolve_rgba8_1080p`, a criterion bench; nothing times anything in `cargo test`. One run: 161 ms per frame (verify: 154 to 156 ms), against the 8 ms share. My earlier deviation "no bench was asked for" was wrong: XP13 asks for it.
+- S1: the `debug_assert!` over `MixSpace::ALL` stays, with a comment that says it exists so that the arms of the other O5 answers stay constructed without `#[allow]`. S5: the comment cites 02 §7.3, not a line. S2: the `RS3a` name is in the commit subjects and headings; the Slice card still says `RS3` and I do not edit it.
+- Kept: `from` `Rgba8` with `to` `Alpha8` is `FormatMismatch` (S4 goes to `specifier`).
+
+Mutants of this round (all killed): I1 (progress after parameters), I2 (parameters after sizes), I3 (pixels before sizes), scale unchecked, scale checked for NaN only, scale after progress: `arq_110_non_finite_cx_scale_*`, `p15_order_*`. I4 (Fade threshold 0.4999) and I4b (0.5001): `arq_118_fade_boundary_is_exactly_one_half`. I5 (`f32` colour alpha clamp 2) and I5b (no lower clip): `arq_118_fade_colour_alpha_is_clipped_in_f32`. C1: `f32` check removed, `u8` check removed, wrong field: the two overflow tests. W3: `encode_f64` constant, sign dropped in encode and decode, decode exponent, no clamp, alpha 0 not zeroed, premultiply dropped: the mix tests. Equivalent: Fade `p <= 0.5` (confirmed by verify) and the guard's `p == 0` / `p == 1` branches for Cut, Dissolve and Fade.
+
+### RED record, corrected (W5)
+
+The stubs, in full, and what came after the code:
+- `54d8e7b`: `From<BufferError>` and `From<ParamError>` returned `UnsupportedFormat { format: Alpha8 }`, `to_message` returned the key `error.raster.stub`, and `Display` wrote nothing. With those three stubs all three tests fail; the body did not name the `Display` stub.
+- `8059490`: `plan` returned `Ok(Plan::Done)`, `Cut::run_cpu` returned `Ok(())`, and `Cut::handles` returned `Both`. The mix module did not exist in that commit. `arq_118_height_alone_differs_and_format_is_checked_before_size` was written after the code, to kill survivors, so it was not RED, and it was listed as such; `arq_111_transitions_are_deterministic` was RED (it compares `dst` after the stub left it untouched) and my note listed it as not RED in error.
+- `09847aa`: `Dissolve::handles` and `Fade::handles` returned `None`, both `run_cpu` copied `from` for any `progress`, the `Fade` schema was empty, and the mix functions returned the first sample. `dissolve_has_the_identity_and_schema_of_the_table` fails only because of the `None` handles, which the body did not state. The mix tests were run RED before the guard and transitions existed; a later edit loosened one assertion (the near-ends test) before the code, while it still failed.
+
+Deviations of this round: `proptest-regressions/` is untracked again and not committed (S3 is the coordinator's decision); XP13 on this machine reads 161 ms, so the table of O5 stays as the design records it. Lines: `git diff --shortstat dc6fced..HEAD -- crates/gafira-raster`.
 

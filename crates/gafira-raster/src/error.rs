@@ -215,7 +215,7 @@ mod effect_tests {
             })
     }
 
-    // 02:1308: EffectError wraps BufferError and ParamError with From, and to_message delegates.
+    // 02 §7.3 (RS3a): EffectError wraps BufferError and ParamError with From, and to_message delegates.
     #[test]
     fn effect_error_wraps_buffer_and_param_errors_and_delegates() {
         let b = BufferError::NonFinite {
