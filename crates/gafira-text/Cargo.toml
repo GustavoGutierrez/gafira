@@ -12,6 +12,7 @@ gafira-color.workspace = true
 gafira-doc.workspace = true
 gafira-pathops.workspace = true
 parley.workspace = true
+skrifa.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
