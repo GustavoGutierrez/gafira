@@ -364,6 +364,13 @@ Fecha: 1 de noviembre de 2026.
 - Amplía D-40; el resto de D-40 sigue vigente.
 - Aplicado a 02 (§12.2) y 04 (FD-34).
 
+## D-42 Brillo y Contorno fuera del primer corte
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: los tipos Brillo y Contorno de FD-35 salen del primer corte de `gafira-raster` hasta que se aprueben sus fórmulas (Q-42). Paralela sigue en el corte.
+- Aplicado a 02 (§4.17.4, §12.2) y 04 (FD-35).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
