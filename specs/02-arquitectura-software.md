@@ -756,6 +756,7 @@ pub struct TransitionInstance {                        // dato del documento, en
 
 - **Patrón**: Strategy + Registry, igual que `Effect`, pero con dos entradas. `RenderGraphBuilder` inserta un nodo `Transition { from, to }` en el grafo cuando el tiempo `t` cae dentro de la unión de dos clips adyacentes; `progress` se muestrea con `easing`. Si un clip no tiene margen de fotogramas, el builder repite el fotograma del borde y la sesión emite un aviso (05 FV-06).
 - **Implementan** en `gafira-raster::transitions` las transiciones del catálogo de 03 §2.6 y 05 FV-06: `Cut` (Corte), `Fade` (Fundido a color), `Dissolve` (Disolvencia), `Slide` (Deslizar, 4 direcciones), `Zoom` y `Wipe` (Borrado, 4 direcciones y circular). Los plugins pueden aportar más en Fase 3 (solo CPU).
+- **Fotograma entero**: `Transition` no tiene `roi` y `run_cpu` recibe fotogramas enteros, nunca tiles.
 - **Registro**: `TransitionRegistry`, construido en el *composition root*.
 - **Parámetros** (PROPUESTA): forman el `ParamSchema` de cada transición, y ninguno es animable. Corte y Disolvencia tienen un esquema vacío. Las etiquetas de las opciones son `transition.direction.<id>`. Negro y blanco son valores de `color`, no otra opción. Fundido convierte `color` una vez por llamada, y conserva su alfa: a bytes sRGB premultiplicados en `Rgba8` y a sRGB lineal premultiplicado en `RgbaF32`.
 
@@ -868,6 +869,7 @@ Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 
 | Tipos | Crate |
 |---|---|
+| `Effect`, `Transition` | `gafira-raster` |
 | `Describe`, `Descriptor`, `ParamSchema`, `ParamValues`, `CancelToken`, `Progress`, `AudioCrossfade` | `gafira_doc::contract` |
 | `IRect` | `gafira-geom` |
 | `ImageView`, `ImageViewMut`, `EffectCx`, `Cost`, `HandleReq`, `GpuEffect`, `GpuTransition`, `UniformBlock`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
