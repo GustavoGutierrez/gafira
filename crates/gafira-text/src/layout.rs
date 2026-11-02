@@ -166,6 +166,62 @@ pub fn layout_box(
     if fonts.is_empty() {
         return Err(TextError::NoFont);
     }
+    let mut stack = Stack::new(fonts)?;
+    layout_with(&mut stack, text, style, size_px, bounds.width())
+}
+
+/// The font stack of a call: registered once, so a search that lays the same text out many
+/// times does not register the fonts again.
+pub(crate) struct Stack {
+    fcx: FontContext,
+    lcx: LayoutContext<()>,
+    names: Vec<FontFamilyName<'static>>,
+    blob_ids: Vec<u64>,
+}
+
+impl Stack {
+    /// Registers the fonts, in order; `InvalidFont` names the first that cannot be read.
+    pub(crate) fn new(fonts: &[&[u8]]) -> Result<Self, TextError> {
+        let mut fcx = FontContext::new();
+        let mut names = Vec::with_capacity(fonts.len());
+        let mut blob_ids = Vec::with_capacity(fonts.len());
+        for (index, bytes) in fonts.iter().enumerate() {
+            let blob = Blob::new(Arc::new(bytes.to_vec()));
+            blob_ids.push(blob.id());
+            let family = fcx
+                .collection
+                .register_fonts(blob, None)
+                .first()
+                .map(|(id, _)| *id)
+                .ok_or(TextError::InvalidFont { index })?;
+            let name = fcx.collection.family_name(family);
+            names.push(FontFamilyName::Named(Cow::Owned(
+                name.ok_or(TextError::InvalidFont { index })?.to_string(),
+            )));
+        }
+        Ok(Self {
+            fcx,
+            lcx: LayoutContext::new(),
+            names,
+            blob_ids,
+        })
+    }
+}
+
+/// The layout of `layout_box` over a prepared stack, with the numbers already checked.
+pub(crate) fn layout_with(
+    stack: &mut Stack,
+    text: &str,
+    style: &TextStyle,
+    size_px: f32,
+    width: f64,
+) -> Result<TextLayout, TextError> {
+    let Stack {
+        fcx,
+        lcx,
+        names,
+        blob_ids,
+    } = stack;
     let input = text;
     let converted;
     let mut source_map = None;
@@ -177,40 +233,22 @@ pub fn layout_box(
     } else {
         text
     };
-    let mut fcx = FontContext::new();
-    let mut names = Vec::with_capacity(fonts.len());
-    let mut blob_ids = Vec::with_capacity(fonts.len());
-    for (index, bytes) in fonts.iter().enumerate() {
-        let blob = Blob::new(Arc::new(bytes.to_vec()));
-        blob_ids.push(blob.id());
-        let family = fcx
-            .collection
-            .register_fonts(blob, None)
-            .first()
-            .map(|(id, _)| *id)
-            .ok_or(TextError::InvalidFont { index })?;
-        let name = fcx.collection.family_name(family);
-        names.push(FontFamilyName::Named(Cow::Owned(
-            name.ok_or(TextError::InvalidFont { index })?.to_string(),
-        )));
-    }
     let spacing = style.letter_spacing / 1000.0 * f64::from(size_px);
-    let width = bounds.width().max(0.0);
+    let width = width.max(0.0);
     // Parley adds the spacing after every cluster, the last one of a line too; the output
     // does not keep that one, so the box is that much wider for the fit.
     // One fit rule for the break and the overflow: a line fits a box of `limit` px.
     let limit = width * (1.0 + FIT_TOLERANCE);
     let fit = (limit + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
-    let mut lcx: LayoutContext<()> = LayoutContext::new();
     let mut lines = Vec::new();
     let mut overflow = false;
     let mut top = 0.0_f64;
     for range in bidi_paragraphs(text) {
         let paragraph = &text[range.clone()];
-        let mut builder = lcx.ranged_builder(&mut fcx, paragraph, 1.0, false);
+        let mut builder = lcx.ranged_builder(fcx, paragraph, 1.0, false);
         builder.push_default(StyleProperty::FontSize(size_px));
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
-            &names,
+            names.as_slice(),
         ))));
         builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
         builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
@@ -233,7 +271,7 @@ pub fn layout_box(
         let mut read = read_lines(
             &laid,
             kept,
-            &blob_ids,
+            blob_ids,
             paragraph,
             spacing as f32,
             style,
