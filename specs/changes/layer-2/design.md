@@ -234,7 +234,7 @@ XP1, XP2 and XP6 are measured; the rest are not. `E1` to `E5` are the older spik
 | SP14 | ARQ-115, ARQ-75 | `assets/LICENSES.toml` must cover all of `assets/`, but ARQ-115 needs only fonts now. Say that a partial file is fine until `xtask` exists | None |
 | SP15 | ARQ-107 | Add a CI step for ARQ-107: today it has none (XP2) | None |
 
-Coordinator, not `specifier`: CAL-06 and CAL-15 live in `backlog/01`, and the FV IDs in `backlog/05`. The rule in `specs/README.md` promotes a backlog document when a change of 02 needs it, in its own commit. Do both before `SC1`, on `develop`, so no stream carries the rename.
+Done on `docs/layer-2-specs`: CAL-06 and CAL-15 live in `01`, and the FV IDs in `05`. The rule in `specs/README.md` promotes a backlog document when a change of 02 needs it, in its own commit. Merge it before `SC1`, so no stream carries the rename.
 
 ## Next
 
