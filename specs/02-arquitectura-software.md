@@ -1768,11 +1768,11 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
-| Q-44 | ¿En qué espacio se calculan los colores medios de ARQ-131: luz lineal, y después Lab, o Lab píxel a píxel? No cambia las escenas de contraste bajo, que son planas. | Titular |
-| Q-43 | ¿Medir la sonoridad, Nivelar y remuestrear un clip largo se pueden cancelar y dan progreso? Ninguna spec lo dice y sus filas no tienen firma con token (ARQ-112). No bloquea el primer corte de `gafira-audio`. | Titular |
 | Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos, y con ellas dará el catálogo de filtros de 04 FD-34 (D-40). No bloquea la especificación. | Titular |
-| Q-42 | ¿Qué fórmula y qué criterio tienen Brillo y Contorno de 04 FD-35, o salen del primer corte de `gafira-raster`? Ninguna spec los da. | Titular |
 | Q-41 | ¿Cómo actúa la Intensidad de 04 FD-34 en parámetros `Int`, `Bool`, `Choice` y `Color`? D-40 fija la mezcla lineal; solo `Float` tiene fórmula. | Titular |
+| Q-42 | ¿Qué fórmula y qué criterio tienen Brillo y Contorno de 04 FD-35, o salen del primer corte de `gafira-raster`? Ninguna spec los da. | Titular |
+| Q-43 | ¿Medir la sonoridad, Nivelar y remuestrear un clip largo se pueden cancelar y dan progreso? Ninguna spec lo dice y sus filas no tienen firma con token (ARQ-112). No bloquea el primer corte de `gafira-audio`. | Titular |
+| Q-44 | ¿En qué espacio se calculan los colores medios de ARQ-131: luz lineal, y después Lab, o Lab píxel a píxel? No cambia las escenas de contraste bajo, que son planas. | Titular |
 
 ---
 

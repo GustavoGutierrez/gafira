@@ -799,8 +799,8 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
 | Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |
-| Q-42 | Fórmula y criterio de Brillo y Contorno de FD-35, o si salen del primer corte | Abierta; bloquea esos dos tipos, no Paralela |
 | Q-41 | Intensidad de FD-34 en parámetros `Int`, `Bool`, `Choice` y `Color` | Abierta; el preset de prueba solo usa `Float` |
+| Q-42 | Fórmula y criterio de Brillo y Contorno de FD-35, o si salen del primer corte | Abierta; bloquea esos dos tipos, no Paralela |
 | Q-35, Q-36, Q-39, Q-40 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33 y D-34 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
