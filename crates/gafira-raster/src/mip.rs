@@ -22,34 +22,6 @@ pub fn mip_size(width: u32, height: u32) -> (u32, u32) {
     ((width / 2).max(1), (height / 2).max(1))
 }
 
-/// The four source indices of one output pixel on one axis. A side of 1 repeats.
-fn pair(out: usize, side: usize) -> [usize; 2] {
-    [(2 * out).min(side - 1), (2 * out + 1).min(side - 1)]
-}
-
-/// Visits every output pixel with the four source pixel indices of its 2×2 box.
-fn for_each_box(
-    (sw, sh): (usize, usize),
-    (dw, dh): (usize, usize),
-    mut f: impl FnMut(usize, [usize; 4]),
-) {
-    for y in 0..dh {
-        let ys = pair(y, sh);
-        for x in 0..dw {
-            let xs = pair(x, sw);
-            f(
-                y * dw + x,
-                [
-                    ys[0] * sw + xs[0],
-                    ys[0] * sw + xs[1],
-                    ys[1] * sw + xs[0],
-                    ys[1] * sw + xs[1],
-                ],
-            );
-        }
-    }
-}
-
 /// sRGB to linear light and back, through the layer-0 transform.
 struct Transfer {
     decode: [f64; 256],
@@ -81,63 +53,144 @@ impl Transfer {
     }
 }
 
-fn reduce_rgba8(src: &[u8], s: (usize, usize), d: (usize, usize), t: &Transfer) -> Vec<u8> {
-    let mut out = vec![0u8; d.0 * d.1 * 4];
-    for_each_box(s, d, |o, idx| {
-        let mut sum = [0.0f64; 3];
-        let mut alpha_sum = 0u32;
-        for i in idx {
-            let p = &src[i * 4..i * 4 + 4];
-            let a = p[3];
-            if a == 0 {
-                continue;
+/// Sums of the original pixels one level covers, four values per pixel.
+///
+/// Every level is built from the sums of the level above, never from rounded
+/// pixels, so a level equals the mean of the original pixels it covers.
+struct Sums {
+    width: usize,
+    height: usize,
+    /// Original columns covered by each column.
+    cover_x: Vec<u64>,
+    /// Original rows covered by each row.
+    cover_y: Vec<u64>,
+    values: Vec<[f64; 4]>,
+}
+
+impl Sums {
+    /// Pixels of the original image, one `[f64; 4]` each.
+    fn base(width: usize, height: usize, fetch: impl Fn(usize) -> [f64; 4]) -> Self {
+        Self {
+            width,
+            height,
+            cover_x: vec![1; width],
+            cover_y: vec![1; height],
+            values: (0..width * height).map(fetch).collect(),
+        }
+    }
+
+    /// The next level. Output `x` takes source `2x` up to `2x + 2`, and the last
+    /// output takes everything left, so an odd side loses no pixel.
+    fn halve(&self) -> Self {
+        let (width, height) = {
+            let (w, h) = mip_size(self.width as u32, self.height as u32);
+            (w as usize, h as usize)
+        };
+        let span = |out: usize, side: usize, out_side: usize| {
+            (
+                2 * out,
+                if out + 1 == out_side {
+                    side
+                } else {
+                    2 * out + 2
+                },
+            )
+        };
+        let cover = |cover: &[u64], side: usize, out_side: usize| -> Vec<u64> {
+            (0..out_side)
+                .map(|o| {
+                    let (a, b) = span(o, side, out_side);
+                    cover[a..b].iter().sum()
+                })
+                .collect()
+        };
+        let mut values = Vec::with_capacity(width * height);
+        for y in 0..height {
+            let (y0, y1) = span(y, self.height, height);
+            for x in 0..width {
+                let (x0, x1) = span(x, self.width, width);
+                let mut acc = [0.0f64; 4];
+                for sy in y0..y1 {
+                    for v in &self.values[sy * self.width + x0..sy * self.width + x1] {
+                        for k in 0..4 {
+                            acc[k] += v[k];
+                        }
+                    }
+                }
+                values.push(acc);
             }
-            alpha_sum += u32::from(a);
-            for k in 0..3 {
-                let straight = unpremultiply_u8(p[k], a);
-                sum[k] += t.decode[usize::from(straight)] * f64::from(a);
+        }
+        Self {
+            width,
+            height,
+            cover_x: cover(&self.cover_x, self.width, width),
+            cover_y: cover(&self.cover_y, self.height, height),
+            values,
+        }
+    }
+
+    /// Area in original pixels of output pixel `(x, y)`.
+    fn area(&self, x: usize, y: usize) -> f64 {
+        (self.cover_x[x] * self.cover_y[y]) as f64
+    }
+
+    fn to_rgba8(&self, t: &Transfer) -> Vec<u8> {
+        let mut out = vec![0u8; self.width * self.height * 4];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let o = y * self.width + x;
+                let s = self.values[o];
+                if s[3] <= 0.0 {
+                    continue;
+                }
+                let a_out = (s[3] / self.area(x, y) + 0.5).floor().clamp(0.0, 255.0) as u8;
+                let straight = t.encode([s[0] / s[3], s[1] / s[3], s[2] / s[3]]);
+                for k in 0..3 {
+                    out[o * 4 + k] = premultiply_u8(straight[k], a_out);
+                }
+                out[o * 4 + 3] = a_out;
             }
         }
-        if alpha_sum == 0 {
-            return;
+        out
+    }
+
+    fn to_alpha8(&self) -> Vec<u8> {
+        let mut out = vec![0u8; self.width * self.height];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let o = y * self.width + x;
+                out[o] = (self.values[o][0] / self.area(x, y) + 0.5)
+                    .floor()
+                    .clamp(0.0, 255.0) as u8;
+            }
         }
-        let w = f64::from(alpha_sum);
-        let straight = t.encode([sum[0] / w, sum[1] / w, sum[2] / w]);
-        let a_out = u8::try_from((alpha_sum + 2) / 4).unwrap_or(u8::MAX);
-        for k in 0..3 {
-            out[o * 4 + k] = premultiply_u8(straight[k], a_out);
+        out
+    }
+
+    fn to_f32(&self) -> Vec<f32> {
+        let mut out = vec![0f32; self.width * self.height * 4];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let o = y * self.width + x;
+                for k in 0..4 {
+                    out[o * 4 + k] = (self.values[o][k] / self.area(x, y)) as f32;
+                }
+            }
         }
-        out[o * 4 + 3] = a_out;
-    });
-    out
+        out
+    }
 }
 
-fn reduce_alpha8(src: &[u8], s: (usize, usize), d: (usize, usize)) -> Vec<u8> {
-    let mut out = vec![0u8; d.0 * d.1];
-    for_each_box(s, d, |o, idx| {
-        let sum: u32 = idx.iter().map(|&i| u32::from(src[i])).sum();
-        out[o] = u8::try_from((sum + 2) / 4).unwrap_or(u8::MAX);
-    });
-    out
-}
-
-fn reduce_f32(src: &[f32], s: (usize, usize), d: (usize, usize)) -> Vec<f32> {
-    let mut out = vec![0f32; d.0 * d.1 * 4];
-    for_each_box(s, d, |o, idx| {
-        for k in 0..4 {
-            let sum: f64 = idx.iter().map(|&i| f64::from(src[i * 4 + k])).sum();
-            out[o * 4 + k] = (sum / 4.0) as f32;
-        }
-    });
-    out
-}
-
-/// Builds every level, level 0 being a copy of `src`. Averages 2×2 boxes in linear
-/// light with premultiplied alpha. An odd side drops its last row or column.
+/// Builds every level, level 0 being a copy of `src`. Each level pixel is the mean,
+/// in linear light with premultiplied alpha, of the original pixels it covers, all
+/// with the same weight. An odd side joins its last row or column to the last box.
+/// Levels come from unrounded sums of level 0, so rounding does not build up. A
+/// pixel with `a = 0` adds no colour.
 ///
 /// # Errors
 ///
-/// [`BufferError::NonFinite`] when an `f32` pixel is NaN or infinite.
+/// [`BufferError::NonFinite`] when an `f32` pixel is NaN or infinite, also in a
+/// pixel with `a = 0`.
 pub fn build_mips(src: ImageView<'_>) -> Result<Vec<ImageBuf>, BufferError> {
     if let PixelData::RgbaF32(px) = src.data()
         && let Some(index) = px.iter().position(|v| !v.is_finite())
@@ -153,24 +206,51 @@ pub fn build_mips(src: ImageView<'_>) -> Result<Vec<ImageBuf>, BufferError> {
         return Ok(levels);
     }
     let transfer = Transfer::new();
-    let mut current = match src.data() {
-        PixelData::Rgba8(d) => PixelBuf::Rgba8(d.to_vec()),
-        PixelData::RgbaF32(d) => PixelBuf::RgbaF32(d.to_vec()),
-        PixelData::Alpha8(d) => PixelBuf::Alpha8(d.to_vec()),
+    let (w, h) = (src.width() as usize, src.height() as usize);
+    let (mut sums, copy) = match src.data() {
+        PixelData::Rgba8(d) => (
+            Sums::base(w, h, |i| {
+                let p = &d[i * 4..i * 4 + 4];
+                let a = p[3];
+                if a == 0 {
+                    return [0.0; 4];
+                }
+                let lin = |k: usize| {
+                    transfer.decode[usize::from(unpremultiply_u8(p[k], a))] * f64::from(a)
+                };
+                [lin(0), lin(1), lin(2), f64::from(a)]
+            }),
+            PixelBuf::Rgba8(d.to_vec()),
+        ),
+        PixelData::RgbaF32(d) => (
+            Sums::base(w, h, |i| {
+                let p = &d[i * 4..i * 4 + 4];
+                if p[3] == 0.0 {
+                    return [0.0; 4];
+                }
+                [
+                    f64::from(p[0]),
+                    f64::from(p[1]),
+                    f64::from(p[2]),
+                    f64::from(p[3]),
+                ]
+            }),
+            PixelBuf::RgbaF32(d.to_vec()),
+        ),
+        PixelData::Alpha8(d) => (
+            Sums::base(w, h, |i| [f64::from(d[i]), 0.0, 0.0, 0.0]),
+            PixelBuf::Alpha8(d.to_vec()),
+        ),
     };
-    let (mut w, mut h) = (src.width(), src.height());
-    levels.push(ImageBuf::new(w, h, current.clone())?);
+    levels.push(ImageBuf::new(src.width(), src.height(), copy)?);
     for _ in 1..count {
-        let (nw, nh) = mip_size(w, h);
-        let sd = (w as usize, h as usize);
-        let dd = (nw as usize, nh as usize);
-        current = match &current {
-            PixelBuf::Rgba8(d) => PixelBuf::Rgba8(reduce_rgba8(d, sd, dd, &transfer)),
-            PixelBuf::RgbaF32(d) => PixelBuf::RgbaF32(reduce_f32(d, sd, dd)),
-            PixelBuf::Alpha8(d) => PixelBuf::Alpha8(reduce_alpha8(d, sd, dd)),
+        sums = sums.halve();
+        let data = match src.data() {
+            PixelData::Rgba8(_) => PixelBuf::Rgba8(sums.to_rgba8(&transfer)),
+            PixelData::RgbaF32(_) => PixelBuf::RgbaF32(sums.to_f32()),
+            PixelData::Alpha8(_) => PixelBuf::Alpha8(sums.to_alpha8()),
         };
-        (w, h) = (nw, nh);
-        levels.push(ImageBuf::new(w, h, current.clone())?);
+        levels.push(ImageBuf::new(sums.width as u32, sums.height as u32, data)?);
     }
     Ok(levels)
 }
@@ -417,16 +497,6 @@ mod tests {
         assert_eq!(got[0], crate::premultiply_u8(213, 192));
     }
 
-    // ARQ-121: an odd side drops its last row or column.
-    #[test]
-    fn arq_121_odd_side_uses_the_first_even_part() {
-        let a = [10u8, 10, 10, 255];
-        let b = [10u8, 10, 10, 255];
-        let junk = [250u8, 250, 250, 255];
-        let chain = mips(&rgba8(3, 1, &[a, b, junk].concat()));
-        assert_eq!(bytes(&chain[1]), a);
-    }
-
     // ARQ-121: 8-bit coverage averages with rounding; f32 averages linear values.
     #[test]
     fn arq_121_alpha8_and_f32_levels() {
@@ -496,5 +566,158 @@ mod tests {
         assert_eq!(mips(&img), mips(&img));
         let img = ImageBuf::new(16, 9, PixelBuf::Alpha8(px[..144].to_vec())).unwrap();
         assert_eq!(mips(&img), mips(&img));
+    }
+
+    fn f32_img(w: u32, h: u32, px: Vec<f32>) -> ImageBuf {
+        ImageBuf::new(w, h, PixelBuf::RgbaF32(px)).unwrap()
+    }
+
+    fn alpha8(w: u32, h: u32, px: Vec<u8>) -> ImageBuf {
+        ImageBuf::new(w, h, PixelBuf::Alpha8(px)).unwrap()
+    }
+
+    fn near(got: u8, want: i32, tol: i32) -> bool {
+        (i32::from(got) - want).abs() <= tol
+    }
+
+    // ARQ-121: an f32 pixel with a = 0 adds no colour, whatever it holds.
+    #[test]
+    fn arq_121_f32_transparent_pixel_adds_no_colour() {
+        let img = f32_img(
+            2,
+            2,
+            vec![
+                1.0, 1.0, 1.0, 0.0, 0.1, 0.2, 0.3, 1.0, 0.1, 0.2, 0.3, 1.0, 1.0, 0.0, 0.0, 0.0,
+            ],
+        );
+        let PixelBuf::RgbaF32(got) = mips(&img)[1].data().clone() else {
+            panic!("format")
+        };
+        for (g, w) in got.iter().zip([0.05f32, 0.1, 0.15, 0.5]) {
+            assert!((g - w).abs() < 1e-6, "{got:?}");
+        }
+        let ghost = f32_img(2, 2, [1.0f32, 1.0, 1.0, 0.0].repeat(4));
+        assert_eq!(mips(&ghost)[1].data(), &PixelBuf::RgbaF32(vec![0.0; 4]));
+        // -0.0 is also zero alpha.
+        let neg = f32_img(1, 1, vec![1.0, 1.0, 1.0, -0.0]);
+        assert_eq!(mips(&neg).len(), 1);
+    }
+
+    // ARQ-121: odd sides keep every pixel; Alpha8 table rows of the spec.
+    #[test]
+    fn arq_121_odd_side_counts_every_pixel_alpha8() {
+        let l1 = |img: &ImageBuf| bytes(&mips(img)[1]).to_vec();
+        assert!(near(l1(&alpha8(3, 1, vec![0, 0, 255]))[0], 85, 1));
+        assert!(near(l1(&alpha8(1, 3, vec![0, 0, 255]))[0], 85, 1));
+        let mut m = vec![0u8; 9];
+        for i in [2, 5, 6, 7, 8] {
+            m[i] = 255;
+        }
+        assert!(near(l1(&alpha8(3, 3, m))[0], 142, 1));
+        let five = alpha8(5, 1, vec![0, 0, 0, 255, 255]);
+        let chain = mips(&five);
+        let lv = bytes(&chain[1]);
+        assert_eq!((chain[1].width(), lv[0]), (2, 0));
+        assert!(near(lv[1], 170, 1), "{lv:?}");
+        assert_eq!(chain.len(), 3);
+        // The top level is the mean of all five.
+        assert!(near(bytes(&chain[2])[0], 102, 1));
+    }
+
+    // ARQ-121: opaque Rgba8 3x1 (sRGB 0, 0, 255) gives 156, on both axes.
+    #[test]
+    fn arq_121_odd_side_counts_every_pixel_rgba8() {
+        let (k, w) = ([0u8, 0, 0, 255], [255u8, 255, 255, 255]);
+        for (width, height) in [(3, 1), (1, 3)] {
+            let chain = mips(&rgba8(width, height, &[k, k, w].concat()));
+            let got = bytes(&chain[1]);
+            assert!(
+                near(got[0], 156, 1) && near(got[1], 156, 1) && near(got[2], 156, 1),
+                "{got:?}"
+            );
+            assert_eq!(got[3], 255);
+        }
+    }
+
+    // ARQ-121: 1000x600 with 512 columns at 0 and 488 at 255 ends at 185, not 0 or 156.
+    #[test]
+    fn arq_121_wide_image_top_level_is_the_exact_mean() {
+        let mut px = Vec::with_capacity(1000 * 600 * 4);
+        for _ in 0..600 {
+            for x in 0..1000 {
+                let v = if x < 512 { 0 } else { 255 };
+                px.extend([v, v, v, 255]);
+            }
+        }
+        let chain = mips(&rgba8(1000, 600, &px));
+        let top = bytes(&chain[9]);
+        assert!(near(top[0], 185, 2), "{top:?}");
+        assert!(near(top[1], 185, 2) && near(top[2], 185, 2) && top[3] == 255);
+    }
+
+    // ARQ-121: 1x1 has one level equal to the input, in every format.
+    #[test]
+    fn arq_121_one_by_one_has_one_level_equal_to_input() {
+        for img in [
+            rgba8(1, 1, &[10, 20, 30, 200]),
+            f32_img(1, 1, vec![0.1, 0.2, 0.3, 0.4]),
+            alpha8(1, 1, vec![77]),
+        ] {
+            assert_eq!(mips(&img), vec![img.clone()]);
+        }
+    }
+
+    // ARQ-121: a constant image is equal at every level, odd sides included.
+    #[test]
+    fn arq_121_constant_image_all_formats() {
+        for (w, h) in [(37u32, 21u32), (5, 3), (1, 9), (8, 8)] {
+            let n = (w * h) as usize;
+            let f = f32_img(w, h, [0.125f32, 0.25, 0.5, 0.5].repeat(n));
+            let m = alpha8(w, h, vec![77; n]);
+            for img in [f, m] {
+                let chain = mips(&img);
+                assert_eq!(chain.len() as u32, mip_level_count(w, h));
+                for level in &chain {
+                    let want = match img.data() {
+                        PixelBuf::RgbaF32(_) => PixelBuf::RgbaF32(
+                            [0.125f32, 0.25, 0.5, 0.5]
+                                .repeat((level.width() * level.height()) as usize),
+                        ),
+                        _ => PixelBuf::Alpha8(vec![77; (level.width() * level.height()) as usize]),
+                    };
+                    assert_eq!(level.data(), &want, "{w}x{h}");
+                }
+            }
+        }
+    }
+
+    // ARQ-121: an image with a zero side has no levels, in every format.
+    #[test]
+    fn arq_121_zero_side_images_have_no_levels() {
+        for (w, h) in [(0u32, 5u32), (5, 0), (0, 0)] {
+            assert!(mips(&rgba8(w, h, &[])).is_empty(), "{w}x{h}");
+            assert!(mips(&f32_img(w, h, vec![])).is_empty());
+            assert!(mips(&alpha8(w, h, vec![])).is_empty());
+        }
+    }
+
+    // ARQ-110: non-finite colour in an a = 0 pixel is still Err, never skipped.
+    #[test]
+    fn arq_110_non_finite_colour_in_transparent_pixel_is_err() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            for ch in 0..3 {
+                let mut px = vec![0.5f32, 0.5, 0.5, 1.0, 0.1, 0.1, 0.1, 0.0];
+                px[4 + ch] = bad;
+                let view = ImageView::new(2, 1, PixelData::RgbaF32(&px)).unwrap();
+                assert_eq!(
+                    build_mips(view).unwrap_err(),
+                    BufferError::NonFinite {
+                        field: "pixels",
+                        index: 4 + ch
+                    },
+                    "{bad} ch {ch}"
+                );
+            }
+        }
     }
 }
