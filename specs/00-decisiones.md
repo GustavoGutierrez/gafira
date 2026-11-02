@@ -385,6 +385,17 @@ Fecha: 1 de noviembre de 2026.
 - **Decisión**: los colores medios de ARQ-131 se promedian en luz lineal y después se pasan a Lab (Q-44).
 - Aplicado a 02 (ARQ-131, §12.2).
 
+## D-45 `ClassicSegmenter` y alcance de la puerta de calidad
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: `ClassicSegmenter` usa solo color, sin término de posición en el GMM, y una copia de trabajo de lado largo 2048 px en lugar de 1024.
+- **Puerta**: el conjunto fijo de 16 escenas deterministas sigue siendo la prueba bloqueante, con IoU ≥ 0,90 por escena. Un conjunto de 12 escenas nuevas, con otra semilla y nunca usado para ajustar parámetros, corre como aviso, no bloquea e informa de su recuento.
+- **Alcance de D-20**: D-20 se cumple en las escenas de la puerta y no está demostrado que generalice. El resultado conocido en las escenas nuevas es 9 de 12.
+- **Q-45**: el fondo texturizado a ΔE76 6 queda fuera de la puerta. Las escenas texturizadas de la puerta conservan el mínimo de ΔE76 de ARQ-132.
+- Amplía D-20; el resto de D-20 sigue vigente. La prioridad central de «Elemento» (D-23) no cambia.
+- Aplicado a 01 (P-04), 02 (§4.7, ARQ-130, ARQ-131, ARQ-132, §6.7, §12.2, §12.3) y 04 (FD-38).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
