@@ -301,40 +301,49 @@ fn fd_41_a_wrapped_right_to_left_paragraph_with_left_keeps_its_ink_in_the_box() 
 
 // ---- the accepted limit: a trailing space of another bidi level (FD-41 m) --------------------
 
+/// The texts of (m) alone, and behind a right-to-left paragraph, whose line comes first.
+const M_PREFIXES: [(&str, usize); 2] = [("", 0), ("\u{627}\u{628}\u{62c}\n", 1)];
+
 #[test]
 fn fd_41_m_a_trailing_space_of_the_other_level_starts_the_line_at_the_edge() {
-    let text = "abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def";
-    let layout = lay_with(text, &[INTER, ARABIC], 12.0, TextAlign::Left, 40.0, 0.0);
-    assert!(!layout.overflow);
-    let second = &layout.lines[1];
-    let first = &second.clusters[0];
-    assert_eq!(&text[first.range.clone()], " ");
-    assert!(first.x.abs() <= 0.01, "the space is at {}", first.x);
-    let (left, _) = edges(text, second);
-    assert!((left - 4.50).abs() <= 0.01, "the content starts at {left}");
+    for (prefix, before) in M_PREFIXES {
+        let text = format!("{prefix}abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def");
+        let layout = lay_with(&text, &[INTER, ARABIC], 12.0, TextAlign::Left, 40.0, 0.0);
+        assert!(!layout.overflow);
+        let second = &layout.lines[before + 1];
+        let first = &second.clusters[0];
+        assert_eq!(&text[first.range.clone()], " ");
+        assert!(first.x.abs() <= 0.01, "the space is at {}", first.x);
+        let (left, _) = edges(&text, second);
+        assert!((left - 4.50).abs() <= 0.01, "the content starts at {left}");
+    }
 }
 
 #[test]
 fn fd_41_m_content_of_the_other_level_can_end_past_the_box_without_overflow() {
-    let text = "abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def";
-    let layout = lay_with(text, &[INTER, ARABIC], 9.0, TextAlign::Left, 39.3, 0.0);
-    assert!(!layout.overflow);
-    let (_, right) = edges(text, &layout.lines[0]);
-    assert!((right - 41.56).abs() <= 0.01, "the content ends at {right}");
-    assert!((right - 39.3 - 2.26).abs() <= 0.01);
+    for (prefix, before) in M_PREFIXES {
+        let text = format!("{prefix}abc \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648} def");
+        let layout = lay_with(&text, &[INTER, ARABIC], 9.0, TextAlign::Left, 39.3, 0.0);
+        assert!(!layout.overflow);
+        let (_, right) = edges(&text, &layout.lines[before]);
+        assert!((right - 41.56).abs() <= 0.01, "the content ends at {right}");
+        assert!((right - 39.3 - 2.26).abs() <= 0.01);
+    }
 }
 
 #[test]
 fn fd_41_m_a_trailing_space_of_the_paragraph_level_stays_behind_the_content() {
-    let text = "abc \u{627}\u{628}\u{62c} def";
-    let layout = lay_with(text, &[INTER, ARABIC], 9.0, TextAlign::Left, 39.3, 0.0);
-    assert!(!layout.overflow);
-    let line = &layout.lines[0];
-    let (_, right) = edges(text, line);
-    assert!((right - 38.19).abs() <= 0.01, "the content ends at {right}");
-    let space = line.clusters.last().expect("clusters");
-    assert_eq!(&text[space.range.clone()], " ");
-    assert!((f64::from(space.x) - right).abs() <= 0.01);
+    for (prefix, before) in M_PREFIXES {
+        let text = format!("{prefix}abc \u{627}\u{628}\u{62c} def");
+        let layout = lay_with(&text, &[INTER, ARABIC], 9.0, TextAlign::Left, 39.3, 0.0);
+        assert!(!layout.overflow);
+        let line = &layout.lines[before];
+        let (_, right) = edges(&text, line);
+        assert!((right - 38.19).abs() <= 0.01, "the content ends at {right}");
+        let space = line.clusters.last().expect("clusters");
+        assert_eq!(&text[space.range.clone()], " ");
+        assert!((f64::from(space.x) - right).abs() <= 0.01);
+    }
 }
 
 #[test]

@@ -54,7 +54,8 @@ pub enum TextAlign {
     /// Against the right edge.
     Right,
     /// Both edges: the spare room goes between words. The last line of a paragraph, a
-    /// line that ends in a forced break and a line of one word are not stretched.
+    /// line that ends in a forced break and a line of one word are not stretched; they
+    /// start where their bidi paragraph starts.
     Justify,
 }
 
@@ -147,6 +148,10 @@ const FIT_TOLERANCE: f64 = 4e-6;
 /// A word wider than the box breaks by cluster, so `overflow` is true only when
 /// a single cluster is wider than the box. A final newline starts one more,
 /// empty line, as in an editor, and an empty text is one empty line.
+///
+/// Every forced break closes a bidi paragraph (FD-41, Párrafos bidi): U+000A, U+000D, the pair
+/// U+000D U+000A as one, U+2028 and U+2029. Each paragraph takes its direction from its first
+/// strong character, and has it in all its lines, for the hang and for `Justify`.
 pub fn layout_box(
     text: &str,
     fonts: &[&[u8]],
@@ -186,44 +191,71 @@ pub fn layout_box(
             name.ok_or(TextError::InvalidFont { index })?.to_string(),
         )));
     }
-    let mut lcx: LayoutContext<()> = LayoutContext::new();
-    let mut builder = lcx.ranged_builder(&mut fcx, text, 1.0, false);
-    builder.push_default(StyleProperty::FontSize(size_px));
-    builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Owned(
-        names,
-    ))));
-    builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
-    builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
-        style.line_height as f32,
-    )));
     let spacing = style.letter_spacing / 1000.0 * f64::from(size_px);
-    if spacing != 0.0 {
-        builder.push_default(StyleProperty::LetterSpacing(spacing as f32));
-        // CSS: optional ligatures are off with any spacing (parley ignores a tiny one);
-        // the required ligatures and joining forms of a script stay.
-        builder.push_default(StyleProperty::FontFeatures(FontFeatures::from(
-            "\"liga\" 0, \"clig\" 0, \"dlig\" 0, \"hlig\" 0",
-        )));
-    }
-    let mut laid = builder.build(text);
     let width = bounds.width().max(0.0);
     // Parley adds the spacing after every cluster, the last one of a line too; the output
     // does not keep that one, so the box is that much wider for the fit.
     // One fit rule for the break and the overflow: a line fits a box of `limit` px.
     let limit = width * (1.0 + FIT_TOLERANCE);
     let fit = (limit + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
-    laid.break_all_lines(Some(fit));
+    let mut lcx: LayoutContext<()> = LayoutContext::new();
+    let mut lines = Vec::new();
+    let mut overflow = false;
+    let mut top = 0.0_f64;
+    for range in bidi_paragraphs(text) {
+        let paragraph = &text[range.clone()];
+        let mut builder = lcx.ranged_builder(&mut fcx, paragraph, 1.0, false);
+        builder.push_default(StyleProperty::FontSize(size_px));
+        builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
+            &names,
+        ))));
+        builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
+        builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
+            style.line_height as f32,
+        )));
+        if spacing != 0.0 {
+            builder.push_default(StyleProperty::LetterSpacing(spacing as f32));
+            // CSS: optional ligatures are off with any spacing (parley ignores a tiny one);
+            // the required ligatures and joining forms of a script stay.
+            builder.push_default(StyleProperty::FontFeatures(FontFeatures::from(
+                "\"liga\" 0, \"clig\" 0, \"dlig\" 0, \"hlig\" 0",
+            )));
+        }
+        let mut laid = builder.build(paragraph);
+        laid.break_all_lines(Some(fit));
 
-    let spacing = spacing as f32;
-    let (mut lines, forced) = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
-    let overflow = lines
-        .iter()
-        .any(|l| widest_content(text, &l.clusters) > limit);
-    let rtl = laid.is_rtl();
-    let last = lines.len().saturating_sub(1);
-    for (i, line) in lines.iter_mut().enumerate() {
-        let stretch = i != last && !forced[i];
-        align_line(line, text, style.align, rtl, width, stretch);
+        // Parley ends a text with a forced break in one more, empty line; here that line is
+        // the next paragraph, which `bidi_paragraphs` always gives.
+        let kept = laid.len() - usize::from(paragraph.ends_with(is_forced_break));
+        let (mut read, forced) = read_lines(
+            &laid,
+            kept,
+            &blob_ids,
+            paragraph,
+            spacing as f32,
+            style,
+            size_px,
+        )?;
+        overflow |= read
+            .iter()
+            .any(|l| widest_content(paragraph, &l.clusters) > limit);
+        // Parley resolves the first strong character of each paragraph by itself (P2, P3).
+        let rtl = laid.is_rtl();
+        let last = read.len().saturating_sub(1);
+        for (i, line) in read.iter_mut().enumerate() {
+            let stretch = i != last && !forced[i];
+            align_line(line, paragraph, style.align, rtl, width, stretch);
+            line.baseline = (top + f64::from(line.baseline)) as f32;
+            for c in &mut line.clusters {
+                c.range = c.range.start + range.start..c.range.end + range.start;
+            }
+        }
+        lines.append(&mut read);
+        top += laid
+            .lines()
+            .take(kept)
+            .map(|l| f64::from(l.metrics().line_height))
+            .sum::<f64>();
     }
     // Ranges index the input text: after upper case, the clusters that come from one
     // character share its range.
@@ -235,7 +267,7 @@ pub fn layout_box(
         }
     }
     let out = TextLayout {
-        height: laid.height(),
+        height: top as f32,
         lines,
         overflow,
     };
@@ -243,11 +275,40 @@ pub fn layout_box(
     Ok(out)
 }
 
-/// The lines of a parley layout as output lines, all starting at x = 0, and whether each one
-/// ends in a forced break. `spacing` is the letter spacing in px that parley added after
-/// every cluster.
+/// The forced breaks of FD-41. Not U+000B, U+000C, U+0085 or U+001C to U+001E, which UAX #9
+/// or parley treat in other ways. A pair U+000D U+000A is one break.
+fn is_forced_break(c: char) -> bool {
+    matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+/// The byte ranges of the bidi paragraphs of the text (FD-41, Párrafos bidi). Each forced break
+/// closes a paragraph and belongs to it; the text after the last one is a paragraph too, also
+/// when it is empty, so the ranges cover the text and there is always at least one. Parley
+/// runs its bidi once per layout, so each paragraph needs a layout of its own.
+fn bidi_paragraphs(text: &str) -> Vec<Range<usize>> {
+    let mut paragraphs = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if is_forced_break(c) {
+            if c == '\r' {
+                chars.next_if(|(_, next)| *next == '\n');
+            }
+            let end = chars.peek().map_or(text.len(), |(next, _)| *next);
+            paragraphs.push(start..end);
+            start = end;
+        }
+    }
+    paragraphs.push(start..text.len());
+    paragraphs
+}
+
+/// The first `kept` lines of the layout of a paragraph as output lines, all starting at x = 0,
+/// and whether each one ends in a forced break. `spacing` is the letter spacing in px that
+/// parley added after every cluster. Baselines and ranges are the ones of the paragraph.
 fn read_lines(
     laid: &parley::Layout<()>,
+    kept: usize,
     blob_ids: &[u64],
     text: &str,
     spacing: f32,
@@ -256,7 +317,7 @@ fn read_lines(
 ) -> Result<(Vec<Line>, Vec<bool>), TextError> {
     let mut lines = Vec::new();
     let mut forced = Vec::new();
-    for line in laid.lines() {
+    for line in laid.lines().take(kept) {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
         let mut hard_breaks = Vec::new();
