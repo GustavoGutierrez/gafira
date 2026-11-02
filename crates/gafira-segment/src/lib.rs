@@ -156,10 +156,11 @@ impl Segmenter for ClassicSegmenter {
                 + hints.stroke_cost((1.0, 1.0), (w, h))
                 + (w * h) as u64;
             let meter = Meter::new(progress, cancel, planned);
-            let mut data = self.subject(&src, hints, (ww, wh), &meter)?;
+            let (mut data, set_aside) = self.subject(&src, hints, (ww, wh), &meter)?;
             // ARQ-131: every zone that segments judges the subject mask, so
-            // «Fondo» says what «Primer plano» says.
-            let reliable = reliable::assess(&img, &data, &meter)?;
+            // «Fondo» says what «Primer plano» says. A real colour kept out of
+            // the models by ARQ-133 clears it too (D-47); the mask is untouched.
+            let reliable = reliable::assess(&img, &data, &meter)? && !set_aside;
             if hints.zone == SegZone::Background {
                 for a in &mut data {
                     *a = 255 - *a;
@@ -174,14 +175,15 @@ impl Segmenter for ClassicSegmenter {
 }
 
 impl ClassicSegmenter {
-    /// The foreground coverage of the whole image, seeds and «Elemento» applied.
+    /// The foreground coverage of the whole image, seeds and «Elemento» applied,
+    /// and whether ARQ-133 set a real colour of the band aside (D-47).
     fn subject(
         &self,
         src: &Source<'_>,
         hints: &SegHints,
         (ww, wh): (usize, usize),
         meter: &Meter<'_>,
-    ) -> Result<Vec<u8>, gafira_doc::contract::Cancelled> {
+    ) -> Result<(Vec<u8>, bool), gafira_doc::contract::Cancelled> {
         let (w, h) = (src.width, src.height);
         let work = WorkImage::build(src, meter)?;
         let sp = slic::slic(&work, &self.pool, meter)?;
@@ -213,7 +215,8 @@ impl ClassicSegmenter {
                 std::cmp::Ordering::Equal => cut::Pin::Free,
             })
             .collect();
-        let mut foreground = cut::grabcut(&nodes, &edges, &pins, meter, cut::round_units(ww, wh))?;
+        let (mut foreground, set_aside) =
+            cut::grabcut(&nodes, &edges, &pins, meter, cut::round_units(ww, wh))?;
         if hints.zone == SegZone::Element {
             foreground = cut::central(&nodes, &edges, &foreground, &pins, (ww, wh));
         }
@@ -237,7 +240,7 @@ impl ClassicSegmenter {
                 )?;
             }
         }
-        Ok(data)
+        Ok((data, set_aside))
     }
 }
 

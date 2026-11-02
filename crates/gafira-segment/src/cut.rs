@@ -17,6 +17,9 @@ const ROUNDS: u64 = 5;
 const BAND_LINK: f64 = 6.0;
 /// A band superpixel with fewer neighbours in colour is an edge mix, not a stretch.
 const BAND_CORE: usize = 4;
+/// A group kept out of the models with at least this percent of the band is a
+/// real colour of the background, not noise (PROPUESTA, D-47).
+const REAL_COLOUR_PERCENT: u64 = 5;
 /// Fixed-point scale of the capacities.
 const SCALE: f64 = 16.0;
 
@@ -112,13 +115,20 @@ pub(crate) fn nodes(
         .collect())
 }
 
+/// What `strays` decided: the superpixels kept out of the models, and whether a
+/// real colour of the band is among them (D-47).
+pub(crate) struct Strays {
+    pub(crate) left_out: Vec<bool>,
+    pub(crate) real: bool,
+}
+
 /// Superpixels of the band whose colour does not train the background model: a
 /// subject touching the border puts its colours in the band, and left in the
 /// model they would take the rest of the subject with them. Band colours are
 /// grouped by nearness, so a gradient stays one group; the largest group is the
-/// background, and a group under half of the band is kept out, as are isolated
-/// colours, which are edge mixes. The pins do not change (ARQ-133).
-fn strays(nodes: &[Node], pins: &[Pin]) -> Vec<bool> {
+/// background, and every smaller group is kept out, as are isolated colours, which
+/// are edge mixes. The pins do not change (ARQ-133).
+fn strays(nodes: &[Node], pins: &[Pin]) -> Strays {
     fn find(parent: &mut [usize], mut i: usize) -> usize {
         while parent[i] != i {
             parent[i] = parent[parent[i]];
@@ -157,13 +167,24 @@ fn strays(nodes: &[Node], pins: &[Pin]) -> Vec<bool> {
     let mut out = vec![false; nodes.len()];
     let top = size.iter().copied().max().unwrap_or(0);
     if top == 0 {
-        return out;
+        return Strays {
+            left_out: out,
+            real: false,
+        };
     }
     for a in 0..band.len() {
         let group = size[find(&mut parent, a)];
-        out[band[a]] = !core[a] || (group < top && 2 * group < total);
+        out[band[a]] = !core[a] || group < top;
     }
-    out
+    // A group kept out with 5 % of the band, equality included, is a real colour;
+    // isolated colours are not (D-47, ARQ-131).
+    let real = size
+        .iter()
+        .any(|&g| g < top && g * 100 >= REAL_COLOUR_PERCENT * total);
+    Strays {
+        left_out: out,
+        real,
+    }
 }
 
 /// `(cost as foreground, cost as background)` of every node, from one GMM per
@@ -205,16 +226,17 @@ fn edge_capacity(d2: f64, beta: f64, length: u32) -> i64 {
     fixed_point(GAMMA * f64::from(length) * (-beta * d2).exp())
 }
 
-/// Runs GrabCut. Returns, per superpixel, whether it is foreground.
+/// Runs GrabCut. Returns, per superpixel, whether it is foreground, and whether
+/// the stray rule kept a real colour of the band out of the models (D-47).
 pub(crate) fn grabcut(
     nodes: &[Node],
     edges: &[(u32, u32, u32)],
     pins: &[Pin],
     meter: &Meter<'_>,
     round_units: u64,
-) -> Result<Vec<bool>, Cancelled> {
+) -> Result<(Vec<bool>, bool), Cancelled> {
     let n = nodes.len();
-    let left_out = strays(nodes, pins);
+    let Strays { left_out, real } = strays(nodes, pins);
     // The seeds go first; a free superpixel of the band is pinned as background.
     let pins: Vec<Pin> = pins
         .iter()
@@ -281,7 +303,7 @@ pub(crate) fn grabcut(
     if spent < ROUNDS {
         meter.step(round_units * (ROUNDS - spent))?;
     }
-    Ok(labels)
+    Ok((labels, real))
 }
 
 /// Keeps only the foreground region nearest the centre of the `w` x `h` image
@@ -365,7 +387,7 @@ mod tests {
         let (progress, cancel) = (NoProgress, CancelToken::new());
         let meter = Meter::new(&progress, &cancel, 1 << 30);
         let free = vec![Pin::Free; 8];
-        let plain = grabcut(&nodes, &edges, &free, &meter, 1).unwrap();
+        let (plain, _) = grabcut(&nodes, &edges, &free, &meter, 1).unwrap();
         assert_eq!(
             plain,
             [true, true, true, true, false, false, false, false],
@@ -374,7 +396,7 @@ mod tests {
         let mut pins = free;
         pins[1] = Pin::Background;
         pins[5] = Pin::Foreground;
-        let pinned = grabcut(&nodes, &edges, &pins, &meter, 1).unwrap();
+        let (pinned, _) = grabcut(&nodes, &edges, &pins, &meter, 1).unwrap();
         assert!(!pinned[1], "red node pinned to background");
         assert!(pinned[5], "grey node pinned to foreground");
     }
@@ -391,7 +413,7 @@ mod tests {
     fn cut(nodes: &[Node], edges: &[(u32, u32, u32)], pins: &[Pin]) -> Vec<bool> {
         let (progress, cancel) = (NoProgress, CancelToken::new());
         let meter = Meter::new(&progress, &cancel, 1 << 30);
-        grabcut(nodes, edges, pins, &meter, 1).unwrap()
+        grabcut(nodes, edges, pins, &meter, 1).unwrap().0
     }
 
     const RED: [f64; 3] = [45.0, 60.0, 40.0];
@@ -507,6 +529,157 @@ mod tests {
         assert!((400.0..=600.0).contains(&GAMMA), "gamma {GAMMA}");
         let reg = crate::gmm::REGULARISATION;
         assert!((20.0..=30.0).contains(&reg), "regularisation {reg}");
+    }
+
+    /// Free band nodes, `pixels` each, of the given colour.
+    fn run_of(lab: [f64; 3], pixels: &[u32]) -> Vec<Node> {
+        pixels.iter().map(|&p| node(lab, p, 1)).collect()
+    }
+
+    const BLUE: [f64; 3] = [30.0, 20.0, -60.0];
+    const GREEN: [f64; 3] = [70.0, -60.0, 50.0];
+
+    /// Whether `strays` sees a real colour set aside in a band of the groups
+    /// given as (colour, pixels of each of its nodes); isolated nodes follow.
+    fn real_of(groups: &[([f64; 3], &[u32])], isolated: &[([f64; 3], u32)]) -> bool {
+        let mut nodes: Vec<Node> = groups.iter().flat_map(|(c, p)| run_of(*c, p)).collect();
+        nodes.extend(isolated.iter().map(|&(c, p)| node(c, p, 1)));
+        let pins = vec![Pin::Free; nodes.len()];
+        strays(&nodes, &pins).real
+    }
+
+    // ARQ-133, ARQ-131, D-47: a set-aside group with 5 % of the band is a real
+    // colour, equality included; with 4.99 % it is not.
+    // Mutants 1 (strict bound), 5 (a group under 5 % clears too).
+    #[test]
+    fn arq_133_five_percent_of_the_band_is_a_real_colour() {
+        let big = [1900, 1900, 1900, 1900, 1900];
+        assert!(real_of(&[(RED, &big), (BLUE, &[100; 5])], &[]), "5 %");
+        let almost = [100, 100, 100, 100, 99];
+        let top = [1900, 1900, 1900, 1900, 1901];
+        assert!(!real_of(&[(RED, &top), (BLUE, &almost)], &[]), "4.99 %");
+    }
+
+    // ARQ-133: the share counts the pixels of the whole superpixels of the free
+    // band, not superpixels and not the whole image.
+    // Mutant 2: share against the whole image, or in superpixels.
+    #[test]
+    fn arq_133_the_share_is_in_band_pixels() {
+        // B: 5 nodes of 1 px against 5 of 19 px: half the superpixels, 5 % of the pixels.
+        let mut nodes = run_of(RED, &[19; 5]);
+        nodes.extend(run_of(BLUE, &[1; 5]));
+        let pins = vec![Pin::Free; nodes.len()];
+        assert!(strays(&nodes, &pins).real, "exactly 5 % of the pixels");
+        nodes[9].pixels = 0;
+        nodes[9].band_pixels = 1;
+        assert!(
+            !strays(&nodes, &pins).real,
+            "under 5 % of the pixels, 50 % of the nodes"
+        );
+        // Interior nodes do not make the band bigger or smaller.
+        let mut nodes = run_of(RED, &[19; 5]);
+        nodes.extend(run_of(BLUE, &[1; 5]));
+        nodes.push(node(GREEN, 100_000, 0));
+        let pins = vec![Pin::Free; nodes.len()];
+        assert!(strays(&nodes, &pins).real, "the image is not the band");
+    }
+
+    // ARQ-133: an isolated superpixel is not a real colour, whatever its size,
+    // and its pixels are part of the band the share is taken of.
+    // Mutant 3: isolated superpixels count toward the share.
+    #[test]
+    fn arq_133_an_isolated_superpixel_is_not_a_real_colour() {
+        let big = [1900; 5];
+        assert!(
+            !real_of(&[(RED, &big)], &[(GREEN, 2000)]),
+            "isolated alone, over 5 %"
+        );
+        // 4.6 % of a band that holds 10 % of isolated colour is under 5 %.
+        assert!(!real_of(
+            &[(RED, &[1700; 5]), (BLUE, &[92; 5])],
+            &[(GREEN, 1000)]
+        ));
+        assert!(real_of(
+            &[(RED, &[1700; 5]), (BLUE, &[100; 5])],
+            &[(GREEN, 1000)]
+        ));
+    }
+
+    // ARQ-133: the largest group is the background, and so is any group that
+    // ties with it; with one group, or none, nothing is real.
+    // Mutant 4: the largest group counted as set aside.
+    #[test]
+    fn arq_133_the_largest_group_is_not_set_aside() {
+        assert!(!real_of(&[(RED, &[100; 5])], &[]), "one group");
+        assert!(
+            !real_of(&[(RED, &[100; 5]), (BLUE, &[100; 5])], &[]),
+            "a tie"
+        );
+        assert!(!real_of(&[], &[(RED, 100)]), "no core");
+        assert!(
+            real_of(&[(RED, &[101; 5]), (BLUE, &[100; 5])], &[]),
+            "not a tie"
+        );
+    }
+
+    // ARQ-133: a superpixel with a seed is not in the rule, so it is not a real
+    // colour either.
+    #[test]
+    fn arq_133_a_seeded_group_is_not_a_real_colour() {
+        let mut nodes = run_of(RED, &[1000; 5]);
+        nodes.extend(run_of(BLUE, &[500; 5]));
+        let mut pins = vec![Pin::Free; nodes.len()];
+        assert!(strays(&nodes, &pins).real, "premise");
+        for p in &mut pins[5..] {
+            *p = Pin::Foreground;
+        }
+        assert!(!strays(&nodes, &pins).real);
+    }
+
+    // ARQ-133, §4.17.6: the band is the free superpixels; seeded ones are not in
+    // its measure. A group of 5 % of the free band stays a real colour when
+    // seeded superpixels of the band would dilute it under 5 %.
+    // Mutant: the seeded superpixels counted in the total of the band.
+    #[test]
+    fn arq_133_seeded_superpixels_are_not_in_the_band_measure() {
+        let mut nodes = run_of(RED, &[1900; 5]);
+        nodes.extend(run_of(BLUE, &[100; 5]));
+        nodes.extend(run_of(GREEN, &[1000; 5]));
+        let mut pins = vec![Pin::Free; 10];
+        pins.extend([
+            Pin::Foreground,
+            Pin::Background,
+            Pin::Foreground,
+            Pin::Background,
+            Pin::Foreground,
+        ]);
+        assert!(strays(&nodes, &pins).real, "5 % of the free band");
+        pins[9] = Pin::Foreground;
+        assert!(
+            !strays(&nodes, &pins).real,
+            "premise: BLUE seeded leaves no group to set aside"
+        );
+    }
+
+    // ARQ-133: two groups tied for the largest are both background; a smaller
+    // third group is set aside, and is real from 5 % of the band, not under.
+    // Mutant: `real` dropped when the largest size is tied.
+    #[test]
+    fn arq_133_a_third_group_beside_a_tie_is_set_aside() {
+        let tie = |third: u32| {
+            let mut nodes = run_of(RED, &[1000; 5]);
+            nodes.extend(run_of(GREEN, &[1000; 5]));
+            nodes.extend(run_of(BLUE, &[third; 5]));
+            let pins = vec![Pin::Free; nodes.len()];
+            let s = strays(&nodes, &pins);
+            assert!(
+                s.left_out[..10].iter().all(|&o| !o) && s.left_out[10..].iter().all(|&o| o),
+                "only the third group is set aside"
+            );
+            s.real
+        };
+        assert!(tie(120), "600 of 10600 px");
+        assert!(!tie(100), "500 of 10500 px is under 5 %");
     }
 
     use crate::slic::{Superpixels, slic};
