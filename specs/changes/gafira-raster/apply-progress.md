@@ -308,3 +308,12 @@ Mutants of this round (all killed unless noted): Wipe softness below 1e-9 treate
 
 Deviations: none new. P15 as amended (d67674b) binds near-end bounds only to Dissolve, Fade and Wipe with `s = 1`; this delivery adds none for Slide, Zoom, Cut or the other softnesses. Lines: `git diff --shortstat 608b196..HEAD -- crates/gafira-raster`.
 
+
+### Fix round 3 (RS3b verify round 2: C1 on `circular`, C3)
+
+Commit: the Wipe fix with its tests (one commit, tests written and seen RED first), then this note. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 each, read alone. `gafira-raster` tests: 136 to 138.
+
+- Cause: circular `u` divided two `hypot` results, each rounded. Now `u = sqrt((a^2 + b^2) / (w^2 + h^2))` with `a = 2 cx - w`, `b = 2 cy - h` (exact in `f64`), one quotient and one sqrt; an exact `u == p` stays exact. Axis path, the saturation test and the non-finite guarantees (W1) are untouched.
+- RED (before the production change): `arq_118_wipe_circular_exact_edge_pixels_keep_the_rule`, "hard 8x8 p 0.875 pixel (0,0)", left 1.0, right 0.0; `arq_118_wipe_circular_exact_edge_on_1080_square`, "hard i=276979", left 1.0, right 0.0. The first also scans every exact-edge pixel on squares 4 to 64 (found by `i128` arithmetic, at least 88) for hard 0 and soft (`s` 1e-16) `p`, and the 8x8 hand case for `s` 1e-16 to 1e-3. The second covers C3 at 1080x1080, p 3/8.
+- Hand mutants: `u <= p` in the hard Wipe, killed by `arq_118_wipe_defaults_are_right_and_hard`, `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre` and both new tests; two-`hypot` quotient restored, killed by both new tests; ramp quotient taken regardless of `|p - u| <= s`, SURVIVES: equivalent at the output (the quotient is then at worst infinite, `p + inf` or `p - inf` is clamped to 1 or 0, never NaN since `gap` is finite), as recorded in round 1 for W1; clamp removed, killed by `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness`, `arq_118_wipe_soft_edge_values`, `arq_118_wipe_matches_the_criterion_for_every_direction`.
+- W5 not touched (follow-up). `proptest-regressions/` not committed. Deviations: none. Lines: `git diff --shortstat HEAD~2..HEAD -- crates/gafira-raster` (69 insertions, 2 deletions in `wipe.rs`).
