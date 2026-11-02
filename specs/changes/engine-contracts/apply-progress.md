@@ -78,3 +78,55 @@ None. `git grep Locale -- crates/gafira-doc` finds nothing. Out of scope and unt
 - S2: the merged RED row is split (above).
 - W2: RED recorded (Deviations).
 - Not touched: C1 and W1 (coordinator and owner).
+
+## D3 (branch `feat/engine-contracts-d3`)
+
+Done: `ToMessage` for `LayoutError` and `PathOpError` (C11 tables, ADR 0012), both exhaustive with no `_` arm; `gafira-pathops -> gafira-doc`; V5 row `gafira-pathops gafira-geom gafira-color gafira-doc`. `Cargo.lock` gained only the `gafira-doc` edge.
+
+Commits:
+
+- `feat(layout): map LayoutError to message keys`
+- `feat(pathops): map PathOpError to message keys` (with `Cargo.toml`, `Cargo.lock` and the V5 row, ADR 0007)
+
+Gates per commit, exit codes read separately: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. V5 step of `ci.yml` run locally: exit 0.
+
+### RED evidence
+
+A compile stub returned key `error.<area>.stub` with no arguments, so RED is an assertion failure.
+
+| Criterion | Test | RED assertion |
+|---|---|---|
+| ARQ-102 layout, per-variant | `gafira-layout/tests/message.rs::arq_102_every_layout_variant_gives_its_table_key_and_arguments` | `left == right` failed: `NonFinite { field: "bleed" }`, left `error.layout.stub`, right `error.layout.non_finite` with `field` |
+| ARQ-102 layout, valid and distinct | `arq_102_layout_keys_are_valid_and_distinct` | failed: stub key shared by all variants |
+| ARQ-102 pathops, per-variant | `gafira-pathops/tests/message.rs::arq_102_every_pathops_variant_gives_its_table_key_and_arguments` | `left == right` failed: `NonFiniteCoordinate { value: Nan }`, left `error.pathops.stub` |
+| ARQ-102 pathops, valid and distinct | `arq_102_pathops_keys_are_valid_and_distinct` | `error.pathops.stub is used by two rows` |
+| `OpenSubpath` saturation | `arq_102_an_open_subpath_index_saturates_at_i64_max` | `left: []`, `right: [("subpath", Int(0))]` |
+| Class and `Geometry` text out of the message | `arq_102_the_non_finite_class_and_the_geometry_text_stay_out_of_the_message` | not RED: passed against the stub (no arguments). Gap-closing, proved by mutants 6 and 7 |
+
+No test calls `Display`; `to_message` is compared with literal messages.
+
+### Hand mutants
+
+| # | Mutant | Killing test | Result |
+|---|---|---|---|
+| 1 | two variants share a key (layout: `invalid_box` -> `non_finite`; pathops: `open_subpath` -> `geometry`) | `*_keys_are_valid_and_distinct` and per-variant | killed (both crates) |
+| 2 | wrong key, each of 6 layout and 9 pathops rows in turn | per-variant fixture tests | killed, 15 of 15 |
+| 3 | argument name wrong (`field`, `node`, `value`, `limit`, `subpath`, `minimum`), extra argument, missing argument, `value`/`limit` swapped, order reversed | per-variant fixture tests | killed |
+| 4 | `NotPositive` and `NonFinite` keys swapped, stroke width and tolerance | `arq_102_every_pathops_variant_gives_its_table_key_and_arguments` | killed, both |
+| 5 | `OpenSubpath` as `*subpath as i64` (wraps) | `arq_102_an_open_subpath_index_saturates_at_i64_max` | killed |
+| 6 | `Geometry(s)` passes `s` as `Text` | `arq_102_the_non_finite_class_and_the_geometry_text_stay_out_of_the_message` and per-variant | killed |
+| 7 | argument from `Display` (`Text(self.to_string())` for layout `field`, `node`; pathops `Geometry`, `NonFiniteCoordinate` class) | per-variant fixtures | killed, all four |
+| 8 | V5 row without `gafira-color gafira-doc` (copy of the step script, scratchpad) | the step itself | exits 1 with `gafira-pathops must not depend on gafira-color` and `... gafira-doc`; the real row exits 0 |
+
+### Measured lines
+
+`git diff --shortstat 9faa98e` (before this section): 7 files changed, 279 insertions(+), 1 deletion(-). Forecast 200 (x1.4: 280). At the limit, not over.
+
+### Deviations
+
+- Mutant 4 was applied as a key swap between the two `NotPositive`/`NonFinite` rows of each area, which gives the same observable message as routing the cause to the other arm.
+- Mutant 8 has no committed test: it is a run of the step script with the row edited, as the list asked ("a negative test for V5"). Not repeatable from git; the real row passes.
+
+### Findings for other stages
+
+None.
