@@ -770,14 +770,14 @@ pub struct TransitionInstance {                        // dato del documento, en
 
   Identidad y márgenes (PROPUESTA). `transition_id` se guarda en `TransitionInstance` y es igual a `Descriptor.id`; `version` empieza en 1 y sube cuando cambia la salida. Ningún valor de `handles` depende de `TransitionAlign`, porque `handles` no la recibe.
 
-| Transición | `transition_id` y clave de nombre | `handles` |
-|---|---|---|
-| Corte | `transition.cut` | `None` |
-| Fundido | `transition.fade` | `Both` |
-| Disolvencia | `transition.dissolve` | `Both` |
-| Deslizar | `transition.slide` | `Both` |
-| Zoom | `transition.zoom` | `Both` |
-| Borrado | `transition.wipe` | `Both` |
+| Transición | `transition_id` | Clave de nombre | `handles` |
+|---|---|---|---|
+| Corte | `transition.cut` | `glossary.transition_cut` | `None` |
+| Fundido | `transition.fade` | `glossary.transition_fade` | `Both` |
+| Disolvencia | `transition.dissolve` | `glossary.transition_dissolve` | `Both` |
+| Deslizar | `transition.slide` | `glossary.transition_slide` | `Both` |
+| Zoom | `transition.zoom` | `glossary.transition_zoom` | `Both` |
+| Borrado | `transition.wipe` | `glossary.transition_wipe` | `Both` |
 
   Aceptación: por transición, `descriptor().id`, `descriptor().name` y `handles()` son los de la tabla. `params()` pasa `ParamSchema::validate_definition` y da los ids, tipos, valores por defecto y etiquetas de la tabla, con `animatable` falso; Corte y Disolvencia dan un esquema vacío; Fundido a blanco opaco con `p` 0,5 da 255 en todos los canales de `Rgba8` y 1,0 en `RgbaF32`; `direction` `diagonal` da `Err`.
 - **Cómo añadir una transición**:
@@ -1819,6 +1819,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos, y con ellas dará el catálogo de filtros de 04 FD-34 (D-40). No bloquea la especificación. | Titular |
 | Q-45 | ¿Se acepta dejar fuera de ARQ-132 el fondo texturizado a ΔE76 6, que pasa con `gamma` 50 y falla con 500? ¿Qué ΔE76 mínimo tienen entonces las escenas texturizadas? Afecta a D-20. | Titular |
 | Q-46 | Si los fundidos de entrada y salida de un clip suman más que el clip, ¿se solapan multiplicando sus ganancias o las asas no pueden cruzarse (05 FV-10)? Ninguna spec lo dice. | Titular |
+| Q-47 | ¿Tiene duración un Corte? 05 FV-06 lo llama instantáneo, pero da a toda transición de 0,1 a 5 s, y con alineación al inicio o al final mostraría fotogramas más allá del clip, aunque su `handles` es `None`. Recomendación: Corte ignora la duración y la alineación, y el cambio ocurre en el corte. | Titular |
 
 ---
 

@@ -427,12 +427,12 @@ ARQ-118 fixes neither. The `direction` id always names the way the moving edge t
 
 | Transition | `Descriptor.id`, also `transition_id` | Name key | `version` |
 |---|---|---|---|
-| Cut | `transition.cut` | `transition.cut` | 1 |
-| Fade | `transition.fade` | `transition.fade` | 1 |
-| Dissolve | `transition.dissolve` | `transition.dissolve` | 1 |
-| Slide | `transition.slide` | `transition.slide` | 1 |
-| Zoom | `transition.zoom` | `transition.zoom` | 1 |
-| Wipe | `transition.wipe` | `transition.wipe` | 1 |
+| Cut | `transition.cut` | `glossary.transition_cut` | 1 |
+| Fade | `transition.fade` | `glossary.transition_fade` | 1 |
+| Dissolve | `transition.dissolve` | `glossary.transition_dissolve` | 1 |
+| Slide | `transition.slide` | `glossary.transition_slide` | 1 |
+| Zoom | `transition.zoom` | `glossary.transition_zoom` | 1 |
+| Wipe | `transition.wipe` | `glossary.transition_wipe` | 1 |
 
 The ids name the concept, not the crate, because `transition_id` is persisted in `TransitionInstance`. Audio's `audio.gain` is the same two-part form. `version` rises when the output changes.
 
