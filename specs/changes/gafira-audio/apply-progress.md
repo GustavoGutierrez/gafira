@@ -455,3 +455,52 @@ Not a fault, recorded: a rate under 8 kHz is accepted but K weighting there depa
 ### Size
 
 `git diff --shortstat 040ba8e HEAD` (merge of AU2) for AU3 and AU4 together: 15 files, 2 232 insertions, 12 deletions; of them 717 in `crates/gafira-audio/src` (meter, peak and plan 345, normalizer 90, resampler 250, errors and exports), about 1 230 in tests and about 290 in this file. Forecast 830 (480 + 350): over it. Size is not a limit for serial work, so the coordinator decides.
+
+### Fix round for verify round 1 of AU3 and AU4 (C9 to C14, W16, W17, S10, S11, S14)
+
+Commits: `c95c006` (C14), `067e69b` (C9, C10, C12, C13, S11, S14), `c0aa391` (C11, W16, W17, S10). The spec commit `01d2000` (ARQ-126: every rate, no floor, band to `min(16 kHz, Nyquist)`) was read first; its criterion (3.36, 8, 11.025, 12, 16, 22.05, 24 kHz; 997 Hz, 2.5 kHz, `min(16 kHz, 0.98 x Nyquist)`; 1 Hz gives no `Err`) is the sweep test.
+
+RED, run against the code before the fix, failing line pasted:
+
+| Item | Test | Failing line |
+|---|---|---|
+| C9 | `arq_126_the_k_weighting_at_other_rates_*` | with the 3.36 kHz row: `a valid call: OutOfRange { field: "rate" }`; with that row out, to see the accuracy: `8000 Hz at 2500 Hz: -13.604642447336579 against -14.100969977933376` |
+| C9 | `arq_126_every_sample_rate_is_measured_and_none_gives_an_error` | `1 Hz: Err(OutOfRange { field: "rate" })` |
+| C12 | `arq_110_a_sum_of_energies_that_overflows_*` | `[1.7e308, 1.7e308]  left: Ok(None) right: Err(NonFinite { field: "energies" })` |
+| C11 | `arq_127_the_leveled_peak_is_at_most_minus_1_dbtp_with_no_tolerance` | `seed 2: -0.9999998437965252 dBTP` |
+| W16, S10 | `arq_127_a_sine_at_a_quarter_of_the_rate_*` (96 and 192 kHz added) | `96000 Hz, phase 1.1780972450961724: 0.9239610356444702 is -0.6869268604766837 dBFS` (x2 reads it low) |
+| C10, C13, C14, W17 | the code was right; the proof was missing. They are proved by the mutants below (no RED by removal) | |
+
+Hand mutants (applied, tests run, reverted; none committed):
+
+| Mutant | Result |
+|---|---|
+| C13 `am1`: relative gate over all blocks | killed by `arq_126_the_relative_gate_counts_only_the_blocks_over_the_absolute_gate` |
+| W16 `am2`: x1 for 48 001 to 96 000 Hz; also x2 there; also x1 for 48 001 to 192 000 | killed by `arq_127_a_sine_at_a_quarter_of_the_rate_*` (96 kHz rows) |
+| C14 `rm5`: `CUTOFF` 0.97 | killed by `arq_128_the_stopband_from_the_lower_nyquist_*` (phases and 1.0, 1.005 rows) |
+| C9: factor 1 (no interpolation); `WEIGHTING_MIN_HZ` 16 000; interpolation half length 20; block length without the factor | killed by the sweep test (and the 1 Hz test for factor 1) |
+| C11: margin 0 | killed by `arq_127_the_leveled_peak_is_at_most_minus_1_dbtp_with_no_tolerance` |
+| C12: no `finite` on the sum | killed by `arq_110_a_sum_of_energies_that_overflows_*` |
+| C10: relative gate at -14 LU | killed by cases 3 and 4 and the gate tests |
+| W17: normalizer on one channel; gain x0.9 | killed by both `fv_10_b_*` tests (the first one by the -20 LUFS test only) |
+
+Survivors, judged equivalent under the spec (no behaviour test added, because none is a spec rule):
+
+- `L = floor(32 000 / fs)` instead of `ceil`: still within the 0.1 dB of ARQ-126 on every rate of the criterion (worst 24 kHz, 0.068 dB). The `ceil` is the verifier's design for margin (0.03 dB); the spec says only +-0.1.
+- Kaiser beta 3 for the interpolator: the stopband is worse, the measured deviation is still inside 0.1 dB.
+- `LoudnessNormalizer` skipping a block shorter than 512 frames in the FV-10 (b) tests: 256 frames of 480 000 do not move the readings beyond their tolerance.
+- The second `?` in `mean(&kept)` cannot fire: `kept` sums to no more than `passed`, which was checked.
+
+Deviations:
+
+- C9: the sweep goes up to `0.98 x min(16 kHz, Nyquist)`, as the spec criterion says, not to the Nyquist itself: the interpolation filter has its transition around the Nyquist (0.98 to 1.02) and a tone at the Nyquist is also degenerate (phase 0 samples to 0). The worst deviation in the sweep is 0.04 dB, 192 kHz at 2.5 kHz (the old limit, not a low rate).
+- C9: the interpolation is a Kaiser sinc of 216 taps with a kernel table read by linear interpolation (resolution 1 024 per sample), polyphase on the fly, so 1 Hz does not need a table per phase. Measurements run several times slower under 32 kHz (216 taps per interpolated sample); the sweep test takes about 10 s in debug.
+- S10 taken: x4 up to 192 kHz, x1 above. Annex 2 asks less (x2 at 96 kHz); this reads more of the peak. The x2 branch and the W16 case disappear.
+- C11: `reached` stays on the exact ceiling; the applied gain is `min(request, ceiling - 1e-5)`. A request within 1e-5 dB under the ceiling reaches the target with a gain up to 1e-5 dB lower.
+- The old test `arq_110_a_rate_under_twice_the_shelf_frequency_*` was replaced by `arq_126_every_sample_rate_is_measured_*`: the guard is gone, as the spec says.
+- S11: the doc comments no longer speak of the rate guard, so both are correct. S14: one `bessel_i0` in `dsp.rs` (the 200-iteration one).
+- Not taken: S12, S13 (not in the list).
+
+Gates, each alone, at `c0aa391`: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. The same three at `067e69b` (with `tests/leveling.rs` and the x4/margin code of the next commit held back): 0, 0, 0. `c95c006` only changes `tests/resample.rs`; its tests were run in both full runs.
+
+Size of the fix round: `git diff --shortstat 59c72b0 HEAD` before this note: 7 files, 279 insertions, 110 deletions.
