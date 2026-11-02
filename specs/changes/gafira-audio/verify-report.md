@@ -363,3 +363,176 @@ This is a closure round, so there is no independent budget. These repeat the rep
 - Size: 2 643 insertions under `crates/` since the card, against a 670 forecast. The owner said size does not concern him: noted, no finding.
 
 next: specifier (ambiguity: W7, W8), then tdd-apply (implementation: C5, W9 as follow-up)
+
+
+---
+
+# Verify report: gafira-audio, AU1, round 3 (closure)
+
+Rounds 1 and 2 stay above, unchanged.
+
+| Field | Value |
+|---|---|
+| Commit | `a605fe7`, branch `feat/gafira-audio`, base `develop`; amended specs `ac411a3`, fix `1d54942` |
+| Depth, mode, tier | V2, full, T4 at close; `mutation: archive`, no `mutants` report (not a finding) |
+| Verdict | **PASS** for delivery AU1; AU2 to AU4 remain, so `next` is `tdd-apply` |
+| Counts | 0 CRITICAL, 4 WARNING (all new, all follow-up), 2 SUGGESTION (S3, S4 carried over) |
+| Per class (CRITICAL + WARNING) | implementation 4 (all follow-up), ambiguity 0, architecture 0, claim 0 |
+
+## Gates
+
+Each command ran alone and its exit code was read directly, on a clean tree at `a605fe7`, with no `CARGO_TARGET_DIR`. Free disk was 28 GB at the start and never below 24 GB.
+
+| Gate | Exit code |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 374 passed, 0 failed, 0 ignored) |
+| `cargo deny --locked check` | 0 |
+| ARQ-07 | 0 |
+| Forbid unsafe | 0 |
+| V5 | 0 |
+| V12 | 0 |
+| ARQ-107 | 0 |
+| V13 | 0 |
+| V14 | 0 |
+
+The policy steps were extracted from `.github/workflows/ci.yml` and run unchanged with `bash --noprofile --norc -eo pipefail`.
+
+## Artifact integrity (step 3c)
+
+- `9bfba1c` touches only `apply-progress.md` and precedes the first implementation commit.
+- `git diff 9bfba1c HEAD` on that file removes no line, so the card is unchanged.
+- `ac411a3` touches only `specs/02-arquitectura-software.md`, the ARQ-123 and ARQ-124 rows.
+- `1d54942` touches only `crates/gafira-audio/src/dsp.rs` and `tests/empty.rs`.
+- `a605fe7` adds 31 lines to `apply-progress.md` and touches nothing else.
+- `.cargo/` is unchanged, so no exclusion needs checking.
+
+## Closure of round 2
+
+| Finding | State | Evidence |
+|---|---|---|
+| C5 | Closed | `accepts` requires `frames() > 0`. Independent probe `q3`: Gain, both fades, Pan, a full chain and an empty chain, with `prepare` at `max_block` 0, `channels` 0 and both, and 0 to 3 empty channels, all equal a control bit for bit. Control mutant E0 is killed by 5 tests |
+| W7 | Closed | ARQ-124 now says the first processed block fixes `L` with the last valid value, counting its own, and a later value becomes the last valid. The code matches. Probe `w7`: 1/240, 1/960 and 1/1920, In and Out, blocks of 1, 7 and 500 |
+| W8 | Closed | ARQ-123 and ARQ-124 say an empty block is not processed and is not the first block. Probe `q4` passes, and `anywhere` shows an empty block at any point of a stream changes no later sample |
+| W9 | Closed | Mutant R1 of round 2 (D2 below) is killed by `arq_124_a_duration_in_a_processed_block_mid_ramp_becomes_the_last_valid_one` |
+
+C1 to C4 and W1 to W6 stayed closed in round 2; the gates and the mutants below touch nothing that reopens them.
+
+The doc item on row `Tamaño 0` of 02 §4.17.5 is the recorded follow-up the coordinator named, so it is not routed here. The row is incomplete, not contradictory.
+
+## Criteria of `ac411a3`
+
+The coordinator asked for each new criterion to be proved by mutation, so this closure round ran more mutants than the usual closure list. All ran on a scratch export of `a605fe7`, with the probe files removed, so a kill can only come from the repo's tests. The export used its own `target` and `CARGO_INCREMENTAL=0`. Every mutated file was restored and compared to the commit.
+
+Every explicit acceptance sentence added by `ac411a3` has a test that fails when that sentence alone is broken.
+
+| New criterion | Narrowest mutant | Killed by |
+|---|---|---|
+| ARQ-123 empty block, valid `prepare`, 2 shapes | E1, E6, N5 | `arq_123_an_empty_block_after_a_valid_prepare_leaves_the_next_block_untouched` |
+| ARQ-123 empty block, `max_block` 0, `channels` 0, both | E2, E3, E4, E5 | `arq_123_an_empty_block_after_a_prepare_with_a_zero_leaves_a_later_prepare_untouched` |
+| ARQ-124 empty without `volume`, then 0 | F1 | `arq_124_an_empty_block_is_not_the_first_block_of_a_gain` |
+| ARQ-124 empty with 0, then no `volume` | N1 | 3 tests, among them the one above |
+| ARQ-124 `volume` 100, empty with 0, no `volume` | N2 | `arq_124_an_empty_block_is_not_the_first_block_of_a_gain` |
+| ARQ-124 empty without `duration`, then 2 s | L1 | `arq_124_an_empty_block_does_not_latch_the_fade_length` |
+| ARQ-124 1/240, no `duration` and NaN | D2, D6, N6 | `arq_124_a_duration_in_a_processed_block_mid_ramp_becomes_the_last_valid_one` |
+| ARQ-124 1/960 | N3 | `arq_124_a_duration_in_an_empty_block_mid_ramp_is_not_read` |
+| ARQ-124 1/1920 | N4 | `arq_124_the_block_after_reset_sets_the_length_with_its_own_duration` |
+| Prose: no parameter read, Gain, Fade, Pan, every block | R1, R2, R3 | 1 to 5 tests each |
+
+The gaps below are in prose rules that have no acceptance sentence of their own, or in an older criterion. The code is correct in all of them: each survivor was killed only by a probe that passes on HEAD, which proves the mutant was built and is not equivalent.
+
+## WARNING
+
+All four are test gaps found after round 1, so they are follow-ups and not routed. None is a code defect.
+
+### W10. A refused non-empty block consuming the `Gain` first block is not pinned
+
+- class: implementation
+- follow-up
+- ref: `crates/gafira-audio/tests/total.rs:214`, ARQ-124
+- `ac411a3` says a block `process` does not process is not the first block. The empty case is pinned; the non-empty case is not.
+- Mutant F2 sets `first = false` on an oversized block and survives. Control probe: oversized block, then `volume` 0, gives 0 from sample 0.
+- The comment at `total.rs:216` claims a consumed first block would show in the valid block. It does not, because that block carries no value.
+- Fix: follow the refused block with a block carrying a value.
+
+### W11. The `prepare` rows of the no-trace test stay skipped
+
+- class: implementation
+- follow-up
+- ref: `crates/gafira-audio/tests/total.rs:223`, ARQ-123
+- `.skip(3)` leaves a non-empty block after a `prepare` with a 0 outside the test, and `ac411a3` adds "no lee ningún parámetro".
+- Mutant R4, reading only in that case, survives on `Fade` and `Pan`. On `Gain` it is killed, but only by `arq_129_prepare_and_reset_reach_every_processor`, so that is incidental.
+- Fix: the same shape as `tests/empty.rs`, with a valid `prepare` before the next block.
+
+### W12. "Su estado no cambia" is pinned only before the first processed block
+
+- class: implementation
+- follow-up
+- ref: `crates/gafira-audio/tests/empty.rs`, `tests/total.rs:214`, ARQ-123
+- No test sends a refused block during a running ramp and then checks the next samples.
+- Survivors: F3 empty re-arms `first`; F4 empty ends the gain ramp; F5 the same for a refused non-empty block; L3 empty clears `L`; L4 empty restarts the fade clock; L5 a refused non-empty block clears `L`.
+- `arq_124_a_duration_in_an_empty_block_mid_ramp_is_not_read` sends a `reset` right after the empty block, so it cannot see these.
+- Fix: compare a mid-ramp stream with and without the refused block, for `Gain` and `Fade`.
+
+### W13. The last valid value across `prepare` is not pinned
+
+- class: implementation
+- follow-up
+- ref: `crates/gafira-audio/tests/fade.rs:210`, `tests/gain.rs:305`, ARQ-124, ARQ-123
+- ARQ-124 says the first block after `prepare` or `reset` uses the last valid value. The tests prove it after `reset` only.
+- Survivors: D4 `prepare` drops `duration`; V1 `prepare` drops `volume`; V3 `prepare` drops `pan`.
+- Fix: one test per processor with a second `prepare` and a block with no value.
+
+## SUGGESTION
+
+- S3 (from round 2, still open). ARQ-129 states only `latency()`. Add that `tail()` is the saturating sum of the stages.
+- S4 (from round 2, still open). Stale doc comments: `ProcessorChain::new` says "it changes nothing" (`chain.rs:20`) and `Pan` says "any other block is not changed" (`pan.rs:33`).
+
+## Acceptance map
+
+| Criterion | State | Proof |
+|---|---|---|
+| ARQ-123 | Covered | `tests/total.rs`, `chain.rs`, `fade.rs`, `empty.rs`; probes `q3`, `lopsided`, `anywhere`; follow-ups W10 to W12 |
+| ARQ-124 | Covered | `tests/gain.rs`, `fade.rs`, `pan.rs`, `empty.rs`; probes `q4`, `w7`, `one_frame`; follow-ups W10, W13 |
+| ARQ-129 | Covered | `tests/chain.rs`, `mix.rs`, `offset.rs` |
+| FV-10 (a) | Covered | `fv_10_a_two_second_fade_in_rises_from_zero_to_one_continuously`, `fv_10_a_stereo_fade_runs_at_the_same_speed_on_both_channels`, `fv_10_the_fade_in_and_the_fade_out_have_independent_durations` |
+| FV-10 (d) | Covered | `fv_10_d_one_millisecond_is_44_samples_at_44_1_khz_and_48_at_48_khz` |
+| ARQ-110 | Covered | `arq_110_*` tests |
+| ARQ-111 | Covered | `arq_111_*` tests, `tests/determinism.rs` |
+| P13, 02 §4.17.5 table | Covered | `tests/params.rs` |
+
+Covered 8 of 8. The AU2 to AU4 IDs of the card are out of this delivery.
+
+## Hand mutants
+
+45 run, 33 killed by the repo's tests, 12 survived. Spot-check item: R1 of round 2 (D2), killed.
+
+| Group | Mutants | Result |
+|---|---|---|
+| Empty clause in `accepts` | E0 to E7 | 8 killed |
+| Parameter read before the guard, per processor | R1, R2, R3 on `Gain`, `Fade`, `Pan`; R4 on `Gain` | 10 killed |
+| The same, non-empty block after `prepare` with a 0 | R4 on `Fade`, `Pan` | **2 survived**, W11 |
+| `Gain` first value | F1 | Killed |
+| `Gain` first value, refused non-empty | F2 | **Survived**, W10 |
+| `Gain` mid-stream | F3, F4, F5 | **3 survived**, W12 |
+| `Fade` latch on a refused block | L1, L2 | 2 killed |
+| `Fade` mid-stream | L3, L4, L5 | **3 survived**, W12 |
+| `duration` rules | D1, D2, D3, D5, D6 | 5 killed |
+| Last valid across `reset` | V2 | Killed |
+| Last valid across `prepare` | D4, V1, V3 | **3 survived**, W13 |
+| One per acceptance sentence | N1 to N6 | 6 killed |
+
+E7 (a one-frame block refused) is killed by a single test, `arq_123_a_non_finite_duration_keeps_the_last_valid_one`, and probably by accident. Probe `one_frame` confirms the code.
+
+## Probes
+
+14 probes, 6 in `vr3.rs` and 8 in `vr3b.rs`, on the scratch export. All pass on `a605fe7`, so no code defect showed. Each of the 12 survivors fails at least one probe in `vr3b.rs`.
+
+## Route
+
+- This round has no CRITICAL. The verdict is PASS for the delivery. "All deliveries done" does not apply yet: `next` is the rule for PASS with deliveries remaining.
+- The follow-ups W10 to W13 reach `archive`. T4 at change close still runs per the Flow line, and these same mutants are ones a hand list for AU2 could reuse.
+- Size: 2 836 insertions under `crates/` since the card, against a 670 forecast; this round added 230 lines in all. The owner said size does not concern him: noted, no finding.
+
+next: tdd-apply (next delivery, AU2)
