@@ -1879,7 +1879,7 @@ pub type CommandLabel = MessageKey;                 // Command::label (§4.3)
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MsgArg {
-    Text(String),              // contenido de la persona (nombre de archivo, de fuente…): nunca se traduce
+    Text(String),              // contenido de la persona (nombre de archivo, de fuente…) o identificador técnico estable (ADR 0012): nunca se traduce
     Count(u64),                // elige la forma de plural
     Int(i64), Decimal(f64),
     Quantity(f64, Unit),       // Unit: Px, Mm, Cm, In, Pt, Percent, Bytes, Seconds, Fps, Db, Lufs, Degrees
@@ -1892,11 +1892,12 @@ pub enum MsgArg {
 pub struct Message { pub key: MessageKey, pub args: Vec<(&'static str, MsgArg)> }
 pub trait ToMessage { fn to_message(&self) -> Message; }
 
-// Única forma de crear claves: xtask check-i18n extrae los literales de msg! y los compara con los catálogos.
+// Forma de crear un Message: xtask check-i18n extrae los literales de msg! y de MessageKey("…") y los compara con los catálogos.
 // msg!("export.pages_selected", count = Count(n))
+// El literal MessageKey("…") sigue siendo válido para etiquetas constantes (CommandLabel, Descriptor, ParamSchema).
 ```
 
-- **Convención de claves**: ASCII en `snake_case` con puntos, `área.objeto[.estado]`. Los nombres del glosario usan `glossary.<id>` y son los mismos en los dos idiomas (03 §2.8).
+- **Convención de claves**: ASCII en `snake_case` con puntos, `área.objeto[.estado]`: 2 o 3 segmentos, cada uno `[a-z][a-z0-9_]*`. Los nombres del glosario usan `glossary.<id>` y son los mismos en los dos idiomas (03 §2.8). Aceptación: valen `edit.set_property`, `error.format.too_new` y `a.b2`; no valen `a`, `.a`, `a.`, `a..b`, `a.b.c.d`, `A.b`, `a.2b` ni `a.é`; `msg!` con una clave no válida no compila.
 - **Todo lo que se muestra lleva clave**: además del texto de `gafira-ui`, los `Descriptor` de los registros (§4), las etiquetas de `ParamSchema` de efectos y transiciones, las opciones de `Exporter::options_schema`, los `Destinos` de `assets/sizes.toml` y las contribuciones de plugins (Fase 3) declaran `MessageKey`, no `&str`.
 - **Qué no se traduce**: el contenido de la persona (textos, nombres de proyecto, capa, archivo o fuente), los nombres de formato (PNG, MP4, AV1), la marca «Gafira», el texto de los logs, los nombres de subcomandos y opciones de la CLI y las claves del formato `.gafira`. Los nombres por defecto de los elementos nuevos («Página 1» / «Page 1») se crean en el idioma activo y desde ese momento son contenido de la persona: cambiar de idioma no los renombra.
 
