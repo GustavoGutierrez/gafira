@@ -1,0 +1,2 @@
+crates/gafira-geom/src/irect.rs:32:20: replace > with >= in IRect::height
+crates/gafira-geom/src/irect.rs:23:20: replace > with >= in IRect::width

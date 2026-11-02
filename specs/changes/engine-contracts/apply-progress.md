@@ -355,3 +355,31 @@ S1: dbd6997 says "18 of 20 tests". At the RED run the file had 20 tests, 18 fail
 Deviations: the racing-`cancel` test is probabilistic in what it can catch (it never fails on correct code); there is no `loom`, as asked. The W1 `Ok(false)` fewer-than-`k` cases are now pinned, which closes the open point under "Deviations and judgments" above.
 
 Measured: `git diff --shortstat bf66b2a HEAD -- crates`: 3 files changed, 248 insertions(+), 10 deletions(-); `progress.rs` source 29 lines changed, the rest tests.
+
+## T4
+
+Mutation run per crate at `--jobs 8`, on 7c4951d.
+
+| Crate | Found | Caught | Missed | Unviable | Timeout | Load | Time |
+|---|---|---|---|---|---|---|---|
+| gafira-doc | 250 | 190 | 2 | 57 | 1 | 1 | 672 s |
+| gafira-geom | 87 | 69 | 2 | 16 | 0 | 0 | 44 s |
+| gafira-pathops | 128 | 106 | 0 | 22 | 0 | 0 | 72 s |
+| gafira-layout | 454 | 437 | 0 | 12 | 5 (confirmed hanging) | 0 | 363 s |
+| gafira-testkit | 251 | 214 | 10 | 27 | 0 | 0 | 674 s |
+
+The gafira-doc row is recorded as given by the coordinator (its columns add to 251 with the load count).
+
+Raw report: `t4-ec/` in the session scratchpad (outside the repository).
+
+### gafira-geom survivors: equivalent
+
+`crates/gafira-geom/src/irect.rs:23:20` and `:32:20`, `>` to `>=` in `IRect::width` and `IRect::height`. `IRect` arithmetic is critical in `design.md`, so they were treated as critical survivors unless equivalent.
+
+Proof. The two forms differ only when `x1 == x0` (`y1 == y0` for height). There the mutant takes the `abs_diff` arm, and `x0.abs_diff(x0)` is 0, the same value as the `else` arm. For `x1 != x0` both forms take the same arm. Exhaustive check outside the repository: every `x` in `i32::MIN..=i32::MAX` with `x1 == x0` gives 0 in both forms (4 294 967 296 cases), plus all pairs over `{MIN, MIN+1, -1, 0, 1, MAX-1, MAX}`: all equal. Equivalent, so no test can kill them.
+
+Action: one narrow `exclude_re` entry in `.cargo/mutants.toml`, pinned to file, line 23 or 32, column 20 and the function. Production code and the Slice card untouched.
+
+### Other survivors
+
+Not decided here: gafira-doc 2 missed (plus 1 timeout) and gafira-testkit 10 missed are recorded as found; the coordinator decides on them.
