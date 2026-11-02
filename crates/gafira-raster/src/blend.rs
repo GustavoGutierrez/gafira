@@ -579,15 +579,16 @@ mod tests {
             [0.3, 0.3, 0.3, 1.0],
             [1.0e-21, 0.0, 1.0e-30, 1.0e-20],
         ];
-        for _ in 0..1500 {
-            // Colours whose c / a is not exact in f32.
+        for _ in 0..3000 {
+            // Colours whose c / a is not exact in f32: low mantissa bits are scrambled, so c
+            // is not a product a * u (for those, (c / a) * a returns c anyway).
             let a = (lcg(&mut seed) as f32).max(1e-6);
-            sources.push([
-                lcg(&mut seed) as f32 * a,
-                lcg(&mut seed) as f32 * a,
-                lcg(&mut seed) as f32 * a,
-                a,
-            ]);
+            let mut channel = || {
+                let c = lcg(&mut seed) as f32 * a;
+                let scrambled = f32::from_bits(c.to_bits() ^ ((lcg(&mut seed) * 4.0) as u32));
+                scrambled.min(a)
+            };
+            sources.push([channel(), channel(), channel(), a]);
         }
         let backdrops = [[0.0f32; 4], [0.9, 0.1, 0.5, 0.0], [1.0, 1.0, 1.0, -0.0]];
         for mode in BlendMode::ALL {
@@ -915,6 +916,66 @@ mod tests {
         }
     }
 
+    // ARQ-119: the SOURCE colour is capped to its alpha too (f32 and 8 bits), not only the
+    // backdrop, and Normal does not cap it.
+    #[test]
+    fn arq_119_source_colour_is_capped_to_its_alpha() {
+        let backdrop = [0.3f32, 0.2, 0.1, 0.6];
+        for mode in BlendMode::ALL
+            .into_iter()
+            .filter(|m| *m != BlendMode::Normal)
+        {
+            let over = blend_f32(mode, backdrop, [0.9, 0.7, 0.5, 0.5]).unwrap();
+            let capped = blend_f32(mode, backdrop, [0.5, 0.5, 0.5, 0.5]).unwrap();
+            assert_eq!(bits(over), bits(capped), "{mode:?}");
+            assert!(
+                over.iter().all(|v| (0.0..=1.0).contains(v)),
+                "{mode:?} {over:?}"
+            );
+            let over8 = blend_u8(mode, [80, 50, 25, 150], [230, 180, 130, 128]);
+            let capped8 = blend_u8(mode, [80, 50, 25, 150], [128, 128, 128, 128]);
+            assert_eq!(over8, capped8, "{mode:?}");
+        }
+        let n = blend_f32(BlendMode::Normal, backdrop, [0.9, 0.7, 0.5, 0.5]).unwrap();
+        assert!((n[0] - (0.9 + 0.3 * 0.5)).abs() < 1e-6, "{n:?}");
+        assert_eq!(
+            blend_u8(BlendMode::Normal, [0, 0, 0, 0], [230, 0, 0, 128])[0],
+            230
+        );
+    }
+
+    // ARQ-110: a result that overflows only in alpha is Err with index 3.
+    #[test]
+    fn arq_110_overflowing_alpha_is_err() {
+        let err = blend_f32(
+            BlendMode::Normal,
+            [0.0, 0.0, 0.0, f32::MAX],
+            [0.0, 0.0, 0.0, -1.0],
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            BufferError::NonFinite {
+                field: "result",
+                index: 3
+            }
+        );
+    }
+
+    // ARQ-110: ColorBurn with a source channel of -0.0 (equal to 0) is 0, never an infinity.
+    #[test]
+    fn arq_110_color_burn_with_negative_zero_source() {
+        for cb in [0.0f32, 0.25, 0.5, 0.999] {
+            let got = blend_f32(
+                BlendMode::ColorBurn,
+                [cb, cb, cb, 1.0],
+                [-0.0, -0.0, -0.0, 1.0],
+            )
+            .unwrap();
+            assert_eq!(got, [0.0, 0.0, 0.0, 1.0], "cb={cb}");
+        }
+    }
+
     mod property {
         use super::*;
         use proptest::prelude::*;
@@ -941,6 +1002,31 @@ mod tests {
                     let out = blend_f32(mode, b, s).unwrap();
                     prop_assert!(out.iter().all(|v| (0.0..=1.0).contains(v)));
                 }
+            }
+
+            // ARQ-110: the interior and the tiny values, not only the corners: finite
+            // output in [0, 1] for every non-Normal mode, and no Err.
+            #[test]
+            fn arq_110_interior_input_gives_output_in_unit_range(
+                b in prop::array::uniform4(prop_oneof![-2.0f32..2.0, -1e-30f32..1e-30, 0.0f32..1.0]),
+                s in prop::array::uniform4(prop_oneof![-2.0f32..2.0, -1e-30f32..1e-30, 0.0f32..1.0]),
+                mode in 1usize..16,
+            ) {
+                let out = blend_f32(BlendMode::ALL[mode], b, s).unwrap();
+                prop_assert!(out.iter().all(|v| (0.0..=1.0).contains(v)), "{b:?} {s:?} {out:?}");
+            }
+
+            // ARQ-119: valid premultiplied input (c <= a) in the interior stays in [0, 1].
+            #[test]
+            fn arq_119_valid_interior_input_stays_in_unit_range(
+                bc in prop::array::uniform3(0.0f32..=1.0), ba in 1e-6f32..=1.0,
+                sc in prop::array::uniform3(0.0f32..=1.0), sa in 1e-6f32..=1.0,
+                mode in 1usize..16,
+            ) {
+                let b = [bc[0] * ba, bc[1] * ba, bc[2] * ba, ba];
+                let s = [sc[0] * sa, sc[1] * sa, sc[2] * sa, sa];
+                let out = blend_f32(BlendMode::ALL[mode], b, s).unwrap();
+                prop_assert!(out.iter().all(|v| (0.0..=1.0).contains(v)), "{b:?} {s:?} {out:?}");
             }
 
             // ARQ-119: valid premultiplied 8-bit input gives a result no brighter than its alpha.
