@@ -113,4 +113,29 @@
   "mutation": null,
   "hand_mutants": {"run": 6, "killed": 6},
   "criteria": {"total": 16, "covered": 13},
-  "size": {"lines": 845, "forecast": null}, "report": "verify-report.md" } ] }
+  "size": {"lines": 845, "forecast": null}, "report": "verify-report.md" },
+  {
+  "round": 3, "delivery": "TX2", "commit": "3c7b18455841c85d80881c2539609db32e70cd41", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 5, "warning": 4, "suggestion": 1},
+  "classes": ["implementation"],
+  "findings": [
+    {"id": "C7", "status": "closed"},
+    {"id": "C8", "status": "closed"},
+    {"id": "C16", "severity": "CRITICAL", "class": "implementation", "ref": "list.rs:152, FD-41 Listas", "summary": "Narrowed: at dpi 1.7e39 to 2e39 the probe wraps in a box of f32::MAX, first line only: Ok with hang 1.97e38 of 3.3e38. Center and Right closed", "follow_up": false, "status": "open"},
+    {"id": "C15", "status": "closed"},
+    {"id": "C17", "status": "closed"},
+    {"id": "W13", "severity": "WARNING", "class": "implementation", "ref": "list.rs, f120b7e, Strict TDD", "summary": "TDD breach kept on record", "follow_up": false, "status": "open"},
+    {"id": "W26", "severity": "WARNING", "class": "implementation", "ref": "FD-41 (l)", "summary": "No test names (l). Met by construction; linear-scaling test possible now, the mode check belongs to TX4", "follow_up": true, "status": "open"},
+    {"id": "W27", "severity": "WARNING", "class": "ambiguity", "ref": "02 line 919", "summary": "Card closed by 1f5fdf2; the stream row still stops at (j). Known, not routed", "follow_up": true, "status": "open"},
+    {"id": "C18", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:209, layout.rs:216, FD-41 Saltos, (i)", "summary": "Slack in the break, none in overflow: Hello 0.0002 px short stays on 1 line with overflow true, widest cluster 15.85 of 51.42. Box 4975 ends 0.019 past", "follow_up": false, "status": "open"},
+    {"id": "C19", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:514, FD-41 Espacio que cuelga, (k)", "summary": "Center and Right return before the hang when room <= 0: RTL line in a box of its own ink runs 4.16 to 60.78 of 56.62, overflow false", "follow_up": false, "status": "open"},
+    {"id": "C20", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:472, FD-41 (i)", "summary": "Regression: justified line summed in f32. t=100, box 4000 ends 0.016 off (round 2 0.005), 8000 0.042, 16000 0.244. f64 patch gives 0", "follow_up": false, "status": "open"},
+    {"id": "C21", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:462, FD-41 Justificado, (i)", "summary": "Leading spaces are stretched: a one-word line in box 90 goes from 9..80.77 to 18.23..90. Inherited from parley, not a regression", "follow_up": false, "status": "open"},
+    {"id": "W28", "severity": "WARNING", "class": "implementation", "ref": "apply-progress TX2 fix round 3 items 2, 3; layout.rs:121", "summary": "Three notes do not hold: slack case is any line; a text past f32::MAX can give Ok; 0.01 px margin fails above about 2500 px", "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 1, "killed": 1},
+  "criteria": {"total": 17, "covered": 14},
+  "size": {"lines": 411, "forecast": null}, "report": "verify-report.md" } ] }

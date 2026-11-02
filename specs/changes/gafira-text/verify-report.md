@@ -1,3 +1,156 @@
+# Verify report: gafira-text, TX2, round 3 (closure)
+
+Commit 3c7b184 on `feat/gafira-text`, base `develop`. Fix commits d284e4e, 413e9d9, f15b184; spec commits ed09718, 1f5fdf2. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Round 2 of TX2 follows this section.
+
+**Verdict: FAIL.** 5 CRITICAL, 4 WARNING, 1 SUGGESTION. Classes: implementation 8 (5 CRITICAL), ambiguity 1 (follow-up). All gates are 0. Fix size: 411 lines added, 42 deleted in `crates/`, 112 added in `src/`.
+
+Closed: C7, C8, C15, C17, and the one-word defect as stated. Still open: C16 (narrowed), W13, W26, W27. New: C18, C19, C20, C21, W28, S9.
+
+The rewrite of the alignment holds in its main path: 44 608 layouts with no break of an invariant, and every difference from round 2 I sampled was intended. All five CRITICAL sit at its edges. Each has a small, local fix. This was the last authorized round and the third FAIL in a row with class `implementation`, so the coordinator stops and asks the owner.
+
+next: tdd-apply
+
+## Gates
+
+`df -h /`: 25 GB free at the start, 31 GB at the end, after freeing 5.1 GB. Each gate ran alone on a clean export of HEAD, without `CARGO_TARGET_DIR`, and each exit code was read alone.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 445 passed, 0 failed, 118 binaries) |
+| `cargo deny --all-features check` | 0 |
+| CI policy: ARQ-07, unsafe, V5, V12, ARQ-107 | 0 each (export) |
+| CI policy: V13, V14 | 0 each (worktree, read-only) |
+
+## Integrity (step 3c)
+
+- `docs(gafira-text): slice card amend` (1f5fdf2) touches only `apply-progress.md`, changes one line of the card, and states why.
+- ed09718 touches only `specs/04-...`. Both commits come before the fix commits, which touch only `crates/gafira-text/src/` and `tests/`.
+- 3c7b184 touches only `apply-progress.md`, and its hunks start at line 195, so the card is unchanged.
+- No change since round 2 to root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.github/` or `.cargo/`.
+- FD-41 (c), (e) to (k) and (m) have tests that name them. (l) has none: see the ruling.
+
+## Criteria
+
+| Criterion | State | Proof |
+|---|---|---|
+| FD-41 (c) | covered | unchanged |
+| FD-41 (e) | covered | formula holds. The Saltos rule beside it fails in the slack band, C18 |
+| FD-41 (f), (g), (h) | covered | unchanged |
+| FD-41 (i) | **failing** in wide boxes and with leading spaces | C18, C20, C21. Holds in the sweep: 4 605 justified lines, 0 bad |
+| FD-41 (j) | **failing** in one DPI window | C16. Center, Right and Justify closed |
+| FD-41 (k) | **failing** in a right-to-left paragraph, line as wide as the box | C19. The literal cases of (k) hold |
+| FD-41 (l) | covered by construction, no test names it | see the ruling, W26 |
+| FD-41 (m) | covered | 3 tests with the exact figures; my probe reads 4.50, 41.56, 38.19 |
+| Fuente sin métricas, decorations | covered | unchanged |
+| ARQ-111, ARQ-110 | covered | no infinity in `Ok` over the DPI sweep to 1e42 |
+| ARQ-116 | covered | logical concatenation holds in all 44 608 layouts |
+| XP12, TX1 W10, W12 | covered | unchanged |
+
+17 criteria: 14 covered, 3 failing. Left out on purpose: FD-41 (b), per the card.
+
+## Rulings asked by the coordinator
+
+**The alignment deviation (no parley `align`).** The main path holds. No regression in TX1 or in Left, Center and Right of left-to-right text. Evidence:
+
+- 44 608 layouts: 17 texts (RTL, mixed bidi, numbers, tabs, NBSP, explicit breaks, empty paragraphs, leading and trailing spaces), 2 font orders, 4 spacings, 82 widths, 4 alignments. Clusters touch with no gap, the concatenation gives the input, sums match, and overflow and line count do not change with the alignment.
+- Of those, with lines that open on a space or end in an other-level space left out, 4 605 justified lines reach the edge. Right, Center and Left of the same lines have 0 bad.
+- Empty texts, `"\n\n"`, `"\u{2028}a\u{2028}"`, `"\r\n"`, in every alignment: as ARQ-116 states, no panic.
+- Differential against 2fcf998, 24 192 layouts: about 20 750 equal. Left in left-to-right text and all of Center and Right are unchanged. Left differs only in right-to-left paragraphs (C15). Justify differs in right-to-left text (C8, C15), on opposite-level one-word lines (the fix), and with U+2003: it now hangs at the end of a line and the ink reaches the edge. I sampled these groups by type; I did not check each of the roughly 3 400 differences alone.
+- The forced-line test is safe. `is_hard_line_break` is `Whitespace::Newline`, the same condition that gives parley's `BreakReason::Explicit`, so U+2028 and U+2029 are forced too.
+
+The edges that fail are C19, C20 and C21.
+
+**The 4e-6 slack: closes C7, breaks something else (C18).** The exact fit holds: 1 620 layouts with lines up to 400 clusters, 2 scripts, 10 sizes, 9 spacings, 0 splits, 0 false overflows. But the overflow test has no slack, so inside the band a word stays on its line and reports overflow. The notes place that on "a cluster wider than the box"; it happens to any line (W28). The comment's "far under the 0.01 px of the spec" holds only under a box of about 2 500 px.
+
+**The `f32::MAX` probe: closes C16 as stated, not fully.** Center and Right keep the room and the line count of Left, and the hang is in proportion to the DPI up to the limit. The note "a text that does not fit gives `NonFinite`" is false in one window, see C16.
+
+**FD-41 (l): met by construction today, testable another way, not a real gap.** Class `implementation`, follow-up (W26 stays).
+
+- By construction: `layout_box` has no hinting input, the only path goes through `ranged_builder(.., false)`, and FD-41 and 02 §6.2 give hinting only to the preview and the outlines. Mutant M1 (advances quantised) is killed by 8 tests.
+- Testable now, against the unhinted metric rather than against a mode: an advance is `hmtx × px / upem`. My probe over 1 363 fractional sizes of `H` in Inter (1522 of 2048 units) stays within 5.6e-8 relative. A `fd_41_l_` test of this kind is about 15 lines and needs no new input. Inter has no `fpgm`, so it proves "no quantising", not "instructions ignored".
+- The literal bit-equal check "with any mode" needs an API with a mode. FD-41 puts that on the outlines, so it belongs to TX4. TX4 should pin it.
+- The note "(l) cannot be tested" is too strong; the card can stay as it is.
+
+**C17.** Closed by acceptance and not implemented: no L1 code was added. The `fd_41_m_*` tests assert every figure of (m) within 0.01. Line 919 of 02 stays as the known doc follow-up, W27, not routed.
+
+**The deviation on Center and Right with an other-level trailing space.** Consistent with (m). The 9 pt line whose content passes the box stays on the left, and the 12 pt line, which fits, is aligned on its content. See S9.
+
+## Closure
+
+| ID | Status | Evidence |
+|---|---|---|
+| C7 | closed | See the ruling. `Hello` 16 pt t=500 in a box of its own advance gives 1 line. C18 comes from this fix |
+| C8 | closed | Arabic 12 pt, box 100, t=100: lines 0.00 to 100.00. 4 605 lines in the sweep |
+| C15 | closed | `ابج دهو  ` in 200: ink 0 to 47.02, as without the spaces. Wrapped at 100: 0 to 98.21, no overflow |
+| C16 | **open, narrowed** | Center, Right, Justify: same line counts as Left, text starts at the indent plus the hang. DPI 1e10 is proportional. The window is in C16 below |
+| C17 | closed | Accepted limit, (m) pinned with its figures |
+| One-word line | closed as stated | `abc ابج دهو def`, 12 pt, box 40: the second line equals Left, the space keeps 4.50, advance 22.996. The leading-space variant is C21 |
+| W13 | open | Recorded, history cannot repair it |
+| W26 | open, follow-up | See the ruling |
+| W27 | open, follow-up | Card closed by 1f5fdf2. Line 919 of 02 remains, known and not routed |
+
+## CRITICAL
+
+**C16. class: implementation.** `list.rs:152`, FD-41 Listas. Narrowed. At DPI 1.7e39 to 2e39 the probe `1. x` wraps inside a box of `f32::MAX`, and `text_start` reads only `lines.first()`, so it returns the `x` of the space. `layout_list` gives `Ok` with a hang of 1.97e38 where 3.3e38 is due, and the text sits on the marker. At 1.5e39, 1.6e39 and from 2.1e39 it gives `NonFinite`, as the note says for all such cases. The window is far outside any real DPI, but TX1 set no DPI range and C9 and C16 were raised at such values. Giving `Err` when the probe has more than one line closes it.
+
+**C18. class: implementation.** `layout.rs:209`, `layout.rs:216`, FD-41 Saltos, (i), ARQ-116. New, from d284e4e. The box is widened by 4e-6 for the break and not for `overflow`. In that band a word wider than the box is not broken and the line reports overflow, though no cluster is wider than the box. Round 1's C7 had the same shape.
+
+| Text | Box short of the advance by | Lines | `overflow` | Widest cluster |
+|---|---|---|---|---|
+| `Hello`, 16 pt | 0.000201 px | 1 | true | 15.85 of 51.42 |
+| `Hello`, 100 pt | 0.001253 px | 1 | true | 99.09 of 321.35 |
+| `Hamburgefonstiv`, 1000 pt | 0.042280 px | 1 | true | 1167.97 of 10841.11 |
+
+FD-45's "no hay desborde de clúster" reads this flag. In wide boxes the same band breaks (i): box 4 975.449, justified line ends 0.019 past the edge, 96 of 200 boxes in the band over 0.01; box 19 915.298, 0.077. `style.rs` tests 0.02 px short only, outside the band at that size.
+
+**C19. class: implementation.** `layout.rs:514`, FD-41 Espacio que cuelga, (k). Center and Right return early when `room <= 0.0`, before any hang, so in a right-to-left paragraph the paragraph-level space stays inside the line. `ابج دهو ابج دهو ابج`, 12 pt, t=100, Right, box 56.6240044: ink 4.16 to 60.78, 4.16 px past the box, `overflow = false`. That box is the line's own ink, the C7 case. Left gives 0 to 56.62. A cluster wider than the box does the same: `ج ابج`, box 3, ink at 4.16 with Center and Right, at 0 with Left. Tests of this path use `W` in left-to-right text only. Round 2 had the same return, so this is not new; 413e9d9 fixed the hang for Left and left this path out.
+
+**C20. class: implementation.** `layout.rs:472`, FD-41 (i). Regression from 413e9d9. The justified line is summed again in `f32`, so the error of each small advance on a large `x` adds up. Long lines at 12 pt, t=100:
+
+| Box | Round 2 | HEAD |
+|---|---|---|
+| 2 000 | 0.0005 | 0.0035 |
+| 4 000 | 0.0051 | **0.0161** |
+| 8 000 | 0.0132 | **0.0420** |
+| 16 000 | 0.0566 | **0.2441** |
+
+At t=0 both give the same error, 0.0117 at 8 000. A scratch patch that sums in `f64` in that loop gives 0.00000 at every size, spacing 0 and 100, to 32 000 px. No justify test goes past 333.3 px.
+
+**C21. class: implementation.** `layout.rs:462`, FD-41 Justificado, (i). Leading spaces count as places to stretch, so a line of one word is stretched. `  abcdefgh ijklmnop qrs`, 12 pt, box 90, Justify: first line ink 18.23 to 90, spaces of 9.11, against 9 to 80.77 with Left. Same on a line after a forced break. In a multi-word line the leading spaces take a share of the room, which FD-41 gives to the gaps between words. Inherited from parley, so not a regression, but the code is now this crate's and it excludes only trailing space. In a right-to-left paragraph the leading spaces sit on the right, so the ink stops short of the right edge.
+
+## WARNING
+
+| ID | Class | Ref | Finding |
+|---|---|---|---|
+| W13 | implementation | `list.rs`, f120b7e, Strict TDD | TDD breach kept on record |
+| W26 | implementation, follow-up | FD-41 (l) | No test names (l). Met by construction; a linear-scaling test is possible now, the mode check belongs to TX4 |
+| W27 | ambiguity, follow-up | 02 line 919 | Card closed; the stream row still stops at (j). Known, not routed |
+| W28 | implementation | apply-progress TX2 fix round 3, items 2, 3; `layout.rs:121` | Three statements do not hold: the slack case is any line, not a lone cluster; a text that does not fit `f32::MAX` can give `Ok`; "far under the 0.01 px" fails above about 2 500 px |
+
+## SUGGESTION
+
+- S9: "esa línea no se centra ni se alinea a la derecha" in FD-41 can be read as every line with an other-level trailing space. The code keeps it only for a line whose content passes the box, which is the better behaviour. One clause would settle it.
+
+S5, S7 and S8 stay open as they were.
+
+## Mutants
+
+No independent budget spent. M1 of FD-41 (l), advances quantised, reapplied on the export and restored: killed by 8 tests. 1 run, 1 killed. The scratch `f64` patch of C20 is a probe, not a mutant, and was restored; `layout.rs` compared equal to the worktree.
+
+## Independent probes
+
+On scratch exports only, in throwaway test files: exact fit, slack band, right-to-left exact fit, invariants, wide boxes, closure figures, empties, lists, DPI sweep, linear scaling, and the differential against 2fcf998. The worktree is clean at 3c7b184.
+
+## Result
+
+FAIL. CRITICAL 5, WARNING 4, SUGGESTION 1. Per class: implementation 8 (5 CRITICAL), ambiguity 1 (follow-up).
+
+next: tdd-apply
+
+---
+
 # Verify report: gafira-text, TX2, round 2 (closure)
 
 Commit 2fcf998c on `feat/gafira-text`. Fix commits c986a36, b007072, 689a84c, 9dbc3e8, 282db5c; specs merged in 16204dd. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Round 1 of TX2 follows this section and is in commit 084c45e.
