@@ -129,4 +129,22 @@
   "mutation": null,
   "hand_mutants": {"run": 10, "killed": 7},
   "criteria": {"total": 19, "covered": 15},
-  "size": {"lines": 1540, "forecast": 450}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1540, "forecast": 450}, "report": "verify-report.md" }, {
+  "delivery": "RS3b", "round": 2, "commit": "808840f7287a55c303d38bdeabb5fbba8e704fa7", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply", "classes": ["implementation"],
+  "counts": {"critical": 2, "warning": 1, "suggestion": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:127", "summary": "Axis closed, circular open: exact u == p is computed one rounding off by two hypot calls. 8x8, p 0.875, s 1e-16 gives 1, not 0.875; worst error 0.81, 135/255. 1 704 of 6 512 edge pixels wrong.", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/slide.rs:367", "summary": "Closed: I1 reapplied, killed by arq_118_slide_offset_is_computed_in_f64.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:127", "summary": "New. Hard circular Wipe breaks strict u < p at exact u == p: 8x8, p 0.875 gives 1, not 0 (255/255); 1080x1080 at p 0.375 too. 36 of 88 edge pixels. Default softness. Same root cause as C1.", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:138", "summary": "Closed: instrumented, 2 547 088 ramp quotients, 997 716 at subnormal softness, 0 non-finite; 74 805 832 infinities avoided (control).", "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1378", "summary": "Closed: one deterministic test and two proptests run every configuration; three scoped mutants killed.", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "specs/changes/layer-2/design.md:380", "summary": "Closed: P15 amended in d67674b, near-end bound only for Dissolve, Fade and Wipe with s = 1, as ARQ-118.", "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:285", "summary": "Closed: note corrected; I8 reapplied at 808840f, still equivalent as the note says.", "follow_up": false, "status": "closed"},
+    {"id": "W5", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-118, 02 4.17.4", "summary": "New. No bound stated for circular below s about 1e-11: f64 rounding of u over s gives 3.6e-4 at 1920x1080 with crafted p and s; bytes within 1/255. Not removable in f64.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 8, "killed": 6},
+  "criteria": {"total": 19, "covered": 17},
+  "size": {"lines": 1810, "forecast": 450}, "report": "verify-report.md" } ] }

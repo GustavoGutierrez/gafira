@@ -1,159 +1,174 @@
-# Verify report: gafira-raster, RS3b, round 1
+# Verify report: gafira-raster, RS3b, round 2
 
-- Commit: `608b196` (branch `feat/gafira-raster`, base `fadac62`). Delivery commits: `bbd49c5` (Slide), `3b316f6` (Wipe), `f78c829` (Zoom), `608b196` (notes).
-- First verify of this code, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
-- This report replaces RS3a round 2, which stays in git at `9739549`. RS3a round 1 stays at `107f9d9`, RS2 round 2 at `1909734`, RS2 round 1 at `0b563fe`, RS1 round 2 at `e5e1d0e`. All rounds are also in `verification.json`.
+- Commit: `808840f` (branch `feat/gafira-raster`). Fix commits: `30769fb` (Wipe mask), `3b9e626` (tests), `808840f` (notes). Spec amendment: `d67674b` (P15, by `architect`, allowed upstream).
+- Closure round, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
+- This report replaces RS3b round 1, which stays in git at `4f8969f`. RS3a round 2 stays at `9739549`, RS3a round 1 at `107f9d9`, RS2 round 2 at `1909734`, RS2 round 1 at `0b563fe`, RS1 round 2 at `e5e1d0e`. All rounds are also in `verification.json`.
 
-**Verdict: FAIL.** 2 CRITICAL, 4 WARNING, 4 SUGGESTION.
-Per class: implementation 5 (2 CRITICAL, 3 WARNING), ambiguity 1 (1 WARNING), architecture 0, claim 0.
+**Verdict: FAIL.** 2 CRITICAL, 1 WARNING (follow-up), 2 SUGGESTION.
+Per class: implementation 2 (2 CRITICAL), ambiguity 1 (1 WARNING, follow-up), architecture 0, claim 0.
 
-Slide and Zoom match an exact independent reference on every case. The two CRITICAL are the Wipe mask at very small softness, which is a code defect, and an untested `f64` rule in Slide.
+C2, W1, W2, W3 and W4 are closed. C1 is closed on the four axis directions and stays open on `circular`. The new C3 is the same root cause at `s = 0`: on a `circular` Wipe, a pixel with exact `u == p` is computed with `u` one rounding away from `p`. It affects the default softness.
+
+**Stop signal for the coordinator.** This is the second consecutive FAIL with class `implementation` in RS3b, and round 3 is the last allowed (`AGENTS.md`, delivery rules). The route below stands, but those rules ask the coordinator to stop and ask the owner.
 
 ## Gates
 
-Each exit code was read alone, on an export of `608b196` with no `proptest-regressions` folder.
+Each exit code was read alone from its own file, on a fresh clone of `808840f` with no `proptest-regressions` folder.
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` (1 448 passed, 0 failed, 0 ignored; 130 in the `gafira-raster` library) | 0 |
+| `cargo test --workspace --locked` (1 454 passed, 0 failed, 0 ignored; 136 in the `gafira-raster` library) | 0 |
 | `cargo deny check` | 0 |
 | policy: ARQ-07 CLI | 0 |
 | policy: forbid unsafe | 0 |
 | policy: V5 layers | 0 |
 | policy: V12 clippy copies | 0 |
 | policy: ARQ-107 language | 0 |
-| policy: V13 EditToken | 0, in a git clone |
-| policy: V14 property tests | 0, in a git clone |
+| policy: V13 EditToken | 0 |
+| policy: V14 property tests | 0 |
 
-V13 and V14 exited 1 on the first run, on the `git archive` export: both logs read `fatal: not a git repository`, from their own `git grep` and `git ls-files`. That is a fault of my export, not of the code. Both, and ARQ-107, were re-run on a real clone at `608b196`, and those are the codes above.
+The 15 seeds in the untracked `proptest-regressions/` also pass on the unmutated code, on a scratch export (exit 0, 136 passed). The CI test job's Windows and macOS targets were not run here. Disk: 35 GB free at the start, 30 GB at the lowest reading, 35 GB after `cargo clean` of all five build folders.
 
-The 15 seeds in the untracked `proptest-regressions/` also pass on the unmutated code, on the scratch export. The CI test job's Windows and macOS targets were not run here. Disk: 36 GB free at the start, 31 GB at the lowest reading, 35 GB after `cargo clean` of all three build folders.
+## Exact reference
 
-## Independent probes (step 1c)
+A new reference, written for this round, shares no code with the crate. `p`, `s` and `u` are exact rationals. Circular `u` is held as its exact square, so `u == p` is decided in integers. The one irrational step, a square root, runs at 2 600 bits, which covers `2^-1074`. The crate ran through its public API, black to white, opaque, in both formats. Bounds are those of 02 §4.17.4: 1e-5 for `f32`, 1/255 for bytes.
 
-Written from ARQ-118 before the implementer's tests were read, on a scratch export.
+**Round 1 grid, replayed.** The same 60 052 cases, with precision raised from 300 to 2 600 bits: **0 mismatches**, against 10 064 wrong pixels at `608b196`.
 
-**Exact reference.** A Python reference shares no code with the crate. It uses exact rationals for `p`, `s`, `u`, `d` and the taps, and 300-bit arithmetic for the circular distance. The crate ran through its public API, with results compared by bits.
+**Softness grid.** 130 575 cases and 59 601 750 pixels: 21 sizes from 1x1 to 1024x1, squares 2x2 to 64x64 included; 46 softness decades, from 1 down to 5e-324, with `s = 0`, the smallest normal, subnormals and powers of two; every direction; values of `p` that land on, or as close as an `f32` can to, pixels of each image.
 
-- 60 052 cases: 15 sizes from 1x1 to 64x1, 18 values of `p` from 1e-45 to 0.99999994, 21 softness values from 5e-324 to 1, every direction and both formats. `Rgba8` was compared with a tolerance of 1/255 from the unrounded target.
-- Slide, 2 272 cases, ties included: **0 mismatches**.
-- Zoom, 1 080 cases: **0 mismatches**.
-- Wipe, 56 700 cases: 5 901 `f32` and 4 163 `Rgba8` pixels wrong, all at softness <= 1e-12 (C1). None at softness >= 1e-10 in this grid; a finer sweep puts the limit of the 1e-5 bound near 3e-12.
-
-**Public API probes, all passing:**
-
-| Probe | Result |
-|---|---|
-| 02 §4.13 table: ids, names, version, `Both`, schema, labels, `animatable` | As the table |
-| `softness` NaN, `±∞`, 1.0000000000000002, -5e-324, -0.1, 1.5, `Int` | `Err` naming it; also at `p` 0 and 1 and on size 0 |
-| `softness` 0, -0.0, 5e-324, 1 | Accepted |
-| `direction` `diagonal` or a `Float`, on all three | `Err` |
-| Unknown id with NaN or `±∞` | Same bytes as without it |
-| Ends at `p` 0, -0.0, -0.5, -1e-45, `-MAX`, 1, 1.5, 1.0000001, `MAX`, pixels with `±MAX`, 1e30, 1e-45, -0.0, all softness values | Identical bit for bit |
-| Pixels with `±MAX`, 1e30, -1e38, subnormals, mid `p` | Finite; `c <= a` kept in bytes |
-| Zoom constants, 19 540 224 bytes, `c <= a` | 0 differences |
-| Zoom constants, `f32`, `±MAX` to 1e-45 | Within 1e-6 relative |
-| Zoom opaque inputs, 2 001 values of `p`, 6 sizes, both directions | Alpha exactly 255 and 1.0 |
-| Zoom mirror on the same grid | 1/255 worst; 2.1e-7 in `f32` |
-| Wipe `s = 1` at 0.0001 and 0.9999, 640x3, black to white both ways | <= 1/255 |
-| 3 000 000x1 and 1x3 000 000 strips | No panic |
-
-Measured, `--release`, 1080p opaque `Rgba8`, one run at `p` 0.37: Slide 8.5 ms, hard Wipe 9.7 ms, soft Wipe 87 ms, Zoom 303 ms. `MIX_SPACE` is provisional pending O5: no finding.
-
-**Against the implementer's tests.** Geometry tests are strong: every mutant on them below dies. Three are weak. `arq_118_wipe_matches_the_criterion_for_every_direction` repeats the code's own expression and tries softness 0, 0.2, 0.5 and 1 only (C1). `arq_118_slide_offset_rounds_half_away_from_zero` has no `p` that separates `f64` from `f32` (C2). The generic tests run on default parameters only (W2).
-
-## Hand mutants (step 4b)
-
-Applied one at a time to a scratch export; `cargo test -p gafira-raster --lib`. 10 run, 7 killed, 2 real survivors, 1 equivalent.
-
-| # | Mutant, rule | Result |
+| Direction | Pixels with exact `u == p` | Over the bound |
 |---|---|---|
-| S1 | Spot-check of the recorded list: half diagonal as the longer side | Killed: `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_matches_the_criterion_for_every_direction` |
-| I1 | Slide `d` computed in `f32` (rule: "en `f64`") | **Survived** (C2) |
-| I2 | Wipe: softness below 1e-9 treated as hard (rule: only `s = 0`) | **Survived** (C1) |
-| I3 | Wipe: no upper clamp of the mask | Killed: 4 tests, among them `arq_118_wipe_soft_edge_values` |
-| I4 | Wipe circular: distance from the pixel corner | Killed: `arq_118_wipe_circular_centre_and_half_diagonal` |
-| I5 | Zoom: pivot `y` from the width | Killed: `arq_118_zoom_pivot_is_the_continuous_centre` |
-| I6 | Zoom: `y` tap clamped by the width | Killed: `arq_118_zoom_pivot_is_the_continuous_centre` |
-| I7 | Zoom: `trunc` for `floor`, negative positions extrapolate | Killed: `arq_118_zoom_ramp_values_for_in_and_out` |
+| `right`, `left`, `down`, `up`, `s > 0` | 682 428 | **0** |
+| `right`, `left`, `down`, `up`, `s = 0` | 9 222 | **0** |
+| `circular`, `s > 0` | 6 512 | **1 704** |
+| `circular`, `s = 0` | 88 | **36** |
+
+All 1 740 `f32` values over the bound are those exact-edge pixels; 1 524 bytes are over 1/255. No axis direction has an error over the bound at any softness.
+
+| `s`, `circular`, exact-edge pixels | Worst `f32` error | Worst byte error |
+|---|---|---|
+| 0 | 1 | 255 |
+| 5e-324 to 1e-16 (decades) | 0.81 | 135 |
+| 1e-15 | 0.11 | 14.4 |
+| 1e-14 | 1.1e-2 | 1.62 |
+| 1e-13 | 1.1e-3 | 0.62 |
+| 1e-12 | 1.1e-4 | 0.48 |
+| 1e-11 | 1.1e-5 | 0.48 |
+| 1e-10 and above | under the bound | under the bound |
+
+**Root-cause control (scratch export only, no source changed).** `u` taken from one exact quotient of squares and one `sqrt`, in place of two `hypot` calls: 136 of 136 tests pass, and the same 130 575 cases have **0 over the bound**, all 6 600 circular edge pixels right. So the cause is the rounding of `u`, not the `p + gap / s` form. It also shows a fix exists at this level. Exact squares fit an `f64` for sides up to about 2^26, and a `u` that an `f32` holds has a square an `f64` holds, so the quotient and the root are then exact.
+
+**Near hits, the residual.** A search for pixel and `p` pairs with a tiny non-zero gap, with `s` set just above that gap: see W5.
+
+## Closure
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 | **Open**, axis closed, `circular` not | Table above. I2 and the reverted expression are killed. |
+| C2 | Closed | I1 reapplied: killed by `arq_118_slide_offset_is_computed_in_f64` (`crates/gafira-raster/src/transitions/slide.rs:367`). The cases hold in the reference. |
+| W1 | Closed | Confirmed by instrumentation, below. |
+| W2 | Closed | `arq_111_every_configuration_is_deterministic` and two proptests (`crates/gafira-raster/src/transitions/mod.rs:1378`, `:1400`, `:1426`). W2a, W2b and W2c killed. |
+| W3 | Closed | `design.md:380` (`d67674b`) now binds near-end bounds to Dissolve, Fade and Wipe with `s = 1` only, as ARQ-118 does. |
+| W4 | Closed | `apply-progress.md:285` corrected. I8 reapplied at `808840f`: 136 pass, still equivalent, as the note now says. |
+| S2 | Closed | `apply-progress.md:285` says "below tolerance". |
+| S3 | Closed | The ends test names FV-06 (a) (`mod.rs:158`). |
+| S1, S4 | Open | Not touched; see below. |
+
+**W1, confirmed.** The recorded evidence was code analysis plus one table row, so a scratch copy was instrumented. It counts, in the ramp branch, any quotient that is non-finite or above 1 and any non-finite `p + quotient`. In the saturated branch it also performs the skipped division, as a positive control.
+
+| Measure (119 355 runs, 73 softness values, every subnormal binade, 13 sizes, 5 directions) | Count |
+|---|---|
+| `Err`, or runs with non-finite output | 0 |
+| Ramp quotients taken | 2 547 088 |
+| Of them, with subnormal softness | 997 716 |
+| Of them, non-finite or above 1 | **0** |
+| Saturated pixels | 97 376 772 |
+| Skipped divisions that would have been non-finite (control) | 74 805 832 |
+
+No infinity passes through the mask. Dropping the saturation test survives all 136 tests, as the note says it would, since the infinity is then clamped. The proof is by this instrumentation, which is not in the repo: no tracked test can see an intermediate.
+
+## Hand mutants
+
+Closure probes only, no independent budget spent. Applied one at a time to a scratch export; `cargo test -p gafira-raster --lib`. 8 run, 6 killed, 2 equivalent.
+
+| # | Mutant | Result |
+|---|---|---|
+| I1 | Slide `d` in `f32` | Killed: `arq_118_slide_offset_is_computed_in_f64` |
+| I2 | Wipe: softness below 1e-9 treated as hard | Killed: `arq_118_wipe_tiny_softness_keeps_the_edge_pixel_at_p`, `arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness` |
+| C1r | The old expression restored | Killed: the same two tests |
+| W2a | Entropy in the soft ramp of `circular` only | Killed: `arq_111_every_configuration_is_deterministic` and 2 more |
+| W2b | Soft Wipe, `up`, softness 0.4, breaks `c <= a` | Killed: `every_configuration_keeps_premultiplied_pixels_valid` |
+| W2c | `circular` at 1e-16 writes `+∞` | Killed: `every_configuration_gives_finite_output_for_finite_input` and 1 more |
 | I8 | Guard: end copies removed for all six | Survived, **equivalent** (W4) |
-| I9 | Wipe: `(1 + s)` dropped in `circular` only | Killed: `arq_118_wipe_circular_centre_and_half_diagonal` |
+| W1d | Saturation test dropped | Survived, **equivalent** at the output (W1) |
 
 ## Criteria
 
-19 criteria: 15 covered, 3 weak, 1 failing.
+19 criteria: 17 covered, 2 failing. Round 1 marked the strict edge rule as covered; its grid had no power-of-two square above 2x2, which is why this was not seen then.
 
 | Criterion | Status | Proof |
 |---|---|---|
-| 02 §4.13 identity and schema | Covered | `slide_`, `wipe_`, `zoom_has_the_identity_and_schema_of_the_table`, probe |
-| `direction` `diagonal` is `Err` | Covered | `arq_110_slide_rejects_an_unknown_direction`, Wipe and Zoom equivalents |
-| Ends exact: ARQ-118, ARQ-25, FV-06 (a) | Covered | `arq_118_ends_are_exact_copies_for_every_transition`, `arq_118_wipe_ends_are_exact_with_any_softness`, probe |
-| `progress` clipped | Covered | Same tests, probe |
-| Slide 10x4 rows | Covered | `arq_118_slide_acceptance_rows_on_10_by_4` |
-| Slide `d` half away from 0, in `f64` | **Weak** (C2) | `arq_118_slide_offset_rounds_half_away_from_zero` |
-| Slide replaces; alpha 0 clears `from` | Covered | `arq_118_slide_replaces_and_does_not_composite`, `arq_118_slide_copies_f32_pixels_bit_for_bit` |
-| Wipe 4x2 rows | Covered | `arq_118_wipe_acceptance_rows_on_4_by_2` |
-| Wipe `s = 0`, strict `u < p`, pixel centre | Covered | `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre` |
-| Wipe mask with softness | **Failing** (C1) | Fails the reference below `s` about 3e-12 |
-| Wipe circular; `p` 1 leaves no `from` | Covered | `arq_118_wipe_circular_centre_and_half_diagonal` |
-| Wipe `s = 1` near the ends | Covered | `arq_118_wipe_soft_stays_within_1_255_of_the_ends_near_them` |
-| Zoom scales, pivot, sampling, bilinear premultiplied | Covered | `arq_118_zoom_ramp_values_for_in_and_out`, `arq_118_zoom_filters_premultiplied_values`, `arq_118_zoom_matches_the_criterion_tap_by_tap`, reference |
-| Zoom edge clamp, opaque, constant | Covered | `arq_118_zoom_constant_images_stay_constant_and_opaque_images_opaque` |
-| Zoom `out` mirrors `in` | Covered | `arq_118_zoom_out_mirrors_zoom_in` |
-| Formats, sizes, `Alpha8`, size 0, `Err` before writing | Covered | Generic tests of `mod.rs` over all six |
-| ARQ-110 parameters | Covered | `arq_110_wipe_rejects_bad_parameters_before_writing` |
-| ARQ-110 finite property, per direction | **Weak** (W2) | Probes pass; no such test through `run_cpu` |
-| ARQ-111 per direction | **Weak** (W2) | `arq_111_transitions_are_deterministic`, default parameters only |
+| Wipe mask with softness | **Failing** (C1) | Axis directions match the reference at every softness. `circular` fails it on exact-edge pixels below `s` about 1e-10 |
+| Wipe `s = 0`, strict `u < p` | **Failing** (C3) | Axis directions hold. `circular` fails it on 36 of 88 exact-edge pixels |
+| Slide `d` half away from 0, in `f64` | Covered | `arq_118_slide_offset_is_computed_in_f64` |
+| ARQ-110 finite property, per direction | Covered | `every_configuration_gives_finite_output_for_finite_input` |
+| ARQ-111 per direction | Covered | `arq_111_every_configuration_is_deterministic` |
+| The other 14 | Covered | As in round 1 (`4f8969f`); the replayed grid has 0 mismatches |
 
-**Artifacts (step 3c).** `b64090c` (slice card) touches only `apply-progress.md`, and `75e360d` is the amend. Against `fadac62`, `apply-progress.md` has 43 additions and 0 removed lines, so no implementer commit changed the card. The P15 and spec amendments are not in this delivery. No commit carries AI attribution.
+**Artifacts (step 3c).** `b64090c` (slice card) touches only `apply-progress.md`, and `75e360d` is the amend. Against `fadac62`, `apply-progress.md` has 58 additions and 0 removed lines, so no implementer commit changed the card. The five implementer commits of RS3b touch only `crates/gafira-raster`. `d67674b` touches only `specs/changes/layer-2/design.md`, one line. No commit carries AI attribution.
 
-**Product IDs (`git grep` over the tests).** ARQ-118, ARQ-25, ARQ-110 and ARQ-111 are named. FV-06 is not named by any test; see S3. Left out on purpose: FV-06 (b) (GPU, no `GpuTransition` in this cut), FV-06 (c) (not in this crate), Q-47 (owner).
-
-W6 of RS3a: `the_f64_curves_agree_with_the_analytic_transform` exists and passes. Not re-mutated here.
+**Product IDs (`git grep` over the tests).** ARQ-118, ARQ-25, ARQ-110, ARQ-111 and FV-06 are named. Left out on purpose: FV-06 (b) (GPU, no `GpuTransition` in this cut), FV-06 (c) (not in this crate), Q-47 (owner).
 
 ## Findings
 
 ### CRITICAL
 
-- **C1. The Wipe mask is wrong at very small softness, on a pixel at the edge.** class: implementation. `crates/gafira-raster/src/transitions/wipe.rs:133`. `(p (1 + s) - u) / s` subtracts two nearly equal numbers and divides by a tiny `s`, so the rounding error of `1 + s` and `p (1 + s)` is amplified. Where `u == p` the formula gives `p`, exactly, for any `s > 0`.
-  - Observed through `run_cpu`, `RgbaF32`, 8x1, `right`, `from` 0, `to` 1, `p` 0.4375, pixel 3:
+- **C1. The Wipe mask is still wrong at very small softness on a `circular` edge pixel.** class: implementation. Open from round 1, narrowed. `crates/gafira-raster/src/transitions/wipe.rs:127`, `:119`. `(cx - w / 2).hypot(cy - h / 2) / half_diagonal` divides two `hypot` results, each rounded, so a `u` that is exactly `p` comes out one rounding away. `gap` is then about 1e-16 where it should be 0, and `gap / s` amplifies it. This is the amplification of round 1, now through `u`.
+  - Observed through `run_cpu`, `RgbaF32`, 8x8, `circular`, `from` 0, `to` 1, `p` 0.875, pixel (0,0). Here `u` is `3.5√2 / 4√2 = 7/8`, so the exact mask is 0.875 for every `s > 0`:
 
     | `s` | Exact mask | Output | Error |
     |---|---|---|---|
-    | 1e-16 | 0.4375 | 0 | 0.44 |
-    | 3e-16 | 0.4375 | 0.3701 | 0.067 |
-    | 1e-14 | 0.4375 | 0.4385 | 1.0e-3 |
-    | 1e-13 | 0.4375 | 0.4374 | 7.2e-5 |
-    | 1e-12 | 0.4375 | 0.4375 | 3.9e-5 |
+    | 1e-16 | 0.875 | 1 | 0.125 |
+    | 1e-14 | 0.875 | 0.8861023 | 1.1e-2 |
+    | 1e-12 | 0.875 | 0.875111 | 1.1e-4 |
+    | 1e-10 | 0.875 | 0.8750011 | 1.1e-6 |
 
-  - Worst error over 8x1 and 1024x1: 0.98 at 1e-16, 8.3e-5 at 1e-12, 1.9e-5 at 3e-12. The bound of 02 §4.17.4 is 1e-5 for `f32` formulas and 1/255 for bytes. In bytes the error reaches 191 of 255.
-  - `softness` is valid across `[0, 1]`, so this is inside the domain. `p` is dyadic and a power-of-two side puts `u` on it, so the case is not contrived in the geometry, only in the softness.
-  - Test gap: no test tries softness between 0 and 0.2, and the reference test repeats the same expression, so it would agree with the error. Mutant I2 (softness below 1e-9 is hard) survives for the same reason.
-  - The same expression in `p + (p - u) / s` form has no such error. A fix needs a test with `u == p` and tiny softness, against a value worked by hand.
+  - Worst over the grid: 16x16, `p` 0.1875, `s` 1e-17, pixel (6,6): 1 against 0.1875, 135/255 in bytes.
+  - Real frame sizes reach it: 1080x1080, `p` 0.375, `s` 1e-16, the four pixels on the diagonals give 0.9301 against 0.375. `p` values 1/8, 5/8 and 7/8 happen to be right on that size. Any square with a dyadic `odd / 2^k` on its diagonal is exposed.
+  - The note of `30769fb` says the edge pixel keeps exactly `p`, and `apply-progress.md:300` says the hand table covers circular. That holds for the four axis directions only. The test of it for `circular` is 2x2 at 0.5 (`wipe.rs:600`), where the rounding happens to cancel, and the exact test is `right` only.
+  - A fix needs a test on squares 4x4 to 64x64, with `p` on a diagonal pixel, against a hand-worked or exact value.
 
-- **C2. The `f64` rule of Slide has no test.** class: implementation. `crates/gafira-raster/src/transitions/slide.rs:101`. ARQ-118 says `d` is computed "en `f64`". Mutant I1, the same line in `f32`, survives all 130 tests. It is a real difference: side 5 at `p` 0.1 gives `d` 4 in `f64` and 5 in `f32`; side 10 at 0.05 gives 9 and 10; side 10 at 0.55 gives 4 and 5. 52 witnesses among 9 sides and 1 999 values of `p`. The code is right, and the reference confirms it; the gap is the test. Critical code, so CRITICAL by step 4b.
+- **C3. New. A hard `circular` Wipe breaks the strict `u < p` rule on an exact-edge pixel.** class: implementation. `crates/gafira-raster/src/transitions/wipe.rs:127`, `:131`. ARQ-118 with `s = 0`: "1 si `u < p` y 0 si no", so `u == p` gives 0. The computed `u` falls just below `p`, and the pixel takes `to` in full. Softness 0 is the default.
+  - 8x8, `p` 0.875, pixel (0,0): 1 against 0, 255 of 255 in bytes. The same on 4x4 at 0.75, 8x8 at 0.375, 16x16 at 0.1875 and 0.4375, 32x32 at 0.34375 and 0.96875, 64x64 at 0.328125 and 0.984375. 36 of 88 exact-edge pixels are wrong.
+  - 1080x1080, `p` 0.375: the four pixels are 255 where the rule gives 0.
+  - Same root cause as C1, present since `3b316f6`. `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre` (`wipe.rs:347`) has no `circular` case.
+  - The size of the visible effect is small: a few pixels on one frame. It is CRITICAL because it breaks a stated rule of critical code, by the full range of the output.
 
 ### WARNING
 
-- **W1. A subnormal softness goes through `±∞` and returns `Ok`.** class: implementation. `crates/gafira-raster/src/transitions/wipe.rs:133`. With `s` 5e-324, `(p - u) / s` overflows to `±∞`, and the clamp hides it. ARQ-110 says a non-finite intermediate result gives `Err`. The output is finite and matches the formula away from `u == p`, so no value is lost beyond C1. An `Err` on a valid softness would be a poor answer; testing the two saturated cases first, then dividing only inside the ramp, removes the `∞` and needs no spec change.
+- **W5. New, follow-up. No rule says what bound holds for `circular` at softness below about 1e-11.** class: ambiguity. ARQ-118, 02 §4.17.4. `softness` is valid across `[0, 1]` and the bound is 1e-5, but a non-dyadic `u` carries a rounding of about 1e-16 in `f64`, and `1/s` amplifies it. No fix of `u` in `f64` removes this: the control gives the same figures, or about half on one size.
 
-- **W2. The generic tests see one configuration of each new transition.** class: implementation. `crates/gafira-raster/src/transitions/mod.rs:89`, `:114`, `:570`, `:773`. `run_u8` and `run_f32` pass an empty `ParamValues`, so `all()` covers Slide `left`, hard Wipe `right` and Zoom `in` only. ARQ-111 does not reach `circular`, soft Wipe or Zoom `out`. ARQ-110's property (finite input in the domain gives finite output) has no test through `run_cpu` for the three, and `dissolve_and_fade_keep_premultiplied_pixels_valid` was not extended to Wipe and Zoom, which also mix. My probes pass on all of these, so this is a test gap, not a defect.
+  | Image, crafted `p`, `s` just above the gap | Code | Control |
+  |---|---|---|
+  | `right` 1920x1 | 3.2e-8 | 3.2e-8 |
+  | `left` 1920x1 | 2.6e-6 | 2.6e-6 |
+  | `right` 6001x1 | 3.2e-6 | 3.2e-6 |
+  | `circular` 1000x1000, `s` 6.7e-13 | 1.1e-4 | 5.1e-5 |
+  | `circular` 1081x1081, `s` 1.8e-13 | 1.3e-4 | 1.3e-4 |
+  | `circular` 1920x1080, `s` 1.9e-13 | 3.6e-4 | 3.6e-4 |
 
-- **W3. P15 asks for near-end behaviour that Zoom does not have.** class: ambiguity. `specs/changes/layer-2/design.md:380`, ARQ-118. P15 says the maths of each transition reaches the limits, "so a test at `p` near 0 and near 1 stays within 1/255 of the end". ARQ-118 lists only Dissolve, Fade and Wipe with `s = 1`. Measured on a 16x9 black and white `Rgba8` checker: Zoom is 4/255 from its end at `in` `p` 0.0001 and `out` 0.9999, and 2/255 at the other two. Slide at a long side moves whole columns. The implementation follows ARQ-118, the later and narrower text, and its deviation 1 records no Zoom test, though it cites "P15 item 3" instead of step 8. P15 needs one sentence aligned with ARQ-118, or ARQ-118 needs a bound for Zoom.
-
-- **W4. The recorded claim about the end copies is false.** class: implementation. `specs/changes/gafira-raster/apply-progress.md:285`. It says Slide and Zoom depend on the guard's copies, "no mix reaches the exact end", and "the tests fail if they are removed". Mutant I8 removes them for all six, and all 130 tests pass. My ends probe with awkward pixels and tiny softness passes on it too. The mutant is equivalent: at `p` 0 Slide has `d = side`, at 1 `d = 0`; Zoom has scale 1, a tap of weight exactly 1 and the weight-1 shortcut; Wipe saturates. Keep the branches, since P15 step 8 asks that no conversion runs at the ends, but correct the note: RS3a's equivalence extends to all six.
+  Bytes stay within 1/255 in all of them, at 0.47 at worst, and the softness grid does not show it. It takes a pixel and a `p` that nearly coincide, and a softness tuned to their gap. Marked follow-up: it does not block the fix of C1 and C3, and the choice (a floor for the bound, or more precision) can wait for the first use of such a softness. A sentence in the numeric table of 02 §4.17.4 would settle it.
 
 ### SUGGESTION
 
-- S1. `samples` in `crates/gafira-raster/src/transitions/zoom.rs:47` allocates a `Vec` per pixel, for a fixed 8. An array removes it. Zoom is 303 ms per 1080p frame, and soft Wipe 87 ms; O5 and XP13 own the cost, so no finding. The Zoom and Wipe figures may be useful to the P15 table.
-- S2. `apply-progress.md:285` calls the decode join 0.04045 moved to 0.04 "equivalent". It is not equivalent: the curves differ by up to 4.8e-7 between the two. That is under the test's tolerance, and in the `Encoded` arm, which is not in use. Call it "below tolerance".
-- S3. No test names FV-06. Its criterion (a) is ARQ-25's, which is named, and FV-06 is not among the card's product IDs. A comment on the ends test would make `git grep FV-06` trace.
+- S1. Still open: `samples` in `crates/gafira-raster/src/transitions/zoom.rs:47` allocates a `Vec` per pixel, for a fixed 8. O5 and XP13 own the cost.
 - S4. Still open: `proptest-regressions/` is untracked, still with 15 seeds. The Slice card still says `RS3`. Both are the coordinator's.
 
 ## Size
 
-1 540 lines added in `crates/gafira-raster` against `fadac62`, against a forecast of 450 (630). About 1 050 of them are tests. Noted, no finding, per the owner.
+1 810 lines added in `crates/gafira-raster` against `fadac62`, 271 of them in this fix round, against a forecast of 450 (630). Noted, no finding, per the owner.
 
-next: specifier (W3, ambiguity), then tdd-apply (C1, C2, W1, W2, W4, implementation)
+next: tdd-apply (C1, C3, implementation); W5 (ambiguity) is a follow-up. Second consecutive FAIL of class `implementation`: the coordinator should stop and ask the owner before round 3, the last.
