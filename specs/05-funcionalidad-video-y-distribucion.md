@@ -128,7 +128,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 - *Propósito*: lograr un sonido equilibrado sin herramientas complejas.
 - *Comportamiento y reglas*:
   - **Volumen** por clip (0–200 %, con gráfica de volumen editable en el clip) y por pista; **Silenciar** (`Ctrl+Shift+M`).
-  - **Fundidos** de entrada y salida en segundos con asas en el clip: rampa lineal de ganancia (02 ARQ-124).
+  - **Fundidos** de entrada y salida, cada uno con su duración en segundos y su asa en el clip: rampa lineal de ganancia (02 ARQ-124).
   - **Separar audio**: extrae el audio de un clip de video a su propia pista enlazada (mover juntos, desenlazar opcional).
   - **Nivelar**: lleva el clip, la pista o todo a una sonoridad objetivo con una ganancia propia, aparte del Volumen (D-31) (por defecto −14 LUFS; opciones −16 y −23 LUFS). Limita la ganancia para que el pico real quede en −1 dBTP o por debajo e informa si no alcanzó el objetivo (D-21, 02 ARQ-127).
   - **Sincronización básica**: forma de onda visible en los clips, **desplazar** el audio con ajuste fino (± ms y por fotograma) y **marcadores** (`M`) a los que se pueden atraer los cortes con el Imán. Marcadores de compás automáticos: Fase 2 (PROPUESTA, VERIFICAR algoritmo).
@@ -136,7 +136,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 - *UI*: Inspector → Clip (Volumen, Fundidos, Nivelar; D-32); clic derecho (Separar audio).
 - *Técnica*: `AudioProcessor` (ganancia, fundido, nivelación EBU R128; 02 §4.9); formas de onda precalculadas por `gafira-media`.
 - *Presupuesto*: la reproducción no asigna ni bloquea en el hilo de audio (ARQ-23); la forma de onda de un clip de 10 min se calcula en segundo plano en < 5 s (PROPUESTA).
-- *Aceptación*: (a) un fundido de 2 s reduce la ganancia de 0 a 1 de forma continua (prueba de respuesta); (b) Nivelar lleva un audio de prueba con pico holgado a ±0,5 LU del objetivo; si el tope de pico lo impide, deja el pico real ≤ −1 dBTP e informa de que no lo alcanzó (D-21); (c) Separar audio conserva la sincronía exacta (diferencia 0 muestras); (d) el desfase fino de 1 ms se aplica con precisión de 1 muestra (02 ARQ-129).
+- *Aceptación*: (a) un fundido de 2 s lleva la ganancia de 0 a 1, o de 1 a 0, de forma continua (prueba de respuesta), y la entrada y la salida tienen duraciones independientes; (b) Nivelar lleva un audio de prueba con pico holgado a ±0,5 LU del objetivo; si el tope de pico lo impide, deja el pico real ≤ −1 dBTP e informa de que no lo alcanzó (D-21); (c) Separar audio conserva la sincronía exacta (diferencia 0 muestras); (d) el desfase fino de 1 ms se aplica con precisión de 1 muestra (02 ARQ-129).
 
 ## A6. Vista previa y exportación
 
@@ -492,7 +492,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 **FV-38 · Assets y fuentes** (RF-58)
 - *Propósito*: garantizar que todo contenido incluido puede venderse.
 - *Comportamiento y reglas*:
-  - **Registro**: cada archivo de `assets/` tiene una entrada en `assets/LICENSES.toml` con ruta, hash, licencia (identificador SPDX o «Propia»), autoría, origen, si exige atribución y si fue modificado (ARQ-75). Sin entrada, el archivo **no se empaqueta** ni se lista en la app.
+  - **Registro**: cada archivo de `assets/` tiene una entrada en `assets/LICENSES.toml` con ruta, hash BLAKE3, licencia (identificador SPDX o «Propia»), autoría, origen, si exige atribución y si fue modificado (ARQ-75). Una entrada puede añadir campos: una fuente de prueba, con `modificado` verdadero, añade repositorio, commit y comando de subconjunto; `assets/splash_screen.jpg` añade los de D-09 y su licencia es «Propia», por la cesión que recoge D-09. Sin entrada, el archivo **no se empaqueta** ni se lista en la app.
   - **Licencias admitidas para contenido**: propia (obra creada para Gafira con cesión de derechos), CC0, MIT, Apache-2.0, BSD, ISC, Zlib. **No se admiten** licencias con atribución obligatoria no resuelta (por ejemplo, CC BY), «no comercial» ni «sin derivados» salvo decisión explícita de la persona titular (PROPUESTA).
   - **Fuentes**: solo **OFL-1.1** o permisivas; Inter y Manrope (marca) se embeben con su `OFL.txt` y aviso de copyright; las fuentes OFL se pueden empaquetar con el programa pero **no venderse por separado**; respetar los nombres reservados de las fuentes. Se desactivan las fuentes por defecto de egui (ARQ-62). Las fuentes del sistema no se redistribuyen.
   - **Música y sonidos**: solo propios o CC0 (el audio es el contenido de mayor riesgo; cada pista con comprobante de origen).
