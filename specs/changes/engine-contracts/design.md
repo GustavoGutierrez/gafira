@@ -37,6 +37,7 @@ Flow line: `Flow: full | level: L2 | new capability | mutation: archive | T4 | V
 | C9 | `AudioCrossfade` | One variant, `EqualPower` |
 | C10 | `IRect` | `i32` corners, half-open, signed; plain data |
 | C11 | Key names and arguments | `error.<area>.<variant>` (ADR 0012); tables below |
+| C12 | Who validates a `ParamSchema` | A precondition, not a run-time check: a test per compiled schema, the plugin adapter for the rest |
 
 ## Public API
 
@@ -206,13 +207,18 @@ pub enum ParamError {
 
 Rules of `params.rs`:
 
+**Domain.** `get`, `defaults`, `check_values` and `resolve` are defined only for a schema that passed `validate_definition`. On any other schema their result is unspecified and no test pins it. They do not run the check themselves (C12). `new`, `params` and `validate_definition` are defined for every schema.
+
 | Function | Rule |
 |---|---|
 | `new`, `ParamValues::set` | Plain data, no validation (ARQ-110) |
 | `validate_definition` | `BadDefinition` for: repeated `id`; non-finite bound or default; `min > max`; default outside `[min, max]`; a `Choice` default not in `options`, or a repeated option id; a non-finite `Color` default. First fault in definition order |
-| `check_values` | Walks the schema in definition order. A missing id passes. A kind mismatch is `WrongType`. Non-finite `Float` or `Color` is `NonFinite`, checked before range. Outside `[min, max]`, inclusive, or a `Choice` not in `options`, is `OutOfRange` |
-| Unknown ids | Ignored and kept, so `resolve` returns them. A saved filter from a newer build keeps its data, as ADR-02 does for extensions |
-| `resolve` | `check_values`, then fills each missing id with its default |
+| Caller of `validate_definition` | A schema compiled into the build: one test per schema in the crate that implements `Effect`, `Transition` or `Exporter`, asserting `Ok`, added by the delivery that adds the schema. No run-time call. A schema from outside the build: the `gafira-plugin` adapter (02 §4.12), once, when it wraps the contribution and before it is registered; on `Err` the plugin is disabled and the document stays intact (02 §7.3, row "Plugin") |
+| `get` | The definition with this id, or `None` |
+| `defaults` | Every parameter at its default, so `resolve` on empty values equals `defaults` |
+| `check_values` | Walks the schema in definition order and stops at the first fault. A missing id passes. The kind decides first: a value of another kind is `WrongType` whatever it holds, NaN and `±∞` included. Only a value of the parameter's kind goes on. Non-finite `Float` or `Color` is `NonFinite`, checked before range. Outside `[min, max]`, inclusive, or a `Choice` not in `options`, is `OutOfRange` |
+| Unknown ids | Ignored and kept whatever they hold, so `resolve` returns them, NaN and `±∞` included. A saved filter from a newer build keeps its data, as ADR-02 does for extensions. ARQ-110 does not forbid it: it binds layer-2 engines, `resolve` is layer 0, an engine reads only the ids of its own schema, and no trait in 02 §4.4 or §4.13 returns `ParamValues`, so such a value reaches no calculation and no engine output (SP16) |
+| `resolve` | `check_values`, then fills each missing id with its default. In `Ok`, every id of the schema is present, of its kind and inside its range, and every `Float` and `Color` among them is finite |
 | Accessors `float`..`color` | `None` when absent or of another kind; no conversion between `Int` and `Float` |
 
 D2b:
@@ -435,6 +441,15 @@ Short form. ADR 0012 holds the cross-cutting part of C5 and C11.
 
 - Decision: signed, because a blur `roi` can leave the image (ARQ-120). `i32`, because tile and page coordinates are far below it. Corners rather than origin and size, to mirror `gafira_geom::Rect`. Half-open, so tiles abut without overlap (ARQ-121). Constructors do not validate (ARQ-110).
 
+### C12. Who validates a `ParamSchema`
+
+- Status: decided, from W2 and W3 of the D2a verify.
+- Context: `new` cannot validate (ARQ-110). A schema is written once and read on every `run_cpu`. `Registry<T>` is bound only by `Describe` (02:424), so it cannot see `params()`.
+- Options: (a) a precondition, met by a test per compiled schema and by the plugin adapter; (b) `check_values` and `resolve` call `validate_definition` each time; (c) a validated schema type from a fallible constructor; (d) `Registry::register` checks.
+- Decision: (a). A fault in a compiled schema is a bug in our code, so `cargo test` is the right place to stop it and no user ever meets it. A plugin schema is foreign input, so it needs a real check, once.
+- Rejected: (b) repeats a static check on every call, and `validate_definition` allocates (`seen`). (c) changes `fn params(&self) -> &ParamSchema` (02:523, 02:735) and `options_schema` (02:559). (d) needs a schema bound on a generic registry that also holds items with no schema.
+- Consequence: a forgotten test is the remaining risk. SP17 puts the step in the "how to add" lists. Nothing calls `validate_definition` at run time until `gafira-plugin` exists (Phase 3).
+
 ## Delivery table
 
 Mode rule: D2a and D2b share `contract/mod.rs` and `lib.rs`. D3 touches only `gafira-pathops`, `gafira-layout`, `ci.yml` and `Cargo.lock`, and no other delivery touches those, so it can run beside them. D1 comes first because all three use its types.
@@ -498,6 +513,9 @@ Hand mutants and T4 apply. T4 at close: `gafira-doc`, `gafira-geom`, `gafira-pat
 | SP2 | 02:1876, 02:1889, 02 §14.2 | `msg!` is the way to build a `Message`; `MessageKey` literals stay legal for labels. Say the key has 2 or 3 segments. Widen `Text`: stable technical identifiers also travel there, untranslated | None |
 | SP3 | 02:429 | `Descriptor` has `id`, `name`, `version`; capabilities live on each trait | None |
 | SP4 | 02:1298, 02 §9.2 | Errors are hand-written: no crate uses `thiserror` and `Cargo.lock` does not list it | None |
+| SP16 | ARQ-110 (02:866) | "Sus números" does not say whether an id the schema does not know counts. Say it does not: it is kept untouched and the engine never reads it. Not a contradiction, the rule above already follows this reading | None |
+| SP17 | 02 §4.4, §4.5, §4.12, §4.13, "Cómo añadir" lists | Add the step of C12: a test that the schema passes `validate_definition`; the plugin adapter checks foreign schemas | None |
+| SP18 | ARQ-110 (02:866), 02:524-525, 02:530, 02:742 | `roi`, `cost_hint` and both `bind` take `ParamValues` and return no `Result`, so they cannot give the `Err` that ARQ-110 asks of every public function, and its only exception is `AudioProcessor::process`. Options: give them a `Result`, or name them as exceptions and require values that passed `resolve` | `RS4` |
 
 SP numbers are shared with `specs/changes/layer-2/design.md`.
 
