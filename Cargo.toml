@@ -58,3 +58,10 @@ opt-level = 2
 [profile.mutants]
 inherits = "test"
 debug = "none"
+
+# The segmentation gate runs 4000x3000 images through the whole pipeline in tests.
+[profile.dev.package.gafira-segment]
+opt-level = 2
+
+[profile.dev.package.gafira-testkit]
+opt-level = 2
