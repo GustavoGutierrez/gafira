@@ -46,35 +46,38 @@ fn arq_111_iter_follows_id_order_not_insertion_order() {
 // ARQ-110
 #[test]
 fn arq_110_accessors_return_only_their_own_kind_and_never_convert() {
+    let samples = [
+        ParamValue::Float(1.5),
+        ParamValue::Int(7),
+        ParamValue::Bool(true),
+        ParamValue::Choice("fast".into()),
+        ParamValue::Color(red()),
+    ];
     let mut v = ParamValues::new();
-    v.set("f", ParamValue::Float(1.5));
-    v.set("i", ParamValue::Int(7));
-    v.set("b", ParamValue::Bool(true));
-    v.set("c", ParamValue::Choice("fast".into()));
-    v.set("k", ParamValue::Color(red()));
-
-    assert_eq!(v.float("f"), Some(1.5));
-    assert_eq!(v.int("i"), Some(7));
-    assert_eq!(v.bool("b"), Some(true));
-    assert_eq!(v.choice("c"), Some("fast"));
-    assert_eq!(v.color("k"), Some(red()));
-
-    // Another kind, including Int <-> Float, is None.
-    assert_eq!(v.float("i"), None);
-    assert_eq!(v.int("f"), None);
-    assert_eq!(v.bool("f"), None);
-    assert_eq!(v.choice("b"), None);
-    assert_eq!(v.color("c"), None);
-    assert_eq!(v.float("k"), None);
-    assert_eq!(v.int("c"), None);
-    assert_eq!(v.bool("k"), None);
-    assert_eq!(v.choice("i"), None);
-    assert_eq!(v.color("f"), None);
-
-    // Absent.
-    assert_eq!(v.float("nope"), None);
-    assert_eq!(v.int("nope"), None);
-    assert_eq!(v.bool("nope"), None);
-    assert_eq!(v.choice("nope"), None);
-    assert_eq!(v.color("nope"), None);
+    for (i, sample) in samples.iter().enumerate() {
+        v.set(format!("p{i}"), sample.clone());
+    }
+    type Accessor = fn(&ParamValues, &str) -> Option<ParamValue>;
+    let accessors: [Accessor; 5] = [
+        |v, id| v.float(id).map(ParamValue::Float),
+        |v, id| v.int(id).map(ParamValue::Int),
+        |v, id| v.bool(id).map(ParamValue::Bool),
+        |v, id| v.choice(id).map(|s| ParamValue::Choice(s.to_owned())),
+        |v, id| v.color(id).map(ParamValue::Color),
+    ];
+    for (kind, accessor) in accessors.iter().enumerate() {
+        for (i, sample) in samples.iter().enumerate() {
+            let want = (i == kind).then(|| sample.clone());
+            assert_eq!(
+                accessor(&v, &format!("p{i}")),
+                want,
+                "accessor {kind} on p{i}"
+            );
+        }
+        assert_eq!(
+            accessor(&v, "absent"),
+            None,
+            "accessor {kind} on an absent id"
+        );
+    }
 }
