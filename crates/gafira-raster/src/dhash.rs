@@ -10,25 +10,40 @@ pub const SIMILAR_DISTANCE: u32 = 10;
 const COLS: usize = 9;
 const ROWS: usize = 8;
 
-/// The pixels `[lo, hi)` of cell `i` of `cells` over a side of `n` pixels. Cells at the same
-/// pace share at most the pixels on their border, and each has one pixel at least (the end of
-/// a cell is past its start), so an image smaller than the grid still fills every cell.
-fn span(i: usize, cells: usize, n: usize) -> (usize, usize) {
-    let lo = i * n / cells;
-    let hi = ((i + 1) * n).div_ceil(cells);
-    (lo, hi)
+/// The cells pixel `i` of a side of `n` pixels touches, as `(cell, weight)`. The side is cut into
+/// `cells` equal parts, so cell `k` covers `[k n, (k + 1) n)` and pixel `i` covers
+/// `[i cells, (i + 1) cells)` in units of `1 / cells` pixel; the weight is the length of the
+/// overlap, so a border pixel counts for the part of it inside each cell, and the weights of
+/// one cell over the whole side add up to `n`.
+fn overlaps(i: usize, n: usize, cells: usize) -> impl Iterator<Item = (usize, u64)> {
+    let (lo, hi) = ((i * cells) as u64, ((i + 1) * cells) as u64);
+    let n = n as u64;
+    (lo / n..=(hi - 1) / n).map(move |k| (k as usize, hi.min((k + 1) * n) - lo.max(k * n)))
 }
 
-/// The sum of the luminance of every cell, `luma` giving one pixel's value as an integer.
-fn cell_sums<T>(data: &[T], w: usize, h: usize, luma: impl Fn(&[T]) -> u64) -> [[u64; COLS]; ROWS] {
-    let mut sums = [[0u64; COLS]; ROWS];
-    for (r, row_sums) in sums.iter_mut().enumerate() {
-        let (y0, y1) = span(r, ROWS, h);
-        for y in y0..y1 {
-            let line = &data[y * w * 4..(y + 1) * w * 4];
-            for (c, cell) in row_sums.iter_mut().enumerate() {
-                let (x0, x1) = span(c, COLS, w);
-                *cell += line[x0 * 4..x1 * 4].chunks_exact(4).map(&luma).sum::<u64>();
+/// The weighted sum of the luminance of every cell, `luma` giving one pixel's value as an
+/// integer. Every cell covers the same area, `w h` in these units, so sums compare as means.
+fn cell_sums<T>(
+    data: &[T],
+    w: usize,
+    h: usize,
+    luma: impl Fn(&[T]) -> u64,
+) -> [[u128; COLS]; ROWS] {
+    let mut sums = [[0u128; COLS]; ROWS];
+    let columns: Vec<Vec<(usize, u64)>> = (0..w).map(|x| overlaps(x, w, COLS).collect()).collect();
+    for y in 0..h {
+        let line = &data[y * w * 4..(y + 1) * w * 4];
+        // At most `2.55e6 * 9` per pixel, so a row of `u32::MAX` pixels still fits.
+        let mut row = [0u64; COLS];
+        for (px, cells) in line.chunks_exact(4).zip(&columns) {
+            let l = luma(px);
+            for &(c, weight) in cells {
+                row[c] += l * weight;
+            }
+        }
+        for (r, wy) in overlaps(y, h, ROWS) {
+            for (cell, part) in sums[r].iter_mut().zip(row) {
+                *cell += u128::from(part) * u128::from(wy);
             }
         }
     }
@@ -36,7 +51,8 @@ fn cell_sums<T>(data: &[T], w: usize, h: usize, luma: impl Fn(&[T]) -> u64) -> [
 }
 
 /// The 64-bit dHash of an image: the image is read as nine by eight cells of mean luminance
-/// (of the premultiplied sRGB values, so transparent is black), and bit `8 r + c` is set when
+/// (of the sRGB values times alpha, so transparent is black; a border pixel counts for the part
+/// of its area inside each cell), and bit `8 r + c` is set when
 /// cell `c` of row `r` is brighter than cell `c + 1`. An image of size 0 hashes to 0.
 ///
 /// # Errors
@@ -78,25 +94,22 @@ pub fn dhash(image: ImageView<'_>) -> Result<u64, EffectError> {
                 if p[3] == 0.0 {
                     return 0;
                 }
-                let e = t.encode_unit([f64::from(p[0]), f64::from(p[1]), f64::from(p[2])]);
+                // Straight, encoded, then weighted by alpha: the 8-bit order (premultiplied
+                // bytes are the encoded colour times alpha), not the encoding of a product.
+                let a = f64::from(p[3]);
+                let e = t.encode_unit([0, 1, 2].map(|k| f64::from(p[k]) / a));
+                let a = a.clamp(0.0, 1.0);
                 // The same scale as the 8-bit sum: 10 000 * 255 for white. Whole numbers, so
                 // a flat image has equal cells.
-                (2126.0 * 255.0 * e[0] + 7152.0 * 255.0 * e[1] + 722.0 * 255.0 * e[2]).round()
-                    as u64
+                ((2126.0 * e[0] + 7152.0 * e[1] + 722.0 * e[2]) * 255.0 * a).round() as u64
             })
         }
         PixelData::Alpha8(_) => return Ok(0),
     };
     let mut hash = 0u64;
     for (r, row) in sums.iter().enumerate() {
-        let (y0, y1) = span(r, ROWS, h);
         for c in 0..COLS - 1 {
-            let (xl0, xl1) = span(c, COLS, w);
-            let (xr0, xr1) = span(c + 1, COLS, w);
-            let left_area = ((y1 - y0) * (xl1 - xl0)) as u128;
-            let right_area = ((y1 - y0) * (xr1 - xr0)) as u128;
-            // mean(left) > mean(right), without dividing.
-            if u128::from(row[c]) * right_area > u128::from(row[c + 1]) * left_area {
+            if row[c] > row[c + 1] {
                 hash |= 1 << (8 * r + c);
             }
         }
@@ -216,7 +229,7 @@ mod tests {
         for y in 0..h {
             lit[(y * w + x) * 4..][..4].copy_from_slice(&grey(255));
         }
-        // Column 7 of 13 lies in cells 4 and 5 (ranges 5..7 and 7..9 of a 9 wide split).
+        // Column 7 of 13 is in cell 4 for 0.22 of it and in cell 5 for 0.78 of it.
         assert_eq!(hash8(&lit, w, h), 0x2020_2020_2020_2020);
     }
 
@@ -391,7 +404,14 @@ mod tests {
     // ARQ-122: an image and its version at 50 % are at distance <= 10 (similar).
     #[test]
     fn arq_122_dhash_an_image_and_its_half_are_similar() {
-        for (w, h) in [(128, 96), (200, 150), (256, 192)] {
+        for (w, h) in [
+            (128, 96),
+            (200, 150),
+            (256, 192),
+            (131, 101),
+            (157, 139),
+            (203, 129),
+        ] {
             let big = scene(w, h);
             let view = ImageView::new(w as u32, h as u32, PixelData::Rgba8(&big)).unwrap();
             let half = build_mips(view).unwrap().remove(1);
@@ -399,6 +419,138 @@ mod tests {
             let d = hamming_distance(a, b);
             assert!(d <= 10 && is_similar(a, b), "{w}x{h}: distance {d}");
             assert_ne!(a, 0);
+        }
+    }
+
+    /// Blocks of 10 x 10 pixels of random colour and alpha 55 to 255, as premultiplied bytes and
+    /// as premultiplied linear `f32`: the same translucent picture in both formats.
+    fn translucent(seed: u32) -> (Vec<u8>, Vec<f32>) {
+        let (w, h) = (90usize, 80usize);
+        let mut s = seed.wrapping_mul(2_654_435_761).wrapping_add(7);
+        let mut blocks = Vec::new();
+        for _ in 0..9 * 8 {
+            s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let a = 55 + ((s >> 24) % 201) as u8;
+            blocks.push([(s >> 16) as u8, (s >> 8) as u8, s as u8, a]);
+        }
+        let lin = |b: u8| {
+            let v = f64::from(b) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let mut bytes = Vec::new();
+        let mut floats = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                let [r, g, b, a] = blocks[(y / 10) * 9 + x / 10];
+                bytes.extend([r, g, b].map(|c| crate::premultiply_u8(c, a)));
+                bytes.push(a);
+                let af = f64::from(a) / 255.0;
+                floats.extend([r, g, b].map(|c| (lin(c) * af) as f32));
+                floats.push(af as f32);
+            }
+        }
+        (bytes, floats)
+    }
+
+    /// Whether every pair of neighbouring cells of a translucent picture differs by more than 1 %
+    /// of the range in 8 bits, so that rounding the premultiplied bytes cannot flip a bit.
+    fn clear_margins(bytes: &[u8]) -> bool {
+        let cell = |c: usize, r: usize| {
+            let p = &bytes[((r * 10) * 90 + c * 10) * 4..][..4];
+            2126 * i64::from(p[0]) + 7152 * i64::from(p[1]) + 722 * i64::from(p[2])
+        };
+        (0..8).all(|r| (0..8).all(|c| (cell(c, r) - cell(c + 1, r)).abs() > 25_500))
+    }
+
+    // ARQ-122, FD-28 (b): the same translucent picture in `Rgba8` and in `RgbaF32` has the same
+    // hash: the colour is encoded before it is weighted by alpha in both.
+    #[test]
+    fn arq_122_dhash_translucent_picture_has_the_same_hash_in_both_formats() {
+        let mut checked = 0;
+        for seed in 0..400 {
+            let (bytes, floats) = translucent(seed);
+            if !clear_margins(&bytes) {
+                continue;
+            }
+            checked += 1;
+            let a = hash8(&bytes, 90, 80);
+            let b = dhash(ImageView::new(90, 80, PixelData::RgbaF32(&floats)).unwrap()).unwrap();
+            assert_eq!(a, b, "seed {seed}: distance {}", hamming_distance(a, b));
+        }
+        assert!(checked >= 20, "only {checked} pictures with clear margins");
+    }
+
+    /// The hash from its definition: cell `(c, r)` is the mean luminance over the area it covers
+    /// of the image cut into 9 x 8 equal parts, border pixels counting for the part of their area
+    /// inside the cell. Written in `f64`, apart from the crate.
+    fn reference(bytes: &[u8], w: usize, h: usize) -> u64 {
+        let mut sums = [[0f64; 9]; 8];
+        let mut weights = [[0f64; 9]; 8];
+        let overlap = |i: usize, n: usize, cells: usize, k: usize| {
+            let (lo, hi) = (
+                i as f64 * cells as f64 / n as f64,
+                (i + 1) as f64 * cells as f64 / n as f64,
+            );
+            ((hi.min((k + 1) as f64)) - lo.max(k as f64)).max(0.0)
+        };
+        for y in 0..h {
+            for x in 0..w {
+                let p = &bytes[(y * w + x) * 4..][..4];
+                let luma = if p[3] == 0 {
+                    0.0
+                } else {
+                    2126.0 * f64::from(p[0]) + 7152.0 * f64::from(p[1]) + 722.0 * f64::from(p[2])
+                };
+                for r in 0..8 {
+                    for c in 0..9 {
+                        let a = overlap(x, w, 9, c) * overlap(y, h, 8, r);
+                        sums[r][c] += luma * a;
+                        weights[r][c] += a;
+                    }
+                }
+            }
+        }
+        let mut hash = 0u64;
+        for r in 0..8 {
+            for c in 0..8 {
+                let (l, rt) = (
+                    sums[r][c] / weights[r][c],
+                    sums[r][c + 1] / weights[r][c + 1],
+                );
+                if l - rt > 1e-9 * l.abs().max(1.0) {
+                    hash |= 1 << (8 * r + c);
+                }
+            }
+        }
+        hash
+    }
+
+    // ARQ-122: a side that is not a multiple of the grid gives every cell its own area: border
+    // pixels count for the part of them inside each cell. Noise, so no two cells are equal.
+    #[test]
+    fn arq_122_dhash_cells_are_weighted_by_the_area_they_cover() {
+        for (w, h) in [
+            (38, 30),
+            (37, 29),
+            (91, 81),
+            (17, 13),
+            (130, 97),
+            (10, 9),
+            (23, 8),
+            (9, 41),
+        ] {
+            for seed in 1..=6 {
+                let bytes = noise(w, h, seed);
+                assert_eq!(
+                    hash8(&bytes, w, h),
+                    reference(&bytes, w, h),
+                    "{w}x{h} seed {seed}"
+                );
+            }
         }
     }
 
