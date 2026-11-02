@@ -1,0 +1,32 @@
+{ "schema": 1, "change": "engine-contracts", "delivery": "final", "rounds": [
+  {
+    "round": 1, "commit": "a2dcf202e08c56ad7bfa9a7b5a4539689d989034", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "FAIL", "next": "tdd-apply", "classes": ["implementation"], "hand_mutants": {"run": 0, "killed": 0}, "criteria": {"total": 10, "covered": 10}, "size": {"lines": 30, "forecast": null}, "report": "verify-report-final.md",
+    "counts": {"critical": 1, "warning": 6, "suggestion": 2},
+    "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+    "mutation": {"tier": "T4", "found": 1170, "caught": 1016, "missed": 14, "timeout": 6, "unviable": 134, "critical_missed": 0, "wall_s": 1825},
+    "findings": [
+      {"id": "F-C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/validate.rs:61:29", "summary": "T4 timeout is not a hang: cargo package cache lock, no test started; re-run caught it in 0.5 s. Stays CRITICAL by rule. No code change owed; needs a new gafira-doc T4.", "follow_up": false, "status": "open"},
+      {"id": "F-W1", "severity": "WARNING", "class": "implementation", "ref": "contract/cancel.rs:68:9, contract/params.rs:325:9", "summary": "2 Display survivors, non-critical: the spec fixes no text.", "follow_up": true, "status": "open"},
+      {"id": "F-W2", "severity": "WARNING", "class": "implementation", "ref": "gafira-testkit golden.rs, lib.rs:326:18, harness.rs:84:9", "summary": "10 survivors in test helpers and trivial accessors, non-critical; none in progress.rs.", "follow_up": true, "status": "open"},
+      {"id": "F-W3", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-102", "summary": "Pending list omits 8 enums with no ToMessage and no owning change; the row's Cumplimiento text is out of date.", "follow_up": true, "status": "open"},
+      {"id": "F-W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-geom/src/irect.rs:23:20, :32:20", "summary": "2 equivalent IRect mutants, excluded by one exact entry.", "follow_up": false, "status": "closed"},
+      {"id": "D1-W1", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:3", "summary": "Flow-change records the level only; pack and reason change unrecorded.", "follow_up": true, "status": "open"},
+      {"id": "D2b-W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Atomicity tests weak on small or busy machines; deterministic proof needs loom.", "follow_up": true, "status": "open"},
+      {"id": "D3-W1", "severity": "WARNING", "class": "ambiguity", "ref": "docs/manuals/tecnico/chapters/02-architecture.md:26", "summary": "Manual still says gafira-pathops depends on gafira-geom alone.", "follow_up": true, "status": "open"}
+    ] },
+  {
+    "round": 2, "commit": "a2dcf202e08c56ad7bfa9a7b5a4539689d989034", "mode": "full", "tier": "T4", "depth": "V2", "verdict": "PASS", "next": "archive", "classes": [], "hand_mutants": {"run": 0, "killed": 0}, "criteria": {"total": 10, "covered": 10}, "size": {"lines": 30, "forecast": null}, "report": "verify-report-final.md",
+    "counts": {"critical": 0, "warning": 6, "suggestion": 2},
+    "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+    "mutation": {"tier": "T4", "found": 250, "caught": 191, "missed": 2, "timeout": 0, "unviable": 57, "critical_missed": 0, "wall_s": 588},
+    "findings": [
+      {"id": "F-C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/validate.rs:61:29", "summary": "Closed: full gafira-doc T4 at a2dcf20 (250 found, 0 timeouts) catches the mutant in 0.6 s; id_rows and from_parts_validates fail on assertions.", "follow_up": false, "status": "closed"},
+      {"id": "F-W1", "severity": "WARNING", "class": "implementation", "ref": "contract/cancel.rs:68:9, contract/params.rs:325:9", "summary": "2 Display survivors, non-critical: the spec fixes no text.", "follow_up": true, "status": "open"},
+      {"id": "F-W2", "severity": "WARNING", "class": "implementation", "ref": "gafira-testkit golden.rs, lib.rs:326:18, harness.rs:84:9", "summary": "10 survivors in test helpers and trivial accessors, non-critical; none in progress.rs.", "follow_up": true, "status": "open"},
+      {"id": "F-W3", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-102", "summary": "Pending list omits 8 enums with no ToMessage and no owning change; the row's Cumplimiento text is out of date.", "follow_up": true, "status": "open"},
+      {"id": "F-W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-geom/src/irect.rs:23:20, :32:20", "summary": "2 equivalent IRect mutants, excluded by one exact entry.", "follow_up": false, "status": "closed"},
+      {"id": "D1-W1", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:3", "summary": "Flow-change records the level only; pack and reason change unrecorded.", "follow_up": true, "status": "open"},
+      {"id": "D2b-W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Atomicity tests weak on small or busy machines; deterministic proof needs loom.", "follow_up": true, "status": "open"},
+      {"id": "D3-W1", "severity": "WARNING", "class": "ambiguity", "ref": "docs/manuals/tecnico/chapters/02-architecture.md:26", "summary": "Manual still says gafira-pathops depends on gafira-geom alone.", "follow_up": true, "status": "open"}
+    ] }
+] }
