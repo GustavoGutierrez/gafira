@@ -1,6 +1,6 @@
 # 0011. ODD lite: outcome-first routing on top of the existing flow
 
-- Status: proposed (until the D3 pilot of `layout-core` ends)
+- Status: accepted (owner confirmation 2026-11-01)
 - Date: 2026-11-01
 - Related: ADR 0001, 0002, 0003, 0004 (amended, not removed), `AGENTS.md`, `.agents/agents/`, `docs/methodology/odd-ligero-migracion.md` (owner's brief), changes `odd-lite`, `layout-core`
 
@@ -75,7 +75,7 @@ On acceptance these ADRs change only their status and index entry, as ADR 0004 d
 
 ### Retained flows
 
-The old path stays available as an explicit option until phase D: the owner says `flow: legacy` and the change runs with its folder, Slice card or Light spec and no level. Delta specs, `proposal.md` and `design.md` stay available in full mode or on request. `layout-core` keeps its folder, card and design until archive, and its deliveries D3 to D7 run with minimal notes.
+The old path stayed available as an explicit option until phase D: the owner said `flow: legacy` and the change ran with its folder, Slice card or Light spec and no level. `flow: legacy` was retired at acceptance (2026-11-01). Folders stay for L3, full mode, work no spec covers and folders in progress. Delta specs, `proposal.md` and `design.md` stay available in full mode or on request. `layout-core` keeps its folder, card and design until archive, and its deliveries D3 to D7 run with minimal notes.
 
 ### Phase C: pilot
 
@@ -90,6 +90,15 @@ Consolidate only when all hold, by owner decision:
 - FAIL counts and rounds are no worse than comparable deliveries (D1 two rounds, D2 three).
 
 Then accept this ADR, update ADR statuses, and mark what proves redundant as legacy. Delivery `chore/specs-consolidation` brought "Cómo continuar el documento en curso" in `specs/README.md` and `docs/manuals/tecnico/chapters*/10-methodology.md` into line with the outcome route. History is not deleted without the owner's OK.
+
+Record at acceptance (owner confirmation 2026-11-01):
+
+| Criterion | Record |
+|---|---|
+| D3 closed PASS | `verify` FAIL, FAIL, PASS; round 3 at `2377174`, merged in `b36a8d4`. Rule gaps on record: W1 to W3 under "Phase D: requirements", resolved by `chore/odd-lite-phase-d` (`26e3071`) |
+| One outcome with no folder | `testkit-golden`: entry `c56954f`, `verify` round 3 PASS at `faefea6`, merged in `fa6778e`, T4 on `gafira-testkit` run (its non-critical survivors are follow-up 38 in `specs/README.md`), closed `e1de0b8`. No commit ever held a `specs/changes/testkit-golden/` folder |
+| Session resumed from `.odd/state.json` | `<RESUME-EVIDENCE>` |
+| FAIL counts and rounds | D3 and `testkit-golden` each took two FAILs and three rounds: the same as D2 (FAIL, FAIL, PASS), one FAIL and one round more than D1 (FAIL, PASS) |
 
 ### Phase D: requirements
 

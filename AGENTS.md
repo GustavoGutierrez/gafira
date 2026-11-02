@@ -4,7 +4,7 @@ Gafira is a local-first design, image and video editor written in Rust (Cargo wo
 
 ## ODD lite
 
-Outcome-driven routing on top of the flow below (`docs/adr/0011-odd-lite.md`, proposed until the `layout-core` D3 pilot ends). It selects mode and agents; it removes no gate, floor or owner stop. An outcome is an observable result, a spec describes a stable capability, a task is executable work: three different things. Natural-language requests stay the entry point; there are no ODD commands (`odd-spec` is `specifier` with skill `product-specs`, `odd-run` is `coordinator` with `tdd-apply`, `odd-verify` is `verify`).
+Outcome-driven routing on top of the flow below (`docs/adr/0011-odd-lite.md`, accepted). It selects mode and agents; it removes no gate, floor or owner stop. An outcome is an observable result, a spec describes a stable capability, a task is executable work: three different things. Natural-language requests stay the entry point; there are no ODD commands (`odd-spec` is `specifier` with skill `product-specs`, `odd-run` is `coordinator` with `tdd-apply`, `odd-verify` is `verify`).
 
 - Put verifiable results and code changes before ceremonial artifacts.
 - Read the code and the relevant spec first; do not load every spec.

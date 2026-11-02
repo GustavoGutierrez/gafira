@@ -9,7 +9,7 @@
 | `verification.json` | **Implemented** as a pilot; the review point is the archive of the next change that uses it | ADR 0001 decision record 5, `.agents/agents/verify.md` |
 | Hand-mutant split between `tdd-apply` and `verify`, closure rounds, T4 survivor closure | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archive of a light or fast-lane run without delta merge | **Implemented** | ADR 0001 decision record 6, ADR 0002 section 6, `.agents/agents/archive.md` |
-| ODD lite: risk levels L0 to L3, outcome entries in `.odd/state.json`, folders only when needed, verify findings in the entry, the BLOCKED verdict | **Implemented** in the process files; its ADR is **proposed** until the `layout-core` D3 pilot ends | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
+| ODD lite: risk levels L0 to L3, outcome entries in `.odd/state.json`, folders only when needed, verify findings in the entry, the BLOCKED verdict | **Implemented** (accepted decision; the process files follow it) | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
 
 ## Lite SDD
 
@@ -38,7 +38,7 @@ The mode of a request (next section) decides which stages run. `mutants` runs ac
 
 ## ODD lite
 
-ODD lite routes a request by risk and records its progress outside a change folder. It sits on top of the flow modes and removes no gate, floor or owner stop. The decision is `docs/adr/0011-odd-lite.md`, status **proposed** until the `layout-core` D3 pilot ends. The process files (`AGENTS.md`, the agent definitions) already apply it.
+ODD lite routes a request by risk and records its progress outside a change folder. It sits on top of the flow modes and removes no gate, floor or owner stop. The decision is `docs/adr/0011-odd-lite.md`, status **accepted**. The process files (`AGENTS.md`, the agent definitions) already apply it.
 
 Natural-language requests remain the entry point; there are no ODD commands. The brief's `odd-spec` is `specifier` with the `product-specs` skill, `odd-run` is `coordinator` with `tdd-apply`, and `odd-verify` is `verify`. An outcome is an observable result, a spec describes a stable capability and a task is executable work.
 

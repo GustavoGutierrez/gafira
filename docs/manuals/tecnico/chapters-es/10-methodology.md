@@ -9,7 +9,7 @@
 | `verification.json` | **Implementado** como piloto; el punto de revisión es el archivado del siguiente change que lo use | ADR 0001 registro de decisiones 5, `.agents/agents/verify.md` |
 | Reparto de mutantes manuales entre `tdd-apply` y `verify`, rondas de cierre, cierre de supervivientes de T4 | **Implementado** (decisión aceptada; las definiciones de los agentes la siguen) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archivado de una ejecución ligera o de carril rápido sin fusión de deltas | **Implementado** | ADR 0001 registro de decisiones 6, ADR 0002 sección 6, `.agents/agents/archive.md` |
-| ODD lite: niveles de riesgo L0 a L3, entradas de outcome en `.odd/state.json`, carpetas solo cuando hacen falta, hallazgos de verify en la entrada, veredicto BLOCKED | **Implementado** en los archivos de proceso; su ADR está **propuesto** hasta que termine el piloto D3 de `layout-core` | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
+| ODD lite: niveles de riesgo L0 a L3, entradas de outcome en `.odd/state.json`, carpetas solo cuando hacen falta, hallazgos de verify en la entrada, veredicto BLOCKED | **Implementado** (decisión aceptada; los archivos de proceso la siguen) | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
 
 ## SDD ligero
 
@@ -38,7 +38,7 @@ El modo de una solicitud (sección siguiente) decide qué etapas se ejecutan. `m
 
 ## ODD lite
 
-ODD lite enruta una solicitud según el riesgo y registra su avance fuera de una carpeta de change. Se apoya en los modos de flujo y no elimina ninguna puerta, mínimo obligatorio ni parada del titular. La decisión es `docs/adr/0011-odd-lite.md`, con estado **propuesto** hasta que termine el piloto D3 de `layout-core`. Los archivos de proceso (`AGENTS.md`, las definiciones de los agentes) ya la aplican.
+ODD lite enruta una solicitud según el riesgo y registra su avance fuera de una carpeta de change. Se apoya en los modos de flujo y no elimina ninguna puerta, mínimo obligatorio ni parada del titular. La decisión es `docs/adr/0011-odd-lite.md`, con estado **aceptado**. Los archivos de proceso (`AGENTS.md`, las definiciones de los agentes) ya la aplican.
 
 Las solicitudes en lenguaje natural siguen siendo el punto de entrada; no hay comandos ODD. El `odd-spec` del brief es `specifier` con el skill `product-specs`, `odd-run` es `coordinator` con `tdd-apply` y `odd-verify` es `verify`. Un outcome es un resultado observable, una spec describe una capacidad estable y una tarea es trabajo ejecutable.
 
