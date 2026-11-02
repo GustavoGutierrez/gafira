@@ -505,9 +505,10 @@ fn fd_38_a_stroke_reports_progress_and_checks_the_token_per_chunk() {
         run(&CancelToken::new(), &log, seeds).unwrap();
         log.fractions().len()
     };
-    // Two stamps (the pins at work size and the final one), five chunks of 256 rows each.
+    // Two stamps (the pins at work size and the final one), 17 chunks of 64 rows each
+    // (rows 14 to 1086).
     assert!(
-        count(true) >= count(false) + 2 * 5,
+        count(true) >= count(false) + 2 * 17,
         "{} against {}",
         count(true),
         count(false)

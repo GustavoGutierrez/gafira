@@ -9,8 +9,8 @@ use crate::work::Source;
 
 /// Window radius in pixels (02 §4.7).
 const RADIUS: usize = 8;
-/// Rows per band (XP11).
-const BAND_ROWS: usize = 250;
+/// Rows per band: with the fraction model it keeps one report under 0.02 on the 1024x768 reference (ARQ-112).
+const BAND_ROWS: usize = 80;
 /// Regularisation of the local linear model, on luma in `[0, 1]`.
 const EPSILON: f32 = 1e-3;
 
