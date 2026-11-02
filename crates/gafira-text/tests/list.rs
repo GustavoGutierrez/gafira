@@ -350,12 +350,15 @@ fn fd_41_j_the_alignment_of_the_list_does_not_change_where_the_text_starts_or_it
 }
 
 #[test]
-fn fd_41_j_the_hang_is_in_proportion_to_the_dpi_at_any_dpi() {
+fn fd_41_j_the_hang_of_1_dot_at_12_pt_is_in_proportion_to_the_dpi_up_to_1_3e39() {
     let hang = |dpi: f64| {
         let entries = layout_list(
             &[item("a", 1, Numbered)],
             &[INTER],
-            &style(),
+            &TextStyle {
+                size_pt: 12.0,
+                ..style()
+            },
             dpi,
             Size::new(1e15, 1e15),
         )
@@ -364,11 +367,11 @@ fn fd_41_j_the_hang_is_in_proportion_to_the_dpi_at_any_dpi() {
     };
     let base = hang(96.0);
     assert!(base > 0.0);
-    for dpi in [960.0, 1e6, 1e10] {
+    for dpi in [960.0, 1e6, 1e10, 1e20, 1e30, 1.3e39] {
         let scaled = hang(dpi);
         let expected = base * dpi / 96.0;
         assert!(
-            (scaled - expected).abs() <= expected * 1e-4,
+            (scaled - expected).abs() <= expected * 1e-4, // FD-41 (j): 0.01 %
             "dpi {dpi}: hang {scaled}, expected {expected}"
         );
     }

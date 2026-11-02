@@ -120,8 +120,10 @@ pub struct Cluster {
 
 /// Relative slack of the fit. Parley sums the advances of a line in its own order and the
 /// output sums them again without the last spacing, so a box equal to the advance the output
-/// reports can be a few f32 ulps short for parley. 4e-6 is 0.0004 px at 100 px, far under the
-/// 0.01 px of the spec, and above the 7e-7 measured.
+/// reports can be a few f32 ulps short for parley. 4e-6 is 0.0004 px at 100 px and above the
+/// 7e-7 measured. It is also the limit of the overflow: a line within it neither breaks nor
+/// overflows. It is under the 0.01 px of the spec only for a box under about 2 500 px; in a
+/// wider box a line can pass the edge by more, with no overflow.
 const FIT_TOLERANCE: f64 = 4e-6;
 
 /// Lays `text` out in a box of `bounds` px.
@@ -206,14 +208,16 @@ pub fn layout_box(
     let width = bounds.width().max(0.0);
     // Parley adds the spacing after every cluster, the last one of a line too; the output
     // does not keep that one, so the box is that much wider for the fit.
-    let fit = ((width + spacing) * (1.0 + FIT_TOLERANCE)).clamp(0.0, f64::from(f32::MAX)) as f32;
+    // One fit rule for the break and the overflow: a line fits a box of `limit` px.
+    let limit = width * (1.0 + FIT_TOLERANCE);
+    let fit = (limit + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
     laid.break_all_lines(Some(fit));
 
     let spacing = spacing as f32;
     let (mut lines, forced) = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
     let overflow = lines
         .iter()
-        .any(|l| f64::from(content_advance(text, &l.clusters)) > width);
+        .any(|l| content_advance(text, &l.clusters) > limit);
     let rtl = laid.is_rtl();
     let last = lines.len().saturating_sub(1);
     for (i, line) in lines.iter_mut().enumerate() {
@@ -423,64 +427,116 @@ fn hanging_mask(text: &str, clusters: &[Cluster]) -> Vec<bool> {
 }
 
 /// The advance of a line without the white space that hangs.
-fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
+fn content_advance(text: &str, clusters: &[Cluster]) -> f64 {
     let hanging = hanging_mask(text, clusters);
     clusters
         .iter()
         .zip(&hanging)
         .filter(|(_, h)| !**h)
-        .map(|(c, _)| c.advance)
+        .map(|(c, _)| f64::from(c.advance))
         .sum()
 }
 
-/// Places the clusters of a line, which start at x = 0, in the box.
+/// Places the clusters of a line, which start at x = 0, in the box. Every alignment and
+/// direction goes through the same three steps, in f64: the hang, then the room, then the
+/// offsets. Positions that change (a stretched line) are summed in f64 from the origin of
+/// the line, never by adding f32 positions one to the next; the others keep the position
+/// of the layout (FD-41 (c), identity bit for bit) plus the offset.
 ///
-/// The white space at the end of the line whose run has the direction of the paragraph
-/// hangs: it is outside the alignment, on the right of a left-to-right paragraph and on the
-/// left (negative x) of a right-to-left one. `Left` puts the rest at the left edge, so a
-/// space of the other direction that stays inside the line keeps its place. `Center` and
-/// `Right` align the content without any of the trailing white space. `Justify` shares
-/// the spare room among the spaces that are not trailing white space; a line with none, the
-/// last line and a line with a forced break (`stretch` false) start where the paragraph
-/// starts: at the left in a left-to-right paragraph and at the right in a right-to-left one.
-/// A line wider than the box stays on the left, except under `Justify` in a right-to-left
-/// paragraph.
+/// 1. The white space at the end of the line whose run has the direction of the paragraph
+///    hangs: it is outside the alignment, on the right of a left-to-right paragraph and on
+///    the left (negative x) of a right-to-left one. The hang is applied whatever the room.
+/// 2. The room is the box less the content, without any trailing white space. A line wider
+///    than the box has none and stays where the hang puts it, except under `Justify` in a
+///    right-to-left paragraph, which ends at the right edge.
+/// 3. `Left` adds nothing; `Center` and `Right` move the content by the room; `Justify`
+///    shares the room among the spaces that are neither trailing nor leading white space.
+///    A line with none, the last line and a line with a forced break (`stretch` false) start
+///    where the paragraph starts: at the left in a left-to-right paragraph and at the right
+///    in a right-to-left one. The trailing space of a run of the other level is not a place
+///    to stretch either (FD-41, accepted limit).
 fn align_line(line: &mut Line, text: &str, align: TextAlign, rtl: bool, width: f64, stretch: bool) {
     let hung = trailing_space(text, &line.clusters, Some(rtl));
-    let hung_width: f64 = zip_sum(&line.clusters, &hung);
-    let hang_shift = if rtl { -hung_width } else { 0.0 };
+    let hung_width = zip_sum(&line.clusters, &hung);
+    let advances: Vec<f64> = line.clusters.iter().map(|c| f64::from(c.advance)).collect();
+    let mut extra = vec![0.0_f64; advances.len()];
+    // 1. The hang.
+    let mut offset = if rtl { -hung_width } else { 0.0 };
+    let total: f64 = advances.iter().sum();
     match align {
-        TextAlign::Left => shift(line, hang_shift),
+        TextAlign::Left => {}
         TextAlign::Center | TextAlign::Right => {
-            shift_line(line, text, width, align == TextAlign::Center);
+            let trailing = hanging_mask(text, &line.clusters);
+            let mut bounds: Option<(f64, f64)> = None;
+            for ((c, adv), t) in line.clusters.iter().zip(&advances).zip(&trailing) {
+                if !t {
+                    let start = f64::from(c.x);
+                    let (l, r) = bounds.unwrap_or((start, start + adv));
+                    bounds = Some((l.min(start), r.max(start + adv)));
+                }
+            }
+            // 2. The room.
+            if let Some((l, r)) = bounds {
+                let room = width - (r - l);
+                if room > 0.0 {
+                    // 3. The offset.
+                    offset = if align == TextAlign::Center {
+                        room / 2.0 - l
+                    } else {
+                        room - l
+                    };
+                }
+            }
         }
         TextAlign::Justify => {
-            let trailing = trailing_space(text, &line.clusters, None);
-            let separators: Vec<usize> = (0..line.clusters.len())
+            let trailing = hanging_mask(text, &line.clusters);
+            let leading = leading_space(text, &line.clusters);
+            let separators: Vec<usize> = (0..advances.len())
                 .filter(|i| {
                     !trailing[*i]
+                        && !leading[*i]
                         && matches!(&text[line.clusters[*i].range.clone()], " " | "\u{a0}")
                 })
                 .collect();
-            let total: f64 = line.clusters.iter().map(|c| f64::from(c.advance)).sum();
             let room = width - (total - hung_width);
             if stretch && !separators.is_empty() && room > 0.0 {
-                let each = (room / separators.len() as f64) as f32;
+                let each = room / separators.len() as f64;
                 for i in &separators {
-                    line.clusters[*i].advance += each;
+                    extra[*i] = each;
                 }
-                let mut x = 0.0;
-                for c in &mut line.clusters {
-                    c.x = x;
-                    x += c.advance;
-                }
-                line.advance = x;
-                shift(line, hang_shift);
             } else if rtl {
-                shift(line, width - total);
+                offset = width - total;
             }
         }
     }
+    if extra.iter().any(|e| *e != 0.0) {
+        let mut x = 0.0_f64;
+        for ((c, adv), more) in line.clusters.iter_mut().zip(&advances).zip(&extra) {
+            c.x = (offset + x) as f32;
+            c.advance = (adv + more) as f32;
+            x += adv + more;
+        }
+        line.advance = x as f32;
+    } else {
+        for c in &mut line.clusters {
+            c.x = (f64::from(c.x) + offset) as f32;
+        }
+    }
+}
+
+/// Which clusters are the white space at the logical start of the line.
+fn leading_space(text: &str, clusters: &[Cluster]) -> Vec<bool> {
+    let mut logical: Vec<usize> = (0..clusters.len()).collect();
+    logical.sort_by_key(|i| clusters[*i].range.start);
+    let mut mask = vec![false; clusters.len()];
+    for i in logical.into_iter().take_while(|i| {
+        text[clusters[*i].range.clone()]
+            .chars()
+            .all(char::is_whitespace)
+    }) {
+        mask[i] = true;
+    }
+    mask
 }
 
 fn zip_sum(clusters: &[Cluster], mask: &[bool]) -> f64 {
@@ -490,32 +546,6 @@ fn zip_sum(clusters: &[Cluster], mask: &[bool]) -> f64 {
         .filter(|(_, m)| **m)
         .map(|(c, _)| f64::from(c.advance))
         .sum()
-}
-
-fn shift(line: &mut Line, by: f64) {
-    for c in &mut line.clusters {
-        c.x += by as f32;
-    }
-}
-
-/// Centres or right-aligns the content of a line in the box; the hanging white space is
-/// outside the content. A line wider than the box stays on the left.
-fn shift_line(line: &mut Line, text: &str, width: f64, centre: bool) {
-    let hanging = hanging_mask(text, &line.clusters);
-    let mut ink = line
-        .clusters
-        .iter()
-        .zip(&hanging)
-        .filter(|(_, h)| !**h)
-        .map(|(c, _)| (c.x, c.x + c.advance));
-    let Some(first) = ink.next() else { return };
-    let (left, right) = ink.fold(first, |(l, r), (a, b)| (l.min(a), r.max(b)));
-    let room = width - f64::from(right - left);
-    if room <= 0.0 {
-        return;
-    }
-    let target = if centre { room / 2.0 } else { room };
-    shift(line, target - f64::from(left));
 }
 
 /// ARQ-110: a non-finite result is an `Err`, never an output.
