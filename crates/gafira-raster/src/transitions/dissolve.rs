@@ -53,14 +53,14 @@ impl Transition for Dissolve {
 
     fn run_cpu(
         &self,
-        _cx: &EffectCx,
+        cx: &EffectCx,
         p: &ParamValues,
         progress: f32,
         from: ImageView<'_>,
         to: ImageView<'_>,
         mut dst: ImageViewMut<'_>,
     ) -> Result<(), EffectError> {
-        match plan(&self.schema, p, progress, &from, &to, &dst)? {
+        match plan(cx, &self.schema, p, progress, &from, &to, &dst)? {
             Plan::Done => {}
             Plan::CopyFrom => copy(&mut dst, &from),
             Plan::CopyTo => copy(&mut dst, &to),

@@ -3,7 +3,8 @@
 use gafira_doc::contract::{ParamSchema, ParamValues};
 
 use crate::{
-    BufferError, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut, PixelFormat,
+    BufferError, EffectCx, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut,
+    PixelFormat,
 };
 
 /// What `run_cpu` does after the checks.
@@ -20,6 +21,7 @@ pub(crate) enum Plan {
 
 /// Runs the checks of P15 in order, then decides what to do. Nothing is written here.
 pub(crate) fn plan(
+    cx: &EffectCx,
     schema: &ParamSchema,
     values: &ParamValues,
     progress: f32,
@@ -27,7 +29,15 @@ pub(crate) fn plan(
     to: &ImageView<'_>,
     dst: &ImageViewMut<'_>,
 ) -> Result<Plan, EffectError> {
-    // 1. progress is finite.
+    // 1. `cx.scale` is finite. No transition reads it, but ARQ-110 checks every number.
+    if !cx.scale.is_finite() {
+        return Err(BufferError::NonFinite {
+            field: "cx.scale",
+            index: 0,
+        }
+        .into());
+    }
+    // 2. progress is finite.
     if !progress.is_finite() {
         return Err(BufferError::NonFinite {
             field: "progress",
@@ -35,9 +45,9 @@ pub(crate) fn plan(
         }
         .into());
     }
-    // 2. The parameters fit the schema.
+    // 3. The parameters fit the schema.
     let resolved = schema.resolve(values)?;
-    // 3. Formats: Rgba8 or RgbaF32, the same on all three.
+    // 4. Formats: Rgba8 or RgbaF32, the same on all three.
     let format = from.data().format();
     if format == PixelFormat::Alpha8 {
         return Err(EffectError::UnsupportedFormat { format });
@@ -51,7 +61,7 @@ pub(crate) fn plan(
             });
         }
     }
-    // 4. Dimensions.
+    // 5. Dimensions.
     let size = (from.width(), from.height());
     for (field, actual) in [
         ("to", (to.width(), to.height())),
@@ -65,7 +75,7 @@ pub(crate) fn plan(
             });
         }
     }
-    // 5. The f32 pixels that will be read are finite.
+    // 6. The f32 pixels that will be read are finite.
     for (field, view) in [("from", from), ("to", to)] {
         if let PixelData::RgbaF32(px) = view.data()
             && let Some(index) = px.iter().position(|v| !v.is_finite())
@@ -73,11 +83,11 @@ pub(crate) fn plan(
             return Err(BufferError::NonFinite { field, index }.into());
         }
     }
-    // 6. Size 0 is Ok.
+    // 7. Size 0 is Ok.
     if size.0 == 0 || size.1 == 0 {
         return Ok(Plan::Done);
     }
-    // 7. Clip; the ends are copies.
+    // 8. Clip; the ends are copies.
     let p = f64::from(progress.clamp(0.0, 1.0));
     Ok(if p == 0.0 {
         Plan::CopyFrom
