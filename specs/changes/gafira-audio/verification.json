@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "change": "gafira-audio",
-  "delivery": "AU2",
+  "delivery": "AU3+AU4",
   "rounds": [
     {
       "round": 1,
@@ -581,6 +581,169 @@
       "size": {
         "lines": 261,
         "forecast": null
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "AU3+AU4",
+      "round": 1,
+      "commit": "0102cd6",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "counts": {
+        "critical": 6,
+        "warning": 3,
+        "suggestion": 5
+      },
+      "classes": [
+        "ambiguity",
+        "implementation"
+      ],
+      "findings": [
+        {
+          "id": "C9",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/src/loudness.rs:43",
+          "summary": "K weighting off 48 kHz by 0.15 to 0.50 dB at 16, 12, 11.025 and 8 kHz, against +-0.1 dB; test skips those rates",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C10",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/tests/loudness.rs:77",
+          "summary": "Tests named EBU 3341 cases 4 and 5 use invented signals, not the published ones; code passes the published ones",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C11",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/src/loudness.rs:336",
+          "summary": "After the gain, 49 of 120 ordinary signals exceed -1 dBTP, by up to 3.41e-7 dB; test allows 1e-3 dB with no spec tolerance",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C12",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/src/loudness.rs:184",
+          "summary": "integrated_from_blocks energy sum overflow gives Ok(None), not Err, against ARQ-110",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C13",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/src/loudness.rs:169",
+          "summary": "Hand mutant survives: relative gate over all blocks readmits absolute-gated ones (2.2 LU off at -68 and -75)",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C14",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/tests/resample.rs:250",
+          "summary": "Hand mutant cutoff 0.97 survives at -29 dB: a phase-0 tone at the Nyquist samples as zeros, so the 1.0 row is blind",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W16",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/src/loudness.rs:235",
+          "summary": "Hand mutant survives: x1 instead of x2 between 48 and 96 kHz; recorded decision with no test",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W17",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-audio/tests/leveling.rs:41",
+          "summary": "FV-10 (b) tests apply the gain with a helper; level to LoudnessNormalizer to true_peak has no test",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W18",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "specs/02 ARQ-126",
+          "summary": "ARQ-126 does not settle the band when Nyquist is under 16 kHz, nor a rate floor; the Err at 3 360 Hz and below has no row",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S10",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/loudness.rs:232",
+          "summary": "Use x4 up to 192 kHz; x2 and x1 are compatible but under-read 0.47 dB at 24 kHz on 96 kHz",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S11",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/loudness.rs:110",
+          "summary": "Doc comments: guard boundary is 3 363.95, and true_peak has no rate error",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S12",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/resample.rs:158",
+          "summary": "Expose the look-ahead that process holds back",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S13",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/resample.rs:178",
+          "summary": "Kernel table index could overrun near 2^42 input frames; from reading the code, not run",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S14",
+          "severity": "SUGGESTION",
+          "ref": "crates/gafira-audio/src/resample.rs:70",
+          "summary": "bessel_i0 exists twice; keep one in dsp.rs",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 8,
+        "killed": 5
+      },
+      "criteria": {
+        "total": 9,
+        "covered": 4
+      },
+      "size": {
+        "lines": 2232,
+        "forecast": 830
       },
       "report": "verify-report.md"
     }
