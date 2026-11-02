@@ -393,6 +393,7 @@ Fecha: 2 de noviembre de 2026.
 - **Puerta**: el conjunto fijo de 16 escenas deterministas sigue siendo la prueba bloqueante, con IoU ≥ 0,90 por escena. Un conjunto de 12 escenas nuevas, con otra semilla y nunca usado para ajustar parámetros, corre como aviso, no bloquea e informa de su recuento.
 - **Alcance de D-20**: D-20 se cumple en las escenas de la puerta y no está demostrado que generalice. El resultado conocido en las escenas nuevas es 9 de 12.
 - **Q-45**: el fondo texturizado a ΔE76 6 queda fuera de la puerta. Las escenas texturizadas de la puerta conservan el mínimo de ΔE76 de ARQ-132.
+- **Nota (verificación de SG3, `gafira-segment`)**: el 9 de 12 es el resultado de las 12 escenas nuevas de XP5. Las 16 escenas de la puerta son las definiciones de XP5; el conjunto nuevo de 02 ARQ-132 es otro y da su propio recuento.
 - Amplía D-20; el resto de D-20 sigue vigente. La prioridad central de «Elemento» (D-23) no cambia.
 - Aplicado a 01 (P-04), 02 (§4.7, ARQ-130, ARQ-131, ARQ-132, §6.7, §12.2, §12.3) y 04 (FD-38).
 
