@@ -6,36 +6,36 @@ Evidence: 00 (D-09, D-40 to D-44), 02 §2, §4.17, §9.2, §10, 04, ADR 0005, AD
 
 ## Quick path
 
-1. Run `CL1` now, beside `engine-contracts`. Nothing blocks it.
+1. Finish `CL1`, beside `engine-contracts`. Nothing blocks it.
 2. Finish `D2a`, `D2b` and `D3`.
-3. Run `explorer` for XP10, XP3 and XP4, then for XP5, XP7, XP8 and XP9 as one prototype.
-4. Run `SC1` alone.
-5. Open one worktree per stream: `TX`, `RS`, `AU`. Open `SG` when `RS1` is on `develop`.
+3. Run `SC1` alone.
+4. Open one worktree per stream: `TX`, `RS`, `AU`. Open `SG` when `RS1` is on `develop`.
+5. Ask the owner O4 before `SG3`, and run `explorer` for XP11 before `SG2`.
 6. Merge each delivery after its verify PASS, one at a time. Run T4 per crate at close, one crate at a time.
 
 ## Dependency state
 
-State at `develop` 3b700dc. `D1` is merged. No owner question and no `specifier` row blocks any delivery.
+State at `develop` b642c1e. `D1` is merged. No `specifier` row blocks any delivery; O4 blocks only `SG3`.
 
 | Delivery | State | Blocked by |
 |---|---|---|
-| `CL1` | Ready | Nothing |
-| `D2a`, `D3` | Ready, with worktrees open | Nothing |
+| `CL1` | In progress on `feat/color-lab` | Nothing |
+| `D2a`, `D3` | In progress on their branches | Nothing |
 | `D2b` | Blocked | `D2a` |
-| `SC1` | Blocked | `D2b`, `D3`, XP10 |
-| `TX1` | Blocked | `SC1`, XP3, XP10 |
+| `SC1` | Blocked | `D2b`, `D3` |
+| `TX1` | Blocked | `SC1` |
 | `TX2` | Blocked | `TX1` |
 | `TX3`, `TX4` | Blocked | `TX2` |
 | `RS1` | Blocked | `SC1` |
 | `RS2`, `RS3` | Blocked | `RS1` |
-| `RS4` | Blocked | `RS3`, XP4 |
+| `RS4` | Blocked | `RS3` |
 | `RS5` | Blocked | `RS4` |
 | `RS6` | Blocked | `RS5`, `CL1` |
 | `AU1` | Blocked | `SC1` |
 | `AU2`, `AU3`, `AU4` | Blocked | `AU1` |
-| `SG1` | Blocked | `RS1`, XP5, XP7, XP8, XP9 |
-| `SG2` | Blocked | `SG1` |
-| `SG3` | Blocked | `SG2`, `CL1` |
+| `SG1` | Blocked | `RS1` |
+| `SG2` | Blocked | `SG1`, XP11 |
+| `SG3` | Blocked | `SG2`, `CL1`, O4 |
 
 ## Delivery table
 
@@ -45,24 +45,24 @@ Forecast is authored lines, with the x1.4 planning figure in brackets. Every del
 |---|---|---|---|---|---|---|
 | `D1`..`D3` | doc, geom, pathops, layout | ARQ-102, ARQ-112 (on doubles) | see `engine-contracts` | see `engine-contracts` | 1 200 (1 685) | 1; `D1` merged |
 | `CL1` | `gafira-color` | ARQ-122 (Lab, ΔE2000, ΔE76) | None | parallel, beside `D1`..`D3` | 280 (390) | any, before `RS6` |
-| `SC1` | all four, testkit, shared files | ARQ-01, ARQ-02, ARQ-70 (rows, lints, licences), ARQ-107 (CI step) | `D2b`, `D3`, XP10 | serial | 180 (250) | 2 |
-| `TX1` | `gafira-text` | FD-41 (a, d), ARQ-115, ARQ-116, ARQ-75 (partial file), ARQ-110, ARQ-111 | `SC1`, XP3, XP10 | parallel stream `TX` | 465 (650) | any |
+| `SC1` | all four, testkit, shared files | ARQ-01, ARQ-02, ARQ-70 (rows, lints, licences), ARQ-107 (CI step) | `D2b`, `D3` | serial | 180 (250) | 2 |
+| `TX1` | `gafira-text` | FD-41 (a, d), ARQ-115, ARQ-116, ARQ-75 (partial file), ARQ-110, ARQ-111 | `SC1` | parallel stream `TX` | 465 (650) | any |
 | `TX2` | `gafira-text` | FD-41 (c, e to j) | `TX1` | serial in `TX` | 440 (615) | after `TX1` |
 | `TX3` | `gafira-text` | FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`) | `TX2` | serial in `TX` | 400 (560) | after `TX2` |
 | `TX4` | `gafira-text` | FD-44 (a, c, d, e), FD-43 (a), ARQ-114 (text) | `TX2` | serial in `TX` | 350 (490) | after `TX3` |
 | `RS1` | `gafira-raster` | ARQ-117, ARQ-121, ARQ-110, ARQ-111 | `SC1` | parallel stream `RS` | 450 (630) | any, before `SG1` |
 | `RS2` | `gafira-raster` | ARQ-119, FD-12 (c, CPU) | `RS1` | serial in `RS` | 340 (475) | after `RS1` |
 | `RS3` | `gafira-raster` | ARQ-118, ARQ-25 (ends) | `RS1` | serial in `RS` | 450 (630) | after `RS2` |
-| `RS4` | `gafira-raster` | ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (`bench_shadow_1080`) | `RS3`, XP4 | serial in `RS` | 420 (590) | after `RS3` |
+| `RS4` | `gafira-raster` | ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (`bench_shadow_1080`) | `RS3` | serial in `RS` | 420 (590) | after `RS3` |
 | `RS5` | `gafira-raster` | FD-33 (a, d to h), except colours detected by ΔE | `RS4` | serial in `RS` | 480 (670) | after `RS4` |
 | `RS6` | `gafira-raster` | ARQ-122, FD-26, FD-28 (b), FD-33 (detected colours), FD-34 (a, b; D-40, D-41), ARQ-114 (`bench_dhash_12mp`) | `RS5`, `CL1` | serial in `RS` | 480 (670) | after `RS5` |
 | `AU1` | `gafira-audio` | ARQ-123, ARQ-124, ARQ-129, FV-10 (a, d), ARQ-110, ARQ-111 | `SC1` | parallel stream `AU` | 480 (670) | any |
 | `AU2` | `gafira-audio`, testkit test | ARQ-125, ARQ-23, CAL-15, FV-20 (c) | `AU1` | serial in `AU` | 400 (560) | after `AU1` |
 | `AU3` | `gafira-audio` | ARQ-126, ARQ-127, FV-10 (b), FV-20 (d) | `AU1` | serial in `AU` | 480 (670) | after `AU2` |
 | `AU4` | `gafira-audio` | ARQ-128, FV-04 (b) | `AU1` | serial in `AU` | 350 (490) | after `AU3` |
-| `SG1` | `gafira-segment` | ARQ-130 (shape, sizes, hints), ARQ-110 | `RS1`, XP5, XP7, XP8, XP9 | parallel stream `SG` | 450 (630) | after `RS1` |
-| `SG2` | `gafira-segment` | ARQ-130 (seeds, zones), FD-38 (reduction) | `SG1` | serial in `SG` | 480 (670) | after `SG1` |
-| `SG3` | `gafira-segment`, testkit | ARQ-131, ARQ-132, FD-32 (e), FD-38 (a, b, c), ARQ-43, CAL-06, ARQ-111, ARQ-112 | `SG2`, `CL1` | serial in `SG` | 490 (685) | after `SG2` |
+| `SG1` | `gafira-segment` | ARQ-130 (shape, sizes, hints), ARQ-110 | `RS1` | parallel stream `SG` | 450 (630) | after `RS1` |
+| `SG2` | `gafira-segment` | ARQ-130 (seeds, zones), FD-38 (reduction) | `SG1`, XP11 | serial in `SG` | 480 (670) | after `SG1` |
+| `SG3` | `gafira-segment`, testkit | ARQ-131, ARQ-132, FD-32 (e), FD-38 (a, b, c), ARQ-43, CAL-06, ARQ-111, ARQ-112 | `SG2`, `CL1`, O4 | serial in `SG` | 490 (685) | after `SG2` |
 
 Total after `engine-contracts`: 7 865 lines (x1.4: 11 010). The largest delivery is 490 lines (x1.4: 685).
 
@@ -211,10 +211,28 @@ pub fn delta_e2000(a: Lab, b: Lab) -> f64;
 
 | Entry | Source of the fields |
 |---|---|
-| Every test font | XP3: upstream, version, licence (ARQ-115) |
+| Every test font | XP3: upstream repository and commit, OFL-1.1, subset command (ARQ-115) |
 | `assets/splash_screen.jpg` | D-09, "Procedencia de la imagen": origin, tool, licence basis, AI notice, copyright note, provenance, similarity check. The similarity check stays VERIFICAR (pending item 6 of `00`) |
 
 ARQ-02 bans `std::fs` under `--all-targets`, so `gafira_testkit::fonts` exposes the fonts with `include_bytes!`. The ARQ-115 check is a testkit integration test, which may read files: testkit has no `clippy.toml`. The same test asserts the splash entry, so the second mandatory entry cannot go missing.
+
+Subset recipe, measured by XP3. It gives the same behaviour as E4, not the same bytes, so nothing may compare against E4's files.
+
+| Item | Value |
+|---|---|
+| Fonts | Inter, Manrope, Noto Sans Arabic, Noto Emoji, all OFL-1.1 |
+| Source | `google/fonts`, commit `6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec` |
+| Tool | `pyftsubset`, fonttools 4.51.0, `--layout-features='*' --glyph-names` |
+| Latin set | `U+0020-007E,U+00A0-017F,U+2010-2022,U+2026,U+20AC` |
+| Arabic set | `U+0020-007E,U+0600-06FF,U+200C-200F` |
+| Emoji set | `U+1F600,U+1F469,U+1F4BB,U+200D,U+FE0F` |
+
+Two rules for `TX1` with parley 0.12.0, which loads all four:
+
+- Turn a feature off with the CSS form `"liga" 0`. `liga=0` is silently ignored.
+- Resolve families by registration id, not by name.
+
+`gafira-text` must not use `StyleProperty::Locale`: it is the only parley API that needs that word, and ARQ-107 forbids it (XP10). Only `specifier` can relax that.
 
 ### P8. Benchmarks that need a clock
 
@@ -222,19 +240,45 @@ ARQ-02 bans `std::fs` under `--all-targets`, so `gafira_testkit::fonts` exposes 
 
 ### P9. The ARQ-107 CI step
 
-- Provisional until XP10.
+- Confirmed by XP10.
 - Options: (a) add the ICU crates to `forbidden` in the V5 step: one line, but V5 walks `-e normal,build`, and ARQ-107 says normal dependencies; (b) a new step in the `policy` job, in `SC1`.
 - Decision: (b). `SC1` owns it because it adds the crates and edits `ci.yml` once.
 - The step reads its crate list from the V5 table, as the V12 step does, so a new crate needs no second list. `gafira-testkit` is left out: it is dev-only support, not a layer 0 to 2 crate.
-- Per crate: `gafira-i18n`, `icu_decimal`, `icu_datetime` and `icu_plurals` must be absent from the normal dependency tree, and `Locale` must have 0 matches. `icu_segmenter` stays allowed in `gafira-text`.
+- Per crate: `gafira-i18n`, `icu_decimal`, `icu_datetime` and `icu_plurals` must be absent from the transitive tree of `cargo tree -e normal`, and `Locale` must have 0 matches. One banned dependency therefore fails every crate that depends on it. `icu_segmenter` stays allowed in `gafira-text`.
 - `verify` of `SC1` runs the negative control: add `icu_plurals` to one of those crates, and the step fails.
 
 ### P10. Input alpha in the ARQ-131 means
 
-- Coordinator's choice, in `SG3`. Not in the spec yet: see SP16.
+- Coordinator's choice, in `SG3`, now in ARQ-131 (SP16).
 - Input alpha weights the mean: each side uses `Σ(a × c) / Σa`, with `c` the unpremultiplied colour in linear light (ARQ-117, D-44). A fully transparent pixel adds no colour.
 - If `Σa` is 0 on one side, that side counts as having no pixels: not reliable, no NaN (ARQ-131).
 - The 1 % and 95 % area rule still counts `mask` pixels. Input alpha does not change it.
+
+### P11. The shadow blur
+
+- Measured by XP4, for `RS4`.
+- Options: (a) three-box: refuted, σ is off beyond ±2 % below σ 10; (b) direct separable kernel, dot-product form: 137 ms, refuted; (c) direct separable kernel with tap-outer loops.
+- Decision: (c), truncated at 3σ, with a 3σ `roi`.
+- Evidence: 46 to 52 ms single-threaded at 1920×1080 under load; σ −0.6 % to −1.25 %; tile match max diff 0.
+- Not measured: RGBA and non-x86. `RS4` runs `bench_shadow_1080` for that.
+
+### P12. The segmentation pipeline
+
+- Measured by XP5, XP7, XP8 and XP9, on one prototype. This is the starting point for `SG1` to `SG3`.
+
+| Part | Value |
+|---|---|
+| Superpixels | Own SLIC, about 1530 |
+| Colour model | 5-component GMM |
+| Cut | Dinic max-flow, up to 5 iterations |
+| Initialisation | Border band |
+| Upscale | Guided filter, radius 8 |
+
+Binding rules for the `SG` deliveries:
+
+- Post-processing runs in serial chunks, and graph adjacency uses a hash table. ARQ-43 holds only with both. XP11 covers the table.
+- The fraction follows a work model, not time share (ARQ-112, XP9).
+- Start from `gamma` about 500 or GMM regularisation about 25 (02 §4.7). Both were tuned on the gate scenes, so passing ARQ-132 does not prove they generalise. O4 covers the known gap.
 
 ## Critical code
 
@@ -254,39 +298,42 @@ T4 at close: `gafira-color`, `gafira-text`, `gafira-raster`, `gafira-audio`, `ga
 
 ## Open questions (owner)
 
-None open. O1 is in the `engine-contracts` design.
+O4 is open. O1 is in the `engine-contracts` design.
 
 | # | Result |
 |---|---|
 | O2 | The owner chose (a): CI re-enabled, run by `workflow_dispatch`. The first run on `develop` (41373916250) failed only on Windows golden paths. `fix/golden-windows-paths` then passed run 41375746735 and is merged in 3b700dc, so `TX3` no longer waits on it |
 | O3 | The owner chose (a): D-40 and D-41. The filter mechanism and 1 test preset are in the cut |
 
-If XP5 shows ARQ-132 is out of reach, D-20 is the owner's decision, and that becomes a new question then.
+Open, for `SG3`:
+
+| # | Question | Options and tradeoffs | Recommendation |
+|---|---|---|---|
+| O4 | Q-45: a textured background at ΔE76 6 is outside ARQ-132. It passes at `gamma` 50 and fails at 500. Is that gap accepted, and what ΔE76 floor do textured scenes get? Affects D-20 and the `SG3` scene list | (a) Accept the gap and keep the textured scenes as measured: no rework, weak on subtle textures. (b) Add that scene to the gate: stronger, but neither `gamma` value passes everything, regularisation 25 has no result on that scene, and `SG3` may fail. (c) Retune first: costs a new prototype run, with an unknown result | (a), with the floor set by the textured scenes that pass, recorded as PROPUESTA. Real photos stay a warning (pending item 9) |
+
+XP5 reached ARQ-132 only in-sample. If `SG3` cannot reach the gate, D-20 is the owner's decision, and that becomes a new question then.
 
 ## Needs explorer
 
-XP1, XP2 and XP6 are measured; the rest are not. XP5, XP7, XP8 and XP9 share one prototype, so run them together. `E1` to `E5` are the older spikes.
+XP1 to XP10 are resolved; XP11 is open and comes from those results. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
 | XP1 | Measured, confirmed: see `engine-contracts` | | Nothing |
 | XP2 | Measured: the parley 0.12 tree with `rayon` passes `cargo deny` and the V5 script. The banned crates of ARQ-107 are absent by a one-off `cargo tree` grep; `SC1` turns that into a step (P9) | `cargo deny` exit 0 on the 3 targets; V5 script exit 0 with the 4 rows; builds on 1.93.1; non-Linux targets not compiled | Nothing |
-| XP3 | E4's subsets can be regenerated with the same results: sizes, advances, Arabic joining, Manrope `liga`. Inputs were not kept, and upstream Manrope returned 404 | `pyftsubset` from pinned upstream files | `TX1` |
-| XP4 | `bench_shadow_1080` < 100 ms single-threaded at radius 40 with a direct kernel. Near 120 taps × 2 passes × 2 M pixels, this looks tight. An IIR blur likely breaks the ARQ-120 tile match; a three-box blur must hold σ within ±2 % | Prototype direct and three-box on one alpha channel; compare σ and time | `RS4` (provisional) |
-| XP5 | Own SLIC, GMM, max-flow and GrabCut reach IoU ≥ 0.90 on every ARQ-132 scene, including low contrast at the floor of ΔE76 6, and 4000 px in < 5 s on D-03 hardware (R-04). This is the largest technical risk of the plan | Prototype on generated scenes, before `SG1` | `SG1` |
+| XP3 | Resolved, confirmed with limits: E4's behaviour is regenerated, not its bytes. Recipe in P7. `TX1` uses it | Sizes, advances, Arabic joining and Manrope `liga` hold; parley 0.12.0 loads all four fonts | Nothing |
+| XP4 | Resolved: three-box and the dot-product kernel are refuted; the tap-outer direct kernel meets 100 ms. Decision in P11 | 46 to 52 ms single-threaded, σ −0.6 % to −1.25 %, tile match max diff 0. Not measured: RGBA, non-x86 | Nothing |
+| XP5 | Resolved with limits: IoU ≥ 0.90 on 16 of 16 scenes, only with `gamma` 500 or GMM regularisation 25; 14 of 16 at 50. `gamma` was chosen on those scenes, so the pass is in-sample. Textured background at ΔE 6, not a gate scene, passes at 50 and fails at 500 | 4000×3000 in 0.3 to 1.6 s by thread count, peak RSS 585 MB. D-03 estimate 1.3 to 3 s, inferred, so CAL-06 still needs its bench | Nothing; see O4 |
 | XP6 | Measured: `SC1` with unused dependencies is allowed | No unused-dependency rule in the repo; `cargo deny` result as in XP2 | Nothing |
-| XP7 | ARQ-131: uniform noise with no subject gives `reliable` false. A segmenter can split noise into light and dark pixels, and those two means can reach ΔE76 ≥ 5 with an area inside 1 % to 95 % | Same prototype, on several noise seeds. If it reports reliable, the rule goes back to `specifier` | `SG1` |
-| XP8 | ARQ-43: the guided filter at 4000 px fits between two token checks in ≤ 100 ms on D-03 hardware. As one pass over the full image, it may not | Same prototype: time the longest stretch between checks, at 4000 px | `SG1` |
-| XP9 | ARQ-112: the fraction rises ≤ 0.02 per report on the 1024×768 reference, so at least 50 reports, each with a token check. Max-flow may offer too few natural points | Same prototype: count reports per stage on the flat background, centred subject scene | `SG1` |
-| XP10 | ARQ-107: the exact CI command gives 0 `Locale` matches once `gafira-text` uses parley, and the tree check stays exact on the new crates. If parley's API needs that word in our source, the rule collides with `gafira-text` | Run the P9 step on a scratch branch with `parley` and a shaping call; run the negative control. A collision goes to `specifier` | `SC1`, `TX1` |
+| XP7 | Resolved: noise is not reliable, so the ARQ-131 rule stands. ARQ-131 now defines uniform noise as per-pixel (bbadc85) | 0 of 48 reliable with per-pixel noise | Nothing |
+| XP8 | Resolved with a condition: ARQ-43 holds only with chunked serial post-processing and hash adjacency. `SG` deliveries must chunk them (P12) | ≤ 100 ms measured with both, on the prototype | Nothing; see XP11 |
+| XP9 | Resolved with a limit: ≥ 50 reports are reached. The ≤ 0.02 step is missed by time share, set by `sp_stats`, so the fraction follows a work model (P12) | Time share per step 0.033 to 0.086 | Nothing; ARQ-112 now says so (ba7fee8) |
+| XP10 | Resolved, confirmed: the P9 step is exact. `StyleProperty::Locale` is the only parley API that needs the word (P7) | Passes clean, fails with `icu_plurals`, works under gawk and mawk | Nothing |
+| XP11 | Hash adjacency can meet ARQ-43 without `std::collections::HashMap`, which `clippy.toml` bans in domain crates, and it stays deterministic (ARQ-111). The prototype's table type is not recorded here | Re-time the longest stretch between token checks with an allowed table: own open addressing, or sorted pairs | `SG2` |
 
 ## Needs specifier
 
-One row is open, and it blocks nothing. It records P10.
-
-| # | ID | Gap and proposed edit | Blocks |
-|---|---|---|---|
-| SP16 | ARQ-131 | The rule does not say what input alpha does to the mean colours. Proposed: alpha weights the mean, so a fully transparent pixel adds no colour; a side with zero total alpha counts as having no pixels; the area rule still counts `mask` pixels | None |
+No row is open.
 
 Closed by `specifier`, all on `develop`:
 
@@ -307,9 +354,10 @@ Closed by `specifier`, all on `develop`:
 | SP13 | ARQ-43 | What `bench_cancel_segment` measures | 1d606e5 |
 | SP14 | ARQ-75 | Partial file allowed, with 2 mandatory entries | fb53eca |
 | SP15 | ARQ-107 | CI step required until `check-layers` exists | 8d175b3 |
+| SP16 | ARQ-131 | Input alpha weights the means; a side with no alpha is not reliable | c25488b |
 
 CAL-06 and CAL-15 now live in `01`, and the FV IDs in `05`. That promotion is merged, so no stream carries the rename.
 
 ## Next
 
-Run `tdd-apply` for `CL1` beside `D2a` and `D3`, and `explorer` for XP10. `specifier` takes SP16 at any time before `SG3`.
+Finish `D2a`, `D2b` and `D3`, then run `SC1`. Ask the owner O4 before `SG3`. `explorer` takes XP11 before `SG2`.
