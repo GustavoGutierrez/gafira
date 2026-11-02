@@ -119,15 +119,25 @@ fn arq_102_the_non_finite_class_and_the_geometry_text_stay_out_of_the_message() 
             nan(NonFiniteValue::Nan).to_message()
         );
     }
-    for kind in [NonFiniteValue::Infinity, NonFiniteValue::NegativeInfinity] {
+    for kind in [
+        NonFiniteValue::Nan,
+        NonFiniteValue::Infinity,
+        NonFiniteValue::NegativeInfinity,
+    ] {
         let width = PathOpError::InvalidStrokeWidth {
             cause: InvalidNumber::NonFinite(kind),
         };
         let tolerance = PathOpError::InvalidTolerance {
             cause: InvalidNumber::NonFinite(kind),
         };
-        assert!(width.to_message().args.is_empty());
-        assert!(tolerance.to_message().args.is_empty());
+        assert_eq!(
+            width.to_message(),
+            message("error.pathops.stroke_width_non_finite", vec![])
+        );
+        assert_eq!(
+            tolerance.to_message(),
+            message("error.pathops.tolerance_non_finite", vec![])
+        );
     }
     let a = PathOpError::Geometry("one".to_string()).to_message();
     let b = PathOpError::Geometry("two".to_string()).to_message();
@@ -135,14 +145,54 @@ fn arq_102_the_non_finite_class_and_the_geometry_text_stay_out_of_the_message() 
 }
 
 #[test]
+fn arq_102_a_not_positive_number_keeps_its_value_and_sign() {
+    for value in [-3.0, -0.5, 0.0, 2.0e-9] {
+        let cause = InvalidNumber::NotPositive(value);
+        assert_eq!(
+            PathOpError::InvalidStrokeWidth { cause }.to_message(),
+            message(
+                "error.pathops.stroke_width_not_positive",
+                decimal("value", value)
+            ),
+        );
+        assert_eq!(
+            PathOpError::InvalidTolerance { cause }.to_message(),
+            message(
+                "error.pathops.tolerance_not_positive",
+                decimal("value", value)
+            ),
+        );
+    }
+}
+
+#[test]
 fn arq_102_an_open_subpath_index_saturates_at_i64_max() {
-    // On a 32-bit target `usize::MAX` fits an `i64`; the rule is the same.
-    let cases = [
+    let mut cases: Vec<(usize, i64)> = vec![
         (0, 0),
-        (usize::MAX, i64::try_from(usize::MAX).unwrap_or(i64::MAX)),
+        (3, 3),
+        (i32::MAX as usize, 2_147_483_647),
+        (usize::MAX, i64::MAX),
     ];
+    // These values only exist where `usize` is 64 bits wide.
+    #[cfg(target_pointer_width = "64")]
+    cases.extend([
+        (i32::MAX as usize + 1, 2_147_483_648),
+        (i64::MAX as usize - 1, 9_223_372_036_854_775_806),
+        (i64::MAX as usize, 9_223_372_036_854_775_807),
+        (i64::MAX as usize + 1, 9_223_372_036_854_775_807),
+    ]);
+    #[cfg(not(target_pointer_width = "64"))]
+    {
+        // `usize::MAX` fits an `i64` here, so it keeps its value.
+        cases.pop();
+        cases.push((usize::MAX, i64::from(u32::MAX)));
+    }
     for (subpath, expected) in cases {
         let message = PathOpError::OpenSubpath { subpath }.to_message();
-        assert_eq!(message.args, vec![("subpath", MsgArg::Int(expected))]);
+        assert_eq!(
+            message.args,
+            vec![("subpath", MsgArg::Int(expected))],
+            "subpath {subpath}"
+        );
     }
 }

@@ -130,3 +130,19 @@ No test calls `Display`; `to_message` is compared with literal messages.
 ### Findings for other stages
 
 None.
+
+### D3 fix round 1 (verify round 1: C1, C2, C3, S1)
+
+Tests only in `crates/gafira-pathops/tests/message.rs`; no production change. These close gaps in code that was already right, so there is no RED: the new tests pass on the unchanged code, and each hand mutant of the report was applied, seen to fail, and restored (source diff empty afterwards).
+
+- C1: the non-finite test now walks all three classes (`Nan`, `Infinity`, `NegativeInfinity`) for stroke width and tolerance, and compares the whole message with the table key, so the test name's claim holds.
+- C2 and S1: `arq_102_an_open_subpath_index_saturates_at_i64_max` uses literal expected values: `0`, `3`, `i32::MAX`, `usize::MAX`, and on 64-bit targets `i32::MAX + 1`, `i64::MAX - 1`, `i64::MAX`, `i64::MAX + 1`. On 32-bit `usize::MAX` keeps its value.
+- C3: new `arq_102_a_not_positive_number_keeps_its_value_and_sign` runs `-3.0`, `-0.5`, `0.0`, `2.0e-9` through both stroke width and tolerance.
+
+| Mutant | Result | Killing test |
+|---|---|---|
+| H1 NaN width and tolerance routed to `*_not_positive` with a NaN value | killed | `arq_102_the_non_finite_class_and_the_geometry_text_stay_out_of_the_message` |
+| H2 saturation over the `i32` range | killed | `arq_102_an_open_subpath_index_saturates_at_i64_max` |
+| H3a `tolerance_not_positive` uses `value.abs()` | killed | `arq_102_a_not_positive_number_keeps_its_value_and_sign` |
+| H3b same on `stroke_width_not_positive` (extra) | killed | same, plus the table test |
+| H3c tolerance value hard-coded to `0.0` (extra) | killed | `arq_102_a_not_positive_number_keeps_its_value_and_sign` |
