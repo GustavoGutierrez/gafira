@@ -9,7 +9,7 @@ use gafira_geom::IRect;
 use super::color_adjust::{apply, hue_matrix, saturate_matrix};
 use super::pointwise::{check_io, check_scale, map_straight, slider, smoothstep};
 use super::{Cost, Effect};
-use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
+use crate::{BufferError, EffectCx, EffectError, ImageView, ImageViewMut};
 
 /// How many samples the effect holds (FD-33).
 pub const DETECTED_SLOTS: usize = 8;
@@ -175,26 +175,33 @@ impl Effect for DetectedColors {
         check_scale(cx)?;
         let values = self.schema.resolve(p)?;
         check_io(&src, &dst)?;
-        // Only the samples that move something count.
-        let samples: Vec<Sample> = (0..DETECTED_SLOTS)
-            .filter_map(|n| {
-                let hue = values.float(HUE[n]).unwrap_or(0.0);
-                let saturation = values.float(SATURATION[n]).unwrap_or(0.0) / 100.0;
-                if hue == 0.0 && saturation == 0.0 {
-                    return None;
+        // Only the samples that move something count. A sample that overflows `f32` when it
+        // is converted is `Err`: `lab_of` would clip it and hide the overflow.
+        let mut samples: Vec<Sample> = Vec::new();
+        for n in 0..DETECTED_SLOTS {
+            let hue = values.float(HUE[n]).unwrap_or(0.0);
+            let saturation = values.float(SATURATION[n]).unwrap_or(0.0) / 100.0;
+            if hue == 0.0 && saturation == 0.0 {
+                continue;
+            }
+            let c = values
+                .color(COLOR[n])
+                .unwrap_or(DEFAULT_SAMPLE)
+                .to_linear_srgb();
+            if let Some(index) = [c.r, c.g, c.b].iter().position(|v| !v.is_finite()) {
+                return Err(BufferError::NonFinite {
+                    field: COLOR[n],
+                    index,
                 }
-                let c = values
-                    .color(COLOR[n])
-                    .unwrap_or(DEFAULT_SAMPLE)
-                    .to_linear_srgb();
-                Some(Sample {
-                    lab: lab_of([c.r, c.g, c.b]),
-                    hue,
-                    saturation,
-                    tolerance: values.float(TOLERANCE[n]).unwrap_or(DEFAULT_TOLERANCE),
-                })
-            })
-            .collect();
+                .into());
+            }
+            samples.push(Sample {
+                lab: lab_of([c.r, c.g, c.b]),
+                hue,
+                saturation,
+                tolerance: values.float(TOLERANCE[n]).unwrap_or(DEFAULT_TOLERANCE),
+            });
+        }
         map_straight(src, dst, |_, c| {
             if samples.is_empty() {
                 return None;
@@ -289,6 +296,39 @@ mod tests {
     /// A colour a fraction `t` of the way from the sample to another one.
     fn mix(t: f32) -> [f32; 3] {
         [0, 1, 2].map(|k| SAMPLE[k] * (1.0 - t) + OTHER[k] * t)
+    }
+
+    // ARQ-110: a sample that overflows `f32` when it is converted is `Err` naming its slot and
+    // channel, and `dst` is untouched; a slot that moves nothing is never converted.
+    #[test]
+    fn arq_110_a_sample_that_overflows_is_err_naming_its_slot() {
+        let srgb = |r, g, b| Color::Srgb(Rgba::new(r, g, b, 1.0));
+        let p3 = |r, g, b| Color::DisplayP3(gafira_color::DisplayP3Rgba::new(r, g, b, 1.0));
+        let src8 = img_u8(4, 3, 1);
+        let srcf = img_f32(4, 3, 1);
+        for (n, c, index) in [
+            (0, srgb(1e30, 0.0, 0.0), 0),
+            (2, srgb(0.0, 0.0, 1e30), 2),
+            (7, p3(1e30, 1e30, -1e30), 0),
+        ] {
+            let mut p = ParamValues::new();
+            p.set(COLOR[n], ParamValue::Color(c));
+            p.set(HUE[n], ParamValue::Float(30.0));
+            let want = Err(EffectError::Buffer(BufferError::NonFinite {
+                field: COLOR[n],
+                index,
+            }));
+            let (r, dst) = run8_keep(&det(), &cx(1.0), &p, &src8, (4, 3));
+            assert_eq!(r, want, "slot {n}");
+            assert!(dst.iter().all(|b| *b == SENTINEL));
+            let (r, dst) = runf_keep(&det(), &cx(1.0), &p, &srcf, (4, 3));
+            assert_eq!(r, want, "slot {n}");
+            assert!(dst.iter().all(|b| b.to_bits() == SENTINEL_F32));
+            // The same slot with nothing to move is not read.
+            let mut idle = ParamValues::new();
+            idle.set(COLOR[n], ParamValue::Color(c));
+            assert_eq!(run8(&det(), &cx(1.0), &idle, &src8, (4, 3)).unwrap(), src8);
+        }
     }
 
     // Passes from the start (data only); proved by mutants on ranges, defaults and ids.
