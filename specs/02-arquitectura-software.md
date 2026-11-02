@@ -979,6 +979,16 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 | ARQ-128 | **Remuestreo.** Admite una razón constante entre cualquier par de frecuencias de `SampleRate`, con Velocidad de 0,1 a 10. La longitud de salida es `redondeo(n × fs_salida / (fs_entrada × velocidad))`, evaluada en `f64`: esa evaluación es normativa también en los empates. Banda pasante ±0,1 dB hasta 0,9 veces el Nyquist menor y atenuación ≥ 80 dB en banda eliminada, que empieza en 1,0 vez el Nyquist menor (PROPUESTA). La latencia se declara. | 44 100 muestras de 44,1 a 48 kHz dan 48 000; 96 000 muestras a 2,0× dan 48 000. Seno de 1 kHz de 44,1 a 48 kHz: SNR ≥ 80 dB. Un impulso sale en la latencia declarada, ±1 muestra. Entrada vacía: salida vacía. Velocidad 0, negativa, 0,09 o 10,1: `Err`. |
 | ARQ-129 | **Cadena, mezcla y desfase.** `ProcessorChain` aplica los procesadores en orden y su `latency()` es la suma. La mezcla suma las muestras de las pistas no silenciadas. `mix` es total, como `process` (ARQ-123): no devuelve error, una muestra NaN o `±∞` cuenta como 0, la salida es finita y no subnormal, y no recorta a ±1. Una pista con menos canales o muestras que el destino aporta lo que tiene. No hay límite de pistas en el motor: 16 es la cifra del Mezclador. Un desfase en *flicks* pasa a muestras con `redondeo(desfase × fs / 705 600 000)`, medio se aleja de 0, en aritmética entera sin desbordamiento. | Una cadena con latencias 3 y 5 declara 8. Sumar 16 pistas coincide con la suma manual ±1e-6. Una pista silenciada no aporta. `mix` con NaN, `+∞` y `−∞` en una pista da la suma de las demás muestras; dos pistas a `f32::MAX` dan una salida finita; una pista de 2 canales sobre un destino de 3 aporta a los 2 primeros. +1 ms a 44,1 kHz da 44 muestras y a 48 kHz, 48. Con `i64::MAX` *flicks*, sin `panic`. |
 
+Parámetros de los procesadores, que forman su `ParamSchema` y son los ids de `ParamSnapshot`. Todos son `Float`.
+
+| Procesador | Id | Unidad | Rango | Por defecto |
+|---|---|---|---|---|
+| `Gain` | `volume` | % | `[0, 200]` | 100 |
+| `Fade` | `duration` | s | `≥ 0`, sin máximo | 0 |
+| `Pan` | `pan` | Sin unidad | `[−1, 1]` | 0 |
+
+Aceptación: `volume` 250 se recorta a 200, `pan` 2 a 1 y `duration` −1 a 0 (ARQ-123); un valor en cada extremo no cambia; un id distinto de estos no cambia la salida.
+
 | Caso numérico | Regla | ID |
 |---|---|---|
 | NaN o `±∞` en funciones con `Result` | `Err`. | ARQ-110 |
