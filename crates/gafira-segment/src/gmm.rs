@@ -3,8 +3,11 @@
 
 /// Components per model (P12).
 const COMPONENTS: usize = 5;
-/// Variance added to every axis of every component (P12, "about 25").
-const REGULARISATION: f64 = 25.0;
+/// Variance added to every axis of every component, in Lab units squared.
+/// Tuned on the 16 gate scenes only (D-45, SG3): 25 (P12) leaves three gradient
+/// scenes at IoU 0.10 to 0.19; every value from 300 to 1000 gives 16 of 16, and
+/// 400 is inside that plateau. The fresh scenes played no part in the choice.
+const REGULARISATION: f64 = 400.0;
 const LLOYD_STEPS: usize = 5;
 
 type V3 = [f64; 3];
