@@ -51,7 +51,7 @@ Creadores de contenido que producen piezas gráficas y videos con frecuencia y n
 
 | Problema habitual del creador | Respuesta de Gafira | Requisitos |
 |---|---|---|
-| Precio y condiciones confusos | Una sola licencia con prueba gratuita: todo el producto en un único plan, sin módulos ni funciones sueltas por separado (D-01, §11). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» | §11, RF-63 |
+| Precio y condiciones confusos | Una sola licencia, sin prueba gratuita (D-12): todo el producto en un único plan, sin módulos ni funciones sueltas por separado (D-01, §11). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» | §11, RF-63 |
 | Retrasos, cierres y pérdida de trabajo | Motor local, autoguardado transaccional, recuperación tras fallo y Copias ligeras | RF-03, RF-53, CAL-18 |
 | Exportaciones fallidas o archivos corruptos | Validación previa, escritura atómica, reintentos y alternativa de códec | RF-33, CAL-17 |
 | Poco control profesional | Capas, Máscaras, Fotogramas clave, Corrección de color, audio avanzado y exportación técnica | RF-45..RF-54 |
@@ -96,7 +96,7 @@ Las fases siguen el PRD (§6) y la hoja de ruta técnica de 02 (§11.2). Cuando 
 
 ### 5.1 Fase final: licencia y distribución comercial
 
-La licencia queda **fuera del alcance de las primeras fases de desarrollo** y no bloquea el MVP técnico de diseño y video. Se entrega en una **fase final, «Licencia y distribución comercial»**, que reúne: el crate `gafira-license` y la integración con el `license-hub` (servicio externo ya existente, reutilizado tal cual), la prueba gratuita, los estados de licencia, la interfaz de activación, `PRIVACY.md` con el identificador de dispositivo, el acuerdo de licencia basado en el de Tracewright y la lista previa a la venta (05, Parte C). Las decisiones de D-01 ya están fijadas (todo de pago con prueba gratuita, una sola licencia, única conexión de red = licencia); su diseño detallado se redacta al final. **Licencia y activación: ver spec 06 (pendiente, se redacta al final).**
+La licencia queda **fuera del alcance de las primeras fases de desarrollo** y no bloquea el MVP técnico de diseño y video. Se entrega en una **fase final, «Licencia y distribución comercial»**, que reúne: el crate `gafira-license` y la integración con el `license-hub` (servicio externo ya existente, reutilizado tal cual), el modo sin licencia, los estados de licencia, la interfaz de activación, `PRIVACY.md` con el identificador de dispositivo, el acuerdo de licencia basado en el de Tracewright y la lista previa a la venta (05, Parte C). Las decisiones de D-01 y D-12 ya están fijadas (todo de pago, modo sin licencia, una sola licencia, única conexión de red = licencia); su diseño detallado se redacta al final. **Licencia y activación: ver spec 06 (pendiente, se redacta al final).**
 
 ## 6. Fuera de alcance
 
@@ -232,7 +232,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-60 | Plugins con API estable (efectos, importadores, proveedores, comandos). | RNF-06 | F3 | `PluginHost`, ARQ-24 | 05 §C |
 | RF-61 | Exportación por lotes con datos de un CSV (variables de contenido). | PRD Fase 3 | F3 | `gafira-cli` | 05 §C |
 | RF-62 | Exportar a PPTX: una diapositiva por página como imagen de alta resolución, sin objetos editables (D-07). | — (no figura en el PRD) | F2 | `gafira-io-pptx`, `Exporter` | 04 §13 |
-| RF-63 | Licencia y activación: todo de pago con prueba gratuita y una sola licencia; activar, validar y desactivar es la única conexión de red (D-01). Licencia y activación: ver spec 06 (pendiente, se redacta al final). | — (sustituye un principio del PRD) | Fase final (§5.1) | §4.14 y §13 de 02, ARQ-90..96 | spec 06 |
+| RF-63 | Licencia y activación: todo de pago y una sola licencia, con modo sin licencia en lugar de prueba gratuita (exportación bloqueada y funciones desactivadas; D-12); activar, validar y desactivar es la única conexión de red (D-01). Licencia y activación: ver spec 06 (pendiente, se redacta al final). | — (sustituye un principio del PRD) | Fase final (§5.1) | §4.14 y §13 de 02, ARQ-90..96 | spec 06 |
 
 ### 7.11 Idioma (D-08)
 
@@ -264,7 +264,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RNF-08 | **Accesibilidad.** Contraste AA, foco visible, AccessKit, reducción de movimiento, color nunca como única señal. | RNF-01, RNF-05 | ARQ-60..64 | CAL-33 |
 | RNF-09 | **Tamaño y recursos.** Instalador, binario y memoria dentro de los presupuestos de la §9. | — (vacío del PRD) | ARQ-83, ARQ-44 | CAL-22..CAL-26 |
 | RNF-10 | **Calidad de salida.** La vista previa y la exportación comparten el grafo; el render de exportación es determinista (CPU por defecto). | RNF-03 | ARQ-42 | CAL-34 |
-| RNF-11 | **Modelo comercial.** Producto propietario, todo de pago con prueba gratuita y una sola licencia; sin módulos de pago separados (D-01). Se implementa en la fase final (§5.1) y no condiciona el MVP técnico. | Decisión del titular | ARQ-90..96 | — |
+| RNF-11 | **Modelo comercial.** Producto propietario, todo de pago y una sola licencia, con modo sin licencia (D-12); sin módulos de pago separados (D-01). Se implementa en la fase final (§5.1) y no condiciona el MVP técnico. | Decisión del titular | ARQ-90..96 | — |
 | RNF-12 | **Cobertura de traducción del 100 %.** Cada clave de mensaje, nombre del glosario y texto de microcopy existe en español y en inglés con los mismos parámetros y las formas de plural que exige cada idioma; una versión publicada nunca muestra una clave ni un texto en el otro idioma (respaldo: idioma pedido → inglés). | Decisión del titular (D-08) | ARQ-97, ARQ-98, ARQ-99 | CAL-37 |
 | RNF-13 | **Cambio de idioma sin reiniciar.** Ningún cambio de idioma exige reiniciar la app ni cerrar o recargar el proyecto; se conservan selección, historial y estado de los paneles, y el cambio completo se ve en ≤ 100 ms. | Decisión del titular (D-08) | ARQ-101 | CAL-36 |
 
@@ -360,7 +360,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | Plataformas | Solo Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Sin Linux aarch64, AppImage ni Flatpak (D-05) | D-05, ARQ-03, ARQ-84 |
 | Local | Sin servidores, web ni nube; la única conexión de red es la de la licencia (D-01); sin comprobación de versiones (D-06) | ARQ-04, ARQ-78, ARQ-91 |
 | Licencias | Dependencias y assets con licencias permisivas; `cargo-deny` en CI; sin dependencias git | ARQ-70, ARQ-71 |
-| Venta | Gafira debe poder venderse sin restricciones de licencia de terceros. Licencia propia: propietaria y de código cerrado, basada en el contrato de Tracewright (`LICENSE` y `LICENCIA.md`, prevalece el español) con tres adaptaciones; todo de pago con prueba gratuita y una sola licencia | D-01 |
+| Venta | Gafira debe poder venderse sin restricciones de licencia de terceros. Licencia propia: propietaria y de código cerrado, basada en el contrato de Tracewright (`LICENSE` y `LICENCIA.md`, prevalece el español) con tres adaptaciones; todo de pago, modo sin licencia y una sola licencia | D-01, D-12 |
 | Binarios | Ningún ejecutable de terceros en el instalador | ARQ-72 |
 | Actualizaciones | La app no comprueba versiones nuevas; el usuario descarga cada versión desde la web | D-06, ARQ-78 |
 | Patentes | Exportación por defecto AV1 + Opus; H.264/AAC solo vía API del sistema; sin encoders propios de H.264, HEVC ni AAC; sin salida HEVC ni MP3; `encumbered-sw` desactivada | D-02, ADR-07 |
@@ -371,18 +371,18 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 
 ---
 
-## 11. Modelo comercial: todo de pago con prueba gratuita
+## 11. Modelo comercial: todo de pago con modo sin licencia
 
-**Decisión D-01 (00-decisiones.md).** Gafira es de pago, con prueba gratuita y **una sola licencia**, igual que Tracewright. Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» y el modelo anterior de «núcleo gratuito y módulos avanzados de pago». Se eliminan el reparto núcleo/avanzado, los módulos de pago separados y los requisitos que dependían de funciones gratuitas.
+**Decisiones D-01 y D-12 (00-decisiones.md).** Gafira es de pago, con **una sola licencia**. No hay prueba gratuita: sin licencia, la app funciona en **modo sin licencia** (D-12). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» y el modelo anterior de «núcleo gratuito y módulos avanzados de pago». Se eliminan el reparto núcleo/avanzado, los módulos de pago separados y los requisitos que dependían de funciones gratuitas.
 
 ### 11.1 Principios
 
 1. **Una licencia, un binario.** El mismo ejecutable contiene todas las funciones de todas las fases; no hay módulos que se activen por separado.
-2. **Prueba gratuita.** Duración, límites y mecanismo (local o con token del `license-hub`) están por definir (pendiente 1 del titular; Q-19).
-3. **Sin marcas de agua** en las exportaciones (PROPUESTA; los límites de la prueba se definen en la spec 06).
+2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Una licencia activada lo desbloquea todo.
+3. **Sin marcas de agua** en las exportaciones (PROPUESTA).
 4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; el alcance exacto sin licencia válida es la pregunta Q-20 (propuesta de 02: solo lectura que permite abrir, ver, recuperar y guardar copia).
 5. **Única conexión de red = licencia** (activar, validar o desactivar). `PRIVACY.md` declara el identificador de dispositivo que se envía al activar y no puede afirmar que la app no transmite datos.
-6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, pendiente 1 del titular).
+6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, tentativo 99 USD, PROPUESTA; pendiente 1 del titular).
 
 ### 11.2 Alcance y fase
 
@@ -404,7 +404,7 @@ Los riesgos técnicos R-01..R-14 están en 02 (§12.1). Aquí se añaden los de 
 | P-04 | **Calidad percibida de la técnica clásica de Aislar sujeto** frente a modelos de IA. | Retocar borde con pincel; prueba bloqueante con IoU ≥ 0,90 en escenas sintéticas con máscara exacta (D-20); el IoU sobre fotos reales es un aviso hasta que el titular aporte un conjunto con licencia; Segmentadores ONNX opcionales en Fase 3. |
 | P-05 | **Accesibilidad de egui** insuficiente en el lienzo. | AccessKit con árbol propio; plan B iced (R-10 de 02). |
 | P-06 | **Marca y nombres.** «Gafira» (y «Gefira», por parecido) podrían coincidir con marcas registradas; el glosario está aprobado (D-04). | Búsqueda del titular en USPTO, TMview y WIPO antes de publicar (§12.4; spec 05, Parte C). |
-| P-07 | **Prueba gratuita y precio sin definir.** | Pendiente 1 del titular y Q-19 antes de la comunicación comercial; la licencia se diseña en la spec 06. |
+| P-07 | **Funciones bloqueadas y precio sin definir.** | Pendiente 1 del titular antes de la comunicación comercial; la licencia se diseña en la spec 06. |
 | P-08 | **Medición de métricas sin telemetría** (adopción, lag). | Informe local voluntario y encuesta opcional (§10.1). |
 | P-09 | **Diferencias de render entre GPU y drivers.** | CPU como referencia de exportación; tolerancias golden (R-07 de 02). |
 
@@ -414,7 +414,7 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 
 | ID | Pregunta | Resolución |
 |---|---|---|
-| Q-01 | Licencia y modelo comercial. | Cerrada: D-01 (propietaria, todo de pago con prueba gratuita, una sola licencia). |
+| Q-01 | Licencia y modelo comercial. | Cerrada: D-01 y D-12 (propietaria, todo de pago, modo sin licencia, una sola licencia). |
 | Q-02 | ¿Basta delegar H.264/HEVC/AAC en el SO? | Cerrada: D-02 (H.264/AAC solo vía API del sistema; HEVC sin salida; AV1 + Opus por defecto). El dictamen legal sigue como VERIFICAR (R-01 de 02). |
 | Q-03 | Linux sin VA-API. | Cerrada: D-02 (sin decodificador de software; se avisa y se propone AV1). |
 | Q-04 | ¿Linux aarch64? | Cerrada: D-05 (no; solo x86_64). |
@@ -428,6 +428,7 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-13 | Importación de AVI y de AAC/M4A. | Cerrada: D-07 (AVI en Fase 2 solo con códecs libres) y D-02 (AAC solo vía SO). |
 | Q-16 | Aprobación del glosario de 03. | Cerrada: D-04 (aprobado sin cambios); queda la búsqueda de marca del titular (§12.4). |
 | Q-14 | ¿Idioma del producto: solo español o también inglés al lanzar? | Cerrada: D-08 (español e inglés; por defecto según el sistema, cualquier otro idioma → inglés; selector en Ajustes → General). Requisitos RF-64..RF-66, RNF-12, RNF-13; arquitectura en 02 §14; diseño en 03 §2.8 y §16. |
+| Q-19 | Mecanismo de la prueba gratuita. | Cerrada: D-12 (no hay prueba gratuita). |
 
 ### 12.3 Preguntas abiertas
 
@@ -439,7 +440,6 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 | Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Producto | Spec 05 |
 | Q-17 | ¿Se admite importar HEVC (y HEIC, `heic-os`) mediante la API del sistema, o queda prohibido en toda vía? D-02 prohíbe «HEVC» sin distinguir importación de salida. | Titular + legal | RF-19, RF-37 |
 | Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Está en suspenso: abriría una conexión distinta de la de licencia, prohibida por D-01. | Titular | Fase 3 |
-| Q-19 | ¿Cómo funciona la prueba gratuita: local desde el primer arranque (sin red, más fácil de alargar) o con un token de prueba firmado por el `license-hub`? Duración y límites: pendientes. | Titular | Spec 06, RF-63 |
 | Q-20 | ¿Qué puede hacer el usuario sin licencia válida? Propuesta de 02: modo de solo lectura (abrir, ver, recuperar y guardar copia; sin editar ni exportar). | Titular | Spec 06, RF-63 |
 | Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Titular | Fase 3 (02 §14.8) |
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma (es-MX `1,234.5`, es-ES `1234,5`) o un formato fijo por idioma? Propuesta de 02 §14.4: según la región. | Titular | RF-64 |
@@ -451,7 +451,7 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 
 Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `license-hub`:
 
-1. Definir duración y límites de la prueba gratuita, y el precio.
+1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio.
 2. Adaptar `LICENSE` y `LICENCIA.md` (contrato de Tracewright con las tres adaptaciones de D-01) y escribir el `PRIVACY.md` de Gafira, con el identificador de dispositivo.
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
 4. Hacer la búsqueda de marca de D-04 (lista de comprobación siguiente).
@@ -494,7 +494,7 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-16 | **Nombre de la función de marca.** El PRD y el producto explorado la designan con un nombre en inglés de otro producto. | PRD | Se llama **Identidad visual** (glosario de 03). |
 | C-17 | **PDF/X y formatos de impresión.** El PRD menciona PDF/X. | PRD vs 02 | PDF RGB en MVP; CMYK en Fase 2; PDF/X en VERIFICAR (no previsto en 02). |
 | C-18 | **Varios monitores.** El PRD lo cita en RNF-01. | PRD | Ventana única; paneles flotantes como PROPUESTA de Fase 2. |
-| C-19 | **Funciones esenciales sin retener tras un plan de pago** (principio del PRD). | PRD vs D-01 | D-01 lo sustituye: todo de pago con prueba gratuita y una sola licencia (§11). |
+| C-19 | **Funciones esenciales sin retener tras un plan de pago** (principio del PRD). | PRD vs D-01 | D-01 y D-12 lo sustituyen: todo de pago, modo sin licencia y una sola licencia (§11). |
 | C-20 | **Idioma del producto.** El manual fija español e inglés como idiomas prioritarios y da el eslogan inglés; el PRD no define idioma de interfaz; 03 decía «la traducción al inglés (si se hace)» y 05 FV-30 limita el instalador al español «según Q-14». | Manual vs PRD vs 03/05 | D-08: español e inglés, por defecto según el sistema y cualquier otro idioma → inglés (§7.11). 03 ya está alineada; 05 FV-30 queda pendiente de actualizar (Q-26). |
 | C-21 | **Plantillas por idioma.** El PRD pide una biblioteca «local y remota» filtrable por idioma. | PRD vs §6 | Solo plantillas locales (§6); cada plantilla empaquetada declara su idioma y la pestaña Plantillas filtra por él (nota de §7.3). |
 | C-22 | **Logo del splash.** El manual cita el «símbolo aislado» como uso correcto en un splash (§7.9, uso 3) y prohíbe el logo sobre una fotografía agitada sin superficie de contraste (§7.10); 03 §5.1 preveía un logo apilado sobre `bg` sin imagen. | Manual vs D-09 vs 03 | D-09: logo horizontal `gafira-logo-primary.svg` sobre un panel `#FAFAF7` (uso correcto 1 y 6 del manual), nunca sobre la ilustración; 03 §5.1 y §7.10 ya están alineadas (RF-67). |
