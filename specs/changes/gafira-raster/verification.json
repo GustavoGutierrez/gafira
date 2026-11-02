@@ -1,186 +1,1344 @@
-{ "schema": 1, "change": "gafira-raster", "delivery": "RS1, RS2, RS3a, RS3b, RS4", "rounds": [ {
-  "delivery": "RS1", "round": 1, "commit": "10f328b10d520a2e17cf2565db4b4fc478b40a00", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
-  "counts": {"critical": 5, "warning": 3, "suggestion": 4},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs:124", "summary": "RgbaF32 mip: an a = 0 pixel adds colour, against ARQ-121; (1,1,1,0) stays (1,1,1,0). Rgba8 skips it. Test covers Rgba8 only.", "follow_up": false, "status": "open"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs convert", "summary": "Survivor V1: input check skipping a = 0 pixels passes all tests; unpremultiply of (NaN,0,0,0) would be Ok. ARQ-110. Code correct today.", "follow_up": false, "status": "open"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs build_mips", "summary": "Survivor V2: same skip in build_mips passes all tests and lets a non-finite value reach output. ARQ-110. Code correct today.", "follow_up": false, "status": "open"},
-    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-111", "summary": "Survivor V3: entropy in unpremultiply passes all tests. No test repeats unpremultiply or the Rgba8 conversions. Code correct today.", "follow_up": false, "status": "open"},
-    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-110", "summary": "The property test ARQ-110 names (finite input gives finite output) is missing: no proptest! block in the crate. Probe p18 holds.", "follow_up": false, "status": "open"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121", "summary": "Odd side undecided. Dropping fits the text but is not stated; 1000x600 top pixel sees 512 of 1000 columns (0 against 185.5). Owner decides.", "follow_up": false, "status": "open"},
-    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02:1308, 02:529, P4", "summary": "One error enum per crate against BufferError plus EffectError in raster. Settle before the first Effect or Transition.", "follow_up": false, "status": "open"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs tests", "summary": "Constant image tested on Rgba8 only; odd-side test covers a column, not a row. Probes hold.", "follow_up": false, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 4, "killed": 1},
-  "criteria": {"total": 19, "covered": 15},
-  "size": {"lines": 1367, "forecast": 450}, "report": "verify-report.md" }, {
-  "delivery": "RS1", "round": 2, "commit": "888f54bc5b8bf37af99e7f72398bd3b94fdd0c2a", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "PASS", "next": "tdd-apply", "classes": [],
-  "counts": {"critical": 0, "warning": 2, "suggestion": 3},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs:228", "summary": "Closed: f32 a = 0 pixels add no colour; bit-exact against an independent mean.", "follow_up": false, "status": "closed"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs convert", "summary": "Closed: V1 killed by arq_110_non_finite_colour_in_transparent_pixel_is_err.", "follow_up": false, "status": "closed"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs build_mips", "summary": "Closed: V2 killed by the mip test of the same name.", "follow_up": false, "status": "closed"},
-    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-111", "summary": "Closed: V3 killed by arq_111_every_conversion_is_deterministic.", "follow_up": false, "status": "closed"},
-    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-110", "summary": "Closed: three proptest! blocks hold the property. Weakness in W5.", "follow_up": false, "status": "closed"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121", "summary": "Closed: amended 02:951 decides the odd side; code matches on all new rows and probes.", "follow_up": false, "status": "closed"},
-    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02:1308", "summary": "Closed: amendment removes the contradiction; deferral accepted. Adding EffectError with From<BufferError> is a duty of RS3 (S5).", "follow_up": false, "status": "closed"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs tests", "summary": "Closed: constant image on all formats, odd rows covered; M4 to M6 killed.", "follow_up": false, "status": "closed"},
-    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121, CAL-26, CAL-22, 04 import limit", "summary": "No bound for build_mips. Peak 551 MiB at 12 MP, within budgets; 12.3 GiB at 16 384 px, the stated maximum, and an abort under a 4 GiB limit. Settle before its first caller.", "follow_up": true, "status": "open"},
-    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs:302", "summary": "ARQ-110 pixel property draws 0 or 1 pixel and hardly reaches the Err arm. New test gap.", "follow_up": true, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 6, "killed": 6},
-  "criteria": {"total": 25, "covered": 25},
-  "size": {"lines": 1696, "forecast": 450}, "report": "verify-report.md" }, {
-  "delivery": "RS2", "round": 1, "commit": "2a2b517ad3cae6294d73f551bd758dcbb5a5869f", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
-  "counts": {"critical": 4, "warning": 5, "suggestion": 3},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:576", "summary": "Identity difference 0 is tested at 1e-6. M1 (Cs held in f32) survives all 55 tests. Code holds today (p20).", "follow_up": false, "status": "open"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:153", "summary": "Alpha cap tested on the backdrop only. M2a (f32) and M2b (8-bit) on the source survive. Code holds today (p6, p21).", "follow_up": false, "status": "open"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:182", "summary": "ARQ-110: M3 (result check skips alpha) survives and would return Ok with infinite alpha. Code holds today (p19).", "follow_up": false, "status": "open"},
-    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:38", "summary": "Claimed equivalent (b) is false: with no Cs == 0 guard a -0.0 source gives +inf in ColorBurn. Survives the tests. Code holds today (p9).", "follow_up": false, "status": "open"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-119, 02 6.2", "summary": "Blending space unstated: blend_u8 on encoded sRGB in Preview, blend_f32 linear in Export; grey gaps up to 232/255. Rule before gafira-render-cpu.", "follow_up": false, "status": "open"},
-    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-119, 02 table", "summary": "Source a = 0 must leave the backdrop, but clipping changes an out-of-range backdrop in non-Normal modes (1.5 to 1.0). Spec must say which wins.", "follow_up": false, "status": "open"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:140", "summary": "W3C says the mixing result must be clamped; it is not. Non-separable modes give channels down to -4.4e-16 on valid input. Unlisted deviation.", "follow_up": false, "status": "open"},
-    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:807", "summary": "Property draws from 1e30, so every channel clips to 0 or 1; it never reaches the interior. Its [0, 1] assertion is false there (W3).", "follow_up": false, "status": "open"},
-    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "FD-12 (c), 02:944", "summary": "No test names FD-12. Covered through ARQ-119; not CRITICAL because step 3c binds the fast lane and this flow is full.", "follow_up": false, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 5, "killed": 1},
-  "criteria": {"total": 15, "covered": 11},
-  "size": {"lines": 842, "forecast": 340}, "report": "verify-report.md" }, {
-  "delivery": "RS2", "round": 2, "commit": "068f17bbc749c8b9baa648b8f2e0d66d790cba7a", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "PASS", "next": "tdd-apply", "classes": [],
-  "counts": {"critical": 0, "warning": 3, "suggestion": 4},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:575", "summary": "Closed: bit comparison on 3 000 inexact sources; M1 killed.", "follow_up": false, "status": "closed"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:922", "summary": "Closed: M2a and M2b killed by arq_119_source_colour_is_capped_to_its_alpha.", "follow_up": false, "status": "closed"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:949", "summary": "Closed: M3 killed by arq_110_overflowing_alpha_is_err.", "follow_up": false, "status": "closed"},
-    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:967", "summary": "Closed: guard mutant killed by the -0.0 test; claim (b) withdrawn.", "follow_up": false, "status": "closed"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-119, 02 6.2", "summary": "Open owner question: blending colour space. Rule before gafira-render-cpu. Follow-up per coordinator.", "follow_up": true, "status": "open"},
-    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-119, 02 table", "summary": "Closed: amended ARQ-119 says the transparent source wins; code and tests match. Both transparent returns the backdrop: ruled derivable.", "follow_up": false, "status": "closed"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:143", "summary": "Closed: mixing result clamped; clamp mutant killed; reference tables still pass.", "follow_up": false, "status": "closed"},
-    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:1010", "summary": "Closed: interior and tiny draws added. Edge of the assertion in W7.", "follow_up": false, "status": "closed"},
-    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "FD-12 (c), 02:944", "summary": "Closed: three comments name FD-12.", "follow_up": false, "status": "closed"},
-    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:201", "summary": "8-bit both-transparent case untested: B3 and B4 pass all 63 tests, killed by probe r3. Code right today. New test gap.", "follow_up": true, "status": "open"},
-    {"id": "W7", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/blend.rs:1001", "summary": "Two properties assert [0, 1], false at source alpha exactly 0 with an out-of-range backdrop. Not seen in 20 M cases; possible rare false failure.", "follow_up": true, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 13, "killed": 11},
-  "criteria": {"total": 16, "covered": 16},
-  "size": {"lines": 1068, "forecast": 340}, "report": "verify-report.md" }, {
-  "delivery": "RS3a", "round": 1, "commit": "dc6fced05cc640b33f83083100e9e50c3003c7e9", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
-  "counts": {"critical": 3, "warning": 5, "suggestion": 5},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:125", "summary": "Fade with a huge finite color writes inf or NaN to an RgbaF32 dst with Ok; Rgba8 gives Ok too. ARQ-110 requires Err for a computed non-finite.", "follow_up": false, "status": "open"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/guard.rs:30", "summary": "P15 order unproved: hand mutants I1, I2, I3 survive (progress after resolve, resolve after sizes, pixels before sizes). Code right today.", "follow_up": false, "status": "open"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:82", "summary": "Fade thresholds 0.4999 and 0.5001 survive and are observable; the recorded equivalent claim is false.", "follow_up": false, "status": "open"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/layer-2/design.md XP13", "summary": "XP13 bench of RS3a skipped; the stated reason is wrong. Measured 154 ms per 1080p Rgba8 Dissolve against 8 ms. For the owner with O5.", "follow_up": false, "status": "open"},
-    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:127", "summary": "f32 colour alpha clip untested: I5, I5b survive. The equivalent claim holds for bytes only. No spec rule fixes this range.", "follow_up": false, "status": "open"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mix.rs:314", "summary": "Dormant Encoded arm gives inf on finite pixels (px / a) and the property excludes it. O5 (b) would need more than the constant and rows.", "follow_up": false, "status": "open"},
-    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-110, P15 order", "summary": "cx.scale NaN gives Ok: ARQ-110 checks every number, P15's closed order has no such step. Rule it; RS4 meets the same question.", "follow_up": false, "status": "open"},
-    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "54d8e7b, 8059490, 09847aa", "summary": "RED replay: 22 of 24 recorded failures reproduce, order not contradicted; two need unstated stubs, height-alone came after the code, ARQ-111 record differs.", "follow_up": false, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 12, "killed": 3},
-  "criteria": {"total": 16, "covered": 12},
-  "size": {"lines": 1992, "forecast": 420}, "report": "verify-report.md" }, {
-  "delivery": "RS3a", "round": 2, "commit": "6ccebeb04ea67eb933a86c0e15556afe94b1a50c", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "PASS", "next": "tdd-apply", "classes": [],
-  "counts": {"critical": 0, "warning": 1, "suggestion": 5},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/fade.rs:145", "summary": "Closed: an overflowing conversion is Err naming color before any write; 308 f32 cases and 77 byte cases hold, ends stay copies.", "follow_up": false, "status": "closed"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1111", "summary": "Closed: I1, I2, I3 reapplied, each killed by p15_order_of_the_checks_with_two_faults_at_once.", "follow_up": false, "status": "closed"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1202", "summary": "Closed: thresholds 0.4999 and 0.5001 reapplied, each killed by arq_118_fade_boundary_is_exactly_one_half.", "follow_up": false, "status": "closed"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/benches/transitions.rs", "summary": "Closed: the bench exists and runs, 159.9 ms per frame. XP13 and O5 record the cost; the 8 ms miss stays an owner matter under O5.", "follow_up": false, "status": "closed"},
-    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1229", "summary": "Closed: I5, I5b reapplied, each killed by arq_118_fade_colour_alpha_is_clipped_in_f32.", "follow_up": false, "status": "closed"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mix.rs:114", "summary": "Closed: the Encoded arm works in f64; 584 647 extreme cases stay finite, and the property now covers all three spaces.", "follow_up": false, "status": "closed"},
-    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "design.md P15 step 1", "summary": "Closed: amended P15 rules it; all three return Buffer(NonFinite cx.scale, 0) first, for NaN and both infinities, nothing written.", "follow_up": false, "status": "closed"},
-    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:244", "summary": "Closed: replay with the stated stubs gives the recorded failures, the two tests included; height-alone and ARQ-111 corrected.", "follow_up": false, "status": "closed"},
-    {"id": "W6", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transfer.rs:46", "summary": "No test ties the second sRGB curve to gafira-color. Bit-equal today on a sweep of 65 000 values, dormant under MIX_SPACE. New test gap.", "follow_up": true, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 7, "killed": 7},
-  "criteria": {"total": 16, "covered": 16},
-  "size": {"lines": 2498, "forecast": 420}, "report": "verify-report.md" }, {
-  "delivery": "RS3b", "round": 1, "commit": "608b1965d21ef8d829ec76e630d4a16fb41d8adb", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
-  "counts": {"critical": 2, "warning": 4, "suggestion": 4},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:133", "summary": "Wipe mask wrong below softness 3e-12 on u == p: 0 for 0.4375 at s 1e-16, error 0.98 worst, 191/255 in bytes. Rounding amplified by 1/s. No test; mutant I2 survives.", "follow_up": false, "status": "open"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/slide.rs:101", "summary": "The en f64 rule of Slide has no test: mutant I1 (d in f32) survives all 130 tests. Side 5, p 0.1: d 4 in f64, 5 in f32. The code is right; the test is missing.", "follow_up": false, "status": "open"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:133", "summary": "Subnormal softness passes through +-inf and returns Ok; ARQ-110 says a non-finite intermediate is Err. Output stays finite. Avoidable with no spec change.", "follow_up": false, "status": "open"},
-    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:114", "summary": "Generic tests pass empty params: ARQ-111 and premultiplied validity miss circular, soft Wipe, Zoom out; no ARQ-110 finite property through run_cpu. Probes pass.", "follow_up": false, "status": "open"},
-    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "specs/changes/layer-2/design.md:380", "summary": "P15 step 8 asks 1/255 near the ends for each transition; ARQ-118 lists three. Zoom measures 4/255 on a 16x9 checker at p 0.0001. Align the two texts.", "follow_up": false, "status": "open"},
-    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:285", "summary": "Claim false: tests do not fail without the guard end copies. Mutant I8 passes all 130 and is equivalent for all six (weight-1 shortcut). Correct the note.", "follow_up": false, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 10, "killed": 7},
-  "criteria": {"total": 19, "covered": 15},
-  "size": {"lines": 1540, "forecast": 450}, "report": "verify-report.md" }, {
-  "delivery": "RS3b", "round": 2, "commit": "808840f7287a55c303d38bdeabb5fbba8e704fa7", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "FAIL", "next": "tdd-apply", "classes": ["implementation"],
-  "counts": {"critical": 2, "warning": 1, "suggestion": 2},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:127", "summary": "Axis closed, circular open: exact u == p is computed one rounding off by two hypot calls. 8x8, p 0.875, s 1e-16 gives 1, not 0.875; worst error 0.81, 135/255. 1 704 of 6 512 edge pixels wrong.", "follow_up": false, "status": "open"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/slide.rs:367", "summary": "Closed: I1 reapplied, killed by arq_118_slide_offset_is_computed_in_f64.", "follow_up": false, "status": "closed"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:127", "summary": "New. Hard circular Wipe breaks strict u < p at exact u == p: 8x8, p 0.875 gives 1, not 0 (255/255); 1080x1080 at p 0.375 too. 36 of 88 edge pixels. Default softness. Same root cause as C1.", "follow_up": false, "status": "open"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:138", "summary": "Closed: instrumented, 2 547 088 ramp quotients, 997 716 at subnormal softness, 0 non-finite; 74 805 832 infinities avoided (control).", "follow_up": false, "status": "closed"},
-    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1378", "summary": "Closed: one deterministic test and two proptests run every configuration; three scoped mutants killed.", "follow_up": false, "status": "closed"},
-    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "specs/changes/layer-2/design.md:380", "summary": "Closed: P15 amended in d67674b, near-end bound only for Dissolve, Fade and Wipe with s = 1, as ARQ-118.", "follow_up": false, "status": "closed"},
-    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:285", "summary": "Closed: note corrected; I8 reapplied at 808840f, still equivalent as the note says.", "follow_up": false, "status": "closed"},
-    {"id": "W5", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-118, 02 4.17.4", "summary": "New. No bound stated for circular below s about 1e-11: f64 rounding of u over s gives 3.6e-4 at 1920x1080 with crafted p and s; bytes within 1/255. Not removable in f64.", "follow_up": true, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 8, "killed": 6},
-  "criteria": {"total": 19, "covered": 17},
-  "size": {"lines": 1810, "forecast": 450}, "report": "verify-report.md" }, {
-  "delivery": "RS3b", "round": 3, "commit": "02f7b2efdc074fc830e2ff33bb7811260892709b", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "PASS", "next": "tdd-apply", "classes": [],
-  "counts": {"critical": 0, "warning": 1, "suggestion": 2},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:130", "summary": "Closed: 14 896 soft circular exact-edge pixels right at HEAD, 4 504 over the bound with two hypot restored. New tests kill that mutant.", "follow_up": false, "status": "closed"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/slide.rs:367", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:130", "summary": "Closed: 988 of 988 hard circular exact-edge pixels give 0; 372 wrong in the control. u <= p and two hypot are killed.", "follow_up": false, "status": "closed"},
-    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:144", "summary": "Closed in round 2. Saturation test unchanged.", "follow_up": false, "status": "closed"},
-    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1378", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
-    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "specs/changes/layer-2/design.md:380", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
-    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:285", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
-    {"id": "W5", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-118, 02 4.17.4", "summary": "Open. New point: 128x128, p nearest f32 to u, s 1e-12: 4.5e-5 over 1e-5, bytes 0.50/255. u is the nearest f64, so not removable in f64.", "follow_up": true, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 5, "killed": 4},
-  "criteria": {"total": 19, "covered": 19},
-  "size": {"lines": 1877, "forecast": 450}, "report": "verify-report.md" }, {
-  "delivery": "RS4", "round": 1, "commit": "c063a3be2feddb6587d463f5961584794614a6db", "mode": "full", "tier": "T4", "depth": "V2",
-  "verdict": "FAIL", "next": "specifier", "classes": ["ambiguity", "implementation"],
-  "counts": {"critical": 3, "warning": 5, "suggestion": 3},
-  "findings": [
-    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/effects/blur.rs:23", "summary": "Impulse sigma misses +-2 % below radius x scale about 1.16: -7.26 % at 1, -38 % at 0.75, -89.6 % at 0.5. Sampled Gaussian loses variance. Fix: [s2/2, 1-s2, s2/2] under sigma 0.6.", "follow_up": false, "status": "open"},
-    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/effects/blur.rs:9", "summary": "Blur under about 3e-162: sigma squared is 0, kernel NaN. Rgba8 gives Ok with no shadow; RgbaF32 Err names backdrop. ARQ-110. Fix: half_width 0 unless radius squared > 0.", "follow_up": false, "status": "open"},
-    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/effects/shadow.rs:241", "summary": "Survivor M1: composite written straight into dst passes all tests; non-equivalent, leaves dst part written with Err. ARQ-110. Code correct today. Fix: add a test.", "follow_up": false, "status": "open"},
-    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "FD-35, ARQ-120", "summary": "Sub-pixel offsets unspecified. Whole-pixel rounding misses the half-size criterion at odd offsets: 17/255 at (1,1) blur 8, 134/255 at (3,3) blur 0. Specifier decides.", "follow_up": false, "status": "open"},
-    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-120", "summary": "Half-size criterion names no image or radius. Noisy 2x2 blocks at offset 0: holds at r >= 16, 1.50/255 at r 8, 3.00 at r 4, 17.50 at r 1. By analysis, inherent to a Gaussian; name a domain.", "follow_up": false, "status": "open"},
-    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/effects/shadow.rs:107", "summary": "Survivor M2: half away from zero on offsets untested; spec silent, so not critical. Fix: assert -0.5 and -1.5 move 1 and 2 px left.", "follow_up": false, "status": "open"},
-    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/effects/shadow.rs:220", "summary": "opacity / 100 inexact: 20 of 51456 pairs one byte low at exact ties (a 50, op 29 gives 14, not 15). Fix: cover * opacity * tint.alpha / 100.", "follow_up": false, "status": "open"},
-    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md RS4", "summary": "Not test-first throughout: stub bodies preceded RED, some tests came after code or never ran RED; e2358e1 holds both. No stub at HEAD. Fix: RED first in fix rounds, no stub.", "follow_up": false, "status": "open"}
-  ],
-  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
-  "mutation": null,
-  "hand_mutants": {"run": 4, "killed": 2},
-  "criteria": {"total": 18, "covered": 16},
-  "size": {"lines": 1660, "forecast": 420}, "report": "verify-report.md" } ] }
+{
+  "schema": 1,
+  "change": "gafira-raster",
+  "delivery": "RS1, RS2, RS3a, RS3b, RS4",
+  "rounds": [
+    {
+      "delivery": "RS1",
+      "round": 1,
+      "commit": "10f328b10d520a2e17cf2565db4b4fc478b40a00",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "classes": [
+        "ambiguity",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 5,
+        "warning": 3,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/mip.rs:124",
+          "summary": "RgbaF32 mip: an a = 0 pixel adds colour, against ARQ-121; (1,1,1,0) stays (1,1,1,0). Rgba8 skips it. Test covers Rgba8 only.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/pixel.rs convert",
+          "summary": "Survivor V1: input check skipping a = 0 pixels passes all tests; unpremultiply of (NaN,0,0,0) would be Ok. ARQ-110. Code correct today.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/mip.rs build_mips",
+          "summary": "Survivor V2: same skip in build_mips passes all tests and lets a non-finite value reach output. ARQ-110. Code correct today.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-111",
+          "summary": "Survivor V3: entropy in unpremultiply passes all tests. No test repeats unpremultiply or the Rgba8 conversions. Code correct today.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C5",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-110",
+          "summary": "The property test ARQ-110 names (finite input gives finite output) is missing: no proptest! block in the crate. Probe p18 holds.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-121",
+          "summary": "Odd side undecided. Dropping fits the text but is not stated; 1000x600 top pixel sees 512 of 1000 columns (0 against 185.5). Owner decides.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "02:1308, 02:529, P4",
+          "summary": "One error enum per crate against BufferError plus EffectError in raster. Settle before the first Effect or Transition.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/mip.rs tests",
+          "summary": "Constant image tested on Rgba8 only; odd-side test covers a column, not a row. Probes hold.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 4,
+        "killed": 1
+      },
+      "criteria": {
+        "total": 19,
+        "covered": 15
+      },
+      "size": {
+        "lines": 1367,
+        "forecast": 450
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS1",
+      "round": 2,
+      "commit": "888f54bc5b8bf37af99e7f72398bd3b94fdd0c2a",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "classes": [],
+      "counts": {
+        "critical": 0,
+        "warning": 2,
+        "suggestion": 3
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/mip.rs:228",
+          "summary": "Closed: f32 a = 0 pixels add no colour; bit-exact against an independent mean.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/pixel.rs convert",
+          "summary": "Closed: V1 killed by arq_110_non_finite_colour_in_transparent_pixel_is_err.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/mip.rs build_mips",
+          "summary": "Closed: V2 killed by the mip test of the same name.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-111",
+          "summary": "Closed: V3 killed by arq_111_every_conversion_is_deterministic.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C5",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-110",
+          "summary": "Closed: three proptest! blocks hold the property. Weakness in W5.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-121",
+          "summary": "Closed: amended 02:951 decides the odd side; code matches on all new rows and probes.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "02:1308",
+          "summary": "Closed: amendment removes the contradiction; deferral accepted. Adding EffectError with From<BufferError> is a duty of RS3 (S5).",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/mip.rs tests",
+          "summary": "Closed: constant image on all formats, odd rows covered; M4 to M6 killed.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-121, CAL-26, CAL-22, 04 import limit",
+          "summary": "No bound for build_mips. Peak 551 MiB at 12 MP, within budgets; 12.3 GiB at 16 384 px, the stated maximum, and an abort under a 4 GiB limit. Settle before its first caller.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/pixel.rs:302",
+          "summary": "ARQ-110 pixel property draws 0 or 1 pixel and hardly reaches the Err arm. New test gap.",
+          "follow_up": true,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 6,
+        "killed": 6
+      },
+      "criteria": {
+        "total": 25,
+        "covered": 25
+      },
+      "size": {
+        "lines": 1696,
+        "forecast": 450
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS2",
+      "round": 1,
+      "commit": "2a2b517ad3cae6294d73f551bd758dcbb5a5869f",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "classes": [
+        "ambiguity",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 4,
+        "warning": 5,
+        "suggestion": 3
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:576",
+          "summary": "Identity difference 0 is tested at 1e-6. M1 (Cs held in f32) survives all 55 tests. Code holds today (p20).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:153",
+          "summary": "Alpha cap tested on the backdrop only. M2a (f32) and M2b (8-bit) on the source survive. Code holds today (p6, p21).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:182",
+          "summary": "ARQ-110: M3 (result check skips alpha) survives and would return Ok with infinite alpha. Code holds today (p19).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:38",
+          "summary": "Claimed equivalent (b) is false: with no Cs == 0 guard a -0.0 source gives +inf in ColorBurn. Survives the tests. Code holds today (p9).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-119, 02 6.2",
+          "summary": "Blending space unstated: blend_u8 on encoded sRGB in Preview, blend_f32 linear in Export; grey gaps up to 232/255. Rule before gafira-render-cpu.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-119, 02 table",
+          "summary": "Source a = 0 must leave the backdrop, but clipping changes an out-of-range backdrop in non-Normal modes (1.5 to 1.0). Spec must say which wins.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:140",
+          "summary": "W3C says the mixing result must be clamped; it is not. Non-separable modes give channels down to -4.4e-16 on valid input. Unlisted deviation.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:807",
+          "summary": "Property draws from 1e30, so every channel clips to 0 or 1; it never reaches the interior. Its [0, 1] assertion is false there (W3).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "FD-12 (c), 02:944",
+          "summary": "No test names FD-12. Covered through ARQ-119; not CRITICAL because step 3c binds the fast lane and this flow is full.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 5,
+        "killed": 1
+      },
+      "criteria": {
+        "total": 15,
+        "covered": 11
+      },
+      "size": {
+        "lines": 842,
+        "forecast": 340
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS2",
+      "round": 2,
+      "commit": "068f17bbc749c8b9baa648b8f2e0d66d790cba7a",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "classes": [],
+      "counts": {
+        "critical": 0,
+        "warning": 3,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:575",
+          "summary": "Closed: bit comparison on 3 000 inexact sources; M1 killed.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:922",
+          "summary": "Closed: M2a and M2b killed by arq_119_source_colour_is_capped_to_its_alpha.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:949",
+          "summary": "Closed: M3 killed by arq_110_overflowing_alpha_is_err.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:967",
+          "summary": "Closed: guard mutant killed by the -0.0 test; claim (b) withdrawn.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-119, 02 6.2",
+          "summary": "Open owner question: blending colour space. Rule before gafira-render-cpu. Follow-up per coordinator.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-119, 02 table",
+          "summary": "Closed: amended ARQ-119 says the transparent source wins; code and tests match. Both transparent returns the backdrop: ruled derivable.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:143",
+          "summary": "Closed: mixing result clamped; clamp mutant killed; reference tables still pass.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:1010",
+          "summary": "Closed: interior and tiny draws added. Edge of the assertion in W7.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "FD-12 (c), 02:944",
+          "summary": "Closed: three comments name FD-12.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W6",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:201",
+          "summary": "8-bit both-transparent case untested: B3 and B4 pass all 63 tests, killed by probe r3. Code right today. New test gap.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W7",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/blend.rs:1001",
+          "summary": "Two properties assert [0, 1], false at source alpha exactly 0 with an out-of-range backdrop. Not seen in 20 M cases; possible rare false failure.",
+          "follow_up": true,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 13,
+        "killed": 11
+      },
+      "criteria": {
+        "total": 16,
+        "covered": 16
+      },
+      "size": {
+        "lines": 1068,
+        "forecast": 340
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS3a",
+      "round": 1,
+      "commit": "dc6fced05cc640b33f83083100e9e50c3003c7e9",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "classes": [
+        "ambiguity",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 3,
+        "warning": 5,
+        "suggestion": 5
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/fade.rs:125",
+          "summary": "Fade with a huge finite color writes inf or NaN to an RgbaF32 dst with Ok; Rgba8 gives Ok too. ARQ-110 requires Err for a computed non-finite.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/guard.rs:30",
+          "summary": "P15 order unproved: hand mutants I1, I2, I3 survive (progress after resolve, resolve after sizes, pixels before sizes). Code right today.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/fade.rs:82",
+          "summary": "Fade thresholds 0.4999 and 0.5001 survive and are observable; the recorded equivalent claim is false.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/layer-2/design.md XP13",
+          "summary": "XP13 bench of RS3a skipped; the stated reason is wrong. Measured 154 ms per 1080p Rgba8 Dissolve against 8 ms. For the owner with O5.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/fade.rs:127",
+          "summary": "f32 colour alpha clip untested: I5, I5b survive. The equivalent claim holds for bytes only. No spec rule fixes this range.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mix.rs:314",
+          "summary": "Dormant Encoded arm gives inf on finite pixels (px / a) and the property excludes it. O5 (b) would need more than the constant and rows.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-110, P15 order",
+          "summary": "cx.scale NaN gives Ok: ARQ-110 checks every number, P15's closed order has no such step. Rule it; RS4 meets the same question.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "54d8e7b, 8059490, 09847aa",
+          "summary": "RED replay: 22 of 24 recorded failures reproduce, order not contradicted; two need unstated stubs, height-alone came after the code, ARQ-111 record differs.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 12,
+        "killed": 3
+      },
+      "criteria": {
+        "total": 16,
+        "covered": 12
+      },
+      "size": {
+        "lines": 1992,
+        "forecast": 420
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS3a",
+      "round": 2,
+      "commit": "6ccebeb04ea67eb933a86c0e15556afe94b1a50c",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "classes": [],
+      "counts": {
+        "critical": 0,
+        "warning": 1,
+        "suggestion": 5
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/fade.rs:145",
+          "summary": "Closed: an overflowing conversion is Err naming color before any write; 308 f32 cases and 77 byte cases hold, ends stay copies.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mod.rs:1111",
+          "summary": "Closed: I1, I2, I3 reapplied, each killed by p15_order_of_the_checks_with_two_faults_at_once.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mod.rs:1202",
+          "summary": "Closed: thresholds 0.4999 and 0.5001 reapplied, each killed by arq_118_fade_boundary_is_exactly_one_half.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/benches/transitions.rs",
+          "summary": "Closed: the bench exists and runs, 159.9 ms per frame. XP13 and O5 record the cost; the 8 ms miss stays an owner matter under O5.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mod.rs:1229",
+          "summary": "Closed: I5, I5b reapplied, each killed by arq_118_fade_colour_alpha_is_clipped_in_f32.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mix.rs:114",
+          "summary": "Closed: the Encoded arm works in f64; 584 647 extreme cases stay finite, and the property now covers all three spaces.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "design.md P15 step 1",
+          "summary": "Closed: amended P15 rules it; all three return Buffer(NonFinite cx.scale, 0) first, for NaN and both infinities, nothing written.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/gafira-raster/apply-progress.md:244",
+          "summary": "Closed: replay with the stated stubs gives the recorded failures, the two tests included; height-alone and ARQ-111 corrected.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W6",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transfer.rs:46",
+          "summary": "No test ties the second sRGB curve to gafira-color. Bit-equal today on a sweep of 65 000 values, dormant under MIX_SPACE. New test gap.",
+          "follow_up": true,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 7,
+        "killed": 7
+      },
+      "criteria": {
+        "total": 16,
+        "covered": 16
+      },
+      "size": {
+        "lines": 2498,
+        "forecast": 420
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS3b",
+      "round": 1,
+      "commit": "608b1965d21ef8d829ec76e630d4a16fb41d8adb",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "classes": [
+        "ambiguity",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 2,
+        "warning": 4,
+        "suggestion": 4
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:133",
+          "summary": "Wipe mask wrong below softness 3e-12 on u == p: 0 for 0.4375 at s 1e-16, error 0.98 worst, 191/255 in bytes. Rounding amplified by 1/s. No test; mutant I2 survives.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/slide.rs:101",
+          "summary": "The en f64 rule of Slide has no test: mutant I1 (d in f32) survives all 130 tests. Side 5, p 0.1: d 4 in f64, 5 in f32. The code is right; the test is missing.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:133",
+          "summary": "Subnormal softness passes through +-inf and returns Ok; ARQ-110 says a non-finite intermediate is Err. Output stays finite. Avoidable with no spec change.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mod.rs:114",
+          "summary": "Generic tests pass empty params: ARQ-111 and premultiplied validity miss circular, soft Wipe, Zoom out; no ARQ-110 finite property through run_cpu. Probes pass.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "specs/changes/layer-2/design.md:380",
+          "summary": "P15 step 8 asks 1/255 near the ends for each transition; ARQ-118 lists three. Zoom measures 4/255 on a 16x9 checker at p 0.0001. Align the two texts.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/gafira-raster/apply-progress.md:285",
+          "summary": "Claim false: tests do not fail without the guard end copies. Mutant I8 passes all 130 and is equivalent for all six (weight-1 shortcut). Correct the note.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 10,
+        "killed": 7
+      },
+      "criteria": {
+        "total": 19,
+        "covered": 15
+      },
+      "size": {
+        "lines": 1540,
+        "forecast": 450
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS3b",
+      "round": 2,
+      "commit": "808840f7287a55c303d38bdeabb5fbba8e704fa7",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "tdd-apply",
+      "classes": [
+        "implementation"
+      ],
+      "counts": {
+        "critical": 2,
+        "warning": 1,
+        "suggestion": 2
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:127",
+          "summary": "Axis closed, circular open: exact u == p is computed one rounding off by two hypot calls. 8x8, p 0.875, s 1e-16 gives 1, not 0.875; worst error 0.81, 135/255. 1 704 of 6 512 edge pixels wrong.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/slide.rs:367",
+          "summary": "Closed: I1 reapplied, killed by arq_118_slide_offset_is_computed_in_f64.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:127",
+          "summary": "New. Hard circular Wipe breaks strict u < p at exact u == p: 8x8, p 0.875 gives 1, not 0 (255/255); 1080x1080 at p 0.375 too. 36 of 88 edge pixels. Default softness. Same root cause as C1.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:138",
+          "summary": "Closed: instrumented, 2 547 088 ramp quotients, 997 716 at subnormal softness, 0 non-finite; 74 805 832 infinities avoided (control).",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mod.rs:1378",
+          "summary": "Closed: one deterministic test and two proptests run every configuration; three scoped mutants killed.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "specs/changes/layer-2/design.md:380",
+          "summary": "Closed: P15 amended in d67674b, near-end bound only for Dissolve, Fade and Wipe with s = 1, as ARQ-118.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/gafira-raster/apply-progress.md:285",
+          "summary": "Closed: note corrected; I8 reapplied at 808840f, still equivalent as the note says.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-118, 02 4.17.4",
+          "summary": "New. No bound stated for circular below s about 1e-11: f64 rounding of u over s gives 3.6e-4 at 1920x1080 with crafted p and s; bytes within 1/255. Not removable in f64.",
+          "follow_up": true,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 8,
+        "killed": 6
+      },
+      "criteria": {
+        "total": 19,
+        "covered": 17
+      },
+      "size": {
+        "lines": 1810,
+        "forecast": 450
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS3b",
+      "round": 3,
+      "commit": "02f7b2efdc074fc830e2ff33bb7811260892709b",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "classes": [],
+      "counts": {
+        "critical": 0,
+        "warning": 1,
+        "suggestion": 2
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:130",
+          "summary": "Closed: 14 896 soft circular exact-edge pixels right at HEAD, 4 504 over the bound with two hypot restored. New tests kill that mutant.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/slide.rs:367",
+          "summary": "Closed in round 2.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:130",
+          "summary": "Closed: 988 of 988 hard circular exact-edge pixels give 0; 372 wrong in the control. u <= p and two hypot are killed.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/wipe.rs:144",
+          "summary": "Closed in round 2. Saturation test unchanged.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/transitions/mod.rs:1378",
+          "summary": "Closed in round 2.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "specs/changes/layer-2/design.md:380",
+          "summary": "Closed in round 2.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/gafira-raster/apply-progress.md:285",
+          "summary": "Closed in round 2.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-118, 02 4.17.4",
+          "summary": "Open. New point: 128x128, p nearest f32 to u, s 1e-12: 4.5e-5 over 1e-5, bytes 0.50/255. u is the nearest f64, so not removable in f64.",
+          "follow_up": true,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 5,
+        "killed": 4
+      },
+      "criteria": {
+        "total": 19,
+        "covered": 19
+      },
+      "size": {
+        "lines": 1877,
+        "forecast": 450
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS4",
+      "round": 1,
+      "commit": "c063a3be2feddb6587d463f5961584794614a6db",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "classes": [
+        "ambiguity",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 3,
+        "warning": 5,
+        "suggestion": 3
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/blur.rs:23",
+          "summary": "Impulse sigma misses +-2 % below radius x scale about 1.16: -7.26 % at 1, -38 % at 0.75, -89.6 % at 0.5. Sampled Gaussian loses variance. Fix: [s2/2, 1-s2, s2/2] under sigma 0.6.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/blur.rs:9",
+          "summary": "Blur under about 3e-162: sigma squared is 0, kernel NaN. Rgba8 gives Ok with no shadow; RgbaF32 Err names backdrop. ARQ-110. Fix: half_width 0 unless radius squared > 0.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:241",
+          "summary": "Survivor M1: composite written straight into dst passes all tests; non-equivalent, leaves dst part written with Err. ARQ-110. Code correct today. Fix: add a test.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "FD-35, ARQ-120",
+          "summary": "Sub-pixel offsets unspecified. Whole-pixel rounding misses the half-size criterion at odd offsets: 17/255 at (1,1) blur 8, 134/255 at (3,3) blur 0. Specifier decides.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-120",
+          "summary": "Half-size criterion names no image or radius. Noisy 2x2 blocks at offset 0: holds at r >= 16, 1.50/255 at r 8, 3.00 at r 4, 17.50 at r 1. By analysis, inherent to a Gaussian; name a domain.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:107",
+          "summary": "Survivor M2: half away from zero on offsets untested; spec silent, so not critical. Fix: assert -0.5 and -1.5 move 1 and 2 px left.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:220",
+          "summary": "opacity / 100 inexact: 20 of 51456 pairs one byte low at exact ties (a 50, op 29 gives 14, not 15). Fix: cover * opacity * tint.alpha / 100.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/gafira-raster/apply-progress.md RS4",
+          "summary": "Not test-first throughout: stub bodies preceded RED, some tests came after code or never ran RED; e2358e1 holds both. No stub at HEAD. Fix: RED first in fix rounds, no stub.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 4,
+        "killed": 2
+      },
+      "criteria": {
+        "total": 18,
+        "covered": 16
+      },
+      "size": {
+        "lines": 1660,
+        "forecast": 420
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS4",
+      "round": 2,
+      "commit": "6d1f1a6b8b1e8a88e822aa778f399118d7705097",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "classes": [],
+      "counts": {
+        "critical": 0,
+        "warning": 2,
+        "suggestion": 2
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/blur.rs:26",
+          "summary": "Closed: worst sigma error 1.254 % over radius x scale 0.02 to 40 at 3 scales; 0.000 % in the three-tap branch.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/blur.rs:10",
+          "summary": "Closed: blur 5e-324 to 3e-162 and 1e-160 at scale 1e-30 are Ok and equal blur 0 in both formats.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:1227",
+          "summary": "Closed: survivor M1 re-applied, killed by arq_110_composite_overflow_is_err_and_dst_is_untouched.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-120, FD-35",
+          "summary": "Closed by 249789a: whole pixels, half away from zero; code and test match.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-120",
+          "summary": "Closed by 249789a: smooth image, radius >= 16, over 3 sigma from the edge. Residue in W6.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:1253",
+          "summary": "Closed: survivor M2 re-applied, killed by fd_35_offsets_round_half_away_from_zero.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:220",
+          "summary": "Closed: 0 of 51456 mismatches; round 1 had 20.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "specs/changes/gafira-raster/apply-progress.md",
+          "summary": "Closed: RED table recorded; replay with the fixes reverted fails exactly the five tests it lists.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W6",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-120",
+          "summary": "Half-size, Rgba8, translucent image, tinted shadow: 1.5/255 on 26 to 45 values over 190000 px when the half is made alone. RgbaF32 0.02/255. Criterion names no format or construction.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W7",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/shadow.rs:746",
+          "summary": "New test gap: half-size test checks alpha only, black shadow, Rgba8; no colour channels or RgbaF32.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "S1",
+          "severity": "SUGGESTION",
+          "class": "ambiguity",
+          "ref": "crates/gafira-raster/src/effects/blur.rs:6",
+          "summary": "Closed: cap 4800; sigma -1.343 % at 3200.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S3",
+          "severity": "SUGGESTION",
+          "class": "claim",
+          "ref": "crates/gafira-raster/benches/shadow.rs",
+          "summary": "Closed: nightly claim removed from both raster bench headers.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S4",
+          "severity": "SUGGESTION",
+          "class": "ambiguity",
+          "ref": "crates/gafira-raster/src/effects/blur.rs:4",
+          "summary": "Cap comment and test cite FD-07 for zoom 32; zoom is FD-08. Value right. Error came from round 1 S1 text.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "S5",
+          "severity": "SUGGESTION",
+          "class": "claim",
+          "ref": "crates/gafira-layout/benches/layout.rs:4",
+          "summary": "Out of scope, noted only: same nightly-job claim as S3.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 2,
+        "killed": 2
+      },
+      "criteria": {
+        "total": 18,
+        "covered": 18
+      },
+      "size": {
+        "lines": 281,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    }
+  ]
+}
