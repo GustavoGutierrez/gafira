@@ -1,7 +1,12 @@
 //! Effects of one input (02 §4.4, ARQ-120, FD-35).
 
+mod blur;
+mod shadow;
+
 use gafira_doc::contract::{Describe, ParamSchema, ParamValues};
 use gafira_geom::IRect;
+
+pub use shadow::ParallelShadow;
 
 use crate::transitions::UniformBlock;
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
