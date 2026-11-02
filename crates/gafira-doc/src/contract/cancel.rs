@@ -79,3 +79,31 @@ impl ToMessage for Cancelled {
         }
     }
 }
+
+/// Receives the progress of a long operation (ARQ-112).
+pub trait Progress: Send + Sync {
+    /// `fraction` is non-decreasing in `[0, 1]`; `1.0` only on success (ARQ-112).
+    fn report(&self, fraction: f32);
+}
+
+/// A [`Progress`] that discards every report.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoProgress;
+
+impl Progress for NoProgress {
+    fn report(&self, _fraction: f32) {}
+}
+
+/// Checks `cancel`, then reports. On `Err` it reports nothing.
+///
+/// # Errors
+/// [`Cancelled`] when `cancel` is cancelled.
+pub fn checkpoint(
+    cancel: &CancelToken,
+    progress: &dyn Progress,
+    fraction: f32,
+) -> Result<(), Cancelled> {
+    cancel.check()?;
+    progress.report(fraction);
+    Ok(())
+}

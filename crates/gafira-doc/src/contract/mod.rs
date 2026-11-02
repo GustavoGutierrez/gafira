@@ -7,7 +7,7 @@ mod cancel;
 mod describe;
 mod params;
 
-pub use cancel::{CancelToken, Cancelled};
+pub use cancel::{CancelToken, Cancelled, NoProgress, Progress, checkpoint};
 pub use describe::{Describe, Descriptor};
 pub use params::{
     ParamChoice, ParamDef, ParamError, ParamKind, ParamSchema, ParamValue, ParamValues,
