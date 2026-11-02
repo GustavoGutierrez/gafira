@@ -84,29 +84,37 @@ pub fn check_progress_contract<E>(
     for k in cancel_points(baseline.len()) {
         let token = CancelToken::new();
         let double = CancelAt {
-            log: ProgressLog::new(),
+            log: Mutex::new(Vec::new()),
             token: &token,
             at: k,
         };
         let cancelled = op(&token, &double)?;
-        if let Err(violation) = judge_cancelled(k, cancelled, &double.log.fractions()) {
+        let fractions = double
+            .log
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Err(violation) = judge_cancelled(k, cancelled, &fractions) {
             return Ok(Err(violation));
         }
     }
     Ok(Ok(()))
 }
 
-/// Logs report `k`, then cancels.
+/// Logs each report and cancels on the `k`-th. Reports may arrive in parallel
+/// (`Progress` is `Sync`), so the position is read under the same lock as the
+/// push: exactly one report is the `k`-th.
 struct CancelAt<'a> {
-    log: ProgressLog,
+    log: Mutex<Vec<f32>>,
     token: &'a CancelToken,
     at: usize,
 }
 
 impl Progress for CancelAt<'_> {
     fn report(&self, fraction: f32) {
-        self.log.report(fraction);
-        if self.log.fractions().len() == self.at {
+        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        log.push(fraction);
+        if log.len() == self.at {
             self.token.cancel();
         }
     }
@@ -151,17 +159,18 @@ fn scan_baseline(fractions: &[f32], max_step: f32) -> Result<(), ProgressViolati
     Ok(())
 }
 
-/// The return value is judged before the log.
+/// Fewer than `k` reports is judged first, whatever `op` returned; after that
+/// the return value is judged before the rest of the log.
 fn judge_cancelled(k: usize, cancelled: bool, fractions: &[f32]) -> Result<(), ProgressViolation> {
+    if fractions.len() < k {
+        return Err(ProgressViolation::NotCancelled { k });
+    }
     if !cancelled {
         return Err(if fractions.last() == Some(&1.0) {
             ProgressViolation::NotCancelled { k }
         } else {
             ProgressViolation::OutputAfterCancel { k }
         });
-    }
-    if fractions.len() < k {
-        return Err(ProgressViolation::NotCancelled { k });
     }
     for at in 0..fractions.len() {
         scan_common(fractions, at)?;

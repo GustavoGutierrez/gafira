@@ -1,6 +1,7 @@
 //! `check_progress_contract` against a conforming fake and one fake per
 //! violation (ARQ-112).
 
+use std::sync::Barrier;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gafira_doc::contract::{CancelToken, Progress, checkpoint};
@@ -474,4 +475,155 @@ fn arq_112_even_steps_are_measured_in_f32_with_no_tolerance() {
     assert!(matches!(check_seq(&seq, 0.02), Err(V::StepTooLarge { .. })));
     let seq: Vec<f32> = (1..=60).map(|i| i as f32 / 60.0).collect();
     assert_eq!(check_seq(&seq, 0.02), Ok(()));
+}
+
+/// Baseline: `n` honest even steps. Later runs: `later` decides what the
+/// operation does, given the token and the log.
+fn check_later(
+    n: usize,
+    later: impl Fn(&CancelToken, &dyn Progress) -> Result<bool, ()>,
+) -> Result<(), V> {
+    let calls = AtomicUsize::new(0);
+    check_progress_contract(1.0, |t, p| {
+        if calls.fetch_add(1, Ordering::SeqCst) > 0 {
+            return later(t, p);
+        }
+        for i in 1..=n {
+            if checkpoint(t, p, i as f32 / n as f32).is_err() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    })
+    .unwrap()
+}
+
+// ARQ-112 (design, "Cancelled run": gap-closing, W1 of verify round 1)
+#[test]
+fn arq_112_fewer_than_k_reports_is_not_cancelled_whatever_the_return_value() {
+    for returned in [true, false] {
+        // k = 1 with no report at all.
+        assert_eq!(
+            check_later(10, |_, _| Ok(returned)),
+            Err(V::NotCancelled { k: 1 }),
+            "empty log, returned {returned}"
+        );
+    }
+    // k = 5 (n = 10 gives points 1, 5, 9) with 3 reports: k = 1 passes, k = 5 fails.
+    for returned in [true, false] {
+        let calls = AtomicUsize::new(0);
+        let got = check_later(10, |t, p| {
+            let call = calls.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                // k = 1: honest.
+                let _ = checkpoint(t, p, 0.1);
+                return Ok(checkpoint(t, p, 0.2).is_err());
+            }
+            for f in [0.1, 0.2, 0.3] {
+                p.report(f);
+            }
+            Ok(returned)
+        });
+        assert_eq!(got, Err(V::NotCancelled { k: 5 }), "returned {returned}");
+    }
+    // Ending at 1.0 with fewer than k reports (k = 5, 3 reports): not cancelled.
+    let calls = AtomicUsize::new(0);
+    let got = check_later(10, |t, p| {
+        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            let _ = checkpoint(t, p, 0.1);
+            return Ok(checkpoint(t, p, 0.2).is_err());
+        }
+        for f in [0.1, 0.2, 1.0] {
+            p.report(f);
+        }
+        Ok(false)
+    });
+    assert_eq!(got, Err(V::NotCancelled { k: 5 }));
+}
+
+// ARQ-112 (gap-closing)
+#[test]
+fn arq_112_fewer_than_k_reports_comes_before_the_scan() {
+    // The log [0.5, 0.4] has a drop, but only 2 reports against k = 5.
+    let calls = AtomicUsize::new(0);
+    let got = check_later(10, |t, p| {
+        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            let _ = checkpoint(t, p, 0.1);
+            return Ok(checkpoint(t, p, 0.2).is_err());
+        }
+        p.report(0.5);
+        p.report(0.4);
+        Ok(true)
+    });
+    assert_eq!(got, Err(V::NotCancelled { k: 5 }));
+}
+
+// ARQ-112 (gap-closing)
+#[test]
+fn arq_112_reports_after_cancel_comes_after_the_scan() {
+    let bad_range: fn(usize, usize) -> Vec<f32> = |_, _| vec![2.0, 2.0];
+    let drop: fn(usize, usize) -> Vec<f32> = |k, n| {
+        let f = (k - 1) as f32 / n as f32;
+        vec![f, f]
+    };
+    let at = |f| Fake::bad(60, |k| k == 30, Mode::Extra(f));
+    assert_eq!(check(&at(bad_range), 0.02), Err(V::OutOfRange { at: 30 }));
+    assert_eq!(check(&at(drop), 0.02), Err(V::Decreasing { at: 30 }));
+}
+
+// ARQ-112 (gap-closing)
+#[test]
+fn arq_112_a_1_in_the_log_that_is_not_last_does_not_make_it_not_cancelled() {
+    // Ok(false) with a log that holds 1.0 but ends below it: OutputAfterCancel.
+    let calls = AtomicUsize::new(0);
+    let got = check_later(10, |t, p| {
+        if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            let _ = checkpoint(t, p, 0.1);
+            return Ok(checkpoint(t, p, 0.2).is_err());
+        }
+        for f in [0.1, 0.2, 0.3, 1.0, 0.9] {
+            p.report(f);
+        }
+        Ok(false)
+    });
+    assert_eq!(got, Err(V::OutputAfterCancel { k: 5 }));
+}
+
+/// Two workers report equal fractions with no lock of their own, then the
+/// caller reports the final `1.0`: n = 2 * per_worker + 1.
+fn two_workers(
+    per_worker: usize,
+) -> impl Fn(&CancelToken, &dyn Progress) -> Result<bool, ()> + Sync {
+    move |t, p| {
+        let start = Barrier::new(2);
+        std::thread::scope(|s| {
+            for _ in 0..2 {
+                s.spawn(|| {
+                    start.wait();
+                    for _ in 0..per_worker {
+                        if checkpoint(t, p, 0.5).is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        if t.is_cancelled() {
+            return Ok(true);
+        }
+        Ok(checkpoint(t, p, 1.0).is_err())
+    }
+}
+
+// ARQ-112 (decision C3: `Progress` is `Sync` for parallel workers)
+#[test]
+fn arq_112_parallel_reports_never_step_over_the_cancel_point() {
+    // Position and push are one step, so exactly one report is the k-th and it
+    // cancels. Before the fix, 2 workers gave a false `NotCancelled` about
+    // 4 times in 10; 200 rounds make a pass on the old code vanishingly rare.
+    let op = two_workers(40);
+    for round in 0..200 {
+        let got = check_progress_contract(1.0, &op).unwrap();
+        assert_eq!(got, Ok(()), "round {round}");
+    }
 }
