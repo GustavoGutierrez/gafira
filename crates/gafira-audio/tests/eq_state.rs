@@ -259,3 +259,18 @@ fn arq_123_the_history_is_flushed_below_the_smallest_normal_sample() {
         assert_eq!(bits(&after), bits(&fresh), "silence {silence}");
     }
 }
+
+#[test]
+fn arq_125_a_band_omitted_at_the_new_rate_does_nothing_after_prepare() {
+    // The high shelf (8 kHz) is designed at 48 kHz, then `prepare` moves to
+    // 16 kHz, where it sits at `fs / 2` and is omitted: the value stays the
+    // last valid one, the design is redone, and the output equals the input.
+    let mut e = eq(48_000, 256, 1);
+    let mut block = vec![noise(5, 256)];
+    run(&mut e, &mut block, &snapshot(0.0, 0.0, 15.0));
+    e.prepare(16_000, 256, 1);
+    let input = noise(6, 256);
+    let mut out = vec![input.clone()];
+    run(&mut e, &mut out, &ParamSnapshot::new());
+    assert_eq!(bits(&out), bits(&[input]));
+}

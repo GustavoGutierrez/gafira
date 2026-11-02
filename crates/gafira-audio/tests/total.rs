@@ -301,3 +301,38 @@ fn arq_111_two_runs_give_the_same_bytes_with_and_without_a_reset() {
         assert_eq!(go(true), go(true), "{name}");
     }
 }
+
+#[test]
+fn arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history() {
+    // The block with the bad sample and the same block with a 0 there give the
+    // same output, and so do the blocks that follow (a filter keeps history).
+    let p = params();
+    let sig = |n: usize| -> Vec<Vec<f32>> {
+        (0..2)
+            .map(|c| {
+                (0..n)
+                    .map(|i| (((i * 37 + c * 11) % 101) as f32 - 50.0) / 60.0)
+                    .collect()
+            })
+            .collect()
+    };
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for (name, make) in makers() {
+            let (mut a, mut b) = (make(), make());
+            a.prepare(48_000, 256, 2);
+            b.prepare(48_000, 256, 2);
+            let (mut x, mut y) = (sig(256), sig(256));
+            x[0][100] = bad;
+            x[1][3] = bad;
+            y[0][100] = 0.0;
+            y[1][3] = 0.0;
+            run(a.as_mut(), &mut x, &p);
+            run(b.as_mut(), &mut y, &p);
+            assert_eq!(bits(&x), bits(&y), "{name} {bad}");
+            let (mut x, mut y) = (sig(256), sig(256));
+            run(a.as_mut(), &mut x, &p);
+            run(b.as_mut(), &mut y, &p);
+            assert_eq!(bits(&x), bits(&y), "{name} {bad} next block");
+        }
+    }
+}

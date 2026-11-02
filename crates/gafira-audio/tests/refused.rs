@@ -175,3 +175,64 @@ fn arq_124_the_last_valid_value_survives_prepare() {
         assert_ne!(bits(&got), bits(&plain), "{name}: the values must matter");
     }
 }
+
+/// Two channels of a signal that is not constant, so a filter or a ramp shows.
+fn signal(frames: usize) -> Vec<Vec<f32>> {
+    (0..2)
+        .map(|c| {
+            (0..frames)
+                .map(|i| (((i * 37 + c * 11) % 101) as f32 - 50.0) / 60.0)
+                .collect()
+        })
+        .collect()
+}
+
+fn play(p: &mut dyn AudioProcessor, params: &ParamSnapshot) -> Vec<Vec<f32>> {
+    let mut b = signal(MAX);
+    run(p, &mut b, params);
+    b
+}
+
+#[test]
+fn arq_124_the_last_valid_value_survives_reset() {
+    // ARQ-124: the first block after `reset` uses the last valid value when it
+    // carries none. Twin of the `prepare` test above.
+    let set = snapshot(50.0, 0.001, -1.0);
+    for (name, make) in makers() {
+        let mut after = make();
+        after.prepare(48_000, MAX, 2);
+        let _ = play(after.as_mut(), &set);
+        after.reset();
+        let got = play(after.as_mut(), &ParamSnapshot::new());
+
+        let mut with_values = make();
+        with_values.prepare(48_000, MAX, 2);
+        let want = play(with_values.as_mut(), &set);
+        assert_eq!(bits(&got), bits(&want), "{name}");
+
+        let mut defaults = make();
+        defaults.prepare(48_000, MAX, 2);
+        let plain = play(defaults.as_mut(), &ParamSnapshot::new());
+        assert_ne!(bits(&got), bits(&plain), "{name}: the values must matter");
+    }
+}
+
+#[test]
+fn arq_125_prepare_at_another_rate_designs_for_the_new_rate_with_the_last_valid_value() {
+    // The stream shape of the new `prepare` rules, the value is the last valid
+    // one: the result equals a processor prepared at the new rate that got the
+    // value in its block.
+    let set = snapshot(50.0, 0.001, -1.0);
+    for (name, make) in makers() {
+        let mut moved = make();
+        moved.prepare(48_000, MAX, 2);
+        let _ = play(moved.as_mut(), &set);
+        moved.prepare(96_000, MAX, 2);
+        let got = play(moved.as_mut(), &ParamSnapshot::new());
+
+        let mut fresh = make();
+        fresh.prepare(96_000, MAX, 2);
+        let want = play(fresh.as_mut(), &set);
+        assert_eq!(bits(&got), bits(&want), "{name}");
+    }
+}
