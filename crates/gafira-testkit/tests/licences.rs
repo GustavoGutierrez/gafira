@@ -38,7 +38,8 @@ fn parse_entries(text: &str) -> Vec<Entry> {
         } else if let (Some(entry), Some((key, value))) = (entries.last_mut(), line.split_once('='))
         {
             let value = value.trim().trim_matches('"').to_string();
-            entry.fields.push((key.trim().to_string(), value));
+            let key = key.trim().trim_matches('"').to_string();
+            entry.fields.push((key, value));
         }
     }
     entries
@@ -194,4 +195,97 @@ fn arq_75_every_entry_points_to_a_file_that_exists() {
         let path = entry.get("path").expect("entry without path");
         assert!(repo_root().join(path).is_file(), "{path} does not exist");
     }
+}
+
+/// The fields 05 FV-38 asks of every entry.
+const FV_38_FIELDS: [&str; 7] = [
+    "path",
+    "hash",
+    "license",
+    "autoría",
+    "origin",
+    "exige atribución",
+    "modificado",
+];
+
+/// The FV-38 fields the entry lacks or leaves empty.
+fn missing_fields(entry: &Entry) -> Vec<&'static str> {
+    FV_38_FIELDS
+        .into_iter()
+        .filter(|k| entry.get(k).is_none_or(str::is_empty))
+        .collect()
+}
+
+#[test]
+fn arq_75_every_entry_has_the_fv_38_fields_and_a_blake3_hash() {
+    let entries = read_entries();
+    assert!(entries.len() >= 5);
+    for entry in &entries {
+        let path = entry.get("path").unwrap_or("?");
+        assert_eq!(missing_fields(entry), Vec::<&str>::new(), "{path}");
+        let hash = entry.get("hash").unwrap_or_default();
+        assert!(
+            hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+            "{path}: hash is not 64 lowercase hex digits"
+        );
+    }
+}
+
+#[test]
+fn arq_75_the_check_fails_when_a_field_is_removed_or_empty() {
+    for removed in FV_38_FIELDS {
+        let mut text = String::from("[[asset]]\n");
+        for key in FV_38_FIELDS.into_iter().filter(|k| *k != removed) {
+            text.push_str(&format!("\"{key}\" = \"x\"\n"));
+        }
+        let entries = parse_entries(&text);
+        assert_eq!(missing_fields(&entries[0]), vec![removed]);
+    }
+    let empty = parse_entries("[[asset]]\npath = \"\"\n");
+    assert!(missing_fields(&empty[0]).contains(&"path"));
+}
+
+#[test]
+fn arq_75_test_fonts_are_modified_and_record_the_year_of_their_own_name_table() {
+    // Year of name ID 0 in each subset, which differs from upstream's OFL.txt for two fonts.
+    let table = [
+        ("Inter-test.ttf", "Copyright 2016 The Inter Project Authors"),
+        (
+            "Manrope-test.ttf",
+            "Copyright 2019 The Manrope Project Authors",
+        ),
+        (
+            "NotoSansArabic-test.ttf",
+            "Copyright 2022 The Noto Project Authors",
+        ),
+        ("NotoEmoji-test.ttf", "Copyright 2013 Google LLC"),
+    ];
+    let entries = read_entries();
+    for (file, author) in table {
+        let path = format!("assets/fonts/test/{file}");
+        let entry = entries
+            .iter()
+            .find(|e| e.get("path") == Some(path.as_str()))
+            .unwrap_or_else(|| panic!("no entry for {path}"));
+        assert!(
+            entry.get("autoría").unwrap_or_default().starts_with(author),
+            "{path}"
+        );
+        assert_eq!(entry.get("modificado"), Some("true"), "{path}");
+        assert_eq!(entry.get("exige atribución"), Some("true"), "{path}");
+    }
+}
+
+#[test]
+fn arq_75_the_splash_licence_is_propia_and_the_open_provenance_item_is_not_stated_as_done() {
+    let entries = read_entries();
+    let entry = entries
+        .iter()
+        .find(|e| e.get("path") == Some("assets/splash_screen.jpg"))
+        .expect("no entry for the splash");
+    assert_eq!(entry.get("license"), Some("Propia"));
+    // Item 6 (b) of 00-decisiones is VERIFICAR: the register must not say the original is kept.
+    let provenance = entry.get("provenance").unwrap_or_default();
+    assert!(provenance.contains("VERIFICAR"), "{provenance}");
+    assert!(!provenance.contains("is kept"), "{provenance}");
 }
