@@ -138,4 +138,29 @@
   "mutation": null,
   "hand_mutants": {"run": 1, "killed": 1},
   "criteria": {"total": 17, "covered": 14},
-  "size": {"lines": 411, "forecast": null}, "report": "verify-report.md" } ] }
+  "size": {"lines": 411, "forecast": null}, "report": "verify-report.md" },
+  {
+  "round": 4, "delivery": "TX2", "commit": "31c2f69ebcbc2b7de27d341a057a5799388783b4", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 2, "warning": 3, "suggestion": 1},
+  "classes": ["implementation"],
+  "findings": [
+    {"id": "C16", "status": "closed"},
+    {"id": "C17", "status": "closed"},
+    {"id": "C18", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:212, :220, :502, FD-41 (i), Saltos", "summary": "Narrowed to wide boxes: parley f32 sum keeps a line over the f64 limit: false overflow from box 3 008, unstretched line up to 0.32 px off the edge", "follow_up": false, "status": "open"},
+    {"id": "C19", "status": "closed"},
+    {"id": "C20", "status": "closed"},
+    {"id": "C21", "status": "closed"},
+    {"id": "W13", "severity": "WARNING", "class": "implementation", "ref": "list.rs, f120b7e, Strict TDD", "summary": "TDD breach kept on record", "follow_up": false, "status": "open"},
+    {"id": "W26", "status": "closed"},
+    {"id": "W27", "status": "closed"},
+    {"id": "W28", "status": "closed"},
+    {"id": "C22", "severity": "CRITICAL", "class": "implementation", "ref": "layout.rs:327, FD-41 (e)", "summary": "Line.advance is an f32 running sum: 129 of 213 single lines over 0.01 px, worst 0.35, from about 2 500 px. Same cause as C20. f64 sum gives 0 of 213", "follow_up": false, "status": "open"},
+    {"id": "W29", "severity": "WARNING", "class": "ambiguity", "ref": "FD-41 parrafo, (a), layout.rs:221", "summary": "One direction for the whole text: a Latin paragraph after an Arabic one is ordered and hung as RTL. FD-41 does not define the bidi paragraph. Owner to decide", "follow_up": true, "status": "open"},
+    {"id": "W30", "severity": "WARNING", "class": "ambiguity", "ref": "FD-41 Justificado, (i), layout.rs:498", "summary": "A line with words split only by U+2003 is not stretched; FD-41 does not define what separates words", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "criteria": {"total": 17, "covered": 15},
+  "size": {"lines": 266, "forecast": null}, "report": "verify-report.md" } ] }
