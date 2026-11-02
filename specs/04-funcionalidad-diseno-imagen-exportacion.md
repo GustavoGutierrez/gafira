@@ -474,7 +474,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
   - **Mayúsculas**: conversión Unicode completa sin idioma (`ß` da `SS`; ARQ-107).
   - **Subrayado y tachado**: posición y grosor salen de las tablas `post` y `OS/2`; con grosor 0 o ausente, 0,05 em (PROPUESTA).
   - **Listas**: numeradas con `1.` y con viñetas `•`, `◦` y `▪` por nivel, en ciclo; hasta 4 niveles; sangría de 1,5 em por nivel (PROPUESTA).
-  - **Fuentes de reserva** (D-19): quien llama da una lista ordenada de fuentes en bytes. Cada clúster usa la primera fuente que cubre todos sus puntos de código. Si ninguna lo cubre, usa la fuente que cubre más puntos de código del clúster, y en un empate la primera de la lista. Los puntos sin cobertura usan su `.notdef` y la salida lo indica; no es un error.
+  - **Fuentes de reserva** (D-19): quien llama da una lista ordenada de fuentes en bytes, con al menos una; una lista vacía da `Err`, porque el texto se perdería sin aviso. Cada clúster usa la primera fuente que cubre todos sus puntos de código. Si ninguna lo cubre, usa la fuente que cubre más puntos de código del clúster, y en un empate la primera de la lista. Los puntos sin cobertura usan su `.notdef` y la salida lo indica; no es un error.
   - **Emoji** (D-19, D-30): en el MVP son contornos de esas fuentes de reserva; las pruebas usan un subconjunto OFL monocromo. Una fuente que solo tiene emoji en color no cubre el clúster. El emoji en color es de Fase 2.
   - **Hinting**: posiciones y avances no dependen del hinting (ARQ-42). Los contornos reciben el modo como entrada y los golden van sin hinting.
 - *UI*: herramienta Texto (T); Panel lateral → Texto; Inspector → Texto.

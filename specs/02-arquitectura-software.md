@@ -928,6 +928,7 @@ Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pu
 | Interletrado | `[−100, 500]` milésimas de em, extremos incluidos. | FD-41 |
 | Interlineado | `[0,5; 4,0]`, extremos incluidos. | FD-41 |
 | Fuente sin métricas | Altura natural ≤ 0: `Err` de fuente inválida. | FD-41 |
+| Lista de fuentes vacía | `Err` de fuente inválida, también con texto vacío, tras las comprobaciones de ARQ-110. Aceptación: `"abc"` y `""` con la lista vacía dan ese `Err`; con NaN en el DPI, el `Err` es el de no finito. | FD-41 |
 | Caja de tamaño 0 | Sin error; hay desborde si el texto tiene algún clúster que no sea espacio en blanco (`White_Space` de Unicode). Aceptación: `" "`, `"   "`, `"\t"`, `"\n"` y `"\r\n"` no dan desborde; `"a"` y `" a"` lo dan. | FD-41, FD-45 |
 | Columnas | `count` en 1–8; `gap` en `[0, 200]`; ancho de columna ≥ 1 px. | FD-45 |
 | `FitBox` | `min_size ≤ max_size`, los dos en `[1, 1000]`; el límite «cabe» incluye la igualdad; rejilla de 0,25 pt. | FD-46 |
