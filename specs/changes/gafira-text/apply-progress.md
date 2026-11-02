@@ -493,3 +493,61 @@ Performance of the columns search (found by the sweep, fixed in da3901d): 5 000 
 5. **FD-43 (a).** "Un contorno de 4 px no cambia el layout" is proved as: the contours come from the layout and its fonts (`&TextLayout` in, no style or effect in), a 4 px stroke from `gafira-pathops` grows the ink by 2 px on every side, and the layout (and the cluster positions and advances) is equal before and after. The layout has no outline input to vary, so nothing else can be tested. Glyphs use the first face of a font file; a glyph with no outline gives no contour. `Cluster` gained `glyph_offsets` and `size_px` for this.
 6. **The `.notdef` of the three test subsets has no outline**, so the `.notdef` cluster has an empty path. A font whose glyph 0 is a box would draw it.
 7. **Subsets and bidi in the sweep** found no defect in TX3 or TX4 other than the performance of the balanced split.
+
+## Fix round 1 of verify (TX3 and TX4), `tdd-apply`
+
+Commits on `feat/gafira-text`: `3d9d9d1` (test gaps C25, C26, C27, W36, S17), `84cea9f` (C23), `6240b05` (W35, S14, S15), `b91594e` (C24, W34, FD-44 (d) to (g), FD-45 one column). Spec read: `39df3a9`. The gates ran on a clean tree before each commit: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0, each exit code read alone.
+
+### RED evidence
+
+Items whose code was right (C25, C26, C27, W36, S17) had no failing test on HEAD by nature: the test is the new proof and its RED is the hand mutant that it kills (below). The others failed first on the code of HEAD:
+
+| Item | Test | Failing line on the code before the fix |
+|---|---|---|
+| C23 | `fd_43_a_letter_spacing_opens_every_gap_between_inked_clusters_in_both_directions` | `"داراز": gap 1 grew by 0 instead of 10` |
+| W35 | `fd_46_f_no_line_passes_the_box_when_the_sizes_and_the_spacing_differ` | `(20.0, 10.0) t 500: a line of 63.12499761581421 px in a box of 60`; for a negative spacing, with the first fix only: `(20.0, 10.0) t -100: a line of 85.40624952316284 px in a box of 84.66` |
+| S14 | `fd_46_f_a_run_with_no_text_does_not_set_the_largest_size` | `left: 7.425000000000001 right: 74.25` |
+| flag | `fd_44_the_trailing_white_space_of_a_line_is_flagged_in_either_direction` | `"ab cd"  left: [[], []]  right: [[2], []]` |
+| C24, W34, FD-44 (d) | `fd_44_f_no_line_of_an_ordinary_box_has_a_radius_of_zero_or_less` | `bend 100: an arc of 236.42291722191004 px for a line of 292.7421875` |
+| W34, FD-44 (g) | `fd_44_g_a_space_at_the_end_does_not_move_the_glyphs_before_it`, `fd_44_d_a_wrapped_line_ignores_the_space_that_hangs_at_its_end`, `fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc` | `assertion failed: (ca.radius - cb.radius).abs() <= 0.01`; the others at their `assert!` on positions and rotations |
+| FD-44 (e) | `fd_44_e_a_line_with_no_advance_does_not_change` (rows `" "`, `"a\n \nb"`, `"a\n   \nb"`) | `left: Some(Arc { radius: 2.04627783975294, ... })  right: None` |
+| FD-44 multi-line | `fd_44_lines_use_concentric_arcs_with_the_same_theta` (rewritten to the `R_ref` rule, three more texts) | failed on HEAD at the radius of its lines |
+
+Old curve tests (`fd_44_d_*`, `fd_44_e_a_tiny_bend_*`, the circle test) now read `L` and `s` without the white space that hangs; they changed with the rule, and failed on HEAD with it.
+
+### Hand mutants (made in `src`, seen to fail, restored; none committed)
+
+| Mutant | Killed by |
+|---|---|
+| C25: `Pen::quad_to` draws a `line_to` to the end point | `fd_43_a_a_round_glyph_keeps_the_curves_of_its_font`: `LineTo((21.65625, 93.34375)) instead of QuadTo((28.953125, 97.859375), (21.65625, 93.34375))` |
+| S17: `Pen::curve_to` draws a `line_to` | `outline::tests::fd_43_a_a_cubic_curve_of_a_font_stays_a_cubic_curve_moved_and_flipped`: `left: LineTo((15.0, 94.0))  right: CurveTo(...)` (in-crate, since no embedded font has cubics) |
+| C26: `ColumnsLayout::height` is `out[0].height` | `fd_45_auto_height_is_the_tallest_column_when_the_lines_differ_in_height`: `left: 53.151375 right: 58.078125` (the fixture asserts first that column 0 is shorter) |
+| C27: `text.trim().is_empty()` in `fit_box` | `fd_46_a_white_space_is_a_text_with_a_height_and_grows_to_the_box`: `grew from 16 pt, got 16` |
+| W36: `bench_text_fit_500` out of `criterion_group!` | `arq_114_each_benchmark_function_is_in_the_criterion_group`: `bench_text_fit_500 is defined but criterion_group! does not run it` |
+| C23: `-=` for `+=`; `/ 2.0`; no `c.rtl` guard (left-to-right moves too) | the C23 test: `gap 1 grew by -10 instead of 10`; `grew by 5 instead of 10`; `"HIHIH": gap 4 grew by 0 instead of 10` |
+| W35: the spacing of the largest run (HEAD); the smallest for a negative spacing; the largest for a positive one | the W35 test: `63.12` px in 60; `t -100 ... 85.41 px in 84.66`; `t 500 ... 63.12 px in 60` |
+| S14: `.filter(\|_\| true)` for runs with text | `fd_46_f_a_run_with_no_text_does_not_set_the_largest_size`: `left: 7.425 right: 74.25` |
+| one column: `overflow` not set for `count = 1` | `fd_45_a_a_single_column_flags_overflow_when_the_text_is_taller_than_a_fixed_box`: `taller than the box` |
+| curve: no `sigma` term in `R_ref` | `fd_44_lines_use_concentric_arcs_with_the_same_theta`, `fd_44_d_the_chord_at_100_*`, `fd_44_f_*` |
+| curve: `L` is `line.advance` | `fd_44_d_a_cluster_at_s_*`, `fd_44_g_*`, `fd_44_d_a_wrapped_line_*`, `fd_44_d_a_space_inside_*`, the concentric test |
+| curve: `s` counts the advance of the hanging space | `fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc`, `fd_44_d_a_wrapped_line_*`, `fd_44_g_*` |
+| curve: lines with `L = 0` enter the maximum; `length < 0.0` curves them; `min` for `max`; radius `+` for `-` | the concentric test (fixture `"ab\n \n \n "`); `fd_44_e_a_line_with_no_advance_does_not_change`; `fd_44_d_the_chord_at_100_*`, `fd_44_f_*`; the concentric test |
+| flag: `c.trailing = !*h` | `fd_44_the_trailing_white_space_of_a_line_*` and six more |
+
+### Adversarial sweep (throwaway, release, deleted)
+
+Curves: 30 720 checks (10 texts: Latin, Arabic, Latin + Arabic both ways, white space only, leading and trailing spaces, empty lines, Arabic + emoji; boxes 1 to 5 000 px; 6, 12, 40, 200 pt; spacing 0, 100, -50, 500; Left, Center, Right, Justify; bends ±100, 99.9, -50, 17, ±0.01, 1e-5). For every line: `Ok`; radius > 0; `R_i |theta| >= L_i` within 0.01 px; the lines with content share the centre; one has the equality; no line with content is straight. 0 problems. Ink gaps: 858 checks on the outlines (Latin, Arabic, joined Arabic, a phrase, 12 and 75 pt, spacing 100, 300, -50, four alignments; Justify skipped where a space moves) plus 108 with two runs of 10 and 20 pt in both orders and both directions through `fit_box`: the gain of each gap over the unspaced layout is the spacing of the cluster that owns it (the logical previous one), within 0.05 px. 0 problems.
+
+### Measured
+
+`git diff --shortstat 2e8d7a8..HEAD` before this note: 12 files changed, 738 insertions, 97 deletions (mostly tests: `tests/curve.rs` +319 -86).
+
+### Deviations and open points
+
+1. **`Cluster::trailing`** is a new public field (white space at the logical end of its line, any direction). The curve takes only a `TextLayout`, with no text, and FD-44 now needs the hanging space (also the opposite-level one, inside the line). It is the `hanging_mask` that `read_lines` already computed for the spacing. `Cluster` is built only in `read_lines`.
+2. **A hanging space has a point on the curve, no place**: it sits where the content before it ends (`s` does not grow by its advance), so one position per cluster stays and the cluster count of a line is unchanged. The spec says it "has no place on the arc" and fixes nothing else. Tested only for finite values and for not moving the glyphs.
+3. **W35 and negative spacing.** The break widens the box by the spacing of the smallest run for a positive spacing and of the largest for a negative one (the smallest value the last cluster can have), found by the test above. A line that ends in a large run may break earlier, as the report said.
+4. **S14.** An empty run keeps its proportion to the largest run with text, so its entry in `sizes_pt` can pass 1 000 pt (an empty run of 1 000 pt beside text of 1 pt, at the top of the range); it is only a number, since it lays out nothing. S15 is a sentence in the doc of `fit_box`.
+5. **Interior opposite-level space.** No embedded text I found makes parley put a trailing space of the other level inside a line (probed 10 texts, with RLM and LRM), so that case is proved on a layout whose cluster is flagged by hand (`fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc`). The flag itself is proved in both directions in `tests/layout.rs`.
+6. **W37 stays open** (FD-45 with lists: `layout_list` and `layout_columns` do not meet). S16 and S18 are settled by `39df3a9`; S18 got a test (`fd_45_a_a_single_column_flags_overflow_*`), S16 was already tested in `fd_45_d_the_numbers_are_checked`.
+7. The `Slice card` was not touched.
