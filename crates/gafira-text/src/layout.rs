@@ -483,8 +483,15 @@ fn read_lines(
                 .filter(|i| !hanging[*i])
                 .max_by_key(|i| clusters[*i].range.start);
             for (i, c) in clusters.iter_mut().enumerate() {
+                let gap = spacing(c.range.start);
                 if (last == Some(i) || hanging[i]) && !hard_breaks[i] {
-                    c.advance -= spacing(c.range.start);
+                    c.advance -= gap;
+                } else if c.rtl && !hard_breaks[i] {
+                    // Parley puts the spacing on the right of an rtl glyph, at the left edge
+                    // of the advance; "after" the cluster is its left, so the glyphs move.
+                    for offset in &mut c.glyph_offsets {
+                        offset.0 += gap;
+                    }
                 }
             }
         }

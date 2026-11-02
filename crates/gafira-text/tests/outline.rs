@@ -287,6 +287,41 @@ fn fd_43_a_a_round_glyph_keeps_the_curves_of_its_font() {
     }
 }
 
+/// The ink of each cluster of the first line, left to right, with letter spacing `t`.
+fn ink_of_line(text: &str, t: f64, align: TextAlign) -> Vec<Bounds> {
+    let style = TextStyle {
+        letter_spacing: t,
+        ..style(align)
+    };
+    let layout = layout_box(text, &STACK, &style, DPI, Size::new(600.0, 1000.0)).expect("valid");
+    outline_text(&layout, &STACK)
+        .expect("valid input")
+        .iter()
+        .filter(|o| o.line == 0)
+        .map(|o| bounds_of(&o.path).expect("every letter has ink"))
+        .collect()
+}
+
+#[test]
+fn fd_43_a_letter_spacing_opens_every_gap_between_inked_clusters_in_both_directions() {
+    // FD-41 Interletrado: t = 100 at 100 px is 10 px after each cluster but the last of the line.
+    // Latin is the control; Arabic is right to left, where "after" is on the left of the glyph.
+    for text in ["HIHIH", "\u{62F}\u{627}\u{631}\u{627}\u{632}"] {
+        let plain = ink_of_line(text, 0.0, TextAlign::Left);
+        let spaced = ink_of_line(text, 100.0, TextAlign::Left);
+        assert_eq!(plain.len(), 5, "{text:?}");
+        for i in 1..plain.len() {
+            let gain = (spaced[i].x0 - spaced[i - 1].x1) - (plain[i].x0 - plain[i - 1].x1);
+            assert!(
+                (gain - 10.0).abs() < 0.05,
+                "{text:?}: gap {i} grew by {gain} instead of 10"
+            );
+        }
+        // The first cluster does not move and the ink ends 4 gaps later.
+        assert!((spaced[0].x0 - plain[0].x0).abs() < 0.05, "{text:?}");
+    }
+}
+
 #[test]
 fn fd_43_a_the_counters_of_a_letter_are_contours_of_their_own() {
     let layout = lay("HAB", 400.0, TextAlign::Left);
