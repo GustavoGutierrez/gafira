@@ -76,6 +76,8 @@ impl Default for TextStyle {
 /// The laid out text, without pixels (ARQ-116).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TextLayout {
+    /// Height of all the lines, in px.
+    pub height: f32,
     /// The text that was laid out: the input, in upper case when asked. Cluster ranges
     /// index it.
     pub text: String,
@@ -214,6 +216,7 @@ pub fn layout_box(
         lines = read_lines(&laid, &blob_ids, spacing, style, size_px)?;
     }
     let out = TextLayout {
+        height: laid.height(),
         text: text.to_string(),
         lines,
         overflow,
@@ -365,7 +368,7 @@ fn in_range(field: &'static str, value: f64, (lo, hi): (f64, f64)) -> Result<(),
 
 /// Non-finite checks of every input first, then the ranges, then the computed size.
 /// Returns the font size in px.
-fn check_input(style: &TextStyle, dpi: f64, bounds: Size) -> Result<f32, TextError> {
+pub(crate) fn check_input(style: &TextStyle, dpi: f64, bounds: Size) -> Result<f32, TextError> {
     let size_pt = finite("style.size_pt", style.size_pt)?;
     let spacing = finite("style.letter_spacing", style.letter_spacing)?;
     let line_height = finite("style.line_height", style.line_height)?;
