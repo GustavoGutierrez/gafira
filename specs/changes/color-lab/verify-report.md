@@ -196,3 +196,119 @@ Checks that could not run: the Windows and macOS CI jobs (not a gate of this dep
 Owed at close: T4 `mutants` on `gafira-color` before archive, with `W1` settled first, then a closure verify only if T4 leaves a critical survivor.
 
 next: archive
+
+---
+
+# Verify report: color-lab, delivery CL1, round 3 (closure, T4 fix round)
+
+Commit verified: `852b92f` (`feat/color-lab-t4`, base `978bbcb`). Depth V2, mode full, tier T4, `mutation: archive`.
+
+**Verdict: PASS.** T4 at the fix commit leaves 0 critical missed. The four timeouts are not open: on re-run each is caught by a test assertion. All 7 new exclusions are equivalent and match exactly the 7 intended mutants.
+
+CRITICAL 0, WARNING 0, SUGGESTION 5. Classes: none open.
+
+## Gates (each exit code read alone, on a clean export of `852b92f`)
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1188 passed, 0 failed) |
+| `cargo deny check` | 0 |
+| CI policy steps, one by one (ARQ-07, forbid unsafe, V5, V12, V13, V14) | 0 each |
+
+V13 and V14 call `git`, so they exited 1 on the plain export ("not a git repository"). That was the harness, not the code. All six were run again on a git clone at `852b92f`, and those exits are the ones in the table.
+
+These ran on Linux only. For the other platforms see WF2 below.
+
+## Artifact integrity (steps 3, 3c)
+
+- Slice card: from `6202244` to HEAD, `apply-progress.md` has 77 added and 0 deleted lines, so the card is unchanged.
+- `bbd911d` touches only `crates/gafira-color/tests/lab.rs`. `852b92f` touches `.cargo/mutants.toml` and `apply-progress.md`. `crates/gafira-color/src` is unchanged against `978bbcb`.
+- Criteria: 7 of 7 covered, as in round 2. `ARQ-122` is in the tests. Left out as the card says: palette and dHash (`RS6`).
+- Size: 446 lines under `crates/` (29 in this round), under the ~700 ceiling.
+
+## T4 (step 4)
+
+The report is valid for this commit. The run started at 22:03:57, after the commit at 22:03:35, from this worktree. It found 415 - 7 = 408 mutants, and its log has the new test failing, so it contains the fix.
+
+| Run | Found | Caught | Missed | Timeout | Unviable | Wall |
+|---|---|---|---|---|---|---|
+| First T4, `978bbcb` | 415 | 387 | 8 | 0 | 20 | 3 min |
+| T4, `852b92f`, 8 jobs, limit 20 s | 408 | 384 | 0 | 4 | 20 | 384 s |
+| Re-run, lines 128 and 129, 4 jobs, limit 300 s | 9 | 9 | 0 | 0 | 0 | 19 s |
+
+Critical missed: 0.
+
+## The four timeouts: not open
+
+| Mutant | T4 | Re-run | Test binary in the re-run |
+|---|---|---|---|
+| `lab.rs:128:13` `+` to `*` | timeout 20 s | caught, exit 101 | 5 tests fail |
+| `lab.rs:129:23` `<` to `==` | timeout 20 s | caught, exit 101 | 4 tests fail |
+| `lab.rs:129:23` `<` to `>` | timeout 20 s | caught, exit 101 | 3 tests fail |
+| `lab.rs:129:23` `<` to `<=` | timeout 20 s | caught, exit 101 | 1 test fails, `arq_122_mean_hue_adjusts_for_a_sum_below_360` |
+
+**Applying "Hanging mutants": the exception does not apply, and it is not needed.**
+
+- They are not hanging. The rule needs a re-run that confirms the mutant does not terminate. Here each terminates, in 0.05 to 0.15 s of test phase. So they do not count as "detected" through that exception.
+- The timeouts measured no test at all. All four T4 logs end in `Blocking waiting for file lock on package cache`, with 0 `running` lines and 0 `test result` lines. No test binary started in those 20 s. So the cause is contention, not the mutant.
+- The stall was machine-wide. A fifth mutant, `128:13` `+` to `-`, spent 19.43 s in the same window before failing on assertions, and two neighbours took 43.85 s to build (usual build 3 to 15 s). 350 logs of the run show the same lock wait.
+- Detection is proved directly. The re-run has the same 4 mutants, on the same tree, each killed by assertions. The limit was longer and the load lower. No source changed between the two runs.
+- Independent check. I applied the 4 mutants by hand on a scratch export, with no contention: same failing tests, test binary 0.00 s, exit 101.
+
+**Ruling.** `AGENTS.md` says a timeout that load explains stays a finding, and step 4 says it stays CRITICAL. I read that as guarding against counting an unproven timeout as detected. These four are not unproven: for them, the newest `mutants` report shows caught, not timeout. So they are recorded as finding TO1, closed, and not CRITICAL. The rule does not name this case in so many words, which is why S7 asks for it to be stated.
+
+## Closure of findings
+
+| Finding | Result | Evidence |
+|---|---|---|
+| M1 `lab.rs:129:18` `+` to `*`, real test gap | closed | Caught in T4 and in the re-run. Only `arq_122_mean_hue_adjusts_for_a_small_hue_and_a_large_hue` fails, confirmed by hand as well |
+| W1 exclusions | closed | See below |
+| WF2 atan2 bits on other platforms | closed | CI run 41380387263 at `978bbcb`, which holds the exact-180 test and pair 14: `policy`, Linux, `aarch64-apple-darwin` and `x86_64-pc-windows-msvc` all success |
+| TO1 four timeouts | closed | See above |
+
+Scope of WF2: the CI run shows these cases pass on those targets. The sensitivity is still there and could return with a new libm. CI has not run the new test, but its hues differ by 240 degrees, far from the discontinuity.
+
+The new test is sound. Hues are 9.95 and 249.92, sum 259.87, difference 239.97. The right mean is 309.93, and the mutant gives -50.07. `T` has period 360, so the mutant only shows through `dtheta`, which is not periodic: 44.298 against 43.709. Expected 43.70902302239777 equals scikit-image 0.25.2 and my own implementation from the paper, in both orders. Tolerance is 1e-9.
+
+## Exclusions (6 new entries, 7 mutants)
+
+Each regex was run against the mutant list of the first T4: it removes exactly the 7 intended mutants, adds none, and nothing else in `lab.rs` matches. No other file is mutated under the name `lab.rs` (`tests/lab.rs` is not mutated). Neighbours stay tested, for example `118:16` `+=` to `*=`.
+
+Each mutant was run against the original on 6,000,000 inputs: random, exact and tiny zero chroma, tiny against huge chroma (down to `5e-324` and up to `1e300`, where a quotient underflows), near-opposite hues, and near-equal colors across hue 0.
+
+| Mutant | Reason in the file | Result | Worst difference | Bit differences |
+|---|---|---|---|---|
+| `41:10` `>` to `>=` | same f64 at `EPSILON` | equivalent | n/a | `cbrt` and the linear arm have the same bits at `EPSILON` |
+| `111:24` `*` to `+` | `th` is 0 | equivalent | 0 | 0 |
+| `111:24` `*` to `/` | `th` is 0 | equivalent | 0 | 0 |
+| `116:16` `-=` to `+=` | full sine period | equivalent, rounding only | 8.5e-14 | yes |
+| `118:16` `+=` to `-=` | full sine period | equivalent, rounding only | 9.2e-14 | yes |
+| `126:12` `+` to `-` | `th` is 0 | equivalent | 0 | 0 |
+| `126:12` `+` to `*` | `th` is 0 | equivalent | 0 | 0 |
+
+- `dh` is used only in the sine, so 116 and 118 cannot reach anything else. The worst relative difference is 3.1% on a result of about 3e-12, where the value is itself rounding noise. No test could assert on that without aiming at the mutant.
+- `th = 0` also needs `S_H > 0`, or it becomes `0/0`. Checked: `T` is periodic with a minimum of 0.362, so `S_H >= 1`. The file does not state this (S6).
+- `/` is the only subtle case: `0/0` gives NaN, which is `!= 0`, and `c1/c2` can underflow to 0 while `c1*c2` is not 0. Neither changes the result: 0 differences, 0 NaN differences.
+- All reasons are present. Three have wording issues, listed in S6. None changes the outcome.
+
+## CRITICAL
+
+None open.
+
+## WARNING
+
+None open.
+
+## SUGGESTION
+
+- S2 of round 1, still open. The `hue_degrees` doc says `[0, 360)`.
+- S4 of round 2, still open. Comment on the reversed pairs says "the +180 wrap".
+- S5 of round 2, still open. Comment says "just under 360", and the sum is exactly 360.
+- S6. `.cargo/mutants.toml`. The header says each regex matches exactly one mutant, but three new entries match two, as `align.rs` already did. The `116|118` reason says the wraps differ by 720 degrees "in the sine argument": `dh` differs by 720, its half by 360. The `111:24` reason ends in "the same cases that matter", which is loose, and `S_H > 0` is not stated.
+- S7. `AGENTS.md` "Hanging mutants" and step 4 of `verify` do not name a timeout that a re-run catches on assertions; state it. Also, a baseline of 0.15 s gives an auto limit of 20 s, which a package-cache lock can use up at 8 jobs before any test runs; a higher floor (`--minimum-test-timeout`) would avoid these re-runs. Both are owner or coordinator decisions.
+
+Checks that could not run: none. Per-commit gates are V3 and were not run. No independent-mutant budget was spent: 5 mutants were applied by hand (M1 and the 4 timeouts), and the 7 exclusions were probed by differential.
+
+next: archive

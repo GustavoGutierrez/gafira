@@ -19,4 +19,12 @@ exclude_re = [
     'grid\.rs:113:27: replace < with <= in level$',
     # Equivalent: two candidates that tie on distance, kind, coordinate and reference differ at most in the sign of a zero (0.0 and -0.0 tie), which the spec treats as the same target (same offset), so replacing one by the other changes nothing.
     'snap\.rs:98:13: replace < with <= in Candidate::beats$',
+    # lab.rs (T4 fix round). Equivalent: at `t = EPSILON` both branches of `f` give the same f64 (difference 0), so `>` and `>=` agree everywhere.
+    'lab\.rs:41:10: replace > with >= in f$',
+    # Equivalent: `chromatic` only gates `dh`, and with `C1 * C2 = 0` the term `dH'` is 0 either way (`2*sqrt(C1*C2)` is 0), so `th` is 0 and `S_H` and `R_T` reach the result only through `th`; a sum or quotient is zero or non-zero in the same cases that matter.
+    'lab\.rs:111:24: replace \* with (\+|/) in delta_e2000$',
+    # Equivalent: the 360 degree wraps of `dh` differ by 720 degrees in `dh/2` radians' sine argument, and `sin` keeps its value over a full period (difference at rounding level, 8.5e-14).
+    'lab\.rs:(116|118):16: replace (-=|\+=) with (\+=|-=) in delta_e2000$',
+    # Equivalent: the achromatic arm of `h_bar` feeds only `T`, `S_H` and `R_T`, which reach the result through `th`, and `th` is 0 when `C1 * C2 = 0`.
+    'lab\.rs:126:12: replace \+ with (-|\*) in delta_e2000$',
 ]

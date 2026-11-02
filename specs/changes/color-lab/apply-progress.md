@@ -77,3 +77,14 @@ Correction of the mutant 4 line above ("the published pairs are one-directional"
 Expected values: from the verify report (two independent implementations, 7 decimals; tolerance 1e-6); the mid-range and grey Lab were also recomputed in f64 from the crate's matrices (12 digits).
 
 Not done: W1 (`.cargo/mutants.toml`) is follow-up for T4 at close. S2 of the report (`hue_degrees` doc) touches production and is left out.
+
+## T4 fix round (8 survivors in `lab.rs` at 978bbcb)
+
+Production unchanged.
+
+| Survivor | Outcome |
+|---|---|
+| `lab.rs:129:18` `+` to `*` in `delta_e2000` (the `h1 + h2 < 360` selection) | Real gap. New test `arq_122_mean_hue_adjusts_for_a_small_hue_and_a_large_hue` (hues about 10 and 250, both orders), expected 43.70902302239777 from scikit-image 0.25.2 `deltaE_ciede2000`, tolerance 1e-9. It passes on the code and fails with the mutant applied (restored). |
+| `lab.rs:41:10` (E1), `lab.rs:111:24` x2 (E2), `lab.rs:116:16` and `118:16` (W9, W10), `lab.rs:126:12` x2 (H4) | Equivalent, as in the verify report. Excluded in `.cargo/mutants.toml`, one entry per group with its reason, each anchored on file, line, column and function. |
+
+`cargo mutants` was not run in this round.
