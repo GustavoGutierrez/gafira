@@ -205,3 +205,13 @@ fn arq_123_a_refused_block_does_not_advance_the_fade() {
     run(&mut f, &mut ok, &snap(0.02));
     assert_eq!(ok[0], 0.0, "still at the start of the fade");
 }
+
+#[test]
+fn arq_124_prepare_again_reads_the_duration_afresh() {
+    let mut f = prepared(FadeDirection::In);
+    let _ = ones(&mut f, 100, &snap(0.02));
+    f.prepare(48_000, 512, 1);
+    let out = ones(&mut f, 400, &snap(0.005)); // 240 samples
+    assert_eq!(out[240], 1.0);
+    assert!((out[120] - 0.5).abs() < 1e-6);
+}

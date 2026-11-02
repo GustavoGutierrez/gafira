@@ -300,3 +300,14 @@ fn arq_111_reset_ends_a_running_ramp() {
     run(&mut g, &mut c, &ParamSnapshot::new());
     assert_eq!(c[0], vec![0.0; 8], "the last valid value, at once");
 }
+
+#[test]
+fn arq_124_prepare_again_makes_the_next_value_a_first_one() {
+    let mut g = prepared(48_000);
+    let mut b = mono(2048, 1.0);
+    run(&mut g, &mut b, &snap(200.0));
+    g.prepare(44_100, 4096, 1);
+    let mut c = mono(64, 1.0);
+    run(&mut g, &mut c, &snap(50.0));
+    assert_eq!(c[0], vec![0.5; 64]);
+}

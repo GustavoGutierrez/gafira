@@ -18,10 +18,10 @@ impl Setup {
     /// True when the block may be processed. A `prepare` with a 0, a block
     /// above `max_block`, channels of different lengths or a channel count
     /// other than the prepared one make `process` only clean it (ARQ-123).
-    /// With `max_block == 0` every non-empty block is above it.
+    /// With `max_block == 0` every non-empty block is above it, and with
+    /// `channels == 0` no block has the prepared channel count.
     pub fn accepts(&self, block: &AudioBlock<'_>) -> bool {
         self.sample_rate != 0
-            && self.channels != 0
             && block.channels.len() == usize::from(self.channels)
             && block.is_uniform()
             && block.frames() <= self.max_block
