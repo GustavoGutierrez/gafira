@@ -16,5 +16,9 @@ proptest.workspace = true
 criterion.workspace = true
 gafira-testkit.workspace = true
 
+[[bench]]
+name = "transitions"
+harness = false
+
 [lints]
 workspace = true
