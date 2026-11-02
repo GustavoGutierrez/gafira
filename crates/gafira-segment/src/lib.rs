@@ -10,6 +10,7 @@ mod gmm;
 mod hints;
 mod meter;
 mod refine;
+mod reliable;
 mod slic;
 mod table;
 mod work;
@@ -132,12 +133,14 @@ impl Segmenter for ClassicSegmenter {
         check_pixels(&img)?;
         let src = Source::new(&img);
         let (w, h) = (src.width, src.height);
-        let data = if hints.zone == SegZone::All {
+        let (data, reliable) = if hints.zone == SegZone::All {
             // Nothing to separate: the whole image, after one look at the token.
-            let meter = Meter::new(progress, cancel, 1);
+            let meter = Meter::new(progress, cancel, 1 + (w * h) as u64);
             meter.step(1)?;
+            let data = vec![255; w * h];
+            let reliable = reliable::assess(&img, &data, &meter)?;
             meter.finish()?;
-            vec![255; w * h]
+            (data, reliable)
         } else {
             let (ww, wh) = work::working_size(w, h);
             let planned = (w * h) as u64
@@ -145,7 +148,8 @@ impl Segmenter for ClassicSegmenter {
                 + cut::planned(ww, wh)
                 + refine::planned(w, h)
                 + hints.stroke_cost(work_scale(w, h, (ww, wh)), (ww, wh))
-                + hints.stroke_cost((1.0, 1.0), (w, h));
+                + hints.stroke_cost((1.0, 1.0), (w, h))
+                + (w * h) as u64;
             let meter = Meter::new(progress, cancel, planned);
             let mut data = self.subject(&src, hints, (ww, wh), &meter)?;
             if hints.zone == SegZone::Background {
@@ -153,14 +157,12 @@ impl Segmenter for ClassicSegmenter {
                     *a = 255 - *a;
                 }
             }
+            let reliable = reliable::assess(&img, &data, &meter)?;
             meter.finish()?;
-            data
+            (data, reliable)
         };
         let mask = AlphaMask::new(width, height, data)?;
-        Ok(Segmentation {
-            mask,
-            reliable: false,
-        })
+        Ok(Segmentation { mask, reliable })
     }
 }
 
