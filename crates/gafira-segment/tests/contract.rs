@@ -1,6 +1,7 @@
 //! ARQ-130 shape and sizes, ARQ-110 inputs of `ClassicSegmenter::segment`.
 
 use gafira_doc::contract::{CancelToken, NoProgress};
+use gafira_doc::msg::MessageKey;
 use gafira_raster::{BufferError, ImageView, PixelData, PixelFormat};
 use gafira_segment::{ClassicSegmenter, SeedStroke, SegError, SegHints, SegZone, Segmenter};
 use gafira_testkit::progress::ProgressLog;
@@ -173,4 +174,15 @@ fn arq_130_requirements_state_the_working_size() {
     let r = seg().requirements();
     assert_eq!(r.max_work_side, 2048);
     assert!(!r.gpu);
+}
+
+// ARQ-130 / 02 §4.7: a `Segmenter` is a `Describe`, so a registry can hold it.
+#[test]
+fn arq_130_segmenter_describes_itself() {
+    let s = seg();
+    let dynamic: &dyn Segmenter = &s;
+    let d = dynamic.descriptor();
+    assert_eq!(d.id, "segment.classic");
+    assert_eq!(d.name, MessageKey("segment.classic"));
+    assert_eq!(d.version, 1);
 }

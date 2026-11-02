@@ -16,7 +16,8 @@ mod work;
 
 use std::sync::Arc;
 
-use gafira_doc::contract::{CancelToken, Progress};
+use gafira_doc::contract::{CancelToken, Describe, Descriptor, Progress};
+use gafira_doc::msg::MessageKey;
 use gafira_raster::{AlphaMask, BufferError, ImageView, PixelData};
 
 use meter::Meter;
@@ -44,7 +45,7 @@ pub struct Segmentation {
 }
 
 /// Isolates a subject from an image (02 §4.7).
-pub trait Segmenter: Send + Sync {
+pub trait Segmenter: Describe + Send + Sync {
     /// CPU or GPU, and the longest side of the working copy.
     fn requirements(&self) -> SegReq;
 
@@ -62,6 +63,9 @@ pub trait Segmenter: Send + Sync {
     ) -> Result<Segmentation, SegError>;
 }
 
+static DESCRIPTOR: Descriptor =
+    Descriptor::new("segment.classic", MessageKey("segment.classic"), 1);
+
 /// The colour-only segmenter of the MVP (D-45). It runs its parallel passes on
 /// the pool it is given, so the trait does not depend on `rayon`.
 #[derive(Clone)]
@@ -74,6 +78,12 @@ impl ClassicSegmenter {
     #[must_use]
     pub fn new(pool: Arc<rayon::ThreadPool>) -> Self {
         Self { pool }
+    }
+}
+
+impl Describe for ClassicSegmenter {
+    fn descriptor(&self) -> &Descriptor {
+        &DESCRIPTOR
     }
 }
 
