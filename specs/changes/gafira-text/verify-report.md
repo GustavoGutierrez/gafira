@@ -1,3 +1,151 @@
+# Verify report: gafira-text, TX2, round 2 (closure)
+
+Commit 2fcf998c on `feat/gafira-text`. Fix commits c986a36, b007072, 689a84c, 9dbc3e8, 282db5c; specs merged in 16204dd. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Round 1 of TX2 follows this section and is in commit 084c45e.
+
+**Verdict: FAIL.** 5 CRITICAL, 3 WARNING, 1 SUGGESTION. Classes: implementation 7 (5 CRITICAL), ambiguity 1 (follow-up). All gates are 0. Fix size: 845 lines added, 137 deleted, 242 added in `src/`.
+
+Closed: C9 to C14, W14 to W25. Still open: C7 (narrowed), C8 (right-to-left only), W13 (stays recorded). New: C15, C16, C17, W26, W27, S8.
+
+Second FAIL in a row with class `implementation` on TX2: the coordinator stops and asks the owner.
+
+next: tdd-apply
+
+## Gates
+
+`df -h /`: 36 GB free at the start, 32 GB at the lowest. Each gate ran alone on a clean export with its own target dir, and each exit code was read alone.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 434 passed, 0 failed, 118 binaries) |
+| `cargo deny --all-features check` | 0 |
+| CI policy: ARQ-07, unsafe, V5, V12, ARQ-107 | 0 each (export) |
+| CI policy: V13, V14 | 0 each (worktree, read-only) |
+
+## Integrity (step 3c)
+
+- `docs(gafira-text): slice card` (2c96bde) touches only `apply-progress.md`. No line of it changed at HEAD.
+- The fix commits touch only `crates/gafira-text/src/`, `crates/gafira-text/tests/` and `apply-progress.md`. Every commit since 084c45e that touches `specs/0*` is a `docs(specs)` commit merged from `develop`.
+- No change to root `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.github/` or `.cargo/`.
+- FD-41 (c) to (k) have tests that name them. (l) has none (W26). Neither the card nor the stream row of 02 lists (k) and (l) (W27).
+
+## Criteria
+
+| Criterion | State | Proof |
+|---|---|---|
+| FD-41 (c) | covered | identity test; M1 killed |
+| FD-41 (e) | covered | formula, `"ab  "` at t=500 ends on the edge; ligature exception stated |
+| FD-41 (f) | covered | 61.743, 121.289, 241.992; the CSS model worked by hand from `hhea` matches at lh 0.5, 0.75, 1 and 3 |
+| FD-41 (g), D-19 | covered | unchanged |
+| FD-41 (h), ARQ-107 | covered | unchanged, ranges amended |
+| FD-41 (i) | **failing** in right-to-left text with spacing | C8 |
+| FD-41 (j) | **failing** with Center and Right | C16; holds with Left and Justify |
+| FD-41 (k) | **failing** in a right-to-left paragraph | C15; the literal cases of (k) hold |
+| FD-41 (l) | covered, no test names it | M1 killed by 8 tests; W26 |
+| Fuente sin métricas | covered | zero-metrics probe: `"abc"` and `""` give `InvalidFont`; behind Inter, `Ok` |
+| Subrayado y tachado | covered | fonts without `post` or `OS/2`: thickness 5.0 at 100 px |
+| ARQ-111 | covered | unchanged |
+| ARQ-110 | covered | 704 list layouts around the limit, 0 infinities in `Ok` |
+| ARQ-116 ranges | covered | `straße`: `4..6, 4..6, 6..7` |
+| XP12 | covered | unchanged |
+| TX1 W10, W12 | closed | unchanged |
+
+16 criteria: 13 covered, 3 failing. C17 also touches FD-41 (a), a TX1 row: its stated example passes, a wrapped line does not.
+
+## Rulings asked by the coordinator
+
+**The fit in a box wider by the spacing: sound, not exact.** The principle holds: 14 640 layouts over 6 texts (both paragraph directions, mixed runs) and t in -50, 0, 100, 300 match a greedy break oracle with no difference. It is not exact: float rounding leaves a box equal to the line's own advance 1 ulp short. See C7.
+
+**Hanging space in an opposite-level run (coordinator's deviation 3, item 4 of the notes): the stated effect is not shown; a different harm is.** No early break was found. The 14 640 layouts above include lines that end in such a space. At t=0, 7 235 by-cluster layouts over 5 texts gave no early break. At t≠0 my by-cluster check counted false hits, so that case rests on the word-level oracle and on the code: `line_break.rs:1219` appends an atom when it fits without its hanging white space, and it does not look at the bidi level. Parley's level test sits in `hanging_whitespace`, which runs after the line is built. The note should be corrected. The real harm is that the space stays inside the line (C17).
+
+**List spacing and kerning in the hang: accepted, no finding.** Spacing: FD-41 puts it after every cluster but the last of a line, and marker and space are followed by text. At t=100 the hang is 31.70, that is 25.30 + 4 × 1.6. (j) holds because all items share the hang. Kerning inside a marker is part of its width. Across the space the hang read the same for `x`, `T`, `V`, `a` and `y` in Inter, so the test letter adds nothing here. See S8.
+
+**W13: stays recorded, open.** History cannot repair it. The RED condition is met as far as it can be: I replayed each fix commit's tests on its parent's source.
+
+| Tests | Parent | Result |
+|---|---|---|
+| `extremes.rs` of c986a36 (C9, C10) | 16204dd | 4 of 5 fail on assertions; C9: left `None`, right `Some(NonFinite { field: "output" })` |
+| `list.rs` of 9dbc3e8 | 689a84c | 7 of 16 fail on assertions; `["1.", "2.", "•", "1."]` against `"3."`; left `OutOfRange`, right `NoFont` |
+| `align.rs`, `style.rs` of b007072 | c986a36 | 4 of 11 and 4 of 17 fail on assertions |
+
+C13 could not go RED: the check already existed, so its test is test-only and its proof is M6, killed. The notes say so.
+
+## Closure
+
+| ID | Status | Evidence |
+|---|---|---|
+| C7 | **open, narrowed** | Round 1 cases pass: `Hello` t=500 in 94.10 gives 1 line; t=-100 in 41.82 gives 2 lines, no overflow. Exact fit fails, see below |
+| C8 | **open, narrowed** | Left-to-right closed: right ends at 200.00002 for t=100, 500, -100; justified sweep passes. Right-to-left justify fails, see below |
+| C9 | closed | Round 1 inputs give `NonFinite`. 704 list layouts, dpi 1e34 to 1e39: 500 `Ok`, 204 `Err`, 0 infinities. RED replayed |
+| C10 | closed | Independent fonts without `post` and without `OS/2`: 5.0 at 100 px |
+| C11 | closed | M3 killed |
+| C12 | closed | M2 killed by 5 tests |
+| C13 | closed | M6 killed by 2 tests |
+| C14 | closed | FD-41 amended to the CSS model; numbers match; I also worked the model by hand from the tables at 4 line heights |
+| W13 | open | Recorded, see the ruling |
+| W14 | closed | M4 killed; the doc, the code and the test agree |
+| W15 | closed | M5 killed by 2 tests that tie `height` to a measure |
+| W16 | closed | Note corrected; probe matches |
+| W17 | closed | Row amended; `Ok` behind Inter |
+| W18 | closed | ARQ-116 amended; `straße` as stated |
+| W19 | closed | Origin stated; test |
+| W20 | closed | Hanging text stated; test (Left and Justify, see C16) |
+| W21 | closed | Bullets stated; test |
+| W22 | closed | Rule stated. The left-to-right code meets it; the right-to-left gap is C15 |
+| W23 | closed | Rule stated; test |
+| W24 | closed | Exception stated in (e) |
+| W25 | closed | FD-41 now cites 02 §6.2, whose line on preview hinting is there |
+
+## CRITICAL
+
+**C7. class: implementation.** `layout.rs:203`, FD-41 Saltos, (e). A box as wide as the line's own output advance can still split it. `Hello` at 16 pt, t=500, advance 94.08333587646484: a box of exactly that gives 2 lines. Over 4 texts, 9 sizes and 7 spacings other than 0, 42 of 252 fail, with a margin of up to 0.000064 px needed; at t=0, 0 of 36. Same defect as round 1, a line split though it fits, now from rounding: the box sum and parley's sum disagree by an ulp. A box sized from a measured line wraps its text. The closure test cannot see it: `style.rs:403` adds 0.001 to the box.
+
+**C8. class: implementation.** `layout.rs:215`, FD-41 (i). Right-to-left justified lines are off by one spacing. Arabic, 12 pt, box 100, t=100: three lines span -1.60 to 98.40, not 0 to 100. Parley's right-to-left offset does not allow for the spacing the output removes. The last line of `ابج دهو  ` in a box of 200 sits at 139.84 to 196.80, against 143.04 to 200.00 without the trailing spaces. `tests/align.rs` uses Latin text only.
+
+**C15. class: implementation.** `layout.rs:213`, FD-41 Espacio que cuelga. "Cuelga en toda alineación" and "no cuenta para alinear" fail for `Left` in a right-to-left paragraph. `ابج دهو  ` in a box of 200 has ink at 9.0 to 56.36, not 0 to 47.36 as without the spaces. Wrapped at 100 it runs 4.5 to 103.73, 3.73 px past the box with `overflow = false`. A space before a forced break does the same. Notes item 2 records this as a choice ("Left alignment moves nothing"), but the amended rule leaves no such choice.
+
+**C16. class: implementation.** `list.rs:141`, `list.rs:143`, FD-41 Listas, (j). `text_start` passes the list's style, alignment included, to a probe in a box of 1e9, so it reads the `x` of an aligned letter. With `Center`, item text starts at x = 500 000 030; with `Right`, at 1 000 000 000. The room falls to 0: an item that takes 3 lines takes 41 with `overflow = true`. All list tests use Left. The same fixed box breaks the probe at very high DPI: at 1e10 the hang is 0, against 1.6e9 needed, so text sits on the marker. Introduced by 9dbc3e8, the fix round.
+
+**C17. class: implementation.** `layout.rs:400`, FD-41 Espacio que cuelga, (a). Parley does not apply UAX #9 rule L1 (its own comment, `line_break.rs:1898`), so a line's trailing space in an opposite-level run stays at its bidi position. Rule L1 puts it at the paragraph level, at the end of the line. Two effects. `abc ابج دهو def`, 12 pt, box 40, Left: the second line starts with the space at x=0 and its ink starts at 4.5. At 9 pt, box 39.3, the first line's ink ends at 41.56 with `overflow = false`, since `content_advance` drops a space that is still in the middle of the line. The output could move those clusters. If the owner prefers to accept parley's limit, FD-41 must say so, and that is a `specifier` decision.
+
+## WARNING
+
+| ID | Class | Ref | Finding |
+|---|---|---|---|
+| W13 | implementation | `list.rs`, f120b7e, Strict TDD | TDD breach for lists, kept on record; see the ruling |
+| W26 | implementation, follow-up | FD-41 (l) | No test names (l), and `layout_box` has no hinting input, so it holds by construction. M1 pins it, killed by 8 tests. New test gap after round 1 |
+| W27 | ambiguity, follow-up | Slice card, 02 line 919 | Both still say FD-41 up to (j). (k) and (l) need a `slice card amend` and a row change |
+
+## SUGGESTION
+
+- S8: `text_start` measures with the letter `x`, so a font that kerns the space with `x` would shift every hang by that pair. FD-41 could state the measure in one line: marker and space with the list's spacing.
+
+S5 and S7 stay open as they were. The notes close S6 with a sweep test; I did not re-examine it.
+
+## Mutants reapplied
+
+No independent budget spent. Scratch export of HEAD, restored after each, compared equal to the worktree at the end.
+
+| # | Rule and wrong behaviour | Result |
+|---|---|---|
+| M1 | FD-41 (l): advances quantised | killed, 8 tests |
+| M2 | forced break is the last cluster | killed, 5 tests |
+| M3 | last cluster in visual order | killed, `fd_41_e_the_last_cluster_in_logical_order_...` |
+| M4 | list levels before fonts | killed, `arq_110_a_list_checks_...` |
+| M5 | `height` doubled | killed, 2 tests |
+| M6 | no `NoFont` check in a list | killed, 2 tests |
+
+6 run, 6 killed.
+
+## Result
+
+FAIL. CRITICAL 5, WARNING 3, SUGGESTION 1. Per class: implementation 7, ambiguity 1 (follow-up).
+
+next: tdd-apply
+
+---
+
 # Verify report: gafira-text, TX2, round 1
 
 Commit 2b8c276f on `feat/gafira-text`, base 0600d68. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Steps 1c and 4b ran in full, with probes written before reading the implementer's tests.
