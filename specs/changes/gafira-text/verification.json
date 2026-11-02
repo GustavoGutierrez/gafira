@@ -1189,6 +1189,189 @@
         "forecast": 750
       },
       "report": "verify-report.md"
+    },
+    {
+      "round": 2,
+      "delivery": "TX3+TX4",
+      "commit": "5325e37fcf8b13a69e889fa7a91d50b80c038e57",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "archive",
+      "counts": {
+        "critical": 0,
+        "warning": 2,
+        "suggestion": 1
+      },
+      "classes": [],
+      "findings": [
+        {
+          "id": "C23",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/layout.rs read_lines; FD-41 Interletrado",
+          "summary": "RTL spacing sits right of the glyph: last gap gets 0, ink 10 px off a right edge. Fix proved: add the spacing to glyph_offsets of rtl clusters",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C24",
+          "severity": "CRITICAL",
+          "class": "ambiguity",
+          "ref": "crates/gafira-text/src/curve.rs radius; FD-44 Geometria",
+          "summary": "Arch lines reach R <= 0 and read backwards (9 of 17 lines, 300 px, bend 100). Spec silent; rule proposed: R_ref = max(L_i/|t| + s(b_i - b_ref))",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C25",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/outline.rs quad_to; FD-43 (a)",
+          "summary": "Hand mutant T4-2 survives: quadratic curves as lines pass every test. Compare a round glyph with the font",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C26",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/columns.rs height; FD-45",
+          "summary": "Hand mutant T3-1 survives: total height from the first column. Assert the tallest on mixed heights",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C27",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/fit.rs is_empty; FD-46 (a), (b)",
+          "summary": "Hand mutant T3-2 survives: white space text treated as empty. Add a case with spaces",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W34",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "crates/gafira-text/src/curve.rs length; FD-44",
+          "summary": "L includes the hanging white space, so wrapped ink is off centre (0.07 rad, 0.8 px). State that L excludes it",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W35",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/layout.rs fit",
+          "summary": "Mixed sizes with spacing: a line passes the box by up to 5.98 px at t=500 with no overflow. Use the smallest run spacing in the fit",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W36",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-text/tests/benches.rs; ARQ-114",
+          "summary": "Hand mutant T4-5 survives: a benchmark out of criterion_group passes the test. Non-critical",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S14",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "round 1",
+          "summary": "Empty run no longer sets the size; negative spacing residue is W38",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S15",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "round 1",
+          "summary": "fit_box doc states the range binds the largest run with text",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S16",
+          "severity": "SUGGESTION",
+          "class": "ambiguity",
+          "ref": "round 1",
+          "summary": "FD-45 (d) settled at 39df3a9; count 1 checks gap",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S17",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "round 1",
+          "summary": "Cubic pen test and overflow doc fixed",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S18",
+          "severity": "SUGGESTION",
+          "class": "ambiguity",
+          "ref": "round 1",
+          "summary": "FD-45 settled at 39df3a9; test of the one-column flag",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W37",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/columns.rs; FD-45",
+          "summary": "Columns with lists not built, outside (a, c, d, e); keep it for archive",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W38",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/layout.rs layout_with, let sizes",
+          "summary": "Empty run still sets the break edge: t -100, empty 1000 pt gives 13.25 pt vs 19.5. No criterion covers it. Fix proved: filter empty ranges",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "S19",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "crates/gafira-text/src/layout.rs:230",
+          "summary": "Doc of layout_with still says the break uses the spacing of size_px",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 4,
+        "killed": 4
+      },
+      "criteria": {
+        "total": 18,
+        "covered": 18
+      },
+      "size": {
+        "lines": 835,
+        "forecast": 750
+      },
+      "report": "verify-report.md"
     }
   ]
 }

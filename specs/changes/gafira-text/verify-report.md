@@ -1,3 +1,111 @@
+# Verify report: gafira-text, TX3 and TX4 together, round 2 (closure)
+
+Commit 5325e37 of `feat/gafira-text`. Depth V2, closure round, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. The scope is the one the coordinator gave: C23 to C27, W34 to W36, S14 to S18, FD-44 and FD-45 at 39df3a9, commits 3d9d9d1, 84cea9f, 6240b05, b91594e, b9d5b40 and the card amend 5325e37.
+
+**Verdict: PASS.** 0 CRITICAL, 2 WARNING (both follow-ups), 1 SUGGESTION. Classes that block: none. All 14 findings of round 1 in scope are closed, and all four survivors are killed. One open condition: the Windows job of run 41474035559 had not finished when this report was written, see ARQ-14.
+
+next: archive
+
+## Gates
+
+Each gate ran alone in the worktree, with `CARGO_TARGET_DIR` unset, and each exit code was read alone from its own file. `df -h /` showed 20 GB free (21.0 GB by bytes) before the build, and 20 GB after this round. The worktree stayed clean.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 801 passed, 0 failed, 144 binaries) |
+| `cargo deny check` | 0 (advisories, bans, licenses, sources ok) |
+| CI policy | 0: job `policy` of run 41474035559 passed; `headSha` 5325e37 |
+
+### ARQ-14, `workflow_dispatch` run 41474035559
+
+`headSha` 5325e37, the commit verified. `policy`, `test (aarch64-apple-darwin)` and `test (x86_64-unknown-linux-gnu)` passed. `test (x86_64-pc-windows-msvc)` was still running at my last look, so the coordinator's re-check must see it pass before archive. `tests/golden_fit.rs` has not changed since round 1, and with one run the new break edge equals the old spacing, so no change in the literal sizes is expected.
+
+## Integrity
+
+| Check | Result |
+|---|---|
+| Card amend 5325e37 | Touches only `apply-progress.md`, one line (`FD-44 (a, c to g)`), and states why |
+| Implementer commits | 3d9d9d1, 84cea9f, 6240b05 and b91594e touch no `specs/` or `.odd` file |
+| b9d5b40 | Appends after line 493 of `apply-progress.md`; the card is not touched |
+| Spec 39df3a9 | Only `specs/04`, the FD-44 and FD-45 blocks; coordinator commit, before the fix round |
+| Survivors | Restored after each run; `src` of the export equals the worktree |
+
+## Closure of round 1
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C23 | closed | Outline ink gaps of `داراز` and `HIHIH`, Left, Right, Center: all 10.00. `داراز` Right ends at 595.50 with and without spacing |
+| C24 | closed | FD-44 (f) case: 17 lines, smallest radius 69.30 at 100 and 81.56 at -100. Sweep below |
+| C25 | closed | T4-2 killed by `fd_43_a_a_round_glyph_keeps_the_curves_of_its_font` |
+| C26 | closed | T3-1 killed by `fd_45_auto_height_is_the_tallest_column_when_the_lines_differ_in_height` |
+| C27 | closed | T3-2 killed by `fd_46_a_white_space_is_a_text_with_a_height_and_grows_to_the_box` |
+| W34 | closed | FD-44 (g), both checked: `Hello`, Arabic with one and three spaces, spacing 0 and 100, ±100, 3 alignments; positions ±0.01 px, turns ±1e-6 rad. `" "` stays straight |
+| W35 | closed | 480 cases: 4 text pairs (Latin, Arabic, both orders), 5 size pairs, 6 spacings from -100 to 500, 4 boxes. Worst excess past the box with `overflow` false: 0.0000 px |
+| W36 | closed | T4-5 killed by `arq_114_each_benchmark_function_is_in_the_criterion_group` |
+| S14 | closed as reported | Spacing 0 and above: the empty run does not set the size and the layout is equal to the text alone. Negative spacing: W38 |
+| S15 | closed | Doc of `fit_box`: the range binds the largest run with text only |
+| S16 | closed | FD-45 and (d) settled at 39df3a9; `count = 1` with gap 300 or -1 is an error |
+| S17 | closed | `fd_43_a_a_cubic_curve_of_a_font_stays_a_cubic_curve_moved_and_flipped`; doc of `TextLayout::overflow` fixed |
+| S18 | closed | FD-45 settled at 39df3a9; one column in a fixed box flags overflow, and its lines equal `layout_box` |
+| W37 | open, follow-up | Out of this scope, as ruled |
+
+Sweep for C24, W34 and FD-44 (d), with `L_i`, `s` and the hanging space computed from the text, not from the crate's flag: 4 texts, 4 widths, 6 bends, 3 spacings, 4 alignments, 27 648 lines with content. Every line has radius > 0, `R_i |θ| >= L_i` within 0.01 px, one shared centre, every cluster on its circle, and the turn `(s / L - 0.5) θ` within 1e-6 rad. Each layout has a line with the equality, 1 170 in all, and at ±100 those lines have the chord `2L / π` within 0.01 px. `Cluster::trailing` equals the independent mask on all of them.
+
+## Survivors of round 1, re-applied on a scratch export
+
+| Mutant | Result |
+|---|---|
+| T3-1 total height is the first column | killed |
+| T3-2 white space text counts as empty | killed |
+| T4-2 quadratic curves become lines | killed |
+| T4-5 a benchmark out of the group | killed |
+
+4 run, 4 killed. `mutants-result.json` labels T4-2 `COMPILE`: that is a false label of my script. I re-ran it alone: it compiled, exit 101, and the test above failed (`probes/t42.log`).
+
+## Rulings on the deviations
+
+| Deviation | Ruling |
+|---|---|
+| Public `Cluster::trailing` | Accepted. `curve_layout` takes only a `TextLayout`, FD-44 needs the hanging space there, and the flag is the mask `read_lines` already had. `Cluster` is built only in `read_lines`, and the flag equals my independent mask |
+| Hanging space keeps one position | Accepted. It takes no advance, moves no glyph and changes no `L`, which is what «no tiene lugar en el arco» requires of the geometry. One position per cluster keeps the two lists aligned. The cluster has no ink |
+| Empty-run size above 1000 pt | Accepted as a number: FD-46 bounds the input and `r`, and the value stays finite (74 250 pt in the extreme probe). It is not «only a number» in one place: W38 |
+| Interior opposite-level space, proved on a hand-flagged layout | Accepted; the flag is proved in both directions in `tests/layout.rs`, and I found no text that reaches that case either |
+| W35 negative spacing | Accepted. The edge is the smallest value the last cluster can have, and the 480 cases hold it |
+
+## WARNING
+
+### W37, class: implementation, follow-up. FD-45 «Funciona con Listas» is not built
+
+Unchanged from round 1. It must not be lost at archive.
+
+### W38, class: implementation, follow-up. An empty run still moves the line break
+
+`crates/gafira-text/src/layout.rs`, `let sizes = runs.iter().map(|r| r.size_px).chain([size_px]);`, in `layout_with`.
+
+The edge takes the size of every run, also of one with no text. With a negative spacing the largest size wins, so an empty run narrows the box. `words(80)`, box 300 x 120, text run 10 pt:
+
+| Spacing | Empty run | Text alone | With the empty run |
+|---|---|---|---|
+| -100 | 20 pt | 19.5 pt, 3 lines | 19.25 pt, 3 lines |
+| -100 | 100 pt | 19.5 pt, 3 lines | 18.5 pt, 4 lines |
+| -100 | 1000 pt | 19.5 pt, 3 lines | 13.25 pt, 5 lines |
+
+A smaller empty run with a positive spacing has the same root: at t = 500, a 1 pt empty run gives 13.25 pt against 13.5 pt. This is what S14 asked to remove, on a path it did not name. It is not CRITICAL: no criterion of FD-46 covers an empty run, `r` still fits, it is a local maximum of the grid, and the proportion holds.
+
+Fix, proved on scratch: `runs.iter().filter(|r| !r.range.is_empty()).map(|r| r.size_px).chain([size_px])`. At t = -10 and -100, with empty runs of 20, 100 and 1000 pt, the layout then equals the text alone, and all 214 tests of the crate pass. It needs a row with a negative spacing in `fd_46_f_a_run_with_no_text_does_not_set_the_largest_size`.
+
+## SUGGESTION
+
+- **S19.** The doc of `layout_with` (`layout.rs:230`) still says the break uses the spacing of `size_px`; since 6240b05 it uses the edge of the runs.
+
+Probes and scripts: `probes/zz_tx34r2_probe.rs`, `tx34r2_gates.sh`, `tx34r2_mutants.py`, `tx34r2_run2.py`, logs in `gates/` and `probes/` beside this report. `probes/probe.log` and `probe2.log` show q4 and q5 failing on a letter spacing below the range, an error of my probe; `probe4.log` is the valid run.
+
+next: archive
+
+---
+
 # Verify report: gafira-text, TX3 and TX4 together, round 1
 
 Commit 3309b86 of `feat/gafira-text`, base `develop` (merge base da288d6). Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding.
