@@ -30,7 +30,8 @@ pub fn crossfade_gains(mode: AudioCrossfade, p: f64) -> Result<(f64, f64), Audio
     }
 }
 
-/// Pan law on stereo blocks; any other block is not changed.
+/// Pan law on stereo blocks; a block of any other channel count is only
+/// cleaned (NaN, `±∞` and subnormals become 0).
 #[derive(Debug)]
 pub struct Pan {
     setup: Setup,

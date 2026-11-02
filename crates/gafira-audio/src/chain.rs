@@ -17,7 +17,7 @@ pub struct ProcessorChain {
 }
 
 impl ProcessorChain {
-    /// An empty chain: it changes nothing.
+    /// An empty chain: it only cleans a block (NaN, `±∞` and subnormals become 0).
     #[must_use]
     pub fn new() -> Self {
         Self::default()

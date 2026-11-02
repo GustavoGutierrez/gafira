@@ -212,9 +212,11 @@ fn arq_123_channels_of_different_lengths_are_cleaned_by_their_own_length() {
 
 #[test]
 fn arq_123_an_unprocessed_block_leaves_no_trace_in_the_state() {
-    // The refused block carries parameters; the valid one carries none. Any
-    // state taken from the refused one (a read parameter, an advanced clock, a
-    // consumed first block) would show in the valid block.
+    // The refused block carries parameters; the valid one carries none. A
+    // parameter read from the refused block, or an advanced clock, would show
+    // in the valid block. A consumed `Gain` first block would not: the valid
+    // block has no value to ramp to (`refused.rs` pins that, and the rows
+    // skipped here, whose `prepare` has a 0, and a refused block mid-ramp).
     let mut odd = ParamSnapshot::new();
     odd.set(PARAM_VOLUME, 20.0);
     odd.set(PARAM_DURATION, 0.0005);
