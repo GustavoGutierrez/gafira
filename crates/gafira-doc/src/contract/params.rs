@@ -64,6 +64,43 @@ impl ParamKind {
         }
     }
 
+    fn check(&self, param: &'static str, value: &ParamValue) -> Result<(), ParamError> {
+        match (self, value) {
+            (ParamKind::Float { min, max, .. }, ParamValue::Float(v)) => {
+                if !v.is_finite() {
+                    Err(ParamError::NonFinite { param })
+                } else if !(min..=max).contains(&v) {
+                    Err(ParamError::OutOfRange { param })
+                } else {
+                    Ok(())
+                }
+            }
+            (ParamKind::Int { min, max, .. }, ParamValue::Int(v)) => {
+                if (min..=max).contains(&v) {
+                    Ok(())
+                } else {
+                    Err(ParamError::OutOfRange { param })
+                }
+            }
+            (ParamKind::Bool { .. }, ParamValue::Bool(_)) => Ok(()),
+            (ParamKind::Choice { options, .. }, ParamValue::Choice(v)) => {
+                if options.iter().any(|o| o.id == v) {
+                    Ok(())
+                } else {
+                    Err(ParamError::OutOfRange { param })
+                }
+            }
+            (ParamKind::Color { .. }, ParamValue::Color(c)) => {
+                if c.is_finite() {
+                    Ok(())
+                } else {
+                    Err(ParamError::NonFinite { param })
+                }
+            }
+            _ => Err(ParamError::WrongType { param }),
+        }
+    }
+
     fn default_value(&self) -> ParamValue {
         match self {
             ParamKind::Float { default, .. } => ParamValue::Float(*default),
@@ -127,6 +164,27 @@ impl ParamSchema {
                 return Err(ParamError::BadDefinition { param: p.id });
             }
             seen.push(p.id);
+        }
+        Ok(())
+    }
+
+    /// Checks `values` against this schema.
+    ///
+    /// Walks the schema in definition order and reports the first fault. An id
+    /// the values lack passes; an id the schema lacks is ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`ParamError::WrongType`] for a value of another kind (no conversion),
+    /// [`ParamError::NonFinite`] for a NaN or infinite `Float` or `Color`
+    /// (checked before the range), [`ParamError::OutOfRange`] for a number
+    /// outside `[min, max]` (both ends inclusive) or a `Choice` that is not an
+    /// option.
+    pub fn check_values(&self, values: &ParamValues) -> Result<(), ParamError> {
+        for p in &self.params {
+            if let Some(value) = values.get(p.id) {
+                p.kind.check(p.id, value)?;
+            }
         }
         Ok(())
     }
