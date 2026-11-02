@@ -35,7 +35,10 @@ pub struct SegReq {
     /// Longest side of the working copy, in pixels (D-45).
     pub max_work_side: u32,
     /// Estimated peak memory of one run on a 4000x3000 image with this
-    /// segmenter's pool, in bytes, calibrated on a measurement (Q-48).
+    /// segmenter's pool, in bytes, calibrated on a measurement (Q-48). It holds
+    /// for that size only and takes no image: a wider or larger input needs more
+    /// (measured on one thread: 46 MB at 4000x4000, 96 MB at 8000x6000, against
+    /// 44 MB here), since the mask and the filter bands follow the input.
     pub ram_bytes: u64,
 }
 
@@ -154,12 +157,14 @@ impl Segmenter for ClassicSegmenter {
                 + (w * h) as u64;
             let meter = Meter::new(progress, cancel, planned);
             let mut data = self.subject(&src, hints, (ww, wh), &meter)?;
+            // ARQ-131: every zone that segments judges the subject mask, so
+            // «Fondo» says what «Primer plano» says.
+            let reliable = reliable::assess(&img, &data, &meter)?;
             if hints.zone == SegZone::Background {
                 for a in &mut data {
                     *a = 255 - *a;
                 }
             }
-            let reliable = reliable::assess(&img, &data, &meter)?;
             meter.finish()?;
             (data, reliable)
         };

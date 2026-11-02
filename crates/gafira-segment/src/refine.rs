@@ -1,5 +1,5 @@
 //! Guided-filter upscale of the coarse mask to the full image (P12): radius 8,
-//! luma guide, serial row bands of 250 (XP11).
+//! luma guide, serial row bands of 80 (XP11).
 
 use gafira_doc::contract::Cancelled;
 use rayon::prelude::*;

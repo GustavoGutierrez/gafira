@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use gafira_doc::contract::{CancelToken, NoProgress};
 use gafira_raster::{ImageView, PixelData};
-use gafira_segment::{ClassicSegmenter, SegHints, SegZone, Segmentation, Segmenter};
+use gafira_segment::{ClassicSegmenter, SeedStroke, SegHints, SegZone, Segmentation, Segmenter};
 use gafira_testkit::scenes::{fixed_scene, reference_scene};
 
 fn seg() -> ClassicSegmenter {
@@ -96,4 +96,59 @@ fn arq_131_input_alpha_weights_reliability_not_the_mask() {
     assert!(opaque.reliable);
     assert!(!transparent.reliable);
     assert_eq!(opaque.mask, transparent.mask);
+}
+
+/// `reliable` of a zone on a grey image with a red rectangle of the given rows and
+/// columns, and these seed strokes.
+fn zone_of(zone: SegZone, rect: [u32; 4], foreground: Vec<SeedStroke>) -> (bool, f64) {
+    let (w, h) = (800u32, 600u32);
+    let [x0, x1, y0, y1] = rect;
+    let data: Vec<u8> = (0..w * h)
+        .flat_map(|i| {
+            let (x, y) = (i % w, i / w);
+            if (x0..x1).contains(&x) && (y0..y1).contains(&y) {
+                [210, 30, 30, 255]
+            } else {
+                [120, 120, 120, 255]
+            }
+        })
+        .collect();
+    let view = ImageView::new(w, h, PixelData::Rgba8(&data)).unwrap();
+    let hints = SegHints {
+        zone,
+        foreground,
+        ..SegHints::default()
+    };
+    let out = seg()
+        .segment(view, &hints, &NoProgress, &CancelToken::new())
+        .unwrap();
+    let on = out.mask.data().iter().filter(|a| **a >= 128).count();
+    (out.reliable, on as f64 / f64::from(w * h))
+}
+
+// ARQ-131: Fondo judges the same mask as Primer plano, not its complement. With
+// a subject of 2 % both are reliable though the mask of Fondo covers 98 %; with
+// 0.5 %, and with 96 % held by a seed (Fondo's mask covers 4 %), neither is.
+// Mutant H4: Fondo judged on its returned mask.
+#[test]
+fn arq_131_background_gives_the_reliable_of_foreground() {
+    let wide = vec![SeedStroke {
+        points: vec![[-500.0, 282.0], [1300.0, 282.0]],
+        radius: 288.0,
+    }];
+    let cases = [
+        ("2 %", [340, 460, 260, 340], Vec::new(), true, 0.98),
+        ("0.5 %", [370, 430, 280, 320], Vec::new(), false, 0.995),
+        ("96 %", [0, 800, 0, 576], wide, false, 0.04),
+    ];
+    for (name, rect, seeds, want, covered) in cases {
+        let (fg, _) = zone_of(SegZone::Foreground, rect, seeds.clone());
+        let (bg, share) = zone_of(SegZone::Background, rect, seeds);
+        assert_eq!(fg, want, "{name}: Foreground");
+        assert_eq!(bg, want, "{name}: Background");
+        assert!(
+            (share - covered).abs() < 0.02,
+            "{name}: Background covers {share}"
+        );
+    }
 }

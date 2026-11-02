@@ -205,6 +205,38 @@ mod tests {
         assert!(!run(&img, &mask(99, 255)), "99 pixels are 0.99 %");
     }
 
+    // ARQ-131: the area counts pixels, not their input alpha: 150 half-seen pixels
+    // are 1.5 % of the image, though their alpha adds up to under 1 %; and 9600
+    // opaque ones with the rest clear are 96 %, whatever the weights.
+    // Mutant H5: the area counted by alpha weight.
+    #[test]
+    fn arq_131_area_counts_pixels_not_alpha() {
+        let mut data = Vec::new();
+        for i in 0..10_000 {
+            data.extend_from_slice(&if i < 150 {
+                [250, 250, 250, 64]
+            } else {
+                [20, 20, 20, 255]
+            });
+        }
+        let img = ImageView::new(100, 100, PixelData::Rgba8(&data)).unwrap();
+        let mask: Vec<u8> = (0..10_000).map(|i| if i < 150 { 255 } else { 0 }).collect();
+        assert!(run(&img, &mask), "150 pixels are 1.5 %");
+        let mut data = Vec::new();
+        for i in 0..10_000 {
+            data.extend_from_slice(&if i < 9_600 {
+                [250, 250, 250, 40]
+            } else {
+                [20, 20, 20, 255]
+            });
+        }
+        let img = ImageView::new(100, 100, PixelData::Rgba8(&data)).unwrap();
+        let mask: Vec<u8> = (0..10_000)
+            .map(|i| if i < 9_600 { 255 } else { 0 })
+            .collect();
+        assert!(!run(&img, &mask), "9600 pixels are 96 %");
+    }
+
     // ARQ-131: a uniform image is not reliable whatever the mask; two distinct
     // colours with a mask between them are.
     #[test]

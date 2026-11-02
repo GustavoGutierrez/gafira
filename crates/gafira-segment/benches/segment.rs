@@ -17,7 +17,8 @@ fn scene() -> Scene {
     fixed_scene(9, 4000, 3000)
 }
 
-/// A segmenter on a pool of 4 threads, the mid-range machine of CAL-06.
+/// A segmenter on a pool of 4 threads. Figures from other machines are indicative
+/// until measured on the mid-range hardware of D-03 (Q-48).
 fn segmenter() -> ClassicSegmenter {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(4)
@@ -33,7 +34,7 @@ fn hints() -> SegHints {
     }
 }
 
-/// `bench_segment_4000`: a whole run on 4000x3000, CAL-06 (< 5 s on CPU).
+/// `bench_segment_4000`: a whole run on 4000x3000, CAL-06, FD-38 (b): < 5 s on CPU.
 fn bench_segment_4000(c: &mut Criterion) {
     let scene = scene();
     let seg = segmenter();

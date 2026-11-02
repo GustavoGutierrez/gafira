@@ -1,4 +1,4 @@
-//! ARQ-112 and ARQ-132: progress, cancellation and determinism of `segment`.
+//! FD-38 (c). ARQ-112 and ARQ-132: progress, cancellation and determinism of `segment`.
 
 use std::sync::Arc;
 
@@ -81,7 +81,7 @@ fn arq_112_the_report_count_does_not_depend_on_the_pool() {
     assert_eq!(count(1), count(4));
 }
 
-// ARQ-130 / ARQ-10: the mask and `reliable` are the same whatever the thread
+// ARQ-111 / ARQ-130 / ARQ-10: the mask and `reliable` are the same whatever the thread
 // count, on a scene that is reduced (4000x3000 > 2048) and one that is not.
 // Mutant: a parallel reduction that sums in an order that depends on the pool.
 #[test]

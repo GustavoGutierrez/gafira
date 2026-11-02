@@ -1,8 +1,9 @@
 //! ARQ-132 (D-20, D-45): the quality gate. The 16 scenes of the fixed set at
 //! 4000x3000 (Q-49: long side above 2048, so the reduction is exercised) must
 //! each reach IoU 0.90 against their exact mask and be reliable (ARQ-131). The
-//! 12 fresh scenes of another seed only report their count: a warning.
+//! 12 fresh scenes of another seed only report their count: a warning. FD-38 (a).
 
+use std::io::Write;
 use std::sync::Arc;
 
 use gafira_doc::contract::{CancelToken, NoProgress};
@@ -36,7 +37,7 @@ fn segment(scene: &Scene) -> Segmentation {
 
 macro_rules! gate_scene_tests {
     ($($name:ident: $i:expr),* $(,)?) => {$(
-        // ARQ-132: this scene reaches IoU 0.90 (blocking); ARQ-131: it is reliable.
+        // ARQ-132, FD-38 (a): this scene reaches IoU 0.90 (blocking); ARQ-131: it is reliable.
         #[test]
         fn $name() {
             let scene = fixed_scene($i, W, H);
@@ -81,10 +82,15 @@ fn fresh_warning(width: u32, height: u32, mask_of: impl Fn(&Scene) -> Vec<u8>) -
         })
         .collect();
     let report = fresh_report(&ious);
-    eprintln!(
-        "WARNING: fresh scenes at IoU >= 0.90: {}/{} (a warning, not a gate)",
+    // Straight to stderr: `eprintln!` is captured for a passing test, and the
+    // count has to reach the log of a plain `cargo test` (ARQ-132).
+    let line = format!(
+        "WARNING: fresh scenes at IoU >= 0.90: {}/{} (a warning, not a gate)\n",
         report.passed, report.total
     );
+    std::io::stderr()
+        .write_all(line.as_bytes())
+        .expect("stderr takes the count");
     report
 }
 
