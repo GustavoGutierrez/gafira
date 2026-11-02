@@ -20,5 +20,9 @@ gafira-testkit.workspace = true
 name = "transitions"
 harness = false
 
+[[bench]]
+name = "shadow"
+harness = false
+
 [lints]
 workspace = true
