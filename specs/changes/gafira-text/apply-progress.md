@@ -158,3 +158,43 @@ Not RED, passing on the code that existed, proved by mutant or kept as negative 
 7. **Right alignment and trailing white space.** Parley counts trailing spaces in the line width for right alignment (`"ab  "` ends 9 px short of the edge). Nothing in FD-41 says otherwise, so no test and no change.
 8. **Not built, outside the TX2 IDs:** bold and italic selection, vertical anchor, kerning and ligature switches, a font with no `post` table (thickness absent is covered only by 0), `shape`. Hinting (ARQ-42) has no input in `layout_box`: the layout is not quantised (`ranged_builder(.., false)`).
 9. W1, W2, W3 of TX1 were amended in the specs and are tested; W11 (zero-advance clusters in a box of 0) is unchanged: they give no overflow.
+
+### TX2 fix round 1
+
+Commits: c986a36 (C9, C10), b007072 (C7, C8, C11, C12, hang), 689a84c (W18 ranges), 9dbc3e8 (lists: C13, W14, W15, amended rules), 282db5c (W16, W17, mixed line height). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. Every RED below was run before the code it needed, with real assertions and no stub. Measured since the merge 16204dd: 845 lines added, 137 deleted (242 added in `src/`).
+
+| Finding | Fix | RED |
+|---|---|---|
+| C7 | parley adds the spacing after every cluster; the fit uses a box wider by that spacing, so a line fits when its output advance does | `fd_41_e_a_word_fits_a_box_as_wide_as_its_line_with_any_spacing`: 2 lines at t=500; `..._breaks_by_cluster_with_any_spacing`: `t=-50: 1 lines` |
+| C8, (i), (k) | Center and Right are mine, on the ink of the line (the hanging white space is outside it); Justify stays with parley on the same wider box | `fd_41_i_a_justified_line_ends_at_the_edge_with_any_spacing` (t -100..500, widths 40..200); `fd_41_right_and_centre_use_the_spacing_the_output_keeps`: `t=-100: right ends at 201.6`; `fd_41_k_*`: `b ends at 91` |
+| C9 | `check_output` reads `height` and the decorations; `layout_list` checks indent, shifted `x` and `top` | `arq_110_an_infinite_height_with_finite_lines_is_an_error` (5.2e36 dpi), `..._a_list_indent_that_overflows_...`, `..._a_list_top_that_overflows_...`: left `None`, right `Some(NonFinite { field: "output" })` |
+| C10 | a font with no `post` (or `OS/2`) table gives 0.05 em, read from the table directory | `fd_41_a_font_without_post_or_os2_...`: `underline 5.5555553` |
+| C11, C12 | tests only | not RED (the code already did it): `fd_41_e_the_last_cluster_in_logical_order_...` (M3), `fd_41_e_a_forced_break_is_not_the_last_cluster_...` (M2) |
+| C13 | test only | not RED: `fd_41_an_empty_font_list_is_an_error_for_a_list_with_no_items_too` (M6) |
+| W14 | list checks numbers, fonts, levels, as documented | `arq_110_a_list_checks_its_numbers_then_its_fonts_then_its_levels`: left `OutOfRange`, right `NoFont` |
+| W15 | height pinned to `n x lh x natural` and the stacked tops | `fd_41_f_the_height_of_n_lines_is_...`, `fd_41_j_items_stack_by_the_height_...` (not RED); M5 killed by both |
+| W16, W17 | note corrected below; `""` with a zero-metrics font tested | not RED: `fd_41_a_zero_metrics_font_is_checked_with_an_empty_text_only_when_it_is_the_first` |
+| W18, ARQ-116 | ranges index the input after upper case through a map; `straße` gives `4..6, 4..6, 6..7` | `arq_116_ranges_after_upper_case_...`: left `[..., 4..5, 5..6, 6..7]`, right `[..., 4..6, 4..6, 6..7]` |
+| Lists, amended | the marker is not part of the laid out text; the item text hangs under the widest marker of its level in the list plus a space (measured as the `x` of a letter after "marker space"); a bullet neither adds nor restarts; a shallower item restarts the deeper levels; `TextLayout::text` is removed | `fd_41_j_nine_and_ten_start_...`: x is 0; `..._the_text_hangs_under_the_widest_marker_...`: `0 vs 19.375`; `..._a_bullet_neither_adds_...`: left `["1.", "2.", "•", "1."]`, right `[..., "3."]`; `..._the_ranges_of_an_entry_index_its_own_text`: byte index 5 is not a char boundary |
+| (f) mixed | test only | not RED: `fd_41_f_inter_and_noto_emoji_on_each_line_give_61_74_121_29_and_241_99_at_100_px` |
+| S6 | the sweep over spacings and widths now pins overflow before the alignment | a mutant that reads it after justify is killed |
+
+Hand mutants reapplied or added, all restored:
+
+| # | Wrong behaviour | Killed by |
+|---|---|---|
+| M2 | a forced break is the last cluster | `fd_41_e_a_forced_break_is_not_the_last_cluster_...`, `fd_41_e_a_hanging_space_...`, `fd_41_e_a_line_grows_...`, two of `align.rs` |
+| M3 | the last cluster in visual order | `fd_41_e_the_last_cluster_in_logical_order_is_the_one_without_spacing` |
+| M4 | list levels checked before fonts | `arq_110_a_list_checks_its_numbers_then_its_fonts_then_its_levels` |
+| M5 | `height` doubled | `fd_41_f_the_height_of_n_lines_is_...`, `fd_41_j_items_stack_by_the_height_...` |
+| M6 | no `NoFont` check in a list | `fd_41_an_empty_font_list_is_an_error_for_a_list_with_no_items_too`, the order test |
+| more | hanging space carries spacing; fit without or with the wrong sign; right ignores the hang; centre as right; a wider line is moved; overflow after justify; ranges unmapped or from the first character only; bullet counts or restarts; no restart of deeper levels; last marker instead of widest (new test); each item under its own marker; no hang; 1.4 em; 5th level; bullets not cycling; height left out of the finite check; metrics check removed; `FontSizeRelative` | each by at least one test |
+
+Deviations and open points:
+1. **W16 correction.** My earlier note said a zero-metrics font with an empty text is `Ok`. It is `Err(InvalidFont { index: 0 })` when that font is the first of the list; it is `Ok` behind a healthy font. Now tested.
+2. **Left alignment moves nothing.** For a right-to-left paragraph the hanging space of a line sits on its left; with Left it stays where parley puts it. Only Center and Right use the ink of the line.
+3. **Justify** is parley's. It reaches the edge within 0.01 px for every spacing and width swept (40 to 200 px, five spacings). A line of one word is not stretched, and the test skips it.
+4. **Hanging space in a right-to-left run.** Parley hangs the space of the line end only at the paragraph's bidi level (C1 of TX1). The output rule (no spacing, outside the ink) is mine and holds in any direction; the fit is parley's, so a right-to-left line that ends in a space inside an opposite-level run may break one cluster early.
+5. **Decoration of a missing table.** Only the thickness is 0.05 em; the offset of a missing table is parley's, which no rule fixes.
+6. **List marker measure.** The hang is the `x` of a letter after "marker space", measured with the style of the list, so letter spacing and kerning count; markers `◦` and `▪` are not in the Inter subset (S5), they only change the width of that level.
+7. **Not raised:** C14 resolved by the amended FD-41 (f), whose numbers parley already gives (mixed-line test). W19 to W25 and S7 need no change in code; `fallback.rs` still takes coverage from comments (S7).
