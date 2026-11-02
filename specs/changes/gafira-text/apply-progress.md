@@ -192,9 +192,47 @@ Hand mutants reapplied or added, all restored:
 
 Deviations and open points:
 1. **W16 correction.** My earlier note said a zero-metrics font with an empty text is `Ok`. It is `Err(InvalidFont { index: 0 })` when that font is the first of the list; it is `Ok` behind a healthy font. Now tested.
-2. **Left alignment moves nothing.** For a right-to-left paragraph the hanging space of a line sits on its left; with Left it stays where parley puts it. Only Center and Right use the ink of the line.
-3. **Justify** is parley's. It reaches the edge within 0.01 px for every spacing and width swept (40 to 200 px, five spacings). A line of one word is not stretched, and the test skips it.
-4. **Hanging space in a right-to-left run.** Parley hangs the space of the line end only at the paragraph's bidi level (C1 of TX1). The output rule (no spacing, outside the ink) is mine and holds in any direction; the fit is parley's, so a right-to-left line that ends in a space inside an opposite-level run may break one cluster early.
+2. **Left alignment moves nothing.** For a right-to-left paragraph the hanging space of a line sits on its left; with Left it stays where parley puts it. Only Center and Right use the ink of the line. *Corrected in fix round 3: wrong (C15). With Left the paragraph-level space hangs on the left of a right-to-left paragraph, at negative x.*
+3. *(Superseded in fix round 3: Justify is now placed by this crate, see below.)* **Justify** is parley's. It reaches the edge within 0.01 px for every spacing and width swept (40 to 200 px, five spacings). A line of one word is not stretched, and the test skips it.
+4. **Hanging space in a right-to-left run.** *(Corrected in fix round 3; the earlier text claimed that a right-to-left line that ends in a space inside an opposite-level run may break one cluster early. The verify of round 2 found no early break: parley's line breaker does not look at the bidi level, only its hang does. The real effect of that space is in its position, not in the break; it is the limit accepted in FD-41 and pinned by (m).)* Only white space with the bidi level of the paragraph hangs at the edge of the line. The space at the end of a run of the other level stays where bidi puts it, inside the line; break, letter spacing, overflow and alignment of Center and Right treat it as hanging space, and Left keeps it in place.
 5. **Decoration of a missing table.** Only the thickness is 0.05 em; the offset of a missing table is parley's, which no rule fixes.
 6. **List marker measure.** The hang is the `x` of a letter after "marker space", measured with the style of the list, so letter spacing and kerning count; markers `◦` and `▪` are not in the Inter subset (S5), they only change the width of that level.
 7. **Not raised:** C14 resolved by the amended FD-41 (f), whose numbers parley already gives (mixed-line test). W19 to W25 and S7 need no change in code; `fallback.rs` still takes coverage from comments (S7).
+
+### TX2 fix round 3
+
+Commits: d284e4e (C7), 413e9d9 (C8, C15, one-word line, FD-41 m), f15b184 (C16). Gates per commit, each run alone, exit codes read separately: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0 (all three commits). Every RED below was run on the existing code, with real assertions and no stub, before the production change. Measured: 411 lines added, 42 deleted (`git diff --shortstat d284e4e^ HEAD`): 112 added in `src/` (layout.rs 102, list.rs 10), 299 in `tests/`. This note adds more.
+
+| Finding | Fix | RED |
+|---|---|---|
+| C7 | the fit box gets a relative slack of 4e-6 (0.0004 px at 100 px); the test uses the exact advance, no 0.001 | `fd_41_e_a_box_as_wide_as_its_line_with_any_spacing_does_not_split_it` (4 texts x 9 sizes x 7 spacings): `"Hello" 8 pt t=500: box 47.04166793823242`, left 2 lines, right 1. `fd_41_e_a_box_narrower_than_its_word_breaks_it_by_cluster` (0.02 px short splits) is not RED: it pins the slack as small |
+| C8 | Center, Right and Justify are placed by this crate (no parley `align`); Justify shares the room among the spaces that are not trailing white space; the start of a line is computed without the spacing the output removed | `fd_41_i_a_right_to_left_justified_line_ends_at_the_edge_with_any_spacing`: `t=-100 w=40: starts at 1.5999999046325684` |
+| C15 | the trailing white space with the level of the paragraph hangs at negative x on the left of a right-to-left paragraph, with Left too | `fd_41_hanging_space_of_a_right_to_left_paragraph_is_outside_the_ink_with_left`: `t=0 "  ": ink starts at 8.32`; `fd_41_a_wrapped_right_to_left_paragraph_with_left_keeps_its_ink_in_the_box`: `t=0 w=30: starts at 4.16` |
+| One-word line, opposite level | the trailing space of a run of another level is not a place to stretch; a line without one is not stretched | `fd_41_i_a_one_word_line_behind_an_opposite_level_space_is_not_stretched`: the justified line has advance 40.000156, the left aligned one 22.996 (the space went from 4.50 to 21.50) |
+| C16 | the probe is left aligned, in a box of `f32::MAX` px | `fd_41_j_the_alignment_of_the_list_does_not_change_where_the_text_starts_or_its_room`: `Center: the room of the item` left 36 lines, right 2; `fd_41_j_the_hang_is_in_proportion_to_the_dpi_at_any_dpi`: `dpi 10000000000: hang 0, expected 3253580729.17` |
+| C17 | closed by acceptance, not implemented (no UAX #9 L1) | `fd_41_m_*` (3 tests) pin the limit with its figures: 12 pt box 40, the space at x 0 and the content at 4.50; 9 pt box 39.3, content ends at 41.56, 2.26 outside, no overflow; `abc ابج def` ends at 38.19 with the space behind. Not RED: they pass on the code of round 2 and on the new one, because they describe behaviour that stays |
+| W26, (l) | **open item, not built** | `layout_box` has no hinting input, so (l) cannot be tested without inventing one. Hand mutant M1 of the verify (advances quantised) is killed by 8 tests that do not name (l). No `fd_41_l_` test exists |
+| W27, (k) | tests named | `fd_41_k_*` (two tests in `align.rs`) already carry the letter; nothing was renamed. The card amend is the coordinator's |
+
+Another test pins the discriminator by level: `fd_41_a_space_of_the_other_level_in_a_right_to_left_paragraph_does_not_hang_with_left` (Latin word and its space at the end of a line of an Arabic paragraph stay at x >= 0 with Left; the sweep checks that some line does end in such a space). It is not RED: the code never hung it, it kills the mutant "hang any level".
+
+Hand mutants (all restored; the tree equals the committed one):
+
+| # | Wrong behaviour | Killed by |
+|---|---|---|
+| 1 | fit slack removed (`FIT_TOLERANCE` 0, the RED); sign reversed (box shrunk); slack 1e-3 | `fd_41_e_a_box_as_wide_as_its_line_...` (first two), `fd_41_e_a_box_narrower_than_its_word_...` (third) |
+| 2 | spacing count of Justify off by one (+1) | `fd_41_i_every_line_but_the_last_...`, `..._with_any_spacing` (both directions), `fd_41_i_a_line_with_a_forced_break_...` |
+| 3 | the same off by one only on right-to-left lines | `fd_41_i_a_right_to_left_justified_line_ends_at_the_edge_with_any_spacing` |
+| 4 | the hang applied to the logical end of the line whatever the direction of the paragraph (negative shift in left-to-right text too) | 5 tests: `fd_41_i_*` x4, `fd_41_m_a_trailing_space_of_the_paragraph_level_stays_behind_the_content` |
+| 5 | white space of any level counts as hanging | `fd_41_a_space_of_the_other_level_in_a_right_to_left_paragraph_does_not_hang_with_left` |
+| 6 | no hang in a right-to-left paragraph | `fd_41_hanging_space_...`, `fd_41_a_wrapped_right_to_left_...`, the right-to-left justify test |
+| 7 | one-word line justified (the trailing space is a place to stretch) | 6 tests incl. `fd_41_i_a_one_word_line_behind_an_opposite_level_space_is_not_stretched` |
+| 8 | list measures with the alignment of the list | `fd_41_j_the_alignment_of_the_list_does_not_change_...` |
+| 9 | list hang from a fixed box (1e9) | `fd_41_j_the_hang_is_in_proportion_to_the_dpi_at_any_dpi` |
+
+Deviations and open points:
+1. **Alignment is now this crate's.** `layout_box` no longer calls parley's `align`. The only parley input is the line break at the box plus the spacing. Justify matches parley's old rule (spaces and NBSP are the places; the last line, a line with a forced break and a line with no place are not stretched; such a line starts at the left, or at the right in a right-to-left paragraph, as parley did). It differs on purpose in one thing: the trailing space of a run of the other bidi level is not a place to stretch (the accepted limit treats it as hanging).
+2. **Slack.** 4e-6 relative is mine; the spec's tolerance is 0.01 px and the measured gap was 7e-7. The overflow test has no slack: a cluster wider than the box by under 4e-6 relative can sit alone on a line that parley accepted, and then `overflow` is true. No test needs it.
+3. **List probe.** `f32::MAX` is a fixed box too, but a text that does not fit it gives `NonFinite`. A hang that cannot be measured is an error, not 0.
+4. **Open for the coordinator:** (l) has no test (no input to vary); the Slice card and the 02 stream row still need the amend for (k) and (l) (W27).
+5. **Center and Right with a trailing space of the other level** keep the old rule: the ink without it is aligned and the space stays beside it. FD-41's accepted limit says such a line is not centred or right aligned; I did not widen or narrow that.
