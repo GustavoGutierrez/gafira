@@ -21,4 +21,25 @@
   "mutation": null,
   "hand_mutants": {"run": 6, "killed": 2},
   "criteria": {"total": 8, "covered": 4},
-  "size": {"lines": 1258, "forecast": 650}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1258, "forecast": 650}, "report": "verify-report.md" },
+  {
+  "round": 2, "commit": "d44eadc5a43a83795fc982d44e2a6d1e2661f7d5", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 6, "suggestion": 0},
+  "classes": ["ambiguity"],
+  "findings": [
+    {"id": "C1", "status": "closed"}, {"id": "C2", "status": "closed"}, {"id": "C3", "status": "closed"}, {"id": "C4", "status": "closed"}, {"id": "C5", "status": "closed"}, {"id": "C6", "status": "closed"},
+    {"id": "W1", "status": "closed"}, {"id": "W2", "status": "closed"}, {"id": "W3", "status": "closed"}, {"id": "W4", "status": "closed"}, {"id": "W5", "status": "closed"}, {"id": "W6", "status": "closed"},
+    {"id": "W7", "severity": "WARNING", "class": "ambiguity", "ref": "assets/LICENSES.toml, D-09, FV-38", "summary": "Splash modificado=false not derivable: D-09 is silent and the repository copy lacks the C2PA of the original download. Owner to state it", "follow_up": false, "status": "open"},
+    {"id": "W8", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-testkit/tests/licences.rs", "summary": "No test recomputes BLAKE3: a changed hash digit passes. Needs a new dev-dependency; no stated rule forbids the absence", "follow_up": true, "status": "open"},
+    {"id": "W9", "severity": "WARNING", "class": "ambiguity", "ref": "02 section 4.17.3, Lista de fuentes vacia", "summary": "Row says Err of invalid font; the code gives a separate NoFont variant and key, not recorded as a deviation", "follow_up": false, "status": "open"},
+    {"id": "W10", "severity": "WARNING", "class": "implementation", "ref": "ARQ-116, Caja de tamano 0", "summary": "Amended acceptance texts partly untested (white space in a box of 0, abc CRLF); white-space mutant survived; all pass by probe", "follow_up": true, "status": "open"},
+    {"id": "W11", "severity": "WARNING", "class": "ambiguity", "ref": "Caja de tamano 0, ARQ-116", "summary": "Zero-advance clusters outside White_Space (U+200B and others) give no overflow in a box of 0; the row and ARQ-116 disagree", "follow_up": true, "status": "open"},
+    {"id": "W12", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-text/src/layout.rs, content_advance", "summary": "Quadratic in trailing white space: 100 000 spaces 27 s in debug, 0.19 s with a set. No spec budget; release not measured", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "gates_63e751a": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 21, "killed": 18},
+  "criteria": {"total": 9, "covered": 9},
+  "size": {"lines": 253, "forecast": null}, "report": "verify-report.md" } ] }
