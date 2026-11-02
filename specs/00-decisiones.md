@@ -404,6 +404,15 @@ Fecha: 2 de noviembre de 2026.
 - **Decisión**: Invertir de FD-33 es un interruptor (`invert`, apagado por defecto), no un slider. Su fórmula es `v' = 1 − v`.
 - Aplicado a 04 (FD-33).
 
+## D-47 Colores minoritarios de la banda y fiabilidad
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: se mantiene la regla de `ClassicSegmenter` que aparta de los GMM los colores minoritarios de la banda de borde, y `reliable` es falso cuando esa regla aparta un color real (hallazgo SG3-W7).
+- **Motivo**: la regla conserva un sujeto que toca el borde. A cambio, en un fondo de dos colores, el menor puede pasar al sujeto.
+- **Consecuencia**: la máscara no cambia. El ruido aislado de la banda no cuenta, así que el umbral de «color real» es una cifra PROPUESTA de 02 ARQ-131, no de esta decisión.
+- Aplicado a 02 (§4.17.6, ARQ-131, ARQ-133).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
