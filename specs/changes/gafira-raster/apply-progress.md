@@ -172,3 +172,57 @@ ARQ-118 gives the maths of `progress`, Cut, Dissolve, Fade, Slide offset, Zoom s
 
 Hand mutants 1 to 11 for the transitions are not run: there is no code.
 
+## RS3a
+
+Branch `feat/gafira-raster` (`develop` merged). Commits: 54d8e7b (`EffectError`), 8059490 (contract, guard, Cut), 09847aa (mix, Dissolve, Fade). Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone. `gafira-raster` tests: 63 to 95. Order: stubs of the signatures, then tests, then RED, then code; the RED of each unit is in its commit body. The earlier W6 and W7 items (fe02abf) stand.
+
+### Done
+
+- `EffectError { Buffer, Param, SizeMismatch, FormatMismatch, UnsupportedFormat }` with `From` for `BufferError` and `ParamError`, `to_message` delegating, keys `error.raster.size_mismatch|format_mismatch|unsupported_format` (sizes in `Count`, formats in `Text`).
+- `gafira_raster::transitions`: `Transition`, `GpuTransition`, `UniformBlock`, `HandleReq`; `Cut`, `Dissolve`, `Fade`. Duration stays out of the crate (Q-47).
+- Shared guard in the P15 order, all before any write: `progress` finite; `schema.resolve`; formats (`Alpha8` gives `UnsupportedFormat`, a mix gives `FormatMismatch` naming `to` then `dst`); sizes (`to` then `dst`); `f32` pixels of `from` and `to` finite; size 0 gives `Ok`; clip; exact copies at 0 and 1.
+- Mix: `MIX_SPACE = Linear`, an arm per format for each of the three spaces, a weight of exactly 1 returns the pixel unconverted, a pixel with `a = 0` adds no colour, `Rgba8` rounds half up and clamps. The linear `Rgba8` arm mixes premultiplied linear colour and alpha, then encodes the straight colour and multiplies by the mixed alpha once before rounding (c <= a survives). `Transfer` moved from `mip.rs` to `transfer.rs` (`pub(crate)`, shared tables built once in a `OnceLock`).
+
+### RED per criterion (stubbed bodies, tests first)
+
+| Criterion | Failing test |
+|---|---|
+| 02:1308 wrapper, delegation | `effect_error_wraps_buffer_and_param_errors_and_delegates` (left `UnsupportedFormat`, right `Buffer(NonFinite progress)`); `effect_error_new_variants_have_keys_and_arguments` |
+| ARQ-118 ends, clip | `arq_118_ends_are_exact_copies_for_every_transition` |
+| ARQ-110 `progress`, pixels, params | `arq_110_non_finite_progress_is_err_and_writes_nothing`, `arq_110_non_finite_pixels_are_err_and_write_nothing`, `arq_110_fade_rejects_a_bad_colour_before_writing` |
+| ARQ-118 formats, sizes, size 0 | `arq_118_formats_are_checked_before_writing`, `arq_118_sizes_are_checked_before_writing`, `arq_118_size_zero_is_ok_after_the_checks` |
+| Cut | `arq_118_cut_switches_at_exactly_one_half`, `cut_has_the_identity_and_schema_of_the_table` (handles `None`) |
+| Dissolve | `arq_118_dissolve_at_a_quarter_over_zero_and_one_is_a_quarter`, `arq_118_dissolve_8_bit_rows_follow_the_mix_space`, `dissolve_has_the_identity_and_schema_of_the_table` |
+| Fade, C12 | `arq_118_fade_at_one_half_is_the_colour_exactly`, `arq_118_fade_halves_use_2p_and_2p_minus_1`, `fade_has_the_identity_and_schema_of_the_table` (calls `validate_definition`; Cut and Dissolve have the same test with the empty schema) |
+| Near the ends | `arq_118_dissolve_and_fade_stay_within_1_255_of_the_ends_near_them` |
+| Mix | `a_sample_of_weight_one_is_returned_as_it_is`, `midpoint_rows_per_space_and_format` (the O5 table beside the constant), `a_transparent_pixel_adds_no_colour`, `rgba8_rounds_half_up_and_clamps` |
+
+Not RED, proved by mutants: unknown parameter ids ignored, trait defaults (`gpu()` none, `audio()` equal power), height-alone and format-before-size, determinism (ARQ-111) and the premultiplied-validity properties.
+
+### Hand mutants (killed unless noted)
+
+| # | Mutants | Killed by |
+|---|---|---|
+| 1 | NaN not `Err`; `±∞` not `Err`; no clip upper or lower | the `progress` test, `arq_118_ends_are_exact_copies_for_every_transition` |
+| 2 | Weight-1 path converting; end copy dropped or swapped | `a_sample_of_weight_one_is_returned_as_it_is`, the ends test. The guard's own `p == 0` and `p == 1` branches are equivalent for these three (weights `(1, 0)` and `(0, 1)` already return the pixel exactly); they matter for RS3b |
+| 3 | `<=` at 0.5, swapped, threshold 0.4999 | `arq_118_cut_switches_at_exactly_one_half` |
+| 4 | Dissolve weights swapped, `from`/`to` swapped, constant weights | 8-bit rows (137/225 against 64/191), the 0.25 test, the near-ends test |
+| 5 | Fade `2p` and `2p - 1` branches wrong, weights swapped, colour not premultiplied, alpha dropped, colour not converted, default white, animatable | the half and quarter tests, `fade_has_the_identity_and_schema_of_the_table` |
+| 9 | No size check on `to` or `dst`; width only; no format check; `Alpha8` allowed; pixel check skipped; size 0 before the checks; sizes before formats; parameters not resolved; `dst` written before `Err` | the size, format, pixel, size-0 and `color` tests |
+| 10 | Linear arm without unpremultiply, without premultiplied output, alpha dropped; ghost colour kept | the mix tests |
+| 11 | `RandomState` entropy in Cut, Dissolve, Fade | determinism and value tests |
+| Arms | `Linear` `Rgba8` as stored; `Encoded` `RgbaF32` as stored; `Encoded` `Rgba8` through the linear arm; `MIX_SPACE` changed; rounding `floor` | `midpoint_rows_per_space_and_format`, `mix_space_is_linear_until_the_owner_answers`, the rounding test. Swapping arms between spaces does not compile (the `match` is exhaustive) |
+
+Equivalent survivors: Fade `p <= 0.5` and a threshold at 0.4999 (the function is continuous at one half, both branches give the colour there); Fade colour alpha clamp to 2 and the final byte clamp (Rust `as u8` saturates); the guard's `p == 0` and `p == 1` branches for these three (see 2).
+
+### Deviations and assumptions
+
+1. P15 names `weighted(samples: &[(Pixel, f64)])`. I wrote one typed function per format, `weighted_u8` and `weighted_f32` (plus `_in(space, ..)` for the tests), because a mixed-format sample list cannot occur and would need an impossible arm.
+2. The colour alpha of Fade is clipped to `[0, 1]` in both formats (P15 says "its own alpha is kept"; an alpha outside the range has no meaning). Display-P3 and other wide-gamut colours keep their out-of-gamut values in `f32` and clamp in bytes.
+3. `MixSpace::ALL` is checked by a `debug_assert!` in `weighted_u8` so that all three variants are constructed in non-test code (no `#[allow]` for dead code).
+4. XP13 (time `weighted` on 2 Mpx) is not done: no bench was asked for in this delivery.
+5. The `Transition` for `Cut` has `HandleReq::None` as in the table; the others `Both`. Q-47 is untouched: no duration handling.
+6. `crates/gafira-raster/proptest-regressions/` is untracked again; not committed.
+
+Lines: `git diff --shortstat baf5e59..HEAD -- crates/gafira-raster` (1 992 added, about 1 100 of them tests).
+
