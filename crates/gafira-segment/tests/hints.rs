@@ -78,6 +78,33 @@ fn arq_130_seed_strokes_set_the_alpha_under_them() {
     );
 }
 
+// ARQ-130: the guarantee holds for the thinnest stroke too, a radius-0 point
+// that covers one pixel of the full-size image.
+#[test]
+fn arq_130_a_single_pixel_seed_still_decides_its_pixel() {
+    let data = scene(&[CENTRE]);
+    let point = |x: f32, y: f32| SeedStroke {
+        points: vec![[x, y]],
+        radius: 0.0,
+    };
+    let hints = SegHints {
+        zone: SegZone::Foreground,
+        foreground: vec![point(30.2, 75.7)],
+        background: vec![point(100.4, 75.4)],
+    };
+    let m = run(&data, &hints);
+    assert!(
+        at(&m, 30, 75) >= 243,
+        "foreground point: {}",
+        at(&m, 30, 75)
+    );
+    assert!(
+        at(&m, 100, 75) <= 12,
+        "background point: {}",
+        at(&m, 100, 75)
+    );
+}
+
 // ARQ-130: a seed steers the cut beyond the pixels under it: a blue decoy is
 // foreground without hints, and a background dot in its middle takes pixels
 // of it that lie outside the dot.
