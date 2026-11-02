@@ -219,3 +219,32 @@ Branch `feat/gafira-audio`, from `develop` d437b8a. Commits: `29d4314` (test-onl
 - `Eq3Band` has `tail() == 0` (default): ARQ-125 declares none.
 - The `makers` of `total.rs`, `empty.rs`, `refused.rs` now include `eq3band`, and their snapshots carry `low`, `mid`, `high`.
 - Size: `git diff --shortstat d437b8a` on `crates/`: 14 files, 1 380 insertions (268 in `src/`, the rest tests and the bench), before this note. Forecast 400 (560): over it, and over ~700 lines in total; the coordinator decides.
+
+### AU2 fix round 1 (verify round 1: C6, C7, C8, W14; W15 is process-only)
+
+Commits: `9ecc6c3` (tests for C6, C7, C8; no code change) and `595487b` (`Eq3Band::tail`, ARQ-125 as worded in `b9442ae`). Each commit passed `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked`, each exit code 0 and read alone.
+
+Tests added:
+- C6: `arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history` (`total.rs`, over every maker: NaN, +inf, -inf equals a 0, in the block and in the next one).
+- C7: `arq_125_prepare_at_another_rate_designs_for_the_new_rate_with_the_last_valid_value` (`refused.rs`, every maker) and `arq_125_a_band_omitted_at_the_new_rate_does_nothing_after_prepare` (`eq_state.rs`).
+- C8: `arq_124_the_last_valid_value_survives_reset` (`refused.rs`, over `makers()`, twin of the `prepare` test).
+- Same three gaps on Gain, Fade and Pan: C6 on all three was already killed (`arq_123_a_non_finite_sample_counts_as_zero`, `arq_123_pan_cleans_non_finite_samples_on_any_block`); C7 (Gain `ramp_len`, Fade `reset` in `prepare`) already killed (`arq_129_prepare_and_reset_reach_every_processor`, the ramp tests, `arq_124_prepare_again_reads_the_duration_afresh`); Pan has no state to redesign. C8 on Gain, Fade and Pan was only killed incidentally by tests that do not name it; the new reset twin now kills it for all.
+
+RED for W14 (tests before code, `tail()` was the default 0): `arq_125_tail_is_forty_milliseconds_in_frames_with_a_band_active` (`left: 0, right: 1764`, fs 44100), `arq_125_tail_is_zero_without_an_active_band` (`left: 0, right: 641`, high at 16 001 Hz), `arq_125_tail_follows_the_last_valid_gain` (`left: 0, right: 1920`), `arq_125_tail_is_kept_by_reset_prepare_at_the_same_rate_and_a_refused_block` (`left: 0, right: 1920`), `arq_125_after_an_impulse_every_sample_from_tail_is_below_1e_6` (panic at frame 0 of the ring-down). Not RED by construction: `arq_125_a_gain_change_applies_from_sample_0_of_the_block_that_carries_it` (1e-6 against the reference at 44.1, 48 and 96 kHz; behaviour already held).
+
+Tail: active band = centre < fs/2 and last valid gain not 0 dB (`Band::is_active`, `Param::value`); `tail = ceil(4 fs / 100)` in `u64`. Figures checked: 1 764, 1 920, 3 840, 1 765, 171 798 692; 0 for 0 dB, -0 dB, not prepared, fs 0, high only at 16 000 Hz; 641 at 16 001 Hz; below 1e-6 from frame `tail()` over the 26 active combinations at three rates.
+
+Hand mutants (applied, killed, reverted):
+
+| Mutant | Killed by |
+|---|---|
+| C6 `clean_input` removed in `Eq3Band` | `arq_123_a_non_finite_sample_counts_as_zero_now_and_in_the_history` |
+| C6 removed in Gain, Fade, Pan | the existing non-finite tests, and the new one for Gain and Fade |
+| C7 no redesign in `Eq3Band::prepare` | `arq_125_a_band_omitted_at_the_new_rate_*`, `arq_125_prepare_at_another_rate_*` |
+| C7 Gain `ramp_len` not set in `prepare`; Fade `prepare` without `reset` | `arq_129_prepare_and_reset_reach_every_processor`, ramp tests; `arq_124_prepare_again_reads_the_duration_afresh` |
+| C8 `Eq3Band::reset` forgets the gains; same on Gain, Fade, Pan | `arq_124_the_last_valid_value_survives_reset` (all four) |
+| tail: `floor` instead of `ceil`; band omission removed; `<=` for `<`; 0 dB not excluded; always active | `arq_125_tail_is_forty_milliseconds_*`, `arq_125_tail_is_zero_without_an_active_band`, `arq_125_tail_follows_the_last_valid_gain`, `arq_125_tail_is_kept_by_reset_*` |
+| tail: `reset` forgets the gains | `arq_125_tail_is_kept_by_reset_*`, `arq_124_the_last_valid_value_survives_reset` |
+| tail: `unwrap_or(u32::MAX)` to `unwrap_or(0)` | Survives, equivalent: `4 fs / 100` never exceeds `u32::MAX`, so the branch cannot run |
+
+Deviation: `Eq3Band` tail is read from the last valid gains, so `tail()` before the first `process` is 0 even if a later snapshot will set a band (ARQ-125 says the last valid value, or the default). W15: nothing to change in this code.
