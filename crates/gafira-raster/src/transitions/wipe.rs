@@ -116,7 +116,10 @@ impl Transition for Wipe {
                 let softness = values.float("softness").unwrap_or(0.0);
                 let (w, h) = (f64::from(from.width()), f64::from(from.height()));
                 let width = from.width() as usize;
-                let half_diagonal = w.hypot(h) / 2.0;
+                // Circular u is |(a, b)| / sqrt(w^2 + h^2) with a = 2 cx - w and b = 2 cy - h,
+                // both exact. One quotient of squares and one sqrt round once, so an exact
+                // u == p stays exact; two `hypot` results would each round on their own.
+                let diagonal_sq = w * w + h * h;
                 // The weight of `to` at pixel i: 1 where `u < p`, softened by `softness`.
                 let mask = |i: usize| -> f64 {
                     let (cx, cy) = ((i % width) as f64 + 0.5, (i / width) as f64 + 0.5);
@@ -124,7 +127,10 @@ impl Transition for Wipe {
                         "left" => 1.0 - cx / w,
                         "down" => cy / h,
                         "up" => 1.0 - cy / h,
-                        "circular" => (cx - w / 2.0).hypot(cy - h / 2.0) / half_diagonal,
+                        "circular" => {
+                            let (a, b) = (2.0 * cx - w, 2.0 * cy - h);
+                            ((a * a + b * b) / diagonal_sq).sqrt()
+                        }
                         _ => cx / w,
                     };
                     if softness == 0.0 {
@@ -628,6 +634,67 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// Pixels of a w x h image whose circular `u` is exactly `p_num / den`, by integer arithmetic:
+    /// u^2 = (a^2 + b^2) / (w^2 + h^2) with a = 2x + 1 - w and b = 2y + 1 - h, so u = p exactly
+    /// when (a^2 + b^2) den^2 = p_num^2 (w^2 + h^2).
+    fn circular_edge_pixels(w: u32, h: u32, p_num: i128, den: i128) -> Vec<usize> {
+        let mut out = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                let a = i128::from(2 * x + 1) - i128::from(w);
+                let b = i128::from(2 * y + 1) - i128::from(h);
+                let d = i128::from(w) * i128::from(w) + i128::from(h) * i128::from(h);
+                if (a * a + b * b) * den * den == p_num * p_num * d {
+                    out.push((y * w + x) as usize);
+                }
+            }
+        }
+        out
+    }
+
+    // ARQ-118, ARQ-110, ARQ-111: on a circular Wipe a pixel with u exactly p keeps the rule of the
+    // criterion: 0 when hard (strict u < p) and p for any softness above 0. Hand-worked: 8x8
+    // pixel (0, 0) has u = 3.5 sqrt 2 / (4 sqrt 2) = 7/8, so p = 0.875 gives 0 hard and 0.875 soft.
+    #[test]
+    fn arq_118_wipe_circular_exact_edge_pixels_keep_the_rule() {
+        let hand = row("circular", 0.0, 0.875, 8, 8);
+        assert_eq!(hand[0], 0.0, "hard 8x8 p 0.875 pixel (0,0)");
+        for s in [1.0e-16, 1.0e-14, 1.0e-12, 1.0e-10, 1.0e-3] {
+            assert_eq!(row("circular", s, 0.875, 8, 8)[0], 0.875, "8x8 s={s}");
+        }
+        let mut found = 0;
+        for n in [4u32, 8, 16, 32, 64] {
+            for j in 1..64i128 {
+                let p = (j as f32) / 64.0;
+                let edge = circular_edge_pixels(n, n, j, 64);
+                if edge.is_empty() {
+                    continue;
+                }
+                let hard = row("circular", 0.0, p, n, n);
+                let soft = row("circular", 1.0e-16, p, n, n);
+                for &i in &edge {
+                    found += 1;
+                    assert_eq!(hard[i], 0.0, "hard n={n} p={p} i={i}");
+                    assert_eq!(soft[i], p, "soft n={n} p={p} i={i}");
+                }
+            }
+        }
+        assert!(found >= 88, "the scan finds the exact-edge pixels: {found}");
+    }
+
+    // ARQ-118: the same on a real frame size, 1080x1080 at p = 3/8 (the report's example).
+    #[test]
+    fn arq_118_wipe_circular_exact_edge_on_1080_square() {
+        let edge = circular_edge_pixels(1080, 1080, 3, 8);
+        assert!(!edge.is_empty());
+        let hard = row("circular", 0.0, 0.375, 1080, 1080);
+        let soft = row("circular", 1.0e-16, 0.375, 1080, 1080);
+        for &i in &edge {
+            assert_eq!(hard[i], 0.0, "hard i={i}");
+            assert_eq!(soft[i], 0.375, "soft i={i}");
         }
     }
 }
