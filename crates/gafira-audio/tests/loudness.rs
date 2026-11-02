@@ -170,6 +170,34 @@ fn arq_126_a_signal_under_400_ms_has_no_measure_and_400_ms_has_one() {
     }
 }
 
+/// The valid sample rates up to 192 kHz: the divisors of 705 600 000.
+fn valid_rates_up_to_192_khz() -> Vec<u32> {
+    (1..=192_000_u32)
+        .filter(|&hz| SampleRate::new(hz).is_ok())
+        .collect()
+}
+
+/// A tone at 0.21 of the rate, loud enough to pass the gates, `n` frames.
+fn tone(n: usize) -> Vec<f32> {
+    (0..n)
+        .map(|i| (0.2 * (std::f64::consts::TAU * 0.21 * i as f64 + 1.0).sin()) as f32)
+        .collect()
+}
+
+#[test]
+fn arq_126_400_ms_in_frames_has_a_measure_and_one_frame_less_has_none_at_every_rate() {
+    // ARQ-126: the block is ceil(0.4 fs) frames; 4 410 frames at 11 025 Hz are
+    // 400 ms and are measured, 100 frames at 252 Hz are 396.8 ms and are not.
+    assert!(measure(&[tone(4_410)], 11_025).expect("ok").is_some());
+    assert_eq!(measure(&[tone(100)], 252), Ok(None));
+    for hz in valid_rates_up_to_192_khz() {
+        let block = (u64::from(hz) * 4).div_ceil(10) as usize;
+        let at = |n: usize| measure(&[tone(n)], hz).expect("a valid call");
+        assert!(at(block).is_some(), "{hz} Hz, {block} frames");
+        assert_eq!(at(block - 1), None, "{hz} Hz, {} frames", block - 1);
+    }
+}
+
 #[test]
 fn arq_126_a_channel_count_other_than_1_2_or_6_is_an_error() {
     for n in [0_usize, 3, 4, 5, 7] {
@@ -205,8 +233,8 @@ fn arq_126_the_k_weighting_at_other_rates_matches_48_khz_within_a_tenth_of_a_db(
     // that fit under that ceiling (and the sweep of fractions of it).
     let at = |r: u32, freq: f64| lufs(&[sine(r, freq, 0.2, 1.0)], r);
     for hz in [
-        3_360, 8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 88_200, 96_000,
-        192_000,
+        3_360, 8_000, 11_025, 12_000, 16_000, 17_640, 22_050, 24_000, 32_000, 44_100, 88_200,
+        96_000, 192_000,
     ] {
         let top = (0.98 * f64::from(hz) / 2.0).min(16_000.0);
         let mut tones = vec![997.0, 2_500.0, top];

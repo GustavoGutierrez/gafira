@@ -164,13 +164,14 @@ fn loudness_of(energy: f64) -> f64 {
 /// Integrated loudness in LUFS (ITU-R BS.1770-4, EBU R128), or `None` for
 /// "no measure": silence, or a signal with no complete 400 ms block.
 ///
-/// Blocks last 400 ms and start every 100 ms (75 % overlap); a block counts
-/// only when it fits in the signal. A rate whose 100 ms is not a whole number
-/// of samples rounds it to the nearest sample, and the block is 4 of them.
-/// Every `SampleRate` is accepted. Under 32 kHz the signal is interpolated up
-/// by an integer factor to 32 kHz or more before the K weighting, so the
-/// weighting follows the 48 kHz one at every rate; the blocks stay of 400 ms
-/// of the original signal.
+/// A block lasts `ceil(0.4 fs)` frames and starts every `ceil(0.1 fs)` frames;
+/// block `k` starts at frame `k * step` and counts only when it fits whole in
+/// the signal. At a rate that is a multiple of 10 the block is exactly 4 steps
+/// (75 % overlap); at others the overlap is approximate. A signal of 400 ms or
+/// more has a block and a shorter one has none. Every `SampleRate` is
+/// accepted. Under 32 kHz the signal is interpolated up by an integer factor
+/// to 32 kHz or more before the K weighting, so the weighting follows the
+/// 48 kHz one at every rate; the blocks stay of 400 ms of the original signal.
 ///
 /// # Errors
 ///
@@ -184,31 +185,32 @@ pub fn integrated_loudness(
     let frames = check(channels)?;
     let weight = weights(channels.len())?;
     let factor = upsampling(rate.hz());
-    let step = ((u64::from(rate.hz()) + 5) / 10).max(1) as usize;
-    let chunks = frames / step;
-    if chunks < 4 {
+    let hz = u64::from(rate.hz());
+    if (frames as u64) * 10 < 4 * hz {
         return Ok(None);
     }
-    // Weighted energy of each 100 ms chunk (of the interpolated signal); a
-    // block is 4 chunks.
-    let mut chunk_energy = vec![0.0_f64; chunks];
+    let step = hz.div_ceil(10) as usize;
+    let len = (4 * hz).div_ceil(10) as usize;
+    // Weighted energy of each frame (of the interpolated signal).
+    let mut frame_energy = vec![0.0_f64; frames];
     for (samples, &w) in channels.iter().zip(weight) {
         if w == 0.0 {
             continue;
         }
         let mut filter = k_weighting(rate.hz() * factor as u32);
-        for n in 0..chunks * step {
+        for (n, slot) in frame_energy.iter_mut().enumerate() {
             for phase in 0..factor {
                 let shelved = filter[0].step(upsampled(samples, n, phase, factor));
                 let y = filter[1].step(shelved);
-                chunk_energy[n / step] += w * y * y;
+                *slot += w * y * y;
             }
         }
     }
-    let block = (4 * step * factor) as f64;
-    let blocks: Vec<f64> = chunk_energy
-        .windows(4)
-        .map(|w| (w[0] + w[1] + w[2] + w[3]) / block)
+    let norm = (len * factor) as f64;
+    let blocks: Vec<f64> = (0..)
+        .map(|k| k * step)
+        .take_while(|start| start + len <= frames)
+        .map(|start| frame_energy[start..start + len].iter().sum::<f64>() / norm)
         .collect();
     integrated_from_blocks(&blocks)
 }
