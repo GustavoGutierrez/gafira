@@ -70,6 +70,10 @@ pub struct Cluster {
 /// (ARQ-110, FD-41). `style.letter_spacing` and `style.line_height` are checked
 /// here and applied from the next delivery.
 ///
+/// An empty font stack gives `Err(NoFont)`, after the number checks and also for
+/// an empty text. The white space at the logical end of a line does not count
+/// for `overflow`, in any direction.
+///
 /// A word wider than the box breaks by cluster, so `overflow` is true only when
 /// a single cluster is wider than the box. A final newline starts one more,
 /// empty line, as in an editor, and an empty text is one empty line.
@@ -81,6 +85,9 @@ pub fn layout_box(
     bounds: Size,
 ) -> Result<TextLayout, TextError> {
     let size_px = check_input(style, dpi, bounds)?;
+    if fonts.is_empty() {
+        return Err(TextError::NoFont);
+    }
     let mut fcx = FontContext::new();
     let mut names = Vec::with_capacity(fonts.len());
     let mut blob_ids = Vec::with_capacity(fonts.len());
@@ -135,7 +142,7 @@ pub fn layout_box(
             }
         }
         let advance: f32 = clusters.iter().map(|c| c.advance).sum();
-        let content = advance - metrics.hanging_advance;
+        let content = content_advance(text, &clusters);
         out.overflow |= f64::from(content) > width;
         out.lines.push(Line {
             baseline: metrics.baseline,
@@ -145,6 +152,27 @@ pub fn layout_box(
     }
     check_output(&out)?;
     Ok(out)
+}
+
+/// The advance of a line without the white space at the end of its logical
+/// text. That space hangs past the box, also inside a right-to-left run, where
+/// it is not at the visual end of the line.
+fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
+    let mut logical: Vec<usize> = (0..clusters.len()).collect();
+    logical.sort_by_key(|i| clusters[*i].range.start);
+    let is_space = |i: &usize| {
+        text[clusters[*i].range.clone()]
+            .chars()
+            .all(char::is_whitespace)
+    };
+    let keep = logical.len() - logical.iter().rev().take_while(|i| is_space(i)).count();
+    let trailing = &logical[keep..];
+    clusters
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !trailing.contains(i))
+        .map(|(_, c)| c.advance)
+        .sum()
 }
 
 /// ARQ-110: a non-finite result is an `Err`, never an output.

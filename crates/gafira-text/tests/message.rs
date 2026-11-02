@@ -31,8 +31,9 @@ fn fixtures() -> Vec<(TextError, Message)> {
         ),
         (
             TextError::InvalidFont { index: 2 },
-            message("error.text.invalid_font", vec![("index", text("2"))]),
+            message("error.text.invalid_font", vec![("index", MsgArg::Int(2))]),
         ),
+        (TextError::NoFont, message("error.text.no_font", vec![])),
     ]
 }
 
@@ -49,7 +50,7 @@ fn arq_102_text_keys_are_valid_and_distinct() {
         .iter()
         .map(|(e, _)| e.to_message().key.0)
         .collect();
-    assert_eq!(keys.len(), 3, "a fixture per variant");
+    assert_eq!(keys.len(), 4, "a fixture per variant");
     for (i, key) in keys.iter().enumerate() {
         assert!(is_valid_key(key), "{key}");
         assert!(!keys[..i].contains(key), "{key} repeats");

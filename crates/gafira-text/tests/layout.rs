@@ -419,6 +419,89 @@ fn arq_110_a_sum_that_overflows_in_the_output_gives_err_and_no_infinity() {
     );
 }
 
+/// C1: a trailing space inside a right-to-left run is not part of the content.
+/// With break by cluster, a text overflows exactly when one cluster that is not
+/// white space is wider than the box; the widths are swept in steps of 1/16 px.
+#[test]
+fn arq_116_overflow_in_mixed_direction_text_depends_only_on_the_widest_cluster() {
+    let texts = [
+        "a \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648}",
+        "hello world \u{627}\u{628}\u{62c} \u{62f}\u{647}\u{648}",
+        "\u{645}\u{631}\u{62d}\u{628}\u{627} \u{628}\u{627}\u{644}\u{639}\u{627}\u{644}\u{645} hello world",
+    ];
+    for text in texts {
+        let wide = lay_in(text, &[INTER, ARABIC], 100_000.0);
+        let widest = wide
+            .lines
+            .iter()
+            .flat_map(|l| &l.clusters)
+            .filter(|c| !text[c.range.clone()].trim().is_empty())
+            .map(|c| f64::from(c.advance))
+            .fold(0.0, f64::max);
+        assert!(widest > 0.0);
+        for step in 0..=4000 {
+            let width = f64::from(step) / 16.0;
+            let layout = lay_in(text, &[INTER, ARABIC], width);
+            assert_eq!(layout.overflow, width < widest, "{text:?} in {width}");
+        }
+    }
+}
+
+#[test]
+fn arq_116_overflow_looks_at_every_line() {
+    // The first line holds the only cluster that is too wide.
+    let wide = f64::from(lay("W").lines[0].clusters[0].advance);
+    let layout = lay_in("W\ni", &[INTER], wide - 1.0);
+    assert_eq!(layout.lines.len(), 2);
+    assert!(layout.overflow);
+}
+
+#[test]
+fn arq_116_a_cluster_with_a_later_glyph_without_cover_is_notdef() {
+    // q + U+0301: Inter has the letter and not the mark, so the glyphs are [q, .notdef].
+    let cluster = &lay("q\u{301}").lines[0].clusters[0];
+    assert_eq!(cluster.glyphs.len(), 2);
+    assert_ne!(cluster.glyphs[0], 0);
+    assert!(cluster.notdef);
+}
+
+#[test]
+fn arq_110_the_numbers_are_checked_in_order_non_finite_then_range_then_fonts() {
+    let junk: &[u8] = b"not a font";
+    let bad_dpi = |size_pt, stack: &[&[u8]]| {
+        let s = TextStyle { size_pt, ..style() };
+        lay_with("a", stack, &s, f64::NAN, 100.0).err()
+    };
+    let non_finite = Some(TextError::NonFinite { field: "dpi" });
+    // A range error does not hide a later non-finite number.
+    assert_eq!(bad_dpi(0.5, &[INTER]), non_finite);
+    // A bad font does not hide a non-finite number.
+    assert_eq!(bad_dpi(24.0, &[junk]), non_finite);
+    assert_eq!(bad_dpi(24.0, &[]), non_finite);
+    // A range error comes before a bad font.
+    let s = TextStyle {
+        size_pt: 0.5,
+        ..style()
+    };
+    assert_eq!(
+        lay_with("a", &[junk], &s, 96.0, 100.0).err(),
+        Some(TextError::OutOfRange {
+            field: "style.size_pt"
+        })
+    );
+}
+
+#[test]
+fn fd_41_an_empty_font_list_is_an_error_also_for_an_empty_text() {
+    for text in ["abc", ""] {
+        assert_eq!(
+            lay_with(text, &[], &style(), 96.0, 100.0).err(),
+            Some(TextError::NoFont),
+            "{text:?}"
+        );
+    }
+}
+
 fn pieces() -> impl Strategy<Value = &'static str> {
     prop::sample::select(vec![
         "a",

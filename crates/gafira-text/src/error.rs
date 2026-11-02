@@ -23,6 +23,8 @@ pub enum TextError {
         /// Position in the font stack.
         index: usize,
     },
+    /// The font stack is empty, so the text would be lost without a notice.
+    NoFont,
 }
 
 impl fmt::Display for TextError {
@@ -31,6 +33,7 @@ impl fmt::Display for TextError {
             Self::NonFinite { field } => write!(f, "{field} is not finite"),
             Self::OutOfRange { field } => write!(f, "{field} is out of range"),
             Self::InvalidFont { index } => write!(f, "font {index} cannot be read"),
+            Self::NoFont => f.write_str("the font stack is empty"),
         }
     }
 }
@@ -46,8 +49,12 @@ impl ToMessage for TextError {
             Self::OutOfRange { field } => {
                 msg!("error.text.out_of_range", field = Text(field.to_string()))
             }
+            Self::NoFont => msg!("error.text.no_font"),
             Self::InvalidFont { index } => {
-                msg!("error.text.invalid_font", index = Text(index.to_string()))
+                msg!(
+                    "error.text.invalid_font",
+                    index = Int(i64::try_from(*index).unwrap_or(i64::MAX))
+                )
             }
         }
     }
