@@ -55,10 +55,33 @@ fn arq_122_dark_colors_use_the_linear_branch() {
 // ARQ-122: a mid-range color, cube-root branch on all three axes.
 #[test]
 fn arq_122_mid_range_color_matches_the_reference_pipeline() {
+    // P6: the conversion runs in f64; an f32 step is off by about 3e-5.
     assert_lab(
         lab_of(0.5, 0.25, 0.75),
-        [64.638_473, 31.919_065, -37.438_607],
-        1e-5,
+        [64.638_473_488_132, 31.919_065_051_059, -37.438_606_873_209],
+        1e-9,
+    );
+}
+
+// ARQ-122: alpha is ignored, so the same color at any alpha gives the same Lab.
+#[test]
+fn arq_122_alpha_is_ignored() {
+    let opaque = lab_of(0.5, 0.25, 0.75);
+    for alpha in [0.0, 0.25, 0.5, 0.999] {
+        let got = Lab::from_linear_srgb(LinearRgba::new(0.5, 0.25, 0.75, alpha));
+        assert_eq!(got, opaque, "alpha {alpha}");
+    }
+}
+
+// ARQ-122: epsilon is exactly 216/24389 = 0.00885645167...; a grey between 0.008856
+// and that value is on the linear branch, and its lightness differs by 1.7e-9 from
+// the branch of the rounded epsilon.
+#[test]
+fn arq_122_epsilon_is_exactly_216_over_24389() {
+    assert_lab(
+        lab_of(0.008_856_226, 0.008_856_226, 0.008_856_226),
+        [7.999_795_927_08, 0.0, 0.0],
+        1e-10,
     );
 }
 
@@ -167,4 +190,95 @@ fn arq_122_delta_e2000_is_symmetric() {
             i + 1
         );
     }
+}
+
+fn assert_de(p: Lab, q: Lab, expected: f64, tol: f64) {
+    for (x, y) in [(p, q), (q, p)] {
+        let d = delta_e2000(x, y);
+        assert!(
+            (d - expected).abs() <= tol,
+            "{x:?} {y:?}: got {d}, expected {expected}"
+        );
+    }
+}
+
+// ARQ-122: values below are from two independent implementations (a reference written
+// from the paper's equations and scikit-image), 7 decimals.
+
+// The hue difference wraps by +360 when it is below -180, and not at -170.
+#[test]
+fn arq_122_hue_difference_wraps_above_minus_180() {
+    assert_de(
+        lab(50.0, 7.0, -0.2),
+        lab(50.0, -58.6, -6.7),
+        50.226_299_1,
+        1e-6,
+    );
+}
+
+// The hue difference wraps by -360 when it is above 180, and not at 170.
+#[test]
+fn arq_122_hue_difference_wraps_below_180() {
+    assert_de(
+        lab(50.0, -57.4, -8.4),
+        lab(50.0, 7.0, -0.1),
+        50.387_619_7,
+        1e-6,
+    );
+}
+
+// Exactly -180 degrees apart is not wrapped, and exactly 180 neither.
+#[test]
+fn arq_122_hue_difference_of_exactly_180_is_not_wrapped() {
+    assert_de(
+        lab(50.0, 38.5, -0.5),
+        lab(50.0, -115.5, 1.5),
+        86.672_811_9,
+        1e-6,
+    );
+    assert_de(
+        lab(50.0, -38.5, 0.5),
+        lab(50.0, 115.5, -1.5),
+        58.035_060_7,
+        1e-6,
+    );
+}
+
+// The published pairs 16, 17 and 19 reach the +180 wrap only when reversed; they are
+// checked against the published values.
+#[test]
+fn arq_122_delta_e2000_matches_the_reversed_sharma_pairs() {
+    for n in [16, 17, 19] {
+        let row = SHARMA[n - 1];
+        let d = delta_e2000(lab(row[3], row[4], row[5]), lab(row[0], row[1], row[2]));
+        assert!(
+            (d - row[6]).abs() <= 1e-4,
+            "pair {n} reversed: got {d}, published {}",
+            row[6]
+        );
+    }
+}
+
+// A hue of exactly 0 (a positive, b zero) stays 0, and 180 (a negative, b zero) stays
+// 180: opposite colors on the a axis are 34.27 apart, not wrapped to another hue.
+#[test]
+fn arq_122_hue_of_the_a_axis_is_0_or_180() {
+    assert_de(
+        lab(50.0, 10.0, 0.0),
+        lab(50.0, -20.0, 0.0),
+        34.268_936_0,
+        1e-6,
+    );
+}
+
+// The mean hue adds 360 when the hues are more than 180 apart and sum below 360, and
+// subtracts it otherwise; here the sum is just under 360.
+#[test]
+fn arq_122_mean_hue_adjusts_for_a_sum_below_360() {
+    assert_de(
+        lab(50.0, 26.0, 39.5),
+        lab(50.0, 104.0, -158.0),
+        52.345_609_5,
+        1e-6,
+    );
 }
