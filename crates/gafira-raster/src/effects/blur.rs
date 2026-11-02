@@ -1,13 +1,14 @@
 //! Gaussian blur of one plane: direct separable kernel, tap-outer loops, truncated at 3σ (P11).
 
-/// Largest kernel half width in taps. A wider radius is cut here, in `half_width`, so that
-/// `roi`, cost and pixels agree and a huge `cx.scale` cannot ask for a huge allocation.
-pub(crate) const MAX_HALF_WIDTH: usize = 4096;
+/// Largest kernel half width in taps: 3σ of blur 100 (radius 100, σ 50, 150 taps) at the
+/// maximum zoom 32 of FD-07. A wider radius is cut here, in `half_width`, so that `roi`, cost
+/// and pixels agree and a huge `cx.scale` cannot ask for a huge allocation.
+pub(crate) const MAX_HALF_WIDTH: usize = 4800;
 
 /// Taps on each side of the centre for a CSS-style `radius_px` (σ = radius / 2), 3σ rounded up.
-/// No radius, a negative one or NaN give 0: the identity.
+/// No radius, a negative one, NaN, or one whose square underflows to 0 give 0: the identity.
 pub(crate) fn half_width(radius_px: f64) -> usize {
-    if radius_px.is_nan() || radius_px <= 0.0 {
+    if radius_px.is_nan() || radius_px <= 0.0 || radius_px * radius_px <= 0.0 {
         return 0;
     }
     let taps = (1.5 * radius_px).ceil();
@@ -18,9 +19,22 @@ pub(crate) fn half_width(radius_px: f64) -> usize {
     }
 }
 
+/// Below this σ the kernel is the exact-variance three-tap one.
+const SMALL_SIGMA: f64 = 0.6;
+
 /// The `2k + 1` weights of the Gaussian of σ = `radius_px` / 2, cut at `k` and summing to 1.
 fn kernel(radius_px: f64, k: usize) -> Vec<f32> {
     let sigma = radius_px / 2.0;
+    if sigma < SMALL_SIGMA {
+        // Integer taps of a sampled Gaussian lose variance here. Three taps with the exact
+        // variance σ² keep the response at σ; the outer taps are 0, so `half_width` stands.
+        let side = (sigma * sigma / 2.0) as f32;
+        let mut ker = vec![0.0f32; 2 * k + 1];
+        ker[k - 1] = side;
+        ker[k + 1] = side;
+        ker[k] = (1.0 - sigma * sigma) as f32;
+        return ker;
+    }
     let raw: Vec<f64> = (0..=2 * k)
         .map(|t| {
             let d = t as f64 - k as f64;
@@ -227,14 +241,16 @@ mod tests {
         assert!((0.25..0.36).contains(&corner), "corner {corner}");
     }
 
-    // ARQ-120: radius 0 is the identity, bit for bit; so is a radius that rounds to nothing.
+    // ARQ-120: radius 0 is the identity, bit for bit; a radius too small to matter is the
+    // identity to within the variance it keeps (σ² of 2.5e-25).
     #[test]
     fn arq_120_radius_zero_is_the_identity() {
         let (w, h) = (13, 7);
         let src = plane(w, h, 3);
         assert_eq!(bits(&blur_shifted(&src, w, h, 0, 0, 0.0)), bits(&src));
         assert_eq!(bits(&blur_shifted(&src, w, h, 0, 0, -3.0)), bits(&src));
-        assert_eq!(bits(&blur_shifted(&src, w, h, 0, 0, 1e-12)), bits(&src));
+        let tiny = blur_shifted(&src, w, h, 0, 0, 1e-12);
+        assert!(tiny.iter().zip(&src).all(|(a, b)| (a - b).abs() <= 1e-6));
     }
 
     // ARQ-120, FD-35: output (i, j) reads the blur at (i + ox, j + oy), also beyond the image,
@@ -325,5 +341,54 @@ mod tests {
         ] {
             assert_eq!(half_width(radius), want, "radius {radius}");
         }
+    }
+
+    // ARQ-120: sigma holds within 2 % also when radius x scale is small, below sigma 0.6
+    // where a sampled Gaussian loses variance.
+    #[test]
+    fn arq_120_sigma_holds_for_small_radius_times_scale() {
+        for radius in [0.25, 0.5, 0.75, 1.0, 1.16, 1.2, 1.25, 1.5] {
+            let (sx, sy) = measured_sigma(21, radius);
+            let want = radius / 2.0;
+            for s in [sx, sy] {
+                assert!(
+                    (s - want).abs() <= 0.02 * want,
+                    "radius {radius}: sigma {s}, want {want}"
+                );
+            }
+        }
+    }
+
+    // ARQ-110, ARQ-120: a radius whose square underflows to 0 is the identity, never NaN.
+    #[test]
+    fn arq_110_a_radius_whose_square_underflows_is_the_identity() {
+        assert_eq!(half_width(1e-170), 0);
+        assert_eq!(half_width(5e-324), 0);
+        let (w, h) = (9, 5);
+        let src = plane(w, h, 2);
+        for radius in [1e-170, 5e-324] {
+            assert_eq!(bits(&blur_shifted(&src, w, h, 0, 0, radius)), bits(&src));
+        }
+    }
+
+    // ARQ-120: the cap is 1.5 x blur 100 x the maximum zoom 32 (FD-07), and sigma holds there.
+    #[test]
+    fn arq_120_the_cap_covers_blur_100_at_zoom_32() {
+        assert_eq!(half_width(f64::MAX), 4800);
+        assert_eq!(half_width(3200.0), 4800);
+        // One row: the vertical pass reads only the centre tap, so sigma is along x.
+        let w = 2 * 4800 + 1;
+        let mut p = vec![0.0f32; w];
+        p[4800] = 1.0;
+        let out = blur_shifted(&p, w, 1, 0, 0, 3200.0);
+        let mass: f64 = out.iter().map(|&v| f64::from(v)).sum();
+        let var: f64 = out
+            .iter()
+            .enumerate()
+            .map(|(x, &v)| f64::from(v) * (x as f64 - 4800.0).powi(2))
+            .sum::<f64>()
+            / mass;
+        let sigma = var.sqrt();
+        assert!((sigma - 1600.0).abs() <= 32.0, "sigma {sigma}");
     }
 }

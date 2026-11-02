@@ -209,7 +209,7 @@ impl Effect for ParallelShadow {
             return Ok(());
         }
         let g = Geometry::new(cx, &values);
-        let factor = number(&values, "opacity") / 100.0;
+        let opacity = number(&values, "opacity");
         match (src.data(), dst.data_mut()) {
             (PixelData::Rgba8(s), PixelDataMut::Rgba8(d)) => {
                 // Alpha in 0..=255 as exact f32 integers: with no blur they come back unchanged.
@@ -217,7 +217,7 @@ impl Effect for ParallelShadow {
                 let blurred = blur_shifted(&alpha, w, h, -g.dx, -g.dy, g.radius);
                 for ((px, out), cover) in s.chunks_exact(4).zip(d.chunks_exact_mut(4)).zip(&blurred)
                 {
-                    let sa = (f64::from(*cover) * factor * tint.alpha + 0.5)
+                    let sa = (f64::from(*cover) * opacity * tint.alpha / 100.0 + 0.5)
                         .floor()
                         .clamp(0.0, 255.0) as u8;
                     let element = [px[0], px[1], px[2], px[3]];
@@ -245,7 +245,8 @@ impl Effect for ParallelShadow {
                     .zip(result.chunks_exact_mut(4))
                     .zip(&blurred)
                 {
-                    let sa = (f64::from(*cover) * factor * tint.alpha).clamp(0.0, 1.0) as f32;
+                    let sa =
+                        (f64::from(*cover) * opacity * tint.alpha / 100.0).clamp(0.0, 1.0) as f32;
                     let element = [px[0], px[1], px[2], px[3]];
                     let shadow = [
                         tint.linear[0] * sa,
@@ -739,14 +740,19 @@ mod tests {
         assert_ne!(at2, plain);
     }
 
-    // ARQ-120: an image and its half at scale 0.5 agree within 1/255 after scaling back.
+    // ARQ-120: a smooth image and its half at scale 0.5 agree within 1/255 after scaling back,
+    // for a radius of 16 px or more and offsets that are whole pixels at that scale (even).
     #[test]
     fn arq_120_a_half_size_image_at_half_scale_matches_after_rescaling() {
         let half = (40usize, 32usize);
+        // A smooth bump of alpha: raised cosine over an ellipse.
         let mut small = vec![0u8; half.0 * half.1 * 4];
-        for y in 10..22 {
-            for x in 12..28 {
-                small[(y * half.0 + x) * 4 + 3] = 255;
+        for y in 0..half.1 {
+            for x in 0..half.0 {
+                let (dx, dy) = ((x as f64 - 19.5) / 12.0, (y as f64 - 15.5) / 9.0);
+                let d = (dx * dx + dy * dy).sqrt().min(1.0);
+                let a = 255.0 * 0.5 * (1.0 + (std::f64::consts::PI * d).cos());
+                small[(y * half.0 + x) * 4 + 3] = a.round() as u8;
             }
         }
         let mut big = vec![0u8; small.len() * 4];
@@ -756,31 +762,35 @@ mod tests {
                 big[(y * half.0 * 2 + x) * 4..][..4].copy_from_slice(&small[s..s + 4]);
             }
         }
-        let p = pv(&[
-            ("blur", 24.0),
-            ("opacity", 100.0),
-            ("offset_x", 0.0),
-            ("offset_y", 0.0),
-        ]);
-        let full = run8(&cx(1.0), &p, &big, (half.0 as u32 * 2, half.1 as u32 * 2)).unwrap();
-        let lo = run8(&cx(0.5), &p, &small, (half.0 as u32, half.1 as u32)).unwrap();
-        // The shadow reaches well outside the block (a partial alpha 6 px from it).
-        assert!(
-            (20..120).contains(&lo[(16 * half.0 + 6) * 4 + 3]),
-            "no shadow"
-        );
-        for y in 0..half.1 {
-            for x in 0..half.0 {
-                let mean: u32 = [(0, 0), (1, 0), (0, 1), (1, 1)]
-                    .iter()
-                    .map(|(a, b)| u32::from(full[((2 * y + b) * half.0 * 2 + 2 * x + a) * 4 + 3]))
-                    .sum();
-                let got = u32::from(lo[(y * half.0 + x) * 4 + 3]);
-                assert!(
-                    (mean as f64 / 4.0 - got as f64).abs() <= 1.0,
-                    "({x},{y}): {} vs {got}",
-                    mean as f64 / 4.0
-                );
+        for (blur, ox, oy) in [(16.0, 0.0, 0.0), (24.0, 4.0, -2.0), (32.0, -6.0, 8.0)] {
+            let p = pv(&[
+                ("blur", blur),
+                ("opacity", 100.0),
+                ("offset_x", ox),
+                ("offset_y", oy),
+            ]);
+            let full = run8(&cx(1.0), &p, &big, (half.0 as u32 * 2, half.1 as u32 * 2)).unwrap();
+            let lo = run8(&cx(0.5), &p, &small, (half.0 as u32, half.1 as u32)).unwrap();
+            // The shadow reaches outside the bump: pixels the element leaves empty get alpha.
+            let spread = (0..half.0 * half.1)
+                .filter(|&i| small[i * 4 + 3] == 0 && lo[i * 4 + 3] > 0)
+                .count();
+            assert!(spread > 50, "no shadow, blur {blur}: {spread}");
+            for y in 0..half.1 {
+                for x in 0..half.0 {
+                    let mean: u32 = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                        .iter()
+                        .map(|(a, b)| {
+                            u32::from(full[((2 * y + b) * half.0 * 2 + 2 * x + a) * 4 + 3])
+                        })
+                        .sum();
+                    let got = u32::from(lo[(y * half.0 + x) * 4 + 3]);
+                    assert!(
+                        (mean as f64 / 4.0 - got as f64).abs() <= 1.0,
+                        "blur {blur} ({x},{y}): {} vs {got}",
+                        mean as f64 / 4.0
+                    );
+                }
             }
         }
     }
@@ -1183,6 +1193,129 @@ mod tests {
             runf(&cx(1.5), &p, &sf, (23, 17)).unwrap(),
         );
         assert_eq!(bits(&a), bits(&b));
+    }
+
+    // ARQ-110, FD-35: a blur whose square underflows is blur 0, in both formats: no Err, no
+    // lost shadow.
+    #[test]
+    fn arq_110_a_blur_too_small_to_square_is_the_same_as_blur_zero() {
+        let base = [("offset_x", 3.0), ("offset_y", -2.0), ("opacity", 70.0)];
+        let with = |blur: f64| {
+            let mut v = base.to_vec();
+            v.push(("blur", blur));
+            pv(&v)
+        };
+        let s8 = img_u8(9, 7, 6);
+        let sf = img_f32(9, 7, 6);
+        for tiny in [1e-170, 5e-324] {
+            assert_eq!(
+                run8(&cx(1.0), &with(tiny), &s8, (9, 7)),
+                run8(&cx(1.0), &with(0.0), &s8, (9, 7)),
+                "u8 blur {tiny}"
+            );
+            let (got, want) = (
+                runf(&cx(1.0), &with(tiny), &sf, (9, 7)),
+                runf(&cx(1.0), &with(0.0), &sf, (9, 7)),
+            );
+            assert!(got.is_ok(), "f32 blur {tiny}: {got:?}");
+            assert_eq!(got.map(|v| bits(&v)), want.map(|v| bits(&v)), "f32 {tiny}");
+        }
+    }
+
+    // ARQ-110: an overflow in the composite is Err and leaves dst as it was.
+    #[test]
+    fn arq_110_composite_overflow_is_err_and_dst_is_untouched() {
+        let src = [0.5f32, 0.0, 0.0, 0.5, 3.3e38, 0.0, 0.0, 0.5];
+        let mut p = pv(&[
+            ("blur", 0.0),
+            ("opacity", 100.0),
+            ("offset_x", 0.0),
+            ("offset_y", 0.0),
+        ]);
+        p.set(
+            "color",
+            ParamValue::Color(Color::Srgb(Rgba::new(1e16, 0.0, 0.0, 1.0))),
+        );
+        let sentinel = f32::from_bits(0x7FC0_1234);
+        let mut dst = vec![sentinel; 8];
+        let r = ParallelShadow::new().run_cpu(
+            &cx(1.0),
+            &p,
+            ImageView::new(2, 1, PixelData::RgbaF32(&src)).unwrap(),
+            ImageViewMut::new(2, 1, PixelDataMut::RgbaF32(&mut dst)).unwrap(),
+        );
+        assert!(r.is_err(), "{r:?}");
+        assert_eq!(bits(&dst), bits(&[sentinel; 8]));
+    }
+
+    // FD-35: offsets round to whole device pixels, half away from zero, also negative.
+    #[test]
+    fn fd_35_offsets_round_half_away_from_zero() {
+        let mut src = vec![0u8; 9 * 4];
+        src[4 * 4 + 3] = 255; // pixel 4 of 9
+        let at = |ox: f64, scale: f32| {
+            let p = pv(&[
+                ("offset_x", ox),
+                ("offset_y", 0.0),
+                ("blur", 0.0),
+                ("opacity", 100.0),
+            ]);
+            let out = run8(&cx(scale), &p, &src, (9, 1)).unwrap();
+            let on: Vec<usize> = (0..9).filter(|&x| out[x * 4 + 3] == 255).collect();
+            // The element stays at 4; the shadow is the other pixel, or none when it overlaps.
+            on.into_iter().find(|&x| x != 4).map_or(4, |x| x)
+        };
+        for (ox, scale, want) in [
+            (-0.5, 1.0, 3),
+            (-1.5, 1.0, 2),
+            (0.5, 1.0, 5),
+            (1.5, 1.0, 6),
+            (2.5, 1.0, 7),
+            (-2.5, 1.0, 1),
+            (1.0, 0.5, 5),
+            (-1.0, 0.5, 3),
+            (0.4, 1.0, 4),
+            (-0.4, 1.0, 4),
+        ] {
+            assert_eq!(at(ox, scale), want, "offset {ox} scale {scale}");
+        }
+    }
+
+    // FD-35 (a): the shadow alpha is round-half-up of alpha x opacity / 100 exactly, also at the
+    // ties where opacity / 100 is not exact in binary.
+    #[test]
+    fn fd_35_a_opacity_ties_round_up_exactly() {
+        for (a, opacity) in [
+            (50u32, 29u32),
+            (90, 35),
+            (170, 35),
+            (150, 41),
+            (50, 57),
+            (150, 57),
+            (25, 58),
+            (150, 69),
+            (45, 70),
+            (85, 70),
+            (165, 70),
+            (175, 70),
+            (75, 82),
+        ] {
+            assert_eq!((a * opacity) % 100, 50, "{a} {opacity} is a tie");
+            let mut src = vec![0u8; 8];
+            src[3] = a as u8;
+            let p = pv(&[
+                ("offset_x", 1.0),
+                ("offset_y", 0.0),
+                ("blur", 0.0),
+                ("opacity", f64::from(opacity)),
+            ]);
+            let out = run8(&cx(1.0), &p, &src, (2, 1)).unwrap();
+            assert_eq!(
+                u32::from(out[7]),
+                (a * opacity) / 100 + 1,
+                "alpha {a} opacity {opacity}"
+            );
+        }
     }
 
     proptest! {
