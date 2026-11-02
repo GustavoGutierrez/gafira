@@ -1,16 +1,26 @@
 //! ARQ-123: `process` is total, for every processor of the crate.
 
-use gafira_audio::{AudioBlock, AudioProcessor, Gain, PARAM_VOLUME, ParamSnapshot};
+use gafira_audio::{
+    AudioBlock, AudioProcessor, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_PAN, PARAM_VOLUME,
+    Pan, ParamSnapshot,
+};
 
 type Maker = fn() -> Box<dyn AudioProcessor>;
 
 fn makers() -> Vec<(&'static str, Maker)> {
-    vec![("gain", || Box::new(Gain::new()))]
+    vec![
+        ("gain", || Box::new(Gain::new())),
+        ("fade_in", || Box::new(Fade::new(FadeDirection::In))),
+        ("fade_out", || Box::new(Fade::new(FadeDirection::Out))),
+        ("pan", || Box::new(Pan::new())),
+    ]
 }
 
 fn params() -> ParamSnapshot {
     let mut s = ParamSnapshot::new();
     s.set(PARAM_VOLUME, 150.0);
+    s.set(PARAM_DURATION, 0.001);
+    s.set(PARAM_PAN, 0.3);
     s
 }
 
