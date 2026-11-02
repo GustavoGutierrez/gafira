@@ -69,6 +69,9 @@ impl ToMessage for FilterError {
     }
 }
 
+/// The intensity a filter starts at (FD-33).
+pub const DEFAULT_INTENSITY: f64 = 60.0;
+
 /// The intensity must be finite and in `[0, 100]` (ARQ-110).
 fn check_intensity(intensity: f64) -> Result<(), FilterError> {
     if !intensity.is_finite() {
@@ -84,20 +87,35 @@ fn check_intensity(intensity: f64) -> Result<(), FilterError> {
     Ok(())
 }
 
-/// Linear-light blend with premultiplied alpha (02 3.4, Q-27, Q-31), `t` in `(0, 1)`. The
+/// The four channels of a colour in its own space.
+fn channels(c: Color) -> [f32; 4] {
+    match c {
+        Color::Srgb(c) => [c.r, c.g, c.b, c.a],
+        Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
+        Color::DisplayP3(c) => [c.r, c.g, c.b, c.a],
+    }
+}
+
+/// Linear-light blend with premultiplied alpha (02 3.4, Q-27, Q-31), `t` in `(0, 1)` as the
+/// `f32` it is in `gafira-anim`: alpha is computed in `f32` and the channels divide by it. The
 /// result keeps the space both ends share and is linear sRGB otherwise. When the resulting
 /// alpha is not positive the channels blend straight. Nothing is clamped.
-fn lerp_color(from: Color, to: Color, t: f64) -> Color {
+///
+/// # Errors
+///
+/// A converted or blended channel that does not fit `f32` is `Err`, naming `field`.
+fn lerp_color(from: Color, to: Color, t: f32, field: &'static str) -> Result<Color, EffectError> {
     let (a, b) = (from.to_linear_srgb(), to.to_linear_srgb());
-    let (wa, wb) = (f64::from(a.a), f64::from(b.a));
-    let alpha = wa + (wb - wa) * t;
+    let alpha = a.a + (b.a - a.a) * t;
+    let (wa, wb, wr) = (f64::from(a.a), f64::from(b.a), f64::from(alpha));
+    let t = f64::from(t);
     let blend = |ca: f32, cb: f32| {
         let (ca, cb) = (f64::from(ca), f64::from(cb));
-        let value = if alpha <= 0.0 {
+        let value = if wr <= 0.0 {
             ca + (cb - ca) * t
         } else {
             let (pa, pb) = (ca * wa, cb * wb);
-            (pa + (pb - pa) * t) / alpha
+            (pa + (pb - pa) * t) / wr
         };
         value as f32
     };
@@ -105,27 +123,36 @@ fn lerp_color(from: Color, to: Color, t: f64) -> Color {
         blend(a.r, b.r),
         blend(a.g, b.g),
         blend(a.b, b.b),
-        alpha as f32,
+        alpha,
     ));
-    if from.space() == to.space() {
+    let mixed = if from.space() == to.space() {
         linear.convert(from.space())
     } else {
         linear
+    };
+    match channels(mixed).iter().position(|v| !v.is_finite()) {
+        Some(index) => Err(BufferError::NonFinite { field, index }.into()),
+        None => Ok(mixed),
     }
 }
 
-/// One parameter between its default `d` and the preset's `p`, at `intensity` in `[0, 100]`.
-fn mix_value(d: &ParamValue, p: &ParamValue, intensity: f64) -> ParamValue {
+/// One parameter `id` between its default `d` and the preset's `p`, at `intensity` in `[0, 100]`.
+fn mix_value(
+    id: &'static str,
+    d: &ParamValue,
+    p: &ParamValue,
+    intensity: f64,
+) -> Result<ParamValue, EffectError> {
     // The ends are the defaults and the preset's values themselves, not a computation that
     // could drift (a -0.0, an `i64` beyond 2^53).
     if intensity == 0.0 {
-        return d.clone();
+        return Ok(d.clone());
     }
     if intensity == 100.0 {
-        return p.clone();
+        return Ok(p.clone());
     }
     let t = intensity / 100.0;
-    match (d, p) {
+    Ok(match (d, p) {
         (ParamValue::Float(d), ParamValue::Float(p)) => {
             // Between the two ends whatever the rounding: a mix of two values the schema
             // accepts is accepted too.
@@ -135,10 +162,12 @@ fn mix_value(d: &ParamValue, p: &ParamValue, intensity: f64) -> ParamValue {
             // `round` sends a half away from 0 (D-41); `as` cuts at the ends of `i64`.
             ParamValue::Int(((*d as f64) * (1.0 - t) + (*p as f64) * t).round() as i64)
         }
-        (ParamValue::Color(d), ParamValue::Color(p)) => ParamValue::Color(lerp_color(*d, *p, t)),
+        (ParamValue::Color(d), ParamValue::Color(p)) => {
+            ParamValue::Color(lerp_color(*d, *p, t as f32, id)?)
+        }
         // A Bool or a Choice jumps to the preset's value above 0 (D-41).
         (_, p) => p.clone(),
-    }
+    })
 }
 
 /// The parameters of an effect at `intensity` (0 to 100): each one between its default and the
@@ -162,10 +191,16 @@ pub fn mix_params(
             continue;
         };
         let value = match preset.get(def.id) {
-            Some(p) => mix_value(d, p, intensity),
+            Some(p) => mix_value(def.id, d, p, intensity)?,
             None => d.clone(),
         };
         mixed.set(def.id, value);
+    }
+    // An id the schema does not know is kept as it came, like `resolve` does (ARQ-110).
+    for (id, value) in preset.iter() {
+        if schema.get(id).is_none() {
+            mixed.set(id, value.clone());
+        }
     }
     Ok(mixed)
 }
@@ -254,7 +289,8 @@ impl FilterPreset {
         let (width, height) = (src.width(), src.height());
         let format = src.data().format();
         let mut dst = dst;
-        if values.is_empty() {
+        // Intensity 0 is no filter, whatever the defaults of the effects do (FD-34 (b)).
+        if values.is_empty() || intensity == 0.0 {
             match (src.data(), dst.data_mut()) {
                 (PixelData::Rgba8(s), PixelDataMut::Rgba8(d)) => d.copy_from_slice(s),
                 (PixelData::RgbaF32(s), PixelDataMut::RgbaF32(d)) => d.copy_from_slice(s),
@@ -317,7 +353,7 @@ mod tests {
     use gafira_doc::contract::{ParamChoice, ParamDef, ParamKind};
 
     use super::super::testing::*;
-    use super::super::{ColorAdjust, Light};
+    use super::super::{ColorAdjust, Light, ParallelShadow};
     use super::*;
     use crate::build_mips;
 
@@ -671,6 +707,119 @@ mod tests {
         ));
     }
 
+    // FD-34 (b), 02 3.4: a Color blends as `gafira-anim` does: alpha in `f32` with `t` as `f32`,
+    // the channels divided by that alpha. Expected bits are taken from `Interpolate for Color`.
+    #[test]
+    fn fd_34_b_color_blend_is_the_interpolation_of_02_3_4_bit_for_bit() {
+        let lin = |c: [f32; 4]| Color::LinearSrgb(LinearRgba::new(c[0], c[1], c[2], c[3]));
+        let cases = [
+            (
+                [0.2, 0.4, 0.6, 0.3],
+                [0.9, 0.1, 0.5, 0.8],
+                37.0,
+                [0x3f20_9142, 0x3e5e_1ced, 0x3f09_f9e1, 0x3ef8_51ec],
+            ),
+            (
+                [0.2, 0.4, 0.6, 0.05],
+                [0.9, 0.1, 0.5, 0.02],
+                33.0,
+                [0x3ea1_6376, 0x3eb3_84ea, 0x3f15_62f4, 0x3d24_3fe6],
+            ),
+            (
+                [0.2, 0.4, 0.6, 0.001],
+                [0.9, 0.1, 0.5, 0.9],
+                7.0,
+                [0x3f63_cb0a, 0x3dd5_bcde, 0x3f00_5f55, 0x3d82_edbc],
+            ),
+            (
+                [0.7, 0.1, 0.3, 0.5],
+                [0.0, 0.8, 0.2, 0.15],
+                61.0,
+                [0x3ef3_efeb, 0x3ea5_a9b1, 0x3e89_3f89, 0x3e92_b020],
+            ),
+        ];
+        for (a, b, i, want) in cases {
+            let s = ParamSchema::new(vec![def("col", ParamKind::Color { default: lin(a) })]);
+            let v = mix_params(&s, &preset_values(&[("col", ParamValue::Color(lin(b)))]), i)
+                .unwrap()
+                .color("col")
+                .unwrap()
+                .to_linear_srgb();
+            let got = [v.r, v.g, v.b, v.a].map(f32::to_bits);
+            assert_eq!(got, want, "{a:?} to {b:?} at {i}");
+        }
+    }
+
+    // FD-34 (b), ARQ-110: a colour that overflows `f32` when it is converted or blended is `Err`
+    // naming the parameter and the channel; the ends are the colours themselves.
+    #[test]
+    fn arq_110_a_colour_mix_that_overflows_is_err_naming_the_parameter() {
+        let p3 = |r, g, b| Color::DisplayP3(gafira_color::DisplayP3Rgba::new(r, g, b, 1.0));
+        let srgb = |r, g, b| Color::Srgb(Rgba::new(r, g, b, 1.0));
+        for (to, index) in [
+            (srgb(1e30, 0.0, 0.0), 0),
+            (srgb(0.0, 0.0, 1e30), 2),
+            (p3(1e30, 1e30, -1e30), 0),
+            (p3(0.0, -1e30, 0.0), 0),
+        ] {
+            let err = Err(FilterError::Effect(EffectError::Buffer(
+                BufferError::NonFinite {
+                    field: "col",
+                    index,
+                },
+            )));
+            for i in [1.0, 50.0, 99.0] {
+                assert_eq!(
+                    mix_params(
+                        &schema(),
+                        &preset_values(&[("col", ParamValue::Color(to))]),
+                        i
+                    ),
+                    err,
+                    "{to:?} at {i}"
+                );
+            }
+            for i in [0.0, 100.0] {
+                mix_params(
+                    &schema(),
+                    &preset_values(&[("col", ParamValue::Color(to))]),
+                    i,
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    // ARQ-110: an id the schema does not know is kept as the preset holds it, at every
+    // intensity, NaN included; `resolve` does the same.
+    #[test]
+    fn arq_110_mix_params_keeps_the_unknown_ids_of_the_preset() {
+        let preset = preset_values(&[
+            ("not_mine", ParamValue::Float(f64::NAN)),
+            ("also_not", ParamValue::Choice("x".to_string())),
+            ("f", ParamValue::Float(80.0)),
+        ]);
+        for i in [0.0, 25.0, 100.0] {
+            let v = mix_params(&schema(), &preset, i).unwrap();
+            assert!(
+                matches!(v.get("not_mine"), Some(ParamValue::Float(x)) if x.is_nan()),
+                "{i}"
+            );
+            assert_eq!(
+                v.get("also_not"),
+                Some(&ParamValue::Choice("x".to_string())),
+                "{i}"
+            );
+        }
+    }
+
+    // FD-33: the intensity a filter starts at is 60.
+    #[test]
+    fn fd_33_the_default_intensity_is_60() {
+        assert_eq!(DEFAULT_INTENSITY, 60.0);
+        assert!(check_intensity(DEFAULT_INTENSITY).is_ok());
+    }
+
     // FD-34 (b), D-41: a Bool and a Choice are the default at 0 and the preset's above 0.
     #[test]
     fn fd_34_b_bool_and_choice_jump_above_zero() {
@@ -934,6 +1083,61 @@ mod tests {
         let (r, out) = apply8(&p, 1.0, -0.0, &s8, (9, 7));
         r.unwrap();
         assert_eq!(out, s8);
+    }
+
+    // FD-34 (b): intensity 0 is no filter for any effect, also one whose defaults are not the
+    // identity (ParallelShadow draws at its defaults); the preset is still checked first.
+    #[test]
+    fn fd_34_b_intensity_zero_is_no_filter_for_an_effect_whose_defaults_change_the_image() {
+        let shadow = ParallelShadow::new();
+        let p = preset(vec![step(
+            "effect.shadow.parallel",
+            &[("offset_x", 20.0), ("blur", 8.0), ("opacity", 90.0)],
+        )]);
+        let s8 = img_u8(12, 9, 6);
+        let sf = img_f32(12, 9, 6);
+        let mut d8 = vec![SENTINEL; s8.len()];
+        p.apply(
+            &[&shadow],
+            &cx(1.0),
+            0.0,
+            ImageView::new(12, 9, PixelData::Rgba8(&s8)).unwrap(),
+            ImageViewMut::new(12, 9, PixelDataMut::Rgba8(&mut d8)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(d8, s8);
+        let mut df = vec![f32::from_bits(SENTINEL_F32); sf.len()];
+        p.apply(
+            &[&shadow],
+            &cx(1.0),
+            0.0,
+            ImageView::new(12, 9, PixelData::RgbaF32(&sf)).unwrap(),
+            ImageViewMut::new(12, 9, PixelDataMut::RgbaF32(&mut df)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(bits(&df), bits(&sf));
+        // The same preset at 100 does draw, so the copy above is not the effect's doing.
+        let mut d8 = vec![SENTINEL; s8.len()];
+        p.apply(
+            &[&shadow],
+            &cx(1.0),
+            100.0,
+            ImageView::new(12, 9, PixelData::Rgba8(&s8)).unwrap(),
+            ImageViewMut::new(12, 9, PixelDataMut::Rgba8(&mut d8)).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(d8, s8);
+        // A bad scale is still Err at 0, and leaves dst alone.
+        let mut d8 = vec![SENTINEL; s8.len()];
+        let r = p.apply(
+            &[&shadow],
+            &cx(f32::NAN),
+            0.0,
+            ImageView::new(12, 9, PixelData::Rgba8(&s8)).unwrap(),
+            ImageViewMut::new(12, 9, PixelDataMut::Rgba8(&mut d8)).unwrap(),
+        );
+        assert!(r.is_err());
+        assert!(d8.iter().all(|b| *b == SENTINEL));
     }
 
     // FD-34 (b): intensity 100 runs the effects with the preset's parameters, in order, and a

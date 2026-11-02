@@ -19,7 +19,9 @@ use gafira_geom::IRect;
 pub use auto_adjust::{AutoAdjust, auto_adjust};
 pub use color_adjust::ColorAdjust;
 pub use detected::{DETECTED_SLOTS, DetectedColors};
-pub use filter::{FilterError, FilterPreset, FilterStep, mix_params, test_preset};
+pub use filter::{
+    DEFAULT_INTENSITY, FilterError, FilterPreset, FilterStep, mix_params, test_preset,
+};
 pub use light::Light;
 pub use shadow::ParallelShadow;
 pub use texture::Texture;
