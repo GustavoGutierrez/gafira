@@ -19,6 +19,12 @@ pub(super) fn slider(
     }
 }
 
+/// Smoothstep from `a` to `b`, `a < b` (FD-33 `w(a, b, x)`).
+pub(super) fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 use crate::transfer::Transfer;
 use crate::{
     BufferError, EffectCx, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut,

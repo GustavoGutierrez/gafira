@@ -1,6 +1,7 @@
 //! Effects of one input (02 §4.4, ARQ-120, FD-35).
 
 mod blur;
+mod light;
 mod pointwise;
 mod shadow;
 #[cfg(test)]
@@ -10,6 +11,7 @@ mod white_balance;
 use gafira_doc::contract::{Describe, ParamSchema, ParamValues};
 use gafira_geom::IRect;
 
+pub use light::Light;
 pub use shadow::ParallelShadow;
 pub use white_balance::{TemperatureTint, WhiteBalance, eyedropper};
 

@@ -144,6 +144,34 @@ pub(crate) fn lin(byte: f64) -> f64 {
     }
 }
 
+/// Encoded value of a linear one, in `f64`, odd about zero.
+pub(crate) fn enc_f(linear: f64) -> f64 {
+    let a = linear.abs();
+    let e = if a <= 0.003_130_8 {
+        12.92 * a
+    } else {
+        1.055 * a.powf(1.0 / 2.4) - 0.055
+    };
+    e.copysign(linear)
+}
+
+/// Linear value of an encoded one, in `f64`, odd about zero.
+pub(crate) fn dec_f(encoded: f64) -> f64 {
+    let a = encoded.abs();
+    let l = if a <= 0.04045 {
+        a / 12.92
+    } else {
+        ((a + 0.055) / 1.055).powf(2.4)
+    };
+    l.copysign(encoded)
+}
+
+/// Smoothstep from `a` to `b` (FD-33 `w(a, b, x)`).
+pub(crate) fn smooth(a: f64, b: f64, x: f64) -> f64 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 /// Linear light to the nearest sRGB byte, written here apart from the crate.
 pub(crate) fn enc(linear: f64) -> u8 {
     let l = linear.clamp(0.0, 1.0);
