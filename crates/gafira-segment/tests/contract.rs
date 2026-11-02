@@ -176,6 +176,17 @@ fn arq_130_requirements_state_the_working_size() {
     assert!(!r.gpu);
 }
 
+// ARQ-130 / 02 §4.7: the requirements state an estimated RAM, from the working
+// size: 16 bytes per pixel of a 2048 x 2048 copy, plus the guided filter's eight
+// `f32` buffers of 282 rows (a 250-row band and its 32-row margin) of 2048.
+#[test]
+fn arq_130_requirements_estimate_ram_from_the_working_size() {
+    let r = seg().requirements();
+    let side = u64::from(r.max_work_side);
+    assert_eq!(r.ram_bytes, side * side * 16 + 8 * 4 * 282 * side);
+    assert_eq!(r.ram_bytes, 85_590_016);
+}
+
 // ARQ-130 / 02 §4.7: a `Segmenter` is a `Describe`, so a registry can hold it.
 #[test]
 fn arq_130_segmenter_describes_itself() {

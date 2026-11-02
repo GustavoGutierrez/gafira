@@ -33,6 +33,22 @@ pub struct SegReq {
     pub gpu: bool,
     /// Longest side of the working copy, in pixels (D-45).
     pub max_work_side: u32,
+    /// Estimated peak memory of one run at the longest working copy, in bytes.
+    /// A first estimate; SG3 calibrates it against a measurement (Q-48).
+    pub ram_bytes: u64,
+}
+
+/// Bytes per pixel of the working copy: colour, labels, SLIC distances, masks
+/// and the node data, rounded up.
+const BYTES_PER_WORK_PIXEL: u64 = 16;
+/// Rows of one guided-filter band with its margins, and the `f32` buffers it keeps.
+const FILTER_ROWS: u64 = 282;
+const FILTER_BUFFERS: u64 = 8;
+
+/// Estimated peak memory for a working copy whose longest side is `side`
+/// (the square is the worst case); SG3 calibrates it (Q-48).
+fn ram_estimate(side: u64) -> u64 {
+    side * side * BYTES_PER_WORK_PIXEL + FILTER_BUFFERS * 4 * FILTER_ROWS * side
 }
 
 /// A mask and whether the person can trust it (ARQ-130, ARQ-131).
@@ -92,6 +108,7 @@ impl Segmenter for ClassicSegmenter {
         SegReq {
             gpu: false,
             max_work_side: 2048,
+            ram_bytes: ram_estimate(work::WORK_SIDE as u64),
         }
     }
 
