@@ -111,50 +111,6 @@ macro_rules! msg {
 mod tests {
     use super::*;
 
-    // ARQ-107
-    #[test]
-    fn arq_107_is_valid_key_follows_the_grammar() {
-        let accepted = [
-            "edit.set_property",
-            "error.format.too_new",
-            "a.b2",
-            "a_1.b_2.c_3",
-        ];
-        for k in accepted {
-            assert!(is_valid_key(k), "should accept {k:?}");
-        }
-        let rejected = [
-            "",
-            "a",
-            ".a",
-            "a.",
-            "a..b",
-            "a.b.c.d",
-            "A.b",
-            "a.B",
-            "a.2b",
-            "2a.b",
-            "a b.c",
-            "a.é",
-            "a.bB",
-            "aB.c",
-            "a.bé",
-            "é.b",
-            "a.b\u{7f}",
-            "a.b.",
-            "a.b..c",
-            "_a.b",
-            "a-b.c",
-            "a.b.c.d.e",
-            ".",
-            "..",
-            "a.b.2",
-        ];
-        for k in rejected {
-            assert!(!is_valid_key(k), "should reject {k:?}");
-        }
-    }
-
     // ARQ-102
     #[test]
     fn arq_102_every_arg_variant_and_unit_builds_and_compares() {

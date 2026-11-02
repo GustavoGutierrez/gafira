@@ -31,9 +31,10 @@ Each test was written first, and a compile stub gave a real assertion failure (n
 
 | Criterion | Test | RED assertion (against the stub) |
 |---|---|---|
-| `is_valid_key` table (ARQ-107) | `msg::tests::arq_107_is_valid_key_follows_the_grammar` | stub `false`: `should accept "edit.set_property"` |
-| Every `MsgArg` and `Unit` builds, `Message` is `Clone` + `PartialEq` | `msg::tests::arq_102_every_arg_variant_and_unit_builds_and_compares` | none: declaration-only types, the test passes as soon as they exist (deviation below) |
-| `msg!` with 0, 1, 2 args, order | `tests/msg_macro.rs::arq_102_msg_with_no_arguments_has_the_key_and_no_args`, `..._keeps_argument_names_and_values_in_order` | stub returns key `""` and no args: `left: MessageKey("")`, `right: MessageKey("export.pages_selected")` |
+| `is_valid_key` table (ARQ-107) | `msg::tests::arq_107_is_valid_key_follows_the_grammar` (moved to `tests/msg_key.rs` in fix round 1) | stub `false`: `should accept "edit.set_property"` |
+| Every `MsgArg` and `Unit` builds, `Message` is `Clone` + `PartialEq` | `msg::tests::arq_102_every_arg_variant_and_unit_builds_and_compares` | reconstructed in fix round 1, see below: `Message` `PartialEq` stubbed to `false`: `assertion left == right failed` at `msg.rs:165:9` |
+| `msg!` with 0 args | `tests/msg_macro.rs::arq_102_msg_with_no_arguments_has_the_key_and_no_args` | stub returns key `""` and no args: `left: MessageKey("")`, `right: MessageKey("export.pages_selected")` |
+| `msg!` with 1, 2 args, order | `tests/msg_macro.rs::arq_102_msg_keeps_argument_names_and_values_in_order` | same stub: the expected args are not present (see commit body for the exact output) |
 | `msg!` trailing comma | `tests/msg_macro.rs::arq_102_msg_accepts_trailing_commas` | `left: []`, `right: [("x", Text("v"))]` |
 | Invalid key does not compile | `compile_fail` doctest on `msg!` | `Test compiled successfully, but it's marked compile_fail` |
 | `IRect` rules | seven tests in `crates/gafira-geom/src/irect.rs` | 7 of 7 failed against constant-return stubs (see commit body) |
@@ -62,10 +63,18 @@ Equivalent mutant, not in the list: `x1.wrapping_sub(x0) as u32` gives the same 
 
 ### Deviations
 
-- The type-only test for `Unit`, `MsgArg` and `Message` has no RED: declarations cannot fail before they exist. It lives in the commit of `is_valid_key`, whose test has a real RED.
+- Corrected in fix round 1 (the earlier text, "declarations cannot fail before they exist", was wrong): the type-only test does get a real RED from a stubbed `PartialEq`. On an export of `03e19cc` (before this fix, history untouched) `impl PartialEq for Message { fn eq(..) -> bool { false } }` replaced the derive; `cargo test -p gafira-doc --lib arq_102` failed on `assertion left == right failed` at `msg.rs:165:9`. The stub is a reconstruction, not in git; the original commit recorded no RED for this test.
 - `msg!` accepts a trailing comma inside a variant's parentheses too (`Quantity(1.5, Unit::Px,)`), as the design's pattern `$(,)?` allows.
 - One expectation in the first `inflate` test was wrong (full rectangle inflated by `i32::MIN` is `(0, 0, -1, -1)`); fixed in the test during GREEN, no code change.
 
 ### Findings for other stages
 
 None. `git grep Locale -- crates/gafira-doc` finds nothing. Out of scope and untouched: `contract`, `ToMessage` impls, pathops, layout.
+
+## D1 fix round 1 (verify round 1: C2, W2, S1, S2)
+
+- C2: new `crates/gafira-doc/tests/msg_key.rs::arq_107_only_the_class_bytes_are_accepted_in_every_position` tries all 256 bytes at the start of the first segment, the start of a later segment, mid-segment and at the end. Honestly not RED: it closes a test gap and the code was already correct. Proven by hand mutants, each reverted: IM2a (digit range widened to `/` and `:`) killed; IM2b (lowercase widened to `` ` `` and `{`) killed; IM2c (segment-start range widened to `` ` ``..`{`) killed; `-` accepted in continuation killed.
+- S1: the grammar table test moved from `msg.rs` `#[cfg(test)]` to `tests/msg_key.rs`, unchanged. Not RED: a move.
+- S2: the merged RED row is split (above).
+- W2: RED recorded (Deviations).
+- Not touched: C1 and W1 (coordinator and owner).
