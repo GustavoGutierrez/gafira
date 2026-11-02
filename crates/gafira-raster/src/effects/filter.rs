@@ -126,7 +126,11 @@ fn mix_value(d: &ParamValue, p: &ParamValue, intensity: f64) -> ParamValue {
     }
     let t = intensity / 100.0;
     match (d, p) {
-        (ParamValue::Float(d), ParamValue::Float(p)) => ParamValue::Float(d * (1.0 - t) + p * t),
+        (ParamValue::Float(d), ParamValue::Float(p)) => {
+            // Between the two ends whatever the rounding: a mix of two values the schema
+            // accepts is accepted too.
+            ParamValue::Float((d * (1.0 - t) + p * t).clamp(d.min(*p), d.max(*p)))
+        }
         (ParamValue::Int(d), ParamValue::Int(p)) => {
             // `round` sends a half away from 0 (D-41); `as` cuts at the ends of `i64`.
             ParamValue::Int(((*d as f64) * (1.0 - t) + (*p as f64) * t).round() as i64)
@@ -591,6 +595,41 @@ mod tests {
         )]);
         let v = mix_params(&p, &p3, 50.0).unwrap();
         assert!(matches!(v.color("col"), Some(Color::LinearSrgb(_))));
+    }
+
+    // FD-34 (b), ARQ-110 (sweep): a mix of two values inside the range stays between them, so
+    // the effect never rejects its own parameters. Between equal values it is that value.
+    #[test]
+    fn fd_34_b_a_float_mix_stays_between_its_ends() {
+        for (d, p) in [
+            (100.0, 100.0),
+            (100.0, 7.3),
+            (-100.0, -100.0),
+            (0.1, 0.1),
+            (100.0, -100.0),
+        ] {
+            let s = ParamSchema::new(vec![def(
+                "x",
+                ParamKind::Float {
+                    min: -100.0,
+                    max: 100.0,
+                    default: d,
+                },
+            )]);
+            for k in 1..2000 {
+                let i = f64::from(k) / 20.0;
+                let m = mix_params(&s, &preset_values(&[("x", ParamValue::Float(p))]), i).unwrap();
+                s.check_values(&m).unwrap();
+                let v = m.float("x").unwrap();
+                assert!(
+                    v >= f64::min(d, p) && v <= f64::max(d, p),
+                    "{d} to {p} at {i}: {v}"
+                );
+                if d == p {
+                    assert_eq!(v, d, "{i}");
+                }
+            }
+        }
     }
 
     // FD-34 (b), 02 3.4: premultiplied weights when the alphas differ; straight when the result
