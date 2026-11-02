@@ -209,6 +209,19 @@ fn gain_db(from: u32, to: u32, speed: f64, freq: f64) -> f64 {
     db(rms(&out[mid]) / (0.5 / 2_f64.sqrt()))
 }
 
+/// Like [`gain_db`], for a sine that starts at `phase` radians.
+fn gain_db_at(from: u32, to: u32, speed: f64, freq: f64, phase: f64) -> f64 {
+    let n = from as usize;
+    let input: Vec<f32> = (0..n)
+        .map(|i| {
+            (0.5 * (std::f64::consts::TAU * freq * i as f64 / f64::from(from) + phase).sin()) as f32
+        })
+        .collect();
+    let out = run(&input, from, to, speed);
+    let mid = out.len() / 4..out.len() * 3 / 4;
+    db(rms(&out[mid]) / (0.5 / 2_f64.sqrt()))
+}
+
 /// Lower Nyquist in Hz of the input: half of the smaller of the effective
 /// rates, `from * speed` and `to`, which in input Hz is `min(to / speed, from) / 2`.
 fn lower_nyquist(from: u32, to: u32, speed: f64) -> f64 {
@@ -225,6 +238,7 @@ fn cases() -> Vec<(u32, u32, f64, f64)> {
         (48_000, 16_000, 0.5),
         (48_000, 48_000, 10.0),
         (8_000, 48_000, 0.1),
+        (48_000, 8_000, 1.0),
     ]
     .into_iter()
     .map(|(f, t, s)| (f, t, s, lower_nyquist(f, t, s)))
@@ -246,14 +260,23 @@ fn arq_128_the_passband_is_flat_within_0_1_db_up_to_0_9_of_the_lower_nyquist() {
 
 #[test]
 fn arq_128_the_stopband_from_the_lower_nyquist_is_down_at_least_80_db() {
+    // A tone exactly at the output Nyquist samples as zero at phase 0 whatever
+    // the filter does, so every row is measured at several phases and the
+    // worst one counts.
     for (from, to, speed, nyquist) in cases() {
-        for fraction in [1.0, 1.02, 1.3] {
+        for fraction in [1.0, 1.005, 1.01, 1.02, 1.3] {
             let freq = fraction * nyquist;
             if freq >= f64::from(from) / 2.0 {
                 continue; // the input has no such frequency
             }
-            let g = gain_db(from, to, speed, freq);
-            assert!(g <= -80.0, "{from}->{to} x{speed} at {fraction}: {g} dB");
+            let worst = [0.0, 0.5, 1.1, std::f64::consts::FRAC_PI_2]
+                .into_iter()
+                .map(|phase| gain_db_at(from, to, speed, freq, phase))
+                .fold(f64::NEG_INFINITY, f64::max);
+            assert!(
+                worst <= -80.0,
+                "{from}->{to} x{speed} at {fraction}: {worst} dB"
+            );
         }
     }
 }
