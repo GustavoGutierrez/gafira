@@ -150,3 +150,13 @@ fn arq_111_the_same_tracks_give_the_same_bytes() {
     };
     assert_eq!(go(), go());
 }
+
+#[test]
+fn arq_129_a_two_channel_track_on_a_three_channel_destination_feeds_the_first_two() {
+    let data = vec![vec![vec![1.0_f32; 3], vec![2.0_f32; 3]]];
+    let mut out = vec![vec![9.0_f32; 3], vec![9.0_f32; 3], vec![9.0_f32; 3]];
+    run_mix(&data, &[], &mut out);
+    assert_eq!(out[0], vec![1.0; 3]);
+    assert_eq!(out[1], vec![2.0; 3]);
+    assert_eq!(out[2], vec![0.0; 3], "nothing for the third channel");
+}
