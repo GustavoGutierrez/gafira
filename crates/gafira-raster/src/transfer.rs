@@ -62,3 +62,60 @@ impl Transfer {
         l.copysign(encoded)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // W6: the `f64` curves agree with the layer-0 transform over a dense sweep, both ways, and are
+    // odd about zero, so a change of a constant in either is caught.
+    #[test]
+    fn the_f64_curves_agree_with_the_analytic_transform() {
+        let t = Transfer::new();
+        let to_linear = AnalyticTransform::new(ColorSpaceId::Srgb, ColorSpaceId::LinearSrgb);
+        let to_srgb = AnalyticTransform::new(ColorSpaceId::LinearSrgb, ColorSpaceId::Srgb);
+        let mut checked = 0;
+        for i in -2000..=3000 {
+            let v = f64::from(i) / 1000.0; // -2 to 3, with the joins at 0.0031308 and 0.04045 inside
+            let mut px = [v as f32, v as f32, v as f32, 1.0];
+            let _ = to_srgb.apply_f32(&mut px, PixelLayout::Rgba);
+            assert!(
+                (t.encode_f64(v) - f64::from(px[0])).abs() < 1e-6,
+                "encode {v}: {} vs {}",
+                t.encode_f64(v),
+                px[0]
+            );
+            let mut px = [v as f32, v as f32, v as f32, 1.0];
+            let _ = to_linear.apply_f32(&mut px, PixelLayout::Rgba);
+            assert!(
+                (t.decode_f64(v) - f64::from(px[0])).abs() < 1e-5 * (1.0 + v.abs().powf(2.4)),
+                "decode {v}: {} vs {}",
+                t.decode_f64(v),
+                px[0]
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 5001);
+        // The joins of both curves, just either side, and the fixed points.
+        for v in [0.003_130_7, 0.003_130_9, 0.040_44, 0.040_46, 0.0, 1.0] {
+            let mut px = [v as f32, 0.0, 0.0, 1.0];
+            let _ = to_srgb.apply_f32(&mut px, PixelLayout::Rgba);
+            assert!(
+                (t.encode_f64(v) - f64::from(px[0])).abs() < 1e-6,
+                "encode join {v}"
+            );
+            let mut px = [v as f32, 0.0, 0.0, 1.0];
+            let _ = to_linear.apply_f32(&mut px, PixelLayout::Rgba);
+            assert!(
+                (t.decode_f64(v) - f64::from(px[0])).abs() < 1e-6,
+                "decode join {v}"
+            );
+        }
+        // Round trip, and odd about zero.
+        for v in [0.1, 0.5, 2.5, 1.0e6] {
+            assert!((t.decode_f64(t.encode_f64(v)) - v).abs() < 1e-9 * v.max(1.0));
+            assert_eq!(t.encode_f64(-v), -t.encode_f64(v));
+            assert_eq!(t.decode_f64(-v), -t.decode_f64(v));
+        }
+    }
+}

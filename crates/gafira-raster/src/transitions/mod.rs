@@ -5,12 +5,14 @@ mod dissolve;
 mod fade;
 mod guard;
 mod mix;
+mod slide;
 
 use gafira_doc::contract::{AudioCrossfade, Describe, ParamSchema, ParamValues};
 
 pub use cut::Cut;
 pub use dissolve::Dissolve;
 pub use fade::Fade;
+pub use slide::Slide;
 
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
 
@@ -85,6 +87,7 @@ mod tests {
             Box::new(Cut::new()),
             Box::new(Dissolve::new()),
             Box::new(Fade::new()),
+            Box::new(Slide::new()),
         ]
     }
 
