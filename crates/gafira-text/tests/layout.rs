@@ -591,3 +591,41 @@ proptest! {
         prop_assert_eq!(logical_text(&text, &layout), (text.clone(), true));
     }
 }
+
+#[test]
+fn fd_44_the_trailing_white_space_of_a_line_is_flagged_in_either_direction() {
+    // The flag is the white space at the logical end of a line, whatever its level: the end of
+    // the wrapped line "ab " in "ab cd", the final spaces of an Arabic line (visually on its
+    // left) and the break of "ab\n".
+    for (text, width, flagged) in [
+        ("ab cd", 40.0, vec![vec![2], vec![]]),
+        ("ab  ", 400.0, vec![vec![2, 3]]),
+        ("\u{627}\u{628}  ", 400.0, vec![vec![4, 5]]),
+        ("ab\n", 400.0, vec![vec![2], vec![]]),
+        ("a b", 400.0, vec![vec![]]),
+    ] {
+        let layout = layout_box(
+            text,
+            &[INTER, ARABIC],
+            &TextStyle::default(),
+            96.0,
+            Size::new(width, 400.0),
+        )
+        .expect("valid input");
+        let got: Vec<Vec<usize>> = layout
+            .lines
+            .iter()
+            .map(|l| {
+                let mut at: Vec<usize> = l
+                    .clusters
+                    .iter()
+                    .filter(|c| c.trailing)
+                    .map(|c| c.range.start)
+                    .collect();
+                at.sort_unstable();
+                at
+            })
+            .collect();
+        assert_eq!(got, flagged, "{text:?}");
+    }
+}

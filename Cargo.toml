@@ -31,6 +31,7 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 trybuild = "1"
 png = "0.18"
 parley = { version = "0.12", default-features = false, features = ["std"] }
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
 rayon = "1"
 assert_no_alloc = "1.1"
 

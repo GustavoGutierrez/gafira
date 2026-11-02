@@ -492,6 +492,7 @@ dependencies = [
  "gafira-testkit",
  "parley",
  "proptest",
+ "skrifa",
 ]
 
 [[package]]

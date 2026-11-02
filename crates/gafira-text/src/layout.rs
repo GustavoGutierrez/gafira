@@ -81,7 +81,8 @@ pub struct TextLayout {
     pub height: f32,
     /// The lines, top to bottom.
     pub lines: Vec<Line>,
-    /// True when a line, without its trailing white space, is wider than the box.
+    /// True when a cluster, not counting the white space at the end of its line, is wider than
+    /// the box.
     pub overflow: bool,
 }
 
@@ -92,6 +93,9 @@ pub struct Line {
     pub baseline: f32,
     /// The sum of the advances of its clusters, in px.
     pub advance: f32,
+    /// Height of the line, in px: the baseline distance of lines of one font, times the
+    /// line height. The heights of all the lines add up to [`TextLayout::height`].
+    pub height: f32,
     /// The grapheme clusters, in visual order (left to right).
     pub clusters: Vec<Cluster>,
 }
@@ -109,10 +113,19 @@ pub struct Cluster {
     pub rtl: bool,
     /// True when a glyph of the cluster has no cover and is the font's `.notdef`.
     pub notdef: bool,
+    /// True when the cluster is white space at the logical end of its line, of any direction:
+    /// the white space that hangs for the letter spacing, the overflow and the curve (FD-41,
+    /// FD-44).
+    pub trailing: bool,
     /// Position in the font stack of the font that shaped the cluster.
     pub font: usize,
     /// Glyph ids of the cluster in the font; none for a forced break.
     pub glyphs: Vec<u32>,
+    /// Where each glyph of `glyphs` starts: the distance from the left edge of the cluster and
+    /// from the baseline (positive is down), in px.
+    pub glyph_offsets: Vec<(f32, f32)>,
+    /// Font size of the cluster, in px.
+    pub size_px: f32,
     /// The underline of the cluster, when the style asks for one.
     pub underline: Option<Decoration>,
     /// The strikethrough of the cluster, when the style asks for one.
@@ -163,6 +176,73 @@ pub fn layout_box(
     if fonts.is_empty() {
         return Err(TextError::NoFont);
     }
+    let mut stack = Stack::new(fonts)?;
+    layout_with(&mut stack, text, style, size_px, &[], bounds.width())
+}
+
+/// The font stack of a call: registered once, so a search that lays the same text out many
+/// times does not register the fonts again.
+pub(crate) struct Stack {
+    fcx: FontContext,
+    lcx: LayoutContext<()>,
+    names: Vec<FontFamilyName<'static>>,
+    blob_ids: Vec<u64>,
+}
+
+impl Stack {
+    /// Registers the fonts, in order; `InvalidFont` names the first that cannot be read.
+    pub(crate) fn new(fonts: &[&[u8]]) -> Result<Self, TextError> {
+        let mut fcx = FontContext::new();
+        let mut names = Vec::with_capacity(fonts.len());
+        let mut blob_ids = Vec::with_capacity(fonts.len());
+        for (index, bytes) in fonts.iter().enumerate() {
+            let blob = Blob::new(Arc::new(bytes.to_vec()));
+            blob_ids.push(blob.id());
+            let family = fcx
+                .collection
+                .register_fonts(blob, None)
+                .first()
+                .map(|(id, _)| *id)
+                .ok_or(TextError::InvalidFont { index })?;
+            let name = fcx.collection.family_name(family);
+            names.push(FontFamilyName::Named(Cow::Owned(
+                name.ok_or(TextError::InvalidFont { index })?.to_string(),
+            )));
+        }
+        Ok(Self {
+            fcx,
+            lcx: LayoutContext::new(),
+            names,
+            blob_ids,
+        })
+    }
+}
+
+/// A size for a byte range of the input text. The text outside every run has the size of the
+/// call.
+#[derive(Clone, Debug)]
+pub(crate) struct SizeRun {
+    pub(crate) range: Range<usize>,
+    pub(crate) size_px: f32,
+}
+
+/// The layout of `layout_box` over a prepared stack, with the numbers already checked. The
+/// letter spacing is in em, so each run has its own in px; the break uses the one of `size_px`,
+/// because parley takes one width for the whole text, so `size_px` must be the largest size.
+pub(crate) fn layout_with(
+    stack: &mut Stack,
+    text: &str,
+    style: &TextStyle,
+    size_px: f32,
+    runs: &[SizeRun],
+    width: f64,
+) -> Result<TextLayout, TextError> {
+    let Stack {
+        fcx,
+        lcx,
+        names,
+        blob_ids,
+    } = stack;
     let input = text;
     let converted;
     let mut source_map = None;
@@ -174,47 +254,81 @@ pub fn layout_box(
     } else {
         text
     };
-    let mut fcx = FontContext::new();
-    let mut names = Vec::with_capacity(fonts.len());
-    let mut blob_ids = Vec::with_capacity(fonts.len());
-    for (index, bytes) in fonts.iter().enumerate() {
-        let blob = Blob::new(Arc::new(bytes.to_vec()));
-        blob_ids.push(blob.id());
-        let family = fcx
-            .collection
-            .register_fonts(blob, None)
-            .first()
-            .map(|(id, _)| *id)
-            .ok_or(TextError::InvalidFont { index })?;
-        let name = fcx.collection.family_name(family);
-        names.push(FontFamilyName::Named(Cow::Owned(
-            name.ok_or(TextError::InvalidFont { index })?.to_string(),
-        )));
-    }
-    let spacing = style.letter_spacing / 1000.0 * f64::from(size_px);
-    let width = bounds.width().max(0.0);
+    let runs: Vec<SizeRun> = runs
+        .iter()
+        .map(|run| SizeRun {
+            range: source_map.as_ref().map_or(run.range.clone(), |map| {
+                map.converted(run.range.start)..map.converted(run.range.end)
+            }),
+            size_px: run.size_px,
+        })
+        .collect();
+    let spacing_em = style.letter_spacing / 1000.0;
+    let spacing = spacing_em * f64::from(size_px);
+    let width = width.max(0.0);
     // Parley adds the spacing after every cluster, the last one of a line too; the output
     // does not keep that one, so the box is that much wider for the fit.
     // One fit rule for the break and the overflow: a line fits a box of `limit` px.
     let limit = width * (1.0 + FIT_TOLERANCE);
-    let fit = (limit + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
-    let mut lcx: LayoutContext<()> = LayoutContext::new();
+    // The last cluster of a line may be of any run, so the box is widened by the smallest
+    // spacing it can have there (the one of the smallest run, or of the largest when the
+    // spacing is negative): the line then never passes the box (FD-46).
+    let sizes = runs.iter().map(|r| r.size_px).chain([size_px]);
+    let edge = if spacing_em < 0.0 {
+        sizes.fold(f32::MIN, f32::max)
+    } else {
+        sizes.fold(f32::MAX, f32::min)
+    };
+    let fit = (limit + spacing_em * f64::from(edge)).clamp(0.0, f64::from(f32::MAX)) as f32;
     let mut lines = Vec::new();
     let mut overflow = false;
     let mut top = 0.0_f64;
     for range in bidi_paragraphs(text) {
         let paragraph = &text[range.clone()];
-        let mut builder = lcx.ranged_builder(&mut fcx, paragraph, 1.0, false);
+        let mut builder = lcx.ranged_builder(fcx, paragraph, 1.0, false);
         builder.push_default(StyleProperty::FontSize(size_px));
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
-            &names,
+            names.as_slice(),
         ))));
         builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
         builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(
             style.line_height as f32,
         )));
+        let mut here = Vec::new();
+        for run in &runs {
+            let (from, to) = (
+                run.range.start.max(range.start),
+                run.range.end.min(range.end),
+            );
+            if from < to {
+                here.push((from - range.start..to - range.start, run.size_px));
+            }
+        }
+        for (part, px) in &here {
+            builder.push(StyleProperty::FontSize(*px), part.clone());
+            if spacing_em != 0.0 {
+                builder.push(
+                    StyleProperty::LetterSpacing((spacing_em * f64::from(*px)) as f32),
+                    part.clone(),
+                );
+            }
+        }
+        // The spacing in px of the cluster that starts at a byte of this paragraph.
+        let spacing_at = |at: usize| -> f32 {
+            let px = here
+                .iter()
+                .find(|(part, _)| part.contains(&at))
+                .map_or(size_px, |(_, px)| *px);
+            (spacing_em * f64::from(px)) as f32
+        };
+        let spaced = spacing != 0.0
+            || runs
+                .iter()
+                .any(|r| spacing_em * f64::from(r.size_px) != 0.0);
         if spacing != 0.0 {
             builder.push_default(StyleProperty::LetterSpacing(spacing as f32));
+        }
+        if spaced {
             // CSS: optional ligatures are off with any spacing (parley ignores a tiny one);
             // the required ligatures and joining forms of a script stay.
             builder.push_default(StyleProperty::FontFeatures(FontFeatures::from(
@@ -227,14 +341,13 @@ pub fn layout_box(
         // Parley ends a text with a forced break in one more, empty line; here that line is
         // the next paragraph, which `bidi_paragraphs` always gives.
         let kept = laid.len() - usize::from(paragraph.ends_with(is_forced_break));
-        let (mut read, forced) = read_lines(
+        let mut read = read_lines(
             &laid,
             kept,
-            &blob_ids,
+            blob_ids,
             paragraph,
-            spacing as f32,
+            spaced.then_some(&spacing_at as &dyn Fn(usize) -> f32),
             style,
-            size_px,
         )?;
         overflow |= read
             .iter()
@@ -243,7 +356,8 @@ pub fn layout_box(
         let rtl = laid.is_rtl();
         let last = read.len().saturating_sub(1);
         for (i, line) in read.iter_mut().enumerate() {
-            let stretch = i != last && !forced[i];
+            // A forced break closes its paragraph, so only the last line can end in one.
+            let stretch = i != last;
             align_line(line, paragraph, style.align, rtl, width, stretch);
             line.baseline = (top + f64::from(line.baseline)) as f32;
             for c in &mut line.clusters {
@@ -303,20 +417,18 @@ fn bidi_paragraphs(text: &str) -> Vec<Range<usize>> {
     paragraphs
 }
 
-/// The first `kept` lines of the layout of a paragraph as output lines, all starting at x = 0,
-/// and whether each one ends in a forced break. `spacing` is the letter spacing in px that
-/// parley added after every cluster. Baselines and ranges are the ones of the paragraph.
+/// The first `kept` lines of the layout of a paragraph as output lines, all starting at x = 0.
+/// `spacing`, when there is any, gives the letter spacing in px that parley added after the
+/// cluster that starts at a byte. Baselines and ranges are the ones of the paragraph.
 fn read_lines(
     laid: &parley::Layout<()>,
     kept: usize,
     blob_ids: &[u64],
     text: &str,
-    spacing: f32,
+    spacing: Option<&dyn Fn(usize) -> f32>,
     style: &TextStyle,
-    size_px: f32,
-) -> Result<(Vec<Line>, Vec<bool>), TextError> {
+) -> Result<Vec<Line>, TextError> {
     let mut lines = Vec::new();
-    let mut forced = Vec::new();
     for line in laid.lines().take(kept) {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
@@ -327,6 +439,7 @@ fn read_lines(
                 .position(|id| *id == run.font().data.id())
                 .unwrap_or(0);
             let m = run.font_metrics();
+            let size_px = run.font_size();
             let natural = m.ascent + m.descent + m.leading;
             if natural.is_nan() || natural <= 0.0 {
                 return Err(TextError::InvalidFont { index: font });
@@ -352,6 +465,12 @@ fn read_lines(
             });
             for c in run.visual_clusters() {
                 let glyphs: Vec<u32> = c.glyphs().map(|g| g.id).collect();
+                let mut pen = 0.0_f32;
+                let mut offsets = Vec::with_capacity(glyphs.len());
+                for g in c.glyphs() {
+                    offsets.push((pen + g.x, g.y));
+                    pen += g.advance;
+                }
                 hard_breaks.push(c.is_hard_line_break());
                 clusters.push(Cluster {
                     range: c.text_range(),
@@ -359,28 +478,40 @@ fn read_lines(
                     advance: c.advance(),
                     rtl: c.is_rtl(),
                     notdef: glyphs.contains(&0),
+                    trailing: false,
                     font,
                     glyphs,
+                    glyph_offsets: offsets,
+                    size_px,
                     underline,
                     strikethrough,
                 });
             }
         }
-        if spacing != 0.0 {
+        let hanging = hanging_mask(text, &clusters);
+        for (c, h) in clusters.iter_mut().zip(&hanging) {
+            c.trailing = *h;
+        }
+        if let Some(spacing) = spacing {
             // The spacing goes after each cluster but the last one of the line. The white
             // space that hangs at the end is neither that cluster nor does it carry the
             // spacing; a forced break gets none from parley.
-            let hanging = hanging_mask(text, &clusters);
             let last = (0..clusters.len())
                 .filter(|i| !hanging[*i])
                 .max_by_key(|i| clusters[*i].range.start);
             for (i, c) in clusters.iter_mut().enumerate() {
+                let gap = spacing(c.range.start);
                 if (last == Some(i) || hanging[i]) && !hard_breaks[i] {
-                    c.advance -= spacing;
+                    c.advance -= gap;
+                } else if c.rtl && !hard_breaks[i] {
+                    // Parley puts the spacing on the right of an rtl glyph, at the left edge
+                    // of the advance; "after" the cluster is its left, so the glyphs move.
+                    for offset in &mut c.glyph_offsets {
+                        offset.0 += gap;
+                    }
                 }
             }
         }
-        forced.push(hard_breaks.contains(&true));
         let mut x = 0.0;
         for c in &mut clusters {
             c.x = x;
@@ -390,16 +521,19 @@ fn read_lines(
         lines.push(Line {
             baseline: metrics.baseline,
             advance,
+            height: metrics.line_height,
             clusters,
         });
     }
-    Ok((lines, forced))
+    Ok(lines)
 }
 
 /// Where each piece of the converted text came from in the input.
 struct SourceMap {
     /// Start in the converted text, and the range of the input character it came from.
     pieces: Vec<(usize, Range<usize>)>,
+    /// Length of the converted text.
+    len: usize,
 }
 
 impl SourceMap {
@@ -408,6 +542,13 @@ impl SourceMap {
             .pieces
             .partition_point(|(start, _)| *start <= converted_byte);
         &self.pieces[i.saturating_sub(1)].1
+    }
+
+    /// The byte of the converted text where the input character that starts at `input_byte`
+    /// starts; the end of the text for the end of the input.
+    fn converted(&self, input_byte: usize) -> usize {
+        let i = self.pieces.partition_point(|(_, r)| r.start < input_byte);
+        self.pieces.get(i).map_or(self.len, |(start, _)| *start)
     }
 
     /// From the first to the last input character the converted range touches.
@@ -425,7 +566,8 @@ fn uppercase_with_map(input: &str) -> (String, SourceMap) {
         pieces.push((upper.len(), start..start + c.len_utf8()));
         upper.extend(c.to_uppercase());
     }
-    (upper, SourceMap { pieces })
+    let len = upper.len();
+    (upper, SourceMap { pieces, len })
 }
 
 /// Whether the font has the table, read from its table directory (index of a collection).
@@ -638,7 +780,7 @@ const SIZE_PT: (f64, f64) = (1.0, 1000.0);
 const LETTER_SPACING: (f64, f64) = (-100.0, 500.0);
 const LINE_HEIGHT: (f64, f64) = (0.5, 4.0);
 
-fn finite(field: &'static str, value: f64) -> Result<f64, TextError> {
+pub(crate) fn finite(field: &'static str, value: f64) -> Result<f64, TextError> {
     if value.is_finite() {
         Ok(value)
     } else {
@@ -646,7 +788,11 @@ fn finite(field: &'static str, value: f64) -> Result<f64, TextError> {
     }
 }
 
-fn in_range(field: &'static str, value: f64, (lo, hi): (f64, f64)) -> Result<(), TextError> {
+pub(crate) fn in_range(
+    field: &'static str,
+    value: f64,
+    (lo, hi): (f64, f64),
+) -> Result<(), TextError> {
     if (lo..=hi).contains(&value) {
         Ok(())
     } else {
@@ -657,15 +803,34 @@ fn in_range(field: &'static str, value: f64, (lo, hi): (f64, f64)) -> Result<(),
 /// Non-finite checks of every input first, then the ranges, then the computed size.
 /// Returns the font size in px.
 pub(crate) fn check_input(style: &TextStyle, dpi: f64, bounds: Size) -> Result<f32, TextError> {
+    check_input_with(style, dpi, bounds, &[])
+}
+
+/// As [`check_input`], with the numbers of a caller (`extra`) checked for NaN and infinity
+/// after the common ones and before any range.
+pub(crate) fn check_input_with(
+    style: &TextStyle,
+    dpi: f64,
+    bounds: Size,
+    extra: &[(&'static str, f64)],
+) -> Result<f32, TextError> {
     let size_pt = finite("style.size_pt", style.size_pt)?;
     let spacing = finite("style.letter_spacing", style.letter_spacing)?;
     let line_height = finite("style.line_height", style.line_height)?;
     finite("dpi", dpi)?;
     finite("bounds.width", bounds.width())?;
     finite("bounds.height", bounds.height())?;
+    for (field, value) in extra {
+        finite(field, *value)?;
+    }
     in_range("style.size_pt", size_pt, SIZE_PT)?;
     in_range("style.letter_spacing", spacing, LETTER_SPACING)?;
     in_range("style.line_height", line_height, LINE_HEIGHT)?;
+    to_px(size_pt, dpi)
+}
+
+/// A size in pt as px at `dpi`; a result that is not finite, also in f32, is an error.
+pub(crate) fn to_px(size_pt: f64, dpi: f64) -> Result<f32, TextError> {
     let size_px = finite("size_px", size_pt * dpi / 72.0)? as f32;
     if size_px.is_finite() {
         Ok(size_px)

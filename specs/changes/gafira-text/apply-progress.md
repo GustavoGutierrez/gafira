@@ -1,6 +1,6 @@
 ## Slice card
 Flow: full | level: L3 | pack: product-spec slice | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: layer-2 crate in the owner's parallel full route; one writer per worktree
-Product IDs: TX1 FD-41 (a, d), ARQ-115, ARQ-116, ARQ-75 (partial file), ARQ-110, ARQ-111; TX2 FD-41 (c, e to n; (a) for bidi paragraphs); TX3 FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (FitBox); TX4 FD-44 (a, c, d, e), FD-43 (a), ARQ-114 (text) (source: specs/02-arquitectura-software.md, specs/01-producto-y-calidad.md, specs/04-funcionalidad-diseno-imagen-exportacion.md, specs/05-funcionalidad-video-y-distribucion.md)
+Product IDs: TX1 FD-41 (a, d), ARQ-115, ARQ-116, ARQ-75 (partial file), ARQ-110, ARQ-111; TX2 FD-41 (c, e to n; (a) for bidi paragraphs); TX3 FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (FitBox); TX4 FD-44 (a, c to g), FD-43 (a), ARQ-114 (text) (source: specs/02-arquitectura-software.md, specs/01-producto-y-calidad.md, specs/04-funcionalidad-diseno-imagen-exportacion.md, specs/05-funcionalidad-video-y-distribucion.md)
 Scope: TX1 to TX4 of specs/changes/layer-2/design.md, with P7 and the XP3 and XP10 records; TX3 needs one workflow_dispatch during its verify (ARQ-14).      Non-goals: other streams; FD-41 (b), FD-47, FD-49, FD-42, FD-46 (d), FD-43 (b, c), FD-44 (b), FD-48; `StyleProperty::Locale` (ARQ-107).
 Deliveries: TX1, TX2, TX3, TX4, serial; each verified and merged before the next.
 Plan: specs/changes/layer-2/design.md, table and decisions; `crates/gafira-text/` plus the files P2 assigns.
@@ -310,3 +310,244 @@ Deviations and open points:
 1. A blank paragraph after an Arabic one now takes its line metrics alone. The final empty line and the middle break already used Inter, so no measured height changed; heights are not fixed by (n).
 2. U+000B, U+000C, U+0085 and U+001C to U+001E keep what parley does with them (one cluster with the font's glyph, not a break).
 
+
+## TX2 follow-ups (W31, W32, S13)
+
+Commits: 533e6e6 (test only), d386830 (refactor). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+| Item | Change | Proof |
+|---|---|---|
+| W31 | `("123 \u{627}", true)` in the direction table of `fd_41_a_a_paragraph_takes_its_direction_from_its_first_strong_character` | Not RED (HEAD is correct). Mutant: direction from the first logical cluster instead of `laid.is_rtl()` (`layout.rs` `let rtl`): killed by that test (`"123 ا"` laid left to right); the table without the new row passes the mutant (16 of 16), so the row is what kills it |
+| W32 | `ابج  \nabc` under Justify, added to `fd_41_n_justify_starts_a_line_where_its_paragraph_starts`: the ink ends at the edge (100 ±0.01) | Not RED. Mutant: `offset = width - total + hung_width` (the hang left out of the Justify RTL offset): killed by that test |
+| S13 | `read_lines` no longer returns the per-line "forced break" flag; `stretch = i != last` | Refactor, tests green. Only the last line of a paragraph can end in a forced break, because the break closes its paragraph |
+
+## TX3
+
+Branch `feat/gafira-text`, from `develop` da288d6. Commits: 17fc089 (columns, `Line::height`), 590cacd (font stack registered once, refactor), f69c486 (fit to the box, `ARQ-14` golden). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. No dependency, `Cargo.toml` or `Cargo.lock` change. `Locale` has 0 matches in `crates/gafira-text`.
+
+Measured (`git diff --shortstat d386830 HEAD`): 2 097 lines added, 34 deleted; 614 in `src/` (`columns.rs` 248, `fit.rs` 200, `layout.rs` 162, `lib.rs` 4) and 1 483 in `tests/` (`columns.rs` 687, `fit.rs` 644, `golden_fit.rs` 152). Over the ~700 mark by a factor of three; the forecast was 400 (560). The tests carry it: two brute-force oracles (all splits of the lines, all 128 sequences of 7 lines) and the rustfmt expansion of tables.
+
+### Done
+
+| ID | Proof |
+|---|---|
+| FD-45 (a) | `columns.rs`: 3 columns of 3 000 characters at 40 widths (all three residues of the line count mod 3) differ by at most one line; balance equals the best split found by trying every split (all 128 sequences of 7 lines, 2 to 4 columns, in a roomy box, in the least box that holds the text, and with auto height, plus 3 sequences of 9 where the best split is taller than the least box) |
+| FD-45 (c) | overflow shows when a column is taller than a fixed box (equality fits), when a cluster is wider than its column, and not before; auto height never overflows by height; no text lost (ranges cover the input once, in reading order) |
+| FD-45 (d) | `count` 0, 9, `u32::MAX`; `gap` -0.01, 200.01 (also with one column); column width 1 px is in, 22.99 px box for 3 columns and gap 10 is out; NaN and infinities first; order count, gap, width, then the font stack |
+| FD-45 (e) | one column equals `layout_box` bit for bit (Debug text of the lines, `to_bits` of the heights), for gaps 0, 0.5, 37, 200, balance on and off, both sizings, 4 texts incl. bidi and paragraphs, widths 0, 30, 300, Left and Justify |
+| FD-45 Reparto | columns of equal width `(w - (n-1) gap) / n`, `x = j (width + gap)`, wraps equal to `layout_box` at that width; fill by height; leftover to the last column; auto height balances always and takes its height from the columns; Justify works inside a column |
+| `Line::height` | new field, the height of each line; the heights add up to `TextLayout::height` and, for one font, to the baseline distance |
+| FD-46 (a) | 12 cases (bidi, paragraphs, odd ends, wrap by cluster, always and never fits): the result fits, the next size of the grid does not, unless it is `max_size`; `overflow` equals "does not fit"; the layout is the one `layout_box` gives at that size; equality of the height fits, a hair less does not; a cluster wider than the box does not fit |
+| FD-46 (b) | empty text or no run: sizes unchanged, no overflow, whatever the box and the range |
+| FD-46 (c) | the result is inside `[min, max]` and on the grid (multiples of 0.25, `min`, `max`); always fits gives `max`; never fits gives `min` with overflow; ranges with no multiple inside; the last multiple below a `max` that is not one |
+| FD-46 (e) | `min = max` gives that size (1, 6.1, 13, 1000); `min > max`, outside 1 to 1000, NaN, infinities give `Err` naming the field; the size of a run is checked too |
+| FD-46 (f) | runs of 10 and 20 pt give exactly 1:2 (also 5, 20, 10 give `r/4, r, r/2`) and their glyphs are laid out at those sizes; letter spacing is in em of each run; upper case and forced breaks keep the runs on their text |
+| ARQ-14 (`FitBox`) | `golden_fit.rs`: 7 cases with literal sizes (18.5, 62.5, 24.75, 30.75, 10.0, 12.0 with overflow, 48.0), each also checked for "fits and the next does not". **Needs the `workflow_dispatch` run on 3 platforms during verify** |
+| ARQ-110 | a size whose layout is not finite is too big for the search; if the minimum has none, `Err(NonFinite)` |
+
+### RED evidence
+
+Every RED was run on the code that existed, with a stub that compiles and does not do the behaviour (`layout_columns` laid the text out in one column at the full width; `fit_box` laid the text out at the size of `style`), before the code of the criterion. Real assertions, no compile error.
+
+| Criterion | Failing test and assertion |
+|---|---|
+| `Line::height` | `fd_45_a_the_height_of_a_line_is_exposed_and_adds_up`: `heights [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` (the field was 0.0) |
+| FD-45 (a) | `fd_45_a_three_columns_of_3000_characters_...`: left 1, right 3; `fd_45_a_balance_minimises_...`: `k=2 [...] AutoHeight`, left `[9]`, right `[5, 4]` |
+| FD-45 Reparto | `fd_45_a_text_split_by_height_fills_each_column_to_the_box`: left `[14]`, right `[5, 5, 4]`; `fd_45_a_line_taller_than_the_box_...`: left `[3]`, right `[1, 2]`; `fd_45_columns_are_equal_in_width_...`: `(col.width - cw).abs() <= 0.01`; `fd_45_columns_work_with_justify`: `column 0 line 0 ends at 210` |
+| FD-45 (c) | `fd_45_c_overflow_shows_when_...`: `fits(five - 1e-6, 2, false)` |
+| FD-45 (d) | `fd_45_d_the_numbers_are_checked`: left `None`, right `Some(OutOfRange { field: "columns.count" })` |
+| FD-46 (a) | `fd_46_a_the_result_fits_and_the_next_size_of_the_grid_does_not`: `"gafira fit dolor ...": 12.25 fits`; `fd_46_a_a_height_equal_to_the_box_fits`: left 12.0, right 20.0 (`equality fits`); `fd_46_a_a_cluster_wider_than_the_box_does_not_fit`: `the next size overflows` |
+| FD-46 (b) | `fd_46_b_empty_text_does_not_change_...`: `the size of the run stays`, left 12.0, right 16.0 |
+| FD-46 (c) | `fd_46_c_the_result_stays_between_...`: left `(12.0, false)`, right `(40.0, false)` |
+| FD-46 (e) | `fd_46_e_equal_minimum_and_maximum_...`: left 12.0, right 1.0; `fd_46_e_a_minimum_over_the_maximum_...`: left `None`, right `Some(OutOfRange { field: "fit.min_size" })` |
+| FD-46 (f) | `fd_46_f_runs_of_10_and_20_...`: `the largest run decides`, left 12.0, right 20.0; `fd_46_f_the_largest_run_decides_...`: left `[5.0, 20.0, 10.0]`, right `[3.0, 12.0, 6.0]` |
+
+Not RED, proved by mutant (they pass on the code that existed, or were written with it): `fd_45_e_*` (the stub is one column too), `fd_45_auto_height_*` (vacuous on the stub, strengthened with `columns.len() == 3` before the code), `fd_45_a_with_fewer_lines_than_columns_...`, `fd_46_a_the_same_input_gives_the_same_result` (determinism has no natural RED), the six `fd_46_c_*`/`fd_46_f_*` tests added in the mutant round (`last multiple below max`, `no multiple inside`, `letter spacing in em of each run`, `upper case and forced breaks`, `non-finite layout`), and `golden_fit.rs` (the literals were measured on the code, then checked by the "fits, next does not" oracle).
+
+### Hand mutants
+
+| # | Wrong behaviour | Killed by |
+|---|---|---|
+| 1 | column width with `count` gaps instead of `count - 1`; gap left out of `x`; last column off by one | `fd_45_columns_are_equal_in_width_...`, `fd_45_d_*`, `fd_45_e_*`, `fd_45_columns_work_with_justify` |
+| 2 | fill with `<` instead of `<=`; a column that may stay empty with a taller line | `fd_45_a_text_split_by_height_fills_...`, `fd_45_c_overflow_...`, `fd_45_a_line_taller_than_the_box_...` |
+| 3 | vertical overflow with `>=`; cluster overflow dropped; auto height does not balance; balance only with `balance` | `fd_45_c_*`, `fd_45_e_*`, `fd_45_a_balance_minimises_...`, `fd_45_auto_height_*` |
+| 4 | count range `1..8`, `0..=8`; gap bounds 199.99, 0.001; width `<= 1` | `fd_45_d_the_numbers_are_checked` (and `fd_45_e_*` for the gap lower bound) |
+| 5 | objective is the tallest column, not the difference; tie goes to the smaller ends; `d < best + TIE`; `h < limit` in the search (equality binds); last column not checked against the box (`if true`); mean pruning with the wrong divisor; `bound - 0.5` on the spread | `fd_45_a_balance_minimises_the_difference_of_heights_when_lines_differ` (the first four after the 7-line and 9-line sequences were added; the last two only by the 3 sequences of 9 where the best split is taller than the least box) |
+| 6 | `top += height` replaced by `top = height`; box height ignored (`INFINITY`); baselines not reset; `x: 0.0`; `width` of the box in `Column::width`; tallest column as the minimum | `fd_45_a_text_split_...`, `fd_45_a_line_taller_...`, `fd_45_c_*`, `fd_45_columns_are_equal_...`, `fd_45_e_*` |
+| 7 | grid step 0.5 and 0.125; grid without `min`; `max - 0.01`; `ceil` to `floor` at the top; `last > 1`; `>= ` for min=max; scale `r / 2`, inverted ratio; ranges 999.99 and 1.01; size of `grid[last]` | `fd_46_a_*`, `fd_46_c_*`, `fd_46_e_*`, `fd_46_f_*` |
+| 8 | `<` for `<=` in "fits"; "fits" without the cluster overflow; "fits" without the height; bisection side swapped; `hi - lo > 2`; overflow forced to false and to `index == last`; empty text threshold `< 2` | `fd_46_a_a_height_equal_to_the_box_fits`, `fd_46_a_*`, `fd_46_c_*`, `fd_46_e_*`, `fd_46_b_*` |
+| 9 | the non-finite layout of a candidate size propagated as `Err`; the fallback for the minimum returns an empty layout | `arq_110_a_size_whose_layout_is_not_finite_is_too_big_and_the_minimum_is_an_error` |
+| 10 | runs: no conversion to the upper case text; last run ends at 0; ranges of a run not relative to its paragraph; spacing of the base size for every run; `font_size()` fixed at 16 | `fd_46_f_runs_follow_the_upper_case_expansion_and_the_forced_breaks`, `fd_46_f_letter_spacing_is_in_em_of_each_run` |
+
+Survivors, each with its proof, none needs a test:
+
+| Mutant | Why it is equivalent |
+|---|---|
+| `TIE` removed or the order of the candidates reversed (`columns.rs`), `bound - 0.5` on the mean (`off <= bound - 0.5`) | The search keeps every state whose spread can tie the best, so the result does not depend on the order. Heights are sums of f32 values in f64, exact, so ties are exact. The mean bound `off <= D` is looser than the true one by `D / count`, which is at least 3.6 px here; a perturbation under that slack discards nothing |
+| `from <= to` for `from < to` (`layout.rs`) | Pushing a style for an empty range changes nothing |
+| `floor + 1` to `ceil` at the bottom of the grid (`fit.rs`) | Differs only when `min` is a multiple of 0.25: `min` appears twice. The bisection keeps `fits(lo)` and `!fits(hi)`, so a duplicate of `min` is never the bracket |
+| `if !fits && last > 0` to `if !fits` | With `last == 0` the minimum is probed again and gives the same answer |
+| `(lo + hi + 1) / 2` for the midpoint | For a predicate that is monotone in the size the result does not depend on the probes; the same 798 boxes gave the same sizes with the other midpoint, and 65 100 layouts (5 texts, 60 widths, 6 to 60 pt in steps of 0.25) gave no case of a height that falls as the size grows. FD-46 says any local maximum is valid |
+| `run.size_pt == largest` guard | Removed from the code: `r * (s / s)` is `r` exactly |
+
+### Adversarial sweep (throwaway, release, not committed)
+
+Columns: 86 400 layouts (9 texts: empty, white space, one cluster, a word wider than any column, 1 500 characters of Latin, Arabic, Latin + Arabic + emoji, paragraphs with `\n`, `\r\n`, U+2029; boxes 0 to 16 000 px in width and height; counts 1, 2, 3, 5, 8; gaps 0, 0.5, 200; balance on and off; both sizings; Left, Justify with spacing 100, Right at 1 pt upper case spacing -100, Center at 1 000 pt spacing 500; underline). Checks: no panic; the only `Err` is `columns.width`, and only when the column is under 1 px; finite output; the right number of columns; clusters cover the input once, in reading order; the height is the tallest column; columns left to right; no overflow flag with a column taller than the box; baselines increase; one column equals `layout_box`; deterministic. 0 problems.
+
+Fit: 15 120 calls (8 texts as one run, a 10/20 pair, a 1/500 (empty)/1000/3 mix, all-empty runs; boxes 0 to 16 000; ranges (1, 1000), (6, 400), (1, 1), (1000, 1000), (6.1, 6.3), (999.9, 1000), (12, 12.25); DPI 1, 96, 300; Left and Justify with spacing 250 and upper case). Checks: `Ok`, result inside the range and on the grid, run proportions, the layout finite, `overflow` equal to the re-fit at that size, the next size of the grid does not fit, deterministic. 0 problems in 22.6 s.
+
+### Deviations and open points
+
+1. **API shape (not fixed by the spec; `TextColumns` and `Autofit` do not exist in `gafira-doc`).** `layout_columns(text, fonts, style, dpi, bounds, &TextColumns, ColumnSizing) -> ColumnsLayout { columns: Vec<Column { x, width, height, lines }>, height, overflow }`; `fit_box(runs: &[FitRun { text, size_pt }], fonts, style, dpi, bounds, &FitBox { min_size, max_size }) -> FitResult { sizes_pt, size_pt, layout, overflow }` (`FitBox::default()` is 6 to 400). `ColumnSizing::{Fixed, AutoHeight}` carries the "alto automático" rule; "ancho automático" (count counts as 1) is the caller's, so it is not built.
+2. **Mixed sizes.** FD-46 (f) needs runs of different size, and `layout_box` took one style. The core now takes crate-private `SizeRun`s (byte range of the input, size in px); `layout_box` passes none and is bit for bit what it was (every existing test passes). Letter spacing is in em of each run; the break uses the one of the largest size (parley takes one width), so with spacing and mixed sizes a line whose last cluster is in a smaller run is allowed up to the difference. No FD-41 or FD-46 clause asks more.
+3. **Spec gaps, decided and recorded, no stop:** (a) `gap` is validated also with `count = 1` ("se ignora" is read as "no effect on the layout"); (b) the width check of a column applies with `count > 1`, a single column has no such limit (a box of size 0 is not an error, 02 §4.17.3); (c) a column fills while the heights add up to at most the box (equality fits, as FD-46), a column always takes one line, the leftover goes to the last column and flags overflow; (d) balance minimises tallest minus shortest over every split into contiguous runs of lines, empty columns allowed, ties to the split with more lines in the earlier columns, found by branch and bound from the filled split; a fixed box that cannot hold the text is filled and flagged; (e) `overflow` is the OR of a cluster wider than its column and, in a fixed box, a taller column; (f) for empty text FD-46 (b) "no cambia" returns the sizes of the runs (the largest, or `style.size_pt` with no run), not clamped to `[min, max]`; (g) `min > max` names `fit.min_size`, and the two ranges are checked first; (h) a candidate whose layout is not finite is too big; (i) FD-46 "Cabe" is the height of the layout (the sum of the line heights) against the box and `!overflow` of FD-41.
+4. **Not built, outside the TX3 IDs:** columns with lists (`layout_list` lays each item with `layout_box`), the manual column break (D-24), FD-46 (d) and the type lock, FD-46 with columns (the two are independent here).
+5. **Performance.** The font stack is registered once per search (`Stack`), not once per probe. The benchmarks `bench_text_columns_5000` and `bench_text_fit_500` belong to ARQ-114 (TX4).
+6. **ARQ-14.** The literals were measured on Linux x86_64 with the embedded fonts. The three platforms are proved only by the `workflow_dispatch` run of the coordinator on this branch; until then the test passes on one.
+
+## TX4
+
+Branch `feat/gafira-text`, after TX3. Commits: 3f495ed (`skrifa` as a direct dependency, P14), 7ac695d (curve, FD-44), 04f9066 (outlines, FD-43), f2d13e8 (benchmarks, ARQ-114), da3901d (perf of the balanced split). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. The first commit ran the gates on a tree that held an untracked throwaway sweep file, so its fmt and clippy failed; the commit was made anyway by a chained command. The gates were re-run on the clean tree afterwards: 0, 0, 0 (the commit has only manifests).
+
+**P14, first commit.** Root `Cargo.toml`: `skrifa = { version = "0.44", default-features = false, features = ["std"] }`; `crates/gafira-text/Cargo.toml`: `skrifa.workspace = true`; `Cargo.lock` regenerated with `cargo check --workspace --all-targets` (not edited by hand): **one line added** (`"skrifa"` in the dependencies of `gafira-text`), no new package. `cargo deny check`: advisories, bans, licenses, sources ok. The V5 step and the ARQ-107 step of `ci.yml` run locally (the `run:` blocks extracted): exit 0, 0 (`Locale` has 0 matches in the crate). `cargo tree -p gafira-text -i skrifa`: 0.44.0, the copy `parley_engine` already uses.
+
+Measured (`git diff --shortstat 3f495ed^ HEAD`): 1 402 lines added, 8 deleted. 332 in `src/` (`curve.rs` 177, `outline.rs` 122, `layout.rs` 13, `columns.rs` 16 net of the perf commit, `lib.rs` 4), 928 in `tests/` (`curve.rs` 458, `outline.rs` 448, `benches.rs` 22), 135 in `benches/text.rs`, 7 in manifests. Over the ~700 mark; the forecast was 350 (490).
+
+### Done
+
+| ID | Proof |
+|---|---|
+| FD-44 (a) | `curve.rs`: bend 0 and -0.0 leave every cluster at `x + advance / 2`, the baseline, rotation 0, bit for bit, and no `Arc` (no radius computed), for 8 texts incl. bidi, justify, empty and `"\n"` |
+| FD-44 (c) | `fd_44_c_a_new_text_makes_a_new_curve`: the curve of `layout_curved` is the curve of the new layout; the radius follows the new advance |
+| FD-44 (d) | at ±100 the chord of the arc is `2L/pi` ±0.01 px and the radius `L/pi`, for 5 texts and 3 widths and alignments; the chord and radius follow `2 (L/t) sin(t/2)` for 8 bends; every cluster turns `(s/L - 0.5) theta` ±1e-6 rad for 8 bends, 5 texts and 3 alignments, each line with its own `L`; +50 and -50 turn in opposite ways, open down and up, and mirror in y |
+| FD-44 (e) | ±100.01, ±1e300, NaN, infinities give `Err` naming `curve.bend` (ends included); 0.01 and -0.01 keep every position finite and within 0.01 px of the straight line centred in the box; an empty line, a line that is only a forced break and an empty first line do not change |
+| FD-44 geometry | every cluster is at `|R|` from the centre, at the angle of its centre; the arc is centred in the width of the box; lines are concentric with one centre, each apex on its baseline |
+| FD-43 (a) | `outline.rs`: the outline of a cluster is the glyph of its font (`Cluster::font`, 3 fonts in one text) at its size, x and baseline: its box equals the box of the glyph in the font header (read with `skrifa` metrics, not drawing), ±0.05 px; `H`, `A`, `B` have 1, 2, 3 contours; a 4 px miter stroke from `gafira-pathops` is 2 px outside the fill on every side while the layout, built twice, is equal and the outlines are equal; spaces and breaks have an empty path; a beh with a fatha is drawn with each glyph at its own offset, the fatha 4 px over the body and centred on it; the runs of a `fit_box` layout are drawn at their own sizes (1:2); a font that cannot be read, a position outside the stack and a glyph that cannot be drawn give `Err(InvalidFont)`; a non-finite outline gives `Err(NonFinite)` |
+| `Cluster` | two fields for the outline: `glyph_offsets` (x from the left edge of the cluster, y down from the baseline) and `size_px` |
+| ARQ-114 (text) | `benches/text.rs`: `bench_text_type_5000`, `bench_text_curve_100`, `bench_text_columns_5000`, `bench_text_fit_500`; `tests/benches.rs` checks each name is registered once |
+
+### RED evidence
+
+Run before the code of the criterion, on a stub that compiles and does not do the behaviour (`curve_layout` returned the straight positions; `outline_text` returned an empty path per cluster, `glyph_offsets` empty, `size_px` 0). Real assertions, no compile error.
+
+| Criterion | Failing test and assertion |
+|---|---|
+| FD-44 (d) | `fd_44_d_a_cluster_at_s_turns_...`: `"Hello curved world" bend 100: 0 instead of -1.3844700849289602`; `fd_44_d_the_chord_at_100_is_two_l_over_pi`, `fd_44_d_the_chord_and_radius_follow_the_bend`, `fd_44_d_plus_and_minus_...`: `an arc` (no arc) |
+| FD-44 geometry | `fd_44_each_cluster_sits_on_the_circle_...`, `fd_44_lines_use_concentric_arcs_...`: `arc`; `fd_44_one_cluster_sits_at_the_top_of_the_arc_without_turning`: `100: CurvedCluster { x: 7.8828125, y: 15.5, rotation: 0.0 }` (x should be 50) |
+| FD-44 (c) | `fd_44_c_a_new_text_makes_a_new_curve`: `arc` |
+| FD-44 (e) | `fd_44_e_the_bend_is_checked_and_its_ends_are_in`: `100.01`, left `None`, right `Some(OutOfRange { field: "curve.bend" })`; `fd_44_e_a_line_with_no_advance_does_not_change`: `curved.arc.is_some()` |
+| FD-43 (a) | `fd_43_a_each_cluster_has_the_outline_of_its_glyph_...`: `"H" has an outline`; `fd_43_a_the_counters_of_a_letter_...`: left `[0, 0, 0]`, right `[1, 2, 3]`; `fd_43_a_a_4_px_stroke_...`: `a letter`; `fd_43_a_every_size_of_a_layout_with_runs_...`: `an H`; `fd_43_a_a_font_that_cannot_be_read_is_an_error`: left `None`, right `Some(InvalidFont { index: 0 })` |
+| FD-43 (a), marks | `fd_43_a_a_cluster_with_a_mark_...`: the first run failed on my miscount of glyphs (a beh with a fatha has 3 glyphs, not 2), fixed before the code; the stub leaves `glyph_offsets` empty, which `glyph_offsets.len() == glyphs.len()` rejects (0 and 3), not observed separately |
+| ARQ-114 | `arq_114_each_text_figure_has_a_benchmark_named_after_its_row`: `bench_text_type_5000 must be registered once with criterion`, left 0, right 1 |
+
+Not RED, passing on the stub or written with the code, proved by mutant: `fd_44_a_bend_zero_...`, `fd_44_e_a_tiny_bend_...`, `arq_110_a_bend_too_small_for_a_radius_is_never_a_nan`, `fd_44_a_negative_width_acts_as_zero`, `fd_43_a_the_same_layout_gives_the_same_outlines`, `fd_43_a_a_glyph_that_cannot_be_drawn_is_an_error`, `arq_110_an_outline_that_is_not_finite_is_an_error`, `fd_43_a_a_glyph_without_cover_...` (the test subsets have an empty glyph 0, so the test accepts a path that is empty exactly when the font header has no box).
+
+### Hand mutants
+
+| # | Wrong behaviour | Killed by |
+|---|---|---|
+| 1 | 1.0 or 0.9 degrees per unit; radius `L / theta` signed or halved | `fd_44_d_the_chord_*`, `fd_44_d_a_cluster_at_s_*`, `fd_44_each_cluster_sits_on_the_circle_*`, `fd_44_e_*` |
+| 2 | angle without the -0.5; with `abs(theta)`; `s` from the start of the cluster, or not relative to the line | `fd_44_d_a_cluster_at_s_*`, `fd_44_each_cluster_*`, `fd_44_d_plus_and_minus_*`, `fd_44_one_cluster_sits_at_the_top_*` |
+| 3 | direction swapped (no sign in x, no sign in y, sign flipped in y); sigma always 1 | `fd_44_d_plus_and_minus_*`, `fd_44_each_cluster_sits_on_the_circle_*`, `fd_44_e_a_tiny_bend_*` |
+| 4 | centre at `width / 3`, or `width` without the clamp at 0; centre below instead of above | `fd_44_each_cluster_*`, `fd_44_a_negative_width_acts_as_zero`, `fd_44_d_the_chord_at_100_*` |
+| 5 | concentric radius with the wrong sign or none; line apex off its baseline | `fd_44_lines_use_concentric_arcs_with_the_same_theta` |
+| 6 | an arc at bend 0 or on a line with no advance; a straight line that gets an arc; empty line counted | `fd_44_a_bend_zero_*`, `fd_44_e_a_line_with_no_advance_*`, `arq_110_a_bend_too_small_*` |
+| 7 | range check removed, or its upper end 100.01; NaN width unchecked; bend not checked before the font stack | `fd_44_e_the_bend_is_checked_and_its_ends_are_in` |
+| 8 | the radius from the shortest line, or from the last of equals; ends at `theta` instead of `theta / 2` | `fd_44_d_the_chord_at_100_*`, `fd_44_e_a_line_with_no_advance_*`, `fd_44_e_a_tiny_bend_*` |
+| 9 | glyph y flipped (down for up), baseline or x of the cluster ignored, offsets ignored (dx, dy), font index always 0, only the first glyph of a cluster, even-odd fill, size fixed at 16 px, draw error ignored, finite check removed | `fd_43_a_each_cluster_has_the_outline_*`, `fd_43_a_a_cluster_with_a_mark_*`, `fd_43_a_every_size_of_a_layout_with_runs_*`, `fd_43_a_a_glyph_that_cannot_be_drawn_*`, `arq_110_an_outline_that_is_not_finite_*` |
+| 10 | in `layout.rs`: glyph offset y negated, x subtracted, x zero, y zero, size fixed at 16 px | `fd_43_a_a_cluster_with_a_mark_draws_the_glyphs_where_the_font_puts_them` (the check that kills them reads the drawing: the fatha is 0 to 15 px over the body and centred on it within 10 px, not the offsets, which the implementation also reads) |
+| 11 | columns search: interval bounds off by one or removed, objective, tie-break, strict limit, mean divisor (re-run after the perf commit) | `fd_45_a_balance_minimises_...`, `fd_45_a_three_columns_*`, `fd_45_a_with_fewer_lines_*`, `fd_45_auto_height_*` |
+
+Survivors, none needs a test:
+
+| Mutant | Why |
+|---|---|
+| `offsets.push((g.x, g.y))`, `(pen, g.y)` and `pen += 0.0` (the pen accumulation of `glyph_offsets`) | Equivalent with the embedded fonts: every cluster with more than one glyph in them is a base with zero-advance marks, and in visual order the base is last, so the pen is 0 for every glyph that has a position. Open point: a font with a multi-glyph cluster whose first glyph advances (a Latin base with a combining mark, in Inter) is not available. The rule is parley's `Glyph { x, y, advance }` as documented in `parley_engine` |
+| `glyphs[0] != 0` (skip a cluster of `.notdef`) | Equivalent with the embedded fonts: glyph 0 has no outline in the three subsets (the font header has no box for it). The test checks the box when the header has one |
+| Pruning guards of the balanced split: `.min(low + bound)`, `max(high - bound)`, `if high - low > bound`, strict or `-1.0` variants | They only discard states that `offer` would reject by itself, so the result is the same; they bound the time (20 000 lines, 5 columns: 606 ms before the interval search, 55 ms after, almost all of it the layout) |
+| `floor + 1` to `ceil` at the bottom of the fit grid; `last > 0` guard; midpoint rounding | See TX3 |
+
+### Benchmarks (release, `cargo bench -p gafira-text --bench text -- --warm-up-time 1 --measurement-time 5`, i7-12700H under load, not D-03 hardware)
+
+| Name | Mean | p50 | p99 over the 100 samples | Budget |
+|---|---|---|---|---|
+| `bench_text_type_5000` | 2.45 ms | 2.30 | 4.77 ms | p99 < 16 ms |
+| `bench_text_curve_100` | 0.094 ms | 0.091 | 0.136 ms | p99 < 16 ms |
+| `bench_text_columns_5000` | 2.77 ms | 2.39 | 4.98 ms | p99 < 16 ms |
+| `bench_text_fit_500` | 5.85 ms | 6.31 | 7.92 ms | p99 < 16 ms |
+
+Each sample is the mean of many iterations, so these p99 are a lower bound of the p99 of one call; the nightly job on the reference machine decides. `bench_text_curve_100` measures the whole `layout_curved` (shaping and curve), not only the curve. The columns bench was measured before the perf commit; the search it changed is under 1 ms at 5 000 characters.
+
+### Adversarial sweep (throwaway, release, not committed)
+
+Curve and outlines: 2 475 checks (9 texts: empty, `"\n"`, a space, one letter, Latin, 12 repeats of a sentence, Arabic with fatha, Latin + Arabic + emoji + an uncovered CJK, five lines with an empty one and different lengths; widths 0, 1, 60, 300, 16 000; five styles from 1 pt to 1 000 pt, 1 to 300 DPI, spacing -100 to 500, upper case, Justify, Right, Center, underline; ten bends: ±100, 99.99, 50, ±0.01, 1e-9, 0, 5e-324, 37.3). Checks: lines and clusters agree; all positions finite; radius equal to the longest line's `L/|theta|` less the baseline distance; every cluster on its circle; rotations per formula; chord of the reference line `2 R sin(theta/2)` ±0.01 where the radius is under 1e7; no arc on a straight line; outlines: one for each cluster, finite, inside two em of the cluster, deterministic, and a round 4 px stroke from `gafira-pathops` succeeds (sizes under 5 000 px). 0 problems. Fit and outlines: 180 `fit_box` calls with runs of 1, 500, 1 000 and 3 pt, boxes 0 to 16 000 px, ranges (1, 1000), (6, 400), (12, 12), DPI 1 to 300, underline, Justify, spacing 150: `Ok`, and the outlines of the result finite and within two em of the baseline. 0 problems.
+
+Performance of the columns search (found by the sweep, fixed in da3901d): 5 000 to 20 000 forced lines, uniform, random and periodic heights, 2, 5, 8 columns, auto, roomy and tight: at 20 000 uniform lines and 5 columns the split took 606 ms (it scanned every end at every node); it now takes ~0 ms. Same results (all 12 `columns.rs` tests, including the exhaustive comparison with every split).
+
+### Deviations and open points
+
+1. **API shape (not fixed by the spec).** `curve_layout(&TextLayout, width, bend) -> Vec<CurvedLine>` and `layout_curved(text, fonts, style, dpi, bounds, bend) -> CurvedText { layout, lines }`; `CurvedLine { arc: Option<Arc { radius, center, start, end }>, clusters: Vec<CurvedCluster { x, y, rotation }> }`, one `CurvedLine` per line and one `CurvedCluster` per cluster. `x, y` is the centre of the advance on the arc, `rotation` is in radians, clockwise positive with y down. `outline_text(&TextLayout, fonts) -> Vec<ClusterOutline { line, cluster, path: gafira_pathops::Path }>`, filled with the non-zero rule, in px from the top left of the box. A text on a curve is not outlined here (FD-44 (b) is out of the cut).
+2. **Spec gap, multi-line curves (FD-44 "Varias líneas ... concéntricos con el mismo θ", PROPUESTA). Decided, not blocked, for `specifier`.** "radio = L / |θ|" fixes the radius of one line; with several lines it cannot hold for each and also keep them concentric one baseline distance apart (two justified lines of the same `L` would lie on the same arc). Chosen: one centre; the longest line (the first of equals) has `R = L / |theta|`; every other line is one baseline distance nearer to the centre in an arch and further in a cup (`R_i = R - sigma (b_i - b)`); each line spans the same angle `theta`, so its glyphs are spaced by `R_i |theta| / L_i` of their natural advance (a shorter line is spread, an inner line of the same length is packed), and each cluster turns by its own line's `(s / L_i - 0.5) theta`, which is what (d) says. The longest was chosen over the first line so that no line is packed tighter than the reference when the first line is short. A line deep inside an arch can reach `R <= 0`, which mirrors it through the centre; the result is finite and I did not clamp it. The chord criterion (d) is exact for the reference line. Recommendation: state in 04 FD-44 which line sets the radius, and what happens when `R <= 0`.
+3. **The arc is centred in the width of the box**, as FD-44 says, so a curved line ignores the alignment of its layout (a Left line is centred on the arc).
+4. **A bend that is not 0 but gives `theta` = 0** (below about 1e-322) is straight, with no radius; a radius that overflows (bends of 1e-306 or less on long lines) is `Err(NonFinite { field: "output" })`. FD-44 (e) asks only for 0.01.
+5. **FD-43 (a).** "Un contorno de 4 px no cambia el layout" is proved as: the contours come from the layout and its fonts (`&TextLayout` in, no style or effect in), a 4 px stroke from `gafira-pathops` grows the ink by 2 px on every side, and the layout (and the cluster positions and advances) is equal before and after. The layout has no outline input to vary, so nothing else can be tested. Glyphs use the first face of a font file; a glyph with no outline gives no contour. `Cluster` gained `glyph_offsets` and `size_px` for this.
+6. **The `.notdef` of the three test subsets has no outline**, so the `.notdef` cluster has an empty path. A font whose glyph 0 is a box would draw it.
+7. **Subsets and bidi in the sweep** found no defect in TX3 or TX4 other than the performance of the balanced split.
+
+## Fix round 1 of verify (TX3 and TX4), `tdd-apply`
+
+Commits on `feat/gafira-text`: `3d9d9d1` (test gaps C25, C26, C27, W36, S17), `84cea9f` (C23), `6240b05` (W35, S14, S15), `b91594e` (C24, W34, FD-44 (d) to (g), FD-45 one column). Spec read: `39df3a9`. The gates ran on a clean tree before each commit: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0, each exit code read alone.
+
+### RED evidence
+
+Items whose code was right (C25, C26, C27, W36, S17) had no failing test on HEAD by nature: the test is the new proof and its RED is the hand mutant that it kills (below). The others failed first on the code of HEAD:
+
+| Item | Test | Failing line on the code before the fix |
+|---|---|---|
+| C23 | `fd_43_a_letter_spacing_opens_every_gap_between_inked_clusters_in_both_directions` | `"داراز": gap 1 grew by 0 instead of 10` |
+| W35 | `fd_46_f_no_line_passes_the_box_when_the_sizes_and_the_spacing_differ` | `(20.0, 10.0) t 500: a line of 63.12499761581421 px in a box of 60`; for a negative spacing, with the first fix only: `(20.0, 10.0) t -100: a line of 85.40624952316284 px in a box of 84.66` |
+| S14 | `fd_46_f_a_run_with_no_text_does_not_set_the_largest_size` | `left: 7.425000000000001 right: 74.25` |
+| flag | `fd_44_the_trailing_white_space_of_a_line_is_flagged_in_either_direction` | `"ab cd"  left: [[], []]  right: [[2], []]` |
+| C24, W34, FD-44 (d) | `fd_44_f_no_line_of_an_ordinary_box_has_a_radius_of_zero_or_less` | `bend 100: an arc of 236.42291722191004 px for a line of 292.7421875` |
+| W34, FD-44 (g) | `fd_44_g_a_space_at_the_end_does_not_move_the_glyphs_before_it`, `fd_44_d_a_wrapped_line_ignores_the_space_that_hangs_at_its_end`, `fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc` | `assertion failed: (ca.radius - cb.radius).abs() <= 0.01`; the others at their `assert!` on positions and rotations |
+| FD-44 (e) | `fd_44_e_a_line_with_no_advance_does_not_change` (rows `" "`, `"a\n \nb"`, `"a\n   \nb"`) | `left: Some(Arc { radius: 2.04627783975294, ... })  right: None` |
+| FD-44 multi-line | `fd_44_lines_use_concentric_arcs_with_the_same_theta` (rewritten to the `R_ref` rule, three more texts) | failed on HEAD at the radius of its lines |
+
+Old curve tests (`fd_44_d_*`, `fd_44_e_a_tiny_bend_*`, the circle test) now read `L` and `s` without the white space that hangs; they changed with the rule, and failed on HEAD with it.
+
+### Hand mutants (made in `src`, seen to fail, restored; none committed)
+
+| Mutant | Killed by |
+|---|---|
+| C25: `Pen::quad_to` draws a `line_to` to the end point | `fd_43_a_a_round_glyph_keeps_the_curves_of_its_font`: `LineTo((21.65625, 93.34375)) instead of QuadTo((28.953125, 97.859375), (21.65625, 93.34375))` |
+| S17: `Pen::curve_to` draws a `line_to` | `outline::tests::fd_43_a_a_cubic_curve_of_a_font_stays_a_cubic_curve_moved_and_flipped`: `left: LineTo((15.0, 94.0))  right: CurveTo(...)` (in-crate, since no embedded font has cubics) |
+| C26: `ColumnsLayout::height` is `out[0].height` | `fd_45_auto_height_is_the_tallest_column_when_the_lines_differ_in_height`: `left: 53.151375 right: 58.078125` (the fixture asserts first that column 0 is shorter) |
+| C27: `text.trim().is_empty()` in `fit_box` | `fd_46_a_white_space_is_a_text_with_a_height_and_grows_to_the_box`: `grew from 16 pt, got 16` |
+| W36: `bench_text_fit_500` out of `criterion_group!` | `arq_114_each_benchmark_function_is_in_the_criterion_group`: `bench_text_fit_500 is defined but criterion_group! does not run it` |
+| C23: `-=` for `+=`; `/ 2.0`; no `c.rtl` guard (left-to-right moves too) | the C23 test: `gap 1 grew by -10 instead of 10`; `grew by 5 instead of 10`; `"HIHIH": gap 4 grew by 0 instead of 10` |
+| W35: the spacing of the largest run (HEAD); the smallest for a negative spacing; the largest for a positive one | the W35 test: `63.12` px in 60; `t -100 ... 85.41 px in 84.66`; `t 500 ... 63.12 px in 60` |
+| S14: `.filter(\|_\| true)` for runs with text | `fd_46_f_a_run_with_no_text_does_not_set_the_largest_size`: `left: 7.425 right: 74.25` |
+| one column: `overflow` not set for `count = 1` | `fd_45_a_a_single_column_flags_overflow_when_the_text_is_taller_than_a_fixed_box`: `taller than the box` |
+| curve: no `sigma` term in `R_ref` | `fd_44_lines_use_concentric_arcs_with_the_same_theta`, `fd_44_d_the_chord_at_100_*`, `fd_44_f_*` |
+| curve: `L` is `line.advance` | `fd_44_d_a_cluster_at_s_*`, `fd_44_g_*`, `fd_44_d_a_wrapped_line_*`, `fd_44_d_a_space_inside_*`, the concentric test |
+| curve: `s` counts the advance of the hanging space | `fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc`, `fd_44_d_a_wrapped_line_*`, `fd_44_g_*` |
+| curve: lines with `L = 0` enter the maximum; `length < 0.0` curves them; `min` for `max`; radius `+` for `-` | the concentric test (fixture `"ab\n \n \n "`); `fd_44_e_a_line_with_no_advance_does_not_change`; `fd_44_d_the_chord_at_100_*`, `fd_44_f_*`; the concentric test |
+| flag: `c.trailing = !*h` | `fd_44_the_trailing_white_space_of_a_line_*` and six more |
+
+### Adversarial sweep (throwaway, release, deleted)
+
+Curves: 30 720 checks (10 texts: Latin, Arabic, Latin + Arabic both ways, white space only, leading and trailing spaces, empty lines, Arabic + emoji; boxes 1 to 5 000 px; 6, 12, 40, 200 pt; spacing 0, 100, -50, 500; Left, Center, Right, Justify; bends ±100, 99.9, -50, 17, ±0.01, 1e-5). For every line: `Ok`; radius > 0; `R_i |theta| >= L_i` within 0.01 px; the lines with content share the centre; one has the equality; no line with content is straight. 0 problems. Ink gaps: 858 checks on the outlines (Latin, Arabic, joined Arabic, a phrase, 12 and 75 pt, spacing 100, 300, -50, four alignments; Justify skipped where a space moves) plus 108 with two runs of 10 and 20 pt in both orders and both directions through `fit_box`: the gain of each gap over the unspaced layout is the spacing of the cluster that owns it (the logical previous one), within 0.05 px. 0 problems.
+
+### Measured
+
+`git diff --shortstat 2e8d7a8..HEAD` before this note: 12 files changed, 738 insertions, 97 deletions (mostly tests: `tests/curve.rs` +319 -86).
+
+### Deviations and open points
+
+1. **`Cluster::trailing`** is a new public field (white space at the logical end of its line, any direction). The curve takes only a `TextLayout`, with no text, and FD-44 now needs the hanging space (also the opposite-level one, inside the line). It is the `hanging_mask` that `read_lines` already computed for the spacing. `Cluster` is built only in `read_lines`.
+2. **A hanging space has a point on the curve, no place**: it sits where the content before it ends (`s` does not grow by its advance), so one position per cluster stays and the cluster count of a line is unchanged. The spec says it "has no place on the arc" and fixes nothing else. Tested only for finite values and for not moving the glyphs.
+3. **W35 and negative spacing.** The break widens the box by the spacing of the smallest run for a positive spacing and of the largest for a negative one (the smallest value the last cluster can have), found by the test above. A line that ends in a large run may break earlier, as the report said.
+4. **S14.** An empty run keeps its proportion to the largest run with text, so its entry in `sizes_pt` can pass 1 000 pt (an empty run of 1 000 pt beside text of 1 pt, at the top of the range); it is only a number, since it lays out nothing. S15 is a sentence in the doc of `fit_box`.
+5. **Interior opposite-level space.** No embedded text I found makes parley put a trailing space of the other level inside a line (probed 10 texts, with RLM and LRM), so that case is proved on a layout whose cluster is flagged by hand (`fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc`). The flag itself is proved in both directions in `tests/layout.rs`.
+6. **W37 stays open** (FD-45 with lists: `layout_list` and `layout_columns` do not meet). S16 and S18 are settled by `39df3a9`; S18 got a test (`fd_45_a_a_single_column_flags_overflow_*`), S16 was already tested in `fd_45_d_the_numbers_are_checked`.
+7. The `Slice card` was not touched.
