@@ -29,6 +29,9 @@ pub struct Fade {
     setup: Setup,
     duration: Param,
     position: u64,
+    /// Ramp length in samples, read at the first accepted block after
+    /// `prepare` or `reset`.
+    length: Option<u64>,
 }
 
 impl Fade {
@@ -44,6 +47,7 @@ impl Fade {
             },
             duration: Param::new(PARAM_DURATION, 0.0, f64::MAX, 0.0),
             position: 0,
+            length: None,
         }
     }
 }
@@ -70,8 +74,12 @@ impl AudioProcessor for Fade {
             return;
         }
         let seconds = self.duration.read(params);
+        // The length is latched with the first block of the ramp, so a later
+        // change waits for the next `reset` and the gain stays continuous.
         // `as` saturates: a huge duration is a fade that never ends.
-        let length = (seconds * f64::from(self.setup.sample_rate)).round() as u64;
+        let length = *self
+            .length
+            .get_or_insert_with(|| (seconds * f64::from(self.setup.sample_rate)).round() as u64);
         for i in 0..block.frames() {
             let gain = if length == 0 {
                 1.0
@@ -91,5 +99,6 @@ impl AudioProcessor for Fade {
 
     fn reset(&mut self) {
         self.position = 0;
+        self.length = None;
     }
 }

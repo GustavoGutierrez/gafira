@@ -48,6 +48,9 @@ pub struct Gain {
     remaining: u32,
     /// Length of a ramp: 10 ms.
     ramp_len: u32,
+    /// True until the first accepted block after `prepare` or `reset`: it has
+    /// no previous value, so its value applies at once.
+    first: bool,
 }
 
 /// 10 ms (PROPUESTA, ARQ-124) in whole samples: `sample_rate / 100`, at least 1.
@@ -72,6 +75,7 @@ impl Gain {
             step: 0.0,
             remaining: 0,
             ramp_len: 1,
+            first: true,
         }
     }
 }
@@ -105,7 +109,13 @@ impl AudioProcessor for Gain {
             return;
         }
         let target = self.volume.read(params) / 100.0;
-        if target.to_bits() != self.target.to_bits() {
+        if self.first {
+            self.first = false;
+            self.target = target;
+            self.current = target;
+            self.remaining = 0;
+            self.step = 0.0;
+        } else if target.to_bits() != self.target.to_bits() {
             self.target = target;
             self.remaining = self.ramp_len;
             self.step = (target - self.current) / f64::from(self.ramp_len);
@@ -125,7 +135,7 @@ impl AudioProcessor for Gain {
     }
 
     fn reset(&mut self) {
-        self.current = self.target;
+        self.first = true;
         self.remaining = 0;
         self.step = 0.0;
     }

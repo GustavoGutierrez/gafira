@@ -18,8 +18,6 @@ fn finite_sample() -> impl Strategy<Value = f32> {
 fn chain() -> ProcessorChain {
     let mut chain = ProcessorChain::new();
     chain.push(Box::new(Gain::new()));
-    chain.push(Box::new(Fade::new(FadeDirection::In)));
-    chain.push(Box::new(Fade::new(FadeDirection::Out)));
     chain.push(Box::new(Pan::new()));
     chain.prepare(48_000, 64, 2);
     chain
@@ -31,10 +29,18 @@ fn run_chain(input: &[Vec<f32>], volume: f64, duration: f64, pan: f64) -> Vec<Ve
     params.set(PARAM_DURATION, duration);
     params.set(PARAM_PAN, pan);
     let mut chain = chain();
+    // Fades sit outside the track chain (ARQ-124).
+    let mut fade_in = Fade::new(FadeDirection::In);
+    let mut fade_out = Fade::new(FadeDirection::Out);
+    fade_in.prepare(48_000, 64, 2);
+    fade_out.prepare(48_000, 64, 2);
     let mut out = input.to_vec();
     for _ in 0..3 {
         let mut slices: Vec<&mut [f32]> = out.iter_mut().map(Vec::as_mut_slice).collect();
-        chain.process(&mut AudioBlock::new(&mut slices), &params);
+        let mut block = AudioBlock::new(&mut slices);
+        fade_in.process(&mut block, &params);
+        chain.process(&mut block, &params);
+        fade_out.process(&mut block, &params);
     }
     out
 }

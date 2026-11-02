@@ -148,6 +148,8 @@ fn arq_129_prepare_and_reset_reach_every_processor() {
 
     // Prepared: a ramp runs in the gain; reset ends it at its target.
     chain.prepare(48_000, 64, 2);
+    let mut first = vec![vec![1.0; 8], vec![1.0; 8]];
+    run(&mut chain, &mut first, &ParamSnapshot::new());
     let mut b = vec![vec![1.0; 8], vec![1.0; 8]];
     run(&mut chain, &mut b, &p);
     assert!(b[0][7] > 0.0 && b[1][7] > 0.0, "ramping");

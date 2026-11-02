@@ -92,10 +92,86 @@ fn arq_123_a_non_finite_duration_keeps_the_last_valid_one() {
         let mut f = prepared(FadeDirection::In);
         let mut first = vec![1.0_f32; 1];
         run(&mut f, &mut first, &snap(0.02));
-        let mut next = vec![1.0_f32; 1];
-        run(&mut f, &mut next, &snap(bad));
-        // Sample 1 of a 960-sample fade-in.
-        assert!((next[0] - 1.0 / 960.0).abs() < 1e-7, "{bad}");
+        f.reset();
+        // The first block after the reset has no valid value: 0.02 s rules.
+        let out = ones(&mut f, 3, &snap(bad));
+        assert!((out[1] - 1.0 / 960.0).abs() < 1e-7, "{bad}");
+    }
+}
+
+#[test]
+fn arq_124_the_duration_is_read_once_per_ramp_and_a_change_waits_for_reset() {
+    let reference = {
+        let mut f = prepared(FadeDirection::In);
+        ones(&mut f, 2000, &snap(0.02))
+    };
+    let mut f = prepared(FadeDirection::In);
+    let mut got = ones(&mut f, 300, &snap(0.02));
+    got.extend(ones(&mut f, 1700, &snap(0.005))); // shorter, mid-ramp
+    assert_eq!(got, reference, "no sample changes");
+    f.reset();
+    let after = ones(&mut f, 400, &snap(0.005)); // 240 samples
+    assert_eq!(after[240], 1.0);
+    assert!((after[120] - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn arq_124_going_from_duration_zero_to_two_seconds_waits_for_reset_too() {
+    for dir in [FadeDirection::In, FadeDirection::Out] {
+        let mut f = prepared(dir);
+        let mut first = ones(&mut f, 100, &snap(0.0));
+        first.extend(ones(&mut f, 1000, &snap(2.0)));
+        assert!(first.iter().all(|&x| x == 1.0), "{dir:?}");
+        f.reset();
+        let again = ones(&mut f, 1000, &snap(2.0));
+        assert!(
+            again.iter().any(|&x| x != 1.0),
+            "{dir:?}: the ramp runs now"
+        );
+    }
+}
+
+#[test]
+fn fv_10_the_fade_in_and_the_fade_out_have_independent_durations() {
+    let mut fade_in = prepared(FadeDirection::In);
+    let mut fade_out = prepared(FadeDirection::Out);
+    let a = ones(&mut fade_in, 1000, &snap(0.01)); // 480 samples
+    let b = ones(&mut fade_out, 1000, &snap(0.02)); // 960 samples
+    assert_eq!((a[480], b[480]), (1.0, 0.5));
+    assert_eq!(b[960], 0.0);
+    assert!(a[479] < 1.0 && b[959] > 0.0);
+}
+
+#[test]
+fn fv_10_a_stereo_fade_runs_at_the_same_speed_on_both_channels() {
+    for dir in [FadeDirection::In, FadeDirection::Out] {
+        let mut f = Fade::new(dir);
+        f.prepare(48_000, 512, 2);
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+        let params = snap(2.0);
+        while left.len() < 96_000 + 512 {
+            let mut chans = [vec![1.0_f32; 512], vec![1.0_f32; 512]];
+            let mut slices: Vec<&mut [f32]> = chans.iter_mut().map(Vec::as_mut_slice).collect();
+            f.process(&mut AudioBlock::new(&mut slices), &params);
+            left.extend_from_slice(&chans[0]);
+            right.extend_from_slice(&chans[1]);
+        }
+        assert_eq!(left, right, "{dir:?}");
+        let (start, end) = if dir == FadeDirection::In {
+            (0.0, 1.0)
+        } else {
+            (1.0, 0.0)
+        };
+        assert_eq!((left[0], left[96_000]), (start, end), "{dir:?}");
+        let step = 1.0 / 96_000.0 + 1e-6;
+        for w in left.windows(2) {
+            assert!(f64::from((w[1] - w[0]).abs()) <= step, "{dir:?}");
+        }
+        assert!(
+            left[95_999] != end,
+            "{dir:?}: not finished one sample early"
+        );
     }
 }
 

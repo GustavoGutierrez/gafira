@@ -114,12 +114,101 @@ fn arq_124_a_jump_from_zero_to_one_changes_at_most_one_480th_per_sample() {
 #[test]
 fn arq_124_a_downward_change_ramps_too() {
     let mut g = prepared(48_000);
+    let mut first = mono(8, 1.0);
+    run(&mut g, &mut first, &ParamSnapshot::new());
+    assert_eq!(first[0], vec![1.0; 8], "no value: the default applies");
     let mut b = mono(1024, 1.0);
     run(&mut g, &mut b, &snap(0.0));
     let out = &b[0];
     assert!(out[0] < 1.0 && out[0] >= 1.0 - 1.0 / 480.0 - 1e-6);
     assert_eq!(out[479], 0.0);
     assert!(out[1023] == 0.0);
+}
+
+#[test]
+fn arq_124_the_first_value_applies_from_sample_zero_without_a_ramp() {
+    for (volume, want) in [(0.0, 0.0), (50.0, 0.5), (200.0, 2.0), (500.0, 2.0)] {
+        let mut g = prepared(48_000);
+        let mut b = mono(64, 1.0);
+        run(&mut g, &mut b, &snap(volume));
+        assert_eq!(b[0], vec![want; 64], "{volume}");
+    }
+}
+
+#[test]
+fn arq_124_after_reset_the_next_value_applies_at_once_too() {
+    let mut g = prepared(48_000);
+    let mut b = mono(2048, 1.0);
+    run(&mut g, &mut b, &snap(200.0));
+    g.reset();
+    let mut c = mono(64, 1.0);
+    run(&mut g, &mut c, &snap(50.0));
+    assert_eq!(c[0], vec![0.5; 64]);
+}
+
+#[test]
+fn arq_124_a_first_block_without_a_value_uses_the_last_valid_one() {
+    let mut g = prepared(48_000);
+    let mut b = mono(8, 1.0);
+    run(&mut g, &mut b, &snap(50.0));
+    g.reset();
+    let mut c = mono(8, 1.0);
+    run(&mut g, &mut c, &ParamSnapshot::new());
+    assert_eq!(c[0], vec![0.5; 8], "the last valid value, with no ramp");
+}
+
+#[test]
+fn arq_124_a_first_block_without_a_value_then_a_zero_ramps() {
+    let mut g = prepared(48_000);
+    let mut first = mono(8, 1.0);
+    run(&mut g, &mut first, &ParamSnapshot::new());
+    let mut second = mono(1024, 1.0);
+    run(&mut g, &mut second, &snap(0.0));
+    assert!(second[0][0] > 0.9, "a ramp, not a step");
+    assert_eq!(second[0][479], 0.0);
+    assert!(second[0][478] > 0.0);
+}
+
+#[test]
+fn arq_124_a_change_during_a_ramp_continues_from_the_current_gain() {
+    let mut g = prepared(48_000);
+    let mut settle = mono(8, 1.0);
+    run(&mut g, &mut settle, &snap(0.0));
+    // Up towards 1.0, interrupted after 100 samples by a target of 0.5.
+    let mut up = mono(100, 1.0);
+    run(&mut g, &mut up, &snap(100.0));
+    let reached = up[0][99];
+    assert!(reached > 0.15 && reached < 0.25, "{reached}");
+    let mut down = mono(1000, 1.0);
+    run(&mut g, &mut down, &snap(50.0));
+    let all: Vec<f32> = up[0].iter().chain(down[0].iter()).copied().collect();
+    let worst = all
+        .windows(2)
+        .map(|w| (w[1] - w[0]).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        worst <= 1.0 / 480.0 + 1e-6,
+        "no jump at the change: {worst}"
+    );
+    assert!(down[0][0] > reached, "still rising on the first sample");
+    assert_eq!(
+        down[0][479], 0.5,
+        "the new ramp lasts 10 ms from the change"
+    );
+    assert!(down[0][478] != 0.5);
+    assert!(down[0][480..].iter().all(|&x| x == 0.5));
+}
+
+#[test]
+fn arq_124_a_change_back_to_the_same_value_does_not_restart_the_ramp() {
+    let mut g = prepared(48_000);
+    let mut first = mono(8, 1.0);
+    run(&mut g, &mut first, &snap(0.0));
+    let mut a = mono(100, 1.0);
+    run(&mut g, &mut a, &snap(100.0));
+    let mut b = mono(380, 1.0);
+    run(&mut g, &mut b, &snap(100.0));
+    assert_eq!(b[0][379], 1.0, "480 samples after the first change in all");
 }
 
 #[test]
@@ -199,13 +288,15 @@ fn arq_111_the_same_input_gives_the_same_bytes() {
 }
 
 #[test]
-fn arq_111_reset_ends_a_running_ramp_at_its_target() {
+fn arq_111_reset_ends_a_running_ramp() {
     let mut g = prepared(48_000);
+    let mut first = mono(8, 1.0);
+    run(&mut g, &mut first, &ParamSnapshot::new());
     let mut b = mono(100, 1.0);
     run(&mut g, &mut b, &snap(0.0));
     assert!(b[0][99] > 0.0, "the ramp is still running");
     g.reset();
     let mut c = mono(8, 1.0);
-    run(&mut g, &mut c, &snap(0.0));
-    assert_eq!(c[0], vec![0.0; 8]);
+    run(&mut g, &mut c, &ParamSnapshot::new());
+    assert_eq!(c[0], vec![0.0; 8], "the last valid value, at once");
 }
