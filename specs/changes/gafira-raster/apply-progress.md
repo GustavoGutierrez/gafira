@@ -133,3 +133,18 @@ Survivors, all equivalent: (a) `ClipColor` recomputing `x` or `L` after the `n <
 
 Size: `blend.rs` is 840 lines (about 560 tests).
 
+### Fix round 1 (RS2 verify round 1: C1 to C4, W2 to W5, S2)
+
+Commits: 07dd1e2 (amended ARQ-119 and W3, with RED), then the gap-closing test commit. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone. Tests in `gafira-raster`: 55 to 63.
+
+- Amended ARQ-119 (RED first): a source with `a = 0` returns the backdrop bit for bit, an early return after the non-finite check, in `f32` and 8 bits, for all modes, with `(1,5; 0,5; 0,2; 1)`, `-0.0` and out-of-range backdrops. RED: `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit` (`Normal` turned `-0.0` into `+0.0`; Multiply clipped 1,5). A NaN or infinity still gives `Err` (`arq_119_transparent_source_still_checks_for_non_finite`, not RED). When both pixels have `a = 0` the source rule wins; the old backdrop test no longer includes `a = 0` sources.
+- W3 (RED first): the mixing result is clamped to [0, 1]. RED: `arq_119_mixing_result_is_clamped` (Saturation gave `-2.7755576e-17`). Checked first: the unclamped reference tables still pass with the clamp (max error unchanged), and the full 55 tests pass.
+- C1: `arq_119_transparent_backdrop_gives_source` compares bits on 3 000 sources whose `c / a` is not exact (low mantissa bits scrambled; for plain `c = u * a` the f32 round trip returns `c` anyway, which is why my first attempt at the mutant survived).
+- C2: `arq_119_source_colour_is_capped_to_its_alpha`. C3: `arq_110_overflowing_alpha_is_err`. C4: `arq_110_color_burn_with_negative_zero_source`; my claim (b) "equivalent" was wrong for `-0.0`: `(1 - cb) / -0.0` is `-inf`, `min(1)` keeps it and `1 - (-inf)` is `+inf`. The guard stays and is tested.
+- W4: two proptests, `arq_110_interior_input_gives_output_in_unit_range` (inputs in [-2, 2], tiny values, [0, 1]) and `arq_119_valid_interior_input_stays_in_unit_range`. W5: the two table tests carry `// ARQ-119 (FD-12 c, CPU)`. S2: `index` doc in `error.rs`.
+- W1 (colour space of blending): not touched. `blend_u8` still blends the stored byte values.
+
+Mutants of this round (all killed): M1 (output rebuilt from an `f32` straight source, two variants) by the bit-exact backdrop test; M2a (`f32` source not capped) and M2b (8-bit source not capped) by the cap test; M3 (result check skips alpha) by `arq_110_overflowing_alpha_is_err`; ColorBurn without the `Cs == 0` guard by the `-0.0` test; early return removed (`f32` and 8 bits), placed before the finite check, or returning the clipped backdrop, by the bit-for-bit and still-checks tests; clamp removed by `arq_119_mixing_result_is_clamped` and the interior property; backdrop ghost colour kept by the backdrop test. Equivalent survivors, corrected: (a) ClipColor recompute and (c) the `Normal` arm of `separable` stand (verify confirmed); (b) is withdrawn.
+
+Deviations: `proptest-regressions/` is still untracked on disk and not committed; I cannot delete it here. Lines of the round: `git diff --shortstat 2a2b517..HEAD -- crates/`.
+
