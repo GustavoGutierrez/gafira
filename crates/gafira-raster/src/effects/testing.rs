@@ -368,7 +368,7 @@ pub(crate) fn assert_empty_images_are_ok(e: &dyn Effect) {
 /// FD-33 (f): alpha is never touched and a pixel with alpha 0 stays as it was, with every
 /// parameter at each end of its range; the premultiplied colour never exceeds its alpha in
 /// 8 bits.
-pub(crate) fn assert_alpha_is_kept(e: &dyn Effect, scale: f32) {
+pub(crate) fn assert_alpha_is_kept(e: &dyn Effect, scale: f32, extra: &[ParamValues]) {
     let (w, h) = (9usize, 7usize);
     let s8 = img_u8(w, h, 11);
     let sf = img_f32(w, h, 11);
@@ -390,6 +390,7 @@ pub(crate) fn assert_alpha_is_kept(e: &dyn Effect, scale: f32) {
         })
         .collect();
     sets.push(pv(&all_max));
+    sets.extend(extra.iter().cloned());
     for p in &sets {
         let o8 = run8(e, &cx(scale), p, &s8, size).unwrap();
         for (i, (a, b)) in s8.chunks(4).zip(o8.chunks(4)).enumerate() {

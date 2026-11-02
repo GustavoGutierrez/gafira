@@ -355,7 +355,7 @@ mod tests {
     // FD-33 (f)
     #[test]
     fn fd_33_f_light_keeps_alpha() {
-        assert_alpha_is_kept(&light(), 1.0);
+        assert_alpha_is_kept(&light(), 1.0, &[]);
     }
 
     // FD-33 (h), ARQ-110
