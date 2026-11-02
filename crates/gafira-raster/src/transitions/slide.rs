@@ -361,4 +361,34 @@ mod tests {
             }
         }
     }
+
+    // ARQ-118: d is computed in f64 ("en f64"); in f32 these three would give 5, 10 and 5.
+    #[test]
+    fn arq_118_slide_offset_is_computed_in_f64() {
+        // (side, progress, expected d): (1 - p) * side is 4.4999999, 9.4999999 and 4.5000000.
+        let cases: [(u32, f32, u32); 4] = [(5, 0.1, 4), (10, 0.05, 9), (10, 0.55, 4), (7, 0.3, 5)];
+        for (side, p, d) in cases {
+            let (f, g) = (unique(side, 1, 1), unique(side, 1, 2));
+            let out = slide_u8("left", p, &f, &g, (side, 1));
+            for x in 0..side {
+                let want = if x >= d {
+                    px(&g, side, x - d, 0)
+                } else {
+                    px(&f, side, x, 0)
+                };
+                assert_eq!(px(&out, side, x, 0), want, "side={side} p={p} d={d} x={x}");
+            }
+            // The same on the vertical axis.
+            let (f, g) = (unique(1, side, 1), unique(1, side, 2));
+            let out = slide_u8("up", p, &f, &g, (1, side));
+            for y in 0..side {
+                let want = if y >= d {
+                    px(&g, 1, 0, y - d)
+                } else {
+                    px(&f, 1, 0, y)
+                };
+                assert_eq!(px(&out, 1, 0, y), want, "up side={side} p={p} d={d} y={y}");
+            }
+        }
+    }
 }
