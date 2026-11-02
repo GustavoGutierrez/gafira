@@ -358,7 +358,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 | **Ajuste automático** | Intensidad | 0–100 (por defecto 60) | Un clic calcula luz y color con histograma y balance de grises; los valores resultantes quedan en los sliders de Luz y Color y pueden afinarse |
 | **Balance de blancos** | Temperatura, Matiz | −100–100 | Operan en luz lineal; cuentagotas sobre un gris neutro calcula ambos |
 | **Luz** | Brillo, Contraste, Luces, Sombras, Blancos, Negros | −100–100 | Contraste con curva en S; Luces y Sombras recuperan detalle sin aplanar |
-| **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; Invertir es un interruptor (`invert`, apagado por defecto); resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
+| **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; Invertir es un interruptor (`invert`, apagado por defecto; D-46); resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
 | **Textura** | Nitidez, Claridad, Viñeta | 0–100 (viñeta −100–100) | Nitidez con máscara de bordes; la viñeta es centrada y ajustable |
 
 **Fórmulas de FD-33** (PROPUESTA; pendientes de aprobación visual del titular, Q-34). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
@@ -376,7 +376,7 @@ Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codifica
 | Tono | Matriz `hue-rotate` de W3C *Filter Effects* sobre `c` |
 | Saturación | Matriz `saturate` de W3C *Filter Effects* con `s = 1 + k` |
 | Vitalidad | La misma matriz con `s = 1 + k × (1 − (max − min))`, con `max` y `min` de `R`, `G`, `B` |
-| Invertir | `v' = 1 − v` |
+| Invertir | `v' = 1 − v` (fijada por D-46) |
 | Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` el ΔE2000 frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
 | Nitidez | `c + 1,5 × k × e × (c − G)`, con `G` desenfoque de radio 2 px y `e = w(0,02; 0,1; |Y − Y_G|)` |
 | Claridad | Igual que Nitidez, con radio 40 px, peso 0,5 y solo sobre `Y`, sin máscara `e` |

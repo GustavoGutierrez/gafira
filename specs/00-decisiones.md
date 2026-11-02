@@ -385,6 +385,13 @@ Fecha: 1 de noviembre de 2026.
 - **Decisión**: los colores medios de ARQ-131 se promedian en luz lineal y después se pasan a Lab (Q-44).
 - Aplicado a 02 (ARQ-131, §12.2).
 
+## D-46 Invertir como interruptor
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: Invertir de FD-33 es un interruptor (`invert`, apagado por defecto), no un slider. Su fórmula es `v' = 1 − v`.
+- Aplicado a 04 (FD-33).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
