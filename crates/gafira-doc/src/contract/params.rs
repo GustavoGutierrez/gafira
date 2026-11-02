@@ -189,6 +189,23 @@ impl ParamSchema {
         Ok(())
     }
 
+    /// Checks `values`, then fills each id they lack with its default. Given
+    /// values and ids the schema does not know are kept as they are.
+    ///
+    /// # Errors
+    ///
+    /// The error of [`ParamSchema::check_values`].
+    pub fn resolve(&self, values: &ParamValues) -> Result<ParamValues, ParamError> {
+        self.check_values(values)?;
+        let mut resolved = values.clone();
+        for p in &self.params {
+            if resolved.get(p.id).is_none() {
+                resolved.set(p.id, p.kind.default_value());
+            }
+        }
+        Ok(resolved)
+    }
+
     /// Every parameter at its default.
     #[must_use]
     pub fn defaults(&self) -> ParamValues {

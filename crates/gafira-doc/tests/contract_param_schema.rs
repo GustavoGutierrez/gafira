@@ -555,3 +555,58 @@ fn arq_110_check_values_reports_the_first_fault_in_definition_order() {
     ]);
     assert_eq!(schema.check_values(&only_a), err(non_finite, "a"));
 }
+
+// ARQ-110
+#[test]
+fn arq_110_resolve_fills_missing_ids_and_keeps_given_and_unknown_values() {
+    let schema = one_of_each();
+    let given = values(&[
+        ("softness", ParamValue::Float(0.75)),
+        ("invert", ParamValue::Bool(false)),
+        ("from_a_newer_build", ParamValue::Int(42)),
+    ]);
+    let got = schema.resolve(&given).unwrap();
+    let want = values(&[
+        ("softness", ParamValue::Float(0.75)),
+        ("steps", ParamValue::Int(4)),
+        ("invert", ParamValue::Bool(false)),
+        ("direction", ParamValue::Choice("vertical".into())),
+        ("tint", ParamValue::Color(red())),
+        ("from_a_newer_build", ParamValue::Int(42)),
+    ]);
+    assert_eq!(got, want);
+
+    assert_eq!(
+        schema.resolve(&ParamValues::new()).unwrap(),
+        schema.defaults()
+    );
+    assert_eq!(
+        schema.resolve(&schema.defaults()).unwrap(),
+        schema.defaults()
+    );
+}
+
+// ARQ-110
+#[test]
+fn arq_110_resolve_returns_the_error_of_check_values() {
+    let schema = one_of_each();
+    let rows = [
+        only("softness", ParamValue::Float(f64::NAN)),
+        only("softness", ParamValue::Float(2.0)),
+        only("steps", ParamValue::Float(2.0)),
+        only("direction", ParamValue::Choice("diagonal".into())),
+    ];
+    for v in rows {
+        let want = schema.check_values(&v).unwrap_err();
+        assert_eq!(schema.resolve(&v), Err(want), "{v:?}");
+    }
+}
+
+// ARQ-110
+#[test]
+fn arq_110_resolve_checks_the_given_values_before_filling_defaults() {
+    // A default is not looked at: only what the caller gave is checked first.
+    let schema = ParamSchema::new(vec![float("p", 0.0, 1.0, 5.0)]);
+    let got = schema.resolve(&ParamValues::new()).unwrap();
+    assert_eq!(got.float("p"), Some(5.0));
+}
