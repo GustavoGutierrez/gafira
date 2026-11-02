@@ -9,7 +9,7 @@ use crate::{Line, TextError, TextStyle, layout_box};
 /// The columns of a box (02 §3.2).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextColumns {
-    /// Number of columns, from 1 to 8. With 1 there are no columns and `gap` is ignored.
+    /// Number of columns, from 1 to 8. With 1 there are no columns, and `gap` is checked and has no effect.
     pub count: u32,
     /// Space between two columns, in px, in `[0, 200]`.
     pub gap: f64,

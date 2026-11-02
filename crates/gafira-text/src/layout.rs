@@ -113,6 +113,10 @@ pub struct Cluster {
     pub rtl: bool,
     /// True when a glyph of the cluster has no cover and is the font's `.notdef`.
     pub notdef: bool,
+    /// True when the cluster is white space at the logical end of its line, of any direction:
+    /// the white space that hangs for the letter spacing, the overflow and the curve (FD-41,
+    /// FD-44).
+    pub trailing: bool,
     /// Position in the font stack of the font that shaped the cluster.
     pub font: usize,
     /// Glyph ids of the cluster in the font; none for a forced break.
@@ -474,6 +478,7 @@ fn read_lines(
                     advance: c.advance(),
                     rtl: c.is_rtl(),
                     notdef: glyphs.contains(&0),
+                    trailing: false,
                     font,
                     glyphs,
                     glyph_offsets: offsets,
@@ -483,11 +488,14 @@ fn read_lines(
                 });
             }
         }
+        let hanging = hanging_mask(text, &clusters);
+        for (c, h) in clusters.iter_mut().zip(&hanging) {
+            c.trailing = *h;
+        }
         if let Some(spacing) = spacing {
             // The spacing goes after each cluster but the last one of the line. The white
             // space that hangs at the end is neither that cluster nor does it carry the
             // spacing; a forced break gets none from parley.
-            let hanging = hanging_mask(text, &clusters);
             let last = (0..clusters.len())
                 .filter(|i| !hanging[*i])
                 .max_by_key(|i| clusters[*i].range.start);

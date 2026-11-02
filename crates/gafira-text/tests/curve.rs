@@ -4,7 +4,7 @@
 use gafira_geom::Size;
 use gafira_testkit::fonts;
 use gafira_text::{
-    Arc, CurvedLine, TextAlign, TextError, TextLayout, TextStyle, curve_layout, layout_box,
+    Arc, CurvedLine, Line, TextAlign, TextError, TextLayout, TextStyle, curve_layout, layout_box,
     layout_curved,
 };
 
@@ -35,26 +35,55 @@ fn theta(bend: f64) -> f64 {
     bend * 1.8_f64.to_radians()
 }
 
-fn start_of(line: &gafira_text::Line) -> f64 {
+/// `L`: the advance of a line without the white space that hangs (FD-44).
+fn content(line: &Line) -> f64 {
     line.clusters
         .iter()
-        .map(|c| f64::from(c.x))
-        .fold(f64::MAX, f64::min)
+        .filter(|c| !c.trailing)
+        .map(|c| f64::from(c.advance))
+        .sum()
+}
+
+/// `s` of the centre of each cluster: from the start of the content, without the advance of
+/// the white space that hangs; none for that white space.
+fn centres(line: &Line) -> Vec<Option<f64>> {
+    let mut at = 0.0;
+    line.clusters
+        .iter()
+        .map(|c| {
+            (!c.trailing).then(|| {
+                let s = at + f64::from(c.advance) / 2.0;
+                at += f64::from(c.advance);
+                s
+            })
+        })
+        .collect()
 }
 
 fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
     ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
 }
 
-/// The longest line, the first of equals: the one that sets the radius.
-fn reference(layout: &TextLayout) -> usize {
-    let longest = layout.lines.iter().map(|l| l.advance).fold(0.0, f32::max);
-    assert!(longest > 0.0, "a line with advance");
-    layout
+/// `R_ref = max_i(L_i / |theta| + sigma (b_i - b_ref))` over the lines with `L_i > 0`, with
+/// `b_ref` the baseline of the first of them, and the line that gives the maximum.
+fn reference(layout: &TextLayout, bend: f64) -> (f64, usize) {
+    let (t, sigma) = (theta(bend).abs(), bend.signum());
+    let first = layout
         .lines
         .iter()
-        .position(|l| l.advance == longest)
-        .expect("a longest line")
+        .find(|l| content(l) > 0.0)
+        .expect("a line with content");
+    let b_ref = f64::from(first.baseline);
+    let mut best = (f64::MIN, 0);
+    for (i, l) in layout.lines.iter().enumerate() {
+        if content(l) > 0.0 {
+            let r = content(l) / t + sigma * (f64::from(l.baseline) - b_ref);
+            if r > best.0 {
+                best = (r, i);
+            }
+        }
+    }
+    best
 }
 
 const TEXTS: [&str; 5] = [
@@ -95,9 +124,10 @@ fn fd_44_d_the_chord_at_100_is_two_l_over_pi() {
             (60.0, TextAlign::Justify),
         ] {
             let layout = lay(text, width, align);
-            let r = reference(&layout);
-            let l = f64::from(layout.lines[r].advance);
             for bend in [100.0, -100.0] {
+                // (d) holds for a single line, or the line that sets the radius.
+                let r = reference(&layout, bend).1;
+                let l = content(&layout.lines[r]);
                 let lines = curve(&layout, width, bend);
                 let arc = lines[r].arc.expect("an arc");
                 let chord = dist(arc.start, arc.end);
@@ -144,13 +174,12 @@ fn fd_44_d_a_cluster_at_s_turns_by_s_over_l_minus_a_half_times_theta() {
             for bend in [100.0, 50.0, 1.0, 0.01, -0.01, -50.0, -100.0, 33.3] {
                 let lines = curve(&layout, 110.0, bend);
                 for (curved, line) in lines.iter().zip(&layout.lines) {
-                    if line.advance <= 0.0 {
+                    if content(line) <= 0.0 {
                         continue;
                     }
-                    let l = f64::from(line.advance);
-                    let x0 = start_of(line);
-                    for (p, c) in curved.clusters.iter().zip(&line.clusters) {
-                        let s = f64::from(c.x) + f64::from(c.advance) / 2.0 - x0;
+                    let l = content(line);
+                    for (p, s) in curved.clusters.iter().zip(centres(line)) {
+                        let Some(s) = s else { continue };
                         let expected = (s / l - 0.5) * theta(bend);
                         assert!(
                             (p.rotation - expected).abs() <= 1e-6,
@@ -208,14 +237,13 @@ fn fd_44_each_cluster_sits_on_the_circle_at_the_angle_of_its_centre() {
         // The ends are the clusters' fraction 0 and 1, on the same circle.
         assert!((dist(start, center) - radius).abs() <= 1e-6);
         assert!((dist(end, center) - radius).abs() <= 1e-6);
-        let l = f64::from(line.advance);
-        let x0 = start_of(line);
-        for (p, c) in curved.clusters.iter().zip(&line.clusters) {
+        let l = content(line);
+        for (p, s) in curved.clusters.iter().zip(centres(line)) {
             assert!(
                 (dist((p.x, p.y), center) - radius).abs() <= 1e-6,
                 "bend {bend}"
             );
-            let f = (f64::from(c.x) + f64::from(c.advance) / 2.0 - x0) / l;
+            let f = s.expect("no white space at the end") / l;
             let alpha = (f - 0.5) * theta(bend);
             assert!((p.x - (center.0 + sigma * radius * alpha.sin())).abs() <= 1e-6);
             assert!((p.y - (center.1 - sigma * radius * alpha.cos())).abs() <= 1e-6);
@@ -225,36 +253,60 @@ fn fd_44_each_cluster_sits_on_the_circle_at_the_angle_of_its_centre() {
 
 #[test]
 fn fd_44_lines_use_concentric_arcs_with_the_same_theta() {
-    let text = "first line\nsecond, a longer line\nthird";
-    let layout = lay(text, 300.0, TextAlign::Left);
-    assert_eq!(layout.lines.len(), 3);
-    for bend in [100.0_f64, 40.0, -40.0, -100.0] {
-        let sigma = bend.signum();
-        let lines = curve(&layout, 300.0, bend);
-        let r = reference(&layout);
-        assert_eq!(r, 1, "the second line is the longest");
-        let first = lines[r].arc.expect("arc");
-        let b0 = f64::from(layout.lines[r].baseline);
-        for (i, curved) in lines.iter().enumerate() {
-            let arc = curved.arc.expect("arc");
-            let b = f64::from(layout.lines[i].baseline);
-            assert!(dist(arc.center, first.center) <= 1e-9, "one centre");
-            // Each line sits on its baseline at the middle of its arc, one line spacing nearer to
-            // the centre in an arch and further in a cup.
-            assert!((arc.radius - (first.radius - sigma * (b - b0))).abs() <= 1e-9);
-            assert!(
-                (arc.center.1 - sigma * arc.radius - b).abs() <= 1e-9,
-                "apex on the baseline"
+    // FD-44 Varias líneas: one centre, one theta, R_i = R_ref - sigma (b_i - b_ref), and
+    // R_ref the maximum over the lines of L_i / |theta| + sigma (b_i - b_ref).
+    for text in [
+        "first line\nsecond, a longer line\nthird",
+        "a longer line first\nab\nabc",
+        "\nab\n \nabcdef",
+        "ab\n \n \n ",
+    ] {
+        let layout = lay(text, 300.0, TextAlign::Left);
+        for bend in [100.0_f64, 40.0, -40.0, -100.0] {
+            let sigma = bend.signum();
+            let lines = curve(&layout, 300.0, bend);
+            let (r_ref, setter) = reference(&layout, bend);
+            let b_ref = f64::from(
+                layout
+                    .lines
+                    .iter()
+                    .find(|l| content(l) > 0.0)
+                    .expect("content")
+                    .baseline,
             );
-            // The same angle: the cluster rotations follow the line's own advance.
-            let line = &layout.lines[i];
-            let (p, c) = (
-                curved.clusters.last().expect("p"),
-                line.clusters.last().expect("c"),
-            );
-            let f = (f64::from(c.x) + f64::from(c.advance) / 2.0 - start_of(line))
-                / f64::from(line.advance);
-            assert!((p.rotation - (f - 0.5) * theta(bend)).abs() <= 1e-6);
+            let centre = (150.0, b_ref + sigma * r_ref);
+            for (i, curved) in lines.iter().enumerate() {
+                let line = &layout.lines[i];
+                let b = f64::from(line.baseline);
+                let Some(arc) = curved.arc else {
+                    assert!(content(line) <= 0.0, "{text:?} line {i}");
+                    continue;
+                };
+                assert!(dist(arc.center, centre) <= 1e-9, "{text:?}: one centre");
+                assert!((arc.radius - (r_ref - sigma * (b - b_ref))).abs() <= 1e-9);
+                assert!(arc.radius > 0.0, "{text:?} {bend} line {i}");
+                // No line is packed below its own advance, and the setter has equality.
+                let room = arc.radius * theta(bend).abs();
+                assert!(room >= content(line) - 1e-9, "{text:?} {bend} line {i}");
+                if i == setter {
+                    assert!((room - content(line)).abs() <= 1e-9);
+                }
+                assert!(
+                    (arc.center.1 - sigma * arc.radius - b).abs() <= 1e-9,
+                    "apex on the baseline"
+                );
+                // The same angle: the rotations follow the line's own L.
+                let last = curved.clusters.len()
+                    - 1
+                    - line
+                        .clusters
+                        .iter()
+                        .rev()
+                        .take_while(|c| c.trailing)
+                        .count();
+                let f = centres(line)[last].expect("content") / content(line);
+                assert!((curved.clusters[last].rotation - (f - 0.5) * theta(bend)).abs() <= 1e-6);
+            }
         }
     }
 }
@@ -262,13 +314,23 @@ fn fd_44_lines_use_concentric_arcs_with_the_same_theta() {
 #[test]
 fn fd_44_e_a_line_with_no_advance_does_not_change() {
     // An empty text, an empty line, a line that is only a forced break, an empty first line.
-    for (text, curved_lines) in [("", 0), ("\n", 0), ("a\n\nb", 2), ("\nab", 1), ("ab\n", 1)] {
+    // A line of white space that hangs, alone, has no content either.
+    for (text, curved_lines) in [
+        ("", 0),
+        ("\n", 0),
+        ("a\n\nb", 2),
+        ("\nab", 1),
+        ("ab\n", 1),
+        (" ", 0),
+        ("a\n \nb", 2),
+        ("a\n   \nb", 2),
+    ] {
         let layout = lay(text, 100.0, TextAlign::Left);
         let lines = curve(&layout, 100.0, 70.0);
         assert_eq!(lines.len(), layout.lines.len());
         let mut arcs = 0;
         for (curved, line) in lines.iter().zip(&layout.lines) {
-            if line.advance <= 0.0 {
+            if content(line) <= 0.0 {
                 assert_eq!(curved.arc, None, "{text:?}");
                 for (p, c) in curved.clusters.iter().zip(&line.clusters) {
                     assert_eq!(p.x, f64::from(c.x) + f64::from(c.advance) / 2.0);
@@ -285,7 +347,7 @@ fn fd_44_e_a_line_with_no_advance_does_not_change() {
     // The empty first line does not set the radius: the first line with advance does.
     let layout = lay("\nab", 100.0, TextAlign::Left);
     let arc = curve(&layout, 100.0, 100.0)[1].arc.expect("arc");
-    let l = f64::from(layout.lines[1].advance);
+    let l = content(&layout.lines[1]);
     assert!((arc.radius - l / PI).abs() <= 1e-9);
     assert!((arc.center.1 - arc.radius - f64::from(layout.lines[1].baseline)).abs() <= 1e-9);
 }
@@ -365,22 +427,22 @@ fn fd_44_e_a_tiny_bend_keeps_every_position_finite() {
         for bend in [0.01, -0.01, 1e-9, -1e-300] {
             let lines = curve(&layout, 200.0, bend);
             for (curved, line) in lines.iter().zip(&layout.lines) {
-                for (p, c) in curved.clusters.iter().zip(&line.clusters) {
+                for (p, s) in curved.clusters.iter().zip(centres(line)) {
                     assert!(
                         p.x.is_finite() && p.y.is_finite() && p.rotation.is_finite(),
                         "{bend}"
                     );
                     // Almost straight: the line, centred in the box, a hair off its baseline.
-                    if bend.abs() >= 0.01 && line.advance > 0.0 {
+                    if let (true, Some(s)) = (bend.abs() >= 0.01 && content(line) > 0.0, s) {
                         // Every line spans the angle of the longest, whose length it takes.
-                        let l = f64::from(line.advance);
-                        let longest = f64::from(layout.lines[reference(&layout)].advance);
-                        let f = (f64::from(c.x) + f64::from(c.advance) / 2.0 - start_of(line)) / l;
+                        let l = content(line);
+                        let longest = content(&layout.lines[reference(&layout, bend).1]);
+                        let f = s / l;
                         let centred = (f - 0.5) * longest + 100.0;
                         assert!(p.rotation.abs() <= theta(bend).abs() / 2.0 + 1e-12);
                         assert!(
                             (p.x - centred).abs() <= 0.01,
-                            "{text:?} {bend}: {} {centred} l={l} c={c:?}",
+                            "{text:?} {bend}: {} {centred} l={l}",
                             p.x
                         );
                         assert!((p.y - f64::from(line.baseline)).abs() <= 0.01);
@@ -455,4 +517,141 @@ fn fd_44_one_cluster_sits_at_the_top_of_the_arc_without_turning() {
 fn fd_44_a_negative_width_acts_as_zero() {
     let layout = lay("Hello", 0.0, TextAlign::Left);
     assert_eq!(curve(&layout, -5.0, 40.0), curve(&layout, 0.0, 40.0));
+}
+
+const WORDS: [&str; 7] = ["gafira", "text", "curve", "lorem", "ipsum", "dolor", "arc"];
+
+fn lorem(chars: usize) -> String {
+    let mut text = String::new();
+    let mut i = 0;
+    while text.len() < chars {
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        text.push_str(WORDS[i * 3 % WORDS.len()]);
+        i += 1;
+    }
+    text.truncate(chars);
+    text
+}
+
+#[test]
+fn fd_44_f_no_line_of_an_ordinary_box_has_a_radius_of_zero_or_less() {
+    // 600 characters, 12 pt, 96 DPI, a box of 300 px: 17 lines, 9 of them mirrored by the
+    // first rule (C24).
+    let layout = lay(&lorem(600), 300.0, TextAlign::Left);
+    assert!(
+        layout.lines.len() >= 15,
+        "many lines: {}",
+        layout.lines.len()
+    );
+    for bend in [100.0, -100.0] {
+        let lines = curve(&layout, 300.0, bend);
+        let mut centres_seen: Vec<(f64, f64)> = Vec::new();
+        let mut equal = 0;
+        for (curved, line) in lines.iter().zip(&layout.lines) {
+            let Some(arc) = curved.arc else {
+                assert!(content(line) <= 0.0);
+                continue;
+            };
+            assert!(arc.radius > 0.0, "bend {bend}: radius {}", arc.radius);
+            let room = arc.radius * PI;
+            assert!(
+                room >= content(line) - 0.01,
+                "bend {bend}: an arc of {room} px for a line of {}",
+                content(line)
+            );
+            if (room - content(line)).abs() <= 0.01 {
+                equal += 1;
+            }
+            centres_seen.push(arc.center);
+        }
+        assert!(equal >= 1, "bend {bend}: one line has the equality");
+        assert!(
+            centres_seen
+                .iter()
+                .all(|c| dist(*c, centres_seen[0]) <= 1e-6),
+            "bend {bend}: one centre"
+        );
+    }
+}
+
+/// The placement of each cluster of the first line, by the start of its text.
+fn placed(text: &str, width: f64, bend: f64) -> Vec<(usize, f64, f64, f64)> {
+    let layout = lay(text, width, TextAlign::Left);
+    let curved = &curve(&layout, width, bend)[0];
+    let mut out: Vec<_> = layout.lines[0]
+        .clusters
+        .iter()
+        .zip(&curved.clusters)
+        .map(|(c, p)| (c.range.start, p.x, p.y, p.rotation))
+        .collect();
+    out.sort_by_key(|p| p.0);
+    out
+}
+
+#[test]
+fn fd_44_g_a_space_at_the_end_does_not_move_the_glyphs_before_it() {
+    for (bare, spaced) in [
+        ("Hello", "Hello "),
+        ("Hello", "Hello   "),
+        (
+            "\u{627}\u{644}\u{639}\u{631}\u{628}\u{64a}",
+            "\u{627}\u{644}\u{639}\u{631}\u{628}\u{64a} ",
+        ),
+    ] {
+        for bend in [100.0, -100.0, 37.0] {
+            let (a, b) = (placed(bare, 300.0, bend), placed(spaced, 300.0, bend));
+            for (p, q) in a.iter().zip(&b) {
+                assert_eq!(p.0, q.0);
+                assert!(
+                    (p.1 - q.1).abs() <= 0.01 && (p.2 - q.2).abs() <= 0.01,
+                    "{spaced:?} {bend}: {p:?} and {q:?}"
+                );
+                assert!(
+                    (p.3 - q.3).abs() <= 1e-6,
+                    "{spaced:?} {bend}: {p:?} and {q:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn fd_44_d_a_wrapped_line_ignores_the_space_that_hangs_at_its_end() {
+    // "Hello " wraps before "world": the space at the end of the first line is part of it.
+    let wrapped = lay("Hello world", 45.0, TextAlign::Left);
+    assert!(wrapped.lines[0].clusters.iter().any(|c| c.trailing));
+    let bare = lay("Hello", 45.0, TextAlign::Left);
+    let (a, b) = (curve(&wrapped, 45.0, 100.0), curve(&bare, 45.0, 100.0));
+    // The rotation of every glyph follows s / L of "Hello" alone; the space ends the content.
+    for (p, q) in a[0].clusters.iter().zip(&b[0].clusters) {
+        assert_eq!(p.rotation, q.rotation);
+    }
+    assert!((a[0].clusters[5].rotation - theta(100.0) / 2.0).abs() <= 1e-9);
+}
+
+#[test]
+fn fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc() {
+    // A hanging space of the other level can be inside the line (FD-41): the glyphs after it
+    // sit where they would if it were not there, and it has no place of its own.
+    let mut with = lay("abc def", 300.0, TextAlign::Left);
+    let without = lay("abcdef", 300.0, TextAlign::Left);
+    let space = 3;
+    assert_eq!(&"abc def"[with.lines[0].clusters[space].range.clone()], " ");
+    with.lines[0].clusters[space].trailing = true;
+    let (a, b) = (curve(&with, 300.0, 100.0), curve(&without, 300.0, 100.0));
+    let (ca, cb) = (a[0].arc.expect("arc"), b[0].arc.expect("arc"));
+    assert!((ca.radius - cb.radius).abs() <= 0.01);
+    let others = a[0]
+        .clusters
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != space);
+    for ((_, p), q) in others.zip(&b[0].clusters) {
+        assert!((p.x - q.x).abs() <= 0.01 && (p.y - q.y).abs() <= 0.01);
+        assert!((p.rotation - q.rotation).abs() <= 1e-6);
+    }
+    let hang = &a[0].clusters[space];
+    assert!(hang.x.is_finite() && hang.y.is_finite() && hang.rotation.is_finite());
 }

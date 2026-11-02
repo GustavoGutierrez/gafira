@@ -517,6 +517,38 @@ fn fd_45_auto_height_is_the_tallest_column_when_the_lines_differ_in_height() {
 }
 
 #[test]
+fn fd_45_a_single_column_flags_overflow_when_the_text_is_taller_than_a_fixed_box() {
+    // One column is the layout of `layout_box` (e), but the indicator of overflow is a rule of
+    // the columns: `layout_box` does not mark a text that is only too tall.
+    let text = lorem(300);
+    let tall = layout_box(
+        &text,
+        &[INTER],
+        &style(TextAlign::Left),
+        DPI,
+        Size::new(200.0, 20.0),
+    )
+    .expect("valid input");
+    assert!(!tall.overflow, "the box layout does not flag the height");
+    let out = run(
+        &text,
+        200.0,
+        20.0,
+        &spec(1, 50.0, false),
+        ColumnSizing::Fixed,
+    );
+    assert!(out.overflow, "taller than the box");
+    let roomy = run(
+        &text,
+        200.0,
+        1e6,
+        &spec(1, 50.0, false),
+        ColumnSizing::Fixed,
+    );
+    assert!(!roomy.overflow);
+}
+
+#[test]
 fn fd_45_columns_work_with_justify() {
     let text = lorem(500);
     let (count, gap, width) = (2_u32, 10.0, 210.0);

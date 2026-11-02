@@ -44,16 +44,25 @@ const DEGREES_PER_UNIT: f64 = 1.8;
 /// Places the lines of a layout on arcs (FD-44).
 ///
 /// `bend` is in `[-100, 100]`, ends included, and the arc covers `theta = bend x 1.8 degrees`:
-/// positive opens downwards (an arch), negative upwards (a cup). A line of advance `L` follows an
-/// arc of length `L`, so the radius is `L / |theta|`. The arc is centred in `width`. A cluster
-/// sits where the centre of its advance, at `s` from the start of the line, is on the arc, and
-/// turns `(s / L - 0.5) x theta` radians (clockwise is positive, y points down). Lines are
-/// concentric and share `theta`: the radius comes from the longest line (the first of equals), and the
-/// others are one baseline distance nearer to the centre in an arch and further in a cup, so a
-/// line deep inside an arch can have a radius of 0 or less, which mirrors it through the centre.
-/// Each cluster still turns by its own line's `s / L`. A bend of 0, or one so small that `theta`
-/// is 0, computes no radius and leaves the text straight, as a line with no advance does. A
-/// negative `width` acts as 0. The result is checked: a position that is not finite is an error.
+/// positive opens downwards (an arch), negative upwards (a cup). `L` is the advance of a line
+/// without the white space that hangs at its end ([`crate::Cluster::trailing`]), also when that space
+/// is inside the line; `s` counts from the start of that content and does not include the
+/// advance of the space, which has no place on the arc: it sits where the content before it
+/// ends. A line of advance `L` follows an arc of length `L`, so the radius is `L / |theta|`. The
+/// arc is centred in `width`. A cluster sits where the centre of its advance, at `s` from the
+/// start of the line, is on the arc, and turns `(s / L - 0.5) x theta` radians (clockwise is
+/// positive, y points down).
+///
+/// Lines are concentric and share `theta`. With `sigma` the sign of `theta`, `b_i` the baseline
+/// of a line and `L_i > 0` its advance, the reference radius is
+/// `R_ref = max_i(L_i / |theta| + sigma (b_i - b_ref))` over the lines with `L_i > 0` (any of
+/// them gives `b_ref`), and each line has `R_i = R_ref - sigma (b_i - b_ref)`, so
+/// `R_i |theta| >= L_i`, every radius is positive, and the centre is at `b_ref + sigma R_ref`.
+/// The line that gives the maximum has `R_i = L_i / |theta|`; a single line is `L / |theta|`.
+/// Each cluster turns by its own line's `s / L_i`. A bend of 0, or one so small that `theta` is
+/// 0, computes no radius and leaves the text straight, as does a line with `L = 0` (empty, or
+/// only white space that hangs). A negative `width` acts as 0. The result is checked: a
+/// position that is not finite is an error.
 pub fn curve_layout(
     layout: &TextLayout,
     width: f64,
@@ -65,11 +74,26 @@ pub fn curve_layout(
     let center_x = width.max(0.0) / 2.0;
     let theta = bend * DEGREES_PER_UNIT.to_radians();
     let sigma = theta.signum();
-    // The longest line, the first of equals, sets the radius: no line is packed tighter than it.
-    let reference = layout
+    let content = |line: &crate::Line| {
+        line.clusters
+            .iter()
+            .filter(|c| !c.trailing)
+            .map(|c| f64::from(c.advance))
+            .sum::<f64>()
+    };
+    // The first line with content gives the baseline the others are measured from; the maximum
+    // does not depend on that choice.
+    let ref_baseline = layout
         .lines
         .iter()
-        .reduce(|best, l| if l.advance > best.advance { l } else { best });
+        .find(|l| content(l) > 0.0)
+        .map_or(0.0, |l| f64::from(l.baseline));
+    let ref_radius = layout
+        .lines
+        .iter()
+        .filter(|l| content(l) > 0.0)
+        .map(|l| content(l) / theta.abs() + sigma * (f64::from(l.baseline) - ref_baseline))
+        .fold(f64::MIN, f64::max);
     let lines: Vec<CurvedLine> = layout
         .lines
         .iter()
@@ -86,12 +110,11 @@ pub fn curve_layout(
                     })
                     .collect(),
             };
-            let (Some(reference), true) = (reference, theta != 0.0 && line.advance > 0.0) else {
+            let length = content(line);
+            if theta == 0.0 || length <= 0.0 {
                 return straight();
-            };
+            }
             let baseline = f64::from(line.baseline);
-            let ref_baseline = f64::from(reference.baseline);
-            let ref_radius = f64::from(reference.advance) / theta.abs();
             let radius = ref_radius - sigma * (baseline - ref_baseline);
             let place = |alpha: f64| {
                 (
@@ -99,17 +122,19 @@ pub fn curve_layout(
                     baseline + sigma * 2.0 * radius * (alpha / 2.0).sin().powi(2),
                 )
             };
-            let length = f64::from(line.advance);
-            let start = line
-                .clusters
-                .iter()
-                .map(|c| f64::from(c.x))
-                .fold(f64::MAX, f64::min);
+            let mut before = 0.0;
             let clusters = line
                 .clusters
                 .iter()
                 .map(|c| {
-                    let s = f64::from(c.x) + f64::from(c.advance) / 2.0 - start;
+                    // The white space that hangs takes no room: it is where the content ends.
+                    let advance = if c.trailing {
+                        0.0
+                    } else {
+                        f64::from(c.advance)
+                    };
+                    let s = before + advance / 2.0;
+                    before += advance;
                     let alpha = (s / length - 0.5) * theta;
                     let (x, y) = place(alpha);
                     CurvedCluster {
