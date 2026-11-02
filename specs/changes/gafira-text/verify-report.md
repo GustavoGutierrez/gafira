@@ -1,3 +1,125 @@
+# Verify report: gafira-text, TX2, round 5 (closure)
+
+Commit 39607ef of `feat/gafira-text`, base `develop`. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Scope as the coordinator set it: C18, C22, bidi paragraphs against FD-41, hand mutants on the paragraph split. W30, C16 and C17 are not re-attacked.
+
+**Verdict: PASS.** 0 CRITICAL, 4 WARNING (all follow-up), 3 SUGGESTION. Classes: implementation 3, ambiguity 1, all follow-up. All gates are 0. C18, C22 and W29 are closed, and every sentence of (n) and of the (m) addition holds by independent probe.
+
+Two hand mutants survive, M3 and M5. Both are test gaps: the code at HEAD behaves correctly in the case each mutant breaks, so under the closure rule and the coordinator's filter they are follow-up warnings, not CRITICAL. Tests for them are two lines each and should go in before T4, which would otherwise report them or their kin.
+
+next: tdd-apply (TX3)
+
+## Gates
+
+`df -h /`: 36 GB free at the start, 32 GB at the end. Each gate ran alone in the worktree, with `CARGO_TARGET_DIR` unset, and each exit code was read alone.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (1 470 passed, 0 failed, 120 binaries) |
+| `cargo deny check` | 0 |
+| CI policy: ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14 | 0 each |
+
+The worktree stayed clean at 39607ef.
+
+## Integrity (step 3c)
+
+| Check | Result |
+|---|---|
+| Card amend 7bf52f2 | touches only `apply-progress.md`, states why, adds (n) and (a) for bidi paragraphs |
+| Spec commit ff1d0e1 | touches only `specs/04`, precedes e520633 |
+| Implementer commits after it | 421536b and e520633 touch `crates/gafira-text` only; c36c8c3 and 39607ef only add notes below the card |
+| IDs | (n) has 4 tests by name in `tests/paragraph.rs`; (m) sentence in `tests/align.rs`; none left out |
+
+The `e520633` change to `tests/align.rs` wraps the three (m) tests in a prefix loop. No assertion was dropped.
+
+## Criteria
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| FD-41 (a), bidi paragraphs | covered | `fd_41_n_each_forced_break_...`, `fd_41_a_paragraph_takes_...`, list test; probe P7 |
+| FD-41 (e) | covered | C22 closed |
+| FD-41 (i) | covered | C18 closed; `fd_41_i_justify_stretches_inside_each_paragraph_...` |
+| FD-41 (m), last sentence | covered | `M_PREFIXES` in `tests/align.rs` |
+| FD-41 (n) | covered | every sentence, see below |
+| Párrafos bidi | covered | breaks and non-breaks, probes P2, P3 |
+| Dirección del párrafo | covered, weak on one case | correct at HEAD; W31 |
+| Alineación por párrafo | covered, weak on one case | correct at HEAD; W32 |
+| Justificado | covered | probes P1, P4 |
+| ARQ-116 | covered | S11 on wording |
+
+The other rows of TX2 are unchanged from round 4: 18 of 18 covered.
+
+## Closure
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C18 | **closed** | Own sweep below: 0 false overflow, 0 missed overflow, 0 justified lines off the edge |
+| C22 | **closed** | Own sweep below: worst 0.0006 px against the sum of clusters; (e) worst 0.0004 px over 10 single wide lines |
+| W29 | **closed** | Bidi paragraphs, e520633 |
+| W30 | **closed** | Settled by the owner: Justify separators stay U+0020 and NBSP; U+0085 is no forced break |
+| W13 | open, follow-up | TDD breach on record; not in scope |
+
+Sweep, release, on a scratch export, with random boxes from 400 to 16 000 px, 4 texts (Latin, Arabic, mixed, the three in several paragraphs), DPI 72 to 300, 6 to 24 pt, spacing -100 to 500, 4 alignments: 7 680 layouts, 265 933 lines. A second Justify run, leaving out one-word lines: 1 920 layouts, worst edge 0.0005 px. The first run counted 119 justified lines off the edge; the ones printed were one-word lines, which FD-41 does not stretch, and the second run, with other random boxes, found 0 once those were left out.
+
+## Bidi paragraphs, independent probes
+
+| Probe | Result |
+|---|---|
+| (n) order and x, all 5 breaks | equal to the text alone by range and x, bit for bit |
+| U+0085, also U+000B, U+000C, U+001C to U+001E | one paragraph, one line, at the start, middle and end of a text; first strong is found past them |
+| AN digits `١٢`, RLE, closed and open isolates, `123 ابج` | direction as P2 and P3 state |
+| White space before each break, 4 alignments, both directions | hangs on the paragraph's side; Right and Justify end at 100.00; Left ink starts at 0 |
+| Wrapped RTL paragraph between LTR ones, Justify | stretched lines 0 to the box, last line ends at the right edge, LTR lines unaffected |
+| Ranges with upper case and every break | each input byte in exactly one cluster |
+| Baselines across paragraphs, Inter and Noto Emoji | 61.74, 121.29, 241.99 at 100 px, as (f) |
+| Cost, 5 000 characters | 3.3 ms for 1 paragraph, 13.2 ms for 5 000, under the 16 ms of `bench_text_type_5000`; a probe, not that bench |
+
+## CRITICAL
+
+None.
+
+## WARNING
+
+| Id | Class | Ref | Item |
+|---|---|---|---|
+| W13 | implementation, follow-up | `list.rs`, f120b7e | TDD breach kept on record |
+| W31 | implementation, follow-up | `layout.rs:243`, Dirección del párrafo | Survivor M3: direction read from the first logical cluster instead of the first strong character. In `abc\n123 ابج` the mutant lays line 2 left to right, ink from 0; HEAD ends it at the edge. The table has `123 abc` and `... ا`, no digits before an RTL letter. Add `("123 \u{627}", true)` to the table in `fd_41_a_paragraph_takes_...` |
+| W32 | implementation, follow-up | `layout.rs:572`, Alineación por párrafo, Justificado | Survivor M5: the hang left out of the Justify offset. `ابج  \nabc` ends at 109 in a box of 100 under the mutant, at 100 at HEAD. No test has white space before a break in an RTL paragraph under Justify. Add it to `fd_41_n_justify_...` |
+| W33 | ambiguity, follow-up | 02 line 919 | Known: the TX2 row still says FD-41 (a, c a m) and needs (n) |
+
+## SUGGESTION
+
+| Id | Ref | Item |
+|---|---|---|
+| S11 | `layout.rs:84`, ARQ-116 | The `overflow` doc and ARQ-116 say a line or "el avance" is wider than the box; the code reads the widest cluster, as Saltos says. No observable gap beyond the accepted limit. Align the wording |
+| S12 | `layout.rs:122` | The `FIT_TOLERANCE` comment says no box width breaks 0.01 px. That holds for Justify. A Left line ran 0.055 px past a box of 14 187 px with no overflow (1 of 265 933 lines; 150 DPI, 24 pt, t=25); Right has the same shape in the band. No FD-41 criterion covers it, so the fix is to narrow the comment |
+| S13 | `layout.rs:246` | `!forced[i]` is now redundant: only a paragraph's last line can end in a break. Removing it is an equivalent mutant T4 will report. Also, parley resets its isolate stack at class B (`bidi.rs:281`), so U+0085 ends an isolate though it opens no paragraph. Read in the source, not run |
+
+## Mutants
+
+Scratch export, full `gafira-text` tests, restored and compared equal to HEAD.
+
+| Mutant | Result |
+|---|---|
+| Spot-check: U+2028 opens no paragraph (recorded) | killed by `fd_41_n_each_forced_break_...`, as recorded |
+| M1 U+000B opens a paragraph | killed by `fd_41_controls_...` |
+| M2 the break goes to the next paragraph | killed by 27 tests |
+| M3 direction from the first logical cluster | **survived**, W31 |
+| M4 height counts parley's dropped line | killed by 8 tests |
+| M5 Justify RTL offset without the hang | **survived**, W32 |
+| M6 LF CR as one break | killed by `fd_41_an_empty_paragraph_...` |
+
+M3 and M5 were re-run against the probes: both change the output, so neither is equivalent.
+
+## Result
+
+PASS, 0 CRITICAL. Warnings 4, suggestions 3. Classes: implementation 3, ambiguity 1, all follow-up. T4 stays owed at the close of the change (`mutation: archive`).
+
+next: tdd-apply (TX3)
+
+---
+
 # Verify report: gafira-text, TX2, round 4 (closure, owner-approved final round)
 
 Commit 31c2f69 of `feat/gafira-text`, clean export, base `develop`. Fix commit 6b12756, notes 31c2f69, spec commit 5c82bd1. Depth V2, mode full, tier T4 at close, `mutation: archive`: no `mutants` report, and that is not a finding. Commit 7e601d0, which landed during the run, was ignored as instructed, except where W27 notes it.

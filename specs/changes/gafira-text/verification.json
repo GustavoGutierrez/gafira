@@ -163,4 +163,24 @@
   "mutation": null,
   "hand_mutants": {"run": 0, "killed": 0},
   "criteria": {"total": 17, "covered": 15},
-  "size": {"lines": 266, "forecast": null}, "report": "verify-report.md" } ] }
+  "size": {"lines": 266, "forecast": null}, "report": "verify-report.md" },
+  {
+  "round": 5, "delivery": "TX2", "commit": "39607ef2ebac86077508ba78b4d4d741c570aced", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 3},
+  "classes": [],
+  "findings": [
+    {"id": "C18", "status": "closed"},
+    {"id": "C22", "status": "closed"},
+    {"id": "W29", "status": "closed"},
+    {"id": "W30", "status": "closed"},
+    {"id": "W13", "severity": "WARNING", "class": "implementation", "ref": "list.rs, f120b7e, Strict TDD", "summary": "TDD breach kept on record", "follow_up": true, "status": "open"},
+    {"id": "W31", "severity": "WARNING", "class": "implementation", "ref": "layout.rs:243, FD-41 Direccion del parrafo", "summary": "Hand mutant M3 survived: direction from the first logical cluster. HEAD is right; no test has digits before an RTL letter, such as 123 + alef", "follow_up": true, "status": "open"},
+    {"id": "W32", "severity": "WARNING", "class": "implementation", "ref": "layout.rs:572, FD-41 Alineacion por parrafo, Justificado", "summary": "Hand mutant M5 survived: Justify RTL offset without the hang. HEAD is right; no test has white space before a break in an RTL paragraph under Justify", "follow_up": true, "status": "open"},
+    {"id": "W33", "severity": "WARNING", "class": "ambiguity", "ref": "specs/02 line 919", "summary": "Known: the gafira-text cut still says FD-41 (a, c a m) and needs (n)", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 7, "killed": 5},
+  "criteria": {"total": 18, "covered": 18},
+  "size": {"lines": 726, "forecast": null}, "report": "verify-report.md" } ] }
