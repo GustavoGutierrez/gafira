@@ -191,6 +191,21 @@ fn fd_46_a_a_height_equal_to_the_box_fits() {
 }
 
 #[test]
+fn fd_46_a_white_space_is_a_text_with_a_height_and_grows_to_the_box() {
+    // Three spaces are not empty text: the line has a height, so the search runs.
+    let wh = (400.0, 200.0);
+    let out = fit("   ", wh, range(6.0, 400.0));
+    assert!(out.size_pt > 16.0, "grew from 16 pt, got {}", out.size_pt);
+    assert!(!out.overflow);
+    assert!(fits("   ", &[INTER], wh, out.size_pt));
+    let next = next_on_grid(out.size_pt, 400.0).expect("not at the maximum");
+    assert!(
+        !fits("   ", &[INTER], wh, next),
+        "the next size of the grid does not fit"
+    );
+}
+
+#[test]
 fn fd_46_a_a_cluster_wider_than_the_box_does_not_fit() {
     // 100 px wide, as tall as it gets: only the width stops the growth.
     let out = fit("WWWW", (100.0, 1e6), range(6.0, 400.0));

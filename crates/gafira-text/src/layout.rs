@@ -81,7 +81,8 @@ pub struct TextLayout {
     pub height: f32,
     /// The lines, top to bottom.
     pub lines: Vec<Line>,
-    /// True when a line, without its trailing white space, is wider than the box.
+    /// True when a cluster, not counting the white space at the end of its line, is wider than
+    /// the box.
     pub overflow: bool,
 }
 

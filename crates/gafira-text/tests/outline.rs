@@ -194,6 +194,99 @@ fn fd_43_a_each_cluster_has_the_outline_of_its_glyph_in_its_font_at_its_place() 
     assert!(non_empty >= 5);
 }
 
+/// What the font itself says about a glyph: the pen calls of `skrifa`, kept as path elements at
+/// `size_px`, with y down and the pen at (`x`, `baseline`).
+struct Recorder {
+    els: Vec<PathEl>,
+    origin: (f64, f64),
+}
+
+impl Recorder {
+    fn p(&self, x: f32, y: f32) -> gafira_pathops::Point {
+        gafira_pathops::Point::new(self.origin.0 + f64::from(x), self.origin.1 - f64::from(y))
+    }
+}
+
+impl skrifa::outline::OutlinePen for Recorder {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.els.push(PathEl::MoveTo(self.p(x, y)));
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.els.push(PathEl::LineTo(self.p(x, y)));
+    }
+    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+        self.els
+            .push(PathEl::QuadTo(self.p(cx0, cy0), self.p(x, y)));
+    }
+    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+        self.els.push(PathEl::CurveTo(
+            self.p(cx0, cy0),
+            self.p(cx1, cy1),
+            self.p(x, y),
+        ));
+    }
+    fn close(&mut self) {
+        self.els.push(PathEl::ClosePath);
+    }
+}
+
+#[test]
+fn fd_43_a_a_round_glyph_keeps_the_curves_of_its_font() {
+    // `O` in Inter is made of curves: a path of straight segments between its on-curve points
+    // is a different shape. The elements must be the ones the font draws, kind and point.
+    let layout = lay("O", 400.0, TextAlign::Left);
+    let outlines = outline_text(&layout, &STACK).expect("valid input");
+    let c = &layout.lines[0].clusters[0];
+    let font = FontRef::new(INTER).expect("a font");
+    let mut rec = Recorder {
+        els: Vec::new(),
+        origin: (
+            f64::from(c.x) + f64::from(c.glyph_offsets[0].0),
+            f64::from(layout.lines[0].baseline) + f64::from(c.glyph_offsets[0].1),
+        ),
+    };
+    font.outline_glyphs()
+        .get(GlyphId::new(c.glyphs[0]))
+        .expect("O has an outline")
+        .draw(
+            skrifa::outline::DrawSettings::unhinted(
+                FontSize::new(c.size_px),
+                LocationRef::default(),
+            ),
+            &mut rec,
+        )
+        .expect("drawn");
+    let got = outlines[0].path.as_bez_path().elements();
+    assert!(
+        rec.els.iter().any(|e| matches!(e, PathEl::QuadTo(..))),
+        "the fixture needs curves"
+    );
+    assert_eq!(got.len(), rec.els.len());
+    for (g, w) in got.iter().zip(&rec.els) {
+        match (g, w) {
+            (PathEl::MoveTo(a), PathEl::MoveTo(b)) | (PathEl::LineTo(a), PathEl::LineTo(b)) => {
+                assert!((*a - *b).hypot() < 1e-9, "{g:?} instead of {w:?}");
+            }
+            (PathEl::QuadTo(a, b), PathEl::QuadTo(c, d)) => {
+                assert!(
+                    (*a - *c).hypot() < 1e-9 && (*b - *d).hypot() < 1e-9,
+                    "{g:?} instead of {w:?}"
+                );
+            }
+            (PathEl::CurveTo(a, b, c), PathEl::CurveTo(d, e, f)) => {
+                assert!(
+                    (*a - *d).hypot() < 1e-9
+                        && (*b - *e).hypot() < 1e-9
+                        && (*c - *f).hypot() < 1e-9,
+                    "{g:?} instead of {w:?}"
+                );
+            }
+            (PathEl::ClosePath, PathEl::ClosePath) => {}
+            _ => panic!("{g:?} instead of {w:?}"),
+        }
+    }
+}
+
 #[test]
 fn fd_43_a_the_counters_of_a_letter_are_contours_of_their_own() {
     let layout = lay("HAB", 400.0, TextAlign::Left);

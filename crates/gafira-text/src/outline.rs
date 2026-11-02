@@ -120,3 +120,26 @@ fn finite(el: &PathEl) -> bool {
         PathEl::ClosePath => true,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // FD-43 (a): no embedded font has cubic outlines, so the pen is driven by hand.
+    #[test]
+    fn fd_43_a_a_cubic_curve_of_a_font_stays_a_cubic_curve_moved_and_flipped() {
+        let mut pen = Pen {
+            path: BezPath::new(),
+            origin: (10.0, 100.0),
+        };
+        pen.move_to(0.0, 0.0);
+        pen.curve_to(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        pen.close();
+        let els = pen.path.elements();
+        let point = |x: f64, y: f64| gafira_pathops::Point::new(x, y);
+        assert_eq!(
+            els[1],
+            PathEl::CurveTo(point(11.0, 98.0), point(13.0, 96.0), point(15.0, 94.0))
+        );
+    }
+}

@@ -491,6 +491,32 @@ fn fd_45_auto_height_balances_and_takes_its_height_from_the_columns() {
 }
 
 #[test]
+fn fd_45_auto_height_is_the_tallest_column_when_the_lines_differ_in_height() {
+    // Line 2 is Arabic and taller than the Latin ones; the split gives the first column the
+    // shorter share, so the box height is not the height of column 0.
+    let text = "a\n\u{627}\u{644}\u{639}\na\na\n";
+    let out = run_with(
+        text,
+        &[INTER, ARABIC],
+        TextAlign::Left,
+        (400.0, 0.0),
+        &spec(2, 10.0, false),
+        ColumnSizing::AutoHeight,
+    )
+    .expect("valid input");
+    let tallest = out
+        .columns
+        .iter()
+        .map(|c| c.height)
+        .fold(f32::MIN, f32::max);
+    assert!(
+        out.columns[0].height < tallest,
+        "the fixture needs a first column shorter than the tallest"
+    );
+    assert_eq!(out.height, tallest);
+}
+
+#[test]
 fn fd_45_columns_work_with_justify() {
     let text = lorem(500);
     let (count, gap, width) = (2_u32, 10.0, 210.0);

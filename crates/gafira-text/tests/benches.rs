@@ -20,3 +20,22 @@ fn arq_114_each_text_figure_has_a_benchmark_named_after_its_row() {
     }
     assert!(BENCHES.contains("criterion_main!"));
 }
+
+#[test]
+fn arq_114_each_benchmark_function_is_in_the_criterion_group() {
+    let start = BENCHES
+        .find("criterion_group!(")
+        .expect("the benchmarks are grouped");
+    let group = &BENCHES[start..start + BENCHES[start..].find(");").expect("the group closes")];
+    for name in [
+        "bench_text_type_5000",
+        "bench_text_curve_100",
+        "bench_text_columns_5000",
+        "bench_text_fit_500",
+    ] {
+        assert!(
+            group.contains(name),
+            "{name} is defined but criterion_group! does not run it"
+        );
+    }
+}
