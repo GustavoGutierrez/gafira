@@ -143,8 +143,20 @@ fn fd_38_a_ramp_edge_gives_graded_alpha() {
         .mask;
     assert!(m.data()[300 * 800 + 400] >= 243, "subject");
     assert!(m.data()[10 * 800 + 10] <= 12, "background");
-    let graded = m.data().iter().filter(|&&a| a > 0 && a < 255).count();
-    assert!(graded > 0, "graded pixels: {graded}");
+    // Only the ramp counts: pixels 1 to 15 away from the subject's square.
+    let (x0, y0, x1, y1) = (250i32, 150i32, 550i32, 450i32);
+    let graded = (0..600i32)
+        .flat_map(|y| (0..800i32).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let d = (x0 - x)
+                .max(x - (x1 - 1))
+                .max(0)
+                .max((y0 - y).max(y - (y1 - 1)).max(0));
+            (1..16).contains(&d)
+        })
+        .filter(|&(x, y)| matches!(m.data()[(y * 800 + x) as usize], 1..=254))
+        .count();
+    assert!(graded > 0, "graded pixels in the ramp: {graded}");
 }
 
 // ARQ-130: the colour is read as stored, over black: the same RGB with another
