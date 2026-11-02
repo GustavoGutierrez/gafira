@@ -282,3 +282,13 @@ fn arq_122_mean_hue_adjusts_for_a_sum_below_360() {
         1e-6,
     );
 }
+
+// ARQ-122: hues near 10 and 250 degrees (sum 260, difference 240) take the `+ 360` mean; a
+// product-based selection would take the other arm. Expected value from scikit-image 0.25.2
+// `deltaE_ciede2000`, in both orders.
+#[test]
+fn arq_122_mean_hue_adjusts_for_a_small_hue_and_a_large_hue() {
+    let (p, q) = (lab(50.0, 39.0, 7.0), lab(50.0, -10.0, -28.0));
+    assert_de(p, q, 43.709_023_022_397_77, 1e-9);
+    assert_de(q, p, 43.709_023_022_397_77, 1e-9);
+}
