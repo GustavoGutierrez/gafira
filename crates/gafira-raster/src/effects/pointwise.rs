@@ -115,6 +115,32 @@ pub(super) fn check_tile(cx: &EffectCx, w: usize, h: usize) -> Result<(), Effect
     })
 }
 
+/// Calls `f(i, c, alpha)` with the straight colour in linear light and the alpha of every pixel
+/// whose alpha is not 0, the same values `map_straight` hands to its closure. Call after
+/// `check_io`.
+pub(super) fn for_each_straight<F>(src: &ImageView<'_>, mut f: F)
+where
+    F: FnMut(usize, [f64; 3], f64),
+{
+    match src.data() {
+        PixelData::Rgba8(s) => {
+            let t = Transfer::new();
+            for (i, px) in s.chunks_exact(4).enumerate().filter(|(_, px)| px[3] != 0) {
+                let a = px[3];
+                let c = [0, 1, 2].map(|k| t.decode[usize::from(unpremultiply_u8(px[k], a))]);
+                f(i, c, f64::from(f32::from(a) / 255.0));
+            }
+        }
+        PixelData::RgbaF32(s) => {
+            for (i, px) in s.chunks_exact(4).enumerate().filter(|(_, px)| px[3] != 0.0) {
+                let a = f64::from(px[3]);
+                f(i, [0, 1, 2].map(|k| f64::from(px[k]) / a), a);
+            }
+        }
+        PixelData::Alpha8(_) => {}
+    }
+}
+
 /// Runs `f` on the straight colour in linear light of every pixel with alpha other than 0 and
 /// writes the result premultiplied, with the same alpha. `f(i, c)` gets the pixel index and
 /// returns the new colour, or `None` to leave the pixel as it was, byte for byte. A pixel with

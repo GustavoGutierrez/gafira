@@ -6,13 +6,15 @@ use gafira_geom::IRect;
 
 use super::blur::{blur_shifted, half_width};
 use super::pointwise::{
-    check_io, check_scale, check_tile, map_straight, slider, smoothstep, window_of,
+    check_io, check_scale, check_tile, for_each_straight, map_straight, slider, smoothstep,
+    window_of,
 };
 use super::{Cost, Effect};
 use crate::transfer::Transfer;
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut, PixelData, unpremultiply_u8};
 
-/// The texture group, in linear light. The blurs read the input image, not each other's output.
+/// The texture group, in linear light, in the order of FD-33: Nitidez, then Claridad on the
+/// result of Nitidez, then Viñeta.
 #[derive(Debug)]
 pub struct Texture {
     descriptor: Descriptor,
@@ -172,9 +174,35 @@ impl Planes {
                 ]) as f32
             })
             .collect();
+        Self::blurred_luma_plane(&y, alpha, w, h, radius)
+    }
+
+    /// The blurred premultiplied luminance plane `y` and the blurred `alpha`.
+    fn blurred_luma_plane(y: &[f32], alpha: Vec<f32>, w: usize, h: usize, radius: f64) -> Self {
         Self {
-            colour: vec![blur_shifted(&y, w, h, 0, 0, radius)],
+            colour: vec![blur_shifted(y, w, h, 0, 0, radius)],
             alpha: blur_shifted(&alpha, w, h, 0, 0, radius),
+        }
+    }
+
+    /// The alpha plane of `src`, as `linear` makes it.
+    fn alpha_plane(src: &ImageView<'_>, w: usize, h: usize) -> Vec<f32> {
+        match src.data() {
+            PixelData::Rgba8(s) => s
+                .chunks_exact(4)
+                .map(|px| {
+                    if px[3] == 0 {
+                        0.0
+                    } else {
+                        f32::from(px[3]) / 255.0
+                    }
+                })
+                .collect(),
+            PixelData::RgbaF32(s) => s
+                .chunks_exact(4)
+                .map(|px| if px[3] == 0.0 { 0.0 } else { px[3] })
+                .collect(),
+            PixelData::Alpha8(_) => vec![0.0; w * h],
         }
     }
 
@@ -201,7 +229,8 @@ impl Effect for Texture {
             return out;
         }
         let g = Settings::new(cx, p);
-        let taps = g.sharpness_taps().max(g.clarity_taps()) as i32;
+        // Claridad reads the result of Nitidez, so the reaches add up.
+        let taps = (g.sharpness_taps() + g.clarity_taps()) as i32;
         // A vignette reads nothing but its own pixel; `cx.tile` places it in its image.
         out.inflate(taps, taps)
     }
@@ -243,12 +272,8 @@ impl Effect for Texture {
         }
         let g = Settings::new(cx, &values);
         let sharp = (g.sharpness != 0.0).then(|| Planes::blurred(&src, w, h, g.sharpness_radius));
-        let clear = (g.clarity != 0.0).then(|| Planes::blurred_luma(&src, w, h, g.clarity_radius));
-        // Viñeta centres on the image, not on `src` (P16).
-        let (x0, y0, image_w, image_h) = window_of(cx, w, h);
-        let (image_w, image_h) = (image_w as f64, image_h as f64);
-        let half_diagonal = image_w.hypot(image_h) / 2.0;
-        map_straight(src, dst, |i, c| {
+        // Nitidez of the straight colour `c` of pixel `i`.
+        let sharpen = |i: usize, c: [f64; 3]| -> [f64; 3] {
             let mut out = c;
             if let Some(b) = &sharp
                 && let Some(blur) = b.straight(i)
@@ -258,10 +283,28 @@ impl Effect for Texture {
                     out[ch] += 1.5 * g.sharpness * e * (c[ch] - blur[ch]);
                 }
             }
+            out
+        };
+        // Claridad reads the result of Nitidez (FD-33 "Orden de cálculo").
+        let clear = (g.clarity != 0.0).then(|| {
+            if sharp.is_none() {
+                return Planes::blurred_luma(&src, w, h, g.clarity_radius);
+            }
+            let mut y = vec![0.0f32; w * h];
+            for_each_straight(&src, |i, c, a| y[i] = (luma(sharpen(i, c)) * a) as f32);
+            let alpha = Planes::alpha_plane(&src, w, h);
+            Planes::blurred_luma_plane(&y, alpha, w, h, g.clarity_radius)
+        });
+        // Viñeta centres on the image, not on `src` (P16).
+        let (x0, y0, image_w, image_h) = window_of(cx, w, h);
+        let (image_w, image_h) = (image_w as f64, image_h as f64);
+        let half_diagonal = image_w.hypot(image_h) / 2.0;
+        map_straight(src, dst, |i, c| {
+            let mut out = sharpen(i, c);
             if let Some(b) = &clear
                 && let Some(y) = b.luma(i)
             {
-                let delta = 0.5 * g.clarity * (luma(c) - y);
+                let delta = 0.5 * g.clarity * (luma(out) - y);
                 out = out.map(|x| x + delta);
             }
             if g.vignette != 0.0 {
@@ -356,31 +399,50 @@ mod tests {
         0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
     }
 
-    /// The Textura formulas of FD-33 on straight linear pixels. `k` is the three sliders
-    /// divided by 100; radii are 2 px and 40 px times `scale`.
+    /// The Textura formulas of FD-33 on straight linear pixels, in the order of FD-33 "Orden de
+    /// cálculo": Nitidez, then Claridad on what Nitidez left, then Viñeta. `k` is the three
+    /// sliders divided by 100; radii are 2 px and 40 px times `scale`.
     fn reference(px: &[Px], w: usize, h: usize, scale: f64, k: [f64; 3]) -> Vec<[f64; 3]> {
         let [ks, kc, kv] = k;
         let alpha: Vec<f64> = px.iter().map(|p| p.1).collect();
-        let plane = |f: &dyn Fn(&Px) -> f64| -> Vec<f64> { px.iter().map(f).collect() };
-        let pre = |ch: usize| plane(&|p: &Px| p.0[ch] * p.1);
         let (r2, r40) = (2.0 * scale, 40.0 * scale);
+        let pre = |ch: usize| -> Vec<f64> { px.iter().map(|p| p.0[ch] * p.1).collect() };
         let g2: Vec<Vec<f64>> = (0..3).map(|ch| blur_ref(&pre(ch), w, h, r2)).collect();
         let a2 = blur_ref(&alpha, w, h, r2);
-        let y40 = blur_ref(&plane(&|p: &Px| lum(p.0) * p.1), w, h, r40);
-        let a40 = blur_ref(&alpha, w, h, r40);
-        let mut out = Vec::new();
-        for (i, p) in px.iter().enumerate() {
-            let mut c = p.0;
-            if p.1 > 0.0 {
-                if ks != 0.0 {
+        // Nitidez
+        let sharp: Vec<[f64; 3]> = px
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let mut c = p.0;
+                if p.1 > 0.0 && ks != 0.0 {
                     let g = [0, 1, 2].map(|ch| g2[ch][i] / a2[i]);
                     let e = smooth(0.02, 0.1, (lum(p.0) - lum(g)).abs());
                     for ch in 0..3 {
                         c[ch] += 1.5 * ks * e * (p.0[ch] - g[ch]);
                     }
                 }
+                c
+            })
+            .collect();
+        // Claridad reads the result of Nitidez.
+        let y40 = blur_ref(
+            &sharp
+                .iter()
+                .zip(px)
+                .map(|(c, p)| lum(*c) * p.1)
+                .collect::<Vec<_>>(),
+            w,
+            h,
+            r40,
+        );
+        let a40 = blur_ref(&alpha, w, h, r40);
+        let mut out = Vec::new();
+        for (i, p) in px.iter().enumerate() {
+            let mut c = sharp[i];
+            if p.1 > 0.0 {
                 if kc != 0.0 {
-                    let d = 0.5 * kc * (lum(p.0) - y40[i] / a40[i]);
+                    let d = 0.5 * kc * (lum(c) - y40[i] / a40[i]);
                     c = c.map(|x| x + d);
                 }
                 if kv != 0.0 {
@@ -619,6 +681,35 @@ mod tests {
         }
     }
 
+    // FD-33 "Orden de cálculo": Nitidez, Claridad and Viñeta in one run give what the three
+    // sliders give one after the other, each on the output of the one before (f32).
+    #[test]
+    fn fd_33_texture_sliders_in_one_run_equal_the_sliders_in_sequence() {
+        let (w, h) = (40usize, 30usize);
+        let size = (w as u32, h as u32);
+        for src in [edge_f32(w, h), img_f32(w, h, 3)] {
+            for (scale, k) in [
+                (1.0f32, [1.0, 1.0, 0.0]),
+                (0.25, [0.5, 0.5, -0.6]),
+                (0.5, [0.7, 1.0, 0.8]),
+            ] {
+                let one = runf(&tex(), &cx(scale), &params_of(k), &src, size).unwrap();
+                let step = |k: [f64; 3], from: &[f32]| {
+                    runf(&tex(), &cx(scale), &params_of(k), from, size).unwrap()
+                };
+                let a = step([k[0], 0.0, 0.0], &src);
+                let b = step([0.0, k[1], 0.0], &a);
+                let seq = step([0.0, 0.0, k[2]], &b);
+                for (i, (x, y)) in one.iter().zip(&seq).enumerate() {
+                    assert!(
+                        (x - y).abs() < 3e-5 * y.abs().max(1.0),
+                        "scale {scale} {k:?} value {i}: {x} vs {y}"
+                    );
+                }
+            }
+        }
+    }
+
     // FD-33, 8 bits: the same reference within 1/255 on premultiplied pixels with alpha 0.
     #[test]
     fn fd_33_texture_matches_the_reference_in_8_bits() {
@@ -739,10 +830,10 @@ mod tests {
         assert_deterministic(&tex(), &params_of([0.5, 0.7, -0.4]));
     }
 
-    // ARQ-120: the input a tile needs is the output grown by the largest blur in use, at the
-    // scale of the context; a vignette alone needs nothing more.
+    // ARQ-120: the input a tile needs is the output grown by the blurs in use (the sum when
+    // Claridad reads Nitidez), at the scale of the context; a vignette alone needs nothing more.
     #[test]
-    fn arq_120_texture_roi_grows_by_the_largest_active_kernel() {
+    fn arq_120_texture_roi_grows_by_the_active_kernels() {
         let out = IRect::new(10, 20, 50, 60);
         let roi = |scale: f32, k: [f64; 3]| tex().roi(&cx(scale), &params_of(k), out);
         // radius 2 px gives ceil(3 scale) taps; radius 40 px gives ceil(60 scale).
@@ -757,9 +848,10 @@ mod tests {
                 out.inflate(c_taps, c_taps),
                 "clarity {scale}"
             );
+            // Claridad reads what Nitidez left, so the reach is the sum of both.
             assert_eq!(
                 roi(scale, [1.0, 1.0, 0.0]),
-                out.inflate(c_taps, c_taps),
+                out.inflate(s_taps + c_taps, s_taps + c_taps),
                 "both {scale}"
             );
         }
