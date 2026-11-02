@@ -162,19 +162,25 @@ fn fd_41_c_negative_zero_spacing_is_also_the_identity() {
 
 // ---- FD-41 (e): letter spacing ----------------------------------------------------------------
 
-/// Number of clusters of a line that are not a forced break.
+/// Number of clusters of a line without the white space at its end, which hangs.
 fn visible(text: &str, line: &gafira_text::Line) -> usize {
-    line.clusters
-        .iter()
-        .filter(|c| !text[c.range.clone()].contains('\n'))
-        .count()
+    let mut by_start: Vec<_> = line.clusters.iter().collect();
+    by_start.sort_by_key(|c| c.range.start);
+    by_start.len()
+        - by_start
+            .iter()
+            .rev()
+            .take_while(|c| text[c.range.clone()].trim().is_empty())
+            .count()
 }
 
 #[test]
 fn fd_41_e_a_line_grows_by_n_minus_1_times_the_spacing() {
-    let texts: [(&str, Vec<&[u8]>); 4] = [
+    let texts: [(&str, Vec<&[u8]>); 6] = [
         ("Hello", vec![INTER]),
         ("a", vec![INTER]),
+        ("ab  ", vec![INTER]),
+        ("ab  \ncde  \n", vec![INTER]),
         ("ab\ncde\n", vec![INTER]),
         ("abc \u{627}\u{628}\u{62c}", vec![INTER, ARABIC]),
     ];
@@ -379,4 +385,98 @@ fn fd_41_a_font_without_metrics_gives_invalid_font_with_its_position() {
     // A healthy font in the same stack is fine, and so is a broken one nothing uses.
     assert!(run("a", &[INTER, broken_arabic.as_slice()]).is_ok());
     assert!(run("a", &[INTER]).is_ok());
+}
+
+// ---- the spacing the output keeps is the spacing that breaks lines ---------------------------
+
+/// Width of the one line of `text` in a very wide box.
+fn one_line(text: &str, t: f64) -> f64 {
+    let l = lay(text, &[INTER], &style(t, 1.0), 100_000.0);
+    assert_eq!(l.lines.len(), 1);
+    f64::from(l.lines[0].advance)
+}
+
+#[test]
+fn fd_41_e_a_word_fits_a_box_as_wide_as_its_line_with_any_spacing() {
+    for t in [500.0, 100.0, 37.5, -50.0, -100.0] {
+        let advance = one_line("Hello", t);
+        let fits = lay("Hello", &[INTER], &style(t, 1.0), advance + 0.001);
+        assert_eq!(fits.lines.len(), 1, "t={t}");
+        assert!(!fits.overflow, "t={t}");
+    }
+}
+
+#[test]
+fn fd_41_e_a_word_wider_than_the_box_breaks_by_cluster_with_any_spacing() {
+    for t in [500.0, 100.0, -50.0, -100.0] {
+        let advance = one_line("Hello", t);
+        let narrow = lay("Hello", &[INTER], &style(t, 1.0), advance - 1.0);
+        assert!(
+            narrow.lines.len() >= 2,
+            "t={t}: {} lines",
+            narrow.lines.len()
+        );
+        assert!(!narrow.overflow, "t={t}: no cluster is wider than the box");
+    }
+}
+
+fn advances(layout: &TextLayout) -> Vec<(std::ops::Range<usize>, f64)> {
+    let mut all: Vec<_> = layout
+        .lines
+        .iter()
+        .flat_map(|l| {
+            l.clusters
+                .iter()
+                .map(|c| (c.range.clone(), f64::from(c.advance)))
+        })
+        .collect();
+    all.sort_by_key(|(r, _)| r.start);
+    all
+}
+
+/// The gain of each cluster, in logical order, from spacing 0 to spacing `t`.
+fn gains(text: &str, stack: &[&[u8]], t: f64) -> Vec<f64> {
+    let base = advances(&lay(text, stack, &style(0.0, 1.0), 100_000.0));
+    let spaced = advances(&lay(text, stack, &style(t, 1.0), 100_000.0));
+    assert_eq!(base.len(), spaced.len());
+    base.iter().zip(&spaced).map(|(a, b)| b.1 - a.1).collect()
+}
+
+#[test]
+fn fd_41_e_the_last_cluster_in_logical_order_is_the_one_without_spacing() {
+    // Right to left: the logically last letter is the leftmost one.
+    let step = 250.0 / 1000.0 * SIZE_PX;
+    let g = gains("\u{627}\u{628}\u{62c}", &[INTER, ARABIC], 250.0);
+    assert_eq!(g.len(), 3);
+    assert!(
+        (g[0] - step).abs() <= 0.01 && (g[1] - step).abs() <= 0.01,
+        "{g:?}"
+    );
+    assert!(g[2].abs() <= 0.01, "{g:?}");
+}
+
+#[test]
+fn fd_41_e_a_forced_break_is_not_the_last_cluster_and_gets_no_spacing() {
+    let step = 250.0 / 1000.0 * SIZE_PX;
+    let g = gains("ab\ncd", &[INTER], 250.0);
+    // a, b, break, c, d: the break keeps its zero advance, b is the last of its line.
+    assert_eq!(g.len(), 5);
+    assert!((g[0] - step).abs() <= 0.01, "{g:?}");
+    assert!(g[1].abs() <= 0.01, "{g:?}");
+    assert!(g[2].abs() <= 0.01, "{g:?}");
+    assert!((g[3] - step).abs() <= 0.01 && g[4].abs() <= 0.01, "{g:?}");
+    let layout = lay("ab\ncd", &[INTER], &style(250.0, 1.0), 100_000.0);
+    assert_eq!(layout.lines[0].clusters[2].advance, 0.0);
+}
+
+#[test]
+fn fd_41_e_a_hanging_space_is_not_the_last_cluster_and_gets_no_spacing() {
+    let step = 250.0 / 1000.0 * SIZE_PX;
+    let g = gains("ab  ", &[INTER], 250.0);
+    assert_eq!(g.len(), 4);
+    assert!((g[0] - step).abs() <= 0.01, "{g:?}");
+    assert!(
+        g[1].abs() <= 0.01 && g[2].abs() <= 0.01 && g[3].abs() <= 0.01,
+        "{g:?}"
+    );
 }

@@ -197,23 +197,28 @@ pub fn layout_box(
     }
     let mut laid = builder.build(text);
     let width = bounds.width().max(0.0);
-    laid.break_all_lines(Some(width.min(f64::from(f32::MAX)) as f32));
+    // Parley adds the spacing after every cluster, the last one of a line too; the output
+    // does not keep that one, so the box is that much wider for the fit.
+    let fit = (width + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
+    laid.break_all_lines(Some(fit));
 
     let spacing = spacing as f32;
-    let mut lines = read_lines(&laid, &blob_ids, spacing, style, size_px)?;
+    let mut lines = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
     // Overflow is read before aligning: justify stretches the spaces of a line up to the box.
     let overflow = lines
         .iter()
         .any(|l| f64::from(content_advance(text, &l.clusters)) > width);
-    let alignment = match style.align {
-        TextAlign::Left => None,
-        TextAlign::Center => Some(Alignment::Center),
-        TextAlign::Right => Some(Alignment::Right),
-        TextAlign::Justify => Some(Alignment::Justify),
-    };
-    if let Some(alignment) = alignment {
-        laid.align(alignment, AlignmentOptions::default());
-        lines = read_lines(&laid, &blob_ids, spacing, style, size_px)?;
+    match style.align {
+        TextAlign::Left => {}
+        TextAlign::Justify => {
+            laid.align(Alignment::Justify, AlignmentOptions::default());
+            lines = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
+        }
+        TextAlign::Center | TextAlign::Right => {
+            for line in &mut lines {
+                shift_line(line, text, width, style.align == TextAlign::Center);
+            }
+        }
     }
     let out = TextLayout {
         height: laid.height(),
@@ -230,6 +235,7 @@ pub fn layout_box(
 fn read_lines(
     laid: &parley::Layout<()>,
     blob_ids: &[u64],
+    text: &str,
     spacing: f32,
     style: &TextStyle,
     size_px: f32,
@@ -285,13 +291,17 @@ fn read_lines(
             }
         }
         if spacing != 0.0 {
-            // The spacing goes after each cluster but the last one of the line. A forced
-            // break gets none from parley and is not a cluster for this rule.
+            // The spacing goes after each cluster but the last one of the line. The white
+            // space that hangs at the end is neither that cluster nor does it carry the
+            // spacing; a forced break gets none from parley.
+            let hanging = hanging_mask(text, &clusters);
             let last = (0..clusters.len())
-                .filter(|i| !hard_breaks[*i])
+                .filter(|i| !hanging[*i])
                 .max_by_key(|i| clusters[*i].range.start);
-            if let Some(i) = last {
-                clusters[i].advance -= spacing;
+            for (i, c) in clusters.iter_mut().enumerate() {
+                if (last == Some(i) || hanging[i]) && !hard_breaks[i] {
+                    c.advance -= spacing;
+                }
             }
         }
         let mut x = metrics.offset;
@@ -343,10 +353,10 @@ fn decoration(offset: f32, thickness: f32, size_px: f32) -> Decoration {
     Decoration { offset, thickness }
 }
 
-/// The advance of a line without the white space at the end of its logical
-/// text. That space hangs past the box, also inside a right-to-left run, where
-/// it is not at the visual end of the line.
-fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
+/// Which clusters are the white space at the end of the logical text of the line. That
+/// space hangs past the box, also inside a right-to-left run, where it is not at the
+/// visual end of the line.
+fn hanging_mask(text: &str, clusters: &[Cluster]) -> Vec<bool> {
     let mut logical: Vec<usize> = (0..clusters.len()).collect();
     logical.sort_by_key(|i| clusters[*i].range.start);
     let is_space = |i: &usize| {
@@ -354,17 +364,46 @@ fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
             .chars()
             .all(char::is_whitespace)
     };
-    let keep = logical.len() - logical.iter().rev().take_while(|i| is_space(i)).count();
-    let mut trailing = vec![false; clusters.len()];
-    for i in &logical[keep..] {
-        trailing[*i] = true;
+    let hanging = logical.iter().rev().take_while(|i| is_space(i)).count();
+    let mut mask = vec![false; clusters.len()];
+    for i in &logical[logical.len() - hanging..] {
+        mask[*i] = true;
     }
+    mask
+}
+
+/// The advance of a line without the white space that hangs.
+fn content_advance(text: &str, clusters: &[Cluster]) -> f32 {
+    let hanging = hanging_mask(text, clusters);
     clusters
         .iter()
-        .zip(&trailing)
-        .filter(|(_, t)| !**t)
+        .zip(&hanging)
+        .filter(|(_, h)| !**h)
         .map(|(c, _)| c.advance)
         .sum()
+}
+
+/// Centres or right-aligns the content of a line in the box; the hanging white space is
+/// outside the content. A line wider than the box stays on the left.
+fn shift_line(line: &mut Line, text: &str, width: f64, centre: bool) {
+    let hanging = hanging_mask(text, &line.clusters);
+    let mut ink = line
+        .clusters
+        .iter()
+        .zip(&hanging)
+        .filter(|(_, h)| !**h)
+        .map(|(c, _)| (c.x, c.x + c.advance));
+    let Some(first) = ink.next() else { return };
+    let (left, right) = ink.fold(first, |(l, r), (a, b)| (l.min(a), r.max(b)));
+    let room = width - f64::from(right - left);
+    if room <= 0.0 {
+        return;
+    }
+    let target = if centre { room / 2.0 } else { room };
+    let shift = (target - f64::from(left)) as f32;
+    for c in &mut line.clusters {
+        c.x += shift;
+    }
 }
 
 /// ARQ-110: a non-finite result is an `Err`, never an output.

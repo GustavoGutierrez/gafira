@@ -10,9 +10,14 @@ const INTER: &[u8] = fonts::INTER.bytes;
 const WIDTH: f64 = 200.0;
 
 fn lay(text: &str, align: TextAlign, width: f64) -> TextLayout {
+    lay_t(text, align, width, 0.0)
+}
+
+fn lay_t(text: &str, align: TextAlign, width: f64, letter_spacing: f64) -> TextLayout {
     let s = TextStyle {
         size_pt: 12.0,
         align,
+        letter_spacing,
         ..TextStyle::default()
     };
     layout_box(text, &[INTER], &s, 96.0, Size::new(width, 1000.0)).expect("valid input")
@@ -111,4 +116,95 @@ fn fd_41_left_center_and_right_place_one_line_in_the_box() {
     assert!((cr - (WIDTH + content) / 2.0).abs() <= 0.01, "{cr}");
     let (_, rr) = edges(text, &lay(text, TextAlign::Right, WIDTH).lines[0]);
     assert!((rr - WIDTH).abs() <= 0.01, "{rr}");
+}
+
+const SPACINGS: [f64; 5] = [-100.0, -20.0, 100.0, 250.0, 500.0];
+
+#[test]
+fn fd_41_i_a_justified_line_ends_at_the_edge_with_any_spacing() {
+    for t in SPACINGS {
+        for step in 40..=200 {
+            let width = f64::from(step);
+            let layout = lay_t(PARAGRAPH, TextAlign::Justify, width, t);
+            let (last, rest) = layout.lines.split_last().expect("lines");
+            for line in rest {
+                let words = line
+                    .clusters
+                    .iter()
+                    .filter(|c| PARAGRAPH[c.range.clone()] == *" ")
+                    .count();
+                if words < 2 {
+                    continue; // a line of one word is not stretched, its space hangs
+                }
+                let (left, right) = edges(PARAGRAPH, line);
+                assert!(left.abs() <= 0.01, "t={t} w={width}: starts at {left}");
+                assert!(
+                    (right - width).abs() <= 0.01,
+                    "t={t} w={width}: ends at {right}"
+                );
+            }
+            assert!(edges(PARAGRAPH, last).1 <= width + 0.01);
+            assert!(!layout.overflow, "t={t} w={width}");
+        }
+    }
+}
+
+#[test]
+fn fd_41_right_and_centre_use_the_spacing_the_output_keeps() {
+    for t in SPACINGS {
+        let (l, r) = edges("Hello", &lay_t("Hello", TextAlign::Left, WIDTH, t).lines[0]);
+        let content = r - l;
+        let (_, right) = edges(
+            "Hello",
+            &lay_t("Hello", TextAlign::Right, WIDTH, t).lines[0],
+        );
+        assert!(
+            (right - WIDTH).abs() <= 0.01,
+            "t={t}: right ends at {right}"
+        );
+        let (cl, cr) = edges(
+            "Hello",
+            &lay_t("Hello", TextAlign::Center, WIDTH, t).lines[0],
+        );
+        assert!((cl - (WIDTH - content) / 2.0).abs() <= 0.01, "t={t}: {cl}");
+        assert!((cr - (WIDTH + content) / 2.0).abs() <= 0.01, "t={t}: {cr}");
+    }
+}
+
+#[test]
+fn fd_41_k_trailing_spaces_hang_to_the_right_and_centre_ignores_them() {
+    let width = 100.0;
+    for t in [0.0, 500.0] {
+        let right = lay_t("ab  ", TextAlign::Right, width, t);
+        let ink = edges("ab  ", &right.lines[0]).1;
+        assert!((ink - width).abs() <= 0.01, "t={t}: b ends at {ink}");
+        let plain = lay_t("ab", TextAlign::Center, width, t);
+        let spaced = lay_t("ab  ", TextAlign::Center, width, t);
+        for (a, b) in plain.lines[0]
+            .clusters
+            .iter()
+            .zip(&spaced.lines[0].clusters)
+        {
+            assert!((a.x - b.x).abs() <= 0.01, "t={t}: {} vs {}", a.x, b.x);
+        }
+    }
+}
+
+#[test]
+fn fd_41_k_a_space_before_a_forced_break_and_on_the_last_line_hangs_too() {
+    let width = 100.0;
+    let layout = lay_t("ab  \ncd  ", TextAlign::Right, width, 0.0);
+    for line in &layout.lines {
+        let ink = edges("ab  \ncd  ", line).1;
+        assert!((ink - width).abs() <= 0.01, "{ink}");
+    }
+}
+
+#[test]
+fn fd_41_a_line_wider_than_the_box_stays_on_the_left_in_any_alignment() {
+    // One cluster wider than the box: it is not centred or pushed to the right.
+    for align in [TextAlign::Left, TextAlign::Center, TextAlign::Right] {
+        let layout = lay("W", align, 3.0);
+        assert_eq!(layout.lines[0].clusters[0].x, 0.0, "{align:?}");
+    }
 }
