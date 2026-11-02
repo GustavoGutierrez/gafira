@@ -180,7 +180,7 @@ fn strays(nodes: &[Node], pins: &[Pin]) -> Strays {
     // isolated colours are not (D-47, ARQ-131).
     let real = size
         .iter()
-        .any(|&g| g > 0 && g < top && g * 100 >= REAL_COLOUR_PERCENT * total);
+        .any(|&g| g < top && g * 100 >= REAL_COLOUR_PERCENT * total);
     Strays {
         left_out: out,
         real,
@@ -634,6 +634,52 @@ mod tests {
             *p = Pin::Foreground;
         }
         assert!(!strays(&nodes, &pins).real);
+    }
+
+    // ARQ-133, §4.17.6: the band is the free superpixels; seeded ones are not in
+    // its measure. A group of 5 % of the free band stays a real colour when
+    // seeded superpixels of the band would dilute it under 5 %.
+    // Mutant: the seeded superpixels counted in the total of the band.
+    #[test]
+    fn arq_133_seeded_superpixels_are_not_in_the_band_measure() {
+        let mut nodes = run_of(RED, &[1900; 5]);
+        nodes.extend(run_of(BLUE, &[100; 5]));
+        nodes.extend(run_of(GREEN, &[1000; 5]));
+        let mut pins = vec![Pin::Free; 10];
+        pins.extend([
+            Pin::Foreground,
+            Pin::Background,
+            Pin::Foreground,
+            Pin::Background,
+            Pin::Foreground,
+        ]);
+        assert!(strays(&nodes, &pins).real, "5 % of the free band");
+        pins[9] = Pin::Foreground;
+        assert!(
+            !strays(&nodes, &pins).real,
+            "premise: BLUE seeded leaves no group to set aside"
+        );
+    }
+
+    // ARQ-133: two groups tied for the largest are both background; a smaller
+    // third group is set aside, and is real from 5 % of the band, not under.
+    // Mutant: `real` dropped when the largest size is tied.
+    #[test]
+    fn arq_133_a_third_group_beside_a_tie_is_set_aside() {
+        let tie = |third: u32| {
+            let mut nodes = run_of(RED, &[1000; 5]);
+            nodes.extend(run_of(GREEN, &[1000; 5]));
+            nodes.extend(run_of(BLUE, &[third; 5]));
+            let pins = vec![Pin::Free; nodes.len()];
+            let s = strays(&nodes, &pins);
+            assert!(
+                s.left_out[..10].iter().all(|&o| !o) && s.left_out[10..].iter().all(|&o| o),
+                "only the third group is set aside"
+            );
+            s.real
+        };
+        assert!(tie(120), "600 of 10600 px");
+        assert!(!tie(100), "500 of 10500 px is under 5 %");
     }
 
     use crate::slic::{Superpixels, slic};
