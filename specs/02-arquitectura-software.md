@@ -988,8 +988,10 @@ Parámetros de los procesadores, que forman su `ParamSchema` y son los ids de `P
 | `Gain` | `volume` | % | `[0, 200]` | 100 | Sí | `audio.gain.volume` |
 | `Fade` | `duration` | s | `[0, f64::MAX]`: todo valor finito ≥ 0 | 0 | No | `audio.fade.duration` |
 | `Pan` | `pan` | Sin unidad | `[−1, 1]` | 0 | No | `audio.pan.pan` |
+| `Eq3Band` | `low`, `mid`, `high` (PROPUESTA) | dB | `[−15, 15]` | 0 (PROPUESTA) | No (PROPUESTA) | `audio.eq3band.low`, `.mid`, `.high` (PROPUESTA) |
+| `LoudnessNormalizer` | `gain` (PROPUESTA) | dB | `[−f64::MAX, f64::MAX]` (PROPUESTA) | 0 | No | `audio.loudness_normalizer.gain` (PROPUESTA) |
 
-Aceptación: por procesador, llamando por `dyn AudioProcessor`, `params()` pasa `ParamSchema::validate_definition` y su id, rango, valor por defecto, animable y etiqueta son los de la tabla; `ProcessorChain` da un esquema vacío. `volume` 250 se recorta a 200, `pan` 2 a 1 y `duration` −1 a 0 (ARQ-123); un valor en cada extremo no cambia; un id distinto de estos no cambia la salida.
+Aceptación: por procesador, llamando por `dyn AudioProcessor`, `params()` pasa `ParamSchema::validate_definition` y su id, rango, valor por defecto, animable y etiqueta son los de la tabla; `ProcessorChain` da un esquema vacío. `volume` 250 se recorta a 200, `pan` 2 a 1, `duration` −1 a 0, y una banda de `Eq3Band` 16 a 15 y −16 a −15 (ARQ-123); un valor en cada extremo no cambia; un id distinto de estos no cambia la salida.
 
 | Caso numérico | Regla | ID |
 |---|---|---|
