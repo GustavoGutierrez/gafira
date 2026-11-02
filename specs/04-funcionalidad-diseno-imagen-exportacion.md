@@ -411,7 +411,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *UI*: Inspector → Imagen → Sombras; Efectos de texto.
 - *Técnica*: `Effect` de sombra en `gafira-raster` (desenfoque gaussiano separable).
 - *Presupuesto*: < 100 ms con radio ≤ 40 px en 1080p (02 §6.7, `bench_shadow_1080`).
-- *Aceptación*: (a) la sombra sigue el canal alfa del elemento: con desenfoque 0, el alfa de la sombra es el del elemento desplazado por `opacidad`, exacto; (b) la exportación SVG la rasteriza o la reproduce con filtro, sin pérdida visible > 2/255 (VERIFICAR modo); (c) apilar tres sombras mantiene el arrastre a 60 fps; (d) opacidad 0 no cambia la imagen, y un parámetro fuera de rango da error.
+- *Aceptación*: (a) la sombra sigue el canal alfa del elemento: con desenfoque 0, el alfa de la sombra es el del elemento desplazado por `opacidad`, exacto; (b) la exportación SVG la rasteriza o la reproduce con filtro, sin pérdida visible > 2/255 (VERIFICAR modo); (c) apilar tres sombras mantiene el arrastre a 60 fps; (d) en Paralela, opacidad 0 no cambia la imagen; un parámetro fuera de rango da `Err` y sus extremos valen: desplazamiento ±500 y desenfoque 0 y 100 pasan; ±500,01 y 100,01 dan `Err`. Brillo y Contorno tienen rangos, pero ninguna spec da su fórmula ni su criterio (Q-42).
 
 **FD-36 · Bordes y esquinas** (RF-21)
 - *Propósito*: enmarcar y redondear.
@@ -799,6 +799,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
 | Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |
+| Q-42 | Fórmula y criterio de Brillo y Contorno de FD-35, o si salen del primer corte | Abierta; bloquea esos dos tipos, no Paralela |
 | Q-41 | Intensidad de FD-34 en parámetros `Int`, `Bool`, `Choice` y `Color` | Abierta; el preset de prueba solo usa `Float` |
 | Q-35, Q-36, Q-39, Q-40 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33 y D-34 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
