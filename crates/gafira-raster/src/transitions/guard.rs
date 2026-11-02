@@ -153,6 +153,8 @@ pub(crate) struct Frames<'a, T> {
     to: &'a [T],
     /// Width in pixels.
     pub(crate) w: usize,
+    /// Height in pixels.
+    pub(crate) h: usize,
 }
 
 impl<T: Copy> Frames<'_, T> {
@@ -172,16 +174,26 @@ pub(crate) fn render(
     f_u8: impl Fn(usize, usize, &Frames<'_, u8>) -> [u8; 4],
     f_f32: impl Fn(usize, usize, &Frames<'_, f32>) -> [f32; 4],
 ) {
-    let w = from.width() as usize;
+    let (w, h) = (from.width() as usize, from.height() as usize);
     match (from.data(), to.data(), dst.data_mut()) {
         (PixelData::Rgba8(a), PixelData::Rgba8(b), PixelDataMut::Rgba8(d)) => {
-            let frames = Frames { from: a, to: b, w };
+            let frames = Frames {
+                from: a,
+                to: b,
+                w,
+                h,
+            };
             for (i, px) in d.chunks_exact_mut(4).enumerate() {
                 px.copy_from_slice(&f_u8(i % w, i / w, &frames));
             }
         }
         (PixelData::RgbaF32(a), PixelData::RgbaF32(b), PixelDataMut::RgbaF32(d)) => {
-            let frames = Frames { from: a, to: b, w };
+            let frames = Frames {
+                from: a,
+                to: b,
+                w,
+                h,
+            };
             for (i, px) in d.chunks_exact_mut(4).enumerate() {
                 px.copy_from_slice(&f_f32(i % w, i / w, &frames));
             }

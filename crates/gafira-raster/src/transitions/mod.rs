@@ -7,6 +7,7 @@ mod guard;
 mod mix;
 mod slide;
 mod wipe;
+mod zoom;
 
 use gafira_doc::contract::{AudioCrossfade, Describe, ParamSchema, ParamValues};
 
@@ -15,6 +16,7 @@ pub use dissolve::Dissolve;
 pub use fade::Fade;
 pub use slide::Slide;
 pub use wipe::Wipe;
+pub use zoom::Zoom;
 
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
 
@@ -91,6 +93,7 @@ mod tests {
             Box::new(Fade::new()),
             Box::new(Slide::new()),
             Box::new(Wipe::new()),
+            Box::new(Zoom::new()),
         ]
     }
 
