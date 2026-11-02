@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "change": "gafira-raster",
-  "delivery": "RS1, RS2, RS3a, RS3b, RS4",
+  "delivery": "RS1, RS2, RS3a, RS3b, RS4, RS5, RS6",
   "rounds": [
     {
       "delivery": "RS1",
@@ -1337,6 +1337,138 @@
       "size": {
         "lines": 281,
         "forecast": null
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS5, RS6",
+      "round": 1,
+      "commit": "d79f9ea70e9906f27c40c99d08dd6a20b8a5bb63",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "architect",
+      "classes": [
+        "architecture",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 6,
+        "warning": 4,
+        "suggestion": 7
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:124",
+          "summary": "Palette closes at five clusters, fullest bins first: a noisy colour with 60 % of the image is left out by 5 small flat colours (ARQ-122, FD-26).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:123",
+          "summary": "Colours within dE2000 10 merge: two flat colours give one entry and five greys give two, against the ARQ-122 criteria.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:257",
+          "summary": "Intensity 0 runs effects at their defaults: a ParallelShadow step changes the image, against FD-34 (b).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/texture.rs:243",
+          "summary": "Claridad reads the input, not the Nitidez result, against the FD-33 order: up to 63/255; tests pin the wrong order.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C5",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:90",
+          "summary": "A colour that overflows on conversion: mix_params returns Ok with inf; DetectedColors hides it. ARQ-110; also detected.rs:189.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C6",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-110",
+          "summary": "New effects and filter lack the unknown-id table, roi and cost extremes and the finite property; 3 mutants survive. Behaviour holds in the probes.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:81",
+          "summary": "RgbaF32 hashes encode(c a), bytes hold encode(c) a: the same translucent image is up to 11 apart.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:16",
+          "summary": "Half-size bound fails on small sides that are not grid multiples: 38x30 worst 33. Area-weighted cells fix it; very small sizes need a spec bound.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:93",
+          "summary": "Local colour blend computes alpha in f64: alpha differs from the bit-exact f32 rule in 16.6 to 39 % of cases, RGB up to 5.5e-6.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "architecture",
+          "ref": "crates/gafira-raster/src/view.rs:294",
+          "summary": "EffectCx has no image size or tile origin: the Vignette by tiles differs by 47/255 from the whole image (ARQ-120 tile rule).",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 23,
+        "killed": 20
+      },
+      "criteria": {
+        "total": 23,
+        "covered": 17
+      },
+      "size": {
+        "lines": 6100,
+        "forecast": 1340
       },
       "report": "verify-report.md"
     }
