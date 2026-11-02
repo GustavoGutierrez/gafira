@@ -15,7 +15,7 @@ Evidence: 00 (D-09, D-40 to D-44), 02 §2, §4.17, §9.2, §10, 04, ADR 0005, AD
 
 ## Dependency state
 
-State at `develop` b642c1e. `D1` is merged. No `specifier` row blocks any delivery; O4 blocks only `SG3`.
+State at `develop` b642c1e. `D1` is merged. SP17 and SP18 go with the `AU1` fix round, and SP19 blocks `AU2` and `AU3`. O4 blocks only `SG3`.
 
 | Delivery | State | Blocked by |
 |---|---|---|
@@ -49,14 +49,14 @@ Forecast is authored lines, with the x1.4 planning figure in brackets. Every del
 | `TX1` | `gafira-text` | FD-41 (a, d), ARQ-115, ARQ-116, ARQ-75 (partial file), ARQ-110, ARQ-111 | `SC1` | parallel stream `TX` | 465 (650) | any |
 | `TX2` | `gafira-text` | FD-41 (c, e to j) | `TX1` | serial in `TX` | 440 (615) | after `TX1` |
 | `TX3` | `gafira-text` | FD-45 (a, c, d, e), FD-46 (a, b, c, e, f), ARQ-14 (`FitBox`) | `TX2` | serial in `TX` | 400 (560) | after `TX2` |
-| `TX4` | `gafira-text` | FD-44 (a, c, d, e), FD-43 (a), ARQ-114 (text) | `TX2` | serial in `TX` | 350 (490) | after `TX3` |
+| `TX4` | `gafira-text` | FD-44 (a, c, d, e), FD-43 (a), ARQ-114 (text) | `TX2` | serial in `TX`; merged alone, for `skrifa` (P14) | 350 (490) | after `TX3` |
 | `RS1` | `gafira-raster` | ARQ-117, ARQ-121, ARQ-110, ARQ-111 | `SC1` | parallel stream `RS` | 450 (630) | any, before `SG1` |
 | `RS2` | `gafira-raster` | ARQ-119, FD-12 (c, CPU) | `RS1` | serial in `RS` | 340 (475) | after `RS1` |
 | `RS3` | `gafira-raster` | ARQ-118, ARQ-25 (ends) | `RS1` | serial in `RS` | 450 (630) | after `RS2` |
 | `RS4` | `gafira-raster` | ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (`bench_shadow_1080`) | `RS3` | serial in `RS` | 420 (590) | after `RS3` |
 | `RS5` | `gafira-raster` | FD-33 (a, d to h), except colours detected by ΔE | `RS4` | serial in `RS` | 480 (670) | after `RS4` |
 | `RS6` | `gafira-raster` | ARQ-122, FD-26, FD-28 (b), FD-33 (detected colours), FD-34 (a, b; D-40, D-41), ARQ-114 (`bench_dhash_12mp`) | `RS5`, `CL1` | serial in `RS` | 480 (670) | after `RS5` |
-| `AU1` | `gafira-audio` | ARQ-123, ARQ-124, ARQ-129, FV-10 (a, d), ARQ-110, ARQ-111 | `SC1` | parallel stream `AU` | 480 (670) | any |
+| `AU1` | `gafira-audio` | ARQ-123, ARQ-124, ARQ-129, FV-10 (a, d), ARQ-110, ARQ-111, `params()` (P13) | `SC1` | parallel stream `AU` | 480 (670) | any |
 | `AU2` | `gafira-audio`, testkit test | ARQ-125, ARQ-23, CAL-15, FV-20 (c) | `AU1` | serial in `AU` | 400 (560) | after `AU1` |
 | `AU3` | `gafira-audio` | ARQ-126, ARQ-127, FV-10 (b), FV-20 (d) | `AU1` | serial in `AU` | 480 (670) | after `AU2` |
 | `AU4` | `gafira-audio` | ARQ-128, FV-04 (b) | `AU1` | serial in `AU` | 350 (490) | after `AU3` |
@@ -113,8 +113,8 @@ After `SC1` no stream should touch these. If one must, this table applies.
 
 | File | Touched by | Resolution at merge |
 |---|---|---|
-| `Cargo.toml` (root) | `SC1` | A later dependency is a stop: mark that delivery serial and merge it alone. Keep both lines |
-| `Cargo.lock` | `SC1` | Never hand-merge. Take `develop`'s file, run `cargo check --workspace --all-targets` to regenerate, then the gates with `--locked` |
+| `Cargo.toml` (root) | `SC1`, `TX4` (P14) | A later dependency is a stop: mark that delivery serial and merge it alone. Keep both lines |
+| `Cargo.lock` | `SC1`, `TX4` (P14) | Never hand-merge. Take `develop`'s file, run `cargo check --workspace --all-targets` to regenerate, then the gates with `--locked` |
 | `.github/workflows/ci.yml` | `D3`, `SC1` | Serial by order. Keep both rows, and the ARQ-107 step of `SC1` |
 | `deny.toml` | `SC1` | Single writer |
 | `clippy.toml` copies | `SC1` | New files. A change to the canonical copy needs every copy in one commit (V12), so it is serial |
@@ -280,6 +280,78 @@ Binding rules for the `SG` deliveries:
 - The fraction follows a work model, not time share (ARQ-112, XP9).
 - Start from `gamma` about 500 or GMM regularisation about 25 (02 §4.7). Both were tuned on the gate scenes, so passing ARQ-132 does not prove they generalise. O4 covers the known gap.
 
+### P13. `AudioProcessor::params()`, amendment to `AU1`
+
+- Context: the C12 decision (`specs/history/2026-11-02-engine-contracts/design.md`) requires a test per compiled schema. `AudioProcessor` (02 §4.9) has no way to reach one, so nothing can run `validate_definition` on the table of 02 §4.17.5. C12 lives in that design and in the "how to add" lists of 02 §4.4 and §4.13, not in the text of ARQ-110, and the §4.9 list lacks the step.
+- Options: (a) a required trait method, as in `Effect` (02 §4.4) and `Transition` (02 §4.13); (b) a static per-type schema, `fn schema() -> ParamSchema` with `where Self: Sized`, or an inherent function.
+- Decision: (a), as a required method with no default body:
+
+```rust
+pub trait AudioProcessor: Describe + Send {
+    fn params(&self) -> &ParamSchema;
+    fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16);
+    fn process(&mut self, block: &mut AudioBlock<'_>, params: &ParamSnapshot);
+    fn latency(&self) -> u32 { 0 }
+    fn tail(&self) -> u32 { 0 }
+    fn reset(&mut self);
+}
+```
+
+- Why: `ProcessorChain` holds `Box<dyn AudioProcessor>` (`crates/gafira-audio/src/chain.rs` on `feat/gafira-audio`) and 02 §11 lists an `AudioRegistry` open to plugins. Option (b) cannot be called through `dyn`, and a new processor that forgets it still compiles. With (a) the compiler enforces the method and only the test can be forgotten, which is the risk C12 accepts.
+- `process` never calls `params()`, so ARQ-23 is unaffected. `params()` only borrows.
+
+Storage:
+
+- Each processor keeps a `schema: ParamSchema` field. `ParamSchema` holds a `Vec` (`crates/gafira-doc/src/contract/params.rs`), so it cannot be a plain `static` like `DESCRIPTOR`.
+- A `LazyLock` is rejected: ARQ-31 excepts only the logging `OnceLock`, and a field needs no global at all. Making `ParamSchema` const-constructible is rejected: it changes `gafira_doc::contract` for one stream.
+- Cost: `Gain::new`, `Fade::new` and `Pan::new` stop being `const fn`. Nothing on `feat/gafira-audio` uses them in a const context. Build processors off the audio thread.
+- One source for the numbers: `dsp::Param` gains `pub(crate) fn def(&self, label: MessageKey, animatable: bool) -> ParamDef`, called in `new` before any `read`, because `value` holds the default until then. The ranges are not written twice.
+- `ProcessorChain` returns an empty schema. It owns no parameter, and merging its stages would repeat ids: two `Fade` stages give `BadDefinition`. Its stages keep their own schemas.
+
+| Processor | Id | `ParamKind` | `animatable` | Label (proposed) | Ground |
+|---|---|---|---|---|---|
+| `Gain` | `volume` | `Float { min: 0.0, max: 200.0, default: 100.0 }` | `true` | `audio.gain.volume` | Stated: FV-14 lists volume as animatable, 02 §3 has `Clip.volume: Animatable<f32>`, FV-10 has an editable volume graph |
+| `Fade` | `duration` | `Float { min: 0.0, max: f64::MAX, default: 0.0 }` | `false` | `audio.fade.duration` | Inferred: ARQ-124 reads it once per ramp and a change waits for the next `reset`, so a keyframed value could not act. FV-14 does not list it |
+| `Pan` | `pan` | `Float { min: -1.0, max: 1.0, default: 0.0 }` | `false`, provisional | `audio.pan.pan` | Unstated: see below |
+
+Not stated in the specs, sent to `specifier` as SP18:
+
+- **`animatable`.** Neither FV-10 nor the table of 02 §4.17.5 has it. FV-10 only supports `volume`, through its graph; the list is in FV-14.
+- **`pan`.** FV-14 lists clip parameters, without pan, but ends with "parámetros de efectos", which could cover it. Pan is a track strip control (FV-20), and neither `Clip` nor `Track` has a pan field (02 §3), so a keyframe has no home. `false` costs nothing: the flag is not persisted and can flip later.
+- **`duration` bound.** 02 says "sin máximo", but `is_consistent` requires a finite `max`, so `f64::INFINITY` gives `BadDefinition`. `f64::MAX` admits every finite value, which keeps the meaning, and `Fade::new` already uses it. A schema-generated control still needs a real limit, such as the clip length.
+- **Labels and units.** 02 gives no label key, and ARQ-98 requires one per `ParamDef`. The keys above follow `Descriptor`'s `audio.gain`. `ParamDef` has no unit field, so the % and s of the table have no place in the schema. No catalogue exists yet, so the keys get their entries with `gafira-i18n`.
+
+`AU1` obligations, in its fix round:
+
+- A table test in `crates/gafira-audio/tests/` over `Gain`, `Fade` in both directions, `Pan` and `ProcessorChain`, called through `dyn AudioProcessor`: `validate_definition` is `Ok`, and id, bounds, default and `animatable` equal the table above.
+- Add the method to the `Op` double in `tests/chain.rs`.
+- This closes W2 of the `AU1` verify report. About 90 lines, mostly test. `AU1` is already 2 094 lines against 670 forecast (`specs/changes/gafira-audio/verification.json` on its branch), so this is not a split trigger, but the forecast no longer holds.
+
+### P14. `skrifa` as a direct dependency of `gafira-text`
+
+- Context: `gafira-text` reaches `skrifa` only through `parley_engine`, and `parley` does not re-export it, so production code cannot call it. 02 §9 already lists it and its licence.
+- Decision: when `TX4` needs a real outline, its first commit makes `skrifa` a direct dependency.
+
+| File | Change |
+|---|---|
+| `Cargo.toml` (root) | `skrifa = { version = "0.44", default-features = false, features = ["std"] }` |
+| `crates/gafira-text/Cargo.toml` | `skrifa.workspace = true` |
+| `Cargo.lock` | Regenerated by the P2 rule |
+
+- `0.44` is the requirement of `parley_engine` 0.12.0, and the lock holds 0.44.0. A `parley` bump moves this line too: `multiple-versions = "warn"` in `deny.toml` would not stop a second copy. `std` is required, because `skrifa` fails to compile without `std` or `libm`.
+- Serial per P2: a root `Cargo.toml` change is a stop. `TX4` merges alone, against all streams, not only inside `TX`.
+
+Does it need to come sooner? No, by delivery:
+
+| Delivery | Needs `skrifa`? | Evidence |
+|---|---|---|
+| `TX1` | No | Apply-progress deviation 1 and verify ruling on `feat/gafira-text`: FD-41 (a) is accepted through a test-only `glyf` reader, with extraction left to `TX4`. Verify S4 points at `TX4`. `layout.rs` uses only `parley` |
+| `TX2` | No, provisional | "Fuente sin métricas" (verify W6) reads parley line metrics. FD-41 (g) picks the font that covers most code points: `parley_engine` tracks best coverage in `shape/cluster.rs`, and `parley::fontique` exposes `QueryFont::charmap` as a fallback. That parley meets the rule across a fallback list is not proved: XP12 |
+| `TX3` | No | FD-45 and FD-46 use layout measures only |
+| `TX4` | Yes, for FD-43 (a) | FD-44 (a, c, d, e) work from advances, and FD-44 (b) is out of the cut. FD-43 (a) is only meaningful on a stroked real outline: FD-43 Técnica and 02 §2.1 give `gafira-text` the contours |
+
+If XP12 fails, the same step moves to the first commit of `TX2`, with the same serial rule.
+
 ## Critical code
 
 Hand mutants apply on all of these. T4 at close covers every crate in the table.
@@ -315,7 +387,7 @@ XP5 reached ARQ-132 only in-sample. If `SG3` cannot reach the gate, D-20 is the 
 
 ## Needs explorer
 
-XP1 to XP10 are resolved; XP11 is open and comes from those results. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
+XP1 to XP10 are resolved; XP11 and XP12 are open, and XP11 comes from those results. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
@@ -330,10 +402,17 @@ XP1 to XP10 are resolved; XP11 is open and comes from those results. XP5, XP7, X
 | XP9 | Resolved with a limit: ≥ 50 reports are reached. The ≤ 0.02 step is missed by time share, set by `sp_stats`, so the fraction follows a work model (P12) | Time share per step 0.033 to 0.086 | Nothing; ARQ-112 now says so (ba7fee8) |
 | XP10 | Resolved, confirmed: the P9 step is exact. `StyleProperty::Locale` is the only parley API that needs the word (P7) | Passes clean, fails with `icu_plurals`, works under gawk and mawk | Nothing |
 | XP11 | Hash adjacency can meet ARQ-43 without `std::collections::HashMap`, which `clippy.toml` bans in domain crates, and it stays deterministic (ARQ-111). The prototype's table type is not recorded here | Re-time the longest stretch between token checks with an allowed table: own open addressing, or sorted pairs | `SG2` |
+| XP12 | `gafira-text` can meet FD-41 (g) without a direct `skrifa`, and adding `skrifa` as in P14 adds no package to `Cargo.lock` | Fixture with two partial fonts on one cluster and a tie through `layout_box`; a throwaway branch with the P14 entry, then `cargo tree -p gafira-text`, `cargo deny` and the V5 and ARQ-107 steps | Start of `TX2` |
 
 ## Needs specifier
 
-No row is open.
+Open:
+
+| # | ID | Request | Blocks |
+|---|---|---|---|
+| SP17 | 02 §4.9 | Add `fn params(&self) -> &ParamSchema;` to the trait and the `validate_definition` step to the "how to add" list (P13) | `AU1` fix round |
+| SP18 | 02 §4.17.5, FV-14 | State `animatable` per parameter, the finite bound of `duration`, the label keys, and whether a unit belongs in the schema. Settle whether `pan` is animatable (P13) | `AU1` fix round; proceed on the provisional P13 table if it comes later |
+| SP19 | 02 §4.17.5 | Add the `Eq3Band` and `LoudnessNormalizer` parameters to the table: neither has a row, and P13 makes `params()` mandatory for both | `AU2`, `AU3` |
 
 Closed by `specifier`, all on `develop`:
 
@@ -360,4 +439,4 @@ CAL-06 and CAL-15 now live in `01`, and the FV IDs in `05`. That promotion is me
 
 ## Next
 
-Finish `D2a`, `D2b` and `D3`, then run `SC1`. Ask the owner O4 before `SG3`. `explorer` takes XP11 before `SG2`.
+Finish `D2a`, `D2b` and `D3`, then run `SC1`. Ask the owner O4 before `SG3`. `explorer` takes XP11 before `SG2` and XP12 before `TX2`. `specifier` takes SP17 and SP18, then `AU1` takes P13 in its fix round.
