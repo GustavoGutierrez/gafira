@@ -27,6 +27,20 @@ pub struct TextStyle {
     pub uppercase: bool,
     /// Where the lines of the box sit across its width.
     pub align: TextAlign,
+    /// Gives every cluster an [`Cluster::underline`].
+    pub underline: bool,
+    /// Gives every cluster a [`Cluster::strikethrough`].
+    pub strikethrough: bool,
+}
+
+/// A line drawn along a cluster, in px (FD-41, Subrayado y tachado).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Decoration {
+    /// Distance from the baseline to the top of the line, positive above it, as the font
+    /// tables give it: negative for a usual underline.
+    pub offset: f32,
+    /// Thickness of the line.
+    pub thickness: f32,
 }
 
 /// Horizontal alignment of the lines in the box (FD-41).
@@ -53,6 +67,8 @@ impl Default for TextStyle {
             line_height: 1.0,
             uppercase: false,
             align: TextAlign::Left,
+            underline: false,
+            strikethrough: false,
         }
     }
 }
@@ -97,6 +113,10 @@ pub struct Cluster {
     pub font: usize,
     /// Glyph ids of the cluster in the font; none for a forced break.
     pub glyphs: Vec<u32>,
+    /// The underline of the cluster, when the style asks for one.
+    pub underline: Option<Decoration>,
+    /// The strikethrough of the cluster, when the style asks for one.
+    pub strikethrough: Option<Decoration>,
 }
 
 /// Lays `text` out in a box of `bounds` px.
@@ -178,7 +198,7 @@ pub fn layout_box(
     laid.break_all_lines(Some(width.min(f64::from(f32::MAX)) as f32));
 
     let spacing = spacing as f32;
-    let mut lines = read_lines(&laid, &blob_ids, spacing)?;
+    let mut lines = read_lines(&laid, &blob_ids, spacing, style, size_px)?;
     // Overflow is read before aligning: justify stretches the spaces of a line up to the box.
     let overflow = lines
         .iter()
@@ -191,7 +211,7 @@ pub fn layout_box(
     };
     if let Some(alignment) = alignment {
         laid.align(alignment, AlignmentOptions::default());
-        lines = read_lines(&laid, &blob_ids, spacing)?;
+        lines = read_lines(&laid, &blob_ids, spacing, style, size_px)?;
     }
     let out = TextLayout {
         text: text.to_string(),
@@ -208,6 +228,8 @@ fn read_lines(
     laid: &parley::Layout<()>,
     blob_ids: &[u64],
     spacing: f32,
+    style: &TextStyle,
+    size_px: f32,
 ) -> Result<Vec<Line>, TextError> {
     let mut lines = Vec::new();
     for line in laid.lines() {
@@ -224,6 +246,12 @@ fn read_lines(
             if natural.is_nan() || natural <= 0.0 {
                 return Err(TextError::InvalidFont { index: font });
             }
+            let underline = style
+                .underline
+                .then(|| decoration(m.underline_offset, m.underline_size, size_px));
+            let strikethrough = style
+                .strikethrough
+                .then(|| decoration(m.strikethrough_offset, m.strikethrough_size, size_px));
             for c in run.visual_clusters() {
                 let glyphs: Vec<u32> = c.glyphs().map(|g| g.id).collect();
                 hard_breaks.push(c.is_hard_line_break());
@@ -235,6 +263,8 @@ fn read_lines(
                     notdef: glyphs.contains(&0),
                     font,
                     glyphs,
+                    underline,
+                    strikethrough,
                 });
             }
         }
@@ -261,6 +291,16 @@ fn read_lines(
         });
     }
     Ok(lines)
+}
+
+/// A thickness of 0 or none is 0.05 em (PROPUESTA, FD-41).
+fn decoration(offset: f32, thickness: f32, size_px: f32) -> Decoration {
+    let thickness = if thickness > 0.0 {
+        thickness
+    } else {
+        0.05 * size_px
+    };
+    Decoration { offset, thickness }
 }
 
 /// The advance of a line without the white space at the end of its logical

@@ -10,4 +10,4 @@ mod error;
 mod layout;
 
 pub use error::TextError;
-pub use layout::{Cluster, Line, TextAlign, TextLayout, TextStyle, layout_box};
+pub use layout::{Cluster, Decoration, Line, TextAlign, TextLayout, TextStyle, layout_box};
