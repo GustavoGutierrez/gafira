@@ -6,7 +6,7 @@ use std::fmt;
 
 use gafira_color::Color;
 
-use crate::msg::MessageKey;
+use crate::msg::{Message, MessageKey, MsgArg, ToMessage};
 
 /// One option of a [`ParamKind::Choice`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -326,3 +326,18 @@ impl fmt::Display for ParamError {
 }
 
 impl std::error::Error for ParamError {}
+
+impl ToMessage for ParamError {
+    fn to_message(&self) -> Message {
+        let (key, param) = match self {
+            ParamError::NonFinite { param } => ("error.param.non_finite", param),
+            ParamError::OutOfRange { param } => ("error.param.out_of_range", param),
+            ParamError::WrongType { param } => ("error.param.wrong_type", param),
+            ParamError::BadDefinition { param } => ("error.param.bad_definition", param),
+        };
+        Message {
+            key: MessageKey(key),
+            args: vec![("param", MsgArg::Text((*param).to_owned()))],
+        }
+    }
+}
