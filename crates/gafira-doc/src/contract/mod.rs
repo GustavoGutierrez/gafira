@@ -4,8 +4,10 @@
 //! never `Page`, `Node` or `Document`.
 
 mod describe;
+mod params;
 
 pub use describe::{Describe, Descriptor};
+pub use params::{ParamValue, ParamValues};
 
 /// How an audio transition blends its two sides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
