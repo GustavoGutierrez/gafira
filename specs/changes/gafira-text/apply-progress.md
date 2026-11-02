@@ -232,7 +232,27 @@ Hand mutants (all restored; the tree equals the committed one):
 
 Deviations and open points:
 1. **Alignment is now this crate's.** `layout_box` no longer calls parley's `align`. The only parley input is the line break at the box plus the spacing. Justify matches parley's old rule (spaces and NBSP are the places; the last line, a line with a forced break and a line with no place are not stretched; such a line starts at the left, or at the right in a right-to-left paragraph, as parley did). It differs on purpose in one thing: the trailing space of a run of the other bidi level is not a place to stretch (the accepted limit treats it as hanging).
-2. **Slack.** 4e-6 relative is mine; the spec's tolerance is 0.01 px and the measured gap was 7e-7. The overflow test has no slack: a cluster wider than the box by under 4e-6 relative can sit alone on a line that parley accepted, and then `overflow` is true. No test needs it.
-3. **List probe.** `f32::MAX` is a fixed box too, but a text that does not fit it gives `NonFinite`. A hang that cannot be measured is an error, not 0.
+2. **Slack.** 4e-6 relative is mine; the spec's tolerance is 0.01 px and the measured gap was 7e-7. The overflow test has no slack: a cluster wider than the box by under 4e-6 relative can sit alone on a line that parley accepted, and then `overflow` is true. No test needs it. *Corrected in fix round 4 (W28): wrong. Break and overflow now share one limit (`width x (1 + 4e-6)`); a line inside it neither breaks nor overflows, and the old statement that only a lone cluster was affected was false: it was any line.*
+3. **List probe.** `f32::MAX` is a fixed box too, but a text that does not fit it gives `NonFinite`. A hang that cannot be measured is an error, not 0. *Corrected in fix round 4 (W28): wrong in one window: a text that does not fit `f32::MAX` can give `Ok` (C16, accepted limit of FD-41 (j): the hang is in proportion to the DPI within 0.01 % up to 1.3e39 DPI, and the test `fd_41_j_the_hang_of_1_dot_at_12_pt_is_in_proportion_to_the_dpi_up_to_1_3e39` pins that, not "any dpi").*
 4. **Open for the coordinator:** (l) has no test (no input to vary); the Slice card and the 02 stream row still need the amend for (k) and (l) (W27).
 5. **Center and Right with a trailing space of the other level** keep the old rule: the ink without it is aligned and the space stays beside it. FD-41's accepted limit says such a line is not centred or right aligned; I did not widen or narrow that.
+
+### TX2 fix round 4
+
+Placement is one function, `align_line`: for every alignment and direction it applies the hang, then computes the room, then the offsets, in f64. A stretched line is summed in f64 from the line origin; other lines keep the layout position plus the offset (FD-41 (c) identity bit for bit). The fit has one limit (`width x (1 + 4e-6)`) for the break and the overflow. Leading white space (logical start) is not a place to stretch.
+
+| Finding | RED (failing test and assertion, run on the code of round 3) |
+|---|---|
+| C18 | `fd_41_c_a_box_within_the_fit_slack_neither_breaks_nor_overflows`: `Hello k=0.0000005: kept whole yet overflow` |
+| C19 | `fd_41_hang_applies_when_there_is_no_room_in_a_right_to_left_line`: `Center: content starts at 9` |
+| C20 | `fd_41_i_a_justified_line_ends_at_the_edge_in_a_very_wide_box`: `ends at 15999.90625` (box 16 000, 2 600 words) |
+| C21 | `fd_41_i_leading_white_space_takes_no_extra_spacing`: left 5.6140623, right 4.5 (advance of a leading space) |
+| W26 (l) | `fd_41_l_advances_are_the_linear_scaling_of_hmtx`: not RED, 2 000 single-glyph clusters at 400 fractional sizes match `hmtx x size / unitsPerEm` within 1e-6; it proves (l) by construction (no hinting input). |
+| FD-41 (j) DPI clause | renamed `fd_41_j_the_hang_of_1_dot_at_12_pt_is_in_proportion_to_the_dpi_up_to_1_3e39`, now at 12 pt and up to 1.3e39 DPI: not RED (passes on the existing code). |
+| W28 | the three statements corrected in place above and in the comment of `FIT_TOLERANCE` |
+
+Hand mutants (all restored): slack on the break only, killed by `fd_41_c_a_box_within_the_fit_slack_...`; slack on the overflow only (no slack in the fit), killed by `fd_41_e_a_box_as_wide_as_its_line_with_any_spacing_does_not_split_it`; hang skipped when room <= 0, killed by `fd_41_hang_applies_when_there_is_no_room_...`; incremental f32 sum, killed by `fd_41_i_a_justified_line_ends_at_the_edge_in_a_very_wide_box`; leading spaces stretched, killed by `fd_41_i_leading_white_space_takes_no_extra_spacing`.
+
+Adversarial sweep (throwaway, not committed): 5 120 layouts (8 texts incl. LTR, RTL, mixed, one word and explicit breaks, 5 leading/trailing space combinations, spacing 0, -100, 100, 500, 8 boxes: exact advance, +-1 ulp, +-0.0002, 90, 4 000, 16 000, 4 alignments). Checks: ink inside the box unless a cluster is wider, justified lines end at the edge (+-0.01), overflow only with a cluster wider than the box, limit (m) excepted. Result: 0 violations after the fix. It first flagged 26 justified RTL lines with a leading space; they were the leading space at the right edge, not a defect of the placement (see open point).
+
+Open point: in a right-to-left paragraph a leading space sits at the right edge, so the ink of a justified line ends one space before it (the line, spaces included, ends at the edge). FD-41 says nothing about leading white space, so which edge the ink or the space takes is not decided here; returned to the coordinator.
