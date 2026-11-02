@@ -404,3 +404,92 @@ Fit: 15 120 calls (8 texts as one run, a 10/20 pair, a 1/500 (empty)/1000/3 mix,
 4. **Not built, outside the TX3 IDs:** columns with lists (`layout_list` lays each item with `layout_box`), the manual column break (D-24), FD-46 (d) and the type lock, FD-46 with columns (the two are independent here).
 5. **Performance.** The font stack is registered once per search (`Stack`), not once per probe. The benchmarks `bench_text_columns_5000` and `bench_text_fit_500` belong to ARQ-114 (TX4).
 6. **ARQ-14.** The literals were measured on Linux x86_64 with the embedded fonts. The three platforms are proved only by the `workflow_dispatch` run of the coordinator on this branch; until then the test passes on one.
+
+## TX4
+
+Branch `feat/gafira-text`, after TX3. Commits: 3f495ed (`skrifa` as a direct dependency, P14), 7ac695d (curve, FD-44), 04f9066 (outlines, FD-43), f2d13e8 (benchmarks, ARQ-114), da3901d (perf of the balanced split). Gates per commit, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0. The first commit ran the gates on a tree that held an untracked throwaway sweep file, so its fmt and clippy failed; the commit was made anyway by a chained command. The gates were re-run on the clean tree afterwards: 0, 0, 0 (the commit has only manifests).
+
+**P14, first commit.** Root `Cargo.toml`: `skrifa = { version = "0.44", default-features = false, features = ["std"] }`; `crates/gafira-text/Cargo.toml`: `skrifa.workspace = true`; `Cargo.lock` regenerated with `cargo check --workspace --all-targets` (not edited by hand): **one line added** (`"skrifa"` in the dependencies of `gafira-text`), no new package. `cargo deny check`: advisories, bans, licenses, sources ok. The V5 step and the ARQ-107 step of `ci.yml` run locally (the `run:` blocks extracted): exit 0, 0 (`Locale` has 0 matches in the crate). `cargo tree -p gafira-text -i skrifa`: 0.44.0, the copy `parley_engine` already uses.
+
+Measured (`git diff --shortstat 3f495ed^ HEAD`): 1 402 lines added, 8 deleted. 332 in `src/` (`curve.rs` 177, `outline.rs` 122, `layout.rs` 13, `columns.rs` 16 net of the perf commit, `lib.rs` 4), 928 in `tests/` (`curve.rs` 458, `outline.rs` 448, `benches.rs` 22), 135 in `benches/text.rs`, 7 in manifests. Over the ~700 mark; the forecast was 350 (490).
+
+### Done
+
+| ID | Proof |
+|---|---|
+| FD-44 (a) | `curve.rs`: bend 0 and -0.0 leave every cluster at `x + advance / 2`, the baseline, rotation 0, bit for bit, and no `Arc` (no radius computed), for 8 texts incl. bidi, justify, empty and `"\n"` |
+| FD-44 (c) | `fd_44_c_a_new_text_makes_a_new_curve`: the curve of `layout_curved` is the curve of the new layout; the radius follows the new advance |
+| FD-44 (d) | at ±100 the chord of the arc is `2L/pi` ±0.01 px and the radius `L/pi`, for 5 texts and 3 widths and alignments; the chord and radius follow `2 (L/t) sin(t/2)` for 8 bends; every cluster turns `(s/L - 0.5) theta` ±1e-6 rad for 8 bends, 5 texts and 3 alignments, each line with its own `L`; +50 and -50 turn in opposite ways, open down and up, and mirror in y |
+| FD-44 (e) | ±100.01, ±1e300, NaN, infinities give `Err` naming `curve.bend` (ends included); 0.01 and -0.01 keep every position finite and within 0.01 px of the straight line centred in the box; an empty line, a line that is only a forced break and an empty first line do not change |
+| FD-44 geometry | every cluster is at `|R|` from the centre, at the angle of its centre; the arc is centred in the width of the box; lines are concentric with one centre, each apex on its baseline |
+| FD-43 (a) | `outline.rs`: the outline of a cluster is the glyph of its font (`Cluster::font`, 3 fonts in one text) at its size, x and baseline: its box equals the box of the glyph in the font header (read with `skrifa` metrics, not drawing), ±0.05 px; `H`, `A`, `B` have 1, 2, 3 contours; a 4 px miter stroke from `gafira-pathops` is 2 px outside the fill on every side while the layout, built twice, is equal and the outlines are equal; spaces and breaks have an empty path; a beh with a fatha is drawn with each glyph at its own offset, the fatha 4 px over the body and centred on it; the runs of a `fit_box` layout are drawn at their own sizes (1:2); a font that cannot be read, a position outside the stack and a glyph that cannot be drawn give `Err(InvalidFont)`; a non-finite outline gives `Err(NonFinite)` |
+| `Cluster` | two fields for the outline: `glyph_offsets` (x from the left edge of the cluster, y down from the baseline) and `size_px` |
+| ARQ-114 (text) | `benches/text.rs`: `bench_text_type_5000`, `bench_text_curve_100`, `bench_text_columns_5000`, `bench_text_fit_500`; `tests/benches.rs` checks each name is registered once |
+
+### RED evidence
+
+Run before the code of the criterion, on a stub that compiles and does not do the behaviour (`curve_layout` returned the straight positions; `outline_text` returned an empty path per cluster, `glyph_offsets` empty, `size_px` 0). Real assertions, no compile error.
+
+| Criterion | Failing test and assertion |
+|---|---|
+| FD-44 (d) | `fd_44_d_a_cluster_at_s_turns_...`: `"Hello curved world" bend 100: 0 instead of -1.3844700849289602`; `fd_44_d_the_chord_at_100_is_two_l_over_pi`, `fd_44_d_the_chord_and_radius_follow_the_bend`, `fd_44_d_plus_and_minus_...`: `an arc` (no arc) |
+| FD-44 geometry | `fd_44_each_cluster_sits_on_the_circle_...`, `fd_44_lines_use_concentric_arcs_...`: `arc`; `fd_44_one_cluster_sits_at_the_top_of_the_arc_without_turning`: `100: CurvedCluster { x: 7.8828125, y: 15.5, rotation: 0.0 }` (x should be 50) |
+| FD-44 (c) | `fd_44_c_a_new_text_makes_a_new_curve`: `arc` |
+| FD-44 (e) | `fd_44_e_the_bend_is_checked_and_its_ends_are_in`: `100.01`, left `None`, right `Some(OutOfRange { field: "curve.bend" })`; `fd_44_e_a_line_with_no_advance_does_not_change`: `curved.arc.is_some()` |
+| FD-43 (a) | `fd_43_a_each_cluster_has_the_outline_of_its_glyph_...`: `"H" has an outline`; `fd_43_a_the_counters_of_a_letter_...`: left `[0, 0, 0]`, right `[1, 2, 3]`; `fd_43_a_a_4_px_stroke_...`: `a letter`; `fd_43_a_every_size_of_a_layout_with_runs_...`: `an H`; `fd_43_a_a_font_that_cannot_be_read_is_an_error`: left `None`, right `Some(InvalidFont { index: 0 })` |
+| FD-43 (a), marks | `fd_43_a_a_cluster_with_a_mark_...`: the first run failed on my miscount of glyphs (a beh with a fatha has 3 glyphs, not 2), fixed before the code; the stub leaves `glyph_offsets` empty, which `glyph_offsets.len() == glyphs.len()` rejects (0 and 3), not observed separately |
+| ARQ-114 | `arq_114_each_text_figure_has_a_benchmark_named_after_its_row`: `bench_text_type_5000 must be registered once with criterion`, left 0, right 1 |
+
+Not RED, passing on the stub or written with the code, proved by mutant: `fd_44_a_bend_zero_...`, `fd_44_e_a_tiny_bend_...`, `arq_110_a_bend_too_small_for_a_radius_is_never_a_nan`, `fd_44_a_negative_width_acts_as_zero`, `fd_43_a_the_same_layout_gives_the_same_outlines`, `fd_43_a_a_glyph_that_cannot_be_drawn_is_an_error`, `arq_110_an_outline_that_is_not_finite_is_an_error`, `fd_43_a_a_glyph_without_cover_...` (the test subsets have an empty glyph 0, so the test accepts a path that is empty exactly when the font header has no box).
+
+### Hand mutants
+
+| # | Wrong behaviour | Killed by |
+|---|---|---|
+| 1 | 1.0 or 0.9 degrees per unit; radius `L / theta` signed or halved | `fd_44_d_the_chord_*`, `fd_44_d_a_cluster_at_s_*`, `fd_44_each_cluster_sits_on_the_circle_*`, `fd_44_e_*` |
+| 2 | angle without the -0.5; with `abs(theta)`; `s` from the start of the cluster, or not relative to the line | `fd_44_d_a_cluster_at_s_*`, `fd_44_each_cluster_*`, `fd_44_d_plus_and_minus_*`, `fd_44_one_cluster_sits_at_the_top_*` |
+| 3 | direction swapped (no sign in x, no sign in y, sign flipped in y); sigma always 1 | `fd_44_d_plus_and_minus_*`, `fd_44_each_cluster_sits_on_the_circle_*`, `fd_44_e_a_tiny_bend_*` |
+| 4 | centre at `width / 3`, or `width` without the clamp at 0; centre below instead of above | `fd_44_each_cluster_*`, `fd_44_a_negative_width_acts_as_zero`, `fd_44_d_the_chord_at_100_*` |
+| 5 | concentric radius with the wrong sign or none; line apex off its baseline | `fd_44_lines_use_concentric_arcs_with_the_same_theta` |
+| 6 | an arc at bend 0 or on a line with no advance; a straight line that gets an arc; empty line counted | `fd_44_a_bend_zero_*`, `fd_44_e_a_line_with_no_advance_*`, `arq_110_a_bend_too_small_*` |
+| 7 | range check missing or ends exclusive (`100.01` allowed); NaN width unchecked; bend not checked before the font stack | `fd_44_e_the_bend_is_checked_and_its_ends_are_in` |
+| 8 | the radius from the first line, from the shortest, from the last of equals; ends at `theta` instead of `theta / 2` | `fd_44_d_the_chord_at_100_*`, `fd_44_e_a_line_with_no_advance_*`, `fd_44_e_a_tiny_bend_*` |
+| 9 | glyph y flipped (down for up), baseline or x of the cluster ignored, offsets ignored (dx, dy), font index always 0, only the first glyph of a cluster, even-odd fill, size fixed at 16 px, draw error ignored, finite check removed | `fd_43_a_each_cluster_has_the_outline_*`, `fd_43_a_a_cluster_with_a_mark_*`, `fd_43_a_every_size_of_a_layout_with_runs_*`, `fd_43_a_a_glyph_that_cannot_be_drawn_*`, `arq_110_an_outline_that_is_not_finite_*` |
+| 10 | in `layout.rs`: glyph offset y negated, x subtracted, x zero, y zero, size fixed at 16 px | `fd_43_a_a_cluster_with_a_mark_draws_the_glyphs_where_the_font_puts_them` (the check that kills them reads the drawing: the fatha is 0 to 15 px over the body and centred on it within 10 px, not the offsets, which the implementation also reads) |
+| 11 | columns search: interval bounds off by one or removed, objective, tie-break, strict limit, mean divisor (re-run after the perf commit) | `fd_45_a_balance_minimises_...`, `fd_45_a_three_columns_*`, `fd_45_a_with_fewer_lines_*`, `fd_45_auto_height_*` |
+
+Survivors, none needs a test:
+
+| Mutant | Why |
+|---|---|
+| `offsets.push((g.x, g.y))`, `(pen, g.y)` and `pen += 0.0` (the pen accumulation of `glyph_offsets`) | Equivalent with the embedded fonts: every cluster with more than one glyph in them is a base with zero-advance marks, and in visual order the base is last, so the pen is 0 for every glyph that has a position. Open point: a font with a multi-glyph cluster whose first glyph advances (a Latin base with a combining mark, in Inter) is not available. The rule is parley's `Glyph { x, y, advance }` as documented in `parley_engine` |
+| `glyphs[0] != 0` (skip a cluster of `.notdef`) | Equivalent with the embedded fonts: glyph 0 has no outline in the three subsets (the font header has no box for it). The test checks the box when the header has one |
+| Pruning guards of the balanced split: `.min(low + bound)`, `max(high - bound)`, `if high - low > bound`, strict or `-1.0` variants | They only discard states that `offer` would reject by itself, so the result is the same; they bound the time (20 000 lines, 5 columns: 606 ms before the interval search, 55 ms after, almost all of it the layout) |
+| `floor + 1` to `ceil` at the bottom of the fit grid; `last > 0` guard; midpoint rounding | See TX3 |
+
+### Benchmarks (release, `cargo bench -p gafira-text --bench text -- --warm-up-time 1 --measurement-time 5`, i7-12700H under load, not D-03 hardware)
+
+| Name | Mean | p50 | p99 over the 100 samples | Budget |
+|---|---|---|---|---|
+| `bench_text_type_5000` | 2.45 ms | 2.30 | 4.77 ms | p99 < 16 ms |
+| `bench_text_curve_100` | 0.094 ms | 0.091 | 0.136 ms | p99 < 16 ms |
+| `bench_text_columns_5000` | 2.77 ms | 2.39 | 4.98 ms | p99 < 16 ms |
+| `bench_text_fit_500` | 5.85 ms | 6.31 | 7.92 ms | p99 < 16 ms |
+
+Each sample is the mean of many iterations, so these p99 are a lower bound of the p99 of one call; the nightly job on the reference machine decides. `bench_text_curve_100` measures the whole `layout_curved` (shaping and curve), not only the curve. The columns bench was measured before the perf commit; the search it changed is under 1 ms at 5 000 characters.
+
+### Adversarial sweep (throwaway, release, not committed)
+
+Curve and outlines: 2 475 checks (9 texts: empty, `"\n"`, a space, one letter, Latin, 12 repeats of a sentence, Arabic with fatha, Latin + Arabic + emoji + an uncovered CJK, five lines with an empty one and different lengths; widths 0, 1, 60, 300, 16 000; five styles from 1 pt to 1 000 pt, 1 to 300 DPI, spacing -100 to 500, upper case, Justify, Right, Center, underline; ten bends: ±100, 99.99, 50, ±0.01, 1e-9, 0, 5e-324, 37.3). Checks: lines and clusters agree; all positions finite; radius equal to the longest line's `L/|theta|` less the baseline distance; every cluster on its circle; rotations per formula; chord of the reference line `2 R sin(theta/2)` ±0.01 where the radius is under 1e7; no arc on a straight line; outlines: one for each cluster, finite, inside two em of the cluster, deterministic, and a round 4 px stroke from `gafira-pathops` succeeds (sizes under 5 000 px). 0 problems. Fit and outlines: 180 `fit_box` calls with runs of 1, 500, 1 000 and 3 pt, boxes 0 to 16 000 px, ranges (1, 1000), (6, 400), (12, 12), DPI 1 to 300, underline, Justify, spacing 150: `Ok`, and the outlines of the result finite and within two em of the baseline. 0 problems.
+
+Performance of the columns search (found by the sweep, fixed in da3901d): 5 000 to 20 000 forced lines, uniform, random and periodic heights, 2, 5, 8 columns, auto, roomy and tight: at 20 000 uniform lines and 5 columns the split took 606 ms (it scanned every end at every node); it now takes ~0 ms. Same results (all 12 `columns.rs` tests, including the exhaustive comparison with every split).
+
+### Deviations and open points
+
+1. **API shape (not fixed by the spec).** `curve_layout(&TextLayout, width, bend) -> Vec<CurvedLine>` and `layout_curved(text, fonts, style, dpi, bounds, bend) -> CurvedText { layout, lines }`; `CurvedLine { arc: Option<Arc { radius, center, start, end }>, clusters: Vec<CurvedCluster { x, y, rotation }> }`, one `CurvedLine` per line and one `CurvedCluster` per cluster. `x, y` is the centre of the advance on the arc, `rotation` is in radians, clockwise positive with y down. `outline_text(&TextLayout, fonts) -> Vec<ClusterOutline { line, cluster, path: gafira_pathops::Path }>`, filled with the non-zero rule, in px from the top left of the box. A text on a curve is not outlined here (FD-44 (b) is out of the cut).
+2. **Spec gap, multi-line curves (FD-44 "Varias líneas ... concéntricos con el mismo θ", PROPUESTA). Decided, not blocked, for `specifier`.** "radio = L / |θ|" fixes the radius of one line; with several lines it cannot hold for each and also keep them concentric one baseline distance apart (two justified lines of the same `L` would lie on the same arc). Chosen: one centre; the longest line (the first of equals) has `R = L / |theta|`; every other line is one baseline distance nearer to the centre in an arch and further in a cup (`R_i = R - sigma (b_i - b)`); each line spans the same angle `theta`, so its glyphs are spaced by `R_i |theta| / L_i` of their natural advance (a shorter line is spread, an inner line of the same length is packed), and each cluster turns by its own line's `(s / L_i - 0.5) theta`, which is what (d) says. The longest was chosen over the first line so that no line is packed tighter than the reference when the first line is short. A line deep inside an arch can reach `R <= 0`, which mirrors it through the centre; the result is finite and I did not clamp it. The chord criterion (d) is exact for the reference line. Recommendation: state in 04 FD-44 which line sets the radius, and what happens when `R <= 0`.
+3. **The arc is centred in the width of the box**, as FD-44 says, so a curved line ignores the alignment of its layout (a Left line is centred on the arc).
+4. **A bend that is not 0 but gives `theta` = 0** (below about 1e-322) is straight, with no radius; a radius that overflows (bends of 1e-306 or less on long lines) is `Err(NonFinite { field: "output" })`. FD-44 (e) asks only for 0.01.
+5. **FD-43 (a).** "Un contorno de 4 px no cambia el layout" is proved as: the contours come from the layout and its fonts (`&TextLayout` in, no style or effect in), a 4 px stroke from `gafira-pathops` grows the ink by 2 px on every side, and the layout (and the cluster positions and advances) is equal before and after. The layout has no outline input to vary, so nothing else can be tested. Glyphs use the first face of a font file; a glyph with no outline gives no contour. `Cluster` gained `glyph_offsets` and `size_px` for this.
+6. **The `.notdef` of the three test subsets has no outline**, so the `.notdef` cluster has an empty path. A font whose glyph 0 is a box would draw it.
+7. **Subsets and bidi in the sweep** found no defect in TX3 or TX4 other than the performance of the balanced split.
