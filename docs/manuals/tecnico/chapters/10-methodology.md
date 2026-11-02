@@ -66,8 +66,6 @@ New work on a capability that an existing spec covers needs no folder under `spe
 | Full mode or L3 | Slice card or delta spec | `specs/changes/<change>/`, with `design.md` and an ADR when the decision is cross-cutting |
 | A folder already in progress | What it has | Keeps folder, card and design until archive |
 
-When the owner says `flow: legacy`, the change runs with its folder and no level, and the `Flow:` line ends in `| flow: legacy`. This path stays available until phase D of ADR 0011 closes.
-
 With no folder, the other artifacts move:
 
 - `tdd-apply` records its notes in the body of the last implementer commit of the delivery.
@@ -161,7 +159,7 @@ The coordinator writes one line in the header of `apply-progress.md` (inside the
 Flow: <mode> | level: L<n> | pack: <pack> | mutation: off|archive|delivery | tier: T<n> | verify: V<n> | decided-by: coordinator|owner | reason: <one line>
 ```
 
-Flow lines without `level` stay valid, and a legacy run ends the line in `| flow: legacy`. In the fast lane the line sits inside the Slice card. The `tier` field names the per-delivery tier with `mutation: delivery`, `T4` with `archive` and `T0` with `off`.
+Flow lines without `level` stay valid. In the fast lane the line sits inside the Slice card. The `tier` field names the per-delivery tier with `mutation: delivery`, `T4` with `archive` and `T0` with `off`.
 
 Each change of mode is appended as `Flow-change: light -> standard (trigger: ambiguity, after verify round 1)`. The coordinator reports the chosen mode to the owner in its first report.
 
@@ -331,7 +329,7 @@ RED (write the test, run it, see it fail), GREEN (minimal code), REFACTOR (tests
 | `specs/00-decisiones.md` | Owner decisions (D-nn). They override other specs and are not reopened without the owner |
 | `specs/NN-*.md` | The document in progress; completed ones move to `specs/archive/` with `git mv`, waiting ones sit in `specs/backlog/` |
 | `specs/capabilities/<capability>/spec.md` | Main specs per capability, the source of truth, filled by archive |
-| `specs/changes/<change>/` | Active change folder, only for L3, full mode, work no spec covers and `flow: legacy`: `proposal.md`, `design.md`, `tasks.md` (optional), `specs/<capability>/spec.md` (delta specs; none in a light or fast-lane run), `apply-progress.md` (starts with the Light spec or the Slice card), `verify-report.md`, `verification.json` |
+| `specs/changes/<change>/` | Active change folder, only for L3, full mode, work no spec covers and folders already in progress: `proposal.md`, `design.md`, `tasks.md` (optional), `specs/<capability>/spec.md` (delta specs; none in a light or fast-lane run), `apply-progress.md` (starts with the Light spec or the Slice card), `verify-report.md`, `verification.json` |
 | `specs/history/<date>-<change>/` | Closed change folders |
 | `.odd/state.json` | Outcome entries of active outcomes (see [ODD lite](#odd-lite)) |
 

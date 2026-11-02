@@ -6,7 +6,7 @@ Ciclo de vida: `backlog/` -> en curso (`specs/`) -> `archive/` (completado).
 
 El skill `product-specs` (`.agents/skills/product-specs/`) describe el ciclo de vida, el formato de los documentos y cómo derivar changes.
 
-Junto a los documentos: `capabilities/` guarda las specs principales (registro de los changes con delta specs), `changes/` las carpetas activas (L3, modo full, trabajo sin spec que lo cubra y `flow: legacy`) y `history/` los changes cerrados (`<fecha>-<change>/`).
+Junto a los documentos: `capabilities/` guarda las specs principales (registro de los changes con delta specs), `changes/` las carpetas activas (L3, modo full, trabajo sin spec que lo cubra y carpetas ya en curso) y `history/` los changes cerrados (`<fecha>-<change>/`).
 
 ## Estado
 
@@ -23,7 +23,7 @@ Junto a los documentos: `capabilities/` guarda las specs principales (registro d
 
 ## Cómo continuar el documento en curso
 
-Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabajo que una spec ya cubre no abre carpeta y sus criterios viven en la entrada del resultado en `.odd/state.json`, que cita los IDs del documento. L3, modo full, trabajo sin spec que lo cubra y `flow: legacy` usan una carpeta en `specs/changes/<change>/`. Los changes cerrados (`specs/history/`, `specs/capabilities/`) no se tocan.
+Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabajo que una spec ya cubre no abre carpeta y sus criterios viven en la entrada del resultado en `.odd/state.json`, que cita los IDs del documento. L3, modo full y trabajo sin spec que lo cubra usan una carpeta en `specs/changes/<change>/`; una carpeta ya en curso sigue ahí hasta su archivo. Los changes cerrados (`specs/history/`, `specs/capabilities/`) no se tocan.
 
 1. Arrancar `claude --agent coordinator` desde `develop` y pedir: "ejecuta specs/02-arquitectura-software.md".
 2. El coordinador termina antes cualquier carpeta en `specs/changes/` y cualquier resultado activo en `.odd/state.json`. Después calcula los IDs pendientes, los que ningún change ni test nombra todavía (con el prefijo del documento; la búsqueda deja fuera los documentos de producto, que nombran todos los IDs) y los coteja con "Detalle":

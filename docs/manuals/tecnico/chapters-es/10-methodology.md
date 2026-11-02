@@ -66,8 +66,6 @@ El trabajo nuevo sobre una capacidad que una spec existente cubre no necesita ca
 | Modo full o L3 | Slice card o delta spec | `specs/changes/<change>/`, con `design.md` y un ADR cuando la decisión es transversal |
 | Una carpeta ya en curso | Lo que tenga | Conserva carpeta, tarjeta y diseño hasta el archivado |
 
-Cuando el titular dice `flow: legacy`, el change se ejecuta con su carpeta y sin nivel, y la línea `Flow:` termina en `| flow: legacy`. Esta ruta sigue disponible hasta que se cierre la fase D del ADR 0011.
-
 Sin carpeta, los demás artefactos cambian de lugar:
 
 - `tdd-apply` registra sus notas en el cuerpo del último commit del implementador de la entrega.
@@ -161,7 +159,7 @@ El coordinador escribe una línea en la cabecera de `apply-progress.md` (dentro 
 Flow: <mode> | level: L<n> | pack: <pack> | mutation: off|archive|delivery | tier: T<n> | verify: V<n> | decided-by: coordinator|owner | reason: <one line>
 ```
 
-Las líneas `Flow:` sin `level` siguen siendo válidas, y una ejecución legacy termina la línea en `| flow: legacy`. En el carril rápido la línea va dentro de la Slice card. El campo `tier` indica el nivel por entrega con `mutation: delivery`, `T4` con `archive` y `T0` con `off`.
+Las líneas `Flow:` sin `level` siguen siendo válidas. En el carril rápido la línea va dentro de la Slice card. El campo `tier` indica el nivel por entrega con `mutation: delivery`, `T4` con `archive` y `T0` con `off`.
 
 Cada cambio de modo se añade como `Flow-change: light -> standard (trigger: ambiguity, after verify round 1)`. El coordinador comunica al titular el modo elegido en su primer informe.
 
@@ -331,7 +329,7 @@ RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REF
 | `specs/00-decisiones.md` | Decisiones del titular (D-nn). Prevalecen sobre las demás specs y no se reabren sin el titular |
 | `specs/NN-*.md` | El documento en curso; los completados pasan a `specs/archive/` con `git mv`, los que esperan están en `specs/backlog/` |
 | `specs/capabilities/<capability>/spec.md` | Specs principales por capacidad, la fuente de verdad, completadas al archivar |
-| `specs/changes/<change>/` | Carpeta de change activa, solo para L3, modo full, trabajo que ninguna spec cubre y `flow: legacy`: `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md`, `verification.json` |
+| `specs/changes/<change>/` | Carpeta de change activa, solo para L3, modo full, trabajo que ninguna spec cubre y carpetas ya en curso: `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md`, `verification.json` |
 | `specs/history/<date>-<change>/` | Carpetas de change cerradas |
 | `.odd/state.json` | Entradas de outcome de los outcomes activos (véase [ODD lite](#odd-lite)) |
 
