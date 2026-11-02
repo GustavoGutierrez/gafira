@@ -280,3 +280,51 @@ Other changes:
 Gates on the last code commit, each alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
 
 Measured: `git diff --shortstat 9df391b HEAD` before this section: 4 files changed, 337 insertions(+), 48 deletions(-); `params.rs` only comments (8 lines), the rest tests.
+
+## D2b (branch `feat/engine-contracts-d2b`, from `develop` 3cebb86, rules of the checker from de57b41)
+
+Commits: 75eaa41 `CancelToken`, `Cancelled`; 2a4cd74 `Progress`, `NoProgress`, `checkpoint`; dbd6997 `gafira_testkit::progress`. `cancel.rs` is in `SOURCES` of `contract_imports.rs` and `mod cancel;` is in `contract/mod.rs`. Gates on each commit, each alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+### RED per acceptance item (compile stub, then GREEN)
+
+| Item | RED (failing test, assertion) |
+|---|---|
+| `CancelToken` clone sees `cancel`; `next_generation`; stale `cancel`; twice | stub `is_cancelled` false, `cancel` no-op, `next_generation` a clone: 9 of 14 failed, e.g. `arq_112_cancel_is_seen_by_the_token_and_by_its_clones`, `arq_112_next_generation_cancels_older_tokens_and_is_live`, `arq_112_cancel_twice_does_not_skip_a_generation` |
+| `Send + Sync + Clone`; live token; independent tokens; `Cancelled` message | not RED: the stub already met them (`arq_112_token_is_send_sync_and_clone`, `arq_102_cancelled_is_the_job_key_with_no_arguments`) |
+| `checkpoint` | stub always reports, `Ok`: `arq_112_checkpoint_on_a_cancelled_token_is_err_and_reports_nothing`, `arq_112_a_cancel_inside_report_k_leaves_no_report_after_the_next_checkpoint`, `arq_112_no_progress_discards_reports_and_is_usable_as_dyn`; live-token and `Send + Sync` tests not RED |
+| `check_progress_contract` | stub `Ok(Ok(()))`: 18 of 20 failed, e.g. `arq_112_decreasing_is_strict`, `arq_112_step_too_large_is_strict_without_tolerance`, `arq_112_reports_after_cancel_allows_one_and_names_extra`; the conforming-fake and `ProgressLog` tests not RED |
+
+Two test bugs were fixed in GREEN, not code bugs: a conforming fake at `n = 2` was held to `max_step = 0.02`, and a step fixture of 0.5 against a limit of 0.25.
+
+### Hand mutants
+
+First run of mutants 2 (`store`) survived: the stale-cancel test cancelled the stale handle before the current one, so the later `fetch_max` restored the value. Fixed by cancelling the stale handle last (`arq_112_a_stale_cancel_leaves_the_new_generation_live`), then killed.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| 1 | `is_cancelled` with `<` | `arq_112_cancel_is_seen_by_the_token_and_by_its_clones` |
+| 1 | only the next generation counts as cancelled | `arq_112_next_generation_cancels_older_tokens_and_is_live` (two generations back) |
+| 1 | `is_cancelled` with `>` | **equivalent**: the counter is never below `issued` through the API |
+| 2 | `cancel` is `fetch_add(1)` / `store(issued + 1)` | `arq_112_a_stale_cancel_leaves_the_new_generation_live` |
+| 3 | `cancel` twice skips a generation | same test |
+| 4 | `next_generation` does not advance / new token starts cancelled | `arq_112_a_clone_of_a_new_generation_is_live`, `arq_112_next_generation_cancels_older_tokens_and_is_live` |
+| 5 | `Clone` resets `issued` to 0 / copies the atomic | `arq_112_a_clone_of_a_new_generation_is_live`, `arq_112_a_clone_shares_the_flag_in_both_directions` |
+| 6 | `checkpoint` reports before checking; reports on `Err`; ignores the token | `arq_112_checkpoint_on_a_cancelled_token_is_err_and_reports_nothing` |
+| 7 | `checkpoint` skips the report; reports 0.0 | `arq_112_checkpoint_on_a_live_token_reports_once_and_is_ok` |
+| 8 | `check` returns `Ok` when cancelled | `arq_112_cancel_is_seen_by_the_token_and_by_its_clones` |
+| 9 | per violation: each check removed (range, decreasing, early, step, not completed, not cancelled/output swapped, reports-after, fewer-than-k, early and scan in a cancelled run, step in a cancelled run); cancel points `1`, `n / 2`, `n - 1` shifted by one, `0` and `n` admitted, no dedup, one point dropped; double cancels at `k + 1`, `k - 1`, `> k`; `Err(E)` and baseline `Ok(true)` ignored | `arq_112_*` in `crates/gafira-testkit/tests/progress.rs`; each negative control has its fake |
+| 10 | `<=` for decreasing; early `1.0` allowed or `>= 0.99`; NaN passes; bounds `0`/`1` exclusive, loosened or tightened by one ulp; step `>=`, tolerance, first report against 0 | `arq_112_decreasing_is_strict`, `arq_112_out_of_range_includes_nan_and_is_inclusive_at_0_and_1`, `arq_112_one_before_the_last_report_is_early_completion`, `arq_112_step_too_large_is_strict_without_tolerance`, `arq_112_even_steps_are_measured_in_f32_with_no_tolerance` |
+| 11 | `Cancelled` key or argument | not applied: the test pins the full `Message` (`arq_102_cancelled_is_the_job_key_with_no_arguments`); a wrong key or an argument changes it |
+
+44 mutants of item 9 and 10 in all; every one killed.
+
+### Deviations and judgments
+
+- The `design.md` table has "Fewer than k reports" before the rule "the return value is judged before the log". Implemented: `Ok(false)` goes by the `Ok(false)` row (`NotCancelled` if the log ends at `1.0`, else `OutputAfterCancel`, even with fewer than `k` reports); `Ok(true)` checks fewer than `k` first. Tested for `Ok(true)` only; the `Ok(false)` plus fewer-than-`k` case is not pinned.
+- Same index, scan order is range, decreasing, early completion, step, as the table says; pinned by `arq_112_a_scan_fault_comes_before_not_completed_and_in_index_order`.
+- The test double `Probe` in `contract_checkpoint.rs` is local: `gafira-doc` tests cannot use `gafira_testkit::progress` for it without a second commit order; it is five lines.
+- Mutant 11 not applied by hand, see the table.
+
+### Measured lines
+
+`git diff --shortstat 3cebb86 HEAD` over code and tests (without specs): source 289 (`cancel.rs` 109, `progress.rs` 177, 3 lines of wiring), tests 756 (`contract_cancel.rs` 175, `contract_checkpoint.rs` 104, `progress.rs` 477). Total about 1 045 against a forecast of 270 (x1.4: 380). **Over ~700: the coordinator decides.** The excess is tests: one fake per violation and per cancel point.
