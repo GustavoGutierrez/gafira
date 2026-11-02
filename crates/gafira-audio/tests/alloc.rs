@@ -6,8 +6,8 @@
 use assert_no_alloc::AllocDisabler;
 use assert_no_alloc::assert_no_alloc;
 use gafira_audio::{
-    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, MixTrack, Pan, ParamSnapshot,
-    ProcessorChain, mix,
+    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, LoudnessNormalizer, MixTrack,
+    Pan, ParamSnapshot, ProcessorChain, mix,
 };
 
 #[cfg(debug_assertions)]
@@ -21,6 +21,7 @@ fn chain() -> ProcessorChain {
     let mut c = ProcessorChain::new();
     c.push(Box::new(Gain::new()));
     c.push(Box::new(Eq3Band::new()));
+    c.push(Box::new(LoudnessNormalizer::new()));
     c.push(Box::new(Pan::new()));
     c
 }
@@ -34,6 +35,7 @@ fn params(round: usize) -> ParamSnapshot {
     s.set("mid", 12.0 - 4.0 * r);
     s.set("high", if round.is_multiple_of(2) { 0.0 } else { 9.0 });
     s.set("duration", 0.01);
+    s.set("gain", 2.0 * r - 6.0);
     s
 }
 

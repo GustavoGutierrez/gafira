@@ -343,3 +343,38 @@ Decisions the specs leave open (unit 2):
 - The interpolation is a Kaiser-windowed sinc of 24 taps per phase (beta 8), each phase normalised to sum 1; not the 48-tap table of Annex 2, whose coefficients are not reproduced here. Its error on a sine crest is under 0.01 dB (the test asks for 0.01). The signal is zero outside its ends, so an abrupt start or end overshoots; that is part of the peak.
 - Above 48 kHz: x2 up to 96 kHz, none above (Annex 2). ARQ-127 pins only x4 at 48 kHz or less.
 - The "peak <= -1 dBTP" check after applying the gain allows 1e-3 dB, for the rounding of the `f32` samples.
+
+### Unit 3: `LoudnessNormalizer` (ARQ-127, SP19, ARQ-123, ARQ-23)
+
+RED, stub with the right API and an empty schema, and a `process` that does nothing (`tests/normalizer.rs`, plus the new `loudness_normalizer` entry in `params.rs`, `total.rs`, `refused.rs`, `empty.rs`, `alloc.rs`):
+
+| Criterion | Failing line |
+|---|---|
+| +16 dB with the Volume at 100 %, Volume untouched | `arq_127_a_gain_of_16_db_is_applied_with_the_volume_at_100_percent_untouched`: `[0.1, 0.1, 0.1, 0.1]` against x6.3096 |
+| the clip's Volume does not reach the normalizer | `arq_127_the_volume_of_the_clip_does_not_reach_the_normalizer`: `assertion failed: ... (x - want).abs() <= 1e-6` |
+| constant over the signal, across blocks | `arq_127_the_gain_is_constant_over_the_whole_signal_across_blocks`: `sample 1: 0.039983336 vs 0.017253572` |
+| a new gain from sample 0 of the next block | `arq_127_a_new_gain_applies_from_the_first_sample_*`: `assertion failed: ... <= 1e-6` |
+| non-finite gain ignored; huge gains finite | `arq_123_a_non_finite_gain_keeps_the_last_valid_one_*`: `assertion failed` |
+| SP19 row (id, range, default, animatable, label) | `p13_every_processor_schema_passes_validate_definition_and_matches_the_table`: `loudness_normalizer`, `left: 0 right: 1` |
+| `process` is total | `arq_123_a_non_finite_sample_counts_as_zero`: `loudness_normalizer`, `left: [NaN, inf, -inf] right: [0.0, 0.0, 0.0]`; the same family in `total.rs` (8 tests) |
+| last valid value survives `prepare` and `reset` | `arq_124_the_last_valid_value_survives_prepare` and `_reset`: `loudness_normalizer: the values must matter` |
+
+Passed from the start (the stub does nothing, which is right for these): `arq_123_an_empty_block_after_a_valid_prepare_*`, `arq_123_an_empty_block_after_a_prepare_with_a_zero_*` (`empty.rs`), `arq_23_sixteen_tracks_*` (`alloc.rs`). Proved by the mutants "reads the parameter on a refused block", "no accepts guard", "default gain 1 dB" and "an allocation in `process`" below.
+
+Hand mutants (applied, killed, reverted):
+
+| Mutant | Killed by |
+|---|---|
+| Volume changed by Nivelar: the normalizer also reads `volume` | `arq_127_the_volume_of_the_clip_does_not_reach_the_normalizer`, `arq_124_the_last_valid_value_survives_*` |
+| Gain limited to the 200 % of Volume (linear gain capped at 2.0) | `arq_127_a_gain_of_16_db_is_applied_with_the_volume_at_100_percent_untouched` |
+| Power law (`db / 10`) | the same, `arq_127_a_new_gain_applies_*` |
+| Gain not constant across the signal (a drift per sample) | `arq_127_the_gain_is_constant_over_the_whole_signal_across_blocks` and the other value tests |
+| Input not cleaned; no `accepts` guard; the parameter read on a refused block | `total.rs`; `refused.rs`, `total.rs`; `empty.rs` |
+| Default gain 1 dB; range +-200 dB; animatable | `arq_127_the_volume_of_the_clip_*`, `empty.rs`; `arq_123_a_non_finite_gain_*`, `p13_*`; `p13_*` |
+| `reset` forgets the gain | `arq_124_the_last_valid_value_survives_reset` |
+| An allocation in `process` | `arq_23_sixteen_tracks_*` (SIGABRT, the harness shows no `FAILED` line) |
+| Linear gain saturated at `f64::MAX` instead of `+inf` | survived, equivalent: `clean_output` already saturates a product and turns `0 x inf` into 0. The saturation was removed. |
+
+Decisions the specs leave open (unit 3):
+- `LoudnessNormalizer` is an `AudioProcessor` with `gain` in dB, range the whole `f64` (SP19), default 0, not animatable, label `audio.loudness_normalizer.gain`. It applies the gain from the first sample of the block that carries it, with no ramp: ARQ-124 puts the ramp on `Gain` only, and Nivelar sets one gain for the whole signal. Latency and tail are 0.
+- The engine feeds it `Leveling::gain_db` (`level` or `plan_leveling`); nothing in the crate writes a `ParamSnapshot`, so the Volume cannot change.

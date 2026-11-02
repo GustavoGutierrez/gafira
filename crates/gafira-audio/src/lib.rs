@@ -12,6 +12,7 @@ mod fade;
 mod gain;
 mod loudness;
 mod mix;
+mod normalizer;
 mod offset;
 mod pan;
 mod processor;
@@ -26,6 +27,7 @@ pub use loudness::{
     Leveling, integrated_from_blocks, integrated_loudness, level, plan_leveling, true_peak,
 };
 pub use mix::{MixTrack, mix};
+pub use normalizer::{LoudnessNormalizer, PARAM_GAIN};
 pub use offset::flicks_to_samples;
 pub use pan::{PARAM_PAN, Pan, crossfade_gains};
 pub use processor::AudioProcessor;

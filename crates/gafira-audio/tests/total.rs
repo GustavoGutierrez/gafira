@@ -1,8 +1,9 @@
 //! ARQ-123: `process` is total, for every processor of the crate.
 
 use gafira_audio::{
-    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, PARAM_DURATION, PARAM_HIGH,
-    PARAM_LOW, PARAM_MID, PARAM_PAN, PARAM_VOLUME, Pan, ParamSnapshot, ProcessorChain,
+    AudioBlock, AudioProcessor, Eq3Band, Fade, FadeDirection, Gain, LoudnessNormalizer,
+    PARAM_DURATION, PARAM_GAIN, PARAM_HIGH, PARAM_LOW, PARAM_MID, PARAM_PAN, PARAM_VOLUME, Pan,
+    ParamSnapshot, ProcessorChain,
 };
 
 type Maker = fn() -> Box<dyn AudioProcessor>;
@@ -14,10 +15,15 @@ fn makers() -> Vec<(&'static str, Maker)> {
         ("fade_out", || Box::new(Fade::new(FadeDirection::Out))),
         ("pan", || Box::new(Pan::new())),
         ("eq3band", || Box::new(Eq3Band::new())),
+        (
+            "loudness_normalizer",
+            || Box::new(LoudnessNormalizer::new()),
+        ),
         ("chain", || {
             let mut chain = ProcessorChain::new();
             chain.push(Box::new(Gain::new()));
             chain.push(Box::new(Eq3Band::new()));
+            chain.push(Box::new(LoudnessNormalizer::new()));
             chain.push(Box::new(Pan::new()));
             Box::new(chain)
         }),
@@ -33,6 +39,7 @@ fn params() -> ParamSnapshot {
     s.set(PARAM_LOW, 5.0);
     s.set(PARAM_MID, -7.0);
     s.set(PARAM_HIGH, 9.0);
+    s.set(PARAM_GAIN, 6.0);
     s
 }
 
