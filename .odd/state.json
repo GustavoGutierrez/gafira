@@ -1,4 +1,37 @@
 {
   "schema": 1,
-  "outcomes": []
+  "outcomes": [
+    {
+      "outcome_id": "golden-windows-paths",
+      "spec_id": "testkit-golden",
+      "status": "implementing",
+      "flow": "light | level: L1 | pack: bug fix | mutation: off | tier: T0 | verify: V2 | decided-by: coordinator | reason: local cause in the golden check candidate path, stated by its doc comment and ADR 0010; no critical code; no floor hit",
+      "scope": "check_in reports the candidate as <candidate_dir>/<name>.png with the directory as given, not its canonical form, so the two golden_check tests pass on x86_64-pc-windows-msvc",
+      "non_goals": [
+        "other Windows CI findings",
+        "changing the tests/golden rejection, which keeps using the resolved path"
+      ],
+      "criteria": [
+        {
+          "id": "AC1",
+          "text": "Given a candidate dir reached through a symlink, when a check fails with a usable actual, then the returned candidate path equals dir.join(name.png) and the file exists there",
+          "type": "unit",
+          "status": "pending"
+        },
+        {
+          "id": "AC2",
+          "text": "Given a dir that resolves into tests/golden, including through a symlink, when check runs, then it is still rejected with BadDir and nothing is written",
+          "type": "unit",
+          "status": "pending"
+        },
+        {
+          "id": "AC3",
+          "text": "Given the CI workflow dispatched on the fix, when the x86_64-pc-windows-msvc job runs, then its Test step passes",
+          "type": "command",
+          "status": "pending"
+        }
+      ],
+      "next_action": "tdd-apply on fix/golden-windows-paths"
+    }
+  ]
 }
