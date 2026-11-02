@@ -175,7 +175,7 @@ Fields are private, because length is an invariant (ARQ-117). The check uses `ch
 | Type | Home | Decision |
 |---|---|---|
 | `Cost` | `gafira-raster` | `Cost { pub work: u64 }`, abstract work units from pixels and kernel size. No time: ARQ-02 |
-| `EffectCx` | `gafira-raster` | `EffectCx { pub scale: f32 }`. No pool (L8). No token: `gafira-render` checks per tile (02:1145) |
+| `EffectCx` | `gafira-raster` | `EffectCx { pub scale: f32, pub tile: Option<TileWindow> }` (P16). No pool (L8). No token: `gafira-render` checks per tile (02:1145) |
 | `HandleReq` | `gafira-raster` | `Both`, `From`, `To`, `None` (02:736) |
 | `GpuEffect`, `GpuTransition`, `UniformBlock` | `gafira-raster` | Traits as in 02; `UniformBlock` is a `Vec<u8>` newtype. No implementation in this cut |
 | `AudioBlock<'_>` | `gafira-audio` | Planar: `channels: &mut [&mut [f32]]`, equal lengths |
@@ -513,6 +513,64 @@ No single step reaches 8 ms by this estimate; the table, the fast path and eithe
 
 **Limit:** `Transition` has no `roi`, and Slide, Wipe and Zoom read the whole image, so `run_cpu` takes whole frames, never tiles (SP23).
 
+### P16. Where a tile sits in its image
+
+- Context: W4 of `specs/changes/gafira-raster/verify-report.md`. `EffectCx` holds only `scale` (`crates/gafira-raster/src/view.rs:294`). `Texture::run_cpu` centres Viñeta on `src` (`effects/texture.rs:283`, `:301`), so a tile differs from the whole image by 47/255, against ARQ-120 "Ejecutar por tiles con `roi` coincide con la imagen entera". `run_cpu` has no equivalent input: `src` and `dst` have the same size (`check_io`, `effects/pointwise.rs:40`) and carry no position.
+- The tile shape is already fixed by the tests (`effects/shadow.rs:977`, `effects/texture.rs:765`): the caller cuts `roi(out)`, intersected with the image, runs on that crop, and keeps `out` from the result. So the position that matters is that of `src`, not of `out`.
+- Decision: `EffectCx` gains an optional window. `None` means `src` is the whole image.
+
+```rust
+/// Where `src` and `dst` sit in the full image, in the pixels of `src`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileWindow {
+    /// Full image width.
+    pub image_width: u32,
+    /// Full image height.
+    pub image_height: u32,
+    /// Column of the first pixel of `src` in the full image.
+    pub x: u32,
+    /// Row of the first pixel of `src` in the full image.
+    pub y: u32,
+}
+
+/// Context handed to an effect. Plain data: it does not validate.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EffectCx {
+    /// Logical-to-physical pixel ratio (ARQ-120).
+    pub scale: f32,
+    /// Set when `src` is a cut of a larger image. `None`: `src` is the whole image.
+    pub tile: Option<TileWindow>,
+}
+
+impl EffectCx {
+    /// A whole-image run.
+    #[must_use]
+    pub fn whole(scale: f32) -> Self {
+        Self { scale, tile: None }
+    }
+}
+```
+
+- Whole-image default: `EffectCx::whole(scale)`, with `tile: None`. It needs no image size, so `roi`, `cost_hint`, `FilterPreset::apply` and every transition call stay as they are. `Some` with `x = y = 0` and the size of `src` gives the same output as `None`, bit for bit.
+- `gafira-render`, per tile: `x`, `y` are the origin of the `roi` after intersecting it with the image, not of `out`. On a mip level or a reduced copy, image size and origin are in that level's pixels, the same as `src`.
+
+| Who | Must do |
+|---|---|
+| `Texture` | Read the window through one helper, `(x, y, image_w, image_h)`, which gives `(0, 0, w, h)` for `None`. Viñeta: `x_c = x + (i % w) + 0.5 - image_w / 2`, the same for `y`, `half_diagonal = hypot(image_w, image_h) / 2`, all in `f64`. `roi` does not change: Viñeta reads only its own pixel. Update the comment at `texture.rs:203` |
+| `Texture`, check | After `check_io`, before the empty-image return and before writing: `x + w <= image_w` and `y + h <= image_h`, in `u64`. Otherwise `EffectError::SizeMismatch { field: "cx.tile", expected: (image_w, image_h), actual: (x + w, y + h) }`, saturating to `u32`. This also keeps `half_diagonal` non-zero for a non-empty `src`, so the output stays finite (ARQ-110). Shared as `check_tile` in `effects/pointwise.rs` |
+| `Light`, `ColorAdjust`, `WhiteBalance`, `DetectedColors`, `ParallelShadow` | Nothing. They read no position: per-pixel closures ignore the index, and `ParallelShadow` already matches on crops. They ignore `tile` and do not check it |
+| `FilterPreset::apply` | Nothing. It hands the same `cx` to each step with same-size buffers (`effects/filter.rs:276`). `dst` is only written by the last step, so a `cx.tile` `Err` from `Texture` leaves it intact |
+| Any new effect | If the output depends on the position or the size of the image, it must use the helper and `check_tile`, and add a tile test with that parameter active |
+| `Transition` | Nothing. It takes whole frames, never tiles (P15 limit, SP23), and reads only `cx.scale`. It ignores `tile` and does not check it |
+
+- Doc comment of `Effect::run_cpu` (`effects/mod.rs:54`): replace "Runs on a whole image" with "Runs on `src`, a whole image or a tile described by `cx.tile`".
+- Tests for the fix: `arq_120_texture_tiles_with_roi_match_the_whole_image` gets a Viñeta case with a window, in `Rgba8` and `RgbaF32`, including a tile touching no corner and one touching the top-left; `Some` at origin equals `None`; a window that does not fit gives the `Err` with `dst` unchanged. The 41 `EffectCx { scale }` literals in `src` and `benches` become `EffectCx::whole(scale)`, and `lib.rs` exports `TileWindow`. Estimate: 40 lines of code, 80 of tests, plus the mechanical literals.
+- Alternatives considered:
+  - Four flat fields, 0 by default: a forgotten size reads as a 0x0 image and gives NaN in Viñeta; a whole-image run must know its size twice.
+  - State in 02 that Viñeta runs on whole images: Textura could not be tiled when Viñeta is active, and export uses parallel tiles (02 §6.7 row `bench_export_png_1080`). It also leaves the next position-dependent effect with the same gap.
+  - New arguments on `run_cpu`: changes the signature of 02 §4.4 and of every implementer for one reader. `EffectCx` is the context already passed for this.
+- Consequences: no implementers exist outside `gafira-raster`, so the change stays in one crate. No ADR: the contract is `EffectCx`, inside layer 2. `GpuEffect::bind` takes only `p`, so a tiled GPU Viñeta will need this window too; no `GpuEffect` exists in this cut, and it is left to the delivery that adds one. Spec changes: SP26.
+
 ## Critical code
 
 Hand mutants apply on all of these. T4 at close covers every crate in the table.
@@ -587,6 +645,7 @@ Open:
 | SP23 | 02 §4.17, §4.13 | Add `Transition` and `Effect` to the type-home table, and state that a transition runs on whole frames | Nothing |
 | SP24 | 02 §4.13, ARQ-118, 02 §7 | Record the persisted `transition_id` values, `handles` per transition, the two formats of "por formato", and `EffectError` and its keys (P15 items 4 to 7) | Nothing |
 | SP25 | ARQ-118 | After O5: the mixing space, premultiplied mixing, and the `Rgba8` rounding (P15 items 8, 9), with the mid `p` test values | Nothing |
+| SP26 | 02 §4.4, §4.13, §4.17 table, ARQ-120 | Record `EffectCx.tile` and `TileWindow` (P16): the window in 02 §4.4, its home in the §4.17 table, that a transition ignores it, and the ARQ-120 sentence and test with the `cx.tile` `Err` | Fix of W4 (`gafira-raster`) |
 
 Closed by `specifier`, all on `develop`:
 
