@@ -335,3 +335,68 @@ fn arq_102_the_new_errors_give_a_key_with_their_data() {
     );
     assert!(is_valid_key(range.to_message().key.0) && is_valid_key(count.to_message().key.0));
 }
+
+#[test]
+fn arq_110_a_rate_under_twice_the_shelf_frequency_is_an_error_not_a_garbage_measure() {
+    // The K weighting has a shelf at 1 682 Hz: a rate whose Nyquist is under it
+    // cannot carry that filter (it would be unstable and give any number).
+    for hz in [1, 8, 100, 1_000, 3_200] {
+        let one = vec![0.1_f32; hz as usize * 2 + 100];
+        assert_eq!(
+            measure(&[one], hz),
+            Err(AudioError::OutOfRange { field: "rate" }),
+            "{hz} Hz"
+        );
+    }
+    for hz in [3_600, 8_000, 44_100] {
+        let one = sine(hz, 440.0, 0.1, 2.0);
+        assert!(measure(&[one], hz).is_ok(), "{hz} Hz");
+    }
+}
+
+#[test]
+fn arq_126_the_first_and_the_last_block_of_a_signal_count_at_the_exact_boundaries() {
+    // 48 kHz: a block is 19 200 frames and the hop 4 800. A burst of 100 ms
+    // placed in the last hop is seen only by the last block, which exists from
+    // 24 000 frames on; one frame less and there is just the first block, which
+    // has no burst. The same burst in the first hop is seen by the first block.
+    let hop = 4_800;
+    let burst = |from: usize, to: usize, n: usize| -> Vec<f32> {
+        (0..n)
+            .map(|i| {
+                if (from..to).contains(&i) {
+                    0.5 * (i as f32 * 0.3).sin()
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    };
+    let n = 19_200 + hop;
+    assert_eq!(
+        measure(&[burst(n - hop, n, n)], 48_000),
+        Ok(Some(lufs(&[burst(n - hop, n, n)], 48_000)))
+    );
+    assert!(lufs(&[burst(n - hop, n, n)], 48_000) > -70.0);
+    assert_eq!(measure(&[burst(n - hop, n - 1, n - 1)], 48_000), Ok(None));
+    assert!(
+        measure(&[burst(0, hop, 19_200)], 48_000)
+            .expect("ok")
+            .is_some()
+    );
+    assert!(
+        measure(&[burst(0, hop, 19_200 - 1)], 48_000)
+            .expect("ok")
+            .is_none()
+    );
+    // The burst in the first hop is also in the second block's range only if
+    // that block starts before it ends: 24 000 frames hold two blocks, the
+    // second sees nothing of a burst in [0, hop).
+    let two = measure(&[burst(0, hop, n)], 48_000)
+        .expect("ok")
+        .expect("a measure");
+    let one = measure(&[burst(0, hop, 19_200)], 48_000)
+        .expect("ok")
+        .expect("a measure");
+    assert_close(two, one, 1e-9);
+}

@@ -403,7 +403,7 @@ RED, against a compiling stub (`resampled_len -> Ok(0)`, `Resampler::new -> Ok`,
 | impulse at the declared latency +-1 | `arq_128_an_impulse_comes_out_*`: panic at the first row |
 | constant ratio over 20 s | `arq_128_the_ratio_is_constant_over_a_long_run`: panic |
 
-Passed from the start (the stub answer, empty, is right for them), each proved by a mutant below: `arq_128_an_empty_input_*`, `arq_128_the_latency_is_declared_*`, `arq_128_the_output_has_the_length_of_the_formula_*` (an empty stub equals itself only for empty; it failed on the first non-empty size in the real run of the stub? it passed: the stub gave 0 for n in the table, which `len` also gave through the stub), `arq_128_chunks_of_any_size_*`, `arq_128_a_resampler_used_twice_*`, `arq_111_resampling_twice_*`, `arq_110_a_finite_input_*`.
+Passed from the start (the stub answer, empty, is right for them), each proved by a mutant below: `arq_128_an_empty_input_*`, `arq_128_the_latency_is_declared_*`, `arq_128_the_output_has_the_length_of_the_formula_*` (the stub gave 0 on both sides of the comparison), `arq_128_chunks_of_any_size_*`, `arq_128_a_resampler_used_twice_*`, `arq_111_resampling_twice_*`, `arq_110_a_finite_input_*`.
 
 One test was added after the implementation, as the fix for a surviving mutant: `arq_128_the_images_of_an_upsampled_tone_are_down_at_least_80_db` (the mutant "cutoff not limited by the lower rate when upsampling" survived the downsampling stopband test).
 
@@ -434,3 +434,24 @@ Decisions the specs leave open (AU4):
 - Filter: Kaiser-windowed sinc, 60 lobes of half-length, beta 9.6, cutoff at 0.95 of the lower Nyquist (the middle of the 0.9 to 1.0 transition), kernel read from a 2 048-per-lobe table by linear interpolation. Measured: passband within 0.1 dB to 0.9, stopband under -80 dB from 1.0, SNR over 80 dB.
 - `resample` reserves the output before it works (`try_reserve_exact`), so a length that cannot be allocated is `OutOfRange` naming `samples`, not an abort. A length over `2^63` is the same error. Output samples go through `clean_output` (finite, no subnormal).
 - The signal is zero outside its ends, so the edges ring like a filtered step; the SNR tests leave out 4 000 frames at each end.
+
+### Adversarial sweep of AU3 and AU4 (throwaway test, not committed; run with `cargo test --release`)
+
+About 48 million checks in 8 sweeps, 1 minute 50 s:
+
+- Length formula against exact integer arithmetic: all 540 x 540 pairs of the `SampleRate` values (the divisors of 705 600 000), 16 speeds (0.1 to 10), 10 input sizes (0 to 1 000 003). The exact value uses the speed as the `f64` it is (mantissa and exponent, in `u128`). 46 656 000 checks, 0 differences outside a tie: 294 551 differ only where the exact value lies within 4e-16 (relative) of a half, which is the case ARQ-128 gives to the `f64` evaluation ("normativa también en los empates").
+- Loudness at every rate from 4 kHz to 400 kHz that is a multiple of 10 Hz (all 1, 2 and 6 channel layouts), with lengths `block - 1`, `block`, `block + 1`, `block + hop - 1`, `block + hop` and `3 x block`: Some or None as the 400 ms rule says, always finite: 0 findings. 1 kHz at -23 LUFS stereo reads -23 within 0.1 dB at 44.1, 48, 88.2, 96, 176.4 and 192 kHz; across the 8 kHz to 400 kHz rates the worst deviation is 0.05 dB (12.8 kHz).
+- Hostile loudness input: `f32::MAX` on two channels (747 LUFS, finite), a subnormal signal (no measure), an LFE-only 6 channel signal (no measure), one sample (no measure), a Nyquist square wave, DC, `level` with the target `f64::MAX` (finite).
+- True peak at 8, 44.1, 48, 96, 192 kHz and 7.056 MHz on sines at a quarter of the rate (phases 0.1 to 2 rad, ends faded): -0.005 to -0.14 dB at 48 kHz or less (x4), but -0.56 dB at 96 kHz and -1.5 dB at 192 kHz, where Annex 2 uses x2 or nothing. Not changed: ARQ-127 pins x4 at 48 kHz or less and a tone at a quarter of 192 kHz is 48 kHz.
+- Resampler over 22 rates (1 Hz to 705.6 MHz) squared and 4 speeds (0.1, 1, 1.7, 10): 1 431 pairs run (the ones whose output is under 3 million frames), each checked for the length, finite output and a gain within 0.1 dB for a tone at 0.3 of the lower Nyquist: 0 problems. Inputs of 0, 1, 2, 3, 63, 64, 65, 127 and 1 000 frames over 4 x 4 rates x 3 speeds: the length of the formula, and 1-frame chunks equal the whole signal byte for byte. Cutting the input at any point never emits more than the final length.
+
+Found and fixed in the same pass (RED first, `tests/loudness.rs`):
+
+- A sample rate whose Nyquist is under the K-weighting shelf (3 364 Hz or less) gave garbage: 1 Hz measured 42.5 LUFS on a 0.1 constant, 8 and 100 Hz gave `Err(NonFinite { field: "energies" })`, because the bilinear design takes `tan(pi f0 / fs)` past its pole and the filter is unstable. RED: `arq_110_a_rate_under_twice_the_shelf_frequency_is_an_error_not_a_garbage_measure`: `1 Hz  left: Ok(Some(42.52187867586579)) right: Err(OutOfRange { field: "rate" })`. Now `integrated_loudness` (and so `level`) gives `OutOfRange` naming `rate` for 3 364 Hz or less. ARQ-126 does not name these rates; the sweep of the 3.6 kHz to 400 kHz rates stays within the spec's 0.1 dB.
+- Pinned, passed from the start, proved by mutants: `arq_126_the_first_and_the_last_block_of_a_signal_count_at_the_exact_boundaries` (a 100 ms burst in the last hop is seen only from 24 000 frames; one frame less and there is no measure; the first block counts). Mutants: last block dropped, first block dropped, rate guard removed, rate guard at 4x and at 1x the shelf: all killed. "Partial last chunk counted" is equivalent (the window count is empty anyway).
+
+Not a fault, recorded: a rate under 8 kHz is accepted but K weighting there departs from 48 kHz above a few kHz (ARQ-126 promises +-0.1 dB up to 16 kHz only where 16 kHz is under the Nyquist frequency).
+
+### Size
+
+`git diff --shortstat 040ba8e` (merge of AU2) on the whole delivery, tests and apply-progress included: see the result of the run.

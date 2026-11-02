@@ -14,6 +14,8 @@ const ABSOLUTE_GATE: f64 = -70.0;
 /// The relative gate sits this many LU under the mean of the blocks that
 /// passed the absolute gate.
 const RELATIVE_GATE: f64 = -10.0;
+/// Centre of the head-related shelf of the K weighting, in Hz.
+const SHELF_HZ: f64 = 1_681.974_450_955_533;
 /// Weight of the surround channels (Ls, Rs).
 const SURROUND_WEIGHT: f64 = 1.41;
 
@@ -40,11 +42,7 @@ impl Biquad {
 /// own set.
 fn k_weighting(hz: u32) -> [Biquad; 2] {
     let fs = f64::from(hz);
-    let (f0, gain_db, q) = (
-        1_681.974_450_955_533,
-        3.999_843_853_973_347,
-        0.707_175_236_955_419_6,
-    );
+    let (f0, gain_db, q) = (SHELF_HZ, 3.999_843_853_973_347, 0.707_175_236_955_419_6);
     let k = (std::f64::consts::PI * f0 / fs).tan();
     let vh = 10_f64.powf(gain_db / 20.0);
     let vb = vh.powf(0.499_666_774_154_541_6);
@@ -109,12 +107,18 @@ fn loudness_of(energy: f64) -> f64 {
 ///
 /// [`AudioError::ChannelCount`] for a count other than 1, 2 or 6,
 /// [`AudioError::OutOfRange`] naming `channels` when their lengths differ and
+/// naming `rate` when the rate is 3 364 Hz or less, under twice the shelf of
+/// the K weighting,
 /// [`AudioError::NonFinite`] naming `samples` for NaN or `±∞`.
 pub fn integrated_loudness(
     channels: &[&[f32]],
     rate: SampleRate,
 ) -> Result<Option<f64>, AudioError> {
     let frames = check(channels)?;
+    if f64::from(rate.hz()) <= 2.0 * SHELF_HZ {
+        // The shelf would sit over the Nyquist frequency: the design is unstable.
+        return Err(AudioError::OutOfRange { field: "rate" });
+    }
     let weight = weights(channels.len())?;
     let step = ((u64::from(rate.hz()) + 5) / 10).max(1) as usize;
     let chunks = frames / step;
