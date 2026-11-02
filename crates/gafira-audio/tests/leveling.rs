@@ -1,7 +1,10 @@
 //! ARQ-127, FV-10 (b), FV-20 (d): true peak and the Nivelar gain. ARQ-110 and
 //! ARQ-111 for both.
 
-use gafira_audio::{AudioError, integrated_loudness, level, plan_leveling, true_peak};
+use gafira_audio::{
+    AudioBlock, AudioError, AudioProcessor, LoudnessNormalizer, PARAM_GAIN, ParamSnapshot,
+    integrated_loudness, level, plan_leveling, true_peak,
+};
 use gafira_time::SampleRate;
 
 fn rate(hz: u32) -> SampleRate {
@@ -38,12 +41,22 @@ fn plan(chans: &[Vec<f32>], hz: u32, target: f64) -> gafira_audio::Leveling {
     level(&slices, rate(hz), target).expect("a valid call")
 }
 
-fn scaled(chans: &[Vec<f32>], gain_db: f64) -> Vec<Vec<f32>> {
-    let g = dbfs(gain_db);
-    chans
-        .iter()
-        .map(|c| c.iter().map(|&x| (f64::from(x) * g) as f32).collect())
-        .collect()
+/// The signal through `LoudnessNormalizer` with `gain_db`, in blocks of 512
+/// frames (the last one shorter), as the engine would run it.
+fn applied(chans: &[Vec<f32>], hz: u32, gain_db: f64) -> Vec<Vec<f32>> {
+    const BLOCK: usize = 512;
+    let mut normalizer = LoudnessNormalizer::new();
+    normalizer.prepare(hz, BLOCK, chans.len() as u16);
+    let mut params = ParamSnapshot::new();
+    params.set(PARAM_GAIN, gain_db);
+    let mut out = chans.to_vec();
+    let frames = out[0].len();
+    for from in (0..frames).step_by(BLOCK) {
+        let to = (from + BLOCK).min(frames);
+        let mut slices: Vec<&mut [f32]> = out.iter_mut().map(|c| &mut c[from..to]).collect();
+        normalizer.process(&mut AudioBlock::new(&mut slices), &params);
+    }
+    out
 }
 
 #[track_caller]
@@ -55,13 +68,14 @@ fn assert_close(got: f64, want: f64, tol: f64) {
 
 #[test]
 fn arq_127_a_sine_at_a_quarter_of_the_rate_between_its_samples_peaks_at_full_scale() {
-    // fs/4 sines whose crest falls half, a quarter and three quarters of a
+    // Also at 96 and 192 kHz, where the factor is 4 too (the chosen reading of
+    // Annex 2, which asks less). fs/4 sines whose crest falls half, a quarter and three quarters of a
     // sample after a sample (phases 45, 67.5 and 22.5 degrees): the samples
     // reach 0.7071, 0.9239 and 0.9239 of the crest, which is 1.0. x2 would see
     // only the first, x4 sees the three. The ends fade over 2 000 samples,
     // because a signal that starts abruptly really overshoots there (0.1 dB).
     use std::f64::consts::PI;
-    for hz in [8_000, 32_000, 44_100, 48_000] {
+    for hz in [8_000, 32_000, 44_100, 48_000, 96_000, 192_000] {
         for phase in [PI / 4.0, 3.0 * PI / 8.0, PI / 8.0] {
             let n = hz as usize;
             let one: Vec<f32> = (0..n)
@@ -235,7 +249,7 @@ fn fv_10_b_a_signal_at_minus_20_lufs_with_headroom_levels_to_minus_14() {
     let s = stereo_sine(48_000, -20.0, 10.0);
     let p = plan(&s, 48_000, -14.0);
     assert!(p.reached);
-    let out = lufs(&scaled(&s, p.gain_db), 48_000).expect("a measure");
+    let out = lufs(&applied(&s, 48_000, p.gain_db), 48_000).expect("a measure");
     assert_close(out, -14.0, 0.5);
 }
 
@@ -247,9 +261,8 @@ fn fv_10_b_a_quiet_signal_with_a_high_peak_stops_at_minus_1_dbtp_and_says_so() {
     let p = plan(&s, 48_000, -14.0);
     assert!(!p.reached);
     assert_close(p.gain_db, 2.0, 0.01);
-    let out = scaled(&s, p.gain_db);
-    // 1e-3 dB for the rounding of the f32 samples.
-    assert!(db(peak(&out, 48_000).expect("ok")) <= -1.0 + 1e-3);
+    let out = applied(&s, 48_000, p.gain_db);
+    assert!(db(peak(&out, 48_000).expect("ok")) <= -1.0);
     assert_close(lufs(&out, 48_000).expect("a measure"), -28.0, 0.5);
 }
 
@@ -284,4 +297,40 @@ fn arq_110_level_checks_the_target_and_the_signal() {
 fn arq_111_level_gives_the_same_bytes_twice() {
     let s = stereo_sine(44_100, -26.0, 3.0);
     assert_eq!(plan(&s, 44_100, -16.0), plan(&s, 44_100, -16.0));
+}
+
+/// Filtered noise: a one-pole low pass over a xorshift sequence, a different
+/// colour and level for every `seed`.
+fn noise(seed: u64, frames: usize, amp: f64, pole: f64) -> Vec<f32> {
+    let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let mut low = 0.0_f64;
+    (0..frames)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let white = (state >> 11) as f64 / (1_u64 << 53) as f64 * 2.0 - 1.0;
+            low = pole * low + (1.0 - pole) * white;
+            (amp * low) as f32
+        })
+        .collect()
+}
+
+#[test]
+fn arq_127_the_leveled_peak_is_at_most_minus_1_dbtp_with_no_tolerance() {
+    // 120 stereo signals; the target is far above every signal, so the ceiling
+    // is the binding side. Gain from `level`, applied by `LoudnessNormalizer`,
+    // peak measured again.
+    for seed in 1..=120_u64 {
+        let amp = 0.2 + 0.7 * (seed % 7) as f64 / 7.0;
+        let pole = 0.5 + 0.45 * (seed % 5) as f64 / 5.0;
+        let s = vec![
+            noise(seed, 24_000, amp, pole),
+            noise(seed + 1_000, 24_000, amp * 0.6, pole),
+        ];
+        let p = plan(&s, 48_000, 0.0);
+        assert!(!p.reached, "seed {seed}: the ceiling binds");
+        let got = db(peak(&applied(&s, 48_000, p.gain_db), 48_000).expect("ok"));
+        assert!(got <= -1.0, "seed {seed}: {got} dBTP");
+    }
 }

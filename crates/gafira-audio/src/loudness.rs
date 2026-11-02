@@ -263,6 +263,9 @@ const PEAK_HALF_TAPS: usize = 12;
 const PEAK_KAISER_BETA: f64 = 8.0;
 /// The ceiling Nivelar keeps the true peak under, in dBTP.
 const PEAK_CEILING_DBTP: f64 = -1.0;
+/// What [`level`] keeps under the ceiling, in dB, for the rounding of the
+/// `f32` samples.
+const CEILING_MARGIN_DB: f64 = 1e-5;
 
 /// Windowed-sinc taps that read the signal `phase / factor` of a sample after
 /// `x[n]`, for `x[n - HALF + 1 ..= n + HALF]`; their sum is 1.
@@ -285,19 +288,17 @@ fn interpolation_taps(phase: usize, factor: usize) -> Vec<f64> {
     taps
 }
 
-/// Oversampling factor of BS.1770-4 Annex 2: 4 up to 48 kHz, 2 up to 96 kHz,
-/// none above.
+/// Oversampling factor of the true peak: 4 up to 192 kHz, none above. BS.1770-4
+/// Annex 2 asks 4 at 48 kHz; the same factor at 96 and 192 kHz reads the peak
+/// of a tone near a quarter of the rate that 2 or 1 would miss by 0.5 dB or
+/// more.
 fn oversampling(hz: u32) -> usize {
-    match hz {
-        0..=48_000 => 4,
-        48_001..=96_000 => 2,
-        _ => 1,
-    }
+    if hz <= 192_000 { 4 } else { 1 }
 }
 
 /// True peak of the whole signal, linear, over all channels (LFE included):
 /// the largest absolute value of the signal oversampled as BS.1770-4 Annex 2
-/// asks: x4 up to 48 kHz (the rule of ARQ-127), x2 up to 96 kHz and none
+/// asks: x4 up to 48 kHz (the rule of ARQ-127), and also up to 192 kHz; none
 /// above. The signal is taken as zero outside its ends.
 ///
 /// # Errors
@@ -378,7 +379,9 @@ pub fn plan_leveling(
     })
 }
 
-/// Measures the signal and plans its Nivelar gain.
+/// Measures the signal and plans its Nivelar gain. Unlike [`plan_leveling`],
+/// the gain stays 1e-5 dB under the ceiling, so that the rounded `f32` output
+/// is at most −1 dBTP; `reached` is still decided on the exact ceiling.
 ///
 /// # Errors
 ///
@@ -392,5 +395,11 @@ pub fn level(
     let measured = integrated_loudness(channels, rate)?;
     let peak = true_peak(channels, rate)?;
     let peak_db = (peak > 0.0).then(|| 20.0 * peak.log10());
-    plan_leveling(target_lufs, measured, peak_db)
+    let mut plan = plan_leveling(target_lufs, measured, peak_db)?;
+    if let Some(p) = peak_db {
+        // The gain is exact in f64 and each output rounds to f32, which can
+        // leave the peak a hair over the ceiling: keep the gain under it.
+        plan.gain_db = plan.gain_db.min(PEAK_CEILING_DBTP - p - CEILING_MARGIN_DB);
+    }
+    Ok(plan)
 }
