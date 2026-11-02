@@ -4,9 +4,12 @@
 //! cancellation token (ARQ-112, D-43). They take planar slices: 1, 2 or 6
 //! channels, the six in the order L, R, C, LFE, Ls, Rs.
 
+use std::sync::OnceLock;
+
 use gafira_time::SampleRate;
 
 use crate::AudioError;
+use crate::dsp::bessel_i0;
 use crate::error::finite;
 
 /// Absolute gate of BS.1770-4, in LUFS. A block must be louder than this.
@@ -34,6 +37,68 @@ impl Biquad {
         self.z[1] = self.b[2] * x - self.a[1] * y;
         y
     }
+}
+
+/// The K weighting is always run at this rate or above, so that the bilinear
+/// transform keeps the shelf close to its analogue shape (ARQ-126).
+const WEIGHTING_MIN_HZ: u32 = 32_000;
+/// Half length, in input samples, of the interpolation filter that brings a
+/// lower rate up to [`WEIGHTING_MIN_HZ`]: 216 taps per output sample.
+const UP_HALF: usize = 108;
+/// Kaiser parameter of that filter (about 70 dB of stopband).
+const UP_BETA: f64 = 7.0;
+/// Entries per input sample of its kernel table, read by linear interpolation.
+const UP_RESOLUTION: usize = 1_024;
+
+/// Integer factor that takes `hz` to [`WEIGHTING_MIN_HZ`] or above.
+fn upsampling(hz: u32) -> usize {
+    WEIGHTING_MIN_HZ.div_ceil(hz).max(1) as usize
+}
+
+/// `sinc(t) × kaiser(t / UP_HALF)` at `k / UP_RESOLUTION`; it is even and
+/// zero past `UP_HALF`. Cuts at half the input rate.
+fn up_kernel() -> &'static [f64] {
+    static TABLE: OnceLock<Vec<f64>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let norm = bessel_i0(UP_BETA);
+        (0..=UP_HALF * UP_RESOLUTION + 1)
+            .map(|k| {
+                let t = k as f64 / UP_RESOLUTION as f64;
+                let u = (t / UP_HALF as f64).min(1.0);
+                let sinc = if k == 0 {
+                    1.0
+                } else {
+                    (std::f64::consts::PI * t).sin() / (std::f64::consts::PI * t)
+                };
+                sinc * bessel_i0(UP_BETA * (1.0 - u * u).sqrt()) / norm
+            })
+            .collect()
+    })
+}
+
+/// The signal `phase / factor` of a sample after `x[n]`, interpolated from
+/// the samples around it (zero outside the signal).
+fn upsampled(samples: &[f32], n: usize, phase: usize, factor: usize) -> f64 {
+    if phase == 0 {
+        return f64::from(samples[n]);
+    }
+    let table = up_kernel();
+    let frac = phase as f64 / factor as f64;
+    let mut sum = 0.0;
+    for j in 0..2 * UP_HALF {
+        // x[n + j + 1 - HALF], zero outside the signal.
+        let Some(i) = (n + j + 1)
+            .checked_sub(UP_HALF)
+            .filter(|&i| i < samples.len())
+        else {
+            continue;
+        };
+        let at = (frac + (UP_HALF - 1) as f64 - j as f64).abs() * UP_RESOLUTION as f64;
+        let k = at as usize;
+        let w = at - k as f64;
+        sum += f64::from(samples[i]) * (table[k] * (1.0 - w) + table[k + 1] * w);
+    }
+    sum
 }
 
 /// The two stages of the K weighting at `hz`: the head-related high shelf and
@@ -102,43 +167,45 @@ fn loudness_of(energy: f64) -> f64 {
 /// Blocks last 400 ms and start every 100 ms (75 % overlap); a block counts
 /// only when it fits in the signal. A rate whose 100 ms is not a whole number
 /// of samples rounds it to the nearest sample, and the block is 4 of them.
+/// Every `SampleRate` is accepted. Under 32 kHz the signal is interpolated up
+/// by an integer factor to 32 kHz or more before the K weighting, so the
+/// weighting follows the 48 kHz one at every rate; the blocks stay of 400 ms
+/// of the original signal.
 ///
 /// # Errors
 ///
 /// [`AudioError::ChannelCount`] for a count other than 1, 2 or 6,
 /// [`AudioError::OutOfRange`] naming `channels` when their lengths differ and
-/// naming `rate` when the rate is 3 364 Hz or less, under twice the shelf of
-/// the K weighting,
 /// [`AudioError::NonFinite`] naming `samples` for NaN or `±∞`.
 pub fn integrated_loudness(
     channels: &[&[f32]],
     rate: SampleRate,
 ) -> Result<Option<f64>, AudioError> {
     let frames = check(channels)?;
-    if f64::from(rate.hz()) <= 2.0 * SHELF_HZ {
-        // The shelf would sit over the Nyquist frequency: the design is unstable.
-        return Err(AudioError::OutOfRange { field: "rate" });
-    }
     let weight = weights(channels.len())?;
+    let factor = upsampling(rate.hz());
     let step = ((u64::from(rate.hz()) + 5) / 10).max(1) as usize;
     let chunks = frames / step;
     if chunks < 4 {
         return Ok(None);
     }
-    // Weighted energy of each 100 ms chunk; a block is 4 chunks.
+    // Weighted energy of each 100 ms chunk (of the interpolated signal); a
+    // block is 4 chunks.
     let mut chunk_energy = vec![0.0_f64; chunks];
     for (samples, &w) in channels.iter().zip(weight) {
         if w == 0.0 {
             continue;
         }
-        let mut filter = k_weighting(rate.hz());
-        for (i, &x) in samples[..chunks * step].iter().enumerate() {
-            let shelved = filter[0].step(f64::from(x));
-            let y = filter[1].step(shelved);
-            chunk_energy[i / step] += w * y * y;
+        let mut filter = k_weighting(rate.hz() * factor as u32);
+        for n in 0..chunks * step {
+            for phase in 0..factor {
+                let shelved = filter[0].step(upsampled(samples, n, phase, factor));
+                let y = filter[1].step(shelved);
+                chunk_energy[n / step] += w * y * y;
+            }
         }
     }
-    let block = (4 * step) as f64;
+    let block = (4 * step * factor) as f64;
     let blocks: Vec<f64> = chunk_energy
         .windows(4)
         .map(|w| (w[0] + w[1] + w[2] + w[3]) / block)
@@ -154,7 +221,8 @@ pub fn integrated_loudness(
 ///
 /// # Errors
 ///
-/// [`AudioError::NonFinite`] naming `energies` for NaN or `±∞`, and
+/// [`AudioError::NonFinite`] naming `energies` for NaN or `±∞`, or when their
+/// sum overflows, and
 /// [`AudioError::OutOfRange`] naming `energies` for a negative one.
 pub fn integrated_from_blocks(energies: &[f64]) -> Result<Option<f64>, AudioError> {
     for &e in energies {
@@ -163,11 +231,11 @@ pub fn integrated_from_blocks(energies: &[f64]) -> Result<Option<f64>, AudioErro
         }
     }
     let passed = louder_than(energies, ABSOLUTE_GATE);
-    let Some(mean) = mean(&passed) else {
+    let Some(mean) = mean(&passed)? else {
         return Ok(None);
     };
     let kept = louder_than(&passed, loudness_of(mean) + RELATIVE_GATE);
-    Ok(self::mean(&kept).map(loudness_of))
+    Ok(self::mean(&kept)?.map(loudness_of))
 }
 
 /// The energies whose loudness is above `gate`.
@@ -179,9 +247,14 @@ fn louder_than(energies: &[f64], gate: f64) -> Vec<f64> {
         .collect()
 }
 
-/// Mean of the energies, if there are any.
-fn mean(energies: &[f64]) -> Option<f64> {
-    (!energies.is_empty()).then(|| energies.iter().sum::<f64>() / energies.len() as f64)
+/// Mean of the energies, if there are any. A sum that overflows is an error,
+/// not a mean that would gate everything out (ARQ-110).
+fn mean(energies: &[f64]) -> Result<Option<f64>, AudioError> {
+    if energies.is_empty() {
+        return Ok(None);
+    }
+    let sum = finite("energies", energies.iter().sum::<f64>())?;
+    Ok(Some(sum / energies.len() as f64))
 }
 
 /// Half the taps of one interpolation phase (24 taps per phase).
@@ -190,21 +263,6 @@ const PEAK_HALF_TAPS: usize = 12;
 const PEAK_KAISER_BETA: f64 = 8.0;
 /// The ceiling Nivelar keeps the true peak under, in dBTP.
 const PEAK_CEILING_DBTP: f64 = -1.0;
-
-/// Modified Bessel function of the first kind, order 0.
-fn bessel_i0(x: f64) -> f64 {
-    let (mut term, mut sum) = (1.0_f64, 1.0_f64);
-    let quarter = x * x / 4.0;
-    for k in 1..60 {
-        let k = f64::from(k);
-        term *= quarter / (k * k);
-        sum += term;
-        if term < sum * 1e-17 {
-            break;
-        }
-    }
-    sum
-}
 
 /// Windowed-sinc taps that read the signal `phase / factor` of a sample after
 /// `x[n]`, for `x[n - HALF + 1 ..= n + HALF]`; their sum is 1.

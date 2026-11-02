@@ -75,27 +75,25 @@ fn arq_126_ebu_3341_case_3_quiet_edges_around_a_loud_minute_are_gated_out() {
 
 #[test]
 fn arq_126_ebu_3341_case_4_the_absolute_gate_drops_the_very_quiet_pieces() {
+    // Published: -72, -36, -23, -36, -72 LUFS for 10, 10, 60, 10, 10 s.
     let s = stereo_pieces(
         48_000,
         &[
             (10.0, -72.0),
-            (10.0, -40.0),
-            (40.0, -23.0),
-            (10.0, -40.0),
+            (10.0, -36.0),
+            (60.0, -23.0),
+            (10.0, -36.0),
             (10.0, -72.0),
         ],
     );
-    // Expected: the -72 pieces fall under the -70 LUFS absolute gate and the
-    // -40 pieces under the relative gate (about -36.8), so -23.0.
     assert_close(lufs(&s, 48_000), -23.0, 0.1);
 }
 
 #[test]
 fn arq_126_ebu_3341_case_5_two_levels_inside_the_relative_gate_are_averaged() {
-    // 20 s at -26 and 10 s at -20: both stay above the relative gate; the mean
-    // energy is 10 log10((20 * 10^-2.6 + 10 * 10^-2.0) / 30) = -22.99 LUFS.
-    let s = stereo_pieces(48_000, &[(20.0, -26.0), (10.0, -20.0)]);
-    assert_close(lufs(&s, 48_000), -22.99, 0.1);
+    // Published: -26, -20, -26 LUFS for 20, 20.1, 20 s.
+    let s = stereo_pieces(48_000, &[(20.0, -26.0), (20.1, -20.0), (20.0, -26.0)]);
+    assert_close(lufs(&s, 48_000), -23.0, 0.1);
 }
 
 #[test]
@@ -202,13 +200,38 @@ fn arq_110_channels_of_different_lengths_are_an_error() {
 
 #[test]
 fn arq_126_the_k_weighting_at_other_rates_matches_48_khz_within_a_tenth_of_a_db() {
-    for hz in [44_100, 88_200, 96_000, 192_000, 32_000] {
-        for freq in [
-            40.0, 100.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12_000.0, 15_000.0,
-        ] {
-            let at = |r: u32| lufs(&[sine(r, freq, 0.2, 3.0)], r);
-            assert_close(at(hz), at(48_000), 0.1);
+    // The rates of the criterion, plus the others that were checked before;
+    // tones 997 Hz, 2.5 kHz and 0.98 of the lower of 16 kHz and Nyquist, those
+    // that fit under that ceiling (and the sweep of fractions of it).
+    let at = |r: u32, freq: f64| lufs(&[sine(r, freq, 0.2, 1.0)], r);
+    for hz in [
+        3_360, 8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 88_200, 96_000,
+        192_000,
+    ] {
+        let top = (0.98 * f64::from(hz) / 2.0).min(16_000.0);
+        let mut tones = vec![997.0, 2_500.0, top];
+        tones.extend([40.0, 100.0, 500.0, 4_000.0, 8_000.0, 12_000.0, 15_000.0]);
+        tones.extend([0.25, 0.5, 0.75, 0.9].map(|f| f * top));
+        for freq in tones.into_iter().filter(|&f| f <= top) {
+            let (got, want) = (at(hz, freq), at(48_000, freq));
+            assert!(
+                (got - want).abs() <= 0.1,
+                "{hz} Hz at {freq} Hz: {got} against {want}"
+            );
         }
+    }
+}
+
+#[test]
+fn arq_126_every_sample_rate_is_measured_and_none_gives_an_error() {
+    // From 1 Hz up: no floor. The measure is finite whatever the rate.
+    for hz in [1, 8, 100, 1_000, 3_200, 3_600] {
+        let one = vec![0.1_f32; hz as usize * 2 + 100];
+        let got = measure(&[one], hz);
+        assert!(
+            matches!(got, Ok(Some(v)) if v.is_finite()),
+            "{hz} Hz: {got:?}"
+        );
     }
 }
 
@@ -295,6 +318,31 @@ fn arq_126_the_relative_gate_is_exactly_10_lu_under_the_mean() {
 }
 
 #[test]
+fn arq_126_the_relative_gate_counts_only_the_blocks_over_the_absolute_gate() {
+    // 10 blocks at -68 and 10 at -75. The mean of the blocks over -70 is -68,
+    // so the relative gate is -78; the -75 blocks are under the absolute gate
+    // and must not come back in through the relative one.
+    let mut blocks = vec![energy(-68.0); 10];
+    blocks.extend(vec![energy(-75.0); 10]);
+    let got = integrated_from_blocks(&blocks)
+        .expect("ok")
+        .expect("a measure");
+    assert_close(got, -68.0, 1e-9);
+}
+
+#[test]
+fn arq_110_a_sum_of_energies_that_overflows_is_an_error_not_no_measure() {
+    for blocks in [vec![1.7e308, 1.7e308], vec![1e308, 1e308, 1e308]] {
+        assert_eq!(
+            integrated_from_blocks(&blocks),
+            Err(AudioError::NonFinite { field: "energies" }),
+            "{blocks:?}"
+        );
+    }
+    assert!(matches!(integrated_from_blocks(&[1e308]), Ok(Some(_))));
+}
+
+#[test]
 fn arq_126_no_blocks_or_only_silent_ones_have_no_measure() {
     assert_eq!(integrated_from_blocks(&[]), Ok(None));
     assert_eq!(integrated_from_blocks(&[0.0, 0.0]), Ok(None));
@@ -334,24 +382,6 @@ fn arq_102_the_new_errors_give_a_key_with_their_data() {
         }
     );
     assert!(is_valid_key(range.to_message().key.0) && is_valid_key(count.to_message().key.0));
-}
-
-#[test]
-fn arq_110_a_rate_under_twice_the_shelf_frequency_is_an_error_not_a_garbage_measure() {
-    // The K weighting has a shelf at 1 682 Hz: a rate whose Nyquist is under it
-    // cannot carry that filter (it would be unstable and give any number).
-    for hz in [1, 8, 100, 1_000, 3_200] {
-        let one = vec![0.1_f32; hz as usize * 2 + 100];
-        assert_eq!(
-            measure(&[one], hz),
-            Err(AudioError::OutOfRange { field: "rate" }),
-            "{hz} Hz"
-        );
-    }
-    for hz in [3_600, 8_000, 44_100] {
-        let one = sine(hz, 440.0, 0.1, 2.0);
-        assert!(measure(&[one], hz).is_ok(), "{hz} Hz");
-    }
 }
 
 #[test]

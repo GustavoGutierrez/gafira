@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 use gafira_time::SampleRate;
 
 use crate::AudioError;
-use crate::dsp::clean_output;
+use crate::dsp::{bessel_i0, clean_output};
 use crate::error::finite;
 
 /// The smallest speed (FV-04), valid.
@@ -64,21 +64,6 @@ pub fn resampled_len(
     } else {
         Err(AudioError::OutOfRange { field: "samples" })
     }
-}
-
-/// Modified Bessel function of the first kind, order 0.
-fn bessel_i0(x: f64) -> f64 {
-    let (mut term, mut sum) = (1.0_f64, 1.0_f64);
-    let quarter = x * x / 4.0;
-    for k in 1..200 {
-        let k = f64::from(k);
-        term *= quarter / (k * k);
-        sum += term;
-        if term < sum * 1e-17 {
-            break;
-        }
-    }
-    sum
 }
 
 /// `sinc(x) × kaiser(x / HALF_LOBES)` at `k / TABLE_RESOLUTION`, for
