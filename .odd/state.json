@@ -4,7 +4,7 @@
     {
       "outcome_id": "golden-windows-paths",
       "spec_id": "testkit-golden",
-      "status": "implementing",
+      "status": "verifying",
       "flow": "light | level: L1 | pack: bug fix | mutation: off | tier: T0 | verify: V2 | decided-by: coordinator | reason: local cause in the golden check candidate path, stated by its doc comment and ADR 0010; no critical code; no floor hit",
       "scope": "check_in reports the candidate as <candidate_dir>/<name>.png with the directory as given, not its canonical form, so the two golden_check tests pass on x86_64-pc-windows-msvc",
       "non_goals": [
@@ -16,22 +16,49 @@
           "id": "AC1",
           "text": "Given a candidate dir reached through a symlink, when a check fails with a usable actual, then the returned candidate path equals dir.join(name.png) and the file exists there",
           "type": "unit",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "ac1 symlink test, verify round 1 at 3a919fa"
         },
         {
           "id": "AC2",
           "text": "Given a dir that resolves into tests/golden, including through a symlink, when check runs, then it is still rejected with BadDir and nothing is written",
           "type": "unit",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "golden_check rejection tests, verify round 1 at 3a919fa"
         },
         {
           "id": "AC3",
           "text": "Given the CI workflow dispatched on the fix, when the x86_64-pc-windows-msvc job runs, then its Test step passes",
           "type": "command",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "CI run 41375746735 windows Test step passed"
         }
       ],
-      "next_action": "tdd-apply on fix/golden-windows-paths"
+      "next_action": "Merge, then archive for follow-up W5",
+      "verify": {
+        "round": 1,
+        "commit": "3a919fa",
+        "verdict": "PASS",
+        "next": "archive",
+        "findings": [
+          {
+            "id": "W5",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "crates/gafira-testkit/src/golden.rs prepare_dir",
+            "summary": "create_dir_all runs before the resolved check, so a rejected dir reached through a link still creates empty folders under tests/golden; same at base",
+            "follow_up": true,
+            "status": "open"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "PASS",
+            "classes": []
+          }
+        ]
+      }
     }
   ]
 }
