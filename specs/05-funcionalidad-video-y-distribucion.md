@@ -625,7 +625,8 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | Q-02, Q-03, Q-04, Q-05, Q-06, Q-09, Q-12, Q-13 | Códecs vía SO, Linux, actualizaciones, MP3, activación y AVI | Cerradas (D-01, D-02, D-05, D-06, D-07; 01 §12.2) |
 | Q-17 | Importar HEVC y HEIC vía API del sistema | Abierta, titular y legal |
 | Q-15 | Voz en off y marcadores de compás en Fase 2 | Abierta |
-| Q-19, Q-20 | Prueba gratuita y modo sin licencia válida | Abiertas; se resuelven en la spec 06 |
+| Q-19 | Prueba gratuita | Abierta; se resuelve en la spec 06 |
+| Q-20 | Modo sin licencia válida | D-12 sustituye la propuesta de solo lectura; la lista de funciones bloqueadas se define en la spec 06 |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |
 | R-06 (02) | `cpal` y `libasound` (LGPL, dinámico) | VERIFICAR, legal |
 | R-F | Licencia de WiX v5, nfpm y de las herramientas de empaquetado | VERIFICAR |
