@@ -130,7 +130,16 @@ impl Transition for Wipe {
                     if softness == 0.0 {
                         if u < p { 1.0 } else { 0.0 }
                     } else {
-                        ((p * (1.0 + softness) - u) / softness).clamp(0.0, 1.0)
+                        // clamp((p (1 + s) - u) / s, 0, 1) is clamp(p + (p - u) / s, 0, 1). The
+                        // quotient only matters while |p - u| <= s (beyond it the mask has
+                        // saturated since 0 <= p <= 1), so it is never huge, never infinite,
+                        // and there is no cancellation between `1 + s` and `p (1 + s)`.
+                        let gap = p - u;
+                        if gap.abs() > softness {
+                            if gap > 0.0 { 1.0 } else { 0.0 }
+                        } else {
+                            (p + gap / softness).clamp(0.0, 1.0)
+                        }
                     }
                 };
                 let tr = Transfer::new();
@@ -541,5 +550,84 @@ mod tests {
             .unwrap();
         assert_eq!(d[15], 32);
         assert!(d[12] <= d[15], "premultiplied: {:?}", &d[12..]);
+    }
+
+    /// Pixel values of `mask` at the given softness for one row.
+    fn row(direction: &str, softness: f64, p: f32, w: u32, h: u32) -> Vec<f32> {
+        mask(&params(direction, softness), p, w, h)
+    }
+
+    // ARQ-118: at tiny softness the mask is p exactly where u == p, 1 where u is below p by more
+    // than the softness allows, 0 where it is above. Hand-worked on 8 columns: u = (x + 0.5) / 8,
+    // so x = 3 has u = 0.4375 = p, x = 2 has u = 0.3125, x = 4 has u = 0.5625. Down to the
+    // subnormals, where dividing first would go through infinity.
+    #[test]
+    fn arq_118_wipe_tiny_softness_keeps_the_edge_pixel_at_p() {
+        let softnesses = [
+            1.0e-2, 1.0e-4, 1.0e-6, 1.0e-8, 1.0e-10, 1.0e-12, 1.0e-14, 3.0e-16, 1.0e-16, 1.0e-20,
+            1.0e-50, 1.0e-150, 1.0e-300, 1.0e-308, 1.0e-310, 5.0e-324,
+        ];
+        for s in softnesses {
+            let got = row("right", s, 0.4375, 8, 1);
+            assert_eq!(
+                got,
+                [1.0, 1.0, 1.0, 0.4375, 0.0, 0.0, 0.0, 0.0],
+                "right s={s}"
+            );
+            // Mirrored: left has u = 1 - (x + 0.5) / 8, so x = 4 has u = 0.4375.
+            let got = row("left", s, 0.4375, 8, 1);
+            assert_eq!(
+                got,
+                [0.0, 0.0, 0.0, 0.0, 0.4375, 1.0, 1.0, 1.0],
+                "left s={s}"
+            );
+            let got = row("down", s, 0.4375, 1, 8);
+            assert_eq!(
+                got,
+                [1.0, 1.0, 1.0, 0.4375, 0.0, 0.0, 0.0, 0.0],
+                "down s={s}"
+            );
+            let got = row("up", s, 0.4375, 1, 8);
+            assert_eq!(got, [0.0, 0.0, 0.0, 0.0, 0.4375, 1.0, 1.0, 1.0], "up s={s}");
+        }
+        // Another p and side: 2 columns have u = 0.25 and 0.75.
+        for s in softnesses {
+            assert_eq!(row("right", s, 0.25, 2, 1), [0.25, 0.0], "s={s}");
+            assert_eq!(row("right", s, 0.75, 2, 1), [1.0, 0.75], "s={s}");
+        }
+        // Circular: 2x2 has all four u equal to 0.5 (the corner distance over half the diagonal).
+        for s in softnesses {
+            assert_eq!(row("circular", s, 0.5, 2, 2), [0.5; 4], "circular s={s}");
+        }
+    }
+
+    // ARQ-118: the mask against exact integer arithmetic. With p = P / 2^30, u = U / 2^30 and
+    // s = 2^-k, clamp(p + (p - u) / s, 0, 1) is the integer clamp(P + (P - U) 2^k, 0, 2^30) / 2^30,
+    // which an f32 holds exactly after one rounding. Every power-of-two softness, every pixel.
+    #[test]
+    fn arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness() {
+        const D: i128 = 1 << 30;
+        for k in 0..=60u32 {
+            let s = 0.5f64.powi(k as i32);
+            for p_num in [1i128, 5, 8, 9, 15, 16, 17, 31] {
+                // p = p_num / 32 is an f32 exactly.
+                let p = (p_num as f32) / 32.0;
+                let big_p = p_num * (D / 32);
+                for w in [4u32, 8, 16, 32] {
+                    let got = row("right", s, p, w, 1);
+                    for x in 0..w {
+                        let big_u = i128::from(2 * x + 1) * (D / i128::from(2 * w));
+                        let m = (big_p + (big_p - big_u) * (1i128 << k)).clamp(0, D);
+                        let want = (m as f64 / D as f64) as f32;
+                        assert_eq!(
+                            got[x as usize].to_bits(),
+                            want.to_bits(),
+                            "k={k} p={p} w={w} x={x}: {} vs {want}",
+                            got[x as usize]
+                        );
+                    }
+                }
+            }
+        }
     }
 }
