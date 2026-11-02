@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod blend;
+pub mod effects;
 mod error;
 mod mip;
 mod pixel;
