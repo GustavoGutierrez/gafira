@@ -10,7 +10,7 @@ The owner asked to adopt ODD lite (the brief above) through safe, reversible adj
 
 ## Decision
 
-Add ODD lite on top of the existing machinery, and change no safety rule. Phases A and B of the brief are done by change `odd-lite`; phase C is the pilot below; phase D waits for its result.
+Add ODD lite on top of the existing machinery, and change no safety rule. Phases A and B of the brief are done by change `odd-lite`; phase C was the pilot below; phase D waited for its result.
 
 1. Levels. The coordinator classifies each request L0 to L3 by impact, uncertainty and reversibility, never by file count. L0 is the light docs-style path, L1 light, L2 standard, L3 full. The mode is the heaviest of floor, level and pack default, so a level can raise rigour and never goes below a floor.
 2. Change folder. New work on a capability an existing spec covers needs no `specs/changes/<change>/` by default. Its criteria are an entry in `.odd/state.json`, or the spec row when requirements change, and a committed entry satisfies G0. Full mode, L3 and work no spec covers keep a folder as today.
@@ -44,7 +44,7 @@ Add ODD lite on top of the existing machinery, and change no safety rule. Phases
 | `explorer` | keep, small edit | `spike.md` needs a folder | no-folder runs return the result only | one line |
 | `architect`, `manual-writer` | keep | unaffected; full mode keeps its folder | none | no diff |
 | Modes, packs, floors, gates, tiers, depths | keep, additive edits | they already do what the brief asks | level sits above them; G0 accepts an outcome entry, G4 rejects BLOCKED, and the Spec and Runs cells of the `AGENTS.md` modes table name the outcome entry | floors and packs tables have no diff; the gates table and the `AGENTS.md` modes table changed additively, with nothing removed |
-| Slice card and Light spec | keep, default narrowed | still the form for folders in progress, L3, uncovered work and legacy | fields move to the entry on covered work | `flow: legacy` restores them |
+| Slice card and Light spec | keep, default narrowed | still the form for folders in progress, L3 and uncovered work, and for legacy until it was retired at acceptance | fields move to the entry on covered work | `flow: legacy` restored them until it was retired at acceptance |
 | `specs/changes/<change>/` | adapt | the document the brief removes by default | optional on covered work | AC4 |
 | `.odd/state.json` | add | no resumable record existed outside a folder | one tracked file | `python3 -m json.tool .odd/state.json` |
 | `.agents/skills/*` other than `product-specs` | keep | not affected | none | no diff |
@@ -121,7 +121,7 @@ Owner request, 2026-11-01. After `layout-core` is archived, on its own branch, c
 
 Use `git mv` to keep history. References to update, at the time of writing and outside the two folders being moved: 29 files cite `openspec/` and 30 cite `docs/specs`, including `AGENTS.md`, agents, skills and the technical manual. `verify` checks that no broken reference remains. No file under `crates/`, `apps/` or `.github/` cites these paths. This task also covers the stale "Cómo continuar el documento en curso" section and the manual chapters named above.
 
-Resolved by delivery `chore/specs-consolidation`. Active folders moved to `specs/changes/<change>/`, which holds L3, full mode, work no spec covers and `flow: legacy`; a change closes into `specs/history/<date>-<change>/`. `openspec/config.yaml` went to `AGENTS.md` and was deleted. `specs/history/`, `specs/capabilities/` and ADRs 0001 to 0010 were only renamed: their text stays byte for byte and they are exempt from the reference check. The From column above is kept as the record.
+Resolved by delivery `chore/specs-consolidation`. Active folders moved to `specs/changes/<change>/`, which then held L3, full mode, work no spec covers and `flow: legacy` (retired at acceptance); a change closes into `specs/history/<date>-<change>/`. `openspec/config.yaml` went to `AGENTS.md` and was deleted. `specs/history/`, `specs/capabilities/` and ADRs 0001 to 0010 were only renamed: their text stays byte for byte and they are exempt from the reference check. The From column above is kept as the record.
 
 ### Rollback
 
