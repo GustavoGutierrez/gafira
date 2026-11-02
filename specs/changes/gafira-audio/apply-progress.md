@@ -248,3 +248,56 @@ Hand mutants (applied, killed, reverted):
 | tail: `unwrap_or(u32::MAX)` to `unwrap_or(0)` | Survives, equivalent: `4 fs / 100` never exceeds `u32::MAX`, so the branch cannot run |
 
 Deviation: `Eq3Band` tail is read from the last valid gains, so `tail()` before the first `process` is 0 even if a later snapshot will set a band (ARQ-125 says the last valid value, or the default). W15: nothing to change in this code.
+
+## AU3
+
+Order: one commit per unit (meter, true peak and leveling plan, `LoudnessNormalizer`). For each unit the tests were written first and run against a compiling stub that returns the empty answer (`Ok(None)`, `0.0`, a no-op `process`); the failing line is pasted below. Every commit passed `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked`, each exit code read alone.
+
+### Unit 1: integrated loudness (ARQ-126, FV-20 d, ARQ-110, ARQ-111)
+
+RED, stub `integrated_loudness -> Ok(None)` and `integrated_from_blocks -> Ok(None)` (`tests/loudness.rs`; 18 of 21 failed):
+
+| Criterion | Failing line |
+|---|---|
+| EBU Tech 3341 cases 1 to 5 | `arq_126_ebu_3341_case_1_*` .. `case_5_*`: panicked at `.expect("a measure")` (the meter said `None`) |
+| 997 Hz stereo, -23.0 at 44.1, 48, 96 kHz | `arq_126_a_997_hz_stereo_sine_*`: the same `expect` |
+| 6 channels, one tone at index 0..5 | `arq_126_six_channels_*`: `channel 0: got Ok(None), want Some(-23.0)` |
+| 399 ms / 400 ms | `arq_126_a_signal_under_400_ms_*`: `left: None, right: Some(())` |
+| 3 channels `Err` | `arq_126_a_channel_count_*`: `left: Ok(None) right: Err(ChannelCount { channels: 0 })` |
+| non-finite sample | `arq_110_a_non_finite_sample_*`: `left: Ok(None) right: Err(NonFinite { field: "samples" })` |
+| unequal lengths | `arq_110_channels_of_different_lengths_*`: `left: Ok(None) right: Err(OutOfRange { field: "channels" })` |
+| non-finite energy | `arq_110_a_non_finite_or_negative_block_energy_*`: `left: Ok(None) right: Err(NonFinite { field: "energies" })` |
+| absolute gate at exactly -70 | `arq_126_a_block_at_exactly_minus_70_lufs_*`: `expect` on `None` at the last assertion line (the "kept above" half) |
+| relative gate | `arq_126_the_relative_gate_*`: `expect("a measure")` on `None` |
+| K weighting at other rates (+-0.1 dB, 40 Hz to 15 kHz, 5 rates) | `arq_126_the_k_weighting_at_other_rates_*`: `expect` on `None` |
+
+Passed from the start (the stub answer is the right one), each proved by a mutant below: `arq_126_silence_has_no_measure_*`, `arq_126_no_blocks_or_only_silent_ones_*`, `arq_111_the_meter_gives_the_same_bytes_twice`.
+
+The K weighting at other rates passed on the first implementation (the bilinear design of the BS.1770-4 analogue prototype is within 0.1 dB of the 48 kHz response for 32, 44.1, 88.2, 96 and 192 kHz up to 15 kHz); it is proved by mutant M1.
+
+Hand mutants (applied, killed, reverted):
+
+| Mutant | Killed by |
+|---|---|
+| M1 K weighting designed at 48 kHz for every rate | `arq_126_the_k_weighting_at_other_rates_*`, `arq_126_a_997_hz_stereo_sine_*` |
+| M2 hop 200 ms; block of 3 hops; block of 2 hops | `arq_126_a_signal_under_400_ms_*`; the 997 Hz, mono, six-channel and EBU cases |
+| M3 absolute gate `>=` for `>` (also the shared gate function) | `arq_126_a_block_at_exactly_minus_70_lufs_*` |
+| M3 absolute gate -69 | the same test |
+| M4 relative gate against the mean of all blocks; against the mean of the loudness values | `arq_126_the_relative_gate_is_10_lu_under_the_mean_energy_*`, `case_3` |
+| M4 relative gate -9, -11, -10.1, -9.9, -10.5 | `arq_126_the_relative_gate_is_exactly_10_lu_under_the_mean` (first -10.5 survived; two blocks 12.7 and 12.85 LU under, a 0.08 LU gap, kill it) |
+| M5 surround weight 1.0 | `arq_126_six_channels_*` |
+| M6 LFE counted | `arq_126_six_channels_*` |
+| M7 3 channels accepted | `arq_126_a_channel_count_*` |
+| M8 silence gives `-inf` | `arq_126_silence_has_no_measure_*` |
+| M9 399 ms measured | `arq_126_a_signal_under_400_ms_*` |
+| determinism: a call counter added to the result | `arq_111_the_meter_gives_the_same_bytes_twice` |
+| `ChannelCount` message argument fixed to 0 | `arq_102_the_new_errors_give_a_key_with_their_data` |
+
+A first version kept the absolute gate in two places (the second pass was strict, the first was the one a mutant changed): the `>=` mutant survived. The gate is now one function, `louder_than`, used twice.
+
+Decisions the specs leave open (unit 1):
+- The gate comparisons are strict (`>`), as BS.1770-4 writes them; ARQ-126 does not say. "A block exactly at -70 LUFS" is not reachable by a filtered signal, so `integrated_from_blocks` (energies in, loudness out) is public as the seam where the boundary is tested, with the energy found by search so that `-0.691 + 10 log10(e)` is -70.0 to the last bit.
+- The error set grew by `OutOfRange { field }` (unequal channel lengths, a negative energy) and `ChannelCount { channels }`; both have message keys.
+- Channels of unequal length are an `Err`, not measured over the shortest.
+- A rate whose 100 ms is not a whole number of samples rounds it to the nearest sample (`(fs + 5) / 10`), and the block is 4 hops. For 44.1, 48 and 96 kHz it is exact.
+- EBU Tech 3341 cases 1 to 5 are synthesised from the published description as I know it: 1 and 2 are single levels (-23, -33 LUFS); 3 is -36, -23, -36 (10, 60, 10 s); 4 and 5 are my own sequences that exercise the gates (4: -72, -40, -23, -40, -72 for 10, 10, 40, 10, 10 s; 5: -26 for 20 s then -20 for 10 s), each with the expected value worked out from the gates. The files were not at hand, so 4 and 5 may differ from the EBU originals.
