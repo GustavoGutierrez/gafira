@@ -10,7 +10,7 @@ pub(crate) const SENTINEL: u8 = 0xAB;
 pub(crate) const SENTINEL_F32: u32 = 0x7FC0_1234;
 
 pub(crate) fn cx(scale: f32) -> EffectCx {
-    EffectCx { scale }
+    EffectCx::whole(scale)
 }
 
 /// Parameter values from `(id, number)` pairs; the rest take their defaults.

@@ -345,7 +345,7 @@ mod tests {
     const SENTINEL: u8 = 0xAB;
 
     fn cx(scale: f32) -> EffectCx {
-        EffectCx { scale }
+        EffectCx::whole(scale)
     }
 
     fn red() -> ParamValue {

@@ -24,5 +24,5 @@ pub use pixel::{premultiply, premultiply_u8, unpremultiply, unpremultiply_u8};
 pub use tile::{TILE_SIZE, TileGrid, tile_grid};
 pub use view::{
     AlphaMask, EffectCx, ImageBuf, ImageView, ImageViewMut, PixelBuf, PixelData, PixelDataMut,
-    PixelFormat,
+    PixelFormat, TileWindow,
 };

@@ -51,7 +51,7 @@ pub trait Effect: Describe + Send + Sync {
     fn roi(&self, cx: &EffectCx, p: &ParamValues, out: IRect) -> IRect;
     /// Work for planning and budgets, without time. `p` is resolved and `cx.scale` finite (ARQ-110).
     fn cost_hint(&self, cx: &EffectCx, p: &ParamValues, px: u64) -> Cost;
-    /// Runs on a whole image.
+    /// Runs on `src`, a whole image or a tile described by `cx.tile`.
     ///
     /// # Errors
     ///

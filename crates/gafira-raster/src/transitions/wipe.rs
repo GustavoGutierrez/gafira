@@ -190,7 +190,7 @@ mod tests {
         let mut d = vec![f32::from_bits(SENTINEL_F32); n * 4];
         Wipe::new()
             .run_cpu(
-                &EffectCx { scale: 1.0 },
+                &EffectCx::whole(1.0),
                 p,
                 progress,
                 ImageView::new(w, h, PixelData::RgbaF32(&f)).unwrap(),
@@ -314,7 +314,7 @@ mod tests {
                 let mut d = vec![SENTINEL_U8; 16];
                 let err = Wipe::new()
                     .run_cpu(
-                        &EffectCx { scale: 1.0 },
+                        &EffectCx::whole(1.0),
                         &p,
                         progress,
                         ImageView::new(2, 2, PixelData::Rgba8(&f)).unwrap(),
@@ -462,7 +462,7 @@ mod tests {
                     let mut du = vec![SENTINEL_U8; 24];
                     Wipe::new()
                         .run_cpu(
-                            &EffectCx { scale: 1.0 },
+                            &EffectCx::whole(1.0),
                             &params(d, s),
                             progress,
                             ImageView::new(3, 2, PixelData::Rgba8(&f)).unwrap(),
@@ -478,7 +478,7 @@ mod tests {
                     let mut df = vec![f32::from_bits(SENTINEL_F32); 24];
                     Wipe::new()
                         .run_cpu(
-                            &EffectCx { scale: 1.0 },
+                            &EffectCx::whole(1.0),
                             &params(d, s),
                             progress,
                             ImageView::new(3, 2, PixelData::RgbaF32(&ff)).unwrap(),
@@ -508,7 +508,7 @@ mod tests {
                 let mut du = vec![0u8; 80];
                 Wipe::new()
                     .run_cpu(
-                        &EffectCx { scale: 1.0 },
+                        &EffectCx::whole(1.0),
                         &params(d, 1.0),
                         progress,
                         ImageView::new(5, 4, PixelData::Rgba8(&f)).unwrap(),
@@ -532,7 +532,7 @@ mod tests {
         let mut d = vec![0u8; 16];
         Wipe::new()
             .run_cpu(
-                &EffectCx { scale: 1.0 },
+                &EffectCx::whole(1.0),
                 &params("right", 0.0),
                 0.5,
                 ImageView::new(4, 1, PixelData::Rgba8(&f)).unwrap(),
@@ -546,7 +546,7 @@ mod tests {
         let mut d = vec![0u8; 16];
         Wipe::new()
             .run_cpu(
-                &EffectCx { scale: 1.0 },
+                &EffectCx::whole(1.0),
                 &params("right", 1.0),
                 0.5,
                 ImageView::new(4, 1, PixelData::Rgba8(&f)).unwrap(),
