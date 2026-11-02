@@ -85,6 +85,36 @@ pub(super) fn check_scale(cx: &EffectCx) -> Result<(), EffectError> {
     }
 }
 
+/// `(x, y, image_width, image_height)` of `src` in its image: `(0, 0, w, h)` without a window.
+pub(super) fn window_of(cx: &EffectCx, w: usize, h: usize) -> (u64, u64, u64, u64) {
+    match cx.tile {
+        Some(t) => (
+            u64::from(t.x),
+            u64::from(t.y),
+            u64::from(t.image_width),
+            u64::from(t.image_height),
+        ),
+        None => (0, 0, w as u64, h as u64),
+    }
+}
+
+/// The window of `cx` must hold `src`: `x + w <= image_width` and `y + h <= image_height`.
+/// For an effect whose output depends on the position or the size of the image (P16). Call
+/// after `check_io`.
+pub(super) fn check_tile(cx: &EffectCx, w: usize, h: usize) -> Result<(), EffectError> {
+    let (x, y, iw, ih) = window_of(cx, w, h);
+    let (right, bottom) = (x + w as u64, y + h as u64);
+    if right <= iw && bottom <= ih {
+        return Ok(());
+    }
+    let cut = |v: u64| u32::try_from(v).unwrap_or(u32::MAX);
+    Err(EffectError::SizeMismatch {
+        field: "cx.tile",
+        expected: (cut(iw), cut(ih)),
+        actual: (cut(right), cut(bottom)),
+    })
+}
+
 /// Runs `f` on the straight colour in linear light of every pixel with alpha other than 0 and
 /// writes the result premultiplied, with the same alpha. `f(i, c)` gets the pixel index and
 /// returns the new colour, or `None` to leave the pixel as it was, byte for byte. A pixel with

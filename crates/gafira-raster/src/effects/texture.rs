@@ -5,7 +5,9 @@ use gafira_doc::msg::MessageKey;
 use gafira_geom::IRect;
 
 use super::blur::{blur_shifted, half_width};
-use super::pointwise::{check_io, check_scale, map_straight, slider, smoothstep};
+use super::pointwise::{
+    check_io, check_scale, check_tile, map_straight, slider, smoothstep, window_of,
+};
 use super::{Cost, Effect};
 use crate::transfer::Transfer;
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut, PixelData, unpremultiply_u8};
@@ -200,7 +202,7 @@ impl Effect for Texture {
         }
         let g = Settings::new(cx, p);
         let taps = g.sharpness_taps().max(g.clarity_taps()) as i32;
-        // A vignette reads nothing but its own pixel; its centre is the image's (whole-image run).
+        // A vignette reads nothing but its own pixel; `cx.tile` places it in its image.
         out.inflate(taps, taps)
     }
 
@@ -235,13 +237,17 @@ impl Effect for Texture {
         let values = self.schema.resolve(p)?;
         check_io(&src, &dst)?;
         let (w, h) = (src.width() as usize, src.height() as usize);
+        check_tile(cx, w, h)?;
         if w == 0 || h == 0 {
             return Ok(());
         }
         let g = Settings::new(cx, &values);
         let sharp = (g.sharpness != 0.0).then(|| Planes::blurred(&src, w, h, g.sharpness_radius));
         let clear = (g.clarity != 0.0).then(|| Planes::blurred_luma(&src, w, h, g.clarity_radius));
-        let half_diagonal = (w as f64).hypot(h as f64) / 2.0;
+        // Viñeta centres on the image, not on `src` (P16).
+        let (x0, y0, image_w, image_h) = window_of(cx, w, h);
+        let (image_w, image_h) = (image_w as f64, image_h as f64);
+        let half_diagonal = image_w.hypot(image_h) / 2.0;
         map_straight(src, dst, |i, c| {
             let mut out = c;
             if let Some(b) = &sharp
@@ -259,8 +265,8 @@ impl Effect for Texture {
                 out = out.map(|x| x + delta);
             }
             if g.vignette != 0.0 {
-                let x = (i % w) as f64 + 0.5 - w as f64 / 2.0;
-                let y = (i / w) as f64 + 0.5 - h as f64 / 2.0;
+                let x = (x0 + (i % w) as u64) as f64 + 0.5 - image_w / 2.0;
+                let y = (y0 + (i / w) as u64) as f64 + 0.5 - image_h / 2.0;
                 let d = x.hypot(y) / half_diagonal;
                 let f = (g.vignette * smoothstep(0.5, 1.0, d)).exp2();
                 out = out.map(|v| v * f);
@@ -276,6 +282,7 @@ mod tests {
 
     use super::super::testing::*;
     use super::*;
+    use crate::TileWindow;
 
     fn tex() -> Texture {
         Texture::new()
@@ -803,6 +810,160 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn window(image: (usize, usize), at: (usize, usize)) -> EffectCx {
+        EffectCx {
+            scale: 1.0,
+            tile: Some(TileWindow {
+                image_width: image.0 as u32,
+                image_height: image.1 as u32,
+                x: at.0 as u32,
+                y: at.1 as u32,
+            }),
+        }
+    }
+
+    /// The pixels of `rect` (x0, y0, x1, y1) of a `w`-wide image with `n` values per pixel.
+    fn crop<T: Copy>(src: &[T], w: usize, n: usize, rect: (usize, usize, usize, usize)) -> Vec<T> {
+        let mut v = Vec::new();
+        for y in rect.1..rect.3 {
+            v.extend_from_slice(&src[(y * w + rect.0) * n..(y * w + rect.2) * n]);
+        }
+        v
+    }
+
+    // ARQ-120, P16: a tile cut with `roi` and placed in its image by `cx.tile` gives the
+    // whole-image pixels, <= 1/255, with Viñeta active: in the middle, at the top-left corner
+    // and at the bottom-right one, in both formats.
+    #[test]
+    fn arq_120_texture_vignette_tiles_with_a_window_match_the_whole_image() {
+        let (w, h) = (64usize, 48usize);
+        let s8 = img_u8(w, h, 5);
+        let sf = img_f32(w, h, 5);
+        let size = (w as u32, h as u32);
+        for (k, out) in [
+            ([0.5, 0.0, 0.8], (20usize, 12usize, 44usize, 34usize)),
+            ([0.0, 0.0, -1.0], (0, 0, 16, 16)),
+            ([0.0, 0.0, 1.0], (48, 32, 64, 48)),
+            ([0.0, 0.7, -0.8], (30, 5, 60, 20)),
+        ] {
+            let p = params_of(k);
+            let r = tex().roi(
+                &cx(1.0),
+                &p,
+                IRect::new(out.0 as i32, out.1 as i32, out.2 as i32, out.3 as i32),
+            );
+            let rect = (
+                r.x0.max(0) as usize,
+                r.y0.max(0) as usize,
+                (r.x1 as usize).min(w),
+                (r.y1 as usize).min(h),
+            );
+            let (tw, th) = (rect.2 - rect.0, rect.3 - rect.1);
+            let c = window((w, h), (rect.0, rect.1));
+            let tsize = (tw as u32, th as u32);
+
+            let full = run8(&tex(), &cx(1.0), &p, &s8, size).unwrap();
+            assert_ne!(full, s8, "the effect changed nothing {k:?}");
+            let tile = run8(&tex(), &c, &p, &crop(&s8, w, 4, rect), tsize).unwrap();
+            let fullf = runf(&tex(), &cx(1.0), &p, &sf, size).unwrap();
+            let tilef = runf(&tex(), &c, &p, &crop(&sf, w, 4, rect), tsize).unwrap();
+            for y in out.1..out.3 {
+                for x in out.0..out.2 {
+                    let (a, b) = (
+                        &full[(y * w + x) * 4..][..4],
+                        &tile[((y - rect.1) * tw + (x - rect.0)) * 4..][..4],
+                    );
+                    for ch in 0..4 {
+                        assert!(a[ch].abs_diff(b[ch]) <= 1, "{k:?} ({x},{y}) {a:?} {b:?}");
+                    }
+                    let (a, b) = (
+                        &fullf[(y * w + x) * 4..][..4],
+                        &tilef[((y - rect.1) * tw + (x - rect.0)) * 4..][..4],
+                    );
+                    for ch in 0..4 {
+                        assert!(
+                            (a[ch] - b[ch]).abs() <= 1.0 / 255.0,
+                            "{k:?} ({x},{y}) {a:?} {b:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // P16: a window at the origin with the size of `src` is the same as no window, bit for bit.
+    #[test]
+    fn arq_120_texture_window_at_the_origin_equals_none_bit_for_bit() {
+        let (w, h) = (23usize, 17usize);
+        let size = (w as u32, h as u32);
+        let s8 = img_u8(w, h, 9);
+        let sf = img_f32(w, h, 9);
+        for k in [[0.0, 0.0, 1.0], [0.4, 0.6, -0.7], [0.0; 3]] {
+            let p = params_of(k);
+            let c = window((w, h), (0, 0));
+            assert_eq!(
+                run8(&tex(), &c, &p, &s8, size).unwrap(),
+                run8(&tex(), &cx(1.0), &p, &s8, size).unwrap(),
+                "{k:?}"
+            );
+            assert_eq!(
+                bits(&runf(&tex(), &c, &p, &sf, size).unwrap()),
+                bits(&runf(&tex(), &cx(1.0), &p, &sf, size).unwrap()),
+                "{k:?}"
+            );
+        }
+    }
+
+    // P16: a window that does not hold `src` is `Err` naming `cx.tile`, before anything is
+    // written and before the empty-image return; the sum is made in `u64` and saturates.
+    #[test]
+    fn arq_120_texture_window_that_does_not_fit_is_err_and_dst_is_untouched() {
+        let s8 = img_u8(4, 3, 1);
+        let sf = img_f32(4, 3, 1);
+        let p = params_of([0.0, 0.0, 0.5]);
+        let tile = |iw: u32, ih: u32, x: u32, y: u32| EffectCx {
+            scale: 1.0,
+            tile: Some(TileWindow {
+                image_width: iw,
+                image_height: ih,
+                x,
+                y,
+            }),
+        };
+        let err = |actual: (u32, u32), expected: (u32, u32)| {
+            Err(EffectError::SizeMismatch {
+                field: "cx.tile",
+                expected,
+                actual,
+            })
+        };
+        // (window, expected Err) for a 4x3 `src`.
+        let cases = [
+            (tile(10, 10, 7, 0), err((11, 3), (10, 10))),
+            (tile(10, 10, 0, 8), err((4, 11), (10, 10))),
+            (tile(3, 3, 0, 0), err((4, 3), (3, 3))),
+            (tile(4, 2, 0, 0), err((4, 3), (4, 2))),
+            (tile(0, 0, 0, 0), err((4, 3), (0, 0))),
+            (
+                tile(u32::MAX, u32::MAX, u32::MAX, u32::MAX),
+                err((u32::MAX, u32::MAX), (u32::MAX, u32::MAX)),
+            ),
+        ];
+        for (c, want) in cases {
+            let (r, dst) = run8_keep(&tex(), &c, &p, &s8, (4, 3));
+            assert_eq!(r, want, "{c:?}");
+            assert!(dst.iter().all(|b| *b == SENTINEL));
+            let (r, dst) = runf_keep(&tex(), &c, &p, &sf, (4, 3));
+            assert_eq!(r, want, "{c:?}");
+            assert!(dst.iter().all(|b| b.to_bits() == SENTINEL_F32));
+        }
+        // The limit itself fits; an empty `src` outside its image is still `Err`.
+        assert!(run8(&tex(), &tile(4, 3, 0, 0), &p, &s8, (4, 3)).is_ok());
+        assert!(run8(&tex(), &tile(10, 10, 6, 7), &p, &s8, (4, 3)).is_ok());
+        let (r, _) = run8_keep(&tex(), &tile(3, 3, 5, 0), &p, &[], (0, 3));
+        assert_eq!(r, err((5, 3), (3, 3)));
     }
 
     // Passes from the start; proved by a mutant on the cost.
