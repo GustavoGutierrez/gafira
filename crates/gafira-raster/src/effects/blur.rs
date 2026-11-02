@@ -1,7 +1,7 @@
 //! Gaussian blur of one plane: direct separable kernel, tap-outer loops, truncated at 3σ (P11).
 
 /// Largest kernel half width in taps: 3σ of blur 100 (radius 100, σ 50, 150 taps) at the
-/// maximum zoom 32 of FD-07. A wider radius is cut here, in `half_width`, so that `roi`, cost
+/// maximum zoom 32 of FD-08. A wider radius is cut here, in `half_width`, so that `roi`, cost
 /// and pixels agree and a huge `cx.scale` cannot ask for a huge allocation.
 pub(crate) const MAX_HALF_WIDTH: usize = 4800;
 
@@ -371,7 +371,7 @@ mod tests {
         }
     }
 
-    // ARQ-120: the cap is 1.5 x blur 100 x the maximum zoom 32 (FD-07), and sigma holds there.
+    // ARQ-120: the cap is 1.5 x blur 100 x the maximum zoom 32 (FD-08), and sigma holds there.
     #[test]
     fn arq_120_the_cap_covers_blur_100_at_zoom_32() {
         assert_eq!(half_width(f64::MAX), 4800);

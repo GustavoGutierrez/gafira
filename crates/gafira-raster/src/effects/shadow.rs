@@ -740,8 +740,10 @@ mod tests {
         assert_ne!(at2, plain);
     }
 
-    // ARQ-120: a smooth image and its half at scale 0.5 agree within 1/255 after scaling back,
-    // for a radius of 16 px or more and offsets that are whole pixels at that scale (even).
+    // ARQ-120: a smooth image and its half at scale 0.5 agree after scaling back, for a radius
+    // of 16 px or more and offsets that are whole pixels at that scale (even). This test is the
+    // alpha of an opaque-colour bump, in `Rgba8`, within 1/255 of the 2x2 mean over the whole
+    // image; the tinted `RgbaF32` and translucent `Rgba8` cases are the next two tests.
     #[test]
     fn arq_120_a_half_size_image_at_half_scale_matches_after_rescaling() {
         let half = (40usize, 32usize);
@@ -792,6 +794,149 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// A smooth premultiplied bump: alpha a raised cosine over an ellipse scaled by `peak`,
+    /// straight colour a gentle gradient. Returns straight-colour premultiplied `f32` pixels.
+    fn bump_f32(w: usize, h: usize, peak: f64) -> Vec<f32> {
+        let mut v = Vec::with_capacity(w * h * 4);
+        for y in 0..h {
+            for x in 0..w {
+                let (dx, dy) = (
+                    (x as f64 - (w as f64 - 1.0) / 2.0) / (w as f64 * 0.3),
+                    (y as f64 - (h as f64 - 1.0) / 2.0) / (h as f64 * 0.28),
+                );
+                let d = (dx * dx + dy * dy).sqrt().min(1.0);
+                let a = peak * 0.5 * (1.0 + (std::f64::consts::PI * d).cos());
+                let c = [
+                    0.2 + 0.6 * x as f64 / w as f64,
+                    0.7 - 0.4 * y as f64 / h as f64,
+                    0.3 + 0.2 * (x + y) as f64 / (w + h) as f64,
+                ];
+                v.extend([
+                    (c[0] * a) as f32,
+                    (c[1] * a) as f32,
+                    (c[2] * a) as f32,
+                    a as f32,
+                ]);
+            }
+        }
+        v
+    }
+
+    /// Whether the pixel is farther than 3 sigma of the half-size run plus its offset from
+    /// every edge of the half-size image (ARQ-120).
+    fn inside(x: usize, y: usize, half: (usize, usize), blur: f64, off: (f64, f64)) -> bool {
+        let margin = (0.75 * blur).ceil() + (off.0.abs().max(off.1.abs()) / 2.0).ceil() + 1.0;
+        let m = margin as usize;
+        x >= m && y >= m && x + m < half.0 && y + m < half.1
+    }
+
+    fn tinted() -> ParamValue {
+        ParamValue::Color(Color::Srgb(Rgba::new(0.8, 0.25, 0.1, 1.0)))
+    }
+
+    // ARQ-120 (W7 of RS4): the smooth tinted image in `RgbaF32`, its half and the full size made
+    // of the half repeated 2x2, within 1/255 per channel at 3 sigma plus the offset from the edge.
+    // Passes from the start; proved by a mutant on the tint (see apply-progress).
+    #[test]
+    fn arq_120_half_size_tinted_rgba_f32_matches_within_1_255() {
+        let half = (96usize, 80usize);
+        let small = bump_f32(half.0, half.1, 1.0);
+        let mut big = vec![0f32; small.len() * 4];
+        for y in 0..half.1 * 2 {
+            for x in 0..half.0 * 2 {
+                let s = ((y / 2) * half.0 + x / 2) * 4;
+                big[(y * half.0 * 2 + x) * 4..][..4].copy_from_slice(&small[s..s + 4]);
+            }
+        }
+        for (blur, ox, oy) in [(16.0, 0.0, 0.0), (24.0, 4.0, -2.0), (32.0, -6.0, 8.0)] {
+            let mut p = pv(&[
+                ("blur", blur),
+                ("opacity", 80.0),
+                ("offset_x", ox),
+                ("offset_y", oy),
+            ]);
+            p.set("color", tinted());
+            let full = runf(&cx(1.0), &p, &big, (half.0 as u32 * 2, half.1 as u32 * 2)).unwrap();
+            let lo = runf(&cx(0.5), &p, &small, (half.0 as u32, half.1 as u32)).unwrap();
+            let mut checked = 0;
+            for y in 0..half.1 {
+                for x in 0..half.0 {
+                    if !inside(x, y, half, blur, (ox, oy)) {
+                        continue;
+                    }
+                    checked += 1;
+                    for ch in 0..4 {
+                        let mean: f32 = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                            .iter()
+                            .map(|(a, b)| full[((2 * y + b) * half.0 * 2 + 2 * x + a) * 4 + ch])
+                            .sum::<f32>()
+                            / 4.0;
+                        let got = lo[(y * half.0 + x) * 4 + ch];
+                        assert!(
+                            (mean - got).abs() <= 1.0 / 255.0,
+                            "blur {blur} ({x},{y}) ch {ch}: {mean} vs {got}"
+                        );
+                    }
+                }
+            }
+            assert!(checked > 500, "too few pixels compared: {checked}");
+        }
+    }
+
+    // ARQ-120 (W7 of RS4): the translucent premultiplied image with a tinted shadow in `Rgba8`,
+    // within 2/255 per channel (8-bit rounding), same distance from the edge. Passes from the
+    // start; proved by a mutant on the shadow alpha (see apply-progress).
+    #[test]
+    fn arq_120_half_size_translucent_tinted_rgba8_matches_within_2_255() {
+        let half = (96usize, 80usize);
+        let small: Vec<u8> = bump_f32(half.0, half.1, 200.0 / 255.0)
+            .iter()
+            .map(|v| (f64::from(*v) * 255.0).round() as u8)
+            .collect();
+        let mut big = vec![0u8; small.len() * 4];
+        for y in 0..half.1 * 2 {
+            for x in 0..half.0 * 2 {
+                let s = ((y / 2) * half.0 + x / 2) * 4;
+                big[(y * half.0 * 2 + x) * 4..][..4].copy_from_slice(&small[s..s + 4]);
+            }
+        }
+        for (blur, ox, oy) in [(16.0, 0.0, 0.0), (24.0, 4.0, -2.0), (32.0, -6.0, 8.0)] {
+            let mut p = pv(&[
+                ("blur", blur),
+                ("opacity", 80.0),
+                ("offset_x", ox),
+                ("offset_y", oy),
+            ]);
+            p.set("color", tinted());
+            let full = run8(&cx(1.0), &p, &big, (half.0 as u32 * 2, half.1 as u32 * 2)).unwrap();
+            let lo = run8(&cx(0.5), &p, &small, (half.0 as u32, half.1 as u32)).unwrap();
+            let mut checked = 0;
+            for y in 0..half.1 {
+                for x in 0..half.0 {
+                    if !inside(x, y, half, blur, (ox, oy)) {
+                        continue;
+                    }
+                    checked += 1;
+                    for ch in 0..4 {
+                        let mean: u32 = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                            .iter()
+                            .map(|(a, b)| {
+                                u32::from(full[((2 * y + b) * half.0 * 2 + 2 * x + a) * 4 + ch])
+                            })
+                            .sum();
+                        let got = f64::from(lo[(y * half.0 + x) * 4 + ch]);
+                        assert!(
+                            (f64::from(mean) / 4.0 - got).abs() <= 2.0,
+                            "blur {blur} ({x},{y}) ch {ch}: {} vs {got}",
+                            f64::from(mean) / 4.0
+                        );
+                    }
+                }
+            }
+            assert!(checked > 500, "too few pixels compared: {checked}");
         }
     }
 
