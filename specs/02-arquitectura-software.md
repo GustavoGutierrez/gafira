@@ -1290,18 +1290,19 @@ proyecto.gafira (ZIP)
 ### 7.3 Errores y degradación
 
 ```rust
-#[derive(thiserror::Error, Debug)]
+#[derive(Debug)]
 pub enum FormatError {
-    #[error("archivo dañado: {0}")] Corrupt(String),
-    #[error("versión de formato {found} más nueva que {supported}")] TooNew { found: u32, supported: u32 },
-    #[error(transparent)] Io(#[from] std::io::Error),
-    #[error(transparent)] Migration(#[from] MigrationError),
+    Corrupt(String),
+    TooNew { found: u32, supported: u32 },
+    Io(std::io::Error),
+    Migration(MigrationError),
 }
+// `Display` (solo para el log), `std::error::Error` y `ToMessage` se escriben a mano (ADR 0012).
 ```
 
-- Un enum `thiserror` por crate (`DocError`, `CommandError`, `FormatError`, `ImportError`, `ExportError`, `MediaError`, `RenderError`, `SegError`, `PluginError`). `anyhow` solo en los binarios y en `xtask`.
+- Un enum de error por crate, escrito a mano y sin `thiserror` (ADR 0012) (`DocError`, `CommandError`, `FormatError`, `ImportError`, `ExportError`, `MediaError`, `RenderError`, `SegError`, `PluginError`). `anyhow` solo en los binarios y en `xtask`.
 - `gafira-engine` traduce los errores a `UserError { kind, message: Message, detail, actions: Vec<Message> }`. Cada enum de error implementa `ToMessage` (`gafira-doc::msg`, §14.2) y devuelve una **clave con parámetros** (por ejemplo `error.format.too_new { found, supported }`), nunca un texto ya traducido (ARQ-102). La UI la traduce en el idioma activo; los mensajes visibles siguen el tono de marca («No pudimos completar esta acción. Inténtalo de nuevo.» / «We couldn't complete this action. Try again.») y el detalle técnico va al log local.
-- El texto de `#[error(...)]` (`Display`) es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (PROPUESTA; el extracto anterior conserva su texto original como ejemplo de estructura).
+- El texto de `Display` es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (PROPUESTA; el extracto anterior conserva su texto original como ejemplo de estructura).
 - **Degradación**:
 
 | Fallo | Comportamiento |
@@ -1508,7 +1509,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | miniz_oxide / flate2 | última | MIT/Apache/Zlib | VERIFICADA (`cargo-deny`) | DEFLATE | — |
 | zstd | última | BSD-3-Clause (crate `zstd`); la `libzstd` en C que compila `zstd-sys` no la lee `cargo-deny`: VERIFICAR | VERIFICAR (solo la parte C) | Tiles de máscara | lz4_flex (MIT) |
 | blake3 | 1.x | CC0/Apache-2.0 | VERIFICADA (`cargo-deny`) | Hash de contenido | — |
-| thiserror | 2.x | MIT/Apache | VERIFICADA (`cargo-deny`) | Errores | — |
+| thiserror | 2.x | MIT/Apache | EVITAR | Ningún crate propio la usa: los errores se escriben a mano (ADR 0012) | — |
 | tracing, tracing-subscriber | última | MIT | VERIFICADA (`cargo-deny`) | Logs y spans locales | log |
 | crossbeam-channel | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Canales | std::sync::mpsc |
 | rayon | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Paralelismo de datos | — |
