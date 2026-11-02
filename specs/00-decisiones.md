@@ -378,6 +378,13 @@ Fecha: 1 de noviembre de 2026.
 - **Decisión**: medir la sonoridad, Nivelar y remuestrear quedan fuera de ARQ-112 en este corte (Q-43). `gafira-engine` los cancelará entre bloques más adelante.
 - Aplicado a 02 (ARQ-112, §12.2).
 
+## D-44 Colores medios de la fiabilidad
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: los colores medios de ARQ-131 se promedian en luz lineal y después se pasan a Lab (Q-44).
+- Aplicado a 02 (ARQ-131, §12.2).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

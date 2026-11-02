@@ -5,7 +5,7 @@
 | Documento | Especificación 02 de 05 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-43 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-44 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-132 son los contratos de los motores de capa 2 (§4.17) |
 
@@ -999,7 +999,7 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
 | ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `Segmentation` cuya `mask` es una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
-| ARQ-131 | **Fiabilidad** (D-23). `Segmentation.reliable` es verdadero si el primer plano, los píxeles de `mask` con alfa ≥ 128 como en ARQ-132, ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Un resultado no fiable no es un error: es `Ok` con `reliable` falso y conserva su máscara. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: `Ok` con `reliable` falso y máscara de las dimensiones de la entrada. Regla con máscara y colores dados: 1 % y 95 % son fiables, y 0,99 % y 95,01 % no; ΔE76 5 es fiable, y 4,999 no. Si no hay píxeles de primer plano o de fondo, no es fiable, sin NaN. Las escenas de ARQ-132: fiable. |
+| ARQ-131 | **Fiabilidad** (D-23). `Segmentation.reliable` es verdadero si el primer plano, los píxeles de `mask` con alfa ≥ 128 como en ARQ-132, ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Esos colores se promedian en luz lineal y después se pasan a Lab (D-44). Un resultado no fiable no es un error: es `Ok` con `reliable` falso y conserva su máscara. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: `Ok` con `reliable` falso y máscara de las dimensiones de la entrada. Regla con máscara y colores dados: 1 % y 95 % son fiables, y 0,99 % y 95,01 % no; ΔE76 5 es fiable, y 4,999 no. Si no hay píxeles de primer plano o de fondo, no es fiable, sin NaN. Un primer plano con la mitad de los píxeles negros y la mitad blancos tiene un color medio de `L` 76,07 ±0,01, no 50. Las escenas de ARQ-132: fiable. |
 | ARQ-132 | **Puerta de calidad** (D-20). `gafira-testkit` genera escenas sintéticas deterministas con máscara exacta conocida: al menos 12, con fondo plano, degradado y texturizado, sujeto centrado y desplazado, formas cóncavas y con agujero, y contraste bajo. En toda escena, el sujeto ocupa entre el 2 % y el 50 % del área y los colores medios exactos de sujeto y fondo están a ΔE76 ≥ 6. Contraste bajo significa sujeto y fondo planos a ΔE76 entre 6 y 10, extremos incluidos (PROPUESTA). Ese margen sale de la puerta: con IoU 0,90, una máscara imperfecta acerca los colores medios hasta un 10,6 % con sujeto ≤ 50 %, y 6 × 0,894 > 5 conserva la fiabilidad de ARQ-131. La prueba bloqueante exige IoU ≥ 0,90 por escena, no en media, binarizando con alfa ≥ 128. Con las dos máscaras vacías, el IoU es 1. Sobre fotos reales, el IoU es solo un aviso hasta que el titular aporte un conjunto con licencia (pendiente 9). | Una prueba recorre las escenas y comprueba el área del sujeto y ΔE76 con su máscara exacta, y que al menos una es de contraste bajo. La prueba de escenas falla si una sola queda por debajo de 0,90. Prueba del cálculo de IoU: 0,90 pasa y 0,8999 falla. Mientras no exista el conjunto real, ninguna prueba bloqueante depende de él. |
 
 Parámetros de partida de `ClassicSegmenter` (PROPUESTA; se pueden cambiar sin tocar esta spec mientras se cumplan ARQ-132 y CAL-06): unos 1 500 superpíxeles SLIC, 5 componentes por GMM, hasta 5 iteraciones de GrabCut y *guided filter* de radio 8 px.
@@ -1723,7 +1723,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-40 constan en `00-decisiones.md` (D-29 a D-34).
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-44 constan en `00-decisiones.md` (D-29 a D-34 y D-41 a D-44).
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1757,6 +1757,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-41 | ¿Cómo actúa la Intensidad de 04 FD-34 en parámetros `Int`, `Bool`, `Choice` y `Color`? | D-41: `Int` mezcla y redondea, medio se aleja de 0; `Color` mezcla en luz lineal; `Bool` y `Choice` saltan al preset por encima de 0. |
 | Q-42 | ¿Qué fórmula y qué criterio tienen Brillo y Contorno de 04 FD-35, o salen del primer corte de `gafira-raster`? | D-42: salen del corte hasta que se aprueben sus fórmulas. |
 | Q-43 | ¿Medir la sonoridad, Nivelar y remuestrear un clip largo se pueden cancelar y dan progreso? | D-43: quedan fuera de ARQ-112 en este corte; `gafira-engine` los cancela entre bloques más adelante. |
+| Q-44 | ¿En qué espacio se calculan los colores medios de ARQ-131? | D-44: en luz lineal, y después se pasan a Lab. |
 
 ### 12.3 Preguntas abiertas
 
@@ -1772,7 +1773,6 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
 | Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos, y con ellas dará el catálogo de filtros de 04 FD-34 (D-40). No bloquea la especificación. | Titular |
-| Q-44 | ¿En qué espacio se calculan los colores medios de ARQ-131: luz lineal, y después Lab, o Lab píxel a píxel? No cambia las escenas de contraste bajo, que son planas. | Titular |
 
 ---
 
