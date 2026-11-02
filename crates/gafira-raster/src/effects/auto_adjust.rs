@@ -3,7 +3,7 @@
 
 use gafira_doc::contract::{ParamError, ParamValue, ParamValues};
 
-use super::eyedropper;
+use super::white_balance::sliders_for;
 use crate::transfer::Transfer;
 use crate::{BufferError, EffectError, ImageView, PixelData, PixelFormat, unpremultiply_u8};
 
@@ -123,7 +123,7 @@ pub fn auto_adjust(original: ImageView<'_>, intensity: f64) -> Result<AutoAdjust
     // n = -0.25 k_N and b = 1 - 0.25 k_B, solved for the sliders.
     let blacks = (-4.0 * percentile(&v, 0.5)).clamp(-1.0, 1.0);
     let whites = (4.0 * (1.0 - percentile(&v, 99.5))).clamp(-1.0, 1.0);
-    let tt = eyedropper([mean[0] as f32, mean[1] as f32, mean[2] as f32])?;
+    let tt = sliders_for(mean);
     let k = intensity / 100.0;
     Ok(AutoAdjust {
         temperature: tt.temperature * k,
@@ -308,6 +308,24 @@ mod tests {
             auto_adjust(view(&px, 10, 1), 100.0).unwrap().brightness,
             100.0 * (0.18f64 / 0.2).log2(),
             "median of ten",
+        );
+    }
+
+    // ARQ-110 (sweep): a finite image gives a finite answer. A straight colour beyond what `f32`
+    // holds (a tiny alpha over a full colour) is a very bright pixel, not an error.
+    #[test]
+    fn arq_110_a_straight_colour_beyond_f32_is_not_an_error() {
+        let px = [1.0f32, 0.5, 0.25, 1.0e-40, 0.2, 0.2, 0.2, 1.0];
+        let a = auto_adjust(view(&px, 2, 1), 100.0).unwrap();
+        for v in [a.temperature, a.tint, a.brightness, a.whites, a.blacks] {
+            assert!(v.is_finite() && v.abs() <= 100.0, "{a:?}");
+        }
+        // The mean is dominated by the bright pixel, red over blue: T and M are the clipped ones.
+        near(a.temperature, -100.0, "temperature");
+        near(
+            a.brightness,
+            100.0 * (0.18f64 / 0.2).log2(),
+            "brightness (the lower middle value)",
         );
     }
 

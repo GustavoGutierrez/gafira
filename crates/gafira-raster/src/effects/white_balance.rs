@@ -29,18 +29,23 @@ pub fn eyedropper(gray: [f32; 3]) -> Result<TemperatureTint, BufferError> {
             index,
         });
     }
-    let [r, g, b] = gray.map(f64::from);
+    Ok(sliders_for(gray.map(f64::from)))
+}
+
+/// The eyedropper on finite channels of any size (a mean can pass what `f32` holds).
+pub(super) fn sliders_for(gray: [f64; 3]) -> TemperatureTint {
+    let [r, g, b] = gray;
     // A channel at 0 (or below) has no quotient: the adjustment does not change.
     if r <= 0.0 || g <= 0.0 || b <= 0.0 {
-        return Ok(TemperatureTint {
+        return TemperatureTint {
             temperature: 0.0,
             tint: 0.0,
-        });
+        };
     }
-    Ok(TemperatureTint {
+    TemperatureTint {
         temperature: (100.0 * (b / r).log2()).clamp(-100.0, 100.0),
         tint: (200.0 * (g / (r * b).sqrt()).log2()).clamp(-100.0, 100.0),
-    })
+    }
 }
 
 /// White balance in linear light.
