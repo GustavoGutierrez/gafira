@@ -716,3 +716,70 @@ Equivalent survivors: the final `Some(out)` of the pointwise closures, `weight <
 ### Size
 
 `git diff --shortstat` over `crates/`: RS5 (ba8fa71 to 82f8034, with the test-only commit 5dca6d4) 3 366 lines added; RS6 (82f8034 to the fix commits) 2 746 added. Both are far above the ~700 mark of the card; about half of each are tests. Authored non-test lines: white balance 132, light 125, color 147, texture 272, auto adjust 136, detected colours 239, filters 313, pointwise runner 158, palette 139, dHash 118, bench 42. The forecast was 480 (670) lines for each delivery; the owner said size is no limit for serial work.
+
+## Fix round of RS5 and RS6 (verify round 1: C1 to C6, W1 to W4, S2, S7)
+
+Commits, in order (each passes `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` and `cargo test --workspace --locked` alone, exit codes read separately):
+
+| Commit | Items |
+|---|---|
+| `b3e7ae8` | P16 types: `TileWindow`, `EffectCx.tile`, `EffectCx::whole`; the 40 literals replaced; `Effect::run_cpu` doc |
+| `eabbbd1` | W4: Viñeta from the window, `window_of`, `check_tile` |
+| `d3facb1` | C4: Claridad reads the result of Nitidez; `roi` is the sum of both tap counts |
+| `84d9db7` | C3, C5 (filter), W3, S2, S7 |
+| `4347022` | C5 (detected colours) |
+| `d0039c8` | W1, W2 |
+| `f3dbfa5` | C1, C2 |
+| `4a82f6d` | C6 |
+
+Test counts: 1 769 at the start of the round, 1 803 at the end, 0 failed.
+
+### RED evidence and hand mutants per item
+
+Each test below was written against the code of the commit before it and run to see the assertion fail; the failing line is quoted. C6 has no RED by design: the behaviour was right (verify probe), so its tests are green and each is named by the mutant it kills. Mutants are made by hand on the working copy, the named tests fail, then the change is reverted; none is committed.
+
+#### W4 (P16) Texture window
+RED: arq_120_texture_vignette_tiles_with_a_window_match_the_whole_image: `[0.5, 0.0, 0.8] (21,12) [194, 149, 242, 255] [215, 166, 255, 255]` (8-bit diff > 1); arq_120_texture_window_that_does_not_fit_is_err_and_dst_is_untouched: `left: Ok(()) right: Err(SizeMismatch { field: "cx.tile", expected: (10, 10), actual: (11, 3) })`.
+Pass from start (property of API): arq_120_texture_window_at_the_origin_equals_none_bit_for_bit (mutants below).
+Mutants killed: M-W4a vignette x ignores x0 -> vignette_tiles test; M-W4b half diagonal from src size -> vignette_tiles; M-W4c check_tile `right < iw` -> 16 tests incl window_that_does_not_fit; M-W4d `bottom < ih` -> same (all 16/1 via window tests); M-W4e check sum ignores x,y -> window_that_does_not_fit; M-W4f check after empty return -> window_that_does_not_fit.
+#### C4 Texture order
+RED (reference corrected + new tests, old code): fd_33_texture_sharpness_and_clarity_match_the_reference_in_f32: `scale 1 [0.6, 0.8, -0.5] px 0 ch 0: 0.024895364 vs 0.024929540051087787`; fd_33_texture_matches_the_reference_in_8_bits: `scale 2 [0.5, 0.5, -0.8] px 7 ch 2: 0 vs 9`; fd_33_texture_sliders_in_one_run_equal_the_sliders_in_sequence: `scale 1 [1.0, 1.0, 0.0] value 0: 0.039661754 vs 0.039735384`; arq_120_texture_roi_grows_by_the_active_kernels: `left IRect{-50,-40,110,120} right IRect{-53,-43,113,123}`.
+Mutants killed: Claridad delta from input luma (luma(c)) -> sequence + 2 reference tests; Y plane from input -> same 3; roi max instead of sum -> arq_120_texture_roi_grows_by_the_active_kernels; Claridad without Nitidez -> 6 tests.
+#### Filter: C3, C5 (mix), W3, S2, S7
+RED: fd_34_b_intensity_zero_is_no_filter_for_an_effect_whose_defaults_change_the_image: assertion `left == right` failed (dst has the shadow, e.g. left [.., 0,0,0,6,..] right [..,7,0,0,0,..]); arq_110_a_colour_mix_that_overflows_is_err_naming_the_parameter: `Srgb(r: 1e30..) at 1: left Ok(.. "col": Color(Srgb(Rgba { r: inf ..`, right Err(Effect(Buffer(NonFinite { field: "col", index: 0 }))); fd_34_b_color_blend_is_the_interpolation_of_02_3_4_bit_for_bit: `[0.2,0.4,0.6,0.05] to [0.9,0.1,0.5,0.02] at 33 left [.., 1051952363, ..] right [.., 1051952362, ..]` (expected bits from gafira_anim::Interpolate for Color, taken by a throwaway test in gafira-anim, deleted); arq_110_mix_params_keeps_the_unknown_ids_of_the_preset: panicked at filter.rs:771 `0` (id lost); fd_33_the_default_intensity_is_60: left 0.0 right 60.0 (constant placeholder 0.0 added to compile).
+Mutants killed: intensity-0 copy removed -> fd_34_b_intensity_zero_is_no_filter_for_an_effect_whose..; DEFAULT_INTENSITY 50 -> fd_33_the_default_intensity_is_60; alpha in f64 -> fd_34_b_color_blend_is_the_interpolation..; t perturbed -> same; result without finite check position(skip 1)-> arq_110_a_colour_mix_that_overflows..; returning unconverted `linear` -> fd_34_b_color_alpha_and_space_follow_the_interpolation_rule; unknown ids not copied -> arq_110_mix_params_keeps_the_unknown_ids..
+#### DetectedColors C5
+RED: arq_110_a_sample_that_overflows_is_err_naming_its_slot: `slot 0 left: Ok(()) right: Err(Buffer(NonFinite { field: "color_1", index: 0 }))`.
+Mutants killed: finite check only for NaN -> that test; check applied to idle slots (skip of the hue/sat filter removed) -> that test (idle half).
+#### dHash W1, W2 (spec 1b159f9 landed: min size 128 px for 2x2 halves, 640 for bilinear/nearest, no bound below; no code behaviour needed)
+RED (old code): arq_122_dhash_translucent_picture_has_the_same_hash_in_both_formats: `seed 0: distance 6 left 13158266634104048221` (before margin filter; same code path); arq_122_dhash_cells_are_weighted_by_the_area_they_cover: `38x30 seed 1 left: 13209995958845039898 right: <reference>`.
+Mutants killed: f32 arm encodes the premultiplied value (old) -> translucent test; weights = 1 -> 4 tests (area, odd sizes, tiny, noise); weights +1 -> area + odd sizes; only first cell touched -> 3 tests. Equivalent: alpha*0.5 uniform scale (hash is scale invariant).
+Half-size test gains 131x101, 157x139, 203x129 (pass from start; spec bound >=128 px).
+#### Palette C1, C2
+RED (old code): arq_122_close_colours_are_one_entry_each: `[[200, 60, 60], [215, 70, 60]]: [PaletteEntry { color: Srgb(0.8128738, 0.25473788, 0.23529412), pixels: 190 }] left: 1 right: 2`; arq_122_a_large_noisy_colour_beats_five_small_flat_ones: `noise 16: PaletteEntry { color: Srgb(0.1176, 0.6274, 0.2352), pixels: 800 }` (first entry is a flat, not the noise); arq_122_a_gradient_beats_five_small_flat_ones: `left: 4399 right: 10000` (entries cover 4399 of 10000).
+Design: exact mode for <=5 distinct straight colours (C2); otherwise up to 32 clusters (bin merge dE<10), clusters within dE 15 (the FD-26 radius) merged, cut to five by area, every bin of a dropped cluster joins the nearest kept one, re-sort (C1). The second merge radius is the "look at the merge threshold": with only the cut, noise +-32 and +-40 took three or four of the five places (first test version failed at noise 40 with a 3470-pixel entry holding flats).
+Old tests changed (deviations): arq_122_at_most_five_entries_the_largest_areas (the colours left out now join, sum 258, was "left out"); arq_122_f32_values_beyond_the_range_do_not_split_a_colour (1e30 vs 1.0 is one colour, 1e30 vs 0.8 are two entries now that up to five colours are one each).
+Mutants killed: exact mode off -> close_colours_are_one_entry_each + f32 test; exact list `<=` PALETTE_SIZE -> six_colours_are_five_entries; dropped bins not redistributed -> 4 tests; stage-2 merge off / radius 12 -> a_large_noisy_colour_beats_five_small_flat_ones (+ six, gradient); dropped bins to cluster 0 instead of the nearest -> noisy_colour test; no re-sort after redistribution -> arq_122_the_order_follows_the_areas_after_the_pixels_left_out_join.
+#### C6 generic ARQ-110 helpers
+No RED by design: the behaviour was right (verify probe); tests are green on the code and killed by mutants. Helpers in testing.rs: assert_unknown_ids_are_ignored, assert_roi_and_cost_extremes, finite_output_case; one proptest per effect (white_balance, light, color_adjust, texture, detected) plus the filter (unknown ids in a step, proptest).
+Mutants killed: G1 `px * work` in Texture::cost_hint -> arq_110_texture_roi_and_cost_hint_survive_the_extremes (overflow panic); G2 `assert!(cx.scale.is_finite())` in Texture::roi -> same test (NaN scale); G3 DetectedColors returns early on an unknown id -> arq_110_detected_unknown_ids_are_ignored; same style for light, color_adjust, white_balance, texture (unknown ids tests); light cost `px * 3` -> arq_110_light_roi_and_cost_hint_survive_the_extremes; filter reads an unknown id -> arq_110_filter_ignores_unknown_ids_in_a_step; finite property: map_straight overflow check removed + vignette x1e4 -> arq_110_texture_finite_input_gives_finite_output.
+
+### Sweep (throwaway, deleted, not committed)
+
+Release build, through the public API only. Every effect (Texture, Light, ColorAdjust, WhiteBalance, DetectedColors, ParallelShadow) in `Rgba8` and `RgbaF32`:
+
+- Tiles against the whole image: 320 x 240, 9 tiles (corners, strips, 1 x 1) with `roi` and `cx.tile`, parameters at minimum, maximum, alternating and middle (detected colours also with eight set samples), scale 0.1, 0.25, 0.5, 1 and 2: 125 combinations, largest difference 0 in `u8` and 0 relative in `f32`. A negative control (Texture at 100 / 100 / 100, scale 0.25, same tile without the window) differs by 56/255, so the sweep is not vacuous. A second pass with 360 random parameter sets, tiles and scales on 200 x 150: largest difference 0 and 0.
+- Extreme scale (`f32::MAX`, `MIN_POSITIVE`, 1e-30, 1e30, 0, -1) and extreme parameters: no non-finite output, no panic, `Rgba8` and `RgbaF32` agree on `Ok` or `Err`.
+- Intensity 0 for every effect as the only step of a preset (parameters at ends, scale 0.5, 1, 2): byte-for-byte copy in `Rgba8` and bit-for-bit in `RgbaF32` (all 6 effects, including ParallelShadow); intensities 1e-300, 1e-9, 0.5, 99.999999, 100 give no non-finite output.
+- Palette, 300 random images with 0 to 8 small flat colours (1 to 40 pixels), noise of amplitude 0 to 48 over 0 to 20 000 pixels and transparent pixels: entries sum to the opaque pixel count, sorted, at most five, one entry per colour when there are at most five distinct, and the noisy mass first when it holds the image: 0 bad cases. Tiny images (1 x 1 to 3 x 3) and `RgbaF32` noise with flats sum to the pixel count. `Rgba8` and `RgbaF32` palettes of the same image agree. 12 MP, one thread, release: uniform noise 288 ms, gradient 112 ms.
+- Found: nothing. No fix was needed beyond the items above.
+
+### Deviations and notes of the fix round
+
+1. **Old tests changed** because they pinned the rejected behaviour: `reference` and the roi test of Textura (C4, order and sum of taps); `arq_122_at_most_five_entries_the_largest_areas` (the colours left out now join the nearest one, so areas add up to the image); `arq_122_f32_values_beyond_the_range_do_not_split_a_colour` (a value beyond 1 equals 1; 0.8 is another colour and, with at most five colours, its own entry).
+2. **Palette merge threshold.** Fixing only the cut left a noisy colour taking three or four of the five places at noise 32 and 40. A second merge of clusters within ΔE2000 15 (the FD-26 radius, constant `CLUSTER_DELTA_E`) was added; up to 32 clusters are opened (`MAX_CLUSTERS`) so the cost stays at `BINS x 32` distances. With more than five colours, colours within 15 of each other become one entry (six greys 100 to 160 give one entry); with at most five, nothing merges (C2). The spec does not bound this.
+3. **dHash.** Area weights make every cell cover the same area, so sums compare directly; `bench_dhash_12mp` reads 25.8 ms (was 9.4 to 11 ms), against the 100 ms of ARQ-114. W2's minimum size landed in `1b159f9` (128 px for 2 x 2 halves, 640 px for bilinear or nearest, no bound below), so no code branch; the half-size test gains 131 x 101, 157 x 139 and 203 x 129. The W1 test only checks pictures whose neighbouring cells differ by more than 1 % of the range, so 8-bit rounding cannot flip a bit (without that filter seed 12 of 24 differed by one bit in the 8-bit premultiply, not in the order of operations).
+4. **DetectedColors C5** checks only the samples that move something (hue or saturation not 0); a non-finite conversion of an idle slot is not read, so not an error.
+5. **Intensity 0 (C3)** copies after `check_scale`, `resolve` and `check_io`, so a step that would fail at 100 (for example a `cx.tile` that does not fit Texture) does not fail at 0; the preset is still validated first.
+6. **S3** (even-count median takes the lower middle) is not changed: it is a recorded deviation pinned by `fd_33_d_*` tests, and the spec does not say which. **S1, S4, S5** are notes; **S6** stays untracked as told.
+7. **P16 against `1b159f9`.** The rows written by the specifier match the code: `size_mismatch` with field `cx.tile`, also for a `src` of size 0, `dst` untouched, sums in `u64`, the other effects and transitions ignore the window.
