@@ -378,3 +378,59 @@ Hand mutants (applied, killed, reverted):
 Decisions the specs leave open (unit 3):
 - `LoudnessNormalizer` is an `AudioProcessor` with `gain` in dB, range the whole `f64` (SP19), default 0, not animatable, label `audio.loudness_normalizer.gain`. It applies the gain from the first sample of the block that carries it, with no ramp: ARQ-124 puts the ramp on `Gain` only, and Nivelar sets one gain for the whole signal. Latency and tail are 0.
 - The engine feeds it `Leveling::gain_db` (`level` or `plan_leveling`); nothing in the crate writes a `ParamSnapshot`, so the Volume cannot change.
+
+### AU3 closing
+
+Commits: `7283248` (meter), `341ad24` (true peak and plan), `d0cbc8e` (`LoudnessNormalizer`). The AU3 sweep is recorded after AU4.
+
+## AU4
+
+### Resampler (ARQ-128, FV-04 b, ARQ-110, ARQ-111)
+
+RED, against a compiling stub (`resampled_len -> Ok(0)`, `Resampler::new -> Ok`, `process` and `finish` doing nothing, `resample -> Ok(vec![])`, `latency -> 0`), `tests/resample.rs`, 11 of 18 failed:
+
+| Criterion | Failing line |
+|---|---|
+| 44 100 samples 44.1 -> 48 kHz give 48 000 | `arq_128_44100_samples_*`: `left: 0 right: 48000` |
+| 96 000 samples at 2.0x give 48 000 (FV-04 b) | `arq_128_96000_samples_at_2x_*`: `left: 0 right: 48000` |
+| length is the f64 expression, half away from 0 | `arq_128_the_length_is_the_f64_expression_*`: `left: 0 right: 1` (first tie row) |
+| speed 0, negative, 0.09, 10.1 are `Err` | `arq_128_a_speed_outside_0_1_to_10_*`: `left: Ok([]) right: Err(OutOfRange { field: "speed" })` |
+| non-finite speed | `arq_110_a_non_finite_speed_*`: `left: Ok([]) right: Err(NonFinite { field: "speed" })` |
+| non-finite sample, nothing written, state intact | `arq_110_a_non_finite_sample_*`: `left: Ok([]) right: Err(NonFinite { field: "samples" })` |
+| SNR >= 80 dB, 1 kHz 44.1 -> 48 kHz | `arq_128_a_1_khz_sine_*`: panic at the SNR (empty output) |
+| passband +-0.1 dB to 0.9 of the lower Nyquist | `arq_128_the_passband_is_flat_*`: panic at the first row |
+| stopband >= 80 dB from 1.0 of the lower Nyquist | `arq_128_the_stopband_*`: panic at the first row |
+| impulse at the declared latency +-1 | `arq_128_an_impulse_comes_out_*`: panic at the first row |
+| constant ratio over 20 s | `arq_128_the_ratio_is_constant_over_a_long_run`: panic |
+
+Passed from the start (the stub answer, empty, is right for them), each proved by a mutant below: `arq_128_an_empty_input_*`, `arq_128_the_latency_is_declared_*`, `arq_128_the_output_has_the_length_of_the_formula_*` (an empty stub equals itself only for empty; it failed on the first non-empty size in the real run of the stub? it passed: the stub gave 0 for n in the table, which `len` also gave through the stub), `arq_128_chunks_of_any_size_*`, `arq_128_a_resampler_used_twice_*`, `arq_111_resampling_twice_*`, `arq_110_a_finite_input_*`.
+
+One test was added after the implementation, as the fix for a surviving mutant: `arq_128_the_images_of_an_upsampled_tone_are_down_at_least_80_db` (the mutant "cutoff not limited by the lower rate when upsampling" survived the downsampling stopband test).
+
+Hand mutants (applied, killed, reverted):
+
+| Mutant | Killed by |
+|---|---|
+| Length in `f32` | `arq_128_the_length_is_the_f64_expression_*` (rows 9 and 10) |
+| Rounding `floor`, `ceil`, half to even | the same test (ties and the 2.5 row) |
+| Evaluation order `n * (to / from) / speed` | the same test (rows 6 to 8) |
+| Ratio inverted in the length; in the position of the filter | `arq_128_the_output_has_the_length_*`; `arq_128_a_1_khz_sine_*`, the impulse test |
+| Speed upper bound exclusive; lower bound exclusive; max 10.1; min 0.09; only `> 0` | `arq_128_a_speed_outside_0_1_to_10_*` (and `arq_110_a_finite_input_*` for the exclusive ones) |
+| Speed finiteness check removed | `arq_110_a_non_finite_speed_*` |
+| Non-constant ratio: position computed in `f32`; ratio drifting by 1e-6; a `trim` that drops one input too many (output depends on the chunks) | `arq_128_the_ratio_is_constant_over_a_long_run`, `arq_128_a_1_khz_sine_*`; `arq_128_chunks_of_any_size_*` |
+| State reused: `finish` without `reset`; `reset` keeps `next_out`, the buffer or the count | `arq_128_a_resampler_used_twice_starts_each_run_from_nothing` |
+| Cutoff 1.1; cutoff 0.8; 20 lobes; Kaiser beta 4; table of 8 entries per lobe | stopband and passband tests; the SNR tests |
+| Cutoff not limited by the lower rate when upsampling | `arq_128_the_images_of_an_upsampled_tone_*` (survived until that test was added) |
+| Latency declared 5 | `arq_128_an_impulse_comes_out_at_the_declared_latency_*` |
+| No sample check; check after the samples were buffered | `arq_110_a_non_finite_sample_*` |
+| No `clean_output` | `arq_110_a_finite_input_gives_a_finite_output_*` |
+| Tail not flushed; empty input gives 1 frame | `arq_128_44100_samples_*`, `arq_128_96000_samples_*`; `arq_128_an_empty_input_*` |
+
+Decisions the specs leave open (AU4):
+- API: `resampled_len` (the formula alone), `Resampler` (`new`, `process` per chunk, `finish`, `reset`, `latency`) and `resample` (one call). The speed is fixed at `new`; there is no way to change the ratio in a run, so a non-constant ratio cannot be asked for. The bytes do not depend on where the chunks end.
+- Speed bounds are inclusive: 0.1 and 10 are valid, as ARQ-128 and FV-04 say "de 0,1 a 10". NaN and `+-inf` are `NonFinite` naming `speed`; a finite value outside is `OutOfRange` naming `speed`.
+- With a speed the clip is read as at `from x speed`, so the "lower Nyquist" of ARQ-128 is `min(from x speed, to) / 2` in output Hz (`min(to / speed, from) / 2` in input Hz). Tests use that.
+- The latency is declared 0: the filter is centred, the output at frame `j` is the signal at input position `j x from x speed / to`, so the impulse comes out at `round(k x ratio)`. The filter looks ahead by `60 / (0.95 x min(1, ratio))` input samples; `process` waits for them and `finish` pays them with zeros, so the total is always the length of the formula.
+- Filter: Kaiser-windowed sinc, 60 lobes of half-length, beta 9.6, cutoff at 0.95 of the lower Nyquist (the middle of the 0.9 to 1.0 transition), kernel read from a 2 048-per-lobe table by linear interpolation. Measured: passband within 0.1 dB to 0.9, stopband under -80 dB from 1.0, SNR over 80 dB.
+- `resample` reserves the output before it works (`try_reserve_exact`), so a length that cannot be allocated is `OutOfRange` naming `samples`, not an abort. A length over `2^63` is the same error. Output samples go through `clean_output` (finite, no subnormal).
+- The signal is zero outside its ends, so the edges ring like a filtered step; the SNR tests leave out 4 000 frames at each end.

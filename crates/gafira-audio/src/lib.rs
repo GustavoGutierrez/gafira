@@ -16,6 +16,7 @@ mod normalizer;
 mod offset;
 mod pan;
 mod processor;
+mod resample;
 
 pub use block::{AudioBlock, MAX_PARAMS, ParamSnapshot};
 pub use chain::ProcessorChain;
@@ -31,3 +32,4 @@ pub use normalizer::{LoudnessNormalizer, PARAM_GAIN};
 pub use offset::flicks_to_samples;
 pub use pan::{PARAM_PAN, Pan, crossfade_gains};
 pub use processor::AudioProcessor;
+pub use resample::{Resampler, resample, resampled_len};
