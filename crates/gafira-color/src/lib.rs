@@ -13,7 +13,7 @@ mod space;
 mod transform;
 
 pub use color::Color;
-pub use lab::{Lab, delta_e76};
+pub use lab::{Lab, delta_e76, delta_e2000};
 pub use rgb::{DisplayP3Rgba, LinearRgba, Rgba};
 pub use space::ColorSpaceId;
 pub use transform::{AnalyticTransform, ColorTransform, PixelBufferError, PixelLayout};
