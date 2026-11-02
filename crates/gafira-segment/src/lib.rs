@@ -105,21 +105,22 @@ impl Segmenter for ClassicSegmenter {
         check_pixels(&img)?;
         let src = Source::new(&img);
         let (w, h) = (src.width, src.height);
+        let (ww, wh) = work::working_size(w, h);
         let planned =
-            (w * h) as u64 + slic::planned(w, h) + cut::planned(w, h) + refine::planned(w, h);
+            (w * h) as u64 + slic::planned(ww, wh) + cut::planned(ww, wh) + refine::planned(w, h);
         let meter = Meter::new(progress, cancel, planned);
-        let work = WorkImage::copy(&src, &meter)?;
+        let work = WorkImage::build(&src, &meter)?;
         let sp = slic::slic(&work, &self.pool, &meter)?;
         let nodes = cut::nodes(&work, &sp, &meter)?;
-        let edges = slic::adjacency(&sp, (w, h), &meter)?;
-        let foreground = cut::grabcut(&nodes, &edges, &meter, cut::round_units(w, h))?;
+        let edges = slic::adjacency(&sp, (ww, wh), &meter)?;
+        let foreground = cut::grabcut(&nodes, &edges, &meter, cut::round_units(ww, wh))?;
         let coarse: Vec<u8> = sp
             .labels
             .iter()
             .map(|&l| if foreground[l as usize] { 255 } else { 0 })
             .collect();
         drop((sp, work));
-        let data = refine::upscale(&src, &coarse, (w, h), &self.pool, &meter)?;
+        let data = refine::upscale(&src, &coarse, (ww, wh), &self.pool, &meter)?;
         meter.finish()?;
         let mask = AlphaMask::new(width, height, data)?;
         Ok(Segmentation {

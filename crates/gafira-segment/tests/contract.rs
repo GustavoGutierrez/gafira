@@ -33,7 +33,14 @@ fn run(w: u32, h: u32) -> gafira_segment::Segmentation {
 // ARQ-130: the mask has the input's width and height.
 #[test]
 fn arq_130_mask_has_the_input_dimensions() {
-    for (w, h) in [(1, 1), (1, 9), (9, 1), (800, 600), (2048, 1536)] {
+    for (w, h) in [
+        (1, 1),
+        (1, 9),
+        (9, 1),
+        (800, 600),
+        (2048, 1536),
+        (4000, 3000),
+    ] {
         let mask = run(w, h).mask;
         assert_eq!((mask.width(), mask.height()), (w, h), "{w}x{h}");
         assert_eq!(mask.data().len(), w as usize * h as usize);

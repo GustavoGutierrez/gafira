@@ -35,7 +35,7 @@ fn scene(w: u32, h: u32, frac: f32) -> Vec<u8> {
 // ARQ-130: with no hints the subject gets alpha >= 128 and the background < 128.
 #[test]
 fn arq_130_isolates_a_centred_subject_without_hints() {
-    for (w, h) in [(64, 48), (200, 150), (800, 600)] {
+    for (w, h) in [(64, 48), (200, 150), (800, 600), (4000, 3000)] {
         let data = scene(w, h, 0.4);
         let view = ImageView::new(w, h, PixelData::Rgba8(&data)).unwrap();
         let out = seg()
