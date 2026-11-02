@@ -294,6 +294,173 @@
     "forecast": null
    },
    "report": "verify-report.md"
+  },
+  {
+   "round": 1,
+   "delivery": "SG3",
+   "commit": "4653a6f8f2b521fbe471da3491f79edc56707a80",
+   "mode": "full",
+   "tier": "T4",
+   "depth": "V2",
+   "verdict": "FAIL",
+   "next": "specifier",
+   "next_after": [
+    "explorer",
+    "tdd-apply"
+   ],
+   "counts": {
+    "critical": 6,
+    "warning": 6,
+    "suggestion": 5
+   },
+   "classes": [
+    "ambiguity",
+    "claim",
+    "implementation"
+   ],
+   "findings": [
+    {
+     "id": "SG3-C1",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-segment/src/cut.rs:181",
+     "summary": "Edge capacity lacks border length and band nodes are free; reg 400 hides it: 5/12 on the D-45 set against 9/12 recorded",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-C2",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-testkit/src/scenes.rs:490",
+     "summary": "Generator ranges far inside ARQ-132 (gradient dE 35+, textured 22+, area 6-19 %), so fresh 12/12 is meaningless",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-C3",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-testkit/tests/scenes.rs:61",
+     "summary": "Hand mutants H1, H2 survive: gradients, concave shapes, holes and offsets can vanish from the gate with tests green",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-C4",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-segment/src/reliable.rs",
+     "summary": "Hand mutant H5 survives: the area of reliable counted by alpha weight, not pixels",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-C5",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-segment/src/lib.rs",
+     "summary": "Hand mutant H4 survives: reliable of Background judged on the subject mask",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-C6",
+     "severity": "CRITICAL",
+     "class": "implementation",
+     "ref": "crates/gafira-segment/tests/gate.rs:84",
+     "summary": "Fresh-set count goes through eprintln, captured by cargo test; the gate log holds no such line, so ARQ-132 informs nobody",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-W1",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "02 ARQ-132",
+     "summary": "D-45 known result and parameter note do not describe the delivered code; ARQ-132 sets no range for the fresh set",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-W2",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "02 ARQ-131, 04 FD-32",
+     "summary": "Literal rule conforms, but Fondo is unreliable under a 5 % subject while Primer plano is reliable",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-W3",
+     "severity": "WARNING",
+     "class": "ambiguity",
+     "ref": "02 Q-49",
+     "summary": "Scene size question still open for the owner; code took the recommendation",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-W4",
+     "severity": "WARNING",
+     "class": "claim",
+     "ref": "apply-progress.md Q-48",
+     "summary": "Figures are not from D-03 hardware but the note says they hold and nothing goes to the owner",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-W5",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-segment/src/lib.rs ram_estimate",
+     "summary": "ram_bytes fits only 4000x3000: heap 96 MB at 8000x6000 against 44 MB estimated on one thread",
+     "follow_up": false,
+     "status": "open"
+    },
+    {
+     "id": "SG3-W6",
+     "severity": "WARNING",
+     "class": "implementation",
+     "ref": "crates/gafira-segment/tests/progress.rs",
+     "summary": "ARQ-111 pool test and FD-38 a, b, c proofs do not name those IDs",
+     "follow_up": false,
+     "status": "open"
+    }
+   ],
+   "gates": {
+    "fmt": 0,
+    "clippy": 0,
+    "test": 0,
+    "deny": 0,
+    "ci_policy": 0
+   },
+   "mutation": null,
+   "hand_mutants": {
+    "run": 7,
+    "killed": 3
+   },
+   "criteria": {
+    "total": 12,
+    "covered": 10
+   },
+   "quality_probe": {
+    "xp5_fresh": "5/12",
+    "verifier_set": "18/24",
+    "implementer_fresh": "12/12",
+    "xp5_fresh_with_candidate_fix": "9/12"
+   },
+   "blocked": [
+    {
+     "check": "CAL-06, ARQ-43, FD-38 (b) on D-03",
+     "reason": "No mid-range machine here; measured on i7-12700H under load, margins 4.7x and 2.3x"
+    },
+    {
+     "check": "CAL-26 with 20 pages",
+     "reason": "Needs the application; only the segmenter's heap share was measured"
+    }
+   ],
+   "report": "verify-report.md"
   }
  ]
 }

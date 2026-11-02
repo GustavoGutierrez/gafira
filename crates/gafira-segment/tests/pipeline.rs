@@ -62,3 +62,94 @@ fn arq_130_isolates_a_centred_subject_without_hints() {
         );
     }
 }
+
+/// Opaque `w` x `h` pixels from a colour function.
+fn paint(w: u32, h: u32, colour: impl Fn(u32, u32) -> [u8; 3]) -> Vec<u8> {
+    (0..w * h)
+        .flat_map(|i| {
+            let [r, g, b] = colour(i % w, i / w);
+            [r, g, b, 255]
+        })
+        .collect()
+}
+
+fn foreground_share(w: u32, h: u32, data: &[u8], inside: impl Fn(u32, u32) -> bool) -> (f64, f64) {
+    let view = ImageView::new(w, h, PixelData::Rgba8(data)).unwrap();
+    let hints = SegHints {
+        zone: SegZone::Foreground,
+        ..SegHints::default()
+    };
+    let out = seg()
+        .segment(view, &hints, &NoProgress, &CancelToken::new())
+        .unwrap();
+    let (mut hit, mut wanted, mut extra, mut rest) = (0.0, 0.0, 0.0, 0.0);
+    for (i, a) in out.mask.data().iter().enumerate() {
+        let (x, y) = (i as u32 % w, i as u32 / w);
+        if inside(x, y) {
+            wanted += 1.0;
+            hit += f64::from(u8::from(*a >= 128));
+        } else {
+            rest += 1.0;
+            extra += f64::from(u8::from(*a >= 128));
+        }
+    }
+    (hit / wanted, extra / rest)
+}
+
+// ARQ-133: on a gradient that spans the subject's colour, the band keeps the
+// background on its side. A free band loses that side and gives a mask of 100 %.
+// Mutant: band pin off.
+#[test]
+fn arq_133_a_gradient_does_not_swallow_the_image() {
+    let (w, h) = (1200, 900);
+    let inside = |x: u32, y: u32| {
+        let (dx, dy) = (f64::from(x) - 600.0, f64::from(y) - 450.0);
+        dx * dx + dy * dy <= 260.0 * 260.0
+    };
+    let data = paint(w, h, |x, y| {
+        if inside(x, y) {
+            [150, 96, 60]
+        } else {
+            let v = (70 + x * 120 / w) as u8;
+            [v, v, v]
+        }
+    });
+    let (hit, extra) = foreground_share(w, h, &data, inside);
+    assert!(hit > 0.9, "subject found: {hit}");
+    assert!(extra < 0.1, "background kept: {extra}");
+}
+
+// ARQ-133: a subject touching the border loses at most what falls in pinned
+// superpixels; the rest of it does not vanish, whether it touches one stretch of
+// the border, a corner, or a whole side.
+// Mutant: subject colours of the band train the background model.
+#[test]
+fn arq_133_a_subject_touching_the_border_does_not_vanish() {
+    let (w, h) = (1200u32, 900u32);
+    let disk = |cx: f64, cy: f64, r: f64| {
+        move |x: u32, y: u32| {
+            let (dx, dy) = (f64::from(x) - cx, f64::from(y) - cy);
+            dx * dx + dy * dy <= r * r
+        }
+    };
+    let whole_side = |_: u32, y: u32| y >= 620;
+    type Inside<'a> = &'a dyn Fn(u32, u32) -> bool;
+    let shapes: [(&str, Inside<'_>); 4] = [
+        ("left edge", &disk(0.0, 450.0, 300.0)),
+        ("corner", &disk(1200.0, 900.0, 480.0)),
+        ("top edge", &disk(600.0, 0.0, 240.0)),
+        ("whole side", &whole_side),
+    ];
+    for (name, inside) in shapes {
+        let data = paint(w, h, |x, y| {
+            if inside(x, y) {
+                [190, 70, 60]
+            } else {
+                [70, 110, 150]
+            }
+        });
+        let (hit, extra) = foreground_share(w, h, &data, inside);
+        assert!(hit > 0.75, "{name}: kept {hit}");
+        assert!(extra < 0.05, "{name}: extra {extra}");
+    }
+}

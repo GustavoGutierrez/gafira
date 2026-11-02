@@ -5,7 +5,7 @@ use std::sync::{Mutex, PoisonError};
 use gafira_doc::contract::{CancelToken, Cancelled, Progress};
 
 /// Rows per serial chunk of the SLIC passes, connectivity and adjacency (XP11).
-pub(crate) const CHUNK_ROWS: usize = 256;
+pub(crate) const CHUNK_ROWS: usize = 64;
 
 /// Counts planned and finished work units. Reports are serialised and the
 /// token is read under the same lock, so fractions never decrease and no

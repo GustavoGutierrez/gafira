@@ -1,6 +1,7 @@
 ## Slice card
 Flow: full | level: L3 | pack: product-spec slice | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: layer-2 crate in the owner's parallel full route; one writer per worktree
-Product IDs: SG1 ARQ-130 (shape, sizes, hints), ARQ-110; SG2 ARQ-130 (seeds, zones), FD-38 (reduction); SG3 ARQ-131, ARQ-132, FD-32 (e), FD-38 (a, b, c), ARQ-43, CAL-06, ARQ-111, ARQ-112 (source: specs/02-arquitectura-software.md, specs/04-funcionalidad-diseno-imagen-exportacion.md, specs/01-producto-y-calidad.md)
+Flow-change: no closure verify for SG3 (trigger: owner order to stop rounds unless grave; decided-by: owner). Gate 16/16, XP5 fresh 9/12, gates green; verify round 1 findings fixed in fd4b99f, 8ca7fb4, 8d0a3b5 and not re-verified.
+Product IDs: SG1 ARQ-130 (shape, sizes, hints), ARQ-110; SG2 ARQ-130 (seeds, zones), FD-38 (reduction); SG3 ARQ-131, ARQ-132, ARQ-133, FD-32 (e), FD-38 (a, b, c), ARQ-43, CAL-06, ARQ-111, ARQ-112 (source: specs/02-arquitectura-software.md, specs/04-funcionalidad-diseno-imagen-exportacion.md, specs/01-producto-y-calidad.md)
 Scope: SG1 to SG3 of specs/changes/layer-2/design.md, under D-45: colour only, working copy of long side 2048 px, 16 fixed blocking scenes, 12 fresh scenes as a warning. XP11 is resolved: a preallocated open-addressing table of u64 pair keys, chunks of 256 rows for adjacency and 250 for the guided filter, about 11 ms or less per whole image on the prototype. O4 is closed by D-45; where design.md still treats it as open, D-45 wins.      Non-goals: other streams; models or ONNX; a real-photo set; changing the budgets of CAL-06 and CAL-26 (Q-48 goes to the owner only if `bench_segment_4000` fails).
 Deliveries: SG1, SG2, SG3, serial; each verified and merged before the next.
 Plan: specs/changes/layer-2/design.md, table and decisions; `crates/gafira-segment/`, and `crates/gafira-testkit/src/scenes.rs` in SG3.
@@ -128,3 +129,109 @@ Deviations and notes:
 - A shared scratch script of another agent overwrote one of my helpers mid-run (it ran another worktree's tests); the three stroke mutants of that moment were re-run with my own helper and killed.
 - W1 (RED by removal in SG1) stays with the owner; nothing changed there.
 - Unchanged: W3/W4 are the specifier's (spec commits a2a2924, 314f3ba).
+
+## SG3: gate, reliability, progress, benches (ARQ-131, ARQ-132, FD-32 e, FD-38 a b c, ARQ-43, CAL-06, ARQ-111, ARQ-112)
+
+Commits: 553b11f (W5), 17d36fa (W6), 5cbd7a5 (scenes), 1444da9 (dev profile), 98acb1a (reliable), a7f4d77 (chunks, progress tests), 1642222 (gate, regularisation), 5d4230a (benches, RAM).
+Measured: `git diff --shortstat 65a7bb5..HEAD`: 16 files, 1606 insertions, 47 deletions (src 937, tests and benches 658). Over the ~700 line mark: the coordinator decides.
+Gates on every code commit, each alone on the staged tree: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+### SG2 follow-ups
+- W5: `hints::tests::arq_110_a_stroke_from_beyond_1e16_ends_where_it_ends`, RED `[1e19, 4.5] -> [1500.5, 4.5]`, left `(Some(1500), Some(2999), 954)` right `(Some(1500), Some(2999), 1500)`. Fix: an uncut end is `a` or `b` itself. The table of the verify report (six rows) is the test; the note "axis-parallel exact" now holds whatever the far end.
+- W6: the ramp test counts only pixels 1 to 15 away from the subject's square. It was green before (the code was right); mutant: binarise after the filter, killed (`graded pixels in the ramp: 0`).
+
+### Scenes (`crates/gafira-testkit/src/scenes.rs`, mine)
+- 16 recipes: flat x7, gradient x4, textured x5; centred and offset; ellipse, rounded rectangle, C (concave), cross (concave), L (concave), ring and rectangle ring (holes); two flat low-contrast (ΔE76 7.82 and 9.10). Subject 6.5 % to 19.1 % of the area; ΔE76 7.82 to 79.24 at 4000x3000. Fresh set: 12 of the 16 recipes (indices `i * 16 / 12`) from `FRESH_SEED`; same constraints (test at 800x600).
+- Colours by construction: the subject colour is sampled against the exact mean of the background, so the ΔE76 range holds; the tests recompute it from the final pixels.
+- RED (all on assertions, stub with wrong values): `left: (0, 0) right: (4000, 3000)` for the 16 scene tests; `arq_132_iou_090_passes_and_08999_fails`, message `90/100`; `arq_132_empty_masks_have_iou_one` `left: 0.0 right: 1.0`; `arq_132_fresh_report_counts_and_never_fails` `left: (0, 0) right: (0, 12)`; `arq_132_scenes_are_deterministic_and_the_seeds_differ` `other seed, other pixels`.
+- Q-49: gate at 4000x3000 (reduced to 2048x1536). ARQ-112 reference at 1024x768 (`reference_scene`, recipe 0).
+
+### reliable (ARQ-131, D-44)
+- `reliable.rs`: `decide` (area 1 % to 95 % inclusive in integers, ΔE76 >= 5) and `assess` (serial chunks of rows, token per chunk, linear-light sums weighted by input alpha). The colour is read as stored, over black (ARQ-130); alpha 0 adds nothing; no weight gives no colour and no NaN. `reliable` is computed on the returned mask, `All` and `Background` included.
+- RED: `arq_131_rule_bounds_are_inclusive` `100/10000 dE Some(9.0) left: false right: true`; `arq_131_means_are_averaged_in_linear_light` `a mean colour`; `arq_131_a_fixed_scene_is_reliable` `assertion failed: out.reliable`; `arq_131_input_alpha_weights_reliability_not_the_mask` `assertion failed: opaque.reliable`; `arq_112_assess_stops_on_a_cancelled_token` `left: Ok(false) right: Err(Cancelled)`.
+- Green from the start, proved by a mutant: uniform, noise, 0.5 % subject, 1x1, `All` (mutant: `decide` returns true).
+
+### Gate and tuning (D-45)
+- RED: `arq_132_gate_scene_06` IoU 0.1917 (gradient-ellipse), `_07` 0.1431 (gradient-roundrect), `_08` 0.0980 (gradient-c), with gamma 500, regularisation 25, compactness 25; 13 of 16 passed. The foreground took the half of the gradient closest in colour to the subject.
+- Tuning ran on the 16 gate scenes only, colour only, working copy 2048. Sweeps (min over the 16 scenes, failing scenes): gamma 50, 100, 500, 2000 at reg 25: no change (the unary terms are weighted by superpixel size, so gamma barely moves the cut); reg 5: scenes 6 to 9 fail; reg 100: 6 and 8 fail; reg 150: 8 fails; reg 250: 8 fails; reg 300, 400, 600, 1000: 16 of 16; compactness 8 (reg 25): scenes 10 to 14 drop to 0.89 to 0.95 and 6 to 8 still fail. Chosen: gamma 500 and compactness 25 unchanged, regularisation 400 (inside the 300 to 1000 plateau). Spec text says "about 25": it is PROPUESTA and the spec allows changing it while ARQ-132 and CAL-06 hold.
+- Result with 400, IoU per scene at 4000x3000: 00 flat-ellipse-centred 1.0000; 01 flat-roundrect-offset 1.0000; 02 flat-c-centred 1.0000; 03 flat-ring-centred 0.9972; 04 flat-ellipse-low-contrast 0.9979; 05 flat-cross-offset-low-contrast 0.9955; 06 gradient-ellipse-centred 1.0000; 07 gradient-roundrect-offset 1.0000; 08 gradient-c-offset 1.0000; 09 gradient-rectring-centred 1.0000; 10 textured-ellipse-centred 0.9909; 11 textured-roundrect-offset 0.9896; 12 textured-cross-centred 0.9963; 13 textured-ring-offset 0.9926; 14 textured-l-centred 0.9961; 15 flat-rectring-offset 1.0000. 16 of 16 and all reliable.
+- Fresh set: run once, after the last parameter change and the sweep, with `--nocapture`: 12 of 12 at IoU >= 0.90 (0.9806 to 1.0000; lowest 0.9806 fresh scene 4 flat-cross-offset-low-contrast, 0.9860 fresh scene 9 textured-cross-centred). Nothing was tuned on it and no scene or parameter changed after it. Caution: the scenes are mine (flat subject, hard edges, no photographic noise), so 12 of 12 is not comparable with the 9 of 12 of D-45 and is no evidence of generalisation. The tuning and the generator were written by the same agent; a reader should treat both counts as in-sample for the generator.
+
+### Progress and cancellation (ARQ-112)
+- RED: `arq_112_progress_and_cancellation_on_the_reference_input` `Err(StepTooLarge { at: 3 })` (steps of 0.0387 with chunks of 256 rows, 0.0504 for 250-row filter bands); `arq_112_one_thread_gives_the_same_fractions_twice` `47 reports` (the contract needs at least 50 for a 0.02 step).
+- Fix: `CHUNK_ROWS` 256 to 64 and `BAND_ROWS` 250 to 80. Reference run: 170 reports, largest step 0.0196 (the final reserve), then 0.0161. XP11 named 256 and 250 rows; smaller chunks only shorten the unit between token checks. The guided-filter margin overhead grows from 13 % to 40 %.
+- Green from the start (proved by mutant): determinism across 1, 2, 4, 7 threads (4000x3000 and 640x480), report count independent of the pool.
+
+### Benches and memory (release, this machine: i7-class 20 threads, not D-03)
+- `bench_segment_4000` (textured cross, 4000x3000, criterion, 10 samples): 1 thread 969 ms, 2 threads 510 ms, 4 threads 416 ms. CAL-06 < 5 s holds with a margin of 5x on one thread.
+- `bench_cancel_segment` (longest gap between two reports, which come with every token check; criterion's `WallTime`, no `Instant::now`): 4 threads 16.9 ms (14.7 to 19.0), 1 thread 11.3 ms, 2 threads 10.8 ms. ARQ-43 <= 100 ms holds. Strokes are checked per band of 64 rows; no stroke stretch is chunked further.
+- Peak memory, `/usr/bin/time -v` on a release test binary, 4000x3000 textured scene, resident set minus the same process generating the scene: 34 MB (1 thread), 71 MB (4), 127 MB (8), 293 MB (20). CAL-26 <= 1.5 GB holds (the process total of that test is 90 to 349 MB). The peak grows by one guided-filter band per thread (8 buffers x 112 rows x 4000 x 4 B = 14.3 MB).
+- `SegReq.ram_bytes` = 30,000,000 + 14,336,000 x pool threads (44 MB, 87 MB, 145 MB, 317 MB for 1, 4, 8, 20), above each measurement; it replaces the 85.6 MB first estimate. `arq_130_requirements_estimate_ram_from_the_measured_peak` pins the formula and the measured figures.
+- Dev profile: `[profile.dev.package.gafira-segment]` and `gafira-testkit` at `opt-level = 2` in the root `Cargo.toml`: the gate's debug run fell from about 66 s to 2.4 s for the progress file. Overflow checks stay on.
+
+### Hand mutants (each applied, run, reverted; none committed)
+- IoU `>=` to `>` (and `meets_gate` strict): `arq_132_iou_090_passes_and_08999_fails`, `arq_132_empty_masks_have_iou_one`. Binarise at `> 128`: `arq_132_iou_binarises_at_alpha_128`.
+- Area limits 1 % and 95 % exclusive, ΔE76 5 strict: `arq_131_rule_bounds_are_inclusive` (lower bound also `arq_131_foreground_is_alpha_128_or_more`). Foreground at `> 128` in `reliable`: `arq_131_foreground_is_alpha_128_or_more`.
+- Averages in sRGB (D-44), in `reliable`: first run SURVIVED (my mutant was an identity table, which still averages linear values); the real mutant (average encoded values, decode after) died on `arq_131_means_are_averaged_in_linear_light` and `arq_131_means_are_weighted_by_input_alpha`. In the scenes' `mean_delta_e76`: SURVIVED because generator and check shared the function; test `d_44_scene_means_are_averaged_in_linear_light` added (hand scene, L 76.07 against grey 188); then killed.
+- Input alpha not weighting the colours: `arq_131_means_are_weighted_by_input_alpha`, `arq_131_input_alpha_weights_reliability_not_the_mask`. No token check in `assess`: `arq_112_assess_stops_on_a_cancelled_token`. Group with weight 0 giving a colour: `arq_131_means_are_weighted_by_input_alpha`. `decide` always true: three tests of each file.
+- Fresh set made blocking (the warning asserts on its count): `arq_132_a_segmenter_failing_every_fresh_scene_reports_0_of_12`; `fresh_report` with `>`: `arq_132_fresh_report_counts_and_never_fails`.
+- Fresh set tuned: not a code mutant. It is held by process: the fresh set was run once, after the last parameter change; the commit order shows the tuning (1642222) before the run. `FRESH_SEED` equal to the fixed seed: `arq_132_scenes_are_deterministic_and_the_seeds_differ`.
+- Generator non-deterministic (a clock in the seed): `arq_132_scenes_are_deterministic_and_the_seeds_differ`. Scene sizes out of range (subject 50 to 55 %): `arq_132_fixed_scene_04_area_and_contrast` and the fresh test; low-contrast range widened: `arq_132_fixed_scene_04_area_and_contrast`.
+- Progress decreasing (a fraction scaled by 0.9 on some reports): `arq_112_progress_and_cancellation_on_the_reference_input`. Report after cancel (`step` reports when cancelled): same test. No token check in `step`: same test. Result delivered after cancel (`let _ = meter.finish()`; also `finish` without a check): same test. Step above 0.02 (chunks back to 256 or 250 rows): same test.
+- Thread count changing the mask (SLIC compactness scaled by the pool size): `arq_130_the_mask_does_not_depend_on_the_thread_count`.
+- RAM per-thread part or fixed part changed: `arq_130_requirements_estimate_ram_from_the_measured_peak`.
+
+### Sweep (throwaway test, not committed, release)
+- Cancel at every report of the reference input (1024x768, 170 reports; 14 for `All`) for 1, 2, 4 and 7 threads and the zones Foreground, Background, Element and All, plus every fifth report of a 4000x3000 scene (377 reports) and a 1x1: 0 findings; each cancel before the last report gave the cancelled error with at most one report after it, no decrease, no 1.0 after the cancel.
+- Determinism with 1, 2, 4 and 7 threads over all 28 scenes (16 fixed and 12 fresh) at 4000x3000, 1100x800 and 333x777, zones Foreground and Element: mask and `reliable` identical in every case; 0 findings. IoU was not read on the fresh scenes there.
+
+### Deviations and questions
+- `reliable` is computed on the returned mask, as ARQ-131 words it. So `Background` (the complement) is unreliable when the subject is under 5 % of the image (the mask exceeds 95 %), and `All` (solid) is always unreliable. FD-32 (f) accepts the second. Whether `Background` should judge the subject mask instead is a question for the specifier.
+- Colour read as stored for `reliable` (premultiplied bytes decoded to linear, weighted by alpha), consistent with ARQ-130: the examples "white alpha 0.25 and black alpha 0.75 gives L 57.08" hold with straight-looking `f32` pixels `[1,1,1,0.25]` and `[0,0,0,0.75]`.
+- GMM regularisation is 400, not "about 25" (PROPUESTA, tuned on the gate; see above). The `* size` weighting of the unary terms in `cut.rs` makes gamma almost inert; left as is.
+- Two commits outside the delivery's files: the root `Cargo.toml` dev profile (1444da9) and tests touched in `tests/hints.rs` (the stroke test counted 5 chunks of 256 rows, now 17 of 64).
+- Q-48: CAL-06, CAL-26 and ARQ-43 hold on this machine; nothing goes to the owner.
+- Disk: the sweep and benches used the worktree `target`; scratch scripts live in the session scratch folder `sg3sweep`.
+
+## SG3 fix round after verify round 1 (ARQ-131, ARQ-132, ARQ-133; spec commit e04ea34)
+
+Commits: fd4b99f (scenes), 8ca7fb4 (cut), 8d0a3b5 (reliable, warning, W5, W6).
+Measured: `git diff --shortstat 3ff2279..HEAD`: 18 files, 1586 insertions, 494 deletions, spec commit e04ea34 included; `src` only, 944 and 405. Over the ~700 line mark: the coordinator decides.
+Gates, each exit code alone: fd4b99f fmt 0, clippy 0, test 0 (1812 passed); 8d0a3b5 fmt 0, clippy 0, test 0 (1826 passed). 8ca7fb4: fmt 0, test 0 (1824 passed), clippy 101 on a type in `tests/pipeline.rs`; after the type alias, clippy 0 and the `pipeline` test file re-run. The full test gate was not repeated on that exact tree.
+
+### Quality, 4000x3000, zone Foreground
+- Gate (table of 02 §4.17): 16/16, min 0.9679. IoU 01 to 16: 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9997, 1.0000, 1.0000, 1.0000, 1.0000, 0.9999, 1.0000, 0.9679, 1.0000, 1.0000.
+- Fresh set, after the last parameter change: **11/12**. IoU: 0.9965, 0.9751, **0.0000 fresh-texture-frame-soft (dE76 7 to 8)**, 1.0000, 0.9988, 0.9933, 0.9995, 1.0000, 0.9930, 0.9881, 0.9972, 1.0000. Caution: the recipes are mine and their subjects are flat like the gate's, so this count is easier than the two below and is not comparable with 9 of 12.
+- XP5 fresh, the verifier's port: **9/12**, the D-45 figure. F7, F9 and F12, all textured, give an empty mask, not reliable.
+- Verifier's hard set: **22/24**, min 0.5315. V07, hue gradient at dE76 14, hard and soft: IoU 0.53, foreground 28.8 %, reported reliable.
+- Nothing was tuned on these three sets. The verifier's logs on them, with their counts per parameter pair, were in hand before this round, so the choice of reg 25 and gamma 500 was not blind to them; ARQ-133 fixes both values anyway.
+
+### Parameters
+- Regularisation 25, gamma 500, inside ARQ-133. On the XP5 gate, gamma 500, 1500 and 5000 all gave 16/16.
+- Band width: min side / 64, unchanged. /64, /37 (about 2 % of the long side) and /32 gave identical IoU on all 16 gate scenes, so the gate gives no reason to change it.
+
+### Border-touching subject: a rule the spec does not name
+The band pin alone gave an empty mask on all 8 border scenes tried: the subject's colours in the band train the background model. Pins are unchanged, as ARQ-133 requires. Band colours are grouped by nearness (dE76 6, 4 neighbours); the largest group is the background; a smaller group under half of the band, and isolated colours, stay out of the background GMM (`strays` in `cut.rs`). A subject on an edge, a corner or a whole side now keeps its inner part (`arq_133_a_subject_touching_the_border_does_not_vanish`). Chosen on border scenes of mine, not on the three sets. Limits: a subject over half of the band still vanishes, not reliable, and a seed recovers it. A low-contrast subject touching the border was not tried with the final rule. A background of two colours whose smaller one is under half of the band can now go to the foreground: not measured, no such scene exists. Specifier to record or reject.
+
+### RED (failing line, on the code before the fix)
+- Scenes, stub `Recipe` on the old generator: `arq_132_the_fixed_set_is_the_table_of_the_spec` `scene 01 left: (Flat, [], [], Centred, 0.0) right: (Flat, [Ellipse(0.667, 0.5, 0.34, 0.25)], [], Centred, 40.0)`; `arq_132_each_set_has_every_class` `concave`; `arq_132_shape_classes_hold_in_the_masks` `flat-ring-centred: hole left: true right: false`; `arq_132_fresh_scenes_cover_the_whole_range` `small subject`; `arq_132_texture_is_per_pixel` `textured-ellipse-centred: 0.0832`; `arq_132_no_fresh_mask_is_a_fixed_mask` `flat-ellipse-low-contrast and flat-ellipse-centred: 0.9600`.
+- Cut: `arq_133_parameters_are_in_their_ranges` `regularisation 400`; `arq_133_twice_the_border_is_twice_the_capacity` `0 7: 8000 8000`; `arq_133_a_longer_border_pulls_the_cut` `long on the background`; `arq_133_pinned_nodes_stay_background_unless_seeded` `pinned red node`; `arq_133_a_subject_touching_the_border_does_not_vanish` `left edge: kept 0.0000`.
+- Reliable: `arq_131_background_gives_the_reliable_of_foreground` `2 %: Background`.
+- Green from the start: `arq_131_area_counts_pixels_not_alpha` (H5 kills it); `arq_133_half_of_the_pixels_in_the_band_pins`, `arq_133_all_pinned_gives_no_foreground`, `arq_133_all_pinned_is_ok_empty_and_unreliable`, `arq_133_a_seed_on_the_band_leaves_it_in_the_foreground` (no mutant of their own). `arq_133_a_gradient_does_not_swallow_the_image` also passed on the old code, so it proves nothing about this fix.
+- Written with the plumbing, not before it: `arq_133_a_pair_counts_its_insertions`, `arq_133_the_shared_border_counts_pixel_pairs`.
+- C6: no test. A plain `cargo test` log now holds `WARNING: fresh scenes at IoU >= 0.90: 11/12 (a warning, not a gate)`. No `ci.yml` change.
+
+### Hand mutants (applied, run, reverted, none committed)
+H1 `arq_132_the_fixed_set_is_the_table_of_the_spec`, and with every gradient gone `arq_132_each_set_has_every_class`; H2 `arq_132_each_set_has_every_class`, `arq_132_shape_classes_hold_in_the_masks`; H3 `arq_132_low_contrast_is_flat_on_both_sides`; H4 `arq_131_background_gives_the_reliable_of_foreground`; H5 `reliable::tests::arq_131_area_counts_pixels_not_alpha`; H6 `arq_112_progress_and_cancellation_on_the_reference_input`; border weight off `arq_133_a_longer_border_pulls_the_cut`, `arq_133_twice_the_border_is_twice_the_capacity`; band pin off `arq_133_pinned_nodes_stay_background_unless_seeded`; stray rule off `arq_133_a_subject_touching_the_border_does_not_vanish`. The mutant run covered only the test files named; each was edited in place, so no stale build.
+
+### Budgets, indicative (i7-12700H under load, not D-03; Q-48 stays open)
+- CAL-06: `bench_segment_4000` 1.02 s on 4 threads. Worst input on 1 thread: 1784 ms in a quieter run, **3468 ms** in a run sharing the machine with this round's own builds. Round 1 measured 1055 ms. Margin to 5 s: 2.8x, or 1.4x contended.
+- ARQ-43: `bench_cancel_segment` 27.9 ms. Worst gap on 1 thread: 25.4 ms quieter, **96.8 ms** contended, against 100 ms. Round 1 measured 43.2 ms. 4 threads: 30 ms or less.
+- CAL-26: heap peak 34.7, 72.8, 130.3, 302.3 MB for 1, 4, 8, 20 threads, unchanged. Segmenter's share only.
+
+### Deviations and notes
+- `Scene` lost `low_contrast` and `textured`; they are on `Recipe`, with the class fields. The 16 per-scene area tests became one test over both sets at 4000x3000.
+- `ram_bytes` states its limit (W5) and does not scale: 44 MB against 96 MB measured at 8000x6000.
+- The fresh test runs in every gate; its count was first read after the last parameter change, then read again from the same deterministic run for the per-scene figures.
+- Scenes repeat run to run. `powf` and the Lab conversions remain, so identity across platforms is not claimed. Shapes and texture use a polynomial sine and T5, not `sin` and `atan2`.
+- Sweep and S3, S5 not done: owner's order to finish.

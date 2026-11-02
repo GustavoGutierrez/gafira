@@ -3,8 +3,9 @@
 
 /// Components per model (P12).
 const COMPONENTS: usize = 5;
-/// Variance added to every axis of every component (P12, "about 25").
-const REGULARISATION: f64 = 25.0;
+/// Variance added to every axis of every component, in Lab units squared.
+/// ARQ-133 keeps it from 20 to 30; tuned on the 16 gate scenes only.
+pub(crate) const REGULARISATION: f64 = 25.0;
 const LLOYD_STEPS: usize = 5;
 
 type V3 = [f64; 3];

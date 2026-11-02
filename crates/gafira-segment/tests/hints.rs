@@ -394,6 +394,49 @@ fn arq_130_a_seed_steers_the_cut_on_elongated_images_in_both_orientations() {
     }
 }
 
+// ARQ-133: a foreground seed on a superpixel of the band goes first: under the
+// seed the alpha is 243 or more, and a seed recovers what the band took from a
+// subject that fills a whole side.
+// Mutant: band pin above the seeds.
+#[test]
+fn arq_133_a_seed_on_the_band_leaves_it_in_the_foreground() {
+    let (w, h) = (800u32, 600u32);
+    let data: Vec<u8> = (0..w * h)
+        .flat_map(|i| {
+            if i / w < 300 {
+                [70, 110, 150, 255]
+            } else {
+                [190, 70, 60, 255]
+            }
+        })
+        .collect();
+    let view = ImageView::new(w, h, PixelData::Rgba8(&data)).unwrap();
+    let seeded = seg()
+        .segment(
+            view,
+            &SegHints {
+                zone: SegZone::Foreground,
+                foreground: vec![SeedStroke {
+                    points: vec![[6.0, 590.0], [790.0, 590.0]],
+                    radius: 6.0,
+                }],
+                ..SegHints::default()
+            },
+            &NoProgress,
+            &CancelToken::new(),
+        )
+        .unwrap()
+        .mask;
+    assert!(
+        seeded.data()[(590 * w + 400) as usize] >= 243,
+        "under the seed"
+    );
+    // Beyond the stroke's own pixels: the superpixels it pinned are foreground.
+    let row = 578;
+    let kept = (20..780).filter(|x| seeded.data()[(row * w + x) as usize] >= 128);
+    assert!(kept.count() > 700, "the band row is recovered");
+}
+
 // ARQ-110: a finite stroke never turns into a non-finite intermediate: a stroke
 // across the image, or a brush the size of the float range, is applied.
 #[test]
@@ -505,9 +548,10 @@ fn fd_38_a_stroke_reports_progress_and_checks_the_token_per_chunk() {
         run(&CancelToken::new(), &log, seeds).unwrap();
         log.fractions().len()
     };
-    // Two stamps (the pins at work size and the final one), five chunks of 256 rows each.
+    // Two stamps (the pins at work size and the final one), 17 chunks of 64 rows each
+    // (rows 14 to 1086).
     assert!(
-        count(true) >= count(false) + 2 * 5,
+        count(true) >= count(false) + 2 * 17,
         "{} against {}",
         count(true),
         count(false)
