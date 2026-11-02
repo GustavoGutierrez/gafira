@@ -78,15 +78,17 @@ fn clip(a: [f64; 2], b: [f64; 2], (w, h): (f64, f64), m: f64) -> Option<([f64; 2
         return None;
     }
     // The coordinate across the box side is the side itself, not `a + t * d`,
-    // whose rounding error at 1e19 would be a thousand pixels.
-    let at = |t: f64, side: Option<(usize, f64)>| {
+    // whose rounding error at 1e19 would be a thousand pixels. An end that is not
+    // cut is the end point itself, for the same reason.
+    let at = |t: f64, side: Option<(usize, f64)>, end: [f64; 2]| {
+        let Some((axis, value)) = side else {
+            return end;
+        };
         let mut p = [a[0] + t * d[0], a[1] + t * d[1]];
-        if let Some((axis, value)) = side {
-            p[axis] = value;
-        }
+        p[axis] = value;
         p
     };
-    Some((at(t0, enter), at(t1, leave)))
+    Some((at(t0, enter, a), at(t1, leave, b)))
 }
 
 /// Pixel range `[lo, hi]` of `limit` that `p..q` widened by `reach` touches.
@@ -232,5 +234,56 @@ impl SegHints {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pixels of row 4 of a 3000x10 image that a radius-0 stroke covers.
+    fn covered_columns(a: [f32; 2], b: [f32; 2]) -> Vec<usize> {
+        let stroke = SeedStroke {
+            points: vec![a, b],
+            radius: 0.0,
+        };
+        let mut xs = Vec::new();
+        stroke
+            .for_covered(
+                (1.0, 1.0),
+                (3000, 10),
+                |_| Ok(()),
+                |x, y| {
+                    if y == 4 {
+                        xs.push(x);
+                    }
+                },
+            )
+            .unwrap();
+        xs.sort_unstable();
+        xs.dedup();
+        xs
+    }
+
+    // ARQ-110 (W5): a far end that is not cut is the end point itself, not
+    // `a + d`, which at 1e19 loses it. Each row is a stroke along the image
+    // that ends inside it, with the columns it must cover.
+    #[test]
+    fn arq_110_a_stroke_from_beyond_1e16_ends_where_it_ends() {
+        let cases: [([f32; 2], [f32; 2], std::ops::RangeInclusive<usize>); 6] = [
+            ([1e19, 4.5], [1500.5, 4.5], 1500..=2999),
+            ([1e19, 4.5], [500.5, 4.5], 500..=2999),
+            ([1e19, 4.5], [2500.5, 4.5], 2500..=2999),
+            ([500.5, 4.5], [1e19, 4.5], 500..=2999),
+            ([1e16, 4.5], [500.5, 4.5], 500..=2999),
+            ([1e15, 4.5], [500.5, 4.5], 500..=2999),
+        ];
+        for (a, b, want) in cases {
+            let got = covered_columns(a, b);
+            // First, last and count: a gap or an excess shows in the count.
+            let summary = |v: &[usize]| (v.first().copied(), v.last().copied(), v.len());
+            let want: Vec<usize> = want.collect();
+            assert_eq!(summary(&got), summary(&want), "{a:?} -> {b:?}");
+        }
     }
 }
