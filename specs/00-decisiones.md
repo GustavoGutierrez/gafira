@@ -356,6 +356,14 @@ Fecha: 1 de noviembre de 2026.
 - **Intensidad**: es una mezcla lineal de cada parámetro desde su valor por defecto hasta el valor del preset.
 - Aplicado a 02 (§12.3) y 04 (FD-34).
 
+## D-41 Intensidad de filtros por tipo de parámetro
+
+Fecha: 1 de noviembre de 2026.
+
+- **Decisión**: la Intensidad de FD-34 trata cada tipo de parámetro así (Q-41): `Int` mezcla como `Float` y redondea, y medio se aleja de 0; `Color` mezcla en luz lineal; `Bool` y `Choice` saltan al valor del preset por encima de intensidad 0.
+- Amplía D-40; el resto de D-40 sigue vigente.
+- Aplicado a 02 (§12.2) y 04 (FD-34).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
