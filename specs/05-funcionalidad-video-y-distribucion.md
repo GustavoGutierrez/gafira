@@ -128,7 +128,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 - *Propósito*: lograr un sonido equilibrado sin herramientas complejas.
 - *Comportamiento y reglas*:
   - **Volumen** por clip (0–200 %, con gráfica de volumen editable en el clip) y por pista; **Silenciar** (`Ctrl+Shift+M`).
-  - **Fundidos** de entrada y salida en segundos con asas en el clip: rampa lineal de ganancia (02 ARQ-124).
+  - **Fundidos** de entrada y salida, cada uno con su duración en segundos y su asa en el clip: rampa lineal de ganancia (02 ARQ-124).
   - **Separar audio**: extrae el audio de un clip de video a su propia pista enlazada (mover juntos, desenlazar opcional).
   - **Nivelar**: lleva el clip, la pista o todo a una sonoridad objetivo con una ganancia propia, aparte del Volumen (D-31) (por defecto −14 LUFS; opciones −16 y −23 LUFS). Limita la ganancia para que el pico real quede en −1 dBTP o por debajo e informa si no alcanzó el objetivo (D-21, 02 ARQ-127).
   - **Sincronización básica**: forma de onda visible en los clips, **desplazar** el audio con ajuste fino (± ms y por fotograma) y **marcadores** (`M`) a los que se pueden atraer los cortes con el Imán. Marcadores de compás automáticos: Fase 2 (PROPUESTA, VERIFICAR algoritmo).
@@ -136,7 +136,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 - *UI*: Inspector → Clip (Volumen, Fundidos, Nivelar; D-32); clic derecho (Separar audio).
 - *Técnica*: `AudioProcessor` (ganancia, fundido, nivelación EBU R128; 02 §4.9); formas de onda precalculadas por `gafira-media`.
 - *Presupuesto*: la reproducción no asigna ni bloquea en el hilo de audio (ARQ-23); la forma de onda de un clip de 10 min se calcula en segundo plano en < 5 s (PROPUESTA).
-- *Aceptación*: (a) un fundido de 2 s reduce la ganancia de 0 a 1 de forma continua (prueba de respuesta); (b) Nivelar lleva un audio de prueba con pico holgado a ±0,5 LU del objetivo; si el tope de pico lo impide, deja el pico real ≤ −1 dBTP e informa de que no lo alcanzó (D-21); (c) Separar audio conserva la sincronía exacta (diferencia 0 muestras); (d) el desfase fino de 1 ms se aplica con precisión de 1 muestra (02 ARQ-129).
+- *Aceptación*: (a) un fundido de 2 s lleva la ganancia de 0 a 1, o de 1 a 0, de forma continua (prueba de respuesta), y la entrada y la salida tienen duraciones independientes; (b) Nivelar lleva un audio de prueba con pico holgado a ±0,5 LU del objetivo; si el tope de pico lo impide, deja el pico real ≤ −1 dBTP e informa de que no lo alcanzó (D-21); (c) Separar audio conserva la sincronía exacta (diferencia 0 muestras); (d) el desfase fino de 1 ms se aplica con precisión de 1 muestra (02 ARQ-129).
 
 ## A6. Vista previa y exportación
 
