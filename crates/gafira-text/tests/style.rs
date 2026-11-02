@@ -480,3 +480,17 @@ fn fd_41_e_a_hanging_space_is_not_the_last_cluster_and_gets_no_spacing() {
         "{g:?}"
     );
 }
+
+#[test]
+fn fd_41_f_the_height_of_n_lines_is_n_times_the_line_height_times_the_natural_height() {
+    let natural = natural_height(INTER, SIZE_PX);
+    for (text, lines) in [("a", 1.0), ("a\nb", 2.0), ("a\nb\nc", 3.0), ("a\n", 2.0)] {
+        for lh in [0.5, 1.0, 2.0, 4.0] {
+            let h = f64::from(lay(text, &[INTER], &style(0.0, lh), 10_000.0).height);
+            assert!(
+                (h - lines * lh * natural).abs() <= 0.01,
+                "{text:?} lh={lh}: {h}"
+            );
+        }
+    }
+}

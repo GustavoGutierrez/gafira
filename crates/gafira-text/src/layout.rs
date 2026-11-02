@@ -22,8 +22,8 @@ pub struct TextStyle {
     pub letter_spacing: f64,
     /// Line height multiplier, in `[0.5, 4.0]`.
     pub line_height: f64,
-    /// Full Unicode upper case, with no language (`ß` gives `SS`). The ranges of
-    /// the output then index [`TextLayout::text`], not the input.
+    /// Full Unicode upper case, with no language (`ß` gives `SS`). Cluster ranges
+    /// still index the input; the clusters of one character share its range.
     pub uppercase: bool,
     /// Where the lines of the box sit across its width.
     pub align: TextAlign,
@@ -78,9 +78,6 @@ impl Default for TextStyle {
 pub struct TextLayout {
     /// Height of all the lines, in px.
     pub height: f32,
-    /// The text that was laid out: the input, in upper case when asked. Cluster ranges
-    /// index it.
-    pub text: String,
     /// The lines, top to bottom.
     pub lines: Vec<Line>,
     /// True when a line, without its trailing white space, is wider than the box.
@@ -235,7 +232,6 @@ pub fn layout_box(
     }
     let out = TextLayout {
         height: laid.height(),
-        text: text.to_string(),
         lines,
         overflow,
     };
