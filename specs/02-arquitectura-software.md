@@ -599,8 +599,9 @@ pub trait RenderBackend: Send {
 pub trait Segmenter: Describe + Send + Sync {
     fn requirements(&self) -> SegReq;            // CPU/GPU, RAM estimada, tamaño máx. de trabajo
     fn segment(&self, img: ImageView<'_>, hints: &SegHints,  // zona, trazos de semilla y prioridad central (ARQ-130)
-               progress: &dyn Progress, cancel: &CancelToken) -> Result<AlphaMask, SegError>;
+               progress: &dyn Progress, cancel: &CancelToken) -> Result<Segmentation, SegError>;
 }
+pub struct Segmentation { pub mask: AlphaMask, pub reliable: bool }  // ARQ-130, ARQ-131
 ```
 
 - **Implementación MVP**: `ClassicSegmenter`, que recibe el pool de `rayon` en su constructor, de modo que el trait no depende de `rayon`. Reduce a un lado largo de 1024 px, aplica SLIC, GMM de primer plano y fondo, *max-flow* (GrabCut iterativo), escala con un *guided filter* sobre la imagen completa y hace *matting* de bordes. Paraleliza con rayon.
@@ -855,6 +856,7 @@ Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 | `IRect` | `gafira-geom` |
 | `ImageView`, `ImageViewMut`, `EffectCx`, `Tile`, `TileSet`, `AlphaMask` | `gafira-raster` |
 | `AudioBlock`, `ParamSnapshot` | `gafira-audio` |
+| `Segmentation` | `gafira-segment` |
 | `Registry<T>` | `gafira-ports` |
 
 Las cifras PROPUESTA de esta sección están confirmadas en bloque por D-34 y pueden cambiar con mediciones.
@@ -992,8 +994,8 @@ Requisitos previos fuera del crate: Lab y ΔE2000 en `gafira-color` (ARQ-122), q
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
-| ARQ-131 | **Fiabilidad** (D-23). El resultado indica si es fiable: el primer plano ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Un resultado no fiable no es un error. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: no fiable. Las escenas de ARQ-132: fiable. |
+| ARQ-130 | **Contrato de `Segmenter`.** Trabaja sobre una copia de lado largo 1024 px; una imagen con lado largo ≤ 1024 no se amplía. Devuelve una `Segmentation` cuya `mask` es una `AlphaMask` de 8 bits con el ancho y el alto de la entrada. `SegHints` expresa la zona (todo, primer plano, fondo o elemento), los trazos de semilla de primer plano y de fondo, y la prioridad central de «Elemento» (D-23). «4000 px» significa lado largo. | Entradas de 4000×3000, 1024×768, 800×600 y 1×1: la máscara tiene sus dimensiones. Ancho o alto 0: `Err`. Un píxel bajo una semilla de primer plano da alfa ≥ 243 y bajo una de fondo, ≤ 12. «Fondo» es el complemento de «Primer plano», `255 − alfa`, ±1. Con dos objetos, «Elemento» elige el del centro. |
+| ARQ-131 | **Fiabilidad** (D-23). `Segmentation.reliable` es verdadero si el primer plano, los píxeles de `mask` con alfa ≥ 128 como en ARQ-132, ocupa entre el 1 % y el 95 % de la imagen, extremos incluidos, y la distancia ΔE76 entre los colores medios de primer plano y fondo es ≥ 5 (PROPUESTA). Un resultado no fiable no es un error: es `Ok` con `reliable` falso y conserva su máscara. | Imagen uniforme, ruido uniforme sin sujeto y una escena con sujeto del 0,5 %: `Ok` con `reliable` falso y máscara de las dimensiones de la entrada. Regla con máscara y colores dados: 1 % y 95 % son fiables, y 0,99 % y 95,01 % no; ΔE76 5 es fiable, y 4,999 no. Si no hay píxeles de primer plano o de fondo, no es fiable, sin NaN. Las escenas de ARQ-132: fiable. |
 | ARQ-132 | **Puerta de calidad** (D-20). `gafira-testkit` genera escenas sintéticas deterministas con máscara exacta conocida: al menos 12, con fondo plano, degradado y texturizado, sujeto centrado y desplazado, formas cóncavas y con agujero, y contraste bajo. La prueba bloqueante exige IoU ≥ 0,90 por escena, no en media, binarizando con alfa ≥ 128. Con las dos máscaras vacías, el IoU es 1. Sobre fotos reales, el IoU es solo un aviso hasta que el titular aporte un conjunto con licencia (pendiente 9). | La prueba de escenas falla si una sola queda por debajo de 0,90. Prueba del cálculo de IoU: 0,90 pasa y 0,8999 falla. Mientras no exista el conjunto real, ninguna prueba bloqueante depende de él. |
 
 Parámetros de partida de `ClassicSegmenter` (PROPUESTA; se pueden cambiar sin tocar esta spec mientras se cumplan ARQ-132 y CAL-06): unos 1 500 superpíxeles SLIC, 5 componentes por GMM, hasta 5 iteraciones de GrabCut y *guided filter* de radio 8 px.
