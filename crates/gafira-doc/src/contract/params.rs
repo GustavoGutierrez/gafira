@@ -126,6 +126,14 @@ pub struct ParamDef {
 ///
 /// Plain data: [`ParamSchema::new`] validates nothing (ARQ-110). Call
 /// [`ParamSchema::validate_definition`] on a schema you did not write.
+///
+/// Precondition: [`get`](ParamSchema::get), [`defaults`](ParamSchema::defaults),
+/// [`check_values`](ParamSchema::check_values) and
+/// [`resolve`](ParamSchema::resolve) are defined only for a schema that passed
+/// `validate_definition`; they do not check it themselves, and on any other
+/// schema their result is unspecified. [`new`](ParamSchema::new),
+/// [`params`](ParamSchema::params) and `validate_definition` are defined for
+/// every schema.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParamSchema {
     params: Vec<ParamDef>,

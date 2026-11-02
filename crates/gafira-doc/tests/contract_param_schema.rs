@@ -72,11 +72,11 @@ fn arq_110_new_keeps_the_definitions_in_order_and_validates_nothing() {
 
 // ARQ-98
 #[test]
-fn arq_98_get_finds_the_first_definition_with_the_id() {
+fn arq_98_get_finds_the_definition_with_the_id() {
     let schema = ParamSchema::new(vec![
         float("a", 0.0, 1.0, 0.5),
         float("b", 0.0, 1.0, 0.1),
-        float("b", 0.0, 2.0, 0.2),
+        float("c", 0.0, 2.0, 0.2),
     ]);
     assert_eq!(schema.get("a").map(|d| d.id), Some("a"));
     assert_eq!(
@@ -87,7 +87,8 @@ fn arq_98_get_finds_the_first_definition_with_the_id() {
             default: 0.1
         })
     );
-    assert_eq!(schema.get("c"), None);
+    assert_eq!(schema.get("c").map(|d| d.id), Some("c"));
+    assert_eq!(schema.get("d"), None);
     assert_eq!(ParamSchema::default().get("a"), None);
 }
 
@@ -114,6 +115,17 @@ const SAME_ID: &[ParamChoice] = &[
         label: MessageKey("param.two"),
     },
 ];
+
+const fn option(id: &'static str) -> ParamChoice {
+    ParamChoice {
+        id,
+        label: MessageKey("param.label"),
+    }
+}
+
+const X_Y_X: &[ParamChoice] = &[option("x"), option("y"), option("x")];
+const A_B_B: &[ParamChoice] = &[option("a"), option("b"), option("b")];
+const A_B_C: &[ParamChoice] = &[option("a"), option("b"), option("c")];
 
 fn int(id: &'static str, min: i64, max: i64, default: i64) -> ParamDef {
     def(id, ParamKind::Int { min, max, default })
@@ -258,6 +270,10 @@ fn arq_110_a_choice_default_must_be_an_option_and_option_ids_must_differ() {
         choice("p", DIRECTIONS, "Vertical"),
         choice("p", &[], "vertical"),
         choice("p", SAME_ID, "a"),
+        choice("p", X_Y_X, "y"),
+        choice("p", X_Y_X, "x"),
+        choice("p", A_B_B, "a"),
+        choice("p", A_B_B, "b"),
     ];
     for d in rejected {
         assert_eq!(
@@ -268,6 +284,10 @@ fn arq_110_a_choice_default_must_be_an_option_and_option_ids_must_differ() {
     }
     for default in ["horizontal", "vertical"] {
         let schema = ParamSchema::new(vec![choice("p", DIRECTIONS, default)]);
+        assert_eq!(schema.validate_definition(), Ok(()), "{default}");
+    }
+    for default in ["a", "b", "c"] {
+        let schema = ParamSchema::new(vec![choice("p", A_B_C, default)]);
         assert_eq!(schema.validate_definition(), Ok(()), "{default}");
     }
 }
@@ -358,7 +378,7 @@ fn err(kind: fn(&'static str) -> ParamError, param: &'static str) -> Result<(), 
     Err(kind(param))
 }
 
-fn non_finite(param: &'static str) -> ParamError {
+fn non_finite_error(param: &'static str) -> ParamError {
     ParamError::NonFinite { param }
 }
 
@@ -439,7 +459,7 @@ fn arq_110_check_values_reports_non_finite_before_the_range() {
     for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert_eq!(
             schema.check_values(&only("f", ParamValue::Float(x))),
-            err(non_finite, "f"),
+            err(non_finite_error, "f"),
             "{x}"
         );
     }
@@ -455,7 +475,7 @@ fn arq_110_check_values_reports_non_finite_before_the_range() {
     for c in colors {
         assert_eq!(
             schema.check_values(&only("k", ParamValue::Color(c))),
-            err(non_finite, "k"),
+            err(non_finite_error, "k"),
             "{c:?}"
         );
     }
@@ -553,7 +573,7 @@ fn arq_110_check_values_reports_the_first_fault_in_definition_order() {
         ("a", ParamValue::Float(f64::NAN)),
         ("z", ParamValue::Float(0.5)),
     ]);
-    assert_eq!(schema.check_values(&only_a), err(non_finite, "a"));
+    assert_eq!(schema.check_values(&only_a), err(non_finite_error, "a"));
 }
 
 // ARQ-110
@@ -605,8 +625,198 @@ fn arq_110_resolve_returns_the_error_of_check_values() {
 // ARQ-110
 #[test]
 fn arq_110_resolve_checks_the_given_values_before_filling_defaults() {
-    // A default is not looked at: only what the caller gave is checked first.
-    let schema = ParamSchema::new(vec![float("p", 0.0, 1.0, 5.0)]);
-    let got = schema.resolve(&ParamValues::new()).unwrap();
-    assert_eq!(got.float("p"), Some(5.0));
+    // `p` is given and bad, `q` is missing: the error is `p`'s, nothing is filled.
+    let schema = ParamSchema::new(vec![float("p", 0.0, 1.0, 0.5), int("q", 0, 9, 3)]);
+    assert_eq!(
+        schema.resolve(&only("p", ParamValue::Float(5.0))),
+        Err(out_of_range("p"))
+    );
+    assert_eq!(
+        schema.resolve(&only("p", ParamValue::Float(0.75))).unwrap(),
+        values(&[("p", ParamValue::Float(0.75)), ("q", ParamValue::Int(3))])
+    );
+}
+
+// ARQ-110
+#[test]
+fn arq_110_resolve_keeps_an_unknown_id_whatever_it_holds() {
+    let schema = one_of_each();
+    for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let given = only("from_a_newer_build", ParamValue::Float(x));
+        let got = schema.resolve(&given).unwrap();
+        assert_eq!(got.iter().count(), 6, "{x}");
+        let kept = got.float("from_a_newer_build").unwrap();
+        assert_eq!(kept.to_bits(), x.to_bits(), "{x}");
+    }
+}
+
+// ARQ-110
+#[test]
+fn arq_110_resolve_on_no_values_is_defaults() {
+    for schema in [one_of_each(), ParamSchema::default()] {
+        assert_eq!(schema.resolve(&ParamValues::new()), Ok(schema.defaults()));
+    }
+}
+
+// ARQ-110
+#[test]
+fn arq_110_a_non_finite_value_of_another_kind_is_a_wrong_type() {
+    let schema = one_of_each();
+    let nan = f32::NAN;
+    let non_finite = [
+        ParamValue::Float(f64::NAN),
+        ParamValue::Float(f64::INFINITY),
+        ParamValue::Float(f64::NEG_INFINITY),
+        ParamValue::Color(Color::Srgb(Rgba::new(nan, 0.0, 0.0, 1.0))),
+        ParamValue::Color(Color::LinearSrgb(LinearRgba::new(
+            0.0,
+            f32::INFINITY,
+            0.0,
+            1.0,
+        ))),
+        ParamValue::Color(Color::DisplayP3(DisplayP3Rgba::new(0.0, 0.0, 0.0, nan))),
+    ];
+    for v in non_finite {
+        for id in ["softness", "steps", "invert", "direction", "tint"] {
+            let own = matches!(
+                (id, &v),
+                ("softness", ParamValue::Float(_)) | ("tint", ParamValue::Color(_))
+            );
+            let want = if own {
+                err(non_finite_error, id)
+            } else {
+                err(wrong_type, id)
+            };
+            assert_eq!(
+                schema.check_values(&only(id, v.clone())),
+                want,
+                "{id} = {v:?}"
+            );
+        }
+    }
+}
+
+const SPECIAL_F64: [f64; 15] = [
+    f64::NAN,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+    f64::MAX,
+    f64::MIN,
+    0.0,
+    -0.0,
+    5e-324,
+    -5e-324,
+    f64::MIN_POSITIVE,
+    -2.0,
+    -1.5,
+    -1.0,
+    0.5,
+    1.0,
+];
+
+fn special_floats() -> Vec<f64> {
+    let mut all = SPECIAL_F64.to_vec();
+    all.extend([
+        1.0_f64.next_up(),
+        1.0_f64.next_down(),
+        -1.0_f64.next_up(),
+        -1.0_f64.next_down(),
+        2.0,
+        10.0,
+        10.0_f64.next_up(),
+    ]);
+    all
+}
+
+fn special_ints() -> Vec<i64> {
+    const P53: i64 = 1 << 53;
+    vec![
+        i64::MIN,
+        i64::MIN + 1,
+        -1,
+        0,
+        1,
+        P53 - 1,
+        P53,
+        P53 + 1,
+        i64::MAX - 1,
+        i64::MAX,
+    ]
+}
+
+// ARQ-110
+#[test]
+fn arq_110_float_definitions_match_the_rule_over_special_values() {
+    let all = special_floats();
+    for &min in &all {
+        for &max in &all {
+            for &default in &all {
+                let finite = min.is_finite() && max.is_finite() && default.is_finite();
+                let valid = finite && min <= max && min <= default && default <= max;
+                let got =
+                    ParamSchema::new(vec![float("p", min, max, default)]).validate_definition();
+                let want = if valid { Ok(()) } else { bad("p") };
+                assert_eq!(got, want, "min {min:?} max {max:?} default {default:?}");
+            }
+        }
+    }
+}
+
+// ARQ-110
+#[test]
+fn arq_110_int_definitions_match_the_rule_over_special_values() {
+    let all = special_ints();
+    for &min in &all {
+        for &max in &all {
+            for &default in &all {
+                let valid = min <= max && min <= default && default <= max;
+                let got = ParamSchema::new(vec![int("p", min, max, default)]).validate_definition();
+                let want = if valid { Ok(()) } else { bad("p") };
+                assert_eq!(got, want, "min {min} max {max} default {default}");
+            }
+        }
+    }
+}
+
+// ARQ-110
+#[test]
+fn arq_110_float_values_match_the_rule_over_special_values() {
+    let all = special_floats();
+    let finite: Vec<f64> = all.iter().copied().filter(|x| x.is_finite()).collect();
+    for &min in &finite {
+        for &max in finite.iter().filter(|&&m| min <= m) {
+            let schema = ParamSchema::new(vec![float("p", min, max, min)]);
+            for &v in &all {
+                let want = if !v.is_finite() {
+                    err(non_finite_error, "p")
+                } else if v < min || v > max {
+                    err(out_of_range, "p")
+                } else {
+                    Ok(())
+                };
+                let got = schema.check_values(&only("p", ParamValue::Float(v)));
+                assert_eq!(got, want, "min {min:?} max {max:?} value {v:?}");
+            }
+        }
+    }
+}
+
+// ARQ-110
+#[test]
+fn arq_110_int_values_match_the_rule_over_special_values() {
+    let all = special_ints();
+    for &min in &all {
+        for &max in all.iter().filter(|&&m| min <= m) {
+            let schema = ParamSchema::new(vec![int("p", min, max, min)]);
+            for &v in &all {
+                let want = if v < min || v > max {
+                    err(out_of_range, "p")
+                } else {
+                    Ok(())
+                };
+                let got = schema.check_values(&only("p", ParamValue::Int(v)));
+                assert_eq!(got, want, "min {min} max {max} value {v}");
+            }
+        }
+    }
 }
