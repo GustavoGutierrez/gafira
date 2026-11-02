@@ -7,6 +7,7 @@
 
 const SOURCES: &[(&str, &str)] = &[
     ("mod.rs", include_str!("../src/contract/mod.rs")),
+    ("cancel.rs", include_str!("../src/contract/cancel.rs")),
     ("describe.rs", include_str!("../src/contract/describe.rs")),
     ("params.rs", include_str!("../src/contract/params.rs")),
 ];

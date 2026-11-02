@@ -38,6 +38,7 @@ Flow line: `Flow: full | level: L2 | new capability | mutation: archive | T4 | V
 | C10 | `IRect` | `i32` corners, half-open, signed; plain data |
 | C11 | Key names and arguments | `error.<area>.<variant>` (ADR 0012); tables below |
 | C12 | Who validates a `ParamSchema` | A precondition, not a run-time check: a test per compiled schema, the plugin adapter for the rest |
+| C13 | `Ok(false)` after a cancel | Told apart by the log: ends at `1.0` is `NotCancelled`, otherwise `OutputAfterCancel` |
 
 ## Public API
 
@@ -288,16 +289,32 @@ pub enum ProgressViolation {
     ReportsAfterCancel { k: usize, extra: usize },
 }
 
-/// Runs `op` once for the report count `n`, then cancels at report 1, `n / 2`
-/// and `n - 1`. `op` returns whether it ended in the engine's cancelled error;
-/// a successful run returns `Ok(false)`, and any other failure is the caller's.
+/// Runs `op` once for the report count `n`, then once per cancel point (rules
+/// below). `op` returns whether it ended in the engine's cancelled error; a
+/// successful run returns `Ok(false)`, and any other failure is the caller's.
 pub fn check_progress_contract<E>(
     max_step: f32,
     op: impl Fn(&CancelToken, &dyn Progress) -> Result<bool, E>,
 ) -> Result<Result<(), ProgressViolation>, E>;
 ```
 
-Tests give the checker one conforming fake and one fake per violation.
+Rules of `check_progress_contract`:
+
+Each run gets a new `CancelToken` and a new log. An `Err(E)` from `op`, in any run, is returned at once. The first violation ends the check. In a run, the return value of `op` is judged before its log, except for the first check of a cancelled run.
+
+| Step | Rule |
+|---|---|
+| Baseline run | Not cancelled; `n` is its report count. `Ok(true)` is `NotCompleted`: it reports cancelled with no cancel. On `Ok(false)` the log goes through the scan |
+| Scan | By index, and at each index in this order. `OutOfRange` when `f` is outside `[0, 1]`, NaN included. `Decreasing` when `f < previous`, strict, so an equal value passes. `EarlyCompletion` when `f == 1.0` before the last report. `StepTooLarge` when `f - previous > max_step`, in `f32`, with no tolerance; the first report has no previous, so it is not compared to 0 |
+| End of the scan | `NotCompleted` when the log is empty or its last report is not `1.0` |
+| Cancel points | `{1, n / 2, n - 1}`, keeping only `1 <= k <= n - 1`, duplicates removed, ascending. `n = 0` and `n = 1` give none, `n = 2` gives `{1}`, `n = 3` gives `{1, 2}`. Report `n` is `1.0`, the end of a good run, so a cancel there comes too late for any operation to see it |
+| Cancelled run | The double (`CancelAt`) records each report and reads its position atomically, under one lock, because reports may arrive in parallel (C3): exactly one report gets position `k`, and that report cancels. First check, before the return value of `op` and whichever it is, `Ok(true)` or `Ok(false)`: fewer than `k` reports means the cancel never fired, so it is `NotCancelled { k }`. The next two rows apply only when the cancel fired |
+| `Ok(false)` after the cancel | `NotCancelled { k }` when the log ends at `1.0`: the operation ran to the end and ignored the token. `OutputAfterCancel { k }` otherwise: it stopped early and still returned success, so it delivered a partial output (C13) |
+| `Ok(true)` after the cancel | The log goes through the scan without `StepTooLarge` and "End of the scan", and any `f == 1.0` is `EarlyCompletion`, the last report included, because `1.0` is only for a good end (ARQ-112). Then `ReportsAfterCancel { k, extra }` when `extra`, the log length minus `k`, is above 1 |
+
+`max_step` binds the baseline only, because ARQ-112 sets the step on the reference input; the caller passes that input to `op`. The same sequence on two 1-thread runs is not checked here: it belongs to the test of the operation.
+
+ARQ-112 bounds the emitted fractions, so `StepTooLarge` has no tolerance. Rounding matters at the limit: 50 even steps, `i / 50` in `f32`, give 19 rises above `0.02f32` (measured, worst 0.02000004). Tests give the checker one conforming fake and one fake per violation, and a conforming fake needs more than 50 even steps at `max_step = 0.02`.
 
 ### `gafira_geom::IRect` (D1)
 
@@ -449,6 +466,14 @@ Short form. ADR 0012 holds the cross-cutting part of C5 and C11.
 - Decision: (a). A fault in a compiled schema is a bug in our code, so `cargo test` is the right place to stop it and no user ever meets it. A plugin schema is foreign input, so it needs a real check, once.
 - Rejected: (b) repeats a static check on every call, and `validate_definition` allocates (`seen`). (c) changes `fn params(&self) -> &ParamSchema` (02:523, 02:735) and `options_schema` (02:559). (d) needs a schema bound on a generic registry that also holds items with no schema.
 - Consequence: a forgotten test is the remaining risk. SP17 puts the step in the "how to add" lists. Nothing calls `validate_definition` at run time until `gafira-plugin` exists (Phase 3).
+
+### C13. `Ok(false)` after a cancel
+
+- Status: decided, from the D2b block.
+- Context: `Ok(false)` after a cancel fails two clauses of ARQ-112 at once, "devuelve `Err` de cancelado" and "no entrega salida", so the two variants overlap. Both are failures; the choice only names the diagnosis.
+- Options: (a) log ends at `1.0` is `OutputAfterCancel`, otherwise `NotCancelled`; (b) the reverse; (c) drop `OutputAfterCancel`; (d) a richer return type from `op`.
+- Decision: (b). `1.0` means the operation finished well (ARQ-112), so a log that ends there shows a token that was ignored, which is `NotCancelled`. A log that stops short shows an operation that stopped and still returned success, so what it delivered can only be partial, which is `OutputAfterCancel`. The signature does not change.
+- Rejected: (a) names each case after the other's fault: a run that never reacted would read as a delivery problem, and one that stopped early as not cancelled. (c) loses the partial-output diagnosis. (d) has nothing to carry: `segment` is the only long operation in layer 2 (ARQ-112), and its `Result<Segmentation, SegError>` cannot hold output together with `Cancelled`, a unit value (ADR 0012). A third state would be the adapter's own claim.
 
 ## Delivery table
 

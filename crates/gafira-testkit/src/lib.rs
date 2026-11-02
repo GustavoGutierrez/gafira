@@ -8,6 +8,7 @@
 
 pub mod golden;
 mod harness;
+pub mod progress;
 
 pub use harness::{LawViolation, prop_command, try_prop_command};
 
