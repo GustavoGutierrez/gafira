@@ -401,7 +401,7 @@ Los riesgos técnicos R-01..R-14 están en 02 (§12.1). Aquí se añaden los de 
 | P-01 | **Alcance.** Tres capas en un solo MVP (diseño, video básico y motor para el avanzado) es mucho trabajo para un equipo pequeño. | Entregas incrementales dentro del MVP: diseño estático primero, luego video básico (02 §11.2). Cada incremento es utilizable. |
 | P-02 | **Exportar H.264 puede exponer a patentes** y no funciona en Linux sin VA-API. | D-02, ADR-07: solo vía API del sistema; AV1 + Opus es la salida por defecto y siempre está disponible. |
 | P-03 | **Contenido incluido** (plantillas, ilustraciones, fotos, música, sonidos) sin licencia clara impide vender. | Solo contenido propio o con licencia permisiva registrada (ARQ-75); paquete de contenido separado si crece el instalador (R-09). |
-| P-04 | **Calidad percibida de la técnica clásica de Aislar sujeto** frente a modelos de IA. | Retocar borde con pincel; prueba bloqueante con IoU ≥ 0,90 en escenas sintéticas con máscara exacta (D-20); el IoU sobre fotos reales es un aviso hasta que el titular aporte un conjunto con licencia; Segmentadores ONNX opcionales en Fase 3. |
+| P-04 | **Calidad percibida de la técnica clásica de Aislar sujeto** frente a modelos de IA. | Retocar borde con pincel; prueba bloqueante con IoU ≥ 0,90 en 16 escenas sintéticas con máscara exacta (D-20), sin generalización demostrada: 9 de 12 en escenas nuevas, que son un aviso (D-45); el IoU sobre fotos reales es un aviso hasta que el titular aporte un conjunto con licencia; Segmentadores ONNX opcionales en Fase 3. |
 | P-05 | **Accesibilidad de egui** insuficiente en el lienzo. | AccessKit con árbol propio; plan B iced (R-10 de 02). |
 | P-06 | **Marca y nombres.** «Gafira» (y «Gefira», por parecido) podrían coincidir con marcas registradas; el glosario está aprobado (D-04). | Búsqueda del titular en USPTO, TMview y WIPO antes de publicar (§12.4; spec 05, Parte C). |
 | P-07 | **Funciones bloqueadas y precio sin definir.** | Pendiente 1 del titular antes de la comunicación comercial; la licencia se diseña en la spec 06. |
@@ -445,7 +445,7 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma (es-MX `1,234.5`, es-ES `1234,5`) o un formato fijo por idioma? Propuesta de 02 §14.4: según la región. | Titular | RF-64 |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto y solo cambia con `--lang` (02 ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux también se ofrecen en los dos idiomas (la spec 05 FV-30 dice solo español)? | Titular | RF-56, RF-64 |
-| Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (02 §12.3, D-40). Q-35..Q-44 están cerradas (D-29 a D-34 y D-41 a D-44). | Titular | No bloquea la especificación |
+| Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (02 §12.3, D-40). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45). | Titular | No bloquea la especificación |
 
 ### 12.4 Pendientes del titular
 
