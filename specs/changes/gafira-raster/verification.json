@@ -16,4 +16,24 @@
   "mutation": null,
   "hand_mutants": {"run": 4, "killed": 1},
   "criteria": {"total": 19, "covered": 15},
-  "size": {"lines": 1367, "forecast": 450}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1367, "forecast": 450}, "report": "verify-report.md" }, {
+  "round": 2, "commit": "888f54bc5b8bf37af99e7f72398bd3b94fdd0c2a", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply", "classes": [],
+  "counts": {"critical": 0, "warning": 2, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs:228", "summary": "Closed: f32 a = 0 pixels add no colour; bit-exact against an independent mean.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs convert", "summary": "Closed: V1 killed by arq_110_non_finite_colour_in_transparent_pixel_is_err.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs build_mips", "summary": "Closed: V2 killed by the mip test of the same name.", "follow_up": false, "status": "closed"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-111", "summary": "Closed: V3 killed by arq_111_every_conversion_is_deterministic.", "follow_up": false, "status": "closed"},
+    {"id": "C5", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-110", "summary": "Closed: three proptest! blocks hold the property. Weakness in W5.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121", "summary": "Closed: amended 02:951 decides the odd side; code matches on all new rows and probes.", "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "02:1308", "summary": "Closed: amendment removes the contradiction; deferral accepted. Adding EffectError with From<BufferError> is a duty of RS3 (S5).", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/mip.rs tests", "summary": "Closed: constant image on all formats, odd rows covered; M4 to M6 killed.", "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-121, CAL-26, CAL-22, 04 import limit", "summary": "No bound for build_mips. Peak 551 MiB at 12 MP, within budgets; 12.3 GiB at 16 384 px, the stated maximum, and an abort under a 4 GiB limit. Settle before its first caller.", "follow_up": true, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/pixel.rs:302", "summary": "ARQ-110 pixel property draws 0 or 1 pixel and hardly reaches the Err arm. New test gap.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 6, "killed": 6},
+  "criteria": {"total": 25, "covered": 25},
+  "size": {"lines": 1696, "forecast": 450}, "report": "verify-report.md" } ] }

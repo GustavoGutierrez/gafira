@@ -1,21 +1,22 @@
-# Verify report: gafira-raster, RS1, round 1
+# Verify report: gafira-raster, RS1, round 2
 
-- Commit: `10f328b` (branch `feat/gafira-raster`, base `9124700`). Worktree clean.
-- Depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding).
-- Round and depth came from the coordinator. Steps 1c and 4b ran in full, on scratch exports.
+- Commit: `888f54b` (branch `feat/gafira-raster`, contains `develop`). Closure round; round 1's report is at `e77d0e9`.
+- Depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
+- Round and depth came from the coordinator. Steps 1c and 4b do not run in a closure round. V1 to V3 were re-applied to check closure, as the coordinator asked.
 
-**Verdict: FAIL.** 5 CRITICAL, 3 WARNING, 4 SUGGESTION.
-Per class: implementation 6 (5 CRITICAL, 1 WARNING), ambiguity 2 (2 WARNING), architecture 0, claim 0.
+**Verdict: PASS for RS1.** 0 CRITICAL, 2 WARNING (both follow-up), 3 SUGGESTION. RS2 to RS6 remain, so the change is not done.
+Per class: implementation 1 (1 WARNING), ambiguity 1 (1 WARNING), architecture 0, claim 0.
+All eight findings of round 1 are closed: C1 to C5, W1, W2, W3.
 
 ## Gates
 
-Each exit code was read alone, from its own file, on a clean export of `10f328b`.
+Each exit code was read alone, from its own file, on a clean export of `888f54b`.
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0 (1 302 passed, 0 failed, 29 in `gafira-raster`) |
+| `cargo test --workspace --locked` | 0 (1 314 passed, 0 failed, 41 in `gafira-raster`) |
 | CLI has no UI dependencies (ARQ-07) | 0 |
 | Crates forbid unsafe code | 0 |
 | Layer table (V5) | 0 |
@@ -25,133 +26,122 @@ Each exit code was read alone, from its own file, on a clean export of `10f328b`
 | Core command property test (V14) | 0 |
 | `cargo deny check` | 0 |
 
-Artifact integrity (step 3c): `b64090c` touches only `apply-progress.md` and comes before the first implementation commit. The card lines are unchanged in `10f328b`. No commit touches `specs/02-arquitectura-software.md`, `specs/changes/layer-2/`, `docs/adr/`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.cargo/` or `.github/`.
+Disk: 34 GB free at the start, 30 GB at the lowest. Both scratch targets were cleaned afterwards.
 
-Disk: free space fell from 25 GB to 19 765 MiB during the run because of the two other writers. The gate run had already started at 23 GB and finished. No new build started under 20 GB: `cargo clean` on this verify's own target brought it back to 23 094 MiB first. No other worktree's folder was touched.
+## Artifact integrity (steps 3, 3c)
 
-## CRITICAL
+- `b64090c` touches only `apply-progress.md`, before the first implementation commit. The 8 card lines at HEAD are identical to that commit.
+- No implementer commit changed the card or a spec. `cfdd474` and `87148cd` touch only `crates/gafira-raster/src/`; `888f54b` touches only `apply-progress.md`.
+- `specs/02-arquitectura-software.md` changed only in `a7726de` and `4e29a87`, one file each, through `docs/rs1-specs` and `develop`, not from an implementer commit. `cfdd474` comes after both.
+- No delivery commit touches `.cargo/`, `.github/`, `Cargo.toml`, `Cargo.lock` or `deny.toml`. `develop` is fully merged.
 
-### C1. `RgbaF32` mip: a pixel with `a = 0` adds colour
+## Closure of round 1
 
-- class: `implementation`
-- ref: `crates/gafira-raster/src/mip.rs:124` (`reduce_f32`), ARQ-121 "El nivel de un píxel `a = 0` no aporta color"
-- Evidence: 2x2 `[(1,1,1,0), (0.1,0.2,0.3,1), (0.1,0.2,0.3,1), (1,0,0,0)]` gives level 1 `[0.55, 0.35, 0.4, 0.5]`; with the two `a = 0` pixels zeroed it gives `[0.05, 0.1, 0.15, 0.5]`. All-`(1,1,1,0)` gives `[1, 1, 1, 0]`, colour with alpha 0 in a premultiplied buffer. Probes `p13`, `p14` fail.
-- Why it is a defect: the criterion has no format limit, and it only has content for such pixels, because a valid premultiplied `a = 0` pixel is already 0. `reduce_rgba8` skips them (`mip.rs:92`) and its test says "whatever bytes it holds"; `unpremultiply` for `f32` zeroes them too. The same picture gives different colour by format.
-- Test gap: `arq_121_transparent_pixel_adds_no_colour` covers `Rgba8` only.
+| Id | Status | Evidence |
+|---|---|---|
+| C1 | closed | `mip.rs:228` zeroes `a = 0` pixels, -0.0 included. The round 1 case gives `[0.05, 0.1, 0.15, 0.5]`, all-`(1,1,1,0)` gives zeros. Probe `p4` matches an exact mean bit for bit on 137 sizes |
+| C2 | closed | V1 re-applied: killed by `pixel::arq_110_non_finite_colour_in_transparent_pixel_is_err`, the only failure |
+| C3 | closed | V2 re-applied: killed by `mip::arq_110_non_finite_colour_in_transparent_pixel_is_err`, the only failure. `p8` holds at every index of a 3x3, with alpha 0 and not |
+| C4 | closed | V3 re-applied, entropy for `|a| != 0.5`: killed by `arq_111_every_conversion_is_deterministic`, the only failure. That test runs both conversions twice on `f32` and `Rgba8`. `p9` agrees |
+| C5 | closed | `proptest!` blocks `arq_110_finite_input_gives_finite_output`, `arq_110_unit_range_premultiply_is_ok_and_finite`, `arq_110_finite_mips_are_finite`. The named property is held by the repository. Weakness: W5, new |
+| W1 | closed | 02:951 now decides the odd side, and `mip.rs` follows it. See "Amended ARQ-121" |
+| W2 | closed | Ruling below |
+| W3 | closed | `arq_121_constant_image_all_formats` covers `f32` and `Alpha8` on odd sizes. Odd rows are in the `Alpha8` and `Rgba8` odd-side tests. M4, M5, M6 below killed |
 
-### C2. Survivor V1: `premultiply` and `unpremultiply` input check on `a = 0` pixels
+S1 and S2 of round 1 were also acted on: the dead code is gone, and `arq_121_zero_side_images_have_no_levels` fixes the zero-side behaviour.
 
-- class: `implementation`
-- ref: `crates/gafira-raster/src/pixel.rs`, `convert`; ARQ-110
-- Mutant: the input check ignores non-finite values in pixels with `a = 0`. All 29 unit tests pass. Probe `p05` fails on it: `unpremultiply` of `(NaN, 0, 0, 0)` gives `Ok`, because `a = 0` writes zeros.
-- The code is correct today (`p05` passes on it). The gap is the test: `arq_110_non_finite_pixel_is_err_and_buffer_unchanged` only uses `a = 0.5`.
+### Ruling on W2: deferral accepted, finding closed
 
-### C3. Survivor V2: `build_mips` input check on `a = 0` pixels
+The finding was a contradiction in the spec, and `4e29a87` removes it. 02:1308 now names `BufferError` as the exception for a type several crates share, lists `EffectError`, and says `EffectError` wraps `BufferError` in a variant with `From`, with `to_message` delegating. That matches the `Cancelled` pattern of ADR 0012 item 4.
 
-- class: `implementation`
-- ref: `crates/gafira-raster/src/mip.rs`, `build_mips`; ARQ-110
-- Mutant: the same skip in `build_mips`. All 29 unit tests pass. Probe `p25` fails on it, with a non-finite value in the output. The code is correct today. `arq_110_non_finite_pixel_is_err_for_f32` only uses `a = 0.5`.
+RS1 owes no code for it. `EffectError` does not exist, no `Effect` or `Transition` exists to return it, and `BufferError` already has `ToMessage`. Adding an unused enum now would be speculative.
 
-### C4. Survivor V3: ARQ-111 does not run every operation twice
+What remains is an implementation duty of the delivery that adds `EffectError`, not an open question. The first signature that needs it is `Transition::run_cpu` (02:742), so RS3 by the delivery order. One gap: that duty is recorded only in `apply-progress.md` and in 02:1308, which no RS3 product ID cites, so verify's per-ID check would not reach it. See S5.
 
-- class: `implementation`
-- ref: `crates/gafira-raster/src/pixel.rs:103` onward; ARQ-111 "ejecuta dos veces cada operación"
-- `arq_111_premultiply_is_deterministic` covers `premultiply` on `f32` only. Nothing repeats `unpremultiply`, or either conversion on `Rgba8`.
-- Mutant: entropy (`RandomState`) in `unpremultiply`, for `|a| != 0.5` only, so it stays away from the exact-value assertions. That limit makes it deliberately narrow, but the coverage fact does not depend on it. All 29 unit tests pass; `p26` fails on it. The code is correct today.
+## Amended ARQ-121
 
-### C5. ARQ-110 property test is missing
+Probes ran on a scratch export, written from the row, and all 9 pass (`p1` to `p9`).
 
-- class: `implementation`
-- ref: ARQ-110 "Prueba de propiedad: con entrada finita dentro del dominio, toda salida numérica es finita"
-- `crates/gafira-raster` has no `proptest!` block, although `proptest` is a dev-dependency and `gafira-layout` has ARQ-110 property tests. The example tests do not replace the named property.
-- The code holds as far as probed: `p18` ran 2 000 random finite inputs plus `±f32::MAX`, with no non-finite output. That is verify's evidence, not a test the repository keeps.
+| Criterion | Result | Test | Probe |
+|---|---|---|---|
+| 3x1 and 1x3 `Alpha8` with 0, 0, 255 give 85 ±1 | covered | `arq_121_odd_side_counts_every_pixel_alpha8` | `p1` |
+| 3x3 `Alpha8`, last row and column 255, gives 142 ±1 | covered | same | `p1` |
+| 5x1 `Alpha8`, level 1 gives 0 and 170 ±1 | covered | same | `p1` |
+| 3x1 `Rgba8` opaque, sRGB 0, 0, 255, gives 156 ±1 | covered, also 1x3 | `arq_121_odd_side_counts_every_pixel_rgba8` | `p2` |
+| 1000x600 opaque, 512 at 0 and 488 at 255, 1x1 level gives 185 ±2 | covered, measured 185; exact 185.486 | `arq_121_wide_image_top_level_is_the_exact_mean` | `p2` |
+| 1x1 has 1 level, equal to the input | covered, all formats | `arq_121_one_by_one_has_one_level_equal_to_input` | `p1` |
+| Every level pixel is the equal-weight mean of the originals it covers | covered | the rows above | `p3`, `p4`, `p5` |
+| Constant image | covered, every valid `(c, a)` pair in `Rgba8` | `arq_121_constant_image_*` | `p6` |
+
+`p3` to `p5` derive the covered set on their own, by mapping each original index down the chain, and compare every level on 137 sizes, among them 1x1025, 1023x3 and 33x65. `Alpha8` matches exactly, `f32` matches bit for bit, `Rgba8` alpha matches exactly and colour within 1. Each level is a partition of the originals, so no pixel is lost. Earlier criteria were not retested beyond the gates.
+
+Mutants, killed and each confirmed for the right reason. None is new budget: V1 to V3 are the survivors of round 1, and M4 to M6 check W3.
+
+| Mutant | Killed by |
+|---|---|
+| V1, V2, V3 | as in the table above |
+| M4: last row not joined to the last box, column kept | `arq_121_odd_side_counts_every_pixel_alpha8`, `..._rgba8`, the wide image test and both constant tests |
+| M5: `f32` divides by 4, not by the area | `arq_121_constant_image_all_formats`, `arq_121_alpha8_and_f32_levels` |
+| M6: `Alpha8` divides by 4, not by the area | `arq_121_constant_image_all_formats`, `arq_121_odd_side_counts_every_pixel_alpha8` |
+
+## Ruling on memory
+
+Measured with `VmHWM` in a release build on the development machine, on a real image in each row. Sizes are MiB. "Added" is the peak above the source.
+
+| Input | Added | Process peak | Levels kept | Time |
+|---|---|---|---|---|
+| `Rgba8` 4000x3000 (12 MP) | 503 | 551 | 61 | 0.5 s |
+| `Alpha8` 4000x3000 | 469 | 483 | 15 | 0.2 s |
+| `RgbaF32` 4000x3000 | 641 | 826 | 244 | 0.3 s |
+| `Rgba8` 4000x4000 (16 MP) | 671 | 735 | 81 | 0.7 s |
+| `Rgba8` 8192x8192 (67 MP) | 2 816 | 3 074 | 341 | 2.8 s |
+| `Rgba8` 16384x16384 (268 MP) | 11 264 | 12 291 | 1 365 | 10.5 s |
+
+The "about 380 MB" in `apply-progress.md` is right for the base sums alone and low for the peak. `halve` holds level 0 and level 1 sums together, and the copy of level 0 is live too, so the added peak at 12 MP is about 500 MiB. "Then a quarter" holds only after that first step.
+
+Budgets stated in `specs/`:
+
+- CAL-26: at most 1.5 GB with 20 pages and images (FIJADA, D-03), on the 8 GB profile.
+- CAL-22, ARQ-44, 02 §6.7: the configured limit plus 10 %, tested at 1 GB, default 50 % of RAM.
+- 04 FD on import: images over 16 384 px per side are reduced with a notice (PROPUESTA), so 16 384 is the stated maximum. Pages use the same limit.
+- No budget names the mip builder. ARQ-121 has no number, §6.7 has no mip row, and ARQ-114 has no mip benchmark.
+
+Ruling:
+
+- **12 MP and 4000 px: no stated budget is broken.** One build takes 37 % of CAL-26 and fits a 1.1 GiB address limit, confirmed by a run under `ulimit -v`. Concurrent builds are the limit: about two reach the 1.1 GB ceiling and three pass 1.5 GB.
+- **Maximum size: it does not fit.** 12.3 GiB is 8 times CAL-26, 3 times the default limit on the 8 GB profile, and more than that profile's RAM. Under a 4 GiB limit the 16 384 px run aborted with SIGABRT, exit 134, `memory allocation of 8589934592 bytes failed`. 8192x8192 aborted the same way under 1.1 GiB. An abort is no `Err`, and `catch_unwind` (ADR-05, ARQ-54) cannot turn it into a failed job. These runs are a limit on one machine, not a run on the reference hardware.
+- **Why this is not CRITICAL.** The budgets are process-wide, nothing calls `build_mips` yet, and no RS1 criterion covers memory. No spec says a whole image of maximum size is built in one pass. Verify cannot invent that requirement, so this goes to the spec as W4.
+- The source and kept levels alone come to about 2.4 GiB at 16 384 px, over CAL-26 with no working memory at all. Maximum-size images need a decision on tiles or limits whatever the builder does, so this is not only a code fix.
 
 ## WARNING
 
-### W1. ARQ-121 does not decide what an odd side does
+### W4. No memory bound for `build_mips`, and the maximum image size cannot be built
 
-- class: `ambiguity`
-- ref: ARQ-121; `apply-progress.md` assumption 2; `crates/gafira-raster/src/mip.rs`, `pair`
-- Reading: dropping does not contradict "promedia caja de 2×2". Every output pixel is an exact 2x2 mean, and sizes round down as stated. But the text does not say that source pixels may be left out, and no acceptance row fixes it. Other readings fit the same text.
-- Measured: the loss adds up along the chain. In 1000x600 the 1x1 level sees 512 of 1000 columns. Left 512 columns black, right 488 white: 1x1 gives 0, the exact linear mean gives 185.5. Worst measured width is 1023 (50.0 %). 3x3 `Alpha8` with the last row and column at 255 gives 0 against an exact 141.7. At level `k` the dropped part is under one output pixel per side, so the near levels only lose a thin edge; the top levels are the ones that change much.
-- Why WARNING: the code follows a defensible reading and the choice is recorded, so it is not a code defect. It should still be settled before merge, because goldens and consumers will fix these bytes. `tdd-apply` should have stopped and reported this as `blocked` rather than choosing.
-- Question for the owner, through `specifier`: keep the drop and state it in ARQ-121, or require every source pixel to count, as the top level's mean suggests.
+- class: `ambiguity`, follow-up
+- ref: ARQ-121 (02:951), CAL-26, CAL-22, 04 FD import limit, `crates/gafira-raster/src/mip.rs` `Sums`
+- Evidence: "Ruling on memory". Peak 551 MiB at 12 MP and 12.3 GiB at 16 384 px, against budgets that never name the builder.
+- Settle before the first caller of `build_mips` (`gafira-render` or the engine). The spec should state a bound or a maximum for one build, and whether maximum-size images use tiles or a reduced base, with a §6.7 row and benchmark if a number is set.
+- Part of the peak is avoidable with no change to the output bytes. Building level 1 straight from the view, without storing `[f64; 4]` for level 0, should cut the added peak at 12 MP from about 500 to about 160 MiB. `Alpha8` could also hold one channel, not four. These are estimates, not measured, and they do not make 16 384 px fit. The trigger the implementer noted ("if a speed or memory test needs less") is the right one, and no such test exists yet.
+- Time: 0.5 s at 12 MP on this machine equals the whole 04 budget for showing a 12 MP JPEG (< 500 ms, PROPUESTA) if the build ever ran inline. §6.1 refines in the background, so nothing is broken today.
 
-### W2. One error enum per crate against two names in raster
+### W5. ARQ-110 pixel property runs on at most one pixel
 
-- class: `ambiguity`
-- ref: 02:1308 ("Un enum de error por crate"), 02:529 and 02:742 (`EffectError`), P4 (`BufferError`)
-- Raster is headed for two enums at the first `Effect` or `Transition`. RS1 itself is fine; it has only `BufferError`. Settle it before RS3, which builds the first `Transition::run_cpu`, or RS4, whichever needs `EffectError` first.
-
-### W3. Weak tests on two ARQ-121 rows
-
-- class: `implementation`
-- ref: `crates/gafira-raster/src/mip.rs` tests
-- "Imagen constante" runs on `Rgba8` only, and the odd-side test covers a dropped column only, not a row. Probes `p10` and `p22` show the code behaves as chosen; the repository does not hold that proof.
+- class: `implementation`, follow-up
+- ref: `crates/gafira-raster/src/pixel.rs:302`, and `:327` in the same way
+- `pixels()` draws 0 to 7 values and cuts to a multiple of 4, so each case has 0 or 1 pixel, and 3 of 8 cases are empty. The range `±1e6` almost never gives an overflow, so the `Err` arm is hardly reached. C5 stays closed: the property is there, each pixel is independent, and `arq_110_overflowing_result_is_err_and_buffer_unchanged` covers the overflow. A longer vector and a mix of tiny alpha values would close it. New test gap after round 1, so not FAIL.
 
 ## SUGGESTION
 
-- S1. `crates/gafira-raster/src/pixel.rs:53-55`: `if a == 0 { p[3] = 0; }` is dead code, since `a` is already 0. T4 may report it.
-- S2. `mip_level_count(0, 5)` gives 0 while the literal formula gives 3, and `mip_size(0, 5)` gives `(1, 2)`. Both are defensible; one spec line on empty images would close this.
-- S3. An invalid `Rgba8` pixel with `c > a` is not kept: constant `(200, 100, 50, 100)` gives `(100, 100, 50, 100)`. It is outside premultiplied alpha, and ARQ-117 caps the result at `a`, so this is not a finding. The owner may want it recorded when ARQ-121 is touched for W1.
-- S4. `apply-progress.md` assumption 5 speaks of "the two constructor variants of P4"; P4 lists no variants. Assumption 3 says the formats are not spelled out, but 02 §6.2 gives 8-bit sRGB premultiplied for Preview and `f32` linear for Export.
-
-## Implementer's assumptions
-
-| Assumption | Class | Basis | Result |
-|---|---|---|---|
-| Empty image gives 0 levels | Derivable | `log2(0)` is undefined; 02 §4.17.4 "Imagen de tamaño 0: `Ok` sin cambios"; no pixels to make a level from. The row is tagged ARQ-118 but sits in the raster table | No finding; S2 for 0xN |
-| Odd side drops the last row or column | Ambiguity | Not contradicted by ARQ-121, and not decided by it | W1 |
-| Side of 1 repeats a pixel | Derivable | `(a+a+b+b)/4 = (a+b)/2`, the only mean available on a side of 1 | No finding |
-| `RgbaF32` averaged as is | Derivable, with one exception | 02 §6.2 and ARQ-117 give linear premultiplied, so the plain mean is right. The exception is `a = 0`, where ARQ-121 states the rule | C1 |
-| `Alpha8` plain rounded mean | Derivable | Coverage has no colour or transfer curve | No finding |
-| Extra API beyond P4 | Derivable, partly stated | `ImageViewMut` is in 02 §4.17 and `EffectCx` in P5, with the exact shape. `PixelDataMut`, `ImageBuf`, `PixelBuf`, `TileGrid` and the helpers follow from what RS1 must return. P4's frozen shape is intact, and the additions are only additions | No finding |
-| `NonFinite` variant | Stated, its home derivable | ARQ-110 requires a typed `Err` naming the field; P4 lists no variants, and `#[non_exhaustive]` leaves `SG` safe. Key and arguments meet ADR 0012 | No finding; W2 on the wider question |
-| 8-bit mip ignores the transform's `Err` | Derivable | 02:692 gives `LengthNotMultiple` as its error, and the buffer has 4 elements. `p09` and `p16` agree | No finding |
+- S5. Before RS3, the coordinator adds the `EffectError` duty of 02:1308 to the card with a `slice card amend`, so RS3's verify checks it.
+- S6. `mip.rs:536`: the comment says "even in a dropped column"; no column is dropped now.
+- S7. `crates/gafira-raster/proptest-regressions/pixel.txt` is untracked in the worktree, from a mutant run. It is not in `888f54b`, its seed passes on the code, and verify may not delete it. Remove it, and leave it out of the merge.
 
 ## Criteria
 
-| # | Criterion | Status | Test or probe |
-|---|---|---|---|
-| 1 | ARQ-117, 65 536 pairs, `<= a`, exact rounding | covered | `arq_117_premultiply_is_exact_rounding_and_at_most_alpha`, `p01` |
-| 2 | ARQ-117, unpremultiply formula | covered | `arq_117_unpremultiply_rounds_clamps_and_zero_alpha_is_zero`, `p02` |
-| 3 | ARQ-117, `a = 255` identity | covered | `arq_117_opaque_is_identity_and_transparent_is_zero`, `p02` |
-| 4 | ARQ-117, `a = 0` gives 0 | covered | same, plus `arq_117_view_*`, `p02` |
-| 5 | ARQ-117, wrong length is `Err` | covered | `arq_117_length_mismatch_is_err_for_each_format`, `p03` |
-| 6 | ARQ-117, overflow is `Err`, no allocation | covered | `arq_117_size_overflow_is_err_without_allocation`, `p03` |
-| 7 | ARQ-121, 256 px tiles, 257x1 gives 2 | covered | `arq_121_tile_counts_at_the_256_boundary`, `p15` |
-| 8 | ARQ-121, 1000x600, 10 levels, last 1x1 | covered | `arq_121_chain_of_1000_by_600_has_ten_levels_ending_1x1`, `p08` |
-| 9 | ARQ-121, constant image | covered, weak (W3) | `arq_121_constant_image_is_equal_at_all_levels`; `p09` all valid `(c, a)`, `p10` |
-| 10 | ARQ-121, checkerboard 188 ±1 | covered | `arq_121_checkerboard_level_one_is_188`; `p11` gives 188 |
-| 11 | ARQ-121, `a = 0` adds no colour | **failing** for `RgbaF32` (C1) | `arq_121_transparent_pixel_adds_no_colour`, `p12`, `p13`, `p14` |
-| 12 | ARQ-121, linear premultiplied mean | covered | `arq_121_level_one_matches_a_linear_premultiplied_reference`; `p16`, 200 000 boxes, colour within 1, alpha exact |
-| 13 | ARQ-110, table, `Err` names the field, buffer unchanged | weak (C2, C3) | `arq_110_*`, `p04` to `p07`, `p25` |
-| 14 | ARQ-110, finite input gives finite output, property | **missing** (C5) | `p18` only |
-| 15 | ARQ-110, constructors do not validate | covered | `arq_110_constructors_accept_non_finite_values`, `p24` |
-| 16 | ARQ-111, each operation twice | weak (C4) | `arq_111_*`, `p19`, `p26`. No `rayon` in the crate, so no pool test applies |
-| 17 | P4, shape and derives | covered | `p24`, code read |
-| 18 | ADR 0005, type homes | covered | `lib.rs` exports |
-| 19 | ADR 0012, keys and arguments | covered | `buffer_error_maps_to_message_keys`, `p20` |
-
-Covered 15 of 19. Product IDs: ARQ-117, ARQ-121, ARQ-110 and ARQ-111 all have named tests (`git grep`). None were left out of RS1. `Tile`, `TileSet`, `Cost`, `HandleReq` and the GPU traits are outside the RS1 row.
-
-## Probes (step 1c)
-
-26 probes were derived from the rows before the tests were read (`p25`, `p26` added afterwards, to confirm the survivors). 24 pass, 2 fail (`p13`, `p14`, C1). They live only under the scratchpad.
-
-## Hand mutants (step 4b)
-
-| Mutant | Rule | Result |
-|---|---|---|
-| Spot-check, recorded item 3: `min(255)` removed | ARQ-117 | Killed by `arq_117_unpremultiply_rounds_clamps_and_zero_alpha_is_zero`, as recorded |
-| V1: input check skips `a = 0` pixels in `convert` | ARQ-110 | **Survived** (C2); `p05` fails on it |
-| V2: input check skips `a = 0` pixels in `build_mips` | ARQ-110 | **Survived** (C3); `p25` fails on it |
-| V3: entropy in `unpremultiply` | ARQ-111 | **Survived** (C4); `p26` fails on it |
-
-Each survivor changes observable behaviour, so none is equivalent. The real code passes all three probes.
+25 of 25 covered: the 19 of round 1, with 9, 11, 13, 14 and 16 no longer weak, missing or failing, plus the 6 new odd-side and 1x1 rows of ARQ-121. Product IDs ARQ-117, ARQ-121, ARQ-110 and ARQ-111 all have named tests. None was left out of RS1.
 
 ## Size
 
-1 367 lines, about 670 of them tests. The owner said size does not concern him, so this is noted and is not a finding.
+1 696 lines added in `crates/` since `9124700`, 430 of them in this fix round. The forecast was 450. The owner said size does not concern him, so this is noted and is not a finding.
 
-next: specifier (W1, W2), then tdd-apply (C1 to C5, W3)
+next: tdd-apply (RS2). Open follow-ups: W4 (ambiguity), W5 (implementation).
