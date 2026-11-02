@@ -148,3 +148,27 @@ Mutants of this round (all killed): M1 (output rebuilt from an `f32` straight so
 
 Deviations: `proptest-regressions/` is still untracked on disk and not committed; I cannot delete it here. Lines of the round: `git diff --shortstat 2a2b517..HEAD -- crates/`.
 
+## RS3
+
+Status: partial. W6 and W7 of RS2's report are done (commit fe02abf). The transitions are blocked on the questions below; no transition code or stub was written.
+
+### Done
+
+- W6: `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit` holds the 8-bit case of both pixels transparent (ghost colour in the backdrop). W7: `arq_110_finite_input_gives_finite_output` asserts the backdrop bit for bit at source alpha 0 and the range only above it; `arq_110_interior_input_gives_output_in_unit_range` assumes a non-zero source alpha. Not RED (the code was right); mutants: 8-bit early return skipped for a transparent backdrop, same returning the source, `f32` early return returning the clipped backdrop. All killed by the first test above. Gates exit 0.
+
+### Blocked: what ARQ-118, 02 §4.13 and 02:1308 do not state
+
+ARQ-118 gives the maths of `progress`, Cut, Dissolve, Fade, Slide offset, Zoom scales and Wipe mask. It leaves open what a `Transition` needs to exist, and C12 needs a schema per transition:
+
+1. `ParamSchema` of each transition: ids, kinds, ranges, defaults, animability, labels, choice ids. 02 says only "dirección, color, suavidad". Needed: Fade colour (default black? "a negro, blanco o color"), Slide direction (4 ids), Wipe direction (4 plus circular) and softness (default, range [0, 1] by ARQ-118), Zoom (in or out? ARQ-118 fixes one: `from` 1 to 2, `to` 0.5 to 1; is "alejar" a second mode?).
+2. Direction conventions (spike R-b named it, nothing closed it): for Slide, from which side `to` enters (left/right/up/down) and whether `lado` is the width for horizontal and the height for vertical; for Wipe, where `u = 0` is for each direction (left to right, right to left, top to bottom, bottom to top) and the centre of the circular wipe (image centre?).
+3. Zoom resampling: the scale of `from` 1 to 2 and `to` 0.5 to 1 about which point (the centre?), and the filter (nearest or bilinear). ARQ-118 fixes none, and `p = 0` or 1 must be byte-exact.
+4. Identifiers and display: `transition_id` strings and `MessageKey` names for the `Descriptor` of each of the six, and their `version`.
+5. `HandleReq` for each transition (`Both`, `From`, `To`, `None`; 02 gives the type, not the values per transition).
+6. Pixel formats: which of `Rgba8`, `RgbaF32`, `Alpha8` each transition accepts, and the error for a mix (from `Rgba8`, to `RgbaF32`, destination `Alpha8`). ARQ-118 tests "por formato".
+7. `EffectError`: 02:1308 states the `BufferError` wrapper only. The typed `Err` variants for a dimension mismatch (ARQ-118) and for a non-finite or invalid `ParamValues` (ARQ-110, `ParamError`) are not named. `BufferError` has no mismatch variant.
+8. Dissolve and Fade on premultiplied values: the formula is stated, and mutant 10 reads "colour operations without premultiplying". Confirm that Dissolve and Fade interpolate the premultiplied RGBA channels directly (the only linear crossfade that keeps alpha), and in which space 8-bit pixels are mixed (stored sRGB bytes, as `blend_u8`, or linear light as the mip levels; W1 of RS2 is the same open question).
+9. `Rgba8` rounding of Dissolve and Fade (round to nearest?).
+
+Hand mutants 1 to 11 for the transitions are not run: there is no code.
+
