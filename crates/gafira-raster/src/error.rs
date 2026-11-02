@@ -27,7 +27,7 @@ pub enum BufferError {
     NonFinite {
         /// Name of the offending field.
         field: &'static str,
-        /// Index of the element in the buffer.
+        /// Index of the element in the buffer, or the channel (0 to 3) for a single pixel.
         index: usize,
     },
 }

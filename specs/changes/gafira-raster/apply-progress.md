@@ -1,6 +1,6 @@
 ## Slice card
 Flow: full | level: L3 | pack: product-spec slice | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: layer-2 crate in the owner's parallel full route; one writer per worktree
-Product IDs: RS1 ARQ-117, ARQ-121, ARQ-110, ARQ-111; RS2 ARQ-119, FD-12 (c, CPU); RS3 ARQ-118, ARQ-25 (ends); RS4 ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (bench_shadow_1080); RS5 FD-33 (a, d to h) except colours detected by ΔE; RS6 ARQ-122, FD-26, FD-28 (b), FD-33 (detected colours), FD-34 (a, b; D-40, D-41), ARQ-114 (bench_dhash_12mp) (source: specs/02-arquitectura-software.md, specs/01-producto-y-calidad.md, specs/04-funcionalidad-diseno-imagen-exportacion.md, specs/05-funcionalidad-video-y-distribucion.md)
+Product IDs: RS1 ARQ-117, ARQ-121, ARQ-110, ARQ-111; RS2 ARQ-119, FD-12 (c, CPU); RS3 ARQ-118, ARQ-25 (ends), 02:1308 (`EffectError` wraps `BufferError`); RS4 ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (bench_shadow_1080); RS5 FD-33 (a, d to h) except colours detected by ΔE; RS6 ARQ-122, FD-26, FD-28 (b), FD-33 (detected colours), FD-34 (a, b; D-40, D-41), ARQ-114 (bench_dhash_12mp) (source: specs/02-arquitectura-software.md, specs/01-producto-y-calidad.md, specs/04-funcionalidad-diseno-imagen-exportacion.md, specs/05-funcionalidad-video-y-distribucion.md)
 Scope: RS1 to RS6 of specs/changes/layer-2/design.md, with P11 for the blur.      Non-goals: other streams; the filter catalogue (Q-34); Brillo and Contorno (D-42); `f16` buffers.
 Deliveries: RS1 to RS6, serial; each verified and merged before the next.
 Plan: specs/changes/layer-2/design.md, table and decisions; `crates/gafira-raster/` plus the files P2 assigns.
@@ -78,4 +78,73 @@ Commits: cfdd474 (mips: C1, W1, W3 mips part, S2), then the test commit for C2 t
 Mutants of this round (all killed): V1 (input check skips `a = 0` pixels in `convert`) by `arq_110_non_finite_colour_in_transparent_pixel_is_err`; V2 (same in `build_mips`) by the mip test of that name; V3 (`RandomState` entropy in `unpremultiply` f32, in 8-bit premultiply and in 8-bit unpremultiply) by `arq_111_every_conversion_is_deterministic`; f32 `a = 0` colour by `arq_121_f32_transparent_pixel_adds_no_colour`; last box not widened (odd side dropped), area ignored, cover sum wrong, sRGB mean, equal weights, Rgba8 `a = 0` raw colour, alpha rounding down, unchecked overflow result: all by the ARQ-121 and ARQ-110 tests above.
 
 Deviations: a mutant run left an untracked `crates/gafira-raster/proptest-regressions/` folder (proptest's failure seeds). I could not delete it here (the `rm` was denied) and did not commit it; delete it before merge. S3 and S4 need no code. Lines for the round: see `git diff --shortstat 10f328b..HEAD -- crates/`.
+
+## RS2
+
+Branch `feat/gafira-raster` (from `develop` plus the card amend). Commit: see `git log` (`feat(raster): the 16 W3C blend modes ...`). Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0, read alone. `gafira-raster` tests: 41 to 55.
+
+Source of the formulas: W3C *Compositing and Blending Level 1*, fetched from the W3C site (sections 5.1, 9 and 10). The test reference (`blend::tests::reference`) transcribes them in `f64` on straight colours with the general formula `αs(1 − αb)Cs + αs αb B + (1 − αs) αb Cb`, with its own structure (closures, `set_sat` by value matching); the code under test works on premultiplied values with another `set_sat`.
+
+### Done
+
+`blend_f32(mode, backdrop, source) -> Result<[f32; 4], BufferError>` and `blend_u8(mode, backdrop, source) -> [u8; 4]`, premultiplied RGBA in and out, all 16 `BlendMode::ALL` (the `match` has no `_` arm: a new mode does not compile). 8-bit blends the stored byte values as the formula inputs (no linearisation), result rounded to nearest.
+
+### RED per criterion
+
+| Criterion | Failing test (stub returned the backdrop) |
+|---|---|
+| 16 modes vs `f64` reference, f32 <= 1e-5 | `arq_119_every_mode_matches_the_reference_in_f32` (400 triples per mode) |
+| 8 bits <= 1/255 | `arq_119_every_mode_matches_the_reference_in_8_bits` (also checks nearest-byte rounding, <= 0.5/255) |
+| Formulas by hand | `arq_119_spot_values_of_the_w3c_formulas` (both `D(x)` branches, Overlay and HardLight asymmetry, four non-separable modes with ClipColor) |
+| `Normal` at alpha 1 gives the source | `arq_119_normal_opaque_source_is_the_source` (also outside [0, 1]) |
+| Backdrop a = 0 gives the source | `arq_119_transparent_backdrop_gives_source` |
+| Clip only before other modes | `arq_119_clip_applies_only_before_other_modes` |
+| Dodge/Burn boundaries | `arq_119_dodge_and_burn_boundaries` |
+| ARQ-110 | `arq_110_non_finite_input_is_err_for_every_mode` (16 modes, 3 values, 8 positions, alpha 0.5 and 0), `arq_110_overflowing_normal_result_is_err`, proptest `arq_110_finite_input_gives_finite_output` |
+
+Not RED, proved by mutants: `arq_119_transparent_source_leaves_backdrop` (source a = 0 with colour and -0.0), `arq_119_boundary_inputs_give_finite_output_for_every_mode` (0, 1, 0.25, 0.5 with alphas down to 1e-45), `arq_111_blend_is_deterministic`, proptest `arq_119_u8_result_is_premultiplied_valid`.
+
+### Hand mutants (all killed unless noted)
+
+| # | Mutants | Killed by |
+|---|---|---|
+| 1 | Per mode: SoftLight `D(x)` join 0.25 to 0.3 and to 0.2; `16` to `15`; Cs split 0.5 to 0.6; SoftLight arguments swapped; Overlay with source (arguments unswapped); HardLight swapped, split 0.4, constant `2s - 0.9`; Multiply `cb*cb`; Screen; Darken and Lighten swapped; Difference without `abs`; Exclusion; Dodge and Burn arguments swapped | the f32 and 8-bit tables, `arq_119_spot_values_of_the_w3c_formulas` |
+| 2 | `Lum` three coefficients; `ClipColor` sign, factor, thresholds, denominators; `SetLum` sign and no clip; `Sat`; `SetSat` mid, max, min/max order; argument order of Hue, Saturation, Color, Luminosity; Hue's `Lum` argument | tables and spot values |
+| 3 | `Normal` clipped | `arq_119_clip_applies_only_before_other_modes`, `arq_110_overflowing_normal_result_is_err` |
+| 4 | No clip before other modes; no alpha cap (f32 and 8-bit); alpha not clipped | `arq_119_clip_applies_only_before_other_modes`, proptest |
+| 5 | Source a = 0 changes the backdrop; backdrop a = 0 keeps its colour; `Normal` source scaled by alpha | `arq_119_transparent_source_leaves_backdrop`, `arq_119_transparent_backdrop_gives_source`, `arq_119_clip_applies_only_before_other_modes` |
+| 6 | Composite on straight values; alpha union `as + ab` and `max`; `(1 - as)` term and `(1 - ab)` factor missing | the tables, identity tests |
+| 7 | Dodge without the `Cb = 0` guard; Dodge and Burn guard order; unpremultiply without the `a > 0` guard (0/0) | `arq_119_dodge_and_burn_boundaries`, tables, `arq_119_transparent_backdrop_gives_source` |
+| 8 | 8-bit truncation instead of rounding; straight colour quantised to 4 bits | `arq_119_every_mode_matches_the_reference_in_8_bits`, identity tests |
+| ARQ-110/111 | Backdrop not checked; `±∞` not checked; check skipped for a = 0; result check reduced to NaN; `RandomState` entropy in the alpha | `arq_110_*`, `arq_111_blend_is_deterministic` |
+
+Survivors, all equivalent: (a) `ClipColor` recomputing `x` or `L` after the `n < 0` step: both branches need spread above 1, and the spread of any colour reaching `ClipColor` is at most 1 (SetLum shifts equally; SetSat gives spread `s <= 1`), so the branches never both run. (b) Dropping the `Cs == 0` guard of ColorBurn: `(1 - cb) / 0` is `+inf` in IEEE, `min(1, inf) = 1`, result 0, the same value; the `Cb == 1` guard (0/0) is the one that matters and is killed. (c) `Normal` in `separable()` is never reached (the `Normal` path is premultiplied); kept for exhaustiveness.
+
+### Assumptions and deviations (spec silent; verify may check)
+
+1. ARQ-119 gives no signature. Chosen: per-pixel functions on premultiplied RGBA (`[f32; 4]`, `[u8; 4]`); no buffer-level blend, so no size-mismatch rule had to be invented. `Cost`/`HandleReq` unchanged. `gafira-render-cpu` can loop.
+2. "Triples (backdrop, source, alpha)": read as backdrop pixel, source pixel and their two alphas.
+3. "Clip channels to [0, 1]": all four inputs are clipped, and a colour channel above its alpha is capped to the alpha (so the straight colour is at most 1; needed to keep `D(x)`, `sqrt` and the division safe). In 8 bits the same cap applies before non-`Normal` modes.
+4. A pixel with `a = 0` is treated as transparent black in both arguments and in every mode, including `Normal` (consistent with RS1's mip rule).
+5. Non-finite check covers all eight inputs first, also for `a = 0` pixels; `Err` field is `"backdrop"`, `"source"` or `"result"` and the index is the channel. A non-finite result only arises in `Normal` (unclipped), which gives `Err`.
+6. `Normal` out of range is not clipped (ARQ-119): output may leave [0, 1].
+7. 8-bit values go into the formulas as `v / 255`, with no sRGB linearisation: the criterion compares with the `f64` formula on the same values.
+8. `crates/gafira-raster/proptest-regressions/` is again untracked on disk (failure seeds from the mutant runs). Not committed; the RS1 coordinator note said so; I cannot delete it here.
+
+Size: `blend.rs` is 840 lines (about 560 tests).
+
+### Fix round 1 (RS2 verify round 1: C1 to C4, W2 to W5, S2)
+
+Commits: 07dd1e2 (amended ARQ-119 and W3, with RED), then the gap-closing test commit. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone. Tests in `gafira-raster`: 55 to 63.
+
+- Amended ARQ-119 (RED first): a source with `a = 0` returns the backdrop bit for bit, an early return after the non-finite check, in `f32` and 8 bits, for all modes, with `(1,5; 0,5; 0,2; 1)`, `-0.0` and out-of-range backdrops. RED: `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit` (`Normal` turned `-0.0` into `+0.0`; Multiply clipped 1,5). A NaN or infinity still gives `Err` (`arq_119_transparent_source_still_checks_for_non_finite`, not RED). When both pixels have `a = 0` the source rule wins; the old backdrop test no longer includes `a = 0` sources.
+- W3 (RED first): the mixing result is clamped to [0, 1]. RED: `arq_119_mixing_result_is_clamped` (Saturation gave `-2.7755576e-17`). Checked first: the unclamped reference tables still pass with the clamp (max error unchanged), and the full 55 tests pass.
+- C1: `arq_119_transparent_backdrop_gives_source` compares bits on 3 000 sources whose `c / a` is not exact (low mantissa bits scrambled; for plain `c = u * a` the f32 round trip returns `c` anyway, which is why my first attempt at the mutant survived).
+- C2: `arq_119_source_colour_is_capped_to_its_alpha`. C3: `arq_110_overflowing_alpha_is_err`. C4: `arq_110_color_burn_with_negative_zero_source`; my claim (b) "equivalent" was wrong for `-0.0`: `(1 - cb) / -0.0` is `-inf`, `min(1)` keeps it and `1 - (-inf)` is `+inf`. The guard stays and is tested.
+- W4: two proptests, `arq_110_interior_input_gives_output_in_unit_range` (inputs in [-2, 2], tiny values, [0, 1]) and `arq_119_valid_interior_input_stays_in_unit_range`. W5: the two table tests carry `// ARQ-119 (FD-12 c, CPU)`. S2: `index` doc in `error.rs`.
+- W1 (colour space of blending): not touched. `blend_u8` still blends the stored byte values.
+
+Mutants of this round (all killed): M1 (output rebuilt from an `f32` straight source, two variants) by the bit-exact backdrop test; M2a (`f32` source not capped) and M2b (8-bit source not capped) by the cap test; M3 (result check skips alpha) by `arq_110_overflowing_alpha_is_err`; ColorBurn without the `Cs == 0` guard by the `-0.0` test; early return removed (`f32` and 8 bits), placed before the finite check, or returning the clipped backdrop, by the bit-for-bit and still-checks tests; clamp removed by `arq_119_mixing_result_is_clamped` and the interior property; backdrop ghost colour kept by the backdrop test. Equivalent survivors, corrected: (a) ClipColor recompute and (c) the `Normal` arm of `separable` stand (verify confirmed); (b) is withdrawn.
+
+Deviations: `proptest-regressions/` is still untracked on disk and not committed; I cannot delete it here. Lines of the round: `git diff --shortstat 2a2b517..HEAD -- crates/`.
 
