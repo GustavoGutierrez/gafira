@@ -1,6 +1,6 @@
 //! The `AudioProcessor` trait (02 §4.9).
 
-use gafira_doc::contract::Describe;
+use gafira_doc::contract::{Describe, ParamSchema};
 
 use crate::{AudioBlock, ParamSnapshot};
 
@@ -15,6 +15,9 @@ use crate::{AudioBlock, ParamSnapshot};
 /// the block and its state does not change: it only sets NaN, `±∞` and
 /// subnormals to 0.
 pub trait AudioProcessor: Describe + Send {
+    /// The parameters this processor reads from the snapshot; their ids are
+    /// the snapshot ids. It only borrows and `process` never calls it.
+    fn params(&self) -> &ParamSchema;
     /// Sets the stream shape and clears the processing state.
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16);
     /// Processes one block in place.

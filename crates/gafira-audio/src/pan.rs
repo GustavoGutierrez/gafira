@@ -2,7 +2,7 @@
 
 use std::f64::consts::{PI, SQRT_2};
 
-use gafira_doc::contract::{AudioCrossfade, Describe, Descriptor};
+use gafira_doc::contract::{AudioCrossfade, Describe, Descriptor, ParamSchema};
 use gafira_doc::msg::MessageKey;
 
 use crate::dsp::{Param, Setup, clean_block, clean_input, clean_output};
@@ -35,19 +35,22 @@ pub fn crossfade_gains(mode: AudioCrossfade, p: f64) -> Result<(f64, f64), Audio
 pub struct Pan {
     setup: Setup,
     pan: Param,
+    schema: ParamSchema,
 }
 
 impl Pan {
     /// Centre, not prepared.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let pan = Param::new(PARAM_PAN, -1.0, 1.0, 0.0);
         Self {
+            schema: ParamSchema::new(vec![pan.def(MessageKey("audio.pan.pan"), false)]),
             setup: Setup {
                 sample_rate: 0,
                 max_block: 0,
                 channels: 0,
             },
-            pan: Param::new(PARAM_PAN, -1.0, 1.0, 0.0),
+            pan,
         }
     }
 }
@@ -65,6 +68,10 @@ impl Describe for Pan {
 }
 
 impl AudioProcessor for Pan {
+    fn params(&self) -> &ParamSchema {
+        &self.schema
+    }
+
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16) {
         self.setup = Setup {
             sample_rate,

@@ -1,6 +1,6 @@
 //! The track chain: processors applied in order (ARQ-129).
 
-use gafira_doc::contract::{Describe, Descriptor};
+use gafira_doc::contract::{Describe, Descriptor, ParamSchema};
 use gafira_doc::msg::MessageKey;
 
 use crate::dsp::clean_block;
@@ -13,6 +13,7 @@ static DESCRIPTOR: Descriptor = Descriptor::new("audio.chain", MessageKey("audio
 #[derive(Default)]
 pub struct ProcessorChain {
     processors: Vec<Box<dyn AudioProcessor>>,
+    schema: ParamSchema,
 }
 
 impl ProcessorChain {
@@ -47,6 +48,10 @@ impl Describe for ProcessorChain {
 }
 
 impl AudioProcessor for ProcessorChain {
+    fn params(&self) -> &ParamSchema {
+        &self.schema
+    }
+
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16) {
         for processor in &mut self.processors {
             processor.prepare(sample_rate, max_block, channels);

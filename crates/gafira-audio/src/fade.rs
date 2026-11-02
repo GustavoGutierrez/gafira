@@ -1,6 +1,6 @@
 //! Clip fade: a linear gain ramp (ARQ-124, FV-10).
 
-use gafira_doc::contract::{Describe, Descriptor};
+use gafira_doc::contract::{Describe, Descriptor, ParamSchema};
 use gafira_doc::msg::MessageKey;
 
 use crate::dsp::{Param, Setup, clean_block, clean_input, clean_output};
@@ -32,20 +32,23 @@ pub struct Fade {
     /// Ramp length in samples, read at the first accepted block after
     /// `prepare` or `reset`.
     length: Option<u64>,
+    schema: ParamSchema,
 }
 
 impl Fade {
     /// A fade with duration 0 until the snapshot says otherwise.
     #[must_use]
-    pub const fn new(direction: FadeDirection) -> Self {
+    pub fn new(direction: FadeDirection) -> Self {
+        let duration = Param::new(PARAM_DURATION, 0.0, f64::MAX, 0.0);
         Self {
+            schema: ParamSchema::new(vec![duration.def(MessageKey("audio.fade.duration"), false)]),
             direction,
             setup: Setup {
                 sample_rate: 0,
                 max_block: 0,
                 channels: 0,
             },
-            duration: Param::new(PARAM_DURATION, 0.0, f64::MAX, 0.0),
+            duration,
             position: 0,
             length: None,
         }
@@ -59,6 +62,10 @@ impl Describe for Fade {
 }
 
 impl AudioProcessor for Fade {
+    fn params(&self) -> &ParamSchema {
+        &self.schema
+    }
+
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16) {
         self.setup = Setup {
             sample_rate,

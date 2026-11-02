@@ -1,6 +1,6 @@
 //! Gain: dB and percent maths, and the ramped `Gain` processor (ARQ-124).
 
-use gafira_doc::contract::{Describe, Descriptor};
+use gafira_doc::contract::{Describe, Descriptor, ParamSchema};
 use gafira_doc::msg::MessageKey;
 
 use crate::dsp::{Param, Setup, clean_block, clean_input, clean_output};
@@ -51,6 +51,7 @@ pub struct Gain {
     /// True until the first accepted block after `prepare` or `reset`: it has
     /// no previous value, so its value applies at once.
     first: bool,
+    schema: ParamSchema,
 }
 
 /// 10 ms (PROPUESTA, ARQ-124) in whole samples: `sample_rate / 100`, at least 1.
@@ -62,14 +63,16 @@ fn ramp_samples(sample_rate: u32) -> u32 {
 impl Gain {
     /// Unity gain, not prepared.
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let volume = Param::new(PARAM_VOLUME, 0.0, 200.0, 100.0);
         Self {
+            schema: ParamSchema::new(vec![volume.def(MessageKey("audio.gain.volume"), true)]),
             setup: Setup {
                 sample_rate: 0,
                 max_block: 0,
                 channels: 0,
             },
-            volume: Param::new(PARAM_VOLUME, 0.0, 200.0, 100.0),
+            volume,
             current: 1.0,
             target: 1.0,
             step: 0.0,
@@ -93,6 +96,10 @@ impl Describe for Gain {
 }
 
 impl AudioProcessor for Gain {
+    fn params(&self) -> &ParamSchema {
+        &self.schema
+    }
+
     fn prepare(&mut self, sample_rate: u32, max_block: usize, channels: u16) {
         self.setup = Setup {
             sample_rate,

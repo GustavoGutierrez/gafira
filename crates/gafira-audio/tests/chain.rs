@@ -3,7 +3,7 @@
 use gafira_audio::{
     AudioBlock, AudioProcessor, Gain, PARAM_VOLUME, Pan, ParamSnapshot, ProcessorChain,
 };
-use gafira_doc::contract::{Describe, Descriptor};
+use gafira_doc::contract::{Describe, Descriptor, ParamSchema};
 use gafira_doc::msg::MessageKey;
 
 static OP: Descriptor = Descriptor::new("test.op", MessageKey("test.op"), 1);
@@ -13,6 +13,7 @@ struct Op {
     double: bool,
     latency: u32,
     tail: u32,
+    schema: ParamSchema,
 }
 
 impl Describe for Op {
@@ -22,6 +23,9 @@ impl Describe for Op {
 }
 
 impl AudioProcessor for Op {
+    fn params(&self) -> &ParamSchema {
+        &self.schema
+    }
     fn prepare(&mut self, _: u32, _: usize, _: u16) {}
     fn process(&mut self, block: &mut AudioBlock<'_>, _: &ParamSnapshot) {
         for c in block.channels.iter_mut() {
@@ -44,6 +48,7 @@ fn op(double: bool, latency: u32) -> Box<dyn AudioProcessor> {
         double,
         latency,
         tail: 0,
+        schema: ParamSchema::default(),
     })
 }
 
@@ -122,6 +127,7 @@ fn arq_129_the_tail_of_a_chain_is_the_sum_and_saturates() {
             double: true,
             latency: 0,
             tail,
+            schema: ParamSchema::default(),
         })
     };
     let mut chain = ProcessorChain::new();

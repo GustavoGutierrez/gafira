@@ -1,6 +1,9 @@
 //! Helpers shared by the processors: the block guard, the parameter reader and
 //! the sample cleaning that makes `process` total (ARQ-123).
 
+use gafira_doc::contract::{ParamDef, ParamKind};
+use gafira_doc::msg::MessageKey;
+
 use crate::{AudioBlock, ParamSnapshot};
 
 /// The stream shape given to `prepare`; all zeros until then.
@@ -60,6 +63,7 @@ pub(crate) struct Param {
     id: &'static str,
     min: f64,
     max: f64,
+    default: f64,
     value: f64,
 }
 
@@ -69,7 +73,23 @@ impl Param {
             id,
             min,
             max,
+            default,
             value: default,
+        }
+    }
+
+    /// The schema entry of this parameter. The range and the default are the
+    /// ones `read` clips to, so they exist once.
+    pub fn def(&self, label: MessageKey, animatable: bool) -> ParamDef {
+        ParamDef {
+            id: self.id,
+            label,
+            kind: ParamKind::Float {
+                min: self.min,
+                max: self.max,
+                default: self.default,
+            },
+            animatable,
         }
     }
 
