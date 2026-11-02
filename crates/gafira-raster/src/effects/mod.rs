@@ -1,5 +1,6 @@
 //! Effects of one input (02 §4.4, ARQ-120, FD-35).
 
+mod auto_adjust;
 mod blur;
 mod color_adjust;
 mod light;
@@ -13,6 +14,7 @@ mod white_balance;
 use gafira_doc::contract::{Describe, ParamSchema, ParamValues};
 use gafira_geom::IRect;
 
+pub use auto_adjust::{AutoAdjust, auto_adjust};
 pub use color_adjust::ColorAdjust;
 pub use light::Light;
 pub use shadow::ParallelShadow;
