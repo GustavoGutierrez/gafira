@@ -72,4 +72,59 @@ Adversarial sweep (throwaway test, not committed, run in release and in debug): 
 Deviations and notes:
 - A seed that is a tie between foreground and background pixels in a superpixel leaves it free; the final stamp still decides the pixels.
 - Under zone Background the seeds keep their meaning for the subject, so the mask under a foreground stroke is <= 12 (the mask is inverted).
-- Not covered here and left to SG3: `reliable`, the IoU gate, the ARQ-112 cancel-at-k and 0.02 step tests, the benches, and tuning of gamma, regularisation, compactness and the guided-filter epsilon on the gate scenes. The border band is a hard background for every superpixel touching it unless pinned; SG3 may need to soften that for subjects near the border.
+- Not covered here and left to SG3: `reliable`, the IoU gate, the ARQ-112 cancel-at-k and 0.02 step tests, the benches, and tuning of gamma, regularisation, compactness and the guided-filter epsilon on the gate scenes. Correction (verify S1): the border band is not a hard background. `grabcut` uses it only to initialise the first GMMs (`cut.rs`); band nodes stay free in the graph cut, as P12 says, and a subject touching the left edge gives IoU 1.000 in the verifier's probe. There is nothing to soften in SG3.
+
+## Fix round after verify round 1 (SG1 + SG2)
+
+Commits: cdce5f4 (C1), 5995482 (C2), 501ab7b (tests: C4, C5, alpha8, hints shape, input alpha, ramp, W2), ea95b74 (C3, C6, C7 tests, seeds and zones tests, S2), 8da7ef1 (exact cut of extreme strokes, found by the sweep). Spec commits a2a2924 and 314f3ba (specifier) were read and covered.
+Measured: `git diff --shortstat f4eb195..HEAD -- crates`: 5 files changed, 858 insertions(+), 162 deletions(-) (mostly tests). Over 700 lines in total with SG1/SG2: the coordinator decides.
+Gates on the final tree, each exit code alone: `cargo fmt --check` 0; `cargo clippy --workspace --all-targets --locked -- -D warnings` 0; `cargo test --workspace --locked` 0. Commits cdce5f4 and 5995482 were gated one by one; 501ab7b was gated as part of the full tree (its tests are green on the old code, see below) and ea95b74 and 8da7ef1 after.
+
+Done, by finding:
+- C1: `Segmenter: Describe + Send + Sync`; `static DESCRIPTOR` `segment.classic`, version 1.
+- C2: `SegReq.ram_bytes` = `side^2 * 16 + 8 * 4 * 282 * side` for the 2048 side (85,590,016); a first estimate, SG3 calibrates it (Q-48).
+- C3: stroke geometry in `f64`; the stroke is cut to the image box first, with the coordinate across the cut set to the box side (a + t*d at 1e19 loses 2048 pixels).
+- C4: tables run over the four zones; pixels over every element of a 3x2 `f32` image (alpha included); hints over x and y of both lists, the radius, and a bad value in the second point.
+- C5: the size test loops over the four zones. S3: `SegHints::default()` stays zone `All` (the spec does not ask for another); the type doc now says so.
+- C6: per-axis scale `(ww/w, wh/h)`; the brush radius uses the smaller one.
+- C7: Elemento test with a side object larger than the central one, in the same and in another colour.
+- W2: the reduction test uses a block with a white pixel in one row only (mean 64).
+- S1: note corrected above. S2: strokes are worked in bands of at most 256 rows; the token is checked and progress reported at each band (cost planned from the bands, both the pin stamp and the final one).
+- Coordinator's spec commit a2a2924: Fondo exact complement with no tolerance, and bounds under seeds; Todo ignores seeds (solid 255); fg wins an overlap and neighbours keep their bounds; Elemento and Primer plano seeds; Alpha8 Err in every zone; `SegHints` with only zone and strokes; ramp scene 800x600 (graded alpha); same RGB with another alpha gives the same mask bit for bit (Rgba8 and RgbaF32).
+
+RED (failing line first, against the code before the fix; stubs, never removal):
+- C1: `arq_130_segmenter_describes_itself`: `left: "" right: "segment.classic"` (supertrait added with an empty descriptor).
+- C2: `arq_130_requirements_estimate_ram_from_the_working_size`: `left: 0 right: 85590016` (field added with 0).
+- C3: `arq_110_extreme_finite_strokes_are_applied` (f32 code): `[-1e19, 10.0] [1e19, 10.0] x=0` assertion `>= 243`.
+- C6: `arq_130_a_seed_steers_the_cut_on_elongated_images_in_both_orientations`: `tall=true: beyond the dot: 234 242`.
+- S2: `fd_38_a_stroke_reports_progress_and_checks_the_token_per_chunk`: `69 against 69` (reports with and without the stroke).
+- Cut of extreme strokes: `arq_110_extreme_strokes_are_applied_along_a_long_image` (first version, f64 without the cut): `tall=false -13000000000000000000 27000000000000000000 at 1024,1: 0`. The version in the tree is `..._along_their_whole_line`; its RED is the two mutants below (the code of ea95b74 is the no-cut mutant). A first cut with `a + t*d` passed the first test and failed the sweep (100x100 at 2,1); the exact-side version was then required.
+
+Green from the start, proved by a mutant (none of these failed before the change; the code was already right):
+- C4 tables, C5 sizes, Alpha8 per zone, input alpha, ramp, W2, C7, Fondo exact, Todo ignores seeds, overlap and neighbours, Elemento/Primer plano seeds.
+
+Hand mutants (all killed; every one applied, run, reverted, none committed):
+- SG1-A hints unchecked in zone All: `arq_110_non_finite_hint_is_err_before_any_work`.
+- SG1-B alpha of `f32` pixels unchecked: `arq_110_non_finite_pixel_is_err`.
+- SG1-C2 pipeline panics on 1x1 and width 2048: `arq_130_mask_has_the_input_dimensions`.
+- SG2-D seeds not scaled (scale 1.0): `arq_130_a_seed_steers_the_cut_on_elongated_images_in_both_orientations`. Old uniform ratio (the C6 defect): the same test.
+- SG2-E Elemento keeps the largest region: only `arq_130_element_keeps_the_central_object_even_when_the_other_is_larger` (the old test survived it).
+- SG2-F reduction samples the first pixel: `fd_38_reduction_averages_source_blocks` (also first row only, first column only).
+- Stamps swapped (spot): `arq_130_seed_strokes_set_the_alpha_under_them`; stamp order swapped (background wins an overlap): `arq_130_foreground_wins_an_overlap_and_neighbours_keep_their_bounds`.
+- Fondo off by one: `arq_130_background_is_the_exact_complement_and_all_is_solid`. Todo applies a background seed: `arq_130_all_ignores_the_seeds`.
+- Alpha used in the colour (`Rgba8`; `RgbaF32`): `arq_130_input_alpha_does_not_enter_the_mask`. Alpha8 accepted in Elemento: `arq_130_alpha8_is_unsupported`. Pipeline binarised after the filter: `fd_38_a_ramp_edge_gives_graded_alpha`.
+- Descriptor id wrong: the descriptor test. RAM formula changed: the RAM test.
+- No cut of strokes; cut with `a + t*d`: `arq_110_extreme_strokes_are_applied_along_their_whole_line`.
+- Stroke progress as no-op in the pin stamp, in the final stamp, or once per stroke: `fd_38_a_stroke_reports_progress_and_checks_the_token_per_chunk`.
+- Scratch note: a first run of the f64 stroke without the cut survived on 64-pixel images (rounding luck), which is why the whole-line test uses 2049, 4000 and 33x4000.
+
+Sweep (throwaway test, not committed, release): 14 sizes (1x1, 1xN, Nx1, 3x5, 33x4000, 4000x33, 1x5000, 5000x1, 2049x9, 9x2049, 2048x2, 2x2048, 100x100, 7x4097) x 3 images (uniform, noise, subject) x 4 zones x 13 strokes (empty, negative, radius 1e9 and MAX, radius 0, denormals, 1e30, row and column through the image at 1e19, diagonal at +-MAX with radius 2 and MAX, 50 duplicate points, 400 points) x the stroke on each list = 2912 runs. Checked: `Ok`, input dimensions, non-decreasing progress ending in a single 1.0, All solid, Fondo the exact complement of Primer plano, a brush of radius 1e9 or MAX covers everything, and that row, column, duplicate and many-point strokes set their pixels in Primer plano and Elemento. First pass: 18 findings (row and column strokes at 1e19, dropped beyond pixel 1024); after the cut, 12 (the cut endpoint was off by up to 2048 pixels); after the exact side, 0. Each was fixed with a test first (above).
+
+Deviations and notes:
+- Extreme diagonal strokes (both coordinates beyond about 1e16) are as exact as an `f64`; no error is returned, and nothing is non-finite. Axis-parallel ones are exact. The sweep checked them for `Ok` only.
+- Two commits bundle test and fix of several findings (ea95b74); the pieces share `lib.rs` and `hints.rs`.
+- Stroke work now adds to the planned progress and reports at each band; SG3 owns the step size tests (ARQ-112).
+- The size test runs 4000x3000 in the four zones; the segment contract test file takes about 40 s in debug.
+- A shared scratch script of another agent overwrote one of my helpers mid-run (it ran another worktree's tests); the three stroke mutants of that moment were re-run with my own helper and killed.
+- W1 (RED by removal in SG1) stays with the owner; nothing changed there.
+- Unchanged: W3/W4 are the specifier's (spec commits a2a2924, 314f3ba).
