@@ -152,9 +152,13 @@ pub fn layout_box(
     if fonts.is_empty() {
         return Err(TextError::NoFont);
     }
+    let input = text;
     let converted;
+    let mut source_map = None;
     let text = if style.uppercase {
-        converted = text.to_uppercase();
+        let (upper, map) = uppercase_with_map(input);
+        converted = upper;
+        source_map = Some(map);
         converted.as_str()
     } else {
         text
@@ -217,6 +221,15 @@ pub fn layout_box(
         TextAlign::Center | TextAlign::Right => {
             for line in &mut lines {
                 shift_line(line, text, width, style.align == TextAlign::Center);
+            }
+        }
+    }
+    // Ranges index the input text: after upper case, the clusters that come from one
+    // character share its range.
+    if let Some(map) = &source_map {
+        for line in &mut lines {
+            for c in &mut line.clusters {
+                c.range = map.input_range(&c.range);
             }
         }
     }
@@ -317,6 +330,38 @@ fn read_lines(
         });
     }
     Ok(lines)
+}
+
+/// Where each piece of the converted text came from in the input.
+struct SourceMap {
+    /// Start in the converted text, and the range of the input character it came from.
+    pieces: Vec<(usize, Range<usize>)>,
+}
+
+impl SourceMap {
+    fn piece(&self, converted_byte: usize) -> &Range<usize> {
+        let i = self
+            .pieces
+            .partition_point(|(start, _)| *start <= converted_byte);
+        &self.pieces[i.saturating_sub(1)].1
+    }
+
+    /// From the first to the last input character the converted range touches.
+    fn input_range(&self, converted: &Range<usize>) -> Range<usize> {
+        let last = converted.end.max(converted.start + 1) - 1;
+        self.piece(converted.start).start..self.piece(last).end
+    }
+}
+
+/// Full Unicode upper case with no language, and the map back to the input.
+fn uppercase_with_map(input: &str) -> (String, SourceMap) {
+    let mut upper = String::with_capacity(input.len());
+    let mut pieces = Vec::new();
+    for (start, c) in input.char_indices() {
+        pieces.push((upper.len(), start..start + c.len_utf8()));
+        upper.extend(c.to_uppercase());
+    }
+    (upper, SourceMap { pieces })
 }
 
 /// Whether the font has the table, read from its table directory (index of a collection).
