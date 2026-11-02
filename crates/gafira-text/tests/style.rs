@@ -22,6 +22,7 @@ fn style(letter_spacing: f64, line_height: f64) -> TextStyle {
         size_pt: 24.0,
         letter_spacing,
         line_height,
+        ..TextStyle::default()
     }
 }
 

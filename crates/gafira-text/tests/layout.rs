@@ -15,8 +15,7 @@ const EMOJI: &[u8] = fonts::NOTO_EMOJI.bytes;
 fn style() -> TextStyle {
     TextStyle {
         size_pt: 24.0,
-        letter_spacing: 0.0,
-        line_height: 1.0,
+        ..TextStyle::default()
     }
 }
 
@@ -575,7 +574,12 @@ proptest! {
         width in 0.0..=100_000.0_f64,
     ) {
         let text = parts.concat();
-        let s = TextStyle { size_pt, letter_spacing: spacing, line_height };
+        let s = TextStyle {
+            size_pt,
+            letter_spacing: spacing,
+            line_height,
+            ..TextStyle::default()
+        };
         let layout = lay_with(&text, &[INTER, ARABIC, EMOJI], &s, dpi, width)
             .expect("input in the domain");
         for line in &layout.lines {

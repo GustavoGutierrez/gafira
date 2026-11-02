@@ -22,6 +22,9 @@ pub struct TextStyle {
     pub letter_spacing: f64,
     /// Line height multiplier, in `[0.5, 4.0]`.
     pub line_height: f64,
+    /// Full Unicode upper case, with no language (`ß` gives `SS`). The ranges of
+    /// the output then index [`TextLayout::text`], not the input.
+    pub uppercase: bool,
 }
 
 impl Default for TextStyle {
@@ -31,6 +34,7 @@ impl Default for TextStyle {
             size_pt: 16.0,
             letter_spacing: 0.0,
             line_height: 1.0,
+            uppercase: false,
         }
     }
 }
@@ -38,6 +42,9 @@ impl Default for TextStyle {
 /// The laid out text, without pixels (ARQ-116).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TextLayout {
+    /// The text that was laid out: the input, in upper case when asked. Cluster ranges
+    /// index it.
+    pub text: String,
     /// The lines, top to bottom.
     pub lines: Vec<Line>,
     /// True when a line, without its trailing white space, is wider than the box.
@@ -105,6 +112,13 @@ pub fn layout_box(
     if fonts.is_empty() {
         return Err(TextError::NoFont);
     }
+    let converted;
+    let text = if style.uppercase {
+        converted = text.to_uppercase();
+        converted.as_str()
+    } else {
+        text
+    };
     let mut fcx = FontContext::new();
     let mut names = Vec::with_capacity(fonts.len());
     let mut blob_ids = Vec::with_capacity(fonts.len());
@@ -146,7 +160,10 @@ pub fn layout_box(
     laid.break_all_lines(Some(width.min(f64::from(f32::MAX)) as f32));
 
     let spacing = spacing as f32;
-    let mut out = TextLayout::default();
+    let mut out = TextLayout {
+        text: text.to_string(),
+        ..TextLayout::default()
+    };
     for line in laid.lines() {
         let metrics = line.metrics();
         let mut clusters = Vec::new();
