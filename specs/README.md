@@ -17,7 +17,7 @@ Junto a los documentos: `capabilities/` guarda las specs principales (registro d
 | `01-producto-y-calidad.md` | En curso | Producto, calidad y criterios de aceptación. Promovido porque la capa 2 de 02 lo necesita: CAL-06 y CAL-15 tienen sus cifras aquí. |
 | `backlog/03-diseno-visual-e-interaccion.md` | Backlog | Tokens, modo oscuro, glosario ES+EN, wireframes. |
 | `04-funcionalidad-diseno-imagen-exportacion.md` | En curso | Diseño, imagen y exportación. Promovido porque la capa 2 de 02 lo necesita: 02 no tiene criterios de aceptación para `gafira-layout` y sí los tiene 04 (FD-03 a FD-07, FD-09, FD-11, FD-53, FD-54). |
-| `backlog/05-funcionalidad-video-y-distribucion.md` | Backlog | Video y distribución. |
+| `05-funcionalidad-video-y-distribucion.md` | En curso | Video y distribución. Promovido porque la capa 2 de 02 lo necesita: `gafira-audio` cubre FV-04, FV-10 y FV-20. |
 | `backlog/06-licencia-y-activacion.md` | Backlog | Licencia y activación. |
 | `archive/` | Archivados | Ninguno todavía. |
 
