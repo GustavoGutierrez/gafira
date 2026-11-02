@@ -8,6 +8,8 @@ mod error;
 mod mip;
 mod pixel;
 mod tile;
+mod transfer;
+pub mod transitions;
 mod view;
 
 pub use blend::{blend_f32, blend_u8};
