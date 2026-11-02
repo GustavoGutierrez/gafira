@@ -7,6 +7,7 @@
 
 mod arena;
 mod blend;
+pub mod contract;
 mod document;
 mod dpi;
 mod edit;
