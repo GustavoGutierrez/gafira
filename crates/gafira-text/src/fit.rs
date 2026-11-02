@@ -62,8 +62,9 @@ pub struct FitResult {
 /// `min_size` with `overflow`. Empty text, or no run, changes nothing: the sizes stay and there
 /// is no overflow.
 ///
-/// With several runs, the result is the size of the largest one, and every other run has the
-/// same proportion of it as before. The size in `style` is the current size, used only when
+/// With several runs, the result is the size of the largest one with text, and every other run
+/// has the same proportion of it as before; the range binds that run only, so a smaller run may
+/// scale below `min_size` and even below 1 pt. The size in `style` is the current size, used only when
 /// there is no run; the other numbers of `style` apply to every run. The checks come in the
 /// order of [`crate::layout_box`], then `fit` and the sizes of the runs; the font stack is
 /// checked before the empty text returns. A size found that is not finite once laid out does
@@ -97,7 +98,7 @@ pub fn fit_box(
     }
     let mut stack = Stack::new(fonts)?;
     let text: String = runs.iter().map(|r| r.text).collect();
-    let largest = runs.iter().map(|r| r.size_pt).fold(f64::MIN, f64::max);
+    let largest_any = runs.iter().map(|r| r.size_pt).fold(f64::MIN, f64::max);
     let height = bounds.height();
     let width = bounds.width();
 
@@ -105,7 +106,7 @@ pub fn fit_box(
         let (size_pt, px) = if runs.is_empty() {
             (style.size_pt, base_px)
         } else {
-            (largest, to_px(largest, dpi)?)
+            (largest_any, to_px(largest_any, dpi)?)
         };
         let layout = layout_with(&mut stack, "", style, px, &[], width)?;
         return Ok(FitResult {
@@ -116,6 +117,12 @@ pub fn fit_box(
         });
     }
 
+    // The largest run with text sets the size; a run with no text has nothing to fit.
+    let largest = runs
+        .iter()
+        .filter(|r| !r.text.is_empty())
+        .map(|r| r.size_pt)
+        .fold(f64::MIN, f64::max);
     let mut ranges = Vec::with_capacity(runs.len());
     let mut at = 0;
     for run in runs {

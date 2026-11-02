@@ -266,7 +266,16 @@ pub(crate) fn layout_with(
     // does not keep that one, so the box is that much wider for the fit.
     // One fit rule for the break and the overflow: a line fits a box of `limit` px.
     let limit = width * (1.0 + FIT_TOLERANCE);
-    let fit = (limit + spacing).clamp(0.0, f64::from(f32::MAX)) as f32;
+    // The last cluster of a line may be of any run, so the box is widened by the smallest
+    // spacing it can have there (the one of the smallest run, or of the largest when the
+    // spacing is negative): the line then never passes the box (FD-46).
+    let sizes = runs.iter().map(|r| r.size_px).chain([size_px]);
+    let edge = if spacing_em < 0.0 {
+        sizes.fold(f32::MIN, f32::max)
+    } else {
+        sizes.fold(f32::MAX, f32::min)
+    };
+    let fit = (limit + spacing_em * f64::from(edge)).clamp(0.0, f64::from(f32::MAX)) as f32;
     let mut lines = Vec::new();
     let mut overflow = false;
     let mut top = 0.0_f64;

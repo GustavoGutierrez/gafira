@@ -521,6 +521,108 @@ fn fd_46_f_letter_spacing_is_in_em_of_each_run() {
 }
 
 #[test]
+fn fd_46_f_a_run_with_no_text_does_not_set_the_largest_size() {
+    // An empty run, however large, has nothing to fit: "Hello" gets the size it gets alone.
+    let wh = (300.0, 120.0);
+    let alone = fit_box(
+        &[FitRun {
+            text: "Hello",
+            size_pt: 10.0,
+        }],
+        &[INTER],
+        &style(TextAlign::Left),
+        DPI,
+        Size::new(wh.0, wh.1),
+        &range(6.0, 400.0),
+    )
+    .expect("valid input");
+    let with_empty = fit_box(
+        &[
+            FitRun {
+                text: "",
+                size_pt: 100.0,
+            },
+            FitRun {
+                text: "Hello",
+                size_pt: 10.0,
+            },
+        ],
+        &[INTER],
+        &style(TextAlign::Left),
+        DPI,
+        Size::new(wh.0, wh.1),
+        &range(6.0, 400.0),
+    )
+    .expect("valid input");
+    assert_eq!(with_empty.size_pt, alone.size_pt);
+    assert_eq!(with_empty.sizes_pt[1], alone.size_pt);
+    assert_eq!(with_empty.layout, alone.layout);
+    // The proportion of an empty run can be huge and is still only a number.
+    let huge = fit_box(
+        &[
+            FitRun {
+                text: "",
+                size_pt: 1000.0,
+            },
+            FitRun {
+                text: "Hello",
+                size_pt: 1.0,
+            },
+        ],
+        &[INTER],
+        &style(TextAlign::Left),
+        DPI,
+        Size::new(wh.0, wh.1),
+        &range(6.0, 1000.0),
+    )
+    .expect("valid input");
+    assert!(huge.layout.height.is_finite());
+}
+
+#[test]
+fn fd_46_f_no_line_passes_the_box_when_the_sizes_and_the_spacing_differ() {
+    // FD-46 purpose: no overflow. The spacing after the last cluster of a line is the one of
+    // its run, which may be the smaller, so the break must not count the larger one.
+    let (a, b) = ("aaa bbb ccc ddd eee ", "fff ggg hhh iii jjj");
+    let text = format!("{a}{b}");
+    for (sizes, t) in [
+        ((20.0, 10.0), 500.0),
+        ((10.0, 20.0), 500.0),
+        ((20.0, 10.0), -100.0),
+        ((10.0, 20.0), -100.0),
+    ] {
+        let runs = [
+            FitRun {
+                text: a,
+                size_pt: sizes.0,
+            },
+            FitRun {
+                text: b,
+                size_pt: sizes.1,
+            },
+        ];
+        for step in 0..200 {
+            let width = 60.0 + f64::from(step) * 1.37;
+            let out = at_sizes(&runs, t, false, (width, 1e6), 20.0);
+            assert!(!out.overflow, "{sizes:?} t {t} at {width}");
+            for line in &out.layout.lines {
+                let ink: f64 = line
+                    .clusters
+                    .iter()
+                    .rev()
+                    .skip_while(|c| text[c.range.clone()].trim().is_empty())
+                    .map(|c| f64::from(c.advance))
+                    .sum();
+                assert!(
+                    ink <= width + 0.01,
+                    "{sizes:?} t {t}: a line of {ink} px in a box of {width}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn fd_46_f_runs_follow_the_upper_case_expansion_and_the_forced_breaks() {
     let reference = |text: &str, size: f64| {
         let s = TextStyle {
