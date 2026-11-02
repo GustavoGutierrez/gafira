@@ -39,7 +39,42 @@
           "text": "The mask is bit-identical to the current one on the same input; only reliable changes. Foreground and Background still agree."
         }
       ],
-      "next_action": "tdd-apply implements D-47, then verify"
+      "next_action": "tdd-apply adds the tests of C1 and C2, then closure verify",
+      "verify": {
+        "round": 1,
+        "commit": "6731e92",
+        "verdict": "FAIL",
+        "next": "tdd-apply",
+        "findings": [
+          {
+            "id": "C1",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "cut.rs:158-183",
+            "summary": "No test keeps seeded superpixels out of the band measure; counting them survives.",
+            "follow_up": false,
+            "status": "open"
+          },
+          {
+            "id": "C2",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "cut.rs:181-183",
+            "summary": "No test for a smaller third group beside two tied largest groups; dropping real on a tie survives.",
+            "follow_up": false,
+            "status": "open"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "FAIL",
+            "classes": [
+              "implementation"
+            ]
+          }
+        ]
+      }
     }
   ]
 }
