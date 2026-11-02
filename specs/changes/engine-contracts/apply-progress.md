@@ -181,3 +181,35 @@ Two surviving mutants led to a code change, not a test change. Equivalent mutant
 - Ambiguity, minor, not tested: duplicate ids in a schema (a bad definition) make `get` return the first and `defaults` the last. `check_values` is defined only for schemas that pass `validate_definition`.
 - D2b: add `cancel.rs` to `SOURCES` in `crates/gafira-doc/tests/contract_imports.rs` when it exists, and `pub mod`/`mod cancel;` to `contract/mod.rs`. D2b also edits `mod.rs` and `lib.rs` is already done.
 - Spec edit for the specifier (not done here): ARQ-98 lists `ParamSchema` labels among the keys `check-i18n` extracts; `ParamChoice.label` is a second source of keys in the same struct and should be named there.
+
+### D2a fix round 1 (verify round 1: C1, C2, C3, W1, W2, W4, S1, S2)
+
+None of these is RED: the code already met every rule (the report's probes passed on it), so each change closes a test gap. Each was proved by applying the report's surviving mutant, seeing a test fail, and restoring the code. Production code changed by comments only (the `ParamSchema` doc states the precondition of `get`, `defaults`, `check_values` and `resolve`, per C12).
+
+| Mutant | Closed by | Result |
+|---|---|---|
+| IM2 Int range compared through `f64` | `arq_110_int_values_match_the_rule_over_special_values` (`2^53 + 1`) | killed |
+| IM3 Float upper bound `max + EPSILON` | `arq_110_float_values_match_the_rule_over_special_values` (`1.0.next_up()` on `[-1.5, 1]`) | killed |
+| IM4 Float upper bound on `\|v\|` | same (negative bounds) | killed |
+| IM5 default checked as `\|d\| <= max` | `arq_110_float_definitions_match_the_rule_over_special_values` (`[-2, -1]`, `-1.5`) | killed |
+| IM6 option ids compared when adjacent | `arq_110_a_choice_default_must_be_an_option_and_option_ids_must_differ` (`[x, y, x]`) | killed |
+| IM7 only the default option id unique | same (`[a, b, b]`, default `a`) | killed |
+| IM8 non-finite `Float` before the kind match | `arq_110_a_non_finite_value_of_another_kind_is_a_wrong_type` | killed |
+| IM9 non-finite `Color` before the kind match | same | killed |
+| IM11b inline `serde_json::Value::Null` | `adr_0005_contract_imports_only_msg_color_serde_and_std` | killed |
+| IM12b `use serde_json::Value;` right after an item | same | killed |
+| IM13 `use` inside a function (already killed) | same | killed |
+| `cancel` declared in `mod.rs`, not in `SOURCES` | `adr_0005_sources_lists_every_module_mod_rs_declares` | killed |
+
+The oracle sweeps (S1) are four tests over 22 float and 10 int special values (NaN, both infinities, `MAX`, `MIN`, signed zero, subnormals, `next_up` and `next_down` around 1 and -1, `2^53 - 1`, `2^53`, `2^53 + 1`), each against the written rule: float and int definitions, float and int values.
+
+Other changes:
+- W1: the kind decides first; pinned for NaN, both infinities and a non-finite `Color` of each variant, on every other kind.
+- W2: the tests outside the validated domain were rewritten inside it: `arq_98_get_finds_the_definition_with_the_id` (unique ids) and `arq_110_resolve_checks_the_given_values_before_filling_defaults` (default inside its range). `arq_110_new_keeps_the_definitions_in_order_and_validates_nothing` stays: `new` is defined for every schema.
+- Pins: `arq_110_resolve_keeps_an_unknown_id_whatever_it_holds` (NaN and both infinities), `arq_110_resolve_on_no_values_is_defaults`.
+- W4: the import checker finds every `use` by word, not by statement start, and checks the root of every path written out in code (lowercase roots other than `std`, `serde`, `gafira_color`, `self`, `super`, primitives, declared modules and names a `use` brought in).
+- S2: the completeness check compares `SOURCES` with the `mod` lines of `mod.rs`, not with the directory, because `std::fs::read_dir` is disallowed by the crate's `clippy.toml` (ARQ-02). A file `mod.rs` does not declare is not compiled.
+
+Gates on the last code commit, each alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+Measured: `git diff --shortstat 9df391b HEAD` before this section: 4 files changed, 337 insertions(+), 48 deletions(-); `params.rs` only comments (8 lines), the rest tests.
