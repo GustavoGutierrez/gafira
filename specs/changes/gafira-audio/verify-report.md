@@ -1149,3 +1149,92 @@ Mutation: `mutation: archive`, so no report at this round and no finding. T4 sta
 Interpolator cost is not a finding, as instructed. The repo was not touched.
 
 next: tdd-apply (C15, implementation; W19, W20, W21 are follow-ups)
+
+# Verify report: gafira-audio, AU3 and AU4, round 3 (closure)
+
+| Field | Value |
+|---|---|
+| Commit | `042e508`, branch `feat/gafira-audio` |
+| Depth, mode, tier | V2, full, T4 at close; `mutation: archive`, no `mutants` report (not a finding) |
+| Verdict | **PASS** |
+| Counts | 0 CRITICAL, 2 WARNING (all follow-up), 1 SUGGESTION |
+| Per class (CRITICAL + WARNING) | implementation 2, ambiguity 0, architecture 0, claim 0 (all follow-ups) |
+| Criteria | 9 of 9 covered |
+| Closed | C15, W19, W20, W21 |
+
+Scope as set by the coordinator: C15, W19, W20, W21, ARQ-126 at `c9e8f0f`, commits `5674119` and `042e508`, the EBU cases and the per-frame energy change. S12 and S13 stay carried, out of this scope.
+
+## Gates
+
+Worktree at `042e508`, no `CARGO_TARGET_DIR`, each exit code read alone.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (132 result lines, all ok, 0 FAILED) |
+| `cargo deny check` | 0 |
+| CI policy (ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14) | 0, each step |
+
+## Artifact integrity (step 3c)
+
+`c9e8f0f` touches only `specs/02-arquitectura-software.md`, one row. `5674119` touches only `loudness.rs` and `tests/loudness.rs`. `042e508` touches only `apply-progress.md`, and its one removed line is the survivor note, after the card. Slice card unchanged; no implementer commit touched a product spec.
+
+## Closure of round 2
+
+| Item | State | Evidence |
+|---|---|---|
+| C15 | Closed | `integrated_loudness` returns `None` on `frames * 10 < 4 * fs`. `arq_126_400_ms_in_frames_*` runs every valid rate up to 192 kHz: `ceil(0.4 fs)` frames measured, one less `None`; holds 252 Hz with 100 frames and 11 025 Hz with 4 410. Rates over 192 kHz are not run; integer arithmetic on all 540 divisors of 705 600 000 shows guard, block fit and exact duration agree at both edges |
+| W19 | Closed | Rule now reads `min(16 kHz, 0,98 × Nyquist)`, the same limit as its criterion |
+| W20 | Closed | 17 640 Hz row in the sweep. `floor` reapplied, killed by `arq_126_the_k_weighting_*`. Survivor note corrected in `apply-progress.md` |
+| W21 | Closed | Block `techo(0,4 × fs)` and step `techo(0,1 × fs)` stated in frames, with block `k` at `k × paso`. Code matches line by line. 4 410 frames at 11 025 Hz give a measure |
+
+## EBU cases and the per-frame energy change
+
+- EBU Tech 3341 cases 1 to 5: all pass at `042e508`, inside the test gate.
+- Old `5ed0f13` against new, 14 rates from 3.36 to 192 kHz, 5 durations and shapes, mono, stereo and 6 channels, 210 readings. At the 13 rates that are multiples of 10: largest difference 7.3e-14 dB, same `None` on every reading.
+- At 11 025 Hz, the one rate that is not a multiple of 10: largest difference 0.001 dB, as the spec now sets 4 410 frames. The 3 readings at exactly 400 ms went from `None` to a measure, which is W21 as intended.
+- All 401 valid rates up to 384 kHz, against 48 kHz: 2 kHz and above, worst 0.0457 dB (0.0453 to 0.0457 at the top, unchanged); largest move from round 2 is 0.0025 dB at 2 016 Hz; no `None` mismatch.
+- Under 2 kHz the short sweep moved by up to 8.5 dB (15 Hz: +9.23 to +0.71; 1 to 4 Hz: 4 to 6 dB). Those are the short-tone probe artefacts of round 2, read through the new block length (at 1 Hz, 1 frame against 4), not a weighting change. Stationary probes rerun at HEAD: 14 Hz to 1 kHz, measured values within 0.005 dB of round 2 and within 0.1 dB of 48 kHz (worst -0.0755 at 14 Hz, against a 30 s reference, round 2 used 120 s); faded tones at 1 to 8 Hz, worst +0.041 dB. The stationary tones at 1, 2 and 4 Hz at amplitude 0.2 were not rerun (over the time limit): round 2 ruled them artefacts, under the gate.
+- Excepted as in round 2: 1 Hz at 0.245 Hz reads -0.345 dB (was -0.343). Round 2 put this on the 48 kHz reference, inferred and not measured; this round adds no proof.
+- 1 hour of stereo at 48 kHz: identical reading to the old code, measuring time 3.07 s against 2.65 s; peak memory, see S15.
+
+## Mutants
+
+Closure checks only, no independent budget. On a scratch export, reverted.
+
+| Mutant | Result | Note |
+|---|---|---|
+| `floor` for `L` | Killed | W20 |
+| `step` nearest for `ceil` | **Survived** (W22) | As recorded by `tdd-apply` |
+| `len` floor for `ceil` | **Survived** (W23) | Spec states `techo(0,4 × fs)` |
+
+## WARNING
+
+### W22. Step rounding is not pinned (follow-up)
+- class: `implementation`
+- ref: `crates/gafira-audio/src/loudness.rs:192`
+- No test fixes the block starts at a rate that is not a multiple of 10. Rule met by the code, no criterion row depends on it, and the effect is a one-frame shift of a block start. Not CRITICAL.
+- Fix: a burst at a chosen rate, 11 025 Hz for example, that only a `ceil` step leaves out of a block.
+
+### W23. Block length rounding is not pinned (follow-up)
+- class: `implementation`
+- ref: `crates/gafira-audio/src/loudness.rs:193`
+- `len` with floor passes every test, because the guard alone gives the `None` cases. The rule is met by the code; no criterion row depends on it.
+
+## SUGGESTION
+
+### S15. Per-frame energy costs memory on long signals
+- ref: `crates/gafira-audio/src/loudness.rs:194`
+- Measured peak, 1 hour of stereo at 48 kHz: 2.03 GB against 0.68 GB before; the signal itself is most of the old figure. No spec row sets a budget, so it is not a finding above SUGGESTION. Growth is 8 bytes per frame, not per channel.
+- Option: keep a running sum over a queue of one block, or energy per step plus the frames left over.
+
+## Disk
+
+`df -h /` read 20G free (19.92 GiB, 21.4 GB) when the last probes were built, at the limit of the 20 GB rule. Export build folders freed at the end.
+
+## Verdict
+
+PASS. AU4 is the last delivery. `mutation: archive`: the T4 run is still owed before close.
+
+next: archive
