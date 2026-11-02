@@ -6,9 +6,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod fonts;
 pub mod golden;
 mod harness;
 pub mod progress;
+pub mod scenes;
 
 pub use harness::{LawViolation, prop_command, try_prop_command};
 
