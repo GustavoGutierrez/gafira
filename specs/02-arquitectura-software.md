@@ -1206,7 +1206,7 @@ Otras cifras (FIJADAS, D-03):
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
 | Mezclador de 16 pistas, EQ de 3 bandas (PRD) | Cadena `AudioProcessor` sin asignaciones; bloques de 512 muestras | `bench_mix_16`: < 25 % de un núcleo a 48 kHz; prueba de respuesta del EQ |
-| Cancelar una segmentación ≤ 100 ms (ARQ-43) | Comprobación del token por unidad de trabajo (ARQ-112) | `bench_cancel_segment`: ≤ 100 ms |
+| Cancelar una segmentación ≤ 100 ms (ARQ-43) | Comprobación del token por unidad de trabajo (ARQ-112) | `bench_cancel_segment`: tramo más largo entre dos comprobaciones del token ≤ 100 ms |
 | Sombra < 100 ms con radio ≤ 40 px en 1080p (04 FD-35) | Desenfoque gaussiano separable | `bench_shadow_1080`: < 100 ms |
 | Hash perceptual de 12 MP < 100 ms (04 FD-28) | La fija el diseño del change | `bench_dhash_12mp`: < 100 ms |
 | Escribir un carácter < 16 ms en cuadros de hasta 5 000 caracteres (04 FD-41) | La fija el diseño del change | `bench_text_type_5000`: p99 < 16 ms |
@@ -1230,7 +1230,7 @@ Otras cifras (FIJADAS, D-03):
 | ARQ-40 | Cada cifra de §6.7 tiene un benchmark con umbral en `perf-budgets.toml`. | El job nocturno en la máquina de referencia falla si una métrica empeora por encima de su umbral o un 10 % respecto a la base. |
 | ARQ-41 | El hilo de UI nunca bloquea más de 16 ms por trabajo del engine. | Instrumentación `tracing`: en la suite E2E, 0 spans de más de 16 ms en el hilo principal fuera de diálogos del SO. |
 | ARQ-42 | La vista previa y la exportación comparten el grafo. | La prueba golden compara la vista previa al 100 % en CPU con la exportación con diferencia ≤ 1/255 por canal en el 99,9 % de los píxeles. |
-| ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. |
+| ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. En `gafira-segment` no hay reloj, ni en sus *benchmarks* (ARQ-02): `bench_cancel_segment` mide el tramo de trabajo más largo entre dos comprobaciones del token con una imagen de 4000 px, y ese tiempo acota la respuesta por arriba. |
 | ARQ-44 | Las cachés respetan el `MemoryGovernor`. | Ver la prueba del límite de memoria en §6.7. |
 | ARQ-45..ARQ-49 | Reservados. | — |
 
