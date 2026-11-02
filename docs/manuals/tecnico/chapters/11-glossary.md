@@ -41,7 +41,7 @@
 | NodeSpec | A node described without ids, the input of `InsertNodes` |
 | BLOCKED | A `verify` verdict: a critical check could not run; it goes to the owner, never counts as PASS and costs no round |
 | Change folder | The folder `specs/changes/<change>/` that holds the artifacts of one change; it closes into `specs/history/` |
-| ODD lite | Outcome-driven routing on top of the flow modes (ADR 0011, proposed): risk levels, outcome entries and BLOCKED |
+| ODD lite | Outcome-driven routing on top of the flow modes (ADR 0011, accepted): risk levels, outcome entries and BLOCKED |
 | Outcome entry | The object in `.odd/state.json` that records the criteria, status and next action of one active outcome |
 | Risk level (L0 to L3) | The class the coordinator gives a request by impact, uncertainty and reversibility; it can raise the flow mode and never lowers a floor |
 | P1 to P6 | The ordered passes of `Document::validate` |

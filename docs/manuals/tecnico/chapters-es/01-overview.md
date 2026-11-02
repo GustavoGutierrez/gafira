@@ -41,7 +41,7 @@ Versión del workspace: `0.1.0-beta.1`. Edición 2024, toolchain `1.93.1` fijado
 | `.agents/agents/` | Agentes del flujo de desarrollo (`.claude/agents` es un enlace simbólico) |
 | `.github/workflows/ci.yml` | CI: pruebas, comprobaciones de política, `cargo-deny` |
 | `deny.toml`, `.cargo/mutants.toml` | Política de licencias y fuentes; ajustes de pruebas de mutación (el perfil `mutants` está en `Cargo.toml`) |
-| `docs/adr/` | Registros de decisiones de arquitectura, incluidas las del flujo (ADR 0001 modos y packs, ADR 0002 carril rápido, ADR 0011 ODD lite, propuesto) |
+| `docs/adr/` | Registros de decisiones de arquitectura, incluidas las del flujo (ADR 0001 modos y packs, ADR 0002 carril rápido, ADR 0011 ODD lite, aceptado) |
 
 ## Orden de lectura
 
