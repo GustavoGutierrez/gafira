@@ -414,3 +414,136 @@ One existing test changed: `arq_120_radius_zero_is_the_identity` asserted bit id
 #### Sweep (throwaway test, deleted)
 
 Radius x scale from 1e-170 to 3200 (blur up to 100, scale = target / blur): 1e-170, 1e-160, 1e-30, 1e-8, 1e-3, then a 1.37 geometric grid from 0.05 to 3000 plus 0.5, 0.75, 1, 1.16, 1.19999, 1.2, 2, 2880, 3000, 3200. One-row images (the vertical pass reads only the centre tap, so sigma is along x), alpha impulse 0.01, `RgbaF32`: sigma from the shadow response. Also `Rgba8` against `RgbaF32` alpha on non-centre pixels, and a tile (7 px with its `roi`) against the whole row, bit-exact in `f32`. Results: no `Err` anywhere; tiles identical at all radii; `Rgba8` within 0.5/255 of `RgbaF32` (impulse of 255 against 1); sigma error 0.000 % up to 1.2, -1.18 % at 1.2 (Gaussian branch), -0.2 % at 2, -1.0 % at 20, -1.34 % from 100 to 3200 (the 3 sigma truncation, expected 1.35 %), so ARQ-120 holds across the sweep, also at the cap 4800. Not a fix: for blur x scale below about 1e-21 (sigma squared under the smallest `f32`) the response cannot be stored in `f32` and the output is the identity (measured sigma 0 at 1e-30 and 1e-160). A 2 % criterion has no meaning there, and the result is the identity, not NaN or `Err`.
+
+## RS5
+
+Branch `feat/gafira-raster` (from `develop` d64a41f). Commits: ba8fa71 (white balance and eyedropper), 6b5cfec (light), 5f9bb26 (color), 69a3406 (texture), 82f8034 (auto adjust), and 5dca6d4 (test only: W7 and S4 of RS4, asked by the coordinator during the run). Gates (fmt `--check`, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each commit, read one by one. The RS5 and RS6 sweep, the size and the bench figure are at the end of the RS6 section.
+
+Strict TDD as the owner asked: for each criterion the test was written first and run against a compile-only stub (`run_cpu` left `dst` at its sentinel, `eyedropper` and `auto_adjust` returned zeros), the failing line is in the tables, then the code. A test that passed from the start says so and names its mutant.
+
+### Done
+
+FD-33 (a) every slider at its default is the identity, difference 0, both formats (also over the 32 896 valid pairs `(c, a)` of 8 bits), (d) `auto_adjust`, (e) the analytic values of the table, (f) alpha kept and alpha 0 stays, flat image, centre of the vignette, Invertir twice, (g) the eyedropper, (h) bad parameters give `Err` and `dst` is untouched. Public API in `gafira_raster::effects`: `WhiteBalance`, `Light`, `ColorAdjust`, `Texture` (all `Effect`), `eyedropper`, `TemperatureTint`, `auto_adjust`, `AutoAdjust`. The detected colours (ΔE) are RS6.
+
+### Unit 1: shared runner, White balance (Temperatura, Matiz) and the eyedropper
+
+RED (stub `run_cpu` returned `Ok(())` and left `dst` at the sentinel; stub `eyedropper` returned (0, 0); all run before any implementation):
+
+| Criterion | Failing test and line |
+|---|---|
+| FD-33 (a) identity | `fd_33_a_white_balance_defaults_are_identity`: "7x5", left `[171, 171, ...]` (sentinel), right = the source |
+| FD-33 (e) factors, f32 | `fd_33_e_temperature_and_tint_scale_the_linear_channels`: "t 100 m 0 a 1 ch 0: NaN vs 0.2828427166893039" |
+| FD-33 (e) 8 bit | `fd_33_e_8_bit_pixels_go_through_linear_light`: "ch 0 t 100 m -40", left 171, right 150 |
+| FD-33 (f) alpha | `fd_33_f_white_balance_keeps_alpha`: "alpha at 0 ... temperature -100", left 59, right 171 |
+| FD-33 (g) values | `fd_33_g_eyedropper_values_and_clipping`: `TemperatureTint { temperature: 0.0, tint: 0.0 }` |
+| FD-33 (g) neutral | `fd_33_g_the_eyedropper_values_make_the_grey_neutral`: `[NaN, NaN, NaN, NaN]` (dst untouched) |
+| FD-33 (h) | `fd_33_h_bad_parameters_are_err_and_dst_is_untouched`: "temperature -100.0000001", left `Ok(())`, right `Err(Param(OutOfRange { param: "temperature" }))` |
+| ARQ-110 | `arq_110_eyedropper_rejects_non_finite_channels`: left `Ok(TemperatureTint {..})`, right `Err(NonFinite { field: "gray", index: 0 })`; `arq_110_overflowing_result_is_err_and_dst_is_untouched`: left `Ok(())`, right `Err(Buffer(NonFinite { field: "result", index: 4 }))`; `arq_110_non_finite_scale_and_pixels_are_err`: "scale NaN" |
+| Formats | `white_balance_rejects_other_formats_and_sizes`: left `Ok(())`, right `Err(UnsupportedFormat { format: Alpha8 })` |
+
+Passed from the start (stub already gave the answer), proved by a mutant: `fd_33_white_balance_schema_has_two_sliders_of_100` (range 100 to 99, default 0 to 5, id), `fd_33_g_eyedropper_with_a_zero_or_negative_channel_changes_nothing` (guard `<= 0` to `< 0`, third channel unchecked), `arq_111_white_balance_is_deterministic` (`RandomState` entropy in the `f32` and in the 8-bit write), `white_balance_empty_images_are_ok` (size 0 returns `Err`), `white_balance_roi_is_the_output_region` (x0 + 1, x1 - 1), `white_balance_cost_grows_with_pixels` (`px + 1`).
+
+### Unit 2: Light (Brillo, Contraste, Luces, Sombras, Blancos, Negros)
+
+RED (stub `run_cpu` left `dst` at the sentinel):
+
+| Criterion | Failing test and line |
+|---|---|
+| FD-33 (a) | `fd_33_a_light_defaults_are_identity`: "7x5", left the sentinel bytes, right the source |
+| FD-33 (e) | `fd_33_e_light_analytic_values`: "brightness +100: NaN vs 0.5" (the sentinel is a NaN) |
+| FD-33 Luces, Sombras | `fd_33_light_highlights_and_shadows_weights`: left NaN, right NaN |
+| FD-33 Blancos, Negros | `fd_33_light_whites_and_blacks_move_the_ends`: "NaN vs 1" |
+| 02 4.17.4 clip | `fd_33_light_contrast_clips_and_brightness_does_not`: `[NaN, NaN, NaN]` |
+| formulas, f32 | `fd_33_light_matches_the_reference_in_f32`: "[0.0, 0.0, 0.0] [0.3, 0.0, ...] ch 0: NaN vs 0" |
+| formulas, 8 bits | `fd_33_light_matches_the_reference_in_8_bits`: "[10, 100, 200, 255] [0.2, 0.5, ...] ch 0: 171 vs 0" |
+| FD-33 (f) | `fd_33_f_light_keeps_alpha`: "alpha at 0 ... brightness -100", left 59, right 171 |
+| FD-33 (h) | `fd_33_h_light_bad_parameters_are_err_and_dst_is_untouched`: "brightness -100.0000001", left `Ok(())`, right `Err(Param(OutOfRange { param: "brightness" }))` |
+| ARQ-110 | `arq_110_light_non_finite_scale_and_pixels_are_err`: "scale NaN", left `Ok(())`; `arq_110_light_overflowing_result_is_err_and_dst_is_untouched`: `Ok(())` |
+| Formats | `light_rejects_other_formats_and_sizes`: left `Ok(())`, right `Err(UnsupportedFormat { format: Alpha8 })` |
+
+Test fix at GREEN: the reference applied the Blancos and Negros stage at zero sliders, which clips above 1; guarded like the code (the spec says the default is the identity).
+
+Passed from the start, proved by a mutant: the schema test, `arq_111_light_is_deterministic`, `light_empty_images_are_ok`, `light_roi_is_the_output_region`, `light_cost_grows_with_pixels` (same mutants as unit 1 on `Light`).
+
+### Unit 3: Color (Tono, Saturación, Vitalidad, Invertir)
+
+RED (stub `run_cpu` left `dst` at the sentinel):
+
+| Criterion | Failing test and line |
+|---|---|
+| FD-33 (a) | `fd_33_a_color_defaults_are_identity`: "7x5", left the sentinel bytes, right the source |
+| FD-33 (e) Saturación -100 | `fd_33_e_saturation_minus_100_gives_equal_channels`: `[NaN, NaN, NaN]` |
+| Tono | `fd_33_color_hue_rotates_the_linear_channels`: `[NaN, NaN, NaN] vs [0.0, 0.356, -0.574]` |
+| Vitalidad | `fd_33_color_vibrance_saturates_dull_colours_more`: `[NaN, NaN, NaN] [0.57083, 0.38083, 0.38083]` |
+| FD-33 (f) Invertir x2 | `fd_33_f_invert_twice_is_the_original_and_flips_v`: `[NaN, NaN, NaN]` |
+| formulas | `fd_33_color_matches_the_reference_in_f32`: "[0.0, 0.0, 0.0] 45 0 0 false ch 0: NaN vs 0"; `fd_33_color_matches_the_reference_in_8_bits`: "[10, 100, 200, 255] ch 0: 171 vs 179" |
+| FD-33 (f) alpha | `fd_33_f_color_keeps_alpha`: "alpha at 0 ... hue -180", left 59, right 171 |
+| FD-33 (h) | `fd_33_h_color_bad_parameters_are_err_and_dst_is_untouched`: "hue -180.00000018", left `Ok(())`, right `Err(Param(OutOfRange { param: "hue" }))` |
+| ARQ-110 | `arq_110_color_non_finite_scale_and_pixels_are_err`: "scale NaN", left `Ok(())`; `arq_110_color_overflowing_result_is_err_and_dst_is_untouched`: `Ok(())` |
+| Formats | `color_rejects_other_formats_and_sizes`: left `Ok(())`, right `Err(UnsupportedFormat { format: Alpha8 })` |
+
+Passed from the start, proved by a mutant: the schema test, `arq_111_color_is_deterministic`, `color_empty_images_are_ok`, `color_roi_is_the_output_region`, `color_cost_grows_with_pixels`.
+
+Equivalent survivors: `unwrap_or(false)` to `unwrap_or(true)` on `invert` (the value is always present after `resolve`), `changed.then_some(c)` to `Some(c)` (with every stage off the pixel goes through decode and encode unchanged; proved over the 32 896 pairs `(c, a)` by the exhaustive identity test), and `Cost { units: 2 * px }` (cost units are abstract, only comparisons mean something; the test requires proportionality to `px`).
+
+### Unit 4: Texture (Nitidez, Claridad, Viñeta)
+
+RED (stub `run_cpu` left `dst` at the sentinel, `roi` returned `out`, cost was `px`):
+
+| Criterion | Failing test and line |
+|---|---|
+| FD-33 (a) | `fd_33_a_texture_defaults_are_identity`: "7x5", left the sentinel bytes, right the source |
+| FD-33 (f) flat image | `fd_33_f_sharpness_and_clarity_do_not_change_a_flat_image`: "1x1 [120, 60, 200, 255] ... sharpness 100 scale 1", left `[171, 171, 171, 171]`, right `[120, 60, 200, 255]` |
+| FD-33 (f) centre | `fd_33_f_vignette_does_not_change_the_centre`: "21x21 px 71 d 0.49", left `[171, ...]`, right the source |
+| FD-33 Viñeta | `fd_33_texture_vignette_matches_the_formula`: "kv 1 px 0 d 0.96: NaN vs 0.79" |
+| FD-33 Nitidez, Claridad f32 | `fd_33_texture_sharpness_and_clarity_match_the_reference_in_f32`: "scale 1 [1.0, 0.0, 0.0] px 0 ch 0: NaN vs 0.09" |
+| FD-33 8 bits | `fd_33_texture_matches_the_reference_in_8_bits`: "scale 1 [1.0, 0.0, 0.0] px 0 ch 0: 171 vs 0" |
+| Nitidez edge | `fd_33_texture_sharpness_steepens_an_edge`: "171 171" |
+| FD-33 (f) alpha | `fd_33_f_texture_keeps_alpha`: "alpha at 0 ... sharpness 0", left 59, right 171 |
+| FD-33 (h) | `fd_33_h_texture_bad_parameters_are_err_and_dst_is_untouched`: "sharpness -0.000000001", left `Ok(())`, right `Err(Param(OutOfRange { param: "sharpness" }))` |
+| ARQ-110 | `arq_110_texture_non_finite_scale_and_pixels_are_err`: "scale NaN", left `Ok(())`; `arq_110_texture_overflowing_result_is_err_and_dst_is_untouched`: `Ok(())` |
+| ARQ-120 roi | `arq_120_texture_roi_grows_by_the_largest_active_kernel`: "sharp 1", left `IRect { 10, 20, 50, 60 }`, right `IRect { 7, 17, 53, 63 }` |
+| ARQ-120 tiles | `arq_120_texture_tiles_with_roi_match_the_whole_image`: "nothing was written" (first version passed against the stub because both runs left the sentinel; the guard was added before GREEN) |
+| cost | `texture_cost_grows_with_pixels_and_with_the_blur`: "c(1.0, [1,0,0], 1000) > c(1.0, [0,0,1], 1000)" |
+| Formats | `texture_rejects_other_formats_and_sizes`: left `Ok(())`, right `Err(UnsupportedFormat { format: Alpha8 })` |
+
+Test fixes at GREEN: the overflow test used Claridad, which cannot overflow with a 3e38 pixel; it uses Nitidez (`c + 1.5 (c - G)` passes 3.4e38). The 8-bit reference test had a case with Nitidez at scale 0.25 (radius 0.5, sigma 0.25): the crate uses its three-tap kernel below sigma 0.6 and the written-again reference does not model it, so the case is Nitidez at scale 2 and Claridad at scale 0.25.
+
+Passed from the start, proved by a mutant: the schema test, `arq_111_texture_is_deterministic`, `texture_empty_images_are_ok`.
+
+Equivalent survivors: `(out != c).then_some(out)` to `Some(out)` and dropping the `a == 0` skip in `Planes::linear` (`unpremultiply_u8(_, 0)` is 0, ARQ-117); the cost weights (`blur(.., 2)` to 4, `blur(.., 4)` to 1): units are abstract and the test pins proportionality to `px` and the order sharp/clarity above no blur.
+
+### Unit 5: Ajuste automático (FD-33 (d))
+
+RED (stub `auto_adjust` returned `AutoAdjust::default()` for every input):
+
+| Criterion | Failing test and line |
+|---|---|
+| FD-33 (d) Brillo | `fd_33_d_brightness_moves_the_median_luminance_to_0_18`: "dark by one stop: 0 vs 100" |
+| FD-33 (d) Blancos, Negros | `fd_33_d_whites_and_blacks_come_from_the_0_5_and_99_5_percentiles`: "blacks: 0 vs -41.28" |
+| FD-33 (d) T, M | `fd_33_d_temperature_and_tint_use_the_mean_colour`: "temperature: 0 vs 16.99" |
+| FD-33 (d) Intensidad | `fd_33_d_intensity_scales_every_value`: "assertion failed: full.brightness != 0.0 && ..." |
+| FD-33 (d) idempotent | `fd_33_d_auto_adjust_is_idempotent`: `assertion left != right`: the stub gave an image equal to the source |
+| FD-33 (h) | `fd_33_h_intensity_outside_0_100_or_not_finite_is_err`: "-0.01", left `Ok(AutoAdjust {..})`, right `Err(Param(OutOfRange { param: "intensity" }))` |
+| ARQ-110 | `arq_110_auto_adjust_rejects_non_finite_pixels_and_alpha8`: left `Ok(..)`, right `Err(Buffer(NonFinite { field: "src", index: 5 }))` |
+
+Passed from the start (the stub returns zeros), proved by a mutant: `fd_33_d_a_black_image_keeps_brightness_temperature_and_tint_at_zero` (`median > 0.0` to `>= 0.0`, no empty-list return, no alpha filter) and `fd_33_d_the_values_are_valid_for_white_balance_and_light` (`temperature` read as `tint`).
+
+Added after the first GREEN, each RED against the mutant that showed the gap: `fd_33_d_translucent_pixels_count_with_their_straight_colour` (the `/ a` of `f32` and the unpremultiply of 8 bits survived because ratios cancel; the 40th percentile survived on short lists).
+
+Equivalent survivor: `px[3] != 0` to `px[3] > 0` (a `u8` is never negative).
+
+
+### Deviations and assumptions of RS5 (spec silent; verify may check)
+
+1. **Question for the owner, kept as built.** FD-33 gives Invertir the range "-100 to 100" with the rest, but its formula `v' = 1 - v` has no `k`, and (f) says "Invertir dos veces". Built as a `Bool` switch (`invert`, default off). If the owner wants a slider, the formula needs a `k`. Recommendation: keep the switch.
+2. One `Effect` per group of the table (`WhiteBalance`, `Light`, `ColorAdjust`, `Texture`), ids `effect.adjust.*`. Ajuste automático is not an effect (its Intensidad default of 60 would break (a)); it is a function of the original image whose result goes to the sliders. T and M are Balance de blancos sliders, so `AutoAdjust` has `white_balance_params()` and `light_params()` (the spec says "Luz y Color").
+3. Stages run only when their sliders are not 0, in the order of the spec (Brillo, Contraste, Luces y Sombras, Blancos y Negros; Tono, Saturación, Vitalidad, Invertir). A pixel no stage changed is written back byte for byte.
+4. `v` is the encoded value clipped to `[0, 1]` (as the notation says): Contraste, Blancos, Negros and Invertir clip their input; Brillo, Luces y Sombras, matrices do not. Results beyond `[0, 1]` stay in `f32` (02 4.17.4) and are clamped by the 8-bit encode.
+5. A pixel with alpha 0 is copied as it is (a colour it holds is kept). Premultiplied pixels are unpremultiplied (ARQ-117 rounding), worked in linear light and premultiplied again.
+6. Nitidez and Claridad: "radio 2 px" and "40 px" are CSS radii (σ = r / 2, ARQ-120), times `cx.scale`; both read the input image, not each other's output. The colour is blurred premultiplied in linear light and divided by the blurred alpha, so the border of the image does not darken (a flat image is unchanged, edges included). Claridad adds `0.5 k (Y - Y_G)` to the three channels, which moves Y by exactly that. Radii below σ 0.6 use the kernel of RS4.
+7. `Texture::roi` grows the output by the largest blur in use (`ceil(1.5 r)` taps, 0 for sliders at 0); the vignette needs the size of the whole image, so `Texture` runs on whole images (as the transitions, SP23) and `roi` does not model it.
+8. Ajuste automático: percentiles by nearest rank on `v_Y` of the pixels with alpha above 0 (`ceil(p n / 100)`-th value); the median of Y is the lower middle value for an even count; Brillo is `log2(0.18 / median)`, Negros `-4 n`, Blancos `4 (1 - b)`, all clipped to the slider range, T and M from the eyedropper on the mean of R, G, B; then times Intensidad / 100. A fully transparent or empty image gives all 0.
+9. The eyedropper treats a channel at 0 or below as "0" (the spec says 0): the adjustment does not change.
+10. `smoothstep` needs `a < b`; the degenerate edge comes with the tolerance of RS6.
+11. Test-only commit 5dca6d4 (coordinator's W7 and S4): two new tests, `arq_120_half_size_tinted_rgba_f32_matches_within_1_255` and `arq_120_half_size_translucent_tinted_rgba8_matches_within_2_255`, on the full image made of the half repeated 2x2, compared at 3σ plus the offset from the edge. Both passed from the start. Mutants that change the scale handling were killed (blur radius ignoring `scale`, offset shifted by 1); mutants that scale the tint or the alpha equally in both sizes survive, because the half-size property holds for them (their tests are the RS4 ones). The comment of the first half-size test says what it covers, and `blur.rs` cites FD-08 for zoom 32.
