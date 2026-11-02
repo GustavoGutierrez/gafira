@@ -86,6 +86,10 @@ jobs:
           gafira-pathops gafira-geom gafira-color gafira-doc
           gafira-layout gafira-geom gafira-color gafira-doc
           gafira-anim   gafira-time gafira-geom gafira-color
+          gafira-text    gafira-geom gafira-color gafira-doc gafira-pathops
+          gafira-raster  gafira-geom gafira-color gafira-doc
+          gafira-audio   gafira-geom gafira-color gafira-doc gafira-time
+          gafira-segment gafira-geom gafira-color gafira-doc gafira-raster
           '
           forbidden='egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq'
           status=0

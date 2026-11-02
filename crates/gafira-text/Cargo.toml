@@ -1,0 +1,22 @@
+[package]
+name = "gafira-text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-geom.workspace = true
+gafira-color.workspace = true
+gafira-doc.workspace = true
+gafira-pathops.workspace = true
+parley.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+criterion.workspace = true
+gafira-testkit.workspace = true
+
+[lints]
+workspace = true
