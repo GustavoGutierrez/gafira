@@ -1,3 +1,14 @@
+## Slice card
+Flow: full | level: L3 | pack: new function | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: public contracts shared by all layer-2 engines with design decisions the spec left open; owner chose the parallel full route
+Flow-change: design.md line 13 said level L2 -> L3 (trigger: serialized contracts every engine copies; level raised by the coordinator, mode unchanged)
+Late record: the coordinator skipped this card before D1. It was written after D1's code, at verify round 1, finding C1. The scope and acceptance it points to were committed in `design.md` at 6bede8b, before D1, and did not change. It precedes D2a, D2b and D3.
+Product IDs: ARQ-102 (types, engine errors; catalog, UI, lint and `UserError` parts pending), ARQ-107, ARQ-98 (labels), ARQ-110 (params), ARQ-112 (on doubles) (source: specs/02-arquitectura-software.md)
+Scope: `specs/changes/engine-contracts/design.md`, "Scope", in column.      Non-goals: same table, out column.
+Deliveries: D1, D2a, D2b serial; D3 parallel after D1 (design.md "Delivery table").
+Acceptance: design.md "Acceptance", copied by reference, unchanged.
+Plan: design.md "Quick path" and "Public API".
+Owner decisions touched: ADR 0012 accepted 2026-11-01; none in `specs/00-decisiones.md`.
+
 Flow: full | level: L3 | pack: new function | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: public contracts shared by all layer-2 engines with design decisions the spec left open; owner chose the parallel full route
 
 # Apply progress: engine-contracts
