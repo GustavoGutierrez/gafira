@@ -15,7 +15,7 @@ Evidence: 00 (D-09, D-40 to D-44), 02 §2, §4.17, §9.2, §10, 04, ADR 0005, AD
 
 ## Dependency state
 
-State at `develop` b642c1e. `D1` is merged. SP17 and SP18 go with the `AU1` fix round, and SP19 blocks `AU2` and `AU3`. O4 blocks only `SG3`.
+State at `develop` b642c1e. `D1` is merged. SP17 and SP18 go with the `AU1` fix round, and SP19 blocks `AU2` and `AU3`. SP20 blocks `RS3a`, and SP21 and SP22 block `RS3b`. O4 blocks only `SG3`; O5 blocks no `RS` delivery (P15).
 
 | Delivery | State | Blocked by |
 |---|---|---|
@@ -27,8 +27,10 @@ State at `develop` b642c1e. `D1` is merged. SP17 and SP18 go with the `AU1` fix 
 | `TX2` | Blocked | `TX1` |
 | `TX3`, `TX4` | Blocked | `TX2` |
 | `RS1` | Blocked | `SC1` |
-| `RS2`, `RS3` | Blocked | `RS1` |
-| `RS4` | Blocked | `RS3` |
+| `RS2` | Blocked | `RS1` |
+| `RS3a` | Blocked | `RS2`, SP20 |
+| `RS3b` | Blocked | `RS3a`, SP21, SP22 |
+| `RS4` | Blocked | `RS3b` |
 | `RS5` | Blocked | `RS4` |
 | `RS6` | Blocked | `RS5`, `CL1` |
 | `AU1` | Blocked | `SC1` |
@@ -52,8 +54,9 @@ Forecast is authored lines, with the x1.4 planning figure in brackets. Every del
 | `TX4` | `gafira-text` | FD-44 (a, c, d, e), FD-43 (a), ARQ-114 (text) | `TX2` | serial in `TX`; merged alone, for `skrifa` (P14) | 350 (490) | after `TX3` |
 | `RS1` | `gafira-raster` | ARQ-117, ARQ-121, ARQ-110, ARQ-111 | `SC1` | parallel stream `RS` | 450 (630) | any, before `SG1` |
 | `RS2` | `gafira-raster` | ARQ-119, FD-12 (c, CPU) | `RS1` | serial in `RS` | 340 (475) | after `RS1` |
-| `RS3` | `gafira-raster` | ARQ-118, ARQ-25 (ends) | `RS1` | serial in `RS` | 450 (630) | after `RS2` |
-| `RS4` | `gafira-raster` | ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (`bench_shadow_1080`) | `RS3` | serial in `RS` | 420 (590) | after `RS3` |
+| `RS3a` | `gafira-raster` | ARQ-118 (`progress`, Cut, Dissolve, Fade), ARQ-25 (ends), ARQ-110 | `RS2` | serial in `RS` | 420 (590) | after `RS2` |
+| `RS3b` | `gafira-raster` | ARQ-118 (Slide, Zoom, Wipe), ARQ-25 (ends), ARQ-110 | `RS3a` | serial in `RS` | 450 (630) | after `RS3a` |
+| `RS4` | `gafira-raster` | ARQ-120, FD-35 (a, d; Paralela only, D-42), ARQ-114 (`bench_shadow_1080`) | `RS3b` | serial in `RS` | 420 (590) | after `RS3` |
 | `RS5` | `gafira-raster` | FD-33 (a, d to h), except colours detected by ΔE | `RS4` | serial in `RS` | 480 (670) | after `RS4` |
 | `RS6` | `gafira-raster` | ARQ-122, FD-26, FD-28 (b), FD-33 (detected colours), FD-34 (a, b; D-40, D-41), ARQ-114 (`bench_dhash_12mp`) | `RS5`, `CL1` | serial in `RS` | 480 (670) | after `RS5` |
 | `AU1` | `gafira-audio` | ARQ-123, ARQ-124, ARQ-129, FV-10 (a, d), ARQ-110, ARQ-111, `params()` (P13) | `SC1` | parallel stream `AU` | 480 (670) | any |
@@ -64,7 +67,7 @@ Forecast is authored lines, with the x1.4 planning figure in brackets. Every del
 | `SG2` | `gafira-segment` | ARQ-130 (seeds, zones), FD-38 (reduction) | `SG1`, XP11 | serial in `SG` | 480 (670) | after `SG1` |
 | `SG3` | `gafira-segment`, testkit | ARQ-131, ARQ-132, FD-32 (e), FD-38 (a, b, c), ARQ-43, CAL-06, ARQ-111, ARQ-112 | `SG2`, `CL1`, O4 | serial in `SG` | 490 (685) | after `SG2` |
 
-Total after `engine-contracts`: 7 865 lines (x1.4: 11 010). The largest delivery is 490 lines (x1.4: 685).
+Total after `engine-contracts`: 8 285 lines (x1.4: 11 600). The largest delivery is 490 lines (x1.4: 685).
 
 Scope of the cut, as closed by the owner:
 
@@ -352,6 +355,148 @@ Does it need to come sooner? No, by delivery:
 
 If XP12 fails, the same step moves to the first commit of `TX2`, with the same serial rule.
 
+### P15. The `RS3` transitions
+
+- Context: items 1 to 9 of `## RS3` in `specs/changes/gafira-raster/apply-progress.md` on `feat/gafira-raster`. ARQ-118 gives the maths. C12 needs a schema per transition, and the rest below is unstated.
+- Status: items 3 to 7 and 9 are decided here. Items 1 and 2 are proposals until `specifier` writes them (SP20 to SP22). Item 8 is provisional until O5.
+
+Split: `RS3` becomes `RS3a` (contract, shared mix, Cut, Dissolve, Fade) and `RS3b` (Slide, Wipe, Zoom). `RS1` and `RS2` came in at about 3 times their forecast (`verification.json`: 1 696 against 450, 1 068 against 340), so one delivery of six transitions would not stay reviewable. `Mode` stays serial: both edit `lib.rs`, `error.rs` and `transitions/`.
+
+**Shape.** `Transition`, as in 02 §4.13, lives in `gafira_raster::transitions`, beside `GpuTransition`, which P5 already puts in this crate. `gpu()` keeps its default `None`. Each transition is one file, and each keeps a `schema: ParamSchema` field, as in P13.
+
+**Order inside `run_cpu`,** in one shared guard, before any write (ARQ-110):
+
+1. `progress` is finite.
+2. `self.params().resolve(p)`.
+3. Formats (item 6).
+4. Dimensions.
+5. `RgbaF32` pixels of `from` and `to` are finite.
+6. Size 0 gives `Ok`.
+7. `p` is clipped. `p == 0` copies `from` and `p == 1` copies `to`.
+
+Step 7 is what keeps ARQ-118 and ARQ-25 byte-exact for all six, Zoom included, because no sampling or colour conversion runs at the ends. The maths of each transition still has to reach the same limits, so a test at `p` near 0 and near 1 stays within 1/255 of the end.
+
+#### Item 1, schemas (proposal)
+
+02 §4.13 says only "dirección, color, suavidad", and FV-06 gives the catalogue. Stated facts: Fade goes to "negro, blanco o color", Slide has 4 directions, Wipe has 4 plus circular with softness in `[0, 1]`, and Zoom is "acercar o alejar".
+
+| Transition | Id | `ParamKind` | Default | Label |
+|---|---|---|---|---|
+| Cut, Dissolve | None | Empty schema | | |
+| Fade | `color` | `Color` | Opaque black, `Srgb` | `transition.fade.color` |
+| Slide | `direction` | `Choice`: `left`, `right`, `up`, `down` | `left` | `transition.slide.direction` |
+| Zoom | `direction` | `Choice`: `in`, `out` | `in` | `transition.zoom.direction` |
+| Wipe | `direction` | `Choice`: `right`, `left`, `down`, `up`, `circular` | `right` | `transition.wipe.direction` |
+| Wipe | `softness` | `Float { min: 0.0, max: 1.0 }` | 0 | `transition.wipe.softness` |
+
+- Black and white are values of `color`, not a separate choice: they are UI shortcuts.
+- Fade converts `color` once per call: to sRGB bytes, then premultiplied, for `Rgba8`, and through `Color::to_linear_srgb`, then premultiplied, for `RgbaF32`, the buffer meanings used since `RS1`. Its own alpha is kept.
+- Choice labels are `transition.direction.<id>`, shared by the three.
+- `animatable` is `false` on all, by the P13 reasoning: FV-14 does not name transition parameters, and the flag is not persisted. `TransitionInstance.params: AnimatableParams` (02 §4.13) would allow `true` later.
+
+#### Item 2, direction conventions (proposal)
+
+ARQ-118 fixes neither. The `direction` id always names the way the moving edge travels, with `y` down.
+
+| Transition | Id | Rule |
+|---|---|---|
+| Slide | `left` | `to` enters at the right edge. `lado` is the width. Screen `x` shows `to(x − d)` when `x ≥ d`, else `from(x)` |
+| Slide | `right` | `to` enters at the left edge. `lado` is the width |
+| Slide | `up` | `to` enters at the bottom edge. `lado` is the height |
+| Slide | `down` | `to` enters at the top edge. `lado` is the height |
+| Wipe | `right` | `u = (x + 0.5) / W` |
+| Wipe | `left` | `u = 1 − (x + 0.5) / W` |
+| Wipe | `down` | `u = (y + 0.5) / H` |
+| Wipe | `up` | `u = 1 − (y + 0.5) / H` |
+| Wipe | `circular` | Centre `(W / 2, H / 2)`, half diagonal `√(W² + H²) / 2`, so `to` opens from the centre |
+
+- Wipe mask `m` is the weight of `to`: ARQ-118 gives 1 for `u < p`, and `p = 1` leaves nothing of `from`.
+- Slide replaces pixels. It does not composite `to` over `from`, because a translucent `to` would otherwise jump at `p = 1`.
+- `d = redondeo((1 − p) × lado)` in `f64`, half away from 0.
+
+#### Item 3, Zoom
+
+- Pivot: the image centre, `(W / 2, H / 2)`, in continuous coordinates, so an odd side needs no rounding.
+- Scale: linear in `p`, as ARQ-118 lists only the ends. `in`: `from` `1 + p`, `to` `(1 + p) / 2`. `out`, the mirror (proposal, SP22): `from` `1 − p / 2`, `to` `2 − p`.
+- Sampling: for a screen pixel, `sx = cx + (x + 0.5 − cx) / scale − 0.5`, and the same in `y`.
+- Filter: bilinear, 4 taps per image, on premultiplied channels. Nearest shimmers during a slow zoom, and bicubic overshoots, which breaks `c ≤ a`.
+- Outside the image: clamp to the edge pixel. `to` at scale 0.5 leaves a ring, and ARQ-118 does not fill it. ARQ-120's transparent black would make two opaque clips translucent mid-way, and Zoom would be the only transition doing so. Clamp keeps opaque inputs opaque, and it is the usual GPU sampler mode for FV-06 (b).
+- No mip level is used, so the `to` side aliases slightly near scale 0.5. This is accepted for a blend lasting under 5 s.
+
+#### Item 4, ids and display
+
+| Transition | `Descriptor.id`, also `transition_id` | Name key | `version` |
+|---|---|---|---|
+| Cut | `transition.cut` | `glossary.transition_cut` | 1 |
+| Fade | `transition.fade` | `glossary.transition_fade` | 1 |
+| Dissolve | `transition.dissolve` | `glossary.transition_dissolve` | 1 |
+| Slide | `transition.slide` | `glossary.transition_slide` | 1 |
+| Zoom | `transition.zoom` | `glossary.transition_zoom` | 1 |
+| Wipe | `transition.wipe` | `glossary.transition_wipe` | 1 |
+
+The ids name the concept, not the crate, because `transition_id` is persisted in `TransitionInstance`. Audio's `audio.gain` is the same two-part form. `version` rises when the output changes.
+
+#### Item 5, `HandleReq`
+
+| Transition | Value | Why |
+|---|---|---|
+| Cut | `None` | Instantaneous in FV-06. No extra frames are shown |
+| Fade, Dissolve, Slide, Zoom, Wipe | `Both` | `handles` does not receive `TransitionAlign`, so the value must hold for `Centered`, `Start` and `End` |
+
+No catalogue transition uses `From` or `To`. A short clip still works: the builder repeats the edge frame and warns (02 §4.13).
+
+#### Item 6, formats
+
+- `Rgba8` and `RgbaF32` only, and `from`, `to` and `dst` must share the format. No transition converts: that belongs to the render graph.
+- `Alpha8` gives `UnsupportedFormat` for all six. Frames are 8-bit or `f32` (02 §6.2), `Alpha8` is mask data with no caller here, and Fade has no meaning on it. ARQ-118's "por formato" therefore means two formats (SP24).
+- A mix gives `FormatMismatch`, naming the first side that differs from `from`.
+
+#### Item 7, `EffectError`
+
+In `crates/gafira-raster/src/error.rs`, shared with `RS4`:
+
+```rust
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectError {
+    Buffer(BufferError),
+    Param(ParamError),
+    SizeMismatch { field: &'static str, expected: (u32, u32), actual: (u32, u32) },
+    FormatMismatch { field: &'static str, expected: PixelFormat, actual: PixelFormat },
+    UnsupportedFormat { format: PixelFormat },
+}
+```
+
+- `Buffer` and `Param` have `From`, and `to_message` delegates (02 §7 error rules, ADR 0012).
+- `field` is `to` or `dst`; `from` is the reference.
+- A non-finite `progress` is `Buffer(BufferError::NonFinite { field: "progress", index: 0 })`, and a pixel the same with `field` `from` or `to`. A new variant would need the key `error.raster.non_finite`, which `BufferError` already holds with other arguments.
+- New keys: `error.raster.size_mismatch`, `error.raster.format_mismatch`, `error.raster.unsupported_format`. Formats go in `Text`, sizes in `Count`.
+
+#### Item 8, the mixing space
+
+- **Decided:** Dissolve, Fade, Wipe and Zoom mix premultiplied RGBA directly, alpha included. It is the only form where the result keeps `c ≤ a`, and it matches `Color` interpolation (02 §3.4). ARQ-117's "sin premultiplicar" binds colour operations, not compositing, so mutant 10 tests the premultiplied path.
+- **Open:** O5, the same question as W1 of RS2.
+- **It is one switch in one function.** Every mix goes through `weighted(samples: &[(Pixel, f64)]) -> Pixel`, in one private module with an arm per format. Dissolve, Fade and Wipe pass 2 samples, and Zoom passes 8. The space is `const MIX_SPACE: MixSpace` in that module. Cut and Slide only copy, so no answer touches them.
+- A sample of weight exactly 1 returns its pixel unconverted, so `s = 0` Wipe and Fade at `p = 0.5` stay exact.
+
+| O5 answer | `Rgba8` | `RgbaF32` | Changes in `RS3` |
+|---|---|---|---|
+| (a) Linear light | Decode, mix, encode | As stored | None: this is the provisional build |
+| (b) Encoded sRGB everywhere | As stored | Encode, mix, decode | The constant, and the midpoint test rows |
+| (c) Each format as stored | As stored | As stored | The constant, and the `Rgba8` midpoint rows |
+
+- `RS3a` and `RS3b` can proceed before O5, on (a). Exact ends, ids, schemas, errors and geometry hold under every answer. Only test rows at mid `p` on the affected format depend on it, so they sit in one table beside the constant.
+- (a) is provisional because it follows what 02 and 05 state: the same graph in both modes to avoid divergence (02 §6.2), a linear working space (FV-19), linear `Color` interpolation (02 §3.4), and linear mips (ARQ-121).
+- `Transfer` in `mip.rs` moves to a `pub(crate)` module for this. `blend_u8` does not change in `RS3`.
+
+#### Item 9, rounding
+
+- `Rgba8`: the weighted sum in `f64`, then `(v + 0.5).floor()` clamped to `[0, 255]`, the same rule as `blend_u8`. Every channel uses the same weights and rounding is monotonic, so `c ≤ a` survives.
+- `RgbaF32`: the weighted sum in `f64`, cast to `f32`. Admitted values beyond `[0, 1]` (02 §4.17.4) stay finite, because a convex sum of `f32` values cannot overflow in `f64`.
+- `p` enters as `f64::from(p)`.
+
+**Limit:** `Transition` has no `roi`, and Slide, Wipe and Zoom read the whole image, so `run_cpu` takes whole frames, never tiles (SP23).
+
 ## Critical code
 
 Hand mutants apply on all of these. T4 at close covers every crate in the table.
@@ -361,7 +506,7 @@ Hand mutants apply on all of these. T4 at close covers every crate in the table.
 | `CL1` | Lab conversion, ΔE formulas (ARQ-122) | None |
 | `SC1` | None; config only, checked by V5, V12, the ARQ-107 step and `cargo deny` | All |
 | `TX1`..`TX4` | Range checks, FD-46 search bounds, curve geometry, overflow and `.notdef` flags | Benches |
-| `RS1`..`RS3` | Length and overflow checks, premultiply, mip levels, blend formulas, transition ends | None |
+| `RS1`..`RS3b` | Length and overflow checks, premultiply, mip levels, blend formulas, transition ends | None |
 | `RS4`..`RS6` | Parameter checks, `roi`, alpha preservation, dHash threshold | Benches |
 | `AU1`..`AU4` | `process` totality, subnormals, offset arithmetic, peak ceiling, output length | Benches |
 | `SG1`..`SG3` | Size checks, ARQ-131 bounds, IoU, cancellation | Benches, scene generators' visuals |
@@ -370,7 +515,7 @@ T4 at close: `gafira-color`, `gafira-text`, `gafira-raster`, `gafira-audio`, `ga
 
 ## Open questions (owner)
 
-O4 is open. O1 is in the `engine-contracts` design.
+O4 and O5 are open. O1 is in the `engine-contracts` design.
 
 | # | Result |
 |---|---|
@@ -383,11 +528,17 @@ Open, for `SG3`:
 |---|---|---|---|
 | O4 | Q-45: a textured background at ΔE76 6 is outside ARQ-132. It passes at `gamma` 50 and fails at 500. Is that gap accepted, and what ΔE76 floor do textured scenes get? Affects D-20 and the `SG3` scene list | (a) Accept the gap and keep the textured scenes as measured: no rework, weak on subtle textures. (b) Add that scene to the gate: stronger, but neither `gamma` value passes everything, regularisation 25 has no result on that scene, and `SG3` may fail. (c) Retune first: costs a new prototype run, with an unknown result | (a), with the floor set by the textured scenes that pass, recorded as PROPUESTA. Real photos stay a warning (pending item 9) |
 
+Open, no `RS` delivery waits for it:
+
+| # | Question | Options and tradeoffs | Recommendation |
+|---|---|---|---|
+| O5 | W1 of RS2: in which colour space do blending and transitions run? Today `blend_u8` uses encoded bytes and `blend_f32` linear values, with grey gaps up to 232/255. A black-to-white Dissolve at 0.5 gives 128 encoded and 188 linear. It must be ruled before `gafira-render-cpu` uses these functions | (a) Linear light in both: Preview matches Export (02 §6.2), but blend modes look unlike tools that blend encoded values, and CPU Preview pays a decode and encode per pixel. (b) Encoded sRGB in both: familiar blend modes, but it contradicts the linear working space. (c) Each format as stored: no cost, but Preview and Export visibly differ | (a) |
+
 XP5 reached ARQ-132 only in-sample. If `SG3` cannot reach the gate, D-20 is the owner's decision, and that becomes a new question then.
 
 ## Needs explorer
 
-XP1 to XP10 are resolved; XP11 and XP12 are open, and XP11 comes from those results. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
+XP1 to XP10 are resolved; XP11, XP12 and XP13 are open, and XP11 comes from those results. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
@@ -403,6 +554,7 @@ XP1 to XP10 are resolved; XP11 and XP12 are open, and XP11 comes from those resu
 | XP10 | Resolved, confirmed: the P9 step is exact. `StyleProperty::Locale` is the only parley API that needs the word (P7) | Passes clean, fails with `icu_plurals`, works under gawk and mawk | Nothing |
 | XP11 | Hash adjacency can meet ARQ-43 without `std::collections::HashMap`, which `clippy.toml` bans in domain crates, and it stays deterministic (ARQ-111). The prototype's table type is not recorded here | Re-time the longest stretch between token checks with an allowed table: own open addressing, or sorted pairs | `SG2` |
 | XP12 | `gafira-text` can meet FD-41 (g) without a direct `skrifa`, and adding `skrifa` as in P14 adds no package to `Cargo.lock` | Fixture with two partial fonts on one cluster and a tie through `layout_box`; a throwaway branch with the P14 entry, then `cargo tree -p gafira-text`, `cargo deny` and the V5 and ARQ-107 steps | Start of `TX2` |
+| XP13 | With O5 (a), a CPU `Rgba8` Dissolve at 1080p fits the 8 ms render share of 02 §6.2. `Transfer::encode` runs `AnalyticTransform` per pixel, and a table may be needed | Time `weighted` on 2 Mpx in a bench of `RS3a` | Nothing; informs O5 |
 
 ## Needs specifier
 
@@ -413,6 +565,12 @@ Open:
 | SP17 | 02 §4.9 | Add `fn params(&self) -> &ParamSchema;` to the trait and the `validate_definition` step to the "how to add" list (P13) | `AU1` fix round |
 | SP18 | 02 §4.17.5, FV-14 | State `animatable` per parameter, the finite bound of `duration`, the label keys, and whether a unit belongs in the schema. Settle whether `pan` is animatable (P13) | `AU1` fix round; proceed on the provisional P13 table if it comes later |
 | SP19 | 02 §4.17.5 | Add the `Eq3Band` and `LoudnessNormalizer` parameters to the table: neither has a row, and P13 makes `params()` mandatory for both | `AU2`, `AU3` |
+| SP20 | 02 §4.13 or §4.17.4 | Transition parameter table: P15 item 1, and whether `animatable` stays `false` | `RS3a` |
+| SP21 | ARQ-118 | Slide and Wipe conventions: P15 item 2, `lado` per axis, replace instead of composite, softness default | `RS3b` |
+| SP22 | ARQ-118, FV-06 | Zoom: linear scale law, centre pivot, bilinear, clamp outside the image, and the `out` mode that ARQ-118 lacks and FV-06 requires (P15 item 3) | `RS3b` |
+| SP23 | 02 §4.17, §4.13 | Add `Transition` and `Effect` to the type-home table, and state that a transition runs on whole frames | Nothing |
+| SP24 | 02 §4.13, ARQ-118, 02 §7 | Record the persisted `transition_id` values, `handles` per transition, the two formats of "por formato", and `EffectError` and its keys (P15 items 4 to 7) | Nothing |
+| SP25 | ARQ-118 | After O5: the mixing space, premultiplied mixing, and the `Rgba8` rounding (P15 items 8, 9), with the mid `p` test values | Nothing |
 
 Closed by `specifier`, all on `develop`:
 
@@ -439,4 +597,4 @@ CAL-06 and CAL-15 now live in `01`, and the FV IDs in `05`. That promotion is me
 
 ## Next
 
-Finish `D2a`, `D2b` and `D3`, then run `SC1`. Ask the owner O4 before `SG3`. `explorer` takes XP11 before `SG2` and XP12 before `TX2`. `specifier` takes SP17 and SP18, then `AU1` takes P13 in its fix round.
+Finish `D2a`, `D2b` and `D3`, then run `SC1`. Ask the owner O4 before `SG3`. `explorer` takes XP11 before `SG2` and XP12 before `TX2`. `specifier` takes SP20 to SP22 before `RS3a` and `RS3b`, and the owner takes O5. `specifier` takes SP17 and SP18, then `AU1` takes P13 in its fix round.
