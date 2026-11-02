@@ -1,6 +1,6 @@
 //! Lab conversion and color differences seen from outside the crate (ARQ-122).
 
-use gafira_color::{Lab, LinearRgba};
+use gafira_color::{Lab, LinearRgba, delta_e76};
 
 fn lab_of(r: f32, g: f32, b: f32) -> Lab {
     Lab::from_linear_srgb(LinearRgba::new(r, g, b, 1.0))
@@ -60,4 +60,32 @@ fn arq_122_mid_range_color_matches_the_reference_pipeline() {
         [64.638_473, 31.919_065, -37.438_607],
         1e-5,
     );
+}
+
+const fn lab(l: f64, a: f64, b: f64) -> Lab {
+    Lab { l, a, b }
+}
+
+// ARQ-122 AC4
+#[test]
+fn arq_122_delta_e76_of_the_published_pair_is_five() {
+    let d = delta_e76(lab(50.0, 0.0, 0.0), lab(53.0, 4.0, 0.0));
+    assert!((d - 5.0).abs() <= 1e-12, "{d}");
+}
+
+// ARQ-122: every axis counts, and the result is a distance, not a squared one.
+#[test]
+fn arq_122_delta_e76_uses_all_three_axes_and_the_square_root() {
+    let cases = [
+        (lab(10.0, 20.0, 30.0), lab(11.0, 22.0, 32.0), 3.0),
+        (lab(0.0, 0.0, 0.0), lab(0.0, 0.0, 7.0), 7.0),
+        (lab(0.0, 0.0, 0.0), lab(0.0, -7.0, 0.0), 7.0),
+        (lab(9.0, 0.0, 0.0), lab(0.0, 0.0, 0.0), 9.0),
+        (lab(5.0, 5.0, 5.0), lab(5.0, 5.0, 5.0), 0.0),
+    ];
+    for (a, b, expected) in cases {
+        for d in [delta_e76(a, b), delta_e76(b, a)] {
+            assert!((d - expected).abs() <= 1e-12, "{a:?} {b:?}: {d}");
+        }
+    }
 }

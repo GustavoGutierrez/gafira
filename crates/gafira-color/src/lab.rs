@@ -76,3 +76,9 @@ impl Lab {
         }
     }
 }
+
+/// CIE76 color difference: the Euclidean distance in Lab (CSS Color 4 §20.1).
+#[must_use]
+pub fn delta_e76(a: Lab, b: Lab) -> f64 {
+    ((a.l - b.l).powi(2) + (a.a - b.a).powi(2) + (a.b - b.b).powi(2)).sqrt()
+}
