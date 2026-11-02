@@ -494,3 +494,47 @@ fn fd_41_f_the_height_of_n_lines_is_n_times_the_line_height_times_the_natural_he
         }
     }
 }
+
+#[test]
+fn fd_41_a_zero_metrics_font_is_checked_with_an_empty_text_only_when_it_is_the_first() {
+    let broken = without_metrics(INTER);
+    let broken = broken.as_slice();
+    let s = style(0.0, 1.0);
+    let run =
+        |text: &str, stack: &[&[u8]]| layout_box(text, stack, &s, 96.0, Size::new(500.0, 100.0));
+    let bad = Some(TextError::InvalidFont { index: 0 });
+    assert_eq!(run("", &[broken]).err(), bad);
+    assert_eq!(run("abc", &[broken]).err(), bad);
+    assert_eq!(run("", &[broken, INTER]).err(), bad);
+    // Behind a healthy font nothing uses it: no error, with text or without.
+    assert!(run("abc", &[INTER, broken]).is_ok());
+    assert!(run("", &[INTER, broken]).is_ok());
+}
+
+#[test]
+fn fd_41_f_inter_and_noto_emoji_on_each_line_give_61_74_121_29_and_241_99_at_100_px() {
+    // 75 pt at 96 dpi is 100 px. The fonts do not nest: the line takes the larger rise and
+    // the larger fall, so the distance is not proportional to the line height.
+    let emoji = fonts::NOTO_EMOJI.bytes;
+    let text = "a\u{1f600}\na\u{1f600}\na\u{1f600}";
+    for (lh, expected) in [(0.5, 61.74), (1.0, 121.29), (2.0, 241.99)] {
+        let s = TextStyle {
+            size_pt: 75.0,
+            line_height: lh,
+            ..TextStyle::default()
+        };
+        let out = layout_box(text, &[INTER, emoji], &s, 96.0, Size::new(10_000.0, 1000.0))
+            .expect("layout");
+        assert!(
+            out.lines[0].clusters.iter().any(|c| c.font == 1),
+            "the emoji comes from font 1"
+        );
+        let b = baselines(&out);
+        for pair in b.windows(2) {
+            assert!(
+                (pair[1] - pair[0] - expected).abs() <= 0.01,
+                "lh={lh}: {b:?}"
+            );
+        }
+    }
+}
