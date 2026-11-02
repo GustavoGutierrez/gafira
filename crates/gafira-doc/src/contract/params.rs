@@ -5,6 +5,102 @@ use std::collections::BTreeMap;
 
 use gafira_color::Color;
 
+use crate::msg::MessageKey;
+
+/// One option of a [`ParamKind::Choice`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParamChoice {
+    /// Stable id, the value stored in [`ParamValue::Choice`].
+    pub id: &'static str,
+    /// Catalog key of the option's label (ARQ-98).
+    pub label: MessageKey,
+}
+
+/// The type of a parameter with its range and default.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ParamKind {
+    Float {
+        min: f64,
+        max: f64,
+        default: f64,
+    },
+    Int {
+        min: i64,
+        max: i64,
+        default: i64,
+    },
+    Bool {
+        default: bool,
+    },
+    Choice {
+        options: &'static [ParamChoice],
+        default: &'static str,
+    },
+    Color {
+        default: Color,
+    },
+}
+
+impl ParamKind {
+    fn default_value(&self) -> ParamValue {
+        match self {
+            ParamKind::Float { default, .. } => ParamValue::Float(*default),
+            ParamKind::Int { default, .. } => ParamValue::Int(*default),
+            ParamKind::Bool { default } => ParamValue::Bool(*default),
+            ParamKind::Choice { default, .. } => ParamValue::Choice((*default).to_owned()),
+            ParamKind::Color { default } => ParamValue::Color(*default),
+        }
+    }
+}
+
+/// One parameter: id, label, kind and whether it can be animated.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamDef {
+    pub id: &'static str,
+    /// Catalog key of the parameter's label (ARQ-98).
+    pub label: MessageKey,
+    pub kind: ParamKind,
+    pub animatable: bool,
+}
+
+/// The ordered parameters of an effect, transition or export format.
+///
+/// Plain data: [`ParamSchema::new`] validates nothing (ARQ-110). Call
+/// [`ParamSchema::validate_definition`] on a schema you did not write.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ParamSchema {
+    params: Vec<ParamDef>,
+}
+
+impl ParamSchema {
+    #[must_use]
+    pub fn new(params: Vec<ParamDef>) -> Self {
+        Self { params }
+    }
+
+    /// The parameters in definition order.
+    #[must_use]
+    pub fn params(&self) -> &[ParamDef] {
+        &self.params
+    }
+
+    /// The first parameter with this id.
+    #[must_use]
+    pub fn get(&self, id: &str) -> Option<&ParamDef> {
+        self.params.iter().find(|p| p.id == id)
+    }
+
+    /// Every parameter at its default.
+    #[must_use]
+    pub fn defaults(&self) -> ParamValues {
+        let mut values = ParamValues::new();
+        for p in &self.params {
+            values.set(p.id, p.kind.default_value());
+        }
+        values
+    }
+}
+
 /// One value of a parameter.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParamValue {
