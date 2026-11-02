@@ -270,3 +270,43 @@ Verify round 4 findings C18 (wide boxes) and C22, with the fix proven on scratch
 Hand mutants (all restored): overflow from the running sum of the line, killed by `fd_41_i_a_wide_box_reports_overflow_only_...`; `Line.advance` summed in f32, killed by `fd_41_e_the_advance_of_a_wide_unstretched_line_...`.
 
 Throwaway sweep (not committed, release): 4 320 layouts, 3 texts (Latin, mixed bidi, Arabic), 4 size/DPI pairs, t -100 to 500, Left/Right/Justify, boxes 3 008, 4 012, 16 000, 3 073.86, 3 705.08, 3 753.55, 5 000, 9 000 each +-0.0002: 77 103 lines, 0 false overflow, 0 advance error over 0.01, 0 justified lines off the edge over 0.01, worst 0.00046 px.
+
+### TX2 bidi paragraphs (FD-41, spec commit ff1d0e1)
+
+Parley 0.12 has no paragraph split: `analyze_text` runs one bidi resolution over the whole text, and U+2028 and the like only break lines. Its `BaseDirection::Auto` already applies P2 and P3 (skips isolates, LTR with no strong character), so nothing of that is duplicated: `bidi_paragraphs` splits the text, each paragraph gets one parley layout with its direction from `Layout::is_rtl`, and `layout_box` concatenates lines, offsetting baselines (f64 sum of `line_height`) and ranges. The break stays in the paragraph it closes, so its cluster and line metrics do not change; the empty line parley adds after a final break is dropped, because the next paragraph is that line, and the text after the last break is always a paragraph, also when empty. Its height is the one of an empty text, as parley gave. `layout_list` needs no change: it calls `layout_box` per item.
+
+Commit: e520633 (573 lines added, 60 deleted; `layout.rs` and tests). Gates on it, each run alone: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0.
+
+| Criterion | RED (run on the code before the commit; the test or its row came first) |
+|---|---|
+| (n) paragraphs, order and x, `\n`, `\r`, `\r\n`, U+2028, U+2029 | `fd_41_n_each_forced_break_opens_a_paragraph_with_its_own_direction`: left `[d, e, f, " ", ج, ب, ا, " ", a, b, c]`, right `[a, b, c, " ", ج, ب, ا, " ", d, e, f]` |
+| (n) Justify | `fd_41_n_justify_starts_a_line_where_its_paragraph_starts`: assertion `a` at x = 0 failed |
+| (n) Left, hang | `fd_41_n_white_space_hangs_where_its_own_paragraph_ends`: first space not at the end of `b` |
+| (m), last sentence | `fd_41_m_a_trailing_space_of_the_other_level_starts_the_line_at_the_edge`: `the space is at -4.5`; `fd_41_m_content_of_the_other_level_can_end_past_the_box_without_overflow`: `the content ends at 38.188`; `fd_41_m_a_trailing_space_of_the_paragraph_level_stays_behind_the_content`: left `c`, right `" "` |
+| Dirección del párrafo | `fd_41_a_paragraph_takes_its_direction_from_its_first_strong_character`: `"abc": starts at 72.08`; `fd_41_an_open_isolate_ends_with_its_paragraph`; `fd_41_an_empty_paragraph_is_left_to_right_and_does_not_inherit`: `"\n": the empty paragraph` |
+| Justificado inside each paragraph | `fd_41_i_justify_stretches_inside_each_paragraph_and_not_its_last_line`: `0 and -4.5` |
+| List callers | `fd_41_a_list_item_has_bidi_paragraphs_too`: left `[d, e, f, ...]`, right `[a, b, c, ...]` |
+
+Not RED, they hold on the old code too and are proved by the mutants below: `fd_41_n_u_0085_keeps_one_right_to_left_paragraph` (its first RED was a fault of the test, which found the wrong alef; rewritten before GREEN), `fd_41_controls_that_are_not_forced_breaks_do_not_open_a_paragraph`, `fd_41_a_crlf_is_one_break_and_lone_cr_and_lf_are_one_each`, `fd_41_a_final_break_gives_one_more_empty_line_of_the_same_height`, `fd_41_line_height_goes_on_across_paragraphs`, `fd_41_overflow_looks_at_every_paragraph`, `arq_116_ranges_index_the_whole_text_across_paragraphs`, `arq_116_upper_case_keeps_the_ranges_across_paragraphs`.
+
+(n) holds as written: `abc ابج def` fits 100 px on one line at 12 pt; `ابج<U+0085>abc ابج def` wraps there and stays one right-to-left paragraph, so its test checks that its last line ends at the right edge, and the order on one line in a box of 1 000 px.
+
+| Hand mutant (all reverted) | Killed by |
+|---|---|
+| Direction from the first paragraph | `fd_41_n_each_forced_break_...`, `fd_41_m_*`, 7 more |
+| Direction inherited from the previous paragraph (no strong character) | `fd_41_a_paragraph_takes_its_direction_...`, `fd_41_n_justify_...`, `fd_41_an_empty_paragraph_...` |
+| Empty paragraph not LTR | `fd_41_an_empty_paragraph_is_left_to_right_and_does_not_inherit` |
+| CRLF as two breaks | `fd_41_a_crlf_is_one_break_...`, `fd_41_n_each_forced_break_...`, `arq_116_a_final_crlf_or_lf_opens_one_more_empty_line` |
+| U+2028 does not open a paragraph | `fd_41_n_each_forced_break_...` |
+| U+0085 opens a paragraph | `fd_41_n_u_0085_...`, `fd_41_controls_that_are_not_forced_breaks_...` |
+| Hang at the side of the first paragraph | `fd_41_n_white_space_hangs_...`, `fd_41_m_a_trailing_space_of_the_other_level_...` |
+| Justify start edge by text, not by paragraph | `fd_41_n_justify_...`, `fd_41_a_paragraph_takes_...`, `fd_41_i_justify_stretches_...` |
+| Byte ranges not offset | `arq_116_ranges_index_the_whole_text_...`, `arq_116_upper_case_keeps_the_ranges_...`, 14 more |
+| Extra: overflow of the last paragraph only; baselines not offset; parley's empty line kept; U+000D or U+2029 not a break; no final paragraph | `fd_41_overflow_looks_at_every_paragraph`; `fd_41_line_height_goes_on_across_paragraphs`; `fd_41_a_final_break_...`; `fd_41_n_each_forced_break_...`; `fd_41_a_final_break_...` |
+
+Throwaway sweep (not committed, release): 138 240 layouts, 12 pieces (Latin, Arabic, mixed, the (m) text, leading and trailing spaces, empty, spaces only, digits) in triples, 5 breaks, 4 alignments, spacing 0 and 100, boxes 40, 100, 4 012 at 12 pt and, beyond the request, 5 and 25 at 12 pt and 36 at 9 pt. 1 301 760 lines: line count equal to the single-paragraph layouts in all, every cluster at the x of its single-paragraph layout (worst 0 px), baselines strictly growing, ink outside the box only in 345 600 lines of a layout with a cluster wider than the box (`overflow`) and 1 440 lines of limit (m), 0 unexplained. The sweep found nothing to fix.
+
+Deviations and open points:
+1. A blank paragraph after an Arabic one now takes its line metrics alone. The final empty line and the middle break already used Inter, so no measured height changed; heights are not fixed by (n).
+2. U+000B, U+000C, U+0085 and U+001C to U+001E keep what parley does with them (one cluster with the font's glyph, not a break).
+
