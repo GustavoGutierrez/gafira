@@ -300,7 +300,7 @@ pub fn check_progress_contract<E>(
 
 Rules of `check_progress_contract`:
 
-Each run gets a new `CancelToken` and a new log. An `Err(E)` from `op`, in any run, is returned at once. The first violation ends the check. In a run, the return value of `op` is judged before its log.
+Each run gets a new `CancelToken` and a new log. An `Err(E)` from `op`, in any run, is returned at once. The first violation ends the check. In a run, the return value of `op` is judged before its log, except for the first check of a cancelled run.
 
 | Step | Rule |
 |---|---|
@@ -308,7 +308,7 @@ Each run gets a new `CancelToken` and a new log. An `Err(E)` from `op`, in any r
 | Scan | By index, and at each index in this order. `OutOfRange` when `f` is outside `[0, 1]`, NaN included. `Decreasing` when `f < previous`, strict, so an equal value passes. `EarlyCompletion` when `f == 1.0` before the last report. `StepTooLarge` when `f - previous > max_step`, in `f32`, with no tolerance; the first report has no previous, so it is not compared to 0 |
 | End of the scan | `NotCompleted` when the log is empty or its last report is not `1.0` |
 | Cancel points | `{1, n / 2, n - 1}`, keeping only `1 <= k <= n - 1`, duplicates removed, ascending. `n = 0` and `n = 1` give none, `n = 2` gives `{1}`, `n = 3` gives `{1, 2}`. Report `n` is `1.0`, the end of a good run, so a cancel there comes too late for any operation to see it |
-| Cancelled run | The double logs report `k`, then cancels. Fewer than `k` reports means the cancel never fired: `NotCancelled { k }` |
+| Cancelled run | The double (`CancelAt`) records each report and reads its position atomically, under one lock, because reports may arrive in parallel (C3): exactly one report gets position `k`, and that report cancels. First check, before the return value of `op` and whichever it is, `Ok(true)` or `Ok(false)`: fewer than `k` reports means the cancel never fired, so it is `NotCancelled { k }`. The next two rows apply only when the cancel fired |
 | `Ok(false)` after the cancel | `NotCancelled { k }` when the log ends at `1.0`: the operation ran to the end and ignored the token. `OutputAfterCancel { k }` otherwise: it stopped early and still returned success, so it delivered a partial output (C13) |
 | `Ok(true)` after the cancel | The log goes through the scan without `StepTooLarge` and "End of the scan", and any `f == 1.0` is `EarlyCompletion`, the last report included, because `1.0` is only for a good end (ARQ-112). Then `ReportsAfterCancel { k, extra }` when `extra`, the log length minus `k`, is above 1 |
 
