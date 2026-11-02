@@ -147,4 +147,22 @@
   "mutation": null,
   "hand_mutants": {"run": 8, "killed": 6},
   "criteria": {"total": 19, "covered": 17},
-  "size": {"lines": 1810, "forecast": 450}, "report": "verify-report.md" } ] }
+  "size": {"lines": 1810, "forecast": 450}, "report": "verify-report.md" }, {
+  "delivery": "RS3b", "round": 3, "commit": "02f7b2efdc074fc830e2ff33bb7811260892709b", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply", "classes": [],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:130", "summary": "Closed: 14 896 soft circular exact-edge pixels right at HEAD, 4 504 over the bound with two hypot restored. New tests kill that mutant.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/slide.rs:367", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:130", "summary": "Closed: 988 of 988 hard circular exact-edge pixels give 0; 372 wrong in the control. u <= p and two hypot are killed.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/wipe.rs:144", "summary": "Closed in round 2. Saturation test unchanged.", "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-raster/src/transitions/mod.rs:1378", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": "specs/changes/layer-2/design.md:380", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/gafira-raster/apply-progress.md:285", "summary": "Closed in round 2.", "follow_up": false, "status": "closed"},
+    {"id": "W5", "severity": "WARNING", "class": "ambiguity", "ref": "ARQ-118, 02 4.17.4", "summary": "Open. New point: 128x128, p nearest f32 to u, s 1e-12: 4.5e-5 over 1e-5, bytes 0.50/255. u is the nearest f64, so not removable in f64.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 4},
+  "criteria": {"total": 19, "covered": 19},
+  "size": {"lines": 1877, "forecast": 450}, "report": "verify-report.md" } ] }

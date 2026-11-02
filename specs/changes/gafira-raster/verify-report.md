@@ -172,3 +172,113 @@ Closure probes only, no independent budget spent. Applied one at a time to a scr
 1 810 lines added in `crates/gafira-raster` against `fadac62`, 271 of them in this fix round, against a forecast of 450 (630). Noted, no finding, per the owner.
 
 next: tdd-apply (C1, C3, implementation); W5 (ambiguity) is a follow-up. Second consecutive FAIL of class `implementation`: the coordinator should stop and ask the owner before round 3, the last.
+
+# Verify report: gafira-raster, RS3b, round 3
+
+- Commit: `02f7b2e` (branch `feat/gafira-raster`). Fix commit: `2cff356` (Wipe). Note: `02f7b2e`.
+- Closure round, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
+- This report replaces RS3b round 2, which stays in git at `4a2ae70`. All rounds are also in `verification.json`.
+
+**Verdict: PASS.** 0 CRITICAL, 1 WARNING (follow-up), 2 SUGGESTION.
+Per class: ambiguity 1 (1 WARNING, follow-up), implementation 0, architecture 0, claim 0.
+
+C1 and C3 are closed. The implementer's claim on the ramp mutant holds at the output. W5 stays open as a follow-up, and this round found a plainer case of it (below). RS4 to RS6 remain.
+
+## Gates
+
+Each exit code was read alone from its own file, on a fresh clone of `02f7b2e` with no `proptest-regressions` folder. `CARGO_TARGET_DIR` was not passed, as the coordinator asked: each export used its own default `target/`, with `CARGO_INCREMENTAL=0`.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` (1 456 passed, 0 failed, 0 ignored; 138 in the `gafira-raster` library) | 0 |
+| `cargo deny check` | 0 |
+| policy: ARQ-07 CLI | 0 |
+| policy: forbid unsafe | 0 |
+| policy: V5 layers | 0 |
+| policy: V12 clippy copies | 0 |
+| policy: ARQ-107 language | 0 |
+| policy: V13 EditToken | 0 |
+| policy: V14 property tests | 0 |
+
+The 15 seeds in the untracked `proptest-regressions/` also pass on the unmutated code, on a scratch export (138 passed). The CI test job's Windows and macOS targets were not run here. Disk: 34 GB free at the start, 24 GB at the lowest reading, 29 GB after cleaning.
+
+## Independent edge sweep
+
+Written for this round; it reuses neither the crate's code nor the earlier harness. `p` and `s` are exact rationals. Circular `u` is exact when `u^2` is a rational square, and otherwise a root at 2 700 bits, so `u == p` is decided exactly. The crate ran through its public API, black to white, opaque, in `RgbaF32` and `Rgba8`. Bounds are those of 02 §4.17.4: 1e-5 for `f32`, 1/255 for bytes.
+
+Grid: 402 944 cases, 215 042 496 pixels; 36 sizes from 1x1 to 1024x1, including squares of 4 to 128, odd squares and non-square shapes; 48 softness values from 1 down to 5e-324, with `s = 0`, subnormals and powers of two (every third value on images of 400 pixels or more); all 5 directions; `p` on dyadic values and on the nearest `f32` to pixel values of `u`. No non-finite output.
+
+| Group | Pixels with exact `u == p` | `f32` over the bound at HEAD | Bytes over at HEAD | Same grid with two `hypot` calls restored |
+|---|---|---|---|---|
+| axis, `s = 0` | 27 858 | 0 | 0 | 0 |
+| axis, `s > 0` | 422 742 | 0 | 0 | 0 |
+| `circular`, `s = 0` | 988 | 0 | 0 | **372** |
+| `circular`, `s > 0` | 14 896 | **8, none of them exact-edge (W5)** | 0 | **4 504** (4 032 in bytes) |
+
+The last column is the positive control: this sweep sees the defect of round 2, at up to 255/255. At HEAD all 15 884 circular exact-edge pixels are right.
+
+## Closure
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 | **Closed** | `crates/gafira-raster/src/transitions/wipe.rs:130`: no circular exact-edge pixel over the bound at any softness. `arq_118_wipe_circular_exact_edge_pixels_keep_the_rule` (`wipe.rs:662`) and `arq_118_wipe_circular_exact_edge_on_1080_square` (`wipe.rs:690`) fail with the old `u` restored. |
+| C3 | **Closed** | 988 of 988 hard circular exact-edge pixels give 0, against 372 wrong in the control. Mutant `u <= p` is killed by both new tests and two older ones. |
+| C2, W1, W2, W3, W4 | Closed in round 2 | Not reopened. The saturation test is unchanged, and on the new path `|gap| <= s` keeps the quotient at most 1. |
+| W5 | Open, follow-up | See below. Not routed, as the coordinator said. |
+| S1, S4 | Open | Not touched. |
+
+The comment's claim holds too. For an exact edge `u == p`, `p` has at most 24 bits, so `p^2` fits an `f64`; the quotient is then exact and the root returns `p`. `a^2 + b^2` and `w^2 + h^2` are exact up to sides of about 2^26.
+
+## Claim: ramp quotient regardless of `|p - u| <= s`
+
+**Equivalent at the output: confirmed.** Applied on a scratch export.
+
+- 138 of 138 tests pass, so the mutant survives.
+- The full sweep is byte-identical to HEAD (`cmp` exit 0 over 1 075 212 480 bytes, `f32` and `Rgba8`).
+- A bit comparison of both masks, on 400 000 000 draws at the extremes (`u` within 4 ulp of `p`, `s` subnormal, `s` equal to `|gap|`, `u` 0 and 1; 225 699 735 saturated): 0 differences, 0 NaN.
+- By argument: with `|gap| > s` the rounded quotient has magnitude at least 1, so `p + q` clamps to 1, or to 0 since `p <= 1`. `gap` and `p` are finite and `s > 0`, so no NaN arises.
+
+One limit on the word "equivalent": the mutant is not equivalent inside. It went through an infinity on 36 667 405 of those draws, which ARQ-110 forbids for an intermediate, while the code had 0 inside its ramp. So the saturation test is what holds ARQ-110 there, and no tracked test can see it, as round 2 recorded under W1.
+
+## Hand mutants
+
+Closure probes only, no independent budget spent. Applied one at a time to a scratch export; `cargo test -p gafira-raster --lib`. 5 run, 4 killed, 1 equivalent.
+
+| Mutant | Result |
+|---|---|
+| Two-`hypot` quotient restored | Killed: both new tests |
+| `u <= p` in the hard Wipe | Killed: both new tests, `arq_118_wipe_defaults_are_right_and_hard`, `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre` |
+| `diagonal_sq` as `2 w^2` (square only) | Killed: `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_matches_the_criterion_for_every_direction` |
+| Clamp removed | Killed: the four recorded tests and `arq_118_wipe_soft_stays_within_1_255_of_the_ends_near_them` |
+| Ramp quotient regardless of `|p - u| <= s` | Survived, **equivalent** at the output (above) |
+
+## Criteria
+
+19 criteria: 19 covered. The two failing in round 2 now hold: the Wipe mask with softness (C1) and `s = 0` strict `u < p` (C3). The other 17 stand as in round 2; the code outside `u` and the test module of `wipe.rs` did not change.
+
+**Artifacts (step 3c).** Since `4a2ae70`: `2cff356` touches only `wipe.rs` (69 insertions, 2 deletions), `02f7b2e` only `apply-progress.md` (9 insertions, 0 removed). The Slice card (`b64090c`, amended by `75e360d`) is unchanged. `02` and `design.md` are unchanged. Neither commit carries AI attribution.
+
+**Product IDs (`git grep` over the tests).** ARQ-118, ARQ-25, ARQ-110, ARQ-111 and FV-06 are named. Left out on purpose: FV-06 (b) (GPU, no `GpuTransition` in this cut), FV-06 (c) (not in this crate), Q-47 (owner).
+
+## Findings
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+- **W5. Open, follow-up. No rule says what bound holds for `circular` at softness below about 1e-11.** class: ambiguity. ARQ-118, 02 §4.17.4. Round 2 stands, with one new data point: the softness need not be tuned to the gap. On 128x128, `p` 0.7984436 (nearest `f32` to `u` of pixel (29,0), not an exact edge), `s` 1e-12, 8 symmetric pixels read 0.8897039 against 0.8896594: 4.5e-5, over the 1e-5 bound. Bytes stay within 1/255, at 0.50 at worst. `u` there is already the nearest `f64` (0.40 ulp off), so no `f64` `u` does better, and this is not a defect of the fix. `p` must still land within about 1e-13 of a non-dyadic `u`.
+
+### SUGGESTION
+
+- S1. Still open: `samples` in `crates/gafira-raster/src/transitions/zoom.rs:47` allocates a `Vec` per pixel, for a fixed 8. O5 and XP13 own the cost.
+- S4. Still open: the Slice card still says `RS3`. The coordinator's. `proptest-regressions/` is left out here: a known pending owner decision.
+
+## Size
+
+1 877 lines added in `crates/gafira-raster` against `fadac62`, 69 of them in this fix round, against a forecast of 450 (630). Noted, no finding, per the owner.
+
+next: tdd-apply (next delivery, RS4). W5 (ambiguity) is a follow-up, not routed. T4 is owed at close.
