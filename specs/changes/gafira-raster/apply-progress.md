@@ -282,7 +282,7 @@ Not RED, proved by mutants: the six transitions in the generic tests of `mod.rs`
 | Zoom: `in` and `out` ranges reversed; each scale wrong; pivot at the index centre or the origin; no `+ 0.5`; no `- 0.5`; scale multiplied instead of divided; nearest instead of bilinear; tap weights swapped; edge transparent (out-of-range tap) instead of clamp; straight (unpremultiplied) filtering; `from` and `to` weights swapped; default `out`; entropy | the zoom tests; the edge-transparent mutant also fails the generic tests (an out-of-range index panics) |
 | W6: `encode_f64` threshold, decode slope, encode offset | `the_f64_curves_agree_with_the_analytic_transform` |
 
-Equivalent survivor: the decode join `0.04045` moved to `0.04` (the curve is continuous there; the change is below the 1e-5 of the test). Ends: the guard copies at 0 and 1 for all six; Slide and Zoom depend on them (no mix reaches the exact end), and the tests fail if they are removed.
+Survivor below tolerance: the decode join `0.04045` moved to `0.04` (the curves differ by up to 4.8e-7, under the 1e-5 of the test, in an arm not in use). Ends: the guard copies at 0 and 1 for all six. Corrected in fix round 1: removing them is an equivalent mutant for all six, not only for Cut, Dissolve and Fade (at `p` 0 Slide has `d` = side, at 1 `d` = 0; Zoom has scale 1 and a tap of weight exactly 1; Wipe saturates), so the claim here that Slide and Zoom depend on them and that the tests fail without them was false. The branches stay because P15 step 8 asks that no conversion runs at the ends.
 
 ### Deviations and assumptions
 
@@ -292,4 +292,19 @@ Equivalent survivor: the decode join `0.04045` moved to `0.04` (the curve is con
 4. `proptest-regressions/` is untracked and not committed.
 
 Lines: `git diff --shortstat fadac62..HEAD -- crates/gafira-raster`.
+
+### Fix round 1 (RS3b verify round 1: C1, C2, W1, W2, W4, S2, S3)
+
+Commits: 30769fb (Wipe mask), 3b9e626 (tests), then this note. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone and checked before each commit. `gafira-raster` tests: 130 to 136.
+
+- C1 (RED first, no stub: the old code): the mask `clamp((p (1 + s) - u) / s, 0, 1)` is now `clamp(p + (p - u) / s, 0, 1)`, taking the quotient only while `|p - u| <= s`; beyond that the mask has saturated. No cancellation, and no division of a normal number by a subnormal. RED: `arq_118_wipe_tiny_softness_keeps_the_edge_pixel_at_p` (s = 1e-10, p 0.4375: pixel 3 was 0.43750003) and `arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness` (k=49, p=0.53125, w=16, x=8: 0.5 against 0.53125). The first is hand-worked on 8 columns (pixel 3 has `u = p`) for 16 softnesses from 1e-2 to 5e-324, in four directions and circular; the second uses exact `i128` arithmetic for every `s = 2^-k`, k up to 60, and shares no expression with the code.
+- W1: with the saturation test, no division by a subnormal reaches infinity. Observable output is the same as before away from `u == p`, so dropping the test is an equivalent mutant at the output; the code analysis above is the evidence, and the 5e-324 row of the hand table covers the result.
+- C2: `arq_118_slide_offset_is_computed_in_f64` (side 5 at 0.1 gives `d` 4; 10 at 0.05 gives 9; 10 at 0.55 gives 4; 7 at 0.3 gives 5; both axes). Not RED.
+- W2: `arq_111_every_configuration_is_deterministic` and the proptests `every_configuration_keeps_premultiplied_pixels_valid` and `every_configuration_gives_finite_output_for_finite_input` run Slide in four directions, Wipe in five directions at softness 0, 0.4, 1 and 1e-16, Zoom `in` and `out`, Cut, Dissolve and Fade through `run_cpu`. Not RED.
+- S3: the ends test carries `FV-06 (a)` in its comment.
+- Not touched: S1 (`samples` allocates a `Vec` per pixel; XP13 and O5 own the cost), the Slice card and `proptest-regressions/`.
+
+Mutants of this round (all killed unless noted): Wipe softness below 1e-9 treated as hard (I2), the old expression, flipped saturation, flipped gap, `p` dropped from the ramp, no clamp; Slide `d` in `f32` (I1); entropy in the soft ramp and in Zoom `out`; a soft Wipe pixel that breaks `c <= a`; a Zoom `f32` pixel divided into NaN. Equivalent: the saturation test dropped (the infinity is clamped) and `>=` for `>` at `|gap| == s`.
+
+Deviations: none new. P15 as amended (d67674b) binds near-end bounds only to Dissolve, Fade and Wipe with `s = 1`; this delivery adds none for Slide, Zoom, Cut or the other softnesses. Lines: `git diff --shortstat 608b196..HEAD -- crates/gafira-raster`.
 
