@@ -34,7 +34,7 @@ fn bench_dissolve_rgba8_1080p(c: &mut Criterion) {
     let (from, to) = (frame(1), frame(2));
     let mut dst = vec![0u8; from.len()];
     let t = Dissolve::new();
-    let cx = EffectCx { scale: 1.0 };
+    let cx = EffectCx::whole(1.0);
     let params = ParamValues::new();
     let mut group = c.benchmark_group("transitions");
     group.sample_size(10);

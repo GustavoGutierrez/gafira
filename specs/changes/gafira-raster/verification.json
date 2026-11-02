@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "change": "gafira-raster",
-  "delivery": "RS1, RS2, RS3a, RS3b, RS4",
+  "delivery": "RS1, RS2, RS3a, RS3b, RS4, RS5, RS6",
   "rounds": [
     {
       "delivery": "RS1",
@@ -1336,6 +1336,339 @@
       },
       "size": {
         "lines": 281,
+        "forecast": null
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS5, RS6",
+      "round": 1,
+      "commit": "d79f9ea70e9906f27c40c99d08dd6a20b8a5bb63",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "architect",
+      "classes": [
+        "architecture",
+        "implementation"
+      ],
+      "counts": {
+        "critical": 6,
+        "warning": 4,
+        "suggestion": 7
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:124",
+          "summary": "Palette closes at five clusters, fullest bins first: a noisy colour with 60 % of the image is left out by 5 small flat colours (ARQ-122, FD-26).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:123",
+          "summary": "Colours within dE2000 10 merge: two flat colours give one entry and five greys give two, against the ARQ-122 criteria.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:257",
+          "summary": "Intensity 0 runs effects at their defaults: a ParallelShadow step changes the image, against FD-34 (b).",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/texture.rs:243",
+          "summary": "Claridad reads the input, not the Nitidez result, against the FD-33 order: up to 63/255; tests pin the wrong order.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C5",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:90",
+          "summary": "A colour that overflows on conversion: mix_params returns Ok with inf; DetectedColors hides it. ARQ-110; also detected.rs:189.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "C6",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-110",
+          "summary": "New effects and filter lack the unknown-id table, roi and cost extremes and the finite property; 3 mutants survive. Behaviour holds in the probes.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:81",
+          "summary": "RgbaF32 hashes encode(c a), bytes hold encode(c) a: the same translucent image is up to 11 apart.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:16",
+          "summary": "Half-size bound fails on small sides that are not grid multiples: 38x30 worst 33. Area-weighted cells fix it; very small sizes need a spec bound.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:93",
+          "summary": "Local colour blend computes alpha in f64: alpha differs from the bit-exact f32 rule in 16.6 to 39 % of cases, RGB up to 5.5e-6.",
+          "follow_up": false,
+          "status": "open"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "architecture",
+          "ref": "crates/gafira-raster/src/view.rs:294",
+          "summary": "EffectCx has no image size or tile origin: the Vignette by tiles differs by 47/255 from the whole image (ARQ-120 tile rule).",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 23,
+        "killed": 20
+      },
+      "criteria": {
+        "total": 23,
+        "covered": 17
+      },
+      "size": {
+        "lines": 6100,
+        "forecast": 1340
+      },
+      "report": "verify-report.md"
+    },
+    {
+      "delivery": "RS5, RS6",
+      "round": 2,
+      "commit": "a4ac3ae25fda407e102b54f94aa80977aa36cbdb",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "PASS",
+      "next": "archive",
+      "classes": [],
+      "counts": {
+        "critical": 0,
+        "warning": 5,
+        "suggestion": 6
+      },
+      "findings": [
+        {
+          "id": "C1",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:172",
+          "summary": "Closed: noise +-16 to +-40 comes first at dE 0.19 to 1.28 with 6 000 pixels; entries sum to the image.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C2",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:138",
+          "summary": "Closed: up to five colours are one entry each, dE 0, area order, also at dE 2 to 5 and in RgbaF32.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C3",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:293",
+          "summary": "Closed: ParallelShadow at intensity 0 and -0.0 is an exact copy in both formats; bad preset and NaN scale stay Err.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C4",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/texture.rs:294",
+          "summary": "Closed: one run against Nitidez then Claridad, f32 gap 2.38e-7 (was 0.09); two mutants killed.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C5",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:134",
+          "summary": "Closed: mix_params and all 8 active detected slots give Err naming the parameter.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "C6",
+          "severity": "CRITICAL",
+          "class": "implementation",
+          "ref": "ARQ-110",
+          "summary": "Closed: G1, G2, G3 reapplied, each killed.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W1",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:100",
+          "summary": "Closed: translucent pictures across formats, median 0, worst 1 (was 11). Margin of the test accepted.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W2",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:18",
+          "summary": "Closed: at the bounds of 1b159f9, worst 7 on pictures; 38x30 worst 2 (was 33). Residue on noise in W6.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W3",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:109",
+          "summary": "Closed: 0 differences from gafira-anim in 2 000 000 cases with t inside (0, 1); M1, M2 killed. Ends in S8.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W4",
+          "severity": "WARNING",
+          "class": "architecture",
+          "ref": "crates/gafira-raster/src/view.rs:294",
+          "summary": "Closed: P16 built; tiles match the whole image with difference 0; control 67/255; window errors as ARQ-120.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "W5",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "crates/gafira-raster/src/palette.rs:172",
+          "summary": "No criterion above five colours: a dropped colour moves its host, a stray pixel merges five greys, six greys give one entry. Specifier states the rule.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W6",
+          "severity": "WARNING",
+          "class": "ambiguity",
+          "ref": "ARQ-122 at 1b159f9",
+          "summary": "Half-size bound says any image; random noise reaches 11 by 2x2, 17 by build_mips, 31 by nearest. Inherent to dHash. Exclude noise from the row.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W7",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/dhash.rs:333",
+          "summary": "New test gap: M3, f32 arm without area weights, survives; cross-format test is 36x32. Code right in probes.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W8",
+          "severity": "WARNING",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/palette.rs:17",
+          "summary": "New test gap: M4 MAX_CLUSTERS 6 and M5 CLUSTER_DELTA_E 25 survive.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "W9",
+          "severity": "WARNING",
+          "class": "claim",
+          "ref": "specs/changes/gafira-raster/apply-progress.md",
+          "summary": "Four closure mutants not reapplied: free disk fell below 20 GB from another build. Behaviour proved by probes; T4 covers them.",
+          "follow_up": true,
+          "status": "open"
+        },
+        {
+          "id": "S2",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:73",
+          "summary": "Closed: DEFAULT_INTENSITY 60.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S7",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:200",
+          "summary": "Closed: mix_params keeps unknown ids.",
+          "follow_up": false,
+          "status": "closed"
+        },
+        {
+          "id": "S8",
+          "severity": "SUGGESTION",
+          "class": "implementation",
+          "ref": "crates/gafira-raster/src/effects/filter.rs:109",
+          "summary": "New: t rounding to 1 in f32 is computed, while gafira-anim returns the end colour. Space or last bits differ.",
+          "follow_up": false,
+          "status": "open"
+        }
+      ],
+      "gates": {
+        "fmt": 0,
+        "clippy": 0,
+        "test": 0,
+        "deny": 0,
+        "ci_policy": 0
+      },
+      "mutation": null,
+      "hand_mutants": {
+        "run": 12,
+        "killed": 9
+      },
+      "criteria": {
+        "total": 23,
+        "covered": 23
+      },
+      "size": {
+        "lines": 1530,
         "forecast": null
       },
       "report": "verify-report.md"

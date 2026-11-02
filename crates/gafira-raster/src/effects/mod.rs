@@ -1,12 +1,31 @@
 //! Effects of one input (02 §4.4, ARQ-120, FD-35).
 
+mod auto_adjust;
 mod blur;
+mod color_adjust;
+mod detected;
+mod filter;
+mod light;
+mod pointwise;
 mod shadow;
+#[cfg(test)]
+mod testing;
+mod texture;
+mod white_balance;
 
 use gafira_doc::contract::{Describe, ParamSchema, ParamValues};
 use gafira_geom::IRect;
 
+pub use auto_adjust::{AutoAdjust, auto_adjust};
+pub use color_adjust::ColorAdjust;
+pub use detected::{DETECTED_SLOTS, DetectedColors};
+pub use filter::{
+    DEFAULT_INTENSITY, FilterError, FilterPreset, FilterStep, mix_params, test_preset,
+};
+pub use light::Light;
 pub use shadow::ParallelShadow;
+pub use texture::Texture;
+pub use white_balance::{TemperatureTint, WhiteBalance, eyedropper};
 
 use crate::transitions::UniformBlock;
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
@@ -34,7 +53,7 @@ pub trait Effect: Describe + Send + Sync {
     fn roi(&self, cx: &EffectCx, p: &ParamValues, out: IRect) -> IRect;
     /// Work for planning and budgets, without time. `p` is resolved and `cx.scale` finite (ARQ-110).
     fn cost_hint(&self, cx: &EffectCx, p: &ParamValues, px: u64) -> Cost;
-    /// Runs on a whole image.
+    /// Runs on `src`, a whole image or a tile described by `cx.tile`.
     ///
     /// # Errors
     ///

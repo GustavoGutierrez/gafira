@@ -396,6 +396,13 @@ Fecha: 2 de noviembre de 2026.
 - Amplía D-20; el resto de D-20 sigue vigente. La prioridad central de «Elemento» (D-23) no cambia.
 - Aplicado a 01 (P-04), 02 (§4.7, ARQ-130, ARQ-131, ARQ-132, §6.7, §12.2, §12.3) y 04 (FD-38).
 
+## D-46 Invertir como interruptor
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: Invertir de FD-33 es un interruptor (`invert`, apagado por defecto), no un slider. Su fórmula es `v' = 1 − v`.
+- Aplicado a 04 (FD-33).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

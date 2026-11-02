@@ -1,120 +1,122 @@
-# Verify report: gafira-raster, RS4, round 2
+# Verify report: gafira-raster, RS5 and RS6, round 2 (closure)
 
-- Commit: `6d1f1a6` (branch `feat/gafira-raster`), base `develop`. Fix commits: `d499754`, `cd16756`, `4a5f7f8`; notes `6d1f1a6`; spec amend `249789a`.
-- Closure round, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
-- This report replaces RS4 round 1, which stays in git at `271f7c6`.
-- Scope, set by the coordinator: C1, C2, C3, W1 to W5, S1, S3 of round 1, the text of ARQ-120 and FD-35 in `249789a`, and the four commits. S2 was not re-checked.
-- Decisions taken as given: below radius × scale of about 1e-21 the response is the identity, not a finding. `Rgba8` σ at small radii is measured in `RgbaF32`.
-- Probes ran on a scratch export of `6d1f1a6`, through the public API. Neither the export nor its target dir touched the worktree. The build folder is cleaned.
+- Commit: `a4ac3ae` (branch `feat/gafira-raster`), base `develop`. Depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding).
+- Scope: C1 to C6 and W1 to W4 of round 1, P16, ARQ-120 and ARQ-122 at `1b159f9`, D-46, commits `b3e7ae8` to `a4ac3ae`.
+- Severity follows the owner's bar: a CRITICAL must break an explicit criterion within its domain, with root cause and a concrete fix. New test gaps are follow-up warnings.
+- Probes and mutants ran on a scratch export through the public API (`rs56r2_probe.rs`, `rs56r2_mutants.py`, next to this report). The repo was not edited; `HEAD` is unchanged.
 
-**Verdict: PASS for RS4.** 0 CRITICAL, 2 WARNING (both follow-up), 2 SUGGESTION. All 10 scoped findings are closed.
-Per class: implementation 1 (1 WARNING), ambiguity 2 (1 WARNING, 1 SUGGESTION), architecture 0, claim 1 (1 SUGGESTION).
+**Verdict: PASS.** 0 CRITICAL, 5 WARNING (all follow-up), 6 SUGGESTION. All 10 findings of round 1 are closed.
+Per class: ambiguity 2 WARNING, implementation 2 WARNING, claim 1 WARNING. No class blocks.
 
-One result needs the owner's eye: W6. On translucent premultiplied `Rgba8` images with a tinted shadow, the half-size criterion reaches 1.5/255 on a few values. It is rated WARNING, not CRITICAL. The reasons are under W6, and the owner can overrule them.
+RS5 and RS6 were the last deliveries of the card. T4 is still owed at close (`mutation: archive`).
 
 ## Gates
 
-Each run alone, exit code read directly, `CARGO_TARGET_DIR` not passed, at `6d1f1a6`.
+Each run alone in the worktree, exit code read directly, `CARGO_TARGET_DIR` not passed.
 
 | Gate | Exit | Note |
 |---|---|---|
 | `cargo fmt --check` | 0 | |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
-| `cargo test --workspace --locked` | 0 | 1 491 passed, 0 failed, 0 ignored (round 1 had 1 484, plus the 7 new tests) |
+| `cargo test --workspace --locked` | 0 | 1 803 passed, 0 failed, 0 ignored |
 | `cargo deny check` | 0 | advisories, bans, licenses and sources ok |
-| CI policy (7 steps of the `policy` job besides Format, read from `ci.yml` with a YAML parser) | 0 | ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 |
-
-`git status` at the end: only `crates/gafira-raster/proptest-regressions/` untracked (known pending, deviation 9).
+| CI policy (7 steps of the `policy` job besides Format, read from `ci.yml` with a YAML parser) | 0 | ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14, each 0 |
 
 ## Artifact integrity
 
-- Slice card unchanged: `271f7c6..HEAD` adds 35 lines to `apply-progress.md` and removes none.
-- `249789a` touches only `specs/02-arquitectura-software.md` and `specs/04-funcionalidad-diseno-imagen-exportacion.md`, one row each, and precedes the fixes. It is the only commit since `07ba7d3` that touches `specs/` outside the change folder.
-- `6d1f1a6` touches only `apply-progress.md`. `d499754` touches only the two bench headers.
+- Slice card: `b64090c` and `75e360d` only. `ced4673..HEAD` removes no line of `apply-progress.md`; `a4ac3ae` only appends.
+- Spec commits `0c05f00` and `1b159f9` carry no code. No commit after `1b159f9` touches `specs/` except `apply-progress.md`.
+- `Cargo.lock`, `.cargo` and `crates/gafira-raster/Cargo.toml` are unchanged in the range.
+- `git status`: only `crates/gafira-raster/proptest-regressions/` untracked (S6).
 
-## Closure
+## Closure of round 1
 
-| Finding | Status | Evidence |
-|---|---|---|
-| C1 σ at small radius | **Closed** | Probe below: worst error 1.254 % over 3 scales and both axes |
-| C2 underflow | **Closed** | Blur `5e-324`, `1e-200`, `1e-170`, `1e-162`, `2e-162`, `3e-162`, and `1e-160` at scale `1e-30`: `Ok` in both formats, `RgbaF32` bit-equal to blur 0, `Rgba8` equal to blur 0 |
-| C3 composite overflow | **Closed** | Survivor M1 re-applied: killed by `arq_110_composite_overflow_is_err_and_dst_is_untouched` |
-| W1 sub-pixel offsets | **Closed** | `249789a`: whole pixels, half away from zero, no sub-pixel offset; the criterion names the 0.5, −0.5, −1.5 and scale 0.5 cases; odd offsets are out of the half-size bound. Code and test match |
-| W2 half-size domain | **Closed** as a spec gap | `249789a` names a smooth image, radius ≥ 16, over 3σ from the edge. Test rewritten. A new residue is in W6 |
-| W3 offset rounding | **Closed** | Survivor M2 re-applied: killed by `fd_35_offsets_round_half_away_from_zero` |
-| W4 opacity ties | **Closed** | Re-ran the round 1 probe: 0 of 51 456 mismatches (round 1 had 20) |
-| W5 test-first | **Closed** | RED table present in `apply-progress.md`, with honest entries for tests that were green at the start (C3, W3, W1 and W2). Replay below. Git cannot show the order, because `cd16756` holds tests and code together |
-| S1 cap 4800 | **Closed** | `MAX_HALF_WIDTH` is 4800; σ −1.343 % at 3 200. The comment cites the wrong ID: S4 |
-| S3 nightly claim | **Closed** | Both raster bench headers reworded; no `nightly` under `crates/gafira-raster` |
+| ID | Class | State | Evidence |
+|---|---|---|---|
+| C1 | implementation | **Closed** | Noise ±16 to ±40, 6 000 pixels with 5 flats of 800, 3 seeds each: first entry is the noisy colour at ΔE2000 0.19 to 1.28, 6 000 pixels. Gradient and natural image: entries sum to the whole image (10 000, 750 000). Test kill not reapplied: W9 |
+| C2 | implementation | **Closed** | Two colours at ΔE 2 to 5, five greys 100 to 148, five pastels, and (50,50,50) with (51,50,50): one entry each, ΔE 0.0000, area order, same count in `RgbaF32` |
+| C3 | implementation | **Closed** | `ParallelShadow` step at intensity 0 and -0.0: byte-identical in `Rgba8`, bit-identical in `RgbaF32`. Bad preset value and NaN scale stay `Err`. Copy removed: killed by `fd_34_b_intensity_zero_is_no_filter_*` |
+| C4 | implementation | **Closed** | One run against Nitidez then Claridad in `f32`, 4 images, 4 slider pairs, 3 scales: largest gap 2.38e-7 (was 0.09). `Rgba8` run against the `f32` run of the same pixels: within byte rounding plus 0.5/255. Input luma: killed by 3 tests. `roi` max: killed by `arq_120_texture_roi_grows_by_the_active_kernels` |
+| C5 | implementation | **Closed** | `mix_params` with `Srgb(1e30, ...)` and P3 `(1e30, 1e30, -1e30)` at 50, and at 1e-300: `Err` naming the parameter. `DetectedColors`, each of 8 slots, both colours, hue or saturation active: `Err` |
+| C6 | implementation | **Closed** | G1, G2, G3 reapplied, each killed (`arq_110_texture_roi_and_cost_hint_survive_the_extremes` twice, `arq_110_detected_unknown_ids_are_ignored`) |
+| W1 | implementation | **Closed** | 160x120 translucent, alpha 55 to 255, 120 seeds on each of 4 picture kinds: median 0, worst 1 (was 11). Near-flat noise: median 1, worst 5 |
+| W2 | implementation | **Closed** | At the bounds of `1b159f9`, smooth and 16-cell block pictures: worst 7 with 2x2 means, 4 with nearest or bilinear. 38x30, below the bound: 0 of 40 over 10, worst 2 (was 13 of 40, worst 33). Residue on noise: W6 |
+| W3 | implementation | **Closed** | Against `gafira_anim::Interpolate`, 2 000 000 cases in three spaces with alpha down to 0: 0 differences with `t` strictly inside `(0, 1)`. Ends: S8 |
+| W4 | architecture | **Closed** | 320x240, 5 slider sets, 3 scales, 5 tiles (corner, middle, far corner, strip, 1 px): difference 0 in `u8` and `f32`; without the window 67/255. Origin window equals `None` bit for bit. Exact fit is `Ok`; 1 px over, `u32::MAX` and size 0 give `SizeMismatch` `cx.tile` with `dst` intact. `Light`, `ParallelShadow`, `DetectedColors` ignore a bad window |
 
-**σ probe (C1, S1).** `RgbaF32`, second moment of an impulse.
+Also closed: S2 (`DEFAULT_INTENSITY`, 60) and S7 (`mix_params` keeps unknown ids). P16 matches the code: `TileWindow`, `EffectCx::whole`, `check_tile` before the empty return, sums in `u64`, the doc of `run_cpu`. D-46 holds: `invert` is `ParamKind::Bool { default: false }`, and `fd_33_f_invert_twice_*` covers it.
 
-| Radius × scale | Error |
+## Rulings on the deviations
+
+| Deviation | Ruling |
 |---|---|
-| About 40 grid points from 0.02 to 40, also 1.16, 1.19, 1.1999, 1.2001, each at scale 1, 0.5 and 2, along x and y | Worst 1.254 % |
-| 0.6, 1, 1.1999 (three-tap branch) | 0.000 % |
-| 1.2 (Gaussian branch) | −1.176 % |
-| 100, 400, 1 600 | −1.306 %, −1.334 %, −1.341 % |
-| 2 880, 3 000, 3 200 | −1.340 %, −1.341 %, −1.343 % |
+| Second merge at ΔE2000 15, cap of 32 clusters | **Accepted.** The radius is the FD-26 search radius. The cap was attacked with 20 to 200 small flats over a noisy mass, 750 runs: the noisy colour came first every time, nearest entry at most ΔE 12.2. The spec does not state what it does above five colours: W5 |
+| Idle slot in `DetectedColors` | **Accepted.** A slot with hue and saturation 0 is not converted, so no intermediate exists, and 1e30 is a finite, valid parameter. Output is the identity; the same slot active gives `Err` |
+| Intensity 0 copy order | **Accepted.** A `cx.tile` that does not fit gives `Ok` with a copy at 0 and `Err` at 50. FD-34 (b) says intensity 0 is no filter, byte for byte, and no effect runs. Preset, scale and buffers are still checked |
+| W1 test margin | **Accepted.** The filter drops only pictures where 8-bit rounding can flip a bit. Measured with no filter: worst 1 on real pictures and 5 on near-flat noise, and no pair stops being similar. The strict equality on the rest is the stronger test |
 
-Round 1 measured −7.26 % at 1, −89.6 % at 0.5 and −3.96 % at 3 200.
-
-**Other probes.**
-
-| Probe | Result |
-|---|---|
-| Tiles with `roi` at small radii: blur 0.25 to 2.4, scales 1, 0.5 and 2, 3 offset pairs, 3 tiles, both formats | Max diff 0 |
-| Constant opaque, centre pixel, blur 0.5, 1, 1.19, 2 | 255 and 1.0 |
-| Half-size, `RgbaF32`, tinted, translucent, blur 16 to 100, even offsets | At most 0.02/255 |
-| Half-size, `Rgba8`, alpha only or opaque image | At most 1.00/255 |
-| Half-size, `Rgba8`, translucent premultiplied, tinted shadow | Up to 1.5/255, see W6 |
-
-**Mutants.** No independent budget on a closure round. Only the two round 1 survivors were re-applied, and both die.
-
-| Mutant | Killed by |
-|---|---|
-| M1 `RgbaF32` composite written straight into `dst` | `arq_110_composite_overflow_is_err_and_dst_is_untouched` |
-| M2 offset `floor(v + 0.5)` | `fd_35_offsets_round_half_away_from_zero` |
-
-**RED replay (W5).** With the four fixes reverted on the export, exactly the five tests the record lists as RED fail: `arq_120_sigma_holds_for_small_radius_times_scale`, `arq_110_a_radius_whose_square_underflows_is_the_identity`, `arq_110_a_blur_too_small_to_square_is_the_same_as_blur_zero`, `arq_120_the_cap_covers_blur_100_at_zoom_32`, `fd_35_a_opacity_ties_round_up_exactly`.
-
-**Rulings.** The change to `arq_120_radius_zero_is_the_identity` (radius `1e-12` now within 1e-6) is accepted: ARQ-120 makes only radius 0 the identity, and radius 0 stays bit-exact. Size was left aside by the owner in round 1; the fix round is 239 insertions and 42 deletions under `crates`, which matches the record.
+The dHash bench at 25.8 ms against 100 ms is fine, as told.
 
 ## Findings
 
-### WARNING
+No CRITICAL.
 
-- **W6**, class: `ambiguity`, follow-up. ARQ-120, half-size criterion, `Rgba8`, as amended in `249789a`.
-  - *Measured:* on a 1024×900 image with neighbour steps ≤ 1/255 per channel, translucent and premultiplied, blur 16 or 32, shadow colour (0.8, 0.3, 0.1), offsets (4, −6) and (−6, 8), over 3σ plus the offset from the edge, 26 to 45 channel values, over about 190 000 pixels, exceed 1/255 on red or green. The worst is 1.5/255. This happens when the half is made on its own: a rounded 2×2 mean (worst 1.5, 26 values at blur 16) or the same function sampled at half size (1.5, 45 values at blur 16). When the large image is the half repeated 2×2, the worst is 0.50/255. Alpha never exceeds 1.00, and alpha-only or opaque images stay within 1.00.
-  - *Why not CRITICAL:* read literally, the bound is exceeded inside the named domain. But the same images reach at most 0.02/255 in `RgbaF32`, so the blur and scale logic are right. The excess is 8-bit rounding that adds up across the input, the shadow alpha, the premultiply and the composite. The criterion does not say how the half is made, in which format the bound applies, or whether it covers colour. On the one construction with no input rounding it holds.
-  - *Fix:* the specifier states the format or the construction, for example "in `RgbaF32`, or in `Rgba8` with a tolerance of 2/255 for translucent images". No code change is expected. This is the one item for the owner to overrule.
-- **W7**, class: `implementation`, follow-up. `shadow.rs`, `arq_120_a_half_size_image_at_half_scale_matches_after_rescaling`. New test gap: the test checks only alpha, with black shadow, in `Rgba8`. Its bump is steeper than the amended definition of smooth, so it is a harder case on alpha but does not exercise colour channels or `RgbaF32`. *Fix:* add a smooth tinted case in `RgbaF32` once W6 is settled.
+### WARNING (all follow-up)
+
+- **W5**, class: `ambiguity`, follow-up. ARQ-122, FD-26. `palette.rs:172`.
+  - *Measured:* with more than five colours, a dropped colour moves its host. Five flats and a noisy mass give (177,193,51), a blend of green (30,160,60) and yellow (240,220,40), neither in the image. Six far flats give (91,91,91) from grey and black. Five greys give five entries, but one stray green pixel turns them into (125,125,125) x 5000. Six greys 100 to 160 give one entry.
+  - *Root cause:* no criterion covers more than five colours. The join came from the fix proposed in round 1, so areas are real and colours are not always.
+  - *Fix:* `specifier` states the rule, for example that a dropped colour joins only within ΔE 15 and otherwise leaves the list, with areas no longer adding up. Not a criterion broken today.
+- **W6**, class: `ambiguity`, follow-up. ARQ-122 at `1b159f9`.
+  - *Measured:* the amended bound says any image. On random pixel noise: 2x2 means reach 11 at 131x101 (4 of 40) and 157x139 (2 of 40); `build_mips` reaches 13 to 17 from 128 px on; nearest reaches 31 and bilinear 22 at 640 px and up. A 40-cell block picture via `build_mips` reaches 13 at 157x139 (1 of 40).
+  - *Root cause:* in noise, neighbouring cells have nearly equal means, so bits follow the sampling. No dHash can meet this, and the code is not the cause.
+  - *Fix:* exclude noise and fine random texture from the row, as ARQ-120 does with "suave".
+- **W7**, class: `implementation`, follow-up. New test gap. `dhash.rs:333`.
+  - *Measured:* M3, the `f32` arm without area weights, passes all 354 tests. `arq_122_dhash_rgba_f32_matches_rgba8` uses 36x32, a multiple of the grid. The code is right: W1 ran at 160x120.
+  - *Fix:* run that test at a size that is not a multiple, for example 131x101.
+- **W8**, class: `implementation`, follow-up. New test gap. `palette.rs:17`, `:21`.
+  - *Measured:* M4 (`MAX_CLUSTERS` 6) and M5 (`CLUSTER_DELTA_E` 25) pass all 354 tests. The cap and the upper side of the radius are unpinned.
+  - *Fix:* add a test with more flats than the cap over a noisy mass, and one with two colours at ΔE 20 among more than five.
+- **W9**, class: `claim`, follow-up. Four closure mutants not reapplied.
+  - *Measured:* C5 check removed, C1 dropped bins not joined, W4 vignette ignores `x0`, W1 old `f32` order. The behaviour is proved by the probes above, and `apply-progress.md` records each as killed, so only the kill by the tests is unconfirmed.
+  - *Root cause:* free disk fell from 24G to 19G in `df -h` during the run, mainly from another `gafira-text` build on the machine. The hygiene rule stops builds below 20 GB, so the run was stopped.
+  - *Fix:* covered by the T4 run at close, or reapply them when disk allows.
 
 ### SUGGESTION
 
-- **S4**, class: `ambiguity`. `blur.rs:4` and the comment at `blur.rs:374` cite FD-07 for zoom 32. FD-07 is the Cuadrícula; zoom is FD-08 (5 to 3200 %). The error came from round 1's own S1 text. The value 4800 is right. *Fix:* change the two citations to FD-08.
-- **S5**, class: `claim`. Outside this scope, noted only: `crates/gafira-layout/benches/layout.rs:4` keeps the same nightly-job claim as S3.
+- **S8**, class: `implementation`. New. `filter.rs:109`. When `t` rounds to 1 in `f32`, from intensity about 99.999997, `gafira-anim` returns the end colour and `lerp_color` computes it, so the space or last bits can differ (279 210 of the probe's cases aimed there). *Fix:* return `to` when `t == 1.0` and `from` when `t == 0.0`.
+- **S1, S3, S4, S5**: unchanged from round 1, open as notes.
+- **S6**: `proptest-regressions/` is still untracked. Delete it before the merge. All its seeds pass at HEAD.
 
-S2 (round 1) was not re-checked and stays open as a suggestion.
+The `Rgba8` run of Nitidez then Claridad as two separate calls differs from one call by up to 152/255. That is the clip between two 8-bit calls, not the order; the one-call result is what FD-33 asks for, so it is not a finding.
+
+## Mutants
+
+Closure round, on a scratch export, baseline 354 passed in the `gafira-raster` lib.
+
+| # | Mutant | Result |
+|---|---|---|
+| M1 | W3 alpha as `a(1 - t) + b t` in `f32` | Killed, `fd_34_b_color_blend_is_the_interpolation_of_02_3_4_bit_for_bit` |
+| M2 | W3 divide by the unrounded `f64` alpha | Killed, same test |
+| M3 | dHash `f32` arm only, no area weights | **Survives, W7** |
+| M4 | Palette `MAX_CLUSTERS` 6 | **Survives, W8** |
+| M5 | Palette `CLUSTER_DELTA_E` 25 | **Survives, W8** |
+| M6 | Palette exact list, smallest area first | Killed, 7 tests |
+| G1, G2, G3 | Round 1 survivors | Killed |
+| C3, C4 (2) | Copy removed, input luma, `roi` max | Killed |
+
+12 run, 9 killed, 3 survivors, all new test gaps. 4 not run: W9.
 
 ## Criteria
 
-| Criterion | Evidence | State |
-|---|---|---|
-| ARQ-120 impulse σ ±2 % | Probe, `arq_120_sigma_holds_*`, `arq_120_the_cap_*`, `arq_120_impulse_*` | Covered |
-| ARQ-120 offsets round (scale 1 and 0.5) | `fd_35_offsets_round_half_away_from_zero` | Covered |
-| ARQ-120 half image, amended | `arq_120_a_half_size_*`, probe | Covered; residue in W6, W7 |
-| ARQ-120 tiles at scale 1, 0.5, 2 | `arq_120_a_tile_*`, probe at small radii | Covered, bit-exact |
-| ARQ-120 radius 0 identity | `arq_120_radius_zero_is_the_identity` | Covered |
-| FD-35 (a) | `fd_35_a_*`, probe | Covered |
-| FD-35 offset scales and rounds | `fd_35_offsets_*` | Covered |
-| ARQ-110 intermediate non-finite | `arq_110_a_blur_too_small_*`, `arq_110_a_radius_whose_square_*`, probe | Covered |
-| ARQ-110 write nothing on composite overflow | `arq_110_composite_overflow_*`, M1 | Covered |
+23 of 23 covered at HEAD, the six rows that failed in round 1 included. The dHash half row is covered within the domain W6 proposes. Product IDs left out, as the card says: FD-33 (b, c), FD-34 (c).
 
-The other criteria of round 1 were not re-opened. Every ID of the Slice card still has tests naming it.
+## Cleanup
+
+The export's build folder is cleaned. The export's source stays under `exp/` beside this report, because `rm -rf` is denied. Free disk at the end: 19G, in `df -h`, with the other build still running.
 
 ## Next
 
-RS4 is done except for T4 at close, which stays owed. RS5 and RS6 remain, so the change is not done. W6 and W7 are follow-ups and do not hold the merge.
+RS5 and RS6 pass and may merge. T4 is owed at close, and W5 to W9 go to the follow-up list.
 
-next: tdd-apply (next delivery, RS5)
+next: archive

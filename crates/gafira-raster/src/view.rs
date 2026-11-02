@@ -289,11 +289,34 @@ impl ImageBuf {
     }
 }
 
+/// Where `src` and `dst` sit in the full image, in the pixels of `src`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileWindow {
+    /// Full image width.
+    pub image_width: u32,
+    /// Full image height.
+    pub image_height: u32,
+    /// Column of the first pixel of `src` in the full image.
+    pub x: u32,
+    /// Row of the first pixel of `src` in the full image.
+    pub y: u32,
+}
+
 /// Context handed to an effect. Plain data: it does not validate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EffectCx {
     /// Logical-to-physical pixel ratio (ARQ-120).
     pub scale: f32,
+    /// Set when `src` is a cut of a larger image. `None`: `src` is the whole image.
+    pub tile: Option<TileWindow>,
+}
+
+impl EffectCx {
+    /// A whole-image run.
+    #[must_use]
+    pub fn whole(scale: f32) -> Self {
+        Self { scale, tile: None }
+    }
 }
 
 #[cfg(test)]
@@ -398,7 +421,7 @@ mod tests {
         let px = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0];
         let view = ImageView::new(1, 1, PixelData::RgbaF32(&px)).unwrap();
         assert_eq!((view.width(), view.height()), (1, 1));
-        let cx = EffectCx { scale: f32::NAN };
+        let cx = EffectCx::whole(f32::NAN);
         assert!(cx.scale.is_nan());
     }
 

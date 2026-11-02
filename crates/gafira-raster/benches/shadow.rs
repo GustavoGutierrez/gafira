@@ -32,7 +32,7 @@ fn bench_shadow_1080(c: &mut Criterion) {
     let src = frame();
     let mut dst = vec![0u8; src.len()];
     let shadow = ParallelShadow::new();
-    let cx = EffectCx { scale: 1.0 };
+    let cx = EffectCx::whole(1.0);
     let mut params = ParamValues::new();
     for (id, v) in [
         ("blur", 40.0),

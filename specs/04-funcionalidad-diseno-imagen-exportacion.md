@@ -351,14 +351,14 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 
 **FD-33 · Ajustes de imagen: Ajuste automático, Balance de blancos, Luz, Color y Textura** (RF-20)
 - *Propósito*: corregir y estilizar sin salir del editor.
-- *Comportamiento y reglas*: cada grupo es un efecto con sliders enlazados a campos numéricos (03 §8); doble clic en un slider lo restablece; Zona de edición se aplica a todos.
+- *Comportamiento y reglas*: cada grupo es un efecto con sliders enlazados a campos numéricos (03 §8), salvo Invertir, que es un interruptor; doble clic en un slider lo restablece; Zona de edición se aplica a todos.
 
 | Grupo | Parámetros | Rango | Reglas |
 |---|---|---|---|
 | **Ajuste automático** | Intensidad | 0–100 (por defecto 60) | Un clic calcula luz y color con histograma y balance de grises; los valores resultantes quedan en los sliders de Luz y Color y pueden afinarse |
 | **Balance de blancos** | Temperatura, Matiz | −100–100 | Operan en luz lineal; cuentagotas sobre un gris neutro calcula ambos |
 | **Luz** | Brillo, Contraste, Luces, Sombras, Blancos, Negros | −100–100 | Contraste con curva en S; Luces y Sombras recuperan detalle sin aplanar |
-| **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
+| **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; Invertir es un interruptor (`invert`, apagado por defecto; D-46); resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
 | **Textura** | Nitidez, Claridad, Viñeta | 0–100 (viñeta −100–100) | Nitidez con máscara de bordes; la viñeta es centrada y ajustable |
 
 **Fórmulas de FD-33** (PROPUESTA; pendientes de aprobación visual del titular, Q-34). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
@@ -376,7 +376,7 @@ Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codifica
 | Tono | Matriz `hue-rotate` de W3C *Filter Effects* sobre `c` |
 | Saturación | Matriz `saturate` de W3C *Filter Effects* con `s = 1 + k` |
 | Vitalidad | La misma matriz con `s = 1 + k × (1 − (max − min))`, con `max` y `min` de `R`, `G`, `B` |
-| Invertir | `v' = 1 − v` |
+| Invertir | `v' = 1 − v` (fijada por D-46) |
 | Color detectado | Peso `1 − w(τ/2, τ, ΔE)`, con `ΔE` el ΔE2000 frente a la muestra y `τ` la tolerancia; el peso modula Tono y Saturación |
 | Nitidez | `c + 1,5 × k × e × (c − G)`, con `G` desenfoque de radio 2 px y `e = w(0,02; 0,1; |Y − Y_G|)` |
 | Claridad | Igual que Nitidez, con radio 40 px, peso 0,5 y solo sobre `Y`, sin máscara `e` |
@@ -391,7 +391,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *UI*: Inspector → Imagen; Barra contextual (Ajuste automático, Zona de edición).
 - *Técnica*: `Effect` + `GpuEffect` (WGSL) en `gafira-raster::effects` (02 §4.4); cálculo en f32 de luz lineal; golden CPU y comparación GPU↔CPU ≤ 2/255.
 - *Presupuesto*: vista previa de cualquier ajuste < 300 ms con 4000 px (CAL-04); el cambio de un slider mantiene la respuesta de interacción < 100 ms (CAL-05).
-- *Aceptación*: (a) cada slider en su valor por defecto es la identidad (diferencia 0); (b) el ajuste de GPU coincide con CPU en ≤ 2/255 en el 99,5 % de los píxeles; (c) los ajustes se pueden desactivar uno a uno (ojo) sin perder valores; (d) `Ajuste automático` es idempotente: se calcula sobre el original, así que aplicarlo dos veces da los mismos valores y no empeora el resultado más de 1/255; (e) valores analíticos de la tabla, ±1e-5: Brillo +100 lleva 0,25 a 0,5; Contraste deja `v = 0,5` en 0,5 con cualquier valor y con +100 lleva `v = 0,75` a 0,9; Blancos +100 lleva `v = 0,75` a 1; Saturación −100 da `R = G = B`; Temperatura +100 multiplica `R` por √2 y divide `B` por √2; (f) un píxel con alfa 0 sigue en 0 y el alfa no cambia con ningún ajuste; Nitidez y Claridad no cambian una imagen plana; Viñeta no cambia el centro; Invertir dos veces da la imagen original ≤ 1/255; (g) tras el cuentagotas sobre un gris dentro del rango, `R`, `G` y `B` de ese gris coinciden ≤ 1/255; (h) un parámetro no finito o fuera de rango da error y no escribe en destino.
+- *Aceptación*: (a) cada slider en su valor por defecto y el interruptor Invertir apagado son la identidad (diferencia 0); (b) el ajuste de GPU coincide con CPU en ≤ 2/255 en el 99,5 % de los píxeles; (c) los ajustes se pueden desactivar uno a uno (ojo) sin perder valores; (d) `Ajuste automático` es idempotente: se calcula sobre el original, así que aplicarlo dos veces da los mismos valores y no empeora el resultado más de 1/255; (e) valores analíticos de la tabla, ±1e-5: Brillo +100 lleva 0,25 a 0,5; Contraste deja `v = 0,5` en 0,5 con cualquier valor y con +100 lleva `v = 0,75` a 0,9; Blancos +100 lleva `v = 0,75` a 1; Saturación −100 da `R = G = B`; Temperatura +100 multiplica `R` por √2 y divide `B` por √2; (f) un píxel con alfa 0 sigue en 0 y el alfa no cambia con ningún ajuste; Nitidez y Claridad no cambian una imagen plana; Viñeta no cambia el centro; Invertir dos veces da la imagen original ≤ 1/255; (g) tras el cuentagotas sobre un gris dentro del rango, `R`, `G` y `B` de ese gris coinciden ≤ 1/255; (h) un parámetro no finito o fuera de rango da error y no escribe en destino.
 
 **FD-34 · Filtros** (RF-21)
 - *Propósito*: aplicar estilos listos con vista previa.

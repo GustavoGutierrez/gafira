@@ -120,7 +120,7 @@ mod tests {
         size: (u32, u32),
     ) -> Result<(), EffectError> {
         t.run_cpu(
-            &EffectCx { scale: 1.0 },
+            &EffectCx::whole(1.0),
             &ParamValues::new(),
             progress,
             ImageView::new(size.0, size.1, PixelData::Rgba8(from)).unwrap(),
@@ -138,7 +138,7 @@ mod tests {
         size: (u32, u32),
     ) -> Result<(), EffectError> {
         t.run_cpu(
-            &EffectCx { scale: 1.0 },
+            &EffectCx::whole(1.0),
             &ParamValues::new(),
             progress,
             ImageView::new(size.0, size.1, PixelData::RgbaF32(from)).unwrap(),
@@ -213,7 +213,7 @@ mod tests {
                 let big = frame_u8(6, 3);
                 let err = t
                     .run_cpu(
-                        &EffectCx { scale: 1.0 },
+                        &EffectCx::whole(1.0),
                         &ParamValues::new(),
                         bad,
                         ImageView::new(2, 2, PixelData::Rgba8(&fu)).unwrap(),
@@ -237,7 +237,7 @@ mod tests {
             let mut d8 = vec![SENTINEL_U8; 16];
             let mut dm = [SENTINEL_U8; 4];
             let mut df = sentinel_f32(16);
-            let ctx = EffectCx { scale: 1.0 };
+            let ctx = EffectCx::whole(1.0);
             let p = ParamValues::new();
             let id = t.descriptor().id;
             // from is Alpha8: unsupported, whatever the others are.
@@ -358,7 +358,7 @@ mod tests {
             let (a, b) = (frame_u8(4, 1), frame_u8(6, 2));
             let mut d = vec![SENTINEL_U8; 16];
             let mut d6 = vec![SENTINEL_U8; 24];
-            let ctx = EffectCx { scale: 1.0 };
+            let ctx = EffectCx::whole(1.0);
             let p = ParamValues::new();
             for progress in [0.0f32, 0.3, 1.0] {
                 let err = t
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn arq_118_height_alone_differs_and_format_is_checked_before_size() {
         for t in all() {
-            let ctx = EffectCx { scale: 1.0 };
+            let ctx = EffectCx::whole(1.0);
             let p = ParamValues::new();
             let (a, b) = (frame_u8(4, 1), frame_u8(3, 2));
             let mut d = vec![SENTINEL_U8; 16];
@@ -529,7 +529,7 @@ mod tests {
             }
             let err = t
                 .run_cpu(
-                    &EffectCx { scale: 1.0 },
+                    &EffectCx::whole(1.0),
                     &ParamValues::new(),
                     0.3,
                     ImageView::new(0, 3, PixelData::Rgba8(&[])).unwrap(),
@@ -551,7 +551,7 @@ mod tests {
             let run = |p: &ParamValues| {
                 let mut d = vec![0u8; 16];
                 t.run_cpu(
-                    &EffectCx { scale: 1.0 },
+                    &EffectCx::whole(1.0),
                     p,
                     0.3,
                     ImageView::new(2, 2, PixelData::Rgba8(&f)).unwrap(),
@@ -651,7 +651,7 @@ mod tests {
         let (f, g) = (from.to_vec(), to.to_vec());
         let mut d = vec![SENTINEL_U8; 4];
         t.run_cpu(
-            &EffectCx { scale: 1.0 },
+            &EffectCx::whole(1.0),
             p,
             progress,
             ImageView::new(1, 1, PixelData::Rgba8(&f)).unwrap(),
@@ -672,7 +672,7 @@ mod tests {
         let (f, g) = (from.to_vec(), to.to_vec());
         let mut d = vec![f32::from_bits(SENTINEL_F32); 4];
         t.run_cpu(
-            &EffectCx { scale: 1.0 },
+            &EffectCx::whole(1.0),
             p,
             progress,
             ImageView::new(1, 1, PixelData::RgbaF32(&f)).unwrap(),
@@ -867,7 +867,7 @@ mod tests {
                 let mut d = vec![SENTINEL_U8; 4];
                 let err = t
                     .run_cpu(
-                        &EffectCx { scale: 1.0 },
+                        &EffectCx::whole(1.0),
                         &p,
                         progress,
                         ImageView::new(1, 1, PixelData::Rgba8(&f)).unwrap(),
@@ -1002,7 +1002,7 @@ mod tests {
                     let mut d = vec![SENTINEL_U8; 16];
                     let err = run_cx(
                         t.as_ref(),
-                        &EffectCx { scale: bad },
+                        &EffectCx::whole(bad),
                         progress,
                         (&f, &g, &mut d),
                         (2, 2),
@@ -1015,7 +1015,7 @@ mod tests {
                 let mut d = vec![SENTINEL_U8; 16];
                 let err = t
                     .run_cpu(
-                        &EffectCx { scale: bad },
+                        &EffectCx::whole(bad),
                         &ParamValues::new(),
                         f32::NAN,
                         ImageView::new(2, 2, PixelData::Rgba8(&f)).unwrap(),
@@ -1031,7 +1031,7 @@ mod tests {
                 assert!(
                     run_cx(
                         t.as_ref(),
-                        &EffectCx { scale: ok },
+                        &EffectCx::whole(ok),
                         0.3,
                         (&f, &g, &mut d),
                         (2, 2)
@@ -1060,7 +1060,7 @@ mod tests {
                 let (f, g) = (frame_f32(1, 1.0), frame_f32(1, 2.0));
                 let mut d = sentinel_f32(4);
                 let r = t.run_cpu(
-                    &EffectCx { scale: 1.0 },
+                    &EffectCx::whole(1.0),
                     &p,
                     progress,
                     ImageView::new(1, 1, PixelData::RgbaF32(&f)).unwrap(),
@@ -1096,7 +1096,7 @@ mod tests {
             let mut d = sentinel_f32(4);
             let err = t
                 .run_cpu(
-                    &EffectCx { scale: 1.0 },
+                    &EffectCx::whole(1.0),
                     &colour(Color::Srgb(Rgba::new(1.0e30, 0.0, 0.0, 1.0))),
                     progress,
                     ImageView::new(1, 1, PixelData::RgbaF32(&f)).unwrap(),
@@ -1120,7 +1120,7 @@ mod tests {
     fn p15_order_of_the_checks_with_two_faults_at_once() {
         let f = Fade::new();
         let bad_colour = colour(Color::Srgb(Rgba::new(f32::NAN, 0.0, 0.0, 1.0)));
-        let ctx = EffectCx { scale: 1.0 };
+        let ctx = EffectCx::whole(1.0);
         let (a, b6) = (frame_u8(4, 1), frame_u8(6, 2));
         let (rf4, rf6) = (frame_f32(4, 1.0), frame_f32(6, 2.0));
         let mut d = vec![SENTINEL_U8; 16];
@@ -1266,7 +1266,7 @@ mod tests {
             let mut d = vec![SENTINEL_U8; 4];
             let err = t
                 .run_cpu(
-                    &EffectCx { scale: 1.0 },
+                    &EffectCx::whole(1.0),
                     &colour(c),
                     progress,
                     ImageView::new(1, 1, PixelData::Rgba8(&f)).unwrap(),
@@ -1343,7 +1343,7 @@ mod tests {
     ) -> Vec<u8> {
         let mut d = vec![SENTINEL_U8; from.len()];
         c.0.run_cpu(
-            &EffectCx { scale: 1.0 },
+            &EffectCx::whole(1.0),
             &c.1,
             progress,
             ImageView::new(size.0, size.1, PixelData::Rgba8(from)).unwrap(),
@@ -1363,7 +1363,7 @@ mod tests {
     ) -> Result<Vec<f32>, EffectError> {
         let mut d = sentinel_f32(from.len());
         c.0.run_cpu(
-            &EffectCx { scale: 1.0 },
+            &EffectCx::whole(1.0),
             &c.1,
             progress,
             ImageView::new(size.0, size.1, PixelData::RgbaF32(from)).unwrap(),

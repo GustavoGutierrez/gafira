@@ -151,7 +151,7 @@ mod tests {
         let mut dst = vec![SENTINEL_U8; from.len()];
         Slide::new()
             .run_cpu(
-                &EffectCx { scale: 1.0 },
+                &EffectCx::whole(1.0),
                 &dir(d),
                 progress,
                 ImageView::new(size.0, size.1, PixelData::Rgba8(from)).unwrap(),
@@ -201,7 +201,7 @@ mod tests {
             let mut d = vec![SENTINEL_U8; 16];
             let err = Slide::new()
                 .run_cpu(
-                    &EffectCx { scale: 1.0 },
+                    &EffectCx::whole(1.0),
                     &dir("diagonal"),
                     progress,
                     ImageView::new(2, 2, PixelData::Rgba8(&f)).unwrap(),
@@ -340,7 +340,7 @@ mod tests {
         let mut d = vec![f32::from_bits(SENTINEL_F32); 24];
         Slide::new()
             .run_cpu(
-                &EffectCx { scale: 1.0 },
+                &EffectCx::whole(1.0),
                 &dir("left"),
                 0.5,
                 ImageView::new(3, 2, PixelData::RgbaF32(&f)).unwrap(),
