@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod blend;
+mod dhash;
 pub mod effects;
 mod error;
 mod mip;
@@ -15,6 +16,7 @@ pub mod transitions;
 mod view;
 
 pub use blend::{blend_f32, blend_u8};
+pub use dhash::{SIMILAR_DISTANCE, dhash, hamming_distance, is_similar};
 pub use error::{BufferError, EffectError};
 pub use mip::{build_mips, mip_level_count, mip_size};
 pub use palette::{PALETTE_SIZE, PaletteEntry, dominant_colors};
