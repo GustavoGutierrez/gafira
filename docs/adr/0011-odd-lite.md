@@ -69,7 +69,7 @@ On acceptance these ADRs change only their status and index entry, as ADR 0004 d
 | ADR | Stays | Amended |
 |---|---|---|
 | 0001 | modes, packs, tiers, depths, gates, `verification.json`, retry caps, coordinator limits | decision record item 3: T4 "in every mode" now excepts L0 and L1 work with no critical code. Section 6: artifacts may live outside a folder. Coordinator write authority extends to `.odd/state.json`. Verdict list gains BLOCKED |
-| 0002 | Flow line, mutation toggle, cargo-mutants speed, floors, verify defaults | section 3: on covered work the Slice card fields go in the outcome entry. Section 6: an outcome with no folder has nothing to move. The Flow line gains an optional `level` and `flow: legacy` |
+| 0002 | Flow line, mutation toggle, cargo-mutants speed, floors, verify defaults | section 3: on covered work the Slice card fields go in the outcome entry. Section 6: an outcome with no folder has nothing to move. The Flow line gains an optional `level`; it also gained `flow: legacy`, retired at acceptance |
 | 0003 | all of it; branches and integration use the outcome id as `<change>` | nothing |
 | 0004 | all of it | where `apply-progress.md` is named, a folderless delivery records the same items in the body of its last implementer commit. A BLOCKED verify is not a round |
 
@@ -97,8 +97,8 @@ Record at acceptance (owner confirmation 2026-11-01):
 |---|---|
 | D3 closed PASS | `verify` FAIL, FAIL, PASS; round 3 at `2377174`, merged in `b36a8d4`. Rule gaps on record: W1 to W3 under "Phase D: requirements", resolved by `chore/odd-lite-phase-d` (`26e3071`) |
 | One outcome with no folder | `testkit-golden`: entry `c56954f`, `verify` round 3 PASS at `faefea6`, merged in `fa6778e`, T4 on `gafira-testkit` run (its non-critical survivors are follow-up 38 in `specs/README.md`), closed `e1de0b8`. No commit ever held a `specs/changes/testkit-golden/` folder |
-| Session resumed from `.odd/state.json` | Partially shown, not fully proven. `testkit-golden` started in another session from the `next_action` of the `odd-lite` entry in `.odd/state.json` and no artifact was duplicated, but no new session resumed a delivery midway. The owner accepted this ADR on 2026-11-01 knowing this; the first real mid-delivery resume should confirm it |
-| FAIL counts and rounds | D3 and `testkit-golden` each took two FAILs and three rounds. That matches D2 (FAIL, FAIL, PASS) and is worse than D1 (FAIL, PASS) by one FAIL and one round. The owner accepted on that basis |
+| Session resumed from `.odd/state.json` | Partially shown, not fully proven. `testkit-golden` started in another session from the `next_action` of the `odd-lite` entry in `.odd/state.json` and no artifact was duplicated, but no new session resumed a delivery midway. The owner confirmed on 2026-11-01 after being told this criterion was unchecked; this partial result was reported to the owner after that confirmation. The first real mid-delivery resume should confirm it |
+| FAIL counts and rounds | D3 and `testkit-golden` each took two FAILs and three rounds. That matches D2 (FAIL, FAIL, PASS) and is worse than D1 (FAIL, PASS) by one FAIL and one round. A report to the owner had wrongly said not worse than D1; this comparison was reported to the owner after the confirmation |
 
 ### Phase D: requirements
 
