@@ -1,7 +1,6 @@
 //! Mip levels (ARQ-121).
 
-use gafira_color::{AnalyticTransform, ColorSpaceId, ColorTransform, PixelLayout};
-
+use crate::transfer::Transfer;
 use crate::{
     BufferError, ImageBuf, ImageView, PixelBuf, PixelData, premultiply_u8, unpremultiply_u8,
 };
@@ -20,37 +19,6 @@ pub fn mip_level_count(width: u32, height: u32) -> u32 {
 #[must_use]
 pub fn mip_size(width: u32, height: u32) -> (u32, u32) {
     ((width / 2).max(1), (height / 2).max(1))
-}
-
-/// sRGB to linear light and back, through the layer-0 transform.
-struct Transfer {
-    decode: [f64; 256],
-    to_srgb: AnalyticTransform,
-}
-
-impl Transfer {
-    fn new() -> Self {
-        let to_linear = AnalyticTransform::new(ColorSpaceId::Srgb, ColorSpaceId::LinearSrgb);
-        let mut decode = [0.0; 256];
-        for (v, slot) in (0u8..=255).zip(&mut decode) {
-            let c = f32::from(v) / 255.0;
-            let mut px = [c, c, c, 1.0];
-            // A four-channel buffer is always whole, so this cannot fail.
-            let _ = to_linear.apply_f32(&mut px, PixelLayout::Rgba);
-            *slot = f64::from(px[0]);
-        }
-        Self {
-            decode,
-            to_srgb: AnalyticTransform::new(ColorSpaceId::LinearSrgb, ColorSpaceId::Srgb),
-        }
-    }
-
-    fn encode(&self, linear: [f64; 3]) -> [u8; 3] {
-        let mut px = [linear[0] as f32, linear[1] as f32, linear[2] as f32, 1.0];
-        let _ = self.to_srgb.apply_f32(&mut px, PixelLayout::Rgba);
-        let q = |v: f32| (f64::from(v).clamp(0.0, 1.0) * 255.0 + 0.5).floor() as u8;
-        [q(px[0]), q(px[1]), q(px[2])]
-    }
 }
 
 /// Sums of the original pixels one level covers, four values per pixel.

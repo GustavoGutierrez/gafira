@@ -1,23 +1,23 @@
-# Verify report: gafira-raster, RS2, round 2
+# Verify report: gafira-raster, RS3a, round 2
 
-- Commit: `068f17b` (branch `feat/gafira-raster`). Fix commits: `07dd1e2` and `1781250`. Closure round: gates, artifact integrity and the earlier findings only.
-- Depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
-- This report replaces RS2 round 1, which stays in git at `0b563fe`, with its probe tables and the W1 measurements. RS1 round 2 stays at `e5e1d0e`. All rounds are also in `verification.json`.
+- Commit: `6ccebeb` (branch `feat/gafira-raster`). Fix commits: `219ffb7`, `9d54263`, `2f0480f`; P15 amended by `architect` in `1d5cc3f`.
+- Closure round, depth V2, mode full, tier T4 at close, `mutation: archive`, so no `mutants` report (not a finding). T4 is still owed at close.
+- This report replaces RS3a round 1, which stays in git at `107f9d9`. RS2 round 2 stays at `1909734`, RS2 round 1 at `0b563fe`, RS1 round 2 at `e5e1d0e`. All rounds are also in `verification.json`.
 
-**Verdict: PASS for RS2.** 0 CRITICAL, 3 WARNING (all follow-ups), 4 SUGGESTION. RS3 to RS6 remain.
-Per class: implementation 2 (2 WARNING), ambiguity 1 (1 WARNING), architecture 0, claim 0. No class routes this round; all three are follow-ups.
+**Verdict: PASS for RS3a; RS3b and later deliveries remain.** 0 CRITICAL, 1 WARNING (follow-up), 5 SUGGESTION.
+Per class: implementation 1 (1 WARNING, follow-up), ambiguity 0, architecture 0, claim 0.
 
-C1 to C4 and W2 to W5 are closed. W1 stays open as an owner question. The fix round left one test gap, W6: no test holds the 8-bit case of both pixels transparent.
+All 8 findings of round 1 are closed. Every reapplied mutant dies. One new test gap, as a follow-up.
 
 ## Gates
 
-Each exit code was read alone, on a clean clone of `068f17b`, with no `proptest-regressions` folder.
+Each exit code was read alone, on a clean clone of `6ccebeb`, with no `proptest-regressions` folder.
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` (1 381 passed, 0 failed, 0 ignored; 63 in `gafira-raster`) | 0 |
+| `cargo test --workspace --locked` (1 422 passed, 0 failed, 0 ignored; 104 in the `gafira-raster` library) | 0 |
 | `cargo deny check` | 0 |
 | policy: ARQ-07 CLI | 0 |
 | policy: forbid unsafe | 0 |
@@ -27,117 +27,76 @@ Each exit code was read alone, on a clean clone of `068f17b`, with no `proptest-
 | policy: V13 EditToken | 0 |
 | policy: V14 property tests | 0 |
 
-The 12 seeds in the untracked `proptest-regressions/` (11 in `blend.txt`, 1 in `pixel.txt`) also pass on the unmutated code, on a scratch copy. The CI test job's Windows and macOS targets were not run here.
-
-Disk: 26 GB free at the start. It fell to 17 GB after the gate build, with other work on the same disk, so the gate target was freed at once. It then read 20G, and the mutant run, already under way and building one crate, went on. Free space was 36 GB at the end. No gate result depends on this.
+The 15 seeds in the untracked `proptest-regressions/` also pass on the unmutated code, on a scratch copy. The CI test job's Windows and macOS targets were not run here. Disk: 36 GB free at the start, 32 GB at the lowest reading, 36 GB after `cargo clean` of all five build folders.
 
 ## Artifact integrity (step 3c)
 
-- `b64090c` (slice card) and `75e360d` (slice card amend) are as checked in round 1.
-- `07dd1e2` touches only `blend.rs`. `1781250` touches only `blend.rs` and `error.rs`. `068f17b` only adds 15 lines to `apply-progress.md`. No implementer commit changed the card.
-- The ARQ-119 amendment is `125d2ab`, merged through `9dc2ed1` and `c1d8504`. No implementer commit touched `specs/02-arquitectura-software.md`.
-- No `.cargo/mutants.toml` change.
-- As in round 1, step 3c binds the fast lane and this flow is `full`. It was applied because the card is the acceptance source.
+- `dc6fced..6ccebeb`: `apply-progress.md` changes at lines 72, 159, 169 and 190 (`02:1308` becomes `02 §7.3`, S5) and gains the fix-round sections. The Slice card, lines 1 to 8, is untouched.
+- `specs/02-arquitectura-software.md`, `.cargo/`, `Cargo.lock` and `deny.toml`: no change. `specs/changes/layer-2/design.md`: only `1d5cc3f`, the allowed `architect` amendment, which comes before the fix commits.
+- No exclusion was added to `.cargo/mutants.toml`.
 
-## Closure of earlier findings
+## Closure
 
-Mutants were reapplied one at a time on a scratch clone, with the same patterns as round 1 where they exist. No independent-mutant budget was spent: W3, W2 and B are closure checks.
+| Finding | Status | Evidence |
+|---|---|---|
+| C1 | closed | `fade.rs:127`, `:145`: the conversion for the format in use is checked before any write. Probe, public API: 11 colours (huge finite, mixed sign, alpha 0, all three spaces) at 7 `progress` values, with extreme pixels. 308 `f32` cases: 168 `Err` naming `color` with `dst` untouched, 140 `Ok` and finite. 77 byte cases: never a bad write. At 0, 1 and clipped values the copy stays `Ok` |
+| C2 | closed | I1, I2, I3 killed, see below. `scale` before `progress` is in the `cx.scale` test |
+| C3 | closed | I4, I4b killed through the public API. The false equivalent claim is withdrawn in the record |
+| W1 | closed | `benches/transitions.rs` builds and runs: 159.85 to 159.91 ms per frame here (5 prior runs of round 1: 154 to 156). XP13 and O5 carry the cost for the owner |
+| W2 | closed | I5, I5b killed |
+| W3 | closed | `mix.rs:114`: `Encoded` works in `f64`. In-crate probe, 584 647 mixes of 17 extreme values (`±MAX`, subnormals, tiny and negative alphas) at 7 weights: all finite. The property covers all three spaces |
+| W4 | closed | Amended P15 steps 1 to 8. See the ruling below |
+| W5 | closed | Replay on exports of the stated stubs: `54d8e7b` gives 3 failing, `effect_error_displays_for_the_log` included; `09847aa` with `Dissolve::handles` `None` fails `dissolve_has_the_identity_and_schema_of_the_table`. The height-alone and ARQ-111 entries are corrected. Lines 177 and 200 keep the old wording, and line 244 supersedes them |
 
-| Finding | Status | Mutant | Implementer's 63 tests |
-|---|---|---|---|
-| C1 identity difference 0 | **Closed** | M1 | Killed by `arq_119_transparent_backdrop_gives_source` |
-| C2 source cap | **Closed** | M2a, M2b | Both killed by `arq_119_source_colour_is_capped_to_its_alpha` |
-| C3 alpha result check | **Closed** | M3 | Killed by `arq_110_overflowing_alpha_is_err` |
-| C4 ColorBurn guard | **Closed** | Guard dropped | Killed by `arq_110_color_burn_with_negative_zero_source`; claim (b) is withdrawn in `apply-progress.md` |
-| W2 transparent source against clip | **Closed** | Early return removed, `f32` and 8 bits | Killed by `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit` |
-| | | Early return before the finite check | Killed by `arq_119_transparent_source_still_checks_for_non_finite` and `arq_110_non_finite_input_is_err_for_every_mode` |
-| W3 mixing result clamped | **Closed** | Clamp removed | Killed by `arq_119_mixing_result_is_clamped` |
-| W4 property only at corners | **Closed** | None | New interior draws reach [-2, 2] and tiny values. Their [0, 1] assertion has an edge: W7 |
-| W5 no test names FD-12 | **Closed** | None | `git grep FD-12` finds three comments in `blend.rs` |
+Also closed: S1 (the comment says why), S5 (no `02:1308` left under `crates/`). S4 is settled and was not reopened. For the record, a test pins the code at `mod.rs:234`: `from` `Alpha8` is `UnsupportedFormat` whatever the others are; a mix under a supported `from` is `FormatMismatch`.
 
-S2 is also closed: the `index` doc in `error.rs` now names the channel.
+## Mutants reapplied
 
-Closure probes on the amended text, separate from the implementer's tests, for all 16 modes: any source colour with `a = 0` or `-0.0` keeps the backdrop bits, with backdrop `(1,5; 0,5; 0,2; 1)`, `-0.0`, `f32::MAX` and negative alpha. NaN and both infinities in that source or backdrop give `Err`. All pass.
+No independent budget spent. Each on a scratch export, `gafira-raster` library tests, 1 of 104 failing.
 
-The round 1 probes were re-run to catch regressions from the clamp and the early return. The reference tables (32 000 `f32` and 32 000 8-bit triples) and the rest pass, with one expected exception below.
+| # | Mutant | Killed by |
+|---|---|---|
+| I1 | `progress` after `resolve` | `p15_order_of_the_checks_with_two_faults_at_once` |
+| I2 | `resolve` after dimensions | same |
+| I3 | Pixels before dimensions | same |
+| I4 | Fade threshold 0.4999 | `arq_118_fade_boundary_is_exactly_one_half` |
+| I4b | Fade threshold 0.5001 | same |
+| I5 | `colour_f32` alpha clamp to 2 | `arq_118_fade_colour_alpha_is_clipped_in_f32` |
+| I5b | `colour_f32` no lower clip | same |
 
-## Ruling: both pixels transparent returns the backdrop
+## Rulings
 
-**Accepted. The code is right; the deviation is derivable.**
+- **ARQ-31: clean.** No `static`, `OnceLock`, `lazy_static!` or `inventory::` in the crate, tests included; the only `static` matches are `'static` lifetimes. One note: ARQ-31 bans mutable global state for registries, so the old read-only table was probably within the rule. The commit body reads it more strictly than the row does. The result is still fine.
+- **Second sRGB curve in `Transfer`: accepted while dormant, with W6.** It is not a defect. `gafira-color`'s `math::encode` and `decode` are `pub(crate)`, `AnalyticTransform` is `f32` only, and that is what overflowed in W3, so sharing needs a new layer-0 API, out of this delivery. No spec row forbids the copy. The same constants and the same sign rule; a sweep of about 65 000 values in `[-8, 8]` matches `AnalyticTransform` exactly after the cast to `f32`. Only the `Encoded` arm calls it, and `MIX_SPACE` does not select that arm. If O5 goes to (b), this becomes production code and the curve should come from `gafira-color`.
+- **`Transfer::new()` per `run_cpu`: accepted.** Measured in `--release`, 5 runs of 20 000: 10.4 µs, 0.13 % of the 8 ms share and under 0.01 % of today's 160 ms frame. It is also spent on `RgbaF32`, which does not use it under (a); the waste is too small to matter. This holds for whole-frame calls, which is the contract. A caller that splits a frame into many calls would have to look again.
+- **W4's `Err` field: correct.** `Buffer(NonFinite { field: "cx.scale", index: 0 })` matches P15 to the letter for all three transitions, NaN and both infinities, before every other check, with `dst` untouched. It reaches `error.raster.non_finite` with `field` `cx.scale` and `index` 0. A finite `scale` of any sign or size is no error, as P15 says.
 
-- The text does not state a precedence. The criteria say both "fuente con alfa 0 [...] deja el fondo igual" and "fondo con alfa 0 da la fuente".
-- On valid premultiplied input they do not conflict: `a = 0` means colour 0 (ARQ-117), so both give zero. Only ghost colour, or the sign of a zero, tells them apart.
-- With ghost colour the source rule must win. It says "sea cual sea su color", so the result may not depend on the source colour, and returning the source would make it depend on exactly that. It is also the rule in the requirement column, stated "en todo modo" and "bit a bit". W3C agrees: zero alpha means the colour does not contribute.
-- The cost is that a ghost backdrop stays ghost: `blend_u8(m, [9,7,5,0], [0,0,0,0])` gives `[9,7,5,0]`, not transparent black. That is what "bit a bit" asks for, and the input was already invalid. It narrows round 1's "`a = 0` as transparent black", and the `blend_f32` doc says so.
-- Evidence: 16 modes, `f32` and 8 bits, ghost colour on both sides, signed zeros: the backdrop every time (probe r3). In `f32` the rule is pinned: B1 and B2 are killed. In 8 bits it is not: W6.
-- Round 1's probe `p4_identities_u8_exhaustive` now fails on exactly this case, 16 modes by one input. Its expectation was written before the amendment; it is stale, not a regression. Its other cases pass.
-
-## CRITICAL
-
-None.
-
-## WARNING
-
-### W1. No stated colour space for blending in Preview
-
-- class: `ambiguity`, `follow-up`
-- ref: ARQ-119, 02 §6.2, RS1 `Rgba8` rule, W3C section 10.2
-- Open, unchanged, owner question: `blend_u8` blends encoded bytes and `blend_f32` linear values, with grey gaps up to 232/255. Measurements are in the round 1 report (`0b563fe`). It does not block RS2. It must be ruled before `gafira-render-cpu` uses these functions.
-
-### W6. The 8-bit case of both pixels transparent has no test
-
-- class: `implementation`, `follow-up`
-- ref: `crates/gafira-raster/src/blend.rs:201`, ARQ-119
-- B3 (8 bits, both transparent falls through to transparent black) and B4 (gives the source) pass all 63 tests; probe r3 kills them. The 8-bit transparent-source tests use backdrop alpha 100, and the property uses valid pixels only.
-- The code is right today. It only shows with ghost colour in an 8-bit backdrop. New test gap after round 1, so not FAIL.
-- Fix: add a backdrop with `a = 0` and ghost colour to the 8-bit cases of `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit`.
-
-### W7. Two properties assert [0, 1], which the amended rule makes false at source alpha 0
-
-- class: `implementation`, `follow-up`
-- ref: `crates/gafira-raster/src/blend.rs:1001`, `:1015`
-- `arq_110_finite_input_gives_finite_output` and `arq_110_interior_input_gives_output_in_unit_range` expect output in [0, 1] for non-`Normal` modes. Their draws can include a source alpha of exactly 0 with an out-of-range backdrop, and then the right answer is outside that range: `blend_f32(Multiply, [2,0,0,1], [0;4])` gives `[2,0,0,1]`.
-- Not seen in practice: the interior property passed 20 million cases, and 256 run per test. The odds are too low to measure from that, so this is a possible rare false failure, not an observed one.
-- Fix: `prop_assume!` a non-zero source alpha, or exclude it from the [0, 1] assertion.
-
-## SUGGESTION
-
-- S1. As in round 1: a per-pixel call has no destination, so "`Err` antes de escribir en destino" moves to the loop in `gafira-render-cpu`, which should check the whole buffer first.
-- S3. `crates/gafira-raster/proptest-regressions/` is still untracked, now with 11 seeds in `blend.txt`, and `.gitignore` does not cover it. Verify may not delete it. Remove it and leave it out of the merge.
-- S4. Add the ruling to ARQ-119 in one clause, for example "con los dos en alfa 0, gana la fuente: queda el fondo". This is a clarification of a derivable reading, not a gap that blocks.
-- S5. A source with negative alpha is not "alfa 0", so a non-`Normal` mode still clips: Multiply with alpha -0,5 over `(1,5; 0,5; 0,2; 1)` gives `(1,0; 0,5; 0,2; 1)`, and so does a source of alpha 1e-45. Both follow the amended text, but W2's effect remains for an out-of-range source. Worth a thought when `gafira-render-cpu` defines its inputs.
+C1 note: `Srgb(1e30, ..)` is `Err` on `RgbaF32` and `Ok` with clamped bytes on `Rgba8`, because only the conversion in use is built, and sRGB to sRGB computes nothing. No non-finite value exists on the byte path, so 02 §4.17 "Rangos" leaves the finite result unspecified. No finding.
 
 ## Criteria
 
-16 criteria: **16 covered, 0 weak, 0 failing, 0 missing.** The amendment adds the `Err` criterion.
+16 of 16 covered. The four open in round 1 (Fade boundary, ARQ-110 computed non-finite, ARQ-110 `cx.scale`, P15 order) now have tests, proved above. P15 now has 8 steps. Left out on purpose: Slide, Zoom, Wipe (`RS3b`); GPU variants; `TransitionRegistry`; `extension-demo`.
 
-| Criterion | State | Proof |
-|---|---|---|
-| 16 modes per W3C | Covered | Tables, spot values |
-| Premultiplied source-over | Covered | Tables, identities |
-| Clip before non-`Normal`, not `Normal`, except source `a = 0` | Covered | `arq_119_clip_applies_only_before_other_modes`, `arq_119_source_colour_is_capped_to_its_alpha`, bit-for-bit test |
-| At least 256 triples, `f32` <= 1e-5 | Covered | `arq_119_every_mode_matches_the_reference_in_f32` |
-| 8 bits <= 1/255 | Covered | `arq_119_every_mode_matches_the_reference_in_8_bits` |
-| Source `a = 0` leaves the backdrop bit for bit, `(1,5; 0,5; 0,2; 1)`, `-0.0` | Covered | `arq_119_transparent_source_leaves_the_backdrop_bit_for_bit` |
-| NaN in that source or backdrop gives `Err` | Covered | `arq_119_transparent_source_still_checks_for_non_finite` |
-| Backdrop `a = 0` gives source | Covered | `arq_119_transparent_backdrop_gives_source` |
-| `Normal` at alpha 1 gives source | Covered | `arq_119_normal_opaque_source_is_the_source` |
-| Identities, difference 0 | Covered | Bit comparisons in the tests above |
-| ARQ-110 inputs | Covered | `arq_110_non_finite_input_is_err_for_every_mode` |
-| ARQ-110 result | Covered | `arq_110_overflowing_normal_result_is_err`, `arq_110_overflowing_alpha_is_err`, `arq_110_color_burn_with_negative_zero_source` |
-| ARQ-110 property | Covered (W7) | `arq_110_finite_input_gives_finite_output`, `arq_110_interior_input_gives_output_in_unit_range` |
-| ARQ-111 | Covered | `arq_111_blend_is_deterministic` |
-| ADR 0012 | Covered | No new `BufferError` variant |
-| FD-12 (c, CPU) | Covered | Named on the ARQ-119 table tests |
+## Findings
 
-Left out on purpose: "`gafira-render-cpu` las usa, no las redefine", since that crate does not exist yet, and the GPU half of FD-12 (c), which is not in this delivery.
+### CRITICAL
 
-Product IDs: ARQ-119 and FD-12 (c, CPU), both named by tests. ARQ-110 and ARQ-111 tests are extended here.
+None.
+
+### WARNING
+
+- **W6. No test ties the second sRGB curve to `gafira-color`.** class: implementation, `follow-up`. `crates/gafira-raster/src/transfer.rs:46`, `:57`. The curves match today, but a change on either side would pass. New test gap: a row comparing `encode_f64` and `decode_f64` against `AnalyticTransform` over a sweep is enough.
+
+### SUGGESTION
+
+- S2. Still open: the Slice card's Deliveries line and IDs say `RS3`. It is the coordinator's card.
+- S3. Still open: `proptest-regressions/` is untracked, now with 15 seeds.
+- S6. `transfer.rs:1` says the curve goes "through the layer-0 transform"; `encode_f64` and `decode_f64` do not.
+- S7. `benches/transitions.rs:3` says the nightly job reads the figure. ARQ-40 specifies that job, but it does not exist yet, and neither does `perf-budgets.toml`. Say "will be". Also, the XP13 row in `design.md` still says `RS3a` owes the bench; it does not now.
+- S8. `6ccebeb` is a `docs` commit about the change folder and also edits a test comment in `error.rs`. Harmless, but it belongs with the S5 fix.
 
 ## Size
 
-226 lines added in `crates/gafira-raster/` this round, for about 1 068 in the delivery, against a forecast of 340 (475). Most are tests. Noted, not a finding.
+2 498 lines added in `crates/gafira-raster` against `baf5e59`, 594 of them in this fix round, against a forecast of 420 (590). Noted, no finding.
 
-Open from RS1, unchanged: W4 (ambiguity, `build_mips` memory) and W5 (implementation, pixel property), both follow-ups.
-
-next: tdd-apply (RS3)
+next: tdd-apply (RS3b; W6 is a follow-up, no routing)

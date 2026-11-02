@@ -366,15 +366,18 @@ Split: `RS3` becomes `RS3a` (contract, shared mix, Cut, Dissolve, Fade) and `RS3
 
 **Order inside `run_cpu`,** in one shared guard, before any write (ARQ-110):
 
-1. `progress` is finite.
-2. `self.params().resolve(p)`.
-3. Formats (item 6).
-4. Dimensions.
-5. `RgbaF32` pixels of `from` and `to` are finite.
-6. Size 0 gives `Ok`.
-7. `p` is clipped. `p == 0` copies `from` and `p == 1` copies `to`.
+1. `cx.scale` is finite.
+2. `progress` is finite.
+3. `self.params().resolve(p)`.
+4. Formats (item 6).
+5. Dimensions.
+6. `RgbaF32` pixels of `from` and `to` are finite.
+7. Size 0 gives `Ok`.
+8. `p` is clipped. `p == 0` copies `from` and `p == 1` copies `to`.
 
-Step 7 is what keeps ARQ-118 and ARQ-25 byte-exact for all six, Zoom included, because no sampling or colour conversion runs at the ends. The maths of each transition still has to reach the same limits, so a test at `p` near 0 and near 1 stays within 1/255 of the end.
+Step 1 holds even though no transition reads `scale`: ARQ-110 checks every number, also those that do not take part in the calculation. A non-finite `scale` gives `Buffer(BufferError::NonFinite { field: "cx.scale", index: 0 })`. `Transition::run_cpu` and `Effect::run_cpu` check it the same way, as the first step, so `RS4` inherits the rule. Only non-finite values are rejected: no row gives `scale` a range (02 §4.17.1, "Rangos").
+
+Step 8 is what keeps ARQ-118 and ARQ-25 byte-exact for all six, Zoom included, because no sampling or colour conversion runs at the ends. The maths of each transition still has to reach the same limits, so a test at `p` near 0 and near 1 stays within 1/255 of the end.
 
 #### Item 1, schemas (proposal)
 
@@ -469,7 +472,7 @@ pub enum EffectError {
 
 - `Buffer` and `Param` have `From`, and `to_message` delegates (02 §7 error rules, ADR 0012).
 - `field` is `to` or `dst`; `from` is the reference.
-- A non-finite `progress` is `Buffer(BufferError::NonFinite { field: "progress", index: 0 })`, and a pixel the same with `field` `from` or `to`. A new variant would need the key `error.raster.non_finite`, which `BufferError` already holds with other arguments.
+- A non-finite `progress` is `Buffer(BufferError::NonFinite { field: "progress", index: 0 })`, `cx.scale` the same with its own field, and a pixel the same with `field` `from` or `to`. A new variant would need the key `error.raster.non_finite`, which `BufferError` already holds with other arguments.
 - New keys: `error.raster.size_mismatch`, `error.raster.format_mismatch`, `error.raster.unsupported_format`. Formats go in `Text`, sizes in `Count`.
 
 #### Item 8, the mixing space
@@ -488,6 +491,19 @@ pub enum EffectError {
 - `RS3a` and `RS3b` can proceed before O5, on (a). Exact ends, ids, schemas, errors and geometry hold under every answer. Only test rows at mid `p` on the affected format depend on it, so they sit in one table beside the constant.
 - (a) is provisional because it follows what 02 and 05 state: the same graph in both modes to avoid divergence (02 §6.2), a linear working space (FV-19), linear `Color` interpolation (02 §3.4), and linear mips (ARQ-121).
 - `Transfer` in `mip.rs` moves to a `pub(crate)` module for this. `blend_u8` does not change in `RS3`.
+- **Cost of (a), measured (XP13):** 154 to 156 ms per 1080p `Rgba8` Dissolve in `--release`, on a scratch export, 5 runs at `p` 0.37 (`RS3a` verify round 1). That is about 74 ns per pixel, and about 19 times the 8 ms share of 02 §6.2. `f32` frames and the ends are not affected.
+
+What would bring it down. Every figure in this table is an estimate, not a measurement, and assumes the same machine:
+
+| Step | Estimate at 1080p, 1 thread | Note |
+|---|---|---|
+| Today | 154 to 156 ms (measured) | `weighted_u8_in` unpremultiplies, then `Transfer::encode` runs `AnalyticTransform` for 3 channels per pixel |
+| Encode lookup table | 40 to 70 ms | Replaces the per-pixel transform, which should be the largest cost. It needs a test against `encode` over a dense input sweep, within 1/255: sRGB is steep near 0, so a uniform table needs enough entries there |
+| Table plus opaque fast path | 20 to 40 ms | With `a = 255` there is no unpremultiply and no alpha division. Mid-`p` mixes of opaque video are the common case |
+| The same on 4 threads | 5 to 12 ms | By rows, with ARQ-111 byte identity across pools. `gafira-raster` declares no `rayon` today, so this is a `Cargo.toml` change in that crate |
+| The same at quarter-area viewport size | 5 to 10 ms, 1 thread | 02 §6.2 runs Preview effects at viewport resolution, so 1080p is the worst case, not the usual one |
+
+No single step reaches 8 ms by this estimate; the table, the fast path and either threads or viewport size together should. The work stays inside `weighted_u8_in` and `Transfer`, so it is a later fix and changes no contract. `RS3a` keeps the XP13 bench, so these estimates can be replaced by numbers.
 
 #### Item 9, rounding
 
@@ -532,13 +548,13 @@ Open, no `RS` delivery waits for it:
 
 | # | Question | Options and tradeoffs | Recommendation |
 |---|---|---|---|
-| O5 | W1 of RS2: in which colour space do blending and transitions run? Today `blend_u8` uses encoded bytes and `blend_f32` linear values, with grey gaps up to 232/255. A black-to-white Dissolve at 0.5 gives 128 encoded and 188 linear. It must be ruled before `gafira-render-cpu` uses these functions | (a) Linear light in both: Preview matches Export (02 §6.2), but blend modes look unlike tools that blend encoded values, and CPU Preview pays a decode and encode per pixel. (b) Encoded sRGB in both: familiar blend modes, but it contradicts the linear working space. (c) Each format as stored: no cost, but Preview and Export visibly differ | (a) |
+| O5 | W1 of RS2: in which colour space do blending and transitions run? Today `blend_u8` uses encoded bytes and `blend_f32` linear values, with grey gaps up to 232/255. A black-to-white Dissolve at 0.5 gives 128 encoded and 188 linear. It must be ruled before `gafira-render-cpu` uses these functions | (a) Linear light in both: Preview matches Export (02 §6.2), but blend modes look unlike tools that blend encoded values, and CPU Preview pays a decode and encode per pixel: 154 to 156 ms per 1080p `Rgba8` Dissolve today, with an estimated 5 to 12 ms after tables, a fast path and threads (P15 item 8). (b) Encoded sRGB in both: familiar blend modes, but it contradicts the linear working space. (c) Each format as stored: no cost, but Preview and Export visibly differ | (a) |
 
 XP5 reached ARQ-132 only in-sample. If `SG3` cannot reach the gate, D-20 is the owner's decision, and that becomes a new question then.
 
 ## Needs explorer
 
-XP1 to XP10 are resolved; XP11, XP12 and XP13 are open, and XP11 comes from those results. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
+XP1 to XP10 are resolved; XP11 and XP12 are open, and XP11 comes from those results. XP13 is measured. XP5, XP7, XP8 and XP9 ran on one prototype: i7-12700H under load, not D-03 hardware. `E1` to `E5` are the older spikes.
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
@@ -554,7 +570,7 @@ XP1 to XP10 are resolved; XP11, XP12 and XP13 are open, and XP11 comes from thos
 | XP10 | Resolved, confirmed: the P9 step is exact. `StyleProperty::Locale` is the only parley API that needs the word (P7) | Passes clean, fails with `icu_plurals`, works under gawk and mawk | Nothing |
 | XP11 | Hash adjacency can meet ARQ-43 without `std::collections::HashMap`, which `clippy.toml` bans in domain crates, and it stays deterministic (ARQ-111). The prototype's table type is not recorded here | Re-time the longest stretch between token checks with an allowed table: own open addressing, or sorted pairs | `SG2` |
 | XP12 | `gafira-text` can meet FD-41 (g) without a direct `skrifa`, and adding `skrifa` as in P14 adds no package to `Cargo.lock` | Fixture with two partial fonts on one cluster and a tie through `layout_box`; a throwaway branch with the P14 entry, then `cargo tree -p gafira-text`, `cargo deny` and the V5 and ARQ-107 steps | Start of `TX2` |
-| XP13 | With O5 (a), a CPU `Rgba8` Dissolve at 1080p fits the 8 ms render share of 02 §6.2. `Transfer::encode` runs `AnalyticTransform` per pixel, and a table may be needed | Time `weighted` on 2 Mpx in a bench of `RS3a` | Nothing; informs O5 |
+| XP13 | Measured, the claim fails: with O5 (a), a CPU `Rgba8` Dissolve at 1080p takes 154 to 156 ms, about 19 times the 8 ms share of 02 §6.2. Remedies and estimates in P15 item 8 | `RS3a` verify round 1: 5 runs, `--release`, `p` 0.37, scratch export. `RS3a` still owes the bench | Nothing; informs O5 |
 
 ## Needs specifier
 

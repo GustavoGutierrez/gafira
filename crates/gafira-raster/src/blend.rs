@@ -837,6 +837,9 @@ mod tests {
                     assert_eq!(bits(got), bits(b), "{mode:?} {b:?} {s:?}");
                 }
             }
+            // 8 bits, both pixels transparent: the source rule wins, ghost colour and all.
+            assert_eq!(blend_u8(mode, [200, 9, 7, 0], [1, 2, 3, 0]), [200, 9, 7, 0]);
+            assert_eq!(blend_u8(mode, [200, 9, 7, 0], [0, 0, 0, 0]), [200, 9, 7, 0]);
             // 8 bits: a backdrop channel above its alpha is returned as it is, too.
             assert_eq!(
                 blend_u8(mode, [200, 9, 7, 100], [1, 2, 3, 0]),
@@ -998,7 +1001,10 @@ mod tests {
                         prop_assert!(is_result);
                     }
                 }
-                if mode != BlendMode::Normal {
+                if s[3] == 0.0 {
+                    // The backdrop comes back as it is, in or out of [0, 1].
+                    prop_assert_eq!(bits(blend_f32(mode, b, s).unwrap()), bits(b));
+                } else if mode != BlendMode::Normal {
                     let out = blend_f32(mode, b, s).unwrap();
                     prop_assert!(out.iter().all(|v| (0.0..=1.0).contains(v)));
                 }
@@ -1012,6 +1018,8 @@ mod tests {
                 s in prop::array::uniform4(prop_oneof![-2.0f32..2.0, -1e-30f32..1e-30, 0.0f32..1.0]),
                 mode in 1usize..16,
             ) {
+                // A source with a = 0 returns the backdrop, which may be out of range.
+                prop_assume!(s[3] != 0.0);
                 let out = blend_f32(BlendMode::ALL[mode], b, s).unwrap();
                 prop_assert!(out.iter().all(|v| (0.0..=1.0).contains(v)), "{b:?} {s:?} {out:?}");
             }
