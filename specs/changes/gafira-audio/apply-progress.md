@@ -122,3 +122,34 @@ The 12 round-0 mutants (list 1 to 12) were re-applied on this code and all stay 
 - A refused block does not read parameters, so it cannot change the last valid value.
 - The `Op` double in `tests/chain.rs` has an empty schema.
 - Size of this round: `git diff --shortstat e1afac9..ca5bfbb`: 22 files, 1 036 insertions, 104 deletions, mostly tests. The AU1 total stays over the ~700 line signal.
+
+### AU1 fix round 3 (verify round 2: C5, W9; amended ARQ-123 and ARQ-124, ac411a3)
+
+Commit: the `fix(audio)` commit of this round. Gates for it: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, each exit code 0.
+
+- Code: `Setup::accepts` also requires `frames() > 0` (`crates/gafira-audio/src/dsp.rs`). Gain, Fade and Pan share it, so no other change was needed. `Fade` already read `duration` on each processed block, so the amended rule (last valid value counts at the latch, later ones only become the last valid) held; W9 needed a test only.
+- Tests: `crates/gafira-audio/tests/empty.rs`.
+
+RED evidence (before the production change):
+
+| Criterion | Test and assertion |
+|---|---|
+| ARQ-123 empty block, valid prepare | `arq_123_an_empty_block_after_a_valid_prepare_leaves_the_next_block_untouched`: next block not x 1.0 |
+| ARQ-123 empty block, prepare with a zero, then valid prepare | `arq_123_an_empty_block_after_a_prepare_with_a_zero_leaves_a_later_prepare_untouched`: same assertion |
+| ARQ-124 gain first block | `arq_124_an_empty_block_is_not_the_first_block_of_a_gain`: `[0.9979, 0.9958, ...] != [0; 8]` (empty then volume 0 ramped) |
+| ARQ-124 fade latch | `arq_124_an_empty_block_does_not_latch_the_fade_length`: `out[0]` 1.0, want 0.0 |
+| ARQ-124 1/960 (empty block mid-ramp) | `arq_124_a_duration_in_an_empty_block_mid_ramp_is_not_read`: step error above 1e-6 |
+| W9, 1/240 and 1/1920 | `arq_124_a_duration_in_a_processed_block_mid_ramp_becomes_the_last_valid_one` and `arq_124_the_block_after_reset_sets_the_length_with_its_own_duration` passed already (behaviour held); pinned by mutants 5 and 6 |
+
+Hand mutants (killed, then reverted; none committed):
+
+| Mutation | Killed by |
+|---|---|
+| 1 `frames() == 0` refusal removed | all five RED tests above |
+| 2 empty block consumes the first value (Gain) | `arq_124_an_empty_block_is_not_the_first_block_of_a_gain` |
+| 3 empty block latches the fade length | `arq_124_an_empty_block_does_not_latch_the_fade_length`, `arq_123_an_empty_block_after_a_valid_prepare_leaves_the_next_block_untouched` |
+| 4 refused non-empty (oversized) block latches the length | `arq_123_an_unprocessed_block_leaves_no_trace_in_the_state` (existing) |
+| 5 duration read only at the latch | `arq_124_a_duration_in_a_processed_block_mid_ramp_becomes_the_last_valid_one` |
+| 6 later processed duration not stored as last valid | same test |
+
+Deviations: none. Size: see `git diff --shortstat` of the round (test file about 175 lines, 4 lines of code); well under 300.
