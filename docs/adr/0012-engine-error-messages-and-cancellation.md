@@ -1,6 +1,6 @@
 # 0012. Engine errors share one key rule and one cancelled value
 
-- Status: proposed
+- Status: accepted (owner confirmation 2026-11-01)
 - Date: 2026-11-01
 - Related: ARQ-102, ARQ-110, ARQ-112, 02 §7.3, 02 §14.2, ADR 0005, changes `engine-contracts`, `layer-2`
 
