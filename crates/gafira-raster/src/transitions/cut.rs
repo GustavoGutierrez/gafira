@@ -61,7 +61,7 @@ impl Transition for Cut {
             Plan::CopyFrom => copy(&mut dst, &from),
             Plan::CopyTo => copy(&mut dst, &to),
             // `from` below one half, `to` from one half.
-            Plan::Mix { p } => copy(&mut dst, if p < 0.5 { &from } else { &to }),
+            Plan::Mix { p, .. } => copy(&mut dst, if p < 0.5 { &from } else { &to }),
         }
         Ok(())
     }

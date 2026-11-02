@@ -14,8 +14,8 @@ pub(crate) enum Plan {
     CopyFrom,
     /// `progress` is 1: copy `to`.
     CopyTo,
-    /// Mix with `p` strictly between 0 and 1.
-    Mix { p: f64 },
+    /// Mix with `p` strictly between 0 and 1 and the resolved parameters.
+    Mix { p: f64, values: ParamValues },
 }
 
 /// Runs the checks of P15 in order, then decides what to do. Nothing is written here.
@@ -36,7 +36,7 @@ pub(crate) fn plan(
         .into());
     }
     // 2. The parameters fit the schema.
-    schema.resolve(values)?;
+    let resolved = schema.resolve(values)?;
     // 3. Formats: Rgba8 or RgbaF32, the same on all three.
     let format = from.data().format();
     if format == PixelFormat::Alpha8 {
@@ -84,7 +84,10 @@ pub(crate) fn plan(
     } else if p == 1.0 {
         Plan::CopyTo
     } else {
-        Plan::Mix { p }
+        Plan::Mix {
+            p,
+            values: resolved,
+        }
     })
 }
 
@@ -93,6 +96,43 @@ pub(crate) fn copy(dst: &mut ImageViewMut<'_>, src: &ImageView<'_>) {
     match (dst.data_mut(), src.data()) {
         (PixelDataMut::Rgba8(d), PixelData::Rgba8(s)) => d.copy_from_slice(s),
         (PixelDataMut::RgbaF32(d), PixelData::RgbaF32(s)) => d.copy_from_slice(s),
+        _ => {}
+    }
+}
+
+/// Writes `f(i, from[i], to[i])` for every pixel, in the format of the buffers.
+pub(crate) fn map_pixels(
+    from: &ImageView<'_>,
+    to: &ImageView<'_>,
+    dst: &mut ImageViewMut<'_>,
+    f_u8: impl Fn(usize, [u8; 4], [u8; 4]) -> [u8; 4],
+    f_f32: impl Fn(usize, [f32; 4], [f32; 4]) -> [f32; 4],
+) {
+    match (from.data(), to.data(), dst.data_mut()) {
+        (PixelData::Rgba8(a), PixelData::Rgba8(b), PixelDataMut::Rgba8(d)) => {
+            for (i, ((a, b), d)) in a
+                .chunks_exact(4)
+                .zip(b.chunks_exact(4))
+                .zip(d.chunks_exact_mut(4))
+                .enumerate()
+            {
+                d.copy_from_slice(&f_u8(i, [a[0], a[1], a[2], a[3]], [b[0], b[1], b[2], b[3]]));
+            }
+        }
+        (PixelData::RgbaF32(a), PixelData::RgbaF32(b), PixelDataMut::RgbaF32(d)) => {
+            for (i, ((a, b), d)) in a
+                .chunks_exact(4)
+                .zip(b.chunks_exact(4))
+                .zip(d.chunks_exact_mut(4))
+                .enumerate()
+            {
+                d.copy_from_slice(&f_f32(
+                    i,
+                    [a[0], a[1], a[2], a[3]],
+                    [b[0], b[1], b[2], b[3]],
+                ));
+            }
+        }
         _ => {}
     }
 }

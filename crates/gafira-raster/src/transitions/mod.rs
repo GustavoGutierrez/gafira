@@ -1,11 +1,16 @@
 //! Transitions between two frames (02 §4.13, ARQ-118).
 
 mod cut;
+mod dissolve;
+mod fade;
 mod guard;
+mod mix;
 
 use gafira_doc::contract::{AudioCrossfade, Describe, ParamSchema, ParamValues};
 
 pub use cut::Cut;
+pub use dissolve::Dissolve;
+pub use fade::Fade;
 
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
 
@@ -76,7 +81,11 @@ mod tests {
 
     /// Every transition of this delivery.
     pub(crate) fn all() -> Vec<Box<dyn Transition>> {
-        vec![Box::new(Cut::new())]
+        vec![
+            Box::new(Cut::new()),
+            Box::new(Dissolve::new()),
+            Box::new(Fade::new()),
+        ]
     }
 
     pub(crate) fn frame_u8(n: usize, seed: u8) -> Vec<u8> {
@@ -613,6 +622,339 @@ mod tests {
             let mut df = sentinel_f32(8);
             run_f32(&t, p, &ff, &tf, &mut df, (2, 1)).unwrap();
             assert_eq!(bits(&df), bits(if is_to { &tf } else { &ff }), "f32 p={p}");
+        }
+    }
+
+    // ---- Dissolve and Fade -------------------------------------------------------------
+
+    use gafira_color::{Color, DisplayP3Rgba, LinearRgba, Rgba};
+    use gafira_doc::contract::{ParamError, ParamKind};
+
+    use super::mix::{MIX_SPACE, MixSpace};
+
+    fn run_with(
+        t: &dyn Transition,
+        p: &ParamValues,
+        progress: f32,
+        from: [u8; 4],
+        to: [u8; 4],
+    ) -> [u8; 4] {
+        let (f, g) = (from.to_vec(), to.to_vec());
+        let mut d = vec![SENTINEL_U8; 4];
+        t.run_cpu(
+            &EffectCx { scale: 1.0 },
+            p,
+            progress,
+            ImageView::new(1, 1, PixelData::Rgba8(&f)).unwrap(),
+            ImageView::new(1, 1, PixelData::Rgba8(&g)).unwrap(),
+            ImageViewMut::new(1, 1, PixelDataMut::Rgba8(&mut d)).unwrap(),
+        )
+        .unwrap();
+        [d[0], d[1], d[2], d[3]]
+    }
+
+    fn run_with_f32(
+        t: &dyn Transition,
+        p: &ParamValues,
+        progress: f32,
+        from: [f32; 4],
+        to: [f32; 4],
+    ) -> [f32; 4] {
+        let (f, g) = (from.to_vec(), to.to_vec());
+        let mut d = vec![f32::from_bits(SENTINEL_F32); 4];
+        t.run_cpu(
+            &EffectCx { scale: 1.0 },
+            p,
+            progress,
+            ImageView::new(1, 1, PixelData::RgbaF32(&f)).unwrap(),
+            ImageView::new(1, 1, PixelData::RgbaF32(&g)).unwrap(),
+            ImageViewMut::new(1, 1, PixelDataMut::RgbaF32(&mut d)).unwrap(),
+        )
+        .unwrap();
+        [d[0], d[1], d[2], d[3]]
+    }
+
+    fn near(a: f32, b: f32, tol: f32) -> bool {
+        (a - b).abs() <= tol
+    }
+
+    // 02 §4.13 acceptance, C12: Dissolve has the id, name, handles and empty schema of the table.
+    #[test]
+    fn dissolve_has_the_identity_and_schema_of_the_table() {
+        let t = Dissolve::new();
+        assert_eq!(t.descriptor().id, "transition.dissolve");
+        assert_eq!(t.descriptor().name.0, "glossary.transition_dissolve");
+        assert_eq!(t.descriptor().version, 1);
+        assert_eq!(t.handles(), HandleReq::Both);
+        assert!(t.params().validate_definition().is_ok());
+        assert!(t.params().params().is_empty());
+    }
+
+    // ARQ-118: Dissolve at 0.25 over 0 and 1 gives 0.25, in every channel (f32).
+    #[test]
+    fn arq_118_dissolve_at_a_quarter_over_zero_and_one_is_a_quarter() {
+        let t = Dissolve::new();
+        let none = ParamValues::new();
+        let got = run_with_f32(&t, &none, 0.25, [0.0; 4], [1.0; 4]);
+        assert!(got.iter().all(|v| near(*v, 0.25, 1e-7)), "{got:?}");
+        // Weights are not swapped: 0.8 * 0.75 + 0.4 * 0.25.
+        let got = run_with_f32(&t, &none, 0.25, [0.8; 4], [0.4; 4]);
+        assert!(got.iter().all(|v| near(*v, 0.7, 1e-6)), "{got:?}");
+        // Out-of-range values are admitted and stay finite.
+        let got = run_with_f32(&t, &none, 0.5, [2.0, -1.0, 0.0, 1.0], [0.0, 1.0, 0.0, 1.0]);
+        assert_eq!(got, [1.0, 0.0, 0.0, 1.0]);
+    }
+
+    // P15 item 8 and 9: 8 bits black to white; the rows depend on MIX_SPACE (O5).
+    #[test]
+    fn arq_118_dissolve_8_bit_rows_follow_the_mix_space() {
+        let t = Dissolve::new();
+        let none = ParamValues::new();
+        let (black, white) = ([0u8, 0, 0, 255], [255u8, 255, 255, 255]);
+        let (q1, q3) = match MIX_SPACE {
+            MixSpace::Linear => (137, 225),
+            MixSpace::Encoded | MixSpace::AsStored => (64, 191),
+        };
+        assert_eq!(run_with(&t, &none, 0.25, black, white), [q1, q1, q1, 255]);
+        assert_eq!(run_with(&t, &none, 0.75, black, white), [q3, q3, q3, 255]);
+        // Alpha mixes premultiplied: transparent to opaque white at one half.
+        assert_eq!(
+            run_with(&t, &none, 0.5, [0; 4], white),
+            [128, 128, 128, 128]
+        );
+        // A transparent pixel with colour adds none.
+        assert_eq!(
+            run_with(&t, &none, 0.5, [200, 10, 5, 0], black),
+            [0, 0, 0, 128]
+        );
+    }
+
+    // ARQ-118: close to the ends the result is within 1/255 of the end.
+    #[test]
+    fn arq_118_dissolve_and_fade_stay_within_1_255_of_the_ends_near_them() {
+        let none = ParamValues::new();
+        let (f8, t8) = ([200u8, 100, 50, 255], [10u8, 220, 90, 255]);
+        let (ff, tf) = ([0.7f32, 0.2, 0.1, 1.0], [0.1f32, 0.9, 0.4, 1.0]);
+        for t in [&Dissolve::new() as &dyn Transition, &Fade::new()] {
+            for p in [0.0001f32, 0.9999] {
+                let (end8, endf) = if p < 0.5 { (f8, ff) } else { (t8, tf) };
+                let got = run_with(t, &none, p, f8, t8);
+                let gotf = run_with_f32(t, &none, p, ff, tf);
+                for k in 0..4 {
+                    assert!(
+                        got[k].abs_diff(end8[k]) <= 1,
+                        "{} p={p} {got:?}",
+                        t.descriptor().id
+                    );
+                    assert!(
+                        near(gotf[k], endf[k], 1.0 / 255.0),
+                        "{} p={p} {gotf:?}",
+                        t.descriptor().id
+                    );
+                }
+            }
+        }
+    }
+
+    // ARQ-117: mixing premultiplied 8-bit pixels keeps c <= a.
+    mod mix_property {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn dissolve_and_fade_keep_premultiplied_pixels_valid(
+                c1 in prop::array::uniform3(any::<u8>()), a1 in any::<u8>(),
+                c2 in prop::array::uniform3(any::<u8>()), a2 in any::<u8>(),
+                p in 0.0f32..=1.0,
+            ) {
+                let px = |c: [u8; 3], a: u8| [
+                    crate::premultiply_u8(c[0], a), crate::premultiply_u8(c[1], a),
+                    crate::premultiply_u8(c[2], a), a,
+                ];
+                for t in [&Dissolve::new() as &dyn Transition, &Fade::new()] {
+                    let out = run_with(t, &ParamValues::new(), p, px(c1, a1), px(c2, a2));
+                    prop_assert!(out[..3].iter().all(|c| *c <= out[3]), "{} {out:?}", t.descriptor().id);
+                }
+            }
+        }
+    }
+
+    // ---- Fade only ---------------------------------------------------------------------
+
+    fn colour(c: Color) -> ParamValues {
+        let mut p = ParamValues::new();
+        p.set("color", ParamValue::Color(c));
+        p
+    }
+
+    // 02 §4.13 acceptance, C12: Fade has the id, name, handles and the one `color` parameter.
+    #[test]
+    fn fade_has_the_identity_and_schema_of_the_table() {
+        let t = Fade::new();
+        assert_eq!(t.descriptor().id, "transition.fade");
+        assert_eq!(t.descriptor().name.0, "glossary.transition_fade");
+        assert_eq!(t.descriptor().version, 1);
+        assert_eq!(t.handles(), HandleReq::Both);
+        assert!(t.params().validate_definition().is_ok());
+        let defs = t.params().params();
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].id, "color");
+        assert_eq!(defs[0].label.0, "transition.fade.color");
+        assert!(!defs[0].animatable);
+        assert_eq!(
+            defs[0].kind,
+            ParamKind::Color {
+                default: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0))
+            }
+        );
+    }
+
+    // ARQ-110: a bad `color` is Err naming it, before anything is written, also at the ends.
+    #[test]
+    fn arq_110_fade_rejects_a_bad_colour_before_writing() {
+        let t = Fade::new();
+        let (f, g) = (frame_u8(1, 1), frame_u8(1, 2));
+        let cases: [(ParamValue, ParamError); 6] = [
+            (
+                ParamValue::Color(Color::Srgb(Rgba::new(f32::NAN, 0.0, 0.0, 1.0))),
+                ParamError::NonFinite { param: "color" },
+            ),
+            (
+                ParamValue::Color(Color::Srgb(Rgba::new(0.0, f32::INFINITY, 0.0, 1.0))),
+                ParamError::NonFinite { param: "color" },
+            ),
+            (
+                ParamValue::Color(Color::LinearSrgb(LinearRgba::new(
+                    0.0,
+                    0.0,
+                    f32::NEG_INFINITY,
+                    1.0,
+                ))),
+                ParamError::NonFinite { param: "color" },
+            ),
+            (
+                ParamValue::Color(Color::DisplayP3(DisplayP3Rgba::new(
+                    0.0,
+                    0.0,
+                    0.0,
+                    f32::NAN,
+                ))),
+                ParamError::NonFinite { param: "color" },
+            ),
+            (
+                ParamValue::Float(0.5),
+                ParamError::WrongType { param: "color" },
+            ),
+            (
+                ParamValue::Choice("black".into()),
+                ParamError::WrongType { param: "color" },
+            ),
+        ];
+        for (value, want) in cases {
+            for progress in [0.0f32, 0.3, 1.0] {
+                let mut p = ParamValues::new();
+                p.set("color", value.clone());
+                let mut d = vec![SENTINEL_U8; 4];
+                let err = t
+                    .run_cpu(
+                        &EffectCx { scale: 1.0 },
+                        &p,
+                        progress,
+                        ImageView::new(1, 1, PixelData::Rgba8(&f)).unwrap(),
+                        ImageView::new(1, 1, PixelData::Rgba8(&g)).unwrap(),
+                        ImageViewMut::new(1, 1, PixelDataMut::Rgba8(&mut d)).unwrap(),
+                    )
+                    .unwrap_err();
+                assert_eq!(err, EffectError::Param(want), "{value:?} p={progress}");
+                assert!(d.iter().all(|b| *b == SENTINEL_U8));
+            }
+        }
+    }
+
+    // ARQ-118: Fade at 0.5 gives the colour exactly; white gives 255 and 1.0 in every channel.
+    #[test]
+    fn arq_118_fade_at_one_half_is_the_colour_exactly() {
+        let t = Fade::new();
+        let white = colour(Color::Srgb(Rgba::new(1.0, 1.0, 1.0, 1.0)));
+        assert_eq!(
+            run_with(&t, &white, 0.5, [9, 8, 7, 255], [1, 2, 3, 255]),
+            [255; 4]
+        );
+        assert_eq!(run_with_f32(&t, &white, 0.5, [0.3; 4], [0.6; 4]), [1.0; 4]);
+        // The default is opaque black.
+        let none = ParamValues::new();
+        assert_eq!(
+            run_with(&t, &none, 0.5, [9, 8, 7, 255], [1, 2, 3, 255]),
+            [0, 0, 0, 255]
+        );
+        assert_eq!(
+            run_with_f32(&t, &none, 0.5, [0.3; 4], [0.6; 4]),
+            [0.0, 0.0, 0.0, 1.0]
+        );
+        // A translucent colour keeps its own alpha: sRGB bytes (204, 102, 51, 128), premultiplied.
+        let c = colour(Color::Srgb(Rgba::new(0.8, 0.4, 0.2, 0.5)));
+        assert_eq!(
+            run_with(&t, &c, 0.5, [9, 8, 7, 255], [1, 2, 3, 255]),
+            [102, 51, 26, 128]
+        );
+        let got = run_with_f32(&t, &c, 0.5, [0.3; 4], [0.6; 4]);
+        for (g, w) in got.iter().zip([0.301_9, 0.066_4, 0.016_5, 0.5]) {
+            assert!(near(*g, w, 1e-3), "{got:?}");
+        }
+        // Linear light and wide gamut are converted once: linear 0.5 is sRGB byte 188.
+        let lin = colour(Color::LinearSrgb(LinearRgba::new(0.5, 0.5, 0.5, 1.0)));
+        assert_eq!(
+            run_with(&t, &lin, 0.5, [0; 4], [0; 4]),
+            [188, 188, 188, 255]
+        );
+        assert_eq!(
+            run_with_f32(&t, &lin, 0.5, [0.0; 4], [0.0; 4]),
+            [0.5, 0.5, 0.5, 1.0]
+        );
+        // Display-P3 red is outside sRGB: bytes clamp, f32 keeps the out-of-gamut values.
+        let p3 = colour(Color::DisplayP3(DisplayP3Rgba::new(1.0, 0.0, 0.0, 1.0)));
+        assert_eq!(run_with(&t, &p3, 0.5, [0; 4], [0; 4]), [255, 0, 0, 255]);
+        let got = run_with_f32(&t, &p3, 0.5, [0.0; 4], [0.0; 4]);
+        assert!(
+            near(got[0], 1.2249, 1e-3) && got[1] < 0.0 && got[2] < 0.0 && got[3] == 1.0,
+            "{got:?}"
+        );
+        // An alpha outside [0, 1] is clipped.
+        let big = colour(Color::Srgb(Rgba::new(1.0, 1.0, 1.0, 2.0)));
+        assert_eq!(run_with(&t, &big, 0.5, [0; 4], [0; 4]), [255; 4]);
+        let neg = colour(Color::Srgb(Rgba::new(1.0, 1.0, 1.0, -0.5)));
+        assert_eq!(run_with(&t, &neg, 0.5, [9; 4], [9; 4]), [0; 4]);
+    }
+
+    // ARQ-118: below one half `from` goes to the colour with 2p; from one half the colour goes
+    // to `to` with 2p - 1 (f32, black pictures, white colour, so the mix is the weight).
+    #[test]
+    fn arq_118_fade_halves_use_2p_and_2p_minus_1() {
+        let t = Fade::new();
+        let white = colour(Color::Srgb(Rgba::new(1.0, 1.0, 1.0, 1.0)));
+        let black = [0.0f32, 0.0, 0.0, 1.0];
+        for (p, want) in [
+            (0.125f32, 0.25f32),
+            (0.25, 0.5),
+            (0.375, 0.75),
+            (0.625, 0.75),
+            (0.75, 0.5),
+            (0.875, 0.25),
+        ] {
+            let got = run_with_f32(&t, &white, p, black, black);
+            assert!(near(got[0], want, 1e-6) && got[3] == 1.0, "p={p}: {got:?}");
+        }
+        // The halves are independent: `from` fades out, `to` fades in.
+        let got = run_with_f32(&t, &white, 0.25, [0.6, 0.6, 0.6, 1.0], [0.0, 0.0, 0.0, 1.0]);
+        assert!(near(got[0], 0.5 * 0.6 + 0.5, 1e-6), "{got:?}");
+        let got = run_with_f32(&t, &white, 0.75, [0.0, 0.0, 0.0, 1.0], [0.6, 0.6, 0.6, 1.0]);
+        assert!(near(got[0], 0.5 * 0.6 + 0.5, 1e-6), "{got:?}");
+        // 8 bits, white colour over the picture: a constant picture of the colour stays put.
+        let c = colour(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0)));
+        let px = [51u8, 102, 153, 255];
+        for p in [0.1f32, 0.3, 0.45, 0.55, 0.7, 0.9] {
+            assert_eq!(run_with(&t, &c, p, px, px), px, "p={p}");
         }
     }
 }
