@@ -167,3 +167,79 @@ fn fd_41_l_advances_are_the_linear_scaling_of_hmtx() {
     }
     assert_eq!(checked, 2000);
 }
+
+fn lay_at(text: &str, size_pt: f64, dpi: f64, align: TextAlign, width: f64, t: f64) -> TextLayout {
+    let s = TextStyle {
+        size_pt,
+        align,
+        letter_spacing: t,
+        ..TextStyle::default()
+    };
+    layout_box(text, &[INTER], &s, dpi, Size::new(width, 100_000.0)).expect("valid input")
+}
+
+const WIDE_TEXT: &str = "Hello wide world, the quick brown fox jumps over the lazy dog. ";
+
+#[test]
+fn fd_41_i_a_wide_box_reports_overflow_only_for_a_cluster_wider_than_it() {
+    // C18: the f32 running sum of the break must not decide the flag in f64. Boxes found
+    // by a sweep of 3 008 to 4 100 px where the two sums disagree.
+    let text = WIDE_TEXT.repeat(60);
+    for w in [
+        3073.86, 3348.77, 3469.39, 3494.18, 3739.86, 3769.09, 4109.86,
+    ] {
+        let out = lay_at(&text, 16.0, 72.0, TextAlign::Left, w, 25.0);
+        let widest = out
+            .lines
+            .iter()
+            .flat_map(|l| &l.clusters)
+            .map(|c| f64::from(c.advance))
+            .fold(0.0, f64::max);
+        assert!(widest < w);
+        assert!(
+            !out.overflow,
+            "w={w}: overflow with widest cluster {widest}"
+        );
+    }
+}
+
+#[test]
+fn fd_41_i_a_wide_justified_line_ends_at_the_edge_when_parley_keeps_it_over_the_box() {
+    // C18: a line parley keeps, a hair over the box in f64, still reaches the edge.
+    let text = WIDE_TEXT.repeat(60);
+    for (t, w) in [
+        (25.0, 3073.86),
+        (25.0, 3348.77),
+        (25.0, 3437.94),
+        (25.0, 3925.6),
+        (25.0, 4082.11),
+        (0.0, 3705.08),
+        (0.0, 3753.55),
+    ] {
+        let out = lay_at(&text, 16.0, 72.0, TextAlign::Justify, w, t);
+        let last = out.lines.len() - 1;
+        for line in &out.lines[..last] {
+            let (_, right) = ink(&text, line);
+            assert!((right - w).abs() <= 0.01, "w={w} t={t}: ends at {right}");
+        }
+    }
+}
+
+#[test]
+fn fd_41_e_the_advance_of_a_wide_unstretched_line_is_the_sum_of_its_clusters() {
+    // C22: Line.advance is summed in f64.
+    let text = "ab cd ef gh ".repeat(300);
+    for size in [9.0, 12.0, 24.0] {
+        for t in [-100.0, 0.0, 100.0, 500.0] {
+            let out = lay_at(&text, size, 96.0, TextAlign::Left, 16_000.0, t);
+            for line in &out.lines {
+                let sum: f64 = line.clusters.iter().map(|c| f64::from(c.advance)).sum();
+                assert!(
+                    (f64::from(line.advance) - sum).abs() <= 0.01,
+                    "pt={size} t={t}: advance {} vs {sum}",
+                    line.advance
+                );
+            }
+        }
+    }
+}

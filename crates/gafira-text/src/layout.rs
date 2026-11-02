@@ -122,8 +122,9 @@ pub struct Cluster {
 /// output sums them again without the last spacing, so a box equal to the advance the output
 /// reports can be a few f32 ulps short for parley. 4e-6 is 0.0004 px at 100 px and above the
 /// 7e-7 measured. It is also the limit of the overflow: a line within it neither breaks nor
-/// overflows. It is under the 0.01 px of the spec only for a box under about 2 500 px; in a
-/// wider box a line can pass the edge by more, with no overflow.
+/// overflows. The overflow reads the widest cluster, not the sum of the line, and a justified
+/// line parley keeps a hair over the box still reaches the edge, so no width of box breaks
+/// the 0.01 px of the spec.
 const FIT_TOLERANCE: f64 = 4e-6;
 
 /// Lays `text` out in a box of `bounds` px.
@@ -217,7 +218,7 @@ pub fn layout_box(
     let (mut lines, forced) = read_lines(&laid, &blob_ids, text, spacing, style, size_px)?;
     let overflow = lines
         .iter()
-        .any(|l| content_advance(text, &l.clusters) > limit);
+        .any(|l| widest_content(text, &l.clusters) > limit);
     let rtl = laid.is_rtl();
     let last = lines.len().saturating_sub(1);
     for (i, line) in lines.iter_mut().enumerate() {
@@ -324,7 +325,7 @@ fn read_lines(
             c.x = x;
             x += c.advance;
         }
-        let advance: f32 = clusters.iter().map(|c| c.advance).sum();
+        let advance = clusters.iter().map(|c| f64::from(c.advance)).sum::<f64>() as f32;
         lines.push(Line {
             baseline: metrics.baseline,
             advance,
@@ -426,15 +427,17 @@ fn hanging_mask(text: &str, clusters: &[Cluster]) -> Vec<bool> {
     trailing_space(text, clusters, None)
 }
 
-/// The advance of a line without the white space that hangs.
-fn content_advance(text: &str, clusters: &[Cluster]) -> f64 {
+/// The advance of the widest cluster of a line that is not white space that hangs. The
+/// overflow is about a cluster wider than the box, not about the sum of a line, which parley
+/// decides in f32 and can differ from an f64 sum on a long line.
+fn widest_content(text: &str, clusters: &[Cluster]) -> f64 {
     let hanging = hanging_mask(text, clusters);
     clusters
         .iter()
         .zip(&hanging)
         .filter(|(_, h)| !**h)
         .map(|(c, _)| f64::from(c.advance))
-        .sum()
+        .fold(0.0, f64::max)
 }
 
 /// Places the clusters of a line, which start at x = 0, in the box. Every alignment and
@@ -499,7 +502,7 @@ fn align_line(line: &mut Line, text: &str, align: TextAlign, rtl: bool, width: f
                 })
                 .collect();
             let room = width - (total - hung_width);
-            if stretch && !separators.is_empty() && room > 0.0 {
+            if stretch && !separators.is_empty() && room > -width * 1e-4 {
                 let each = room / separators.len() as f64;
                 for i in &separators {
                     extra[*i] = each;
