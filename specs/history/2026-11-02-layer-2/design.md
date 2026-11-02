@@ -328,7 +328,7 @@ Not stated in the specs, sent to `specifier` as SP18:
 
 - A table test in `crates/gafira-audio/tests/` over `Gain`, `Fade` in both directions, `Pan` and `ProcessorChain`, called through `dyn AudioProcessor`: `validate_definition` is `Ok`, and id, bounds, default and `animatable` equal the table above.
 - Add the method to the `Op` double in `tests/chain.rs`.
-- This closes W2 of the `AU1` verify report. About 90 lines, mostly test. `AU1` is already 2 094 lines against 670 forecast (`specs/changes/gafira-audio/verification.json` on its branch), so this is not a split trigger, but the forecast no longer holds.
+- This closes W2 of the `AU1` verify report. About 90 lines, mostly test. `AU1` is already 2 094 lines against 670 forecast (`specs/history/2026-11-02-gafira-audio/verification.json` on its branch), so this is not a split trigger, but the forecast no longer holds.
 
 ### P14. `skrifa` as a direct dependency of `gafira-text`
 
@@ -357,7 +357,7 @@ If XP12 fails, the same step moves to the first commit of `TX2`, with the same s
 
 ### P15. The `RS3` transitions
 
-- Context: items 1 to 9 of `## RS3` in `specs/changes/gafira-raster/apply-progress.md` on `feat/gafira-raster`. ARQ-118 gives the maths. C12 needs a schema per transition, and the rest below is unstated.
+- Context: items 1 to 9 of `## RS3` in `specs/history/2026-11-02-gafira-raster/apply-progress.md` on `feat/gafira-raster`. ARQ-118 gives the maths. C12 needs a schema per transition, and the rest below is unstated.
 - Status: items 3 to 7 and 9 are decided here. Items 1 and 2 are proposals until `specifier` writes them (SP20 to SP22). Item 8 is provisional until O5.
 
 Split: `RS3` becomes `RS3a` (contract, shared mix, Cut, Dissolve, Fade) and `RS3b` (Slide, Wipe, Zoom). `RS1` and `RS2` came in at about 3 times their forecast (`verification.json`: 1 696 against 450, 1 068 against 340), so one delivery of six transitions would not stay reviewable. `Mode` stays serial: both edit `lib.rs`, `error.rs` and `transitions/`.
@@ -515,7 +515,7 @@ No single step reaches 8 ms by this estimate; the table, the fast path and eithe
 
 ### P16. Where a tile sits in its image
 
-- Context: W4 of `specs/changes/gafira-raster/verify-report.md`. `EffectCx` holds only `scale` (`crates/gafira-raster/src/view.rs:294`). `Texture::run_cpu` centres Viñeta on `src` (`effects/texture.rs:283`, `:301`), so a tile differs from the whole image by 47/255, against ARQ-120 "Ejecutar por tiles con `roi` coincide con la imagen entera". `run_cpu` has no equivalent input: `src` and `dst` have the same size (`check_io`, `effects/pointwise.rs:40`) and carry no position.
+- Context: W4 of `specs/history/2026-11-02-gafira-raster/verify-report.md`. `EffectCx` holds only `scale` (`crates/gafira-raster/src/view.rs:294`). `Texture::run_cpu` centres Viñeta on `src` (`effects/texture.rs:283`, `:301`), so a tile differs from the whole image by 47/255, against ARQ-120 "Ejecutar por tiles con `roi` coincide con la imagen entera". `run_cpu` has no equivalent input: `src` and `dst` have the same size (`check_io`, `effects/pointwise.rs:40`) and carry no position.
 - The tile shape is already fixed by the tests (`effects/shadow.rs:977`, `effects/texture.rs:765`): the caller cuts `roi(out)`, intersected with the image, runs on that crop, and keeps `out` from the result. So the position that matters is that of `src`, not of `out`.
 - Decision: `EffectCx` gains an optional window. `None` means `src` is the whole image.
 

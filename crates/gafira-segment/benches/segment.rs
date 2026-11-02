@@ -1,5 +1,5 @@
 //! Benchmarks of `ClassicSegmenter` (ARQ-114, 02 §6.7 and ARQ-43, CAL-06, P8 of
-//! `specs/changes/layer-2/design.md`). The crate has no clock (ARQ-02), so the
+//! `specs/history/2026-11-02-layer-2/design.md`). The crate has no clock (ARQ-02), so the
 //! timing comes from criterion's own measurement, never from `Instant::now`.
 
 use std::sync::{Arc, Mutex, PoisonError};

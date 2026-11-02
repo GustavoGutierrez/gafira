@@ -352,7 +352,7 @@ Fecha: 30 de octubre de 2026.
 
 Fecha: 1 de noviembre de 2026.
 
-- **Decisión**: el primer corte entrega el mecanismo de filtros de FD-34 y un solo preset de prueba (opción a de la pregunta O3 de `specs/changes/layer-2/design.md`). El catálogo real llega más adelante, con Q-34.
+- **Decisión**: el primer corte entrega el mecanismo de filtros de FD-34 y un solo preset de prueba (opción a de la pregunta O3 de `specs/history/2026-11-02-layer-2/design.md`). El catálogo real llega más adelante, con Q-34.
 - **Intensidad**: es una mezcla lineal de cada parámetro desde su valor por defecto hasta el valor del preset.
 - Aplicado a 02 (§12.3) y 04 (FD-34).
 
