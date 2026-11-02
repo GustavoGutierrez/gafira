@@ -2,6 +2,7 @@
 //! one-input effect must pass (ARQ-110, ARQ-111, FD-33 (a, f, h)).
 
 use gafira_doc::contract::{ParamError, ParamKind, ParamValue, ParamValues};
+use gafira_geom::IRect;
 
 use super::Effect;
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut, PixelFormat};
@@ -425,4 +426,178 @@ pub(crate) fn assert_deterministic(e: &dyn Effect, p: &ParamValues) {
         bits(&runf(e, &cx(1.0), p, &sf, (8, 6)).unwrap()),
         bits(&runf(e, &cx(1.0), p, &sf, (8, 6)).unwrap())
     );
+}
+
+/// Parameter sets for the generic checks: nothing, the defaults, every float at its minimum, at
+/// its maximum, and the two ends mixed.
+fn schema_sets(e: &dyn Effect) -> Vec<ParamValues> {
+    let floats: Vec<(&str, f64, f64)> = e
+        .params()
+        .params()
+        .iter()
+        .filter_map(|d| match d.kind {
+            ParamKind::Float { min, max, .. } => Some((d.id, min, max)),
+            _ => None,
+        })
+        .collect();
+    let at = |pick: &dyn Fn(usize, f64, f64) -> f64| {
+        let items: Vec<(&str, f64)> = floats
+            .iter()
+            .enumerate()
+            .map(|(i, (id, lo, hi))| (*id, pick(i, *lo, *hi)))
+            .collect();
+        pv(&items)
+    };
+    vec![
+        ParamValues::new(),
+        e.params().defaults(),
+        at(&|_, lo, _| lo),
+        at(&|_, _, hi| hi),
+        at(&|i, lo, hi| if i % 2 == 0 { lo } else { hi }),
+    ]
+}
+
+/// ARQ-110: an id the schema does not know is never read, whatever it holds (NaN, infinities,
+/// another kind): the output is the same, bit for bit, in both formats, with the parameters
+/// absent, at their defaults and at their ends.
+pub(crate) fn assert_unknown_ids_are_ignored(e: &dyn Effect) {
+    use gafira_color::{Color, Rgba};
+    let (w, h) = (7usize, 5usize);
+    let size = (w as u32, h as u32);
+    let s8 = img_u8(w, h, 13);
+    let sf = img_f32(w, h, 13);
+    let strangers = [
+        ParamValue::Float(f64::NAN),
+        ParamValue::Float(f64::INFINITY),
+        ParamValue::Float(f64::NEG_INFINITY),
+        ParamValue::Int(i64::MAX),
+        ParamValue::Bool(true),
+        ParamValue::Choice("nobody".to_string()),
+        ParamValue::Color(Color::Srgb(Rgba::new(
+            f32::NAN,
+            f32::INFINITY,
+            1e30,
+            f32::NAN,
+        ))),
+    ];
+    for base in schema_sets(e) {
+        let mut with = base.clone();
+        for (i, v) in strangers.iter().enumerate() {
+            with.set(format!("not_mine_{i}"), v.clone());
+        }
+        assert_eq!(
+            run8(e, &cx(1.0), &with, &s8, size),
+            run8(e, &cx(1.0), &base, &s8, size),
+            "{base:?}"
+        );
+        let a = runf(e, &cx(1.0), &with, &sf, size).map(|v| bits(&v));
+        let b = runf(e, &cx(1.0), &base, &sf, size).map(|v| bits(&v));
+        assert_eq!(a, b, "{base:?}");
+    }
+}
+
+/// ARQ-110: `roi` and `cost_hint` do not panic (with overflow checks on) at the extremes of
+/// resolved values, of `i32` and `u64`, with `cx.scale` at `f32::MAX` and its extremes, with
+/// values that were never resolved (NaN, infinities, huge, of the wrong kind), and with a
+/// non-finite scale; no value is pinned for those. With a finite scale and resolved values,
+/// twice the pixels never costs less.
+pub(crate) fn assert_roi_and_cost_extremes(e: &dyn Effect) {
+    let outs = [
+        IRect::new(i32::MIN, i32::MIN, i32::MAX, i32::MAX),
+        IRect::new(i32::MAX - 1, i32::MAX - 1, i32::MAX, i32::MAX),
+        IRect::new(i32::MIN, i32::MIN, i32::MIN + 1, i32::MIN + 1),
+        IRect::new(5, 5, 5, 5),
+        IRect::new(9, 9, 2, 2),
+    ];
+    let mut sets = schema_sets(e);
+    for def in e.params().params() {
+        if let ParamKind::Float { .. } = def.kind {
+            for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, -1e300] {
+                sets.push(pv(&[(def.id, v)]));
+            }
+        }
+        let mut wrong = ParamValues::new();
+        wrong.set(def.id, ParamValue::Bool(true));
+        sets.push(wrong);
+        let mut wrong = ParamValues::new();
+        wrong.set(def.id, ParamValue::Choice("x".to_string()));
+        sets.push(wrong);
+    }
+    let scales = [
+        1.0,
+        0.5,
+        f32::MAX,
+        f32::MIN,
+        f32::MIN_POSITIVE,
+        0.0,
+        -2.0,
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+    ];
+    for p in &sets {
+        for s in scales {
+            for out in outs {
+                let _ = e.roi(&cx(s), p, out);
+            }
+            for px in [0, 1, u64::MAX / 2, u64::MAX] {
+                let _ = e.cost_hint(&cx(s), p, px);
+            }
+        }
+    }
+    for p in schema_sets(e) {
+        for s in [0.25f32, 1.0, 2.0, 1e30, f32::MAX] {
+            for px in [
+                0u64,
+                1,
+                7,
+                1 << 20,
+                1 << 40,
+                u64::MAX / 2,
+                u64::MAX / 2 + 1,
+                u64::MAX,
+            ] {
+                let one = e.cost_hint(&cx(s), &p, px);
+                let two = e.cost_hint(&cx(s), &p, px.saturating_mul(2));
+                assert!(two >= one, "{p:?} scale {s} px {px}");
+            }
+        }
+        // And the run itself with the largest scale, on a small image.
+        let _ = run8(e, &cx(f32::MAX), &p, &img_u8(6, 5, 1), (6, 5));
+        let _ = runf(e, &cx(f32::MAX), &p, &img_f32(6, 5, 1), (6, 5));
+    }
+}
+
+/// ARQ-110, for the property tests: finite input inside the domain gives `Ok` with every number
+/// of the output finite, or `Err`. `fractions` place each float parameter between its ends
+/// (and the channels of each colour parameter between -1 and 2); the rest stay at defaults.
+pub(crate) fn finite_output_case(
+    e: &dyn Effect,
+    px: &[f32],
+    fractions: &[f64],
+    scale: f32,
+) -> Result<(), proptest::test_runner::TestCaseError> {
+    use gafira_color::{Color, LinearRgba};
+    let mut p = ParamValues::new();
+    for (i, def) in e.params().params().iter().enumerate() {
+        let f = |k: usize| fractions[(i + k) % fractions.len()];
+        match def.kind {
+            ParamKind::Float { min, max, .. } => {
+                p.set(def.id, ParamValue::Float(min + f(0) * (max - min)));
+            }
+            ParamKind::Color { .. } => {
+                let c = |k: usize| (f(k) * 3.0 - 1.0) as f32;
+                p.set(
+                    def.id,
+                    ParamValue::Color(Color::LinearSrgb(LinearRgba::new(c(0), c(1), c(2), 1.0))),
+                );
+            }
+            _ => {}
+        }
+    }
+    let size = ((px.len() / 4) as u32, 1);
+    if let Ok(out) = runf(e, &cx(scale), &p, px, size) {
+        proptest::prop_assert!(out.iter().all(|v| v.is_finite()), "{p:?}");
+    }
+    Ok(())
 }

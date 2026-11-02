@@ -1335,4 +1335,55 @@ mod tests {
         };
         assert_eq!(FilterError::from(inner).to_message(), inner.to_message());
     }
+
+    // ARQ-110: an id the effect's schema does not know, in a step of the preset, is never read:
+    // the output is the same, bit for bit, in both formats (killed mutant: it is read).
+    #[test]
+    fn arq_110_filter_ignores_unknown_ids_in_a_step() {
+        let plain = preset(vec![
+            step(LIGHT, &[("contrast", 40.0)]),
+            step(COLOR, &[("saturation", 60.0)]),
+        ]);
+        let mut strange = plain.clone();
+        for st in &mut strange.steps {
+            st.params.set("not_mine", ParamValue::Float(f64::NAN));
+            st.params.set("also_not", ParamValue::Float(f64::INFINITY));
+            st.params.set("nor_this", ParamValue::Bool(true));
+        }
+        let s8 = img_u8(8, 6, 3);
+        let sf = img_f32(8, 6, 3);
+        for i in [0.0, 37.0, 100.0] {
+            assert_eq!(
+                apply8(&strange, 1.0, i, &s8, (8, 6)),
+                apply8(&plain, 1.0, i, &s8, (8, 6)),
+                "{i}"
+            );
+            let (a, b) = (
+                applyf(&strange, 1.0, i, &sf, (8, 6)),
+                applyf(&plain, 1.0, i, &sf, (8, 6)),
+            );
+            assert_eq!(a.0, b.0, "{i}");
+            assert_eq!(bits(&a.1), bits(&b.1), "{i}");
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(48))]
+
+        // ARQ-110: finite input inside the domain gives finite output, or `Err`, at any intensity.
+        #[test]
+        fn arq_110_filter_finite_input_gives_finite_output(
+            px in proptest::collection::vec(-1.0e6f32..1.0e6, 4 * 12),
+            intensity in 0.0f64..=100.0,
+            scale in 0.01f32..8.0,
+        ) {
+            let p = preset(vec![
+                step(LIGHT, &[("brightness", 60.0), ("contrast", 100.0), ("highlights", -80.0)]),
+                step(COLOR, &[("hue", 90.0), ("saturation", 100.0), ("vibrance", 100.0)]),
+            ]);
+            if let (Ok(()), out) = applyf(&p, scale, intensity, &px, (12, 1)) {
+                proptest::prop_assert!(out.iter().all(|v| v.is_finite()));
+            }
+        }
+    }
 }

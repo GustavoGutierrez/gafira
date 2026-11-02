@@ -637,4 +637,32 @@ mod tests {
         assert_eq!(c(0), 0);
         assert!(c(1000) > 0 && c(2000) == 2 * c(1000));
     }
+
+    // ARQ-110: an id the schema does not know is never read (killed mutant: the effect behaves
+    // differently when one is present).
+    #[test]
+    fn arq_110_detected_unknown_ids_are_ignored() {
+        assert_unknown_ids_are_ignored(&det());
+    }
+
+    // ARQ-110: roi and cost_hint do not panic at the extremes (killed mutants: an unchecked
+    // multiply of `px`, an assert on a finite scale).
+    #[test]
+    fn arq_110_detected_roi_and_cost_hint_survive_the_extremes() {
+        assert_roi_and_cost_extremes(&det());
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(48))]
+
+        // ARQ-110: finite input inside the domain gives finite output.
+        #[test]
+        fn arq_110_detected_finite_input_gives_finite_output(
+            px in proptest::collection::vec(-1.0e6f32..1.0e6, 4 * 12),
+            fractions in proptest::collection::vec(0.0f64..=1.0, 1..40),
+            scale in 0.01f32..8.0,
+        ) {
+            finite_output_case(&det(), &px, &fractions, scale)?;
+        }
+    }
 }
