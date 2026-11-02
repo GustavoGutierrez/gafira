@@ -5,12 +5,18 @@ mod dissolve;
 mod fade;
 mod guard;
 mod mix;
+mod slide;
+mod wipe;
+mod zoom;
 
 use gafira_doc::contract::{AudioCrossfade, Describe, ParamSchema, ParamValues};
 
 pub use cut::Cut;
 pub use dissolve::Dissolve;
 pub use fade::Fade;
+pub use slide::Slide;
+pub use wipe::Wipe;
+pub use zoom::Zoom;
 
 use crate::{EffectCx, EffectError, ImageView, ImageViewMut};
 
@@ -85,6 +91,9 @@ mod tests {
             Box::new(Cut::new()),
             Box::new(Dissolve::new()),
             Box::new(Fade::new()),
+            Box::new(Slide::new()),
+            Box::new(Wipe::new()),
+            Box::new(Zoom::new()),
         ]
     }
 
@@ -146,7 +155,7 @@ mod tests {
         vec![f32::from_bits(SENTINEL_F32); n]
     }
 
-    // ARQ-25, ARQ-118: p = 0 copies `from` and p = 1 copies `to`, byte for byte, for every
+    // FV-06 (a), ARQ-25, ARQ-118: p = 0 copies `from` and p = 1 copies `to`, byte for byte, for every
     // transition and both formats; a p outside [0, 1] clips to the nearest end; -0.0 is 0.
     #[test]
     fn arq_118_ends_are_exact_copies_for_every_transition() {
@@ -1273,6 +1282,157 @@ mod tests {
                 "{err:?}"
             );
             assert!(d.iter().all(|b| *b == SENTINEL_U8));
+        }
+    }
+
+    // ---- Fix round (RS3b verify round 1): every configuration, not only the defaults ----------
+
+    /// One transition with one set of parameters.
+    type Config = (Box<dyn Transition>, ParamValues, String);
+
+    fn choice(id: &str, value: &str) -> ParamValues {
+        let mut p = ParamValues::new();
+        p.set(id, ParamValue::Choice(value.to_owned()));
+        p
+    }
+
+    /// Every direction of Slide, Wipe (hard, soft, softest) and Zoom, and Fade in a colour.
+    fn configs() -> Vec<Config> {
+        let mut out: Vec<Config> = Vec::new();
+        for d in ["left", "right", "up", "down"] {
+            out.push((
+                Box::new(Slide::new()),
+                choice("direction", d),
+                format!("slide {d}"),
+            ));
+        }
+        for d in ["right", "left", "down", "up", "circular"] {
+            for s in [0.0, 0.4, 1.0, 1.0e-16] {
+                let mut p = choice("direction", d);
+                p.set("softness", ParamValue::Float(s));
+                out.push((Box::new(Wipe::new()), p, format!("wipe {d} s={s}")));
+            }
+        }
+        for d in ["in", "out"] {
+            out.push((
+                Box::new(Zoom::new()),
+                choice("direction", d),
+                format!("zoom {d}"),
+            ));
+        }
+        out.push((Box::new(Cut::new()), ParamValues::new(), "cut".into()));
+        out.push((
+            Box::new(Dissolve::new()),
+            ParamValues::new(),
+            "dissolve".into(),
+        ));
+        out.push((
+            Box::new(Fade::new()),
+            colour(Color::Srgb(Rgba::new(0.9, 0.2, 0.1, 0.6))),
+            "fade".into(),
+        ));
+        out
+    }
+
+    fn run_config_u8(
+        c: &Config,
+        progress: f32,
+        from: &[u8],
+        to: &[u8],
+        size: (u32, u32),
+    ) -> Vec<u8> {
+        let mut d = vec![SENTINEL_U8; from.len()];
+        c.0.run_cpu(
+            &EffectCx { scale: 1.0 },
+            &c.1,
+            progress,
+            ImageView::new(size.0, size.1, PixelData::Rgba8(from)).unwrap(),
+            ImageView::new(size.0, size.1, PixelData::Rgba8(to)).unwrap(),
+            ImageViewMut::new(size.0, size.1, PixelDataMut::Rgba8(&mut d)).unwrap(),
+        )
+        .unwrap();
+        d
+    }
+
+    fn run_config_f32(
+        c: &Config,
+        progress: f32,
+        from: &[f32],
+        to: &[f32],
+        size: (u32, u32),
+    ) -> Result<Vec<f32>, EffectError> {
+        let mut d = sentinel_f32(from.len());
+        c.0.run_cpu(
+            &EffectCx { scale: 1.0 },
+            &c.1,
+            progress,
+            ImageView::new(size.0, size.1, PixelData::RgbaF32(from)).unwrap(),
+            ImageView::new(size.0, size.1, PixelData::RgbaF32(to)).unwrap(),
+            ImageViewMut::new(size.0, size.1, PixelDataMut::RgbaF32(&mut d)).unwrap(),
+        )?;
+        Ok(d)
+    }
+
+    // ARQ-111: the same input twice gives the same bytes, for every direction and softness.
+    #[test]
+    fn arq_111_every_configuration_is_deterministic() {
+        for c in configs() {
+            for progress in [0.07f32, 0.5, 0.93] {
+                let (f, g) = (frame_u8(35, 1), frame_u8(35, 2));
+                let a = run_config_u8(&c, progress, &f, &g, (7, 5));
+                let b = run_config_u8(&c, progress, &f, &g, (7, 5));
+                assert_eq!(a, b, "{} p={progress}", c.2);
+                let (f, g) = (frame_f32(35, 1.0), frame_f32(35, 2.0));
+                let a = run_config_f32(&c, progress, &f, &g, (7, 5)).unwrap();
+                let b = run_config_f32(&c, progress, &f, &g, (7, 5)).unwrap();
+                assert_eq!(bits(&a), bits(&b), "{} p={progress}", c.2);
+            }
+        }
+    }
+
+    mod config_property {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // ARQ-117: premultiplied 8-bit pixels stay premultiplied (c <= a) in every configuration.
+            #[test]
+            fn every_configuration_keeps_premultiplied_pixels_valid(
+                seed in any::<u32>(), p in 0.0f32..=1.0, w in 1u32..6, h in 1u32..6,
+            ) {
+                let n = (w * h) as usize;
+                let frame = |k: u32| -> Vec<u8> {
+                    let mut s = seed ^ k;
+                    (0..n).flat_map(|_| {
+                        s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        let a = (s >> 24) as u8;
+                        s = s.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        let c = |sh: u32| crate::premultiply_u8((s >> sh) as u8, a);
+                        [c(0), c(8), c(16), a]
+                    }).collect()
+                };
+                let (f, g) = (frame(1), frame(2));
+                for c in configs() {
+                    let out = run_config_u8(&c, p, &f, &g, (w, h));
+                    for px in out.chunks_exact(4) {
+                        prop_assert!(px[..3].iter().all(|v| *v <= px[3]), "{} {px:?}", c.2);
+                    }
+                }
+            }
+
+            // ARQ-110: finite input in the domain gives finite output through `run_cpu`, in every
+            // configuration, for large, tiny and mixed-sign pixels.
+            #[test]
+            fn every_configuration_gives_finite_output_for_finite_input(
+                a in prop::collection::vec(prop_oneof![-1.0e30f32..1.0e30, -1.0e-30f32..1.0e-30, -2.0f32..2.0], 12),
+                b in prop::collection::vec(prop_oneof![-1.0e30f32..1.0e30, -1.0e-30f32..1.0e-30, -2.0f32..2.0], 12),
+                p in 0.0f32..=1.0,
+            ) {
+                for c in configs() {
+                    let out = run_config_f32(&c, p, &a, &b, (3, 1)).unwrap();
+                    prop_assert!(out.iter().all(|v| v.is_finite()), "{} {out:?}", c.2);
+                }
+            }
         }
     }
 }

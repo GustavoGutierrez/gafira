@@ -250,3 +250,70 @@ The stubs, in full, and what came after the code:
 
 Deviations of this round: `proptest-regressions/` is untracked again and not committed (S3 is the coordinator's decision); XP13 on this machine reads 161 ms, so the table of O5 stays as the design records it. Lines: `git diff --shortstat dc6fced..HEAD -- crates/gafira-raster`.
 
+## RS3b
+
+Branch `feat/gafira-raster` (merged at fadac62 plus this work). Commits: bbd49c5 (Slide, W6), 3b316f6 (Wipe), f78c829 (Zoom). Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone, and checked before each commit. `gafira-raster` tests: 104 to 130. Order per transition: the stub, the tests, RED, the code. The stub of each is stated exactly in its commit body.
+
+### Done
+
+- `Slide`, `Wipe`, `Zoom` in `gafira_raster::transitions`, each with the id, name key, version and `HandleReq::Both` of the 02 §4.13 table; every schema passes `validate_definition` in its own test (C12) with the ids, kinds, defaults, option labels and `animatable: false` of the table.
+- Slide: `d = round((1 - p) * side)` in `f64` (halves away from zero), `left` shows `to(x - d)` for `x >= d`, `right` shows `to(x + d)` for `x < W - d`, `up` and `down` on `y` with the height; replaces pixels.
+- Wipe: `m = clamp((p (1 + s) - u) / s, 0, 1)`, `u < p` at `s = 0` with no division, `u` at the pixel centre, circular from `(W / 2, H / 2)` over half the diagonal; defaults `right` and `0`.
+- Zoom: `in` (`from` `1 + p`, `to` `(1 + p) / 2`) and `out` (`1 - p / 2`, `2 - p`), pivot `(W / 2, H / 2)`, `s = c + (x + 0.5 - c) / scale - 0.5`, four taps on premultiplied channels, edge clamp, 8 samples in one call of the shared mix.
+- W6: `the_f64_curves_agree_with_the_analytic_transform` sweeps `encode_f64` and `decode_f64` against `AnalyticTransform` from -2 to 3 with the joins inside, plus oddness and round trip.
+- `guard.rs`: `Frames` and `render` for transitions that read pixels at other positions.
+
+### RED per criterion (stubs as in the commit bodies)
+
+| Criterion | Failing test |
+|---|---|
+| Slide table, bad direction, 10x4 acceptance, rounding, replace, f32 bits | `slide_has_the_identity_and_schema_of_the_table`, `arq_110_slide_rejects_an_unknown_direction`, `arq_118_slide_acceptance_rows_on_10_by_4`, `arq_118_slide_offset_rounds_half_away_from_zero`, `arq_118_slide_replaces_and_does_not_composite`, `arq_118_slide_copies_f32_pixels_bit_for_bit` |
+| Wipe | `wipe_has_the_identity_and_schema_of_the_table`, `arq_110_wipe_rejects_bad_parameters_before_writing`, `arq_118_wipe_acceptance_rows_on_4_by_2`, `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre`, `arq_118_wipe_soft_edge_values`, `arq_118_wipe_matches_the_criterion_for_every_direction`, `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_defaults_are_right_and_hard`, `arq_118_wipe_hard_edge_copies_pixels_and_soft_edge_mixes_premultiplied`, `arq_118_wipe_soft_stays_within_1_255_of_the_ends_near_them` |
+| Zoom | `zoom_has_the_identity_and_schema_of_the_table`, `arq_110_zoom_rejects_an_unknown_direction`, `arq_118_zoom_ramp_values_for_in_and_out`, `arq_118_zoom_pivot_is_the_continuous_centre`, `arq_118_zoom_filters_premultiplied_values`, `arq_118_zoom_matches_the_criterion_tap_by_tap`, `arq_118_zoom_out_mirrors_zoom_in` |
+
+Not RED, proved by mutants: the six transitions in the generic tests of `mod.rs` (ends, sizes, formats, pixels, determinism; any copy of `from` satisfies them), `arq_118_wipe_ends_are_exact_with_any_softness`, `arq_118_zoom_constant_images_stay_constant_and_opaque_images_opaque`, and W6.
+
+### Hand mutants (killed unless noted)
+
+| Mutants | Killed by |
+|---|---|
+| Slide: `from` moves; offset floor, ceil, half-even; `(1 - p)` reversed; `d` on the wrong axis (width for all, height for all); `x > d`; `right` off by one; up and down swapped; left and right swapped; default `right`; composite instead of replace | the slide tests above |
+| Wipe: `u` not at the centre; `s = 0` with `<=`; no `s = 0` branch (division by 0, NaN at `u == p`); half diagonal as the full one or the longer side; circular centre off; left, down, up wrong; softness default 0.5; direction default `left`; weights swapped; `(1 + s)` dropped; no low clamp; end copy swapped; entropy | the wipe tests, `arq_118_ends_are_exact_copies_for_every_transition` |
+| Zoom: `in` and `out` ranges reversed; each scale wrong; pivot at the index centre or the origin; no `+ 0.5`; no `- 0.5`; scale multiplied instead of divided; nearest instead of bilinear; tap weights swapped; edge transparent (out-of-range tap) instead of clamp; straight (unpremultiplied) filtering; `from` and `to` weights swapped; default `out`; entropy | the zoom tests; the edge-transparent mutant also fails the generic tests (an out-of-range index panics) |
+| W6: `encode_f64` threshold, decode slope, encode offset | `the_f64_curves_agree_with_the_analytic_transform` |
+
+Survivor below tolerance: the decode join `0.04045` moved to `0.04` (the curves differ by up to 4.8e-7, under the 1e-5 of the test, in an arm not in use). Ends: the guard copies at 0 and 1 for all six. Corrected in fix round 1: removing them is an equivalent mutant for all six, not only for Cut, Dissolve and Fade (at `p` 0 Slide has `d` = side, at 1 `d` = 0; Zoom has scale 1 and a tap of weight exactly 1; Wipe saturates), so the claim here that Slide and Zoom depend on them and that the tests fail without them was false. The branches stay because P15 step 8 asks that no conversion runs at the ends.
+
+### Deviations and assumptions
+
+1. P15 item 3 leaves open what happens to `to` pixels exactly at `p` near 0 for Zoom (no near-end bound is stated for Zoom, Slide, or hard Wipe, only for Dissolve, Fade and soft Wipe); I tested none. A 1080p frame sampled at `p = 0.0001` moves up to about 0.1 pixel.
+2. The test reference for bytes uses `weighted_u8_in` with the taps written in the test, so it checks geometry and weights, not the mixing space (O5).
+3. `Slide` with `lado` 1 and `p` below 0.5 shows `from` entirely (d = 1), above shows `to` (d = 0).
+4. `proptest-regressions/` is untracked and not committed.
+
+Lines: `git diff --shortstat fadac62..HEAD -- crates/gafira-raster`.
+
+### Fix round 1 (RS3b verify round 1: C1, C2, W1, W2, W4, S2, S3)
+
+Commits: 30769fb (Wipe mask), 3b9e626 (tests), then this note. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 on each, read alone and checked before each commit. `gafira-raster` tests: 130 to 136.
+
+- C1 (RED first, no stub: the old code): the mask `clamp((p (1 + s) - u) / s, 0, 1)` is now `clamp(p + (p - u) / s, 0, 1)`, taking the quotient only while `|p - u| <= s`; beyond that the mask has saturated. No cancellation, and no division of a normal number by a subnormal. RED: `arq_118_wipe_tiny_softness_keeps_the_edge_pixel_at_p` (s = 1e-10, p 0.4375: pixel 3 was 0.43750003) and `arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness` (k=49, p=0.53125, w=16, x=8: 0.5 against 0.53125). The first is hand-worked on 8 columns (pixel 3 has `u = p`) for 16 softnesses from 1e-2 to 5e-324, in four directions and circular; the second uses exact `i128` arithmetic for every `s = 2^-k`, k up to 60, and shares no expression with the code.
+- W1: with the saturation test, no division by a subnormal reaches infinity. Observable output is the same as before away from `u == p`, so dropping the test is an equivalent mutant at the output; the code analysis above is the evidence, and the 5e-324 row of the hand table covers the result.
+- C2: `arq_118_slide_offset_is_computed_in_f64` (side 5 at 0.1 gives `d` 4; 10 at 0.05 gives 9; 10 at 0.55 gives 4; 7 at 0.3 gives 5; both axes). Not RED.
+- W2: `arq_111_every_configuration_is_deterministic` and the proptests `every_configuration_keeps_premultiplied_pixels_valid` and `every_configuration_gives_finite_output_for_finite_input` run Slide in four directions, Wipe in five directions at softness 0, 0.4, 1 and 1e-16, Zoom `in` and `out`, Cut, Dissolve and Fade through `run_cpu`. Not RED.
+- S3: the ends test carries `FV-06 (a)` in its comment.
+- Not touched: S1 (`samples` allocates a `Vec` per pixel; XP13 and O5 own the cost), the Slice card and `proptest-regressions/`.
+
+Mutants of this round (all killed unless noted): Wipe softness below 1e-9 treated as hard (I2), the old expression, flipped saturation, flipped gap, `p` dropped from the ramp, no clamp; Slide `d` in `f32` (I1); entropy in the soft ramp and in Zoom `out`; a soft Wipe pixel that breaks `c <= a`; a Zoom `f32` pixel divided into NaN. Equivalent: the saturation test dropped (the infinity is clamped) and `>=` for `>` at `|gap| == s`.
+
+Deviations: none new. P15 as amended (d67674b) binds near-end bounds only to Dissolve, Fade and Wipe with `s = 1`; this delivery adds none for Slide, Zoom, Cut or the other softnesses. Lines: `git diff --shortstat 608b196..HEAD -- crates/gafira-raster`.
+
+
+### Fix round 3 (RS3b verify round 2: C1 on `circular`, C3)
+
+Commit: the Wipe fix with its tests (one commit, tests written and seen RED first), then this note. Gates (fmt, clippy `-D warnings`, test `--workspace --locked`) exit 0 each, read alone. `gafira-raster` tests: 136 to 138.
+
+- Cause: circular `u` divided two `hypot` results, each rounded. Now `u = sqrt((a^2 + b^2) / (w^2 + h^2))` with `a = 2 cx - w`, `b = 2 cy - h` (exact in `f64`), one quotient and one sqrt; an exact `u == p` stays exact. Axis path, the saturation test and the non-finite guarantees (W1) are untouched.
+- RED (before the production change): `arq_118_wipe_circular_exact_edge_pixels_keep_the_rule`, "hard 8x8 p 0.875 pixel (0,0)", left 1.0, right 0.0; `arq_118_wipe_circular_exact_edge_on_1080_square`, "hard i=276979", left 1.0, right 0.0. The first also scans every exact-edge pixel on squares 4 to 64 (found by `i128` arithmetic, at least 88) for hard 0 and soft (`s` 1e-16) `p`, and the 8x8 hand case for `s` 1e-16 to 1e-3. The second covers C3 at 1080x1080, p 3/8.
+- Hand mutants: `u <= p` in the hard Wipe, killed by `arq_118_wipe_defaults_are_right_and_hard`, `arq_118_wipe_edge_is_strict_and_at_the_pixel_centre` and both new tests; two-`hypot` quotient restored, killed by both new tests; ramp quotient taken regardless of `|p - u| <= s`, SURVIVES: equivalent at the output (the quotient is then at worst infinite, `p + inf` or `p - inf` is clamped to 1 or 0, never NaN since `gap` is finite), as recorded in round 1 for W1; clamp removed, killed by `arq_118_wipe_circular_centre_and_half_diagonal`, `arq_118_wipe_mask_equals_exact_integer_arithmetic_for_dyadic_softness`, `arq_118_wipe_soft_edge_values`, `arq_118_wipe_matches_the_criterion_for_every_direction`.
+- W5 not touched (follow-up). `proptest-regressions/` not committed. Deviations: none. Lines: `git diff --shortstat HEAD~2..HEAD -- crates/gafira-raster` (69 insertions, 2 deletions in `wipe.rs`).

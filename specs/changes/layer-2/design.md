@@ -377,7 +377,7 @@ Split: `RS3` becomes `RS3a` (contract, shared mix, Cut, Dissolve, Fade) and `RS3
 
 Step 1 holds even though no transition reads `scale`: ARQ-110 checks every number, also those that do not take part in the calculation. A non-finite `scale` gives `Buffer(BufferError::NonFinite { field: "cx.scale", index: 0 })`. `Transition::run_cpu` and `Effect::run_cpu` check it the same way, as the first step, so `RS4` inherits the rule. Only non-finite values are rejected: no row gives `scale` a range (02 §4.17.1, "Rangos").
 
-Step 8 is what keeps ARQ-118 and ARQ-25 byte-exact for all six, Zoom included, because no sampling or colour conversion runs at the ends. The maths of each transition still has to reach the same limits, so a test at `p` near 0 and near 1 stays within 1/255 of the end.
+With step 8, no sampling or colour conversion runs at the ends, so ARQ-118 and ARQ-25 hold byte-exact for all six, Zoom included. Near the ends, ARQ-118 binds only Dissolve, Fade and Wipe with `s = 1`: at `p` 0.0001 and 0.9999 they stay within 1/255 of their end. Cut, Slide, Zoom and Wipe with another softness have no such bound: Slide moves whole pixels, and Zoom measured up to 4/255 (`RS3b` verify round 1, W3).
 
 #### Item 1, schemas (proposal)
 
