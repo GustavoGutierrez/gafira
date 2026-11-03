@@ -17,7 +17,7 @@
           "id": "AC1",
           "status": "pending",
           "type": "unit",
-          "text": "8-bit Shadow composites in linear light: its result equals blend_u8 Normal of the shadow over the backdrop, and 8-bit and f32 Shadow agree within 1/255."
+          "text": "8-bit Shadow composites in linear light: its result equals blend_u8 Normal of the shadow over the backdrop (FD-35 (e)), and 8-bit and f32 Shadow agree as FD-35 (f) states: within 2/255 where the 8-bit shadow alpha is 16 or more, no bound below 16."
         },
         {
           "id": "AC2",
