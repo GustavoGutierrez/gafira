@@ -18,7 +18,7 @@ Precedent followed: `specs/history/2026-11-02-layer-2/design.md` (its delivery t
 4. Run each stream in order: `RE1` → `RE2` → `RE3` → `RE4` → `RE5`, `ME1` → `ME2` → `ME3` → `ME4` → `ME5`.
 5. Run `explorer` for XP1 to XP5 before `RE2` and `ME2` verify, and for XP8 to XP10 before `SC1` verify.
 6. Merge each delivery after its verify PASS, one at a time, in dependency order.
-7. Raise O1 to O3 with the owner. None of them blocks a delivery: the design proceeds on the recommended option of each (P1, P20).
+7. Record O1 to O3 and their reversibility in "Owner decisions taken (YOLO, 2026-11-03)". The owner resolved all three in YOLO mode on 2026-11-03, on the recommended option of each; no question is left to ask (P1, P20).
 
 ## Dependency state
 
@@ -270,13 +270,41 @@ T4 at close: `gafira-render`, `gafira-media`, `gafira-doc`, `gafira-ports`, `gaf
 
 ## Open questions (owner)
 
-None of these blocks a delivery. The design proceeds on the recommended option of each; the coordinator raises them one at a time.
+The owner resolved O1 to O3 in YOLO mode on 2026-11-03, on the recommended option of each. The table below is kept as the record of what was considered and what was recommended; "Owner decisions taken (YOLO, 2026-11-03)" carries the answers.
 
 | # | Question | Options and tradeoffs | Recommendation |
 |---|---|---|---|
 | O1 | The timeline model (`Sequence`, `Track`, `Clip`) does not exist, and 02 §2.1 gives it to `gafira-doc` (layer 1). Without it, `gafira-media` can only deliver the machinery: the export pipeline runs over a time range, not over a sequence. Is a follow-up `gafira-doc` change for the timeline approved, and does it come before or after layer 3? | (a) Layer 3 delivers the machinery now; the timeline lands in a later `gafira-doc` change and `gafira-media` gains a resolver. The cut stays bounded and the persisted schema is untouched. (b) Pull the timeline into this change: layer 3 grows a layer-1 crate, the schema changes while D-36 keeps schema 1 open, and the estimate grows well past the table above. (c) Stop layer 3 until the timeline exists: the two layer-3 crates would wait for a layer-1 crate, and the layer order in 02 §2.1 would be inverted. | (a). The owner confirms whether the timeline change is approved and where it sits in the queue. |
 | O2 | 02 §6.5 fixes the frame cache budget at "1 GB or 15 % of RAM, the lesser", and D-03 fixes "≤ 1,5 GB with 20 pages" and "≤ 300 MB at rest". On the reference machine (8 GB) the frame cache is 1 GB, which leaves 0,5 GB for everything else under the 1,5 GB cap. Is the frame cache inside the 1,5 GB or on top of it? | (a) Inside: the governor trims the frame cache first to fit the 1,5 GB. One number to respect, and the idle budget is untouched. (b) On top: the 1,5 GB covers the document only and the cache is extra, which is easier to reason about but lets the process pass the number D-03 fixed. (c) Lower the frame cache default: contradicts the FIJADA figure in 02 §6.5 without a new owner decision. | (a). It changes `gafira-media`'s default budget and the governor's trim order, so the owner confirms it. |
 | O3 | `gafira-render-cpu` is the golden oracle (02 §4.5, ARQ-113) and unblocks `bench_export_png_1080` (CAL-11) and the ARQ-42 preview/export golden. It is layer 4 and out of this cut. Should it be planned as its own change right after layer 3, or pulled into this one? | (a) Its own change right after layer 3: layer 3 stays at the size above, and the oracle lands when the plan and the graph are stable. (b) Pulled in: the pixel-level acceptances land with layer 3, but the delivery grows by roughly a compositor and its own licence and platform questions, and the two streams stop being parallel. | (a), planned as the next change. The owner confirms the priority. |
+
+## Owner decisions taken (YOLO, 2026-11-03)
+
+The owner worked in YOLO mode and was not available for questions, so O1 to O3 were resolved on 2026-11-03 on the recommended option of each. The table of options above stays as the record of what was weighed. Each decision below stands on the recommendation it adopted, and each names what the owner can revert.
+
+### O1. The timeline model stays out of this cut — option (a)
+
+Layer 3 delivers the machinery now. The timeline model (`Sequence`, `Track`, `Clip`) arrives later, in its own `gafira-doc` change at layer 1, and `gafira-media` gains a resolver then. The timeline change is not opened now; it is noted as next in the queue, after layer 3.
+
+Reason: the cut stays bounded to the two layer-3 crates and the persisted schema stays untouched while D-36 keeps schema 1 open.
+
+Reversible: yes, and cheap. The timeline change is a separate change in a separate crate, and `gafira-media`'s public API does not have to change when it lands (P11). What is not reversible here is the content of that later change: the schema it writes, the node kinds it adds and the order it comes after layer 3. Those are the owner's to fix in the timeline change itself.
+
+### O2. The frame cache lives inside the 1,5 GB of D-03 — option (a)
+
+The frame cache counts against the "≤ 1,5 GB with 20 pages" figure of D-03, and the `MemoryGovernor` trims the frame cache first to fit. The default of 02 §6.5 is not lowered: it stays FIJADA at "1 GB or 15 % of RAM, the lesser". D-03 is not contradicted; this is the reading that makes both hold at once.
+
+Reason: one number to respect, and the idle budget of D-03 is untouched.
+
+Reversible: yes. The trim order is a governor decision, so a later change can move the frame cache outside the 1,5 GB without touching `gafira-media`'s cache API. What is not reversible is the arithmetic itself: while the frame cache holds 1 GB and the cap is 1,5 GB, the document has 0,5 GB to work in, and the idle figure of 300 MB means the cache must be released when it is not playing. Changing either number means changing a FIJADA figure of 02 §6.5 or of D-03, which is the owner's call.
+
+### O3. `gafira-render-cpu` is planned as its own change right after layer 3 — option (a)
+
+The CPU backend stays out of this cut and is planned as a separate change immediately after layer 3.
+
+Reason: layer 3 stays at the size of the delivery table, the golden oracle and the pixel-level acceptances land when the plan and the graph are stable, and the two streams keep running in parallel.
+
+Reversible: yes. The backend sits behind `ports::RenderBackend` (P4), so adding `gafira-render-cpu` later does not change `gafira-render`'s API. What is not reversible is the queue order: the oracle, `bench_export_png_1080` (CAL-11) and the ARQ-42 golden stay unproven until that change lands, and the owner may reorder that queue.
 
 ## Needs explorer
 
@@ -318,7 +346,7 @@ Provisional claims. Nothing in the table is built on until it is measured.
 
 ## Next
 
-The coordinator runs `explorer` for XP8 and XP9 before `SC1` verifies, and for XP1 to XP5 before `RE2` and `ME2` verify. `specifier` takes SP1 to SP4 before `DC1` starts, and SP6 to SP13 before the delivery each one names. The owner takes O1 to O3, one at a time; the design proceeds on the recommended option meanwhile.
+The coordinator runs `explorer` for XP8 and XP9 before `SC1` verifies, and for XP1 to XP5 before `RE2` and `ME2` verify. `specifier` takes SP1 to SP4 before `DC1` starts, and SP6 to SP13 before the delivery each one names. The owner resolved O1 to O3 in YOLO mode on 2026-11-03, on the recommended option of each, and they are recorded in "Owner decisions taken (YOLO, 2026-11-03)". No owner decision is outstanding, so `SC1` can start without waiting for the owner.
 
 `SC1` is the first delivery and the first `tdd-apply`. Then `DC1`, then the two streams `RE` and `ME` in parallel worktrees.
 
