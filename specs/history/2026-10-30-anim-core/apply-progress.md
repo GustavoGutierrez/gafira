@@ -1,0 +1,213 @@
+## Slice card
+Flow: standard | pack: product-spec slice | mutation: archive | tier: T4 | verify: V2 | decided-by: coordinator | reason: new crate gafira-anim already described in 02 (layer 1, deps time/geom/color, so the V5 row follows 02); spec gaps fixed by specifier first (724bdcb)
+Product IDs: ARQ-12 (partial: structural proof; the 1 µs benchmark stays with ARQ-40), ARQ-16, ARQ-17, ARQ-18, ARQ-19 (source: docs/specs/02-arquitectura-software.md §3.4, §2.1, §2.2)
+Scope: new crate `crates/gafira-anim`: `Interpolate`, `Easing` with its curves, `Keyframe`, `KeyTrack` with its invariant, `Animatable<T>` with serde and `sample`, and `Interpolate` for `f32`, `Vec2`, `Color` and `Transform2D`.
+Non-goals: `GradientStops` (arrives with the gradient type); the ARQ-12 benchmark and `perf-budgets.toml` (ARQ-40); `ToMessage` for anim errors (ARQ-102, belongs above gafira-doc); wiring `Animatable` into gafira-doc nodes; animation presets; `SetKeyframe`.
+Deliveries (serial):
+  D1 crate scaffold (workspace entry, V5 row `gafira-anim gafira-time gafira-geom gafira-color`, clippy.toml copy, forbid(unsafe_code)), `Easing` and its curves (ARQ-17), ~300 lines
+  D2a `Interpolate` with `f32` and `Vec2` (ARQ-19 part), `Keyframe`, `KeyTrack` and its invariant (ARQ-18 construction), commits c2b26f9..d9d2e50, 454 lines measured
+  D2b `Animatable` with `sample` (ARQ-16, ARQ-12 structural) and serde through an unvalidated wire shape (ARQ-18 deserialization), commits 71681b3..d8ab4cf, 640 lines measured
+  D3a `Interpolate` for `Color` (ARQ-19: premultiplied alpha Q-27, alpha <= 0 rule Q-31, tolerance per §3.4, `is_finite`), plus widening the `f32`/`Vec2` property domains to [-MAX/2, MAX/2] (Q-32 A, test-only), ~350 lines
+  D3b `Interpolate` for `Transform2D` (ARQ-19: modified decomposition, shortest-path rotation, degenerate endpoints Q-28 B and Q-30 A, exact endpoints, `is_finite`), ~450 lines
+  D3c ARQ-12 cross-platform golden: a file of tracks of the four types with sampled `t` and stored expected results, checked bit for bit or within the §3.4 tolerances; locally only Linux runs it while CI is disabled (README follow-up 2), ~200 lines
+Plan: D1 -> verify -> merge to develop; D2a -> verify -> merge; D2b -> verify -> merge; D3a, D3b, D3c each -> verify -> merge; T4 mutants on gafira-anim; archive (also fixes the README "Detalle" entry that lists ARQ-12 under domain-doc).
+Owner decisions touched: none (checked D-03: the 1 µs figure is unchanged); Q-27..Q-31 answered by the owner and recorded in 02 §12.2 (9907bf9, c10e38b).
+Flow-change: D3 split into D3a, D3b, D3c and the ARQ-12 golden assigned to D3c (trigger: size forecast x1.4 above ~700, and verify D2b W1: the golden had no delivery)
+Flow-change: D2 split into D2a and D2b at commit boundaries (trigger: size, D2 measured 1107 lines; owner OK to split)
+
+## D1 progress (tdd-apply)
+Done: crate scaffold (workspace entry, V5 row, clippy.toml copy, forbid(unsafe_code)); `Easing` with `is_valid` and `apply` (ARQ-17). Only dependency: serde (+ proptest, serde_json dev); gafira-time/geom/color are in the V5 row but not yet used by code.
+RED evidence (stub `apply` = identity, `is_valid` = true):
+- ARQ-17 validity: `arq_17_cubic_bezier_validity_rule` failed at `(-0.01, 0.0, 0.5, 1.0)`.
+- ARQ-17 precision/CSS curves: `arq_17_bezier_matches_f64_reference_within_tolerance` and `arq_17_named_curves_match_css_reference_values` failed on the tolerance assertion.
+- ARQ-17 Linear, bit-for-bit named==bezier, exact ends, bounds, serde names: pass against the stub by construction (identity is Linear; ends and bounds hold for identity), so no RED for them; the named==bezier test is guaranteed by delegation and Hold step test was added after implementation.
+Deviations: the spec does not define `Easing::apply` for `Hold`; chosen as a step (0 for u<1, 1 at u=1) to meet e(0)=0, e(1)=1. `u` outside [0,1] or NaN clamps to the nearest end (NaN -> 0). Added `Debug`/`PartialEq` derives beyond the spec snippet.
+
+## D1 round 2
+Fixes for verify round 1 (`openspec/changes/anim-core/verify-report.md`).
+- C1: solver stop is now relative, `|x(s) - u| <= 1e-12 * u`, instead of an absolute `< 1e-12`, so tiny `u` no longer returns the first guess `s = u`. RED: `arq_17_bezier_is_precise_for_tiny_u_with_flat_start` failed with `u = 1e-12: got 2.9999999880125916e-12, want 2.9997000060049960e-4`; also `arq_17_bezier_precision_grid_of_extreme_control_points` failed at `(0,-2,0,-2) u = 1e-12`.
+- C3: precision property now draws `u` log-biased near 0 and 1 and control-point x values at/near 0 and 1 (4096 cases), plus the fixed grid test. RED: `arq_17_bezier_matches_f64_reference_within_tolerance` failed (got 1.908e-4, want 1.689e-4, tol 1e-5) before the solver fix.
+- C2: validity test now has x1 = 1.0, x2 = 1.0, x1 = 0.0 as valid and the adjacent floats outside each end (`-MIN_POSITIVE`, next float above 1.0) as invalid. No RED against the code (the code was already right; the gap was the test). Hand mutant `(0.0..1.0)` on x1 is now killed.
+- W1: `arq_17_every_curve_clamps_its_input_and_maps_nan_to_zero` covers u < 0, -0.0, -inf, NaN -> 0 and u > 1, +inf -> 1 for every variant. No RED (behavior already implemented, matches the updated spec: Hold is a step, output not clamped). Hand mutant "NaN not handled" is now killed.
+- M2 (epsilon 1e-12 -> 1e-6) is now killed by both the grid and the tiny-u tests.
+- W3, surviving mutants kept as equivalent:
+  - Dropping the final `y.clamp(min, max)`: `y` is a convex combination of values that are exact f32 hull bounds, so a rounding overshoot in f64 is about 1e-16 and the cast to f32 rounds it back to the bound. Unobservable on the f32 output, so equivalent.
+  - Dropping the Newton bracket guard (`next > lo && next < hi`): `x` is monotone and the bracket is updated every iteration with the bisection fallback, so convergence within 64 iterations holds on all tested inputs (grid plus 4096 random curves); no input found where the result differs beyond tolerance. Treated as equivalent for the output contract.
+- Test note: the grid test skips `u >= 1.0` because e(1) = 1 is pinned by the exact-ends tests and the f64 reference is ill-conditioned at u = 1 with x2 = 1.
+
+## D2 progress (tdd-apply)
+Done: `Interpolate` (+ `f32`, `Vec2`), `Keyframe`, `KeyTrack` with `KeyTrackError`/`KeyTrackRule`, `Animatable<T>` with `sample` and serde (untagged write; read through the private `RawAnimatable` wire shape, then validate). Deps added: gafira-time, gafira-geom (both already in the V5 row).
+RED evidence (stubs first, then implementation):
+- ARQ-19 f32/Vec2: `arq_19_f32_endpoints_are_exact` (minimal input a = 0.0, b = -0.0), `arq_19_vec2_endpoints_are_exact`, `arq_19_f32_follows_the_formula_and_extrapolates`, `arq_19_vec2_follows_the_formula_per_component` failed against an identity stub. The between-ends properties pass against the stub (identity lies between the ends), so they have no RED; the formula tests kill that gap.
+- ARQ-18 construction: `arq_18_construction_names_the_rule_and_index`, `arq_18_non_finite_vec2_component_is_rejected`, `arq_18_error_message_names_rule_and_index` failed against a `new` that accepts everything.
+- ARQ-16 / ARQ-12: against a `sample` that returns the first key: 12 of 17 tests failed (table rows, `arq_12_sample_calls_interpolate_at_most_once`, the sampling properties).
+- ARQ-18 serde: `arq_18_invalid_tracks_fail_naming_rule_and_index` failed twice: with a plain derive the invalid track was accepted ("empty: Keyed(KeyTrack { keys: [] })"); with validation inside `KeyTrack` but a plain untagged enum the error was "data did not match any variant of untagged enum Animatable" (spike claim 3). Fixed by the `RawAnimatable` + `try_from` pattern.
+- Round-trip, golden and residual-ambiguity serde tests pass against the naive derive by construction (no RED).
+Deviations:
+- `Interpolate` has a second required method `is_finite(&self) -> bool`, which the spec snippet does not list; ARQ-18 needs a finiteness check over generic `T` and there is no other way to get it.
+- `KeyTrack.keys` is private with `keys()` and `KeyTrack::new`, so no public operation can leave an invalid track (spec: "Ninguna operación pública deja una pista inválida"); the snippet shows it `pub`.
+- Error type: `KeyTrackError { rule: KeyTrackRule, index: Option<usize> }`; `index` is `None` only for the empty-track rule. Added `Debug`/`PartialEq` derives.
+- Non-finite values through JSON are covered only by construction tests (JSON cannot carry them).
+- `f32::interpolate` uses the spec formula `a + (b - a) * t`; with finite ends whose difference overflows f32 (|a|, |b| near 3e38 with opposite signs) the result is infinite. The property tests stay within 1e30. Not specified; flag to the specifier if it matters.
+- Test sizes: source ~256 lines, tests ~815, so the delivery is past the ~700 line mark in total (git diff --shortstat 261dd77..HEAD: see the coordinator result).
+
+## D3a progress (tdd-apply)
+Done: `Interpolate for Color` (linear-light blend, premultiplied alpha Q-27, straight blend when the resulting alpha <= 0 Q-31, shared space kept else linear sRGB, no clamping, exact endpoints, `is_finite`); `gafira-color` added to `gafira-anim` dependencies (the V5 row and 02 §2.2 already listed it, so no doc change); Q-32 test-only widening of the `f32`/`Vec2` between-ends domains to [-MAX/2, MAX/2] (`HALF32`/`HALF64` plus the extremes as fixed cases).
+RED evidence (stub `interpolate` = `*self`, `is_finite` = true; all 11 tests in `tests/color.rs` failed on assertions):
+- Endpoints: `arq_19_color_endpoints_are_exact` (t = 1 returned `a`).
+- Reference match / premultiplied: `arq_19_color_matches_premultiplied_reference`, `arq_19_color_premultiplies_alpha` (r 0.8 expected, got the start color).
+- Result space: `arq_19_color_result_space_rule`; linear light: `arq_19_color_blends_in_linear_light`; no clamp: `arq_19_color_does_not_clamp_channels`.
+- Alpha bit-exact: `arq_19_color_alpha_is_linear_and_bit_exact`.
+- Red to transparent black: `arq_19_opaque_red_to_transparent_black_keeps_hue`; Q-31: `arq_19_color_transparent_to_transparent_blends_straight`, `arq_19_color_negative_alpha_extrapolates_straight` (a = -0.25).
+- ARQ-18/19 finiteness: `arq_19_color_is_finite_checks_every_channel`.
+- Q-32 widening: no RED (test-only, the code already satisfies the wider domain; passes first run).
+Deviations:
+- Red-to-transparent-black test: for Display-P3 the expected hue is the converted red in linear sRGB (g, b nonzero there); g = b = 0 is asserted only for sRGB and linear sRGB. Spec wording ("g = b = 0") holds in the sRGB primaries.
+- Alpha uses the `f32` formula (`a + (b - a) * t` in f32, same as `f32::interpolate`); channels are computed in f64 and narrowed once.
+- Tolerance 1e-5 (ARQ-19) is tested against an f64 reference; the cross-platform 4*eps bound of §3.4 belongs to the D3c golden.
+
+## D3a fix round (tdd-apply)
+Trigger: `develop` RED on `arq_19_color_matches_premultiplied_reference` (proptest seed saved in `crates/gafira-anim/tests/color.proptest-regressions`) and D3a verify W1/S1/S2.
+Diagnosis: test bug, code matches §3.4. Input a = Srgb alpha 0.528554, b = Srgb alpha 0.0253676, t = 1.0502127 gives a result alpha of about 1.0e-4. The code divides by its own f32 alpha (§3.4: "se divide por su a"), while the test reference divided by an f64 alpha. The f32 alpha carries about 6e-8 absolute cancellation error, so about 6e-4 relative at that magnitude, and un-premultiplying amplified it to 0.076 on a value of 199.36 (got 199.28341674804688, reference 199.3598177686992). The reference now takes its alpha (divisor and branch test) from the f32 formula `a + (b - a) * t`, widened, the same alpha the bit-exact alpha test pins (S1). No spec ambiguity: the 1e-5 tolerance is against a reference that applies the spec's divisor.
+Fixes (test-only, `tests/color.rs`): reference alpha as above (S1); `arq_19_opaque_red_to_transparent_black_keeps_hue` asserts, for each space, the result space and that the result's own channels are (1, 0, 0) within 1e-5 (W1); the Q-31 transparent-to-transparent test loops over the three spaces (S2).
+Correction to the D3a note above: the deviation "g = b = 0 is asserted only for sRGB and linear sRGB; spec holds in the sRGB primaries" was wrong. Both ends share the space, so the result is in that space (Display-P3 included) and the criterion applies to its own channels.
+RED: the saved regression case fails `arq_19_color_matches_premultiplied_reference` before the fix (`ch 2: [0.0, 0.0, 199.28341674804688, 0.00010126829147338867] vs [0.0, 0.0, 199.3598177686992]`).
+
+## D3b progress (tdd-apply)
+Done: `Interpolate for Transform2D` in `crates/gafira-anim/src/interpolate.rs` (decomposition into translation, `sx > 0`, `sy` signed by the determinant, shear `k`, rotation by the shortest path; all lerped, recomposed to `[sx c, sx s, sy(k c - s), sy(k s + c)]`; Q-28 B degenerate end borrows rotation and shear of the other end with per-axis scale as the diagonal in that frame (Q-30 A); both degenerate -> 6-coefficient lerp; exact endpoints at t = 0 and 1; extrapolation); `is_finite` over the 6 coefficients. Tests in `crates/gafira-anim/tests/transform.rs`. No change to gafira-geom (`coeffs()` and `From<[f64; 6]>` already exist).
+RED evidence (stub `interpolate` = `*self`, `is_finite` = true): 15 of 17 tests failed on assertions: `arq_19_transform_rotation_takes_the_short_way`, `..._rotation_extrapolates_without_wrapping`, `..._two_translations_...`, `..._two_scales_...`, `..._flip_is_carried_by_the_y_scale`, `..._shear_from_identity_is_linear_and_continuous`, `..._scale_zero_to_b_...`, `..._scale_x_zero_to_identity_...`, `..._rank_one_endpoint_jumps_as_documented`, `..._both_degenerate_...`, `..._endpoints_are_exact_for_fixed_cases` and the properties (`endpoints_are_exact`, `rotations_follow_the_short_arc`, `degenerate_pairs_are_the_linear_blend`); `arq_18_transform_is_finite_checks_every_coefficient` (NaN accepted). Pass against the stub by construction (no RED): the det-sign property (identity keeps the sign) and equal-endpoints round trip; the real checks for those are the decomposition tests and the mutants below.
+Hand mutants killed: longest-path rotation (3 tests), no shear (4), no t=0/1 special case (4), degenerate frame swapped (2). The sign-on-`sx` mutant was wrongly called equivalent here; it differs between ends of opposite determinant sign (round 2, C1).
+Multi-seed: 40 distinct `PROPTEST_RNG_SEED` values (7919 * 1..40), 17/17 each, no flake. The det-sign property avoids global rejects by swapping the rows of `b` when its determinant sign differs.
+Deviations: a non-finite coefficient on either end (out of contract, ARQ-18 rejects it in tracks) yields the 6-coefficient lerp, never a panic. Det is tested with `== 0.0` exactly (superseded by Q-33 in round 2); a finite end whose parts overflow or divide to non-finite is treated as degenerate. Mixed-sign determinants are specified by §3.4 ("un volteo es siempre `sy < 0`", each component lerped): `sx` stays positive and `sy` crosses 0 as a lerp (corrected in round 2).
+
+## D3b round 2 (tdd-apply)
+Findings fixed (verify round 1 FAIL): C1, Q-33 B (W1), S1, S2, S3. Tests in `crates/gafira-anim/tests/transform.rs`, code in `crates/gafira-anim/src/interpolate.rs` (`Parts::decompose`).
+- Q-33: an end with finite coefficients is degenerate if `det` or `|c1|·|c2|` is not finite, or `|det| <= 1e-12·|c1|·|c2|` (f64, `c1 = (a, b)`, `c2 = (c, d)`). Replaces `det == 0.0`. Numbers checked against §3.4 / ARQ-19 text: `[0.1, 0.3, 0.7, 2.1]` -> `[0.55, 0, 0, 1.55]`, `[1e200, 1e200, 1e200, 2e200]` -> `[5e199, 0, 0, 1e200]`, `scale(1e-9)` not degenerate -> `scale(0.5 + 5e-10)`; zero translation, towards identity, t = 0.5, 1e-9 tolerance; plus the exact-zero `[1.1, 2.2, 3.3, 6.6]` -> `[1.05, 0, 0, 3.8]`.
+- RED (assertion failures before the code change): `arq_19_q33_rank_one_end_with_rounding_determinant_is_degenerate` (huge shear coefficients instead of `[0.55, 0, 0, 1.55]`), `arq_19_q33_finite_coefficients_with_non_finite_determinant_are_degenerate` (non-finite result), `arq_19_q33_threshold_is_relative_to_the_column_lengths` (sine 1e-13 end was decomposed). `arq_19_q33_tiny_uniform_scale_is_not_degenerate` passed before (correction in round 3: it did not guard against an absolute threshold; towards the identity a degenerate `scale(1e-9)` gives the same result).
+- C1 (test-only, passes on the code): `..._flip_from_identity_collapses_the_y_axis_at_the_middle` (identity to `scale(1,-1)`, t = 0.5 -> `[1,0,0,0]`, both directions, plus t = 0.25 and 1.5), `..._horizontal_flip_from_identity_goes_through_a_half_turn_frame`, `..._rotated_flip_keeps_the_rotation_and_collapses_the_y_axis`, and property `arq_19_transform_opposite_sign_pairs_match_the_decomposition_reference` (2048 cases, independent reference decomposition, ties at half a turn skipped; tolerance 1e-9·max(1,|w|)·1e3 because near-singular ends give large shears). RED evidence is the mutant: sign moved onto `sx` (`sx = hypot.copysign(det)`, `sy` positive) fails 4 tests: the flip-from-identity test (`[0,0,1,0]`-style quarter-turn path), the horizontal flip, the rotated flip and the property; the clean code passes all.
+- S1: `arq_19_transform_non_finite_endpoint_never_panics` (NaN, +-inf in each coefficient, either end or both, several t).
+- S3: `arq_19_transform_degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame` (`scaleY(0)` with translation vs a B with theta 0.7, k 0.8, scales 2 and 3; expected computed independently as the diagonal of `U^-1 R^T L`; asserted different from the plain 6-coefficient blend; mirrored direction too). Mutants killed: borrowing sx replaced by the column norm (this test and the rank-one test), borrowing disabled (5 tests).
+- Multi-seed: 60 distinct `PROPTEST_RNG_SEED` values (`15485863*i + 101`, i = 1..60), `PROPTEST_CASES=4096`, 28/28 tests each, 0 failures; no `transform.proptest-regressions` file created. A first run failed on every seed from "too many global rejects" in the new property (angle wrap applied after the assume); fixed in the test before commit.
+- Deviation: Q-33 test and fix are in one commit (single file, same behavior unit).
+
+## D3b round 3 (tdd-apply)
+Findings fixed (verify round 2 FAIL): C2, W2, S5, S6. Test-only, plus one comment in `src/interpolate.rs`.
+- C2: `arq_19_q33_tiny_uniform_scale_is_not_degenerate` replaced by the two ARQ-19 examples: `arq_19_q33_large_scale_with_tiny_column_sine_is_degenerate` (`[1e6, 0, 2e6 cos 1e-13, 2e6 sin 1e-13]` -> `[500000.5, 0, 0, (1+2e-7)/2]`) and `arq_19_q33_tiny_rotated_scale_keeps_its_own_rotation` (`1e-7 rotation(0.3)` to `rotation(2.0)`, t = 0.5 -> `0.50000005 rotation(1.15)`). Zero translation. The Q-33 tests all use one helper with the spec tolerance `|got - want| <= 1e-9 * max(1, |want|)`; `assert_rel` removed.
+- RED evidence: the tests pass on the code; their RED is the absolute-threshold mutant M3 below.
+- W2: the `* 1e3` slack of the opposite-sign property is removed (tolerance 1e-9 * max(1, |w|)).
+- S5: comment on the redundant `!area.is_finite()` clause. S6: round 2 note corrected above.
+
+Hand mutants against the full gafira-anim suite (one at a time, source restored after each):
+| # | Mutant | Killing tests |
+|---|---|---|
+| M1 | determinant sign on `sx` instead of `sy` | `equal_endpoints_stay_put_within_tolerance`, `flip_blends_the_rotation_of_the_positive_x_scale_frame`, `flip_from_identity_collapses_the_y_axis_at_the_middle`, `flip_is_carried_by_the_y_scale`, `horizontal_flip_from_identity_goes_through_a_half_turn_frame`, `opposite_sign_pairs_match_the_decomposition_reference`, `rotated_flip_keeps_the_rotation_and_collapses_the_y_axis`, `scale_zero_to_b_scales_the_linear_part_by_t` (8) |
+| M2 | exact `det == 0.0` | `q33_large_scale_with_tiny_column_sine_is_degenerate`, `q33_rank_one_end_with_rounding_determinant_is_degenerate`, `q33_threshold_is_relative_to_the_column_lengths` |
+| M3 | absolute threshold `|det| <= 1e-12` | `q33_large_scale_with_tiny_column_sine_is_degenerate`, `q33_tiny_rotated_scale_keeps_its_own_rotation` |
+| M4 | non-finite checks removed (`det`, `area`) | `q33_finite_coefficients_with_non_finite_determinant_are_degenerate` |
+| M5 | degenerate-end borrowing disabled (6-coefficient blend) | `q33_finite_coefficients_with_non_finite_determinant_are_degenerate`, `q33_large_scale_with_tiny_column_sine_is_degenerate`, `q33_rank_one_end_with_rounding_determinant_is_degenerate`, `q33_threshold_is_relative_to_the_column_lengths`, `degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame`, `rank_one_endpoint_jumps_as_documented` |
+All five killed. (Test names abbreviated: prefix `arq_19_transform_` or `arq_19_`.)
+Multi-seed: 60 distinct `PROPTEST_RNG_SEED` values (`15485863*i + 977`), `PROPTEST_CASES=4096`, 29/29 transform tests each, 0 failures; no regressions file kept (the file written by the mutant runs was deleted).
+
+## D3b round 4 (tdd-apply, test-only)
+
+Added to `crates/gafira-anim/tests/transform.rs` (no source change): C3 (both column orders, decomposed), C4 (exact threshold is degenerate), S7 (tiny rotation, reverse direction), S8 (extrapolation with one degenerate end). All pass against the current code on first run (they pin behavior already implemented; no RED possible without a source change).
+
+Hand mutants, run against the full gafira-anim suite, source restored after each:
+
+| Mutant | Result | Killing test |
+|---|---|---|
+| H1 `<` instead of `<=` in the threshold | killed | `arq_19_q33_determinant_exactly_at_the_threshold_is_degenerate` |
+| H2 `\|c1\|·\|c1\|` instead of `\|c1\|·\|c2\|` | killed | `arq_19_q33_unequal_columns_with_sine_1e_3_are_decomposed_in_both_orders` |
+
+Seeds: transform tests passed under 30 distinct `PROPTEST_RNG_SEED` values (7919*i+13, i = 1..30).
+
+## D3c progress (tdd-apply)
+Done: ARQ-12 cross-platform golden in `crates/gafira-anim/tests/golden.rs` with data file `crates/gafira-anim/tests/golden/sample.json` (53 lines, one track case per line). Tracks of `f32`, `Vec2`, `Color`, `Transform2D`; expected values stored as IEEE bit patterns (u32/u64, color tagged with its space). Compare: `f32`, `Vec2` bit for bit; `Color` r/g/b within `4 * 2^-23 * max(1, |c|)` with the same space and alpha bit-exact; `Transform2D` within `1e-9 * max(1, |c|)` per coefficient. Coverage (asserted by a test): every easing variant for each type, key instants, instants around keys, `i64::MIN`/`i64::MAX`, Hold, Static, and the cases Q-28 (degenerate endpoint, both degenerate), Q-30 (rank 1 to identity), Q-31 (zero alpha, negative-alpha extrapolation through a bezier overshoot), Q-33 (rounding det, exact det 0, 1e200, both relative-threshold examples).
+Platform note: CI is disabled (README follow-up 2), so this test only ran locally on Linux x86_64; the aarch64 FMA claim in 02 §3.4 stays unchecked until CI runs on the three platforms.
+Regeneration (opt-in): gafira-anim is under the ARQ-02 purity lint (no `std::fs`, no `std::env::var`), and `#[allow]` is not permitted. So the switch is compile-time (`option_env!("GAFIRA_BLESS_GOLDEN")`, only the value `1` counts) and the test `arq_12_golden_print_regenerated` prints the new file between markers; the one-liner to write it is in the module docs. It never writes anything itself. Checked: regenerating on this platform reproduces the committed file byte for byte.
+RED: with the data file absent, `arq_12_golden_file_matches_sample_on_this_platform` and `arq_12_golden_file_covers_the_required_cases` failed ("cannot read .../sample.json"). The comparator and switch tests live in the same file and pass by construction; they get their RED from the mutants below.
+Hand mutants (each applied alone, restored after; run with `cargo test -p gafira-anim --locked`, which stops at the first failing test binary):
+| # | Mutant | Killed by |
+|---|---|---|
+| 1 | f32 compared with tolerance 1e-5 instead of bits | `arq_12_f32_and_vec2_compare_bit_for_bit` |
+| 2 | Color alpha compared with tolerance | `arq_12_color_tolerance_is_4_eps_per_channel_and_alpha_is_exact` |
+| 3 | Transform2D tolerance 1e-6 instead of 1e-9 | `arq_12_transform_tolerance_is_1e9_relative_to_max_1_and_c` |
+| 4 | regenerate switch on by default (`value != Some("0")`) | `arq_12_regenerate_switch_is_opt_in` |
+| 5 | one-ULP change (+1 bit) in a stored f32 expected value | `arq_12_golden_file_matches_sample_on_this_platform` |
+Deviations: regeneration prints instead of writing (reason above); the first commit attempt failed clippy (ARQ-02) and was amended before any other commit, so the single commit passes alone.
+
+## D3c round 2 (tdd-apply, test-only)
+
+Scope: W1, W2, S1, S2, S3 of the D3c round 1 verify report. No `src/` change, Slice card and spec untouched.
+- W1: `Golden::matches` takes `exact`. `is_exact_instant` (static track, `t` outside the key range, `t` at a key, `t` inside a segment whose `out` is `Hold`) makes `Color` and `Transform2D` compare bit for bit; the tolerance applies only to interpolated instants. Tests: `arq_12_color_and_transform_are_bit_exact_where_no_interpolation_runs`, `arq_12_exact_instants_are_static_outside_range_keys_and_hold`.
+- W2: `arq_12_golden_file_covers_the_required_cases` now checks per type: required case names (`static`, `easing_0..5`, plus `extreme_ats` for f32, the Q-28/Q-30/Q-31/Q-33 and `premultiplied_alpha`/`rotation_350_to_10`/`skew` cases for the types that have them), a Static track, `i64::MIN`/`i64::MAX` samples, samples at `at-1`, `at`, `at+1` for every key, a sample strictly inside every segment, and every easing variant (Hold included) as a segment's `out` (the last key's `out` does not count, S4). `extreme_ats` has keys at both ends of the range (asserted on its track). It exists only for f32; the other types are covered structurally (extreme instants sampled).
+- S1: colors `same_space_display_p3`, `same_space_linear_srgb`. S2: color `alpha_f32_rounding` (alpha 0.9 -> 0.1, Linear; at several sampled instants the f32 formula and an f64 formula narrowed to f32 differ, e.g. t=255/256 and t=0.999). S3: comment fixed (now describes every key, per type).
+- Data: `sample.json` regenerated with `GAFIRA_BLESS_GOLDEN=1`; the 3 new color cases are appended at the end of the color group, every existing case line is byte-identical (the only touched old line is `out_of_gamut_no_clamp`, which gained the trailing comma).
+- RED: before regenerating, `arq_12_golden_file_covers_the_required_cases` failed with "color: missing case same_space_display_p3". The exactness tests pass by construction on the comparator; their RED is the mutants below.
+
+Hand mutants, each applied alone against `cargo test -p gafira-anim --locked --no-fail-fast`, restored after each:
+
+| Mutant | Result | Killing test |
+|---|---|---|
+| H2 Color alpha computed in f64 then narrowed (`src/interpolate.rs`) | killed by the golden alone (also by ARQ-19 color tests) | `arq_12_golden_file_matches_sample_on_this_platform` |
+| H5 five claimed cases deleted from the data file (`q28_both_degenerate`, `q33_det_zero_exact`, `premultiplied_alpha`, `rotation_350_to_10`, `extreme_ats`; JSON kept valid) | killed by the coverage test only (the match test still passes) | `arq_12_golden_file_covers_the_required_cases` ("f32: missing case extreme_ats") |
+| W1 Color key instant off by one ULP: stored r bits of `same_space_display_p3` at `t=0` +1 (within the 4-eps tolerance) | killed | `arq_12_golden_file_matches_sample_on_this_platform` |
+| W1b key/Hold instants return `interpolate(.., MIN_POSITIVE)` instead of the stored value (`src/animatable.rs`) | killed | `arq_12_golden_file_matches_sample_on_this_platform`, `arq_12_sample_calls_interpolate_at_most_once`, `arq_16_hold_keeps_the_previous_value_until_the_next_key` |
+
+## T4 fix round
+
+Branch `feat/anim-core-t4`, from `develop` at 9572a06. Result: T4 re-run on `gafira-anim` = 293 mutants, 279 caught, 0 missed, 0 timeout, 14 unviable, 3m14s wall (`--jobs 8`; 19 more are excluded by argument in `.cargo/mutants.toml`, 312 in total).
+
+### Tooling finding: do not share `CARGO_TARGET_DIR` across `--jobs`
+With `CARGO_TARGET_DIR` set, the 8 jobs share one target directory and cargo-mutants reports wrong outcomes both ways: a run on `easing.rs` alone listed `coord`, `82:16 < -> >` and `88:28 / -> *` as missed although the same mutants fail the suite when applied by hand (`cargo test --test easing`: 4 failures each). Without it (default per-job target) the same run is stable and exposed 8 real survivors that T4 had reported as caught (`slope -> 0.0`, `slope -> -1.0`, and 6 in `interpolate.rs`, below). The T4 list was therefore partly unreliable. The re-run used no `CARGO_TARGET_DIR`.
+
+### Group A: `Parts::borrowing` lines 186-187 (8 mutants), killed
+Why `degenerate_end_uses_the_diagonal_in_a_rotated_sheared_frame` did not kill them: its degenerate end is `[1, 0, 0, 0]`, so `b = c_ = d = 0`. Then `sx = a*(k*s+co) - b*(k*co-s)` loses the whole `b` term and `sy = d*co - c_*s` is identically 0, so three of the eight mutants (186:43 `* -> /`, 187:24 `- -> +`, 187:19 `* -> /`) change nothing (`0*x = 0`, `0/x = 0`) and the old test could not kill them. The other five were already killed by older tests; they showed as missed only in the first run, which shared one target dir (see the tooling finding above). Only 3 of the 8 needed the new test (verify S1).
+
+New test `arq_19_transform_degenerate_end_with_full_linear_part_borrows_both_scales` (`crates/gafira-anim/tests/transform.rs`): degenerate end `[2, 1, 4, 2]` (det 0, all four coefficients non-zero) against a B with theta 0.7, k 0.8, scales (2, 3). Expected values computed independently with python3 f64 as `S = U^-1 R^T L` (S11 = 2.5927766115593833, S22 = -1.047186374381787), blended at t = 0.5, both orders, tolerance `1e-9*max(1,|want|)`. RED evidence: each of the 8 mutants applied by hand makes that test fail: 186:43 `* -> /`, 186:48 `- -> /`, 187:29 `* -> +`, 187:19 `* -> +`, 186:43 `* -> +`, 187:24 `- -> +`, 187:19 `* -> /`, 187:24 `- -> /` (all "FAILED, 1 failed").
+
+### Group B: `easing.rs::bezier` (16 mutants listed by T4; 16 in the final non-shared list)
+Behavior tests cannot kill them. The solver keeps `lo`/`hi` as a sign bracket and Newton is only an accelerator; the existing precision tests (grid of extreme control points, tiny `u`, property tests against the f64 bisection reference) already hit the hard cases. Evidence (scratch Rust port of the solver with each mutant, vs a 100-iteration f64 bisection reference, y error scaled by `max(1,|y1|,|y2|)` over y pairs in {-2,3}, {3,-2}, {0,1}, {1,0}, ...): grid 45x45 control points x 400 `u` plus `1-10^-k` and `10^-k`; f32-only grid (`1-j*2^-24`, `j*2^-24`, `10^-k`); 3M random f32 samples biased to x in {0, 1, near both}. Worst error: baseline 3.1e-6 (the `(1,0)` triple-root, `u = 0.5`) and every mutant <= 3.2e-6 on the f64 grids, <= 1.2e-7 on the f32/random sets, against the ARQ-17 bound 1e-5. The only excursion past 1e-5 was `89:44 && -> ||` at `u = 1-1e-9`, which is not an `f32` (the nearest `f32` below 1 is `1-6e-8`; `apply` takes `f32`).
+Every mutant also passes `cargo test` in full; all 16 are excluded with `exclude_re` (one regex each, exact line and column):
+- `82:16 < -> <=`: the loop breaks on `|err| <= 1e-12*u` with `u > 0` first, so `err == 0` never reaches the test; unreachable, strictly equivalent.
+- `88:22 - -> +`, `slope -> 0.0`, `slope -> -1.0`: pure bisection. `d > 0` for a monotone `x(s)` (`x1, x2` in `[0,1]`), so `s + err/d` lands on the wrong side of the bracket end just set to `s` and the guard `next > lo && next < hi` rejects it; `slope = 0.0` fails `|d| > 1e-9`; `slope = -1.0` gives `next = s + err`, also on the wrong side. Every iteration is a halving: 64 of them leave a bracket of width 2^-64 around the sign change of `coord - u`, which is exactly the root the reference bisection finds, so the y error is at most `3*max(1,|y|)*2^-64`.
+- `88:22 - -> /`: `next = s*d/err` is negative (rejected) for `err < 0`; for `err > 0` any accepted value is still strictly inside `(lo, hi)`, so the sign bracket stays valid and the result is a point of the final bracket, as for bisection (measured above).
+- `89:24`, `89:39`, `89:52` with `>=`/`<=`/`==`: the guard differs from the original only when `|d| == 1e-9`, `next == lo` or `next == hi` exactly, a measure-zero tie where taking Newton (which lies on the bracket border and is then a bracket point) or a midpoint gives the same precision.
+- `89:24 > -> <`, `89:39 > -> <`, `89:52 < -> >`, `89:31 && -> ||`, `89:44 && -> ||`: the guard accepts a wrong or out-of-bracket Newton iterate. Newton on the monotone `x(s)` still converges, the sign update keeps the root bracketed, and the measured error stays under 1.2e-7 for every `f32` input. This is the weakest argument of the set (measured, not proved); flagged for the coordinator.
+All 16 survive `cargo mutants` by construction of the exclude, not by `#[mutants::skip]`.
+
+### Extra survivors found by the non-shared re-run (6, all in `interpolate.rs`)
+- `107:33`, `108:33` (`match guard is_finite6(..) -> true`) and `157:28` (`|| -> &&` before `!det.is_finite()`): killed by new test `arq_19_transform_end_with_a_non_finite_coefficient_blends_the_six_coefficients_linearly`: an end with a NaN or infinite translation (decomposable linear part) against a rotated sheared end blends the six coefficients linearly in both orders. This pins existing implementation behavior for inputs outside the contracted domain (ARQ-18 invalidates such a track); the spec does not state it, so the coordinator may prefer to delete the test and exclude those three instead. RED: each of the three mutants fails it.
+- `157:48` (`|| -> &&` between `!det.is_finite()` and `!area.is_finite()`): excluded. For finite coefficients `|a*d - b*c| <= |c1||c2|`, so an overflowing `det` implies an overflowing `area` (`B && C` equals `B`); a finite `det` with infinite `area` is degenerate through the last term (`|det| <= 1e-12*inf`). Non-finite coefficients are caught by the first term.
+- `195:19 > -> >=`, `197:26 < -> <=`: excluded. They differ only at `|dtheta| == pi`, a tie; §3.4 says `|dtheta| <= pi`, so +pi and -pi are both the short path.
+
+### Commits and gates
+- 568e79d test(anim): ARQ-19 borrowed scales of a degenerate end with a full linear part in a rotated sheared frame
+- 5eb8cb2 chore(mutants): exclude 16 equivalent bezier solver mutants with arguments
+- f0f851a test(anim): ARQ-19 an end with a non-finite coefficient blends the six coefficients linearly
+- adef88e chore(mutants): exclude 3 equivalent interpolate mutants with arguments
+
+## T4 fix round 2
+
+Branch `feat/anim-core-t4`. Commits: `fix(anim): stop the bezier solver on the step in s, not on the error in x`, `test(anim): ARQ-19 the tie at pi keeps dtheta as computed in both directions`, `fix(anim): solve the bezier by plain bisection ...`, `chore(mutants): drop the easing and tie exclusions ...`, plus this note.
+
+### C1 (ARQ-17 precision near a flat inflection)
+- RED: `arq_17_bezier_is_precise_near_a_flat_inflection` (`tests/easing.rs`): x2 = 2^-k for k in 30..=60 with x1 = 1, the mirrored x1 = 2^-k with x2 = 1, the exact 0/1 cases, three y pairs (including [-2, 3] scaling) and u in {0.1, 0.25, 0.5, 0.75, 0.9}, against the 200-step f64 bisection reference at `1e-5 * max(1, |y1|, |y2|)`. Failing assertion on the old solver: `(1e0,0,1.8189894e-12,1) u = 0.5: got 0.4999057948589325, want 0.49991681799321075`.
+- Step 1 (first commit): hybrid Newton/bisection kept, stop rule replaced by "last step in `s` <= 1e-12". Test green, existing tests green, goldens unchanged. Stress of 3M f32 cases (x in {0, 1, 2^-k, 1-2^-k, random}, random y in [-2, 3], u same families) against the reference: worst scaled error 2.3e-6 (x1 = 1, x2 = 0, u = 0.5, the f64 noise floor of the triple root, shared by the reference), bound 1e-5.
+- Step 2 (second solver commit, deviation to review): the hybrid left 7 easing mutants alive with only measured, not proved, equivalence arguments (the weak point of verify W1). The solver is now plain bisection: 53 halvings of the bracket `[0, 1]` on the monotone `x(s)`, then `y(s_mid)` clamped. The error in `s` is at most 2^-53 by construction, `slope` and every Newton guard are gone, there is no `mul_add` and no data-dependent iteration count, and the cost is 53 `coord` calls. Spec §3.4 only requires the precision, not the method. Consequence: `tests/golden/sample.json` (ARQ-12, easing bits) was regenerated with the documented `GAFIRA_BLESS_GOLDEN=1` procedure because the bits changed: 33 values, all f32 results differ by 1 ulp (7) or are f64 Vec2/Transform2D coefficients at progress ~1e-9 whose magnitude is ~1e-17 (absolute differences below 1e-23, relative about 1e-7, which is the 2^-53 resolution of `s` there; the ARQ-17 bound is absolute). If the coordinator prefers to keep the old bits, revert the second solver commit and the golden change; the first commit alone fixes C1 but needs 7 equivalence arguments again (survivors listed in the T4 section below).
+- Survivors of the hybrid (first commit) with the easing exclusions removed (`-f easing.rs`, 12 min): `82:16 < -> <=`, `89:38 && -> ||`, `89:51 && -> ||`, `89:31 > -> >=`, `89:46 > -> >=`, `89:59 < -> <=`, `94:26 - -> +`.
+
+### W2 (tie at pi) and W3
+- Test `arq_19_transform_horizontal_flip_tie_at_pi_keeps_dtheta_as_computed` replaces the old two-sided test and pins the exact values of ARQ-19: identity -> `scale_xy(-1, 1)` at t = 0.5 gives `[0, 1, 0, 0, 0, 0]` and at 0.25 `[sqrt2/2, sqrt2/2, -sqrt2/4, sqrt2/4, 0, 0]`; `scale_xy(-1, 1)` -> identity at 0.5 and 0.75, the same values (tolerance `1e-9 * max(1, |want|)`).
+- RED (as mutants, since the code already keeps dtheta as computed): `interpolate.rs` `dtheta > PI` -> `>=` fails with `coeff 1: [6.12e-17, -1.0, 0, 0, 0, 0] vs [0, 1, 0, 0, 0, 0]`; `dtheta < -PI` -> `<=` fails with `coeff 1: [-1.84e-16, -1.0, 0, -0.0, 0, 0] vs [0, 1, 0, 0, 0, 0]`. The two exclusions (195:19, 197:26) are removed from `.cargo/mutants.toml`.
+- W3: `arq_19_transform_end_with_a_non_finite_coefficient_blends_the_six_coefficients_linearly` was compared with the ARQ-19 text (identity linear part, `tx` NaN or +inf, `ty = 4`, towards and from the decomposable end theta 2, k 0.8, sx 2, sy 3, translation (1, -2), t = 0.5, every coefficient except `tx` is the linear interpolation with `1e-9 * max(1, |want|)`): it asserts exactly that, in both directions, indices 0, 1, 2, 3, 5. No change.
+
+### S1, S2
+- S1: the Group A note above is corrected (3 of 8 mutants needed the new test).
+- S2: the `==` exclusion comment disappears with the Newton entries (all 16 easing entries removed).
+
+### Exclusions after the change
+Only `Document::schema_version -> 1`, `History::debug_check -> ()`, `hittest < -> <=` (workspace, none in gafira-anim) and `interpolate.rs:157:48 || -> &&` (proved by Hadamard, unchanged) remain. Re-derived easing: 0 exclusions. The only equality-sensitive mutant of the new solver, `77:31 < -> <=`, is caught by the suite (checked alone with `--no-config`: 1 caught).
+
+### T4 (`cargo mutants -p gafira-anim --jobs 8`, no `CARGO_TARGET_DIR`, cargo-mutants default per-job targets)
+264 found (after exclusions), 250 caught, 0 missed, 0 timeout, 14 unviable, 1 excluded in gafira-anim (`157:48`); wall 2 min 11 s. Output: `scratchpad/mutants-t4d`.

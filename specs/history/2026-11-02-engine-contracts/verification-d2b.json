@@ -1,0 +1,48 @@
+{ "schema": 1, "change": "engine-contracts", "delivery": "D2b", "rounds": [
+ {
+  "round": 1,
+  "commit": "bf66b2a8de6988da5f2181d54fbb4f3ff35d454b",
+  "mode": "full",
+  "tier": "T4",
+  "depth": "V2",
+  "verdict": "FAIL",
+  "next": "specifier",
+  "counts": {"critical": 3, "warning": 2, "suggestion": 1},
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 7, "killed": 1},
+  "criteria": {"total": 9, "covered": 6},
+  "size": {"lines": 1045, "forecast": 270},
+  "report": "verify-report.md",
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Hand mutant survives: next_generation as load plus store passes all token tests; no test holds its atomicity", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Hand mutant survives: cancel as load, compare, store passes all token tests; loom shows the newest token lost", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-testkit/src/progress.rs:CancelAt::report", "summary": "Double pushes and reads length under two locks; parallel reports skip k: false NotCancelled 383/1000 on a 2-worker conforming op, 0/2000 when serialized", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "design.md, rules of check_progress_contract", "summary": "Ok(false) with fewer than k reports, log not ending at 1.0: return-first rule gives OutputAfterCancel, row Cancelled run gives NotCancelled; code does the first. Still a failure", "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-testkit/tests/progress.rs", "summary": "Checker mutants survive (non-critical): fewer-than-k order both ways, ReportsAfterCancel before scan, contains for ends-at-1.0", "follow_up": false, "status": "open"}
+  ] },
+ {
+  "round": 2,
+  "commit": "5b0b4471ce64131a39df03bdc8026834096dd164",
+  "mode": "full",
+  "tier": "T4",
+  "depth": "V2",
+  "verdict": "PASS",
+  "next": "archive",
+  "classes": [],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 0},
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 9, "killed": 9},
+  "criteria": {"total": 9, "covered": 9},
+  "size": {"lines": 1284, "forecast": 270},
+  "report": "verify-report.md",
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Closed: mutant A killed 100/100 idle on 20 and on 4 CPUs", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Closed: exact mutant killed 200/200 idle on 20 and on 4 CPUs; replaced test is sound; see W3", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-testkit/src/progress.rs:CancelAt::report", "summary": "Closed: one lock; two-lock mutant killed 30/30", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "design.md, rules of check_progress_contract", "summary": "Closed: settled in 75a066d, code and tests match", "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-testkit/tests/progress.rs", "summary": "Closed: C, D, E, J all killed on HEAD", "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/tests/contract_cancel.rs", "summary": "Atomicity tests weak on small or busy machines: == caught 1/50 on 4 CPUs under load, 5/50 on 2 CPUs. Never fail wrongly; deterministic proof needs loom (owner)", "follow_up": true, "status": "open"}
+  ] }
+] }

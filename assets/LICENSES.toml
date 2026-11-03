@@ -1,0 +1,99 @@
+# Licence register for the files of `assets/` (ARQ-75).
+#
+# This file is partial until `xtask` exists. It has two mandatory entries from
+# its first commit: the test fonts (ARQ-115) and `assets/splash_screen.jpg` (D-09).
+# `crates/gafira-testkit/tests/licences.rs` checks both.
+#
+# Every entry has the fields of 05 FV-38 (path, hash BLAKE3, license, autoría, origin,
+# exige atribución, modificado); `hash` is computed from the file, not typed.
+# Font entries add upstream, commit and subset command; `autoría` is name ID 0 of the subset.
+# Splash `modificado` is false because D-09 records no edit; confirm with the owner.
+#
+# Each entry is one `[[asset]]` table of `key = "value"` lines.
+
+[[asset]]
+path = "assets/fonts/test/Inter-test.ttf"
+hash = "ffefc9391e3991e445c47876b376969a6bfce7e3d0419fb72d47ea95583f5a87"
+license = "OFL-1.1"
+"autoría" = "Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+origin = "https://github.com/google/fonts, ofl/inter/Inter[opsz,wght].ttf, commit 6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+"exige atribución" = "true"
+modificado = "true"
+license_file = "assets/fonts/test/OFL-inter.txt"
+reserved_font_name = "none"
+copyright_ofl_txt = "Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)"
+upstream = "https://github.com/google/fonts"
+commit = "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+source_file = "ofl/inter/Inter[opsz,wght].ttf"
+tool = "pyftsubset, fonttools 4.51.0"
+subset_command = "pyftsubset Inter.ttf --unicodes=U+0020-007E,U+00A0-017F,U+2010-2022,U+2026,U+20AC --layout-features='*' --glyph-names --output-file=Inter-test.ttf"
+note = "Test subset for gafira-text (ARQ-115). Same behaviour as the E4 spike subsets, not the same bytes."
+
+[[asset]]
+path = "assets/fonts/test/Manrope-test.ttf"
+hash = "887390a00d6b23b7516d19c964dcb0f7c780eac5ecd064950a8b7e59be6c6bf5"
+license = "OFL-1.1"
+"autoría" = "Copyright 2019 The Manrope Project Authors (https://github.com/googlefonts/manrope)"
+origin = "https://github.com/google/fonts, ofl/manrope/Manrope[wght].ttf, commit 6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+"exige atribución" = "true"
+modificado = "true"
+license_file = "assets/fonts/test/OFL-manrope.txt"
+reserved_font_name = "none"
+copyright_ofl_txt = "Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope)"
+upstream = "https://github.com/google/fonts"
+commit = "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+source_file = "ofl/manrope/Manrope[wght].ttf"
+tool = "pyftsubset, fonttools 4.51.0"
+subset_command = "pyftsubset Manrope.ttf --unicodes=U+0020-007E,U+00A0-017F,U+2010-2022,U+2026,U+20AC --layout-features='*' --glyph-names --output-file=Manrope-test.ttf"
+note = "Test subset for gafira-text (ARQ-115). Same behaviour as the E4 spike subsets, not the same bytes."
+
+[[asset]]
+path = "assets/fonts/test/NotoSansArabic-test.ttf"
+hash = "a700210b0be2dc6bf99652dfd96dbbd9066d3b8bba863b1c0b246999b44d81da"
+license = "OFL-1.1"
+"autoría" = "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)"
+origin = "https://github.com/google/fonts, ofl/notosansarabic/NotoSansArabic[wdth,wght].ttf, commit 6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+"exige atribución" = "true"
+modificado = "true"
+license_file = "assets/fonts/test/OFL-notosansarabic.txt"
+reserved_font_name = "none"
+copyright_ofl_txt = "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)"
+upstream = "https://github.com/google/fonts"
+commit = "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+source_file = "ofl/notosansarabic/NotoSansArabic[wdth,wght].ttf"
+tool = "pyftsubset, fonttools 4.51.0"
+subset_command = "pyftsubset NotoSansArabic.ttf --unicodes=U+0020-007E,U+0600-06FF,U+200C-200F --layout-features='*' --glyph-names --output-file=NotoSansArabic-test.ttf"
+note = "Test subset for gafira-text (ARQ-115). Same behaviour as the E4 spike subsets, not the same bytes."
+
+[[asset]]
+path = "assets/fonts/test/NotoEmoji-test.ttf"
+hash = "f855305990c80e6fb63b0d0446a10df3b2e895f806c010e7c35c5d8bf984bb04"
+license = "OFL-1.1"
+"autoría" = "Copyright 2013 Google LLC"
+origin = "https://github.com/google/fonts, ofl/notoemoji/NotoEmoji[wght].ttf, commit 6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+"exige atribución" = "true"
+modificado = "true"
+license_file = "assets/fonts/test/OFL-notoemoji.txt"
+reserved_font_name = "none"
+copyright_ofl_txt = "Copyright 2013 Google LLC"
+upstream = "https://github.com/google/fonts"
+commit = "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
+source_file = "ofl/notoemoji/NotoEmoji[wght].ttf"
+tool = "pyftsubset, fonttools 4.51.0"
+subset_command = "pyftsubset NotoEmoji.ttf --unicodes=U+1F600,U+1F469,U+1F4BB,U+200D,U+FE0F --layout-features='*' --glyph-names --output-file=NotoEmoji-test.ttf"
+note = "Test subset for gafira-text (ARQ-115). Same behaviour as the E4 spike subsets, not the same bytes."
+
+[[asset]]
+path = "assets/splash_screen.jpg"
+hash = "5c8768d55a9dcf834dfad40c34ecf0d9534563a11bd38ede43bbcff1b109f8b7"
+license = "Propia"
+"autoría" = "Titular de Gafira, con imagen generada con ChatGPT Plus (OpenAI)"
+"exige atribución" = "false"
+modificado = "false"
+origin = "Illustration (macaw, mountains and sea in coral, graphite and gold) generated by the owner with ChatGPT Plus on the night of 23 October 2026."
+tool = "ChatGPT Plus image generation (OpenAI)"
+license_basis = "OpenAI Terms of use, in force since 1 January 2026 (https://openai.com/policies/row-terms-of-use/), section Ownership of content: the user owns the Output and may use it commercially without attribution or royalties."
+ai_notice = "About / Credits must show it as generated with AI (OpenAI); it must not be presented as human work."
+copyright_note = "Probably not protectable by copyright (U.S. Copyright Office, 2025), so it gives no exclusivity. OpenAI gives no warranty of uniqueness or non-infringement."
+provenance = "Source: D-09, Procedencia de la imagen (technical reading of 24 October 2026, not legal advice). The repository copy carries no C2PA metadata. Keeping the original download with its C2PA metadata outside the repository as proof is VERIFICAR (pending item 6 (b) of 00-decisiones), not done."
+similarity_check = "VERIFICAR: reverse image search (Google Lens, TinEye) and a visual review for logos, text or signatures are still pending (item 6 of 00)."

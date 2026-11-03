@@ -6,7 +6,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod fonts;
+pub mod golden;
 mod harness;
+pub mod progress;
+pub mod scenes;
 
 pub use harness::{LawViolation, prop_command, try_prop_command};
 
@@ -14,9 +18,9 @@ use std::sync::Arc;
 
 use gafira_color::{Color, DisplayP3Rgba, LinearRgba, Rgba};
 use gafira_doc::{
-    BlendMode, DocMut, Document, Dpi, EditToken, ElementBase, ExtensionNode, Flip, GroupNode,
-    LoadError, Node, NodeField, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry,
-    ShapeNode, ValidationError,
+    BlendMode, DocMut, Document, Dpi, EditToken, ElementBase, ExtensionNode, Flip, GridSettings,
+    GridStyle, GroupNode, Guide, GuideAxis, GuideSet, LoadError, Margins, Node, NodeField, NodeId,
+    NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode, ValidationError,
 };
 use gafira_geom::{Length, Unit};
 use proptest::collection::vec;
@@ -78,6 +82,92 @@ fn placement() -> impl Strategy<Value = Placement> {
             p.skew = skew;
             p.flip = Flip { x: fx, y: fy };
             p
+        })
+}
+
+fn any_unit() -> impl Strategy<Value = Unit> {
+    proptest::sample::select(Unit::ALL.to_vec())
+}
+
+/// A length of `lo..=hi` in any unit, written as the number it holds.
+fn length_in(lo: f64, hi: f64) -> impl Strategy<Value = Length> {
+    (lo..=hi, any_unit()).prop_map(|(v, unit)| Length::new(v, unit))
+}
+
+/// A page bleed of 0 to 10 mm, the ends included.
+pub fn bleed() -> impl Strategy<Value = Length> {
+    prop_oneof![
+        1 => Just(Length::new(0.0, Unit::Mm)),
+        1 => Just(Length::new(10.0, Unit::Mm)),
+        4 => (0.0..=10.0_f64).prop_map(|v| Length::new(v, Unit::Mm)),
+    ]
+}
+
+/// Margins of 0 to 500 px per side; `linked` is free and independent of the
+/// sides, which are stored as given.
+pub fn margins() -> impl Strategy<Value = Margins> {
+    let side = || prop_oneof![Just(Length::new(0.0, Unit::Px)), length_in(0.0, 500.0)];
+    (side(), side(), side(), side(), any::<bool>()).prop_map(
+        |(top, right, bottom, left, linked)| Margins {
+            top,
+            right,
+            bottom,
+            left,
+            linked,
+        },
+    )
+}
+
+/// One guide at any finite position, including negative and far outside a page.
+pub fn guide() -> impl Strategy<Value = Guide> {
+    (
+        any::<bool>(),
+        prop_oneof![
+            finite().prop_map(|v| Length::new(v, Unit::Px)),
+            length_in(-1e6, 1e6)
+        ],
+        any::<bool>(),
+    )
+        .prop_map(|(vertical, position, locked)| Guide {
+            axis: if vertical {
+                GuideAxis::Vertical
+            } else {
+                GuideAxis::Horizontal
+            },
+            position,
+            locked,
+        })
+}
+
+/// Up to 6 guides, duplicates and any order included.
+pub fn guide_set() -> impl Strategy<Value = GuideSet> {
+    prop_oneof![
+        1 => Just(GuideSet::default()),
+        4 => vec(guide(), 1..=6).prop_map(GuideSet),
+        1 => guide().prop_map(|g| GuideSet(vec![g, g])),
+    ]
+}
+
+/// Grid settings inside the ranges the spec allows: step 1 to 500, 1 to 10
+/// subdivisions.
+pub fn grid_settings() -> impl Strategy<Value = GridSettings> {
+    (
+        any::<bool>(),
+        length_in(1.0, 500.0),
+        1..=10_u8,
+        any::<bool>(),
+        any::<bool>(),
+    )
+        .prop_map(|(visible, step, subdivisions, dots, snap)| GridSettings {
+            visible,
+            step,
+            subdivisions,
+            style: if dots {
+                GridStyle::Dots
+            } else {
+                GridStyle::Lines
+            },
+            snap,
         })
 }
 
@@ -178,6 +268,7 @@ struct PageSpec {
     flags: (bool, bool),
     unit: Unit,
     axes: [AxisSpec; 2],
+    layout: (Length, Margins, GuideSet, GridSettings),
     nodes: Vec<NodeSpec>,
 }
 
@@ -188,13 +279,15 @@ fn page_spec() -> impl Strategy<Value = PageSpec> {
         any::<(bool, bool)>(),
         proptest::sample::select(Unit::ALL.to_vec()),
         [axis.clone(), axis],
+        (bleed(), margins(), guide_set(), grid_settings()),
         vec(node_spec(), 0..=MAX_NODES),
     )
-        .prop_map(|(name, flags, unit, axes, nodes)| PageSpec {
+        .prop_map(|(name, flags, unit, axes, layout, nodes)| PageSpec {
             name,
             flags,
             unit,
             axes,
+            layout,
             nodes,
         })
 }
@@ -312,6 +405,7 @@ fn build(spec: &DocSpec) -> Document {
                 page_size(p, spec.dpi),
             );
             (page.locked, page.hidden) = p.flags;
+            (page.bleed, page.margins, page.guides, page.grid) = p.layout.clone();
             let mut nodes: Vec<Node> = Vec::new();
             let mut depths: Vec<usize> = Vec::new();
             for n in &p.nodes {

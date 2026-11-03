@@ -1,0 +1,40 @@
+{ "schema": 1, "change": "engine-contracts", "delivery": "D1", "rounds": [ {
+  "round": 1, "commit": "4e1f742b6c3d6a45135c34a634dc64838ca4c9b5", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "specifier",
+  "classes": ["ambiguity", "implementation"],
+  "counts": {"critical": 2, "warning": 2, "suggestion": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "ambiguity", "ref": ".odd/state.json; design.md:10",
+     "summary": "No G0 record: no outcome entry, Slice card, Light spec or delta spec. design.md precedes the code and is unchanged, but its acceptance list was never recorded.",
+     "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/src/msg.rs:72",
+     "summary": "Hand mutants survive in is_valid_key: segment class widened to / : ` {. Code is correct; test table lacks bytes next to the 0-9 and a-z ranges.",
+     "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:1; design.md:13",
+     "summary": "Flow line says L3, new function; design says L2, new capability. No Flow-change line. Mode, mutation, tier and depth agree.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "apply-progress.md Deviations",
+     "summary": "Type criterion has no RED and the stated reason fails: a false PartialEq stub on Message fails the test on an assertion.",
+     "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 3},
+  "criteria": {"total": 10, "covered": 9},
+  "size": {"lines": 427, "forecast": 370}, "report": "verify-report.md" },
+  {
+  "round": 2, "commit": "7b8c2cd697a328c7fb6e1fa068a80da6b4aebeb0", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "classes": [],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 1},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "ambiguity", "ref": "apply-progress.md:1", "summary": "Closed by owner acceptance of the late Slice card, as relayed by the coordinator. Card touches only apply-progress.md; no implementer commit changed it. G0 order itself was not met.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-doc/tests/msg_key.rs:66", "summary": "IM2a and IM2b reapplied; both killed by the byte test.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:3; design.md:13", "summary": "Flow-change records the level only. Pack new capability -> new function and the reason change are unrecorded. No obligation changes.", "follow_up": true, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "apply-progress.md Deviations", "summary": "Deviation corrected; PartialEq stub RED reproduced on 03e19cc, exit 101.", "follow_up": false, "status": "closed"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 2, "killed": 2},
+  "criteria": {"total": 10, "covered": 10},
+  "size": {"lines": 452, "forecast": 370}, "report": "verify-report.md" } ] }

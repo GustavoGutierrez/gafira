@@ -9,7 +9,7 @@ description: >
 
 # Technical manual: update, find, build
 
-The manual documents what is implemented in the repository today. English is the source (`chapters/`, `index.md`); Spanish mirrors it (`chapters-es/`, `index-es.md`) with the same numbers and file names. The tool is `docs/manuals/tecnico/manual.py` (standard library only); its `README.md` is the short user guide. Product intent lives in `docs/specs/`; if the manual and the spec disagree, the spec and the owner decisions win.
+The manual documents what is implemented in the repository today. English is the source (`chapters/`, `index.md`); Spanish mirrors it (`chapters-es/`, `index-es.md`) with the same numbers and file names. The tool is `docs/manuals/tecnico/manual.py` (standard library only); its `README.md` is the short user guide. Product intent lives in `specs/`; if the manual and the spec disagree, the spec and the owner decisions win.
 
 ## Use it when
 

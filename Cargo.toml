@@ -15,13 +15,25 @@ gafira-color = { path = "crates/gafira-color" }
 gafira-doc = { path = "crates/gafira-doc" }
 gafira-edit = { path = "crates/gafira-edit" }
 gafira-time = { path = "crates/gafira-time" }
+gafira-anim = { path = "crates/gafira-anim" }
 gafira-testkit = { path = "crates/gafira-testkit" }
 gafira-pathops = { path = "crates/gafira-pathops" }
+gafira-layout = { path = "crates/gafira-layout" }
+gafira-text = { path = "crates/gafira-text" }
+gafira-raster = { path = "crates/gafira-raster" }
+gafira-audio = { path = "crates/gafira-audio" }
+gafira-segment = { path = "crates/gafira-segment" }
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 trybuild = "1"
+png = "0.18"
+parley = { version = "0.12", default-features = false, features = ["std"] }
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
+rayon = "1"
+assert_no_alloc = "1.1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -47,3 +59,10 @@ opt-level = 2
 [profile.mutants]
 inherits = "test"
 debug = "none"
+
+# The segmentation gate runs 4000x3000 images through the whole pipeline in tests.
+[profile.dev.package.gafira-segment]
+opt-level = 2
+
+[profile.dev.package.gafira-testkit]
+opt-level = 2

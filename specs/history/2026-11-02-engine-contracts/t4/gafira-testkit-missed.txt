@@ -1,0 +1,10 @@
+crates/gafira-testkit/src/lib.rs:326:18: replace + with * in axis_length
+crates/gafira-testkit/src/golden.rs:51:9: replace <impl fmt::Display for GoldenError>::fmt -> fmt::Result with Ok(Default::default())
+crates/gafira-testkit/src/golden.rs:108:9: replace Image::width -> u32 with 1
+crates/gafira-testkit/src/golden.rs:108:9: replace Image::width -> u32 with 0
+crates/gafira-testkit/src/golden.rs:113:9: replace Image::height -> u32 with 0
+crates/gafira-testkit/src/golden.rs:113:9: replace Image::height -> u32 with 1
+crates/gafira-testkit/src/golden.rs:123:9: replace Image::bytes -> &[u8] with Vec::leak(vec![1])
+crates/gafira-testkit/src/golden.rs:123:9: replace Image::bytes -> &[u8] with Vec::leak(Vec::new())
+crates/gafira-testkit/src/golden.rs:123:9: replace Image::bytes -> &[u8] with Vec::leak(vec![0])
+crates/gafira-testkit/src/harness.rs:84:9: delete field failure_persistence from struct Config expression in try_prop_command

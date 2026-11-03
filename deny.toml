@@ -31,6 +31,14 @@ allow = [
 confidence-threshold = 0.93
 # The allowlist is policy for future dependencies; unused entries are not an error.
 unused-allowed-license = "allow"
+# The exception below is for a dev-only dependency, which cargo-deny never matches (layer-2 design L9, P1).
+unused-license-exception = "allow"
+
+# assert_no_alloc (BSD-1-Clause, not in the allowlist) is a dev-dependency of gafira-audio and gafira-testkit, used as the
+# allocation guard of ARQ-23. Owner exception, layer-2 design E2/S20; it never ships in a product binary.
+[[licenses.exceptions]]
+allow = ["BSD-1-Clause"]
+crate = "assert_no_alloc"
 
 [licenses.private]
 # Workspace crates use LicenseRef-Gafira-Proprietary and are never published.

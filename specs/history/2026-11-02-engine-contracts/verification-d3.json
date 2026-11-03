@@ -1,0 +1,43 @@
+{ "schema": 1, "change": "engine-contracts", "delivery": "D3", "rounds": [ {
+  "round": 1, "commit": "ac73e8aaa25d23ee221bfbcf1e22b840c9a1a192", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "classes": ["implementation"],
+  "counts": {"critical": 3, "warning": 1, "suggestion": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-pathops/tests/message.rs:122",
+     "summary": "Hand mutant H1 survives: NaN width and tolerance routed to *_not_positive with a NaN value. Fixtures and loop never pass NaN to these arms. Code is correct.",
+     "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-pathops/tests/message.rs:140",
+     "summary": "Hand mutant H2 survives: OpenSubpath saturates over the i32 range. Cases are 0, 3 and usize::MAX, none near a boundary. Code is correct.",
+     "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-pathops/tests/message.rs:65",
+     "summary": "Hand mutant H3 survives: tolerance_not_positive drops the sign. The only fixture is 0.0, which cannot show it. Code is correct.",
+     "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "docs/manuals/tecnico/chapters/02-architecture.md:26,89",
+     "summary": "Manual (en, es) says gafira-pathops depends on gafira-geom alone; false after D3. Outside D3 scope; manual changes only on owner request.",
+     "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 1},
+  "criteria": {"total": 9, "covered": 6},
+  "size": {"lines": 331, "forecast": 200}, "report": "verify-report.md" }, {
+  "round": 2, "commit": "04b21310fff88d199405cead4ea44d60b7d2034f", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "classes": [],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 1},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-pathops/tests/message.rs:122",
+     "summary": "H1 reapplied, killed by arq_102_the_non_finite_class_and_the_geometry_text_stay_out_of_the_message.", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-pathops/tests/message.rs:140",
+     "summary": "H2 reapplied, killed by arq_102_an_open_subpath_index_saturates_at_i64_max.", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-pathops/tests/message.rs:65",
+     "summary": "H3 reapplied, killed by arq_102_a_not_positive_number_keeps_its_value_and_sign.", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "docs/manuals/tecnico/chapters/02-architecture.md:26,89",
+     "summary": "Manual still says gafira-pathops depends on gafira-geom alone. Follow-up for archive.", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 3, "killed": 3},
+  "criteria": {"total": 9, "covered": 9},
+  "size": {"lines": 397, "forecast": 200}, "report": "verify-report.md" } ] }

@@ -1,0 +1,52 @@
+{ "schema": 1, "change": "color-lab", "delivery": "CL1", "rounds": [ {
+  "round": 1, "commit": "1d6eab3596b9b0164165d5842050261f82593122", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 4, "warning": 1, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:115-117",
+     "summary": "Hue wrap limit unpinned: thresholds 170 and >=, <= at exact 180 survive, error up to 36.6 dE; direct cases needed", "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "P6 alpha ignored, lab.rs:69",
+     "summary": "No test varies alpha; premultiplying by alpha survives, L off by up to 100", "follow_up": false, "status": "open"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:95,129",
+     "summary": "h<=0 in hue_degrees (15.7 dE) and h1+h2<=360 (2e-4) survive; no exact hue boundary case", "follow_up": false, "status": "open"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/tests/lab.rs:46-61",
+     "summary": "Tolerance 1e-5 does not pin f64 (f32 narrowing survives) or exact epsilon (0.008856 survives)", "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": ".cargo/mutants.toml",
+     "summary": "Six verified equivalents will appear in T4 on critical code; exclusions with reasons needed before archive", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 54, "killed": 38},
+  "criteria": {"total": 7, "covered": 5},
+  "size": {"lines": 335, "forecast": 280}, "report": "verify-report.md" }, {
+  "round": 2, "commit": "b43f439301aba66044a8a7d651fe2a6e9ba4765d", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive", "classes": [],
+  "counts": {"critical": 0, "warning": 2, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:115-117", "summary": "Closed: W2, W3, W5, W7, W12 and both S2 arms killed", "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation", "ref": "P6 alpha ignored, lab.rs:69", "summary": "Closed: A1 killed by arq_122_alpha_is_ignored", "follow_up": false, "status": "closed"},
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:95,129", "summary": "Closed: H7 and H2 killed", "follow_up": false, "status": "closed"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/tests/lab.rs:46-61", "summary": "Closed: A9 (two forms) and A2 killed", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": ".cargo/mutants.toml", "summary": "Verified equivalents will appear in T4 on critical code; exclusions with reasons needed before archive", "follow_up": true, "status": "open"},
+    {"id": "WF2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-color/tests/lab.rs, exact-180 test and Sharma pair 14", "summary": "Exact-180 cases depend on system atan2 bits; 1 ulp flips dE by up to 6.7. Windows and macOS CI unproven", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 13, "killed": 13},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 436, "forecast": 280}, "report": "verify-report.md" }, {
+  "round": 3, "commit": "852b92f1a8c4f32889677d59fcf9b03599911f06", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive", "classes": [],
+  "counts": {"critical": 0, "warning": 0, "suggestion": 5},
+  "findings": [
+    {"id": "M1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:129:18", "summary": "Closed: + to * was missed in the first T4; caught in T4 at 852b92f by the new mean-hue test", "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": ".cargo/mutants.toml", "summary": "Closed: 6 entries remove exactly the 7 intended mutants; all equivalent, 6,000,000-input differential", "follow_up": true, "status": "closed"},
+    {"id": "WF2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-color/tests/lab.rs, exact-180 test and Sharma pair 14", "summary": "Closed: CI run 41380387263 at 978bbcb passed on Linux, macOS and Windows", "follow_up": true, "status": "closed"},
+    {"id": "TO1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-color/src/lab.rs:128:13, 129:23 x3", "summary": "Closed: not hanging; T4 logs stop at the package cache lock, no test ran; all 4 caught on assertions on re-run", "follow_up": false, "status": "closed"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": {"tier": "T4", "found": 408, "caught": 384, "missed": 0, "timeout": 4, "unviable": 20, "critical_missed": 0, "wall_s": 384,
+               "rerun": {"found": 9, "caught": 9, "missed": 0, "timeout": 0, "jobs": 4, "timeout_s": 300, "wall_s": 19}},
+  "hand_mutants": {"run": 5, "killed": 5},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 446, "forecast": 280}, "report": "verify-report.md" } ] }

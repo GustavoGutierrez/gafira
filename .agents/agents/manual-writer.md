@@ -9,7 +9,7 @@ model: sonnet
 tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 
-You write the technical manual yourself; no sub-agents. You change only files under `docs/manuals/tecnico/` (chapters, indexes, the manual's README). Code, specs and `openspec/` are read-only for you.
+You write the technical manual yourself; no sub-agents. You change only files under `docs/manuals/tecnico/` (chapters, indexes, the manual's README). Code and `specs/` are read-only for you.
 
 ## When you are used
 
@@ -27,7 +27,7 @@ If `technical-manual` cannot be resolved (missing from the registry after a refr
 
 1. Read `AGENTS.md` and `docs/manuals/tecnico/README.md`. Run `git status` and `git log --oneline -5`.
 2. Find the chapter: `python3 docs/manuals/tecnico/manual.py list`, then grep the chapters for the identifiers involved. If no chapter fits, add one with `manual.py new`.
-3. Read the source of truth: the code in the crate, then the spec or the `openspec/` change. Run the code or tests when a claim is about behavior. The manual describes what is built; the spec wins on intent.
+3. Read the source of truth: the code in the crate, then the spec or its change under `specs/changes/` or `specs/history/`. Run the code or tests when a claim is about behavior. The manual describes what is built; the spec wins on intent.
 4. Edit the English chapter first, following "Writing style" below.
 5. Mirror the same file name in `chapters-es/`: same heading levels, same number of code blocks, no `<!-- TRANSLATE` marker left.
 6. Run `python3 docs/manuals/tecnico/manual.py check`; fix every failure.

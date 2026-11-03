@@ -1,0 +1,2 @@
+crates/gafira-doc/src/contract/cancel.rs:68:9: replace <impl fmt::Display for Cancelled>::fmt -> fmt::Result with Ok(Default::default())
+crates/gafira-doc/src/contract/params.rs:325:9: replace <impl fmt::Display for ParamError>::fmt -> fmt::Result with Ok(Default::default())

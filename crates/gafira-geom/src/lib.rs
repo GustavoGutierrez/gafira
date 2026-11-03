@@ -4,10 +4,12 @@
 
 #![forbid(unsafe_code)]
 
+mod irect;
 mod length;
 mod size;
 mod transform;
 
+pub use irect::IRect;
 pub use kurbo::{Affine, Point, Rect, Vec2};
 pub use length::{ConversionError, Length, Unit};
 pub use size::Size;

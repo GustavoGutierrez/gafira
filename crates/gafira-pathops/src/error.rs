@@ -2,6 +2,9 @@
 
 use std::fmt;
 
+use gafira_doc::msg;
+use gafira_doc::msg::{Message, ToMessage};
+
 /// Which kind of non-finite number a coordinate holds.
 ///
 /// The classification, not the raw `f64`, is what the error carries: a NaN does
@@ -144,6 +147,46 @@ impl fmt::Display for PathOpError {
 }
 
 impl std::error::Error for PathOpError {}
+
+impl ToMessage for PathOpError {
+    fn to_message(&self) -> Message {
+        match self {
+            Self::NonFiniteCoordinate { .. } => msg!("error.pathops.non_finite_coordinate"),
+            Self::CoordinateOutOfRange { value, limit } => msg!(
+                "error.pathops.coordinate_out_of_range",
+                value = Decimal(*value),
+                limit = Decimal(*limit)
+            ),
+            Self::OpenSubpath { subpath } => msg!(
+                "error.pathops.open_subpath",
+                subpath = Int(i64::try_from(*subpath).unwrap_or(i64::MAX))
+            ),
+            Self::InvalidStrokeWidth {
+                cause: InvalidNumber::NotPositive(value),
+            } => msg!(
+                "error.pathops.stroke_width_not_positive",
+                value = Decimal(*value)
+            ),
+            Self::InvalidStrokeWidth {
+                cause: InvalidNumber::NonFinite(_),
+            } => msg!("error.pathops.stroke_width_non_finite"),
+            Self::InvalidTolerance {
+                cause: InvalidNumber::NotPositive(value),
+            } => msg!(
+                "error.pathops.tolerance_not_positive",
+                value = Decimal(*value)
+            ),
+            Self::InvalidTolerance {
+                cause: InvalidNumber::NonFinite(_),
+            } => msg!("error.pathops.tolerance_non_finite"),
+            Self::ToleranceTooFine { minimum } => msg!(
+                "error.pathops.tolerance_too_fine",
+                minimum = Decimal(*minimum)
+            ),
+            Self::Geometry(_) => msg!("error.pathops.geometry"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

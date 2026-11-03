@@ -17,6 +17,8 @@ Always. Every code change flows through git.
 
 ### Trunk-Based Development (Recommended)
 
+> This repo: Gafira does not integrate against `main`. Changes branch from `develop`, the coordinator merges them into `develop` after verify PASS, and the only PR is `develop` -> `main`, opened only on the owner's request or OK at a release-worthy point (see `docs/adr/0003-develop-integration-branch.md`).
+
 Keep `main` always deployable. Work in short-lived feature branches that merge back within 1-3 days. Long-lived development branches are hidden costs — they diverge, create merge conflicts, and delay integration. DORA research consistently shows trunk-based development correlates with high-performing engineering teams.
 
 ```

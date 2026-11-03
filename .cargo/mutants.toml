@@ -11,4 +11,22 @@ exclude_re = [
     'replace History::debug_check with \(\)$',
     # Equivalent: when two segments are equally near the point, keeping the first or the last gives the same distance.
     'hittest\.rs:\d+:\d+: replace < with <= in Path::distance_to_perimeter$',
+    # interpolate.rs (T4 fix round). Redundant term: `!det.is_finite()` implies `!area.is_finite()` (Hadamard, |a*d| <= |c1||c2|) and a finite `det` with an infinite `area` is degenerate through the last term anyway, so `A || B || C || D` and `A || (B && C) || D` agree on every input.
+    'interpolate\.rs:157:48: replace \|\| with && in Parts::decompose$',
+    # layout (T4 fix round). Equivalent: the check only asks whether the centre is finite, and `x % 2.0` is finite exactly when `x / 2.0` is (both are non-finite for an infinite sum; NaN cannot arise after the number check).
+    'align\.rs:(62|63):37: replace / with % in check_boxes$',
+    # Equivalent: at a screen spacing of exactly 6 px the doubling loop runs zero times and gives `unit = step, div = 1, every = 1`, which is what the plain level (and the minor level when subdivisions = 1) gives.
+    'grid\.rs:113:27: replace < with <= in level$',
+    # Equivalent: two candidates that tie on distance, kind, coordinate and reference differ at most in the sign of a zero (0.0 and -0.0 tie), which the spec treats as the same target (same offset), so replacing one by the other changes nothing.
+    'snap\.rs:98:13: replace < with <= in Candidate::beats$',
+    # lab.rs (T4 fix round). Equivalent: at `t = EPSILON` both branches of `f` give the same f64 (difference 0), so `>` and `>=` agree everywhere.
+    'lab\.rs:41:10: replace > with >= in f$',
+    # Equivalent: `chromatic` only gates `dh`, and with `C1 * C2 = 0` the term `dH'` is 0 either way (`2*sqrt(C1*C2)` is 0), so `th` is 0 and `S_H` and `R_T` reach the result only through `th`; a sum or quotient is zero or non-zero in the same cases that matter.
+    'lab\.rs:111:24: replace \* with (\+|/) in delta_e2000$',
+    # Equivalent: the 360 degree wraps of `dh` differ by 720 degrees in `dh/2` radians' sine argument, and `sin` keeps its value over a full period (difference at rounding level, 8.5e-14).
+    'lab\.rs:(116|118):16: replace (-=|\+=) with (\+=|-=) in delta_e2000$',
+    # Equivalent: the achromatic arm of `h_bar` feeds only `T`, `S_H` and `R_T`, which reach the result through `th`, and `th` is 0 when `C1 * C2 = 0`.
+    'lab\.rs:126:12: replace \+ with (-|\*) in delta_e2000$',
+    # irect.rs (T4). Equivalent: `>` and `>=` differ only at `x1 == x0` (`y1 == y0`), where the `>=` arm gives `abs_diff` = 0, the same as the `else` arm. Checked over every `x` in `i32` with `x1 == x0` plus the boundary pairs.
+    'irect\.rs:(23|32):20: replace > with >= in IRect::(width|height)$',
 ]

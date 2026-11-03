@@ -1,0 +1,23 @@
+{ "schema": 1, "change": "layer-2-scaffold", "delivery": "SC1", "rounds": [ {
+  "round": 1, "commit": "60f39cf106a9a5871c512540f5067f9b7da40e7a", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 2},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": ".github/workflows/ci.yml V5 step",
+     "summary": "ARQ-01 is proved by V5, which does not name it; git grep traces only to an unrelated gafira-doc test. Read as WARNING for command-typed ACs; literal step 3c would be CRITICAL.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "claim", "ref": "deny.toml [[licenses.exceptions]], 02 9.2",
+     "summary": "Nothing enforces dev-only assert_no_alloc: moved to normal deps, deny and V5 exit 0 with the exception, deny exits 4 without it. Holds today, unguarded.",
+     "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "ambiguity", "ref": ".github/workflows/ci.yml ARQ-107 step, design P9",
+     "summary": "Optional icu_plurals with its feature off passes the ARQ-107 step and V5. The step matches P9; ARQ-107 does not say if inactive optional deps count.",
+     "follow_up": false, "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "apply-progress.md, AGENTS Delivery rules",
+     "summary": "shortstat is 944 insertions (391 without Cargo.lock), above ~700 with no recorded OK; authored ~340 exceeds forecast 180 x1.4 = 250.",
+     "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 32, "killed": 27},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 944, "forecast": 180}, "report": "verify-report.md" } ] }

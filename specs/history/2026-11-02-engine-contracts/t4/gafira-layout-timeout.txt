@@ -1,0 +1,5 @@
+crates/gafira-layout/src/attractors.rs:61:34: replace += with *= in attractors
+crates/gafira-layout/src/attractors.rs:69:31: replace += with *= in attractors
+crates/gafira-layout/src/bounds.rs:59:23: replace += with *= in bounds_with
+crates/gafira-layout/src/grid.rs:115:31: replace * with / in level
+crates/gafira-layout/src/grid.rs:116:22: replace *= with /= in level

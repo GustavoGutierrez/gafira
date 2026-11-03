@@ -42,8 +42,7 @@ cargo test --workspace --locked
 |---|---|
 | `crates/` | `gafira-*` library crates (hexagonal layering enforced in CI) |
 | `apps/` | Binaries (`gafira-cli`; the GUI app comes later) |
-| `docs/specs/` | Product specs in progress (in Spanish) plus `00-decisiones.md` (owner decisions); completed ones go to `docs/specs/archive/`, the rest waits in `docs/specs/backlog/`, see `docs/specs/README.md` |
-| `openspec/` | Specs and changes that drive development (`config.yaml`, `specs/`, `changes/`) |
+| `specs/` | Product specs in progress (in Spanish) plus `00-decisiones.md` (owner decisions); completed ones go to `specs/archive/`, the rest waits in `specs/backlog/`, see `specs/README.md`. `specs/capabilities/` holds the main specs, `specs/changes/` active change folders, `specs/history/` closed changes |
 | `assets/` | Splash screen and other design assets (logos live in `docs/manuals/marca/assets/`) |
 | `.agents/` | Agents and skills for Claude Code; `.claude/agents` and `.claude/skills` are symlinks to it |
 
@@ -64,11 +63,11 @@ spec -> explorer (only for risky claims) -> tdd-apply -> verify -> mutants (whol
 ```
 
 - One writer at a time; each delivery is built with strict TDD and one commit per work unit.
-- A product spec in `docs/specs/` runs directly from its requirement IDs (fast lane, `docs/adr/0002-fast-lane.md`); no proposal or delta specs.
+- A product spec in `specs/` runs directly from its requirement IDs (fast lane, `docs/adr/0002-fast-lane.md`); no proposal or delta specs.
 - `mutants` (cargo-mutants, optional dev tool) lists surviving mutants; by default once per touched crate when the change closes (`mutation: archive` in the Flow line; `delivery` and `off` are the alternatives).
 - `verify` checks the gates and every scenario; on FAIL the work goes back to `tdd-apply`.
 - The coordinator rejects `done` without evidence.
-- The coordinator may push branches and open PRs after verify PASS; the owner does every merge. Each delivery targets `main` (or the previous unmerged delivery branch), never a long-lived integration branch.
+- Each change and delivery is a short-lived branch cut from `develop`. After verify PASS the coordinator merges it into `develop`, runs the gates and pushes `develop`; the only PR is `develop` -> `main`, opened only when the owner asks or at a release-worthy point, and the owner reviews and merges it (`docs/adr/0003-develop-integration-branch.md`).
 
 First-time setup: generate the gitignored skill registry (`.atl/skill-registry.md`):
 
@@ -76,12 +75,12 @@ First-time setup: generate the gitignored skill registry (`.atl/skill-registry.m
 .agents/skills/skill-registry/refresh.sh
 ```
 
-The full methodology (flow, TDD, delivery rules, OpenSpec layout) is in `AGENTS.md`.
+The full methodology (flow, TDD, delivery rules, specs layout) is in `AGENTS.md`.
 
 ## Assets
 
-Audio under `assets/musics/` is kept out of git (owner decision D-10 in `docs/specs/00-decisiones.md`). Keep local copies there; do not commit them.
+Audio under `assets/musics/` is kept out of git (owner decision D-10 in `specs/00-decisiones.md`). Keep local copies there; do not commit them.
 
 ## License
 
-Proprietary; see `LICENSE`. The full license agreement and privacy policy are written in the final licensing phase (`docs/specs/backlog/06-licencia-y-activacion.md`). Third-party crates must use permissive licenses only (`deny.toml`).
+Proprietary; see `LICENSE`. The full license agreement and privacy policy are written in the final licensing phase (`specs/backlog/06-licencia-y-activacion.md`). Third-party crates must use permissive licenses only (`deny.toml`).

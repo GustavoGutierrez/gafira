@@ -4,7 +4,7 @@
 
 This manual describes how Gafira is built: its crates, the rules between them, the public API of the domain crates, the document format, the quality gates and the development method. It documents what exists in the repository today. Parts that are specified but not yet implemented are marked **Planned**.
 
-Product intent (what and why) lives in `docs/specs/`; this manual is the technical counterpart (how it is built). When this manual and a spec disagree, the spec and the owner decisions in `docs/specs/00-decisiones.md` win, and this manual is corrected.
+Product intent (what and why) lives in `specs/`; this manual is the technical counterpart (how it is built). When this manual and a spec disagree, the spec and the owner decisions in `specs/00-decisiones.md` win, and this manual is corrected.
 
 ## What Gafira is
 
@@ -33,17 +33,18 @@ Workspace version: `0.1.0-beta.1`. Edition 2024, toolchain `1.93.1` pinned in `r
 |---|---|
 | `crates/` | Library crates (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`, `gafira-pathops`, `gafira-testkit`) |
 | `apps/gafira-cli/` | Command-line binary |
-| `docs/specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
+| `specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
 | `docs/manuals/` | Brand manual (`marca/`) and this technical manual (`tecnico/`) |
-| `openspec/specs/` | Main specs per capability, merged at archive time; fast-lane changes do not edit them |
-| `openspec/changes/` | Open changes; closed ones move to `openspec/changes/archive/` |
+| `specs/capabilities/` | Main specs per capability, merged at archive time; fast-lane changes do not edit them |
+| `specs/changes/` | Active change folders, only for work that needs one; closed ones move to `specs/history/` |
+| `.odd/state.json` | The active outcomes of ODD lite (see the methodology chapter) |
 | `.agents/agents/` | Agents of the development flow (`.claude/agents` is a symlink) |
 | `.github/workflows/ci.yml` | CI: tests, policy checks, `cargo-deny` |
 | `deny.toml`, `.cargo/mutants.toml` | License and source policy; mutation-testing settings (the `mutants` profile is in `Cargo.toml`) |
-| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane) |
+| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane, ADR 0011 ODD lite, accepted) |
 
 ## Reading order
 
 1. Architecture and layering, to know where code may live.
 2. The crate chapters, bottom-up: geometry, color, document, edit.
-3. Tooling and methodology, before sending a change. Product specs run through the fast lane described in the methodology chapter.
+3. Tooling and methodology, before sending a change. Product specs run through the flow described in the methodology chapter (ODD lite and the fast lane).

@@ -9,7 +9,7 @@ description: >
 
 # Gafira brand rules
 
-Authority, in order: `docs/manuals/marca/manual-gafira.md` (the brand manual), then `docs/specs/backlog/03-diseno-visual-e-interaccion.md` (tokens JSON, dark mode, glossary ES+EN, wireframes, contrast table). If they disagree, the manual wins; report the conflict, do not guess. Re-read the manual section you apply; this file is a checklist, not a copy.
+Authority, in order: `docs/manuals/marca/manual-gafira.md` (the brand manual), then `specs/backlog/03-diseno-visual-e-interaccion.md` (tokens JSON, dark mode, glossary ES+EN, wireframes, contrast table). If they disagree, the manual wins; report the conflict, do not guess. Re-read the manual section you apply; this file is a checklist, not a copy.
 
 ## Name and voice
 - Write **Gafira** exactly: no accents, variants or added characters. Never "Canva" or other products' names in specs or UI.
