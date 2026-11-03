@@ -36,7 +36,7 @@ pub(crate) fn weighted_u8(t: &Transfer, samples: &[([u8; 4], f64)]) -> [u8; 4] {
 }
 
 /// Weighted sum of premultiplied `RgbaF32` pixels, mixed as stored (D-48). The weights sum to 1.
-pub(crate) fn weighted_f32(_t: &Transfer, samples: &[([f32; 4], f64)]) -> [f32; 4] {
+pub(crate) fn weighted_f32(samples: &[([f32; 4], f64)]) -> [f32; 4] {
     if let Some((px, _)) = samples.iter().find(|(_, w)| *w == 1.0) {
         return *px;
     }
@@ -91,7 +91,7 @@ mod tests {
             [2.0, -1.0, 0.3, -0.25],
             [0.7, 0.1, 0.1, 1.0],
         ] {
-            let got = weighted_f32(&Transfer::new(), &[(px, 1.0), ([0.5; 4], 0.0)]);
+            let got = weighted_f32(&[(px, 1.0), ([0.5; 4], 0.0)]);
             assert_eq!(bits(got), bits(px));
         }
     }
@@ -105,10 +105,7 @@ mod tests {
             &[([0, 0, 0, 255], 0.5), ([255, 255, 255, 255], 0.5)],
         );
         assert_eq!(got, [188, 188, 188, 255]);
-        let got = weighted_f32(
-            &Transfer::new(),
-            &[([0.0, 0.0, 0.0, 1.0], 0.5), ([1.0, 1.0, 1.0, 1.0], 0.5)],
-        );
+        let got = weighted_f32(&[([0.0, 0.0, 0.0, 1.0], 0.5), ([1.0, 1.0, 1.0, 1.0], 0.5)]);
         for c in &got[..3] {
             assert!((c - 0.5).abs() < 1e-5, "{got:?}");
         }
@@ -140,10 +137,7 @@ mod tests {
             &[([200, 10, 5, 0], 0.5), ([0, 0, 0, 255], 0.5)],
         );
         assert_eq!(got, [0, 0, 0, 128]);
-        let got = weighted_f32(
-            &Transfer::new(),
-            &[([9.0, 9.0, 9.0, 0.0], 0.5), ([0.0, 0.0, 0.0, 1.0], 0.5)],
-        );
+        let got = weighted_f32(&[([9.0, 9.0, 9.0, 0.0], 0.5), ([0.0, 0.0, 0.0, 1.0], 0.5)]);
         assert_eq!(bits(got), bits([0.0, 0.0, 0.0, 0.5]));
     }
 
@@ -164,7 +158,7 @@ mod tests {
                 );
             }
             let px = [0.2f32, 0.1, 0.05, 0.4];
-            let got = weighted_f32(&Transfer::new(), &[(px, 1.0 - w), (px, w)]);
+            let got = weighted_f32(&[(px, 1.0 - w), (px, w)]);
             for k in 0..4 {
                 assert!((got[k] - px[k]).abs() < 1e-6, "{got:?}");
             }
@@ -176,7 +170,7 @@ mod tests {
     fn out_of_range_colours_keep_their_sign() {
         let px = [-0.25f32, 1.5, -2.0, 1.0];
         for w in [0.3f64, 0.5, 0.9] {
-            let got = weighted_f32(&Transfer::new(), &[(px, 1.0 - w), (px, w)]);
+            let got = weighted_f32(&[(px, 1.0 - w), (px, w)]);
             for k in 0..4 {
                 assert!((got[k] - px[k]).abs() < 1e-5, "w={w}: {got:?}");
             }
@@ -200,7 +194,7 @@ mod tests {
         ];
         for (a, b) in rows {
             for w in [0.5f64, 0.25, 1.0e-9, 0.999_999] {
-                let out = weighted_f32(&Transfer::new(), &[(a, 1.0 - w), (b, w)]);
+                let out = weighted_f32(&[(a, 1.0 - w), (b, w)]);
                 assert!(
                     out.iter().all(|v| v.is_finite()),
                     "{a:?} {b:?} w={w}: {out:?}"
@@ -236,7 +230,7 @@ mod tests {
                 b in prop::array::uniform4(prop_oneof![-1.0e38f32..1.0e38, -1.0e-30f32..1.0e-30, -2.0f32..2.0]),
                 w in 0.0f64..=1.0,
             ) {
-                let out = weighted_f32(&Transfer::new(), &[(a, 1.0 - w), (b, w)]);
+                let out = weighted_f32(&[(a, 1.0 - w), (b, w)]);
                 prop_assert!(out.iter().all(|v| v.is_finite()), "{out:?}");
             }
 
@@ -246,7 +240,7 @@ mod tests {
                 b in prop::array::uniform4(-1.0e30f32..1.0e30),
                 w in 0.0f64..=1.0,
             ) {
-                let out = weighted_f32(&Transfer::new(), &[(a, 1.0 - w), (b, w)]);
+                let out = weighted_f32(&[(a, 1.0 - w), (b, w)]);
                 for k in 0..4 {
                     let ak = if a[3] == 0.0 && k < 3 { 0.0 } else { a[k] };
                     let bk = if b[3] == 0.0 && k < 3 { 0.0 } else { b[k] };

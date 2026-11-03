@@ -137,7 +137,7 @@ impl Transition for Zoom {
                     &to,
                     &mut dst,
                     |x, y, f| weighted_u8(&tr, &samples(f, x, y, p, scales)),
-                    |x, y, f| weighted_f32(&tr, &samples(f, x, y, p, scales)),
+                    |x, y, f| weighted_f32(&samples(f, x, y, p, scales)),
                 );
             }
         }

@@ -159,7 +159,7 @@ impl Transition for Wipe {
                     },
                     |i, a, b| {
                         let m = mask(i);
-                        weighted_f32(&tr, &[(a, 1.0 - m), (b, m)])
+                        weighted_f32(&[(a, 1.0 - m), (b, m)])
                     },
                 );
             }
