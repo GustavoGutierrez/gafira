@@ -471,6 +471,25 @@ Fecha: 2 de noviembre de 2026.
 - Amplía D-51.
 - Aplicado a 02 (§12.2) y 05 (FV-10).
 
+## D-56 Sombra en luz lineal
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: el efecto Sombra pinta el elemento sobre su sombra con el modo `Normal` de ARQ-119, en luz lineal también en `Rgba8`, como D-53 (aviso W1 de la verificación de D-53). Así la sombra en 8 bits y en `f32` sigue la misma regla y las dos coinciden a ≤ 1/255.
+- **Consecuencia**: en 8 bits cambian los píxeles donde un elemento translúcido deja ver su sombra, que hasta ahora se componían sobre los valores sRGB codificados.
+- Amplía D-53.
+- Aplicado a 02 (ARQ-120, §4.17.4) y 04 (FD-35).
+
+## D-57 Referencia de 8 bits de los modos de mezcla
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: la referencia en `f64` de ARQ-119 para 8 bits despremultiplica con el redondeo de 8 bits de ARQ-117, como hace el código (aviso W2 de la verificación de D-53).
+- **Motivo**: frente a una referencia con `c / a` exacto, ColorBurn, ColorDodge, Hue y Overlay se separan más de 1/255, hasta 85/255 en ColorBurn, también con alfas altos.
+- **Consecuencia**: una ruta GPU que reciba 8 bits debe despremultiplicar con el mismo redondeo para quedar a ≤ 2/255 de la CPU (04 FD-12 (c)).
+- Precisa D-53.
+- Aplicado a 02 (ARQ-119) y 04 (FD-12).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
