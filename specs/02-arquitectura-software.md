@@ -7,7 +7,7 @@
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
 | Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-45 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-148 quedan reservados para los motores de la capa de aplicación (§4.17.7, §4.17.8) |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-148 son los contratos de los motores de la capa de aplicación (§4.17.7, §4.17.8) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -485,7 +485,7 @@ pub fn walk<V: NodeVisitor>(page: &PageView, v: &mut V, order: WalkOrder) -> Vec
   3. No se toca `gafira-doc`.
 - **Cómo añadir un tipo de nodo de extensión**:
   1. Implementar `NodeExtension` (bounds y esquema del inspector) en el crate de la extensión. El trait del dominio **no** declara `render_into` ni menciona el grafo de render (ARQ-137).
-  2. Registrar el manejador de render en el motor que lo consume (`gafira-render` en este corte) y, si aplica, el esquema del inspector.
+  2. Registrar el manejador de render en el motor que lo consume (`gafira-render` en este corte, §4.17.7) y, si aplica, el esquema del inspector.
   3. Nunca se añade una variante a `NodeKind` desde fuera del núcleo.
 
 | ID | Requisito | Criterio de aceptación |
@@ -974,11 +974,11 @@ pub trait Translator: Send + Sync {                                       // gaf
 - **`Region`**: es un tipo propio `Copy` y no el de `icu_locale_core`, para que el engine y los adaptadores reciban `FormatLocale` sin depender de ICU; `gafira-i18n` convierte en su borde. `Region::new` acepta 2 letras ASCII, que guarda en mayúsculas, o 3 dígitos ASCII (`419`, para `es-419`); cualquier otra cosa da `None`. Aceptación: `mx` y `MX` dan `MX`; `419` es válido; `m`, `mex`, `41`, `4190`, `m1` y `ñx` dan `None`; `as_str` devuelve lo guardado.
 - **Dobles de prueba**: `FakeSystemLocaleSource` (etiquetas fijas) en `gafira-testkit`, tras la feature `ports` (§2.2); `PseudoTranslator` (feature `pseudo` de `gafira-i18n`, solo desarrollo y pruebas, §14.6).
 
-### 4.17 Contratos de los motores de capa 2
+### 4.17 Contratos de los motores de capa 2 y de la capa de aplicación
 
-Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las fichas de 04 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
+Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y el de los dos motores de la capa de aplicación, `gafira-render` (§4.17.7) y `gafira-media` (§4.17.8). Las fichas de 04 y 05 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
 
-Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007).
+Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y después `gafira-render` y `gafira-media`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007); los dos motores de la capa de aplicación no tienen arista entre sí (ADR 0015).
 
 Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 
@@ -991,6 +991,8 @@ Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 | `AudioBlock`, `ParamSnapshot` | `gafira-audio` |
 | `Segmentation`, `SegHints`, `SegReq`, `SegError` | `gafira-segment` |
 | `Registry<T>` | `gafira-ports` |
+| `RenderGraph`, `RenderGraphBuilder` | `gafira-render` |
+| `RenderPlan`, `TileKey`, `ContentKey`, `TileCache` | `gafira-ports` |
 
 `Cost` da unidades de trabajo abstractas, calculadas con los píxeles y el tamaño del núcleo, sin tiempo (ARQ-02). Aceptación: con los mismos parámetros y el mismo `cx`, `cost_hint` no da menos trabajo para el doble de píxeles.
 
@@ -1196,6 +1198,58 @@ Hueco conocido y aceptado (D-45, Q-45): un fondo texturizado a ΔE76 6 queda fue
 | Todos los superpíxeles fijados como fondo | `Ok`, sin primer plano, no fiable. | ARQ-131, ARQ-133 |
 | Sujeto que toca el borde de la imagen, sin semillas | Lo que cae en superpíxeles fijados queda como fondo. Una semilla de primer plano lo recupera. Sin cota de IoU. No fiable si deja en la banda un grupo con al menos el 5 % de ella; un contacto menor no cambia `reliable`. | ARQ-131, ARQ-133 |
 | Cancelación | Sin reloj en las pruebas unitarias (ARQ-112). | ARQ-112 |
+
+#### 4.17.7 `gafira-render`
+
+`gafira-render` construye el grafo de render, calcula la clave de contenido de cada nodo, planifica los tiles por prioridad y reparte el presupuesto del frame (§6.1, §6.2). Es un motor de la capa de aplicación: no depende de `gafira-media` y no ve el motor que ejecuta el plan (§4.6). Las tres reglas comunes de ARQ-138 a ARQ-140 valen para los dos motores de la capa de aplicación, este y `gafira-media` (§4.17.8).
+
+| Primer corte | Fuera del corte |
+|---|---|
+| 02 §4.1 (visitante), §4.5 (`PageRenderer`), §4.6 (`RenderBackend`, `TileCache`), §6.1, §6.2, §6.3 (prioridades), §7.1 (las cachés no van en el `.gafira`); ARQ-10, ARQ-13, ARQ-20, ARQ-22, ARQ-41, ARQ-42 (parcial), ARQ-43, ARQ-44, ARQ-121; CAL-13, CAL-14 (parcial) | Motores de render (`gafira-render-cpu`, `gafira-render-gpu`), que son capa 4. `gafira-engine` (sesión, `MemoryGovernor`, cola de exportación). Exportadores SVG y PDF. `gafira-layout` y `gafira-text`: el grafo lee la colocación del nodo, no la maqueta. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-138 | **Pureza y puertos.** `gafira-render` es puro en el sentido de ARQ-02: no usa `std::fs`, `std::net`, `std::thread::spawn`, `std::time::Instant::now`, `std::time::SystemTime::now` ni `std::env`. El tiempo llega por `ports::Clock`, el sistema de archivos por `ports::FileSystem` y el pool de hilos por parámetro. No crea motores de render: elige entre los que le inyectan por `BackendCaps` (§4.6). | El lint de CI (`clippy::disallowed_methods` y `clippy::disallowed_types` del `clippy.toml` canónico) da 0 avisos en el crate (command). Con un `Clock` falso, el plazo del frame sale del reloj inyectado y no del reloj del sistema: dos ejecuciones con relojes distintos dan plazos distintos (unit). |
+| ARQ-139 | **Cancelación y progreso sin reloj.** Una operación larga es la que recibe `CancelToken` y `Progress`. Una operación larga emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. La fracción sigue un modelo de trabajo, las unidades hechas sobre las previstas, no el tiempo transcurrido. Comprueba el token al menos una vez por tile y por fotograma. Al ver la cancelación devuelve un error de cancelado, no entrega salida parcial y no emite más progreso. La estimación de tiempo la calcula `gafira-engine` con su `Clock`, no este crate (ARQ-02). | Con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo), la llamada devuelve cancelado y hay como mucho 1 informe después del `k` (unit). Sobre la entrada de referencia, la fracción sube ≤ 0,02 entre dos informes seguidos, medido sobre las fracciones emitidas y no sobre el tiempo de cada tramo (unit). Sin medidas de tiempo en `cargo test`: la cota de ≤ 100 ms (ARQ-43) se mide en §6.7. |
+| ARQ-140 | **Determinismo.** La misma entrada produce los mismos bytes: la clave de contenido, el grafo y el plan no dependen del número de hilos ni de ninguna fuente de entropía. | El crate ejecuta dos veces cada operación de su primer corte y compara los bytes (unit). Con pool de 1, 2 y 4 hilos, el grafo y las claves son idénticos (property). |
+| ARQ-141 | **Grafo y clave de contenido.** Cada nodo del grafo tiene una clave de contenido (§6.1) que depende del tipo del nodo, de los parámetros muestreados en `t`, de las claves de entrada y del LOD. Dos nodos con los mismos cuatro datos dan la misma clave, y cambiar cualquiera de los cuatro da otra clave. El grafo es el mismo en vista previa y en exportación (§6.2): solo cambian los parámetros. | Dos nodos idénticos dan la misma clave; un nodo con un parámetro distinto, con otro LOD o con otra clave de entrada dan claves distintas (unit). El grafo de la vista previa y el de la exportación tienen las mismas operaciones, con los parámetros de calidad distintos (§6.2) (integration, ARQ-42). |
+| ARQ-142 | **Caché de tiles.** La caché de tiles es direccionada por contenido: la clave es (`ContentKey`, nivel, columna, fila) (§4.6) y el presupuesto se cuenta en bytes. `bytes()` informa del tamaño actual y `trim(budget)` la deja por debajo o igual al presupuesto; las dos llamadas viajan por `ports::TileCache`, porque el gobernador pregunta a la caché cuánto tiene y le dice que se encoja (ARQ-44). Al insertar y superar el presupuesto, la caché descarta la entrada menos usada hasta volver al presupuesto. | Con un presupuesto de 0, la caché no conserva ninguna entrada y `bytes()` da 0 (unit). `trim(budget)` con un presupuesto mayor que el tamaño actual no cambia nada y no falla (unit). Después de un `trim`, `bytes()` es ≤ el presupuesto dado (unit). El descarte es determinista: con dos entradas del mismo tamaño, sale la que lleva más tiempo sin usarse (unit). |
+| ARQ-143 | **Presupuesto de frame y degradación.** El presupuesto del frame y su reparto son los de §6.2. El plazo del render visible sale del reloj inyectado. Si el plazo pasa, `execute` no da error: devuelve un `RenderReport` con `left > 0`, y quien llama presenta el mejor mip disponible y refina en el frame siguiente (§6.2). Ante `RenderError::DeviceLost`, el motor pasa a CPU para el resto de la sesión y lo informa, sin perder el documento (ARQ-22). | Con un reloj falso que adelanta el plazo, `execute` devuelve `left > 0` y no un error (unit). Con un doble de motor que falla con `DeviceLost` a mitad de un frame, el frame termina en CPU y el documento sigue editable (integration, ARQ-22). El reparto por etapas y el margen se comprueban en §6.2. |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Presupuesto de la caché | En bytes. `bytes()` da el tamaño actual; `trim(budget)` deja la caché en ≤ `budget`. | ARQ-142 |
+| Presupuesto 0 | La caché queda vacía y `bytes()` da 0. | ARQ-142 |
+| `trim` con un presupuesto mayor que el tamaño actual | No cambia nada. | ARQ-142 |
+| Empate al descartar | Con dos entradas del mismo tamaño sale la menos usada hace más tiempo; el orden es estable. | ARQ-142 |
+| Plazo alcanzado | `now == plazo` cuenta como plazo pasado (`left > 0`); un nanosegundo antes, `left == 0`. | ARQ-143 |
+| Plazo sin límite | `Deadline::Unbounded` nunca pasa. | ARQ-143 |
+
+#### 4.17.8 `gafira-media`
+
+`gafira-media` indexa los keyframes, cachea los fotogramas decodificados, genera las copias ligeras, lleva el reloj de reproducción con sincronía A/V y orquesta la exportación de video (§6.5). Es un motor de la capa de aplicación: no depende de `gafira-render` y llega al render por el puerto `PageRenderer` (§4.5). Trabaja por activo y por rango de tiempo: el modelo de línea de tiempo (`Sequence`, `Track`, `Clip`) no existe todavía (§3.1) y llega con su propio cambio, así que este corte no lo da por hecho.
+
+| Primer corte | Fuera del corte |
+|---|---|
+| 02 §4.5 (`Exporter`), §4.6 (`Container`, `Codec`, `Decoder`, `Encoder`, `Muxer`), §6.5, §7.1 (las cachés no van en el `.gafira`); 05 FV-11, FV-12 (parcial), FV-22, FV-24 (parcial); ARQ-43, ARQ-44; CAL-14, CAL-16 (parcial), CAL-17 (parcial) | Códecs y contenedores concretos (`gafira-codec-free`, `gafira-codec-os`, `gafira-mux`), que son capa 4. El modelo de línea de tiempo (`Sequence`, `Track`, `Clip`), que es capa 1 y llega con su propio cambio. La cola de exportación y el `MemoryGovernor` (`gafira-engine`). La interfaz de reproducción. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-144 | **Índice de keyframes.** Al importar un medio se indexan sus keyframes en segundo plano, con una cota de ≤ 1 s por minuto de material 1080p (FIJADA, §6.5). El índice se construye recorriendo los paquetes del contenedor y guardando los que son keyframe, con su tiempo. `SeekMode::Keyframe` cae en el keyframe anterior al tiempo pedido y `SeekMode::Exact` cae en el mismo y decodifica hacia delante. El índice vive en memoria: en este corte no se escribe ni en el `.gafira` (§7.1) ni en la caché del usuario, y se reconstruye al volver a abrir el medio. | Con un medio de prueba de tres keyframes en 0 s, 2 s y 4 s, buscar 3,5 s devuelve el keyframe de 2 s y `SeekMode::Exact` devuelve el fotograma de 3,5 s (integration). Un medio sin keyframes hasta 5 s devuelve el primer keyframe disponible, y un índice vacío no da `panic` (unit). Cerrar y volver a abrir el medio reconstruye el índice y los resultados de búsqueda son los mismos (integration). Después de abrir un proyecto, la caché del usuario no tiene ningún archivo nuevo de índice (command). |
+| ARQ-145 | **Caché de fotogramas.** La caché de fotogramas es un LRU con presupuesto de RAM (por defecto 1 GB o el 15 % de la RAM, el menor; FIJADA, §6.5) y hace *prefetch* en la dirección del movimiento del cabezal. La clave es el contenido del medio, el nivel de proxy y el índice de fotograma (§6.5). Cuando se pide un fotograma que no está, se muestra el más cercano que sí está, mientras el exacto se decodifica. | Con un presupuesto de 0 la caché no conserva fotogramas. Con un presupuesto que cabe un solo fotograma, al pedir el tercero el primero se descarta y `bytes()` da ≤ el presupuesto. El fotograma más cercano se elige por distancia en el tiempo; a igual distancia gana el anterior (unit). |
+| ARQ-146 | **Copias ligeras.** Las copias ligeras se generan automáticamente para el material de más de 1080p o con códecs costosos, en MJPEG intra a 540p o 720p, y viven en la caché del usuario, fuera del `.gafira` (§7.1, FV-22). La caché de proxies tiene un límite configurable, por defecto 10 GB (PROPUESTA, FV-22), y descarta los menos usados. La generación corre en segundo plano, con prioridad `Background`, progreso y cancelación. **La exportación nunca usa una copia ligera**: usa el original (FV-22 (b), V-3). | Al generar una copia ligera, el archivo aparece en la caché del usuario y no en el `.gafira` (integration). Cancelar la generación a mitad deja la caché en un estado usable y no deja un archivo final a medias (integration). Una exportación de un medio que tiene copia ligera usa el original: el archivo exportado tiene la resolución del original (integration, FV-22 (b)). |
+| ARQ-147 | **Reloj de reproducción y descarte de fotogramas.** El reloj maestro es el de audio: el video nunca lo bloquea. Si el video se retrasa, se descartan fotogramas y se sigue. La deriva entre el audio y el video en la vista previa no pasa de 40 ms. La tolerancia se aplica al fotograma cuya presentación ya pasó. | Con un reloj falso que avanza de golpe, los fotogramas que ya pasaron se descartan y el audio no se corta (integration). Con audio y video desalineados 39 ms, no se descarta ningún fotograma; con 40 ms o más, se descarta (unit). Un rango de duración cero no da `panic` (unit). |
+| ARQ-148 | **Opciones del exportador en memoria.** El exportador de video de este crate es un `ports::Exporter` (§4.5) y lee sus opciones de `ParamValues`, **en memoria**, dentro del `ExportJob` que recibe. En este corte `ParamValues` no tiene forma serializada y el exportador no la necesita: no serializa opciones, no las persiste y no las vuelve a leer. La persistencia de las opciones llega con la cola de exportación de `gafira-engine` (§6.4), fuera de este corte. | Dos ejecuciones del mismo `ExportJob` con el mismo `ParamValues` dan el mismo archivo, byte a byte (unit). El crate no escribe ni lee opciones de exportación en disco: el único archivo que produce es el de salida (integration). Un `ExportJob` con opciones inválidas se rechaza antes de empezar a exportar, sin dejar archivo parcial (integration, FV-24 (b)). |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Presupuesto de la caché de fotogramas | En bytes. El valor por defecto es el menor entre 1 GB y el 15 % de la RAM (FIJADA). | ARQ-145 |
+| Presupuesto 0 | La caché no conserva fotogramas y el más cercano sale vacío. | ARQ-145 |
+| Descarte por presupuesto | Al insertar y superar el presupuesto sale primero el fotograma menos usado. | ARQ-145 |
+| Empate al elegir el fotograma más cercano | A igual distancia en el tiempo, gana el anterior. | ARQ-145 |
+| Deriva A/V de la vista previa | El límite es 40 ms. A 39 ms no se descarta ningún fotograma; a 40 ms o más, se descarta. | ARQ-147 |
+| Rango de duración cero | No da `panic` y no produce fotogramas. | ARQ-147 |
+| Índice de keyframes vacío | No da `panic`: no hay keyframe al que caer. | ARQ-144 |
 
 ---
 
