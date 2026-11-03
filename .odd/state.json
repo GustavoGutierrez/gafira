@@ -4,7 +4,7 @@
     {
       "outcome_id": "raster-shadow-linear",
       "spec_id": "02-arquitectura-software",
-      "status": "specifying",
+      "status": "verifying",
       "flow": "Flow: standard | level: L2 | pack: bug fix | mutation: delivery | tier: T3 | verify: V2 | decided-by: owner | reason: owner answers W1 (a) and W2 (a) of the D-53 verify; new rule on critical 8-bit compositing; T3 on the touched files because the crate T4 debt is recorded in specs/07-deuda-abierta.md",
       "scope": "Shadow composites 8-bit in linear light like D-53; ARQ-119 states that its f64 reference unpremultiplies with ARQ-117 8-bit rounding.",
       "non_goals": [
@@ -26,7 +26,60 @@
           "text": "ARQ-119 acceptance names the reference unpremultiply with ARQ-117 8-bit rounding; the reference test follows it and all 16 modes stay within 1/255."
         }
       ],
-      "next_action": "specifier records W1 and W2, then tdd-apply"
+      "next_action": "closure verify of C1",
+      "verify": {
+        "round": 1,
+        "commit": "84181d8",
+        "verdict": "FAIL",
+        "next": "coordinator amends AC1, closure verify",
+        "findings": [
+          {
+            "id": "C1",
+            "severity": "CRITICAL",
+            "class": "ambiguity",
+            "ref": "AC1, FD-35 (f)",
+            "summary": "AC1 said 1/255; the owner's FD-35 (f) answer is 2/255 from shadow alpha 16. Fixed by the outcome amend.",
+            "follow_up": false,
+            "status": "open"
+          },
+          {
+            "id": "W1",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "FD-35 (d), (e)",
+            "summary": "An alpha-0 element holding colour over a zero shadow: code keeps the element (d), blend_u8 gives zero (e); the spec does not say which wins.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "W2",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "blend.rs:226",
+            "summary": "Equivalent mutant from D-53 not recorded in specs/07-deuda-abierta.md nor excluded.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "W3",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "blend.rs:81, shadow.rs cost_hint, shadow.rs:208",
+            "summary": "Recorded raster debt found again by T3; BR1 line reference is now 81.",
+            "follow_up": true,
+            "status": "open"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "FAIL",
+            "classes": [
+              "ambiguity"
+            ]
+          }
+        ]
+      }
     }
   ]
 }
