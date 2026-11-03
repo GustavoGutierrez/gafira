@@ -1,6 +1,6 @@
 # 0014. One error enum per port family in `gafira-ports`
 
-- Status: proposed
+- Status: accepted (owner confirmation 2026-11-02)
 - Date: 2026-11-02
 - Related: ARQ-102, 02 §7.3, ADR 0012, change `gafira-ports`
 

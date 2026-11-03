@@ -2,7 +2,7 @@
 
 This design fixes the crate's surface, its V5 row and its deliveries. The key moves: `gafira-ports` sits directly above `gafira-raster`, the render contract lives in ports so adapters never see `gafira-render`, and `D1` lands every shared-file change so later deliveries touch only their own module.
 
-Evidence: 02 §1.3, §2.1 to §2.3, §4 intro, §4.5 to §4.16, §5.3, §5.5, §6.1 to §6.4, §7.3, §11, §13, §14.1 to §14.4; 00 (D-02, D-08, D-12); 04 FD-31, FD-55, FD-57, FD-58, FD-64; 05 V-5, FV-02, FV-12, FV-23; ADR 0005, 0007, 0008, 0012; `.github/workflows/ci.yml`; `crates/gafira-doc/src/contract/`, `crates/gafira-raster/src/view.rs`, `crates/gafira-segment/src/lib.rs`, `crates/gafira-testkit/`. ADRs: [0013](../../../docs/adr/0013-ports-edges-and-v5-row.md), [0014](../../../docs/adr/0014-one-error-enum-per-port.md), both `proposed`.
+Evidence: 02 §1.3, §2.1 to §2.3, §4 intro, §4.5 to §4.16, §5.3, §5.5, §6.1 to §6.4, §7.3, §11, §13, §14.1 to §14.4; 00 (D-02, D-08, D-12); 04 FD-31, FD-55, FD-57, FD-58, FD-64; 05 V-5, FV-02, FV-12, FV-23; ADR 0005, 0007, 0008, 0012; `.github/workflows/ci.yml`; `crates/gafira-doc/src/contract/`, `crates/gafira-raster/src/view.rs`, `crates/gafira-segment/src/lib.rs`, `crates/gafira-testkit/`. ADRs: [0013](../../../docs/adr/0013-ports-edges-and-v5-row.md), [0014](../../../docs/adr/0014-one-error-enum-per-port.md), both accepted by the owner on 2026-11-02.
 
 ## Flow
 
@@ -15,7 +15,7 @@ Evidence: 02 §1.3, §2.1 to §2.3, §4 intro, §4.5 to §4.16, §5.3, §5.5, §
 3. Run `D5b` last.
 4. T4 at close: `gafira-ports`, then `gafira-doc`, one at a time.
 
-None of the open items below blocks a delivery. O1 and S1 to S16 can land at any time; `D2` builds on the provisional reading of O1.
+O1 and O2 are closed. S1 to S16 block no delivery and can land at any time.
 
 ## Decisions
 
@@ -161,7 +161,7 @@ A later addition to this crate is a small delivery of the crate that needs it. I
 | `media` | `Container`, `Demuxer`, `Muxer`, `Codec`, `Decoder`, `Encoder`, `MediaError`, `MuxConfig`, `MuxReport`, `StreamInfo`, `StreamIdx`, `Packet`, `SeekMode`, `CodecId`, `CodecCaps`, `CodecParams`, `EncoderConfig`, `Frame`, `VideoFrame`, `AudioBuf`, `CodecRegistry` | ports | |
 | `assets` | `AssetProvider`, `AssetKind`, `AssetQuery`, `AssetItem`, `AssetPage`, `ProviderAssetId`, `Materialized`, `AssetError`, `AssetRegistry` | ports | |
 | `repository` | `ProjectRepository`, `LoadedProject`, `RepositoryError` | ports | Over `Document`: S15 |
-| `license` | `LicenseVerifier`, `LicenseStatus`, `LicenseKey`, `LicenseError`, `ReasonCode` | ports | O1 |
+| `license` | `LicenseVerifier`, `LicenseStatus`, `LicenseKey`, `LicenseError`, `ReasonCode` | ports | O1 (a) |
 | `assist` | `TextAssistant`, `AssistReq`, `RewriteRequest`, `Suggestion`, `AssistError`, `TextAssistantRegistry` | ports | |
 | `i18n` | `Locale`, `LanguagePreference`, `SystemLocale`, `SystemLocaleSource`, `ResolvedLocale`, `LocaleSource`, `LocaleResolver`, `FormatLocale`, `Region`, `Translator`, `NumberStyle`, `DateStyle` | ports | P9 |
 | `render` | `EffectRegistry`, `TransitionRegistry` | ports | `pub type` over raster traits |
@@ -267,7 +267,15 @@ ADR 0014: one hand-written enum per port family, in the port's module, each with
 
 02 §4.14, §4.16 and §5.3 place fakes in `gafira-testkit`. A plain `testkit -> ports` edge means `testkit -> raster`, which breaks the V5 testkit row and ADR 0007. It also rebuilds ports and testkit on every `gafira-raster` mutant, because raster has `testkit` as a dev-dependency.
 
-Decision (ADR 0013): `gafira-testkit` gains an optional feature `ports`, off by default, which enables the optional dependency and a `fakes` module. Consumers ask for it in their `dev-dependencies`. The V5 row keeps checking the default graph, so it does not change. Spec text stays true. Not built here: it lands with the first fake (XP1).
+Decision (ADR 0013): `gafira-testkit` gains an optional feature `ports = ["dep:gafira-ports", "dep:gafira-raster"]`, off by default, with a `fakes` module behind it. Both dependencies are optional, so the default graph of testkit has neither. Consumers ask for it in their `dev-dependencies`. The V5 row keeps checking the default graph, so it does not change. Spec text stays true. Not built here: it lands with the first fake.
+
+Rules, from XP1:
+
+| Rule | Why (XP1) |
+|---|---|
+| `gafira-raster` never enables the `ports` feature and never depends on `gafira-ports`, in any section | Otherwise `cargo mutants -p gafira-raster` builds ports and testkit for every mutant |
+| A fake that takes or returns raster types is used only from integration tests (`crates/<crate>/tests/`) or from other crates, never from a unit test in `gafira-raster/src` | Inside raster's unit tests, the loop `raster [dev] -> testkit -> ports -> raster` gives two copies of `gafira_raster`, and the types do not match (E0308) |
+| Other crates enable it freely | Their tests, and raster's integration tests, see one copy |
 
 `gafira-testkit/examples/extension-demo` (ARQ-20) uses a dev-dependency of testkit, which V5 does not walk.
 
@@ -413,10 +421,12 @@ T4 at close: `gafira-ports`, `gafira-doc`. Plain data has few mutants, so T4 is 
 
 ## Open questions (owner)
 
+None open. The record:
+
 | # | Question | Options and tradeoffs | Recommendation |
 |---|---|---|---|
-| O1 | D-12 removes the trial and lets people use the app unlicensed with export blocked; 02 §4.14 has `Trial` and `can_edit`, and ARQ-92, ARQ-93 and ARQ-95 follow it (open item 42). What does `LicenseStatus` expose while the list of blocked functions is pending? | (a) No `Trial`; `can_export` only. Applies D-12 exactly, and adds a predicate per blocked function later. (b) Keep `can_edit` with its 02 meaning: contradicts "se puede usar sin licencia". (c) Copy 02 as written: contradicts D-12, which prevails | (a). `D2` builds it provisionally, and `Unlicensed` stays a state. Only the predicate would change, so an answer costs a few lines. It blocks nothing |
-| O2 | Accept ADR 0013 and ADR 0014? | Accepting makes the row, the testkit feature and the error rule binding. They stay `proposed` until then; `D1` can run on them | Accept |
+| O1 | D-12 removes the trial and lets people use the app unlicensed with export blocked; 02 §4.14 has `Trial` and `can_edit`, and ARQ-92, ARQ-93 and ARQ-95 follow it (open item 42). What does `LicenseStatus` expose while the list of blocked functions is pending? | (a) No `Trial`; `can_export` only. Applies D-12 exactly, and adds a predicate per blocked function later. (b) Keep `can_edit` with its 02 meaning: contradicts "se puede usar sin licencia". (c) Copy 02 as written: contradicts D-12, which prevails | Closed 2026-11-02: owner chose (a). `D2` builds it; `Unlicensed` stays a state |
+| O2 | Accept ADR 0013 and ADR 0014? | Accepting makes the row, the testkit feature and the error rule binding. They stay `proposed` until then; `D1` can run on them | Closed 2026-11-02: owner chose (a), both accepted |
 
 Owner decisions touched, none changed: D-02 (`best_decoder`), D-08 (`Locale`, §14.4 rule), D-12 (O1). O5 of the layer-2 design blocks `gafira-render-cpu`, not this crate.
 
@@ -424,7 +434,7 @@ Owner decisions touched, none changed: D-02 (`best_decoder`), D-08 (`Locale`, §
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
-| XP1 | With resolver 3, `cargo tree -p gafira-testkit -e normal,build` omits an optional `ports` feature even when another crate enables it in `dev-dependencies`; `cargo test --workspace --locked` passes with `raster [dev] -> testkit -> ports -> raster`; `cargo mutants -p gafira-raster` does not build ports | Throwaway branch or a scratch workspace. An attempt from this agent was refused by permissions, so nothing is measured | First fake (`gafira-i18n` or `gafira-license`). Nothing in this change. If it fails, the fallback is a new support crate, which needs a 02 §2.1 row |
+| XP1 | Resolved, confirmed with limits, by `explorer` on a scratch workspace. (1) The default testkit tree has no ports or raster. (2) Workspace tests and the dev loop build, but a unit test in `gafira-raster/src` using a fake that returns raster types fails with E0308: two copies of `gafira_raster`. Integration tests in `crates/gafira-raster/tests/` and tests in other crates work. (3) `cargo mutants -p gafira-raster` does not build ports while raster neither enables the feature nor depends on ports. (4) The V5 cargo-tree check passes | Feature `ports = ["dep:gafira-ports", "dep:gafira-raster"]`. Rules in P7 | Nothing |
 | XP2 | `VideoFrame` in RGBA `ImageBuf` meets CAL-16 and the 1 GB cache of 02 §6.5. At 1080p it costs 8 MB per frame | Measure with `gafira-media` | `gafira-media` design. Nothing here |
 
 ## Needs specifier
@@ -452,4 +462,4 @@ None blocks a delivery. `tdd-apply` builds to this design; 02 then follows.
 
 ## Next
 
-`tdd-apply` for `D1`. The coordinator asks O1 and O2, one at a time, whenever it suits; neither blocks. `specifier` takes S1 to S16 in one pass. `explorer` takes XP1 before the first fake.
+`tdd-apply` for `D1`. `specifier` takes S1 to S16 in one pass; S10 follows O1 (a), and S12 adds the P7 rules.
