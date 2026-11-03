@@ -1,4 +1,4 @@
-//! Importers and the format registry (02 §4.5).
+//! Importers, exporters and the format registry (02 §4.5).
 
 use std::fmt;
 use std::io::{self, SeekFrom};
@@ -11,6 +11,7 @@ use gafira_doc::msg::{Message, ToMessage};
 use gafira_doc::{ContentHash, Node, NodeId, Page};
 
 use crate::common::{Confidence, LegalClass};
+use crate::export::{ExportCaps, Exporter};
 use crate::registry::RegistryError;
 use crate::store::{ContentStore, StoreError};
 use crate::system::ReadSeek;
@@ -180,12 +181,16 @@ pub trait Importer: Send + Sync {
     ) -> Result<Imported, ImportError>;
 }
 
-/// The importers of the application, in registration order.
+/// The importers and exporters of the application, each list in registration
+/// order.
 ///
-/// Built by value at the composition root (ARQ-31).
+/// Built by value at the composition root (ARQ-31). An importer and an
+/// exporter may share an id (`.gafira` does both); an id is unique within its
+/// own list.
 #[derive(Default)]
 pub struct FormatRegistry {
     importers: Vec<Arc<dyn Importer>>,
+    exporters: Vec<Arc<dyn Exporter>>,
 }
 
 impl FormatRegistry {
@@ -207,6 +212,34 @@ impl FormatRegistry {
         }
         self.importers.push(importer);
         Ok(())
+    }
+
+    /// Adds an exporter under its descriptor id.
+    ///
+    /// # Errors
+    /// [`RegistryError::DuplicateId`] when another exporter has the id; the
+    /// registry is left unchanged. An importer with the same id does not
+    /// count.
+    pub fn register_exporter(&mut self, exporter: Arc<dyn Exporter>) -> Result<(), RegistryError> {
+        let id = exporter.descriptor().id;
+        if self.exporters.iter().any(|e| e.descriptor().id == id) {
+            return Err(RegistryError::DuplicateId { id });
+        }
+        self.exporters.push(exporter);
+        Ok(())
+    }
+
+    /// The exporters in registration order.
+    pub fn exporters(&self) -> impl Iterator<Item = &Arc<dyn Exporter>> {
+        self.exporters.iter()
+    }
+
+    /// The exporters whose capabilities contain `required`, in registration
+    /// order.
+    pub fn exporters_with(&self, required: ExportCaps) -> impl Iterator<Item = &Arc<dyn Exporter>> {
+        self.exporters
+            .iter()
+            .filter(move |e| e.capabilities().contains(required))
     }
 
     /// The importers in registration order.
