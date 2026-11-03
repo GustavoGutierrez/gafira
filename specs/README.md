@@ -22,6 +22,10 @@ Junto a los documentos: `capabilities/` guarda las specs principales (registro d
 | `07-deuda-abierta.md` | Vigente (no ejecutable) | Inventario de los ítems 39 a 77 y de los sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster`. No crea requisitos. |
 | `archive/` | Archivados | Ninguno todavía. |
 
+## Próximo paso
+
+El siguiente trabajo previsto de 02 es la capa 3: crates `gafira-render` y `gafira-media`, posiblemente como entregas paralelas en worktrees separados. Es un piso de modo full, así que `architect` lo diseña primero. Arranca solo cuando el titular lo pida.
+
 ## Cómo continuar el documento en curso
 
 Desde ADR 0011 (ODD ligero) los documentos se ejecutan por resultados: el trabajo que una spec ya cubre no abre carpeta y sus criterios viven en la entrada del resultado en `.odd/state.json`, que cita los IDs del documento. L3, modo full y trabajo sin spec que lo cubra usan una carpeta en `specs/changes/<change>/`; una carpeta ya en curso sigue ahí hasta su archivo. Los changes cerrados (`specs/history/`, `specs/capabilities/`) no se tocan.
