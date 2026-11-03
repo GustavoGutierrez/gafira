@@ -96,7 +96,7 @@ Recorded 2026-10-26; items 6-9 and 10-15 recorded 2026-10-30; items 16-34 record
 54. **Regla de banda stray fuera de ARQ-133.** Why: la regla de banda stray no está en ARQ-133 (SG3). Start: `specifier` la añade a la spec; test después.
 55. **Q-48 abierta en hardware D-03.** Why: Q-48 sigue abierta hasta medir en hardware D-03. Start: medir en D-03; llevar Q-48 al owner solo si `bench_segment_4000` falla, como dice la card de SG3.
 56. **Redacción desactualizada en 01 P-04 y 04 FD-38.** Why: ambos textos quedaron con redacción anterior a SG3. Start: `specifier` actualiza la redacción.
-57. **Decisiones abiertas del owner: O5, Q-46, Q-47 y texto `modificado` del splash.** Why: siguen sin decidir. Start: el owner decide cada una; `--jobs` a 6 ya está en el item 31.
+57. **Decisión abierta del owner: texto `modificado` del splash.** Why: sigue sin decidir. Start: el owner la decide; `--jobs` a 6 ya está en el item 31.
 58. **RS5/RS6, ronda 2: W5 a W9 pendientes (`gafira-raster`).** Why: W5 y W6 son ambigüedades de ARQ-122 y FD-26 (`palette.rs:172`, ARQ-122 en `1b159f9`); W7 y W8 son huecos de test (`dhash.rs:333`, `palette.rs:17`, `:21`); W9 son cuatro mutantes de cierre no reaplicados. Start: los huecos de test primero; `specifier` para W5 y W6.
 59. **`GpuEffect::bind` sin `cx` (`gafira-raster`).** Why: `GpuEffect::bind` no recibe `cx`, y `EffectCx` solo guarda `scale`. Start: `specifier` decide la firma; test primero.
 60. **FD-28 (b): tamaño mínimo pendiente en RS6.** Why: el tamaño mínimo de FD-28 (b) queda sin fijar en el verify de cierre de RS6. Start: el owner lo fija; después test primero.

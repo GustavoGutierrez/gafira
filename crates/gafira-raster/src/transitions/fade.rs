@@ -102,9 +102,9 @@ impl Transition for Fade {
                     },
                     |_, a, b| {
                         if first {
-                            weighted_f32(&tr, &[(a, 1.0 - t), (cf, t)])
+                            weighted_f32(&[(a, 1.0 - t), (cf, t)])
                         } else {
-                            weighted_f32(&tr, &[(cf, 1.0 - t), (b, t)])
+                            weighted_f32(&[(cf, 1.0 - t), (b, t)])
                         }
                     },
                 );

@@ -137,7 +137,7 @@ impl Transition for Zoom {
                     &to,
                     &mut dst,
                     |x, y, f| weighted_u8(&tr, &samples(f, x, y, p, scales)),
-                    |x, y, f| weighted_f32(&tr, &samples(f, x, y, p, scales)),
+                    |x, y, f| weighted_f32(&samples(f, x, y, p, scales)),
                 );
             }
         }
@@ -149,7 +149,7 @@ impl Transition for Zoom {
 mod tests {
     use gafira_doc::contract::{ParamError, ParamKind, ParamValue};
 
-    use super::super::mix::{MIX_SPACE, weighted_u8_in};
+    use super::super::mix::weighted_u8;
     use super::super::tests::{SENTINEL_F32, SENTINEL_U8};
     use super::*;
     use crate::transfer::Transfer;
@@ -474,7 +474,7 @@ mod tests {
                                     ));
                                 }
                             }
-                            let want = weighted_u8_in(&t, MIX_SPACE, &samples);
+                            let want = weighted_u8(&t, &samples);
                             assert_eq!(
                                 &got[(y * w + x) * 4..][..4],
                                 &want,

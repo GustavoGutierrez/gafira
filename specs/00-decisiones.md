@@ -413,6 +413,64 @@ Fecha: 2 de noviembre de 2026.
 - **Consecuencia**: la máscara no cambia. El ruido aislado de la banda no cuenta, así que el umbral de «color real» es una cifra PROPUESTA de 02 ARQ-131, no de esta decisión.
 - Aplicado a 02 (§4.17.6, ARQ-131, ARQ-133).
 
+## D-48 Espacio de mezcla de las transiciones
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: las transiciones mezclan en luz lineal (O5 (a)). `Rgba8` se decodifica a luz lineal, se mezcla y se codifica. `RgbaF32` se mezcla tal como está guardado.
+- **Motivo**: la vista previa y la exportación comparten el grafo (02 §6.2), y la exportación trabaja en luz lineal.
+- **Coste conocido**: una Disolvencia `Rgba8` en CPU a 1080p tarda de 154 a 156 ms, unas 19 veces los 8 ms de render de 02 §6.2 (XP13: 5 ejecuciones, `--release`, `p` 0,37). `RgbaF32` y los extremos no pagan ese coste. Los remedios del diseño de capa 2 (P15, punto 8) son estimaciones, no medidas, y no entran en esta decisión.
+- **Alcance**: transiciones. Los modos de mezcla de ARQ-119 los fija D-53.
+- Este O5 es el del diseño de capa 2, no el O5 de audio de `spike-layer2.md`.
+- Aplicado a 02 (§6.2, ARQ-118, §12.3).
+
+## D-49 Las asas de fundido no se cruzan
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: las asas de fundido de entrada y salida de un clip no pueden cruzarse: la suma de sus duraciones nunca supera la duración del clip (Q-46). Recortar un clip por debajo de esa suma reduce los dos fundidos en proporción.
+- Aplicado a 02 (ARQ-124, §12.2, §12.3) y 05 (FV-10).
+
+## D-50 Corte sin duración
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: un Corte ignora la duración y la alineación, y el cambio ocurre en el corte (Q-47).
+- Aplicado a 02 (§4.13, ARQ-118, §12.2, §12.3) y 05 (FV-06).
+
+## D-51 Fundidos al acortar un clip por otras vías
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: Velocidad, Dividir y Congelar fotograma también reducen los fundidos en proporción cuando dejan un clip más corto que su suma (Q-50). Es la regla de D-49 para recortar.
+- Amplía D-49.
+- Aplicado a 02 (§12.2, §12.3) y 05 (FV-10).
+
+## D-52 Alargar no devuelve los fundidos; arrastre desde el inicio del gesto
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: alargar un clip no devuelve los fundidos que se redujeron; solo Deshacer los restaura. En un arrastre, la reducción se calcula desde las duraciones del inicio del gesto (Q-51).
+- Amplía D-49.
+- Aplicado a 02 (§12.2, §12.3) y 05 (FV-10).
+
+## D-53 Modos de mezcla en luz lineal
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: los modos de mezcla entre capas operan en luz lineal, también en `Rgba8`, igual que las transiciones de D-48 (Q-52). Incluye los 16 modos de D-27, `Normal` incluido.
+- **Consecuencia**: los modos se ven distintos de los programas que mezclan valores sRGB codificados. La vista previa `Rgba8` paga la conversión por píxel, como en D-48; ese coste no está medido.
+- Amplía D-48.
+- Aplicado a 02 (ARQ-119, §12.2, §12.3).
+
+## D-54 Fundidos al Dividir y Congelar fotograma
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: tras Dividir o Congelar fotograma, la primera parte conserva el fundido de entrada, la última conserva el de salida, y en el punto de división no hay fundido (Q-53). Así dividir y volver a unir no pierde nada (05 FV-03 (a)).
+- Amplía D-51.
+- Aplicado a 02 (§12.2) y 05 (FV-10).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

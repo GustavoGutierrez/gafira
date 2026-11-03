@@ -72,7 +72,7 @@ impl Transition for Dissolve {
                     &to,
                     &mut dst,
                     |_, a, b| weighted_u8(&tr, &[(a, 1.0 - p), (b, p)]),
-                    |_, a, b| weighted_f32(&tr, &[(a, 1.0 - p), (b, p)]),
+                    |_, a, b| weighted_f32(&[(a, 1.0 - p), (b, p)]),
                 );
             }
         }

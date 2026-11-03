@@ -3,7 +3,10 @@
 
 use gafira_doc::BlendMode;
 
+use std::sync::OnceLock;
+
 use crate::BufferError;
+use crate::transfer::Transfer;
 
 /// Backdrop colour `Cb`, source colour `Cs`, both straight, one channel.
 fn separable(mode: BlendMode, cb: f64, cs: f64) -> f64 {
@@ -194,27 +197,52 @@ pub fn blend_f32(
     }
 }
 
-/// Blends premultiplied RGBA 8-bit pixels; the result is rounded to nearest.
-/// A channel above its alpha is clipped to the alpha before a mode but `Normal`.
+/// The sRGB curve, built once: `blend_u8` takes no context.
+fn transfer() -> &'static Transfer {
+    static TRANSFER: OnceLock<Transfer> = OnceLock::new();
+    TRANSFER.get_or_init(Transfer::new)
+}
+
+/// Blends premultiplied RGBA 8-bit pixels in linear light, in every mode (D-53, ARQ-119).
+///
+/// Each pixel is unpremultiplied, its colour decoded from sRGB to linear light, blended and
+/// composited as in [`blend_f32`], then encoded back and premultiplied; alpha does not go
+/// through the curve. The result is rounded to nearest, halves up. A channel above its alpha is
+/// clipped to the alpha before a mode but `Normal`. A source with `a = 0` returns the backdrop,
+/// a backdrop with `a = 0` returns the source, and `Normal` with `a = 255` returns the source,
+/// all bit for bit.
 #[must_use]
 pub fn blend_u8(mode: BlendMode, backdrop: [u8; 4], source: [u8; 4]) -> [u8; 4] {
     if source[3] == 0 {
         return backdrop;
     }
-    let wide = |p: [u8; 4]| {
+    if backdrop[3] == 0 || (mode == BlendMode::Normal && source[3] == 255) {
+        return source;
+    }
+    let t = transfer();
+    let linear = |p: [u8; 4]| {
         let a = f64::from(p[3]) / 255.0;
         let c = |i: usize| {
-            let v = f64::from(p[i]) / 255.0;
-            if mode == BlendMode::Normal {
-                v
+            let v = if mode == BlendMode::Normal {
+                p[i]
             } else {
-                v.min(a)
-            }
+                p[i].min(p[3])
+            };
+            t.decode[usize::from(crate::unpremultiply_u8(v, p[3]))] * a
         };
         [c(0), c(1), c(2), a]
     };
-    composite(mode, wide(backdrop), wide(source))
-        .map(|v| (v * 255.0 + 0.5).floor().clamp(0.0, 255.0) as u8)
+    let out = composite(mode, linear(backdrop), linear(source));
+    let alpha = out[3];
+    // The source is not transparent, so the result has alpha.
+    let encoded = t.encode_unit([0, 1, 2].map(|i| (out[i] / alpha).clamp(0.0, 1.0)));
+    let byte = |v: f64| (v + 0.5).floor().clamp(0.0, 255.0) as u8;
+    [
+        byte(255.0 * alpha * encoded[0]),
+        byte(255.0 * alpha * encoded[1]),
+        byte(255.0 * alpha * encoded[2]),
+        byte(255.0 * alpha),
+    ]
 }
 
 #[cfg(test)]
@@ -435,8 +463,42 @@ mod tests {
         }
     }
 
-    // ARQ-119 (FD-12 c, CPU): every mode in 8 bits, error <= 1/255, and the result is the
-    // nearest byte.
+    /// The sRGB curve written out from its definition, apart from the code under test.
+    fn srgb_to_linear(v: f64) -> f64 {
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn linear_to_srgb(v: f64) -> f64 {
+        if v <= 0.003_130_8 {
+            12.92 * v
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    }
+
+    /// The 8-bit rule of ARQ-119 on `f64`: unpremultiply, decode to linear light, the W3C
+    /// formula and the composite on linear premultiplied values, encode, premultiply. Alpha does
+    /// not go through the curve.
+    fn reference_u8(mode: BlendMode, b8: [u8; 4], s8: [u8; 4]) -> [f64; 4] {
+        let lin = |p: [u8; 4]| {
+            let a = f64::from(p[3]) / 255.0;
+            let c = |i: usize| {
+                let straight = crate::unpremultiply_u8(p[i], p[3]);
+                srgb_to_linear(f64::from(straight) / 255.0) * a
+            };
+            [c(0), c(1), c(2), a]
+        };
+        let o = reference::composite(mode, lin(b8), lin(s8));
+        let c = |i: usize| linear_to_srgb((o[i] / o[3]).clamp(0.0, 1.0)) * o[3];
+        [c(0), c(1), c(2), o[3]]
+    }
+
+    // ARQ-119 (FD-12 c, CPU): every mode in 8 bits in linear light, error <= 1/255, and the
+    // result is the nearest byte.
     #[test]
     fn arq_119_every_mode_matches_the_reference_in_8_bits() {
         let to_u8 = |c: [f64; 3], a: f64| {
@@ -452,11 +514,10 @@ mod tests {
             for (cb, cs, ab, a_s) in &t {
                 let b8: [u8; 4] = to_u8(*cb, *ab).try_into().unwrap();
                 let s8: [u8; 4] = to_u8(*cs, *a_s).try_into().unwrap();
-                let want = reference::composite(
-                    mode,
-                    b8.map(|v| f64::from(v) / 255.0),
-                    s8.map(|v| f64::from(v) / 255.0),
-                );
+                if s8[3] == 0 {
+                    continue;
+                }
+                let want = reference_u8(mode, b8, s8);
                 let got = blend_u8(mode, b8, s8);
                 for i in 0..4 {
                     let err = (f64::from(got[i]) / 255.0 - want[i]).abs();
@@ -465,9 +526,56 @@ mod tests {
                         "{mode:?} {b8:?} {s8:?} ch{i}: {got:?} vs {want:?}"
                     );
                     assert!(
-                        err <= 0.5 / 255.0 + 1e-9,
+                        err <= 0.5 / 255.0 + 1e-5,
                         "{mode:?} not rounded to nearest: ch{i} {got:?} vs {want:?}"
                     );
+                }
+            }
+        }
+    }
+
+    // ARQ-119: the hand-written 8-bit values with the sRGB curves.
+    #[test]
+    fn arq_119_8_bit_spec_values_in_linear_light() {
+        // White at alpha 128, premultiplied (128, 128, 128, 128), Normal over opaque black.
+        assert_eq!(
+            blend_u8(BlendMode::Normal, [0, 0, 0, 255], [128, 128, 128, 128]),
+            [188, 188, 188, 255]
+        );
+        // Opaque grey 128 over opaque grey 128.
+        let g = [128, 128, 128, 255];
+        assert_eq!(blend_u8(BlendMode::Multiply, g, g), [61, 61, 61, 255]);
+        assert_eq!(blend_u8(BlendMode::Screen, g, g), [167, 167, 167, 255]);
+    }
+
+    // ARQ-119: Normal of (v, v, v, 255) over any backdrop is the source, for every byte.
+    #[test]
+    fn arq_119_normal_opaque_source_is_exact_for_every_byte() {
+        for v in 0..=255u8 {
+            for b in [
+                [0, 0, 0, 0],
+                [9, 8, 7, 200],
+                [255, 255, 255, 255],
+                [v, 0, 5, 255],
+            ] {
+                assert_eq!(
+                    blend_u8(BlendMode::Normal, b, [v, v, v, 255]),
+                    [v, v, v, 255],
+                    "v={v} over {b:?}"
+                );
+            }
+        }
+    }
+
+    // ARQ-119: a backdrop with a = 0 gives the source exactly, in every mode, also where the
+    // unpremultiply round trip would lose a unit.
+    #[test]
+    fn arq_119_transparent_backdrop_gives_source_exactly_in_8_bits() {
+        for mode in BlendMode::ALL {
+            for a in [1u8, 3, 100, 128, 254] {
+                for c in 0..=a {
+                    let s = [c, c / 2, a - c, a];
+                    assert_eq!(blend_u8(mode, [0, 0, 0, 0], s), s, "{mode:?} {s:?}");
                 }
             }
         }

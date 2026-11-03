@@ -268,9 +268,10 @@ impl Effect for ParallelShadow {
     }
 }
 
-/// `blend_u8(Normal, shadow, element)` in integers: `e + round(s * (255 - ea) / 255)` per
-/// channel, which is the same value (the exact quotient never sits within 1/510 of a tie).
-/// A transparent element paints nothing, as in `blend_u8`.
+/// Source-over of the element on the shadow in encoded (as stored) space, in integers:
+/// `e + round(s * (255 - ea) / 255)` per channel (the exact quotient never sits within 1/510 of
+/// a tie). Not `blend_u8`, which blends in linear light (D-53). A transparent element paints
+/// nothing.
 fn over_u8(shadow: [u8; 4], element: [u8; 4]) -> [u8; 4] {
     if element[3] == 0 {
         return shadow;
@@ -335,12 +336,11 @@ impl Tint {
 #[cfg(test)]
 mod tests {
     use gafira_color::{Color, Rgba};
-    use gafira_doc::BlendMode;
     use gafira_doc::contract::{ParamError, ParamValue};
     use proptest::prelude::*;
 
     use super::*;
-    use crate::{BufferError, PixelData, PixelDataMut, PixelFormat, blend_u8, premultiply_u8};
+    use crate::{BufferError, PixelData, PixelDataMut, PixelFormat, premultiply_u8};
 
     const SENTINEL: u8 = 0xAB;
 
@@ -614,7 +614,20 @@ mod tests {
         }
     }
 
-    // ARQ-119, FD-35: the 8-bit composite is the Normal blend of the shadow under the element,
+    /// The same rule in `f64`: `e + s (1 - ea)` per channel, halves up.
+    fn encoded_over(shadow: [u8; 4], element: [u8; 4]) -> [u8; 4] {
+        if element[3] == 0 {
+            return shadow;
+        }
+        let k = 1.0 - f64::from(element[3]) / 255.0;
+        [0, 1, 2, 3].map(|i| {
+            (f64::from(element[i]) + f64::from(shadow[i]) * k + 0.5)
+                .floor()
+                .min(255.0) as u8
+        })
+    }
+
+    // FD-35: the 8-bit composite is source-over of the element on the shadow in encoded space,
     // rounded to nearest; a transparent element is replaced by the shadow.
     #[test]
     fn fd_35_the_8_bit_composite_equals_the_normal_blend() {
@@ -631,7 +644,7 @@ mod tests {
                         let element = [e, c, e / 3, ea];
                         assert_eq!(
                             over_u8(shadow, element),
-                            blend_u8(BlendMode::Normal, shadow, element),
+                            encoded_over(shadow, element),
                             "{shadow:?} under {element:?}"
                         );
                     }
@@ -694,7 +707,6 @@ mod tests {
         // A half-transparent black element over its own red shadow, which has the same alpha.
         let src = [0u8, 0, 0, 128];
         let out = run8(&cx(1.0), &p, &src, (1, 1)).unwrap();
-        assert_eq!(out, blend_u8(BlendMode::Normal, [128, 0, 0, 128], src));
         // The red of the shadow shows through the element, scaled by what the element lets by.
         assert_eq!(out, vec![64, 0, 0, 192]);
         let f = [0.0f32, 0.0, 0.0, 0.5];
