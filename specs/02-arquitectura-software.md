@@ -1814,7 +1814,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-45 constan en `00-decisiones.md` (D-29 a D-34 y D-41 a D-45). Q-46 y Q-47 constan ahí como D-49 y D-50, y Q-50, Q-51 y Q-52 como D-51, D-52 y D-53. Q-49 se cerró en la verificación de SG3 de `gafira-segment`.
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-45 constan en `00-decisiones.md` (D-29 a D-34 y D-41 a D-45). Q-46 y Q-47 constan ahí como D-49 y D-50, y Q-50, Q-51 y Q-52 como D-51, D-52 y D-53. Q-53 se abrió y se cerró en el mismo día como D-54. Q-49 se cerró en la verificación de SG3 de `gafira-segment`.
 
 | ID | Pregunta | Resolución |
 |---|---|---|
@@ -1855,6 +1855,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-50 | Si Velocidad, Dividir o Congelar fotograma acortan un clip por debajo de la suma de sus fundidos, ¿se reducen también en proporción? | D-51: sí, con la regla de D-49. |
 | Q-51 | ¿Alargar un clip devuelve los fundidos reducidos? ¿Desde dónde se calcula la reducción en un arrastre? | D-52: alargar no los devuelve, solo Deshacer; en un arrastre se calcula desde el inicio del gesto. |
 | Q-52 | ¿Pasan también los modos de mezcla a luz lineal? | D-53: sí, los 16 modos, también en `Rgba8`. |
+| Q-53 | ¿Qué fundidos conserva cada parte tras Dividir o Congelar fotograma? | D-54: la primera, el de entrada; la última, el de salida; ninguno en el punto de división. |
 | Q-49 | ¿De qué tamaño son las escenas de ARQ-132? | 4000×3000 px, lado largo > 2048, de modo que la copia reduce y D-45 se ejercita. La entrada de referencia de ARQ-112 sigue a 1024×768. |
 
 ### 12.3 Preguntas abiertas

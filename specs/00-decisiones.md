@@ -463,6 +463,14 @@ Fecha: 2 de noviembre de 2026.
 - Amplía D-48.
 - Aplicado a 02 (ARQ-119, §12.2, §12.3).
 
+## D-54 Fundidos al Dividir y Congelar fotograma
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: tras Dividir o Congelar fotograma, la primera parte conserva el fundido de entrada, la última conserva el de salida, y en el punto de división no hay fundido (Q-53). Así dividir y volver a unir no pierde nada (05 FV-03 (a)).
+- Amplía D-51.
+- Aplicado a 02 (§12.2) y 05 (FV-10).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
