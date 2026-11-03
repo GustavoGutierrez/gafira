@@ -298,7 +298,7 @@ Cada bloque es un archivo, o una parte de `layout.rs`, y se puede ejecutar solo.
 
 | Archivo:línea:col | Función | Mutación |
 |---|---|---|
-| `blend.rs:78:10` | `clip_color` | `replace > with >=` |
+| `blend.rs:81:10` | `clip_color` | `replace > with >=` |
 
 ### BR2. `gafira-raster`, `dhash.rs` (2)
 
