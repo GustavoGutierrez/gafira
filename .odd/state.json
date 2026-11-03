@@ -1,4 +1,44 @@
 {
   "schema": 1,
-  "outcomes": []
+  "outcomes": [
+    {
+      "outcome_id": "owner-decisions-o5-q46-q47",
+      "spec_id": "02-arquitectura-software",
+      "status": "specifying",
+      "flow": "Flow: standard | level: L2 | pack: spec-only then small refactor | mutation: off | tier: T0 | verify: V2 | decided-by: owner | reason: three owner decisions recorded; the code only retires a provisional constant, the mix rule itself does not change, hand mutants stay on critical code",
+      "scope": "Record O5 (a), Q-46 (a) and Q-47 (a) in the specs; retire the provisional MixSpace choice in gafira-raster and state what code each decision needs.",
+      "non_goals": [
+        "Optimising the 1080p CPU Dissolve (P15 remedies)",
+        "UI for fade handles",
+        "Reopening other decisions"
+      ],
+      "criteria": [
+        {
+          "id": "AC1",
+          "status": "pending",
+          "type": "manual",
+          "text": "O5 (a): Rgba8 transitions mix in linear light, RgbaF32 as stored; recorded as a decision and in the spec, cost stated."
+        },
+        {
+          "id": "AC2",
+          "status": "pending",
+          "type": "manual",
+          "text": "Q-46 (a): fade handles cannot cross, their sum never exceeds the clip, and trimming a clip reduces both fades proportionally; stated with testable acceptance."
+        },
+        {
+          "id": "AC3",
+          "status": "pending",
+          "type": "manual",
+          "text": "Q-47 (a): Cut ignores duration and alignment; the change happens at the cut; stated with testable acceptance."
+        },
+        {
+          "id": "AC4",
+          "status": "pending",
+          "type": "unit",
+          "text": "gafira-raster has one mix space, linear light, with no provisional constant or unused O5 arms; pixel results are unchanged."
+        }
+      ],
+      "next_action": "specifier records the three decisions"
+    }
+  ]
 }
