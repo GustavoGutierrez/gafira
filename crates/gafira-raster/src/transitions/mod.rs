@@ -639,8 +639,6 @@ mod tests {
     use gafira_color::{Color, DisplayP3Rgba, LinearRgba, Rgba};
     use gafira_doc::contract::{ParamError, ParamKind};
 
-    use super::mix::{MIX_SPACE, MixSpace};
-
     fn run_with(
         t: &dyn Transition,
         p: &ParamValues,
@@ -714,16 +712,13 @@ mod tests {
         assert_eq!(got, [1.0, 0.0, 0.0, 1.0]);
     }
 
-    // P15 item 8 and 9: 8 bits black to white; the rows depend on MIX_SPACE (O5).
+    // P15 item 8 and 9: 8 bits black to white; linear light (D-48).
     #[test]
-    fn arq_118_dissolve_8_bit_rows_follow_the_mix_space() {
+    fn arq_118_dissolve_8_bit_rows_mix_in_linear_light() {
         let t = Dissolve::new();
         let none = ParamValues::new();
         let (black, white) = ([0u8, 0, 0, 255], [255u8, 255, 255, 255]);
-        let (q1, q3) = match MIX_SPACE {
-            MixSpace::Linear => (137, 225),
-            MixSpace::Encoded | MixSpace::AsStored => (64, 191),
-        };
+        let (q1, q3) = (137, 225);
         assert_eq!(run_with(&t, &none, 0.25, black, white), [q1, q1, q1, 255]);
         assert_eq!(run_with(&t, &none, 0.75, black, white), [q3, q3, q3, 255]);
         // Alpha mixes premultiplied: transparent to opaque white at one half.
