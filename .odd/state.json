@@ -23,7 +23,7 @@
           "id": "F2",
           "status": "pending",
           "type": "command",
-          "text": "All 104 critical survivors appear with crate, file:line and mutation; counts per crate are 65 and 39 and match the raw lists."
+          "text": "All critical survivors appear with crate, file:line and mutation; counts per crate are 65 and 33 and match the raw lists."
         },
         {
           "id": "F3",
