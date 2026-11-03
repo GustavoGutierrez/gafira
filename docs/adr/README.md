@@ -35,6 +35,8 @@ Where a decision lives:
 | [0012](0012-engine-error-messages-and-cancellation.md) | Engine errors share one key rule and one cancelled value | accepted |
 | [0013](0013-ports-edges-and-v5-row.md) | `gafira-ports` edges, V5 row and test doubles | accepted |
 | [0014](0014-one-error-enum-per-port.md) | One error enum per port family in `gafira-ports` | accepted |
+| [0015](0015-layer-3-sibling-seams.md) | `gafira-render` and `gafira-media` are siblings that meet only through `gafira-ports` | proposed |
+| [0016](0016-layer-3-purity-through-ports.md) | Layer-3 crates take their I/O, their clock and their threads through ports | proposed |
 
 ## Template
 
