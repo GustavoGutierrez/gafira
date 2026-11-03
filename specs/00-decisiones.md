@@ -475,7 +475,8 @@ Fecha: 2 de noviembre de 2026.
 
 Fecha: 2 de noviembre de 2026.
 
-- **Decisión**: el efecto Sombra pinta el elemento sobre su sombra con el modo `Normal` de ARQ-119, en luz lineal también en `Rgba8`, como D-53 (aviso W1 de la verificación de D-53). Así la sombra en 8 bits y en `f32` sigue la misma regla y las dos coinciden a ≤ 1/255.
+- **Decisión**: el efecto Sombra pinta el elemento sobre su sombra con el modo `Normal` de ARQ-119, en luz lineal también en `Rgba8`, como D-53 (aviso W1 de la verificación de D-53). Así la sombra en 8 bits y en `f32` sigue la misma regla.
+- **Precisión** (titular, tras medir): las dos coinciden a ≤ 2/255, la cota de ARQ-120 para sombras translúcidas tintadas, en los píxeles con alfa de sombra en 8 bits ≥ 16. Por debajo no hay cota: una sombra de alfa cercano a 1 no conserva su color en 8 bits, y la diferencia medida llega a 6,4/255. Con 16, el peor caso medido es 1,88/255, un margen de 0,12/255; con 14 sería 1,99/255, sin margen (04 FD-35 (f)).
 - **Consecuencia**: en 8 bits cambian los píxeles donde un elemento translúcido deja ver su sombra, que hasta ahora se componían sobre los valores sRGB codificados.
 - Amplía D-53.
 - Aplicado a 02 (ARQ-120, §4.17.4) y 04 (FD-35).
@@ -485,7 +486,7 @@ Fecha: 2 de noviembre de 2026.
 Fecha: 2 de noviembre de 2026.
 
 - **Decisión**: la referencia en `f64` de ARQ-119 para 8 bits despremultiplica con el redondeo de 8 bits de ARQ-117, como hace el código (aviso W2 de la verificación de D-53).
-- **Motivo**: frente a una referencia con `c / a` exacto, ColorBurn, ColorDodge, Hue y Overlay se separan más de 1/255, hasta 85/255 en ColorBurn, también con alfas altos.
+- **Motivo**: frente a una referencia con `c / a` exacto, diez modos se separan más de 1/255, también con alfas altos: ColorBurn (hasta 85/255), ColorDodge, Hue, Overlay, Difference (2,05/255), Saturation (1,28/255), SoftLight (1,05/255), Luminosity (2,15/255), Color (1,24/255) y HardLight (1,69/255).
 - **Consecuencia**: una ruta GPU que reciba 8 bits debe despremultiplicar con el mismo redondeo para quedar a ≤ 2/255 de la CPU (04 FD-12 (c)).
 - Precisa D-53.
 - Aplicado a 02 (ARQ-119) y 04 (FD-12).
