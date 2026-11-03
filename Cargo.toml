@@ -23,6 +23,7 @@ gafira-text = { path = "crates/gafira-text" }
 gafira-raster = { path = "crates/gafira-raster" }
 gafira-audio = { path = "crates/gafira-audio" }
 gafira-segment = { path = "crates/gafira-segment" }
+gafira-ports = { path = "crates/gafira-ports" }
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
