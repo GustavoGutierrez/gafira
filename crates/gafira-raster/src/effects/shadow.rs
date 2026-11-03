@@ -10,7 +10,7 @@ use super::blur::{blur_shifted, half_width};
 use super::{Cost, Effect};
 use crate::{
     BufferError, EffectCx, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut,
-    PixelFormat, blend_f32, premultiply_u8,
+    PixelFormat, blend_f32, blend_u8, premultiply_u8,
 };
 
 /// Work units per pixel besides the two blur passes: alpha plane, tint and composite.
@@ -230,7 +230,7 @@ impl Effect for ParallelShadow {
                     out.copy_from_slice(&if sa == 0 {
                         element
                     } else {
-                        over_u8(shadow, element)
+                        blend_u8(BlendMode::Normal, shadow, element)
                     });
                 }
                 Ok(())
@@ -266,27 +266,6 @@ impl Effect for ParallelShadow {
             _ => Ok(()),
         }
     }
-}
-
-/// Source-over of the element on the shadow in encoded (as stored) space, in integers:
-/// `e + round(s * (255 - ea) / 255)` per channel (the exact quotient never sits within 1/510 of
-/// a tie). Not `blend_u8`, which blends in linear light (D-53). A transparent element paints
-/// nothing.
-fn over_u8(shadow: [u8; 4], element: [u8; 4]) -> [u8; 4] {
-    if element[3] == 0 {
-        return shadow;
-    }
-    let inv = 255 - u32::from(element[3]);
-    let mix = |s: u8, e: u8| {
-        let v = u32::from(e) + (2 * u32::from(s) * inv + 255) / 510;
-        v.min(255) as u8
-    };
-    [
-        mix(shadow[0], element[0]),
-        mix(shadow[1], element[1]),
-        mix(shadow[2], element[2]),
-        mix(shadow[3], element[3]),
-    ]
 }
 
 /// The colour parameter in what each format needs: straight bytes and straight linear light,
@@ -340,7 +319,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::{BufferError, PixelData, PixelDataMut, PixelFormat, premultiply_u8};
+    use crate::{BufferError, PixelData, PixelDataMut, PixelFormat, blend_u8, premultiply_u8};
 
     const SENTINEL: u8 = 0xAB;
 
@@ -614,39 +593,59 @@ mod tests {
         }
     }
 
-    /// The same rule in `f64`: `e + s (1 - ea)` per channel, halves up.
-    fn encoded_over(shadow: [u8; 4], element: [u8; 4]) -> [u8; 4] {
-        if element[3] == 0 {
-            return shadow;
-        }
-        let k = 1.0 - f64::from(element[3]) / 255.0;
-        [0, 1, 2, 3].map(|i| {
-            (f64::from(element[i]) + f64::from(shadow[i]) * k + 0.5)
-                .floor()
-                .min(255.0) as u8
-        })
-    }
-
-    // FD-35: the 8-bit composite is source-over of the element on the shadow in encoded space,
-    // rounded to nearest; a transparent element is replaced by the shadow.
+    // FD-35 (e): every output pixel of the 8-bit path is the ARQ-119 Normal blend in 8 bits, with
+    // the shadow pixel as the backdrop and the element as the source, bit for bit; a shadow of
+    // alpha 0 leaves the element as it is.
     #[test]
     fn fd_35_the_8_bit_composite_equals_the_normal_blend() {
         let vals: Vec<u8> = (0..=255)
             .step_by(17)
             .chain([1, 2, 126, 127, 128, 253, 254, 255])
             .collect();
-        for &sa in &vals {
-            for &ea in &vals {
-                for &c in &vals {
-                    for &e in &vals {
-                        // A shadow is a premultiplied pixel: no channel above its alpha.
-                        let shadow = [c.min(sa), (c / 2).min(sa), (255 - c).min(sa), sa];
-                        let element = [e, c, e / 3, ea];
-                        assert_eq!(
-                            over_u8(shadow, element),
-                            encoded_over(shadow, element),
-                            "{shadow:?} under {element:?}"
-                        );
+        let tints = [
+            (1.0, 0.0, 0.0),
+            (0.8, 0.25, 0.1),
+            (0.5, 0.5, 0.5),
+            (0.0, 0.0, 0.0),
+        ];
+        for opacity in [100.0, 60.0, 25.0] {
+            for &(r, g, b) in &tints {
+                let mut p = pv(&[
+                    ("blur", 0.0),
+                    ("opacity", opacity),
+                    ("offset_x", 0.0),
+                    ("offset_y", 0.0),
+                ]);
+                p.set(
+                    "color",
+                    ParamValue::Color(Color::Srgb(Rgba::new(r, g, b, 1.0))),
+                );
+                let q = |v: f32| (f64::from(v) * 255.0 + 0.5).floor() as u8;
+                let bytes = [q(r), q(g), q(b)];
+                for &ea in &vals {
+                    for &c in &vals {
+                        for &e in &vals {
+                            // An element is a premultiplied pixel: no channel above its alpha.
+                            let element = [e.min(ea), c.min(ea), (e / 3).min(ea), ea];
+                            let got = run8(&cx(1.0), &p, &element, (1, 1)).unwrap();
+                            let sa = (f64::from(ea) * opacity / 100.0 + 0.5).floor() as u8;
+                            let shadow = [
+                                premultiply_u8(bytes[0], sa),
+                                premultiply_u8(bytes[1], sa),
+                                premultiply_u8(bytes[2], sa),
+                                sa,
+                            ];
+                            let want = if sa == 0 {
+                                element
+                            } else {
+                                blend_u8(BlendMode::Normal, shadow, element)
+                            };
+                            assert_eq!(
+                                got,
+                                want.to_vec(),
+                                "{shadow:?} under {element:?} (opacity {opacity})"
+                            );
+                        }
                     }
                 }
             }
@@ -707,8 +706,8 @@ mod tests {
         // A half-transparent black element over its own red shadow, which has the same alpha.
         let src = [0u8, 0, 0, 128];
         let out = run8(&cx(1.0), &p, &src, (1, 1)).unwrap();
-        // The red of the shadow shows through the element, scaled by what the element lets by.
-        assert_eq!(out, vec![64, 0, 0, 192]);
+        // The red of the shadow shows through the element, in linear light (FD-35 e).
+        assert_eq!(out, vec![117, 0, 0, 192]);
         let f = [0.0f32, 0.0, 0.0, 0.5];
         let out = runf(&cx(1.0), &p, &f, (1, 1)).unwrap();
         for (g, w) in out.iter().zip([0.25f32, 0.0, 0.0, 0.75]) {
