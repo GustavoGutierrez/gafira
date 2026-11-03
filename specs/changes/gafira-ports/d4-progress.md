@@ -45,3 +45,9 @@ Skeleton with wrong bodies (`best_decoder` always `None`, `AudioBuf::new` unchec
 - `CodecRegistry` is a struct wrapping `Registry<dyn Codec>` (not an alias) so `best_decoder` has a home. No alias for `Registry<dyn Container>` was added (not in P4).
 - The shared target dir let sibling worktrees overwrite the `gafira-ports` artifact; the first runs linked foreign code. Every result above was taken (or retaken) with `--cfg wt_d4`.
 - ARQ-77 registry walk of the full build stays pending (needs adapters).
+
+### Verify round 1 fixes
+
+- C1: `arq_77_hardware_decoders_tie_whatever_their_class` (`[hw RoyaltyFree, hw OsLicensed]` in both orders, first registered wins). Mutant 9, "among hardware decoders `OsLicensed` ranks above `RoyaltyFree`", is killed by it (and by the order test).
+- W1: `From<Cancelled> for MediaError` added test-first. RED: `arq_102_cancelled_converts_into_media_error` failed on a skeleton `From` returning another variant; green with `Self::Cancelled(c)`.
+- S3: the V-5 test now relies on the wildcard-free `match`; the dead range assert was dropped.

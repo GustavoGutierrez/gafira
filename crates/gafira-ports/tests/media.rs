@@ -169,6 +169,35 @@ fn arq_77_tie_takes_the_first_registered() {
     }
 }
 
+// ARQ-77 (S9): among hardware decoders the legal class does not rank; the
+// first registered wins.
+#[test]
+fn arq_77_hardware_decoders_tie_whatever_their_class() {
+    let a = ("hw-rf", caps(true, true, RF));
+    let b = ("hw-os", caps(true, true, OS));
+    for order in [[a, b], [b, a]] {
+        let all = order
+            .iter()
+            .map(|(n, c)| fake(n, CodecId::Aac, *c))
+            .collect();
+        assert_eq!(
+            best(&registry(all), CodecId::Aac),
+            Some(order[0].0),
+            "{order:?}"
+        );
+    }
+}
+
+// ADR 0012 rule 4: `?` turns `Cancelled` into `MediaError::Cancelled`.
+#[test]
+fn arq_102_cancelled_converts_into_media_error() {
+    fn run() -> Result<(), MediaError> {
+        Err(Cancelled)?;
+        Ok(())
+    }
+    assert!(matches!(run(), Err(MediaError::Cancelled(Cancelled))));
+}
+
 // ARQ-31: the codec registry is a registry: duplicate ids are refused, order kept.
 #[test]
 fn arq_31_codec_registry_is_a_registry() {
@@ -189,17 +218,17 @@ fn arq_31_codec_registry_is_a_registry() {
     assert!(reg.get("nope").is_none());
 }
 
-// V-5: `LegalClass` has exactly these three classes.
+// V-5: `LegalClass` has exactly these three classes. The match has no wildcard,
+// so a fourth class stops this file from compiling.
 #[test]
 fn v5_legal_class_has_three_classes() {
-    for c in [RF, OS, ENC] {
-        let n = match c {
-            LegalClass::RoyaltyFree => 1,
-            LegalClass::OsLicensed => 2,
-            LegalClass::Encumbered => 3,
-        };
-        assert!((1..=3).contains(&n));
+    let classes = [RF, OS, ENC];
+    for c in classes {
+        match c {
+            LegalClass::RoyaltyFree | LegalClass::OsLicensed | LegalClass::Encumbered => {}
+        }
     }
+    assert_eq!(classes.len(), 3);
 }
 
 // Every public trait is object-safe.

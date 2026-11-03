@@ -64,6 +64,12 @@ impl std::error::Error for MediaError {
     }
 }
 
+impl From<Cancelled> for MediaError {
+    fn from(c: Cancelled) -> Self {
+        Self::Cancelled(c)
+    }
+}
+
 impl ToMessage for MediaError {
     fn to_message(&self) -> Message {
         match self {
