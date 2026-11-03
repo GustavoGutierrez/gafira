@@ -99,3 +99,10 @@ fn arq_102_assist_error_messages() {
     let cancelled = AssistError::Cancelled(Cancelled).to_message();
     assert_eq!(cancelled, Cancelled.to_message());
 }
+
+// ADR 0012 rule 4 via ADR 0014: `?` turns a `Cancelled` into the variant.
+#[test]
+fn adr_0012_assist_error_from_cancelled() {
+    let e: AssistError = Cancelled.into();
+    assert_eq!(e, AssistError::Cancelled(Cancelled));
+}

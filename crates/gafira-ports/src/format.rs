@@ -1,4 +1,4 @@
-//! Importers and the format registry (02 §4.5).
+//! Importers, exporters and the format registry (02 §4.5).
 
 use std::fmt;
 use std::io::{self, SeekFrom};
@@ -11,6 +11,7 @@ use gafira_doc::msg::{Message, ToMessage};
 use gafira_doc::{ContentHash, Node, NodeId, Page};
 
 use crate::common::{Confidence, LegalClass};
+use crate::export::{ExportCaps, Exporter};
 use crate::registry::RegistryError;
 use crate::store::{ContentStore, StoreError};
 use crate::system::ReadSeek;
@@ -143,6 +144,12 @@ impl std::error::Error for ImportError {
     }
 }
 
+impl From<Cancelled> for ImportError {
+    fn from(e: Cancelled) -> Self {
+        Self::Cancelled(e)
+    }
+}
+
 impl ToMessage for ImportError {
     fn to_message(&self) -> Message {
         match self {
@@ -174,12 +181,16 @@ pub trait Importer: Send + Sync {
     ) -> Result<Imported, ImportError>;
 }
 
-/// The importers of the application, in registration order.
+/// The importers and exporters of the application, each list in registration
+/// order.
 ///
-/// Built by value at the composition root (ARQ-31).
+/// Built by value at the composition root (ARQ-31). An importer and an
+/// exporter may share an id (`.gafira` does both); an id is unique within its
+/// own list.
 #[derive(Default)]
 pub struct FormatRegistry {
     importers: Vec<Arc<dyn Importer>>,
+    exporters: Vec<Arc<dyn Exporter>>,
 }
 
 impl FormatRegistry {
@@ -201,6 +212,34 @@ impl FormatRegistry {
         }
         self.importers.push(importer);
         Ok(())
+    }
+
+    /// Adds an exporter under its descriptor id.
+    ///
+    /// # Errors
+    /// [`RegistryError::DuplicateId`] when another exporter has the id; the
+    /// registry is left unchanged. An importer with the same id does not
+    /// count.
+    pub fn register_exporter(&mut self, exporter: Arc<dyn Exporter>) -> Result<(), RegistryError> {
+        let id = exporter.descriptor().id;
+        if self.exporters.iter().any(|e| e.descriptor().id == id) {
+            return Err(RegistryError::DuplicateId { id });
+        }
+        self.exporters.push(exporter);
+        Ok(())
+    }
+
+    /// The exporters in registration order.
+    pub fn exporters(&self) -> impl Iterator<Item = &Arc<dyn Exporter>> {
+        self.exporters.iter()
+    }
+
+    /// The exporters whose capabilities contain `required`, in registration
+    /// order.
+    pub fn exporters_with(&self, required: ExportCaps) -> impl Iterator<Item = &Arc<dyn Exporter>> {
+        self.exporters
+            .iter()
+            .filter(move |e| e.capabilities().contains(required))
     }
 
     /// The importers in registration order.
@@ -245,7 +284,8 @@ impl FormatRegistry {
     /// Each try starts at byte 0 of `src` and with the warnings `cx` held on
     /// entry. The first `Ok` is the result and `Cancelled` stops at once. When
     /// every importer fails the first error is returned, since it comes from
-    /// the most likely format.
+    /// the most likely format. On every `Err` the warnings of `cx` are those
+    /// it held on entry: nothing from a failed try stays (02 §4.5 rule 5).
     ///
     /// # Errors
     /// [`ImportError::Unsupported`] without candidates, [`ImportError::Io`]
@@ -259,6 +299,22 @@ impl FormatRegistry {
         cx: &mut ImportCx<'_>,
     ) -> Result<Imported, ImportError> {
         let kept = cx.warnings.len();
+        let result = self.try_each(path, head, src, opt, cx, kept);
+        if result.is_err() {
+            cx.warnings.truncate(kept);
+        }
+        result
+    }
+
+    fn try_each(
+        &self,
+        path: &Path,
+        head: &[u8],
+        src: &mut dyn ReadSeek,
+        opt: &ImportOptions,
+        cx: &mut ImportCx<'_>,
+        kept: usize,
+    ) -> Result<Imported, ImportError> {
         let mut first_error = None;
         for importer in self.resolve_import(path, head) {
             src.seek(SeekFrom::Start(0)).map_err(ImportError::Io)?;
