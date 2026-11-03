@@ -5,15 +5,17 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use gafira_doc::contract::{CancelToken, Cancelled};
+use gafira_doc::contract::{CancelToken, Cancelled, ParamValues};
 use gafira_doc::msg::{Message, MessageKey, ToMessage, is_valid_key};
 use gafira_geom::IRect;
 use gafira_ports::common::Bytes;
 use gafira_ports::render::{
-    BackendCaps, BackendKind, ContentKey, Deadline, FrameCx, FrameId, MemoryUsage, Priority,
-    RenderBackend, RenderError, RenderOp, RenderPlan, RenderQuality, RenderReport, TargetDesc,
-    TileCache, TileKey, TileTask,
+    BackendCaps, BackendKind, ContentKey, Deadline, EffectRegistry, FrameCx, FrameId, MemoryUsage,
+    Priority, RenderBackend, RenderError, RenderOp, RenderPlan, RenderQuality, RenderReport,
+    TargetDesc, TileCache, TileKey, TileTask, TransitionRegistry,
 };
+use gafira_raster::effects::ColorAdjust;
+use gafira_raster::transitions::Cut;
 use gafira_raster::{BufferError, EffectError, ImageBuf, PixelBuf, PixelFormat};
 
 /// A cache double over a `BTreeMap`.
@@ -351,4 +353,28 @@ fn arq_102_wrapped_errors_delegate_and_convert() {
         height: 4,
     };
     assert_eq!(RenderError::from(buffer).to_message(), buffer.to_message());
+}
+
+// P4: the aliases hold raster traits, register by id and refuse a repeat; what
+// they hold goes straight into a plan op.
+#[test]
+fn p4_effect_and_transition_registries_register_by_id() {
+    let mut effects = EffectRegistry::new();
+    effects.register(Arc::new(ColorAdjust::new())).unwrap();
+    let id = effects.iter().next().unwrap().descriptor().id;
+    assert!(effects.register(Arc::new(ColorAdjust::new())).is_err());
+    assert_eq!(effects.len(), 1);
+    let effect = Arc::clone(effects.get(id).unwrap());
+    let op = RenderOp::ApplyEffect {
+        effect,
+        params: ParamValues::default(),
+        scale: 1.0,
+    };
+    assert!(matches!(op, RenderOp::ApplyEffect { .. }));
+
+    let mut transitions = TransitionRegistry::new();
+    transitions.register(Arc::new(Cut::new())).unwrap();
+    assert!(transitions.register(Arc::new(Cut::new())).is_err());
+    assert!(transitions.get("transition.cut").is_some());
+    assert!(transitions.get(id).is_none());
 }

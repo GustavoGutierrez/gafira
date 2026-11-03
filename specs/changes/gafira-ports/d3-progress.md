@@ -36,3 +36,9 @@ Design: `specs/changes/gafira-ports/design.md` (D3 row, P2, P6, P8). Branch `fea
 - Acceptance rule is `now >= t` (design P8, 02 §4.6); the task's example "passed only when `now > t`" is mutant 1.
 - The shared target dir makes sibling worktrees overwrite each other's `gafira-ports` rlib (same package, same workspace-relative metadata hash): a first test build linked another worktree's stub. Fixed by `RUSTFLAGS="--cfg wt_d3"` (changes the metadata hash, touches no file). Nothing in the repo changed.
 - `Display` text and plain data are untested, per design.
+
+## Verify round 1 fix (C1, S2)
+
+- C1: added `EffectRegistry = Registry<dyn Effect>` and `TransitionRegistry = Registry<dyn Transition>` (design P4). Test `p4_effect_and_transition_registries_register_by_id` registers a real raster effect (`ColorAdjust`) and transition (`Cut`) through each, rejects a repeat, and builds an `ApplyEffect` op from the stored `Arc`. RED: compile-level (the aliases did not exist), as aliases hold no behaviour to fail an assertion.
+- Alias mutant: `TransitionRegistry` over `dyn Effect` is killed by the same test (type error on `Cut`). No other logic.
+- S2: doc notes that `Alpha8` is not a render target on `TargetDesc` and `BackendCaps`.

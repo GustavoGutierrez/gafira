@@ -18,6 +18,13 @@ use gafira_raster::{AlphaMask, BufferError, EffectError, ImageBuf, PixelFormat};
 use kurbo::BezPath;
 
 use crate::common::Bytes;
+use crate::registry::Registry;
+
+/// The effects a build knows, by id (P4). Built by value at the composition root.
+pub type EffectRegistry = Registry<dyn Effect>;
+
+/// The transitions a build knows, by id (P4).
+pub type TransitionRegistry = Registry<dyn Transition>;
 
 /// Identifies the content of a tile; computed by `gafira-render`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -128,13 +135,13 @@ pub struct BackendCaps {
     pub kind: BackendKind,
     /// Largest texture side in pixels.
     pub max_texture: u32,
-    /// Formats `read_back` and targets can use.
+    /// Formats `read_back` and targets can use: `Rgba8` or `RgbaF32`, never `Alpha8`.
     pub formats: Vec<PixelFormat>,
     /// True when effects run on the device.
     pub gpu_effects: bool,
 }
 
-/// The surface of one frame.
+/// The surface of one frame. `format` is `Rgba8` or `RgbaF32`; `Alpha8` is not a render target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TargetDesc {
     pub width: u32,
