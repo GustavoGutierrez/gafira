@@ -378,7 +378,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 ### 11.1 Principios
 
 1. **Una licencia, un binario.** El mismo ejecutable contiene todas las funciones de todas las fases; no hay módulos que se activen por separado.
-2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada: con `Unlicensed` o `Expired` se puede editar, recuperar un journal, guardar y usar «Guardar copia» (D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo.
+2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo.
 3. **Sin marcas de agua** en las exportaciones (PROPUESTA).
 4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20).
 5. **Única conexión de red = licencia** (activar, validar o desactivar). `PRIVACY.md` declara el identificador de dispositivo que se envía al activar y no puede afirmar que la app no transmite datos.
@@ -440,7 +440,7 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 | Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Producto | Spec 05 |
 | Q-17 | ¿Se admite importar HEVC (y HEIC, `heic-os`) mediante la API del sistema, o queda prohibido en toda vía? D-02 prohíbe «HEVC» sin distinguir importación de salida. | Titular + legal | RF-19, RF-37 |
 | Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Está en suspenso: abriría una conexión distinta de la de licencia, prohibida por D-01. | Titular | Fase 3 |
-| Q-20 | ¿Qué puede hacer el usuario sin licencia válida? D-12 sustituye la propuesta de solo lectura de 02: rige el modo sin licencia. Queda la lista de funciones bloqueadas; hasta entonces solo la exportación está bloqueada (D-55). | Titular | Spec 06, RF-63 |
+| Q-20 | ¿Qué puede hacer el usuario sin licencia válida? D-12 sustituye la propuesta de solo lectura de 02: rige el modo sin licencia. Queda la lista de funciones bloqueadas; hasta entonces solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). | Titular | Spec 06, RF-63 |
 | Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Titular | Fase 3 (02 §14.8) |
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma (es-MX `1,234.5`, es-ES `1234,5`) o un formato fijo por idioma? Propuesta de 02 §14.4: según la región. | Titular | RF-64 |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
