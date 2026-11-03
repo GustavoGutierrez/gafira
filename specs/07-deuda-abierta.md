@@ -46,7 +46,7 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 54 | Regla de banda stray fuera de ARQ-133. | `specifier` la añade a la spec, test después. Ver §1.3. |
 | 55 | Q-48 abierta en hardware D-03. | Se mide en D-03; va al titular solo si `bench_segment_4000` falla. |
 | 56 | Redacción desactualizada en 01 P-04 y 04 FD-38. | `specifier` actualiza la redacción. |
-| 57 | Decisiones sin tomar: O5, Q-46, Q-47 y el texto `modificado` del splash. | El titular decide cada una. |
+| 57 | Decisión sin tomar: el texto `modificado` del splash. | El titular la decide. |
 | 58 | W5 a W9 de RS5/RS6: ambigüedades de ARQ-122 y FD-26, huecos de test y cuatro mutantes de cierre no reaplicados. | Huecos de test primero; `specifier` para W5 y W6. |
 | 59 | `GpuEffect::bind` no recibe `cx`. | `specifier` decide la firma, con test primero. |
 | 60 | Tamaño mínimo de FD-28 (b) sin fijar. | El titular lo fija; después, test primero. Ver §1.3. |
