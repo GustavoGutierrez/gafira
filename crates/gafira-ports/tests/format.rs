@@ -681,3 +681,44 @@ fn adr_0012_import_error_from_cancelled() {
     let e: ImportError = Cancelled.into();
     assert!(matches!(e, ImportError::Cancelled(_)), "{e:?}");
 }
+
+// 02 §4.5 rule 5: a failed import leaves `cx.warnings` as it was at the call,
+// on every `Err` return.
+#[test]
+fn fd_31_warnings_are_restored_when_every_importer_fails() {
+    let (reg, _) = registry(vec![
+        spec("a", &["x"], High).warn(2),
+        spec("b", &["x"], Medium).warn(1),
+    ]);
+    let (r, warnings) = run(&reg, "f.x", &mut bytes());
+    assert_eq!(corrupt(r), "a");
+    assert_eq!(warnings.len(), 1, "only the caller's warning is left");
+    assert_eq!(warnings[0].key.0, "import.caller");
+}
+
+#[test]
+fn fd_31_warnings_are_restored_when_an_importer_cancels() {
+    let (reg, _) = registry(vec![
+        spec("a", &["x"], High).warn(2),
+        spec("b", &["x"], Medium).warn(1).act(Act::Cancel),
+    ]);
+    let (r, warnings) = run(&reg, "f.x", &mut bytes());
+    assert!(matches!(r, Err(ImportError::Cancelled(_))), "{r:?}");
+    assert_eq!(warnings.len(), 1, "only the caller's warning is left");
+    assert_eq!(warnings[0].key.0, "import.caller");
+}
+
+#[test]
+fn fd_31_warnings_are_restored_when_the_rewind_fails_after_a_try() {
+    let (reg, _) = registry(vec![
+        spec("a", &["x"], High).warn(2),
+        spec("b", &["x"], Medium).act(Act::Ok),
+    ]);
+    let mut src = SeekFails {
+        inner: bytes(),
+        seeks_ok: 1,
+    };
+    let (r, warnings) = run(&reg, "f.x", &mut src);
+    assert!(matches!(r, Err(ImportError::Io(_))), "{r:?}");
+    assert_eq!(warnings.len(), 1, "only the caller's warning is left");
+}

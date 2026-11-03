@@ -251,7 +251,8 @@ impl FormatRegistry {
     /// Each try starts at byte 0 of `src` and with the warnings `cx` held on
     /// entry. The first `Ok` is the result and `Cancelled` stops at once. When
     /// every importer fails the first error is returned, since it comes from
-    /// the most likely format.
+    /// the most likely format. On every `Err` the warnings of `cx` are those
+    /// it held on entry: nothing from a failed try stays (02 §4.5 rule 5).
     ///
     /// # Errors
     /// [`ImportError::Unsupported`] without candidates, [`ImportError::Io`]
@@ -265,6 +266,22 @@ impl FormatRegistry {
         cx: &mut ImportCx<'_>,
     ) -> Result<Imported, ImportError> {
         let kept = cx.warnings.len();
+        let result = self.try_each(path, head, src, opt, cx, kept);
+        if result.is_err() {
+            cx.warnings.truncate(kept);
+        }
+        result
+    }
+
+    fn try_each(
+        &self,
+        path: &Path,
+        head: &[u8],
+        src: &mut dyn ReadSeek,
+        opt: &ImportOptions,
+        cx: &mut ImportCx<'_>,
+        kept: usize,
+    ) -> Result<Imported, ImportError> {
         let mut first_error = None;
         for importer in self.resolve_import(path, head) {
             src.seek(SeekFrom::Start(0)).map_err(ImportError::Io)?;
