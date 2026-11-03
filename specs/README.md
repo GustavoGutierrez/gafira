@@ -19,6 +19,7 @@ Junto a los documentos: `capabilities/` guarda las specs principales (registro d
 | `04-funcionalidad-diseno-imagen-exportacion.md` | En curso | Diseño, imagen y exportación. Promovido porque la capa 2 de 02 lo necesita: 02 no tiene criterios de aceptación para `gafira-layout` y sí los tiene 04 (FD-03 a FD-07, FD-09, FD-11, FD-53, FD-54). |
 | `05-funcionalidad-video-y-distribucion.md` | En curso | Video y distribución. Promovido porque la capa 2 de 02 lo necesita: `gafira-audio` cubre FV-04, FV-10 y FV-20. |
 | `backlog/06-licencia-y-activacion.md` | Backlog | Licencia y activación. |
+| `07-deuda-abierta.md` | Vigente (no ejecutable) | Inventario de los ítems 39 a 77 y de los sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster`. No crea requisitos. |
 | `archive/` | Archivados | Ninguno todavía. |
 
 ## Cómo continuar el documento en curso
