@@ -674,3 +674,10 @@ fn fd_31_warnings_of_a_failed_try_are_discarded() {
     assert_eq!(warnings.len(), 2, "the caller's plus the successful try's");
     assert_eq!(warnings[0].key.0, "import.caller");
 }
+
+// ADR 0012 rule 4 via ADR 0014: `?` turns a `Cancelled` into the variant.
+#[test]
+fn adr_0012_import_error_from_cancelled() {
+    let e: ImportError = Cancelled.into();
+    assert!(matches!(e, ImportError::Cancelled(_)), "{e:?}");
+}

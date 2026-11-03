@@ -143,6 +143,12 @@ impl std::error::Error for ImportError {
     }
 }
 
+impl From<Cancelled> for ImportError {
+    fn from(e: Cancelled) -> Self {
+        Self::Cancelled(e)
+    }
+}
+
 impl ToMessage for ImportError {
     fn to_message(&self) -> Message {
         match self {

@@ -82,6 +82,12 @@ impl fmt::Display for AssistError {
 
 impl std::error::Error for AssistError {}
 
+impl From<Cancelled> for AssistError {
+    fn from(e: Cancelled) -> Self {
+        Self::Cancelled(e)
+    }
+}
+
 impl ToMessage for AssistError {
     fn to_message(&self) -> Message {
         match self {
