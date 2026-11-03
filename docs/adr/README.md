@@ -33,6 +33,8 @@ Where a decision lives:
 | [0010](0010-pixel-golden-format.md) | Pixel goldens are PNG files compared on raw bytes | accepted |
 | [0011](0011-odd-lite.md) | ODD lite: outcome-first routing on top of the existing flow | accepted |
 | [0012](0012-engine-error-messages-and-cancellation.md) | Engine errors share one key rule and one cancelled value | accepted |
+| [0013](0013-ports-edges-and-v5-row.md) | `gafira-ports` edges, V5 row and test doubles | proposed |
+| [0014](0014-one-error-enum-per-port.md) | One error enum per port family in `gafira-ports` | proposed |
 
 ## Template
 
