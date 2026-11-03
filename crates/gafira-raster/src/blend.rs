@@ -480,9 +480,10 @@ mod tests {
         }
     }
 
-    /// The 8-bit rule of ARQ-119 on `f64`: unpremultiply, decode to linear light, the W3C
-    /// formula and the composite on linear premultiplied values, encode, premultiply. Alpha does
-    /// not go through the curve.
+    /// The 8-bit rule of ARQ-119 on `f64`: unpremultiply with the 8-bit rounding of ARQ-117,
+    /// `min(255, round(c * 255 / a))` (D-57), not an exact `c / a`; decode to linear light, the
+    /// W3C formula and the composite on linear premultiplied values, encode, premultiply. Alpha
+    /// does not go through the curve.
     fn reference_u8(mode: BlendMode, b8: [u8; 4], s8: [u8; 4]) -> [f64; 4] {
         let lin = |p: [u8; 4]| {
             let a = f64::from(p[3]) / 255.0;
