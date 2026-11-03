@@ -1,26 +1,4 @@
 {
   "schema": 1,
-  "outcomes": [
-    {
-      "outcome_id": "unlicensed-save",
-      "spec_id": "02-arquitectura-software",
-      "status": "specifying",
-      "flow": "Flow: standard | level: L2 | pack: spec-only | mutation: off | tier: T0 | verify: V0 | decided-by: owner | reason: owner decision on what an unlicensed user may do while the D-12 list is pending; no code",
-      "scope": "Record that Unlicensed and Expired may edit, recover a journal, save normally and Guardar copia; only export is blocked until the D-12 list exists.",
-      "non_goals": [
-        "The D-12 list itself",
-        "gafira-license code",
-        "Price and trial"
-      ],
-      "criteria": [
-        {
-          "id": "F1",
-          "status": "pending",
-          "type": "manual",
-          "text": "ARQ-04, ARQ-95, §4.14 and §13 state ordinary save allowed without a licence, with testable acceptance, and no line of 02 contradicts it."
-        }
-      ],
-      "next_action": "specifier records the decision"
-    }
-  ]
+  "outcomes": []
 }
