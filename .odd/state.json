@@ -15,23 +15,25 @@
       "criteria": [
         {
           "id": "AC1",
-          "status": "pending",
+          "status": "passed",
           "type": "unit",
-          "text": "8-bit Shadow composites in linear light: its result equals blend_u8 Normal of the shadow over the backdrop (FD-35 (e)), and 8-bit and f32 Shadow agree as FD-35 (f) states: within 2/255 where the 8-bit shadow alpha is 16 or more, no bound below 16."
+          "text": "8-bit Shadow composites in linear light: its result equals blend_u8 Normal of the shadow over the backdrop (FD-35 (e)), and 8-bit and f32 Shadow agree as FD-35 (f) states: within 2/255 where the 8-bit shadow alpha is 16 or more, no bound below 16.",
+          "evidence": "verify round 2 PASS (code at 84181d8); T3 0 survivors in changed lines"
         },
         {
           "id": "AC2",
-          "status": "pending",
+          "status": "passed",
           "type": "unit",
-          "text": "ARQ-119 acceptance names the reference unpremultiply with ARQ-117 8-bit rounding; the reference test follows it and all 16 modes stay within 1/255."
+          "text": "ARQ-119 acceptance names the reference unpremultiply with ARQ-117 8-bit rounding; the reference test follows it and all 16 modes stay within 1/255.",
+          "evidence": "verify round 2 PASS (code at 84181d8); T3 0 survivors in changed lines"
         }
       ],
-      "next_action": "closure verify of C1",
+      "next_action": "archive: delete the entry, record follow-ups W1 to W3",
       "verify": {
-        "round": 1,
+        "round": 2,
         "commit": "84181d8",
-        "verdict": "FAIL",
-        "next": "coordinator amends AC1, closure verify",
+        "verdict": "PASS",
+        "next": "archive",
         "findings": [
           {
             "id": "C1",
@@ -40,7 +42,7 @@
             "ref": "AC1, FD-35 (f)",
             "summary": "AC1 said 1/255; the owner's FD-35 (f) answer is 2/255 from shadow alpha 16. Fixed by the outcome amend.",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "W1",
@@ -77,6 +79,11 @@
             "classes": [
               "ambiguity"
             ]
+          },
+          {
+            "round": 2,
+            "verdict": "PASS",
+            "classes": []
           }
         ]
       }
