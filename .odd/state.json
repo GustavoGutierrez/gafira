@@ -1,38 +1,4 @@
 {
   "schema": 1,
-  "outcomes": [
-    {
-      "outcome_id": "open-debt-spec",
-      "spec_id": "none",
-      "status": "specifying",
-      "flow": "Flow: standard | level: L0 | pack: spec-only | mutation: off | tier: T0 | verify: V0 | decided-by: owner | reason: documents open follow-ups in one product document, no code",
-      "scope": "One document in specs/ gathering the open follow-ups 39 to 77 of specs/README.md and the 104 critical survivors of text and raster, listed by file and line.",
-      "non_goals": [
-        "Fixing any item",
-        "Changing requirements or owner decisions",
-        "Closing or renumbering README items"
-      ],
-      "criteria": [
-        {
-          "id": "F1",
-          "status": "pending",
-          "type": "manual",
-          "text": "Every open README item from 39 to 77 appears once, with its number, or is listed as closed."
-        },
-        {
-          "id": "F2",
-          "status": "pending",
-          "type": "command",
-          "text": "All critical survivors appear with crate, file:line and mutation; counts per crate are 65 and 33 and match the raw lists."
-        },
-        {
-          "id": "F3",
-          "status": "pending",
-          "type": "manual",
-          "text": "Each item states acceptance: what closes it. Survivors group into executable blocks."
-        }
-      ],
-      "next_action": "specifier writes the document"
-    }
-  ]
+  "outcomes": []
 }
