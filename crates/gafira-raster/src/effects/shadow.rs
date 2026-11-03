@@ -652,6 +652,141 @@ mod tests {
         }
     }
 
+    fn srgb_to_linear(v: f64) -> f64 {
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn linear_to_srgb(v: f64) -> f64 {
+        if v <= 0.003_130_8 {
+            12.92 * v
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    }
+
+    /// The `RgbaF32` input of an 8-bit image (FD-35 f): unpremultiplied with ARQ-117, decoded
+    /// to linear light and premultiplied again.
+    fn to_linear_f32(px: &[u8]) -> Vec<f32> {
+        px.chunks_exact(4)
+            .flat_map(|p| {
+                let a = f64::from(p[3]) / 255.0;
+                let c = |i: usize| {
+                    let straight = crate::unpremultiply_u8(p[i], p[3]);
+                    (srgb_to_linear(f64::from(straight) / 255.0) * a) as f32
+                };
+                [c(0), c(1), c(2), a as f32]
+            })
+            .collect()
+    }
+
+    /// The `RgbaF32` output in 8-bit units, as the reference of ARQ-119: straight linear light
+    /// encoded to sRGB, premultiplied, times 255; alpha does not go through the curve.
+    fn to_units(px: &[f32]) -> Vec<f64> {
+        px.chunks_exact(4)
+            .flat_map(|p| {
+                let a = f64::from(p[3]);
+                let c = |i: usize| {
+                    if a == 0.0 {
+                        0.0
+                    } else {
+                        255.0 * a * linear_to_srgb((f64::from(p[i]) / a).clamp(0.0, 1.0))
+                    }
+                };
+                [c(0), c(1), c(2), 255.0 * a]
+            })
+            .collect()
+    }
+
+    // FD-35 (f): the same image in Rgba8 and RgbaF32, with the same parameters, differs by at
+    // most 2/255 per channel wherever the 8-bit shadow alpha is at least 16; below 16 there is
+    // no bound (D-56). Includes blur, low element alpha and a translucent tint.
+    #[test]
+    fn fd_35_f_rgba8_and_rgba_f32_agree_within_2_255_from_shadow_alpha_16() {
+        let bump = |peak: f64| -> Vec<u8> {
+            bump_f32(96, 80, peak)
+                .iter()
+                .map(|v| (f64::from(*v) * 255.0).round() as u8)
+                .collect()
+        };
+        // Alpha 0 is black (ARQ-117): the f32 input cannot keep a stray colour there.
+        let clean = |mut v: Vec<u8>| {
+            for p in v.chunks_exact_mut(4).filter(|p| p[3] == 0) {
+                p.fill(0);
+            }
+            v
+        };
+        let mut images: Vec<(String, Vec<u8>, (u32, u32))> = vec![
+            ("translucent bump".into(), bump(200.0 / 255.0), (96, 80)),
+            ("opaque bump".into(), bump(1.0), (96, 80)),
+            ("low alpha bump".into(), bump(12.0 / 255.0), (96, 80)),
+        ];
+        for seed in 1..=12u32 {
+            images.push((
+                format!("random {seed}"),
+                clean(img_u8(40, 30, seed.wrapping_mul(0x9E37_79B9))),
+                (40, 30),
+            ));
+        }
+        let colors = [
+            Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            Color::Srgb(Rgba::new(0.8, 0.25, 0.1, 1.0)),
+            Color::Srgb(Rgba::new(0.8, 0.25, 0.1, 0.4)),
+            Color::Srgb(Rgba::new(0.5, 0.5, 0.5, 0.5)),
+        ];
+        let (mut worst, mut worst_at, mut compared) = (0.0f64, String::new(), 0usize);
+        for (name, img, size) in &images {
+            let (w, h) = (size.0 as usize, size.1 as usize);
+            let alpha: Vec<f32> = img.chunks_exact(4).map(|px| f32::from(px[3])).collect();
+            for blur in [0.0, 1.0, 3.0, 12.0] {
+                for opacity in [100.0, 55.0, 10.0, 3.0, 1.0] {
+                    for color in colors {
+                        let mut p = pv(&[
+                            ("blur", blur),
+                            ("opacity", opacity),
+                            ("offset_x", 3.0),
+                            ("offset_y", -2.0),
+                        ]);
+                        p.set("color", ParamValue::Color(color));
+                        let o8 = run8(&cx(1.0), &p, img, *size).unwrap();
+                        let of = runf(&cx(1.0), &p, &to_linear_f32(img), *size).unwrap();
+                        let units = to_units(&of);
+                        // The 8-bit shadow alpha of each pixel, as the effect forms it.
+                        let v = resolved(&p);
+                        let g = Geometry::new(&cx(1.0), &v);
+                        let cover = blur_shifted(&alpha, w, h, -g.dx, -g.dy, g.radius);
+                        let tint_a = match color {
+                            Color::Srgb(c) => f64::from(c.a),
+                            _ => 1.0,
+                        };
+                        for (i, c) in cover.iter().enumerate() {
+                            let sa = (f64::from(*c) * opacity / 100.0 * tint_a + 0.5).floor();
+                            if sa < 16.0 {
+                                continue;
+                            }
+                            compared += 1;
+                            for ch in 0..4 {
+                                let d = (f64::from(o8[i * 4 + ch]) - units[i * 4 + ch]).abs();
+                                if d > worst {
+                                    worst = d;
+                                    worst_at = format!(
+                                        "{name} blur {blur} opacity {opacity} {color:?} px {i} ch {ch}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("worst at shadow alpha >= 16: {worst} / 255, {worst_at}");
+        assert!(compared > 10_000, "too few pixels compared: {compared}");
+        assert!(worst <= 2.0, "{worst} / 255 at {worst_at}");
+    }
+
     // FD-35: the colour parameter tints the shadow, and its own alpha scales the shadow. 8-bit
     // pixels hold the sRGB bytes; f32 pixels hold linear light.
     #[test]
