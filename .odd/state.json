@@ -1,4 +1,32 @@
 {
   "schema": 1,
-  "outcomes": []
+  "outcomes": [
+    {
+      "outcome_id": "raster-shadow-linear",
+      "spec_id": "02-arquitectura-software",
+      "status": "specifying",
+      "flow": "Flow: standard | level: L2 | pack: bug fix | mutation: delivery | tier: T3 | verify: V2 | decided-by: owner | reason: owner answers W1 (a) and W2 (a) of the D-53 verify; new rule on critical 8-bit compositing; T3 on the touched files because the crate T4 debt is recorded in specs/07-deuda-abierta.md",
+      "scope": "Shadow composites 8-bit in linear light like D-53; ARQ-119 states that its f64 reference unpremultiplies with ARQ-117 8-bit rounding.",
+      "non_goals": [
+        "Old T4 survivors of gafira-raster",
+        "Performance of the linear path",
+        "GPU code"
+      ],
+      "criteria": [
+        {
+          "id": "AC1",
+          "status": "pending",
+          "type": "unit",
+          "text": "8-bit Shadow composites in linear light: its result equals blend_u8 Normal of the shadow over the backdrop, and 8-bit and f32 Shadow agree within 1/255."
+        },
+        {
+          "id": "AC2",
+          "status": "pending",
+          "type": "unit",
+          "text": "ARQ-119 acceptance names the reference unpremultiply with ARQ-117 8-bit rounding; the reference test follows it and all 16 modes stay within 1/255."
+        }
+      ],
+      "next_action": "specifier records W1 and W2, then tdd-apply"
+    }
+  ]
 }
