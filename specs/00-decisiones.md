@@ -471,6 +471,20 @@ Fecha: 2 de noviembre de 2026.
 - Amplía D-51.
 - Aplicado a 02 (§12.2) y 05 (FV-10).
 
+## D-55 Guardar sin licencia mientras falta la lista de D-12
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: mientras la lista de funciones bloqueadas de D-12 siga pendiente, un usuario en `Unlicensed` o `Expired` puede editar, recuperar un journal, guardar con normalidad (Guardar, `Ctrl+S`) y usar «Guardar copia». Solo la exportación está bloqueada (opción (b) de la pregunta del hueco S10 de `gafira-ports`).
+- **Precisiones** (respuestas del titular a las preguntas de D-55):
+  1. La licencia nunca bloquea guardar: `Invalid` también guarda, igual que `Unlicensed` y `Expired`.
+  2. Guardar como y el autoguardado en el journal también están permitidos sin licencia.
+  3. «Exportar proyecto editable con recursos» cuenta como guardar, no como exportar: solo escribe el `.gafira` del usuario y sus recursos. Está permitido sin licencia y `can_export` no lo controla.
+- **Guardar**, en esta decisión, es Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos». Exportar es todo lo demás que escribe una salida (PNG, PDF, MP4 y los demás formatos de exportación).
+- **Consecuencia**: `LicenseStatus` conserva un único predicado, `can_export`. No hay `can_save`: guardar no depende de la licencia en ningún estado.
+- Amplía D-12. Sustituye la propuesta de solo lectura de 02 (Q-20).
+- Aplicado a 01 (§11, Q-20), 02 (ARQ-04, §4.14, §13.1, §13.3, ARQ-95, Q-20) y 04 (FD-63).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |
