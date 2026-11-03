@@ -7,7 +7,7 @@
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
 | Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-45 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17) |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-148 son los contratos de los motores de la capa de aplicación (§4.17.7, §4.17.8) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -455,32 +455,55 @@ pub trait NodeBehavior {
     fn hit_test(&self, cx: &MeasureCx, p: Point, t: Flicks) -> bool;
 }
 
+/// Vista prestada de una página y su arena. No la posee ni la clona.
+pub struct PageView<'a> { page: &'a Page }
+
+/// Contexto de medición: solo lo que posee el dominio.
+pub struct MeasureCx<'a> { page: &'a Page, dpi: f32 }
+
+/// Orden del recorrido.
+pub enum WalkOrder { PreOrder, PostOrder }
+
 pub trait NodeVisitor {
     type Out;
-    fn visit_group(&mut self, n: &Node, g: &GroupNode) -> Self::Out;
-    fn visit_frame(&mut self, n: &Node, f: &FrameNode) -> Self::Out;
-    fn visit_shape(&mut self, n: &Node, s: &ShapeNode) -> Self::Out;
-    fn visit_text(&mut self, n: &Node, t: &TextNode) -> Self::Out;
-    fn visit_image(&mut self, n: &Node, i: &ImageNode) -> Self::Out;
-    fn visit_video(&mut self, n: &Node, v: &VideoNode) -> Self::Out;
-    fn visit_adjustment(&mut self, n: &Node, a: &AdjustmentNode) -> Self::Out;
-    fn visit_sticky(&mut self, n: &Node, s: &StickyNode) -> Self::Out;
-    fn visit_table(&mut self, n: &Node, t: &TableNode) -> Self::Out;
-    fn visit_extension(&mut self, n: &Node, e: &ExtensionNode) -> Self::Out;
+    /// Obligatoria: recibe todo nodo al que no se aplique un método específico.
+    fn visit_node(&mut self, n: &Node) -> Self::Out;
+    /// Con implementación por defecto: delegan en `visit_node`.
+    fn visit_group(&mut self, n: &Node, g: &GroupNode) -> Self::Out { self.visit_node(n) }
+    fn visit_shape(&mut self, n: &Node, s: &ShapeNode) -> Self::Out { self.visit_node(n) }
+    fn visit_extension(&mut self, n: &Node, e: &ExtensionNode) -> Self::Out { self.visit_node(n) }
 }
-pub fn walk<V: NodeVisitor>(doc: &PageView, v: &mut V, order: WalkOrder) -> Vec<V::Out>;
+pub fn walk<V: NodeVisitor>(page: &PageView, v: &mut V, order: WalkOrder) -> Vec<V::Out>;
 ```
 
 - **Patrón**: Visitor sobre un enum cerrado. Separa las operaciones (render, exportación SVG/PDF, recolección de fuentes, GC de recursos, *hit testing*, accesibilidad del lienzo) de los datos.
+- **Dónde vive**: el visitante, el recorrido y la vista de página son de `gafira-doc` (§2.1): un Visitor sobre los tipos de nodo del dominio no puede vivir por debajo de él, y la promesa de que una operación nueva se añade sin tocar `gafira-doc` (ARQ-20) necesita un único punto de despacho que todas las operaciones compartan.
 - **Implementan**: `RenderGraphBuilder` (`gafira-render`), `SvgWriter` (`gafira-io-svg`), `PdfWriter` (`gafira-io-pdf`), `FontCollector` y `AssetCollector` (`gafira-engine`), `HitTester` (`gafira-edit`).
 - **Cómo añadir una operación nueva**:
   1. Crear un struct que implemente `NodeVisitor` en el crate que la necesita.
   2. Invocar `walk`.
   3. No se toca `gafira-doc`.
 - **Cómo añadir un tipo de nodo de extensión**:
-  1. Implementar `NodeExtension` (bounds, `render_into(&mut RenderGraphBuilder)`, esquema del inspector).
-  2. Registrarlo.
+  1. Implementar `NodeExtension` (bounds y esquema del inspector) en el crate de la extensión. El trait del dominio **no** declara `render_into` ni menciona el grafo de render (ARQ-137).
+  2. Registrar el manejador de render en el motor que lo consume (`gafira-render` en este corte, §4.17.7) y, si aplica, el esquema del inspector.
   3. Nunca se añade una variante a `NodeKind` desde fuera del núcleo.
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-134 | **Cobertura del visitante.** El visitante cubre en este corte los tres tipos de nodo que existen: `Group`, `Shape` y `Extension`. Los métodos `visit_frame`, `visit_text`, `visit_image`, `visit_video`, `visit_adjustment`, `visit_sticky` y `visit_table` no existen todavía: cada uno llega con su tipo de nodo. Añadir una variante a `NodeKind` **no rompe** a los implementores del trait: cada método `visit_*` tiene implementación por defecto y delega en `visit_node`, y `walk` despacha cada nodo a un único método. El despacho sobre `NodeKind` es exhaustivo y no tiene brazo `_`: añadir una variante rompe la compilación de `gafira-doc` y obliga a despacharla ahí, no en los implementores. | Un visitante que implementa solo `visit_node` y ningún `visit_*` compila y recibe una llamada por nodo (unit). Con una página con un grupo, una forma y una extensión, el recorrido llama una vez a `visit_node` por cada uno de los tres, y ninguna llamada recibe un nodo dos veces (unit). El número de métodos `visit_*` declarados es 3, uno por variante de `NodeKind` (unit). El `match` de despacho de `walk` no contiene un brazo `_` (command: `grep` sobre el archivo del despacho, más el fallo de compilación que produce añadir una variante a `NodeKind`). |
+| ARQ-135 | **`PageView` es una vista prestada.** `PageView` presta la página y su arena: no la posee, no la clona y no la copia. Su vida es la del préstamo. `walk` toma `&PageView` y devuelve valores propios, de modo que ningún visitante conserva una referencia a un nodo más allá del recorrido. | Construir la vista de una página no cambia el contenido de la página ni el número de referencias a sus nodos: la arena que se recorre es la misma (unit). `walk` sobre una página sin raíces devuelve un vector vacío (unit). El tipo de salida del visitante es un valor propio y no una referencia al nodo: el recorrido no puede devolver una referencia que expire al terminar (unit, comprobación de tipos). |
+| ARQ-136 | **Contexto de medición y orden del recorrido.** `MeasureCx` lleva solo lo que posee el dominio: la página que se mide, prestada, y el DPI del destino. El tiempo se pasa aparte (`t: Flicks`), no en el contexto. `MeasureCx` no depende de `gafira-layout` ni de ningún motor de capa 2, porque esos dependen del dominio (ARQ-01). `local_bounds` devuelve la caja del nodo en coordenadas de página y `hit_test` recibe el punto en coordenadas de página. `WalkOrder` tiene dos variantes: `PreOrder` (el padre antes que sus hijos) y `PostOrder` (los hijos antes que su padre). En las dos, los hermanos se recorren en el orden guardado, de atrás hacia delante, y cada nodo se visita una sola vez. Un visitante que necesite el orden inverso (el *hit testing*, que va de delante hacia atrás) recorre el resultado al revés. El recorrido no filtra por `visible` ni por `locked`: visita todo nodo alcanzable y quien recorta es el visitante. | Con un grupo de tres hijos, `PreOrder` devuelve los cuatro nodos con el grupo primero y `PostOrder` devuelve los cuatro con el grupo último, y en los dos casos los tres hijos en el orden guardado (unit). Una página sin raíces devuelve un vector vacío en los dos órdenes (unit). Un grupo cuyo hijo es él mismo, o dos grupos que se apuntan mutuamente, terminan el recorrido y devuelven cada nodo una sola vez (unit). Un id de hijo que no existe en la arena se omite, el resto de los hijos se recorre y no hay `panic` (unit). Un `MeasureCx` con el DPI no finito (NaN, `+∞`, `−∞`), negativo o cero hace que `local_bounds` devuelva un rectángulo de ancho 0 y alto 0 y que `hit_test` devuelva `false` (unit). |
+| ARQ-137 | **La costura del nodo de extensión.** `gafira-doc` no conoce el render: el trait `NodeExtension` del dominio declara `bounds` y el esquema del inspector, y no declara `render_into` ni ninguna referencia al grafo de render. El render de un nodo de extensión lo resuelve un manejador que el motor de render posee y que la raíz de composición registra; el dominio no registra manejadores ni conoce sus tipos. Un nodo de extensión sin manejador registrado no produce operación de render: se dibuja como su caja opaca. La arista `gafira-doc → gafira-render` no existe (ARQ-01) y la capacidad de renderizar extensiones se añade sin modificar `gafira-doc` (ARQ-20). | `cargo xtask check-layers` no encuentra ninguna arista de `gafira-doc` a `gafira-render` ni a ningún otro crate de capa superior (command). La API pública de `gafira-doc` no menciona `RenderGraphBuilder` ni `gafira_render`: la salida de `cargo public-api` de `gafira-doc`, que CI ya genera, no contiene esos nombres (command). Un documento con una extensión sin manejador registrado produce un grafo sin operaciones para ese nodo y con las operaciones del resto de la página (integration). Registrar un manejador nuevo no cambia ninguna línea de `gafira-doc` (integration, ARQ-20). |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Orden de los hermanos | Siempre el orden guardado (de atrás hacia delante), en los dos órdenes. | ARQ-136 |
+| Padre y su hijo | `PreOrder`: el padre primero. `PostOrder`: el hijo primero. | ARQ-136 |
+| Página vacía | Vector vacío, sin error. | ARQ-135, ARQ-136 |
+| Ciclo en la arena | El recorrido termina; el nodo repetido no se vuelve a visitar. | ARQ-136 |
+| Hijo inexistente | Se omite; los demás hijos se recorren; no hay `panic`. | ARQ-136 |
+| DPI no finito (NaN, `+∞`, `−∞`) | `local_bounds` devuelve un rectángulo de ancho 0 y alto 0; `hit_test` devuelve `false`. | ARQ-136 |
+| DPI negativo o cero | Igual que el caso no finito. | ARQ-136 |
 
 ### 4.2 `Tool` (patrón State)
 
@@ -635,6 +658,8 @@ pub trait RenderBackend: Send {
 pub trait TileCache: Send {                      // trait de gafira-ports; lo implementa gafira-render
     fn get(&self, key: &TileKey) -> Option<Arc<ImageBuf>>;
     fn put(&mut self, key: TileKey, tile: Arc<ImageBuf>);
+    fn bytes(&self) -> Bytes;                     // tamaño actual de la caché, en bytes
+    fn trim(&mut self, budget: Bytes);            // deja la caché en ≤ budget y libera el resto
 }
 
 pub struct RenderPlan { pub quality: RenderQuality, pub tasks: Vec<TileTask> } // tareas por prioridad (§6.1)
@@ -655,7 +680,7 @@ pub enum RenderOp {                              // cerrado: sin #[non_exhaustiv
 ```
 
 - **Contrato de render en los puertos**: `RenderPlan`, `RenderOp`, `TileCache`, `FrameCx`, `Deadline` y `RenderReport` viven en `gafira-ports`, porque los backends no ven `gafira-render` (ARQ-06). `gafira-render` construye el plan y los backends lo leen. El plan es autocontenido: cada efecto llega como `Arc<dyn Effect>` con sus parámetros ya resueltos. El texto llega como contornos (`FillPath`); los glifos con *hinting* de la vista previa serán una variante nueva. `RenderOp` es un enum cerrado, de modo que una variante nueva no compila en un backend que no la trate.
-- **`TileCache`**: es un trait de `gafira-ports`, implementado en `gafira-render` (§6.1); `execute` recibe `&mut dyn TileCache`. Un backend GPU guarda sus texturas por `TileKey` en privado y las libera en `trim`.
+- **`TileCache`**: es un trait de `gafira-ports`, implementado en `gafira-render` (§6.1); `execute` recibe `&mut dyn TileCache`. Un backend GPU guarda sus texturas por `TileKey` en privado y las libera en `trim`. `bytes()` y `trim(budget)` se cuentan en **bytes** y son las dos llamadas que usa el `MemoryGovernor` para preguntar el tamaño de una caché y para encogerla (ARQ-44).
 - **`FrameCx`**: es un identificador plano del frame (`FrameId`). Cada backend guarda su propio estado por `FrameId`.
 - **`Deadline`**: `Unbounded` o `At(t)`, con `t` del reloj monotónico (`Clock::monotonic`). Ha pasado cuando `now >= t`; `Unbounded` nunca pasa.
 - **Render tardío**: si vence el plazo, `execute` no da error: devuelve un `RenderReport` con las tareas que quedan (`left`). El informe está completo cuando `left == 0`.
@@ -906,7 +931,7 @@ pub trait TextAssistant: Describe + Send + Sync {
 |---|---|---|
 | ARQ-20 | Toda capacidad de las §4.4–§4.13 y §4.15 se añade sin modificar `gafira-doc`, `gafira-edit` ni `gafira-engine`. | Prueba arquitectónica: el crate `gafira-testkit/examples/extension-demo` registra un efecto, un exportador y un proveedor nuevos sin tocar el núcleo, y compila en CI. |
 | ARQ-21 | Los importadores no causan `panic` con entradas arbitrarias. | Los objetivos `cargo fuzz` de cada importador corren 10 min por PR y 8 h por semana sin fallos. |
-| ARQ-22 | La GPU degrada a CPU sin perder el documento. | Una prueba con inyección de `DeviceLost` en mitad de un render termina el frame en CPU y la sesión sigue editable. |
+| ARQ-22 | La GPU degrada a CPU sin perder el documento. La degradación dura el resto de la sesión y se informa. | Una prueba con inyección de `DeviceLost` en mitad de un render termina el frame en CPU y la sesión sigue editable. **La inyección ocurre dentro de `execute`, después de que el motor haya consumido al menos una tarea del plan y antes de que termine el frame**: un doble que falla antes de consumir la primera tarea no cuenta como esta prueba. Con un doble que falla en la segunda tarea, `execute` devuelve el error de pérdida de dispositivo, el documento queda igual, el siguiente comando de edición se aplica y los frames siguientes van al motor de CPU. |
 | ARQ-23 | El hilo de audio no asigna ni bloquea. | En build de depuración, la prueba con la guardia de asignación (§4.9, D-18) pasa con 16 pistas activas y bloques de 512 muestras. Una asignación aborta el proceso, así que el control negativo de `gafira-testkit` corre en un subproceso y comprueba ese fallo. |
 | ARQ-24 | Un plugin no puede colgar la app. | Un plugin con bucle infinito se interrumpe en ≤ 100 ms por combustible y la UI sigue respondiendo. |
 | ARQ-25 | Una transición nueva se añade sin modificar el núcleo y respeta sus extremos. | `extension-demo` registra una `Transition` nueva y compila sin tocar `gafira-doc`, `gafira-edit` ni `gafira-engine`. Para cada transición registrada, la prueba golden da salida idéntica a «desde» en `progress = 0` y a «hacia» en `progress = 1`. |
@@ -951,11 +976,11 @@ pub trait Translator: Send + Sync {                                       // gaf
 - **`Region`**: es un tipo propio `Copy` y no el de `icu_locale_core`, para que el engine y los adaptadores reciban `FormatLocale` sin depender de ICU; `gafira-i18n` convierte en su borde. `Region::new` acepta 2 letras ASCII, que guarda en mayúsculas, o 3 dígitos ASCII (`419`, para `es-419`); cualquier otra cosa da `None`. Aceptación: `mx` y `MX` dan `MX`; `419` es válido; `m`, `mex`, `41`, `4190`, `m1` y `ñx` dan `None`; `as_str` devuelve lo guardado.
 - **Dobles de prueba**: `FakeSystemLocaleSource` (etiquetas fijas) en `gafira-testkit`, tras la feature `ports` (§2.2); `PseudoTranslator` (feature `pseudo` de `gafira-i18n`, solo desarrollo y pruebas, §14.6).
 
-### 4.17 Contratos de los motores de capa 2
+### 4.17 Contratos de los motores de capa 2 y de la capa de aplicación
 
-Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las fichas de 04 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
+Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y el de los dos motores de la capa de aplicación, `gafira-render` (§4.17.7) y `gafira-media` (§4.17.8). Las fichas de 04 y 05 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
 
-Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007).
+Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y después `gafira-render` y `gafira-media`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007); los dos motores de la capa de aplicación no tienen arista entre sí (ADR 0015).
 
 Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 
@@ -968,6 +993,8 @@ Dónde vive cada tipo compartido (ADR 0005, ADR 0008):
 | `AudioBlock`, `ParamSnapshot` | `gafira-audio` |
 | `Segmentation`, `SegHints`, `SegReq`, `SegError` | `gafira-segment` |
 | `Registry<T>` | `gafira-ports` |
+| `RenderGraph`, `RenderGraphBuilder` | `gafira-render` |
+| `RenderPlan`, `TileKey`, `ContentKey`, `TileCache` | `gafira-ports` |
 
 `Cost` da unidades de trabajo abstractas, calculadas con los píxeles y el tamaño del núcleo, sin tiempo (ARQ-02). Aceptación: con los mismos parámetros y el mismo `cx`, `cost_hint` no da menos trabajo para el doble de píxeles.
 
@@ -1174,6 +1201,69 @@ Hueco conocido y aceptado (D-45, Q-45): un fondo texturizado a ΔE76 6 queda fue
 | Sujeto que toca el borde de la imagen, sin semillas | Lo que cae en superpíxeles fijados queda como fondo. Una semilla de primer plano lo recupera. Sin cota de IoU. No fiable si deja en la banda un grupo con al menos el 5 % de ella; un contacto menor no cambia `reliable`. | ARQ-131, ARQ-133 |
 | Cancelación | Sin reloj en las pruebas unitarias (ARQ-112). | ARQ-112 |
 
+#### 4.17.7 `gafira-render`
+
+`gafira-render` construye el grafo de render, calcula la clave de contenido de cada nodo, planifica los tiles por prioridad y reparte el presupuesto del frame (§6.1, §6.2). Es un motor de la capa de aplicación: no depende de `gafira-media` y no ve el motor que ejecuta el plan (§4.6). Las tres reglas comunes de ARQ-138 a ARQ-140 valen para los dos motores de la capa de aplicación, este y `gafira-media` (§4.17.8).
+
+| Primer corte | Fuera del corte |
+|---|---|
+| 02 §4.1 (visitante), §4.5 (`PageRenderer`), §4.6 (`RenderBackend`, `TileCache`), §6.1, §6.2, §6.3 (prioridades), §7.1 (las cachés no van en el `.gafira`); ARQ-10, ARQ-13, ARQ-20, ARQ-22, ARQ-41, ARQ-42 (parcial), ARQ-43, ARQ-44, ARQ-121; CAL-13, CAL-14 (parcial) | Motores de render (`gafira-render-cpu`, `gafira-render-gpu`), que son capa 4. `gafira-engine` (sesión, `MemoryGovernor`, cola de exportación). Exportadores SVG y PDF. `gafira-layout` y `gafira-text`: el grafo lee la colocación del nodo, no la maqueta. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-138 | **Pureza y puertos.** `gafira-render` es puro en el sentido de ARQ-02: no usa `std::fs`, `std::net`, `std::thread::spawn`, `std::time::Instant::now`, `std::time::SystemTime::now` ni `std::env`. El tiempo llega por `ports::Clock`, el sistema de archivos por `ports::FileSystem` y el pool de hilos por parámetro. No crea motores de render: elige entre los que le inyectan por `BackendCaps` (§4.6). | El lint de CI (`clippy::disallowed_methods` y `clippy::disallowed_types` del `clippy.toml` canónico) da 0 avisos en el crate (command). Con un `Clock` falso, el plazo del frame sale del reloj inyectado y no del reloj del sistema: dos ejecuciones con relojes distintos dan plazos distintos (unit). |
+| ARQ-139 | **Cancelación y progreso sin reloj.** Una operación larga es la que recibe `CancelToken` y `Progress`. Una operación larga emite `Progress` con una fracción no decreciente en `[0, 1]`, que solo llega a `1,0` al terminar bien. La fracción sigue un modelo de trabajo, las unidades hechas sobre las previstas, no el tiempo transcurrido. Comprueba el token al menos una vez por tile y por fotograma. Al ver la cancelación devuelve un error de cancelado, no entrega salida parcial y no emite más progreso. La estimación de tiempo la calcula `gafira-engine` con su `Clock`, no este crate (ARQ-02). | Con un doble de `Progress` que cancela en el informe `k` (`k` = 1, el del medio y el penúltimo), la llamada devuelve cancelado y hay como mucho 1 informe después del `k` (unit). Sobre la entrada de referencia, la fracción sube ≤ 0,02 entre dos informes seguidos, medido sobre las fracciones emitidas y no sobre el tiempo de cada tramo (unit). Sin medidas de tiempo en `cargo test`: la cota de ≤ 100 ms (ARQ-43) se mide en §6.7. |
+| ARQ-140 | **Determinismo.** La misma entrada produce los mismos bytes: la clave de contenido, el grafo y el plan no dependen del número de hilos ni de ninguna fuente de entropía. | El crate ejecuta dos veces cada operación de su primer corte y compara los bytes (unit). Con pool de 1, 2 y 4 hilos, el grafo y las claves son idénticos (property). |
+| ARQ-141 | **Grafo y clave de contenido.** Cada nodo del grafo tiene una clave `ContentKey` (`u128`) que es el hash BLAKE3 truncado a 16 bytes de una descripción canónica (§6.1): un byte de dominio, un byte de tipo de nodo, un byte de nivel (LOD), el número de claves de entrada y esas claves de entrada, y los parámetros muestreados en `t`. La descripción canónica y su truncado son los de §6.1. Dos nodos con los mismos datos dan la misma clave, y cambiar cualquiera de ellos da otra clave. El grafo es el mismo en vista previa y en exportación (§6.2): solo cambian los parámetros. | Dos nodos idénticos dan la misma clave (unit). Un nodo con un parámetro distinto, con otro LOD, con otra clave de entrada o de otro tipo da una clave distinta (unit). La clave no depende del orden del recorrido: recorrer la página en los dos órdenes da las mismas claves (unit). El grafo de la vista previa y el de la exportación tienen las mismas operaciones, con los parámetros de calidad distintos (§6.2) (integration, ARQ-42). |
+| ARQ-142 | **Caché de tiles.** La caché de tiles es direccionada por contenido: la clave es (`ContentKey`, nivel, columna, fila) (§4.6) y el presupuesto se cuenta en bytes. `bytes()` informa del tamaño actual y `trim(budget)` la deja por debajo o igual al presupuesto; las dos llamadas viajan por `ports::TileCache`, porque el gobernador pregunta a la caché cuánto tiene y le dice que se encoja (ARQ-44). Al insertar y superar el presupuesto, la caché descarta la entrada menos usada hasta volver al presupuesto. | Con un presupuesto de 0, la caché no conserva ninguna entrada y `bytes()` da 0 (unit). `trim(budget)` con un presupuesto mayor que el tamaño actual no cambia nada y no falla (unit). Después de un `trim`, `bytes()` es ≤ el presupuesto dado (unit). El descarte es determinista: con dos entradas del mismo tamaño, sale la que lleva más tiempo sin usarse (unit). |
+| ARQ-143 | **Presupuesto de frame y degradación.** El presupuesto del frame es de 16 ms y su reparto es el de §6.2: plazos acumulados desde el inicio del frame (≤ 4 ms de UI, ≤ 2 ms de grafo y planificación, ≤ 8 ms de render visible) y un margen de 2 ms que ninguna etapa puede gastar. El plazo del render visible sale del reloj inyectado, nunca del reloj del sistema. Si el plazo pasa, `execute` no da error: devuelve un `RenderReport` con `left > 0`, y quien llama presenta el mejor mip disponible y refina en el frame siguiente (§6.2). Ante `RenderError::DeviceLost`, el motor pasa a CPU para el resto de la sesión y lo informa, sin perder el documento (ARQ-22). | Con un reloj falso que adelanta el plazo, `execute` devuelve `left > 0` y no un error; con el reloj exactamente en el plazo, también, porque `now >= plazo` cuenta como plazo pasado (unit). Con un doble de motor que falla con `DeviceLost` después de consumir una tarea, el frame termina en CPU y el documento sigue editable (integration, ARQ-22). El reparto por etapas se comprueba con el reloj inyectado: cada etapa respeta su plazo acumulado (§6.2) (unit). |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Truncado de la clave | Los 16 primeros bytes del hash, leídos como `u128` big-endian. | ARQ-141 |
+| Byte de tipo de nodo | `1` = `Group`, `2` = `Shape`, `3` = `Extension`. Un tipo nuevo toma el siguiente número libre y no reutiliza ninguno. | ARQ-141 |
+| Número de claves de entrada | 0 es válido: un nodo fuente no tiene entradas. | ARQ-141 |
+| NaN en un parámetro | Se escribe con el patrón canónico de NaN quiet: dos NaN dan la misma clave. | ARQ-141 |
+| `+∞` o `−∞` en un parámetro | Conservan su patrón: `+∞` y `−∞` dan claves distintas. | ARQ-141 |
+| Parámetro que no depende del tiempo | Se incluye igual, con el mismo valor en todos los `t`. | ARQ-141 |
+| Presupuesto de la caché | En bytes. `bytes()` da el tamaño actual; `trim(budget)` deja la caché en ≤ `budget`. | ARQ-142 |
+| Presupuesto 0 | La caché queda vacía y `bytes()` da 0. | ARQ-142 |
+| `trim` con un presupuesto mayor que el tamaño actual | No cambia nada. | ARQ-142 |
+| Empate al descartar | Con dos entradas del mismo tamaño sale la menos usada hace más tiempo; el orden es estable. | ARQ-142 |
+| Reparto por etapa | ≤ 4 ms de UI, ≤ 2 ms de grafo y planificación, ≤ 8 ms de render visible, acumulados desde el inicio del frame. | ARQ-143 |
+| Margen | 2 ms, de `inicio + 14 ms` a `inicio + 16 ms`. Ninguna etapa puede gastarlo; el trabajo que no cabe se difiere al frame siguiente. | ARQ-143 |
+| Plazo alcanzado | `now == plazo` cuenta como plazo pasado (`left > 0`); un nanosegundo antes, `left == 0`. | ARQ-143 |
+| Plazo sin límite | `Deadline::Unbounded` nunca pasa. | ARQ-143 |
+
+#### 4.17.8 `gafira-media`
+
+`gafira-media` indexa los keyframes, cachea los fotogramas decodificados, genera las copias ligeras, lleva el reloj de reproducción con sincronía A/V y orquesta la exportación de video (§6.5). Es un motor de la capa de aplicación: no depende de `gafira-render` y llega al render por el puerto `PageRenderer` (§4.5). Trabaja por activo y por rango de tiempo: el modelo de línea de tiempo (`Sequence`, `Track`, `Clip`) no existe todavía (§3.1) y llega con su propio cambio, así que este corte no lo da por hecho.
+
+| Primer corte | Fuera del corte |
+|---|---|
+| 02 §4.5 (`Exporter`), §4.6 (`Container`, `Codec`, `Decoder`, `Encoder`, `Muxer`), §6.5, §7.1 (las cachés no van en el `.gafira`); 05 FV-11, FV-12 (parcial), FV-22, FV-24 (parcial); ARQ-43, ARQ-44; CAL-14, CAL-16 (parcial), CAL-17 (parcial) | Códecs y contenedores concretos (`gafira-codec-free`, `gafira-codec-os`, `gafira-mux`), que son capa 4. El modelo de línea de tiempo (`Sequence`, `Track`, `Clip`), que es capa 1 y llega con su propio cambio. La cola de exportación y el `MemoryGovernor` (`gafira-engine`). La interfaz de reproducción. |
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-144 | **Índice de keyframes.** Al importar un medio se indexan sus keyframes en segundo plano, con una cota de ≤ 1 s por minuto de material 1080p (FIJADA, §6.5). El índice se construye recorriendo los paquetes del contenedor y guardando los que son keyframe, con su tiempo. `SeekMode::Keyframe` cae en el keyframe anterior al tiempo pedido y `SeekMode::Exact` cae en el mismo y decodifica hacia delante. El índice vive en memoria: en este corte no se escribe ni en el `.gafira` (§7.1) ni en la caché del usuario, y se reconstruye al volver a abrir el medio. | Con un medio de prueba de tres keyframes en 0 s, 2 s y 4 s, buscar 3,5 s devuelve el keyframe de 2 s y `SeekMode::Exact` devuelve el fotograma de 3,5 s (integration). Un medio cuyo primer keyframe está en 5 s, pedido en 3 s, devuelve el de 5 s, y un índice vacío no da `panic` (unit). Cerrar y volver a abrir el medio reconstruye el índice y los resultados de búsqueda son los mismos (integration). Después de abrir un proyecto, la caché del usuario no tiene ningún archivo nuevo de índice (command). |
+| ARQ-145 | **Caché de fotogramas.** La caché de fotogramas es un LRU con presupuesto de RAM (por defecto 1 GB o el 15 % de la RAM, el menor; FIJADA, §6.5) y hace *prefetch* en la dirección del movimiento del cabezal. La clave tiene tres partes (§6.5): el hash del contenido del medio (`ContentHash`, no el id del recurso dentro del proyecto), el nivel de proxy (`Original`, `P540` o `P720`) y el índice de fotograma en ese nivel. La caché cuenta dentro del tope de 1,5 GB de D-03 y el `MemoryGovernor` recorta primero esta caché (ARQ-44); el valor por defecto no baja por eso. Cuando se pide un fotograma que no está, se muestra el más cercano que sí está, mientras el exacto se decodifica. | Con un presupuesto de 0 la caché no conserva fotogramas. Con un presupuesto que cabe un solo fotograma, al pedir el tercero el primero se descarta y `bytes()` da ≤ el presupuesto (unit). El fotograma más cercano se elige por distancia en el tiempo; a igual distancia gana el anterior (unit). El mismo archivo con otro id de recurso dentro del proyecto da el mismo fotograma de la caché (unit). |
+| ARQ-146 | **Copias ligeras.** Las copias ligeras se generan automáticamente para el material de más de 1080p o con códecs costosos, en MJPEG intra a 540p o 720p, y viven en la caché del usuario, fuera del `.gafira` (§7.1, FV-22). La caché de proxies tiene un límite configurable, por defecto 10 GB (PROPUESTA, FV-22), y descarta los menos usados. La generación corre en segundo plano, con prioridad `Background`, progreso y cancelación. **La exportación nunca usa una copia ligera**: usa el original (FV-22 (b), V-3). | Al generar una copia ligera, el archivo aparece en la caché del usuario y no en el `.gafira` (integration). Cancelar la generación a mitad deja la caché en un estado usable y no deja un archivo final a medias (integration). Una exportación de un medio que tiene copia ligera usa el original: el archivo exportado tiene la resolución del original (integration, FV-22 (b)). |
+| ARQ-147 | **Reloj de reproducción y descarte de fotogramas.** El reloj maestro es el de audio: el video nunca lo bloquea. Si el video se retrasa, se descartan fotogramas y se sigue. La deriva entre el audio y el video en la vista previa no pasa de 40 ms (§6.5), la misma tolerancia que FV-12 (b) fija para el archivo exportado. La tolerancia se aplica al fotograma cuya presentación ya pasó: con un fotograma 39 ms tarde no se descarta ninguno; con uno 40 ms o más tarde, se descarta el que llega tarde y se presenta el siguiente. | Con un reloj falso que avanza de golpe, los fotogramas que ya pasaron se descartan y el audio no se corta (integration). Con audio y video desalineados 39 ms, no se descarta ningún fotograma; con 40 ms o más, se descarta (unit). Un rango de duración cero no da `panic` (unit). El reloj es monotónico: dos lecturas del mismo instante dan el mismo valor (unit). |
+| ARQ-148 | **Opciones del exportador en memoria.** El exportador de video de este crate es un `ports::Exporter` (§4.5) y lee sus opciones de `ParamValues`, **en memoria**, dentro del `ExportJob` que recibe. En este corte `ParamValues` no tiene forma serializada y el exportador no la necesita: no serializa opciones, no las persiste y no las vuelve a leer. La persistencia de las opciones llega con la cola de exportación de `gafira-engine` (§6.4), fuera de este corte. El pipeline es decodificar → componer → codificar → *mux*, y el audio se mezcla antes de codificarlo. | Dos ejecuciones del mismo `ExportJob` con el mismo `ParamValues` dan el mismo archivo, byte a byte (unit). El crate no escribe ni lee opciones de exportación en disco: el único archivo que produce es el de salida (integration). Un `ExportJob` con opciones inválidas se rechaza antes de empezar a exportar, sin dejar archivo parcial (integration, FV-24 (b)). Cancelar el trabajo a mitad no deja un archivo final parcial (§6.4) (integration, ARQ-43). |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Nivel de proxy | Tres valores: `Original`, `P540`, `P720`. `Original` no es una copia ligera. | ARQ-145 |
+| Identidad del medio | La clave usa el hash del contenido del archivo, no el id del recurso en el proyecto: el mismo archivo da la misma entrada de caché en cualquier proyecto. | ARQ-145 |
+| Índice de fotograma | El del nivel: el del archivo en `Original`, el de la copia en `P540` y `P720`. | ARQ-145 |
+| Presupuesto de la caché de fotogramas | En bytes. El valor por defecto es el menor entre 1 GB y el 15 % de la RAM (FIJADA). | ARQ-145 |
+| Presupuesto 0 | La caché no conserva fotogramas y el más cercano sale vacío. | ARQ-145 |
+| Descarte por presupuesto | Al insertar y superar el presupuesto sale primero el fotograma menos usado. | ARQ-145 |
+| Empate al elegir el fotograma más cercano | A igual distancia en el tiempo, gana el anterior. | ARQ-145 |
+| Deriva A/V de la vista previa | El límite es 40 ms. A 39 ms no se descarta ningún fotograma; a 40 ms o más, se descarta. | ARQ-147 |
+| Rango de duración cero | No da `panic` y no produce fotogramas. | ARQ-147 |
+| Índice de keyframes vacío | No da `panic`: no hay keyframe al que caer. | ARQ-144 |
+
 ---
 
 ## 5. Patrones transversales
@@ -1283,14 +1373,15 @@ Document snapshot (Arc) ──► RenderGraphBuilder (Visitor) ──► RenderG
 
 - **Dónde vive cada pieza**: `RenderGraphBuilder`, `RenderGraph`, el planificador y `BackendSelector` son de `gafira-render`. `RenderPlan` y `TileCache` son de `gafira-ports` (§4.6): `TileCache` es un trait de `gafira-ports`, implementado en `gafira-render`; `execute` recibe `&mut dyn TileCache`.
 
-- **Claves de caché por contenido**: cada nodo del grafo tiene `key = hash(tipo, parámetros muestreados en t, claves de entrada, LOD)`. Si un parámetro no cambia, la clave tampoco y el resultado se reutiliza. Esto cubre el movimiento de un elemento sin re-rasterizarlo: solo cambia la composición.
+- **Claves de caché por contenido**: cada nodo del grafo tiene una clave `ContentKey` (`u128`) que es el hash BLAKE3 truncado a 16 bytes de una descripción canónica del nodo. La descripción canónica concatena, en este orden y sin separadores: un byte de dominio (`R`), un byte de tipo de nodo (`1` = `Group`, `2` = `Shape`, `3` = `Extension`; cada tipo nuevo toma el siguiente número libre y no reutiliza ninguno), un byte de nivel (LOD), un `u32` big-endian con el número de claves de entrada y esa cantidad de claves de entrada de 16 bytes big-endian cada una, y por último los parámetros muestreados en `t`, cada uno como un `u32` big-endian con la longitud del valor y los bytes del valor. El truncado toma los 16 primeros bytes del hash y los lee como un `u128` big-endian. Los parámetros que el nodo declara dependientes del tiempo se muestrean en `t`; los que no dependen del tiempo valen lo mismo en todos los `t` y se incluyen igual. Un `f64` o un `f32` no finito se escribe con su patrón canónico (el NaN quiet con carga cero), para que dos valores iguales den la misma clave; `+∞` y `−∞` conservan el suyo y dan claves distintas. Si un parámetro no cambia, la clave tampoco y el resultado se reutiliza. Esto cubre el movimiento de un elemento sin re-rasterizarlo: solo cambia la composición.
 - **Tiles**: 256×256 px por nivel de zoom en potencias de 2 (FIJADA). El zoom de 5 % a 3200 % usa el mip más cercano y se refina en segundo plano. El vector se re-rasteriza en el nivel exacto cuando la vista se estabiliza (150 ms sin cambios, FIJADA).
 - **Invalidación**: `Command::touches` → `DirtySet` → rectángulos sucios en coordenadas de página → tiles afectados.
 - **Overlay** de selección, asas, guías y *snap*: se dibuja con el pintor de egui encima del lienzo y nunca invalida tiles del documento.
 
 ### 6.2 Presupuesto de frame y vista previa frente a exportación
 
-- **Presupuesto**: 16 ms por frame de UI. Reparto orientativo (FIJADA): ≤ 4 ms UI egui, ≤ 2 ms construcción y planificación del grafo, ≤ 8 ms render visible, 2 ms de margen.
+- **Presupuesto**: 16 ms por frame de UI (FIJADA). El reparto son **plazos acumulados desde el inicio del frame**, no presupuestos independientes: ≤ 4 ms de UI egui, ≤ 2 ms de construcción y planificación del grafo, ≤ 8 ms de render visible, y 2 ms de margen. El grafo está listo antes de `inicio + 6 ms` y el render visible termina antes de `inicio + 14 ms`. El margen, de `inicio + 14 ms` a `inicio + 16 ms`, no se reparte entre las etapas: es la reserva del frame para la presentación, el *overlay* y el trabajo ligero de E/S, y ninguna etapa puede gastarlo. Si una etapa necesita el margen, el trabajo que no cabe se difiere al frame siguiente.
+- **Plazo**: el plazo del render visible es un instante monotónico absoluto que sale del reloj inyectado (`ports::Clock`, §4.6). Ha pasado cuando `now >= plazo`, con la igualdad incluida: un frame que termina exactamente en el plazo se reporta como incompleto (`left > 0`) y uno que termina un nanosegundo antes, como completo (`left == 0`). `Deadline::Unbounded` nunca pasa.
 - Si el render no termina dentro del `Deadline`, se presenta el mejor mip disponible y se continúa en el siguiente frame (refinamiento progresivo). La UI nunca espera.
 - `RenderQuality::Preview`: 8 bits sRGB premultiplicado o f16 en GPU, efectos a resolución del viewport, proxies de video, texto con *hinting* de pantalla.
 - `RenderQuality::Export`: f32 en luz lineal, resolución completa, medios originales y CPU por defecto (determinista). La GPU es opcional para exportar video si pasa la verificación golden.
@@ -1316,7 +1407,7 @@ Reglas:
 
 ### 6.4 Cola de exportación
 
-- Se persiste el `ExportRequest` de cada trabajo en `datos_app/export-queue.json`, y los trabajos sobreviven a un fallo: al reabrir, se ofrece reanudarlos. `ExportJob` es la vista de una ejecución (§4.5): toma prestados el documento y los puertos, así que no se persiste. Para eso `ParamValues` necesita una forma serializada, que hoy no tiene; llega con la cola de exportación. Aceptación: un `ExportRequest` guardado y leído de nuevo es igual al original.
+- Se persiste el `ExportRequest` de cada trabajo en `datos_app/export-queue.json`, y los trabajos sobreviven a un fallo: al reabrir, se ofrece reanudarlos. `ExportJob` es la vista de una ejecución (§4.5): toma prestados el documento y los puertos, así que no se persiste. Para eso `ParamValues` necesita una forma serializada, que hoy no tiene; llega con la cola de exportación. **El exportador de video de `gafira-media` no depende de esa forma serializada**: lee sus opciones de `ParamValues` en memoria, dentro del `ExportJob` que recibe, y no las serializa (§4.17.8, ARQ-148). Aceptación: un `ExportRequest` guardado y leído de nuevo es igual al original.
 - Estados: `Queued → Preparing → Rendering(p) → Encoding(p) → Finalizing → Done | Failed(e) | Cancelled`.
 - Se escribe a un archivo temporal y se renombra al terminar. Nunca queda un archivo final parcial.
 - **Reintentos**: hasta 2 automáticos solo para errores transitorios (E/S temporal, `DeviceLost` → reintento en CPU, códec del sistema no disponible → propuesta de AV1 + Opus con aviso, porque no existe un códec de software de la misma clase legal, D-02). Los errores de validación no se reintentan: se muestran antes de encolar.
@@ -1324,11 +1415,11 @@ Reglas:
 
 ### 6.5 Video: scrubbing, caché de fotogramas y proxies
 
-- **Al importar**: se indexan los keyframes en segundo plano (≤ 1 s por minuto de material 1080p, FIJADA) y se genera una tira de miniaturas para la timeline.
-- **Caché de fotogramas**: LRU por `(asset, índice de fotograma, nivel de proxy)`, con presupuesto de RAM (por defecto 1 GB o el 15 % de la RAM, el menor; FIJADA) y prefetch en la dirección del movimiento del cabezal.
+- **Al importar**: se indexan los keyframes en segundo plano (≤ 1 s por minuto de material 1080p, FIJADA) y se genera una tira de miniaturas para la timeline. El índice de keyframes vive en memoria: en este corte no se escribe ni en el `.gafira` (§7.1) ni en la caché del usuario, y se reconstruye al volver a abrir el medio.
+- **Caché de fotogramas**: LRU por `(contenido del medio, nivel de proxy, índice de fotograma)`, con presupuesto de RAM (por defecto 1 GB o el 15 % de la RAM, el menor; FIJADA) y prefetch en la dirección del movimiento del cabezal. El «contenido del medio» es el hash del contenido del archivo (`ContentHash`, BLAKE3 completo), no el id del recurso dentro del proyecto: la caché vive fuera del proyecto (§7.1) y el mismo archivo tiene que dar el mismo fotograma en cualquier proyecto. El «nivel de proxy» tiene tres valores: el original (`Original`), la copia ligera a 540p (`P540`) y la copia ligera a 720p (`P720`), los dos últimos los de FV-22. El «índice de fotograma» es el del nivel: en el original, el del archivo; en una copia ligera, el de la copia. La caché cuenta dentro del tope de 1,5 GB de D-03 y el `MemoryGovernor` recorta primero la caché de fotogramas para caber en él (ARQ-44); el valor por defecto de arriba no baja por eso.
 - **Proxies**: se generan automáticamente para material de más de 1080p o códecs costosos, en MJPEG intra a 540p o 720p, en la caché del usuario (fuera del `.gafira`). Al exportar siempre se usa el original.
 - **Scrubbing**: búsqueda al keyframe previo y decodificación hacia delante en el hilo de decodificación. Mientras tanto se muestra el fotograma en caché más cercano. Con proxies todo es intra, así que la búsqueda es inmediata.
-- **Reproducción**: el reloj maestro es el de audio. El video descarta fotogramas si se retrasa y nunca bloquea el audio.
+- **Reproducción**: el reloj maestro es el de audio. El video nunca bloquea el audio. Un fotograma se descarta cuando su tiempo de presentación ya pasó respecto del reloj maestro por más de la tolerancia, y entonces se presenta el siguiente. La tolerancia de la vista previa es 40 ms, la misma que FV-12 (b) fija para el archivo exportado: la deriva entre el audio y el video en la vista previa no pasa de 40 ms. Con un fotograma que llega 39 ms tarde no se descarta ninguno; con uno que llega 40 ms o más tarde, se descarta el que llega tarde.
 
 ### 6.6 Hardware de referencia (FIJADA, D-03)
 
@@ -1385,7 +1476,7 @@ Otras cifras (FIJADAS, D-03):
 | Autoguardado cada 5–15 s, pérdida ≤ 15 s, recuperación 100 % (PRD) | §7.2 | Prueba de *kill* aleatorio (`SIGKILL` / `TerminateProcess`) 500 veces: siempre recuperable y pérdida ≤ intervalo configurado |
 | Primera pieza publicable < 10 min (PRD) | Plantillas locales indexadas, exportación con valores por defecto | Prueba de usabilidad (spec 01), no de CI |
 | Quejas de lag < 5 % de sesiones (PRD) | Todo lo anterior; registro **local** de frames lentos visible solo para el usuario (no es telemetría: nunca sale del equipo) | Informe local opcional; sin envío automático |
-| Límite configurable de memoria y VRAM (PRD) | `MemoryGovernor` en el engine: cachés con `trim(budget)` y evento `MemoryPressure` | Prueba con un límite de 1 GB: el proceso no lo supera más de un 10 % al abrir el documento de 20 páginas |
+| Límite configurable de memoria y VRAM (PRD) | `MemoryGovernor` en el engine: cachés con `bytes()` y `trim(budget)`, en bytes, y evento `MemoryPressure` | Prueba con un límite de 1 GB: el proceso no lo supera más de un 10 % al abrir el documento de 20 páginas |
 | Reescritura de texto < 4 s (spec) | Solo con IA local opcional; fuera del MVP | Sin prueba en el MVP |
 
 | ID | Requisito | Criterio de aceptación |
@@ -1394,7 +1485,7 @@ Otras cifras (FIJADAS, D-03):
 | ARQ-41 | El hilo de UI nunca bloquea más de 16 ms por trabajo del engine. | Instrumentación `tracing`: en la suite E2E, 0 spans de más de 16 ms en el hilo principal fuera de diálogos del SO. |
 | ARQ-42 | La vista previa y la exportación comparten el grafo. | La prueba golden compara la vista previa al 100 % en CPU con la exportación con diferencia ≤ 1/255 por canal en el 99,9 % de los píxeles. |
 | ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. En `gafira-segment` no hay reloj, ni en sus *benchmarks* (ARQ-02): `bench_cancel_segment` mide el tramo de trabajo más largo entre dos comprobaciones del token con una imagen de 4000 px, y ese tiempo acota la respuesta por arriba. |
-| ARQ-44 | Las cachés respetan el `MemoryGovernor`. | Ver la prueba del límite de memoria en §6.7. |
+| ARQ-44 | Las cachés respetan el `MemoryGovernor`. Toda caché que el gobernador pueda recortar expone `bytes()` y `trim(budget)`, las dos en **bytes**: `bytes()` da el tamaño actual de la caché y `trim(budget)` la deja por debajo o igual al presupuesto dado. El gobernador recorta primero la caché de fotogramas (§6.5). | Ver la prueba del límite de memoria en §6.7. Con un límite de 1 GB, el proceso no lo supera más de un 10 % al abrir el documento de 20 páginas. Con un `trim` a la mitad del tamaño actual, `bytes()` da ≤ la mitad; con un presupuesto mayor que el tamaño actual, `trim` no cambia nada. |
 | ARQ-45..ARQ-49 | Reservados. | — |
 
 ---
@@ -1432,7 +1523,7 @@ proyecto.gafira (ZIP)
 
 - **Migraciones por paso**: `schema` es un entero. Las funciones `migrate_n_to_n1(serde_json::Value) -> Result<Value, MigrationError>` se encadenan y cada una tiene su propio golden de entrada y salida.
 - Al abrir un archivo de un `schema` futuro: modo solo lectura con aviso y nunca se sobrescribe.
-- Los proxies, cachés y el historial **no** se guardan en el archivo.
+- Los proxies, cachés y el historial **no** se guardan en el archivo. El índice de keyframes tampoco: se reconstruye al abrir el medio (§6.5).
 - Las fuentes no se incrustan por defecto. Si la licencia OFL de una fuente lo permite, «Empaquetar fuentes» las incluye en `assets/` (PROPUESTA).
 - *Descartado*:
   - SQLite como formato de proyecto: binario opaco, más difícil de migrar y de inspeccionar, y no aporta frente a JSON por página.
