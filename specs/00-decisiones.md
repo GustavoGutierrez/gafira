@@ -471,6 +471,15 @@ Fecha: 2 de noviembre de 2026.
 - Amplía D-51.
 - Aplicado a 02 (§12.2) y 05 (FV-10).
 
+## D-55 Guardar sin licencia mientras falta la lista de D-12
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: mientras la lista de funciones bloqueadas de D-12 siga pendiente, un usuario en `Unlicensed` o `Expired` puede editar, recuperar un journal, guardar con normalidad (Guardar, `Ctrl+S`) y usar «Guardar copia». Solo la exportación está bloqueada (opción (b) de la pregunta del hueco S10 de `gafira-ports`).
+- **Consecuencia**: `LicenseStatus` conserva un único predicado, `can_export`. No hay `can_save`: guardar no depende de la licencia.
+- Amplía D-12. Sustituye la propuesta de solo lectura de 02 (Q-20).
+- Aplicado a 01 (§11, Q-20) y 02 (ARQ-04, §4.14, §13.1, §13.3, ARQ-95, Q-20).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

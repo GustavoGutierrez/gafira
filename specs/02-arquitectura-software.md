@@ -72,7 +72,7 @@ Gafira sigue el patrón de puertos y adaptadores:
 | ARQ-01 | **Regla de dependencias**: un crate solo depende de crates de su misma capa o de capas inferiores. El dominio no depende de motores, aplicación ni adaptadores. | `cargo xtask check-layers` lee `cargo metadata`, compara con la tabla de capas de §2.1 y falla en CI si hay una arista prohibida. |
 | ARQ-02 | El dominio y los motores no hacen I/O: no usan `std::fs`, `std::net`, `std::thread::spawn`, `std::time::SystemTime::now` ni `std::env`. | Un lint de CI (`clippy::disallowed_methods` y `disallowed_types` en `clippy.toml`, aplicado a los crates de las capas 0–2) da 0 avisos. |
 | ARQ-03 | Las únicas plataformas objetivo son `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu` y `aarch64-apple-darwin`. | La matriz de CI contiene exactamente esos tres *targets*. `gafira-platform` emite `compile_error!` en cualquier otro. |
-| ARQ-04 | Ninguna función de edición, importación o exportación abre conexiones de red. La única conexión de la app es la de licencias (§13). No hay telemetría ni comprobación de versiones. | Una prueba E2E con red bloqueada (sandbox del SO) completa crear → editar → exportar PNG/PDF/MP4 con la licencia en estado `Active` u `OfflineGrace`, y crear → editar con `Unlicensed` (D-12). `cargo tree -i <cliente HTTP> -p gafira` muestra un único camino: `gafira-license` con la feature `online`. Ningún otro crate del workspace depende de un cliente HTTP, de sockets ni de DNS. |
+| ARQ-04 | Ninguna función de edición, importación o exportación abre conexiones de red. La única conexión de la app es la de licencias (§13). No hay telemetría ni comprobación de versiones. | Una prueba E2E con red bloqueada (sandbox del SO) completa crear → editar → exportar PNG/PDF/MP4 con la licencia en estado `Active` u `OfflineGrace`, y crear → editar → guardar (Guardar y «Guardar copia») con `Unlicensed` y con `Expired` (D-12, D-55). `cargo tree -i <cliente HTTP> -p gafira` muestra un único camino: `gafira-license` con la feature `online`. Ningún otro crate del workspace depende de un cliente HTTP, de sockets ni de DNS. |
 | ARQ-05 | Las capas superiores ven a las inferiores solo por su API pública. Los detalles internos son `pub(crate)`. | `cargo public-api` se ejecuta en CI para `gafira-doc`, `gafira-ports` y `gafira-engine`, y los cambios de API pública requieren revisión. |
 
 ---
@@ -882,7 +882,7 @@ pub enum LicenseStatus {                                   // sin `Trial`: no ha
 impl LicenseStatus { pub fn can_export(&self) -> bool { matches!(self, Self::Active{..} | Self::OfflineGrace{..}) } }
 ```
 
-- **Predicados** (D-12): la licencia no decide si se puede editar. `can_export` es el único predicado mientras la lista de funciones bloqueadas de D-12 siga pendiente (spec 06); cada función que esa lista bloquee tendrá el suyo. Aceptación: `can_export` es verdadero para `Active` y `OfflineGrace`, y falso para `Expired`, `Unlicensed` e `Invalid`.
+- **Predicados** (D-12, D-55): la licencia no decide si se puede editar, recuperar un journal, guardar ni «Guardar copia»; no hay `can_save`. `can_export` es el único predicado mientras la lista de funciones bloqueadas de D-12 siga pendiente (spec 06); cada función que esa lista bloquee tendrá el suyo. Aceptación: `can_export` es verdadero para `Active` y `OfflineGrace`, y falso para `Expired`, `Unlicensed` e `Invalid`.
 
 - **Patrón**: Port/Adapter. `gafira-ports` define el trait y `gafira-license` lo implementa (§13). `status` es puro y recibe la hora del puerto `Clock` (ARQ-02). Los métodos de red son bloqueantes y el engine los ejecuta en el hilo de E/S, nunca en el de UI.
 - **Consumidor**: `LicenseService` en `gafira-engine` publica `EngineEvent::LicenseChanged(LicenseStatus)` y la UI muestra la pantalla de activación y el estado en Ajustes (03).
@@ -1939,7 +1939,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-17 | ¿Se admite **importar** HEVC (y HEIC) mediante la API del sistema, o queda prohibido en toda vía? D-02 prohíbe «HEVC» sin distinguir importación de exportación; esta spec lo excluye del MVP y prohíbe su salida. | Titular + legal |
 | Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Abriría conexiones distintas de la de licencia, prohibidas por D-01. | Titular |
 | Q-19 | ¿Cómo se implementa la prueba gratuita: local desde el primer arranque (sin red, más fácil de alargar) o con un token de prueba firmado por el `license-hub` (exige conexión al empezar y un endpoint que el servicio no tiene, VERIFICAR)? Duración y límites: pendientes de D-01. | Titular |
-| Q-20 | ¿Qué puede hacer el usuario sin licencia válida (prueba vencida)? Esta spec propone un modo de solo lectura que permite abrir, ver, recuperar y guardar copia, sin editar ni exportar (ARQ-95). | Titular |
+| Q-20 | ¿Qué funciones bloquea el modo sin licencia, además de la exportación? D-12 sustituye la propuesta de solo lectura; hasta que exista la lista, solo la exportación está bloqueada y se puede editar, recuperar y guardar (D-55, ARQ-95). | Titular |
 | Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? La arquitectura los admite (§14.8), pero cada uno exige catálogo completo, glosario 1:1, revisión de expansión y quizá ADR-09 revisado (Fluent si su gramática lo pide). | Titular |
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés (03 §12), y búsqueda de marca de los nombres ingleses propios. | Titular |
@@ -1953,7 +1953,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 
 ### 13.1 Alcance y servicio externo
 
-- **Modelo** (D-01, D-12): Gafira es de pago, sin prueba gratuita y con una sola licencia. El mismo binario contiene todas las funciones. Sin licencia, la app funciona en modo sin licencia: la exportación está bloqueada, y las demás funciones bloqueadas se fijan en la spec 06 (lista pendiente de D-12).
+- **Modelo** (D-01, D-12): Gafira es de pago, sin prueba gratuita y con una sola licencia. El mismo binario contiene todas las funciones. Sin licencia, la app funciona en modo sin licencia: la exportación está bloqueada, y las demás funciones bloqueadas se fijan en la spec 06 (lista pendiente de D-12). Hasta entonces, guardar no depende de la licencia (D-55).
 - **Servicio**: la activación usa el **`license-hub`** del titular, un servicio externo (Cloudflare Workers + D1; proveedor Gumroad o clave propia; de 1 a 10 dispositivos por licencia). **No se despliega con la app**, no forma parte del workspace de Gafira ni del instalador. Gafira solo contiene el cliente. La URL base, el `iss` esperado y el identificador de aplicación (`"gafira"`, PROPUESTA) se fijan en el build; Gafira se registra en el servicio como una aplicación más.
 - **Única conexión de red**: activar, validar o desactivar la licencia. Nada más sale del equipo (ARQ-91).
 
@@ -1989,7 +1989,7 @@ No hay estado de prueba (D-12).
 
 - **Invariante**: un fallo de red **nunca** invalida un token válido. `Active` pasa a `OfflineGrace` y sigue siendo usable hasta `exp`. Solo un rechazo explícito del servidor o el vencimiento quitan el permiso.
 - **Gracia sin conexión**: la duración del token (`tokenTtlSeconds` del servicio) define cuánto tiempo puede trabajar el equipo sin conexión. Propuesta: 30 días. La app intenta validar sola como máximo una vez al día y solo cuando quedan menos de 7 días, y ofrece «Validar ahora» en Ajustes (cifras PROPUESTA).
-- **Sin licencia válida** (D-12): la app abre, muestra, edita, recupera y permite «Guardar copia» de los proyectos; no permite exportar. Las demás funciones bloqueadas las fija la spec 06; hasta entonces, solo la exportación está bloqueada. Los datos del usuario nunca quedan retenidos (PROPUESTA, Q-20).
+- **Sin licencia válida** (D-12, D-55): con `Expired` o `Unlicensed`, la app abre, muestra, edita, recupera un journal, guarda con normalidad (Guardar, `Ctrl+S`) y permite «Guardar copia» de los proyectos; no permite exportar. Las demás funciones bloqueadas las fija la spec 06; hasta entonces, solo la exportación está bloqueada. Los datos del usuario nunca quedan retenidos (PROPUESTA, Q-20).
 
 ### 13.4 Datos enviados y almacenamiento
 
@@ -2014,7 +2014,7 @@ No hay estado de prueba (D-12).
 | ARQ-92 | Un fallo de red no invalida un token válido. | Prueba de propiedad: para todo token vigente y todo error de red (tiempo agotado, DNS, 5xx), el estado resultante es `OfflineGrace` y `can_export()` es verdadero hasta `exp`. |
 | ARQ-93 | Las transiciones de estado son completas y deterministas. | Prueba de tabla: cada par (estado, evento) de los cinco estados de §13.3, sin `Trial` (D-12), da el estado esperado con un `Clock` falso. |
 | ARQ-94 | El secreto del dispositivo y el token no se filtran. | Búsqueda en logs, journals, `.gafira` e informes de fallo de la suite E2E: 0 apariciones del secreto o del token. |
-| ARQ-95 | Sin licencia válida, el usuario conserva el acceso a sus proyectos. | Con `Expired` y con `Unlicensed`, la prueba abre un proyecto, lo muestra, ejecuta un comando de edición, recupera un journal y guarda una copia; exportar está deshabilitado con un mensaje que lleva a activar (D-12). |
+| ARQ-95 | Sin licencia válida, el usuario conserva el acceso a sus proyectos y puede guardarlos. Solo la exportación está bloqueada mientras la lista de D-12 siga pendiente (D-55). | Con `Expired` y con `Unlicensed`, la prueba abre un proyecto, lo muestra, ejecuta un comando de edición y recupera un journal. Guardar (`Ctrl+S`) escribe el `.gafira` en su ruta y, al reabrirlo, contiene la edición; «Guardar copia» escribe otro `.gafira` que también la contiene. Ninguna de esas acciones muestra aviso de licencia. Exportar está deshabilitado con un mensaje que lleva a activar (D-12). |
 | ARQ-96 | El `license-hub` no se despliega con la app. | `xtask audit-bundle` no encuentra código del servicio (scripts del Worker, configuración de despliegue, migraciones SQL) ni secretos de administración en los paquetes; las cadenas del binario solo contienen la clave **pública**. |
 | ARQ-97..ARQ-99 | Usados por el idioma: ver §14.7. | — |
 
