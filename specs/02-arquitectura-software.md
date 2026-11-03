@@ -24,7 +24,7 @@ Gafira es un editor de escritorio local para diseño gráfico, imagen y video. S
 | Rendimiento | Cumple las cifras del PRD y de la spec técnica (tabla en §6.7). Ninguna operación pesada corre en el hilo de UI. La Pantalla de arranque se pinta pronto y no bloquea la carga (D-09). | ARQ-40..ARQ-47, ARQ-65, ARQ-68 |
 | Robustez | Pérdida máxima por fallo de 15 s, recuperación del 100 %, guardado atómico, degradación elegante ante fallos de GPU, códec o plugin. | ARQ-50..ARQ-57 |
 | Portabilidad | **Solo** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64. Sin web/wasm, sin macOS x86_64, sin Windows arm64, sin Linux en otras arquitecturas, sin móvil (D-05). | ARQ-03, ARQ-80, ARQ-84 |
-| Vendibilidad | Todas las dependencias y assets distribuidos tienen licencias permisivas. No hay GPL, LGPL, AGPL ni licencias no comerciales. El instalador no incluye binarios externos (FFmpeg incluido). Gafira es software propietario de pago con prueba gratuita y una única licencia (D-01). | ARQ-70..ARQ-79, ARQ-90..ARQ-96 |
+| Vendibilidad | Todas las dependencias y assets distribuidos tienen licencias permisivas. No hay GPL, LGPL, AGPL ni licencias no comerciales. El instalador no incluye binarios externos (FFmpeg incluido). Gafira es software propietario de pago, sin prueba gratuita y con una única licencia (D-01, D-12). | ARQ-70..ARQ-79, ARQ-90..ARQ-96 |
 | Localización | La interfaz se publica en español e inglés (D-08). El dominio y los motores solo conocen claves de mensaje; los textos, plurales y formatos de número, fecha y unidad los resuelve `gafira-i18n`. El idioma cambia sin reiniciar. | ARQ-97..ARQ-107 |
 | Privacidad local | La app trabaja sin conexión. La **única** conexión de red es activar, validar o desactivar la licencia (D-01, D-06). Sin telemetría ni comprobación de versiones. La IA es opcional, local, desactivable y queda fuera del MVP. | ARQ-04, ARQ-91 |
 
@@ -72,7 +72,7 @@ Gafira sigue el patrón de puertos y adaptadores:
 | ARQ-01 | **Regla de dependencias**: un crate solo depende de crates de su misma capa o de capas inferiores. El dominio no depende de motores, aplicación ni adaptadores. | `cargo xtask check-layers` lee `cargo metadata`, compara con la tabla de capas de §2.1 y falla en CI si hay una arista prohibida. |
 | ARQ-02 | El dominio y los motores no hacen I/O: no usan `std::fs`, `std::net`, `std::thread::spawn`, `std::time::SystemTime::now` ni `std::env`. | Un lint de CI (`clippy::disallowed_methods` y `disallowed_types` en `clippy.toml`, aplicado a los crates de las capas 0–2) da 0 avisos. |
 | ARQ-03 | Las únicas plataformas objetivo son `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu` y `aarch64-apple-darwin`. | La matriz de CI contiene exactamente esos tres *targets*. `gafira-platform` emite `compile_error!` en cualquier otro. |
-| ARQ-04 | Ninguna función de edición, importación o exportación abre conexiones de red. La única conexión de la app es la de licencias (§13). No hay telemetría ni comprobación de versiones. | Una prueba E2E con red bloqueada (sandbox del SO) completa crear → editar → exportar PNG/PDF/MP4 con la licencia en estado `Trial`, `Active` u `OfflineGrace`. `cargo tree -i <cliente HTTP> -p gafira` muestra un único camino: `gafira-license` con la feature `online`. Ningún otro crate del workspace depende de un cliente HTTP, de sockets ni de DNS. |
+| ARQ-04 | Ninguna función de edición, importación o exportación abre conexiones de red. La única conexión de la app es la de licencias (§13). No hay telemetría ni comprobación de versiones. | Una prueba E2E con red bloqueada (sandbox del SO) completa crear → editar → exportar PNG/PDF/MP4 con la licencia en estado `Active` u `OfflineGrace`, y crear → editar con `Unlicensed` (D-12). `cargo tree -i <cliente HTTP> -p gafira` muestra un único camino: `gafira-license` con la feature `online`. Ningún otro crate del workspace depende de un cliente HTTP, de sockets ni de DNS. |
 | ARQ-05 | Las capas superiores ven a las inferiores solo por su API pública. Los detalles internos son `pub(crate)`. | `cargo public-api` se ejecuta en CI para `gafira-doc`, `gafira-ports` y `gafira-engine`, y los cambios de API pública requieren revisión. |
 
 ---
@@ -94,10 +94,10 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 2 Motores | `gafira-pathops` | Booleanas de rutas, contorno de trazo, simplificación, *hit testing* geométrico. | Pintar píxeles. | MVP |
 | 2 Motores | `gafira-text` | Shaping, bidi, saltos de línea, maquetación de cajas, interletrado, ligaduras, texto en curva y conversión a contornos. Las fuentes llegan como bytes. | Enumerar fuentes del sistema (eso es `gafira-platform`). | MVP |
 | 2 Motores | `gafira-layout` | Guías, rejillas de columnas, ajuste magnético (*snap*), alineación y distribución, cálculo de sangrado y zona segura, reflujo al cambiar de tamaño. | Mutar el documento (devuelve resultados que un `Command` aplica). | MVP |
-| 2 Motores | `gafira-raster` | Buffers de imagen (u8/f16/f32, premultiplicados), `AlphaMask`, tiles, mipmaps, fórmulas de los modos de mezcla, trait `Effect` y efectos del núcleo (ajustes, desenfoque, nitidez, viñeta, sombras), trait `Transition` y transiciones del núcleo (§4.13), paleta dominante y hash perceptual, scopes (Fase 2). | Decodificar formatos de archivo. | MVP |
+| 2 Motores | `gafira-raster` | Buffers de imagen (8 bits y f32, premultiplicados; f16 solo es interno de la GPU, ARQ-117), `AlphaMask`, tiles, mipmaps, fórmulas de los modos de mezcla, trait `Effect` y efectos del núcleo (ajustes, desenfoque, nitidez, viñeta, sombras), trait `Transition` y transiciones del núcleo (§4.13), paleta dominante y hash perceptual, scopes (Fase 2). | Decodificar formatos de archivo. | MVP |
 | 2 Motores | `gafira-audio` | Grafo de mezcla, trait `AudioProcessor`, ganancia, fundidos, EQ de 3 bandas, panorama, nivelación (EBU R128), remuestreo. Fase 2: puerta de ruido, compresor, limitador, reducción de ruido y *time-stretch* con «mantener tono». | Abrir dispositivos de audio. | MVP |
 | 2 Motores | `gafira-segment` | Trait `Segmenter` e implementación clásica sin ML (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC, refinado de bordes con *guided filter*). Feature `onnx` opcional (Fase 3). | Incluir pesos de modelos por defecto. | MVP |
-| 3 Aplicación | `gafira-ports` | Traits de puertos y registros: `Importer`, `Exporter`, `RenderBackend`, `Container`, `Codec`, `Decoder`, `Encoder`, `AssetProvider`, `ProjectRepository`, `ContentStore`, `FileSystem`, `Clock`, `Notifier`, `PluginHost`, `LicenseVerifier` (§4.14), `TextAssistant` (§4.15, opcional), los puertos de idioma `Translator`, `LocaleResolver` y `SystemLocaleSource` con los tipos `Locale`, `LanguagePreference` y `FormatLocale` (§4.16) y `Registry<T>`. | Implementar adaptadores. | MVP |
+| 3 Aplicación | `gafira-ports` | Traits de puertos y registros: `Importer`, `Exporter`, `PageRenderer` (§4.5), `RenderBackend`, `TileCache` y el plan de render que leen los backends (§4.6), `Container`, `Demuxer`, `Muxer`, `Codec`, `Decoder`, `Encoder`, `AssetProvider`, `ProjectRepository`, `ContentStore`, `FileSystem`, `Clock`, `Notifier`, `LicenseVerifier` (§4.14), `TextAssistant` (§4.15, opcional), los puertos de idioma `Translator`, `LocaleResolver` y `SystemLocaleSource` con los tipos `Locale`, `LanguagePreference` y `FormatLocale` (§4.16) y `Registry<T>`. `PluginHost` llega con `gafira-plugin` (Fase 3). | Implementar adaptadores. | MVP |
 | 3 Aplicación | `gafira-render` | Construcción del grafo de render (Visitor), caché por contenido y por tiles, planificador con prioridades, presupuesto de frame, selección y degradación de backend. | Hablar con wgpu directamente. | MVP |
 | 3 Aplicación | `gafira-media` | Pipeline de medios: índice de keyframes, caché de fotogramas, proxies, sincronía A/V, reloj de reproducción y orquestación de exportación de video. | Implementar códecs concretos. | MVP |
 | 3 Aplicación | `gafira-engine` | `Session`, servicios Facade (§5.4), bus de eventos, cola de exportación, autoguardado, recuperación, Versiones, límites de memoria, gestión de trabajos y cancelación, y `LicenseService` (consulta `LicenseVerifier`, §13). | Depender de egui. Abrir conexiones de red. | MVP |
@@ -119,7 +119,7 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 4 Adaptadores | `gafira-ui` | Interfaz egui/eframe: shell, paneles, lienzo, timeline, herramientas (`Tool`), widgets accesibles y traducción de eventos. Pantalla de arranque con sus recursos incrustados (§8.4, D-09). Todo texto visible sale de `Translator` por clave (ARQ-97). | Mutar el documento sin `Command`, o hacer I/O directo. Contener texto literal visible. | MVP |
 | 4 Adaptadores | `gafira-captions` | Lectura y escritura de SRT y WebVTT, estilos de subtítulo. | — | Fase 2 |
 | 4 Adaptadores | `gafira-plugin` | `PluginHost` con wasmi (sandbox, combustible, capacidades), manifiesto de extensión. | Dar acceso a red o disco no concedido. | Fase 3 |
-| Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas), escenas sintéticas con máscara exacta (ARQ-132). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
+| Soporte | `gafira-testkit` | Fixtures, generadores `proptest`, comparación golden, documentos sintéticos (100 capas, 20 páginas, video de 3 pistas), escenas sintéticas con máscara exacta (ARQ-132). Dobles de los puertos tras la feature `ports`, desactivada por defecto (§2.2). Solo `dev-dependency`. | Entrar en binarios de release. | MVP |
 | Soporte | `xtask` | Comprobación de capas, empaquetado (MSI; `.deb`, `.rpm` y `.tar.gz` para Linux x86_64; DMG), generación de iconos, auditoría de licencias y generación de `THIRD_PARTY_NOTICES.md`. | Distribuirse. | MVP |
 | Binario | `gafira` (`apps/gafira`) | App de escritorio: composición, registros e inyección. | Contener lógica. | MVP |
 | Binario | `gafira-cli` (`apps/gafira-cli`) | Exportación por lotes (`gafira-cli export proyecto.gafira --format png --pages 1-5`), validación de proyectos, *benchmarks* de escenario (`gafira-cli bench`), regeneración de golden. Mensajes en inglés por defecto; `--lang` para cambiarlo (ARQ-104). | Depender de `gafira-ui`. | MVP |
@@ -134,7 +134,7 @@ gafira-color ┘                     │
         gafira-pathops  gafira-text  gafira-layout  gafira-raster  gafira-audio  gafira-segment
                  (cada motor puede depender de geom, color y doc; audio, también de time; ADR 0007.
                   Únicas aristas entre motores: text → pathops y segment → raster.
-                  Sin layout → text, testkit → raster, doc → time, audio → anim ni raster → anim.
+                  Sin layout → text, testkit → raster (en el grafo por defecto), doc → time, audio → anim ni raster → anim.
                   Aquí a → b significa que a depende de b. Hoy gafira-doc solo depende de geom y color)
                                    │
                                    ▼
@@ -152,11 +152,21 @@ gafira-color ┘                     │
           apps/gafira, apps/gafira-cli (dependen de todo lo necesario)
 ```
 
+En el dibujo, la fila de adaptadores bajo `gafira-engine` no es una dependencia: los adaptadores dependen de `gafira-ports` y el *composition root* los inyecta en el engine (ARQ-06).
+
+**Dobles de los puertos** (ADR 0013): `gafira-testkit` no depende de `gafira-ports` ni de `gafira-raster` en su grafo por defecto. Los dobles de los puertos (`FakeLicenseVerifier`, `FakeSystemLocaleSource`, `InMemoryRepository`, `FileSystem` y `Clock` falsos) están tras la feature `ports` de `gafira-testkit`, desactivada por defecto, que quien la usa activa en sus `dev-dependencies`. Reglas:
+
+- `gafira-raster` no activa la feature `ports` ni depende de `gafira-ports` en ninguna sección de su `Cargo.toml`. Así sus mutantes no recompilan los puertos.
+- Un doble que recibe o devuelve tipos de `gafira-raster` solo se usa desde pruebas de integración (`crates/<crate>/tests/`) o desde otros crates, nunca desde una prueba unitaria dentro de `gafira-raster/src`: allí habría dos copias de `gafira_raster` y sus tipos no coincidirían.
+- Los demás crates la activan sin restricción.
+
+Aceptación: el árbol de dependencias por defecto de `gafira-testkit` no contiene `gafira-ports` ni `gafira-raster`; el de `gafira-raster`, con todas sus secciones, no contiene `gafira-ports` ni la feature `ports` de `gafira-testkit`.
+
 Reglas adicionales:
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-06 | Los adaptadores dependen de `gafira-ports` y de las capas 0–2, **nunca** de `gafira-engine`. Única excepción: `gafira-ui`, que consume la Facade del engine. | `check-layers` falla si `gafira-format`, `gafira-io-*`, `gafira-codec-*`, `gafira-render-*`, `gafira-assets`, `gafira-license` o `gafira-i18n` declaran `gafira-engine`. |
+| ARQ-06 | Los adaptadores dependen de `gafira-ports` y de las capas 0–2, **nunca** de `gafira-engine`. Única excepción: `gafira-ui`, que consume la Facade del engine. | `check-layers` falla si un adaptador de la capa 4 de §2.1 distinto de `gafira-ui` declara `gafira-engine`, `gafira-render` o `gafira-media`. Eso incluye `gafira-format`, `gafira-assets`, `gafira-io-*`, `gafira-mux`, `gafira-codec-*`, `gafira-render-*`, `gafira-platform`, `gafira-theme`, `gafira-license`, `gafira-i18n`, `gafira-captions` y `gafira-plugin`. |
 | ARQ-07 | `gafira-cli` no depende de `gafira-ui`, `eframe`, `winit` ni `wgpu` en su build mínima. | `cargo tree -p gafira-cli --no-default-features` no contiene esos crates. |
 | ARQ-08 | Las features que traen exposición a patentes, librerías nativas o red (`os-codecs`, `onnx`, `heic-os`, `online`, `credentials`) son *opt-in* por crate y se activan solo en los binarios. No existen las features `update-check` ni `encumbered-sw` con código (D-02, D-06). | `cargo tree -e features` del dominio y los motores no contiene esas features. Una búsqueda en los `Cargo.toml` no encuentra `update-check`. |
 | ARQ-09 | Reservado. | — |
@@ -207,6 +217,7 @@ Project
 - **Diseño estático**: un `Project` con `pages` y sin `sequences`.
 - **Video básico**: una `Sequence` cuya pista principal coloca `Scene(PageId)` y clips de medios en orden. La acción de «agregar escena» crea una `Page` y un `Clip`.
 - **Video avanzado**: varias pistas, keyframes, máscaras y capas de ajuste. Es el mismo modelo con más datos, no otro modelo.
+- **Estado actual**: hoy la raíz del modelo en `gafira-doc` es `Document` (esquema, DPI y páginas). `Project`, `AssetRef` y `AssetTable` aún no existen. Hasta que `Project` llegue, `ProjectRepository` carga y guarda un `Document` (§5.3).
 
 `NodeArena` es un `HashMap<NodeId, Arc<Node>>` con hijos por `NodeId`. Así se comparte estructura entre versiones (§5.1) y se hace *lookup* O(1).
 
@@ -420,14 +431,16 @@ Fuera de este bloque: los presets de animación, `GradientStops`, la edición de
 Convención para todos los registros:
 
 ```rust
-pub struct Registry<T: ?Sized> { items: Vec<Arc<T>>, by_id: HashMap<&'static str, usize> }
+pub struct Registry<T: ?Sized> { items: Vec<Arc<T>>, by_id: BTreeMap<&'static str, usize> } // `HashMap` está prohibido por `clippy.toml`
 impl<T: ?Sized + Describe> Registry<T> {
     pub fn register(&mut self, item: Arc<T>) -> Result<(), RegistryError>; // id duplicado → error
     pub fn get(&self, id: &str) -> Option<&Arc<T>>;
-    pub fn iter(&self) -> impl Iterator<Item = &Arc<T>>;
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<T>>;                   // en orden de registro
 }
 pub trait Describe { fn descriptor(&self) -> &Descriptor; } // id estable, nombre, versión
 ```
+
+Aceptación de `Registry`: registrar un `descriptor().id` repetido da `RegistryError::DuplicateId { id }` y deja el registro como estaba; `iter` da los elementos en orden de registro; `get` de un id desconocido da `None`.
 
 `Descriptor` tiene `id`, `name` (`MessageKey`) y `version`. Las capacidades no van en él: cada trait expone las suyas en forma tipada (`Effect::gpu`, `Segmenter::requirements`, `RenderBackend::caps`, `Exporter::capabilities`). Aceptación: `Descriptor` se construye con esos tres campos, y ningún consumidor lee capacidades de él.
 
@@ -574,9 +587,30 @@ pub trait Exporter: Send + Sync {
     fn export(&self, job: &ExportJob<'_>, sink: &mut dyn ExportSink,
               progress: &dyn Progress, cancel: &CancelToken) -> Result<ExportReport, ExportError>;
 }
+
+pub struct ExportRequest { pub format_id: String, pub scope: ExportScope, pub options: ParamValues } // lo que se persiste (§6.4)
+pub enum ExportScope { Pages(Vec<PageId>), Nodes { page: PageId, nodes: Vec<NodeId> } }      // rangos resueltos por quien llama
+pub struct ExportJob<'a> {                       // vista de una ejecución: no se persiste
+    pub request: &'a ExportRequest, pub document: &'a Document,
+    pub store: &'a dyn ContentStore, pub pages: &'a dyn PageRenderer,
+}
+pub trait PageRenderer: Send + Sync {            // lo implementa gafira-render
+    fn render(&self, req: &PageRenderRequest, cancel: &CancelToken) -> Result<ImageBuf, RenderError>;
+}
+pub struct PageRenderRequest { pub page: PageId, pub time: Flicks, pub scale: f32, pub region: IRect, pub transparent: bool }
 ```
 
-- **Descubrimiento**: `FormatRegistry::resolve_import(path, head)` filtra por extensión, ordena por `sniff`, prueba el de mayor confianza y, si falla, el siguiente. Para exportar, la UI lista `exporters().filter(caps ⊇ requeridas por el documento)`.
+- **Descubrimiento**: `FormatRegistry::resolve_import(path, head)` filtra por extensión, ordena por `sniff`, prueba el de mayor confianza y, si falla, el siguiente. Reglas:
+  1. La extensión es la última del nombre, en minúsculas ASCII. Sin extensión o con una que no es UTF-8, ningún importador coincide por extensión.
+  2. Se descartan los importadores cuyo `sniff(head)` es `None`.
+  3. Si ningún importador con esa extensión reconoce la cabecera, se prueban todos (con la misma regla 2): un PNG llamado `.jpg` se abre.
+  4. Se ordena por confianza, de mayor a menor. Empate: orden de registro.
+  5. Se vuelve al byte 0 de la fuente antes de cada intento, y se descartan los avisos del intento fallido. Si la vuelta al byte 0 falla, se devuelve ese error de E/S.
+  6. El primer `Ok` es el resultado. `Cancelled` detiene los intentos. Si todos fallan, se devuelve el primer error, que viene del formato más probable. Sin candidatos, el error es `Unsupported`.
+
+  Aceptación: con importadores de prueba, cada regla tiene un caso: `.PNG` coincide con `png`; un PNG llamado `.jpg` lo abre el importador PNG; un `sniff` `None` nunca se intenta; dos importadores con la misma confianza se prueban en orden de registro; el segundo intento lee desde el byte 0; un `Cancelled` del primero no deja probar el segundo; con dos fallos se devuelve el error del primero; una lista vacía da `Unsupported`.
+- **Píxeles para exportar**: un `Exporter` vive en un adaptador y no ve `gafira-render` (ARQ-06). Pide cada página a `ExportJob::pages`, el `PageRenderer` que el engine inyecta. Aceptación: un exportador de prueba en un crate que solo depende de `gafira-ports` y de las capas 0–2 obtiene una página como `ImageBuf` por `PageRenderer`.
+- Para exportar, la UI lista `exporters().filter(caps ⊇ requeridas por el documento)`, en orden de registro. Un mismo id puede ser importador y exportador (`.gafira`).
 - **Implementan**: `gafira-io-image`, `gafira-io-svg`, `gafira-io-pdf`, `gafira-format` (el propio `.gafira` también es un `Importer` y `Exporter` para «guardar copia») y los adaptadores de video y audio en `gafira-media` (que combinan `Container` y `Codec`).
 - **Cómo añadir un formato**:
   1. Implementar `Importer` o `Exporter` en un crate adaptador.
@@ -589,15 +623,45 @@ pub trait Exporter: Send + Sync {
 
 ```rust
 pub trait RenderBackend: Send {
-    fn caps(&self) -> BackendCaps;               // max_texture, formatos, f16/f32, efectos GPU
+    fn caps(&self) -> BackendCaps;               // max_texture, formatos, efectos GPU
     fn begin_frame(&mut self, target: &TargetDesc) -> Result<FrameCx, RenderError>;
-    fn execute(&mut self, cx: &mut FrameCx, plan: &RenderPlan, cache: &mut TileCache,
+    fn execute(&mut self, cx: &mut FrameCx, plan: &RenderPlan, cache: &mut dyn TileCache,
                deadline: Deadline, cancel: &CancelToken) -> Result<RenderReport, RenderError>;
-    fn read_back(&mut self, cx: &FrameCx, region: IRect) -> Result<ImageBuf, RenderError>;
+    fn read_back(&mut self, cx: &FrameCx, region: IRect) -> Result<ImageBuf, RenderError>; // Rgba8 o RgbaF32
     fn memory_usage(&self) -> MemoryUsage;
     fn trim(&mut self, budget: Bytes);           // libera caché al superar límite
 }
+
+pub trait TileCache: Send {                      // trait de gafira-ports; lo implementa gafira-render
+    fn get(&self, key: &TileKey) -> Option<Arc<ImageBuf>>;
+    fn put(&mut self, key: TileKey, tile: Arc<ImageBuf>);
+}
+
+pub struct RenderPlan { pub quality: RenderQuality, pub tasks: Vec<TileTask> } // tareas por prioridad (§6.1)
+pub struct TileTask { pub key: TileKey, pub priority: Priority, pub ops: Vec<RenderOp> }
+pub struct TileKey { pub content: ContentKey, pub level: u8, pub column: u32, pub row: u32 }
+pub enum Priority { Interactive, Visible, Prefetch, Background }  // §6.3
+pub enum RenderQuality { Preview, Export }                         // §6.2
+
+pub enum RenderOp {                              // cerrado: sin #[non_exhaustive]
+    PushLayer,
+    PopLayer { blend: BlendMode, opacity: f32 },
+    FillPath { path: Arc<BezPath>, color: Color, transform: Affine },
+    DrawImage { image: Arc<ImageBuf>, transform: Affine },
+    ApplyMask { mask: Arc<AlphaMask> },
+    ApplyEffect { effect: Arc<dyn Effect>, params: ParamValues, scale: f32 },
+    ApplyTransition { transition: Arc<dyn Transition>, params: ParamValues, progress: f32 },
+}
 ```
+
+- **Contrato de render en los puertos**: `RenderPlan`, `RenderOp`, `TileCache`, `FrameCx`, `Deadline` y `RenderReport` viven en `gafira-ports`, porque los backends no ven `gafira-render` (ARQ-06). `gafira-render` construye el plan y los backends lo leen. El plan es autocontenido: cada efecto llega como `Arc<dyn Effect>` con sus parámetros ya resueltos. El texto llega como contornos (`FillPath`); los glifos con *hinting* de la vista previa serán una variante nueva. `RenderOp` es un enum cerrado, de modo que una variante nueva no compila en un backend que no la trate.
+- **`TileCache`**: es un trait de `gafira-ports`, implementado en `gafira-render` (§6.1); `execute` recibe `&mut dyn TileCache`. Un backend GPU guarda sus texturas por `TileKey` en privado y las libera en `trim`.
+- **`FrameCx`**: es un identificador plano del frame (`FrameId`). Cada backend guarda su propio estado por `FrameId`.
+- **`Deadline`**: `Unbounded` o `At(t)`, con `t` del reloj monotónico (`Clock::monotonic`). Ha pasado cuando `now >= t`; `Unbounded` nunca pasa.
+- **Render tardío**: si vence el plazo, `execute` no da error: devuelve un `RenderReport` con las tareas que quedan (`left`). El informe está completo cuando `left == 0`.
+- **Formatos**: f16 solo es interno de la GPU; `read_back` da `Rgba8` o `RgbaF32` (los formatos de `gafira-raster`, ARQ-117).
+
+Aceptación del contrato: un doble de `RenderBackend` en una prueba compila usando solo `gafira-ports` y crates de las capas 0–2; `Deadline::At(t)` ha pasado con `now == t` y no con `now` un nanosegundo antes; `Unbounded` nunca ha pasado; `RenderReport` está completo solo con `left == 0`; `RenderOp` no lleva `#[non_exhaustive]`; en la suite golden de cada backend, `read_back` da `Rgba8` o `RgbaF32`.
 
 - **Patrón**: Strategy, porque CPU y GPU son intercambiables, y Adapter, porque cada backend adapta tiny-skia/vello/wgpu al plan común. `BackendSelector` aplica la degradación: GPU → CPU ante `DeviceLost`, `OutOfMemory`, adaptador ausente o lista de bloqueo de drivers. Tras un fallo durante la inicialización de la GPU, el siguiente arranque abre en modo CPU y lo notifica.
 - **Implementan**: `gafira-render-cpu` (referencia) y `gafira-render-gpu`.
@@ -660,7 +724,7 @@ pub trait Encoder: Send {
 }
 ```
 
-- **Patrón**: Strategy + Abstract Factory (`Codec` crea `Decoder` y `Encoder` compatibles) + Registry con política. `CodecRegistry::best_decoder(id)` prefiere hardware del sistema y luego software libre de regalías. No existe una tercera vía de software restringido (D-02). `LegalClass` filtra según las features de build. Para exportar, el valor por defecto es AV1 + Opus (WebM o MP4); H.264/AAC solo se ofrece si `gafira-codec-os` encuentra la API del sistema.
+- **Patrón**: Strategy + Abstract Factory (`Codec` crea `Decoder` y `Encoder` compatibles) + Registry con política. `CodecRegistry::best_decoder(id)` elige entre los códecs con ese `CodecId` que decodifican. Orden: hardware; códec del SO sin hardware (`OsLicensed`, por ejemplo AAC de AudioToolbox); libre de regalías (`RoyaltyFree`). Empate: orden de registro. `Encumbered` nunca. Sin candidato, no devuelve ninguno. No existe una tercera vía de software restringido (D-02). Aceptación: con códecs de prueba, uno `Encumbered` nunca se elige; uno que solo codifica no se elige; uno de otro `CodecId` no se elige; hardware gana a `OsLicensed` y `OsLicensed` a `RoyaltyFree`; con dos iguales gana el primero registrado. `LegalClass` filtra según las features de build. Para exportar, el valor por defecto es AV1 + Opus (WebM o MP4); H.264/AAC solo se ofrece si `gafira-codec-os` encuentra la API del sistema.
 - **Implementan**: `gafira-mux` (contenedores), `gafira-codec-free` y `gafira-codec-os`.
 - **Cómo añadir un códec**:
   1. Implementar `Codec`, `Decoder` y `Encoder` en el crate de su clase legal. Un códec con patentes activas (H.264, HEVC, AAC) nunca se implementa en Gafira: solo se adapta la API del sistema en `gafira-codec-os`.
@@ -807,20 +871,21 @@ pub trait LicenseVerifier: Send + Sync {
     fn deactivate(&self) -> Result<(), LicenseError>;                                              // red
 }
 
-pub enum LicenseStatus {
-    Trial { ends_at: UnixTime },                           // prueba gratuita en curso
+pub enum LicenseStatus {                                   // sin `Trial`: no hay prueba gratuita (D-12)
     Active { expires_at: UnixTime, activation_id: String },// token válido verificado sin conexión
     OfflineGrace { token_expires_at: UnixTime, retry_after: Duration }, // sin conexión; el token sigue vigente
-    Expired,                                               // prueba o token vencidos
-    Unlicensed,                                            // nunca activada y sin prueba
+    Expired,                                               // token vencido
+    Unlicensed,                                            // nunca activada: modo sin licencia (D-12)
     Invalid { reason: ReasonCode },                        // rechazada por el servidor o token alterado
 }
-impl LicenseStatus { pub fn can_edit(&self) -> bool { matches!(self, Self::Trial{..} | Self::Active{..} | Self::OfflineGrace{..}) } }
+impl LicenseStatus { pub fn can_export(&self) -> bool { matches!(self, Self::Active{..} | Self::OfflineGrace{..}) } }
 ```
+
+- **Predicados** (D-12): la licencia no decide si se puede editar. `can_export` es el único predicado mientras la lista de funciones bloqueadas de D-12 siga pendiente (spec 06); cada función que esa lista bloquee tendrá el suyo. Aceptación: `can_export` es verdadero para `Active` y `OfflineGrace`, y falso para `Expired`, `Unlicensed` e `Invalid`.
 
 - **Patrón**: Port/Adapter. `gafira-ports` define el trait y `gafira-license` lo implementa (§13). `status` es puro y recibe la hora del puerto `Clock` (ARQ-02). Los métodos de red son bloqueantes y el engine los ejecuta en el hilo de E/S, nunca en el de UI.
 - **Consumidor**: `LicenseService` en `gafira-engine` publica `EngineEvent::LicenseChanged(LicenseStatus)` y la UI muestra la pantalla de activación y el estado en Ajustes (03).
-- **Dobles de prueba**: `FakeLicenseVerifier` en `gafira-testkit` con cada estado, para que las pruebas E2E no dependan de la red.
+- **Dobles de prueba**: `FakeLicenseVerifier` en `gafira-testkit`, tras la feature `ports` (§2.2), con cada estado, para que las pruebas E2E no dependan de la red.
 
 ### 4.15 `TextAssistant` (opcional, local y desactivable)
 
@@ -852,10 +917,14 @@ pub trait TextAssistant: Describe + Send + Sync {
 ```rust
 // gafira-ports::i18n
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]                           // forma serializada: "es", "en"
 pub enum Locale { Es, En }                                   // idiomas publicados (D-08); ampliable (Q-23)
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]        // serde escrito a mano: "system" | "es" | "en" (§14.4)
 pub enum LanguagePreference { #[default] System, Es, En }    // Ajustes → General: Sistema | Español | English
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Region(/* privado */);                            // propio, sin ICU: 2 letras ASCII o 3 dígitos ASCII
 
 pub struct SystemLocale { pub ui: Option<String>, pub formats: Option<String> } // etiquetas tal como las da el SO
 pub trait SystemLocaleSource: Send + Sync { fn system_locale(&self) -> SystemLocale; } // gafira-platform
@@ -878,7 +947,8 @@ pub trait Translator: Send + Sync {                                       // gaf
 
 - **Patrón**: Port/Adapter + Strategy. Los tipos viven en `gafira-ports` para que el engine, la UI y la CLI los usen sin depender del adaptador; `gafira-i18n` implementa `Translator` y `LocaleResolver`, y `gafira-platform` implementa `SystemLocaleSource`. El *composition root* los inyecta. El detalle, el ADR y los requisitos están en §14.
 - **Sin estado global**: el idioma activo es un `Locale` (`Copy`) que guarda quien pinta (la UI o la CLI) y que se pasa en cada llamada. No hay `set_locale` global (ARQ-31).
-- **Dobles de prueba**: `FakeSystemLocaleSource` (etiquetas fijas) en `gafira-testkit`; `PseudoTranslator` (feature `pseudo` de `gafira-i18n`, solo desarrollo y pruebas, §14.6).
+- **`Region`**: es un tipo propio `Copy` y no el de `icu_locale_core`, para que el engine y los adaptadores reciban `FormatLocale` sin depender de ICU; `gafira-i18n` convierte en su borde. `Region::new` acepta 2 letras ASCII, que guarda en mayúsculas, o 3 dígitos ASCII (`419`, para `es-419`); cualquier otra cosa da `None`. Aceptación: `mx` y `MX` dan `MX`; `419` es válido; `m`, `mex`, `41`, `4190`, `m1` y `ñx` dan `None`; `as_str` devuelve lo guardado.
+- **Dobles de prueba**: `FakeSystemLocaleSource` (etiquetas fijas) en `gafira-testkit`, tras la feature `ports` (§2.2); `PseudoTranslator` (feature `pseudo` de `gafira-i18n`, solo desarrollo y pruebas, §14.6).
 
 ### 4.17 Contratos de los motores de capa 2
 
@@ -1151,7 +1221,7 @@ El engine publica por `crossbeam_channel` (sin límite para eventos de estado, c
 |---|---|---|
 | Builder | `ExportRequest::builder()`, `ProjectBuilder` (en testkit y en plantillas), `EncoderConfig::builder()` | Construcciones con muchos opcionales validadas en `build()`. |
 | Facade | `gafira-engine::Gafira` con los servicios `ProjectService`, `EditService`, `SelectionService`, `AssetService`, `IdentityService`, `MediaService`, `ExportService`, `SettingsService`, `LicenseService` | La UI y la CLI usan una API estable y pequeña. Los detalles internos cambian sin romper la UI. |
-| Repository | `ProjectRepository` (`.gafira`), `ContentStore` (recursos), `LibraryRepository` (índice de la biblioteca local), `SettingsRepository` | Aísla la persistencia y permite pruebas en memoria (`InMemoryRepository` en testkit). |
+| Repository | `ProjectRepository` (`.gafira`; carga y guarda un `Document` hasta que exista `Project`, §3.1), `ContentStore` (recursos), `LibraryRepository` (índice de la biblioteca local), `SettingsRepository` | Aísla la persistencia y permite pruebas en memoria (`InMemoryRepository` en testkit, tras la feature `ports`, §2.2). |
 | DI por traits | Los servicios reciben `Arc<dyn Port>` en su constructor. El *composition root* está en los binarios, sin frameworks ni contenedores mágicos. | Pruebas con dobles y binarios con distintas combinaciones (CLI sin GPU). |
 | Strategy + Registry | Efectos, formatos, códecs, backends, segmentadores, proveedores, herramientas | Extensión sin tocar el núcleo. |
 | Visitor | Recorridos de documento (§4.1) | Operaciones nuevas sin modificar los datos. |
@@ -1210,6 +1280,8 @@ Document snapshot (Arc) ──► RenderGraphBuilder (Visitor) ──► RenderG
         ──► RenderBackend.execute(deadline) ──► Overlay (selección, guías) ──► presentación egui
 ```
 
+- **Dónde vive cada pieza**: `RenderGraphBuilder`, `RenderGraph`, el planificador y `BackendSelector` son de `gafira-render`. `RenderPlan` y `TileCache` son de `gafira-ports` (§4.6): `TileCache` es un trait de `gafira-ports`, implementado en `gafira-render`; `execute` recibe `&mut dyn TileCache`.
+
 - **Claves de caché por contenido**: cada nodo del grafo tiene `key = hash(tipo, parámetros muestreados en t, claves de entrada, LOD)`. Si un parámetro no cambia, la clave tampoco y el resultado se reutiliza. Esto cubre el movimiento de un elemento sin re-rasterizarlo: solo cambia la composición.
 - **Tiles**: 256×256 px por nivel de zoom en potencias de 2 (FIJADA). El zoom de 5 % a 3200 % usa el mip más cercano y se refina en segundo plano. El vector se re-rasteriza en el nivel exacto cuando la vista se estabiliza (150 ms sin cambios, FIJADA).
 - **Invalidación**: `Command::touches` → `DirtySet` → rectángulos sucios en coordenadas de página → tiles afectados.
@@ -1242,7 +1314,7 @@ Reglas:
 
 ### 6.4 Cola de exportación
 
-- Los trabajos `ExportJob` se persisten en `datos_app/export-queue.json` y sobreviven a un fallo: al reabrir, se ofrece reanudarlos.
+- Se persiste el `ExportRequest` de cada trabajo en `datos_app/export-queue.json`, y los trabajos sobreviven a un fallo: al reabrir, se ofrece reanudarlos. `ExportJob` es la vista de una ejecución (§4.5): toma prestados el documento y los puertos, así que no se persiste. Para eso `ParamValues` necesita una forma serializada, que hoy no tiene; llega con la cola de exportación. Aceptación: un `ExportRequest` guardado y leído de nuevo es igual al original.
 - Estados: `Queued → Preparing → Rendering(p) → Encoding(p) → Finalizing → Done | Failed(e) | Cancelled`.
 - Se escribe a un archivo temporal y se renombra al terminar. Nunca queda un archivo final parcial.
 - **Reintentos**: hasta 2 automáticos solo para errores transitorios (E/S temporal, `DeviceLost` → reintento en CPU, códec del sistema no disponible → propuesta de AV1 + Opus con aviso, porque no existe un códec de software de la misma clase legal, D-02). Los errores de validación no se reintentan: se muestran antes de encolar.
@@ -1391,7 +1463,8 @@ pub enum FormatError {
 // `Display` (solo para el log), `std::error::Error` y `ToMessage` se escriben a mano (ADR 0012).
 ```
 
-- Un enum de error por crate, escrito a mano y sin `thiserror` (ADR 0012) (`DocError`, `CommandError`, `FormatError`, `ImportError`, `ExportError`, `MediaError`, `RenderError`, `EffectError`, `SegError`, `PluginError`). Excepción: un tipo que comparten varios crates puede tener su propio enum, como `BufferError` en `gafira-raster` (`ImageView`, `AlphaMask`). El enum del crate lo envuelve en una variante con `From`, y su `to_message` delega, como con `Cancelled`: `EffectError` envuelve `BufferError` y `ParamError`, y añade `size_mismatch`, `format_mismatch` y `unsupported_format`, con las claves `error.raster.<variante>`. Los formatos viajan en `Text` y los tamaños en `Count`. `anyhow` solo en los binarios y en `xtask`.
+- Un enum de error por crate, escrito a mano y sin `thiserror` (ADR 0012) (`DocError`, `CommandError`, `FormatError`, `EffectError`, `SegError`). Excepción: un tipo que comparten varios crates puede tener su propio enum, como `BufferError` en `gafira-raster` (`ImageView`, `AlphaMask`). El enum del crate lo envuelve en una variante con `From`, y su `to_message` delega, como con `Cancelled`: `EffectError` envuelve `BufferError` y `ParamError`, y añade `size_mismatch`, `format_mismatch` y `unsupported_format`, con las claves `error.raster.<variante>`. Los formatos viajan en `Text` y los tamaños en `Count`. `anyhow` solo en los binarios y en `xtask`.
+- **Excepción de la capa 3** (ADR 0014): `gafira-ports` tiene un enum por familia de puerto, en el módulo del puerto, porque cada uno aparece en la firma de un trait: `RegistryError`, `StoreError`, `ImportError`, `ExportError`, `RenderError`, `MediaError`, `AssetError`, `RepositoryError`, `LicenseError` y `AssistError`. `PluginError` llega con `PluginHost` (Fase 3). Sus claves usan la familia como área, no el crate: `error.<familia>.<variante>`, con las familias `registry`, `store`, `import`, `export`, `render`, `media`, `asset`, `repository`, `license` y `assist` (por ejemplo `error.render.device_lost`). El resto de ADR 0012 se aplica igual: `Cancelled` delega, `to_message` no tiene brazo `_` y el texto de la biblioteca queda en `Display`. Un adaptador devuelve el enum que nombra su puerto; su enum interno, como `FormatError`, se convierte en él. Los fallos de E/S conservan `std::io::Error`, como `FormatError`, y no dan argumento a la clave. Aceptación: ARQ-102 con un fixture por variante de cada uno de los diez enums, con la clave en el área de su familia.
 - `gafira-engine` traduce los errores a `UserError { kind, message: Message, detail, actions: Vec<Message> }`. Cada enum de error implementa `ToMessage` (`gafira-doc::msg`, §14.2) y devuelve una **clave con parámetros** (por ejemplo `error.format.too_new { found, supported }`), nunca un texto ya traducido (ARQ-102). La UI la traduce en el idioma activo; los mensajes visibles siguen el tono de marca («No pudimos completar esta acción. Inténtalo de nuevo.» / «We couldn't complete this action. Try again.») y el detalle técnico va al log local.
 - El texto de `Display` es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (PROPUESTA; el extracto anterior conserva su texto original como ejemplo de estructura).
 - **Degradación**:
@@ -1672,7 +1745,7 @@ Notas de la medición de licencias (`cargo-deny` solo lee los metadatos de los c
 
 ### 9.4 Licencia propia de Gafira
 
-Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el de Tracewright (`LICENSE` en inglés y `LICENCIA.md` en español; prevalece el español) adaptado a Gafira: el usuario es titular de los diseños, imágenes y videos que crea, y puede usar dentro de sus creaciones las plantillas, fuentes y recursos incluidos. El modelo es **todo de pago con prueba gratuita** y **una sola licencia**: no hay núcleo gratuito ni módulos avanzados de pago separados, y el mismo binario contiene todas las funciones. La activación y sus requisitos están en §13. La arquitectura garantiza que ninguna dependencia condiciona esta licencia.
+Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el de Tracewright (`LICENSE` en inglés y `LICENCIA.md` en español; prevalece el español) adaptado a Gafira: el usuario es titular de los diseños, imágenes y videos que crea, y puede usar dentro de sus creaciones las plantillas, fuentes y recursos incluidos. El modelo es **todo de pago, sin prueba gratuita** (D-12) y con **una sola licencia**: no hay núcleo gratuito ni módulos avanzados de pago separados, y el mismo binario contiene todas las funciones. La activación y sus requisitos están en §13. La arquitectura garantiza que ninguna dependencia condiciona esta licencia.
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
@@ -1763,11 +1836,11 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | Efecto o filtro | `Effect` / `GpuEffect` | `EffectRegistry` | Sí | Sí (solo CPU) |
 | Transición entre clips | `Transition` / `GpuTransition` | `TransitionRegistry` | Sí | Sí (solo CPU) |
 | Formato | `Importer` / `Exporter` | `FormatRegistry` | Sí | Sí (bytes → bytes) |
-| Contenedor y códec | `Container` / `Codec` | `MediaRegistry` | Sí | No |
+| Contenedor y códec | `Container` / `Codec` | `Registry<dyn Container>` / `CodecRegistry` | Sí | No |
 | Backend de render | `RenderBackend` | `BackendSelector` | Sí | No |
 | Segmentador | `Segmenter` | `SegmenterRegistry` | Sí | Sí (paquete con modelo) |
 | Procesador de audio | `AudioProcessor` | `AudioRegistry` | Sí | Fase 3+ |
-| Transformación de color | `ColorTransform` | `ColorRegistry` | Sí | LUT como datos |
+| Transformación de color | `ColorTransform` | — (sin registro hasta que haya un consumidor; `ColorTransform` no implementa `Describe`) | Sí | LUT como datos |
 | Recursos | `AssetProvider` | `AssetRegistry` | Sí | Sí |
 | Asistente de texto (opcional, local) | `TextAssistant` | `TextAssistantRegistry` | No (vacío en el MVP) | Fase 3, paquete con modelo |
 | Licencia (puerto, no extensión) | `LicenseVerifier` | — (una implementación inyectada) | Sí (`gafira-license`) | No |
@@ -1874,7 +1947,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 
 ### 13.1 Alcance y servicio externo
 
-- **Modelo** (D-01): Gafira es de pago con prueba gratuita y una sola licencia. El mismo binario contiene todas las funciones; la licencia solo decide si se puede editar y exportar.
+- **Modelo** (D-01, D-12): Gafira es de pago, sin prueba gratuita y con una sola licencia. El mismo binario contiene todas las funciones. Sin licencia, la app funciona en modo sin licencia: la exportación está bloqueada, y las demás funciones bloqueadas se fijan en la spec 06 (lista pendiente de D-12).
 - **Servicio**: la activación usa el **`license-hub`** del titular, un servicio externo (Cloudflare Workers + D1; proveedor Gumroad o clave propia; de 1 a 10 dispositivos por licencia). **No se despliega con la app**, no forma parte del workspace de Gafira ni del instalador. Gafira solo contiene el cliente. La URL base, el `iss` esperado y el identificador de aplicación (`"gafira"`, PROPUESTA) se fijan en el build; Gafira se registra en el servicio como una aplicación más.
 - **Única conexión de red**: activar, validar o desactivar la licencia. Nada más sale del equipo (ARQ-91).
 
@@ -1887,7 +1960,6 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | `token` | `verify_token`: firma Ed25519, `iss`, `aud`, dispositivo, `exp` e `iat` con tolerancia de reloj de 60 s. | — (puro) |
 | `claims` | `ActivationClaims { kind, iss, aud, sub, jti, device, iat, exp }` y `VerifiedToken`. | — |
 | `state` | Máquina de estados pura (§13.3). No usa red ni reloj: recibe `now`. | — |
-| `trial` | Estado de la prueba gratuita (mecanismo según Q-19). | — |
 | `device` | Identificador de dispositivo aleatorio (UUID v4, **no** derivado del hardware) y secreto de 32 bytes aleatorios en base64url. | — |
 | `store` | Trait `SecretStore` y `MemoryStore` (pruebas). `KeyringStore` en el llavero del SO. | `credentials` |
 | `client` | `LicenseClient`: `activate`, `validate` y `deactivate` (tres POST), tiempo límite de 5 s y sin reintentos automáticos; la política de reintento es del llamador. | `online` |
@@ -1899,18 +1971,19 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 
 ### 13.3 Estados de licencia
 
-| `LicenseStatus` | Cuándo | Editar y exportar |
+No hay estado de prueba (D-12).
+
+| `LicenseStatus` | Cuándo | Exportar (`can_export`) |
 |---|---|---|
-| `Trial { ends_at }` | Prueba gratuita en curso | Sí |
 | `Active { expires_at, activation_id }` | Token válido verificado sin conexión | Sí |
 | `OfflineGrace { token_expires_at, retry_after }` | El servidor no responde, pero el token sigue vigente | Sí, con aviso discreto |
-| `Expired` | Prueba o token vencidos | No (ARQ-95) |
-| `Unlicensed` | Sin activación ni prueba | No (ARQ-95) |
+| `Expired` | Token vencido | No (ARQ-95) |
+| `Unlicensed` | Nunca activada: modo sin licencia (D-12) | No (ARQ-95) |
 | `Invalid { reason }` | Rechazo explícito del servidor o token alterado | No (ARQ-95) |
 
 - **Invariante**: un fallo de red **nunca** invalida un token válido. `Active` pasa a `OfflineGrace` y sigue siendo usable hasta `exp`. Solo un rechazo explícito del servidor o el vencimiento quitan el permiso.
 - **Gracia sin conexión**: la duración del token (`tokenTtlSeconds` del servicio) define cuánto tiempo puede trabajar el equipo sin conexión. Propuesta: 30 días. La app intenta validar sola como máximo una vez al día y solo cuando quedan menos de 7 días, y ofrece «Validar ahora» en Ajustes (cifras PROPUESTA).
-- **Sin licencia válida**: la app abre, muestra, recupera y permite «Guardar copia» de los proyectos; no permite editar ni exportar. Los datos del usuario nunca quedan retenidos (PROPUESTA, Q-20).
+- **Sin licencia válida** (D-12): la app abre, muestra, edita, recupera y permite «Guardar copia» de los proyectos; no permite exportar. Las demás funciones bloqueadas las fija la spec 06; hasta entonces, solo la exportación está bloqueada. Los datos del usuario nunca quedan retenidos (PROPUESTA, Q-20).
 
 ### 13.4 Datos enviados y almacenamiento
 
@@ -1932,10 +2005,10 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 |---|---|---|
 | ARQ-90 | El token se verifica sin conexión con una clave pública fija. | Pruebas: un token firmado con otra clave, de otro dispositivo, con `aud` o `iss` distintos o con claims alterados se rechaza. `status` hace 0 llamadas de red (cliente HTTP falso con contador). La constante de clave coincide con la SPKI publicada. |
 | ARQ-91 | La única conexión de red es la de licencia. | Prueba E2E con monitor de red del sandbox: en una sesión de activar → editar → exportar → desactivar, todas las conexiones van al host configurado del servicio y solo durante esas tres operaciones; con la licencia `Active`, editar y exportar abren 0 conexiones. |
-| ARQ-92 | Un fallo de red no invalida un token válido. | Prueba de propiedad: para todo token vigente y todo error de red (tiempo agotado, DNS, 5xx), el estado resultante es `OfflineGrace` y `can_edit()` es verdadero hasta `exp`. |
-| ARQ-93 | Las transiciones de estado son completas y deterministas. | Prueba de tabla: cada par (estado, evento) de §13.3 da el estado esperado con un `Clock` falso. |
+| ARQ-92 | Un fallo de red no invalida un token válido. | Prueba de propiedad: para todo token vigente y todo error de red (tiempo agotado, DNS, 5xx), el estado resultante es `OfflineGrace` y `can_export()` es verdadero hasta `exp`. |
+| ARQ-93 | Las transiciones de estado son completas y deterministas. | Prueba de tabla: cada par (estado, evento) de los cinco estados de §13.3, sin `Trial` (D-12), da el estado esperado con un `Clock` falso. |
 | ARQ-94 | El secreto del dispositivo y el token no se filtran. | Búsqueda en logs, journals, `.gafira` e informes de fallo de la suite E2E: 0 apariciones del secreto o del token. |
-| ARQ-95 | Sin licencia válida, el usuario conserva el acceso a sus proyectos. | Con `Expired`, la prueba abre un proyecto, lo muestra, recupera un journal y guarda una copia; editar y exportar están deshabilitados con un mensaje que lleva a activar. |
+| ARQ-95 | Sin licencia válida, el usuario conserva el acceso a sus proyectos. | Con `Expired` y con `Unlicensed`, la prueba abre un proyecto, lo muestra, ejecuta un comando de edición, recupera un journal y guarda una copia; exportar está deshabilitado con un mensaje que lleva a activar (D-12). |
 | ARQ-96 | El `license-hub` no se despliega con la app. | `xtask audit-bundle` no encuentra código del servicio (scripts del Worker, configuración de despliegue, migraciones SQL) ni secretos de administración en los paquetes; las cadenas del binario solo contienen la clave **pública**. |
 | ARQ-97..ARQ-99 | Usados por el idioma: ver §14.7. | — |
 
@@ -2041,7 +2114,7 @@ fn primary_language(tag: &str) -> Option<String>;
 /// Región del formato regional solo si su idioma coincide con la interfaz (es-MX → `1,234.5`); si no, la de CLDR del idioma.
 fn format_locale(locale: Locale, formats: Option<&str>) -> FormatLocale;
 
-pub struct FormatLocale { pub locale: Locale, pub region: Option<Region> } // en gafira-ports::i18n
+pub struct FormatLocale { pub locale: Locale, pub region: Option<Region> } // en gafira-ports::i18n; Region es propio (§4.16)
 ```
 
 | Etiqueta del sistema | Resultado con «Sistema» |
@@ -2052,7 +2125,7 @@ pub struct FormatLocale { pub locale: Locale, pub region: Option<Region> } // en
 | Sin dato, ilegible, `C`, `POSIX`, `C.UTF-8` | English (`Fallback`) |
 
 - Con `LanguagePreference::Es` o `En` el sistema se ignora para el idioma de la interfaz (solo aporta la región de formato si coincide).
-- **Persistencia**: `SettingsRepository` guarda `"language": "system" | "es" | "en"` (por defecto `"system"`; un valor desconocido se lee como `"system"`). Ajustes muestra las opciones «Sistema», «Español» y «English» (03 §16.1).
+- **Persistencia**: `SettingsRepository` guarda `"language": "system" | "es" | "en"` (por defecto `"system"`). La comparación es exacta: solo un texto desconocido, como `"ES"` o `"fr"`, se lee como `"system"`; un valor que no es texto (número, `null`, objeto) es un error de lectura. `Locale` se serializa como `"es"` y `"en"`. Aceptación: `"system"`, `"es"` y `"en"` dan sus variantes y se escriben igual; `"ES"`, `"fr"` y `""` dan `System`; `1` y `null` dan error. Ajustes muestra las opciones «Sistema», «Español» y «English» (03 §16.1).
 - **Formatos por región** (PROPUESTA, Q-24): con interfaz en español y formato regional `es-MX`, los números se escriben `1,234.5`; con `es-ES`, `1234,5` y `12.345,5`; con interfaz en inglés y formato regional francés, se usa el de CLDR para `en`.
 
 ### 14.5 Traducción, catálogos y formatos (`CatalogTranslator`)
@@ -2113,12 +2186,12 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | ARQ-99 | **Cadena de respaldo**: idioma pedido → inglés → clave visible solo en desarrollo. | Pruebas con un catálogo de prueba incompleto: falta en `es` → texto inglés; falta en los dos → `⟦clave⟧` en desarrollo y, compilado con la configuración de `dist`, el texto del otro idioma o `…`; ninguna salida de release coincide con el patrón de clave `^[a-z0-9_]+(\.[a-z0-9_]+)+$`. |
 | ARQ-100 | **Regla de D-08 exacta.** | Prueba de tabla con `FakeSystemLocaleSource` y todas las etiquetas de §14.4 (≥ 30): cualquier `es*` → `Es`; `en*` y cualquier otro idioma → `En`; sin dato o `C`/`POSIX` → `En` con `Fallback`; `Es` y `En` manuales ignoran el sistema. En Linux, una prueba en subproceso cubre la precedencia `LANGUAGE` → `LC_ALL` → `LC_MESSAGES` → `LANG`. En cada SO de la CI, `gafira-platform` devuelve una etiqueta no vacía. |
 | ARQ-101 | **Cambio de idioma sin reiniciar**, en ≤ 100 ms. | Prueba E2E: cambiar Ajustes → General → Idioma con un proyecto abierto deja todo el texto visible, los menús y los nombres de AccessKit en el idioma nuevo en el siguiente frame, sin cerrar el proyecto ni tocar el historial (`history.len()` igual) ni la selección. `bench_locale_switch`: del cambio al primer frame completo en el idioma nuevo ≤ 100 ms (p99) en el hardware de gama media (§6.6). |
-| ARQ-102 | **Los errores de capas inferiores viajan como claves con parámetros.** | Cada enum de error (§7.3) implementa `ToMessage`; una prueba recorre sus variantes (fixtures por variante) y comprueba que la clave existe en los dos catálogos y que la UI muestra el texto del catálogo, nunca el `Display`. Un lint de `gafira-ui` prohíbe `to_string()` y `format!` sobre tipos de error: 0 coincidencias. `UserError` no tiene campos `String` visibles. **Cumplimiento**: hoy `gafira-doc::msg` solo tiene `MessageKey` y ningún error implementa `ToMessage`. Los tipos llegan con el change `engine-contracts`, que adapta `LayoutError` y `PathOpError`. Los demás crates cumplen al crearse, o con el change que los adapte. |
+| ARQ-102 | **Los errores de capas inferiores viajan como claves con parámetros.** | Cada enum de error (§7.3) implementa `ToMessage`; una prueba recorre sus variantes (fixtures por variante) y comprueba que la clave existe en los dos catálogos y que la UI muestra el texto del catálogo, nunca el `Display`. Un lint de `gafira-ui` prohíbe `to_string()` y `format!` sobre tipos de error: 0 coincidencias. `UserError` no tiene campos `String` visibles. **Cumplimiento**: hoy implementan `ToMessage` `Cancelled`, `ParamError`, `LayoutError`, `PathOpError`, `TextError`, `BufferError`, `EffectError`, `FilterError`, `AudioError` y `SegError`. Los diez enums de `gafira-ports` (§7.3, ADR 0014) cumplen al crearse, con el change `gafira-ports`. Los demás crates cumplen al crearse, o con el change que los adapte; los enums sin dueño siguen en 07 (ítem 45). |
 | ARQ-103 | **Seudo-localización en las pruebas de expansión.** | La suite E2E recorre las 8 pantallas (03 DIS-18) con `PseudoTranslator`: 0 truncados sin tooltip, 0 solapes y 0 textos sin `⟦ ⟧`. Capturas golden nocturnas en `es`, `en` y seudo. `cargo tree -e features -p gafira` del perfil `dist` no contiene la feature `pseudo`. |
 | ARQ-104 | **`gafira-cli` imprime en inglés por defecto** y respeta otro idioma solo si se pide. | Con `LANG=es_ES.UTF-8`, `gafira-cli export` imprime en inglés; con `--lang es` (o `GAFIRA_CLI_LANG=es`), en español; `--lang system` aplica la regla de D-08 y `--lang app` la preferencia guardada por la app. La salida `--json` contiene claves y valores, no texto traducido, y es idéntica con cualquier `--lang`. Subcomandos, opciones y códigos de salida no cambian con el idioma. |
 | ARQ-105 | **Las fuentes cubren los dos idiomas.** | Una prueba de `gafira-theme` lee la tabla `cmap` de Inter y Manrope embebidas y comprueba todos los caracteres de `es.toml`, `en.toml` y `glosario.toml` más ¿ ¡ ñ Ñ á é í ó ú ü Á É Í Ó Ú Ü « » “ ” ‘ ’ — – … × °: 0 ausentes. |
 | ARQ-106 | **Formatos por idioma correctos y dentro del presupuesto de tamaño.** | Pruebas golden de `number`, `date`, `relative` y `quantity` para `es`, `es-MX` y `en` con los valores de la tabla de §14.5. `cargo bloat` atribuye a `gafira-i18n`, sus datos ICU4X y los catálogos ≤ 2 MB (PROPUESTA) dentro de los 40 MB del binario (ARQ-83). |
-| ARQ-107 | **El dominio no conoce idiomas.** | `check-layers`: `gafira-i18n` solo depende de `gafira-ports`, `gafira-doc` y crates ICU4X; ningún crate de las capas 0–2 depende de `gafira-i18n` ni de `icu_decimal`, `icu_datetime` o `icu_plurals` (`icu_segmenter` en `gafira-text` sigue permitido). Una búsqueda de `Locale` en las capas 0–2 da 0 coincidencias y `gafira-doc::msg` no contiene literales distintos de claves. Mientras no exista `check-layers`, un paso de CI hace las comprobaciones de dependencias y de `Locale` de esta fila sobre las dependencias normales de las capas 0–2. Control negativo: añadir `icu_plurals` a un crate de esas capas hace fallar el paso. |
+| ARQ-107 | **El dominio no conoce idiomas.** | `check-layers`: `gafira-i18n` solo depende de `gafira-ports`, `gafira-doc` y crates ICU4X; ningún crate de las capas 0–2 depende de `gafira-i18n` ni de `icu_decimal`, `icu_datetime` o `icu_plurals` (`icu_segmenter` en `gafira-text` sigue permitido). Una búsqueda de `Locale` en las capas 0–2 da 0 coincidencias y `gafira-doc::msg` no contiene literales distintos de claves. Mientras no exista `check-layers`, un paso de CI hace las comprobaciones de dependencias y de `Locale` de esta fila sobre las dependencias normales de los crates de la tabla V5 de CI. Esa tabla también lista crates de la capa 3 (hoy `gafira-ports`): para ellos corre la comprobación de dependencias, pero no la búsqueda de `Locale`, porque `gafira-ports` define `Locale` (§4.16, ADR 0013). Controles negativos: añadir `icu_plurals` a un crate de las capas 0–2 o a `gafira-ports` hace fallar el paso, y añadir `Locale` a `gafira-raster` también. |
 
 *Decisión sobre la CLI (ARQ-104)*: la CLI sirve para lotes, CI y pruebas golden. Una salida en inglés fijo hace que los scripts, los logs y las comparaciones no dependan del equipo que los ejecuta, y el inglés es además el idioma de respaldo de D-08. La regla de D-08 se aplica a la interfaz de la app; la CLI la aplica solo con `--lang system`. Confirmación del titular: Q-26.
 

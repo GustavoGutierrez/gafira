@@ -58,7 +58,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 | VP8, ProRes | — | — | No previsto | — | — |
 
 - *UI*: Biblioteca → Video y Audio; diálogo de importación.
-- *Técnica*: `Container`, `Demuxer`, `Codec`, `Decoder` (02 §4.8); `CodecRegistry::best_decoder` (prefiere hardware del SO, luego software libre); `LegalClass`.
+- *Técnica*: `Container`, `Demuxer`, `Codec`, `Decoder` (02 §4.8); `CodecRegistry::best_decoder` (orden: hardware; códec del SO sin hardware; libre de regalías; `Encumbered` nunca; 02 §4.8); `LegalClass`.
 - *Presupuesto*: indexar ≤ 1 s por minuto de material 1080p (CAL-32); importar un clip de 1 GB sin bloquear la UI (ARQ-41).
 - *Aceptación*: (a) el sondeo identifica cada fixture de la tabla; (b) los fuzz targets de cada `Demuxer` y `Decoder` pasan 10 min por PR (ARQ-21, ARQ-82); (c) un clip con códec ausente se importa como marcador y el proyecto no falla; (d) el build `free-only` importa AV1, Opus, Vorbis, FLAC y WAV (ARQ-74); (e) MP3 se importa y no existe ninguna opción de exportarlo (ARQ-77).
 
@@ -361,7 +361,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 - *Propósito*: renderizar varios trabajos en segundo plano sin perder el control.
 - *Comportamiento y reglas*: la **Cola de exportación** (botón «Cola ▾» de la Barra superior) lista los trabajos con estado (`Queued → Preparing → Rendering(p) → Encoding(p) → Finalizing → Done | Failed(e) | Cancelled`), progreso, tiempo restante estimado, prioridad (**Alta, Normal, Baja**; se reordena arrastrando), **Pausar**, **Reanudar**, **Cancelar**, **Reintentar** y «Mostrar en carpeta». Se ejecuta **un trabajo a la vez** por defecto (configurable). Los trabajos usan una **instantánea del proyecto**: se puede seguir editando o abrir otro proyecto mientras se renderiza. Los trabajos se guardan en disco y se ofrecen para reanudar tras un fallo. **Reintentos**: hasta 2 automáticos solo para errores transitorios (E/S, `DeviceLost` → CPU, códec de hardware no disponible → códec de software de la misma clase legal o alternativa libre, con aviso). **Notificación** al terminar: aviso en la app («Tu diseño está listo para compartir») y notificación del SO opcional. Cada trabajo registra ruta, configuración, duración, tamaño y errores.
 - *UI*: Barra superior → Cola; panel de la cola.
-- *Técnica*: `ExportService::{enqueue, cancel, list}` (02 §5.4), `ExportJob` persistido en `export-queue.json`, `CancelToken`.
+- *Técnica*: `ExportService::{enqueue, cancel, list}` (02 §5.4), `ExportRequest` persistido en `export-queue.json` (`ExportJob` es la vista de una ejecución y no se persiste, 02 §6.4), `CancelToken`.
 - *Presupuesto*: cancelar en ≤ 100 ms (CAL-27); la UI sigue fluida durante un render largo (CAL-35); el trabajo se escribe a archivo temporal y se renombra.
 - *Aceptación*: (a) matar el proceso en medio de un trabajo y reabrir ofrece reanudarlo; (b) un error transitorio simulado dispara un reintento y registra el evento; (c) con prioridad Alta un trabajo adelanta a uno en espera; (d) la suite `export_matrix` mantiene ≥ 98 % de éxito (CAL-17).
 
