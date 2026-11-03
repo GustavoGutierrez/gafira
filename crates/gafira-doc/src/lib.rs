@@ -7,6 +7,7 @@
 
 mod arena;
 mod blend;
+mod content_hash;
 pub mod contract;
 mod document;
 mod dpi;
@@ -24,6 +25,7 @@ mod placement;
 mod validate;
 
 pub use blend::BlendMode;
+pub use content_hash::ContentHash;
 pub use document::Document;
 pub use dpi::Dpi;
 pub use edit::{DocMut, EditToken};
