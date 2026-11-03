@@ -7,7 +7,7 @@
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
 | Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-45 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
-| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17) |
+| Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-148 quedan reservados para los motores de la capa de aplicación (§4.17.7, §4.17.8) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
 
@@ -455,32 +455,55 @@ pub trait NodeBehavior {
     fn hit_test(&self, cx: &MeasureCx, p: Point, t: Flicks) -> bool;
 }
 
+/// Vista prestada de una página y su arena. No la posee ni la clona.
+pub struct PageView<'a> { page: &'a Page }
+
+/// Contexto de medición: solo lo que posee el dominio.
+pub struct MeasureCx<'a> { page: &'a Page, dpi: f32 }
+
+/// Orden del recorrido.
+pub enum WalkOrder { PreOrder, PostOrder }
+
 pub trait NodeVisitor {
     type Out;
-    fn visit_group(&mut self, n: &Node, g: &GroupNode) -> Self::Out;
-    fn visit_frame(&mut self, n: &Node, f: &FrameNode) -> Self::Out;
-    fn visit_shape(&mut self, n: &Node, s: &ShapeNode) -> Self::Out;
-    fn visit_text(&mut self, n: &Node, t: &TextNode) -> Self::Out;
-    fn visit_image(&mut self, n: &Node, i: &ImageNode) -> Self::Out;
-    fn visit_video(&mut self, n: &Node, v: &VideoNode) -> Self::Out;
-    fn visit_adjustment(&mut self, n: &Node, a: &AdjustmentNode) -> Self::Out;
-    fn visit_sticky(&mut self, n: &Node, s: &StickyNode) -> Self::Out;
-    fn visit_table(&mut self, n: &Node, t: &TableNode) -> Self::Out;
-    fn visit_extension(&mut self, n: &Node, e: &ExtensionNode) -> Self::Out;
+    /// Obligatoria: recibe todo nodo al que no se aplique un método específico.
+    fn visit_node(&mut self, n: &Node) -> Self::Out;
+    /// Con implementación por defecto: delegan en `visit_node`.
+    fn visit_group(&mut self, n: &Node, g: &GroupNode) -> Self::Out { self.visit_node(n) }
+    fn visit_shape(&mut self, n: &Node, s: &ShapeNode) -> Self::Out { self.visit_node(n) }
+    fn visit_extension(&mut self, n: &Node, e: &ExtensionNode) -> Self::Out { self.visit_node(n) }
 }
-pub fn walk<V: NodeVisitor>(doc: &PageView, v: &mut V, order: WalkOrder) -> Vec<V::Out>;
+pub fn walk<V: NodeVisitor>(page: &PageView, v: &mut V, order: WalkOrder) -> Vec<V::Out>;
 ```
 
 - **Patrón**: Visitor sobre un enum cerrado. Separa las operaciones (render, exportación SVG/PDF, recolección de fuentes, GC de recursos, *hit testing*, accesibilidad del lienzo) de los datos.
+- **Dónde vive**: el visitante, el recorrido y la vista de página son de `gafira-doc` (§2.1): un Visitor sobre los tipos de nodo del dominio no puede vivir por debajo de él, y la promesa de que una operación nueva se añade sin tocar `gafira-doc` (ARQ-20) necesita un único punto de despacho que todas las operaciones compartan.
 - **Implementan**: `RenderGraphBuilder` (`gafira-render`), `SvgWriter` (`gafira-io-svg`), `PdfWriter` (`gafira-io-pdf`), `FontCollector` y `AssetCollector` (`gafira-engine`), `HitTester` (`gafira-edit`).
 - **Cómo añadir una operación nueva**:
   1. Crear un struct que implemente `NodeVisitor` en el crate que la necesita.
   2. Invocar `walk`.
   3. No se toca `gafira-doc`.
 - **Cómo añadir un tipo de nodo de extensión**:
-  1. Implementar `NodeExtension` (bounds, `render_into(&mut RenderGraphBuilder)`, esquema del inspector).
-  2. Registrarlo.
+  1. Implementar `NodeExtension` (bounds y esquema del inspector) en el crate de la extensión. El trait del dominio **no** declara `render_into` ni menciona el grafo de render (ARQ-137).
+  2. Registrar el manejador de render en el motor que lo consume (`gafira-render` en este corte) y, si aplica, el esquema del inspector.
   3. Nunca se añade una variante a `NodeKind` desde fuera del núcleo.
+
+| ID | Requisito | Criterio de aceptación |
+|---|---|---|
+| ARQ-134 | **Cobertura del visitante.** El visitante cubre en este corte los tres tipos de nodo que existen: `Group`, `Shape` y `Extension`. Los métodos `visit_frame`, `visit_text`, `visit_image`, `visit_video`, `visit_adjustment`, `visit_sticky` y `visit_table` no existen todavía: cada uno llega con su tipo de nodo. Añadir una variante a `NodeKind` **no rompe** a los implementores del trait: cada método `visit_*` tiene implementación por defecto y delega en `visit_node`, y `walk` despacha cada nodo a un único método. El despacho sobre `NodeKind` es exhaustivo y no tiene brazo `_`: añadir una variante rompe la compilación de `gafira-doc` y obliga a despacharla ahí, no en los implementores. | Un visitante que implementa solo `visit_node` y ningún `visit_*` compila y recibe una llamada por nodo (unit). Con una página con un grupo, una forma y una extensión, el recorrido llama una vez a `visit_node` por cada uno de los tres, y ninguna llamada recibe un nodo dos veces (unit). El número de métodos `visit_*` declarados es 3, uno por variante de `NodeKind` (unit). El `match` de despacho de `walk` no contiene un brazo `_` (command: `grep` sobre el archivo del despacho, más el fallo de compilación que produce añadir una variante a `NodeKind`). |
+| ARQ-135 | **`PageView` es una vista prestada.** `PageView` presta la página y su arena: no la posee, no la clona y no la copia. Su vida es la del préstamo. `walk` toma `&PageView` y devuelve valores propios, de modo que ningún visitante conserva una referencia a un nodo más allá del recorrido. | Construir la vista de una página no cambia el contenido de la página ni el número de referencias a sus nodos: la arena que se recorre es la misma (unit). `walk` sobre una página sin raíces devuelve un vector vacío (unit). El tipo de salida del visitante es un valor propio y no una referencia al nodo: el recorrido no puede devolver una referencia que expire al terminar (unit, comprobación de tipos). |
+| ARQ-136 | **Contexto de medición y orden del recorrido.** `MeasureCx` lleva solo lo que posee el dominio: la página que se mide, prestada, y el DPI del destino. El tiempo se pasa aparte (`t: Flicks`), no en el contexto. `MeasureCx` no depende de `gafira-layout` ni de ningún motor de capa 2, porque esos dependen del dominio (ARQ-01). `local_bounds` devuelve la caja del nodo en coordenadas de página y `hit_test` recibe el punto en coordenadas de página. `WalkOrder` tiene dos variantes: `PreOrder` (el padre antes que sus hijos) y `PostOrder` (los hijos antes que su padre). En las dos, los hermanos se recorren en el orden guardado, de atrás hacia delante, y cada nodo se visita una sola vez. Un visitante que necesite el orden inverso (el *hit testing*, que va de delante hacia atrás) recorre el resultado al revés. El recorrido no filtra por `visible` ni por `locked`: visita todo nodo alcanzable y quien recorta es el visitante. | Con un grupo de tres hijos, `PreOrder` devuelve los cuatro nodos con el grupo primero y `PostOrder` devuelve los cuatro con el grupo último, y en los dos casos los tres hijos en el orden guardado (unit). Una página sin raíces devuelve un vector vacío en los dos órdenes (unit). Un grupo cuyo hijo es él mismo, o dos grupos que se apuntan mutuamente, terminan el recorrido y devuelven cada nodo una sola vez (unit). Un id de hijo que no existe en la arena se omite, el resto de los hijos se recorre y no hay `panic` (unit). Un `MeasureCx` con el DPI no finito (NaN, `+∞`, `−∞`), negativo o cero hace que `local_bounds` devuelva un rectángulo de ancho 0 y alto 0 y que `hit_test` devuelva `false` (unit). |
+| ARQ-137 | **La costura del nodo de extensión.** `gafira-doc` no conoce el render: el trait `NodeExtension` del dominio declara `bounds` y el esquema del inspector, y no declara `render_into` ni ninguna referencia al grafo de render. El render de un nodo de extensión lo resuelve un manejador que el motor de render posee y que la raíz de composición registra; el dominio no registra manejadores ni conoce sus tipos. Un nodo de extensión sin manejador registrado no produce operación de render: se dibuja como su caja opaca. La arista `gafira-doc → gafira-render` no existe (ARQ-01) y la capacidad de renderizar extensiones se añade sin modificar `gafira-doc` (ARQ-20). | `cargo xtask check-layers` no encuentra ninguna arista de `gafira-doc` a `gafira-render` ni a ningún otro crate de capa superior (command). La API pública de `gafira-doc` no menciona `RenderGraphBuilder` ni `gafira_render`: la salida de `cargo public-api` de `gafira-doc`, que CI ya genera, no contiene esos nombres (command). Un documento con una extensión sin manejador registrado produce un grafo sin operaciones para ese nodo y con las operaciones del resto de la página (integration). Registrar un manejador nuevo no cambia ninguna línea de `gafira-doc` (integration, ARQ-20). |
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Orden de los hermanos | Siempre el orden guardado (de atrás hacia delante), en los dos órdenes. | ARQ-136 |
+| Padre y su hijo | `PreOrder`: el padre primero. `PostOrder`: el hijo primero. | ARQ-136 |
+| Página vacía | Vector vacío, sin error. | ARQ-135, ARQ-136 |
+| Ciclo en la arena | El recorrido termina; el nodo repetido no se vuelve a visitar. | ARQ-136 |
+| Hijo inexistente | Se omite; los demás hijos se recorren; no hay `panic`. | ARQ-136 |
+| DPI no finito (NaN, `+∞`, `−∞`) | `local_bounds` devuelve un rectángulo de ancho 0 y alto 0; `hit_test` devuelve `false`. | ARQ-136 |
+| DPI negativo o cero | Igual que el caso no finito. | ARQ-136 |
 
 ### 4.2 `Tool` (patrón State)
 
