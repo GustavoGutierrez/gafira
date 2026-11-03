@@ -4,9 +4,9 @@
     {
       "outcome_id": "owner-decisions-o5-q46-q47",
       "spec_id": "02-arquitectura-software",
-      "status": "specifying",
-      "flow": "Flow: standard | level: L2 | pack: spec-only then small refactor | mutation: off | tier: T0 | verify: V2 | decided-by: owner | reason: three owner decisions recorded; the code only retires a provisional constant, the mix rule itself does not change, hand mutants stay on critical code",
-      "scope": "Record O5 (a), Q-46 (a) and Q-47 (a) in the specs; retire the provisional MixSpace choice in gafira-raster and state what code each decision needs.",
+      "status": "implementing",
+      "flow": "Flow: standard | level: L2 | pack: spec-only then small refactor | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: D-53 changes blend_u8 results, critical code; three owner decisions recorded; the code only retires a provisional constant, the mix rule itself does not change, hand mutants stay on critical code",
+      "scope": "Record O5 (a), Q-46 (a) and Q-47 (a) in the specs; retire the provisional MixSpace choice in gafira-raster and state what code each decision needs. Also record Q-50 to Q-52 (D-51 to D-53) and make blend_u8 blend in linear light (D-53, ARQ-119).",
       "non_goals": [
         "Optimising the 1080p CPU Dissolve (P15 remedies)",
         "UI for fade handles",
@@ -36,9 +36,15 @@
           "status": "pending",
           "type": "unit",
           "text": "gafira-raster has one mix space, linear light, with no provisional constant or unused O5 arms; pixel results are unchanged."
+        },
+        {
+          "id": "AC5",
+          "status": "pending",
+          "type": "unit",
+          "text": "blend_u8 blends in linear light for every mode per ARQ-119 and D-53: the new 8-bit values hold within 1/255, alpha 0 returns the backdrop bit for bit, Normal at alpha 255 returns the source bit for bit; blend_f32 unchanged."
         }
       ],
-      "next_action": "specifier records the three decisions"
+      "next_action": "tdd-apply for AC5, then verify of AC1 to AC5"
     }
   ]
 }
