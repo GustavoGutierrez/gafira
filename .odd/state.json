@@ -4,7 +4,7 @@
     {
       "outcome_id": "raster-shadow-linear",
       "spec_id": "02-arquitectura-software",
-      "status": "verifying",
+      "status": "verified",
       "flow": "Flow: standard | level: L2 | pack: bug fix | mutation: delivery | tier: T3 | verify: V2 | decided-by: owner | reason: owner answers W1 (a) and W2 (a) of the D-53 verify; new rule on critical 8-bit compositing; T3 on the touched files because the crate T4 debt is recorded in specs/07-deuda-abierta.md",
       "scope": "Shadow composites 8-bit in linear light like D-53; ARQ-119 states that its f64 reference unpremultiplies with ARQ-117 8-bit rounding.",
       "non_goals": [
@@ -28,7 +28,7 @@
           "evidence": "verify round 2 PASS (code at 84181d8); T3 0 survivors in changed lines"
         }
       ],
-      "next_action": "archive: delete the entry, record follow-ups W1 to W3",
+      "next_action": "archive: delete the entry, record follow-ups W1 to W3 and the T4 waiver",
       "verify": {
         "round": 2,
         "commit": "84181d8",
@@ -86,6 +86,12 @@
             "classes": []
           }
         ]
+      },
+      "t4": {
+        "status": "waived",
+        "decided_by": "owner",
+        "date": "2026-11-03",
+        "reason": "Owner answer A: close with T3 (0 survivors in changed lines at 84181d8); gafira-raster critical debt (33) is recorded in specs/07-deuda-abierta.md. The same owner waiver covers the archived D-48 to D-53 outcomes."
       }
     }
   ]
