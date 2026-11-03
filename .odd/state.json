@@ -4,7 +4,7 @@
     {
       "outcome_id": "owner-decisions-o5-q46-q47",
       "spec_id": "02-arquitectura-software",
-      "status": "implementing",
+      "status": "verifying",
       "flow": "Flow: standard | level: L2 | pack: spec-only then small refactor | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: D-53 changes blend_u8 results, critical code; three owner decisions recorded; the code only retires a provisional constant, the mix rule itself does not change, hand mutants stay on critical code",
       "scope": "Record O5 (a), Q-46 (a) and Q-47 (a) in the specs; retire the provisional MixSpace choice in gafira-raster and state what code each decision needs. Also record Q-50 to Q-52 (D-51 to D-53) and make blend_u8 blend in linear light (D-53, ARQ-119).",
       "non_goals": [
@@ -15,36 +15,74 @@
       "criteria": [
         {
           "id": "AC1",
-          "status": "pending",
+          "status": "passed",
           "type": "manual",
-          "text": "O5 (a): Rgba8 transitions mix in linear light, RgbaF32 as stored; recorded as a decision and in the spec, cost stated."
+          "text": "O5 (a): Rgba8 transitions mix in linear light, RgbaF32 as stored; recorded as a decision and in the spec, cost stated.",
+          "evidence": "verify round 1 PASS at e5735f8"
         },
         {
           "id": "AC2",
-          "status": "pending",
+          "status": "passed",
           "type": "manual",
-          "text": "Q-46 (a): fade handles cannot cross, their sum never exceeds the clip, and trimming a clip reduces both fades proportionally; stated with testable acceptance."
+          "text": "Q-46 (a): fade handles cannot cross, their sum never exceeds the clip, and trimming a clip reduces both fades proportionally; stated with testable acceptance.",
+          "evidence": "verify round 1 PASS at e5735f8"
         },
         {
           "id": "AC3",
-          "status": "pending",
+          "status": "passed",
           "type": "manual",
-          "text": "Q-47 (a): Cut ignores duration and alignment; the change happens at the cut; stated with testable acceptance."
+          "text": "Q-47 (a): Cut ignores duration and alignment; the change happens at the cut; stated with testable acceptance.",
+          "evidence": "verify round 1 PASS at e5735f8"
         },
         {
           "id": "AC4",
-          "status": "pending",
+          "status": "passed",
           "type": "unit",
-          "text": "gafira-raster has one mix space, linear light, with no provisional constant or unused O5 arms; pixel results are unchanged."
+          "text": "gafira-raster has one mix space, linear light, with no provisional constant or unused O5 arms; pixel results are unchanged.",
+          "evidence": "verify round 1 PASS at e5735f8"
         },
         {
           "id": "AC5",
-          "status": "pending",
+          "status": "passed",
           "type": "unit",
-          "text": "blend_u8 blends in linear light for every mode per ARQ-119 and D-53: the new 8-bit values hold within 1/255, alpha 0 returns the backdrop bit for bit, Normal at alpha 255 returns the source bit for bit; blend_f32 unchanged."
+          "text": "blend_u8 blends in linear light for every mode per ARQ-119 and D-53: the new 8-bit values hold within 1/255, alpha 0 returns the backdrop bit for bit, Normal at alpha 255 returns the source bit for bit; blend_f32 unchanged.",
+          "evidence": "verify round 1 PASS at e5735f8"
         }
       ],
-      "next_action": "tdd-apply for AC5, then verify of AC1 to AC5"
+      "next_action": "record Q-53 (D-54); mutants on the changed raster files; owner on W1 and W2",
+      "verify": {
+        "round": 1,
+        "commit": "e5735f8",
+        "verdict": "PASS",
+        "next": "archive",
+        "findings": [
+          {
+            "id": "W1",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "FD-35, ARQ-120",
+            "summary": "No spec says whether Shadow's 8-bit composite follows D-53; it stays in encoded space while the float path is linear.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "W2",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "ARQ-119, ARQ-117, FD-12 (c)",
+            "summary": "ARQ-119 does not say the f64 reference unpremultiplies with ARQ-117 8-bit rounding; exact c/a misses 1/255 by up to 85/255 in four modes, a CPU/GPU risk.",
+            "follow_up": true,
+            "status": "open"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "PASS",
+            "classes": []
+          }
+        ]
+      }
     }
   ]
 }
