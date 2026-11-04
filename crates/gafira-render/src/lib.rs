@@ -9,11 +9,13 @@
 
 #![forbid(unsafe_code)]
 
+mod cache;
 mod graph;
 mod key;
 mod planner;
 mod pool;
 
+pub use cache::ContentTileCache;
 pub use graph::{
     GraphError, GraphNode, GraphNodeId, GraphNodeKind, GraphParams, RenderGraph,
     RenderGraphBuilder, SourceKind,
