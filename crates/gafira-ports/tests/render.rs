@@ -29,6 +29,17 @@ impl TileCache for MapCache {
     fn put(&mut self, key: TileKey, tile: Arc<ImageBuf>) {
         self.0.insert(key, tile);
     }
+    fn bytes(&self) -> Bytes {
+        Bytes(self.0.values().map(|tile| tile_bytes(tile)).sum())
+    }
+    fn trim(&mut self, budget: Bytes) {
+        while self.bytes() > budget {
+            let Some(last) = self.0.keys().next_back().copied() else {
+                break;
+            };
+            self.0.remove(&last);
+        }
+    }
 }
 
 /// A backend double. Each task costs one tick of its own clock; it stops when
@@ -51,6 +62,25 @@ impl TickBackend {
 
 fn tile() -> Arc<ImageBuf> {
     Arc::new(ImageBuf::new(1, 1, PixelBuf::Rgba8(vec![0, 0, 0, 255])).unwrap())
+}
+
+/// The bytes a tile holds.
+fn tile_bytes(image: &ImageBuf) -> u64 {
+    match image.data() {
+        PixelBuf::Rgba8(d) => d.len() as u64,
+        PixelBuf::RgbaF32(d) => (d.len() * 4) as u64,
+        PixelBuf::Alpha8(d) => d.len() as u64,
+    }
+}
+
+/// The key of the tile in `column`.
+fn tile_key(column: u32) -> TileKey {
+    TileKey {
+        content: ContentKey(1),
+        level: 0,
+        column,
+        row: 0,
+    }
 }
 
 impl RenderBackend for TickBackend {
@@ -114,12 +144,7 @@ fn plan(n: u32) -> RenderPlan {
         quality: RenderQuality::Preview,
         tasks: (0..n)
             .map(|column| TileTask {
-                key: TileKey {
-                    content: ContentKey(1),
-                    level: 0,
-                    column,
-                    row: 0,
-                },
+                key: tile_key(column),
                 priority: Priority::Visible,
                 ops: vec![RenderOp::PushLayer],
             })
@@ -377,4 +402,31 @@ fn p4_effect_and_transition_registries_register_by_id() {
     assert!(transitions.register(Arc::new(Cut::new())).is_err());
     assert!(transitions.get("transition.cut").is_some());
     assert!(transitions.get(id).is_none());
+}
+
+// ARQ-44: a cache tells the governor how much it holds and can be trimmed to
+// a budget; both are in bytes. The calls go through the trait, so this also
+// proves the trait declares them.
+#[test]
+fn arq_44_tile_cache_reports_bytes_and_trims_to_a_budget() {
+    let mut cache: Box<dyn TileCache> = Box::new(MapCache::default());
+    assert_eq!(cache.bytes(), Bytes(0));
+
+    for column in 0..3 {
+        cache.put(tile_key(column), tile());
+    }
+    // Three 1x1 Rgba8 tiles: four bytes each.
+    assert_eq!(cache.bytes(), Bytes(12));
+
+    // A budget above the current size changes nothing.
+    cache.trim(Bytes(1_000));
+    assert_eq!(cache.bytes(), Bytes(12));
+
+    // A trim to half the current size leaves at most half of it.
+    cache.trim(Bytes(6));
+    assert!(cache.bytes() <= Bytes(6), "left {}", cache.bytes().0);
+
+    // A trim to zero empties the cache.
+    cache.trim(Bytes(0));
+    assert_eq!(cache.bytes(), Bytes(0));
 }
