@@ -279,6 +279,24 @@ mod tests {
         );
     }
 
+    // ARQ-141 / 02 §6.1: the domain byte and the node type bytes are the ones
+    // the section fixes by name: `R`, and `1` = Group, `2` = Shape,
+    // `3` = Extension.
+    #[test]
+    fn arq_141_the_domain_and_the_node_types_are_the_ones_of_the_section() {
+        assert_eq!(DOMAIN, b'R');
+        assert_eq!(NodeType::Group as u8, 1);
+        assert_eq!(NodeType::Shape as u8, 2);
+        assert_eq!(NodeType::Extension as u8, 3);
+
+        let group = canonical_description(NodeType::Group, 0, &[], &[]);
+        let shape = canonical_description(NodeType::Shape, 0, &[], &[]);
+        let extension = canonical_description(NodeType::Extension, 0, &[], &[]);
+        assert_eq!(group[..2], [b'R', 1]);
+        assert_eq!(shape[..2], [b'R', 2]);
+        assert_eq!(extension[..2], [b'R', 3]);
+    }
+
     // ARQ-141: the key is the hash of the canonical description, truncated to
     // 16 bytes and read big-endian.
     #[test]
@@ -299,7 +317,9 @@ mod tests {
         let input = ContentKey(0x0102_0304_0506_0708_090A_0B0C_0D0E_0F10);
         let parameters = params();
         let description = canonical_description(NodeType::Shape, 2, &[input], &parameters);
-        assert_eq!(&description[0..3], &[DOMAIN, NodeType::Shape as u8, 2]);
+        // The domain byte `R` and the type byte `2` of a shape, as §6.1 names
+        // them, not through the constants of this module.
+        assert_eq!(&description[0..3], &[b'R', 2, 2]);
         assert_eq!(&description[3..7], &1u32.to_be_bytes());
         assert_eq!(&description[7..23], &input.0.to_be_bytes());
         // The first parameter: its length and its bytes.
