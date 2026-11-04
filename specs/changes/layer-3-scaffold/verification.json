@@ -17,4 +17,25 @@
   "mutation": null,
   "hand_mutants": {"run": 3, "killed": 3},
   "criteria": {"total": 8, "covered": 8},
+  "size": {"lines": 675, "forecast": 200}, "report": "verify-report.md" },
+  {
+  "round": 2, "commit": "218a9be2e1aaf9f734c8682e7cab66455f276a14", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "classes": [],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 0},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": ".github/workflows/ci.yml V5 step and CI matrix; 02 ARQ-01/03/06",
+     "summary": "Unchanged from round 1: ARQ-01, ARQ-03 and ARQ-06 are still proved by commands that do not name the ID. Follow-up warning, not re-opened as CRITICAL; it reaches archive.",
+     "follow_up": true, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "ambiguity", "ref": "specs/02-arquitectura-software.md:76 ARQ-05; apply-progress.md Slice card IDs",
+     "summary": "Closed by the coordinator's 02ff7bb: ARQ-05 dropped from the card's ID list with the reason written in the card; the amend touches only apply-progress.md and the card is otherwise unchanged.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": ".github/workflows/ci.yml:260-273 policy step; crates/gafira-testkit/Cargo.toml",
+     "summary": "Closed by a18096f and remote run 41851219724: the policy job now compiles the ports feature (step 13, success), the step run verbatim exits 0, and the feature-off default suite stays green (2271 vs 2272 tests).",
+     "follow_up": false, "status": "closed"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0, "ports_feature": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "criteria": {"total": 8, "covered": 8},
   "size": {"lines": 675, "forecast": 200}, "report": "verify-report.md" } ] }
