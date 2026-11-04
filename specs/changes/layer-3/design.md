@@ -38,8 +38,10 @@ Two known pending items from the C14 note are inside this cut: **ARQ-22** ("fall
 | `ME1` | Blocked | `SC1` |
 | `ME2` | Blocked | `ME1` |
 | `ME3` | Blocked | `ME1`, `ME2` |
-| `ME4` | Blocked | `SC1` |
-| `ME5` | Blocked | `ME2`, `ME4` |
+| `ME4` | Deferred to `layer-3b` | `SC1` (O6) |
+| `ME5` | Deferred to `layer-3b` | `ME2`, `ME4` (O6) |
+
+`RE4`, `RE5`, `ME4` and `ME5` are marked **deferred** by the owner's decision O6 below, taken on 2026-11-04. This cut closes with `RE1`, `RE2`, `RE3`, `ME1`, `ME2` and `ME3`. The four deferred deliveries have no consumer inside the cut: `RE4` and `RE5` feed the composition root and `ME4`/`ME5` the export queue, and none of them is a dependency of a delivery that stays. `RE3` and `ME3` are therefore the last ones to build.
 
 `RE2` and `RE3` are siblings that can run in parallel inside the render stream: `RE2` owns the planner module and `RE3` owns the cache module, and they meet at `ports::TileCache`, which `SC1` has already fixed. They share `crates/gafira-render/src/lib.rs`, so they are marked `serial` anyway (P2 of layer 2 gave the same rule).
 
@@ -331,6 +333,16 @@ The CPU backend stays out of this cut and is planned as a separate change immedi
 Reason: layer 3 stays at the size of the delivery table, the golden oracle and the pixel-level acceptances land when the plan and the graph are stable, and the two streams keep running in parallel.
 
 Reversible: yes. The backend sits behind `ports::RenderBackend` (P4), so adding `gafira-render-cpu` later does not change `gafira-render`'s API. What is not reversible is the queue order: the oracle, `bench_export_png_1080` (CAL-11) and the ARQ-42 golden stay unproven until that change lands, and the owner may reorder that queue.
+
+### O6. The cut closes with `RE1`–`RE3` and `ME1`–`ME3`; `RE4`, `RE5`, `ME4` and `ME5` move to `layer-3b` — decided by the owner on 2026-11-04
+
+The owner chose to close this cut with the core of both streams rather than with all twelve deliveries. `RE4` (the frame budget, the deadline, the backend selection and the CPU degradation), `RE5` (the `PageRenderer`, the preview and export quality and the export scope), `ME4` (the playback clock, the A/V sync and the frame dropping) and `ME5` (the video exporter) do not ship in this change. They are built in a later change, `layer-3b`, which is not opened until this one is archived.
+
+Reason: time. The verification rounds, not the implementation, are what set the pace of the cut, and the four deferred deliveries are the four that no remaining delivery depends on: they are the consumers at the end of both streams, so deferring them leaves no half-built seam behind. The core that stays — the graph and its content key, the planner, the tile cache, the keyframe index, the frame cache and the proxy store — is the part every later piece of the engine sits on.
+
+Consequences inside the cut: `RE3` depends on `RE2` and `ME3` on `ME2`, so the two caches still close both dependency chains; nothing in the cut is left blocked waiting for a deferred delivery. The acceptance criteria of the deferred deliveries (`ARQ-22`, `ARQ-42`, `ARQ-43`, `ARQ-147`, `ARQ-148`, `FD-57`, `FV-10` (c), `FV-12`, `FV-24`, `CAL-16`, `CAL-17`) stay unproven and move to `layer-3b` with their card sections.
+
+Reversible: yes. Every deferred delivery sits behind a port or a trait that `SC1` and the core already fix (`ports::RenderBackend`, `ports::PageRenderer`, `ports::Exporter`, `ports::Clock`), so `layer-3b` adds them without changing the API of the two crates. What is not free is the time already spent: the cost of the change is the same whether the four land now or later, and the owner may reopen them at any point.
 
 ## Needs explorer
 
