@@ -8,10 +8,15 @@
 
 #![forbid(unsafe_code)]
 
+mod cache;
 mod index;
 mod medium;
 mod ports;
 
+pub use cache::{
+    DEFAULT_BUDGET, FrameCache, FrameHit, FrameKey, FrameRequest, HeadDirection, MediumRef,
+    ProxyLevel, default_budget,
+};
 pub use index::{INDEX_BUDGET_PER_MINUTE, IndexReport, KeyframeIndex};
 pub use medium::{Medium, SeekOutcome};
 pub use ports::{Job, Ports, WorkerPool};
