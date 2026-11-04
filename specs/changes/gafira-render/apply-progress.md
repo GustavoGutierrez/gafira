@@ -70,3 +70,50 @@ The four pieces of critical code of `RE1` (design, "Critical code") carry the ha
 - **The `Cargo.lock` grows by one line**: the dev-dependency on `gafira-testkit` adds one line to the lock, not the two the spike XP9 predicted.
 - **The size**: 1571 lines of code (`git diff --shortstat 7e3a23c 44b3269`), over the ~700 the guide marks; these notes add their own lines on top. `git diff --shortstat develop...HEAD` measures the whole branch against `develop`: it also carries the visitor contract of `DC1`, which is not on `develop` yet. The forecast of the design (480, at most 672) did not count the pool seam and its thread test, the cancellation and the progress of ARQ-139, nor the doubles of the testkit and their test. The coordinator decides whether this delivery needs a chained PR.
 - **The branch carries the merge of `develop`**: `SC1` landed on `develop` after this branch was cut, so the branch had no `crates/gafira-render` at all. `develop` was merged in before the work; the merge is `7e3a23c` and it brings no change of this delivery.
+
+## RE1 (fix round 1)
+
+Closes C1 and C2 of `verify-report.md` (round 1). Test-only for C2, encoding change for C1. Nothing else in `RE1` was touched: the graph, the pool, the emission, the testkit doubles and the acceptance criteria stay as they were.
+
+Commits:
+
+- `5a4da07 fix(gafira-render): tag the kind of a parameter in the content key` — the value of a `KeyParam` opens with the tag byte of its kind.
+- `4bcb404 test(gafira-render): pin the domain byte and the node types of §6.1` — the literals of §6.1 asserted as literals.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the nine CI policy steps of `.github/workflows/ci.yml` (Format, CLI/UI ARQ-07, forbid(unsafe_code), V5, V12, ARQ-107, V13, V14 and the testkit ports feature of ADR 0013), each by extracting its `run:` block and running it with `bash -euo pipefail`. The workspace suite is green after both.
+
+### C1 — two different parameters gave the same key
+
+- **RED** — `key::tests::arq_141_a_different_parameter_kind_gives_another_key`, written before the fix, on the code of `7530b39`:
+  `assertion 'left != right' failed: the parameters 0 and 1 give the same key`, with both sides `ContentKey(83267603764345867193730438760013285531)` — the key verify's probe reported. Parameters 0 and 1 are `Quality(Preview)` and `Geometry(Rect)`; the test derives the six kinds from one-value nodes, so `Fill(None)` and `Blend(Normal)` are covered too.
+- **GREEN** — `KeyParam::tag` numbers the kinds `1` Quality, `2` Geometry, `3` Fill, `4` Transform, `5` Opacity, `6` Blend, and `write` leads the value with it. The tag stays inside the length-prefixed block §6.1 describes, so the framing of the description does not change: it is still `u32` length + bytes per parameter.
+- **AC1 kept** — the same test ends with `assert_eq!(keys[2], content_key(NodeType::Shape, 0, &[], &[KeyParam::Fill(None)]))`, and `arq_141_the_same_data_gives_the_same_key` still passes unchanged.
+
+### C2 — the literals §6.1 fixes were not anchored
+
+- **RED** — this finding is a hole in the suite, so its RED is the survivor itself: the test `key::tests::arq_141_the_domain_and_the_node_types_are_the_ones_of_the_section` passes on the correct bytes by construction, and it fails the moment the bytes move. Both mutants of the list below (H1 and H2) were applied to gather that evidence, and both now fail the test.
+- **GREEN** — the test states `b'R'` for the domain byte and `1`, `2`, `3` for `Group`, `Shape` and `Extension`, both on the constants and on the `[..2]` head of the description of each node type. `arq_141_the_description_holds_the_bytes_of_the_section` no longer compares against `DOMAIN` and `NodeType::Shape as u8` either: it asserts `[b'R', 2, 2]`.
+
+### Hand mutants
+
+Each was applied on the green code, its killing test was run, and the change was reverted. None is committed.
+
+| # | Wrong behaviour | Test that kills it | Failing assertion |
+|---|---|---|---|
+| H1 | `DOMAIN = b'X'` | `key::tests::arq_141_the_domain_and_the_node_types_are_the_ones_of_the_section` | `left: 88`, `right: 82` |
+| H2 | `NodeType::Shape` given the discriminant `5` | `key::tests::arq_141_the_domain_and_the_node_types_are_the_ones_of_the_section` | `left: 5`, `right: 2` |
+| H3 | the tag byte removed from `KeyParam::write`, so the four kinds collide at `0x00` again | `key::tests::arq_141_a_different_parameter_kind_gives_another_key` | `assertion 'left != right' failed: the parameters 0 and 1 give the same key`, both sides `ContentKey(83267603764345867193730438760013285531)` |
+| H4 | the tag depends on a call counter instead of the parameter, so two identical nodes differ | `key::tests::arq_141_the_same_data_gives_the_same_key` (and the same-kind assertion of `..._a_different_parameter_kind_gives_another_key`) | `left: ContentKey(92328368084581001185630601936379180973)`, `right: ContentKey(291030209336286807384734632626724749923)`; and `left: ContentKey(302593356595757854645899473531573265)`, `right: ContentKey(151018354611883218370633641501097623571)` |
+
+H3 is exactly the defect of C1 and H4 its converse, so the two directions of ARQ-141 are now tied by a test.
+
+### Choices and deviations
+
+- **The numbering of the kinds** — `1` to `6` in the order the enum declares them, `0` left free, mirroring the rule §6.1 fixes for the node types ("cada tipo nuevo toma el siguiente número libre y no reutiliza ninguno"). §6.1 fixes the framing of a parameter (`u32` length + bytes) and not the content of those bytes, so the tag lives inside the value and the description keeps the exact shape the section describes. The numbers are fixed from here on: a kind added later takes the next free number and reuses none, the same way the node types do.
+- **The NaN test moved by one byte** — `arq_141_the_non_finite_pattern_of_the_section_is_used` asserted the bytes of `write`, which now start with the tag, so it asserts `&bytes[1..]` against the canonical pattern. The assertion on the pattern is unchanged; only the offset of the payload moved. Its key-level half (`NaN` equals `-NaN`, `+∞` differs from `−∞`) is untouched.
+- **One assertion replaced, none deleted** — `arq_141_the_description_holds_the_bytes_of_the_section` compared the head of the description against the crate's own constants and now compares it against `[b'R', 2, 2]`, which is stronger; the rest of that test (the order, the count, the keys, the parameter framing) is unchanged.
+- **No other key changes** — the graph of `RE1` builds the parameter slots per node kind, so the tag does not change which slots exist; the keys of the graph change value (the description changed) and every test of the delivery that compares keys compares them with each other, not with a stored literal, so nothing else needed to move.
+
+### The size
+
+`git diff --shortstat 7530b39..4bcb404`: **87 insertions, 8 deletions, 1 file** (`crates/gafira-render/src/key.rs`). Split: `5a4da07` adds 66 and deletes 7, `4bcb404` adds 21 and deletes 1. The crate ends with 20 unit tests (was 18) and the suite of `gafira-render` is green.
