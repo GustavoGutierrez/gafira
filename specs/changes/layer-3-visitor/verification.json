@@ -1,0 +1,21 @@
+{ "schema": 1, "change": "layer-3-visitor", "delivery": "DC1", "rounds": [ {
+  "round": 1, "commit": "4363413113e21b87adb8d21e141a8a0852d55614", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 3, "suggestion": 3},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "specs/02-arquitectura-software.md 4.1 ARQ-136; crates/gafira-doc/src/visit.rs:104",
+     "summary": "ARQ-136 sketches t: Flicks in a gafira-doc trait, but 02 2.1/2.2 and the V5 table forbid gafira-doc -> gafira-time, so the row is unimplementable; the instant became a type parameter. The rule (time apart, not in the context) holds. The row must be reconciled.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/src/visit.rs:63-66",
+     "summary": "No test pins ARQ-136's 'the instant is not in the context' rule, the rule the delivery deviated on: adding a t field to MeasureCx would fail no test in the repo.",
+     "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules; specs/changes/layer-3-visitor/apply-progress.md:83",
+     "summary": "720 authored code lines against a forecast of 430 (x1.4 = 600), over the ~700 ceiling that needs the owner's explicit OK; no OK is recorded.",
+     "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 4},
+  "criteria": {"total": 12, "covered": 12},
+  "size": {"lines": 803, "code_lines": 720, "forecast": 430},
+  "report": "verify-report.md" } ] }
