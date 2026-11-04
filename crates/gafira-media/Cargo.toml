@@ -14,5 +14,8 @@ gafira-time.workspace = true
 gafira-geom.workspace = true
 gafira-color.workspace = true
 
+[dev-dependencies]
+gafira-testkit = { workspace = true, features = ["ports"] }
+
 [lints]
 workspace = true
