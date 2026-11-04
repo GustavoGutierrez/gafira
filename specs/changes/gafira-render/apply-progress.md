@@ -27,3 +27,30 @@ Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --w
 ### Negative controls
 
 ### Choices and deviations
+
+## RE3
+
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the render stream closes with the tile cache that the plan writes into; the mutation run and the deep verify were waived by the owner (O4, O5 of the layer-3 design)
+Product IDs: ARQ-10, ARQ-44, ARQ-142 (source: specs/02-arquitectura-software.md §6.1, §4.6)
+Scope: `RE3` of `specs/changes/layer-3/design.md`: in `gafira-render`, the content-addressed tile cache: the LRU, the byte budget, the `trim` call and the eviction order, addressed by `ports::TileCache`.      Non-goals: the planner (`RE2`), the frame budget (`RE4`), the `PageRenderer` (`RE5`), and any change to `gafira-ports` (the trait already carries `bytes()` and `trim(budget)` from `SC1`).
+Acceptance:
+  AC9 Given a budget of 0, When a tile is inserted, Then no entry is kept and `bytes()` gives 0 [unit]
+  AC10 Given a `trim` with a budget larger than the current size, When it runs, Then nothing changes and it does not fail [unit]
+  AC11 Given a `trim`, When it runs, Then `bytes()` is at most the budget given [unit]
+  AC12 Given two entries of the same size, When the cache overflows, Then the one unused for the longest time is discarded [unit]
+  AC13 Given the key of §4.6, When it is built, Then it is the content key, the level, the column and the row [unit]
+  AC14 Given the crate, When the CI policy steps run, Then `gafira-render` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the cache travels through `ports::TileCache` [command]
+Plan: the delivery adds the tile cache module to `crates/gafira-render/src/`, on top of the graph of `RE1` and the plan of `RE2`. It implements the trait that `SC1` left in `ports::TileCache`; the trait itself is not touched. The critical code is the eviction order, the byte accounting, the `trim` boundary and the zero-size budget (design "Critical code"), so those carry the hand mutants.
+Owner decisions touched: none (checked D-01 to D-57: the tile cache is a domain capability and ARQ-44 keeps it inside the memory governor).
+
+## RE3 (tdd-apply)
+
+Commits:
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
+
+### RED evidence
+
+### Negative controls
+
+### Choices and deviations
