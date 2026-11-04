@@ -81,3 +81,59 @@ Acceptance:
   AC18 Given the crate, When the CI policy steps run, Then `gafira-media` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the crate has no `std::fs` [command]
 Plan: the delivery adds the frame cache module to `crates/gafira-media/src/`, on top of the keyframe index that `ME1` built. The budget calls travel through the same trait shape that `ports::TileCache` uses, and the order of ARQ-44 holds: the governor trims this cache first. The cache lives inside the 1,5 GB of D-03, which is the owner's decision of 2026-11-03 (O2). The critical code is the cache key, the eviction order, the nearest-frame search and the budget boundary (design "Critical code"), so those carry the hand mutants.
 Owner decisions touched: O2 of 2026-11-03 (the frame cache lives inside the 1,5 GB of D-03 and the governor trims it first); no D-nn is contradicted.
+
+## ME2 (tdd-apply)
+
+Commits:
+
+- `6d6eab9` `feat(gafira-media): add the frame cache`: the cache module of the crate (`src/cache.rs`), its exports (`src/lib.rs`) and its tests (`tests/cache.rs`). 3 files changed, 649 insertions(+).
+
+Measured at `6d6eab9`: `git diff --shortstat a57f8ea...HEAD` -> 4 files changed, 667 insertions(+), of which 18 are the `## ME2` section of the card that `98e6d57` added. The delivery alone, from that card: `git diff --shortstat 98e6d57...HEAD` -> 3 files changed, 649 insertions(+), that is 649 authored lines against the ~470 ceiling of the design (660 with the factor of the plan). The breakdown is 380 lines for the cache module, 5 for the exports and 264 for the tests. No file outside `crates/gafira-media/**` was touched: the delivery needed no new double, so the manifest of the testkit was not touched either.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked` (182 binaries, 2293 tests, 0 failed), `cargo deny check` (advisories, bans, licenses and sources ok) and the CI policy steps, each by extracting its `run:` from `ci.yml`: CLI/UI (ARQ-07), the forbid step, the layer table (V5), the clippy.toml copies (V12), ARQ-107, V13, V14 and the `ports` feature of the testkit (ADR 0013). Plus the crate gate: `cargo clippy -p gafira-media --all-targets --locked -- -D warnings` and `cargo test -p gafira-media --locked` (21 tests, 0 failed).
+
+### RED evidence
+
+The tests were written against the acceptance criteria of the card and the implementation was then reduced to a skeleton, in two batches, to capture the RED. Every failure below is an assertion failure, not a compile error, and the implementation was restored afterwards.
+
+The first batch is the core of the cache: the key, the budget, the eviction and the trim. Its skeleton never evicted (the budget was never enforced), keyed the frames by the id of the resource inside the project instead of the hash of the content, and always answered the default budget with one gigabyte. Six of the eight tests of the batch failed:
+
+- AC10 `arq_145_a_budget_of_zero_keeps_no_frame`: `assertion left == right failed, left: Bytes(16), right: Bytes(0)`.
+- AC11 `arq_145_a_budget_of_one_frame_discards_the_first`: `assertion failed: cache.bytes() <= budget`.
+- AC13 `arq_145_the_same_file_with_another_resource_id_gives_the_same_frame`: `the same file gives the same cached frame in any project`.
+- AC14 `arq_145_the_key_is_the_content_hash_the_level_and_the_index`: `assertion left == right failed, left: FrameKey { content: ContentHash([99, 108, 105, 112, 0, ...]), level: P720, index: 12 }, right: FrameKey { content: ContentHash([7, 7, 7, ...]), level: P720, index: 12 }` (the key had taken the id of the resource inside the project).
+- AC17 `arq_145_the_trim_leaves_the_cache_at_or_below_the_budget`: `assertion failed: cache.bytes() <= budget`.
+- The budget of ARQ-145, `arq_145_the_default_budget_is_the_lesser_of_a_gigabyte_and_a_fifteenth_of_the_ram`: `assertion left == right failed, left: Bytes(1073741824), right: Bytes(644245094)`.
+
+The second batch is the nearest frame and the prefetch. Its skeleton looked for no nearest frame at all and its prefetch always went forward. Five of the twelve tests of the batch failed:
+
+- AC12 `arq_145_the_nearest_frame_wins_the_tie_with_the_earlier_one`: `assertion left == right failed: the earlier frame wins the tie, left: Flicks(211680000), right: Flicks(70560000)`.
+- AC15 `arq_145_a_missing_frame_answers_with_the_nearest_one`: `assertion left == right failed: the nearest frame of the medium asked for, left: Flicks(289296000), right: Flicks(282240000)`.
+- AC16 `arq_145_the_prefetch_follows_the_direction_of_the_head`: `assertion left == right failed, left: [11, 12, 13], right: [9, 8, 7]`.
+- AC16, the border of the prefetch, `arq_145_the_prefetch_skips_the_cached_frames_and_stops_at_the_first_one`: `assertion left == right failed, left: [3, 4, 5], right: [0]`.
+- The level of the key, `arq_145_a_frame_of_the_original_is_not_the_frame_of_the_proxy`: `assertion left == right failed, left: Nearest(VideoFrame { pts: Flicks(112896000), ... }), right: Empty`.
+
+AC18 is a command: the policy steps above, all of them exit 0, and `grep -rn` over the `.rs` files of `crates/gafira-media` for `std::fs`, `std::net`, `std::thread`, `std::time::Instant`, `std::time::SystemTime` and `std::env`: no hit. The crate keeps `#![forbid(unsafe_code)]` and its row of the layer table (V5) still passes.
+
+### Negative controls
+
+The four hand mutants of the design ("Critical code" of `ME2`), applied one at a time to the cache of `gafira-media` and reverted after each run. None of them was committed and the tree is clean after the four.
+
+- The key of the cache: the key of a request took the id of the resource inside the project instead of the hash of the content. Killed by `arq_145_the_same_file_with_another_resource_id_gives_the_same_frame`: `the same file gives the same cached frame in any project`. It also killed `arq_145_the_key_is_the_content_hash_the_level_and_the_index` and the two tests of the nearest frame.
+- The order of the eviction: the eviction freed the most recently used frame instead of the least. Killed by `arq_145_the_trim_leaves_the_cache_at_or_below_the_budget`: `the most recently used frame stays in the cache`; and by `arq_145_a_budget_of_one_frame_discards_the_first`: `assertion failed: matches!(cache.lookup(&third), FrameHit::Exact(_))`.
+- The search of the nearest frame: at the same distance the later frame won. Killed by `arq_145_the_nearest_frame_wins_the_tie_with_the_earlier_one`: `assertion left == right failed: the earlier frame wins the tie, left: Flicks(211680000), right: Flicks(70560000)`.
+- The limit of the budget: the eviction freed until the size was below the budget (`>=` instead of `>`). Killed by `arq_145_a_budget_of_one_frame_discards_the_first`: `assertion left == right failed, left: 0, right: 1` (the cache kept no frame); and by `arq_145_the_trim_leaves_the_cache_at_or_below_the_budget`: `left: 0, right: 1`.
+
+### Choices and deviations
+
+- **The content hash is reused, not computed.** The key uses `gafira_doc::ContentHash`, the 32-byte hash that names a content in the content store (02 §5.3), which is plain data by ADR 0008 rule 1. The hash of the file is computed where the content is stored, so the media crate takes it as a parameter and adds no dependency: the `Cargo.toml` of the crate and the `Cargo.lock` are untouched by this delivery.
+- **The caller names the medium with two names.** `MediumRef` holds the id of the resource inside the project (`ProviderAssetId`, the only id of asset of the ports) and the hash of the content of the file. The cache ignores the id and keys by the hash, which is what AC13 proves; the id is in the call so the proof is possible.
+- **The budget of a machine is a parameter.** `default_budget(ram)` returns the lesser of one gigabyte and 15 % of the RAM (02 §6.5, FIJADA), because the crate reads no value of the system (ARQ-138). The default does not lower because of the 1,5 GB of D-03: that cap belongs to the governor, and the owner decided on 2026-11-03 (O2) that the governor trims this cache first.
+- **`trim(budget)` frees the cache and does not lower the budget of the cache.** It follows the semantics of `ports::TileCache::trim` ("frees the cache until the cache holds at most `budget` bytes"), so the governor can trim the cache and the cache grows again under its own budget; the shape of the two calls is the one of the port (`bytes()` and `trim(budget)`, both in bytes).
+- **The cache does not implement `ports::TileCache`.** That trait is the one of the tiles of the render stream: its key is a content key plus a tile rect and its value is an `ImageBuf`. The frame cache is keyed by the content hash, the proxy level and the index of the frame, and holds a `VideoFrame` with its time. The governor lives in `gafira-engine`, out of the cut of this delivery, and calls the two calls on the concrete type.
+- **The bytes of a frame are the bytes of its pixels** (`Rgba8`, `RgbaF32` and `Alpha8`); the rest of the frame is a time, and the cache counts the memory it holds (ARQ-44).
+- **The nearest frame is searched among the frames of the same medium and the same level**, by the distance in time, and the search walks the `BTreeMap` by the range of the key instead of the whole cache. At the same distance the earlier frame wins (02 §4.17.8).
+- **The LRU order lives in a second `BTreeMap`**, from the tick of the last use to the key, so the eviction takes the least recently used frame without walking the cache. The crate uses `BTreeMap` and never `HashMap` (ARQ-10).
+- **The prefetch names the frames to decode.** The crate does not decode them: it gives the keys of the frames ahead of the head, in the direction the head moves, that the cache does not hold yet, and the caller decodes and stores them. The prefetch stops at the first frame of the medium when it goes backward.
+- **The RED was captured in two batches, by reducing the implementation to a skeleton**, not in the order of one test at a time: the tests and the implementation were written in the same session and the skeleton replay shows that every criterion has a test that detects its absence. The evidence above is the real output of those replays.
+- **No deviation of scope.** The delivery touched only `crates/gafira-media/**`: it needed no new double, so the manifest of the testkit (`crates/gafira-testkit/Cargo.toml`, a single-writer file of `SC1`) was not touched, and `crates/gafira-ports`, `crates/gafira-render`, `crates/gafira-doc` and `.odd/state.json` were not touched either.
