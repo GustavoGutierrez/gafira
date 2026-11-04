@@ -137,3 +137,53 @@ The four hand mutants of the design ("Critical code" of `ME2`), applied one at a
 - **The prefetch names the frames to decode.** The crate does not decode them: it gives the keys of the frames ahead of the head, in the direction the head moves, that the cache does not hold yet, and the caller decodes and stores them. The prefetch stops at the first frame of the medium when it goes backward.
 - **The RED was captured in two batches, by reducing the implementation to a skeleton**, not in the order of one test at a time: the tests and the implementation were written in the same session and the skeleton replay shows that every criterion has a test that detects its absence. The evidence above is the real output of those replays.
 - **No deviation of scope.** The delivery touched only `crates/gafira-media/**`: it needed no new double, so the manifest of the testkit (`crates/gafira-testkit/Cargo.toml`, a single-writer file of `SC1`) was not touched, and `crates/gafira-ports`, `crates/gafira-render`, `crates/gafira-doc` and `.odd/state.json` were not touched either.
+
+## ME1 (fix round 1)
+
+The finding that this round closes: **C1** of the verify round 1 (CRITICAL, class `implementation`). `Medium::seek` checked the cancel token once per packet of the forward decode, so the keyframe mode never checked it: a cancelled seek looked the keyframe up, moved the container, reported `1.0` and answered `Ok(SeekOutcome::Keyframe(..))`, and the early return of an empty index answered `Ok(SeekOutcome::NoKeyframe)`.
+
+Commits:
+
+- `9bc20f1` `fix(gafira-media): check the cancel token in the keyframe seek`: the check of the token at the top of `Medium::seek`, before the lookup of the keyframe, and the test of the contract `arq_139_the_keyframe_seek_checks_the_cancel_token`. 2 files changed, 85 insertions(+), 5 deletions(-).
+
+Measured: `git diff --shortstat c1ba024...9bc20f1` -> 2 files changed, 85 insertions(+), 5 deletions(-), that is 90 changed lines. The round with these notes: `git diff --shortstat c1ba024...HEAD` -> 3 files changed, 135 insertions(+), 5 deletions(-).
+
+### RED evidence
+
+The test was written first and run against the code of `c1ba024`, which does not check the token in the keyframe path. The failure is an assertion failure, not a compile error:
+
+```
+running 3 tests
+test arq_139_the_keyframe_seek_checks_the_cancel_token ... FAILED
+test arq_139_the_scan_follows_the_progress_contract ... ok
+test arq_140_the_index_does_not_depend_on_the_pool ... ok
+
+failures:
+
+---- arq_139_the_keyframe_seek_checks_the_cancel_token stdout ----
+
+thread 'arq_139_the_keyframe_seek_checks_the_cancel_token' panicked at crates/gafira-media/tests/contract.rs:106:5:
+a cancelled seek answers the cancelled error in both routes: keyframe Ok(Keyframe(Flicks(1693440000))), empty index Ok(NoKeyframe)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+failures:
+    arq_139_the_keyframe_seek_checks_the_cancel_token
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+The message shows both routes of the defect at once: the seek over a medium with keyframes answered `Ok(Keyframe(..))` and the seek over an empty index answered `Ok(NoKeyframe)`, both with the token already cancelled. The code of `c1ba024` is the mutant of the rule, so this RED is also the proof that the new test kills it.
+
+### GREEN
+
+After the fix, `cargo test -p gafira-media --locked` gives 22 tests and 0 failed: the contract binary runs 3 (`arq_139_the_keyframe_seek_checks_the_cancel_token`, `arq_139_the_scan_follows_the_progress_contract` and `arq_140_the_index_does_not_depend_on_the_pool`), the keyframe binary 7 and the cache binary 12.
+
+### Gates
+
+Each gate ran alone, in this order, and its own exit code was read: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0, `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`). The policy steps of CI, extracted from the `run:` blocks of `.github/workflows/ci.yml`, all exit 0: Format, CLI has no UI dependencies (ARQ-07), Domain crates forbid unsafe code, Domain crates respect the layer table (V5), Domain clippy.toml copies are in sync (V12), Layers 0-2 know no language (ARQ-107), EditToken only in the edit crates (V13), Every core command has a property test (V14) and Testkit ports feature compiles (ADR 0013).
+
+### Choices and deviations
+
+- **The check is at the top of `seek`, before the lookup of the keyframe.** One check covers the three places the defect had: the lookup, the seek of the container and the early return of an empty index. The mode `Exact` keeps its own check per packet, and its answer does not change: with a live token it behaves as before, and with a cancelled token it already answered the cancelled error, because the check of the first packet of the decode came before any output.
+- **An empty index with a cancelled token now answers the cancelled error, not the absence of a keyframe.** ARQ-139 asks for the cancelled error and no partial output, and `NoKeyframe` is a partial output. The test of AC3 (`arq_144_an_empty_index_reports_the_absence_of_a_keyframe`) uses a live token and keeps its answer.
+- **No deviation of scope.** The round touched only `crates/gafira-media/src/medium.rs` and `crates/gafira-media/tests/contract.rs`: no file of `ME2` (`cache.rs`, `tests/cache.rs`, `lib.rs`) was touched, the manifest of the testkit was not touched, and neither was `.odd/state.json`. The other findings of the verify round 1 (W1 to W6) stay open: they are not in the scope of this round.
