@@ -6,7 +6,8 @@
 //! byte of the level of detail, the number of input keys as a big-endian
 //! `u32`, that many input keys of 16 big-endian bytes each, and the sampled
 //! parameters, each as a big-endian `u32` with the length of the value and the
-//! bytes of the value.
+//! bytes of the value; the bytes of a parameter open with the tag of its kind,
+//! so two different kinds never give the same description.
 
 use gafira_color::{Color, ColorSpaceId};
 use gafira_doc::{BlendMode, ShapeGeometry};
@@ -33,7 +34,9 @@ pub enum NodeType {
 /// One parameter of a node, sampled at the instant of the graph (02 §6.1).
 ///
 /// A parameter that does not depend on time holds the same value at every
-/// instant and is written all the same.
+/// instant and is written all the same. The value of a parameter opens with
+/// the tag byte of its kind, so two different kinds never encode the same
+/// bytes (ARQ-141).
 #[derive(Clone, Debug, PartialEq)]
 pub enum KeyParam {
     /// The quality of the graph: preview or export (02 §6.2).
@@ -56,7 +59,8 @@ pub enum KeyParam {
 /// byte of the node, the byte of the level of detail, the number of input keys
 /// as a big-endian `u32`, that many input keys of 16 big-endian bytes each,
 /// and the sampled parameters, each as a big-endian `u32` with the length of
-/// the value and the bytes of the value.
+/// the value and the bytes of the value; the bytes of a parameter open with the
+/// tag of its kind (ARQ-141).
 #[must_use]
 pub fn canonical_description(
     node_type: NodeType,
@@ -97,8 +101,27 @@ pub fn content_key(
 }
 
 impl KeyParam {
-    /// The bytes of the value of this parameter.
+    /// The tag byte of the kind of this parameter (02 §6.1).
+    ///
+    /// Like the node types of the section, the numbers are fixed: a kind added
+    /// later takes the next free number and reuses none, and `0` stays free so
+    /// that no tag can be confused with an empty value. The tag leads the value
+    /// of the parameter, inside the length-prefixed block §6.1 describes, so
+    /// that two different kinds never give the same bytes (ARQ-141).
+    const fn tag(&self) -> u8 {
+        match self {
+            Self::Quality(_) => 1,
+            Self::Geometry(_) => 2,
+            Self::Fill(_) => 3,
+            Self::Transform(_) => 4,
+            Self::Opacity(_) => 5,
+            Self::Blend(_) => 6,
+        }
+    }
+
+    /// The bytes of the value of this parameter: its tag and its payload.
     fn write(&self, out: &mut Vec<u8>) {
+        out.push(self.tag());
         match self {
             Self::Quality(quality) => out.push(match quality {
                 RenderQuality::Preview => 0,
@@ -221,6 +244,41 @@ mod tests {
         assert_ne!(base, content_key(NodeType::Shape, 0, &[input], &params()));
     }
 
+    // ARQ-141: the kind of a parameter is part of the description. Two
+    // different kinds never give the same key, and the same kind with the same
+    // value still gives the same key.
+    #[test]
+    fn arq_141_a_different_parameter_kind_gives_another_key() {
+        // The four kinds whose value is a single byte of zero, and their two
+        // neighbours: the tag has to tell them apart.
+        let parameters = [
+            KeyParam::Quality(RenderQuality::Preview),
+            KeyParam::Geometry(ShapeGeometry::Rect),
+            KeyParam::Fill(None),
+            KeyParam::Transform([0.0; 6]),
+            KeyParam::Opacity(0.0),
+            KeyParam::Blend(BlendMode::Normal),
+        ];
+        let keys: Vec<ContentKey> = parameters
+            .iter()
+            .map(|param| content_key(NodeType::Shape, 0, &[], std::slice::from_ref(param)))
+            .collect();
+
+        for (left, first) in keys.iter().enumerate() {
+            for (right, second) in keys.iter().enumerate().skip(left + 1) {
+                assert_ne!(
+                    first, second,
+                    "the parameters {left} and {right} give the same key"
+                );
+            }
+        }
+
+        assert_eq!(
+            keys[2],
+            content_key(NodeType::Shape, 0, &[], &[KeyParam::Fill(None)])
+        );
+    }
+
     // ARQ-141: the key is the hash of the canonical description, truncated to
     // 16 bytes and read big-endian.
     #[test]
@@ -273,15 +331,16 @@ mod tests {
             content_key(NodeType::Shape, 0, &[], std::slice::from_ref(&negative))
         );
 
+        // The tag leads the value; the payload is the canonical pattern.
         let mut bytes = Vec::new();
         nan.write(&mut bytes);
-        assert_eq!(&bytes[..], &0x7FC0_0000u32.to_be_bytes()[..]);
+        assert_eq!(&bytes[1..], &0x7FC0_0000u32.to_be_bytes()[..]);
         let mut bytes = Vec::new();
         positive.write(&mut bytes);
-        assert_eq!(&bytes[..], &0x7F80_0000u32.to_be_bytes()[..]);
+        assert_eq!(&bytes[1..], &0x7F80_0000u32.to_be_bytes()[..]);
         let mut bytes = Vec::new();
         negative.write(&mut bytes);
-        assert_eq!(&bytes[..], &0xFF80_0000u32.to_be_bytes()[..]);
+        assert_eq!(&bytes[1..], &0xFF80_0000u32.to_be_bytes()[..]);
     }
 
     // ARQ-141: a node without inputs is valid: the count of input keys may be
