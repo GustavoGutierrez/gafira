@@ -1,0 +1,18 @@
+[package]
+name = "gafira-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-raster.workspace = true
+gafira-time.workspace = true
+gafira-geom.workspace = true
+gafira-color.workspace = true
+
+[lints]
+workspace = true
