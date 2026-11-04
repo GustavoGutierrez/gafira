@@ -89,10 +89,15 @@ impl Medium {
     /// the frame at `time`. The decoder comes from the caller and must be
     /// fresh: the port has no way to reset it.
     ///
+    /// The seek is a long operation, so it checks the cancel token before
+    /// it looks the keyframe up and once per packet of the forward decode
+    /// (ARQ-139): a cancelled seek answers the cancelled error, lands on
+    /// nothing and reports no progress.
+    ///
     /// # Errors
     ///
     /// [`MediaError`] when the container cannot seek or the decoder fails,
-    /// and [`MediaError::Cancelled`] when the caller cancels the decode.
+    /// and [`MediaError::Cancelled`] when the caller cancels the seek.
     pub fn seek(
         &mut self,
         decoder: &mut dyn Decoder,
@@ -101,6 +106,7 @@ impl Medium {
         cancel: &CancelToken,
         progress: &dyn Progress,
     ) -> Result<SeekOutcome, MediaError> {
+        cancel.check()?;
         let Some(keyframe) = self.index.keyframe_at_or_before(time) else {
             return Ok(SeekOutcome::NoKeyframe);
         };
