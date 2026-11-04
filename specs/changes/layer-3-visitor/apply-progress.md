@@ -87,3 +87,95 @@ Measured: `git diff --shortstat develop...HEAD` before this note: 4 files, 753 i
 - **W3 (720 lines of code, over the ~700 ceiling): accepted.** The delivery is the visitor contract with its tests and the shape checks, and the size is 3 % over the ceiling of a `full` run. The owner gave the coordinator the decision in YOLO mode on 2026-11-03, and the coordinator accepts it here. The measurement is recorded in the verification report.
 - **W1 (ARQ-136 says the instant travels apart as `t: Flicks`): routed to `specifier`.** The rule is satisfied: the instant is a separate argument and never a field of `MeasureCx`. The literal type is unreachable from `gafira-doc` by the layering of 02 §2.1 and §2.2, so the row has to say it in a way that the domain can honour. The row stays as it is until `specifier` reconciles it.
 - **W2 (nothing ties "the instant is not in the context"): routed to a fix round of `tdd-apply`.** A source-shape test has to fail if `MeasureCx` ever grows a time field.
+
+## DC1 (fix round 1)
+
+This round closes W2 of the verification of DC1 (round 1): nothing tied the rule "the instant is not in the context", so a `t` field on `MeasureCx` would have failed no test in the repository. The round adds one test and changes no behaviour of the crate: the sources of `gafira-doc` are untouched.
+
+Commit: `fe6349e` `test(gafira-doc): tie the measure context to the absence of a time` (`crates/gafira-doc/tests/visit_contract.rs`).
+
+The test is `visit_contract::arq_136_the_measure_context_carries_no_time`, next to the other source-shape tests of the file. It checks three things: the fields `MeasureCx` declares are exactly the ones 02 §4.1 gives the domain (`page` and `dpi`), the block of the struct names no time type, and no file of `crates/gafira-doc/src/` names one (`Flicks`, `FrameRate`, `Instant`, `Duration`, `SystemTime`).
+
+### RED evidence
+
+The RED was the new test against a `MeasureCx` that carries a time field. The field was `t: std::time::Duration` and not `t: Flicks`: `gafira-time` is out of reach for `gafira-doc` (the layer table of CI, V5), so `Flicks` would have broken the build instead of failing an assertion. The mutant was applied, the test was run, and the mutant was reverted; it was never committed.
+
+`cargo test -p gafira-doc --test visit_contract --locked`, with the field in place:
+
+```
+---- arq_136_the_measure_context_carries_no_time stdout ----
+
+thread 'arq_136_the_measure_context_carries_no_time' panicked at crates/gafira-doc/tests/visit_contract.rs:206:5:
+assertion `left == right` failed: the context declares only the borrowed page and the target's DPI:
+{
+    page: &'a Page,
+    dpi: f32,
+    t: std::time::Duration,
+}
+  left: ["page", "dpi", "t"]
+ right: ["page", "dpi"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+The failure was an assertion, never a compile error: the crate built with the mutant in place, and the other four tests of the file kept passing.
+
+### Negative controls (run, then reverted)
+
+Both halves of the test had to bite, and each was checked on its own. No mutant was committed.
+
+| Mutant | Wrong shape | Killing test | Failure |
+|---|---|---|---|
+| 1 | `MeasureCx` gains the field `t: std::time::Duration` | `visit_contract::arq_136_the_measure_context_carries_no_time` | `left: ["page", "dpi", "t"], right: ["page", "dpi"]` (the RED above) |
+| 2 | `visit.rs` names a time type (`use std::time::Instant;`), the struct untouched | the same test | `the domain names the time type Instant in src/visit.rs` (panicked at `visit_contract.rs:239:13`) |
+| 3 | a new module `timeline` enters `lib.rs` and the list of sources does not cover it | the same test | `src/lib.rs declares the module timeline, which the list of sources does not cover: add it` (panicked at `visit_contract.rs:228:13`) |
+
+Mutant 3 breaks no rule of ARQ-136: it is the control of the guard that keeps the list of sources complete, so that a module added later cannot slip into the crate unexamined.
+
+### GREEN
+
+With every mutant reverted, `cargo test -p gafira-doc --test visit_contract --locked` is `ok` for the five tests of the file, the new one included:
+
+```
+running 5 tests
+test arq_134_the_trait_declares_one_method_per_node_kind ... ok
+test arq_20_a_visitor_is_written_outside_the_domain ... ok
+test arq_134_the_dispatch_has_no_catch_all_arm ... ok
+test arq_137_the_domain_depends_on_no_crate_above_it ... ok
+test arq_136_the_measure_context_carries_no_time ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+```
+
+### Gates
+
+Every gate was run on the delivered tree, one by one, exit 0:
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 |
+| `cargo deny check` | 0 |
+| CI policy step `Format` | 0 |
+| CI policy step `CLI has no UI dependencies (ARQ-07)` | 0 |
+| CI policy step `Domain crates forbid unsafe code` | 0 |
+| CI policy step `Domain crates respect the layer table (V5)` | 0 |
+| CI policy step `Domain clippy.toml copies are in sync (V12)` | 0 |
+| CI policy step `Layers 0-2 know no language (ARQ-107)` | 0 |
+| CI policy step `EditToken only in the edit crates (V13)` | 0 |
+| CI policy step `Every core command has a property test (V14)` | 0 |
+
+The step `Testkit ports feature compiles (ADR 0013)` is not in this branch's `ci.yml`: it is in `develop`'s, added by `feat/layer-3-scaffold`, which this branch does not contain. Run against this tree it exits 101 with `error: the package 'gafira-testkit' does not contain this feature: ports`, and it fails the same way on the pristine `6672880` (checked with this round stashed). The failure is the age of the branch, not this round.
+
+### Choices and deviations
+
+- The test reads the sources of the crate when it is compiled, with `include_str!`, and not from the disk: `gafira-doc` has a `clippy.toml` that forbids `std::fs` (ARQ-02), and the lint reaches the integration tests of the crate (probed: `std::fs::read_to_string` inside `crates/gafira-doc/tests/` is a `disallowed-methods` error). The testkit, which has no `clippy.toml`, is where the repo reads files.
+- The list of the sources is explicit (23 files) and a guard compares it with the modules the crate declares, so the list fails closed when the crate grows: a new module makes the test fail with the name of the module to add.
+- The names searched are the concrete time types (`Flicks`, `FrameRate`, `Instant`, `Duration`, `SystemTime`), not the word "time": a field called `t: f64` is caught by the check of the fields, and a type named in any module is caught by the scan of the crate.
+- The check of the fields reads the block of the struct `MeasureCx` and compares the names it declares with `page` and `dpi`, the two things 02 §4.1 gives the domain: the page, borrowed, and the DPI of the target.
+- The half of ARQ-136 that the instant travels apart is not checked by this test (the type of `NodeBehavior<T>` checks it): this one checks that the context does not carry it.
+- W1 stays open: the row of 02 §4.1 still says `t: Flicks`, and the literal type is unreachable from `gafira-doc`. This round does not touch it; `specifier` still has to reconcile the row.
+
+Measured: `git diff --shortstat 6672880...HEAD` after the code commit is 1 file changed, 141 insertions(+), 2 deletions(-), the test file alone. These notes are the only other change of the round.
