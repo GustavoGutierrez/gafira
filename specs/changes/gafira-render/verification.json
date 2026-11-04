@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "change": "gafira-render",
+  "delivery": "RE1",
+  "rounds": [
+    {
+      "round": 1,
+      "commit": "6d66219",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V2",
+      "verdict": "FAIL",
+      "next": "specifier",
+      "counts": { "critical": 2, "warning": 2, "suggestion": 5 },
+      "classes": { "implementation": 3, "ambiguity": 1, "architecture": 0, "claim": 0 },
+      "findings": [
+        { "id": "C1", "severity": "CRITICAL", "class": "implementation",
+          "ref": "crates/gafira-render/src/key.rs:101-129 (KeyParam::write); AC2; ARQ-141; 02 §6.1",
+          "summary": "The parameter encoding has no tag of its kind: Quality(Preview), Geometry(Rect), Fill(None) and Blend(Normal) all encode to 0x00, so content_key gives the same key for different parameters.",
+          "follow_up": false, "status": "open" },
+        { "id": "C2", "severity": "CRITICAL", "class": "implementation",
+          "ref": "crates/gafira-render/src/key.rs:16,25-30,244; 02 §6.1",
+          "summary": "The domain byte b'R' and the node type bytes 1/2/3 are asserted against the crate's own constants, so the hand mutants that change them survive the whole suite.",
+          "follow_up": false, "status": "open" },
+        { "id": "W1", "severity": "WARNING", "class": "implementation",
+          "ref": "apply-progress.md (the size); git diff --shortstat 7e3a23c 44b3269",
+          "summary": "1571 lines against a ~700 ceiling and a 480 forecast (2.34x the planning figure), with no recorded owner OK; the coordinator decides the split.",
+          "follow_up": false, "status": "open" },
+        { "id": "W2", "severity": "WARNING", "class": "ambiguity",
+          "ref": "Slice card Product IDs; specs/changes/layer-3/design.md scope table; 02 §4.17.7",
+          "summary": "ARQ-117 is listed for RE1 but its row is about pixel buffers, which RE1 does not produce; the card and the design must reconcile it.",
+          "follow_up": false, "status": "open" }
+      ],
+      "gates": { "fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0 },
+      "mutation": null,
+      "hand_mutants": { "run": 8, "killed": 6, "survived": 2 },
+      "criteria": { "total": 11, "covered": 10, "failing": 1 },
+      "size": { "lines": 1571, "forecast": 480 },
+      "report": "verify-report.md"
+    }
+  ]
+}
