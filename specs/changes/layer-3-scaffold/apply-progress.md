@@ -20,10 +20,47 @@ Owner decisions touched: none (checked D-01 to D-57: the scaffold adds no produc
 
 Commits:
 
-Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, and the ARQ-107 step), each by extracting its `run:` from `ci.yml`.
+- `14409a6` feat(layer-3): scaffold the gafira-render and gafira-media crates
+- `efc84c0` feat(gafira-ports): add the budget calls to TileCache
+- `d5caa7b` feat(gafira-testkit): add the ports feature and the double stubs
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, and the ARQ-107 step), each by extracting its `run:` from `ci.yml`. The third commit adds two more gates, because the `ports` feature is off by default: `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` and `cargo test -p gafira-testkit --features ports --locked`.
+
+Hand mutants: none. The design lists `SC1` as "None; configuration only", so no mutant list came with the delivery.
 
 ### RED evidence
 
+The RED of a scaffold is the CI step that fails for the declared reason before the change that satisfies it, the precedent of the layer-2 scaffold. AC6 and AC7 have a real behaviour RED, and AC6 is the compile error the Slice card allows for that criterion.
+
+| AC | RED | Command and exit | GREEN |
+|---|---|---|---|
+| AC1 | V5 rows added, crates absent | V5 step: `error: package ID specification 'gafira-render' did not match any packages`, exit 101 | crates added, exit 0 |
+| AC2 | rows and crates added, no `clippy.toml` copies | V12 step: `::error::gafira-render is in the V5 table but has no crates/gafira-render/clippy.toml` and the same for `gafira-media`, exit 1 | byte-identical copies of `crates/gafira-geom/clippy.toml` (same md5 `eb4b5378...`), exit 0 |
+| AC3 | crates with a `lib.rs` lacking the attribute | forbid step: `missing forbid(unsafe_code): crates/gafira-media/src/lib.rs` and `missing forbid(unsafe_code): crates/gafira-render/src/lib.rs`, exit 1 | `#![forbid(unsafe_code)]`, exit 0 |
+| AC4 | no failing state on the clean tree: the ARQ-107 step exists since layer 2 and reads the crate list from the V5 table, so it covers the two new crates with no edit | clean tree exit 0 | the failing state is the negative control below |
+| AC5 | no failing state: `cargo deny check` passes with the two new crates and `blake3` (CC0-1.0 OR Apache-2.0, both in the allowlist) | exit 0 | exit 0 |
+| AC6 | the trait without the budget calls | `cargo test -p gafira-ports --test render`: `error[E0407]: method 'bytes' is not a member of trait 'TileCache'` and `error[E0407]: method 'trim' is not a member of trait 'TileCache'`, exit 101 | `arq_44_tile_cache_reports_bytes_and_trims_to_a_budget` passes (13 passed, 0 failed) |
+| AC7 | the testkit manifest without `[features]` | `cargo test -p gafira-testkit --test ports_feature`: `arq_112_the_ports_feature_brings_the_port_crates_in` FAILED, `cargo tree ["--features", "ports"] failed: error: the package 'gafira-testkit' does not contain this feature: ports`, exit 101 | the three tests of `tests/ports_feature.rs` pass; the third one only with `--features ports` |
+| AC8 | the coordinator's `workflow_dispatch` on this branch; not run here | | |
+
 ### Negative controls
 
+Run and reverted; the tree was clean afterwards and the V5, V12 and ARQ-107 steps exit 0 again.
+
+- AC1, row lacking a dependency: the `gafira-render` row without `gafira-ports` -> `::error::gafira-render must not depend on gafira-ports`, exit 1.
+- AC1, `clippy.toml` without a row: the `gafira-render` row deleted -> `::error::gafira-render has clippy.toml but no V5 row`, exit 1.
+- AC4, an ICU crate in the tree: `icu_plurals = "2"` in the dependencies of `gafira-render` -> `::error::gafira-render depends on icu_plurals v2.4.0 (ARQ-107)`, exit 1.
+- AC4, the word in the sources: `Locale` in `crates/gafira-render/src/lib.rs` -> `::error::gafira-render mentions Locale (ARQ-107): crates/gafira-render/src/lib.rs:5://! The Locale of a render.`, exit 1. The two new crates are layer 3 but not `gafira-ports`, so the search of the step applies to them.
+
 ### Choices and deviations
+
+- The module list of the doubles is declared in `lib.rs`, behind `#[cfg(feature = "ports")]`, as the inline module `ports`; the files of the doubles live in `crates/gafira-testkit/src/ports/`, the path the design names. A later delivery fills the file of its own double; a new double still needs the coordinator to fold the `lib.rs` edit into the next serial delivery.
+- The stubs panic. `unimplemented!()` and `todo!()` are denied by the workspace lints, so a stub that does nothing yet says so with a `panic!` and a doc comment. The stubs are never called by a test.
+- The optional dependencies of the testkit are declared with `path = "../gafira-ports"` and `path = "../gafira-raster"`, as the delivery asked, and not with `workspace = true` as the other crates do: the path stays local to the manifest that owns the optional edge, and the root manifest keeps only the two new crates and `blake3`.
+- The `ports` feature is off by default, so `cargo test --workspace` compiles the testkit without the doubles. The run with the feature (`cargo test -p gafira-testkit --features ports --locked`) and its clippy are extra gates of this delivery.
+- The test of the feature reads the tree of the testkit with `cargo tree` as a subprocess, run from the crate directory with `--locked`: no network, no change of the lockfile, and no deadlock inside `cargo test`.
+- V5 row-without-crate exits 101, not 1 (AC1 reads "exits 1"): the existing V5 step, which this delivery does not change.
+- `Cargo.lock` grew 48 lines: `blake3` with its tree (`arrayvec`, `cc`, `cfg-if`, `constant_time_eq`, `cpufeatures`) and the two new crates.
+- The notes of this delivery are a separate `docs` commit, as in the layer-2 scaffold (`60f39cf`), because the notes name the hash of the commit they describe.
+
+Measured: `git diff --shortstat develop...HEAD` -> 24 files changed, 675 insertions(+), 6 deletions(-). Authored lines without `Cargo.lock` and without the two `clippy.toml` copies: about 504 (forecast 200, x1.4 = 280). Over the forecast, under the ~700 ceiling of a full run; the coordinator decides.
