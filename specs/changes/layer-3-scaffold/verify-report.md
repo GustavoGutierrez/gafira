@@ -167,3 +167,154 @@ The row's only stated acceptance mechanism is "`cargo public-api` runs in CI for
 - The XP8 gap that the spike could not close (the native Windows and macOS compile) is closed by run `41836317734`.
 
 next: archive
+
+---
+
+# Verify report: layer-3-scaffold, SC1, round 2 (closure)
+
+Commit `218a9be` on `feat/layer-3-scaffold`, base `develop` at `ed1dc7d`. Depth V2, mode full, level L2, tier T4, `mutation: archive` (no `mutants` report; a closure round spends no independent-mutant budget, so that is not a finding). Date 2026-11-04.
+
+**Verdict: PASS.** CRITICAL 0, WARNING 1, SUGGESTION 0 (the three of round 1 stand). Classes: implementation 1, ambiguity 0, claim 0, architecture 0. The round's routing list `classes` is empty: the only open finding, W1, is a follow-up, so there is nothing for the coordinator to route.
+
+A closure round: the gates at HEAD (step 2), the artifact-integrity checks (steps 3, 3b, 3c, 3d) and the closure of each round-1 finding, with the probes limited to that. Steps 1c and 4b belong to round 1 and did not run; no independent mutants were spent.
+
+## Gates at HEAD (218a9be)
+
+Each command ran alone in the repo worktree, clean at `218a9be`, with its own exit code read. The build used a dedicated `CARGO_TARGET_DIR` (`target/verify-r2`, gitignored) and `CARGO_INCREMENTAL=0`. The CI policy steps were extracted with a YAML parse from the `run:` blocks of `.github/workflows/ci.yml` and run with `bash --noprofile --norc -e -o pipefail`, the way the workflow's `shell: bash` runs them.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (179 binaries, 2271 tests passed, 0 failed, 0 ignored) |
+| `cargo deny check` (0.20.2) | 0 (`advisories ok, bans ok, licenses ok, sources ok`; one pre-existing `duplicate` warning on `miniz_oxide`, not an error) |
+| CLI has no UI dependencies (ARQ-07) | 0 |
+| Domain crates forbid unsafe code | 0 |
+| Domain crates respect the layer table (V5) | 0 |
+| Domain clippy.toml copies are in sync (V12) | 0 |
+| Layers 0-2 know no language (ARQ-107) | 0 |
+| EditToken only in the edit crates (V13) | 0 |
+| Every core command has a property test (V14) | 0 |
+| **Testkit ports feature compiles (ADR 0013)** — the new step | 0 |
+
+All ten `policy` steps of the workflow exited 0 in workflow order, and the new step also exits 0 run alone.
+
+### The new step, in its exact form
+
+Extracted from the `run:` block of `.github/workflows/ci.yml:260-273` and executed verbatim. The extracted body is byte-identical to the workflow's block after the YAML dedent (`diff` of the two is empty). Its executable lines, with the comment lines elided:
+
+```
+set -euo pipefail
+host="$(rustc -vV | sed -n 's/^host: //p')"
+[ "$host" = x86_64-unknown-linux-gnu ] || { echo "::error::unexpected host: $host (expected x86_64-unknown-linux-gnu)" >&2; exit 1; }
+cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings
+cargo test -p gafira-testkit --features ports --locked
+```
+
+Exit 0. The host check passes on this machine (`x86_64-unknown-linux-gnu`), the same host the `policy` job runs on.
+
+### The same gate with the feature off
+
+The feature is off by default (`crates/gafira-testkit/Cargo.toml` declares `ports = ["dep:gafira-ports", "dep:gafira-raster"]` and no `default`), so the default suite must stay green: a failure there would be a regression, not a proof.
+
+| Gate | Exit |
+|---|---|
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` (default features) | 0 |
+| `cargo test --workspace --locked` (default features) | 0 (179 binaries, 2271 tests passed, 0 failed) |
+| `cargo clippy --workspace --all-targets --locked --features gafira-testkit/ports -- -D warnings` | 0 |
+| `cargo test --workspace --locked --features gafira-testkit/ports` | 0 (179 binaries, 2272 tests passed, 0 failed) |
+
+The feature-on run carries exactly one test more: `crates/gafira-testkit/tests/ports_feature.rs` runs 2 tests without the feature and 3 with it, the third being `arq_112_the_port_doubles_are_reachable_with_the_feature_on`, which is `#[cfg(feature = "ports")]`. That is the same 2271/2272 split round 1 measured, so the feature is still off by default and the doubles are still compiled only when asked for.
+
+### W3 in local terms
+
+The implementer's negative control (breaking the signature of a stub and watching the step exit 101 while the default suite exited 0) is recorded in the notes of the fix round, `apply-progress.md` §SC1 (fix round 1). I did not repeat the mutation. The closure rests on three facts checked here: the step exists in the `policy` job, its body compiles the feature (exit 0), and the default suite is still green (exit 0).
+
+## CI run (AC8)
+
+Run `41851219724`, `workflow_dispatch`, branch `feat/layer-3-scaffold`, SHA `218a9be`: **completed, success**, watched to the end. <https://github.com/GustavoGutierrez/gafira/actions/runs/41851219724>
+
+| Job | Result | Window (UTC) |
+|---|---|---|
+| `policy` | success, 3m11s. Every step ran: Format, CLI/UI (ARQ-07), forbid, V5, V12, ARQ-107, V13, V14, **Testkit ports feature compiles (ADR 0013)** and cargo-deny | 14:48:23 → 14:51:34 |
+| `test (x86_64-unknown-linux-gnu)` | success, 13m13s. Clippy and Test both success | 14:48:23 → 15:01:36 |
+| `test (aarch64-apple-darwin)` | success, 4m30s. Clippy and Test both success | 14:48:23 → 14:52:53 |
+| `test (x86_64-pc-windows-msvc)` | success, 21m37s. Clippy and Test both success | 14:48:24 → 15:10:01 |
+
+Step 13 of the `policy` job is the new step and it reports `success`. This is the remote half of W3: the nine doubles are now inside the remote gate. The only annotations are the Node.js 20 deprecation notices on `actions/checkout`, pre-existing and unrelated.
+
+## Artifact integrity (steps 3b, 3c, 3d)
+
+- `c5f6b12 docs(layer-3-scaffold): slice card` touches only `specs/changes/layer-3-scaffold/apply-progress.md` (1 file, 29 insertions) and precedes the first implementation commit `14409a6`.
+- The Slice card block (lines 1-16 of `apply-progress.md`) is byte-identical at `c5f6b12` and at `17a93bc`, the implementer's notes commit: md5 `1b975479995f863844f0b10b3f4c8dff` on both sides, and that diff starts at line 20, below the card. No implementer commit changed the card.
+- `02ff7bb docs(layer-3-scaffold): slice card amend` touches only `apply-progress.md` (1 file, 1 insertion, 1 deletion). The single changed line is the `Product IDs:` line: ARQ-05 is dropped and the reason is written in the card itself. The `Flow:` line, `Scope:`, `Non-goals:`, `Acceptance:` (AC1-AC8), `Plan:` and `Owner decisions touched:` are untouched.
+- After the amend the card block is byte-identical at `02ff7bb` and at `HEAD`: md5 `d9a30bc11c11ba1a3724606daced0286` on both sides, so no implementer commit touched it afterwards either.
+- `a18096f ci(layer-3): compile the testkit ports feature in CI` touches only `.github/workflows/ci.yml` (1 file, 14 insertions). `218a9be docs(layer-3-scaffold): record the W3 fix round` touches only `apply-progress.md`, below the card.
+- Conventional commit prefixes throughout the branch: `feat`, `ci`, `docs`. No AI attribution line in any commit (grep for `co-authored-by`, `generated with`, `claude`, `anthropic`: none).
+
+### Product IDs (step 3c)
+
+The card now lists ARQ-01, ARQ-02, ARQ-03, ARQ-06, ARQ-44 (partial), ARQ-70, ARQ-71, ARQ-107. The state of each is unchanged from round 1, except ARQ-05, which left the card.
+
+| ID | Proof | Named by |
+|---|---|---|
+| ARQ-01 | the V5 step plus the two manifests | nothing relevant (`git grep ARQ-01` traces only to `crates/gafira-doc/tests/`). **W1** |
+| ARQ-02 | the canonical `clippy.toml` copies plus the clippy gate | the canonical `clippy.toml` header |
+| ARQ-03 | the CI matrix holds exactly the three targets; the remote run built all three | nothing. **W1** |
+| ARQ-06 | the V5 rows and the two manifests: neither new crate declares `gafira-engine` nor the other | `crates/gafira-ports/tests/` only, not the proving artifact. **W1** |
+| ARQ-44 (partial) | `crates/gafira-ports/tests/render.rs:407` | the test itself |
+| ARQ-70 | `cargo deny check` exit 0 locally and in the remote `policy` job | the `deny.toml` header |
+| ARQ-71 | `deny.toml` has `allow-git = []` and `unknown-git = "deny"`; the deny job is green | the `deny.toml` header |
+| ARQ-107 | the CI step, whose name carries `(ARQ-107)`; it reads the crate list from the V5 table, so it covers the two new crates with no edit | the step name in `ci.yml` |
+
+**Left out, with the reason:** ARQ-05 left the card on 2026-11-03 (`02ff7bb`), with the reason written in the card: its only stated mechanism, `cargo public-api` in CI, does not exist in the repository and names `gafira-doc`, `gafira-ports` and `gafira-engine`, none of which this delivery touches, so the property is vacuous for two empty crates. ARQ-112 is not in the card's ID list but is named by `crates/gafira-testkit/tests/ports_feature.rs`; it is the row behind AC7 and is proved by that test.
+
+## Closure of the round-1 findings
+
+### W1. ARQ-01, ARQ-03 and ARQ-06 are proved by commands that do not name them. class: implementation. **Still open, as a follow-up WARNING.**
+
+The state is unchanged: `git grep` over the tests still traces none of the three to a test of the new crates, and `.github/workflows/ci.yml` still names none of them (the V5 step and the matrix are the proving artifacts). This is the same judgement the layer-2 verify recorded for ARQ-01 and the same shape as the layer-2 W1: a WARNING of follow-up, not a CRITICAL re-opened. All eight ACs of the card are typed `[command]`, the proof exists, and the fix belongs to a later cut, not to this closure. It reaches `archive` as a follow-up.
+
+Fix: name the three IDs in the V5 step and in the matrix block of `ci.yml`.
+
+### W2. ARQ-05 is listed as a covered Product ID, but nothing in the repo can prove it. class: ambiguity. **Closed.**
+
+Closed by the coordinator's commit `02ff7bb docs(layer-3-scaffold): slice card amend`: the amend touches only `apply-progress.md` and states the reason in the card itself, as the "slice card amend" rule allows. The card is otherwise the one round 1 verified, and no implementer commit touched it before or after. Nothing for `tdd-apply` to do.
+
+### W3. No CI job compiles the `ports` feature, so the nine doubles are outside the remote gate. class: implementation. **Closed.**
+
+Closed by `a18096f`, and proved on both sides:
+
+- The step exists in the `policy` job of `ci.yml:260-273`, `Testkit ports feature compiles (ADR 0013)`.
+- Its body compiles the feature: run verbatim, exit 0.
+- The feature-off default suite stays green: exit 0, and the feature-on run carries exactly one test more (2272 against 2271), so the doubles are compiled only when the feature is on and nothing else changed.
+- The remote gate now compiles it: run `41851219724`, job `policy`, step 13, `success`.
+
+## Findings
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+**W1. ARQ-01, ARQ-03 and ARQ-06 are proved by commands that do not name them.** class: implementation. Ref: `.github/workflows/ci.yml` V5 step and the CI matrix; `specs/02-arquitectura-software.md:72,76,169`. Follow-up, still open; see the closure section above.
+
+### SUGGESTION
+
+The three suggestions of round 1 stand unchanged; the fix round deliberately left S1 alone.
+
+**S1.** The V5 row of `gafira-testkit` (`ci.yml:85`) describes only its default tree. With the `ports` feature on, the tree also holds `gafira-ports`, `gafira-raster` and `gafira-time`, none of which the row lists, and no step resolves the graph with the feature on. Re-checked here with `cargo tree`: the default tree holds `gafira-geom gafira-color gafira-doc gafira-edit`, the feature-on tree those plus `gafira-ports gafira-raster gafira-time`. A note, not a defect.
+
+**S2.** The forecast was 200 authored lines (x1.4 = 280). The measured delivery is 675 insertions in 24 files at `d5caa7b`; the fix round added 14 more lines in `ci.yml`. Nothing to stop for.
+
+**S3.** `cargo clippy -p gafira-render -p gafira-media --all-targets --features ports --locked -- -D warnings` still exits 101 with `none of the selected packages contains this feature: ports`: the `ports` feature belongs to `gafira-testkit`, and neither `crates/gafira-render/Cargo.toml` nor `crates/gafira-media/Cargo.toml` has a `[dev-dependencies]` section, so the command cannot apply to this delivery. Recorded so the coordinator does not read the 101 as a gate failure.
+
+## Notes
+
+- The worktree was clean at `218a9be` before and after the run; the only files this round writes are `verify-report.md` and `verification.json`.
+- The branch against `develop` is 27 files and 1434 insertions; the delivery code itself is 24 files and 675 insertions (`develop...d5caa7b`), and the fix round is 1 file and 14 insertions (`02ff7bb..a18096f`). The difference is `spike.md` (+449) and the two verify artifacts.
+- The T4 mutants for the four touched crates (`gafira-render`, `gafira-media`, `gafira-ports`, `gafira-testkit`) are still owed before the archive, per the Flow line's `mutation: archive`. This round spent no mutant budget: `mutation: archive`, no report, and a closure round has none to spend.
+- `layer-3-scaffold` is its own change folder and its only delivery is SC1; the remaining deliveries of the design (`DC1`, `RE1`-`RE5`, `ME1`-`ME5`) belong to the parent change `layer-3`, which has its own folder. The layer-2 precedent closed the same way (`specs/history/2026-11-02-layer-2-scaffold/`).
+
+next: archive

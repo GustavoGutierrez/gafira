@@ -23,6 +23,7 @@ mod page;
 mod page_size;
 mod placement;
 mod validate;
+pub mod visit;
 
 pub use blend::BlendMode;
 pub use content_hash::ContentHash;
