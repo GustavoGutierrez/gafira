@@ -3,14 +3,19 @@
 
 use gafira_doc::contract::{Describe, Descriptor};
 use gafira_doc::msg::MessageKey;
+use gafira_ports::common::LegalClass;
 use gafira_ports::media::{
     Codec, CodecCaps, CodecId, CodecParams, Decoder, Encoder, EncoderConfig, MediaError,
 };
 
+use super::decoder::FrameDecoder;
+use super::encoder::PacketEncoder;
+
 /// The descriptor of the fake codec.
 static DESCRIPTOR: Descriptor = Descriptor::new("test.codec", MessageKey("test.codec"), 1);
 
-/// The fake codec. A stub: the media stream fills it.
+/// The fake codec: it hands out the decoder that yields a frame per packet
+/// and the encoder that yields a packet per frame.
 pub struct FakeCodec;
 
 impl Describe for FakeCodec {
@@ -21,23 +26,28 @@ impl Describe for FakeCodec {
 }
 
 impl Codec for FakeCodec {
-    /// Not filled yet.
+    /// The codec the double stands for.
     fn codec_id(&self) -> CodecId {
-        panic!("stub: the codec double is not filled yet")
+        CodecId::H264
     }
 
-    /// Not filled yet.
+    /// The double decodes and encodes, without hardware.
     fn caps(&self) -> CodecCaps {
-        panic!("stub: the codec double is not filled yet")
+        CodecCaps {
+            decode: true,
+            encode: true,
+            hardware: false,
+            legal: LegalClass::RoyaltyFree,
+        }
     }
 
-    /// Not filled yet.
+    /// The decoder of the double.
     fn decoder(&self, _params: &CodecParams) -> Result<Box<dyn Decoder>, MediaError> {
-        panic!("stub: the codec double is not filled yet")
+        Ok(Box::new(FrameDecoder::new()))
     }
 
-    /// Not filled yet.
+    /// The encoder of the double.
     fn encoder(&self, _config: &EncoderConfig) -> Result<Box<dyn Encoder>, MediaError> {
-        panic!("stub: the codec double is not filled yet")
+        Ok(Box::new(PacketEncoder::new()))
     }
 }

@@ -457,6 +457,7 @@ dependencies = [
  "gafira-geom",
  "gafira-ports",
  "gafira-raster",
+ "gafira-testkit",
  "gafira-time",
 ]
 
@@ -538,6 +539,7 @@ dependencies = [
  "gafira-geom",
  "gafira-ports",
  "gafira-raster",
+ "gafira-time",
  "png",
  "proptest",
  "serde_json",

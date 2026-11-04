@@ -7,7 +7,7 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-ports = ["dep:gafira-ports", "dep:gafira-raster"]
+ports = ["dep:gafira-ports", "dep:gafira-raster", "dep:gafira-time"]
 
 [dependencies]
 gafira-geom.workspace = true
@@ -16,6 +16,7 @@ gafira-doc.workspace = true
 gafira-edit.workspace = true
 gafira-ports = { path = "../gafira-ports", optional = true }
 gafira-raster = { path = "../gafira-raster", optional = true }
+gafira-time = { path = "../gafira-time", optional = true }
 proptest.workspace = true
 serde_json.workspace = true
 png.workspace = true
