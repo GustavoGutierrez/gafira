@@ -536,6 +536,8 @@ dependencies = [
  "gafira-doc",
  "gafira-edit",
  "gafira-geom",
+ "gafira-ports",
+ "gafira-raster",
  "png",
  "proptest",
  "serde_json",
