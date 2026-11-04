@@ -22,12 +22,62 @@ Owner decisions touched: none (checked D-01 to D-57: the visitor contract is a d
 
 ## DC1 (tdd-apply)
 
-Commits:
+Commits: `df8ab59` the visitor contract over the node kinds (`crates/gafira-doc/src/visit.rs`, its `lib.rs` line and `crates/gafira-doc/tests/visit_contract.rs`).
 
-Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, and the ARQ-107 step), each by extracting its `run:` from `ci.yml`.
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, and the ARQ-107 step), each by extracting its `run:` from `ci.yml`. The gates were run on the delivered tree after the hand mutants were reverted; the mutants themselves were run against the test suite alone and were never committed.
 
 ### RED evidence
 
-### Negative controls
+The RED state was the module with its whole public API and the behaviour missing: the walk reduced to its first root, the dispatch with a catch-all arm and the measurement without the DPI gate. Every test below failed with an assertion or a panic, never with a compile error.
+
+| AC | RED (test and failing assertion) | GREEN |
+|---|---|---|
+| AC1 | `visit::tests::arq_134_every_node_is_visited_once`: `assertion left == right failed: left: [1], right: [1, 2, 3]` | the same test, `ok` |
+| AC2 | `visit::tests::arq_134_a_visitor_with_only_visit_node_receives_every_node`: `left: [1], right: [1, 2, 3]` | the same test, `ok` |
+| AC3 | `visit_contract::arq_134_the_dispatch_has_no_catch_all_arm`: the dispatch block printed with the arm `_ => v.visit_node(node),` in it | the same test, `ok` |
+| AC4 | `visit::tests::arq_135_the_view_borrows_the_page_and_its_arena`: `left: [1], right: [1, 2]` | the same test, `ok` |
+| AC5 | `visit::tests::arq_135_a_page_without_roots_walks_to_an_empty_vector`: panicked `the page has a root` | the same test, `ok` |
+| AC6 | `visit::tests::arq_135_the_walk_answers_with_owned_values`: `left: [1], right: [1, 2]`. The type half of the criterion is a compile-time check: the page is dropped before the assertion, so the test only compiles because `Out` is owned (`walk` returns `Vec<V::Out>`, the visitor's `Out` is `NodeId`) | the same test, `ok` |
+| AC7 | `visit::tests::arq_136_pre_order_visits_the_parent_before_its_children`: `left: [1], right: [1, 2, 4, 3]`; `visit::tests::arq_136_post_order_visits_the_parent_after_its_children`: `left: [1], right: [4, 2, 3, 1]` | both tests, `ok` |
+| AC8 | `visit::tests::arq_136_a_cycle_ends_the_walk_and_visits_each_node_once`: `left: [1], right: [1, 2]` (the mutual cycle; the own cycle already reached `[1]`) | the same test, `ok` |
+| AC9 | `visit::tests::arq_136_a_missing_child_is_skipped_and_the_rest_is_walked`: `left: [1], right: [1, 2, 3]` | the same test, `ok` |
+| AC10 | `visit::tests::arq_136_an_unusable_dpi_degenerates_the_measurement`: `assertion left == right failed: dpi NaN, left: (10.0, 10.0), right: (0.0, 0.0)` | the same test, `ok` |
+| AC11 | command `grep -rn "RenderGraphBuilder\|gafira_render" crates/gafira-doc/src/`: no match (grep exit 1, which is the pass). The companion `visit_contract::arq_137_the_domain_depends_on_no_crate_above_it` reads the manifest and finds no crate above the domain | the same command, no match, and the test, `ok` |
+| AC12 | the CI policy steps and `cargo test --workspace --locked`: the ARQ-13 invariants are checked by `Document::validate`, whose tests are part of that run. `crates/gafira-doc/src/lib.rs` keeps `#![forbid(unsafe_code)]` | every step exit 0, `cargo test --workspace --locked` exit 0 |
+
+The RED run of `visit_contract::arq_134_the_trait_declares_one_method_per_node_kind` failed on its own name extraction (the names came out without the `visit_` prefix, `the trait declares ["node", "group", "shape", "extension"]`), so the dispatch test above carries the RED evidence of AC3; the trait test was fixed and passes.
+
+### Negative controls (run, then reverted)
+
+The critical code of DC1 is the walk order, the cycle guard, the borrow rules of `PageView` and the empty-page case (design, "Critical code"). Each mutant was applied to the delivered code, the test that kills it was run, and the mutant was reverted. No mutant was committed.
+
+| Mutant | Wrong behaviour | Killing test | Failure |
+|---|---|---|---|
+| 1 | the two orders are inverted: `PreOrder` visits the parent after its children | `visit::tests::arq_136_pre_order_visits_the_parent_before_its_children` | `left: [4, 2, 3, 1], right: [1, 2, 4, 3]` (5 tests failed) |
+| 2 | the cycle guard becomes a depth cap: the walk still ends, but a node is visited more than once | `visit::tests::arq_136_a_cycle_ends_the_walk_and_visits_each_node_once` | `left: [1, 1, 1, 1, 1, 1, 1, 1], right: [1]` |
+| 3 | `PageView` owns a clone of the page instead of borrowing it | `visit::tests::arq_135_the_view_borrows_the_page_and_its_arena` | `assertion left == right failed: the walk cloned or copied the arena, left: [2, 2], right: [1, 1]` |
+| 4 | the walk panics when the page has no roots | `visit::tests::arq_135_a_page_without_roots_walks_to_an_empty_vector` | panicked `the page has a root` |
+
+Mutant 2 was written as a depth cap and not as the removal of the guard: the removal does not terminate, and the criterion is that the walk ends *and* visits each node once, so a mutant that hangs would not fail an assertion (ADR 0004).
+
+The assertions that must not move, and that the mutants above show bite:
+
+- a child that does not exist in the arena is skipped, the other children are walked and nothing panics (`arq_136_a_missing_child_is_skipped_and_the_rest_is_walked`);
+- the arena is not cloned: the `Arc::strong_count` of every node is the same before and after the walk, and the node the visitor receives is the one in the arena (`arq_135_the_view_borrows_the_page_and_its_arena`);
+- the dispatch over `NodeKind` has no catch-all arm (`arq_134_the_dispatch_has_no_catch_all_arm`);
+- the domain's public API names no render graph (the `grep` of AC11, and `arq_137_the_domain_depends_on_no_crate_above_it`);
+- the walk does not filter by `visible` or `locked` (`arq_136_the_walk_visits_hidden_and_locked_nodes`).
 
 ### Choices and deviations
+
+- The instant is a type parameter, not `Flicks`: the layer table of CI (V5) gives `gafira-doc` only `gafira-geom` and `gafira-color`, and this delivery changes no manifest and no `Cargo.lock`, so it can run beside the `RE` and `ME` streams. `NodeBehavior<T = ()>` and `NodeExtension<T = ()>` therefore take the instant as the caller's type and the domain names no time type. ARQ-136's rule holds: the instant is a separate argument, never in the context.
+- `local_bounds` answers with the node's own placed box; the union of a group's children is `gafira-layout`'s answer (D-28, ADR 0009). The domain does not depend on the layout engine.
+- The DPI decides whether the measurement is defined and nothing else, because no node kind sizes itself in physical units yet: with a usable DPI the box is the node's page-space box, and with an unusable one it is the degenerate box of 02 §4.1 (width 0, height 0) and the hit test is `false`.
+- `NodeExtension` is declared here with `bounds` and `inspector_schema`, and with no render reference (ARQ-137). The handler that draws an extension belongs to the render engine (design P5, `RE1`): the domain registers nothing and knows no handler type.
+- The dispatch over `NodeKind` has no catch-all arm, and the shape is checked by a test that reads the source (`arq_134_the_dispatch_has_no_catch_all_arm`), because ARQ-134 asks for the grep and for the compile failure that adding a variant produces; that compile failure cannot be a unit test.
+- The walk answers with owned values: the visitor's `Out` cannot borrow a node, because the trait's methods take `&Node` with a short lifetime and return `Self::Out` (ARQ-135).
+- `PageView` and `MeasureCx` are neither `Clone` nor `Copy`: they hold a `&Page` and nothing else, so handing one over copies nothing.
+- The hit test follows kurbo's convention: the top-left corner is inside the box and the bottom-right edge is not.
+- The walk uses an explicit stack, so a deep tree cannot overflow the call stack, as `Document::validate` does for its own walk.
+
+Measured: `git diff --shortstat develop...HEAD` before this note: 4 files, 753 insertions, of which 33 are the Slice card: about 720 authored lines for DC1 (forecast 430, x1.4 = 600). Over the ~700 signal of `AGENTS.md`: the coordinator decides.
