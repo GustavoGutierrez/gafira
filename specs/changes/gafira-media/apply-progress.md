@@ -66,8 +66,8 @@ The four hand mutants of the design ("Critical code" of `ME1`), applied one at a
 
 ## ME2
 
-Flow: full | level: L2 | pack: product-spec slice | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: the media stream continues with the cache the scrubbing reads from
-Product IDs: ARQ-44, ARQ-145, CAL-14, FV-11 (b) (source: specs/02-arquitectura-software.md §6.5, specs/05-funcionalidad-video-y-distribucion.md §A6)
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the media stream continues with the cache the scrubbing reads from; the mutation run and the deep verify were waived by the owner (O4, O5 of the layer-3 design)
+Product IDs: ARQ-44, ARQ-145, CAL-14 (partial, the rest lands with ME4), FV-11 (b) (partial, the rest lands with ME4) (source: specs/02-arquitectura-software.md §6.5, specs/05-funcionalidad-video-y-distribucion.md §A6)
 Scope: `ME2` of `specs/changes/layer-3/design.md`: in `gafira-media`, the cache of frames: the LRU, the byte budget, the prefetch policy in the direction of the head and the nearest cached frame.      Non-goals: the proxies (`ME3`), the playback clock (`ME4`), the exporter (`ME5`), the tile cache of the render stream, and any change to `gafira-ports`.
 Acceptance:
   AC10 Given a budget of 0, When a frame is cached, Then no frame is kept and `bytes()` gives 0 [unit]
