@@ -278,6 +278,32 @@ The owner resolved O1 to O3 in YOLO mode on 2026-11-03, on the recommended optio
 | O2 | 02 §6.5 fixes the frame cache budget at "1 GB or 15 % of RAM, the lesser", and D-03 fixes "≤ 1,5 GB with 20 pages" and "≤ 300 MB at rest". On the reference machine (8 GB) the frame cache is 1 GB, which leaves 0,5 GB for everything else under the 1,5 GB cap. Is the frame cache inside the 1,5 GB or on top of it? | (a) Inside: the governor trims the frame cache first to fit the 1,5 GB. One number to respect, and the idle budget is untouched. (b) On top: the 1,5 GB covers the document only and the cache is extra, which is easier to reason about but lets the process pass the number D-03 fixed. (c) Lower the frame cache default: contradicts the FIJADA figure in 02 §6.5 without a new owner decision. | (a). It changes `gafira-media`'s default budget and the governor's trim order, so the owner confirms it. |
 | O3 | `gafira-render-cpu` is the golden oracle (02 §4.5, ARQ-113) and unblocks `bench_export_png_1080` (CAL-11) and the ARQ-42 preview/export golden. It is layer 4 and out of this cut. Should it be planned as its own change right after layer 3, or pulled into this one? | (a) Its own change right after layer 3: layer 3 stays at the size above, and the oracle lands when the plan and the graph are stable. (b) Pulled in: the pixel-level acceptances land with layer 3, but the delivery grows by roughly a compositor and its own licence and platform questions, and the two streams stop being parallel. | (a), planned as the next change. The owner confirms the priority. |
 
+## Owner decisions taken (YOLO, 2026-11-03, second session)
+
+The owner asked for the change to be finished faster and named what to skip. Two decisions were taken on 2026-11-03, after `SC1` and `DC1` had already been verified at depth V2 and merged.
+
+### O4. The T4 mutation run at close is skipped — `mutation: off`
+
+The five crates the change touches (`gafira-render`, `gafira-media`, `gafira-doc`, `gafira-ports`, `gafira-testkit`) do not get the whole-crate `cargo mutants` run that `mutation: archive` would require at close.
+
+Reason: the owner decides that the code is already validated by the per-delivery gates. Every delivery runs `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check` and the nine CI policy steps **on each of its commits**, plus the hand mutants of the design's critical code, which the implementer applies and kills before committing.
+
+Cost of the decision: the mutation report is the one piece of evidence that says no wrong behaviour survives the whole test suite of a crate. It is not replaced. What replaces it is the V1 verification of every delivery (gates at HEAD plus a criterion map), the hand mutants on the critical code of each delivery, and the remote CI on the three product targets for every branch.
+
+Reversible: yes. The T4 run is a command over the same tree; a later change can run it on the two new crates without touching the code.
+
+### O5. The remaining deliveries are verified at depth V1
+
+From `ME2` and `RE2` onwards, the verification depth is **V1**: the gates at HEAD plus a map of every acceptance criterion to the test or command that proves it. The independent probes, the independent hand mutants and the scratch-export runs of V2 are not run for those deliveries.
+
+Reason: the owner asks for speed and states that the created code is already validated. V1 keeps the gates and the criterion map, which is what says whether a criterion has a proof; what it drops is the second opinion that V2 adds on top.
+
+What this means per delivery: the `tdd-apply` still applies the hand mutants of the design's critical code and kills each one before committing, and still runs the full gate suite on every commit. The `verify` still checks every acceptance criterion against a test or command, still checks the integrity of the Slice card and the notes, and still runs the gates. The rounds that already ran at V2 (`SC1` rounds 1 and 2, `DC1` rounds 1 and 2, `ME1` round 1 and `RE1` round 1) keep their depth and their reports.
+
+Cost of the decision: a defect that only an independent probe would find, as the one the V2 round of `ME1` found in the keyframe seek, may reach `develop`. The gates and the hand mutants do not cover that class of defect.
+
+Reversible: yes. Any delivery can be re-verified at V2 later, and the V2 report of `RE1` is the reference for what that costs.
+
 ## Owner decisions taken (YOLO, 2026-11-03)
 
 The owner worked in YOLO mode and was not available for questions, so O1 to O3 were resolved on 2026-11-03 on the recommended option of each. The table of options above stays as the record of what was weighed. Each decision below stands on the recommendation it adopted, and each names what the owner can revert.
