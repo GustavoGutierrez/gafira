@@ -207,10 +207,64 @@ Owner decisions touched: none (checked D-01 to D-57: FV-22 fixes the location of
 
 Commits:
 
-Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
+- `bfcc9e5` `feat(gafira-media): add the proxy store`: the store module of the crate (`src/proxy.rs`), its exports (`src/lib.rs`), its tests (`tests/proxy.rs`) and the writable file system double those tests inject (`tests/proxy_support.rs`). 4 files changed, 1108 insertions(+).
+
+Measured at `bfcc9e5`: `git diff --shortstat cbe83c5...HEAD` -> 4 files changed, 1108 insertions(+), that is 1108 authored lines against the ~460 ceiling of the design (645 with the factor of the plan): 440 lines for the store, 467 for the tests, 197 for the double and 4 for the exports. The delivery passes the ~700 signal of `AGENTS.md` by 408 lines, and the double is the largest avoidable part of it (see "Choices and deviations"): the coordinator decides whether the size is accepted or the delivery is cut.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0 (185 binaries, 2320 tests, 0 failed), `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`), and the nine CI policy steps, each `run:` extracted literally from `.github/workflows/ci.yml` and run with `bash -euo pipefail`: Format 0, CLI has no UI dependencies (ARQ-07) 0, Domain crates forbid unsafe code 0, the layer table (V5) 0, the `clippy.toml` copies (V12) 0, Layers 0-2 know no language (ARQ-107) 0, EditToken only in the edit crates (V13) 0, Every core command has a property test (V14) 0 and Testkit ports feature compiles (ADR 0013) 0. Plus the crate gate: `cargo clippy -p gafira-media --all-targets --locked -- -D warnings` 0 and `cargo test -p gafira-media --locked` 0, 31 tests (12 cache, 3 contract, 7 keyframe, 9 proxy). The gates were run twice, before and after the wording of one module doc comment, so the numbers above are the ones of the committed tree.
 
 ### RED evidence
 
+The tests were written against the acceptance criteria of the card and the implementation was then reduced to a skeleton, in two batches, to capture the RED. Every failure below is an assertion failure, not a compile error, and the implementation was restored afterwards.
+
+The first batch is the store: its skeleton wrote no file and answered `Ok` with `Bytes(0)` at `Priority::Interactive`, named every copy `copy.mjpeg`, answered the default budget with one gibibyte, let the export read the copy and never enforced the budget. Eight of the nine tests of the binary failed:
+
+- AC19 `arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project`: `assertion left == right failed, left: Bytes(0), right: Bytes(8)`.
+- AC21 `arq_146_an_export_reads_the_original_and_never_the_copy`: `assertion left == right failed, left: ProxySource { level: Original, path: "/home/user/Documents/clip.gafira" }, right: ProxySource { level: P540, path: "/home/user/.cache/gafira/proxies/copy.mjpeg" }` (the preview answered the original: the skeleton wrote nothing).
+- AC22, the default `arq_146_the_default_budget_of_the_copies_is_ten_gigabytes`: `assertion left == right failed, left: Bytes(1073741824), right: Bytes(10737418240)`.
+- AC22, the eviction `arq_146_the_budget_discards_the_least_used_copies`: `the least used copy is discarded, not the most used one`.
+- AC20 `arq_146_a_cancelled_generation_leaves_no_half_written_file`: `a cancelled generation answers the cancelled error: Ok(ProxyReport { size: Bytes(0), frames: 4, priority: Interactive })`.
+- AC23, the priority `arq_146_the_generation_runs_in_the_background_with_progress`: `assertion left == right failed, left: Interactive, right: Background`.
+- AC23, the contract `arq_146_the_generation_follows_the_progress_contract`: `assertion left == right failed, left: Err(NotCompleted), right: Ok(())`.
+- AC19, the naming `arq_146_the_two_levels_of_a_medium_are_two_copies`: `assertion left != right failed, left: "/home/user/.cache/gafira/proxies/copy.mjpeg", right: "/home/user/.cache/gafira/proxies/copy.mjpeg"`.
+- `arq_146_a_budget_of_zero_keeps_no_copy` is the only one that holds in that batch: a store that writes nothing keeps no copy either. Its rule is the eviction of the green code and H3 covers it.
+
+The second batch is the generation: its skeleton kept the writes but dropped the checkpoints of the cancel token and the reports of the progress. Two tests failed:
+
+- AC20 and AC23 `arq_146_a_cancelled_generation_leaves_no_half_written_file`: `a cancelled generation answers the cancelled error: Ok(ProxyReport { size: Bytes(16), frames: 4, priority: Background })`.
+- AC23 `arq_146_the_generation_runs_in_the_background_with_progress`: `assertion left == right failed: the fraction is the frames done over the frames planned, and 1.0 is the end, left: [1.0], right: [0.2, 0.4, 0.6, 0.8, 1.0]`.
+
+The contract checker of the testkit (`check_progress_contract`) does not fail in that batch, and the reason is worth recording: it places the cancel in reports 1, n/2 and n-1, so a generation that reports only its end gives it no report to cancel in and the run passes without checking anything. The AC23 test therefore asserts the number of reports of a plain run (5 for 4 frames) before it hands the operation to the checker; a generation without the per-frame report fails on that count, as the second batch shows.
+
+AC24 is a command: the policy steps above all exit 0, and `grep -rn` over `crates/gafira-media/src` and `crates/gafira-media/tests` for `std::fs`, `std::net`, `std::thread::spawn`, `std::thread::Builder`, `std::time::Instant::now`, `std::time::SystemTime::now` and `std::env::` gives no hit (exit 1). The crate keeps `#![forbid(unsafe_code)]` and its row of the layer table (V5).
+
 ### Negative controls
 
+The six hand mutants of the list, applied one at a time to the store on the green code and reverted after each run. None of them was committed and the tree of `bfcc9e5` is the green one.
+
+| # | The wrong behaviour | The killing test | The assertion |
+|---|---|---|---|
+| H1 | `ProxyStore::path` built the name under the project (`/home/user/Documents/clip.gafira/`) instead of the cache root | `arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project` | `the copy lives in the user cache: "/home/user/Documents/clip.gafira/0101010101010101010101010101010101010101010101010101010101010101-540p.mjpeg"` |
+| H2 | the copy was written straight to its final name (`temporary = final_path`) | `arq_146_a_cancelled_generation_leaves_no_half_written_file` | `assertion left == right failed: the copy is never visible under its final name while it is written, left: [true], right: [false]` |
+| H3 a | the default budget became five gibibytes | `arq_146_the_default_budget_of_the_copies_is_ten_gigabytes` | `assertion left == right failed, left: Bytes(5368709120), right: Bytes(10737418240)` |
+| H3 b | `evict_to` took `next_back()`, so it freed the most recently used copy | `arq_146_the_budget_discards_the_least_used_copies` | `the least used copy is the one discarded` |
+| H4 | `read` lost the `ProxyUse::Export` branch, so an export read the copy | `arq_146_an_export_reads_the_original_and_never_the_copy` | `assertion left == right failed: the export reads the original and keeps the resolution of the original, left: ProxySource { level: P540, path: ".../proxies/0101...-540p.mjpeg" }, right: ProxySource { level: Original, path: "/home/user/Documents/clip.gafira" }` |
+| H5 | the checkpoints of the loop and of the last frame were dropped | `arq_146_a_cancelled_generation_leaves_no_half_written_file` | `a cancelled generation answers the cancelled error: Ok(ProxyReport { size: Bytes(16), frames: 4, priority: Background })` |
+| H6 | the cancel branch reported `1.0` before it returned the cancelled error | `arq_146_a_cancelled_generation_leaves_no_half_written_file` and `arq_146_the_generation_follows_the_progress_contract` | `it reports nothing more, left: [0.2, 1.0], right: [0.2]`; `left: Err(EarlyCompletion { at: 1 }), right: Ok(())` |
+
+Two of them survived their first run, and each one exposed a test that did not prove the rule:
+
+- H1 survived the first version of the AC19 test, which compared the file set against `store.path(&key)`: the store named the expected path too, so a copy in the project matched. The test now asserts the path against the cache root and every held file against the two roots, and the mutant dies.
+- H2 survived too, because the error path of the generation removes the temporary name, and the mutant had made that name the final one: the wrong behaviour only leaves a partial file when the cleanup is absent. The test now watches the final name at every progress report (a `Progress` double that asks the file system whether the final name is taken) and the mutant dies on the first frame. The cleanup stays covered by the file-set assertion of the same test.
+
 ### Choices and deviations
+
+- **The crate does not encode, and the seam is a trait of the crate.** The MJPEG codec is layer 4, so `ProxyProducer` gives the store the chunks of the copy, one per frame, and the store writes them, checks the token once per frame and reports the progress. It is the only decision this delivery had to take and it keeps the store pure: when the codec lands, the adapter decodes, encodes and feeds the store, and nothing of this delivery changes.
+- **The level of a copy is `ProxyLevel`, from the frame cache of `ME2`.** `ProxyKey::of` answers `None` for `ProxyLevel::Original`: the original is not a light copy (FV-22), so a key is 540p or 720p and the frames of the copy key the frame cache at that level.
+- **The reader decides with `ProxyUse::{Preview, Export}` and not with `RenderQuality`.** The store is not rendering, and the rule FV-22 (b) fixes is a decision of the reader ("the export always uses the original"); a new two-value enum says it without borrowing the vocabulary of the render ports.
+- **The generation reports `Priority::Background` in its `ProxyReport`.** `ports::WorkerPool` carries no priority, so the store cannot enqueue its work at that priority: the report says which priority the generation runs at and the caller enqueues it accordingly (02 §6.3). The AC23 test asserts the field.
+- **Ten gigabytes are `Bytes(10 << 30)`.** FV-22 writes "10 GB (PROPUESTA)" and does not say whether the gigabyte is decimal or binary; the crate follows the "1 GB" of ARQ-145, which `ME2` reads as `Bytes(1 << 30)`, so the default is 10 737 418 240 bytes. This is a choice, not a figure of the spec: if the owner reads GB as 10^9, the constant is the one line to change.
+- **The budget counts what the store wrote, and the index lives in memory.** `ports::FileSystem` has no call that gives the size of a file, so a fresh store cannot adopt the copies another session left under the cache directory: it starts empty and generates them again, which is what a cache is for (FV-22 (c), "borrar la caché no pierde datos del proyecto"). The risk, for verify: files left by an earlier process are not counted against the 10 GB until they are generated again. A follow-up could add the size to the port or a manifest, and neither is in the scope of this delivery.
+- **AC21 is proved on the half the store owns.** With a 540p copy in the cache, the source of an export is the path of the original at `ProxyLevel::Original`, so the export reads the original and keeps its resolution; the assertion over the file the export produces needs the exporter, which is `ME5`, so the resolution of the written file is proved by `ME5`'s acceptance. This is a deviation of the evidence, not of the behaviour, and it is reported as such.
+- **The tests inject a second file system double, and that is the price of the size.** `tests/support/mod.rs` keeps its read-only double on purpose: it is what proves that opening a medium writes no file (ARQ-144, `ME1`), so making it writable would weaken that test. `tests/proxy_support.rs` is the writable one (197 lines) and it is the largest avoidable part of the 408 lines over the ~700 signal. The alternative was an `#[allow(dead_code)]` on the shared module, which the crate rules forbid; the coordinator may accept the double, or fold it into the shared module in a later delivery that also owns the read-only test.
+- **No deviation of scope.** The delivery touched only `crates/gafira-media/**`: `src/proxy.rs`, `src/lib.rs`, `tests/proxy.rs` and `tests/proxy_support.rs`. `crates/gafira-ports`, `crates/gafira-doc`, `crates/gafira-testkit` and `.odd/state.json` were not touched, and the Slice card and the `Flow:` line above were not edited.
