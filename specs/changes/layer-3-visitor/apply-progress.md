@@ -179,3 +179,9 @@ The step `Testkit ports feature compiles (ADR 0013)` is not in this branch's `ci
 - W1 stays open: the row of 02 §4.1 still says `t: Flicks`, and the literal type is unreachable from `gafira-doc`. This round does not touch it; `specifier` still has to reconcile the row.
 
 Measured: `git diff --shortstat 6672880...HEAD` after the code commit is 1 file changed, 141 insertions(+), 2 deletions(-), the test file alone. These notes are the only other change of the round.
+
+### Coordinator decisions on verify round 2
+
+- **W3 (size): refreshed.** The round-2 measurement is **859 authored code lines** (visit.rs 551, visit_contract.rs 307, lib.rs 1), not the 720 quoted in the round-1 decision: the fix round of W2 added 139 net lines to the test file. That is 22,7 % over the ~700 signal, not 3 %. The decision stands on the character of the delivery (a contract with its shape checks and its tests), and the owner delegated the decision to the coordinator in YOLO mode on 2026-11-03. **The coordinator accepts it at the refreshed figure.**
+- **W1: closed in the spec, not on this branch.** The `specifier` reconciled ARQ-136 and the §4.1 sketch in `specs/02-arquitectura-software.md` (commit `d5090a1`, merged into `develop` as `9ef43d6`): the instant travels apart from the call, the domain names no time type because `gafira-doc` does not reach `gafira-time` (§2.1, §2.2), and the type of the instant is chosen by the caller through a type parameter. The round-2 verify could not see it because this branch was cut before that commit; merging `develop` in brings it.
+- **S3 (stale note).** The note that the `ports` step of CI "is not in the `ci.yml` of the branch" was true at `6672880` and is false after the merge of `develop`; the step exists and passes on this branch.
