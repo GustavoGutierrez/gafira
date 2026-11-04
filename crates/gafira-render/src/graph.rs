@@ -171,6 +171,7 @@ impl From<Cancelled> for GraphError {
 pub struct RenderGraph {
     nodes: Vec<GraphNode>,
     ops: Vec<RenderOp>,
+    root_op_ranges: Vec<std::ops::Range<usize>>,
     visited: Vec<NodeId>,
     roots: Vec<GraphNodeId>,
     params: GraphParams,
@@ -194,6 +195,18 @@ impl RenderGraph {
     #[must_use]
     pub fn ops(&self) -> &[RenderOp] {
         &self.ops
+    }
+
+    /// The operations of the subtree of every root, in the order of the
+    /// roots.
+    ///
+    /// The planner gives each tile the operations of the root it draws
+    /// (02 §6.1).
+    #[must_use]
+    pub fn root_ops(&self) -> impl ExactSizeIterator<Item = &[RenderOp]> {
+        self.root_op_ranges
+            .iter()
+            .map(|range| &self.ops[range.clone()])
     }
 
     /// The document nodes the walk reached, in the order it reached them.
@@ -301,6 +314,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
 
         let mut nodes: Vec<GraphNode> = Vec::new();
         let mut ops: Vec<RenderOp> = Vec::new();
+        let mut root_op_ranges: Vec<std::ops::Range<usize>> = Vec::new();
         let mut graph_roots: Vec<GraphNodeId> = Vec::new();
         let mut done = 0usize;
         for sub in subgraphs {
@@ -315,15 +329,18 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 done += 1;
                 checkpoint(cancel, progress, done as f32 / planned as f32)?;
             }
+            let ops_start = ops.len();
             ops.extend(sub.ops);
             if let Some(root) = root {
                 graph_roots.push(GraphNodeId(base + root.0));
+                root_op_ranges.push(ops_start..ops.len());
             }
         }
         checkpoint(cancel, progress, 1.0)?;
         Ok(RenderGraph {
             nodes,
             ops,
+            root_op_ranges,
             visited,
             roots: graph_roots,
             params: self.params,
