@@ -64,3 +64,73 @@ Run and reverted; the tree was clean afterwards and the V5, V12 and ARQ-107 step
 - The notes of this delivery are a separate `docs` commit, as in the layer-2 scaffold (`60f39cf`), because the notes name the hash of the commit they describe.
 
 Measured: `git diff --shortstat develop...HEAD` -> 24 files changed, 675 insertions(+), 6 deletions(-). Authored lines without `Cargo.lock` and without the two `clippy.toml` copies: about 504 (forecast 200, x1.4 = 280). Over the forecast, under the ~700 ceiling of a full run; the coordinator decides.
+
+## SC1 (fix round 1)
+
+Round that closes the warning W3 of verify round 1 (`implementation`): "No CI job compiles the testkit ports feature, so the nine doubles (~300 lines) are outside the remote gate: run 41836317734 never compiled them. SC1 owns `ci.yml`, so the feature-on job belongs here."
+
+Commit:
+
+- `a18096f` ci(layer-3): compile the testkit ports feature in CI
+
+The change adds one step to the `policy` job of `.github/workflows/ci.yml`, `Testkit ports feature compiles (ADR 0013)`, which runs `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` and `cargo test -p gafira-testkit --features ports --locked`.
+
+### RED evidence
+
+The RED of a CI configuration fix is the state the gate is missing from, and its real output.
+
+| AC | RED | Command and exit | GREEN |
+|---|---|---|---|
+| AC8 | no job of the workflow compiles the `ports` feature | `grep -n 'features ports' .github/workflows/ci.yml` -> no match, exit 1. The only cargo runs of the workflow were `cargo clippy --workspace --all-targets --locked -- -D warnings` (line 47) and `cargo test --workspace --locked` (line 49), neither with `--features ports`, plus `cargo fmt --check` and the `cargo tree` of the policy steps | the `policy` job carries the step `Testkit ports feature compiles (ADR 0013)`, exit 0 |
+| AC7 | the default suite compiles the doubles and their test out | `cargo test -p gafira-testkit --test ports_feature --locked` -> `running 2 tests`, `arq_112_the_port_doubles_are_reachable_with_the_feature_on` absent, exit 0 | `cargo test -p gafira-testkit --features ports --locked` -> `running 3 tests`, `arq_112_the_port_doubles_are_reachable_with_the_feature_on ... ok`, exit 0 |
+
+### Negative control
+
+The signature of a double was broken on purpose: `fn now(&self) -> UnixTime` became `fn now(&self) -> u64` in `crates/gafira-testkit/src/ports/clock.rs`, a signature that does not match the `Clock` trait. The step body was then run as CI runs it.
+
+```
+error[E0053]: method `now` has an incompatible type for trait
+  --> crates/gafira-testkit/src/ports/clock.rs:14:22
+   |
+14 |     fn now(&self) -> u64 {
+   |                      ^^^ expected `gafira_ports::common::UnixTime`, found `u64`
+error: could not compile `gafira-testkit` (lib) due to 2 previous errors
+```
+
+Step exit: 101.
+
+The same defect with the default features, which is what the workflow ran before this fix, passed:
+
+```
+$ cargo clippy --workspace --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.18s
+EXIT: 0
+```
+
+That is the substance of W3: the defect was invisible to the remote gate. The change was reverted with `git checkout -- crates/gafira-testkit/src/ports/clock.rs`, the tree was clean apart from `.github/workflows/ci.yml`, and the step exited 0 again.
+
+Hand mutants: none. The delivery carries no mutant list (the design lists `SC1` as "None; configuration only"); the control above is its configuration equivalent.
+
+### Gates
+
+Run in order, each on its own, exit 0:
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 |
+| `cargo deny check` (`advisories ok, bans ok, licenses ok, sources ok`) | 0 |
+| CI policy steps of `ci.yml`, each body extracted from its `run:` and run in bash: toolchain install, Format, CLI has no UI dependencies (ARQ-07), Domain crates forbid unsafe code, V5, V12, ARQ-107, V13, V14, and the new `Testkit ports feature compiles (ADR 0013)` | 0 each (10 of 10) |
+| `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` | 0 |
+| `cargo test -p gafira-testkit --features ports --locked` | 0 |
+
+### Choices and deviations
+
+- The step lives in the `policy` job and not in the `test` matrix: the matrix is the three product targets, and the Slice card's Plan gives `ci.yml` to `SC1`, so the feature-on gate belongs to the delivery that owns the file. The job runs on a single target, so the step checks the host itself (`rustc -vV` must report `x86_64-unknown-linux-gnu`, the Linux entry of the matrix) and states in its comment that the feature is compiled on Linux while the three product targets are covered by the `test` matrix through the default suite, whose tree carries neither `gafira-ports` nor `gafira-raster` (ADR 0013, decision 4). No new matrix was invented.
+- The step runs before the `cargo-deny` action, which stays last.
+- The `policy` job warms no cache and none was added: the step adds a full build of the testkit and its tree to that job, and correctness comes before the time.
+- The `gafira-testkit` dev-dependency of `gafira-render` and `gafira-media` was **not** added here. Neither `crates/gafira-render/Cargo.toml` nor `crates/gafira-media/Cargo.toml` has a `[dev-dependencies]` section, which is the state XP9 records ("the premise is not in the tree"); XP9 also records that the dev-dependency adds two lines to `Cargo.lock`, so it belongs to the delivery that adds it (`RE1`/`ME1`), serial and alone. Out of this round.
+- The V5 row of `gafira-testkit` still describes only its default tree (suggestion S1 of verify round 1). Unchanged here: V5 and the ARQ-107 step resolve the graph without `--features`, by design.
+
+Measured: the fix round itself is `git diff --shortstat 02ff7bb..a18096f` -> 1 file changed, 14 insertions(+). The branch at the time of writing is `git diff --shortstat develop...HEAD` -> 27 files changed, 1364 insertions(+), 6 deletions(-).
