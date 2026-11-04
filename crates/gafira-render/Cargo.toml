@@ -17,5 +17,8 @@ gafira-anim.workspace = true
 blake3.workspace = true
 kurbo.workspace = true
 
+[dev-dependencies]
+gafira-testkit = { workspace = true, features = ["ports"] }
+
 [lints]
 workspace = true
