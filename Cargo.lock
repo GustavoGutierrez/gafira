@@ -510,6 +510,7 @@ dependencies = [
  "gafira-geom",
  "gafira-ports",
  "gafira-raster",
+ "gafira-testkit",
  "gafira-time",
  "kurbo",
 ]
