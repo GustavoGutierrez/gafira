@@ -344,6 +344,18 @@ Consequences inside the cut: `RE3` depends on `RE2` and `ME3` on `ME2`, so the t
 
 Reversible: yes. Every deferred delivery sits behind a port or a trait that `SC1` and the core already fix (`ports::RenderBackend`, `ports::PageRenderer`, `ports::Exporter`, `ports::Clock`), so `layer-3b` adds them without changing the API of the two crates. What is not free is the time already spent: the cost of the change is the same whether the four land now or later, and the owner may reopen them at any point.
 
+### O7. The `RE` stream closes on the mechanical gates, without a verification round — decided by the owner on 2026-11-04
+
+`RE1`'s closure round, `RE2`'s first round and `RE3`'s first round do not run. The stream closes when the gates pass at HEAD: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check` and the nine policy steps of the CI workflow. The hand mutants of each delivery's critical code still run, because they are part of `tdd-apply` and not of `verify`.
+
+Reason: time. The owner judged the delivery speed worth more than the independent review of the last two deliveries of the render stream.
+
+What this costs, stated once: `RE2` and `RE3` have never been read by a reviewer other than their implementer, and the fix of `RE1` (the tag byte of the parameter kind, `5a4da07`) has not been re-checked either. The class of defect the V2 round of `ME1` found in the keyframe seek — a branch that ignores the cancel token in a path no test of the implementer touched — is exactly the class this round would have caught. The gates prove that the workspace builds, lints clean, passes its own tests and respects the layer table; they do not prove that the tests cover the criteria.
+
+Consequence for the record: `specs/changes/gafira-render/` carries no `verification.json` past round 1 of `RE1`, so the G4 gate is satisfied for `RE1` only, and `RE2` and `RE3` are merged on the strength of their own `apply-progress.md` and of the gates. `archive` records the three deliveries as merged without an independent verdict.
+
+Reversible: yes, and the only thing needed is time. `RE1`, `RE2` and `RE3` can be verified at V1 later on their own branches or after the merge, and the round-1 report of `RE1` is the reference for what a V2 round costs. What is not reversible is nothing: no format, no API and no persisted schema depends on this decision.
+
 ## Needs explorer
 
 Provisional claims. Nothing in the table is built on until it is measured.
