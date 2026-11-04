@@ -1,23 +1,40 @@
-# Verify report: gafira-media, ME1, round 1
+# Verify report: gafira-media — ME1 round 2 (closure) and ME2 round 1
 
-Commit `c299ae7` on `feat/layer-3-media`, base `feat/layer-3-scaffold` at `267b372`. Depth V2, mode full, level L2, tier T4, `mutation: archive` (no `mutants` report, not a finding). Date 2026-11-04.
+Two rounds in one file, verified at the head of `feat/layer-3-media`, commit `c9d696c` (the merge of `develop`), in the worktree `/tmp/gafira-wt/me`. Gates and inspection at `c9d696c`; the tree was clean before and after the run.
 
-**Verdict: FAIL.** CRITICAL 1, WARNING 6, SUGGESTION 3. Classes: implementation 6, claim 1, ambiguity 0, architecture 0.
+| Round | Delivery | Kind | Depth | Verdict |
+|---|---|---|---|---|
+| A | `ME1` | closure round 2 of 3 | V2, on the open findings only | **PASS** |
+| B | `ME2` | first verify, round 1 of 3 | V1 (owner decision O5) | **PASS** |
 
-The gates are all green. The delivery fails on one code defect that an independent probe found and that no test of the delivery reaches: `Medium::seek` ignores the cancel token when it seeks by keyframe, so a cancelled seek returns success.
+Round A: **PASS.** CRITICAL 0, WARNING 6 (all from round 1, still open), SUGGESTION 4. Classes: implementation 5, claim 1.
+Round B: **PASS.** CRITICAL 0, WARNING 3, SUGGESTION 1. Classes: implementation 1, ambiguity 2.
 
-Gates, probes and hand mutants ran on a scratch export outside the repo (`git archive` of `c299ae7` into `/tmp/gafira-verify-export`, own `CARGO_TARGET_DIR=/tmp/gafira-verify-export-target`, `CARGO_INCREMENTAL=0`). The export tree was checksum-identical to `c299ae7` before the run. The shared worktree `/tmp/gafira-wt/me` was **not** used for the gates: while this round ran, uncommitted ME2 files appeared in it (`crates/gafira-media/src/cache.rs`, `crates/gafira-media/tests/cache.rs` and a modified `crates/gafira-media/src/lib.rs`, written between 11:01 and 12:19), so a gate run there would have measured a tree that is not `c299ae7`.
+Both verdicts are mechanical: no CRITICAL is open in either delivery, and the gates are green at HEAD. Two cautions for the coordinator, stated up front:
 
-## Gates
+- **ME1 still carries two real code defects** found by round 1's probes and untouched by the fix round: **W1** (the progress step breaks ARQ-139's 0.02 bound when the packet count does not match `duration x fps`) and **W2** (the keyframe times are never sorted, so the binary search can land wrong). A closure round does not re-severity earlier findings, so they stay WARNING and ME1 is PASS; the coordinator decides whether to route them to `tdd-apply` before merging ME1 or to carry them as follow-ups. Round 1 already routed them.
+- **ME2 ships no bench**, so CAL-14's FIJADA figure for the cache search (< 50 ms) is unmeasured (**W8**), and the card's ME2 Flow line still says `verify: V2 | mutation: archive` while the owner decisions O5 and O4 say V1 and `mutation: off` (**W9**).
 
-Each command ran alone and its own exit code was read, in the clean export of `c299ae7`.
+---
+
+# Round A — `ME1`, closure round 2 (depth V2, open findings only)
+
+The open findings are the ones of round 1 (`specs/changes/gafira-media/verify-report.md` at `c1ba024`, recorded in `verification.json` round 1): C1 (CRITICAL) and W1 to W6. The implementer answered with `9bc20f1 fix(gafira-media): check the cancel token in the keyframe seek` and recorded the round in `2c3dff5`.
+
+Per the depth rule for closure rounds, this round runs the gates and the artifact-integrity checks, checks only that each earlier finding is closed, and spends no independent-mutant budget. No probe was written from scratch; every closure below rests on the code, the implementer's test, or the gate run at HEAD.
+
+## Gates at HEAD (`c9d696c`)
+
+Each command ran alone, in the worktree, with `CARGO_TARGET_DIR=/tmp/gafira-verify-me-target` and `CARGO_INCREMENTAL=0`. The exit code is the command's own (read through `PIPESTATUS` where the output was filtered).
 
 | Gate | Exit |
 |---|---|
 | `cargo fmt --check` | 0 |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
-| `cargo test --workspace --locked` | 0 |
-| `cargo deny check` (0.20.2, the version CI builds) | 0 (`advisories ok, bans ok, licenses ok, sources ok`) |
+| `cargo test --workspace --locked` | 0 (183 binaries, 2311 tests passed, 0 failed) |
+| `cargo deny check` | 0 (`advisories ok, bans ok, licenses ok, sources ok`) |
+| `cargo test -p gafira-media --locked` | 0 (22 tests: `cache` 12, `contract` 3, `keyframe` 7) |
+| Format (CI step) | 0 |
 | CLI has no UI dependencies (ARQ-07) | 0 |
 | Domain crates forbid unsafe code | 0 |
 | Domain crates respect the layer table (V5) | 0 |
@@ -27,81 +44,65 @@ Each command ran alone and its own exit code was read, in the clean export of `c
 | Every core command has a property test (V14) | 0 |
 | Testkit ports feature compiles (ADR 0013) | 0 |
 
-The CI policy steps were extracted from the `run:` blocks of `.github/workflows/ci.yml` with a YAML parse and run with `bash -euo pipefail`, in the export. The `cargo-deny` step is a `uses:` action in CI, so `cargo deny check` ran locally instead.
+The nine policy steps were extracted from the `run:` blocks of `.github/workflows/ci.yml` with a YAML parse and run one by one with `bash -euo pipefail`. The `cargo-deny` step is a `uses:` action in CI, so `cargo deny check` ran locally instead.
 
-Corroboration in the shared worktree (same commit, but the tree was being edited concurrently, so it is not the source of record): `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0, `cargo deny check` 0, and the eight policy steps 0.
+## Closure of the earlier findings
 
-## Acceptance criteria
+| Id | Severity | Class | Status now | Evidence |
+|---|---|---|---|---|
+| C1 | CRITICAL | implementation | **closed** | See below. |
+| W1 | WARNING | implementation | open | `Work::step` (`crates/gafira-media/src/index.rs:176-182`) and `planned_frames` (`:224-237`) are unchanged by the fix round; the plan is still `duration x fps` and the jump on a mismatch still happens. |
+| W2 | WARNING | implementation | open | `keyframe_times` (`crates/gafira-media/src/index.rs:188-220`) still concatenates each chunk's times in packet order and sorts nothing, while the type documents ascending order (`:44-47`) and `keyframe_at_or_before` uses `partition_point` (`:82`). |
+| W3 | WARNING | implementation | open | `crates/gafira-testkit/Cargo.toml:10,19` still carries `gafira-time` and `dep:gafira-time` in the `ports` feature, added by `ff58ca0`, a single-writer file of `SC1`. |
+| W4 | WARNING | implementation | open | `git grep ARQ-138` over `crates/gafira-media/tests` reaches only the module header of `tests/support/mod.rs:1`. |
+| W5 | WARNING | implementation | open | The delivery is still 1401 code lines (measured below); the owner's OK on the size is still not recorded. |
+| W6 | WARNING | claim | open | `specs/changes/gafira-media/` has no `spike.md` and `crates/gafira-media/` has no `benches/` directory, so XP6 is still unmeasured. |
 
-| AC | Type | Status | Proof |
-|---|---|---|---|
-| AC1 | integration | covered | `arq_144_the_seek_lands_on_the_previous_keyframe_and_the_exact_seek_on_the_frame`; probes P1, P2, P18 (P18 adds the frame *at or after* the requested time, which no test of the delivery covers) |
-| AC2 | unit | covered | `arq_144_a_time_before_the_first_keyframe_returns_the_first_keyframe`; probe P3 |
-| AC3 | unit | covered | `arq_144_an_empty_index_reports_the_absence_of_a_keyframe`; probe P4 |
-| AC4 | integration | covered | `arq_144_reopening_the_medium_rebuilds_the_index`; probe P5 (the probe also checks that the container is read twice, so the index is really rebuilt) |
-| AC5 | command | covered | `arq_144_opening_a_medium_writes_no_file`; probe P6 (the file system of the probe **accepts** a write, so a write shows in the log instead of failing the call) |
-| AC6 | command | covered | Probe P15 walks the whole crate tree (`src/` and `tests/`, not one file) and finds none of the six forbidden paths; the clippy gate with the canonical `clippy.toml` copy bans the same paths; probe P7 shows the elapsed time comes from the injected `Clock` and from nowhere else |
-| AC7 | unit | **failing** | The scan half holds (`arq_139_the_scan_follows_the_progress_contract`, probes P8, P9, P16). The seek half does not: the keyframe path never checks the token (**C1**) and the step of the fraction breaks the 0,02 bound when the medium does not match the plan (**W1**) |
-| AC8 | property | covered | `arq_140_the_index_does_not_depend_on_the_pool` (pools of 1, 2 and 4); probes P11 (pools of 0, 1, 2 and 4) and P14 |
-| AC9 | command | covered | The forbid step, the V5 step and the testkit `ports` step all exit 0; `gafira-media/src/lib.rs:10` carries `#![forbid(unsafe_code)]` |
+### C1 (closed): the cancel token is checked in the keyframe seek
 
-Eight of the nine criteria are covered; AC7 is covered for the scan and refuted for the seek.
+The defect was that `Medium::seek` checked the token only inside the forward-decode loop, so `SeekMode::Keyframe` never checked it and a cancelled seek answered `Ok`.
 
-## Product IDs (step 3c)
+The fix, `crates/gafira-media/src/medium.rs:109`:
 
-`git grep <ID>` over `crates/*/tests/` and `crates/*/src/` in the export of `c299ae7`.
+```rust
+cancel.check()?;
+let Some(keyframe) = self.index.keyframe_at_or_before(time) else {
+    return Ok(SeekOutcome::NoKeyframe);
+};
+```
 
-| ID | Proof | Named by |
+Evidence that it holds in both seek modes and in both routes of the keyframe mode:
+
+| Route | Where the token is checked | Answer with a cancelled token |
 |---|---|---|
-| ARQ-138 | The lint of CI with the canonical `clippy.toml` copy gives 0 warnings in the crate (clippy gate, exit 0) and the time comes from the injected clock (probe P7: a clock that advances 250 ms per reading gives exactly 250 ms of elapsed time, a wall clock could not). | Nothing that proves the criterion: `git grep ARQ-138` over the tests reaches only the module header of `crates/gafira-media/tests/support/mod.rs`. The behaviour is proved by `arq_144_the_scan_reports_its_cost_against_the_budget` (two clocks, two results) under another ID. **W4** |
-| ARQ-139 | `arq_139_the_scan_follows_the_progress_contract` (the checker of the testkit: non-decreasing, in `[0, 1]`, 1,0 only at the end, cancellation at report `k`); probes P8 (the fraction follows the units done over the units planned), P9 (a cancelled scan returns the cancelled error), P16 (the seek reports a non-decreasing fraction), P17 (**W1**) | The test itself |
-| ARQ-140 | `arq_140_the_index_does_not_depend_on_the_pool`; probes P11 (pools of 0, 1, 2 and 4 give the same bytes) and P14 (two runs give the same bytes) | The test itself |
-| ARQ-144 | Seven tests of `crates/gafira-media/tests/keyframe.rs`; probes P1 to P6, P12 (the budget of 6 s, 30 s, 60 s and 120 s of material), P13 (**W2**) | The tests themselves |
-| FV-11 | **Left out of ME1 on purpose.** FV-11 (05 §A6) is the real-time preview and the scrubbing; its acceptance (a) `bench_playback_3tracks` and `bench_scrub_1080`, (b) ten minutes of playback without a loss of fluidity or of memory, (c) the audio is never cut, (d) the 39 ms / 40 ms drop tolerance, all need the frame cache (ME2), the playback clock and the A/V sync (ME4) or the exporter (ME5). What ME1 does deliver of FV-11 is its "indexado de keyframes al importar", and it delivers it through ARQ-144. | Nothing, on purpose |
-| CAL-14 (partial) | **Left out of ME1 on purpose.** CAL-14 (01 §CAL-14) is "scrubbing 1080p: ≥ 24 updates/s, cache search < 50 ms, without cache < 250 ms (FIJADA)", and its mechanism in the row of 01 is `bench_scrub_1080`, which needs the frame cache of ME2. ME1 contributes the "without cache" half only as the keyframe seek it implements. | Nothing, on purpose |
+| `SeekMode::Keyframe`, medium with keyframes | `medium.rs:109`, before the lookup, the container seek and the `progress.report(1.0)` at `:115` | `Err(MediaError::Cancelled(_))`, no output, no report |
+| `SeekMode::Keyframe`, empty index | the same line, before the `NoKeyframe` early return at `:110-112` | `Err(MediaError::Cancelled(_))`, not `NoKeyframe` |
+| `SeekMode::Exact`, cancelled before the call | the same line, `:109` (no mode branch precedes it) | `Err(MediaError::Cancelled(_))`, no output, no report |
+| `SeekMode::Exact`, cancelled during the decode | `:109` and once per packet at `:119` | unchanged from round 1 |
 
-ARQ-02 (named by AC6, not by the card) is covered by the clippy gate, the canonical `clippy.toml` copy and probes P7 and P15.
+The check is the first statement of the method and no branch precedes it, so it is mode-independent: the exact path keeps its per-packet check and gains the early one. The implementer's test `arq_139_the_keyframe_seek_checks_the_cancel_token` (`crates/gafira-media/tests/contract.rs:79`) drives both routes — a medium with keyframes and a medium with an empty index — and asserts `Err(MediaError::Cancelled(_))`, the absence of `Ok`, and that no progress was reported. Its RED evidence in `apply-progress.md` (the same call at `c1ba024` answering `Ok(Keyframe(Flicks(1693440000)))` and `Ok(NoKeyframe)`) is the mutant of the rule, which is the proof that the test kills it.
 
-## Independent probes (step 1c)
+No criterion that passed in round 1 regressed: the seven tests of `tests/keyframe.rs` (AC1 to AC4) are green, including `arq_144_an_empty_index_reports_the_absence_of_a_keyframe`, which keeps its `NoKeyframe` answer under a live token; the contract test of the scan (`arq_139_the_scan_follows_the_progress_contract`) and the determinism test (`arq_140_the_index_does_not_depend_on_the_pool`) are green.
 
-Derived from the acceptance criteria, written before reading the tests of the delivery and run on the export of `c299ae7`. They do not reuse the doubles of the delivery: the container, the demuxer, the decoder, the file system, the pool and the clock of the probes are local to `crates/gafira-media/tests/verify_probes.rs` of the export, so what they observe is the crate and not a double the same delivery wrote.
+### Suggestion added by this round
 
-| Probe | Criterion | Result |
-|---|---|---|
-| P1 | AC1: the keyframe seek lands on the 2 s keyframe and the exact seek on the 3,5 s frame | pass |
-| P2 | AC1: the search is inclusive at both ends and saturates after the last keyframe | pass |
-| P3 | AC2: a time before the first keyframe lands on that keyframe | pass |
-| P4 | AC3: an empty index reports the absence of a keyframe, no panic | pass |
-| P5 | AC4: reopening rebuilds the index and the container is read twice | pass |
-| P6 | AC5: opening a medium writes no file (the file system of the probe accepts the write) | pass |
-| P7 | ARQ-138: the elapsed time comes from the injected clock (250 ms of step, 250 ms of elapsed) | pass |
-| P8 | AC7: the fraction follows the units done over the units planned and never falls | pass |
-| P9 | AC7: a cancelled scan returns the cancelled error and no index | pass |
-| P10 | AC7: a cancelled seek returns the cancelled error, in both modes | **FAIL: C1** |
-| P11 | AC8: the index does not depend on the pool (0, 1, 2 and 4 workers) | pass |
-| P12 | ARQ-144: the budget is one second per minute (6 s, 30 s, 60 s and 120 s) | pass |
-| P13 | ARQ-144: the keyframe times of the index are in ascending order | **FAIL: W2** |
-| P14 | ARQ-140: two runs give the same bytes | pass |
-| P15 | AC6: the crate tree holds none of the six forbidden paths | pass |
-| P16 | AC7: the seek reports a non-decreasing fraction that ends at 1,0 | pass |
-| P17 | AC7: the step of the fraction stays under 0,02 between two reports | **FAIL: W1** |
-| P18 | AC1: the exact seek lands on the first frame at or after the requested time | pass |
+**S4.** The new test exercises `SeekMode::Keyframe` only; a cancelled `SeekMode::Exact` call is proved by inspection of the check order (and was proved by round 1's probe P10), but no test of the delivery asserts it. One more arm in `arq_139_the_keyframe_seek_checks_the_cancel_token` would name it.
 
-Fifteen probes pass, three fail. The failures are the findings C1, W1 and W2 below.
+## Criterion map (AC1 to AC9), re-confirmed at HEAD
 
-## Hand mutants (step 4b)
-
-Applied one at a time to the export, the tests run, the file restored. The implementer recorded four mutants in `apply-progress.md`; the first one was spot-checked and four independent ones were added.
-
-| Id | Mutant | Killed by | Result |
+| AC | Type | Status | Proof at `c9d696c` |
 |---|---|---|---|
-| SC-1 | Spot-check of the recorded "boundaries of the lookup": `*t <= time` becomes `*t < time` | `arq_144_a_seek_to_the_time_of_a_keyframe_lands_on_it` | killed, and the killing test is the one the delivery recorded |
-| IM-1 | The index keeps every packet, not only the keyframes | `arq_140_the_index_does_not_depend_on_the_pool` | killed |
-| IM-2 | The keyframe times come out in reverse order (a rule cargo-mutants cannot express) | `arq_144_the_seek_lands_on_the_previous_keyframe_and_the_exact_seek_on_the_frame`, `arq_144_a_seek_to_the_time_of_a_keyframe_lands_on_it`, `arq_144_a_time_before_the_first_keyframe_returns_the_first_keyframe` | killed |
-| IM-3 | The exact seek does not decode forward and returns the keyframe | `arq_144_the_seek_lands_on_the_previous_keyframe_and_the_exact_seek_on_the_frame` | killed |
-| IM-4 | The budget is one second per second of material, not per minute | `arq_144_the_scan_reports_its_cost_against_the_budget` | killed |
+| AC1 | integration | covered | `arq_144_the_seek_lands_on_the_previous_keyframe_and_the_exact_seek_on_the_frame` (green) |
+| AC2 | unit | covered | `arq_144_a_time_before_the_first_keyframe_returns_the_first_keyframe` (green) |
+| AC3 | unit | covered | `arq_144_an_empty_index_reports_the_absence_of_a_keyframe` (green, live token) |
+| AC4 | integration | covered | `arq_144_reopening_the_medium_rebuilds_the_index` (green) |
+| AC5 | command | covered | `arq_144_opening_a_medium_writes_no_file` (green) |
+| AC6 | command | covered | `grep -rn` over `crates/gafira-media/src` and `tests` for the six forbidden paths: no hit (exit 1); clippy gate 0; `#![forbid(unsafe_code)]` at `src/lib.rs:9` |
+| AC7 | unit | covered | Both halves: the scan by `arq_139_the_scan_follows_the_progress_contract`, the cancellation of the seek by `arq_139_the_keyframe_seek_checks_the_cancel_token` (the C1 defect). ARQ-139's separate acceptance of the 0.02 step is **not** met on a medium whose packet count differs from its plan (**W1**, open); AC7's own wording does not state that bound. |
+| AC8 | property | covered | `arq_140_the_index_does_not_depend_on_the_pool` (pools 1, 2 and 4, green) |
+| AC9 | command | covered | forbid 0, V5 0, testkit `ports` 0 (table above) |
 
-Five mutants run, five killed. No survivor.
+Nine of nine criteria have a proof at HEAD. AC7 is covered as written and still subject to W1.
 
 ## Artifact integrity (step 3c)
 
@@ -109,131 +110,141 @@ Five mutants run, five killed. No survivor.
 |---|---|
 | `fb1a621` `docs(gafira-media): slice card` touches only `apply-progress.md` | pass (`1 file changed, 30 insertions`) |
 | It precedes the first implementation commit (`ff58ca0`) | pass |
-| No implementer commit changed the Slice card | pass: `ff58ca0` and `07ae973` touch no file of `specs/`; `c299ae7` (`record the ME1 progress`) appends the section `## ME1 (tdd-apply)` below the card and changes no line of the card |
-| The amend `a57f8ea` (`slice card amend`) touches only that file and states why | pass: `1 file changed, 3 insertions(+), 1 deletion(-)`, the body says the card now covers the whole media stream and that the criteria, the Flow line and the owner decisions are unchanged |
-| The amend `98e6d57` (`slice card amend`), committed while this round ran, touches only that file and states why | pass: `1 file changed, 18 insertions(+)`, the body says it adds the ME2 section and that the Flow line, the ME1 criteria and the owner decisions are unchanged |
-| The code tree is the same at `c299ae7` and at the head of the branch | pass: `git diff --stat c299ae7 HEAD -- crates/ Cargo.lock` is empty |
+| No implementer commit changed the card | pass: `ff58ca0`, `07ae973`, `6d6eab9` and `9bc20f1` touch no file of `specs/` (0 `specs/` paths each) |
+| The `Flow:` line is intact | pass: line 2 is byte-identical to `fb1a621`'s line 2 |
+| The amends `a57f8ea` and `98e6d57` touch only that file and state why | pass (`2 insertions, 1 deletion`; `18 insertions`) |
+| The fix round changed only ME1 files | pass: `9bc20f1` is `src/medium.rs` and `tests/contract.rs`; the ME2 files (`cache.rs`, `tests/cache.rs`, `lib.rs`) are untouched by it |
 
-## The two deviations of the delivery, judged
+## Size (measured, not judged)
 
-### 1. The testkit manifest, a single-writer file of `SC1`
-
-`ff58ca0` edited `crates/gafira-testkit/Cargo.toml`, which `specs/changes/layer-3/design.md:139` reserves to `SC1` ("Single writer. The `ports` feature of ADR 0013, with `gafira-ports` and `gafira-raster` as optional dependencies"). The change adds `gafira-time = { path = "../gafira-time", optional = true }` and `dep:gafira-time` to the `ports` feature. The reason is sound: `ports::media::Demuxer::seek` takes `gafira_time::Flicks`, so a double of the testkit cannot implement `Demuxer` without the crate of time.
-
-Checked by hand, on the export of `c299ae7`:
-
-| Check | Result |
-|---|---|
-| The feature is off by default | pass: `ports = ["dep:gafira-ports", "dep:gafira-raster", "dep:gafira-time"]`, none of them a default feature |
-| The default tree of the testkit holds neither `gafira-ports` nor `gafira-raster` nor `gafira-time` | pass: `cargo tree -p gafira-testkit -e normal,build --target all --prefix none -f '{p}'` lists only `gafira-testkit`, `gafira-doc`, `gafira-edit`, `gafira-geom` and `gafira-color` |
-| The V5 row of the testkit still passes | pass: the V5 step exits 0 (the row allows `gafira-geom gafira-color gafira-doc gafira-edit`, and the optional dependencies are not in the default tree) |
-| The ARQ-107 step is still green | pass: exit 0 |
-| `cargo deny check` | pass: exit 0 |
-
-The default graph did **not** change, so this is not the CRITICAL class `implementation` the coordinator asked about. It stays a **WARNING** (W3): the rule of the design was broken, in a file that two parallel streams share, and the delivery disclosed it in `apply-progress.md`. The graph of the crate is unchanged, so the fix is not urgent; the clean repair is to own that one line in a single-writer commit.
-
-### 2. The budget of the index is reported, not enforced
-
-**Judgment: ARQ-144 does not require the crate to enforce the budget, so this is not a CRITICAL class `ambiguity`.** The reading that supports it:
-
-- ARQ-144 states a bound on the import ("con una cota de ≤ 1 s por minuto de material 1080p, FIJADA, §6.5"), not an error condition, and its acceptance column lists four proofs, none of which is the budget.
-- §6.7, the map of "figures → technique → test" of 02, has no row for this figure: it names `bench_scrub_1080` and `bench_playback_3tracks` for FV-11 and CAL-14, and nothing for the keyframe scan. The spec states no mechanism that could enforce it.
-- `MediaError` has no variant for "too slow", and adding one is a change to `gafira-ports`, which the card lists as a non-goal of the delivery.
-- ARQ-139 says the estimate of time is computed by `gafira-engine` with its `Clock`, not by this crate; the crate measures with the injected clock and hands the number to the caller, which is the layering the row asks for.
-
-What the delivery does is enough for that reading: `IndexReport` carries `elapsed` (from `ports::Clock`), `budget` and `within_budget()`, and the test `arq_144_the_scan_reports_its_cost_against_the_budget` proves that two clocks give two verdicts (probe P7 proves the same at the level of the elapsed time).
-
-What is missing is the **measurement** of the bound, and that is a finding of its own: **W6** (class `claim`).
-
-## Size
-
-Measured with the measure of `AGENTS.md` (`git diff --shortstat`), from the commit of the Slice card `fb1a621` to the verified commit `c299ae7`:
+`git diff --shortstat`:
 
 | Scope | Lines |
 |---|---|
-| The whole delivery | 16 files changed, 1394 insertions(+), 43 deletions(-) = **1437** changed lines |
-| The code only (`crates/` and `Cargo.lock`) | 15 files, 1359 insertions(+) + 42 deletions(-) = **1401** |
-| `crates/gafira-media/src/` | 426 |
-| `crates/gafira-media/tests/` | 533 |
-| `crates/gafira-testkit/src/ports/` (the five doubles) | 393 insertions + 41 deletions = 434 |
-| The two manifests | 5 insertions + 1 deletion = 6 |
-| `Cargo.lock` | 2 |
-| The notes of the delivery (`apply-progress.md`) | 35 + 1 = 36 (not code) |
+| ME1 delivery, card `fb1a621` to the round-1 commit `c299ae7` | 16 files, 1394 insertions + 43 deletions = **1437** (code only 1401) |
+| The fix round `c1ba024...9bc20f1` | 2 files, 85 insertions + 5 deletions = **90** |
+| The whole change `fb1a621...c9d696c` | 30 files, 4202 insertions + 48 deletions = **4250** |
 
-Of the 1352 Rust lines added, 970 are authored (neither blank nor a comment line). The number of the delivery notes (1401 code lines) is exact.
+ME1 remains at **2.0x the ~700-line guide** and 2.3x its adjusted forecast of 600 (**W5**, open). The fix round adds 90 lines, inside any reading of the guide.
 
-The forecast of the design (`specs/changes/layer-3/design.md:101`) is 430 lines, which `AGENTS.md` turns into 600 with the x1,4 factor. The measured 1401 is **2,0× the ~700 ceiling** of the delivery rules and **2,3× the adjusted forecast**, outside the x1,4–x1,9 band `AGENTS.md` describes. Above the ceiling the delivery needs the explicit OK of the owner. The decision is the coordinator's; it is recorded as **W5**.
+## Risks carried out of round A
+
+- W1 and W2 are code defects, not test gaps: a scrub over material whose packets arrive out of presentation order can land on the wrong keyframe (`keyframe_at_or_before` is a binary search over unsorted data), and a stream whose packet count does not match `duration x fps` breaks the 0.02 step of ARQ-139. Both are inside ARQ-144 and ARQ-139, both are one small change each.
+- W3 and W5 outlive the delivery: the testkit manifest is a shared file of the scaffold that two streams read, and the size needs the owner's OK.
+- W6 has no owner inside `gafira-media`; it belongs to `explorer`.
+
+---
+
+# Round B — `ME2`, first verify (depth V1)
+
+Commit `6d6eab9 feat(gafira-media): add the frame cache`, notes in `a66ee11 docs(gafira-media): record the ME2 progress`. Base of the delivery: the card amend `98e6d57`.
+
+**Depth.** Per the owner decision O5 in `specs/changes/layer-3/design.md:295-305`, `ME2` and the deliveries after it are verified at **V1**: the gates at HEAD plus a map of every acceptance criterion to its test or command. V1 drops the independent probes, the independent hand mutants and the scratch-export runs of V2, and it keeps the gates, the criterion map and the artifact-integrity checks. This round holds to that: no probe was written and no mutant was run. (`mutation: off` by O4 as well, so there is no `mutants` report and its absence is not a finding.)
+
+## Gates at HEAD (`c9d696c`)
+
+Same commands, same working tree and target dir as round A; the table of round A is the table of this round, since both deliveries are verified at the same commit. In short: `fmt` 0, `clippy` 0, `test` 0 (2311 tests), `deny` 0, and all nine CI policy steps 0, the `Testkit ports feature compiles (ADR 0013)` step included.
+
+## Criterion map (AC10 to AC18)
+
+| AC | Type | Status | Proof at `c9d696c` | Strength |
+|---|---|---|---|---|
+| AC10 | unit | covered | `arq_145_a_budget_of_zero_keeps_no_frame` (`tests/cache.rs:51`) | Strong: asserts `bytes() == 0`, `len() == 0` and `lookup == Empty`, so a cache that kept the frame but reported 0 bytes fails too. |
+| AC11 | unit | covered | `arq_145_a_budget_of_one_frame_discards_the_first` (`:65`) | Strong: budget of one frame, three inserts, `bytes() <= budget`, `len() == 1`, third `Exact`, first not `Exact`. |
+| AC12 | unit | covered | `arq_145_the_nearest_frame_wins_the_tie_with_the_earlier_one` (`:195`) | Adequate: 100 ms and 300 ms cached, request at 200 ms, asserts the earlier one. It does not also assert the later one is not chosen, but the `Nearest` value carries the time. |
+| AC13 | unit | covered | `arq_145_the_same_file_with_another_resource_id_gives_the_same_frame` (`:120`) | Strong: two different `ProviderAssetId`s, the same `ContentHash`, second lookup is `Exact`, and `len() == 1` (no duplicate entry). |
+| AC14 | unit | covered | `arq_145_the_key_is_the_content_hash_the_level_and_the_index` (`:85`) plus `arq_145_a_frame_of_the_original_is_not_the_frame_of_the_proxy` (`:104`) | Strong: each of the three parts varies alone and the key differs; the level test proves the parts are not collapsed. |
+| AC15 | unit | covered | `arq_145_a_missing_frame_answers_with_the_nearest_one` (`:216`) | Adequate: a nearer frame of another medium is in the cache and is not returned, so the search is scoped to the medium; the `Nearest` variant is the proof that the exact one is left to the decode. |
+| AC16 | unit | covered | `arq_145_the_prefetch_follows_the_direction_of_the_head` (`:238`) and `arq_145_the_prefetch_skips_the_cached_frames_and_stops_at_the_first_one` (`:252`) | Strong: both directions, the cached frame skipped, and the backward walk stops at index 0 instead of wrapping. |
+| AC17 | unit | covered | `arq_145_the_trim_leaves_the_cache_at_or_below_the_budget` (`:137`) and `arq_145_a_trim_with_a_bigger_budget_changes_nothing` (`:163`) | Strong: the touched frame survives the trim to one frame's budget, `bytes() <= budget`, and a bigger budget changes nothing. |
+| AC18 | command | covered | The policy steps above (forbid 0, V5 0), plus `grep -rnE 'std::fs|std::net|std::thread::spawn|std::time::Instant::now|std::time::SystemTime::now|std::env' crates/gafira-media/{src,tests}` with no hit (exit 1) and `#![forbid(unsafe_code)]` at `src/lib.rs:9` | Command; the crate tree is walked, not one file. |
+
+Nine of nine criteria have a proof. No criterion is proved only by a weak test.
+
+## Implementation read against the criteria
+
+`crates/gafira-media/src/cache.rs` (380 lines) is an LRU over `FrameKey` with a `BTreeMap` of entries and a second `BTreeMap` from the use tick to the key, which is the deterministic shape ARQ-10 and the canonical `clippy.toml` demand (no hash types; clippy gate 0).
+
+- The key is `FrameKey(ContentHash, ProxyLevel, u32)`; `FrameRequest::key()` builds it from the content hash and drops the `ProviderAssetId`, which is exactly §6.5 and AC13/AC14.
+- The budget is enforced on insert (`put` ends in `evict_to(self.budget)`) and by `trim`, both in bytes; the loop condition is `size > budget`, so the cache lands *at or below* the budget, not below it (AC11, AC17; the implementer's mutant of `>=` is killed by both tests).
+- The byte accounting is the pixels of the frame (`frame_size`), with `RgbaF32` counted at 4 bytes per sample; the rest of the frame is a time, as the notes say.
+- The nearest search walks only `FrameKey(content, level, 0)..=FrameKey(content, level, u32::MAX)`, so it never leaves the medium and the level; the tie is broken towards the earlier presentation time (AC12). It compares distances in `i128`, so a signed `Flicks` difference cannot overflow.
+- The prefetch emits the keys ahead of the head in the direction of travel, skips what the cache holds, and stops at index 0 going backward (or `u32::MAX` going forward) instead of wrapping (AC16).
+- `default_budget(ram)` is the lesser of 1 GiB and 15 % of the RAM, with the RAM injected (ARQ-138), and it does not lower for the 1.5 GB of D-03, which is O2's call on the governor.
+
+The one deviation of design is judged sound: the cache does **not** implement `ports::TileCache`, because that trait's key is a tile rect plus a content key and its value is an `ImageBuf`, while this cache is keyed by the frame index and holds a `VideoFrame`. The card asked for "the same trait shape", and `bytes()`/`trim(budget)` in bytes are that shape, which is what ARQ-44 requires of a cache the governor can trim.
+
+## Product IDs (step 3c)
+
+`git grep <ID>` over `crates/*/tests/` and `crates/*/src/`.
+
+| ID | Proof | Named by |
+|---|---|---|
+| ARQ-145 | Twelve tests of `crates/gafira-media/tests/cache.rs`; the budget default (`arq_145_the_default_budget_is_the_lesser_of_a_gigabyte_and_a_fifteenth_of_the_ram`), the boundary, the eviction, the nearest and the prefetch. | The tests themselves. **Covered.** |
+| ARQ-44 | `bytes()` and `trim(budget)` in bytes, and the "trim to half leaves `bytes()` ≤ half; a bigger budget changes nothing" acceptance, are proved by `arq_145_the_trim_leaves_the_cache_at_or_below_the_budget` and `arq_145_a_trim_with_a_bigger_budget_changes_nothing`. The process-level parts of the row (1 GB limit, 20-page document) belong to `gafira-engine` and are out of this cut. | **Nothing in `gafira-media`**: `git grep ARQ-44` reaches only doc comments of `src/cache.rs` (and the tile-cache tests of `gafira-ports`). **W7.** |
+| CAL-14 | Its mechanism (`bench_scrub_1080`) does not exist and needs the proxies of `ME3`; the cache-search half (< 50 ms) has no bench either. | **Nothing.** **W8.** |
+| FV-11 (b) | (b) is "after 10 minutes of continuous playback neither the smoothness degrades nor memory grows more than 10 %": it needs the playback clock of `ME4` and a long run, neither of which `ME2` has. What `ME2` contributes to FV-11 is the cache and the nearest frame. | **Nothing.** **W8.** |
 
 ## Findings
 
-### CRITICAL
-
-**C1. `Medium::seek` ignores the cancel token when it seeks by keyframe, so a cancelled seek returns success.** class: implementation. Ref: `crates/gafira-media/src/medium.rs:104-111`; ARQ-139 (`specs/02-arquitectura-software.md:1215`); AC7 of the Slice card.
-
-`Medium::seek` receives a `CancelToken` and a `Progress` in both modes, so ARQ-139 makes it a long operation: "Al ver la cancelación devuelve un error de cancelado, no entrega salida parcial y no emite más progreso", and the acceptance of the row demands it. The exact path checks the token once per packet (`medium.rs:113`). The keyframe path never checks it: the index lookup, the seek of the container, the report of 1,0 and the return of `Ok(SeekOutcome::Keyframe(..))` happen with no `cancel.check()` anywhere. The early return of `SeekOutcome::NoKeyframe` has the same hole.
-
-Probe P10, on the export of `c299ae7`: a token cancelled before the call returns `Ok(SeekOutcome::Keyframe(Flicks(2822400000)))` instead of `Err(MediaError::Cancelled(_))`. The exact mode of the same probe returns the cancelled error, so the defect is specific to the keyframe path.
-
-No test of the delivery reaches it: `crates/gafira-media/tests/contract.rs` claims to check "the cancellation and the progress of ARQ-139" but drives only `Medium::open` (the scan), and the cancellation part of the checker of the testkit finds no cancel point at all against the seek, because the seek emits a single report (see S1). The repo's own checker has the name for this shape, `ProgressViolation::OutputAfterCancel`.
-
-Fix: one `cancel.check()?` at the top of `seek`, before the index lookup, and the row of the contract test extended to the seek.
-
-Bounded impact, stated so the coordinator can reclassify: the keyframe seek is one seek of the container, so the user-visible cost of a cancelled keyframe seek is a position applied that the user asked not to apply, not a long operation. The criterion of ARQ-139 is nonetheless explicit, and the fix is one line.
-
 ### WARNING
 
-**W1. The step of the progress fraction breaks the 0,02 bound of ARQ-139 when the medium does not hold exactly `duration x fps` packets.** class: implementation. Ref: `crates/gafira-media/src/index.rs:177-182` (`Work::step`), `crates/gafira-media/src/index.rs:224-237` (`planned_frames`).
+**W7. `ARQ-44`, a Product ID this card lists, has no test in `gafira-media` that names it.** class: implementation. Ref: `crates/gafira-media/tests/cache.rs`; `specs/02-arquitectura-software.md:1490` (ARQ-44).
 
-The crate plans the units of the work as `duration x frame_rate` and counts the units done as the packets read. When the two disagree, the reports jump: `step` reports `done / planned` only while `done < planned`, so a stream with more packets than planned freezes its fraction below 1,0 and then jumps to 1,0 in the last report.
+Read literally, step 3c makes a missing name CRITICAL. It is read as a WARNING here, the same judgement round 1 of ME1 recorded for ARQ-138 (its W4) and the layer-3-scaffold round recorded for ARQ-01, ARQ-03 and ARQ-06: the row is proved in substance by two `arq_145_` tests, but the ID does not trace to the proof. Fix: one comment line naming ARQ-44 in the trim tests, or a test `arq_44_the_trim_leaves_bytes_at_or_below_the_budget`.
 
-Probe P17, on the export of `c299ae7`: a medium of 30 packets that announces 1 s at 2 fps (2 units planned) makes the checker of the testkit that the delivery itself uses (`gafira_testkit::progress::check_progress_contract(0.02, ..)`) return `Err(StepTooLarge { at: 1 })`. The delivery's own test passes only because its reference medium holds exactly 120 packets for 6 s at 20 fps, so the plan and the count agree to the packet. The ARQ-139 acceptance ("la fracción sube ≤ 0,02 entre dos informes seguidos") is proved by a test that holds only for that one material; on a stream with a variable frame rate, or with a container whose duration is rounded, the same contract fails.
+**W8. `CAL-14` and `FV-11 (b)` are listed by the ME2 card with no test or command that proves them, and the card does not mark them partial.** class: ambiguity. Ref: the `## ME2` block of `specs/changes/gafira-media/apply-progress.md:70`; `specs/01-producto-y-calidad.md:311` (CAL-14); `specs/05-funcionalidad-video-y-distribucion.md:143` (FV-11); `specs/changes/layer-3/design.md:248` (P20 counts the cache bench of `gafira-media`).
 
-Fix: reconcile the two numbers (plan from the packets actually read, or reserve a tail of the fraction for the work that is left), and extend the contract test to a medium whose count does not match its plan.
+`CAL-14` fixes "búsqueda en caché < 50 ms" and names `bench_scrub_1080` as its mechanism; `crates/gafira-media/` has no `benches/` directory, so nothing measures the cache lookup. `FV-11 (b)` needs the playback clock of `ME4`. The card inherited from ME1 the shape "FV-11, CAL-14 (partial)" but for ME2 it lists them without the qualifier, and no criterion of the ME2 block (AC10 to AC18) covers either. Fix: mark them partial with the part `ME2` covers (the cache mechanism) and the delivery that closes each (ME3 for the scrubbing bench, ME4 for (b)), or add the bench to the delivery. This is the same shape as round 1's W6 for ARQ-144 and as its S3.
 
-**W2. The index does not sort its keyframe times, although its own documentation says they are kept in ascending order and that the search is a binary one.** class: implementation. Ref: `crates/gafira-media/src/index.rs:44-47` (the struct), `crates/gafira-media/src/index.rs:195-220` (`keyframe_times`); ARQ-144.
+**W9. The ME2 `Flow:` line contradicts the owner decisions O4 and O5.** class: ambiguity. Ref: `specs/changes/gafira-media/apply-progress.md:69` (`verify: V2`, `mutation: archive`); `specs/changes/layer-3/design.md:285` (O4, `mutation: off`) and `:295` (O5, V1 from ME2).
 
-`KeyframeIndex` documents "The keyframe times are kept in ascending order, so a search is a binary one", and `keyframe_at_or_before` relies on that order with `partition_point`. The builder never sorts: it keeps the times in the order the container gave the packets. The port carries `pts` and `dts` separately, so nothing in `ports::media::Demuxer` promises the presentation order.
-
-Probe P13, on the export of `c299ae7`: the same three keyframes (0 s, 2 s, 4 s) handed out in another order give the index `[2 s, 0 s, 4 s]` and the search for 3,5 s lands on the wrong keyframe. The spec does not say the packets arrive in presentation order, so the defect is in the code relative to its own documented invariant.
-
-Fix: sort the times in `KeyframeIndex::build` (and drop the duplicates), or weaken the documentation and the search to tolerate any order.
-
-**W3. The manifest of the testkit, a single-writer file of `SC1`, was edited by the implementer.** class: implementation. Ref: `crates/gafira-testkit/Cargo.toml` (commit `ff58ca0`); `specs/changes/layer-3/design.md:139`.
-
-The line added is `gafira-time = { path = "../gafira-time", optional = true }` plus `dep:gafira-time` in the `ports` feature. The default graph does not change (the feature is off, and the default tree of the testkit carries neither `gafira-ports` nor `gafira-raster` nor `gafira-time`), so the V5 row, the ARQ-107 step and `cargo deny` all stay green; the rule exists because the media and the render streams run in parallel and the file is shared. The delivery disclosed the deviation in `apply-progress.md`.
-
-Fix: own that one line in a single-writer commit, and let the next delivery of the stream start from a manifest that already carries it.
-
-**W4. ARQ-138, a Product ID of the card, has no test that names it.** class: implementation. Ref: `crates/gafira-media/tests/` (`git grep ARQ-138` reaches only the module header of `tests/support/mod.rs`); `specs/02-arquitectura-software.md:1214`.
-
-Read literally, step 3c makes a missing name CRITICAL. It is read as a WARNING here, the same judgement the layer-3-scaffold round recorded for ARQ-01, ARQ-03 and ARQ-06 (its W1): the row is proved in substance (the lint of CI with the canonical `clippy.toml` copy gives 0 warnings in the crate, and the time comes from the injected clock, proved by `arq_144_the_scan_reports_its_cost_against_the_budget` and by probe P7), but the ID does not trace to the proof.
-
-Fix: name ARQ-138 in the test that proves the clock half (a comment line is enough), or add a test `arq_138_the_time_comes_from_the_injected_clock`.
-
-**W5. The delivery is twice the ceiling of the delivery rules.** class: implementation. Ref: the size table above; `specs/changes/layer-3/design.md:101` (forecast 430, x1,4 = 600); `AGENTS.md`, "Delivery rules".
-
-1401 code lines against a ceiling of ~700 and an adjusted forecast of 600. The split: 426 of crate, 533 of tests, 434 of the doubles of the testkit, 8 of manifests and lockfile. Above the ceiling the delivery needs the explicit OK of the owner; the decision is the coordinator's.
-
-**W6. XP6, the claim that the design marks as blocking ME1, was never measured, so the figure FIJADA of ARQ-144 is unproven.** class: claim. Ref: `specs/changes/layer-3/design.md:320` (XP6, "Blocks: ME1"); `specs/02-arquitectura-software.md:1248` (ARQ-144) and `:1418` (§6.5).
-
-The design opens that table with "Provisional claims. Nothing in the table is built on until it is measured", and XP6 is exactly the claim of the ≤ 1 s per minute of 1080p material, with the check "a timing of a full packet scan of a 1080p file, with the allocation counted". No spike for XP6 exists: the spike of the scaffold (`specs/changes/layer-3-scaffold/spike.md`) covers XP8, XP9 and XP10, and the media folder has none. The crate ships no bench for the scan either, although the design counts the benches of `gafira-media` among the things the crate contributes (P20).
-
-The claim is measurable in this cut with the ports and a double (XP10 could not be, because it needs a real codec; XP6 needs only the cost of `read_packet`, which the double reproduces), so the delivery was built on a claim that could have been settled.
-
-Route: `explorer`, for XP6. It does not block the fix of C1.
+The ME2 block was committed in `98e6d57` before the coordinator recorded O4 and O5 (`93f562d`), and it was never amended. As the coordinator's own routing did, this round ran at V1 and no mutants ran; the card is the file the next agents read, so the stale fields can mislead. Fix: a `slice card amend` that sets `verify: V1 | mutation: off` in the ME2 Flow line and states why (O4, O5). Not a defect of the delivery; a stale acceptance artifact.
 
 ### SUGGESTION
 
-**S1.** The exact seek emits no progress but the report of the end: the implementer recorded the choice ("El seek reporta el end de la decodificación solamente"). With one single report, the cancellation part of the checker of the testkit finds no cancel point at all (`cancel_points(1)` is empty), so the ARQ-139 acceptance ("a double of `Progress` that cancels at the report `k`") passes vacuously against the seek. A work model for the decode (the frames done over the frames planned) would make the seek cancellable through the progress, which is how a scrub is cancelled in practice.
+**S5.** `FrameCache::lookup` marks a frame as recently used only on an `Exact` hit (`cache.rs:249-252`); a `Nearest` hit returns `Arc::clone` without touching the recency (`:254-257`). The frame the scrub just displayed is therefore the next one the eviction may take. No criterion demands otherwise (AC17 speaks of "the most recently used entries", which the exact path and `put` establish), but a nearest hit is a use in the sense §6.5 describes.
 
-**S2.** The budget does not scale with the resolution that the figure names. ARQ-144 says "≤ 1 s por minuto de material 1080p", and `budget_for` uses the duration alone, so a minute of 4K material is compared against the rate of 1080p and `within_budget()` can be false while the rate of the figure is met. Either scale the budget by the pixel count, or state in the spec that the figure is the reference of 1080p and that the report is informational.
+## Artifact integrity (step 3c)
 
-**S3.** The card names FV-11 and CAL-14 (partial) as Product IDs of ME1, but no criterion of the card covers them: ME1 proves them only through ARQ-144, and the mechanism of CAL-14 (`bench_scrub_1080`) needs the frame cache of ME2. Saying in the card which part of each ID ME1 covers would keep the traceability of the later deliveries unambiguous.
+| Check | Result |
+|---|---|
+| The ME2 criteria were committed before the first implementation commit | pass: `98e6d57` (`slice card amend`, 18 insertions) precedes `6d6eab9` (`git merge-base --is-ancestor 98e6d57 6d6eab9` holds) |
+| It touches only `apply-progress.md` | pass (`1 file changed, 18 insertions`) |
+| Its body states why | pass: "Adds the ME2 section ... so the criteria of the second delivery of this stream are committed before its first implementation commit." |
+| No implementer commit changed the ME2 block | pass: `6d6eab9` touches no file of `specs/`; `2c3dff5` and `a66ee11` only append below the card (0 deletions) |
+| The ME2 Flow line is present and readable | pass, and stale: **W9** |
+| The delivery touches only `crates/gafira-media/**` | pass: `6d6eab9` is `src/cache.rs`, `src/lib.rs`, `tests/cache.rs`; the testkit manifest, `gafira-ports`, `gafira-doc` and `.odd/state.json` are untouched, so the shared-file rule of the design is respected and the W3 deviation of ME1 is not repeated |
 
-## Notes
+## The notes of the delivery, checked
 
-- The tree of the shared worktree was not touched: only this report and `verification.json` are written, and they live in `specs/changes/gafira-media/`.
-- The worktree carried the ME2 files while this round ran, and ME2 landed on the branch as `6d6eab9` (`feat(gafira-media): add the frame cache`) at 12:32, in the middle of the round. That commit adds `crates/gafira-media/src/cache.rs` and `crates/gafira-media/tests/cache.rs` and changes `crates/gafira-media/src/lib.rs`; it touches **no file of ME1** (`index.rs`, `medium.rs`, `ports.rs`, `tests/keyframe.rs`, `tests/contract.rs` are byte-identical between `c299ae7` and `6d6eab9`), so C1 is still open at the head of the branch. The gates of record are the ones of the export of `c299ae7`, not the ones of the worktree.
-- The scratch export and its target dir are freed at the end of the round (`cargo clean --target-dir`).
+- "649 insertions, 3 files, `98e6d57...HEAD`": measured `git diff --shortstat 98e6d57 6d6eab9` = `3 files changed, 649 insertions(+)`. Exact.
+- "380 lines for the cache module, 5 for the exports, 264 for the tests": the three files are 380 + 5 + 264 = 649. Exact.
+- "21 tests, 0 failed" at the commit: at HEAD `cargo test -p gafira-media --locked` gives 22 (the 22nd is ME1's `arq_139_the_keyframe_seek_checks_the_cancel_token`); the cache binary gives the 12 the note claims. Consistent.
+- "No deviation of scope": confirmed above.
+- The four negative controls: the design marks the cache key, the eviction order, the nearest-frame search and the budget boundary as critical, and the notes record one mutant for each, killed by the named test. This round did not re-run them (V1), and the two `arq_145` tests that kill the budget boundary and the eviction order are green at HEAD.
 
-next: explorer (W6, XP6), then tdd-apply (C1, W1, W2, W3, W4, W5)
+## Size (measured, not judged)
+
+| Scope | Lines |
+|---|---|
+| The delivery, card amend `98e6d57` to `6d6eab9` | 3 files, 649 insertions = **649** |
+| The notes `a66ee11` (`apply-progress.md`) | 56 insertions (not code) |
+| The whole change so far, `fb1a621...c9d696c` | 30 files, 4202 insertions + 48 deletions = **4250** |
+
+ME2 is **649 lines against the ~700-line guide**: below it, and within the x1.4 band of its forecast (470 authored, 660 adjusted). The delivery does not exceed the guide, so no owner approval is needed for the size.
+
+## Risks carried out of round B
+
+- CAL-14's FIJADA figure for the cache search is unmeasured, and P20 of the design says `gafira-media` contributes the cache bench. The risk is that the figure is met only by argument until a bench exists (**W8**).
+- The nearest hit does not refresh the LRU position (**S5**): a scrub that leans on nearest hits can evict the frames it is showing. Cheap to change if the design wants it.
+- The cache's default budget is not capped by the 1.5 GB of D-03 inside the crate; that is O2's design (the governor trims first), and the governor does not exist yet, so the cap is unproven end to end.
+
+---
+
+## Notes on this run
+
+- The shared worktree `/tmp/gafira-wt/me` was deleted by something outside this session while `cargo test --workspace` ran (the directory disappeared entirely; `git worktree list` then showed it as `prunable`). It was recreated with `git worktree prune` and `git worktree add /tmp/gafira-wt/me feat/layer-3-media` in the main repository, at the same commit `c9d696c`, with a clean tree; `cargo fmt`, `clippy`, `deny`, the crate tests and the policy steps then ran there against the same `CARGO_TARGET_DIR`. The `cargo test --workspace` run finished before the deletion, on the same clean tree and commit, and its 2311 passing tests are the ones recorded. No file of the tree was modified by this session: only this report and `verification.json` are written.
+- The target dir `/tmp/gafira-verify-me-target` is freed with `cargo clean --target-dir` at the end of the round.
+
+next: tdd-apply (ME1: W1, W2, W3, W4, W5; ME2: W7; then ME3), with explorer for W6 (XP6) and the coordinator for W8 and W9 (card attribution and the stale Flow line)

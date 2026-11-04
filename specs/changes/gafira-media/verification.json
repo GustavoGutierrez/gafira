@@ -1,87 +1,56 @@
 {
   "schema": 1,
   "change": "gafira-media",
-  "delivery": "ME1",
+  "delivery": "ME1+ME2",
   "rounds": [
     {
-      "round": 1,
-      "commit": "c299ae7",
+      "round": 2,
+      "delivery": "ME1",
+      "commit": "c9d696c",
       "mode": "full",
       "tier": "T4",
       "depth": "V2",
-      "verdict": "FAIL",
-      "next": "explorer",
-      "counts": { "critical": 1, "warning": 6, "suggestion": 3 },
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "counts": { "critical": 0, "warning": 6, "suggestion": 4 },
+      "classes": ["implementation", "claim"],
       "findings": [
-        {
-          "id": "C1",
-          "severity": "CRITICAL",
-          "class": "implementation",
-          "ref": "crates/gafira-media/src/medium.rs:104-111 (ARQ-139, AC7)",
-          "summary": "Medium::seek never checks the cancel token in the SeekMode::Keyframe path (nor on the empty-index return): a cancelled seek returns Ok instead of Err(Cancelled). Probe P10.",
-          "follow_up": false,
-          "status": "open"
-        },
-        {
-          "id": "W1",
-          "severity": "WARNING",
-          "class": "implementation",
-          "ref": "crates/gafira-media/src/index.rs:177-182,224-237 (ARQ-139, AC7)",
-          "summary": "The fraction steps by done/planned with planned = duration x fps; when the packet count differs, the last report jumps and the 0.02 step bound of ARQ-139 breaks. Probe P17.",
-          "follow_up": false,
-          "status": "open"
-        },
-        {
-          "id": "W2",
-          "severity": "WARNING",
-          "class": "implementation",
-          "ref": "crates/gafira-media/src/index.rs:44-47,195-220 (ARQ-144)",
-          "summary": "KeyframeIndex::build keeps the keyframe times in the order the container gave them and never sorts them, although the type documents them as ascending; the binary search then lands wrong.",
-          "follow_up": false,
-          "status": "open"
-        },
-        {
-          "id": "W3",
-          "severity": "WARNING",
-          "class": "implementation",
-          "ref": "crates/gafira-testkit/Cargo.toml (ff58ca0), specs/changes/layer-3/design.md:139",
-          "summary": "The implementer edited crates/gafira-testkit/Cargo.toml, a single-writer file of SC1, to add gafira-time to the ports feature; the default graph does not change, so V5, ARQ-107 and deny stay green.",
-          "follow_up": false,
-          "status": "open"
-        },
-        {
-          "id": "W4",
-          "severity": "WARNING",
-          "class": "implementation",
-          "ref": "crates/gafira-media/tests/ (ARQ-138), specs/02-arquitectura-software.md:1214",
-          "summary": "ARQ-138, a Product ID of the card, is proved in substance by the clippy gate and by an ARQ-144-named test, but no test names ARQ-138: git grep ARQ-138 reaches only a module header.",
-          "follow_up": false,
-          "status": "open"
-        },
-        {
-          "id": "W5",
-          "severity": "WARNING",
-          "class": "implementation",
-          "ref": "specs/changes/layer-3/design.md:101, AGENTS.md (delivery rules)",
-          "summary": "The delivery is 1401 code lines against a ceiling of ~700 and an adjusted forecast of 600: twice the ceiling, outside the x1.4-x1.9 band. It needs the explicit OK of the owner.",
-          "follow_up": false,
-          "status": "open"
-        },
-        {
-          "id": "W6",
-          "severity": "WARNING",
-          "class": "claim",
-          "ref": "specs/changes/layer-3/design.md:320 (XP6), specs/02-arquitectura-software.md:1248",
-          "summary": "XP6, the claim of the <=1 s per minute of 1080p material that the design marks as blocking ME1, was never measured: no spike exists and the crate ships no bench for the scan.",
-          "follow_up": false,
-          "status": "open"
-        }
+        {"id": "C1", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-media/src/medium.rs:109 (ARQ-139, AC7)", "summary": "CLOSED: cancel.check()? is now the first statement of Medium::seek, so a cancelled seek answers Cancelled in both routes of Keyframe and before any Exact work; test arq_139_the_keyframe_seek_checks_the_cancel_token.", "follow_up": false, "status": "closed"},
+        {"id": "W1", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-media/src/index.rs:176-182,224-237 (ARQ-139)", "summary": "OPEN, unchanged by the fix: the fraction steps by done/planned with planned = duration x fps; when the packet count differs the last report jumps and the 0.02 step bound breaks.", "follow_up": false, "status": "open"},
+        {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-media/src/index.rs:44-47,188-220 (ARQ-144)", "summary": "OPEN, unchanged: KeyframeIndex never sorts its times although the type documents them ascending and looks them up with partition_point.", "follow_up": false, "status": "open"},
+        {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-testkit/Cargo.toml:10,19 (ff58ca0); design.md:139", "summary": "OPEN: the implementer still owns the gafira-time line of the testkit ports feature, a single-writer file of SC1; the default graph is unchanged.", "follow_up": false, "status": "open"},
+        {"id": "W4", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-media/tests/support/mod.rs:1 (ARQ-138)", "summary": "OPEN: ARQ-138 is proved in substance but no test names it; git grep reaches only a module header.", "follow_up": false, "status": "open"},
+        {"id": "W5", "severity": "WARNING", "class": "implementation", "ref": "specs/changes/layer-3/design.md:101, AGENTS.md delivery rules", "summary": "OPEN: ME1 is 1401 code lines, 2.0x the ~700 guide and 2.3x its adjusted forecast of 600; the owner's OK is still not recorded.", "follow_up": false, "status": "open"},
+        {"id": "W6", "severity": "WARNING", "class": "claim", "ref": "design.md:320 (XP6), specs/02-arquitectura-software.md:1248", "summary": "OPEN: XP6 (<=1 s per minute of 1080p) has no spike and the crate has no benches/ directory, so ARQ-144's FIJADA figure is unmeasured.", "follow_up": false, "status": "open"}
       ],
       "gates": { "fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0 },
       "mutation": null,
-      "hand_mutants": { "run": 5, "killed": 5 },
-      "criteria": { "total": 9, "covered": 8 },
+      "hand_mutants": null,
+      "criteria": { "total": 9, "covered": 9 },
       "size": { "lines": 1401, "forecast": 600 },
+      "report": "verify-report.md"
+    },
+    {
+      "round": 1,
+      "delivery": "ME2",
+      "commit": "c9d696c",
+      "mode": "full",
+      "tier": "T4",
+      "depth": "V1",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "counts": { "critical": 0, "warning": 3, "suggestion": 1 },
+      "classes": ["implementation", "ambiguity"],
+      "findings": [
+        {"id": "W7", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-media/tests/cache.rs (ARQ-44), specs/02-arquitectura-software.md:1490", "summary": "ARQ-44, a Product ID of the ME2 card, has no test in gafira-media that names it; the bytes()/trim acceptance is proved by two arq_145_ tests but the ID does not trace.", "follow_up": true, "status": "open"},
+        {"id": "W8", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:70 (ME2 card), specs/01-producto-y-calidad.md:311, specs/05-funcionalidad-video-y-distribucion.md:143", "summary": "CAL-14 and FV-11 (b) are listed by the ME2 card without 'partial' and no test, bench or command proves them; CAL-14's <50 ms cache search is unmeasured (no benches/), FV-11 (b) needs ME4.", "follow_up": true, "status": "open"},
+        {"id": "W9", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:69; design.md:285 (O4), design.md:295 (O5)", "summary": "The ME2 Flow line still says verify: V2 and mutation: archive while O5 sets V1 from ME2 and O4 sets mutation: off; the block was written in 98e6d57 before those decisions and never amended.", "follow_up": true, "status": "open"}
+      ],
+      "gates": { "fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0 },
+      "mutation": null,
+      "hand_mutants": null,
+      "criteria": { "total": 9, "covered": 9 },
+      "size": { "lines": 649, "forecast": 660 },
       "report": "verify-report.md"
     }
   ]
