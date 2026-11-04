@@ -11,6 +11,7 @@
 
 mod graph;
 mod key;
+mod planner;
 mod pool;
 
 pub use graph::{
@@ -18,4 +19,8 @@ pub use graph::{
     RenderGraphBuilder, SourceKind,
 };
 pub use key::{DOMAIN, KeyParam, NodeType, canonical_description, content_key};
+pub use planner::{
+    PageExtent, PlanError, PlannedTile, Planner, RenderPlan, TILE_SIZE, TileGrid, Viewport,
+    level_for_zoom,
+};
 pub use pool::{InlinePool, WorkerPool};
