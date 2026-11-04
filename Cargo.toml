@@ -24,6 +24,9 @@ gafira-raster = { path = "crates/gafira-raster" }
 gafira-audio = { path = "crates/gafira-audio" }
 gafira-segment = { path = "crates/gafira-segment" }
 gafira-ports = { path = "crates/gafira-ports" }
+gafira-render = { path = "crates/gafira-render" }
+gafira-media = { path = "crates/gafira-media" }
+blake3 = "1"
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

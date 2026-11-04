@@ -12,6 +12,25 @@ mod harness;
 pub mod progress;
 pub mod scenes;
 
+/// The port doubles of Gafira (ADR 0013, ARQ-112).
+///
+/// Behind the `ports` feature, off by default: the default tree of this
+/// crate carries neither `gafira-ports` nor `gafira-raster` (ADR 0007). The
+/// list of the doubles is fixed here, so a later delivery fills a file of
+/// this module instead of editing this one.
+#[cfg(feature = "ports")]
+pub mod ports {
+    pub mod clock;
+    pub mod codec;
+    pub mod container;
+    pub mod decoder;
+    pub mod encoder;
+    pub mod file_system;
+    pub mod muxer;
+    pub mod page_renderer;
+    pub mod render_backend;
+}
+
 pub use harness::{LawViolation, prop_command, try_prop_command};
 
 use std::sync::Arc;

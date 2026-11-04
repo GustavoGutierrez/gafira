@@ -110,6 +110,10 @@ pub trait TileCache: Send {
     fn get(&self, key: &TileKey) -> Option<Arc<ImageBuf>>;
     /// Stores a tile.
     fn put(&mut self, key: TileKey, tile: Arc<ImageBuf>);
+    /// Memory held now, in bytes.
+    fn bytes(&self) -> Bytes;
+    /// Frees cache until the cache holds at most `budget` bytes.
+    fn trim(&mut self, budget: Bytes);
 }
 
 /// Identifies one frame in a backend.
