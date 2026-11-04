@@ -81,3 +81,9 @@ The assertions that must not move, and that the mutants above show bite:
 - The walk uses an explicit stack, so a deep tree cannot overflow the call stack, as `Document::validate` does for its own walk.
 
 Measured: `git diff --shortstat develop...HEAD` before this note: 4 files, 753 insertions, of which 33 are the Slice card: about 720 authored lines for DC1 (forecast 430, x1.4 = 600). Over the ~700 signal of `AGENTS.md`: the coordinator decides.
+
+### Coordinator decisions on verify round 1
+
+- **W3 (720 lines of code, over the ~700 ceiling): accepted.** The delivery is the visitor contract with its tests and the shape checks, and the size is 3 % over the ceiling of a `full` run. The owner gave the coordinator the decision in YOLO mode on 2026-11-03, and the coordinator accepts it here. The measurement is recorded in the verification report.
+- **W1 (ARQ-136 says the instant travels apart as `t: Flicks`): routed to `specifier`.** The rule is satisfied: the instant is a separate argument and never a field of `MeasureCx`. The literal type is unreachable from `gafira-doc` by the layering of 02 §2.1 and §2.2, so the row has to say it in a way that the domain can honour. The row stays as it is until `specifier` reconciles it.
+- **W2 (nothing ties "the instant is not in the context"): routed to a fix round of `tdd-apply`.** A source-shape test has to fail if `MeasureCx` ever grows a time field.
