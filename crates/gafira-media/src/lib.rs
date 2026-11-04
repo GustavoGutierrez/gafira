@@ -12,6 +12,7 @@ mod cache;
 mod index;
 mod medium;
 mod ports;
+mod proxy;
 
 pub use cache::{
     DEFAULT_BUDGET, FrameCache, FrameHit, FrameKey, FrameRequest, HeadDirection, MediumRef,
@@ -20,3 +21,6 @@ pub use cache::{
 pub use index::{INDEX_BUDGET_PER_MINUTE, IndexReport, KeyframeIndex};
 pub use medium::{Medium, SeekOutcome};
 pub use ports::{Job, Ports, WorkerPool};
+pub use proxy::{
+    DEFAULT_PROXY_BUDGET, ProxyKey, ProxyProducer, ProxyReport, ProxySource, ProxyStore, ProxyUse,
+};
