@@ -187,3 +187,30 @@ Each gate ran alone, in this order, and its own exit code was read: `cargo fmt -
 - **The check is at the top of `seek`, before the lookup of the keyframe.** One check covers the three places the defect had: the lookup, the seek of the container and the early return of an empty index. The mode `Exact` keeps its own check per packet, and its answer does not change: with a live token it behaves as before, and with a cancelled token it already answered the cancelled error, because the check of the first packet of the decode came before any output.
 - **An empty index with a cancelled token now answers the cancelled error, not the absence of a keyframe.** ARQ-139 asks for the cancelled error and no partial output, and `NoKeyframe` is a partial output. The test of AC3 (`arq_144_an_empty_index_reports_the_absence_of_a_keyframe`) uses a live token and keeps its answer.
 - **No deviation of scope.** The round touched only `crates/gafira-media/src/medium.rs` and `crates/gafira-media/tests/contract.rs`: no file of `ME2` (`cache.rs`, `tests/cache.rs`, `lib.rs`) was touched, the manifest of the testkit was not touched, and neither was `.odd/state.json`. The other findings of the verify round 1 (W1 to W6) stay open: they are not in the scope of this round.
+
+## ME3
+
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the media stream closes with the proxy store that the scrubbing falls back to; the mutation run and the deep verify were waived by the owner (O4, O5 of the layer-3 design)
+Product IDs: ARQ-43, ARQ-146, FV-22 (source: specs/02-arquitectura-software.md §6.5, §7.1, specs/05-funcionalidad-video-y-distribucion.md §A6)
+Scope: `ME3` of `specs/changes/layer-3/design.md`: in `gafira-media`, the store of lightweight copies: the byte budget of the proxy cache, the background priority of the generation, the progress and the cancellation.      Non-goals: the frame cache (`ME2`), the playback clock (`ME4`), the exporter (`ME5`), the MJPEG codec itself (layer 4), and any change to `gafira-ports`.
+Acceptance:
+  AC19 Given a generated lightweight copy, When the user cache is inspected, Then the file is there and the `.gafira` holds no copy [integration]
+  AC20 Given a generation cancelled half way, When the cache is inspected, Then it is usable and there is no half-written final file [integration]
+  AC21 Given a medium that has a lightweight copy, When it is exported, Then the export uses the original and the exported file has the resolution of the original [integration]
+  AC22 Given the proxy cache limit, When it is exceeded, Then the least used copies are discarded, and the default limit is 10 GB [unit]
+  AC23 Given the generation, When it runs, Then it runs in the background with `Background` priority, reports progress and checks the cancel token [unit]
+  AC24 Given the crate, When the CI policy steps run, Then `gafira-media` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the crate has no `std::fs` [command]
+Plan: the delivery adds the proxy store module to `crates/gafira-media/src/`, on top of the frame cache of `ME2`. The file system is reached through `ports::FileSystem` and never through `std::fs` (ADR 0016), so the store lives in the user cache and never in the `.gafira` (§7.1). The MJPEG encoding itself is layer 4 and arrives later; this delivery owns the store, the budget, the priority, the progress and the cancellation around it. The critical code is the proxy naming, the byte budget, the cancellation checkpoints and the rule that an export never uses a proxy (design "Critical code"), so those carry the hand mutants.
+Owner decisions touched: none (checked D-01 to D-57: FV-22 fixes the location of the copies and the default limit).
+
+## ME3 (tdd-apply)
+
+Commits:
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
+
+### RED evidence
+
+### Negative controls
+
+### Choices and deviations
