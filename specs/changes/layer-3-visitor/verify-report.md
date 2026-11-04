@@ -178,3 +178,154 @@ The delivery is 720 authored code lines against a forecast of 430 (x1.4 = 600), 
 ## next
 
 archive
+
+---
+
+# Verify report: layer-3-visitor, DC1, round 2 (closure)
+
+Commit `a17fe2e` (`Merge branch 'develop' into feat/layer-3-visitor`), the HEAD of `feat/layer-3-visitor`; it already carries the merge of `develop` (`65392f0`, with `SC1`). Integration base `65392f0`. Depth V2, mode full, level L2, tier T4, `mutation: archive` (no `mutants` report; per the contract that is not a finding). Date 2026-11-04.
+
+**Verdict: PASS.** CRITICAL 0, WARNING 1 (still open), SUGGESTION 4 (still open). Classes of the open findings: ambiguity 1, implementation 0, architecture 0, claim 0.
+
+Of the three findings of round 1: **W2 and W3 are closed, W1 is still open.**
+
+This round ran the gates (step 2), the artifact-integrity checks (steps 3, 3b, 3c, 3d) and the closure probes for W2 only. It spent no independent-mutant budget (closure round) and ran no probe outside the closure of W2. The counts above are of the findings still open at this round; W2 and W3 are listed in `findings` with `status: closed`.
+
+Every command ran in the worktree `/tmp/gafira-wt/dc1` at `a17fe2e`, with `CARGO_TARGET_DIR=/tmp/gafira-verify-dc1` and `CARGO_INCREMENTAL=0`. The closure probes ran on a scratch export (`/tmp/gafira-verify-dc1/w2probe`, from `git archive a17fe2e`), never in the worktree. The worktree stayed clean apart from this report and `verification.json`.
+
+## Gates
+
+Each command ran alone and its exit code was read without a pipe.
+
+| Gate | Exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (180 test binaries, 2 288 passed, 0 failed) |
+| `cargo deny check` | 0 (`advisories ok, bans ok, licenses ok, sources ok`) |
+| CI policy: Format | 0 |
+| CI policy: CLI has no UI dependencies (ARQ-07) | 0 |
+| CI policy: Domain crates forbid unsafe code | 0 |
+| CI policy: Domain crates respect the layer table (V5) | 0 |
+| CI policy: Domain clippy.toml copies are in sync (V12) | 0 |
+| CI policy: Layers 0-2 know no language (ARQ-107) | 0 |
+| CI policy: EditToken only in the edit crates (V13) | 0 |
+| CI policy: Every core command has a property test (V14) | 0 |
+| CI policy: Testkit ports feature compiles (ADR 0013) | 0 |
+
+The nine policy steps were extracted from the `run:` of `.github/workflows/ci.yml` at `a17fe2e` and run with `bash -e -o pipefail` in the worktree (V13 and V14 call `git`, and the worktree is a repository, so they ran as they do in Actions). The step `Check host matches matrix target` is a GitHub expression (`${{ matrix.target }}`); it is not a policy check and cannot run outside Actions.
+
+`Testkit ports feature compiles (ADR 0013)` exists in this branch now: the merge `a17fe2e` brought `develop`'s `ci.yml`, and the step compiles and tests `gafira-testkit` with the `ports` feature, exit 0. The round-1 note that the step was absent from the branch was true of `6672880` and is stale at `a17fe2e`.
+
+`cargo deny check` prints one `warning[duplicate]` for `miniz_oxide` (`Cargo.lock`, via `png` ← `gafira-testkit`, from `develop`'s `SC1`). It is a warning of the deny tool, not an error: the command exits 0 and no advisory, ban, licence or source check fails. It is not a finding of this delivery.
+
+`gafira-doc` at this commit: 115 unit tests and 5 `visit_contract` tests pass. The delivery names 17 tests (`arq_134` 4, `arq_135` 3, `arq_136` 8, `arq_137` 1, `arq_20` 1).
+
+## Remote CI
+
+The coordinator dispatched the workflow over the branch. Run `41878047458`, `head_sha` `a17fe2e76976ddccf993f5d6a4b2baec4deb9510` (the verified commit), `workflow_dispatch`, started 2026-11-04T17:30:06Z, ended 2026-11-04T17:51:08Z. **Conclusion: success.**
+
+| Job | Status | Conclusion | Steps |
+|---|---|---|---|
+| `policy` | completed | success | Format, CLI/UI (ARQ-07), forbid unsafe code, V5, V12, ARQ-107, V13, V14, **Testkit ports feature compiles (ADR 0013)**, cargo-deny: all success |
+| `test (x86_64-unknown-linux-gnu)` | completed | success | host check, Clippy, Test: all success |
+| `test (x86_64-pc-windows-msvc)` | completed | success | host check, Clippy, Test: all success |
+| `test (aarch64-apple-darwin)` | completed | success | host check, Clippy, Test: all success |
+
+Four jobs, zero failures. The three product targets of the matrix (Windows, Linux, macOS 12+ aarch64) pass the whole suite, which the local run on Linux alone could not show.
+
+## Artifact integrity (steps 3, 3b, 3c, 3d)
+
+| Commit | Subject | Files | Verdict |
+|---|---|---|---|
+| `a6d4bc5` | `docs(layer-3-visitor): slice card` | `specs/changes/layer-3-visitor/apply-progress.md` only (1 file, 33 insertions) | correct: touches only the card file and precedes the first implementation commit `df8ab59` (09:49:48 vs 10:13:53) |
+| `df8ab59` | `feat(gafira-doc): add the visitor contract over the node kinds` | `crates/gafira-doc/` only (3 files, 720 insertions) | implementer: no card, no spec, no other crate |
+| `4363413` | `docs(layer-3-visitor): record the DC1 progress` | `apply-progress.md` only (53 insertions, 3 deletions) | implementer notes in the skeleton the card commit held; card block untouched |
+| `17c2b90` | `docs(layer-3-visitor): record verify round 1` | `verification.json`, `verify-report.md` | coordinator: exactly the two files `verify` writes |
+| `6672880` | `docs(layer-3-visitor): record the coordinator decisions on verify round 1` | `apply-progress.md` only (+6) | coordinator: adds the `### Coordinator decisions on verify round 1` section, states why, touches no other file |
+| `fe6349e` | `test(gafira-doc): tie the measure context to the absence of a time` | `crates/gafira-doc/tests/visit_contract.rs` only (+141, −2) | implementer fix round: no source of the crate, no card |
+| `a71b2b8` | `docs(layer-3-visitor): record the DC1 fix round 1` | `apply-progress.md` only (+92) | implementer notes of the fix round; adds the `## DC1 (fix round 1)` section, touches no other file |
+| `a17fe2e` | `Merge branch 'develop' into feat/layer-3-visitor` | the `SC1` tree from `develop` | merge; touches neither the card nor `specs/02-arquitectura-software.md` |
+
+- The Slice card block (lines 1 to 19, including the `Flow:` line) is **byte-identical** between `a6d4bc5` and `a17fe2e` (`diff` of both versions is empty). No implementer commit changed the card.
+- The `Flow:` line was introduced by `a6d4bc5` and never modified: `git log -L2,2` on the file shows one commit for it.
+- No `slice card amend` commit exists for this change, so the coordinator needed none.
+- `specs/02-arquitectura-software.md` was touched by **no** commit of the branch: `git log ed1dc7d..a17fe2e -- specs/02-arquitectura-software.md` is empty.
+- The sources of the delivery did not change since round 1: `git diff df8ab59 a17fe2e -- crates/gafira-doc/src/visit.rs crates/gafira-doc/src/lib.rs` is empty. The fix round and the merge changed no behaviour of the crate.
+- Conventional commit subjects, no AI attribution lines.
+
+## Closure of the findings of round 1
+
+### W1 — WARNING — class: ambiguity — **STILL OPEN**
+
+`specs/02-arquitectura-software.md` §4.1, ARQ-136 (line 495) still reads, verbatim: *"El tiempo se pasa aparte (`t: Flicks`), no en el contexto."* The row was **not** reconciled: no commit of the branch touched the file, and the merge brought no change to it. `Flicks` still lives in `gafira-time` (`crates/gafira-time/src/flicks.rs`), which `gafira-doc` may not depend on under 02 §2.1 (line 92), 02 §2.2 (line 138) and the CI layer table (`.github/workflows/ci.yml:83`, `gafira-doc gafira-geom gafira-color`). The literal half of the row is still unimplementable in the domain.
+
+The rule the row protects does hold in the delivered code, and the deviation is declared in `apply-progress.md`; the finding is a gap in the product row, not a defect of the code. **Status: open.** The coordinator's recorded decision routes it to `specifier` (section `### Coordinator decisions on verify round 1` of `apply-progress.md`); it is not closed and the archive must not consume it.
+
+### W2 — WARNING — class: implementation — **CLOSED** by `fe6349e`
+
+The new test is `visit_contract::arq_136_the_measure_context_carries_no_time` (`crates/gafira-doc/tests/visit_contract.rs:201-245`). It reads the sources of the crate with `include_str!` and checks three things: the fields `MeasureCx` declares are exactly `page` and `dpi`; the block of the struct names no time type; and no file of `crates/gafira-doc/src/` names one of `Flicks`, `FrameRate`, `Instant`, `Duration`, `SystemTime`.
+
+The test was probed on the scratch export (`/tmp/gafira-verify-dc1/w2probe`, `git archive a17fe2e`, files touched so the build is not stale) with the private target dir. Three probes, each applied and then reverted; the worktree was never modified.
+
+| Probe | Wrong shape applied | Result | Killed |
+|---|---|---|---|
+| P1 | `MeasureCx` gains the field `t: std::time::Duration` (and `new` sets it, so the crate still compiles) | `arq_136_the_measure_context_carries_no_time` FAILED at `visit_contract.rs:206:5`: `left: ["page", "dpi", "t"]`, `right: ["page", "dpi"]`; the other 4 tests of the file kept passing | yes |
+| P2 | `visit.rs` names a time type (`use std::time::Instant;`), the struct untouched | the same test FAILED at `visit_contract.rs:239:13`: `the domain names the time type Instant in src/visit.rs` | yes |
+| P3 | a new module `timeline` enters `lib.rs` and the list of sources does not cover it | the same test FAILED at `visit_contract.rs:228:13`: `src/lib.rs declares the module timeline, which the list of sources does not cover: add it` | yes |
+
+3 probes, 3 killed, 0 survivors. Every probe failed with an **assertion**, never with a compile error: the crate built with each mutant in place, which is what makes the rule observable. The three messages reproduce the RED evidence and the negative controls recorded in `apply-progress.md` exactly, at the same line numbers.
+
+**The completeness guard fails closed**: P3 shows that a module added to the crate later makes the test fail with the name of the module to add, so the list of 23 sources cannot silently go stale.
+
+After reverting every probe, `cargo test -p gafira-doc --test visit_contract --locked` is `ok. 5 passed; 0 failed`, and the export is byte-identical to `a17fe2e` (`diff` empty). The worktree was never touched: `git status --short` is empty and `git diff a17fe2e -- crates/` is empty.
+
+### W3 — WARNING — class: implementation — **CLOSED** by the coordinator's recorded decision
+
+The decision is registered in `apply-progress.md`, section `### Coordinator decisions on verify round 1`: *"**W3 (720 lines of code, over the ~700 ceiling): accepted.** The delivery is the visitor contract with its tests and the shape checks, and the size is 3 % over the ceiling of a `full` run. The owner gave the coordinator the decision in YOLO mode on 2026-11-03, and the coordinator accepts it here."*
+
+The decision is present, it states why, and it was taken by the coordinator with the owner's delegation, which is what the finding asked for.
+
+**The measurement it accepted has grown.** The 720 lines were the whole delivery at `df8ab59`; the fix round that closed W2 added 139 more net lines to the test file. The real size of DC1 at `a17fe2e` is below. The number the decision quotes (720, "3 % over the ceiling") is stale; the delivery is now 859 code lines, 22.7 % over the ~700 ceiling. The character of the delivery is the one the decision describes (the visitor contract, its tests and its shape checks), so the decision stands; the coordinator may want to refresh the figure before the archive (S4).
+
+## Size
+
+Measured on the delivery branch against its integration base `65392f0` (the tip of `develop` merged at `a17fe2e`), with `git diff --numstat`:
+
+| Scope | Result |
+|---|---|
+| Whole delivery | 6 files changed, 1 241 insertions(+) |
+| Code only (`crates/`) | 3 files changed, 859 insertions(+) |
+| `crates/gafira-doc/src/visit.rs` | 551 |
+| `crates/gafira-doc/tests/visit_contract.rs` | 307 |
+| `crates/gafira-doc/src/lib.rs` | 1 |
+| `specs/changes/layer-3-visitor/apply-progress.md` | 181 (19 of the card, 162 of notes) |
+| `specs/changes/layer-3-visitor/verify-report.md` | 180 |
+| `specs/changes/layer-3-visitor/verification.json` | 21 |
+
+The forecast was 430 (x1.4 = 600). The implementation commit `df8ab59` was 720 code lines (the figure of round 1) and the fix round `fe6349e` added 141 insertions and 2 deletions to the test file alone, for 859 net code lines now.
+
+## Findings
+
+### W1 — WARNING — class: ambiguity — **open** — `specs/02-arquitectura-software.md` §4.1, ARQ-136 (line 495)
+
+The row still says the instant travels apart as `t: Flicks`, and `Flicks` is unreachable from `gafira-doc` under 02 §2.1, 02 §2.2 and the V5 layer table. No commit of the branch touched the file. The rule the row protects holds in the code (the instant is a separate argument; `MeasureCx` carries only the borrowed page and the DPI, now pinned by `arq_136_the_measure_context_carries_no_time`). `specifier` still has to reconcile the row; until it does, the product spec and the delivery disagree about the literal type.
+
+### W2 — WARNING — class: implementation — **closed** — `crates/gafira-doc/tests/visit_contract.rs:201-245`
+
+Closed by `fe6349e`. The probe above proves the test bites on all three of its halves and that the completeness guard fails closed. Verified in this round.
+
+### W3 — WARNING — class: implementation — **closed** — `AGENTS.md` "Delivery rules"; `specs/changes/layer-3-visitor/apply-progress.md` (section `### Coordinator decisions on verify round 1`)
+
+Closed by the coordinator's recorded decision. The measurement it quotes (720 code lines) is now 859 (see S4).
+
+## Suggestions
+
+- **S1** (round 1, still open) — AC3 of the card reads "declares three `visit_*` methods"; the trait declares four names that start with `visit_` (`visit_node` plus the three kind-specific ones), which is what 02 §4.1 sketches. Reword the card so the count excludes the mandatory `visit_node`, or a later reader will read the delivery as failing AC3. The card is frozen; changing it needs a `slice card amend` commit by the coordinator that states why.
+- **S2** (round 1, still open) — the Scope of the card enumerates `NodeVisitor`, `walk`, `WalkOrder`, `PageView` and `MeasureCx`; the delivery also adds two public traits, `NodeBehavior` and `NodeExtension`. Both are demanded by the rows the card cites (ARQ-136 names `local_bounds` and `hit_test`, ARQ-137 names `NodeExtension`), so the code is right and the enumeration is incomplete. Reword the card.
+- **S3** (round 1, still open in a new form) — the gate evidence in `apply-progress.md` comes from the pre-`SC1` tree, and the notes of the fix round state that the step `Testkit ports feature compiles (ADR 0013)` is not in the branch's `ci.yml`. That was true at `6672880` and is **no longer true at `a17fe2e`**: the merge brought `develop`'s `ci.yml` and the step now exists and passes (exit 0 locally, success in the remote run). Refresh the notes before the archive so the record matches the merged tree.
+- **S4** (new) — the decision on W3 quotes 720 code lines ("3 % over the ceiling"); the delivery is now 859 code lines (22.7 % over). The decision stands on the character of the delivery it describes, but its figure is stale; refresh the measurement in the notes before the archive.
+
+## next
+
+archive
