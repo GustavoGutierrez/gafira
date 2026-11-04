@@ -63,3 +63,21 @@ The four hand mutants of the design ("Critical code" of `ME1`), applied one at a
 - **The RED was captured by replaying the tests against a skeleton**, not in the order of one test at a time: the tests and the implementation were written in the same session and the skeleton replay shows that every test detects the missing behaviour. The evidence above is the real output of that replay.
 - **The budget is reported, not enforced.** `MediaError` has no variant for a scan that runs slow, and `gafira-ports` is out of the scope of the delivery, so `IndexReport` carries the elapsed time and the budget and `within_budget()` tells the caller.
 
+
+## ME2
+
+Flow: full | level: L2 | pack: product-spec slice | mutation: archive | tier: T4 | verify: V2 | decided-by: owner | reason: the media stream continues with the cache the scrubbing reads from
+Product IDs: ARQ-44, ARQ-145, CAL-14, FV-11 (b) (source: specs/02-arquitectura-software.md §6.5, specs/05-funcionalidad-video-y-distribucion.md §A6)
+Scope: `ME2` of `specs/changes/layer-3/design.md`: in `gafira-media`, the cache of frames: the LRU, the byte budget, the prefetch policy in the direction of the head and the nearest cached frame.      Non-goals: the proxies (`ME3`), the playback clock (`ME4`), the exporter (`ME5`), the tile cache of the render stream, and any change to `gafira-ports`.
+Acceptance:
+  AC10 Given a budget of 0, When a frame is cached, Then no frame is kept and `bytes()` gives 0 [unit]
+  AC11 Given a budget that fits a single frame, When the third frame is asked for, Then the first is discarded and `bytes()` is at most the budget [unit]
+  AC12 Given two frames at the same distance from the requested time, When the nearest is chosen, Then the earlier one wins [unit]
+  AC13 Given the same file with another resource id inside the project, When a frame is cached, Then the cached frame is the same [unit]
+  AC14 Given the cache key of §6.5, When it is built, Then it is the content hash of the medium, the proxy level and the frame index in that level [unit]
+  AC15 Given a frame that is not cached, When it is asked for, Then the nearest cached frame is returned and the exact one is left to be decoded [unit]
+  AC16 Given the head moving, When the prefetch runs, Then it prefetches in the direction of the movement [unit]
+  AC17 Given `trim(budget)`, When it runs, Then `bytes()` is at most the budget given and the cache keeps the most recently used entries [unit]
+  AC18 Given the crate, When the CI policy steps run, Then `gafira-media` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the crate has no `std::fs` [command]
+Plan: the delivery adds the frame cache module to `crates/gafira-media/src/`, on top of the keyframe index that `ME1` built. The budget calls travel through the same trait shape that `ports::TileCache` uses, and the order of ARQ-44 holds: the governor trims this cache first. The cache lives inside the 1,5 GB of D-03, which is the owner's decision of 2026-11-03 (O2). The critical code is the cache key, the eviction order, the nearest-frame search and the budget boundary (design "Critical code"), so those carry the hand mutants.
+Owner decisions touched: O2 of 2026-11-03 (the frame cache lives inside the 1,5 GB of D-03 and the governor trims it first); no D-nn is contradicted.
