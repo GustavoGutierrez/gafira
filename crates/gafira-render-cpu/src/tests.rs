@@ -709,6 +709,59 @@ fn arq_139_the_progress_is_tiles_done_over_tiles_planned() {
 }
 
 // ---------------------------------------------------------------------------
+// AC8 — the memory the backend holds, and the trim
+// ---------------------------------------------------------------------------
+
+// ARQ-143, ARQ-44 (partial): `memory_usage` answers the surface plus the cache,
+// and `trim` drops what the backend holds to the budget given, without leaking
+// a buffer.
+#[test]
+fn arq_143_memory_usage_is_the_surface_plus_the_cache_and_trim_drops_to_the_budget() {
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 16, 16),
+        vec![fill(0.0, 0.0, 16.0, 16.0, white())],
+    )]);
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let mut cache = RecordingCache::default();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+
+    // The surface is 16 × 16 linear pixels, four channels each; the cache holds
+    // the one tile the plan was made of, in the same shape.
+    let surface = 16 * 16 * 16;
+    let cached = cache.bytes().0;
+    assert_eq!(cached, surface, "one tile of the same size");
+    assert_eq!(frame.backend.memory_usage().host, Bytes(surface + cached));
+    assert_eq!(frame.backend.memory_usage().device, Bytes(0));
+
+    // A budget that covers what the backend holds drops nothing.
+    frame.backend.trim(Bytes(surface + cached));
+    assert_eq!(frame.backend.memory_usage().host, Bytes(surface + cached));
+    assert!(
+        frame.read(IRect::new(0, 0, 16, 16)).is_ok(),
+        "an untouched frame stays readable"
+    );
+
+    // A tighter budget drops the buffers, and nothing leaks: the frame is gone
+    // and the next one starts from a clean surface.
+    frame.backend.trim(Bytes(surface));
+    assert_eq!(frame.backend.memory_usage().host, Bytes(0));
+    assert!(
+        frame.read(IRect::new(0, 0, 16, 16)).is_err(),
+        "a trimmed frame is not readable"
+    );
+    let freshly = Frame::open(CpuBackend::new(), target_desc);
+    assert_eq!(freshly.backend.memory_usage().host, Bytes(surface));
+    assert!(
+        freshly.backend.memory_usage().host <= Bytes(surface + cached),
+        "a new frame does not hold more than the one it replaced"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // AC7 — the same plan and the same surface give the same bytes
 // ---------------------------------------------------------------------------
 

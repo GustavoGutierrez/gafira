@@ -39,6 +39,8 @@ pub struct CpuBackend {
     progress: Arc<dyn Progress>,
     /// The last fraction reported in this frame, so it never decreases.
     last_fraction: f32,
+    /// The bytes the caller's cache held at the last observation (ARQ-143).
+    cache_bytes: u64,
 }
 
 impl CpuBackend {
@@ -134,6 +136,7 @@ impl Default for CpuBackend {
             next_frame: 0,
             progress: Arc::new(NoProgress),
             last_fraction: 0.0,
+            cache_bytes: 0,
         }
     }
 }
@@ -168,7 +171,10 @@ impl RenderBackend for CpuBackend {
     ) -> Result<RenderReport, RenderError> {
         // The deadline is the caller's: this backend reads no clock (D8,
         // ARQ-02), and `FrameLoop` checks it before every tile.
-        match self.run(cx, plan, cache, cancel) {
+        let outcome = self.run(cx, plan, cache, cancel);
+        // The cache belongs to the caller, so its size is observed, not owned.
+        self.cache_bytes = cache.bytes().0;
+        match outcome {
             Ok(report) => Ok(report),
             Err(error) => {
                 if matches!(&error, RenderError::Cancelled(_)) {
@@ -187,16 +193,21 @@ impl RenderBackend for CpuBackend {
     }
 
     fn memory_usage(&self) -> MemoryUsage {
+        let owned = self.surface.as_ref().map_or(0, Surface::bytes);
         MemoryUsage {
-            host: Bytes(self.surface.as_ref().map_or(0, Surface::bytes)),
+            host: Bytes(owned + self.cache_bytes),
             device: Bytes(0),
         }
     }
 
     fn trim(&mut self, budget: Bytes) {
+        // The surface is the only buffer this delivery owns (the layer pool
+        // arrives with `CB2`), and the cache's bytes are the caller's: trim
+        // releases the frame and the accounting of both (ARQ-44, ARQ-143).
         if self.memory_usage().host > budget {
             self.surface = None;
             self.frame = None;
+            self.cache_bytes = 0;
         }
     }
 }
