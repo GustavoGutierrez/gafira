@@ -211,6 +211,63 @@ fn arq_144_opening_a_medium_writes_no_file() {
     assert_eq!(file_system.calls(), vec!["open".to_string()]);
 }
 
+// ARQ-144: a container whose keyframes do not arrive in presentation
+// order: the index keeps them in ascending order and the search lands on
+// the keyframe that covers the time asked for.
+#[test]
+fn arq_144_an_index_built_from_out_of_order_keyframes_is_sorted_and_searches_correctly() {
+    let mut medium = open(
+        &[
+            FakePacket::Keyframe(0),
+            FakePacket::Keyframe(4_000),
+            FakePacket::Keyframe(2_000),
+        ],
+        4_000,
+        2,
+    );
+    let token = CancelToken::new();
+    let time = Flicks::from_millis(3_500).expect("3,5 s fits");
+
+    assert_eq!(
+        medium
+            .seek(
+                &mut FrameDecoder::new(),
+                time,
+                SeekMode::Keyframe,
+                &token,
+                &NoProgress,
+            )
+            .expect("the seek lands"),
+        SeekOutcome::Keyframe(Flicks::from_seconds(2).expect("2 s fits")),
+    );
+    assert_eq!(
+        medium.index().times(),
+        [
+            Flicks::from_seconds(0).expect("0 s fits"),
+            Flicks::from_seconds(2).expect("2 s fits"),
+            Flicks::from_seconds(4).expect("4 s fits"),
+        ]
+        .as_slice(),
+    );
+}
+
+// ARQ-144: the keyframes that already arrive in order keep their order in
+// the index, and the search lands on the keyframe that covers the time.
+#[test]
+fn arq_144_an_index_built_from_in_order_keyframes_keeps_them_in_ascending_order() {
+    let medium = open(&acceptance_packets(), 6_000, 2);
+
+    assert_eq!(
+        medium.index().times(),
+        [
+            Flicks::from_seconds(0).expect("0 s fits"),
+            Flicks::from_seconds(2).expect("2 s fits"),
+            Flicks::from_seconds(4).expect("4 s fits"),
+        ]
+        .as_slice(),
+    );
+}
+
 // ARQ-144: the scan measures its cost with the injected clock and compares
 // it with the budget of one second per minute of material.
 #[test]

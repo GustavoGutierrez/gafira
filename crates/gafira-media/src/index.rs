@@ -192,6 +192,10 @@ impl Work {
 /// The records are split into as many chunks as the pool has workers and
 /// the results are merged by chunk, so the index does not depend on the
 /// pool nor on the order the chunks finish in.
+///
+/// The container may deliver its keyframes in any order, so the merged
+/// times are sorted: the index keeps them in ascending order and its
+/// search is a binary one (ARQ-144).
 fn keyframe_times(records: &[Record], pool: &dyn WorkerPool) -> Vec<Flicks> {
     let chunk_size = records.len().div_ceil(pool.workers().max(1)).max(1);
     let chunks: Vec<&[Record]> = records.chunks(chunk_size).collect();
@@ -216,7 +220,9 @@ fn keyframe_times(records: &[Record], pool: &dyn WorkerPool) -> Vec<Flicks> {
         .collect();
     pool.execute_all(jobs);
     let slots = slots.lock().unwrap_or_else(PoisonError::into_inner);
-    slots.iter().flatten().copied().collect()
+    let mut times: Vec<Flicks> = slots.iter().flatten().copied().collect();
+    times.sort_unstable();
+    times
 }
 
 /// The number of frames the scan plans to read: the duration of the stream
