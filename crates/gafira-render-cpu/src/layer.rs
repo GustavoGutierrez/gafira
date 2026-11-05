@@ -15,6 +15,12 @@
 //! chooses the operands: the layer's buffer is the **source** and the parent's
 //! pixels are the **backdrop**.
 //!
+//! The buffers are pooled rather than allocated per layer: a pop returns its
+//! buffer to the pool and the next push takes it back. The pool keeps every
+//! buffer a pop returns, so its size converges to the deepest stack the frame
+//! drew and never shrinks on its own; `trim` is what drops it (ARQ-143). That
+//! growth policy is not critical code (design, "Critical code").
+//!
 //! The plan's stack is balanced (02 §6.1): every pop closes the layer its push
 //! opened. A pop with no layer open, and a layer left open at the end of the
 //! tile, are plans this backend cannot execute; the port carries no
@@ -26,21 +32,44 @@ use gafira_doc::BlendMode;
 use gafira_ports::render::RenderError;
 use gafira_raster::blend_f32;
 
-/// The layers of one tile, outermost first.
+/// The layers of one tile, outermost first, and the buffers a pop returned.
 #[derive(Default)]
 pub(crate) struct Layers {
     open: Vec<Vec<f32>>,
+    pool: Vec<Vec<f32>>,
 }
 
 impl Layers {
-    /// A tile with no open layer.
+    /// A tile with no open layer and an empty pool.
     pub(crate) const fn new() -> Self {
-        Self { open: Vec::new() }
+        Self {
+            open: Vec::new(),
+            pool: Vec::new(),
+        }
     }
 
     /// True when every layer the plan pushed has been popped.
     pub(crate) fn is_empty(&self) -> bool {
         self.open.is_empty()
+    }
+
+    /// The bytes the open layers and the pool hold (ARQ-143).
+    pub(crate) fn bytes(&self) -> u64 {
+        let pixels: usize = self.open.iter().chain(self.pool.iter()).map(Vec::len).sum();
+        u64::try_from(pixels)
+            .ok()
+            .and_then(|count| count.checked_mul(4))
+            .unwrap_or(u64::MAX)
+    }
+
+    /// Returns every open layer to the pool.
+    ///
+    /// A tile that ended with a layer open, because its plan was unbalanced or
+    /// its render failed, leaves nothing behind for the next tile: the buffers
+    /// are reusable, the depth is reset.
+    pub(crate) fn reset(&mut self) {
+        let open = std::mem::take(&mut self.open);
+        self.pool.extend(open);
     }
 
     /// The buffer the next op draws into: the innermost open layer, or the
@@ -54,7 +83,13 @@ impl Layers {
 
     /// Opens a layer with a transparent buffer of `pixels` premultiplied values.
     pub(crate) fn push(&mut self, pixels: usize) {
-        self.open.push(vec![0.0; pixels]);
+        let mut buffer = self.pool.pop().unwrap_or_default();
+        buffer.resize(pixels, 0.0);
+        // A pooled buffer still holds the layer that returned it, so it is
+        // cleared to transparent here: nothing of a previous layer may reach
+        // the new one (ARQ-117). A fresh buffer is transparent already.
+        buffer.fill(0.0);
+        self.open.push(buffer);
     }
 
     /// Composites the innermost layer onto its parent with `blend` and `opacity`.
@@ -71,10 +106,13 @@ impl Layers {
         let Some(source) = self.open.pop() else {
             return Err(RenderError::DriverBlocked);
         };
-        match self.open.last_mut() {
+        let outcome = match self.open.last_mut() {
             Some(parent) => composite(parent, &source, blend, opacity),
             None => composite(tile, &source, blend, opacity),
-        }
+        };
+        // The buffer goes back to the pool whether the composite worked or not.
+        self.pool.push(source);
+        outcome
     }
 }
 

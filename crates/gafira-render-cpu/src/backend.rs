@@ -44,6 +44,12 @@ pub struct CpuBackend {
     last_fraction: f32,
     /// The bytes the caller's cache held at the last observation (ARQ-143).
     cache_bytes: u64,
+    /// The layers of the tile being drawn, and the buffers their pops returned.
+    ///
+    /// The pool lives on the backend, so a pop's buffer is reused by the next
+    /// layer of the same tile and by the tiles and frames that follow; `trim`
+    /// is the only thing that drops it (ARQ-143).
+    layers: Layers,
 }
 
 impl CpuBackend {
@@ -85,7 +91,7 @@ impl CpuBackend {
             let tile = match cached_tile(cache, task.key, size, format) {
                 Some(tile) => tile,
                 None => {
-                    let tile = render_tile(task)?;
+                    let tile = render_tile(task, &mut self.layers)?;
                     let encoded = surface::encode_tile(&tile, size, format)?;
                     cache.put(task.key, Arc::new(encoded));
                     tile
@@ -140,6 +146,7 @@ impl Default for CpuBackend {
             progress: Arc::new(NoProgress),
             last_fraction: 0.0,
             cache_bytes: 0,
+            layers: Layers::new(),
         }
     }
 }
@@ -180,6 +187,9 @@ impl RenderBackend for CpuBackend {
         match outcome {
             Ok(report) => Ok(report),
             Err(error) => {
+                // A tile that failed may have left a layer open: the buffers go
+                // back to the pool, the depth restarts with the next tile.
+                self.layers.reset();
                 if matches!(&error, RenderError::Cancelled(_)) {
                     // A cancelled frame is abandoned, so no partial surface is
                     // returned and the next frame opens its own (ARQ-139).
@@ -196,21 +206,22 @@ impl RenderBackend for CpuBackend {
     }
 
     fn memory_usage(&self) -> MemoryUsage {
-        let owned = self.surface.as_ref().map_or(0, Surface::bytes);
+        let surface = self.surface.as_ref().map_or(0, Surface::bytes);
         MemoryUsage {
-            host: Bytes(owned + self.cache_bytes),
+            host: Bytes(surface + self.cache_bytes + self.layers.bytes()),
             device: Bytes(0),
         }
     }
 
     fn trim(&mut self, budget: Bytes) {
-        // The surface is the only buffer this delivery owns (the layer pool
-        // arrives with `CB2`), and the cache's bytes are the caller's: trim
-        // releases the frame and the accounting of both (ARQ-44, ARQ-143).
+        // The surface and the layer pool are this backend's buffers; the
+        // cache's bytes are the caller's and only its accounting is dropped
+        // (ARQ-44, ARQ-143).
         if self.memory_usage().host > budget {
             self.surface = None;
             self.frame = None;
             self.cache_bytes = 0;
+            self.layers = Layers::new();
         }
     }
 }
@@ -238,17 +249,19 @@ fn cached_tile(
 /// The buffer is the tile's own content: the ops are composited in plan order
 /// on a transparent backdrop, and the loop writes the result at the task's
 /// region (D4, D6).
-fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
+fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderError> {
     let size = (task.region.width(), task.region.height());
     let count = usize::try_from(u64::from(size.0) * u64::from(size.1))
         .ok()
         .and_then(|pixels| pixels.checked_mul(4))
         .ok_or(RenderError::OutOfMemory)?;
+    // A tile that failed before left its layers open; their buffers are
+    // reusable, the depth is not.
+    layers.reset();
     let mut pixels = vec![0.0f32; count];
     if count == 0 {
         return Ok(pixels);
     }
-    let mut layers = Layers::new();
     for op in &task.ops {
         match op {
             RenderOp::PushLayer => layers.push(count),

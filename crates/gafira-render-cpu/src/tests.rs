@@ -1248,3 +1248,205 @@ fn arq_119_an_unbalanced_plan_is_refused() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// CB2 AC3 and AC6 — the buffer is cleared when it is pushed, and a reused
+// buffer leaves no residue
+// ---------------------------------------------------------------------------
+
+// ARQ-117: a layer buffer is cleared to transparent when it is pushed, so the
+// previous layer of the same tile cannot come back. The first layer here lands
+// at half opacity; the second takes its buffer back from the pool, draws only
+// on the right, and must leave the half-transparent white of the first one
+// alone on the left instead of compositing its full white again.
+#[test]
+fn arq_117_a_pushed_layer_is_cleared_to_transparent() {
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 2, 1),
+        vec![
+            push(),
+            fill(0.0, 0.0, 2.0, 1.0, white()),
+            pop(BlendMode::Normal, 0.5),
+            push(),
+            fill(1.0, 0.0, 2.0, 1.0, srgb(1.0, 0.0, 0.0, 1.0)),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let surface = run(target(2, 1, (0, 0), PixelFormat::RgbaF32), &scene);
+    assert_eq!(
+        channels(&surface, 0, 0),
+        [0.5, 0.5, 0.5, 0.5],
+        "the second layer is transparent on the left: the first one's white cannot come back"
+    );
+    assert_eq!(
+        channels(&surface, 1, 0),
+        [1.0, 0.0, 0.0, 1.0],
+        "and it holds only its own fill"
+    );
+}
+
+// ARQ-117: a buffer a pop returned to the pool leaves no residue when the next
+// tile's layer takes it. The second tile's layer draws nothing, so its pop must
+// show the transparent page, not the first tile's white.
+#[test]
+fn arq_117_a_reused_layer_buffer_leaves_no_residue() {
+    let scene = plan(vec![
+        task(
+            1,
+            IRect::new(0, 0, 2, 1),
+            vec![
+                push(),
+                fill(0.0, 0.0, 2.0, 1.0, white()),
+                pop(BlendMode::Normal, 1.0),
+            ],
+        ),
+        task(
+            2,
+            IRect::new(2, 0, 4, 1),
+            vec![push(), pop(BlendMode::Normal, 1.0)],
+        ),
+    ]);
+    let surface = run(target(4, 1, (0, 0), PixelFormat::RgbaF32), &scene);
+    assert_eq!(
+        channels(&surface, 0, 0),
+        [1.0, 1.0, 1.0, 1.0],
+        "the first tile paints its layer"
+    );
+    assert_eq!(
+        channels(&surface, 3, 0),
+        [0.0, 0.0, 0.0, 0.0],
+        "the second tile's layer is empty: the pooled buffer carries no residue"
+    );
+}
+
+// ARQ-143, ARQ-44 (partial): a layered frame keeps one buffer per depth in the
+// pool instead of allocating per tile or per layer, the pool is part of what
+// `memory_usage` answers, and `trim` drops it. Two 32 × 16 tiles of one layer
+// each hold one 8 KiB layer buffer after the frame, not two.
+#[test]
+fn arq_143_the_layer_pool_is_accounted_and_trim_drops_it() {
+    let target_desc = target(64, 16, (0, 0), PixelFormat::RgbaF32);
+    let layer = |region: IRect, key: u128| {
+        task(
+            key,
+            region,
+            vec![
+                push(),
+                fill(0.0, 0.0, 64.0, 64.0, srgb(0.5, 0.25, 0.75, 1.0)),
+                pop(BlendMode::Normal, 0.5),
+            ],
+        )
+    };
+    let scene = plan(vec![
+        layer(IRect::new(0, 0, 32, 16), 1),
+        layer(IRect::new(32, 0, 64, 16), 2),
+    ]);
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let mut cache = RecordingCache::default();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+
+    let surface = 64 * 16 * 16;
+    let cached = cache.bytes().0;
+    assert_eq!(cached, 2 * 32 * 16 * 16, "the cache holds both tiles");
+    let pooled = 32 * 16 * 16;
+    assert_eq!(
+        frame.backend.memory_usage().host,
+        Bytes(surface + cached + pooled),
+        "the surface, the cache and one pooled layer buffer"
+    );
+
+    // A budget that covers it keeps the pool; a tighter one drops it with the
+    // surface and the accounting of the cache (ARQ-44).
+    frame.backend.trim(Bytes(surface + cached + pooled));
+    assert_eq!(
+        frame.backend.memory_usage().host,
+        Bytes(surface + cached + pooled),
+        "a budget that covers what is held drops nothing"
+    );
+    frame.backend.trim(Bytes(0));
+    assert_eq!(frame.backend.memory_usage().host, Bytes(0));
+}
+
+// ---------------------------------------------------------------------------
+// CB2 AC7 — determinism, and a pool that does not reach the pixels
+// ---------------------------------------------------------------------------
+
+// ARQ-111: a layered plan gives the same bytes twice, and a frame that leaves
+// buffers in the pool first does not change them: the number of buffers the
+// pool holds never reaches the pixels.
+#[test]
+fn arq_111_a_layered_plan_is_deterministic_and_the_pool_does_not_reach_the_pixels() {
+    let scene = || {
+        plan(vec![task(
+            1,
+            IRect::new(0, 0, 8, 8),
+            vec![
+                fill(0.0, 0.0, 8.0, 8.0, srgb(0.3, 0.6, 0.9, 1.0)),
+                push(),
+                fill(2.0, 2.0, 6.0, 6.0, srgb(0.9, 0.2, 0.1, 0.6)),
+                pop(BlendMode::Multiply, 0.75),
+            ],
+        )])
+    };
+    let target_desc = target(8, 8, (0, 0), PixelFormat::Rgba8);
+    let cold = run(target_desc, &scene());
+    let again = run(target_desc, &scene());
+    assert_eq!(
+        cold.data(),
+        again.data(),
+        "the same plan gives the same bytes"
+    );
+
+    // Three nested layers in an earlier frame leave three buffers in the pool.
+    let warm_up = plan(vec![task(
+        9,
+        IRect::new(0, 0, 8, 8),
+        vec![
+            push(),
+            push(),
+            push(),
+            fill(0.0, 0.0, 8.0, 8.0, white()),
+            pop(BlendMode::Normal, 1.0),
+            pop(BlendMode::Normal, 1.0),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let mut backend = CpuBackend::new();
+    let mut cache = RecordingCache::default();
+    let token = CancelToken::new();
+    let mut first = backend
+        .begin_frame(&target_desc)
+        .expect("the first frame opens");
+    backend
+        .execute(
+            &mut first,
+            &warm_up,
+            &mut cache,
+            Deadline::Unbounded,
+            &token,
+        )
+        .expect("the warm-up runs");
+    let mut second = backend
+        .begin_frame(&target_desc)
+        .expect("the second frame opens");
+    backend
+        .execute(
+            &mut second,
+            &scene(),
+            &mut cache,
+            Deadline::Unbounded,
+            &token,
+        )
+        .expect("the plan runs");
+    let warm = backend
+        .read_back(&second, IRect::new(0, 0, 8, 8))
+        .expect("the surface reads");
+    assert_eq!(
+        cold.data(),
+        warm.data(),
+        "the buffers the pool holds do not change the result"
+    );
+}
