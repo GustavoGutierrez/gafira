@@ -191,12 +191,12 @@ Each gate ran alone, in this order, and its own exit code was read: `cargo fmt -
 ## ME3
 
 Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the media stream closes with the proxy store that the scrubbing falls back to; the mutation run and the deep verify were waived by the owner (O4, O5 of the layer-3 design)
-Product IDs: ARQ-43, ARQ-146, FV-22 (source: specs/02-arquitectura-software.md §6.5, §7.1, specs/05-funcionalidad-video-y-distribucion.md §A6)
+Product IDs: ARQ-43 (partial: the per-frame cancel checkpoint is proved, the ≤100 ms bound needs the cancel bench of the cancel path), ARQ-146, FV-22 (partial: (b) here; the automatic trigger, the manual create and delete and (c) land with the exporter and the UI) (source: specs/02-arquitectura-software.md §6.5, §7.1, specs/05-funcionalidad-video-y-distribucion.md §A6)
 Scope: `ME3` of `specs/changes/layer-3/design.md`: in `gafira-media`, the store of lightweight copies: the byte budget of the proxy cache, the background priority of the generation, the progress and the cancellation.      Non-goals: the frame cache (`ME2`), the playback clock (`ME4`), the exporter (`ME5`), the MJPEG codec itself (layer 4), and any change to `gafira-ports`.
 Acceptance:
   AC19 Given a generated lightweight copy, When the user cache is inspected, Then the file is there and the `.gafira` holds no copy [integration]
   AC20 Given a generation cancelled half way, When the cache is inspected, Then it is usable and there is no half-written final file [integration]
-  AC21 Given a medium that has a lightweight copy, When it is exported, Then the export uses the original and the exported file has the resolution of the original [integration]
+  AC21 Given a medium that has a lightweight copy, When it is exported, Then the export uses the original and the exported file has the resolution of the original [integration] — the first clause is proved here; the second needs the exporter of `ME5`, which moved to `layer-3b` (O6)
   AC22 Given the proxy cache limit, When it is exceeded, Then the least used copies are discarded, and the default limit is 10 GB [unit]
   AC23 Given the generation, When it runs, Then it runs in the background with `Background` priority, reports progress and checks the cancel token [unit]
   AC24 Given the crate, When the CI policy steps run, Then `gafira-media` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the crate has no `std::fs` [command]
