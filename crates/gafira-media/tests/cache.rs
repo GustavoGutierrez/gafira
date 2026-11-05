@@ -131,10 +131,10 @@ fn arq_145_the_same_file_with_another_resource_id_gives_the_same_frame() {
     assert_eq!(cache.len(), 1);
 }
 
-// ARQ-145: a trim leaves the cache at or below the budget given and keeps
-// the most recently used frames.
+// ARQ-44: a trim leaves the cache at or below the budget given. The frames
+// it keeps are the most recently used ones (ARQ-145).
 #[test]
-fn arq_145_the_trim_leaves_the_cache_at_or_below_the_budget() {
+fn arq_44_the_trim_leaves_the_cache_at_or_below_the_budget() {
     let budget = frame_bytes(2);
     let mut cache = FrameCache::new(Bytes(64));
     let first = FrameRequest::new(medium("clip", 1), ProxyLevel::Original, 0, at(0));
@@ -157,10 +157,10 @@ fn arq_145_the_trim_leaves_the_cache_at_or_below_the_budget() {
     );
 }
 
-// ARQ-145: a trim with a budget bigger than the size of the cache changes
+// ARQ-44: a trim with a budget bigger than the size of the cache changes
 // nothing and does not fail.
 #[test]
-fn arq_145_a_trim_with_a_bigger_budget_changes_nothing() {
+fn arq_44_a_trim_with_a_bigger_budget_changes_nothing() {
     let mut cache = FrameCache::new(Bytes(1024));
     let first = FrameRequest::new(medium("clip", 1), ProxyLevel::Original, 0, at(0));
     let second = FrameRequest::new(medium("clip", 1), ProxyLevel::Original, 1, at(40));

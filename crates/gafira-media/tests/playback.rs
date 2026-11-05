@@ -392,6 +392,9 @@ fn arq_138_the_master_is_monotonic_and_comes_from_the_clock_port() {
 
 // ARQ-139: the playback is a long operation: it checks the cancel token once
 // per frame and its progress reaches 1.0 only on a normal end.
+// ARQ-43: that per-frame checkpoint is the one that bounds the answer of a
+// cancellation. The 100 ms bound itself is not measured here: this crate
+// has no bench.
 #[test]
 fn arq_139_the_playback_checks_the_cancel_token_per_frame() {
     let times = [ms(100), ms(200), ms(300), ms(400)];
