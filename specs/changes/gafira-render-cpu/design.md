@@ -546,12 +546,12 @@ verifies, `XP1` and `XP4` before `CB1`, and `XP2` before `CB3`.
 
 | # | ID | Request | Blocks |
 |---|---|---|---|
-| `SP1` | 02 §4.6, §4.17 | State that a tile task carries its page-space region and that a target carries its page-space origin, with the units and whether the region is clipped to the viewport. Today §4.6 describes the plan without the place of a tile. | `PC1`, `CB1` |
-| `SP2` | 02 §4.6 | Say what `ApplyMask` masks, what `PushLayer` bounds are, and where a transition's two inputs begin and end in the op stream. Three ops are unimplementable as written; today only the adapter's reading (`D7`) exists. | `CB5`, and the change that first emits them |
-| `SP3` | 02 §2.1, §6.2 | Add a §4.17 row set for `gafira-render-cpu` (the "first cut / outside the cut" table the six layer-2 engines have): which ops, which qualities, which formats. | Records this design; nothing blocks |
-| `SP4` | 02 §6.7, CAL-11 | Reconcile "render CPU en tiles paralelos" with `RenderBackend::execute` being handed one tile per call (`D12`). Either the technique changes or the contract does. | `CB6`, `CB7`, `O4` |
-| `SP5` | 02 §6.7, ARQ-40 | Name the owner of `perf-budgets.toml` and the reference-machine job, and whether a bench whose number exists but is not gated is acceptable while that job is unbuilt. | `CB6`, `O3` |
-| `SP6` | §10 | Say in which space the ARQ-42 tolerance is measured (8-bit sRGB premultiplied, as `D9` reads it) and that the export is encoded with ARQ-117's rules before comparing. | `CB3` |
+| `SP1` (closed 2026-11-05) | 02 §4.6, §4.17 | State that a tile task carries its page-space region and that a target carries its page-space origin, with the units and whether the region is clipped to the viewport. Today §4.6 describes the plan without the place of a tile. | `PC1`, `CB1` |
+| `SP2` (closed 2026-11-05) | 02 §4.6 | Say what `ApplyMask` masks, what `PushLayer` bounds are, and where a transition's two inputs begin and end in the op stream. Three ops are unimplementable as written; today only the adapter's reading (`D7`) exists. | `CB5`, and the change that first emits them |
+| `SP3` (closed 2026-11-05) | 02 §2.1, §6.2 | Add a §4.17 row set for `gafira-render-cpu` (the "first cut / outside the cut" table the six layer-2 engines have): which ops, which qualities, which formats. | Records this design; nothing blocks |
+| `SP4` (closed 2026-11-05) | 02 §6.7, CAL-11 | Reconcile "render CPU en tiles paralelos" with `RenderBackend::execute` being handed one tile per call (`D12`). Either the technique changes or the contract does. | `CB6`, `CB7`, `O4` |
+| `SP5` (closed 2026-11-05) | 02 §6.7, ARQ-40 | Name the owner of `perf-budgets.toml` and the reference-machine job, and whether a bench whose number exists but is not gated is acceptable while that job is unbuilt. | `CB6`, `O3` |
+| `SP6` (closed 2026-11-05) | §10 | Say in which space the ARQ-42 tolerance is measured (8-bit sRGB premultiplied, as `D9` reads it) and that the export is encoded with ARQ-117's rules before comparing. | `CB3` |
 
 ## Next
 
