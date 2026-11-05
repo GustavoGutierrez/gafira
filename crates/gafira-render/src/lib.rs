@@ -1,6 +1,7 @@
 //! Layer-3 render engine crate `gafira-render`: the render graph, the content
 //! key of every node, the emission of the render operations, the planner, the
-//! tile cache and the frame budget (02 §4.17.7, §6.1, §6.2, §6.3).
+//! tile cache, the frame budget and the page renderer the exporters reach
+//! (02 §4.5, §4.17.7, §6.1, §6.2, §6.3).
 //!
 //! The crate is pure in the sense of ARQ-02 (ADR 0016): it opens no file,
 //! opens no socket, spawns no thread and reads no clock of its own. The
@@ -14,6 +15,7 @@ mod cache;
 mod frame;
 mod graph;
 mod key;
+mod page;
 mod planner;
 mod pool;
 mod scope;
@@ -26,6 +28,7 @@ pub use graph::{
     RenderGraphBuilder, SourceKind,
 };
 pub use key::{DOMAIN, KeyParam, NodeType, canonical_description, content_key};
+pub use page::{GraphPageRenderer, PAGE_BACKGROUND};
 pub use planner::{
     PageExtent, PlanError, PlannedTile, Planner, RenderPlan, TILE_SIZE, TileGrid, Viewport,
     level_for_zoom,
