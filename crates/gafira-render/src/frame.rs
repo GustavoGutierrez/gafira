@@ -178,6 +178,9 @@ pub struct FrameLoop {
     selector: BackendSelector,
     /// The level of the last plan that finished: the best mip available.
     presented: Option<u8>,
+    /// The surface the last frame opened, for the read back of
+    /// [`FrameLoop::read_back`] (02 §4.6).
+    surface: Option<FrameCx>,
 }
 
 /// What one frame needs from the caller (02 §6.2, §6.3).
@@ -205,6 +208,7 @@ impl FrameLoop {
         Self {
             selector,
             presented: None,
+            surface: None,
         }
     }
 
@@ -261,6 +265,9 @@ impl FrameLoop {
         let level = plan.tasks.first().map_or(0, |task| task.key.level);
         let planned = plan.tasks.len();
         let mut cx = self.selector.begin_frame(&target)?;
+        // The surface stays open after the frame so a caller can read its
+        // pixels back (02 §4.6, RE5).
+        self.surface = Some(cx);
         let mut done = 0usize;
         // The cancel token is checked once per frame (02 §6.3).
         cancel.check().map_err(RenderError::Cancelled)?;
@@ -298,6 +305,17 @@ impl FrameLoop {
             mip: self.presented.unwrap_or(level),
             refine: left > 0,
         })
+    }
+
+    /// Reads the region of the surface the last frame opened (02 §4.6).
+    ///
+    /// The loop only schedules; a caller that needs the pixels asks for them
+    /// here. `None` when no frame has run yet, because there is no surface to
+    /// read back.
+    #[must_use]
+    pub fn read_back(&mut self, region: IRect) -> Option<Result<ImageBuf, RenderError>> {
+        let cx = self.surface?;
+        Some(self.selector.read_back(&cx, region))
     }
 }
 
@@ -985,5 +1003,37 @@ mod tests {
                 .expect("a late frame is a report")
         };
         assert_eq!(run(), run());
+    }
+
+    // ARQ-42, 02 §4.6: the surface of the last frame reads back, and a loop
+    // that ran no frame has none to answer.
+    #[test]
+    fn arq_42_the_surface_of_the_last_frame_reads_back() {
+        let mut loop_ = cpu_loop();
+        let region = IRect::new(0, 0, TILE_SIZE as i32, TILE_SIZE as i32);
+        assert!(
+            loop_.read_back(region).is_none(),
+            "no frame ran, so there is no surface"
+        );
+
+        let outcome = loop_
+            .frame(
+                request(
+                    &FixedClock(Duration::ZERO),
+                    Deadline::Unbounded,
+                    &mut ContentTileCache::new(Bytes(0)),
+                    &CancelToken::new(),
+                    &NoProgress,
+                ),
+                plan(0, 1),
+            )
+            .expect("the frame renders");
+        assert_eq!(outcome.report, RenderReport { done: 1, left: 0 });
+
+        let image = loop_
+            .read_back(region)
+            .expect("the frame opened a surface")
+            .expect("the region reads back");
+        assert_eq!((image.width(), image.height()), (TILE_SIZE, TILE_SIZE));
     }
 }
