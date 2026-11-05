@@ -985,7 +985,7 @@ pub trait Translator: Send + Sync {                                       // gaf
 
 ### 4.17 Contratos de los motores de capa 2 y de la capa de aplicación
 
-Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y el de los dos motores de la capa de aplicación, `gafira-render` (§4.17.7) y `gafira-media` (§4.17.8). Las fichas de 04 y 05 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
+Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, el de los dos motores de la capa de aplicación, `gafira-render` (§4.17.7) y `gafira-media` (§4.17.8), y el del adaptador CPU que los ejecuta (§4.17.9). Las fichas de 04 y 05 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
 
 Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y después `gafira-render` y `gafira-media`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007); los dos motores de la capa de aplicación no tienen arista entre sí (ADR 0015).
 
@@ -1271,6 +1271,26 @@ Hueco conocido y aceptado (D-45, Q-45): un fondo texturizado a ΔE76 6 queda fue
 | Deriva A/V de la vista previa | El límite es 40 ms. A 39 ms no se descarta ningún fotograma; a 40 ms o más, se descarta. | ARQ-147 |
 | Rango de duración cero | No da `panic` y no produce fotogramas. | ARQ-147 |
 | Índice de keyframes vacío | No da `panic`: no hay keyframe al que caer. | ARQ-144 |
+
+#### 4.17.9 `gafira-render-cpu`
+
+`gafira-render-cpu` es el adaptador que ejecuta el plan: recibe un `ports::RenderPlan` con sus `RenderOp` y entrega los píxeles de esa tarea en la calidad pedida (§4.6). Es capa 4 y el oráculo de las pruebas golden (§2.1, §4.5, ARQ-113). No planifica, no elige motor y no depende de `gafira-render` (ARQ-06): el grafo, la caché de tiles y el reparto del frame son de `gafira-render` (§4.17.7). Cada llamada a `execute` trae **una** tarea, un tile (§6.7), y el adaptador compone ese tile: no reparte tiles entre hilos.
+
+| Primer corte | Fuera del corte |
+|---|---|
+| 02 §4.5 (`PageRenderer`), §4.6 (`RenderBackend`: `caps`, `begin_frame`, `execute`, `read_back`, `memory_usage`, `trim`; `TileCache`), §6.1, §6.2 (las dos calidades), §6.7 (CAL-11); ARQ-06, ARQ-42, ARQ-43, ARQ-111, ARQ-113, ARQ-117, ARQ-119, ARQ-121, ARQ-138, ARQ-142, ARQ-149; CAL-11 (medida, 01 §9.2) | `gafira-render-gpu`, que es otro adaptador. `gafira-io-image` y los exportadores, que son capa 4. El paralelismo por tiles, que es de `gafira-render` (§6.3, §6.7). La emisión de máscaras, efectos y transiciones desde el documento: las tres variantes se implementan, pero ningún documento las produce. La puerta de rendimiento de CAL-11 (`perf-budgets.toml` y el job nocturno, ARQ-40). Los formatos `f16`, los formatos de GPU y CMYK (ARQ-117, FD-56). |
+
+**Calidades y formatos.** Las dos calidades de §6.2 son las dos únicas que ejecuta: `RenderQuality::Preview` entrega `Rgba8` sRGB premultiplicado y `RenderQuality::Export` entrega `RgbaF32` en luz lineal, premultiplicado. Premultiplicar y despremultiplicar siguen ARQ-117; los 16 modos de mezcla son los de `gafira-raster` y el adaptador los usa, no los redefine (ARQ-119). El grafo es el mismo en las dos calidades y solo cambian los parámetros (ARQ-42).
+
+**Orden de cobertura.** El primer corte entra por operaciones y en este orden: (1) superficie del tamaño del destino, bucle de tiles, caché, cancelación y `FillPath` con cobertura de 8 bits en las dos calidades; (2) pila de capas, `PushLayer` y `PopLayer` con opacidad y los 16 modos, anidados sobre búferes del tamaño del tile; (3) la prueba de ARQ-42 —vista previa al 100 % contra exportación— y el comparador de ARQ-113; (4) `DrawImage` con remuestreo afín y filtro bilineal, premultiplicado en las dos calidades; (5) `ApplyMask`, `ApplyEffect` sobre el ROI del tile y `ApplyTransition`; (6) el banco de exportación de CAL-11 y la medición de cancelación de ARQ-43. El reparto en entregas y su orden están en el diseño del cambio; esta ficha fija el alcance del conjunto.
+
+Le valen las reglas comunes de ARQ-111 (determinismo: los mismos bytes con 1, 2 y 4 hilos) y de ARQ-114 (sus cifras no son una puerta de `cargo test`).
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Cobertura de un borde suavizado | 8 bits, una sola vez y compartida por las dos calidades: la exportación no tiene cobertura más fina que la vista previa. | ARQ-42, ARQ-117 |
+| Premultiplicado en 8 bits | `(c × a + 127) / 255` con división entera; despremultiplicar con `a = 0` da `(0, 0, 0, 0)`. | ARQ-117 |
+| Tile de nivel 0 | 256 × 256 px de página. El adaptador no deriva la rejilla ni traslada las operaciones: llegan en coordenadas de página, con la región y el origen de ARQ-149. | ARQ-121, ARQ-149 |
 
 ---
 
