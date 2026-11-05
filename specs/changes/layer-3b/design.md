@@ -40,3 +40,15 @@ Reversible: yes, and the only thing it needs is time. Any delivery can be verifi
 - The streams keep the file layout that worked in layer 3: one change folder per stream (`layer-3b-render`, `layer-3b-media`), so the two agents never edit the same `apply-progress.md`.
 - ADRs `0015` and `0016` are still `proposed` in `docs/adr/`. This change builds on them as designed; the owner's acceptance of those two records is still open and is not part of this change.
 - The debt of layer 3 (items 90 to 99 of `specs/README.md`) is not paid here unless a delivery has to touch the same code.
+
+### O9. One verification round covers both streams — decided by the owner on 2026-11-05
+
+O8 fixed one `verify` round per stream at V1. The owner replaces that with a **single combined round** over the four deliveries: `RE4`, `RE5`, `ME4` and `ME5` are read together, with the same depth V1 and the same gates at HEAD.
+
+Reason: time. Two rounds at V1 cost about eighty minutes and the second one re-runs the same gate suite over the same tree.
+
+What it costs: the round is split across four deliveries, so each one gets less of the reviewer's attention than it would alone, and the two large ones — `ME5` at 2285 lines and `RE4` at 1277 — are the ones that lose most. The criterion map and the gate run are still the whole of V1; what shrinks is the depth of the reading per delivery.
+
+Consequence for the record: one `verification.json` covers the four deliveries, written under `specs/changes/layer-3b-render/` with the media findings in the same file and the report naming the stream of each finding.
+
+Reversible: yes. Any delivery can be re-verified at V1 alone or at V2 later; the reports of layer 3 are the reference for what that costs.
