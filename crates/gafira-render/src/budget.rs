@@ -198,6 +198,8 @@ mod tests {
 
     // ARQ-02, 02 §6.2: the deadline instant comes from the injected clock; the
     // crate reads no clock of its own.
+    // ARQ-138: the same for this crate: the deadline comes from the clock the
+    // caller injects, and two different clocks give two different deadlines.
     #[test]
     fn arq_02_the_deadline_comes_from_the_injected_clock() {
         for start in [ms(0), ms(7), ms(1_000)] {
