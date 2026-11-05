@@ -1,9 +1,23 @@
 name: CI
 
+# Cost control: the only pull request this repo opens is `develop` -> `main`
+# (ADR 0003), and a commit that touches only specs, docs or markdown cannot
+# break a Rust gate. Runs are the expensive part of this workflow — four jobs,
+# the Windows one takes about twenty minutes — so a push to `develop` costs
+# nothing while it has no open PR, and a docs-only change costs nothing at all.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "specs/**"
+      - "docs/**"
+      - "**/*.md"
   pull_request:
+    branches: [main]
+    paths-ignore:
+      - "specs/**"
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
