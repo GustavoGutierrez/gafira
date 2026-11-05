@@ -11,6 +11,7 @@
 
 mod budget;
 mod cache;
+mod frame;
 mod graph;
 mod key;
 mod planner;
@@ -18,6 +19,7 @@ mod pool;
 
 pub use budget::{FRAME, FrameBudget, GRAPH_READY, MARGIN, Stage, VISIBLE_DONE};
 pub use cache::ContentTileCache;
+pub use frame::{BackendSelector, Degradation};
 pub use graph::{
     GraphError, GraphNode, GraphNodeId, GraphNodeKind, GraphParams, RenderGraph,
     RenderGraphBuilder, SourceKind,
