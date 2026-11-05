@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use gafira_color::Color;
 use gafira_doc::BlendMode;
-use gafira_doc::contract::CancelToken;
+use gafira_doc::contract::{CancelToken, NoProgress, Progress, checkpoint};
 use gafira_geom::{Affine, IRect};
 use gafira_ports::common::Bytes;
 use gafira_ports::render::{
@@ -28,7 +28,6 @@ use crate::surface::{self, Surface};
 ///
 /// Single-threaded and clockless (D8, ARQ-02): the deadline belongs to the
 /// caller's clock and the cancellation arrives as a [`CancelToken`].
-#[derive(Default)]
 pub struct CpuBackend {
     /// The open frame's surface, `None` between frames and after a trim.
     surface: Option<Surface>,
@@ -36,13 +35,86 @@ pub struct CpuBackend {
     frame: Option<FrameId>,
     /// The id of the next `begin_frame`.
     next_frame: u64,
+    /// Where `execute` reports the fraction of the plan it finished (ARQ-139).
+    progress: Arc<dyn Progress>,
+    /// The last fraction reported in this frame, so it never decreases.
+    last_fraction: f32,
 }
 
 impl CpuBackend {
-    /// A backend with no open frame.
+    /// A backend with no open frame that reports no progress.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A backend that reports the fraction of the plan it finished to
+    /// `progress` (ARQ-139).
+    ///
+    /// The port's `execute` takes no `Progress`, so the sink is bound to the
+    /// backend; [`NoProgress`] is the default.
+    #[must_use]
+    pub fn with_progress(mut self, progress: Arc<dyn Progress>) -> Self {
+        self.progress = progress;
+        self
+    }
+
+    /// Runs the plan's tasks through the cache and the surface.
+    fn run(
+        &mut self,
+        cx: &FrameCx,
+        plan: &RenderPlan,
+        cache: &mut dyn TileCache,
+        cancel: &CancelToken,
+    ) -> Result<RenderReport, RenderError> {
+        let planned = plan.tasks.len();
+        let format = self.surface_of(cx)?.format();
+        // A plan with nothing to do is complete by definition (ARQ-139).
+        if planned == 0 {
+            return self.finish(cancel);
+        }
+        for (index, task) in plan.tasks.iter().enumerate() {
+            // The token is checked before every tile (02 §6.3, ARQ-139).
+            cancel.check()?;
+            let size = (task.region.width(), task.region.height());
+            let tile = match cached_tile(cache, task.key, size, format) {
+                Some(tile) => tile,
+                None => {
+                    let tile = render_tile(task)?;
+                    let encoded = surface::encode_tile(&tile, size, format)?;
+                    cache.put(task.key, Arc::new(encoded));
+                    tile
+                }
+            };
+            self.surface_of(cx)?.write(task.region, &tile, size);
+            // The fraction is the tiles done over the tiles planned, and it
+            // reaches `1.0` only with the last tile of the plan (ARQ-139).
+            self.report(cancel, (index + 1, planned))?;
+        }
+        Ok(RenderReport {
+            done: planned,
+            left: 0,
+        })
+    }
+
+    /// Reports the fraction of `(done, planned)`, never below the last one.
+    fn report(
+        &mut self,
+        cancel: &CancelToken,
+        (done, planned): (usize, usize),
+    ) -> Result<(), RenderError> {
+        let planned = planned.max(1);
+        let fraction = (done as f32 / planned as f32).clamp(0.0, 1.0);
+        self.last_fraction = self.last_fraction.max(fraction);
+        checkpoint(cancel, self.progress.as_ref(), self.last_fraction)?;
+        Ok(())
+    }
+
+    /// Reports `1.0` for a plan that ended without a tile.
+    fn finish(&mut self, cancel: &CancelToken) -> Result<RenderReport, RenderError> {
+        self.last_fraction = 1.0;
+        checkpoint(cancel, self.progress.as_ref(), 1.0)?;
+        Ok(RenderReport { done: 0, left: 0 })
     }
 
     /// The surface of `cx`, or [`RenderError::DeviceLost`] when it is gone.
@@ -50,6 +122,18 @@ impl CpuBackend {
         match (self.frame, self.surface.as_mut()) {
             (Some(id), Some(surface)) if id == cx.id => Ok(surface),
             _ => Err(RenderError::DeviceLost),
+        }
+    }
+}
+
+impl Default for CpuBackend {
+    fn default() -> Self {
+        Self {
+            surface: None,
+            frame: None,
+            next_frame: 0,
+            progress: Arc::new(NoProgress),
+            last_fraction: 0.0,
         }
     }
 }
@@ -70,6 +154,7 @@ impl RenderBackend for CpuBackend {
         self.next_frame = self.next_frame.saturating_add(1);
         self.frame = Some(id);
         self.surface = Some(surface);
+        self.last_fraction = 0.0;
         Ok(FrameCx { id })
     }
 
@@ -79,27 +164,22 @@ impl RenderBackend for CpuBackend {
         plan: &RenderPlan,
         cache: &mut dyn TileCache,
         _deadline: Deadline,
-        _cancel: &CancelToken,
+        cancel: &CancelToken,
     ) -> Result<RenderReport, RenderError> {
-        let planned = plan.tasks.len();
-        let format = self.surface_of(cx)?.format();
-        for task in &plan.tasks {
-            let size = (task.region.width(), task.region.height());
-            let tile = match cached_tile(cache, task.key, size, format) {
-                Some(tile) => tile,
-                None => {
-                    let tile = render_tile(task)?;
-                    let encoded = surface::encode_tile(&tile, size, format)?;
-                    cache.put(task.key, Arc::new(encoded));
-                    tile
+        // The deadline is the caller's: this backend reads no clock (D8,
+        // ARQ-02), and `FrameLoop` checks it before every tile.
+        match self.run(cx, plan, cache, cancel) {
+            Ok(report) => Ok(report),
+            Err(error) => {
+                if matches!(&error, RenderError::Cancelled(_)) {
+                    // A cancelled frame is abandoned, so no partial surface is
+                    // returned and the next frame opens its own (ARQ-139).
+                    self.surface = None;
+                    self.frame = None;
                 }
-            };
-            self.surface_of(cx)?.write(task.region, &tile, size);
+                Err(error)
+            }
         }
-        Ok(RenderReport {
-            done: planned,
-            left: 0,
-        })
     }
 
     fn read_back(&mut self, cx: &FrameCx, region: IRect) -> Result<ImageBuf, RenderError> {

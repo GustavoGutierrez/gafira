@@ -2,15 +2,15 @@
 //! cache, the cull, the cancellation and the progress, and the memory the
 //! backend accounts for.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gafira_color::{Color, Rgba};
-use gafira_doc::contract::CancelToken;
+use gafira_doc::contract::{CancelToken, Progress};
 use gafira_geom::{Affine, IRect, Point};
 use gafira_ports::common::Bytes;
 use gafira_ports::render::{
-    BackendCaps, BackendKind, ContentKey, Deadline, Priority, RenderBackend, RenderOp, RenderPlan,
-    RenderQuality, TargetDesc, TileCache, TileKey, TileTask,
+    BackendCaps, BackendKind, ContentKey, Deadline, FrameCx, Priority, RenderBackend, RenderError,
+    RenderOp, RenderPlan, RenderQuality, RenderReport, TargetDesc, TileCache, TileKey, TileTask,
 };
 use gafira_raster::{ImageBuf, PixelBuf, PixelFormat, premultiply_u8};
 use kurbo::{BezPath, PathEl};
@@ -228,6 +228,100 @@ fn index_of(image: &ImageBuf, x: u32, y: u32) -> usize {
     (usize::try_from(y).unwrap() * usize::try_from(image.width()).unwrap()
         + usize::try_from(x).unwrap())
         * 4
+}
+
+/// A frame of one backend, for the tests that need the error of `execute`.
+struct Frame {
+    backend: CpuBackend,
+    cx: FrameCx,
+}
+
+impl Frame {
+    fn open(backend: CpuBackend, target_desc: TargetDesc) -> Self {
+        let mut backend = backend;
+        let cx = backend.begin_frame(&target_desc).expect("the frame opens");
+        Self { backend, cx }
+    }
+
+    fn execute(
+        &mut self,
+        plan: &RenderPlan,
+        cache: &mut dyn TileCache,
+        token: &CancelToken,
+    ) -> Result<RenderReport, RenderError> {
+        self.backend
+            .execute(&mut self.cx, plan, cache, Deadline::Unbounded, token)
+    }
+
+    fn read(&mut self, region: IRect) -> Result<ImageBuf, RenderError> {
+        self.backend.read_back(&self.cx, region)
+    }
+}
+
+/// Receives the fractions a backend reports.
+#[derive(Clone, Default)]
+struct Recorder {
+    fractions: Arc<Mutex<Vec<f32>>>,
+}
+
+impl Recorder {
+    fn fractions(&self) -> Vec<f32> {
+        self.fractions
+            .lock()
+            .map(|fractions| fractions.clone())
+            .unwrap_or_default()
+    }
+}
+
+impl Progress for Recorder {
+    fn report(&self, fraction: f32) {
+        if let Ok(mut fractions) = self.fractions.lock() {
+            fractions.push(fraction);
+        }
+    }
+}
+
+/// A cache that cancels `token` when its `cancel_at`-th tile is written: it
+/// models the caller cancelling the frame between two tiles.
+struct CancellingCache {
+    token: CancelToken,
+    cancel_at: usize,
+    puts: usize,
+}
+
+impl TileCache for CancellingCache {
+    fn get(&self, _key: &TileKey) -> Option<Arc<ImageBuf>> {
+        None
+    }
+
+    fn put(&mut self, _key: TileKey, _tile: Arc<ImageBuf>) {
+        self.puts += 1;
+        if self.puts == self.cancel_at {
+            self.token.cancel();
+        }
+    }
+
+    fn bytes(&self) -> Bytes {
+        Bytes(0)
+    }
+
+    fn trim(&mut self, _budget: Bytes) {}
+}
+
+/// Four tiles side by side along one row of a 32 × 8 surface.
+fn four_tiles() -> RenderPlan {
+    plan(
+        (0..4u128)
+            .map(|index| {
+                let column = i32::try_from(index).unwrap();
+                task(
+                    index,
+                    IRect::new(column * 8, 0, column * 8 + 8, 8),
+                    Vec::new(),
+                )
+            })
+            .collect(),
+    )
 }
 
 /// Runs one plan on a fresh backend and answers the whole surface.
@@ -507,6 +601,111 @@ fn spec_02_6_2_the_cull_skips_an_op_that_misses_the_tile() {
     assert_eq!(a.data(), b.data(), "the off-tile fill changes no pixel");
     assert!(is_white(&b, 20, 20), "the fill inside the tile is drawn");
     assert!(is_clear(&b, 2, 2), "and stays inside its own path");
+}
+
+// ---------------------------------------------------------------------------
+// AC5 — a cancelled token stops the loop before the next tile
+// ---------------------------------------------------------------------------
+
+// ARQ-139: the token is checked before every tile, the loop stops with the
+// cancellation the port fixes, and no partial surface is returned.
+#[test]
+fn arq_139_a_cancelled_token_stops_before_the_next_tile() {
+    let token = CancelToken::new();
+    let mut cache = CancellingCache {
+        token: token.clone(),
+        cancel_at: 1,
+        puts: 0,
+    };
+    let scene = four_tiles();
+    let mut frame = Frame::open(
+        CpuBackend::new(),
+        target(32, 8, (0, 0), PixelFormat::RgbaF32),
+    );
+    let error = frame
+        .execute(&scene, &mut cache, &token)
+        .expect_err("the cancelled frame fails");
+    assert!(
+        matches!(error, RenderError::Cancelled(_)),
+        "the port's cancellation, not another error: {error:?}"
+    );
+    assert_eq!(error.to_string(), "operation cancelled");
+    assert_eq!(cache.puts, 1, "the loop stopped before the second tile");
+    assert!(
+        frame.read(IRect::new(0, 0, 32, 8)).is_err(),
+        "a cancelled frame returns no partial surface"
+    );
+}
+
+// ARQ-139: a token cancelled before the first tile stops before drawing.
+#[test]
+fn arq_139_a_token_cancelled_before_the_first_tile_stops_at_once() {
+    let token = CancelToken::new();
+    token.cancel();
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(
+        CpuBackend::new(),
+        target(32, 8, (0, 0), PixelFormat::RgbaF32),
+    );
+    assert!(
+        frame.execute(&four_tiles(), &mut cache, &token).is_err(),
+        "a cancelled token stops at once"
+    );
+    assert!(cache.puts().is_empty(), "nothing was covered");
+}
+
+// ---------------------------------------------------------------------------
+// AC6 — the progress follows the tiles done over the tiles planned
+// ---------------------------------------------------------------------------
+
+// ARQ-139: the fraction is non-decreasing in `[0, 1]`, follows the tiles done
+// over the tiles planned, and only reaches `1.0` on a normal end.
+#[test]
+fn arq_139_the_progress_is_tiles_done_over_tiles_planned() {
+    // A plan that ends normally walks the whole ladder and ends at `1.0`.
+    let sink = Recorder::default();
+    let backend = CpuBackend::new().with_progress(Arc::new(sink.clone()));
+    let mut frame = Frame::open(backend, target(32, 8, (0, 0), PixelFormat::RgbaF32));
+    let mut cache = RecordingCache::default();
+    let token = CancelToken::new();
+    frame
+        .execute(&four_tiles(), &mut cache, &token)
+        .expect("the plan runs");
+    assert_eq!(sink.fractions(), vec![0.25, 0.5, 0.75, 1.0]);
+
+    // A plan that is cancelled half way never reports `1.0`, and nothing it
+    // reported goes back.
+    let sink = Recorder::default();
+    let backend = CpuBackend::new().with_progress(Arc::new(sink.clone()));
+    let mut frame = Frame::open(backend, target(32, 8, (0, 0), PixelFormat::RgbaF32));
+    let token = CancelToken::new();
+    let mut cache = CancellingCache {
+        token: token.clone(),
+        cancel_at: 2,
+        puts: 0,
+    };
+    assert!(frame.execute(&four_tiles(), &mut cache, &token).is_err());
+    // The tile that finished before the cancel is reported; the one that did
+    // not is not, and `1.0` never arrives (ARQ-112 checks before it reports).
+    assert_eq!(sink.fractions(), vec![0.25]);
+    assert!(
+        sink.fractions().iter().all(|fraction| *fraction < 1.0),
+        "a cancelled plan never reaches 1.0"
+    );
+    assert!(
+        sink.fractions().windows(2).all(|pair| pair[0] <= pair[1]),
+        "the fraction never goes back"
+    );
+
+    // A plan with no task is complete by definition.
+    let sink = Recorder::default();
+    let backend = CpuBackend::new().with_progress(Arc::new(sink.clone()));
+    let mut frame = Frame::open(backend, target(8, 8, (0, 0), PixelFormat::RgbaF32));
+    let mut cache = RecordingCache::default();
+    frame
+        .execute(&plan(Vec::new()), &mut cache, &CancelToken::new())
+        .expect("an empty plan runs");
+    assert_eq!(sink.fractions(), vec![1.0]);
 }
 
 // ---------------------------------------------------------------------------
