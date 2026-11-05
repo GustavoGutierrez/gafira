@@ -121,3 +121,33 @@ are dropped from the crate-wide scan; the `MeasureCx` assertion stays as it is e
 At the head of the branch: 11 files changed, 278 insertions(+), 17 deletions(-), of which this
 file is 95 of the insertions and the delivery's code and tests 183. The guard commit adds the scope of the ARQ-136 scan and the
 fixture of the golden; the notes commits change this file only.
+
+## TL2
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the timeline exists when the model and its laws do; every later delivery and the commands rest on them
+Product IDs: ARQ-01, ARQ-10, ARQ-13, ARQ-30, ARQ-136, V-1, V-2, FV-01, FV-03, FV-04 (source: specs/02-arquitectura-software.md §3.1, §3.2, §4.14; specs/05-funcionalidad-video-y-distribucion.md FV-01, FV-03, V-1, V-2)
+Scope: `TL2` of `specs/changes/gafira-timeline/design.md`: in `gafira-doc`, the types `Sequence`, `Track`, `TrackKind`, `Clip`, `ClipSource`, `Marker` and the ids `SequenceId`, `TrackId`, `ClipId`, `AssetRef`; the laws that make them a timeline; the query a resolver needs; and the `DocMut` accessors under the `EditToken` of ARQ-30.      Non-goals: the persisted form of the model (`TL3`), the commands `MoveClip`, `TrimClip` and `SplitClip` and the media resolver (later changes, by owner decision Q4), the import metadata of the assets (Q5), and any change to `gafira-time` or to `gafira-ports`.
+Acceptance:
+  AC1 Given a project, When a sequence is built, Then it carries its rate, its size and its sample rate, its tracks are `Video`, `Overlay`, `Audio` or `Caption` and no further kind exists, and a clip names its source, its offsets in the sequence and in the source, its speed and its volume (FV-01, ARQ-13) [unit]
+  AC2 Given the ids, When a sequence, a track, a clip or a marker is created, Then its id comes from the document's counter, unique across the whole document and not per page (ARQ-10, V-1) [unit]
+  AC3 Given a cut, When it is placed, Then it lands on an exact frame of the sequence at its rate, including 23,976, where the frame duration in flicks is exact and not rounded (V-2, FV-03) [unit]
+  AC4 Given a clip, When it is placed, Then its range is half-open, lies inside the range of its source and inside the sequence, and a range outside either is rejected with the error the crate fixes (FV-01) [unit]
+  AC5 Given two clips in one track, When they would overlap at any instant, Then the model rejects it, and the stacking of the lanes is the order of `tracks`, not the order of insertion (P11 of the design) [unit]
+  AC6 Given a sequence whose rate changes, When the clips are retimed, Then their positions and durations land on the new grid by the function FV-01 (c) fixes, and the retiming is deterministic (FV-01 (c), ARQ-10) [unit]
+  AC7 Given a track count, When the sixteenth audio track is added, Then it is accepted and the seventeenth is rejected (FV-01) [unit]
+  AC8 Given a speed, When a clip's duration is computed, Then it follows the relation between speed, source duration and sequence duration, and a speed of zero or a negative one is rejected (FV-03) [unit]
+  AC9 Given an instant, When the resolver query is asked, Then it answers which clip each track shows at that instant, and it answers `None` where a track shows nothing (the contract P11 and Q4 name, without implementing the resolver) [unit]
+  AC10 Given a held `EditToken`, When a timeline mutation is attempted without it, Then it is refused, and every mutation that holds it is undoable and redoable like the rest of the document (ARQ-30) [unit]
+Plan: the delivery fills `crates/gafira-doc/src/` with the model and its laws, on top of the edge and `Page.duration` that `TL1` brought. The laws are the point: a model without them is data that breaks the first time someone persists it, and `TL3` is what persists it. The design's P11 (one clip per track at an instant) and the frame grid are the two with the most edge cases, and they carry the hand mutants. The resolver query is a query over the model, not the resolver that `gafira-media` will implement. The critical code is everything in the design's "Critical code" row for `TL2`: the grid arithmetic, the bounds check, the overlap rule, the audio cap, the retiming and the speed relation.
+Owner decisions touched: Q3 of the design (bare values for the animated volume and transform, recorded as a deviation here), Q4 (the commands and the resolver go to later changes), Q5 (the minimum asset table arrives in `TL3`), and the rigor of O4/O8/O10.
+
+## TL2 (tdd-apply)
+
+Commits:
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` (`gafira-doc` is not a leaf), `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps by extracting their `run:` from `ci.yml`.
+
+### RED evidence
+
+### Negative controls
+
+### Choices and deviations
