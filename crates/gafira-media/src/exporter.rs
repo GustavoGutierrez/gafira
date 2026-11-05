@@ -449,6 +449,11 @@ impl Exporter for VideoExporter<'_> {
         source.open(self.medium.read_path()).map_err(media_error)?;
         let frames = options.frames();
         let planned = frames.saturating_add(1);
+        // The video track is anchored to the start of the range, as the audio
+        // is: the first video frame of the range is presented at the start
+        // of the range, so the A/V difference of the result stays below the
+        // 40 ms of FV-12 (b) whatever the times of the source are.
+        let mut video_origin: Option<Flicks> = None;
         for index in 0..frames {
             cancel.check().map_err(ExportError::Cancelled)?;
             let Some(time) = source.next_video().map_err(media_error)? else {
@@ -467,7 +472,15 @@ impl Exporter for VideoExporter<'_> {
                     cancel,
                 )
                 .map_err(render_error)?;
-            video_encoder.send(Some(&Frame::Video(VideoFrame { pts: time, image })))?;
+            let first = *video_origin.get_or_insert(time);
+            let pts = Flicks::from_ticks(
+                options
+                    .range
+                    .start()
+                    .ticks()
+                    .saturating_add(time.ticks().saturating_sub(first.ticks())),
+            );
+            video_encoder.send(Some(&Frame::Video(VideoFrame { pts, image })))?;
             if let Some(mut packet) = video_encoder.receive()? {
                 packet.stream = video_index;
                 muxer.write_packet(&packet)?;
@@ -500,9 +513,10 @@ impl Exporter for VideoExporter<'_> {
 impl VideoExporter<'_> {
     /// Writes the audio track of the range (FV-12 (b)).
     ///
-    /// The audio is anchored to the start of the range, so the first audio
-    /// packet shares its presentation time with the first video packet and
-    /// the A/V difference of the result stays below the 40 ms of FV-12 (b).
+    /// The audio is anchored to the start of the range, and so is the video:
+    /// the first audio packet and the first video packet share their
+    /// presentation time, so the A/V difference of the result is 0 and stays
+    /// below the 40 ms of FV-12 (b) whatever the times of the source are.
     /// The audio the range does not cover is dropped.
     ///
     /// # Errors
