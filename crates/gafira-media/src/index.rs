@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use gafira_doc::contract::{CancelToken, Progress};
-use gafira_ports::media::{CodecParams, Demuxer, MediaError, StreamIdx, StreamInfo};
+use gafira_ports::media::{Demuxer, MediaError, SeekMode, StreamIdx, StreamInfo};
 use gafira_ports::system::Clock;
 use gafira_time::{FLICKS_PER_SECOND, Flicks};
 
@@ -105,14 +105,25 @@ impl KeyframeIndex {
     /// The scan reads every packet of the container and keeps the time of
     /// the keyframes of `stream`. It checks the cancel token once per
     /// packet, so at least once per frame, and reports the work done over
-    /// the work planned (ARQ-139). The keyframe times are computed over the
-    /// pool and merged by chunk, so the index does not depend on the pool
-    /// (ARQ-140).
+    /// the work planned (ARQ-139).
+    ///
+    /// The work planned is the number of packets the stream really holds. The
+    /// container may declare a frame rate that is not its own, and the
+    /// fraction of ARQ-139 has to be the work done over the work planned:
+    /// an estimate would leave the fraction outside the steps of the
+    /// contract, or short of `1.0` before the end. `ports::Demuxer` exposes
+    /// no count, so the number is known after a first pass over the
+    /// container; the scan starts where the count started, so both passes
+    /// see the same packets.
+    ///
+    /// The keyframe times are computed over the pool and merged by chunk, so
+    /// the index does not depend on the pool (ARQ-140).
     ///
     /// # Errors
     ///
     /// [`MediaError::Cancelled`] when the caller cancels the scan, and the
-    /// error of the container when reading a packet fails.
+    /// error of the container when reading a packet fails or when the scan
+    /// cannot go back to where the count started.
     pub fn build(
         demuxer: &mut dyn Demuxer,
         stream: StreamIdx,
@@ -122,17 +133,22 @@ impl KeyframeIndex {
         progress: &dyn Progress,
     ) -> Result<(Self, IndexReport), MediaError> {
         let started = clock.monotonic();
-        let planned = planned_frames(demuxer.streams(), stream);
+        let (start, planned) = count_packets(demuxer, stream, cancel)?;
         let mut work = Work::new(planned);
         let mut records = Vec::new();
-        while let Some(packet) = demuxer.read_packet()? {
-            cancel.check()?;
-            if packet.stream == stream {
-                work.step(progress);
-                records.push(Record {
-                    time: packet.pts,
-                    keyframe: packet.keyframe,
-                });
+        if planned > 0 {
+            // The scan starts where the count started, so both passes read
+            // the same packets.
+            demuxer.seek(start, SeekMode::Exact)?;
+            while let Some(packet) = demuxer.read_packet()? {
+                cancel.check()?;
+                if packet.stream == stream {
+                    work.step(progress);
+                    records.push(Record {
+                        time: packet.pts,
+                        keyframe: packet.keyframe,
+                    });
+                }
             }
         }
         let times = keyframe_times(&records, pool);
@@ -147,6 +163,32 @@ impl KeyframeIndex {
             },
         ))
     }
+}
+
+/// The packets of `stream` and where they start (ARQ-139).
+///
+/// The count is a first pass over the container: `ports::Demuxer` exposes no
+/// count of the packets, so the planned work of the scan is only known after
+/// reading them. The count is the work of ARQ-144's budget, which has room
+/// for the pass.
+fn count_packets(
+    demuxer: &mut dyn Demuxer,
+    stream: StreamIdx,
+    cancel: &CancelToken,
+) -> Result<(Flicks, u64), MediaError> {
+    let mut start = None;
+    let mut count = 0_u64;
+    while let Some(packet) = demuxer.read_packet()? {
+        cancel.check()?;
+        if packet.stream != stream {
+            continue;
+        }
+        if start.is_none() {
+            start = Some(packet.pts);
+        }
+        count = count.saturating_add(1);
+    }
+    Ok((start.unwrap_or(Flicks::ZERO), count))
 }
 
 /// One packet of the scanned stream, kept without its payload.
@@ -167,18 +209,24 @@ struct Work {
 }
 
 impl Work {
-    /// A work of `planned` units. Zero planned units mean that the total is
-    /// unknown: the operation then reports only its end.
+    /// A work of `planned` units. Zero planned units mean that the stream
+    /// holds no packet: the operation then reports only its end.
     fn new(planned: u64) -> Self {
         Self { planned, done: 0 }
     }
 
     /// Reports the fraction of the work already done and counts one unit.
+    ///
+    /// The fraction is the work done over the work planned, and it never
+    /// reaches `1.0`: the end of the work is reported by
+    /// [`finish`](Self::finish), so `1.0` only arrives on a good end
+    /// (ARQ-139). A container that hands more packets than the count saw
+    /// does not move the fraction past its last value either.
     fn step(&mut self, progress: &dyn Progress) {
+        self.done = self.done.saturating_add(1);
         if self.planned > 0 && self.done < self.planned {
             progress.report(self.done as f32 / self.planned as f32);
         }
-        self.done += 1;
     }
 
     /// Reports the end of the work.
@@ -223,23 +271,6 @@ fn keyframe_times(records: &[Record], pool: &dyn WorkerPool) -> Vec<Flicks> {
     let mut times: Vec<Flicks> = slots.iter().flatten().copied().collect();
     times.sort_unstable();
     times
-}
-
-/// The number of frames the scan plans to read: the duration of the stream
-/// times its frame rate (ARQ-139: the units planned).
-fn planned_frames(streams: &[StreamInfo], stream: StreamIdx) -> u64 {
-    let Some(info) = streams.iter().find(|s| s.index == stream) else {
-        return 0;
-    };
-    let CodecParams::Video { frame_rate, .. } = info.params else {
-        return 0;
-    };
-    let Some(duration) = info.duration else {
-        return 0;
-    };
-    let frames = (i128::from(duration.ticks()) * i128::from(frame_rate.num()))
-        / (i128::from(FLICKS_PER_SECOND) * i128::from(frame_rate.den()));
-    u64::try_from(frames).unwrap_or(u64::MAX)
 }
 
 /// The budget of the scan: one second per minute of material (ARQ-144).
