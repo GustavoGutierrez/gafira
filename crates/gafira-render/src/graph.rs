@@ -1003,6 +1003,9 @@ mod tests {
     }
 
     // ARQ-140: the graph and the keys do not depend on the number of threads.
+    // ARQ-138: the pool of workers is a parameter: the graph is built with the
+    // pool the caller hands in, of one thread or of four, and the crate
+    // creates no thread of its own.
     #[test]
     fn arq_140_the_graph_does_not_depend_on_the_number_of_threads() {
         let mut page = new_page();

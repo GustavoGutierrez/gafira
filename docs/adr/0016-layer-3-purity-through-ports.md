@@ -1,7 +1,7 @@
 # 0016. Layer-3 crates take their I/O, their clock and their threads through ports
 
-- Status: proposed
-- Date: 2026-11-03
+- Status: accepted
+- Date: 2026-11-03 (proposed); accepted 2026-11-05, after layer 3 and layer-3b were built on it
 - Related: 02 §2.1, §2.3, §4.14, §6.3, §6.5; ARQ-01, ARQ-02, ARQ-44; ADR 0005, ADR 0007, ADR 0013; change `layer-3`
 
 ## Context

@@ -38,6 +38,9 @@ mod tests {
 
     // ARQ-140: the results come back in the order of the indices, whatever
     // order the jobs ran in.
+    // ARQ-138: the pool of workers is a parameter of the crate: the jobs run
+    // on the pool the caller hands in, here on the calling thread, and the
+    // crate creates no thread of its own.
     #[test]
     fn arq_140_the_results_keep_the_order_of_the_indices() {
         let pool = InlinePool;

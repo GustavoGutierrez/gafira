@@ -2,6 +2,7 @@
 
 mod proxy_support;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
@@ -13,6 +14,7 @@ use gafira_media::{
 use gafira_ports::common::Bytes;
 use gafira_ports::media::MediaError;
 use gafira_ports::render::Priority;
+use gafira_ports::system::FileSystem;
 use gafira_testkit::progress::{ProgressLog, check_progress_contract};
 use proxy_support::FakeFileSystem;
 
@@ -33,13 +35,54 @@ fn key(seed: u8, level: ProxyLevel) -> ProxyKey {
 }
 
 /// A store under the user cache of the test.
-fn new_store() -> ProxyStore {
-    ProxyStore::with_default_budget(PathBuf::from(CACHE))
+fn new_store(file_system: &FakeFileSystem) -> ProxyStore {
+    ProxyStore::open_with_default_budget(file_system, PathBuf::from(CACHE))
+        .expect("the store opens")
 }
 
 /// A store with this budget, under the user cache of the test.
-fn new_store_with_budget(bytes: u64) -> ProxyStore {
-    ProxyStore::new(PathBuf::from(CACHE), Bytes(bytes))
+fn new_store_with_budget(file_system: &FakeFileSystem, bytes: u64) -> ProxyStore {
+    ProxyStore::open(file_system, PathBuf::from(CACHE), Bytes(bytes)).expect("the store opens")
+}
+
+/// The directory of the copies in the user cache.
+fn proxy_dir() -> PathBuf {
+    Path::new(CACHE).join("proxies")
+}
+
+/// The hex name of a content hash.
+fn hex(content: ContentHash) -> String {
+    content.0.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The name of the copy of the medium `seed` at `level`.
+fn copy_name(seed: u8, level: ProxyLevel) -> String {
+    let tag = match level {
+        ProxyLevel::P540 => "540p",
+        ProxyLevel::P720 => "720p",
+        ProxyLevel::Original => "",
+    };
+    format!("{}-{tag}.mjpeg", hex(content(seed)))
+}
+
+/// The path of the copy of the medium `seed` at `level`.
+fn copy_path(seed: u8, level: ProxyLevel) -> PathBuf {
+    proxy_dir().join(copy_name(seed, level))
+}
+
+/// The path of the interrupted copy of the medium `seed` at `level`: the
+/// name a generation that was cut short leaves behind.
+fn interrupted_path(seed: u8, level: ProxyLevel) -> PathBuf {
+    let mut path = copy_path(seed, level).into_os_string();
+    path.push(".part");
+    PathBuf::from(path)
+}
+
+/// Writes `bytes` bytes in the file of `path`.
+fn put(file_system: &FakeFileSystem, path: &Path, bytes: usize) {
+    let mut file = file_system.create(path).expect("the file is created");
+    file.write_all(&vec![7; bytes])
+        .expect("the bytes are written");
 }
 
 /// A producer of copies: `frames` chunks of the same bytes.
@@ -150,7 +193,7 @@ impl Progress for CancelAfter<'_> {
 #[test]
 fn arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project() {
     let file_system = FakeFileSystem::with_file(PROJECT, vec![1, 2, 3]);
-    let mut store = new_store();
+    let mut store = new_store(&file_system);
     let key = key(1, ProxyLevel::P540);
     let mut producer = Chunks::new(2, 4);
 
@@ -194,10 +237,13 @@ fn arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project() {
 
 // ARQ-146: a generation cancelled half way leaves no half-written final file
 // and leaves the cache usable.
+// ARQ-43: the generation checks the token per chunk written, the checkpoint
+// that bounds the answer of the cancellation. The 100 ms bound itself is not
+// measured here: this crate has no bench.
 #[test]
 fn arq_146_a_cancelled_generation_leaves_no_half_written_file() {
     let file_system = FakeFileSystem::with_file(PROJECT, vec![1, 2, 3]);
-    let mut store = new_store();
+    let mut store = new_store(&file_system);
     let key = key(1, ProxyLevel::P540);
     let token = CancelToken::new();
     let cancelling = CancelAfter::new(&token, 1, &file_system, store.path(&key));
@@ -245,15 +291,18 @@ fn arq_146_the_default_budget_of_the_copies_is_ten_gigabytes() {
     let ten_gigabytes = Bytes(10 * (1 << 30));
 
     assert_eq!(DEFAULT_PROXY_BUDGET, ten_gigabytes);
-    assert_eq!(new_store().budget(), ten_gigabytes);
-    assert_eq!(new_store_with_budget(4096).budget(), Bytes(4096));
+    assert_eq!(new_store(&FakeFileSystem::new()).budget(), ten_gigabytes);
+    assert_eq!(
+        new_store_with_budget(&FakeFileSystem::new(), 4096).budget(),
+        Bytes(4096)
+    );
 }
 
 // ARQ-146: the budget discards the least used copies.
 #[test]
 fn arq_146_the_budget_discards_the_least_used_copies() {
     let file_system = FakeFileSystem::new();
-    let mut store = new_store_with_budget(8);
+    let mut store = new_store_with_budget(&file_system, 8);
     let first = key(1, ProxyLevel::P540);
     let second = key(2, ProxyLevel::P540);
     let third = key(3, ProxyLevel::P540);
@@ -299,7 +348,7 @@ fn arq_146_the_budget_discards_the_least_used_copies() {
 #[test]
 fn arq_146_a_budget_of_zero_keeps_no_copy() {
     let file_system = FakeFileSystem::new();
-    let mut store = new_store_with_budget(0);
+    let mut store = new_store_with_budget(&file_system, 0);
     let key = key(1, ProxyLevel::P540);
 
     store
@@ -325,7 +374,7 @@ fn arq_146_a_budget_of_zero_keeps_no_copy() {
 #[test]
 fn arq_146_an_export_reads_the_original_and_never_the_copy() {
     let file_system = FakeFileSystem::new();
-    let mut store = new_store();
+    let mut store = new_store(&file_system);
     let copy = key(1, ProxyLevel::P540);
     store
         .generate(
@@ -373,9 +422,10 @@ fn arq_146_the_generation_follows_the_progress_contract() {
     // The checker places the cancel in reports 1, n/2 and n-1, so a
     // generation that reported only its end would not be checked at all.
     let log = ProgressLog::new();
-    new_store()
+    let file_system = FakeFileSystem::new();
+    new_store(&file_system)
         .generate(
-            &FakeFileSystem::new(),
+            &file_system,
             &key(1, ProxyLevel::P540),
             &mut Chunks::new(4, 2),
             &CancelToken::new(),
@@ -390,7 +440,7 @@ fn arq_146_the_generation_follows_the_progress_contract() {
 
     let contract = check_progress_contract(0.25, |cancel, progress| {
         let file_system = FakeFileSystem::new();
-        let mut store = new_store();
+        let mut store = new_store(&file_system);
         let mut producer = Chunks::new(4, 2);
         match store.generate(
             &file_system,
@@ -414,7 +464,7 @@ fn arq_146_the_generation_follows_the_progress_contract() {
 #[test]
 fn arq_146_the_generation_runs_in_the_background_with_progress() {
     let file_system = FakeFileSystem::new();
-    let mut store = new_store();
+    let mut store = new_store(&file_system);
     let log = ProgressLog::new();
 
     let report = store
@@ -436,12 +486,123 @@ fn arq_146_the_generation_runs_in_the_background_with_progress() {
     );
 }
 
+// FV-22: the store of a session adopts the copies of the previous ones: the
+// bytes they take come out of the budget of the session.
+#[test]
+fn fv_22_the_store_adopts_the_copies_of_the_previous_sessions() {
+    let file_system = FakeFileSystem::new();
+    let first = key(1, ProxyLevel::P540);
+    let second = key(2, ProxyLevel::P720);
+    put(&file_system, &copy_path(1, ProxyLevel::P540), 10);
+    put(&file_system, &copy_path(2, ProxyLevel::P720), 6);
+
+    let store = ProxyStore::open_with_default_budget(&file_system, PathBuf::from(CACHE))
+        .expect("the store opens");
+
+    assert_eq!(
+        store.bytes(),
+        Bytes(16),
+        "the adopted copies take their bytes out of the budget of the session"
+    );
+    assert_eq!(
+        store.len(),
+        2,
+        "the two copies of the previous session are held"
+    );
+    assert!(
+        store.contains(&first),
+        "the copy of the previous session is held"
+    );
+    assert!(
+        store.contains(&second),
+        "the copy of the previous session is held"
+    );
+}
+
+// ARQ-146: a generation that was cut short leaves a `*.part` file behind: the
+// store removes it when it opens, so no garbage is kept between sessions.
+#[test]
+fn arq_146_the_store_removes_the_interrupted_copies_when_it_opens() {
+    let file_system = FakeFileSystem::new();
+    let interrupted = interrupted_path(1, ProxyLevel::P540);
+    put(&file_system, &interrupted, 5);
+    put(&file_system, &copy_path(2, ProxyLevel::P540), 4);
+
+    let store =
+        ProxyStore::open(&file_system, PathBuf::from(CACHE), Bytes(1024)).expect("the store opens");
+
+    assert!(
+        !file_system.paths().contains(&interrupted),
+        "the interrupted copy leaves the user cache"
+    );
+    assert_eq!(store.len(), 1, "the complete copy is adopted");
+    assert_eq!(store.bytes(), Bytes(4));
+}
+
+// FV-22: the adopted copies have no known order of use, so they are treated
+// as the oldest ones: the eviction of the session prefers them.
+#[test]
+fn fv_22_the_eviction_prefers_the_adopted_copies() {
+    let file_system = FakeFileSystem::new();
+    let adopted = key(1, ProxyLevel::P540);
+    put(&file_system, &copy_path(1, ProxyLevel::P540), 8);
+
+    let mut store =
+        ProxyStore::open(&file_system, PathBuf::from(CACHE), Bytes(8)).expect("the store opens");
+    let fresh = key(2, ProxyLevel::P540);
+    store
+        .generate(
+            &file_system,
+            &fresh,
+            &mut Chunks::new(1, 4),
+            &CancelToken::new(),
+            &NoProgress,
+        )
+        .expect("the copy is generated");
+
+    assert!(
+        !store.contains(&adopted),
+        "the adopted copy is the oldest one and is the first to leave"
+    );
+    assert!(store.contains(&fresh), "the copy of the session stays");
+    assert!(
+        !file_system
+            .paths()
+            .contains(&copy_path(1, ProxyLevel::P540)),
+        "the evicted copy leaves the user cache"
+    );
+    assert!(store.bytes() <= store.budget());
+}
+
+// FV-22: the store respects its budget right after it adopts the copies of
+// the previous sessions.
+#[test]
+fn fv_22_the_store_respects_the_budget_after_adopting() {
+    let file_system = FakeFileSystem::new();
+    put(&file_system, &copy_path(1, ProxyLevel::P540), 8);
+    put(&file_system, &copy_path(2, ProxyLevel::P720), 8);
+
+    let store =
+        ProxyStore::open(&file_system, PathBuf::from(CACHE), Bytes(10)).expect("the store opens");
+
+    assert!(
+        store.bytes() <= store.budget(),
+        "the adopted copies do not take the store over its budget"
+    );
+    assert_eq!(store.len(), 1, "the copy that does not fit leaves");
+    assert_eq!(
+        file_system.paths().len(),
+        1,
+        "the evicted copy leaves the user cache"
+    );
+}
+
 // ARQ-146: the name of a copy is the content and the level, so the two
 // levels of a medium are two files in the user cache.
 #[test]
 fn arq_146_the_two_levels_of_a_medium_are_two_copies() {
     let file_system = FakeFileSystem::new();
-    let mut store = new_store();
+    let mut store = new_store(&file_system);
     let p540 = key(1, ProxyLevel::P540);
     let p720 = key(1, ProxyLevel::P720);
     for (copy, size) in [(p540, 2_usize), (p720, 3_usize)] {
@@ -461,7 +622,7 @@ fn arq_146_the_two_levels_of_a_medium_are_two_copies() {
     assert_eq!(file_system.read(&store.path(&p720)), Some(vec![7; 3]));
     assert_eq!(store.len(), 2);
     // The same medium gives the same name in another session of the cache.
-    assert_eq!(new_store().path(&p540), store.path(&p540));
+    assert_eq!(new_store(&file_system).path(&p540), store.path(&p540));
     // The original is not a light copy, so it has no key and no name.
     assert_eq!(ProxyKey::of(content(1), ProxyLevel::Original), None);
 }

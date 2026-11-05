@@ -1,7 +1,7 @@
 # 0015. `gafira-render` and `gafira-media` are siblings that meet only through `gafira-ports`
 
-- Status: proposed
-- Date: 2026-11-03
+- Status: accepted
+- Date: 2026-11-03 (proposed); accepted 2026-11-05, after layer 3 and layer-3b were built on it
 - Related: 02 §2.1, §2.2, §2.3, §4.5, §4.6, §4.8, §6.1, §6.5; ARQ-01, ARQ-06; ADR 0007, ADR 0008, ADR 0013; change `layer-3`
 
 ## Context
