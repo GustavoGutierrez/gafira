@@ -46,6 +46,7 @@ fn plan() -> RenderPlan {
                 row: 0,
             },
             priority: Priority::Visible,
+            region: IRect::new(0, 0, 256, 256),
             ops: Vec::new(),
         }],
     }
@@ -61,6 +62,7 @@ fn arq_112_the_render_doubles_answer() {
     let target = TargetDesc {
         width: 4,
         height: 4,
+        origin: (0, 0),
         format: PixelFormat::Rgba8,
     };
     let mut cx = backend.begin_frame(&target).expect("the frame opens");
@@ -107,6 +109,7 @@ fn arq_112_a_cancelled_token_stops_the_doubles() {
     let target = TargetDesc {
         width: 4,
         height: 4,
+        origin: (0, 0),
         format: PixelFormat::Rgba8,
     };
     let mut cx = backend.begin_frame(&target).expect("the frame opens");

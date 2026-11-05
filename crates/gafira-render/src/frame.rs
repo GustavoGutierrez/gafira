@@ -413,6 +413,7 @@ mod tests {
         TargetDesc {
             width: TILE_SIZE,
             height: TILE_SIZE,
+            origin: (0, 0),
             format: PixelFormat::Rgba8,
         }
     }
@@ -430,6 +431,7 @@ mod tests {
                         row: 0,
                     },
                     priority: Priority::Visible,
+                    region: IRect::new(0, 0, 256, 256),
                     ops: Vec::new(),
                 })
                 .collect(),

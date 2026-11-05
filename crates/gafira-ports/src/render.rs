@@ -95,6 +95,10 @@ pub enum RenderOp {
 pub struct TileTask {
     pub key: TileKey,
     pub priority: Priority,
+    /// The part of the page the task covers, in page pixels at full resolution
+    /// (ARQ-149). Half-open, clipped to the viewport of the request and inside
+    /// the page; the level of the tile does not change the unit.
+    pub region: IRect,
     pub ops: Vec<RenderOp>,
 }
 
@@ -146,10 +150,16 @@ pub struct BackendCaps {
 }
 
 /// The surface of one frame. `format` is `Rgba8` or `RgbaF32`; `Alpha8` is not a render target.
+///
+/// The surface covers the page rectangle that starts at `origin` and measures
+/// `width × height` pixels (ARQ-149). The operations of a task stay in page
+/// coordinates: the plan never translates them to the surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TargetDesc {
     pub width: u32,
     pub height: u32,
+    /// The top-left corner of the surface, in page pixels at full resolution.
+    pub origin: (i32, i32),
     pub format: PixelFormat,
 }
 
