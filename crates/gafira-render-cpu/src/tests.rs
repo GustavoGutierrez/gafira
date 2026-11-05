@@ -444,6 +444,72 @@ fn arq_44_a_cached_tile_of_the_other_format_is_a_miss() {
 }
 
 // ---------------------------------------------------------------------------
+// AC4 — the cull: an op whose bounds miss the tile is skipped
+// ---------------------------------------------------------------------------
+
+// 02 §6.2 (the cull, as corrected by the XP round): an operation that misses
+// the tile is skipped, and skipping it changes no pixel. The cull must never
+// drop an op that contributes, so a fill that only partly overlaps the tile is
+// drawn — including one that starts inside the tile but not at its origin.
+#[test]
+fn spec_02_6_2_the_cull_keeps_a_fill_that_partly_overlaps_the_tile() {
+    let cases = [
+        // Starts after the tile's origin and ends outside it.
+        (
+            IRect::new(128, 128, 192, 192),
+            (140.0, 140.0, 300.0, 300.0),
+            (150u32, 150u32),
+        ),
+        // Starts before the tile and ends inside it.
+        (
+            IRect::new(128, 128, 192, 192),
+            (100.0, 100.0, 160.0, 160.0),
+            (135u32, 135u32),
+        ),
+        // Covers the tile completely and then some.
+        (
+            IRect::new(32, 32, 96, 96),
+            (0.0, 0.0, 512.0, 512.0),
+            (60u32, 60u32),
+        ),
+    ];
+    for (region, (x0, y0, x1, y1), (x, y)) in cases {
+        let scene = plan(vec![task(1, region, vec![fill(x0, y0, x1, y1, white())])]);
+        let surface = run(target(256, 256, (0, 0), PixelFormat::RgbaF32), &scene);
+        assert!(
+            is_white(&surface, x, y),
+            "{region:?}: the fill at ({x0}, {y0})-({x1}, {y1}) overlaps and must be drawn"
+        );
+    }
+}
+
+// 02 §6.2: an op whose bounds miss the tile changes no pixel, so a plan with
+// it and a plan without it give the same bytes.
+#[test]
+fn spec_02_6_2_the_cull_skips_an_op_that_misses_the_tile() {
+    let region = IRect::new(0, 0, 64, 64);
+    let without = plan(vec![task(
+        1,
+        region,
+        vec![fill(8.0, 8.0, 56.0, 56.0, white())],
+    )]);
+    let with = plan(vec![task(
+        1,
+        region,
+        vec![
+            fill(8.0, 8.0, 56.0, 56.0, white()),
+            fill(4096.0, 4096.0, 8192.0, 8192.0, srgb(1.0, 0.0, 0.0, 1.0)),
+        ],
+    )]);
+    let target_desc = target(64, 64, (0, 0), PixelFormat::RgbaF32);
+    let a = run(target_desc, &without);
+    let b = run(target_desc, &with);
+    assert_eq!(a.data(), b.data(), "the off-tile fill changes no pixel");
+    assert!(is_white(&b, 20, 20), "the fill inside the tile is drawn");
+    assert!(is_clear(&b, 2, 2), "and stays inside its own path");
+}
+
+// ---------------------------------------------------------------------------
 // AC7 — the same plan and the same surface give the same bytes
 // ---------------------------------------------------------------------------
 

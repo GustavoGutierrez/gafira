@@ -10,7 +10,7 @@
 //! coverage covers exactly the tile's window and no page-sized path is ever
 //! scanned.
 
-use gafira_geom::Affine;
+use gafira_geom::{Affine, IRect, Point, Rect};
 use kurbo::{BezPath, PathEl};
 
 /// The coverage of `path` on a `size`-pixel tile whose top-left page pixel is
@@ -70,4 +70,39 @@ fn to_tiny(path: &BezPath) -> Option<tiny_skia::Path> {
         }
     }
     builder.finish()
+}
+
+/// The page-space box of `path` under `transform`, from the **control points**
+/// (D6): a superset of the filled area, which is what a cull may use.
+pub(crate) fn page_bounds(path: &BezPath, transform: Affine) -> Rect {
+    let control = path.control_box();
+    let corners = [
+        Point::new(control.x0, control.y0),
+        Point::new(control.x1, control.y0),
+        Point::new(control.x0, control.y1),
+        Point::new(control.x1, control.y1),
+    ]
+    .map(|corner| transform * corner);
+    let mut bounds = Rect::new(corners[0].x, corners[0].y, corners[0].x, corners[0].y);
+    for corner in &corners[1..] {
+        bounds = Rect::new(
+            bounds.x0.min(corner.x),
+            bounds.y0.min(corner.y),
+            bounds.x1.max(corner.x),
+            bounds.y1.max(corner.y),
+        );
+    }
+    bounds
+}
+
+/// True when `bounds` meets `region`: the cull of D6.
+///
+/// Touching counts as meeting, so a path that only grazes the tile is never
+/// dropped. The test must stay conservative in both directions; its wrong
+/// side (a partially overlapping tile losing its fill) is a hand mutant.
+pub(crate) fn meets(bounds: Rect, region: IRect) -> bool {
+    bounds.x1 >= f64::from(region.x0)
+        && bounds.x0 <= f64::from(region.x1)
+        && bounds.y1 >= f64::from(region.y0)
+        && bounds.y0 <= f64::from(region.y1)
 }

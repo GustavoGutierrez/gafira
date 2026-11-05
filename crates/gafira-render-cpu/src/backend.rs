@@ -160,7 +160,14 @@ fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
                 path,
                 color,
                 transform,
-            } => paint_fill(&mut pixels, size, task.region, path, *color, *transform)?,
+            } => {
+                // D6: an op whose page-space bounds miss the tile is skipped
+                // before the path is converted. The box is the transformed
+                // control-point box, so the cull never drops a contributing op.
+                if coverage::meets(coverage::page_bounds(path, *transform), task.region) {
+                    paint_fill(&mut pixels, size, task.region, path, *color, *transform)?;
+                }
+            }
             RenderOp::PushLayer
             | RenderOp::PopLayer { .. }
             | RenderOp::DrawImage { .. }
