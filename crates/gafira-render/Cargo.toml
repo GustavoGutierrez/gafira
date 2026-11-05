@@ -19,6 +19,7 @@ kurbo.workspace = true
 
 [dev-dependencies]
 gafira-testkit = { workspace = true, features = ["ports"] }
+proptest.workspace = true
 
 [[bench]]
 name = "plan"
