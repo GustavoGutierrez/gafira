@@ -593,6 +593,21 @@ Consequence for `O2`: `specifier` amends ARQ-06 before `CB3` writes the comparis
 
 What this round does **not** settle, and which delivery still carries the risk: `XP2` (preview and export agreeing at 1/255) blocks `CB3` and was not measured here; `XP3`'s byte-identity across targets needs the CI matrix, because linking fails locally on macOS and Windows; and `CB1`'s real pixel cost awaits the backend, measured here only as parts.
 
+## Corrections from the frame-cost round (2026-11-05)
+
+`specs/changes/gafira-render-cpu/spike-frame-cost.md` measured one 1080p frame of the real
+`CpuBackend` at `CB1`'s HEAD. Three statements above are superseded.
+
+| # | Superseded | Measured | Consequence |
+|---|---|---|---|
+| 1 | Correction 2 of the XP round placed the `Rgba8` cost on `blend_u8`'s three `powf` per pixel. `O11` removed that path from the backend, so nothing in the crate calls it any more. | The curve is still paid, by `quantise_srgb8`: **135.31 ms** encoding the tiles into the cache plus **121.39 ms** quantising the page again in `read_back`, of a ~326 ms cold `Rgba8` frame. `blend_f32` is 43–50 ms over 3.65 M pixels and the coverage 1.3–1.5 ms. | An `Rgba8` target pays the sRGB curve **twice**. That is a `CB1` decision (the cache's format, and an `f32` surface for an 8-bit target) and the single largest cost of the preview path. It needs a delivery of its own before `CB6`; the export target is `RgbaF32` and does not see it, so `CB6`'s number will not show the fix either. |
+| 2 | `D8` and the `CB7` line assumed the frame's cost was the blend and that parallelism was the answer to it. | A cold full page is 163–195 ms against ARQ-143's ≤ 8 ms of visible render; the blend is under a third of it. The frame also faulted the theory that ~113 ms went to page faults on freshly mapped tile buffers: forty 1 MiB buffers cost **0.61 ms** fresh and **0.03 ms** pooled. | `CB7` is not what makes a preview usable, and the pool is not a frame-time win. `read_back` already takes a region, so quantising the invalidated rectangle instead of the page is the preview's fix — and it is the caller's, not this change's. |
+| 3 | The preview budget was read as one full-page cold frame against 16 ms. | ARQ-143 defers and refines: `execute` returns `left > 0` and the caller presents the best available mip. A cold 100 % frame is not a violation by itself. | `CAL-11` (one PNG frame < 2 s) is **inside** with 23× margin at 84.68 ms, and always was: the scratch harness that reported it "at risk at 2 677 ms" had multiplied a per-frame cost by 30 and compared it to a one-frame budget. The budget a reel threatens is `CAL-16`'s 180 s — 1 800 frames × 84.68 ms = 152.4 s of render alone, before decode, codec and mux — and that number is FD-55's. |
+
+What this round does **not** settle: whether the quantise-once delivery is `CB8` in this change or a
+change of its own, and how the preview's region-scoped `read_back` gets measured once the app
+exists. Both are open in the change's `apply-progress.md`, not here.
+
 ### O10. The rigor of O8 carries over to this change — decided by the owner on 2026-11-05
 
 `tdd-apply` applies the hand mutants of the critical code of every delivery and kills each one before committing, and every commit passes its gates. `verify` runs at **V1**, once per group of deliveries. The crate-wide **T4 does not run**: what line 461 says about T4 covering the three crates is superseded by this decision.
