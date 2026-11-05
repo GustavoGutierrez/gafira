@@ -592,3 +592,17 @@ Consequence for `O2`: `specifier` amends ARQ-06 before `CB3` writes the comparis
 | 4 | `D4`'s one page-sized surface was assumed to cover FD-55's widest case. | The 16 384 px side is 4 GiB in `RgbaF32` — 2.9× the 1.5 GB cap of `D-03` (measured: the 1080p and 4K cases are 33.2 MB and 132.7 MB, ≤ 15.8 % of the cap). | The surface holds 1080p and 4K. FD-55's 16 384 px side becomes a **stated limit** in the crate's documentation, with the tiled or streaming path named as what would lift it. `CB1` stays at 1080p and 4K. |
 
 What this round does **not** settle, and which delivery still carries the risk: `XP2` (preview and export agreeing at 1/255) blocks `CB3` and was not measured here; `XP3`'s byte-identity across targets needs the CI matrix, because linking fails locally on macOS and Windows; and `CB1`'s real pixel cost awaits the backend, measured here only as parts.
+
+### O11. The preview composites in `f32` and quantises once, at the end — decided by the owner on 2026-11-05
+
+`XP2` measured what `D8` assumed and contradicted it: the 8-bit preview path does not reach ARQ-42's tolerance on nested semi-transparent groups. One group leaves 0.244 % of the pixels out, two leave 1.001 %, three leave 3.369 %, and the worst case — three groups at alpha 0.5 — leaves 12.866 %, with differences up to 3/255. The cause is structural: each intermediate buffer quantises its premultiplied value, and `blend_u8`'s unpremultiply divides that error by the alpha, so a group at alpha 0.5 doubles it.
+
+Decision: **the preview's layer buffers are `f32` and it quantises once, when the final surface is handed back as `Rgba8`.** What the port returns does not change: `Preview` still answers 8-bit sRGB premultiplied.
+
+Reason: the two paths then agree by construction — the preview's surface *is* the export's `D9` conversion — so the tolerance is met with room, and no requirement has to be relaxed. It is also cheaper: `blend_u8` decodes and encodes the sRGB curve on every pixel and measures 7.1× slower than `blend_f32` (`XP1`).
+
+Cost, stated plainly: the layer pool becomes `depth × 1 MiB` instead of `depth × 256 KiB`, a budget line 278 already carries. And the golden of `CB3` stops measuring the colour quantisation — it keeps measuring the rasteriser, which is what ARQ-42 is for, but the quantisation is no longer what the tolerance proves.
+
+What this supersedes: any reading of `D8`/`D9` in which the preview accumulates in 8 bits. Line 278's `depth × 256 KiB` no longer applies to a layer buffer.
+
+Reversible: yes, at the price of the tolerance. Reverting to 8-bit buffers makes ARQ-42 fail on any scene with two nested groups, so a revert is a change of the requirement, not of the code.
