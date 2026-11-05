@@ -826,6 +826,137 @@ mod tests {
         );
     }
 
+    // ARQ-111, byte-exact: a frozen copy of `blend_u8` as of commit 70ce7be (before the
+    // guarded fast encode). The differential test below compares the live implementation
+    // against it; one differing byte in any sampled input fails, so a change to the
+    // transfer curve cannot move the product's pixels silently.
+    fn blend_u8_frozen(mode: BlendMode, backdrop: [u8; 4], source: [u8; 4]) -> [u8; 4] {
+        if source[3] == 0 {
+            return backdrop;
+        }
+        if backdrop[3] == 0 || (mode == BlendMode::Normal && source[3] == 255) {
+            return source;
+        }
+        let t = transfer();
+        let linear = |p: [u8; 4]| {
+            let a = f64::from(p[3]) / 255.0;
+            let c = |i: usize| {
+                let v = if mode == BlendMode::Normal {
+                    p[i]
+                } else {
+                    p[i].min(p[3])
+                };
+                t.decode[usize::from(crate::unpremultiply_u8(v, p[3]))] * a
+            };
+            [c(0), c(1), c(2), a]
+        };
+        let out = composite(mode, linear(backdrop), linear(source));
+        let alpha = out[3];
+        // The source is not transparent, so the result has alpha.
+        let encoded = t.encode_unit([0, 1, 2].map(|i| (out[i] / alpha).clamp(0.0, 1.0)));
+        let byte = |v: f64| (v + 0.5).floor().clamp(0.0, 255.0) as u8;
+        [
+            byte(255.0 * alpha * encoded[0]),
+            byte(255.0 * alpha * encoded[1]),
+            byte(255.0 * alpha * encoded[2]),
+            byte(255.0 * alpha),
+        ]
+    }
+
+    /// Deterministic xorshift: the same inputs every run, no dependency, no clock.
+    fn xorshift(state: &mut u64) -> u64 {
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *state = x;
+        x
+    }
+
+    // ARQ-110, ARQ-111: the live `blend_u8` matches the frozen copy byte for byte on a
+    // dense sample: a full alpha sweep by three per mode, a pseudo-random sweep over the
+    // whole space by mode, and the alpha extremes the byte rule turns on.
+    #[test]
+    fn blend_u8_matches_the_frozen_baseline_byte_for_byte() {
+        let mut mismatches = 0usize;
+        let mut checked = 0usize;
+        let check = |mode, b8, s8, mismatches: &mut usize, checked: &mut usize| {
+            let got = blend_u8(mode, b8, s8);
+            let want = blend_u8_frozen(mode, b8, s8);
+            *checked += 1;
+            if got != want
+                && {
+                    eprintln!("MISMATCH {mode:?} b={b8:?} s={s8:?}: got={got:?} want={want:?}");
+                    true
+                }
+            {
+                *mismatches += 1;
+            }
+        };
+        // The extremes the byte rule turns on: alpha 0, 1, floor/ceil, 254, 255.
+        let extremes = [0u8, 1, 2, 64, 127, 128, 129, 200, 253, 254, 255];
+        let channels = [0u8, 1, 64, 127, 128, 129, 200, 254, 255];
+        for mode in BlendMode::ALL {
+            // The three structural colour pairs, over the full cross of both alphas.
+            for b in [
+                [0, 0, 0, 0],
+                [255, 255, 255, 255],
+                [128, 17, 200, 128],
+            ] {
+                for s in [
+                    [0, 0, 0, 0],
+                    [255, 255, 255, 255],
+                    [11, 222, 33, 199],
+                ] {
+                    for ba in &extremes {
+                        for sa in &extremes {
+                            check(
+                                mode,
+                                [b[0], b[1], b[2], *ba],
+                                [s[0], s[1], s[2], *sa],
+                                &mut mismatches,
+                                &mut checked,
+                            );
+                        }
+                    }
+                }
+            }
+            // Deterministic pseudo-random sweep over the whole input space, then a grid
+            // of channel cases with the swept extremes over the alpha it drew.
+            let mut state = 0x243F_6A88_85A3_08D3u64.wrapping_add(mode as u64);
+            for _ in 0..8192 {
+                let r = xorshift(&mut state) as u8;
+                let g = (xorshift(&mut state) >> 8) as u8;
+                let bl = (xorshift(&mut state) >> 16) as u8;
+                let ba = xorshift(&mut state) as u8;
+                let sa = xorshift(&mut state) as u8;
+                let sr = xorshift(&mut state) as u8;
+                let sg = (xorshift(&mut state) >> 8) as u8;
+                let sb = (xorshift(&mut state) >> 16) as u8;
+                check(
+                    mode,
+                    [r, g, bl, ba],
+                    [sr, sg, sb, sa],
+                    &mut mismatches,
+                    &mut checked,
+                );
+                for bc in &channels {
+                    for sc in &channels {
+                        check(
+                            mode,
+                            [*bc, g, bl, ba],
+                            [*sc, sg, sb, sa],
+                            &mut mismatches,
+                            &mut checked,
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(mismatches, 0, "{checked} sampled inputs, {mismatches} differ");
+        assert!(checked > 1_000_000, "sample too thin: {checked}");
+    }
+
     // ARQ-119, ARQ-110: boundary colours and alphas, a = 0 included, give finite output
     // in [0, 1] for every mode (no 0/0 from an unpremultiply).
     #[test]
