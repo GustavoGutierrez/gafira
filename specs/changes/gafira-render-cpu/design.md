@@ -579,3 +579,16 @@ The six open questions above are settled. `O4` and `O5` were decided by the coor
 | `O6` | **`tiny-skia` 0.12** for coverage only; the pixels stay `gafira-raster`'s. Option (a). | It is what 02 §2.1 names, it is BSD-3-Clause and in `deny.toml`'s allow-list, and an f32-native rasterizer in the export is exactly what ARQ-42's tolerance must not have. |
 
 Consequence for `O2`: `specifier` amends ARQ-06 before `CB3` writes the comparison, so the criterion is not citing a row that contradicts the gate.
+
+## Corrections from the XP round (2026-11-05)
+
+`specs/changes/gafira-render-cpu/spike.md` measured XP1, XP3 and XP4 before `SC1` verified. Four statements above are superseded; where they disagree, the spike wins and this section says what changed.
+
+| # | Superseded | Measured | Consequence |
+|---|---|---|---|
+| 1 | `D6` justified the tile cull as the difference between CAL-11 and CAL-11 × the tile count, because "the same page-sized path is scanned 40 times". The scan is already the tile's window. | The cull saves ≤ 4 ms on a 200-shape page, nothing on the page background, and only 4.19 → 2.12 ms on a dense one. | The cull stays, for a different reason: it skips operations that miss the tile (−14 % sparse, −49 % dense) and bounds a pathological page. It is not what buys CAL-11's margin. |
+| 2 | `XP1` placed the cost risk on `blend_f32`, whose per-pixel `f64` call with a finite check looked like the expensive primitive. `D8` said the margin came from culling, buffer reuse and avoiding copies. | `blend_f32` is **7.1× faster** than `blend_u8` for the same work: 90.7 ms against **640.7 ms** (Normal), and 213.1 ms against the same `blend_u8` figure (Multiply). `blend_u8` pays three `f64` `powf` per pixel. | **The expensive path is the `Rgba8` preview, not the `RgbaF32` export.** CAL-11 is comfortable (≈ 115 ms of its 2 000 ms, 17× margin), so `CB7`'s justification, if it ever has one, is the preview and ARQ-41's 16 ms, not the export. |
+| 3 | `D2` listed five transitive crates for `tiny-skia`. | The tree has seven: `cfg-if` and `strict-num` were missing. `bytemuck`, `arrayvec` and `cfg-if` already sit in `Cargo.lock`. | `SC1` adds five new lock entries, not three. Nothing else changes. |
+| 4 | `D4`'s one page-sized surface was assumed to cover FD-55's widest case. | The 16 384 px side is 4 GiB in `RgbaF32` — 2.9× the 1.5 GB cap of `D-03` (measured: the 1080p and 4K cases are 33.2 MB and 132.7 MB, ≤ 15.8 % of the cap). | The surface holds 1080p and 4K. FD-55's 16 384 px side becomes a **stated limit** in the crate's documentation, with the tiled or streaming path named as what would lift it. `CB1` stays at 1080p and 4K. |
+
+What this round does **not** settle, and which delivery still carries the risk: `XP2` (preview and export agreeing at 1/255) blocks `CB3` and was not measured here; `XP3`'s byte-identity across targets needs the CI matrix, because linking fails locally on macOS and Windows; and `CB1`'s real pixel cost awaits the backend, measured here only as parts.
