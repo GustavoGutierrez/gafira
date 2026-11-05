@@ -88,11 +88,53 @@ Owner decisions touched: O8 of 2026-11-05 (the rigor of layer 3 carries over); D
 
 Commits:
 
-Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
+- `38aaedf` `feat(gafira-media): add the video exporter`: the exporter module of the crate (`src/exporter.rs`), its exports (`src/lib.rs`), its tests (`tests/exporter.rs`) and the medium, the codecs, the container, the sink and the renderer those tests inject (`tests/exporter_support.rs`). 4 files changed, 2242 insertions(+).
+
+Measured at `38aaedf`: `git diff --shortstat 443fd37...HEAD` -> 4 files changed, 2242 insertions(+), that is 2242 authored lines against the ~500 forecast of the design of record (700 with the factor of the plan): 965 lines for the exporter (the loop, the eleven options of FV-24 with their schema and statics, and the docs), 631 for the tests and 640 for the doubles. The delivery passes the ~700 signal of `AGENTS.md` by 1542 lines: the coordinator decides whether the size is accepted or the delivery is cut. No file outside `crates/gafira-media/**` was touched, the testkit needed no new double, and neither a manifest nor `Cargo.lock` changed.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo test --workspace --locked` 0 (2380 tests, 0 failed), `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`), and the nine CI policy steps, each `run:` extracted literally from `.github/workflows/ci.yml` and run with `bash -euo pipefail`: Format 0, CLI has no UI dependencies (ARQ-07) 0, Domain crates forbid unsafe code 0, the layer table (V5) 0, the `clippy.toml` copies (V12) 0, Layers 0-2 know no language (ARQ-107) 0, EditToken only in the edit crates (V13) 0, Every core command has a property test (V14) 0 and Testkit ports feature compiles (ADR 0013) 0. Plus the crate gate: `cargo clippy -p gafira-media --all-targets --locked -- -D warnings` 0 and `cargo test -p gafira-media --locked` 0, 49 tests (12 cache, 3 contract, 9 exporter, 7 keyframe, 9 playback, 9 proxy).
+
+`CAL-16` (`bench_export_reel_60s` under 180 s) and `CAL-17` (the export matrix of at least 40 combinations) stay partial: both measure the layer-4 codecs and container writers, which this cut does not ship (D-02, ARQ-77).
 
 ### RED evidence
 
+The tests were written against the acceptance criteria of the card and the implementation was then reduced, in eight replays, to the skeleton of each behaviour to capture the RED. Every failure below is an assertion failure, not a compile error, and the implementation was restored afterwards (`cargo test -p gafira-media --test exporter --locked`: 9 passed, 0 failed).
+
+- AC1 `fv_12_the_pipeline_orders_the_stages_and_encodes_the_frames_of_the_range`, with `frames()` planning nothing: `assertion left == right failed: the pipeline is decode, compose, encode, mux in that order, left: None, right: Some([Decode, Compose, Encode, Mux])`.
+- AC2 `fv_12_the_audio_track_is_muxed_and_the_av_difference_is_below_40_ms`, with `write_audio` answering before writing: `assertion left == right failed: the muxer is given the video stream and the audio track, left: 1, right: 2`.
+- AC3 `fv_12_a_cancelled_export_leaves_no_partial_file_and_the_next_one_runs`, with the final name created before the export: `assertion left == right failed: a cancelled export creates no final file, left: ["reel.mp4"], right: []`.
+- AC4 `arq_139_the_export_honours_the_progress_contract_at_background_priority`, with the finish report missing: `assertion left == right failed: the export follows the progress contract, left: Err(NotCompleted), right: Ok(())`.
+- AC5 `fv_12_an_export_reads_the_original_and_never_the_copy`, with `read_path` preferring the copy: `assertion left == right failed: the export reads the original and never the light copy, left: ["copy.mjpeg"], right: ["original.mov"]`.
+- AC6 `fv_12_the_composition_goes_through_the_page_renderer`, with the composition skipped and a placeholder image encoded: `assertion left == right failed: every frame of the range is composed through PageRenderer, left: 0, right: 25`.
+- AC7 `arq_43_a_lost_or_unavailable_encoder_fails_without_a_file`, with the output created before the encoder: `an unavailable encoder leaves no file`. The error half of the test is the assertion `an unavailable encoder fails with the error of the port: Err(Media(SystemCodecUnavailable))`, and the second part, a lost encoder, asserts `Err(Media(Corrupt { .. }))`.
+- FV-24 `fv_24_an_unavailable_codec_is_rejected_before_the_export_starts`, with `validate` accepting everything: `FV-24: a codec the adapter cannot write blocks the export`.
+- AC8 is a command: the policy steps above all exit 0, and `grep -rnE` over `crates/gafira-media/src` and `crates/gafira-media/tests` for `std::fs`, `std::net`, `std::thread::spawn`, `std::thread::Builder`, `std::time::Instant::now`, `std::time::SystemTime::now` and `std::env` gives no hit (exit 1). The crate keeps `#![forbid(unsafe_code)]` at `src/lib.rs:9` and its row of the layer table (V5).
+
 ### Negative controls
 
+The hand mutants of the list, applied one at a time to the exporter on the green code and reverted after each run. None of them was committed and `38aaedf` is the green one.
+
+| # | The wrong behaviour | The killing test | The assertion |
+|---|---|---|---|
+| H1 | the compose stage moved before the decode stage (two stages swapped) | `fv_12_the_pipeline_orders_the_stages_and_encodes_the_frames_of_the_range` | `assertion left == right failed: the pipeline is decode, compose, encode, mux in that order, left: Some([Compose, Decode, Encode, Mux]), right: Some([Decode, Compose, Encode, Mux])` |
+| H2 | the audio track shifted 50 ms past the video | `fv_12_the_audio_track_is_muxed_and_the_av_difference_is_below_40_ms` | `the A/V difference is below 40 ms: 35280000 ticks against 28224000` |
+| H3 | the final name written straight, so a cancel leaves a partial file | `fv_12_a_cancelled_export_leaves_no_partial_file_and_the_next_one_runs` | `assertion left == right failed: a cancelled export creates no final file, left: ["reel.mp4"], right: []` |
+| H4 | the per-frame cancel checkpoint removed | `arq_139_the_export_checks_the_cancel_token_per_frame` | `assertion left == right failed: the export checks the token per frame, not through the renderer, left: Err(ReportsAfterCancel { k: 1, extra: 49 }), right: Ok(())` |
+| H5 | one frame too few at the end of the range | `fv_12_the_pipeline_orders_the_stages_and_encodes_the_frames_of_the_range` | `assertion left == right failed: the frames of a range of 2 s at 25 fps are encoded, left: 49, right: 50` |
+| H6 | the light copy read when one exists | `fv_12_an_export_reads_the_original_and_never_the_copy` | `assertion left == right failed: the export reads the original and never the light copy, left: ["copy.mjpeg"], right: ["original.mov"]` |
+
+H4 survived the first attempt: the testkit `FakePageRenderer` checks the token itself, so dropping the checkpoint still cancelled within the report. It was killed by adding `arq_139_the_export_checks_the_cancel_token_per_frame`, whose renderer ignores the token, so only the exporter's own per-frame checkpoint can react. No item survived after that; no other test had to be added.
+
 ### Choices and deviations
+
+- **The exporter is a `ports::Exporter` and reads its options in memory (ARQ-148, FV-24).** The schema exposes the codec, the bit rate, the fps, the width and the height of FV-24, the audio codec, bit rate, sample rate and channels, and the start and end of the range in milliseconds. The codec the request asks for must be the one the injected codec writes; otherwise the export answers the `MediaError::UnsupportedCodec` the port fixes, before any file exists.
+- **The codecs and the container are injected as `&dyn Codec` and `&dyn Container`.** This is the adapter of 02 §4.5 ("los adaptadores de video y audio en `gafira-media` combinan `Container` y `Codec`"): the delivery writes no encoder (D-02, ARQ-77). `Exporter::export` takes `&self`, so the decoded frames come from an `ExportSourceFactory` and every run gets a fresh source (ARQ-140); the medium, the factory and the output name are per-job constructor parameters.
+- **The decode is the caller's.** `ExportSource` mirrors `ProxyProducer` (ARQ-146) and `PlaybackSource` (ARQ-147): the crate owns the loop, the order, the checkpoints, the progress and the mux, and the caller hands the decoded frames and audio over. `next_video` is one frame per call, which is the per-frame checkpoint of ARQ-139.
+- **The final name is created only once the mux has finished (FV-12 (d)).** The output is collected in an in-memory `WriteSeek` and handed to the job's `ExportSink` after `Muxer::finish`, because `ExportSink` exposes only `create(name)` and no rename, and its own contract puts the temp file and the rename in its implementation (02 §6.4). This is the observable rule of `ME3`'s shape rather than its literal `.part` + `replace`, which belongs to the layer-4 sink. The cost is that a reel is buffered until the end: flagged for layer 4 and `CAL-16`.
+- **The audio track is anchored to the start of the range.** The first audio buffer's presentation time becomes the range start and the rest follow it, so the first audio packet shares its time with the first video packet and the A/V difference of the result is 0, below the 40 ms of FV-12 (b). The audio stream is declared only when the source yields its first buffer, so a video-only export declares no audio track.
+- **The frame count is the whole frames that fit in the range (floor).** FV-24's fps conversion by duplication or blending belongs to the compositor (`RE5`), which this cut does not build; a partial tail is therefore not encoded.
+- **The export renders the first page of the `Pages` scope.** The timeline model is out of this cut (design `O1`) and `Nodes` is rejected as invalid input.
+- **A cancellation seen by a port is reported as `ExportError::Cancelled`.** `RenderError::Cancelled` and `MediaError::Cancelled` are mapped to it, so a cancel inside the renderer or the source answers the error the trait fixes (02 §4.5), not a nested one.
+- **Size.** 2242 lines against the 500 (700) forecast, 1271 of them tests and doubles. Recorded for the coordinator's decision, as `ME4` did.
+- **No deviation of scope.** The delivery touched only `crates/gafira-media/**`: no testkit file, no `Cargo.toml`, no `Cargo.lock`, and `gafira-ports`, `gafira-doc` and the testkit are untouched.
 
