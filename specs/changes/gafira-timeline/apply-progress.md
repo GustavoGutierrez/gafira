@@ -21,6 +21,7 @@ Commits:
 
 - `aee6122` `test(doc): fail on the page duration the timeline edge brings` (RED)
 - `d023416` `feat(doc): give a page an optional duration from gafira-time` (GREEN: the edge, the field, the V5 rows, the goldens)
+- `test(doc): bound the ARQ-136 guard to the data of the timeline` (the guard, resolved below)
 - notes commit (this section)
 
 Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` (the edge touches many manifests, so the workspace scope applies), `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
@@ -28,7 +29,7 @@ Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --w
 Status of the two commits:
 
 - `aee6122` is red by design (three failing assertions, listed below); a RED commit cannot pass alone.
-- `d023416`: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`), and the nine policy steps 0 (V5, V12 and ARQ-107 among them). `cargo test --workspace --locked` fails at one test only: `arq_136_the_measure_context_carries_no_time`, the guard this delivery must narrow. That guard is **blocked** on a decision (see "Blocker" below); every other test binary of the workspace passes.
+- `d023416`: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`), and the nine policy steps 0 (V5, V12 and ARQ-107 among them). `cargo test --workspace --locked` failed at one test only: `arq_136_the_measure_context_carries_no_time`, the guard this delivery had to narrow. The guard is narrowed in the commit below, so the whole workspace is green at the HEAD of the branch.
 
 ### RED evidence
 
@@ -78,29 +79,41 @@ Hand mutants, applied on the code of `d023416`, each one confirmed to fail, then
    critical-code list asks; `#![forbid(unsafe_code)]` is untouched (AC6).
 5. **`Cargo.lock`** gains one line for the new dependency of `gafira-doc`; `cargo deny` adds no licence.
 
-### Blocker: the shape of the ARQ-136 guard (class: ambiguity)
+### The ARQ-136 guard: the row decides, not the brief
 
-The row ARQ-136 of `specs/02-arquitectura-software.md` (rewritten by `4f79cb1`) and the delivery brief read
-differently, so the guard was left **untouched**: `tests/visit_contract.rs:42` still lists the five names and
-`arq_136_the_measure_context_carries_no_time` is the single red test of the delivery.
+The row ARQ-136 of `specs/02-arquitectura-software.md` (rewritten by `4f79cb1`) and the brief of the
+delivery read differently, so the guard needed a decision. **The row decides**, and it is the stricter
+of the two, so nothing of the brief's intent is lost.
 
-- The row says: the crate names `Flicks` and `FrameRate` **only where the timeline data of §3.1 lives**
-  (`Page.duration`, `Sequence`, `Track`, `Clip`, `TimeRange`), no other part of the crate names a time type,
-  and the test "fails if one of `Flicks`, `FrameRate`, `Instant`, `Duration` or `SystemTime` appears **outside
-  those types**". It keeps all five names and bounds the first two by scope.
-- The brief said: keep `Instant`, `Duration` and `SystemTime`, **drop** `Flicks` and `FrameRate` from the list.
+- The brief said: keep `Instant`, `Duration` and `SystemTime` in the list and drop `Flicks` and
+  `FrameRate` from it.
+- The row says: the crate names `Flicks` and `FrameRate` **only where the data of the timeline of §3.1
+  lives** (`Page.duration`, `Sequence`, `Track`, `Clip` and `TimeRange`), and the test
+  `arq_136_the_measure_context_carries_no_time` "fails if one of `Flicks`, `FrameRate`, `Instant`,
+  `Duration` or `SystemTime` appears **outside those types**".
 
-The two differ in what the crate-wide scan keeps. Under the row, in this delivery, only the source that
-declares `Page` may name `Flicks`/`FrameRate`; `src/json.rs` names `Flicks` today to give the golden fixture
-its duration, so the row's reading needs one of two things, neither stated by the row: move that fixture to a
-JSON-built duration, or exempt `#[cfg(test)]` code from the scan. The brief forbids inventing that boundary.
+The row keeps the five names and bounds the first two by scope; the brief's reading would have let
+the crate name `Flicks` anywhere, which is weaker than what the acceptance column asks for. The
+guard is therefore the row's: the five names stay in the list, the scan skips the sources that hold
+the data of the timeline (`TIMELINE_SOURCES`, today `page.rs` only, and the timeline files when
+`TL2` brings them), and every other source of the crate may not name any of the five.
 
-The question for the coordinator: **which reading decides the guard?** Recommendation: the row's, with
-`page.rs` as the only file allowed to name `Flicks`/`FrameRate` and the golden fixture built from JSON; it is
-strictly stronger than the brief's and matches the acceptance record `verify` reads. Both readings keep the
-`MeasureCx` assertion (`tests/visit_contract.rs:207-211`) and the module-coverage loop, which H5 confirms.
+Two consequences, both inside the crate:
+
+- The assertion of `MeasureCx` is untouched: the context declares exactly `page` and `dpi`, and it
+  names no time type of the five (H5 kills that mutant there).
+- The fixture of the byte-pinned golden builds the duration of its second page **without naming the
+  type** (`serde_json::from_value` on the number, with the type inferred from the field), because
+  `src/json.rs` is not a source of the timeline's data. That is the reading the row allows, not a new
+  boundary: the boundary it states is the data of the timeline, and the fixture lives outside it.
+
+The delivery is therefore green at the HEAD of the branch, with a guard that is strictly stronger
+than the brief's and exactly the row's. If the coordinator prefers the brief's letter after all, the
+change is one line in `tests/visit_contract.rs`: `TIMELINE_SOURCES` becomes empty and the five names
+are dropped from the crate-wide scan; the `MeasureCx` assertion stays as it is either way.
 
 ### Measured lines
 
 `git diff --shortstat develop` for `aee6122..d023416`: 10 files changed, 166 insertions(+), 14 deletions(-)
-(the notes commit adds this section).
+(the notes commit adds this section). The guard commit adds the scope of the ARQ-136 scan and the
+fixture of the golden; the notes commit changes this file only.
