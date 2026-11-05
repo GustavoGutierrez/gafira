@@ -728,6 +728,53 @@ mod tests {
         }
     }
 
+    // ARQ-22: a session that starts without a GPU adapter degrades to the
+    // CPU, reports the missing adapter for the rest of the session, and
+    // leaves the document untouched.
+    #[test]
+    fn arq_22_a_missing_adapter_degrades_the_session_to_the_cpu() {
+        let page = new_page(400, 400);
+        let graph = graph_of(&page);
+        let key = graph.key_of(NodeId::new(1));
+        let plan = plan_of(&graph, 400);
+        let mut selector = BackendSelector::new(None, Box::new(CountingBackend::default()));
+
+        assert_eq!(
+            selector.kind(),
+            BackendKind::Cpu,
+            "a session without a GPU adapter starts on the CPU"
+        );
+        assert_eq!(
+            selector.degradation(),
+            Some(Degradation::AdapterMissing),
+            "the missing adapter is reported"
+        );
+
+        let mut cache = ContentTileCache::new(Bytes(0));
+        let cancel = CancelToken::new();
+        let target = target();
+        // The frames render on the CPU and the degradation lasts for the
+        // rest of the session.
+        for _ in 0..2 {
+            let mut cx = selector
+                .begin_frame(&target)
+                .expect("the CPU opens the frame");
+            let report = selector
+                .execute(&mut cx, &plan, &mut cache, Deadline::Unbounded, &cancel)
+                .expect("the CPU renders the same plan");
+            assert_eq!(report.left, 0);
+            assert_eq!(selector.kind(), BackendKind::Cpu);
+            assert_eq!(
+                selector.degradation(),
+                Some(Degradation::AdapterMissing),
+                "the degradation lasts for the rest of the session"
+            );
+            // The document and its graph survived.
+            assert_eq!(graph.key_of(NodeId::new(1)), key, "the document is intact");
+            assert_eq!(page.nodes.len(), 1, "the document is intact");
+        }
+    }
+
     // ARQ-41, 02 §6.2: a frame that ends exactly at the deadline is incomplete
     // with tiles left, one a nanosecond before is complete, and `Unbounded`
     // never passes.
