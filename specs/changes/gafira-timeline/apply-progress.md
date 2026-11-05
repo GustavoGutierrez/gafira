@@ -21,15 +21,18 @@ Commits:
 
 - `aee6122` `test(doc): fail on the page duration the timeline edge brings` (RED)
 - `d023416` `feat(doc): give a page an optional duration from gafira-time` (GREEN: the edge, the field, the V5 rows, the goldens)
-- `test(doc): bound the ARQ-136 guard to the data of the timeline` (the guard, resolved below)
-- notes commit (this section)
+- `8a5b71c` `test(doc): bound the ARQ-136 guard to the data of the timeline` (the guard, resolved below)
+- `93172c8` `docs(gafira-timeline): record the TL1 progress, its mutants and the open guard`
+- `b0f6c44` `docs(gafira-timeline): resolve the ARQ-136 guard in the TL1 notes`
+- the head commit of the branch, `docs(gafira-timeline): align the TL1 notes with the head of the branch` (this section)
 
 Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` (the edge touches many manifests, so the workspace scope applies), `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
 
-Status of the two commits:
+Status of the commits:
 
 - `aee6122` is red by design (three failing assertions, listed below); a RED commit cannot pass alone.
-- `d023416`: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`), and the nine policy steps 0 (V5, V12 and ARQ-107 among them). `cargo test --workspace --locked` failed at one test only: `arq_136_the_measure_context_carries_no_time`, the guard this delivery had to narrow. The guard is narrowed in the commit below, so the whole workspace is green at the HEAD of the branch.
+- `d023416`: `cargo fmt --check` 0, `cargo clippy --workspace --all-targets --locked -- -D warnings` 0, `cargo deny check` 0 (`advisories ok, bans ok, licenses ok, sources ok`), and the nine policy steps 0 (V5, V12 and ARQ-107 among them). `cargo test --workspace --locked` failed at one test only: `arq_136_the_measure_context_carries_no_time`, the guard this delivery had to narrow (commit `8a5b71c`).
+- `8a5b71c`: the same gates at the HEAD of the branch, all 0, and `cargo test --workspace --locked --no-fail-fast` exit 0 with 194 test binaries passing and none failing.
 
 ### RED evidence
 
@@ -55,7 +58,7 @@ Hand mutants, applied on the code of `d023416`, each one confirmed to fail, then
 | H2 | an absent field reads as zero (`#[serde(default = "zero_duration")]` with `Some(Flicks::ZERO)`) | the same test, `tests/duration.rs:70`: `a document without a duration must re-save without the field`, the re-save writes `"duration":0`. |
 | H3 | the duration is an integer of the page's own (`Option<i64>`) | `arq_136_the_duration_is_a_flicks_of_gafira_time` does not compile: `tests/duration.rs:119`, `expected Option<Flicks>, found Option<i64>`. A type rule has no runtime observable here: `Flicks` is `#[serde(transparent)]` over `i64`, so both write the same bare number; the typed binding is the guard. |
 | H4 | drop `gafira-time` from a V5 row whose tree reaches it (`gafira-doc`) | the V5 step: `::error::gafira-doc must not depend on gafira-time`, exit 1. |
-| H5 | add a time field to the measurement context (`instant: Option<Flicks>`) | `arq_136_the_measure_context_carries_no_time`, `tests/visit_contract.rs:207`: `the context declares only the borrowed page and the target's DPI`, before the crate-wide scan is reached. |
+| H5 | add a time field to the measurement context (`instant: Option<Flicks>`) | `arq_136_the_measure_context_carries_no_time`, `tests/visit_contract.rs:212`: `the context declares only the borrowed page and the target's DPI`, before the crate-wide scan is reached. |
 
 ### Choices and deviations
 
@@ -114,6 +117,7 @@ are dropped from the crate-wide scan; the `MeasureCx` assertion stays as it is e
 
 ### Measured lines
 
-`git diff --shortstat develop` for `aee6122..d023416`: 10 files changed, 166 insertions(+), 14 deletions(-)
-(the notes commit adds this section). The guard commit adds the scope of the ARQ-136 scan and the
-fixture of the golden; the notes commit changes this file only.
+`git diff --shortstat develop` for `aee6122..d023416`: 10 files changed, 166 insertions(+), 14 deletions(-).
+At the head of the branch: 11 files changed, 278 insertions(+), 17 deletions(-), of which this
+file is 95 of the insertions and the delivery's code and tests 183. The guard commit adds the scope of the ARQ-136 scan and the
+fixture of the golden; the notes commits change this file only.
