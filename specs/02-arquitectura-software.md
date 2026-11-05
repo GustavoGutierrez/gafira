@@ -1483,7 +1483,7 @@ Otras cifras (FIJADAS, D-03):
 | Pantalla de arranque visible ≥ 1,2 s (D-09) y aviso de carga lenta a los 5 s (PROPUESTA) | Temporizador de la Pantalla de arranque sobre el reloj inyectado (`Clock`); cierre con `StartupFinished` | `splash_visible_ms` ≥ 1200 y ≤ `max(1200, pasos bloqueantes) + 1 frame`; pruebas con arranque simulado (03 DIS-82) |
 | Abrir proyecto de 20 páginas < 3 s (PRD) | Manifiesto y JSON por página; render de la página visible primero; miniaturas guardadas en el archivo; recursos bajo demanda | `bench_open_20_pages` < 3 s hasta la primera página interactiva |
 | Abrir documento de 100 capas < 500 ms (spec) | Deserialización serde directa, sin pasos intermedios; textos maquetados de forma perezosa | `bench_open_100_layers` < 500 ms |
-| Exportar PNG 1080p < 2 s (spec) | Render CPU en tiles paralelos; codificador PNG con compresión rápida por defecto | `bench_export_png_1080` < 2 s |
+| Exportar PNG 1080p < 2 s (spec) | Render CPU secuencial, un tile por llamada a `execute` (§4.6), con el descarte de las operaciones que no tocan el tile; codificador PNG con compresión rápida por defecto | `bench_export_png_1080` < 2 s |
 | Zoom 5 %–3200 % (PRD) | Mipmaps y re-rasterización vectorial al nivel exacto | Prueba funcional en los límites y golden a 3200 % sin pixelado del vector |
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
@@ -1515,6 +1515,8 @@ Otras cifras (FIJADAS, D-03):
 | ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. En `gafira-segment` no hay reloj, ni en sus *benchmarks* (ARQ-02): `bench_cancel_segment` mide el tramo de trabajo más largo entre dos comprobaciones del token con una imagen de 4000 px, y ese tiempo acota la respuesta por arriba. |
 | ARQ-44 | Las cachés respetan el `MemoryGovernor`. Toda caché que el gobernador pueda recortar expone `bytes()` y `trim(budget)`, las dos en **bytes**: `bytes()` da el tamaño actual de la caché y `trim(budget)` la deja por debajo o igual al presupuesto dado. El gobernador recorta primero la caché de fotogramas (§6.5). | Ver la prueba del límite de memoria en §6.7. Con un límite de 1 GB, el proceso no lo supera más de un 10 % al abrir el documento de 20 páginas. Con un `trim` a la mitad del tamaño actual, `bytes()` da ≤ la mitad; con un presupuesto mayor que el tamaño actual, `trim` no cambia nada. |
 | ARQ-45..ARQ-49 | Reservados. | — |
+
+**Sobre «tiles paralelos» (CAL-11).** La técnica que §6.3 atribuye a `gafira-render` —el paralelismo por tiles— no es la de este corte: `RenderBackend::execute` recibe un plan con una sola tarea y el bucle de frame lo llama tile por tile (§4.6), así que el adaptador no puede repartir tiles entre hilos. La cifra se mide con ese bucle secuencial, y lo único paralelizable dentro del contrato de hoy es el interior de un tile, por bandas de filas, con un pool que llega por parámetro (ARQ-138). El paralelismo por tiles llega con un cambio de `gafira-render` que entregue lotes de tiles o un pool al bucle de frame; hasta entonces el motor CPU es secuencial y el número de CAL-11 no depende de los núcleos.
 
 ---
 
