@@ -6,11 +6,13 @@
 //! preview quantises **once**, when the surface is handed back as `Rgba8`
 //! (O11). There is no second accumulation path.
 
-use gafira_color::LinearRgba;
+use gafira_color::{LinearRgba, Rgba};
 use gafira_geom::IRect;
 use gafira_ports::common::Bytes;
 use gafira_ports::render::{RenderError, TargetDesc};
-use gafira_raster::{BufferError, EffectError, ImageBuf, PixelBuf, PixelFormat, premultiply_u8};
+use gafira_raster::{
+    BufferError, EffectError, ImageBuf, PixelBuf, PixelFormat, premultiply_u8, unpremultiply_u8,
+};
 
 /// The largest surface side this delivery allocates.
 ///
@@ -70,6 +72,11 @@ impl Surface {
             format: target.format,
             pixels: vec![0.0; pixels],
         })
+    }
+
+    /// The format `read_back` answers.
+    pub(crate) const fn format(&self) -> PixelFormat {
+        self.format
     }
 
     /// The page-space rectangle the surface covers.
@@ -226,6 +233,84 @@ pub(crate) fn quantise_srgb8(pixel: [f32; 4]) -> [u8; 4] {
         premultiply_u8(round_u8(encoded.b), a),
         a,
     ]
+}
+
+/// The format of a tile or a surface image.
+pub(crate) fn format_of(image: &ImageBuf) -> PixelFormat {
+    match image.data() {
+        PixelBuf::Rgba8(_) => PixelFormat::Rgba8,
+        PixelBuf::RgbaF32(_) => PixelFormat::RgbaF32,
+        PixelBuf::Alpha8(_) => PixelFormat::Alpha8,
+    }
+}
+
+/// Encodes a tile-local premultiplied `f32` tile in `format`, for the cache.
+///
+/// # Errors
+/// [`RenderError::Effect`] for a format that is not a tile format, and
+/// [`RenderError::Buffer`] when the buffer does not match `size`.
+pub(crate) fn encode_tile(
+    pixels: &[f32],
+    size: (u32, u32),
+    format: PixelFormat,
+) -> Result<ImageBuf, RenderError> {
+    match format {
+        PixelFormat::RgbaF32 => ImageBuf::new(size.0, size.1, PixelBuf::RgbaF32(pixels.to_vec()))
+            .map_err(RenderError::Buffer),
+        PixelFormat::Rgba8 => {
+            let mut out = vec![0u8; pixels.len()];
+            for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+                out[index * 4..index * 4 + 4]
+                    .copy_from_slice(&quantise_srgb8([pixel[0], pixel[1], pixel[2], pixel[3]]));
+            }
+            ImageBuf::new(size.0, size.1, PixelBuf::Rgba8(out)).map_err(RenderError::Buffer)
+        }
+        PixelFormat::Alpha8 => Err(not_rgba()),
+    }
+}
+
+/// Decodes a cached tile into tile-local premultiplied `f32` pixels.
+///
+/// # Errors
+/// [`RenderError::Effect`] for an `Alpha8` tile, which is never a render target.
+pub(crate) fn decode_tile(image: &ImageBuf) -> Result<Vec<f32>, RenderError> {
+    match image.data() {
+        PixelBuf::RgbaF32(data) => Ok(data.clone()),
+        PixelBuf::Rgba8(data) => {
+            let mut out = vec![0.0f32; data.len()];
+            for (index, pixel) in data.chunks_exact(4).enumerate() {
+                out[index * 4..index * 4 + 4]
+                    .copy_from_slice(&decode_srgb8([pixel[0], pixel[1], pixel[2], pixel[3]]));
+            }
+            Ok(out)
+        }
+        PixelBuf::Alpha8(_) => Err(not_rgba()),
+    }
+}
+
+/// Decodes one premultiplied sRGB 8-bit pixel into premultiplied linear `f32`.
+///
+/// The inverse of [`quantise_srgb8`], used when a cached tile is read back
+/// into the `f32` surface.
+pub(crate) fn decode_srgb8(pixel: [u8; 4]) -> [f32; 4] {
+    let alpha = f32::from(pixel[3]) / 255.0;
+    if alpha == 0.0 {
+        return [0.0; 4];
+    }
+    let straight = [
+        f32::from(unpremultiply_u8(pixel[0], pixel[3])) / 255.0,
+        f32::from(unpremultiply_u8(pixel[1], pixel[3])) / 255.0,
+        f32::from(unpremultiply_u8(pixel[2], pixel[3])) / 255.0,
+    ];
+    let linear = Rgba::new(straight[0], straight[1], straight[2], alpha).to_linear();
+    [linear.r * alpha, linear.g * alpha, linear.b * alpha, alpha]
+}
+
+/// The error of a buffer that is not an RGBA render target.
+fn not_rgba() -> RenderError {
+    RenderError::Effect(EffectError::UnsupportedFormat {
+        format: PixelFormat::Alpha8,
+    })
 }
 
 /// Rounds a `[0, 1]` channel to an 8-bit value, halves up.

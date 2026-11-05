@@ -86,21 +86,87 @@ fn white() -> Color {
 // Surface helpers
 // ---------------------------------------------------------------------------
 
-/// A cache that holds nothing: `CB1`'s first slice writes no tile yet.
-struct EmptyCache;
+/// A tile cache that records what the backend asked of it.
+#[derive(Default)]
+struct RecordingCache {
+    tiles: Vec<(TileKey, Arc<ImageBuf>)>,
+    gets: std::cell::RefCell<Vec<TileKey>>,
+    puts: Vec<TileKey>,
+}
 
-impl TileCache for EmptyCache {
-    fn get(&self, _key: &TileKey) -> Option<Arc<ImageBuf>> {
-        None
+impl RecordingCache {
+    fn with(tiles: Vec<(TileKey, Arc<ImageBuf>)>) -> Self {
+        Self {
+            tiles,
+            gets: std::cell::RefCell::new(Vec::new()),
+            puts: Vec::new(),
+        }
     }
 
-    fn put(&mut self, _key: TileKey, _tile: Arc<ImageBuf>) {}
+    /// The last tile stored under `key`.
+    fn stored(&self, key: TileKey) -> Option<Arc<ImageBuf>> {
+        self.tiles
+            .iter()
+            .rev()
+            .find(|(stored, _)| *stored == key)
+            .map(|(_, tile)| Arc::clone(tile))
+    }
+
+    fn puts(&self) -> &[TileKey] {
+        &self.puts
+    }
+}
+
+impl TileCache for RecordingCache {
+    fn get(&self, key: &TileKey) -> Option<Arc<ImageBuf>> {
+        self.gets.borrow_mut().push(*key);
+        self.stored(*key)
+    }
+
+    fn put(&mut self, key: TileKey, tile: Arc<ImageBuf>) {
+        self.puts.push(key);
+        self.tiles.push((key, tile));
+    }
 
     fn bytes(&self) -> Bytes {
-        Bytes(0)
+        let bytes: u64 = self
+            .tiles
+            .iter()
+            .map(|(_, tile)| match tile.data() {
+                PixelBuf::Rgba8(data) => u64::try_from(data.len()).unwrap_or(0),
+                PixelBuf::RgbaF32(data) => u64::try_from(data.len()).unwrap_or(0) * 4,
+                PixelBuf::Alpha8(data) => u64::try_from(data.len()).unwrap_or(0),
+            })
+            .sum();
+        Bytes(bytes)
     }
 
-    fn trim(&mut self, _budget: Bytes) {}
+    fn trim(&mut self, budget: Bytes) {
+        while self.bytes() > budget {
+            if self.tiles.pop().is_none() {
+                break;
+            }
+        }
+    }
+}
+
+/// A tile of one colour, in the target format.
+fn solid_tile32(width: u32, height: u32, pixel: [f32; 4]) -> Arc<ImageBuf> {
+    let count = width as usize * height as usize * 4;
+    let mut data = vec![0.0f32; count];
+    for chunk in data.chunks_exact_mut(4) {
+        chunk.copy_from_slice(&pixel);
+    }
+    Arc::new(ImageBuf::new(width, height, PixelBuf::RgbaF32(data)).expect("the tile"))
+}
+
+fn solid_tile8(width: u32, height: u32, pixel: [u8; 4]) -> Arc<ImageBuf> {
+    let count = width as usize * height as usize * 4;
+    let mut data = vec![0u8; count];
+    for chunk in data.chunks_exact_mut(4) {
+        chunk.copy_from_slice(&pixel);
+    }
+    Arc::new(ImageBuf::new(width, height, PixelBuf::Rgba8(data)).expect("the tile"))
 }
 
 fn channels(image: &ImageBuf, x: u32, y: u32) -> [f32; 4] {
@@ -166,12 +232,17 @@ fn index_of(image: &ImageBuf, x: u32, y: u32) -> usize {
 
 /// Runs one plan on a fresh backend and answers the whole surface.
 fn run(target_desc: TargetDesc, plan: &RenderPlan) -> ImageBuf {
+    let mut cache = RecordingCache::default();
+    run_with(target_desc, plan, &mut cache)
+}
+
+/// Runs one plan with `cache` and answers the whole surface.
+fn run_with(target_desc: TargetDesc, plan: &RenderPlan, cache: &mut RecordingCache) -> ImageBuf {
     let mut backend = CpuBackend::new();
     let mut cx = backend.begin_frame(&target_desc).expect("the frame opens");
-    let mut cache = EmptyCache;
     let token = CancelToken::new();
     backend
-        .execute(&mut cx, plan, &mut cache, Deadline::Unbounded, &token)
+        .execute(&mut cx, plan, cache, Deadline::Unbounded, &token)
         .expect("the plan runs");
     let region = IRect::new(
         target_desc.origin.0,
@@ -279,6 +350,97 @@ fn arq_117_both_formats_premultiply_the_same_fill() {
     // The rule, pinned by hand: 51·128 and 153·128 are the two channels where
     // truncation and the ARQ-117 rounding disagree.
     assert_eq!(expected, [26, 51, 77, 128]);
+}
+
+// ---------------------------------------------------------------------------
+// AC3 — the cache: a hit is reused, a miss is written back at the plan's key
+// ---------------------------------------------------------------------------
+
+// ARQ-44 (partial): a tile the cache holds is reused as it stands and the path
+// is not covered again; a tile it does not hold is covered and written back
+// under the key of the plan.
+#[test]
+fn arq_44_a_cached_tile_is_reused_and_a_miss_is_written_back_at_the_key_of_the_plan() {
+    // A hit: the cached tile answers every pixel, so the white fill never runs.
+    let hit = plan(vec![task(
+        1,
+        IRect::new(0, 0, 32, 32),
+        vec![fill(0.0, 0.0, 32.0, 32.0, white())],
+    )]);
+    let mut cache =
+        RecordingCache::with(vec![(key(1), solid_tile32(32, 32, [1.0, 0.0, 0.0, 1.0]))]);
+    let surface = run_with(
+        target(32, 32, (0, 0), PixelFormat::RgbaF32),
+        &hit,
+        &mut cache,
+    );
+    assert_eq!(
+        channels(&surface, 10, 10),
+        [1.0, 0.0, 0.0, 1.0],
+        "the cached tile answers, not the fill"
+    );
+    assert!(cache.puts().is_empty(), "a hit is not written back");
+    assert_eq!(
+        cache.gets.borrow().as_slice(),
+        &[key(1)],
+        "the cache is asked with the key of the plan"
+    );
+
+    // A miss: each tile is written under its own key, with its own pixels.
+    let miss = plan(vec![
+        task(
+            10,
+            IRect::new(0, 0, 64, 32),
+            vec![fill(0.0, 0.0, 64.0, 32.0, srgb(1.0, 0.0, 0.0, 1.0))],
+        ),
+        task(
+            11,
+            IRect::new(64, 0, 128, 32),
+            vec![fill(64.0, 0.0, 128.0, 32.0, srgb(0.0, 0.0, 1.0, 1.0))],
+        ),
+    ]);
+    let mut cache = RecordingCache::default();
+    let surface = run_with(
+        target(128, 32, (0, 0), PixelFormat::RgbaF32),
+        &miss,
+        &mut cache,
+    );
+    assert_eq!(cache.puts(), &[key(10), key(11)], "one write per plan key");
+    let first = cache.stored(key(10)).expect("the first tile");
+    assert_eq!((first.width(), first.height()), (64, 32));
+    assert_eq!(channels(&first, 5, 5), [1.0, 0.0, 0.0, 1.0]);
+    let second = cache.stored(key(11)).expect("the second tile");
+    assert_eq!(channels(&second, 5, 5), [0.0, 0.0, 1.0, 1.0]);
+    // And the surface holds each tile at its own region.
+    assert_eq!(channels(&surface, 10, 10), [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(channels(&surface, 74, 10), [0.0, 0.0, 1.0, 1.0]);
+}
+
+// ARQ-44 (partial), D5: a cached tile of the other format is a miss, because a
+// `TileKey` carries no format and one cache may serve both qualities.
+#[test]
+fn arq_44_a_cached_tile_of_the_other_format_is_a_miss() {
+    let scene = plan(vec![task(
+        7,
+        IRect::new(0, 0, 16, 16),
+        vec![fill(0.0, 0.0, 16.0, 16.0, white())],
+    )]);
+    let mut cache = RecordingCache::with(vec![(key(7), solid_tile8(16, 16, [255, 0, 0, 255]))]);
+    let surface = run_with(
+        target(16, 16, (0, 0), PixelFormat::RgbaF32),
+        &scene,
+        &mut cache,
+    );
+    assert_eq!(
+        channels(&surface, 4, 4),
+        [1.0, 1.0, 1.0, 1.0],
+        "the fill is covered instead of reusing the 8-bit tile"
+    );
+    let stored = cache.stored(key(7)).expect("the tile");
+    assert!(
+        matches!(stored.data(), PixelBuf::RgbaF32(_)),
+        "the miss is written in the frame's format"
+    );
 }
 
 // ---------------------------------------------------------------------------

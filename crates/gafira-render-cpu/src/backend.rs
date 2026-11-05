@@ -7,6 +7,8 @@
 //! dropped: a backend that silently flattened a group would draw the wrong
 //! page and say the tile was done.
 
+use std::sync::Arc;
+
 use gafira_color::Color;
 use gafira_doc::BlendMode;
 use gafira_doc::contract::CancelToken;
@@ -14,13 +16,13 @@ use gafira_geom::{Affine, IRect};
 use gafira_ports::common::Bytes;
 use gafira_ports::render::{
     BackendCaps, BackendKind, Deadline, FrameCx, FrameId, MemoryUsage, RenderBackend, RenderError,
-    RenderOp, RenderPlan, RenderReport, TargetDesc, TileCache, TileTask,
+    RenderOp, RenderPlan, RenderReport, TargetDesc, TileCache, TileKey, TileTask,
 };
 use gafira_raster::{ImageBuf, PixelFormat, blend_f32};
 use kurbo::BezPath;
 
 use crate::coverage;
-use crate::surface::Surface;
+use crate::surface::{self, Surface};
 
 /// The CPU rasterizer (02 §2.1, §6.2).
 ///
@@ -75,14 +77,23 @@ impl RenderBackend for CpuBackend {
         &mut self,
         cx: &mut FrameCx,
         plan: &RenderPlan,
-        _cache: &mut dyn TileCache,
+        cache: &mut dyn TileCache,
         _deadline: Deadline,
         _cancel: &CancelToken,
     ) -> Result<RenderReport, RenderError> {
         let planned = plan.tasks.len();
+        let format = self.surface_of(cx)?.format();
         for task in &plan.tasks {
-            let tile = render_tile(task)?;
             let size = (task.region.width(), task.region.height());
+            let tile = match cached_tile(cache, task.key, size, format) {
+                Some(tile) => tile,
+                None => {
+                    let tile = render_tile(task)?;
+                    let encoded = surface::encode_tile(&tile, size, format)?;
+                    cache.put(task.key, Arc::new(encoded));
+                    tile
+                }
+            };
             self.surface_of(cx)?.write(task.region, &tile, size);
         }
         Ok(RenderReport {
@@ -108,6 +119,24 @@ impl RenderBackend for CpuBackend {
             self.frame = None;
         }
     }
+}
+
+/// The cached tile of `key`, when it is reusable as it stands.
+///
+/// `TileKey` carries no format (D5), so a caller may hand one cache to a
+/// preview and an export frame: a tile whose sizes or format differ from this
+/// frame is a miss, and the loop writes the right one back.
+fn cached_tile(
+    cache: &dyn TileCache,
+    key: TileKey,
+    size: (u32, u32),
+    format: PixelFormat,
+) -> Option<Vec<f32>> {
+    let tile = cache.get(&key)?;
+    if tile.width() != size.0 || tile.height() != size.1 || surface::format_of(&tile) != format {
+        return None;
+    }
+    surface::decode_tile(&tile).ok()
 }
 
 /// Renders one task into a tile-local premultiplied `f32` buffer.
