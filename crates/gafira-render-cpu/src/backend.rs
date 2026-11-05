@@ -24,7 +24,7 @@ use gafira_raster::{ImageBuf, PixelFormat, blend_f32};
 use kurbo::BezPath;
 
 use crate::coverage;
-use crate::layer::Layer;
+use crate::layer::Layers;
 use crate::surface::{self, Surface};
 
 /// The CPU rasterizer (02 §2.1, §6.2).
@@ -248,11 +248,11 @@ fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
     if count == 0 {
         return Ok(pixels);
     }
-    let mut layer = Layer::new();
+    let mut layers = Layers::new();
     for op in &task.ops {
         match op {
-            RenderOp::PushLayer => layer.push(count),
-            RenderOp::PopLayer { blend, opacity } => layer.pop(&mut pixels, *blend, *opacity)?,
+            RenderOp::PushLayer => layers.push(count),
+            RenderOp::PopLayer { blend, opacity } => layers.pop(&mut pixels, *blend, *opacity)?,
             RenderOp::FillPath {
                 path,
                 color,
@@ -263,7 +263,7 @@ fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
                 // control-point box, so the cull never drops a contributing op.
                 if coverage::meets(coverage::page_bounds(path, *transform), task.region) {
                     paint_fill(
-                        layer.target(&mut pixels),
+                        layers.target(&mut pixels),
                         size,
                         task.region,
                         path,
@@ -277,6 +277,11 @@ fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
             | RenderOp::ApplyEffect { .. }
             | RenderOp::ApplyTransition { .. } => return Err(not_in_this_delivery()),
         }
+    }
+    // The plan's stack is balanced (02 §6.1): a layer left open would have to
+    // be flattened by a guess, so the tile is refused instead.
+    if !layers.is_empty() {
+        return Err(RenderError::DriverBlocked);
     }
     Ok(pixels)
 }

@@ -1,38 +1,52 @@
-//! The layer the ops of a tile are drawn into (`CB2`, 02 §6.1).
+//! The layers the ops of a tile are drawn into (`CB2`, 02 §6.1).
 //!
 //! `PushLayer` opens a buffer the size of the tile, the ops between it and its
 //! `PopLayer` are drawn there, and the pop composites that buffer onto its
-//! parent with the pop's blend and opacity, **once** (ARQ-119). The layer's
-//! bounds are the task's: `PushLayer` carries no rectangle, so the buffer is
-//! the whole tile and nothing finer clips the group (02 §6.1, ARQ-149).
+//! parent — the layer below it, or the tile's own pixels — with the pop's blend
+//! and opacity, **once** (ARQ-119). The layer's bounds are the task's:
+//! `PushLayer` carries no rectangle, so the buffer is the whole tile and
+//! nothing finer clips the group (02 §6.1, ARQ-149).
 //!
-//! The buffer is linear-light premultiplied `f32`, the same type as the
+//! The buffers are linear-light premultiplied `f32`, the same type as the
 //! surface (O11), so a group costs memory per nesting level and nothing in
 //! conversion. There is no 8-bit layer path.
 //!
 //! The sixteen formulas belong to `gafira-raster` (ARQ-119). This module only
 //! chooses the operands: the layer's buffer is the **source** and the parent's
 //! pixels are the **backdrop**.
+//!
+//! The plan's stack is balanced (02 §6.1): every pop closes the layer its push
+//! opened. A pop with no layer open, and a layer left open at the end of the
+//! tile, are plans this backend cannot execute; the port carries no
+//! plan-validation error, so both are refused with the one it has for a plan
+//! that cannot run, [`RenderError::DriverBlocked`], instead of drawn with a
+//! guess.
 
 use gafira_doc::BlendMode;
 use gafira_ports::render::RenderError;
 use gafira_raster::blend_f32;
 
-/// The open layer of one tile, if any.
+/// The layers of one tile, outermost first.
 #[derive(Default)]
-pub(crate) struct Layer {
-    open: Option<Vec<f32>>,
+pub(crate) struct Layers {
+    open: Vec<Vec<f32>>,
 }
 
-impl Layer {
+impl Layers {
     /// A tile with no open layer.
     pub(crate) const fn new() -> Self {
-        Self { open: None }
+        Self { open: Vec::new() }
     }
 
-    /// The buffer the next op draws into: the open layer, or the tile's own.
+    /// True when every layer the plan pushed has been popped.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.open.is_empty()
+    }
+
+    /// The buffer the next op draws into: the innermost open layer, or the
+    /// tile's own pixels when there is none.
     pub(crate) fn target<'a>(&'a mut self, tile: &'a mut [f32]) -> &'a mut [f32] {
-        match self.open.as_mut() {
+        match self.open.last_mut() {
             Some(buffer) => buffer,
             None => tile,
         }
@@ -40,20 +54,27 @@ impl Layer {
 
     /// Opens a layer with a transparent buffer of `pixels` premultiplied values.
     pub(crate) fn push(&mut self, pixels: usize) {
-        self.open = Some(vec![0.0; pixels]);
+        self.open.push(vec![0.0; pixels]);
     }
 
-    /// Composites the open layer onto `tile` with `blend` and `opacity`.
+    /// Composites the innermost layer onto its parent with `blend` and `opacity`.
+    ///
+    /// # Errors
+    /// [`RenderError::DriverBlocked`] when no layer is open, and
+    /// [`RenderError::Buffer`] when the composite produces a non-finite value.
     pub(crate) fn pop(
         &mut self,
         tile: &mut [f32],
         blend: BlendMode,
         opacity: f32,
     ) -> Result<(), RenderError> {
-        let Some(source) = self.open.take() else {
-            return Ok(());
+        let Some(source) = self.open.pop() else {
+            return Err(RenderError::DriverBlocked);
         };
-        composite(tile, &source, blend, opacity)
+        match self.open.last_mut() {
+            Some(parent) => composite(parent, &source, blend, opacity),
+            None => composite(tile, &source, blend, opacity),
+        }
     }
 }
 

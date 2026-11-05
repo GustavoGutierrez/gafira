@@ -1183,3 +1183,68 @@ fn arq_119_all_sixteen_modes_composite_the_layer_as_source() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// CB2 AC4 — nested layers, the reverse pop order, the unbalanced plan
+// ---------------------------------------------------------------------------
+
+// ARQ-119, 02 §6.1: the pops happen in the reverse order of the pushes, each
+// with its own blend and opacity, and an inner layer does not overwrite the one
+// it sits in: outside the inner fill the parent's ink survives, and where the
+// inner layer covers it the half opacity of the inner pop is what shows.
+#[test]
+fn arq_119_nested_layers_pop_in_the_reverse_order_of_their_pushes() {
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 4, 1),
+        vec![
+            push(),
+            fill(0.0, 0.0, 4.0, 1.0, srgb(1.0, 0.0, 0.0, 1.0)),
+            push(),
+            fill(2.0, 0.0, 4.0, 1.0, srgb(1.0, 1.0, 1.0, 1.0)),
+            pop(BlendMode::Normal, 0.5),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let surface = run(target(4, 1, (0, 0), PixelFormat::RgbaF32), &scene);
+    assert_eq!(
+        channels(&surface, 0, 0),
+        [1.0, 0.0, 0.0, 1.0],
+        "outside the inner layer the parent's red survives"
+    );
+    assert_eq!(
+        channels(&surface, 3, 0),
+        [1.0, 0.5, 0.5, 1.0],
+        "the inner layer at half opacity over the red parent"
+    );
+}
+
+// ARQ-119, 02 §6.1: a plan that pops without pushing, or leaves a layer open,
+// is refused instead of drawn with a guess. The port carries no plan-validation
+// error, so the refusal is the one the adapter uses for a plan it cannot
+// execute: `DriverBlocked`.
+#[test]
+fn arq_119_an_unbalanced_plan_is_refused() {
+    let cases = [
+        ("a pop with no push", vec![pop(BlendMode::Normal, 1.0)]),
+        (
+            "a push with no pop",
+            vec![push(), fill(0.0, 0.0, 8.0, 8.0, srgb(1.0, 0.0, 0.0, 1.0))],
+        ),
+    ];
+    for (case, ops) in cases {
+        let scene = plan(vec![task(1, IRect::new(0, 0, 8, 8), ops)]);
+        let mut frame = Frame::open(
+            CpuBackend::new(),
+            target(8, 8, (0, 0), PixelFormat::RgbaF32),
+        );
+        let mut cache = RecordingCache::default();
+        let error = frame
+            .execute(&scene, &mut cache, &CancelToken::new())
+            .expect_err(case);
+        assert!(
+            matches!(error, RenderError::DriverBlocked),
+            "{case}: refused, not drawn: {error:?}"
+        );
+    }
+}
