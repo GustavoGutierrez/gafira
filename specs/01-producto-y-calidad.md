@@ -287,6 +287,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 ### 9.2 Método de medición común
 
 - Cada criterio tiene un benchmark en `gafira-cli bench` o `criterion` y un umbral en `perf-budgets.toml` (ARQ-40). El job nocturno en la máquina de referencia (*self-hosted*) falla si una métrica supera su umbral o empeora más de un 10 % frente a la base.
+- **Cifras medidas antes de que exista la puerta**: `perf-budgets.toml` y el job nocturno son el cambio de ARQ-40 (02 §6.7), así que hoy no existen. Una cifra medida con un *benchmark* de `criterion` mientras tanto queda como medición registrada y no rompe CI. CAL-11 es la primera: la mide `bench_export_png_1080` al construir el motor CPU y su número no es un criterio de CI hasta que la puerta exista.
 - Los percentiles se calculan sobre ≥ 300 muestras tras calentar; se reporta p50, p95 y p99. Los documentos de prueba son sintéticos y reproducibles (`gafira-testkit`: 100 capas, 20 páginas, video de 3 pistas, Reel de 60 s).
 - Las cifras de la tabla están **fijadas** por el titular (D-03: «las demás cifras propuestas en 02 pasan de PROPUESTA a fijadas»). Los criterios marcados **VERIFICAR** requieren un *spike* técnico antes de comprometerlos.
 - La medición de la experiencia (CAL-20) es una prueba de usabilidad con personas, no una prueba de CI.
@@ -305,7 +306,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-08 | Arranque hasta el primer frame interactivo de Inicio, incluida la Pantalla de arranque | < 5 s (objetivo interno < 2 s, FIJADA) | PRD | Gama media | `gafira --bench-startup` | RNF-02, RF-67 |
 | CAL-09 | Abrir un proyecto de 20 páginas | < 3 s hasta la primera página interactiva | PRD | Gama media | `bench_open_20_pages` | RF-01 |
 | CAL-10 | Abrir un documento de 100 capas | < 500 ms | spec técnica | Gama media | `bench_open_100_layers` | RF-02 |
-| CAL-11 | Exportar PNG de 1080p | < 2 s | spec técnica | Gama media | `bench_export_png_1080` | RF-31 |
+| CAL-11 | Exportar PNG de 1080p | < 2 s | spec técnica | Gama media | `bench_export_png_1080` (`criterion`); medición registrada, sin puerta hasta el cambio de ARQ-40 (§9.2) | RF-31 |
 | CAL-12 | Rango de zoom | 5 %–3200 %, vector sin pixelado a 3200 % | PRD | Gama media | Prueba funcional y golden | RF-09 |
 | CAL-13 | Vista previa de video de 60 s con 3 pistas | Frames de UI p99 < 16,7 ms durante la reproducción | PRD | Gama media | `bench_playback_3tracks` | RF-43 |
 | CAL-14 | Scrubbing 1080p | ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) | PRD (cifra: FIJADA) | Gama media | `bench_scrub_1080` | RF-43 |

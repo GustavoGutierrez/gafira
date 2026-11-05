@@ -1509,7 +1509,7 @@ Otras cifras (FIJADAS, D-03):
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-40 | Cada cifra de §6.7 tiene un benchmark con umbral en `perf-budgets.toml`. | El job nocturno en la máquina de referencia falla si una métrica empeora por encima de su umbral o un 10 % respecto a la base. |
+| ARQ-40 | Cada cifra de §6.7 tiene un benchmark con umbral en `perf-budgets.toml`. `perf-budgets.toml` y el job nocturno de la máquina de referencia los construye el cambio de esta fila; ningún otro los crea antes. Mientras no existan, una cifra medida con `criterion` queda registrada y no es una puerta de CI (01 §9.2, CAL-11). | El job nocturno en la máquina de referencia falla si una métrica empeora por encima de su umbral o un 10 % respecto a la base. |
 | ARQ-41 | El hilo de UI nunca bloquea más de 16 ms por trabajo del engine. | Instrumentación `tracing`: en la suite E2E, 0 spans de más de 16 ms en el hilo principal fuera de diálogos del SO. |
 | ARQ-42 | La vista previa y la exportación comparten el grafo. | La prueba golden compara la vista previa al 100 % en CPU con la exportación con diferencia ≤ 1/255 por canal en el 99,9 % de los píxeles. |
 | ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. En `gafira-segment` no hay reloj, ni en sus *benchmarks* (ARQ-02): `bench_cancel_segment` mide el tramo de trabajo más largo entre dos comprobaciones del token con una imagen de 4000 px, y ese tiempo acota la respuesta por arriba. |
