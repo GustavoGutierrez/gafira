@@ -593,6 +593,16 @@ Consequence for `O2`: `specifier` amends ARQ-06 before `CB3` writes the comparis
 
 What this round does **not** settle, and which delivery still carries the risk: `XP2` (preview and export agreeing at 1/255) blocks `CB3` and was not measured here; `XP3`'s byte-identity across targets needs the CI matrix, because linking fails locally on macOS and Windows; and `CB1`'s real pixel cost awaits the backend, measured here only as parts.
 
+### O10. The rigor of O8 carries over to this change — decided by the owner on 2026-11-05
+
+`tdd-apply` applies the hand mutants of the critical code of every delivery and kills each one before committing, and every commit passes its gates. `verify` runs at **V1**, once per group of deliveries. The crate-wide **T4 does not run**: what line 461 says about T4 covering the three crates is superseded by this decision.
+
+Reason: the owner's third consecutive answer of the same kind, after O4 and O8. The hand mutants and the gates carry the correctness; the crate-wide mutation run is the part judged not worth its cost.
+
+What it costs: a defect that only a whole-crate mutation run would find can reach `develop`. The V2 round of `ME1` and the combined round of `layer-3b` each found one defect of that family, so the risk is not hypothetical. The hand mutants on the critical code stay, and they are what caught the content-key collision and the proxy budget.
+
+Reversible: yes, and the only thing it needs is time. `cargo mutants` can run on the three touched crates at any later point.
+
 ### O11. The preview composites in `f32` and quantises once, at the end — decided by the owner on 2026-11-05
 
 `XP2` measured what `D8` assumed and contradicted it: the 8-bit preview path does not reach ARQ-42's tolerance on nested semi-transparent groups. One group leaves 0.244 % of the pixels out, two leave 1.001 %, three leave 3.369 %, and the worst case — three groups at alpha 0.5 — leaves 12.866 %, with differences up to 3/255. The cause is structural: each intermediate buffer quantises its premultiplied value, and `blend_u8`'s unpremultiply divides that error by the alpha, so a group at alpha 0.5 doubles it.
