@@ -1,0 +1,18 @@
+[package]
+name = "gafira-render-cpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-geom.workspace = true
+gafira-color.workspace = true
+gafira-raster.workspace = true
+tiny-skia.workspace = true
+
+[lints]
+workspace = true
