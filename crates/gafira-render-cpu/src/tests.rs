@@ -382,6 +382,69 @@ fn arq_119_the_fill_is_drawn_at_the_region_of_the_task_in_both_formats() {
     }
 }
 
+// ARQ-119: the op's placement transform reaches the coverage, not only the
+// path: a non-uniform scale is the shape whose coefficients cannot be
+// transposed and still agree.
+#[test]
+fn arq_119_the_placement_transform_reaches_the_coverage() {
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 64, 64),
+        vec![RenderOp::FillPath {
+            path: Arc::new(rect_path(0.0, 0.0, 10.0, 10.0)),
+            color: white(),
+            // 10 × 10 become 20 × 30 at the page origin.
+            transform: Affine::new([2.0, 0.0, 0.0, 3.0, 0.0, 0.0]),
+        }],
+    )]);
+    let surface = run(target(64, 64, (0, 0), PixelFormat::RgbaF32), &scene);
+    assert!(
+        is_white(&surface, 15, 25),
+        "page (15, 25) is inside 20 × 30"
+    );
+    assert!(
+        is_white(&surface, 19, 29),
+        "page (19, 29) is the far corner"
+    );
+    assert!(
+        is_clear(&surface, 25, 15),
+        "page (25, 15) is outside: a transposed scale would fill it"
+    );
+    assert!(is_clear(&surface, 5, 35), "page (5, 35) is outside");
+}
+
+// ARQ-119: the coverage is the **source alpha** of the fill. Over an opaque
+// backdrop, half a pixel of an opaque white fill leaves the backdrop's alpha
+// at one and moves its colour by the coverage alone.
+#[test]
+fn arq_119_the_coverage_is_the_source_alpha_of_the_fill() {
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 2, 1),
+        vec![
+            fill(0.0, 0.0, 2.0, 1.0, srgb(0.0, 0.0, 0.0, 1.0)),
+            // The left half of the first pixel only.
+            fill(0.0, 0.0, 0.5, 1.0, white()),
+        ],
+    )]);
+    let surface = run(target(2, 1, (0, 0), PixelFormat::RgbaF32), &scene);
+    let [r, g, b, a] = channels(&surface, 0, 0);
+    assert_eq!(
+        a, 1.0,
+        "the backdrop stays opaque: coverage is not its alpha"
+    );
+    assert!(r == g && g == b, "a grey source over black: {r} {g} {b}");
+    assert!(
+        (0.49..=0.51).contains(&r),
+        "half a pixel of coverage moves the colour by about a half, not by a quarter: {r}"
+    );
+    assert_eq!(
+        channels(&surface, 1, 0),
+        [0.0, 0.0, 0.0, 1.0],
+        "the second pixel is outside the fill and keeps the backdrop"
+    );
+}
+
 // ARQ-117: the target's format decides the surface, and only `Rgba8` and
 // `RgbaF32` are render targets.
 #[test]
