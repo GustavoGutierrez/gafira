@@ -985,7 +985,7 @@ pub trait Translator: Send + Sync {                                       // gaf
 
 ### 4.17 Contratos de los motores de capa 2 y de la capa de aplicación
 
-Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y el de los dos motores de la capa de aplicación, `gafira-render` (§4.17.7) y `gafira-media` (§4.17.8). Las fichas de 04 y 05 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
+Esta sección hace ejecutable el primer corte de `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, el de los dos motores de la capa de aplicación, `gafira-render` (§4.17.7) y `gafira-media` (§4.17.8), y el del adaptador CPU que los ejecuta (§4.17.9). Las fichas de 04 y 05 fijan lo que ve el usuario; aquí están las reglas comunes y lo que no tiene ficha en el MVP. Cada crate tiene una tabla con lo que entra en su primer corte y una lista de casos numéricos.
 
 Orden de ejecución sugerido: `gafira-layout`, `gafira-text`, `gafira-raster`, `gafira-audio` y `gafira-segment`, y después `gafira-render` y `gafira-media`. Las únicas aristas entre motores son `text → pathops` y `segment → raster` (§2.2, ADR 0007); los dos motores de la capa de aplicación no tienen arista entre sí (ADR 0015).
 
@@ -1272,6 +1272,26 @@ Hueco conocido y aceptado (D-45, Q-45): un fondo texturizado a ΔE76 6 queda fue
 | Rango de duración cero | No da `panic` y no produce fotogramas. | ARQ-147 |
 | Índice de keyframes vacío | No da `panic`: no hay keyframe al que caer. | ARQ-144 |
 
+#### 4.17.9 `gafira-render-cpu`
+
+`gafira-render-cpu` es el adaptador que ejecuta el plan: recibe un `ports::RenderPlan` con sus `RenderOp` y entrega los píxeles de esa tarea en la calidad pedida (§4.6). Es capa 4 y el oráculo de las pruebas golden (§2.1, §4.5, ARQ-113). No planifica, no elige motor y no depende de `gafira-render` (ARQ-06): el grafo, la caché de tiles y el reparto del frame son de `gafira-render` (§4.17.7). Cada llamada a `execute` trae **una** tarea, un tile (§6.7), y el adaptador compone ese tile: no reparte tiles entre hilos.
+
+| Primer corte | Fuera del corte |
+|---|---|
+| 02 §4.5 (`PageRenderer`), §4.6 (`RenderBackend`: `caps`, `begin_frame`, `execute`, `read_back`, `memory_usage`, `trim`; `TileCache`), §6.1, §6.2 (las dos calidades), §6.7 (CAL-11); ARQ-06, ARQ-42, ARQ-43, ARQ-111, ARQ-113, ARQ-117, ARQ-119, ARQ-121, ARQ-138, ARQ-142, ARQ-149; CAL-11 (medida, 01 §9.2) | `gafira-render-gpu`, que es otro adaptador. `gafira-io-image` y los exportadores, que son capa 4. El paralelismo por tiles, que es de `gafira-render` (§6.3, §6.7). La emisión de máscaras, efectos y transiciones desde el documento: las tres variantes se implementan, pero ningún documento las produce. La puerta de rendimiento de CAL-11 (`perf-budgets.toml` y el job nocturno, ARQ-40). Los formatos `f16`, los formatos de GPU y CMYK (ARQ-117, FD-56). |
+
+**Calidades y formatos.** Las dos calidades de §6.2 son las dos únicas que ejecuta: `RenderQuality::Preview` entrega `Rgba8` sRGB premultiplicado y `RenderQuality::Export` entrega `RgbaF32` en luz lineal, premultiplicado. Lo que entrega el puerto no dice cómo acumula: la vista previa acumula en `f32` y cuantiza una sola vez, al entregar la superficie, y la exportación acumula en `f32` lineal de principio a fin. Premultiplicar y despremultiplicar siguen ARQ-117; los 16 modos de mezcla son los de `gafira-raster` y el adaptador los usa, no los redefine (ARQ-119). El grafo es el mismo en las dos calidades y solo cambian los parámetros (ARQ-42).
+
+**Orden de cobertura.** El primer corte entra por operaciones y en este orden: (1) superficie del tamaño del destino, bucle de tiles, caché, cancelación y `FillPath` con cobertura de 8 bits en las dos calidades; (2) pila de capas, `PushLayer` y `PopLayer` con opacidad y los 16 modos, anidados sobre búferes del tamaño del tile; (3) la prueba de ARQ-42 —vista previa al 100 % contra exportación— y el comparador de ARQ-113; (4) `DrawImage` con remuestreo afín y filtro bilineal, premultiplicado en las dos calidades; (5) `ApplyMask`, `ApplyEffect` sobre el ROI del tile y `ApplyTransition`; (6) el banco de exportación de CAL-11 y la medición de cancelación de ARQ-43. El reparto en entregas y su orden están en el diseño del cambio; esta ficha fija el alcance del conjunto.
+
+Le valen las reglas comunes de ARQ-111 (determinismo: los mismos bytes con 1, 2 y 4 hilos) y de ARQ-114 (sus cifras no son una puerta de `cargo test`).
+
+| Caso numérico | Regla | ID |
+|---|---|---|
+| Cobertura de un borde suavizado | 8 bits, una sola vez y compartida por las dos calidades: la exportación no tiene cobertura más fina que la vista previa. | ARQ-42, ARQ-117 |
+| Premultiplicado en 8 bits | `(c × a + 127) / 255` con división entera; despremultiplicar con `a = 0` da `(0, 0, 0, 0)`. | ARQ-117 |
+| Tile de nivel 0 | 256 × 256 px de página. El adaptador no deriva la rejilla ni traslada las operaciones: llegan en coordenadas de página, con la región y el origen de ARQ-149. | ARQ-121, ARQ-149 |
+
 ---
 
 ## 5. Patrones transversales
@@ -1463,7 +1483,7 @@ Otras cifras (FIJADAS, D-03):
 | Pantalla de arranque visible ≥ 1,2 s (D-09) y aviso de carga lenta a los 5 s (PROPUESTA) | Temporizador de la Pantalla de arranque sobre el reloj inyectado (`Clock`); cierre con `StartupFinished` | `splash_visible_ms` ≥ 1200 y ≤ `max(1200, pasos bloqueantes) + 1 frame`; pruebas con arranque simulado (03 DIS-82) |
 | Abrir proyecto de 20 páginas < 3 s (PRD) | Manifiesto y JSON por página; render de la página visible primero; miniaturas guardadas en el archivo; recursos bajo demanda | `bench_open_20_pages` < 3 s hasta la primera página interactiva |
 | Abrir documento de 100 capas < 500 ms (spec) | Deserialización serde directa, sin pasos intermedios; textos maquetados de forma perezosa | `bench_open_100_layers` < 500 ms |
-| Exportar PNG 1080p < 2 s (spec) | Render CPU en tiles paralelos; codificador PNG con compresión rápida por defecto | `bench_export_png_1080` < 2 s |
+| Exportar PNG 1080p < 2 s (spec) | Render CPU secuencial, un tile por llamada a `execute` (§4.6), con el descarte de las operaciones que no tocan el tile; codificador PNG con compresión rápida por defecto | `bench_export_png_1080` < 2 s |
 | Zoom 5 %–3200 % (PRD) | Mipmaps y re-rasterización vectorial al nivel exacto | Prueba funcional en los límites y golden a 3200 % sin pixelado del vector |
 | Video de 60 s con 3 pistas sin bloquear la UI (PRD) | Decodificación en hilos propios; caché de fotogramas; reloj de audio | `bench_playback_3tracks`: frames de UI p99 < 16,7 ms durante la reproducción |
 | Scrubbing 1080p fluido (PRD) | Proxies intra, prefetch y fotograma más cercano en caché | `bench_scrub_1080`: ≥ 24 actualizaciones/s; búsqueda en caché < 50 ms, sin caché < 250 ms (FIJADA) |
@@ -1489,12 +1509,14 @@ Otras cifras (FIJADAS, D-03):
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-40 | Cada cifra de §6.7 tiene un benchmark con umbral en `perf-budgets.toml`. | El job nocturno en la máquina de referencia falla si una métrica empeora por encima de su umbral o un 10 % respecto a la base. |
+| ARQ-40 | Cada cifra de §6.7 tiene un benchmark con umbral en `perf-budgets.toml`. `perf-budgets.toml` y el job nocturno de la máquina de referencia los construye el cambio de esta fila; ningún otro los crea antes. Mientras no existan, una cifra medida con `criterion` queda registrada y no es una puerta de CI (01 §9.2, CAL-11). | El job nocturno en la máquina de referencia falla si una métrica empeora por encima de su umbral o un 10 % respecto a la base. |
 | ARQ-41 | El hilo de UI nunca bloquea más de 16 ms por trabajo del engine. | Instrumentación `tracing`: en la suite E2E, 0 spans de más de 16 ms en el hilo principal fuera de diálogos del SO. |
-| ARQ-42 | La vista previa y la exportación comparten el grafo. | La prueba golden compara la vista previa al 100 % en CPU con la exportación con diferencia ≤ 1/255 por canal en el 99,9 % de los píxeles. |
+| ARQ-42 | La vista previa y la exportación comparten el grafo. | La prueba golden compara la vista previa al 100 % en CPU con la exportación con diferencia ≤ 1/255 por canal en el 99,9 % de los píxeles. El espacio de comparación es el de §10: 8 bits sRGB premultiplicado, con la exportación codificada según ARQ-117 antes de comparar. |
 | ARQ-43 | La cancelación responde en ≤ 100 ms. | Cancelar una exportación 4K o una segmentación devuelve el control en ≤ 100 ms. En `gafira-segment` no hay reloj, ni en sus *benchmarks* (ARQ-02): `bench_cancel_segment` mide el tramo de trabajo más largo entre dos comprobaciones del token con una imagen de 4000 px, y ese tiempo acota la respuesta por arriba. |
 | ARQ-44 | Las cachés respetan el `MemoryGovernor`. Toda caché que el gobernador pueda recortar expone `bytes()` y `trim(budget)`, las dos en **bytes**: `bytes()` da el tamaño actual de la caché y `trim(budget)` la deja por debajo o igual al presupuesto dado. El gobernador recorta primero la caché de fotogramas (§6.5). | Ver la prueba del límite de memoria en §6.7. Con un límite de 1 GB, el proceso no lo supera más de un 10 % al abrir el documento de 20 páginas. Con un `trim` a la mitad del tamaño actual, `bytes()` da ≤ la mitad; con un presupuesto mayor que el tamaño actual, `trim` no cambia nada. |
 | ARQ-45..ARQ-49 | Reservados. | — |
+
+**Sobre «tiles paralelos» (CAL-11).** La técnica que §6.3 atribuye a `gafira-render` —el paralelismo por tiles— no es la de este corte: `RenderBackend::execute` recibe un plan con una sola tarea y el bucle de frame lo llama tile por tile (§4.6), así que el adaptador no puede repartir tiles entre hilos. La cifra se mide con ese bucle secuencial, y lo único paralelizable dentro del contrato de hoy es el interior de un tile, por bandas de filas, con un pool que llega por parámetro (ARQ-138). El paralelismo por tiles llega con un cambio de `gafira-render` que entregue lotes de tiles o un pool al bucle de frame; hasta entonces el motor CPU es secuencial y el número de CAL-11 no depende de los núcleos.
 
 ---
 
@@ -1876,6 +1898,8 @@ Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el 
 | E2E | Flujos completos sin UI (Facade) y con UI (`egui_kittest`, VERIFICAR) | `cargo test --test e2e` | Flujos del MVP en verde en las 3 plataformas |
 | Robustez | Kill aleatorio, inyección de fallos de E/S y GPU, límites de memoria | Arneses de testkit | §6.7 y §7 |
 | Localización | Cobertura de claves es/en, parámetros y plurales; regla de D-08; formatos por idioma; seudo-localización con capturas; texto literal en la UI | `xtask check-i18n`, `xtask check-ui-literals`, `cargo test -p gafira-i18n`, E2E con `PseudoTranslator` | 100 % de claves en los dos idiomas; 0 literales; 0 truncados sin tooltip (§14.7) |
+
+**Espacio de comparación de la tolerancia.** La tolerancia de esta tabla y la de ARQ-42 se miden en un solo espacio: 8 bits sRGB **premultiplicado**, sobre la misma región de la misma imagen. La vista previa ya está ahí: su superficie se entrega en `Rgba8`. La exportación está en `RgbaF32` en luz lineal y se codifica antes de comparar, con las reglas de ARQ-117: despremultiplicar (con `a = 0` da `(0, 0, 0, 0)`), aplicar la curva sRGB, cuantizar a 8 bits y volver a premultiplicar con `(c × a + 127) / 255`. El orden es parte de la regla: primero se codifica con ARQ-117 y después se comparan los dos búferes de 8 bits. Nunca se compara el `f32` crudo de la exportación contra los 8 bits de la vista previa, porque esa diferencia mide la curva de transferencia y el redondeo, no el rasterizado.
 
 ### 10.1 CI
 

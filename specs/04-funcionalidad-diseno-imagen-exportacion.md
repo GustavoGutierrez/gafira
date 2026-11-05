@@ -658,7 +658,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 | **SVG** | Texto como contornos (por defecto) o como texto; imágenes incrustadas | Los efectos no representables se rasterizan con aviso; sin referencias externas |
 
 - *UI*: Exportar → Formato.
-- *Técnica*: `Exporter` en `gafira-io-image` (PNG, JPEG, WebP, GIF) y `gafira-io-svg`; render en `RenderQuality::Export` (f32 en luz lineal, CPU por defecto; 02 §6.2) con tiles paralelos.
+- *Técnica*: `Exporter` en `gafira-io-image` (PNG, JPEG, WebP, GIF) y `gafira-io-svg`; render en `RenderQuality::Export` (f32 en luz lineal, CPU por defecto; 02 §6.2), con el bucle de frame secuencial de hoy y el paralelismo por tiles del lado de `gafira-render` (02 §6.7).
 - *Formatos*: PNG, JPEG, WebP, GIF animado y SVG en el MVP.
 - *Presupuesto*: **PNG de 1080p < 2 s** (CAL-11); JPEG y WebP de 1080p < 3 s (PROPUESTA); exportación en segundo plano sin bloquear la UI.
 - *Aceptación*: (a) `bench_export_png_1080` < 2 s; (b) un PNG con fondo transparente tiene alfa 0 donde no hay contenido (comparación de píxeles); (c) la vista previa y la exportación difieren ≤ 1/255 en el 99,9 % de los píxeles (ARQ-42, CAL-34); (d) cancelar devuelve el control en ≤ 100 ms sin dejar archivo parcial (ARQ-43, ARQ-50).
