@@ -83,6 +83,13 @@ fn tile_key(column: u32) -> TileKey {
     }
 }
 
+/// The page region of the tile in `column` (ARQ-149): 256 px per side at the
+/// level zero.
+fn tile_region(column: u32) -> IRect {
+    let x0 = column as i32 * 256;
+    IRect::new(x0, 0, x0 + 256, 256)
+}
+
 impl RenderBackend for TickBackend {
     fn caps(&self) -> BackendCaps {
         BackendCaps {
@@ -146,6 +153,7 @@ fn plan(n: u32) -> RenderPlan {
             .map(|column| TileTask {
                 key: tile_key(column),
                 priority: Priority::Visible,
+                region: tile_region(column),
                 ops: vec![RenderOp::PushLayer],
             })
             .collect(),
@@ -156,6 +164,7 @@ fn target(format: PixelFormat) -> TargetDesc {
     TargetDesc {
         width: 1,
         height: 1,
+        origin: (0, 0),
         format,
     }
 }

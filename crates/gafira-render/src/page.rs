@@ -195,9 +195,12 @@ impl PageRenderer for GraphPageRenderer {
             paint_background(&mut plan, extent);
         }
 
+        // ARQ-149: the surface sits at the corner of the region the request
+        // asked for, in page pixels; the operations keep their page geometry.
         let target = TargetDesc {
             width: region.width(),
             height: region.height(),
+            origin: (request.region.x0, request.region.y0),
             format,
         };
         let mut frame = self.frame.lock().unwrap_or_else(PoisonError::into_inner);
@@ -438,6 +441,7 @@ mod tests {
     struct Ran {
         quality: RenderQuality,
         keys: Vec<TileKey>,
+        regions: Vec<IRect>,
         ops: Vec<Vec<OpShape>>,
     }
 
@@ -532,6 +536,7 @@ mod tests {
             let ran = Ran {
                 quality: plan.quality,
                 keys: plan.tasks.iter().map(|task| task.key).collect(),
+                regions: plan.tasks.iter().map(|task| task.region).collect(),
                 ops: plan.tasks.iter().map(|task| shapes(&task.ops)).collect(),
             };
             let at = {
@@ -684,6 +689,7 @@ mod tests {
             vec![TargetDesc {
                 width: 200,
                 height: 150,
+                origin: (0, 0),
                 format: PixelFormat::Rgba8,
             }]
         );
@@ -695,6 +701,61 @@ mod tests {
             .expect("the page renders again");
         let (_, _, _, hits) = seen(&record);
         assert_eq!(hits, 1, "the second render reads the tile of the first");
+    }
+
+    // ARQ-149: a request whose region does not start at the page origin
+    // carries that origin in the target, and its tasks carry regions clipped to
+    // the requested region.
+    #[test]
+    fn arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks() {
+        let document = document(&[(1000, 1000)]);
+        let page = document.pages()[0].id;
+        for (region, origin) in [
+            (IRect::new(100, 100, 356, 356), (100, 100)),
+            (IRect::new(0, 0, 356, 356), (0, 0)),
+        ] {
+            let (renderer, record) = renderer(
+                document.clone(),
+                RenderQuality::Preview,
+                RecordingBackend::new(),
+            );
+            let image = renderer
+                .render(&request(page, region, 1.0, true), &CancelToken::new())
+                .expect("the page renders");
+            let (width, height) = (region.width(), region.height());
+            assert_eq!((image.width(), image.height()), (width, height));
+            let (targets, ran, reads, _) = seen(&record);
+            // The surface sits where the request asked for, not at the page
+            // origin.
+            assert_eq!(
+                targets,
+                vec![TargetDesc {
+                    width,
+                    height,
+                    origin,
+                    format: PixelFormat::Rgba8,
+                }]
+            );
+            // Every task carries its place in page pixels, clipped to the
+            // requested region.
+            let regions: Vec<IRect> = ran
+                .iter()
+                .flat_map(|plan| plan.regions.iter().copied())
+                .collect();
+            assert!(!regions.is_empty(), "{origin:?} plans its tiles");
+            for tile in &regions {
+                assert_eq!(
+                    *tile,
+                    tile.intersect(region),
+                    "{origin:?} plans {tile:?}, outside {region:?}"
+                );
+            }
+            // The tile of the request's corner is the first one of the page
+            // grid, clipped to the request.
+            let corner = IRect::new(origin.0, origin.1, 256, 256);
+            assert!(regions.contains(&corner), "{origin:?} plans {regions:?}");
+            assert_eq!(reads, vec![IRect::new(0, 0, width as i32, height as i32)]);
+        }
     }
 
     // ARQ-42, AC3: the preview is 8-bit sRGB premultiplied at the zoom, the

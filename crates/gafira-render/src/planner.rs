@@ -123,6 +123,7 @@ impl RenderPlan {
                 .map(|tile| gafira_ports::render::TileTask {
                     key: tile.key,
                     priority: tile.priority,
+                    region: tile.region,
                     ops: tile.ops,
                 })
                 .collect(),
@@ -397,7 +398,7 @@ mod tests {
         ElementBase, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry,
         ShapeNode,
     };
-    use gafira_geom::{Length, Unit};
+    use gafira_geom::{Affine, Length, Unit};
     use gafira_ports::render::Priority;
     use gafira_testkit::progress::check_progress_contract;
     use gafira_time::Flicks;
@@ -460,6 +461,31 @@ mod tests {
                     tile.region,
                     tile.ops.iter().map(|op| op_kind(op)).collect(),
                 )
+            })
+            .collect()
+    }
+
+    /// The regions of the port plan, by tile position.
+    fn port_regions(plan: RenderPlan) -> Vec<((u32, u32), IRect)> {
+        let mut tasks: Vec<((u32, u32), IRect)> = plan
+            .into_ports_plan()
+            .tasks
+            .into_iter()
+            .map(|task| ((task.key.row, task.key.column), task.region))
+            .collect();
+        tasks.sort_by_key(|(position, _)| *position);
+        tasks
+    }
+
+    /// The transform of every fill of the port plan, in plan order.
+    fn fill_transforms(plan: RenderPlan) -> Vec<Affine> {
+        plan.into_ports_plan()
+            .tasks
+            .iter()
+            .flat_map(|task| task.ops.iter())
+            .filter_map(|op| match op {
+                RenderOp::FillPath { transform, .. } => Some(*transform),
+                _ => None,
             })
             .collect()
     }
@@ -695,6 +721,153 @@ mod tests {
             .find(|tile| tile.key.column == 0 && tile.key.row == 0)
             .expect("the first tile is there");
         assert_eq!(first.region, IRect::new(100, 100, 256, 256));
+    }
+
+    // ARQ-149: the plan carries the place of every tile, in page pixels
+    // clipped to the viewport, and no backend re-derives it from the key.
+    #[test]
+    fn arq_149_the_plan_carries_the_clipped_region_of_every_tile() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        // The viewport starts and ends in the middle of a tile, so every tile
+        // of the plan is clipped.
+        let viewport = Viewport {
+            rect: IRect::new(100, 100, 356, 356),
+            zoom: 1.0,
+            focus: None,
+        };
+        assert_eq!(
+            port_regions(plan(&graph, extent, &viewport)),
+            vec![
+                ((0, 0), IRect::new(100, 100, 256, 256)),
+                ((0, 1), IRect::new(256, 100, 356, 256)),
+                ((1, 0), IRect::new(100, 256, 256, 356)),
+                ((1, 1), IRect::new(256, 256, 356, 356)),
+            ]
+        );
+    }
+
+    // ARQ-149: a viewport smaller than a tile clips its only tile.
+    #[test]
+    fn arq_149_a_viewport_smaller_than_a_tile_clips_its_only_tile() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        let viewport = Viewport {
+            rect: IRect::new(0, 0, 100, 100),
+            zoom: 1.0,
+            focus: None,
+        };
+        assert_eq!(
+            port_regions(plan(&graph, extent, &viewport)),
+            vec![((0, 0), IRect::new(0, 0, 100, 100))]
+        );
+    }
+
+    // ARQ-149: the level of a tile does not change the unit of its region: a
+    // full tile of level one covers 512 page pixels per side, not 256.
+    #[test]
+    fn arq_149_a_full_tile_of_level_one_covers_512_page_pixels() {
+        let page = new_page(1024, 1024);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1024,
+            height: 1024,
+        };
+        let viewport = Viewport {
+            rect: IRect::new(0, 0, 1024, 1024),
+            zoom: 2.0,
+            focus: None,
+        };
+        let planned = plan(&graph, extent, &viewport);
+        assert_eq!(planned.level(), 1);
+        let regions = port_regions(planned);
+        assert_eq!(regions.len(), 4);
+        assert_eq!(regions[0], ((0, 0), IRect::new(0, 0, 512, 512)));
+    }
+
+    // ARQ-149: the operations stay in page coordinates; the plan does not
+    // translate them to the surface of the request.
+    #[test]
+    fn arq_149_the_plan_does_not_translate_the_operations() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        let at_origin = Viewport {
+            rect: IRect::new(0, 0, 356, 356),
+            zoom: 1.0,
+            focus: None,
+        };
+        let offset = Viewport {
+            rect: IRect::new(100, 100, 456, 456),
+            zoom: 1.0,
+            focus: None,
+        };
+        let first = fill_transforms(plan(&graph, extent, &at_origin));
+        let second = fill_transforms(plan(&graph, extent, &offset));
+        assert!(!first.is_empty(), "the graph emits a fill");
+        assert_eq!(first, second, "the plan translates no operation");
+        // The two plans really are different plans of the same page.
+        assert_ne!(
+            port_regions(plan(&graph, extent, &at_origin)),
+            port_regions(plan(&graph, extent, &offset))
+        );
+    }
+
+    // ARQ-149: no task of the plan has an empty region, and a region never
+    // leaves the page or the viewport.
+    #[test]
+    fn arq_149_no_task_of_the_plan_has_an_empty_region() {
+        let page = new_page(1000, 1000);
+        let graph = build(&page);
+        let extent = PageExtent {
+            width: 1000,
+            height: 1000,
+        };
+        let page_rect = IRect::new(0, 0, 1000, 1000);
+        for rect in [
+            page_rect,
+            IRect::new(0, 0, 100, 100),
+            IRect::new(900, 900, 1600, 1600),
+            IRect::new(1000, 1000, 1200, 1200),
+            IRect::new(2000, 2000, 2100, 2100),
+        ] {
+            let viewport = Viewport {
+                rect,
+                zoom: 1.0,
+                focus: None,
+            };
+            let regions = port_regions(plan(&graph, extent, &viewport));
+            assert!(
+                regions.iter().all(|(_, region)| !region.is_empty()),
+                "{rect:?} plans an empty region"
+            );
+            for (_, region) in &regions {
+                assert_eq!(
+                    *region,
+                    region.intersect(rect),
+                    "{rect:?} plans {region:?}, outside the viewport"
+                );
+                assert_eq!(
+                    *region,
+                    region.intersect(page_rect),
+                    "{rect:?} plans {region:?}, outside the page"
+                );
+            }
+            if rect.intersect(page_rect).is_empty() {
+                assert!(regions.is_empty(), "{rect:?} plans {regions:?}");
+            }
+        }
     }
 
     // ARQ-140: the same graph gives the same plan.
