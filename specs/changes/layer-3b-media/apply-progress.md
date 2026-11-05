@@ -68,3 +68,31 @@ H1 is listed on both sides because the card fixes the boundary in both direction
 - **No deviation of scope.** The delivery touched only `crates/gafira-media/**`: no testkit file, no `Cargo.toml`, no `Cargo.lock`, and `gafira-ports`, `gafira-doc` and the testkit are untouched.
 - **Size.** 897 lines against the 420 (590) forecast, 457 of them tests. Recorded for the coordinator's decision, as ME3 did.
 
+## ME5
+Flow: standard | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the media stream of layer-3b closes with the video exporter that the export queue reaches; O8 carries O4 and O5 of layer 3 to this cut
+Product IDs: FV-12 (partial: the pipeline, the sync, the cancellation and the audio track here; the real codecs and the matrix land with the layer-4 adapters), FV-24 (partial), ARQ-43, CAL-16 (partial), CAL-17 (partial) (source: specs/05-funcionalidad-video-y-distribucion.md §A6, specs/02-arquitectura-software.md §6.4, §4.5)
+Scope: `ME5` of `specs/history/2026-11-04-layer-3/design.md`: in `gafira-media`, the video exporter behind `ports::Exporter`: the loop of decode to compose to encode to mux, the progress, the cancellation and the audio track.      Non-goals: the MJPEG or AV1 encoders themselves and the container writers (layer-4 adapters), the export queue (03 §7.5), the codec matrix of CAL-17, `PageRenderer` (`RE5`, the exporter composes through the port), and any change to `gafira-ports`.
+Acceptance:
+  AC1 Given a range and an export frame rate, When the export runs, Then the pipeline is decode to compose to encode to mux in that order, and the number of encoded frames equals the frames of the range at that rate (FV-12) [unit]
+  AC2 Given a sequence with audio, When it is exported, Then the audio track is muxed in and the A/V difference of the result stays below 40 ms (FV-12 (b)) [unit]
+  AC3 Given an export cancelled part way, When it stops, Then no partial final file is left and the queue stays usable (FV-12 (d), the same rule as ME3's AC20) [integration]
+  AC4 Given the export, When it runs, Then it checks the cancel token per frame, reports a non-decreasing fraction in `[0, 1]` that only reaches `1.0` on success, and enqueues with `Background` priority (ARQ-43, 02 §6.3) [unit]
+  AC5 Given a medium with a lightweight copy, When it is exported, Then the export reads the original and never the copy (ME3's rule, §6.5) [unit]
+  AC6 Given the export, When it composes a frame, Then it goes through `ports::PageRenderer` and is proved against the testkit double, so the delivery does not depend on `RE5` (design of layer 3, `ME5`) [integration]
+  AC7 Given a lost or unavailable encoder, When the export runs, Then it fails with the error the port fixes and does not leave a partial file [unit]
+  AC8 Given the crate, When the CI policy steps run, Then `gafira-media` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the crate has no `std::fs` [command]
+Plan: the delivery adds the exporter module to `crates/gafira-media/src/`, on top of the frame cache of `ME2` and the playback clock of `ME4`, and implements `ports::Exporter`. The codecs and the container writers arrive as layer-4 adapters; this delivery owns the loop, the ordering, the progress, the cancellation and the audio track. The critical code is the frame loop, the A/V alignment, the cancellation checkpoints, the mux ordering and the frame count (design of layer 3, "Critical code"), so those carry the hand mutants. `CAL-16` (`bench_export_reel_60s` under 180 s) and `CAL-17` (the export matrix of at least 40 combinations) are measurements of the layer-4 adapters: they stay partial here.
+Owner decisions touched: O8 of 2026-11-05 (the rigor of layer 3 carries over); D-02 (the codecs and their licences) is respected by not shipping an encoder of our own.
+
+## ME5 (tdd-apply)
+
+Commits:
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
+
+### RED evidence
+
+### Negative controls
+
+### Choices and deviations
+
