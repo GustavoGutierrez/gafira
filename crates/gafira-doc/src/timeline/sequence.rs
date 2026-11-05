@@ -145,7 +145,16 @@ impl Sequence {
     /// [`TimelineError::TooManyAudioTracks`] when this track would be the
     /// seventeenth audio lane.
     pub fn add_track(&mut self, id: TrackId, kind: TrackKind) -> Result<(), TimelineError> {
-        let _ = kind;
+        if kind == TrackKind::Audio {
+            let audio = self
+                .tracks
+                .iter()
+                .filter(|track| track.kind == TrackKind::Audio)
+                .count();
+            if audio >= AUDIO_TRACK_CAP {
+                return Err(TimelineError::TooManyAudioTracks { sequence: self.id });
+            }
+        }
         self.tracks.push(Track::new(id, kind));
         Ok(())
     }
@@ -225,8 +234,8 @@ impl Sequence {
             let mut clips = Vec::with_capacity(track.clips.len());
             let mut last_end = 0i64;
             for clip in &track.clips {
-                let start = clip.place.start().ticks();
-                let duration = clip.place.duration().ticks();
+                let start = snap_nearest(clip.place.start().ticks(), frame);
+                let duration = snap_nearest(clip.place.duration().ticks(), frame);
                 // A span below one frame keeps one frame and pushes what
                 // follows it right; nothing is lost (FV-01 (c)).
                 let duration = duration.max(frame);
@@ -260,4 +269,13 @@ impl Sequence {
             markers: self.markers.clone(),
         }
     }
+}
+
+/// The nearest frame of the grid for `ticks`, ties breaking towards the later
+/// frame (FV-01 (c)). `ticks` is at least zero, `frame` at least one.
+fn snap_nearest(ticks: i64, frame: i64) -> i64 {
+    debug_assert!(ticks >= 0 && frame > 0, "the grid snaps non-negative ticks");
+    let q = ticks / frame;
+    let r = ticks % frame;
+    if r * 2 >= frame { q + 1 } else { q }
 }

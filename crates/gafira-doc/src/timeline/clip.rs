@@ -31,7 +31,10 @@ impl Speed {
     /// [`TimelineError::InvalidSpeed`] when the numerator or the denominator
     /// is zero (FV-03).
     pub fn new(num: u32, den: u32) -> Result<Self, TimelineError> {
-        let g = gcd(num.max(1), den.max(1));
+        if num == 0 || den == 0 {
+            return Err(TimelineError::InvalidSpeed { num, den });
+        }
+        let g = gcd(num, den);
         Ok(Self {
             num: num / g,
             den: den / g,

@@ -126,7 +126,23 @@ impl Track {
     /// [`TimelineError::OffGrid`], [`TimelineError::SpanTooShort`] or
     /// [`TimelineError::SourceBeforeStart`], as the first broken law.
     pub fn check_clip(&self, clip: &Clip, frame: Flicks) -> Result<(), TimelineError> {
-        let _ = (clip, frame);
+        if clip.place.start().ticks() % frame.ticks() != 0 {
+            return Err(TimelineError::OffGrid {
+                clip: clip.id,
+                at: clip.place.start().ticks(),
+            });
+        }
+        if clip.place.duration().ticks() % frame.ticks() != 0 || clip.place.duration() < frame {
+            return Err(TimelineError::SpanTooShort {
+                span: clip.place.duration().ticks(),
+            });
+        }
+        if clip.source_in < Flicks::ZERO {
+            return Err(TimelineError::SourceBeforeStart {
+                clip: clip.id,
+                source_in: clip.source_in.ticks(),
+            });
+        }
         Ok(())
     }
 
@@ -134,7 +150,25 @@ impl Track {
     /// overlap the clips already on this lane, and the lane's contents stay
     /// sorted by place.
     pub fn check_overlaps(&self, clip: &Clip) -> Result<(), TimelineError> {
-        let _ = clip;
+        let idx = self
+            .clips
+            .partition_point(|c| c.place.end() <= clip.place.start());
+        if let Some(left) = self.clips.get(idx.wrapping_sub(1))
+            && left.place.end() > clip.place.start()
+        {
+            return Err(TimelineError::Overlap {
+                track: self.id,
+                at: clip.place.start().ticks(),
+            });
+        }
+        if let Some(right) = self.clips.get(idx)
+            && right.place.start() < clip.place.end()
+        {
+            return Err(TimelineError::Overlap {
+                track: self.id,
+                at: right.place.start().ticks(),
+            });
+        }
         Ok(())
     }
 
@@ -185,7 +219,12 @@ impl Track {
     pub fn clip_at(&self, at: Flicks) -> Option<&Clip> {
         let idx = self.clips.partition_point(|c| c.place.start() <= at);
         let candidate = idx.checked_sub(1)?;
-        self.clips.get(candidate)
+        let clip = self.clips.get(candidate)?;
+        if clip.place.end() > at {
+            Some(clip)
+        } else {
+            None
+        }
     }
 }
 
