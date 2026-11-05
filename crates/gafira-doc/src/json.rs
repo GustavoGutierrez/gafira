@@ -331,6 +331,14 @@ mod tests {
         };
         let mut second = Page::new(PageId::new(10), String::new(), a4);
         second.hidden = true;
+        // The duration is written when the page has one, in its canonical
+        // position: after the grid and before `locked` (ADR 0006 rule 3).
+        // The type is not named here: the domain names the time types only in
+        // the data of the timeline (ARQ-136).
+        second.duration = Some(
+            serde_json::from_value(serde_json::Value::from(3_528_000_000_i64))
+                .expect("the duration fits"),
+        );
         let d = test_document(20, Dpi::new(300), vec![Arc::new(page), Arc::new(second)]);
         let golden = include_str!("../tests/golden/full.json");
         assert_eq!(d.to_json().unwrap(), golden);

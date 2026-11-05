@@ -37,9 +37,14 @@ fn block(source: &str, marker: &str) -> String {
     panic!("the block that starts at {marker} is not closed");
 }
 
-/// The time types the domain must not name: the instant travels apart, as a
-/// separate argument, and the domain owns no clock (ARQ-136).
+/// The time types the domain must not name outside the data of the timeline:
+/// the instant travels apart, as a separate argument, and the domain owns no
+/// clock (ARQ-136).
 const TIME_TYPES: [&str; 5] = ["Flicks", "FrameRate", "Instant", "Duration", "SystemTime"];
+
+/// The sources that hold the data of the timeline of 02 §3.1: the domain
+/// names the time types there and nowhere else (ARQ-136).
+const TIMELINE_SOURCES: [&str; 1] = ["page.rs"];
 
 /// The Rust sources of the domain crate, as paths relative to `src/`.
 ///
@@ -178,7 +183,9 @@ fn arq_134_the_dispatch_has_no_catch_all_arm() {
 }
 
 // ARQ-137: the domain depends on no crate above it: its manifest names no
-// engine of a higher layer.
+// engine of a higher layer. `gafira-time` is layer 0 — below the domain, never
+// above it — and the edge to it is the one ARQ-136 names as expected and
+// bounded, so it is not part of this ban.
 #[test]
 fn arq_137_the_domain_depends_on_no_crate_above_it() {
     let manifest = include_str!("../Cargo.toml");
@@ -186,7 +193,6 @@ fn arq_137_the_domain_depends_on_no_crate_above_it() {
         "gafira-render",
         "gafira-media",
         "gafira-layout",
-        "gafira-time",
         "gafira-ports",
     ] {
         assert!(
@@ -235,10 +241,15 @@ fn arq_136_the_measure_context_carries_no_time() {
     }
 
     for (path, text) in DOMAIN_SOURCES {
+        if TIMELINE_SOURCES.contains(path) {
+            // The data of the timeline lives here: the time types are
+            // legitimate in this file and nowhere else (ARQ-136).
+            continue;
+        }
         for name in TIME_TYPES {
             assert!(
                 !names_type(text, name),
-                "the domain names the time type {name} in src/{path}"
+                "the domain names the time type {name} in src/{path}, outside the data of the timeline"
             );
         }
     }

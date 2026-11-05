@@ -1,7 +1,9 @@
 //! Layer-1 document model for Gafira: `Document -> Page -> Node`.
 //!
-//! Pure domain code: no I/O, no `unsafe`. Depends only on `gafira-geom` and
-//! `gafira-color`; geometry types are always imported through `gafira_geom`.
+//! Pure domain code: no I/O, no `unsafe`. Depends only on `gafira-geom`,
+//! `gafira-color` and `gafira-time`, the timeline edge of ADR 0007 whose
+//! trigger is `Page.duration`; geometry types are always imported through
+//! `gafira_geom`.
 
 #![forbid(unsafe_code)]
 

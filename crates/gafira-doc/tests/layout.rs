@@ -80,7 +80,8 @@ fn adr_0006_old_bytes_resave_in_the_canonical_form() {
     };
     assert_eq!(resave(PRE_MINIMAL), include_str!("golden/minimal.json"));
     assert_eq!(resave(PRE_EXTENSION), include_str!("golden/extension.json"));
-    // `full.json` now carries layout data on page 1; page 2 has none.
+    // `full.json` now carries layout data on page 1 and a duration on page 2;
+    // the bytes of the previous session carry neither.
     let full = resave(PRE_FULL);
     let mut want: serde_json::Value =
         serde_json::from_str(include_str!("golden/full.json")).unwrap();
@@ -89,6 +90,12 @@ fn adr_0006_old_bytes_resave_in_the_canonical_form() {
     for key in ["bleed", "margins", "guides", "grid"] {
         want["pages"][0][key] = fresh[key].clone();
     }
+    // The duration is absent in the wire form when the page has none, so the
+    // old bytes re-save in the canonical form of a document without one.
+    want["pages"][1]
+        .as_object_mut()
+        .expect("a page is an object")
+        .remove("duration");
     assert_eq!(got, want);
     assert_eq!(resave(&full), full);
 }
