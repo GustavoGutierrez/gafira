@@ -24,6 +24,7 @@ mod node;
 mod page;
 mod page_size;
 mod placement;
+pub mod timeline;
 mod validate;
 pub mod visit;
 
@@ -34,7 +35,7 @@ pub use dpi::Dpi;
 pub use edit::{DocMut, EditToken};
 pub use element::ElementBase;
 pub use error::{NodeField, ValidationError};
-pub use ids::{IdSpaceExhausted, NodeId, PageId};
+pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
 pub use json::LoadError;
 pub use layout::{
     GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,
@@ -46,3 +47,7 @@ pub use node::{
 pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};
 pub use placement::{Flip, Placement};
+pub use timeline::{
+    AssetEntry, AssetRef, AssetStorage, AssetTable, Clip, ClipSource, Marker, PixelSize, Sequence,
+    Speed, TimelineError, Track, TrackKind,
+};

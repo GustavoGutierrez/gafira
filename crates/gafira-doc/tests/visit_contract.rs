@@ -44,7 +44,12 @@ const TIME_TYPES: [&str; 5] = ["Flicks", "FrameRate", "Instant", "Duration", "Sy
 
 /// The sources that hold the data of the timeline of 02 §3.1: the domain
 /// names the time types there and nowhere else (ARQ-136).
-const TIMELINE_SOURCES: [&str; 1] = ["page.rs"];
+const TIMELINE_SOURCES: [&str; 4] = [
+    "page.rs",
+    "timeline/clip.rs",
+    "timeline/sequence.rs",
+    "timeline/track.rs",
+];
 
 /// The Rust sources of the domain crate, as paths relative to `src/`.
 ///
@@ -79,6 +84,12 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "node.rs",
     "page.rs",
     "page_size.rs",
+    "timeline/mod.rs",
+    "timeline/asset.rs",
+    "timeline/clip.rs",
+    "timeline/error.rs",
+    "timeline/sequence.rs",
+    "timeline/track.rs",
     "placement.rs",
     "validate.rs",
     "visit.rs",
