@@ -246,13 +246,14 @@ La metáfora no es un pincel ni un lienzo literal: son **fragmentos visuales que
 | Horizontal principal | `gafira-logo-primary.svg` | Web clara, emails, documentos |
 | Horizontal para fondo oscuro | `gafira-logo-dark-background.svg` | Hero oscuro, presentaciones, video |
 | Vertical o apilada | `gafira-logo-stacked.svg` | Composiciones centradas, posters, portada |
-| Solo texto (wordmark) | `Text Gafira.svg` | Nombre sin isotipo, sobre fondos claros |
+| Solo texto (wordmark) | `gafira-wordmark.svg` | Nombre sin isotipo, sobre fondos claros |
 | Símbolo a color | `gafira-logo-symbol.svg` | Avatar, acceso rápido, icono de aplicación |
 | Símbolo para fondo oscuro | `gafira-logo-symbol-dark.svg` | Aplicaciones sobre azul grafito |
 | Horizontal monocroma grafito | `gafira-logo-mono-navy.svg` | Impresión a una tinta sobre blanco |
 | Horizontal monocroma clara | `gafira-logo-mono-white.svg` | Impresión/inversión sobre fondo oscuro |
 | Símbolo monocromo | `gafira-logo-symbol-mono-navy.svg`, `gafira-logo-symbol-mono-white.svg` | Grabado, sellos y usos a una tinta |
 | Favicon | `gafira-favicon.svg` | Pestañas del navegador; también PNG de 16–512 px |
+| Icono de archivo de proyecto | `gafira-gaf-icon.svg` | Archivos `.gaf` en el sistema y en el producto (ver 7.12) |
 
 Las variantes vectoriales conservan el contorno del símbolo y la tipografía vistos en el PNG, simplificando la antialiasing y normalizando los rellenos a los colores HEX de esta guía. Son **vectorizaciones aproximadas**, no trazados originales recuperados.
 
@@ -269,14 +270,14 @@ El isotipo consta de tres piezas: **base azul grafito, panel coral superior y pa
 
 ### 7.5. Logotipo tipográfico (wordmark)
 
-![Logotipo tipográfico Gafira](assets/Text%20Gafira.svg)
+![Logotipo tipográfico Gafira](assets/gafira-wordmark.svg)
 
 Versión que contiene **solo la denominación «Gafira»**, sin el isotipo. Es un trazado vectorial: no se debe reescribir con una fuente arbitraria.
 
 - Usarla cuando el símbolo ya aparece cerca (por ejemplo, un avatar junto al nombre) o cuando el espacio es muy horizontal y no admite el isotipo.
 - Respetar el área de protección y los tamaños mínimos de la versión horizontal.
 - Su color es oscuro: usarla sobre fondos claros y no colocarla sobre azul grafito `#18243B`.
-- **Archivo:** [`assets/Text Gafira.svg`](assets/Text%20Gafira.svg).
+- **Archivo:** [`assets/gafira-wordmark.svg`](assets/gafira-wordmark.svg).
 
 ### 7.6. Variante para fondo oscuro
 
@@ -332,6 +333,58 @@ Son límites conservadores basados en inspección visual, sujetos a una prueba f
 ### 7.11. Principio de consistencia
 
 **El logo debe permanecer discreto y reconocible; el contenido creado en Gafira es el verdadero protagonista.** En la interfaz del editor evitar marcas de agua permanentes, logos enormes o decoración que compita con el lienzo del usuario.
+
+### 7.12. Icono de archivo de proyecto (.gaf)
+
+![Icono de archivo de proyecto Gafira (.gaf)](assets/gafira-gaf-icon.svg)
+
+El icono de archivo identifica un **proyecto editable de Gafira** (extensión `.gaf`) en el explorador de archivos del sistema, en los diálogos de apertura y guardado de la aplicación y en cualquier lugar donde se muestre un documento de Gafira. Es un activo de marca propio: no es el isotipo de la aplicación ni un adorno del logotipo.
+
+**Anatomía del icono**
+
+1. **Pliego de documento** en azul grafito `#18243B`, con interior blanco `#FFFFFF` y esquina superior derecha doblada en verde agua `#46B4A8`.
+2. **Denominación «Gafira»** en la parte superior, en grafito, con el mismo criterio tipográfico del logotipo.
+3. **Símbolo de tres paneles** (grafito, coral `#FF6B57` y verde agua) en el centro, con las posiciones y separaciones del isotipo.
+4. **Filete coral** sobre una **barra inferior grafito** que lleva la extensión `.Gaf` en blanco.
+
+La lectura debe ser inmediata: primero el tipo de archivo, después la marca.
+
+**Archivos**
+
+| Formato | Archivo | Uso |
+|---|---|---|
+| Vectorial | [`assets/gafira-gaf-icon.svg`](assets/gafira-gaf-icon.svg) | Archivo maestro; escala sin pérdida |
+| Rasterizado | [`assets/gafira-gaf-icon.png`](assets/gafira-gaf-icon.png) | 512 × 512 px, para donde el SVG no esté disponible |
+
+El SVG es el original: **no recrear el icono en otro editor**. El PNG es una exportación de ese mismo archivo.
+
+**Uso correcto**
+
+1. Mostrarlo junto al nombre del archivo en listados, y como icono de tipo de archivo del sistema operativo.
+2. Mantener su proporción y su tamaño; nunca estirarlo ni deformarlo.
+3. Conservar el fondo transparente y colocarlo sobre superficies claras o neutras.
+4. Respetar el área de protección: **X = 1/5 del ancho visible**, igual que el logotipo.
+5. Aportarlo a la aplicación en la asociación de archivos `.gaf` de Windows, macOS y Linux.
+
+**Tamaños**
+
+| Uso | Tamaño mínimo orientativo | Nota |
+|---|---:|---|
+| Explorador de archivos (vistas de iconos) | 32 × 32 px | Usar el PNG exportado |
+| Lista de archivos o diálogo | 16 × 16 px | Comprobar que se distingue el pliego y el pie `.Gaf` |
+| Vista previa o panel de detalles | 64 × 64 px | Verificar legibilidad del símbolo central |
+
+Son límites conservadores basados en inspección visual; conviene una prueba final en el explorador del sistema y en pantallas reales.
+
+**Uso incorrecto**
+
+- ❌ Usarlo como icono de la aplicación o como favicon: corresponden al isotipo (ver 7.4 y 12.4).
+- ❌ Reemplazar el símbolo central por el logotipo horizontal, o retirar el pliego, la barra inferior o la extensión `.Gaf`.
+- ❌ Recolorear el pliego, el pliegue turquesa, el filete coral o el pie grafito.
+- ❌ Añadir sombras, contornos, degradados o texturas.
+- ❌ Invertir los colores sobre fondos oscuros: el interior blanco y el símbolo perderían su lectura. Sobre fondo oscuro, colocar el icono sobre una superficie clara.
+- ❌ Repetir la extensión `.gaf` como texto junto al icono: la barra inferior ya la declara.
+- ❌ Usarlo como marca de agua sobre el lienzo del usuario.
 
 ---
 
@@ -438,6 +491,8 @@ Usar rectángulos de esquinas moderadas, recortes rectos, capas, formas que se a
 
 Iconos de trazo simple, grosor consistente y geometría contenida. Las acciones frecuentes deben reconocerse sin una etiqueta compleja; acompañar con texto o tooltip cuando el significado no sea inequívoco.
 
+El icono de archivo `.gaf` (ver 7.12) es la única excepción a este sistema: es un icono **de marca**, no de trazo, y se usa sin variantes monocromas.
+
 ### 10.3. Ilustraciones e imágenes
 
 Dar protagonismo a **ejemplos reales de diseños** realizados con el producto. Mostrar usos diversos: miniaturas, posts, presentaciones, ofertas y material educativo. Evitar imágenes de stock desconectadas de lo que la app realmente puede crear.
@@ -500,6 +555,7 @@ Incluir navegación por teclado, foco visible, contraste suficiente, alternativa
 | Presentación | Horizontal o apilada | Según espacio disponible |
 | Impresión B/N | Monocromo oscuro | Blanco |
 | Marca de agua discreta | Monocromo, opacidad controlada | Superficie que garantice legibilidad |
+| Archivo de proyecto `.gaf` | Icono de archivo Gafira (7.12) | Transparente o superficie clara |
 
 ### 12.1. Landing page
 
@@ -597,6 +653,7 @@ No publicar páginas para capacidades aún no disponibles, ni repetir palabras c
 4. Variantes monocromas oscuras y claras (**SVG**).
 5. Favicon SVG e iconos PNG de **16, 32, 48, 180, 192 y 512 px**.
 6. Copia del PNG original utilizado como referencia.
+7. Icono de archivo de proyecto `.gaf` (**SVG + PNG 512 × 512**).
 7. Tokens iniciales en **CSS y JSON**, además del manual en **Markdown y PDF**.
 
 ### 14.3. Siguientes validaciones
