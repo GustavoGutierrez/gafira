@@ -79,3 +79,31 @@ The eight hand mutants of the Slice card were applied on the green code, the tes
 - **`Alpha8` is refused as a target** with `RenderError::Effect(EffectError::UnsupportedFormat)`: `TargetDesc` says `Rgba8` or `RgbaF32` only, and that is the vocabulary the port already has for a rejected format.
 - **The worker count of AC7 has no subject yet.** No thread is created (D8) and no pool exists until `CB7`, so the determinism test compares runs, not worker counts.
 - **Scopes.** The delivery is a leaf crate, so every commit ran the leaf scope of ADR 0017. The first commit also touched `Cargo.lock` (the `kurbo` line) and the manifest, which under ADR 0017 is a `--workspace` scope: the full workspace suite ran once at the delivery HEAD instead of on that commit, and it covers exactly that risk. `crates/gafira-raster/`, `crates/gafira-doc/`, `gafira-edit`, the testkit and `ci.yml` are untouched.
+
+## CB2
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the golden's scene needs groups, and a group is a layer; the blend modes are what compositing is
+Product IDs: ARQ-119, ARQ-117 (source: specs/02-arquitectura-software.md §6.1, §6.2)
+Scope: `CB2` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, the layer stack behind `PushLayer` and `PopLayer`, the layer opacity, the sixteen blend modes called through `gafira-raster`, nesting, tile-local layer buffers and their reuse.      Non-goals: the ARQ-42 comparison (`CB3`), images (`CB4`), masks, effects and transitions (`CB5`), the benches (`CB6`), the parallel bands (`CB7`), and any change to the crate's dependencies or its V5 row.
+Acceptance:
+  AC1 Given a `PushLayer` with a blend and an opacity, When the ops inside it are drawn, Then they land in a buffer of their own and the buffer is composited onto its parent with **that** blend and opacity when the matching `PopLayer` arrives, not with `Normal` (ARQ-119) [unit]
+  AC2 Given a layer whose opacity is 0,5, When it holds two opaque shapes, Then the opacity is applied **once**, to the composite, and not to each child; the result differs from drawing both children at half alpha, and a test states both numbers (ARQ-119) [unit]
+  AC3 Given a `PushLayer`, When the buffer is taken from the pool, Then it is cleared to transparent first, so nothing from a previous layer remains (ARQ-117) [unit]
+  AC4 Given nested layers, When they are popped, Then the pops happen in the reverse order of the pushes and an unbalanced plan is refused with the error the port fixes (ARQ-119) [unit]
+  AC5 Given the sixteen modes of `BlendMode::ALL`, When each is used as the blend of a layer, Then the backend calls `gafira-raster`'s formula with the layer's buffer as source and the parent's as backdrop — it *calls* them, it does not reimplement them (ARQ-119) [unit]
+  AC6 Given a buffer returned to the pool, When it is taken again, Then no residue of the earlier layer can be observed (ARQ-117) [unit]
+  AC7 Given a plan with layers, When the backend runs twice, Then the bytes are identical, and the number of buffers the pool holds does not change the result (determinism, ARQ-111) [property]
+  AC8 Given the crate, When the CI policy steps run, Then `gafira-render-cpu` still has `#![forbid(unsafe_code)]`, its V5 row passes and the crate still names no clock and no file (ARQ-02) [command]
+Plan: the delivery fills `crates/gafira-render-cpu/src/` on top of `CB1`'s surface and tile loop. The layer buffers are `f32` linear premultiplied like the surface (`O11`), so a group costs memory per nesting level and nothing in conversion. `gafira-raster` owns the sixteen formulas; the adapter's job is to call them with the right operands, and the test proves the call and the operands, not the arithmetic, which ARQ-119 already proves in that crate. The critical code is the whole push/pop bookkeeping (design, "Critical code"): depth and buffer index, the pop's blend and opacity, the opacity applied once, the clear at push, the nested order and the reuse without residue — those carry the hand mutants. The buffer pool's growth policy is not critical and is stated as a choice.
+Owner decisions touched: O11 (the f32 accumulation, which is what makes a layer buffer and the surface the same type), Q3 of the timeline design does not apply here, and the rigor of O4/O8/O10.
+
+## CB2 (tdd-apply)
+
+Commits:
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`, `cargo test -p gafira-render-cpu --locked`, `cargo deny check`, and the CI policy steps by extracting their `run:` from `ci.yml`. The full workspace suite runs once at the delivery HEAD.
+
+### RED evidence
+
+### Negative controls
+
+### Choices and deviations
