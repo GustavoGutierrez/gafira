@@ -513,6 +513,7 @@ dependencies = [
  "gafira-testkit",
  "gafira-time",
  "kurbo",
+ "proptest",
 ]
 
 [[package]]
