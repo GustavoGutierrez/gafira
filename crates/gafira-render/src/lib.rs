@@ -16,6 +16,7 @@ mod graph;
 mod key;
 mod planner;
 mod pool;
+mod scope;
 
 pub use budget::{FRAME, FrameBudget, GRAPH_READY, MARGIN, Stage, VISIBLE_DONE};
 pub use cache::ContentTileCache;
@@ -30,3 +31,4 @@ pub use planner::{
     level_for_zoom,
 };
 pub use pool::{InlinePool, WorkerPool};
+pub use scope::{PageScope, ScopeError};
