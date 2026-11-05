@@ -17,6 +17,10 @@ criterion.workspace = true
 gafira-testkit.workspace = true
 
 [[bench]]
+name = "blend"
+harness = false
+
+[[bench]]
 name = "transitions"
 harness = false
 

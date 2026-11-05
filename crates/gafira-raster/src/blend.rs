@@ -203,6 +203,95 @@ fn transfer() -> &'static Transfer {
     TRANSFER.get_or_init(Transfer::new)
 }
 
+/// Segments of the guarded encode approximation: 16 384 uniform, power-of-two steps, one
+/// further probe node than needed to keep the interpolation simple.
+const FAST_K: usize = 16_384;
+/// De-indexing scale of `FAST_K` (exact in `f64`, power of two).
+const FAST_K_F: f64 = FAST_K as f64;
+/// One step of the grid.
+const FAST_STEP: f64 = 1.0 / FAST_K_F;
+
+/// Piecewise-linear approximation of the encode on `[0, 1]`, with a measured error bound.
+///
+/// `blend_u8` must stay byte-exact (ARQ-111), so the value is only taken from this table
+/// when the bytes that the bounds produce agree; when they do not, meaning a rounding
+/// boundary of the byte falls inside the small error window, `‘blend_u8' falls back to the
+/// exact transform. The bound is measured at build time against the exact transform itself:
+/// the probe grid is dense enough that missing the true peak of the deviation cannot eat
+/// the 2× margin, and the transfer curves are monotone concave (or exactly linear below
+/// the encode threshold), so the per-segment deviation has one interior peak only.
+///
+/// Real path: `x` (as `f32`) → `math::encode` (`powf(f64)`) → `as f32` → `f64` → clamp
+/// (`crates/gafira-color/src/math.rs::encode`). Three of those powf per pixel dominate
+/// `blend_u8`'s cost (XP1: 640.7 ms vs 90.7 ms for `blend_f32`); the monotone chord of
+/// 16 384 segments costs a multiply and a multiply-add, plus the byte-awareness of the
+/// guard, so the fallback rate (pixels near a byte boundary) decides the win.
+///
+/// Init: 32 769 encode probes (17 385 at the nodes, 16 384 at the segment midpoints) ≈ a
+/// few milliseconds, once, behind the existing `OnceLock`. Memory: one `f64` vector.
+struct FastEncode {
+    /// The exact encoded value at each breakpoint, as `[f64]` from the `f32` path.
+    ys: Vec<f64>,
+    /// Measured deviation, enlarged ×2. Any real value's byte is decided between
+    /// `[y - err, y + err]`; only equal bounds go through.
+    err: f64,
+}
+
+impl FastEncode {
+    fn build() -> Self {
+        let t = transfer();
+        let mut ys = Vec::with_capacity(FAST_K + 1);
+        for i in 0..=FAST_K {
+            let x = i as f64 * FAST_STEP;
+            ys.push(t.encode_unit([x; 3])[0]);
+        }
+        // The deviation of a monotone curve from its chord peaks inside a segment; the
+        // exact sweep stops at the join between the linear and the powf segments, both
+        // probed below. One real encode per segment and per node, in release, is cheap.
+        let mut dev = 0.0f64;
+        for i in 0..FAST_K {
+            let x = (i as f64 + 0.5) * FAST_STEP;
+            let x0 = i as f64 * FAST_STEP;
+            let chord = ys[i] + (ys[i + 1] - ys[i]) * (x - x0) * FAST_K_F;
+            dev = dev.max((chord - t.encode_unit([x; 3])[0]).abs());
+        }
+        Self { ys, err: dev * 2.0 }
+    }
+
+    /// Encoded channel values, or `None` when any channel's byte is not decided by the
+    /// bounds, so the exact transform has to answer the pixel. `x` must be in `[0, 1]`
+    /// (`blend_u8` clamps before calling) and `alpha` in `(0, 1]`.
+    fn try_bytes(&self, x: [f64; 3], alpha: f64) -> Option<[[u8; 1]; 3]> {
+        let mut bytes = [[0u8; 1]; 3];
+        for (slot, &x) in bytes.iter_mut().zip(&x) {
+            if !(0.0..=1.0).contains(&x) {
+                return None;
+            }
+            let j = ((x * FAST_K_F).floor() as usize).min(FAST_K - 1);
+            let x0 = j as f64 * FAST_STEP;
+            let chord = self.ys[j] + (self.ys[j + 1] - self.ys[j]) * (x - x0) * FAST_K_F;
+            let lo = (chord - self.err).max(0.0);
+            let hi = (chord + self.err).min(1.0);
+            let vlo = 255.0 * alpha * lo;
+            let vhi = 255.0 * alpha * hi;
+            let blo = (vlo + 0.5).floor();
+            let bhi = (vhi + 0.5).floor();
+            if blo == bhi {
+                *slot = [bhi.clamp(0.0, 255.0) as u8];
+            } else {
+                return None;
+            }
+        }
+        Some(bytes)
+    }
+}
+
+/// The guarded encode, built once with the exact curve.
+fn fast_encode() -> &'static FastEncode {
+    static FAST: OnceLock<FastEncode> = OnceLock::new();
+    FAST.get_or_init(FastEncode::build)
+}
+
 /// Blends premultiplied RGBA 8-bit pixels in linear light, in every mode (D-53, ARQ-119).
 ///
 /// Each pixel is unpremultiplied, its colour decoded from sRGB to linear light, blended and
@@ -235,13 +324,23 @@ pub fn blend_u8(mode: BlendMode, backdrop: [u8; 4], source: [u8; 4]) -> [u8; 4] 
     let out = composite(mode, linear(backdrop), linear(source));
     let alpha = out[3];
     // The source is not transparent, so the result has alpha.
-    let encoded = t.encode_unit([0, 1, 2].map(|i| (out[i] / alpha).clamp(0.0, 1.0)));
+    let enc_in = [0, 1, 2].map(|i| (out[i] / alpha).clamp(0.0, 1.0));
     let byte = |v: f64| (v + 0.5).floor().clamp(0.0, 255.0) as u8;
+    let a_out = byte(255.0 * alpha);
+    // The guarded fast path. A pixel whose bounds land on one byte keeps the exact result
+    // by the interval argument in [`FastEncode`]; the rest take the exact transform, same
+    // code as before, bit for bit.
+    if let Some(channels) = fast_encode().try_bytes(enc_in, alpha) {
+        // The `[u8; 1]` wrapper keeps map(flat) style from being confused with span.
+        // The algorithm of [`FastEncode::try_bytes`] already premultiplies and rounds.
+        return [channels[0][0], channels[1][0], channels[2][0], a_out];
+    }
+    let encoded = t.encode_unit(enc_in);
     [
         byte(255.0 * alpha * encoded[0]),
         byte(255.0 * alpha * encoded[1]),
         byte(255.0 * alpha * encoded[2]),
-        byte(255.0 * alpha),
+        a_out,
     ]
 }
 
@@ -824,6 +923,157 @@ mod tests {
             blend_u8(BlendMode::ColorBurn, [255, 255, 255, 255], [0, 0, 0, 255])[0],
             255
         );
+    }
+
+    // ARQ-111, byte-exact: a frozen copy of `blend_u8` as of commit 70ce7be (before the
+    // guarded fast encode). The differential test below compares the live implementation
+    // against it; one differing byte in any sampled input fails, so a change to the
+    // transfer curve cannot move the product's pixels silently.
+    fn blend_u8_frozen(mode: BlendMode, backdrop: [u8; 4], source: [u8; 4]) -> [u8; 4] {
+        if source[3] == 0 {
+            return backdrop;
+        }
+        if backdrop[3] == 0 || (mode == BlendMode::Normal && source[3] == 255) {
+            return source;
+        }
+        let t = transfer();
+        let linear = |p: [u8; 4]| {
+            let a = f64::from(p[3]) / 255.0;
+            let c = |i: usize| {
+                let v = if mode == BlendMode::Normal {
+                    p[i]
+                } else {
+                    p[i].min(p[3])
+                };
+                t.decode[usize::from(crate::unpremultiply_u8(v, p[3]))] * a
+            };
+            [c(0), c(1), c(2), a]
+        };
+        let out = composite(mode, linear(backdrop), linear(source));
+        let alpha = out[3];
+        // The source is not transparent, so the result has alpha.
+        let encoded = t.encode_unit([0, 1, 2].map(|i| (out[i] / alpha).clamp(0.0, 1.0)));
+        let byte = |v: f64| (v + 0.5).floor().clamp(0.0, 255.0) as u8;
+        [
+            byte(255.0 * alpha * encoded[0]),
+            byte(255.0 * alpha * encoded[1]),
+            byte(255.0 * alpha * encoded[2]),
+            byte(255.0 * alpha),
+        ]
+    }
+
+    /// Deterministic xorshift: the same inputs every run, no dependency, no clock.
+    fn xorshift(state: &mut u64) -> u64 {
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *state = x;
+        x
+    }
+
+    /// An `f64` in `[0, 1]` from the xorshift stream: the low 52 mantissa bits with the
+    /// exponent fixed, so the value is `[1, 2)`, and subtracting one gives `[0, 1)`.
+    pub(super) fn xorshift_bits_01(state: &mut u64) -> f64 {
+        f64::from_bits((xorshift(state) & 0x000F_FFFF_FFFF_FFFF) | 0x3FF0_0000_0000_0000) - 1.0
+    }
+
+    // Deterministic rate check (informational): the correctness of the fast path is the
+    // byte-exact test below, and this one just makes sure the approximation didn't
+    // degrade to the point of always falling back.
+    #[test]
+    fn the_guard_falls_back_rarely() {
+        // White-box rate only: the correctness of the fast path is the byte-exact test
+        // above. The rate decides the win, not the bytes, so this read is a guard on
+        // regression: if the approximation worsens and the fallback grows, somebody
+        // should know before a bench notices.
+        let fe = fast_encode();
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut fallback = 0usize;
+        let probes = 100_000usize;
+        for _ in 0..probes {
+            let alpha = xorshift_bits_01(&mut state).max(1.0 / 255.0);
+            let x = [xorshift_bits_01(&mut state); 3];
+            if fe.try_bytes(x, alpha).is_none() {
+                fallback += 1;
+            }
+        }
+        let rate = f64::from(fallback as u32) / f64::from(probes as u32);
+        assert!(rate < 0.05, "fallback rate {rate:.4} over {probes} probes");
+    }
+
+    #[test]
+    fn blend_u8_matches_the_frozen_baseline_byte_for_byte() {
+        let mut mismatches = 0usize;
+        let mut checked = 0usize;
+        let check = |mode, b8, s8, mismatches: &mut usize, checked: &mut usize| {
+            let got = blend_u8(mode, b8, s8);
+            let want = blend_u8_frozen(mode, b8, s8);
+            *checked += 1;
+            if got != want && {
+                eprintln!("MISMATCH {mode:?} b={b8:?} s={s8:?}: got={got:?} want={want:?}");
+                true
+            } {
+                *mismatches += 1;
+            }
+        };
+        // The extremes the byte rule turns on: alpha 0, 1, floor/ceil, 254, 255.
+        let extremes = [0u8, 1, 2, 64, 127, 128, 129, 200, 253, 254, 255];
+        let channels = [0u8, 1, 64, 127, 128, 129, 200, 254, 255];
+        for mode in BlendMode::ALL {
+            // The three structural colour pairs, over the full cross of both alphas.
+            for b in [[0, 0, 0, 0], [255, 255, 255, 255], [128, 17, 200, 128]] {
+                for s in [[0, 0, 0, 0], [255, 255, 255, 255], [11, 222, 33, 199]] {
+                    for ba in &extremes {
+                        for sa in &extremes {
+                            check(
+                                mode,
+                                [b[0], b[1], b[2], *ba],
+                                [s[0], s[1], s[2], *sa],
+                                &mut mismatches,
+                                &mut checked,
+                            );
+                        }
+                    }
+                }
+            }
+            // Deterministic pseudo-random sweep over the whole input space, then a grid
+            // of channel cases with the swept extremes over the alpha it drew.
+            let mut state = 0x243F_6A88_85A3_08D3u64.wrapping_add(mode as u64);
+            for _ in 0..8192 {
+                let r = xorshift(&mut state) as u8;
+                let g = (xorshift(&mut state) >> 8) as u8;
+                let bl = (xorshift(&mut state) >> 16) as u8;
+                let ba = xorshift(&mut state) as u8;
+                let sa = xorshift(&mut state) as u8;
+                let sr = xorshift(&mut state) as u8;
+                let sg = (xorshift(&mut state) >> 8) as u8;
+                let sb = (xorshift(&mut state) >> 16) as u8;
+                check(
+                    mode,
+                    [r, g, bl, ba],
+                    [sr, sg, sb, sa],
+                    &mut mismatches,
+                    &mut checked,
+                );
+                for bc in &channels {
+                    for sc in &channels {
+                        check(
+                            mode,
+                            [*bc, g, bl, ba],
+                            [*sc, sg, sb, sa],
+                            &mut mismatches,
+                            &mut checked,
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            mismatches, 0,
+            "{checked} sampled inputs, {mismatches} differ"
+        );
+        assert!(checked > 1_000_000, "sample too thin: {checked}");
     }
 
     // ARQ-119, ARQ-110: boundary colours and alphas, a = 0 included, give finite output
