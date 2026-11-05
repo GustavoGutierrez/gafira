@@ -11,6 +11,7 @@
 mod cache;
 mod index;
 mod medium;
+mod playback;
 mod ports;
 mod proxy;
 
@@ -20,6 +21,9 @@ pub use cache::{
 };
 pub use index::{INDEX_BUDGET_PER_MINUTE, IndexReport, KeyframeIndex};
 pub use medium::{Medium, SeekOutcome};
+pub use playback::{
+    FrameDecision, PlayReport, PlaybackClock, PlaybackSource, SYNC_TOLERANCE, Speed, StepDirection,
+};
 pub use ports::{Job, Ports, WorkerPool};
 pub use proxy::{
     DEFAULT_PROXY_BUDGET, ProxyKey, ProxyProducer, ProxyReport, ProxySource, ProxyStore, ProxyUse,
