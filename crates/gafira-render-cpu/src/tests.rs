@@ -1,10 +1,12 @@
-//! The behaviour tests of `CB1`: the frame, the fill in both formats, the
-//! cache, the cull, the cancellation and the progress, and the memory the
-//! backend accounts for.
+//! The behaviour tests of `CB1` and `CB2`: the frame, the fill in both
+//! formats, the cache, the cull, the cancellation, the progress and the memory
+//! the backend accounts for; and the layer stack, its blend and opacity, its
+//! nesting and the reuse of its buffers.
 
 use std::sync::{Arc, Mutex};
 
 use gafira_color::{Color, Rgba};
+use gafira_doc::BlendMode;
 use gafira_doc::contract::{CancelToken, Progress};
 use gafira_geom::{Affine, IRect, Point};
 use gafira_ports::common::Bytes;
@@ -12,7 +14,7 @@ use gafira_ports::render::{
     BackendCaps, BackendKind, ContentKey, Deadline, FrameCx, Priority, RenderBackend, RenderError,
     RenderOp, RenderPlan, RenderQuality, RenderReport, TargetDesc, TileCache, TileKey, TileTask,
 };
-use gafira_raster::{ImageBuf, PixelBuf, PixelFormat, premultiply_u8};
+use gafira_raster::{AlphaMask, ImageBuf, PixelBuf, PixelFormat, blend_f32, premultiply_u8};
 use kurbo::{BezPath, PathEl};
 
 use crate::CpuBackend;
@@ -72,6 +74,16 @@ fn fill(x0: f64, y0: f64, x1: f64, y1: f64, color: Color) -> RenderOp {
         color,
         transform: Affine::IDENTITY,
     }
+}
+
+/// A layer opens on the ops that follow it (02 §6.1).
+fn push() -> RenderOp {
+    RenderOp::PushLayer
+}
+
+/// A layer closes and composites with these parameters (02 §6.1).
+fn pop(blend: BlendMode, opacity: f32) -> RenderOp {
+    RenderOp::PopLayer { blend, opacity }
 }
 
 fn srgb(r: f32, g: f32, b: f32, a: f32) -> Color {
@@ -873,34 +885,30 @@ fn arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target() {
     );
 }
 
-// CB1 renders no layer, image, mask, effect or transition: the closed
-// `RenderOp` enum forces a reading, and the adapter reports the op instead of
-// drawing a page it cannot compose. The layer stack is CB2, the image CB4 and
-// the other three CB5.
+// CB1 and CB2 render no image, mask, effect or transition: the closed
+// `RenderOp` enum forces a reading, and the adapter reports an op it cannot
+// compose instead of drawing a page it cannot finish. The image is CB4 and the
+// other three CB5; the layer ops are rendered from CB2 on.
 #[test]
-fn a_layer_op_is_reported_and_not_silently_flattened() {
-    let ops = [
-        RenderOp::PushLayer,
-        RenderOp::PopLayer {
-            blend: gafira_doc::BlendMode::Normal,
-            opacity: 1.0,
-        },
-    ];
-    for op in ops {
-        let scene = plan(vec![task(1, IRect::new(0, 0, 8, 8), vec![op])]);
-        let mut frame = Frame::open(
-            CpuBackend::new(),
-            target(8, 8, (0, 0), PixelFormat::RgbaF32),
-        );
-        let mut cache = RecordingCache::default();
-        let error = frame
-            .execute(&scene, &mut cache, &CancelToken::new())
-            .expect_err("a layer op is not rendered by this delivery");
-        assert!(
-            matches!(error, RenderError::DriverBlocked),
-            "reported as blocked, not drawn: {error:?}"
-        );
-    }
+fn an_op_of_a_later_delivery_is_reported_and_not_silently_flattened() {
+    let mask = Arc::new(AlphaMask::new(2, 2, vec![255u8; 4]).expect("the mask"));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 8, 8),
+        vec![RenderOp::ApplyMask { mask }],
+    )]);
+    let mut frame = Frame::open(
+        CpuBackend::new(),
+        target(8, 8, (0, 0), PixelFormat::RgbaF32),
+    );
+    let mut cache = RecordingCache::default();
+    let error = frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect_err("a mask op is not rendered by this delivery");
+    assert!(
+        matches!(error, RenderError::DriverBlocked),
+        "reported as blocked, not drawn: {error:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -979,4 +987,199 @@ fn the_caps_and_the_memory_of_an_open_surface() {
     // 16 × 8 pixels, four `f32` channels.
     assert_eq!(backend.memory_usage().host, Bytes(16 * 8 * 16));
     assert_eq!(backend.memory_usage().device, Bytes(0));
+}
+
+// ---------------------------------------------------------------------------
+// CB2 AC1 — a layer composites with its own blend and opacity
+// ---------------------------------------------------------------------------
+
+// ARQ-119, 02 §6.1: the ops between `PushLayer` and its `PopLayer` land in a
+// buffer of their own, and the pop composites that buffer onto its parent with
+// the pop's blend and opacity, not with `Normal`. The expectation is the
+// raster crate's own formula called with the layer as source and the parent as
+// backdrop: the adapter chooses the operands and `gafira-raster` owns the
+// sixteen formulas (ARQ-119).
+#[test]
+fn arq_119_a_layer_composites_with_its_own_blend_and_opacity() {
+    let region = IRect::new(0, 0, 4, 4);
+    let backdrop_color = srgb(0.5, 0.5, 0.5, 1.0);
+    let layer_color = srgb(0.25, 1.0, 0.5, 1.0);
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+
+    // The parent's pixel, from the same fill without a layer around it.
+    let backdrop_plan = plan(vec![task(
+        1,
+        region,
+        vec![fill(0.0, 0.0, 4.0, 4.0, backdrop_color)],
+    )]);
+    let backdrop = channels(&run(target_desc, &backdrop_plan), 2, 2);
+
+    let scene = plan(vec![task(
+        1,
+        region,
+        vec![
+            fill(0.0, 0.0, 4.0, 4.0, backdrop_color),
+            push(),
+            fill(0.0, 0.0, 4.0, 4.0, layer_color),
+            pop(BlendMode::Multiply, 0.5),
+        ],
+    )]);
+    let got = channels(&run(target_desc, &scene), 2, 2);
+
+    // The layer as source, premultiplied and taken at the pop's opacity once.
+    let linear = layer_color.to_linear_srgb();
+    let scaled = [
+        linear.r * 0.5,
+        linear.g * 0.5,
+        linear.b * 0.5,
+        linear.a * 0.5,
+    ];
+    let expected = blend_f32(BlendMode::Multiply, backdrop, scaled).expect("the blend");
+    assert_eq!(
+        got, expected,
+        "Multiply at half opacity, the layer as source"
+    );
+    // The fixture tells the mode and the opacity apart from the wrong answers a
+    // pop can give.
+    assert_ne!(
+        expected,
+        blend_f32(BlendMode::Normal, backdrop, scaled).expect("the blend"),
+        "the fixture tells Multiply from Normal"
+    );
+    assert_ne!(
+        expected,
+        blend_f32(
+            BlendMode::Multiply,
+            backdrop,
+            [linear.r, linear.g, linear.b, linear.a],
+        )
+        .expect("the blend"),
+        "the fixture tells half opacity from none"
+    );
+}
+
+// ARQ-119, 02 §6.1: a layer at `Normal` and full opacity changes no pixel,
+// which is what lets the graph wrap every node in one.
+#[test]
+fn arq_119_a_normal_layer_at_full_opacity_changes_no_pixel() {
+    let region = IRect::new(0, 0, 8, 8);
+    let color = srgb(0.2, 0.4, 0.6, 0.5);
+    let plain = plan(vec![task(1, region, vec![fill(0.0, 0.0, 8.0, 8.0, color)])]);
+    let wrapped = plan(vec![task(
+        1,
+        region,
+        vec![
+            push(),
+            fill(0.0, 0.0, 8.0, 8.0, color),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let target_desc = target(8, 8, (0, 0), PixelFormat::RgbaF32);
+    let a = run(target_desc, &plain);
+    let b = run(target_desc, &wrapped);
+    assert_eq!(
+        a.data(),
+        b.data(),
+        "a Normal layer at full opacity is an identity"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// CB2 AC2 — the opacity applies once, to the composite
+// ---------------------------------------------------------------------------
+
+// ARQ-119, 02 §6.1: two opaque fills in a layer at 0,5 over the transparent
+// page leave alpha 0,5 — and the blue alone — where they overlap. Applying the
+// half to each child instead leaves 0,75 and a quarter of the red under the
+// blue: the two numbers are stated here, and the second one is what a child-wise
+// opacity would give.
+#[test]
+fn arq_119_the_opacity_applies_once_to_the_composite() {
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 2, 1),
+        vec![
+            push(),
+            fill(0.0, 0.0, 2.0, 1.0, srgb(1.0, 0.0, 0.0, 1.0)),
+            fill(1.0, 0.0, 2.0, 1.0, srgb(0.0, 0.0, 1.0, 1.0)),
+            pop(BlendMode::Normal, 0.5),
+        ],
+    )]);
+    let surface = run(target(2, 1, (0, 0), PixelFormat::RgbaF32), &scene);
+    assert_eq!(
+        channels(&surface, 0, 0),
+        [0.5, 0.0, 0.0, 0.5],
+        "one fill at half opacity"
+    );
+    let overlap = channels(&surface, 1, 0);
+    assert_eq!(
+        overlap,
+        [0.0, 0.0, 0.5, 0.5],
+        "the composite at half opacity, once"
+    );
+    assert_ne!(
+        overlap,
+        [0.25, 0.0, 0.5, 0.75],
+        "not half alpha on each child: that is 0,75 of alpha and a quarter of the red"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// CB2 AC5 — the sixteen modes reach the raster formula
+// ---------------------------------------------------------------------------
+
+// ARQ-119, 02 §6.1: every mode of `BlendMode::ALL` reaches `gafira-raster`'s
+// formula with the layer's buffer as **source** and the parent's pixels as
+// **backdrop**. The adapter does not own the arithmetic: the expectation is the
+// crate's own `blend_f32` called with those operands. An identical
+// reimplementation would pass this test; what it pins is the mode that arrives
+// and the order of the two operands.
+#[test]
+fn arq_119_all_sixteen_modes_composite_the_layer_as_source() {
+    let region = IRect::new(0, 0, 4, 4);
+    let backdrop_color = srgb(0.3, 0.6, 0.2, 1.0);
+    let layer_color = srgb(0.9, 0.1, 0.7, 1.0);
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let backdrop = channels(
+        &run(
+            target_desc,
+            &plan(vec![task(
+                1,
+                region,
+                vec![fill(0.0, 0.0, 4.0, 4.0, backdrop_color)],
+            )]),
+        ),
+        2,
+        2,
+    );
+    let linear = layer_color.to_linear_srgb();
+    let source = [
+        linear.r * linear.a,
+        linear.g * linear.a,
+        linear.b * linear.a,
+        linear.a,
+    ];
+
+    for mode in BlendMode::ALL {
+        let scene = plan(vec![task(
+            1,
+            region,
+            vec![
+                fill(0.0, 0.0, 4.0, 4.0, backdrop_color),
+                push(),
+                fill(0.0, 0.0, 4.0, 4.0, layer_color),
+                pop(mode, 1.0),
+            ],
+        )]);
+        let got = channels(&run(target_desc, &scene), 2, 2);
+        let expected = blend_f32(mode, backdrop, source).expect("the blend");
+        assert_eq!(got, expected, "{mode:?}: the layer is the source");
+        let swapped = blend_f32(mode, source, backdrop).expect("the blend");
+        if swapped != expected {
+            assert_ne!(
+                got, swapped,
+                "{mode:?}: the parent is the backdrop, not the source"
+            );
+        }
+    }
 }

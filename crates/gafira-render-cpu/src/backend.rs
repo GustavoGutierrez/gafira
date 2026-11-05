@@ -1,9 +1,11 @@
 //! The CPU render backend: the reference implementation of the port (ARQ-113).
 //!
-//! `CB1` renders one op — `FillPath`, in both formats — through the tile loop
-//! of 02 §6.2. The layer stack (`PushLayer`/`PopLayer`, `CB2`), images
-//! (`CB4`) and masks, effects and transitions (`CB5`) arrive in their own
-//! deliveries, and until then an op of those kinds is **reported**, never
+//! `CB1` renders `FillPath` in both formats through the tile loop of 02 §6.2,
+//! and `CB2` composites it through the layer stack of 02 §6.1: `PushLayer`
+//! opens a tile-sized buffer, the ops inside it are drawn there, and `PopLayer`
+//! composites that buffer onto its parent with the pop's blend and opacity.
+//! Images (`CB4`) and masks, effects and transitions (`CB5`) arrive in their
+//! own deliveries, and until then an op of those kinds is **reported**, never
 //! dropped: a backend that silently flattened a group would draw the wrong
 //! page and say the tile was done.
 
@@ -22,6 +24,7 @@ use gafira_raster::{ImageBuf, PixelFormat, blend_f32};
 use kurbo::BezPath;
 
 use crate::coverage;
+use crate::layer::Layer;
 use crate::surface::{self, Surface};
 
 /// The CPU rasterizer (02 §2.1, §6.2).
@@ -245,8 +248,11 @@ fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
     if count == 0 {
         return Ok(pixels);
     }
+    let mut layer = Layer::new();
     for op in &task.ops {
         match op {
+            RenderOp::PushLayer => layer.push(count),
+            RenderOp::PopLayer { blend, opacity } => layer.pop(&mut pixels, *blend, *opacity)?,
             RenderOp::FillPath {
                 path,
                 color,
@@ -256,12 +262,17 @@ fn render_tile(task: &TileTask) -> Result<Vec<f32>, RenderError> {
                 // before the path is converted. The box is the transformed
                 // control-point box, so the cull never drops a contributing op.
                 if coverage::meets(coverage::page_bounds(path, *transform), task.region) {
-                    paint_fill(&mut pixels, size, task.region, path, *color, *transform)?;
+                    paint_fill(
+                        layer.target(&mut pixels),
+                        size,
+                        task.region,
+                        path,
+                        *color,
+                        *transform,
+                    )?;
                 }
             }
-            RenderOp::PushLayer
-            | RenderOp::PopLayer { .. }
-            | RenderOp::DrawImage { .. }
+            RenderOp::DrawImage { .. }
             | RenderOp::ApplyMask { .. }
             | RenderOp::ApplyEffect { .. }
             | RenderOp::ApplyTransition { .. } => return Err(not_in_this_delivery()),
@@ -303,10 +314,9 @@ fn paint_fill(
 
 /// The error of an op this delivery does not render yet.
 ///
-/// `PushLayer`/`PopLayer` are `CB2`, `DrawImage` is `CB4`, and the mask, the
-/// effect and the transition are `CB5`. The port's error set has no
-/// `Unsupported`, so the adapter reports the op as blocked rather than
-/// dropping it silently.
+/// `DrawImage` is `CB4`, and the mask, the effect and the transition are
+/// `CB5`. The port's error set has no `Unsupported`, so the adapter reports
+/// the op as blocked rather than dropping it silently.
 fn not_in_this_delivery() -> RenderError {
     RenderError::DriverBlocked
 }

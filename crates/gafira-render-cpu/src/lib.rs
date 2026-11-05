@@ -26,6 +26,7 @@
 
 mod backend;
 mod coverage;
+mod layer;
 mod surface;
 #[cfg(test)]
 mod tests;
