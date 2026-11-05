@@ -532,6 +532,7 @@ dependencies = [
  "gafira-geom",
  "gafira-ports",
  "gafira-raster",
+ "kurbo",
  "tiny-skia",
 ]
 

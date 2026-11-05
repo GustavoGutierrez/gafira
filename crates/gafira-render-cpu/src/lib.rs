@@ -12,5 +12,22 @@
 //! redefined (ARQ-119). The crate is pure in the sense of ARQ-02: it reads no
 //! clock, touches no file system and creates no thread; the deadline arrives
 //! as `ports::Deadline` and the cancellation as `gafira_doc::contract::CancelToken`.
+//!
+//! Both qualities accumulate in one `f32` surface and the target's format
+//! decides only what `read_back` answers, so the preview quantises once, when
+//! the surface is handed back (O11).
+//!
+//! The surface is page-sized (D4): 1080p and 4K fit inside the 1.5 GB cap of
+//! `D-03`, and FD-55's 16 384 px side does not (4 GiB in `RgbaF32`, measured in
+//! `spike.md`). That side is a stated limit of this delivery; the tiled or
+//! streaming path FD-55 names is what would lift it.
 
 #![forbid(unsafe_code)]
+
+mod backend;
+mod coverage;
+mod surface;
+#[cfg(test)]
+mod tests;
+
+pub use backend::CpuBackend;
