@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "change": "gafira-media",
-  "delivery": "ME1+ME2",
+  "delivery": "ME3",
   "rounds": [
     {
       "round": 2,
@@ -51,6 +51,31 @@
       "hand_mutants": null,
       "criteria": { "total": 9, "covered": 9 },
       "size": { "lines": 649, "forecast": 660 },
+      "report": "verify-report.md"
+    },
+    {
+      "round": 1,
+      "delivery": "ME3",
+      "commit": "5a50147",
+      "mode": "full",
+      "tier": "T0",
+      "depth": "V1",
+      "verdict": "PASS",
+      "next": "tdd-apply",
+      "counts": { "critical": 0, "warning": 5, "suggestion": 6 },
+      "classes": ["ambiguity", "implementation"],
+      "findings": [
+        {"id": "W10", "severity": "WARNING", "class": "implementation", "ref": "apply-progress.md:194 (ARQ-43); specs/02-arquitectura-software.md:1489", "summary": "ARQ-43 is a card Product ID and no test, bench or command names it; the per-frame checkpoint is proved under ARQ-146, but the <=100 ms bound needs bench_cancel_segment and gafira-media has no benches/.", "follow_up": false, "status": "open"},
+        {"id": "W11", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:199 (AC21); specs/02-arquitectura-software.md:1252; tests/proxy.rs:326", "summary": "AC21's second clause, the exported file has the original resolution, has no proof: only the reader half exists until the ME5 exporter. ARQ-146 and AC21 need the partial marker.", "follow_up": false, "status": "open"},
+        {"id": "W12", "severity": "WARNING", "class": "ambiguity", "ref": "apply-progress.md:194 (FV-22); specs/05-funcionalidad-video-y-distribucion.md:350-357", "summary": "FV-22 is listed without a partial marker and only (b) is proved: the automatic trigger, the manual create/delete and (c) have no code or test in this delivery.", "follow_up": false, "status": "open"},
+        {"id": "W13", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-media/src/proxy.rs:286-378; apply-progress.md:267", "summary": "The 10 GB budget counts only the copies this process wrote: the store never seeds from the cache directory and never drops *.part files, so an earlier session can exceed the limit; open+seek(End) would size them.", "follow_up": false, "status": "open"},
+        {"id": "W14", "severity": "WARNING", "class": "implementation", "ref": "size 1108 code lines; specs/changes/layer-3/design.md:103 (460, 645 adjusted)", "summary": "ME3 is 1108 code lines (1163 with the notes): 1.58x the ~700 guide and 1.7x its adjusted forecast, so it needs the owner's explicit OK.", "follow_up": false, "status": "open"}
+      ],
+      "gates": { "fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0 },
+      "mutation": null,
+      "hand_mutants": null,
+      "criteria": { "total": 6, "covered": 5 },
+      "size": { "lines": 1108, "forecast": 645 },
       "report": "verify-report.md"
     }
   ]

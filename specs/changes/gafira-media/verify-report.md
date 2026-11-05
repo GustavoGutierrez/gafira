@@ -248,3 +248,134 @@ ME2 is **649 lines against the ~700-line guide**: below it, and within the x1.4 
 - The target dir `/tmp/gafira-verify-me-target` is freed with `cargo clean --target-dir` at the end of the round.
 
 next: tdd-apply (ME1: W1, W2, W3, W4, W5; ME2: W7; then ME3), with explorer for W6 (XP6) and the coordinator for W8 and W9 (card attribution and the stale Flow line)
+
+---
+
+# Round C — `ME3`, first verify (depth **V1**)
+
+Delivery `ME3` of `layer-3`, crate `gafira-media`, verified at `5a50147` (the code tree is `bfcc9e5`). Mode full, `mutation: off` (owner decision O4), tier T0, depth **V1** (owner decision O5: the gates at HEAD plus the map of every criterion to its test or command; no independent probes from a scratch export and no independent hand mutants). This is round 1 of the delivery, so step 1c and step 4b do not apply.
+
+## Gates at HEAD (`5a50147`), each run alone
+
+`CARGO_TARGET_DIR=/tmp/gafira-verify-me3-target`, `CARGO_INCREMENTAL=0`, `df -h /` at 115 GB free before the first build.
+
+| Gate | Command | Exit |
+|---|---|---|
+| Format | `cargo fmt --check` | 0 |
+| Clippy | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| Test | `cargo test --workspace --locked` | 0 |
+| Deny | `cargo deny check` (`advisories ok, bans ok, licenses ok, sources ok`) | 0 |
+| CI policy | the nine `run:` blocks of the `policy` job, extracted literally and run with `bash -euo pipefail` | 0 (each) |
+
+`cargo test --workspace --locked`: 185 test binaries, **2320 tests passed, 0 failed**. The four binaries of the delivery: `proxy` 9, `cache` 12, `contract` 3, `keyframe` 7 (31 in the crate), all green, which matches the implementer's count.
+
+The nine policy steps, each in its own `bash -euo pipefail`: Format 0, `CLI has no UI dependencies (ARQ-07)` 0, `Domain crates forbid unsafe code` 0, `Domain crates respect the layer table (V5)` 0, `Domain clippy.toml copies are in sync (V12)` 0, `Layers 0-2 know no language (ARQ-107)` 0, `EditToken only in the edit crates (V13)` 0, `Every core command has a property test (V14)` 0, `Testkit ports feature compiles (ADR 0013)` 0. No `head` was applied to a cargo pipe, so no exit code is a `SIGPIPE` 101.
+
+AC24's own command, run here: `#![forbid(unsafe_code)]` at `crates/gafira-media/src/lib.rs:9`; `grep -rn` over `crates/gafira-media/src` and `crates/gafira-media/tests` for `std::fs`, `std::net`, `std::thread`, `std::time::Instant`, `std::time::SystemTime`, `std::env` and `unsafe ` returns no hit (exit 1 in each of the seven searches). The `std::io::Write` and `std::path` imports that `proxy.rs` does use are not in the list ADR 0016 bans. The V5 row is at `.github/workflows/ci.yml:95` and passes.
+
+## Criterion map (AC19 to AC24)
+
+| AC | Type | Proof | Result |
+|---|---|---|---|
+| AC19 | integration | `arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project` (`tests/proxy.rs:151`), `arq_146_the_two_levels_of_a_medium_are_two_copies` (`:442`) | covered |
+| AC20 | integration | `arq_146_a_cancelled_generation_leaves_no_half_written_file` (`:198`) plus the cancel points of `check_progress_contract` inside `arq_146_the_generation_follows_the_progress_contract` (`:372`) | covered |
+| AC21 | integration | `arq_146_an_export_reads_the_original_and_never_the_copy` (`:326`) proves the reader, not the exported file | **partial** (W11) |
+| AC22 | unit | `arq_146_the_default_budget_of_the_copies_is_ten_gigabytes` (`:244`), `arq_146_the_budget_discards_the_least_used_copies` (`:254`), `arq_146_a_budget_of_zero_keeps_no_copy` (`:300`) | covered, with W13 and S4 |
+| AC23 | unit | `arq_146_the_generation_runs_in_the_background_with_progress` (`:415`), `arq_146_the_generation_follows_the_progress_contract` (`:372`) | covered, with S5 |
+| AC24 | command | the gates above plus the seven `grep`s | covered |
+
+**AC19, the copy lives in the user cache and not in the `.gafira`.** The store writes only `root.join("proxies")` (`proxy.rs:381-383`), and the only root a caller can pass is the cache: nothing in the crate reaches the `.gafira`. The test does what the criterion asks: the copy is readable at `store.path(&key)`, that path starts with `/home/user/.cache/gafira`, every file the double holds is under the cache root or is the project file itself, and the project file is byte-identical afterwards. It also pins the naming half (§7.1, "the proxies do not go in the file"): the two levels are two files and a second store on the same cache names the same copy. The test's first version compared the expected name against `store.path(&key)` and H1 survived it; the current assertion is against the cache root, so the mutant dies (checked by reading `:176-187`).
+
+**AC20, a cancel leaves the cache usable and no half-written final file.** This is the strongest test of the delivery, and the rule it proves is real in the code: `generate` writes to `temporary_path(&final_path)` (`proxy.rs:427-432`), and `replace` is the only statement that can put bytes under the final name (`:287-290`); every early return between the create and the replace removes the temporary name (`:283`, `:289`), and `write_chunks` returns before writing when `create` fails (`:314`). The cancel checkpoints are at `:317` (before every chunk) and `:328` (after the last one, before the rename), so a cancel can land at any frame boundary and never reaches `1.0`. The three assertions of the test cover the criterion: `Err(MediaError::Cancelled(_))`, `paths() == [PROJECT]` (no final file *and* no leftover `.part`), `producer.asked() == 1` (it stops at the cancel), `reports() == [0.2]` (no `1.0` after the cancel) and `visible() == [false]`, a `Progress` double that asks the file system whether the final name is taken at every frame. The last part of the test generates the same copy again, which is "the cache stays usable". The one file-level gap is that the *success* path never asserts the `.part` is gone (S6).
+
+**AC21, an export never uses a proxy.** `read` answers `ProxySource { level: Original, path: original }` when `use_of == ProxyUse::Export`, before it even looks at the registry (`proxy.rs:231`), and `ProxyKey::of` refuses to build a key at `ProxyLevel::Original` (`:57-62`), so an export cannot even name a copy. `arq_146_an_export_reads_the_original_and_never_the_copy` proves both halves of that rule and also that a preview of the same key does answer the copy, so the test would fail if the branch were inverted (H4 kills it). The criterion's second clause — "the exported file has the resolution of the original" — has no proof in this delivery (W11).
+
+**AC22, the budget, the 10 GB default and the least-used eviction.** `DEFAULT_PROXY_BUDGET = Bytes(10 << 30)` (`:29`) is asserted exactly; the eviction walks the `recency` map from its lowest tick (`:366-378`), and the test makes the *older* copy the most recently used one through `read`, so insertion order alone cannot pass it. The `>` boundary is proved: three 4-byte copies under an 8-byte budget leave two, and `bytes() <= budget()`; the `>=` mutant empties the cache and fails the same test. The reservation in the budget of what the store wrote (W13) and the GiB reading of "10 GB" (S4) are the two caveats.
+
+**AC23, background priority, progress and the cancel token.** The report carries `Priority::Background` (`:296`) and the test asserts the field. It is a label: `ports::WorkerPool` has no priority, so the store cannot enqueue its work at that priority, and the implementer recorded the choice. Progress is the frames done over the frames planned (`planned = frames + 1`, `:275`), which keeps the fraction below `1.0` until the rename, and the test asserts the exact sequence `[0.2, 0.4, 0.6, 0.8, 1.0]` and the report count, which is what stops the contract checker from passing vacuously (the implementer's note on that is correct: `check_progress_contract` cancels at reports `{1, n/2, n-1}`, and `n = 5` here, so it does exercise cancels at the first, the middle and the last frame). The cancel checkpoints are the two at `:317` and `:328`; the contract check at `k = 4` reaches the post-loop checkpoint, which the file-system assertions of the AC20 test do not.
+
+## Product IDs (step 3c)
+
+| ID | Named by a test? | Proves its acceptance? |
+|---|---|---|
+| ARQ-146 | yes, 10 hits in `tests/proxy.rs`, and every test name carries it | yes for the cache, the cancel and the "export never uses a copy" rules; not for the resolution of the exported file (W11) |
+| FV-22 | only the module header of `tests/proxy.rs:1` | partially: (b) is proved, (a) and (c) are not (W12) |
+| ARQ-43 | **no** — `git grep ARQ-43 -- crates/gafira-media` is empty | the per-frame checkpoint is proved under ARQ-146; the ≤ 100 ms bound has no bench (W10) |
+
+## Artifact integrity (step 3c)
+
+- `cbe83c5 docs(gafira-media): slice card for ME3` touches only `specs/changes/gafira-media/apply-progress.md` (+27 lines): the `## ME3` block, its `Flow:` line at `:193` and AC19 to AC24. Nothing else in the commit.
+- `bfcc9e5 feat(gafira-media): add the proxy store` touches only `crates/gafira-media/src/lib.rs` (+4), `src/proxy.rs` (440), `tests/proxy.rs` (467) and `tests/proxy_support.rs` (197). No file outside the crate.
+- `5a50147 docs(gafira-media): record the ME3 progress` touches only `apply-progress.md`, and `git diff cbe83c5..HEAD -- apply-progress.md` starts at line 207: every changed line is inside `## ME3 (tdd-apply)`. The card block (191-204) is byte-identical to `cbe83c5`, including the `Flow:` line and the `Deliveries`/`Scope`/`Non-goals`/`Plan` fields. The notes sit in the right section and the placeholder "Gates per commit" line the card left is the 1 deletion.
+- The `Flow:` line of this delivery, `full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1`, matches O4 and O5 of the design, unlike the stale ME2 line W9 already recorded.
+- The delivery adds no `.cargo/mutants.toml` exclusion (no file of that or `Cargo.toml`/`Cargo.lock` is touched), and `mutation: off` needs none.
+- The ME3 card is byte-identical on `develop` and on this branch (checked with `diff`), so the amend that fixed the ME2 card does not disturb this round.
+
+## The notes of the delivery, checked
+
+The six hand mutants of the list are the four critical rules of the design for `ME3` (naming, budget, the checkpoints, "an export never uses a proxy") split into six behaviours, and each names the test that kills it. The two survivors that forced a test to be strengthened (H1, H2) are visible in the committed tests: `:176-187` for H1 and the `visible()` double at `:131-146` for H2, which does die on the first frame against a store that writes to the final name. The RED evidence is recorded output, not something git can reproduce (no skeleton commit exists), and V1 does not ask for that re-run.
+
+## Size (measured, not judged)
+
+`git diff --shortstat cbe83c5...HEAD` -> **5 files changed, 1163 insertions(+), 1 deletion(-)**. Without the notes commit the delivery is 1108 insertions in 4 files, of which 440 are the store, 467 the tests, 197 the extra double and 4 the exports.
+
+Against the `AGENTS.md` signal of ~700 lines per delivery that is **1,58×**, and against the design's forecast for `ME3` (`design.md:103`: 460, or 645 with the x1,4 factor) it is **2,4×** and **1,7×**. Above the ceiling the delivery needs the owner's explicit OK; that is W14, and the decision is the coordinator's. The 197-line double is the avoidable part (S7).
+
+## Findings
+
+### CRITICAL
+
+None.
+
+### WARNING
+
+**W10. ARQ-43, a Product ID of the card, has no test, bench or command that names it.** class: implementation. Ref: `apply-progress.md:194`; `git grep ARQ-43 -- crates/gafira-media` (empty); `specs/02-arquitectura-software.md:1489`.
+
+Read literally, step 3c makes a missing name CRITICAL. It is read as a WARNING here, the same judgement ME1 round 1 (W4, ARQ-138) and ME2 round 1 (W7, ARQ-44) recorded, for the same reason: the rule is proved in substance and only the trace is missing. The mechanism of ARQ-43 in this delivery is the per-frame checkpoint, which the AC20 and AC23 tests do prove; the figure itself, "cancel ≤ 100 ms", is measured by `bench_cancel_segment` in `gafira-segment` (§6.7), and the crate has no `benches/` directory, so nothing here can measure it. A per-frame checkpoint does not by itself bound the response to 100 ms, because one chunk write is outside the check.
+
+Fix: name ARQ-43 in the test that proves the checkpoint (one comment line is enough), and say in the card that the 100 ms figure is the bench of `gafira-segment` and not this crate's.
+
+**W11. AC21's second clause, "the exported file has the resolution of the original", has no proof in this delivery.** class: ambiguity. Ref: `apply-progress.md:199`; `specs/02-arquitectura-software.md:1252` (ARQ-146, third acceptance); `crates/gafira-media/tests/proxy.rs:326`.
+
+The store owns and proves the half that is its own: an export reads the original path at `ProxyLevel::Original` and never the copy. The written file does not exist until the exporter of `ME5` exists, and the implementer declared this as "a deviation of the evidence, not of the behaviour". The criterion as written cannot be observed in `ME3`, so the card attributes to this delivery an outcome of another one. If the coordinator wants the card literal it needs the same "partial" marker the ME2 card got in `1da2b21`; a strict reading of step 3c would make this CRITICAL and route to `specifier`, and it is not graded that way because the behaviour the store owns is proved and the missing half is scheduled by this same change.
+
+Fix: mark ARQ-146 and AC21 as partial in the card (export half to `ME5`), as ME2 did with CAL-14 and FV-11 (b).
+
+**W12. FV-22 is listed without a partial marker, and only (b) of its acceptance is proved.** class: ambiguity. Ref: `apply-progress.md:194`; `specs/05-funcionalidad-video-y-distribucion.md:350-357`; `crates/gafira-media/tests/proxy.rs:1`.
+
+FV-22 asks for four things: automatic generation for material over 1080p or with expensive codecs, MJPEG at 540p/720p in the user cache, a 10 GB limit discarding the least used, and the export always on the original. The delivery has the store, the format name, the limit and the export rule; the *automatic* trigger depends on the codec and the asset metadata (`gafira-engine`, `ME5`), and the manual create/delete of the Copies belongs to the Phase 2 UI. The only appearance of FV-22 in the tests is the module header at `:1`, which is not a test name. (c) "deleting the cache loses no project data" has no test, although `evict_to` removing only its own files is the code that makes it true.
+
+Fix: scope FV-22 in the card to the store half, and let `ME5`/the engine own the trigger.
+
+**W13. The 10 GB budget only counts the copies this process wrote; a cache left by an earlier session is neither counted nor collected.** class: implementation. Ref: `crates/gafira-media/src/proxy.rs:286-345` (`size` starts at `Bytes(0)`), `:366-378` (eviction removes only registered keys); the implementer's note at `apply-progress.md:267`.
+
+The store keeps no manifest and never enumerates the proxy directory, so a second session starts from zero, regenerates what it needs and can push the real directory well past 10 GB; a `.part` file left behind by a killed process is never collected either, because `read_dir` is not used anywhere in the crate. The note's justification, "`ports::FileSystem` has no call that gives the size of a file", overstates the port: `open` returns `Box<dyn ReadSeek + Send>` (`crates/gafira-ports/src/system.rs:41`), and `Seek::seek(SeekFrom::End(0))` gives the length, so the store could seed itself from `read_dir` at construction and also drop stale `.part` files. The criterion is therefore proved only within one `ProxyStore` instance, and FV-22 (c) is met by accident rather than by test.
+
+Fix: seed the store from `read_dir` (size by `open` + `seek(End)`, dropping `*.part`) or record the manifest, and say in the card that the budget is per-session until that lands.
+
+**W14. The delivery is 1,58× the ~700-line signal.** class: implementation. Ref: the size section above; `specs/changes/layer-3/design.md:103` (forecast 460, 645 adjusted); `AGENTS.md`, "Delivery rules".
+
+1108 code lines (1163 with the notes) against ~700, and 1,7× its own adjusted forecast. Above the ceiling the delivery needs the explicit OK of the owner; the split is 440 store, 467 tests, 197 double, 4 exports, so the tests are not the outlier — the extra double is (S7).
+
+### SUGGESTION
+
+**S4.** `DEFAULT_PROXY_BUDGET` is `10 << 30`, that is 10 GiB, while FV-22 and ARQ-146 say "10 GB (PROPUESTA)" without stating whether the gigabyte is decimal. If the owner reads GB as 10^9 the constant is 7 % above the spec. It follows `DEFAULT_BUDGET` of `ME2` (1 GB = `1 << 30`), and the test pins the binary reading, so this is a spec wording question, not a defect: one line to change if the owner answers.
+
+**S5.** The contract test passes `max_step = 0.25` to `check_progress_contract`, while ARQ-139's acceptance fixes a rise of at most 0,02 between two reports *on the reference input*. The finest step the model can give is `1/(frames+1)`, so 0,02 holds from 50 frames up and a 4-frame copy (the test's producer) reports 0,2. Naming the reference copy of this operation (≥ 50 frames) or saying in ARQ-146 that the per-frame model is the reference would close the gap between the row and its proof.
+
+**S6.** The success path never asserts that the `.part` name is gone: the AC19 test only checks that every held file is under the cache root, and a leftover `...540p.mjpeg.part` satisfies that. `replace` cannot leave it (the double's and the OS's rename both remove the source), so this is a cheap extra assertion rather than a defect. Likewise, no test injects a failing `FileSystem` or a producer that returns `Err`, so the three error paths of the temporary rule (`create`, `write_all`, `replace`) are proved by reading `:278-290`, not by a test.
+
+**S7.** The 197-line writable double duplicates a home that already exists: `crates/gafira-testkit/src/ports/file_system.rs` is a `FakeFileSystem` that panics ("A stub: the media stream fills it"), and the design's shared-files table gives `crates/gafira-testkit/src/ports/**` to each stream for "their own files" but never assigns `file_system.rs`. Filling that stub, or declaring the file in the table, would cut the largest avoidable part of the over-size — and would let `ME4`/`ME5` reuse it. The implementer's stated reason (`tests/support/mod.rs` must stay read-only for ARQ-144 and `#[allow(dead_code)]` is banned) does not cover the testkit copy, which lives behind the `ports` feature.
+
+**S8.** `write_chunks` reads `producer.frames()` a second time (`proxy.rs:316`) although `generate` already read it for `planned` (`:271`). A producer whose `frames()` changes between the two calls can make the fraction reach `1.0` before the rename, which is exactly what ARQ-139 forbids. Reading it once and passing it down, or documenting `frames()` as a stable count, removes the hole; the `Chunks` double is stable, so no test sees it today.
+
+**S9.** `§6.3` of `02` puts "generación de proxies" on the I/O thread with priority "Normal", while FV-22 and ARQ-146 demand `Background`. The delivery follows the latter, but the store can only *report* the priority (`ports::WorkerPool` carries none), so the contradiction will surface when `gafira-engine` enqueues the work. Reconciling the two rows in the spec would decide who owns the enqueue.
+
+## Notes on this run
+
+- Both deliverables were written on `develop`'s copies of the two files, which hold the ME1 round 2 and ME2 round 1 rows, because this branch's copies predate them. The ME1 and ME2 rounds are byte-identical to `develop`'s; the report gains this section and nothing else (131 insertions, 0 deletions against `develop`), and `verification.json` gains the ME3 round plus the one-line `delivery` field, which now reads `ME3` and no longer `ME1+ME2` (each round keeps its own `delivery` label).
+- `develop` already contains the three ME3 commits (`33715bf Merge branch 'feat/layer-3-media-3' into develop`) while this first verify of the delivery was still to run, and that merge kept `develop`'s `verification.json`. Recorded because it changes what a fix round has to rebase on; not a finding of this round.
+- Nothing outside the two files was touched: the worktree is clean apart from them, no commit was made, `.odd/state.json` was not opened for writing, and the build dir `/tmp/gafira-verify-me3-target` is freed with `cargo clean --target-dir` at the end of the round.
+- Verdict reasoning: no CRITICAL, so PASS; the five WARNINGs stay open and become follow-ups on PASS. `next` is `tdd-apply` for `ME4`, which is the next delivery of the card.
+
+next: tdd-apply (ME4), with the coordinator to amend the ME3 card for ARQ-43, ARQ-146/AC21 and FV-22 if it wants the card literal (W10, W11, W12) and for the size (W14)
