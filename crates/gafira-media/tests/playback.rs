@@ -200,6 +200,25 @@ fn arq_147_the_preview_drift_never_passes_40_ms() {
     }
 }
 
+// ARQ-147: a frame that is ahead of the master reports no drift: the drift
+// is 0 when the frame was ahead of the master, as the doc of the method says.
+#[test]
+fn arq_147_a_frame_ahead_of_the_master_reports_no_drift() {
+    let clock = ManualClock::new();
+    let mut playback = start(&clock, range_seconds(10), Speed::Normal);
+
+    assert_eq!(
+        playback.decide(ms(20)),
+        FrameDecision::Present,
+        "a frame ahead of the master is presented"
+    );
+    assert_eq!(
+        playback.drift(),
+        Flicks::ZERO,
+        "the drift of a frame ahead of the master is zero, not a negative time"
+    );
+}
+
 // FV-11: the three speeds scale the presentation time, and the master stays
 // the audio clock at every one of them.
 #[test]

@@ -43,7 +43,7 @@ ODD changes the default: new work on a capability an existing spec covers needs 
 
 A change folder lives in `specs/changes/<change>/`, whether it comes from full mode, L3 or work no spec covers; it closes into `specs/history/<date>-<change>/`.
 
-With no folder, `tdd-apply` records its progress notes in the body of the last implementer commit of the delivery (skipping coordinator commits that touch only `.odd/state.json`); `verify` writes `verify-report.md` and `verification.json` to the scratchpad path the coordinator gives it, and the coordinator keeps what must survive a session in the entry's `verify` field (`round`, `commit`, `verdict`, `next`, `findings`, `rounds`); `explorer` returns its result without a `spike.md`.
+With no folder, `tdd-apply` records its progress notes in the body of the last implementer commit of the delivery (skipping coordinator commits that touch only `.odd/state.json`); `verify` writes `verify-report.md` to the scratchpad path the coordinator gives it, and the coordinator keeps what must survive a session in the entry's `verify` field (`round`, `commit`, `verdict`, `next`, `findings`, `rounds`); `explorer` returns its result without a `spike.md`.
 
 ### Outcome state
 
@@ -63,7 +63,7 @@ Only when the entry is the G0 artifact (no Slice card or Light spec holds these)
 
 | Field | Content |
 |---|---|
-| `findings` | every CRITICAL and WARNING of any run, as `{id, severity, class, ref, summary, follow_up, status}` copied from `verification.json` (same ids, each unique across the entry's rounds; `summary` <=200 chars). `follow_up` is true for a WARNING marked follow-up, and for every WARNING still open when a delivery ends in PASS. `status` is `open` or `closed`, as the latest closure round's `verification.json` lists it; a re-listed id updates its finding. SUGGESTIONs are not stored |
+| `findings` | every CRITICAL and WARNING of any run, as `{id, severity, class, ref, summary, follow_up, status}` copied from the verify report (same ids, each unique across the entry's rounds; `summary` <=200 chars). `follow_up` is true for a WARNING marked follow-up, and for every WARNING still open when a delivery ends in PASS. `status` is `open` or `closed`, as the latest closure round's report lists it; a re-listed id updates its finding. SUGGESTIONs are not stored |
 | `rounds` | one `{round, verdict, classes}` row per verify run of the current delivery; `classes` holds the distinct classes of its CRITICAL and WARNING findings that are not follow-ups, including earlier findings still open in that round. A BLOCKED row is kept and does not count toward the stops; its re-run has the same round number and replaces the row |
 
 The coordinator commits this update on the delivery branch before routing, on PASS, FAIL and BLOCKED alike, because the scratchpad does not survive a session. A PASS does not route WARNINGs, so on a delivery PASS every still-open WARNING that is not a follow-up becomes `follow_up: true` and reaches `archive`. When the next delivery of the same outcome starts, the coordinator resets `rounds` and drops closed findings; open follow-ups stay until `archive` consumes them.
@@ -132,13 +132,17 @@ A design note (`architect`) is written only when a spec leaves a real decision o
 
 ## Strict TDD
 
-RED (write the test, run it, see it fail) -> GREEN (minimal code) -> REFACTOR (tests green). One commit per reviewable work unit. Every commit must pass alone:
+RED (write the test, run it, see it fail) -> GREEN (minimal code) -> REFACTOR (tests green). One commit per reviewable work unit. Every commit must pass alone, scoped to what it can break:
 
 ```
 cargo fmt --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+cargo clippy -p <crate> --all-targets --locked -- -D warnings
+cargo test -p <crate> --locked
 ```
+
+Use `--workspace` instead of `-p <crate>` when the commit touches a crate that other crates depend on (anything under `gafira-ports`, `gafira-doc`, `gafira-geom`, `gafira-color`, `gafira-raster`, `gafira-time`, `gafira-anim`, `gafira-layout`, `gafira-pathops`, `gafira-text`, `gafira-audio`, `gafira-edit`, `gafira-segment`, `gafira-testkit`), when it touches `Cargo.toml` or `Cargo.lock`, or when it touches `ci.yml`. A leaf crate with no dependents — today `gafira-render` and `gafira-media` — only needs its own scope, because an unchanged crate's tests cannot regress.
+
+The full workspace suite runs **once at the delivery HEAD** and **once before the `develop` -> `main` PR**, never on every commit. Measured on 2026-11-05, warm: `cargo test --workspace` 148 s against `cargo test -p gafira-render` 2 s, so the scope is not a micro-optimisation. The same scope applies to the RED run of every acceptance criterion and to the test that kills each hand mutant.
 
 `cargo check --workspace --all-targets` is the build check. Tests are unit and integration (in each crate's `tests/`); there is no e2e layer, no coverage tool is installed and there is no coverage threshold.
 
@@ -184,7 +188,6 @@ specs/changes/<change>/                    active change folders
   specs/<capability>/spec.md               delta specs for this change (none in the fast lane or light mode)
   apply-progress.md                        written by tdd-apply (existing name, keep it); starts with the `Flow:` line, or with the block written by the coordinator: Light spec (light mode) or Slice card (fast lane: product IDs, scope, non-goals, deliveries, plan, Flow line)
   verify-report.md                         written by verify
-  verification.json                        written by verify beside the report (pilot, every depth above V0; see ADR 0001)
 specs/history/<date>-<change>/             closed changes
 ```
 

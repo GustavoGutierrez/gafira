@@ -143,6 +143,70 @@ fn fv_12_the_pipeline_orders_the_stages_and_encodes_the_frames_of_the_range() {
     );
 }
 
+// FV-12 (b): the A/V difference of the export, measured with a source whose
+// first video frame is not at the start of the range: the claim of the
+// exporter only held for an aligned source.
+#[test]
+fn fv_12_the_av_difference_is_measured_with_a_video_that_starts_after_the_range() {
+    let journal = Journal::new();
+    let probe = Probe::new();
+    let renderer = CountingRenderer::new(journal.clone());
+    let container = RecordingContainer::new(journal.clone(), probe.clone());
+    let video = LogCodec::video(journal.clone());
+    let audio = LogCodec::audio(journal.clone());
+    let source = RecordingSourceFactory::new(
+        journal.clone(),
+        SourcePlan {
+            // The first video frame is 41 ms after the start of the range.
+            video: timeline(541, 2_500, FrameRate::FPS_25),
+            audio: (0..20).map(silent).collect(),
+        },
+    );
+    let exporter = VideoExporter::new(
+        ExportMedium::new("original.mov"),
+        Box::new(source),
+        &container,
+        &video,
+        &audio,
+        "reel.mp4",
+    );
+    let mut sink = MemSink::new(SinkProbe::new());
+    let request = request(values(500, 2_500, "25"));
+
+    run(
+        &exporter,
+        &request,
+        &renderer,
+        &mut sink,
+        &ProgressProbe::new(),
+        &CancelToken::new(),
+    )
+    .expect("the export completes");
+
+    let video_packets = probe.stream_packets(StreamIdx(0));
+    let audio_packets = probe.stream_packets(StreamIdx(1));
+    let first_video = video_packets
+        .first()
+        .expect("the video has a first packet")
+        .pts
+        .ticks();
+    let first_audio = audio_packets
+        .first()
+        .expect("the audio has a first packet")
+        .pts
+        .ticks();
+    let drift = (first_audio - first_video).abs();
+    assert_eq!(
+        drift, 0,
+        "both tracks are anchored to the start of the range, so the A/V difference is zero"
+    );
+    assert!(
+        drift < SYNC_TOLERANCE.ticks(),
+        "the A/V difference is below 40 ms: {drift} ticks against {}",
+        SYNC_TOLERANCE.ticks()
+    );
+}
+
 // FV-12 (b): the audio track is muxed in and the A/V difference of the result
 // stays below the 40 ms of the preview tolerance.
 #[test]
