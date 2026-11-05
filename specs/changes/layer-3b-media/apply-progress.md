@@ -1,6 +1,6 @@
 ## Slice card
 Flow: standard | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the media stream of layer-3b opens with the playback clock that keeps the audio and the video together; O8 carries O4 and O5 of layer 3 to this cut
-Product IDs: FV-11, FV-10 (c) (source: specs/05-funcionalidad-video-y-distribucion.md §A6, specs/02-arquitectura-software.md §6.5)
+Product IDs: FV-11, FV-11 (c) (source: specs/05-funcionalidad-video-y-distribucion.md §A6, specs/02-arquitectura-software.md §6.5)
 Scope: `ME4` of `specs/history/2026-11-04-layer-3/design.md`: in `gafira-media`, the playback clock whose master is the audio, the A/V drift that follows from it, and the drop decision of §6.5 with its 40 ms tolerance.      Non-goals: the exporter (`ME5`), the frame cache (`ME2`, done), the keyframe index (`ME1`, done), the audio mixer itself (layer 2, `gafira-audio`), and any change to `gafira-ports`.
 Acceptance:
   AC1 Given the playback, When the clock is read, Then the master is the audio and the video never blocks it (02 §6.5) [unit]
