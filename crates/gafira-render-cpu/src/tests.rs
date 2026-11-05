@@ -762,6 +762,85 @@ fn arq_143_memory_usage_is_the_surface_plus_the_cache_and_trim_drops_to_the_budg
 }
 
 // ---------------------------------------------------------------------------
+// The place of the surface, and the ops this delivery does not render
+// ---------------------------------------------------------------------------
+
+// ARQ-149: the surface covers the page rectangle at the target's origin, a tile
+// that runs outside it is clipped, and a read outside it answers transparent
+// black in a buffer of the size asked for.
+#[test]
+fn arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target() {
+    let target_desc = target(64, 64, (100, 200), PixelFormat::RgbaF32);
+    // The tile runs past the surface's right and bottom edges, and the fill
+    // only meets the surface in a 4 × 4 corner.
+    let scene = plan(vec![task(
+        1,
+        IRect::new(150, 250, 214, 314),
+        vec![fill(160.0, 260.0, 200.0, 300.0, white())],
+    )]);
+    let surface = run(target_desc, &scene);
+    assert!(
+        is_white(&surface, 60, 60),
+        "page (160, 260) is inside the fill"
+    );
+    assert!(
+        is_clear(&surface, 50, 50),
+        "page (150, 250) is outside the fill"
+    );
+    assert!(
+        is_clear(&surface, 58, 62),
+        "page (158, 262) is outside the fill"
+    );
+
+    // A read that reaches past the target keeps the size it asked for; the part
+    // outside the target is transparent black.
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let mut cache = RecordingCache::default();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+    let read = frame
+        .read(IRect::new(150, 250, 200, 300))
+        .expect("the region reads");
+    assert_eq!((read.width(), read.height()), (50, 50));
+    assert!(is_white(&read, 10, 10), "page (160, 260) inside the target");
+    assert!(
+        is_clear(&read, 20, 20),
+        "page (170, 270) is outside the target"
+    );
+}
+
+// CB1 renders no layer, image, mask, effect or transition: the closed
+// `RenderOp` enum forces a reading, and the adapter reports the op instead of
+// drawing a page it cannot compose. The layer stack is CB2, the image CB4 and
+// the other three CB5.
+#[test]
+fn a_layer_op_is_reported_and_not_silently_flattened() {
+    let ops = [
+        RenderOp::PushLayer,
+        RenderOp::PopLayer {
+            blend: gafira_doc::BlendMode::Normal,
+            opacity: 1.0,
+        },
+    ];
+    for op in ops {
+        let scene = plan(vec![task(1, IRect::new(0, 0, 8, 8), vec![op])]);
+        let mut frame = Frame::open(
+            CpuBackend::new(),
+            target(8, 8, (0, 0), PixelFormat::RgbaF32),
+        );
+        let mut cache = RecordingCache::default();
+        let error = frame
+            .execute(&scene, &mut cache, &CancelToken::new())
+            .expect_err("a layer op is not rendered by this delivery");
+        assert!(
+            matches!(error, RenderError::DriverBlocked),
+            "reported as blocked, not drawn: {error:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // AC7 — the same plan and the same surface give the same bytes
 // ---------------------------------------------------------------------------
 
