@@ -178,7 +178,9 @@ fn arq_134_the_dispatch_has_no_catch_all_arm() {
 }
 
 // ARQ-137: the domain depends on no crate above it: its manifest names no
-// engine of a higher layer.
+// engine of a higher layer. `gafira-time` is layer 0 — below the domain, never
+// above it — and the edge to it is the one ARQ-136 names as expected and
+// bounded, so it is not part of this ban.
 #[test]
 fn arq_137_the_domain_depends_on_no_crate_above_it() {
     let manifest = include_str!("../Cargo.toml");
@@ -186,7 +188,6 @@ fn arq_137_the_domain_depends_on_no_crate_above_it() {
         "gafira-render",
         "gafira-media",
         "gafira-layout",
-        "gafira-time",
         "gafira-ports",
     ] {
         assert!(

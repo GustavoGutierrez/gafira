@@ -94,16 +94,16 @@ jobs:
           gafira-geom  -
           gafira-color -
           gafira-time  -
-          gafira-doc   gafira-geom gafira-color
-          gafira-edit  gafira-geom gafira-color gafira-doc
-          gafira-testkit gafira-geom gafira-color gafira-doc gafira-edit
-          gafira-pathops gafira-geom gafira-color gafira-doc
-          gafira-layout gafira-geom gafira-color gafira-doc
+          gafira-doc   gafira-geom gafira-color gafira-time
+          gafira-edit  gafira-geom gafira-color gafira-doc gafira-time
+          gafira-testkit gafira-geom gafira-color gafira-doc gafira-edit gafira-time
+          gafira-pathops gafira-geom gafira-color gafira-doc gafira-time
+          gafira-layout gafira-geom gafira-color gafira-doc gafira-time
           gafira-anim   gafira-time gafira-geom gafira-color
-          gafira-text    gafira-geom gafira-color gafira-doc gafira-pathops
-          gafira-raster  gafira-geom gafira-color gafira-doc
+          gafira-text    gafira-geom gafira-color gafira-doc gafira-pathops gafira-time
+          gafira-raster  gafira-geom gafira-color gafira-doc gafira-time
           gafira-audio   gafira-geom gafira-color gafira-doc gafira-time
-          gafira-segment gafira-geom gafira-color gafira-doc gafira-raster
+          gafira-segment gafira-geom gafira-color gafira-doc gafira-raster gafira-time
           gafira-ports   gafira-geom gafira-color gafira-doc gafira-time gafira-raster
           gafira-render  gafira-ports gafira-doc gafira-geom gafira-color gafira-raster gafira-time gafira-anim
           gafira-media   gafira-ports gafira-doc gafira-raster gafira-time gafira-geom gafira-color

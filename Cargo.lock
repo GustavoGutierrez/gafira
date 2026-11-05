@@ -416,6 +416,7 @@ dependencies = [
  "gafira-color",
  "gafira-geom",
  "gafira-testkit",
+ "gafira-time",
  "proptest",
  "serde",
  "serde_json",

@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 gafira-geom.workspace = true
 gafira-color.workspace = true
+gafira-time.workspace = true
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
 

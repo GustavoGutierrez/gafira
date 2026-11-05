@@ -6,6 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use gafira_geom::Length;
+use gafira_time::Flicks;
 
 use crate::layout::{check_bleed, default_bleed};
 use crate::{
@@ -38,6 +39,13 @@ pub struct Page {
     /// The background grid.
     #[serde(default)]
     pub grid: GridSettings,
+    /// The duration of the page, when it has one (02 §3.1).
+    ///
+    /// The field is absent in the wire form when the page has no duration, so
+    /// a document written before the timeline edge still loads (ADR 0006
+    /// rule 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<Flicks>,
     /// Whether the whole page is protected from edits.
     #[serde(default)]
     pub locked: bool,
@@ -72,6 +80,7 @@ impl Page {
             margins: Margins::default(),
             guides: GuideSet::default(),
             grid: GridSettings::default(),
+            duration: None,
             locked: false,
             hidden: false,
             roots: Vec::new(),

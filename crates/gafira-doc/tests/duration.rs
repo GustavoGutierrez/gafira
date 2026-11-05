@@ -7,6 +7,7 @@
 
 use gafira_doc::{Document, Page, PageId, PageSize};
 use gafira_geom::{Length, Unit};
+use gafira_time::Flicks;
 
 /// A page size of 100 by 200 pixels.
 fn size() -> PageSize {
@@ -107,4 +108,20 @@ fn arq_10_the_duration_takes_part_in_the_equality_of_the_document() {
     assert_eq!(without.pages()[0].id, PageId::new(1));
     assert_eq!(with.pages()[0].size, size());
     assert_eq!(with.clone(), with, "cloning a document keeps its duration");
+}
+
+// ARQ-136, V-2 (AC2): the duration is an `Option<Flicks>` of `gafira-time`,
+// not an integer of the crate's own. The type is the evidence: the two
+// bindings below only compile with that exact type.
+#[test]
+fn arq_136_the_duration_is_a_flicks_of_gafira_time() {
+    let mut page = Page::new(PageId::new(1), "P".to_string(), size());
+    let none: Option<Flicks> = page.duration;
+    assert_eq!(none, None, "a page has no duration by default");
+
+    page.duration = Some(Flicks::from_millis(1_500).expect("the time fits"));
+    let ticks: Option<i64> = page.duration.map(Flicks::ticks);
+    assert_eq!(ticks, Some(1_058_400_000), "one and a half seconds");
+    let saved: Option<Flicks> = page.duration;
+    assert_eq!(saved, Some(Flicks::from_millis(1_500).unwrap()));
 }
