@@ -1,0 +1,16 @@
+{ "schema": 1, "change": "gafira-ports", "delivery": "D5b", "rounds": [ {
+  "round": 1, "commit": "951a5a6", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 2, "suggestion": 1},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "crates/gafira-ports/src/export.rs",
+     "summary": "ExportIssue, IssueSeverity, ExportReport, ExportedFile are implementer shapes; spec and design name them only. Owner to confirm.",
+     "follow_up": true, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-ports/src/assist.rs:83",
+     "summary": "AssistError uses the default source(), so Cancelled is not exposed, unlike the other port errors. Not against ADR 0012.",
+     "follow_up": true, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": null, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 4},
+  "criteria": {"total": 13, "covered": 13},
+  "size": {"lines": 885, "forecast": 365}, "report": "verify-report.md" } ] }

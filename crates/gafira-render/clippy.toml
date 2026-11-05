@@ -1,0 +1,47 @@
+# ARQ-02 layer purity for domain crates: no I/O, threads, clocks, env or processes.
+# Clippy does not merge files and cannot disallow a whole module, so each path is
+# listed. This is the canonical copy; other domain crates must stay byte-identical
+# (checked by the V12 `diff` step in CI).
+
+disallowed-methods = [
+    { path = "std::fs::read", reason = "ARQ-02" },
+    { path = "std::fs::read_to_string", reason = "ARQ-02" },
+    { path = "std::fs::write", reason = "ARQ-02" },
+    { path = "std::fs::read_dir", reason = "ARQ-02" },
+    { path = "std::fs::metadata", reason = "ARQ-02" },
+    { path = "std::fs::create_dir", reason = "ARQ-02" },
+    { path = "std::fs::create_dir_all", reason = "ARQ-02" },
+    { path = "std::fs::remove_file", reason = "ARQ-02" },
+    { path = "std::fs::remove_dir", reason = "ARQ-02" },
+    { path = "std::fs::remove_dir_all", reason = "ARQ-02" },
+    { path = "std::fs::copy", reason = "ARQ-02" },
+    { path = "std::fs::rename", reason = "ARQ-02" },
+    { path = "std::fs::File::open", reason = "ARQ-02" },
+    { path = "std::fs::File::create", reason = "ARQ-02" },
+    { path = "std::fs::OpenOptions::open", reason = "ARQ-02" },
+    { path = "std::thread::spawn", reason = "ARQ-02" },
+    { path = "std::thread::Builder::spawn", reason = "ARQ-02" },
+    { path = "std::time::SystemTime::now", reason = "ARQ-02" },
+    { path = "std::time::Instant::now", reason = "ARQ-02" },
+    { path = "std::env::var", reason = "ARQ-02" },
+    { path = "std::env::var_os", reason = "ARQ-02" },
+    { path = "std::env::vars", reason = "ARQ-02" },
+    { path = "std::env::args", reason = "ARQ-02" },
+    { path = "std::env::args_os", reason = "ARQ-02" },
+    { path = "std::env::current_dir", reason = "ARQ-02" },
+    { path = "std::env::temp_dir", reason = "ARQ-02" },
+    { path = "std::process::Command::new", reason = "ARQ-02" },
+    { path = "std::process::exit", reason = "ARQ-02" },
+]
+
+disallowed-types = [
+    { path = "std::fs::File", reason = "ARQ-02" },
+    { path = "std::fs::OpenOptions", reason = "ARQ-02" },
+    { path = "std::net::TcpStream", reason = "ARQ-02" },
+    { path = "std::net::TcpListener", reason = "ARQ-02" },
+    { path = "std::net::UdpSocket", reason = "ARQ-02" },
+    { path = "std::process::Command", reason = "ARQ-02" },
+    { path = "std::thread::Builder", reason = "ARQ-02" },
+    { path = "std::collections::HashMap", reason = "ARQ-10: unstable iteration order; use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "ARQ-10: unstable iteration order; use BTreeSet" },
+]

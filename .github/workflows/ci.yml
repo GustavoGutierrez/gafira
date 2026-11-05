@@ -90,6 +90,9 @@ jobs:
           gafira-raster  gafira-geom gafira-color gafira-doc
           gafira-audio   gafira-geom gafira-color gafira-doc gafira-time
           gafira-segment gafira-geom gafira-color gafira-doc gafira-raster
+          gafira-ports   gafira-geom gafira-color gafira-doc gafira-time gafira-raster
+          gafira-render  gafira-ports gafira-doc gafira-geom gafira-color gafira-raster gafira-time gafira-anim
+          gafira-media   gafira-ports gafira-doc gafira-raster gafira-time gafira-geom gafira-color
           '
           forbidden='egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq'
           status=0
@@ -155,6 +158,11 @@ jobs:
             grep -q "^$name v" <<<"$tree" || { echo "::error::empty cargo tree for $name" >&2; status=1; continue; }
             if bad=$(grep -E "^($banned) v" <<<"$tree"); then echo "::error::$name depends on $bad (ARQ-107)" >&2; status=1; fi
             [ -d "crates/$name/src" ] || { echo "::error::crates/$name/src not found" >&2; status=1; continue; }
+            # gafira-ports is layer 3 and defines Locale (02 §14.1, ADR 0013): only its dependency check above applies.
+            if [ "$name" = gafira-ports ]; then
+              echo "gafira-ports: layer 3, exempt from the Locale search"
+              continue
+            fi
             rc=0; hits=$(grep -rn 'Locale' "crates/$name") || rc=$?
             case "$rc" in
               0) echo "::error::$name mentions Locale (ARQ-107):" >&2; echo "$hits" >&2; status=1 ;;
@@ -249,6 +257,20 @@ jobs:
             esac
           done
           [ -z "$missing" ] || { echo "::error::core commands without a property test in $props:$missing" >&2; exit 1; }
+      - name: Testkit ports feature compiles (ADR 0013)
+        run: |
+          set -euo pipefail
+          # The `ports` feature of the testkit is off by default (ADR 0013, decision 4), so the
+          # default suite of the `test` matrix compiles neither the nine port doubles nor the
+          # `#[cfg(feature = "ports")]` test of tests/ports_feature.rs. This job runs on a single
+          # target, so the step checks the host before compiling: the feature is compiled here on
+          # Linux (x86_64-unknown-linux-gnu, the Linux entry of the `test` matrix). The three
+          # product targets (Windows, Linux, macOS) are covered by that matrix through the default
+          # suite, whose tree carries neither gafira-ports nor gafira-raster.
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          [ "$host" = x86_64-unknown-linux-gnu ] || { echo "::error::unexpected host: $host (expected x86_64-unknown-linux-gnu)" >&2; exit 1; }
+          cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings
+          cargo test -p gafira-testkit --features ports --locked
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check

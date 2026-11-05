@@ -413,6 +413,98 @@ Fecha: 2 de noviembre de 2026.
 - **Consecuencia**: la máscara no cambia. El ruido aislado de la banda no cuenta, así que el umbral de «color real» es una cifra PROPUESTA de 02 ARQ-131, no de esta decisión.
 - Aplicado a 02 (§4.17.6, ARQ-131, ARQ-133).
 
+## D-48 Espacio de mezcla de las transiciones
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: las transiciones mezclan en luz lineal (O5 (a)). `Rgba8` se decodifica a luz lineal, se mezcla y se codifica. `RgbaF32` se mezcla tal como está guardado.
+- **Motivo**: la vista previa y la exportación comparten el grafo (02 §6.2), y la exportación trabaja en luz lineal.
+- **Coste conocido**: una Disolvencia `Rgba8` en CPU a 1080p tarda de 154 a 156 ms, unas 19 veces los 8 ms de render de 02 §6.2 (XP13: 5 ejecuciones, `--release`, `p` 0,37). `RgbaF32` y los extremos no pagan ese coste. Los remedios del diseño de capa 2 (P15, punto 8) son estimaciones, no medidas, y no entran en esta decisión.
+- **Alcance**: transiciones. Los modos de mezcla de ARQ-119 los fija D-53.
+- Este O5 es el del diseño de capa 2, no el O5 de audio de `spike-layer2.md`.
+- Aplicado a 02 (§6.2, ARQ-118, §12.3).
+
+## D-49 Las asas de fundido no se cruzan
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: las asas de fundido de entrada y salida de un clip no pueden cruzarse: la suma de sus duraciones nunca supera la duración del clip (Q-46). Recortar un clip por debajo de esa suma reduce los dos fundidos en proporción.
+- Aplicado a 02 (ARQ-124, §12.2, §12.3) y 05 (FV-10).
+
+## D-50 Corte sin duración
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: un Corte ignora la duración y la alineación, y el cambio ocurre en el corte (Q-47).
+- Aplicado a 02 (§4.13, ARQ-118, §12.2, §12.3) y 05 (FV-06).
+
+## D-51 Fundidos al acortar un clip por otras vías
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: Velocidad, Dividir y Congelar fotograma también reducen los fundidos en proporción cuando dejan un clip más corto que su suma (Q-50). Es la regla de D-49 para recortar.
+- Amplía D-49.
+- Aplicado a 02 (§12.2, §12.3) y 05 (FV-10).
+
+## D-52 Alargar no devuelve los fundidos; arrastre desde el inicio del gesto
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: alargar un clip no devuelve los fundidos que se redujeron; solo Deshacer los restaura. En un arrastre, la reducción se calcula desde las duraciones del inicio del gesto (Q-51).
+- Amplía D-49.
+- Aplicado a 02 (§12.2, §12.3) y 05 (FV-10).
+
+## D-53 Modos de mezcla en luz lineal
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: los modos de mezcla entre capas operan en luz lineal, también en `Rgba8`, igual que las transiciones de D-48 (Q-52). Incluye los 16 modos de D-27, `Normal` incluido.
+- **Consecuencia**: los modos se ven distintos de los programas que mezclan valores sRGB codificados. La vista previa `Rgba8` paga la conversión por píxel, como en D-48; ese coste no está medido.
+- Amplía D-48.
+- Aplicado a 02 (ARQ-119, §12.2, §12.3).
+
+## D-54 Fundidos al Dividir y Congelar fotograma
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: tras Dividir o Congelar fotograma, la primera parte conserva el fundido de entrada, la última conserva el de salida, y en el punto de división no hay fundido (Q-53). Así dividir y volver a unir no pierde nada (05 FV-03 (a)).
+- Amplía D-51.
+- Aplicado a 02 (§12.2) y 05 (FV-10).
+
+## D-55 Guardar sin licencia mientras falta la lista de D-12
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: mientras la lista de funciones bloqueadas de D-12 siga pendiente, un usuario en `Unlicensed` o `Expired` puede editar, recuperar un journal, guardar con normalidad (Guardar, `Ctrl+S`) y usar «Guardar copia». Solo la exportación está bloqueada (opción (b) de la pregunta del hueco S10 de `gafira-ports`).
+- **Precisiones** (respuestas del titular a las preguntas de D-55):
+  1. La licencia nunca bloquea guardar: `Invalid` también guarda, igual que `Unlicensed` y `Expired`.
+  2. Guardar como y el autoguardado en el journal también están permitidos sin licencia.
+  3. «Exportar proyecto editable con recursos» cuenta como guardar, no como exportar: solo escribe el `.gafira` del usuario y sus recursos. Está permitido sin licencia y `can_export` no lo controla.
+- **Guardar**, en esta decisión, es Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos». Exportar es todo lo demás que escribe una salida (PNG, PDF, MP4 y los demás formatos de exportación).
+- **Consecuencia**: `LicenseStatus` conserva un único predicado, `can_export`. No hay `can_save`: guardar no depende de la licencia en ningún estado.
+- Amplía D-12. Sustituye la propuesta de solo lectura de 02 (Q-20).
+- Aplicado a 01 (§11, Q-20), 02 (ARQ-04, §4.14, §13.1, §13.3, ARQ-95, Q-20) y 04 (FD-63).
+
+## D-56 Sombra en luz lineal
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: el efecto Sombra pinta el elemento sobre su sombra con el modo `Normal` de ARQ-119, en luz lineal también en `Rgba8`, como D-53 (aviso W1 de la verificación de D-53). Así la sombra en 8 bits y en `f32` sigue la misma regla.
+- **Precisión** (titular, tras medir): las dos coinciden a ≤ 2/255, la cota de ARQ-120 para sombras translúcidas tintadas, en los píxeles con alfa de sombra en 8 bits ≥ 16. Por debajo no hay cota: una sombra de alfa cercano a 1 no conserva su color en 8 bits, y la diferencia medida llega a 6,4/255. Con 16, el peor caso medido es 1,88/255, un margen de 0,12/255; con 14 sería 1,99/255, sin margen (04 FD-35 (f)).
+- **Consecuencia**: en 8 bits cambian los píxeles donde un elemento translúcido deja ver su sombra, que hasta ahora se componían sobre los valores sRGB codificados.
+- Amplía D-53.
+- Aplicado a 02 (ARQ-120, §4.17.4) y 04 (FD-35).
+
+## D-57 Referencia de 8 bits de los modos de mezcla
+
+Fecha: 2 de noviembre de 2026.
+
+- **Decisión**: la referencia en `f64` de ARQ-119 para 8 bits despremultiplica con el redondeo de 8 bits de ARQ-117, como hace el código (aviso W2 de la verificación de D-53).
+- **Motivo**: frente a una referencia con `c / a` exacto, diez modos se separan más de 1/255, también con alfas altos: ColorBurn (hasta 85/255), ColorDodge, Hue, Overlay, Difference (2,05/255), Saturation (1,28/255), SoftLight (1,05/255), Luminosity (2,15/255), Color (1,24/255) y HardLight (1,69/255).
+- **Consecuencia**: una ruta GPU que reciba 8 bits debe despremultiplicar con el mismo redondeo para quedar a ≤ 2/255 de la CPU (04 FD-12 (c)).
+- Precisa D-53.
+- Aplicado a 02 (ARQ-119) y 04 (FD-12).
+
 ## Efecto sobre las especificaciones
 
 | Spec | Qué cambiar |

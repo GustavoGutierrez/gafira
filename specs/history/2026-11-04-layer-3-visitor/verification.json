@@ -1,0 +1,43 @@
+{ "schema": 1, "change": "layer-3-visitor", "delivery": "DC1", "rounds": [ {
+  "round": 1, "commit": "4363413113e21b87adb8d21e141a8a0852d55614", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 3, "suggestion": 3},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "specs/02-arquitectura-software.md 4.1 ARQ-136; crates/gafira-doc/src/visit.rs:104",
+     "summary": "ARQ-136 sketches t: Flicks in a gafira-doc trait, but 02 2.1/2.2 and the V5 table forbid gafira-doc -> gafira-time, so the row is unimplementable; the instant became a type parameter. The rule (time apart, not in the context) holds. The row must be reconciled.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/src/visit.rs:63-66",
+     "summary": "No test pins ARQ-136's 'the instant is not in the context' rule, the rule the delivery deviated on: adding a t field to MeasureCx would fail no test in the repo.",
+     "follow_up": false, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules; specs/changes/layer-3-visitor/apply-progress.md:83",
+     "summary": "720 authored code lines against a forecast of 430 (x1.4 = 600), over the ~700 ceiling that needs the owner's explicit OK; no OK is recorded.",
+     "follow_up": false, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 4},
+  "criteria": {"total": 12, "covered": 12},
+  "size": {"lines": 803, "code_lines": 720, "forecast": 430},
+  "report": "verify-report.md" }, {
+  "round": 2, "commit": "a17fe2e76976ddccf993f5d6a4b2baec4deb9510", "mode": "full", "tier": "T4", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "classes": ["ambiguity"],
+  "counts": {"critical": 0, "warning": 1, "suggestion": 4},
+  "findings": [
+    {"id": "W1", "severity": "WARNING", "class": "ambiguity", "ref": "specs/02-arquitectura-software.md 4.1 ARQ-136 line 495",
+     "summary": "Still open: ARQ-136 still says the instant travels apart as t: Flicks and no branch commit touched specs/02; Flicks stays unreachable from gafira-doc. The rule holds in the code. Routed to specifier; the archive must not consume it.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation", "ref": "crates/gafira-doc/tests/visit_contract.rs:201-245",
+     "summary": "Closed by fe6349e. Probed: 3 closure probes on a scratch export, 3 killed, 0 survivors (t field on MeasureCx, a named time type, a new module the source list misses). The completeness guard fails closed.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "implementation", "ref": "AGENTS.md Delivery rules; specs/changes/layer-3-visitor/apply-progress.md (Coordinator decisions on verify round 1)",
+     "summary": "Closed by the coordinator's recorded decision (owner delegated in YOLO mode, 2026-11-03). The figure it quotes (720 code lines) is stale: the delivery is now 859 code lines after the W2 fix round.",
+     "follow_up": false, "status": "closed"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0, "ci_remote": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 0, "killed": 0},
+  "closure_probes": {"run": 3, "killed": 3},
+  "criteria": {"total": 12, "covered": 12},
+  "size": {"lines": 1241, "code_lines": 859, "forecast": 430},
+  "report": "verify-report.md" } ] }
