@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-anim"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -378,7 +378,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-audio"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "assert_no_alloc",
  "criterion",
@@ -392,11 +392,11 @@ dependencies = [
 
 [[package]]
 name = "gafira-cli"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 
 [[package]]
 name = "gafira-color"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "proptest",
  "serde",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-doc"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gafira-color",
  "gafira-geom",
@@ -417,7 +417,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-edit"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-geom"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "kurbo",
  "proptest",
@@ -440,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-layout"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "criterion",
  "gafira-doc",
@@ -450,7 +450,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-media"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -463,7 +463,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-pathops"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gafira-doc",
  "gafira-geom",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-ports"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gafira-color",
  "gafira-doc",
@@ -489,7 +489,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-raster"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-render"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "blake3",
  "gafira-anim",
@@ -517,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-segment"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-testkit"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "assert_no_alloc",
  "gafira-color",
@@ -548,7 +548,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-text"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "criterion",
  "gafira-color",
@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "gafira-time"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "proptest",
  "serde",
