@@ -71,3 +71,31 @@ H2 and H3 are the equality of the deadline and the `Unbounded` case of 02 §6.2;
 ### The size
 
 `git diff --shortstat 414bef4`: **1232 insertions, 5 deletions, 3 files** (`budget.rs` and `frame.rs` new, `lib.rs` the module list and its doc). Split: `a1bb4b7` adds 241 and deletes 5, `2e9e6da` adds 380, `436299d` adds 629 and deletes 18. Of those 1232, about 435 are the module code (115 in `budget.rs`, 313 in `frame.rs`, and the exports of `lib.rs`) and the rest are the tests, the doubles and the page and graph helpers they need: the code alone stays under the 460 of the design's forecast (645 at x1.4), and the total with the tests is over it, as `RE1` and `RE3` also were, because the two module suites carry the doubles, the scripted clocks and the page and graph helpers. The crate ends with 51 unit tests (43 after the budget, 44 after the selector, 51 with the loop) and the workspace suite at 2373. With these notes the branch measures 1277 insertions and 6 deletions over four files.
+
+## RE5
+Flow: standard | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the render stream of layer-3b closes with the PageRenderer that the exporters reach; O8 carries O4 and O5 of layer 3 to this cut
+Product IDs: ARQ-42 (partial: the shared graph and the quality switch here; the 1/255 golden needs the CPU backend of O3), FD-57 (partial: the page scope here; the naming, the multi-file output and the PDF are the exporters of layer 4) (source: specs/02-arquitectura-software.md §4.5, §6.2, specs/04-funcionalidad-diseno-imagen-exportacion.md FD-57)
+Scope: `RE5` of `specs/history/2026-11-04-layer-3/design.md`: in `gafira-render`, the `PageRenderer` that `ports::export` describes: it renders one page through the graph, the plan and the tile cache, with the preview and export qualities and the page scope.      Non-goals: the real CPU and GPU backends (`gafira-render-cpu` is O3), the golden of 1/255 (it needs that backend), the importers and exporters of layer 4, the naming and the multi-file output of FD-57, and any change to `gafira-ports`.
+Acceptance:
+  AC1 Given a `PageRenderRequest`, When the renderer runs, Then it answers an `ImageBuf` built from the graph of `RE1`, the plan of `RE2` and the tiles of `RE3`, and it implements `ports::PageRenderer` (ARQ-42, 02 §4.5) [unit]
+  AC2 Given the same page, When it is rendered for the preview and for the export, Then both use the same graph and the same operations, and only the quality parameters of the content keys differ (ARQ-42, 02 §6.2) [integration]
+  AC3 Given each quality, When it renders, Then `Preview` answers 8-bit sRGB premultiplied and `Export` answers `f32` in linear light at full resolution, as 02 §6.2 fixes [unit]
+  AC4 Given a page scope, When it renders, Then a single page and a page range are handled, and an out-of-range page is rejected with the error the port fixes, without panicking (FD-57 (a)) [unit]
+  AC5 Given a cancelled render, When the token fires, Then the renderer answers `RenderError::Cancelled` and returns no partial buffer (02 §6.3, ARQ-43) [unit]
+  AC6 Given the same page and the same quality, When it renders twice, Then the two buffers are identical byte by byte (determinism, ARQ-02) [property]
+  AC7 Given the request, When the transparent background is asked for, Then the buffer has an alpha channel and the page background is not painted (`transparent`, 02 §4.5) [unit]
+  AC8 Given the crate, When the CI policy steps run, Then `gafira-render` still has `#![forbid(unsafe_code)]`, its V5 row still passes and the crate reads no clock [command]
+Plan: the delivery adds the page renderer module to `crates/gafira-render/src/`, on top of the graph of `RE1`, the plan of `RE2`, the tile cache of `RE3` and the frame loop of `RE4`. It implements the trait that `SC1` left in `ports::export`; the trait itself is not touched. `PageRenderRequest` carries no quality field, so the renderer takes the quality when it is constructed and builds the graph for it; that choice is recorded as a deviation, not invented silently. The critical code is the quality switch, the mapping of the export scope and the single-page and range cases (design of layer 3, "Critical code"), so those carry the hand mutants.
+Owner decisions touched: O8 of 2026-11-05 (the rigor of layer 3 carries over); O3 keeps the CPU backend, and with it the 1/255 golden of ARQ-42, out of this change.
+
+## RE5 (tdd-apply)
+
+Commits:
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps (forbid, CLI/UI, V5, V12, V13, V14, ARQ-107, and the testkit `ports` step), each by extracting its `run:` from `ci.yml`.
+
+### RED evidence
+
+### Negative controls
+
+### Choices and deviations
