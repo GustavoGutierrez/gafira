@@ -332,6 +332,9 @@ fn arq_139_the_export_honours_the_progress_contract_at_background_priority() {
 
 // ARQ-139: the exporter checks the cancel token per frame itself, even when
 // a port does not look at it.
+// ARQ-43: that per-frame checkpoint is the one that bounds the answer of a
+// cancellation. The 100 ms bound itself is not measured here: this crate
+// has no bench.
 #[test]
 fn arq_139_the_export_checks_the_cancel_token_per_frame() {
     let journal = Journal::new();

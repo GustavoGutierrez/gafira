@@ -194,6 +194,9 @@ fn arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project() {
 
 // ARQ-146: a generation cancelled half way leaves no half-written final file
 // and leaves the cache usable.
+// ARQ-43: the generation checks the token per chunk written, the checkpoint
+// that bounds the answer of the cancellation. The 100 ms bound itself is not
+// measured here: this crate has no bench.
 #[test]
 fn arq_146_a_cancelled_generation_leaves_no_half_written_file() {
     let file_system = FakeFileSystem::with_file(PROJECT, vec![1, 2, 3]);
