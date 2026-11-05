@@ -201,6 +201,7 @@ impl<'a> PlaybackClock<'a> {
                 .master
                 .checked_sub(presentation.frame)
                 .unwrap_or(Flicks::ZERO)
+                .max(Flicks::ZERO)
         })
     }
 
