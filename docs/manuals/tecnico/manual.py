@@ -35,6 +35,12 @@ LANGS = {
         "title": "Gafira Technical Manual",
         "version": "Version",
         "toc": "Contents",
+        "kicker": "TECHNICAL MANUAL",
+        "blurb": "How Gafira is built: layers, crates and ports, the document format, the quality gates and the development method.",
+        "author": "Ing. Gustavo Gutiérrez",
+        "author_role": "Colombia",
+        "edition": "English edition",
+        "legal": "Gafira is proprietary software. This manual documents what the repository implements today and marks as Planned what the specifications name and the code does not have yet. The product intent lives in specs/; when the two disagree, the specification and the owner decisions win.",
         "template": "# {title}\n\n## Purpose\n\nState what this chapter covers and who needs it.\n\n## Content\n\n"
         "Describe what exists in the repository today. Mark anything specified but not\nimplemented as **Planned**.\n",
     },
@@ -45,6 +51,12 @@ LANGS = {
         "title": "Manual técnico de Gafira",
         "version": "Versión",
         "toc": "Contenido",
+        "kicker": "MANUAL TÉCNICO",
+        "blurb": "Cómo está construido Gafira: capas, crates y puertos, el formato de documento, las puertas de calidad y el método de desarrollo.",
+        "author": "Ing. Gustavo Gutiérrez",
+        "author_role": "Colombia",
+        "edition": "Edición en español",
+        "legal": "Gafira es software propietario. Este manual documenta lo que el repositorio implementa hoy y marca como Planificado lo que las especificaciones nombran y el código todavía no tiene. La intención de producto vive en specs/; cuando ambas cosas discrepan, ganan la especificación y las decisiones del titular.",
         "template": "# {title}\n\n<!-- TRANSLATE: replace this stub with the Spanish translation of the English chapter -->\n\n"
         "## Propósito\n\nIndique qué cubre este capítulo y quién lo necesita.\n\n## Contenido\n\n"
         "Describa lo que existe hoy en el repositorio. Marque como **Planificado** lo que está\nespecificado pero no implementado.\n",
@@ -89,6 +101,17 @@ end
 
 LATEX_HEADER = r"""\usepackage{fvextra}
 \usepackage{etoolbox}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usetikzlibrary{calc}
+\definecolor{gafiraink}{HTML}{18243B}
+\definecolor{gafiracoral}{HTML}{FF6B57}
+\definecolor{gafiracanvas}{HTML}{FAFAF7}
+\definecolor{gafiramint}{HTML}{3FBFA9}
+\definecolor{gafiramist}{HTML}{E7EAF2}
+\newfontfamily\GafiraDisplay{Inter}[Path=FONTPATH/, Extension=.ttf, UprightFont=Inter-test, AutoFakeBold=1.35]
+\newfontfamily\GafiraHeavy{Manrope}[Path=FONTPATH/, Extension=.ttf, UprightFont=Manrope-test, AutoFakeBold=2.4]
+\renewcommand{\maketitle}{}
 \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\footnotesize}
 \setlength{\emergencystretch}{4em}
 \sloppy
@@ -325,6 +348,17 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def render_template(name: str, values: dict[str, str]) -> str:
+    """Fill a tracked .tex template; every placeholder must be provided."""
+    text = (HERE / name).read_text(encoding="utf-8")
+    for key, value in values.items():
+        text = text.replace("{{" + key + "}}", value)
+    missing = sorted(set(re.findall(r"\{\{([A-Z_]+)\}\}", text)))
+    if missing:
+        sys.exit(f"error: {name} has unfilled placeholders: {', '.join(missing)}")
+    return text
+
+
 def cmd_build(args: argparse.Namespace) -> int:
     if cmd_check(args) != 0:
         return 1
@@ -339,12 +373,25 @@ def cmd_build(args: argparse.Namespace) -> int:
     md.write_text("\n\n".join((cfg["chapters"] / f).read_text(encoding="utf-8").rstrip() + "\n"
                                          for _, f in entries), encoding="utf-8")
     (BUILD / "code-break.lua").write_text(LUA_FILTER, encoding="utf-8")
-    (BUILD / "header.tex").write_text(LATEX_HEADER, encoding="utf-8")
+    assets = (HERE.parent / "marca" / "assets").resolve()
+    (BUILD / "header.tex").write_text(
+        LATEX_HEADER.replace("FONTPATH", str((repo_root() / "assets" / "fonts" / "test").resolve()))
+        + f"\\graphicspath{{{{{assets}/}}}}\n", encoding="utf-8")
+    today = datetime.date.today().isoformat()
+    values = {
+        "TITLE": cfg["title"], "KICKER": cfg["kicker"], "BLURB": cfg["blurb"],
+        "VERSION": f"{cfg['version']} {workspace_version()}", "AUTHOR": cfg["author"],
+        "AUTHOR_ROLE": cfg["author_role"], "LEGAL": cfg["legal"],
+        "EDITION": cfg["edition"], "DATE": today,
+    }
+    (BUILD / "cover.tex").write_text(render_template("cover.tex", values), encoding="utf-8")
+    (BUILD / "backcover.tex").write_text(render_template("backcover.tex", values), encoding="utf-8")
     css = BUILD / "manual.css"
     css.write_text(CSS, encoding="utf-8")
     pdf = BUILD / cfg["pdf"]
     pdf.unlink(missing_ok=True)
     meta = ["-M", f"title={cfg['title']}", "-M", f"subtitle={cfg['version']} {workspace_version()}",
+            "-M", f"author={cfg['author']}",
             "-M", f"date={datetime.date.today().isoformat()}", "-M", f"lang={args.lang}", "-M", f"toc-title={cfg['toc']}"]
     base = ["--from", "markdown+pipe_tables", "--toc", "--toc-depth=2", "--number-sections"]
     engine, errors = args.engine, []
@@ -352,6 +399,8 @@ def cmd_build(args: argparse.Namespace) -> int:
         try:
             run(["pandoc", str(md), "-o", str(pdf), *base, "--pdf-engine=xelatex", "--syntax-highlighting=none",
                  "--lua-filter", str(BUILD / "code-break.lua"), "-H", str(BUILD / "header.tex"),
+                 "--include-before-body", str(BUILD / "cover.tex"),
+                 "--include-after-body", str(BUILD / "backcover.tex"),
                  "-V", "papersize=a4", "-V", "geometry:margin=2.2cm", "-V", "fontsize=10pt", "-V", "colorlinks=true", *meta])
         except subprocess.CalledProcessError as e:
             errors.append(f"xelatex failed: {e}")
