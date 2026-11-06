@@ -2,13 +2,15 @@
 
 ## Local gates
 
-Every commit must pass these three commands on its own, not only the last commit of a branch:
+Every commit must pass the gates that cover what it can break, on its own, not only the last commit of a branch:
 
 ```bash
 cargo fmt --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+cargo clippy -p <crate> --all-targets --locked -- -D warnings
+cargo test -p <crate> --locked
 ```
+
+The scope is the crate the commit touches. Use `--workspace` when the commit touches a crate that others depend on, a `Cargo.toml`, a `Cargo.lock` or `ci.yml`. The full workspace suite runs once at the delivery HEAD and once before the `develop` -> `main` pull request (ADR 0017).
 
 The toolchain is pinned to `1.93.1` with `rustfmt` and `clippy` in `rust-toolchain.toml`. `--locked` keeps `Cargo.lock` authoritative.
 

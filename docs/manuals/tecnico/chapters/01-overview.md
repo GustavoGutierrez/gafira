@@ -15,23 +15,22 @@ Gafira is a local-first desktop editor for graphic design, images and video, wri
 | Area | State |
 |---|---|
 | Workspace, CI, license gate | Implemented |
-| `gafira-geom` (lengths, transforms) | Implemented |
-| `gafira-color` (color spaces, conversions) | Implemented |
-| `gafira-doc` (document model, JSON, validation, edit capability) | Implemented |
-| `gafira-time` (flicks, frame and sample rates, time ranges, timecode) | Implemented |
-| `gafira-edit` (`Command`, `Transaction`, `DirtySet`, `History`, `SetProperty`, `InsertNodes`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage`, `RemovePage`) | Implemented |
-| `gafira-pathops` (path booleans, stroke outline, simplification, hit testing) | Implemented |
+| Layers 0 and 1: `gafira-geom`, `gafira-color`, `gafira-time`, `gafira-anim`, `gafira-doc`, `gafira-edit` | Implemented |
+| Layer 2: `gafira-pathops`, `gafira-text`, `gafira-layout`, `gafira-raster`, `gafira-audio`, `gafira-segment` | Implemented |
+| Layers 3 and 4: `gafira-ports`, `gafira-render`, `gafira-media`, `gafira-render-cpu` | Implemented; the render graph emits fills and layers only, and the CPU backend returns an error for images, masks, effects and transitions (`crates/gafira-render-cpu/src/backend.rs`) |
 | `gafira-testkit` (document generator, command property harness) | Implemented (test support only) |
 | `gafira-cli` | Only `--help` and `--version` |
-| Format, render, engine, UI, codecs, licensing | **Planned** (see the architecture chapter) |
+| `gafira-engine`, `gafira-format`, `gafira-ui`, codecs, licensing, packaging | **Planned** (the architecture chapter holds the full inventory) |
 
-Workspace version: `0.1.0-beta.1`. Edition 2024, toolchain `1.93.1` pinned in `rust-toolchain.toml`.
+The table groups the crates by layer; the architecture chapter lists the full crate inventory.
+
+Workspace version: `0.1.0-beta.2`. Edition 2024, toolchain `1.93.1` pinned in `rust-toolchain.toml`.
 
 ## Repository map
 
 | Path | Content |
 |---|---|
-| `crates/` | Library crates (`gafira-geom`, `gafira-color`, `gafira-time`, `gafira-doc`, `gafira-edit`, `gafira-pathops`, `gafira-testkit`) |
+| `crates/` | Seventeen library crates in layers 0 to 4, including the test-support crate `gafira-testkit`; the architecture chapter holds the full inventory |
 | `apps/gafira-cli/` | Command-line binary |
 | `specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
 | `docs/manuals/` | Brand manual (`marca/`) and this technical manual (`tecnico/`) |
