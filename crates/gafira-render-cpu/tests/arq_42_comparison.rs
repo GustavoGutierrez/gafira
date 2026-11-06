@@ -10,7 +10,24 @@
 //! through would be one code path grading itself, which is the fake this
 //! delivery exists to prevent.
 
-use gafira_color::LinearRgba;
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use gafira_color::{Color, LinearRgba, Rgba};
+use gafira_doc::contract::CancelToken;
+use gafira_doc::{
+    BlendMode, Document, Dpi, ElementBase, GroupNode, Node, NodeId, NodeKind, Page, PageId,
+    PageSize, Placement, ShapeGeometry, ShapeNode,
+};
+use gafira_geom::{IRect, Length, Unit};
+use gafira_ports::common::{Bytes, UnixTime};
+use gafira_ports::export::{PageRenderRequest, PageRenderer};
+use gafira_ports::render::RenderQuality;
+use gafira_ports::system::Clock;
+use gafira_raster::PixelBuf;
+use gafira_render::{BackendSelector, ContentTileCache, GraphPageRenderer};
+use gafira_render_cpu::CpuBackend;
 
 /// One 8-bit premultiplied sample as `(c × a + 127) / 255`, integer division
 /// (ARQ-117). The comparator carries its own copy on purpose: a hand-computed
@@ -185,6 +202,236 @@ fn buffer(pixel: [u8; 4], pixels: usize) -> Vec<u8> {
     pixel.iter().copied().cycle().take(pixels * 4).collect()
 }
 
+/// A whole `RgbaF32` surface as premultiplied sRGB 8-bit.
+fn encode_export(surface: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(surface.len());
+    for pixel in surface.chunks_exact(4) {
+        out.extend_from_slice(&encode_export_pixel([
+            pixel[0], pixel[1], pixel[2], pixel[3],
+        ]));
+    }
+    out
+}
+
+/// The side of the page of the comparison, in pixels.
+const PAGE: u32 = 64;
+
+/// The region both renderers read back, and the region of the golden: the whole
+/// page at 100 %, so the two sides cover the same pixels (ARQ-42, FD-55 (c)).
+const REGION: IRect = IRect::new(0, 0, 64, 64);
+
+/// The scale both requests ask for. The export renders at level 0 whatever it
+/// is given (02 §6.2), so the preview has to ask for 1.0 to meet it there.
+const SCALE: f32 = 1.0;
+
+/// A clock stuck at one instant; it never reads the system time (ARQ-02).
+struct FixedClock;
+
+impl Clock for FixedClock {
+    fn now(&self) -> UnixTime {
+        UnixTime(0)
+    }
+
+    fn monotonic(&self) -> Duration {
+        Duration::ZERO
+    }
+}
+
+/// A colour with straight (unpremultiplied) channels, as the document stores it.
+fn color(r: f32, g: f32, b: f32, a: f32) -> Color {
+    Color::Srgb(Rgba::new(r, g, b, a))
+}
+
+/// The shared header of a node: its box on the page, its opacity and its blend.
+fn element(id: u64, x: f64, y: f64, w: f64, h: f64, opacity: f32, blend: BlendMode) -> ElementBase {
+    let mut base = ElementBase::new(NodeId::new(id), Placement::new(x, y, w, h));
+    base.opacity = opacity;
+    base.blend = blend;
+    base
+}
+
+/// A filled shape of the scene, inside the box `[x, y, w, h]`.
+fn shape(
+    id: u64,
+    rect: [f64; 4],
+    geometry: ShapeGeometry,
+    fill: Color,
+    opacity: f32,
+    blend: BlendMode,
+) -> Node {
+    Node::new(
+        element(id, rect[0], rect[1], rect[2], rect[3], opacity, blend),
+        NodeKind::Shape(ShapeNode {
+            geometry,
+            fill: Some(fill),
+        }),
+    )
+}
+
+/// A group of the scene: it only carries its opacity and its children.
+fn group(id: u64, opacity: f32, children: &[u64]) -> Node {
+    let mut node = Node::new(
+        element(
+            id,
+            0.0,
+            0.0,
+            f64::from(PAGE),
+            f64::from(PAGE),
+            opacity,
+            BlendMode::Normal,
+        ),
+        NodeKind::Group(GroupNode {}),
+    );
+    node.children = children.iter().copied().map(NodeId::new).collect();
+    node
+}
+
+/// A page of the scene's nodes.
+fn document(nodes: Vec<Node>, roots: &[u64]) -> Document {
+    let mut page = Page::new(
+        PageId::new(1),
+        "ARQ-42".to_string(),
+        PageSize {
+            width: Length::new(f64::from(PAGE), Unit::Px),
+            height: Length::new(f64::from(PAGE), Unit::Px),
+        },
+    );
+    for node in nodes {
+        let id = node.base.id;
+        page.nodes.insert(id, Arc::new(node));
+    }
+    page.roots = roots.iter().copied().map(NodeId::new).collect();
+    Document::from_parts(11, Dpi::default(), vec![Arc::new(page)]).expect("the document validates")
+}
+
+/// The scene of AC1 and of the stored golden: an opaque fill, a semi-
+/// transparent fill, a blended fill, a group at reduced opacity, and a group
+/// nested inside it.
+///
+/// Deliberately not a flat page: a single opaque fill would make every pixel
+/// agree trivially, and a comparator that never sees a difference proves
+/// nothing. Two corners of [`REGION`] stay empty, which is what FD-55 (b) reads
+/// in the transparent render.
+fn scene() -> Document {
+    let nodes = vec![
+        shape(
+            2,
+            [6.0, 8.0, 26.0, 22.0],
+            ShapeGeometry::Rect,
+            color(0.85, 0.15, 0.25, 1.0),
+            1.0,
+            BlendMode::Normal,
+        ),
+        shape(
+            3,
+            [22.0, 18.0, 34.0, 40.0],
+            ShapeGeometry::Ellipse,
+            color(0.1, 0.55, 0.9, 0.55),
+            1.0,
+            BlendMode::Normal,
+        ),
+        shape(
+            9,
+            [50.0, 10.0, 14.0, 14.0],
+            ShapeGeometry::Rect,
+            color(0.2, 0.85, 0.95, 0.6),
+            1.0,
+            BlendMode::Normal,
+        ),
+        group(4, 0.75, &[5, 6]),
+        shape(
+            5,
+            [10.0, 44.0, 30.0, 18.0],
+            ShapeGeometry::Rect,
+            color(0.2, 0.9, 0.4, 1.0),
+            1.0,
+            BlendMode::Screen,
+        ),
+        group(6, 0.6, &[7, 8]),
+        shape(
+            7,
+            [30.0, 30.0, 28.0, 26.0],
+            ShapeGeometry::Ellipse,
+            color(0.95, 0.75, 0.05, 0.9),
+            1.0,
+            BlendMode::Normal,
+        ),
+        shape(
+            8,
+            [40.0, 50.0, 22.0, 14.0],
+            ShapeGeometry::Rect,
+            color(0.05, 0.05, 0.1, 0.35),
+            1.0,
+            BlendMode::Multiply,
+        ),
+        group(10, 1.0, &[2, 3, 4, 9]),
+    ];
+    // One root group, as a document of a page usually is: the planner emits a
+    // task per tile and root, and a tile is the full content of its region.
+    document(nodes, &[10])
+}
+
+/// A renderer of one quality, on its own CPU backend and its own cache: the
+/// two sides never share a cache and cannot agree through one.
+fn renderer(document: Document, quality: RenderQuality) -> GraphPageRenderer {
+    GraphPageRenderer::new(
+        document,
+        quality,
+        BackendSelector::new(None, Box::new(CpuBackend::new())),
+        ContentTileCache::new(Bytes(1024 * 1024)),
+        Box::new(FixedClock),
+    )
+}
+
+/// The one request of the comparison: the same page, instant, region and scale
+/// for both qualities.
+fn request(transparent: bool) -> PageRenderRequest {
+    PageRenderRequest {
+        page: PageId::new(1),
+        time: Default::default(),
+        scale: SCALE,
+        region: REGION,
+        transparent,
+    }
+}
+
+/// The preview's own bytes: the `Rgba8` surface `CpuBackend::read_back` hands
+/// a `Preview` frame (O11's one quantisation).
+fn preview(document: Document, transparent: bool) -> Vec<u8> {
+    let image = renderer(document, RenderQuality::Preview)
+        .render(&request(transparent), &CancelToken::new())
+        .expect("the preview renders");
+    assert_eq!(image.width(), REGION.width(), "the region's width");
+    assert_eq!(image.height(), REGION.height(), "the region's height");
+    match image.data() {
+        PixelBuf::Rgba8(bytes) => bytes.clone(),
+        other => panic!("the preview answers Rgba8, not {other:?}"),
+    }
+}
+
+/// The export's `RgbaF32` surface, converted here, once, to the comparison
+/// space.
+fn export_srgb8(document: Document, transparent: bool) -> Vec<u8> {
+    let image = renderer(document, RenderQuality::Export)
+        .render(&request(transparent), &CancelToken::new())
+        .expect("the export renders");
+    assert_eq!(image.width(), REGION.width(), "the region's width");
+    assert_eq!(image.height(), REGION.height(), "the region's height");
+    match image.data() {
+        PixelBuf::RgbaF32(values) => encode_export(values),
+        other => panic!("the export answers RgbaF32, not {other:?}"),
+    }
+}
+
+/// How many distinct premultiplied sRGB8 pixels an image holds.
+fn distinct(image: &[u8]) -> usize {
+    image
+        .chunks_exact(4)
+        .map(|p| [p[0], p[1], p[2], p[3]])
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
 // ARQ-117, SP6 (02 §10): the comparator encodes the export's `RgbaF32` pixel in
 // the order the comparison space fixes, and a hand-computed pixel matches byte
 // for byte. The third row is where truncating instead of rounding shows.
@@ -290,4 +537,70 @@ fn arq_113_the_golden_is_exact_only_on_the_platform_that_generates_it() {
     assert_eq!(mode_for("x86_64", "linux", "gnu"), Mode::Exact);
     assert_eq!(mode_for("aarch64", "macos", "other"), Mode::Tolerant);
     assert_eq!(mode_for("x86_64", "windows", "msvc"), Mode::Tolerant);
+}
+
+// ARQ-42, AC1, FD-55 (c): the preview at 100 % and the export render the same
+// region of the same page at the same scale, and their 8-bit sRGB
+// premultiplied images agree to within 1/255 on 99,9 % of the pixels.
+#[test]
+fn arq_42_the_preview_and_the_export_agree_on_the_scene() {
+    let preview = preview(scene(), false);
+    let export = export_srgb8(scene(), false);
+    let report = assert_agrees(
+        Mode::Tolerant,
+        "ARQ-42, the scene at 100 %",
+        &preview,
+        &export,
+    );
+    assert_eq!(
+        report.pixels,
+        REGION.width() as usize * REGION.height() as usize,
+        "the two sides cover the region the request named"
+    );
+    assert_eq!(
+        report.allowed,
+        report.pixels / 1000,
+        "ARQ-42's budget is one pixel in a thousand"
+    );
+    assert_eq!(
+        report.differing, 0,
+        "O11: the preview quantises the export's surface, so the paths meet exactly"
+    );
+
+    // The scene has to be able to disagree. A single opaque fill would make
+    // every pixel equal for free, and this test would prove nothing.
+    assert!(
+        distinct(&preview) >= 8,
+        "the scene is not one flat fill: {} distinct pixels",
+        distinct(&preview)
+    );
+    assert!(
+        preview.chunks_exact(4).all(|p| p[3] == 255),
+        "without transparency the page background makes every pixel opaque"
+    );
+}
+
+// FD-55 (b), ARQ-117: a transparent render has alpha 0 where nothing is drawn,
+// on both sides of the comparison.
+#[test]
+fn fd_55_a_transparent_render_is_zero_where_nothing_is_drawn() {
+    let preview = preview(scene(), true);
+    let export = export_srgb8(scene(), true);
+    // The first pixel of the region is page (4, 6), above the first shape.
+    assert_eq!(
+        &preview[0..4],
+        &[0, 0, 0, 0],
+        "the preview keeps alpha 0 where nothing is drawn"
+    );
+    assert_eq!(
+        &export[0..4],
+        &[0, 0, 0, 0],
+        "the export converts an empty pixel to four zeroes, not to a division"
+    );
+    let report = assert_agrees(Mode::Tolerant, "FD-55 (b)", &preview, &export);
+    assert_eq!(report.differing, 0, "the transparent scene agrees too");
+    assert!(
+        preview.chunks_exact(4).any(|p| p[3] != 0),
+        "the region does draw content, so both sides are not blank"
+    );
 }
