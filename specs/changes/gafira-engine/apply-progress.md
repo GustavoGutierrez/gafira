@@ -495,3 +495,19 @@ Plan: fakes first (with their own tests), then RED for AC1-AC11, then `open`, th
 the errors and keys, then the port doc comment, then the gates; notes in a separate commit.
 
 Estimate: 380 authored lines, 532 at x1.4. Verify: V1.
+
+### Slice card amend — `E3c` split into `E3c1` and `E3c2` (owner, 2026-11-06)
+
+Why: the `open` half with the fault-injecting fakes measured ~500 lines and the forecast for
+`save` is ~300, ~800 in all against the ~700 ceiling; the owner chose to split.
+
+- `E3c1` = `ProjectService::open` and the private fakes (in-memory `FileSystem` with trace and
+  armed faults, in-memory `ProjectRepository` writing through it). Criteria: AC8, AC9, AC12 (for
+  the code it adds), AC13. Hand mutant: session swapped before `History::new` validates. Commit
+  `16280b5`.
+- `E3c2` = `ProjectService::save`, `Session { path, read_only, project key }`, `EngineError::{
+  ReadOnly, NoPath, Io}` and their keys, the `ProjectRepository::save` doc comment (SP6).
+  Criteria: AC1-AC7, AC10, AC11, AC12, AC13. Hand mutants: the other seven of the `E3c` list.
+  Read-only flag of `open` is kept from `E3c2` on (AC5, AC6).
+
+Everything else in the `E3c` card holds for both halves.
