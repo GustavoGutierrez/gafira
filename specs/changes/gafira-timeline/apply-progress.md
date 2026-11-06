@@ -124,7 +124,7 @@ fixture of the golden; the notes commits change this file only.
 
 ## TL3
 Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T0 | verify: V1 | decided-by: owner | reason: the timeline reaches the disk when the model it persists exists; the document a user opens is the one the laws must hold on, and the golden of the timeline is the evidence that the wire form writes every field
-Product IDs: ARQ-10, ARQ-13, ARQ-30, ARQ-53, V-5, D-36, FV-02 (source: specs/02-arquitectura-software.md §3.1, §3.5, §7.1; specs/05-funcionalidad-video-y-distribucion.md FV-02; ADR 0006)
+Product IDs: ARQ-10, ARQ-13, ARQ-30, ARQ-53, V-5, D-36, FV-02 (source: specs/02-arquitectura-software.md §3.1, §3.5, §7.1; specs/05-funcionalidad-video-y-distribucion.md FV-02; ADR 0006). Three of them name no test and that is deliberate: `V-5`'s canonical form is proven by AC2 and AC7's byte-set tests, which the V1 round verified; `D-36` is the schema-version decision, proven by AC2's head check and by the fact that pre-`TL3` bytes still load; `FV-02`'s privacy clause is about what a document *contains*, and this delivery's job is the table that will hold it — its test arrives with the asset import of `TL3`'s successor, not here.
 Scope: `TL3` of `specs/changes/gafira-timeline/design.md`: in `gafira-doc`, the persistence of the model `TL2` defined — `Document.sequences` and the asset table keyed by `AssetRef` —, the wire form of both, the validation of the new ids, of the clip sources and of the laws of `TL2` on a loaded document, and the goldens: a new timeline golden plus the seven old byte sets, which must still re-save byte for byte.      Non-goals: the commands `MoveClip`, `TrimClip` and `SplitClip` and the media resolver (later changes, by owner decision Q4), the import metadata of the assets (Q5), any change to `gafira-time` or to `gafira-ports`, and the `Project` root of 02 §3.1, which is layer 4 (`gafira-format`).
 Acceptance:
   AC1 Given a sequence, a track, a clip and a marker, When the document is written, Then their ids are plain numbers in the wire form, the enums carry their tags, every field is written and the defaults are read (ADR 0006 rule 3, ARQ-10) [unit]
@@ -355,3 +355,172 @@ not counted).
   `TIMELINE_SOURCES`, because they name no time type: the error carries plain
   ticks and the asset table carries hashes. The list stays a list of the
   sources that hold the data, not a wildcard.
+
+## TL3 (tdd-apply)
+
+Commits (branch `feat/gafira-timeline-tl3`, cut from `develop` at `d89bb4e`):
+
+| Commit | What |
+|---|---|
+| `9924741` feat(gafira-doc): the document writes its timeline and its asset table | The wire form of the model (`Sequence`, `Track`, `Clip`, `Marker` derive `Serialize`/`Deserialize`; `TrackKind`, `ClipSource` and `AssetStorage` carry their tag in `snake_case`), `DocumentWire` gaining `sequences` and `assets` with `#[serde(default)]`, `Document` writing six fields, the new timeline golden and the three canonical goldens moved. |
+| `e0439b8` feat(gafira-doc): the timeline ids share the document's counter | P2 extended: the ids of the sequences, the tracks, the clips and the markers enter the uniqueness check and the `next_id` bound, with the battery of `tests/timeline_validation.rs`. |
+| `485028a` feat(gafira-doc): a loaded timeline is checked against its laws and its sources | P7 (a `Scene` clip names a page, a `Media` or `Audio` clip names an asset) and P8 (`Sequence::check_laws`: the cut on the grid, the span, the clip inside its sequence and its source, the speed, one strip per lane, the audio cap), with `BeforeSequence` and the three `ValidationError` variants they report. |
+| `68c8783` Merge branch 'develop' into feat/gafira-timeline-tl3 | `develop` moved while this delivery ran (TL2's verify round: `cfbadc7` the retime in flicks, `60b69a0` `place_span_for`). The merge keeps `check_laws` and `place_span_for` side by side in `timeline/sequence.rs` and changes nothing of TL3. |
+| `c9661c0` docs(gafira-timeline): record the TL3 delivery, its mutants and its goldens | This section: the commits, the RED evidence per criterion, the seventeen hand mutants, the deviations and the measured lines. |
+| `f801c9e` docs(gafira-doc): point the clip's law link at the sequence's path | One intra-doc link of `timeline/clip.rs` prefixed, so `cargo doc -p gafira-doc --no-deps` is warning-free (the round-1 report of TL2 raised the same class as S2). |
+
+No commit is red by design: the RED of every criterion was observed in the working
+tree before the implementation (recorded below) and each committed unit carries its
+test with its code, so the three commits of the delivery pass every gate alone — and
+the merge and the two notes commits pass them too, `git status` clean at the head.
+
+Gates per commit, each run alone, exit 0: `cargo fmt --check`,
+`cargo clippy --workspace --all-targets --locked -- -D warnings` (`gafira-doc` is not
+a leaf, ADR 0017), `cargo test --workspace --locked` (`2474`, `2476`, `2480` and
+`2481` tests passed, 0 failed), `cargo deny check` (`advisories ok, bans ok, licenses
+ok, sources ok`) and the nine policy steps of `.github/workflows/ci.yml`, extracted
+from the `policy` job's `run:` blocks into `/tmp/gafira-tl3-ci/steps2/` and run with
+`bash -euo pipefail` (AC8): format, CLI without UI crates (ARQ-07), `forbid unsafe`,
+V5, V12, ARQ-107, V13, V14 and the testkit `ports` feature. The full workspace suite
+ran once per commit (the counts above) and once more at the head of the branch.
+
+### RED evidence
+
+Wire form, `cargo test -p gafira-doc --locked --test timeline_wire` before the
+implementation: `0 passed; 6 failed`.
+
+| AC | Requirement | Test | The assertion that fails before the implementation |
+|---|---|---|---|
+| AC1 | ARQ-10: the ids as plain numbers, the enums tagged, every field written | `arq_10_the_timeline_ids_are_plain_numbers_and_every_field_is_written` | `"sequences":[{"id":3, is not in {"schema_version":1,...,"pages":[...]}` — the root writes four fields and the timeline is not on the wire. |
+| AC2 | ARQ-13: `sequences` always written, an older document reads it as empty, the error path unchanged | `arq_13_a_document_that_predates_sequences_reads_them_as_empty` | `the saved bytes write both fields: {...}` — the re-save of the old bytes carries no `"sequences":[],"assets":{}`. |
+| AC5 | P9: the table keyed by the 64-character lowercase hex hash | `p9_the_asset_table_is_keyed_by_the_lowercase_hex_hash` | `the table is keyed by the hex hash: {...}` — no `"assets"` in the bytes. |
+| AC7 | ARQ-53: the timeline golden is the canonical bytes | `arq_53_the_timeline_golden_is_the_canonical_bytes` | `left: "{...\"pages\":[...]}"` against the placeholder golden `{}`. |
+| AC7 | ADR 0006 rule 1: the old byte sets load and re-save canonically | `adr_0006_the_old_bytes_read_the_timeline_as_empty` | `extension_noncanonical writes both fields: {...}`. |
+| AC1 | ARQ-10, ARQ-13: the timeline survives the round trip | `arq_10_the_timeline_round_trips_through_the_document` | `assert_eq!(back, doc)`: the re-read document has `sequences: []` where the built one has the sequence. |
+
+`arq_10_the_timeline_ids_are_plain_numbers_and_every_field_is_written` is also AC1's
+only honest RED: a test that named `serde_json::to_string(&clip)` before the derive
+would have been a compile error, which the testing policy forbids as RED (the same
+situation as TL1's AC2).
+
+Validation, `cargo test -p gafira-doc --locked --test timeline_validation` before the
+implementation: `0 passed; 5 failed`, every one at
+`crates/gafira-doc/tests/timeline_validation.rs:67`:
+
+```
+a sequence id used twice: the document loaded and it must not
+a cut between two frames: the document loaded and it must not
+a scene clip with no page: the document loaded and it must not
+the second sequence is checked: the document loaded and it must not
+the second sequence names a page that is gone: the document loaded and it must not
+```
+
+| AC | Requirement | Tests | RED |
+|---|---|---|---|
+| AC3 | ARQ-10: the timeline ids unique in the document and below `next_id` | `arq_10_the_timeline_ids_are_unique_in_the_whole_document`, `arq_10_a_timeline_id_at_the_counter_is_refused` | `a sequence id used twice: the document loaded and it must not` |
+| AC4 | P9, FV-02: a `Scene` names a page, a `Media`/`Audio` names an asset | `p9_a_clip_names_a_page_and_an_asset_the_document_holds`, `arq_13_every_clip_of_the_document_names_its_source` | `a scene clip with no page: the document loaded and it must not` |
+| AC6 | ARQ-13: the laws of `TL2` on a loaded document | `arq_13_a_document_that_breaks_a_law_does_not_load`, `arq_13_every_sequence_of_the_document_is_checked` | `a cut between two frames: the document loaded and it must not` |
+
+AC8 has no RED of its own: the nine policy steps pass before and after this delivery,
+which is their point. They ran literally, exit 0, at each commit.
+
+### Hand mutants
+
+Seventeen behaviours of the delivery's critical code, applied one at a time to the
+green tree at the head of the branch (re-run after the merge of `develop`), each one
+confirmed to fail a test and reverted; nothing was committed. Seventeen killed, none
+survived, and every kill is a failing assertion, not a compile error.
+
+| # | Rule | Wrong behaviour applied | Test that killed it, and the observed failure |
+|---|---|---|---|
+| M1 | The root writes `sequences` always (ADR 0006 rule 3) | `Document::serialize` drops the `sequences` field | `timeline_wire::arq_10_the_timeline_ids_are_plain_numbers_and_every_field_is_written`: `"sequences":[{"id":3, is not in {...}` |
+| M2 | A document that predates the field reads it as empty (rule 1) | `#[serde(default)]` removed from `DocumentWire.sequences` | `timeline_wire::arq_13_a_document_that_predates_sequences_reads_them_as_empty`: `old bytes still load: Json(Error("missing field \`sequences\`"))` |
+| M3 | The asset table is keyed by the lowercase hex hash (P9) | `AssetRef::hex` writes uppercase | `timeline_wire::p9_the_asset_table_is_keyed_by_the_lowercase_hex_hash`: `the table is keyed by the hex hash: {...}` |
+| M4 | A reference is exactly 64 hex characters | the length check of `AssetRef::from_hex` removed | the same test: the short key loads instead of being a JSON error |
+| M5 | Every field is written, defaults included (rule 3) | `#[serde(skip_serializing_if = "Not::not")]` on `Track::ripple` | `arq_10_the_timeline_ids_are_plain_numbers...`: `"kind":"overlay","ripple":false is not in {...}` |
+| M6 | The enums carry their tag (ARQ-10) | `rename_all = "snake_case"` removed from `TrackKind` | the same test: `{"id":4,"kind":"video" is not in {...}` |
+| M7 | The timeline ids are unique in the whole document (P2) | the `timeline` iterator dropped from `check_ids`' `ids()` | `timeline_validation::arq_10_the_timeline_ids_are_unique_in_the_whole_document`: `a sequence id used twice: the document loaded and it must not` |
+| M8 | The timeline ids are below `next_id` (P2) | the counter bound computed over the pages only | `arq_10_a_timeline_id_at_the_counter_is_refused`: `a clip id at the counter: the document loaded and it must not` |
+| M9 | A `Scene` clip names an existing page (P9) | the `Scene` arm of `check_clip_sources` removed | `p9_a_clip_names_a_page_and_an_asset_the_document_holds`: `a scene clip with no page: the document loaded and it must not` |
+| M10 | A `Media`/`Audio` clip names an asset entry (P9) | the `Media`/`Audio` arm removed | the same test: `a media clip with no asset: the document loaded and it must not` |
+| M11 | Every sequence of the document is checked (ARQ-13) | `check_timeline` reads only `sequences[0]` | `arq_13_every_sequence_of_the_document_is_checked`: `the second sequence is checked: the document loaded and it must not` |
+| M12 | Every clip of every sequence names its source (AC4) | `check_clip_sources` reads only `sequences[0]` | `arq_13_every_clip_of_the_document_names_its_source`: `the second sequence names a page that is gone: ...` |
+| M13 | One strip per lane at any instant (P11) | the `windows(2)` overlap loop of `check_laws` removed | `arq_13_a_document_that_breaks_a_law_does_not_load`: `two clips at one instant: the document loaded and it must not` |
+| M14 | The audio cap: sixteen tracks (FV-01) | the cap check of `check_laws` removed | the same test: `the seventeenth audio track: the document loaded and it must not` |
+| M15 | The speed divides (FV-03) | the `InvalidSpeed` check of `check_laws` removed | the same test: `a zero speed: the document loaded and it must not` |
+| M16 | A clip starts inside its sequence (FV-01) | the `BeforeSequence` rule of `Track::check_clip` removed | the same test: `a clip before the sequence starts: the document loaded and it must not` |
+| M17 | A document is validated while it loads (ARQ-13) | `doc.validate()` dropped from `TryFrom<DocumentWire>` | the same test: `a cut between two frames: the document loaded and it must not` |
+
+### Choices and deviations
+
+- **The wire order is the one 02 §7.1 lists:** `schema_version`, `next_id`, `dpi`,
+  `pages`, `sequences`, `assets`, so the canonical bytes end
+  `..."nodes":[]}],"sequences":[],"assets":{}}`. The asset table is a JSON object
+  keyed by the hex hash, so two entries cannot hold the same content and the order is
+  the `BTreeMap`'s (ARQ-01).
+- **The three new enums are spelled in `snake_case`** (`"video"`, `{"scene":1}`,
+  `{"media":"abab…"}`, `"embedded"`), the lowercase vocabulary the rest of the
+  document's wire form already uses (`"normal"`, `"lines"`, `"group"`, `"srgb"`).
+  A unit variant is a bare string and a variant with a value is a one-key object, so
+  every enum carries its tag.
+- **The defaults are the root's, not the model's.** ADR 0006 rule 1 is about a field
+  the document gained after a document could exist: `sequences` and `assets` read with
+  `#[serde(default)]` and every field of the model itself is required, because no
+  bytes of a timeline exist yet that a default would have to serve.
+- **`Track::check_clip` gained the `BeforeSequence` rule.** `TL2`'s AC4 says "its
+  range ... lies inside the range of its source and inside the sequence, and a range
+  outside either is rejected", but `check_clip` only checked the grid, the span and
+  `source_in >= 0`. The validation of a loaded document needs the missing half, so it
+  lives in the model's own predicate, and `Track::insert` now refuses a cut at a
+  negative tick too. That is the law AC4 already states, not a new rule.
+- **`TimelineError` gained `BeforeSequence`, and `ValidationError` gained three
+  variants.** The two referential rules (`DanglingScene`, `DanglingAsset`) are the
+  document's, not the model's: only the document can see the pages and the asset
+  table, which is why they are not `TimelineError` variants. `TimelineLaw {
+  sequence, error }` wraps a break of the model's own laws, so the error the load
+  returns says which sequence and which law. `ValidationError` stays
+  `#[non_exhaustive]`.
+- **`ClipSource::Nodes` is not referentially checked.** AC4 names the `Scene` clip
+  and the `Media`/`Audio` clip; the node list of a `Nodes` clip belongs with the node
+  commands, which do not exist yet.
+- **A non-reduced speed off the wire is accepted.** `Speed` reduces at construction,
+  so the writer always spells 2/1 and never 4/2; a hand-written 4/2 behaves as the
+  same ratio. Only a zero numerator or denominator is refused (FV-03), which is the
+  one value that divides nothing and would make the relation panic.
+- **The seven byte sets: what moves and what stays.** Rule 3 moves the three
+  canonical goldens (`minimal.json`, `full.json`, `extension.json`), which gain
+  exactly `,"sequences":[],"assets":{}` at the root, and `tests/duration.rs` (TL1's
+  two pinned byte strings) gains the same two fields, for the same reason. The four
+  old byte sets (`extension_noncanonical.json` and `pre_layout/{minimal,full,
+  extension}.json`) stay as input-only fixtures and are the evidence of rule 1: they
+  load with an empty timeline and re-save in the new canonical form.
+  "The seven old byte sets re-save byte for byte" cannot be literally true while rule
+  3 holds — writing a field the old bytes do not carry changes them — so the
+  achievable form is the one the tests pin: the three canonical goldens round-trip
+  byte for byte (`tests/golden.rs`), the four old byte sets land on them
+  (`adr_0006_the_old_bytes_read_the_timeline_as_empty`, and `tests/layout.rs` for the
+  page-level differences of `pre_layout/full.json`), and the new timeline golden
+  round trips too.
+- **`RemovePage` over a shown page fails, and that is the safe half-state.** With
+  P9's rules in place, removing a page a `Scene` clip shows leaves the document with
+  `ValidationError::DanglingScene` on the next load: `RemovePage` alone cannot produce
+  a document that validates. FV-05 (c) — "deleting the scene deletes its clip, and it
+  is reversible" — is the commands change deleting both before it validates. Noted
+  here because it is a consequence of this delivery that a later change must own.
+- **`develop` moved under the delivery.** TL2's verify round landed `cfbadc7`
+  (retime in flicks) and `60b69a0` (`Sequence::place_span_for`) plus its notes while
+  this delivery ran. The merge `68c8783` brings them in; the three conflicts
+  (`timeline/sequence.rs`, `timeline/track.rs` doc comment) were resolved by keeping
+  both sides, and the mutants were re-run at the merged head.
+
+### Measured lines
+
+`git diff --shortstat develop` without this section: 17 files changed, 955
+insertions(+), 47 deletions(-), which is 1 002 changed lines. Of those, 702 are the two
+new test files (`tests/timeline_wire.rs` 365, `tests/timeline_validation.rs` 337) and
+253 are code, the three goldens and the two byte strings of `tests/duration.rs`; the
+new golden is one line of 2 221 bytes and each moved golden changes by the two fields.
+The design forecast 330 (460) and the delivery ceiling is ~700 lines, so the measured
+size is **above the ceiling** and rests on the tests: 702 of the 1 002 lines are the
+battery, and the code the delivery writes is 253. The coordinator decides whether that
+is the delivery or whether the battery is a review slice of its own.

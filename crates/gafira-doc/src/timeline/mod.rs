@@ -1,10 +1,10 @@
 //! The timeline model of 02 §3.1: sequences, tracks, clips, markers and the asset
 //! table, with the laws that make them a timeline.
 //!
-//! Everything here is the data of the timeline; the commands that rest on it and
-//! the persistence wire form are later work. The time types are exactly
-//! `gafira-time`'s: a cut lands on a whole frame of the sequence's rate, and no
-//! rate is ever rounded.
+//! Everything here is the data of the timeline and its wire form; the commands
+//! that rest on it are later work. The time types are exactly `gafira-time`'s: a
+//! cut lands on a whole frame of the sequence's rate, and no rate is ever
+//! rounded.
 
 mod asset;
 mod clip;

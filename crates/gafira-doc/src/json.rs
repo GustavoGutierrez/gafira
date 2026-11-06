@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::timeline::{AssetTable, Sequence};
 use crate::{Document, Dpi, Page, ValidationError};
 
 /// Why a document could not be read.
@@ -36,6 +37,11 @@ impl std::error::Error for LoadError {
 }
 
 /// The unchecked wire shape of a [`Document`].
+///
+/// `sequences` and `assets` are the fields the timeline joined schema 1 with:
+/// they are read with a default, so a document written before them loads with
+/// an empty timeline and an empty table (ADR 0006 rule 1), and they are always
+/// written back (rule 3).
 #[derive(Deserialize)]
 pub(crate) struct DocumentWire {
     schema_version: u32,
@@ -43,6 +49,10 @@ pub(crate) struct DocumentWire {
     #[serde(default)]
     dpi: Dpi,
     pages: Vec<Arc<Page>>,
+    #[serde(default)]
+    sequences: Vec<Arc<Sequence>>,
+    #[serde(default)]
+    assets: AssetTable,
 }
 
 impl TryFrom<DocumentWire> for Document {
@@ -54,10 +64,8 @@ impl TryFrom<DocumentWire> for Document {
             next_id: w.next_id,
             dpi: w.dpi,
             pages: w.pages,
-            // The timeline and the asset table are not on the wire yet (they
-            // arrive with the tables change): the model starts empty on load.
-            sequences: Vec::new(),
-            assets: std::collections::BTreeMap::new(),
+            sequences: w.sequences,
+            assets: w.assets,
         };
         doc.validate()?;
         Ok(doc)
@@ -78,31 +86,30 @@ impl Document {
 }
 
 impl Serialize for Document {
-    // The timeline of 02 §3.1 is not on the wire yet (the tables change): the
-    // canonical bytes keep the shape of schema 1, so the model fields are
-    // skipped and the wire is built from the four fields the wire read maps.
-    // The derive would have leaked the model's data into bytes the schema
-    // version has not declared.
+    // Every field is written, the empty timeline and the empty table included
+    // (ADR 0006 rule 3), in one order: the header, the pages, the sequences
+    // and the asset table their clips name (02 §7.1 lists them in this order).
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut out = serializer.serialize_struct("Document", 4)?;
+        let mut out = serializer.serialize_struct("Document", 6)?;
         out.serialize_field("schema_version", &self.schema_version)?;
         out.serialize_field("next_id", &self.next_id)?;
         out.serialize_field("dpi", &self.dpi)?;
         out.serialize_field("pages", &self.pages)?;
+        out.serialize_field("sequences", &self.sequences)?;
+        out.serialize_field("assets", &self.assets)?;
         out.end()
     }
 }
 
 impl<'de> Deserialize<'de> for Document {
-    // The validate-while-loading rule of ARQ-13 keeps its shape: the wire
-    // read validates the same way the derive's `try_from` did, and the
-    // timeline of 02 §3.1 is not part of the wire yet (the tables change
-    // brings its persisted form). The derive left the struct, so this manual
-    // pair keeps the wire bytes identical.
+    // The validate-while-loading rule of ARQ-13 keeps its shape: the wire read
+    // validates the same way the derive's `try_from` did, now over the
+    // timeline too. The derive left the struct, so this manual pair keeps the
+    // wire bytes identical to the field order of `Serialize`.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -166,7 +173,7 @@ mod tests {
                 r#""left":{"value":0.0,"unit":"px"},"linked":true},"guides":[],"#,
                 r#""grid":{"visible":false,"step":{"value":10.0,"unit":"px"},"subdivisions":1,"#,
                 r#""style":"lines","snap":true},"#,
-                r#""locked":false,"hidden":false,"roots":[],"nodes":[]}]}"#
+                r#""locked":false,"hidden":false,"roots":[],"nodes":[]}],"sequences":[],"assets":{}}"#
             )
         );
     }

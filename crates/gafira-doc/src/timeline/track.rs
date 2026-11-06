@@ -13,7 +13,12 @@ use crate::{ClipId, MarkerId, TrackId};
 /// The five lanes of the interface are a mapping from these values plus the
 /// track's label; the model itself knows only the kind and the place in the
 /// [`crate::timeline::Sequence::tracks`] order, which alone decides the pixel stacking.
+///
+/// The wire form is the kind's name in `snake_case`, the same lowercase
+/// vocabulary the rest of the document's enums use; an unknown kind fails to
+/// load (ADR 0006 rule 4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum TrackKind {
     /// The principal video track.
@@ -41,7 +46,10 @@ impl TrackKind {
 /// stacking rule of P11: index 0 is the bottom and later tracks paint over
 /// earlier ones, the same back-to-front convention [`crate::Page::roots`]
 /// uses.
-#[derive(Clone, Debug, PartialEq)]
+///
+/// Every field is written in the wire form, defaults included (ADR 0006
+/// rule 3).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub(crate) id: TrackId,
     pub(crate) kind: TrackKind,
@@ -123,9 +131,16 @@ impl Track {
     ///
     /// # Errors
     ///
-    /// [`TimelineError::OffGrid`], [`TimelineError::SpanTooShort`] or
+    /// [`TimelineError::BeforeSequence`], [`TimelineError::OffGrid`],
+    /// [`TimelineError::SpanTooShort`] or
     /// [`TimelineError::SourceBeforeStart`], as the first broken law.
     pub fn check_clip(&self, clip: &Clip, frame: Flicks) -> Result<(), TimelineError> {
+        if clip.place.start().ticks() < 0 {
+            return Err(TimelineError::BeforeSequence {
+                clip: clip.id,
+                at: clip.place.start().ticks(),
+            });
+        }
         if clip.place.start().ticks() % frame.ticks() != 0 {
             return Err(TimelineError::OffGrid {
                 clip: clip.id,
@@ -232,8 +247,10 @@ impl Track {
 ///
 /// Markers have no span and no law on their instant in this cut beyond being
 /// at least zero; a marker that lands between two frames is not a cut, and
-/// the laws that move it (`M`, the Imán) arrive with the commands change.
-#[derive(Clone, Debug, PartialEq)]
+/// the laws that move it (`M`, the Imán) arrive with the commands change. A
+/// marker is not a cut, so it needs no grid; every field is written, defaults
+/// included (ADR 0006 rule 3).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Marker {
     pub(crate) id: MarkerId,
     /// The instant the marker points at; at least zero.

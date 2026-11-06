@@ -3,7 +3,8 @@
 use std::fmt;
 
 use crate::node::MAX_EXTENSION_DEPTH;
-use crate::{Document, Dpi, NodeId, PageId, PageLayoutError, PageSizeError};
+use crate::timeline::TimelineError;
+use crate::{ClipId, Document, Dpi, NodeId, PageId, PageLayoutError, PageSizeError, SequenceId};
 
 /// A numeric field of a node, named in value errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +62,8 @@ impl fmt::Display for NodeField {
 ///         | PageLayout { .. } | DanglingRoot { .. } | DuplicateRoot { .. } | NonFinite { .. }
 ///         | OutOfRange { .. } | EmptyExtensionTypeId { .. } | ExtensionTooDeep { .. }
 ///         | ChildrenOnLeaf { .. } | DanglingChild { .. } | MultipleParents { .. }
-///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } => {}
+///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } | DanglingScene { .. }
+///         | DanglingAsset { .. } | TimelineLaw { .. } => {}
 ///     }
 /// }
 /// ```
@@ -117,6 +119,16 @@ pub enum ValidationError {
     Orphan { node: NodeId },
     /// P6: a node cannot be reached from any root, so it is in or below a cycle.
     Cycle { node: NodeId },
+    /// P7: a `Scene` clip names a page the document does not have.
+    DanglingScene { clip: ClipId, page: PageId },
+    /// P7: a `Media` or `Audio` clip names an entry the asset table does not
+    /// have (P9 of the timeline design).
+    DanglingAsset { clip: ClipId },
+    /// P8: a sequence breaks a law of the timeline model (FV-01, FV-03, P11).
+    TimelineLaw {
+        sequence: SequenceId,
+        error: TimelineError,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -170,6 +182,18 @@ impl fmt::Display for ValidationError {
             }
             Self::Orphan { node } => write!(f, "node {node}: is not a root and has no parent"),
             Self::Cycle { node } => write!(f, "node {node}: is in or below a cycle"),
+            Self::DanglingScene { clip, page } => {
+                write!(
+                    f,
+                    "clip {clip}: the page {page} it shows is not in the document"
+                )
+            }
+            Self::DanglingAsset { clip } => {
+                write!(f, "clip {clip}: the asset it names is not in the table")
+            }
+            Self::TimelineLaw { sequence, error } => {
+                write!(f, "sequence {sequence}: {error}")
+            }
         }
     }
 }

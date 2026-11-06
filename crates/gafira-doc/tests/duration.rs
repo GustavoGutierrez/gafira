@@ -26,7 +26,8 @@ const DOC_WITHOUT_DURATION: &str = concat!(
     r#""right":{"value":0.0,"unit":"px"},"bottom":{"value":0.0,"unit":"px"},"#,
     r#""left":{"value":0.0,"unit":"px"},"linked":true},"guides":[],"#,
     r#""grid":{"visible":false,"step":{"value":10.0,"unit":"px"},"subdivisions":1,"#,
-    r#""style":"lines","snap":true},"locked":false,"hidden":false,"roots":[],"nodes":[]}]}"#
+    r#""style":"lines","snap":true},"locked":false,"hidden":false,"roots":[],"nodes":[]}],"#,
+    r#""sequences":[],"assets":{}}"#
 );
 
 /// The same document with a five-second duration on the page, in flicks:
@@ -40,7 +41,7 @@ const DOC_WITH_DURATION: &str = concat!(
     r#""left":{"value":0.0,"unit":"px"},"linked":true},"guides":[],"#,
     r#""grid":{"visible":false,"step":{"value":10.0,"unit":"px"},"subdivisions":1,"#,
     r#""style":"lines","snap":true},"duration":3528000000,"locked":false,"#,
-    r#""hidden":false,"roots":[],"nodes":[]}]}"#
+    r#""hidden":false,"roots":[],"nodes":[]}],"sequences":[],"assets":{}}"#
 );
 
 // ARQ-01 (AC1): the crate declares the `gafira-time` edge of ADR 0007, the

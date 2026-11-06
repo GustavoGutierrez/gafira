@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 use crate::timeline::{AssetEntry, AssetRef, AssetTable, Sequence};
 use crate::{Dpi, IdSpaceExhausted, Page, PageId};
 
-/// A whole document: a version, one id counter, a DPI and ordered pages.
+/// A whole document: a version, one id counter, a DPI, ordered pages, the
+/// timelines and the asset table their clips name (02 §3.1).
 ///
 /// Fields are private; pages are shared by `Arc` so cloning copies no page
 /// or node. Reading never hands out `&mut` access; mutation needs an
@@ -20,11 +21,9 @@ pub struct Document {
     pub(crate) next_id: u64,
     pub(crate) dpi: Dpi,
     pub(crate) pages: Vec<Arc<Page>>,
-    /// The timelines of the document (02 §3.1), not persisted yet; the wire
-    /// form keeps its shape and this model arrives with the tables change.
+    /// The timelines of the document, in creation order (02 §3.1).
     pub(crate) sequences: Vec<Arc<Sequence>>,
-    /// The asset table the clips need (P9), keyed by the content hash; the
-    /// same non-prompt status as the sequences until the tables change.
+    /// The asset table the clips need (P9), keyed by the content hash.
     pub(crate) assets: AssetTable,
 }
 
@@ -32,8 +31,8 @@ impl Document {
     /// The sequences of the document, in the order they were created.
     ///
     /// Timeline data sits on the document root until the composition root
-    /// (`Project`, 02 §3.1) exists, and the wire form does not carry it yet:
-    /// the persistence lands with the tables change.
+    /// (`Project`, 02 §3.1) exists, and the wire form carries it beside the
+    /// pages.
     #[must_use]
     pub fn sequences(&self) -> &[Arc<Sequence>] {
         &self.sequences
@@ -68,7 +67,8 @@ impl Document {
         self.schema_version
     }
 
-    /// The next id the shared counter will hand out (nodes and pages).
+    /// The next id the shared counter will hand out (pages, nodes and the
+    /// timeline's sequences, tracks, clips and markers).
     pub fn next_id(&self) -> u64 {
         self.next_id
     }

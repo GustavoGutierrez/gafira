@@ -712,3 +712,256 @@ deviation from it:
   merge is what a push would deliver; every gate above ran on the merged tree, not on the branch.
 
 next: tdd-apply (TL3, the next delivery of `gafira-timeline`); W3, W4, W5, W6, S3 remain the specifier's (ambiguity), W7 is TL3's, W8 is the coordinator's
+
+```json
+{ "schema": 1, "change": "gafira-timeline", "delivery": "TL3", "rounds": [ {
+  "round": 1, "commit": "85a98b717352e6befb359bc9b0d1880d25281202", "mode": "standard", "tier": "T0", "depth": "V1",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 2, "suggestion": 4},
+  "classes": ["implementation", "ambiguity"],
+  "findings": [
+    {"id": "TL3-W1", "severity": "WARNING", "class": "implementation",
+     "ref": "git diff --shortstat 1c9c3f8 HEAD",
+     "summary": "Size: 955 insertions and 47 deletions in 17 files (1 002 changed lines; 1 171 with the record's 169-line section) against the card's 330 (460) forecast and the ~700 ceiling — 2.18x the forecast, 1.43x the ceiling. Source, goldens and the two duration strings are 253 and the two new test files are 702, so the code is inside the forecast and the battery crosses the ceiling. The coordinator's call, already stated. The 2 089 in this round's input is TL2's W8 figure (git diff 2ff24c6 5789465), not this delivery's.",
+     "follow_up": false, "status": "open"},
+    {"id": "TL3-W2", "severity": "WARNING", "class": "ambiguity",
+     "ref": "specs/changes/gafira-timeline/apply-progress.md:127 (card Product IDs); specs/05-funcionalidad-video-y-distribucion.md:40 (FV-02)",
+     "summary": "Three card IDs have no test that names them. V-5 is proven by the V5 policy step of AC8, a command and not a Rust test; D-36 by AC2/AC7's behaviour, proven and unnamed; FV-02's own row is the import (RF-37), out of scope by Q5 and the card's non-goals, while the table a clip names is AC4's, proven. The same shape as TL2's W5: a card-level naming ambiguity, not an untested criterion.",
+     "follow_up": false, "status": "open"},
+    {"id": "TL3-S1", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-doc/src/timeline/sequence.rs:18-31,71-82; crates/gafira-doc/src/timeline/track.rs:264-275",
+     "summary": "The load does not re-apply two constructor-level claims: Sequence::new refuses a zero pixel side (EmptyPixelSize) while PixelSize derives Deserialize, and a marker before zero is claimed by Marker's doc and enforced nowhere. Both were probed to load. Outside AC1-AC8 and no crash (nothing at load reads either), but a value the constructor refuses reaches the editor.",
+     "follow_up": false, "status": "open"},
+    {"id": "TL3-S2", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "specs/changes/gafira-timeline/apply-progress.md:322-330,472-487",
+     "summary": "The record's commit table lists 6 of the branch's 8 commits: it omits de10774 (the notes commit that wrote the two-notes-commits line) and the merge 85a98b7, which is the verified HEAD. Its claim that the new golden is one line of 2 221 bytes measures 2 220.",
+     "follow_up": false, "status": "open"},
+    {"id": "TL3-S3", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-doc/tests/timeline_wire.rs:336",
+     "summary": "`.expect(\"{name} still loads\")` does not interpolate, so a failing fixture reports the literal `{name} still loads` and names no fixture. Diagnostic only; the loop already carries `name` as the fix.",
+     "follow_up": false, "status": "open"},
+    {"id": "TL3-S4", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "specs/changes/gafira-timeline/apply-progress.md:343",
+     "summary": "The record cites `/tmp/gafira-tl3-ci/steps2/`, an absolute scratch path in a tracked file, which the repo rule forbids. The same class already exists at line 238 from TL2's record, so it is a record-hygiene item, not this delivery's invention.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": null,
+  "criteria": {"total": 8, "covered": 8},
+  "size": {"lines": 955, "forecast": 460}, "report": "verify-report.md" } ] }
+```
+
+## Round 1 — TL3
+
+- Delivery `TL3`, verified at `85a98b717352e6befb359bc9b0d1880d25281202` (`Merge branch 'develop'
+  into feat/gafira-timeline-tl3`), a plain worktree at `/tmp/gafira-tl3`, branch
+  `feat/gafira-timeline-tl3`, clean. The branch was cut from `develop` at `d89bb4e`; the merge
+  brings `develop` at `1c9c3f8`. Not pushed, not merged.
+- **Round 1.** Mode `standard`, depth `V1`, `mutation: off`, tier `T0` as the card records (that
+  label is `S3`, carried). No `mutants` report: `mutation: off`, so `mutation` is `null`. V1 buys no
+  hand-mutant budget, so the `hand_mutants` key is `null`; the probes in the map below are the
+  criteria check of step 3, run on a scratch export, and are not that budget.
+- Verdict: **PASS**. Every gate exits 0 at HEAD, all eight acceptance criteria are covered by a
+  test or a command that stops when the code is removed (probes below), `TL2`'s `W7` is closed by a
+  real write-read-compare round trip, the goldens are deliberate and no test rewrites one, and
+  `ARQ-136`'s guard was not loosened. The two warnings are the size (the coordinator's call) and a
+  card-level ID naming ambiguity; neither is a defect in this delivery.
+- The input's "2 089 insertions" is `TL2`'s `W8`: `TL3` measures 955 insertions / 47 deletions (see
+  **Size**). The input's "seven goldens" is the design's count of byte sets, not seven files moved.
+- Toolchain: cargo/rustc 1.93.1 (`x86_64-unknown-linux-gnu`), cargo-deny 0.20.2. Disk at start:
+  181 GB free. Gates ran with a `CARGO_TARGET_DIR` outside the worktree, and the probes had one of
+  their own; `CARGO_INCREMENTAL` was the default (the CI sets it to `0` for its timing, which no
+  gate here measures).
+
+### The two things `TL3` had to carry
+
+**`W7` (the manual serde silently dropped `sequences`/`assets`) — closed, with a real round trip.**
+`crates/gafira-doc/src/json.rs:52-55,102-103` puts both fields on the wire and reads them back, and
+`tests/timeline_wire.rs:241-254` is the round trip: it builds a document with one sequence (four
+tracks, four clips of the four source kinds, a marker) and two assets, writes it with `to_json`,
+reads it with `from_json`, and asserts `back == doc` on the whole `Document` (a derived `PartialEq`
+that includes `sequences: Vec<Arc<Sequence>>` and `assets: AssetTable`), then that the re-save is
+byte-identical and that the re-read document holds 1 sequence and 2 assets. It is not a reading of
+the derive: probe 1 removes the two `serialize_field` calls and this test fails on
+`assert_eq!(back, doc)` while the six validation tests stay green. A document written and read back
+keeps the timeline.
+
+**The schema is still 1, and the record claims it.** `Document::SCHEMA_VERSION` is 1
+(`document.rs:63`), `check_header` still compares to it exactly (`validate.rs:32-35`), and the
+decision is `D-36` / the card's `Q1` ("schema 1 stays open until the first build that writes
+`.gafira` reaches a user", `specs/02-arquitectura-software.md:227`). A document written before
+`TL3` still loads: the four old byte sets read an empty timeline and table and re-save in the new
+canonical form (`timeline_wire.rs:316-349`), and the `#[serde(default)]` that does it is load-bearing
+— probe 5 removes it and exactly those two tests fail with `missing field sequences`. The error path
+is unchanged and pinned: version 2 still returns `UnsupportedSchemaVersion` before anything else,
+malformed bytes are still `LoadError::Json`. The residual, which the record does not claim to close:
+bytes written *by* `TL3` still say `schema_version: 1`, so a reader built before this delivery would
+ignore the two fields and silently drop the timeline. No such reader exists in the field — the
+`.gafira` container is `gafira-format`, layer 4 and unbuilt — which is exactly why `D-36` lets
+schema 1 stay open. Stated here, not filed: it is the decision's own boundary.
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no output, no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile`, 0 warnings |
+| `cargo test --workspace --locked` | 0 | **2 481 passed, 0 failed, 0 ignored**; 197 suites (178 test binaries and 19 doctest binaries) |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| the nine `policy` steps of `.github/workflows/ci.yml` | 0 (9/9) | Format; CLI without UI crates (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107; V13 `EditToken`; V14 property per core command; testkit `ports` — each exit 0 |
+| `RUSTDOCFLAGS="-D warnings" cargo doc -p gafira-doc --no-deps` | 0 | generated `gafira_doc/index.html`, no warning |
+
+The policy extractor was re-checked against the file before it ran: the `policy` job has 10 `run:`
+steps, the extractor skips `Install toolchain (rust-toolchain.toml)`, so 9 run; it reads
+`.github/workflows/ci.yml` at HEAD, so it cannot be stale, and no `run:` block of the job holds a
+`${{ }}` expression, so executing the bodies literally is faithful to the job. The head count of
+2 481 matches the last count the record claims (2 474 / 2 476 / 2 480 / 2 481 per commit); the
+per-commit runs are the record's claim and were **not** re-run, which V1 does not ask for.
+
+### Acceptance criteria — every one mapped to what proves it
+
+`[unit]` unless marked; "fails without the code" is the probe that shows the assertion is load
+bearing, not the test's name.
+
+| AC | What proves it | Fails without the code |
+|---|---|---|
+| **AC1** ids as plain numbers, the enums tagged, every field written (`ARQ-10`) | `timeline_wire.rs:171-206`: the literal wire prefixes `{id:3`, `{id:4,kind:video`, `{id:5,source:{scene:1}`, the marker; then every field of a track, a clip, a marker and the three other source tags; then the rates and the size | probe 6 (drop `#[serde(rename_all = "snake_case")]` on `TrackKind`) fails it; probe 1 fails it too. Note the round-trip test *survives* probe 6 — it writes and reads consistently — which is why the literal test is the one AC1 needs |
+| **AC2** `sequences` always written, a predating document reads empty, error path unchanged (`ARQ-13`) | `timeline_wire.rs:212-238` (old bytes load empty, re-save with both fields, version 2 refused, malformed bytes are `Json`) and `:316-349` (the four old byte sets) | probe 5 (remove both `#[serde(default)]`) → exactly these two tests fail, the other four pass |
+| **AC3** the three new id spaces unique in the document and below `next_id` (`ARQ-10`) | `timeline_validation.rs:83-135` (a duplicate sequence, track, clip and marker, and a clip sharing the page's raw id) and `:137-151` (an id at the counter is refused, one below it loads) | probe 2 (drop the `timeline` iterator from `check_ids`) → exactly these two fail |
+| **AC4** a `Scene` clip names a page, a `Media`/`Audio` clip names an asset (`P9`, `FV-02`) | `timeline_validation.rs:153-197` (a scene on a missing page, media and audio on a missing entry, then both load once the page/table holds them) and `:320-337` (the second sequence's clip, a track that is not the first) | probe 3 (remove `check_clip_sources`) → exactly these two fail. `ClipSource::Nodes` is deliberately not referentially checked: AC4 names `Scene` and `Media`/`Audio`, and the record discloses it |
+| **AC5** the table keyed by the 64-character lowercase hex hash, the entry carrying its name and storage (`P9`) | `timeline_wire.rs:256-289`: the exact `"assets":{...}` literal for both entries, an upper-case key normalising back to the canonical spelling, and `1111` / 63 / 65 characters each a `LoadError::Json` | probe 1 (drop the `assets` field) fails it. The content hash is the key by construction, not a repeated field — that is `P9`'s reading and the design's own |
+| **AC6** the laws of `TL2` hold on a loaded document, or it fails to load (`ARQ-13`, `FV-01`) | `timeline_validation.rs:201-293`: off-grid cut, half-frame and empty span, a cut before the sequence, `source_in` negative, two clips meeting, an unsorted lane, both zero speeds, the 16/17 audio cap, and the golden loading clean — each pinned to its own `TimelineError`; `:295-318` proves every sequence is checked | probe 4 (remove `check_timeline`) → exactly these two fail. AC6's "relation of the speed" is the non-zero check only; the relation itself needs a source duration and is `W3`, carried, not re-opened |
+| **AC7** the new timeline golden is the canonical bytes of a document with a clip of each source kind, and the old byte sets still hold (`ARQ-53`, `ADR 0006` 1 and 3) | `timeline_wire.rs:299-314` (the golden equals the fixture's bytes, re-saves byte for byte, re-reads equal, is one line) and `:316-349`; `golden.rs:18-38` (the three canonical goldens byte for byte, the non-canonical normalising to the canonical one) | probe 1 → `canonical_goldens_round_trip_byte_for_byte`, `noncanonical_golden_normalizes_to_the_canonical_one` and `arq_53_...` all fail |
+| **AC8** the V5 row passes, V12 keeps the `clippy.toml` identical, the crate still forbids `unsafe` (`ARQ-02`, `V-5`) **[command]** | the nine policy steps at HEAD, exit 0 — the V5 step prints nothing for `gafira-doc` and would print `::error::` for a missing or forbidden dep; V12 compares the `clippy.toml` copies; the `forbid(unsafe_code)` step greps `crates/*/src/lib.rs` | a regression makes the step exit non-zero; no Rust test names `V-5`, which is `TL3-W2` |
+
+One more test, not an AC of the card but `W7`'s closure:
+`timeline_wire.rs:241-254`, the round trip (probe 1 kills it).
+
+### Criteria probes (scratch export, step 3 — not the 4b budget)
+
+A detached worktree at `/tmp/gafira-tl3-probe` with its own target dir; every mutation reverted with
+`git checkout --`, nothing written to the delivery tree.
+
+| # | Applied | Result |
+|---|---|---|
+| 1 | `Document::serialize` drops the two `serialize_field` calls | golden 2/3 fail, `timeline_wire` 6/6 fail (AC1, AC2, AC5, AC7 and the round trip) |
+| 2 | `check_ids` without the timeline iterator | `timeline_validation` 2 fail (AC3), 4 pass |
+| 3 | `check_clip_sources` removed from `validate()` | 2 fail (AC4), 4 pass |
+| 4 | `check_timeline` removed from `validate()` | 2 fail (AC6), 4 pass |
+| 5 | `#[serde(default)]` removed from both new fields | 2 fail (AC2), 4 pass, with `Json(Error("missing field sequences"))` |
+| 6 | `rename_all = "snake_case"` removed from `TrackKind` | `timeline_validation` 6/6 fail (their wire text is snake_case) and 2 wire tests (AC1, AC7); the round trip still passes |
+| 7 | nothing: a document with `"width":0` and a marker at `-29400000` | both **load** — the evidence for `TL3-S1` |
+
+### The goldens
+
+- **No test rewrites its reference (`ARQ-113`).** The goldens are `include_str!` bytes compared with
+  `assert_eq!`; `grep -rn "fs::write|File::create|std::fs" crates/gafira-doc/tests/` returns nothing,
+  `crates/gafira-doc` has no `build.rs`, and no test reads an update/bless variable. A drift makes a
+  test fail (probes 1 and 6 show it), and the only way to change a reference is to edit it.
+- **The new golden was written deliberately, not regenerated.** `tests/golden/timeline.json` is
+  2 220 bytes, one line, and the test compares it to the bytes of a document the test itself builds
+  (`assert_eq!(timeline_document().to_json().unwrap(), golden)`) *and* re-saves it through the
+  validating path (`assert_eq!(resave(golden), golden)`), so its bytes are a law that a reader
+  re-derives, not a snapshot nobody checks. Its content is a clip of each source kind (scene `5`,
+  media `6`, nodes `7`, audio `10`), the four track kinds, a marker `12` and two assets (embedded and
+  linked) — AC7's "a clip of each source kind", exactly.
+- **The three canonical goldens moved by the two fields and nothing else.** Reconstructing
+  `old[:-1] + ',"sequences":[],"assets":{}}'` equals the new file for `minimal.json` (515 → 542
+  bytes), `full.json` (2 299 → 2 326) and `extension.json` (932 → 959). `extension_noncanonical.json`
+  and `pre_layout/{minimal,full,extension}.json` are untouched: they are the old bytes of `ADR 0006`
+  rule 1, and their page-level differences stay `tests/layout.rs`'s.
+
+### `ARQ-136`'s guard
+
+`crates/gafira-doc/tests/visit_contract.rs` is **not in the delivery's diff** — the file is byte-
+identical to `1c9c3f8`. `TIMELINE_SOURCES` still holds the four entries `TL1` left (`page.rs`,
+`timeline/clip.rs`, `timeline/sequence.rs`, `timeline/track.rs`), and `DOMAIN_SOURCES` gained no
+module. The guard was not loosened to let the new fields through, and it did not need to be: a
+word-boundary search for the five time types outside those four files over `src/` returns nothing,
+so `document.rs`, `json.rs`, `ids.rs`, `validate.rs`, `timeline/asset.rs` and `timeline/error.rs`
+name no time type. The validation that reads the laws lives in `validate.rs` and calls
+`Sequence::check_laws`; the Flicks arithmetic stays in the timeline's own data files, which is
+`ARQ-136`'s shape.
+
+### Size
+
+Measured against the branch point `1c9c3f8`, not against a moved `develop`:
+
+- **17 files, 955 insertions, 47 deletions — 1 002 changed lines** (1 171 with the record's own
+  169-line section, which is the only file the record's 17 does not count).
+- 702 of the 1 002 are the two new test files (`timeline_wire.rs` 365, `timeline_validation.rs`
+  337); 253 are source, the three moved goldens, the new one-line golden and the two byte strings of
+  `tests/duration.rs`. The code proper is **inside** the card's 330 forecast; the battery is what
+  crosses the ~700 ceiling (1.43× it, 2.18× the 460 at ×1.4).
+- The record reports 955 / 47 / 17 and explains the split; the numbers agree with the tree.
+- **The 2 089 in this round's input is not `TL3`'s.** It is `TL2`'s `W8`
+  (`git diff --shortstat 2ff24c6 5789465`, 14 files), still open and still the coordinator's. `TL3`'s
+  own number needs its own call, and the coordinator has said so.
+
+### Artifact integrity (fast lane, step 3c)
+
+- `197c881 docs(gafira-timeline): slice card for TL3` touches only
+  `specs/changes/gafira-timeline/apply-progress.md` (+16), is an ancestor of the first
+  implementation commit, and the `## TL3` block it wrote is **byte-identical** at `197c881` and at
+  the verified HEAD (extracted by heading and compared: 16 lines each). No implementer commit
+  changed the card; `c9661c0` and `de10774` append the record below it and remove no card line.
+- Commit scope matches the record: `9924741` (`document.rs`, `json.rs`, the timeline model, the
+  goldens), `e0439b8` (`validate.rs` + `timeline_validation.rs`), `485028a` (`error.rs`,
+  `timeline/error.rs`, `sequence.rs`, `track.rs`, + the rest of the tests) touch only
+  `crates/gafira-doc`; `f801c9e` is one doc-comment line in `clip.rs`; the merges only join
+  `develop`.
+- No conflict markers in any `.rs` or `.md`; `Cargo.toml` and `Cargo.lock` are untouched (no
+  dependency change, so no V5 row moved); no absolute or user path in the changed source or tests
+  (the record's own `/tmp/...` citation is `TL3-S4`); no AI attribution in any `TL3` commit message.
+- **Product IDs on the card** (`apply-progress.md:127`): `ARQ-10` (named by `timeline_wire.rs`
+  AC1/round trip and `timeline_validation.rs` AC3), `ARQ-13` (AC2 and AC6), `ARQ-53` (the
+  `arq_53_` test), `ARQ-30` (named by `timeline_laws.rs`, `TL2`'s file; `TL3` mutates only through
+  `view.sequences_mut()`/`assets_mut()` under the token), `V-5` (AC8's V5 step), `D-36` (AC2/AC7's
+  behaviour, unnamed) and `FV-02` (its row is the import, out of scope by `Q5`; the table it implies
+  is AC4's). `V-5`, `D-36` and `FV-02` have no test that names them: `TL3-W2`.
+
+### Carried out of the `TL2` rounds (stated, not re-opened)
+
+- **`W3`** — the speed remainder: `place_span_for` reports it, nothing absorbs it into `source_in`;
+  the design owes the direction. Unchanged by `TL3`, and `check_laws` does not touch it.
+- **`W4`** — "inside its source" and "inside its sequence" cannot be checked without a source
+  duration (`Q5`) and a stored sequence length (`P4`). `TL3`'s new law checks what exists: the start
+  at or after zero, the span, the grid, `source_in >= 0`.
+- **`W5`** — its `ARQ-13` half is in fact answered here: `TL3`'s tests name `ARQ-13` and prove the
+  validate-on-load rule for the timeline. Its `FV-04` half stays the specifier's; `FV-04` is not on
+  `TL3`'s card.
+- **`W6`** — the undo clause: the commands are deferred by `Q4`, so nothing here can prove it.
+- **`S3`** — the card's `tier: T0` for a delivery that writes critical Rust; still the specifier's
+  label. `TL3`'s Flow line repeats it (line 126), which is the same item, not a new one.
+
+### Findings
+
+| Id | Severity | Class | Ref | Summary | Status |
+|---|---|---|---|---|---|
+| TL3-W1 | WARNING | implementation | `git diff --shortstat 1c9c3f8 HEAD` | 955 insertions / 47 deletions in 17 files (1 002 changed lines) against 330 (460) and the ~700 ceiling; the code is 253 and the battery 702. The coordinator's call. The input's 2 089 is TL2's W8, not this delivery's. | open |
+| TL3-W2 | WARNING | ambiguity | `apply-progress.md:127`; `specs/05...:40` | `V-5`, `D-36` and `FV-02` have no test naming them: V-5 is AC8's command, D-36 is AC2/AC7's behaviour, FV-02's own row (the import) is out of scope by Q5. The shape of TL2's W5. | open |
+| TL3-S1 | SUGGESTION | implementation | `sequence.rs:18-31,71-82`; `track.rs:264-275` | A zero pixel size and a marker before zero load: the constructor laws are not re-applied from bytes. Probed; no crash, outside the ACs. | open |
+| TL3-S2 | SUGGESTION | implementation | `apply-progress.md:322-330,472-487` | The commit table lists 6 of 8 commits (omits `de10774` and the verified merge `85a98b7`); the golden's byte count is 2 220, not 2 221. | open |
+| TL3-S3 | SUGGESTION | implementation | `timeline_wire.rs:336` | `.expect("{name} still loads")` does not interpolate; a failure names no fixture. | open |
+| TL3-S4 | SUGGESTION | implementation | `apply-progress.md:343` | The record cites `/tmp/gafira-tl3-ci/steps2/`, an absolute path in a tracked file (the same class already at line 238 from TL2). | open |
+
+### Observations (not findings)
+
+- **`develop` has moved 57 commits past this branch's merge of it**, and two of them matter here:
+  `c774c92` (the `TL2` report this file appends to, which the branch does not contain) and
+  `f103281` (`retimed`, in `timeline/sequence.rs` — the same file `TL3` edited 50 lines away). A
+  real merge into today's `develop` was attempted in a throwaway worktree and applied **cleanly**
+  (exit 0, no conflicts). The merged tree was **not** gated here: the gates above are HEAD's, and
+  re-gating after the merge is the coordinator's step, not a discount of them.
+- **`AC6`'s "relation of the speed" is still only the non-zero check** — `W3`'s carried question,
+  not a new gap: there is no source duration to relate the place to.
+- **The load path's validation order** is ids, nodes, parents, reachability, sources, laws, so a
+  document that is both dangling and law-breaking reports the source first. Nothing pins that order
+  as a contract; the tests that use one break at a time do not need it to.
+- **The canonical root order is 02 §7.1's** (header, pages, sequences, assets), which is why every
+  moved golden ends `],"sequences":[],"assets":{}}`; the `BTreeMap` makes the table's order a
+  function of the hash, so the bytes are deterministic (`ARQ-10`'s own determinism).
+- **Nothing is pushed.** The report is written in this worktree and left uncommitted for the
+  coordinator to commit with the merge.
+
+next: archive (TL3 closes `gafira-timeline`'s three deliveries, all PASS); before it the specifier owns W3, W4, W5's FV-04 half, W6, S3 and TL3-W2, the coordinator owns TL3-W1 (size) and the merge-and-re-gate, and TL3-S1..S4 are follow-ups

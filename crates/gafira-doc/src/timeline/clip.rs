@@ -85,8 +85,11 @@ fn gcd(a: u32, b: u32) -> u32 {
 ///
 /// The identity is by content, never by path (P9): a `Media` or `Audio` source
 /// names an asset by its hash, so replacing the file on disk does not move any
-/// clip, and a `Scene` names a page by its id.
+/// clip, and a `Scene` names a page by its id. The wire form names the tag in
+/// `snake_case` and then the value: `{"scene":1}`, `{"media":"<hash>"}`,
+/// `{"nodes":[2, 3]}` or `{"audio":"<hash>"}`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ClipSource {
     /// A page, rendered as the clip's content.
@@ -106,7 +109,11 @@ pub enum ClipSource {
 /// half-open by [`TimeRange`], and it starts at or after the start of its
 /// source (`source_in` is at least zero). The animation of the volume arrives
 /// with the commands change; today it is a bare value (Q3).
-#[derive(Clone, Debug, PartialEq)]
+///
+/// Every field is written in the wire form, defaults included (ADR 0006
+/// rule 3); the laws are re-applied to a value that came from bytes
+/// ([`crate::timeline::Sequence::check_laws`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub(crate) id: ClipId,
     pub(crate) source: ClipSource,
