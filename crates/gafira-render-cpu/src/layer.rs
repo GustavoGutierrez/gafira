@@ -21,6 +21,11 @@
 //! drew and never shrinks on its own; `trim` is what drops it (ARQ-143). That
 //! growth policy is not critical code (design, "Critical code").
 //!
+//! `ApplyMask` multiplies the innermost layer by its coverage and
+//! `ApplyTransition` replaces it with the transition of the layer and the
+//! pixels it will be composited onto (02 §4.6). Both are ops **on** the layer,
+//! so both are refused when no layer is open.
+//!
 //! The plan's stack is balanced (02 §6.1): every pop closes the layer its push
 //! opened. A pop with no layer open, and a layer left open at the end of the
 //! tile, are plans this backend cannot execute; the port carries no
@@ -29,8 +34,13 @@
 //! guess.
 
 use gafira_doc::BlendMode;
+use gafira_doc::contract::ParamValues;
 use gafira_ports::render::RenderError;
-use gafira_raster::{AlphaMask, blend_f32};
+use gafira_raster::transitions::Transition;
+use gafira_raster::{
+    AlphaMask, BufferError, EffectCx, EffectError, ImageView, ImageViewMut, PixelData,
+    PixelDataMut, blend_f32,
+};
 
 /// The layers of one tile, outermost first, and the buffers a pop returned.
 #[derive(Default)]
@@ -127,6 +137,75 @@ impl Layers {
                     layer[at + channel] *= coverage;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Replaces the innermost layer with the transition of its background and
+    /// its content (02 §4.6).
+    ///
+    /// `to` is the layer's content — what was drawn since the `PushLayer` — and
+    /// `from` is its background: the pixels the `PopLayer` will composite onto,
+    /// which is the parent's buffer, or the tile's own pixels for the outermost
+    /// layer. No snapshot is needed: while a layer is open nothing writes to its
+    /// parent, so the parent **at the op** is the background **at the push**.
+    /// Both inputs have the region and the format of the destination, as
+    /// ARQ-118 requires; this backend accumulates in premultiplied `f32` (O11),
+    /// so the format is the same in both qualities.
+    ///
+    /// # Errors
+    /// [`RenderError::DriverBlocked`] when no layer is open: without a `PopLayer`
+    /// there is no background to be `from`. [`RenderError::Effect`] naming
+    /// `progress` when it is not finite, and the transition's own [`EffectError`]
+    /// otherwise. A finite `progress` outside `[0, 1]` is clipped (ARQ-118).
+    pub(crate) fn apply_transition(
+        &mut self,
+        transition: &dyn Transition,
+        params: &ParamValues,
+        progress: f32,
+        tile: &mut [f32],
+        size: (u32, u32),
+    ) -> Result<(), RenderError> {
+        if self.open.is_empty() {
+            return Err(RenderError::DriverBlocked);
+        }
+        if !progress.is_finite() {
+            return Err(RenderError::Effect(EffectError::Buffer(
+                BufferError::NonFinite {
+                    field: "progress",
+                    index: 0,
+                },
+            )));
+        }
+        // ARQ-118: a finite progress outside the range is clipped, not refused.
+        let progress = progress.clamp(0.0, 1.0);
+        let depth = self.open.len();
+        let (parents, innermost) = self.open.split_at_mut(depth - 1);
+        let to = innermost[0].as_slice();
+        let from = match parents.last() {
+            Some(parent) => parent.as_slice(),
+            None => &tile[..],
+        };
+        let mut dst = vec![0.0f32; to.len()];
+        {
+            // A transition runs on whole frames and does not read `cx.tile`
+            // (02 §4.13), and its op carries no scale.
+            let cx = EffectCx::whole(1.0);
+            transition
+                .run_cpu(
+                    &cx,
+                    params,
+                    progress,
+                    ImageView::new(size.0, size.1, PixelData::RgbaF32(from))?,
+                    ImageView::new(size.0, size.1, PixelData::RgbaF32(to))?,
+                    ImageViewMut::new(size.0, size.1, PixelDataMut::RgbaF32(&mut dst))?,
+                )
+                .map_err(RenderError::Effect)?;
+        }
+        // The op replaces the layer's content with the result; what is drawn
+        // after it belongs to neither input (02 §4.6).
+        if let Some(layer) = self.open.last_mut() {
+            layer.copy_from_slice(&dst);
         }
         Ok(())
     }

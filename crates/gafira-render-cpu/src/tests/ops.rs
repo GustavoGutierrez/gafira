@@ -5,11 +5,17 @@
 //! so these tests pin the sentence each criterion quotes and not a choice of
 //! this delivery.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gafira_doc::BlendMode;
+use gafira_doc::contract::{Describe, Descriptor, ParamSchema, ParamValues};
+use gafira_doc::msg::MessageKey;
 use gafira_ports::render::RenderError;
-use gafira_raster::{AlphaMask, PixelFormat};
+use gafira_raster::transitions::{Dissolve, HandleReq, Transition};
+use gafira_raster::{
+    AlphaMask, BufferError, EffectCx, EffectError, ImageBuf, ImageView, ImageViewMut, PixelBuf,
+    PixelData, PixelDataMut, PixelFormat,
+};
 
 use super::*;
 
@@ -198,4 +204,315 @@ fn spec_02_4_6_a_mask_outside_a_layer_is_refused() {
         matches!(outcome, Err(RenderError::DriverBlocked)),
         "a mask with no open layer is out of the plan's domain: {outcome:?}"
     );
+}
+
+/// A transition that records the `progress` it was handed and copies `to`.
+struct ProbeTransition {
+    descriptor: Descriptor,
+    schema: ParamSchema,
+    seen: Mutex<Vec<f32>>,
+}
+
+impl ProbeTransition {
+    fn new() -> Self {
+        Self {
+            descriptor: Descriptor::new("test.probe.transition", MessageKey("test.probe"), 1),
+            schema: ParamSchema::new(Vec::new()),
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn seen(&self) -> Vec<f32> {
+        self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+impl Describe for ProbeTransition {
+    fn descriptor(&self) -> &Descriptor {
+        &self.descriptor
+    }
+}
+
+impl Transition for ProbeTransition {
+    fn params(&self) -> &ParamSchema {
+        &self.schema
+    }
+
+    fn handles(&self) -> HandleReq {
+        HandleReq::None
+    }
+
+    fn run_cpu(
+        &self,
+        _cx: &EffectCx,
+        _p: &ParamValues,
+        progress: f32,
+        _from: ImageView<'_>,
+        to: ImageView<'_>,
+        mut dst: ImageViewMut<'_>,
+    ) -> Result<(), EffectError> {
+        self.seen
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(progress);
+        let source = match to.data() {
+            PixelData::RgbaF32(data) => data.to_vec(),
+            other => panic!("the transition runs on f32, not {other:?}"),
+        };
+        match dst.data_mut() {
+            PixelDataMut::RgbaF32(data) => data.copy_from_slice(&source),
+            _ => panic!("the transition writes f32"),
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AC6 — a transition's two inputs
+// ---------------------------------------------------------------------------
+
+/// The raw premultiplied values of an `RgbaF32` surface, for byte-for-byte
+/// comparisons.
+fn values(image: &ImageBuf) -> Vec<f32> {
+    match image.data() {
+        PixelBuf::RgbaF32(data) => data.clone(),
+        _ => panic!("the target asked for RgbaF32"),
+    }
+}
+
+/// A `Dissolve` at `progress`; `02 §4.13` gives it no parameters.
+fn dissolve(progress: f32) -> RenderOp {
+    RenderOp::ApplyTransition {
+        transition: Arc::new(Dissolve::new()) as Arc<dyn Transition>,
+        params: ParamValues::new(),
+        progress,
+    }
+}
+
+/// The layer over a background, with a `Dissolve` at `progress` inside it.
+fn crossfade(progress: f32) -> RenderPlan {
+    let region = IRect::new(0, 0, 4, 4);
+    plan(vec![task(
+        1,
+        region,
+        vec![
+            // The background: what the surface holds when the layer opens.
+            fill(0.0, 0.0, 4.0, 4.0, srgb(0.5, 0.25, 0.5, 1.0)),
+            push(),
+            // The layer's content since the `PushLayer`, translucent so the pop
+            // changes the page and the two inputs cannot be confused.
+            fill(0.0, 0.0, 2.0, 4.0, srgb(0.25, 1.0, 0.5, 0.5)),
+            dissolve(progress),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )])
+}
+
+// 02 §4.6, ARQ-118: `to` is what was drawn since the `PushLayer`, `from` is the
+// layer's background — the pixels `PopLayer` composites onto. Progress 0 gives
+// the background exactly and 1 the drawn content exactly.
+#[test]
+fn spec_02_4_6_a_transition_takes_from_the_background_and_to_the_layer() {
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let background = run(
+        target_desc,
+        &plan(vec![task(
+            1,
+            IRect::new(0, 0, 4, 4),
+            vec![fill(0.0, 0.0, 4.0, 4.0, srgb(0.5, 0.25, 0.5, 1.0))],
+        )]),
+    );
+    // The same layer with no transition: the content drawn since the push.
+    let plain = plan(vec![task(
+        1,
+        IRect::new(0, 0, 4, 4),
+        vec![
+            fill(0.0, 0.0, 4.0, 4.0, srgb(0.5, 0.25, 0.5, 1.0)),
+            push(),
+            fill(0.0, 0.0, 2.0, 4.0, srgb(0.25, 1.0, 0.5, 0.5)),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let drawn = run(target_desc, &plain);
+
+    let at_zero = run(target_desc, &crossfade(0.0));
+    let at_one = run(target_desc, &crossfade(1.0));
+    let at_half = run(target_desc, &crossfade(0.5));
+
+    assert_eq!(
+        values(&at_zero),
+        values(&background),
+        "progress 0 is the layer's background, byte for byte"
+    );
+    assert_eq!(
+        values(&at_one),
+        values(&drawn),
+        "progress 1 is the content drawn since the PushLayer, byte for byte"
+    );
+    assert_ne!(
+        values(&background),
+        values(&drawn),
+        "the fixture tells the two inputs apart"
+    );
+    // A midpoint is a genuine mix of both, not a copy of either.
+    assert_ne!(values(&at_half), values(&background), "half is not `from`");
+    assert_ne!(values(&at_half), values(&drawn), "half is not `to`");
+}
+
+// ---------------------------------------------------------------------------
+// AC7 — the progress clip and the non-finite refusal
+// ---------------------------------------------------------------------------
+
+// ARQ-118: a finite `progress` outside `[0, 1]` is clipped to the range.
+#[test]
+fn arq_118_a_finite_progress_outside_the_range_is_clipped() {
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    for (outside, inside) in [(-0.5f32, 0.0f32), (1.5, 1.0)] {
+        assert_eq!(
+            values(&run(target_desc, &crossfade(outside))),
+            values(&run(target_desc, &crossfade(inside))),
+            "{outside} is clipped to {inside}"
+        );
+    }
+}
+
+// ARQ-118, ARQ-110: NaN and an infinity are refused, naming the field, and no
+// partial surface is delivered.
+#[test]
+fn arq_110_a_non_finite_progress_is_refused() {
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    for progress in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut cache = RecordingCache::default();
+        let mut frame = Frame::open(CpuBackend::new(), target_desc);
+        let token = CancelToken::new();
+        let outcome = frame.execute(&crossfade(progress), &mut cache, &token);
+        assert!(
+            matches!(
+                outcome,
+                Err(RenderError::Effect(EffectError::Buffer(
+                    BufferError::NonFinite {
+                        field: "progress",
+                        ..
+                    }
+                )))
+            ),
+            "{progress} answers an error that names the field: {outcome:?}"
+        );
+        assert!(cache.puts().is_empty(), "{progress} writes no tile");
+    }
+}
+
+// 02 §4.6, ARQ-118: `from` is the background the `PopLayer` composites onto, so
+// for a nested layer it is the enclosing layer's pixels and not the page.
+#[test]
+fn spec_02_4_6_a_nested_transition_takes_from_the_layer_it_composites_onto() {
+    let region = IRect::new(0, 0, 4, 4);
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let outer = srgb(0.0, 1.0, 0.0, 0.5);
+    let scene = plan(vec![task(
+        1,
+        region,
+        vec![
+            fill(0.0, 0.0, 4.0, 4.0, srgb(0.5, 0.25, 0.5, 1.0)),
+            push(),
+            fill(0.0, 0.0, 4.0, 4.0, outer),
+            push(),
+            fill(0.0, 0.0, 2.0, 4.0, white()),
+            dissolve(0.0),
+            pop(BlendMode::Normal, 1.0),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let got = channels(&run(target_desc, &scene), 3, 2);
+
+    // The nested layer becomes the outer layer's content `L`; the inner pop
+    // composites it over `L`, and the outer pop composites that over the page's
+    // opaque `B`.
+    let linear = outer.to_linear_srgb();
+    let layer = [linear.r * 0.5, linear.g * 0.5, linear.b * 0.5, 0.5];
+    let inner = blend_f32(BlendMode::Normal, layer, layer).expect("the blend");
+    let backdrop = channels(
+        &run(
+            target_desc,
+            &plan(vec![task(
+                1,
+                region,
+                vec![fill(0.0, 0.0, 4.0, 4.0, srgb(0.5, 0.25, 0.5, 1.0))],
+            )]),
+        ),
+        3,
+        2,
+    );
+    let expected = blend_f32(BlendMode::Normal, backdrop, inner).expect("the blend");
+    assert_eq!(
+        got, expected,
+        "at 0 the nested layer holds the layer it composites onto"
+    );
+    // The page's own pixels are not `from`: that reading leaves the inner layer
+    // transparent, so the outer layer reaches the page as it was drawn.
+    let page_only = blend_f32(BlendMode::Normal, backdrop, layer).expect("the blend");
+    assert_ne!(
+        expected, page_only,
+        "the fixture tells the two readings apart"
+    );
+}
+
+// ARQ-118: the op clips the progress it hands the transition, and it refuses a
+// non-finite one before the transition runs — the core transitions check this
+// themselves, but a transition is a plugin and the op's contract is its own.
+#[test]
+fn arq_118_the_backend_clips_the_progress_it_hands_a_transition() {
+    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    for (given, clipped) in [(-0.5f32, 0.0f32), (0.25, 0.25), (1.5, 1.0)] {
+        let probe = Arc::new(ProbeTransition::new());
+        let scene = plan(vec![task(
+            1,
+            IRect::new(0, 0, 4, 4),
+            vec![
+                fill(0.0, 0.0, 4.0, 4.0, srgb(0.5, 0.25, 0.5, 1.0)),
+                push(),
+                fill(0.0, 0.0, 2.0, 4.0, white()),
+                RenderOp::ApplyTransition {
+                    transition: Arc::clone(&probe) as Arc<dyn Transition>,
+                    params: ParamValues::new(),
+                    progress: given,
+                },
+                pop(BlendMode::Normal, 1.0),
+            ],
+        )]);
+        run(target_desc, &scene);
+        assert_eq!(
+            probe.seen(),
+            vec![clipped],
+            "{given} reaches the op as {clipped}"
+        );
+    }
+    for progress in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let probe = Arc::new(ProbeTransition::new());
+        let scene = plan(vec![task(
+            1,
+            IRect::new(0, 0, 4, 4),
+            vec![
+                push(),
+                RenderOp::ApplyTransition {
+                    transition: Arc::clone(&probe) as Arc<dyn Transition>,
+                    params: ParamValues::new(),
+                    progress,
+                },
+                pop(BlendMode::Normal, 1.0),
+            ],
+        )]);
+        let mut cache = RecordingCache::default();
+        let mut frame = Frame::open(CpuBackend::new(), target_desc);
+        let token = CancelToken::new();
+        let outcome = frame.execute(&scene, &mut cache, &token);
+        assert!(
+            matches!(outcome, Err(RenderError::Effect(EffectError::Buffer(_)))),
+            "{progress} is refused: {outcome:?}"
+        );
+        assert!(
+            probe.seen().is_empty(),
+            "{progress} is refused before the transition runs"
+        );
+    }
 }

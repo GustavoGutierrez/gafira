@@ -5,12 +5,12 @@
 //! opens a tile-sized buffer, the ops inside it are drawn there, and `PopLayer`
 //! composites that buffer onto its parent with the pop's blend and opacity.
 //! `CB4` resamples `DrawImage` into the same buffer with a bilinear filter
-//! ([`crate::image`]). `CB5` masks the open layer with an 8-bit coverage
-//! ([`crate::layer`]), grows the tile by an effect's input region and runs the
-//! effect once over it ([`crate::effect`]), and blends the layer with its
-//! background through a transition. An op of a kind this delivery does not
-//! render is **reported**, never dropped: a backend that silently flattened a
-//! group would draw the wrong page and say the tile was done.
+//! ([`crate::image`]). `CB5` closes the op set: `ApplyMask` and
+//! `ApplyTransition` are ops on an open layer ([`crate::layer`]), and
+//! `ApplyEffect` grows the tile by the effect's input region and runs the effect
+//! once over it ([`crate::effect`]). Every variant of the port's closed
+//! `RenderOp` is rendered here, so a plan this backend cannot execute is a plan
+//! it refuses, never one it draws with a guessed behaviour.
 
 use std::sync::Arc;
 
@@ -323,7 +323,17 @@ fn render_tile(
                 page,
                 cancel,
             )?,
-            RenderOp::ApplyTransition { .. } => return Err(not_in_this_delivery()),
+            RenderOp::ApplyTransition {
+                transition,
+                params,
+                progress,
+            } => layers.apply_transition(
+                transition.as_ref(),
+                params,
+                *progress,
+                &mut pixels,
+                size,
+            )?,
         }
     }
     // The plan's stack is balanced (02 §6.1): a layer left open would have to
@@ -411,13 +421,4 @@ fn paint_fill(
         pixels[at..at + 4].copy_from_slice(&blend_f32(BlendMode::Normal, backdrop, source)?);
     }
     Ok(())
-}
-
-/// The error of an op this delivery does not render yet.
-///
-/// The mask, the effect and the transition are `CB5`. The port's error set has
-/// no `Unsupported`, so the adapter reports the op as blocked rather than
-/// dropping it silently.
-fn not_in_this_delivery() -> RenderError {
-    RenderError::DriverBlocked
 }
