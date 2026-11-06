@@ -668,10 +668,16 @@ opaque page and the region `(4,6,68,70)`, **616 of 4 096** pixels came back tran
 qualities lose the same band, so a comparison of the two would have called a wrong page correct.
 
 Decision: the rectangle is in **page space**, the same space as `TileTask.region` and
-`TargetDesc.origin`, and the surface maps it into its own storage. The fix therefore lands in
-`Surface::read`/`Surface::write` (they must agree), not in the caller, which already passes the
-right rectangle. A test pins an offset region over an opaque page and asserts that no pixel comes
-back transparent.
+`TargetDesc.origin`, and the surface maps it into its own storage. A test pins an offset region
+over an opaque page and asserts that no pixel comes back transparent.
+
+Corrected by `CB3b` (2026-11-06): this decision first said the caller already passed the right
+rectangle and the fix was therefore in the surface alone. That premise was wrong. `render` was
+passing `target_region(request.region)` — the whole page, `(0,0,w,h)` — while the surface already
+worked in page space, so **both** ends were wrong and the fix is in both: `render` now passes
+`request.region`, `target_region`/`whole` are gone, and the surface keeps one shared mapping
+between `read` and `write`. The card's AC3 was right to demand the end-to-end case; a decision that
+had trusted its own premise would have shipped a half fix.
 
 If 02 §4.6 does not say which space `read_back` answers in, that is an `SP`-style request to the
 specifier, on the same footing as `SP1` for `TileTask.region`.
