@@ -218,11 +218,15 @@ pub(crate) enum FsOp {
     Remove(PathBuf),
 }
 
+/// What a test runs inside a save, between the snapshot and the `replace`.
+type Hook = Box<dyn FnOnce() + Send>;
+
 #[derive(Default)]
 struct FsState {
     files: BTreeMap<PathBuf, Vec<u8>>,
     trace: Vec<FsOp>,
     faults: BTreeSet<usize>,
+    before_replace: Option<Hook>,
 }
 
 /// An in-memory `FileSystem` that records every `create`, `write`,
@@ -259,6 +263,12 @@ impl MemoryFs {
     /// Fail the operations that will sit at these indices of the trace.
     pub(crate) fn fail_at(&self, indices: &[usize]) {
         self.state().faults = indices.iter().copied().collect();
+    }
+
+    /// Run `hook` once, just before the next `replace` is traced, with no
+    /// lock of the fake held.
+    pub(crate) fn before_replace(&self, hook: impl FnOnce() + Send + 'static) {
+        self.state().before_replace = Some(Box::new(hook));
     }
 
     /// Record `op`, then run `effect` unless its index was armed.
@@ -334,6 +344,10 @@ impl FileSystem for MemoryFs {
     }
 
     fn replace(&self, from: &Path, to: &Path) -> io::Result<()> {
+        let hook = self.state().before_replace.take();
+        if let Some(hook) = hook {
+            hook();
+        }
         self.traced(FsOp::Replace(from.to_owned(), to.to_owned()), |state| {
             let bytes = state.files.remove(from).ok_or_else(|| not_found(from))?;
             state.files.insert(to.to_owned(), bytes);

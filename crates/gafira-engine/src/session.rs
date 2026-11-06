@@ -6,6 +6,7 @@
 //! hold. The version is not the session's: the engine owns it, so replacing
 //! the session never resets it (owner decision O2).
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -31,15 +32,22 @@ impl DocVersion {
     }
 }
 
-/// The open document: its history and the version it was last clean at.
+/// The open document: its history, where it lives, whether it may be saved
+/// over and the version it was last clean at (design P15).
 ///
-/// The path, the read-only flag and the autosave state of P15 arrive with
-/// the deliveries that read them (`E3c`, `E3d`).
+/// The autosave state of P15 arrives with `E3d`, which reads it.
 pub(crate) struct Session {
     /// The document and its undo stack, with the default budget (§5.1).
     pub(crate) history: History,
+    /// The file `open` read and `save` writes; `None` after `new`.
+    pub(crate) path: Option<PathBuf>,
+    /// Set when the file's schema is newer: edits run, `save` refuses (ARQ-55).
+    pub(crate) read_only: bool,
     /// The version of the last `new`, `open` or `save` (P15, "modified").
     pub(crate) clean_version: DocVersion,
+    /// Names this session among every session of the engine, so a save that
+    /// finishes after the session was replaced touches nothing (P13, P18).
+    pub(crate) project_key: String,
 }
 
 /// The session both services share; `None` until the first `new` or `open`.

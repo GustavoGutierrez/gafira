@@ -304,8 +304,8 @@ impl Gafira {
         })
     }
 
-    /// The session's lifecycle (02 §5.4 line 1357): `new_document` and
-    /// `is_modified` in this delivery.
+    /// The session's lifecycle (02 §5.4 line 1357): `new_document`, `open`,
+    /// `save` and `is_modified` so far.
     #[must_use]
     pub fn projects(&self) -> &ProjectService {
         &self.projects
