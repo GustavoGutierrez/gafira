@@ -83,3 +83,72 @@ Measured size of the round's code commits: `git diff --shortstat e7bb63f..HEAD -
 2 files changed, 76 insertions, 25 deletions (the deleted test accounts for most of the
 deletions).
 
+
+## Slice card — `E2` bus transport
+
+Product IDs: none. This delivery makes the bus of `E1` observable: the transport, the receiver and
+the coalescing window. No service is functional yet.
+
+Deliveries `E2` to `E10` in `E1`'s non-goals are unaffected; `E2` is the first of them.
+
+Scope:
+
+- `EngineEvent::JobProgress { job, fraction, eta }` and the `JobId` newtype (the vocabulary §5.2
+  line 1322 needs and no crate owns; design P3 assigns it to this delivery).
+- `Waker` trait — one method, `wake()` — and `NoopWaker`; the engine calls it on every delivery
+  (02 §5.2 line 1335: an injected waker that asks the UI for a repaint).
+- `EventSink::flush` with a default no-op, so `E1`'s sinks keep compiling.
+- `ChannelSink`: an unbounded `crossbeam_channel` for state events, the `Waker` call and the 10 Hz
+  coalescing of `JobProgress`.
+- `EventBus::channel(waker, clock) -> (EventBus, Receiver<EngineEvent>)` and `EventBus::flush`.
+- `Gafira::new(ports, registries, config, waker)`, `Gafira::events() -> &Receiver<EngineEvent>` and
+  `Gafira::flush_events()`.
+- `crossbeam-channel` in the root `[workspace.dependencies]`, in the engine manifest and in
+  `Cargo.lock`; `cargo deny check` on the three targets.
+
+Non-goals: no `SaveState`, no `JobFinished`, no `RecoveryAvailable` (they belong to `E4`, `E7` and
+the governor), no `UserError` mapping beyond what `E1` shipped, no service.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | `Gafira::publish` reaches the observer through the channel, which is what **W5** asked for: gutting the method body must fail a test | unit test: publish through the facade, receive the event from `events()`, assert the waker count |
+| AC2 | The waker is called exactly once per delivered event and never for a coalesced one | unit test with a counting waker |
+| AC3 | `JobProgress` is coalesced to 10 Hz and the last one always arrives | unit test with the injected clock: five in one window, then a flush; and a non-progress event flushing the pending one |
+| AC4 | State events are never dropped or coalesced | unit test: ten `DocumentChanged` produce ten deliveries |
+| AC5 | `docs`-only commits skip cargo; the code commit runs the `--workspace` scope | gate output in the commit notes |
+| AC6 | The new dependency is allowed by `deny.toml` and by §6 of the spec | `cargo deny check` on the three targets |
+
+Plan: RED for AC1 (publish through the facade with nothing behind it), AC2, AC3 and AC4, then the
+sink, then the facade wiring, then the gates. Hand mutants: make `publish` skip the bus (AC1 must
+fail); call the waker on a coalesced event (AC2 must fail); drop the window check (AC3 must fail);
+route state events through the coalescer (AC4 must fail).
+
+Estimate: 320 authored lines, 448 at x1.4. Verify: V1, gates and the criterion map.
+
+## Notes — `E2`
+
+- **W5 is closed.** `w5_publishing_through_the_facade_reaches_the_observer` publishes through the
+  facade, drains `Gafira::events()` and asserts exactly one delivery. Gutting `Gafira::publish` now
+  fails a test (mutant M1 below).
+- `Gafira::new` gains the `waker` argument. `§5.4` line 1356 does not list it and P2 of the design
+  said the transport would arrive "without changing this signature"; it could not, because an
+  optional bus cannot honour `events()`. The deviation is recorded in the method's doc comment.
+- `EngineEvent` loses `Eq`, which `JobProgress`'s `f32` cannot satisfy; `PartialEq` stays.
+- `JobId(u64)` and `JobProgress { job, fraction, eta }` join `event.rs`: the first **Planned**
+  variant of design P3 to land. The remaining seven still belong to their deliveries.
+- `EventSink` gains `flush` with a default no-op, so `NoopSink` and the `E1` tests compiled without
+  a change.
+- The coalescing clock is `ports::Clock`, not a clock of its own (design P1): the tests drive a
+  `TestClock` and the window is deterministic.
+
+Hand mutants: each was applied, the named test failed, the file was restored, and
+`cargo test -p gafira-engine --locked` was green afterwards. Nothing from a mutant reached a commit.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| M1 | `Gafira::publish` body replaced by `let _ = event;` | `w5_publishing_through_the_facade_reaches_the_observer` |
+| M2 | a coalesced `JobProgress` also calls `waker.wake()` | `ac2_the_waker_is_called_once_per_delivery`, plus two `ac3` tests |
+| M3 | `ChannelSink::window_is_open` returns `true` | the three `ac3` tests |
+| M4 | state events routed through the coalescer | `ac4_ten_state_events_produce_ten_deliveries`, plus two more |
