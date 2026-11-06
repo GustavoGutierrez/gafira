@@ -240,6 +240,46 @@ mod tests {
         assert_eq!(serde_json::from_str::<Page>(&json).unwrap(), p);
     }
 
+    // ADR 0006 rule 3: the field excepted from "always written" is written
+    // when it has a value, in the canonical position §3.1 gives it — after
+    // the grid, before `locked` — and it is never `null`. This is the present
+    // side; `page_wire_form_writes_every_field` is the absent one.
+    #[test]
+    fn adr_0006_a_present_duration_sits_between_grid_and_locked() {
+        let mut p = Page::new(PageId::new(1), "P".to_string(), size());
+        p.duration = Some(Flicks::from_ticks(705_600_000));
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(
+            json,
+            concat!(
+                r#"{"id":1,"name":"P","size":{"width":{"value":100.0,"unit":"px"},"#,
+                r#""height":{"value":50.0,"unit":"px"}},"bleed":{"value":0.0,"unit":"mm"},"#,
+                r#""margins":{"top":{"value":0.0,"unit":"px"},"right":{"value":0.0,"unit":"px"},"#,
+                r#""bottom":{"value":0.0,"unit":"px"},"left":{"value":0.0,"unit":"px"},"#,
+                r#""linked":true},"guides":[],"grid":{"visible":false,"#,
+                r#""step":{"value":10.0,"unit":"px"},"subdivisions":1,"style":"lines","#,
+                r#""snap":true},"duration":705600000,"locked":false,"hidden":false,"#,
+                r#""roots":[],"nodes":[]}"#
+            )
+        );
+
+        // The exact byte position: the field opens right after the grid
+        // object closes and the next field is `locked`.
+        let grid = r#""style":"lines","snap":true}"#;
+        let at = json.find(grid).expect("the grid is written") + grid.len();
+        let tail = r#","duration":705600000,"locked":false"#;
+        assert_eq!(
+            &json[at..at + tail.len()],
+            tail,
+            "the duration sits between the grid and `locked`:\n{json}"
+        );
+        assert!(
+            !json.contains("null"),
+            "an absent duration is omitted, never written as null:\n{json}"
+        );
+        assert_eq!(serde_json::from_str::<Page>(&json).unwrap(), p);
+    }
+
     #[test]
     fn arena_is_written_as_an_ascending_array() {
         let mut p = Page::new(PageId::new(1), String::new(), size());
