@@ -808,3 +808,29 @@ deletions (`autosave.rs` tests 376/0, `engine.rs` tests 25/0, `fakes.rs` 43/4, t
 `project.rs` tests 1/0). The split came from `git diff --numstat` and the hunk headers against each
 file's `#[cfg(test)]` line. Estimate 360 (504 at x1.4): over both and just over the ~700 stop line;
 production is 263 lines, under the estimate, and the overrun is the tests (`autosave.rs` 376).
+
+## E3d fix round 1 (verify round 1 FAIL, E3d-C1)
+
+Test-only round; no production code changed.
+
+Done:
+- E3d-C1: `undo` and `redo` mark the session pending for autosave (design P13 "Timer"). Two tests
+  in `autosave.rs`, both `// ARQ-51`: after the edit's job was taken and finished (nothing pending
+  at T0 + 60 s), an undo (resp. a redo) alone at T0 + 70 s leaves `autosave_due()` `None` one
+  nanosecond before T0 + 80 s and `Some` exactly at T0 + 80 s, with the version of that undo
+  (resp. redo).
+  - `an_undo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it`
+  - `a_redo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it`
+
+Proof in place of RED (the code was already right): the verifier's two probe mutants, applied to
+`edit.rs` one at a time, run against the crate's tests, then reverted with `git checkout`
+(`git diff` afterwards showed only the new tests).
+
+| probe | mutant | killing test | failure |
+|---|---|---|---|
+| P-undo | in `undo`, `Self::bumped(..)` replaced by `shared.changed(dirty)` (bump, no pending mark) | `an_undo_alone_after_the_last_snapshot_...` | panic at `expect("one interval after the undo")`; 65 passed, 1 failed |
+| P-redo | the same in `redo` | `a_redo_alone_after_the_last_snapshot_...` | panic at `expect("one interval after the redo")`; 65 passed, 1 failed |
+
+Deviations: none.
+
+Measured lines (`git diff --shortstat c2a1faa..e26538c`): 1 file changed, 43 insertions(+).
