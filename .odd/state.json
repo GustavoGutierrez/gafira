@@ -85,14 +85,19 @@
           "id": "E3c2",
           "status": "passed",
           "evidence": "verify E3c2 round 1 PASS at 99c38bc: ac1-ac7, ac10, ac11 in project.rs (ARQ-50 fault loop, ARQ-55 empty trace), workspace gates 0 (2558 passed); 7 hand mutants killed, verifier re-ran 1, 4, 6 plus 3 own"
+        },
+        {
+          "id": "E3d",
+          "status": "passed",
+          "evidence": "verify E3d round 2 PASS at 61ed459: autosave.rs AC1-AC12 plus undo/redo pending tests, workspace gates 0 (2573 passed); 9 hand mutants and both probes killed"
         }
       ],
-      "next_action": "E3d fix round (E3d-C1: undo/redo pending tests), verify round 2; then E5",
+      "next_action": "E5 (MemoryGovernor, P17) on feat/gafira-engine-e3; then the outcome's deliveries on this branch are done (no push, no merge without the owner)",
       "verify": {
-        "round": 1,
-        "commit": "6f3c918",
-        "verdict": "FAIL",
-        "next": "tdd-apply test-only round for E3d-C1, then verify round 2",
+        "round": 2,
+        "commit": "61ed459",
+        "verdict": "PASS",
+        "next": "E5 slice card, tdd-apply, verify",
         "findings": [
           {
             "id": "E2-W7",
@@ -131,22 +136,13 @@
             "status": "open"
           },
           {
-            "id": "E3d-C1",
-            "severity": "CRITICAL",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/edit.rs:69 (undo), :83 (redo); design P13 Timer",
-            "summary": "No test proves undo or redo marks the session pending for autosave: replacing the mark with a plain bump leaves all 64 engine tests green.",
-            "follow_up": false,
-            "status": "open"
-          },
-          {
-            "id": "E3d-W1",
+            "id": "E3d-W2",
             "severity": "WARNING",
             "class": "implementation",
-            "ref": "git diff --shortstat 34837d3..4cb17f8",
-            "summary": "712 authored lines (263 prod, 449 test) vs 504 forecast and the ~700 ceiling; owner accepted 2026-11-06.",
-            "follow_up": false,
-            "status": "closed"
+            "ref": "git diff 34837d3..e26538c -- crates",
+            "summary": "E3d code totals 755 lines after the fix round, 43 test lines above the 712 the owner accepted.",
+            "follow_up": true,
+            "status": "open"
           }
         ],
         "rounds": [
@@ -156,6 +152,11 @@
             "classes": [
               "implementation"
             ]
+          },
+          {
+            "round": 2,
+            "verdict": "PASS",
+            "classes": []
           }
         ]
       }
