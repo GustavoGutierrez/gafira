@@ -108,6 +108,7 @@ jobs:
           gafira-render  gafira-ports gafira-doc gafira-geom gafira-color gafira-raster gafira-time gafira-anim
           gafira-media   gafira-ports gafira-doc gafira-raster gafira-time gafira-geom gafira-color
           gafira-render-cpu gafira-ports gafira-doc gafira-geom gafira-color gafira-raster gafira-time
+          gafira-engine gafira-ports gafira-doc gafira-edit gafira-geom gafira-color gafira-time gafira-raster
           '
           forbidden='egui|eframe|winit|wgpu|tokio|mio|socket2|reqwest|ureq'
           status=0

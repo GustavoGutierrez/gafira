@@ -1,4 +1,19 @@
 {
   "schema": 1,
-  "outcomes": []
+  "outcomes": [
+    {
+      "outcome_id": "gafira-engine",
+      "spec_id": "02-arquitectura-software",
+      "status": "implementing",
+      "criteria": [
+        { "id": "E1-AC1", "status": "passed", "evidence": "cargo clippy -p gafira-engine --all-targets --locked -- -D warnings (2271ab5)" },
+        { "id": "E1-AC2", "status": "passed", "evidence": "all three consumers of the V5 table exit 0 with the engine row present (e7bb63f): V5 (the transitive gafira-* tree), V12 (the clippy.toml copy vs gafira-geom) and the ARQ-107 step, which prints gafira-engine: layer 3, exempt from the Locale search; the nine policy steps of ci.yml were run and POLICY OK. The entry proves the row is accepted by every step that reads the table, not only V5 and V12" },
+        { "id": "E1-AC3", "status": "passed", "evidence": "engine::tests::ac3_* (3 tests), hand mutant drops the check and the test fails" },
+        { "id": "E1-AC4", "status": "passed", "evidence": "event::tests::ac4_* (2 tests): publish reaches the sink exactly once, and all five variants reach the no-op sink with a count; hand mutant skips the sink and the test fails" },
+        { "id": "E1-AC5", "status": "passed", "evidence": "engine::tests::ac5_the_facade_is_send_and_sync_and_keeps_the_ports_it_was_given: Send + Sync plus Arc::ptr_eq on the six injected ports" },
+        { "id": "E1-AC6", "status": "passed", "evidence": "cargo tree -p gafira-engine: no gafira-i18n, no ICU crate" }
+      ],
+      "next_action": "independent verify round at V1 for E1 (no round ran yet), then E2: channel sink, events(), 10 Hz coalescing"
+    }
+  ]
 }

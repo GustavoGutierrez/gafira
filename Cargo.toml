@@ -27,6 +27,7 @@ gafira-ports = { path = "crates/gafira-ports" }
 gafira-render = { path = "crates/gafira-render" }
 gafira-media = { path = "crates/gafira-media" }
 gafira-render-cpu = { path = "crates/gafira-render-cpu" }
+gafira-engine = { path = "crates/gafira-engine" }
 blake3 = "1"
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
