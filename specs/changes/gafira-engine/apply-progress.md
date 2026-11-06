@@ -893,3 +893,94 @@ and wrappers, then the order, then the arithmetic and the bound, then the pressu
 gates; notes in a separate commit after the code.
 
 Estimate: 320 authored lines, 448 at x1.4. Verify: V1.
+
+## Notes — `E5`
+
+Done: AC1-AC11. Code commits `a0d9599` (`Trimmable`, `TileCacheTrim`, `BackendTrim`,
+`CacheKind`, `PressureLevel`, `GovernorOutcome`, `MAX_TRIM_PASSES = 2`, `MemoryGovernor::{new,
+limit, enforce}`: the order, the arithmetic, the boundary, the zero budget and the two-pass
+bound), `bae33af` (`EngineEvent::MemoryPressure(PressureLevel)`, published through the bus only
+on a change of level) and `fc26608` (refactor: a trim pass checks its excess after each cache, so
+only the governor's `total <= limit` guard decides whether a pass runs; see hand mutant M3a).
+Tests are unit tests in `src/governor.rs` and the variant list of `src/event.rs`.
+
+The bound: `enforce` is a `for` over `0..MAX_TRIM_PASSES` with at most one `trim` per cache per
+pass, so one call makes at most `2 * caches.len()` `trim` calls and returns; there is no `loop`,
+no `while` and no wait. A cache that cannot shrink is tried again only on the host's next
+`enforce` (P17). AC7 proves it with exact call lists over three consecutive calls; hand mutants
+M7a (a third pass) and M7b (an unbounded `loop`) are killed.
+
+RED evidence (stage 1: `enforce` returned `{ before: 0, after: 0, level: Normal }` and trimmed
+nothing, `new` accepted a missing limit, both wrappers answered `Bytes(0)` and ignored `trim`;
+stage 2, for AC8: the trimming in place, the variant added, nothing published):
+
+| AC | Test | Assertion before the code |
+|---|---|---|
+| AC1 | `ac1_caches_are_trimmed_frames_tiles_backend_and_stable_within_a_kind` | left `[]`, right `[("frames-a", 0), ("frames-b", 0), ("tiles-a", 0), ("tiles-b", 0), ("backend", 0)]` |
+| AC2 | `ac2_exactly_at_the_limit_trims_nothing_and_one_byte_above_trims_one_byte` | `limit 100`: left `GovernorOutcome { before: Bytes(0), after: Bytes(0), level: Normal }`, right `{ before: Bytes(100), after: Bytes(100), level: Normal }` (the `limit 99` row expects exactly `[("frames", 59)]`) |
+| AC3 | `ac3_each_target_is_the_cache_bytes_minus_the_running_excess` | left `[]`, right `[("frames", 0), ("tiles", 20)]` |
+| AC4 | `ac4_a_total_near_u64_max_saturates_instead_of_wrapping` | left `[]`, right `[("frames", 100), ("frames", 90)]` |
+| AC4 | `ac4_a_cache_that_grows_after_its_trim_freed_nothing` | left `[]`, right `[("frames", 5), ("tiles", 5), ("frames", 10), ("tiles", 0)]` |
+| AC5 | `ac5_a_zero_limit_trims_every_cache_to_zero` | left `[]`, right `[("frames", 0), ("tiles", 0), ("backend", 0)]` |
+| AC6 | `ac6_a_cache_that_stops_short_is_finished_by_the_second_pass` | left `[]`, right `[("frames", 30), ("tiles", 0), ("frames", 50)]` |
+| AC6 | `ac6_never_more_than_two_passes` | left `[]`, right `[("frames", 50), ("frames", 50)]` |
+| AC7 | `ac7_caches_that_cannot_shrink_cost_two_trims_each_per_call` | `call 0`: left `[]`, right `[("frames", 70), ("tiles", 20), ("frames", 70), ("tiles", 20)]` |
+| AC8 | `ac8_memory_pressure_is_published_only_on_a_change_of_level` | stage 2, `call 1`: left `[]`, right `[MemoryPressure(Critical)]` |
+| AC9 | `ac9_a_config_without_a_memory_limit_refuses_the_governor` | `assertion failed: matches!(refused, Err(EngineError::InvalidConfig { .. }))` |
+| AC9 | `ac9_an_empty_slice_trims_nothing_and_stays_normal` | passed against the stub (the stub's answer is the expected one); it kills M3b and M9 |
+| AC10 | `ac10_a_cache_that_grew_back_gets_a_second_pass` | left `[]`, right `[("frames", 10), ("frames", 10)]` |
+| scope | `scope_the_port_wrappers_report_host_bytes_and_forward_the_target` | left `GovernorOutcome { before: Bytes(0), after: Bytes(0), level: Normal }`, right `{ before: Bytes(80), after: Bytes(50), level: Critical }` |
+| AC11 | gates and purity grep | at `a0d9599`, `bae33af` and `fc26608`: `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --locked -- -D warnings` no warning; `cargo test --workspace --locked` 199 suites, 2587 passed, 0 failed (2586 at `a0d9599`). `cargo deny check` at `a0d9599` (manifest change): `advisories ok, bans ok, licenses ok, sources ok`. `git diff 69a7d8e..fc26608 -- crates/gafira-engine \| grep '^+' \| grep -nE "std::fs\|std::thread\|std::env\|rand\|thread::spawn\|Instant\|SystemTime\|std::time"` → nothing; `git grep -nE "std::fs\|std::thread\|std::env\|rand::\|thread::spawn" -- crates/gafira-engine/src` → only the existing doc comment `engine.rs:103` |
+
+The doubles (owner's requirement): `Fake::honest` (frees down to the target), `Fake::lying` (honest
+`bytes()`, `trim` frees at most a fixed step, so it stops short), `Fake::stuck` (frees nothing),
+`Fake::scripted` (`bytes()` answers a fixed list of readings: a cache that grows after its trim or
+grows back before the fresh sum). Every test asserts the exact `trim` sequence with names and
+targets, the exact `GovernorOutcome`, and for AC8 and AC9 the exact event list drained from
+`Gafira::events()` of an engine whose bus the governor publishes into.
+
+Hand mutants (applied by a runner that restores the file in a `finally` and checks the restore;
+built once per mutant, the test binary run under `ulimit -v 2000000` and `timeout 30`; `git diff`
+empty before every commit):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| M1 | caller order (no sort) | `ac1`, `ac2`, `ac3`, `ac4` (saturation), `ac5`, `ac6` (stops short), `ac7`, `scope_...` | `ac2` `limit 99`: left `[("tiles", 39)]`, right `[("frames", 59)]` |
+| M2 | reversed order (`Reverse(rank)`) | `ac1`, `ac2`, `ac3`, both `ac4`, `ac5`, `ac6` (stops short), `ac7`, `scope_...` | `ac1`: left `[("backend", 0), ("tiles-a", 0), ("tiles-b", 0), ("frames-a", 0), ("frames-b", 0)]` |
+| M3a | `<` instead of `<=` in the pass guard (trims at exactly the budget) | `ac1`, `ac2`, `ac3`, `ac5` | `ac1`: a sixth trim `("frames-a", 0)` after the five expected. Before `fc26608` it survived as an equivalent mutant (the pass began with an `excess == 0` check that masked it) |
+| M3b | `>=` instead of `>` in the level rule (`Critical` at exactly the budget) | ten tests, among them `ac2`, `ac8`, `ac9` (empty) | `ac10`: left `level: Critical`, right `level: Normal` |
+| M4 | target `excess` instead of `bytes() - excess` | ten tests | `ac4` (grows): left `[("frames", 5), ("tiles", 5), ("frames", 5), ("tiles", 5)]`, right `[..., ("frames", 10), ("tiles", 0)]` |
+| M5a | `wrapping_add` in the total | `ac4_a_total_near_u64_max_saturates_instead_of_wrapping` | left `[]`, right `[("frames", 100), ("frames", 90)]` |
+| M5b | `wrapping_sub` for `freed` | `ac4_a_cache_that_grows_after_its_trim_freed_nothing` | left `[("frames", 5), ("frames", 5), ("tiles", 0)]`, right `[("frames", 5), ("tiles", 5), ("frames", 10), ("tiles", 0)]` |
+| M5c | `wrapping_sub` for the target | `ac1`, `ac3`, `ac5`, `ac6` (stops short), `scope_...` | `ac1`: targets `18446744073709551584`, ... instead of `0` |
+| M6 | zero budget treated as "no limit" | `ac1`, `ac5` | `ac1`: left `[]`, right the five trims to 0 |
+| M7a | a third pass (`0..MAX_TRIM_PASSES + 1`) | `ac6_never_more_than_two_passes`, `ac7`, `scope_...` | left `[("frames", 50), ("frames", 50), ("frames", 50)]`, right two |
+| M7b | unbounded `loop` | `ac6_never_more_than_two_passes` (and `ac7`) | the call never returns: `memory allocation of 805306368 bytes failed`, abort (rc -6) under the memory limit |
+| M8 | second pass decided by the running excess | `ac10`, `ac4` (both) | `ac10`: left `[("frames", 10)]`, right `[("frames", 10), ("frames", 10)]` |
+| M9 | `MemoryPressure` published on every `enforce` | `ac8`, `ac9` (empty) | `ac9`: left `[MemoryPressure(Normal)]`, right `[]` |
+| M10 | `Critical` decided after the first pass | `ac6` (stops short), `ac10`, both `ac4` | `ac10`: left `level: Critical`, right `level: Normal` |
+
+Deviations:
+
+- D1. `MemoryGovernor::new(&EngineConfig, EventBus)`: the card fixes the build from
+  `memory_limit` and publication through the bus, not the signature; the bus is the Facade's
+  (`Gafira::bus().clone()`). `a0d9599` had `new(&EngineConfig)`; `bae33af` added the bus with the
+  event. `limit()` is a read accessor (AC9).
+- D2. The governor is not held by `Gafira` and has no Facade accessor: P17 says the frame loop
+  owns the caches and calls `enforce`; §5.4's accessor list names none. The composition root
+  builds it. Confirm in verify if a Facade accessor is wanted.
+- D3. The wrapper names `TileCacheTrim` and `BackendTrim` are not fixed by the design.
+  `BackendTrim::bytes` is `memory_usage().host` (P17, SP8 (b)); the scope test proves the device
+  bytes are not counted.
+- D4. Dev-dependency `gafira-raster` (the backend double must name `ImageBuf` in `read_back`);
+  allowed by the layer table, normal dependencies unchanged, `cargo deny check` ok.
+- D5. `fc26608` is a behaviour-preserving refactor made to kill M3a, not a new rule.
+- D6. SP8 (a) stays provisional: `PressureLevel { Normal, Critical }` as P17 states.
+- D7. The `EngineEvent` doc now lists the variants still planned "for the later deliveries, up to
+  `E10`" instead of "`E3` to `E10`".
+
+Measured (`git diff --shortstat 69a7d8e..fc26608`): 5 files changed, 694 insertions(+), 4
+deletions(-). Production about 230 lines (`governor.rs` 219 above `#[cfg(test)]`, `event.rs` the
+variant and its doc, `lib.rs` 5, manifest and lock 2), tests about 460 (`governor.rs` 458, the
+variant list of `event.rs`). Over the estimate (320, 448 at x1.4) and close to the 700 mark: the
+tests are 2/3 of it (the four doubles, the two port doubles of the scope test, and the AC8 table).
