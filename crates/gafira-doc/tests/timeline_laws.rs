@@ -254,38 +254,71 @@ fn p_11_no_lane_holds_two_clips_at_any_instant() {
     );
 }
 
-// FV-01 (AC6): the retime FV-01 (c) fixes snaps the cuts to the nearest frame
-// of the new grid, loses no clip, and is deterministic (a tie goes to the
-// later frame).
+// FV-01 (AC6): the retime FV-01 (c) fixes moves every cut to the nearest
+// frame of the new grid and loses no clip. The expected ticks are absolute and
+// the tie goes to the later frame, so a frame index passed where a count of
+// ticks belongs fails here instead of passing on a one-frame coincidence.
 #[test]
 fn fv_01_the_retime_snaps_cuts_to_the_new_grid() {
     let (_doc, _token, sid, tid) = setup();
     let frame_24 = FPS_24.flicks_per_frame();
+    let frame_30 = FrameRate::FPS_30.flicks_per_frame();
     let mut sequence = a_sequence(sid, FPS_24);
     sequence
         .add_track(tid, TrackKind::Video)
         .expect("the video lane fits");
-    let track = sequence.track_mut_by_id(tid).expect("the lane is there");
-    // Two clips of one frame each, back to back, at 24 fps.
-    track
-        .insert(frame_clip(ClipId::new(1), 0, 1, frame_24), frame_24)
-        .expect("the first clip sits on the grid");
-    track
-        .insert(frame_clip(ClipId::new(2), 1, 1, frame_24), frame_24)
-        .expect("the second clip sits on the grid");
+    let tie_id = TrackId::new(77);
+    sequence
+        .add_track(tie_id, TrackKind::Overlay)
+        .expect("the overlay lane fits");
+    // 60 frames at 24 fps: 2.5 s, which is 75 frames at 30 fps. Both cuts
+    // land exactly: the frame duration divides the place on both grids.
+    let video = sequence.track_mut_by_id(tid).expect("the lane is there");
+    video
+        .insert(frame_clip(ClipId::new(1), 0, 60, frame_24), frame_24)
+        .expect("the 2.5 s clip sits on the grid");
+    // A cut exactly halfway between two 30 fps frames: 2 frames at 24 fps is
+    // 2.5 frames at 30 fps, so the tie breaks towards the later frame.
+    let tie = sequence.track_mut_by_id(tie_id).expect("the lane is there");
+    tie.insert(frame_clip(ClipId::new(2), 2, 1, frame_24), frame_24)
+        .expect("the tie clip sits on the grid");
     let before = sequence.clone();
-    // The retime to 30 fps: same cuts, snapped to the new grid, and no clip
-    // lost.
     let after = sequence.retimed(FrameRate::FPS_30);
     assert_eq!(after.fps(), FrameRate::FPS_30);
-    let clips = after.track(tid).expect("the lane is still there").clips();
-    assert_eq!(clips.len(), 2, "the retime loses no clip");
-    let frame_30 = FrameRate::FPS_30.flicks_per_frame();
-    assert_eq!(clips[0].place().start().ticks() % frame_30.ticks(), 0);
-    assert_eq!(clips[1].place().start().ticks() % frame_30.ticks(), 0);
-    // The function is pure: the sequence it came from did not move.
-    assert_eq!(sequence, before);
-    // And it is deterministic: two calls give the same sequence.
+    // The long clip keeps its 2.5 s: 75 frames of 30 fps, not one frame.
+    let video = after.track(tid).expect("the lane is still there").clips();
+    assert_eq!(video.len(), 1, "the retime loses no clip");
+    assert_eq!(
+        video[0].place().start().ticks(),
+        0,
+        "the first cut stays at 0"
+    );
+    assert_eq!(
+        video[0].place().duration().ticks(),
+        1_764_000_000,
+        "2.5 s at 30 fps is 75 frames, not one"
+    );
+    assert_eq!(video[0].place().duration().ticks(), 75 * frame_30.ticks());
+    // The tie clip: 58 800 000 ticks is 2.5 frames of 30 fps, so it lands on
+    // the third one.
+    let tie = after
+        .track(tie_id)
+        .expect("the lane is still there")
+        .clips();
+    assert_eq!(tie.len(), 1);
+    assert_eq!(
+        tie[0].place().start().ticks(),
+        70_560_000,
+        "a tie breaks towards the later frame (3 frames of 30 fps)"
+    );
+    assert_eq!(tie[0].place().duration().ticks(), frame_30.ticks());
+    // Both cuts are on the new grid, and the function is pure and
+    // deterministic.
+    for clip in [&video[0], &tie[0]] {
+        assert_eq!(clip.place().start().ticks() % frame_30.ticks(), 0);
+        assert_eq!(clip.place().duration().ticks() % frame_30.ticks(), 0);
+    }
+    assert_eq!(sequence, before, "the retime mutates nothing");
     assert_eq!(sequence.retimed(FrameRate::FPS_30), after);
 }
 

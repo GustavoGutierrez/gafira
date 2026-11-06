@@ -234,8 +234,10 @@ impl Sequence {
             let mut clips = Vec::with_capacity(track.clips.len());
             let mut last_end = 0i64;
             for clip in &track.clips {
-                let start = snap_nearest(clip.place.start().ticks(), frame);
-                let duration = snap_nearest(clip.place.duration().ticks(), frame);
+                // `snap_nearest` answers a frame index; the place is counted
+                // in flicks, so the index is multiplied by the frame.
+                let start = snap_nearest(clip.place.start().ticks(), frame) * frame;
+                let duration = snap_nearest(clip.place.duration().ticks(), frame) * frame;
                 // A span below one frame keeps one frame and pushes what
                 // follows it right; nothing is lost (FV-01 (c)).
                 let duration = duration.max(frame);
