@@ -143,8 +143,10 @@ delivery HEAD of the change and once before the `develop` → `main` PR, not per
 | `CB5` | `gafira-render-cpu`: `ApplyMask`, `ApplyEffect` with the ROI-grown tile, `ApplyTransition` | ARQ-118, ARQ-119, ARQ-120, ARQ-112 | `CB2`, `CB4` | serial in `CB` | 420 (590) | ARQ-113 (the effect case of the oracle) |
 | `CB6` | `gafira-render-cpu` benches: `bench_export_png_1080` (criterion, `harness = false`), the cancellation gap measurement, a plain `#[test]` guard that asserts 2 s only when the build is optimised | CAL-11, ARQ-40, ARQ-114, ARQ-43 | `CB4` | serial in `CB` | 260 (365) | **CAL-11** (measured) |
 | `CB7` | `gafira-render-cpu`: parallel row bands inside one task, with an injected `WorkerPool` (no thread is created here) | ARQ-138; CAL-11 | `CB6` | serial in `CB`, **conditional** | 300 (420) | CAL-11 (the margin, only if `CB6` is over) |
+| `CB3b` | `gafira-render`'s planner and/or `gafira-render-cpu`'s surface write: the composition of several roots over one region, and the coordinate space `read_back` answers in (`O12`, `O13`) | ARQ-42; ARQ-149, ARQ-121; 02 §4.6 | `CB3` | serial in `CB`, **before `CB4`** | 180 (250) | any page with more than one root |
+| `CB8` | `gafira-render-cpu`: an `Rgba8` surface for an `Rgba8` target, so the sRGB curve runs once per pixel instead of twice (`O14`) | ARQ-143, ARQ-44; CAL-11 (which does not show it) | `CB3` | serial in `CB`, **before `CB6`** | 160 (225) | the preview's frame cost |
 
-Total: 2 780 authored lines (x1.4: 3 892). The largest delivery is `CB1` at 460 (x1.4: 644).
+Total: 3 120 authored lines (x1.4: 4 368), after `CB3b` and `CB8` were added on 2026-11-06. The largest delivery is `CB1` at 460 (x1.4: 644).
 
 `CB7` is cut **only** if `CB6` measures above 2 s on the reference profile. It is listed so the
 coordinator does not have to invent it under time pressure, and so that the owner sees the cost of
@@ -631,3 +633,67 @@ Cost, stated plainly: the layer pool becomes `depth × 1 MiB` instead of `depth 
 What this supersedes: any reading of `D8`/`D9` in which the preview accumulates in 8 bits. Line 278's `depth × 256 KiB` no longer applies to a layer buffer.
 
 Reversible: yes, at the price of the tolerance. Reverting to 8-bit buffers makes ARQ-42 fail on any scene with two nested groups, so a revert is a change of the requirement, not of the code.
+
+### O12. The plan merges the roots of one region into one task — decided by the coordinator on 2026-11-06
+
+`CB3` found the defect and `CB1`'s contract made it invisible until a real document existed:
+`crates/gafira-render/src/planner.rs` emits **one task per tile and per root**, each carrying that
+root's ops but the same `region`, and `CpuBackend` writes each tile over the surface as the whole
+content of its region (`Surface::write`, a copy). The second root's tile erases the first. Measured:
+two disjoint opaque rectangles on one page, only the second survives. Every plan of `CB1` and `CB2`
+had a single root, which is why no gate saw it.
+
+Decision: **the planner composes every root of a region into one task**, in root order, under one
+content key. `TileTask` keeps its meaning ("the tile's own content", ARQ-149) and the backend keeps
+copying.
+
+The rejected option is the one a compositor would pick: keep a task per root and have the backend
+composite each tile **over** the surface. It is cheaper in cache terms — per-root invalidation
+survives, so dragging one object re-renders one root's tiles instead of the region's — and it is
+where this should end. It is not the first step because of `paint_background`, which inserts the
+**page rect into every task**: under over-semantics the second root's task would paint the page
+background on top of the first root's pixels and the defect would come back wearing a different
+hat. The precondition for that option is moving the background out of the per-root tasks into one
+task of its own, and that is a `gafira-render` change with its own measurement.
+
+Cost, stated plainly: a region's tile is invalidated by a change to any root that meets it, so the
+preview re-renders more than it strictly needs to. Reversible: yes — the backend-side option stays
+open and its precondition is written here.
+
+### O13. `read_back`'s rectangle is page space — decided by the coordinator on 2026-11-06
+
+`GraphPageRenderer::render` computes `target_region(request.region)` and hands it to
+`FrameLoop::read_back`; `CpuBackend::read_back` hands the same rectangle to `Surface::read`. With an
+opaque page and the region `(4,6,68,70)`, **616 of 4 096** pixels came back transparent, and both
+qualities lose the same band, so a comparison of the two would have called a wrong page correct.
+
+Decision: the rectangle is in **page space**, the same space as `TileTask.region` and
+`TargetDesc.origin`, and the surface maps it into its own storage. The fix therefore lands in
+`Surface::read`/`Surface::write` (they must agree), not in the caller, which already passes the
+right rectangle. A test pins an offset region over an opaque page and asserts that no pixel comes
+back transparent.
+
+If 02 §4.6 does not say which space `read_back` answers in, that is an `SP`-style request to the
+specifier, on the same footing as `SP1` for `TileTask.region`.
+
+### O14. An `Rgba8` target gets an `Rgba8` surface — decided by the coordinator on 2026-11-06
+
+`spike-frame-cost.md` measured the sRGB curve twice in one `Rgba8` frame: `encode_tile` quantises
+every tile into the cache (~135 ms of a 195 ms `execute` at 1080p) and `Surface::read` quantises
+the page again (~121 ms). `O11` decided the preview composites in `f32` and quantises **once**, at
+the end; the code quantises twice because the surface is `f32` whatever the target is.
+
+Decision: for an `Rgba8` target the surface holds 8-bit premultiplied sRGB, and the write copies the
+tile the cache already encoded. `read_back` becomes a copy (~12 ms measured for the export) instead
+of a pass over two million pixels.
+
+The rejected option is the cache holding `f32` tiles instead: it removes the same single pass and
+leaves the surface as it is, but it multiplies the cache by four (1 MiB per tile instead of
+256 KiB), and the cache is the caller's budget under ARQ-44.
+
+What this does not buy: `CB6`'s number will not move. The export target is `RgbaF32`, so
+`encode_tile` copies and `read_back` copies there; the doubled curve is a preview cost, and no bench
+in this change measures the preview. The delivery must therefore be measured against ARQ-143's
+visible-render budget or it will be a fix nobody counts.
+
+Reversible: yes, and cheaply — the surface's format is one decision in `begin_frame`.
