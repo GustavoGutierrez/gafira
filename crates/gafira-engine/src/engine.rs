@@ -19,6 +19,8 @@ use gafira_ports::system::{Clock, FileSystem, Notifier};
 
 use crossbeam_channel::Receiver;
 use gafira_doc::ValidationError;
+use gafira_doc::msg;
+use gafira_doc::msg::{Message, ToMessage};
 use gafira_edit::CommandError;
 
 use crate::bus::EventChannel;
@@ -158,8 +160,9 @@ impl EngineConfig {
 
 /// What the engine can fail with (design P6, P16).
 ///
-/// The message-key mapping of ADR 0012 (ARQ-102) is the next commit of `E3b`
-/// (design P12). The `Display` text is for the local log only. `E3c` to `E10`
+/// Every variant has a message key in the area `error.engine.`, and the
+/// wrapped port enums delegate to their own key (ARQ-102, ADR 0012, ADR 0014;
+/// design P12). The `Display` text is for the local log only. `E3c` to `E10`
 /// add variants, so the enum is `#[non_exhaustive]`.
 #[non_exhaustive]
 #[derive(Debug)]
@@ -195,6 +198,22 @@ impl fmt::Display for EngineError {
 }
 
 impl std::error::Error for EngineError {}
+
+impl ToMessage for EngineError {
+    /// `CommandError` and `ValidationError` have no `ToMessage` yet, so their
+    /// variants get an engine key without delegation (design P12, SP3(b)).
+    /// `InvalidConfig` takes no argument: its detail is prose for the log.
+    fn to_message(&self) -> Message {
+        match self {
+            Self::InvalidConfig { .. } => msg!("error.engine.invalid_config"),
+            Self::Repository(e) => e.to_message(),
+            Self::Store(e) => e.to_message(),
+            Self::NoSession => msg!("error.engine.no_session"),
+            Self::Command(_) => msg!("error.engine.command_failed"),
+            Self::InvalidDocument(_) => msg!("error.engine.invalid_document"),
+        }
+    }
+}
 
 impl From<RepositoryError> for EngineError {
     fn from(e: RepositoryError) -> Self {
@@ -323,6 +342,7 @@ mod tests {
 
     use crate::event::Waker;
     use crate::fakes::*;
+    use gafira_doc::ContentHash;
     use gafira_ports::render::BackendKind;
 
     use super::*;
@@ -374,6 +394,42 @@ mod tests {
         assert_eq!(
             engine.events().try_recv().expect("the later event"),
             EngineEvent::LinksMissing(Vec::new())
+        );
+    }
+
+    // ARQ-102
+    #[test]
+    fn ac9_every_engine_error_has_its_key_and_the_port_errors_delegate() {
+        let too_new = || RepositoryError::TooNew {
+            found: 3,
+            supported: 1,
+        };
+        let not_found = || StoreError::NotFound {
+            hash: ContentHash([7; 32]),
+        };
+        let cases = [
+            (
+                EngineError::InvalidConfig { detail: "x" },
+                msg!("error.engine.invalid_config"),
+            ),
+            (EngineError::Repository(too_new()), too_new().to_message()),
+            (EngineError::Store(not_found()), not_found().to_message()),
+            (EngineError::NoSession, msg!("error.engine.no_session")),
+            (
+                EngineError::Command(CommandError::NotApplied),
+                msg!("error.engine.command_failed"),
+            ),
+            (
+                EngineError::InvalidDocument(ValidationError::InvalidDpi { dpi: 0 }),
+                msg!("error.engine.invalid_document"),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.to_message(), expected, "{error:?}");
+        }
+        assert_eq!(
+            EngineError::Repository(too_new()).to_message().key.0,
+            "error.repository.too_new"
         );
     }
 
