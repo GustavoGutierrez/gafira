@@ -1,4 +1,19 @@
 {
   "schema": 1,
-  "outcomes": []
+  "outcomes": [
+    {
+      "outcome_id": "gafira-engine",
+      "spec_id": "02-arquitectura-software",
+      "status": "implementing",
+      "criteria": [
+        { "id": "E1-AC1", "status": "pending" },
+        { "id": "E1-AC2", "status": "pending" },
+        { "id": "E1-AC3", "status": "pending" },
+        { "id": "E1-AC4", "status": "pending" },
+        { "id": "E1-AC5", "status": "pending" },
+        { "id": "E1-AC6", "status": "pending" }
+      ],
+      "next_action": "E1 gates at workspace scope, then E2 (channel sink, events(), coalescing)"
+    }
+  ]
 }
