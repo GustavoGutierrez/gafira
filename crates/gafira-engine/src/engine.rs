@@ -271,13 +271,14 @@ impl Gafira {
         let bus = events.bus();
         let shared = Shared::new(bus.clone());
         let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
+        let projects = ProjectService::over(shared, &ports);
         Ok(Self {
             ports,
             registries,
             config,
             bus,
             events: events.receiver(),
-            projects: ProjectService::over(shared),
+            projects,
             edit,
         })
     }
