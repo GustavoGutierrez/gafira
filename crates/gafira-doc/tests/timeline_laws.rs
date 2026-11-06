@@ -322,6 +322,96 @@ fn fv_01_the_retime_snaps_cuts_to_the_new_grid() {
     assert_eq!(sequence.retimed(FrameRate::FPS_30), after);
 }
 
+// FV-01 (AC6): a clip has two cuts, and the retime moves each one to the
+// nearest frame of the new grid. It is not a snapped start plus a snapped
+// duration: the two roundings are not additive, so the end cut would drift by
+// up to one frame. The expected ticks are absolute, one case grows and one
+// shrinks.
+#[test]
+fn fv_01_the_retime_moves_both_cuts_of_a_clip() {
+    // Grow: 24 -> 30 fps. A one-frame clip at 24 fps is [29 400 000..
+    // 58 800 000); 58 800 000 is exactly 2.5 frames of 30 fps, so the end cut
+    // breaks the tie towards the later frame: 3 frames, 70 560 000.
+    let (_doc, _token, sid, tid) = setup();
+    let frame_24 = FPS_24.flicks_per_frame();
+    let mut sequence = a_sequence(sid, FPS_24);
+    sequence
+        .add_track(tid, TrackKind::Video)
+        .expect("the video lane fits");
+    sequence
+        .track_mut_by_id(tid)
+        .expect("the lane is there")
+        .insert(frame_clip(ClipId::new(1), 1, 1, frame_24), frame_24)
+        .expect("the one-frame clip sits on the grid");
+    let grown = sequence.retimed(FrameRate::FPS_30);
+    let grown_clips = grown.track(tid).expect("the lane is there").clips();
+    assert_eq!(grown_clips.len(), 1, "the retime loses no clip");
+    assert_eq!(
+        grown_clips[0].place().start().ticks(),
+        23_520_000,
+        "the start cut snaps to 1 frame of 30 fps"
+    );
+    assert_eq!(
+        grown_clips[0].place().end().ticks(),
+        70_560_000,
+        "the end cut snaps on its own: 2.5 frames of 30 fps goes to the later frame"
+    );
+
+    // Shrink: 30 -> 24 fps. A two-frame clip at 30 fps is [47 040 000..
+    // 94 080 000); its cuts land on 2 and 3 frames of 24 fps, one frame apart.
+    let (_doc, _token, sid, tid) = setup();
+    let frame_30 = FrameRate::FPS_30.flicks_per_frame();
+    let mut sequence = a_sequence(sid, FrameRate::FPS_30);
+    sequence
+        .add_track(tid, TrackKind::Video)
+        .expect("the video lane fits");
+    sequence
+        .track_mut_by_id(tid)
+        .expect("the lane is there")
+        .insert(frame_clip(ClipId::new(1), 2, 2, frame_30), frame_30)
+        .expect("the two-frame clip sits on the grid");
+    let shrunk = sequence.retimed(FPS_24);
+    let shrunk_clips = shrunk.track(tid).expect("the lane is there").clips();
+    assert_eq!(shrunk_clips.len(), 1, "the retime loses no clip");
+    assert_eq!(
+        shrunk_clips[0].place().start().ticks(),
+        58_800_000,
+        "the start cut snaps to 2 frames of 24 fps"
+    );
+    assert_eq!(
+        shrunk_clips[0].place().end().ticks(),
+        88_200_000,
+        "the end cut snaps to 3 frames of 24 fps, not the snapped span added to the start"
+    );
+
+    // A span below one frame keeps one frame and pushes what follows right:
+    // two one-frame clips at 60 fps both round to the same 24 fps frame.
+    let (_doc, _token, sid, tid) = setup();
+    let frame_60 = FrameRate::FPS_60.flicks_per_frame();
+    let mut sequence = a_sequence(sid, FrameRate::FPS_60);
+    sequence
+        .add_track(tid, TrackKind::Video)
+        .expect("the video lane fits");
+    let lane = sequence.track_mut_by_id(tid).expect("the lane is there");
+    lane.insert(frame_clip(ClipId::new(1), 0, 1, frame_60), frame_60)
+        .expect("the first clip sits on the grid");
+    lane.insert(frame_clip(ClipId::new(2), 1, 1, frame_60), frame_60)
+        .expect("the second clip sits on the grid");
+    let floored = sequence.retimed(FPS_24);
+    let floored_clips = floored.track(tid).expect("the lane is there").clips();
+    assert_eq!(floored_clips.len(), 2, "the retime loses no clip");
+    assert_eq!(
+        floored_clips[0].place().duration().ticks(),
+        FPS_24.flicks_per_frame().ticks(),
+        "a span below one frame keeps one frame"
+    );
+    assert_eq!(
+        floored_clips[1].place().start().ticks(),
+        FPS_24.flicks_per_frame().ticks(),
+        "the clip that would overlap is pushed right"
+    );
+}
+
 // FV-01 (AC7): sixteen audio tracks are allowed, the seventeenth is refused
 // with a message that says which sequence ran out.
 #[test]
