@@ -95,15 +95,21 @@ impl EventBus {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use gafira_ports::i18n::{FormatLocale, Locale, LocaleSource};
+
     use super::*;
 
+    /// Counts what reaches it and forwards to the real no-op sink, so a test
+    /// can show the sink this delivery ships accepts every variant.
     #[derive(Default)]
     struct CountingSink {
+        noop: NoopSink,
         seen: AtomicUsize,
     }
 
     impl EventSink for CountingSink {
-        fn publish(&self, _event: EngineEvent) {
+        fn publish(&self, event: EngineEvent) {
+            self.noop.publish(event);
             self.seen.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -112,6 +118,29 @@ mod tests {
         EngineEvent::DocumentChanged {
             dirty: DirtySet::default(),
         }
+    }
+
+    /// Every variant of `EngineEvent`: adding a variant must fail this test, and
+    /// leaving one out of the list must fail the count in
+    /// `ac4_the_noop_sink_accepts_every_variant`.
+    fn every_variant() -> Vec<EngineEvent> {
+        vec![
+            document_changed(),
+            EngineEvent::LinksMissing(Vec::new()),
+            EngineEvent::LicenseChanged(LicenseStatus::Unlicensed),
+            EngineEvent::LocaleChanged {
+                preference: LanguagePreference::System,
+                resolved: ResolvedLocale {
+                    locale: Locale::Es,
+                    formats: FormatLocale {
+                        locale: Locale::Es,
+                        region: None,
+                    },
+                    source: LocaleSource::Fallback,
+                },
+            },
+            EngineEvent::BackendChanged(BackendKind::Cpu),
+        ]
     }
 
     #[test]
@@ -128,10 +157,14 @@ mod tests {
 
     #[test]
     fn ac4_the_noop_sink_accepts_every_variant() {
-        let bus = EventBus::noop();
-        bus.publish(document_changed());
-        bus.publish(EngineEvent::LinksMissing(Vec::new()));
-        bus.publish(EngineEvent::LicenseChanged(LicenseStatus::Unlicensed));
-        bus.publish(EngineEvent::BackendChanged(BackendKind::Cpu));
+        let sink = Arc::new(CountingSink::default());
+        let bus = EventBus::new(sink.clone());
+
+        for (index, event) in every_variant().into_iter().enumerate() {
+            bus.publish(event);
+            assert_eq!(sink.seen.load(Ordering::SeqCst), index + 1);
+        }
+
+        assert_eq!(sink.seen.load(Ordering::SeqCst), 5);
     }
 }

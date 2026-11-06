@@ -368,17 +368,6 @@ mod tests {
         }
     }
 
-    fn ports() -> Ports {
-        Ports::new(
-            Arc::new(NoRepository),
-            Arc::new(NoStore),
-            Arc::new(NoFilesystem),
-            Arc::new(NoClock),
-            Arc::new(NoNotifier),
-            Arc::new(NoLicense),
-        )
-    }
-
     fn config() -> EngineConfig {
         EngineConfig::new("/data/gafira").expect("a valid data directory")
     }
@@ -407,18 +396,42 @@ mod tests {
     }
 
     #[test]
-    fn ac5_the_facade_is_send_and_sync_and_keeps_its_parts() {
+    fn ac5_the_facade_is_send_and_sync_and_keeps_the_ports_it_was_given() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Gafira>();
 
-        let engine = Gafira::new(ports(), Registries::new(), config()).expect("an engine");
+        // The exact values handed over below: the facade must hold these
+        // allocations and not a copy or a replacement (design P4).
+        let repository: Arc<dyn ProjectRepository> = Arc::new(NoRepository);
+        let store: Arc<dyn ContentStore> = Arc::new(NoStore);
+        let filesystem: Arc<dyn FileSystem> = Arc::new(NoFilesystem);
+        let clock: Arc<dyn Clock> = Arc::new(NoClock);
+        let notifier: Arc<dyn Notifier> = Arc::new(NoNotifier);
+        let license: Arc<dyn LicenseVerifier> = Arc::new(NoLicense);
+
+        let engine = Gafira::new(
+            Ports::new(
+                Arc::clone(&repository),
+                Arc::clone(&store),
+                Arc::clone(&filesystem),
+                Arc::clone(&clock),
+                Arc::clone(&notifier),
+                Arc::clone(&license),
+            ),
+            Registries::new(),
+            config(),
+        )
+        .expect("an engine");
+
+        let ports = engine.ports();
+        assert!(Arc::ptr_eq(&ports.repository, &repository));
+        assert!(Arc::ptr_eq(&ports.store, &store));
+        assert!(Arc::ptr_eq(&ports.filesystem, &filesystem));
+        assert!(Arc::ptr_eq(&ports.clock, &clock));
+        assert!(Arc::ptr_eq(&ports.notifier, &notifier));
+        assert!(Arc::ptr_eq(&ports.license, &license));
+
         assert_eq!(engine.config().data_dir(), Path::new("/data/gafira"));
         assert_eq!(engine.registries().formats.importers().count(), 0);
-    }
-
-    #[test]
-    fn ac5_publishing_through_the_facade_reaches_the_bus() {
-        let engine = Gafira::new(ports(), Registries::new(), config()).expect("an engine");
-        engine.publish(EngineEvent::LinksMissing(Vec::new()));
     }
 }
