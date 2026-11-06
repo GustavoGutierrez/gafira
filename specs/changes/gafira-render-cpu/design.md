@@ -355,8 +355,19 @@ Reversible: yes.
 
 ### D7. `ApplyMask`, `ApplyEffect`, `ApplyTransition`: the port under-specifies two of them, and the design says which reading it takes
 
+Corrected by the `CB5` fix round (2026-11-06): this paragraph said `roi(cx, p, tile_rect)`, which
+is the defect the round's `M-C1` mutant reproduces verbatim — a second effect asked against the tile
+grows to `14×14` where `16×16` is needed. The code now asks each effect against the buffer the
+previous ops produced, and the composition is a single forward pass: an earlier effect's input is
+**not** re-expanded for a later effect's growth. That is exact for the rois real filters answer (a
+dilation and a translation telescope), and it is a latent pixel defect for a roi that shrinks its
+argument followed by a dilating one (`W11` of the round), which no op reaches today because nothing
+emits effects yet (ARQ-134).
+
 `ApplyEffect { effect, params, scale }` is fully specified by `Effect::roi`, `cost_hint` and
-`run_cpu`. Decision: the adapter computes `roi(cx, p, tile_rect)`, renders the task's ops into a
+`run_cpu`. Decision: the adapter computes `roi(cx, p, buffer)`, where `buffer` is what the ops so far have
+produced — the tile for the first effect, and the grown rectangle the previous one left, for each
+one after it — renders the task's ops into a
 scratch buffer of that size (offset by the ROI origin, with the same coverage and layer machinery),
 runs `run_cpu` with `EffectCx { scale, tile: None }`, and blits the crop. Cost: a second pass over the
 grown area for the tiles of an effected node; exact at seams, which is the point of `roi`.
