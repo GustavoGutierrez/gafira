@@ -6,7 +6,7 @@
 |---|---|---|
 | Flow modes, packs, gates G0 to G5, verify depths V0 to V3, mutation tiers T0 to T4 | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0001-flow-modes-and-packs.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | Fast lane: spec-direct execution with a Slice card, the `mutation` toggle, V1/V2 verify defaults | **Implemented** (accepted decision; supersedes parts of ADR 0001) | `docs/adr/0002-fast-lane.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
-| `verification.json` | **Implemented** as a pilot; the review point is the archive of the next change that uses it | ADR 0001 decision record 5, `.agents/agents/verify.md` |
+| `verification.json` | **Retired**; the single verification artefact is `verify-report.md` | `docs/adr/0017-gate-scope-and-one-verification-artefact.md`, `.agents/agents/verify.md` |
 | Hand-mutant split between `tdd-apply` and `verify`, closure rounds, T4 survivor closure | **Implemented** (accepted decision; the agent definitions follow it) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archive of a light or fast-lane run without delta merge | **Implemented** | ADR 0001 decision record 6, ADR 0002 section 6, `.agents/agents/archive.md` |
 | ODD lite: risk levels L0 to L3, outcome entries in `.odd/state.json`, folders only when needed, verify findings in the entry, the BLOCKED verdict | **Implemented** (accepted decision; the process files follow it) | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
@@ -30,7 +30,7 @@ The mode of a request (next section) decides which stages run. `mutants` runs ac
 | Measure risky claims in a scratch directory and cross-check numbers across docs | `explorer` | `specs/changes/<change>/spike.md` with command, output and verdict; with no folder, the result only |
 | Build one delivery with strict TDD | `tdd-apply` | Commits and `specs/changes/<change>/apply-progress.md`; with no folder, notes in the body of the last implementer commit |
 | Mutation-test the code according to the `mutation` value (default: whole crate at change close); report surviving mutants (read-only) | `mutants` | A report in the session scratch directory, outside the repo |
-| Check gates and every acceptance criterion, requirement and scenario | `verify` | `verify-report.md` and `verification.json` in the change folder (with no folder, in the scratchpad), PASS, FAIL or BLOCKED |
+| Check gates and every acceptance criterion, requirement and scenario | `verify` | `verify-report.md` in the change folder (with no folder, in the scratchpad), PASS, FAIL or BLOCKED |
 | Close the change after PASS and all deliveries done | `archive` | Change moved to `specs/history/` (with no folder, nothing to move and the entry is deleted); fast lane: status table in `specs/README.md` updated with the covered IDs; delta specs, when present, merged into `specs/capabilities/` |
 | Edit the technical manual, English first with a Spanish mirror | `manual-writer` | Chapters in both languages, `manual.py check` and `build` evidence |
 
@@ -69,7 +69,7 @@ New work on a capability that an existing spec covers needs no folder under `spe
 With no folder, the other artifacts move:
 
 - `tdd-apply` records its notes in the body of the last implementer commit of the delivery.
-- `verify` writes `verify-report.md` and `verification.json` to the scratchpad path the coordinator gives it.
+- `verify` writes `verify-report.md` to the scratchpad path the coordinator gives it.
 - `explorer` returns its result without a `spike.md`.
 - `archive` has nothing to move and runs only for covered IDs or follow-ups; the entry is deleted.
 
@@ -91,7 +91,7 @@ The `verify` field is `{round, commit, verdict, next, findings, rounds}`. The fi
 
 | Field | Content |
 |---|---|
-| `findings` | Every CRITICAL and WARNING of any run, as `{id, severity, class, ref, summary, follow_up, status}`, copied from `verification.json`; no SUGGESTION |
+| `findings` | Every CRITICAL and WARNING of any run, as `{id, severity, class, ref, summary, follow_up, status}`, copied from the report; no SUGGESTION |
 | `rounds` | One `{round, verdict, classes}` row per verify run of the current delivery; a BLOCKED row stays and does not count toward the stops |
 
 The coordinator commits this update on the delivery branch before it routes, on PASS, FAIL and BLOCKED alike. A WARNING still open when a delivery ends in PASS becomes a follow-up and reaches `archive`.
@@ -175,7 +175,7 @@ The coordinator checks each gate before the next phase. A failed gate returns th
 | G1 | After `specifier`: no open question, every requirement has a typed scenario, owner decisions respected | Standard, full |
 | G2 | After `architect`: delivery table with dependencies, each delivery near or below about 700 lines | Full |
 | G3 | After `tdd-apply`: `status: done` with commits, gate output, measured lines, RED evidence per criterion, deviations | All code modes |
-| G4 | After `verify` (and `mutants` when a run happened): zero CRITICAL, verdict not BLOCKED, tier thresholds met, `verification.json` written | All modes with V1 or above |
+| G4 | After `verify` (and `mutants` when a run happened): zero CRITICAL, verdict not BLOCKED, tier thresholds met, `verify-report.md` written | All modes with V1 or above |
 | G5 | Before merge into `develop` and archive: PASS for all deliveries; with `mutation: archive` or `delivery`, T4 run for every crate the change touched and no critical survivor | Standard, full |
 
 The coordinator cannot waive G0. If the owner asks for no spec, the coordinator writes a three-line Light spec. For a product-spec slice the Slice card satisfies G0.
@@ -251,11 +251,9 @@ Round 1 is the first `verify` of a delivery and the only round that runs the ind
 - A real code defect shown by a probe, a gate failure and a critical survivor in the newest `mutants` report are CRITICAL in any round.
 - A critical T4 survivor goes to `tdd-apply`, then T4 runs again on that crate, then a closure-round `verify` reads the new report. Only that new report proves closure; a stale report leaves the survivor CRITICAL.
 
-### verification.json
+### Verification artefacts
 
-`verify` writes `verification.json` beside `verify-report.md` for every depth above V0: in `specs/changes/<change>/`, or in the scratchpad path the coordinator gives it when there is no folder. It holds one object per verify round in a `rounds` array: round, verified commit, mode, tier, depth, verdict, `next`, counts, findings (id, severity, `class`, reference, summary), gate exit codes, mutation counts and wall time, hand mutants, criteria covered, and measured size. The coordinator reads this file, not the long report, to route, and copies the findings into the outcome entry when there is no folder. If the two disagree, the report wins and the round runs again.
-
-The file is a pilot. If routing does not read it after the next change that uses it is archived, it is removed.
+`verify-report.md` is the only file `verify` writes: the verdict, the findings table and the `next:` line are read from the report. `verification.json` is retired; it was piloted beside the report and had to be kept in sync by hand, and reading it instead of the report bought nothing.
 
 ## Mutation tiers
 
@@ -329,7 +327,7 @@ RED (write the test, run it, see it fail), GREEN (minimal code), REFACTOR (tests
 | `specs/00-decisiones.md` | Owner decisions (D-nn). They override other specs and are not reopened without the owner |
 | `specs/NN-*.md` | The document in progress; completed ones move to `specs/archive/` with `git mv`, waiting ones sit in `specs/backlog/` |
 | `specs/capabilities/<capability>/spec.md` | Main specs per capability, the source of truth, filled by archive |
-| `specs/changes/<change>/` | Active change folder, only for L3, full mode, work no spec covers and folders already in progress: `proposal.md`, `design.md`, `tasks.md` (optional), `specs/<capability>/spec.md` (delta specs; none in a light or fast-lane run), `apply-progress.md` (starts with the Light spec or the Slice card), `verify-report.md`, `verification.json` |
+| `specs/changes/<change>/` | Active change folder, only for L3, full mode, work no spec covers and folders already in progress: `proposal.md`, `design.md`, `tasks.md` (optional), `specs/<capability>/spec.md` (delta specs; none in a light or fast-lane run), `apply-progress.md` (starts with the Light spec or the Slice card), `verify-report.md` |
 | `specs/history/<date>-<change>/` | Closed change folders |
 | `.odd/state.json` | Outcome entries of active outcomes (see [ODD lite](#odd-lite)) |
 

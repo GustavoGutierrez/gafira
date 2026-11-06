@@ -2,13 +2,15 @@
 
 ## Puertas locales
 
-Cada commit debe pasar estos tres comandos por sí solo, no solo el último commit de una rama:
+Cada commit debe pasar las puertas que cubren lo que puede romper, por sí solo, no solo el último commit de una rama:
 
 ```bash
 cargo fmt --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+cargo clippy -p <crate> --all-targets --locked -- -D warnings
+cargo test -p <crate> --locked
 ```
+
+El alcance es el crate que toca el commit. Se usa `--workspace` cuando el commit toca un crate del que dependen otros, un `Cargo.toml`, un `Cargo.lock` o `ci.yml`. La suite completa del workspace se ejecuta una vez en el HEAD de la entrega y una vez antes del pull request de `develop` a `main` (ADR 0017).
 
 El toolchain está fijado en `1.93.1` con `rustfmt` y `clippy` en `rust-toolchain.toml`. `--locked` mantiene a `Cargo.lock` como autoridad.
 

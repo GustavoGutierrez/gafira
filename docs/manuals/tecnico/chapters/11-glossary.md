@@ -34,7 +34,7 @@
 | Mutation tier (T0 to T4) | How much code the mutation run covers: none, hand mutants, diff, changed files, whole crate |
 | Mutation toggle | The `mutation: off\|archive\|delivery` field of the `Flow:` line; it sets when `cargo-mutants` runs (default `archive`: T4 per touched crate at change close) |
 | Pack | The predefined mode, agents, `mutation` value and verify depth for a request type |
-| `verification.json` | The machine-readable record of each verify round, written by `verify` (pilot) |
+| `verification.json` | **Retired**: the machine-readable record of each verify round that ADR 0001 introduced; ADR 0017 leaves `verify-report.md` as the only file `verify` writes |
 | Verify depth (V0 to V3) | How much independent work `verify` does, from deterministic checks only to the full matrix |
 | MergeKey | The key under which two commands may be merged into one history entry |
 | Mutant | A small deliberate code change made by `cargo-mutants`; a surviving mutant means a test gap |
@@ -46,7 +46,7 @@
 | Risk level (L0 to L3) | The class the coordinator gives a request by impact, uncertainty and reversibility; it can raise the flow mode and never lowers a floor |
 | P1 to P6 | The ordered passes of `Document::validate` |
 | Planned | Specified but not implemented in the repository yet |
-| Port | A trait defined by the application layer that adapters implement (**Planned**, `gafira-ports`) |
+| Port | A trait of layer 3 that adapters implement; the port traits and their registries live in `gafira-ports` |
 | Snapshot | The `Arc<Document>` before or after a history entry; it shares unchanged pages and nodes with its neighbors |
 | `testkit` | `gafira-testkit`, the test-support crate with the document generator and `prop_command` |
 | `trybuild` | The dev-dependency that checks that fixtures fail (or pass) to compile; evidence for ARQ-30 |

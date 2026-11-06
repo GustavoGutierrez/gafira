@@ -6,7 +6,7 @@
 |---|---|---|
 | Modos de flujo, packs, puertas G0 a G5, profundidades de verify V0 a V3, niveles de mutación T0 a T4 | **Implementado** (decisión aceptada; las definiciones de los agentes la siguen) | `docs/adr/0001-flow-modes-and-packs.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
 | Carril rápido: ejecución directa de la spec con Slice card, el interruptor `mutation`, valores por defecto V1/V2 de verify | **Implementado** (decisión aceptada; sustituye partes del ADR 0001) | `docs/adr/0002-fast-lane.md`, `AGENTS.md`, `.agents/agents/coordinator.md` |
-| `verification.json` | **Implementado** como piloto; el punto de revisión es el archivado del siguiente change que lo use | ADR 0001 registro de decisiones 5, `.agents/agents/verify.md` |
+| `verification.json` | **Retirado**; el único artefacto de verificación es `verify-report.md` | `docs/adr/0017-gate-scope-and-one-verification-artefact.md`, `.agents/agents/verify.md` |
 | Reparto de mutantes manuales entre `tdd-apply` y `verify`, rondas de cierre, cierre de supervivientes de T4 | **Implementado** (decisión aceptada; las definiciones de los agentes la siguen) | `docs/adr/0004-hand-mutant-split-and-verify-rounds.md`, `AGENTS.md`, `.agents/agents/verify.md`, `.agents/agents/tdd-apply.md`, `.agents/agents/coordinator.md` |
 | Archivado de una ejecución ligera o de carril rápido sin fusión de deltas | **Implementado** | ADR 0001 registro de decisiones 6, ADR 0002 sección 6, `.agents/agents/archive.md` |
 | ODD lite: niveles de riesgo L0 a L3, entradas de outcome en `.odd/state.json`, carpetas solo cuando hacen falta, hallazgos de verify en la entrada, veredicto BLOCKED | **Implementado** (decisión aceptada; los archivos de proceso la siguen) | `docs/adr/0011-odd-lite.md`, `AGENTS.md`, `.agents/agents/coordinator.md`, `.agents/agents/verify.md` |
@@ -30,7 +30,7 @@ El modo de una solicitud (sección siguiente) decide qué etapas se ejecutan. `m
 | Medir afirmaciones riesgosas en un directorio temporal y contrastar cifras entre documentos | `explorer` | `specs/changes/<change>/spike.md` con comando, salida y veredicto; sin carpeta, solo el resultado |
 | Construir una entrega con TDD estricto | `tdd-apply` | Commits y `specs/changes/<change>/apply-progress.md`; sin carpeta, notas en el cuerpo del último commit del implementador |
 | Probar por mutación el código según el valor de `mutation` (por defecto, crate completo al cerrar el change); reportar mutantes supervivientes (solo lectura) | `mutants` | Un informe en el directorio temporal de la sesión, fuera del repositorio |
-| Comprobar las puertas y cada criterio de aceptación, requisito y escenario | `verify` | `verify-report.md` y `verification.json` en la carpeta del change (sin carpeta, en el directorio temporal), PASS, FAIL o BLOCKED |
+| Comprobar las puertas y cada criterio de aceptación, requisito y escenario | `verify` | `verify-report.md` en la carpeta del change (sin carpeta, en el directorio temporal), PASS, FAIL o BLOCKED |
 | Cerrar el change tras PASS y con todas las entregas hechas | `archive` | El change pasa a `specs/history/` (sin carpeta, no hay nada que mover y la entrada se elimina); carril rápido: tabla de estado de `specs/README.md` actualizada con los IDs cubiertos; las delta specs, si existen, se fusionan en `specs/capabilities/` |
 | Editar el manual técnico, primero en inglés y con espejo en español | `manual-writer` | Capítulos en ambos idiomas, evidencia de `manual.py check` y `build` |
 
@@ -69,7 +69,7 @@ El trabajo nuevo sobre una capacidad que una spec existente cubre no necesita ca
 Sin carpeta, los demás artefactos cambian de lugar:
 
 - `tdd-apply` registra sus notas en el cuerpo del último commit del implementador de la entrega.
-- `verify` escribe `verify-report.md` y `verification.json` en la ruta temporal que le da el coordinador.
+- `verify` escribe `verify-report.md` en la ruta temporal que le da el coordinador.
 - `explorer` devuelve su resultado sin `spike.md`.
 - `archive` no tiene nada que mover y se ejecuta solo para IDs cubiertos o seguimientos; la entrada se elimina.
 
@@ -91,7 +91,7 @@ El campo `verify` es `{round, commit, verdict, next, findings, rounds}`. Los cua
 
 | Campo | Contenido |
 |---|---|
-| `findings` | Todo CRITICAL y WARNING de cualquier ejecución, como `{id, severity, class, ref, summary, follow_up, status}`, copiado de `verification.json`; sin SUGGESTION |
+| `findings` | Todo CRITICAL y WARNING de cualquier ejecución, como `{id, severity, class, ref, summary, follow_up, status}`, copiado del informe; sin SUGGESTION |
 | `rounds` | Una fila `{round, verdict, classes}` por ejecución de verify de la entrega actual; una fila BLOCKED se conserva y no cuenta para las paradas |
 
 El coordinador confirma esta actualización en la rama de la entrega antes de enrutar, con PASS, FAIL y BLOCKED por igual. Un WARNING aún abierto cuando una entrega termina en PASS pasa a ser seguimiento y llega a `archive`.
@@ -175,7 +175,7 @@ El coordinador comprueba cada puerta antes de la fase siguiente. Una puerta fall
 | G1 | Tras `specifier`: sin preguntas abiertas, cada requisito con un escenario tipado, decisiones del titular respetadas | Standard, full |
 | G2 | Tras `architect`: tabla de entregas con dependencias, cada entrega cerca o por debajo de unas 700 líneas | Full |
 | G3 | Tras `tdd-apply`: `status: done` con commits, salida de las puertas, líneas medidas, evidencia RED por criterio, desviaciones | Todos los modos con código |
-| G4 | Tras `verify` (y `mutants` cuando hubo una ejecución): cero CRITICAL, veredicto distinto de BLOCKED, umbrales del nivel cumplidos, `verification.json` escrito | Todos los modos con V1 o superior |
+| G4 | Tras `verify` (y `mutants` cuando hubo una ejecución): cero CRITICAL, veredicto distinto de BLOCKED, umbrales del nivel cumplidos, `verify-report.md` escrito | Todos los modos con V1 o superior |
 | G5 | Antes de fusionar en `develop` y de archivar: PASS en todas las entregas; con `mutation: archive` o `delivery`, T4 ejecutado en cada crate que toca el change y sin supervivientes críticos | Standard, full |
 
 El coordinador no puede dispensar G0. Si el titular pide no tener spec, el coordinador escribe igualmente una Light spec de tres líneas. En una porción de spec de producto, la Slice card satisface G0.
@@ -251,11 +251,9 @@ La ronda 1 es el primer `verify` de una entrega y la única ronda que ejecuta lo
 - Un defecto real de código mostrado por un sondeo, un fallo de puerta y un superviviente crítico en el informe más reciente de `mutants` son CRITICAL en cualquier ronda.
 - Un superviviente crítico de T4 va a `tdd-apply`, después T4 se ejecuta de nuevo sobre ese crate, y luego un `verify` de ronda de cierre lee el informe nuevo. Solo ese informe nuevo prueba el cierre; un informe antiguo deja el superviviente como CRITICAL.
 
-### verification.json
+### Artefactos de verificación
 
-`verify` escribe `verification.json` junto a `verify-report.md` en toda profundidad superior a V0: en `specs/changes/<change>/`, o en la ruta temporal que le da el coordinador cuando no hay carpeta. Contiene un objeto por ronda de verify en un array `rounds`: ronda, commit verificado, modo, nivel, profundidad, veredicto, `next`, recuentos, hallazgos (id, severidad, `class`, referencia, resumen), códigos de salida de las puertas, recuentos de mutación y tiempo, mutantes manuales, criterios cubiertos y tamaño medido. El coordinador lee este archivo, no el informe largo, para enrutar, y copia los hallazgos en la entrada de outcome cuando no hay carpeta. Si ambos difieren, prevalece el informe y la ronda se repite.
-
-El archivo es un piloto. Si el enrutado no lo lee tras archivar el siguiente change que lo use, se elimina.
+`verify-report.md` es el único archivo que escribe `verify`: el veredicto, la tabla de hallazgos y la línea `next:` se leen del informe. `verification.json` está retirado; se puso a prueba junto al informe y había que mantenerlo sincronizado a mano, y leerlo en lugar del informe no aportaba nada.
 
 ## Niveles de mutación
 
@@ -329,7 +327,7 @@ RED (escribir la prueba, ejecutarla, verla fallar), GREEN (código mínimo), REF
 | `specs/00-decisiones.md` | Decisiones del titular (D-nn). Prevalecen sobre las demás specs y no se reabren sin el titular |
 | `specs/NN-*.md` | El documento en curso; los completados pasan a `specs/archive/` con `git mv`, los que esperan están en `specs/backlog/` |
 | `specs/capabilities/<capability>/spec.md` | Specs principales por capacidad, la fuente de verdad, completadas al archivar |
-| `specs/changes/<change>/` | Carpeta de change activa, solo para L3, modo full, trabajo que ninguna spec cubre y carpetas ya en curso: `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md`, `verification.json` |
+| `specs/changes/<change>/` | Carpeta de change activa, solo para L3, modo full, trabajo que ninguna spec cubre y carpetas ya en curso: `proposal.md`, `design.md`, `tasks.md` (opcionales), `specs/<capability>/spec.md` (delta specs; ninguna en una ejecución light o de carril rápido), `apply-progress.md` (empieza con la Light spec o la Slice card), `verify-report.md` |
 | `specs/history/<date>-<change>/` | Carpetas de change cerradas |
 | `.odd/state.json` | Entradas de outcome de los outcomes activos (véase [ODD lite](#odd-lite)) |
 
