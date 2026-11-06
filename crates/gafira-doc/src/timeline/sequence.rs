@@ -257,6 +257,10 @@ impl Sequence {
     /// keeping at least one frame, the later clips pushed right when a span
     /// stays below one frame, and not one clip lost (FV-01 (c)).
     ///
+    /// Each of the two cuts snaps on its own: the end is not the snapped start
+    /// plus a snapped span, because the two roundings are not additive, so an
+    /// end cut would drift up to one frame.
+    ///
     /// The ties of the nearest frame break towards the later frame, and the
     /// computation is pure integer arithmetic on flicks: two calls with the
     /// same inputs give the same sequence, and `self` stays untouched
@@ -270,22 +274,23 @@ impl Sequence {
             let mut clips = Vec::with_capacity(track.clips.len());
             let mut last_end = 0i64;
             for clip in &track.clips {
-                // `snap_nearest` answers a frame index; the place is counted
-                // in flicks, so the index is multiplied by the frame.
+                // `snap_nearest` answers a frame index; each cut is counted in
+                // flicks, so the index is multiplied by the frame.
                 let start = snap_nearest(clip.place.start().ticks(), frame) * frame;
-                let duration = snap_nearest(clip.place.duration().ticks(), frame) * frame;
+                let end = snap_nearest(clip.place.end().ticks(), frame) * frame;
                 // A span below one frame keeps one frame and pushes what
                 // follows it right; nothing is lost (FV-01 (c)).
-                let duration = duration.max(frame);
                 let start = start.max(last_end);
-                let end = start.saturating_add(duration);
+                let end = end.max(start.saturating_add(frame));
                 last_end = end;
                 let mut moved = clip.clone();
-                moved.place = gafira_time::TimeRange::new(
+                // The span is derived from the two snapped cuts, not rounded
+                // on its own: `from_bounds` keeps the end the grid gave.
+                moved.place = gafira_time::TimeRange::from_bounds(
                     Flicks::from_ticks(start),
-                    Flicks::from_ticks(duration),
+                    Flicks::from_ticks(end),
                 )
-                .expect("the retimed place keeps the range's own law (start, positive span)");
+                .expect("the retimed place keeps the range's own law (start <= end)");
                 clips.push(moved);
             }
             tracks.push(Track {
