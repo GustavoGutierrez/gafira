@@ -26,6 +26,12 @@ use gafira_raster::{EffectCx, ImageView, ImageViewMut, PixelData, PixelDataMut, 
 
 /// The rectangle the tile's ops are rendered over: the tile grown by every
 /// effect's input region, and clipped to the page (ARQ-120).
+///
+/// The growth composes, in plan order: each effect's `roi` is asked against the
+/// buffer the previous ops produced, and the buffer extends to include the
+/// input that `roi` answers. A second effect therefore measures its input over
+/// what the first one grew, not over the bare tile — measuring every `roi`
+/// against the tile leaves a chain short of the input its last effect needs.
 pub(crate) fn grown_rect(task: &TileTask, page: IRect) -> IRect {
     let tile = task.region.intersect(page);
     let mut grown = tile;
@@ -36,9 +42,10 @@ pub(crate) fn grown_rect(task: &TileTask, page: IRect) -> IRect {
             scale,
         } = op
         {
-            // `out` is the tile's region: an effect's output replaces the layer
-            // it runs on, and the tile is the part of it that reaches the page.
-            let input = effect.roi(&cx(*scale, tile, page), params, tile);
+            // An effect replaces the buffer it filters, so what it must produce
+            // is the buffer as it stands at this op. Asking `roi` over `grown`
+            // is asking it over the buffer the effect will read.
+            let input = effect.roi(&cx(*scale, grown, page), params, grown);
             grown = union(grown, input.intersect(page));
         }
     }

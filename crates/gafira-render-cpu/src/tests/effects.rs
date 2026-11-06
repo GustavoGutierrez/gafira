@@ -190,6 +190,48 @@ fn arq_120_the_effect_reads_past_the_tile_edge_and_runs_once() {
     );
 }
 
+// ARQ-120: an effect's `roi` is asked against the buffer it filters, so a
+// chain of effects composes. The first asks the tile and grows the buffer; the
+// second asks **that** buffer, so its input covers what the first produced.
+// Measuring every `roi` against the bare tile instead leaves the second one
+// two pixels short on each side of the first one's growth.
+#[test]
+fn arq_120_two_effects_grow_by_the_buffer_the_first_produced() {
+    let target_desc = target(32, 32, (0, 0), PixelFormat::RgbaF32);
+    let first = Arc::new(Probe::new(Shape::Pad(2)));
+    let second = Arc::new(Probe::new(Shape::Shift(4)));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(8, 8, 16, 16),
+        vec![
+            fill(0.0, 0.0, 32.0, 32.0, white()),
+            effect_op(&first),
+            effect_op(&second),
+        ],
+    )]);
+    let got = run(target_desc, &scene);
+
+    // The first effect asks `roi` over the tile (8, 8)-(16, 16) and pads it by
+    // 2, so the buffer is (6, 6)-(18, 18). The second asks `roi` over that
+    // buffer and shifts it by 4, reaching (2, 2)-(14, 14); the union is
+    // (2, 2)-(18, 18), 16 x 16. From the tile alone the second asks
+    // (4, 4)-(12, 12) and the union is 14 x 14 — the crop this fixes.
+    assert_eq!(
+        first.seen(),
+        vec![(16, 16)],
+        "the buffer the first effect produced"
+    );
+    assert_eq!(
+        second.seen(),
+        vec![(16, 16)],
+        "the second effect reads what the first produced, not the tile"
+    );
+    assert_eq!(first.calls(), 1, "each effect runs once");
+    assert_eq!(second.calls(), 1, "each effect runs once");
+    assert!(is_white(&got, 8, 8), "the tile keeps its crop");
+    assert!(is_white(&got, 15, 15), "the tile keeps its crop");
+}
+
 // ARQ-120: the grown rectangle is the effect's request, clipped to the page.
 #[test]
 fn arq_120_the_grown_rectangle_is_clipped_to_the_page() {
