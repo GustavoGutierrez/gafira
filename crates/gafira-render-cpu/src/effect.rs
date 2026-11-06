@@ -32,15 +32,19 @@ use gafira_raster::{EffectCx, ImageView, ImageViewMut, PixelData, PixelDataMut, 
 use crate::surface::SURFACE_BUDGET;
 
 /// The rectangle the tile's ops are rendered over: the tile grown by every
-/// effect's input region, and clipped to the page (ARQ-120).
+/// effect's input region, and clipped to the **surface** (ARQ-120).
+///
+/// The clipping rectangle is the surface and not the page: an effect's input
+/// can only be what the backend holds (O18), so growth past the surface would
+/// ask for pixels no buffer has.
 ///
 /// The growth composes, in plan order: each effect's `roi` is asked against the
 /// buffer the previous ops produced, and the buffer extends to include the
 /// input that `roi` answers. A second effect therefore measures its input over
 /// what the first one grew, not over the bare tile — measuring every `roi`
 /// against the tile leaves a chain short of the input its last effect needs.
-pub(crate) fn grown_rect(task: &TileTask, page: IRect) -> IRect {
-    let tile = task.region.intersect(page);
+pub(crate) fn grown_rect(task: &TileTask, surface: IRect, page: (u32, u32)) -> IRect {
+    let tile = task.region.intersect(surface);
     let mut grown = tile;
     for op in &task.ops {
         if let RenderOp::ApplyEffect {
@@ -53,7 +57,7 @@ pub(crate) fn grown_rect(task: &TileTask, page: IRect) -> IRect {
             // is the buffer as it stands at this op. Asking `roi` over `grown`
             // is asking it over the buffer the effect will read.
             let input = effect.roi(&cx(*scale, grown, page), params, grown);
-            grown = union(grown, input.intersect(page));
+            grown = union(grown, input.intersect(surface));
         }
     }
     grown
@@ -75,8 +79,8 @@ pub(crate) struct Pass<'a> {
     pub held: u64,
     /// The grown rectangle `target` covers.
     pub grown: IRect,
-    /// The page `grown` sits in.
-    pub page: IRect,
+    /// The page's extent, in page pixels: the image the window describes (O18).
+    pub page: (u32, u32),
 }
 
 /// Runs `effect` once over the grown tile and commits its result to `target`.
@@ -167,18 +171,20 @@ fn fits(held: u64, scratch: u64) -> bool {
 /// The context an effect answers its `roi` and runs in.
 ///
 /// `src` is a cut of the page, so the window describes where the cut sits in
-/// the page (ARQ-120): `x` and `y` are its origin in page pixels. A tile of
-/// this backend is one page pixel per buffer pixel, so the offsets are the
-/// region's own.
-fn cx(scale: f32, region: IRect, page: IRect) -> EffectCx {
-    let offset = |low: i32, origin: i32| u32::try_from(low.saturating_sub(origin)).unwrap_or(0);
+/// the page (ARQ-120, O18): `x` and `y` are its origin in page pixels and
+/// `image_width`/`image_height` are the **page's** extent, never the surface's.
+/// A tile of this backend is one page pixel per buffer pixel (D4) and the ops
+/// carry page coordinates (ARQ-149), so a region's own corner is already the
+/// page pixel the window asks for — subtracting the surface's origin would
+/// re-express it in the window's space instead.
+fn cx(scale: f32, region: IRect, page: (u32, u32)) -> EffectCx {
     EffectCx {
         scale,
         tile: Some(TileWindow {
-            image_width: page.width(),
-            image_height: page.height(),
-            x: offset(region.x0, page.x0),
-            y: offset(region.y0, page.y0),
+            image_width: page.0,
+            image_height: page.1,
+            x: u32::try_from(region.x0).unwrap_or(0),
+            y: u32::try_from(region.y0).unwrap_or(0),
         }),
     }
 }

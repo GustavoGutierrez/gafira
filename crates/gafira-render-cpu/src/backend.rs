@@ -101,11 +101,14 @@ impl CpuBackend {
             // The token is checked before every tile (02 §6.3, ARQ-139).
             cancel.check()?;
             let size = (task.region.width(), task.region.height());
-            let page = self.surface_of(cx)?.page_rect();
+            let surface = self.surface_of(cx)?.surface_rect();
+            // O18: the window an effect is handed is page space, so the page's
+            // extent travels beside the surface's rectangle.
+            let page = self.surface_of(cx)?.page_extent();
             let tile = match cached_tile(cache, task.key, size, format) {
                 Some(tile) => tile,
                 None => {
-                    let drawn = effect::grown_rect(task, page);
+                    let drawn = effect::grown_rect(task, surface, page);
                     let held = self.surface.as_ref().map_or(0, Surface::bytes);
                     let tile = render_tile(
                         task,
@@ -286,14 +289,15 @@ fn cached_tile(
 /// `drawn` is the tile **grown** by every effect's input region (`CB5`,
 /// ARQ-120): an effect has to read pixels the tile does not hold, so the whole
 /// tile is drawn over that larger rectangle and the tile keeps its own crop of
-/// it. The ops are composited in plan order on a transparent backdrop and the
-/// loop writes the result at the task's region (D4, D6). `held` is what the
-/// frame already holds, so an effect's destination can be refused before it is
-/// allocated (`O17`).
+/// it. `page` is the page the window is cut from, which is the extent an
+/// effect's window reports (O18). The ops are composited in plan order on a
+/// transparent backdrop and the loop writes the result at the task's region
+/// (D4, D6). `held` is what the frame already holds, so an effect's destination
+/// can be refused before it is allocated (`O17`).
 fn render_tile(
     task: &TileTask,
     drawn: IRect,
-    page: IRect,
+    page: (u32, u32),
     held: u64,
     layers: &mut Layers,
     scratch: &mut Vec<f32>,

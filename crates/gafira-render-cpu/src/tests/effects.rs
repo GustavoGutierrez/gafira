@@ -10,6 +10,7 @@ use gafira_ports::render::RenderError;
 use gafira_raster::effects::{Cost, Effect};
 use gafira_raster::{
     EffectCx, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut, PixelFormat,
+    TileWindow,
 };
 
 use super::*;
@@ -31,6 +32,7 @@ pub(super) struct Probe {
     shape: Shape,
     calls: Mutex<usize>,
     seen: Mutex<Vec<(u32, u32)>>,
+    windows: Mutex<Vec<TileWindow>>,
     cancel: Option<CancelToken>,
 }
 
@@ -44,6 +46,7 @@ impl Probe {
             shape,
             calls: Mutex::new(0),
             seen: Mutex::new(Vec::new()),
+            windows: Mutex::new(Vec::new()),
             cancel: None,
         }
     }
@@ -62,6 +65,14 @@ impl Probe {
     /// The `src` sizes the effect was handed, in call order.
     pub(super) fn seen(&self) -> Vec<(u32, u32)> {
         self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The windows the effect was asked with, in call order.
+    pub(super) fn windows(&self) -> Vec<TileWindow> {
+        self.windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -89,12 +100,18 @@ impl Effect for Probe {
 
     fn run_cpu(
         &self,
-        _cx: &EffectCx,
+        cx: &EffectCx,
         _p: &ParamValues,
         src: ImageView<'_>,
         mut dst: ImageViewMut<'_>,
     ) -> Result<(), EffectError> {
         *self.calls.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        if let Some(window) = cx.tile {
+            self.windows
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(window);
+        }
         self.seen
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -281,6 +298,63 @@ fn arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect() {
     assert!(
         is_clear(&without, 8, 8),
         "outside the grown rectangle the tile keeps the transparent page"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// O18 — the window an effect is handed is page space
+// ---------------------------------------------------------------------------
+
+// ARQ-120, ARQ-149, O18, 02 §4.4: `image_width`/`image_height` are the whole
+// **page's** extent and `x`/`y` are the page pixel coordinates of `src`'s first
+// pixel. A surface that is a sub-region of the page is the case the surface's
+// own rectangle gets wrong on both counts; a full-page surface at `(0, 0)` is
+// the case where the two readings coincide, so the export path's window is the
+// one `CB5` produced.
+#[test]
+fn arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region() {
+    // A 16 x 16 viewport at (8, 8) of a 32 x 32 page. The surface's rectangle
+    // is (8, 8)-(24, 24); the page's is (0, 0)-(32, 32).
+    let viewport = target_in_page(16, 16, (8, 8), (32, 32), PixelFormat::RgbaF32);
+    let probe = Arc::new(Probe::new(Shape::Pad(2)));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(8, 8, 24, 24),
+        vec![fill(0.0, 0.0, 32.0, 32.0, white()), effect_op(&probe)],
+    )]);
+    run(viewport, &scene);
+
+    assert_eq!(
+        probe.windows(),
+        vec![TileWindow {
+            image_width: 32,
+            image_height: 32,
+            x: 8,
+            y: 8,
+        }],
+        "the window names the 32 x 32 page, and src starts at its (8, 8)"
+    );
+
+    // The full-page surface of the export: the surface is the page, so the
+    // window is exactly what it was before the page extent reached the port.
+    let full = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let probe = Arc::new(Probe::new(Shape::Pad(2)));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 16, 16),
+        vec![fill(0.0, 0.0, 16.0, 16.0, white()), effect_op(&probe)],
+    )]);
+    run(full, &scene);
+
+    assert_eq!(
+        probe.windows(),
+        vec![TileWindow {
+            image_width: 16,
+            image_height: 16,
+            x: 0,
+            y: 0,
+        }],
+        "the export path's window does not move"
     );
 }
 

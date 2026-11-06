@@ -414,6 +414,7 @@ mod tests {
             width: TILE_SIZE,
             height: TILE_SIZE,
             origin: (0, 0),
+            page: (TILE_SIZE, TILE_SIZE),
             format: PixelFormat::Rgba8,
         }
     }

@@ -165,6 +165,7 @@ fn target(format: PixelFormat) -> TargetDesc {
         width: 1,
         height: 1,
         origin: (0, 0),
+        page: (1, 1),
         format,
     }
 }

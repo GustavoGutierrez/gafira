@@ -200,10 +200,14 @@ impl PageRenderer for GraphPageRenderer {
 
         // ARQ-149: the surface sits at the corner of the region the request
         // asked for, in page pixels; the operations keep their page geometry.
+        // O18: the page extent travels with it, because the surface is only a
+        // window onto the page and an effect's window is measured against the
+        // page — deriving it from `region` would name the window instead.
         let target = TargetDesc {
             width: region.width(),
             height: region.height(),
             origin: (request.region.x0, request.region.y0),
+            page: (extent.width, extent.height),
             format,
         };
         let mut frame = self.frame.lock().unwrap_or_else(PoisonError::into_inner);
@@ -682,6 +686,7 @@ mod tests {
                 width: 200,
                 height: 150,
                 origin: (0, 0),
+                page: (200, 150),
                 format: PixelFormat::Rgba8,
             }]
         );
@@ -718,13 +723,15 @@ mod tests {
             assert_eq!((image.width(), image.height()), (width, height));
             let (targets, ran, reads, _) = seen(&record);
             // The surface sits where the request asked for, not at the page
-            // origin.
+            // origin — and the target names the 1000 x 1000 page it was cut
+            // from, not its own 256 x 256 window (O18).
             assert_eq!(
                 targets,
                 vec![TargetDesc {
                     width,
                     height,
                     origin,
+                    page: (1000, 1000),
                     format: PixelFormat::Rgba8,
                 }]
             );
