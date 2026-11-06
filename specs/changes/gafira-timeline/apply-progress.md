@@ -327,10 +327,13 @@ Commits (branch `feat/gafira-timeline-tl3`, cut from `develop` at `d89bb4e`):
 | `e0439b8` feat(gafira-doc): the timeline ids share the document's counter | P2 extended: the ids of the sequences, the tracks, the clips and the markers enter the uniqueness check and the `next_id` bound, with the battery of `tests/timeline_validation.rs`. |
 | `485028a` feat(gafira-doc): a loaded timeline is checked against its laws and its sources | P7 (a `Scene` clip names a page, a `Media` or `Audio` clip names an asset) and P8 (`Sequence::check_laws`: the cut on the grid, the span, the clip inside its sequence and its source, the speed, one strip per lane, the audio cap), with `BeforeSequence` and the three `ValidationError` variants they report. |
 | `68c8783` Merge branch 'develop' into feat/gafira-timeline-tl3 | `develop` moved while this delivery ran (TL2's verify round: `cfbadc7` the retime in flicks, `60b69a0` `place_span_for`). The merge keeps `check_laws` and `place_span_for` side by side in `timeline/sequence.rs` and changes nothing of TL3. |
+| `c9661c0` docs(gafira-timeline): record the TL3 delivery, its mutants and its goldens | This section: the commits, the RED evidence per criterion, the seventeen hand mutants, the deviations and the measured lines. |
+| `f801c9e` docs(gafira-doc): point the clip's law link at the sequence's path | One intra-doc link of `timeline/clip.rs` prefixed, so `cargo doc -p gafira-doc --no-deps` is warning-free (the round-1 report of TL2 raised the same class as S2). |
 
 No commit is red by design: the RED of every criterion was observed in the working
 tree before the implementation (recorded below) and each committed unit carries its
-test with its code, so all four commits pass every gate alone. `git status` is clean.
+test with its code, so the three commits of the delivery pass every gate alone — and
+the merge and the two notes commits pass them too, `git status` clean at the head.
 
 Gates per commit, each run alone, exit 0: `cargo fmt --check`,
 `cargo clippy --workspace --all-targets --locked -- -D warnings` (`gafira-doc` is not
