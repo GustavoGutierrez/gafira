@@ -199,19 +199,21 @@ fn total(caches: &[(CacheKind, &mut dyn Trimmable)]) -> Bytes {
     }))
 }
 
-/// One pass in `order`: each cache is asked to keep `bytes() - excess`, and
-/// the excess drops by what it actually freed; a cache that grew frees 0.
+/// One pass in `order` over a positive `excess`: each cache is asked to keep
+/// `bytes() - excess`, and the excess drops by what it actually freed; a cache
+/// that grew frees 0. The pass stops once the excess reaches 0. Whether a pass
+/// runs at all is decided by the caller alone, against the budget.
 fn trim_pass(caches: &mut [(CacheKind, &mut dyn Trimmable)], order: &[usize], excess: u64) {
     let mut excess = excess;
     for &at in order {
-        if excess == 0 {
-            break;
-        }
         let cache = &mut caches[at].1;
         let held = cache.bytes().0;
         cache.trim(Bytes(held.saturating_sub(excess)));
         let freed = held.saturating_sub(cache.bytes().0);
         excess = excess.saturating_sub(freed);
+        if excess == 0 {
+            break;
+        }
     }
 }
 
