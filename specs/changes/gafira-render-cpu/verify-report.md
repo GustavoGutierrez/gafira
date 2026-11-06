@@ -1769,3 +1769,212 @@ Re-measured from git, not from the record:
   recorded.
 
 next: tdd-apply (CB5b, the next delivery) — `W7` is the architect's line and belongs before a delivery is planned against `D7`; `W8`–`W10` are follow-ups for a later `gafira-render-cpu` round, and `W4`/`SP7` stays the specifier's
+
+## Round 1 — CB5b
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB5b", "rounds": [ {
+  "round": 1, "commit": "9e528cabd3ddb9d60a4e20741032cc5577c3322e", "mode": "standard", "tier": "T2", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 5, "suggestion": 1},
+  "classes": {},
+  "findings": [
+    {"id": "W8", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/backend.rs:99, :130-133, :399; src/tests/effects.rs:526",
+     "summary": "Closed: both terms of `held` now reach a test through `execute`. Setting the surface term to 0 or dropping `layers.bytes()` each fail arq_44_execute_refuses_the_effect_peak_near_the_cap (exit 101); a hand-computed 6144 B peak matches the code's threshold exactly.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W9", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:116; src/tests/effects.rs:489",
+     "summary": "Closed: deleting `dst.fill(0.0)` fails arq_111_a_reused_destination_starts_cleared_for_the_next_op, and the double that catches it writes one pixel of `dst`, so it is not passing because a writer touches every pixel.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W12", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests.rs:35-51, :878, :939, :1025; src/tests/image.rs:46-56, :477",
+     "summary": "AC3 is met by the renderer but not by the crate's own helper: `target()` fixes `page: (w, h)` while four call sites pass a non-zero origin, so those descriptors name a page smaller than the surface. Inert today (no effect in those scenes, so `page` is unread); it lies the moment one gains an effect.",
+     "follow_up": true, "status": "open"},
+    {"id": "W13", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:8-9; src/tests/effects.rs:262, :264, :274",
+     "summary": "The rename is incomplete: the module doc still says \"the growth is clipped to the page\" 25 lines above `grown_rect`'s corrected doc, and `arq_120_the_grown_rectangle_is_clipped_to_the_page` asserts it. The record claims the words were corrected. XP5 is the delivery that grows past the surface.",
+     "follow_up": true, "status": "open"},
+    {"id": "W14", "severity": "WARNING", "class": "implementation",
+     "ref": "the delivery's diff, c5d0273..9e528ca",
+     "summary": "378 insertions (122 production src, 184 behaviour tests, 72 record and small sites) against the card's 120 forecast, 170 at x1.4: 3.2x / 2.2x. Below the ~700 signal; the card leaves the call to the coordinator.",
+     "follow_up": true, "status": "open"},
+    {"id": "S1", "severity": "SUGGESTION", "class": "claim",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:546, :557",
+     "summary": "Two record slips with no code impact: the construction-site list omits `page.rs:685` and `:730`, which also gained `page:`; and production src is 122/40, not 137/41 (the 15 lines of `tests.rs` are counted twice).",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 7, "killed": 7},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 378, "forecast": 120}, "report": "verify-report.md" } ] }
+```
+
+- `classes` is `{}` on purpose: the two `WARNING`s this round closes (`W8`, `W9`) carry no routing,
+  and the three it opens are all `follow_up`, so there is nothing for the coordinator to send back.
+- Delivery: `CB5b` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb5b`, HEAD
+  `9e528cabd3ddb9d60a4e20741032cc5577c3322e`, cut from `develop` at `c5d0273`. Commits under test:
+  `beb6d84` (the port change and the window, +160/−27), `beaeae3` (`W9`'s test, +47/−1), `6c33dc9`
+  (`W8`'s seam and test, +117/−18) and `9e528ca` (the record, +54). Round 1, depth `V2`, mode
+  `standard`, `mutation: off` — no `cargo-mutants` run and no `mutants` report, which is not a
+  finding; the hand mutants below are hand-run.
+- Acceptance source: the `## CB5b` Slice card (`apply-progress.md:528`), ruling `O18` (`design.md:899`),
+  `CB5`'s round-2 `W8`/`W9` (`verify-report.md:1684`), product rows `ARQ-120`, `ARQ-149`, `ARQ-44`,
+  `ARQ-111` (plus `ARQ-119`, in the card's ID list). Artifact integrity: `c5d0273` touches only
+  `apply-progress.md`; `git diff c5d0273..HEAD -- apply-progress.md` is additions only, all of them
+  after the card's last line, so no implementer commit changed the card. Every card ID has a test that
+  names it: `arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region` (`ARQ-120`),
+  `page::tests::arq_149_a_request_off_the_page_origin_...` (`ARQ-149`),
+  `arq_44_execute_refuses_the_effect_peak_near_the_cap` (`ARQ-44`),
+  `arq_111_a_reused_destination_starts_cleared_for_the_next_op` (`ARQ-111`) and the `arq_119_*` suite
+  (`ARQ-119`, untouched by this delivery and unaffected by it).
+
+### The window's space (AC1, AC2)
+
+Six probes written from the criteria **before** reading the delivery's tests, run on a scratch export
+of `9e528ca` and, for the baseline, of `c5d0273` (its own `CARGO_TARGET_DIR`; one target dir across
+two trees silently reuses the other tree's `gafira_ports` rlib, which cost one false compile error and
+is worth knowing):
+
+| Probe | Scene | Expected | Result |
+|---|---|---|---|
+| P1 | 16 x 16 surface at `(8, 8)` of a 32 x 32 page, tile `(12,12)-(16,16)`, `roi` pad 2 | window `{32, 32, 10, 10}` (the parent gives `{16, 16, 2, 2}`) | PASS |
+| P2 | the same surface, tile `(13,9)-(16,13)`, no growth | `{32, 32, 13, 9}` — a page pixel no surface-relative formula yields | PASS |
+| P3 | 16 x 16 full-page surface at `(0,0)`, tile `(2,2)-(6,6)`, pad 2 | `{16, 16, 0, 0}` | PASS **on `c5d0273` too**, which is AC2's window half |
+| P4 | 24 x 24 full page, an image-centred effect (`x/y` + extent decide every pixel), rendered on `c5d0273` and on HEAD | the same 2304 bytes | PASS: identical (1792 non-zero bytes, 50 distinct values) |
+| P5 | `execute` with a hand-computed peak (AC4) | 2048 + 2048 + 2048 = 6144 B | PASS: ok at 6144 with the effect called once, `OutOfMemory` at 6143 with zero calls |
+| P6 | two effects in one 16 x 16 tile, the second writing one pixel (AC5) | the corner white, `(1,0)` and `(15,15)` clear | PASS |
+
+AC2's pixel half deserves its own line: `CB3`'s stored golden is
+`crates/gafira-render-cpu/tests/golden/arq_113_scene.rgba8`, the **same blob** at `c5d0273` and at HEAD
+(`78eb800e…`), compared exactly by `arq_113_the_stored_golden_is_the_scene_on_its_platform`
+(`assert_agrees` → `report.within_budget()`), with `arq_113_one_altered_byte_fails_on_this_platform`
+proving the comparison has teeth; `--test arq_42_comparison` is 14/14 at HEAD. But that scene carries
+no effect, so it cannot move the effect window at all — the record says so, and P4 is the missing
+half: with an effect, full page, the bytes are unchanged. The delivery's own test cannot show that,
+because its effect is a `Pad`.
+
+Their `arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region` (`effects.rs:325`) proves both
+halves and fails without the change (parent: `{16, 16, 0, 0}`, which is their own recorded RED). It
+cannot distinguish "page coordinates of `src`'s first pixel" from "the surface's origin", because its
+tile is the whole surface; P2 is that case and passes. That is not a finding: the type now makes the
+old bug inexpressible — `effect::cx` no longer receives the surface's rectangle, so
+`region.x0 - origin` cannot be written there.
+
+### `W8`'s seam
+
+Legitimate. `CpuBackend::with_budget` (`backend.rs:99`) is `#[cfg(test)] pub(crate)`, so it does not
+exist in a production build, and it only sets the field the comparison reads. What stays production:
+
+- the comparison: `fits(held, scratch, budget)` is the same `held + scratch <= budget` body, with the
+  cap as a parameter and `surface::SURFACE_BUDGET` the only production value (`Default`);
+- its position: `reserve_scratch` refuses **before** `scratch.resize` and before `run_cpu`;
+- both `held` terms: `backend.rs:130-133` builds `Held { bytes: surface.bytes(), budget: self.budget }` and
+  `:399` adds `layers.bytes()` at the op, all in `render_tile`'s production path.
+
+Nothing bypasses it, and the seam is not decorative: pointing the tile-level `budget` at
+`SURFACE_BUDGET` instead of `self.budget` (VM2) kills the delivery's test, so the lowered cap really
+travels through both hand-offs. The deletion proofs are now lethal, which is the whole point:
+
+| Deletion | Test | Result |
+|---|---|---|
+| surface term → `bytes: 0` | `arq_44_execute_refuses_the_effect_peak_near_the_cap` | **FAILED**, `the backend answers the refusal: Ok(RenderReport { done: 1, left: 0 })` |
+| `held.bytes` without `layers.bytes()` | the same test | **FAILED**, same assertion |
+| removing `dst.fill(0.0)` | `arq_111_a_reused_destination_starts_cleared_for_the_next_op` | **FAILED**, `the pixel the second op left holds no byte of the first` |
+
+All three go through `execute` (P5 reproduces the wiring independently, at a peak I computed from the
+`O17` terms before reading their test). `CB5`'s P-B and P-C left 57/57 green; they now each fail one
+named test and nothing else.
+
+### `W9`
+
+Closed by a genuine sparse writer. `Shape::Dot` (`effects.rs:26`) `continue`s for every pixel but
+`(0,0)`, which `Effect`'s contract allows (`gafira-raster/src/effects/mod.rs`: only an **error** must
+leave `dst` untouched), so the test would not pass for the "writer touches every pixel" reason that
+made `CB5`'s probe useless. One limit, stated so the next round does not over-trust it: the test
+also passes if the effect allocated a fresh zeroed buffer per op, so it pins the **contract** (no
+stale byte reaches the next op) and not the reuse; the reuse itself is `arq_143_the_effect_scratch_is
+_accounted_and_trim_drops_it` (`CB5`). That is the right split — the reuse is an implementation
+choice, the contract is what ARQ-111 needs.
+
+### The construction sites, the rename, and the growth's clip
+
+- **Five sites, and the claim holds.** `git grep 'TargetDesc {'` finds 8 literals in 6 files: the
+  renderer (`page.rs:206`), two expected values in `page.rs`'s own tests (`:685`, `:730`), the
+  `gafira-render` test helper (`frame.rs:413`), two in `ports_doubles.rs` (`:62`, `:110`), one in
+  `ports/tests/render.rs:164` and the crate's helper (`tests.rs:48`). **`gafira-testkit` builds none**:
+  `FakeRenderBackend::begin_frame(&mut self, _target: &TargetDesc)` consumes the descriptor and
+  ignores it — not only `page`, but `origin` and `format` too. So no double fills a placeholder that
+  would compile and lie, and the double is honest about being a no-op. The one place a placeholder
+  does exist is the crate's own `target()` helper (`W12`), which is the same class of lie, one level
+  down.
+- **The rename is a good instinct, and incomplete.** `Surface::page_rect` → `surface_rect` names the
+  value that was actually handed in, which is what `O18` says the bug was made of; nothing still
+  calls `page_rect` and `surface.rs`'s own doc is right. But two places still read as if the surface
+  were the page: the module doc at `effect.rs:8` ("The growth is clipped to the page") and the test
+  `arq_120_the_grown_rectangle_is_clipped_to_the_page` with its assertion message, both in files this
+  delivery edited (`W13`). The record's sentence "the delivery corrects the words" is not true of
+  those two.
+- **The clip, and `O18`'s second limit.** `grown_rect` clips to the surface (`effect.rs:45-62`), the
+  record calls it `O18`'s second limit rather than a defect, and that matches the ruling word for
+  word: an effect cannot read pixels the backend was not given, and the fix is the caller's
+  (`PageRenderer` grows the request, `read_back` crops — `XP5`, unmeasured). **The record is honest.**
+  It also matters for a scrolled preview: §6.2's viewport render puts effects "a resolución del
+  viewport", so a blur at the viewport's edge reads transparent black where the page has content — a
+  dark fringe — and the same page exported at `(0,0)` differs. That is `XP5`'s problem, and this
+  delivery neither hides it nor claims it.
+
+### Gates (at `9e528ca`, `CARGO_TARGET_DIR=/tmp/gafira-cb5b-v2-target`, `CARGO_INCREMENTAL=0`)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | **200** `test result` blocks, **2541 passed, 0 failed, 0 ignored** |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| the `policy` job's steps | 0 | ten `run:` steps, all 0: toolchain install, Format, CLI/UI (ARQ-07), `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14, testkit `ports` (ADR 0013) |
+
+`AC6` also checked by hand: `#![forbid(unsafe_code)]` is the first attribute of both `lib.rs`
+(`gafira-render-cpu` 25, `gafira-ports` 6); `std::fs|SystemTime::now|Instant::now|std::net|
+std::thread::spawn` over both crates' `src/` finds nothing (grep exit 1); `.github/` and
+`crates/*/clippy.toml` are untouched by the diff, so no V5 row moved and the `clippy.toml` copies are
+byte-identical. The record's per-commit gate claims were not re-run: `V2` runs the gates at HEAD.
+
+### Hand mutants (7 run, 7 killed, on a clean export of HEAD; each file restored and the suite re-run)
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| S1 | **spot-check of the record's `HM3`**: the descriptor is filled from the surface (`page: (region.width(), region.height())`, `page.rs:210`) | `page::tests::arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks` | killed (101) |
+| D1 | the surface term leaves `held` (`bytes: 0`) | `arq_44_execute_refuses_the_effect_peak_near_the_cap` | killed (101) |
+| D2 | the open layers leave `held` (`held.bytes` without `layers.bytes()`) | the same test | killed (101) |
+| D3 | the reused destination is not cleared | `arq_111_a_reused_destination_starts_cleared_for_the_next_op` | killed (101) |
+| VM1 | **mine**: the growth clips to the page, not the surface (`input.intersect(surface)` → a page rectangle) | `arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region` | killed (101) |
+| VM2 | **mine**: the lowered cap never reaches the comparison (`budget: self.budget` → `SURFACE_BUDGET`) | `arq_44_execute_refuses_the_effect_peak_near_the_cap` | killed (101) |
+| VM3 | **mine**: only the width is the page's (`image_height: page.1` → `region.height()`) | `arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region` | killed (101) |
+
+`VM1` is the one the round's own list does not have and the one worth having: the surface clip is a
+rule, not a coincidence, and a delivery that clips to the page would pass every other test.
+
+### Size
+
+`git diff --shortstat c5d0273..9e528ca` → **11 files, 378 insertions, 46 deletions**: 122/40
+production `src/`, 184/6 the behaviour tests (`effects.rs`), 15 the crate's test helpers, 3 the port's
+and `gafira-render`'s test sites, 54 this record. Against the card's 120 forecast (170 at x1.4) that is
+3.2x / **2.2x**, below the ~700 signal and below `CB5`'s 3.8x. `W14` records it; the coordinator
+decides, as the card says.
+
+### Observations (not findings)
+
+- **`O18`'s `cx` argument is sound.** Dropping the page subtraction from `cx` is not a shortcut: the
+  ops are already page space (ARQ-149) and one surface pixel is one page pixel (D4), so a region's
+  corner *is* the page pixel. `Pass` carrying `page: (u32, u32)` and no surface rectangle is what
+  makes `W13` a doc problem rather than a live risk.
+- **`Held { bytes, budget }`** groups one `O17` concept and keeps `render_tile` at seven arguments
+  (clippy's limit). Fine.
+- **The page extent is full-resolution page pixels even for a zoomed preview** (`page.rs:210` uses the
+  `PageExtent` the planner resolves, not the zoomed viewport). That is consistent with `image_width`
+  being "the whole image" and with `cx.scale` carrying the zoom; nothing reads it differently today.
+- `CB5`'s `W7` (`D7` still says `roi(cx, p, tile_rect)` and `tile: None`) and `W11` (the fixed-point
+  residual) stay open and untouched, as routed; neither is in this delivery's scope.
+
+next: tdd-apply (CB6, the next delivery) — PASS with no CRITICAL and all six criteria covered; the three `WARNING`s (W12 the `target()` helper's placeholder `page`, W13 the two "clipped to the page" leftovers, W14 the size) and `S1` are follow-ups, and `W12`/`W13` are a few lines each for the next `gafira-render-cpu` delivery to fold in
