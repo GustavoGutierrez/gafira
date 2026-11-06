@@ -285,6 +285,108 @@ fn arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect() {
 }
 
 // ---------------------------------------------------------------------------
+// O17 — the effect's destination is the backend's, accounted and dropable
+// ---------------------------------------------------------------------------
+
+// O17, ARQ-143, ARQ-44 (partial): an effect's destination is one backend-owned
+// scratch, reused by the ops of the tile, counted in `memory_usage` beside the
+// surface and the layer pool, and dropped by `trim` — `trim` runs between
+// frames, which is the only moment a lever can exist. The plan carries two
+// effects, so a per-op buffer would double the term.
+#[test]
+fn arq_143_the_effect_scratch_is_accounted_and_trim_drops_it() {
+    let target_desc = target(32, 32, (0, 0), PixelFormat::RgbaF32);
+    let first = Arc::new(Probe::new(Shape::Pad(2)));
+    let second = Arc::new(Probe::new(Shape::Shift(4)));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(8, 8, 16, 16),
+        vec![
+            fill(0.0, 0.0, 32.0, 32.0, white()),
+            effect_op(&first),
+            effect_op(&second),
+        ],
+    )]);
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let mut cache = RecordingCache::default();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+
+    let surface = 32 * 32 * 16;
+    let cached = 8 * 8 * 16;
+    // The two effects compose to a 16 x 16 buffer, and the one scratch serves
+    // both of them: a destination per op would be 2 x this term.
+    let scratch = 16 * 16 * 16;
+    assert_eq!(
+        frame.backend.memory_usage().host,
+        Bytes(surface + cached + scratch),
+        "the surface, the cache and the one effect destination"
+    );
+    assert_eq!(frame.backend.memory_usage().device, Bytes(0));
+
+    // A budget that covers what is held keeps the scratch; a tighter one drops
+    // it with the frame and the accounting of the cache (ARQ-44).
+    frame.backend.trim(Bytes(surface + cached + scratch));
+    assert_eq!(
+        frame.backend.memory_usage().host,
+        Bytes(surface + cached + scratch),
+        "a budget that covers what is held drops nothing"
+    );
+    frame.backend.trim(Bytes(0));
+    assert_eq!(
+        frame.backend.memory_usage().host,
+        Bytes(0),
+        "trim drops the scratch with the surface and the pool"
+    );
+}
+
+// O17, D-03, ARQ-44 (partial): the peak — the surface, the layer bytes and the
+// effect's destination — is refused **before** the buffer is allocated, and the
+// cap is a ceiling: exactly at `SURFACE_BUDGET` fits, one byte over does not.
+#[test]
+fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
+    use crate::surface::SURFACE_BUDGET;
+
+    let pixels = 16usize;
+    let bytes = 64u64;
+    // The boundary fits: the frame's held bytes plus the new buffer are exactly
+    // the cap, and the cap is inclusive.
+    let mut scratch = Vec::new();
+    crate::effect::reserve_scratch(&mut scratch, pixels, SURFACE_BUDGET.0 - bytes)
+        .expect("the cap is inclusive");
+    assert_eq!(scratch.len(), pixels, "the buffer is grown at the cap");
+
+    // One byte further is over, and the refusal precedes the allocation.
+    let mut refused = Vec::new();
+    assert!(
+        matches!(
+            crate::effect::reserve_scratch(&mut refused, pixels, SURFACE_BUDGET.0 - bytes + 1),
+            Err(RenderError::OutOfMemory)
+        ),
+        "a peak past the cap is refused"
+    );
+    assert!(refused.is_empty(), "the refusal precedes the allocation");
+
+    // The case O17 names: the 8192 x 8192 surface of `MAX_SIDE` holds 1.07 GB,
+    // and a page-sized destination would double it past the cap. The numbers
+    // are the guard's; nothing is allocated to refuse them.
+    let page = 8192usize * 8192;
+    let mut big = Vec::new();
+    assert!(
+        matches!(
+            crate::effect::reserve_scratch(&mut big, page * 4, page as u64 * 16),
+            Err(RenderError::OutOfMemory)
+        ),
+        "the doubled page is refused"
+    );
+    assert!(
+        big.is_empty(),
+        "the 2.14 GB peak is refused before it exists"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // AC5 — a cancelled effect leaves nothing behind
 // ---------------------------------------------------------------------------
 

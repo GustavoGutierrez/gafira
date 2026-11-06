@@ -55,6 +55,14 @@ pub struct CpuBackend {
     /// layer of the same tile and by the tiles and frames that follow; `trim`
     /// is the only thing that drops it (ARQ-143).
     layers: Layers,
+    /// The effect pass's destination, owned and counted here (`O17`).
+    ///
+    /// One buffer, reused by every effect of the frame, so a task with two
+    /// effects holds one grown buffer and not two. It is counted in
+    /// [`CpuBackend::memory_usage`] beside the surface and the layers, its peak
+    /// is refused against [`surface::SURFACE_BUDGET`] before it grows, and
+    /// `trim` drops it (ARQ-143).
+    scratch: Vec<f32>,
 }
 
 impl CpuBackend {
@@ -97,7 +105,17 @@ impl CpuBackend {
             let tile = match cached_tile(cache, task.key, size, format) {
                 Some(tile) => tile,
                 None => {
-                    let tile = render_tile(task, page, &mut self.layers, cancel)?;
+                    let drawn = effect::grown_rect(task, page);
+                    let held = self.surface.as_ref().map_or(0, Surface::bytes);
+                    let tile = render_tile(
+                        task,
+                        drawn,
+                        page,
+                        held,
+                        &mut self.layers,
+                        &mut self.scratch,
+                        cancel,
+                    )?;
                     let encoded = surface::encode_tile(&tile, size, format)?;
                     cache.put(task.key, Arc::new(encoded));
                     tile
@@ -153,6 +171,7 @@ impl Default for CpuBackend {
             last_fraction: 0.0,
             cache_bytes: 0,
             layers: Layers::new(),
+            scratch: Vec::new(),
         }
     }
 }
@@ -213,21 +232,33 @@ impl RenderBackend for CpuBackend {
 
     fn memory_usage(&self) -> MemoryUsage {
         let surface = self.surface.as_ref().map_or(0, Surface::bytes);
+        // The effect's destination is this backend's buffer (O17): "memory
+        // held now" includes it, or `trim` would compensate for memory nobody
+        // reports.
+        let scratch = u64::try_from(self.scratch.len())
+            .unwrap_or(u64::MAX)
+            .saturating_mul(4);
         MemoryUsage {
-            host: Bytes(surface + self.cache_bytes + self.layers.bytes()),
+            host: Bytes(
+                surface
+                    .saturating_add(self.cache_bytes)
+                    .saturating_add(self.layers.bytes())
+                    .saturating_add(scratch),
+            ),
             device: Bytes(0),
         }
     }
 
     fn trim(&mut self, budget: Bytes) {
-        // The surface and the layer pool are this backend's buffers; the
-        // cache's bytes are the caller's and only its accounting is dropped
-        // (ARQ-44, ARQ-143).
+        // The surface, the layer pool and the effect's scratch are this
+        // backend's buffers; the cache's bytes are the caller's and only its
+        // accounting is dropped (ARQ-44, ARQ-143, O17).
         if self.memory_usage().host > budget {
             self.surface = None;
             self.frame = None;
             self.cache_bytes = 0;
             self.layers = Layers::new();
+            self.scratch = Vec::new();
         }
     }
 }
@@ -252,18 +283,22 @@ fn cached_tile(
 
 /// Renders one task and answers the tile's own crop, premultiplied `f32`.
 ///
-/// The ops are composited in plan order on a transparent backdrop and the loop
-/// writes the result at the task's region (D4, D6). The buffer is the tile
-/// **grown** by every effect's input region (`CB5`, ARQ-120): an effect has to
-/// read pixels the tile does not hold, so the whole tile is drawn over that
-/// larger rectangle and the tile keeps its own crop of it.
+/// `drawn` is the tile **grown** by every effect's input region (`CB5`,
+/// ARQ-120): an effect has to read pixels the tile does not hold, so the whole
+/// tile is drawn over that larger rectangle and the tile keeps its own crop of
+/// it. The ops are composited in plan order on a transparent backdrop and the
+/// loop writes the result at the task's region (D4, D6). `held` is what the
+/// frame already holds, so an effect's destination can be refused before it is
+/// allocated (`O17`).
 fn render_tile(
     task: &TileTask,
+    drawn: IRect,
     page: IRect,
+    held: u64,
     layers: &mut Layers,
+    scratch: &mut Vec<f32>,
     cancel: &CancelToken,
 ) -> Result<Vec<f32>, RenderError> {
-    let drawn = effect::grown_rect(task, page);
     let size = (drawn.width(), drawn.height());
     let count = usize::try_from(u64::from(size.0) * u64::from(size.1))
         .ok()
@@ -320,15 +355,25 @@ fn render_tile(
                 effect,
                 params,
                 scale,
-            } => effect::run(
-                effect.as_ref(),
-                params,
-                *scale,
-                layers.target(&mut pixels),
-                drawn,
-                page,
-                cancel,
-            )?,
+            } => {
+                // The effect's destination is the backend's scratch (O17). The
+                // frame's peak is the surface, the layer bytes and that
+                // buffer, and it is checked before the buffer grows.
+                let held = held.saturating_add(layers.bytes());
+                effect::run(
+                    effect.as_ref(),
+                    effect::Pass {
+                        params,
+                        scale: *scale,
+                        target: layers.target(&mut pixels),
+                        scratch: &mut *scratch,
+                        held,
+                        grown: drawn,
+                        page,
+                    },
+                    cancel,
+                )?;
+            }
             RenderOp::ApplyTransition {
                 transition,
                 params,
