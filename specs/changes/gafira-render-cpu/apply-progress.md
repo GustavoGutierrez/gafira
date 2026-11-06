@@ -606,3 +606,56 @@ Acceptance:
   AC6 Given the crate, When the CI policy steps run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged and the crate still names no clock and no file (ARQ-02) [command]
 Plan: the surface becomes format-dependent in **storage**, not in meaning: an `Rgba8` target keeps premultiplied sRGB bytes, an `RgbaF32` target keeps linear premultiplied floats, and both answer `read_back` with the format they claim. The write copies the cache's encoded tile — `encode_tile` already produces exactly those bytes — so the curve runs once, where it already ran, and `Surface::read` loses its per-pixel branch for the 8-bit case. `AC4` is not bookkeeping: the surface is what the effect's peak is compared against, so a surface that reports four bytes per pixel while holding one would refuse frames that fit. `AC2` is the guard that this is free: the same page through both paths must be byte-identical, which is also what `AC5`'s golden checks on the export. The critical code is the write's copy, the read's two branches, the accounting's figure and the budget comparison — those carry the hand mutants. `W12` and `W13` are folded in because they are the same files and a lie in a helper is cheaper to fix now than to inherit.
 Owner decisions touched: `O14` (the ruling), `O17` (the accounting it must keep true), `O11` (the layer buffers, untouched here), `O10` (the rigor).
+
+## CB8 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `a0c9cd5 test(gafira-render-cpu): name the page in every target descriptor` — `W12`: `target()` now takes the page it is cut from (`target(w, h, origin, page, format)`), `target_in_page` is gone, and the sixty-eight call sites say which page they are in. The full-page scenes pass their own extents; the three offset surfaces name their pages — `(164, 264)` for the 64 × 64 surface at `(100, 200)`, `(96, 96)` for the window of the 96 × 96 page, `(96, 80)` for the surface at `(32, 16)` — and `image::drawn` names the smallest page that holds its region, since those scenes have no effect and no page of their own. No behaviour changes; the suite is 60/60 + 14/14 before and after.
+- `d5d9271 docs(gafira-render-cpu): the growth clips to the surface, not the page` — `W13`: the module header, the test comment, the test's name (`arq_120_the_grown_rectangle_is_clipped_to_the_surface`) and its assertion message now say surface, which is `O18`'s second limit and what `grown_rect` was already handed.
+- `50988a0 feat(gafira-render-cpu): keep an Rgba8 surface in the bytes the cache encoded` — the delivery: `Surface` stores `Pixels::Srgb8(Vec<u8>)` for an `Rgba8` target and `Pixels::Linear(Vec<f32>)` for `RgbaF32`, so the write copies the tile `encode_tile` produced and the read copies the surface; `backend::run` writes the encoded tile on a miss **and** on a hit, and `decode_tile` went with the decode it existed for. `Surface::bytes` is the storage's own figure and `Surface::new` compares it against the budget, which `with_budget` now lowers; `format()` is derived from the storage. Six new tests: AC1 (the two-tile surface and a window read), AC2 (the `Rgba8` page against the `RgbaF32` page quantised independently, cold and warm), AC3 (the export surface is the linear bytes it was handed), and AC4 (the memory figure, the budget boundary, the effect's peak).
+- `docs(gafira-render-cpu): record the CB8 delivery` — this record, which cannot name its own commit.
+
+Gates per commit, each run alone from the worktree root with `CARGO_TARGET_DIR=/tmp/gafira-cb8-target CARGO_INCREMENTAL=0`, exit 0:
+
+- `cargo fmt --check` (0), `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings` (0), `cargo test -p gafira-render-cpu --locked` (0: 60 + 14 tests on `a0c9cd5` and `d5d9271`, 66 + 14 at `50988a0`), `cargo deny check` (0, `advisories ok, bans ok, licenses ok, sources ok`).
+- The `policy` job of `.github/workflows/ci.yml` under `/tmp/gafira-policy-run.py`, re-checked against the file: the job holds ten `run:` steps and the runner skips the toolchain install, so the nine it executes — Format, CLI/UI (ARQ-07), `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14 and the testkit `ports` build — all exit 0 on every commit. `.github/` is untouched.
+- The full workspace suite ran once at HEAD: `cargo test --workspace --locked` → exit 0, **2547 passed, 0 failed, 0 ignored** across 200 `test result` blocks (2541 at the `CB5b` record plus the six tests here).
+- No manifest or lock line moved (`git diff -- Cargo.toml Cargo.lock crates/*/Cargo.toml` is empty), and `git grep -nE 'std::fs|SystemTime::now|Instant::now|std::net|std::thread::spawn' -- crates/gafira-render-cpu/src` finds nothing (ARQ-02).
+
+Measured size: `git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **8 files changed, 544 insertions(+), 226 deletions(-)**. Production `src/` is `surface.rs` 300 (the storage enum and the two copy helpers replace the `f32`-only surface), `backend.rs` 29, `lib.rs` 7 and `effect.rs` 6; the rest is the behaviour tests (`tests.rs` 330, `tests/effects.rs` 68) plus the `target` call sites of `W12` (`tests/image.rs` 12, `tests/ops.rs` 18). The design forecast 160 (225 at ×1.4); the overrun is `W12`, which is sixty-eight mechanical call sites, and the `surface.rs` rewrite whose diff counts the replaced block as well as the additions. Every commit is at or under 300 changed lines except the delivery's, at 599.
+
+### RED evidence
+
+- **AC4** — three real assertion REDs on the code as it stood, `Surface::new` still counting `f32`:
+  - `arq_44_an_rgba8_surface_counts_one_byte_per_channel`: `left: Bytes(2048)`, `right: Bytes(512)` for a 16 × 8 `Rgba8` page.
+  - `arq_44_the_budget_counts_the_bytes_the_rgba8_surface_stores`: `one byte over does not fit` — the old backend ignored `with_budget` and answered `Ok` at `bytes - 1`.
+  - `effects::arq_44_the_effect_peak_counts_the_rgba8_surface_it_stores`: `the cap is inclusive: Err(OutOfMemory)` — the f32 figure doubled the peak.
+- **AC1, AC2, AC3, AC5 are invariance criteria, and their RED is a wrong behaviour on the landed code, as `CB5b`'s refusal was.** The old double pass and the new copy answer the same bytes: a temporary, uncommitted probe ran every *valid* premultiplied 8-bit pixel (`a > 0`, each channel `≤ a`) through `quantise_srgb8(decode_srgb8(..))` and found **0 mismatches** across 32 640 cases (the mismatches only appear at `a = 0` or with channel `> alpha`, which this pipeline never encodes). So no test can fail before the change without asserting an invalid tile, and `AC1`'s bytes, `AC2`'s equality and the golden hold on both codes. The guard against a wrong *new* implementation is HM1–HM3 and HM6 below; they are the RED that matters here. `AC2`'s expected bytes are computed by the test's own `quantise_premultiplied_srgb` (unpremultiply, sRGB, round, `(c × a + 127) / 255`) and not by `surface::quantise_srgb8`, so the two paths do not grade each other; it passes cold and with a shared warm cache.
+- **AC5** — `arq_113_the_stored_golden_is_the_scene_on_its_platform` and the rest of `--test arq_42_comparison` are 14/14 at every commit, `crates/gafira-render-cpu/tests/golden/arq_113_scene.rgba8` unchanged. **The golden held.**
+- **AC6** — the nine policy steps above and the clock/file grep, both green.
+
+### Hand mutants
+
+Each was applied to the delivered code, observed, and reverted; none is committed and `git status` is clean after each.
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| HM1 | the write ignores the tile's row stride (`source_start = source_column * 4`) | `arq_117_an_rgba8_surface_holds_the_tile_the_cache_encoded` (`row 8 at the tile's place`: red where the cache holds transparent) | killed |
+| HM2 | the `Rgba8` read stops at the clip's first row (`clip.y1 = clip.y0 + 1`) | the same test (`row 1 at the tile's place`: zero where the cache holds the tile) | killed |
+| HM3 | the `RgbaF32` read indexes from the page origin, not the surface's (`(0, 0)`) | `arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target` (`page (160, 260) is inside the fill`) | killed |
+| HM4 | `Surface::bytes` reports the `f32` figure for the 8-bit storage (`len × 4`) | `arq_44_an_rgba8_surface_counts_one_byte_per_channel` (`2048` vs `512`) and `effects::arq_44_the_effect_peak_counts_the_rgba8_surface_it_stores` (`the cap is inclusive: Err(OutOfMemory)`) | killed |
+| HM5 | the budget comparison ignores the budget and names `SURFACE_BUDGET` | `arq_44_the_budget_counts_the_bytes_the_rgba8_surface_stores` (`one byte over does not fit`) | killed |
+| HM6 | the `RgbaF32` read rounds each value to 8-bit (`(v × 255).round() / 255`) | `arq_117_an_rgba_f32_surface_is_the_linear_bytes_it_was_handed` (`left: [0.12156863, …]`, `right: [0.12345679, …]`) | killed |
+
+No T4.
+
+### Choices and deviations
+
+- **`W12` is one helper with a page, not a second helper.** The card asks that the call sites say which page they are in; `target` now takes it. `target_in_page` therefore said nothing the new `target` did not, so it is deleted and its one caller uses `target`. Rustfmt reflowed the sixty-eight sites, which is why a one-argument change counts 161 lines.
+- **`decode_tile` is deleted; `decode_srgb8` is not touched.** Nothing reads a cached tile as `f32` any more — a hit is written into the surface as it stands — so `decode_tile` was dead and clippy would say so. `decode_srgb8` stays because `image::DrawImage` still uses it (ARQ-117's curve, not this delivery's).
+- **The write takes the encoded `ImageBuf`, not a `&[f32]` plus a size.** The tile's own width is the stride, so the `size` argument (already derivable and already passed by the loop) is gone; `Surface::write(task.region, &tile)` is the same call for a hit and a miss, and a `TileKey`'s format check keeps the storage and the tile in the same vocabulary.
+- **`with_budget` now lowers the surface's cap too.** `MAX_SIDE` keeps the production budget comparison above any surface a test can build (8 192² × 16 B is under the 1.5 GB cap), so `AC4`'s comparison is only reachable through the seam; the production value is still `SURFACE_BUDGET` and the comparison, its position and both `held` terms are the production ones. This is the same seam `CB5b` introduced, with one more consumer.
+- **The format is derived from the storage.** `Pixels` is the single source of truth for `format()` and `bytes()`; a separate field could disagree with what the surface holds, which is exactly `AC4`'s failure mode.
+- **`AC4`'s "one byte per pixel" is read as one byte per channel, four per `Rgba8` pixel.** A surface pixel is RGBA, so the 8-bit storage is four bytes and the `f32` storage sixteen; the test pins `Bytes(16 × 8 × 4) = 512` against the old `2048`, which is the four-fold figure the card is about. The budget test pins the same number as the cap an `Rgba8` page fits and an `RgbaF32` one does not.
+- **`MAX_SIDE` is untouched.** At 16 384 px an `Rgba8` surface would now fit the cap (1 GiB), but the side limit is a stated limit of this delivery and lifting it is the tiled or streaming path FD-55 names; `CB8` removes a pass, it does not widen the page.
