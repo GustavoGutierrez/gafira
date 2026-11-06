@@ -187,8 +187,9 @@ GREEN run after `b00b845`: `test result: ok. 10 passed; 0 failed`.
 
 ### Hand mutants
 
-Seven behaviours applied to the green code, one test each, reverted after every one.
-Seven dead, none weakened:
+Nine behaviours applied to the green code, one test each, reverted after every one.
+Nine dead, none weakened. `H1` to `H7` are the round-0 list; `H8` and `H9` close `W2` of
+the round-1 verify.
 
 | # | Rule | Wrong behaviour applied | Test that killed it |
 |---|---|---|---|
@@ -200,9 +201,12 @@ Seven dead, none weakened:
 | H6 | the audio cap | the seventeenth audio track is accepted | `fv_01_the_audio_cap_sixteenth_enters_seventeenth_is_refused` |
 | H7 | the speed relation | the relation divided the other way round | `fv_03_the_duration_follows_the_speed_relation` |
 | H7 | the speed relation | a speed of zero is accepted | `fv_03_the_duration_follows_the_speed_relation` |
+| H8 | the retiming law | `snap_nearest`'s frame index is used where a count of ticks belongs (the defect `C1` of the round-1 verify) | `fv_01_the_retime_snaps_cuts_to_the_new_grid` |
+| H9 | the speed rule's grid step | the floor of one frame is dropped from `place_span_for` | `fv_03_the_place_of_a_clip_is_the_source_over_the_speed_on_the_grid` |
 
-Two of the seven needed a stronger test, and the test was strengthened instead of
-the mutant being weakened:
+Nine mutants over the eight laws plus the speed rule's grid step; both of the first
+two needed a stronger test, and the test was strengthened instead of the mutant being
+weakened:
 
 - **H2** first survived because the test read the frame from the rate
   (`FrameRate::flicks_per_frame`) and not from the sequence. The test now reads
@@ -212,6 +216,30 @@ the mutant being weakened:
   clip ids ran in the same order as the lanes. The test now puts two lanes over
   the same instant, with the lane ids and the clip ids both in the opposite
   order of the tracks list, and asserts the answer follows the list.
+
+### Round 1 closure (verify findings)
+
+The round-1 report (`/tmp/tl2-verify-round1.md`) failed the delivery on one CRITICAL and
+three implementation warnings. This round fixes those four and leaves the rest where the
+coordinator put them:
+
+| Finding | What was wrong | What changed |
+|---|---|---|
+| `C1` (CRITICAL) | `Sequence::retimed` fed `snap_nearest`'s **frame index** to `Flicks::from_ticks`, so every clip longer than one frame collapsed to one frame: 2.5 s at 24->30 fps became 23 520 000 ticks instead of 1 764 000 000. | The index is multiplied by the frame; `.max(frame)` and `.max(last_end)` stay. Commit `cfbadc7`. |
+| `W1` | AC6's test passed over `C1`: two one-frame clips, a modulo assertion, no absolute tick. | A 60-frame clip with the absolute ticks of both cuts (0 and 1 764 000 000) and a tie case (58 800 000 -> 70 560 000, the later frame). It failed on the bug before the fix. Commit `cfbadc7`. |
+| `W2` | The hand-mutant list skipped the retiming law. | `H8` added and run: the mutant reproduces `C1` and the strengthened test kills it (`left: 23520000, right: 1764000000`). `H9` covers the new grid step of the speed rule (`left: 0, right: 29400000`). |
+| `W3` | The design's speed rule ("rounded to the grid, remainder into `source_in`") had no code, and `clip.rs` linked a method that did not exist. | `Sequence::place_span_for` answers `PlaceSpan { place, remainder }`: the place snapped to the grid and floored at one frame, the signed remainder reported. The reading of "the source offset absorbs the remainder" is in the method's doc; the alternative (shifting `source_in` by the remainder) moves content and needs an owner decision. Commit `60b69a0`. |
+| `S2` | `cargo doc` warned about five unresolved intra-doc links. | The links carry their path; `cargo doc -p gafira-doc --no-deps` is clean. Commit `60b69a0`. |
+
+Left open by the coordinator's instruction, not by oversight:
+
+- `W7` (the manual serde drops `sequences`/`assets`): TL3's, where the timeline reaches the wire.
+- `W4`, `W5`, `W6`, `S3` (card and spec wording: AC4's two bounds, `ARQ-13`/`FV-04` in the card's
+  ID list, AC10's undo clause, the `tier: T0` label): the specifier's, not TL2 code.
+- `W8` (1 794 insertions against a 480/670 forecast and the ~700 ceiling): the coordinator's call
+  once this round lands.
+- `S1` (`AssetRef`'s hex serde and `Speed`'s reduction untested): untouched; neither is reachable
+  from an AC in this cut.
 
 ### Negative controls
 
