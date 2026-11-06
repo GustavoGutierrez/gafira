@@ -579,3 +579,66 @@ fn an_alpha8_image_is_refused_rather_than_drawn() {
         "reported as an unsupported format, not drawn: {error:?}"
     );
 }
+
+// ARQ-149 (W10): the cull runs before the source is read, so an `Alpha8` image
+// whose page bounds miss the tile is skipped without a report, while the same
+// image covering the tile is refused. This skip is the cull's only observable
+// trace and the reason it is pinned here: a culled image changes no pixel
+// whether the cull runs or not, because the per-pixel destination clip rejects
+// the same sample points, so removing the cull leaves every page right and
+// only turns this skip into an error.
+#[test]
+fn arq_149_an_off_tile_alpha8_image_is_culled_before_the_format_is_refused() {
+    let image = Arc::new(ImageBuf::new(1, 1, PixelBuf::Alpha8(vec![128])).expect("the image"));
+    let region = IRect::new(0, 0, 4, 4);
+
+    // Off the tile at (100, 100): the op contributes nothing, so no texel is
+    // read and the unsupported format is never reached.
+    let mut frame = Frame::open(
+        CpuBackend::new(),
+        target(4, 4, (0, 0), PixelFormat::RgbaF32),
+    );
+    let mut cache = RecordingCache::default();
+    let scene = plan(vec![task(
+        1,
+        region,
+        image_task(Affine::translate((100.0, 100.0)), &image),
+    )]);
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("a culled image is not sampled, so its format is not refused");
+    let export = frame.read(region).expect("the region reads back");
+    for y in 0..4u32 {
+        for x in 0..4u32 {
+            assert!(
+                is_clear(&export, x, y),
+                "page ({x}, {y}) is not covered by an image at (100, 100)"
+            );
+        }
+    }
+
+    // The control: over the tile, the same image reaches the sampler and is
+    // refused, so the skip above is the cull and not a swallowed error.
+    let mut frame = Frame::open(
+        CpuBackend::new(),
+        target(4, 4, (0, 0), PixelFormat::RgbaF32),
+    );
+    let mut cache = RecordingCache::default();
+    let scene = plan(vec![task(
+        2,
+        region,
+        image_task(Affine::scale(4.0), &image),
+    )]);
+    let error = frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect_err("an Alpha8 image that covers the tile is refused");
+    assert!(
+        matches!(
+            error,
+            RenderError::Effect(gafira_raster::EffectError::UnsupportedFormat {
+                format: PixelFormat::Alpha8
+            })
+        ),
+        "reported as an unsupported format, not skipped: {error:?}"
+    );
+}
