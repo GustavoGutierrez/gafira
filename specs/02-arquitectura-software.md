@@ -101,7 +101,7 @@ Prefijo `gafira-`. El prefijo evita colisiones en crates.io si en el futuro se p
 | 3 Aplicación | `gafira-render` | Construcción del grafo de render (Visitor), caché por contenido y por tiles, planificador con prioridades, presupuesto de frame, selección y degradación de backend. | Hablar con wgpu directamente. | MVP |
 | 3 Aplicación | `gafira-media` | Pipeline de medios: índice de keyframes, caché de fotogramas, proxies, sincronía A/V, reloj de reproducción y orquestación de exportación de video. | Implementar códecs concretos. | MVP |
 | 3 Aplicación | `gafira-engine` | `Session`, servicios Facade (§5.4), bus de eventos, cola de exportación, autoguardado, recuperación, Versiones, límites de memoria, gestión de trabajos y cancelación, y `LicenseService` (consulta `LicenseVerifier`, §13). | Depender de egui. Abrir conexiones de red. | MVP |
-| 4 Adaptadores | `gafira-format` | Lectura y escritura de `.gafira` (§7), carpeta `versions/`, medios vinculados, migraciones por paso, guardado atómico. Implementa `ProjectRepository`. | Decodificar imágenes. Guardar rutas absolutas. | MVP |
+| 4 Adaptadores | `gafira-format` | Lectura y escritura de `.gafira` (§7), carpeta `versions/`, medios vinculados, migraciones por paso, la escritura sincronizada del guardado atómico (§7.2). Implementa `ProjectRepository`. | Decodificar imágenes. Guardar rutas absolutas. | MVP |
 | 4 Adaptadores | `gafira-assets` | Almacén direccionado por contenido (BLAKE3), índice de biblioteca local, miniaturas, plantillas empaquetadas. Implementa `ContentStore` y `AssetProvider`. | Acceder a la red. | MVP |
 | 4 Adaptadores | `gafira-io-image` | `Importer`/`Exporter` raster: PNG, JPEG, WebP, GIF (incluido el animado), TIFF, BMP, QOI. | Contener lógica de documento. | MVP |
 | 4 Adaptadores | `gafira-io-svg` | Importación SVG (usvg) y exportación SVG propia (texto como contornos o como `<text>`). | — | MVP |
@@ -1340,7 +1340,7 @@ El engine publica por `crossbeam_channel` (sin límite para eventos de estado, c
 |---|---|---|
 | Builder | `ExportRequest::builder()`, `ProjectBuilder` (en testkit y en plantillas), `EncoderConfig::builder()` | Construcciones con muchos opcionales validadas en `build()`. |
 | Facade | `gafira-engine::Gafira` con los servicios `ProjectService`, `EditService`, `SelectionService`, `AssetService`, `IdentityService`, `MediaService`, `ExportService`, `SettingsService`, `LicenseService` | La UI y la CLI usan una API estable y pequeña. Los detalles internos cambian sin romper la UI. |
-| Repository | `ProjectRepository` (`.gafira`; carga y guarda un `Document` hasta que exista `Project`, §3.1), `ContentStore` (recursos), `LibraryRepository` (índice de la biblioteca local), `SettingsRepository` | Aísla la persistencia y permite pruebas en memoria (`InMemoryRepository` en testkit, tras la feature `ports`, §2.2). |
+| Repository | `ProjectRepository` (`.gafira`; carga y guarda un `Document` hasta que exista `Project`, §3.1; `ProjectRepository::save` deja el archivo escrito sincronizado con `fsync` antes de volver, y el `rename` y la sincronización del directorio son del engine, §7.2), `ContentStore` (recursos), `LibraryRepository` (índice de la biblioteca local), `SettingsRepository` | Aísla la persistencia y permite pruebas en memoria (`InMemoryRepository` en testkit, tras la feature `ports`, §2.2). |
 | DI por traits | Los servicios reciben `Arc<dyn Port>` en su constructor. El *composition root* está en los binarios, sin frameworks ni contenedores mágicos. | Pruebas con dobles y binarios con distintas combinaciones (CLI sin GPU). |
 | Strategy + Registry | Efectos, formatos, códecs, backends, segmentadores, proveedores, herramientas | Extensión sin tocar el núcleo. |
 | Visitor | Recorridos de documento (§4.1) | Operaciones nuevas sin modificar los datos. |
@@ -1354,7 +1354,7 @@ El engine publica por `crossbeam_channel` (sin límite para eventos de estado, c
 pub struct Gafira { /* servicios y puertos inyectados */ }
 impl Gafira {
     pub fn new(ports: Ports, registries: Registries, cfg: EngineConfig) -> Result<Self, EngineError>;
-    pub fn projects(&self) -> &ProjectService;   // new, open, save, save_as, recover, close,
+    pub fn projects(&self) -> &ProjectService;   // new_document, open, save, save_as, recover, close,
                                                  // save_version, list_versions, restore_version
     pub fn edit(&mut self) -> &mut EditService;  // execute(cmd), undo, redo, begin/end_gesture
     pub fn assets(&self) -> &AssetService;       // import (embebido o vinculado), relocate(folder)
@@ -1365,6 +1365,8 @@ impl Gafira {
     pub fn events(&self) -> &Receiver<EngineEvent>;
 }
 ```
+
+`ProjectService` crea un documento nuevo con `new_document`, no con `new`: clippy rechaza un método `new` que no devuelve `Self` (`new_ret_no_self`) y el repositorio prohíbe `#[allow]`.
 
 ### 5.5 Antipatrones prohibidos
 
@@ -1552,7 +1554,7 @@ proyecto.gafira (ZIP)
 - **Medios vinculados** (Fase 2, con Relocalizar medios, 01 RF-55 y 05 FV-25). Por defecto todos los medios se embeben. Los videos de más de 500 MB (PROPUESTA, de 05) pueden vincularse: el manifiesto guarda `rel_path` relativo a la carpeta del `.gafira`, el tamaño y el hash BLAKE3 completo, nunca una ruta absoluta (ARQ-56). La última ruta absoluta conocida puede guardarse en `datos_app/links/<project_id>.json`, fuera del proyecto, solo como pista. **Relocalizar medios**: el usuario elige una carpeta; `AssetService::relocate` la indexa, busca por nombre, filtra por tamaño y confirma por hash; reconecta todos los coincidentes con un solo `Command` y rechaza con aviso los que tienen el mismo nombre y otro hash. Un vínculo ausente emite `LinksMissing`, se muestra como marcador y la exportación avisa antes de empezar. Proxies y miniaturas de un medio vinculado van a la caché del usuario. El campo `linked` existe desde `schema` 1, para que activar la función en Fase 2 no exija migración.
 
 - **Migraciones por paso**: `schema` es un entero. Las funciones `migrate_n_to_n1(serde_json::Value) -> Result<Value, MigrationError>` se encadenan y cada una tiene su propio golden de entrada y salida.
-- Al abrir un archivo de un `schema` futuro: modo solo lectura con aviso y nunca se sobrescribe.
+- Al abrir un archivo de un `schema` futuro: modo solo lectura con aviso y nunca se sobrescribe. El documento se puede editar en memoria; «Guardar» devuelve un error de solo lectura antes de cualquier operación de archivo, y los cambios solo se conservan con «Guardar como» (ARQ-55).
 - Los proxies, cachés y el historial **no** se guardan en el archivo. El índice de keyframes tampoco: se reconstruye al abrir el medio (§6.5).
 - Las fuentes no se incrustan por defecto. Si la licencia OFL de una fuente lo permite, «Empaquetar fuentes» las incluye en `assets/` (PROPUESTA).
 - *Descartado*:
@@ -1563,9 +1565,9 @@ proyecto.gafira (ZIP)
 ### 7.2 Guardado atómico, autoguardado y recuperación
 
 - **Guardado atómico**:
-  1. Escribir `nombre.gafira.tmp-<rand>` en el mismo directorio.
-  2. `fsync` del archivo.
-  3. En Unix, `rename` y `fsync` del directorio. En Windows, `ReplaceFileW` (conserva ACL), con `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` como alternativa.
+  1. El engine llama a `ProjectRepository::save`, que escribe `nombre.gafira.tmp-<rand>` en el mismo directorio.
+  2. `fsync` del archivo, dentro de `ProjectRepository::save`: el contrato del puerto exige que el adaptador deje el archivo escrito sincronizado antes de volver.
+  3. Si `save` vuelve con éxito, el engine reemplaza el destino con `FileSystem::replace`, que hace el `rename` y la sincronización del directorio. En Unix, `rename` y `fsync` del directorio. En Windows, `ReplaceFileW` (conserva ACL), con `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` como alternativa.
   4. El archivo anterior se conserva como `.gafira.bak` (1 generación, FIJADA).
 - **Guardado incremental**: los recursos ya presentes con el mismo hash se copian del ZIP anterior sin recomprimirlos. Solo se reescriben los JSON de páginas sucias.
 - **Autoguardado rotativo**: cada N s con N configurable entre 5 y 15 (por defecto 10, FIJADA), solo si hay cambios. Se escribe en `datos_app/recovery/<project_id>/slot-{0,1,2}.gafira-journal` en rotación. El journal guarda solo JSON (documento y páginas sucias) más referencias a recursos ya volcados en el `ContentStore` local, de modo que cada autoguardado dura menos de 200 ms en el documento de 20 páginas (FIJADA). Se ejecuta en el hilo de E/S sobre una instantánea `Arc`, sin bloquear.
@@ -1608,12 +1610,12 @@ pub enum FormatError {
 
 | ID | Requisito | Criterio de aceptación |
 |---|---|---|
-| ARQ-50 | El guardado es atómico. | La inyección de fallos (kill en cada `write`/`fsync`/`rename` de una traza simulada con `FileSystem` falso) deja siempre el archivo anterior o el nuevo íntegros. |
+| ARQ-50 | El guardado es atómico. `ProjectRepository::save` deja el archivo escrito sincronizado (`fsync`) antes de volver; el engine hace el `rename` y la sincronización del directorio con `FileSystem::replace` (§7.2). | La inyección de fallos (kill en cada `write`/`fsync`/`rename` de una traza simulada con `FileSystem` falso) deja siempre el archivo anterior o el nuevo íntegros. Con dobles de los puertos, el engine llama a `FileSystem::replace` solo después de que `ProjectRepository::save` vuelva con éxito, y no lo llama si `save` devuelve un error (unit). |
 | ARQ-51 | La pérdida máxima es ≤ intervalo de autoguardado (≤ 15 s). | Prueba de *kill* aleatorio (§6.7). |
 | ARQ-52 | La recuperación es del 100 % de los journals válidos. | 500/500 recuperaciones en la prueba de *kill*. |
 | ARQ-53 | Las migraciones están encadenadas y probadas. | Cada versión de `schema` tiene un fixture que abre en la versión actual con un golden de salida. |
 | ARQ-54 | Un error en un trabajo de fondo no cierra la app. | La prueba con un efecto que provoca `panic` deja la sesión viva y el trabajo marcado como `Failed`. |
-| ARQ-55 | Los archivos de esquema futuro no se sobrescriben. | Prueba: abrir con `schema = actual + 1` → solo lectura y «Guardar» deshabilitado. |
+| ARQ-55 | Los archivos de esquema futuro no se sobrescriben. La sesión de solo lectura se puede editar en memoria; «Guardar» la rechaza y los cambios solo se conservan con «Guardar como». | Prueba: abrir con `schema = actual + 1` da una sesión de solo lectura. (a) Edición: `execute`, `undo` y `redo` funcionan y la versión del documento avanza igual que en una sesión que no es de solo lectura (unit). (b) Guardado: «Guardar» devuelve un error de solo lectura, las trazas del `FileSystem` falso y del `ProjectRepository` falso quedan vacías y el archivo conserva sus bytes (unit). |
 | ARQ-56 | El proyecto no guarda rutas absolutas. | Una búsqueda en los JSON de los fixtures (incluidos los de medios vinculados y `versions/`) no encuentra rutas absolutas. Los recursos se referencian por hash y los vínculos por `rel_path`. |
 | ARQ-57 | Hay bloqueo multiinstancia. | Una segunda instancia que abre el mismo archivo recibe la opción de solo lectura. |
 | ARQ-58 | Las versiones se guardan dentro del `.gafira` sin duplicar recursos y se restauran sin pérdida. | Prueba: crear 5 versiones nombradas de un proyecto con 100 MB de recursos aumenta el archivo en < 1 % de esos 100 MB más el JSON; restaurar cada versión reproduce su documento byte a byte (serialización determinista, ARQ-10); deshacer la restauración devuelve el estado previo. |
