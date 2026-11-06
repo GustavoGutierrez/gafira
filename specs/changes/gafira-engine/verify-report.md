@@ -1443,3 +1443,101 @@ Run 6, killed 6. The implementer's list (#1-6, #8) plus X1-X3 is recorded with t
 ```
 
 next: tdd-apply (next delivery, `E3d`)
+
+---
+
+# Verify report: `gafira-engine` delivery `E3d` (autosave over a snapshot), round 1
+
+round: 1 | commit: 6f3c918 (code at 4cb17f8) | base: 34837d3 | mode: full, L3 | tier: hand mutants only | mutation: off | depth: V1
+
+## Verdict: FAIL
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3d-C1 | CRITICAL | implementation | crates/gafira-engine/src/edit.rs:69,83 (undo, redo); P13 "Timer"; Slice card scope bullet 2 | No test proves an undo or a redo marks the session pending. With `Self::bumped` replaced by `shared.changed` in `undo` (or in `redo`) all 64 engine lib tests pass. | no | open |
+| E3d-W1 | WARNING | implementation | `git diff --shortstat 34837d3..4cb17f8` | Size 712 authored lines (691+/21-) against a 504 forecast (360 x1.4) and the ~700 ceiling. Over the ceiling, so the owner has to OK it (AGENTS "Delivery rules"). Production is 263 lines; 449 are tests. | no | open |
+| E3d-S1 | SUGGESTION | - | design P13, last bullet; project.rs:121-125 | D1 is an accepted refinement, not a deviation: record it in P13 at the architect's next touch ("clears `pending_since` if no change arrived while it wrote"). | - | - |
+
+counts: critical 1, warning 1, suggestion 1. Per class: implementation 2 (1 CRITICAL, 1 WARNING).
+
+## Gates (export of 6f3c918, its own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2571 passed, 0 failed, 0 ignored) |
+| testkit `ports` feature: clippy and test | 0, 0 |
+| `cargo deny check` | 0 |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 (run from `ci.yml` in the worktree) | all 0 |
+
+The worktree stays clean (`git status` is empty). The target dir was freed with `cargo clean` (7.1 GiB).
+
+## Integrity of the committed code (the crashed mutant script)
+
+I read `4cb17f8` against mutants 1, 3, 5, 6 and 8, and the committed code has none of them:
+- M1: `autosave_due` returns `None` while `now - since < interval`, so the job is due at `>=` (project.rs:193).
+- M3: `install` (the path of both `new_document` and `open`) sets `autosave: Autosave::default()`, so `pending_since` is `None` (project.rs:174). `install` never calls `bumped`.
+- M5: `pending_since = None` happens when the job is taken (project.rs:196). `autosave_finished` never clears it.
+- M6: only the `Ok` arm advances the slot. `Err` sets `pending_since = Some(now)` (project.rs:229-230).
+- M8: the outcome is filtered on `project_key` (project.rs:223-225).
+- `git grep` shows no other write to `pending_since`, `in_flight` or `slot`. `git diff 4cb17f8 6f3c918` touches no crate file.
+
+I re-applied the mutants on the scratch export. Each one was killed:
+
+| # | mutant | killing test(s) | failure |
+|---|---|---|---|
+| 1 | `< interval` changed to `<= interval` | `ac2_...` and 10 others (11 fail) | `ac2`: `due at the interval` |
+| 4 | snapshot taken at `run` (the job reads the live session through a cloned `Shared`) | `ac4_the_slot_holds_the_document_as_it_was_when_the_job_was_made` | left `next_id: 8` (4 pages), right `next_id: 7` |
+| 6 | the slot also advances on failure | `ac6_...`, `ac7_...` | `ac6`: left `[0,1,2,0,1]`, right `[0,1,2,2,0]`; `ac7`: left `slot-1`, right `slot-0` |
+| 8 | stale outcome applied (`.filter(\|_\| true)`) | `ac8_an_outcome_of_a_replaced_session_is_ignored` | panic at autosave.rs:403 (`pending since T0 + 31`) |
+
+Extra probes (beyond V1, run because the scope bullet had no AC row):
+
+| probe | result |
+|---|---|
+| P-undo: `undo` bumps without marking pending | **survived**, all 64 pass (E3d-C1) |
+| P-redo: `redo` bumps without marking pending | **survived**, all 64 pass (E3d-C1) |
+
+## Acceptance map (Slice card AC1-AC13)
+
+| AC | proof | status |
+|---|---|---|
+| AC1 | engine.rs `e3d_ac1_the_autosave_interval_is_5_to_15_seconds_inclusive_and_10_by_default` (4.999 s, 5 s, 15 s, 15.001 s, default 10 s) | covered |
+| AC2 | `ac2_due_at_exactly_the_interval_after_the_first_pending_change` (one ns before, and at the interval) | covered |
+| AC3 | `ac3_no_job_without_changes` (no session, new, open, after save, positive control), `ac3_a_save_leaves_pending_a_change_made_while_it_wrote` | covered |
+| AC4 | `ac4_...` (slot read back through the fake repository) | covered; M4 killed |
+| AC5 | `ac5_...` (no second job while one is in flight; next job one interval after the change) | covered |
+| AC6 | `ac6_...` (five jobs, slots 0,1,2,2,0; `Remove(tmp)` after the failure) | covered; M6 killed |
+| AC7 | `ac7_...` (next tick, one ns before, at the interval, same slot) | covered |
+| AC8 | `ac8_...` (stale success and stale failure; in-flight, pending and slot of the current session untouched) | covered; M8 killed |
+| AC9 | `ac9_...` (`is_modified`, no event, the next edit is version 3) | covered |
+| AC10 | `ac10_...` (exact trace; a fault at each of 6 ops, then `Remove(tmp)` and the old bytes) | covered |
+| AC11 | `ac11_a_read_only_session_still_autosaves` | covered |
+| AC12 | `ac12_a_job_and_its_outcome_are_send`; purity grep (below) | covered |
+| AC13 | gates above | covered |
+| scope: pending set by the first edit, **undo or redo** bump | edit path: `ac2_...`. Undo and redo: **no test** | missing, E3d-C1 |
+
+Purity: `git grep -nE "std::fs|std::thread|std::env|rand::|thread::spawn|EditToken|Instant|SystemTime" 4cb17f8 -- crates/gafira-engine/src` finds only the existing doc comment at engine.rs:103. Every instant comes from `Clock::monotonic()`. `run` writes only through `create_dir_all`, `ProjectRepository::save`, `replace` and `remove`. There is no `EditToken`, and V13 passes.
+
+Artifact integrity (3c-style): `34837d3` touches only `apply-progress.md`. The implementer commits never touched the card: `6f3c918` appends 94 lines after line 716 and deletes nothing. `861e0f5` and `4cb17f8` touch only `crates/gafira-engine/src`.
+
+O5 = (a) is respected. The autosave.rs module doc and the `4cb17f8` body both say that "JSON only" and 200 ms are not met. No file in the delivery claims them, and no README or CHANGELOG changed.
+
+## Deviations
+
+- **D1**: accepted refinement, not a design deviation that needs an amend first. P13 gives its reason inside the same sentence ("the content is on disk"). A change made while the file was written is not on disk. Clearing `pending_since` without a condition would leave that change out of every slot until the next edit, which breaks P13's own bound (`interval + p + w`). The rule matches `clean_version` from `E3c2`, and `ac3_a_save_leaves_pending_...` proves it. The code and P13's wording now differ, so E3d-S1 asks the architect to align the wording later. This is not an ambiguity: there is one reading consistent with the stated reason.
+- **D2**: matches P13 literally. A change made during a failed job is retried one interval after the failure. That still fits the P13 bound, because `w` includes the job.
+- **D3**: no leak. `version()` returns the already-public `DocVersion`. The fields are `pub(crate)` and `slot_path` is private. `error()` is a read accessor.
+- **D4**: no public API leak. The `ProjectService.shared` field is `pub(crate)` and its type `Shared` is a `pub(crate) struct` (session.rs:73). `EditService::new` stays `pub(crate)`. `ProjectService::over` is `pub(crate)`.
+- **D5**: fine. `FsOp::CreateDirAll` is new in a test-only module, and every earlier test passes unchanged.
+
+## Size
+
+`git diff --shortstat 34837d3..4cb17f8`: 7 files, 691 insertions, 21 deletions, so 712 authored lines. With the notes commit (`..6f3c918`): 8 files, 785 insertions, 21 deletions. Per file (numstat): autosave.rs 475/0, project.rs 78/7, engine.rs 56/2, fakes.rs 43/4, edit.rs 20/5, session.rs 17/3, lib.rs 2/0. These match the implementer's figures (263 production, 449 test). See E3d-W1.
+
+## Routing
+
+Fix for E3d-C1 (tests only): add one test where an undo and one where a redo, after a snapshot was taken (or after `open`), makes a job due at exactly one interval later and not one step before. Then re-run the two probe mutants. E3d-W1 needs an owner decision on the size, not a code change.
+
+next: tdd-apply
