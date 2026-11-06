@@ -1565,7 +1565,7 @@ proyecto.gafira (ZIP)
 ### 7.2 Guardado atómico, autoguardado y recuperación
 
 - **Guardado atómico**:
-  1. El engine llama a `ProjectRepository::save`, que escribe `nombre.gafira.tmp-<rand>` en el mismo directorio.
+  1. El engine llama a `ProjectRepository::save`, que escribe un archivo temporal con un nombre único en el mismo directorio que el destino. La forma de generar ese nombre no está fijada.
   2. `fsync` del archivo, dentro de `ProjectRepository::save`: el contrato del puerto exige que el adaptador deje el archivo escrito sincronizado antes de volver.
   3. Si `save` vuelve con éxito, el engine reemplaza el destino con `FileSystem::replace`, que hace el `rename` y la sincronización del directorio. En Unix, `rename` y `fsync` del directorio. En Windows, `ReplaceFileW` (conserva ACL), con `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` como alternativa.
   4. El archivo anterior se conserva como `.gafira.bak` (1 generación, FIJADA).
