@@ -65,87 +65,20 @@
           "id": "E2-AC6",
           "status": "passed",
           "evidence": "cargo deny check 0 at cbe874e"
+        },
+        {
+          "id": "E3a",
+          "status": "passed",
+          "evidence": "verify E3a round 1 PASS at 778e494: crates/gafira-edit/tests/dirty_sets.rs AC1-AC6, workspace gates 0 (2529 passed); hand mutants 1-3 killed"
         }
       ],
-      "next_action": "E3a on feat/gafira-engine-e3 (cut from cbe874e): slice card, tdd-apply, verify; then E3b, E3c, E3d, E5. Follow-ups: E2-W7 (per-job coalescing, before E7), E2-W8 (size 802)",
+      "next_action": "E3b on feat/gafira-engine-e3: slice card, tdd-apply, verify; then E3c, E3d, E5. Follow-ups open: E2-W7, E2-W8",
       "verify": {
-        "round": 3,
-        "commit": "cbe874e",
+        "round": 1,
+        "commit": "778e494",
         "verdict": "PASS",
-        "next": "E2 done (not merged: owner said no merge); E3a on feat/gafira-engine-e3 cut from cbe874e",
+        "next": "E3b slice card, tdd-apply, verify",
         "findings": [
-          {
-            "id": "E2-C1",
-            "severity": "CRITICAL",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/engine.rs:213-228 (AC1)",
-            "summary": "Gafira::new can build the channel with NoopWaker and ignore the injected waker with all 14 engine tests green; the AC1 test does not assert the waker count the card requires.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W1",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/event.rs:186-199",
-            "summary": "E1's W2 fix regressed: the every-variant test again omits LocaleChanged and asserts nothing.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W2",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "commit 642d14d",
-            "summary": "Size: 762 changed lines for E2 (fix round 402 vs ~120 forecast), above the ~700 ceiling; needs the owner's explicit OK. Owner accepted 762 lines on 2026-11-06.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W3",
-            "severity": "WARNING",
-            "class": "architecture",
-            "ref": "02 §5.2:1331, §5.4:1356, design P2",
-            "summary": "Gafira::new creates the channel itself, while §5.2 has the composition root create it before the engine (ARQ-68 startup screen); the signature change has no design amend.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W4",
-            "severity": "WARNING",
-            "class": "ambiguity",
-            "ref": "design.md:80,102,218 vs E2 card non-goals",
-            "summary": "The design assigns the UserError mapping (ARQ-102) to E2; the card defers it; the design was not amended.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W5",
-            "severity": "WARNING",
-            "class": "claim",
-            "ref": ".odd/state.json, commit 07c36f2",
-            "summary": "E1 evidence reverted to pre-round-2 text (E1-AC2 omits ARQ-107, E1-AC5 loses ptr_eq). Restored by the coordinator in this update.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W6",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "commit 962e95d",
-            "summary": "The slice-card commit also carries post-implementation notes, and all three commits share one timestamp, so history cannot show the card preceded the code.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-C2",
-            "severity": "CRITICAL",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/bus.rs:144-148",
-            "summary": "A progress that opens the window leaves an older pending one in place: a probe receives 0.1, 0.9, 0.2, so the observer ends on a stale fraction; breaks AC3 and the claim at bus.rs:155-156.",
-            "follow_up": false,
-            "status": "closed"
-          },
           {
             "id": "E2-W7",
             "severity": "WARNING",
@@ -168,23 +101,6 @@
         "rounds": [
           {
             "round": 1,
-            "verdict": "FAIL",
-            "classes": [
-              "implementation",
-              "architecture",
-              "ambiguity",
-              "claim"
-            ]
-          },
-          {
-            "round": 2,
-            "verdict": "FAIL",
-            "classes": [
-              "implementation"
-            ]
-          },
-          {
-            "round": 3,
             "verdict": "PASS",
             "classes": []
           }
