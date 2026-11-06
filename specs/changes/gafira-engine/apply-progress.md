@@ -351,3 +351,83 @@ Plan: RED for AC1-AC9, then `DocVersion` and `Session`, then `EditService`, then
 then the gates; notes in a separate commit after the code. Fakes private to the engine (P16).
 
 Estimate: 420 authored lines, 588 at x1.4. Verify: V1.
+
+## Notes — `E3b`
+
+Done: AC1-AC11. Code commits `5df8a7a` (refactor: the private port fakes move from `engine.rs`'s
+test module to `src/fakes.rs`, `#[cfg(test)]`, P16), `dc28f3c` (`session.rs`, `edit.rs`,
+`project.rs`, the version, the event field, the new `EngineError` variants) and `3bde884`
+(`ToMessage for EngineError`). Tests are unit tests in `src/edit.rs`, `src/project.rs` and
+`src/engine.rs`, named `acN_...` with a `// ARQ-30`, `// ARQ-33` or `// ARQ-102` line.
+
+RED evidence. Round 1: the services had their shape with stub bodies (`Shared::changed` bumped and
+published nothing, `new_document` installed a session only when none existed, `is_modified` returned
+`false`, a missing session was `InvalidConfig { detail: "stub" }`, `to_message` returned
+`error.engine.todo`); 15 tests failed, the edit tests mostly in the shared `new` precondition
+(`the new`, left `0`, right `1`). Round 2: `Shared::changed` and `new_document` real, the edit side
+still not publishing; each test then failed on its own assertion or on the append precondition.
+
+| AC | Test | Assertion before the code |
+|---|---|---|
+| AC1 | `ac1_a_changed_execute_bumps_once_with_the_newest_set` | left `[]`, right `[DocumentChanged { version: DocVersion(2), dirty: {pages: {PageId(1)}} }]` |
+| AC1 | `ac1_a_merged_execute_bumps_once_with_the_merged_set` | `the append` left `0`, right `1`; own assertion: probe X1 |
+| AC1, AC4 | `ac1_ac4_undo_bumps_once_with_the_undone_set` | `the append` left `0`, right `1`; own assertion killed by mutants 2 and 4 |
+| AC1, AC4 | `ac1_ac4_redo_bumps_once_with_the_redone_set` | `the append` left `0`, right `1`; own assertion killed by mutant 2 |
+| AC1, AC4 | `ac1_ac4_new_bumps_once_and_lists_the_whole_empty_document` | round 1: left `[]`, right `[DocumentChanged { version: DocVersion(1), dirty: {} }]` |
+| AC2 | `ac2_an_empty_undo_or_redo_neither_bumps_nor_publishes` | left `[]`, right `[DocumentChanged { version: DocVersion(2), .. }]` (the probe bump) |
+| AC2 | `ac2_an_unchanged_execute_...`, `ac2_a_failed_execute_...`, `ac2_gestures_neither_bump_nor_publish` | `the append` left `0`, right `1`; own assertions: mutant 1, probes X3 and X2 |
+| AC3 | `ac3_the_version_strictly_increases_across_a_second_new` | left `[2]`, right `[1, 2, 3, 4, 5, 6, 7, 8, 9]` |
+| AC5 | `ac5_a_gesture_of_many_steps_is_one_entry` | `the append` left `0`, right `1`; own assertion killed by mutant 2 |
+| AC6 | `ac6_new_drops_the_history_before_it` | round 1: `the append` left `0`, right `1`; own assertion killed by mutant 5 |
+| AC7 | `ac7_without_a_session_every_edit_call_is_refused_and_publishes_nothing` | `call 0: Err(InvalidConfig { detail: "stub" })` |
+| AC8 | `ac8_modified_after_an_edit_and_after_undoing_it` | `after an edit` (`is_modified()` was `false`) |
+| AC9 | `ac9_every_engine_error_has_its_key_and_the_port_errors_delegate` | left `Message { key: "error.engine.todo" }`, right `Message { key: "error.engine.invalid_config" }` |
+| AC10 | `ac5_the_facade_is_send_and_sync_and_keeps_the_ports_it_was_given` | the existing `assert_send_sync::<Gafira>()` still compiles with the session mutex |
+| AC11 | gates at workspace scope | `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --locked -- -D warnings` no warning; `cargo test --workspace --locked` 199 suites, 2544 passed, 0 failed; `cargo deny check` advisories ok, bans ok, licenses ok, sources ok (the manifest gained a dev-dependency) |
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 1 | bump on an `Unchanged` execute | `ac2_an_unchanged_execute_neither_bumps_nor_publishes` | `nothing published`: left `[DocumentChanged { version: DocVersion(3), dirty: {PageId(1)} }]`, right `[]` |
+| 2 | no bump on `undo` | `ac1_ac4_undo_...`, `ac1_ac4_redo_...`, `ac3_...`, `ac5_...` | `undo`: left `[]`, right `[DocumentChanged { version: DocVersion(4), dirty: {PageId(2)} }]`; `ac3`: left `[1, 2, 3, 4, 5, 6, 7]`, right `[1, ..., 9]` |
+| 3 | reset the version to 0 on `new_document` | `ac3_the_version_strictly_increases_across_a_second_new` | left `[1, 2, 3, 4, 5, 6, 1, 2, 3]`, right `[1, 2, 3, 4, 5, 6, 7, 8, 9]` |
+| 4 | publish `newest_touches` after `undo` | `ac1_ac4_undo_bumps_once_with_the_undone_set` | left `dirty: {PageId(1)}`, right `dirty: {PageId(2)}` (both version 4) |
+| 5 | keep the old history across `new_document` | `ac6_new_drops_the_history_before_it` | `assertion failed: engine.edit().undo().expect("an undo").is_none()` |
+| 6 | publish an event with no session | `ac7_without_a_session_every_edit_call_is_refused_and_publishes_nothing` | left five `DocumentChanged` (versions 1 to 5, empty sets), right `[]` |
+| 7 | map `Repository` to an engine key | `ac9_every_engine_error_has_its_key_and_the_port_errors_delegate` | left `Message { key: "error.engine.repository", args: [] }`, right `Message { key: "error.repository.too_new", args: [found: Count(3), supported: Count(1)] }` |
+
+Extra probes, not on the card's list, run so that every test's own assertion was seen failing:
+
+| # | Probe | Killed by | Failure |
+|---|---|---|---|
+| X1 | no publish once the history holds two entries | `ac1_a_merged_execute_bumps_once_with_the_merged_set` (and 8 more) | left `[]`, right `[DocumentChanged { version: DocVersion(3), .. }, DocumentChanged { version: DocVersion(4), .. }]` |
+| X2 | `begin_gesture` publishes | `ac2_gestures_neither_bump_nor_publish`, `ac5_...` | left `[DocumentChanged { version: DocVersion(3), dirty: {} }]`, right `[]`; `ac5`: left `5`, right `4` |
+| X3 | publish on a failed execute | `ac2_a_failed_execute_neither_bumps_nor_publishes` | left `[DocumentChanged { version: DocVersion(3), dirty: {} }]`, right `[]` |
+
+Deviations:
+
+- D1. The `new` of §5.4 and of the card is `ProjectService::new_document`: clippy's
+  `new_ret_no_self` (default warn, `-D warnings`) rejects a method `new` that does not return
+  `Self`, and the repo forbids `#[allow]`. Reversible rename; the doc comment cites line 1357.
+- D2. `Session` holds `history` and `clean_version` only. `path`, `read_only` and the autosave state
+  of P15 arrive with `E3c`/`E3d`, which read them; adding them now is dead code under `-D warnings`.
+- D3. `is_modified()` is `false` with no session (nothing to lose); no AC or design row states it,
+  and `ac8_...` asserts it.
+- D4. `undo`/`redo` returning `Err` is not tested through the engine: it needs a compacted entry
+  whose revert fails, and `History::new` keeps the 512 MiB budget (P15). The code path is the same
+  `?` as `execute`'s `Err`, which `ac2_a_failed_execute_...` covers.
+- D5. `new_document` builds a document with no pages (`Document::from_parts(1, Dpi::DEFAULT, [])`),
+  so AC4's "every page and node" is proven for the empty document only (`dirty: {}`); a non-empty
+  whole-document set first appears with `open` in `E3c`.
+- D6. `crates/gafira-engine/Cargo.toml` gains `gafira-geom` as a dev-dependency (the tests build a
+  `PageSize`); `Cargo.lock` gains one line. V5 reads the normal tree only, and `gafira-geom` is in
+  the engine's row anyway. `crates/gafira-edit` is not touched.
+- D7. `InvalidConfig` maps to `error.engine.invalid_config` with no argument (its detail is log
+  prose, ARQ-102 forbids prose in a message); `NoSession` maps to `error.engine.no_session`.
+
+Measured lines: `git diff --shortstat 9df403d..3bde884`: 10 files, 865 insertions, 152 deletions.
+Without the fakes move (`5df8a7a`, 150/137, moved code): `git diff --shortstat 5df8a7a..3bde884`:
+10 files, 717 insertions, 17 deletions, 734 authored lines, about 417 production and 317 test.
+Estimate 420 (588 at x1.4): over the x1.4 figure and above the ~700 stop line; the overrun is the
+tests (`edit.rs` 225 test lines).
