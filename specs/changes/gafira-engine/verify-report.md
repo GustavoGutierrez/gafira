@@ -1701,3 +1701,40 @@ E5-C1 fix hint (for `tdd-apply`): a test with at least 21 caches of interleaved 
 `git diff --shortstat 69a7d8e..fc26608`: 5 files, 694 insertions, 4 deletions (governor.rs 677: 219 above `#[cfg(test)]`, 458 tests; event.rs +10/-4; lib.rs +5; manifest and lock +2). About 230 production, 460 test. Forecast 448 (x1.55), under the ~700 ceiling.
 
 next: tdd-apply
+
+---
+
+# Verify report: gafira-engine E5 (memory governor), round 2 (closure)
+
+verdict: PASS (for delivery E5; zero CRITICAL)
+round: 2 | commit: b7f6e2c | mode: full | tier: hand mutants only | depth: V1 | mutation: off
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E5-C1 | CRITICAL | implementation | crates/gafira-engine/src/governor.rs `ac1_many_caches_of_one_kind_keep_the_caller_order` | Stable order within a kind is now proven: the `sort_unstable_by_key` mutant fails only the new 64-cache test | no | closed |
+| E5-S1..S3 | SUGGESTION | - | round 1 | Carried over, no action needed | - | carried |
+
+Counts: critical 0 (open), warning 0, suggestion 3 (carried). Per class (open): none.
+
+## Gates (HEAD b7f6e2c, scratch export, own CARGO_TARGET_DIR, CARGO_INCREMENTAL=0)
+- `cargo fmt --check`: 0
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: 0
+- `cargo test --workspace --locked`: 0; 2588 passed, 0 failed; the new test ran and passed
+- Disk before the build: 145 GB free. Both target dirs were freed with `cargo clean`. Worktree `/tmp/gafira-engine-e3` is clean at b7f6e2c.
+
+## Artifact integrity
+- Since round 1 (a651000..b7f6e2c): `045008d` touches only `crates/gafira-engine/src/governor.rs` (+29). The hunk starts at line 366, inside `#[cfg(test)] mod tests` (line 220), so there is no production change. `b7f6e2c` only appends to `apply-progress.md` (+23, a fix-round section after the E5 notes). The Slice card is unchanged.
+- No implementer commit touches `.odd/state.json` or `verify-report.md`.
+
+## Closure of E5-C1
+- The expected order is built separately from the production code. The test hardcodes the kind order `[Frames, Tiles, Backend]` and filters the input `caches` vector in the caller's order. It does not use production `rank` or the governor's sort. It also checks `outcome(64, 0, Normal)`.
+- Mutants run on a scratch export through the restore-safe runner (`vmut.py`, restored ok):
+  - I4 `sort_by_key` -> `sort_unstable_by_key` (the round-1 survivor): KILLED, failed only by `ac1_many_caches_of_one_kind_keep_the_caller_order`.
+  - R2 `<=` -> `<` at the budget: KILLED (ac1 x2, ac2, ac3, ac5).
+  - R5 `for 0..MAX_TRIM_PASSES` -> `loop`: KILLED by `ac6_never_more_than_two_passes` (abort under the memory limit or timeout).
+- Hand mutants this round: 3 run, 3 killed. Per the closure-round rules, no independent-mutant budget was spent.
+
+## Measured lines
+`git diff --shortstat a651000..b7f6e2c`: 2 files changed, 52 insertions(+) (test 29, notes 23; production 0).
+
+next: tdd-apply (next delivery of gafira-engine), or archive if E5 is the last delivery
