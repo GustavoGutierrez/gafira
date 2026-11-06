@@ -62,12 +62,12 @@
           "status": "pending"
         }
       ],
-      "next_action": "architect amends design for E2-W3, E2-W4 and the E3 gaps (autosave port, undo/redo DirtySet); then tdd-apply E2 fix round; then E3 and E5 on feat/gafira-engine-e3 cut from E2",
+      "next_action": "tdd-apply E2 fix round F1-F6 (design ad8f058), then verify round 2; owner answered O5=(a) 2026-11-06 (autosave slot written as a whole project via ProjectRepository::save until a journal port exists; that port is a release prerequisite); XP6 confirmed, XP4 holds for installed history entries only; then E3a-E3d and E5 on feat/gafira-engine-e3",
       "verify": {
         "round": 1,
         "commit": "07c36f2",
         "verdict": "FAIL",
-        "next": "architect (E2-W3 architecture, E2-W4 ambiguity, plus E3 design gaps), then tdd-apply (E2-C1, E2-W1, E2-W6), then verify round 2",
+        "next": "tdd-apply (E2 fix round F1-F6 per design ad8f058), then verify round 2",
         "findings": [
           {
             "id": "E2-C1",
