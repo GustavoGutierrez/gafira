@@ -9,7 +9,7 @@
 
 use super::*;
 
-use std::f64::consts::FRAC_PI_2;
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
 // ---------------------------------------------------------------------------
 // Image scene helpers
@@ -488,6 +488,61 @@ fn arq_149_an_image_that_partly_covers_the_tile_draws_only_its_own_window() {
     assert!(
         is_clear(&offset, 2, 2),
         "the rest of the tile is outside the image"
+    );
+}
+
+// ARQ-149: the destination clip is the image's own quad, not its page-space
+// bounding box. A 4×4 white image turned 45° about its centre (2, 2) has its
+// box at (−0.828, −0.828)-(4.828, 4.828), and three of the box's pixels fall
+// outside the quad: page (0, 0) maps to image (−0.121, 2), page (3, 0) to
+// (2, −0.121) and page (4, 4) to (5.536, 2). Clipping to the box and clamping
+// the sample — the plausible wrong reading of "clipped to the image" — paints
+// those three with the edge texel's colour; the quad test leaves them alone,
+// which is what a rotated image must do to the corners of its box.
+#[test]
+fn arq_149_a_rotated_image_paints_its_quad_not_the_corners_of_its_box() {
+    let image = rgba32_image(4, 4, &[[1.0, 1.0, 1.0, 1.0]; 16]);
+    let region = IRect::new(0, 0, 5, 5);
+    let turned = Affine::rotate_about(FRAC_PI_4, Point::new(2.0, 2.0));
+    let outside = [(0, 0), (3, 0), (4, 4)];
+
+    let export = drawn(region, PixelFormat::RgbaF32, image_task(turned, &image));
+    assert_eq!(
+        channels(&export, 2, 2),
+        [1.0; 4],
+        "the centre of the quad is painted"
+    );
+    for (x, y) in outside {
+        assert!(
+            is_clear(&export, x, y),
+            "page ({x}, {y}) is inside the image's box and outside its quad"
+        );
+    }
+
+    // Over an opaque backdrop the same pixels keep the backdrop: the sampler
+    // never writes them, so nothing of the image reaches the gap.
+    let over = drawn(
+        region,
+        PixelFormat::RgbaF32,
+        vec![
+            fill(0.0, 0.0, 5.0, 5.0, srgb(0.2, 0.4, 0.6, 1.0)),
+            RenderOp::DrawImage {
+                image: Arc::clone(&image),
+                transform: turned,
+            },
+        ],
+    );
+    for (x, y) in outside {
+        assert_close(
+            channels(&over, x, y),
+            GREY,
+            "page ({x}, {y}) keeps the backdrop the rotated image does not cover",
+        );
+    }
+    assert_eq!(
+        channels(&over, 2, 2),
+        [1.0; 4],
+        "and the quad is painted over it"
     );
 }
 
