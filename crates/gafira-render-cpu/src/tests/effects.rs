@@ -251,6 +251,39 @@ fn arq_120_the_grown_rectangle_is_clipped_to_the_page() {
     assert!(is_clear(&got, 7, 7), "outside the tile stays unwritten");
 }
 
+// 02 §6.2, ARQ-120: on a grown tile the cull's rectangle is the **grown** one,
+// and that is a pixel rule, not only work skipped. A fill strictly inside the
+// margin — outside the tile and inside what the effect reads — must still be
+// drawn, or the effect pulls transparency into the tile. Culling at
+// `task.region` drops it and the tile loses the pixel it was grown for.
+#[test]
+fn arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect() {
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let probe = Arc::new(Probe::new(Shape::Shift(4)));
+    // The tile is (8, 8)-(16, 16) and the effect reads 4 px back, so the grown
+    // rectangle is (4, 4)-(16, 16). The fill is (4, 4)-(6, 6): wholly outside
+    // the tile and wholly inside the growth.
+    let scene = quadrant(vec![fill(4.0, 4.0, 6.0, 6.0, white()), effect_op(&probe)]);
+    let got = run(target_desc, &scene);
+
+    assert_eq!(probe.seen(), vec![(12, 12)], "the grown rectangle");
+    assert!(
+        is_white(&got, 8, 8),
+        "the fill inside the margin reaches the tile through the effect"
+    );
+    // The control: the same scene with the fill outside the grown rectangle
+    // leaves the pixel clear, so the pixel above is the fill's and not a
+    // default the effect writes.
+    let without = run(
+        target_desc,
+        &quadrant(vec![fill(0.0, 0.0, 2.0, 2.0, white()), effect_op(&probe)]),
+    );
+    assert!(
+        is_clear(&without, 8, 8),
+        "outside the grown rectangle the tile keeps the transparent page"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // AC5 — a cancelled effect leaves nothing behind
 // ---------------------------------------------------------------------------
