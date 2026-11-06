@@ -564,3 +564,89 @@ Measured lines (`git diff --shortstat fb3c814..16280b5`): 3 files, 496 insertion
 Production: 31 insertions, 6 deletions (`project.rs` 29/5, `engine.rs` 2/1). Test: 465
 insertions, 4 deletions (`fakes.rs` 353/4, `project.rs` tests 112/0). The split figures came
 from `git diff --numstat` and the hunk headers of `project.rs` against its `#[cfg(test)]` line.
+
+## Notes — `E3c2`
+
+Done: AC1-AC7, AC10, AC11, AC12, AC13. Code commits `5297f6d` (`EngineError::{ReadOnly, NoPath,
+Io}`, `From<io::Error>`, their keys), `72d34f6` (`ProjectService::save`, `Session { path,
+read_only, project_key }`, `open` keeps `LoadedProject::read_only`, the `before_replace` hook of
+`MemoryFs`), `adad43a` (the SP6 doc comment of `ProjectRepository::save`, no signature change).
+Tests are unit tests in `src/project.rs` and `src/engine.rs`.
+
+The stash `stash@{0}` from `E3c1` (`session.rs` only) was applied with `git stash pop` as the
+starting point and kept as it was; it was stashed again for the length of `5297f6d` (so that
+commit carries no unread field) and popped again before `72d34f6`. No stash is left.
+
+RED evidence (AC11: the three variants first mapped to `error.engine.todo`; the rest: `save` first
+a stub returning `Ok(())` and `open` passing `read_only: false`, the tests run against them):
+
+| AC | Test | Assertion before the code |
+|---|---|---|
+| AC1 | `ac1_a_fault_at_every_operation_of_a_save_leaves_the_old_or_the_new_bytes_in_full` | trace left `[]`, right `[Create(tmp-0), Write(tmp-0, 1073), Write(tmp-0, 1073), SyncAll(tmp-0), Replace(tmp-0, TARGET)]` |
+| AC2 | `ac2_replace_runs_only_after_the_repository_save_returned_ok` | calls left `[]`, right `[Save("/work/poster.gafira.tmp-0")]` |
+| AC3 | `ac3_a_failed_save_removes_the_temporary_returns_the_first_error_and_stays_modified` | `expect_err("a failed save")` on `Ok(())` |
+| AC4 | `ac4_a_save_cleans_at_the_snapshot_and_a_later_edit_keeps_it_modified` | `clean after a save` (`is_modified()` was `true`) |
+| AC5 | `ac5_a_read_only_session_edits_undoes_and_redoes_like_any_other` | passed at first run: no edit path reads `read_only`, so the stub could not fail it. Its assertion was seen failing with probe X1 below |
+| AC6 | `ac6_a_read_only_save_is_refused_before_any_port_call` | `matches!(error, Err(EngineError::ReadOnly))` failed on `Ok(())` |
+| AC7 | `ac7_a_save_with_no_session_or_no_path_is_refused_before_any_port_call` | `matches!(error, Err(EngineError::NoSession))` failed on `Ok(())` |
+| AC10 | `ac10_two_saves_in_a_row_use_distinct_temporaries_in_the_target_folder` | trace left `[]`, right the two save traces through `tmp-0` then `tmp-1` |
+| AC11 | `ac11_read_only_no_path_and_io_have_engine_keys_without_arguments` | `ReadOnly`: left `Message { key: "error.engine.todo" }`, right `Message { key: "error.engine.read_only" }` |
+| AC12 | purity grep | `git diff 2f99df8..adad43a -- crates/gafira-engine \| grep '^+' \| grep -nE "std::fs\|std::thread\|std::env\|rand\|thread::spawn"` → one line, the doc comment of `temporary_for` ("no `rand`, P1"); `git grep -nE "std::fs\|std::thread\|std::env\|rand::\|thread::spawn" -- crates/gafira-engine/src` → only `engine.rs:96` (existing doc comment). `save` writes only through `ProjectRepository::save`, `FileSystem::replace` and `FileSystem::remove`; the temporary name comes from an `AtomicU64` counter |
+| AC13 | gates at workspace scope, at `72d34f6` and at `adad43a` | `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --locked -- -D warnings` no warning; `cargo test --workspace --locked` 199 suites, 2558 passed, 0 failed; at `5297f6d`: 199 suites, 2549 passed. No manifest change, so no `cargo deny` |
+
+AC1/AC2 prove the repository writes through the fake `FileSystem` (E3c1-S2, P16): the exact
+trace of a save is the repository's `Create`, two `Write`s and `SyncAll` on the temporary, then the
+engine's `Replace`, and AC1 injects a fault at each of those five indices in turn (target: the old
+bytes after each fault, the new bytes in full with none). AC2 also asserts, for a fault at each of
+the repository's four operations, the exact trace up to the fault followed by `Remove(tmp-0)` and
+no `Replace`. AC3 is table-driven: fault at the sync, at the `replace`, at the sync and the
+`remove`, at the `replace` and the `remove`; it asserts the port and the text of the first error,
+the exact trace ending in `Remove(tmp-0)`, whether the temporary is left behind, still modified and
+nothing published. AC4's second half edits through a second `EditService` over the same `Shared`
+from the `before_replace` hook, between the snapshot (version 2) and the `replace`; the save then
+leaves the session modified. One more test, `a_save_that_finishes_after_the_session_was_replaced_
+leaves_the_new_one_alone`, proves the `project_key` rule of P18 (the hook swaps in another session
+clean at version 3; it is still clean after the save).
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 1 | `replace` even after the repository's `save` failed | `ac1_...`, `ac2_...`, `ac3_...` | `ac2` fault at 0: left `[Create(tmp-0), Replace(tmp-0, TARGET), Remove(tmp-0)]`, right `[Create(tmp-0), Remove(tmp-0)]`; `ac1` fault at 1: target left `Some([])`, right the old bytes |
+| 2 | `replace` before `save` | `ac1_...`, `ac2_...`, `ac3_...`, `ac4_...`, `ac10_...`, the session-replaced test | `a save: Io(Custom { kind: NotFound, error: "/work/poster.gafira.tmp-0" })`; `ac3` `[3]`: left `("filesystem", "/work/poster.gafira.tmp-0")`, right `("repository", "fault at 3")` |
+| 3 | skip `remove(tmp)` on failure | `ac2_...`, `ac3_...` | `ac2` fault at 0: left `[Create(tmp-0)]`, right `[Create(tmp-0), Remove(tmp-0)]` |
+| 4 | the `remove` error replaces the first error | `ac3_...` | `[3, 4]`: left `("filesystem", "fault at 4")`, right `("repository", "fault at 3")` |
+| 5 | `clean_version` set before the write succeeds | `ac3_...` | `[3]: still modified` |
+| 6 | `read_only` checked after the first port call | `ac6_...` | `no file operation`: left `[Create(tmp-0), Write(tmp-0, 1073), Write(tmp-0, 1073), SyncAll(tmp-0)]`, right `[]` |
+| 8 | the same temporary name for every save | `ac10_...` | left: the second save through `tmp-0`, right: through `tmp-1` |
+
+Mutant 7 (session swapped before `History::new` validates) was `E3c1`'s.
+
+Extra probes, not on the card's list, run so that every new test's own assertion was seen failing:
+
+| # | Probe | Killed by | Failure |
+|---|---|---|---|
+| X1 | `EditService` refuses every edit of a read-only session with `ReadOnly` | `ac5_a_read_only_session_edits_undoes_and_redoes_like_any_other` | `append_page`: left `None`, right `Some(Changed)` |
+| X2 | `clean_version` set on success whatever the session (no `project_key` check) | `a_save_that_finishes_after_the_session_was_replaced_leaves_the_new_one_alone` | `the new session stays clean at version 3` |
+| X3 | `clean_version` set to the current version instead of the snapshot's | `ac4_a_save_cleans_at_the_snapshot_and_a_later_edit_keeps_it_modified` | `clean at 2, the document at 3` |
+
+Deviations:
+
+- D1. `project_key` is minted at `new` and `open` as `<clock.now() seconds>-<engine counter>`, as
+  P13 states; `E3c2` reads it only to compare (P18), so `ProjectService` now holds the `Clock`
+  port. Its format is first read by `E3d` (the recovery folder) and is not tested here.
+- D2. The temporary is the target's whole path with `.tmp-<n>` appended (`/work/poster.gafira.tmp-0`),
+  which is P18's `<file name>.tmp-<n>` in the target's folder. The counter starts at 0 and is
+  separate from the session counter, so the n-th save of an engine uses `tmp-<n-1>`.
+- D3. `save` never bumps the version and publishes nothing (P15 table); `ac3_...` and `ac4_...`
+  assert it. A successful `save` does not clear any autosave state: there is none until `E3d`.
+- D4. AC5 could not be RED against the stub (nothing on the edit path reads `read_only`); probe X1
+  shows its assertion can fail.
+- D5. `Gafira::projects`'s doc comment now lists `open` and `save` (doc only, `engine.rs`).
+
+Measured lines (`git diff --shortstat 2f99df8..adad43a`): 5 files, 408 insertions, 17 deletions.
+Production: 141 insertions, 14 deletions (`project.rs` 100/7, `engine.rs` 24/3, `session.rs`
+11/3, `gafira-ports/src/repository.rs` 6/1, doc only). Test: 267 insertions, 3 deletions
+(`project.rs` tests 237/3, `engine.rs` tests 16/0, `fakes.rs` 14/0, test-only module). The split
+figures came from `git diff --numstat` and the hunk headers of `project.rs` and `engine.rs`
+against their `#[cfg(test)]` lines. Forecast ~300; 425 authored lines, under the ~700 stop line.
