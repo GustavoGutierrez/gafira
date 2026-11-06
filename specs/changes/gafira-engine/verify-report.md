@@ -1337,3 +1337,109 @@ hand_mutants: run 4, killed 4. mutation: null (`mutation: off`).
 - Both scratch target dirs were removed with `cargo clean`.
 
 next: tdd-apply (E3c2)
+
+---
+
+# Verify report: `gafira-engine` delivery `E3c2` (atomic save, read-only refusal)
+
+round: 1
+commit: 99c38bc (worktree `/tmp/gafira-engine-e3`, branch `feat/gafira-engine-e3`, base `2f99df8`)
+mode: full | level: L3 | pack: new capability | mutation: off | tier: hand mutants only | depth: V1 (decided-by: owner)
+
+**Verdict: PASS** for this delivery. It has 0 CRITICAL, 0 WARNING and 3 SUGGESTION findings. The change still has deliveries to come (`E3d` and later), so it is not done.
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3c2-S1 | SUGGESTION | - | `project.rs` `ac5_a_read_only_session_edits_undoes_and_redoes_like_any_other` | AC5 never asserts that the session it edits is read-only. Mutant C (`open` drops `read_only`) passes AC5 and only AC6 kills it. Adding `save() == Err(ReadOnly)` at the end of AC5 would make the test prove this alone. | no | open |
+| E3c2-S2 | SUGGESTION | - | `project.rs` `temporary_for` (D2) | The counter is per engine and starts at 0, so two engines or processes saving one file both use `<file>.tmp-0`. This is allowed by the owner's answer ("unique name in the target folder", P18) and the file lock is out of scope (ARQ-57). Recheck when ARQ-57 lands. | no | open |
+| E3c2-S3 | SUGGESTION | - | design XP5, `repository.rs` doc comment (SP6) | SP6 is only a written contract so far: no real `ProjectRepository` adapter checks that it syncs the file. Keep XP5 open for `gafira-format`. | no | open |
+
+## Gates (at HEAD 99c38bc, workspace scope, external `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0: 199 suites, 2558 passed, 0 failed (matches the notes) |
+| CI policy job, all 10 `run` steps taken from `ci.yml` (ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13 EditToken, V14, testkit `ports` feature) | 0 each |
+| `cargo deny check` (no manifest change, run anyway) | 0 |
+
+Before the run, `df -h /` showed 146 GB free. Both target dirs were cleaned afterwards with `cargo clean --target-dir`. The worktree is clean at HEAD `99c38bc` and holds no stash.
+
+## Artifact integrity
+
+- Slice card `fb3c814` and amend `4f742b3` touch only `specs/changes/gafira-engine/apply-progress.md`. The amend states why (size, split chosen by the owner).
+- Implementer commits: `5297f6d` (`engine.rs`), `72d34f6` (`engine.rs`, `fakes.rs`, `project.rs`, `session.rs`), `adad43a` (`gafira-ports/src/repository.rs`), `99c38bc` (notes; it only adds lines to `apply-progress.md`, 86+/0-). No implementer commit changed the card, `design.md` or `specs/02`.
+- The `gafira-ports` change is doc-only: the diff touches only `///` lines on `ProjectRepository::save` and changes no signature.
+- Commit order: code, then the port doc, then the notes in a separate commit.
+
+## Acceptance criteria
+
+| AC | proof | status |
+|---|---|---|
+| AC1 ARQ-50 fault at every op | `ac1_...` fixes the trace (Create, Write x2, SyncAll, Replace) exactly, then injects a fault at each of the 5 indices and requires the target to keep its old bytes; with no fault, the new bytes in full | covered |
+| AC2 order, no `replace` after an error | `ac2_...`: exact repo calls `[Save(tmp-0)]`, exact trace; faults 0-3 give trace up to the fault, then `Remove`, with no `Replace` | covered |
+| AC3 `remove`, first error kept, still modified | `ac3_...` table: [3], [4], [3,4], [4,5]; checks the error's origin and text, the exact trace, whether the temporary is left behind, still modified, nothing published | covered |
+| AC4 clean at the snapshot | `ac4_...`: clean after save, no event; an edit after the save makes it modified again; an edit between snapshot and `replace` (hook) leaves it modified | covered |
+| AC5 ARQ-55(a) | `ac5_...`: read-only and writable runs give the same versions [1,2,3,4] and the same page count (see S1) | covered |
+| AC6 ARQ-55(b) | `ac6_...`: `ReadOnly`, empty fs trace, empty repo calls, target bytes unchanged, still modified | covered |
+| AC7 `NoSession` / `NoPath` | `ac7_...`: both errors, empty trace and calls | covered |
+| AC10 distinct temporaries in the folder | `ac10_...`: exact traces through `/work/poster.gafira.tmp-0` then `tmp-1` | covered |
+| AC11 keys | `engine.rs` `ac11_...`: `read_only`, `no_path`, `io` with no argument | covered |
+| AC12 purity | `git grep -nE "std::fs\|std::thread\|std::env\|rand\|thread::spawn\|EditToken" -- crates/gafira-engine/src` finds only the doc comments `engine.rs:96` and `project.rs:130`. CI V13 passes. The temporary name comes from an `AtomicU64` | covered |
+| AC13 gates | above | covered |
+| E3c1-S2 | `MemoryRepository::save` writes through `MemoryFs` (`fakes.rs:450-459`: `fs.create`, 2 `write_all`, `sync_all`). The repository's 4 ops appear in the AC1/AC2 traces and get faults injected | closed |
+| `project_key` rule (P18) | `a_save_that_finishes_after_the_session_was_replaced_leaves_the_new_one_alone` | covered |
+
+Every test checks exact values (traces, bytes, versions, error origin). Covered: 11 of 11 criteria, plus E3c1-S2.
+
+## Hand mutants (re-applied by verify on a `git archive` export of `99c38bc`, `cargo test -p gafira-engine --locked --lib`, reverted; the restored file was checked byte for byte)
+
+| # | mutant | killed by | failure |
+|---|---|---|---|
+| 1 | `replace` even after `repository.save` failed | ac1, ac2, ac3 | ac3: trace has `Replace(tmp-0, TARGET)` where `Remove(tmp-0)` was expected |
+| 4 | the `remove` error replaces the first | ac3 | `("filesystem","fault at 4")` vs `("repository","fault at 3")` |
+| 6 | `read_only` checked after the repository's save | ac6 | trace `[Create, Write, Write, SyncAll]` vs `[]` |
+| A (own) | `remove(tmp)` only after a repository error, not after a failed `replace` | ac3 | trace ends at `Replace`, `Remove` missing |
+| B (own) | temporary = file name only (outside the target's folder) | ac1, ac2, ac3, ac10 | `poster.gafira.tmp-0` vs `/work/poster.gafira.tmp-0` |
+| C (own) | `open` drops `LoadedProject::read_only` | ac6 | `ReadOnly` expected (AC5 passes, see S1) |
+
+Run 6, killed 6. The implementer's list (#1-6, #8) plus X1-X3 is recorded with the test that kills each mutant. This round re-applied #1, #4 and #6, and each failed as recorded.
+
+## Critical points
+
+- Order `save(tmp)` then `replace(tmp, path)`, and no `replace` after an error: `write_then_replace` uses `?`. Proved by AC2 and mutant 1.
+- `remove(tmp)` runs on any failure and its error is discarded (`let _`). Proved by AC3 and mutants 4 and A.
+- The target is unchanged at every fault: AC1.
+- `ReadOnly` comes before any port call: the check happens under the lock before `temporary_for` or any port use. Proved by AC6 and mutant 6.
+- `clean_version` is set only after `Ok` and only when the `project_key` matches. Proved by AC3, AC4 and the session-replaced test (implementer probes 5, X2, X3).
+- `open` keeps `read_only`: AC6 and mutant C.
+- Distinct temporaries in the folder: AC10 and mutant B.
+- Purity: no `std::fs`, threads, `std::env`, `rand` or `EditToken`.
+
+## Deviations
+
+- D1 (`project_key` = `<clock seconds>-<counter>`, `ProjectService` holds `Clock`). This follows P13. Only equality is read, and the counter keeps keys unique within an engine. Accepted.
+- D2 (temporary = whole target path + `.tmp-<n>`). Appending to the whole path keeps the parent directory, so the result is `<target dir>/<file name>.tmp-<n>`. That is exactly P18's `<file name>.tmp-<n>` in the target's folder, and it meets §7.2 step 1 (line 1568: a unique name in the same directory, how it is generated is not fixed). Mutant B shows the folder is pinned by tests. Accepted (see S2).
+- D3 (`save` neither bumps nor publishes). This matches the P15 table and AC3/AC4 assert it. Accepted.
+- D4 (AC5 not RED). This is legitimate: the behaviour came before this delivery, since no edit path reads `read_only`, so a stub cannot fail the test. Probe X1 shows the assertion can fail. Accepted, with S1 to make the test self-sufficient.
+- D5 (`Gafira::projects` doc). Doc-only. Accepted.
+
+## Size
+
+`git diff --shortstat 2f99df8..adad43a`: 5 files, 408 insertions, 17 deletions (425 authored). With the notes (`..99c38bc`): 6 files, 494 insertions, 17 deletions. The forecast was ~300, so this is x1.42, under the ~700 ceiling. The notes' production/test split matches `git diff --numstat`.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E3c2", "rounds": [ {
+  "round": 1, "commit": "99c38bc", "mode": "full", "tier": "hand", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 0, "suggestion": 3},
+  "findings": [],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 6, "killed": 6},
+  "criteria": {"total": 11, "covered": 11},
+  "size": {"lines": 425, "forecast": 300}, "report": "e3c2-verify-report-r1.md" } ] }
+```
+
+next: tdd-apply (next delivery, `E3d`)
