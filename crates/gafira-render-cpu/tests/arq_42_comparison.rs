@@ -87,6 +87,26 @@ fn mode_for(arch: &str, os: &str, env: &str) -> Mode {
     }
 }
 
+/// [`mode_for`] for the target this test binary was built for.
+fn current_mode() -> Mode {
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x86_64"
+    } else {
+        "other"
+    };
+    let os = if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "other"
+    };
+    let env = if cfg!(target_env = "gnu") {
+        "gnu"
+    } else {
+        "other"
+    };
+    mode_for(arch, os, env)
+}
+
 /// One channel of an sRGB8 pixel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Channel {
@@ -185,9 +205,13 @@ fn compare(mode: Mode, reference: &[u8], actual: &[u8]) -> Report {
 /// comparison is outside the mode's budget (AC6).
 fn assert_agrees(mode: Mode, label: &str, reference: &[u8], actual: &[u8]) -> Report {
     let report = compare(mode, reference, actual);
+    let rule = match mode {
+        Mode::Exact => "differ",
+        Mode::Tolerant => "differ by 2/255 or more",
+    };
     assert!(
         report.within_budget(),
-        "{label}: {} of {} pixels differ by 2/255 or more (allowed {}); worst channel {:?} at {}/255",
+        "{label}: {} of {} pixels {rule} (allowed {}); worst channel {:?} at {}/255",
         report.differing,
         report.pixels,
         report.allowed,
@@ -296,12 +320,15 @@ fn document(nodes: Vec<Node>, roots: &[u64]) -> Document {
             height: Length::new(f64::from(PAGE), Unit::Px),
         },
     );
+    let mut next_id = 1;
     for node in nodes {
         let id = node.base.id;
+        next_id = next_id.max(id.get() + 1);
         page.nodes.insert(id, Arc::new(node));
     }
     page.roots = roots.iter().copied().map(NodeId::new).collect();
-    Document::from_parts(11, Dpi::default(), vec![Arc::new(page)]).expect("the document validates")
+    Document::from_parts(next_id, Dpi::default(), vec![Arc::new(page)])
+        .expect("the document validates")
 }
 
 /// The scene of AC1 and of the stored golden: an opaque fill, a semi-
@@ -369,6 +396,46 @@ fn scene() -> Document {
     // One root group, as a document of a page usually is: the planner emits a
     // task per tile and root, and a tile is the full content of its region.
     document(nodes, &[10])
+}
+
+/// The scene of AC6: three groups nested one inside the other, each at a
+/// semi-transparent opacity, with a shape at every level. `groups` is the
+/// opacity of the outer, middle and inner group, in that order.
+///
+/// O11 records what the superseded 8-bit path did on this family: three groups
+/// at 0,5 left 12,866 % of the pixels over 1/255. The 0,5/0,5/0,5 case is the
+/// worst of XP2's measurements, so it is the one the test uses.
+fn deep_scene(groups: [f32; 3]) -> Document {
+    let nodes = vec![
+        group(20, groups[0], &[21, 22]),
+        shape(
+            21,
+            [4.0, 6.0, 24.0, 20.0],
+            ShapeGeometry::Rect,
+            color(0.9, 0.35, 0.1, 1.0),
+            1.0,
+            BlendMode::Normal,
+        ),
+        group(22, groups[1], &[23, 24]),
+        shape(
+            23,
+            [14.0, 12.0, 28.0, 26.0],
+            ShapeGeometry::Ellipse,
+            color(0.15, 0.75, 0.45, 0.85),
+            1.0,
+            BlendMode::Normal,
+        ),
+        group(24, groups[2], &[25]),
+        shape(
+            25,
+            [22.0, 22.0, 30.0, 28.0],
+            ShapeGeometry::Rect,
+            color(0.2, 0.3, 0.95, 0.9),
+            1.0,
+            BlendMode::Normal,
+        ),
+    ];
+    document(nodes, &[20])
 }
 
 /// A renderer of one quality, on its own CPU backend and its own cache: the
@@ -602,5 +669,76 @@ fn fd_55_a_transparent_render_is_zero_where_nothing_is_drawn() {
     assert!(
         preview.chunks_exact(4).any(|p| p[3] != 0),
         "the region does draw content, so both sides are not blank"
+    );
+}
+
+// ARQ-42, AC6: three nested semi-transparent layers still meet the 99,9 %
+// budget, and the nesting reaches the pixels.
+#[test]
+fn arq_42_three_nested_semi_transparent_layers_agree() {
+    let nested = preview(deep_scene([0.5, 0.5, 0.5]), false);
+    let export = export_srgb8(deep_scene([0.5, 0.5, 0.5]), false);
+    let report = assert_agrees(
+        Mode::Tolerant,
+        "ARQ-42, three nested layers at 0,5",
+        &nested,
+        &export,
+    );
+    assert_eq!(
+        report.differing, 0,
+        "the deepest scene of XP2 leaves no pixel over 1/255"
+    );
+
+    // The fixture has to nest: the same shapes with opaque groups are another
+    // image, so the three opacities are what the comparison just proved.
+    let opaque = preview(deep_scene([1.0, 1.0, 1.0]), false);
+    assert_ne!(
+        nested, opaque,
+        "three semi-transparent groups change the composite"
+    );
+}
+
+/// The stored golden of ARQ-113: the transparent preview of the whole page at
+/// 100 %, raw premultiplied sRGB8 `RGBA`, one byte per channel, row-major.
+///
+/// ARQ-113 fixes the platform it is generated on (`x86_64-unknown-linux-gnu`),
+/// the lossless format (raw bytes are the pixels, no encoder in between) and
+/// the size, which the test's constants fix. No test writes it: a run only ever
+/// reads it, and regenerating it is an explicit, one-off action.
+const GOLDEN_SIDE: usize = 64;
+const GOLDEN: &[u8] = include_bytes!("golden/arq_113_scene.rgba8");
+
+// ARQ-113: the stored golden is the scene on the platform that generated it,
+// and one altered byte fails there.
+#[test]
+fn arq_113_the_stored_golden_is_the_scene_on_its_platform() {
+    assert_eq!(
+        GOLDEN.len(),
+        GOLDEN_SIDE * GOLDEN_SIDE * 4,
+        "the golden has the size the test fixes"
+    );
+    let actual = preview(scene(), true);
+    assert_agrees(
+        current_mode(),
+        "ARQ-113, the stored golden",
+        GOLDEN,
+        &actual,
+    );
+}
+
+// ARQ-113: a reference with one byte altered fails on the platform that
+// generated it, which is why the golden is compared exactly there.
+#[test]
+fn arq_113_one_altered_byte_fails_on_this_platform() {
+    let mut reference = GOLDEN.to_vec();
+    let at = reference.len() / 2;
+    reference[at] ^= 1;
+    let actual = preview(scene(), true);
+    let report = compare(Mode::Exact, &reference, &actual);
+    assert_eq!(report.differing, 1, "one altered byte is one pixel over");
+    assert_eq!(report.max_delta, 1);
+    assert!(
+        !report.within_budget(),
+        "a stored golden is exact on the platform that generated it"
     );
 }
