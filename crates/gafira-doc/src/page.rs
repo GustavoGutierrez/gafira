@@ -10,7 +10,8 @@ use gafira_time::Flicks;
 
 use crate::layout::{check_bleed, default_bleed};
 use crate::{
-    Dpi, GridSettings, GuideSet, Margins, Node, NodeId, PageId, PageLayoutError, PageSize,
+    Dpi, GridSettings, GuideSet, Margins, Node, NodeId, PageField, PageId, PageLayoutError,
+    PageSize,
 };
 
 /// One page: its size, flags, root order and the arena that owns its nodes.
@@ -61,13 +62,26 @@ pub struct Page {
 }
 
 impl Page {
-    /// Checks the layout data against its ranges: bleed, margins, guides,
-    /// then grid. The first failure is returned; nothing is changed.
+    /// Checks the page against its ranges: bleed, margins, guides, grid, then
+    /// the duration. The first failure is returned; nothing is changed.
     pub fn check_layout(&self, dpi: Dpi) -> Result<(), PageLayoutError> {
         check_bleed(self.bleed, dpi)?;
         self.margins.check()?;
         self.guides.check()?;
-        self.grid.check()
+        self.grid.check()?;
+        self.check_duration()
+    }
+
+    /// The duration is a count of flicks at least zero: a page either has no
+    /// duration or one that is not before its own start (02 §3.1).
+    fn check_duration(&self) -> Result<(), PageLayoutError> {
+        match self.duration {
+            Some(duration) if duration.ticks() < 0 => Err(PageLayoutError::OutOfRange {
+                field: PageField::DurationTicks,
+                value: duration.ticks() as f64,
+            }),
+            _ => Ok(()),
+        }
     }
 
     /// An unlocked, visible page with no nodes.

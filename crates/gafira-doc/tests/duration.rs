@@ -5,7 +5,9 @@
 //! edge), AC3 (the wire form omits an absent duration) and AC7 (the field
 //! takes part in equality and in the canonical order of the bytes).
 
-use gafira_doc::{Document, Page, PageId, PageSize};
+use gafira_doc::{
+    Document, LoadError, Page, PageField, PageId, PageLayoutError, PageSize, ValidationError,
+};
 use gafira_geom::{Length, Unit};
 use gafira_time::Flicks;
 
@@ -125,4 +127,34 @@ fn arq_136_the_duration_is_a_flicks_of_gafira_time() {
     assert_eq!(ticks, Some(1_058_400_000), "one and a half seconds");
     let saved: Option<Flicks> = page.duration;
     assert_eq!(saved, Some(Flicks::from_millis(1_500).unwrap()));
+}
+
+// ARQ-13 (design `TL1`: a page duration is a `Flicks` value >= 0): the load
+// validates the document, so a negative duration is refused and zero is a
+// duration the page may have.
+#[test]
+fn arq_13_a_negative_page_duration_fails_to_load() {
+    let negative = DOC_WITH_DURATION.replace(r#""duration":3528000000"#, r#""duration":-5"#);
+    match Document::from_json(negative.as_bytes()) {
+        Err(LoadError::Invalid(ValidationError::PageLayout { page, error })) => {
+            assert_eq!(page, PageId::new(1), "the failing page is reported");
+            assert_eq!(
+                error,
+                PageLayoutError::OutOfRange {
+                    field: PageField::DurationTicks,
+                    value: -5.0,
+                },
+                "the range error names the duration and the value"
+            );
+        }
+        other => panic!("a negative page duration must fail to load, got {other:?}"),
+    }
+
+    let zero = DOC_WITH_DURATION.replace(r#""duration":3528000000"#, r#""duration":0"#);
+    let loaded = Document::from_json(zero.as_bytes()).expect("a zero duration loads");
+    assert_eq!(
+        loaded.pages()[0].duration,
+        Some(Flicks::from_ticks(0)),
+        "zero is a duration, not the absence of one"
+    );
 }

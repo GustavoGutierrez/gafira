@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Dpi;
 
-/// A numeric page-layout field, named in [`PageLayoutError`].
+/// A numeric page field, named in [`PageLayoutError`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PageField {
     /// `bleed`.
@@ -31,6 +31,8 @@ pub enum PageField {
     GridStep,
     /// `grid.subdivisions`.
     GridSubdivisions,
+    /// `Page.duration`, in flicks.
+    DurationTicks,
 }
 
 impl fmt::Display for PageField {
@@ -44,11 +46,12 @@ impl fmt::Display for PageField {
             Self::GuidePosition => "guide position",
             Self::GridStep => "grid step",
             Self::GridSubdivisions => "grid subdivisions",
+            Self::DurationTicks => "duration",
         })
     }
 }
 
-/// Why page-layout data failed its range check. Nothing is ever clamped.
+/// Why a page field failed its range check. Nothing is ever clamped.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PageLayoutError {
@@ -61,8 +64,8 @@ pub enum PageLayoutError {
     OutOfRange {
         /// The failing field.
         field: PageField,
-        /// The value as checked: millimetres for the bleed, the stored number
-        /// for the others.
+        /// The value as checked: millimetres for the bleed, flicks for the
+        /// duration, the stored number for the others.
         value: f64,
     },
 }
