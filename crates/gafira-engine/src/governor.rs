@@ -14,6 +14,7 @@ use gafira_ports::common::Bytes;
 use gafira_ports::render::{RenderBackend, TileCache};
 
 use crate::engine::{EngineConfig, EngineError};
+use crate::event::{EngineEvent, EventBus};
 
 /// The most passes one [`MemoryGovernor::enforce`] runs over the caches, so at
 /// most `MAX_TRIM_PASSES * caches.len()` `trim` calls per call (P17).
@@ -114,18 +115,26 @@ pub struct GovernorOutcome {
 /// Keeps the caches it is given within the declared memory limit.
 pub struct MemoryGovernor {
     limit: Bytes,
+    /// The last level published; `Normal`, unpublished, at the start.
+    level: PressureLevel,
+    bus: EventBus,
 }
 
 impl MemoryGovernor {
-    /// A governor for the limit of `config`.
+    /// A governor for the limit of `config`, publishing
+    /// [`EngineEvent::MemoryPressure`] into `bus`.
     ///
     /// Returns [`EngineError::InvalidConfig`] when `config` declares no memory
     /// limit (design P5, P7).
-    pub fn new(config: &EngineConfig) -> Result<Self, EngineError> {
+    pub fn new(config: &EngineConfig, bus: EventBus) -> Result<Self, EngineError> {
         let limit = config.memory_limit().ok_or(EngineError::InvalidConfig {
             detail: "no memory limit is declared",
         })?;
-        Ok(Self { limit })
+        Ok(Self {
+            limit,
+            level: PressureLevel::Normal,
+            bus,
+        })
     }
 
     /// The limit this governor enforces.
@@ -161,6 +170,12 @@ impl MemoryGovernor {
         } else {
             PressureLevel::Normal
         };
+        // Only a change is news: a host calling `enforce` every frame must not
+        // flood the bus (P17). "Trimmed and now within" is in the outcome.
+        if level != self.level {
+            self.level = level;
+            self.bus.publish(EngineEvent::MemoryPressure(level));
+        }
         GovernorOutcome {
             before,
             after,
@@ -214,7 +229,7 @@ mod tests {
     use gafira_raster::ImageBuf;
 
     use super::*;
-    use crate::fakes::config;
+    use crate::fakes::{config, drain, engine_over, quiet_channel};
 
     use CacheKind::{Backend, Frames, Tiles};
 
@@ -292,8 +307,13 @@ mod tests {
     }
 
     fn governor(limit: u64) -> MemoryGovernor {
+        governor_over(&engine_over(quiet_channel()), limit)
+    }
+
+    /// A governor that publishes into `engine`'s bus.
+    fn governor_over(engine: &crate::Gafira, limit: u64) -> MemoryGovernor {
         let config = config().with_memory_limit(Bytes(limit));
-        MemoryGovernor::new(&config).expect("a governor")
+        MemoryGovernor::new(&config, engine.bus().clone()).expect("a governor")
     }
 
     fn enforce(governor: &mut MemoryGovernor, caches: &mut [(CacheKind, Fake)]) -> GovernorOutcome {
@@ -496,21 +516,54 @@ mod tests {
         }
     }
 
-    /// AC9: an empty slice is within even a zero limit.
+    /// AC9: an empty slice is within even a zero limit, and says nothing.
     #[test]
     fn ac9_an_empty_slice_trims_nothing_and_stays_normal() {
-        let done = enforce(&mut governor(0), &mut []);
+        let engine = engine_over(quiet_channel());
+        let done = enforce(&mut governor_over(&engine, 0), &mut []);
         assert_eq!(done, outcome(0, 0, PressureLevel::Normal));
+        assert_eq!(drain(&engine), []);
+    }
+
+    /// AC8: `MemoryPressure` is published only on a change of level: never at
+    /// the start, once on `Normal -> Critical`, not again while `Critical`,
+    /// once on `Critical -> Normal`.
+    #[test]
+    fn ac8_memory_pressure_is_published_only_on_a_change_of_level() {
+        use PressureLevel::{Critical, Normal};
+        let engine = engine_over(quiet_channel());
+        let mut governor = governor_over(&engine, 10);
+        let log = log();
+        let mut caches = [(Frames, Fake::stuck("frames", 5, &log))];
+        let pressure = |level| vec![EngineEvent::MemoryPressure(level)];
+        // (bytes held before the call, the level, the events it publishes)
+        let steps = [
+            (5, Normal, vec![]),
+            (20, Critical, pressure(Critical)),
+            (20, Critical, vec![]),
+            (30, Critical, vec![]),
+            (10, Normal, pressure(Normal)),
+            (0, Normal, vec![]),
+            (11, Critical, pressure(Critical)),
+        ];
+
+        for (call, (held, level, events)) in steps.into_iter().enumerate() {
+            caches[0].1.held = held;
+            let done = enforce(&mut governor, &mut caches);
+            assert_eq!(done, outcome(held, held, level), "call {call}");
+            assert_eq!(drain(&engine), events, "call {call}");
+        }
     }
 
     /// AC9: no declared limit, no governor (P5, P7).
     #[test]
     fn ac9_a_config_without_a_memory_limit_refuses_the_governor() {
-        let refused = MemoryGovernor::new(&config());
+        let engine = engine_over(quiet_channel());
+        let refused = MemoryGovernor::new(&config(), engine.bus().clone());
         assert!(matches!(refused, Err(EngineError::InvalidConfig { .. })));
 
         let config = config().with_memory_limit(Bytes(7));
-        let built = MemoryGovernor::new(&config).expect("a governor");
+        let built = MemoryGovernor::new(&config, engine.bus().clone()).expect("a governor");
         assert_eq!(built.limit(), Bytes(7));
     }
 
