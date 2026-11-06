@@ -96,19 +96,21 @@ impl ChannelSink {
         }
     }
 
-    /// Run `f` over the window state, ignoring lock poisoning: a panic in
-    /// another thread must not lose the queue.
-    fn with_window<T>(&self, f: impl FnOnce(&mut Window) -> T) -> T {
-        let mut guard = match self.window.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+    /// Run `f` over the window state and the sender under one lock, ignoring
+    /// lock poisoning: a panic in another thread must not lose the queue.
+    ///
+    /// `f` returns how many events it delivered; the waker is called that many
+    /// times after the lock is released, so a waker can never block a
+    /// publisher. An unbounded `send` never blocks (design P11, XP6).
+    fn deliver(&self, f: impl FnOnce(&mut Window, &Sender<EngineEvent>) -> usize) {
+        let delivered = {
+            let mut guard = match self.window.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            f(&mut guard, &self.sender)
         };
-        f(&mut guard)
-    }
-
-    /// Deliver one event and wake the observer.
-    fn send(&self, event: EngineEvent) {
-        if self.sender.send(event).is_ok() {
+        for _ in 0..delivered {
             self.waker.wake();
         }
     }
@@ -122,54 +124,58 @@ impl ChannelSink {
     }
 }
 
+impl Window {
+    fn take_pending(&mut self) -> Option<EngineEvent> {
+        self.pending.take()
+    }
+}
+
+/// Send one event; `1` when it reached the queue, `0` when the receiver is gone
+/// (the error carries the event back and there is nobody to wake).
+fn send(sender: &Sender<EngineEvent>, event: EngineEvent) -> usize {
+    usize::from(sender.send(event).is_ok())
+}
+
 impl EventSink for ChannelSink {
     fn publish(&self, event: EngineEvent) {
-        if matches!(event, EngineEvent::JobProgress { .. }) {
-            let now = self.clock.monotonic();
-            let open = self.with_window(|window| {
-                let open = Self::window_is_open(now, window.last_progress);
-                if open {
+        let is_progress = matches!(event, EngineEvent::JobProgress { .. });
+        let now = self.clock.monotonic();
+        self.deliver(|window, sender| {
+            if is_progress {
+                if Self::window_is_open(now, window.last_progress) {
                     window.last_progress = Some(now);
+                    return send(sender, event);
                 }
-                open
-            });
-            if open {
-                self.send(event);
-            } else {
-                // Inside the window: keep only the latest fraction. It leaves on
-                // the next event of any other kind, or on the host's flush.
-                self.with_window(|window| window.pending = Some(event));
+                // Inside the window: keep only the latest fraction. It leaves
+                // on the next event of any other kind, or on the host's flush.
+                window.pending = Some(event);
+                return 0;
             }
-            return;
-        }
-
-        // A state event: never dropped, never coalesced. It carries the pending
-        // progress out first, so the observer never sees progress go backwards.
-        if let Some(pending) = self.with_window(Window::take_pending) {
-            self.send(pending);
-        }
-        self.send(event);
+            // A state event: never dropped, never coalesced. It carries the
+            // pending progress out first, so the observer never sees progress
+            // go backwards.
+            let carried = window
+                .take_pending()
+                .map_or(0, |pending| send(sender, pending));
+            carried + send(sender, event)
+        });
     }
 
     fn flush(&self) {
         let now = self.clock.monotonic();
-        let open = self.with_window(|window| Self::window_is_open(now, window.last_progress));
-        if !open {
-            return;
-        }
-        let pending = self.with_window(|window| {
-            window.last_progress = Some(now);
-            window.take_pending()
+        self.deliver(|window, sender| {
+            if !Self::window_is_open(now, window.last_progress) {
+                return 0;
+            }
+            // The window moves only when something leaves (E2-S1).
+            match window.take_pending() {
+                Some(pending) => {
+                    window.last_progress = Some(now);
+                    send(sender, pending)
+                }
+                None => 0,
+            }
         });
-        if let Some(pending) = pending {
-            self.send(pending);
-        }
-    }
-}
-
-impl Window {
-    fn take_pending(&mut self) -> Option<EngineEvent> {
-        self.pending.take()
     }
 }
 
@@ -350,5 +356,104 @@ mod tests {
         let sink = ChannelSink::new(sender, Arc::new(NoopWaker), clock);
         sink.publish(changed());
         assert_eq!(receiver.len(), 1);
+    }
+
+    /// E2-S1: a flush with nothing pending does not move the window, so the next
+    /// progress after 100 ms is delivered, not coalesced.
+    #[test]
+    fn s1_an_idle_flush_does_not_hold_back_the_next_progress() {
+        let (sink, receiver, clock, _waker) = sink();
+
+        sink.publish(progress(0.1));
+        for _ in 0..7 {
+            clock.advance(Duration::from_millis(16));
+            sink.flush();
+        }
+        // 112 ms since the last delivered progress.
+        sink.publish(progress(0.9));
+
+        assert_eq!(receiver.try_recv().expect("first"), progress(0.1));
+        assert_eq!(receiver.try_recv().expect("next"), progress(0.9));
+    }
+
+    /// E2-S2: two publishers over one channel keep the order: the pending
+    /// progress of one leaves before the state event of the other.
+    #[test]
+    fn s2_two_bus_clones_keep_the_pending_progress_before_the_state_event() {
+        let clock = TestClock::new();
+        let channel = EventChannel::new(Arc::new(NoopWaker), clock);
+        let (one, other, receiver) = (channel.bus(), channel.bus(), channel.receiver());
+
+        one.publish(progress(0.2));
+        one.publish(progress(0.6));
+        other.publish(changed());
+
+        assert_eq!(receiver.try_recv().expect("first"), progress(0.2));
+        assert_eq!(receiver.try_recv().expect("pending"), progress(0.6));
+        assert_eq!(receiver.try_recv().expect("state"), changed());
+    }
+
+    /// E2-S2: the waker runs after the sink released its lock, so a waker that
+    /// reaches back into the sink cannot deadlock.
+    #[test]
+    fn s2_the_waker_is_called_after_the_lock_is_released() {
+        struct ProbeWaker {
+            sink: std::sync::OnceLock<Arc<ChannelSink>>,
+            lock_free: AtomicUsize,
+            lock_held: AtomicUsize,
+        }
+        impl Waker for ProbeWaker {
+            fn wake(&self) {
+                let free = self
+                    .sink
+                    .get()
+                    .is_some_and(|sink| sink.window.try_lock().is_ok());
+                let counter = if free {
+                    &self.lock_free
+                } else {
+                    &self.lock_held
+                };
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let (sender, _receiver) = unbounded();
+        let probe = Arc::new(ProbeWaker {
+            sink: std::sync::OnceLock::new(),
+            lock_free: AtomicUsize::new(0),
+            lock_held: AtomicUsize::new(0),
+        });
+        let sink = Arc::new(ChannelSink::new(sender, probe.clone(), TestClock::new()));
+        assert!(probe.sink.set(sink.clone()).is_ok());
+
+        sink.publish(progress(0.1));
+        sink.publish(progress(0.2));
+        sink.publish(changed());
+
+        assert_eq!(
+            probe.lock_held.load(Ordering::SeqCst),
+            0,
+            "woke under the lock"
+        );
+        assert_eq!(
+            probe.lock_free.load(Ordering::SeqCst),
+            3,
+            "pending, state, first"
+        );
+    }
+
+    /// E2-S2 / XP6: a send into a channel whose receiver is gone returns an
+    /// error at once; the sink must not panic and must not wake anyone.
+    #[test]
+    fn s2_publishing_after_the_receiver_dropped_does_not_panic() {
+        let (sink, receiver, _clock, waker) = sink();
+        drop(receiver);
+
+        sink.publish(changed());
+        sink.publish(progress(0.1));
+        sink.publish(progress(0.2));
+        sink.flush();
+
+        assert_eq!(waker.count(), 0, "nothing was delivered");
     }
 }

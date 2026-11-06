@@ -156,6 +156,8 @@ impl EventBus {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use gafira_ports::i18n::{FormatLocale, Locale, LocaleSource};
+
     use super::*;
 
     #[derive(Default)]
@@ -187,19 +189,46 @@ mod tests {
         assert_eq!(sink.seen.load(Ordering::SeqCst), 2);
     }
 
+    /// E2-W1: every variant of the vocabulary goes through the bus to its sink,
+    /// one count each. A new variant must be added to this list.
     #[test]
-    fn ac4_the_noop_sink_accepts_every_variant() {
-        let bus = EventBus::noop();
-        bus.publish(document_changed());
-        bus.publish(EngineEvent::LinksMissing(Vec::new()));
-        bus.publish(EngineEvent::LicenseChanged(LicenseStatus::Unlicensed));
-        bus.publish(EngineEvent::BackendChanged(BackendKind::Cpu));
-        bus.publish(EngineEvent::JobProgress {
-            job: JobId::new(1),
-            fraction: 0.5,
-            eta: None,
-        });
-        bus.flush();
+    fn ac4_every_variant_reaches_the_sink_once() {
+        const VARIANTS: usize = 6;
+        let sink = Arc::new(CountingSink::default());
+        let bus = EventBus::new(sink.clone());
+        let every_variant = [
+            document_changed(),
+            EngineEvent::LinksMissing(Vec::new()),
+            EngineEvent::LicenseChanged(LicenseStatus::Unlicensed),
+            EngineEvent::LocaleChanged {
+                preference: LanguagePreference::En,
+                resolved: ResolvedLocale {
+                    locale: Locale::En,
+                    formats: FormatLocale {
+                        locale: Locale::En,
+                        region: None,
+                    },
+                    source: LocaleSource::Manual,
+                },
+            },
+            EngineEvent::BackendChanged(BackendKind::Cpu),
+            EngineEvent::JobProgress {
+                job: JobId::new(1),
+                fraction: 0.5,
+                eta: None,
+            },
+        ];
+
+        for (published, event) in every_variant.into_iter().enumerate() {
+            bus.publish(event);
+            assert_eq!(sink.seen.load(Ordering::SeqCst), published + 1);
+        }
+        assert_eq!(sink.seen.load(Ordering::SeqCst), VARIANTS);
+    }
+
+    #[test]
+    fn ac4_the_noop_sink_accepts_a_flush() {
+        EventBus::noop().flush();
     }
 
     #[test]
