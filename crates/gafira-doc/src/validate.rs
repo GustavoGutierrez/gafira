@@ -40,12 +40,27 @@ impl Document {
     }
 
     /// P2: distinct ids, arena keys, then the `next_id` bound.
+    ///
+    /// The counter is one for the document, so the ids of the pages, the nodes
+    /// and the timeline share it and are distinct among themselves and below
+    /// `next_id` (ARQ-10).
     fn check_ids(&self) -> Result<(), ValidationError> {
         let ids = || {
-            self.pages.iter().flat_map(|p| {
+            let pages = self.pages.iter().flat_map(|p| {
                 let nodes = p.nodes.values().map(|n| n.base.id.get());
                 std::iter::once(p.id.get()).chain(nodes)
-            })
+            });
+            let timeline = self.sequences.iter().flat_map(|sequence| {
+                let lanes = sequence.tracks().iter().flat_map(|track| {
+                    let clips = track.clips().iter().map(|clip| clip.id().get());
+                    std::iter::once(track.id().get()).chain(clips)
+                });
+                let markers = sequence.markers().iter().map(|marker| marker.id().get());
+                std::iter::once(sequence.id().get())
+                    .chain(lanes)
+                    .chain(markers)
+            });
+            pages.chain(timeline)
         };
         let mut seen = BTreeSet::new();
         if let Some(id) = ids().find(|&id| !seen.insert(id)) {
