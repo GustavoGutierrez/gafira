@@ -671,3 +671,252 @@ the mutants HM1/HM2/SM. Their `follow_up: true` can become `closed` in the entry
   mutation score and its absence is not a gap.
 
 next: tdd-apply
+
+## Round 1 — CB4
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB4", "rounds": [ {
+  "round": 1, "commit": "e3630cc97bd7d7e5608940f9e3eb8ad20b6e2aa2", "mode": "standard", "tier": "T2", "depth": "V2",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 2, "warning": 1, "suggestion": 3},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs, src/image.rs:146-205",
+     "summary": "No test filters an Rgba8 source: H-A (mix premultiplied sRGB, convert after) and H-C (straight-alpha mix) leave all 38 tests green; probes P4/P5 kill both. The 8-bit filtering space is unpinned.",
+     "follow_up": false, "status": "open"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/image.rs:93-95, src/tests/image.rs:303-340",
+     "summary": "The destination clip's shape is unpinned: H-B (clip to the page-space bounding box, clamp the sample) survives all 38 tests; only a rotated image tells it from the per-pixel quad. P6 kills it.",
+     "follow_up": false, "status": "open"},
+    {"id": "W10", "severity": "WARNING", "class": "implementation",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:302 (AC6), src/backend.rs:290-302",
+     "summary": "AC6's first clause is not observed: removing the cull leaves 38/38 green. Its only trace today is an off-tile Alpha8 not being refused. The cull earns its place as work skipped, not as a pixel rule.",
+     "follow_up": true, "status": "open"},
+    {"id": "S7", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:302-340",
+     "summary": "AC5's checkerboard is invariant under a quarter turn in either direction, so the sign of the rotation is unpinned; the record states it, and M4 (forward vs inverse) covers it indirectly through AC4.",
+     "follow_up": false, "status": "open"},
+    {"id": "S8", "severity": "SUGGESTION", "class": "ambiguity",
+     "ref": "crates/gafira-render-cpu/src/backend.rs:290-302, src/image.rs:129-139",
+     "summary": "An off-tile Alpha8 image is skipped rather than refused, so the refusal depends on which tile asks. Benign today (the visible page is right); an eager per-tile conversion would make it inconsistent.",
+     "follow_up": false, "status": "open"},
+    {"id": "S9", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "the delivery's 7 files",
+     "summary": "693 insertions against the card's 360 forecast (504 at x1.4): 1.9x, 450 of them tests. Inside the ~700 signal; the coordinator decides, as the card says.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 1},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 693, "forecast": 504}, "report": "verify-report.md" } ] }
+```
+
+- Delivery: `CB4` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb4`, HEAD
+  `e3630cc97bd7d7e5608940f9e3eb8ad20b6e2aa2`, cut from `develop` `2b949be`. Four commits: `2b949be`
+  (the card), `f0d3136` (the sampler), `bea13dc` (the record), `e3630cc` (the card amend). Not
+  pushed, not merged.
+- Mode `standard`, depth **V2** (the card says `verify: V2`). `mutation: off`: no `cargo-mutants`
+  run happened and that is not a finding; the rigor is the hand mutants and the gates, so V2's
+  independent probes and its own mutant budget are this round's.
+- Verdict: **FAIL** — 2 CRITICAL, 1 WARNING, 3 SUGGESTION. The *code* answers the question this
+  round exists for: it converts in ARQ-117's order and composites in linear premultiplied light, and
+  nine independent probes with hand-derived constants say so. The *tests* do not: the three
+  properties they never exercise — filtering an 8-bit source, and the per-pixel quad clip — are
+  exactly where a plausible wrong reading lives, and each survives the whole suite.
+- Toolchain: cargo/rustc 1.93.1, clippy 0.1.93, cargo-deny 0.20.2. Disk: `df -h /` at start 174 GB
+  free.
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile` in 22.91 s |
+| `cargo test --workspace --locked` | 0 | **196 test binaries, 2497 passed, 0 failed, 0 ignored**; the delivery's own binaries are `gafira-render-cpu` lib **38** (30 at CB3b + the 8 image tests) and `arq_42_comparison` 14 |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| CI policy, job `policy` | 0 | 9/9 steps exit 0: Format; CLI has no UI deps (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107 language; V13 `EditToken`; V14 property test; testkit `ports` |
+
+The extractor `/tmp/gafira-policy-run.py` was re-checked against this `ci.yml`: job `policy` has 12
+steps — `actions/checkout` (`uses`), `Install toolchain` (the one `run:` step the extractor skips),
+the nine checks above, and `cargo-deny-action` (`uses`) — so the record's "ten `run:`, one skipped,
+nine" reproduces, and the extractor's `SKIP` entry for the test matrix's target guard names a step
+this job does not have (harmless). AC7's other halves: `src/lib.rs:25` still has
+`#![forbid(unsafe_code)]`; the purity `grep` for `std::fs|std::net|std::thread::spawn|
+std::time::(Instant|SystemTime)::now|std::env` exits 1; and
+`git diff 2b949be..HEAD -- Cargo.toml Cargo.lock crates/gafira-render-cpu/Cargo.toml` is empty, so
+no dependency arrived and no V5 row moved (`O2`).
+
+Build hygiene: `CARGO_TARGET_DIR=/tmp/gafira-cb4-v2-target-head` for the worktree,
+`/tmp/gafira-cb4-v2-target` for the probe and mutant export, both with `CARGO_INCREMENTAL=0` and not
+shared. A first `clippy` ran with the export's target dir, which breaks the one-dir-per-tree rule;
+it was discarded and the gate re-run in the head dir, and its 0 is the one reported. The worktree is
+clean (`git status` empty) and no source file was edited by this round; the only file written is
+this one.
+
+### Artifact integrity (fast lane, step 3c)
+
+- `2b949be docs(gafira-render-cpu): slice card for CB4` touches only
+  `specs/changes/gafira-render-cpu/apply-progress.md` (+15), as G0 requires.
+- No implementer commit changed the card. `git diff 2b949be..bea13dc` on that file adds **56** lines
+  and removes **0**: the `## CB4 (tdd-apply)` record and its three subsections only. The amendment
+  is `e3630cc docs(gafira-render-cpu): slice card amend for CB4` by the coordinator: it touches
+  only that file (+10/−2) and states why (the `AC4` wording read bilinear as nearest-neighbour, and
+  the non-goal misplaced `level`).
+- Every product ID in the card has a test that names it and proves its criterion: **ARQ-117**
+  (`src/tests/image.rs:128`, `:181`, plus the CB1/CB2 hashes), **ARQ-121** (`:215`, `:257`),
+  **ARQ-149** (`:350`, `:372`), **ARQ-42** (`:303`). No ID is left out. **ARQ-02** is AC7's command.
+
+### Independent probes (step 1c, before reading the delivery's tests)
+
+Nine probes in my own file (`crates/gafira-render-cpu/tests/cb4_probe.rs`) on a clean `git archive`
+export at HEAD, built from the card and the product rows only: my own scenes, my own `TileCache`,
+the real `CpuBackend`. Every expected number was derived first, in Python from the spec text
+(`/tmp/cb4derive.py`: ARQ-117's `(c×a+127)/255`, `round(c×255/a)` with halves up, the CSS Color 4
+sRGB curve of §10, and bilinear at `i+0.5`), not read from the delivery.
+
+| Probe | Criterion | What it asserts | HEAD |
+|---|---|---|---|
+| P1 | AC1 | `[128,64,32,128]` → `(0.50196078, 0.10835351, 0.02573526, 0.50196078)`; over an opaque `Srgb(.2,.4,.6,1)` → `(0.51844826, 0.17452714, 0.18438405, 1)`; the pixel outside the image stays clear | pass |
+| P2 | AC2 | `[.25,.5,.75,.5]` is returned bit for bit, no curve | pass |
+| P3 | AC4 | a 4-wide ramp `0,¼,½,1` at 2× gives `[0, 1/16, 3/16, 5/16, 7/16, 10/16, 14/16, 1]`, and no weight at a corner | pass |
+| P4 | AC1 (composition) | a 2×2 `Rgba8` image at 2× equals the mix of the four *converted* texels (`(0.62647059, 0.13523025, 0.01930144, 0.62647059)` at (1,0)) | pass |
+| P5 | AC1 (no bleed) | opaque red beside transparency keeps `r == a` at every column, so the alpha ramps and the hue does not move to black | pass |
+| P6 | AC6 + the clip | a 4×4 white image turned 45° about (2,2): page (0,0) and (5,5) are inside the box and outside the quad and stay clear; the centre is painted | pass |
+| P7 | AC6 | an image at page (1000,1000) changes no pixel of the tile | pass |
+| P8 | AC6 + Alpha8 | on-tile `Alpha8` → `RenderError::Effect(UnsupportedFormat)`; off-tile it is skipped with no error | pass |
+| P9 | ARQ-149 | a 1×1 image at page (104,104) on a tile at region (100,100)-(108,108) paints exactly page (104,104) | pass |
+
+Two things this establishes. **The arithmetic is independently confirmed**: my Python and the
+implementation agree to `1e-6` on the AC1 texel, the composite, the AC4 quarters, the 2×2 four-tap
+mix and the no-bleed case — so the amended `AC4` (weights at texel centres, the quarter/
+three-quarter pair, no constant block) is the correct reading and the delivery's choice to implement
+the parenthetical was right, not a deviation to excuse. And **the probes are not vacuous**: every
+mutant I applied dies on at least one of them (P4/P5 on H-A and H-C, P6 on H-B, P2 on M3, P8 on the
+removal of the cull).
+
+Comparison with the delivery's tests afterwards: they are stronger than mine on the AC1 texel set
+(four hand-computed texels, one partially transparent, plus the backdrop) and equivalent on AC2 to
+AC4. They are weaker in one dimension that matters: **every test that involves interpolation uses
+`RgbaF32`, and every `Rgba8` test is a 1:1 translate** — so no delivery test ever filters a texel
+that needs converting (`C1`), and no delivery test uses a non-axis-aligned transform where the box
+and the quad differ (`C2`).
+
+### Hand mutants (step 4b)
+
+Four counted on the export (warm target dir), each reverted before the next; the export's `src/`
+diffs clean against HEAD afterwards. I did not repeat the record's list.
+
+| # | Mutation | Killed by the delivery's tests? | Result |
+|---|---|---|---|
+| SM | **spot-check of the recorded M2**: `decode_srgb8` drops the premultiply (`[linear.r, …]`) | `arq_117_an_rgba8_texel_is_converted_once_in_the_order_arq_117_fixes` | **killed**, with the recorded signature `channel 0 is [1.0, 0.21586053, 0.051269464, 0.5019608]` |
+| HM1 | **mine**: filter the `Rgba8` source in its own space — mix the premultiplied sRGB bytes, convert the mixed value once | **no** — 38/38 green | **survived** the suite; **killed by my P4 and P5** → `C1` |
+| HM2 | **mine**: filter with straight alpha — unpremultiply each tap, mix, premultiply once at the end | **no** — 38/38 green | **survived** the suite; **killed by my P4 and P5** (blue `0.02409` vs `0.01930`) → `C1` |
+| HM3 | **mine**: clip to the image's page-space **bounding box** and clamp the sample, instead of the per-pixel quad test | **no** — 38/38 green | **survived** the suite; **killed by my P6** (the box corner reads `[1,1,1,1]`, expected `[0,0,0,0]`) → `C2` |
+
+Re-checks of the record's own claims, uncounted: **M3** (an sRGB decode applied to `RgbaF32`) is
+**killed** by three of their tests (AC2 and both f32 AC3/AC4) and by P2 — the claim holds. **M7**
+(the cull removed) leaves 38/38 green, as the record says. **M8** (the cull's box from the first
+corner only) is **killed** by `arq_149_an_image_that_partly_covers_the_tile_draws_only_its_own_window`,
+so the cull's *semantics* are pinned even though its *existence* is not.
+
+### `C1`: the 8-bit filtering space is the one place the suite cannot see
+
+`AC1` says the conversion is "unpremultiply, sRGB to linear, premultiply" and the plan says the
+sampling "happens in premultiplied linear light, so an edge against transparency does not bleed
+towards black". The code does both (`src/image.rs:146-165`: each tap through `decode_srgb8` before
+any weight, `mix` in the premultiplied linear result). But the tests pin the order only at a 1:1
+translate, where no two texels are ever weighed: `arq_117_…_the_order_arq_117_fixes` uses
+`Affine::translate((2.0, 1.0))`, and the only four-tap tests (`AC3`, `AC4`, `AC5`) all use
+`RgbaF32`, the format that must not be converted. HM1 and HM2 are the two plausible wrong
+readings — filter in premultiplied sRGB and convert afterwards, or filter straight alpha and
+premultiply at the end — and both leave the 38 tests green while moving a channel by a quarter
+(HM2 on P4's (1,0): blue `0.02409` against `0.01930`) or bending the edge towards black (HM2 on P5).
+This is not a rounding question; it is the silent wrong page the card says it exists to prevent.
+The code is right today, so the fix is two tests, not behaviour: a scaled `Rgba8` case asserted
+against per-tap hand constants, and an opaque-next-to-transparent case asserting `r == a` at every
+column.
+
+### `C2`: the clip's shape is unpinned
+
+The delivery replaced a box clip with the per-pixel quad test on purpose and argues the box would
+smear a rotated image's edge into the corners — **that argument is right**, and P6 confirms the
+implementation does the quad. What no test does is distinguish the two: `AC6`'s partly-covers test
+uses a translate (box = quad) and `AC5`'s quarter turn maps the box onto the quad exactly. HM3
+substitutes the box clip and clamps the sample, and all 38 tests stay green; it is only visible on a
+non-axis-aligned transform whose box corners fall outside the quad, which is P6. One rotated
+fixture with a corner asserted clear closes it.
+
+### `W10`: the cull is real, and its survival is not a defect of the code
+
+M7 was reproduced: with the whole `matches!(…)` cull removed from the `DrawImage` arm the suite is
+38/38 green, because the per-pixel clip rejects every sample a missed tile could produce. So AC6's
+first clause — "the op is culled before any sampling" — cannot be falsified by the criterion's own
+kind of evidence (`[unit]`, on pixels). It is not literally unfalsifiable, though: the cull has
+exactly one behavioural trace today, and P8 shows it — **an off-tile `Alpha8` image is skipped
+instead of refused**, while the same image on-tile errors. That is `D6` applied consistently (a
+culled op contributes nothing, so nothing is sampled), and no test asserts it.
+
+The cull earns its place: it trades one four-corner transform and a rectangle test per tile for
+`width × height` inverse transforms and range tests (`256 × 256` on a full tile) on an op that can
+draw nothing. That is a per-tile, not per-pixel, saving, and with many off-tile images it is the
+difference between skipping a few dozen ops and running the sampler over every tile. It stays
+pixel-invisible only while conversion is per tap; with an eager per-tile conversion it would become
+observable, because the cull would be the only thing preventing the work. Recommendation: keep the
+cull, and either reword AC6's first clause to the cull's observable form (an off-tile `Alpha8` image
+is not refused) or assert that in a test. Not CRITICAL: the criterion's visible half (a missed image
+changes no pixel) is proven, and the cull's shape and box are pinned by M8/M9/M10.
+
+### The seven criteria, mapped
+
+| AC | Proven by | State |
+|---|---|---|
+| AC1 | `arq_117_an_rgba8_texel_is_converted_once_in_the_order_arq_117_fixes` (four hand texels + the composite) and P1, P4, P5 | covered; the filtered 8-bit path is unpinned → `C1` |
+| AC2 | `arq_117_an_rgba_f32_texel_is_taken_as_linear_premultiplied` (bit for bit) and P2; M3 re-checked and killed | covered |
+| AC3 | `arq_121_a_one_texel_image_scaled_over_the_tile_is_that_colour` (64 px) and P3's edge exactness | covered |
+| AC4 | `arq_121_an_integer_scale_takes_its_weights_at_texel_centres` (the eight quarters, the corner reading asserted not to be it) and P3; my Python reproduces the same eight numbers from the geometry | covered, and the amended card matches the code |
+| AC5 | `arq_42_a_checkerboard_rotated_by_ninety_degrees_is_the_rotated_checkerboard` (16 px against `source(y, 3−x)`); I derived the same permutation from `rotate_about(π/2, (2,2))` | covered; the fixture's symmetry does not pin the sign (`S7`) |
+| AC6 | the two `arq_149_…` tests, P7, P9 (the window and the tile origin), P8 for the skip | covered except the literal "before any sampling" clause (`W10`) |
+| AC7 | `src/lib.rs:25`, the nine policy steps, the purity `grep` (exit 1), the empty manifest diff | covered |
+
+### Flagged items, judged
+
+1. **`AC4` and the parenthetical.** The amend is correct. At an integer 2× scale the destination
+   centres sit a quarter texel either side of each texel boundary, so bilinear *must* answer
+   `¾A + ¼B` and `¼A + ¾B`; "each texel covers its block" is nearest-neighbour and contradicts the
+   filter the same card, the scope and the plan fix. My derivation reaches the card's eight numbers
+   independently, and the delivery's choice to implement the parenthetical was right.
+2. **The destination clip is per pixel.** Right, and the argument for it is right: a page-space box
+   clip paints the area between a rotated image's quad and its box with the clamped edge, and M10
+   shows the tile alone would flood it. The gap is only that no test makes the distinction (`C2`).
+3. **`Alpha8` refused, and culled before the refusal.** Worth one SUGGESTION, not a defect: the
+   page is right either way (a plan with a visible `Alpha8` image still fails on the tile that
+   covers it), and D6 justifies skipping a culled op. It becomes a real inconsistency only if
+   conversion moves ahead of the cull (`S8`).
+4. **No converted copy cached.** The arithmetic is right: `sample` calls `texel` four times per
+   output pixel (`src/image.rs:150-152`), so an `Rgba8` source pays up to four curve decodes, and a
+   clamped or constant region pays fewer because the taps repeat. The deferral is honest: nothing
+   emits `DrawImage` yet — `git grep 'fn visit_image'` is empty, `ARQ-134` keeps the visitor at three
+   kinds, and `gafira-render`'s planner only passes the op through — so no document can reach this
+   code, and `CB6` is where the measurement belongs. No finding.
+5. **Size.** 693 insertions (+13 deleted) is 1.9× the 360 forecast (1.4× of it is 504), with 450 of
+   the insertions in `src/tests/image.rs` and 243 in `src/`. It is inside the ~700 signal and the
+   tests are the forecast's own x1.4 rule at work, so this is a SUGGESTION for the coordinator to
+   decide on, as the card says (`S9`); it does not gate the round.
+
+### Observations (not findings)
+
+- **The record's own survivor is honestly stated.** M7 is not concealed, and two mutants (M8, M9)
+  pin what the cull *is*. That is the right way to report a survivor; the finding above is about the
+  criterion's wording, not about the record's candour.
+- **`decode_srgb8` is shared, not duplicated.** The cached-tile read-back and the image path call
+  one function (`src/surface.rs:299`), so the conversion order has one implementation. That is the
+  right shape, and it means a fix for `C1`'s tests also protects the tile path.
+- **The guard no test can see.** `draw` returns early when the inverse is not finite, and the
+  destination clip would reject every pixel of such a transform anyway. The record claims it as
+  untested; I agree, and P6's geometry shows why it is unobservable rather than a gap.
+- **The negative control is sound.** M4 (the transform instead of its inverse) is killed by the AC4
+  test, which is what keeps AC5's symmetric fixture from being the only evidence of the mapping.
+- **No T4 and no `cargo-mutants` run**, per `mutation: off` and `O10`. This round's rigor is its own
+  probes and mutants, and the absence of a mutation score is not a gap.
+
+next: tdd-apply
