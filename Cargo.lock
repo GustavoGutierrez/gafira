@@ -453,6 +453,7 @@ dependencies = [
  "gafira-edit",
  "gafira-geom",
  "gafira-ports",
+ "gafira-raster",
 ]
 
 [[package]]
