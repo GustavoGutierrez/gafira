@@ -109,8 +109,9 @@ LATEX_HEADER = r"""\usepackage{fvextra}
 \definecolor{gafiracanvas}{HTML}{FAFAF7}
 \definecolor{gafiramint}{HTML}{3FBFA9}
 \definecolor{gafiramist}{HTML}{E7EAF2}
-\newfontfamily\GafiraDisplay{Inter}[Path=FONTPATH/, Extension=.ttf, UprightFont=Inter-test, AutoFakeBold=1.35]
-\newfontfamily\GafiraHeavy{Manrope}[Path=FONTPATH/, Extension=.ttf, UprightFont=Manrope-test, AutoFakeBold=2.4]
+\newfontfamily\GafiraDisplay{Inter}[UprightFont={[TESTFONTDIR/Inter-test.ttf]},
+  BoldFont={[MANUALFONTDIR/Inter-SemiBold.ttf]}]
+\newfontfamily\GafiraHeavy{Manrope}[UprightFont={[MANUALFONTDIR/Manrope-ExtraBold.ttf]}]
 \renewcommand{\maketitle}{}
 \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\footnotesize}
 \setlength{\emergencystretch}{4em}
@@ -375,7 +376,8 @@ def cmd_build(args: argparse.Namespace) -> int:
     (BUILD / "code-break.lua").write_text(LUA_FILTER, encoding="utf-8")
     assets = (HERE.parent / "marca" / "assets").resolve()
     (BUILD / "header.tex").write_text(
-        LATEX_HEADER.replace("FONTPATH", str((repo_root() / "assets" / "fonts" / "test").resolve()))
+        LATEX_HEADER.replace("TESTFONTDIR", str((repo_root() / "assets" / "fonts" / "test").resolve()))
+        .replace("MANUALFONTDIR", str((repo_root() / "assets" / "fonts" / "manual").resolve()))
         + f"\\graphicspath{{{{{assets}/}}}}\n", encoding="utf-8")
     today = datetime.date.today().isoformat()
     values = {
