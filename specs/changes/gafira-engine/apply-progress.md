@@ -152,3 +152,36 @@ Hand mutants: each was applied, the named test failed, the file was restored, an
 | M2 | a coalesced `JobProgress` also calls `waker.wake()` | `ac2_the_waker_is_called_once_per_delivery`, plus two `ac3` tests |
 | M3 | `ChannelSink::window_is_open` returns `true` | the three `ac3` tests |
 | M4 | state events routed through the coalescer | `ac4_ten_state_events_produce_ten_deliveries`, plus two more |
+
+## E2 fix round
+
+Commits: the channel and facade change (F1, F2, F6), then the sink change (F3, F4, F5). Gates per
+code commit: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D
+warnings`, `cargo test --workspace --locked`, all green. No manifest changed, so no `cargo deny`.
+
+RED evidence:
+
+| Item | Failing test and assertion before the code |
+|---|---|
+| F1 | `p11_an_event_published_before_the_engine_exists_is_drained_first`: left `LinksMissing([])`, right `BackendChanged(Cpu)` (stub `Gafira::new` that ignored the channel) |
+| F2 | `w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it`: "one wake", left 0, right 1 (same stub) |
+| F5 | `s1_an_idle_flush_does_not_hold_back_the_next_progress`: the second `try_recv` was empty (old `flush` moved the window with nothing pending) |
+| F3, F4, F6 | no RED: F3 and F4 are characterization tests of behaviour the old code already had (the waker already ran outside the lock and a dropped receiver was already handled); they are pinned by hand mutants 3, 4 and 5. F6 is docs only. |
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 1 | `Gafira::new` builds its bus with a no-op waker instead of the channel's | `w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it`, `p11_an_event_published_before...` | `try_recv` expects on the bus/waker path fail; wake count 0 |
+| 2 | `flush` moves the window with nothing pending | `s1_an_idle_flush_does_not_hold_back_the_next_progress` | next `try_recv` empty |
+| 3 | `LocaleChanged` dropped from the every-variant list | `ac4_every_variant_reaches_the_sink_once` | left 5, right 6 |
+| 4a | waker called while the lock is held | `s2_the_waker_is_called_after_the_lock_is_released` | `lock_held` left 3, right 0 |
+| 4b | a coalesced `JobProgress` wakes | `ac2_the_waker_is_called_once_per_delivery`, two `ac3` tests, `s2_...` pair | left 3, right 2 |
+| 5 | `send` result unwrapped | `s2_publishing_after_the_receiver_dropped_does_not_panic` | panic at the `unwrap` |
+
+Deviations:
+
+- F3 uses a counting sink (the bus forwards to it), not "the real `NoopSink`", because a
+  `NoopSink` cannot be counted; the assertion is one count per variant and the exact total of six.
+- Observed and left alone: a progress that opens the window does not clear an older pending one,
+  so a stale fraction can still leave later. No finding names it; it belongs in a follow-up.
