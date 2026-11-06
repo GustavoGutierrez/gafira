@@ -273,140 +273,13 @@ impl Gafira {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::time::Duration;
-
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::event::{NoopWaker, Waker};
-    use gafira_doc::{ContentHash, Document};
-    use gafira_ports::common::UnixTime;
-    use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus};
+    use crate::event::Waker;
+    use crate::fakes::*;
     use gafira_ports::render::BackendKind;
-    use gafira_ports::store::*;
-    use gafira_ports::system::*;
 
     use super::*;
-
-    struct NoRepository;
-
-    impl ProjectRepository for NoRepository {
-        fn load(
-            &self,
-            _path: &Path,
-        ) -> Result<gafira_ports::repository::LoadedProject, RepositoryError> {
-            Err(RepositoryError::Io(io::Error::other("unused")))
-        }
-
-        fn save(&self, _path: &Path, _document: &Document) -> Result<(), RepositoryError> {
-            Err(RepositoryError::Io(io::Error::other("unused")))
-        }
-    }
-
-    struct NoStore;
-
-    impl ContentStore for NoStore {
-        fn put(&self, _src: &mut dyn io::Read) -> Result<ContentHash, StoreError> {
-            Err(StoreError::Io(io::Error::other("unused")))
-        }
-
-        fn open(&self, _hash: ContentHash) -> Result<Box<dyn ReadSeek + Send>, StoreError> {
-            Err(StoreError::Io(io::Error::other("unused")))
-        }
-
-        fn contains(&self, _hash: ContentHash) -> Result<bool, StoreError> {
-            Err(StoreError::Io(io::Error::other("unused")))
-        }
-    }
-
-    struct NoFilesystem;
-
-    impl FileSystem for NoFilesystem {
-        fn open(&self, _path: &Path) -> io::Result<Box<dyn ReadSeek + Send>> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn create(&self, _path: &Path) -> io::Result<Box<dyn FileWrite>> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn replace(&self, _from: &Path, _to: &Path) -> io::Result<()> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn remove(&self, _path: &Path) -> io::Result<()> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn exists(&self, _path: &Path) -> io::Result<bool> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn read_dir(&self, _path: &Path) -> io::Result<Vec<PathBuf>> {
-            Err(io::Error::other("unused"))
-        }
-    }
-
-    struct NoClock;
-
-    impl Clock for NoClock {
-        fn now(&self) -> UnixTime {
-            UnixTime(0)
-        }
-
-        fn monotonic(&self) -> Duration {
-            Duration::ZERO
-        }
-    }
-
-    struct NoNotifier;
-
-    impl Notifier for NoNotifier {
-        fn notify(&self, _title: &str, _body: &str) {}
-    }
-
-    struct NoLicense;
-
-    impl LicenseVerifier for NoLicense {
-        fn status(&self, _now: UnixTime) -> LicenseStatus {
-            LicenseStatus::Unlicensed
-        }
-
-        fn activate(
-            &self,
-            _key: &LicenseKey,
-            _label: Option<&str>,
-        ) -> Result<LicenseStatus, LicenseError> {
-            Err(LicenseError::Storage)
-        }
-
-        fn validate(&self, _now: UnixTime) -> Result<LicenseStatus, LicenseError> {
-            Err(LicenseError::Storage)
-        }
-
-        fn deactivate(&self) -> Result<(), LicenseError> {
-            Err(LicenseError::Storage)
-        }
-    }
-
-    fn config() -> EngineConfig {
-        EngineConfig::new("/data/gafira").expect("a valid data directory")
-    }
-
-    fn six_ports() -> Ports {
-        Ports::new(
-            Arc::new(NoRepository),
-            Arc::new(NoStore),
-            Arc::new(NoFilesystem),
-            Arc::new(NoClock),
-            Arc::new(NoNotifier),
-            Arc::new(NoLicense),
-        )
-    }
 
     #[derive(Default)]
     struct CountingWaker {
@@ -417,14 +290,6 @@ mod tests {
         fn wake(&self) {
             self.wakes.fetch_add(1, Ordering::SeqCst);
         }
-    }
-
-    fn quiet_channel() -> EventChannel {
-        EventChannel::new(Arc::new(NoopWaker), Arc::new(NoClock))
-    }
-
-    fn engine_over(events: EventChannel) -> Gafira {
-        Gafira::new(six_ports(), Registries::new(), config(), events).expect("an engine")
     }
 
     /// W5 and E2-C1: publishing through the facade reaches the observer exactly

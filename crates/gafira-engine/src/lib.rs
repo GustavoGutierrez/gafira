@@ -16,6 +16,8 @@
 mod bus;
 mod engine;
 mod event;
+#[cfg(test)]
+mod fakes;
 
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries};
