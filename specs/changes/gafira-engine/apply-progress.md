@@ -511,3 +511,56 @@ Why: the `open` half with the fault-injecting fakes measured ~500 lines and the 
   Read-only flag of `open` is kept from `E3c2` on (AC5, AC6).
 
 Everything else in the `E3c` card holds for both halves.
+
+## Notes — `E3c1`
+
+Done: AC8, AC9, AC12 (for the code `E3c1` adds), AC13. Code commit `16280b5`
+(`ProjectService::open`, a private `install` shared with `new_document`, `ProjectService::over`
+now takes `&Ports`; the private fakes `MemoryFs`, `MemoryFile`, `FsOp`, `MemoryRepository`,
+`RepoCall`, `engine_on`, `two_page_document`, `invalid_document` in `src/fakes.rs`). Tests are
+unit tests in `src/project.rs` and one fakes test in `src/fakes.rs`.
+
+RED evidence (`open` was first a stub returning `Ok(())`, the tests run against it):
+
+| AC | Test | Assertion before the code |
+|---|---|---|
+| AC9 | `ac9_open_bumps_once_lists_the_whole_loaded_document_and_drops_the_old_history` | left `[]`, right `[DocumentChanged { version: DocVersion(3), dirty: DirtySet { pages: {PageId(1), PageId(4)}, nodes: {NodeId(2), NodeId(3), NodeId(5)} } }]` |
+| AC8 | `ac8_an_open_that_fails_to_load_leaves_the_old_session` | `matches!(error, Err(EngineError::Repository(RepositoryError::Io(_))))` failed on `Ok(())` |
+| AC8 | `ac8_an_open_of_an_invalid_document_leaves_the_old_session` | `matches!(error, Err(EngineError::InvalidDocument(_)))` failed on `Ok(())` |
+| AC12 | purity grep | `git diff fb3c814..16280b5 -- crates/gafira-engine \| grep '^+' \| grep -cE "std::fs\|std::thread\|std::env\|rand\|thread::spawn"` → `0`; `git grep -nE "std::fs\|std::thread\|std::env\|rand::\|thread::spawn" -- crates/gafira-engine/src` → only the existing doc comment `engine.rs:96` ("`std::env` is banned here"); `open` reads only through `ProjectRepository::load` |
+| AC13 | gates at workspace scope, at `16280b5` | `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --locked -- -D warnings` no warning; `cargo test --workspace --locked` 199 suites, 2548 passed, 0 failed; no manifest change, so no `cargo deny` |
+
+AC9 runs on a NON-empty document (`two_page_document`: page 1 with nodes 2 and 3, page 4 with
+node 5), which closes E3b-W3; it also asserts exactly one `RepoCall::Load(TARGET)`, the loaded
+document equal to the fixture, clean after open and no undo across it. AC8 asserts, after the
+failed `open`: nothing published, still modified, the old document (one page), its history (an
+undo is `Some`), and the version unmoved (the undo publishes version 3 with the appended page).
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 7 | swap the session (`*cell = None` under the lock) before `History::new` validates | `ac8_an_open_of_an_invalid_document_leaves_the_old_session` | panicked `still modified` |
+
+The other seven hand mutants of the `E3c` list belong to `save` (`E3c2`).
+
+Deviations:
+
+- D1. `invalid_document()` (test-only, `src/fakes.rs`): every public constructor of `Document`
+  validates, so the fake builds the invalid one with a test command that sets the DPI to 0
+  through the `DocMut` it is given, clones `doc.as_doc()`, and returns `Err(NotApplied)`, so
+  `History::preview` drops its copy and nothing is installed. `EditToken` is never named. The
+  helper asserts the copy fails `validate()`.
+- D2. `Session` does not gain `path`, `read_only` and the project key in `E3c1`: nothing reads
+  them before `save`, and unread fields are dead code under `-D warnings`. They arrive with
+  `E3c2` (the prepared change is kept as `stash@{0}` in the worktree, `session.rs` only). Until
+  then `open` ignores `LoadedProject::read_only`.
+- D3. The memory fakes are minimal where `E3c` does not need them: `MemoryFile` appends on every
+  `write` and its `seek`, `create_dir_all` and `read_dir` return `Unsupported`; `open` and
+  `exists` are not traced (the trace is the write side, P16). The `replace` hook for the
+  snapshot-version test arrives with `E3c2`.
+
+Measured lines (`git diff --shortstat fb3c814..16280b5`): 3 files, 496 insertions, 10 deletions.
+Production: 31 insertions, 6 deletions (`project.rs` 29/5, `engine.rs` 2/1). Test: 465
+insertions, 4 deletions (`fakes.rs` 353/4, `project.rs` tests 112/0). The split figures came
+from `git diff --numstat` and the hunk headers of `project.rs` against its `#[cfg(test)]` line.
