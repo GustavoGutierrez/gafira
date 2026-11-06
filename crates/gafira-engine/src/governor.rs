@@ -366,6 +366,35 @@ mod tests {
         assert_eq!(done, outcome(39, 0, PressureLevel::Normal));
     }
 
+    /// AC1: the order within a kind is the caller's even with many caches, where
+    /// an unstable sort would reorder caches of equal kind (P17, "sorted
+    /// stably").
+    #[test]
+    fn ac1_many_caches_of_one_kind_keep_the_caller_order() {
+        let log = log();
+        let kinds = [Backend, Frames, Tiles];
+        let mut caches: Vec<(CacheKind, Fake)> = (0..64_usize)
+            .map(|at| {
+                let name: &'static str = Box::leak(format!("cache-{at}").into_boxed_str());
+                (kinds[(at * 7 + at / 5) % 3], Fake::honest(name, 1, &log))
+            })
+            .collect();
+        let expected: Vec<Trim> = [Frames, Tiles, Backend]
+            .into_iter()
+            .flat_map(|kind| {
+                caches
+                    .iter()
+                    .filter(move |(listed, _)| *listed == kind)
+                    .map(|(_, cache)| (cache.name, 0))
+            })
+            .collect();
+
+        let done = enforce(&mut governor(0), &mut caches);
+
+        assert_eq!(taken(&log), expected);
+        assert_eq!(done, outcome(64, 0, PressureLevel::Normal));
+    }
+
     /// AC2: exactly at the budget is within it; one byte above trims exactly
     /// one byte from the first cache in order.
     #[test]
