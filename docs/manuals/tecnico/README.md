@@ -12,6 +12,8 @@ docs/manuals/tecnico/
 ```
 
 Outputs: `build/Gafira_Technical_Manual.pdf` (English) and `build/Gafira_Manual_Tecnico.pdf` (Spanish).
+`build` renders **every** edition; `--lang en|es` limits it to one. A failure in one edition does
+not stop the other, and the exit code is non-zero if either could not be produced.
 
 ## Requirements
 

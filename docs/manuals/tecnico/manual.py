@@ -149,6 +149,11 @@ def repo_root() -> Path:
     return HERE
 
 
+def edition(lang: str | None) -> str:
+    """The edition a command works on: the one asked for, or English."""
+    return lang or "en"
+
+
 def read_index(lang: str) -> tuple[list[str], list[tuple[str, str]]]:
     """Return the raw index lines and the (title, file) entries in order."""
     index = LANGS[lang]["index"]
@@ -183,7 +188,7 @@ def chapter_title(path: Path) -> str | None:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    _, entries = read_index(args.lang)
+    _, entries = read_index(edition(args.lang))
     for title, file in entries:
         print(f"{file[:2]}  {title}  ({file})")
     return 0
@@ -317,7 +322,7 @@ def check_mirror(errors: list[str]) -> None:
 
 def cmd_check(args: argparse.Namespace) -> int:
     errors: list[str] = []
-    check_structure(args.lang, errors)
+    check_structure(edition(args.lang), errors)
     for lang in LANGS:
         scan_files(lang, errors)
     check_mirror(errors)
@@ -339,8 +344,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("\n".join(errors), file=sys.stderr)
         print(f"check failed: {len(errors)} problem(s)", file=sys.stderr)
         return 1
-    _, entries = read_index(args.lang)
-    print(f"check ok [{args.lang}]: {len(entries)} chapters, English and Spanish mirror each other, "
+    _, entries = read_index(edition(args.lang))
+    print(f"check ok [{edition(args.lang)}]: {len(entries)} chapters, English and Spanish mirror each other, "
           "no absolute paths, links resolve")
     return 0
 
@@ -376,10 +381,19 @@ def cmd_build(args: argparse.Namespace) -> int:
     if not shutil.which("pandoc"):
         print("error: pandoc is required", file=sys.stderr)
         return 1
-    cfg = LANGS[args.lang]
-    _, entries = read_index(args.lang)
+    langs = [args.lang] if args.lang else sorted(LANGS)
+    failed = False
+    for lang in langs:
+        failed = build_edition(lang, args) or failed
+    return 1 if failed else 0
+
+
+def build_edition(lang: str, args: argparse.Namespace) -> bool:
+    """Render one edition; answers True when its PDF could not be produced."""
+    cfg = LANGS[lang]
+    _, entries = read_index(lang)
     BUILD.mkdir(exist_ok=True)
-    stem = "manual" if args.lang == "en" else "manual-es"
+    stem = "manual" if lang == "en" else "manual-es"
     md = BUILD / f"{stem}.md"
     md.write_text("\n\n".join((cfg["chapters"] / f).read_text(encoding="utf-8").rstrip() + "\n"
                                          for _, f in entries), encoding="utf-8")
@@ -404,7 +418,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     pdf.unlink(missing_ok=True)
     meta = ["-M", f"title={cfg['title']}", "-M", f"subtitle={cfg['version']} {workspace_version()}",
             "-M", f"author={cfg['author']}",
-            "-M", f"date={datetime.date.today().isoformat()}", "-M", f"lang={args.lang}", "-M", f"toc-title={cfg['toc']}"]
+            "-M", f"date={datetime.date.today().isoformat()}", "-M", f"lang={lang}", "-M", f"toc-title={cfg['toc']}"]
     base = ["--from", "markdown+pipe_tables", "--toc", "--toc-depth=2", "--number-sections"]
     engine, errors = args.engine, []
     if engine in ("auto", "xelatex") and shutil.which("xelatex"):
@@ -436,10 +450,10 @@ def cmd_build(args: argparse.Namespace) -> int:
             except subprocess.CalledProcessError as e:
                 errors.append(f"wkhtmltopdf failed: {e}")
     if not pdf.exists() or pdf.stat().st_size == 0:
-        print("error: no PDF produced. " + "; ".join(errors), file=sys.stderr)
-        return 1
+        print(f"error: no PDF produced for {lang}. " + "; ".join(errors), file=sys.stderr)
+        return True
     print(f"built {pdf.relative_to(repo_root())} ({pdf.stat().st_size} bytes)")
-    return 0
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -448,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
 
     def add(name: str, help: str, func) -> argparse.ArgumentParser:
         p = sub.add_parser(name, help=help)
-        p.add_argument("--lang", choices=sorted(LANGS), default="en", help="language edition (default en)")
+        p.add_argument("--lang", choices=sorted(LANGS), default=None,
+                       help="language edition (default: every edition for build, English otherwise)")
         p.set_defaults(func=func)
         return p
 
