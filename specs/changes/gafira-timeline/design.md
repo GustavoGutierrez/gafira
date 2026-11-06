@@ -393,9 +393,12 @@ module naming `Flicks` therefore cannot coexist with the test as written, in any
 
 Decision: `TL1` rewrites that test to keep what the row is really about and drop what the edge
 invalidates. The `MeasureCx` field assertion stays exact (`page` and `dpi`, no time field,
-`visit_contract.rs:202-217`); the crate-wide name scan is removed, and its replacement is a narrower
-one: no type of time may appear in `visit.rs`'s `MeasureCx` and no time field may be added to
-`PageView`. The module-coverage loop stays.
+`visit_contract.rs:202-217`); the crate-wide name scan is **narrowed, not removed** — corrected in
+the `TL1` fix round, which found that skipping the four timeline sources wholesale also legalised
+`Instant`, `Duration` and `SystemTime` inside `page.rs`. The scan now partitions the five time types
+into clock types and timeline types: the clock types are refused in **every** source, the two data
+types are allowed only in the four timeline sources, and the guard reads code rather than prose.
+The module-coverage loop stays.
 
 This is a **spec change**, not a test-only change: ARQ-136's command clause ("el bloque `pub struct
 MeasureCx` ... declara exactamente `page` y `dpi`") survives, its crate-wide clause does not.
@@ -460,10 +463,11 @@ from it, rule by rule, with the wrong behaviour and no code.
   `MeasureCx` assertion and the module-coverage loop, and drops the crate-wide name scan. The name
   `Flicks` in a `gafira-doc` source is expected from `TL1` on, so a test that still greps for it is
   a test that cannot pass.
-- The goldens: all seven move, because the field is always written — `tests/golden/minimal.json`,
-  `full.json`, `extension.json`, `extension_noncanonical.json` and `pre_layout/{minimal,full,
-  extension}.json` — and the old bytes stay as an input-only fixture that must load and re-save in the
-  new canonical form.
+- The goldens: **one** moves, `tests/golden/full.json`, by the single token `,"duration":…`, and the
+  rest stay as they are — corrected in the `TL1` fix round. This paragraph argued from the old
+  "every field is always written", which the amended ADR 0006 replaced: an `Option` whose `None` is
+  semantic is **omitted**, so a page without a duration keeps the bytes it had. That is why the old
+  byte sets still re-save identically instead of having to move.
 
 ### `TL2` — the model and its laws
 
