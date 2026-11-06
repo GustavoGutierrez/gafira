@@ -92,12 +92,12 @@
           "evidence": "verify E3d round 2 PASS at 61ed459: autosave.rs AC1-AC12 plus undo/redo pending tests, workspace gates 0 (2573 passed); 9 hand mutants and both probes killed"
         }
       ],
-      "next_action": "E5 (MemoryGovernor, P17) on feat/gafira-engine-e3; then the outcome's deliveries on this branch are done (no push, no merge without the owner)",
+      "next_action": "E5 fix round (E5-C1: stable order test with >= 21 mixed caches), verify round 2",
       "verify": {
-        "round": 2,
-        "commit": "61ed459",
-        "verdict": "PASS",
-        "next": "E5 slice card, tdd-apply, verify",
+        "round": 1,
+        "commit": "71b6078",
+        "verdict": "FAIL",
+        "next": "tdd-apply test-only round for E5-C1, then verify round 2",
         "findings": [
           {
             "id": "E2-W7",
@@ -143,6 +143,15 @@
             "summary": "E3d code totals 755 lines after the fix round, 43 test lines above the 712 the owner accepted.",
             "follow_up": true,
             "status": "open"
+          },
+          {
+            "id": "E5-C1",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "crates/gafira-engine/src/governor.rs:157, test ac1 (:344)",
+            "summary": "Stable order within a kind is unproven: sort_unstable_by_key survives all governor tests; the sorts differ from 21 caches up.",
+            "follow_up": false,
+            "status": "open"
           }
         ],
         "rounds": [
@@ -152,11 +161,6 @@
             "classes": [
               "implementation"
             ]
-          },
-          {
-            "round": 2,
-            "verdict": "PASS",
-            "classes": []
           }
         ]
       }
