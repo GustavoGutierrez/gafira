@@ -70,14 +70,19 @@
           "id": "E3a",
           "status": "passed",
           "evidence": "verify E3a round 1 PASS at 778e494: crates/gafira-edit/tests/dirty_sets.rs AC1-AC6, workspace gates 0 (2529 passed); hand mutants 1-3 killed"
+        },
+        {
+          "id": "E3b",
+          "status": "passed",
+          "evidence": "verify E3b round 1 PASS at 9c16cc5: AC1-AC11 tests in session.rs/edit.rs/project.rs/engine.rs, workspace gates 0 (2544 passed); hand mutants 1-7 killed, re-applied 1, 3, 4"
         }
       ],
-      "next_action": "E3b on feat/gafira-engine-e3: slice card, tdd-apply, verify; then E3c, E3d, E5. Follow-ups open: E2-W7, E2-W8",
+      "next_action": "owner answered 2026-11-06: SP7 = edits allowed in memory when read-only, save returns ReadOnly before any file op; SP6 = ProjectRepository::save must fsync the file before returning (port contract), the engine does rename + dir sync. Next: specifier records SP6, SP7, E3b-W2 in 02; then E3c. SP5 (project_id) open for E3d.",
       "verify": {
         "round": 1,
-        "commit": "778e494",
+        "commit": "9c16cc5",
         "verdict": "PASS",
-        "next": "E3b slice card, tdd-apply, verify",
+        "next": "specifier records SP6/SP7 and E3b-W2 in 02; then E3c",
         "findings": [
           {
             "id": "E2-W7",
@@ -94,6 +99,42 @@
             "class": "implementation",
             "ref": "git diff --shortstat 962e95d cbe874e",
             "summary": "E2 is 802 lines, 40 above the 762 the owner accepted; the fix round added 44 lines, 37 of them tests.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E3b-W1",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "git diff --shortstat 5df8a7a..3bde884",
+            "summary": "734 authored lines (about 350 prod / 367 test) against 588 forecast and the ~700 ceiling; owner accepted 2026-11-06.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E3b-W2",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "02 §5.4:1357",
+            "summary": "§5.4 names ProjectService::new but clippy new_ret_no_self and the no-#[allow] rule force new_document; the spec should name new_document.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E3b-W3",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "project.rs every_page_and_node (AC4)",
+            "summary": "The whole-document dirty set is proven only for an empty document; E3c's open must assert a non-empty set.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E3b-W4",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "edit.rs undo/redo; history.rs:236-252",
+            "summary": "undo/redo Err is unreachable with the fixed 512 MiB budget; the Err half of AC2 is proven by reading only.",
             "follow_up": true,
             "status": "open"
           }
