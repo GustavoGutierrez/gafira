@@ -34,7 +34,7 @@
 | Nivel de mutación (T0 a T4) | Cuánto código cubre la ejecución de mutación: ninguno, mutantes manuales, diff, archivos cambiados, crate completo |
 | Interruptor de mutación | El campo `mutation: off\|archive\|delivery` de la línea `Flow:`; fija cuándo se ejecuta `cargo-mutants` (por defecto `archive`: T4 por crate tocado al cerrar el change) |
 | Pack | El modo, los agentes, el valor de `mutation` y la profundidad de verify predefinidos para un tipo de solicitud |
-| `verification.json` | El registro legible por máquina de cada ronda de verify, escrito por `verify` (piloto) |
+| `verification.json` | **Retirado**: el registro legible por máquina de cada ronda de verify que introdujo el ADR 0001; el ADR 0017 deja `verify-report.md` como el único archivo que escribe `verify` |
 | Profundidad de verify (V0 a V3) | Cuánto trabajo independiente hace `verify`, desde solo comprobaciones deterministas hasta la matriz completa |
 | MergeKey | La clave bajo la que dos comandos pueden fusionarse en una sola entrada de historial |
 | Mutante | Un pequeño cambio deliberado de código hecho por `cargo-mutants`; un mutante superviviente indica una laguna de pruebas |
@@ -46,7 +46,7 @@
 | Nivel de riesgo (L0 a L3) | La clase que el coordinador asigna a una solicitud por impacto, incertidumbre y reversibilidad; puede subir el modo de flujo y nunca baja un suelo |
 | P1 a P6 | Las pasadas ordenadas de `Document::validate` |
 | Planificado | Especificado pero aún no implementado en el repositorio |
-| Puerto | Un trait definido por la capa de aplicación que implementan los adaptadores (**Planificado**, `gafira-ports`) |
+| Puerto | Un trait de la capa 3 que implementan los adaptadores; los traits de puerto y sus registros viven en `gafira-ports` |
 | Instantánea | El `Arc<Document>` anterior o posterior a una entrada del historial; comparte con sus vecinas las páginas y nodos sin cambios |
 | `testkit` | `gafira-testkit`, el crate de soporte de pruebas con el generador de documentos y `prop_command` |
 | `trybuild` | La dev-dependency que comprueba que los fixtures no compilen (o compilen); evidencia de ARQ-30 |
