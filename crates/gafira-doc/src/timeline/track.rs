@@ -131,9 +131,16 @@ impl Track {
     ///
     /// # Errors
     ///
-    /// [`TimelineError::OffGrid`], [`TimelineError::SpanTooShort`] or
+    /// [`TimelineError::BeforeSequence`], [`TimelineError::OffGrid`],
+    /// [`TimelineError::SpanTooShort`] or
     /// [`TimelineError::SourceBeforeStart`], as the first broken law.
     pub fn check_clip(&self, clip: &Clip, frame: Flicks) -> Result<(), TimelineError> {
+        if clip.place.start().ticks() < 0 {
+            return Err(TimelineError::BeforeSequence {
+                clip: clip.id,
+                at: clip.place.start().ticks(),
+            });
+        }
         if clip.place.start().ticks() % frame.ticks() != 0 {
             return Err(TimelineError::OffGrid {
                 clip: clip.id,

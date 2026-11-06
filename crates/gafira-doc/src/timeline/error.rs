@@ -22,6 +22,10 @@ pub enum TimelineError {
     /// A clip's window in its source starts before the source does (FV-01):
     /// the source offset is at least zero.
     SourceBeforeStart { clip: ClipId, source_in: i64 },
+    /// A clip starts before the sequence does (FV-01): the sequence's own
+    /// instant zero is its first frame, so a cut at a negative tick is
+    /// outside it.
+    BeforeSequence { clip: ClipId, at: i64 },
     /// Two clips of one lane meet at an instant (P11): a lane holds one
     /// strip at a time, so the cut at `at` is refused.
     Overlap {
@@ -55,6 +59,12 @@ impl fmt::Display for TimelineError {
                 write!(
                     f,
                     "clip {clip}: source offset {source_in} is before the source start"
+                )
+            }
+            Self::BeforeSequence { clip, at } => {
+                write!(
+                    f,
+                    "clip {clip}: the cut at {at} is before the sequence starts"
                 )
             }
             Self::Overlap { track, at } => {
@@ -105,6 +115,10 @@ mod tests {
                 clip: ClipId::new(7),
                 source_in: -3,
             },
+            TimelineError::BeforeSequence {
+                clip: ClipId::new(7),
+                at: -9,
+            },
             TimelineError::Overlap {
                 track: TrackId::new(2),
                 at: 11,
@@ -123,6 +137,7 @@ mod tests {
             "clip 7: the cut at 9 is not a whole frame",
             "a span of 9 ticks is shorter than one frame",
             "clip 7: source offset -3 is before the source start",
+            "clip 7: the cut at -9 is before the sequence starts",
             "track 2: two clips meet at the instant 11",
             "sequence 1: a seventeenth audio track does not fit (sixteen is the cap)",
             "speed 0/4: a zero numerator or denominator divides nothing",

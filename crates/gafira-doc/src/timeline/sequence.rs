@@ -33,7 +33,8 @@ impl PixelSize {
 /// markers (FV-01, 02 §3.1).
 ///
 /// Every field is written in the wire form, defaults included (ADR 0006
-/// rule 3).
+/// rule 3), and the laws that make the value a timeline are re-applied to a
+/// value that came from bytes ([`Sequence::check_laws`]).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sequence {
     pub(crate) id: SequenceId,
@@ -217,6 +218,58 @@ impl Sequence {
             }
         }
         out
+    }
+
+    /// Applies the model's laws to a sequence that already exists, which is
+    /// the shape a sequence takes when it comes from bytes: the cap of the
+    /// audio tracks, then, lane by lane, the cut on the grid, the span of at
+    /// least one frame, the clip inside its sequence and inside its source,
+    /// the speed that divides and the one strip per lane at any instant
+    /// (FV-01, P11, FV-03).
+    ///
+    /// These are the laws [`Track::insert`] upholds while a sequence is
+    /// built. A value read from the wire went through no insertion, so the
+    /// document applies them here instead of trusting the bytes (ARQ-13).
+    ///
+    /// # Errors
+    ///
+    /// [`TimelineError::TooManyAudioTracks`], [`TimelineError::BeforeSequence`],
+    /// [`TimelineError::OffGrid`], [`TimelineError::SpanTooShort`],
+    /// [`TimelineError::SourceBeforeStart`], [`TimelineError::InvalidSpeed`]
+    /// or [`TimelineError::Overlap`], as the first law the value breaks.
+    pub fn check_laws(&self) -> Result<(), TimelineError> {
+        let audio = self
+            .tracks
+            .iter()
+            .filter(|track| track.kind == TrackKind::Audio)
+            .count();
+        if audio > AUDIO_TRACK_CAP {
+            return Err(TimelineError::TooManyAudioTracks { sequence: self.id });
+        }
+        let frame = self.frame();
+        for track in &self.tracks {
+            for clip in track.clips() {
+                track.check_clip(clip, frame)?;
+                let speed = clip.speed();
+                if speed.num() == 0 || speed.den() == 0 {
+                    return Err(TimelineError::InvalidSpeed {
+                        num: speed.num(),
+                        den: speed.den(),
+                    });
+                }
+            }
+            // The lane keeps its clips sorted by place and none of them meets
+            // another: the rule of P11, read over the list the bytes gave.
+            for pair in track.clips().windows(2) {
+                if pair[1].place().start() < pair[0].place().end() {
+                    return Err(TimelineError::Overlap {
+                        track: track.id(),
+                        at: pair[1].place().start().ticks(),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The retime of FV-01's acceptance (c): a NEW sequence at `new_rate`

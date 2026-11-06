@@ -6,6 +6,7 @@ use gafira_color::Color;
 use serde_json::Value;
 
 use crate::node::MAX_EXTENSION_DEPTH;
+use crate::timeline::ClipSource;
 use crate::{Document, Node, NodeField, NodeId, NodeKind, Page, ValidationError};
 
 impl Document {
@@ -21,7 +22,9 @@ impl Document {
         self.check_pages()?;
         self.check_nodes()?;
         self.check_parents()?;
-        self.check_reachability()
+        self.check_reachability()?;
+        self.check_clip_sources()?;
+        self.check_timeline()
     }
 
     /// P1: schema version, then DPI.
@@ -175,6 +178,61 @@ impl Document {
             if let Some(&node) = page.nodes.keys().find(|id| !reached.contains(id)) {
                 return Err(ValidationError::Cycle { node });
             }
+        }
+        Ok(())
+    }
+
+    /// P7: the source each clip of the timeline names — a `Scene` clip names a
+    /// page of the document, and a `Media` or `Audio` clip names an entry of
+    /// the asset table (P9 of the timeline design).
+    ///
+    /// A page a clip shows is never removed while the clip exists: deleting
+    /// both is a command (`RemovePage` alone leaves a document that does not
+    /// validate, the safe half-state), FV-05 (c).
+    fn check_clip_sources(&self) -> Result<(), ValidationError> {
+        for sequence in &self.sequences {
+            for track in sequence.tracks() {
+                for clip in track.clips() {
+                    let error = match clip.source() {
+                        ClipSource::Scene(page) if self.page(*page).is_none() => {
+                            Some(ValidationError::DanglingScene {
+                                clip: clip.id(),
+                                page: *page,
+                            })
+                        }
+                        ClipSource::Media(reference) | ClipSource::Audio(reference)
+                            if self.asset(reference).is_none() =>
+                        {
+                            Some(ValidationError::DanglingAsset { clip: clip.id() })
+                        }
+                        _ => None,
+                    };
+                    if let Some(error) = error {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// P8: the laws of the timeline model, sequence by sequence — the cut on
+    /// the grid, the span of at least one frame, the clip inside its sequence
+    /// and inside its source, the speed that divides, the one strip per lane
+    /// at any instant and the cap of the audio tracks (FV-01, FV-03, P11).
+    ///
+    /// The model upholds these laws as the sequence is built ([`Track::insert`],
+    /// [`Sequence::add_track`]); a value that comes from bytes went through no
+    /// insertion, so a document that breaks one fails to load instead of
+    /// reaching the editor (ARQ-13).
+    fn check_timeline(&self) -> Result<(), ValidationError> {
+        for sequence in &self.sequences {
+            sequence
+                .check_laws()
+                .map_err(|error| ValidationError::TimelineLaw {
+                    sequence: sequence.id(),
+                    error,
+                })?;
         }
         Ok(())
     }
