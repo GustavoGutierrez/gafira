@@ -864,3 +864,185 @@ HEAD is `e340de1`.
 
 next: tdd-apply (implementation: E2-C2, round 3 closure; E2-W2 size needs the owner's OK via the
 coordinator; E2-W7 ambiguity is a follow-up for the architect/specifier and does not block)
+
+---
+
+# Verify report — `gafira-engine` delivery `E2` (bus transport), round 3 (closure)
+
+Verdict: **PASS** — 0 CRITICAL, 2 WARNING (both follow-up), 0 SUGGESTION.
+
+E2-C2 is closed by `12ea73c`. The round-2 closures (E2-C1, W1, W3, W4, W5, W6) still hold. E2-W2
+was closed by the owner at 762 lines. One new follow-up WARNING (E2-W8): the fix round adds 44
+lines, so the delivery is now 802 lines, above the 762 the owner accepted. E2-W7 stays a follow-up.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E2", "rounds": [ {
+  "round": 3, "commit": "cbe874e", "mode": "full", "tier": "T1", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 2, "suggestion": 0},
+  "classes": {},
+  "findings": [
+    {"id": "E2-C2", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-engine/src/bus.rs:145-149",
+     "summary": "Closed: a window-opening progress clears pending before sending; two new AC3 tests and the round-2 probes pass; hand mutant (a) fails both new tests.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-C1", "severity": "CRITICAL", "class": "implementation", "ref": "engine.rs:433-446",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W1", "severity": "WARNING", "class": "implementation", "ref": "event.rs:195-226",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W2", "severity": "WARNING", "class": "implementation", "ref": "93c0be8",
+     "summary": "Closed: owner accepted 762 lines on 2026-11-06.", "follow_up": false, "status": "closed"},
+    {"id": "E2-W3", "severity": "WARNING", "class": "architecture", "ref": "bus.rs:33 EventChannel; engine.rs:217; design P11",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W4", "severity": "WARNING", "class": "ambiguity", "ref": "engine.rs:157-158; design P12",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W5", "severity": "WARNING", "class": "claim", "ref": ".odd/state.json E1-AC1..6",
+     "summary": "Closed (coordinator, round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W6", "severity": "WARNING", "class": "implementation", "ref": "12ea73c -> cbe874e",
+     "summary": "Closed: still holds; the round-3 notes are a separate docs commit, after the code and append-only.", "follow_up": false, "status": "closed"},
+    {"id": "E2-W7", "severity": "WARNING", "class": "ambiguity",
+     "ref": "02 §5.2:1321,1335; card AC3; bus.rs:72-75 (one pending slot)",
+     "summary": "The coalescing key is unspecified: one pending slot is shared across JobIds. Is coalescing per job? Settle it before E7 or ExportService.",
+     "follow_up": true, "status": "open"},
+    {"id": "E2-W8", "severity": "WARNING", "class": "implementation",
+     "ref": "git diff --shortstat 962e95d cbe874e -- crates Cargo.toml Cargo.lock",
+     "summary": "Size: E2 is now 802 changed lines (737+, 65-), 40 above the 762 the owner accepted. The fix is 44 lines (37 of them tests). Record it in the design table and tell the owner.",
+     "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 1, "killed": 1},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 802, "forecast": 448}, "report": "e2-verify-report-r3.md" } ] }
+```
+
+## Inputs
+
+- Worktree `/tmp/gafira-engine-e2`, branch `feat/gafira-engine-e2`, HEAD `cbe874e` (fix `12ea73c`,
+  notes `cbe874e`).
+- Flow: `full | L3 | new capability | mutation: off | hand mutants only | V1 | owner`. There was no
+  `mutants` run and none was expected, so `mutation: null` is not a finding.
+- This is a closure round. It ran the gates, the artifact checks, the closure of E2-C2 with the
+  probes from round 2 plus one stream probe, and the requested hand mutant (a). It spent no
+  independent-mutant budget.
+
+## Gates at HEAD `cbe874e` (workspace scope)
+
+`df -h /`: 163 GB free. Target dir `e2r3-target` under the scratchpad, `CARGO_INCREMENTAL=0`.
+
+| Gate | Command | Exit |
+|---|---|---|
+| fmt | `cargo fmt --check` | 0 |
+| clippy | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| test | `cargo test --workspace --locked` | 0. 198 suites, 2522 passed (round 2 had 2520; +2 new), 0 failed, 0 ignored. `gafira-engine` lib: 22 passed |
+| deny | `cargo deny check` | 0 (advisories, bans, licenses, sources ok). No manifest changed since `e340de1` |
+| ci_policy | `run` steps of the `policy` job, extracted from `ci.yml`: Format, ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 | 0 each. ARQ-107: `gafira-engine: layer 3, exempt from the Locale search` |
+
+Skipped: "Testkit ports feature compiles (ADR 0013)". E2 does not touch `gafira-testkit` (same as
+rounds 1 and 2).
+
+## Artifact integrity (steps 3, 3c, 3d)
+
+- `12ea73c` touches only `crates/gafira-engine/src/bus.rs`. `cbe874e` touches only
+  `apply-progress.md`, as one appended section (`## E2 fix round 2`).
+- The Slice card is intact: `git diff 962e95d cbe874e -- apply-progress.md` has 0 removed lines.
+- Commits since round 2 that touch `.odd/state.json` or `design.md`: only the coordinator's
+  `273c3e6` and `93c0be8`. `93c0be8` changes only `status`, `next_action` and `verify` (E2-W2
+  closed with the owner's OK). The criterion ids, texts and types are unchanged. No implementer
+  commit touched the outcome entry, the design or the card.
+
+## E2-C2: closure
+
+The fix is at `bus.rs:145-149`. When a `JobProgress` opens the window, the code sets
+`window.last_progress = Some(now)` and `window.pending = None`, then calls `send`. The comment on
+the state-event path (155-158) now matches the behaviour.
+
+**Do the two new tests encode AC3 correctly?** Yes. Both publish this sequence with the injected
+clock:
+
+```
+t=0     p(0.1)  window open  -> delivered
+t=0     p(0.9)  inside       -> pending = 0.9
+t=100   p(0.2)  window open  -> delivered; with the fix, pending 0.9 is discarded
+then    DocumentChanged      (test 1)    or   t=200 flush   (test 2)
+expected fractions: [0.1, 0.2]
+```
+
+- "Newest" means the last one published. That is 0.2. The test lists the fractions in falling
+  order on purpose, so arrival order can be told apart from size. The observer must end on 0.2,
+  and 0.9 is older than 0.2 (published earlier), so it must never arrive after 0.2. `[0.1, 0.2]`
+  satisfies both parts of AC3: the observer ends on the newest fraction and nothing older arrives
+  after something newer. The expected value is derived from AC3, not fitted to the fix.
+- The RED output `left [0.1, 0.2, 0.9]` is exactly the pre-fix behaviour for this sequence: the
+  stale 0.9 leaves on the state event, or on the flush at t=200 when the window is open. The record
+  is consistent.
+- The alternative order, sending the pending 0.9 before 0.2 (`[0.1, 0.9, 0.2]`), would also end
+  on the newest fraction. But it delivers two progress events at t=100, inside one window, which
+  breaks the 10 Hz half of AC3. So discarding the pending one, which the test requires, is the
+  correct choice, not an over-specification.
+- Limit: `fractions` filters out non-progress events, so the new tests do not assert that the
+  `DocumentChanged` itself arrives. AC4 already covers that
+  (`ac4_ten_state_events_produce_ten_deliveries`). Not a finding.
+
+**Probes** (scratch export of `cbe874e`, own target dir, tests added to the export only):
+
+| Probe | Sequence | Result |
+|---|---|---|
+| round-2 probe, state-event variant | t0 p(0.1), t50 p(0.2), t150 p(0.9), DocumentChanged; expect `[0.1, 0.9]` | pass |
+| round-2 probe, flush variant | same, then t250 flush; expect `[0.1, 0.9]` | pass |
+| round-3 stream probe | 15 rising fractions at irregular steps (0-200 ms). Ends with a flush after one window, then again with a state event. Asserts strictly increasing arrivals and that the last one equals the last published | pass (both endings) |
+
+**Hand mutant (a)** (the implementer's #a, requested): remove `window.pending = None;`. Result:
+**killed**. 5 tests failed, 20 passed: both `ac3_a_new_window_…` tests (`left [0.1, 0.2, 0.9]`,
+`right [0.1, 0.2]`) and all three probes (`left [0.1, 0.9, 0.2]`). The export file was then
+restored and matched the worktree with `cmp`.
+
+## Round-2 closures re-checked
+
+`git diff --stat e340de1 cbe874e -- crates/gafira-engine/src` changes only `bus.rs`, and only by
+the fix and the two tests. `engine.rs` and `event.rs` are byte-identical to round 2, so the
+following still hold:
+
+- E2-C1: `w5_…_and_wakes_it` asserts one wake (engine.rs:444).
+- E2-W1: `ac4_every_variant_reaches_the_sink_once`, `VARIANTS = 6` (event.rs:195-226).
+- E2-W3: `EventChannel` (bus.rs:33), `Gafira::new` takes it (engine.rs:217), and `p11_…` passes.
+- E2-W4: the `EngineError` doc points to `E3b`/`E11`/P12 (engine.rs:157-158).
+- E2-W6: still holds for this round's commits.
+
+## Criterion map (AC1-AC6)
+
+| AC | Proof | Status |
+|---|---|---|
+| AC1 | `w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it`, `p11_…` | covered |
+| AC2 | `ac2_the_waker_is_called_once_per_delivery`, `s2_the_waker_is_called_after_the_lock_is_released`, wake assertion in `w5_…` | covered |
+| AC3 | `ac3_job_progress_coalesces_…`, `ac3_a_state_event_flushes_…`, `ac3_a_flush_inside_the_window_…`, the two new `ac3_a_new_window_…` tests, `s1_…`, `s2_two_bus_clones_…` | covered (the E2-C2 defect is fixed) |
+| AC4 | `ac4_ten_state_events_produce_ten_deliveries`, `ac4_every_variant_reaches_the_sink_once` | covered |
+| AC5 | gate output in the commit notes (`cbe874e`) and this round's workspace gates | covered |
+| AC6 | `cargo deny check` exits 0; manifests unchanged | covered |
+
+Product IDs: none (card). Nothing was left out.
+
+## Findings
+
+### WARNING
+
+- **E2-W7**, class: ambiguity, follow-up, open. Carried over from round 2 and not routed. The
+  coalescing key is unspecified: one `pending` slot is shared by all `JobId`s. The architect or
+  specifier should settle this before `E7` or `ExportService` produces progress for parallel jobs.
+- **E2-W8**, class: implementation, follow-up, open (new). `git diff --shortstat 962e95d cbe874e --
+  crates Cargo.toml Cargo.lock` gives 7 files, 737+ and 65-, which is 802 changed lines. The owner
+  accepted 762 (`93c0be8`), and this round adds 44 lines (42+, 2-), 37 of them tests. The amount
+  is small and it is the fix the owner authorised. But the measured size now exceeds the number
+  the owner accepted, so the coordinator should record 802 in the design's delivery table and
+  mention it to the owner. It does not block the verdict.
+
+## Build hygiene
+
+The target dirs `e2r3-target` (6.4 GiB) and `e2r3-export-target` (174 MiB) were freed with
+`cargo clean --target-dir`. The export `e2r3-export` stays in the scratchpad with `bus.rs`
+restored, because `rm -rf` is denied. The worktree was never modified: `git status` is clean and
+HEAD is `cbe874e`.
+
+next: tdd-apply (E2 PASS: merge `feat/gafira-engine-e2` into `develop`, then the next delivery;
+follow-ups E2-W7 (ambiguity, for the architect/specifier before E7) and E2-W8 (record 802 lines,
+tell the owner))
