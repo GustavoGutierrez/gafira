@@ -714,3 +714,97 @@ Plan: RED for AC1-AC11, then the interval, then the pending rule, then `autosave
 then `run`, then `autosave_finished`, then the gates; notes in a separate commit after the code.
 
 Estimate: 360 authored lines, 504 at x1.4. Verify: V1.
+
+## Notes — `E3d`
+
+Done: AC1-AC13. Code commits `861e0f5` (`EngineConfig::autosave_interval`, default 10 s, and
+`with_autosave_interval`, 5 s to 15 s inclusive) and `4cb17f8` (`ProjectService::{autosave_due,
+autosave_finished}`, `AutosaveJob`, `AutosaveOutcome`, `Session::autosave` with `pending_since`,
+`in_flight` and `slot`, the pending mark on every edit, undo and redo bump, `save` clearing it; in
+the private fakes `FsOp::CreateDirAll`, `ManualClock` and `engine_with_clock`). Tests are unit
+tests in `src/autosave.rs` (AC2-AC12) and `src/engine.rs` (AC1). Owner decision O5 = (a) holds: a
+slot is a whole project written by `ProjectRepository::save`; "JSON only" and the 200 ms figure of
+§7.2 are not met and not claimed. The folder is `data_dir/recovery/<project_key>` with the key of
+`E3c2` (SP5 stays open for `E4`).
+
+RED evidence (AC1: `with_autosave_interval` first a stub returning `Ok(self)` and the default
+`Duration::ZERO`; AC2-AC11: `autosave_due` first returned `None`, `autosave_finished` did nothing,
+`run` returned `Ok` without writing, no edit set `pending_since`. A second RED stage, with
+`autosave_due` and the pending rule in place but `run` and `autosave_finished` still stubs, is
+recorded where it applies):
+
+| AC | Test | Assertion before the code |
+|---|---|---|
+| AC1 | `e3d_ac1_the_autosave_interval_is_5_to_15_seconds_inclusive_and_10_by_default` | left `0ns`, right `10s`; with the default in place, `4.999s accepted` |
+| AC2 | `ac2_due_at_exactly_the_interval_after_the_first_pending_change` | `due at the interval` (`expect` on `None`) |
+| AC3 | `ac3_no_job_without_changes` | `a change after the save is due` (the control at the end); second stage: `after a save` |
+| AC3 | `ac3_a_save_leaves_pending_a_change_made_while_it_wrote` | `the change made during the save` |
+| AC4 | `ac4_the_slot_holds_the_document_as_it_was_when_the_job_was_made` | `a job`; second stage: `the slot: Io(Custom { kind: NotFound, error: "/data/gafira/recovery/1700000000-0/slot-0.gafira-journal" })` |
+| AC5 | `ac5_a_change_during_a_job_stays_pending_and_comes_one_interval_after_it` | `the first job`; second stage: `the change during it` |
+| AC6 | `ac6_slots_rotate_on_success_only_and_a_failed_job_writes_its_slot_again` | `a job`; second stage: `a replace` |
+| AC7 | `ac7_a_failed_job_is_retried_one_interval_later_never_on_the_next_tick` | `a job`; second stage: `the retry` |
+| AC8 | `ac8_an_outcome_of_a_replaced_session_is_ignored` | `session 0's job`; second stage: `pending since T0 + 31` |
+| AC9 | `ac9_an_autosave_never_clears_modified_never_bumps_and_publishes_nothing` | `a job` |
+| AC10 | `ac10_a_fault_at_every_operation_of_a_run_keeps_the_old_slot_and_removes_the_temporary` | `a job`; second stage: trace left `[]`, right `[CreateDirAll(".../1700000000-0"), Create(".../slot-0.gafira-journal.tmp"), Write(.., 1073), Write(.., 1073), SyncAll(..), Replace(".../slot-0.gafira-journal.tmp", ".../slot-0.gafira-journal")]` |
+| AC11 | `ac11_a_read_only_session_still_autosaves` | `a job`; second stage: `the slot` left `None`, right the document's bytes |
+| AC12 | `ac12_a_job_and_its_outcome_are_send` plus the purity grep | compile-time `assert_send::<AutosaveJob>()` and `::<AutosaveOutcome>()`. `git diff 34837d3..4cb17f8 -- crates/gafira-engine \| grep '^+' \| grep -nE "std::fs\|std::thread\|std::env\|rand\|thread::spawn\|EditToken\|Instant\|SystemTime"` → nothing; `git grep -nE "std::fs\|std::thread\|std::env\|rand::\|thread::spawn\|EditToken" -- crates/gafira-engine/src` → only the existing doc comment `engine.rs:103`. Every instant is `Clock::monotonic()` (`autosave_due`, `autosave_finished`, `EditService`); the job writes only through `FileSystem::create_dir_all`, `ProjectRepository::save`, `FileSystem::replace` and `FileSystem::remove` |
+| AC13 | gates at workspace scope, at `861e0f5` and at `4cb17f8` | `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --locked -- -D warnings` no warning; `cargo test --workspace --locked` 199 suites, 2571 passed, 0 failed (at `861e0f5`: 2559 passed). No manifest change, so no `cargo deny` |
+
+Every test asserts exact values: instants one nanosecond before and at the boundary, slot paths
+`/data/gafira/recovery/1700000000-<session>/slot-<n>.gafira-journal` from the trace (the key's
+format of P13 is read here for the first time: `ManualClock::NOW` seconds, then the session
+counter), the whole trace of a run, the slot's bytes and the versions. AC6 runs five jobs, the
+third failing at its `replace`, and asserts the slots `0, 1, 2, 2, 0` from the `Replace` of each
+trace and a `Remove` of `slot-2.gafira-journal.tmp` after the failure. AC8 leaves a succeeding job
+of session 0 (`open`) and a failing one of session 1 (`new_document`) and hands both in while
+session 2 (`open`) has a job in flight: session 2 is still in flight, then its next job is due at
+exactly one interval after its own pending change and writes `.../1700000000-2/slot-1...`. AC10
+puts other bytes in slot 0 first, injects a fault at each of the six operations in turn, and asserts
+the exact trace up to the fault followed by `Remove(tmp)` and the slot's previous bytes.
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 1 | `>` instead of `>=` at the due boundary (`< interval` became `<= interval`) | `ac2_...` and every test that takes a job at exactly the interval (11 of 12) | `ac2`: `due at the interval` |
+| 2 | accept 4 s or 16 s (range `4..=16`, then `5..=16`) | `e3d_ac1_...` | `4.999s accepted`; `15.001s accepted` |
+| 3 | set `pending_since` on `open`/`new_document` (in `install`) | `ac3_no_job_without_changes` | `after new_document` |
+| 4 | snapshot taken at `run` instead of at creation (the job read the live session) | `ac4_...` | `three pages`: left `Document { next_id: 8, .. }`, right `Document { next_id: 7, .. }` |
+| 5 | clear `pending_since` on `autosave_finished` instead of when the job is taken | `ac5_...`, `ac8_...` | `the change during it`; `pending since T0 + 31` |
+| 6 | advance the slot on failure | `ac6_...`, `ac7_...` | `ac6`: left `[slot-0, slot-1, slot-2, slot-0, slot-1]`, right `[slot-0, slot-1, slot-2, slot-2, slot-0]`; `ac7` `the same slot`: left `slot-1`, right `slot-0` |
+| 7 | retry on the next tick after a failure (`pending_since = now - interval`) | `ac7_...` | `the next tick` |
+| 8 | apply a stale outcome (no `project_key` check) | `ac8_...` | `pending since T0 + 31` |
+| 9 | clear "modified" on autosave (`clean_version` set on success) | `ac9_...` | `still modified` |
+
+Extra probes, not on the card's list:
+
+| # | Probe | Killed by | Failure |
+|---|---|---|---|
+| X1 | a successful `save` clears `pending_since` whatever was edited while it wrote | `ac3_a_save_leaves_pending_a_change_made_while_it_wrote` | `the change made during the save` |
+| X2 | every bump resets `pending_since` (not only the first) | `ac2_...` | `due at the interval` |
+
+Deviations:
+
+- D1. A successful `save` clears `pending_since` only when no change arrived between its snapshot
+  and its end (`version` still the snapshot's). P13 says "a successful `save` clears
+  `pending_since`: the content is on disk"; a change made while the file was written is not on
+  disk, and clearing it would leave it out of every slot until the next edit, past the ARQ-51
+  window. Same rule as `clean_version` in `E3c2`. Test `ac3_a_save_leaves_pending_...`, probe X1.
+- D2. On failure `pending_since` becomes `now` even when a change made during the job had set it
+  earlier, as P13 states; that change is retried one interval after the failure.
+- D3. `AutosaveJob` exposes `version()` (asserted by AC2, AC3, AC5) and keeps its fields
+  `pub(crate)`; the slot path is private. `AutosaveOutcome` exposes `error()` for the host's log.
+  `autosave_finished` returns nothing.
+- D4. `ProjectService::over` takes `&EngineConfig` for the interval and `data_dir`;
+  `ProjectService::shared` is `pub(crate)` so a test outside `project.rs` can edit from the
+  `before_replace` hook.
+- D5. The memory fakes now trace `create_dir_all` (`FsOp::CreateDirAll`); no earlier test calls it,
+  so no earlier trace changed. `ManualClock::now` is fixed at `UnixTime(1_700_000_000)`.
+
+Measured lines (`git diff --shortstat 34837d3..4cb17f8`): 7 files, 691 insertions, 21 deletions,
+712 authored lines. Production: 246 insertions, 17 deletions (`autosave.rs` 99/0, `project.rs`
+77/7, `engine.rs` 31/2, `edit.rs` 20/5, `session.rs` 17/3, `lib.rs` 2/0). Test: 445 insertions, 4
+deletions (`autosave.rs` tests 376/0, `engine.rs` tests 25/0, `fakes.rs` 43/4, test-only module,
+`project.rs` tests 1/0). The split came from `git diff --numstat` and the hunk headers against each
+file's `#[cfg(test)]` line. Estimate 360 (504 at x1.4): over both and just over the ~700 stop line;
+production is 263 lines, under the estimate, and the overrun is the tests (`autosave.rs` 376).
