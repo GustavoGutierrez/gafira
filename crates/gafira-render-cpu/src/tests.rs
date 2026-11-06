@@ -1022,6 +1022,48 @@ fn arq_111_the_same_plan_and_surface_give_the_same_bytes() {
     }
 }
 
+// ARQ-111, AC5, O12: the merged tile of a region is content-addressed, so the
+// same frame rendered twice answers the same bytes and the second run reuses
+// the cached tile instead of covering both roots again.
+#[test]
+fn arq_111_a_second_frame_reuses_the_merged_tile() {
+    let target_desc = target(32, 32, (0, 0), PixelFormat::RgbaF32);
+    let scene = plan(vec![task(
+        7,
+        IRect::new(0, 0, 32, 32),
+        vec![
+            fill(0.0, 0.0, 16.0, 32.0, srgb(1.0, 0.0, 0.0, 1.0)),
+            fill(16.0, 0.0, 32.0, 32.0, srgb(0.0, 0.0, 1.0, 1.0)),
+        ],
+    )]);
+    let mut cache = RecordingCache::default();
+
+    let first = run_with(target_desc, &scene, &mut cache);
+    assert_eq!(cache.puts().len(), 1, "the merged tile is rendered once");
+    assert_eq!(
+        channels(&first, 8, 16),
+        [1.0, 0.0, 0.0, 1.0],
+        "the first root of the merged tile"
+    );
+    assert_eq!(
+        channels(&first, 24, 16),
+        [0.0, 0.0, 1.0, 1.0],
+        "the second root of the merged tile"
+    );
+
+    let second = run_with(target_desc, &scene, &mut cache);
+    assert_eq!(
+        cache.puts().len(),
+        1,
+        "the cached tile is reused, not rendered again"
+    );
+    assert_eq!(
+        first.data(),
+        second.data(),
+        "the two frames agree byte for byte"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The surface the backend opens
 // ---------------------------------------------------------------------------

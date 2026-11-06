@@ -16,6 +16,34 @@ use gafira_ports::render::{ContentKey, RenderQuality};
 /// The domain byte of the render graph (02 §6.1).
 pub const DOMAIN: u8 = b'R';
 
+/// The domain byte of the composition of the roots of a region (O12).
+///
+/// It is distinct from [`DOMAIN`], so a composed key never collides with the
+/// key of a node of the graph.
+pub const COMPOSITE_DOMAIN: u8 = b'T';
+
+/// The key of the tile that composes every root of a region (O12).
+///
+/// The roots arrive in paint order, and the key is the BLAKE3 hash of the
+/// domain byte, their number and their keys in that order, truncated and read
+/// as a [`content_key`] is. It changes when any root changes and when the
+/// order changes, which is what a region's tile needs: the backend writes the
+/// tile over the surface as the whole content of the region, so a stale tile
+/// would serve an image of a page that no longer exists.
+#[must_use]
+pub fn composite_key(root_keys: &[ContentKey]) -> ContentKey {
+    let mut description = Vec::with_capacity(5 + 16 * root_keys.len());
+    description.push(COMPOSITE_DOMAIN);
+    description.extend_from_slice(&(root_keys.len() as u32).to_be_bytes());
+    for key in root_keys {
+        description.extend_from_slice(&key.0.to_be_bytes());
+    }
+    let hash = blake3::hash(&description);
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&hash.as_bytes()[..16]);
+    ContentKey(u128::from_be_bytes(bytes))
+}
+
 /// The type of a node in the canonical description (02 §6.1).
 ///
 /// The numbers are fixed: `1` is a group, `2` a shape and `3` an extension. A

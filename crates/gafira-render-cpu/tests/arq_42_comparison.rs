@@ -698,6 +698,61 @@ fn crop(bytes: &[u8], width: usize, region: IRect) -> Vec<u8> {
     out
 }
 
+/// The four bytes of page pixel `(x, y)` of a `REGION`-sized buffer.
+fn pixel_at(bytes: &[u8], x: usize, y: usize) -> [u8; 4] {
+    let index = (y * REGION.width() as usize + x) * 4;
+    [
+        bytes[index],
+        bytes[index + 1],
+        bytes[index + 2],
+        bytes[index + 3],
+    ]
+}
+
+// ARQ-42, O12: a page whose roots are two disjoint opaque shapes keeps both
+// through the read-back. Before O12 each root got a task of its own carrying
+// the whole region, so the second root's tile erased the first.
+#[test]
+fn arq_42_two_roots_of_a_page_both_survive_the_read_back() {
+    let two_roots = document(
+        vec![
+            shape(
+                2,
+                [4.0, 4.0, 20.0, 20.0],
+                ShapeGeometry::Rect,
+                color(1.0, 0.0, 0.0, 1.0),
+                1.0,
+                BlendMode::Normal,
+            ),
+            shape(
+                3,
+                [36.0, 40.0, 20.0, 20.0],
+                ShapeGeometry::Rect,
+                color(0.0, 0.0, 1.0, 1.0),
+                1.0,
+                BlendMode::Normal,
+            ),
+        ],
+        &[2, 3],
+    );
+    let bytes = preview(two_roots, true);
+    assert_eq!(
+        pixel_at(&bytes, 10, 10),
+        [255, 0, 0, 255],
+        "the first root is drawn"
+    );
+    assert_eq!(
+        pixel_at(&bytes, 46, 50),
+        [0, 0, 255, 255],
+        "the second root is drawn too, instead of erasing the first"
+    );
+    assert_eq!(
+        pixel_at(&bytes, 30, 30),
+        [0, 0, 0, 0],
+        "between the two roots the transparent page keeps its alpha"
+    );
+}
+
 /// The region of the offset tests: it starts away from the page origin, so a
 /// read clipped against its own offset would lose a band of `x0` columns and
 /// `y0` rows (O13).

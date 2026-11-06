@@ -17,6 +17,7 @@ use gafira_geom::IRect;
 use gafira_ports::render::{ContentKey, Priority, RenderOp, RenderQuality, TileKey};
 
 use crate::graph::RenderGraph;
+use crate::key::composite_key;
 
 /// The size of a tile, in pixels (FIJADA, 02 §6.1 and ARQ-121).
 pub const TILE_SIZE: u32 = 256;
@@ -258,13 +259,25 @@ impl Planner {
         let level = grid.level_for(viewport.zoom);
         let focus = viewport.focus.unwrap_or_else(|| centre(viewport.rect));
 
-        // The roots of the graph, with the operations of their subtree: a
-        // task holds the operations of the root it draws.
+        // The roots of the graph, with the operations of their subtree, in
+        // paint order.
         let roots: Vec<(ContentKey, &[RenderOp])> = graph
             .roots()
             .iter()
             .zip(graph.root_ops())
             .filter_map(|(id, ops)| graph.node(*id).map(|node| (node.key(), ops)))
+            .collect();
+
+        // O12: a region is one task. The roots of the page are composed in
+        // paint order, because the backend writes a task's tile over the
+        // surface as the whole content of its region (`Surface::write`), so a
+        // task per root would erase the roots painted before it.
+        let root_keys: Vec<ContentKey> = roots.iter().map(|(key, _)| *key).collect();
+        let content = composite_key(&root_keys);
+        let merged: Vec<RenderOp> = roots
+            .iter()
+            .flat_map(|(_, ops)| ops.iter())
+            .map(copy_op)
             .collect();
 
         // The tiles of the viewport, clipped to it.
@@ -284,7 +297,7 @@ impl Planner {
             }
         }
 
-        let planned = regions.len() * roots.len() + 1;
+        let planned = regions.len() + 1;
         let mut tiles: Vec<PlannedTile> = Vec::with_capacity(planned);
         let mut done = 0usize;
         for (column, row, region) in regions {
@@ -293,26 +306,23 @@ impl Planner {
             } else {
                 Priority::Visible
             };
-            for (key, ops) in &roots {
-                tiles.push(PlannedTile {
-                    key: TileKey {
-                        content: *key,
-                        level,
-                        column,
-                        row,
-                    },
-                    priority,
-                    region,
-                    ops: ops.iter().map(copy_op).collect(),
-                });
-                done += 1;
-                checkpoint(cancel, progress, done as f32 / planned as f32)?;
-            }
+            tiles.push(PlannedTile {
+                key: TileKey {
+                    content,
+                    level,
+                    column,
+                    row,
+                },
+                priority,
+                region,
+                ops: merged.iter().map(copy_op).collect(),
+            });
+            done += 1;
+            checkpoint(cancel, progress, done as f32 / planned as f32)?;
         }
         checkpoint(cancel, progress, 1.0)?;
 
-        // The priority order of 02 §6.3: the most urgent tile first. The
-        // sort is stable, so the roots of a tile keep the paint order.
+        // The priority order of 02 §6.3: the most urgent tile first.
         tiles.sort_by_key(|tile| (tile.priority, tile.key.row, tile.key.column));
         Ok(RenderPlan {
             quality: graph.params().quality,
@@ -426,6 +436,68 @@ mod tests {
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
         page.roots = vec![NodeId::new(1)];
         page
+    }
+
+    /// A top-level shape of `page`, 10 × 10 at `(x, y)`, filled with `fill`.
+    fn add_root(page: &mut Page, id: u64, x: f64, y: f64, fill: Color) {
+        let base = ElementBase::new(NodeId::new(id), Placement::new(x, y, 10.0, 10.0));
+        let kind = NodeKind::Shape(ShapeNode {
+            geometry: ShapeGeometry::Rect,
+            fill: Some(fill),
+        });
+        page.nodes
+            .insert(NodeId::new(id), Arc::new(Node::new(base, kind)));
+    }
+
+    /// A page with two top-level shapes, so the graph has two roots.
+    fn two_root_page() -> Page {
+        let mut page = Page::new(
+            PageId::new(1),
+            "P".to_string(),
+            PageSize {
+                width: Length::new(100.0, Unit::Px),
+                height: Length::new(100.0, Unit::Px),
+            },
+        );
+        add_root(&mut page, 1, 0.0, 0.0, red());
+        add_root(&mut page, 2, 20.0, 0.0, blue());
+        page.roots = vec![NodeId::new(1), NodeId::new(2)];
+        page
+    }
+
+    fn red() -> Color {
+        Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0))
+    }
+
+    fn blue() -> Color {
+        Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0))
+    }
+
+    /// The plan of the whole page at 100 %, one tile of the grid.
+    fn merged_plan(page: &Page) -> RenderPlan {
+        plan(
+            &build(page),
+            PageExtent {
+                width: 100,
+                height: 100,
+            },
+            &Viewport {
+                rect: IRect::new(0, 0, 100, 100),
+                zoom: 1.0,
+                focus: None,
+            },
+        )
+    }
+
+    /// The fill colors of a tile, in paint order.
+    fn fill_colors(tile: &PlannedTile) -> Vec<Color> {
+        tile.ops
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::FillPath { color, .. } => Some(*color),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The parameters of a graph of the given quality.
@@ -910,5 +982,58 @@ mod tests {
             }
         });
         assert_eq!(result, Ok(Ok(())));
+    }
+
+    // ARQ-42, O12: a region is one task, and the task carries the operations of
+    // every root in paint order; the second root no longer gets a task of its
+    // own that would erase the first.
+    #[test]
+    fn arq_42_a_region_is_one_task_with_the_ops_of_every_root_in_paint_order() {
+        let page = two_root_page();
+        let graph = build(&page);
+        assert_eq!(graph.roots().len(), 2, "the page has two top-level shapes");
+        let plan = merged_plan(&page);
+
+        assert_eq!(plan.tiles().len(), 1, "one region, one task");
+        let tile = &plan.tiles()[0];
+        assert_eq!(
+            tile.region,
+            IRect::new(0, 0, 100, 100),
+            "the task keeps the region of its tile"
+        );
+        assert_eq!(
+            fill_colors(tile),
+            vec![red(), blue()],
+            "both roots, in the order the page paints them"
+        );
+    }
+
+    // ARQ-42, O12: the one content key of the region changes when either root
+    // changes, so a stale tile can never be served for a changed root, and the
+    // order of the roots is part of the key.
+    #[test]
+    fn arq_42_the_merged_key_changes_when_either_root_changes() {
+        let base = merged_plan(&two_root_page()).tiles()[0].key.content;
+
+        let mut first_changed = two_root_page();
+        add_root(&mut first_changed, 1, 0.0, 0.0, blue());
+        let changed_first = merged_plan(&first_changed).tiles()[0].key.content;
+        assert_ne!(base, changed_first, "the first root is in the key");
+
+        let mut second_changed = two_root_page();
+        add_root(&mut second_changed, 2, 20.0, 0.0, red());
+        let changed_second = merged_plan(&second_changed).tiles()[0].key.content;
+        assert_ne!(base, changed_second, "the second root is in the key");
+        assert_ne!(
+            changed_first, changed_second,
+            "each root keeps its own contribution"
+        );
+
+        // Paint order is content: the same two shapes back to front are another
+        // image, so they cannot share a key.
+        let mut swapped = two_root_page();
+        swapped.roots = vec![NodeId::new(2), NodeId::new(1)];
+        let swapped_key = merged_plan(&swapped).tiles()[0].key.content;
+        assert_ne!(base, swapped_key, "the order of the roots is in the key");
     }
 }
