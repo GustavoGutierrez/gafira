@@ -1127,3 +1127,137 @@ Product IDs: 02 §5.1, §4.3, ARQ-30 (card). Every test in `dirty_sets.rs` carri
 ```
 
 next: tdd-apply (next delivery `E3b`)
+
+---
+
+# Verify report: `gafira-engine` delivery `E3b` (session, edits, document version)
+
+round: 1 (first verify of this code)
+commit: 9c16cc5 (branch `feat/gafira-engine-e3`, worktree `/tmp/gafira-engine-e3`), base 9df403d
+mode: full | level: L3 | pack: new capability | mutation: off | tier: hand mutants only | depth: V1
+
+**Verdict: PASS** (0 CRITICAL, 4 WARNING, 2 SUGGESTION). The delivery has no CRITICAL finding;
+the change still has deliveries left (`E3c` onward). The size is above the ~700-line ceiling, and
+going past it needs the owner's explicit OK (E3b-W1).
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3b-W1 | WARNING | implementation | `git diff --shortstat 5df8a7a..3bde884` | Size: 734 authored lines (717+/17-), above 588 forecast and ~700 ceiling; needs owner OK. Notes' 417 prod/317 test split is wrong: measured ~350 prod / ~367 test | no | open |
+| E3b-W2 | WARNING | ambiguity | 02 §5.4 line 1357; `project.rs` `new_document` | D1: §5.4 names `ProjectService::new`; clippy `new_ret_no_self` (verified on a scratch export) plus the no-`#[allow]` rule forbid it. The spec comment needs to name `new_document`, or another name needs to be picked | yes | open |
+| E3b-W3 | WARNING | implementation | AC4; `project.rs` `every_page_and_node` | D5: the whole-document set is proven only for the empty doc. Mutant "return `DirtySet::default()`" survives. It is equivalent in E3b, because `new` only builds empty docs. `E3c` `open` must assert a non-empty set | yes | open |
+| E3b-W4 | WARNING | ambiguity | AC2; `edit.rs` undo/redo; `gafira-edit/src/history.rs:236-252` | D4: the undo/redo `Err` half of AC2 cannot be tested through the engine. `History` errs only on a compacted entry, and the engine fixes the 512 MiB budget. Proved by inspection only: `?` comes before the publish | yes | open |
+| E3b-S1 | SUGGESTION | - | P15; `session.rs` `Session` | D2: `Session` has only `history`, `clean_version`. `path`/`read_only`/`project_key`/autosave are left out because they would be dead code under `-D warnings`. Accepted; the `E3c`/`E3d` cards should list them | - | open |
+| E3b-S2 | SUGGESTION | - | P15 "Modified"; `project.rs` `is_modified` | D3: `is_modified()` is `false` with no session. Sensible, and `ac8` asserts it, but P15 does not say it. Record it in P15 | - | open |
+
+## Gates (HEAD 9c16cc5, workspace scope)
+
+| gate | exit | evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | clean |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | no warning |
+| `cargo test --workspace --locked` | 0 | 199 suites, 2544 passed, 0 failed |
+| `cargo deny check` | 0 | advisories ok, bans ok, licenses ok, sources ok |
+| CI policy (ci.yml `policy` job) | 0 | ARQ-07 CLI, forbid(unsafe), V5 layer table, V12 clippy.toml sync, ARQ-107, V13 EditToken, V14 property tests, testkit `ports` feature clippy + test: all exit 0 |
+
+Purity: `crates/gafira-engine/src` has no `EditToken`, no `std::thread`, no `std::env` (one doc
+comment only says it is banned), no `Instant::now`/`SystemTime`. `EditService` takes `at` from
+`Clock::monotonic()` (`edit.rs` `execute`). The worktree is clean after the run. Both scratch
+target dirs were removed with `cargo clean`.
+
+## Artifact integrity
+
+- `9df403d` (slice card, coordinator) touches only `specs/changes/gafira-engine/apply-progress.md` (+58).
+- No implementer commit changed the card. `9c16cc5` (notes) appends 80 lines and deletes none;
+  `5df8a7a`, `dc28f3c` and `3bde884` do not touch the file.
+- `5df8a7a` is a pure move. After normalising indentation, the only differences between the
+  removed and added lines are `pub(crate)` visibility, explicit imports in place of globs, the
+  `mod fakes;` / `#[cfg(test)]` declaration, a reflowed `load` signature and module/doc comments.
+  No behaviour changed.
+
+## Acceptance map
+
+| AC | proof | status |
+|---|---|---|
+| AC1 | `edit.rs` `ac1_a_changed_execute_...`, `ac1_a_merged_execute_...`, `ac1_ac4_undo_...`, `ac1_ac4_redo_...`; `project.rs` `ac1_ac4_new_bumps_once_...` (exact version, whole event vec) | covered |
+| AC2 | `ac2_an_unchanged_execute_...`, `ac2_a_failed_execute_...`, `ac2_an_empty_undo_or_redo_...`, `ac2_gestures_...` (empty drain plus the next bump's exact version) | covered except undo/redo `Err` (E3b-W4) |
+| AC3 | `ac3_the_version_strictly_increases_across_a_second_new` (versions `1..=9`) | covered |
+| AC4 | the undo/redo/execute tests compare whole `DirtySet`s; `new` gives `{}` | covered for execute/undo/redo; whole-document set only for the empty doc (E3b-W3) |
+| AC5 | `ac5_a_gesture_of_many_steps_is_one_entry` | covered |
+| AC6 | `ac6_new_drops_the_history_before_it` | covered |
+| AC7 | `ac7_without_a_session_every_edit_call_is_refused_...` (all 5 methods, empty drain) | covered |
+| AC8 | `project.rs` `ac8_modified_after_an_edit_and_after_undoing_it` | covered |
+| AC9 | `engine.rs` `ac9_every_engine_error_has_its_key_...` (6 variants, delegation for `Repository`/`Store`); the `to_message` match has no `_` arm | covered |
+| AC10 | `assert_send_sync::<Gafira>()` (`engine.rs:461`) compiles | covered |
+| AC11 | gates above | covered |
+
+Product IDs: the tests carry `// ARQ-30`, `// ARQ-33`, `// ARQ-102`. Covered: ARQ-30
+(execute/undo/redo through `History` only), ARQ-33 (AC5), ARQ-102 (`ToMessage` half; `UserError` is
+out of scope, `E11`), §5.2 (1317: `DocumentChanged { version, dirty }`), §5.4 (1357
+`projects(&self)`, `new` as `new_document`, E3b-W2; 1359 `edit(&mut self)` with execute, undo,
+redo, begin/end_gesture). §5.1: `at` comes from the clock. §7.3: keys per variant. Left out by
+the card: `open`/`save` (`E3c`), autosave (`E3d`), `UserError` (`E11`).
+
+Critical points (design "Critical code" row `E3b`):
+- P15 bump table: matches `edit.rs`/`project.rs` exactly. Bumps on `Changed` (merged or not),
+  undo/redo `Some` and a successful `new`. No bump on `Unchanged`, `Err`, `None`, the gestures or
+  a failed `new` (the `?` runs before `changed`).
+- Strict monotonicity: one `AtomicU64` per engine, `fetch_add(1)`, and publishing happens under the
+  session lock, so versions reach the bus in order.
+- Dirty sets: `newest_touches` after execute/redo, `undone_touches` after undo (P14).
+- History boundary: `new_document` replaces `Session` and the old `History` is dropped.
+- `NoSession`: `with_session` refuses before running or publishing anything.
+
+## Deviations judged
+
+- D1: valid; the lint was verified (rename to `new` makes `clippy -D warnings` fail with
+  `new_ret_no_self`). Spec wording is a follow-up: E3b-W2.
+- D2: accepted (dead-code rule): E3b-S1.
+- D3: accepted, unspecified: E3b-S2.
+- D4: the claim was verified in `history.rs` (snapshot entries cannot fail). Not testable through
+  the engine as designed: E3b-W4.
+- D5: confirmed by a surviving mutant that is equivalent in E3b: E3b-W3.
+- D6: no finding. `gafira-geom` is in the engine's V5 row, V5 reads only the normal tree, and
+  `cargo deny` passes.
+- D7: no finding. It matches P12 (every variant has a key in `error.engine.`), and dropping the
+  detail argument avoids prose in a message (ARQ-102).
+
+## Hand mutants (scratch export of HEAD, own target dir)
+
+| # | mutant | result |
+|---|---|---|
+| 1 (recorded) | bump on an `Unchanged` execute | killed by `ac2_an_unchanged_execute_neither_bumps_nor_publishes` |
+| 3 (recorded) | reset the version to 0 before the bump in `new_document` | killed by `ac3_the_version_strictly_increases_across_a_second_new` |
+| 4 (recorded) | `newest_touches` after `undo` | killed by `ac1_ac4_undo_bumps_once_with_the_undone_set` |
+| P1 (probe for D5) | `new_document` publishes `DirtySet::default()` | survived; equivalent in E3b (E3b-W3) |
+
+Each of the three recorded mutants fails only its own named test, which answers the concern about
+"RED only at the shared setup step". Totals: 4 run, 3 killed, 1 equivalent survivor.
+
+## Size
+
+`git diff --shortstat 5df8a7a..3bde884`: 10 files, 717 insertions, 17 deletions, so 734 authored
+lines. Counting by `#[cfg(test)]` boundary: about 350 production (including docs and manifest)
+and about 367 test lines inserted. `9df403d..3bde884`, which includes the pure move, is 865/152.
+The forecast was 420 (588 at x1.4), and the ceiling is ~700.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E3b", "rounds": [ {
+  "round": 1, "commit": "9c16cc5", "mode": "full", "tier": "hand", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 2},
+  "findings": [
+    {"id": "E3b-W1", "severity": "WARNING", "class": "implementation", "ref": "git diff --shortstat 5df8a7a..3bde884", "summary": "734 authored lines over the ~700 ceiling and 588 forecast; owner OK needed; notes' prod/test split wrong (~350/~367)", "follow_up": false, "status": "open"},
+    {"id": "E3b-W2", "severity": "WARNING", "class": "ambiguity", "ref": "02 §5.4 line 1357", "summary": "ProjectService::new cannot exist under clippy new_ret_no_self and no #[allow]; spec comment should name new_document", "follow_up": true, "status": "open"},
+    {"id": "E3b-W3", "severity": "WARNING", "class": "implementation", "ref": "AC4; project.rs every_page_and_node", "summary": "whole-document set proven only for the empty doc; default-set mutant survives (equivalent in E3b); E3c open must assert a non-empty set", "follow_up": true, "status": "open"},
+    {"id": "E3b-W4", "severity": "WARNING", "class": "ambiguity", "ref": "AC2; edit.rs undo/redo", "summary": "undo/redo Err cannot be reached through the engine (compaction needs > 512 MiB); proved by inspection only", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 3},
+  "criteria": {"total": 11, "covered": 11},
+  "size": {"lines": 734, "forecast": 588}, "report": "e3b-verify-report-r1.md" } ] }
+```
+
+classes (CRITICAL/WARNING): implementation 2, ambiguity 2.
+
+next: tdd-apply (next delivery `E3c`, after the owner's OK on size, E3b-W1; route E3b-W2/W4 to specifier as follow-ups)
