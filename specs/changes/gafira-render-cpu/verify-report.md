@@ -420,3 +420,254 @@ carries 386 inbound deletions — see below. The coordinator decides; `W7` recor
   `src/` is not modified, and the new code cannot reach a `RenderError` because it only renders.
 
 next: tdd-apply
+
+## Round 1 — CB3b
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB3b", "rounds": [ {
+  "round": 1, "commit": "c07f6a3f7839915be9d961fb9071938f7b06b8bc", "mode": "standard", "tier": "T2", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 2, "suggestion": 1},
+  "findings": [
+    {"id": "W8", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render/src/{key,planner}.rs, crates/gafira-render-cpu/src/{surface,tests}.rs, crates/gafira-render/tests/page_renderer.rs, crates/gafira-render-cpu/tests/arq_42_comparison.rs",
+     "summary": "576 insertions (522 of work at 5dd0691 + 54 of record) against the card's 180 forecast, 250 at x1.4: 2.9x, 2.1x with the factor. Below the ~700 signal; the card leaves the call to the coordinator.",
+     "follow_up": false, "status": "open"},
+    {"id": "W9", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render/src/planner.rs:299-320",
+     "summary": "A page with no roots now plans one task per region (the background alone): right, but unpinned. Skipping the task leaves all 118 tests of the two crates green; probe P4 is the only killer, and the record states the gap.",
+     "follow_up": true, "status": "open"},
+    {"id": "S6", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/tests/golden/arq_113_scene.rgba8, arq_42_comparison.rs:399-403",
+     "summary": "The stored golden's scene is one wrapper root and its region is the page origin, so the fix leaves it untouched and the composition now has no golden coverage across platforms. The multi-root re-generation is the card's coordinator follow-up.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 3},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 576, "forecast": 250}, "report": "verify-report.md" } ] }
+```
+
+- Delivery: `CB3b` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb3b`, HEAD
+  `c07f6a3f7839915be9d961fb9071938f7b06b8bc`, cut from `develop` `8e1a468`. Three commits:
+  `4590c2b` (the read-back space), `5dd0691` (the multi-root composition), `c07f6a3` (the record).
+  Not pushed, not merged. The card commit `8e1a468` is the merge base.
+- Mode `standard`, depth **V2** (the card says `verify: V2`). `mutation: off`: no `cargo-mutants`
+  run happened and per `O10` that is not a finding. The rigor is the per-commit gates and the hand
+  mutants, so this round owes V2's own independent probes and its own mutant budget; the card's
+  `tier: T2` is inert under `off`.
+- Verdict: **PASS** — 0 CRITICAL, 2 WARNING, 1 SUGGESTION. Every gate exits 0, all six acceptance
+  criteria are covered by probes I wrote before reading the delivery's tests, and 3 of 4 hand
+  mutants are killed. Both defects of `CB3` (`W4`, `W5`) are gone, end to end and at the unit level,
+  with the defect's own signature reproduced as the negative control.
+- Toolchain: cargo/rustc 1.93.1, clippy 0.1.93, cargo-deny 0.20.2. Disk: `df -h /` at start 182 GB
+  free, 173 GB after the build folders were freed.
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile` in 29.04 s |
+| `cargo test --workspace --locked` | 0 | **196 test binaries, 2489 passed, 0 failed, 0 ignored**; the delivery's own binaries are `gafira-render` lib 71, `page_renderer` 3, `gafira-render-cpu` lib 30, `arq_42_comparison` 14 |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| CI policy, job `policy` | 0 | 9/9 steps exit 0: Format; CLI has no UI deps (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107 language; V13 `EditToken`; V14 property test; testkit `ports` |
+
+The extractor `/tmp/gafira-policy-run.py` was re-checked against this `ci.yml`: job `policy` has 12
+steps — checkout, `Install toolchain` (the one step the extractor skips), the nine `run:` checks
+above, and `cargo-deny-action` (covered by the `cargo deny check` row) — and it reads no other job,
+so the `SKIP` name for the test matrix's target guard is harmless. The record's claim of "nine
+`run:` steps after the toolchain install" reproduces (10 `run:`, 1 skipped for the install).
+
+Build hygiene: `CARGO_TARGET_DIR=/tmp/gafira-cb3b-v2-wt-target` for the worktree,
+`/tmp/gafira-cb3b-v2-target` for the probe export at HEAD, `/tmp/gafira-cb3b-v2-base-target` for the
+negative control at the base, all with `CARGO_INCREMENTAL=0` and none shared. The worktree is clean
+(`git status` empty) and no source file was edited by this round; the only file written is this one.
+
+### Artifact integrity (fast lane, step 3c)
+
+- `8e1a468 docs(gafira-render-cpu): slice card for CB3b` touches only
+  `specs/changes/gafira-render-cpu/apply-progress.md` (+14), as G0 requires.
+- No implementer commit changed the card: the delivery's diff against `8e1a468` removes **zero**
+  lines from that file and only adds the `## CB3b (tdd-apply)`, `### RED evidence`,
+  `### Negative controls` and `### Choices and deviations` sections. The card's acceptance text is
+  byte-identical to the commit that wrote it.
+- Every product ID in the card has a test that names it and proves its criterion: **ARQ-42** (6
+  files, incl. the planner, the surface, the offset and the comparison tests), **ARQ-149** (5 files;
+  `page.rs`, `planner.rs`, `coverage.rs`, `layer.rs`, `tests.rs`), **ARQ-121** (`planner.rs`, the
+  tile grid and its `// ARQ-121` tests), **ARQ-02** (both `lib.rs` forbids, the ARQ-02 purity
+  step), plus **ARQ-111** and **ARQ-113** which the card names through AC5 and the golden. No ID is
+  left out.
+- The record commit `c07f6a3` touches only `apply-progress.md` and states the deviation, as the
+  fast lane requires.
+
+### Independent probes (step 1c, before reading the delivery's tests)
+
+Six probes on a clean `git archive` export at HEAD, in my own file
+(`crates/gafira-render-cpu/tests/v2_probes.rs`), built from the card's AC text with my own scenes
+(96 px page, my own ids, my own colours) and no recording backend: a real `Document`, the real
+`GraphPageRenderer`, the real `CpuBackend`. They are not the delivery's tests and share no helper
+with them.
+
+| Probe | Criterion | What it asserts | HEAD | Base `8e1a468` |
+|---|---|---|---|---|
+| P1 | AC2 | two disjoint opaque roots (red 8..28, blue 60..80) on an opaque page: >300 red px, >300 blue px, the gap at (44,44) is the white background, and (16,16)/(70,70) are the two fills | pass | **fail: `the first root is drawn: 0 red pixels`** |
+| P2 | AC3 | region `(4,6,68,70)` over an opaque page: 0 transparent pixels, and the 64×64 bytes equal the crop of a full-page read | pass | **fail: `616` transparent pixels** |
+| P3 | AC4 | preview vs export on that region within 1/255, **with both sides asserted opaque first** | pass | fail (`the preview is opaque here`) |
+| P4 | — (the no-roots case) | `roots: []` → one task per region, and the page reads back as 4096 opaque white pixels | pass | **fail: 0 tasks** |
+| P5 | AC1 | one task per region, both fills in paint order, key changes with either root and with the order | pass | **fail: 2 tasks for 2 roots** |
+| P6 | AC5 (same bytes half) | the same renderer twice answers identical bytes | pass | pass |
+
+Two things this establishes. **The probes are not vacuous**: five of six fail on the pre-fix tree
+and print the defect's own signature — `0` red pixels (the card's "red `0`, blue `256`) and `616`
+transparent pixels, which is exactly `4096 − 60×58`. And **AC4 cannot be proved by agreement
+alone**: P3 *passes* on the pre-fix tree, because both qualities lose the same band; only the
+opacity premise makes it evidence. The committed test asserts that premise first
+(`arq_42_the_preview_and_the_export_agree_on_an_offset_region`, `:832-835`), so the claim is not
+hollowed there. P6 passing on the base is correct: determinism is not what `O12` changes.
+
+Comparison with the delivery's tests afterwards: they are equal or stronger on every criterion. The
+two-roots test asserts both pixels and the transparent gap (`:716-754`); the offset test asserts the
+whole window against a crop of the full read and the first/last pixel by hand (`:796-818`); the
+surface unit test does the same one level down and adds the corner bytes (`src/tests.rs:897-951`).
+
+### Hand mutants (step 4b)
+
+Four, on the export at HEAD (warm `CARGO_TARGET_DIR`), each reverted before the next; `git status`
+of the export diffed against the backup copies after the last one. I did not repeat the record's
+eleven.
+
+| # | Mutation | Killed by | Result |
+|---|---|---|---|
+| SM | **spot-check of the recorded M1**: the roots composed in reverse paint order (`planner.rs`, `.rev()`) | the recorded test `planner::tests::arq_42_a_region_is_one_task_with_the_ops_of_every_root_in_paint_order` | **killed**, with the recorded signature `left: [blue, red]` |
+| HM1 | **mine**: `composite_key` XOR-folds the roots' hashes instead of hashing the sequence — order lost, duplicate roots cancel | **my P5** (`the order of the roots is in the key`) and the delivery's `planner::tests::arq_42_the_merged_key_changes_when_either_root_changes` | **killed** |
+| HM2 | **mine**: `Surface::write` maps through `source_index(clip.x0 - region.x0, y - region.y0)` while `read` stays page space, so the pair stops agreeing | **my P2** (`no pixel of an opaque page is transparent: 4096`) plus six committed tests of `gafira-render-cpu` | **killed** |
+| HM3 | **mine**: the planner skips a region when no root contributes an op (`if merged.is_empty() { continue; }`) — the old no-roots behaviour | **my P4 only**; all 118 committed tests of the two crates stay green | **survived** → `W9` |
+
+HM1 is the mutant the card asks for by name ("does it change when **either** root changes, and does
+it depend on paint order? Pin it with your own mutant"): the key is a blake3 over a domain byte, the
+count and the roots' keys in order, so a sequence-losing combiner is the failure mode, and it dies on
+both my probe and the delivered test. HM2 targets the claim the `surface.rs` diff makes — that
+`read` and `write` now share one page-space mapping — and dies. HM3 is the round's one survivor.
+
+### `W9`: the no-roots case is right and unpinned
+
+The behaviour is right. With `merged` empty the region loop still emits its task, `page.rs`'s
+`paint_background` puts the page rect into it, and the surface is the opaque page instead of the
+transparent buffer zero roots used to leave: my P4 reads 4096 of 4096 opaque white pixels at HEAD
+and 0 tasks at the base. For a new empty page — the most common state of a document — the old
+behaviour was a transparent frame.
+
+But nothing pins it: HM3 restores the old behaviour and the whole committed suite passes, including
+the delivery's own planner tests, because they all build a page with at least one root. The record
+says so plainly ("No test pinned the old behaviour […] Stated for `verify`"), which is exactly the
+honest reporting this round wants. I keep it a **WARNING**, not a CRITICAL: the delivered code is
+correct, no acceptance criterion of the card names the blank page, and the card's critical list for
+`CB3b` is the merge order, the key combination and the `read` mapping — HM3 touches none of the
+three. It is a test gap of class `implementation` and it is marked `follow_up`, so it reaches
+`archive` rather than being silently dropped.
+
+### The two changed assertions: premise corrections, not concessions
+
+Read both diffs as a reviewer:
+
+- **`page_renderer`'s task key** (`tests/page_renderer.rs:312-327`). It pinned
+  `task.key.content == root_key(graph, 0)`, which was a true statement of the *old* plan ("a tile
+  holds the operations of the root it draws") and is false by construction under `O12`: the tile now
+  carries every root. The replacement asserts the task's key differs from each root's. That is a
+  premise correction — the old premise is the behaviour the delivery exists to change — but it is
+  *weaker* than the rule: "differs from both" would also pass a constant key or a `root₁` key with a
+  fixed mask. The record says the composition is pinned by the planner tests instead, and that is
+  true: HM1 (a combiner that loses order and cancels duplicates) is killed there. So the weak
+  assertion is backed, and the comment in the test says where. The quality half of the test still
+  holds: the ops are still asserted equal between the qualities and the key still asserted different,
+  so "the plans differ only in the content keys" is unchanged.
+- **`page::tests::arq_149_a_request_off_the_page_origin_carries_its_origin_and_clipped_tasks`**
+  (`page.rs:749`). It pinned `reads == [(0,0,w,h)]`, which *is* the defect: the caller translated the
+  request's region to the surface origin before reading. The test is `CB1`/`PC1`'s, not `CB3`'s, so
+  no `CB3` test was rewritten; and the new value `reads == [region]` is the stronger, correct rule
+  (the exact page-space rectangle, not merely "not the origin"). The negative control proves the old
+  value was the bug: with it, P2 measures the `616` band.
+
+Verdict: **both are premise corrections.** Neither lowers what the suite can catch; the arq_149 one
+raises it.
+
+### The `O13` deviation: the card's text was wrong, the code is right
+
+The card and the worktree's `design.md` say the fix lands in the surface because "the caller already
+passes the right rectangle". That premise is false: `render` passed `target_region(request.region)`
+= `(0,0,w,h)` while `Surface::write` and `Surface::read` already subtracted `TargetDesc.origin`, so
+both ends were wrong. `develop` `e10ebe9` corrects the decision. The implementer's deviation —
+touching `page.rs`, deleting `target_region`/`whole` — is therefore **correct and the minimal
+change**, and judging the code rather than the stale text, it is not a finding. It also explains why
+`CB3`'s `W5` was read as a surface bug: the surface was the only end that looked wrong in isolation.
+The `surface.rs` half of the delivery is behaviour-preserving (the same index arithmetic through one
+function); the observable fix is the caller, which my P2 measures.
+
+### The stored golden (`ARQ-113`): unaffected, and that is the right call
+
+The file `tests/golden/arq_113_scene.rgba8` (16 384 bytes) is untouched by the delivery
+(`git log` on that path stops at `d291434`), and no test regenerates it. Its scene is
+`document(nodes, &[10])` — one wrapper group — and its region is `REGION = (0,0,64,64)`. So: one
+root means one task per region before and after `O12`, with the identical op list (the group's
+subtree ops); and a region at the page origin means the old `target_region` was the identity, so the
+`O13` fix does not move a byte. The golden compares a scene the fix **did not change**, which is why
+it still passes and why not regenerating it is correct rather than lazy. The consequence is `S6`:
+the pixel-level proof of the composition lives in the new two-roots test, not in the cross-platform
+oracle. The card already assigns a multi-root golden to the coordinator as a follow-up, so this is a
+SUGGESTION, not a demand of this round.
+
+### Size
+
+`git diff --shortstat 8e1a468..5dd0691` → 7 files, **522 insertions(+), 73 deletions(-)**; at HEAD
+with the record, 8 files, **576**. Against the card's forecast of 180 (250 at ×1.4) that is
+**2.9×** and 2.1×, and below the ~700-line signal at which the owner must be asked. 444 of the 522
+are tests and the rest is `src/` (`key.rs` 28, `planner.rs` 30, `page.rs` 4 net, `surface.rs` a
+rewrite of the same 16 lines). The record's numbers reproduce exactly, including the base-relative
+diff and the split at `5dd0691`. `W8` records it for the coordinator, which is what the card asks
+for; it does not change the verdict.
+
+### Closure of `CB3`'s `W4` and `W5`
+
+Not a closure round, so they are not re-listed in the JSON, but the coordinator needs the state:
+**both are closed.** `W4` (a multi-root page loses every root but the last) — P1 at HEAD has both
+roots, the base has `0` red pixels; `W5` (an opaque page at `(4,6,68,70)` returns `616` transparent
+pixels) — P2 at HEAD has `0`, the base `616`. The committed tests that own each are
+`arq_42_two_roots_of_a_page_both_survive_the_read_back` and the two offset tests, and both survive
+the mutants HM1/HM2/SM. Their `follow_up: true` can become `closed` in the entry.
+
+### Findings
+
+| ID | Severity | Class | Ref | Summary | Status |
+|---|---|---|---|---|---|
+| W8 | WARNING | implementation | the delivery's 8 files | 576 insertions (522 of work) against the 180 forecast, 250 at ×1.4: 2.9× / 2.1×, below the ~700 signal. The coordinator decides, as the card says. | open |
+| W9 | WARNING | implementation | `planner.rs:299-320` | The no-roots task is right (P4: 4096 opaque px) but unpinned: HM3 restoring "no task" leaves all 118 tests of the two crates green. Test gap, follow-up. | open |
+| S6 | SUGGESTION | implementation | `tests/golden/arq_113_scene.rgba8`, `arq_42_comparison.rs:399-403` | The golden's scene is single-root at the page origin, so it is unaffected by both fixes and no golden covers the composition across platforms. Re-generation is the card's coordinator follow-up. | open |
+
+### Observations (not findings)
+
+- **The AC1 key is not hollowed.** `composite_key` hashes a domain byte, the count and the 16-byte
+  keys in order; HM1 shows an order-losing combiner dies on my probe and on the delivered test. The
+  one rule no test can kill is the count in the description, which the record already states as
+  framing (fixed-width keys make it unobservable) — I agree, and it is not a survivor worth chasing.
+- **AC5's "reused rather than re-rendered" is sound, not a proxy.** The test counts `put`s, which
+  would be a weak proxy if render and put could diverge; in `backend.rs:91-100` they are the two
+  statements of the same `None` arm of a `match cached_tile(...)`, so a hit skips both. There is no
+  one-line mutant that renders without putting. The same test also pins the merged tile's two
+  pixels and byte-for-byte equality across frames, so AC5's two halves both have evidence.
+- **`page_renderer`'s new `assert_ne` cannot pin the composition** (see above) and says so in its
+  comment; HM1 proves the composition *is* pinned, in `planner.rs`. A future reader should get the
+  key's proof from there.
+- **The branch's `design.md` still carries the false `O13` premise.** The correction is on
+  `develop` at `e10ebe9`, and this branch does not touch `design.md`, so the merge keeps develop's
+  corrected text. Nothing to fix here; recorded so the merge is not read as a regression.
+- **`O14`/`CB8` is untouched**, as the card's non-goals say: no quantisation change, no `Rgba8`
+  surface, and the two sRGB passes are still there.
+- **V2 does not re-run the per-commit gates.** The record states that `4590c2b` and `5dd0691` each
+  pass their own scope alone, and its test counts reproduce arithmetically (71 − 2 planner tests =
+  69 at `4590c2b`; 30 − 1 = 29 for the CPU crate), but the per-commit runs are V3's, and this round
+  does not claim them.
+- **No T4 and no `cargo-mutants` run**, per `mutation: off` and `O10`. This round does not report a
+  mutation score and its absence is not a gap.
+
+next: tdd-apply
