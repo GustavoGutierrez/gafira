@@ -15,5 +15,10 @@ gafira-raster.workspace = true
 kurbo.workspace = true
 tiny-skia.workspace = true
 
+# O2: the ARQ-42 comparison builds two `GraphPageRenderer`s, so the tests reach
+# the layer-3 crate. Dev-only: the library never names it (ARQ-06 as amended).
+[dev-dependencies]
+gafira-render.workspace = true
+
 [lints]
 workspace = true
