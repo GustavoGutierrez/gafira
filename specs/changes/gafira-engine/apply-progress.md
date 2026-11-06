@@ -984,3 +984,26 @@ deletions(-). Production about 230 lines (`governor.rs` 219 above `#[cfg(test)]`
 variant and its doc, `lib.rs` 5, manifest and lock 2), tests about 460 (`governor.rs` 458, the
 variant list of `event.rs`). Over the estimate (320, 448 at x1.4) and close to the 700 mark: the
 tests are 2/3 of it (the four doubles, the two port doubles of the scope test, and the AC8 table).
+
+### E5 fix round 1 (verify round 1 FAIL, finding E5-C1)
+
+Test-only round; no production change. E5-C1: AC1 "equal kinds keep the caller's order" (P17,
+"sorted stably") was unproven, since `sort_unstable_by_key` only differs from `sort_by_key` from
+about 21 elements up and the AC1 test has five.
+
+- Added `ac1_many_caches_of_one_kind_keep_the_caller_order` (`045008d`): 64 honest caches of one
+  byte each, kind `[Backend, Frames, Tiles][(i * 7 + i / 5) % 3]` (25 frames, 13 tiles, 26
+  backend, scrambled), limit 0; asserts the exact `trim` sequence (frames, then tiles, then
+  backend, each in caller order, every target 0) and `outcome(64, 0, Normal)`.
+- RED evidence: the code was already right, so the proof is by mutant (below).
+
+| Mutant | Change at `enforce` | Killed by | Failure |
+|---|---|---|---|
+| M11 | `sort_unstable_by_key` | `ac1_many_caches_of_one_kind_keep_the_caller_order` | `assertion left == right failed`: the tiles run is left `[cache-7, cache-27, cache-12, ...]`, right `[cache-2, cache-7, cache-12, ...]` |
+| M12 | reverse within a kind (`(rank, Reverse(at))`) | both AC1 tests | left `[("frames-b", 0), ("frames-a", 0), ...]`, right `[("frames-a", 0), ("frames-b", 0), ...]` |
+
+Both ran through a runner that restores the file (restored: True); neither was committed.
+Gates: `cargo fmt --all --check` ok, `cargo clippy --workspace --all-targets --locked -- -D
+warnings` ok, `cargo test --workspace --locked` 2588 passed, 0 failed.
+
+Measured (`git diff --shortstat a651000..045008d`): 1 file changed, 29 insertions(+).
