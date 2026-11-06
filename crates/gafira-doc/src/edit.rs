@@ -7,7 +7,10 @@
 
 use std::sync::Arc;
 
-use crate::{Document, Dpi, IdSpaceExhausted, Node, NodeId, Page, PageId};
+use crate::{
+    AssetEntry, AssetRef, AssetTable, Clip, ClipId, Document, Dpi, IdSpaceExhausted, MarkerId,
+    Node, NodeId, Page, PageId, Sequence, SequenceId, Track, TrackId,
+};
 
 /// Proof that the holder may edit documents.
 ///
@@ -144,6 +147,71 @@ impl DocMut<'_> {
     /// The node with this id, copied on write along the page and node only.
     pub fn node_mut(&mut self, page: PageId, id: NodeId) -> Option<&mut Node> {
         self.page_mut(page)?.nodes.get_mut(&id).map(Arc::make_mut)
+    }
+
+    // ---- timeline of 02 §3.1 -------------------------------------------
+    // The ids come from the same counter as pages and nodes (ARQ-10), and
+    // every mutation below goes through `edit(&token)` (ARQ-30).
+
+    /// Allocates a sequence id from the shared counter.
+    pub fn alloc_sequence_id(&mut self) -> Result<SequenceId, IdSpaceExhausted> {
+        self.doc.alloc_id().map(SequenceId::new)
+    }
+
+    /// Allocates a track id from the shared counter.
+    pub fn alloc_track_id(&mut self) -> Result<TrackId, IdSpaceExhausted> {
+        self.doc.alloc_id().map(TrackId::new)
+    }
+
+    /// Allocates a clip id from the shared counter.
+    pub fn alloc_clip_id(&mut self) -> Result<ClipId, IdSpaceExhausted> {
+        self.doc.alloc_id().map(ClipId::new)
+    }
+
+    /// Allocates a marker id from the shared counter.
+    pub fn alloc_marker_id(&mut self) -> Result<MarkerId, IdSpaceExhausted> {
+        self.doc.alloc_id().map(MarkerId::new)
+    }
+
+    /// The sequence list, for adding or removing whole sequences.
+    pub fn sequences_mut(&mut self) -> &mut Vec<Arc<Sequence>> {
+        &mut self.doc.sequences
+    }
+
+    /// The sequence with this id, copied on write along this path only.
+    pub fn sequence_mut(&mut self, id: SequenceId) -> Option<&mut Sequence> {
+        self.doc
+            .sequences
+            .iter_mut()
+            .find(|sequence| sequence.id == id)
+            .map(Arc::make_mut)
+    }
+
+    /// The track of one sequence with this id, copied on write along this
+    /// path only.
+    pub fn track_mut(&mut self, sequence: SequenceId, id: TrackId) -> Option<&mut Track> {
+        self.sequence_mut(sequence)?.track_mut_by_id(id)
+    }
+
+    /// The clip of one track with this id, copied on write along the path only.
+    pub fn clip_mut(
+        &mut self,
+        sequence: SequenceId,
+        track: TrackId,
+        id: ClipId,
+    ) -> Option<&mut Clip> {
+        self.track_mut(sequence, track)?.clip_mut_by_id(id)
+    }
+
+    /// The asset table the clips name their media with, for adding, updating
+    /// or removing entries.
+    pub fn assets_mut(&mut self) -> &mut AssetTable {
+        &mut self.doc.assets
+    }
+
+    /// The entry of the asset table this reference names, copied on write.
+    pub fn asset_mut(&mut self, reference: AssetRef) -> Option<&mut AssetEntry> {
+        self.doc.assets.get_mut(&reference)
     }
 
     /// Read access to the document being edited.

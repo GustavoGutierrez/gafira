@@ -3,7 +3,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{Document, Dpi, Page, ValidationError};
 
@@ -54,6 +54,10 @@ impl TryFrom<DocumentWire> for Document {
             next_id: w.next_id,
             dpi: w.dpi,
             pages: w.pages,
+            // The timeline and the asset table are not on the wire yet (they
+            // arrive with the tables change): the model starts empty on load.
+            sequences: Vec::new(),
+            assets: std::collections::BTreeMap::new(),
         };
         doc.validate()?;
         Ok(doc)
@@ -70,6 +74,41 @@ impl Document {
     /// Writes the compact canonical JSON form (no trailing newline).
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
+    }
+}
+
+impl Serialize for Document {
+    // The timeline of 02 §3.1 is not on the wire yet (the tables change): the
+    // canonical bytes keep the shape of schema 1, so the model fields are
+    // skipped and the wire is built from the four fields the wire read maps.
+    // The derive would have leaked the model's data into bytes the schema
+    // version has not declared.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut out = serializer.serialize_struct("Document", 4)?;
+        out.serialize_field("schema_version", &self.schema_version)?;
+        out.serialize_field("next_id", &self.next_id)?;
+        out.serialize_field("dpi", &self.dpi)?;
+        out.serialize_field("pages", &self.pages)?;
+        out.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Document {
+    // The validate-while-loading rule of ARQ-13 keeps its shape: the wire
+    // read validates the same way the derive's `try_from` did, and the
+    // timeline of 02 §3.1 is not part of the wire yet (the tables change
+    // brings its persisted form). The derive left the struct, so this manual
+    // pair keeps the wire bytes identical.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = DocumentWire::deserialize(deserializer)?;
+        Document::try_from(wire).map_err(serde::de::Error::custom)
     }
 }
 

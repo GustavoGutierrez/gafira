@@ -1,4 +1,4 @@
-//! Typed identifiers for nodes and pages.
+//! Typed identifiers for nodes, pages and the timeline (02 §3.1).
 
 use std::fmt;
 
@@ -49,6 +49,25 @@ id_type!(
 id_type!(
     /// Identifier of a page, unique inside its document.
     PageId
+);
+id_type!(
+    /// Identifier of a sequence (02 §3.1), unique inside its document.
+    ///
+    /// Distinct from [`PageId`] and [`NodeId`]; the counter is one per document, so a
+    /// sequence and a page can never share a raw value in one document.
+    SequenceId
+);
+id_type!(
+    /// Identifier of a track (02 §3.1), unique inside its document.
+    TrackId
+);
+id_type!(
+    /// Identifier of a clip (02 §3.1), unique inside its document.
+    ClipId
+);
+id_type!(
+    /// Identifier of a marker (02 §3.1), unique inside its document.
+    MarkerId
 );
 
 /// The id counter reached `u64::MAX`, so no further id can be allocated.

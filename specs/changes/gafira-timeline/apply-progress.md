@@ -160,10 +160,131 @@ Owner decisions touched: Q3 of the design (bare values for the animated volume a
 
 Commits:
 
+| Commit | What |
+|---|---|
+| `da35130` feat(gafira-doc): the timeline types, ids and the edit view | The types `Sequence`, `Track`, `TrackKind`, `Clip`, `ClipSource`, `Marker`, `Speed`, `AssetRef`, `AssetEntry`, `AssetStorage`, `PixelSize`; the ids `SequenceId`, `TrackId`, `ClipId`, `MarkerId` from the document's counter; the `DocMut` accessors of ARQ-30; the model's query surface. No laws yet: the surface the laws come on top of. |
+| `b00b845` feat(gafira-doc): the laws of the timeline, each with its test | The seven laws with the battery of `crates/gafira-doc/tests/timeline_laws.rs` (10 tests, one per AC). |
+
 Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` (`gafira-doc` is not a leaf), `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps by extracting their `run:` from `ci.yml`.
 
 ### RED evidence
 
+The battery was written against the types of `da35130`, before the laws existed. RED run
+(`cargo test -p gafira-doc --locked --test timeline_laws`), one line per AC:
+
+```
+test fv_01_a_sequence_and_a_clip_carry_their_fields ... ok
+test arq_10_and_v_1_the_timeline_ids_come_from_one_counter ... ok
+test arq_30_the_timeline_mutators_ask_for_the_token ... ok
+test v_2_and_fv_03_a_cut_lands_on_an_exact_frame_including_23_976 ... FAILED
+test fv_01_a_clip_lies_inside_its_source_and_its_sequence ... FAILED
+test p_11_no_lane_holds_two_clips_at_any_instant ... FAILED
+test fv_01_the_retime_snaps_cuts_to_the_new_grid ... FAILED
+test fv_01_the_audio_cap_sixteenth_enters_seventeenth_is_refused ... FAILED
+test fv_03_the_duration_follows_the_speed_relation ... FAILED
+test p_7_the_lane_answers_what_it_shows_at_an_instant ... FAILED
+test result: FAILED. 3 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+GREEN run after `b00b845`: `test result: ok. 10 passed; 0 failed`.
+
+| AC | Requirement | Test | RED | GREEN |
+|---|---|---|---|---|
+| AC1 | FV-01, ARQ-13: the sequence carries its rate, size and sample rate, the four track kinds, the clip carries its source, its offsets, its speed and its volume | `fv_01_a_sequence_and_a_clip_carry_their_fields` | green (the types are the surface) | ok |
+| AC2 | ARQ-10, V-1: the ids come from the document's counter, unique across the document | `arq_10_and_v_1_the_timeline_ids_come_from_one_counter` | green (the ids are the surface) | ok |
+| AC3 | V-2, FV-03: a cut lands on an exact frame; 23,976 gives exactly 29 429 400 flicks | `v_2_and_fv_03_a_cut_lands_on_an_exact_frame_including_23_976` | FAILED | ok |
+| AC4 | FV-01: the clip lies inside its source and the sequence, half-open, at least one frame | `fv_01_a_clip_lies_inside_its_source_and_its_sequence` | FAILED | ok |
+| AC5 | P11: no overlap on a lane; the stacking is the order of `tracks` | `p_11_no_lane_holds_two_clips_at_any_instant` | FAILED | ok |
+| AC6 | FV-01 (c): the retime snaps to the nearest frame of the new grid, loses no clip, is deterministic | `fv_01_the_retime_snaps_cuts_to_the_new_grid` | FAILED | ok |
+| AC7 | FV-01: the sixteenth audio track enters, the seventeenth is refused | `fv_01_the_audio_cap_sixteenth_enters_seventeenth_is_refused` | FAILED | ok |
+| AC8 | FV-03: the relation between speed, source and sequence duration; zero or negative refused | `fv_03_the_duration_follows_the_speed_relation` | FAILED | ok |
+| AC9 | P7: the model answers which clip each lane shows at an instant, `None` where nothing | `p_7_the_lane_answers_what_it_shows_at_an_instant` | FAILED | ok |
+| AC10 | ARQ-30: the mutation needs the token; the counter never repeats | `arq_30_the_timeline_mutators_ask_for_the_token` | green (the edit view is the surface) | ok |
+
+### Hand mutants
+
+Seven behaviours applied to the green code, one test each, reverted after every one.
+Seven dead, none weakened:
+
+| # | Rule | Wrong behaviour applied | Test that killed it |
+|---|---|---|---|
+| H1 | the grid: a cut lands on an exact frame | the cut between two frames is rounded instead of reported | `v_2_and_fv_03_a_cut_lands_on_an_exact_frame_including_23_976` |
+| H2 | 23,976 gives an exact frame duration | the frame rounded to the millisecond (29 635 200 flicks) | `v_2_and_fv_03_a_cut_lands_on_an_exact_frame_including_23_976` |
+| H3 | the bounds: inside the source and the sequence | a clip starting before its source is accepted | `fv_01_a_clip_lies_inside_its_source_and_its_sequence` |
+| H4 | P11: no overlap on any lane | two clips may meet on the video lane | `p_11_no_lane_holds_two_clips_at_any_instant` |
+| H5 | P11: the stacking is the order of `tracks` | the stacking follows the order of insertion (the lane ids) | `p_7_the_lane_answers_what_it_shows_at_an_instant` |
+| H6 | the audio cap | the seventeenth audio track is accepted | `fv_01_the_audio_cap_sixteenth_enters_seventeenth_is_refused` |
+| H7 | the speed relation | the relation divided the other way round | `fv_03_the_duration_follows_the_speed_relation` |
+| H7 | the speed relation | a speed of zero is accepted | `fv_03_the_duration_follows_the_speed_relation` |
+
+Two of the seven needed a stronger test, and the test was strengthened instead of
+the mutant being weakened:
+
+- **H2** first survived because the test read the frame from the rate
+  (`FrameRate::flicks_per_frame`) and not from the sequence. The test now reads
+  `sequence.frame()` and asserts the exact 29 429 400 flicks, which is the frame
+  the model's own grid uses.
+- **H5** first survived because the mutant ordered by the *clip* ids and the test's
+  clip ids ran in the same order as the lanes. The test now puts two lanes over
+  the same instant, with the lane ids and the clip ids both in the opposite
+  order of the tracks list, and asserts the answer follows the list.
+
 ### Negative controls
 
+- The guard of ARQ-136 still bites: with the new sources out of
+  `TIMELINE_SOURCES`, `arq_136_the_measure_context_carries_no_time` fails with
+  "the domain names the time type Flicks in src/timeline/error.rs, outside the
+  data of the timeline". It is the guard the delivery had to satisfy, not a
+  formality: the error type carries plain `i64` ticks so the law's values can
+  be reported without the time type leaking out of the timeline's own files.
+- The module coverage of the same test fails on a module the list does not cover:
+  `src/lib.rs declares the module timeline, which the list of sources does not
+  cover: add it`. That is why `timeline/{mod,asset,clip,error,sequence,track}.rs`
+  are in `DOMAIN_SOURCES`.
+- The wire did not move: the golden files and `tests/serde.rs` pass untouched
+  (18 passed), and the timeline is not on the wire yet (see the deviations).
+
 ### Choices and deviations
+
+- **The timeline is in memory, not on the wire (UD-3).** `Document` keeps
+  `sequences` and `assets`, and its `Serialize` writes the four canonical fields
+  of schema 1, so the golden bytes do not move; the persisted form arrives with
+  the tables change (TL3). The derive of `Serialize`/`Deserialize` left the
+  struct for a manual pair, because the model types are not serde-ready in this
+  cut and the derive would have leaked them into bytes the schema version has
+  not declared. `Deserialize` keeps ARQ-13's validate-while-loading rule
+  (`try_from`, as the derive's `try_from` did).
+- **`Speed` is a rational (`num`, `den`), not a float.** FV-03's relation is
+  exact (`source × den / num`), a float would round the duration and the
+  tolerance of ARQ-42 would measure the rounding instead of the raster. The
+  ratio is reduced at construction, so the same speed has one form.
+- **The volume is a bare `f32` (Q3 of the design).** The animation of the
+  volume (`Animatable<f32>`) is out of this cut.
+- **`TimelineError` is its own type, not a `ValidationError` variant.** The
+  laws of the model are not the document's validation (that pass is ARQ-13's,
+  over the document's structure), and the timeline is not on the wire yet, so a
+  variant there would promise a persisted error that does not exist. Its values
+  carry plain `i64` ticks so that no file outside the timeline's own names a
+  time type (ARQ-136).
+- **The frame grid of the sequence comes from `gafira-time`'s `FrameRate`,**
+  whose own law rejects a rate whose frame is not a whole number of flicks.
+  The sequence never rounds: a cut that is not on the grid is reported
+  (`OffGrid`), and the 23,976 case is checked against 29 429 400 flicks, not
+  against a rounded millisecond.
+- **The retime is a pure function** (`Sequence::retimed(&self, new_rate) ->
+  Sequence`), as P6 of the design says: it moves nothing, because only a
+  command may write (ARQ-30), and the commands are the next change. A clip
+  that would fall below one frame keeps one frame and pushes the rest of its
+  lane right, so no clip is lost (FV-01 (c)); the tie of the nearest frame
+  breaks towards the later frame.
+- **`AssetTable` is keyed by `AssetRef`** (P9), with the two fields the
+  document needs (`name`, `storage`); the import metadata (duration, rate,
+  legal class) arrives with the import feature (Q5).
+- **The `TIMELINE_SOURCES` list grew from one entry to four:**
+  `page.rs` (TL1's `Page.duration`), `timeline/clip.rs`, `timeline/sequence.rs`
+  and `timeline/track.rs` — the four files that hold the timeline's data and
+  name the time types. `timeline/error.rs` and `timeline/asset.rs` are in
+  `DOMAIN_SOURCES` (so the module coverage passes) but not in
+  `TIMELINE_SOURCES`, because they name no time type: the error carries plain
+  ticks and the asset table carries hashes. The list stays a list of the
+  sources that hold the data, not a wildcard.

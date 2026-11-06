@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use crate::json::DocumentWire;
+use crate::timeline::{AssetEntry, AssetRef, AssetTable, Sequence};
 use crate::{Dpi, IdSpaceExhausted, Page, PageId};
 
 /// A whole document: a version, one id counter, a DPI and ordered pages.
@@ -14,16 +14,52 @@ use crate::{Dpi, IdSpaceExhausted, Page, PageId};
 /// `EditToken` and goes through `Document::edit`. Replacing a whole value
 /// (`*doc = other`) is possible for whoever owns the document and is owned by
 /// `EditService` in C3; it is documented, not prevented.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DocumentWire")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Document {
     pub(crate) schema_version: u32,
     pub(crate) next_id: u64,
     pub(crate) dpi: Dpi,
     pub(crate) pages: Vec<Arc<Page>>,
+    /// The timelines of the document (02 §3.1), not persisted yet; the wire
+    /// form keeps its shape and this model arrives with the tables change.
+    pub(crate) sequences: Vec<Arc<Sequence>>,
+    /// The asset table the clips need (P9), keyed by the content hash; the
+    /// same non-prompt status as the sequences until the tables change.
+    pub(crate) assets: AssetTable,
 }
 
 impl Document {
+    /// The sequences of the document, in the order they were created.
+    ///
+    /// Timeline data sits on the document root until the composition root
+    /// (`Project`, 02 §3.1) exists, and the wire form does not carry it yet:
+    /// the persistence lands with the tables change.
+    #[must_use]
+    pub fn sequences(&self) -> &[Arc<Sequence>] {
+        &self.sequences
+    }
+
+    /// The sequence with this id.
+    #[must_use]
+    pub fn sequence(&self, id: crate::SequenceId) -> Option<&Sequence> {
+        self.sequences
+            .iter()
+            .find(|s| s.id == id)
+            .map(|sequence| sequence.as_ref())
+    }
+
+    /// The asset table the clips name their media with (P9).
+    #[must_use]
+    pub fn assets(&self) -> &AssetTable {
+        &self.assets
+    }
+
+    /// The entry of the asset table the reference names.
+    #[must_use]
+    pub fn asset(&self, reference: &AssetRef) -> Option<&AssetEntry> {
+        self.assets.get(reference)
+    }
+
     /// The schema version this build writes and reads.
     pub const SCHEMA_VERSION: u32 = 1;
 
@@ -63,6 +99,8 @@ impl Document {
             next_id,
             dpi,
             pages,
+            sequences: Vec::new(),
+            assets: BTreeMap::new(),
         };
         doc.validate()?;
         Ok(doc)
@@ -84,6 +122,8 @@ impl Default for Document {
             next_id: 1,
             dpi: Dpi::default(),
             pages: Vec::new(),
+            sequences: Vec::new(),
+            assets: BTreeMap::new(),
         }
     }
 }
@@ -96,6 +136,8 @@ pub(crate) fn test_document(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Do
         next_id,
         dpi,
         pages,
+        sequences: Vec::new(),
+        assets: BTreeMap::new(),
     }
 }
 
