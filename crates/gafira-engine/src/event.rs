@@ -25,7 +25,12 @@ use gafira_ports::render::BackendKind;
 ///
 /// `DocumentChanged` carries no version: `DocVersion` does not exist in the
 /// repository today (design P3, open question O2).
+///
+/// The enum is `#[non_exhaustive]` because the variants 02 §5.2 names keep
+/// arriving delivery by delivery (design P3): an external matcher must carry a
+/// wildcard arm rather than break on the next one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EngineEvent {
     /// The document changed; `dirty` is what the command touched.
     DocumentChanged { dirty: DirtySet },
