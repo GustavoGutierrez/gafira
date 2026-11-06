@@ -453,6 +453,49 @@ mod tests {
         }
     }
 
+    // ARQ-51
+    #[test]
+    fn an_undo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it() {
+        let mut rig = Rig::opened(false);
+        rig.edit_at(T0);
+        let job = rig.due_at(T0 + INTERVAL).expect("the edit's job");
+        rig.finish_at(T0 + secs(11), job);
+        assert!(rig.due_at(T0 + secs(60)).is_none(), "nothing pending");
+
+        rig.at(T0 + secs(70));
+        assert!(rig.engine.edit().undo().expect("an undo").is_some());
+        assert!(
+            rig.due_at(T0 + secs(80) - STEP).is_none(),
+            "one step before"
+        );
+        let job = rig
+            .due_at(T0 + secs(80))
+            .expect("one interval after the undo");
+        assert_eq!(job.version(), DocVersion(3), "the edit, then the undo");
+    }
+
+    // ARQ-51
+    #[test]
+    fn a_redo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it() {
+        let mut rig = Rig::opened(false);
+        rig.edit_at(T0);
+        assert!(rig.engine.edit().undo().expect("an undo").is_some());
+        let job = rig.due_at(T0 + INTERVAL).expect("the job of both");
+        rig.finish_at(T0 + secs(11), job);
+        assert!(rig.due_at(T0 + secs(60)).is_none(), "nothing pending");
+
+        rig.at(T0 + secs(70));
+        assert!(rig.engine.edit().redo().expect("a redo").is_some());
+        assert!(
+            rig.due_at(T0 + secs(80) - STEP).is_none(),
+            "one step before"
+        );
+        let job = rig
+            .due_at(T0 + secs(80))
+            .expect("one interval after the redo");
+        assert_eq!(job.version(), DocVersion(4), "the edit, undo, then redo");
+    }
+
     // ARQ-55
     #[test]
     fn ac11_a_read_only_session_still_autosaves() {
