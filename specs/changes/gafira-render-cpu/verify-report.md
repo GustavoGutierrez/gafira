@@ -1139,3 +1139,633 @@ gate.
   not a gap this round, as round 1 recorded.
 
 next: tdd-apply
+
+---
+
+## Round 1 — CB5
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB5", "rounds": [ {
+  "round": 1, "commit": "b6693e37d1bd89c83e56810bc6d21b349bee5b1c", "mode": "standard", "tier": "T2", "depth": "V2",
+  "verdict": "FAIL", "next": "architect",
+  "counts": {"critical": 1, "warning": 6, "suggestion": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:29-44, src/tests/effects.rs",
+     "summary": "A tile with two ApplyEffect ops is not covered: only the first effect's roi grows the buffer (53/53 lib tests green with the break); the second is handed a crop. Probe: 12x12 instead of 16x16.",
+     "follow_up": false, "status": "open"},
+    {"id": "W1", "severity": "WARNING", "class": "claim",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:474, src/backend.rs:299-316",
+     "summary": "The stated survivor is not equivalent: the cull at task.region drops an op wholly inside the growth and outside the tile, so the tile loses a pixel (0.4,0.3,0.2,0.5 -> 0). The cull is a pixel rule on a grown tile, not only work skipped.",
+     "follow_up": false, "status": "open"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/effects.rs:159",
+     "summary": "No test pins the grown-rect cull: AC4's fixture's fill only touches the tile's corner and coverage::meets is inclusive, so task.region survives all 53 lib tests. Add a fill strictly inside the margin.",
+     "follow_up": true, "status": "open"},
+    {"id": "W3", "severity": "WARNING", "class": "architecture",
+     "ref": "specs/changes/gafira-render-cpu/design.md:282-283",
+     "summary": "D4 calls the layer's region 'the tile's region (grown by the effect ROI)', which contradicts 02 §4.6 (layer bounds are the task's) and D4's own next sentence. The growth is the render buffer for the effect's input; the layer stays the task's.",
+     "follow_up": false, "status": "open"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity",
+     "ref": "02 §4.6:688, ARQ-120, src/layer.rs:124-153",
+     "summary": "A mask covers the layer and the layer is the task's region, so the margin a later effect reads stays unmasked: mask-then-effect is not tile equivalent (probe: page (8,8) 0 in one task, (1,0,0,1) in two). §4.6 needs the sentence before ARQ-134 emits these.",
+     "follow_up": true, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:66, apply-progress.md:479",
+     "summary": "The effect's temporary grown dst is in no accounting: memory_usage and trim cannot see it. Bounded to one page-sized buffer per op: +33 MB at 1080p, +133 MB at 4K, both inside the cap; at MAX_SIDE 8192 it doubles a 1.07 GB surface past the 1.5 GB cap with no lever.",
+     "follow_up": true, "status": "open"},
+    {"id": "W6", "severity": "WARNING", "class": "ambiguity",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:88-99, ARQ-120, ARQ-149",
+     "summary": "image_width/height is the surface's page rectangle, not the page, so an effect clamps at the surface edge. Right for a full-page surface; wrong for a sub-region request ARQ-149 allows, and the port carries no page extent.",
+     "follow_up": true, "status": "open"},
+    {"id": "S1", "severity": "SUGGESTION", "class": "ambiguity",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:481",
+     "summary": "The transition's RgbaF32 inputs in both qualities are not a deviation: ARQ-118's clause is about from/to/dst, which agree and take the destination's format; O11 and 02 §4.6 fix the destination as f32. The record should say so.",
+     "follow_up": false, "status": "open"},
+    {"id": "S2", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "the delivery's 8 files",
+     "summary": "1244 insertions against the card's 420 forecast (590 at x1.4): 2.8x, 815 of them tests, 357 production. Above the ~700 signal; the coordinator decides, as the record says.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 3},
+  "criteria": {"total": 8, "covered": 8},
+  "size": {"lines": 1244, "forecast": 590}, "report": "verify-report.md" } ] }
+```
+
+- Delivery: `CB5` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb5`, HEAD
+  `b6693e37d1bd89c83e56810bc6d21b349bee5b1c`, merge base `develop` `90603a6` (the card commit).
+  Five commits: `2a7f72f` (mask), `2279fe8` (ROI growth), `6dbaa02` (transition), `e71a8fe` (the mask
+  anchor), `b6693e3` (the record). Not pushed, not merged; `develop` has moved to `0bc90a9`, which
+  does not change this branch's base.
+- Mode `standard`, depth **V2** (the card says `verify: V2`). `mutation: off`: no `cargo-mutants`
+  run and no `mutants` report, and that is not a finding; this round's rigour is the gates, ten
+  independent probe tests and five hand mutants.
+- Verdict: **FAIL** — 1 CRITICAL, 6 WARNING, 2 SUGGESTION. The *code* answers every acceptance
+  criterion, and the anchor this round exists for is the card's, not `D4`'s (below). What fails is
+  the evidence at two edges of the ROI work: a tile with **two** effects, and the grown-rect cull
+  whose equivalence the record got wrong.
+- Toolchain: cargo/rustc 1.93.1, clippy 0.1.93, cargo-deny 0.20.2. Disk: `df -h /` at start 171 GB
+  free (433 GB used of 636 GB).
+
+### The anchor: which buffer is the layer
+
+**Ruling: `02 §4.6` supports the card. The mask anchors at the task's (tile's) corner, and `D4` is
+what needs correcting.**
+
+Three sentences, in the order the spec settles them:
+
+1. Layer bounds. §4.6:687 — "`PushLayer` no lleva rectángulo, así que **los límites de la capa son
+   los de la tarea**: toda la superficie del destino, que es la región de página recortada al
+   viewport (ARQ-149), sin cota más fina". The layer's bounds are `TileTask.region`, which §4.6:686
+   defines as the task's page rectangle clipped to the request's viewport. Nothing in §4.6 grows it,
+   and an effect's private `roi` is not a property of the task.
+2. The mask's anchor. §4.6:688 — "La máscara se ancla en la **esquina superior izquierda de la
+   capa**, sin reescalado: un píxel de máscara por píxel de la capa, y como el op no lleva escala,
+   la máscara llega del tamaño de la capa". With (1), that corner is `task.region`'s top-left, so
+   inside a grown buffer it sits `region.x0 − drawn.x0` pixels in — exactly `backend.rs:278-283`.
+3. The mask's reach. §4.6:688 — "Donde la máscara no llega, la capa queda como estaba". The mask is
+   the layer's size, and the layer is the task's.
+
+`D4`'s consequence (`design.md:282-283`) says "the adapter defines the layer region as the tile's
+region **(grown by the effect ROI in `CB5`)**", and then "A layer is therefore never larger than a
+tile" — the parenthetical contradicts both §4.6 and the design's own next sentence. The growth is
+the **render buffer** that lets an effect read outside the tile; it is not the layer. The reading the
+card states is also the only one a document can author: `ApplyMask` carries no rect and no scale
+(§4.6:688, design `D7`), so an emitter must hand a mask cropped to a region it knows — the tile — and
+a mask sized to a rectangle that depends on an effect's private `roi` is unknowable at emit time.
+
+The implementer's `M5` (anchor at the grown origin) is therefore a genuine mutant and the fix in
+`e71a8fe` is right. What the same finding exposes is that `D4` is now wrong about the layer and W3
+carries the correction; W4 carries the consequence that the growth is *not* masked.
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile` in 25.44 s |
+| `cargo test --workspace --locked` | 0 | **198 binaries, 2518 passed, 0 failed, 0 ignored**; the delivery's own binaries are `gafira-render-cpu` lib **53** (12 of them new: 9 `src/tests/ops.rs`, 3 `src/tests/effects.rs`) and `arq_42_comparison` 14 |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| CI policy, job `policy` | 0 | 9/9 steps exit 0: Format; CLI has no UI deps (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107 language; V13 `EditToken`; V14 property test; testkit `ports` (ADR 0013) |
+
+AC8's other halves, re-run: `src/lib.rs:25` still opens with `#![forbid(unsafe_code)]`; the purity
+grep `std::fs|std::net|std::thread::spawn|std::time::(Instant|SystemTime)::now|std::env` over
+`crates/gafira-render-cpu/src/*` exits 1; `git diff 90603a6..HEAD -- Cargo.toml Cargo.lock
+crates/gafira-render-cpu/Cargo.toml` is empty (`O2`), so no dependency and no V5 row moved.
+
+Build hygiene: `CARGO_TARGET_DIR=/tmp/gafira-cb5-v2-target` for the probe/mutant export and
+`/tmp/gafira-cb5-v2-target-head` for the worktree, both with `CARGO_INCREMENTAL=0`, not shared and
+not shared with any other tree. The worktree is clean (`git status` empty); no source file was
+edited by this round, and the only file written is this one. Both target dirs are cleaned before the
+round closes.
+
+### Artifact integrity (fast lane, step 3c)
+
+- `90603a6 docs(gafira-render-cpu): slice card for CB5` touches only
+  `specs/changes/gafira-render-cpu/apply-progress.md` (+16), as G0 requires, and precedes the first
+  implementation commit.
+- No implementer commit changed the card: `2a7f72f`, `2279fe8`, `6dbaa02` and `e71a8fe` touch only
+  `crates/gafira-render-cpu/**`, and `b6693e3` adds the `## CB5 (tdd-apply)` record (+72) to that
+  file and nothing else. No amend commit.
+- Every product ID in the card has a test that names it and proves its criterion: **ARQ-119**
+  (`src/tests/ops.rs:46`, `:49`), **ARQ-110** (`:231`, `:235`; the non-finite `progress` is ARQ-110's
+  typed error), **ARQ-118** (`:359`, `:363`, `:414`, `:416`, `:427`, `:430`, `:453`, `:456`, `:508`),
+  **ARQ-120** (`src/tests/effects.rs:2`, `:153`, `:159`, `:193`, `:195`), **ARQ-112** (`:216`, `:220`).
+  No ID is left out. **ARQ-02** is AC8's command.
+
+### Independent probes (step 1c, before reading the delivery's tests)
+
+Ten probe tests in my own file (`crates/gafira-render-cpu/tests/cb5_probe.rs`) on a clean `git archive`
+export at HEAD — eleven checks, because P4's window assertion rides P3's scene and P11 is a side probe
+— written from §4.6, the card and the product rows only: my own scenes, my own
+`TileCache`, my own `Effect` and `Transition` doubles, the real `CpuBackend`.
+
+| Probe | Criterion | What it asserts | HEAD |
+|---|---|---|---|
+| P1 | AC1 | a `(0.4, 0.3, 0.2, 0.5)` premultiplied layer under coverage 0, 255 and 128: all four channels scale (`0.4·128/255` on channel 0), 255 is exact | pass |
+| P2 | §4.6 anchor | a task grown by an effect: the tile's `(0,0)` is the mask's `(0,0)` and becomes transparent; `(1,1)` unchanged | pass |
+| P3 | AC4 | a fill **wholly outside** the tile (page 12..15 under a tile at 16..24) reaches the crop through a 4 px shift; the effect ran once | pass |
+| P4 | AC4, ARQ-120 | `cx.tile` at run time is `(image 32×32, x 12, y 12, src 16×16)` — the roi's origin, not `out`'s | pass |
+| P5 | AC4 | two effects on one tile: the second sees the union of both rois (16×16 from a 2 px and a 4 px pad) | pass |
+| P6 | AC6 | `progress` 0 equals a background-only render and 1 equals the same ops with no transition, whole surface, and the two references differ | pass |
+| P7 | AC6 | nested: at 0 the inner layer holds the enclosing layer (`(0,0,1,1)`), not the page | pass |
+| P8 | AC7 | −0.5 reaches the op as 0.0 and 1.5 as 1.0, whole surface equal to the ends; NaN and ±∞ are refused and never reach the op | pass |
+| P9 | AC3 | an `ApplyMask` with no open layer answers `DriverBlocked` | pass |
+| P10 | AC5 | an effect that cancels inside `run_cpu` answers `Cancelled` and writes no tile to the cache | pass |
+| P11 | W4 (side probe) | the same mask-then-effect ops: page (8,8) is `(0,0,0,0)` in one whole-page task and `(1,0,0,1)` in two half tiles | differs |
+
+P6 also records that `from`, `to` and `dst` are all `RgbaF32` and all 8×8 — the three op buffers of
+ARQ-118 agree, which is what S1 is about. P3 and P4 are the probes that pin what the delivery's own
+suite does not (W1, W2) and what it cannot (P5 → C1).
+
+### Hand mutants (step 4b)
+
+Five applied on the green export tree, the named test run alone, the tree reverted each time
+(`git status`-equivalent: the export is not a repository, so each file was restored from a copy and
+the suite re-run green).
+
+| # | Mutation | Killed? | What shows it |
+|---|---|---|---|
+| S (spot-check of the record's `M5`) | `mask_origin` is `(0, 0)` instead of the task's offset in the buffer | yes | `spec_02_4_6_the_mask_anchors_at_the_tile_when_the_task_grows`, exactly as recorded: `(0, 0) channel 0: … got 0.07058824 expected 0` |
+| H1 (the stated survivor) | both op culls meet `task.region` instead of `drawn` | **no** — 53/53 lib tests green | no test can see it (the cull only differs when an effect grew the buffer, and no emitted plan has one); my P3 dies (`(0.4,0.3,0.2,0.5)` → `0`). W1 |
+| H2 | `grown_rect` stops after the first `ApplyEffect` | **no** — 53/53 lib tests green | my P5 dies: the second effect is handed 12×12 instead of 16×16, so it reads a crop. C1 |
+| H3 | `paint_fill` builds its coverage at `(0,0)` instead of the drawn rectangle's origin | yes | several tests, among them `arq_120_the_effect_reads_past_the_tile_edge_and_runs_once` and `arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target` |
+| H4 | the transition's clamp keeps only the low side (`max(0.0)`) | yes | `arq_118_the_backend_clips_the_progress_it_hands_a_transition`; the two `Dissolve` tests stay green, which is `M11`'s mechanism reproduced |
+
+3 killed, 2 missed. H1 is documented as a survivor by the record and is **not equivalent** (W1);
+H2 is a survivor in the design's critical code (C1).
+
+### The stated survivor, judged the way `CB4`'s `M7` was
+
+`CB4`'s `M7` earned the cull a place as work skipped: removing it changed no pixel, and `W10`
+recorded that. `CB5`'s survivor is **not the same case**. `coverage::meets` is inclusive, so an op
+whose box merely *touches* the tile is drawn either way — that is why the record's fixture (a fill
+ending exactly at the tile's top-left, `src/tests/effects.rs:162`) survives the mutation. An op whose
+box lies **strictly inside the grown margin** is a different animal: with the cull at `task.region` it
+is dropped, and the effect that was grown to read it pulls black into the crop. P3 is exactly that
+scene, and it fails under H1.
+
+So the cull does earn its place on a grown tile — as a **pixel rule**, not only as an optimisation —
+and the record's sentence ("changes no pixel … The cull is an optimisation over the sampling, exactly
+as `CB4` recorded") is wrong for the case the growth exists to serve (W1). The code is on the right
+side of it; nothing pins it (W2).
+
+### The four flagged risks, ruled
+
+1. **The effect's temporary grown dst is outside `memory_usage`.** It is a real hole in the
+   accounting: `effect::run` allocates `vec![0; target.len()]` (`src/effect.rs:66`), frees it when the
+   op returns, and neither `bytes()` nor `trim()` can ever see it, so the governor cannot ask for it
+   and cannot shrink it — §4.6:690 gives the governor exactly `bytes()`/`trim()` on a cache, and this
+   is neither a cache nor a persistent buffer. Does it matter at the sizes `ARQ-120` allows? At the
+   two sizes the crate documents and measures — 1080p (`+33.2 MB`, peak 66 MB with the surface) and
+   4K (`+132.7 MB`, peak 265 MB) — no: it stays far inside `D-03`'s 1.5 GB. At the top of the range
+   the guard accepts (`MAX_SIDE = 8192`, `src/surface.rs:23`) the surface alone is 1.07 GB and one
+   full-page temp buffer doubles it to 2.14 GB, past the cap, while `memory_usage()` reports ~1.07 GB
+   and there is no lever to pull. Bounded to one buffer per effect op, and one op at a time. W5
+   (follow-up); it does not fail the delivery.
+2. **`cx.tile` is the tile's window for `roi` and the grown window for `run_cpu`.** That is
+   self-consistent with the contract: §4.4's `TileWindow` is "dónde están `src` y `dst` en la imagen
+   entera, en píxeles de `src`", so the window must describe the buffer that call is about. At `roi`
+   time the input under discussion is the tile (`out` is the tile); at run time `src` **is** the grown
+   region, and ARQ-120's "`x` e `y` son el origen de la `roi` después de intersecarla con la imagen,
+   no el de `out`" is precisely the run call — P4 pins `(32, 32, 12, 12, 16, 16)`. `EffectCx::whole`
+   is not in play here. `image_width/height` as the surface's page rectangle is the right extent
+   **exactly when the surface is the page**, which is every render this delivery tests and ARQ-42's
+   comparison; for a request whose region is smaller than the page — which ARQ-149 allows and §6.2's
+   viewport renders will use — the effect clamps at the surface edge instead of the page's, and the
+   port carries no page extent to do better. W6 (follow-up), not a defect of this delivery.
+3. **`RgbaF32` inputs in both qualities.** ARQ-118's clause — "«Desde», «hacia» y destino tienen las
+   mismas dimensiones y el mismo formato, `Rgba8` o `RgbaF32`" — is about the **op's three buffers**,
+   not about the backend's internal accumulation or about the format `read_back` answers. Here all
+   three are `RgbaF32` and the same size (P6 records it), which is the destination's format: `O11`
+   and §4.6:1283 fix the destination as `f32` ("la vista previa acumula en `f32` y cuantiza una sola
+   vez, al entregar la superficie"). So this is **not a deviation**; the record states the choice but
+   not the reason it satisfies ARQ-118 as written. S1.
+4. **`M11`: is the op's own `progress` clip redundant?** No. AC7 is the card's criterion ("Given a
+   finite `progress` outside `[0, 1]`, When it runs, Then it is clipped to the range, and a NaN or
+   infinite one answers `Err` (ARQ-118)"), so the clip is the backend's guarantee **at its port
+   boundary** — the plan and `RenderOp` are the port's, a transition is a plugin (§4.13), and ARQ-118
+   puts the errors before writing. The core transitions also guard the value, which is why the two
+   `Dissolve` tests cannot see the op's own clip; the probe test is the only observable and must
+   exist, and it does (`src/tests/ops.rs:508`, asserting both the clipped value the op was handed and
+   that a non-finite one never reaches it). H4 reproduces `M11`'s asymmetry exactly — only the probe
+   test dies. Keep both the clip and the probe.
+
+### Criteria
+
+| Criterion | Proof | Status |
+|---|---|---|
+| AC1 four premultiplied channels | `arq_119_a_mask_scales_all_four_premultiplied_channels` (`ops.rs:49`), P1 | covered |
+| AC2 a smaller mask masks its rectangle only | `spec_02_4_6_a_mask_smaller_than_the_layer_masks_only_its_rectangle` (`ops.rs:118`, all 65 536 pixels of the spec's own 128×128-over-256×256 case), P1 | covered |
+| AC3 a mask with no layer is refused | `spec_02_4_6_a_mask_outside_a_layer_is_refused` (`ops.rs:235`), P9 | covered |
+| AC4 the grown rectangle, one run, the crop | `arq_120_the_effect_reads_past_the_tile_edge_and_runs_once` (`effects.rs:159`), `arq_120_the_grown_rectangle_is_clipped_to_the_page` (`:195`), P3, P4 | covered for one effect; a tile with two is C1 |
+| AC5 a cancelled effect aborts the tile | `arq_112_a_cancelled_effect_aborts_the_tile_before_it_is_committed` (`effects.rs:220`), P10 | covered |
+| AC6 `from` at 0 and `to` at 1, exact | `spec_02_4_6_a_transition_takes_from_the_background_and_to_the_layer` (`ops.rs:363`), `spec_02_4_6_a_nested_transition_takes_from_the_layer_it_composites_onto` (`:456`), P6, P7 | covered |
+| AC7 the progress clip and the non-finite refusal | `arq_118_a_finite_progress_outside_the_range_is_clipped` (`:416`), `arq_110_a_non_finite_progress_is_refused` (`:430`), `arq_118_the_backend_clips_the_progress_it_hands_a_transition` (`:508`), P8 | covered |
+| AC8 the crate's policy | `cargo fmt`, `clippy`, the nine `policy` steps, the purity grep, the empty manifest diff | covered (command) |
+
+AC6's specific question: the two whole-surface comparisons really are against **different renders** —
+`background` is a render of the background fill alone (`ops.rs:365-372`), `drawn` is a render of the
+same ops with no transition (`:374-384`), `values()` is the whole surface (`tests.rs:360-375`), and
+the test asserts `background != drawn` (`:400-404`) before comparing. The nested case exists
+(`:456`), and it compares the two readings through `blend_f32` and asserts they differ. P6/P7 confirm
+both independently. AC6 is the criterion that pins which buffer is `from`, and it does.
+
+### Findings
+
+| id | severity | class | what to change |
+|---|---|---|---|
+| C1 | CRITICAL | implementation | cover a tile with two `ApplyEffect` ops (the union of their rois); the second effect is currently handed a crop and the whole suite is green |
+| W1 | WARNING | claim | the record's survivor is not equivalent; say the grown-rect cull is a pixel rule, not only skipped work |
+| W2 | WARNING | implementation (follow-up) | add the fill strictly inside the margin so the cull's rectangle is pinned |
+| W3 | WARNING | architecture | correct `D4`: the growth is the render buffer, the layer stays the task's region |
+| W4 | WARNING | ambiguity (follow-up) | say in §4.6 that a mask cannot reach the growth, so mask-then-effect is not tile equivalent; the emitter (ARQ-134) must know before it emits |
+| W5 | WARNING | implementation (follow-up) | the effect's temp buffer is outside `memory_usage`; bound it or report it, and say what happens at `MAX_SIDE` |
+| W6 | WARNING | ambiguity (follow-up) | `image_width/height` is the surface, not the page; ARQ-120's "tamaño de la imagen entera" cannot be honoured for a sub-region request until the port carries the page extent |
+| S1 | SUGGESTION | ambiguity | state that ARQ-118's format clause is satisfied by the three op buffers being `f32`, so the record does not read as an unexcused deviation |
+| S2 | SUGGESTION | implementation | 1244 insertions, 2.8× the card's forecast (815 test lines, 357 production): the coordinator's size decision |
+
+C1's evidence, so the fix can be checked: with `break` after the first `grown_rect` union the whole
+library suite is 53/53 green (the 14 `arq_42_comparison` tests cannot be affected here: no
+emitted plan carries an effect), and a second effect asking 4 px on a tile asking 2 px is handed 12×12
+where the correct union is 16×16 — a blur at a tile edge then has no input where it needs one. The
+code at HEAD is right; the suite is what is missing.
+
+### Observations (not findings)
+
+- **`M5` and `M11` reproduce.** `M5` is the row I spot-checked and it fails on the same assertion
+  with the same numbers; `M11`'s mechanism reproduces through H4 (the two `Dissolve` tests stay green
+  when only the high side of the clamp goes). Those two rows are evidence, not a claim; the other
+  eleven were not re-run.
+- **The mask's overlap clip is a refinement §4.6 does not require and does not forbid.** `columns`
+  and `rows` are clipped to the buffer as well as to the mask, so a mask larger than the layer is
+  harmless (a panic would be ARQ-110's failure mode). Nothing tests a mask larger than the layer; no
+  test needs to.
+- **`ApplyTransition` with no open layer is refused (`DriverBlocked`), which the card states only for
+  `ApplyMask`.** §4.6 defines `from` through the `PopLayer`, so a transition outside a pair is as
+  undefined as a mask; the choice is recorded and the port has no plan-validation error. Accepted.
+- **Nothing emits these three ops from a document** (ARQ-134), so all of this is proven on synthetic
+  plans. The record says so, and P11 is the shape of what the emitter will have to decide.
+- **`EffectCx::whole(1.0)` for the transition is right at any level in this adapter**, because a tile
+  of this backend holds one buffer pixel per page pixel (ARQ-149) and §4.13 says a transition ignores
+  `cx.tile`.
+- **No `cargo-mutants` run and no T4 report**, per `mutation: off`. Absence of a mutation score is not
+  a gap this round, as round 1 of `CB4` recorded.
+
+next: architect (then tdd-apply for C1/W2 — implementation; specifier for W4/W6 — ambiguity; explorer for W1 — claim)
+
+---
+
+## Round 2 — CB5 (closure)
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB5", "rounds": [ {
+  "round": 2, "commit": "47ec4f1a369bcf6269bbc908018595a9ceb5b19a", "mode": "standard", "tier": "T2", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 7, "suggestion": 1},
+  "classes": {"architecture": 1, "implementation": 1},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:42-60, src/tests/effects.rs:199",
+     "summary": "Closed: grown_rect asks each roi against the buffer the previous ops produced. M-C1 reproduced fails arq_120_two_effects_grow_by_the_buffer_the_first_produced with left [(14, 14)] right [(16, 16)].",
+     "follow_up": false, "status": "closed"},
+    {"id": "W1", "severity": "WARNING", "class": "claim",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:474-478",
+     "summary": "Closed: the record now calls the task.region cull NOT equivalent and names it a pixel rule on a grown tile; M-C2 kills the new test, so the sentence matches the code.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W2", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/effects.rs:260",
+     "summary": "Closed: arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect puts the fill at (4,4)-(6,6), outside the tile and inside the growth; M-C2 fails it with 56/57 green.",
+     "follow_up": true, "status": "closed"},
+    {"id": "W3", "severity": "WARNING", "class": "architecture",
+     "ref": "specs/changes/gafira-render-cpu/design.md:292-303",
+     "summary": "Closed by O15: D4 now says the layer's region is the task's and the roi grows a render buffer that is never the layer; the rejected reading and the emitter cost are stated.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W4", "severity": "WARNING", "class": "ambiguity",
+     "ref": "design.md O16, SP7; 02 §4.6:688 unchanged",
+     "summary": "Still open, as routed: O16 states that mask-then-effect is not tile equivalent and SP7 (open) is the specifier's; §4.6 itself still anchors the mask in task space, and SP7 blocks ARQ-134.",
+     "follow_up": true, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/backend.rs:65, :233-263; src/effect.rs:142-165",
+     "summary": "Closed by O17 and this fix: one backend scratch, in memory_usage().host, dropped by trim, refused against SURFACE_BUDGET before it grows. M-C3 and M-C3b reproduce the recorded numbers.",
+     "follow_up": true, "status": "closed"},
+    {"id": "W6", "severity": "WARNING", "class": "ambiguity",
+     "ref": "design.md O18, the CB5b row",
+     "summary": "Still open, as routed: O18 rules the window is page space and TargetDesc carries no page extent; the port change is listed as CB5b before CB6, not written yet.",
+     "follow_up": true, "status": "open"},
+    {"id": "W7", "severity": "WARNING", "class": "architecture",
+     "ref": "specs/changes/gafira-render-cpu/design.md:356-364",
+     "summary": "D7 still says the adapter computes roi(cx, p, tile_rect) and runs with EffectCx { tile: None }; that is now literally M-C1, and the code asks the grown buffer with Some(window). O15 corrected D4, not this line.",
+     "follow_up": false, "status": "open"},
+    {"id": "W8", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/backend.rs:109, :362; src/tests/effects.rs:297",
+     "summary": "The refusal's held value is unpinned end-to-end: held = 0 and dropping layers.bytes() both leave 57/57 green, so only reserve_scratch's own boundary is tested. A cheaper seam than a 1 GB surface exists.",
+     "follow_up": true, "status": "open"},
+    {"id": "W9", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:115; src/tests/effects.rs:297",
+     "summary": "The reused scratch's clear is unpinned: removing dst.fill(0.0) leaves 57/57 green, because every effect double writes all of dst. ARQ-111's determinism here rests on an unasserted line.",
+     "follow_up": true, "status": "open"},
+    {"id": "W10", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/backend.rs:302-319, :233-250",
+     "summary": "The bounded peak is not the frame's peak: the tile's drawn buffer (drawn pixels x 16 B, 1.07 GB at MAX_SIDE) is in no term and in no memory_usage, and layers.push is never refused. 1.07 + 1.07 + 0.43 GB is accepted.",
+     "follow_up": true, "status": "open"},
+    {"id": "W11", "severity": "WARNING", "class": "claim",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:507-509",
+     "summary": "The stated residual is right for dilation and translation rois (the union telescopes) but wrong for a shrinking roi before a dilating one: the tile then reads an edge no op fetched. Unreachable today (ARQ-134), and the record does not name the shape.",
+     "follow_up": true, "status": "open"},
+    {"id": "S1", "severity": "SUGGESTION", "class": "ambiguity",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:489-492",
+     "summary": "Closed: the transition bullet now states that RgbaF32 inputs are the destination's format under O11 and that ARQ-118's clause is about the op's three buffers, as recorded.",
+     "follow_up": false, "status": "closed"},
+    {"id": "S2", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "the delivery's code and tests",
+     "summary": "Re-measured: 1586 insertions (1244 + this round's 342: 177 tests, 165 production) against the card's 420 forecast, 3.8x (2.7x at x1.4). The coordinator decides.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 9, "killed": 6},
+  "criteria": {"total": 8, "covered": 8},
+  "size": {"lines": 1586, "forecast": 420}, "report": "verify-report.md" } ] }
+```
+
+- Delivery: `CB5` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb5`, HEAD
+  `47ec4f1a369bcf6269bbc908018595a9ceb5b19a`. Round 2 is a **closure round** over the round-1
+  `FAIL` (`C1`, `W1`, `W2`) and over `O17`, the ruling `W5` became. The commits under test are
+  `2e59d68` (the architect's four rulings, `O15`-`O18`, and the `CB5b` row), `6370d3c` (the composed
+  growth, +52/−3), `8f42904` (the cull's test, +33), `a517c3e` (the scratch, +257/−32) and `47ec4f1`
+  (the record, +43/−4). Base of this round is the round-1 report, committed inside `2e59d68`.
+- Mode `standard`, depth **V1** as the coordinator set it: the five gates, the artifact-integrity
+  checks, and one reproduced mutant per earlier finding. `mutation: off` — no `cargo-mutants` run and
+  no `mutants` report, which is not a finding. The nine mutants below are *reproductions of the
+  earlier findings* plus three probes of the fix's own claims, not a new independent-mutant budget:
+  six were killed, three survived, and the three survivors are `W8`–`W10`.
+- Verdict: **PASS** — 0 CRITICAL. `C1`, `W1`, `W2`, `W3`, `W5` and `S1` are closed, each proved by
+  applying the mutant on a clean export and watching the new test fail with the recorded message.
+  `W4` and `W6` stay open as routed follow-ups (`SP7`, `CB5b`); `S2` stays open as a SUGGESTION.
+  Four new warnings, none of them a code defect: `W7` (the design's `D7` still prescribes the mutation
+  `C1` fixed), `W8`/`W9` (two O17 properties only inspection pins) and `W10` (the peak O17 bounds is
+  not the frame's peak), plus `W11` on the precision of the stated residual.
+- Toolchain: cargo/rustc 1.93.1, clippy 0.1.93, cargo-deny 0.20.2. Disk: `df -h /` at start **156 GB**
+  free (448 GB used of 636 GB).
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile` in 27.60 s |
+| `cargo test --workspace --locked` | 0 | **198 test binaries, 2522 passed, 0 failed, 0 ignored** (round 1: 2518 — the +4 are this round's tests); the delivery's own binaries are `gafira-render-cpu` lib **57** (53 at round 1) and `arq_42_comparison` 14 |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| CI policy, job `policy` | 0 | 9/9 steps exit 0: Format; CLI has no UI deps (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107 language; V13 `EditToken`; V14 property test; testkit `ports` (ADR 0013) |
+
+The nine steps are the `run:` steps of the `policy` job after the toolchain install, extracted by
+`/tmp/gafira-policy-run.py` and re-checked against `.github/workflows/ci.yml`. Build hygiene:
+`CARGO_TARGET_DIR=/tmp/gafira-cb5-v2b-target` for the worktree gates and
+`/tmp/gafira-cb5-r2-export-target` for the clean `git archive` export, both with `CARGO_INCREMENTAL=0`,
+not shared and not shared with any other tree; both freed with `cargo clean --target-dir` at the end.
+
+### Artifact integrity (steps 3, 3c)
+
+- The card is untouched. `47ec4f1 docs(gafira-render-cpu): record the CB5 fix round` has one hunk,
+  `@@ -471,17 +471,56 @@`, so `apply-progress.md`'s `## CB5` block at lines 401-416 is byte-identical to
+  `90603a6`, and the fix does not change an AC, a Given/When/Then line or a product ID.
+- No implementer commit touched a spec file: `6370d3c`, `8f42904` and `a517c3e` touch only
+  `crates/gafira-render-cpu/**`; `47ec4f1` touches only `apply-progress.md`. No amend commit.
+- `2e59d68` is the architect's: `design.md` +247/−14 (the `O15`-`O18` section, the corrected `D4`,
+  `SP7`, `XP5`, the `CB5b` row, the "cannot prove" line) **and** the round-1 report at +295, which is
+  the verifier's file committed by the architect's commit. That is not an acceptance-text change and
+  not a finding — the report is the record and committing it makes it durable — but the coordinator
+  should know the architect's commit carries it.
+- Every product ID the card names still has a test that names it and proves its criterion: **ARQ-119**
+  (2 sites), **ARQ-110** (2), **ARQ-118** (7), **ARQ-120** (5, now including the chain and the cull),
+  **ARQ-112** (1), **ARQ-110** as the non-finite refusal, and **ARQ-02** is AC8's command. `ARQ-143`
+  and **ARQ-44** gain their first tests (`O17`). No ID was left out, and the crate's non-goals hold:
+  `git diff --numstat 2e59d68..HEAD -- crates/` lists three files, all in `gafira-render-cpu`, and
+  `Cargo.toml`/`Cargo.lock` did not move.
+- The worktree is clean; the only file this round wrote is this report.
+
+### Closure of the earlier findings
+
+| Id | Round-1 finding | What closes it | How it was checked this round | Status |
+|---|---|---|---|---|
+| `C1` | A tile with two `ApplyEffect` ops is uncovered; only the first `roi` grows the buffer (53/53 green) | `effect::grown_rect` asks each `roi` over the buffer the previous ops produced (`effect.rs:52-57`) and `arq_120_two_effects_grow_by_the_buffer_the_first_produced` pins 16×16 | M-C1 reproduced: the test fails at `effects.rs:219` with `the buffer the first effect produced` — `left: [(14, 14)]`, `right: [(16, 16)]`, exactly the recorded numbers | **closed** |
+| `W1` | The record calls the `task.region` cull equivalent; it drops a pixel the growth exists to fetch | The paragraph now reads "**not** an equivalent mutant … the cull is a pixel rule, not only skipped work" (`apply-progress.md:474-478`) | M-C2 reproduced: `arq_120_a_fill_inside_the_margin_…` fails at `effects.rs:270`; the claim now matches the measured behaviour | **closed** |
+| `W2` | No test pins the grown-rect cull: the fixture's fill only touches the tile's corner | `arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect` (`effects.rs:260`), fill at (4,4)-(6,6) with a control outside the growth | M-C2 reproduced: **56 passed, 1 failed**, and the failure is that test only | **closed** |
+| `W3` | `D4` said the layer's region is the tile's "grown by the effect ROI" | `O15` corrected it: the layer's region is the task's, the growth is a render buffer (`design.md:292-303`) | Read the corrected text; it agrees with `backend.rs:313-318` (`mask_origin`) and with §4.6:687-688 | **closed** |
+| `W4` | A mask's reach is the task's, so mask-then-effect is not tile equivalent; §4.6 needs a sentence | `O16` rules it and `SP7` (open) carries the spec change; the design's "cannot prove" table now says it | §4.6 is untouched, so the ambiguity is still in the spec; `SP7` blocks `ARQ-134` | open (follow-up, `SP7`) |
+| `W5` | The effect's temp destination is outside `memory_usage` and `trim` | `O17` and `a517c3e`: one backend scratch, in `host`, dropped by `trim`, refused before it grows | M-C3 (`left: Bytes(17408)`, `right: Bytes(21504)`) and M-C3b (`left: Bytes(4096)`, `right: Bytes(0)`) reproduce | **closed** |
+| `W6` | `image_width/height` is the surface, not the page; the port carries no page extent | `O18` rules it and the `CB5b` row puts the port change before `CB6` | The code still clamps at the surface edge; the port change is a delivery, not done | open (follow-up, `CB5b`) |
+| `S1` | The record does not say why `RgbaF32` inputs satisfy ARQ-118 | The bullet now says the clause is about the op's three buffers and `O11`/§4.6 fix the destination as `f32` | Read it: `apply-progress.md:489-492` | **closed** |
+| `S2` | 1244 insertions against the 420 forecast | the coordinator's call | Re-measured: **1586** (3.8×, 2.7× at ×1.4); see *Size* | open (SUGGESTION) |
+| `O17` | The ruling `W5` became: one scratch, counted, trimmed, refused first | `effect::reserve_scratch` + `memory_usage` + `trim` + the two tests | M-C3, M-C3b, M-C4 and M-C5 all killed; the boundary arithmetic below | **closed** as ruled |
+
+### The mutants reproduced
+
+All nine on a clean `git archive` export of `47ec4f1` (`/tmp/gafira-cb5-r2-export`) with its own
+target dir; each applied alone, the named test or the whole lib run, then the file restored from a
+copy. The export's green baseline before the first mutant and its closing run after the last both
+report **57 passed**; `diff -q` against the backups is empty for `backend.rs` and `effect.rs`.
+
+| # | Mutation | Killed? | What shows it |
+|---|---|---|---|
+| M-C1 | `grown_rect` asks every `roi` against the tile instead of the buffer the previous ops produced (`effect.rs:55`) | **yes** | `arq_120_two_effects_grow_by_the_buffer_the_first_produced`: `the buffer the first effect produced` — `left: [(14, 14)]`, `right: [(16, 16)]` |
+| M-C2 | both op culls meet `task.region` instead of `drawn` (`backend.rs:334`, `:349`) | **yes** | `arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect` fails at `effects.rs:270`; **56 passed, 1 failed** |
+| M-C3 | `memory_usage` leaves the scratch out of `host` | **yes** | `arq_143_the_effect_scratch_is_accounted_and_trim_drops_it`: `left: Bytes(17408)`, `right: Bytes(21504)` |
+| M-C3b | `trim` drops the surface and the pool but keeps the scratch | **yes** | the same test: `trim drops the scratch with the surface and the pool` — `left: Bytes(4096)`, `right: Bytes(0)` |
+| M-C4 | `fits` compares with `<`, so the cap is exclusive | **yes** | `arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated`: `the cap is inclusive: OutOfMemory` |
+| M-C5 | the scratch is resized before the peak is checked | **yes** | the same test: `the refusal precedes the allocation` |
+| P-A | the reused slice is not cleared (`dst.fill(0.0)` removed) | **no** — 57/57 green | every effect double writes all of `dst`, so nothing observes the reuse. `W9` |
+| P-B | `execute` hands `held = 0` to the effect (`backend.rs:109`) | **no** — 57/57 green | the refusal's surface term is unobserved end-to-end. `W8` |
+| P-C | the open layers are left out of `held` (`backend.rs:362`) | **no** — 57/57 green | the same: `layers.bytes()` never reaches a test through `execute`. `W8` |
+
+### `C1` — closed, and the forward pass judged
+
+The fix does what it says: `grown_rect` starts at the tile, and for each `ApplyEffect` in plan order
+it asks `roi` with the **current** buffer as `out` (and as the window it sits in), then unions the
+answer in. On the test's scene — tile (8,8)-(16,16), `Pad(2)` then `Shift(4)` — the first asks
+(6,6)-(18,18), the second asks (2,2)-(14,14) of that, and the union is 16×16. Asking the second
+against the tile gives (4,4)-(12,12) and 14×14, which is M-C1 and the round's number. The defect was
+real, the fix is the right one, and the test pins both the rectangle and the single call per effect.
+
+**The residual, judged.** The record states that "an effect's own input is not re-expanded for a later
+effect's growth … a fixed-point loop would need a bound the port does not carry". That is accurate,
+and for the rois real filters answer it costs nothing:
+
+- For a **dilation** roi (`roi(out) = out ⊕ r`, a blur, a dilate, a drop shadow) the pass telescopes:
+  `G₁ = T ⊕ r₁`, `G₂ = G₁ ⊕ r₂ = T ⊕ (r₁+r₂)`, which is exactly the input effect 1 needs to produce
+  the region effect 2 reads. Exact, no fixed point.
+- For a **translation** roi (a displacement map, `roi(out) = out + t`) it is exact for the same
+  reason: `G₂ = T ∪ (T+t) ∪ (T+2t)` contains the `T+2t` effect 1 needs to feed effect 2 at `T+t`.
+- It is **not** exact for a roi that shrinks its argument, which a mip-based or downsample effect can
+  honestly answer: with `roi₁(X) = 2X` and `roi₂(X) = X ⊕ 1`, the pass yields `2T ⊕ 1` while the tile
+  needs `2(T ⊕ 1)`, one pixel wider on the low side. Effect 1's output there is computed from input no
+  op fetched, and effect 2 pulls it into the tile — a wrong pixel, not a smaller buffer.
+
+So: a **correct limit, exactly stated as a limit** — but its consequence is a tile that can differ from
+the whole-image render, and the record frames it as re-expansion rather than as that consequence; `W11`
+asks for the sentence, not for the loop. Unreachable today: nothing emits `ApplyEffect` (`ARQ-134`), and
+the emitter is the stage that would need the bound. No change is owed by this delivery, and the test
+it does carry (two dilations) is the shape a real chain has.
+
+### `W1`/`W2` — closed, and the cull is now the rule with a kill
+
+M-C2 is the exact mutant the record names, and it is killed by exactly one test of 57. The fixture
+matters: `coverage::meets` is inclusive, so the round-1 fill that ended on the tile's corner was drawn
+under either rectangle, which is why the mutant survived then. The new fill is at (4,4)-(6,6) — wholly
+outside the tile (8,8)-(16,16) and wholly inside the 4 px growth the `Shift(4)` asks for — so the
+`task.region` cull drops it and the effect pulls transparent black into the tile. The control scene (a
+fill at (0,0)-(2,2), outside the growth) keeps the pixel clear, so the assertion is the fill's and not a
+default the effect writes. The record's paragraph now says the same thing in the same words ("**not**
+an equivalent mutant … a pixel rule"), with `M-C2` named as its kill. `W1` and `W2` are closed, and the
+`CB4` `M7` comparison the round made is now correctly distinguished in the record.
+
+### `O17` — closed as ruled, and the arithmetic at the boundary
+
+The scratch is one `Vec<f32>` on `CpuBackend` (`backend.rs:65`), handed to `run_cpu` as `dst`,
+**cleared** before every effect (`effect.rs:115`), counted as `len × 4` in `memory_usage().host`
+beside the surface, the observed cache bytes and `layers.bytes()` (`backend.rs:233-250`), dropped by
+`trim` with the surface and the pool (`:252-263`), and grown only through `reserve_scratch`, which
+compares **before** the `resize` (`effect.rs:150-158`) with the same constant and the same error
+`Surface::new` uses (`surface.rs:54, :68`: `Bytes(bytes) > SURFACE_BUDGET`).
+
+Boundary arithmetic, checked rather than read off the code: `SURFACE_BUDGET = 1 500 000 000` B;
+16 `f32` is 64 B; `held = 1 499 999 936` gives exactly `1 500 000 000` and **fits** (M-C4's `<` fails
+here, `the cap is inclusive`); `held = 1 499 999 937` gives `1 500 000 001` and **refuses**, with the
+scratch still empty (M-C5's resize-first fails `the refusal precedes the allocation`). The `O17`
+numbers reproduce: at `MAX_SIDE`, the 8192² surface is `1 073 741 824` B and a page-sized destination is
+the same, so `2 147 483 648` B is refused by `reserve_scratch` without being allocated. The accounting
+test's `21 504` is the surface (`16 384`), the cached tile (`1 024`) and one `16²` scratch (`4 096`);
+round 1's `17 408` is the same figure without it, and the two effects serving one buffer are why it is
+one scratch and not two.
+
+The two halves this round's probes could not kill are `W8` and `W9` below; both are test gaps, not code
+defects, and both are cheap to close without a 1 GB allocation.
+
+### `W7` — `D7` still prescribes the mutation `C1` fixed
+
+`design.md:356-364` still reads: "the adapter computes `roi(cx, p, tile_rect)`, renders the task's ops
+into a scratch buffer of that size …, runs `run_cpu` with `EffectCx { scale, tile: None }`, and blits
+the crop." Against HEAD that is wrong twice, and one of the two is the defect this round fixed:
+
+1. `roi(cx, p, tile_rect)` is **M-C1** word for word. The code asks `roi` with the buffer the previous
+   ops produced (`effect.rs:55`), the card's own Plan line says `roi(cx, p, out)` and the record says
+   the composition is the fix. A delivery planned from `D7` would reintroduce `C1`.
+2. `EffectCx { scale, tile: None }` contradicts `effect.rs:173-184`, which builds
+   `Some(TileWindow { image_width, image_height, x, y })` over the grown region — the window round 1's
+   probe P4 and the record's `cx.tile` bullet both accept as the right one. That half predates this fix
+   (it has been `Some` since the ROI work), so it is not a regression, but the architect's `O15` corrected
+   `D4` and left `D7`, which is the decision the effect's reading actually lives in.
+
+This is a live contradiction with the code, with the card and with the fix's own record, and it is the
+only finding this round whose owner is the design. `W7`, class `architecture`, no follow-up: the words
+are one sentence, and the next delivery looks at `D7` before it cuts work.
+
+### The two O17 properties only inspection pins (`W8`, `W9`)
+
+The fix's stated risk is real, and the probes measure it: the refusal is exercised **through
+`reserve_scratch`**, and nothing drives `execute` to a refusal. That is enough for the **rule** — the
+cap's boundary is asserted in both directions and the 8192² numbers are refused without allocating —
+but not for the **wiring**, and the wiring is two thirds of the guarantee:
+
+- `held` reaches the rule from `execute` as *surface bytes* (`backend.rs:109`) plus `layers.bytes()`
+  (`:362`). Setting the first to `0` (P-B) and dropping the second (P-C) both leave **57/57 green**.
+  So nothing in the suite can tell whether the surface and the open layers are in the comparison at
+  all — which is the sentence `O17` is built on ("with the open layers in the comparison").
+- The clear (`effect.rs:115`) is the ARQ-111 half of the reuse: the old code allocated a zeroed
+  destination per op, and now one slice serves every op and tile. Removing the `fill` leaves **57/57
+  green** (P-A), because both doubles write every pixel of `dst`; a sparse writer — which `Effect`'s
+  contract does not forbid (`gafira-raster/src/effects/mod.rs:49-72` says only that an **error** writes
+  nothing) — would then read the previous op's bytes. The code is right; the property is unasserted.
+
+Both are cheap: a `#[cfg(test)]` seam that calls `render_tile`/`reserve_scratch` with a `held` near the
+cap settles `W8` with a few bytes, and a partial-writing `Probe` shape settles `W9`. Neither is owed by
+the fix as the ruling words it, so both are WARNINGs marked follow-up rather than a FAIL.
+
+### `W10` — the peak O17 bounds is not the frame's peak
+
+The refusal bounds `surface + layers.bytes() + the new scratch`. Two terms of the frame's real peak are
+outside it:
+
+- The tile's own drawn buffer. `render_tile` allocates `vec![0.0f32; count]` with `count = drawn
+  pixels × 4` (`backend.rs:302-319`) and that buffer lives for the whole tile pass — it is what every op
+  composites into before the crop. It is in no `held` term and in no `memory_usage`. At `MAX_SIDE` a
+  page-sized tile makes it `1 073 741 824` B, the same size as the surface: the scratch can be accepted
+  at `surface 1.07 GB + scratch ≤ 0.43 GB` and the frame then really holds `1.07 + 1.07 + 0.43 ≈
+  2.57 GB`, 1.7× the cap the check calls a ceiling. At 1080p it is 33 MB, invisible; at `MAX_SIDE` it is
+  the doubling `W5` measured, one buffer up.
+- The layer buffers' own growth. `layers.push(count)` is given the **grown** count and never compares
+  anything with `SURFACE_BUDGET`; `O17`'s sentence "the check above covers it because `layers.bytes()`
+  is already a term" covers only the *scratch* — a plan with two open layers on a page-sized grown tile
+  holds `2 × 1.07 GB` that no refusal ever sees.
+
+Both predate this fix (the tile buffer since `CB1`, the push rule since `CB2`), which is why this is a
+follow-up WARNING and not a regression of `CB5`. It is recorded because `O17`'s stated purpose — "the
+largest frame the backend accepts is bounded by the budget, with a lever" — is only two thirds true,
+and because the reported `host` figure is the honest one (`memory_usage` also leaves the tile buffer
+out, so `trim` is asked about `surface + cache + layers + scratch` while the process holds one buffer
+more). The scratch itself is inside the rule, exactly as ruled.
+
+### Size
+
+Re-measured from git, not from the record:
+
+- `git diff --numstat 2e59d68..HEAD -- crates/` → **342 insertions, 35 deletions** in three files:
+  `src/tests/effects.rs` +177 (tests), `src/effect.rs` +100/−15 and `src/backend.rs` +65/−20
+  (production, 165 net). The record's split reproduces.
+- The delivery at round 1 was **1244** insertions (8 files, `90603a6..b6693e3`). With this round's 342
+  the delivery's code, tests and card are **1586** insertions against the card's 420 forecast: **3.8×**,
+  or **2.7×** the ×1.4 gate of 590. 815 test lines become 992; 357 production lines become 522.
+- Read at HEAD, the delivery's own two paths are **1594** insertions (`crates/` 1483 + the card 111,
+  `90603a6..HEAD`). The two figures count different things and neither is wrong: 1586 is the round
+  totals added together, 1594 is what the tree holds after the fix replaced some round-1 lines. The
+  branch against the card base (`git diff --shortstat 90603a6..HEAD`) is **10 files, 2136 insertions,
+  60 deletions** — those 1594, the architect's 247 of design (14 replaced), this round's 43 of record
+  and round 1's 295 of report.
+- No line was added for a forecast's sake: the four tests are the four properties, and `effect.rs`'s
+  +100/−15 is `grown_rect`'s loop and `reserve_scratch` replacing `vec![0; len]`.
+
+### Observations (not findings)
+
+- **`O17`'s check runs only when the scratch grows.** `reserve_scratch` returns early when
+  `scratch.len() >= pixels` (`effect.rs:147-149`), so a scratch kept from an earlier frame is not
+  re-compared against a bigger surface's `held`. The arithmetic bounds it in practice — the scratch is
+  at most that frame's grown buffer, and a frame whose buffer is no larger than the retained scratch
+  needs a surface at least that large — but a preview frame that grows a large scratch followed by an
+  export frame with a bigger surface can hold `surface₂ + scratch₁ > SURFACE_BUDGET` with no refusal.
+  `memory_usage` reports it and `trim` is the lever, which is the same shape the layer pool has had
+  since `CB2`. Worth knowing before the governor work; not a defect of this fix.
+- **The cache is in `host` but not in the refusal.** `memory_usage` counts `cache_bytes` (the caller's,
+  observed), while `held` is the surface plus the layers, as `O17` words it. The two figures answer
+  different questions and the test asserts both, so this is consistent, not an omission.
+- **`D4`'s corrected sentence and `O17` still differ in one word.** `D4` says "a layer is never larger
+  than a task"; `O17` says `Layers::push` gets the *grown* buffer, so a layer is as large as the drawn
+  task. Both are true of different things (the layer's region versus its buffer) and `O17` spells it
+  out, so no delivery can read it two ways — but a reader of `D4` alone can.
+- **The other five `a517c3e` hunks are unchanged behaviour.** `run` still commits only after
+  `cancel.check()`, a cancelled effect still leaves the layer as it was (`arq_112_…` green), and the
+  scratch's `&mut` is threaded through `render_tile` without a second borrow.
+- **`mutation: off`, no T4 report.** Its absence is not a gap, as round 1 of `CB4` and round 1 of `CB5`
+  recorded.
+
+next: tdd-apply (CB5b, the next delivery) — `W7` is the architect's line and belongs before a delivery is planned against `D7`; `W8`–`W10` are follow-ups for a later `gafira-render-cpu` round, and `W4`/`SP7` stays the specifier's

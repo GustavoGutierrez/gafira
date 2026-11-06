@@ -13,6 +13,9 @@ Owner decision: **O3** of `specs/history/2026-11-04-layer-3/design.md` scheduled
 4. `D2`: a coverage source (tiny-skia) plus the existing `gafira-raster` primitives; no new blends.
 5. "What this change cannot prove": read before planning the hand mutants.
 6. "The V5 row": the exact line, and why it permits exactly that.
+7. "Corrections from the CB5 round": the four rulings that masks, effects and transitions forced once
+   the pixels existed — what is a layer, what is a buffer, what an effect's window is, and who counts
+   the memory.
 
 ## Dependency state
 
@@ -144,9 +147,10 @@ delivery HEAD of the change and once before the `develop` → `main` PR, not per
 | `CB6` | `gafira-render-cpu` benches: `bench_export_png_1080` (criterion, `harness = false`), the cancellation gap measurement, a plain `#[test]` guard that asserts 2 s only when the build is optimised | CAL-11, ARQ-40, ARQ-114, ARQ-43 | `CB4` | serial in `CB` | 260 (365) | **CAL-11** (measured) |
 | `CB7` | `gafira-render-cpu`: parallel row bands inside one task, with an injected `WorkerPool` (no thread is created here) | ARQ-138; CAL-11 | `CB6` | serial in `CB`, **conditional** | 300 (420) | CAL-11 (the margin, only if `CB6` is over) |
 | `CB3b` | `gafira-render`'s planner and/or `gafira-render-cpu`'s surface write: the composition of several roots over one region, and the coordinate space `read_back` answers in (`O12`, `O13`) | ARQ-42; ARQ-149, ARQ-121; 02 §4.6 | `CB3` | serial in `CB`, **before `CB4`** | 180 (250) | any page with more than one root |
+| `CB5b` | `gafira-ports`: `TargetDesc` gains the page extent the effect's window is measured in (`O18`), with the adapter and its callers following | ARQ-120, ARQ-149; ARQ-113 | `CB5` | serial in `CB`, before `CB6` | 120 (170) | the effect window, and any surface that is a sub-region of the page |
 | `CB8` | `gafira-render-cpu`: an `Rgba8` surface for an `Rgba8` target, so the sRGB curve runs once per pixel instead of twice (`O14`) | ARQ-143, ARQ-44; CAL-11 (which does not show it) | `CB3` | serial in `CB`, **before `CB6`** | 160 (225) | the preview's frame cost |
 
-Total: 3 120 authored lines (x1.4: 4 368), after `CB3b` and `CB8` were added on 2026-11-06. The largest delivery is `CB1` at 460 (x1.4: 644).
+Total: 3 240 authored lines (x1.4: 4 536), after `CB3b`, `CB8` and `CB5b` were added on 2026-11-06. A second `gafira-ports` delivery (a page-space mask rectangle) is conditional on `SP7` and is not counted. The largest delivery is `CB1` at 460 (x1.4: 644).
 
 `CB7` is cut **only** if `CB6` measures above 2 s on the reference profile. It is listed so the
 coordinator does not have to invent it under time pressure, and so that the owner sees the cost of
@@ -163,6 +167,7 @@ the sequential port contract (`D12`). If `CB6` is inside the budget, the change 
 | `CB2` after `CB1` | The layer stack composes the fill `CB1` produces; there is nothing to composite before `CB1`. |
 | `CB3` after `CB2`, before `CB4` | The ARQ-42 golden needs fills and layers only. Landing it before images and effects means the acceptance is proven while the diff is small and the failure is diagnosable. It also becomes the regression net for `CB4`–`CB7`. |
 | `CB4` and `CB5` after `CB2`, `CB5` after `CB4` | Both extend the pixel paths `CB2` fixed; `CB5`'s effect ROI grows a tile that already contains images in real documents. Neither blocks `CB6`. |
+| `CB5b` before `CB6` | It changes a port type; a bench cut before it would be measuring a `TargetDesc` that no longer exists. |
 | `CB6` last but for `CB7` | A bench measures what exists; it must be cut on a HEAD where nothing under it changes, or its baseline is meaningless. |
 | `CB7` conditional | It exists only to buy the CAL-11 margin, and it changes the determinism argument (`ARQ-111`: identical bytes with 1, 2 and 4 threads). Cutting it without a measurement is risk for no gain. |
 
@@ -182,7 +187,7 @@ composition root's question. |
 | `CB3` | ARQ-42 beyond its scene set | The tolerance is measured on the scenes `CB3` builds. Arbitrary documents (deep nesting, many semi-transparent overlaps) accumulate 8-bit rounding; `XP2` measures how far. |
 | `CB3` | That the preview and the export share a graph | That is layer-3b's proof (`apply-progress.md` of `2026-11-05-layer-3b-render`, RE5). Here the two renderers are constructed by the test and could differ; what is proven is that the pixels agree. |
 | `CB4` | That an image node renders correctly | No document node produces `DrawImage` (ARQ-134). The resampler is proven against analytic cases (a 1×1 image, an axis-aligned integer scale, a rotation of a checkerboard), not against a user's document. |
-| `CB5` | Mask placement, transition semantics, and cancellation inside an effect | The port carries neither a mask rect nor the two inputs of a transition (`D7`). The readings are provisional; nothing emits them, so nothing contradicts them either — which is the risk. And `Effect::run_cpu` receives no `CancelToken` (ARQ-112), so a long effect on a grown tile cannot answer ARQ-43's 100 ms; the checkpoints are around it, not inside. |
+| `CB5` | Mask placement, transition semantics, cancellation inside an effect, and tile equivalence for a mask followed by an effect | The port carries neither a mask rect nor the two inputs of a transition (`D7`). The readings are provisional; nothing emits them, so nothing contradicts them either — which is the risk. And `Effect::run_cpu` receives no `CancelToken` (ARQ-112), so a long effect on a grown tile cannot answer ARQ-43's 100 ms; the checkpoints are around it, not inside. And a mask followed by an effect is **not** tile equivalent: the mask's rectangle is the task's (`O16`), so no test here may claim ARQ-120's whole-image equivalence for that plan; the case needs `SP7` before an emitter can produce it. |
 | `CB6` | CAL-11 as a product number | It measures render + encode with `png` as a stand-in for `gafira-io-image`, single-threaded. The criterion bench runs under `cargo bench` (bench profile); the 2 s guard runs under `cargo test`, in debug, so it is skipped unless the build is optimised. The printed criterion number is the number; the gate does not exist (`D10`). |
 | `CB7` | That parallelism is worth it | It proves identical bytes at 1, 2 and 4 threads (ARQ-111) and reports a number. Whether the wall clock improves enough to keep the code is a coordinator decision on `CB6`'s and `CB7`'s numbers. |
 
@@ -265,10 +270,12 @@ the "not reversible" item above.
 
 Reversible: no, by design.
 
-### D4. One surface, page-sized, one surface pixel per page pixel; tile-local layer stack
+### D4. One surface, a page rectangle at page resolution, one surface pixel per page pixel; tile-local layer stack
 
-The surface is `TargetDesc`-sized (33 MB at 1080p in `RgbaF32`, 133 MB at 4K). It is the same size the
-port already implies (`read_back` returns `region`-sized pixels), so no choice exists there.
+The surface is `TargetDesc`-sized (33 MB at 1080p in `RgbaF32`, 133 MB at 4K) and covers the page
+rectangle that starts at `origin` (ARQ-149), so it is the page itself only when the request asked for
+the page. It is the same size the port already implies (`read_back` returns `region`-sized pixels),
+so no choice exists there.
 
 The **layer stack** is the choice. Options: **(a)** one buffer per open layer, allocated at the tile's
 size and reused across tiles from a per-depth pool; **(b)** one buffer per open layer at surface
@@ -277,10 +284,19 @@ size; **(c)** composite directly into the surface with a saved backdrop.
 Decision: **(a)**. Reason: (b) costs `depth × 33 MB` for a page with a hundred groups, and D-03's
 1.5 GB cap (which ARQ-44 makes the caches respect) does not leave room for that. (c) requires a copy
 of the backdrop per layer, which is the same memory at surface size. With (a) the ceiling is
-`depth × 256 KiB` (`Rgba8`) or `depth × 1 MiB` (`RgbaF32`), and `trim` drops the pool.
+`depth × 1 MiB` — one `f32` value per pixel is the only layer format there is, `O11` — and `trim`
+drops the pool. The growth does not change the shape of the rule but it does change the size:
+`Layers::push` takes the buffer of the task **as it is drawn**, so a task grown by an effect holds
+`depth × grown` bytes (`O17`), and a page-sized effect input makes a layer page-sized.
 
-Consequence to state: `PushLayer` carries no bounds, so the adapter defines the layer region as the
-tile's region (grown by the effect ROI in `CB5`). A layer is therefore never larger than a tile.
+Consequence, corrected on 2026-11-06 (`O15`, `W3` of the `CB5` round): `PushLayer` carries no
+bounds, so the layer's region is **the task's region** (02 §4.6:687) — the page rectangle clipped to
+the viewport — and a layer is never larger than a task. The effect's `roi` grows a separate
+**render buffer**: the tile is drawn into a larger rectangle so that the effect can read past its
+edge, the effect runs once over it, and the tile keeps its own crop (02 §4.6, ARQ-120). That buffer
+is the effect's input; it is not the layer, and no document can author against it: `ApplyMask`
+carries no rect and is anchored at the layer's top-left (`D7`), which is `task.region`'s corner, so
+a mask sized to a rectangle that depends on a private `roi` is unknowable at emit time.
 
 At a level above zero, a level-`L` tile covers `256 << L` page pixels in a 256×256 raster, so the
 adapter draws it scaled by `2^L` into the surface, whose pixels stay page pixels. At 100 % (level 0)
@@ -289,10 +305,13 @@ the mapping is 1:1, which is what ARQ-42 compares.
 Cost: none in exactness for the blends themselves — every mode in `gafira-raster` is a per-pixel
 function of source and backdrop, so a group composited tile by tile equals the group composited whole,
 as long as each tile's layer holds the page content clipped to that tile (which it does: the ops are
-page space and the mask is the clip). A seam can only appear when a pixel depends on pixels outside
-its tile: that is a filter, whose `roi` grows the tile in `CB5`, and a whole-frame transition, whose
-`run_cpu` sees one tile at a time (`D7`). The second is a real limitation and is stated in "What this
-change cannot prove".
+page space and the buffer is the tile, `D6` — the coverage mask of a fill is the clip, not
+`ApplyMask`). A seam can only appear when a pixel depends on pixels outside its tile: that is a
+filter, whose `roi` grows the tile in `CB5`, and a whole-frame transition, whose `run_cpu` sees one
+tile at a time (`D7`). The filter's seam is closed by the growth *as long as no `ApplyMask` precedes
+it*: a mask's reach is the task's region, so mask-then-effect is not tile equivalent, and that is
+`O16`'s subject, not this decision's. The transition is a real limitation and is stated in "What
+this change cannot prove".
 
 Reversible: yes (the pool is internal), at a cost in memory or in the hidden seam.
 
@@ -336,8 +355,19 @@ Reversible: yes.
 
 ### D7. `ApplyMask`, `ApplyEffect`, `ApplyTransition`: the port under-specifies two of them, and the design says which reading it takes
 
+Corrected by the `CB5` fix round (2026-11-06): this paragraph said `roi(cx, p, tile_rect)`, which
+is the defect the round's `M-C1` mutant reproduces verbatim — a second effect asked against the tile
+grows to `14×14` where `16×16` is needed. The code now asks each effect against the buffer the
+previous ops produced, and the composition is a single forward pass: an earlier effect's input is
+**not** re-expanded for a later effect's growth. That is exact for the rois real filters answer (a
+dilation and a translation telescope), and it is a latent pixel defect for a roi that shrinks its
+argument followed by a dilating one (`W11` of the round), which no op reaches today because nothing
+emits effects yet (ARQ-134).
+
 `ApplyEffect { effect, params, scale }` is fully specified by `Effect::roi`, `cost_hint` and
-`run_cpu`. Decision: the adapter computes `roi(cx, p, tile_rect)`, renders the task's ops into a
+`run_cpu`. Decision: the adapter computes `roi(cx, p, buffer)`, where `buffer` is what the ops so far have
+produced — the tile for the first effect, and the grown rectangle the previous one left, for each
+one after it — renders the task's ops into a
 scratch buffer of that size (offset by the ROI origin, with the same coverage and layer machinery),
 runs `run_cpu` with `EffectCx { scale, tile: None }`, and blits the crop. Cost: a second pass over the
 grown area for the tiles of an effected node; exact at seams, which is the point of `roi`.
@@ -533,7 +563,8 @@ constraint costs anything real here; both fail the build if forgotten.
 ## Needs explorer
 
 Provisional claims. Nothing is built on any of them until it is measured. `XP3` runs before `SC1`
-verifies, `XP1` and `XP4` before `CB1`, and `XP2` before `CB3`.
+verifies, `XP1` and `XP4` before `CB1`, `XP2` before `CB3`, and `XP5` before the first viewport render
+that carries an effect.
 
 | # | Claim | Check | Blocks |
 |---|---|---|---|
@@ -541,6 +572,7 @@ verifies, `XP1` and `XP4` before `CB1`, and `XP2` before `CB3`.
 | `XP2` | The 8-bit preview and the f32 export agree within 1/255 on 99.9 % of the pixels for scenes with up to three nested semi-transparent layers. Unmeasured: each `blend_u8` rounds to nearest, and the roundings accumulate. | A loop over the scene family `CB3` will use: 1–3 nested groups with alpha 0.5–0.9 and a full-opacity shape on top, both paths, counting pixels that differ by 2 or more after the `D9` conversion. | `CB3`, `D3` |
 | `XP3` | `tiny-skia` 0.12 builds and passes `cargo deny` on the three targets, and its output is byte-identical across those targets for the same input at the same level of `simd`. | `cargo deny check` on the three targets, a build on each, and a hash of one rendered tile per target. | `SC1` |
 | `XP4` | The surface plus the layer pool fits ARQ-44's budget: 33 MB at 1080p, 133 MB at 4K, plus `depth × 1 MiB`; and FD-55's 16 384 px side (4.3 GB in `RgbaF32`) is either feasible or a stated limit. | Arithmetic against 02 §6.6's machine (8 GB) and the 1.5 GB cap of D-03; a single allocation test at the 16 384 px side. | `CB1`, and the "cannot prove" table of `CB1` |
+| `XP5` | A preview frame at a viewport offset that contains an effect keeps its pixels when the surface is grown by the effects' `roi` and cropped on `read_back` (`O18`). Unmeasured: no preview renders an effect today, and `PageRenderer` has never been asked to grow a request. | A throwaway harness: one page with a large-radius blur, rendered as a full page and as a 512×512 viewport at an offset, both with the growth and without it; count the pixels that differ along the viewport's edge. | `O18`'s second limit, and the change that first renders a viewport with an effect |
 
 ## Needs specifier
 
@@ -554,6 +586,7 @@ verifies, `XP1` and `XP4` before `CB1`, and `XP2` before `CB3`.
 | `SP4` (closed 2026-11-05) | 02 §6.7, CAL-11 | Reconcile "render CPU en tiles paralelos" with `RenderBackend::execute` being handed one tile per call (`D12`). Either the technique changes or the contract does. | `CB6`, `CB7`, `O4` |
 | `SP5` (closed 2026-11-05) | 02 §6.7, ARQ-40 | Name the owner of `perf-budgets.toml` and the reference-machine job, and whether a bench whose number exists but is not gated is acceptable while that job is unbuilt. | `CB6`, `O3` |
 | `SP6` (closed 2026-11-05) | §10 | Say in which space the ARQ-42 tolerance is measured (8-bit sRGB premultiplied, as `D9` reads it) and that the export is encoded with ARQ-117's rules before comparing. | `CB3` |
+| `SP7` (open 2026-11-06) | 02 §4.6, ARQ-120 | Say where an `ApplyMask`'s rectangle is **in page space**, so that the coverage at a page pixel does not depend on which task rendered it: either the op carries the mask's page rectangle, or the mask is anchored in page space with "unchanged" outside the authored rect. Today §4.6:688 anchors it at the layer's top-left and §4.6:687 makes the layer the task's region, so a mask followed by an effect is not tile equivalent (`O16`, probe P11 of the `CB5` round). | `CB5`'s claim, and the change that first emits masks and effects (ARQ-134) |
 
 ## Next
 
@@ -703,3 +736,214 @@ in this change measures the preview. The delivery must therefore be measured aga
 visible-render budget or it will be a fix nobody counts.
 
 Reversible: yes, and cheaply — the surface's format is one decision in `begin_frame`.
+
+## Corrections from the CB5 round (2026-11-06)
+
+`CB5` is the delivery where masks, effects and transitions met real pixels, and its V2 round
+(`verify-report.md`, "Round 1 — CB5") found one CRITICAL and six warnings. Four of the findings are
+decisions, not defects, and they are settled here: `W3` is a correction to `D4` (`O15`), `W4` is the
+tile-equivalence question and it is not a defect of the adapter (`O16`), `W5` is memory (`O17`) and
+`W6` is the meaning of the effect's window (`O18`). `C1`, `W1` and `W2` stay the implementer's: they
+are missing evidence on code that is right at HEAD.
+
+### O15. The layer is the task's region; the ROI grows a render buffer — ruled by `architect` on 2026-11-06
+
+`D4` said the adapter defines "the layer region as the tile's region (grown by the effect ROI in
+`CB5`)", and then said a layer is never larger than a tile. The two sentences contradict each other,
+and the first contradicts 02 §4.6:687 (`PushLayer` carries no rect, so the layer's bounds are the
+task's: the page rectangle clipped to the viewport) and §4.6:688 (the mask anchors at the layer's
+top-left, one mask pixel per layer pixel). The delivery followed the spec and the card, probe P2
+confirms the anchor, and the round ruled the card right and `D4` wrong.
+
+**The correction is applied to `D4` above**: the growth is the effect's **render buffer** — the tile
+drawn into a larger rectangle so the effect can read past its own edge — and it is never the layer. A
+layer is never larger than a task.
+
+What the correction buys, beyond consistency: a mask a document can author. `ApplyMask` carries no
+rect and no scale (`D7`), so the emitter's only anchor is the layer's top-left; if the layer were the
+ROI-grown tile, that anchor would move with an effect's parameters, its `scale` and the task's
+position, and the emitter would have to re-crop the mask to a size only the backend computes. With
+the layer at the task's region, the emitter's contract is the one §4.6 states in one line.
+
+The rejected reading — keep `D4` as written and grow the layer — costs the emitter a rectangle it
+cannot know, and it would make the same `ApplyMask` op mean a different page rectangle per effect in
+the stream (`O16`'s option (b), below).
+
+Cost: none in pixels and none in code. This changes one sentence of this design. The adapter's own
+comments already say it — `crates/gafira-render-cpu/src/layer.rs:114-118` and
+`src/backend.rs:278-283` — which is why the round found the divergence in this document and not in
+the delivery.
+
+### O16. Mask-then-effect is not tile equivalent: the mask's place, not the op order — `SP7`, 2026-11-06
+
+**What the round measured.** Probe P11: the same two ops — an `ApplyMask`, then an `ApplyEffect` —
+answer `(0,0,0,0)` at page `(8,8)` over one whole-page task and `(1,0,0,1)` over two half-page tasks.
+The image depends on the decomposition, and §6.1's tiles are a decomposition, not a semantic;
+ARQ-120's own criterion ("ejecutar por tiles con `roi` coincide con la imagen entera ≤ 1/255") says so
+for effects.
+
+**Why it happens, exactly.** §4.6:687 makes the layer's bounds the task's region and §4.6:688 anchors
+the mask at the layer's top-left, one mask pixel per layer pixel. So the mask's **rectangle is the
+task's region**. A page pixel inside the tile is masked; the same pixel, inside a bigger task, is
+inside the mask's rectangle instead of outside it; and the growth that an effect reads is outside the
+tile, so it is outside the mask's rectangle and stays unchanged ("donde la máscara no llega, la capa
+queda como estaba", §4.6:688). The effect therefore reads a masked value at a page pixel in one
+decomposition and an unmasked one in another.
+
+The dependency is in the mask's **place**, not in the order of the two ops. A mask on a child layer
+followed by an effect on the parent reproduces it — the child's mask covers the child's task region,
+the parent's effect reads past it — and that order is the one §6.1's pipeline produces for every
+document (`Source → Transform → Effect* → Mask → Blend → Composite`).
+
+**The three candidates, and why none of them is the fix.**
+
+- **(a) Forbid an effect after a mask in one task.** It bans one shape and leaves its relatives: the
+  same asymmetry arrives through a `PopLayer` (a child's mask under a parent's effect), which no
+  planner rule avoids without splitting a task at every layer boundary — and a split task is two
+  writes to the same tile, which `O12`'s copy semantics cannot carry. It also cannot be enforced:
+  the port has no plan-validation error, and `DriverBlocked` is already carrying three meanings
+  (`W2`). Cost: a document intent lost ("filter the masked group" becomes unexpressible), a rule with
+  no error to say no with, and the defect alive in the neighbouring case.
+- **(b) Define the mask in the grown buffer's coordinates.** Then the same op means different things
+  in different streams: its anchor becomes a function of a sibling op's private `roi` — and, with two
+  effects, of the union of rois, which is a property of the whole task. The emitter cannot supply such
+  a raster, `ContentKey` cannot cover it, and the mask would reach into coverage the document never
+  authored. Cost: the op stops being a function of its own fields, so a task can no longer be
+  re-decomposed, re-cached or reproduced from the plan alone — `ARQ-142`'s content addressing in
+  spirit, and `ARQ-111`'s determinism by construction.
+- **(c) Compute the `roi` before the mask is applied, so the growth never lands between them.** 02
+  §4.6's stream is order-significant and the backend may not reorder it: `ApplyTransition`'s "from"
+  and "to" are defined by position in the stream (§4.6:689), `ApplyMask` alters the layer in place,
+  and `ApplyEffect` filters what the layer holds at that point. Clipping the growth to the mask's
+  rectangle reorders nothing — it only moves the seam to the mask's edge and breaks ARQ-120's
+  tile criterion, because the mask's boundary is a page rectangle in the document but a *tile*
+  rectangle in the plan. Cost: every effect on a masked layer silently loses its input at the mask's
+  boundary, and equivalence still fails.
+
+**Ruling: 02 §4.6 does not settle it, and the fix is the mask's place, not the op order.** The
+property needs one thing: the coverage at a page pixel must be the same in every decomposition. That
+holds if and only if the mask's rectangle is a property of the **page** — the authored rectangle,
+anchored in page space, with "unchanged" outside it — because then "where the mask does not reach" is
+one rule everywhere and the effect reads the same input over its `roi` in every decomposition.
+`Effect*` after `Mask` then needs no special rule at all.
+
+This is `SP7` for the specifier, not a rule this design invents. Two shapes can state it in the port:
+`ApplyMask { mask, rect: IRect }` (the mask's page-space rectangle, clipped by the backend to its
+buffer), or an `AlphaMask` anchored page space with "unchanged" outside the authored rect (at most a
+page-sized 8-bit raster: 2 MB at 1080p, 8 MB at 4K). The first is one field and is the one to prefer.
+
+Until `SP7` is answered the backend keeps the reading §4.6 gives it — the layer's corner, the layer's
+size — which is what `CB5` implemented and what P2/P11 measured. Nothing regresses, because
+`RenderGraphBuilder` emits neither `ApplyMask` nor `ApplyEffect` (ARQ-134): no document can reach the
+case today. What must **not** be claimed is that a synthetic plan is tile equivalent; the probe
+measured that it is not, and `CB5`'s cannot-prove row now says so.
+
+What each route costs: the rect (or the page anchor) is a new `gafira-ports` delivery, because `PC1`
+is merged — a third op field or a page-anchored mask, the constructors that build `RenderOp`, and
+`--workspace` on it. The emitter must then compute the authored mask's page rectangle, which it
+already owns because it builds the raster. If the specifier instead declares mask-then-effect out of
+the plan's domain, no field is needed but the port needs a plan-validation variant so that a backend
+can refuse it (`W2`), and the same-layer composition is lost. The one option that costs a
+requirement rather than code is leaving this open: a document with a mask and an effect can render
+differently in the preview and the export, because the two requests have different regions and
+therefore different tile boundaries.
+
+### O17. The effect's temporary buffer is accounted for, and its peak bounded first — ruled by `architect` on 2026-11-06
+
+**What the round measured.** `W5`: `effect::run` allocates `vec![0.0f32; target.len()]`
+(`crates/gafira-render-cpu/src/effect.rs:66`), frees it when the op returns, and neither `bytes()` nor
+`trim()` ever sees it. At 1080p that is +33.2 MB over a 33.2 MB surface; at 4K +132.7 MB over
+132.7 MB; at `MAX_SIDE = 8192` (`crates/gafira-render-cpu/src/surface.rs:23`) the surface is 1.07 GB
+and one full-page buffer doubles it to 2.14 GB — past `D-03`'s 1.5 GB — while `memory_usage()` reports
+the surface alone and no lever exists.
+
+**Decision: it must be counted, and the counter is the backend at the allocation point — `trim` cannot
+be the lever, because it runs between frames and the buffer lives inside one `execute`.**
+
+1. `effect::run` stops owning the buffer. The backend owns one scratch (`Vec<f32>`), reused across ops
+   and tiles, and hands it to `run_cpu` as `dst`. It is counted in `memory_usage()` beside
+   `Surface::bytes()` and `Layers::bytes()` (`crates/gafira-render-cpu/src/backend.rs:214-220`), and
+   it joins what `trim` drops (`src/backend.rs:222-232`). The lever exists at the only moment a lever
+   can: between frames.
+2. The peak is bounded *before* it is allocated, not reported after: `execute` checks
+   `surface + layers.bytes() + the new scratch size ≤ SURFACE_BUDGET` and answers
+   `Err(OutOfMemory)` before growing the scratch. That is the same constant and the same error
+   `Surface::new` already uses (`src/surface.rs:54`, `:68`), so the crate has one memory rule, and
+   the 8192² full-page effect becomes a refused tile instead of a 2.14 GB allocation.
+
+**The rejected options.**
+
+- **Leave it outside the accounting and document it** (the state the round found). Cost: the largest
+  frame the backend accepts is twice its own budget, with no lever and a `memory_usage()` that
+  under-reports by half — the one thing ARQ-44 exists to prevent.
+- **Report a peak from `memory_usage()` without owning the buffer.** `memory_usage` is "memory held
+  now" (`crates/gafira-ports/src/render.rs:311-312`); a peak that no longer exists is a number between
+  frames that `trim` cannot act on, so the governor would evict cache to compensate for memory nobody
+  holds.
+- **Account for it only at `begin_frame`, reserving `2 × surface`.** `begin_frame` does not see the
+  plan, so it refuses an 8192² surface that never runs an effect — a false refusal for the plain
+  export — and still says nothing about the case that needs it.
+
+**The second term the round did not name, and it is the larger one.** `Layers::push` is given the
+*grown* buffer's length (`crates/gafira-render-cpu/src/backend.rs:284-287`), so a task grown to near
+the page holds `depth × grown` bytes, not `depth × tile`; `D4`'s "`depth × 1 MiB`" ceiling is right
+only for an ungrown tile. A page-sized effect input therefore multiplies the layer pool by the page.
+The check above covers it because `layers.bytes()` is already a term, and `D4` is corrected to say it.
+
+Cost, stated plainly: with an effect in the frame the backend holds one grown buffer across the frame
+(up to one page: 33 MB at 1080p, 133 MB at 4K, 1.07 GB at `MAX_SIDE`) instead of allocating it per op
+and per tile; and a plan whose surface plus layers plus scratch exceed the 1.5 GB ceiling is now
+refused with `OutOfMemory` where it used to be drawn. Reversible: yes — one buffer and one constant.
+The fix belongs to the `CB5` fix round, with `C1`, `W1` and `W2`.
+
+### O18. The effect's window is page space; the port does not carry the page extent — ruled by `architect` on 2026-11-06
+
+**What the round measured.** `W6`: `image_width`/`image_height` and the window's `x`/`y` are computed
+from `page` = `Surface::page_rect()` (`crates/gafira-render-cpu/src/backend.rs:96`,
+`src/effect.rs:88-99`), so the window describes the **surface**, not the image. `TileWindow` is "dónde
+están `src` y `dst` en la imagen entera" with `image_width`/`image_height` the whole image's size
+(02 §4.4), and ARQ-120 checks `x + ancho ≤ image_width`. Right exactly when the surface *is* the
+page — the full-page export — and wrong for a sub-region request, which ARQ-149 allows.
+
+**Decision: the window is page space, and the port carries the page extent.** An effect may assume
+that `image_width`/`image_height` are the page's and that `x`/`y` are the page pixel coordinates of the
+first pixel of `src`. `TargetDesc` gains `page: (u32, u32)` — the page's extent in page pixels —
+beside `origin`, filled where `origin` is filled (`crates/gafira-render/src/page.rs`). ARQ-149 already
+makes the ops page space and the surface a window onto the page; the window's extent is the missing
+half of that sentence, and a backend that derived it as `origin + width × height` would be the second
+source of truth that `D1` rejects for the tile grid.
+
+**The rejected options.**
+
+- **Document the limit: the image is the surface.** Cost: this is not an edge case. §6.2 puts the
+  preview's effects "a resolución del viewport", so every vignette or shadow on a scrolled page would
+  centre and clamp at the viewport's edge, and the same page exported at `(0,0)` would differ from the
+  preview at an offset for a reason that has nothing to do with the raster. ARQ-120's tile criterion is
+  measured at the page origin today, so it would not notice.
+- **Force full-page surfaces.** Contradicts ARQ-149 and §6.2's viewport renders, and buys nothing the
+  field does not.
+
+**A second limit the field does not lift, and whose owner is not this crate.** An effect's input can
+only be what the surface holds, so a blur whose `roi` leaves the requested region reads transparent
+black where the page has content — a dark fringe at the viewport's edge. The page extent lets the
+effect tell "outside the page" from "outside my window"; no adapter can read pixels it was not given.
+The fix is the caller's: `PageRenderer` requests the region grown by the union of the effects' `roi`s
+in it, and `read_back` crops to the requested region — which `O13`'s page-space rectangle already
+allows. That is a `gafira-render` change and `XP5` of *Needs explorer*; nothing measures a preview frame
+with an effect today.
+
+Cost: a third field on `TargetDesc`, and a `--workspace` delivery in `gafira-ports` and
+`gafira-render` — the same files `PC1` touched, plus the adapter's `cx` losing its page subtraction.
+It blocks the emitter (ARQ-134) and any viewport render carrying an effect, so the coordinator cuts it
+after the `CB5` fix round and before `CB6`; it must not be folded into `CB5`, which has no port work
+left to spend. Reversible: additive.
+
+### What this changes for the deliveries that follow
+
+- **`CB8`** (an `Rgba8` surface): nothing here. The surface's storage and the cache's encode change
+  (`O14`); the effect's `src`/`dst` stay premultiplied `f32` in both qualities (ARQ-118, `O11`), the
+  scratch's format does not follow the target, and the mask multiplies a layer, not the surface.
+- **`CB6`** (the bench): nothing in its number. The bench's plan carries no effect, so the grown
+  layer pool, the scratch and `O17`'s check are all absent, and the export's surface is the page, so
+  `O18`'s two readings coincide. If the bench's scene ever gains an effect, the number includes the
+  scratch's first allocation.

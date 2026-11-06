@@ -6,7 +6,9 @@
 //! The tests of `CB4` live in [`image`], a child module of this one: they reuse
 //! the scene, the frame and the cache helpers below.
 
+mod effects;
 mod image;
+mod ops;
 
 use std::sync::{Arc, Mutex};
 

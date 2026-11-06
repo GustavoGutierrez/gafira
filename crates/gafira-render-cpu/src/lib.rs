@@ -26,6 +26,7 @@
 
 mod backend;
 mod coverage;
+mod effect;
 mod image;
 mod layer;
 mod surface;
