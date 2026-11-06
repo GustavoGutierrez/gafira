@@ -1046,3 +1046,84 @@ HEAD is `cbe874e`.
 next: tdd-apply (E2 PASS: merge `feat/gafira-engine-e2` into `develop`, then the next delivery;
 follow-ups E2-W7 (ambiguity, for the architect/specifier before E7) and E2-W8 (record 802 lines,
 tell the owner))
+
+---
+
+# Verify report — `gafira-engine` delivery `E3a` (history dirty sets), round 1
+
+round: 1 | commit: 778e494 | base: cad7d0c | mode: full | level: L3 | tier: hand mutants only | depth: V1 | mutation: off
+
+**Verdict: PASS** (delivery; deliveries `E3b` to `E3d` and `E5` remain)
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3a-S1 | SUGGESTION | - | crates/gafira-edit/tests/dirty_sets.rs:103-118 | AC4 proves the merge by `len() == 3`; the set assertion alone cannot tell a merged entry from an unmerged one, because `SetProperty` merges only on an equal `MergeKey` (same page). Keep the `len` assertion when this test is edited. | no | open |
+| E3a-S2 | SUGGESTION | - | crates/gafira-edit/tests/dirty_sets.rs:141-153 | AC6 covers a failure before any mutation (index check is the first line of `InsertPage::apply`). A command failing after a partial write on the copy would add a second case; not required by the card. | no | open |
+
+Counts: critical 0, warning 0, suggestion 2. Per class: none (suggestions carry no class).
+
+## Gates at HEAD (`778e494`, workspace scope, scratch `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2529 passed, 0 failed, 0 ignored; matches the notes) |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13 (EditToken, incl. positive control and re-export check), V14 | 0 each |
+| CI policy: testkit `ports` feature (clippy + test) | 0 |
+| `cargo deny check` | 0 |
+
+Free disk before builds: 147 GB. Both target dirs freed with `cargo clean`; worktree clean at `778e494`. The source-only scratch export `e3a-export` stays in the scratchpad (`rm -rf` is denied).
+
+## Artifact integrity (step 3c)
+
+- `cad7d0c docs(gafira-engine): slice card for E3a` touches only `specs/changes/gafira-engine/apply-progress.md` (+42).
+- `d1d6641` touches only `crates/gafira-edit/src/history.rs` and `crates/gafira-edit/tests/dirty_sets.rs`.
+- `778e494` appends the notes after the card (+36, pure addition after the card's last line); the card block is unchanged since `cad7d0c`.
+- Public API diff of `gafira-edit` (`git diff cad7d0c HEAD -- crates/`, `pub` lines): only `History::newest_touches` and `History::undone_touches`, both `&self`, read-only. The other change is a private `use` of `DirtySet` (already public). No `execute`/`undo`/`redo` signature or `Command` impl changed (card non-goals hold).
+
+## Criteria map
+
+| AC | Proof | Status |
+|---|---|---|
+| AC1 | `ac1_after_a_changed_execute_the_newest_set_is_the_applied_one`: `InsertPage` (set empty before `apply`, XP4), full pair compared | covered |
+| AC2 | `ac2_undo_reports_the_undone_entry_and_the_new_top`: two distinct entries, then down to `(None, Some(first))` | covered |
+| AC3 | `ac3_redo_reports_the_redone_entry_and_the_next_redo_entry`: three redos, each pair compared, ends `(Some, None)` | covered |
+| AC4 | `ac4_a_merged_gesture_reports_the_merged_entry` | covered (see doubt 1) |
+| AC5 | `ac5_an_empty_history_reports_nothing`, `ac5_an_unchanged_execute_leaves_both_sets` (asserts `Ok(Unchanged)`) | covered |
+| AC6 | `ac6_a_command_that_fails_to_apply_leaves_both_sets` | covered (see doubt 2) |
+| AC7 | gates above, workspace scope | covered |
+
+Product IDs: 02 §5.1, §4.3, ARQ-30 (card). Every test in `dirty_sets.rs` carries `// ARQ-30` (7 tests, `git grep ARQ-30`). ARQ-33 is not a card ID; its "one entry per gesture" rule is what AC4 relies on and is exercised there. None left out.
+
+## Coordinator doubts
+
+1. **AC4 merges.** The test opens one gesture and executes three `SetProperty::page(second, PageName(..), Some(gesture))` at 1 s, 2 s and 3 s, each `Ok(Changed)`. `History::len()` is `self.undo.len()` (history.rs:194); after two `InsertPage` entries, `len() == 3` holds only if the three renames became one entry. The 1 s gaps exceed `MERGE_WINDOW` (500 ms), so the merge comes from the gesture branch of `merge_into_newest` (`old.gesture == open`), not the time window. `SetProperty` is the merging command (`merge_key` returns `Some`; set_property.rs:433). So it is a merged entry, and `newest_touches()` on it is asserted as `(Some({second}), None)`. Settled: AC4 is covered. Limit noted in E3a-S1.
+2. **AC6 failure path.** `InsertPage::new(9, ..)` on a one-page document: `InsertPage::apply` returns `IndexOutOfRange { index: 9, len: 1 }` (pages.rs:52); `History::execute` calls `apply_to_copy(..)?` first (history.rs:99), so the error returns before `redo.clear()` and before any push or merge. The test asserts that exact `Err` and then the full pair `(Some({first}), Some({second}))` over a history with both stacks non-empty, so both sets are proved unchanged, including the redo side a wrong `redo.clear()` would empty. Settled: real `apply` failure, AC6 covered.
+3. **Hand mutant 1 re-applied** (scratch export of `778e494`): `newest_touches` reads `self.redo.last()`, `undone_touches` reads `self.undo.last()`. `cargo test -p gafira-edit --locked --test dirty_sets`: 6 failed, 1 passed (`ac5_an_empty_history_reports_nothing`, as the notes say). E.g. `ac1`: left `(None, Some({PageId(1)}))`, right `(Some({PageId(1)}), None)`. Killed, matches the record.
+4. **API diff**: only the two additive methods (above).
+
+## Mutation
+
+`mutation: off`: no `mutants` report; not a finding. Hand mutants: 1 run (spot-check of recorded mutant 1), 1 killed. V1 adds no independent hand mutants.
+
+## Size
+
+`git diff --shortstat cad7d0c..d1d6641`: 2 files, 171 insertions, 1 deletion (code 19, tests 153). Delivery total to `778e494`: 207 insertions, 1 deletion. Forecast 90 (126 at x1.4); 171 is x1.9 of the raw forecast, inside the x1.4 to x1.9 range AGENTS.md records and far below ~700.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E3a", "rounds": [ {
+  "round": 1, "commit": "778e494", "mode": "full", "tier": "hand mutants only", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 0, "suggestion": 2},
+  "findings": [
+    {"id": "E3a-S1", "severity": "SUGGESTION", "ref": "crates/gafira-edit/tests/dirty_sets.rs:103-118", "summary": "AC4 merge proved by len()==3; the set assertion alone cannot distinguish merged from unmerged (same MergeKey page). Keep the len assertion.", "follow_up": false, "status": "open"},
+    {"id": "E3a-S2", "severity": "SUGGESTION", "ref": "crates/gafira-edit/tests/dirty_sets.rs:141-153", "summary": "AC6 covers a pre-mutation apply failure only; a post-partial-write failure case is optional.", "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 1, "killed": 1},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 171, "forecast": 126}, "report": "e3a-verify-report-r1.md" } ] }
+```
+
+next: tdd-apply (next delivery `E3b`)
