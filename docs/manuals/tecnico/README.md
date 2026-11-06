@@ -16,7 +16,7 @@ Outputs: `build/Gafira_Technical_Manual.pdf` (English) and `build/Gafira_Manual_
 ## Requirements
 
 - Python 3.9 or newer (no packages).
-- For the PDF: `pandoc` plus one engine. `build` tries, in order: `xelatex`, then `google-chrome` or `chromium` (headless print), then `wkhtmltopdf`. Force one with `--engine xelatex|chrome|wkhtmltopdf`.
+- For the PDF: `pandoc` plus one engine. `build` tries, in order: `xelatex`, then `google-chrome` or `chromium` (headless print), then `wkhtmltopdf`. Force one with `--engine xelatex|chrome|wkhtmltopdf`. The `xelatex` path uses `fontspec`, `fvextra`, `etoolbox`, `sectsty`, `tikz` and the brand faces under `assets/fonts/`: a full TeX Live satisfies all of them, a minimal install does not.
 
 ## Write or update a chapter
 

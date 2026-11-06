@@ -101,6 +101,7 @@ end
 
 LATEX_HEADER = r"""\usepackage{fvextra}
 \usepackage{etoolbox}
+\usepackage{sectsty}
 \usepackage{tikz}
 \usepackage{graphicx}
 \usetikzlibrary{calc}
@@ -112,6 +113,15 @@ LATEX_HEADER = r"""\usepackage{fvextra}
 \newfontfamily\GafiraDisplay{Inter}[UprightFont={[TESTFONTDIR/Inter-test.ttf]},
   BoldFont={[MANUALFONTDIR/Inter-SemiBold.ttf]}]
 \newfontfamily\GafiraHeavy{Manrope}[UprightFont={[MANUALFONTDIR/Manrope-ExtraBold.ttf]}]
+\setmainfont{Inter}[UprightFont={[TESTFONTDIR/Inter-test.ttf]},
+  BoldFont={[MANUALFONTDIR/Inter-SemiBold.ttf]}]
+\newfontfamily\GafiraHeading{Manrope}[UprightFont={[MANUALFONTDIR/Manrope-ExtraBold.ttf]}]
+\allsectionsfont{\GafiraHeading}
+% Inter's figures are wider than Latin Modern's: the class's default number box in the
+% table of contents is too narrow for a four-character number such as 10.12.
+\makeatletter
+\renewcommand{\l@subsection}{\@dottedtocline{2}{1.5em}{2.9em}}
+\makeatother
 \renewcommand{\maketitle}{}
 \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\footnotesize}
 \setlength{\emergencystretch}{4em}
