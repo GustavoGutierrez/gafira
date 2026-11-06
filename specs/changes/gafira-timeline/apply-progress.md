@@ -148,6 +148,7 @@ Commits:
 |---|---|
 | `da35130` feat(gafira-doc): the timeline types, ids and the edit view | The types `Sequence`, `Track`, `TrackKind`, `Clip`, `ClipSource`, `Marker`, `Speed`, `AssetRef`, `AssetEntry`, `AssetStorage`, `PixelSize`; the ids `SequenceId`, `TrackId`, `ClipId`, `MarkerId` from the document's counter; the `DocMut` accessors of ARQ-30; the model's query surface. No laws yet: the surface the laws come on top of. |
 | `b00b845` feat(gafira-doc): the laws of the timeline, each with its test | The seven laws with the battery of `crates/gafira-doc/tests/timeline_laws.rs` (10 tests, one per AC). |
+| `f103281` fix(gafira-doc): snap both cuts of a retimed clip | Round 2: each cut of a retimed clip snaps on its own instead of the start and the duration snapping independently (see "Round 2 closure"). |
 
 Gates per commit, each run alone, exit 0: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` (`gafira-doc` is not a leaf), `cargo test --workspace --locked`, `cargo deny check`, and the CI policy steps by extracting their `run:` from `ci.yml`.
 
@@ -240,6 +241,44 @@ Left open by the coordinator's instruction, not by oversight:
   once this round lands.
 - `S1` (`AssetRef`'s hex serde and `Speed`'s reduction untested): untouched; neither is reachable
   from an AC in this cut.
+
+### Round 2 closure (both cuts of a retimed clip)
+
+The design (`design.md:481-482`) says the retime moves "every cut to the nearest frame". A clip
+has two cuts, and rounding is not additive, so `snap(start) + snap(duration) != snap(start + duration)`:
+the end cut drifted by up to one frame, in both directions. `Sequence::retimed` now snaps each
+cut on its own and derives the span with `TimeRange::from_bounds(start, end)`. The one-frame
+floor and the push-right survive because the start is still floored at `last_end` and the end
+at `start + frame`.
+
+| Commit | What |
+|---|---|
+| `f103281` fix(gafira-doc): snap both cuts of a retimed clip | Both cuts snap independently; the span is derived from them. Test `fv_01_the_retime_moves_both_cuts_of_a_clip`. |
+
+RED on `4a24b8b`, before the fix
+(`cargo test -p gafira-doc --locked --test timeline_laws fv_01_the_retime_moves_both_cuts_of_a_clip`):
+
+- grow, 24 -> 30 fps, clip `[29 400 000..58 800 000)`: `the end cut snaps on its own: 2.5 frames
+  of 30 fps goes to the later frame`, `left: 47040000, right: 70560000`.
+- shrink, 30 -> 24 fps, clip `[47 040 000..94 080 000)`: `the end cut snaps to 3 frames of 24 fps,
+  not the snapped span added to the start`, `left: 117600000, right: 88200000`. (The grow
+  assertion was temporarily set to its buggy value to reach this one; restored before the commit.)
+
+The test also guards the two rules the round had to keep: a span below one frame keeps one frame
+(two one-frame 60 fps clips retimed to 24 fps) and the clip that would overlap is pushed right.
+
+Hand mutant, applied on the green `f103281` and reverted (tree clean after):
+
+| # | Rule | Wrong behaviour applied | Test that killed it |
+|---|---|---|---|
+| H10 | the retime moves every cut to the nearest frame | the end is `start + snap(duration)` instead of `snap(end)`, the defect's own shape | `fv_01_the_retime_moves_both_cuts_of_a_clip`, `left: 47040000, right: 70560000` |
+
+Gates at `f103281`, each alone, exit 0: `cargo fmt --check`, `cargo clippy -p gafira-doc
+--all-targets --locked -- -D warnings`, `cargo test -p gafira-doc --locked` (all binaries ok),
+`cargo deny check` (`advisories ok, bans ok, licenses ok, sources ok`), the nine policy steps of
+`ci.yml` (`POLICY OK: every step exited 0`), and `RUSTDOCFLAGS="-D warnings" cargo doc -p
+gafira-doc --no-deps`. Measured: 2 files changed, 103 insertions(+), 8 deletions(-) (this file
+not counted).
 
 ### Negative controls
 
