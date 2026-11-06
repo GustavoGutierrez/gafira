@@ -144,6 +144,8 @@ impl EventSink for ChannelSink {
             if is_progress {
                 if Self::window_is_open(now, window.last_progress) {
                     window.last_progress = Some(now);
+                    // The newer fraction supersedes any pending older one.
+                    window.pending = None;
                     return send(sender, event);
                 }
                 // Inside the window: keep only the latest fraction. It leaves
@@ -152,8 +154,9 @@ impl EventSink for ChannelSink {
                 return 0;
             }
             // A state event: never dropped, never coalesced. It carries the
-            // pending progress out first, so the observer never sees progress
-            // go backwards.
+            // pending progress out first, and a progress that opens the window
+            // discards the pending one, so the observer never sees progress go
+            // backwards and always ends on the newest fraction.
             let carried = window
                 .take_pending()
                 .map_or(0, |pending| send(sender, pending));
@@ -291,6 +294,43 @@ mod tests {
         assert_eq!(second, progress(0.5), "the latest fraction is the one kept");
         assert_eq!(waker.count(), 2);
         assert!(receiver.try_recv().is_err(), "nothing else is queued");
+    }
+
+    /// Fractions the observer received, in order.
+    fn fractions(receiver: &Receiver<EngineEvent>) -> Vec<f32> {
+        receiver
+            .try_iter()
+            .filter_map(|event| match event {
+                EngineEvent::JobProgress { fraction, .. } => Some(fraction),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// AC3: a progress that opens the window supersedes the pending one; the
+    /// observer ends on the newest fraction after a state event.
+    #[test]
+    fn ac3_a_new_window_discards_the_stale_pending_progress_before_a_state_event() {
+        let (sink, receiver, clock, _waker) = sink();
+        sink.publish(progress(0.1));
+        sink.publish(progress(0.9));
+        clock.advance(JOB_PROGRESS_WINDOW);
+        sink.publish(progress(0.2));
+        sink.publish(changed());
+        assert_eq!(fractions(&receiver), vec![0.1, 0.2]);
+    }
+
+    /// AC3: same, ending with a flush.
+    #[test]
+    fn ac3_a_new_window_discards_the_stale_pending_progress_before_a_flush() {
+        let (sink, receiver, clock, _waker) = sink();
+        sink.publish(progress(0.1));
+        sink.publish(progress(0.9));
+        clock.advance(JOB_PROGRESS_WINDOW);
+        sink.publish(progress(0.2));
+        clock.advance(JOB_PROGRESS_WINDOW);
+        sink.flush();
+        assert_eq!(fractions(&receiver), vec![0.1, 0.2]);
     }
 
     /// AC3: a state event carries the pending progress out before itself.
