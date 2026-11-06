@@ -80,14 +80,19 @@
           "id": "E3c1",
           "status": "passed",
           "evidence": "verify E3c1 round 1 PASS at e1fef7f: ac8_* and ac9_* in project.rs, workspace gates 0 (2548 passed); hand mutant 7 and three verifier mutants killed"
+        },
+        {
+          "id": "E3c2",
+          "status": "passed",
+          "evidence": "verify E3c2 round 1 PASS at 99c38bc: ac1-ac7, ac10, ac11 in project.rs (ARQ-50 fault loop, ARQ-55 empty trace), workspace gates 0 (2558 passed); 7 hand mutants killed, verifier re-ran 1, 4, 6 plus 3 own"
         }
       ],
-      "next_action": "E3c2 (save, ReadOnly/NoPath/Io, SP6 doc comment; stash@{0} holds the session fields), then E3d (needs architect on SP5 project_id), then E5",
+      "next_action": "E3d (autosave, P13, O5=(a)), then E5. SP5 (real project_id) blocks E4, not E3d.",
       "verify": {
         "round": 1,
-        "commit": "e1fef7f",
+        "commit": "99c38bc",
         "verdict": "PASS",
-        "next": "tdd-apply E3c2 (save), then verify",
+        "next": "E3d slice card, tdd-apply, verify",
         "findings": [
           {
             "id": "E2-W7",
