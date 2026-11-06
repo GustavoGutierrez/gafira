@@ -4,7 +4,7 @@
 |---|---|
 | Documento | Especificación 07 |
 | Estado | Vigente (no ejecutable): inventario, sin requisitos propios |
-| Alcance | Ítems 39 a 77 de `specs/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
+| Alcance | Ítems 39 a 77 y 104 a 111 de `specs/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
 | Fuentes | `specs/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
 | Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
 | Copia duradera | Las listas crudas estaban en el scratchpad de una sesión, que es temporal. Este documento es la copia que queda |
@@ -14,6 +14,7 @@
 | Medida | Cifra |
 |---|---|
 | Ítems 39 a 77 | 39: 34 abiertos, 2 remiten a otro ítem (70, 71), 3 cerrados o solo registro (51, 64, 65) |
+| Ítems 104 a 111 | 8: 8 abiertos (archivo de `gafira-timeline`) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -21,7 +22,7 @@
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
 
-## 1. Seguimientos abiertos (ítems 39 a 77)
+## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 111)
 
 La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí.
 
@@ -63,6 +64,14 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 75 | T4 de `gafira-raster`: 33 críticos (§2). | Se confirma la suposición de `cost_hint` (§2.2); después, `specifier` y test primero. Un T4 del crate sin críticos vivos lo confirma. |
 | 76 | SG3-W8: Q-48 y la cita de §4.17 aún dan 1055 ms y 43 ms. | `specifier` pone las cifras medidas tras el arreglo. |
 | 77 | SG3-W9: el stub de test imprime un `WARNING ... 0/12` falso. | Se corrige el stub o la condición en `gate.rs`, test primero. |
+| 104 | La regla de la velocidad no absorbe el resto en el offset de origen; el registro redefine «absorbe» como «reporta» (W3 de `gafira-timeline`). | El `specifier` decide si el offset de origen absorbe el resto o si el diseño dice que lo reporta, y hay test. |
+| 105 | AC4 no puede comprobar «dentro de su fuente» ni «dentro de la secuencia»: faltan la duración de la fuente (Q5) y la longitud guardada de la secuencia (P4) (W4 de `gafira-timeline`). | El `specifier` da a AC4 las dos cotas, o lo reduce a lo que el modelo puede sostener. |
+| 106 | FV-04 citada sin un test que la nombre; la mitad de ARQ-13 sí quedó probada por TL3 (W5 de `gafira-timeline`). | El `specifier` decide si FV-04 se prueba en el change de comandos o se retira de la tarjeta. |
+| 107 | La cláusula de deshacer de AC10 no tiene código ni test; los comandos están diferidos por Q4 (W6 de `gafira-timeline`). | Se prueba en el change de comandos, con el camino de `gafira-edit::History`. |
+| 108 | `tier: T0` en las tarjetas de TL2 y TL3, que escriben Rust crítico (S3 de `gafira-timeline`). | El `specifier` corrige la etiqueta o deja constancia de que las tarjetas archivadas no se editan. |
+| 109 | La carga no reaplica las leyes del constructor: un lado de píxel cero y un marcador negativo cargan (TL3-S1 de `gafira-timeline`). | Se decide si la carga reaplica esas dos leyes y hay test. |
+| 110 | La tabla de commits del registro lista 6 de 8, y el golden mide 2 220 bytes, no 2 221 (TL3-S2 de `gafira-timeline`). | El registro archivado queda corregido al revisarlo; no bloquea. |
+| 111 | `.expect("{name} still loads")` no interpola en `timeline_wire.rs:336` (TL3-S3 de `gafira-timeline`). | El mensaje nombra la fixture y un fallo lo confirma. |
 
 ### 1.2 Cerrados o sin trabajo propio
 
