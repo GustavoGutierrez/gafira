@@ -55,6 +55,11 @@ pub struct CpuBackend {
     /// layer of the same tile and by the tiles and frames that follow; `trim`
     /// is the only thing that drops it (ARQ-143).
     layers: Layers,
+    /// The cap the effect's peak is refused against (`O17`, `D-03`).
+    ///
+    /// [`surface::SURFACE_BUDGET`] unless a test lowers it to a ceiling it can
+    /// reach with real buffers instead of a gigabyte of them.
+    budget: Bytes,
     /// The effect pass's destination, owned and counted here (`O17`).
     ///
     /// One buffer, reused by every effect of the frame, so a task with two
@@ -80,6 +85,19 @@ impl CpuBackend {
     #[must_use]
     pub fn with_progress(mut self, progress: Arc<dyn Progress>) -> Self {
         self.progress = progress;
+        self
+    }
+
+    /// A backend whose effect scratch is refused against `budget` instead of
+    /// [`surface::SURFACE_BUDGET`] (`O17`).
+    ///
+    /// The cap is the only thing a test lowers: the comparison, its position
+    /// before the allocation and both terms of `held` are the production ones,
+    /// which is what makes [`CpuBackend::execute`]'s refusal observable without
+    /// a 1 GiB surface.
+    #[cfg(test)]
+    pub(crate) fn with_budget(mut self, budget: Bytes) -> Self {
+        self.budget = budget;
         self
     }
 
@@ -109,7 +127,10 @@ impl CpuBackend {
                 Some(tile) => tile,
                 None => {
                     let drawn = effect::grown_rect(task, surface, page);
-                    let held = self.surface.as_ref().map_or(0, Surface::bytes);
+                    let held = Held {
+                        bytes: self.surface.as_ref().map_or(0, Surface::bytes),
+                        budget: self.budget,
+                    };
                     let tile = render_tile(
                         task,
                         drawn,
@@ -174,6 +195,7 @@ impl Default for CpuBackend {
             last_fraction: 0.0,
             cache_bytes: 0,
             layers: Layers::new(),
+            budget: surface::SURFACE_BUDGET,
             scratch: Vec::new(),
         }
     }
@@ -284,6 +306,16 @@ fn cached_tile(
     surface::decode_tile(&tile).ok()
 }
 
+/// What the frame already holds, and the cap it must stay inside (`O17`).
+#[derive(Clone, Copy)]
+struct Held {
+    /// The surface, the layer pool and the layers open at this op.
+    bytes: u64,
+    /// The cap those bytes plus a new effect destination are compared against
+    /// (`D-03`).
+    budget: Bytes,
+}
+
 /// Renders one task and answers the tile's own crop, premultiplied `f32`.
 ///
 /// `drawn` is the tile **grown** by every effect's input region (`CB5`,
@@ -298,7 +330,7 @@ fn render_tile(
     task: &TileTask,
     drawn: IRect,
     page: (u32, u32),
-    held: u64,
+    held: Held,
     layers: &mut Layers,
     scratch: &mut Vec<f32>,
     cancel: &CancelToken,
@@ -363,7 +395,10 @@ fn render_tile(
                 // The effect's destination is the backend's scratch (O17). The
                 // frame's peak is the surface, the layer bytes and that
                 // buffer, and it is checked before the buffer grows.
-                let held = held.saturating_add(layers.bytes());
+                let peak = Held {
+                    bytes: held.bytes.saturating_add(layers.bytes()),
+                    budget: held.budget,
+                };
                 effect::run(
                     effect.as_ref(),
                     effect::Pass {
@@ -371,7 +406,8 @@ fn render_tile(
                         scale: *scale,
                         target: layers.target(&mut pixels),
                         scratch: &mut *scratch,
-                        held,
+                        held: peak.bytes,
+                        budget: peak.budget,
                         grown: drawn,
                         page,
                     },

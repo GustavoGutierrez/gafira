@@ -437,15 +437,25 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
     // The boundary fits: the frame's held bytes plus the new buffer are exactly
     // the cap, and the cap is inclusive.
     let mut scratch = Vec::new();
-    crate::effect::reserve_scratch(&mut scratch, pixels, SURFACE_BUDGET.0 - bytes)
-        .expect("the cap is inclusive");
+    crate::effect::reserve_scratch(
+        &mut scratch,
+        pixels,
+        SURFACE_BUDGET.0 - bytes,
+        SURFACE_BUDGET,
+    )
+    .expect("the cap is inclusive");
     assert_eq!(scratch.len(), pixels, "the buffer is grown at the cap");
 
     // One byte further is over, and the refusal precedes the allocation.
     let mut refused = Vec::new();
     assert!(
         matches!(
-            crate::effect::reserve_scratch(&mut refused, pixels, SURFACE_BUDGET.0 - bytes + 1),
+            crate::effect::reserve_scratch(
+                &mut refused,
+                pixels,
+                SURFACE_BUDGET.0 - bytes + 1,
+                SURFACE_BUDGET
+            ),
             Err(RenderError::OutOfMemory)
         ),
         "a peak past the cap is refused"
@@ -459,7 +469,7 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
     let mut big = Vec::new();
     assert!(
         matches!(
-            crate::effect::reserve_scratch(&mut big, page * 4, page as u64 * 16),
+            crate::effect::reserve_scratch(&mut big, page * 4, page as u64 * 16, SURFACE_BUDGET),
             Err(RenderError::OutOfMemory)
         ),
         "the doubled page is refused"
@@ -504,6 +514,54 @@ fn arq_111_a_reused_destination_starts_cleared_for_the_next_op() {
         is_clear(&got, 15, 15),
         "and the tile's far corner is clear too"
     );
+}
+
+// O17, D-03, ARQ-44: the refusal is the backend's own path, not only the
+// reservation's. `execute` puts the surface and the open layers into `held` and
+// hands the effect's peak to the same comparison; dropping either term leaves
+// the peak under the cap and the tile runs, which is what `CB5`'s round could
+// not see. The cap is the one thing lowered here, so the frame reaches it with
+// real buffers instead of a gibibyte of them.
+#[test]
+fn arq_44_execute_refuses_the_effect_peak_near_the_cap() {
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    // One tile half the page wide, its fill inside a layer, and the effect on
+    // the layer: the frame holds the surface, the open layer and the
+    // destination at the effect op.
+    let scene = |probe: &Arc<Probe>| {
+        plan(vec![task(
+            1,
+            IRect::new(0, 0, 8, 16),
+            vec![
+                push(),
+                fill(0.0, 0.0, 8.0, 16.0, white()),
+                effect_op(probe),
+                pop(BlendMode::Normal, 1.0),
+            ],
+        )])
+    };
+    // (16 x 16 surface + 8 x 16 layer + 8 x 16 destination) x 16 bytes.
+    let peak = 16 * 16 * 16 + 8 * 16 * 16 * 2;
+
+    // Exactly at the cap the frame runs: the comparison is inclusive.
+    let probe = Arc::new(Probe::new(Shape::Pad(0)));
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(CpuBackend::new().with_budget(Bytes(peak)), target_desc);
+    let outcome = frame.execute(&scene(&probe), &mut cache, &CancelToken::new());
+    assert!(outcome.is_ok(), "the cap is inclusive: {outcome:?}");
+    assert_eq!(probe.calls(), 1, "the effect runs at the cap");
+
+    // One byte over, and `execute` answers the refusal itself — before the
+    // effect is reached.
+    let probe = Arc::new(Probe::new(Shape::Pad(0)));
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(CpuBackend::new().with_budget(Bytes(peak - 1)), target_desc);
+    let outcome = frame.execute(&scene(&probe), &mut cache, &CancelToken::new());
+    assert!(
+        matches!(outcome, Err(RenderError::OutOfMemory)),
+        "the backend answers the refusal: {outcome:?}"
+    );
+    assert_eq!(probe.calls(), 0, "the refusal precedes the effect");
 }
 
 // ---------------------------------------------------------------------------

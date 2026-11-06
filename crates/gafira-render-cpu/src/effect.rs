@@ -16,7 +16,7 @@
 //!
 //! The destination belongs to the backend, not to the op (`O17`): one scratch
 //! buffer, reused by every effect of the frame and compared against
-//! [`SURFACE_BUDGET`] **before** it grows, because `trim` runs between frames
+//! [`crate::surface::SURFACE_BUDGET`] **before** it grows, because `trim` runs between frames
 //! and cannot be the lever for a buffer that lives inside one `execute`.
 //!
 //! The buffers are premultiplied linear `f32` ([`crate::layer`], O11), which is
@@ -25,11 +25,10 @@
 
 use gafira_doc::contract::{CancelToken, ParamValues};
 use gafira_geom::IRect;
+use gafira_ports::common::Bytes;
 use gafira_ports::render::{RenderError, RenderOp, TileTask};
 use gafira_raster::effects::Effect;
 use gafira_raster::{EffectCx, ImageView, ImageViewMut, PixelData, PixelDataMut, TileWindow};
-
-use crate::surface::SURFACE_BUDGET;
 
 /// The rectangle the tile's ops are rendered over: the tile grown by every
 /// effect's input region, and clipped to the **surface** (ARQ-120).
@@ -77,6 +76,8 @@ pub(crate) struct Pass<'a> {
     /// The bytes the frame already holds: the surface, the layer pool and the
     /// layers open at this op.
     pub held: u64,
+    /// The cap that peak is refused against ([`crate::surface::SURFACE_BUDGET`], `D-03`).
+    pub budget: Bytes,
     /// The grown rectangle `target` covers.
     pub grown: IRect,
     /// The page's extent, in page pixels: the image the window describes (O18).
@@ -86,8 +87,7 @@ pub(crate) struct Pass<'a> {
 /// Runs `effect` once over the grown tile and commits its result to `target`.
 ///
 /// The destination is [`Pass::scratch`], grown only after the frame's peak —
-/// [`Pass::held`] plus this buffer — is checked against [`SURFACE_BUDGET`]
-/// (`O17`).
+/// [`Pass::held`] plus this buffer — is checked against the cap (`O17`).
 ///
 /// # Errors
 /// [`RenderError::OutOfMemory`] when the destination would take the frame's
@@ -106,12 +106,13 @@ pub(crate) fn run(
         target,
         scratch,
         held,
+        budget,
         grown,
         page,
     } = pass;
     // The buffer is the grown rectangle's pixels, so its size is the region's.
     let size = (grown.width(), grown.height());
-    reserve_scratch(scratch, target.len(), held)?;
+    reserve_scratch(scratch, target.len(), held, budget)?;
     let dst = &mut scratch[..target.len()];
     // The destination is reused, so nothing of a previous op or tile may reach
     // this one: the effect starts from transparent black, as a fresh buffer
@@ -142,11 +143,12 @@ pub(crate) fn run(
 ///
 /// # Errors
 /// [`RenderError::OutOfMemory`] when `held` plus the new buffer would pass
-/// [`SURFACE_BUDGET`], or when the size cannot be expressed.
+/// [`crate::surface::SURFACE_BUDGET`], or when the size cannot be expressed.
 pub(crate) fn reserve_scratch(
     scratch: &mut Vec<f32>,
     pixels: usize,
     held: u64,
+    budget: Bytes,
 ) -> Result<(), RenderError> {
     if scratch.len() >= pixels {
         return Ok(());
@@ -155,7 +157,7 @@ pub(crate) fn reserve_scratch(
         .ok()
         .and_then(|count| count.checked_mul(4))
         .ok_or(RenderError::OutOfMemory)?;
-    if !fits(held, bytes) {
+    if !fits(held, bytes, budget) {
         return Err(RenderError::OutOfMemory);
     }
     scratch.resize(pixels, 0.0);
@@ -164,8 +166,11 @@ pub(crate) fn reserve_scratch(
 
 /// True when a frame holding `held` bytes can add `scratch` bytes and stay
 /// inside the cap `Surface::new` applies (`D-03`, `O17`).
-fn fits(held: u64, scratch: u64) -> bool {
-    held.saturating_add(scratch) <= SURFACE_BUDGET.0
+///
+/// No test path bypasses this comparison: the backend hands the cap in, and the
+/// production cap is [`crate::surface::SURFACE_BUDGET`].
+fn fits(held: u64, scratch: u64, budget: Bytes) -> bool {
+    held.saturating_add(scratch) <= budget.0
 }
 
 /// The context an effect answers its `roi` and runs in.
