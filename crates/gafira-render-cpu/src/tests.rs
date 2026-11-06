@@ -217,6 +217,14 @@ fn bytes8(image: &ImageBuf, x: u32, y: u32) -> [u8; 4] {
     }
 }
 
+/// The bytes of an `Rgba8` image, row by row.
+fn rgba8_bytes(image: &ImageBuf) -> Vec<u8> {
+    match image.data() {
+        PixelBuf::Rgba8(data) => data.clone(),
+        _ => panic!("the target asked for Rgba8"),
+    }
+}
+
 /// True when the pixel is the opaque white the scene fills.
 fn is_white(image: &ImageBuf, x: u32, y: u32) -> bool {
     let [r, g, b, a] = channels(image, x, y);
@@ -882,6 +890,65 @@ fn arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target() {
     assert!(
         is_clear(&read, 20, 20),
         "page (170, 270) is outside the target"
+    );
+}
+
+// O13, ARQ-42: a rectangle is page space for `write` and for `read`, so an
+// offset region answers the window the page holds and equals the same window
+// of a full-surface read. Before O13 the read was clipped against its own
+// offset and lost a band of `x0` columns and `y0` rows.
+#[test]
+fn arq_42_an_offset_region_reads_back_the_window_the_page_holds() {
+    let full = run(
+        target(96, 96, (0, 0), PixelFormat::Rgba8),
+        &plan(vec![task(
+            1,
+            IRect::new(0, 0, 96, 96),
+            vec![
+                fill(0.0, 0.0, 48.0, 96.0, srgb(1.0, 0.0, 0.0, 1.0)),
+                fill(48.0, 0.0, 96.0, 96.0, srgb(0.0, 0.0, 1.0, 1.0)),
+            ],
+        )]),
+    );
+    let full = rgba8_bytes(&full);
+
+    let region = IRect::new(4, 6, 68, 70);
+    let offset = run(
+        target(64, 64, (4, 6), PixelFormat::Rgba8),
+        &plan(vec![task(
+            2,
+            region,
+            vec![
+                fill(0.0, 0.0, 48.0, 96.0, srgb(1.0, 0.0, 0.0, 1.0)),
+                fill(48.0, 0.0, 96.0, 96.0, srgb(0.0, 0.0, 1.0, 1.0)),
+            ],
+        )]),
+    );
+    let offset = rgba8_bytes(&offset);
+
+    // The same window of the full-surface read, row by row.
+    let mut expected = Vec::with_capacity(64 * 64 * 4);
+    for y in region.y0..region.y1 {
+        let start = (usize::try_from(y).unwrap() * 96 + 4) * 4;
+        expected.extend_from_slice(&full[start..start + 64 * 4]);
+    }
+    assert_eq!(
+        offset, expected,
+        "the offset read is the window of the page, not its own offset"
+    );
+    assert!(
+        offset.chunks_exact(4).all(|pixel| pixel[3] == 255),
+        "an opaque page answers no transparent pixel"
+    );
+    assert_eq!(
+        &offset[0..4],
+        &[255, 0, 0, 255],
+        "the first pixel of the region is page (4, 6), red"
+    );
+    assert_eq!(
+        &offset[offset.len() - 4..],
+        &[0, 0, 255, 255],
+        "the last pixel of the region is page (67, 69), blue"
     );
 }
 
