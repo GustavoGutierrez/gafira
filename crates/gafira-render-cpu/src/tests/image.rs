@@ -170,6 +170,87 @@ fn arq_117_an_rgba8_texel_is_converted_once_in_the_order_arq_117_fixes() {
     );
 }
 
+// ARQ-117: the weights run on the **converted** values, in linear
+// premultiplied light, and a 1:1 translate never weighs two texels — so the
+// test above pins the conversion's order but not the space the filter works in.
+// A 1.5× scale puts the destination centres at fractional image coordinates:
+//
+//   (0.333, 0.333)  (1.000, 0.333)  (1.667, 0.333)
+//   (0.333, 1.000)  (1.000, 1.000)  (1.667, 1.000)
+//   (0.333, 1.667)  (1.000, 1.667)  (1.667, 1.667)
+//
+// The taps are taken at `coordinate − 0.5`, so the middle row and column weigh
+// two texels 0.5/0.5 (page (1, 0) is half `TEXEL_00` and half `TEXEL_10`) and
+// the centre weighs all four a quarter each; the outer row and column clamp to
+// a single texel and repeat it. The two plausible wrong readings are visible
+// here and nowhere else: filtering the premultiplied **sRGB** value and
+// converting the mix once answers red `0.49064723` at page (1, 1), and
+// filtering **straight alpha** and premultiplying at the end answers green
+// `0.12878995` and blue `0.10891713` there — against the values below.
+const AT_1_5X: [[f64; 4]; 9] = [
+    TEXEL_00,
+    [
+        0.750_980_406_999_588,
+        0.162_107_028_05,
+        0.038_502_363_485,
+        0.750_980_406_999_588,
+    ],
+    TEXEL_10,
+    [
+        0.255_001_541_499_588,
+        0.071_107_000_2,
+        0.053_730_035_39,
+        0.329_411_782_499_588,
+    ],
+    [
+        0.521_895_883_75,
+        0.121_378_053_025,
+        0.047_656_391_742_5,
+        0.664_705_891_249_794,
+    ],
+    [0.788_790_226, 0.171_649_105_85, 0.041_582_748_095, 1.0],
+    TEXEL_01,
+    [
+        0.292_811_360_5,
+        0.080_649_078,
+        0.056_810_42,
+        0.578_431_375_5,
+    ],
+    TEXEL_11,
+];
+
+#[test]
+fn arq_117_a_scaled_rgba8_image_is_filtered_after_each_texel_is_converted() {
+    let image = ac1_source();
+    let export = drawn(
+        IRect::new(0, 0, 3, 3),
+        PixelFormat::RgbaF32,
+        image_task(Affine::scale(1.5), &image),
+    );
+    // The five mixing pixels first — they are the case this test exists for —
+    // then the four whose samples clamp to a single texel, as the control that
+    // the geometry still lands where the table says.
+    let order = [
+        (1, 1),
+        (1, 0),
+        (0, 1),
+        (2, 1),
+        (1, 2),
+        (0, 0),
+        (2, 0),
+        (0, 2),
+        (2, 2),
+    ];
+    for (x, y) in order {
+        let index = usize::try_from(y * 3 + x).unwrap();
+        assert_close(
+            channels(&export, x, y),
+            AT_1_5X[index],
+            &format!("page ({x}, {y}) of the 1.5× scale"),
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // AC2 — an `RgbaF32` texel is linear premultiplied already, and untouched
 // ---------------------------------------------------------------------------
