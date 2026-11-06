@@ -46,5 +46,40 @@ Estimate: 230 authored lines, 322 at x1.4. Verify: V1, gates and the criterion m
 
 ## Notes
 
-Filled after the delivery, in the last implementer commit body (no folder rule does not apply:
-this change has a folder).
+### Hand mutants of `E1` (applied, watched fail, reverted; none committed)
+
+| # | Mutation | Killing test | Failure message |
+|---|---|---|---|
+| H1 | `EngineConfig::new`: the `if data_dir.as_os_str().is_empty() { return Err(EngineError::InvalidConfig { .. }); }` block deleted, so an empty path is accepted | `engine::tests::ac3_an_empty_data_directory_is_rejected` | `panicked at crates/gafira-engine/src/engine.rs:377: an empty data directory must be rejected: EngineConfig { data_dir: "", memory_limit: None, export_jobs: 1 }` |
+| H2 | `EventBus::publish` body replaced by `let _ = event;`, so the sink is never called | `event::tests::ac4_publish_reaches_the_sink_exactly_once` | `assertion 'left == right' failed: left: 0, right: 1` at `crates/gafira-engine/src/event.rs:157` |
+
+Both were applied to the source, the named test was run and failed with the message above,
+and the file was restored with `git checkout --`; `cargo test -p gafira-engine --locked`
+was green again afterwards. Nothing from a mutant reached a commit.
+
+### Fix round after verify `V1` (round 1)
+
+- **W1, AC5.** `ac5_the_facade_is_send_and_sync_and_keeps_the_ports_it_was_given` now builds the
+  six trait-object `Arc`s itself, hands clones to `Gafira::new` and asserts `Arc::ptr_eq` for
+  `repository`, `store`, `filesystem`, `clock`, `notifier` and `license` against them. It still
+  asserts `Send + Sync`, the data directory and the empty format registry.
+  `ac5_publishing_through_the_facade_reaches_the_bus` is **deleted**: `Gafira::new` fixes
+  `EventBus::noop()` and `E1` injects no sink, so the test could not observe delivery and could
+  only fail by not compiling. AC4's delegation is proved on `EventBus` directly; `E2` restores a
+  facade publish test with the channel sink and a real observer.
+- **W2, AC4.** `ac4_the_noop_sink_accepts_every_variant` now publishes all five variants through a
+  counting sink that forwards each one to the real `NoopSink`, and asserts one delivery per event
+  and five in total. `LocaleChanged` is included, built from `LanguagePreference::System` and a
+  `ResolvedLocale`. The count is what makes the test fail if a variant is dropped.
+- **W3.** The hand-mutant record is the table above.
+- **S2.** `.odd/state.json` `E1-AC2` now names the three consumers of the V5 table (V5, V12,
+  ARQ-107) and the policy run that exercised them with the engine row present.
+- **S3.** `EngineEvent` is `#[non_exhaustive]`, with the reason in its doc comment. No in-tree
+  matcher needed a wildcard.
+- **C1.** The workflow half arrived with the `develop` merge (`5e582e1`); the design half is the
+  corrected `XP1`, which no longer claims the ARQ-107 step leaves layer 3 alone.
+
+Measured size of the round's code commits: `git diff --shortstat e7bb63f..HEAD -- crates/` =
+2 files changed, 76 insertions, 25 deletions (the deleted test accounts for most of the
+deletions).
+
