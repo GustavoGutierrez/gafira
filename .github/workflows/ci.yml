@@ -173,11 +173,14 @@ jobs:
             grep -q "^$name v" <<<"$tree" || { echo "::error::empty cargo tree for $name" >&2; status=1; continue; }
             if bad=$(grep -E "^($banned) v" <<<"$tree"); then echo "::error::$name depends on $bad (ARQ-107)" >&2; status=1; fi
             [ -d "crates/$name/src" ] || { echo "::error::crates/$name/src not found" >&2; status=1; continue; }
-            # gafira-ports is layer 3 and defines Locale (02 §14.1, ADR 0013): only its dependency check above applies.
-            if [ "$name" = gafira-ports ]; then
-              echo "gafira-ports: layer 3, exempt from the Locale search"
-              continue
-            fi
+            # The search is ARQ-107's "layers 0-2 know no language". Layer 3 resolves the locale by
+            # design (02 §14.1, ADR 0013), so the crates below keep only their dependency check
+            # above; every other crate in the table must stay free of the type.
+            case "$name" in
+              gafira-ports|gafira-engine)
+                echo "$name: layer 3, exempt from the Locale search"
+                continue ;;
+            esac
             rc=0; hits=$(grep -rn 'Locale' "crates/$name") || rc=$?
             case "$rc" in
               0) echo "::error::$name mentions Locale (ARQ-107):" >&2; echo "$hits" >&2; status=1 ;;
