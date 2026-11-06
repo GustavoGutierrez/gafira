@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+mod autosave;
 mod bus;
 mod edit;
 mod engine;
@@ -23,6 +24,7 @@ mod fakes;
 mod project;
 mod session;
 
+pub use autosave::{AutosaveJob, AutosaveOutcome};
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use edit::EditService;
 pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries};

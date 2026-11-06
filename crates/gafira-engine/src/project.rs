@@ -1,27 +1,34 @@
 //! `ProjectService`: the session's lifecycle (02 §5.4 line 1357).
 //!
-//! `new_document` (the `new` of §5.4), `open`, `save` and `is_modified`.
+//! `new_document` (the `new` of §5.4), `open`, `save`, `is_modified` and the
+//! autosave schedule (`autosave_due`, `autosave_finished`, design P13).
 //! Every file operation goes through the injected ports; the engine opens
 //! nothing itself (P1, design P18).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use gafira_doc::{Document, Dpi};
 use gafira_edit::{DirtySet, History};
 use gafira_ports::repository::ProjectRepository;
 use gafira_ports::system::{Clock, FileSystem};
 
-use crate::engine::{EngineError, Ports};
-use crate::session::{Session, Shared};
+use crate::autosave::{AutosaveJob, AutosaveOutcome, SLOTS};
+use crate::engine::{EngineConfig, EngineError, Ports};
+use crate::session::{Autosave, Session, Shared};
 
 /// Creates, opens and saves the session's document (02 §5.4 line 1357).
 pub struct ProjectService {
-    shared: Shared,
+    pub(crate) shared: Shared,
     repository: Arc<dyn ProjectRepository>,
     filesystem: Arc<dyn FileSystem>,
     clock: Arc<dyn Clock>,
+    /// How long a change waits before it is autosaved (P16).
+    autosave_interval: Duration,
+    /// `data_dir/recovery`: one folder per session's project key (P13).
+    recovery: PathBuf,
     /// Numbers the sessions of this engine, for their project keys (P13).
     sessions: AtomicU64,
     /// Numbers the temporary files of `save`, so no two share a name (P18).
@@ -29,12 +36,14 @@ pub struct ProjectService {
 }
 
 impl ProjectService {
-    pub(crate) fn over(shared: Shared, ports: &Ports) -> Self {
+    pub(crate) fn over(shared: Shared, ports: &Ports, config: &EngineConfig) -> Self {
         Self {
             shared,
             repository: Arc::clone(&ports.repository),
             filesystem: Arc::clone(&ports.filesystem),
             clock: Arc::clone(&ports.clock),
+            autosave_interval: config.autosave_interval(),
+            recovery: config.data_dir().join("recovery"),
             sessions: AtomicU64::new(0),
             temporaries: AtomicU64::new(0),
         }
@@ -82,8 +91,8 @@ impl ProjectService {
     /// temporary file is removed on a best-effort basis, the first error is
     /// returned and the session stays modified. On success the session is
     /// clean at the saved version, if it is still the session that was
-    /// saved: an edit made meanwhile keeps it modified. `save` never bumps
-    /// the version.
+    /// saved: an edit made meanwhile keeps it modified, and pending for
+    /// autosave (P13). `save` never bumps the version.
     pub fn save(&self) -> Result<(), EngineError> {
         let (snapshot, version, path, key) = {
             let cell = self.shared.lock();
@@ -109,6 +118,11 @@ impl ProjectService {
         let mut cell = self.shared.lock();
         if let Some(session) = cell.as_mut().filter(|s| s.project_key == key) {
             session.clean_version = version;
+            // The file holds every change up to the snapshot; one made while
+            // it was written stays pending for autosave.
+            if self.shared.version() == version {
+                session.autosave.pending_since = None;
+            }
         }
         Ok(())
     }
@@ -157,8 +171,64 @@ impl ProjectService {
             read_only,
             clean_version,
             project_key,
+            autosave: Autosave::default(),
         });
         Ok(())
+    }
+
+    /// The job that writes the session's next recovery slot, when one is due
+    /// (02 §7.2 "Autoguardado rotativo", design P13).
+    ///
+    /// `Some` exactly when a session is open, a change is pending, no job of
+    /// it is in flight, and the clock's monotonic time is at least one
+    /// interval past the first pending change. The job holds the document as
+    /// it is now; taking it clears the pending change, so an edit made while
+    /// it runs is pending again. The host pumps this; the engine has no timer.
+    #[must_use]
+    pub fn autosave_due(&self) -> Option<AutosaveJob> {
+        let now = self.clock.monotonic();
+        let mut cell = self.shared.lock();
+        let session = cell.as_mut()?;
+        let since = session.autosave.pending_since?;
+        if session.autosave.in_flight || now.saturating_sub(since) < self.autosave_interval {
+            return None;
+        }
+        session.autosave.pending_since = None;
+        session.autosave.in_flight = true;
+        Some(AutosaveJob {
+            snapshot: Arc::clone(session.history.document()),
+            version: self.shared.version(),
+            slot: session.autosave.slot,
+            folder: self.recovery.join(&session.project_key),
+            project_key: session.project_key.clone(),
+            repository: Arc::clone(&self.repository),
+            filesystem: Arc::clone(&self.filesystem),
+        })
+    }
+
+    /// Account for a job the host ran (design P13).
+    ///
+    /// A success moves the next job to the following slot (`0, 1, 2, 0`); a
+    /// failure keeps the slot and makes the change pending from now, so a
+    /// failing disk is retried once per interval, never once per tick. Either
+    /// way the session may be handed its next job. An outcome of a session
+    /// `new_document` or `open` replaced since is ignored. Neither clears
+    /// "modified" nor bumps the version: the user's file did not change.
+    pub fn autosave_finished(&self, outcome: AutosaveOutcome) {
+        let now = self.clock.monotonic();
+        let mut cell = self.shared.lock();
+        let Some(session) = cell
+            .as_mut()
+            .filter(|session| session.project_key == outcome.project_key)
+        else {
+            return;
+        };
+        let autosave = &mut session.autosave;
+        autosave.in_flight = false;
+        match outcome.result {
+            Ok(()) => autosave.slot = (autosave.slot + 1) % SLOTS,
+            Err(_) => autosave.pending_since = Some(now),
+        }
     }
 
     /// Whether the session holds changes no `new_document`, `open` or `save`
@@ -491,6 +561,7 @@ mod tests {
                 read_only: false,
                 clean_version,
                 project_key: "another".to_owned(),
+                autosave: Default::default(),
             });
         });
         engine.projects().save().expect("a save");

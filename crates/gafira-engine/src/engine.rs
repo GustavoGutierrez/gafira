@@ -321,7 +321,7 @@ impl Gafira {
         let bus = events.bus();
         let shared = Shared::new(bus.clone());
         let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
-        let projects = ProjectService::over(shared, &ports);
+        let projects = ProjectService::over(shared, &ports, &config);
         Ok(Self {
             ports,
             registries,
@@ -334,7 +334,7 @@ impl Gafira {
     }
 
     /// The session's lifecycle (02 §5.4 line 1357): `new_document`, `open`,
-    /// `save` and `is_modified` so far.
+    /// `save`, `is_modified`, `autosave_due` and `autosave_finished` so far.
     #[must_use]
     pub fn projects(&self) -> &ProjectService {
         &self.projects

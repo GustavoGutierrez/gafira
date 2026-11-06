@@ -210,6 +210,7 @@ pub(crate) fn pages(ids: &[PageId]) -> DirtySet {
 /// One write-side operation the [`MemoryFs`] was asked for, failed or not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FsOp {
+    CreateDirAll(PathBuf),
     Create(PathBuf),
     /// The file and the number of bytes of one `write` call.
     Write(PathBuf, usize),
@@ -229,7 +230,7 @@ struct FsState {
     before_replace: Option<Hook>,
 }
 
-/// An in-memory `FileSystem` that records every `create`, `write`,
+/// An in-memory `FileSystem` that records every `create_dir_all`, `create`, `write`,
 /// `sync_all`, `replace` and `remove`, and fails the ones whose index in the
 /// trace was armed with [`MemoryFs::fail_at`] (ARQ-50, design P16). A failed
 /// operation changes nothing.
@@ -369,8 +370,8 @@ impl FileSystem for MemoryFs {
         Ok(self.state().files.contains_key(path))
     }
 
-    fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
-        Ok(())
+    fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.traced(FsOp::CreateDirAll(path.to_owned()), |_| Ok(()))
     }
 
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
@@ -462,15 +463,53 @@ impl ProjectRepository for MemoryRepository {
 
 /// An engine whose repository and file system are `repository` and `fs`.
 pub(crate) fn engine_on(fs: &MemoryFs, repository: &Arc<MemoryRepository>) -> Gafira {
+    engine_with_clock(fs, repository, Arc::new(NoClock))
+}
+
+/// [`engine_on`], reading every instant from `clock`.
+pub(crate) fn engine_with_clock(
+    fs: &MemoryFs,
+    repository: &Arc<MemoryRepository>,
+    clock: Arc<dyn Clock>,
+) -> Gafira {
     let ports = Ports::new(
         Arc::clone(repository) as Arc<dyn ProjectRepository>,
         Arc::new(NoStore),
         Arc::new(fs.clone()),
-        Arc::new(NoClock),
+        clock,
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
     );
     Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
+}
+
+/// A clock the test moves: `monotonic` is the last instant set, `now` is
+/// always [`ManualClock::NOW`].
+pub(crate) struct ManualClock {
+    at: Mutex<Duration>,
+}
+
+impl ManualClock {
+    /// The wall time every `now` returns.
+    pub(crate) const NOW: UnixTime = UnixTime(1_700_000_000);
+
+    pub(crate) fn at(at: Duration) -> Self {
+        Self { at: Mutex::new(at) }
+    }
+
+    pub(crate) fn set(&self, at: Duration) {
+        *self.at.lock().expect("the fake's lock") = at;
+    }
+}
+
+impl Clock for ManualClock {
+    fn now(&self) -> UnixTime {
+        Self::NOW
+    }
+
+    fn monotonic(&self) -> Duration {
+        *self.at.lock().expect("the fake's lock")
+    }
 }
 
 /// A valid document of two pages and three nodes: page 1 holds nodes 2 and

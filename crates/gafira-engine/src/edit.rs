@@ -3,12 +3,15 @@
 //!
 //! Every change that installs a document bumps the engine's version by one
 //! and publishes one `DocumentChanged` with the set of the entry `History`
-//! installed (design P14, P15). Nothing else bumps or publishes.
+//! installed (design P14, P15). Nothing else bumps or publishes. The first
+//! such bump after the last snapshot marks the session pending for autosave
+//! (design P13).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use gafira_doc::msg::CommandLabel;
-use gafira_edit::{Applied, Command, GestureId};
+use gafira_edit::{Applied, Command, DirtySet, GestureId};
 use gafira_ports::system::Clock;
 
 use crate::engine::EngineError;
@@ -23,6 +26,13 @@ pub struct EditService {
 impl EditService {
     pub(crate) fn new(shared: Shared, clock: Arc<dyn Clock>) -> Self {
         Self { shared, clock }
+    }
+
+    /// Bump and publish `dirty`, and mark the session pending since `at`
+    /// unless an earlier change already did (P13).
+    fn bumped(session: &mut Session, shared: &Shared, dirty: DirtySet, at: Duration) {
+        shared.changed(dirty);
+        session.autosave.pending_since.get_or_insert(at);
     }
 
     /// Run `f` over the open session, or refuse with
@@ -43,7 +53,8 @@ impl EditService {
         self.with_session(|session, shared| {
             let applied = session.history.execute(command, at)?;
             if applied == Applied::Changed {
-                shared.changed(session.history.newest_touches().unwrap_or_default());
+                let dirty = session.history.newest_touches().unwrap_or_default();
+                Self::bumped(session, shared, dirty, at);
             }
             Ok(applied)
         })
@@ -51,10 +62,12 @@ impl EditService {
 
     /// Undo the newest entry; `Some` publishes the set of the entry undone.
     pub fn undo(&mut self) -> Result<Option<CommandLabel>, EngineError> {
+        let at = self.clock.monotonic();
         self.with_session(|session, shared| {
             let label = session.history.undo()?;
             if label.is_some() {
-                shared.changed(session.history.undone_touches().unwrap_or_default());
+                let dirty = session.history.undone_touches().unwrap_or_default();
+                Self::bumped(session, shared, dirty, at);
             }
             Ok(label)
         })
@@ -63,10 +76,12 @@ impl EditService {
     /// Redo the newest undone entry; `Some` publishes the set of the entry
     /// redone.
     pub fn redo(&mut self) -> Result<Option<CommandLabel>, EngineError> {
+        let at = self.clock.monotonic();
         self.with_session(|session, shared| {
             let label = session.history.redo()?;
             if label.is_some() {
-                shared.changed(session.history.newest_touches().unwrap_or_default());
+                let dirty = session.history.newest_touches().unwrap_or_default();
+                Self::bumped(session, shared, dirty, at);
             }
             Ok(label)
         })

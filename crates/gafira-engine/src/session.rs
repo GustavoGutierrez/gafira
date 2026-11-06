@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use gafira_edit::{DirtySet, History};
 
@@ -33,9 +34,8 @@ impl DocVersion {
 }
 
 /// The open document: its history, where it lives, whether it may be saved
-/// over and the version it was last clean at (design P15).
-///
-/// The autosave state of P15 arrives with `E3d`, which reads it.
+/// over, the version it was last clean at and its autosave state (design
+/// P15).
 pub(crate) struct Session {
     /// The document and its undo stack, with the default budget (§5.1).
     pub(crate) history: History,
@@ -48,6 +48,20 @@ pub(crate) struct Session {
     /// Names this session among every session of the engine, so a save that
     /// finishes after the session was replaced touches nothing (P13, P18).
     pub(crate) project_key: String,
+    /// Where the recovery slots of this session stand (P13).
+    pub(crate) autosave: Autosave,
+}
+
+/// The autosave state of one session (design P13); a new session starts with
+/// nothing pending, no job in flight and slot 0.
+#[derive(Default)]
+pub(crate) struct Autosave {
+    /// The monotonic instant of the first change no slot or save holds yet.
+    pub(crate) pending_since: Option<Duration>,
+    /// Whether a job was handed out and its outcome is not back yet.
+    pub(crate) in_flight: bool,
+    /// The slot the next job writes, `0`, `1` or `2`.
+    pub(crate) slot: u8,
 }
 
 /// The session both services share; `None` until the first `new` or `open`.
