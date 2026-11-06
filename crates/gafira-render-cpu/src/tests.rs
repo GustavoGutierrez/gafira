@@ -12,7 +12,7 @@ mod ops;
 
 use std::sync::{Arc, Mutex};
 
-use gafira_color::{Color, Rgba};
+use gafira_color::{Color, LinearRgba, Rgba};
 use gafira_doc::BlendMode;
 use gafira_doc::contract::{CancelToken, Progress};
 use gafira_geom::{Affine, IRect, Point};
@@ -233,6 +233,30 @@ fn bytes8(image: &ImageBuf, x: u32, y: u32) -> [u8; 4] {
         ],
         _ => panic!("the target asked for Rgba8"),
     }
+}
+
+/// ARQ-117's preview rule, written out: unpremultiply in linear light, encode
+/// with the sRGB curve, round, and premultiply in 8 bits with
+/// `(c × a + 127) / 255`. Deliberately not the crate's `quantise_srgb8`, so a
+/// test compares the two paths instead of the implementation grading itself.
+fn quantise_premultiplied_srgb(pixel: [f32; 4]) -> [u8; 4] {
+    let round = |value: f32| {
+        let scaled = (value.clamp(0.0, 1.0) * 255.0 + 0.5).floor();
+        u8::try_from(scaled.clamp(0.0, 255.0) as u32).unwrap_or(u8::MAX)
+    };
+    let alpha = pixel[3].clamp(0.0, 1.0);
+    let a = round(alpha);
+    if a == 0 {
+        return [0, 0, 0, 0];
+    }
+    let encoded =
+        LinearRgba::new(pixel[0] / alpha, pixel[1] / alpha, pixel[2] / alpha, alpha).to_srgb();
+    [
+        premultiply_u8(round(encoded.r), a),
+        premultiply_u8(round(encoded.g), a),
+        premultiply_u8(round(encoded.b), a),
+        a,
+    ]
 }
 
 /// The bytes of an `Rgba8` image, row by row.
@@ -555,6 +579,160 @@ fn arq_117_both_formats_premultiply_the_same_fill() {
     // The rule, pinned by hand: 51·128 and 153·128 are the two channels where
     // truncation and the ARQ-117 rounding disagree.
     assert_eq!(expected, [26, 51, 77, 128]);
+}
+
+// ARQ-117, O14: an `Rgba8` surface holds the bytes the cache encoded, byte for
+// byte. The write is a copy of the tile the backend encoded, and a window of
+// the surface reads back as a copy of its own bytes — no second trip through
+// the sRGB curve on either side.
+#[test]
+fn arq_117_an_rgba8_surface_holds_the_tile_the_cache_encoded() {
+    let left = IRect::new(0, 0, 16, 16);
+    let right = IRect::new(16, 0, 32, 16);
+    let scene = plan(vec![
+        task(
+            1,
+            left,
+            // Half a tile: the top eight rows differ from the bottom eight, so
+            // a row copied to the wrong place cannot hide.
+            vec![fill(0.0, 0.0, 16.0, 8.0, srgb(1.0, 0.0, 0.0, 1.0))],
+        ),
+        task(
+            2,
+            right,
+            vec![fill(16.0, 0.0, 32.0, 16.0, srgb(0.0, 0.5, 1.0, 1.0))],
+        ),
+    ]);
+    let target_desc = target(32, 16, (0, 0), (32, 16), PixelFormat::Rgba8);
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let mut cache = RecordingCache::default();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+    let surface = frame
+        .read(IRect::new(0, 0, 32, 16))
+        .expect("the surface reads");
+    let packed = rgba8_bytes(&surface);
+
+    // Each tile is on the surface at its own region, row by row.
+    assert_eq!(cache.puts(), &[key(1), key(2)], "one tile per task");
+    for (content, region) in [(1u128, left), (2u128, right)] {
+        let tile = cache
+            .stored(key(content))
+            .expect("the tile was written back");
+        let PixelBuf::Rgba8(bytes) = tile.data() else {
+            panic!("a miss is encoded in the frame's format");
+        };
+        for row in 0..16usize {
+            let source = &bytes[row * 16 * 4..(row + 1) * 16 * 4];
+            let at = (row * 32 + usize::try_from(region.x0).unwrap()) * 4;
+            assert_eq!(
+                &packed[at..at + 64],
+                source,
+                "row {row} at the tile's place"
+            );
+        }
+    }
+
+    // A window smaller than the surface reads back the same bytes: the read
+    // has the surface's stride and the window's own.
+    let window = frame
+        .read(IRect::new(4, 2, 28, 14))
+        .expect("the window reads");
+    let window = rgba8_bytes(&window);
+    for row in 0..12usize {
+        let from = ((row + 2) * 32 + 4) * 4;
+        let at = row * 24 * 4;
+        assert_eq!(
+            &window[at..at + 96],
+            &packed[from..from + 96],
+            "window row {row}"
+        );
+    }
+}
+
+// ARQ-117, ARQ-42, O14: the same page through an `Rgba8` target is the
+// `RgbaF32` page quantised exactly once. The expectation is written out from
+// the colour space, not taken from the crate's encoder, so the two paths do
+// not grade each other.
+#[test]
+fn arq_117_the_rgba8_read_is_the_f32_page_quantised_once() {
+    let scene = plan(vec![
+        task(
+            1,
+            IRect::new(0, 0, 16, 16),
+            vec![fill(0.0, 0.0, 16.0, 16.0, srgb(0.9, 0.2, 0.1, 0.4))],
+        ),
+        task(
+            2,
+            IRect::new(16, 0, 32, 16),
+            vec![
+                fill(16.0, 0.0, 30.0, 16.0, white()),
+                fill(20.0, 4.0, 28.0, 12.0, srgb(0.1, 0.7, 0.3, 0.75)),
+            ],
+        ),
+    ]);
+    let target_desc = |format| target(32, 16, (0, 0), (32, 16), format);
+
+    let linear = run(target_desc(PixelFormat::RgbaF32), &scene);
+    let PixelBuf::RgbaF32(values) = linear.data() else {
+        panic!("the export surface is f32");
+    };
+    let once: Vec<u8> = values
+        .chunks_exact(4)
+        .flat_map(|pixel| quantise_premultiplied_srgb([pixel[0], pixel[1], pixel[2], pixel[3]]))
+        .collect();
+
+    let preview = rgba8_bytes(&run(target_desc(PixelFormat::Rgba8), &scene));
+    assert_eq!(preview, once, "the preview is the export quantised once");
+    assert!(
+        once.chunks_exact(4).any(|pixel| pixel != [0, 0, 0, 0]),
+        "the scene drew something"
+    );
+
+    // A warm cache answers the same bytes: a hit copies the encoded tile
+    // instead of decoding it and quantising on the way out.
+    let mut cache = RecordingCache::default();
+    let first = rgba8_bytes(&run_with(
+        target_desc(PixelFormat::Rgba8),
+        &scene,
+        &mut cache,
+    ));
+    let second = rgba8_bytes(&run_with(
+        target_desc(PixelFormat::Rgba8),
+        &scene,
+        &mut cache,
+    ));
+    assert_eq!(first, second, "a reused encoded tile moves no byte");
+    assert_eq!(second, once, "the warm path is the same page");
+}
+
+// ARQ-117, O14: an `RgbaF32` surface keeps the linear `f32` it was handed. The
+// write and the read are copies, so a value no 8-bit curve can represent comes
+// back untouched — the export path does not move.
+#[test]
+fn arq_117_an_rgba_f32_surface_is_the_linear_bytes_it_was_handed() {
+    let pixel = [0.123_456_79, 0.456_789_03, 0.789_012_4, 0.9];
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 8, 8),
+        vec![fill(0.0, 0.0, 8.0, 8.0, white())],
+    )]);
+    let mut cache = RecordingCache::with(vec![(key(1), solid_tile32(8, 8, pixel))]);
+    let surface = run_with(
+        target(8, 8, (0, 0), (8, 8), PixelFormat::RgbaF32),
+        &scene,
+        &mut cache,
+    );
+    assert!(
+        matches!(surface.data(), PixelBuf::RgbaF32(_)),
+        "the export surface is f32"
+    );
+    assert_eq!(
+        channels(&surface, 3, 3),
+        pixel,
+        "the cached f32 reaches the export surface unchanged"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1139,6 +1317,45 @@ fn the_caps_and_the_memory_of_an_open_surface() {
     // 16 × 8 pixels, four `f32` channels.
     assert_eq!(backend.memory_usage().host, Bytes(16 * 8 * 16));
     assert_eq!(backend.memory_usage().device, Bytes(0));
+}
+
+// ARQ-44, O17, O14: an `Rgba8` surface stores one byte per channel — four per
+// pixel — and the accounting reports what it holds, not the `f32` figure.
+#[test]
+fn arq_44_an_rgba8_surface_counts_one_byte_per_channel() {
+    let mut backend = CpuBackend::new();
+    backend
+        .begin_frame(&target(16, 8, (0, 0), (16, 8), PixelFormat::Rgba8))
+        .expect("the frame opens");
+    // 16 × 8 pixels, four 8-bit channels.
+    assert_eq!(backend.memory_usage().host, Bytes(16 * 8 * 4));
+    assert_eq!(backend.memory_usage().device, Bytes(0));
+}
+
+// O17, D-03, ARQ-44, O14: the budget is compared against the bytes the surface
+// stores. An `Rgba8` page of `n` bytes fits a cap of `n` and not one byte less;
+// the `RgbaF32` surface of the same page is four times the bytes and does not
+// fit that cap.
+#[test]
+fn arq_44_the_budget_counts_the_bytes_the_rgba8_surface_stores() {
+    let page = target(16, 8, (0, 0), (16, 8), PixelFormat::Rgba8);
+    let bytes = 16 * 8 * 4;
+    let mut backend = CpuBackend::new().with_budget(Bytes(bytes));
+    assert!(backend.begin_frame(&page).is_ok(), "the cap is inclusive");
+    let mut backend = CpuBackend::new().with_budget(Bytes(bytes - 1));
+    assert!(
+        matches!(backend.begin_frame(&page), Err(RenderError::OutOfMemory)),
+        "one byte over does not fit"
+    );
+    let mut backend = CpuBackend::new().with_budget(Bytes(bytes));
+    let f32_page = target(16, 8, (0, 0), (16, 8), PixelFormat::RgbaF32);
+    assert!(
+        matches!(
+            backend.begin_frame(&f32_page),
+            Err(RenderError::OutOfMemory)
+        ),
+        "the f32 surface of the same page is four times as many bytes"
+    );
 }
 
 // ---------------------------------------------------------------------------

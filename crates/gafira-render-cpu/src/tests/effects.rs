@@ -564,6 +564,48 @@ fn arq_44_execute_refuses_the_effect_peak_near_the_cap() {
     assert_eq!(probe.calls(), 0, "the refusal precedes the effect");
 }
 
+// O17, D-03, ARQ-44, O14: the peak compares the **Rgba8** surface's bytes —
+// one per channel, four per pixel — so a frame that fits is not refused with the
+// `f32` figure. The layer and the destination stay linear `f32` (O11).
+#[test]
+fn arq_44_the_effect_peak_counts_the_rgba8_surface_it_stores() {
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::Rgba8);
+    let scene = |probe: &Arc<Probe>| {
+        plan(vec![task(
+            1,
+            IRect::new(0, 0, 8, 16),
+            vec![
+                push(),
+                fill(0.0, 0.0, 8.0, 16.0, white()),
+                effect_op(probe),
+                pop(BlendMode::Normal, 1.0),
+            ],
+        )])
+    };
+    // (16 x 16 Rgba8 surface x 4 bytes + 8 x 16 layer + 8 x 16 destination x 16
+    // bytes), the same peak the `f32` surface would double the first term of.
+    let peak = 16 * 16 * 4 + 8 * 16 * 16 * 2;
+
+    // Exactly at the cap the frame runs: the comparison is inclusive.
+    let probe = Arc::new(Probe::new(Shape::Pad(0)));
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(CpuBackend::new().with_budget(Bytes(peak)), target_desc);
+    let outcome = frame.execute(&scene(&probe), &mut cache, &CancelToken::new());
+    assert!(outcome.is_ok(), "the cap is inclusive: {outcome:?}");
+    assert_eq!(probe.calls(), 1, "the effect runs at the cap");
+
+    // One byte over is refused before the effect is reached.
+    let probe = Arc::new(Probe::new(Shape::Pad(0)));
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(CpuBackend::new().with_budget(Bytes(peak - 1)), target_desc);
+    let outcome = frame.execute(&scene(&probe), &mut cache, &CancelToken::new());
+    assert!(
+        matches!(outcome, Err(RenderError::OutOfMemory)),
+        "the backend answers the refusal: {outcome:?}"
+    );
+    assert_eq!(probe.calls(), 0, "the refusal precedes the effect");
+}
+
 // ---------------------------------------------------------------------------
 // AC5 — a cancelled effect leaves nothing behind
 // ---------------------------------------------------------------------------

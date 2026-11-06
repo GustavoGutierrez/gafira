@@ -1,17 +1,20 @@
-//! The frame surface: linear light, `f32`, premultiplied (ARQ-117, O11).
+//! The frame surface: the format's own storage, one pixel per page pixel
+//! (ARQ-117, O11, O14).
 //!
 //! One surface pixel per page pixel (D4), covering the page rectangle that
-//! starts at the target's `origin`. Both qualities accumulate here in `f32`
-//! and the target's format decides only what `read_back` answers, so the
-//! preview quantises **once**, when the surface is handed back as `Rgba8`
-//! (O11). There is no second accumulation path.
+//! starts at the target's `origin`. The target's format decides the storage:
+//! an `RgbaF32` surface holds linear-light premultiplied floats, and an
+//! `Rgba8` surface holds the premultiplied sRGB bytes [`encode_tile`] produced
+//! for the cache. The write is a copy of that encoded tile and the read is a
+//! copy of the surface, so the sRGB curve runs **once**, where it already ran
+//! (`spike-frame-cost.md`, O14). There is no second accumulation path.
 
 use gafira_color::{LinearRgba, Rgba};
 use gafira_geom::IRect;
 use gafira_ports::common::Bytes;
 use gafira_ports::render::{RenderError, TargetDesc};
 use gafira_raster::{
-    BufferError, EffectError, ImageBuf, PixelBuf, PixelFormat, premultiply_u8, unpremultiply_u8,
+    EffectError, ImageBuf, PixelBuf, PixelFormat, premultiply_u8, unpremultiply_u8,
 };
 
 /// The largest surface side this delivery allocates.
@@ -34,54 +37,71 @@ pub(crate) struct Surface {
     /// measured against. The surface is a window onto the page, so this is not
     /// [`Self::surface_rect`].
     page: (u32, u32),
-    /// What `read_back` answers: `Rgba8` or `RgbaF32`.
-    format: PixelFormat,
+    /// What the surface holds, and therefore what `read_back` answers.
+    pixels: Pixels,
+}
+
+/// The surface's storage, one variant per render target (O14).
+enum Pixels {
     /// `width × height × 4` linear-light premultiplied values (ARQ-117).
-    pixels: Vec<f32>,
+    Linear(Vec<f32>),
+    /// `width × height × 4` premultiplied sRGB bytes: the cache's encoding,
+    /// stored as it stands (O14).
+    Srgb8(Vec<u8>),
 }
 
 impl Surface {
     /// Opens a surface for `target`.
     ///
+    /// `budget` is the cap the storage is compared against before it is
+    /// allocated: one byte per channel for `Rgba8`, four for `RgbaF32`, which
+    /// is what `O17` compares the effect's peak against.
+    ///
     /// # Errors
     /// [`RenderError::Effect`] for a format that is not a render target
     /// (`Alpha8`), and [`RenderError::OutOfMemory`] for a surface over
-    /// [`MAX_SIDE`] or over [`SURFACE_BUDGET`].
-    pub(crate) fn new(target: &TargetDesc) -> Result<Self, RenderError> {
-        if !matches!(target.format, PixelFormat::Rgba8 | PixelFormat::RgbaF32) {
-            // The port's error set has no `Unsupported` variant; the buffer
-            // vocabulary already names this case (`EffectError::UnsupportedFormat`).
-            return Err(RenderError::Effect(EffectError::UnsupportedFormat {
-                format: target.format,
-            }));
-        }
+    /// [`MAX_SIDE`] or over `budget`.
+    pub(crate) fn new(target: &TargetDesc, budget: Bytes) -> Result<Self, RenderError> {
         if target.width > MAX_SIDE || target.height > MAX_SIDE {
             return Err(RenderError::OutOfMemory);
         }
-        let pixels = usize::try_from(u64::from(target.width) * u64::from(target.height))
+        let channels = usize::try_from(u64::from(target.width) * u64::from(target.height))
             .ok()
             .and_then(|count| count.checked_mul(4))
             .ok_or(RenderError::OutOfMemory)?;
-        let bytes = u64::try_from(pixels)
+        let per_channel = match target.format {
+            PixelFormat::Rgba8 => 1u64,
+            PixelFormat::RgbaF32 => 4,
+            PixelFormat::Alpha8 => return Err(not_rgba()),
+        };
+        let bytes = u64::try_from(channels)
             .ok()
-            .and_then(|len| len.checked_mul(4))
+            .and_then(|len| len.checked_mul(per_channel))
             .ok_or(RenderError::OutOfMemory)?;
-        if Bytes(bytes) > SURFACE_BUDGET {
+        if Bytes(bytes) > budget {
             return Err(RenderError::OutOfMemory);
         }
+        let pixels = match target.format {
+            PixelFormat::Rgba8 => Pixels::Srgb8(vec![0u8; channels]),
+            PixelFormat::RgbaF32 => Pixels::Linear(vec![0.0f32; channels]),
+            // Refused above.
+            PixelFormat::Alpha8 => return Err(not_rgba()),
+        };
         Ok(Self {
             width: target.width,
             height: target.height,
             origin: target.origin,
             page: target.page,
-            format: target.format,
-            pixels: vec![0.0; pixels],
+            pixels,
         })
     }
 
     /// The format `read_back` answers.
     pub(crate) const fn format(&self) -> PixelFormat {
-        self.format
+        match &self.pixels {
+            Pixels::Linear(_) => PixelFormat::RgbaF32,
+            Pixels::Srgb8(_) => PixelFormat::Rgba8,
+        }
     }
 
     /// The page-space rectangle the surface covers.
@@ -102,52 +122,53 @@ impl Surface {
         self.page
     }
 
-    /// The bytes of the pixel buffer.
+    /// The bytes the surface holds: one per channel for `Rgba8`, four for
+    /// `RgbaF32` (ARQ-44, O14).
     pub(crate) fn bytes(&self) -> u64 {
-        u64::try_from(self.pixels.len() * 4).unwrap_or(u64::MAX)
+        match &self.pixels {
+            Pixels::Srgb8(pixels) => u64::try_from(pixels.len()).unwrap_or(u64::MAX),
+            Pixels::Linear(pixels) => u64::try_from(pixels.len())
+                .unwrap_or(u64::MAX)
+                .saturating_mul(4),
+        }
     }
 
-    /// Writes one tile into the surface, clipped to the target (D4).
+    /// Writes one encoded tile into the surface, clipped to the target (D4).
     ///
     /// `region` is page space (O13), the same space as [`Self::read`] and as
     /// `TileTask.region`; the surface maps it into its own storage through
-    /// [`Self::source_index`]. `tile` is `size`-sized, tile-local and
-    /// premultiplied; the part of `region` that falls outside the surface is
-    /// dropped, so a clip that only partly overlaps the target loses nothing
-    /// inside it.
-    pub(crate) fn write(&mut self, region: IRect, tile: &[f32], size: (u32, u32)) {
+    /// [`pixel_index`]. `tile` is the tile [`encode_tile`] produced for the
+    /// frame's format, tile-local and premultiplied; the part of `region` that
+    /// falls outside the surface is dropped, so a clip that only partly
+    /// overlaps the target loses nothing inside it.
+    pub(crate) fn write(&mut self, region: IRect, tile: &ImageBuf) {
         let clip = region.intersect(self.surface_rect());
         if clip.is_empty() {
             return;
         }
-        let Ok(span) = usize::try_from(clip.width()) else {
-            return;
-        };
-        let span = span * 4;
-        let Ok(tile_width) = usize::try_from(size.0) else {
-            return;
-        };
-        for y in clip.y0..clip.y1 {
-            let (Ok(source_row), Ok(source_column)) = (
-                usize::try_from(y - region.y0),
-                usize::try_from(clip.x0 - region.x0),
-            ) else {
-                continue;
-            };
-            let Some(target_start) = self.source_index(clip.x0, y) else {
-                continue;
-            };
-            let source_start = (source_row * tile_width + source_column) * 4;
-            let (Some(source_end), Some(target_end)) = (
-                source_start.checked_add(span),
-                target_start.checked_add(span),
-            ) else {
-                continue;
-            };
-            if source_end <= tile.len() && target_end <= self.pixels.len() {
-                self.pixels[target_start..target_end]
-                    .copy_from_slice(&tile[source_start..source_end]);
-            }
+        let source_width = tile.width();
+        match (&mut self.pixels, tile.data()) {
+            (Pixels::Linear(target), PixelBuf::RgbaF32(source)) => write_rows(
+                target,
+                source,
+                self.origin,
+                self.width,
+                region,
+                clip,
+                source_width,
+            ),
+            (Pixels::Srgb8(target), PixelBuf::Rgba8(source)) => write_rows(
+                target,
+                source,
+                self.origin,
+                self.width,
+                region,
+                clip,
+                source_width,
+            ),
+            // The loop encodes in the frame's format, so a tile of any other
+            // format is not one this backend writes.
+            _ => {}
         }
     }
 
@@ -155,9 +176,9 @@ impl Surface {
     ///
     /// `region` is page space (O13), the same space as [`Self::write`] and as
     /// `TileTask.region`; the surface maps it into its own storage through
-    /// [`Self::source_index`]. The answer is `region`-sized; the part of
-    /// `region` outside the surface is transparent black, which is the pixel
-    /// the page has there.
+    /// [`pixel_index`]. The answer is `region`-sized; the part of `region`
+    /// outside the surface is transparent black, which is the pixel the page
+    /// has there.
     ///
     /// # Errors
     /// [`RenderError::OutOfMemory`] when the region cannot be allocated.
@@ -168,70 +189,97 @@ impl Surface {
             .and_then(|pixels| pixels.checked_mul(4))
             .ok_or(RenderError::OutOfMemory)?;
         let clip = region.intersect(self.surface_rect());
-        match self.format {
-            PixelFormat::RgbaF32 => {
+        match &self.pixels {
+            Pixels::Linear(pixels) => {
                 let mut out = vec![0.0f32; count];
-                for (x, y) in pixels_of(clip) {
-                    let (Some(source), Some(target)) =
-                        (self.source_index(x, y), output_index(region, width, x, y))
-                    else {
-                        continue;
-                    };
-                    out[target..target + 4].copy_from_slice(&self.pixels[source..source + 4]);
-                }
+                read_rows(&mut out, pixels, self.origin, self.width, region, clip);
                 ImageBuf::new(width, height, PixelBuf::RgbaF32(out)).map_err(RenderError::Buffer)
             }
-            PixelFormat::Rgba8 => {
+            Pixels::Srgb8(pixels) => {
                 let mut out = vec![0u8; count];
-                for (x, y) in pixels_of(clip) {
-                    let (Some(source), Some(target)) =
-                        (self.source_index(x, y), output_index(region, width, x, y))
-                    else {
-                        continue;
-                    };
-                    let pixel = [
-                        self.pixels[source],
-                        self.pixels[source + 1],
-                        self.pixels[source + 2],
-                        self.pixels[source + 3],
-                    ];
-                    out[target..target + 4].copy_from_slice(&quantise_srgb8(pixel));
-                }
+                read_rows(&mut out, pixels, self.origin, self.width, region, clip);
                 ImageBuf::new(width, height, PixelBuf::Rgba8(out)).map_err(RenderError::Buffer)
             }
-            // `new` refuses every other format, so no surface can be in one.
-            PixelFormat::Alpha8 => Err(RenderError::Buffer(BufferError::LengthMismatch {
-                expected: count,
-                actual: 0,
-            })),
         }
     }
+}
 
-    /// The index of page pixel `(x, y)` in `pixels`, if it is inside.
-    fn source_index(&self, x: i32, y: i32) -> Option<usize> {
-        let Ok(width) = usize::try_from(self.width) else {
-            return None;
+/// Copies the clipped rows of a tile into the surface's storage.
+fn write_rows<T: Copy>(
+    target: &mut [T],
+    source: &[T],
+    origin: (i32, i32),
+    width: u32,
+    region: IRect,
+    clip: IRect,
+    source_width: u32,
+) {
+    let Ok(span) = usize::try_from(clip.width()) else {
+        return;
+    };
+    let span = span * 4;
+    let Ok(source_width) = usize::try_from(source_width) else {
+        return;
+    };
+    for y in clip.y0..clip.y1 {
+        let (Ok(source_row), Ok(source_column)) = (
+            usize::try_from(y - region.y0),
+            usize::try_from(clip.x0 - region.x0),
+        ) else {
+            continue;
         };
-        let column = usize::try_from(x - self.origin.0).ok()?;
-        let row = usize::try_from(y - self.origin.1).ok()?;
-        if column >= width || row >= usize::try_from(self.height).ok()? {
-            return None;
-        }
-        Some((row * width + column) * 4)
+        let Some(target_start) = pixel_index(origin, width, clip.x0, y) else {
+            continue;
+        };
+        let source_start = (source_row * source_width + source_column) * 4;
+        copy_span(target, source, target_start, source_start, span);
     }
 }
 
-/// Every pixel of `region`, row by row.
-fn pixels_of(region: IRect) -> impl Iterator<Item = (i32, i32)> {
-    (region.y0..region.y1).flat_map(move |y| (region.x0..region.x1).map(move |x| (x, y)))
+/// Copies the clipped rows of the surface into a `region`-sized output.
+fn read_rows<T: Copy>(
+    out: &mut [T],
+    pixels: &[T],
+    origin: (i32, i32),
+    width: u32,
+    region: IRect,
+    clip: IRect,
+) {
+    let Ok(span) = usize::try_from(clip.width()) else {
+        return;
+    };
+    let span = span * 4;
+    for y in clip.y0..clip.y1 {
+        let (Some(from), Some(at)) = (
+            pixel_index(origin, width, clip.x0, y),
+            pixel_index((region.x0, region.y0), region.width(), clip.x0, y),
+        ) else {
+            continue;
+        };
+        copy_span(out, pixels, at, from, span);
+    }
 }
 
-/// The index of page pixel `(x, y)` in a `region`-sized, `width`-wide buffer.
-fn output_index(region: IRect, width: u32, x: i32, y: i32) -> Option<usize> {
-    let read_width = usize::try_from(width).ok()?;
-    let column = usize::try_from(x - region.x0).ok()?;
-    let row = usize::try_from(y - region.y0).ok()?;
-    Some((row * read_width + column) * 4)
+/// The index of page pixel `(x, y)` in a `width`-wide buffer whose origin is
+/// `origin`: four channels per pixel, for either storage. Callers clip first,
+/// so this converts and checks the bounds of the arithmetic, not the pixel.
+fn pixel_index(origin: (i32, i32), width: u32, x: i32, y: i32) -> Option<usize> {
+    let width = usize::try_from(width).ok()?;
+    let column = usize::try_from(x - origin.0).ok()?;
+    let row = usize::try_from(y - origin.1).ok()?;
+    row.checked_mul(width)?.checked_add(column)?.checked_mul(4)
+}
+
+/// Copies `span` channels from `source` into `target`, or nothing when either
+/// slice is too short.
+fn copy_span<T: Copy>(target: &mut [T], source: &[T], at: usize, from: usize, span: usize) {
+    let (Some(target_end), Some(source_end)) = (at.checked_add(span), from.checked_add(span))
+    else {
+        return;
+    };
+    if target_end <= target.len() && source_end <= source.len() {
+        target[at..target_end].copy_from_slice(&source[from..source_end]);
+    }
 }
 
 /// Encodes one premultiplied linear pixel as premultiplied sRGB 8-bit.
@@ -264,7 +312,8 @@ pub(crate) fn format_of(image: &ImageBuf) -> PixelFormat {
     }
 }
 
-/// Encodes a tile-local premultiplied `f32` tile in `format`, for the cache.
+/// Encodes a tile-local premultiplied `f32` tile in `format`: the bytes the
+/// cache holds and, for `Rgba8`, the bytes the surface stores (O14).
 ///
 /// # Errors
 /// [`RenderError::Effect`] for a format that is not a tile format, and
@@ -289,29 +338,10 @@ pub(crate) fn encode_tile(
     }
 }
 
-/// Decodes a cached tile into tile-local premultiplied `f32` pixels.
-///
-/// # Errors
-/// [`RenderError::Effect`] for an `Alpha8` tile, which is never a render target.
-pub(crate) fn decode_tile(image: &ImageBuf) -> Result<Vec<f32>, RenderError> {
-    match image.data() {
-        PixelBuf::RgbaF32(data) => Ok(data.clone()),
-        PixelBuf::Rgba8(data) => {
-            let mut out = vec![0.0f32; data.len()];
-            for (index, pixel) in data.chunks_exact(4).enumerate() {
-                out[index * 4..index * 4 + 4]
-                    .copy_from_slice(&decode_srgb8([pixel[0], pixel[1], pixel[2], pixel[3]]));
-            }
-            Ok(out)
-        }
-        PixelBuf::Alpha8(_) => Err(not_rgba()),
-    }
-}
-
 /// Decodes one premultiplied sRGB 8-bit pixel into premultiplied linear `f32`.
 ///
-/// The inverse of [`quantise_srgb8`], used when a cached tile is read back
-/// into the `f32` surface.
+/// The inverse of [`quantise_srgb8`], used when an `Rgba8` image is drawn into
+/// a linear buffer.
 pub(crate) fn decode_srgb8(pixel: [u8; 4]) -> [f32; 4] {
     let alpha = f32::from(pixel[3]) / 255.0;
     if alpha == 0.0 {

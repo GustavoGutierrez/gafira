@@ -13,9 +13,10 @@
 //! clock, touches no file system and creates no thread; the deadline arrives
 //! as `ports::Deadline` and the cancellation as `gafira_doc::contract::CancelToken`.
 //!
-//! Both qualities accumulate in one `f32` surface and the target's format
-//! decides only what `read_back` answers, so the preview quantises once, when
-//! the surface is handed back (O11).
+//! A tile accumulates in linear `f32` and the surface stores the frame's
+//! format: linear `f32` for the export, the premultiplied sRGB bytes the cache
+//! already encoded for the preview, so the curve runs once and `read_back` is
+//! a copy (O11, O14).
 //!
 //! The surface is page-sized (D4): 1080p and 4K fit inside the 1.5 GB cap of
 //! `D-03`, and FD-55's 16 384 px side does not (4 GiB in `RgbaF32`, measured in

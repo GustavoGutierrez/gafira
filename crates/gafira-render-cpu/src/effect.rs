@@ -21,7 +21,7 @@
 //!
 //! The buffers are premultiplied linear `f32` ([`crate::layer`], O11), which is
 //! the format the effect is handed in both qualities: the target's format
-//! decides only what `read_back` answers.
+//! decides the surface's storage and what `read_back` answers (O14).
 
 use gafira_doc::contract::{CancelToken, ParamValues};
 use gafira_geom::IRect;
