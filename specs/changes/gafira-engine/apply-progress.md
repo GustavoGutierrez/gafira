@@ -834,3 +834,62 @@ Proof in place of RED (the code was already right): the verifier's two probe mut
 Deviations: none.
 
 Measured lines (`git diff --shortstat c2a1faa..e26538c`): 1 file changed, 43 insertions(+).
+
+## Slice card — `E5` memory governor
+
+Product IDs: 02 §6.7 (1515), §4.6 (690); ARQ-44 (1518), ARQ-142 (1225), ARQ-145 (1257); D-03.
+Design: P7, P17, row `E5`, "Critical code" row `E5`. Same branch, after `E3d` (owner, 2026-11-06).
+Owner requirements for this delivery (2026-11-06): test with a cache that reports `bytes()`
+honestly but whose `trim` stops short of the budget, and with one that cannot shrink at all; say
+what bounds the retries so the governor can never loop forever; hand mutants on the trim order,
+the byte arithmetic with the boundary at exactly the budget, the zero budget, and the
+`MemoryPressure` rule.
+
+Scope:
+
+- `Trimmable { fn bytes(&self) -> Bytes; fn trim(&mut self, budget: Bytes); }` in the engine, with
+  wrappers over `&mut dyn ports::TileCache` and `&mut dyn ports::RenderBackend` (host bytes). The
+  frame cache is wrapped by the composition root until `E8` (no `gafira-media` edge here).
+- `CacheKind { Frames, Tiles, Backend }` and `MemoryGovernor::enforce(&mut self, caches: &mut
+  [(CacheKind, &mut dyn Trimmable)]) -> GovernorOutcome { before, after, level }`.
+- `MAX_TRIM_PASSES = 2`; `PressureLevel { Normal, Critical }`;
+  `EngineEvent::MemoryPressure(PressureLevel)`, published only on a change of level.
+- The governor is built from `EngineConfig::memory_limit`; `None` refuses (`InvalidConfig`, P5).
+
+Non-goals: owning or storing the caches (the frame loop does); proxies or job deferral on
+`Critical` (`E8`, `E7`, UI); the history and the document (they are not trimmable caches here);
+VRAM enforcement (SP8); the process test "1 GB limit, +10 %" of §6.7; any change to
+`crates/gafira-render`, `crates/gafira-render-cpu`, `crates/gafira-doc`, `crates/gafira-media` or a
+port signature.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | Order: whatever order the caller passes, caches are trimmed frames, then tiles, then backend; equal kinds keep the caller's order (stable) | unit test recording the `trim` call sequence from a shuffled slice with two caches of one kind |
+| AC2 | Exactly at the budget: `total == limit` calls no `trim`; `total == limit + 1` trims exactly 1 byte from the first cache in order | unit tests on the recorded calls and targets |
+| AC3 | Arithmetic: the target passed to each cache is `bytes() - excess` (saturating); the running excess drops by what the cache actually freed; later caches are not trimmed once the excess is 0 | unit test with three honest caches and exact targets |
+| AC4 | Saturation: totals near `u64::MAX` saturate instead of overflowing; a cache whose `bytes()` grows after `trim` frees 0, never a negative amount | unit tests |
+| AC5 | Zero budget: `limit = 0` trims every cache to 0 in order and ends at `after == 0` with honest caches | unit test |
+| AC6 | A lying cache (its `trim` stops short of the target): the governor moves on to the next cache and, if still above the limit, runs a second pass; never more than `MAX_TRIM_PASSES` passes | unit test counting passes and calls |
+| AC7 | A cache that cannot shrink at all: `enforce` returns after at most `2 * caches.len()` `trim` calls, with `level == Critical`; repeated `enforce` calls never loop inside one call | unit test with an upper bound on calls |
+| AC8 | `MemoryPressure`: `Critical` only when the fresh total is still above the limit after the bound; published once on `Normal → Critical`, not again while it stays `Critical`, once on `Critical → Normal`; never at start | unit test draining `events()` over a sequence of `enforce` calls |
+| AC9 | Empty slice: no trim, `Normal`, no event; `memory_limit: None` refuses to build the governor | unit tests |
+| AC10 | The second pass runs only when a fresh sum of every `bytes()` (not the running excess) is still above the limit | unit test where the running excess says 0 but a cache grew back |
+| AC11 | Gates at `--workspace` scope; the engine stays pure | gate output and the purity grep in the notes |
+
+Every test asserts a value that can fail: exact call sequences, exact targets, exact byte totals,
+exact event lists.
+
+Hand mutants (critical code, row `E5`): reverse or caller-order instead of the fixed order; `<`
+instead of `<=` at the budget (trims at exactly the budget); target `excess` instead of
+`bytes() - excess`; wrapping instead of saturating arithmetic; skip the zero-budget path (treat 0
+as "no limit"); third pass or unbounded loop; second pass decided by the running excess; publish
+`MemoryPressure` on every `enforce` instead of on a change; `Critical` before the bound is
+exhausted. Record each with its killing test and failure.
+
+Plan: test doubles first (honest, lying, unshrinkable, growing), RED for AC1-AC10, then the trait
+and wrappers, then the order, then the arithmetic and the bound, then the pressure rule, then the
+gates; notes in a separate commit after the code.
+
+Estimate: 320 authored lines, 448 at x1.4. Verify: V1.
