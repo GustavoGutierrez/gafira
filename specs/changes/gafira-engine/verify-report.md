@@ -1541,3 +1541,61 @@ O5 = (a) is respected. The autosave.rs module doc and the `4cb17f8` body both sa
 Fix for E3d-C1 (tests only): add one test where an undo and one where a redo, after a snapshot was taken (or after `open`), makes a job due at exactly one interval later and not one step before. Then re-run the two probe mutants. E3d-W1 needs an owner decision on the size, not a code change.
 
 next: tdd-apply
+
+---
+
+# Verify report: `gafira-engine` delivery `E3d` (autosave over a snapshot), round 2 (closure)
+
+round: 2 | commit: 61ed459 (code at e26538c) | base: 34837d3 | mode: full, L3 | tier: hand mutants only | mutation: off | depth: V1
+
+## Verdict: PASS (delivery; the change still has deliveries to come, so it is not done)
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3d-C1 | CRITICAL | implementation | crates/gafira-engine/src/edit.rs:70,84; autosave.rs tests `an_undo_alone_...`, `a_redo_alone_...` | Closed. The new tests kill both round-1 probes (undo and redo bump without the pending mark). | no | closed |
+| E3d-W1 | WARNING | implementation | `git diff --shortstat 34837d3..4cb17f8` | Closed. The owner accepted the size (712 authored lines). | no | closed |
+| E3d-S1 | SUGGESTION | - | design P13, last bullet | Carried over: record D1 in P13 at the architect's next touch. | - | open |
+
+counts: critical 0, warning 0, suggestion 1. Per class: none open.
+
+## Gates (export of 61ed459 under the scratchpad, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2573 passed, 0 failed, 0 ignored; round 1 had 2571, plus the 2 new tests) |
+
+`e26538c` touches only test code, so the round-1 runs of deny and the CI policy checks (all 0) still apply. The target dir was freed with `cargo clean` (6.6 GiB). The worktree `/tmp/gafira-engine-e3` stays clean.
+
+## Closure of E3d-C1
+
+- `git show --stat e26538c`: only `crates/gafira-engine/src/autosave.rs`, +43/-0, and every line is inside `mod tests` (after line 453). No production code changed.
+- The round-1 probes were re-applied on the export, one at a time, with `Self::bumped(session, shared, dirty, at)` replaced by `shared.changed(dirty)`. That still bumps the version but sets no pending mark.
+
+| probe | killing test | failure |
+|---|---|---|
+| P-undo (edit.rs:70) | `an_undo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it` | panic at autosave.rs:473 `expect("one interval after the undo")`; 65 passed, 1 failed |
+| P-redo (edit.rs:84) | `a_redo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it` | panic at autosave.rs:495 `expect("one interval after the redo")`; 65 passed, 1 failed |
+
+Each test starts from "nothing pending" (the job for the edit was taken and finished). It checks one step before the interval and then exactly at it, and asserts the version of the job. That proves the scope bullet "pending set by an undo or redo bump" on its own. The results match the implementer's table in the fix-round notes.
+
+## Round-1 PASS items re-checked
+
+| # | mutant | result |
+|---|---|---|
+| 1 | `< interval` changed to `<= interval` (project.rs:193) | killed: `ac2_...` and others fail, including the new redo test |
+| 6 | the slot also advances on failure (project.rs:229) | killed: `ac6_...` (autosave.rs:354), `ac7_...` (autosave.rs:373); 64 passed, 2 failed |
+
+Both files were restored and checked with `cmp` before the clean.
+
+## Artifact integrity
+
+- Commits since round 1: `75a25fe` (`.odd/state.json`) and `c2a1faa` (`verify-report.md`), both by the coordinator. Then `e26538c` (autosave.rs tests) and `61ed459` (apply-progress.md, +26 appended).
+- `git diff 34837d3 HEAD -- apply-progress.md` has no removed lines, so the Slice card is unchanged. Every implementer change to the file was appended after it.
+
+## Size
+
+`git diff --shortstat c2a1faa..e26538c`: 1 file, 43 insertions. Delivery code total `34837d3..e26538c -- crates`: 7 files, 734 insertions, 21 deletions (755).
+
+next: tdd-apply (next delivery)
