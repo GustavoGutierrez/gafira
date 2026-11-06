@@ -8,6 +8,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use gafira_ports::common::Bytes;
 use gafira_ports::format::FormatRegistry;
@@ -90,6 +91,12 @@ impl Registries {
     }
 }
 
+/// The autosave interval unless the caller sets another (02 §7.2).
+const DEFAULT_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(10);
+/// The shortest and the longest autosave interval, both allowed (02 §7.2).
+const AUTOSAVE_INTERVALS: std::ops::RangeInclusive<Duration> =
+    Duration::from_secs(5)..=Duration::from_secs(15);
+
 /// What the caller fixes before the engine starts (design P5).
 ///
 /// The limits arrive from the caller because reading RAM or the environment is
@@ -99,6 +106,7 @@ pub struct EngineConfig {
     data_dir: PathBuf,
     memory_limit: Option<Bytes>,
     export_jobs: u8,
+    autosave_interval: Duration,
 }
 
 impl EngineConfig {
@@ -119,6 +127,7 @@ impl EngineConfig {
             data_dir,
             memory_limit: None,
             export_jobs: 1,
+            autosave_interval: DEFAULT_AUTOSAVE_INTERVAL,
         })
     }
 
@@ -141,6 +150,26 @@ impl EngineConfig {
     #[must_use]
     pub fn export_jobs(&self) -> u8 {
         self.export_jobs
+    }
+
+    /// How long a change waits before it is autosaved (02 §7.2, design P16).
+    #[must_use]
+    pub fn autosave_interval(&self) -> Duration {
+        self.autosave_interval
+    }
+
+    /// Set the autosave interval: 5 s to 15 s, both included (02 §7.2,
+    /// FIJADA; design P16).
+    ///
+    /// Returns [`EngineError::InvalidConfig`] for any other duration.
+    pub fn with_autosave_interval(mut self, interval: Duration) -> Result<Self, EngineError> {
+        if !AUTOSAVE_INTERVALS.contains(&interval) {
+            return Err(EngineError::InvalidConfig {
+                detail: "the autosave interval is outside 5 s to 15 s",
+            });
+        }
+        self.autosave_interval = interval;
+        Ok(self)
     }
 
     /// Set the memory ceiling for this run.
@@ -492,6 +521,31 @@ mod tests {
         let config = config();
         assert_eq!(config.memory_limit(), None);
         assert_eq!(config.export_jobs(), 1);
+    }
+
+    // E3d AC1, ARQ-51
+    #[test]
+    fn e3d_ac1_the_autosave_interval_is_5_to_15_seconds_inclusive_and_10_by_default() {
+        assert_eq!(config().autosave_interval(), Duration::from_secs(10));
+        let cases = [
+            (Duration::from_millis(4_999), false),
+            (Duration::from_secs(5), true),
+            (Duration::from_secs(15), true),
+            (Duration::from_millis(15_001), false),
+        ];
+        for (interval, accepted) in cases {
+            let result = config().with_autosave_interval(interval);
+            match result {
+                Ok(config) => {
+                    assert!(accepted, "{interval:?} accepted");
+                    assert_eq!(config.autosave_interval(), interval);
+                }
+                Err(error) => {
+                    assert!(!accepted, "{interval:?} rejected");
+                    assert!(matches!(error, EngineError::InvalidConfig { .. }));
+                }
+            }
+        }
     }
 
     #[test]
