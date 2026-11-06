@@ -431,3 +431,67 @@ Without the fakes move (`5df8a7a`, 150/137, moved code): `git diff --shortstat 5
 10 files, 717 insertions, 17 deletions, 734 authored lines, about 417 production and 317 test.
 Estimate 420 (588 at x1.4): over the x1.4 figure and above the ~700 stop line; the overrun is the
 tests (`edit.rs` 225 test lines).
+
+## Slice card — `E3c` open, atomic save and the read-only case
+
+Product IDs: 02 §5.3 (1343), §5.4 (1357), §7.1 (1557), §7.2 steps 1-3 (1568-1570); ARQ-50 (1613),
+ARQ-55 (1618). Design: P15 (open, `clean_version`), P16 (`ReadOnly`, `NoPath`, `Io`, fakes), P18,
+row `E3c`, "Critical code" row `E3c`. Owner answers, 2026-11-06, already in 02: SP6 (the
+repository's `save` leaves the file synced before returning; the engine renames and syncs the
+folder), SP7 (a read-only session edits in memory, `save` refuses before any file operation), the
+temporary only needs a unique name in the target's folder (engine counter, P18). Follow-up taken
+here: E3b-W3 (the whole-document dirty set of `open` on a non-empty document). E3b-S1: `Session`
+gains `path`, `read_only` and the project key now.
+
+Scope:
+
+- `ProjectService::open(path)`: `repository.load`, `History::new` (`ValidationError` →
+  `InvalidDocument`), swap only on success (P15, P18); bumps the version once and publishes one
+  `DocumentChanged` listing every page and node of the loaded document; `read_only` from
+  `LoadedProject`.
+- `ProjectService::save()`: `NoSession`, then `ReadOnly` (before any port call), then `NoPath`;
+  snapshot and version under the lock, lock released; `repository.save(tmp)` then
+  `filesystem.replace(tmp, path)`; on failure a best-effort `remove(tmp)` whose error does not
+  replace the first; `clean_version` set to the snapshot's version on success only, and only if
+  the session is still the same.
+- `EngineError` gains `ReadOnly`, `NoPath`, `Io(std::io::Error)` with `From<io::Error>`, each with
+  its `error.engine.` key (P12 rule, fixture per variant).
+- The `ProjectRepository::save` doc comment in `crates/gafira-ports/src/repository.rs` states the
+  SP6 contract (doc only, no signature change).
+- Private fakes (P16): an in-memory `FileSystem` that records each operation and can fail the n-th
+  one, and an in-memory `ProjectRepository` that writes through that `FileSystem`.
+
+Non-goals: `save_as`, `.gafira.bak`, `recover`, versions (`E4`); autosave (`E3d`); the file lock
+(ARQ-57); `UserError` (`E11`); the UI's "Guardar" state (03); any change to `crates/gafira-doc`,
+`crates/gafira-render`, `crates/gafira-render-cpu`; any port signature change.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | ARQ-50: for one save, a failure injected at every operation of the fake trace in turn leaves the target with the old bytes or the new bytes in full, never a mix or nothing | unit test looping over every fault index, comparing the target's bytes |
+| AC2 | ARQ-50: `replace` runs only after `repository.save` returns `Ok`, and never after an error; the order is exactly `save(tmp)` then `replace(tmp, path)` | unit test on the recorded trace |
+| AC3 | On any failure `remove(tmp)` is attempted, the first error is returned even if `remove` fails, and `clean_version` is unchanged | unit tests (failing `save`, failing `replace`, failing `remove` too) |
+| AC4 | On success `is_modified()` becomes false at the snapshot's version; an edit after the snapshot keeps it modified | unit test |
+| AC5 | ARQ-55 (a): a project loaded with `read_only` accepts `execute`, `undo`, `redo` and the version moves as in a normal session | unit test |
+| AC6 | ARQ-55 (b): `save` on a read-only session returns `ReadOnly`, the fakes record no call, the target keeps its bytes | unit test asserting an empty trace |
+| AC7 | `save` with no session → `NoSession`; a session from `new_document` (no path) → `NoPath`; both with an empty trace | unit tests |
+| AC8 | A failed `open` (load error, invalid document) leaves the old session, its version, its history and its modified state as they were, and publishes nothing | unit tests |
+| AC9 | A successful `open` bumps the version once and publishes one `DocumentChanged` whose `dirty` lists every page and node of a NON-empty loaded document; the old history is dropped (E3b-W3) | unit test comparing the whole `DirtySet` |
+| AC10 | Two saves in a row use distinct temporary names in the target's folder | unit test on the trace |
+| AC11 | `ToMessage` keys for `ReadOnly`, `NoPath`, `Io` (`error.engine.` area, no argument for `Io`) | fixture per variant |
+| AC12 | The engine stays pure: every file operation through `FileSystem` or `ProjectRepository`, no `std::fs`, no threads, no `rand` | `git grep` in the notes plus the existing CI steps |
+| AC13 | Gates at `--workspace` scope | gate output in the notes |
+
+Every test asserts a value that can fail: exact traces, exact bytes, exact versions.
+
+Hand mutants (critical code, row `E3c`): call `replace` even after `save` failed; `replace` before
+`save`; skip `remove(tmp)` on failure; let the `remove` error replace the first error; set
+`clean_version` before the write succeeds; check `read_only` after the first port call; swap the
+session before `History::new` validates; reuse the same temporary name. Record each with its
+killing test and failure.
+
+Plan: fakes first (with their own tests), then RED for AC1-AC11, then `open`, then `save`, then
+the errors and keys, then the port doc comment, then the gates; notes in a separate commit.
+
+Estimate: 380 authored lines, 532 at x1.4. Verify: V1.
