@@ -6,14 +6,14 @@
       "spec_id": "02-arquitectura-software",
       "status": "implementing",
       "criteria": [
-        { "id": "E1-AC1", "status": "pending" },
-        { "id": "E1-AC2", "status": "pending" },
-        { "id": "E1-AC3", "status": "pending" },
-        { "id": "E1-AC4", "status": "pending" },
-        { "id": "E1-AC5", "status": "pending" },
-        { "id": "E1-AC6", "status": "pending" }
+        { "id": "E1-AC1", "status": "passed", "evidence": "cargo clippy -p gafira-engine --all-targets --locked -- -D warnings (2271ab5)" },
+        { "id": "E1-AC2", "status": "passed", "evidence": "V5 tree check and cmp of clippy.toml against gafira-geom, run locally on 2271ab5" },
+        { "id": "E1-AC3", "status": "passed", "evidence": "engine::tests::ac3_* (3 tests), hand mutant drops the check and the test fails" },
+        { "id": "E1-AC4", "status": "passed", "evidence": "event::tests::ac4_* (2 tests), hand mutant skips the sink and the test fails" },
+        { "id": "E1-AC5", "status": "passed", "evidence": "engine::tests::ac5_the_facade_is_send_and_sync_and_keeps_its_parts" },
+        { "id": "E1-AC6", "status": "passed", "evidence": "cargo tree -p gafira-engine: no gafira-i18n, no ICU crate" }
       ],
-      "next_action": "E1 gates at workspace scope, then E2 (channel sink, events(), coalescing)"
+      "next_action": "independent verify round at V1 for E1 (no round ran yet), then E2: channel sink, events(), 10 Hz coalescing"
     }
   ]
 }
