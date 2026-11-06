@@ -1,0 +1,25 @@
+%% Back cover of the technical manual. Rendered by manual.py, which replaces
+%% every {{...}} placeholder; the fonts, colours and asset path are set in the preamble.
+\clearpage
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture, overlay]
+  \fill[gafiracanvas] (current page.south west) rectangle (current page.north east);
+  \fill[gafiracoral] (current page.north west) rectangle ([xshift=3mm]current page.south west);
+  \fill[gafiramint] ([xshift=-58mm,yshift=-19mm]current page.north east)
+    rectangle ([yshift=-19.5mm]current page.north east);
+\end{tikzpicture}
+\sffamily
+\vspace*{4mm}
+{\raggedright\includegraphics[width=52mm]{gafira-logo-primary}\par}
+\vfill
+{\GafiraDisplay\fontsize{11}{17}\selectfont\color{gafiraink} {{LEGAL}}\par}
+\vspace{10mm}
+{\GafiraDisplay\fontsize{9.5}{13}\selectfont\color{gafiraink}%
+  {{EDITION}} \quad\textbullet\quad {{VERSION}} \quad\textbullet\quad {{DATE}}\par}
+\vfill
+{\color{gafiraink}\rule{\linewidth}{0.25mm}}\par
+\vspace{4mm}
+{\GafiraDisplay\fontsize{11.5}{14}\selectfont\bfseries\color{gafiraink} {{AUTHOR}}\par}
+\vspace{1mm}
+{\GafiraDisplay\fontsize{9.5}{13}\selectfont\color{gafiraink} {{AUTHOR_ROLE}}\par}
+\vspace*{2mm}
