@@ -90,14 +90,19 @@
           "id": "E3d",
           "status": "passed",
           "evidence": "verify E3d round 2 PASS at 61ed459: autosave.rs AC1-AC12 plus undo/redo pending tests, workspace gates 0 (2573 passed); 9 hand mutants and both probes killed"
+        },
+        {
+          "id": "E5",
+          "status": "passed",
+          "evidence": "verify E5 round 2 PASS at b7f6e2c: governor.rs AC1-AC11 incl. ac1_many_caches_of_one_kind_keep_the_caller_order, workspace gates 0 (2588 passed); 15 hand mutants killed"
         }
       ],
-      "next_action": "E5 fix round (E5-C1: stable order test with >= 21 mixed caches), verify round 2",
+      "next_action": "E2, E3a-E3d and E5 verified on feat/gafira-engine-e3 (stacked on feat/gafira-engine-e2); awaiting the owner's OK to merge into develop. Then E4 (needs SP5), E6, E7 (needs E2-W7 and how E7 reaches the governor, E5-S1), E8-E11 (E11 needs SP3)",
       "verify": {
-        "round": 1,
-        "commit": "71b6078",
-        "verdict": "FAIL",
-        "next": "tdd-apply test-only round for E5-C1, then verify round 2",
+        "round": 2,
+        "commit": "b7f6e2c",
+        "verdict": "PASS",
+        "next": "owner: merge feat/gafira-engine-e2 then feat/gafira-engine-e3 into develop (not done: owner said no push, no merge)",
         "findings": [
           {
             "id": "E2-W7",
@@ -143,15 +148,6 @@
             "summary": "E3d code totals 755 lines after the fix round, 43 test lines above the 712 the owner accepted.",
             "follow_up": true,
             "status": "open"
-          },
-          {
-            "id": "E5-C1",
-            "severity": "CRITICAL",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/governor.rs:157, test ac1 (:344)",
-            "summary": "Stable order within a kind is unproven: sort_unstable_by_key survives all governor tests; the sorts differ from 21 caches up.",
-            "follow_up": false,
-            "status": "open"
           }
         ],
         "rounds": [
@@ -161,6 +157,11 @@
             "classes": [
               "implementation"
             ]
+          },
+          {
+            "round": 2,
+            "verdict": "PASS",
+            "classes": []
           }
         ]
       }
