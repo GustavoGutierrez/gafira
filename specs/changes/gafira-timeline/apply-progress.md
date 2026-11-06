@@ -524,3 +524,137 @@ The design forecast 330 (460) and the delivery ceiling is ~700 lines, so the mea
 size is **above the ceiling** and rests on the tests: 702 of the 1 002 lines are the
 battery, and the code the delivery writes is 253. The coordinator decides whether that
 is the delivery or whether the battery is a review slice of its own.
+
+## TL1 fix (tdd-apply)
+
+Closes the two implementation warnings of the retroactive `TL1` round on
+`fix/gafira-timeline-tl1-verdict`, cut from `develop` at `316d247` (the commit
+that amended ADR 0006 rule 3). The record lives here, in the change folder,
+because `specs/changes/gafira-timeline/` has not moved to `history/` yet; had it
+moved, the notes would go to the `specs/07-deuda-abierta.md` entry instead.
+
+### Commits
+
+- `04ebea9` `test(doc): refuse a clock inside the timeline sources` — `W1`, the
+  ARQ-136 guard (`crates/gafira-doc/tests/visit_contract.rs`, +215/−11).
+- `418b300` `feat(doc): refuse a page duration before zero on load` — `W2`, the
+  range rule (`src/page.rs`, `src/layout.rs`, `tests/duration.rs`, +58/−9).
+- `73690c1` `test(doc): pin the present side of the excepted page duration` —
+  the amended ADR's other side (`src/page.rs`, +40).
+- the record commit of this section (this file).
+
+### `W1` — the guard refuses a clock inside a timeline source
+
+The old rule skipped each of the four `TIMELINE_SOURCES` whole, so
+`std::time::Instant`, `Duration` and `SystemTime` were legal in `page.rs`,
+`timeline/clip.rs`, `timeline/sequence.rs` and `timeline/track.rs`. A timeline
+source may now name `Flicks` and `FrameRate` and nothing else: the three clock
+types are refused there too. Every other source still refuses all five. The five
+names are checked to be exactly two data types plus three clock types, so a name
+added to one list and not the other is a hole.
+
+How the guard tells a type from a word: `code_only` strips line comments, nested
+block comments, string literals and raw strings before the whole-word search
+runs. A type is an identifier in code; the word in a doc comment, in an
+assertion message or inside `r#"…"#` is prose. The search is case-sensitive and
+bound at identifier edges, so the field `duration`, the identifier `durations`
+and the English word `Duration` in prose are not the type, while
+`std::time::Duration`, `Duration::from_secs` and `fn wait(clock: Instant)` are.
+The last piece is a naming constraint, not a guard exception:
+`PageField::DurationTicks` (below) is the only page-field variant that could
+have collided with the banned name, and it is named for its unit so the crate
+holds no free-standing `Duration` identifier outside the timeline's data files.
+
+RED, before the fix (`cargo test -p gafira-doc --test visit_contract`):
+
+```text
+---- arq_136_a_clock_type_inside_a_timeline_source_is_refused ----
+src/page.rs must refuse the clock type Instant
+  left: []  right: ["Instant"]
+---- arq_136_the_guard_tells_a_type_from_a_word ----
+assertion `left == right` failed
+  left: []  right: ["Duration"]
+```
+
+The literal probe from the finding: `#[cfg(any())] fn probe_time_type(_now:
+std::time::Instant) {}` in `src/page.rs` then failed
+`arq_136_the_measure_context_carries_no_time` with `src/page.rs names the time
+type(s) ["Instant"]`; the probe was removed and is not committed.
+
+### `W2` — a negative page duration fails to load
+
+The design of `TL1` says a page duration is a `Flicks` value `>= 0`, but `Flicks`
+is signed: `"duration":-5` loaded and re-saved. `Page::check_layout` now checks
+the duration after the grid, with the error the page's other ranges already use,
+`PageLayoutError::OutOfRange`, reported by `Document::validate` as
+`ValidationError::PageLayout`. `"duration":-5` fails with
+`page 1: duration is -5, out of range`; `"duration":0` loads and is
+`Some(Flicks(0))`, an absence being `None`, not zero. `gafira-edit` calls the
+same `check_layout`, so a negative duration set through a command is refused
+there too.
+
+RED, before the fix (`cargo test -p gafira-doc --test duration`):
+
+```text
+---- arq_13_a_negative_page_duration_fails_to_load ----
+a negative page duration must fail to load, got Ok(Document { …, duration: Some(Flicks(-5)), … })
+```
+
+The page-field variant is `PageField::DurationTicks`, not `Duration`: see the
+guard note above. It is named for the unit (`flicks`) it holds.
+
+### The amended ADR's two-sided test
+
+ADR 0006 rule 3's sentence — "absent when `None`, present and in canonical
+position when `Some`, never `null`" — points at the pair
+`page::tests::page_wire_form_writes_every_field` (absent: the whole page's bytes
+have no `duration`) and
+`page::tests::adr_0006_a_present_duration_sits_between_grid_and_locked`
+(present: the whole page's bytes with `"duration":705600000`,
+`assert_eq!` on the three bytes after the grid's closing brace and before
+`locked`, and `!json.contains("null")`). `tests/duration.rs`'s
+`arq_13_a_page_without_a_duration_writes_no_field` is the same absent side one
+level up, on the document; the new test is the side `TL1` lacked.
+
+### Hand mutants
+
+| # | The rule | The wrong behaviour | Killed by |
+|---|---|---|---|
+| M1 | the guard's allow-list | a timeline source is exempt from every time type (`&[]` in the timeline branch), the old whole-file skip | `arq_136_a_clock_type_inside_a_timeline_source_is_refused` (also `arq_136_the_guard_tells_a_type_from_a_word`) |
+| M2 | the negative-duration check | the bound is `i64::MIN`, so every value is accepted | `arq_13_a_negative_page_duration_fails_to_load` (`:150`, "must fail to load, got Ok") |
+| M3 | type versus word | `code_only` is replaced by the raw source, so comments and strings count | `arq_136_the_guard_tells_a_type_from_a_word` (`:458`) |
+| M4 | the duration boundary | `< 0` becomes `<= 0`, so zero is refused | `arq_13_a_negative_page_duration_fails_to_load` (`:154`, zero must load) |
+
+Each mutant was applied, run, seen failing, and reverted; `git status` is clean
+and no mutant is committed. M1 and M2 are the two the finding asked for; M3 and
+M4 are the boundary and the type/word trap.
+
+### Gates
+
+Per commit, each run alone at that commit, exit 0: `cargo fmt --check`;
+`cargo clippy -p gafira-doc --all-targets --locked -- -D warnings`;
+`cargo test -p gafira-doc --locked`; `cargo deny check` (`advisories ok, bans
+ok, licenses ok, sources ok`); and the nine `policy` steps of
+`.github/workflows/ci.yml` re-read from the file (Format, CLI/UI, forbid,
+V5, V12, ARQ-107, V13, V14, testkit `ports`), all exit 0. The full workspace
+suite runs once at the HEAD of the branch.
+
+### Measured lines
+
+`git diff --shortstat 316d247 HEAD` before this section: 4 files changed,
+313 insertions(+), 20 deletions(−), 333 changed lines — 72 of code, 261 of
+tests and the guard. Under the ~700 delivery ceiling.
+
+### Deviations
+
+- **The duration's range error is the page's layout error.** Duration is not
+  layout data, but `PageLayoutError` is the error the crate already uses for a
+  page field out of range and `Page::check_layout` is where `validate.rs` and
+  `gafira-edit` already look for those failures; a second page-range error type
+  would duplicate the path. The docs of `PageField` and `PageLayoutError` were
+  widened from "page-layout data" to "page field" to say so.
+- **`PageField::DurationTicks`.** ARQ-136 bans the name `Duration` outside the
+  timeline's data files, and the guard reads identifiers in code; naming the new
+  variant `Duration`, `Self::Duration` or `PageField::Duration` would have put
+  that identifier in `src/layout.rs`, outside the timeline. The variant keeps
+  the unit instead, and the message still reads `duration is -5, out of range`.
