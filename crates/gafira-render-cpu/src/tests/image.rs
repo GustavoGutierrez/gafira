@@ -46,10 +46,14 @@ fn rgba32_image(width: u32, height: u32, texels: &[[f32; 4]]) -> Arc<ImageBuf> {
 fn drawn(region: IRect, format: PixelFormat, ops: Vec<RenderOp>) -> ImageBuf {
     let width = region.width();
     let height = region.height();
+    // The page is the smallest one that holds the surface: the surface starts
+    // at the region's origin and ends at its far corner. These scenes have no
+    // effect, so the page is never read (O18).
+    let page = (region.x1.unsigned_abs(), region.y1.unsigned_abs());
     let scene = plan(vec![task(1, region, ops)]);
     let mut frame = Frame::open(
         CpuBackend::new(),
-        target(width, height, (region.x0, region.y0), format),
+        target(width, height, (region.x0, region.y0), page, format),
     );
     let mut cache = RecordingCache::default();
     frame
@@ -563,7 +567,7 @@ fn an_alpha8_image_is_refused_rather_than_drawn() {
     )]);
     let mut frame = Frame::open(
         CpuBackend::new(),
-        target(4, 4, (0, 0), PixelFormat::RgbaF32),
+        target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32),
     );
     let mut cache = RecordingCache::default();
     let error = frame
@@ -596,7 +600,7 @@ fn arq_149_an_off_tile_alpha8_image_is_culled_before_the_format_is_refused() {
     // read and the unsupported format is never reached.
     let mut frame = Frame::open(
         CpuBackend::new(),
-        target(4, 4, (0, 0), PixelFormat::RgbaF32),
+        target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32),
     );
     let mut cache = RecordingCache::default();
     let scene = plan(vec![task(
@@ -621,7 +625,7 @@ fn arq_149_an_off_tile_alpha8_image_is_culled_before_the_format_is_refused() {
     // refused, so the skip above is the cull and not a swallowed error.
     let mut frame = Frame::open(
         CpuBackend::new(),
-        target(4, 4, (0, 0), PixelFormat::RgbaF32),
+        target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32),
     );
     let mut cache = RecordingCache::default();
     let scene = plan(vec![task(

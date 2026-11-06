@@ -184,7 +184,7 @@ fn quadrant(ops: Vec<RenderOp>) -> RenderPlan {
 // from outside it.
 #[test]
 fn arq_120_the_effect_reads_past_the_tile_edge_and_runs_once() {
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let probe = Arc::new(Probe::new(Shape::Shift(4)));
     let scene = quadrant(vec![fill(0.0, 0.0, 8.0, 8.0, white()), effect_op(&probe)]);
     let got = run(target_desc, &scene);
@@ -224,7 +224,7 @@ fn arq_120_the_effect_reads_past_the_tile_edge_and_runs_once() {
 // two pixels short on each side of the first one's growth.
 #[test]
 fn arq_120_two_effects_grow_by_the_buffer_the_first_produced() {
-    let target_desc = target(32, 32, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(32, 32, (0, 0), (32, 32), PixelFormat::RgbaF32);
     let first = Arc::new(Probe::new(Shape::Pad(2)));
     let second = Arc::new(Probe::new(Shape::Shift(4)));
     let scene = plan(vec![task(
@@ -262,7 +262,7 @@ fn arq_120_two_effects_grow_by_the_buffer_the_first_produced() {
 // ARQ-120: the grown rectangle is the effect's request, clipped to the page.
 #[test]
 fn arq_120_the_grown_rectangle_is_clipped_to_the_page() {
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let probe = Arc::new(Probe::new(Shape::Pad(100)));
     let scene = quadrant(vec![fill(0.0, 0.0, 16.0, 16.0, white()), effect_op(&probe)]);
     let got = run(target_desc, &scene);
@@ -285,7 +285,7 @@ fn arq_120_the_grown_rectangle_is_clipped_to_the_page() {
 // `task.region` drops it and the tile loses the pixel it was grown for.
 #[test]
 fn arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect() {
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let probe = Arc::new(Probe::new(Shape::Shift(4)));
     // The tile is (8, 8)-(16, 16) and the effect reads 4 px back, so the grown
     // rectangle is (4, 4)-(16, 16). The fill is (4, 4)-(6, 6): wholly outside
@@ -325,7 +325,7 @@ fn arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect() {
 fn arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region() {
     // A 16 x 16 viewport at (8, 8) of a 32 x 32 page. The surface's rectangle
     // is (8, 8)-(24, 24); the page's is (0, 0)-(32, 32).
-    let viewport = target_in_page(16, 16, (8, 8), (32, 32), PixelFormat::RgbaF32);
+    let viewport = target(16, 16, (8, 8), (32, 32), PixelFormat::RgbaF32);
     let probe = Arc::new(Probe::new(Shape::Pad(2)));
     let scene = plan(vec![task(
         1,
@@ -347,7 +347,7 @@ fn arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region() {
 
     // The full-page surface of the export: the surface is the page, so the
     // window is exactly what it was before the page extent reached the port.
-    let full = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let full = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let probe = Arc::new(Probe::new(Shape::Pad(2)));
     let scene = plan(vec![task(
         1,
@@ -379,7 +379,7 @@ fn arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region() {
 // effects, so a per-op buffer would double the term.
 #[test]
 fn arq_143_the_effect_scratch_is_accounted_and_trim_drops_it() {
-    let target_desc = target(32, 32, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(32, 32, (0, 0), (32, 32), PixelFormat::RgbaF32);
     let first = Arc::new(Probe::new(Shape::Pad(2)));
     let second = Arc::new(Probe::new(Shape::Shift(4)));
     let scene = plan(vec![task(
@@ -487,7 +487,7 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
 // first one's bytes would surface; removing the clearing turns the tile white.
 #[test]
 fn arq_111_a_reused_destination_starts_cleared_for_the_next_op() {
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let writer = Arc::new(Probe::new(Shape::Pad(0)));
     let partial = Arc::new(Probe::new(Shape::Dot));
     let scene = quadrant(vec![
@@ -524,7 +524,7 @@ fn arq_111_a_reused_destination_starts_cleared_for_the_next_op() {
 // real buffers instead of a gibibyte of them.
 #[test]
 fn arq_44_execute_refuses_the_effect_peak_near_the_cap() {
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     // One tile half the page wide, its fill inside a layer, and the effect on
     // the layer: the frame holds the surface, the open layer and the
     // destination at the effect op.
@@ -573,7 +573,7 @@ fn arq_44_execute_refuses_the_effect_peak_near_the_cap() {
 // before it reaches the surface or the cache, and the layer keeps what it had.
 #[test]
 fn arq_112_a_cancelled_effect_aborts_the_tile_before_it_is_committed() {
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let token = CancelToken::new();
     let probe = Arc::new(Probe::cancelling(Shape::Shift(4), token.clone()));
     let scene = quadrant(vec![fill(0.0, 0.0, 16.0, 16.0, white()), effect_op(&probe)]);

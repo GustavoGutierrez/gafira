@@ -49,7 +49,7 @@ fn masked(mask: Arc<AlphaMask>) -> RenderOp {
 fn arq_119_a_mask_scales_all_four_premultiplied_channels() {
     let region = IRect::new(0, 0, 4, 4);
     let colour = srgb(0.5, 0.5, 0.5, 0.5);
-    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32);
 
     // The layer's own premultiplied content, from the same plan without a mask.
     let base_plan = plan(vec![task(
@@ -117,7 +117,7 @@ fn arq_119_a_mask_scales_all_four_premultiplied_channels() {
 #[test]
 fn spec_02_4_6_a_mask_smaller_than_the_layer_masks_only_its_rectangle() {
     let region = IRect::new(0, 0, 256, 256);
-    let target_desc = target(256, 256, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(256, 256, (0, 0), (256, 256), PixelFormat::RgbaF32);
     let colour = srgb(0.25, 0.5, 0.75, 0.5);
     let ops_with = |mask: Arc<AlphaMask>| {
         vec![
@@ -184,7 +184,7 @@ fn spec_02_4_6_a_mask_smaller_than_the_layer_masks_only_its_rectangle() {
 #[test]
 fn spec_02_4_6_the_mask_anchors_at_the_tile_when_the_task_grows() {
     let region = IRect::new(8, 8, 16, 16);
-    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     // Every mask pixel has its own coverage, so an anchor two pixels off reads a
     // different number at every pixel.
     let data = (0..8u8)
@@ -244,7 +244,7 @@ fn spec_02_4_6_a_mask_outside_a_layer_is_refused() {
     let mut cache = RecordingCache::default();
     let mut frame = Frame::open(
         CpuBackend::new(),
-        target(4, 4, (0, 0), PixelFormat::RgbaF32),
+        target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32),
     );
     let token = CancelToken::new();
     let outcome = frame.execute(&scene, &mut cache, &token);
@@ -361,7 +361,7 @@ fn crossfade(progress: f32) -> RenderPlan {
 // the background exactly and 1 the drawn content exactly.
 #[test]
 fn spec_02_4_6_a_transition_takes_from_the_background_and_to_the_layer() {
-    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32);
     let background = run(
         target_desc,
         &plan(vec![task(
@@ -414,7 +414,7 @@ fn spec_02_4_6_a_transition_takes_from_the_background_and_to_the_layer() {
 // ARQ-118: a finite `progress` outside `[0, 1]` is clipped to the range.
 #[test]
 fn arq_118_a_finite_progress_outside_the_range_is_clipped() {
-    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32);
     for (outside, inside) in [(-0.5f32, 0.0f32), (1.5, 1.0)] {
         assert_eq!(
             values(&run(target_desc, &crossfade(outside))),
@@ -428,7 +428,7 @@ fn arq_118_a_finite_progress_outside_the_range_is_clipped() {
 // partial surface is delivered.
 #[test]
 fn arq_110_a_non_finite_progress_is_refused() {
-    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32);
     for progress in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
         let mut cache = RecordingCache::default();
         let mut frame = Frame::open(CpuBackend::new(), target_desc);
@@ -455,7 +455,7 @@ fn arq_110_a_non_finite_progress_is_refused() {
 #[test]
 fn spec_02_4_6_a_nested_transition_takes_from_the_layer_it_composites_onto() {
     let region = IRect::new(0, 0, 4, 4);
-    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32);
     let outer = srgb(0.0, 1.0, 0.0, 0.5);
     let scene = plan(vec![task(
         1,
@@ -510,7 +510,7 @@ fn spec_02_4_6_a_nested_transition_takes_from_the_layer_it_composites_onto() {
 // themselves, but a transition is a plugin and the op's contract is its own.
 #[test]
 fn arq_118_the_backend_clips_the_progress_it_hands_a_transition() {
-    let target_desc = target(4, 4, (0, 0), PixelFormat::RgbaF32);
+    let target_desc = target(4, 4, (0, 0), (4, 4), PixelFormat::RgbaF32);
     for (given, clipped) in [(-0.5f32, 0.0f32), (0.25, 0.25), (1.5, 1.0)] {
         let probe = Arc::new(ProbeTransition::new());
         let scene = plan(vec![task(
