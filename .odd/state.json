@@ -38,36 +38,41 @@
         },
         {
           "id": "E2-AC1",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "engine::tests::w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it, p11_*; hand mutant 1 killed (verify r3, cbe874e)"
         },
         {
           "id": "E2-AC2",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "bus::tests::ac2_the_waker_is_called_once_per_delivery, s2_the_waker_is_called_after_the_lock_is_released"
         },
         {
           "id": "E2-AC3",
-          "status": "failed",
-          "evidence": "verify E2 round 2, E2-C2: stale progress arrives after a newer one"
+          "status": "passed",
+          "evidence": "bus::tests::ac3_* incl. ac3_a_new_window_discards_the_stale_pending_progress_before_{a_state_event,a_flush}; mutant (a) kills 5 tests"
         },
         {
           "id": "E2-AC4",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "bus::tests::ac4_ten_state_events_produce_ten_deliveries"
         },
         {
           "id": "E2-AC5",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "workspace fmt/clippy/test 0 at cbe874e (198 suites, 2522 passed)"
         },
         {
           "id": "E2-AC6",
-          "status": "pending"
+          "status": "passed",
+          "evidence": "cargo deny check 0 at cbe874e"
         }
       ],
-      "next_action": "owner OK 2026-11-06: round 3 for E2 and the 762-line size accepted; tdd-apply fixes E2-C2, then verify round 3",
+      "next_action": "E3a on feat/gafira-engine-e3 (cut from cbe874e): slice card, tdd-apply, verify; then E3b, E3c, E3d, E5. Follow-ups: E2-W7 (per-job coalescing, before E7), E2-W8 (size 802)",
       "verify": {
-        "round": 2,
-        "commit": "e340de1",
-        "verdict": "FAIL",
-        "next": "tdd-apply E2-C2, then verify round 3 (last under the cap)",
+        "round": 3,
+        "commit": "cbe874e",
+        "verdict": "PASS",
+        "next": "E2 done (not merged: owner said no merge); E3a on feat/gafira-engine-e3 cut from cbe874e",
         "findings": [
           {
             "id": "E2-C1",
@@ -139,7 +144,7 @@
             "ref": "crates/gafira-engine/src/bus.rs:144-148",
             "summary": "A progress that opens the window leaves an older pending one in place: a probe receives 0.1, 0.9, 0.2, so the observer ends on a stale fraction; breaks AC3 and the claim at bus.rs:155-156.",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "E2-W7",
@@ -147,6 +152,15 @@
             "class": "ambiguity",
             "ref": "02 §5.2:1321/1335, card AC3, bus.rs:72-75",
             "summary": "All jobs share one pending progress slot, so job 1 can overwrite job 2's last fraction; the spec does not say whether coalescing is per job.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E2-W8",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "git diff --shortstat 962e95d cbe874e",
+            "summary": "E2 is 802 lines, 40 above the 762 the owner accepted; the fix round added 44 lines, 37 of them tests.",
             "follow_up": true,
             "status": "open"
           }
@@ -168,6 +182,11 @@
             "classes": [
               "implementation"
             ]
+          },
+          {
+            "round": 3,
+            "verdict": "PASS",
+            "classes": []
           }
         ]
       }
