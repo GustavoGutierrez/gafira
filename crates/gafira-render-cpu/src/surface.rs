@@ -30,6 +30,10 @@ pub(crate) struct Surface {
     width: u32,
     height: u32,
     origin: (i32, i32),
+    /// The page's extent, in page pixels (O18): what an effect's window is
+    /// measured against. The surface is a window onto the page, so this is not
+    /// [`Self::surface_rect`].
+    page: (u32, u32),
     /// What `read_back` answers: `Rgba8` or `RgbaF32`.
     format: PixelFormat,
     /// `width × height × 4` linear-light premultiplied values (ARQ-117).
@@ -69,6 +73,7 @@ impl Surface {
             width: target.width,
             height: target.height,
             origin: target.origin,
+            page: target.page,
             format: target.format,
             pixels: vec![0.0; pixels],
         })
@@ -80,10 +85,21 @@ impl Surface {
     }
 
     /// The page-space rectangle the surface covers.
-    pub(crate) fn page_rect(&self) -> IRect {
+    ///
+    /// This is the window, not the page (ARQ-149, O18): a request off the page
+    /// origin answers the region it asked for, inside a page that may be larger.
+    pub(crate) fn surface_rect(&self) -> IRect {
         let x1 = i32::try_from(self.width).map_or(i32::MAX, |w| self.origin.0.saturating_add(w));
         let y1 = i32::try_from(self.height).map_or(i32::MAX, |h| self.origin.1.saturating_add(h));
         IRect::new(self.origin.0, self.origin.1, x1, y1)
+    }
+
+    /// The page's extent, in page pixels (O18).
+    ///
+    /// The effect's window is measured in page space, so a surface that is a
+    /// sub-region of the page still names the page's extent.
+    pub(crate) const fn page_extent(&self) -> (u32, u32) {
+        self.page
     }
 
     /// The bytes of the pixel buffer.
@@ -100,7 +116,7 @@ impl Surface {
     /// dropped, so a clip that only partly overlaps the target loses nothing
     /// inside it.
     pub(crate) fn write(&mut self, region: IRect, tile: &[f32], size: (u32, u32)) {
-        let clip = region.intersect(self.page_rect());
+        let clip = region.intersect(self.surface_rect());
         if clip.is_empty() {
             return;
         }
@@ -151,7 +167,7 @@ impl Surface {
             .ok()
             .and_then(|pixels| pixels.checked_mul(4))
             .ok_or(RenderError::OutOfMemory)?;
-        let clip = region.intersect(self.page_rect());
+        let clip = region.intersect(self.surface_rect());
         match self.format {
             PixelFormat::RgbaF32 => {
                 let mut out = vec![0.0f32; count];

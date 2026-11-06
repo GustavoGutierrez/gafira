@@ -30,11 +30,26 @@ use crate::CpuBackend;
 // Scene helpers
 // ---------------------------------------------------------------------------
 
+/// A surface of `width × height` whose surface **is** the page: the full-page
+/// case, where `origin` is the page origin and the extents coincide.
 fn target(width: u32, height: u32, origin: (i32, i32), format: PixelFormat) -> TargetDesc {
+    target_in_page(width, height, origin, (width, height), format)
+}
+
+/// A surface of `width × height` at `origin`, cut out of a `page`-sized page
+/// (ARQ-149, O18).
+fn target_in_page(
+    width: u32,
+    height: u32,
+    origin: (i32, i32),
+    page: (u32, u32),
+    format: PixelFormat,
+) -> TargetDesc {
     TargetDesc {
         width,
         height,
         origin,
+        page,
         format,
     }
 }

@@ -160,6 +160,13 @@ pub struct TargetDesc {
     pub height: u32,
     /// The top-left corner of the surface, in page pixels at full resolution.
     pub origin: (i32, i32),
+    /// The page's extent, in page pixels at full resolution.
+    ///
+    /// The surface is a window onto the page, so this is **not** `width ×
+    /// height` and not `origin + width × height`: the caller knows the page it
+    /// cut the window out of, and an effect measures its `TileWindow` against
+    /// the image, not against the window (ARQ-120, ARQ-149, 02 §4.4).
+    pub page: (u32, u32),
     pub format: PixelFormat,
 }
 

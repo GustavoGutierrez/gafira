@@ -10,6 +10,7 @@ use gafira_ports::render::RenderError;
 use gafira_raster::effects::{Cost, Effect};
 use gafira_raster::{
     EffectCx, EffectError, ImageView, ImageViewMut, PixelData, PixelDataMut, PixelFormat,
+    TileWindow,
 };
 
 use super::*;
@@ -22,6 +23,10 @@ pub(super) enum Shape {
     Shift(i32),
     /// The identity over a region `p` larger than `out` on every side.
     Pad(i32),
+    /// Writes its destination's first pixel and leaves the rest as it found
+    /// it: a sparse writer, which `Effect`'s contract allows (only an error
+    /// must leave `dst` untouched).
+    Dot,
 }
 
 /// An effect that records how it was called.
@@ -31,6 +36,7 @@ pub(super) struct Probe {
     shape: Shape,
     calls: Mutex<usize>,
     seen: Mutex<Vec<(u32, u32)>>,
+    windows: Mutex<Vec<TileWindow>>,
     cancel: Option<CancelToken>,
 }
 
@@ -44,6 +50,7 @@ impl Probe {
             shape,
             calls: Mutex::new(0),
             seen: Mutex::new(Vec::new()),
+            windows: Mutex::new(Vec::new()),
             cancel: None,
         }
     }
@@ -63,6 +70,14 @@ impl Probe {
     pub(super) fn seen(&self) -> Vec<(u32, u32)> {
         self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
+
+    /// The windows the effect was asked with, in call order.
+    pub(super) fn windows(&self) -> Vec<TileWindow> {
+        self.windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
 }
 
 impl Describe for Probe {
@@ -80,6 +95,7 @@ impl Effect for Probe {
         match self.shape {
             Shape::Shift(d) => IRect::new(out.x0 - d, out.y0 - d, out.x1 - d, out.y1 - d),
             Shape::Pad(p) => out.inflate(p, p),
+            Shape::Dot => out,
         }
     }
 
@@ -89,12 +105,18 @@ impl Effect for Probe {
 
     fn run_cpu(
         &self,
-        _cx: &EffectCx,
+        cx: &EffectCx,
         _p: &ParamValues,
         src: ImageView<'_>,
         mut dst: ImageViewMut<'_>,
     ) -> Result<(), EffectError> {
         *self.calls.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        if let Some(window) = cx.tile {
+            self.windows
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(window);
+        }
         self.seen
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -107,7 +129,7 @@ impl Effect for Probe {
         let height = usize::try_from(dst.height()).unwrap_or(0);
         let shift = match self.shape {
             Shape::Shift(d) => i64::from(d),
-            Shape::Pad(_) => 0,
+            Shape::Pad(_) | Shape::Dot => 0,
         };
         let target = match dst.data_mut() {
             PixelDataMut::RgbaF32(data) => data,
@@ -115,6 +137,11 @@ impl Effect for Probe {
         };
         for y in 0..height {
             for x in 0..width {
+                // A sparse writer: the contract forbids only an **error** from
+                // writing, so leaving the rest of `dst` alone is legal.
+                if matches!(self.shape, Shape::Dot) && (x, y) != (0, 0) {
+                    continue;
+                }
                 let read_x =
                     usize::try_from((i64::try_from(x).unwrap_or(0) - shift).max(0)).unwrap_or(0);
                 let read_y =
@@ -285,6 +312,63 @@ fn arq_120_a_fill_inside_the_margin_reaches_the_tile_through_the_effect() {
 }
 
 // ---------------------------------------------------------------------------
+// O18 — the window an effect is handed is page space
+// ---------------------------------------------------------------------------
+
+// ARQ-120, ARQ-149, O18, 02 §4.4: `image_width`/`image_height` are the whole
+// **page's** extent and `x`/`y` are the page pixel coordinates of `src`'s first
+// pixel. A surface that is a sub-region of the page is the case the surface's
+// own rectangle gets wrong on both counts; a full-page surface at `(0, 0)` is
+// the case where the two readings coincide, so the export path's window is the
+// one `CB5` produced.
+#[test]
+fn arq_120_the_window_is_the_page_when_the_surface_is_a_sub_region() {
+    // A 16 x 16 viewport at (8, 8) of a 32 x 32 page. The surface's rectangle
+    // is (8, 8)-(24, 24); the page's is (0, 0)-(32, 32).
+    let viewport = target_in_page(16, 16, (8, 8), (32, 32), PixelFormat::RgbaF32);
+    let probe = Arc::new(Probe::new(Shape::Pad(2)));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(8, 8, 24, 24),
+        vec![fill(0.0, 0.0, 32.0, 32.0, white()), effect_op(&probe)],
+    )]);
+    run(viewport, &scene);
+
+    assert_eq!(
+        probe.windows(),
+        vec![TileWindow {
+            image_width: 32,
+            image_height: 32,
+            x: 8,
+            y: 8,
+        }],
+        "the window names the 32 x 32 page, and src starts at its (8, 8)"
+    );
+
+    // The full-page surface of the export: the surface is the page, so the
+    // window is exactly what it was before the page extent reached the port.
+    let full = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let probe = Arc::new(Probe::new(Shape::Pad(2)));
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 16, 16),
+        vec![fill(0.0, 0.0, 16.0, 16.0, white()), effect_op(&probe)],
+    )]);
+    run(full, &scene);
+
+    assert_eq!(
+        probe.windows(),
+        vec![TileWindow {
+            image_width: 16,
+            image_height: 16,
+            x: 0,
+            y: 0,
+        }],
+        "the export path's window does not move"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // O17 — the effect's destination is the backend's, accounted and dropable
 // ---------------------------------------------------------------------------
 
@@ -353,15 +437,25 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
     // The boundary fits: the frame's held bytes plus the new buffer are exactly
     // the cap, and the cap is inclusive.
     let mut scratch = Vec::new();
-    crate::effect::reserve_scratch(&mut scratch, pixels, SURFACE_BUDGET.0 - bytes)
-        .expect("the cap is inclusive");
+    crate::effect::reserve_scratch(
+        &mut scratch,
+        pixels,
+        SURFACE_BUDGET.0 - bytes,
+        SURFACE_BUDGET,
+    )
+    .expect("the cap is inclusive");
     assert_eq!(scratch.len(), pixels, "the buffer is grown at the cap");
 
     // One byte further is over, and the refusal precedes the allocation.
     let mut refused = Vec::new();
     assert!(
         matches!(
-            crate::effect::reserve_scratch(&mut refused, pixels, SURFACE_BUDGET.0 - bytes + 1),
+            crate::effect::reserve_scratch(
+                &mut refused,
+                pixels,
+                SURFACE_BUDGET.0 - bytes + 1,
+                SURFACE_BUDGET
+            ),
             Err(RenderError::OutOfMemory)
         ),
         "a peak past the cap is refused"
@@ -375,7 +469,7 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
     let mut big = Vec::new();
     assert!(
         matches!(
-            crate::effect::reserve_scratch(&mut big, page * 4, page as u64 * 16),
+            crate::effect::reserve_scratch(&mut big, page * 4, page as u64 * 16, SURFACE_BUDGET),
             Err(RenderError::OutOfMemory)
         ),
         "the doubled page is refused"
@@ -384,6 +478,90 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
         big.is_empty(),
         "the 2.14 GB peak is refused before it exists"
     );
+}
+
+// O17, ARQ-111: the destination is the backend's and is reused by the ops of a
+// tile, so nothing a previous op wrote may reach this one — the effect starts
+// from transparent black, as a freshly allocated buffer would. The second
+// effect writes its first pixel and leaves the rest, which is exactly where the
+// first one's bytes would surface; removing the clearing turns the tile white.
+#[test]
+fn arq_111_a_reused_destination_starts_cleared_for_the_next_op() {
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let writer = Arc::new(Probe::new(Shape::Pad(0)));
+    let partial = Arc::new(Probe::new(Shape::Dot));
+    let scene = quadrant(vec![
+        fill(0.0, 0.0, 16.0, 16.0, white()),
+        effect_op(&writer),
+        effect_op(&partial),
+    ]);
+    let got = run(target_desc, &scene);
+
+    // The first effect writes the whole tile-sized destination; the second
+    // reuses the same scratch and writes one pixel of it.
+    assert_eq!(
+        writer.seen(),
+        vec![(8, 8)],
+        "the first fills the destination"
+    );
+    assert_eq!(partial.seen(), vec![(8, 8)], "the second reuses it");
+    assert!(is_white(&got, 8, 8), "the pixel the second op wrote");
+    assert!(
+        is_clear(&got, 9, 9),
+        "the pixel the second op left holds no byte of the first"
+    );
+    assert!(
+        is_clear(&got, 15, 15),
+        "and the tile's far corner is clear too"
+    );
+}
+
+// O17, D-03, ARQ-44: the refusal is the backend's own path, not only the
+// reservation's. `execute` puts the surface and the open layers into `held` and
+// hands the effect's peak to the same comparison; dropping either term leaves
+// the peak under the cap and the tile runs, which is what `CB5`'s round could
+// not see. The cap is the one thing lowered here, so the frame reaches it with
+// real buffers instead of a gibibyte of them.
+#[test]
+fn arq_44_execute_refuses_the_effect_peak_near_the_cap() {
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    // One tile half the page wide, its fill inside a layer, and the effect on
+    // the layer: the frame holds the surface, the open layer and the
+    // destination at the effect op.
+    let scene = |probe: &Arc<Probe>| {
+        plan(vec![task(
+            1,
+            IRect::new(0, 0, 8, 16),
+            vec![
+                push(),
+                fill(0.0, 0.0, 8.0, 16.0, white()),
+                effect_op(probe),
+                pop(BlendMode::Normal, 1.0),
+            ],
+        )])
+    };
+    // (16 x 16 surface + 8 x 16 layer + 8 x 16 destination) x 16 bytes.
+    let peak = 16 * 16 * 16 + 8 * 16 * 16 * 2;
+
+    // Exactly at the cap the frame runs: the comparison is inclusive.
+    let probe = Arc::new(Probe::new(Shape::Pad(0)));
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(CpuBackend::new().with_budget(Bytes(peak)), target_desc);
+    let outcome = frame.execute(&scene(&probe), &mut cache, &CancelToken::new());
+    assert!(outcome.is_ok(), "the cap is inclusive: {outcome:?}");
+    assert_eq!(probe.calls(), 1, "the effect runs at the cap");
+
+    // One byte over, and `execute` answers the refusal itself — before the
+    // effect is reached.
+    let probe = Arc::new(Probe::new(Shape::Pad(0)));
+    let mut cache = RecordingCache::default();
+    let mut frame = Frame::open(CpuBackend::new().with_budget(Bytes(peak - 1)), target_desc);
+    let outcome = frame.execute(&scene(&probe), &mut cache, &CancelToken::new());
+    assert!(
+        matches!(outcome, Err(RenderError::OutOfMemory)),
+        "the backend answers the refusal: {outcome:?}"
+    );
+    assert_eq!(probe.calls(), 0, "the refusal precedes the effect");
 }
 
 // ---------------------------------------------------------------------------
