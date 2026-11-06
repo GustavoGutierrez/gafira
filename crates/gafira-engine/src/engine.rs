@@ -182,6 +182,14 @@ pub enum EngineError {
     Command(CommandError),
     /// A document the engine built or received is not valid.
     InvalidDocument(ValidationError),
+    /// `save` on a session whose file has a newer schema (ARQ-55): edits
+    /// stay in memory and only `save_as` (`E4`) keeps them.
+    ReadOnly,
+    /// `save` on a session that was never saved (`new`); its exit is
+    /// `save_as` (`E4`).
+    NoPath,
+    /// A `FileSystem` call of the engine failed (design P16).
+    Io(std::io::Error),
 }
 
 impl fmt::Display for EngineError {
@@ -193,6 +201,9 @@ impl fmt::Display for EngineError {
             Self::NoSession => f.write_str("no document is open"),
             Self::Command(e) => write!(f, "command failed: {e}"),
             Self::InvalidDocument(e) => write!(f, "invalid document: {e}"),
+            Self::ReadOnly => f.write_str("the project is read-only"),
+            Self::NoPath => f.write_str("the project has no file yet"),
+            Self::Io(e) => write!(f, "file system error: {e}"),
         }
     }
 }
@@ -202,7 +213,8 @@ impl std::error::Error for EngineError {}
 impl ToMessage for EngineError {
     /// `CommandError` and `ValidationError` have no `ToMessage` yet, so their
     /// variants get an engine key without delegation (design P12, SP3(b)).
-    /// `InvalidConfig` takes no argument: its detail is prose for the log.
+    /// `InvalidConfig` takes no argument: its detail is prose for the log, and
+    /// neither does `Io`: an `io::Error` carries only prose (ARQ-102).
     fn to_message(&self) -> Message {
         match self {
             Self::InvalidConfig { .. } => msg!("error.engine.invalid_config"),
@@ -211,6 +223,9 @@ impl ToMessage for EngineError {
             Self::NoSession => msg!("error.engine.no_session"),
             Self::Command(_) => msg!("error.engine.command_failed"),
             Self::InvalidDocument(_) => msg!("error.engine.invalid_document"),
+            Self::ReadOnly => msg!("error.engine.read_only"),
+            Self::NoPath => msg!("error.engine.no_path"),
+            Self::Io(_) => msg!("error.engine.io"),
         }
     }
 }
@@ -230,6 +245,12 @@ impl From<StoreError> for EngineError {
 impl From<CommandError> for EngineError {
     fn from(e: CommandError) -> Self {
         Self::Command(e)
+    }
+}
+
+impl From<std::io::Error> for EngineError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
     }
 }
 
@@ -432,6 +453,22 @@ mod tests {
             EngineError::Repository(too_new()).to_message().key.0,
             "error.repository.too_new"
         );
+    }
+
+    // ARQ-55, ARQ-102
+    #[test]
+    fn ac11_read_only_no_path_and_io_have_engine_keys_without_arguments() {
+        let cases = [
+            (EngineError::ReadOnly, msg!("error.engine.read_only")),
+            (EngineError::NoPath, msg!("error.engine.no_path")),
+            (
+                EngineError::from(std::io::Error::other("disk full")),
+                msg!("error.engine.io"),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.to_message(), expected, "{error:?}");
+        }
     }
 
     #[test]
