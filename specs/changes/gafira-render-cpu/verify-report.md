@@ -166,3 +166,257 @@ eight rules — two applied in both directions — and the one I spot-checked is
   that is a deliberate override, not a breach.
 
 next: tdd-apply
+
+## Round 1 — CB3
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB3", "rounds": [ {
+  "round": 1, "commit": "24d4045dc8dfcb5628b30aeee7f01a9c8da521f2", "mode": "standard", "tier": "T2", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 3},
+  "findings": [
+    {"id": "W4", "severity": "WARNING", "class": "architecture",
+     "ref": "crates/gafira-render/src/planner.rs:295-315, crates/gafira-render-cpu/src/surface.rs:103",
+     "summary": "A page with more than one root loses every root but the last (probe: red 0, blue 256 of 256). Pre-existing CB1/PC1; O12 on develop allocates it to CB3b. Not CB3.",
+     "follow_up": true, "status": "open"},
+    {"id": "W5", "severity": "WARNING", "class": "architecture",
+     "ref": "crates/gafira-render/src/page.rs:211-239, crates/gafira-render-cpu/src/surface.rs:144",
+     "summary": "render() hands (0,0,w,h) to read_back while the surface origin is the page offset: an opaque page at region (4,6,68,70) returns 616/4096 transparent px. Pre-existing; O13 allocates CB3b.",
+     "follow_up": true, "status": "open"},
+    {"id": "W6", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/tests/arq_42_comparison.rs:249",
+     "summary": "M4 (preview at scale 2.0) is unobservable here: equivalent while both requests share SCALE and the surface is page-sized; CB4's image sampling makes it observable.",
+     "follow_up": true, "status": "open"},
+    {"id": "W7", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/tests/arq_42_comparison.rs (744) + manifest and lock (6)",
+     "summary": "750 work lines (805 with the record) against the 300 forecast, 420 at x1.4: 1.79x and 1.92x, above the ~700 signal. Needs the owner's explicit OK before merge.",
+     "follow_up": false, "status": "open"},
+    {"id": "S3", "severity": "SUGGESTION", "class": "ambiguity",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:157",
+     "summary": "The card cites FD-55 in specs/05; the row lives in specs/04:648. The criterion is covered, the pointer is wrong.",
+     "follow_up": false, "status": "open"},
+    {"id": "S4", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/tests/arq_42_comparison.rs:732-743",
+     "summary": "arq_113_one_altered_byte_fails_on_this_platform asserts differing==1 in Exact mode whatever current_mode() says, so a matrix target whose golden is not byte-identical would fail. Passes here.",
+     "follow_up": false, "status": "open"},
+    {"id": "S5", "severity": "SUGGESTION", "class": "architecture",
+     "ref": "design.md:384-400 (D9), apply-progress.md:213",
+     "summary": "D9 named gafira-testkit::golden::compare; the delivery wrote its own (recorded) because Mismatch::Pixels carries no worst channel. Amend D9 or extend the testkit before CB6 reuses it.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 5},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 805, "forecast": 420}, "report": "verify-report.md" } ] }
+```
+
+- Delivery: `CB3` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb3`, HEAD
+  `24d4045dc8dfcb5628b30aeee7f01a9c8da521f2`, cut from `develop` `76b546f` (the slice-card commit,
+  which is also the merge base). Not pushed, not merged.
+- Mode `standard`, depth **V2** (the card's Flow line says `verify: V2`). `mutation: off`: no
+  `cargo-mutants` run happened and per `O10` that is not a finding; the rigor is the hand mutants
+  and the per-commit gates, so this round owes V2's own independent probes and mutant budget.
+- Tier as recorded: `T2`, inert under `mutation: off`.
+- Verdict: **PASS** — 0 CRITICAL, 4 WARNING, 3 SUGGESTION. Every gate exits 0, all seven acceptance
+  criteria are covered, and the spot-check plus four independent hand mutants were all killed. The
+  single question of the round — does the comparison prove `ARQ-42` or only that the test agrees
+  with itself — is answered **no self-agreement**: both sides are distinct frames on distinct
+  backends, the preview's bytes come from the backend's own `Rgba8` read-back, and an independently
+  written conversion (including a hand-written sRGB curve) reproduces them.
+- Toolchain: cargo/rustc 1.93.1, clippy 0.1.93, cargo-deny 0.20.2. Disk: 155 GB free at start,
+  148 GB after the build folders were freed.
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile` in 21.57 s |
+| `cargo test --workspace --locked` | 0 | **196 test binaries, 2479 passed, 0 failed, 0 ignored**; the delivery's own binaries are `arq_42_comparison` 11 passed and the crate's unit tests 28 passed |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| CI policy, job `policy` | 0 | 9/9 steps exit 0: Format; CLI has no UI deps (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107 language; V13 `EditToken`; V14 property test; testkit `ports` |
+
+The extractor `/tmp/gafira-policy-run.py` was re-checked against the current `ci.yml`: job `policy`
+has 12 steps — checkout, `Install toolchain (rust-toolchain.toml)` (skipped on purpose by the
+extractor), the nine `run:` checks above, and `cargo-deny-action` (covered by the `cargo deny check`
+row). Nothing applicable was skipped.
+
+Build hygiene: `CARGO_TARGET_DIR=/tmp/gafira-cb3-v2-target` for the worktree and
+`/tmp/gafira-cb3-v2-probe-target` for the probe export, both `CARGO_INCREMENTAL=0`, both released
+with `cargo clean --target-dir` at the end (7.0 GiB and 220 MiB). The worktree is clean; no source
+file was edited by this round.
+
+### The single question: a comparison, or the test agreeing with itself?
+
+Derived from `ARQ-42`, `ARQ-113`, 02 §10 and FD-55 (b)/(c) **before** reading the delivery's tests,
+and probed on a `git archive` export (`/tmp/gafira-cb3-probe`) in a probe file of my own.
+
+| Way it could be hollow | Verdict | What settles it |
+|---|---|---|
+| The preview's bytes quantised by the test's own function instead of coming out of the backend's `Rgba8` path | **refuted** | `preview()` renders a `Preview` `GraphPageRenderer` and takes `PixelBuf::Rgba8` from its `read_back` (`arq_42_comparison.rs:467-477`); only the export is converted, by `encode_export` (`:481-491`). Probe 1 reproduces those bytes with a §10 conversion written from the spec, not imported: worst delta **0/255** on 4 096 pixels, i.e. the backend's quantisation and an outside implementation of the rule agree byte for byte. |
+| Both sides deriving from one renderer or one read-back | **refuted** | `renderer()` builds a fresh `GraphPageRenderer` on a fresh `CpuBackend::new()` and a fresh `ContentTileCache` per call (`:443-451`); `preview()` and `export_srgb8()` each call it, so no backend, cache, frame or surface is shared. `GraphPageRenderer::render` opens and abandons one frame per call (`page.rs:203-230`). |
+| A scene flat enough that every pixel matches trivially | **refuted, and guarded** | The scene is 3 shapes (two ellipses, anti-aliased), a `Screen` fill, a `Multiply` fill, a group at 0.75 and a group at 0.6 nested inside it (`:342-399`). The guard `distinct(&preview) >= 8` (`:639-643`) bites — mutant HM3 flattens the scene and the guard fails with `1 distinct pixels`. Probe 1's own scene measures 87 distinct colours and 4 096/4 096 opaque. |
+| A golden that regenerates itself, or that is compared with a tolerance it defines itself | **refuted** | The golden is `include_bytes!("golden/arq_113_scene.rgba8")` (`:709`) and the test tree has no write path (AC5 below). The tolerance is not the file's: `current_mode()` picks `Mode::Exact` (`allowed = 0`) on `x86_64-unknown-linux-gnu` and `Mode::Tolerant` (`pixels / 1000`) elsewhere (`:82-108`, `:190-194`), which is ARQ-113's and §10's wording, not metadata stored with the image. Probe 5 shows the golden is a real image (106 distinct pixels, 572 opaque, 3 524 transparent), so "one altered byte fails" is not vacuous. |
+
+Two limits the comparison does **not** prove, both stated by the design and neither a defect:
+the sRGB **curve** is shared on purpose (`LinearRgba::to_srgb` on both sides, `D9`), and the
+scene set of `CB3` is not arbitrary documents (`design.md`, "ARQ-42 is reachable"). Probe 6 pushes
+back on the first: re-encoding the export with a hand-written IEC 61966-2-1 curve (no
+`gafira_color`) still gives `differing(≥2/255) = 0` and `worst = 1/255`, so the agreement is a
+raster agreement and not an artefact of one shared function.
+
+### Acceptance criteria
+
+| AC | Proves it | Verdict | Does it prove the criterion as worded? |
+|---|---|---|---|
+| AC1 the two qualities agree within ARQ-42's budget at scale 1.0 | `arq_42_the_preview_and_the_export_agree_on_the_scene` (11-test binary, this one green), plus probes 1 and 6 | covered | Yes. 4 096 pixels, `report.differing == 0`, `allowed == 4` (0.0977 %, inside 0,1 %), and the metadata is asserted: `distinct >= 8` and every pixel `a == 255`. Probes 1 and 6 reproduce the agreement independently with a different scene. |
+| AC2 the export pixel is encoded in §10's order, hand-computed byte for byte | `arq_117_the_export_pixel_is_encoded_in_the_order_of_the_comparison_space` (3 rows) | covered | Yes. I recomputed all three rows by hand (`[0.5,0.25,0.1,1.0] → [188,137,89,255]`, `[0.25,…,0.5] → [94,62,45,128]`, `[0.05,0.125,0.0125,0.25] → [31,47,16,64]`) and they are correct; the third row is a rounding boundary that a truncating quantise misses (HM1), and the second row is where the premultiply rounding shows (M2). |
+| AC3 alpha 0 answers four zeroes, never divides | `arq_117_a_zero_alpha_pixel_answers_four_zeroes` (3 rows, incl. `a = 0.001`), `fd_55_a_transparent_render_is_zero_where_nothing_is_drawn` | covered | Yes. Probe 4 confirms on a real render that both sides give the identical 3 840 zero pixels of 4 096 and that the region draws content. The division itself is not byte-observable (the record says so); what is pinned is the output, which is the rule. |
+| AC4 one altered byte fails on this platform | `arq_113_one_altered_byte_fails_on_this_platform`, `arq_113_the_stored_golden_is_the_scene_on_its_platform`, `arq_113_the_golden_is_exact_only_on_the_platform_that_generates_it` | covered | Yes, and the stored golden passes **exactly** on this platform (the suite is green and `current_mode()` is `Exact` here), which is also the evidence that it was generated on `x86_64-unknown-linux-gnu`. See `S4` for the cross-platform reading of the altered-byte test. |
+| AC5 no test writes the golden | command | covered | Yes. `git grep -nE 'fs::(write\|File::create\|OpenOptions\|rename\|copy)\|std::fs' -- crates/gafira-render-cpu/tests/` → exit 1; `GOLDEN` enters the suite only as `include_bytes!`; size 16 384 = 64 × 64 × 4 as the constants fix. |
+| AC6 three nested semi-transparent layers keep the budget and the report names the worst channel and the count | `arq_42_three_nested_semi_transparent_layers_agree`, `arq_42_the_report_names_the_worst_channel_and_the_count`, `arq_42_the_failure_report_quotes_the_worst_channel` | covered | Yes. `differing == 0` at 0.5/0.5/0.5 (XP2's worst), and the fixture is shown to nest by `assert_ne!(nested, opaque)` at 1.0/1.0/1.0 (M8 kills it). The report is pinned to `worst == Blue`, `differing == 2` of 4 pixels, `max_delta == 3`, and the panic text. |
+| AC7 policy: `forbid(unsafe_code)`, V5, no clock, no file | command | covered | Yes. `lib.rs:25` has `#![forbid(unsafe_code)]`; the `forbid(unsafe_code)` and V5 steps exit 0; `git grep -nE 'std::fs\|std::net\|std::thread::spawn\|std::time::(Instant\|SystemTime)::now\|std::env' -- 'crates/gafira-render-cpu/src/*'` → exit 1; the new test reads no environment (`current_mode` is built from `cfg!`). The V5 row is unchanged and `gafira-render` is a **dev** edge only (`cargo tree -e normal,build` names it zero times, and the V5 step passes). |
+
+Product IDs of the card: `ARQ-42` (nine references in the test names and comments), `ARQ-113` (six),
+`FD-55` (seven), plus `ARQ-117` (the rule AC2 and AC3 name). All are named by a test; none is
+deliberately left out. The card's source line for `FD-55` points at `specs/05` while the row is in
+`specs/04:648` — the criterion is covered, the pointer is wrong (`S3`).
+
+### Artifact integrity (fast lane, step 3c)
+
+- `76b546f docs(gafira-render-cpu): slice card for CB3` touches only
+  `specs/changes/gafira-render-cpu/apply-progress.md` (+15, one file).
+- The card block (lines 155–169) is byte-identical between `76b546f` and HEAD: the only implementer
+  commit that touches the file, `24d4045`, has its hunk at `@@ -168,0 +169,55 @@`, entirely inside
+  the `## CB3 (tdd-apply)` record that follows the card.
+- Delivery diff against its base `76b546f`: **5 files, 805 insertions, 0 deletions** — exactly the
+  figure the record states. Nothing outside `crates/gafira-render-cpu/` and that record changed;
+  `src/` is untouched.
+- `develop` moved during the round (to `5789465`), which is why `git diff develop` reports 12 files
+  and 386 deletions: those are inbound timeline commits plus `1c9c3f8`, not this delivery. See
+  "Observations".
+
+### Independent probes (step 1c, before reading the delivery's tests)
+
+Six probes in `/tmp/gafira-cb3-probe/crates/gafira-render-cpu/tests/verify_probe_v2.rs`, on a
+`git archive` export of HEAD (files `touch`ed), each with its own conversion written from §10.
+
+| Probe | Criterion | Measurement |
+|---|---|---|
+| 1 — two qualities, two renderers, one region | AC1, AC2 | Non-flat scene of my own (two anti-aliased ellipses, one rect, a semi-transparent overlap): `differing(≥2/255) = 0/4096`, **worst = 0/255**, 87 distinct pixels, 4 096/4 096 opaque. The backend's `Rgba8` bytes and my independent §10 conversion agree byte for byte. |
+| 2 — two roots at the top level | claim 1 | Two disjoint opaque rects, preview read-back: **red = 0 pixels, blue = 256**. Only the last root survives. |
+| 3 — a region with an offset origin | claim 2 | Opaque page, region `(4,6,68,70)`: **616 of 4 096** pixels come back `(0,0,0,0)` — the 4-column × 6-row band, exactly `4 096 − 60 × 58`. |
+| 4 — FD-55 (b) on a real render | AC3 | Transparent page with one shape: 3 840 transparent pixels on the preview and the same 3 840 after converting the export; the region draws content. |
+| 5 — the stored golden is an image | AC4, ARQ-113 | 106 distinct premultiplied sRGB8 pixels, 572 opaque, 3 524 transparent, 16 384 bytes. Not flat, not blank. |
+| 6 — the export under a hand-written sRGB curve | AC1, AC2, `D9` | `differing(≥2/255) = 0`, `worst = 1/255` against the preview's own bytes. The curve is not hiding a self-agreement. |
+
+Comparison with the delivery's tests: no criterion is proved only by a weak test. The delivery's
+comparison is stronger than my probe on the fixed scene (it pins `differing == 0` on a scene with
+two nested groups and two blend modes) and weaker nowhere; my probes are stronger on independence
+(probe 6's curve) and on the two guard predicates (probes 2, 3, 5).
+
+### Hand mutants (step 4b)
+
+Applied to the export's copy of `arq_42_comparison.rs`, the named test run, the file restored from
+a pristine copy each time. The list `tdd-apply` recorded is **not** repeated: one item is
+spot-checked and four are mine.
+
+| Mutant | Wrong behaviour | Result | Killed by (and the observed failure) |
+|---|---|---|---|
+| Spot-check **M2** (recorded) | `(c × a) / 255` instead of `(c × a + 127) / 255` | killed | `arq_117_the_export_pixel_is_encoded_in_the_order_of_the_comparison_space`: `left: [94, 62, 44, 128]`, `right: [94, 62, 45, 128]` — exactly the recorded assertion |
+| **HM1** (mine) | the quantise step truncates instead of rounding to nearest (`floor(v × 255)` rather than `floor(v × 255 + 0,5)`) | killed | the AC2 opaque row: `left: [187, 136, 89, 255]`, `right: [188, 137, 89, 255]`. A different rule from M2 (quantisation, not premultiplication), so it is not a repeat. |
+| **HM2** (mine) | the tolerance boundary excludes a delta of exactly 2/255 (`delta > 2`) | killed | `arq_113_the_budget_is_one_pixel_in_a_thousand`: `one pixel at 2/255: left: 0`, `right: 1` — ARQ-113's "1 píxel a 2/255 pasa" is exactly the boundary |
+| **HM3** (mine) | the fixture is flattened to one opaque full-page rect | killed | the distinctness guard: `the scene is not one flat fill: 1 distinct pixels`. The "at least 8 distinct pixels" guard really bites. |
+| **HM4** (mine, extra, for the other guard) | the request always asks for transparency, so the background is not painted | killed | the opacity guard: `without transparency the page background makes every pixel opaque`. The "every pixel opaque" guard really bites — and probe 3 shows its predicate is exactly what fails on the coordinate-space defect. |
+
+5 run, 5 killed, no survivor. `git status` in the worktree stayed clean throughout (the mutants live
+in the scratch export only).
+
+### The two defect claims, verified independently
+
+Both are **real**, with my own numbers rather than the record's.
+
+1. **A page with more than one root loses every root but the last — confirmed.** Mechanism, read and
+   not assumed: `crates/gafira-render/src/planner.rs:295-315` emits one task per `(tile, root)` and
+   every one of them carries the same `region` with only that root's ops; `CpuBackend` writes a
+   task's tile over the surface as the whole content of its region
+   (`src/backend.rs:104` → `surface.rs:103-138`, a `copy_from_slice`). The second root's tile
+   erases the first. Probe 2: red **0**, blue **256** of 256.
+   Owner: **`CB3b`** (decision `O12` on `develop`), which puts the composition in the planner;
+   the contract half is `PC1`'s (`TileTask` is "the tile's own content") and the erase half is
+   `CB1`'s write. Not `CB3`, whose card forbids any change to `gafira-render`/`gafira-ports`.
+2. **`GraphPageRenderer::render` and `CpuBackend::read_back` disagree on the region's coordinate
+   space — confirmed.** `render` computes `target_region(request.region)` = `(0,0,w,h)`
+   (`page.rs:253`) while the surface sits at `origin = (request.region.x0, y0)` (`page.rs:211-215`)
+   and `Surface::read` treats its argument as page space (`surface.rs:144-150`, via
+   `page_rect`/`source_index`). Reading `(0,0,64,64)` from a surface at `(4,6)` loses 4 columns and
+   6 rows: probe 3 gives **616 of 4 096** transparent, the same number the record reports.
+   Consequence, and it is the important part: both qualities lose the **same** band, so AC1 would
+   have passed on a wrong page; only the opacity guard catches it (HM4 proves that guard bites).
+   Owner: **`CB3b`** (decision `O13`), with the fix in `Surface::read`/`write`; the ambiguous
+   contract is `gafira-ports`' `read_back`, which does not say which space it answers in.
+
+Neither claim is absorbed into this round, and neither is a `claim`-class finding: both reproduced.
+
+### `M4` (the preview at scale 2.0 survives)
+
+**A limit that `CB4` makes observable, not a gap in `CB3`'s acceptance.** AC1 fixes both sides at
+`scale 1.0`, and both requests come from one `request()` with one `SCALE` (`:249`, `:455-463`), so
+the two qualities cannot disagree on the zoom by construction. Within this cut the level of detail
+changes content keys and the tile grid but not a pixel, because the surface and the coverage are
+page-sized and nothing samples an image yet; the mutant is **equivalent here**, which is why it
+survives. It becomes observable with `CB4`'s `DrawImage` resampling, where the zoom changes the
+sampled footprint. Classified `W6` as a WARNING with `follow_up: true` (CB4), not as a critical
+survivor: the card's own hand-mutant rule ("the zoom being the same on both renderers") has no
+observable subject until then, and the region half of that rule is covered (the recorded M3).
+
+### Size
+
+`git diff --shortstat $(git merge-base develop HEAD)..HEAD` → **5 files changed, 805 insertions(+)**:
+`tests/arq_42_comparison.rs` 744, `Cargo.toml` 5, `Cargo.lock` 1, the record 55, and the golden is
+a 16 384-byte binary that git does not count as lines. Work excluding the record: **750**. Against
+the card's 300 (420 at ×1.4) that is 2.5× the forecast and **1.92×** of the ×1.4 figure, above the
+~700-line signal. The 840 (or 846) insertion figure does **not** reproduce as this delivery's diff;
+846 come from `git diff develop..HEAD`, where `develop` has advanced to `5789465` and the diff
+carries 386 inbound deletions — see below. The coordinator decides; `W7` records it.
+
+### Findings
+
+| Id | Severity | Class | Ref | Summary | Status |
+|---|---|---|---|---|---|
+| W4 | WARNING | architecture | `planner.rs:295-315`, `surface.rs:103` | A page with more than one root loses every root but the last (probe: red 0, blue 256 of 256). Real, pre-existing in `CB1`/`PC1`, and already allocated to **`CB3b`** by `O12` on `develop`. Not `CB3`. | open |
+| W5 | WARNING | architecture | `page.rs:211-239`, `surface.rs:144` | `render()` hands `(0,0,w,h)` to `read_back` while the surface origin is the page offset: an opaque page at region `(4,6,68,70)` returns 616/4 096 transparent pixels. Real, pre-existing; **`CB3b`** owns it per `O13`. Both sides lose the same band, so the comparison alone would not have seen it — the opacity guard did. | open |
+| W6 | WARNING | implementation | `arq_42_comparison.rs:249` | The recorded `M4` (preview at 2.0) is equivalent in this cut: both requests share `SCALE` and the surface is page-sized. `CB4`'s image sampling makes it observable. Follow-up, not a gap in AC1. | open |
+| W7 | WARNING | implementation | `arq_42_comparison.rs` 744, manifest+lock 6 | 750 work lines (805 with the record) against 300 forecast, 420 at ×1.4 — 1.79× and 1.92×, above the ~700 signal. Needs the owner's explicit OK before merge. | open |
+| S3 | SUGGESTION | ambiguity | `apply-progress.md:157` | The card cites FD-55 in `specs/05`; the row is `specs/04:648`. Criterion covered, pointer wrong. | open |
+| S4 | SUGGESTION | implementation | `arq_42_comparison.rs:732-743` | `arq_113_one_altered_byte_fails_on_this_platform` asserts `differing == 1` in `Mode::Exact` regardless of `current_mode()`, so on a matrix target whose golden is not byte-identical the count would be larger and the test red. It passes on this platform; the CI matrix is not runnable here. | open |
+| S5 | SUGGESTION | architecture | `design.md:384-400` (`D9`), `apply-progress.md:213` | `D9` named `gafira_testkit::golden::compare`; the delivery wrote its own and recorded why. The justification is factual — `Mismatch` is `Size \| Channels \| Pixels { differing, allowed }` (`gafira-testkit/src/golden.rs:180-187`), so AC6's worst-channel report cannot come from it — but `D9` now describes code that does not exist, and `CB6`'s critical list reuses "the encode path (same rules as CB3)". Amend `D9` or extend the testkit before then. | open |
+
+### Observations (not findings)
+
+- **No self-agreement, and that is the round's answer.** The preview is the backend's own `Rgba8`
+  read-back of its own `f32` accumulation; the export is a second, independent frame's `RgbaF32`
+  surface converted once by the test. The comparator carries its own `premultiply8` and `quantise8`
+  on purpose (`:35-45`) rather than calling `gafira_raster::premultiply_u8`, and my probe 1/6 land
+  on the backend's bytes from outside. What the test proves is the raster's agreement, exactly as
+  `ARQ-42` words it; what it cannot prove is the sRGB curve (shared by `D9`) — probe 6 shows the
+  curve is nonetheless standard to ≤ 1/255.
+- **`ARQ-113` is the mechanism only, as designed.** One stored golden of one scene (106 distinct
+  pixels), exact on its platform, no write path. The suite ARQ-113 describes needs the node kinds
+  and the exporters that do not exist (`design.md`, "ARQ-113 cannot be closed by this change"), and
+  the card asks only for the mechanism.
+- **`develop` moved during the round**, from the branch point `76b546f` to `5789465`: the timeline
+  retime fixes plus `1c9c3f8 docs(gafira-render-cpu): decide the multi-root task, the read_back
+  space and the single quantisation`, which adds `O12`, `O13` and `O14` and the deliveries `CB3b`
+  and `CB8`. That commit assigns `W4` and `W5` to `CB3b` (before `CB4`) and supersedes nothing in
+  this delivery's acceptance. The branch's card commit is unaffected, and nothing of this round's
+  verdict changes: `CB3` is verified against `76b546f` and its own card.
+- **The record's numbers reproduce.** 196 binaries / 2 479 passed / 0 failed / 0 ignored; 805
+  insertions against the base; 616 of 4 096; 64 of 4 096 for the region shift; the golden's
+  16 384 bytes; and the hand-mutant table's assertions, one of which I re-ran (M2) and got byte for
+  byte. The one figure that does not reproduce is the 840-insertion count, which is the
+  `develop`-relative diff (846/386) rather than the delivery's.
+- **The `DriverBlocked` conflation from `W2` of `CB2` is untouched** by this delivery:
+  `src/` is not modified, and the new code cannot reach a `RenderError` because it only renders.
+
+next: tdd-apply
