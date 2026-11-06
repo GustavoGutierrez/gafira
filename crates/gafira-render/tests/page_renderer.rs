@@ -235,12 +235,6 @@ fn graph(quality: RenderQuality) -> RenderGraph {
     .expect("the page builds")
 }
 
-/// The key of the root `index` of a graph.
-fn root_key(graph: &RenderGraph, index: usize) -> gafira_ports::render::ContentKey {
-    let root = graph.roots()[index];
-    graph.node(root).expect("the root is a node").key()
-}
-
 // ARQ-42, AC2: the preview and the export build the same graph with the same
 // operations, and only the quality of the content keys differs.
 #[test]
@@ -312,19 +306,27 @@ fn arq_42_the_rendered_plans_differ_only_in_the_content_keys() {
         );
         assert!(
             one.ops.len() > 1,
-            "a tile carries the background and the operations of its root"
+            "a tile carries the background and the operations of the page's roots"
         );
     }
 
-    // The plan of each quality is the plan of its own graph (RE1 → RE2).
-    assert_eq!(
-        preview[0].key.content,
-        root_key(&graph(RenderQuality::Preview), 0)
-    );
-    assert_eq!(
-        export[0].key.content,
-        root_key(&graph(RenderQuality::Export), 0)
-    );
+    // O12: the page has two roots, and the task of a region composes both, so
+    // its content key is neither root's key.
+    for (quality, task) in [
+        (RenderQuality::Preview, &preview[0]),
+        (RenderQuality::Export, &export[0]),
+    ] {
+        let graph = graph(quality);
+        assert_eq!(graph.roots().len(), 2, "the page has two roots");
+        for root in graph.roots() {
+            let root = graph.node(*root).expect("the root is a node");
+            assert_ne!(
+                task.key.content,
+                root.key(),
+                "the task composes both roots, not one of them"
+            );
+        }
+    }
 }
 
 // ARQ-42, AC1: the engine reaches an exporter through the port (02 §4.5).

@@ -217,6 +217,14 @@ fn bytes8(image: &ImageBuf, x: u32, y: u32) -> [u8; 4] {
     }
 }
 
+/// The bytes of an `Rgba8` image, row by row.
+fn rgba8_bytes(image: &ImageBuf) -> Vec<u8> {
+    match image.data() {
+        PixelBuf::Rgba8(data) => data.clone(),
+        _ => panic!("the target asked for Rgba8"),
+    }
+}
+
 /// True when the pixel is the opaque white the scene fills.
 fn is_white(image: &ImageBuf, x: u32, y: u32) -> bool {
     let [r, g, b, a] = channels(image, x, y);
@@ -885,6 +893,65 @@ fn arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target() {
     );
 }
 
+// O13, ARQ-42: a rectangle is page space for `write` and for `read`, so an
+// offset region answers the window the page holds and equals the same window
+// of a full-surface read. Before O13 the read was clipped against its own
+// offset and lost a band of `x0` columns and `y0` rows.
+#[test]
+fn arq_42_an_offset_region_reads_back_the_window_the_page_holds() {
+    let full = run(
+        target(96, 96, (0, 0), PixelFormat::Rgba8),
+        &plan(vec![task(
+            1,
+            IRect::new(0, 0, 96, 96),
+            vec![
+                fill(0.0, 0.0, 48.0, 96.0, srgb(1.0, 0.0, 0.0, 1.0)),
+                fill(48.0, 0.0, 96.0, 96.0, srgb(0.0, 0.0, 1.0, 1.0)),
+            ],
+        )]),
+    );
+    let full = rgba8_bytes(&full);
+
+    let region = IRect::new(4, 6, 68, 70);
+    let offset = run(
+        target(64, 64, (4, 6), PixelFormat::Rgba8),
+        &plan(vec![task(
+            2,
+            region,
+            vec![
+                fill(0.0, 0.0, 48.0, 96.0, srgb(1.0, 0.0, 0.0, 1.0)),
+                fill(48.0, 0.0, 96.0, 96.0, srgb(0.0, 0.0, 1.0, 1.0)),
+            ],
+        )]),
+    );
+    let offset = rgba8_bytes(&offset);
+
+    // The same window of the full-surface read, row by row.
+    let mut expected = Vec::with_capacity(64 * 64 * 4);
+    for y in region.y0..region.y1 {
+        let start = (usize::try_from(y).unwrap() * 96 + 4) * 4;
+        expected.extend_from_slice(&full[start..start + 64 * 4]);
+    }
+    assert_eq!(
+        offset, expected,
+        "the offset read is the window of the page, not its own offset"
+    );
+    assert!(
+        offset.chunks_exact(4).all(|pixel| pixel[3] == 255),
+        "an opaque page answers no transparent pixel"
+    );
+    assert_eq!(
+        &offset[0..4],
+        &[255, 0, 0, 255],
+        "the first pixel of the region is page (4, 6), red"
+    );
+    assert_eq!(
+        &offset[offset.len() - 4..],
+        &[0, 0, 255, 255],
+        "the last pixel of the region is page (67, 69), blue"
+    );
+}
+
 // CB1 and CB2 render no image, mask, effect or transition: the closed
 // `RenderOp` enum forces a reading, and the adapter reports an op it cannot
 // compose instead of drawing a page it cannot finish. The image is CB4 and the
@@ -953,6 +1020,48 @@ fn arq_111_the_same_plan_and_surface_give_the_same_bytes() {
         let second = run(target_desc, &scene);
         assert_eq!(first.data(), second.data(), "{:?}", target_desc.format);
     }
+}
+
+// ARQ-111, AC5, O12: the merged tile of a region is content-addressed, so the
+// same frame rendered twice answers the same bytes and the second run reuses
+// the cached tile instead of covering both roots again.
+#[test]
+fn arq_111_a_second_frame_reuses_the_merged_tile() {
+    let target_desc = target(32, 32, (0, 0), PixelFormat::RgbaF32);
+    let scene = plan(vec![task(
+        7,
+        IRect::new(0, 0, 32, 32),
+        vec![
+            fill(0.0, 0.0, 16.0, 32.0, srgb(1.0, 0.0, 0.0, 1.0)),
+            fill(16.0, 0.0, 32.0, 32.0, srgb(0.0, 0.0, 1.0, 1.0)),
+        ],
+    )]);
+    let mut cache = RecordingCache::default();
+
+    let first = run_with(target_desc, &scene, &mut cache);
+    assert_eq!(cache.puts().len(), 1, "the merged tile is rendered once");
+    assert_eq!(
+        channels(&first, 8, 16),
+        [1.0, 0.0, 0.0, 1.0],
+        "the first root of the merged tile"
+    );
+    assert_eq!(
+        channels(&first, 24, 16),
+        [0.0, 0.0, 1.0, 1.0],
+        "the second root of the merged tile"
+    );
+
+    let second = run_with(target_desc, &scene, &mut cache);
+    assert_eq!(
+        cache.puts().len(),
+        1,
+        "the cached tile is reused, not rendered again"
+    );
+    assert_eq!(
+        first.data(),
+        second.data(),
+        "the two frames agree byte for byte"
+    );
 }
 
 // ---------------------------------------------------------------------------

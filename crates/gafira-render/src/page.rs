@@ -159,7 +159,10 @@ impl PageRenderer for GraphPageRenderer {
         cancel: &CancelToken,
     ) -> Result<ImageBuf, RenderError> {
         let format = self.format();
-        let region = target_region(request.region);
+        // O13: the region of the request is page space, the space of the tasks
+        // and of the surface's origin, so `read_back` answers the window the
+        // request named.
+        let region = request.region;
         // AC4: the port gives no variant for a page the document does not
         // hold. The scope mapping is what rejects it (FD-58), so `render` stays
         // total over `PageId` and answers the empty region instead of failing
@@ -246,17 +249,6 @@ fn zoom_of(quality: RenderQuality, scale: f32) -> f64 {
 /// One side of the page in whole pixels, at least one.
 fn side_px(px: f64) -> u32 {
     (px.round() as u32).max(1)
-}
-
-/// The region of the surface to read back: the output starts at its origin,
-/// whatever the page offset of the request.
-fn target_region(region: IRect) -> IRect {
-    IRect::new(0, 0, whole(region.width()), whole(region.height()))
-}
-
-/// A pixel count of the surface as the coordinate type of [`IRect`].
-fn whole(px: u32) -> i32 {
-    i32::try_from(px).unwrap_or(i32::MAX)
 }
 
 /// An empty (fully transparent) image of the region (AC4, AC5).
@@ -754,8 +746,32 @@ mod tests {
             // grid, clipped to the request.
             let corner = IRect::new(origin.0, origin.1, 256, 256);
             assert!(regions.contains(&corner), "{origin:?} plans {regions:?}");
-            assert_eq!(reads, vec![IRect::new(0, 0, width as i32, height as i32)]);
+            assert_eq!(reads, vec![region]);
         }
+    }
+
+    // O13, ARQ-42: `read_back` answers the page-space window the request named.
+    // A rectangle translated to the surface's own origin is read against the
+    // surface's page position and loses a band of `x0` columns and `y0` rows.
+    #[test]
+    fn arq_42_read_back_is_asked_for_the_page_space_region_of_the_request() {
+        let document = document(&[(200, 150)]);
+        let page = document.pages()[0].id;
+        let (renderer, record) =
+            renderer(document, RenderQuality::Preview, RecordingBackend::new());
+        let region = IRect::new(4, 6, 68, 70);
+        let image = renderer
+            .render(&request(page, region, 1.0, false), &CancelToken::new())
+            .expect("the page renders");
+        assert_eq!((image.width(), image.height()), (64, 64));
+
+        let (targets, _, reads, _) = seen(&record);
+        assert_eq!(targets[0].origin, (4, 6), "the surface sits at the region");
+        assert_eq!(
+            reads,
+            vec![region],
+            "the rectangle is page space, the same space as the tasks (O13)"
+        );
     }
 
     // ARQ-42, AC3: the preview is 8-bit sRGB premultiplied at the zoom, the

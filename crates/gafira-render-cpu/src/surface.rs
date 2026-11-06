@@ -93,9 +93,12 @@ impl Surface {
 
     /// Writes one tile into the surface, clipped to the target (D4).
     ///
-    /// `tile` is `size`-sized, tile-local and premultiplied; the part of
-    /// `region` that falls outside the surface is dropped, so a clip that only
-    /// partly overlaps the target loses nothing inside it.
+    /// `region` is page space (O13), the same space as [`Self::read`] and as
+    /// `TileTask.region`; the surface maps it into its own storage through
+    /// [`Self::source_index`]. `tile` is `size`-sized, tile-local and
+    /// premultiplied; the part of `region` that falls outside the surface is
+    /// dropped, so a clip that only partly overlaps the target loses nothing
+    /// inside it.
     pub(crate) fn write(&mut self, region: IRect, tile: &[f32], size: (u32, u32)) {
         let clip = region.intersect(self.page_rect());
         if clip.is_empty() {
@@ -105,22 +108,20 @@ impl Surface {
             return;
         };
         let span = span * 4;
-        let (Ok(tile_width), Ok(surface_width)) =
-            (usize::try_from(size.0), usize::try_from(self.width))
-        else {
+        let Ok(tile_width) = usize::try_from(size.0) else {
             return;
         };
         for y in clip.y0..clip.y1 {
-            let (Ok(source_row), Ok(target_row), Ok(source_column), Ok(target_column)) = (
+            let (Ok(source_row), Ok(source_column)) = (
                 usize::try_from(y - region.y0),
-                usize::try_from(y - self.origin.1),
                 usize::try_from(clip.x0 - region.x0),
-                usize::try_from(clip.x0 - self.origin.0),
             ) else {
                 continue;
             };
+            let Some(target_start) = self.source_index(clip.x0, y) else {
+                continue;
+            };
             let source_start = (source_row * tile_width + source_column) * 4;
-            let target_start = (target_row * surface_width + target_column) * 4;
             let (Some(source_end), Some(target_end)) = (
                 source_start.checked_add(span),
                 target_start.checked_add(span),
@@ -136,8 +137,11 @@ impl Surface {
 
     /// Reads `region` back in the target's format.
     ///
-    /// The answer is `region`-sized; the part of `region` outside the surface
-    /// is transparent black, which is the pixel the page has there.
+    /// `region` is page space (O13), the same space as [`Self::write`] and as
+    /// `TileTask.region`; the surface maps it into its own storage through
+    /// [`Self::source_index`]. The answer is `region`-sized; the part of
+    /// `region` outside the surface is transparent black, which is the pixel
+    /// the page has there.
     ///
     /// # Errors
     /// [`RenderError::OutOfMemory`] when the region cannot be allocated.

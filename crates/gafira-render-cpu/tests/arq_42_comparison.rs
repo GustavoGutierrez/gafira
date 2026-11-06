@@ -312,12 +312,17 @@ fn group(id: u64, opacity: f32, children: &[u64]) -> Node {
 
 /// A page of the scene's nodes.
 fn document(nodes: Vec<Node>, roots: &[u64]) -> Document {
+    page_of(f64::from(PAGE), nodes, roots)
+}
+
+/// A square page of `side` pixels holding the scene's nodes.
+fn page_of(side: f64, nodes: Vec<Node>, roots: &[u64]) -> Document {
     let mut page = Page::new(
         PageId::new(1),
         "ARQ-42".to_string(),
         PageSize {
-            width: Length::new(f64::from(PAGE), Unit::Px),
-            height: Length::new(f64::from(PAGE), Unit::Px),
+            width: Length::new(side, Unit::Px),
+            height: Length::new(side, Unit::Px),
         },
     );
     let mut next_id = 1;
@@ -450,14 +455,14 @@ fn renderer(document: Document, quality: RenderQuality) -> GraphPageRenderer {
     )
 }
 
-/// The one request of the comparison: the same page, instant, region and scale
-/// for both qualities.
-fn request(transparent: bool) -> PageRenderRequest {
+/// The request of the comparison: the same page, instant, region and scale for
+/// both qualities.
+fn request_in(region: IRect, transparent: bool) -> PageRenderRequest {
     PageRenderRequest {
         page: PageId::new(1),
         time: Default::default(),
         scale: SCALE,
-        region: REGION,
+        region,
         transparent,
     }
 }
@@ -465,11 +470,16 @@ fn request(transparent: bool) -> PageRenderRequest {
 /// The preview's own bytes: the `Rgba8` surface `CpuBackend::read_back` hands
 /// a `Preview` frame (O11's one quantisation).
 fn preview(document: Document, transparent: bool) -> Vec<u8> {
+    preview_in(document, transparent, REGION)
+}
+
+/// The preview's bytes over `region`.
+fn preview_in(document: Document, transparent: bool, region: IRect) -> Vec<u8> {
     let image = renderer(document, RenderQuality::Preview)
-        .render(&request(transparent), &CancelToken::new())
+        .render(&request_in(region, transparent), &CancelToken::new())
         .expect("the preview renders");
-    assert_eq!(image.width(), REGION.width(), "the region's width");
-    assert_eq!(image.height(), REGION.height(), "the region's height");
+    assert_eq!(image.width(), region.width(), "the region's width");
+    assert_eq!(image.height(), region.height(), "the region's height");
     match image.data() {
         PixelBuf::Rgba8(bytes) => bytes.clone(),
         other => panic!("the preview answers Rgba8, not {other:?}"),
@@ -479,11 +489,16 @@ fn preview(document: Document, transparent: bool) -> Vec<u8> {
 /// The export's `RgbaF32` surface, converted here, once, to the comparison
 /// space.
 fn export_srgb8(document: Document, transparent: bool) -> Vec<u8> {
+    export_srgb8_in(document, transparent, REGION)
+}
+
+/// The export's bytes over `region`, in the comparison space.
+fn export_srgb8_in(document: Document, transparent: bool, region: IRect) -> Vec<u8> {
     let image = renderer(document, RenderQuality::Export)
-        .render(&request(transparent), &CancelToken::new())
+        .render(&request_in(region, transparent), &CancelToken::new())
         .expect("the export renders");
-    assert_eq!(image.width(), REGION.width(), "the region's width");
-    assert_eq!(image.height(), REGION.height(), "the region's height");
+    assert_eq!(image.width(), region.width(), "the region's width");
+    assert_eq!(image.height(), region.height(), "the region's height");
     match image.data() {
         PixelBuf::RgbaF32(values) => encode_export(values),
         other => panic!("the export answers RgbaF32, not {other:?}"),
@@ -669,6 +684,156 @@ fn fd_55_a_transparent_render_is_zero_where_nothing_is_drawn() {
     assert!(
         preview.chunks_exact(4).any(|p| p[3] != 0),
         "the region does draw content, so both sides are not blank"
+    );
+}
+
+/// The window `region` of a `width`-wide `Rgba8` buffer of page `(0, 0)`.
+fn crop(bytes: &[u8], width: usize, region: IRect) -> Vec<u8> {
+    let span = usize::try_from(region.width()).unwrap() * 4;
+    let mut out = Vec::with_capacity(span * usize::try_from(region.height()).unwrap());
+    for y in region.y0..region.y1 {
+        let start = (usize::try_from(y).unwrap() * width + usize::try_from(region.x0).unwrap()) * 4;
+        out.extend_from_slice(&bytes[start..start + span]);
+    }
+    out
+}
+
+/// The four bytes of page pixel `(x, y)` of a `REGION`-sized buffer.
+fn pixel_at(bytes: &[u8], x: usize, y: usize) -> [u8; 4] {
+    let index = (y * REGION.width() as usize + x) * 4;
+    [
+        bytes[index],
+        bytes[index + 1],
+        bytes[index + 2],
+        bytes[index + 3],
+    ]
+}
+
+// ARQ-42, O12: a page whose roots are two disjoint opaque shapes keeps both
+// through the read-back. Before O12 each root got a task of its own carrying
+// the whole region, so the second root's tile erased the first.
+#[test]
+fn arq_42_two_roots_of_a_page_both_survive_the_read_back() {
+    let two_roots = document(
+        vec![
+            shape(
+                2,
+                [4.0, 4.0, 20.0, 20.0],
+                ShapeGeometry::Rect,
+                color(1.0, 0.0, 0.0, 1.0),
+                1.0,
+                BlendMode::Normal,
+            ),
+            shape(
+                3,
+                [36.0, 40.0, 20.0, 20.0],
+                ShapeGeometry::Rect,
+                color(0.0, 0.0, 1.0, 1.0),
+                1.0,
+                BlendMode::Normal,
+            ),
+        ],
+        &[2, 3],
+    );
+    let bytes = preview(two_roots, true);
+    assert_eq!(
+        pixel_at(&bytes, 10, 10),
+        [255, 0, 0, 255],
+        "the first root is drawn"
+    );
+    assert_eq!(
+        pixel_at(&bytes, 46, 50),
+        [0, 0, 255, 255],
+        "the second root is drawn too, instead of erasing the first"
+    );
+    assert_eq!(
+        pixel_at(&bytes, 30, 30),
+        [0, 0, 0, 0],
+        "between the two roots the transparent page keeps its alpha"
+    );
+}
+
+/// The region of the offset tests: it starts away from the page origin, so a
+/// read clipped against its own offset would lose a band of `x0` columns and
+/// `y0` rows (O13).
+const OFFSET: IRect = IRect::new(4, 6, 68, 70);
+
+/// A page larger than [`OFFSET`], with an opaque background and two shapes, so
+/// every pixel of the region has content and a comparison has something to
+/// disagree about.
+fn offset_scene() -> Document {
+    page_of(
+        96.0,
+        vec![
+            shape(
+                2,
+                [0.0, 0.0, 96.0, 96.0],
+                ShapeGeometry::Rect,
+                color(0.92, 0.94, 0.96, 1.0),
+                1.0,
+                BlendMode::Normal,
+            ),
+            shape(
+                3,
+                [10.0, 12.0, 30.0, 24.0],
+                ShapeGeometry::Ellipse,
+                color(0.8, 0.1, 0.2, 1.0),
+                1.0,
+                BlendMode::Normal,
+            ),
+            shape(
+                4,
+                [40.0, 20.0, 30.0, 40.0],
+                ShapeGeometry::Rect,
+                color(0.1, 0.5, 0.9, 0.5),
+                1.0,
+                BlendMode::Multiply,
+            ),
+        ],
+        &[2, 3, 4],
+    )
+}
+
+// ARQ-42, O13: an offset region over an opaque page answers no transparent
+// pixel, and its bytes are the same window of a full-page read.
+#[test]
+fn arq_42_an_offset_region_is_the_window_of_a_full_page_read() {
+    let full = preview_in(offset_scene(), false, IRect::new(0, 0, 96, 96));
+    let window = preview_in(offset_scene(), false, OFFSET);
+
+    assert_eq!(window.len(), 64 * 64 * 4, "the region answers its own size");
+    assert!(
+        window.chunks_exact(4).all(|pixel| pixel[3] == 255),
+        "an opaque page answers no transparent pixel in an offset region"
+    );
+    assert_eq!(
+        window,
+        crop(&full, 96, OFFSET),
+        "the offset region is the page's window, not its own origin"
+    );
+}
+
+// ARQ-42, O13, O11: the preview and the export agree on the offset region
+// within ARQ-42's budget, on a region whose content reaches every pixel.
+#[test]
+fn arq_42_the_preview_and_the_export_agree_on_an_offset_region() {
+    let preview = preview_in(offset_scene(), false, OFFSET);
+    let export = export_srgb8_in(offset_scene(), false, OFFSET);
+
+    assert!(
+        preview.chunks_exact(4).all(|pixel| pixel[3] == 255),
+        "the region carries the whole page, so the comparison is not of a band"
+    );
+    let report = assert_agrees(
+        Mode::Tolerant,
+        "ARQ-42, an offset region",
+        &preview,
+        &export,
+    );
+    assert_eq!(report.pixels, 64 * 64, "the comparison covers the region");
+    assert_eq!(
+        report.differing, 0,
+        "O11: the preview quantises the export's surface"
     );
 }
 
