@@ -257,3 +257,39 @@ in a separate commit after the code.
 Estimate: 90 authored lines, 126 at x1.4. Verify: V1.
 
 Owner decisions touched: none (O2 and O5 belong to `E3b` and `E3d`).
+
+## Notes — `E3a`
+
+Done: AC1-AC7. `History::newest_touches` and `History::undone_touches` in
+`crates/gafira-edit/src/history.rs` (doc comments cite P14); tests in
+`crates/gafira-edit/tests/dirty_sets.rs`, each named `acN_...` with `// ARQ-30`. Code commit
+`d1d6641`.
+
+RED evidence (both methods stubbed to `None`, tests run, every assertion compares whole
+`(newest_touches, undone_touches)` pairs of `DirtySet`s):
+
+| AC | Test | Assertion before the code |
+|---|---|---|
+| AC1 | `ac1_after_a_changed_execute_the_newest_set_is_the_applied_one` | left `(None, None)`, right `(Some({pages: {PageId(1)}}), None)` |
+| AC2 | `ac2_undo_reports_the_undone_entry_and_the_new_top` | left `(None, None)`, right `(Some({PageId(1)}), Some({PageId(2)}))` |
+| AC3 | `ac3_redo_reports_the_redone_entry_and_the_next_redo_entry` | left `(None, None)`, right `(Some({PageId(1)}), Some({PageId(2)}))` |
+| AC4 | `ac4_a_merged_gesture_reports_the_merged_entry` | left `(None, None)`, right `(Some({PageId(2)}), None)` |
+| AC5 | `ac5_an_unchanged_execute_leaves_both_sets` | left `(None, None)`, right `(Some({PageId(1)}), Some({PageId(2)}))` |
+| AC5 | `ac5_an_empty_history_reports_nothing` | passed against the `None` stub (see deviations); killed by mutant 3 |
+| AC6 | `ac6_a_command_that_fails_to_apply_leaves_both_sets` | left `(None, None)`, right `(Some({PageId(1)}), Some({PageId(2)}))` |
+| AC7 | gates at workspace scope | `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --locked -- -D warnings` finished with no warning; `cargo test --workspace --locked` 199 suites, 2529 passed, 0 failed |
+
+AC1 uses `InsertPage`, whose set is empty before `apply` (XP4); AC6 uses an `InsertPage` with an
+out-of-range index (`IndexOutOfRange { index: 9, len: 1 }`) over a history with both stacks full.
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 1 | swap the stacks (`newest_touches` reads the redo top, `undone_touches` the undo top) | all but `ac5_an_empty_history_reports_nothing`; e.g. `ac1_...` | left `(None, Some({PageId(1)}))`, right `(Some({PageId(1)}), None)` |
+| 2 | read the bottom (`first()`) instead of the top | `ac2_...`, `ac3_...`, `ac4_...` | `ac4`: left `(Some({PageId(1)}), None)`, right `(Some({PageId(2)}), None)`; `ac3`: undone left `{PageId(3)}`, right `{PageId(2)}` |
+| 3 | `Some(DirtySet::default())` on an empty stack | `ac5_an_empty_history_reports_nothing` (and `ac1` to `ac4`) | left `(Some({}), Some({}))`, right `(None, None)` |
+
+Deviations: the `None`-on-empty half of AC5 cannot fail against a stub that returns `None`; its
+RED is mutant 3 instead. Measured lines (`git diff --shortstat cad7d0c..d1d6641`): 2 files, 171
+insertions, 1 deletion (estimate 90, 126 at x1.4; the overrun is the test file, 153 lines).
