@@ -154,7 +154,7 @@ The eight hand mutants of the Slice card were applied on the green HEAD, the tes
 
 ## CB3
 Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: coordinator | reason: the tolerance ARQ-42 exists for is provable only now that two qualities render the same scene; a comparator that agrees with itself is the easiest thing to fake, so the round owes independent probes
-Product IDs: ARQ-42, ARQ-113; FD-55 (b), (c) (source: specs/02-arquitectura-software.md §10, ARQ-42, ARQ-113; specs/05-funcionalidad-video-y-distribucion.md FD-55)
+Product IDs: ARQ-42, ARQ-113; FD-55 (b), (c) (source: specs/02-arquitectura-software.md §10, ARQ-42, ARQ-113; specs/04-funcionalidad-diseno-imagen-exportacion.md FD-55, §13)
 Scope: `CB3` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`'s tests, the ARQ-42 comparison of the two qualities at 100 %, the sRGB8 comparator with ARQ-117's rounding, the transparency case of FD-55 (b), and one stored golden of the mechanism of ARQ-113.      Non-goals: images (`CB4`), masks, effects and transitions (`CB5`), the benches and the cancellation gap (`CB6`), the parallel bands (`CB7`), any change outside `crates/gafira-render-cpu/`'s tests and its test helpers, and any change to the crate's dependencies or its V5 row.
 Acceptance:
   AC1 Given a scene of fills and layers, When a `GraphPageRenderer` at `Preview` and one at `Export` render the same region at scale 1.0, Then the two sRGB8 images differ by more than 1/255 in no more than 0,1 % of the pixels (ARQ-42) [unit]
@@ -221,3 +221,11 @@ The eight hand mutants below were applied on the green HEAD, the test that names
 - **`Cargo.lock` gains one line** (`"gafira-render"` under `gafira-render-cpu`), as `O2` allows. The V5 row is unchanged and that was verified, not assumed: `cargo tree -p gafira-render-cpu -e normal,build --target all` names `gafira-render` zero times, and the V5 policy step passes.
 - **`gafira-doc` and `gafira-time` stay normal dependencies.** The card's plan names `gafira-doc` as a dev-dependency, but it is already a normal one (the crate hands `gafira-doc`'s contract types); `Flicks` is not named at all (the request takes `time: Default::default()`), so no dependency was added for it. The only manifest change is the `gafira-render` dev edge.
 - **Scopes.** The first commit touched `Cargo.toml`, so it ran the `--workspace` clippy scope of ADR 0017; the rest ran the leaf scope. `crates/gafira-render-cpu/src/` is untouched: the whole delivery is `tests/`, the manifest and the lock. Nothing outside `crates/gafira-render-cpu/` changed.
+
+Coordinator decisions on the CB3 round (2026-11-06): the card cited FD-55 in `05`, and FD-55 is
+`04`'s row (§13, `04-funcionalidad-diseno-imagen-exportacion.md:648`); the citation is corrected
+above. The size is accepted at **750 lines of work** (805 with this record) against the card's 300:
+744 of the 750 are tests, the golden is a 16 KiB binary git does not count, and the manifest and
+lock add six. The 840 first reported did not reproduce — it measured against a `develop` that had
+already moved — and the V2 round caught that, which is the reason the figure is stated with the
+base it was measured from.
