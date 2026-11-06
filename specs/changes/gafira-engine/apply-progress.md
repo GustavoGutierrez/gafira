@@ -650,3 +650,67 @@ Production: 141 insertions, 14 deletions (`project.rs` 100/7, `engine.rs` 24/3, 
 (`project.rs` tests 237/3, `engine.rs` tests 16/0, `fakes.rs` 14/0, test-only module). The split
 figures came from `git diff --numstat` and the hunk headers of `project.rs` and `engine.rs`
 against their `#[cfg(test)]` lines. Forecast ~300; 425 authored lines, under the ~700 stop line.
+
+## Slice card — `E3d` autosave over a snapshot
+
+Product IDs: 02 §7.2 "Autoguardado rotativo" (1573); ARQ-51 (1614) bounded as P13 states, not the
+kill test. Design: P13, P16 (`autosave_interval`), P15 ("autosave pending", what never clears
+"modified"), row `E3d`, "Critical code" row `E3d`. Owner decision touched: **O5 = (a)**,
+2026-11-06 — until a journal port exists, each slot is written as a whole project through
+`ProjectRepository::save`; "JSON only" and the 200 ms figure of §7.2 are **not met and not
+claimed** here; the journal method in `gafira-ports` is a release prerequisite. SP5 (a real
+project id) blocks `E4`, not this delivery: `project_key` from `E3c2` names the folder.
+
+Scope:
+
+- `EngineConfig::autosave_interval: Duration` (default 10 s) and
+  `with_autosave_interval(self, Duration) -> Result<Self, EngineError>`: 5 s to 15 s inclusive,
+  `InvalidConfig` otherwise.
+- `pending_since: Option<Duration>` in the session: set (monotonic) by the first edit, undo or redo
+  bump after the last snapshot was taken; not set by `new_document` or `open`; cleared by taking a
+  job and by a successful `save`.
+- `ProjectService::autosave_due() -> Option<AutosaveJob>`: `Some` exactly when a session is open,
+  `pending_since` is set, no job is in flight, and `now - pending_since >= interval`.
+- `AutosaveJob { snapshot, version, slot, folder, project_key, repository, filesystem }`, `Send`;
+  `run(self) -> AutosaveOutcome`: `create_dir_all(folder)`, `repository.save(tmp)`,
+  `filesystem.replace(tmp, slot path)`, best-effort `remove(tmp)` on failure. Path
+  `data_dir/recovery/<project_key>/slot-<n>.gafira-journal`, `n` in `0, 1, 2`, temporary
+  `slot-<n>.gafira-journal.tmp` in the same folder.
+- `ProjectService::autosave_finished(outcome)`: success → slot advances `0 → 1 → 2 → 0`, in-flight
+  cleared; failure → slot does not advance, `pending_since = now`; an outcome whose `project_key`
+  is not the current session's is ignored.
+
+Non-goals: the journal format, the BLAKE3 checksum, `RecoveryAvailable`, `recover`, slot lookup by
+project (`E4`, SP5); the file lock (ARQ-57); a thread or timer in the engine (P1, P8: the host
+pumps); `SaveState` events; the kill test of §6.7.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | The interval accepts exactly 5 s and 15 s, rejects 4.999 s and 15.001 s (one step outside each), default 10 s | unit tests on `with_autosave_interval` |
+| AC2 | Due at exactly `interval` after the first pending change, not one step before | unit test with the fake `Clock` |
+| AC3 | No job without changes: after `new_document`, after `open`, after a successful `save`, and with no session, `autosave_due()` is `None` at any time | unit tests |
+| AC4 | The snapshot is the document at job creation: an edit made after `autosave_due()` and before `run` is not in the written slot | unit test reading the slot back through the fake repository |
+| AC5 | A change made while a job is in flight stays pending: no second job while in flight; after `autosave_finished(Ok)`, the next job comes one interval after that change | unit test |
+| AC6 | Slots rotate `0 → 1 → 2 → 0` on success only; a failed job keeps the slot and the next job writes the same slot | unit test over four successful and one failed job, asserting slot paths from the trace |
+| AC7 | After a failure the retry is one interval later, never on the next tick | unit test: `autosave_due()` is `None` just before `now + interval`, `Some` at it |
+| AC8 | A stale outcome (session replaced by `new_document` or `open` meanwhile) is ignored: the new session's slot, in-flight mark and pending state are untouched | unit test |
+| AC9 | An autosave never clears "modified" (`is_modified()` stays true after a successful job) and does not bump the version or publish | unit test |
+| AC10 | `run` writes through the ports only: `create_dir_all` of the slot folder, `save` to the temporary in that folder, `replace` onto the slot; on a failure at any operation the slot holds its previous bytes or the new bytes in full, and `remove(tmp)` is attempted | unit test with the fault-injecting fakes of `E3c1` |
+| AC11 | A read-only session still autosaves (slots are not the user's file, P18) | unit test |
+| AC12 | `AutosaveJob` is `Send`; the engine spawns nothing, every instant from `Clock` | compile-time assertion and the purity grep |
+| AC13 | Gates at `--workspace` scope | gate output in the notes |
+
+Every test asserts a value that can fail: exact instants, exact slot paths, exact bytes.
+
+Hand mutants (critical code, row `E3d`): `>` instead of `>=` at the due boundary; accept 4 s or
+16 s; set `pending_since` on `open`/`new_document`; take the snapshot at `run` instead of at
+creation; clear `pending_since` on `autosave_finished` instead of when the job is taken; advance
+the slot on failure; retry on the next tick after a failure; apply a stale outcome; clear
+"modified" on autosave. Record each with its killing test and failure.
+
+Plan: RED for AC1-AC11, then the interval, then the pending rule, then `autosave_due` and the job,
+then `run`, then `autosave_finished`, then the gates; notes in a separate commit after the code.
+
+Estimate: 360 authored lines, 504 at x1.4. Verify: V1.
