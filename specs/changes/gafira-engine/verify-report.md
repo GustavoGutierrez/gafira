@@ -1261,3 +1261,79 @@ The forecast was 420 (588 at x1.4), and the ceiling is ~700.
 classes (CRITICAL/WARNING): implementation 2, ambiguity 2.
 
 next: tdd-apply (next delivery `E3c`, after the owner's OK on size, E3b-W1; route E3b-W2/W4 to specifier as follow-ups)
+
+---
+
+# Verify report: gafira-engine, delivery E3c1 (open + private fakes)
+
+round: 1 | commit: e1fef7f | branch: feat/gafira-engine-e3 | mode: full | level: L3 | tier: hand mutants only | depth: V1 | mutation: off
+
+**Verdict: PASS** (E3c1; deliveries remain, E3c2 next)
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3b-W3 | WARNING (earlier) | implementation | project.rs `ac9_open_bumps_once_lists_the_whole_loaded_document_and_drops_the_old_history` | The whole-document `DirtySet` of `open` is now compared in full on a NON-empty document (pages {1,4}, nodes {2,3,5}). Hand mutant B (open drops the nodes) is killed. | - | closed |
+| E3c1-S1 | SUGGESTION | - | apply-progress.md Notes E3c1 D3, and the measured lines | D3 says `create_dir_all` and `read_dir` of `MemoryFs` return `Unsupported`. In the code, `create_dir_all` returns `Ok(())` and `read_dir` lists the folder (fakes.rs). The production split is 33 insertions (engine.rs 2, project.rs 31 above `#[cfg(test)]`), not 31 (29 + 2). Fix the notes the next time they are touched. | no | open |
+| E3c1-S2 | SUGGESTION | - | fakes.rs `MemoryRepository::save` | The P16 write path (the repository writes through `MemoryFs`) has no test in E3c1. Its proof is AC1/AC2 in E3c2 and the amend lists those there, so this is not a finding here. E3c2 verify should check it. | no | open |
+
+Counts: critical 0, warning 0, suggestion 2. Per class: none (CRITICAL/WARNING).
+
+## Gates (export of e1fef7f, scratch target dir, CARGO_INCREMENTAL=0)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2548 passed, 0 failed) |
+| CI policy: ARQ-07, forbid(unsafe), V5, V12, ARQ-107, V13 (EditToken), V14 | 0 each (run in the worktree, read-only) |
+| `cargo deny check` | 0 (no manifest change; run anyway) |
+| Testkit `ports` feature step | not run: does not apply, because the delivery does not touch gafira-testkit |
+
+## Artifact integrity (step 3c)
+
+- `fb3c814` (slice card) and `4f742b3` (card amend; it states why: ~800 lines against the ~700 ceiling, owner split) each touch only `specs/changes/gafira-engine/apply-progress.md`.
+- `16280b5` (the code) touches only `crates/gafira-engine/src/{engine,project,fakes}.rs`.
+- `e1fef7f` (notes) only appends after the amend: the diff has zero `-` lines.
+- No implementer commit changed the card or the amend.
+
+## Criteria (E3c1: AC8, AC9, AC12, AC13)
+
+| AC | status | proof |
+|---|---|---|
+| AC8 | covered | `ac8_an_open_that_fails_to_load_leaves_the_old_session` and `ac8_an_open_of_an_invalid_document_leaves_the_old_session`, through `assert_old_session_kept`. They check: nothing published, still modified, the old document (1 page), the old history (undo is `Some`), and the version did not move (the undo publishes version 3). |
+| AC9 | covered | The `ac9_...` test checks: exactly one `RepoCall::Load(TARGET)`, one `DocumentChanged` at version 3 with the full `DirtySet` of a non-empty document, clean after open, the loaded document equal to the fixture, and no undo across open. |
+| AC12 | covered | `git grep -nE "std::fs\|std::thread\|std::env\|rand::\|thread::spawn" -- crates/gafira-engine/src` finds only the existing doc comment at engine.rs:96. `open` reads only through `ProjectRepository::load`. The CI steps are green. |
+| AC13 | covered | The gates above, at workspace scope. |
+
+Design checks:
+- **P18**: load, then `History::new` (whose `?` maps to `InvalidDocument`), then lock + publish + swap.
+- **P15**: the version bumps once, `clean_version` is set to the new version, and the history is dropped.
+- **P16 (fakes are private)**: `lib.rs:21` has `#[cfg(test)] mod fakes;` and every item is `pub(crate)`. `MemoryRepository` reads and writes through `MemoryFs`. The write-side trace covers create, write, sync_all, replace and remove.
+- **`invalid_document()`**: it never names `EditToken` (`git grep EditToken -- crates/gafira-engine` finds nothing, and V13 is green). It builds the invalid document through `DocMut` inside a failing `Command`.
+- `read_only` is ignored until E3c2 (D2, as the amend says).
+
+## Hand mutants (scratch export, `cargo test -p gafira-engine --locked project::`)
+
+| # | mutant | result | killed by |
+|---|---|---|---|
+| 7 (spot-check of the recorded list) | `*self.shared.lock() = None` before `History::new` | killed | `ac8_an_open_of_an_invalid_document_leaves_the_old_session` ("still modified") |
+| A | publish (`shared.changed`) before `History::new` validates | killed | `ac8_an_open_of_an_invalid_document...` ("a failed open publishes nothing") |
+| B | `open` publishes only the pages (nodes cleared) | killed | `ac9_...` (the `DirtySet` comparison) |
+| C | keep the old history on `open` instead of dropping it | killed | `ac9_...` (the loaded-document equality) |
+
+hand_mutants: run 4, killed 4. mutation: null (`mutation: off`).
+
+## Size
+
+`git diff --shortstat fb3c814..16280b5`: 3 files, 496 insertions, 10 deletions.
+- Production: about 33 insertions.
+- Tests: about 463 insertions (fakes.rs 353/4, the tests in project.rs about 110).
+- The E3c forecast was 380 (532 at x1.4). E3c1 alone is under the ~700 stop line.
+
+## Hygiene
+
+- The worktree is clean at e1fef7f.
+- `stash@{0}` was not touched.
+- Both scratch target dirs were removed with `cargo clean`.
+
+next: tdd-apply (E3c2)
