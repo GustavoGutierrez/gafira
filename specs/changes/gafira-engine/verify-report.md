@@ -1599,3 +1599,105 @@ Both files were restored and checked with `cmp` before the clean.
 `git diff --shortstat c2a1faa..e26538c`: 1 file, 43 insertions. Delivery code total `34837d3..e26538c -- crates`: 7 files, 734 insertions, 21 deletions (755).
 
 next: tdd-apply (next delivery)
+
+---
+
+# Verify report — `gafira-engine` delivery `E5` (memory governor), round 1
+
+round: 1
+commit: 71b6078 (code at fc26608), base 69a7d8e
+mode: full | level L3 | pack: new capability | mutation: off | tier: hand mutants only | depth: V1 (owner)
+
+**Verdict: FAIL** (1 CRITICAL, 0 WARNING, 3 SUGGESTION). Per class: implementation 1.
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E5-C1 | CRITICAL | implementation | `crates/gafira-engine/src/governor.rs:157`, test `ac1_...` (:344) | AC1 "equal kinds keep the caller's order (stable)" is not proved: mutant `sort_by_key` -> `sort_unstable_by_key` SURVIVES all 23 governor/event tests. It is not equivalent: probe shows stable and unstable sorts differ from n = 21 caches (std uses insertion sort below 21). | no | open |
+| E5-S1 | SUGGESTION | - | design P9, line 158 | D2 is consistent now, but `E7` "asks the governor for a budget before each job" with no Facade-held governor; the architect should settle how `E7` reaches it before `E7`. | - | open |
+| E5-S2 | SUGGESTION | - | design SP8 | D6: SP8 (a) stays provisional; keep it in the open list until the owner fixes the levels. | - | open |
+| E5-S3 | SUGGESTION | - | size | 694 insertions vs 448 forecast (x1.55), under the ~700 ceiling; tests are 2/3. No action. | - | open |
+
+## Gates (scratch export of 71b6078, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2587 passed, 0 failed) |
+| `cargo deny check` | 0 (advisories, bans, licenses, sources ok) |
+| CI policy: ARQ-07, unsafe, V5 layer table, V12, ARQ-107, V13, V14, ADR 0013 testkit ports | 0 each |
+
+Disk before builds: 145 GB free. Target dirs cleaned; worktree `/tmp/gafira-engine-e3` clean at 71b6078.
+
+## Artifact integrity
+
+- Slice card commit `69a7d8e` touches only `specs/changes/gafira-engine/apply-progress.md`. The only later commit touching that file is `71b6078` (notes); its diff has no removed lines, so the card is unchanged. Code commits `a0d9599`, `bae33af`, `fc26608` touch only `crates/gafira-engine/**` and `Cargo.lock`.
+- No change in `gafira-ports`, `gafira-render`, `gafira-render-cpu`, `gafira-media`, `gafira-doc`: no port signature changed, no media/render edge.
+- Purity: `git diff 69a7d8e..HEAD -- crates/gafira-engine | grep '^+'` for `std::fs|std::thread|std::env|rand|thread::spawn|Instant|SystemTime|std::time|sleep|loop|while` -> nothing.
+
+## Criteria
+
+| AC | proof | status |
+|---|---|---|
+| AC1 order | `ac1_caches_are_trimmed_frames_tiles_backend_and_stable_within_a_kind`; killed R1, I7 | fixed order covered; **stability not proved (E5-C1)** |
+| AC2 boundary | `ac2_exactly_at_the_limit_...` (100 -> no trim; 99 -> `("frames", 59)`); killed R2 | covered |
+| AC3 arithmetic | `ac3_each_target_is_...`; killed R3, I5 | covered |
+| AC4 saturation | both `ac4_*`; killed by the implementer's M5a/M5b (not repeated) | covered |
+| AC5 zero budget | `ac5_a_zero_limit_...`, `ac1`; killed R4 | covered |
+| AC6 lying cache | both `ac6_*`; killed R5, I1, I3 | covered |
+| AC7 unshrinkable | `ac7_...` (three calls, exact lists, `<= 2 * len`); killed R5, I1, I3 | covered |
+| AC8 pressure rule | `ac8_...` (seven-step event table); killed R7, I6; `Critical` after the bound: `ac10`, I2 | covered |
+| AC9 empty / no limit | `ac9_*` both | covered |
+| AC10 fresh sum | `ac10_a_cache_that_grew_back_...`; killed R6, I1 | covered |
+| AC11 gates, purity | above | covered |
+| scope (host bytes) | `scope_the_port_wrappers_...`; killed I8 | covered |
+
+Product IDs: §6.7 (1515), §4.6 (690), ARQ-44, ARQ-142, ARQ-145, D-03 all map to the rows above (bytes/trim in bytes, frames first, tiles before backend, a limit is required). Left out by the card's non-goals: the §6.7 process test "1 GB, +10 %", VRAM (SP8 (b)), the ARQ-142/ARQ-145 cache-internal criteria (owned by `gafira-render`/`gafira-media`).
+
+## The bound
+
+`enforce` (`governor.rs:155-184`) is `for _ in 0..MAX_TRIM_PASSES` with a `break` on `after <= limit`; `trim_pass` is a `for` over `order` with one `trim` per cache. No `loop`, no `while`, no wait: at most `2 * caches.len()` `trim` calls per call. `after.0 - self.limit.0` cannot underflow (only reached when `after > limit`). Re-applied unbounded `loop` (R5) aborts `ac6_never_more_than_two_passes` under `ulimit -v 2000000` / `timeout 30` (rc -6, allocation failure of the growing log), so the bound is proved by an assertion-carrying test, not only by a hang.
+
+## `fc26608` behaviour-preserving
+
+Confirmed by reasoning on the diff: `trim_pass` is called only with `excess = after - limit` where `after > limit`, so `excess >= 1` at entry and the removed pre-check never fired on the first cache; the pre-check at cache k+1 equals the new post-check at cache k. Same calls, same targets, same result. Tests unchanged in that commit; R2 (`<` at the guard) is now killed, as the notes claim.
+
+## Hand mutants (scratch export, runner restores and checks the restore)
+
+Re-applied from the critical list (7) and independent (8): 15 run, 14 killed.
+
+| # | mutant | result | first failure |
+|---|---|---|---|
+| R1 | caller order (no sort) | killed (8 tests) | `ac3`: left `[("backend", 0), ("tiles", 30)]` |
+| R2 | `<` instead of `<=` at the budget | killed (ac1, ac2, ac3, ac5) | `ac1`: sixth trim `("frames-a", 0)` |
+| R3 | target `excess` | killed (10) | `ac2` limit 99: left `[("frames", 1)]` |
+| R4 | zero limit as "no limit" (early return) | killed (ac1, ac5) | `ac1`: left `[]` |
+| R5 | unbounded `loop` | killed (`ac6_never_more_than_two_passes`, rc -6) | allocation failure under the memory limit |
+| R6 | second pass decided by the running excess | killed (8, incl. ac10) | `ac1`: `after 39, Critical` |
+| R7 | publish on every `enforce` | killed (ac8, ac9 empty) | `ac8` call 0: left `[MemoryPressure(Normal)]` |
+| I1 | trust the lying cache (`freed = asked`) | killed (ac10, ac4 grows, ac7, ac6) | `ac10`: one trim instead of two |
+| I2 | level from `before` | killed (8) | `ac10`: `Critical` instead of `Normal` |
+| I3 | `MAX_TRIM_PASSES = 1` | killed (7) | `ac10` |
+| I4 | `sort_unstable_by_key` (breaks stability) | **SURVIVED** | E5-C1 |
+| I5 | running excess never reduced | killed (5) | `ac3`: backend trimmed too |
+| I6 | governor starts `Critical` | killed (ac8, ac9) | `ac8` call 0 |
+| I7 | tiles before frames in `TRIM_ORDER` | killed (8) | `ac3` |
+| I8 | backend counts device bytes | killed (scope) | before 1030 instead of 80 |
+
+E5-C1 fix hint (for `tdd-apply`): a test with at least 21 caches of interleaved kinds asserting the exact caller order within each kind.
+
+## Deviations
+
+- D1 `new(&EngineConfig, EventBus)`: accepted; the card fixes the source of the limit and publication through the bus, not the signature.
+- D2 no governor in `Gafira`, no accessor: consistent with P9 (§5.4 accessors are the whole Facade surface; §5.4 names none for memory) and P17 (the frame loop owns the caches and calls `enforce`). Forward note E5-S1.
+- D3 wrapper names: accepted; `BackendTrim` counts host bytes only, proved by the scope test (I8 killed).
+- D4 `gafira-raster` dev-dependency: accepted; the V5 step checks normal and build edges only, and `gafira-raster` is in the engine's V5 row anyway; deny ok.
+- D5 `fc26608`: confirmed behaviour-preserving (above).
+- D6 SP8 (a) provisional: accepted, E5-S2.
+- D7 doc wording of `EngineEvent`: accepted.
+
+## Size
+
+`git diff --shortstat 69a7d8e..fc26608`: 5 files, 694 insertions, 4 deletions (governor.rs 677: 219 above `#[cfg(test)]`, 458 tests; event.rs +10/-4; lib.rs +5; manifest and lock +2). About 230 production, 460 test. Forecast 448 (x1.55), under the ~700 ceiling.
+
+next: tdd-apply
