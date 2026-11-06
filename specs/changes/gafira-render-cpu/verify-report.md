@@ -920,3 +920,222 @@ changes no pixel) is proven, and the cull's shape and box are pinned by M8/M9/M1
   probes and mutants, and the absence of a mutation score is not a gap.
 
 next: tdd-apply
+
+## Round 2 — CB4 (closure)
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB4", "rounds": [ {
+  "round": 2, "commit": "d762b43fc700c8413e0671eb4cdd06838baf733e", "mode": "standard", "tier": "T2", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 1, "suggestion": 2},
+  "classes": {"claim": 1, "implementation": 2},
+  "findings": [
+    {"id": "C1", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:190-246",
+     "summary": "Closed: arq_117_a_scaled_rgba8_image_is_filtered_after_each_texel_is_converted pins the filtering space with nine hand-derived constants; HM1 reproduced gives 0.49064726 against 0.52189588375.",
+     "follow_up": false, "status": "closed"},
+    {"id": "C2", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:488-550",
+     "summary": "Closed: arq_149_a_rotated_image_paints_its_quad_not_the_corners_of_its_box; HM3 reproduced fails on page (0, 0), the other 40 tests green.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W10", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:583-644",
+     "summary": "Closed: the off-tile Alpha8 skip and the on-tile refusal are asserted in one test; removing the cull fails it with the recorded message.",
+     "follow_up": false, "status": "closed"},
+    {"id": "S7", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:303-340",
+     "summary": "Still open: AC5's checkerboard and the new 45-degree fixture are both invariant under the sign of the rotation, so the direction is still unpinned. Not owed by this fix.",
+     "follow_up": false, "status": "open"},
+    {"id": "S8", "severity": "SUGGESTION", "class": "ambiguity",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:591",
+     "summary": "Closed as pinned: the off-tile skip is now asserted, so an eager per-tile conversion cannot change it silently; AC6's wording is the coordinator's to settle.",
+     "follow_up": false, "status": "closed"},
+    {"id": "S9", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "the delivery's 9 files",
+     "summary": "Re-measured: 1228 insertions against the 360 forecast (3.4x; 2.4x at x1.4), 200 of them this round and all tests. 243 of the 1228 are production src. The coordinator decides.",
+     "follow_up": false, "status": "open"},
+    {"id": "S10", "severity": "WARNING", "class": "claim",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:373-374",
+     "summary": "The record's HM1/HM2 rows pair a value only the float convert-once form answers (0.49064726) with the green count of the byte-space form (38). The float form also fails two pre-existing Rgba8 tests.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 4},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 1228, "forecast": 360}, "report": "verify-report.md" } ] }
+```
+
+- Delivery: `CB4` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb4`, HEAD
+  `d762b43fc700c8413e0671eb4cdd06838baf733e`. Round 2 is a **closure round** over the round-1 `FAIL`
+  (`C1`, `C2`, `W10`): the fix is `cc53364` (+81), `7724ad5` (+56/−1), `07908ba` (+63), all in
+  `src/tests/image.rs`, plus `d762b43` (+22/−1) in `apply-progress.md`. Base of this round is the
+  round-1 report commit `13f5195`. Not pushed, not merged.
+- Mode `standard`, depth **V1** as the coordinator set it: the five gates, the artifact-integrity
+  checks, and one reproduced mutant per earlier finding. `mutation: off` — no `cargo-mutants` run, and
+  that is not a finding. The mutants below are *reproductions of round 1's findings*, not a new
+  independent-mutant budget: there are 4, and all 4 were killed.
+- Verdict: **PASS** — 0 CRITICAL. `C1`, `C2` and `W10` are closed, each proved by applying the round-1
+  mutant on a clean export and watching the new test fail with the recorded message. One new WARNING
+  (`S10`, class `claim`): the record's HM1/HM2 green count does not reproduce for the mutant that
+  produces the recorded value. `S7` and `S9` stay open as SUGGESTIONs; neither is owed by this fix.
+- Toolchain: cargo/rustc 1.93.1, clippy 0.1.93, cargo-deny 0.20.2. Disk: `df -h /` at start **172 GB**
+  free.
+
+### Gates (delivery HEAD, run once)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | no diff |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | `Finished dev profile` in 28.73 s |
+| `cargo test --workspace --locked` | 0 | **196 test binaries, 2500 passed, 0 failed, 0 ignored** (round 1: 2497 — the +3 are this round's tests); the delivery's own `gafira-render-cpu` lib binary is **41** (38 at round 1) |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| CI policy, job `policy` | 0 | 9/9 steps exit 0: Format; CLI has no UI deps (ARQ-07); `forbid(unsafe_code)`; V5 layer table; V12 `clippy.toml`; ARQ-107 language; V13 `EditToken`; V14 property test; testkit `ports` |
+
+The nine steps are the `run:` steps of the `policy` job after the toolchain install, extracted by
+`/tmp/gafira-policy-run.py` and re-checked against `.github/workflows/ci.yml` (the job's `runs-on` and
+the two `uses:` steps are not `run:` steps; the toolchain install is skipped because this machine has
+it). Build hygiene: `CARGO_TARGET_DIR=/tmp/gafira-cb4-v2b-target` for the worktree gates and
+`/tmp/gafira-cb4-r2-export-target` for the clean export, both `CARGO_INCREMENTAL=0`, not shared; both
+freed with `cargo clean --target-dir` at the end.
+
+### Artifact integrity (steps 3, 3b/3c)
+
+- The fix does not touch the spec artifact's acceptance text. `git diff 13f5195..d762b43 --
+  specs/changes/gafira-render-cpu/apply-progress.md` adds the `### Mutants the verify round left alive`
+  section, its table and its bullets, and **replaces one record paragraph** (the `M7` survivor note,
+  extended with one sentence). No acceptance criterion, Given/When/Then line or product ID changed.
+- `cc53364`, `7724ad5` and `07908ba` touch one file, `crates/gafira-render-cpu/src/tests/image.rs`;
+  `d762b43` touches only `apply-progress.md`. No implementer commit touched the card commit `2b949be`,
+  the coordinator's amend `e3630cc` or any other spec file.
+- Every AC still has its test or command, and the new tests only add to the map: AC1 gains the filtered
+  8-bit case (`:223`), AC6 gains the cull's trace (`:591`) and the quad clip (`:503`). AC7 is still the
+  policy command set and the empty manifest diff. All seven IDs the card names (`ARQ-117`, `ARQ-121`,
+  `ARQ-149`, `ARQ-42`, `ARQ-02`, `ARQ-111`, `ARQ-113`) keep a test that names them.
+- The worktree is clean (`git status` empty); the only file this round wrote is this report.
+
+### "The sampler was not changed" — confirmed
+
+```
+git diff 13f5195..d762b43 -- crates/gafira-render-cpu/src/image.rs \
+                              crates/gafira-render-cpu/src/backend.rs
+(empty)
+```
+
+`git diff --name-only 13f5195..d762b43` lists exactly two paths: `src/tests/image.rs` and
+`apply-progress.md`. The one qualification, and it is not a contradiction: `src/tests/image.rs` *is*
+under `src/`, but `src/lib.rs:32` gates `mod tests` with `#[cfg(test)]`, so it is test code and no
+production line moved. The claim holds at the level that matters — `image.rs`'s sampler, `backend.rs`'s
+cull and everything the page depends on are byte-identical to what round 1 verified. `git diff` of the
+production files is empty, and the 41-test crate suite is green on the export at HEAD before any mutant
+is applied.
+
+### Closure of the earlier findings
+
+| Id | Round-1 finding | What closes it | How it was checked this round | Status |
+|---|---|---|---|---|
+| `C1` | The 8-bit filtering space is unpinned: HM1 and HM2 leave 38/38 green | A scaled `Rgba8` case asserting per-tap hand constants | HM1 applied on the export: `arq_117_a_scaled_rgba8_image_is_filtered_after_each_texel_is_converted` fails at `page (1, 1)` with `0.49064726` against `0.52189588375` — the recorded message, character for character. The test also fails with the byte-space form (`0.48697385`) | **closed** |
+| `C2` | The destination clip's shape is unpinned: HM3 (bbox clip + clamp) leaves 38/38 green | A 4×4 image rotated 45° with box-corner pixels asserted clear | HM3 applied: the same one test fails on `page (0, 0) is inside the image's box and outside its quad`; **40 others green** | **closed** |
+| `W10` | AC6's first clause is unobserved; removing the cull leaves 38/38 green | A test asserting the cull's only trace, both halves | The cull removed from `backend.rs:290-302`: `arq_149_an_off_tile_alpha8_image_is_culled_before_the_format_is_refused` fails with `a culled image is not sampled, so its format is not refused: Effect(UnsupportedFormat { format: Alpha8 })`; **40 others green** | **closed** |
+| `S7` | AC5's fixture is blind to the sign of the rotation | not owed | The new 45° fixture is a uniform white 4×4 square: `+45°` and `−45°` map the three gap pixels to mirrored points, both outside the quad, and every painted pixel is the same white — so the sign is still unpinned | open (SUGGESTION) |
+| `S8` | An off-tile `Alpha8` is skipped rather than refused, so refusal depends on which tile asks | a test or a reworded AC6 | The new test asserts the skip and the on-tile refusal as one rule; a future eager conversion now has to change a test on purpose | **closed** (pinned) |
+| `S9` | 693 insertions against the 360 forecast | the coordinator's call | Re-measured: **1228** — 3.4× the raw forecast, 2.4× the ×1.4 gate; see *Size* | open (SUGGESTION) |
+
+### The mutants reproduced
+
+All four on a clean `git archive` export of `d762b43` with its own target dir; each reverted before the
+next, and the export's `src/` diffed clean against itself (`diff` of `image.rs` and `backend.rs` against
+the backups) before the closing green run, which reports **41 passed**.
+
+| # | Mutation | Applied to | Result |
+|---|---|---|---|
+| HM1 | filter the premultiplied sRGB value and convert the mix once (float unpremultiply, `Rgba::to_linear`) | `image.rs`, `Source::sample` + a `raw` texel accessor + `convert_mixed` | **killed by the new test**: `page (1, 1) … channel 0 is [0.49064726, 0.11899241, 0.036425173, 0.6647059], expected [0.52189588375, …]`. **38 passed, 3 failed** (see `S10`) |
+| HM1b | the same reading with the mix rounded back to bytes and `decode_srgb8` on the mix | `image.rs`, same site | **killed**: `channel 0 is [0.48697385, 0.118592285, 0.036320187, 0.6666667]`; **40 passed, 1 failed** |
+| HM3 | clip to `page_bounds(image, transform)` and clamp the sample into the grid | `image.rs:92-95` | **killed**: `page (0, 0) is inside the image's box and outside its quad`; **40 passed, 1 failed** |
+| M7′ | remove the `coverage::meets(…)` guard around `sampling::draw` | `backend.rs:290-302` | **killed**: `a culled image is not sampled, so its format is not refused: Effect(UnsupportedFormat { format: Alpha8 })`; **40 passed, 1 failed** |
+
+The arithmetic of HM1 and HM1b was predicted before the runs: my own derivation gives `0.490647233`
+and `0.48697` respectively, so the mutant values are the derived ones, not artefacts of my edit.
+
+### `C1` — closed, and the constants are hand-derived
+
+I re-derived all nine expected pixels from the rules alone: ARQ-117's integer unpremultiply
+(`round(c × 255 / a)`), the §10 sRGB curve, per-tap conversion, and bilinear taps at
+`image_coordinate − 0.5` with the edge clamp. My f64 derivation reproduces the test's table with a
+**maximum difference of 3.06e-8** (tolerance 1e-6) — e.g. the centre `0.5218958732` against the
+table's `0.52189588375`, and `(2, 1)` = the 0.5/0.5 vertical pair of `TEXEL_10` and `TEXEL_11`
+(`0.7887902202`). So the table is the geometry, not a recording of the sampler. The test states the
+derivation in its comment (the coordinate grid, which pairs weigh which, and why), and the two wrong
+readings it names are the two the mutants confirm: 0.49064726 (sRGB space) and 0.436853 (straight
+alpha). It is also the only test in the crate that weighs an `Rgba8` texel: the AC1 translate never
+weighs two of them and every f32 test must not be converted, so the filtering space had no test —
+which is exactly the gap round 1 reported. (The AC1 translate does kill the *float* form of HM1, but
+only through the single-texel conversion `S10` describes, not through the filter; the byte-space form
+it cannot see at all.)
+
+### `C2` — closed
+
+The geometry checks out independently: the inverse of `rotate_about(π/4, (2,2))` maps page
+`(0.5, 0.5)` to image `(−0.1213, 2.0)`, and the box of the turned square is
+`(−0.828, −0.828)-(4.828, 4.828)`, so that pixel is inside the box and outside the `[0,4)²` quad.
+Page `(3, 0)` and `(4, 4)` are the same by symmetry. The test asserts the three are clear, then redraws
+over an opaque backdrop and asserts they keep it (`GREY`) while the centre is painted — so the clip is
+distinguished from "the sampler never writes" as well as from the box. HM3 dies on the first of the
+three, which is the strongest form: the box clip *paints* a pixel the quad must leave alone.
+
+### `W10` — closed, both halves asserted
+
+The test asserts the skip (`execute` returns `Ok`, all 16 pixels clear for an image at page
+`(100, 100)`) **and** the control (`scale(4.0)` over the same tile → `Effect(UnsupportedFormat
+{ format: Alpha8 })`). Removing the cull fails on the first half with the recorded error, so the skip
+cannot be a swallowed error and the cull cannot be a no-op with a green suite. This is the observable
+form of AC6's first clause, which was round 1's recommendation.
+
+### `S10` — the record's HM1/HM2 evidence does not reproduce (WARNING, class `claim`)
+
+`apply-progress.md:373-374` records, for HM1: the failing assertion `channel 0 is [0.49064726, …]` and
+"the other **38 were green**". I reproduced both halves and they belong to **two different mutants**:
+
+- the **float** convert-once form answers exactly `0.49064726` — and it also fails two pre-existing
+  tests, `arq_117_an_rgba8_texel_is_converted_once_in_the_order_arq_117_fixes` and
+  `arq_149_an_image_that_partly_covers_the_tile_draws_only_its_own_window`, because a 1:1 sample still
+  goes through `convert_mixed`, whose float unpremultiply answers `0.5` where `decode_srgb8` rounds
+  `127.5` up to `128` (`channel 1` `0.10744026` vs `0.10835353`). So it is **38 passed, 3 failed**, not
+  38 green.
+- the **byte-space** form does keep every other test green (40/40) — but it answers `0.48697385`, not
+  the recorded number.
+
+No single mutant satisfies both cells of that row, and the suite count isolates it: at `cc53364` the
+crate has 39 tests, so "the other 38" can only be true if the new test is the sole failure. This is
+round 1's own `HM1` description ("mix the premultiplied sRGB **bytes**, convert the mixed value once")
+paired with a value the float form produces — most likely a number derived analytically rather than
+read off the run. It does not weaken the closure: the new test kills both forms, and kills HM2 for the
+same reason. It matters because a mutant table is evidence, and one of its cells is not what a run
+prints. HM3 and M7′'s rows do reproduce exactly (40 green, as written).
+
+### `S9` — size, re-measured
+
+`git diff --shortstat 2b949be..d762b43` → **9 files, 1228 insertions(+), 15 deletions(-)**, against
+the card's 360 forecast: **3.4×**, or 2.4× the ×1.4 gate of 504. The record's figures reproduce
+(`1207` at `07908ba` plus its 22). Composition: 243 production `src/` lines (`image.rs` 206,
+`backend.rs` 21, `coverage.rs` 14, `lib.rs` 1, `surface.rs` 1), 649 test lines (`tests/image.rs` 644,
+`tests.rs` 5), 87 record lines and 249 lines of round 1's report. This round adds **200 insertions and 1
+deletion, all tests**, plus its 22-line record: no production line moved. That is the basis the
+coordinator said it would accept on; the figure and its split are reported for that decision, not as a
+gate.
+
+### Observations (not findings)
+
+- **The three tests are the minimum the findings ask for, and no more.** Each closes exactly one
+  property, each was green on the unmutated tree first (41/41 on the export), and each fails for the
+  plausible wrong reading. Nothing else in the suite changed: the diff of `src/tests/image.rs` is
+  additions plus one `use` line (`FRAC_PI_4`).
+- **The record's per-commit gates are not re-run here.** V1 does not owe them, and the counts do
+  reproduce arithmetically: 39 (`cc53364`), 40 (`7724ad5`), 41 (`07908ba`/HEAD). V3 would run them.
+- **`S8`'s ambiguity is now behavioural, not textual.** AC6's first clause still says "culled before
+  any sampling" while the assertion is "an off-tile `Alpha8` is skipped" — the same condition, one
+  level down. If the coordinator rewords the criterion, the test is its sentence; if not, the test is
+  the rule.
+- **No `cargo-mutants` run and no T4 report**, per `mutation: off`. The absence of a mutation score is
+  not a gap this round, as round 1 recorded.
+
+next: tdd-apply
