@@ -30,7 +30,7 @@
 
 use gafira_doc::BlendMode;
 use gafira_ports::render::RenderError;
-use gafira_raster::blend_f32;
+use gafira_raster::{AlphaMask, blend_f32};
 
 /// The layers of one tile, outermost first, and the buffers a pop returned.
 #[derive(Default)]
@@ -90,6 +90,45 @@ impl Layers {
         // the new one (ARQ-117). A fresh buffer is transparent already.
         buffer.fill(0.0);
         self.open.push(buffer);
+    }
+
+    /// Multiplies the innermost layer by `mask`'s coverage (02 §4.6).
+    ///
+    /// The mask is 8-bit and single-channel, one mask pixel per layer pixel,
+    /// anchored at the layer's top-left with no rescale; the coverage multiplies
+    /// **all four** premultiplied channels, so the layer stays premultiplied
+    /// (ARQ-117). Where the mask does not reach the layer keeps the value it
+    /// had, which is what makes a mask smaller than the layer mask only its own
+    /// rectangle.
+    ///
+    /// # Errors
+    /// [`RenderError::DriverBlocked`] when no layer is open: 02 §4.6 puts an
+    /// `ApplyMask` outside a `PushLayer`/`PopLayer` pair outside the plan's
+    /// domain, and this backend refuses what it cannot define.
+    pub(crate) fn apply_mask(
+        &mut self,
+        mask: &AlphaMask,
+        size: (u32, u32),
+    ) -> Result<(), RenderError> {
+        let Some(layer) = self.open.last_mut() else {
+            return Err(RenderError::DriverBlocked);
+        };
+        let stride = usize::try_from(size.0).unwrap_or(0);
+        let columns = usize::try_from(mask.width()).unwrap_or(0).min(stride);
+        let rows = usize::try_from(mask.height())
+            .unwrap_or(0)
+            .min(usize::try_from(size.1).unwrap_or(0));
+        let mask_stride = usize::try_from(mask.width()).unwrap_or(0);
+        for row in 0..rows {
+            for column in 0..columns {
+                let coverage = f32::from(mask.data()[row * mask_stride + column]) / 255.0;
+                let at = (row * stride + column) * 4;
+                for channel in 0..4 {
+                    layer[at + channel] *= coverage;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Composites the innermost layer onto its parent with `blend` and `opacity`.

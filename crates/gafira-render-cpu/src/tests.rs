@@ -7,6 +7,7 @@
 //! the scene, the frame and the cache helpers below.
 
 mod image;
+mod ops;
 
 use std::sync::{Arc, Mutex};
 

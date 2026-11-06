@@ -300,9 +300,10 @@ fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderE
                     )?;
                 }
             }
-            RenderOp::ApplyMask { .. }
-            | RenderOp::ApplyEffect { .. }
-            | RenderOp::ApplyTransition { .. } => return Err(not_in_this_delivery()),
+            RenderOp::ApplyMask { mask } => layers.apply_mask(mask, size)?,
+            RenderOp::ApplyEffect { .. } | RenderOp::ApplyTransition { .. } => {
+                return Err(not_in_this_delivery());
+            }
         }
     }
     // The plan's stack is balanced (02 §6.1): a layer left open would have to
