@@ -31,7 +31,10 @@ impl PixelSize {
 
 /// One sequence: a rate, a size, a sample rate, the ordered lanes and the
 /// markers (FV-01, 02 §3.1).
-#[derive(Clone, Debug, PartialEq)]
+///
+/// Every field is written in the wire form, defaults included (ADR 0006
+/// rule 3).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sequence {
     pub(crate) id: SequenceId,
     pub(crate) fps: FrameRate,

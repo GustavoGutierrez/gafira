@@ -17,8 +17,9 @@ use crate::ContentHash;
 /// The reference a clip names its media with: the hash of the content, so reloca-
 /// ting it or replacing it does not move any clip (§3.1, P9).
 ///
-/// The wire form is the 64-character hex hash, the same spelling `assets/<blake3-hex>`
-/// uses (§7.1); the persistence lands with the tables change.
+/// The wire form is the 64-character lowercase hex hash, the same spelling
+/// `assets/<blake3-hex>` uses (§7.1): it is the key of the persisted asset
+/// table, and a key of another length is a JSON error, not a document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetRef(ContentHash);
 
@@ -99,7 +100,11 @@ pub struct AssetEntry {
 }
 
 /// How the bytes of an asset are reached.
+///
+/// The wire form is the storage's name in `snake_case`; `Embedded` is what an
+/// import writes when the bytes travel inside the document (02 §3.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AssetStorage {
     /// The bytes live inside the saved document.
     Embedded,
