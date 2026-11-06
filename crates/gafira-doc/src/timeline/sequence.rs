@@ -8,9 +8,9 @@
 use gafira_time::{Flicks, FrameRate, SampleRate};
 use serde::{Deserialize, Serialize};
 
-use super::Clip;
 use super::error::TimelineError;
 use super::track::{Marker, Track, TrackKind};
+use super::{Clip, Speed};
 use crate::{ClipId, MarkerId, SequenceId, TrackId};
 
 /// The pixel size of a sequence, whole pixels.
@@ -46,6 +46,16 @@ pub struct Sequence {
 /// How many audio tracks one sequence can hold (FV-01): the sixteenth enters,
 /// the seventeenth is refused.
 pub const AUDIO_TRACK_CAP: usize = 16;
+
+/// The place a source window takes at one speed, on a sequence's grid
+/// ([`Sequence::place_span_for`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaceSpan {
+    /// The place in the sequence: a whole number of frames, at least one.
+    pub place: Flicks,
+    /// The source time the place does not reach; signed, see the method.
+    pub remainder: Flicks,
+}
 
 impl Sequence {
     /// Builds a sequence; a zero size side is refused (AC1).
@@ -214,6 +224,32 @@ impl Sequence {
             }
         }
         out
+    }
+
+    /// The place a clip takes for a window of one source at one speed, on this
+    /// sequence's frame grid (FV-03, design TL2: "the place of the clip is the
+    /// source duration over the speed, rounded to the grid, and the source
+    /// offset absorbs the remainder").
+    ///
+    /// `place` is a whole number of frames, at least one, and is the value
+    /// [`crate::Track::insert`] accepts; `remainder` is the source time the
+    /// place does not reach (`source − speed × place`), signed: positive when
+    /// the grid rounded the place down and the window keeps frames unused,
+    /// negative when the law of at least one frame asks more source than the
+    /// window holds. The source bound that would refuse the second case needs
+    /// the import metadata (Q5), so the value is reported instead of refused.
+    #[must_use]
+    pub fn place_span_for(&self, source: Flicks, speed: Speed) -> PlaceSpan {
+        let frame = self.frame().ticks();
+        let exact = speed.sequence_span(source).ticks();
+        // `snap_nearest` answers a frame index; the place is counted in
+        // flicks, and at least one frame is the law's own floor.
+        let place = (snap_nearest(exact, frame) * frame).max(frame);
+        let used = speed.source_span(Flicks::from_ticks(place)).ticks();
+        PlaceSpan {
+            place: Flicks::from_ticks(place),
+            remainder: Flicks::from_ticks(source.ticks() - used),
+        }
     }
 
     /// The retime of FV-01's acceptance (c): a NEW sequence at `new_rate`

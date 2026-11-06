@@ -377,6 +377,52 @@ fn fv_03_the_duration_follows_the_speed_relation() {
     assert_eq!(Speed::ONE.den(), 1);
 }
 
+// FV-03 (AC8), design TL2: the place of a clip is its source span over the
+// speed, rounded to the grid of the sequence, and the source window absorbs
+// the remainder -- what the grid could not take stays outside the place and is
+// reported, so a caller never has to round again and never hands
+// Track::insert a span that is not a whole number of frames.
+#[test]
+fn fv_03_the_place_of_a_clip_is_the_source_over_the_speed_on_the_grid() {
+    let (_doc, _token, sid, _tid) = setup();
+    let frame = FPS_24.flicks_per_frame();
+    let sequence = a_sequence(sid, FPS_24);
+    // 2.5 s of source at speed 2 lands exactly: 30 frames, no remainder.
+    let source = Flicks::from_ticks(frame.ticks() * 60);
+    let fast = sequence.place_span_for(source, Speed::new(2, 1).expect("speed two"));
+    assert_eq!(fast.place.ticks(), frame.ticks() * 30);
+    assert_eq!(fast.remainder.ticks(), 0);
+    // A source a little longer than one frame snaps down to one frame and the
+    // extra 600 000 ticks are the remainder the window does not consume.
+    let almost = Flicks::from_ticks(frame.ticks() + 600_000);
+    let one = sequence.place_span_for(almost, Speed::ONE);
+    assert_eq!(one.place.ticks(), frame.ticks());
+    assert_eq!(one.remainder.ticks(), 600_000);
+    // A source below half a frame still takes one frame: the law of at least
+    // one frame wins over the rounding, and the remainder is negative
+    // (the place asks more source than the window has, which the source bound
+    // of Q5 will refuse once the import metadata exists).
+    let tiny = sequence.place_span_for(Flicks::from_ticks(100), Speed::ONE);
+    assert_eq!(tiny.place.ticks(), frame.ticks());
+    assert_eq!(tiny.remainder.ticks(), 100 - frame.ticks());
+    // The place it answers is accepted by the lane as it stands: no rounding
+    // left for the caller.
+    let mut track = Track::new(TrackId::new(5), TrackKind::Video);
+    let place = TimeRange::new(Flicks::ZERO, one.place).expect("a place of one frame");
+    let clip = Clip::new(
+        ClipId::new(1),
+        media(),
+        place,
+        Flicks::ZERO,
+        Speed::ONE,
+        1.0,
+    );
+    assert!(
+        track.insert(clip, frame).is_ok(),
+        "the place the sequence answers sits on the grid"
+    );
+}
+
 // P7 (AC9): the model answers which clip each lane shows at an instant, one
 // entry per lane in the stacking order, and `None` where nothing shows.
 #[test]

@@ -12,7 +12,7 @@ use crate::{ClipId, MarkerId, TrackId};
 ///
 /// The five lanes of the interface are a mapping from these values plus the
 /// track's label; the model itself knows only the kind and the place in the
-/// [`Sequence::tracks`] order, which alone decides the pixel stacking.
+/// [`crate::timeline::Sequence::tracks`] order, which alone decides the pixel stacking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum TrackKind {
@@ -37,7 +37,7 @@ impl TrackKind {
 
 /// One track of one sequence: a list of clips, sorted by place, disjoint.
 ///
-/// The index inside [`Sequence::tracks`], not any order of insertion, is the
+/// The index inside [`crate::timeline::Sequence::tracks`], not any order of insertion, is the
 /// stacking rule of P11: index 0 is the bottom and later tracks paint over
 /// earlier ones, the same back-to-front convention [`crate::Page::roots`]
 /// uses.

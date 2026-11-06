@@ -54,7 +54,7 @@ impl Speed {
     /// The span of sequence time a source span plays at this speed:
     /// `source × den / num`, floored to whole flicks and never below zero.
     /// Not rounded to any grid here: rounding to the sequence's grid is
-    /// [`Sequence::place_span_for`]'s job.
+    /// [`crate::timeline::Sequence::place_span_for`]'s job.
     #[must_use]
     pub fn sequence_span(self, source: Flicks) -> Flicks {
         let span = i128::from(source.ticks()) * i128::from(self.den) / i128::from(self.num);
@@ -101,7 +101,7 @@ pub enum ClipSource {
 
 /// One rectangle of one source over one sequence (02 §3.1).
 ///
-/// The laws it obeys live in [`Track::insert`] and [`Sequence`]: its cuts land
+/// The laws it obeys live in [`crate::timeline::Track::insert`] and [`crate::timeline::Sequence`]: its cuts land
 /// on whole frames of the sequence's rate, its span is at least one frame,
 /// half-open by [`TimeRange`], and it starts at or after the start of its
 /// source (`source_in` is at least zero). The animation of the volume arrives
@@ -117,7 +117,7 @@ pub struct Clip {
 }
 
 impl Clip {
-    /// Builds the value itself; the placement laws are [`Track::insert`]'s.
+    /// Builds the value itself; the placement laws are [`crate::timeline::Track::insert`]'s.
     ///
     /// `volume` follows Q3: a bare `0.0..=1.0` value until the animation
     /// change arrives; the commands clamp.
@@ -181,7 +181,7 @@ impl Clip {
     /// floor of the design: `source_in + (at − place.start) × speed`.
     ///
     /// At the identity speed the value is exact, not a rounded division
-    /// (FV-03). `at` must lie inside the clip's place; [`Track::clip_at`]
+    /// (FV-03). `at` must lie inside the clip's place; [`crate::timeline::Track::clip_at`]
     /// upholds that, its callers never see the outside.
     #[must_use]
     pub fn source_time(&self, at: Flicks) -> Flicks {
