@@ -4,7 +4,7 @@
     {
       "outcome_id": "gafira-engine",
       "spec_id": "02-arquitectura-software",
-      "status": "blocked",
+      "status": "implementing",
       "criteria": [
         {
           "id": "E1-AC1",
@@ -62,12 +62,12 @@
           "status": "pending"
         }
       ],
-      "next_action": "owner decision: E2 hit two consecutive implementation FAILs and 762 lines; proposed: one more fix round for E2-C2 (verify round 3, the last under the cap)",
+      "next_action": "owner OK 2026-11-06: round 3 for E2 and the 762-line size accepted; tdd-apply fixes E2-C2, then verify round 3",
       "verify": {
         "round": 2,
         "commit": "e340de1",
         "verdict": "FAIL",
-        "next": "owner: two consecutive implementation FAILs on E2 and size 762 > ~700; then tdd-apply E2-C2, verify round 3 (last under the cap)",
+        "next": "tdd-apply E2-C2, then verify round 3 (last under the cap)",
         "findings": [
           {
             "id": "E2-C1",
@@ -92,9 +92,9 @@
             "severity": "WARNING",
             "class": "implementation",
             "ref": "commit 642d14d",
-            "summary": "Size: 762 changed lines for E2 (fix round 402 vs ~120 forecast), above the ~700 ceiling; needs the owner's explicit OK.",
+            "summary": "Size: 762 changed lines for E2 (fix round 402 vs ~120 forecast), above the ~700 ceiling; needs the owner's explicit OK. Owner accepted 762 lines on 2026-11-06.",
             "follow_up": false,
-            "status": "open"
+            "status": "closed"
           },
           {
             "id": "E2-W3",
