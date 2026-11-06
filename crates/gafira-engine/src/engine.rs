@@ -19,7 +19,8 @@ use gafira_ports::system::{Clock, FileSystem, Notifier};
 
 use crossbeam_channel::Receiver;
 
-use crate::event::{EngineEvent, EventBus, Waker};
+use crate::bus::EventChannel;
+use crate::event::{EngineEvent, EventBus};
 
 /// The port implementations the composition root injects (ARQ-06, 02 §5.4).
 ///
@@ -152,9 +153,10 @@ impl EngineConfig {
 
 /// What the engine can fail with in this delivery (design P6).
 ///
-/// The `UserError` mapping with message keys of ADR 0012 (ARQ-102) is
-/// **Planned** for `E2`: the `Display` text below is a plain sentence and no
-/// caller may match on it.
+/// The message-key mapping of ADR 0012 (ARQ-102) is **Planned**: `ToMessage`
+/// for this enum arrives with the first failing service, `E3b`, and the
+/// `UserError` struct is `E11`, after SP3 (design P12). Until then the
+/// `Display` text below is a plain sentence and no caller may match on it.
 #[derive(Debug)]
 pub enum EngineError {
     /// The configuration cannot produce a working engine.
@@ -206,25 +208,24 @@ pub struct Gafira {
 
 impl Gafira {
     /// Compose an engine from its ports, its registries, its configuration and
-    /// the waker of its observer (02 §5.4 line 1356, §5.2 line 1335).
+    /// the event channel the composition root built first (design P11,
+    /// 02 §5.2 line 1331).
     ///
-    /// §5.4 does not list the waker in this signature; `E2` adds it because the
-    /// transport is part of the engine, and the alternative was an optional bus
-    /// that could not honour `events()`. The bus delivers into an unbounded
-    /// channel whose receiver is [`Gafira::events`].
+    /// §5.4 line 1356 lists three parameters; §5.2 needs the fourth, because the
+    /// startup sequence publishes before the engine exists (SP4). The bus is
+    /// the channel's bus and [`Gafira::events`] is its receiver.
     pub fn new(
         ports: Ports,
         registries: Registries,
         config: EngineConfig,
-        waker: Arc<dyn Waker>,
+        events: EventChannel,
     ) -> Result<Self, EngineError> {
-        let (bus, events) = EventBus::channel(waker, Arc::clone(&ports.clock));
         Ok(Self {
             ports,
             registries,
             config,
-            bus,
-            events,
+            bus: events.bus(),
+            events: events.receiver(),
         })
     }
 
@@ -275,10 +276,13 @@ mod tests {
     use std::io;
     use std::time::Duration;
 
-    use crate::event::NoopWaker;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::event::{NoopWaker, Waker};
     use gafira_doc::{ContentHash, Document};
     use gafira_ports::common::UnixTime;
     use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus};
+    use gafira_ports::render::BackendKind;
     use gafira_ports::store::*;
     use gafira_ports::system::*;
 
@@ -404,16 +408,31 @@ mod tests {
         )
     }
 
-    /// W5 of the round-2 verify report: gutting `Gafira::publish` must fail.
+    #[derive(Default)]
+    struct CountingWaker {
+        wakes: AtomicUsize,
+    }
+
+    impl Waker for CountingWaker {
+        fn wake(&self) {
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn quiet_channel() -> EventChannel {
+        EventChannel::new(Arc::new(NoopWaker), Arc::new(NoClock))
+    }
+
+    fn engine_over(events: EventChannel) -> Gafira {
+        Gafira::new(six_ports(), Registries::new(), config(), events).expect("an engine")
+    }
+
+    /// W5 and E2-C1: publishing through the facade reaches the observer exactly
+    /// once and wakes the waker the root built the channel with, once.
     #[test]
-    fn w5_publishing_through_the_facade_reaches_the_observer() {
-        let engine = Gafira::new(
-            six_ports(),
-            Registries::new(),
-            config(),
-            Arc::new(NoopWaker),
-        )
-        .expect("an engine");
+    fn w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it() {
+        let waker = Arc::new(CountingWaker::default());
+        let engine = engine_over(EventChannel::new(waker.clone(), Arc::new(NoClock)));
 
         engine.publish(EngineEvent::LinksMissing(Vec::new()));
 
@@ -422,6 +441,29 @@ mod tests {
             EngineEvent::LinksMissing(Vec::new())
         );
         assert!(engine.events().try_recv().is_err(), "exactly one delivery");
+        assert_eq!(waker.wakes.load(Ordering::SeqCst), 1, "one wake");
+    }
+
+    /// P11: what the startup sequence published through the channel before the
+    /// engine existed is the first thing the engine's `events()` drains.
+    #[test]
+    fn p11_an_event_published_before_the_engine_exists_is_drained_first() {
+        let channel = quiet_channel();
+        channel
+            .bus()
+            .publish(EngineEvent::BackendChanged(BackendKind::Cpu));
+
+        let engine = engine_over(channel);
+        engine.publish(EngineEvent::LinksMissing(Vec::new()));
+
+        assert_eq!(
+            engine.events().try_recv().expect("the early event"),
+            EngineEvent::BackendChanged(BackendKind::Cpu)
+        );
+        assert_eq!(
+            engine.events().try_recv().expect("the later event"),
+            EngineEvent::LinksMissing(Vec::new())
+        );
     }
 
     #[test]
@@ -472,7 +514,7 @@ mod tests {
             ),
             Registries::new(),
             config(),
-            Arc::new(NoopWaker),
+            quiet_channel(),
         )
         .expect("an engine");
 

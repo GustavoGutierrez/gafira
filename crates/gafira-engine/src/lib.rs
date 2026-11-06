@@ -17,6 +17,6 @@ mod bus;
 mod engine;
 mod event;
 
-pub use bus::{ChannelSink, JOB_PROGRESS_WINDOW};
+pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries};
 pub use event::{EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, Waker};

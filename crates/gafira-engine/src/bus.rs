@@ -7,6 +7,8 @@
 //! pending one is delivered by the next state event or by the host's
 //! [`EventBus::flush`].
 //!
+//! The pair is built by the composition root before the engine (design P11).
+//!
 //! Every delivery wakes the injected [`Waker`], which is what asks the UI for a
 //! repaint. A coalesced event does not wake anyone: nothing reached the queue.
 
@@ -21,17 +23,47 @@ use crate::event::{EngineEvent, EventBus, EventSink, Waker};
 /// The coalescing window of `JobProgress`: 10 Hz (02 §5.2 line 1335).
 pub const JOB_PROGRESS_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
 
-impl EventBus {
-    /// A bus that delivers into an unbounded channel and wakes `waker`.
-    ///
-    /// The receiver is the one §5.4 line 1365 asks the Facade for: the
-    /// composition root creates the channel first, hands the receiver to the
-    /// UI (or to the splash screen, §5.2 line 1331) and keeps the bus here.
+/// The pair the composition root builds before the engine exists (design P11,
+/// 02 §5.2 line 1331): the bus the publishers hold and the receiver the
+/// observer drains, both over one unbounded channel.
+///
+/// The root builds it with the same `Clock` it puts in `Ports`, hands
+/// [`EventChannel::receiver`] to the startup screen and [`EventChannel::bus`]
+/// to the startup sequence, then consumes it in `Gafira::new`.
+pub struct EventChannel {
+    bus: EventBus,
+    receiver: Receiver<EngineEvent>,
+}
+
+impl EventChannel {
+    /// A channel whose deliveries wake `waker`, with `JobProgress` coalesced on
+    /// the time `clock` reads.
     #[must_use]
-    pub fn channel(waker: Arc<dyn Waker>, clock: Arc<dyn Clock>) -> (Self, Receiver<EngineEvent>) {
+    pub fn new(waker: Arc<dyn Waker>, clock: Arc<dyn Clock>) -> Self {
         let (sender, receiver) = unbounded();
         let sink = Arc::new(ChannelSink::new(sender, waker, clock));
-        (Self::new(sink), receiver)
+        Self {
+            bus: EventBus::new(sink),
+            receiver,
+        }
+    }
+
+    /// A handle that publishes into this channel; every clone feeds the same
+    /// queue.
+    #[must_use]
+    pub fn bus(&self) -> EventBus {
+        self.bus.clone()
+    }
+
+    /// A handle that drains this channel (02 §5.4 line 1365).
+    ///
+    /// One drainer at a time: a `crossbeam` receiver is multi-consumer, so two
+    /// drainers would split the stream. The startup screen drains until
+    /// `StartupFinished`, then the UI drains `Gafira::events`. The engine cannot
+    /// enforce this (P11).
+    #[must_use]
+    pub fn receiver(&self) -> Receiver<EngineEvent> {
+        self.receiver.clone()
     }
 }
 

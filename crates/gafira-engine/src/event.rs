@@ -114,6 +114,10 @@ impl EventSink for NoopSink {
 }
 
 /// The bus: the Facade publishes into it and the sink decides what happens next.
+///
+/// Cloning is cheap (one `Arc`) and every clone feeds the same sink, which is
+/// what lets the startup sequence publish from another thread (design P11).
+#[derive(Clone)]
 pub struct EventBus {
     sink: Arc<dyn EventSink>,
 }
