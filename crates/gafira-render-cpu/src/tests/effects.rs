@@ -23,6 +23,10 @@ pub(super) enum Shape {
     Shift(i32),
     /// The identity over a region `p` larger than `out` on every side.
     Pad(i32),
+    /// Writes its destination's first pixel and leaves the rest as it found
+    /// it: a sparse writer, which `Effect`'s contract allows (only an error
+    /// must leave `dst` untouched).
+    Dot,
 }
 
 /// An effect that records how it was called.
@@ -91,6 +95,7 @@ impl Effect for Probe {
         match self.shape {
             Shape::Shift(d) => IRect::new(out.x0 - d, out.y0 - d, out.x1 - d, out.y1 - d),
             Shape::Pad(p) => out.inflate(p, p),
+            Shape::Dot => out,
         }
     }
 
@@ -124,7 +129,7 @@ impl Effect for Probe {
         let height = usize::try_from(dst.height()).unwrap_or(0);
         let shift = match self.shape {
             Shape::Shift(d) => i64::from(d),
-            Shape::Pad(_) => 0,
+            Shape::Pad(_) | Shape::Dot => 0,
         };
         let target = match dst.data_mut() {
             PixelDataMut::RgbaF32(data) => data,
@@ -132,6 +137,11 @@ impl Effect for Probe {
         };
         for y in 0..height {
             for x in 0..width {
+                // A sparse writer: the contract forbids only an **error** from
+                // writing, so leaving the rest of `dst` alone is legal.
+                if matches!(self.shape, Shape::Dot) && (x, y) != (0, 0) {
+                    continue;
+                }
                 let read_x =
                     usize::try_from((i64::try_from(x).unwrap_or(0) - shift).max(0)).unwrap_or(0);
                 let read_y =
@@ -457,6 +467,42 @@ fn arq_44_the_effect_peak_is_refused_before_the_scratch_is_allocated() {
     assert!(
         big.is_empty(),
         "the 2.14 GB peak is refused before it exists"
+    );
+}
+
+// O17, ARQ-111: the destination is the backend's and is reused by the ops of a
+// tile, so nothing a previous op wrote may reach this one — the effect starts
+// from transparent black, as a freshly allocated buffer would. The second
+// effect writes its first pixel and leaves the rest, which is exactly where the
+// first one's bytes would surface; removing the clearing turns the tile white.
+#[test]
+fn arq_111_a_reused_destination_starts_cleared_for_the_next_op() {
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    let writer = Arc::new(Probe::new(Shape::Pad(0)));
+    let partial = Arc::new(Probe::new(Shape::Dot));
+    let scene = quadrant(vec![
+        fill(0.0, 0.0, 16.0, 16.0, white()),
+        effect_op(&writer),
+        effect_op(&partial),
+    ]);
+    let got = run(target_desc, &scene);
+
+    // The first effect writes the whole tile-sized destination; the second
+    // reuses the same scratch and writes one pixel of it.
+    assert_eq!(
+        writer.seen(),
+        vec![(8, 8)],
+        "the first fills the destination"
+    );
+    assert_eq!(partial.seen(), vec![(8, 8)], "the second reuses it");
+    assert!(is_white(&got, 8, 8), "the pixel the second op wrote");
+    assert!(
+        is_clear(&got, 9, 9),
+        "the pixel the second op left holds no byte of the first"
+    );
+    assert!(
+        is_clear(&got, 15, 15),
+        "and the tile's far corner is clear too"
     );
 }
 
