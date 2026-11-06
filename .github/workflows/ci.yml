@@ -174,8 +174,9 @@ jobs:
             if bad=$(grep -E "^($banned) v" <<<"$tree"); then echo "::error::$name depends on $bad (ARQ-107)" >&2; status=1; fi
             [ -d "crates/$name/src" ] || { echo "::error::crates/$name/src not found" >&2; status=1; continue; }
             # The search is ARQ-107's "layers 0-2 know no language". Layer 3 resolves the locale by
-            # design (02 §14.1, ADR 0013), so the crates below keep only their dependency check
-            # above; every other crate in the table must stay free of the type.
+            # design: gafira-ports defines the type (ADR 0013) and ADR 0016 makes layer 3 take its
+            # I/O, its clock and its threads through ports, so the crates below keep only their
+            # dependency check above; every other crate in the table must stay free of the type.
             case "$name" in
               gafira-ports|gafira-engine)
                 echo "$name: layer 3, exempt from the Locale search"
