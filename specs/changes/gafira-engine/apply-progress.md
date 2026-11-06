@@ -185,3 +185,33 @@ Deviations:
   `NoopSink` cannot be counted; the assertion is one count per variant and the exact total of six.
 - Observed and left alone: a progress that opens the window does not clear an older pending one,
   so a stale fraction can still leave later. No finding names it; it belongs in a follow-up.
+
+## E2 fix round 2
+
+Item E2-C2 (CRITICAL, verify round 2): a `JobProgress` that opened a new coalescing window left
+an older pending progress in place, so the observer received 0.1, 0.2, 0.9 and ended on a stale
+fraction (AC3). Fix: when a progress opens the window, the pending one is discarded (superseded)
+before sending; the comment on the state-event path now says so. This closes the stale-fraction
+deviation recorded at the end of the E2 fix round. The single-slot design is unchanged (E2-W7
+stays a follow-up).
+
+Commit: `fix(gafira-engine): a progress that opens the window supersedes the pending one`. Gates
+green: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D
+warnings`, `cargo test --workspace --locked`.
+
+RED evidence (new tests run against the code at `93c0be8`, fix removed, tests kept):
+
+| Test | Assertion before the fix |
+|---|---|
+| `ac3_a_new_window_discards_the_stale_pending_progress_before_a_state_event` | `fractions` left `[0.1, 0.2, 0.9]`, right `[0.1, 0.2]` |
+| `ac3_a_new_window_discards_the_stale_pending_progress_before_a_flush` | `fractions` left `[0.1, 0.2, 0.9]`, right `[0.1, 0.2]` |
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| a | a progress that opens the window keeps the stale pending one | both `ac3_a_new_window_...` tests | left `[0.1, 0.2, 0.9]` |
+| b | the pending one is sent after the new one instead of being discarded | both `ac3_a_new_window_...` tests | left `[0.1, 0.2, 0.9]` |
+
+Deviations: none. The tests and fix came from an interrupted earlier run of this round. They were
+kept as they were, after RED was shown again against `93c0be8`.
