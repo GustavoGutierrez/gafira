@@ -87,12 +87,12 @@
           "evidence": "verify E3c2 round 1 PASS at 99c38bc: ac1-ac7, ac10, ac11 in project.rs (ARQ-50 fault loop, ARQ-55 empty trace), workspace gates 0 (2558 passed); 7 hand mutants killed, verifier re-ran 1, 4, 6 plus 3 own"
         }
       ],
-      "next_action": "E3d (autosave, P13, O5=(a)), then E5. SP5 (real project_id) blocks E4, not E3d.",
+      "next_action": "E3d fix round (E3d-C1: undo/redo pending tests), verify round 2; then E5",
       "verify": {
         "round": 1,
-        "commit": "99c38bc",
-        "verdict": "PASS",
-        "next": "E3d slice card, tdd-apply, verify",
+        "commit": "6f3c918",
+        "verdict": "FAIL",
+        "next": "tdd-apply test-only round for E3d-C1, then verify round 2",
         "findings": [
           {
             "id": "E2-W7",
@@ -129,13 +129,33 @@
             "summary": "undo/redo Err is unreachable with the fixed 512 MiB budget; the Err half of AC2 is proven by reading only.",
             "follow_up": true,
             "status": "open"
+          },
+          {
+            "id": "E3d-C1",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "crates/gafira-engine/src/edit.rs:69 (undo), :83 (redo); design P13 Timer",
+            "summary": "No test proves undo or redo marks the session pending for autosave: replacing the mark with a plain bump leaves all 64 engine tests green.",
+            "follow_up": false,
+            "status": "open"
+          },
+          {
+            "id": "E3d-W1",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "git diff --shortstat 34837d3..4cb17f8",
+            "summary": "712 authored lines (263 prod, 449 test) vs 504 forecast and the ~700 ceiling; owner accepted 2026-11-06.",
+            "follow_up": false,
+            "status": "closed"
           }
         ],
         "rounds": [
           {
             "round": 1,
-            "verdict": "PASS",
-            "classes": []
+            "verdict": "FAIL",
+            "classes": [
+              "implementation"
+            ]
           }
         ]
       }
