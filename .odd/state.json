@@ -75,14 +75,19 @@
           "id": "E3b",
           "status": "passed",
           "evidence": "verify E3b round 1 PASS at 9c16cc5: AC1-AC11 tests in session.rs/edit.rs/project.rs/engine.rs, workspace gates 0 (2544 passed); hand mutants 1-7 killed, re-applied 1, 3, 4"
+        },
+        {
+          "id": "E3c1",
+          "status": "passed",
+          "evidence": "verify E3c1 round 1 PASS at e1fef7f: ac8_* and ac9_* in project.rs, workspace gates 0 (2548 passed); hand mutant 7 and three verifier mutants killed"
         }
       ],
-      "next_action": "owner answered 2026-11-06: SP7 = edits allowed in memory when read-only, save returns ReadOnly before any file op; SP6 = ProjectRepository::save must fsync the file before returning (port contract), the engine does rename + dir sync. Next: specifier records SP6, SP7, E3b-W2 in 02; then E3c. SP5 (project_id) open for E3d.",
+      "next_action": "E3c2 (save, ReadOnly/NoPath/Io, SP6 doc comment; stash@{0} holds the session fields), then E3d (needs architect on SP5 project_id), then E5",
       "verify": {
         "round": 1,
-        "commit": "9c16cc5",
+        "commit": "e1fef7f",
         "verdict": "PASS",
-        "next": "specifier records SP6/SP7 and E3b-W2 in 02; then E3c",
+        "next": "tdd-apply E3c2 (save), then verify",
         "findings": [
           {
             "id": "E2-W7",
@@ -103,29 +108,11 @@
             "status": "open"
           },
           {
-            "id": "E3b-W1",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "git diff --shortstat 5df8a7a..3bde884",
-            "summary": "734 authored lines (about 350 prod / 367 test) against 588 forecast and the ~700 ceiling; owner accepted 2026-11-06.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
             "id": "E3b-W2",
             "severity": "WARNING",
             "class": "ambiguity",
             "ref": "02 §5.4:1357",
             "summary": "§5.4 names ProjectService::new but clippy new_ret_no_self and the no-#[allow] rule force new_document; the spec should name new_document.",
-            "follow_up": true,
-            "status": "open"
-          },
-          {
-            "id": "E3b-W3",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "project.rs every_page_and_node (AC4)",
-            "summary": "The whole-document dirty set is proven only for an empty document; E3c's open must assert a non-empty set.",
             "follow_up": true,
             "status": "open"
           },
