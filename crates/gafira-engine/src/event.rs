@@ -15,6 +15,8 @@ use gafira_ports::i18n::{LanguagePreference, ResolvedLocale};
 use gafira_ports::license::LicenseStatus;
 use gafira_ports::render::BackendKind;
 
+use crate::session::DocVersion;
+
 /// The identifier of a queued job (02 §5.2 line 1322, §6.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JobId(pub u64);
@@ -42,14 +44,20 @@ impl JobId {
 /// `RecoveryAvailable`, `MemoryPressure`, `StartupProgress`, `StartupFinished`
 /// and `SelectionChanged` are **Planned** for `E3` to `E10`.
 ///
-/// `DocumentChanged` carries no version yet: `DocVersion` does not exist in the
-/// repository (design P3, open question O2). `E2` drops the `Eq` bound, which
+/// `E3b` gives `DocumentChanged` its version, the engine-owned counter of
+/// design P15 (owner decision O2). `E2` dropped the `Eq` bound, which
 /// `JobProgress`'s `f32` cannot satisfy.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EngineEvent {
-    /// The document changed; `dirty` is what the command touched.
-    DocumentChanged { dirty: DirtySet },
+    /// The document changed (design P14, P15).
+    DocumentChanged {
+        /// The state this event names; one more than the previous one.
+        version: DocVersion,
+        /// What changed: the installed or undone entry's set, or every page
+        /// and node of a new document. Per event, never accumulated.
+        dirty: DirtySet,
+    },
     /// Assets the document refers to are no longer at their recorded path.
     LinksMissing(Vec<AssetRef>),
     /// The licence state changed (02 §4.14, line 920).
@@ -173,6 +181,7 @@ mod tests {
 
     fn document_changed() -> EngineEvent {
         EngineEvent::DocumentChanged {
+            version: DocVersion::default(),
             dirty: DirtySet::default(),
         }
     }

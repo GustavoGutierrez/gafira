@@ -18,9 +18,14 @@ use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, FileSystem, Notifier};
 
 use crossbeam_channel::Receiver;
+use gafira_doc::ValidationError;
+use gafira_edit::CommandError;
 
 use crate::bus::EventChannel;
+use crate::edit::EditService;
 use crate::event::{EngineEvent, EventBus};
+use crate::project::ProjectService;
+use crate::session::Shared;
 
 /// The port implementations the composition root injects (ARQ-06, 02 §5.4).
 ///
@@ -151,23 +156,29 @@ impl EngineConfig {
     }
 }
 
-/// What the engine can fail with in this delivery (design P6).
+/// What the engine can fail with (design P6, P16).
 ///
-/// The message-key mapping of ADR 0012 (ARQ-102) is **Planned**: `ToMessage`
-/// for this enum arrives with the first failing service, `E3b`, and the
-/// `UserError` struct is `E11`, after SP3 (design P12). Until then the
-/// `Display` text below is a plain sentence and no caller may match on it.
+/// The message-key mapping of ADR 0012 (ARQ-102) is the next commit of `E3b`
+/// (design P12). The `Display` text is for the local log only. `E3c` to `E10`
+/// add variants, so the enum is `#[non_exhaustive]`.
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum EngineError {
     /// The configuration cannot produce a working engine.
     InvalidConfig {
-        /// What is wrong, in one sentence.
+        /// What is wrong, in one sentence, for the log.
         detail: &'static str,
     },
     /// The project repository port failed.
     Repository(RepositoryError),
     /// The content store port failed.
     Store(StoreError),
+    /// An edit or undo arrived with no open document (design P15).
+    NoSession,
+    /// A command could not be applied or reverted (ARQ-30).
+    Command(CommandError),
+    /// A document the engine built or received is not valid.
+    InvalidDocument(ValidationError),
 }
 
 impl fmt::Display for EngineError {
@@ -176,6 +187,9 @@ impl fmt::Display for EngineError {
             Self::InvalidConfig { detail } => write!(f, "invalid engine configuration: {detail}"),
             Self::Repository(e) => write!(f, "repository error: {e}"),
             Self::Store(e) => write!(f, "content store error: {e}"),
+            Self::NoSession => f.write_str("no document is open"),
+            Self::Command(e) => write!(f, "command failed: {e}"),
+            Self::InvalidDocument(e) => write!(f, "invalid document: {e}"),
         }
     }
 }
@@ -194,16 +208,31 @@ impl From<StoreError> for EngineError {
     }
 }
 
+impl From<CommandError> for EngineError {
+    fn from(e: CommandError) -> Self {
+        Self::Command(e)
+    }
+}
+
+impl From<ValidationError> for EngineError {
+    fn from(e: ValidationError) -> Self {
+        Self::InvalidDocument(e)
+    }
+}
+
 /// The application Facade of 02 §5.4: what the UI and the CLI talk to.
 ///
-/// `E1` fixes the shape only. Each service accessor of §5.4 (1357-1365) arrives
-/// with its delivery; until then `Gafira` exposes its parts and nothing else.
+/// Each service accessor of §5.4 (1357-1365) arrives with its delivery. The
+/// document version is the engine's (owner decision O2): both services share
+/// it with the session, and it lives as long as `Gafira`.
 pub struct Gafira {
     ports: Ports,
     registries: Registries,
     config: EngineConfig,
     bus: EventBus,
     events: Receiver<EngineEvent>,
+    projects: ProjectService,
+    edit: EditService,
 }
 
 impl Gafira {
@@ -220,13 +249,30 @@ impl Gafira {
         config: EngineConfig,
         events: EventChannel,
     ) -> Result<Self, EngineError> {
+        let bus = events.bus();
+        let shared = Shared::new(bus.clone());
+        let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
         Ok(Self {
             ports,
             registries,
             config,
-            bus: events.bus(),
+            bus,
             events: events.receiver(),
+            projects: ProjectService::over(shared),
+            edit,
         })
+    }
+
+    /// The session's lifecycle (02 §5.4 line 1357): `new_document` and
+    /// `is_modified` in this delivery.
+    #[must_use]
+    pub fn projects(&self) -> &ProjectService {
+        &self.projects
+    }
+
+    /// The edits, undo, redo and gestures (02 §5.4 line 1359).
+    pub fn edit(&mut self) -> &mut EditService {
+        &mut self.edit
     }
 
     /// The configuration this engine was built with.

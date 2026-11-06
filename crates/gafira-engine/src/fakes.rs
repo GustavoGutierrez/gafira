@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use gafira_doc::{ContentHash, Document};
+use gafira_doc::{ContentHash, Document, PageId, PageSize};
+use gafira_edit::{Applied, DirtySet, GestureId, InsertPage, Property, SetProperty};
+use gafira_geom::{Length, Unit};
 use gafira_ports::common::UnixTime;
 use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier};
 use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
@@ -16,7 +18,7 @@ use gafira_ports::system::{Clock, FileSystem, FileWrite, Notifier, ReadSeek};
 
 use crate::bus::EventChannel;
 use crate::engine::{EngineConfig, Gafira, Ports, Registries};
-use crate::event::NoopWaker;
+use crate::event::{EngineEvent, NoopWaker};
 
 pub(crate) struct NoRepository;
 
@@ -143,4 +145,57 @@ pub(crate) fn quiet_channel() -> EventChannel {
 /// An engine over the fakes that publishes into `events`.
 pub(crate) fn engine_over(events: EventChannel) -> Gafira {
     Gafira::new(six_ports(), Registries::new(), config(), events).expect("an engine")
+}
+
+/// The name of every page the tests append.
+pub(crate) const NAME: &str = "page";
+
+/// An engine after `new`, with its `DocumentChanged` (version 1) drained.
+pub(crate) fn open_engine() -> Gafira {
+    let engine = engine_over(quiet_channel());
+    engine.projects().new_document().expect("a new document");
+    assert_eq!(drain(&engine).len(), 1, "the new");
+    engine
+}
+
+/// Every event waiting in the engine's queue, in order.
+pub(crate) fn drain(engine: &Gafira) -> Vec<EngineEvent> {
+    engine.events().try_iter().collect()
+}
+
+/// Append one page called [`NAME`] and return its id.
+pub(crate) fn append_page(engine: &mut Gafira) -> PageId {
+    let len = engine.edit().document().expect("a session").pages().len();
+    let size = PageSize {
+        width: Length::new(10.0, Unit::Px),
+        height: Length::new(10.0, Unit::Px),
+    };
+    let insert = InsertPage::new(len, NAME.to_owned(), size);
+    let applied = engine.edit().execute(Box::new(insert));
+    assert_eq!(applied.ok(), Some(Applied::Changed));
+    engine.edit().document().expect("a session").pages()[len].id
+}
+
+/// A command that renames `page`, inside `gesture` when one is given.
+pub(crate) fn rename(page: PageId, name: &str, gesture: Option<GestureId>) -> Box<SetProperty> {
+    Box::new(SetProperty::page(
+        page,
+        Property::PageName(name.to_owned()),
+        gesture,
+    ))
+}
+
+/// The name of the first page of the open document.
+pub(crate) fn page_name(engine: &mut Gafira) -> String {
+    engine.edit().document().expect("a session").pages()[0]
+        .name
+        .clone()
+}
+
+/// The dirty set of exactly these pages.
+pub(crate) fn pages(ids: &[PageId]) -> DirtySet {
+    DirtySet {
+        pages: ids.iter().copied().collect(),
+        nodes: Default::default(),
+    }
 }

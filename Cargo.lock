@@ -451,6 +451,7 @@ dependencies = [
  "crossbeam-channel",
  "gafira-doc",
  "gafira-edit",
+ "gafira-geom",
  "gafira-ports",
 ]
 
