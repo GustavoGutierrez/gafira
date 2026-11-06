@@ -16,7 +16,7 @@ use super::*;
 
 /// What the probe effect does to its input.
 #[derive(Clone, Copy)]
-enum Shape {
+pub(super) enum Shape {
     /// `dst(x, y) = src(x − d, y − d)`, clamped at the top-left: it reads its
     /// input from the far side of the tile's own edge.
     Shift(i32),
@@ -25,7 +25,7 @@ enum Shape {
 }
 
 /// An effect that records how it was called.
-struct Probe {
+pub(super) struct Probe {
     descriptor: Descriptor,
     schema: ParamSchema,
     shape: Shape,
@@ -34,8 +34,10 @@ struct Probe {
     cancel: Option<CancelToken>,
 }
 
+pub(super) type ProbeEffect = Probe;
+
 impl Probe {
-    fn new(shape: Shape) -> Self {
+    pub(super) fn new(shape: Shape) -> Self {
         Self {
             descriptor: Descriptor::new("test.probe", MessageKey("test.probe"), 1),
             schema: ParamSchema::new(Vec::new()),
@@ -53,12 +55,12 @@ impl Probe {
         }
     }
 
-    fn calls(&self) -> usize {
+    pub(super) fn calls(&self) -> usize {
         *self.calls.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The `src` sizes the effect was handed, in call order.
-    fn seen(&self) -> Vec<(u32, u32)> {
+    pub(super) fn seen(&self) -> Vec<(u32, u32)> {
         self.seen.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
@@ -131,7 +133,7 @@ impl Effect for Probe {
     }
 }
 
-fn effect_op(probe: &Arc<Probe>) -> RenderOp {
+pub(super) fn effect_op(probe: &Arc<Probe>) -> RenderOp {
     RenderOp::ApplyEffect {
         effect: Arc::clone(probe) as Arc<dyn Effect>,
         params: ParamValues::new(),

@@ -275,6 +275,12 @@ fn render_tile(
     if count == 0 {
         return Ok(Vec::new());
     }
+    // A mask describes the task's region, so its `(0, 0)` is the tile's corner
+    // inside the buffer, grown or not (02 §4.6).
+    let mask_origin = (
+        u32::try_from(task.region.x0.saturating_sub(drawn.x0)).unwrap_or(0),
+        u32::try_from(task.region.y0.saturating_sub(drawn.y0)).unwrap_or(0),
+    );
     let mut pixels = vec![0.0f32; count];
     for op in &task.ops {
         match op {
@@ -309,7 +315,7 @@ fn render_tile(
                     sampling::draw(image, *transform, layers.target(&mut pixels), size, drawn)?;
                 }
             }
-            RenderOp::ApplyMask { mask } => layers.apply_mask(mask, size)?,
+            RenderOp::ApplyMask { mask } => layers.apply_mask(mask, size, mask_origin)?,
             RenderOp::ApplyEffect {
                 effect,
                 params,

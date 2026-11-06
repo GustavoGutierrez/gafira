@@ -17,6 +17,8 @@ use gafira_raster::{
     PixelData, PixelDataMut, PixelFormat,
 };
 
+use super::effects::{ProbeEffect, Shape, effect_op};
+
 use super::*;
 
 /// A mask of `width × height` coverage values, row-major.
@@ -172,6 +174,52 @@ fn spec_02_4_6_a_mask_smaller_than_the_layer_masks_only_its_rectangle() {
                 channels(&base, x, y),
                 "({x}, {y}) under a 255 mask is unchanged, byte for byte"
             );
+        }
+    }
+}
+
+// 02 §4.6: the mask's `(0, 0)` is the layer's top-left, and the layer's region
+// is the task's — so a task that grows the tile for an effect still masks the
+// tile from its own corner, not from the grown buffer's.
+#[test]
+fn spec_02_4_6_the_mask_anchors_at_the_tile_when_the_task_grows() {
+    let region = IRect::new(8, 8, 16, 16);
+    let target_desc = target(16, 16, (0, 0), PixelFormat::RgbaF32);
+    // Every mask pixel has its own coverage, so an anchor two pixels off reads a
+    // different number at every pixel.
+    let data = (0..8u8)
+        .flat_map(|row| (0..8u8).map(move |column| column * 8 + row))
+        .collect::<Vec<_>>();
+    let probe = Arc::new(ProbeEffect::new(Shape::Pad(2)));
+    let scene = plan(vec![task(
+        1,
+        region,
+        vec![
+            push(),
+            fill(0.0, 0.0, 16.0, 16.0, white()),
+            effect_op(&probe),
+            masked(mask(8, 8, data)),
+            pop(BlendMode::Normal, 1.0),
+        ],
+    )]);
+    let got = run(target_desc, &scene);
+    assert_eq!(
+        probe.seen(),
+        vec![(10, 10)],
+        "the tile grew by the effect's roi"
+    );
+
+    for row in 0..8u32 {
+        for column in 0..8u32 {
+            let coverage = f32::from((column * 8 + row) as u8) / 255.0;
+            for channel in [0usize, 3] {
+                let value = channels(&got, 8 + column, 8 + row)[channel];
+                assert!(
+                    (value - coverage).abs() <= 1e-6,
+                    "({column}, {row}) channel {channel}: the mask starts at the \
+                     tile's corner, got {value} expected {coverage}"
+                );
+            }
         }
     }
 }

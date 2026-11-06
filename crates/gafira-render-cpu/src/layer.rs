@@ -111,6 +111,12 @@ impl Layers {
     /// had, which is what makes a mask smaller than the layer mask only its own
     /// rectangle.
     ///
+    /// The layer's bounds are the task's region, so the mask's `(0, 0)` is the
+    /// tile's `(0, 0)`. `origin` is that corner inside the buffer, which is the
+    /// grown rectangle when the tile also carries an effect (`CB5`): the growth
+    /// is there to feed the effect, and a mask describes the task, so it neither
+    /// moves with the growth nor reaches into it.
+    ///
     /// # Errors
     /// [`RenderError::DriverBlocked`] when no layer is open: 02 §4.6 puts an
     /// `ApplyMask` outside a `PushLayer`/`PopLayer` pair outside the plan's
@@ -119,20 +125,25 @@ impl Layers {
         &mut self,
         mask: &AlphaMask,
         size: (u32, u32),
+        origin: (u32, u32),
     ) -> Result<(), RenderError> {
         let Some(layer) = self.open.last_mut() else {
             return Err(RenderError::DriverBlocked);
         };
         let stride = usize::try_from(size.0).unwrap_or(0);
-        let columns = usize::try_from(mask.width()).unwrap_or(0).min(stride);
+        let left = usize::try_from(origin.0).unwrap_or(usize::MAX);
+        let top = usize::try_from(origin.1).unwrap_or(usize::MAX);
+        let columns = usize::try_from(mask.width())
+            .unwrap_or(0)
+            .min(stride.saturating_sub(left));
         let rows = usize::try_from(mask.height())
             .unwrap_or(0)
-            .min(usize::try_from(size.1).unwrap_or(0));
+            .min(usize::try_from(size.1).unwrap_or(0).saturating_sub(top));
         let mask_stride = usize::try_from(mask.width()).unwrap_or(0);
         for row in 0..rows {
             for column in 0..columns {
                 let coverage = f32::from(mask.data()[row * mask_stride + column]) / 255.0;
-                let at = (row * stride + column) * 4;
+                let at = ((top + row) * stride + left + column) * 4;
                 for channel in 0..4 {
                     layer[at + channel] *= coverage;
                 }
