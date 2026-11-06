@@ -17,7 +17,9 @@ use gafira_ports::repository::{ProjectRepository, RepositoryError};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, FileSystem, Notifier};
 
-use crate::event::{EngineEvent, EventBus};
+use crossbeam_channel::Receiver;
+
+use crate::event::{EngineEvent, EventBus, Waker};
 
 /// The port implementations the composition root injects (ARQ-06, 02 §5.4).
 ///
@@ -199,24 +201,30 @@ pub struct Gafira {
     registries: Registries,
     config: EngineConfig,
     bus: EventBus,
+    events: Receiver<EngineEvent>,
 }
 
 impl Gafira {
-    /// Compose an engine from its ports, its registries and its configuration
-    /// (02 §5.4, line 1356).
+    /// Compose an engine from its ports, its registries, its configuration and
+    /// the waker of its observer (02 §5.4 line 1356, §5.2 line 1335).
     ///
-    /// The bus starts with the no-op sink; `E2` replaces it with the channel
-    /// sink without changing this signature (design P2).
+    /// §5.4 does not list the waker in this signature; `E2` adds it because the
+    /// transport is part of the engine, and the alternative was an optional bus
+    /// that could not honour `events()`. The bus delivers into an unbounded
+    /// channel whose receiver is [`Gafira::events`].
     pub fn new(
         ports: Ports,
         registries: Registries,
         config: EngineConfig,
+        waker: Arc<dyn Waker>,
     ) -> Result<Self, EngineError> {
+        let (bus, events) = EventBus::channel(waker, Arc::clone(&ports.clock));
         Ok(Self {
             ports,
             registries,
             config,
-            bus: EventBus::noop(),
+            bus,
+            events,
         })
     }
 
@@ -244,6 +252,18 @@ impl Gafira {
         &self.bus
     }
 
+    /// The queue the observer drains, at the start of each of its frames
+    /// (02 §5.2 line 1335, §5.4 line 1365).
+    #[must_use]
+    pub fn events(&self) -> &Receiver<EngineEvent> {
+        &self.events
+    }
+
+    /// Let the bus release the `JobProgress` its window held back.
+    pub fn flush_events(&self) {
+        self.bus.flush();
+    }
+
     /// Publish one event to the observers of this engine.
     pub fn publish(&self, event: EngineEvent) {
         self.bus.publish(event);
@@ -255,6 +275,7 @@ mod tests {
     use std::io;
     use std::time::Duration;
 
+    use crate::event::NoopWaker;
     use gafira_doc::{ContentHash, Document};
     use gafira_ports::common::UnixTime;
     use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus};
@@ -372,6 +393,37 @@ mod tests {
         EngineConfig::new("/data/gafira").expect("a valid data directory")
     }
 
+    fn six_ports() -> Ports {
+        Ports::new(
+            Arc::new(NoRepository),
+            Arc::new(NoStore),
+            Arc::new(NoFilesystem),
+            Arc::new(NoClock),
+            Arc::new(NoNotifier),
+            Arc::new(NoLicense),
+        )
+    }
+
+    /// W5 of the round-2 verify report: gutting `Gafira::publish` must fail.
+    #[test]
+    fn w5_publishing_through_the_facade_reaches_the_observer() {
+        let engine = Gafira::new(
+            six_ports(),
+            Registries::new(),
+            config(),
+            Arc::new(NoopWaker),
+        )
+        .expect("an engine");
+
+        engine.publish(EngineEvent::LinksMissing(Vec::new()));
+
+        assert_eq!(
+            engine.events().try_recv().expect("the published event"),
+            EngineEvent::LinksMissing(Vec::new())
+        );
+        assert!(engine.events().try_recv().is_err(), "exactly one delivery");
+    }
+
     #[test]
     fn ac3_an_empty_data_directory_is_rejected() {
         let error = EngineConfig::new("").expect_err("an empty data directory must be rejected");
@@ -420,6 +472,7 @@ mod tests {
             ),
             Registries::new(),
             config(),
+            Arc::new(NoopWaker),
         )
         .expect("an engine");
 
