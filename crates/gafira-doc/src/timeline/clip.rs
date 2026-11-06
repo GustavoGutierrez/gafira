@@ -112,7 +112,7 @@ pub enum ClipSource {
 ///
 /// Every field is written in the wire form, defaults included (ADR 0006
 /// rule 3); the laws are re-applied to a value that came from bytes
-/// ([`Sequence::check_laws`]).
+/// ([`crate::timeline::Sequence::check_laws`]).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub(crate) id: ClipId,
