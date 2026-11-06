@@ -259,9 +259,9 @@ fn arq_120_two_effects_grow_by_the_buffer_the_first_produced() {
     assert!(is_white(&got, 15, 15), "the tile keeps its crop");
 }
 
-// ARQ-120: the grown rectangle is the effect's request, clipped to the page.
+// ARQ-120: the grown rectangle is the effect's request, clipped to the surface.
 #[test]
-fn arq_120_the_grown_rectangle_is_clipped_to_the_page() {
+fn arq_120_the_grown_rectangle_is_clipped_to_the_surface() {
     let target_desc = target(16, 16, (0, 0), (16, 16), PixelFormat::RgbaF32);
     let probe = Arc::new(Probe::new(Shape::Pad(100)));
     let scene = quadrant(vec![fill(0.0, 0.0, 16.0, 16.0, white()), effect_op(&probe)]);
@@ -271,7 +271,7 @@ fn arq_120_the_grown_rectangle_is_clipped_to_the_page() {
     assert_eq!(
         probe.seen(),
         vec![(16, 16)],
-        "an asked-for 100 px pad is clipped to the page"
+        "an asked-for 100 px pad is clipped to the surface"
     );
     assert!(is_white(&got, 8, 8), "the identity leaves the tile alone");
     assert!(is_white(&got, 15, 15), "the crop is the whole tile");
