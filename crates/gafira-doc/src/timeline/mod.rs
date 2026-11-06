@@ -15,5 +15,5 @@ mod track;
 pub use asset::{AssetEntry, AssetRef, AssetStorage, AssetTable};
 pub use clip::{Clip, ClipSource, Speed};
 pub use error::TimelineError;
-pub use sequence::{AUDIO_TRACK_CAP, PixelSize, Sequence};
+pub use sequence::{AUDIO_TRACK_CAP, PixelSize, PlaceSpan, Sequence};
 pub use track::{Marker, Track, TrackKind};
