@@ -5,10 +5,12 @@
 //! opens a tile-sized buffer, the ops inside it are drawn there, and `PopLayer`
 //! composites that buffer onto its parent with the pop's blend and opacity.
 //! `CB4` resamples `DrawImage` into the same buffer with a bilinear filter
-//! ([`crate::image`]). Masks, effects and transitions (`CB5`) arrive in their
-//! own delivery, and until then an op of those kinds is **reported**, never
-//! dropped: a backend that silently flattened a group would draw the wrong
-//! page and say the tile was done.
+//! ([`crate::image`]). `CB5` masks the open layer with an 8-bit coverage
+//! ([`crate::layer`]), grows the tile by an effect's input region and runs the
+//! effect once over it ([`crate::effect`]), and blends the layer with its
+//! background through a transition. An op of a kind this delivery does not
+//! render is **reported**, never dropped: a backend that silently flattened a
+//! group would draw the wrong page and say the tile was done.
 
 use std::sync::Arc;
 
@@ -25,6 +27,7 @@ use gafira_raster::{ImageBuf, PixelFormat, blend_f32};
 use kurbo::BezPath;
 
 use crate::coverage;
+use crate::effect;
 use crate::image as sampling;
 use crate::layer::Layers;
 use crate::surface::{self, Surface};
@@ -90,10 +93,11 @@ impl CpuBackend {
             // The token is checked before every tile (02 §6.3, ARQ-139).
             cancel.check()?;
             let size = (task.region.width(), task.region.height());
+            let page = self.surface_of(cx)?.page_rect();
             let tile = match cached_tile(cache, task.key, size, format) {
                 Some(tile) => tile,
                 None => {
-                    let tile = render_tile(task, &mut self.layers)?;
+                    let tile = render_tile(task, page, &mut self.layers, cancel)?;
                     let encoded = surface::encode_tile(&tile, size, format)?;
                     cache.put(task.key, Arc::new(encoded));
                     tile
@@ -246,13 +250,21 @@ fn cached_tile(
     surface::decode_tile(&tile).ok()
 }
 
-/// Renders one task into a tile-local premultiplied `f32` buffer.
+/// Renders one task and answers the tile's own crop, premultiplied `f32`.
 ///
-/// The buffer is the tile's own content: the ops are composited in plan order
-/// on a transparent backdrop, and the loop writes the result at the task's
-/// region (D4, D6).
-fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderError> {
-    let size = (task.region.width(), task.region.height());
+/// The ops are composited in plan order on a transparent backdrop and the loop
+/// writes the result at the task's region (D4, D6). The buffer is the tile
+/// **grown** by every effect's input region (`CB5`, ARQ-120): an effect has to
+/// read pixels the tile does not hold, so the whole tile is drawn over that
+/// larger rectangle and the tile keeps its own crop of it.
+fn render_tile(
+    task: &TileTask,
+    page: IRect,
+    layers: &mut Layers,
+    cancel: &CancelToken,
+) -> Result<Vec<f32>, RenderError> {
+    let drawn = effect::grown_rect(task, page);
+    let size = (drawn.width(), drawn.height());
     let count = usize::try_from(u64::from(size.0) * u64::from(size.1))
         .ok()
         .and_then(|pixels| pixels.checked_mul(4))
@@ -260,10 +272,10 @@ fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderE
     // A tile that failed before left its layers open; their buffers are
     // reusable, the depth is not.
     layers.reset();
-    let mut pixels = vec![0.0f32; count];
     if count == 0 {
-        return Ok(pixels);
+        return Ok(Vec::new());
     }
+    let mut pixels = vec![0.0f32; count];
     for op in &task.ops {
         match op {
             RenderOp::PushLayer => layers.push(count),
@@ -273,14 +285,16 @@ fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderE
                 color,
                 transform,
             } => {
-                // D6: an op whose page-space bounds miss the tile is skipped
-                // before the path is converted. The box is the transformed
-                // control-point box, so the cull never drops a contributing op.
-                if coverage::meets(coverage::page_bounds(path, *transform), task.region) {
+                // D6: an op whose page-space bounds miss the drawn rectangle is
+                // skipped before the path is converted. The box is the
+                // transformed control-point box, so the cull never drops a
+                // contributing op — and the rectangle is the grown one, because
+                // an op outside the tile may still feed an effect's `roi`.
+                if coverage::meets(coverage::page_bounds(path, *transform), drawn) {
                     paint_fill(
                         layers.target(&mut pixels),
                         size,
-                        task.region,
+                        drawn,
                         path,
                         *color,
                         *transform,
@@ -288,22 +302,28 @@ fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderE
                 }
             }
             RenderOp::DrawImage { image, transform } => {
-                // D6: an image whose page bounds miss the tile contributes no
-                // pixel, so it is dropped before a texel is sampled.
-                if coverage::meets(sampling::page_bounds(image, *transform), task.region) {
-                    sampling::draw(
-                        image,
-                        *transform,
-                        layers.target(&mut pixels),
-                        size,
-                        task.region,
-                    )?;
+                // D6: an image whose page bounds miss the drawn rectangle
+                // contributes no pixel, so it is dropped before a texel is
+                // sampled.
+                if coverage::meets(sampling::page_bounds(image, *transform), drawn) {
+                    sampling::draw(image, *transform, layers.target(&mut pixels), size, drawn)?;
                 }
             }
             RenderOp::ApplyMask { mask } => layers.apply_mask(mask, size)?,
-            RenderOp::ApplyEffect { .. } | RenderOp::ApplyTransition { .. } => {
-                return Err(not_in_this_delivery());
-            }
+            RenderOp::ApplyEffect {
+                effect,
+                params,
+                scale,
+            } => effect::run(
+                effect.as_ref(),
+                params,
+                *scale,
+                layers.target(&mut pixels),
+                drawn,
+                page,
+                cancel,
+            )?,
+            RenderOp::ApplyTransition { .. } => return Err(not_in_this_delivery()),
         }
     }
     // The plan's stack is balanced (02 §6.1): a layer left open would have to
@@ -311,7 +331,55 @@ fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderE
     if !layers.is_empty() {
         return Err(RenderError::DriverBlocked);
     }
-    Ok(pixels)
+    // The tile keeps its own crop of the grown buffer (ARQ-120).
+    crop(&pixels, size, drawn, task.region)
+}
+
+/// The tile's own rectangle out of the (possibly grown) buffer.
+///
+/// The tile is what the cache stores and what the loop writes, so the grown
+/// rectangle never leaves this function.
+fn crop(
+    pixels: &[f32],
+    size: (u32, u32),
+    drawn: IRect,
+    tile: IRect,
+) -> Result<Vec<f32>, RenderError> {
+    let width = usize::try_from(tile.width()).unwrap_or(0);
+    let height = usize::try_from(tile.height()).unwrap_or(0);
+    let count = width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(RenderError::OutOfMemory)?;
+    let stride = usize::try_from(size.0).unwrap_or(0);
+    let mut out = vec![0.0f32; count];
+    // A tile that leaves the page keeps nothing there: the pixels it covers
+    // outside the page are the page's transparent black.
+    let clip = tile.intersect(drawn);
+    for y in clip.y0..clip.y1 {
+        for x in clip.x0..clip.x1 {
+            let (Ok(row), Ok(column)) =
+                (usize::try_from(y - drawn.y0), usize::try_from(x - drawn.x0))
+            else {
+                continue;
+            };
+            let (Ok(target_row), Ok(target_column)) =
+                (usize::try_from(y - tile.y0), usize::try_from(x - tile.x0))
+            else {
+                continue;
+            };
+            let Some(source) = (row * stride + column).checked_mul(4) else {
+                continue;
+            };
+            let Some(target) = (target_row * width + target_column).checked_mul(4) else {
+                continue;
+            };
+            if source + 4 <= pixels.len() && target + 4 <= out.len() {
+                out[target..target + 4].copy_from_slice(&pixels[source..source + 4]);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Composites one fill into the tile (ARQ-117, ARQ-119).
