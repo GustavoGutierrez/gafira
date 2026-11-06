@@ -215,3 +215,45 @@ Hand mutants (applied, test failed, reverted; never committed):
 
 Deviations: none. The tests and fix came from an interrupted earlier run of this round. They were
 kept as they were, after RED was shown again against `93c0be8`.
+
+## Slice card — `E3a` history dirty sets
+
+Product IDs: 02 §5.1, §4.3; ARQ-30 (design P14, row `E3a`). Branch `feat/gafira-engine-e3`, cut
+from `feat/gafira-engine-e2` at `6f7525b` after `E2` PASS (round 3); `E3a` to `E3d` and `E5` run
+serially on it (owner, 2026-11-06). Flow line of the change applies (header of this file).
+
+Scope:
+
+- `History::newest_touches(&self) -> Option<DirtySet>`: `touches()` of the newest undo entry.
+- `History::undone_touches(&self) -> Option<DirtySet>`: `touches()` of the newest redo entry.
+- Both additive, read-only, in `crates/gafira-edit/src/history.rs`; doc comments cite P14.
+
+Non-goals: no engine code (that is `E3b`); no change to `execute`, `undo` or `redo` signatures; no
+change to any `Command` impl; no change to `crates/gafira-doc`, `crates/gafira-render`,
+`crates/gafira-render-cpu`.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | After an `execute` that returns `Changed`, `newest_touches()` equals the `DirtySet` the command reports once applied | unit test with a command whose set is only known after `apply` (e.g. a reparent or an insert) |
+| AC2 | After `undo` returns `Some`, `undone_touches()` equals the set of the entry just undone, and `newest_touches()` is the set of the entry now on top (or `None`) | unit test with two distinct entries |
+| AC3 | After `redo` returns `Some`, `newest_touches()` is the redone entry's set and `undone_touches()` moves to the next redo entry (or `None`) | unit test |
+| AC4 | Inside one merged gesture, `newest_touches()` reports the merged entry's set (`SetProperty`, the only merging command, XP4) | unit test with a gesture of several merged steps |
+| AC5 | Both return `None` on an empty stack; an `execute` that returns `Unchanged` leaves both unchanged | unit test |
+| AC6 | The accessors only read installed entries (XP4: before `apply` some commands report an empty or partial set) | unit test: a command that fails to apply leaves `newest_touches()` as it was |
+| AC7 | Gates at `--workspace` scope (every crate above layer 1 compiles against `gafira-edit`) | gate output in the commit notes |
+
+Every test asserts a value that can fail (E1 W1/W2): compare full `DirtySet` values, never only
+`is_some()`.
+
+Hand mutants (critical code, design "Critical code" row `E3a`): swap the stacks (`newest_touches`
+reads the redo top, `undone_touches` the undo top); read the bottom instead of the top; return
+`Some(DirtySet::default())` on an empty stack. Record each with its killing test and failure.
+
+Plan: RED for AC1-AC6 in `crates/gafira-edit` tests, then the two methods, then the gates; notes
+in a separate commit after the code.
+
+Estimate: 90 authored lines, 126 at x1.4. Verify: V1.
+
+Owner decisions touched: none (O2 and O5 belong to `E3b` and `E3d`).
