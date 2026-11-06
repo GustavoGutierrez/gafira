@@ -4,8 +4,9 @@
 //! and `CB2` composites it through the layer stack of 02 §6.1: `PushLayer`
 //! opens a tile-sized buffer, the ops inside it are drawn there, and `PopLayer`
 //! composites that buffer onto its parent with the pop's blend and opacity.
-//! Images (`CB4`) and masks, effects and transitions (`CB5`) arrive in their
-//! own deliveries, and until then an op of those kinds is **reported**, never
+//! `CB4` resamples `DrawImage` into the same buffer with a bilinear filter
+//! ([`crate::image`]). Masks, effects and transitions (`CB5`) arrive in their
+//! own delivery, and until then an op of those kinds is **reported**, never
 //! dropped: a backend that silently flattened a group would draw the wrong
 //! page and say the tile was done.
 
@@ -24,6 +25,7 @@ use gafira_raster::{ImageBuf, PixelFormat, blend_f32};
 use kurbo::BezPath;
 
 use crate::coverage;
+use crate::image as sampling;
 use crate::layer::Layers;
 use crate::surface::{self, Surface};
 
@@ -285,8 +287,20 @@ fn render_tile(task: &TileTask, layers: &mut Layers) -> Result<Vec<f32>, RenderE
                     )?;
                 }
             }
-            RenderOp::DrawImage { .. }
-            | RenderOp::ApplyMask { .. }
+            RenderOp::DrawImage { image, transform } => {
+                // D6: an image whose page bounds miss the tile contributes no
+                // pixel, so it is dropped before a texel is sampled.
+                if coverage::meets(sampling::page_bounds(image, *transform), task.region) {
+                    sampling::draw(
+                        image,
+                        *transform,
+                        layers.target(&mut pixels),
+                        size,
+                        task.region,
+                    )?;
+                }
+            }
+            RenderOp::ApplyMask { .. }
             | RenderOp::ApplyEffect { .. }
             | RenderOp::ApplyTransition { .. } => return Err(not_in_this_delivery()),
         }
@@ -332,9 +346,9 @@ fn paint_fill(
 
 /// The error of an op this delivery does not render yet.
 ///
-/// `DrawImage` is `CB4`, and the mask, the effect and the transition are
-/// `CB5`. The port's error set has no `Unsupported`, so the adapter reports
-/// the op as blocked rather than dropping it silently.
+/// The mask, the effect and the transition are `CB5`. The port's error set has
+/// no `Unsupported`, so the adapter reports the op as blocked rather than
+/// dropping it silently.
 fn not_in_this_delivery() -> RenderError {
     RenderError::DriverBlocked
 }

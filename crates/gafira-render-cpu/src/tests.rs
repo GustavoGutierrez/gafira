@@ -2,6 +2,11 @@
 //! formats, the cache, the cull, the cancellation, the progress and the memory
 //! the backend accounts for; and the layer stack, its blend and opacity, its
 //! nesting and the reuse of its buffers.
+//!
+//! The tests of `CB4` live in [`image`], a child module of this one: they reuse
+//! the scene, the frame and the cache helpers below.
+
+mod image;
 
 use std::sync::{Arc, Mutex};
 

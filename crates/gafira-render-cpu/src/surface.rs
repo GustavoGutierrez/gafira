@@ -311,7 +311,7 @@ pub(crate) fn decode_srgb8(pixel: [u8; 4]) -> [f32; 4] {
 }
 
 /// The error of a buffer that is not an RGBA render target.
-fn not_rgba() -> RenderError {
+pub(crate) fn not_rgba() -> RenderError {
     RenderError::Effect(EffectError::UnsupportedFormat {
         format: PixelFormat::Alpha8,
     })

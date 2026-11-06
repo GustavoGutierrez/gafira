@@ -75,12 +75,21 @@ fn to_tiny(path: &BezPath) -> Option<tiny_skia::Path> {
 /// The page-space box of `path` under `transform`, from the **control points**
 /// (D6): a superset of the filled area, which is what a cull may use.
 pub(crate) fn page_bounds(path: &BezPath, transform: Affine) -> Rect {
-    let control = path.control_box();
+    transformed_bounds(path.control_box(), transform)
+}
+
+/// The page-space box of `rect` under `transform`, from its **four corners**.
+///
+/// The minimal box holding the four mapped corners, which is the box a cull
+/// needs and a superset of whatever the rectangle's image covers: an axis
+/// aligned transform gives the rectangle itself, a rotated one its tight
+/// bounding box.
+pub(crate) fn transformed_bounds(rect: Rect, transform: Affine) -> Rect {
     let corners = [
-        Point::new(control.x0, control.y0),
-        Point::new(control.x1, control.y0),
-        Point::new(control.x0, control.y1),
-        Point::new(control.x1, control.y1),
+        Point::new(rect.x0, rect.y0),
+        Point::new(rect.x1, rect.y0),
+        Point::new(rect.x0, rect.y1),
+        Point::new(rect.x1, rect.y1),
     ]
     .map(|corner| transform * corner);
     let mut bounds = Rect::new(corners[0].x, corners[0].y, corners[0].x, corners[0].y);
