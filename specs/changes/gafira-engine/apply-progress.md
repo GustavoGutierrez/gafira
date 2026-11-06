@@ -293,3 +293,61 @@ Hand mutants (applied, test failed, reverted; never committed):
 Deviations: the `None`-on-empty half of AC5 cannot fail against a stub that returns `None`; its
 RED is mutant 3 instead. Measured lines (`git diff --shortstat cad7d0c..d1d6641`): 2 files, 171
 insertions, 1 deletion (estimate 90, 126 at x1.4; the overrun is the test file, 153 lines).
+
+## Slice card — `E3b` session, edits and the document version
+
+Product IDs: 02 §5.1, §5.2 (1317), §5.4 (1357, 1359), §7.3; ARQ-30, ARQ-33, ARQ-102 (`ToMessage`
+half only). Design: P12, P14, P15, P16 (the `E3b` parts), row `E3b`, "Critical code" row `E3b`.
+Owner decision touched: O2 = (a), 2026-11-06 — `DocVersion` is an engine-owned counter; recorded,
+not reopened. `crates/gafira-doc` is not touched.
+
+Scope:
+
+- `DocVersion(u64)`, `Copy + Ord`, owned by `Gafira`, 0 at construction, strictly increasing for
+  the engine's lifetime, never reset (P15).
+- `Session { history, path, read_only, clean_version, .. }` and `SessionCell =
+  Arc<Mutex<Option<Session>>>` shared by `ProjectService` and `EditService` (P15).
+- `EditService::{execute, undo, redo, begin_gesture, end_gesture}` over the session's `History`,
+  passing `Clock::monotonic()` as `at` (§5.1).
+- `ProjectService::new` (empty document via `Document::from_parts`, replaces the session, drops
+  the old history) and `ProjectService::is_modified()` (`version != clean_version`).
+- `Gafira::projects(&self) -> &ProjectService`, `Gafira::edit(&mut self) -> &mut EditService`.
+- `EngineEvent::DocumentChanged { version: DocVersion, dirty: DirtySet }`.
+- `EngineError` gains `NoSession`, `Command(CommandError)`, `InvalidDocument(ValidationError)`
+  with `From`; becomes `#[non_exhaustive]`; `ToMessage for EngineError` per P12.
+
+Non-goals: `open`, `save` and every file operation (`E3c`); `ReadOnly`, `NoPath`, `Io` (`E3c`);
+autosave and `autosave_interval` (`E3d`); `UserError` (`E11`); `ToMessage` for `CommandError` or
+`ValidationError` (SP3(b)); any change to `gafira-edit` beyond E3a, or to `gafira-doc`,
+`gafira-render`, `gafira-render-cpu`.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | Every bump of the P15 table bumps the version by exactly one and publishes exactly one `DocumentChanged` with that version: `execute` → `Changed` (merged or not), `undo` → `Some`, `redo` → `Some`, a successful `new` | unit tests, one per row, asserting the exact version and the event count |
+| AC2 | Nothing in the "never bumps" column bumps or publishes: `execute` → `Unchanged`/`Err`, `undo`/`redo` → `None`/`Err`, `begin_gesture`, `end_gesture` | unit tests asserting version unchanged and zero events drained |
+| AC3 | The version is strictly increasing across a mixed sequence (edits, undo, redo, a second `new`) and a second `new` does not reset it | unit test over the whole sequence, comparing each event's version to the previous |
+| AC4 | `DocumentChanged.dirty` is `newest_touches()` after `execute`/`redo` and `undone_touches()` after `undo` (P14); after `new` it lists every page and node of the new document | unit tests comparing whole `DirtySet` values |
+| AC5 | ARQ-33 through the engine: a gesture of many merging steps leaves one history entry and `undo` returns to the state before the gesture | unit test (`begin_gesture`, N `SetProperty` steps, `end_gesture`, one `undo`) |
+| AC6 | History boundary: after `new`, `undo` of an edit made before it is impossible (`None`), and the old history is gone | unit test |
+| AC7 | With no session, every `EditService` call returns `EngineError::NoSession` and publishes nothing | unit test per method |
+| AC8 | "Modified": false after `new`; true after an edit; still true after undoing back to the `new` content (conservative, P15) | unit test |
+| AC9 | `ToMessage`: one key per `EngineError` variant in the area `error.engine.`, `Repository` and `Store` delegate to their own `to_message`, `Command` → `error.engine.command_failed`, `InvalidDocument` → `error.engine.invalid_document`, no `_` arm | fixture per variant asserting the key name (no catalog exists, P12) |
+| AC10 | `Gafira` stays `Send + Sync` with the session mutex (XP7) | the existing compile-time assertion still compiles |
+| AC11 | Gates at `--workspace` scope | gate output in the notes |
+
+Every test asserts a value that can fail (E1 W1/W2): exact versions, exact event counts, whole
+`DirtySet`s.
+
+Hand mutants (critical code, row `E3b`): bump the version on an `Unchanged` execute; do not bump
+on `undo`; reset the version to 0 on `new`; publish `newest_touches` after `undo` instead of
+`undone_touches`; keep the old history across `new`; publish an event when there is no session;
+map `Repository` to an engine key instead of delegating. Record each with its killing test and
+failure.
+
+Plan: RED for AC1-AC9, then `DocVersion` and `Session`, then `EditService`, then
+`ProjectService::new`/`is_modified`, then the facade accessors and the event, then `ToMessage`,
+then the gates; notes in a separate commit after the code. Fakes private to the engine (P16).
+
+Estimate: 420 authored lines, 588 at x1.4. Verify: V1.
