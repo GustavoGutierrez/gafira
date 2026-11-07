@@ -144,3 +144,37 @@ fn cal_11_the_fixed_frame_renders_byte_identical_pngs() {
         "two builds of the frame encode the same bytes"
     );
 }
+
+/// FNV-1a, 64 bits: a digest of the PNG bytes, so the pin is one line.
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+/// The PNG's length and digest on `x86_64-unknown-linux-gnu`, the platform a
+/// stored golden is generated on (ARQ-113).
+const PINNED_PNG: (usize, u64) = (82_840, 0xb8fe_38af_ef16_1061);
+
+// CAL-11, ARQ-111, ARQ-113, W21: the frame's PNG is the same bytes in every
+// process, not only twice in one; on the golden platform it is pinned exactly,
+// as ARQ-113 compares a stored golden in `Mode::Exact`. Elsewhere the encoder
+// and the float paths may differ, so the pin does not apply there.
+#[test]
+fn cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform() {
+    let png = frame_1080::export_png(&frame_1080::plan(RenderQuality::Export));
+    let golden_platform = cfg!(all(
+        target_arch = "x86_64",
+        target_os = "linux",
+        target_env = "gnu"
+    ));
+    if !golden_platform {
+        eprintln!("CAL-11 pin skipped: the PNG is pinned on x86_64-unknown-linux-gnu only");
+        return;
+    }
+    assert_eq!(
+        (png.len(), fnv1a_64(&png)),
+        PINNED_PNG,
+        "the fixed frame's PNG (length, FNV-1a 64) on x86_64-unknown-linux-gnu"
+    );
+}
