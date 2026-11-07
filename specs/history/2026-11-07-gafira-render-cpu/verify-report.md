@@ -2358,3 +2358,5 @@ Closure: C3 — the new test reads the whole 64×64 surface and kills IM3 in eac
 Named by a test or bench: CAL-11, ARQ-143, ARQ-43, ARQ-117, ARQ-44, ARQ-114, ARQ-149. ARQ-40 is a non-goal (`D10`, `SP5`).
 
 next: archive — CB6 is the change's last delivery (`CB7` is conditional on CAL-11 > 2 s and is not cut: 288 ms). W20 is the owner's call; W22 is a specifier follow-up.
+
+Owner decision (2026-11-07): `W20` is decided — the owner accepted CB6's 825 lines ("sí, acepto las 825 líneas").

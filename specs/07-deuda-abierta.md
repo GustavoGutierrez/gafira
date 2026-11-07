@@ -4,7 +4,7 @@
 |---|---|
 | Documento | Especificación 07 |
 | Estado | Vigente (no ejecutable): inventario, sin requisitos propios |
-| Alcance | Ítems 39 a 77 y 104 a 111 de `specs/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
+| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
 | Fuentes | `specs/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
 | Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
 | Copia duradera | Las listas crudas estaban en el scratchpad de una sesión, que es temporal. Este documento es la copia que queda |
@@ -15,6 +15,7 @@
 |---|---|
 | Ítems 39 a 77 | 39: 34 abiertos, 2 remiten a otro ítem (70, 71), 3 cerrados o solo registro (51, 64, 65) |
 | Ítems 104 a 111 | 8: 8 abiertos (archivo de `gafira-timeline`) |
+| Ítems 112 a 132 | 21: 20 abiertos, 1 solo registro (129) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -22,9 +23,9 @@
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
 
-## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 111)
+## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 132)
 
-La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí.
+La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/history/2026-11-07-gafira-render-cpu/`.
 
 ### 1.1 Abiertos
 
@@ -72,6 +73,26 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 109 | La carga no reaplica las leyes del constructor: un lado de píxel cero y un marcador negativo cargan (TL3-S1 de `gafira-timeline`). | Se decide si la carga reaplica esas dos leyes y hay test. |
 | 110 | La tabla de commits del registro lista 6 de 8, y el golden mide 2 220 bytes, no 2 221 (TL3-S2 de `gafira-timeline`). | El registro archivado queda corregido al revisarlo; no bloquea. |
 | 111 | `.expect("{name} still loads")` no interpola en `timeline_wire.rs:336` (TL3-S3 de `gafira-timeline`). | El mensaje nombra la fixture y un fallo lo confirma. |
+| 112 | AC1 de CB2 pone la mezcla y la opacidad en `PushLayer`; el puerto las pone en `PopLayer` (W1 de `gafira-render-cpu`). | `specifier` decide si el registro deja constancia o enmienda AC1; las tarjetas archivadas no se editan. |
+| 113 | AC4 de CB2 cita un error de validación de plan que el puerto no tiene; `DriverBlocked` se reutiliza (W2 de `gafira-render-cpu`). | `architect` decide si el puerto gana la variante; si no, el registro lo declara. |
+| 114 | Ningún test ejecuta `execute` después de un `trim` a mitad de frame (S1 de CB2). | Test primero: `execute` tras `trim` con el frame abierto. |
+| 115 | CB2 registra `tier: T0` para código crítico de Rust (S2 de CB2). | Se corrige la etiqueta o se deja constancia, como el ítem 108. |
+| 116 | M4 (la previa a escala 2.0) es equivalente en CB3; el muestreo de CB4 debería volverla observable y el registro de CB4 no lo confirma (W6 de CB3). | Un test de la previa a escala 2.0 con imagen, o el registro confirma que CB4 la mata. |
+| 117 | `arq_113_one_altered_byte_fails_on_this_platform` fija `differing == 1` en modo Exact (S4 de CB3). | Test primero: la aserción sigue a `current_mode()`. |
+| 118 | D9 nombra `golden::compare` y la entrega usa su propio comparador (S5 de CB3). | `architect` enmienda D9 o extiende el testkit. |
+| 119 | Una página sin raíces planifica una tarea por región y ningún test lo fija (W9 de CB3b). | Test primero: página sin raíces que pinta el fondo. |
+| 120 | El golden almacenado tiene una sola raíz; no hay golden entre plataformas con varias (S6 de CB3b). | El coordinador decide si se regenera sobre una escena multi-raíz. |
+| 121 | El sentido de la rotación no queda fijado: el tablero y el fixture de 45° son invariantes al signo (S7 de CB4). | `specifier` añade un caso que lo fije; test primero. |
+| 122 | Los renglones HM1 y HM2 del registro de CB4 no reproducen (S10 de CB4). | Se corrige el registro de CB4. |
+| 123 | El buffer dibujado del tile está fuera de la contabilidad y el pico acotado no es el del frame (W10 de CB5, ronda 2). | `architect` decide la contabilidad; después test. |
+| 124 | Una ROI decreciente antes de una que dilata deja un borde sin pedir; hoy es inalcanzable (W11 de CB5, ronda 2). | `specifier` nombra o excluye la forma; test si entra. |
+| 125 | SP7: el rectángulo de `ApplyMask` en espacio de página; máscara-luego-efecto no es equivalente por tiles (W4 de CB5, ronda 2; O16). | `specifier` responde SP7 en 02 §4.6 o lo excluye. Bloquea ARQ-134. |
+| 126 | Tamaños sin decisión registrada: CB3b W8 (576 frente a 180), CB4 S9 (1228 frente a 360), CB5 S2 (1586 frente a 420), CB5b W14 (378 frente a 120) y CB8 W19 (597 frente a 160). | El coordinador acepta o rechaza cada uno. Ninguno bloquea. |
+| 127 | Dos resbalones del registro de CB5b: sitios de construcción y cifras de src (S1 de CB5b). | Se corrige al revisar el registro; no bloquea. |
+| 128 | Una cifra del registro de CB8 sin la línea «con este registro» (S2 de CB8). | Se corrige la cifra; no bloquea. |
+| 130 | ARQ-143 no tiene regla para un tile más largo que su etapa de 8 ms (W22 de CB6). | `specifier` añade la regla; test después. |
+| 131 | D10 (opción a) y la fila 106 del diseño describen `GraphPageRenderer`; el bench arma el plan a mano (S11 de CB6). | `specifier` enmienda D10 y la fila 106. |
+| 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
 
 ### 1.2 Cerrados o sin trabajo propio
 
@@ -80,6 +101,11 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 - **65**: registro. Aviso de tamaño de `pi-agent-sync`, ya integrado; no queda acción sobre esa entrega.
 - **70**: sin trabajo propio. Es el ítem 47.
 - **71**: sin trabajo propio. Es el ítem 42.
+- **129**: registro. El titular aceptó las 825 líneas de CB6 el 2026-11-07 (W20 de `gafira-render-cpu`); no queda acción.
+- **W15 de CB8** (contador de la curva sRGB en un frame): cerrado en CB6 por `afc55de`.
+- **W16 de CB8** (`read_rows` con el span del clip): cerrado en CB6 por `d2a2f49`; su gemelo de escritura (C3 de CB6) por `012b433`.
+- **W18 de CB8** (comparación de la vista previa en frío con ARQ-143): cerrado en CB6 por `74207ab`, la nota de diseño; el banco de vista previa está en `21707d6`.
+- **S3 de CB8** (`drawn` con una región que termina fuera de la página): cerrado en CB6 por `d31909f`.
 
 ### 1.3 Desajustes con el README, sin corregir
 

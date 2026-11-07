@@ -1,6 +1,6 @@
 //! Benchmarks of `blend_u8` at the XP1 spike's unit of work.
 //!
-//! `specs/changes/gafira-render-cpu/spike.md` measured `blend_u8` and `blend_f32` over
+//! `specs/history/2026-11-07-gafira-render-cpu/spike.md` measured `blend_u8` and `blend_f32` over
 //! 2 073 600 pixels (1920×1080) × 3 layers = 6 220 800 calls: 640.7 ms (`Normal`) and
 //! 718.2 ms (`Multiply`) for `blend_u8`, against 90.7 ms and 213.1 ms for `blend_f32`.
 //! These benches keep that unit so their numbers compare with the spike's directly.
