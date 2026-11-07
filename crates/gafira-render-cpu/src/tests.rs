@@ -735,6 +735,59 @@ fn arq_117_an_rgba_f32_surface_is_the_linear_bytes_it_was_handed() {
     );
 }
 
+// ARQ-117, O14, W15: an `Rgba8` frame runs the sRGB curve exactly once per
+// pixel of every tile it encodes, and nowhere else: the write copies the
+// encoded tile, a hit copies the cached one, and `read_back` copies the
+// surface. The count is of tile pixels, so the third tile's eight columns past
+// the surface are encoded (the cache keeps the whole tile) and counted.
+#[test]
+fn arq_117_an_rgba8_frame_quantises_each_encoded_pixel_once() {
+    let scene = plan(
+        (0..3u128)
+            .map(|index| {
+                let x0 = i32::try_from(index).unwrap() * 16;
+                task(
+                    index,
+                    IRect::new(x0, 0, x0 + 16, 16),
+                    vec![fill(0.0, 0.0, 48.0, 16.0, srgb(0.9, 0.2, 0.1, 0.6))],
+                )
+            })
+            .collect(),
+    );
+    let target_desc = target(40, 16, (0, 0), (40, 16), PixelFormat::Rgba8);
+    let whole = IRect::new(0, 0, 40, 16);
+    let mut cache = RecordingCache::default();
+
+    // A cold frame: three misses of 16 × 16.
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let before = crate::surface::quantised();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+    let encoded = crate::surface::quantised() - before;
+    assert_eq!(encoded, 3 * 16 * 16, "once per encoded tile pixel");
+    let before = crate::surface::quantised();
+    frame.read(whole).expect("the surface reads");
+    assert_eq!(
+        crate::surface::quantised() - before,
+        0,
+        "read_back quantises nothing"
+    );
+
+    // A warm frame: three hits, so nothing is encoded at all.
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let before = crate::surface::quantised();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+    frame.read(whole).expect("the surface reads");
+    assert_eq!(
+        crate::surface::quantised() - before,
+        0,
+        "a hit is copied, not decoded and encoded again"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // AC3 — the cache: a hit is reused, a miss is written back at the plan's key
 // ---------------------------------------------------------------------------

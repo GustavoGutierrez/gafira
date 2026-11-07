@@ -282,12 +282,29 @@ fn copy_span<T: Copy>(target: &mut [T], source: &[T], at: usize, from: usize, sp
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many pixels [`quantise_srgb8`] encoded on this thread (W15).
+    ///
+    /// Thread-local, so tests running in parallel do not see each other; the
+    /// backend is single-threaded, so a frame runs on its caller's thread.
+    static QUANTISED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The pixels [`quantise_srgb8`] encoded on this thread so far (W15, O14).
+#[cfg(test)]
+pub(crate) fn quantised() -> u64 {
+    QUANTISED.with(std::cell::Cell::get)
+}
+
 /// Encodes one premultiplied linear pixel as premultiplied sRGB 8-bit.
 ///
 /// The order is the one ARQ-117 and D9 fix: unpremultiply in linear light,
 /// encode with the sRGB curve, and premultiply in 8 bits with
 /// `(c × a + 127) / 255` on integer division.
 pub(crate) fn quantise_srgb8(pixel: [f32; 4]) -> [u8; 4] {
+    #[cfg(test)]
+    QUANTISED.with(|count| count.set(count.get() + 1));
     let alpha = pixel[3].clamp(0.0, 1.0);
     let a = round_u8(alpha);
     if a == 0 {
