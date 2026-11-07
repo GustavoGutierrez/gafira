@@ -48,8 +48,13 @@ fn drawn(region: IRect, format: PixelFormat, ops: Vec<RenderOp>) -> ImageBuf {
     let height = region.height();
     // The page is the smallest one that holds the surface: the surface starts
     // at the region's origin and ends at its far corner. These scenes have no
-    // effect, so the page is never read (O18).
-    let page = (region.x1.unsigned_abs(), region.y1.unsigned_abs());
+    // effect, so the page is never read (O18). A region whose far corner is
+    // left of or above the page has no page that holds it, so the helper
+    // refuses it rather than name one with `unsigned_abs` (S3).
+    let page = (
+        u32::try_from(region.x1).expect("the region ends inside the page"),
+        u32::try_from(region.y1).expect("the region ends inside the page"),
+    );
     let scene = plan(vec![task(1, region, ops)]);
     let mut frame = Frame::open(
         CpuBackend::new(),
