@@ -5,8 +5,8 @@
 //! region, so the tile is **grown** by every effect's `roi` before anything is
 //! drawn, the plan's ops are rendered over the grown rectangle, each effect runs
 //! **once** over it, and the tile keeps its own crop (`design.md`, "Critical
-//! code"). The growth is clipped to the page, so an effect cannot ask for a
-//! buffer the destination does not have.
+//! code"). The growth is clipped to the surface, so an effect cannot ask for
+//! a buffer the destination does not have.
 //!
 //! The effect runs in place, through a destination buffer of the same size, and
 //! its result is committed only when it succeeded **and** the token is still
@@ -21,7 +21,7 @@
 //!
 //! The buffers are premultiplied linear `f32` ([`crate::layer`], O11), which is
 //! the format the effect is handed in both qualities: the target's format
-//! decides only what `read_back` answers.
+//! decides the surface's storage and what `read_back` answers (O14).
 
 use gafira_doc::contract::{CancelToken, ParamValues};
 use gafira_geom::IRect;

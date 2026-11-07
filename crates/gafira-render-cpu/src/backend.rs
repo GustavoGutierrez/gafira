@@ -88,13 +88,13 @@ impl CpuBackend {
         self
     }
 
-    /// A backend whose effect scratch is refused against `budget` instead of
-    /// [`surface::SURFACE_BUDGET`] (`O17`).
+    /// A backend that refuses its surface and its effect scratch against
+    /// `budget` instead of [`surface::SURFACE_BUDGET`] (`O17`).
     ///
-    /// The cap is the only thing a test lowers: the comparison, its position
-    /// before the allocation and both terms of `held` are the production ones,
-    /// which is what makes [`CpuBackend::execute`]'s refusal observable without
-    /// a 1 GiB surface.
+    /// The cap is the only thing a test lowers: the surface's figure, the
+    /// comparisons against it, their position before the allocation and both
+    /// terms of `held` are the production ones, which is what makes the
+    /// refusals observable without a gibibyte of real buffers.
     #[cfg(test)]
     pub(crate) fn with_budget(mut self, budget: Bytes) -> Self {
         self.budget = budget;
@@ -123,6 +123,9 @@ impl CpuBackend {
             // O18: the window an effect is handed is page space, so the page's
             // extent travels beside the surface's rectangle.
             let page = self.surface_of(cx)?.page_extent();
+            // A miss is encoded once, written back and written into the
+            // surface; a hit is that same encoded tile, so the surface copies
+            // what the cache holds and the sRGB curve does not run again (O14).
             let tile = match cached_tile(cache, task.key, size, format) {
                 Some(tile) => tile,
                 None => {
@@ -140,12 +143,12 @@ impl CpuBackend {
                         &mut self.scratch,
                         cancel,
                     )?;
-                    let encoded = surface::encode_tile(&tile, size, format)?;
-                    cache.put(task.key, Arc::new(encoded));
-                    tile
+                    let encoded = Arc::new(surface::encode_tile(&tile, size, format)?);
+                    cache.put(task.key, Arc::clone(&encoded));
+                    encoded
                 }
             };
-            self.surface_of(cx)?.write(task.region, &tile, size);
+            self.surface_of(cx)?.write(task.region, &tile);
             // The fraction is the tiles done over the tiles planned, and it
             // reaches `1.0` only with the last tile of the plan (ARQ-139).
             self.report(cancel, (index + 1, planned))?;
@@ -212,7 +215,7 @@ impl RenderBackend for CpuBackend {
     }
 
     fn begin_frame(&mut self, target: &TargetDesc) -> Result<FrameCx, RenderError> {
-        let surface = Surface::new(target)?;
+        let surface = Surface::new(target, self.budget)?;
         let id = FrameId(self.next_frame);
         self.next_frame = self.next_frame.saturating_add(1);
         self.frame = Some(id);
@@ -298,12 +301,12 @@ fn cached_tile(
     key: TileKey,
     size: (u32, u32),
     format: PixelFormat,
-) -> Option<Vec<f32>> {
+) -> Option<Arc<ImageBuf>> {
     let tile = cache.get(&key)?;
     if tile.width() != size.0 || tile.height() != size.1 || surface::format_of(&tile) != format {
         return None;
     }
-    surface::decode_tile(&tile).ok()
+    Some(tile)
 }
 
 /// What the frame already holds, and the cap it must stay inside (`O17`).
