@@ -783,3 +783,62 @@ manifest and lock (10), `S3` (9) and the design note (23). With this record the 
 - **`W18`'s comparison is only fair warm.** The design note says why and what would measure it: a
   `FrameLoop` bench in `gafira-render` with a real 8 ms deadline. It also records that one heavy
   tile (~12 ms) is longer than the 8 ms stage, so a frame can overrun by up to one tile.
+
+### Fix round 1 (`C3`, `C4`/`S13`, `W21`, `S12`)
+
+Commits, each passing fmt, clippy `-D warnings` and the crate's tests alone (exit 0):
+
+- `012b433 test(gafira-render-cpu): a tile clipped at the right edge writes every row of the corner` — `C3`.
+- `9e59f39 docs(gafira-render-cpu): name ARQ-114 on bench_export_png_1080 and the guard` — `C4`, `S13`.
+- `fa9d181 test(gafira-render-cpu): pin the fixed frame's PNG on the golden platform` — `W21`.
+- `docs(gafira-render-cpu): record the CB6 fix round` — this section.
+
+**RED.**
+
+- `C3` — `arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner` reads the whole
+  64 × 64 surface of ARQ-149's scene in both storages: white exactly on the 4 × 4 corner, clear
+  elsewhere. Green on the code; with IM3 applied (`write_rows` spans `region.width()`) it fails
+  `Rgba8: (60, 63) is filled`, and with the loop cut to `RgbaF32` alone `RgbaF32: (60, 63) is
+  filled` — the last row of the clipped tile is lost in both.
+- `C4`, `S13` — `bench_export_png_1080`'s doc names ARQ-114 (the bench with that row's name, `D10`;
+  the name is fixed, so the ID goes in the doc, as `gafira-segment`'s benches do). The guard's
+  module doc says why it is not the `cargo test` gate ARQ-114 forbids: CI's `cargo test` builds in
+  debug, where the guard skips and never fails on time; the assert runs only in a build optimised on
+  purpose, and the number is the bench's (`D10`). `git grep ARQ-114 -- crates/gafira-render-cpu`
+  finds both. No RED: documentation.
+- `W21` — `cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform` pins `(length, FNV-1a
+  64)` of the PNG on `x86_64-unknown-linux-gnu`, as ARQ-113 compares a stored golden in
+  `Mode::Exact` there, and skips visibly elsewhere. RED with the pin at `(0, 0)`: `left: (82840,
+  13330154275344879713)`, `right: (0, 0)`; the value is `0xb8fe38afef161061`, the digest verify
+  measured in two debug processes and one release process. Green in debug and in `--release`.
+
+**Hand mutants** (applied, observed, reverted; restored by `sha256sum -c`, tree clean):
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| IM3 | `write_rows` takes its span from `region.width()` | `arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner` (`Rgba8: (60, 63) is filled`; `RgbaF32` the same) | killed |
+| IM1 | the background's red is `0.96 - (pid % 50 + 1) × 0.005` | `cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform`, three processes, three failures (`left: (83281, …)`, `(83115, …)`, `(83296, …)`) | killed |
+| HM1 | a static counter darkens the background per build | the byte-identical test and the pin | killed |
+| HM2 | `judge` loses its `if !optimised` | the table test (`left: Over(9s)`, `right: Skipped`) and the guard | killed |
+| HM3 | the guard's condition inverted | the guard: debug `left: false right: true`, release `left: true right: false` | killed |
+
+A first IM1 with `pid % 7` passed one run in three: that pid was a multiple of 7, so the shift was
+zero and the frame was the constant one. The mutant above shifts in every process. HM4–HM7 are in
+`src/` code this round did not touch, and their killing tests are unchanged.
+
+**Gates at HEAD** (`CARGO_TARGET_DIR=/tmp/gafira-cb6-target CARGO_INCREMENTAL=0`, worktree root):
+`cargo fmt --check` 0; `cargo clippy --workspace --all-targets --locked -- -D warnings` 0;
+`cargo test --workspace --locked` 0 (**2636 passed, 0 failed, 0 ignored**, 202 blocks: the two new
+tests); `cargo deny check` 0; the nine `run:` steps of the `policy` job after the toolchain install
+(Format, ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14, ADR 0013) 0 each. Nothing under `src/` outside
+`tests.rs`, `Cargo.toml`, `Cargo.lock`, `crates/gafira-ports`, `crates/gafira-render`,
+`crates/gafira-doc` or `.github/` changed.
+
+**`S12`.** CAL-11 names a mid-range reference machine; the i7-12700H (14 cores, 20 threads, a
+high-end laptop part) is not one. The 288 ms above is therefore indicative: it shows the frame is
+far under 2 s here, not that it is under 2 s on CAL-11's machine. That number waits for the
+reference machine of ARQ-40's change.
+
+**Size.** `git diff --shortstat c1ff86d..HEAD` before this section: **3 files changed, 72
+insertions(+)** — the `C3` test 27, the pin 34 and the guard's doc 8 in
+`tests/cal_11_export_1080.rs` (42), the bench's doc 3. No production line.
