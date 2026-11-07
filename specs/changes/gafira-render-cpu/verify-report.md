@@ -1978,3 +1978,240 @@ decides, as the card says.
   residual) stay open and untouched, as routed; neither is in this delivery's scope.
 
 next: tdd-apply (CB6, the next delivery) — PASS with no CRITICAL and all six criteria covered; the three `WARNING`s (W12 the `target()` helper's placeholder `page`, W13 the two "clipped to the page" leftovers, W14 the size) and `S1` are follow-ups, and `W12`/`W13` are a few lines each for the next `gafira-render-cpu` delivery to fold in
+
+## Round 1 — CB8
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB8", "rounds": [ {
+  "round": 1, "commit": "f847e046cb061424550e601a293b9d07b61d9882", "mode": "standard", "tier": "T2", "depth": "V2",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 7, "suggestion": 2},
+  "classes": {},
+  "findings": [
+    {"id": "W15", "severity": "WARNING", "class": "claim",
+     "ref": "crates/gafira-render-cpu/src/surface.rs:160-168, :198-202; apply-progress.md:601",
+     "summary": "AC1's \"the curve runs once\" is not enforced by anything: re-quantising in read and re-encoding the cached tile in write each survive all 80 delivered tests plus 7 independent probes (0/32 896 valid pixels move). Only a reader of surface.rs sees it; AC4 pins the storage, not the number of passes.",
+     "follow_up": true, "status": "open"},
+    {"id": "W16", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/surface.rs:240-251",
+     "summary": "The new read_rows takes its span from the clip; a mutant using region.width() is killed only by the verifier's probe, not by the delivery: no test reads a region wider than the surface. Code right, arithmetic untested on code this delivery wrote.",
+     "follow_up": true, "status": "open"},
+    {"id": "W17", "severity": "WARNING", "class": "ambiguity",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:604 (AC4)",
+     "summary": "AC4 says \"one byte per pixel\"; ARQ-117 fixes an 8-bit buffer at ancho x alto x canales, so it is one byte per channel, four per pixel. The delivery's reading is the only one consistent with ARQ-117 and ARQ-44; the card's number is what must be amended.",
+     "follow_up": true, "status": "open"},
+    {"id": "W18", "severity": "WARNING", "class": "ambiguity",
+     "ref": "apply-progress.md:598, :607; design.md:735",
+     "summary": "The card lists ARQ-143 and O14 says the delivery must be measured against the visible-render budget, but the card's non-goals put the benches in CB6, no AC asks for a number and none exists. The ~121 ms pass is asserted from the spike, not re-measured after the change.",
+     "follow_up": true, "status": "open"},
+    {"id": "W19", "severity": "WARNING", "class": "implementation",
+     "ref": "79859ab..f847e04",
+     "summary": "597 insertions / 226 deletions against the card's 160 (225 at x1.4): 3.7x / 2.65x, below the ~700 stop signal. The overrun is W12 (68 mechanical call sites) and the surface.rs rewrite; W12 and W13 are separate commits if a review slice is wanted.",
+     "follow_up": true, "status": "open"},
+    {"id": "W12", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests.rs:37-51",
+     "summary": "Closed by a0c9cd5: target() takes the page and all 68 sites state it; the four non-zero-origin descriptors now name pages that hold the surface, and drawn's minimal hull equals origin+size for its non-negative regions.",
+     "follow_up": false, "status": "closed"},
+    {"id": "W13", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/effect.rs:8, :34-38; src/tests/effects.rs:262, :264, :274",
+     "summary": "Closed by d5d9271: the module header, grown_rect's doc, the test's comment, its name (arq_120_the_grown_rectangle_is_clipped_to_the_surface) and its assertion message all say surface; the only page/clip mentions left state the contrast.",
+     "follow_up": false, "status": "closed"},
+    {"id": "S2", "severity": "SUGGESTION", "class": "claim",
+     "ref": "specs/changes/gafira-render-cpu/apply-progress.md:626",
+     "summary": "The record quotes $(git merge-base develop HEAD)..HEAD and gives 8 files / 544 insertions, which is 79859ab..50988a0; at HEAD the same command gives 9 files / 597. The other records add the \"with this record\" figure; this one does not. No code impact.",
+     "follow_up": false, "status": "open"},
+    {"id": "S3", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-render-cpu/src/tests/image.rs:52",
+     "summary": "drawn derives page as (region.x1.unsigned_abs(), region.y1.unsigned_abs()): for a region with a negative origin that names a page not holding the surface. No call site passes one today, but it is the same class of lie W12 just repaired.",
+     "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 3},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 597, "forecast": 160}, "report": "verify-report.md" } ] }
+```
+
+- `classes` is `{}` on purpose: the round passes, so every still-open `WARNING` becomes a follow-up;
+  the two it closes (`W12`, `W13`) route nowhere. `counts` includes those two closures, as `CB5b`'s
+  round did: five open `WARNING`s (`W15` claim, `W16` and `W19` implementation, `W17` and `W18`
+  ambiguity) plus the two closed. `hand_mutants` is 5 run, 3 killed — the two
+  survivors (`P3`, `P4`) are output-equivalent mutants, which the mutation policy records as
+  `WARNING`, never `FAIL`, and they are `W15`.
+- Delivery: `CB8` of `gafira-render-cpu`, branch `feat/gafira-render-cpu-cb8`, HEAD
+  `f847e046cb061424550e601a293b9d07b61d9882`, cut from `develop` at `79859ab`. Commits under test:
+  `a0c9cd5` (`W12`, +93/−68), `d5d9271` (`W13`, +5/−5), `50988a0` (the delivery, +446/−153) and
+  `f847e04` (the record, +53). Round 1, depth `V2`, mode `standard`, `mutation: off` — no
+  `cargo-mutants` run and no `mutants` report, which is not a finding; the hand mutants below are
+  hand-run.
+- Acceptance source: the `## CB8` Slice card (`apply-progress.md:596`), ruling `O14`
+  (`design.md:718`), `O17` (`:851`), the measurement in `spike-frame-cost.md` §1, product rows
+  `ARQ-117`, `ARQ-143`, `ARQ-44`, `ARQ-42` (and `ARQ-113`, in the card's ID list).
+- Artifact integrity: `79859ab` (`docs: slice card`) touches only `apply-progress.md` (+14) and
+  precedes the first implementation commit; `git diff 79859ab..HEAD -- apply-progress.md` has no
+  removed line, so no implementer commit changed the card. `f847e04` touches only
+  `apply-progress.md`.
+
+### The question this round exists for: is "the curve runs once" enforced?
+
+**No. Only a human reading `surface.rs` enforces it, and that is now on the record.** Three facts,
+each measured:
+
+1. **The invariance is real.** I re-ran the implementer's premise on the crate's own functions
+   (temporary in-crate probe, then removed): `quantise_srgb8(decode_srgb8(x)) == x` for **0
+   mismatches across 32 896 valid premultiplied pixels** (32 640 of them with `a > 0`; the invalid
+   corner `[255, 255, 255, 1]` collapses to `[1, 1, 1, 1]`, which the pipeline never encodes). A
+   second trip through the curve moves no byte.
+2. **So the mutants that reintroduce it survive.** `P3` re-quantises the whole page inside
+   `Surface::read` (`surface.rs:198-202`) — literally the pass `spike-frame-cost.md` measured at
+   121 ms — and `P4` decodes and re-quantises the cached tile inside `Surface::write`
+   (`:160-168`). Each ran the crate's 80 tests **plus my 7 independent probes**: 87/87 pass, exit 0.
+   Nothing in the tree fails. The delivered AC1/AC2 tests are as strong as bytes allow and they
+   cannot see this; the golden cannot either; `AC4`'s memory figure pins the **storage** (4 B per
+   pixel, so the surface is bytes and not `f32`), not the **number of applications**.
+3. **The consequence, stated plainly.** If a later change quantises on read again — or decodes the
+   cache on the way in — no gate, test, golden or policy step notices. The only sensor is re-running
+   the spike's measurement, and nothing in the tree re-runs it. `W15` records it. The implementer
+   said this plainly and did not overclaim; the record's RED section is honest, and its hand mutants
+   `HM1`–`HM3`/`HM6` pin the copy's *geometry*, which is the observable half.
+
+A cheap structural fix exists if the coordinator wants the claim to hold by machine: a `#[cfg(test)]`
+counter in `quantise_srgb8` asserted not to move between `execute` and `read_back`. It is not in the
+tree, and `V2` does not require it — but `O14` is the ruling this delivery exists to satisfy, and the
+stricter reading of `AC1`'s second clause has no proof today.
+
+### Criteria, with what proves each
+
+| AC | Proved by | Enforced before the change? |
+|---|---|---|
+| `AC1` the write stores the cache's tile byte for byte | `arq_117_an_rgba8_surface_holds_the_tile_the_cache_encoded` (two tiles, per-row equality with the cache, a 24 × 12 window); probes `P1` (miss: two tiles at their own regions on a 12 × 12 surface at origin `(10, 0)`, 8- and 4-px wide tiles, 12-px surface stride) and `P3` (hit: a seeded tile no render could produce comes back verbatim and is not overwritten) | **no** — invariance guard; the second clause ("the curve runs there and not again") is `W15` |
+| `AC2` the `Rgba8` page equals the `f32` page quantised once | `arq_117_the_rgba8_read_is_the_f32_page_quantised_once` (its own quantiser, cold and warm) and probe `P4`: every pixel of a 16 × 8 page against my own sRGB reference, written from ARQ-117 before I read the test — exact | **no** — invariance guard |
+| `AC3` the `RgbaF32` target is untouched | `arq_117_an_rgba_f32_surface_is_the_linear_bytes_it_was_handed` (a cache hit), probe `P5` (unrounded premultiplied linear, format `RgbaF32`) | **no** — invariance guard |
+| `AC4` the figure is the storage's own | `arq_44_an_rgba8_surface_counts_one_byte_per_channel` (512 B for 16 × 8), `arq_44_the_budget_counts_the_bytes_the_rgba8_surface_stores` (inclusive cap, one byte over refused, the `f32` page of the same size refused), `effects::arq_44_the_effect_peak_counts_the_rgba8_surface_it_stores`; probe `P6` (512 vs 2048 B) | **yes** — three real assertion REDs, `left: 2048 / right: 512` |
+| `AC5` the stored golden still compares | `arq_113_the_stored_golden_is_the_scene_on_its_platform` + 14/14 in `--test arq_42_comparison`; `tests/golden/arq_113_scene.rgba8` unchanged since `d291434` | n/a — a guard that must hold on both codes |
+| `AC6` the policy steps, V5, `forbid`, no clock/file | the nine `policy` steps below, plus `git grep -nE 'std::fs|SystemTime::now|Instant::now|std::net|std::thread::spawn' -- crates/gafira-render-cpu/src` → no match | n/a |
+
+Product IDs in the card: `ARQ-117` (AC1–AC3), `ARQ-44` (AC4), `ARQ-42` (AC2 and the untouched
+`arq_42_comparison` suite), `ARQ-113` (AC5). `ARQ-143` is the one with no delivery of its own:
+`arq_143_*` tests exist (`memory_usage`/`trim`) but none of them is this delivery's number, and the
+card asks for none — `W18`.
+
+### Independent probes (7, written from the card and ARQ-117 before reading the tests; exit 0)
+
+On a scratch export of HEAD at `/tmp/gafira-cb8-v2-export`, through the public `RenderBackend` API
+only (no crate internals, no crate helper), so they cannot grade the implementation with its own
+code:
+
+| # | Probe | Result |
+|---|---|---|
+| `P1` | a miss: two tiles at their own regions on a 12 × 12 surface at origin `(10, 0)` inside a 24 × 12 page; each cache tile equals `read_back(region)`, and the pixels land at columns 0–7 and 8–11, rows 4–7 | ok |
+| `P2` | a read wider than the surface answers transparent black outside it (`(2, 2)` green, `(8, 5)` clear on a 6 × 4 surface at `(2, 2)`) | ok |
+| `P3` | a hit: a seeded 8 × 12 `Rgba8` tile (`c ≤ a`, unmatchable by any fill) is what `read_back` answers, and the cache keeps it | ok |
+| `P4` | `AC2` against my own sRGB reference (`linear → 1.055·v^(1/2.4) − 0.055`, round, `(c·a + 127)/255`): exact at every pixel, and the reference reproduces ARQ-118's stated `(128, 128, 128, 128)` | ok |
+| `P5` | `AC3`: an `RgbaF32` page is premultiplied linear, uniform, unrounded, format `RgbaF32` | ok |
+| `P6` | `AC4`: `memory_usage().host` is 512 B for a 16 × 8 `Rgba8` surface and 2048 B for the same page in `f32` | ok |
+| `P7` | one cache shared across the two formats: the `Rgba8` tile is a miss for the export, which draws its own pixels | ok |
+| `P8` | (in-crate, temporary) `quantise_srgb8(decode_srgb8(x)) == x` over every valid premultiplied pixel: 32 896 cases, 0 mismatches | ok |
+
+`P1`'s first run failed on two coordinates **of mine** (I asserted a fill where no tile covers), which
+the probe's own reading of the surface corrected; the code was right both times.
+
+### Hand mutants (5 run, 3 killed, 2 survived; on the scratch export, each file restored by hash and the suite re-run)
+
+| # | The wrong behaviour | Killed by | Verdict |
+|---|---|---|---|
+| `S1` | **spot-check of the record's `HM1`**: the write ignores the tile's row stride (`source_start = source_column * 4`) | `tests::arq_117_an_rgba8_surface_holds_the_tile_the_cache_encoded` plus 12 more (exit 101) | killed, as recorded |
+| `P1` | **mine**: the hit stops checking the cached tile's format (`surface::format_of(&tile) != format` dropped) | `tests::arq_44_a_cached_tile_of_the_other_format_is_a_miss` (101) | killed |
+| `P2` | **mine**: `read_rows` takes its span from `region.width()` instead of `clip.width()` | **only my probe `P2`** (101); the delivery's 80 tests all pass | killed by the probe → `W16` |
+| `P3` | **mine**: the second sRGB pass returns inside `Surface::read` | nothing — 87/87 pass (0) | **survived** → `W15` |
+| `P4` | **mine**: the cached tile is decoded and re-quantised inside `Surface::write` | nothing — 87/87 pass (0) | **survived** → `W15` |
+
+`W12`'s page audit, done by hand over all 68 `target(` sites: the four non-zero-origin descriptors
+name pages that hold the surface — `(4, 6)–(68, 70)` in 96 × 96, `(32, 16)–(96, 80)` in 96 × 80,
+`(100, 200)–(164, 264)` in 164 × 264, `(8, 8)–(24, 24)` in 32 × 32 — and the other 63 name their own
+extents. `image::drawn` names the minimal hull, which equals `origin + size` for its non-negative
+regions, and those scenes carry no effect, so the page is unread (`O18`). **No call site got the
+smallest page that compiles**; the one latent trap is `S3`.
+
+`with_budget` still leaves the production comparison in place: it is `#[cfg(test)] pub(crate)`
+(`backend.rs:98-102`); production enters from `Default` with `budget: surface::SURFACE_BUDGET`
+(`:201`) into `begin_frame → Surface::new(target, self.budget)` (`:218`), where the comparison is
+above the allocation (`surface.rs:81-83`); both `held` terms are production code — the surface's own
+figure (`surface.rs:127-134`) and `layers.bytes()` (`backend.rs:401-404`), with the scratch's
+`held + bytes <= budget` in `effect.rs:175-177`. The seam lowers the constant and nothing else.
+
+### Gates (at `f847e04`, scratch export, `CARGO_TARGET_DIR=/tmp/gafira-cb8-v2-target`, `CARGO_INCREMENTAL=0`)
+
+| Gate | Exit | Evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | |
+| `cargo test --workspace --locked` | 0 | **200** `test result` blocks, **2547 passed, 0 failed, 0 ignored** — the record's count exactly |
+| `cargo deny check` | 0 | `advisories ok, bans ok, licenses ok, sources ok` |
+| the `policy` job's steps | 0 | ten `run:` steps; the runner skips the toolchain install, so the **nine** that execute are all 0: Format, CLI/UI (ARQ-07), `forbid(unsafe_code)`, V5, V12, ARQ-107, V13, V14, testkit `ports` (ADR 0013) |
+
+`AC6` by hand as well: `#![forbid(unsafe_code)]` at `lib.rs:26`; the ARQ-02 grep finds nothing;
+`.github/` is untouched by the diff, so no V5 row moved. **The golden held** — no diff under
+`tests/golden/` since `d291434`, and 14/14 in the comparison suite. **No manifest or lock line
+moved** — `git diff 79859ab..HEAD -- Cargo.toml Cargo.lock crates/*/Cargo.toml deny.toml` is empty.
+
+### Findings
+
+- **`W15` (`claim`) — the delivery's central claim rests on the code, not on a test.** Detail above.
+  The implementer's own record says it; this round confirms it survived every attempt to catch it,
+  including two mutations that are the literal regression. Class `claim`, not `implementation`,
+  because no code is wrong: the bytes are identical by construction, and `P3`/`P4` are
+  output-equivalent mutants, which the policy documents as `WARNING`.
+- **`W16` (`implementation`) — `read_rows`' clip arithmetic is untested where it can differ.** The
+  old read was per-pixel; this delivery replaced it with a row copy (`surface.rs:240-261`) whose span
+  must be the clip's, not the region's. `P2` shows the suite does not pin it, and the case that
+  distinguishes them is a read of a region wider than the surface — which the method's own doc
+  promises ("the part of `region` outside the surface is transparent black"), and which is reachable
+  whenever a caller asks for the page while the surface is a viewport window (`O18`). One test would
+  close it; the code is right today, which is why it is not `CRITICAL`.
+- **`W17` (`ambiguity`) — `AC4`'s "one byte per pixel" is wrong; the delivery is right.** ARQ-117
+  fixes a buffer's length as `ancho × alto × canales`, and ARQ-44 wants `bytes()` to report the size
+  actually held; an `Rgba8` pixel is four channels, so the figure is 4 bytes per pixel (16 for
+  `RgbaF32`). Read literally, the criterion would have the surface report a quarter of what it
+  holds, which is the under-report `O17` rejects as "the one thing ARQ-44 exists to prevent" — and
+  the effect's peak would be compared against a figure four times too small, admitting a frame that
+  does not fit. The delivery's reading is the only one consistent with both rows, it is documented
+  (`apply-progress.md:660`), and the test pins `16 × 8 × 4 = 512` against the old `2048`. **Ruling:
+  the card's wording is the thing to fix**, in a `slice card amend` that names ARQ-117; the code and
+  the test stay as they are. This is also the criterion that decides whether a frame that fits is
+  refused, and with the correct figure it is not.
+- **`W18` (`ambiguity`) — `ARQ-143` is listed but not answered.** The card's ID list includes it and
+  `O14` (`design.md:735`) says "the delivery must therefore be measured against ARQ-143's
+  visible-render budget or it will be a fix nobody counts"; the card's non-goals hand the benches to
+  `CB6`, no AC asks for a number, and the record claims none (honestly). The change's benefit — one
+  of two 1080p quantisation passes — is therefore still the spike's number, taken before the change.
+  Either the card says `CB8` owes no measurement (`O14` itself says `CB6`'s export number will not
+  move, so the bench cannot show it) or a preview measurement is owed to `CB6`. Card and ruling
+  disagree; that is the specifier's or the coordinator's call, not the implementer's.
+- **`W19` (`implementation`) — size.** 597 insertions / 226 deletions at HEAD (544/226 before the
+  record) against the card's 160 (225 at ×1.4): **3.7× / 2.65×**, below the ~700 stop signal and in
+  the same band as `CB5b`'s 3.2×. The overrun is `W12` (68 mechanical call sites, 161 changed lines
+  of a one-argument change) and the `surface.rs` rewrite whose diff counts the replaced block. If the
+  coordinator wants a review slice, `a0c9cd5` (`W12`) and `d5d9271` (`W13`) are separate commits and
+  neither touches production behaviour.
+- `W12` and `W13` are **closed** by this delivery, as `CB5b`'s round routed them.
+- **`S2`**: the record's measured-size line quotes a command whose output is not the one at its own
+  HEAD (see the finding). **`S3`**: `image::drawn`'s `unsigned_abs` would misname the page for a
+  negative region; no call site does that.
+
+### Observations (not findings)
+
+- **`decode_tile` went, `decode_srgb8` stayed, and that is right.** Nothing reads a cached tile as
+  `f32` any more (a hit is written as it stands), and `image::DrawImage` still uses the inverse
+  curve for ARQ-117's 8-bit texel; keeping it is not dead code.
+- **`Surface::write`'s `_ => {}`** silently drops a tile whose format differs from the storage. It is
+  unreachable (`cached_tile` refuses a mismatched format, and the miss path encodes in the frame's
+  format) and `P1` confirms the guard, but a `debug_assert` would say so at the site rather than 90
+  lines away. No action.
+- **`Pixels` as the single source of truth for `format()` and `bytes()`** is what makes `AC4`'s
+  failure mode structural rather than a second field that could disagree; that part of the delivery
+  is the strongest thing in it.
+- **The record is accurate** apart from `S2`: the per-commit line counts, the 2547/200 workspace
+  count, the 60+14 → 66+14 crate counts, the six hand mutants, the empty manifest diff and the
+  untouched golden all check out.
+
+next: tdd-apply (CB6, the next delivery) — PASS with no CRITICAL and all six criteria covered; the five `WARNING`s are follow-ups (`W15` the unenforced single-pass claim, `W16` the read clip's missing test, `W17` the card's `AC4` wording, `W18` the unmeasured `ARQ-143`, `W19` the size), and `W17` asks for a `slice card amend` before archive

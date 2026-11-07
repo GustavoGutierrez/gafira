@@ -601,11 +601,23 @@ Acceptance:
   AC1 Given an `Rgba8` target, When a tile is written, Then the bytes the surface holds are **the tile the cache encoded**, byte for byte — the curve runs there and not again (ARQ-117, `O14`) [unit]
   AC2 Given an `Rgba8` target, When the page is read back, Then the result equals, byte for byte, what the `f32` path produced and quantised once: the change removes work and moves no pixel (ARQ-117, ARQ-42) [unit]
   AC3 Given an `RgbaF32` target, When the frame runs, Then the surface is `f32`, the write is a copy and `read_back` is a copy — the export path is untouched (ARQ-117) [unit]
-  AC4 Given an `Rgba8` surface, When the backend reports `memory_usage`, Then it counts **one byte per pixel**, and the budget comparison and the effect's scratch reservation use that figure rather than the `f32` one (ARQ-44, `O17`) [unit]
+  AC4 Given an `Rgba8` surface, When the backend reports `memory_usage`, Then it counts **one byte per channel — four per `Rgba8` pixel**, `ancho × alto × canales` as ARQ-117 fixes it — and the budget comparison and the effect's scratch reservation use that figure rather than the `f32` one (ARQ-44, `O17`) [unit]
   AC5 Given `CB3`'s stored golden, When the suite runs, Then it still compares and no byte moved — the widening is not a rewrite (ARQ-113) [unit]
   AC6 Given the crate, When the CI policy steps run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged and the crate still names no clock and no file (ARQ-02) [command]
 Plan: the surface becomes format-dependent in **storage**, not in meaning: an `Rgba8` target keeps premultiplied sRGB bytes, an `RgbaF32` target keeps linear premultiplied floats, and both answer `read_back` with the format they claim. The write copies the cache's encoded tile — `encode_tile` already produces exactly those bytes — so the curve runs once, where it already ran, and `Surface::read` loses its per-pixel branch for the 8-bit case. `AC4` is not bookkeeping: the surface is what the effect's peak is compared against, so a surface that reports four bytes per pixel while holding one would refuse frames that fit. `AC2` is the guard that this is free: the same page through both paths must be byte-identical, which is also what `AC5`'s golden checks on the export. The critical code is the write's copy, the read's two branches, the accounting's figure and the budget comparison — those carry the hand mutants. `W12` and `W13` are folded in because they are the same files and a lie in a helper is cheaper to fix now than to inherit.
 Owner decisions touched: `O14` (the ruling), `O17` (the accounting it must keep true), `O11` (the layer buffers, untouched here), `O10` (the rigor).
+
+Coordinator amend on the CB8 round (2026-11-06): `AC4` said "one byte per pixel" and the delivery read
+it as one byte per **channel**. The delivery is right and the card was wrong — ARQ-117 fixes an 8-bit
+buffer at `ancho × alto × canales` and ARQ-44 wants the size actually held, so the literal reading
+would under-report four times over and shrink the effect's peak by the same factor, which is the
+failure `O17` exists to prevent. Corrected above; the code stands.
+
+The round also found that the delivery's central claim — "the curve runs once" — has no test behind
+it: re-quantising the page on read, or decoding and re-encoding the cached tile on write, passes all
+87 tests, because the two paths are byte-identical by construction (0 mismatches over 32 896 valid
+premultiplied pixels). `W15` is that finding, class `claim`: the work is gone, and nothing stops it
+coming back silently. A `#[cfg(test)]` counter in `quantise_srgb8` would make it machine-checked.
 
 ## CB8 (tdd-apply)
 
