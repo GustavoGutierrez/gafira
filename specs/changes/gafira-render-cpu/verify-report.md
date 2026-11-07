@@ -2316,3 +2316,45 @@ All accepted: no `Instant::now` (clippy.toml bans it for every target; criterion
 - **S14** — the W15 counter sees only `quantise_srgb8`; a second encode path would not be counted.
 
 next: tdd-apply (C3, C4; W21 in the same round). W20 is the owner's call. W22 is a specifier follow-up and does not route.
+
+## Round 2 — CB6
+
+```json
+{ "schema": 1, "change": "gafira-render-cpu", "delivery": "CB6", "rounds": [ {
+  "round": 2, "commit": "ad40c30", "mode": "full", "tier": "T2", "depth": "V2",
+  "verdict": "PASS", "next": "archive",
+  "counts": {"critical": 0, "warning": 2, "suggestion": 0},
+  "classes": ["implementation"],
+  "findings": [
+    {"id": "C3", "severity": "CRITICAL", "class": "implementation", "ref": "crates/gafira-render-cpu/src/tests.rs:1209",
+     "summary": "closed: IM3 (write_rows span from region.width()) is killed by arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner in Rgba8 and in RgbaF32 alone, each at (60, 63).", "follow_up": false, "status": "closed"},
+    {"id": "C4", "severity": "CRITICAL", "class": "implementation", "ref": "ARQ-114",
+     "summary": "closed: bench_export_png_1080's doc names ARQ-114; the guard's module doc says why it is not the cargo test gate ARQ-114 forbids (D10).", "follow_up": false, "status": "closed"},
+    {"id": "W20", "severity": "WARNING", "class": "implementation", "ref": "delivery diff",
+     "summary": "open, owner's call: 753 lines vs 260 forecast at round 1; the fix round adds 72 test/doc lines and no production line.", "follow_up": false, "status": "open"},
+    {"id": "W21", "severity": "WARNING", "class": "implementation", "ref": "tests/cal_11_export_1080.rs:163",
+     "summary": "closed: IM1 (pid-dependent background, never-zero shift) fails cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform in 3 of 3 processes; the pin holds in debug and release.", "follow_up": false, "status": "closed"},
+    {"id": "W22", "severity": "WARNING", "class": "ambiguity", "ref": "design.md W18 note; ARQ-143",
+     "summary": "unchanged: ARQ-143 has no rule for a tile longer than its 8 ms stage. Specifier follow-up.", "follow_up": true, "status": "open"},
+    {"id": "S12", "severity": "SUGGESTION", "class": "claim", "ref": "apply-progress.md fix round 1",
+     "summary": "closed: the record says the i7-12700H is not CAL-11's mid-range machine and that 288 ms is indicative.", "follow_up": false, "status": "closed"},
+    {"id": "S13", "severity": "SUGGESTION", "class": "implementation", "ref": "tests/cal_11_export_1080.rs:9-15",
+     "summary": "closed with C4.", "follow_up": false, "status": "closed"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 2, "killed": 2},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 825, "forecast": 260}, "report": "verify-report.md" } ] }
+```
+
+Closure round: no new independent-mutant budget; IM3 and IM1 re-applied on a clean `git archive ad40c30` export, restored by `sha256sum -c`.
+
+Gates at `ad40c30`: `cargo fmt --check` 0; `cargo clippy --workspace --all-targets --locked -- -D warnings` 0; `cargo test --workspace --locked` 0 (2636 passed, 0 failed, 0 ignored, 202 blocks); `cargo deny check` 0; the nine `policy` steps 0 each.
+
+Commit hygiene `c1ff86d..ad40c30`: `012b433` `src/tests.rs` +27 (`#[cfg(test)]`); `9e59f39` doc comments only (+3, +8); `fa9d181` `tests/cal_11_export_1080.rs` +34; `ad40c30` the record, append-only. No production `src/` line, nothing under `crates/gafira-ports`, `crates/gafira-render`, `crates/gafira-doc`, `.github/`, `Cargo.toml` or `Cargo.lock`. 131 insertions, 0 deletions.
+
+Closure: C3 — the new test reads the whole 64×64 surface and kills IM3 in each format alone; the other `arq_149` tests do not. C4 — `git grep ARQ-114` finds `benches/export_png_1080.rs:37` and `tests/cal_11_export_1080.rs:9-10`; ARQ-114's criterion (02:1018) asks for a bench named after the §6.7 row, which `bench_export_png_1080` is. W21 — three processes fail the pin (`left: (83327, …)`, `(83174, …)`, `(83237, …)`) while the same-process identity test stays green; the pinned `(82_840, 0xb8fe38afef161061)` matches round 1's digest. The pin runs on `x86_64-unknown-linux-gnu` only (in the CI matrix) and skips visibly elsewhere, following ARQ-113's golden-platform rule; a per-process input on non-golden platforms alone would go unnoticed (note, not a finding). S12 — recorded.
+
+Named by a test or bench: CAL-11, ARQ-143, ARQ-43, ARQ-117, ARQ-44, ARQ-114, ARQ-149. ARQ-40 is a non-goal (`D10`, `SP5`).
+
+next: archive — CB6 is the change's last delivery (`CB7` is conditional on CAL-11 > 2 s and is not cut: 288 ms). W20 is the owner's call; W22 is a specifier follow-up.
