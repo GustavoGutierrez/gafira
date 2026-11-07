@@ -1108,6 +1108,46 @@ fn arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target() {
     );
 }
 
+// ARQ-117, W16: a read wider and taller than the surface copies, row by row,
+// the span the surface and the region share — the clip's, not the region's —
+// and leaves every other pixel transparent black, in both storages.
+#[test]
+fn arq_117_a_read_wider_than_the_surface_copies_the_clip_and_nothing_else() {
+    for format in [PixelFormat::Rgba8, PixelFormat::RgbaF32] {
+        // A 6 × 4 surface at (2, 2), fully covered, read through a 12 × 8 region.
+        let scene = plan(vec![task(
+            1,
+            IRect::new(2, 2, 8, 6),
+            vec![fill(0.0, 0.0, 12.0, 8.0, white())],
+        )]);
+        let mut frame = Frame::open(CpuBackend::new(), target(6, 4, (2, 2), (12, 8), format));
+        let mut cache = RecordingCache::default();
+        frame
+            .execute(&scene, &mut cache, &CancelToken::new())
+            .expect("the plan runs");
+        let read = frame
+            .read(IRect::new(0, 0, 12, 8))
+            .expect("the region reads");
+        assert_eq!((read.width(), read.height()), (12, 8));
+        for y in 0..8u32 {
+            for x in 0..12u32 {
+                let inside = (2..8).contains(&x) && (2..6).contains(&y);
+                if inside {
+                    assert!(
+                        is_white(&read, x, y),
+                        "{format:?}: ({x}, {y}) is on the surface"
+                    );
+                } else {
+                    assert!(
+                        is_clear(&read, x, y),
+                        "{format:?}: ({x}, {y}) is off the surface"
+                    );
+                }
+            }
+        }
+    }
+}
+
 // O13, ARQ-42: a rectangle is page space for `write` and for `read`, so an
 // offset region answers the window the page holds and equals the same window
 // of a full-surface read. Before O13 the read was clipped against its own
