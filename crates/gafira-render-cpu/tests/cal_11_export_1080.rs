@@ -6,6 +6,14 @@
 //! says so, because its time says nothing about the budget (`D10`). Nothing
 //! here is a CI gate on the number (ARQ-40 is a separate change).
 //!
+//! ARQ-114 says the §6.7 figures are measured by a bench and are not a
+//! `cargo test` gate. This guard is not that gate (`D10`): the gate ARQ-114
+//! forbids is a timing assert that `cargo test` runs on every build and that a
+//! slow machine or a debug run fails for the wrong reason. Here the CI's
+//! `cargo test` builds in debug, where the guard skips and never fails on
+//! time; the assert runs only in a build someone optimised on purpose
+//! (`cargo test --release`), and the number itself is the bench's.
+//!
 //! The crate reads no clock (ARQ-02, `clippy.toml`), and that holds for its
 //! tests too: the time comes from criterion's `WallTime`, as in
 //! `gafira-segment`'s benches.

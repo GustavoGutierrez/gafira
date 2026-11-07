@@ -33,6 +33,9 @@ use gafira_render_cpu::CpuBackend;
 
 /// CAL-11: one frame, built once outside the timed loop, rendered from a cold
 /// cache and encoded inside it.
+///
+/// ARQ-114: CAL-11 is a §6.7 figure of this layer-2 card, so it has a bench
+/// with that row's name — `bench_export_png_1080`, exactly (`D10`).
 fn bench_export_png_1080(c: &mut Criterion) {
     let plan = frame_1080::plan(RenderQuality::Export);
     let mut group = c.benchmark_group("cal_11");
