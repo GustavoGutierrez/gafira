@@ -15,7 +15,7 @@
 |---|---|
 | Ítems 39 a 77 | 39: 34 abiertos, 2 remiten a otro ítem (70, 71), 3 cerrados o solo registro (51, 64, 65) |
 | Ítems 104 a 111 | 8: 8 abiertos (archivo de `gafira-timeline`) |
-| Ítems 112 a 132 | 21: 21 abiertos (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
+| Ítems 112 a 132 | 21: 20 abiertos, 1 solo registro (129) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -90,7 +90,6 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 126 | Tamaños sin decisión registrada: CB3b W8 (576 frente a 180), CB4 S9 (1228 frente a 360), CB5 S2 (1586 frente a 420), CB5b W14 (378 frente a 120) y CB8 W19 (597 frente a 160). | El coordinador acepta o rechaza cada uno. Ninguno bloquea. |
 | 127 | Dos resbalones del registro de CB5b: sitios de construcción y cifras de src (S1 de CB5b). | Se corrige al revisar el registro; no bloquea. |
 | 128 | Una cifra del registro de CB8 sin la línea «con este registro» (S2 de CB8). | Se corrige la cifra; no bloquea. |
-| 129 | CB6: 825 líneas frente a 260 (W20 de `gafira-render-cpu`). | Decisión del titular. |
 | 130 | ARQ-143 no tiene regla para un tile más largo que su etapa de 8 ms (W22 de CB6). | `specifier` añade la regla; test después. |
 | 131 | D10 (opción a) y la fila 106 del diseño describen `GraphPageRenderer`; el bench arma el plan a mano (S11 de CB6). | `specifier` enmienda D10 y la fila 106. |
 | 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
@@ -102,6 +101,7 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 - **65**: registro. Aviso de tamaño de `pi-agent-sync`, ya integrado; no queda acción sobre esa entrega.
 - **70**: sin trabajo propio. Es el ítem 47.
 - **71**: sin trabajo propio. Es el ítem 42.
+- **129**: registro. El titular aceptó las 825 líneas de CB6 el 2026-11-07 (W20 de `gafira-render-cpu`); no queda acción.
 - **W15 de CB8** (contador de la curva sRGB en un frame): cerrado en CB6 por `afc55de`.
 - **W16 de CB8** (`read_rows` con el span del clip): cerrado en CB6 por `d2a2f49`; su gemelo de escritura (C3 de CB6) por `012b433`.
 - **W18 de CB8** (comparación de la vista previa en frío con ARQ-143): cerrado en CB6 por `74207ab`, la nota de diseño; el banco de vista previa está en `21707d6`.
