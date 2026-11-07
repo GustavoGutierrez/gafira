@@ -15,6 +15,9 @@ use gafira_ports::i18n::{LanguagePreference, ResolvedLocale};
 use gafira_ports::license::LicenseStatus;
 use gafira_ports::render::BackendKind;
 
+use crate::governor::PressureLevel;
+use crate::session::DocVersion;
+
 /// The identifier of a queued job (02 §5.2 line 1322, §6.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JobId(pub u64);
@@ -38,18 +41,25 @@ impl JobId {
 /// The variants 02 names arrive with the delivery that first produces them
 /// (design P3). `E1` shipped the five whose payload types exist in the layers
 /// below; `E2` adds `JobProgress` with its `JobId`, because the coalescing rule
-/// of §5.2 line 1335 is what this delivery builds. `SaveState`, `JobFinished`,
-/// `RecoveryAvailable`, `MemoryPressure`, `StartupProgress`, `StartupFinished`
-/// and `SelectionChanged` are **Planned** for `E3` to `E10`.
+/// of §5.2 line 1335 is what this delivery builds; `E5` adds `MemoryPressure`
+/// with the governor's `PressureLevel` (design P17, SP8 (a)). `SaveState`,
+/// `JobFinished`, `RecoveryAvailable`, `StartupProgress`, `StartupFinished`
+/// and `SelectionChanged` are **Planned** for the later deliveries, up to `E10`.
 ///
-/// `DocumentChanged` carries no version yet: `DocVersion` does not exist in the
-/// repository (design P3, open question O2). `E2` drops the `Eq` bound, which
+/// `E3b` gives `DocumentChanged` its version, the engine-owned counter of
+/// design P15 (owner decision O2). `E2` dropped the `Eq` bound, which
 /// `JobProgress`'s `f32` cannot satisfy.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EngineEvent {
-    /// The document changed; `dirty` is what the command touched.
-    DocumentChanged { dirty: DirtySet },
+    /// The document changed (design P14, P15).
+    DocumentChanged {
+        /// The state this event names; one more than the previous one.
+        version: DocVersion,
+        /// What changed: the installed or undone entry's set, or every page
+        /// and node of a new document. Per event, never accumulated.
+        dirty: DirtySet,
+    },
     /// Assets the document refers to are no longer at their recorded path.
     LinksMissing(Vec<AssetRef>),
     /// The licence state changed (02 §4.14, line 920).
@@ -72,6 +82,9 @@ pub enum EngineEvent {
         /// The estimate of what is left, when the job can produce one.
         eta: Option<Duration>,
     },
+    /// The governed caches crossed the memory limit, either way (design P17):
+    /// published only on a change of level, never at the start.
+    MemoryPressure(PressureLevel),
 }
 
 /// Tells the observer that an event is waiting for it (02 §5.2 line 1335).
@@ -173,6 +186,7 @@ mod tests {
 
     fn document_changed() -> EngineEvent {
         EngineEvent::DocumentChanged {
+            version: DocVersion::default(),
             dirty: DirtySet::default(),
         }
     }
@@ -193,7 +207,7 @@ mod tests {
     /// one count each. A new variant must be added to this list.
     #[test]
     fn ac4_every_variant_reaches_the_sink_once() {
-        const VARIANTS: usize = 6;
+        const VARIANTS: usize = 7;
         let sink = Arc::new(CountingSink::default());
         let bus = EventBus::new(sink.clone());
         let every_variant = [
@@ -217,6 +231,7 @@ mod tests {
                 fraction: 0.5,
                 eta: None,
             },
+            EngineEvent::MemoryPressure(PressureLevel::Critical),
         ];
 
         for (published, event) in every_variant.into_iter().enumerate() {

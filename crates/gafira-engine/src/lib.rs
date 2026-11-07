@@ -7,16 +7,32 @@
 //! comes from `ports::FileSystem`, the instant from `ports::Clock` and the work
 //! from the caller (ARQ-138).
 //!
-//! This is the `E1` scaffold: the ports are injected, the Facade composes and
-//! the bus has no effect yet. The services arrive in the later deliveries of
+//! The ports are injected, the Facade composes, and each service lives in its
+//! own module (design P9): `project` and `edit` share the session of
+//! `session`. The other services arrive in the later deliveries of
 //! `specs/changes/gafira-engine/design.md`.
 
 #![forbid(unsafe_code)]
 
+mod autosave;
 mod bus;
+mod edit;
 mod engine;
 mod event;
+#[cfg(test)]
+mod fakes;
+mod governor;
+mod project;
+mod session;
 
+pub use autosave::{AutosaveJob, AutosaveOutcome};
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
+pub use edit::EditService;
 pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries};
 pub use event::{EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, Waker};
+pub use governor::{
+    BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,
+    TileCacheTrim, Trimmable,
+};
+pub use project::ProjectService;
+pub use session::DocVersion;

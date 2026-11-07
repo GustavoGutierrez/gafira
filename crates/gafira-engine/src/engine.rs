@@ -8,6 +8,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use gafira_ports::common::Bytes;
 use gafira_ports::format::FormatRegistry;
@@ -18,9 +19,16 @@ use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, FileSystem, Notifier};
 
 use crossbeam_channel::Receiver;
+use gafira_doc::ValidationError;
+use gafira_doc::msg;
+use gafira_doc::msg::{Message, ToMessage};
+use gafira_edit::CommandError;
 
 use crate::bus::EventChannel;
+use crate::edit::EditService;
 use crate::event::{EngineEvent, EventBus};
+use crate::project::ProjectService;
+use crate::session::Shared;
 
 /// The port implementations the composition root injects (ARQ-06, 02 §5.4).
 ///
@@ -83,6 +91,12 @@ impl Registries {
     }
 }
 
+/// The autosave interval unless the caller sets another (02 §7.2).
+const DEFAULT_AUTOSAVE_INTERVAL: Duration = Duration::from_secs(10);
+/// The shortest and the longest autosave interval, both allowed (02 §7.2).
+const AUTOSAVE_INTERVALS: std::ops::RangeInclusive<Duration> =
+    Duration::from_secs(5)..=Duration::from_secs(15);
+
 /// What the caller fixes before the engine starts (design P5).
 ///
 /// The limits arrive from the caller because reading RAM or the environment is
@@ -92,6 +106,7 @@ pub struct EngineConfig {
     data_dir: PathBuf,
     memory_limit: Option<Bytes>,
     export_jobs: u8,
+    autosave_interval: Duration,
 }
 
 impl EngineConfig {
@@ -112,6 +127,7 @@ impl EngineConfig {
             data_dir,
             memory_limit: None,
             export_jobs: 1,
+            autosave_interval: DEFAULT_AUTOSAVE_INTERVAL,
         })
     }
 
@@ -136,6 +152,26 @@ impl EngineConfig {
         self.export_jobs
     }
 
+    /// How long a change waits before it is autosaved (02 §7.2, design P16).
+    #[must_use]
+    pub fn autosave_interval(&self) -> Duration {
+        self.autosave_interval
+    }
+
+    /// Set the autosave interval: 5 s to 15 s, both included (02 §7.2,
+    /// FIJADA; design P16).
+    ///
+    /// Returns [`EngineError::InvalidConfig`] for any other duration.
+    pub fn with_autosave_interval(mut self, interval: Duration) -> Result<Self, EngineError> {
+        if !AUTOSAVE_INTERVALS.contains(&interval) {
+            return Err(EngineError::InvalidConfig {
+                detail: "the autosave interval is outside 5 s to 15 s",
+            });
+        }
+        self.autosave_interval = interval;
+        Ok(self)
+    }
+
     /// Set the memory ceiling for this run.
     #[must_use]
     pub fn with_memory_limit(mut self, limit: Bytes) -> Self {
@@ -151,23 +187,38 @@ impl EngineConfig {
     }
 }
 
-/// What the engine can fail with in this delivery (design P6).
+/// What the engine can fail with (design P6, P16).
 ///
-/// The message-key mapping of ADR 0012 (ARQ-102) is **Planned**: `ToMessage`
-/// for this enum arrives with the first failing service, `E3b`, and the
-/// `UserError` struct is `E11`, after SP3 (design P12). Until then the
-/// `Display` text below is a plain sentence and no caller may match on it.
+/// Every variant has a message key in the area `error.engine.`, and the
+/// wrapped port enums delegate to their own key (ARQ-102, ADR 0012, ADR 0014;
+/// design P12). The `Display` text is for the local log only. `E3c` to `E10`
+/// add variants, so the enum is `#[non_exhaustive]`.
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum EngineError {
     /// The configuration cannot produce a working engine.
     InvalidConfig {
-        /// What is wrong, in one sentence.
+        /// What is wrong, in one sentence, for the log.
         detail: &'static str,
     },
     /// The project repository port failed.
     Repository(RepositoryError),
     /// The content store port failed.
     Store(StoreError),
+    /// An edit or undo arrived with no open document (design P15).
+    NoSession,
+    /// A command could not be applied or reverted (ARQ-30).
+    Command(CommandError),
+    /// A document the engine built or received is not valid.
+    InvalidDocument(ValidationError),
+    /// `save` on a session whose file has a newer schema (ARQ-55): edits
+    /// stay in memory and only `save_as` (`E4`) keeps them.
+    ReadOnly,
+    /// `save` on a session that was never saved (`new`); its exit is
+    /// `save_as` (`E4`).
+    NoPath,
+    /// A `FileSystem` call of the engine failed (design P16).
+    Io(std::io::Error),
 }
 
 impl fmt::Display for EngineError {
@@ -176,11 +227,37 @@ impl fmt::Display for EngineError {
             Self::InvalidConfig { detail } => write!(f, "invalid engine configuration: {detail}"),
             Self::Repository(e) => write!(f, "repository error: {e}"),
             Self::Store(e) => write!(f, "content store error: {e}"),
+            Self::NoSession => f.write_str("no document is open"),
+            Self::Command(e) => write!(f, "command failed: {e}"),
+            Self::InvalidDocument(e) => write!(f, "invalid document: {e}"),
+            Self::ReadOnly => f.write_str("the project is read-only"),
+            Self::NoPath => f.write_str("the project has no file yet"),
+            Self::Io(e) => write!(f, "file system error: {e}"),
         }
     }
 }
 
 impl std::error::Error for EngineError {}
+
+impl ToMessage for EngineError {
+    /// `CommandError` and `ValidationError` have no `ToMessage` yet, so their
+    /// variants get an engine key without delegation (design P12, SP3(b)).
+    /// `InvalidConfig` takes no argument: its detail is prose for the log, and
+    /// neither does `Io`: an `io::Error` carries only prose (ARQ-102).
+    fn to_message(&self) -> Message {
+        match self {
+            Self::InvalidConfig { .. } => msg!("error.engine.invalid_config"),
+            Self::Repository(e) => e.to_message(),
+            Self::Store(e) => e.to_message(),
+            Self::NoSession => msg!("error.engine.no_session"),
+            Self::Command(_) => msg!("error.engine.command_failed"),
+            Self::InvalidDocument(_) => msg!("error.engine.invalid_document"),
+            Self::ReadOnly => msg!("error.engine.read_only"),
+            Self::NoPath => msg!("error.engine.no_path"),
+            Self::Io(_) => msg!("error.engine.io"),
+        }
+    }
+}
 
 impl From<RepositoryError> for EngineError {
     fn from(e: RepositoryError) -> Self {
@@ -194,16 +271,37 @@ impl From<StoreError> for EngineError {
     }
 }
 
+impl From<CommandError> for EngineError {
+    fn from(e: CommandError) -> Self {
+        Self::Command(e)
+    }
+}
+
+impl From<std::io::Error> for EngineError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<ValidationError> for EngineError {
+    fn from(e: ValidationError) -> Self {
+        Self::InvalidDocument(e)
+    }
+}
+
 /// The application Facade of 02 §5.4: what the UI and the CLI talk to.
 ///
-/// `E1` fixes the shape only. Each service accessor of §5.4 (1357-1365) arrives
-/// with its delivery; until then `Gafira` exposes its parts and nothing else.
+/// Each service accessor of §5.4 (1357-1365) arrives with its delivery. The
+/// document version is the engine's (owner decision O2): both services share
+/// it with the session, and it lives as long as `Gafira`.
 pub struct Gafira {
     ports: Ports,
     registries: Registries,
     config: EngineConfig,
     bus: EventBus,
     events: Receiver<EngineEvent>,
+    projects: ProjectService,
+    edit: EditService,
 }
 
 impl Gafira {
@@ -220,13 +318,31 @@ impl Gafira {
         config: EngineConfig,
         events: EventChannel,
     ) -> Result<Self, EngineError> {
+        let bus = events.bus();
+        let shared = Shared::new(bus.clone());
+        let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
+        let projects = ProjectService::over(shared, &ports, &config);
         Ok(Self {
             ports,
             registries,
             config,
-            bus: events.bus(),
+            bus,
             events: events.receiver(),
+            projects,
+            edit,
         })
+    }
+
+    /// The session's lifecycle (02 §5.4 line 1357): `new_document`, `open`,
+    /// `save`, `is_modified`, `autosave_due` and `autosave_finished` so far.
+    #[must_use]
+    pub fn projects(&self) -> &ProjectService {
+        &self.projects
+    }
+
+    /// The edits, undo, redo and gestures (02 §5.4 line 1359).
+    pub fn edit(&mut self) -> &mut EditService {
+        &mut self.edit
     }
 
     /// The configuration this engine was built with.
@@ -273,140 +389,14 @@ impl Gafira {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::time::Duration;
-
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::event::{NoopWaker, Waker};
-    use gafira_doc::{ContentHash, Document};
-    use gafira_ports::common::UnixTime;
-    use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus};
+    use crate::event::Waker;
+    use crate::fakes::*;
+    use gafira_doc::ContentHash;
     use gafira_ports::render::BackendKind;
-    use gafira_ports::store::*;
-    use gafira_ports::system::*;
 
     use super::*;
-
-    struct NoRepository;
-
-    impl ProjectRepository for NoRepository {
-        fn load(
-            &self,
-            _path: &Path,
-        ) -> Result<gafira_ports::repository::LoadedProject, RepositoryError> {
-            Err(RepositoryError::Io(io::Error::other("unused")))
-        }
-
-        fn save(&self, _path: &Path, _document: &Document) -> Result<(), RepositoryError> {
-            Err(RepositoryError::Io(io::Error::other("unused")))
-        }
-    }
-
-    struct NoStore;
-
-    impl ContentStore for NoStore {
-        fn put(&self, _src: &mut dyn io::Read) -> Result<ContentHash, StoreError> {
-            Err(StoreError::Io(io::Error::other("unused")))
-        }
-
-        fn open(&self, _hash: ContentHash) -> Result<Box<dyn ReadSeek + Send>, StoreError> {
-            Err(StoreError::Io(io::Error::other("unused")))
-        }
-
-        fn contains(&self, _hash: ContentHash) -> Result<bool, StoreError> {
-            Err(StoreError::Io(io::Error::other("unused")))
-        }
-    }
-
-    struct NoFilesystem;
-
-    impl FileSystem for NoFilesystem {
-        fn open(&self, _path: &Path) -> io::Result<Box<dyn ReadSeek + Send>> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn create(&self, _path: &Path) -> io::Result<Box<dyn FileWrite>> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn replace(&self, _from: &Path, _to: &Path) -> io::Result<()> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn remove(&self, _path: &Path) -> io::Result<()> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn exists(&self, _path: &Path) -> io::Result<bool> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
-            Err(io::Error::other("unused"))
-        }
-
-        fn read_dir(&self, _path: &Path) -> io::Result<Vec<PathBuf>> {
-            Err(io::Error::other("unused"))
-        }
-    }
-
-    struct NoClock;
-
-    impl Clock for NoClock {
-        fn now(&self) -> UnixTime {
-            UnixTime(0)
-        }
-
-        fn monotonic(&self) -> Duration {
-            Duration::ZERO
-        }
-    }
-
-    struct NoNotifier;
-
-    impl Notifier for NoNotifier {
-        fn notify(&self, _title: &str, _body: &str) {}
-    }
-
-    struct NoLicense;
-
-    impl LicenseVerifier for NoLicense {
-        fn status(&self, _now: UnixTime) -> LicenseStatus {
-            LicenseStatus::Unlicensed
-        }
-
-        fn activate(
-            &self,
-            _key: &LicenseKey,
-            _label: Option<&str>,
-        ) -> Result<LicenseStatus, LicenseError> {
-            Err(LicenseError::Storage)
-        }
-
-        fn validate(&self, _now: UnixTime) -> Result<LicenseStatus, LicenseError> {
-            Err(LicenseError::Storage)
-        }
-
-        fn deactivate(&self) -> Result<(), LicenseError> {
-            Err(LicenseError::Storage)
-        }
-    }
-
-    fn config() -> EngineConfig {
-        EngineConfig::new("/data/gafira").expect("a valid data directory")
-    }
-
-    fn six_ports() -> Ports {
-        Ports::new(
-            Arc::new(NoRepository),
-            Arc::new(NoStore),
-            Arc::new(NoFilesystem),
-            Arc::new(NoClock),
-            Arc::new(NoNotifier),
-            Arc::new(NoLicense),
-        )
-    }
 
     #[derive(Default)]
     struct CountingWaker {
@@ -417,14 +407,6 @@ mod tests {
         fn wake(&self) {
             self.wakes.fetch_add(1, Ordering::SeqCst);
         }
-    }
-
-    fn quiet_channel() -> EventChannel {
-        EventChannel::new(Arc::new(NoopWaker), Arc::new(NoClock))
-    }
-
-    fn engine_over(events: EventChannel) -> Gafira {
-        Gafira::new(six_ports(), Registries::new(), config(), events).expect("an engine")
     }
 
     /// W5 and E2-C1: publishing through the facade reaches the observer exactly
@@ -466,6 +448,58 @@ mod tests {
         );
     }
 
+    // ARQ-102
+    #[test]
+    fn ac9_every_engine_error_has_its_key_and_the_port_errors_delegate() {
+        let too_new = || RepositoryError::TooNew {
+            found: 3,
+            supported: 1,
+        };
+        let not_found = || StoreError::NotFound {
+            hash: ContentHash([7; 32]),
+        };
+        let cases = [
+            (
+                EngineError::InvalidConfig { detail: "x" },
+                msg!("error.engine.invalid_config"),
+            ),
+            (EngineError::Repository(too_new()), too_new().to_message()),
+            (EngineError::Store(not_found()), not_found().to_message()),
+            (EngineError::NoSession, msg!("error.engine.no_session")),
+            (
+                EngineError::Command(CommandError::NotApplied),
+                msg!("error.engine.command_failed"),
+            ),
+            (
+                EngineError::InvalidDocument(ValidationError::InvalidDpi { dpi: 0 }),
+                msg!("error.engine.invalid_document"),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.to_message(), expected, "{error:?}");
+        }
+        assert_eq!(
+            EngineError::Repository(too_new()).to_message().key.0,
+            "error.repository.too_new"
+        );
+    }
+
+    // ARQ-55, ARQ-102
+    #[test]
+    fn ac11_read_only_no_path_and_io_have_engine_keys_without_arguments() {
+        let cases = [
+            (EngineError::ReadOnly, msg!("error.engine.read_only")),
+            (EngineError::NoPath, msg!("error.engine.no_path")),
+            (
+                EngineError::from(std::io::Error::other("disk full")),
+                msg!("error.engine.io"),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.to_message(), expected, "{error:?}");
+        }
+    }
+
     #[test]
     fn ac3_an_empty_data_directory_is_rejected() {
         let error = EngineConfig::new("").expect_err("an empty data directory must be rejected");
@@ -487,6 +521,31 @@ mod tests {
         let config = config();
         assert_eq!(config.memory_limit(), None);
         assert_eq!(config.export_jobs(), 1);
+    }
+
+    // E3d AC1, ARQ-51
+    #[test]
+    fn e3d_ac1_the_autosave_interval_is_5_to_15_seconds_inclusive_and_10_by_default() {
+        assert_eq!(config().autosave_interval(), Duration::from_secs(10));
+        let cases = [
+            (Duration::from_millis(4_999), false),
+            (Duration::from_secs(5), true),
+            (Duration::from_secs(15), true),
+            (Duration::from_millis(15_001), false),
+        ];
+        for (interval, accepted) in cases {
+            let result = config().with_autosave_interval(interval);
+            match result {
+                Ok(config) => {
+                    assert!(accepted, "{interval:?} accepted");
+                    assert_eq!(config.autosave_interval(), interval);
+                }
+                Err(error) => {
+                    assert!(!accepted, "{interval:?} rejected");
+                    assert!(matches!(error, EngineError::InvalidConfig { .. }));
+                }
+            }
+        }
     }
 
     #[test]

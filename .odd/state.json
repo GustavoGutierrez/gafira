@@ -65,87 +65,45 @@
           "id": "E2-AC6",
           "status": "passed",
           "evidence": "cargo deny check 0 at cbe874e"
+        },
+        {
+          "id": "E3a",
+          "status": "passed",
+          "evidence": "verify E3a round 1 PASS at 778e494: crates/gafira-edit/tests/dirty_sets.rs AC1-AC6, workspace gates 0 (2529 passed); hand mutants 1-3 killed"
+        },
+        {
+          "id": "E3b",
+          "status": "passed",
+          "evidence": "verify E3b round 1 PASS at 9c16cc5: AC1-AC11 tests in session.rs/edit.rs/project.rs/engine.rs, workspace gates 0 (2544 passed); hand mutants 1-7 killed, re-applied 1, 3, 4"
+        },
+        {
+          "id": "E3c1",
+          "status": "passed",
+          "evidence": "verify E3c1 round 1 PASS at e1fef7f: ac8_* and ac9_* in project.rs, workspace gates 0 (2548 passed); hand mutant 7 and three verifier mutants killed"
+        },
+        {
+          "id": "E3c2",
+          "status": "passed",
+          "evidence": "verify E3c2 round 1 PASS at 99c38bc: ac1-ac7, ac10, ac11 in project.rs (ARQ-50 fault loop, ARQ-55 empty trace), workspace gates 0 (2558 passed); 7 hand mutants killed, verifier re-ran 1, 4, 6 plus 3 own"
+        },
+        {
+          "id": "E3d",
+          "status": "passed",
+          "evidence": "verify E3d round 2 PASS at 61ed459: autosave.rs AC1-AC12 plus undo/redo pending tests, workspace gates 0 (2573 passed); 9 hand mutants and both probes killed"
+        },
+        {
+          "id": "E5",
+          "status": "passed",
+          "evidence": "verify E5 round 2 PASS at b7f6e2c: governor.rs AC1-AC11 incl. ac1_many_caches_of_one_kind_keep_the_caller_order, workspace gates 0 (2588 passed); 15 hand mutants killed"
         }
       ],
-      "next_action": "E3a on feat/gafira-engine-e3 (cut from cbe874e): slice card, tdd-apply, verify; then E3b, E3c, E3d, E5. Follow-ups: E2-W7 (per-job coalescing, before E7), E2-W8 (size 802)",
+      "next_action": "E2, E3a-E3d and E5 verified on feat/gafira-engine-e3 (stacked on feat/gafira-engine-e2); awaiting the owner's OK to merge into develop. Then E4 (needs SP5), E6, E7 (needs E2-W7 and how E7 reaches the governor, E5-S1), E8-E11 (E11 needs SP3)",
       "verify": {
-        "round": 3,
-        "commit": "cbe874e",
+        "round": 2,
+        "commit": "b7f6e2c",
         "verdict": "PASS",
-        "next": "E2 done (not merged: owner said no merge); E3a on feat/gafira-engine-e3 cut from cbe874e",
+        "next": "owner: merge feat/gafira-engine-e2 then feat/gafira-engine-e3 into develop (not done: owner said no push, no merge)",
         "findings": [
-          {
-            "id": "E2-C1",
-            "severity": "CRITICAL",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/engine.rs:213-228 (AC1)",
-            "summary": "Gafira::new can build the channel with NoopWaker and ignore the injected waker with all 14 engine tests green; the AC1 test does not assert the waker count the card requires.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W1",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/event.rs:186-199",
-            "summary": "E1's W2 fix regressed: the every-variant test again omits LocaleChanged and asserts nothing.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W2",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "commit 642d14d",
-            "summary": "Size: 762 changed lines for E2 (fix round 402 vs ~120 forecast), above the ~700 ceiling; needs the owner's explicit OK. Owner accepted 762 lines on 2026-11-06.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W3",
-            "severity": "WARNING",
-            "class": "architecture",
-            "ref": "02 §5.2:1331, §5.4:1356, design P2",
-            "summary": "Gafira::new creates the channel itself, while §5.2 has the composition root create it before the engine (ARQ-68 startup screen); the signature change has no design amend.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W4",
-            "severity": "WARNING",
-            "class": "ambiguity",
-            "ref": "design.md:80,102,218 vs E2 card non-goals",
-            "summary": "The design assigns the UserError mapping (ARQ-102) to E2; the card defers it; the design was not amended.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W5",
-            "severity": "WARNING",
-            "class": "claim",
-            "ref": ".odd/state.json, commit 07c36f2",
-            "summary": "E1 evidence reverted to pre-round-2 text (E1-AC2 omits ARQ-107, E1-AC5 loses ptr_eq). Restored by the coordinator in this update.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-W6",
-            "severity": "WARNING",
-            "class": "implementation",
-            "ref": "commit 962e95d",
-            "summary": "The slice-card commit also carries post-implementation notes, and all three commits share one timestamp, so history cannot show the card preceded the code.",
-            "follow_up": false,
-            "status": "closed"
-          },
-          {
-            "id": "E2-C2",
-            "severity": "CRITICAL",
-            "class": "implementation",
-            "ref": "crates/gafira-engine/src/bus.rs:144-148",
-            "summary": "A progress that opens the window leaves an older pending one in place: a probe receives 0.1, 0.9, 0.2, so the observer ends on a stale fraction; breaks AC3 and the claim at bus.rs:155-156.",
-            "follow_up": false,
-            "status": "closed"
-          },
           {
             "id": "E2-W7",
             "severity": "WARNING",
@@ -163,6 +121,33 @@
             "summary": "E2 is 802 lines, 40 above the 762 the owner accepted; the fix round added 44 lines, 37 of them tests.",
             "follow_up": true,
             "status": "open"
+          },
+          {
+            "id": "E3b-W2",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "02 §5.4:1357",
+            "summary": "§5.4 names ProjectService::new but clippy new_ret_no_self and the no-#[allow] rule force new_document; the spec should name new_document.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E3b-W4",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "edit.rs undo/redo; history.rs:236-252",
+            "summary": "undo/redo Err is unreachable with the fixed 512 MiB budget; the Err half of AC2 is proven by reading only.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E3d-W2",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "git diff 34837d3..e26538c -- crates",
+            "summary": "E3d code totals 755 lines after the fix round, 43 test lines above the 712 the owner accepted.",
+            "follow_up": true,
+            "status": "open"
           }
         ],
         "rounds": [
@@ -170,21 +155,11 @@
             "round": 1,
             "verdict": "FAIL",
             "classes": [
-              "implementation",
-              "architecture",
-              "ambiguity",
-              "claim"
-            ]
-          },
-          {
-            "round": 2,
-            "verdict": "FAIL",
-            "classes": [
               "implementation"
             ]
           },
           {
-            "round": 3,
+            "round": 2,
             "verdict": "PASS",
             "classes": []
           }

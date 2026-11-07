@@ -1046,3 +1046,695 @@ HEAD is `cbe874e`.
 next: tdd-apply (E2 PASS: merge `feat/gafira-engine-e2` into `develop`, then the next delivery;
 follow-ups E2-W7 (ambiguity, for the architect/specifier before E7) and E2-W8 (record 802 lines,
 tell the owner))
+
+---
+
+# Verify report — `gafira-engine` delivery `E3a` (history dirty sets), round 1
+
+round: 1 | commit: 778e494 | base: cad7d0c | mode: full | level: L3 | tier: hand mutants only | depth: V1 | mutation: off
+
+**Verdict: PASS** (delivery; deliveries `E3b` to `E3d` and `E5` remain)
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3a-S1 | SUGGESTION | - | crates/gafira-edit/tests/dirty_sets.rs:103-118 | AC4 proves the merge by `len() == 3`; the set assertion alone cannot tell a merged entry from an unmerged one, because `SetProperty` merges only on an equal `MergeKey` (same page). Keep the `len` assertion when this test is edited. | no | open |
+| E3a-S2 | SUGGESTION | - | crates/gafira-edit/tests/dirty_sets.rs:141-153 | AC6 covers a failure before any mutation (index check is the first line of `InsertPage::apply`). A command failing after a partial write on the copy would add a second case; not required by the card. | no | open |
+
+Counts: critical 0, warning 0, suggestion 2. Per class: none (suggestions carry no class).
+
+## Gates at HEAD (`778e494`, workspace scope, scratch `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2529 passed, 0 failed, 0 ignored; matches the notes) |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13 (EditToken, incl. positive control and re-export check), V14 | 0 each |
+| CI policy: testkit `ports` feature (clippy + test) | 0 |
+| `cargo deny check` | 0 |
+
+Free disk before builds: 147 GB. Both target dirs freed with `cargo clean`; worktree clean at `778e494`. The source-only scratch export `e3a-export` stays in the scratchpad (`rm -rf` is denied).
+
+## Artifact integrity (step 3c)
+
+- `cad7d0c docs(gafira-engine): slice card for E3a` touches only `specs/changes/gafira-engine/apply-progress.md` (+42).
+- `d1d6641` touches only `crates/gafira-edit/src/history.rs` and `crates/gafira-edit/tests/dirty_sets.rs`.
+- `778e494` appends the notes after the card (+36, pure addition after the card's last line); the card block is unchanged since `cad7d0c`.
+- Public API diff of `gafira-edit` (`git diff cad7d0c HEAD -- crates/`, `pub` lines): only `History::newest_touches` and `History::undone_touches`, both `&self`, read-only. The other change is a private `use` of `DirtySet` (already public). No `execute`/`undo`/`redo` signature or `Command` impl changed (card non-goals hold).
+
+## Criteria map
+
+| AC | Proof | Status |
+|---|---|---|
+| AC1 | `ac1_after_a_changed_execute_the_newest_set_is_the_applied_one`: `InsertPage` (set empty before `apply`, XP4), full pair compared | covered |
+| AC2 | `ac2_undo_reports_the_undone_entry_and_the_new_top`: two distinct entries, then down to `(None, Some(first))` | covered |
+| AC3 | `ac3_redo_reports_the_redone_entry_and_the_next_redo_entry`: three redos, each pair compared, ends `(Some, None)` | covered |
+| AC4 | `ac4_a_merged_gesture_reports_the_merged_entry` | covered (see doubt 1) |
+| AC5 | `ac5_an_empty_history_reports_nothing`, `ac5_an_unchanged_execute_leaves_both_sets` (asserts `Ok(Unchanged)`) | covered |
+| AC6 | `ac6_a_command_that_fails_to_apply_leaves_both_sets` | covered (see doubt 2) |
+| AC7 | gates above, workspace scope | covered |
+
+Product IDs: 02 §5.1, §4.3, ARQ-30 (card). Every test in `dirty_sets.rs` carries `// ARQ-30` (7 tests, `git grep ARQ-30`). ARQ-33 is not a card ID; its "one entry per gesture" rule is what AC4 relies on and is exercised there. None left out.
+
+## Coordinator doubts
+
+1. **AC4 merges.** The test opens one gesture and executes three `SetProperty::page(second, PageName(..), Some(gesture))` at 1 s, 2 s and 3 s, each `Ok(Changed)`. `History::len()` is `self.undo.len()` (history.rs:194); after two `InsertPage` entries, `len() == 3` holds only if the three renames became one entry. The 1 s gaps exceed `MERGE_WINDOW` (500 ms), so the merge comes from the gesture branch of `merge_into_newest` (`old.gesture == open`), not the time window. `SetProperty` is the merging command (`merge_key` returns `Some`; set_property.rs:433). So it is a merged entry, and `newest_touches()` on it is asserted as `(Some({second}), None)`. Settled: AC4 is covered. Limit noted in E3a-S1.
+2. **AC6 failure path.** `InsertPage::new(9, ..)` on a one-page document: `InsertPage::apply` returns `IndexOutOfRange { index: 9, len: 1 }` (pages.rs:52); `History::execute` calls `apply_to_copy(..)?` first (history.rs:99), so the error returns before `redo.clear()` and before any push or merge. The test asserts that exact `Err` and then the full pair `(Some({first}), Some({second}))` over a history with both stacks non-empty, so both sets are proved unchanged, including the redo side a wrong `redo.clear()` would empty. Settled: real `apply` failure, AC6 covered.
+3. **Hand mutant 1 re-applied** (scratch export of `778e494`): `newest_touches` reads `self.redo.last()`, `undone_touches` reads `self.undo.last()`. `cargo test -p gafira-edit --locked --test dirty_sets`: 6 failed, 1 passed (`ac5_an_empty_history_reports_nothing`, as the notes say). E.g. `ac1`: left `(None, Some({PageId(1)}))`, right `(Some({PageId(1)}), None)`. Killed, matches the record.
+4. **API diff**: only the two additive methods (above).
+
+## Mutation
+
+`mutation: off`: no `mutants` report; not a finding. Hand mutants: 1 run (spot-check of recorded mutant 1), 1 killed. V1 adds no independent hand mutants.
+
+## Size
+
+`git diff --shortstat cad7d0c..d1d6641`: 2 files, 171 insertions, 1 deletion (code 19, tests 153). Delivery total to `778e494`: 207 insertions, 1 deletion. Forecast 90 (126 at x1.4); 171 is x1.9 of the raw forecast, inside the x1.4 to x1.9 range AGENTS.md records and far below ~700.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E3a", "rounds": [ {
+  "round": 1, "commit": "778e494", "mode": "full", "tier": "hand mutants only", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 0, "suggestion": 2},
+  "findings": [
+    {"id": "E3a-S1", "severity": "SUGGESTION", "ref": "crates/gafira-edit/tests/dirty_sets.rs:103-118", "summary": "AC4 merge proved by len()==3; the set assertion alone cannot distinguish merged from unmerged (same MergeKey page). Keep the len assertion.", "follow_up": false, "status": "open"},
+    {"id": "E3a-S2", "severity": "SUGGESTION", "ref": "crates/gafira-edit/tests/dirty_sets.rs:141-153", "summary": "AC6 covers a pre-mutation apply failure only; a post-partial-write failure case is optional.", "follow_up": false, "status": "open"} ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 1, "killed": 1},
+  "criteria": {"total": 7, "covered": 7},
+  "size": {"lines": 171, "forecast": 126}, "report": "e3a-verify-report-r1.md" } ] }
+```
+
+next: tdd-apply (next delivery `E3b`)
+
+---
+
+# Verify report: `gafira-engine` delivery `E3b` (session, edits, document version)
+
+round: 1 (first verify of this code)
+commit: 9c16cc5 (branch `feat/gafira-engine-e3`, worktree `/tmp/gafira-engine-e3`), base 9df403d
+mode: full | level: L3 | pack: new capability | mutation: off | tier: hand mutants only | depth: V1
+
+**Verdict: PASS** (0 CRITICAL, 4 WARNING, 2 SUGGESTION). The delivery has no CRITICAL finding;
+the change still has deliveries left (`E3c` onward). The size is above the ~700-line ceiling, and
+going past it needs the owner's explicit OK (E3b-W1).
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3b-W1 | WARNING | implementation | `git diff --shortstat 5df8a7a..3bde884` | Size: 734 authored lines (717+/17-), above 588 forecast and ~700 ceiling; needs owner OK. Notes' 417 prod/317 test split is wrong: measured ~350 prod / ~367 test | no | open |
+| E3b-W2 | WARNING | ambiguity | 02 §5.4 line 1357; `project.rs` `new_document` | D1: §5.4 names `ProjectService::new`; clippy `new_ret_no_self` (verified on a scratch export) plus the no-`#[allow]` rule forbid it. The spec comment needs to name `new_document`, or another name needs to be picked | yes | open |
+| E3b-W3 | WARNING | implementation | AC4; `project.rs` `every_page_and_node` | D5: the whole-document set is proven only for the empty doc. Mutant "return `DirtySet::default()`" survives. It is equivalent in E3b, because `new` only builds empty docs. `E3c` `open` must assert a non-empty set | yes | open |
+| E3b-W4 | WARNING | ambiguity | AC2; `edit.rs` undo/redo; `gafira-edit/src/history.rs:236-252` | D4: the undo/redo `Err` half of AC2 cannot be tested through the engine. `History` errs only on a compacted entry, and the engine fixes the 512 MiB budget. Proved by inspection only: `?` comes before the publish | yes | open |
+| E3b-S1 | SUGGESTION | - | P15; `session.rs` `Session` | D2: `Session` has only `history`, `clean_version`. `path`/`read_only`/`project_key`/autosave are left out because they would be dead code under `-D warnings`. Accepted; the `E3c`/`E3d` cards should list them | - | open |
+| E3b-S2 | SUGGESTION | - | P15 "Modified"; `project.rs` `is_modified` | D3: `is_modified()` is `false` with no session. Sensible, and `ac8` asserts it, but P15 does not say it. Record it in P15 | - | open |
+
+## Gates (HEAD 9c16cc5, workspace scope)
+
+| gate | exit | evidence |
+|---|---|---|
+| `cargo fmt --check` | 0 | clean |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 | no warning |
+| `cargo test --workspace --locked` | 0 | 199 suites, 2544 passed, 0 failed |
+| `cargo deny check` | 0 | advisories ok, bans ok, licenses ok, sources ok |
+| CI policy (ci.yml `policy` job) | 0 | ARQ-07 CLI, forbid(unsafe), V5 layer table, V12 clippy.toml sync, ARQ-107, V13 EditToken, V14 property tests, testkit `ports` feature clippy + test: all exit 0 |
+
+Purity: `crates/gafira-engine/src` has no `EditToken`, no `std::thread`, no `std::env` (one doc
+comment only says it is banned), no `Instant::now`/`SystemTime`. `EditService` takes `at` from
+`Clock::monotonic()` (`edit.rs` `execute`). The worktree is clean after the run. Both scratch
+target dirs were removed with `cargo clean`.
+
+## Artifact integrity
+
+- `9df403d` (slice card, coordinator) touches only `specs/changes/gafira-engine/apply-progress.md` (+58).
+- No implementer commit changed the card. `9c16cc5` (notes) appends 80 lines and deletes none;
+  `5df8a7a`, `dc28f3c` and `3bde884` do not touch the file.
+- `5df8a7a` is a pure move. After normalising indentation, the only differences between the
+  removed and added lines are `pub(crate)` visibility, explicit imports in place of globs, the
+  `mod fakes;` / `#[cfg(test)]` declaration, a reflowed `load` signature and module/doc comments.
+  No behaviour changed.
+
+## Acceptance map
+
+| AC | proof | status |
+|---|---|---|
+| AC1 | `edit.rs` `ac1_a_changed_execute_...`, `ac1_a_merged_execute_...`, `ac1_ac4_undo_...`, `ac1_ac4_redo_...`; `project.rs` `ac1_ac4_new_bumps_once_...` (exact version, whole event vec) | covered |
+| AC2 | `ac2_an_unchanged_execute_...`, `ac2_a_failed_execute_...`, `ac2_an_empty_undo_or_redo_...`, `ac2_gestures_...` (empty drain plus the next bump's exact version) | covered except undo/redo `Err` (E3b-W4) |
+| AC3 | `ac3_the_version_strictly_increases_across_a_second_new` (versions `1..=9`) | covered |
+| AC4 | the undo/redo/execute tests compare whole `DirtySet`s; `new` gives `{}` | covered for execute/undo/redo; whole-document set only for the empty doc (E3b-W3) |
+| AC5 | `ac5_a_gesture_of_many_steps_is_one_entry` | covered |
+| AC6 | `ac6_new_drops_the_history_before_it` | covered |
+| AC7 | `ac7_without_a_session_every_edit_call_is_refused_...` (all 5 methods, empty drain) | covered |
+| AC8 | `project.rs` `ac8_modified_after_an_edit_and_after_undoing_it` | covered |
+| AC9 | `engine.rs` `ac9_every_engine_error_has_its_key_...` (6 variants, delegation for `Repository`/`Store`); the `to_message` match has no `_` arm | covered |
+| AC10 | `assert_send_sync::<Gafira>()` (`engine.rs:461`) compiles | covered |
+| AC11 | gates above | covered |
+
+Product IDs: the tests carry `// ARQ-30`, `// ARQ-33`, `// ARQ-102`. Covered: ARQ-30
+(execute/undo/redo through `History` only), ARQ-33 (AC5), ARQ-102 (`ToMessage` half; `UserError` is
+out of scope, `E11`), §5.2 (1317: `DocumentChanged { version, dirty }`), §5.4 (1357
+`projects(&self)`, `new` as `new_document`, E3b-W2; 1359 `edit(&mut self)` with execute, undo,
+redo, begin/end_gesture). §5.1: `at` comes from the clock. §7.3: keys per variant. Left out by
+the card: `open`/`save` (`E3c`), autosave (`E3d`), `UserError` (`E11`).
+
+Critical points (design "Critical code" row `E3b`):
+- P15 bump table: matches `edit.rs`/`project.rs` exactly. Bumps on `Changed` (merged or not),
+  undo/redo `Some` and a successful `new`. No bump on `Unchanged`, `Err`, `None`, the gestures or
+  a failed `new` (the `?` runs before `changed`).
+- Strict monotonicity: one `AtomicU64` per engine, `fetch_add(1)`, and publishing happens under the
+  session lock, so versions reach the bus in order.
+- Dirty sets: `newest_touches` after execute/redo, `undone_touches` after undo (P14).
+- History boundary: `new_document` replaces `Session` and the old `History` is dropped.
+- `NoSession`: `with_session` refuses before running or publishing anything.
+
+## Deviations judged
+
+- D1: valid; the lint was verified (rename to `new` makes `clippy -D warnings` fail with
+  `new_ret_no_self`). Spec wording is a follow-up: E3b-W2.
+- D2: accepted (dead-code rule): E3b-S1.
+- D3: accepted, unspecified: E3b-S2.
+- D4: the claim was verified in `history.rs` (snapshot entries cannot fail). Not testable through
+  the engine as designed: E3b-W4.
+- D5: confirmed by a surviving mutant that is equivalent in E3b: E3b-W3.
+- D6: no finding. `gafira-geom` is in the engine's V5 row, V5 reads only the normal tree, and
+  `cargo deny` passes.
+- D7: no finding. It matches P12 (every variant has a key in `error.engine.`), and dropping the
+  detail argument avoids prose in a message (ARQ-102).
+
+## Hand mutants (scratch export of HEAD, own target dir)
+
+| # | mutant | result |
+|---|---|---|
+| 1 (recorded) | bump on an `Unchanged` execute | killed by `ac2_an_unchanged_execute_neither_bumps_nor_publishes` |
+| 3 (recorded) | reset the version to 0 before the bump in `new_document` | killed by `ac3_the_version_strictly_increases_across_a_second_new` |
+| 4 (recorded) | `newest_touches` after `undo` | killed by `ac1_ac4_undo_bumps_once_with_the_undone_set` |
+| P1 (probe for D5) | `new_document` publishes `DirtySet::default()` | survived; equivalent in E3b (E3b-W3) |
+
+Each of the three recorded mutants fails only its own named test, which answers the concern about
+"RED only at the shared setup step". Totals: 4 run, 3 killed, 1 equivalent survivor.
+
+## Size
+
+`git diff --shortstat 5df8a7a..3bde884`: 10 files, 717 insertions, 17 deletions, so 734 authored
+lines. Counting by `#[cfg(test)]` boundary: about 350 production (including docs and manifest)
+and about 367 test lines inserted. `9df403d..3bde884`, which includes the pure move, is 865/152.
+The forecast was 420 (588 at x1.4), and the ceiling is ~700.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E3b", "rounds": [ {
+  "round": 1, "commit": "9c16cc5", "mode": "full", "tier": "hand", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 4, "suggestion": 2},
+  "findings": [
+    {"id": "E3b-W1", "severity": "WARNING", "class": "implementation", "ref": "git diff --shortstat 5df8a7a..3bde884", "summary": "734 authored lines over the ~700 ceiling and 588 forecast; owner OK needed; notes' prod/test split wrong (~350/~367)", "follow_up": false, "status": "open"},
+    {"id": "E3b-W2", "severity": "WARNING", "class": "ambiguity", "ref": "02 §5.4 line 1357", "summary": "ProjectService::new cannot exist under clippy new_ret_no_self and no #[allow]; spec comment should name new_document", "follow_up": true, "status": "open"},
+    {"id": "E3b-W3", "severity": "WARNING", "class": "implementation", "ref": "AC4; project.rs every_page_and_node", "summary": "whole-document set proven only for the empty doc; default-set mutant survives (equivalent in E3b); E3c open must assert a non-empty set", "follow_up": true, "status": "open"},
+    {"id": "E3b-W4", "severity": "WARNING", "class": "ambiguity", "ref": "AC2; edit.rs undo/redo", "summary": "undo/redo Err cannot be reached through the engine (compaction needs > 512 MiB); proved by inspection only", "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 4, "killed": 3},
+  "criteria": {"total": 11, "covered": 11},
+  "size": {"lines": 734, "forecast": 588}, "report": "e3b-verify-report-r1.md" } ] }
+```
+
+classes (CRITICAL/WARNING): implementation 2, ambiguity 2.
+
+next: tdd-apply (next delivery `E3c`, after the owner's OK on size, E3b-W1; route E3b-W2/W4 to specifier as follow-ups)
+
+---
+
+# Verify report: gafira-engine, delivery E3c1 (open + private fakes)
+
+round: 1 | commit: e1fef7f | branch: feat/gafira-engine-e3 | mode: full | level: L3 | tier: hand mutants only | depth: V1 | mutation: off
+
+**Verdict: PASS** (E3c1; deliveries remain, E3c2 next)
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3b-W3 | WARNING (earlier) | implementation | project.rs `ac9_open_bumps_once_lists_the_whole_loaded_document_and_drops_the_old_history` | The whole-document `DirtySet` of `open` is now compared in full on a NON-empty document (pages {1,4}, nodes {2,3,5}). Hand mutant B (open drops the nodes) is killed. | - | closed |
+| E3c1-S1 | SUGGESTION | - | apply-progress.md Notes E3c1 D3, and the measured lines | D3 says `create_dir_all` and `read_dir` of `MemoryFs` return `Unsupported`. In the code, `create_dir_all` returns `Ok(())` and `read_dir` lists the folder (fakes.rs). The production split is 33 insertions (engine.rs 2, project.rs 31 above `#[cfg(test)]`), not 31 (29 + 2). Fix the notes the next time they are touched. | no | open |
+| E3c1-S2 | SUGGESTION | - | fakes.rs `MemoryRepository::save` | The P16 write path (the repository writes through `MemoryFs`) has no test in E3c1. Its proof is AC1/AC2 in E3c2 and the amend lists those there, so this is not a finding here. E3c2 verify should check it. | no | open |
+
+Counts: critical 0, warning 0, suggestion 2. Per class: none (CRITICAL/WARNING).
+
+## Gates (export of e1fef7f, scratch target dir, CARGO_INCREMENTAL=0)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2548 passed, 0 failed) |
+| CI policy: ARQ-07, forbid(unsafe), V5, V12, ARQ-107, V13 (EditToken), V14 | 0 each (run in the worktree, read-only) |
+| `cargo deny check` | 0 (no manifest change; run anyway) |
+| Testkit `ports` feature step | not run: does not apply, because the delivery does not touch gafira-testkit |
+
+## Artifact integrity (step 3c)
+
+- `fb3c814` (slice card) and `4f742b3` (card amend; it states why: ~800 lines against the ~700 ceiling, owner split) each touch only `specs/changes/gafira-engine/apply-progress.md`.
+- `16280b5` (the code) touches only `crates/gafira-engine/src/{engine,project,fakes}.rs`.
+- `e1fef7f` (notes) only appends after the amend: the diff has zero `-` lines.
+- No implementer commit changed the card or the amend.
+
+## Criteria (E3c1: AC8, AC9, AC12, AC13)
+
+| AC | status | proof |
+|---|---|---|
+| AC8 | covered | `ac8_an_open_that_fails_to_load_leaves_the_old_session` and `ac8_an_open_of_an_invalid_document_leaves_the_old_session`, through `assert_old_session_kept`. They check: nothing published, still modified, the old document (1 page), the old history (undo is `Some`), and the version did not move (the undo publishes version 3). |
+| AC9 | covered | The `ac9_...` test checks: exactly one `RepoCall::Load(TARGET)`, one `DocumentChanged` at version 3 with the full `DirtySet` of a non-empty document, clean after open, the loaded document equal to the fixture, and no undo across open. |
+| AC12 | covered | `git grep -nE "std::fs\|std::thread\|std::env\|rand::\|thread::spawn" -- crates/gafira-engine/src` finds only the existing doc comment at engine.rs:96. `open` reads only through `ProjectRepository::load`. The CI steps are green. |
+| AC13 | covered | The gates above, at workspace scope. |
+
+Design checks:
+- **P18**: load, then `History::new` (whose `?` maps to `InvalidDocument`), then lock + publish + swap.
+- **P15**: the version bumps once, `clean_version` is set to the new version, and the history is dropped.
+- **P16 (fakes are private)**: `lib.rs:21` has `#[cfg(test)] mod fakes;` and every item is `pub(crate)`. `MemoryRepository` reads and writes through `MemoryFs`. The write-side trace covers create, write, sync_all, replace and remove.
+- **`invalid_document()`**: it never names `EditToken` (`git grep EditToken -- crates/gafira-engine` finds nothing, and V13 is green). It builds the invalid document through `DocMut` inside a failing `Command`.
+- `read_only` is ignored until E3c2 (D2, as the amend says).
+
+## Hand mutants (scratch export, `cargo test -p gafira-engine --locked project::`)
+
+| # | mutant | result | killed by |
+|---|---|---|---|
+| 7 (spot-check of the recorded list) | `*self.shared.lock() = None` before `History::new` | killed | `ac8_an_open_of_an_invalid_document_leaves_the_old_session` ("still modified") |
+| A | publish (`shared.changed`) before `History::new` validates | killed | `ac8_an_open_of_an_invalid_document...` ("a failed open publishes nothing") |
+| B | `open` publishes only the pages (nodes cleared) | killed | `ac9_...` (the `DirtySet` comparison) |
+| C | keep the old history on `open` instead of dropping it | killed | `ac9_...` (the loaded-document equality) |
+
+hand_mutants: run 4, killed 4. mutation: null (`mutation: off`).
+
+## Size
+
+`git diff --shortstat fb3c814..16280b5`: 3 files, 496 insertions, 10 deletions.
+- Production: about 33 insertions.
+- Tests: about 463 insertions (fakes.rs 353/4, the tests in project.rs about 110).
+- The E3c forecast was 380 (532 at x1.4). E3c1 alone is under the ~700 stop line.
+
+## Hygiene
+
+- The worktree is clean at e1fef7f.
+- `stash@{0}` was not touched.
+- Both scratch target dirs were removed with `cargo clean`.
+
+next: tdd-apply (E3c2)
+
+---
+
+# Verify report: `gafira-engine` delivery `E3c2` (atomic save, read-only refusal)
+
+round: 1
+commit: 99c38bc (worktree `/tmp/gafira-engine-e3`, branch `feat/gafira-engine-e3`, base `2f99df8`)
+mode: full | level: L3 | pack: new capability | mutation: off | tier: hand mutants only | depth: V1 (decided-by: owner)
+
+**Verdict: PASS** for this delivery. It has 0 CRITICAL, 0 WARNING and 3 SUGGESTION findings. The change still has deliveries to come (`E3d` and later), so it is not done.
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3c2-S1 | SUGGESTION | - | `project.rs` `ac5_a_read_only_session_edits_undoes_and_redoes_like_any_other` | AC5 never asserts that the session it edits is read-only. Mutant C (`open` drops `read_only`) passes AC5 and only AC6 kills it. Adding `save() == Err(ReadOnly)` at the end of AC5 would make the test prove this alone. | no | open |
+| E3c2-S2 | SUGGESTION | - | `project.rs` `temporary_for` (D2) | The counter is per engine and starts at 0, so two engines or processes saving one file both use `<file>.tmp-0`. This is allowed by the owner's answer ("unique name in the target folder", P18) and the file lock is out of scope (ARQ-57). Recheck when ARQ-57 lands. | no | open |
+| E3c2-S3 | SUGGESTION | - | design XP5, `repository.rs` doc comment (SP6) | SP6 is only a written contract so far: no real `ProjectRepository` adapter checks that it syncs the file. Keep XP5 open for `gafira-format`. | no | open |
+
+## Gates (at HEAD 99c38bc, workspace scope, external `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0: 199 suites, 2558 passed, 0 failed (matches the notes) |
+| CI policy job, all 10 `run` steps taken from `ci.yml` (ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13 EditToken, V14, testkit `ports` feature) | 0 each |
+| `cargo deny check` (no manifest change, run anyway) | 0 |
+
+Before the run, `df -h /` showed 146 GB free. Both target dirs were cleaned afterwards with `cargo clean --target-dir`. The worktree is clean at HEAD `99c38bc` and holds no stash.
+
+## Artifact integrity
+
+- Slice card `fb3c814` and amend `4f742b3` touch only `specs/changes/gafira-engine/apply-progress.md`. The amend states why (size, split chosen by the owner).
+- Implementer commits: `5297f6d` (`engine.rs`), `72d34f6` (`engine.rs`, `fakes.rs`, `project.rs`, `session.rs`), `adad43a` (`gafira-ports/src/repository.rs`), `99c38bc` (notes; it only adds lines to `apply-progress.md`, 86+/0-). No implementer commit changed the card, `design.md` or `specs/02`.
+- The `gafira-ports` change is doc-only: the diff touches only `///` lines on `ProjectRepository::save` and changes no signature.
+- Commit order: code, then the port doc, then the notes in a separate commit.
+
+## Acceptance criteria
+
+| AC | proof | status |
+|---|---|---|
+| AC1 ARQ-50 fault at every op | `ac1_...` fixes the trace (Create, Write x2, SyncAll, Replace) exactly, then injects a fault at each of the 5 indices and requires the target to keep its old bytes; with no fault, the new bytes in full | covered |
+| AC2 order, no `replace` after an error | `ac2_...`: exact repo calls `[Save(tmp-0)]`, exact trace; faults 0-3 give trace up to the fault, then `Remove`, with no `Replace` | covered |
+| AC3 `remove`, first error kept, still modified | `ac3_...` table: [3], [4], [3,4], [4,5]; checks the error's origin and text, the exact trace, whether the temporary is left behind, still modified, nothing published | covered |
+| AC4 clean at the snapshot | `ac4_...`: clean after save, no event; an edit after the save makes it modified again; an edit between snapshot and `replace` (hook) leaves it modified | covered |
+| AC5 ARQ-55(a) | `ac5_...`: read-only and writable runs give the same versions [1,2,3,4] and the same page count (see S1) | covered |
+| AC6 ARQ-55(b) | `ac6_...`: `ReadOnly`, empty fs trace, empty repo calls, target bytes unchanged, still modified | covered |
+| AC7 `NoSession` / `NoPath` | `ac7_...`: both errors, empty trace and calls | covered |
+| AC10 distinct temporaries in the folder | `ac10_...`: exact traces through `/work/poster.gafira.tmp-0` then `tmp-1` | covered |
+| AC11 keys | `engine.rs` `ac11_...`: `read_only`, `no_path`, `io` with no argument | covered |
+| AC12 purity | `git grep -nE "std::fs\|std::thread\|std::env\|rand\|thread::spawn\|EditToken" -- crates/gafira-engine/src` finds only the doc comments `engine.rs:96` and `project.rs:130`. CI V13 passes. The temporary name comes from an `AtomicU64` | covered |
+| AC13 gates | above | covered |
+| E3c1-S2 | `MemoryRepository::save` writes through `MemoryFs` (`fakes.rs:450-459`: `fs.create`, 2 `write_all`, `sync_all`). The repository's 4 ops appear in the AC1/AC2 traces and get faults injected | closed |
+| `project_key` rule (P18) | `a_save_that_finishes_after_the_session_was_replaced_leaves_the_new_one_alone` | covered |
+
+Every test checks exact values (traces, bytes, versions, error origin). Covered: 11 of 11 criteria, plus E3c1-S2.
+
+## Hand mutants (re-applied by verify on a `git archive` export of `99c38bc`, `cargo test -p gafira-engine --locked --lib`, reverted; the restored file was checked byte for byte)
+
+| # | mutant | killed by | failure |
+|---|---|---|---|
+| 1 | `replace` even after `repository.save` failed | ac1, ac2, ac3 | ac3: trace has `Replace(tmp-0, TARGET)` where `Remove(tmp-0)` was expected |
+| 4 | the `remove` error replaces the first | ac3 | `("filesystem","fault at 4")` vs `("repository","fault at 3")` |
+| 6 | `read_only` checked after the repository's save | ac6 | trace `[Create, Write, Write, SyncAll]` vs `[]` |
+| A (own) | `remove(tmp)` only after a repository error, not after a failed `replace` | ac3 | trace ends at `Replace`, `Remove` missing |
+| B (own) | temporary = file name only (outside the target's folder) | ac1, ac2, ac3, ac10 | `poster.gafira.tmp-0` vs `/work/poster.gafira.tmp-0` |
+| C (own) | `open` drops `LoadedProject::read_only` | ac6 | `ReadOnly` expected (AC5 passes, see S1) |
+
+Run 6, killed 6. The implementer's list (#1-6, #8) plus X1-X3 is recorded with the test that kills each mutant. This round re-applied #1, #4 and #6, and each failed as recorded.
+
+## Critical points
+
+- Order `save(tmp)` then `replace(tmp, path)`, and no `replace` after an error: `write_then_replace` uses `?`. Proved by AC2 and mutant 1.
+- `remove(tmp)` runs on any failure and its error is discarded (`let _`). Proved by AC3 and mutants 4 and A.
+- The target is unchanged at every fault: AC1.
+- `ReadOnly` comes before any port call: the check happens under the lock before `temporary_for` or any port use. Proved by AC6 and mutant 6.
+- `clean_version` is set only after `Ok` and only when the `project_key` matches. Proved by AC3, AC4 and the session-replaced test (implementer probes 5, X2, X3).
+- `open` keeps `read_only`: AC6 and mutant C.
+- Distinct temporaries in the folder: AC10 and mutant B.
+- Purity: no `std::fs`, threads, `std::env`, `rand` or `EditToken`.
+
+## Deviations
+
+- D1 (`project_key` = `<clock seconds>-<counter>`, `ProjectService` holds `Clock`). This follows P13. Only equality is read, and the counter keeps keys unique within an engine. Accepted.
+- D2 (temporary = whole target path + `.tmp-<n>`). Appending to the whole path keeps the parent directory, so the result is `<target dir>/<file name>.tmp-<n>`. That is exactly P18's `<file name>.tmp-<n>` in the target's folder, and it meets §7.2 step 1 (line 1568: a unique name in the same directory, how it is generated is not fixed). Mutant B shows the folder is pinned by tests. Accepted (see S2).
+- D3 (`save` neither bumps nor publishes). This matches the P15 table and AC3/AC4 assert it. Accepted.
+- D4 (AC5 not RED). This is legitimate: the behaviour came before this delivery, since no edit path reads `read_only`, so a stub cannot fail the test. Probe X1 shows the assertion can fail. Accepted, with S1 to make the test self-sufficient.
+- D5 (`Gafira::projects` doc). Doc-only. Accepted.
+
+## Size
+
+`git diff --shortstat 2f99df8..adad43a`: 5 files, 408 insertions, 17 deletions (425 authored). With the notes (`..99c38bc`): 6 files, 494 insertions, 17 deletions. The forecast was ~300, so this is x1.42, under the ~700 ceiling. The notes' production/test split matches `git diff --numstat`.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E3c2", "rounds": [ {
+  "round": 1, "commit": "99c38bc", "mode": "full", "tier": "hand", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 0, "suggestion": 3},
+  "findings": [],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 6, "killed": 6},
+  "criteria": {"total": 11, "covered": 11},
+  "size": {"lines": 425, "forecast": 300}, "report": "e3c2-verify-report-r1.md" } ] }
+```
+
+next: tdd-apply (next delivery, `E3d`)
+
+---
+
+# Verify report: `gafira-engine` delivery `E3d` (autosave over a snapshot), round 1
+
+round: 1 | commit: 6f3c918 (code at 4cb17f8) | base: 34837d3 | mode: full, L3 | tier: hand mutants only | mutation: off | depth: V1
+
+## Verdict: FAIL
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3d-C1 | CRITICAL | implementation | crates/gafira-engine/src/edit.rs:69,83 (undo, redo); P13 "Timer"; Slice card scope bullet 2 | No test proves an undo or a redo marks the session pending. With `Self::bumped` replaced by `shared.changed` in `undo` (or in `redo`) all 64 engine lib tests pass. | no | open |
+| E3d-W1 | WARNING | implementation | `git diff --shortstat 34837d3..4cb17f8` | Size 712 authored lines (691+/21-) against a 504 forecast (360 x1.4) and the ~700 ceiling. Over the ceiling, so the owner has to OK it (AGENTS "Delivery rules"). Production is 263 lines; 449 are tests. | no | open |
+| E3d-S1 | SUGGESTION | - | design P13, last bullet; project.rs:121-125 | D1 is an accepted refinement, not a deviation: record it in P13 at the architect's next touch ("clears `pending_since` if no change arrived while it wrote"). | - | - |
+
+counts: critical 1, warning 1, suggestion 1. Per class: implementation 2 (1 CRITICAL, 1 WARNING).
+
+## Gates (export of 6f3c918, its own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2571 passed, 0 failed, 0 ignored) |
+| testkit `ports` feature: clippy and test | 0, 0 |
+| `cargo deny check` | 0 |
+| CI policy: ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 (run from `ci.yml` in the worktree) | all 0 |
+
+The worktree stays clean (`git status` is empty). The target dir was freed with `cargo clean` (7.1 GiB).
+
+## Integrity of the committed code (the crashed mutant script)
+
+I read `4cb17f8` against mutants 1, 3, 5, 6 and 8, and the committed code has none of them:
+- M1: `autosave_due` returns `None` while `now - since < interval`, so the job is due at `>=` (project.rs:193).
+- M3: `install` (the path of both `new_document` and `open`) sets `autosave: Autosave::default()`, so `pending_since` is `None` (project.rs:174). `install` never calls `bumped`.
+- M5: `pending_since = None` happens when the job is taken (project.rs:196). `autosave_finished` never clears it.
+- M6: only the `Ok` arm advances the slot. `Err` sets `pending_since = Some(now)` (project.rs:229-230).
+- M8: the outcome is filtered on `project_key` (project.rs:223-225).
+- `git grep` shows no other write to `pending_since`, `in_flight` or `slot`. `git diff 4cb17f8 6f3c918` touches no crate file.
+
+I re-applied the mutants on the scratch export. Each one was killed:
+
+| # | mutant | killing test(s) | failure |
+|---|---|---|---|
+| 1 | `< interval` changed to `<= interval` | `ac2_...` and 10 others (11 fail) | `ac2`: `due at the interval` |
+| 4 | snapshot taken at `run` (the job reads the live session through a cloned `Shared`) | `ac4_the_slot_holds_the_document_as_it_was_when_the_job_was_made` | left `next_id: 8` (4 pages), right `next_id: 7` |
+| 6 | the slot also advances on failure | `ac6_...`, `ac7_...` | `ac6`: left `[0,1,2,0,1]`, right `[0,1,2,2,0]`; `ac7`: left `slot-1`, right `slot-0` |
+| 8 | stale outcome applied (`.filter(\|_\| true)`) | `ac8_an_outcome_of_a_replaced_session_is_ignored` | panic at autosave.rs:403 (`pending since T0 + 31`) |
+
+Extra probes (beyond V1, run because the scope bullet had no AC row):
+
+| probe | result |
+|---|---|
+| P-undo: `undo` bumps without marking pending | **survived**, all 64 pass (E3d-C1) |
+| P-redo: `redo` bumps without marking pending | **survived**, all 64 pass (E3d-C1) |
+
+## Acceptance map (Slice card AC1-AC13)
+
+| AC | proof | status |
+|---|---|---|
+| AC1 | engine.rs `e3d_ac1_the_autosave_interval_is_5_to_15_seconds_inclusive_and_10_by_default` (4.999 s, 5 s, 15 s, 15.001 s, default 10 s) | covered |
+| AC2 | `ac2_due_at_exactly_the_interval_after_the_first_pending_change` (one ns before, and at the interval) | covered |
+| AC3 | `ac3_no_job_without_changes` (no session, new, open, after save, positive control), `ac3_a_save_leaves_pending_a_change_made_while_it_wrote` | covered |
+| AC4 | `ac4_...` (slot read back through the fake repository) | covered; M4 killed |
+| AC5 | `ac5_...` (no second job while one is in flight; next job one interval after the change) | covered |
+| AC6 | `ac6_...` (five jobs, slots 0,1,2,2,0; `Remove(tmp)` after the failure) | covered; M6 killed |
+| AC7 | `ac7_...` (next tick, one ns before, at the interval, same slot) | covered |
+| AC8 | `ac8_...` (stale success and stale failure; in-flight, pending and slot of the current session untouched) | covered; M8 killed |
+| AC9 | `ac9_...` (`is_modified`, no event, the next edit is version 3) | covered |
+| AC10 | `ac10_...` (exact trace; a fault at each of 6 ops, then `Remove(tmp)` and the old bytes) | covered |
+| AC11 | `ac11_a_read_only_session_still_autosaves` | covered |
+| AC12 | `ac12_a_job_and_its_outcome_are_send`; purity grep (below) | covered |
+| AC13 | gates above | covered |
+| scope: pending set by the first edit, **undo or redo** bump | edit path: `ac2_...`. Undo and redo: **no test** | missing, E3d-C1 |
+
+Purity: `git grep -nE "std::fs|std::thread|std::env|rand::|thread::spawn|EditToken|Instant|SystemTime" 4cb17f8 -- crates/gafira-engine/src` finds only the existing doc comment at engine.rs:103. Every instant comes from `Clock::monotonic()`. `run` writes only through `create_dir_all`, `ProjectRepository::save`, `replace` and `remove`. There is no `EditToken`, and V13 passes.
+
+Artifact integrity (3c-style): `34837d3` touches only `apply-progress.md`. The implementer commits never touched the card: `6f3c918` appends 94 lines after line 716 and deletes nothing. `861e0f5` and `4cb17f8` touch only `crates/gafira-engine/src`.
+
+O5 = (a) is respected. The autosave.rs module doc and the `4cb17f8` body both say that "JSON only" and 200 ms are not met. No file in the delivery claims them, and no README or CHANGELOG changed.
+
+## Deviations
+
+- **D1**: accepted refinement, not a design deviation that needs an amend first. P13 gives its reason inside the same sentence ("the content is on disk"). A change made while the file was written is not on disk. Clearing `pending_since` without a condition would leave that change out of every slot until the next edit, which breaks P13's own bound (`interval + p + w`). The rule matches `clean_version` from `E3c2`, and `ac3_a_save_leaves_pending_...` proves it. The code and P13's wording now differ, so E3d-S1 asks the architect to align the wording later. This is not an ambiguity: there is one reading consistent with the stated reason.
+- **D2**: matches P13 literally. A change made during a failed job is retried one interval after the failure. That still fits the P13 bound, because `w` includes the job.
+- **D3**: no leak. `version()` returns the already-public `DocVersion`. The fields are `pub(crate)` and `slot_path` is private. `error()` is a read accessor.
+- **D4**: no public API leak. The `ProjectService.shared` field is `pub(crate)` and its type `Shared` is a `pub(crate) struct` (session.rs:73). `EditService::new` stays `pub(crate)`. `ProjectService::over` is `pub(crate)`.
+- **D5**: fine. `FsOp::CreateDirAll` is new in a test-only module, and every earlier test passes unchanged.
+
+## Size
+
+`git diff --shortstat 34837d3..4cb17f8`: 7 files, 691 insertions, 21 deletions, so 712 authored lines. With the notes commit (`..6f3c918`): 8 files, 785 insertions, 21 deletions. Per file (numstat): autosave.rs 475/0, project.rs 78/7, engine.rs 56/2, fakes.rs 43/4, edit.rs 20/5, session.rs 17/3, lib.rs 2/0. These match the implementer's figures (263 production, 449 test). See E3d-W1.
+
+## Routing
+
+Fix for E3d-C1 (tests only): add one test where an undo and one where a redo, after a snapshot was taken (or after `open`), makes a job due at exactly one interval later and not one step before. Then re-run the two probe mutants. E3d-W1 needs an owner decision on the size, not a code change.
+
+next: tdd-apply
+
+---
+
+# Verify report: `gafira-engine` delivery `E3d` (autosave over a snapshot), round 2 (closure)
+
+round: 2 | commit: 61ed459 (code at e26538c) | base: 34837d3 | mode: full, L3 | tier: hand mutants only | mutation: off | depth: V1
+
+## Verdict: PASS (delivery; the change still has deliveries to come, so it is not done)
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E3d-C1 | CRITICAL | implementation | crates/gafira-engine/src/edit.rs:70,84; autosave.rs tests `an_undo_alone_...`, `a_redo_alone_...` | Closed. The new tests kill both round-1 probes (undo and redo bump without the pending mark). | no | closed |
+| E3d-W1 | WARNING | implementation | `git diff --shortstat 34837d3..4cb17f8` | Closed. The owner accepted the size (712 authored lines). | no | closed |
+| E3d-S1 | SUGGESTION | - | design P13, last bullet | Carried over: record D1 in P13 at the architect's next touch. | - | open |
+
+counts: critical 0, warning 0, suggestion 1. Per class: none open.
+
+## Gates (export of 61ed459 under the scratchpad, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2573 passed, 0 failed, 0 ignored; round 1 had 2571, plus the 2 new tests) |
+
+`e26538c` touches only test code, so the round-1 runs of deny and the CI policy checks (all 0) still apply. The target dir was freed with `cargo clean` (6.6 GiB). The worktree `/tmp/gafira-engine-e3` stays clean.
+
+## Closure of E3d-C1
+
+- `git show --stat e26538c`: only `crates/gafira-engine/src/autosave.rs`, +43/-0, and every line is inside `mod tests` (after line 453). No production code changed.
+- The round-1 probes were re-applied on the export, one at a time, with `Self::bumped(session, shared, dirty, at)` replaced by `shared.changed(dirty)`. That still bumps the version but sets no pending mark.
+
+| probe | killing test | failure |
+|---|---|---|
+| P-undo (edit.rs:70) | `an_undo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it` | panic at autosave.rs:473 `expect("one interval after the undo")`; 65 passed, 1 failed |
+| P-redo (edit.rs:84) | `a_redo_alone_after_the_last_snapshot_makes_a_job_due_one_interval_after_it` | panic at autosave.rs:495 `expect("one interval after the redo")`; 65 passed, 1 failed |
+
+Each test starts from "nothing pending" (the job for the edit was taken and finished). It checks one step before the interval and then exactly at it, and asserts the version of the job. That proves the scope bullet "pending set by an undo or redo bump" on its own. The results match the implementer's table in the fix-round notes.
+
+## Round-1 PASS items re-checked
+
+| # | mutant | result |
+|---|---|---|
+| 1 | `< interval` changed to `<= interval` (project.rs:193) | killed: `ac2_...` and others fail, including the new redo test |
+| 6 | the slot also advances on failure (project.rs:229) | killed: `ac6_...` (autosave.rs:354), `ac7_...` (autosave.rs:373); 64 passed, 2 failed |
+
+Both files were restored and checked with `cmp` before the clean.
+
+## Artifact integrity
+
+- Commits since round 1: `75a25fe` (`.odd/state.json`) and `c2a1faa` (`verify-report.md`), both by the coordinator. Then `e26538c` (autosave.rs tests) and `61ed459` (apply-progress.md, +26 appended).
+- `git diff 34837d3 HEAD -- apply-progress.md` has no removed lines, so the Slice card is unchanged. Every implementer change to the file was appended after it.
+
+## Size
+
+`git diff --shortstat c2a1faa..e26538c`: 1 file, 43 insertions. Delivery code total `34837d3..e26538c -- crates`: 7 files, 734 insertions, 21 deletions (755).
+
+next: tdd-apply (next delivery)
+
+---
+
+# Verify report — `gafira-engine` delivery `E5` (memory governor), round 1
+
+round: 1
+commit: 71b6078 (code at fc26608), base 69a7d8e
+mode: full | level L3 | pack: new capability | mutation: off | tier: hand mutants only | depth: V1 (owner)
+
+**Verdict: FAIL** (1 CRITICAL, 0 WARNING, 3 SUGGESTION). Per class: implementation 1.
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E5-C1 | CRITICAL | implementation | `crates/gafira-engine/src/governor.rs:157`, test `ac1_...` (:344) | AC1 "equal kinds keep the caller's order (stable)" is not proved: mutant `sort_by_key` -> `sort_unstable_by_key` SURVIVES all 23 governor/event tests. It is not equivalent: probe shows stable and unstable sorts differ from n = 21 caches (std uses insertion sort below 21). | no | open |
+| E5-S1 | SUGGESTION | - | design P9, line 158 | D2 is consistent now, but `E7` "asks the governor for a budget before each job" with no Facade-held governor; the architect should settle how `E7` reaches it before `E7`. | - | open |
+| E5-S2 | SUGGESTION | - | design SP8 | D6: SP8 (a) stays provisional; keep it in the open list until the owner fixes the levels. | - | open |
+| E5-S3 | SUGGESTION | - | size | 694 insertions vs 448 forecast (x1.55), under the ~700 ceiling; tests are 2/3. No action. | - | open |
+
+## Gates (scratch export of 71b6078, own `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL=0`)
+
+| gate | exit |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| `cargo test --workspace --locked` | 0 (199 suites, 2587 passed, 0 failed) |
+| `cargo deny check` | 0 (advisories, bans, licenses, sources ok) |
+| CI policy: ARQ-07, unsafe, V5 layer table, V12, ARQ-107, V13, V14, ADR 0013 testkit ports | 0 each |
+
+Disk before builds: 145 GB free. Target dirs cleaned; worktree `/tmp/gafira-engine-e3` clean at 71b6078.
+
+## Artifact integrity
+
+- Slice card commit `69a7d8e` touches only `specs/changes/gafira-engine/apply-progress.md`. The only later commit touching that file is `71b6078` (notes); its diff has no removed lines, so the card is unchanged. Code commits `a0d9599`, `bae33af`, `fc26608` touch only `crates/gafira-engine/**` and `Cargo.lock`.
+- No change in `gafira-ports`, `gafira-render`, `gafira-render-cpu`, `gafira-media`, `gafira-doc`: no port signature changed, no media/render edge.
+- Purity: `git diff 69a7d8e..HEAD -- crates/gafira-engine | grep '^+'` for `std::fs|std::thread|std::env|rand|thread::spawn|Instant|SystemTime|std::time|sleep|loop|while` -> nothing.
+
+## Criteria
+
+| AC | proof | status |
+|---|---|---|
+| AC1 order | `ac1_caches_are_trimmed_frames_tiles_backend_and_stable_within_a_kind`; killed R1, I7 | fixed order covered; **stability not proved (E5-C1)** |
+| AC2 boundary | `ac2_exactly_at_the_limit_...` (100 -> no trim; 99 -> `("frames", 59)`); killed R2 | covered |
+| AC3 arithmetic | `ac3_each_target_is_...`; killed R3, I5 | covered |
+| AC4 saturation | both `ac4_*`; killed by the implementer's M5a/M5b (not repeated) | covered |
+| AC5 zero budget | `ac5_a_zero_limit_...`, `ac1`; killed R4 | covered |
+| AC6 lying cache | both `ac6_*`; killed R5, I1, I3 | covered |
+| AC7 unshrinkable | `ac7_...` (three calls, exact lists, `<= 2 * len`); killed R5, I1, I3 | covered |
+| AC8 pressure rule | `ac8_...` (seven-step event table); killed R7, I6; `Critical` after the bound: `ac10`, I2 | covered |
+| AC9 empty / no limit | `ac9_*` both | covered |
+| AC10 fresh sum | `ac10_a_cache_that_grew_back_...`; killed R6, I1 | covered |
+| AC11 gates, purity | above | covered |
+| scope (host bytes) | `scope_the_port_wrappers_...`; killed I8 | covered |
+
+Product IDs: §6.7 (1515), §4.6 (690), ARQ-44, ARQ-142, ARQ-145, D-03 all map to the rows above (bytes/trim in bytes, frames first, tiles before backend, a limit is required). Left out by the card's non-goals: the §6.7 process test "1 GB, +10 %", VRAM (SP8 (b)), the ARQ-142/ARQ-145 cache-internal criteria (owned by `gafira-render`/`gafira-media`).
+
+## The bound
+
+`enforce` (`governor.rs:155-184`) is `for _ in 0..MAX_TRIM_PASSES` with a `break` on `after <= limit`; `trim_pass` is a `for` over `order` with one `trim` per cache. No `loop`, no `while`, no wait: at most `2 * caches.len()` `trim` calls per call. `after.0 - self.limit.0` cannot underflow (only reached when `after > limit`). Re-applied unbounded `loop` (R5) aborts `ac6_never_more_than_two_passes` under `ulimit -v 2000000` / `timeout 30` (rc -6, allocation failure of the growing log), so the bound is proved by an assertion-carrying test, not only by a hang.
+
+## `fc26608` behaviour-preserving
+
+Confirmed by reasoning on the diff: `trim_pass` is called only with `excess = after - limit` where `after > limit`, so `excess >= 1` at entry and the removed pre-check never fired on the first cache; the pre-check at cache k+1 equals the new post-check at cache k. Same calls, same targets, same result. Tests unchanged in that commit; R2 (`<` at the guard) is now killed, as the notes claim.
+
+## Hand mutants (scratch export, runner restores and checks the restore)
+
+Re-applied from the critical list (7) and independent (8): 15 run, 14 killed.
+
+| # | mutant | result | first failure |
+|---|---|---|---|
+| R1 | caller order (no sort) | killed (8 tests) | `ac3`: left `[("backend", 0), ("tiles", 30)]` |
+| R2 | `<` instead of `<=` at the budget | killed (ac1, ac2, ac3, ac5) | `ac1`: sixth trim `("frames-a", 0)` |
+| R3 | target `excess` | killed (10) | `ac2` limit 99: left `[("frames", 1)]` |
+| R4 | zero limit as "no limit" (early return) | killed (ac1, ac5) | `ac1`: left `[]` |
+| R5 | unbounded `loop` | killed (`ac6_never_more_than_two_passes`, rc -6) | allocation failure under the memory limit |
+| R6 | second pass decided by the running excess | killed (8, incl. ac10) | `ac1`: `after 39, Critical` |
+| R7 | publish on every `enforce` | killed (ac8, ac9 empty) | `ac8` call 0: left `[MemoryPressure(Normal)]` |
+| I1 | trust the lying cache (`freed = asked`) | killed (ac10, ac4 grows, ac7, ac6) | `ac10`: one trim instead of two |
+| I2 | level from `before` | killed (8) | `ac10`: `Critical` instead of `Normal` |
+| I3 | `MAX_TRIM_PASSES = 1` | killed (7) | `ac10` |
+| I4 | `sort_unstable_by_key` (breaks stability) | **SURVIVED** | E5-C1 |
+| I5 | running excess never reduced | killed (5) | `ac3`: backend trimmed too |
+| I6 | governor starts `Critical` | killed (ac8, ac9) | `ac8` call 0 |
+| I7 | tiles before frames in `TRIM_ORDER` | killed (8) | `ac3` |
+| I8 | backend counts device bytes | killed (scope) | before 1030 instead of 80 |
+
+E5-C1 fix hint (for `tdd-apply`): a test with at least 21 caches of interleaved kinds asserting the exact caller order within each kind.
+
+## Deviations
+
+- D1 `new(&EngineConfig, EventBus)`: accepted; the card fixes the source of the limit and publication through the bus, not the signature.
+- D2 no governor in `Gafira`, no accessor: consistent with P9 (§5.4 accessors are the whole Facade surface; §5.4 names none for memory) and P17 (the frame loop owns the caches and calls `enforce`). Forward note E5-S1.
+- D3 wrapper names: accepted; `BackendTrim` counts host bytes only, proved by the scope test (I8 killed).
+- D4 `gafira-raster` dev-dependency: accepted; the V5 step checks normal and build edges only, and `gafira-raster` is in the engine's V5 row anyway; deny ok.
+- D5 `fc26608`: confirmed behaviour-preserving (above).
+- D6 SP8 (a) provisional: accepted, E5-S2.
+- D7 doc wording of `EngineEvent`: accepted.
+
+## Size
+
+`git diff --shortstat 69a7d8e..fc26608`: 5 files, 694 insertions, 4 deletions (governor.rs 677: 219 above `#[cfg(test)]`, 458 tests; event.rs +10/-4; lib.rs +5; manifest and lock +2). About 230 production, 460 test. Forecast 448 (x1.55), under the ~700 ceiling.
+
+next: tdd-apply
+
+---
+
+# Verify report: gafira-engine E5 (memory governor), round 2 (closure)
+
+verdict: PASS (for delivery E5; zero CRITICAL)
+round: 2 | commit: b7f6e2c | mode: full | tier: hand mutants only | depth: V1 | mutation: off
+
+| id | severity | class | ref | summary | follow-up | status |
+|---|---|---|---|---|---|---|
+| E5-C1 | CRITICAL | implementation | crates/gafira-engine/src/governor.rs `ac1_many_caches_of_one_kind_keep_the_caller_order` | Stable order within a kind is now proven: the `sort_unstable_by_key` mutant fails only the new 64-cache test | no | closed |
+| E5-S1..S3 | SUGGESTION | - | round 1 | Carried over, no action needed | - | carried |
+
+Counts: critical 0 (open), warning 0, suggestion 3 (carried). Per class (open): none.
+
+## Gates (HEAD b7f6e2c, scratch export, own CARGO_TARGET_DIR, CARGO_INCREMENTAL=0)
+- `cargo fmt --check`: 0
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: 0
+- `cargo test --workspace --locked`: 0; 2588 passed, 0 failed; the new test ran and passed
+- Disk before the build: 145 GB free. Both target dirs were freed with `cargo clean`. Worktree `/tmp/gafira-engine-e3` is clean at b7f6e2c.
+
+## Artifact integrity
+- Since round 1 (a651000..b7f6e2c): `045008d` touches only `crates/gafira-engine/src/governor.rs` (+29). The hunk starts at line 366, inside `#[cfg(test)] mod tests` (line 220), so there is no production change. `b7f6e2c` only appends to `apply-progress.md` (+23, a fix-round section after the E5 notes). The Slice card is unchanged.
+- No implementer commit touches `.odd/state.json` or `verify-report.md`.
+
+## Closure of E5-C1
+- The expected order is built separately from the production code. The test hardcodes the kind order `[Frames, Tiles, Backend]` and filters the input `caches` vector in the caller's order. It does not use production `rank` or the governor's sort. It also checks `outcome(64, 0, Normal)`.
+- Mutants run on a scratch export through the restore-safe runner (`vmut.py`, restored ok):
+  - I4 `sort_by_key` -> `sort_unstable_by_key` (the round-1 survivor): KILLED, failed only by `ac1_many_caches_of_one_kind_keep_the_caller_order`.
+  - R2 `<=` -> `<` at the budget: KILLED (ac1 x2, ac2, ac3, ac5).
+  - R5 `for 0..MAX_TRIM_PASSES` -> `loop`: KILLED by `ac6_never_more_than_two_passes` (abort under the memory limit or timeout).
+- Hand mutants this round: 3 run, 3 killed. Per the closure-round rules, no independent-mutant budget was spent.
+
+## Measured lines
+`git diff --shortstat a651000..b7f6e2c`: 2 files changed, 52 insertions(+) (test 29, notes 23; production 0).
+
+next: tdd-apply (next delivery of gafira-engine), or archive if E5 is the last delivery

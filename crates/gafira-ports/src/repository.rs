@@ -74,7 +74,12 @@ pub trait ProjectRepository: Send + Sync {
     /// A newer schema is not an error: it loads with `read_only` set (ARQ-55).
     fn load(&self, path: &Path) -> Result<LoadedProject, RepositoryError>;
 
-    /// Writes `document` at `path`.
+    /// Writes `document` at `path` and leaves the file synced (`fsync`)
+    /// before it returns `Ok` (02 §7.2 step 2, ARQ-50).
+    ///
+    /// The engine passes a temporary path in the target's folder and, only
+    /// after this returns `Ok`, renames it over the target and syncs the
+    /// folder with `FileSystem::replace`; the rename is not the adapter's.
     ///
     /// # Errors
     /// [`RepositoryError::TooNew`] when `path` holds a newer schema that must

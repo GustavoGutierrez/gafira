@@ -7,7 +7,7 @@ use std::time::Duration;
 use gafira_doc::msg::CommandLabel;
 use gafira_doc::{DocMut, Document, EditToken, ValidationError};
 
-use crate::{Applied, Command, CommandError, GestureId, budget};
+use crate::{Applied, Command, CommandError, DirtySet, GestureId, budget};
 
 /// The documents on both sides of an entry's command.
 #[derive(Debug)]
@@ -208,6 +208,23 @@ impl History {
     /// Whether there is an undone entry to redo.
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
+    }
+
+    /// The pages and nodes of the newest entry to undo: the one an `execute`
+    /// that returned `Changed` or a `redo` that returned `Some` just
+    /// installed (design P14). Inside a merged gesture it is the merged
+    /// entry's set. `None` when there is nothing to undo.
+    ///
+    /// Reads installed entries only, never a command before its `apply`.
+    pub fn newest_touches(&self) -> Option<DirtySet> {
+        self.undo.last().map(|entry| entry.command.touches())
+    }
+
+    /// The pages and nodes of the newest entry to redo: the one an `undo`
+    /// that returned `Some` just reverted (design P14). `None` when there is
+    /// nothing to redo.
+    pub fn undone_touches(&self) -> Option<DirtySet> {
+        self.redo.last().map(|entry| entry.command.touches())
     }
 
     /// Restores the document from before the newest entry and returns its label.

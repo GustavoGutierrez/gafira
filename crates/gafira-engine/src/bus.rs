@@ -255,6 +255,7 @@ mod tests {
 
     fn changed() -> EngineEvent {
         EngineEvent::DocumentChanged {
+            version: crate::session::DocVersion::default(),
             dirty: gafira_edit::DirtySet::default(),
         }
     }

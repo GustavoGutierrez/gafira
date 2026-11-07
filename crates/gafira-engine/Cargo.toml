@@ -12,5 +12,9 @@ gafira-doc.workspace = true
 gafira-edit.workspace = true
 crossbeam-channel.workspace = true
 
+[dev-dependencies]
+gafira-geom.workspace = true
+gafira-raster.workspace = true
+
 [lints]
 workspace = true
