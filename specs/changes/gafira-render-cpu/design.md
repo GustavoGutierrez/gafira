@@ -947,3 +947,26 @@ left to spend. Reversible: additive.
   layer pool, the scratch and `O17`'s check are all absent, and the export's surface is the page, so
   `O18`'s two readings coincide. If the bench's scene ever gains an effect, the number includes the
   scratch's first allocation.
+
+## Note from `CB6`: the preview against ARQ-143's 8 ms (`W18`, 2026-11-07)
+
+`CB6` measures the 1080p frame of `benches/export_png_1080.rs` on an `Rgba8` target, `execute` +
+`read_back`: **237 ms cold** (every tile a miss) and **1.6 ms warm** (every tile a hit), criterion
+medians on an i7-12700H. Only the warm figure compares fairly with ARQ-143's 8 ms of visible render;
+the cold one does not, for two reasons:
+
+- **A page is not a frame.** ARQ-143's 8 ms is a deadline the frame loop checks before every tile:
+  what does not fit returns `left > 0` and is refined in the next frame (§6.2). The bench renders all
+  40 tiles of the page in one `execute`, so 237 ms is the time for the preview to converge from an
+  empty cache, not the length of one frame. Per tile it is ~5.9 ms on average, so a cold frame fits
+  about one tile.
+- **The budget is the selected backend's.** §6.2 sets it for the frame whatever renders it; the CPU
+  backend is the oracle and the GPU's fallback, and the number says what the fallback costs, not what
+  the GPU will.
+
+What the cold number does show: the deadline is checked **between** tiles, so a frame overruns it by
+up to one tile, and the heaviest tile of this page takes ~12 ms (the cancel gap below), more than
+the 8 ms stage on its own. A fair measurement is a `gafira-render` bench (layer 3b, where `FrameLoop`
+and the injected clock live) that drives the CPU backend through `FrameLoop::frame` with a real
+8 ms deadline over a 1080p viewport and reports, from a cold cache, the frames until `left == 0` and
+the worst overrun of a frame past its deadline. That bench is not part of this change.
