@@ -465,3 +465,584 @@ survived, and is reported as W5 rather than hidden in the kill count.
 
 next: tdd-apply (E1 PASS; next delivery `E2`, which must carry W5 — the facade publish test with the
 channel sink — and close it; W4 awaits the coordinator, S1 awaits the owner)
+
+---
+
+# Verify report — `gafira-engine` delivery `E2` (bus transport), round 1
+
+Verdict: **FAIL** — 1 CRITICAL, 6 WARNING, 3 SUGGESTION.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E2", "rounds": [ {
+  "round": 1, "commit": "07c36f2", "mode": "full", "tier": "T1", "depth": "V1",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 1, "warning": 6, "suggestion": 3},
+  "classes": {"implementation": 4, "architecture": 1, "ambiguity": 1, "claim": 1},
+  "findings": [
+    {"id": "E2-C1", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-engine/src/engine.rs:213-228 (Gafira::new); AC1",
+     "summary": "The facade never proves it forwards the injected waker: Gafira::new passing NoopWaker instead survives all 14 tests. AC1's stated proof (assert the waker count) is not in the W5 test.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W1", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-engine/src/event.rs:186-199",
+     "summary": "Regression of closed E1 W2: ac4_the_noop_sink_accepts_every_variant again asserts nothing and omits LocaleChanged; it can only fail by not compiling.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W2", "severity": "WARNING", "class": "implementation",
+     "ref": "commit 642d14d",
+     "summary": "Size: 489 insertions + 69 deletions = 558 changed lines against 320 forecast (448 at x1.4). Under the ~700 ceiling; coordinator and owner decide.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W3", "severity": "WARNING", "class": "architecture",
+     "ref": "crates/gafira-engine/src/engine.rs:213-228; 02 §5.2 line 1331, §5.4 line 1356; design P2",
+     "summary": "Gafira::new creates the channel itself, but §5.2 has the composition root create it before the engine (startup screen, ARQ-68). The signature deviates from §5.4 and P2 with no design amend.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W4", "severity": "WARNING", "class": "ambiguity",
+     "ref": "design.md lines 80, 102, 218 vs apply-progress.md Slice card E2 non-goals",
+     "summary": "The design gives E2 the UserError mapping (ARQ-102) and lists ARQ-68/101/102/112; the card says Product IDs none and defers the mapping. The design was not amended.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W5", "severity": "WARNING", "class": "claim",
+     "ref": ".odd/state.json, commit 07c36f2 (E1-AC2, E1-AC4, E1-AC5)",
+     "summary": "The state commit rewrote E1's evidence to its pre-round-2 text: E1-AC2 again omits the ARQ-107 step (reopens E1 S2); E1-AC4/AC5 lose the count and ptr_eq detail.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W6", "severity": "WARNING", "class": "implementation",
+     "ref": "commit 962e95d",
+     "summary": "The slice card commit also carries the post-implementation Notes (W5 closed, M1-M4 killed), and all three commits share one timestamp, so history cannot show the card preceded the code.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-S1", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-engine/src/bus.rs:122-135",
+     "summary": "flush resets the window even when nothing is pending, so a host flushing every frame delays the next immediate JobProgress. Still <= 10 Hz; worth a decision.", "status": "open"},
+    {"id": "E2-S2", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "crates/gafira-engine/src/bus.rs:94-120",
+     "summary": "send() runs outside the window lock, so with concurrent publishers a pending progress can leave before an earlier open one; the 'never backwards' comment holds only for one publisher.", "status": "open"},
+    {"id": "E2-S3", "severity": "SUGGESTION", "class": "implementation",
+     "ref": "commit 642d14d body; AC5",
+     "summary": "AC5 says gate output in the commit notes; the code commit body is subject-only. Covered here by re-running the gates at HEAD (code identical to 642d14d).", "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 5, "killed": 4},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 558, "forecast": 448}, "report": "e2-verify-report.md" } ] }
+```
+
+`criteria.covered` counts the six ACs as having a test or command; E2-C1 is that AC1's proof is
+weaker than the card itself demands. `hand_mutants` are extra at V1 (V1 owes none): the W5 check,
+one spot-check from the recorded list (M3) and three of mine (X1-X3).
+
+## Inputs
+
+- Worktree `/tmp/gafira-engine-e2`, branch `feat/gafira-engine-e2`, HEAD `07c36f2`, base `develop` `0bc90a9`.
+- Flow: `full | level: L3 | mutation: off | tier: hand mutants only | verify: V1`. No `mutants`
+  run; none expected (`mutation: off`), not a finding.
+- Acceptance source: Slice card E2 (`apply-progress.md`), design row E2, 02 §5.2/§5.4/§13.
+- Commits: `962e95d` (card + design O4 note + E2 Notes), `642d14d` (code), `07c36f2` (state).
+
+## Gates at HEAD `07c36f2`
+
+`CARGO_TARGET_DIR` in the scratchpad (`e2-target`), `CARGO_INCREMENTAL=0`; disk 158 GB free.
+Workspace scope (the commit touches the root `Cargo.toml` and `Cargo.lock`).
+
+| Gate | Command | Exit |
+|---|---|---|
+| fmt | `cargo fmt --check` | 0 |
+| clippy | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| test | `cargo test --workspace --locked` | 0 — 198 suites, 2514 passed, 0 failed, 0 ignored; `gafira-engine` unit: 14 passed, doctests 0 |
+| deny | `cargo deny check` (targets: windows-msvc, linux-gnu, aarch64-darwin per `deny.toml`) | 0 — advisories, bans, licenses, sources ok |
+| ci_policy | the eight `run` steps of the `policy` job other than the toolchain and testkit-ports steps | 0 each |
+
+Policy steps run: Format, ARQ-07, forbid unsafe, V5, V12, ARQ-107 (`gafira-engine: layer 3,
+exempt from the Locale search`), V13, V14 — all exit 0. Skipped: "Testkit ports feature compiles"
+(E2 does not touch `gafira-testkit` and `crossbeam-channel` enters only the engine's tree). V5's
+forbidden list does not include crossbeam; `cargo tree -p gafira-engine` adds
+`crossbeam-channel v0.5.17` and `crossbeam-utils v0.8.23` only.
+
+## W5 (E1 round 2) — CLOSED
+
+On a scratch export of HEAD (`git archive`, touched, own target dir), `Gafira::publish`'s body
+replaced by `let _ = event;`:
+
+```
+test engine::tests::w5_publishing_through_the_facade_reaches_the_observer ... FAILED
+panicked at crates/gafira-engine/src/engine.rs:421:40
+test result: FAILED. 13 passed; 1 failed
+```
+
+Restored: 14 passed. The worktree was never edited (`git status` clean).
+
+## Criterion map
+
+| AC | Proof | Status |
+|---|---|---|
+| AC1 publish reaches the observer through the channel | `engine::tests::w5_publishing_through_the_facade_reaches_the_observer` (kills M1) | covered, but the card's "assert the waker count" is missing — E2-C1 |
+| AC2 waker once per delivery, never for a coalesced one | `bus::tests::ac2_the_waker_is_called_once_per_delivery`, waker counts in ac3/ac4 tests | covered (sink level only) |
+| AC3 10 Hz coalescing, last one arrives | the three `bus::tests::ac3_*` (window, flush at exactly 100 ms, state event carries pending out, flush inside window) | covered |
+| AC4 state events never dropped/coalesced | `bus::tests::ac4_ten_state_events_produce_ten_deliveries` | covered |
+| AC5 docs-only commits skip cargo; code commit at workspace scope | gates re-run at workspace scope at HEAD (code tree identical to `642d14d`) | covered (E2-S3) |
+| AC6 dependency allowed | `cargo deny check` exit 0 on the three targets; 02 §6 line 1801 lists crossbeam-channel VERIFICADA | covered |
+
+Product IDs: the card declares none, so the per-ID `git grep` is vacuous. ARQ-68, ARQ-101,
+ARQ-102 and ARQ-112 (design row) are context, not proved by E2: their acceptance tests need the
+startup sequence, `SettingsService`, the error mapping and layer-2 `Progress` respectively. The
+ARQ-102 deferral contradicts the design (E2-W4).
+
+## Artifact integrity
+
+- `962e95d` touches `apply-progress.md` and `design.md` (the O4 crossbeam correction). A design
+  note in the same commit was accepted for E1 in full mode (`901e66c`); not a finding by itself.
+  It also contains the `## Notes — E2` section with results that only exist after the code
+  (E2-W6).
+- No implementer commit touched the card: `642d14d` changes only code and manifests; `07c36f2`
+  only `.odd/state.json`.
+- `07c36f2` (coordinator) adds `E2-AC1`…`E2-AC6` and rewrites the E1 evidence strings (E2-W5).
+
+## Hand mutants (scratch export, `cargo test -p gafira-engine --locked`)
+
+| # | Mutant | Result |
+|---|---|---|
+| M1 (W5) | `Gafira::publish` body `let _ = event;` | killed by `w5_…` |
+| M3 (spot-check of recorded list) | `window_is_open` returns `true` | killed by `ac2_…`, `ac3_job_progress_…`, `ac3_a_flush_inside_…` |
+| X1 | window boundary `>=` -> `>` | killed by `ac3_job_progress_coalesces_…` |
+| X2 | `flush` ignores the window | killed by `ac3_a_flush_inside_the_window_delivers_nothing` |
+| X3 | `Gafira::new` builds the channel with `NoopWaker`, ignoring the injected waker | **survived** (14 passed) — E2-C1 |
+
+Every mutant was reverted (`cmp` against the saved original); final run on the export 14 passed.
+
+## Findings
+
+### CRITICAL
+
+- **E2-C1** — class: implementation. `Gafira::new` (`engine.rs:213-228`) is the only place the
+  injected waker reaches the bus, and no test watches it: X3 survives. The card's AC1 proof reads
+  "publish through the facade, receive the event from `events()`, assert the waker count", and the
+  W5 test passes `NoopWaker`. In the product the UI would never repaint (02 §5.2 line 1335), and
+  that is a spec rule with an invariant (AGENTS.md critical code). Fix: a counting waker in the W5
+  test, plus an assertion that its count is 1.
+
+### WARNING
+
+- **E2-W1** — class: implementation. `event.rs:186-199` brings back exactly what E1 W2 closed: the
+  "every variant" test publishes 5 of 6 variants (no `LocaleChanged`) to `EventBus::noop()` and
+  asserts nothing. E1-AC4 still has a killing test (`ac4_publish_reaches_the_sink_exactly_once`),
+  so this is not CRITICAL, but restore the counted every-variant list (now with `JobProgress`).
+- **E2-W2** — class: implementation. Size 558 changed lines (`git show --shortstat 642d14d`: 7
+  files, 489+, 69-) against 448 forecast; `bus.rs` is 322 of them (about half are tests).
+- **E2-W3** — class: architecture. §5.2 (line 1331): "the composition root creates the channel
+  **before** the engine, gives the receiver to the startup screen and the sender to the sequence".
+  `Gafira::new` creates the channel internally and only takes a waker, so the startup sequence
+  (ARQ-68) cannot publish before the engine exists, or into the same queue. `bus.rs:27-29` even says
+  the composition root creates the channel first. The signature also departs from §5.4 (1356) and
+  from P2 ("without changing this signature"). That is recorded only in a doc comment. Decide
+  whether `new` takes an `EventBus` (or a sender) from the root, and amend P2 before callers
+  multiply.
+- **E2-W4** — class: ambiguity. Design lines 80 and 218 and row E2 (line 102) put the `UserError`
+  mapping (ARQ-102) in E2. The card makes it a non-goal ("no `UserError` mapping beyond what `E1`
+  shipped") and E2 has no failing service. Move the mapping to the delivery of the first failing
+  service in the design.
+- **E2-W5** — class: claim. `07c36f2` swaps the round-2 E1 evidence for older text: E1-AC2 is
+  "V5 tree check and cmp of clippy.toml" again, which E1 S2 had corrected to include the ARQ-107
+  step. E1-AC5 drops "Arc::ptr_eq on the six injected ports". Restore the develop wording.
+- **E2-W6** — class: implementation (commit hygiene). The card commit `962e95d` contains the
+  `## Notes — E2` block ("W5 is closed", M1-M4 with killing tests), which can only be written after
+  `642d14d`. All three commits carry `2026-11-06 11:28:43`. The card was not changed by an
+  implementer commit, but history cannot show it was fixed before the code. Keep the card and the
+  implementer's notes in separate commits, in order.
+
+### SUGGESTION
+
+- **E2-S1** — `bus.rs:122-135`: when the window is open, `flush` sets `last_progress = now` even
+  with nothing pending. A host that flushes every frame closes the window without delivering, so
+  the next `JobProgress` waits for a flush instead of going out at once. The rate stays at most
+  10 Hz.
+- **E2-S2** — `bus.rs:94-120`: the window check and `send` take the lock separately. With two
+  publishers, a pending progress can be sent (by a state event or a flush) before an earlier "open"
+  progress, so the observer can see the fraction go backwards. Fine for one publisher; document it
+  or send under the lock.
+- **E2-S3** — AC5 says "gate output in the commit notes", but the body of `642d14d` is just the
+  subject line. Covered here by the HEAD re-run.
+
+## Build hygiene
+
+Target dirs `e2-target` and `e2-export-target` under the scratchpad, freed with
+`cargo clean --target-dir`. The worktree was never modified.
+
+next: tdd-apply (implementation: E2-C1, E2-W1, E2-W2, E2-W6; non-blocking WARNINGs for the coordinator to route: architecture E2-W3 -> architect, ambiguity E2-W4 -> specifier/design amend, claim E2-W5 -> restore the E1 evidence in `.odd/state.json`)
+
+---
+
+# Verify report — `gafira-engine` delivery `E2` (bus transport), round 2 (closure)
+
+Verdict: **FAIL** — 1 CRITICAL, 2 WARNING, 0 SUGGESTION.
+
+Round-1 findings: E2-C1, E2-W1, E2-W3, E2-W4, E2-W5 and E2-W6 are closed. E2-W2 (size) is still open
+and is now worse. One new CRITICAL (E2-C2) comes from the probe the coordinator asked for, and one
+new follow-up WARNING (E2-W7).
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E2", "rounds": [ {
+  "round": 2, "commit": "e340de1", "mode": "full", "tier": "T1", "depth": "V1",
+  "verdict": "FAIL", "next": "tdd-apply",
+  "counts": {"critical": 1, "warning": 2, "suggestion": 0},
+  "classes": {"implementation": 2},
+  "findings": [
+    {"id": "E2-C1", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-engine/src/engine.rs:217-230, :433-446",
+     "summary": "Closed: the facade test builds the channel with a counting waker and asserts one wake; HM1 (facade ignores the injected waker) and HM1b (sink never wakes) both fail it.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-W1", "severity": "WARNING", "class": "implementation",
+     "ref": "crates/gafira-engine/src/event.rs ac4_every_variant_reaches_the_sink_once",
+     "summary": "Closed: all six variants, LocaleChanged and JobProgress included, one count each and a total of six.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-W2", "severity": "WARNING", "class": "implementation",
+     "ref": "git diff --shortstat 962e95d e340de1 -- crates Cargo.toml Cargo.lock",
+     "summary": "Size: E2 now has 762 changed lines (697+, 65-), above the ~700 ceiling. The fix round alone has 402 against a forecast of ~120 (168 at x1.4). This needs the owner's explicit OK.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W3", "severity": "WARNING", "class": "architecture",
+     "ref": "bus.rs:26-68 EventChannel; engine.rs:217-230; design P11",
+     "summary": "Closed: the root builds EventChannel and Gafira::new consumes it; p11_an_event_published_before_the_engine_exists_is_drained_first proves it.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-W4", "severity": "WARNING", "class": "ambiguity",
+     "ref": "design P12, design.md:105,142; engine.rs:156-158",
+     "summary": "Closed: P12 moves ToMessage to E3b and UserError to E11; the EngineError doc points to P12; no mapping code.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-W5", "severity": "WARNING", "class": "claim",
+     "ref": ".odd/state.json E1-AC1..E1-AC6 (6a49e48)",
+     "summary": "Closed (coordinator): the six E1 criteria are field-for-field equal to develop's round-2 E1 text (ARQ-107 step in E1-AC2, ptr_eq in E1-AC5).",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-W6", "severity": "WARNING", "class": "implementation",
+     "ref": "commits 91084a1 -> e340de1",
+     "summary": "Closed: the fix-round notes are in their own docs commit, after the code and append-only; the card is untouched. Round-1 history stays as recorded.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-C2", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-engine/src/bus.rs:144-148 (and the claim at :155-156)",
+     "summary": "A progress that opens the window does not drop the older pending one, so a stale fraction arrives after a newer one (0.1, 0.9, 0.2). The observer ends on 0.2. Breaks AC3 'the last one' and the code's own 'never backwards' claim.",
+     "follow_up": false, "status": "open"},
+    {"id": "E2-W7", "severity": "WARNING", "class": "ambiguity",
+     "ref": "02 §5.2:1321,1335; card AC3; bus.rs:72-75 (one pending slot)",
+     "summary": "The coalescing key is unspecified. One pending slot is shared across JobIds, so job 1 overwrites job 2's pending progress and job 2's last fraction never arrives. Is coalescing per job?",
+     "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 2, "killed": 2},
+  "criteria": {"total": 6, "covered": 5},
+  "size": {"lines": 762, "forecast": 448}, "report": "e2-verify-report-r2.md" } ] }
+```
+
+`criteria.covered` is 5 because AC3 has tests, but the probe shows the code violates it (E2-C2).
+`hand_mutants` lists HM1 (the requested re-application) and HM1b. The probes are reported
+separately and are not counted as mutants.
+
+## Inputs
+
+- Worktree `/tmp/gafira-engine-e2`, branch `feat/gafira-engine-e2`, HEAD `e340de1`, merge base with
+  `develop` `90603a6`.
+- Flow: `full | level: L3 | pack: new capability | mutation: off | tier: hand mutants only | verify:
+  V1 | decided-by: owner`. Nothing ran mutants and nothing was expected to (`mutation: null`), so
+  that is not a finding.
+- Acceptance source: E2 Slice card and "E2 fix round" (`apply-progress.md`), design P11, P12 and
+  the fix-round table F1-F6 (`ad8f058`), 02 §5.2 (1321, 1331, 1335) and §5.4 (1356).
+- Closure round: it ran the gates, the artifact integrity checks and the closure of the round-1
+  ids. It spent no independent-mutant budget. The only probe is the one the coordinator asked for
+  (the implementer's observation).
+
+## Gates at HEAD `e340de1` (workspace scope)
+
+`df -h /`: 163 GB free. `CARGO_TARGET_DIR` under the scratchpad (`e2r2-target`),
+`CARGO_INCREMENTAL=0`.
+
+| Gate | Command | Exit |
+|---|---|---|
+| fmt | `cargo fmt --check` | 0 |
+| clippy | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| test | `cargo test --workspace --locked` | 0. 198 suites, 2520 passed, 0 failed, 0 ignored. `gafira-engine` lib: 20 passed |
+| deny | `cargo deny check` | 0 (advisories, bans, licenses, sources ok). No manifest changed in the fix round |
+| ci_policy | the `run` steps of the `policy` job: Format, ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 | 0 each. ARQ-107 prints `gafira-engine: layer 3, exempt from the Locale search` |
+
+Skipped: "Testkit ports feature compiles". E2 does not touch `gafira-testkit`, as in round 1.
+
+## Artifact integrity (steps 3, 3c, 3d)
+
+- The Slice card has not changed since `962e95d`. `git diff 962e95d e340de1 -- apply-progress.md`
+  has zero removed lines. `e340de1` is one append-only hunk (`## E2 fix round`) after `## Notes — E2`.
+- The implementer's code commits `7c1df86` and `91084a1` touch only `crates/gafira-engine/src/*`.
+  No implementer commit touches `.odd/state.json`, `design.md` or the card.
+- The coordinator commits `6a49e48` and `779b8ed` touch only `.odd/state.json`, and `b5111f6` only
+  `verify-report.md`. The architect commit `ad8f058` touches only `design.md`. In the outcome
+  entry, only evidence, verify and `next_action` changed. Criterion ids and texts are intact.
+- E2-W5: for the six `E1-AC*` objects of `.odd/state.json`, a JSON comparison with `develop:.odd/state.json` shows them all
+  equal. The differences are whitespace only.
+
+## Closure of the round-1 findings
+
+| Id | Evidence | Status |
+|---|---|---|
+| E2-C1 | See the hand mutants below. `w5_…_and_wakes_it` asserts `wakes == 1` (engine.rs:444) | closed |
+| E2-W1 | `event.rs` `ac4_every_variant_reaches_the_sink_once`: 6 variants, a count per publish, total `VARIANTS = 6`. It counts on a `CountingSink`, not `NoopSink`, which is a deviation the implementer documented and is acceptable because a `NoopSink` cannot be counted | closed |
+| E2-W2 | 762 changed lines for the delivery, above the ~700 ceiling. The fix round: `7c1df86` 111+/33-, `91084a1` 196+/62- = 402 lines against ~120 forecast. The design's size note records only "558 before the fix round" | **open** (owner OK needed) |
+| E2-W3 | `EventChannel::{new, bus, receiver}`, `EventBus: Clone`, `Gafira::new(.., events: EventChannel)`, the bus.rs header cites P11, and the `p11_…` test drains the pre-engine event first, in order | closed |
+| E2-W4 | P12 in the design. `EngineError` doc (engine.rs:156-158) points to `E3b` and `E11`. No mapping code | closed |
+| E2-W5 | see artifact integrity | closed (coordinator) |
+| E2-W6 | notes in `e340de1`, after `91084a1` and append-only. The card is not edited | closed |
+
+The round-1 suggestions were also checked. S1 is fixed and proved by
+`s1_an_idle_flush_does_not_hold_back_the_next_progress`. S2 is fixed: the window decision and
+`send` happen under one lock and the waker runs after the lock is released, proved by
+`s2_two_bus_clones_…` and `s2_the_waker_is_called_after_the_lock_is_released`. S3 is not needed
+because this round re-ran the gates.
+
+## Hand mutants (scratch export of `e340de1`, own target dir, `cargo test -p gafira-engine --locked --lib`)
+
+| # | Mutant | Result |
+|---|---|---|
+| HM1 (requested; implementer's #1) | `Gafira::new` discards the given channel and builds `EventChannel::new(Arc::new(NoopWaker), ports.clock)` | **killed**: `w5_…_and_wakes_it` (engine.rs:446) and `p11_…` (engine.rs:461) fail, 18 passed / 2 failed |
+| HM1b (waker-specific) | `ChannelSink::deliver` never calls `wake()` (events are still delivered) | **killed**: `w5_…_and_wakes_it` fails at the wake-count assertion (engine.rs:444), plus 5 bus tests |
+
+Both files were restored and checked with `cmp` against the worktree. The final run on the export
+passed 20 tests.
+
+## The implementer's observation: judged
+
+> "a progress that opens the window does not clear an older pending one, so a stale fraction can
+> still leave later"
+
+The observation is real. The defect has been in the code since round 1 (`642d14d`, same branch
+logic), and round 1 missed it. The probe below was a test added on the export only:
+
+```
+t=0    publish p(0.1)   -> window open, delivered
+t=50   publish p(0.2)   -> inside window, pending = p(0.2)
+t=150  publish p(0.9)   -> window open, delivered; pending still p(0.2)
+       publish DocumentChanged  (or: t=250 flush)
+seen = [p(0.1), p(0.9), p(0.2), DocumentChanged]      // flush variant: [p(0.1), p(0.9), p(0.2)]
+```
+
+Both probes fail. The observer's last `JobProgress` is 0.2, but the latest published is 0.9.
+
+**Decision: this violates AC3 and the rule §5.2 sets for the coalescing. The finding is CRITICAL,
+class `implementation` (E2-C2).**
+
+- AC3 says "`JobProgress` is coalesced to 10 Hz and the last one always arrives". The intent of
+  coalescing, as stated in the module header (bus.rs:6, "keeps only the latest fraction of the
+  window"), is that what the observer ends on is the latest fraction. Here a superseded fraction
+  arrives after the newest one, so the value the UI keeps is stale. When `JobFinished` lands in
+  `E7` it is a state event, so it would carry the stale fraction out right before itself.
+- bus.rs:155-156 states "so the observer never sees progress go backwards". That is false as soon
+  as a window-opening progress meets an older pending one, and the design marks "the coalescing
+  window" and "the ordering of the drain" as critical code for E2.
+- It is a code defect, not only a test gap. Per the closure-round rule, a probe that shows a real
+  code defect stays CRITICAL. The fix is a few lines. When a progress opens the window, it
+  supersedes the pending one: clear `pending` (it is older) before sending. The RED test is the
+  first probe above, plus a hand mutant that leaves `pending` in place.
+
+## New finding details
+
+- **E2-C2**, class: implementation, critical code. Location: `bus.rs:144-148`, the window-open
+  branch of `ChannelSink::publish`. It sends the new progress and leaves `window.pending` untouched.
+  Effect: a stale fraction arrives after a newer one, through the next state event or flush.
+  Expected: after `p(0.9)` opens the window, nothing older than `p(0.9)` leaves.
+- **E2-W7**, class: ambiguity, follow-up. `Window` has one `pending` slot for all jobs. Probe:
+  `p(job1,0.1)`, `p(job2,0.5)`, `p(job1,0.4)`, then wait 100 ms and flush. The result is
+  `[p(1,0.1), p(1,0.4)]`, and job 2's last progress never arrives. §5.2 (1335) says only "10 Hz
+  coalescing of `JobProgress`". `JobProgress` carries a `JobId` (1321) and `EngineConfig` allows
+  more than one export job, but neither the spec, the card nor the design says whether the window
+  and the "last one" are per job. This does not block E2 today, because only one producer exists.
+  The architect or specifier should settle it before `E7` or `ExportService` produces progress
+  for parallel jobs. If the key is decided before the C2 fix, C2 can be fixed per job in the same
+  change.
+
+## Size (E2-W2)
+
+`git diff --shortstat 962e95d e340de1 -- crates Cargo.toml Cargo.lock`: 7 files, 697+, 65-, which
+is 762 changed lines. The forecast was 320 (448 at x1.4). The ceiling is ~700 (AGENTS.md:99, :162),
+so the owner's explicit OK is needed. The fix round was 402 lines against ~120.
+
+## Build hygiene
+
+The target dirs `e2r2-target` (6.4 GiB) and `e2r2-export-target` were freed with
+`cargo clean --target-dir`. The export `e2r2-export` stays in the scratchpad with its sources
+restored, because `rm -rf` is denied. The worktree was never modified: `git status` is clean and
+HEAD is `e340de1`.
+
+next: tdd-apply (implementation: E2-C2, round 3 closure; E2-W2 size needs the owner's OK via the
+coordinator; E2-W7 ambiguity is a follow-up for the architect/specifier and does not block)
+
+---
+
+# Verify report — `gafira-engine` delivery `E2` (bus transport), round 3 (closure)
+
+Verdict: **PASS** — 0 CRITICAL, 2 WARNING (both follow-up), 0 SUGGESTION.
+
+E2-C2 is closed by `12ea73c`. The round-2 closures (E2-C1, W1, W3, W4, W5, W6) still hold. E2-W2
+was closed by the owner at 762 lines. One new follow-up WARNING (E2-W8): the fix round adds 44
+lines, so the delivery is now 802 lines, above the 762 the owner accepted. E2-W7 stays a follow-up.
+
+```json
+{ "schema": 1, "change": "gafira-engine", "delivery": "E2", "rounds": [ {
+  "round": 3, "commit": "cbe874e", "mode": "full", "tier": "T1", "depth": "V1",
+  "verdict": "PASS", "next": "tdd-apply",
+  "counts": {"critical": 0, "warning": 2, "suggestion": 0},
+  "classes": {},
+  "findings": [
+    {"id": "E2-C2", "severity": "CRITICAL", "class": "implementation",
+     "ref": "crates/gafira-engine/src/bus.rs:145-149",
+     "summary": "Closed: a window-opening progress clears pending before sending; two new AC3 tests and the round-2 probes pass; hand mutant (a) fails both new tests.",
+     "follow_up": false, "status": "closed"},
+    {"id": "E2-C1", "severity": "CRITICAL", "class": "implementation", "ref": "engine.rs:433-446",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W1", "severity": "WARNING", "class": "implementation", "ref": "event.rs:195-226",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W2", "severity": "WARNING", "class": "implementation", "ref": "93c0be8",
+     "summary": "Closed: owner accepted 762 lines on 2026-11-06.", "follow_up": false, "status": "closed"},
+    {"id": "E2-W3", "severity": "WARNING", "class": "architecture", "ref": "bus.rs:33 EventChannel; engine.rs:217; design P11",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W4", "severity": "WARNING", "class": "ambiguity", "ref": "engine.rs:157-158; design P12",
+     "summary": "Closed (unchanged since round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W5", "severity": "WARNING", "class": "claim", "ref": ".odd/state.json E1-AC1..6",
+     "summary": "Closed (coordinator, round 2).", "follow_up": false, "status": "closed"},
+    {"id": "E2-W6", "severity": "WARNING", "class": "implementation", "ref": "12ea73c -> cbe874e",
+     "summary": "Closed: still holds; the round-3 notes are a separate docs commit, after the code and append-only.", "follow_up": false, "status": "closed"},
+    {"id": "E2-W7", "severity": "WARNING", "class": "ambiguity",
+     "ref": "02 §5.2:1321,1335; card AC3; bus.rs:72-75 (one pending slot)",
+     "summary": "The coalescing key is unspecified: one pending slot is shared across JobIds. Is coalescing per job? Settle it before E7 or ExportService.",
+     "follow_up": true, "status": "open"},
+    {"id": "E2-W8", "severity": "WARNING", "class": "implementation",
+     "ref": "git diff --shortstat 962e95d cbe874e -- crates Cargo.toml Cargo.lock",
+     "summary": "Size: E2 is now 802 changed lines (737+, 65-), 40 above the 762 the owner accepted. The fix is 44 lines (37 of them tests). Record it in the design table and tell the owner.",
+     "follow_up": true, "status": "open"}
+  ],
+  "gates": {"fmt": 0, "clippy": 0, "test": 0, "deny": 0, "ci_policy": 0},
+  "mutation": null,
+  "hand_mutants": {"run": 1, "killed": 1},
+  "criteria": {"total": 6, "covered": 6},
+  "size": {"lines": 802, "forecast": 448}, "report": "e2-verify-report-r3.md" } ] }
+```
+
+## Inputs
+
+- Worktree `/tmp/gafira-engine-e2`, branch `feat/gafira-engine-e2`, HEAD `cbe874e` (fix `12ea73c`,
+  notes `cbe874e`).
+- Flow: `full | L3 | new capability | mutation: off | hand mutants only | V1 | owner`. There was no
+  `mutants` run and none was expected, so `mutation: null` is not a finding.
+- This is a closure round. It ran the gates, the artifact checks, the closure of E2-C2 with the
+  probes from round 2 plus one stream probe, and the requested hand mutant (a). It spent no
+  independent-mutant budget.
+
+## Gates at HEAD `cbe874e` (workspace scope)
+
+`df -h /`: 163 GB free. Target dir `e2r3-target` under the scratchpad, `CARGO_INCREMENTAL=0`.
+
+| Gate | Command | Exit |
+|---|---|---|
+| fmt | `cargo fmt --check` | 0 |
+| clippy | `cargo clippy --workspace --all-targets --locked -- -D warnings` | 0 |
+| test | `cargo test --workspace --locked` | 0. 198 suites, 2522 passed (round 2 had 2520; +2 new), 0 failed, 0 ignored. `gafira-engine` lib: 22 passed |
+| deny | `cargo deny check` | 0 (advisories, bans, licenses, sources ok). No manifest changed since `e340de1` |
+| ci_policy | `run` steps of the `policy` job, extracted from `ci.yml`: Format, ARQ-07, forbid unsafe, V5, V12, ARQ-107, V13, V14 | 0 each. ARQ-107: `gafira-engine: layer 3, exempt from the Locale search` |
+
+Skipped: "Testkit ports feature compiles (ADR 0013)". E2 does not touch `gafira-testkit` (same as
+rounds 1 and 2).
+
+## Artifact integrity (steps 3, 3c, 3d)
+
+- `12ea73c` touches only `crates/gafira-engine/src/bus.rs`. `cbe874e` touches only
+  `apply-progress.md`, as one appended section (`## E2 fix round 2`).
+- The Slice card is intact: `git diff 962e95d cbe874e -- apply-progress.md` has 0 removed lines.
+- Commits since round 2 that touch `.odd/state.json` or `design.md`: only the coordinator's
+  `273c3e6` and `93c0be8`. `93c0be8` changes only `status`, `next_action` and `verify` (E2-W2
+  closed with the owner's OK). The criterion ids, texts and types are unchanged. No implementer
+  commit touched the outcome entry, the design or the card.
+
+## E2-C2: closure
+
+The fix is at `bus.rs:145-149`. When a `JobProgress` opens the window, the code sets
+`window.last_progress = Some(now)` and `window.pending = None`, then calls `send`. The comment on
+the state-event path (155-158) now matches the behaviour.
+
+**Do the two new tests encode AC3 correctly?** Yes. Both publish this sequence with the injected
+clock:
+
+```
+t=0     p(0.1)  window open  -> delivered
+t=0     p(0.9)  inside       -> pending = 0.9
+t=100   p(0.2)  window open  -> delivered; with the fix, pending 0.9 is discarded
+then    DocumentChanged      (test 1)    or   t=200 flush   (test 2)
+expected fractions: [0.1, 0.2]
+```
+
+- "Newest" means the last one published. That is 0.2. The test lists the fractions in falling
+  order on purpose, so arrival order can be told apart from size. The observer must end on 0.2,
+  and 0.9 is older than 0.2 (published earlier), so it must never arrive after 0.2. `[0.1, 0.2]`
+  satisfies both parts of AC3: the observer ends on the newest fraction and nothing older arrives
+  after something newer. The expected value is derived from AC3, not fitted to the fix.
+- The RED output `left [0.1, 0.2, 0.9]` is exactly the pre-fix behaviour for this sequence: the
+  stale 0.9 leaves on the state event, or on the flush at t=200 when the window is open. The record
+  is consistent.
+- The alternative order, sending the pending 0.9 before 0.2 (`[0.1, 0.9, 0.2]`), would also end
+  on the newest fraction. But it delivers two progress events at t=100, inside one window, which
+  breaks the 10 Hz half of AC3. So discarding the pending one, which the test requires, is the
+  correct choice, not an over-specification.
+- Limit: `fractions` filters out non-progress events, so the new tests do not assert that the
+  `DocumentChanged` itself arrives. AC4 already covers that
+  (`ac4_ten_state_events_produce_ten_deliveries`). Not a finding.
+
+**Probes** (scratch export of `cbe874e`, own target dir, tests added to the export only):
+
+| Probe | Sequence | Result |
+|---|---|---|
+| round-2 probe, state-event variant | t0 p(0.1), t50 p(0.2), t150 p(0.9), DocumentChanged; expect `[0.1, 0.9]` | pass |
+| round-2 probe, flush variant | same, then t250 flush; expect `[0.1, 0.9]` | pass |
+| round-3 stream probe | 15 rising fractions at irregular steps (0-200 ms). Ends with a flush after one window, then again with a state event. Asserts strictly increasing arrivals and that the last one equals the last published | pass (both endings) |
+
+**Hand mutant (a)** (the implementer's #a, requested): remove `window.pending = None;`. Result:
+**killed**. 5 tests failed, 20 passed: both `ac3_a_new_window_…` tests (`left [0.1, 0.2, 0.9]`,
+`right [0.1, 0.2]`) and all three probes (`left [0.1, 0.9, 0.2]`). The export file was then
+restored and matched the worktree with `cmp`.
+
+## Round-2 closures re-checked
+
+`git diff --stat e340de1 cbe874e -- crates/gafira-engine/src` changes only `bus.rs`, and only by
+the fix and the two tests. `engine.rs` and `event.rs` are byte-identical to round 2, so the
+following still hold:
+
+- E2-C1: `w5_…_and_wakes_it` asserts one wake (engine.rs:444).
+- E2-W1: `ac4_every_variant_reaches_the_sink_once`, `VARIANTS = 6` (event.rs:195-226).
+- E2-W3: `EventChannel` (bus.rs:33), `Gafira::new` takes it (engine.rs:217), and `p11_…` passes.
+- E2-W4: the `EngineError` doc points to `E3b`/`E11`/P12 (engine.rs:157-158).
+- E2-W6: still holds for this round's commits.
+
+## Criterion map (AC1-AC6)
+
+| AC | Proof | Status |
+|---|---|---|
+| AC1 | `w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it`, `p11_…` | covered |
+| AC2 | `ac2_the_waker_is_called_once_per_delivery`, `s2_the_waker_is_called_after_the_lock_is_released`, wake assertion in `w5_…` | covered |
+| AC3 | `ac3_job_progress_coalesces_…`, `ac3_a_state_event_flushes_…`, `ac3_a_flush_inside_the_window_…`, the two new `ac3_a_new_window_…` tests, `s1_…`, `s2_two_bus_clones_…` | covered (the E2-C2 defect is fixed) |
+| AC4 | `ac4_ten_state_events_produce_ten_deliveries`, `ac4_every_variant_reaches_the_sink_once` | covered |
+| AC5 | gate output in the commit notes (`cbe874e`) and this round's workspace gates | covered |
+| AC6 | `cargo deny check` exits 0; manifests unchanged | covered |
+
+Product IDs: none (card). Nothing was left out.
+
+## Findings
+
+### WARNING
+
+- **E2-W7**, class: ambiguity, follow-up, open. Carried over from round 2 and not routed. The
+  coalescing key is unspecified: one `pending` slot is shared by all `JobId`s. The architect or
+  specifier should settle this before `E7` or `ExportService` produces progress for parallel jobs.
+- **E2-W8**, class: implementation, follow-up, open (new). `git diff --shortstat 962e95d cbe874e --
+  crates Cargo.toml Cargo.lock` gives 7 files, 737+ and 65-, which is 802 changed lines. The owner
+  accepted 762 (`93c0be8`), and this round adds 44 lines (42+, 2-), 37 of them tests. The amount
+  is small and it is the fix the owner authorised. But the measured size now exceeds the number
+  the owner accepted, so the coordinator should record 802 in the design's delivery table and
+  mention it to the owner. It does not block the verdict.
+
+## Build hygiene
+
+The target dirs `e2r3-target` (6.4 GiB) and `e2r3-export-target` (174 MiB) were freed with
+`cargo clean --target-dir`. The export `e2r3-export` stays in the scratchpad with `bus.rs`
+restored, because `rm -rf` is denied. The worktree was never modified: `git status` is clean and
+HEAD is `cbe874e`.
+
+next: tdd-apply (E2 PASS: merge `feat/gafira-engine-e2` into `develop`, then the next delivery;
+follow-ups E2-W7 (ambiguity, for the architect/specifier before E7) and E2-W8 (record 802 lines,
+tell the owner))

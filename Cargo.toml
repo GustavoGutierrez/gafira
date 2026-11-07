@@ -29,6 +29,7 @@ gafira-media = { path = "crates/gafira-media" }
 gafira-render-cpu = { path = "crates/gafira-render-cpu" }
 gafira-engine = { path = "crates/gafira-engine" }
 blake3 = "1"
+crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

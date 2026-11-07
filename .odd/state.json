@@ -6,14 +6,190 @@
       "spec_id": "02-arquitectura-software",
       "status": "implementing",
       "criteria": [
-        { "id": "E1-AC1", "status": "passed", "evidence": "cargo clippy -p gafira-engine --all-targets --locked -- -D warnings (2271ab5)" },
-        { "id": "E1-AC2", "status": "passed", "evidence": "all three consumers of the V5 table exit 0 with the engine row present (e7bb63f): V5 (the transitive gafira-* tree), V12 (the clippy.toml copy vs gafira-geom) and the ARQ-107 step, which prints gafira-engine: layer 3, exempt from the Locale search; the nine policy steps of ci.yml were run and POLICY OK. The entry proves the row is accepted by every step that reads the table, not only V5 and V12" },
-        { "id": "E1-AC3", "status": "passed", "evidence": "engine::tests::ac3_* (3 tests), hand mutant drops the check and the test fails" },
-        { "id": "E1-AC4", "status": "passed", "evidence": "event::tests::ac4_* (2 tests): publish reaches the sink exactly once, and all five variants reach the no-op sink with a count; hand mutant skips the sink and the test fails" },
-        { "id": "E1-AC5", "status": "passed", "evidence": "engine::tests::ac5_the_facade_is_send_and_sync_and_keeps_the_ports_it_was_given: Send + Sync plus Arc::ptr_eq on the six injected ports" },
-        { "id": "E1-AC6", "status": "passed", "evidence": "cargo tree -p gafira-engine: no gafira-i18n, no ICU crate" }
+        {
+          "id": "E1-AC1",
+          "status": "passed",
+          "evidence": "cargo clippy -p gafira-engine --all-targets --locked -- -D warnings (2271ab5)"
+        },
+        {
+          "id": "E1-AC2",
+          "status": "passed",
+          "evidence": "all three consumers of the V5 table exit 0 with the engine row present (e7bb63f): V5 (the transitive gafira-* tree), V12 (the clippy.toml copy vs gafira-geom) and the ARQ-107 step, which prints gafira-engine: layer 3, exempt from the Locale search; the nine policy steps of ci.yml were run and POLICY OK. The entry proves the row is accepted by every step that reads the table, not only V5 and V12"
+        },
+        {
+          "id": "E1-AC3",
+          "status": "passed",
+          "evidence": "engine::tests::ac3_* (3 tests), hand mutant drops the check and the test fails"
+        },
+        {
+          "id": "E1-AC4",
+          "status": "passed",
+          "evidence": "event::tests::ac4_* (2 tests): publish reaches the sink exactly once, and all five variants reach the no-op sink with a count; hand mutant skips the sink and the test fails"
+        },
+        {
+          "id": "E1-AC5",
+          "status": "passed",
+          "evidence": "engine::tests::ac5_the_facade_is_send_and_sync_and_keeps_the_ports_it_was_given: Send + Sync plus Arc::ptr_eq on the six injected ports"
+        },
+        {
+          "id": "E1-AC6",
+          "status": "passed",
+          "evidence": "cargo tree -p gafira-engine: no gafira-i18n, no ICU crate"
+        },
+        {
+          "id": "E2-AC1",
+          "status": "passed",
+          "evidence": "engine::tests::w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it, p11_*; hand mutant 1 killed (verify r3, cbe874e)"
+        },
+        {
+          "id": "E2-AC2",
+          "status": "passed",
+          "evidence": "bus::tests::ac2_the_waker_is_called_once_per_delivery, s2_the_waker_is_called_after_the_lock_is_released"
+        },
+        {
+          "id": "E2-AC3",
+          "status": "passed",
+          "evidence": "bus::tests::ac3_* incl. ac3_a_new_window_discards_the_stale_pending_progress_before_{a_state_event,a_flush}; mutant (a) kills 5 tests"
+        },
+        {
+          "id": "E2-AC4",
+          "status": "passed",
+          "evidence": "bus::tests::ac4_ten_state_events_produce_ten_deliveries"
+        },
+        {
+          "id": "E2-AC5",
+          "status": "passed",
+          "evidence": "workspace fmt/clippy/test 0 at cbe874e (198 suites, 2522 passed)"
+        },
+        {
+          "id": "E2-AC6",
+          "status": "passed",
+          "evidence": "cargo deny check 0 at cbe874e"
+        }
       ],
-      "next_action": "independent verify round at V1 for E1 (no round ran yet), then E2: channel sink, events(), 10 Hz coalescing"
+      "next_action": "E3a on feat/gafira-engine-e3 (cut from cbe874e): slice card, tdd-apply, verify; then E3b, E3c, E3d, E5. Follow-ups: E2-W7 (per-job coalescing, before E7), E2-W8 (size 802)",
+      "verify": {
+        "round": 3,
+        "commit": "cbe874e",
+        "verdict": "PASS",
+        "next": "E2 done (not merged: owner said no merge); E3a on feat/gafira-engine-e3 cut from cbe874e",
+        "findings": [
+          {
+            "id": "E2-C1",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "crates/gafira-engine/src/engine.rs:213-228 (AC1)",
+            "summary": "Gafira::new can build the channel with NoopWaker and ignore the injected waker with all 14 engine tests green; the AC1 test does not assert the waker count the card requires.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W1",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "crates/gafira-engine/src/event.rs:186-199",
+            "summary": "E1's W2 fix regressed: the every-variant test again omits LocaleChanged and asserts nothing.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W2",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "commit 642d14d",
+            "summary": "Size: 762 changed lines for E2 (fix round 402 vs ~120 forecast), above the ~700 ceiling; needs the owner's explicit OK. Owner accepted 762 lines on 2026-11-06.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W3",
+            "severity": "WARNING",
+            "class": "architecture",
+            "ref": "02 §5.2:1331, §5.4:1356, design P2",
+            "summary": "Gafira::new creates the channel itself, while §5.2 has the composition root create it before the engine (ARQ-68 startup screen); the signature change has no design amend.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W4",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "design.md:80,102,218 vs E2 card non-goals",
+            "summary": "The design assigns the UserError mapping (ARQ-102) to E2; the card defers it; the design was not amended.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W5",
+            "severity": "WARNING",
+            "class": "claim",
+            "ref": ".odd/state.json, commit 07c36f2",
+            "summary": "E1 evidence reverted to pre-round-2 text (E1-AC2 omits ARQ-107, E1-AC5 loses ptr_eq). Restored by the coordinator in this update.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W6",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "commit 962e95d",
+            "summary": "The slice-card commit also carries post-implementation notes, and all three commits share one timestamp, so history cannot show the card preceded the code.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-C2",
+            "severity": "CRITICAL",
+            "class": "implementation",
+            "ref": "crates/gafira-engine/src/bus.rs:144-148",
+            "summary": "A progress that opens the window leaves an older pending one in place: a probe receives 0.1, 0.9, 0.2, so the observer ends on a stale fraction; breaks AC3 and the claim at bus.rs:155-156.",
+            "follow_up": false,
+            "status": "closed"
+          },
+          {
+            "id": "E2-W7",
+            "severity": "WARNING",
+            "class": "ambiguity",
+            "ref": "02 §5.2:1321/1335, card AC3, bus.rs:72-75",
+            "summary": "All jobs share one pending progress slot, so job 1 can overwrite job 2's last fraction; the spec does not say whether coalescing is per job.",
+            "follow_up": true,
+            "status": "open"
+          },
+          {
+            "id": "E2-W8",
+            "severity": "WARNING",
+            "class": "implementation",
+            "ref": "git diff --shortstat 962e95d cbe874e",
+            "summary": "E2 is 802 lines, 40 above the 762 the owner accepted; the fix round added 44 lines, 37 of them tests.",
+            "follow_up": true,
+            "status": "open"
+          }
+        ],
+        "rounds": [
+          {
+            "round": 1,
+            "verdict": "FAIL",
+            "classes": [
+              "implementation",
+              "architecture",
+              "ambiguity",
+              "claim"
+            ]
+          },
+          {
+            "round": 2,
+            "verdict": "FAIL",
+            "classes": [
+              "implementation"
+            ]
+          },
+          {
+            "round": 3,
+            "verdict": "PASS",
+            "classes": []
+          }
+        ]
+      }
     }
   ]
 }

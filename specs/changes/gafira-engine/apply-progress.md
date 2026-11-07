@@ -83,3 +83,135 @@ Measured size of the round's code commits: `git diff --shortstat e7bb63f..HEAD -
 2 files changed, 76 insertions, 25 deletions (the deleted test accounts for most of the
 deletions).
 
+
+## Slice card — `E2` bus transport
+
+Product IDs: none. This delivery makes the bus of `E1` observable: the transport, the receiver and
+the coalescing window. No service is functional yet.
+
+Deliveries `E2` to `E10` in `E1`'s non-goals are unaffected; `E2` is the first of them.
+
+Scope:
+
+- `EngineEvent::JobProgress { job, fraction, eta }` and the `JobId` newtype (the vocabulary §5.2
+  line 1322 needs and no crate owns; design P3 assigns it to this delivery).
+- `Waker` trait — one method, `wake()` — and `NoopWaker`; the engine calls it on every delivery
+  (02 §5.2 line 1335: an injected waker that asks the UI for a repaint).
+- `EventSink::flush` with a default no-op, so `E1`'s sinks keep compiling.
+- `ChannelSink`: an unbounded `crossbeam_channel` for state events, the `Waker` call and the 10 Hz
+  coalescing of `JobProgress`.
+- `EventBus::channel(waker, clock) -> (EventBus, Receiver<EngineEvent>)` and `EventBus::flush`.
+- `Gafira::new(ports, registries, config, waker)`, `Gafira::events() -> &Receiver<EngineEvent>` and
+  `Gafira::flush_events()`.
+- `crossbeam-channel` in the root `[workspace.dependencies]`, in the engine manifest and in
+  `Cargo.lock`; `cargo deny check` on the three targets.
+
+Non-goals: no `SaveState`, no `JobFinished`, no `RecoveryAvailable` (they belong to `E4`, `E7` and
+the governor), no `UserError` mapping beyond what `E1` shipped, no service.
+
+Acceptance criteria:
+
+| # | Criterion | Proof |
+|---|---|---|
+| AC1 | `Gafira::publish` reaches the observer through the channel, which is what **W5** asked for: gutting the method body must fail a test | unit test: publish through the facade, receive the event from `events()`, assert the waker count |
+| AC2 | The waker is called exactly once per delivered event and never for a coalesced one | unit test with a counting waker |
+| AC3 | `JobProgress` is coalesced to 10 Hz and the last one always arrives | unit test with the injected clock: five in one window, then a flush; and a non-progress event flushing the pending one |
+| AC4 | State events are never dropped or coalesced | unit test: ten `DocumentChanged` produce ten deliveries |
+| AC5 | `docs`-only commits skip cargo; the code commit runs the `--workspace` scope | gate output in the commit notes |
+| AC6 | The new dependency is allowed by `deny.toml` and by §6 of the spec | `cargo deny check` on the three targets |
+
+Plan: RED for AC1 (publish through the facade with nothing behind it), AC2, AC3 and AC4, then the
+sink, then the facade wiring, then the gates. Hand mutants: make `publish` skip the bus (AC1 must
+fail); call the waker on a coalesced event (AC2 must fail); drop the window check (AC3 must fail);
+route state events through the coalescer (AC4 must fail).
+
+Estimate: 320 authored lines, 448 at x1.4. Verify: V1, gates and the criterion map.
+
+## Notes — `E2`
+
+- **W5 is closed.** `w5_publishing_through_the_facade_reaches_the_observer` publishes through the
+  facade, drains `Gafira::events()` and asserts exactly one delivery. Gutting `Gafira::publish` now
+  fails a test (mutant M1 below).
+- `Gafira::new` gains the `waker` argument. `§5.4` line 1356 does not list it and P2 of the design
+  said the transport would arrive "without changing this signature"; it could not, because an
+  optional bus cannot honour `events()`. The deviation is recorded in the method's doc comment.
+- `EngineEvent` loses `Eq`, which `JobProgress`'s `f32` cannot satisfy; `PartialEq` stays.
+- `JobId(u64)` and `JobProgress { job, fraction, eta }` join `event.rs`: the first **Planned**
+  variant of design P3 to land. The remaining seven still belong to their deliveries.
+- `EventSink` gains `flush` with a default no-op, so `NoopSink` and the `E1` tests compiled without
+  a change.
+- The coalescing clock is `ports::Clock`, not a clock of its own (design P1): the tests drive a
+  `TestClock` and the window is deterministic.
+
+Hand mutants: each was applied, the named test failed, the file was restored, and
+`cargo test -p gafira-engine --locked` was green afterwards. Nothing from a mutant reached a commit.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| M1 | `Gafira::publish` body replaced by `let _ = event;` | `w5_publishing_through_the_facade_reaches_the_observer` |
+| M2 | a coalesced `JobProgress` also calls `waker.wake()` | `ac2_the_waker_is_called_once_per_delivery`, plus two `ac3` tests |
+| M3 | `ChannelSink::window_is_open` returns `true` | the three `ac3` tests |
+| M4 | state events routed through the coalescer | `ac4_ten_state_events_produce_ten_deliveries`, plus two more |
+
+## E2 fix round
+
+Commits: the channel and facade change (F1, F2, F6), then the sink change (F3, F4, F5). Gates per
+code commit: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D
+warnings`, `cargo test --workspace --locked`, all green. No manifest changed, so no `cargo deny`.
+
+RED evidence:
+
+| Item | Failing test and assertion before the code |
+|---|---|
+| F1 | `p11_an_event_published_before_the_engine_exists_is_drained_first`: left `LinksMissing([])`, right `BackendChanged(Cpu)` (stub `Gafira::new` that ignored the channel) |
+| F2 | `w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it`: "one wake", left 0, right 1 (same stub) |
+| F5 | `s1_an_idle_flush_does_not_hold_back_the_next_progress`: the second `try_recv` was empty (old `flush` moved the window with nothing pending) |
+| F3, F4, F6 | no RED: F3 and F4 are characterization tests of behaviour the old code already had (the waker already ran outside the lock and a dropped receiver was already handled); they are pinned by hand mutants 3, 4 and 5. F6 is docs only. |
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| 1 | `Gafira::new` builds its bus with a no-op waker instead of the channel's | `w5_publishing_through_the_facade_reaches_the_observer_and_wakes_it`, `p11_an_event_published_before...` | `try_recv` expects on the bus/waker path fail; wake count 0 |
+| 2 | `flush` moves the window with nothing pending | `s1_an_idle_flush_does_not_hold_back_the_next_progress` | next `try_recv` empty |
+| 3 | `LocaleChanged` dropped from the every-variant list | `ac4_every_variant_reaches_the_sink_once` | left 5, right 6 |
+| 4a | waker called while the lock is held | `s2_the_waker_is_called_after_the_lock_is_released` | `lock_held` left 3, right 0 |
+| 4b | a coalesced `JobProgress` wakes | `ac2_the_waker_is_called_once_per_delivery`, two `ac3` tests, `s2_...` pair | left 3, right 2 |
+| 5 | `send` result unwrapped | `s2_publishing_after_the_receiver_dropped_does_not_panic` | panic at the `unwrap` |
+
+Deviations:
+
+- F3 uses a counting sink (the bus forwards to it), not "the real `NoopSink`", because a
+  `NoopSink` cannot be counted; the assertion is one count per variant and the exact total of six.
+- Observed and left alone: a progress that opens the window does not clear an older pending one,
+  so a stale fraction can still leave later. No finding names it; it belongs in a follow-up.
+
+## E2 fix round 2
+
+Item E2-C2 (CRITICAL, verify round 2): a `JobProgress` that opened a new coalescing window left
+an older pending progress in place, so the observer received 0.1, 0.2, 0.9 and ended on a stale
+fraction (AC3). Fix: when a progress opens the window, the pending one is discarded (superseded)
+before sending; the comment on the state-event path now says so. This closes the stale-fraction
+deviation recorded at the end of the E2 fix round. The single-slot design is unchanged (E2-W7
+stays a follow-up).
+
+Commit: `fix(gafira-engine): a progress that opens the window supersedes the pending one`. Gates
+green: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D
+warnings`, `cargo test --workspace --locked`.
+
+RED evidence (new tests run against the code at `93c0be8`, fix removed, tests kept):
+
+| Test | Assertion before the fix |
+|---|---|
+| `ac3_a_new_window_discards_the_stale_pending_progress_before_a_state_event` | `fractions` left `[0.1, 0.2, 0.9]`, right `[0.1, 0.2]` |
+| `ac3_a_new_window_discards_the_stale_pending_progress_before_a_flush` | `fractions` left `[0.1, 0.2, 0.9]`, right `[0.1, 0.2]` |
+
+Hand mutants (applied, test failed, reverted; never committed):
+
+| # | Mutant | Killed by | Failure |
+|---|---|---|---|
+| a | a progress that opens the window keeps the stale pending one | both `ac3_a_new_window_...` tests | left `[0.1, 0.2, 0.9]` |
+| b | the pending one is sent after the new one instead of being discarded | both `ac3_a_new_window_...` tests | left `[0.1, 0.2, 0.9]` |
+
+Deviations: none. The tests and fix came from an interrupted earlier run of this round. They were
+kept as they were, after RED was shown again against `93c0be8`.
