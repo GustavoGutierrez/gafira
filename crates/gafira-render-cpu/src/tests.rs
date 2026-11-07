@@ -1201,6 +1201,33 @@ fn arq_117_a_read_wider_than_the_surface_copies_the_clip_and_nothing_else() {
     }
 }
 
+// ARQ-149, ARQ-117, C3: a tile that runs past the surface's right and bottom
+// edges writes, row by row, only the span it shares with the surface — the
+// clip's, not the tile's — so every row of the clipped corner lands, the last
+// one included, and nothing spills into the next row, in both storages.
+#[test]
+fn arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner() {
+    for format in [PixelFormat::Rgba8, PixelFormat::RgbaF32] {
+        // The scene of `arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target`.
+        let scene = plan(vec![task(
+            1,
+            IRect::new(150, 250, 214, 314),
+            vec![fill(160.0, 260.0, 200.0, 300.0, white())],
+        )]);
+        let surface = run(target(64, 64, (100, 200), (164, 264), format), &scene);
+        for y in 0..64u32 {
+            for x in 0..64u32 {
+                let inside = (60..64).contains(&x) && (60..64).contains(&y);
+                if inside {
+                    assert!(is_white(&surface, x, y), "{format:?}: ({x}, {y}) is filled");
+                } else {
+                    assert!(is_clear(&surface, x, y), "{format:?}: ({x}, {y}) is clear");
+                }
+            }
+        }
+    }
+}
+
 // O13, ARQ-42: a rectangle is page space for `write` and for `read`, so an
 // offset region answers the window the page holds and equals the same window
 // of a full-surface read. Before O13 the read was clipped against its own
