@@ -19,6 +19,14 @@ tiny-skia.workspace = true
 # the layer-3 crate. Dev-only: the library never names it (ARQ-06 as amended).
 [dev-dependencies]
 gafira-render.workspace = true
+# CB6: CAL-11's bench and the PNG it encodes. Dev-only, so `cargo tree -e
+# normal,build` and the V5 row do not move (ADR 0017).
+criterion.workspace = true
+png.workspace = true
+
+[[bench]]
+name = "export_png_1080"
+harness = false
 
 [lints]
 workspace = true

@@ -735,6 +735,59 @@ fn arq_117_an_rgba_f32_surface_is_the_linear_bytes_it_was_handed() {
     );
 }
 
+// ARQ-117, O14, W15: an `Rgba8` frame runs the sRGB curve exactly once per
+// pixel of every tile it encodes, and nowhere else: the write copies the
+// encoded tile, a hit copies the cached one, and `read_back` copies the
+// surface. The count is of tile pixels, so the third tile's eight columns past
+// the surface are encoded (the cache keeps the whole tile) and counted.
+#[test]
+fn arq_117_an_rgba8_frame_quantises_each_encoded_pixel_once() {
+    let scene = plan(
+        (0..3u128)
+            .map(|index| {
+                let x0 = i32::try_from(index).unwrap() * 16;
+                task(
+                    index,
+                    IRect::new(x0, 0, x0 + 16, 16),
+                    vec![fill(0.0, 0.0, 48.0, 16.0, srgb(0.9, 0.2, 0.1, 0.6))],
+                )
+            })
+            .collect(),
+    );
+    let target_desc = target(40, 16, (0, 0), (40, 16), PixelFormat::Rgba8);
+    let whole = IRect::new(0, 0, 40, 16);
+    let mut cache = RecordingCache::default();
+
+    // A cold frame: three misses of 16 × 16.
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let before = crate::surface::quantised();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+    let encoded = crate::surface::quantised() - before;
+    assert_eq!(encoded, 3 * 16 * 16, "once per encoded tile pixel");
+    let before = crate::surface::quantised();
+    frame.read(whole).expect("the surface reads");
+    assert_eq!(
+        crate::surface::quantised() - before,
+        0,
+        "read_back quantises nothing"
+    );
+
+    // A warm frame: three hits, so nothing is encoded at all.
+    let mut frame = Frame::open(CpuBackend::new(), target_desc);
+    let before = crate::surface::quantised();
+    frame
+        .execute(&scene, &mut cache, &CancelToken::new())
+        .expect("the plan runs");
+    frame.read(whole).expect("the surface reads");
+    assert_eq!(
+        crate::surface::quantised() - before,
+        0,
+        "a hit is copied, not decoded and encoded again"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // AC3 — the cache: a hit is reused, a miss is written back at the plan's key
 // ---------------------------------------------------------------------------
@@ -1106,6 +1159,73 @@ fn arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target() {
         is_clear(&read, 20, 20),
         "page (170, 270) is outside the target"
     );
+}
+
+// ARQ-117, W16: a read wider and taller than the surface copies, row by row,
+// the span the surface and the region share — the clip's, not the region's —
+// and leaves every other pixel transparent black, in both storages.
+#[test]
+fn arq_117_a_read_wider_than_the_surface_copies_the_clip_and_nothing_else() {
+    for format in [PixelFormat::Rgba8, PixelFormat::RgbaF32] {
+        // A 6 × 4 surface at (2, 2), fully covered, read through a 12 × 8 region.
+        let scene = plan(vec![task(
+            1,
+            IRect::new(2, 2, 8, 6),
+            vec![fill(0.0, 0.0, 12.0, 8.0, white())],
+        )]);
+        let mut frame = Frame::open(CpuBackend::new(), target(6, 4, (2, 2), (12, 8), format));
+        let mut cache = RecordingCache::default();
+        frame
+            .execute(&scene, &mut cache, &CancelToken::new())
+            .expect("the plan runs");
+        let read = frame
+            .read(IRect::new(0, 0, 12, 8))
+            .expect("the region reads");
+        assert_eq!((read.width(), read.height()), (12, 8));
+        for y in 0..8u32 {
+            for x in 0..12u32 {
+                let inside = (2..8).contains(&x) && (2..6).contains(&y);
+                if inside {
+                    assert!(
+                        is_white(&read, x, y),
+                        "{format:?}: ({x}, {y}) is on the surface"
+                    );
+                } else {
+                    assert!(
+                        is_clear(&read, x, y),
+                        "{format:?}: ({x}, {y}) is off the surface"
+                    );
+                }
+            }
+        }
+    }
+}
+
+// ARQ-149, ARQ-117, C3: a tile that runs past the surface's right and bottom
+// edges writes, row by row, only the span it shares with the surface — the
+// clip's, not the tile's — so every row of the clipped corner lands, the last
+// one included, and nothing spills into the next row, in both storages.
+#[test]
+fn arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner() {
+    for format in [PixelFormat::Rgba8, PixelFormat::RgbaF32] {
+        // The scene of `arq_149_the_surface_sits_at_the_origin_and_clips_to_the_target`.
+        let scene = plan(vec![task(
+            1,
+            IRect::new(150, 250, 214, 314),
+            vec![fill(160.0, 260.0, 200.0, 300.0, white())],
+        )]);
+        let surface = run(target(64, 64, (100, 200), (164, 264), format), &scene);
+        for y in 0..64u32 {
+            for x in 0..64u32 {
+                let inside = (60..64).contains(&x) && (60..64).contains(&y);
+                if inside {
+                    assert!(is_white(&surface, x, y), "{format:?}: ({x}, {y}) is filled");
+                } else {
+                    assert!(is_clear(&surface, x, y), "{format:?}: ({x}, {y}) is clear");
+                }
+            }
+        }
+    }
 }
 
 // O13, ARQ-42: a rectangle is page space for `write` and for `read`, so an

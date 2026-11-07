@@ -671,3 +671,174 @@ No T4.
 - **The format is derived from the storage.** `Pixels` is the single source of truth for `format()` and `bytes()`; a separate field could disagree with what the surface holds, which is exactly `AC4`'s failure mode.
 - **`AC4`'s "one byte per pixel" is read as one byte per channel, four per `Rgba8` pixel.** A surface pixel is RGBA, so the 8-bit storage is four bytes and the `f32` storage sixteen; the test pins `Bytes(16 × 8 × 4) = 512` against the old `2048`, which is the four-fold figure the card is about. The budget test pins the same number as the cap an `Rgba8` page fits and an `RgbaF32` one does not.
 - **`MAX_SIDE` is untouched.** At 16 384 px an `Rgba8` surface would now fit the cap (1 GiB), but the side limit is a stated limit of this delivery and lifting it is the tiled or streaming path FD-55 names; `CB8` removes a pass, it does not widen the page.
+
+## CB6
+Flow: full | level: L2 | pack: product-spec slice | mutation: off | tier: T2 | verify: V2 | decided-by: owner | reason: the last delivery of the change: the number CAL-11 asks for, the preview number `O14` was promised against (`W18`), and the three follow-ups of the `CB8` round that need a test rather than a reading (`W15`, `W16`, `S3`)
+Product IDs: CAL-11, ARQ-143, ARQ-40, ARQ-43, ARQ-114; ARQ-117, ARQ-44 (source: specs/01-producto-y-calidad.md §9.2 CAL-11; specs/02-arquitectura-software.md §6.2, §6.7, ARQ-40, ARQ-43, ARQ-143; FD-55 (d); rulings `O14`, `SP5`, `D10` of the change)
+Scope: `CB6` of `specs/changes/gafira-render-cpu/design.md`: in `gafira-render-cpu`, (1) `bench_export_png_1080` under criterion (`[[bench]]`, `harness = false`): one fixed 1080p page, `RgbaF32` export target, plan -> tiles -> surface -> `read_back` -> sRGB PNG bytes through `png` as a dev-dependency (the same encode rules as `CB3`), single-threaded, cold cache per iteration; (2) a preview bench for `W18`: the same page on an `Rgba8` target, cold and warm cache, `execute` + `read_back`, reported against ARQ-143's 8 ms visible-render budget; (3) the cancellation gap of FD-55 (d) / ARQ-43: the time from the token being cancelled to `execute` returning, on the same page; (4) a plain `#[test]` guard that asserts CAL-11's 2 s for one 1080p frame **only when the build is optimised** (`cfg!(debug_assertions)` false) and skips itself, visibly, otherwise; (5) `W15`: a `#[cfg(test)]` counter of `quantise_srgb8` applications, asserted to equal the tiles encoded and not to move in `read_back`; (6) `W16`: a test reading a region wider than the surface, so the span comes from the clip and not the region; (7) `S3`: take or leave `image::drawn`'s `unsigned_abs`, with the reason in the record.      Non-goals: `perf-budgets.toml`, the nightly job or any CI gate on these numbers (`D10`, `SP5`, ARQ-40's own change); `gafira-io-image` and the real exporter (FD-55, layer 4); parallel bands (`CB7`, cut only if CAL-11 is over 2 s); any change to `gafira-ports`, `gafira-render`, `gafira-doc` or `.github/`; making any curve faster.
+Acceptance:
+  AC1 Given the fixed 1080p scene, When `cargo bench -p gafira-render-cpu --bench export_png_1080` runs, Then criterion reports the time of one frame rendered and encoded to PNG, and the record states the number and the machine; the scene is built from constants, so two runs render byte-identical PNGs (CAL-11, ARQ-111) [command]
+  AC2 Given the same scene on an `Rgba8` target, When the preview bench runs, Then it reports the cold and warm frame time of `execute` + `read_back`, and the record compares them with ARQ-143's 8 ms; if the number cannot be compared fairly (CPU against a GPU budget, a page against a viewport), the record and a design note say why and what would measure it (ARQ-143, `O14`, `W18`) [command]
+  AC3 Given the scene and a token cancelled at a fixed point, When `execute` runs, Then the gap from cancellation to return is measured and reported against ARQ-43's 100 ms (FD-55 (d), ARQ-43) [command]
+  AC4 Given an optimised build, When the guard runs, Then one 1080p frame rendered and encoded takes < 2 s or the test fails; given a debug build, Then the guard skips itself and says so, and never fails on time (CAL-11, `D10`) [unit]
+  AC5 Given an `Rgba8` frame, When `execute` and `read_back` run, Then `quantise_srgb8` ran exactly once per encoded tile pixel and `read_back` added no application; re-quantising on read or decoding and re-encoding the cached tile on write fails the test (ARQ-117, `O14`, `W15`) [unit]
+  AC6 Given a surface smaller than the region read, When `read_rows` copies, Then the pixels outside the surface are transparent black and the copied span is the clip's; taking the span from the region fails a test (ARQ-117, `W16`) [unit]
+  AC7 Given the crate, When the gates run, Then `forbid(unsafe_code)` holds, the V5 row is unchanged (`cargo tree -e normal,build` is identical before and after; `criterion` and `png` are dev-only), `cargo deny` passes, and `src/` still names no clock and no file — the benches may use `std::time::Instant`, `src/` may not (ARQ-02, ADR 0017) [command]
+Plan: the benches live in `benches/` and the guard in `tests/`, so the library stays clock-free. The scene is a constant document — a page background, a few groups with fills and one image, no effect — built once outside the timed loop; the timed unit is one page from a cold cache, with the encode inside it for CAL-11 and outside it for ARQ-143. The guard reuses the same scene builder (a shared test module) so the bench and the guard measure one thing. The `W15` counter is `#[cfg(test)]`, thread-local so parallel tests do not see each other, and the test reads it around `execute` and around `read_back` separately. Critical code and hand mutants: the scene's determinism (a builder that varies per run — e.g. a seed or an iteration index entering the document — must fail AC1's byte check), the guard's skip (inverting or removing the `debug_assertions` condition must be observable: a debug run fails on time or an optimised run skips), and the counter (re-quantise in `Surface::read`, decode-and-re-encode in `Surface::write`, and a counter that never increments must each fail AC5); plus the `W16` span mutant (span from the region). Touching `Cargo.toml` puts that commit in ADR 0017's `--workspace` scope. Report the numbers; do not gate them.
+Owner decisions touched: `O14` (the preview it promised to measure), `SP5` (an ungated measured number is acceptable), `D10` (no gate), `O10` (the rigor), and `CB7`'s condition (cut only if CAL-11 is over 2 s).
+
+## CB6 (tdd-apply)
+
+Commits (conventional, no AI attribution, each passing its gates alone):
+
+- `d2a2f49 test(gafira-render-cpu): a read wider than the surface copies the clip's span` — `W16`.
+- `d31909f test(gafira-render-cpu): drawn refuses a region that ends off the page` — `S3`.
+- `afc55de test(gafira-render-cpu): count the sRGB curve's applications in a frame` — `W15`.
+- `ba641df feat(gafira-render-cpu): bench_export_png_1080 and the CAL-11 guard` — AC1, AC4; the manifest commit (`--workspace`).
+- `21707d6 feat(gafira-render-cpu): preview and cancel-gap benches on the 1080p frame` — AC2, AC3.
+- `74207ab docs(gafira-render-cpu): why the cold preview does not meet ARQ-143's 8 ms fairly` — `W18`'s design note.
+- `docs(gafira-render-cpu): record the CB6 delivery` — this record.
+
+### The numbers
+
+Machine: 12th Gen Intel Core i7-12700H, `nproc` 20, Linux 6.8.0, `rustc 1.93.1`; one thread, the
+bench profile (`opt-level = 3`, thin LTO). Criterion medians from
+`target/criterion/<group>/<bench>/new/estimates.json`, 95 % interval in brackets; nothing is gated.
+
+| What | Where | Median | Against |
+|---|---|---|---|
+| **CAL-11**: one 1080p frame, `RgbaF32`, cold cache, read back, PNG-encoded | `cal_11/bench_export_png_1080` | **288.0 ms** [286.2, 293.0] | < 2 s: met by ~7×, so `CB7` is not cut |
+| CAL-11 guard, `cargo test --release -- --test-threads=1`, three runs | `cal_11_one_1080p_frame_renders_and_encodes_under_two_seconds` | 324, 302, 290 ms | < 2 s |
+| Preview, `Rgba8`, `execute` + `read_back`, cold | `arq_143/bench_preview_1080_cold` | **237.0 ms** [235.6, 237.7] | 8 ms: not a fair comparison (design note) |
+| Preview, warm (every tile a hit) | `arq_143/bench_preview_1080_warm` | **1.61 ms** [1.51, 1.68] | 8 ms: met |
+| Cancel gap, export frame, cancel in the lookup of the heaviest tile | `arq_43/bench_cancel_gap_1080` | **11.7 ms** [11.6, 12.1] | ≤ 100 ms (ARQ-43): met |
+
+In a debug build the guard prints `CAL-11 guard skipped: a debug build is not optimised …` and
+passes; the same frame takes ~3.4 s there.
+
+### RED evidence
+
+- **AC4** — `cal_11_the_guard_measures_only_an_optimised_build_and_is_strict` against a `judge` that
+  always skipped: `optimised true, 1.999s`, `left: Skipped`, `right: Within(1.999s)`.
+- **AC5 (`W15`)** — `arq_117_an_rgba8_frame_quantises_each_encoded_pixel_once` against the counter
+  without its increment: `once per encoded tile pixel`, `left: 0`, `right: 768`.
+- **AC1, AC6 (`W16`)** are invariance criteria on code already right; their RED is the wrong
+  behaviour, HM1 and HM6 below. AC2, AC3 are `[command]`: the numbers above. **AC7**: the gates below.
+- `S3` has no test: it is a test helper's conversion. `try_from(..).expect(..)` replaces
+  `unsigned_abs`, so a region ending left of or above the page panics instead of naming a page of
+  `|x1|` that does not hold it; no call site passes one, so the suite is unchanged.
+
+### Hand mutants
+
+Applied, observed, reverted; none committed; `sha256sum -c` and `git status` clean after each.
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| HM1 | the frame varies per build: a static counter darkens the background | `cal_11_the_fixed_frame_renders_byte_identical_pngs` | killed |
+| HM2 | `judge` loses its `if !optimised` | the table test (`left: Over(9s)`, `right: Skipped`); in debug also the guard | killed |
+| HM3 | the guard's condition inverted (`cfg!(debug_assertions)`) | the guard: debug `left: false right: true`; release `left: true right: false` | killed |
+| HM4 | `Surface::read` re-quantises the `Rgba8` page | `arq_117_an_rgba8_frame_quantises_each_encoded_pixel_once` (`left: 640`, `right: 0`) | killed |
+| HM5 | `Surface::write` decodes and re-encodes the tile | the same (`left: 1536`, `right: 768`) | killed |
+| HM6 | the counter never increments | the same (`left: 0`, `right: 768`) | killed |
+| HM7 | `read_rows` takes its span from `region.width()` | `arq_117_a_read_wider_than_the_surface_copies_the_clip_and_nothing_else` (`Rgba8: (8, 2) is off the surface`) | killed |
+
+HM3 first survived in release: the guard's arms asserted on the same variable the mutant inverted.
+They now compare the verdict with `cfg!(debug_assertions)` itself. No T4.
+
+### Gates
+
+`CARGO_TARGET_DIR=/tmp/gafira-cb6-target CARGO_INCREMENTAL=0`, worktree root, exit 0 on every commit:
+`cargo fmt --check`, `cargo clippy -p gafira-render-cpu --all-targets --locked -- -D warnings`,
+`cargo test -p gafira-render-cpu --locked`; at `ba641df` the clippy and test runs are `--workspace`
+(2634 passed, 0 failed). At HEAD: `cargo test --workspace --locked` 0 (**2634 passed, 0 failed, 0
+ignored**, 202 blocks); `cargo deny check` 0; the nine executed `run:` steps of the `policy` job 0
+(the toolchain install skipped); `cargo bench -p gafira-render-cpu --bench export_png_1080` 0.
+`cargo tree -e normal,build`, for the crate and for the workspace, is byte-identical before and
+after; `Cargo.lock` gains only the two dev edges. `git grep` for
+`std::fs|SystemTime::now|Instant::now|std::net|std::thread::spawn` in the crate's `src/` finds
+nothing, and `Instant::now` appears in the crate only in `clippy.toml`'s ban.
+
+### Size
+
+`git diff --shortstat 6f0f012..HEAD` before this record: **9 files changed, 654 insertions(+),
+2 deletions(-)**, against 260 (365 at ×1.4). Production `src/` is 17 (the counter); the rest is
+the frame module (222), the bench (144), the guard (138), the `W15`/`W16` tests (93), the
+manifest and lock (10), `S3` (9) and the design note (23). With this record the delivery passes
+~700 lines.
+
+### Choices and deviations
+
+- **No target names `Instant::now`.** The card lets benches and tests use it, but the crate's
+  `clippy.toml` bans it for every target and `#[allow]` is not an option. The times come from
+  criterion's `WallTime`, as in `gafira-segment`'s benches; the guard uses it too.
+- **The frame is a `RenderPlan`, not a `Document`.** The card asks for one image and no document
+  node produces `DrawImage` (ARQ-134). The plan is the planner's 256 px grid clipped to the page,
+  one task per tile carrying the whole op list, so the cull is the backend's.
+- **The PNG is straight alpha.** PNG stores straight alpha, so the encode is CB3's order without the
+  last premultiply; with the opaque background every pixel has `a = 255` and the two coincide.
+- **The cancel point is the cache lookup of tile 25.** The lookup is the first call after the
+  loop's per-tile check, so the whole tile runs after the cancel; a scratch probe over all 40 tiles
+  (not committed) found tile 25 the longest. ARQ-43 names a 4K export; the gap is per tile, and
+  tiles are 256 px at any page size, so 1080p bounds it for this scene.
+- **`W18`'s comparison is only fair warm.** The design note says why and what would measure it: a
+  `FrameLoop` bench in `gafira-render` with a real 8 ms deadline. It also records that one heavy
+  tile (~12 ms) is longer than the 8 ms stage, so a frame can overrun by up to one tile.
+
+### Fix round 1 (`C3`, `C4`/`S13`, `W21`, `S12`)
+
+Commits, each passing fmt, clippy `-D warnings` and the crate's tests alone (exit 0):
+
+- `012b433 test(gafira-render-cpu): a tile clipped at the right edge writes every row of the corner` — `C3`.
+- `9e59f39 docs(gafira-render-cpu): name ARQ-114 on bench_export_png_1080 and the guard` — `C4`, `S13`.
+- `fa9d181 test(gafira-render-cpu): pin the fixed frame's PNG on the golden platform` — `W21`.
+- `docs(gafira-render-cpu): record the CB6 fix round` — this section.
+
+**RED.**
+
+- `C3` — `arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner` reads the whole
+  64 × 64 surface of ARQ-149's scene in both storages: white exactly on the 4 × 4 corner, clear
+  elsewhere. Green on the code; with IM3 applied (`write_rows` spans `region.width()`) it fails
+  `Rgba8: (60, 63) is filled`, and with the loop cut to `RgbaF32` alone `RgbaF32: (60, 63) is
+  filled` — the last row of the clipped tile is lost in both.
+- `C4`, `S13` — `bench_export_png_1080`'s doc names ARQ-114 (the bench with that row's name, `D10`;
+  the name is fixed, so the ID goes in the doc, as `gafira-segment`'s benches do). The guard's
+  module doc says why it is not the `cargo test` gate ARQ-114 forbids: CI's `cargo test` builds in
+  debug, where the guard skips and never fails on time; the assert runs only in a build optimised on
+  purpose, and the number is the bench's (`D10`). `git grep ARQ-114 -- crates/gafira-render-cpu`
+  finds both. No RED: documentation.
+- `W21` — `cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform` pins `(length, FNV-1a
+  64)` of the PNG on `x86_64-unknown-linux-gnu`, as ARQ-113 compares a stored golden in
+  `Mode::Exact` there, and skips visibly elsewhere. RED with the pin at `(0, 0)`: `left: (82840,
+  13330154275344879713)`, `right: (0, 0)`; the value is `0xb8fe38afef161061`, the digest verify
+  measured in two debug processes and one release process. Green in debug and in `--release`.
+
+**Hand mutants** (applied, observed, reverted; restored by `sha256sum -c`, tree clean):
+
+| # | The wrong behaviour | Killing test | Verdict |
+|---|---|---|---|
+| IM3 | `write_rows` takes its span from `region.width()` | `arq_149_a_tile_clipped_at_the_right_edge_writes_every_row_of_the_corner` (`Rgba8: (60, 63) is filled`; `RgbaF32` the same) | killed |
+| IM1 | the background's red is `0.96 - (pid % 50 + 1) × 0.005` | `cal_11_the_fixed_frame_encodes_the_pinned_png_on_this_platform`, three processes, three failures (`left: (83281, …)`, `(83115, …)`, `(83296, …)`) | killed |
+| HM1 | a static counter darkens the background per build | the byte-identical test and the pin | killed |
+| HM2 | `judge` loses its `if !optimised` | the table test (`left: Over(9s)`, `right: Skipped`) and the guard | killed |
+| HM3 | the guard's condition inverted | the guard: debug `left: false right: true`, release `left: true right: false` | killed |
+
+A first IM1 with `pid % 7` passed one run in three: that pid was a multiple of 7, so the shift was
+zero and the frame was the constant one. The mutant above shifts in every process. HM4–HM7 are in
+`src/` code this round did not touch, and their killing tests are unchanged.
+
+**Gates at HEAD** (`CARGO_TARGET_DIR=/tmp/gafira-cb6-target CARGO_INCREMENTAL=0`, worktree root):
+`cargo fmt --check` 0; `cargo clippy --workspace --all-targets --locked -- -D warnings` 0;
+`cargo test --workspace --locked` 0 (**2636 passed, 0 failed, 0 ignored**, 202 blocks: the two new
+tests); `cargo deny check` 0; the nine `run:` steps of the `policy` job after the toolchain install
+(Format, ARQ-07, unsafe, V5, V12, ARQ-107, V13, V14, ADR 0013) 0 each. Nothing under `src/` outside
+`tests.rs`, `Cargo.toml`, `Cargo.lock`, `crates/gafira-ports`, `crates/gafira-render`,
+`crates/gafira-doc` or `.github/` changed.
+
+**`S12`.** CAL-11 names a mid-range reference machine; the i7-12700H (14 cores, 20 threads, a
+high-end laptop part) is not one. The 288 ms above is therefore indicative: it shows the frame is
+far under 2 s here, not that it is under 2 s on CAL-11's machine. That number waits for the
+reference machine of ARQ-40's change.
+
+**Size.** `git diff --shortstat c1ff86d..HEAD` before this section: **3 files changed, 72
+insertions(+)** — the `C3` test 27, the pin 34 and the guard's doc 8 in
+`tests/cal_11_export_1080.rs` (42), the bench's doc 3. No production line.
