@@ -567,3 +567,31 @@ Fecha: 16 de noviembre de 2026.
 - **Decisión** (titular): la primera versión se publica **sin licencia**: el composition root inyecta `NoLicensing` (D-58), todo está habilitado y no hay conexión de red.
 - **Consecuencia**: `gafira-license`, la lista de funciones bloqueadas y el precio de D-12 quedan **aplazados** hasta que el titular decida cobrar; no bloquean el lanzamiento. ARQ-90 a ARQ-96 se aplican solo a un build con licencia habilitada.
 - Precisa D-12 y D-58.
+
+## D-63 Identidad del proyecto para la recuperación (SP5)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): cada proyecto lleva un **UUID** que se genera al crearlo y se guarda en el `.gafira` (campo nuevo de `schema` 1, que D-36 mantiene abierto). `recovery/<project_id>/` y la carpeta de versiones usan ese UUID, así que la recuperación sobrevive a renombrar o mover el archivo.
+- **Copias**: «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto.
+- Cierra SP5 (02 §5.6) y desbloquea E4. Sustituye la clave provisional de P13.
+
+## D-64 Formato de números y fechas por región (Q-24)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los números y las fechas siguen la **región del sistema cuando su idioma coincide con el de la interfaz** (es-MX → `1,234.5`; es-ES → `1234,5`); si no coincide, se usa el formato CLDR del idioma de la interfaz. Confirma la propuesta de 02 §14.4.
+- Cierra Q-24.
+
+## D-65 El tiempo vive en el documento (Q-54, Q-55)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): se confirma la opción (a): `gafira-doc` depende de `gafira-time` y los tipos de tiempo del documento viven ahí, como ya hace el código.
+- Cierra Q-54 y Q-55.
+
+## D-66 Mutantes críticos de `gafira-text` y `gafira-raster` en paralelo (07, ítems 74 y 75)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los 98 mutantes críticos vivos se atacan **ahora, en paralelo** al engine, en una spec propia que solo añade tests (sin cambiar la API pública).
