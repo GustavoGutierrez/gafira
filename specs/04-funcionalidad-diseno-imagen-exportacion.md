@@ -5,8 +5,8 @@
 | Documento | Especificación 04 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-80, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
-| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78). D-80 confirma las decisiones PROPUESTA, salvo el campo `template` del manifiesto (FD-16, §15) y las fórmulas de FD-33 (D-78) |
+| Depende de | `00-decisiones.md` (D-01 a D-83, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
+| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78). D-80 confirma las decisiones PROPUESTA, salvo el campo `template` del manifiesto (FD-16, §15), que fija D-81, y las fórmulas de FD-33 (D-78) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o cifra propia, confirmada por D-71) · *Aceptación* (criterios verificables) · *RF*.
 
@@ -194,7 +194,7 @@
 
 **FD-16 · Guardar como plantilla propia** (RF-15)
 - *Propósito*: reutilizar diseños propios.
-- *Comportamiento y reglas*: Archivo → Guardar como plantilla (o menú contextual sobre la selección) pide Nombre, Etiquetas y Estilo; guarda el diseño o la selección como un `.gaf` marcado como plantilla (`manifest.json`: campo `template` con etiquetas, formato, estilo y color; PROPUESTA) en la biblioteca local, con miniatura. Las imágenes se incrustan; los elementos de texto se marcan como reemplazables. Se pueden renombrar, editar y borrar desde la pestaña Plantillas.
+- *Comportamiento y reglas*: Archivo → Guardar como plantilla (o menú contextual sobre la selección) pide Nombre, Etiquetas y Estilo; guarda el diseño o la selección como un `.gaf` marcado como plantilla (`manifest.json`: objeto opcional `template` con `tags`, `pageFormat` (id de formato de inicio de 03 §6.2), `style` y `color` `#RRGGBB`; D-81, 02 §7.1) en la biblioteca local, con miniatura. Las imágenes se incrustan; los elementos de texto se marcan como reemplazables. Se pueden renombrar, editar y borrar desde la pestaña Plantillas.
 - *UI*: Archivo → Guardar como plantilla; menú contextual; Plantillas → «Mías».
 - *Técnica*: `gafira-format` (`ProjectRepository`), `UserLibraryProvider`.
 - *Presupuesto*: guardar < 500 ms para 20 páginas.
@@ -751,7 +751,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 |---|---|---|
 | `Page.grid` y `Page.notes` | FD-02, FD-07 | Incorporados: `Page { grid: GridSettings, notes: String, … }` (§3.1) |
 | `TextNode` | FD-45, FD-46, FD-47 | Incorporados: `columns: TextColumns`, `autofit: Autofit`, `type_lock: TypeLock` (§3.2) |
-| `manifest.json` | FD-16 | Campo opcional `template` (etiquetas, formato, estilo, color): PROPUESTA de esta spec, aún no recogida en el esquema de 02 §7.1 (registrada allí como hueco abierto) |
+| `manifest.json` | FD-16 | Incorporado: objeto opcional `template { tags, pageFormat, style, color }` (D-81, §7.1); un lector que no lo conoce lo ignora |
 | Almacén de Versiones | FD-60 | Incorporado: `versions/index.json` y `versions/<version_id>/` (§7.1) |
 | QR y Gráficos | FD-20, FD-22 | `NodeExtension` internos `gafira.qr` y `gafira.chart` registrados en el binario (ADR-02) |
 | `TextAssistant` | FD-64 | Incorporado: trait en `gafira-ports` (§4.15, Fase 3) |
