@@ -318,6 +318,75 @@ pub(crate) fn engine_with_license(license: Arc<dyn LicenseVerifier>) -> Gafira {
     Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
 }
 
+/// A content store in memory; the hash is a deterministic digest of the
+/// bytes, so the same content always has the same hash. `fail` makes every
+/// later `put` fail.
+#[derive(Default)]
+pub(crate) struct MemoryStore {
+    contents: Mutex<BTreeMap<ContentHash, Vec<u8>>>,
+    failing: Mutex<bool>,
+}
+
+impl MemoryStore {
+    /// The hash this store gives `bytes`: FNV-1a over the bytes, spread over
+    /// 32 bytes. Not BLAKE3; the engine only needs equal bytes, equal hash.
+    pub(crate) fn hash_of(bytes: &[u8]) -> ContentHash {
+        let mut out = [0u8; 32];
+        for (lane, chunk) in out.chunks_exact_mut(8).enumerate() {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ lane as u64;
+            for b in bytes {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+            chunk.copy_from_slice(&h.to_le_bytes());
+        }
+        ContentHash(out)
+    }
+
+    pub(crate) fn fail(&self) {
+        *lock(&self.failing) = true;
+    }
+
+    pub(crate) fn get(&self, hash: ContentHash) -> Option<Vec<u8>> {
+        lock(&self.contents).get(&hash).cloned()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        lock(&self.contents).len()
+    }
+}
+
+impl ContentStore for MemoryStore {
+    fn put(&self, src: &mut dyn io::Read) -> Result<ContentHash, StoreError> {
+        if *lock(&self.failing) {
+            return Err(StoreError::Io(io::Error::other("store full")));
+        }
+        let mut bytes = Vec::new();
+        src.read_to_end(&mut bytes).map_err(StoreError::Io)?;
+        let hash = Self::hash_of(&bytes);
+        lock(&self.contents).insert(hash, bytes);
+        Ok(hash)
+    }
+
+    fn open(&self, hash: ContentHash) -> Result<Box<dyn ReadSeek + Send>, StoreError> {
+        let bytes = self.get(hash).ok_or(StoreError::NotFound { hash })?;
+        Ok(Box::new(io::Cursor::new(bytes)))
+    }
+
+    fn contains(&self, hash: ContentHash) -> Result<bool, StoreError> {
+        Ok(lock(&self.contents).contains_key(&hash))
+    }
+}
+
+/// An engine whose files are `fs` and whose content store is `store`; no
+/// document is open.
+pub(crate) fn engine_with_store(fs: &MemoryFs, store: &Arc<MemoryStore>) -> Gafira {
+    let mut ports = six_ports();
+    ports.filesystem = Arc::new(fs.clone());
+    ports.store = Arc::clone(store) as Arc<dyn ContentStore>;
+    Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
+}
+
 pub(crate) fn config() -> EngineConfig {
     EngineConfig::new("/data/gafira").expect("a valid data directory")
 }

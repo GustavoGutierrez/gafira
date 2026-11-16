@@ -9,12 +9,13 @@
 //!
 //! The ports are injected, the Facade composes, and each service lives in its
 //! own module (design P9): `project` and `edit` share the session of
-//! `session`; `settings` (spec 009) holds the user's settings and `license` (spec 010)
-//! the licence state. The other services arrive in the later deliveries of
+//! `session`; `settings` (spec 009) holds the user's settings `license` (spec 010)
+//! the licence state and `assets` (spec 011) the imports. The other services arrive in the later deliveries of
 //! `specs/done/legacy/changes/gafira-engine/design.md`.
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod autosave;
 mod bus;
 mod edit;
@@ -28,6 +29,7 @@ mod project;
 mod session;
 mod settings;
 
+pub use assets::AssetService;
 pub use autosave::{AutosaveJob, AutosaveOutcome};
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use edit::EditService;
