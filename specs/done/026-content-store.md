@@ -1,6 +1,6 @@
 # 026 — `gafira-assets`: almacén por contenido y recursos embebidos en el `.gaf`
 
-> **Estado:** in-progress — 2026-11-16 — rama `feat/026-content-store`.
+> **Estado:** done — 2026-11-16 — S26-01..S26-10 cubiertos por `gafira-assets` (`tests/store.rs`, 4) y `gafira-format` (`tests/assets.rs`, 6; `assets::tests`, 2); 4 mutantes a mano muertos; 2285 tests en el workspace. La app guarda los recursos en `<datos_app>/store` y el `.gaf` los lleva en `assets/`.
 
 ## Objetivo
 
@@ -55,6 +55,22 @@ Casos que deben fallar primero:
 ## Evidencia esperada
 
 Tests nuevos en verde, `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `python3 tools/sync_agents.py --check`, `cargo deny check licenses bans sources` y los pasos de política de `ci.yml`.
+
+## Evidencia
+
+- `cargo fmt --check`: ok.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: ok.
+- `cargo test --workspace --locked`: 2285 pasan, 0 fallan; los tests nuevos borran sus carpetas temporales.
+- `python3 tools/sync_agents.py --check`: 0.
+- `cargo deny check licenses bans sources`: `bans ok, licenses ok, sources ok` (solo los avisos de duplicados de antes).
+- Pasos de política de `ci.yml` en local: ARQ-07, `forbid(unsafe_code)`, V5, ARQ-06 (nuevo), V12, ARQ-107 (dos), V13 y V14 ok. `gafira-assets` hace E/S, así que no lleva `clippy.toml` de dominio ni fila V5, como `gafira-format` y `gafira-platform`; el paso nuevo comprueba ARQ-06 en los tres.
+- Mutantes a mano (archivo hostil): sin comprobar el hash al abrir (lo mata S26-07, porque el almacén recibe bytes), sin comprobar los embebidos que faltan (S26-08), aceptar el hash en mayúsculas (S26-09) y siempre DEFLATE (S26-05).
+
+## Limitaciones y seguimiento
+
+- `GafRepository::default()` queda sin almacén (no guarda ni abre recursos embebidos); lo usa el test S19-11 de `gafira-ui`, que no tiene recursos.
+- El manifiesto aún no lleva `mime` (02 §7.1); llega con la importación de imágenes.
+- No hay recolector: un recurso que ya nadie usa sigue en el almacén.
 
 ## Riesgos y decisiones abiertas
 

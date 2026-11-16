@@ -51,6 +51,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 022 | [Tiradores de tamaño](done/022-resize-handles.md) | Ocho tiradores en la selección; redimensionar con el borde opuesto fijo en un solo deshacer |
 | 023 | [Relleno y opacidad](done/023-fill-and-opacity.md) | Selector de color, «Sin relleno» y opacidad de la forma seleccionada en el Inspector |
 | 024 | [Pestaña Capas](done/024-layers-tab.md) | Lista de elementos de la página, selección desde la lista, Subir y Bajar con deshacer |
+| 026 | [Almacén por contenido y recursos embebidos](done/026-content-store.md) | `gafira-assets` (`FsStore`, BLAKE3, escritura atómica, sin duplicados) compuesto en `<datos_app>/store`; el `.gaf` guarda los embebidos en `assets/<hash>.<ext>` y al abrir comprueba cada hash; 12 tests nuevos |
 
 ### Historial del flujo anterior
 
