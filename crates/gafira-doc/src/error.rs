@@ -27,6 +27,12 @@ pub enum NodeField {
     FillChannel,
     /// The alpha channel of a shape fill.
     FillAlpha,
+    /// The font size of a text span (spec 027).
+    FontSize,
+    /// A red, green or blue channel of a text span colour.
+    TextColorChannel,
+    /// The alpha channel of a text span colour.
+    TextColorAlpha,
 }
 
 impl fmt::Display for NodeField {
@@ -41,6 +47,9 @@ impl fmt::Display for NodeField {
             Self::Opacity => "opacity",
             Self::FillChannel => "fill channel",
             Self::FillAlpha => "fill alpha",
+            Self::FontSize => "font size",
+            Self::TextColorChannel => "text color channel",
+            Self::TextColorAlpha => "text color alpha",
         })
     }
 }
@@ -331,6 +340,9 @@ mod tests {
             (Opacity, "opacity"),
             (FillChannel, "fill channel"),
             (FillAlpha, "fill alpha"),
+            (FontSize, "font size"),
+            (TextColorChannel, "text color channel"),
+            (TextColorAlpha, "text color alpha"),
         ];
         for (field, name) in rows {
             assert_eq!(field.to_string(), name);

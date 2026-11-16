@@ -6,7 +6,8 @@ use gafira_color::Color;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
     BlendMode, DocMut, Document, Dpi, GridSettings, GuideSet, Margins, Node, NodeId, NodeKind,
-    Page, PageId, PageSize, Placement, ShapeGeometry, ValidationError, check_bleed,
+    Page, PageId, PageSize, Placement, RichText, ShapeGeometry, TextNode, ValidationError,
+    check_bleed,
 };
 use gafira_geom::Length;
 
@@ -28,6 +29,8 @@ pub enum Property {
     Locked(bool),
     Fill(Option<Color>),
     Geometry(ShapeGeometry),
+    /// The rich text of a text element (spec 027).
+    TextContent(RichText),
     PageName(String),
     PageSize(PageSize),
     PageLocked(bool),
@@ -55,6 +58,7 @@ impl Property {
             Self::Locked(_) => "set_property.locked",
             Self::Fill(_) => "set_property.fill",
             Self::Geometry(_) => "set_property.geometry",
+            Self::TextContent(_) => "set_property.text_content",
             Self::PageName(_) => "set_property.page_name",
             Self::PageSize(_) => "set_property.page_size",
             Self::PageLocked(_) => "set_property.page_locked",
@@ -83,6 +87,17 @@ impl Property {
             ),
             Self::Opacity(o) => ("opacity", unit(f64::from(*o))),
             Self::Fill(Some(c)) => ("fill", c.is_finite() && unit(f64::from(c.alpha()))),
+            Self::TextContent(text) => (
+                "text_content",
+                text.spans().all(|span| {
+                    let size = span.style.size;
+                    size.is_finite()
+                        && size > 0.0
+                        && size <= TextNode::MAX_SIZE
+                        && span.style.color.is_finite()
+                        && unit(f64::from(span.style.color.alpha()))
+                }),
+            ),
             _ => return Ok(()),
         };
         if ok {
@@ -105,6 +120,7 @@ impl Property {
             (Self::Locked(_), _) => Self::Locked(base.locked),
             (Self::Fill(_), NodeKind::Shape(s)) => Self::Fill(s.fill),
             (Self::Geometry(_), NodeKind::Shape(s)) => Self::Geometry(s.geometry),
+            (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
             _ => return None,
         })
     }
@@ -121,6 +137,7 @@ impl Property {
             (Self::Locked(v), _) => base.locked = *v,
             (Self::Fill(v), NodeKind::Shape(s)) => s.fill = *v,
             (Self::Geometry(v), NodeKind::Shape(s)) => s.geometry = *v,
+            (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
             _ => {}
         }
     }

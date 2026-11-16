@@ -96,6 +96,11 @@ struct Asked {
     fill: Option<Option<gafira_color::Color>>,
     /// An opacity set in the Inspector, 0 to 1.
     opacity: Option<f32>,
+    /// A new text element of this preset (Texto tab, spec 027).
+    /// With the words it starts with, already in the interface language.
+    insert_text: Option<(canvas::TextPreset, String)>,
+    /// New rich text for the selected text element (Inspector).
+    text: Option<gafira_doc::RichText>,
     /// A root element to move to this index of its page (Capas).
     reorder: Option<(PageId, NodeId, usize)>,
     /// Ver → Modo oscuro switched to this value (D-82).
@@ -382,6 +387,42 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                if TABS[self.tab] == "tab.text" {
+                    for (key, words, preset) in [
+                        (
+                            gafira_doc::msg!("text.add_title"),
+                            gafira_doc::msg!("text.title"),
+                            canvas::TextPreset::Title,
+                        ),
+                        (
+                            gafira_doc::msg!("text.add_subtitle"),
+                            gafira_doc::msg!("text.subtitle"),
+                            canvas::TextPreset::Subtitle,
+                        ),
+                        (
+                            gafira_doc::msg!("text.add_body"),
+                            gafira_doc::msg!("text.body"),
+                            canvas::TextPreset::Body,
+                        ),
+                    ] {
+                        let (size, display) = preset.size_and_display();
+                        let font = if display {
+                            egui::FontId::new(
+                                size as f32 * 0.4,
+                                egui::FontFamily::Name(crate::style::DISPLAY.into()),
+                            )
+                        } else {
+                            egui::FontId::proportional(size as f32 * 0.5)
+                        };
+                        let button = egui::Button::new(RichText::new(texts.t(&key)).font(font))
+                            .min_size(Vec2::new(ui.available_width(), 48.0));
+                        if ui.add(button).clicked() {
+                            asked.insert_text = Some((preset, texts.t(&words)));
+                        }
+                        ui.add_space(8.0);
+                    }
+                    return;
+                }
                 if TABS[self.tab] == "tab.pieces" {
                     ui.label(
                         RichText::new(texts.t(&gafira_doc::msg!("pieces.shapes")))
@@ -483,6 +524,10 @@ impl Editor {
                     );
                     return;
                 };
+                if let Some(text) = &shape.text {
+                    text_fields(ui, theme, texts, text, asked);
+                    ui.add_space(16.0);
+                }
                 let mut placement = shape.placement;
                 let mut changed = false;
                 egui::Grid::new("inspector.position")
@@ -511,22 +556,24 @@ impl Editor {
                     asked.place = Some(placement);
                 }
                 ui.add_space(16.0);
-                ui.horizontal(|ui| {
-                    ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
-                    let mut color = shape
-                        .fill
-                        .map_or(Color32::TRANSPARENT, canvas::screen_color);
-                    if ui.color_edit_button_srgba(&mut color).changed() {
-                        asked.fill = Some(Some(canvas::document_color(color)));
-                    }
-                    if shape.fill.is_some()
-                        && ui
-                            .small_button(texts.t(&gafira_doc::msg!("inspector.no_fill")))
-                            .clicked()
-                    {
-                        asked.fill = Some(None);
-                    }
-                });
+                if shape.text.is_none() {
+                    ui.horizontal(|ui| {
+                        ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
+                        let mut color = shape
+                            .fill
+                            .map_or(Color32::TRANSPARENT, canvas::screen_color);
+                        if ui.color_edit_button_srgba(&mut color).changed() {
+                            asked.fill = Some(Some(canvas::document_color(color)));
+                        }
+                        if shape.fill.is_some()
+                            && ui
+                                .small_button(texts.t(&gafira_doc::msg!("inspector.no_fill")))
+                                .clicked()
+                        {
+                            asked.fill = Some(None);
+                        }
+                    });
+                }
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.label(texts.t(&gafira_doc::msg!("inspector.opacity")));
@@ -688,6 +735,9 @@ impl Editor {
                                 let shapes = canvas::shapes(page_doc);
                                 for shape in &shapes {
                                     let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    if let Some(text) = &shape.text {
+                                        draw_text(painter, theme, at, zoom, shape.opacity, text);
+                                    }
                                     let fill = canvas::paint(shape);
                                     match shape.geometry {
                                         ShapeGeometry::Rect => {
@@ -830,6 +880,42 @@ impl Editor {
                 }
             }
         }
+        if let Some((preset, words)) = &asked.insert_text
+            && let Some(document) = document
+        {
+            let page = self
+                .selected
+                .and_then(|(page, _)| document.page(page))
+                .or_else(|| document.pages().first().map(AsRef::as_ref));
+            if let Some(page) = page
+                && let Ok(size) = page.size.to_px(document.dpi())
+            {
+                let (font_size, display) = preset.size_and_display();
+                let tokens = &theme.tokens;
+                let style = gafira_doc::SpanStyle {
+                    font: if display {
+                        tokens.typography.display.clone()
+                    } else {
+                        tokens.typography.ui.clone()
+                    },
+                    size: font_size,
+                    color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
+                };
+                let px = Vec2::new(size.width() as f32, size.height() as f32);
+                let spec = canvas::new_text(px, words, &style);
+                let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
+                let next = NodeId::new(document.next_id());
+                match engine.edit().execute(Box::new(command)) {
+                    Ok(_) => self.selected = Some((page.id, next)),
+                    Err(error) => eprintln!("insert text: {error}"),
+                }
+            }
+        }
+        if let (Some(text), Some((page, node))) = (&asked.text, self.selected) {
+            let command =
+                SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
+            log("text", engine.edit().execute(Box::new(command)).map(drop));
+        }
         if let Some((origin, handle)) = asked.drag_begin {
             let gesture = engine.edit().begin_gesture().ok();
             self.drag = Some(Drag {
@@ -895,6 +981,99 @@ impl Editor {
         } else {
             Go::Stay
         }
+    }
+}
+
+/// The Inspector fields of a text element: its words, size and colour,
+/// applied to every span (one style per element for now, spec 027).
+fn text_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    text: &gafira_doc::TextNode,
+    asked: &mut Asked,
+) {
+    let Some(style) = text.content.first_style().cloned() else {
+        return;
+    };
+    ui.label(
+        RichText::new(texts.t(&gafira_doc::msg!("inspector.text"))).font(theme.font("ui-label")),
+    );
+    let mut words = text.content.plain_text();
+    let edit = egui::TextEdit::multiline(&mut words)
+        .desired_rows(3)
+        .desired_width(f32::INFINITY);
+    if ui.add(edit).changed() {
+        asked.text = Some(gafira_doc::RichText::plain(&words, &style));
+    }
+    ui.add_space(8.0);
+    let mut size = style.size;
+    let mut color = canvas::screen_color(style.color);
+    ui.horizontal(|ui| {
+        ui.label(texts.t(&gafira_doc::msg!("inspector.font_size")));
+        let size_changed = ui
+            .add(
+                egui::DragValue::new(&mut size)
+                    .speed(1.0)
+                    .range(1.0..=gafira_doc::TextNode::MAX_SIZE),
+            )
+            .changed();
+        ui.label(texts.t(&gafira_doc::msg!("inspector.text_color")));
+        let color_changed = ui.color_edit_button_srgba(&mut color).changed();
+        if size_changed || color_changed {
+            let restyled = gafira_doc::SpanStyle {
+                size,
+                color: canvas::document_color(color),
+                ..style.clone()
+            };
+            asked.text = Some(gafira_doc::RichText::plain(&words, &restyled));
+        }
+    });
+}
+
+/// Draw a text element in its box: one galley per paragraph, wrapped to the
+/// box width, aligned, stacked downwards. The canvas draws with egui; the
+/// document renderer (`gafira-text`) takes over when the canvas renders
+/// through `gafira-render`.
+fn draw_text(
+    painter: &egui::Painter,
+    theme: &Theme,
+    at: Rect,
+    zoom: f32,
+    opacity: f32,
+    text: &gafira_doc::TextNode,
+) {
+    let mut y = at.min.y;
+    for paragraph in &text.content.paragraphs {
+        let Some(style) = paragraph.spans.first().map(|span| &span.style) else {
+            continue;
+        };
+        let words: String = paragraph
+            .spans
+            .iter()
+            .map(|span| span.text.as_str())
+            .collect();
+        let family = if style.font == theme.tokens.typography.display {
+            egui::FontFamily::Name(crate::style::DISPLAY.into())
+        } else {
+            egui::FontFamily::Proportional
+        };
+        let size = (style.size as f32 * zoom).max(1.0);
+        let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
+        let galley = painter.layout(
+            words,
+            egui::FontId::new(size, family),
+            color,
+            at.width().max(1.0),
+        );
+        let x = match text.align {
+            gafira_doc::TextAlign::Center => at.center().x - galley.size().x / 2.0,
+            gafira_doc::TextAlign::Right => at.max.x - galley.size().x,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => at.min.x,
+        };
+        let height = galley.size().y.max(size);
+        painter.galley(Pos2::new(x, y), galley, color);
+        y += height;
     }
 }
 
@@ -1400,5 +1579,85 @@ pub(crate) mod tests {
         engine.edit().undo().expect("an undo");
         let page = engine.edit().document().expect("a document").pages()[0].clone();
         assert_eq!(page.roots[0], rect);
+    }
+
+    // S27-04
+    #[test]
+    fn s27_04_a_text_is_added_edited_restyled_and_undone_through_the_engine() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        let mut editor = Editor::default();
+        let snapshot = engine.edit().document();
+        let asked = Asked {
+            insert_text: Some((canvas::TextPreset::Title, "Título".to_owned())),
+            ..Asked::default()
+        };
+        editor.apply(&mut engine, &snapshot, &asked, &theme);
+        let text = |engine: &mut Gafira| the_shapes(engine)[0].text.clone().expect("a text");
+        let first = text(&mut engine);
+        assert_eq!(first.content.plain_text(), "Título");
+        let style = first.content.first_style().expect("a style").clone();
+        assert_eq!(
+            style.font, theme.tokens.typography.display,
+            "a title uses the display family"
+        );
+        assert_eq!(style.size, 72.0);
+        assert!(editor.selected.is_some(), "the new text is selected");
+
+        let edited = gafira_doc::RichText::plain("Hola\nmundo", &style);
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                text: Some(edited.clone()),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert_eq!(text(&mut engine).content, edited);
+
+        let bigger = gafira_doc::SpanStyle {
+            size: 90.0,
+            ..style.clone()
+        };
+        let restyled = gafira_doc::RichText::plain("Hola\nmundo", &bigger);
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                text: Some(restyled),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert!(
+            text(&mut engine)
+                .content
+                .spans()
+                .all(|span| span.style.size == 90.0)
+        );
+
+        let broken = gafira_doc::SpanStyle { size: 0.0, ..style };
+        let refused = gafira_doc::RichText::plain("x", &broken);
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                text: Some(refused),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert_eq!(
+            text(&mut engine).content.plain_text(),
+            "Hola\nmundo",
+            "a zero size is refused"
+        );
+
+        // Consecutive edits of one text merge into one entry (ARQ-33), so one
+        // undo takes back the editing and leaves the inserted title.
+        engine.edit().undo().expect("an undo");
+        assert_eq!(text(&mut engine).content.plain_text(), "Título");
     }
 }

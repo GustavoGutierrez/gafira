@@ -991,7 +991,9 @@ mod guards {
                             assert!(value_depth(&e.payload) <= 3);
                             assert!(payload_in_bounds(&e.payload));
                         }
-                        NodeKind::Shape(_) => assert!(node.children.is_empty()),
+                        NodeKind::Shape(_) | NodeKind::Text(_) => {
+                            assert!(node.children.is_empty());
+                        }
                     }
                 }
             }

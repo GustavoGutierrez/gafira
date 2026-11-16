@@ -5,11 +5,13 @@
 
 use egui::{Color32, Pos2, Rect, Vec2};
 use gafira_color::{Color, ColorSpaceId, Rgba};
-use gafira_doc::{NodeId, NodeKind, Page, PageId, Placement, ShapeGeometry, ShapeNode};
+use gafira_doc::{
+    NodeId, NodeKind, Page, PageId, Placement, ShapeGeometry, ShapeNode, SpanStyle, TextNode,
+};
 use gafira_edit::NodeSpec;
 
 /// A drawable shape of a page.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Shape {
     pub(crate) page: PageId,
     pub(crate) node: NodeId,
@@ -18,6 +20,9 @@ pub(crate) struct Shape {
     pub(crate) fill: Option<Color>,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
+    /// The text of a text element; its box hits and moves like a rectangle
+    /// (spec 027).
+    pub(crate) text: Option<TextNode>,
 }
 
 /// The visible shapes of `page`, back to front: roots in order, each node
@@ -28,7 +33,12 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
         if !node.base.visible {
             return;
         }
-        if let NodeKind::Shape(ShapeNode { geometry, fill }) = node.kind {
+        let drawn = match &node.kind {
+            NodeKind::Shape(ShapeNode { geometry, fill }) => Some((*geometry, *fill, None)),
+            NodeKind::Text(text) => Some((ShapeGeometry::Rect, None, Some(text.clone()))),
+            NodeKind::Group(_) | NodeKind::Extension(_) => None,
+        };
+        if let Some((geometry, fill, text)) = drawn {
             out.push(Shape {
                 page: page.id,
                 node: id,
@@ -36,6 +46,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 geometry,
                 fill,
                 opacity: node.base.opacity,
+                text,
             });
         }
         for child in &node.children {
@@ -79,6 +90,7 @@ pub(crate) fn layers(page: &Page) -> Vec<Layer> {
                     ..
                 }) => "pieces.ellipse",
                 NodeKind::Group(_) => "layers.group",
+                NodeKind::Text(_) => "layers.text",
                 _ => "layers.element",
             };
             Some(Layer {
@@ -214,6 +226,40 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
         }),
         placement,
     )
+}
+
+/// The three text presets of the Texto tab (03 §2.3): a title, a subtitle
+/// and body text, by font size in px.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TextPreset {
+    Title,
+    Subtitle,
+    Body,
+}
+
+impl TextPreset {
+    /// The font size, in px, and whether the display family is used.
+    pub(crate) fn size_and_display(self) -> (f64, bool) {
+        match self {
+            Self::Title => (72.0, true),
+            Self::Subtitle => (44.0, true),
+            Self::Body => (28.0, false),
+        }
+    }
+}
+
+/// A new text element of `preset` saying `text`, centred on a page of
+/// `page_px`, 60 % of its width across and one line high.
+pub(crate) fn new_text(page_px: Vec2, text: &str, style: &SpanStyle) -> NodeSpec {
+    let w = f64::from(page_px.x) * 0.6;
+    let h = style.size * 1.4;
+    let placement = Placement::new(
+        (f64::from(page_px.x) - w) / 2.0,
+        (f64::from(page_px.y) - h) / 2.0,
+        w,
+        h,
+    );
+    NodeSpec::new(NodeKind::Text(TextNode::plain(text, style)), placement)
 }
 
 /// A document colour on screen (sRGB, 8 bits).
@@ -404,7 +450,7 @@ mod tests {
     #[test]
     fn s23_01_the_paint_carries_fill_and_opacity() {
         let red = document_color(Color32::from_rgb(255, 0, 0));
-        let mut shape = shapes(&page())[0];
+        let mut shape = shapes(&page())[0].clone();
         assert_eq!(
             paint(&shape),
             Color32::TRANSPARENT,
@@ -433,5 +479,39 @@ mod tests {
                 (2, "pieces.rect", 0)
             ]
         );
+    }
+
+    #[test]
+    fn s27_03_a_text_element_is_listed_hit_and_placed_like_a_box() {
+        let style = SpanStyle {
+            font: "Inter".to_owned(),
+            size: 40.0,
+            color: document_color(Color32::BLACK),
+        };
+        let spec = new_text(Vec2::new(1000.0, 1000.0), "Hola", &style);
+        assert_eq!((spec.placement.w, spec.placement.h), (600.0, 56.0));
+        assert_eq!((spec.placement.x, spec.placement.y), (200.0, 472.0));
+        let mut page = page();
+        let base = gafira_doc::ElementBase::new(NodeId::new(9), spec.placement);
+        page.nodes
+            .insert(NodeId::new(9), Arc::new(Node::new(base, spec_kind(&spec))));
+        page.roots.push(NodeId::new(9));
+        let all = shapes(&page);
+        let text = all.last().expect("the text is drawn last");
+        assert_eq!(text.node, NodeId::new(9));
+        assert_eq!(
+            text.text.as_ref().map(|t| t.content.plain_text()),
+            Some("Hola".to_owned())
+        );
+        assert_eq!(layers(&page)[0].kind, "layers.text");
+        let page_rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(1000.0));
+        assert_eq!(
+            hit(&all, page_rect, 1.0, Pos2::new(500.0, 500.0)),
+            Some(NodeId::new(9))
+        );
+    }
+
+    fn spec_kind(spec: &NodeSpec) -> NodeKind {
+        spec.kind.clone()
     }
 }
