@@ -633,7 +633,11 @@ pub(crate) mod tests {
             },
         );
         assert_eq!(pages(&mut engine).len(), 1);
-        assert_eq!(engine.edit().can_undo_redo(), (true, true));
+        assert_eq!(
+            engine.edit().can_undo_redo(),
+            (false, true),
+            "the first page belongs to the new document (spec 016)"
+        );
 
         let snapshot = engine.edit().document();
         apply(

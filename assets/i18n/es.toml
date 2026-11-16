@@ -101,6 +101,22 @@ save_copy = "Guardar copia…"
 save_failed = "No pudimos guardar el proyecto. Inténtalo de nuevo."
 open_failed = "No pudimos abrir el archivo. Comprueba que es un proyecto de Gafira."
 
+[recovery]
+title = "Encontramos trabajo sin guardar"
+recover = "Recuperar"
+open_saved = "Abrir el último guardado"
+discard = "Descartar"
+confirm_discard = "¿Descartar este trabajo? No se puede deshacer."
+unnamed = "Proyecto sin guardar"
+failed = "No pudimos recuperar este trabajo."
+
+[leave]
+title = "¿Guardar los cambios?"
+body = "Si sales sin guardar, perderás los cambios."
+save = "Guardar"
+discard = "No guardar"
+cancel = "Cancelar"
+
 [nav]
 home = "Inicio"
 projects = "Proyectos"

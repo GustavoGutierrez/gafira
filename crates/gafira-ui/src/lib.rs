@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+mod dialogs;
 mod editor;
 mod files;
 mod format;

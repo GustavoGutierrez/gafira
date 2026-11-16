@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gafira_doc::AssetRef;
+use gafira_doc::{AssetRef, ProjectId};
 use gafira_edit::DirtySet;
 use gafira_ports::i18n::{LanguagePreference, ResolvedLocale};
 use gafira_ports::license::LicenseStatus;
@@ -49,6 +49,16 @@ impl JobId {
 /// `E3b` gives `DocumentChanged` its version, the engine-owned counter of
 /// design P15 (owner decision O2). `E2` dropped the `Eq` bound, which
 /// `JobProgress`'s `f32` cannot satisfy.
+/// A project whose recovery slots a previous run left (02 §5.2, D-75: the
+/// engine defines the payload types).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecoveryEntry {
+    /// The project the slots belong to (D-63).
+    pub project_id: ProjectId,
+    /// The file the work belongs to; `None` for a document never saved.
+    pub origin: Option<std::path::PathBuf>,
+}
+
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq)]
 pub enum EngineEvent {
@@ -71,6 +81,9 @@ pub enum EngineEvent {
         /// What the resolver made of it.
         resolved: ResolvedLocale,
     },
+    /// Recovery slots of projects a previous run did not close were found
+    /// (02 §7.2; spec 016).
+    RecoveryAvailable(Vec<RecoveryEntry>),
     /// The render backend changed, for example after a fallback (ARQ-22).
     BackendChanged(BackendKind),
     /// A queued job advanced; coalesced to 10 Hz (02 §5.2 line 1335).

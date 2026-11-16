@@ -650,21 +650,31 @@ impl FileSystem for MemoryFs {
         })
     }
 
+    /// A file, or a folder that holds one: folders exist through their files.
     fn exists(&self, path: &Path) -> io::Result<bool> {
-        Ok(self.state().files.contains_key(path))
+        let state = self.state();
+        Ok(state.files.contains_key(path)
+            || state
+                .files
+                .keys()
+                .any(|file| file.starts_with(path) && file != path))
     }
 
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         self.traced(FsOp::CreateDirAll(path.to_owned()), |_| Ok(()))
     }
 
+    /// The files and the folders right under `path`, each once, in order.
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
         let state = self.state();
-        let inside = state
+        let inside: BTreeSet<PathBuf> = state
             .files
             .keys()
-            .filter(|file| file.parent() == Some(path));
-        Ok(inside.cloned().collect())
+            .filter_map(|file| file.strip_prefix(path).ok())
+            .filter_map(|rest| rest.components().next())
+            .map(|first| path.join(first))
+            .collect();
+        Ok(inside.into_iter().collect())
     }
 }
 

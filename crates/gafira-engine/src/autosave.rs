@@ -11,6 +11,7 @@
 //! §7.2 are not met here; a journal method in `gafira-ports` replaces
 //! [`AutosaveJob::run`]'s write before the release.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -33,8 +34,32 @@ pub struct AutosaveJob {
     pub(crate) slot: u8,
     pub(crate) folder: PathBuf,
     pub(crate) session_key: String,
+    /// The user's file the session lives in, recorded beside the slots so a
+    /// recovery knows where the work belongs (spec 016).
+    pub(crate) origin: Option<PathBuf>,
     pub(crate) repository: Arc<dyn ProjectRepository>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
+}
+
+/// The file beside the slots that names the newest one and the user's file
+/// (spec 016): `latest`, two lines, written atomically after each slot.
+pub(crate) const MARKER: &str = "latest";
+
+/// `"<slot>\n<path>"`; the path line is empty for a document never saved or
+/// a path that is not UTF-8 (the recovery then asks for «Guardar como»).
+pub(crate) fn marker_text(slot: u8, origin: Option<&Path>) -> String {
+    let path = origin.and_then(Path::to_str).unwrap_or_default();
+    format!("{slot}\n{path}")
+}
+
+/// The slot and the user's file a marker names; `None` when it is not one.
+pub(crate) fn parse_marker(text: &str) -> Option<(u8, Option<PathBuf>)> {
+    let (slot, path) = text.split_once('\n').unwrap_or((text, ""));
+    let slot: u8 = slot.trim().parse().ok().filter(|n| *n < SLOTS)?;
+    let path = Some(path.trim_end_matches('\n'))
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from);
+    Some((slot, path))
 }
 
 impl AutosaveJob {
@@ -71,12 +96,27 @@ impl AutosaveJob {
     }
 
     /// The folder, then the repository writes and syncs `tmp` (SP6), then
-    /// the file system renames it over `slot` (the save's steps, P13, P18).
+    /// the file system renames it over `slot` (the save's steps, P13, P18),
+    /// then the marker names it as the newest (spec 016). A failed marker
+    /// leaves the previous one, which still names a complete slot.
     fn write(&self, tmp: &Path, slot: &Path) -> Result<(), EngineError> {
         self.filesystem.create_dir_all(&self.folder)?;
         self.repository.save(tmp, &self.snapshot)?;
         self.filesystem.replace(tmp, slot)?;
-        Ok(())
+        let marker = self.folder.join(MARKER);
+        let marker_tmp = self.folder.join(format!("{MARKER}.tmp"));
+        let text = marker_text(self.slot, self.origin.as_deref());
+        let written = (|| -> std::io::Result<()> {
+            let mut file = self.filesystem.create(&marker_tmp)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+            self.filesystem.replace(&marker_tmp, &marker)
+        })();
+        if written.is_err() {
+            let _ = self.filesystem.remove(&marker_tmp);
+        }
+        written.map_err(EngineError::Io)
     }
 }
 
@@ -140,16 +180,23 @@ mod tests {
 
     /// The trace of one job writing `len` bytes to slot `n` of the first
     /// session: the folder, the repository's create, two writes and sync,
-    /// then the `replace`.
+    /// the `replace`, then the marker naming slot `n` and [`TARGET`]
+    /// (spec 016) written, synced and renamed.
     fn job_trace(n: u8, len: usize) -> Vec<FsOp> {
         let folder = Path::new(&slot(n)).parent().expect("a folder").to_owned();
+        let marker_tmp = folder.join("latest.tmp");
+        let marker = marker_text(n, Some(Path::new(TARGET)));
         vec![
-            FsOp::CreateDirAll(folder),
+            FsOp::CreateDirAll(folder.clone()),
             FsOp::Create(tmp(n)),
             FsOp::Write(tmp(n), len / 2),
             FsOp::Write(tmp(n), len - len / 2),
             FsOp::SyncAll(tmp(n)),
             FsOp::Replace(tmp(n), slot(n).into()),
+            FsOp::Create(marker_tmp.clone()),
+            FsOp::Write(marker_tmp.clone(), marker.len()),
+            FsOp::SyncAll(marker_tmp.clone()),
+            FsOp::Replace(marker_tmp, folder.join("latest")),
         ]
     }
 
@@ -441,15 +488,22 @@ mod tests {
         assert_eq!(trace, job_trace(0, new.len()));
         assert_eq!(rig.fs.file(&slot(0)), Some(new), "the new bytes in full");
 
+        // Indices 0-5 write the slot; 6-9 the marker, after the slot is in
+        // place, so a fault there keeps the new slot whole.
         for fault in 0..trace.len() {
-            let (rig, job, _) = prepared();
+            let (rig, job, new) = prepared();
             rig.fs.fail_at(&[fault]);
             assert!(job.run().error().is_some(), "fault at {fault}");
             let mut expected = trace[..=fault].to_vec();
+            if fault >= 6 {
+                let folder = Path::new(&slot(0)).parent().expect("a folder").to_owned();
+                expected.push(FsOp::Remove(folder.join("latest.tmp")));
+            }
             expected.push(FsOp::Remove(tmp(0)));
             assert_eq!(rig.fs.take_trace(), expected, "fault at {fault}");
             let kept = rig.fs.file(&slot(0));
-            assert_eq!(kept, Some(previous.clone()), "fault at {fault}");
+            let whole = if fault >= 6 { new } else { previous.clone() };
+            assert_eq!(kept, Some(whole), "fault at {fault}");
         }
     }
 
