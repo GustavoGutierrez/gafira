@@ -95,6 +95,11 @@ impl Shared {
         }
     }
 
+    /// The bus the session's events go to.
+    pub(crate) fn bus(&self) -> &EventBus {
+        &self.bus
+    }
+
     /// The version of the newest published state.
     pub(crate) fn version(&self) -> DocVersion {
         DocVersion(self.version.load(Ordering::SeqCst))

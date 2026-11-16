@@ -36,7 +36,9 @@ pub use edit::EditService;
 pub use engine::{
     EngineConfig, EngineError, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
 };
-pub use event::{EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, Waker};
+pub use event::{
+    EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, RecoveryEntry, Waker,
+};
 pub use governor::{
     BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,
     TileCacheTrim, Trimmable,

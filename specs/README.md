@@ -29,7 +29,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 
 | ID | Spec | Estado |
 | --- | --- | --- |
-| — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 en parte por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`); pendientes el resto de E4 (`recover`, `RecoveryAvailable`, bloqueos, versiones), E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y solo SP7 sigue abierto. Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
+| — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 y la 016 (quedan versiones en el `.gaf` y bloqueos) (identidad, «Guardar como», «Guardar copia», `.bak`); pendientes el resto de E4 (`recover`, `RecoveryAvailable`, bloqueos, versiones), E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y solo SP7 sigue abierto. Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
 
@@ -42,6 +42,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 013 | [Mutantes críticos de `gafira-text` y `gafira-raster`](done/013-mutant-debt-text-raster.md) | D-66, ítems 74 y 75 de 07, solo tests: de 98 críticos, 57 muertos, 34 equivalentes excluidos en `.cargo/mutants.toml` y 7 sin matar en la frontera de una tolerancia; 24 tests nuevos, 2691 tests |
 | 014 | [`gafira-theme`: tokens de diseño y tipografías](done/014-theme-tokens.md) | `assets/theme/gafira.tokens.json` (03 §3) cargado y validado (schema, referencias, modos, contraste DIS-10, pares rechazados, movimiento reducido) en tipos neutros; Inter y Manrope embebidas (subconjuntos provisionales) con prueba `cmap` de ARQ-105; 24 tests nuevos, 9 de 10 mutantes a mano muertos (1 equivalente), 2718 tests |
 | 015 | [`gafira-i18n`: catálogos es/en y regla de D-08](done/015-i18n-catalogs.md) | `assets/i18n/{es,en}.toml` compilados en build; `D08LocaleResolver` (D-08, región D-64) y `CatalogTranslator` (parámetros, plurales CLDR, respaldo de §14.6, números y cantidades con ICU4X, tiempo relativo) y `PseudoTranslator` (feature `pseudo`); fechas como interim ISO 8601 UTC; 27 tests nuevos, 8 de 9 mutantes a mano muertos (1 equivalente), 2718 tests |
+| 016 | [Recuperación tras fallo, `close` y la primera página](done/016-engine-recovery-and-close.md) | Marcador de ranuras, `recoverable`/`recover`/`discard_recovery`, `close`, `new_document_with`; diálogos de recuperación y «¿Guardar los cambios?»; autoguardado en hilo |
 | 017 | [Primer shell de escritorio](done/017-ui-desktop-shell.md) | `gafira-ui` (egui/eframe) y `apps/gafira`: Pantalla de arranque, Inicio y regiones del Editor de diseño con tokens y catálogos reales; 12 tests; la app abre en Linux |
 | 018 | [La UI sobre el engine y `gafira-platform`](done/018-ui-engine-platform.md) | Adaptadores reales de archivos, reloj, UUID, idioma y ajustes; la ventana crea el documento, dibuja sus páginas y deshace/rehace por el engine; 8 tests nuevos |
 | 019 | [`gafira-format` y el menú Archivo](done/019-gaf-format-and-file-menu.md) | `.gaf` con la disposición de D-68: escritura determinista, lectura como archivo hostil, solo lectura para lo futuro; Abrir, Guardar, Guardar como y Guardar copia en la ventana; 12 tests nuevos |
@@ -61,4 +62,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **020** (la 016, segunda parte de E4, está reservada).
+Siguiente ID libre: **020**.

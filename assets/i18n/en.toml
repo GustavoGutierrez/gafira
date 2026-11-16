@@ -101,6 +101,22 @@ save_copy = "Save a copy…"
 save_failed = "We couldn't save the project. Try again."
 open_failed = "We couldn't open the file. Check that it is a Gafira project."
 
+[recovery]
+title = "We found unsaved work"
+recover = "Recover"
+open_saved = "Open the last saved"
+discard = "Discard"
+confirm_discard = "Discard this work? This can't be undone."
+unnamed = "Unsaved project"
+failed = "We couldn't recover this work."
+
+[leave]
+title = "Save your changes?"
+body = "If you leave without saving, your changes will be lost."
+save = "Save"
+discard = "Don't save"
+cancel = "Cancel"
+
 [nav]
 home = "Home"
 projects = "Projects"

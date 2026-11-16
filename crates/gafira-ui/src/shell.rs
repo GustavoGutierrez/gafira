@@ -4,11 +4,13 @@ use std::time::Duration;
 
 use std::sync::Arc;
 
-use gafira_edit::InsertPage;
-use gafira_engine::{EngineError, Gafira, Waker};
+use std::sync::mpsc;
+
+use gafira_engine::{AutosaveOutcome, EngineError, Gafira, RecoveryEntry, Waker};
 use gafira_ports::i18n::Locale;
 use gafira_theme::ThemeTokens;
 
+use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
 use crate::editor::Editor;
 use crate::files::{self, FileAction, Outcome};
 use crate::format::StartFormat;
@@ -67,6 +69,18 @@ struct Shell {
     /// The last failure, shown in the editor's status line until the next
     /// action.
     notice: Option<String>,
+    /// The autosave job running on its thread, if any.
+    autosave: Option<mpsc::Receiver<AutosaveOutcome>>,
+    /// Whether the recovery scan already ran.
+    scanned: bool,
+    /// The projects a previous run left slots for (03 §7.9).
+    recovery: Vec<RecoveryEntry>,
+    /// The entry whose «Descartar» waits for confirmation.
+    confirm_discard: Option<usize>,
+    /// Why the last recovery action failed.
+    recovery_failure: Option<String>,
+    /// The destination «¿Guardar los cambios?» holds back.
+    leaving: Option<Leave>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -109,9 +123,155 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 screen: Screen::Splash,
                 elapsed: 0.0,
                 notice: None,
+                autosave: None,
+                scanned: false,
+                recovery: Vec::new(),
+                confirm_discard: None,
+                recovery_failure: None,
+                leaving: None,
             }))
         }),
     )
+}
+
+/// Where the person was going when «¿Guardar los cambios?» stopped them.
+#[derive(Clone, Copy)]
+enum Leave {
+    Home,
+    Open,
+}
+
+impl Shell {
+    /// Pump the autosave (02 §7.2): hand the due job to a thread and account
+    /// for it when it comes back. The engine schedules; the host runs (P13).
+    fn pump_autosave(&mut self, ctx: &egui::Context) {
+        if let Some(pending) = &self.autosave {
+            match pending.try_recv() {
+                Ok(outcome) => {
+                    if let Some(error) = outcome.error() {
+                        eprintln!("autosave: {error}");
+                    }
+                    self.engine.projects().autosave_finished(outcome);
+                    self.autosave = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => self.autosave = None,
+            }
+        }
+        if self.autosave.is_none()
+            && let Some(job) = self.engine.projects().autosave_due()
+        {
+            let (sender, receiver) = mpsc::channel();
+            let waker = ctx.clone();
+            std::thread::spawn(move || {
+                let _ = sender.send(job.run());
+                waker.request_repaint();
+            });
+            self.autosave = Some(receiver);
+        }
+        // The engine has no timer: look again in a second.
+        ctx.request_repaint_after(Duration::from_secs(1));
+    }
+
+    /// Leave the editor for `to`, closing the session (its slots go with it).
+    fn proceed(&mut self, to: Leave) {
+        self.engine.projects().close();
+        self.screen = Screen::Home(Home::default());
+        if let Leave::Open = to {
+            self.file(FileAction::Open);
+        }
+    }
+
+    fn file(&mut self, action: FileAction) {
+        self.notice = None;
+        match files::run(&self.engine, action) {
+            Outcome::Cancelled => {}
+            Outcome::Done => {
+                if action == FileAction::Open {
+                    self.screen = Screen::Editor(Editor::default());
+                }
+            }
+            Outcome::Failed(message, detail) => {
+                eprintln!("{action:?}: {detail}");
+                self.notice = Some(self.texts.t(&message));
+            }
+        }
+    }
+
+    /// The dialogs over the screen; `true` when one is open.
+    fn dialogs(&mut self, ctx: &egui::Context) -> bool {
+        if let Some(to) = self.leaving {
+            match dialogs::leave(ctx, &self.theme, &self.texts) {
+                LeaveChoice::None => {}
+                LeaveChoice::Cancel => self.leaving = None,
+                LeaveChoice::Discard => {
+                    self.leaving = None;
+                    self.proceed(to);
+                }
+                LeaveChoice::Save => {
+                    self.leaving = None;
+                    self.file(FileAction::Save);
+                    if !self.engine.projects().is_modified() {
+                        self.proceed(to);
+                    }
+                }
+            }
+            return true;
+        }
+        if self.recovery.is_empty() {
+            return false;
+        }
+        let failure = self.recovery_failure.clone();
+        match dialogs::recovery(
+            ctx,
+            &self.theme,
+            &self.texts,
+            &self.recovery,
+            self.confirm_discard,
+            failure.as_deref(),
+        ) {
+            RecoveryChoice::None => {}
+            RecoveryChoice::CancelDiscard => self.confirm_discard = None,
+            RecoveryChoice::AskDiscard(index) => self.confirm_discard = Some(index),
+            RecoveryChoice::Discard(index) => {
+                let entry = self.recovery.remove(index);
+                self.engine.projects().discard_recovery(entry.project_id);
+                self.confirm_discard = None;
+            }
+            RecoveryChoice::Recover(index) => {
+                let id = self.recovery[index].project_id;
+                match self.engine.projects().recover(id) {
+                    Ok(()) => {
+                        self.recovery.clear();
+                        self.screen = Screen::Editor(Editor::default());
+                    }
+                    Err(error) => {
+                        eprintln!("recover: {error}");
+                        self.recovery_failure =
+                            Some(self.texts.t(&gafira_doc::msg!("recovery.failed")));
+                    }
+                }
+            }
+            RecoveryChoice::OpenSaved(index) => {
+                let entry = self.recovery[index].clone();
+                if let Some(origin) = &entry.origin {
+                    match self.engine.projects().open(origin) {
+                        Ok(()) => {
+                            self.engine.projects().discard_recovery(entry.project_id);
+                            self.recovery.clear();
+                            self.screen = Screen::Editor(Editor::default());
+                        }
+                        Err(error) => {
+                            eprintln!("open: {error}");
+                            self.recovery_failure =
+                                Some(self.texts.t(&gafira_doc::msg!("file.open_failed")));
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
 }
 
 impl eframe::App for Shell {
@@ -119,6 +279,7 @@ impl eframe::App for Shell {
         // The window reads the document from snapshots each frame; the events
         // only wake it (02 §5.2), so the queue is drained and dropped.
         while self.engine.events().try_recv().is_ok() {}
+        self.pump_autosave(ctx);
         let go = match &mut self.screen {
             Screen::Splash => {
                 self.elapsed += ctx.input(|i| i.unstable_dt);
@@ -140,29 +301,32 @@ impl eframe::App for Shell {
                 self.notice.as_deref(),
             ),
         };
+        let blocked = self.dialogs(ctx);
+        let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request
             // it would wait for the next input event.
             ctx.request_repaint();
         }
+        let in_editor = matches!(self.screen, Screen::Editor(_));
+        let modified = self.engine.projects().is_modified();
         match go {
             Go::Stay => {}
-            Go::Home => self.screen = Screen::Home(Home::default()),
-            Go::File(action) => {
-                self.notice = None;
-                match files::run(&self.engine, action) {
-                    Outcome::Cancelled => {}
-                    Outcome::Done => {
-                        if action == FileAction::Open {
-                            self.screen = Screen::Editor(Editor::default());
-                        }
-                    }
-                    Outcome::Failed(message, detail) => {
-                        eprintln!("{action:?}: {detail}");
-                        self.notice = Some(self.texts.t(&message));
+            Go::Home if in_editor && modified => self.leaving = Some(Leave::Home),
+            Go::Home if in_editor => self.proceed(Leave::Home),
+            Go::Home => {
+                self.screen = Screen::Home(Home::default());
+                // Once, as Inicio first appears (03 §6.1).
+                if !self.scanned {
+                    self.scanned = true;
+                    match self.engine.projects().recoverable() {
+                        Ok(entries) => self.recovery = entries,
+                        Err(error) => eprintln!("recovery scan: {error}"),
                     }
                 }
             }
+            Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
+            Go::File(action) => self.file(action),
             Go::Editor(format) => match start(&mut self.engine, format) {
                 Ok(()) => self.screen = Screen::Editor(Editor::default()),
                 Err(error) => eprintln!("new document: {error}"),
@@ -171,17 +335,8 @@ impl eframe::App for Shell {
     }
 }
 
-/// A new document with one page of `format` (03 §6.2, «Elegir»).
-///
-/// The page is the first edit of the document, so undo can take it away; a
-/// `new_document` that takes the first page's size is a gap of the engine
-/// (spec 018, notes).
+/// A new document whose first page has the size of `format` (03 §6.2,
+/// «Elegir»); the page is part of the document, so undo keeps it (spec 016).
 pub(crate) fn start(engine: &mut Gafira, format: StartFormat) -> Result<(), EngineError> {
-    engine.projects().new_document()?;
-    engine.edit().execute(Box::new(InsertPage::new(
-        0,
-        String::new(),
-        format.page_size(),
-    )))?;
-    Ok(())
+    engine.projects().new_document_with(format.page_size())
 }

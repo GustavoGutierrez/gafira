@@ -14,13 +14,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use gafira_doc::{Document, Dpi};
+use gafira_doc::{Document, Dpi, Page, PageId, PageSize, ProjectId};
 use gafira_edit::{DirtySet, History};
 use gafira_ports::repository::ProjectRepository;
 use gafira_ports::system::{Clock, FileSystem, IdSource};
 
-use crate::autosave::{AutosaveJob, AutosaveOutcome, SLOTS};
+use crate::autosave::{AutosaveJob, AutosaveOutcome, MARKER, SLOTS, parse_marker};
 use crate::engine::{EngineConfig, EngineError, Ports};
+use crate::event::{EngineEvent, RecoveryEntry};
 use crate::session::{Autosave, DocVersion, Session, Shared};
 
 /// Creates, opens and saves the session's document (02 §5.4 line 1357).
@@ -70,6 +71,139 @@ impl ProjectService {
     pub fn new_document(&self) -> Result<(), EngineError> {
         let document = Document::from_parts(1, Dpi::DEFAULT, Vec::new())?;
         self.install(document, None, false)
+    }
+
+    /// [`ProjectService::new_document`] with a first page of `size`, part of
+    /// the new document and not an edit of it: undo cannot take it away
+    /// (03 §6.2 «Elegir», spec 016).
+    ///
+    /// # Errors
+    /// [`EngineError::InvalidDocument`] when `size` is outside the page
+    /// limits; the old session stays.
+    pub fn new_document_with(&self, size: PageSize) -> Result<(), EngineError> {
+        let page = Page::new(PageId::new(1), String::new(), size);
+        let document = Document::from_parts(2, Dpi::DEFAULT, vec![Arc::new(page)])?;
+        self.install(document, None, false)
+    }
+
+    /// End the session: the document and its history go, and so do its
+    /// recovery slots, because the person chose to leave (spec 016). The UI
+    /// asks «¿Guardar los cambios?» first (03 §6.1). Nothing is published.
+    pub fn close(&self) {
+        let ended = self.shared.lock().take();
+        if let Some(session) = ended {
+            self.discard_slots(session.history.document().project_id());
+        }
+    }
+
+    /// The projects with recovery slots left by a run that did not end
+    /// them: a crash, or a close that never came (02 §7.2 «Recuperación»).
+    /// The open session's own project is not listed. Publishes
+    /// `RecoveryAvailable` when there is any.
+    ///
+    /// Until the lock files of §7.2 exist, a second running instance's
+    /// slots are listed too (spec 016, notes).
+    ///
+    /// # Errors
+    /// [`EngineError::Io`] when the recovery folder cannot be listed; a
+    /// missing folder is no error.
+    pub fn recoverable(&self) -> Result<Vec<RecoveryEntry>, EngineError> {
+        if !self.filesystem.exists(&self.recovery)? {
+            return Ok(Vec::new());
+        }
+        let current = self
+            .shared
+            .lock()
+            .as_ref()
+            .map(|session| session.history.document().project_id());
+        let mut entries = Vec::new();
+        for folder in self.filesystem.read_dir(&self.recovery)? {
+            let Some(project_id) = folder
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.parse::<ProjectId>().ok())
+            else {
+                continue;
+            };
+            if Some(project_id) == current {
+                continue;
+            }
+            if let Some((_, origin)) = self.marker(project_id) {
+                entries.push(RecoveryEntry { project_id, origin });
+            }
+        }
+        entries.sort_by_key(|entry| entry.project_id);
+        if !entries.is_empty() {
+            self.shared
+                .bus()
+                .publish(EngineEvent::RecoveryAvailable(entries.clone()));
+        }
+        Ok(entries)
+    }
+
+    /// Replace the session with the newest readable slot of `project_id`
+    /// (02 §7.2: a slot that does not load gives way to the one before).
+    /// The recovered session lives at the file it came from and is modified:
+    /// its changes are not in that file yet. The slots stay until the next
+    /// save or close.
+    ///
+    /// # Errors
+    /// [`EngineError::NoRecovery`] when the project has no marker; the error
+    /// of the oldest slot when none loads. The old session stays then.
+    pub fn recover(&self, project_id: ProjectId) -> Result<(), EngineError> {
+        let (newest, origin) = self.marker(project_id).ok_or(EngineError::NoRecovery)?;
+        let folder = self.recovery.join(project_id.to_string());
+        let mut last = EngineError::NoRecovery;
+        for back in 0..SLOTS {
+            let slot = (newest + SLOTS - back) % SLOTS;
+            match self
+                .repository
+                .load(&folder.join(format!("slot-{slot}.gaf-journal")))
+            {
+                Ok(loaded) => {
+                    self.install(loaded.document, origin, false)?;
+                    if let Some(session) = self.shared.lock().as_mut() {
+                        // Nothing the file holds: modified until saved.
+                        session.clean_version = DocVersion(0);
+                    }
+                    return Ok(());
+                }
+                Err(error) => last = error.into(),
+            }
+        }
+        Err(last)
+    }
+
+    /// Delete the recovery slots of `project_id`: the person chose
+    /// «Descartar» (02 §7.2).
+    pub fn discard_recovery(&self, project_id: ProjectId) {
+        self.discard_slots(project_id);
+    }
+
+    /// The marker of `project_id`'s slots, if it reads.
+    fn marker(&self, project_id: ProjectId) -> Option<(u8, Option<PathBuf>)> {
+        let path = self.recovery.join(project_id.to_string()).join(MARKER);
+        let mut text = String::new();
+        self.filesystem
+            .open(&path)
+            .ok()?
+            .read_to_string(&mut text)
+            .ok()?;
+        parse_marker(&text)
+    }
+
+    /// Remove the marker and the slots of `project_id`, best effort: a file
+    /// that is not there is fine, and a failure only leaves an offer of
+    /// recovery behind.
+    fn discard_slots(&self, project_id: ProjectId) {
+        let folder = self.recovery.join(project_id.to_string());
+        let files = std::iter::once(folder.join(MARKER))
+            .chain((0..SLOTS).map(|slot| folder.join(format!("slot-{slot}.gaf-journal"))));
+        for file in files {
+            if self.filesystem.exists(&file).unwrap_or(false) {
+                let _ = self.filesystem.remove(&file);
+            }
+        }
     }
 
     /// Replace the session with the project at `path` (02 §5.4 line 1357).
@@ -177,10 +311,18 @@ impl ProjectService {
             session.read_only = false;
         }
         session.clean_version = version;
+        let project_id = session.history.document().project_id();
         // The file holds every change up to the snapshot; one made while it
         // was written stays pending for autosave.
-        if self.shared.version() == version {
+        let all_saved = self.shared.version() == version;
+        if all_saved {
             session.autosave.pending_since = None;
+        }
+        drop(cell);
+        // The file now holds everything the slots held: they would only
+        // offer a stale recovery (spec 016).
+        if all_saved {
+            self.discard_slots(project_id);
         }
     }
 
@@ -295,6 +437,7 @@ impl ProjectService {
                 .recovery
                 .join(session.history.document().project_id().to_string()),
             session_key: session.session_key.clone(),
+            origin: session.path.clone(),
             repository: Arc::clone(&self.repository),
             filesystem: Arc::clone(&self.filesystem),
         })
@@ -1018,5 +1161,175 @@ mod tests {
         ));
         assert_eq!(fs.take_trace(), Vec::new());
         assert_eq!(repository.take_calls(), Vec::new());
+    }
+
+    // ---- Spec 016: first page, close, recovery after a crash ----
+
+    use gafira_doc::PageSize;
+
+    use crate::autosave::marker_text;
+    use crate::event::RecoveryEntry;
+
+    /// An engine over `fs` with a clock the test moves; `fs` survives it, as
+    /// the disk survives a crash.
+    fn rig_on(fs: &MemoryFs) -> (Gafira, Arc<ManualClock>) {
+        let repository = Arc::new(MemoryRepository::new(fs, false));
+        let clock = Arc::new(ManualClock::at(Duration::ZERO));
+        let engine = engine_with_clock(fs, &repository, Arc::clone(&clock) as _);
+        (engine, clock)
+    }
+
+    /// [`TARGET`] opened and edited, and one autosave run and accounted
+    /// for: slot 0 and the marker are on disk. Returns the edited document.
+    fn crashed_after_an_autosave(fs: &MemoryFs) -> Document {
+        let (mut engine, clock) = rig_on(fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        append_page(&mut engine);
+        clock.set(Duration::from_secs(60));
+        let job = engine.projects().autosave_due().expect("a job");
+        let outcome = job.run();
+        assert!(outcome.error().is_none());
+        engine.projects().autosave_finished(outcome);
+        Document::clone(&engine.edit().document().expect("a document"))
+        // The engine is dropped without `close`: the crash.
+    }
+
+    fn target_fs() -> MemoryFs {
+        let fs = MemoryFs::default();
+        fs.put(
+            TARGET,
+            two_page_document().to_json().expect("json").as_bytes(),
+        );
+        fs
+    }
+
+    fn slot_file(n: u8) -> String {
+        format!("/data/gafira/recovery/{}/slot-{n}.gaf-journal", id(1))
+    }
+
+    // S16-01
+    #[test]
+    fn s16_01_the_first_page_belongs_to_the_new_document_and_undo_keeps_it() {
+        let (mut engine, _fs, _repository) = engine_with_target(false);
+        let size = PageSize {
+            width: gafira_geom::Length::new(1080.0, gafira_geom::Unit::Px),
+            height: gafira_geom::Length::new(1920.0, gafira_geom::Unit::Px),
+        };
+        engine
+            .projects()
+            .new_document_with(size)
+            .expect("a new document");
+        let document = engine.edit().document().expect("a document");
+        assert_eq!(document.pages().len(), 1);
+        assert_eq!(document.pages()[0].size, size);
+        assert!(!document.project_id().is_nil());
+        assert!(!engine.projects().is_modified());
+        assert_eq!(engine.edit().can_undo_redo(), (false, false));
+        assert_eq!(engine.edit().undo().expect("an undo"), None);
+        assert_eq!(
+            engine.edit().document().expect("a document").pages().len(),
+            1
+        );
+    }
+
+    // S16-02
+    #[test]
+    fn s16_02_the_marker_names_the_slot_and_the_file() {
+        use crate::autosave::parse_marker;
+        let text = marker_text(2, Some(Path::new(TARGET)));
+        assert_eq!(parse_marker(&text), Some((2, Some(PathBuf::from(TARGET)))));
+        assert_eq!(parse_marker(&marker_text(0, None)), Some((0, None)));
+        for bad in ["", "3\n/x", "x\n/x", "-1"] {
+            assert_eq!(parse_marker(bad), None, "{bad:?}");
+        }
+    }
+
+    // S16-03
+    #[test]
+    fn s16_03_after_a_crash_the_work_is_offered_and_recovered_where_it_belongs() {
+        let fs = target_fs();
+        let edited = crashed_after_an_autosave(&fs);
+
+        let (mut engine, _clock) = rig_on(&fs);
+        let entries = engine.projects().recoverable().expect("a scan");
+        let entry = RecoveryEntry {
+            project_id: id(1),
+            origin: Some(PathBuf::from(TARGET)),
+        };
+        assert_eq!(entries, std::slice::from_ref(&entry));
+        assert_eq!(
+            drain(&engine),
+            [EngineEvent::RecoveryAvailable(vec![entry])]
+        );
+
+        engine.projects().recover(id(1)).expect("recovers");
+        assert_eq!(*engine.edit().document().expect("a document"), edited);
+        assert_eq!(engine.projects().path(), Some(PathBuf::from(TARGET)));
+        assert!(
+            engine.projects().is_modified(),
+            "the file does not hold it yet"
+        );
+        assert_eq!(
+            engine.projects().recoverable().expect("a scan"),
+            [],
+            "its own slots are not offered"
+        );
+    }
+
+    // S16-04
+    #[test]
+    fn s16_04_a_slot_that_does_not_load_gives_way_to_the_one_before() {
+        let fs = target_fs();
+        let edited = crashed_after_an_autosave(&fs);
+        // A newer slot 1 that the crash cut short, named by the marker.
+        fs.put(&slot_file(1), b"cut short");
+        let marker = format!("/data/gafira/recovery/{}/latest", id(1));
+        fs.put(&marker, marker_text(1, Some(Path::new(TARGET))).as_bytes());
+
+        let (mut engine, _clock) = rig_on(&fs);
+        engine.projects().recover(id(1)).expect("recovers slot 0");
+        assert_eq!(*engine.edit().document().expect("a document"), edited);
+
+        fs.put(&slot_file(0), b"broken too");
+        let (engine, _clock) = rig_on(&fs);
+        assert!(matches!(
+            engine.projects().recover(id(1)),
+            Err(EngineError::Repository(_))
+        ));
+        assert!(matches!(
+            engine.projects().recover(id(9)),
+            Err(EngineError::NoRecovery)
+        ));
+    }
+
+    // S16-05
+    #[test]
+    fn s16_05_save_close_and_discard_remove_the_slots() {
+        let marker = format!("/data/gafira/recovery/{}/latest", id(1));
+        for way in ["save", "close", "discard"] {
+            let fs = target_fs();
+            crashed_after_an_autosave(&fs);
+            let (engine, _clock) = rig_on(&fs);
+            match way {
+                "save" | "close" => {
+                    engine.projects().recover(id(1)).expect("recovers");
+                    if way == "save" {
+                        engine.projects().save().expect("saves");
+                    } else {
+                        engine.projects().close();
+                        assert!(!engine.projects().is_modified(), "no session");
+                    }
+                }
+                _ => engine.projects().discard_recovery(id(1)),
+            }
+            assert_eq!(fs.file(&marker), None, "{way}");
+            assert_eq!(fs.file(&slot_file(0)), None, "{way}");
+            let (engine, _clock) = rig_on(&fs);
+            assert_eq!(
+                engine.projects().recoverable().expect("a scan"),
+                [],
+                "{way}"
+            );
+        }
     }
 }
