@@ -6,8 +6,11 @@ use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gafira_engine::{AutosaveOutcome, EngineError, Gafira, RecoveryEntry, Waker};
+use gafira_ports::i18n::LanguagePreference;
 use gafira_ports::i18n::Locale;
 use gafira_ports::settings::Appearance;
+
+use crate::settings::{self, Change, SettingsView};
 use gafira_theme::ThemeTokens;
 
 use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
@@ -65,12 +68,16 @@ pub(crate) enum Go {
     OpenRecent(PathBuf),
     /// Switch the interface to dark (`true`) or light, and remember it.
     Dark(bool),
+    /// Open Ajustes over the current screen (03 §7.8, spec 034).
+    Settings,
     /// Open «Exportar» for the page of the selection, if any (spec 030).
     Export(Option<gafira_doc::PageId>),
 }
 
 struct Shell {
     engine: Gafira,
+    /// Ajustes, when open, drawn instead of the screen (spec 034).
+    settings: Option<SettingsView>,
     recent: Box<dyn RecentStore>,
     theme: Theme,
     texts: Texts,
@@ -128,9 +135,11 @@ pub fn run(config: UiConfig) -> eframe::Result {
                     engine.settings().locale()
                 }
             };
-            theme.dark = engine.settings().get().appearance == Appearance::Dark;
+            let system_dark = cc.egui_ctx.system_theme().map(|t| t == egui::Theme::Dark);
+            theme.dark = settings::is_dark(engine.settings().get().appearance, system_dark);
             theme.apply(&cc.egui_ctx);
             Ok(Box::new(Shell {
+                settings: None,
                 engine,
                 recent: config.recent,
                 theme,
@@ -354,12 +363,60 @@ impl Shell {
     }
 }
 
+impl Shell {
+    /// Ajustes over the whole window; a change applies at once and persists
+    /// through `SettingsService` (03 §7.8, §16.1).
+    fn show_settings(&mut self, ctx: &egui::Context) {
+        let Some(view) = self.settings.as_mut() else {
+            return;
+        };
+        let current = self.engine.settings().get();
+        let system = self.engine.settings().preview(LanguagePreference::System);
+        let change = settings::show(
+            ctx,
+            &self.theme,
+            &self.texts,
+            view,
+            current,
+            &system,
+            self.version,
+        );
+        match change {
+            Change::None => {}
+            Change::Back => {
+                self.settings = None;
+                ctx.request_repaint();
+            }
+            Change::Language(language) => match self.engine.settings().set_language(language) {
+                Ok(resolved) => self.texts.locale = resolved.locale,
+                Err(error) => eprintln!("settings: {error}"),
+            },
+            Change::Appearance(appearance) => {
+                let system_dark = ctx.system_theme().map(|t| t == egui::Theme::Dark);
+                self.theme.dark = settings::is_dark(appearance, system_dark);
+                self.theme.apply(ctx);
+                if let Err(error) = self
+                    .engine
+                    .settings()
+                    .set(current.with_appearance(appearance))
+                {
+                    eprintln!("settings: {error}");
+                }
+            }
+        }
+    }
+}
+
 impl eframe::App for Shell {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // The window reads the document from snapshots each frame; the events
         // only wake it (02 §5.2), so the queue is drained and dropped.
         while self.engine.events().try_recv().is_ok() {}
         self.pump_autosave(ctx);
+        if self.settings.is_some() {
+            self.show_settings(ctx);
+            return;
+        }
         let go = match &mut self.screen {
             Screen::Splash => {
                 self.elapsed += ctx.input(|i| i.unstable_dt);
@@ -411,6 +468,7 @@ impl eframe::App for Shell {
                 self.leaving = Some(Leave::Recent(path));
             }
             Go::OpenRecent(path) => self.open_recent(&path),
+            Go::Settings => self.settings = Some(SettingsView::default()),
             Go::Dark(dark) => {
                 self.theme.dark = dark;
                 self.theme.apply(ctx);

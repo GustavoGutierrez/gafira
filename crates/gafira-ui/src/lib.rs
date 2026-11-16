@@ -19,6 +19,7 @@ mod files;
 mod format;
 mod home;
 mod recent;
+mod settings;
 mod shell;
 mod splash;
 mod style;

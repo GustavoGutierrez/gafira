@@ -58,6 +58,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 029 | [Imágenes en el lienzo](done/029-images-on-canvas.md) | `ImageNode` en el documento, «Importar imagen…» (PNG/JPEG) desde Biblioteca, dibujo desde el almacén |
 | 030 | [Exportar PNG y PDF](done/030-export-png-pdf.md) | `ExportService` con licencia, registro y escritura por `*.tmp`; `gafira-io-image` (PNG 0,5×–4×, sRGB, 16 384 px) y `gafira-io-pdf` (krilla, una imagen por página); texto como contornos y escala de exportación en `gafira-render`; diálogo «Exportar» (PNG 1×/2× o PDF); 31 tests nuevos, 2880 tests |
 | 031 | [Versiones dentro del `.gaf`](done/031-versions.md) | `versions/index.json` y una carpeta por versión, recursos compartidos por hash; el puerto lleva las versiones (`LoadedProject.versions`, `save(.., versions)`); versión automática al guardar (más de 30 min, 20 conservadas, nombradas nunca); `save_version`, `list_versions`, `restore_version` con el comando `RestoreVersion`; «Versiones» y «Guardar versión…» en el editor; 33 tests nuevos, 5 mutantes a mano muertos, 2882 tests |
+| 034 | [Pantalla de Ajustes](done/034-settings-screen.md) | General (idioma al momento), Apariencia (Claro, Oscuro, Sistema), Privacidad y Acerca de; desde Inicio y Archivo |
 
 ### Historial del flujo anterior
 

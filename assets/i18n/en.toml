@@ -6,7 +6,24 @@
 [brand]
 slogan = "Bring your ideas to life."
 
+[settings]
+title = "Settings"
+back = "Back"
+general = "General"
+privacy = "Privacy"
+privacy_text = "Your designs and files never leave your computer. Gafira does not connect to the internet."
+about = "About"
+fonts = "Bundled typefaces"
+font_license = "SIL Open Font License"
+
+[settings.appearance]
+title = "Appearance"
+light = "Light"
+dark = "Dark"
+system = "System"
+
 [settings.language]
+help = "With System, Gafira uses Spanish if your computer is set to any variant of Spanish, and English otherwise. The change applies at once."
 title = "Language"
 system = "System"
 system_now = "System · now: {language} ({tag})"

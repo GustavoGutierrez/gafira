@@ -6,7 +6,24 @@
 [brand]
 slogan = "Haz visibles tus ideas."
 
+[settings]
+title = "Ajustes"
+back = "Volver"
+general = "General"
+privacy = "Privacidad"
+privacy_text = "Tus diseños y archivos no salen de tu equipo. Gafira no se conecta a internet."
+about = "Acerca de"
+fonts = "Tipografías incluidas"
+font_license = "Licencia SIL Open Font"
+
+[settings.appearance]
+title = "Apariencia"
+light = "Claro"
+dark = "Oscuro"
+system = "Sistema"
+
 [settings.language]
+help = "Con Sistema, Gafira usa español si tu equipo está en cualquier variante de español, e inglés en los demás casos. El cambio se aplica al momento."
 title = "Idioma"
 system = "Sistema"
 system_now = "Sistema · ahora: {language} ({tag})"

@@ -54,7 +54,11 @@ impl Home {
                 false,
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("nav.settings")), false);
+                if widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("nav.settings")), false)
+                    .clicked()
+                {
+                    go = Go::Settings;
+                }
                 ui.add_space(16.0);
                 ui.label(
                     RichText::new(texts.t(&gafira_doc::msg!("nav.search")))
