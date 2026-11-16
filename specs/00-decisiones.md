@@ -714,3 +714,12 @@ Fecha: 16 de noviembre de 2026.
 - **Decisión** (titular): los puntos 15 (firma de código) y 19 a 22 (calidad, instalación, distribución y accesibilidad) de 05 C11 bloquean **cualquier** versión, también la primera, gratuita. Motivo: SmartScreen (Windows) y Gatekeeper (macOS) bloquean las aplicaciones sin firmar.
 - **Consecuencia**: esos puntos pasan a «Toda versión» y C11 ya no tiene puntos sin clasificar.
 - Amplía D-70. Aplicado a 05 (C11).
+
+## D-80 Decisiones PROPUESTA confirmadas en bloque
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): toda decisión de producto o de diseño marcada PROPUESTA en 01, 02, 04 y 05 queda **confirmada** tal como está escrita. Las cifras ya las confirmó D-71.
+- **Quedan fuera** y siguen abiertas: el campo `template` del manifiesto (02 §7.1, hueco abierto; 04 FD-16 y §15) y el modo oscuro derivado (01 C-06). Lo aplazado sigue aplazado: Q-20 y el precio (D-70) y Q-23 (D-74). Las fórmulas de FD-33 siguen en PROPUESTA hasta la revisión visual del ítem 133 de 07 (D-78).
+- **Marcas**: como en D-71, PROPUESTA pasa a «confirmada (D-80)», para que lo que sigue en PROPUESTA sea solo lo abierto. No cambia el contenido de ninguna decisión.
+- Amplía D-71. Aplicado a 01 (convenciones, RNF-01, §10.1, §11.1, C-18), 02 (convenciones, §4.17.5, §7.3, §13.1, §13.2, §14.3, §14.5), 04 (convenciones, FD-05, FD-17, FD-21, FD-24, FD-26, FD-44, FD-48, FD-59) y 05 (convenciones, FV-15, FV-18, FV-19, C1, C4, C7, C10).

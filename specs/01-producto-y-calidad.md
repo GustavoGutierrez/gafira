@@ -5,9 +5,9 @@
 | Documento | Especificación 01 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-79 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-80 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
-| Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
+| Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar; **confirmada (D-80)** = decisión de producto o de diseño que fue PROPUESTA y el titular confirmó tal como está escrita (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
 ---
 
@@ -254,7 +254,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 
 | ID | Requisito | PRD | ARQ | Criterios de calidad |
 |---|---|---|---|---|
-| RNF-01 | **Plataforma.** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Pantallas HiDPI, modo oscuro y teclado completo. Sin web ni otras plataformas. Varios monitores: la ventana principal es única; paneles flotantes en un segundo monitor son PROPUESTA de Fase 2. | RNF-01 | ARQ-03, ARQ-80 | — |
+| RNF-01 | **Plataforma.** Windows 10/11 x86_64 (MSI), Linux x86_64 (`.deb`, `.rpm` y `.tar.gz`) y macOS 12+ aarch64 (DMG). Pantallas HiDPI, modo oscuro y teclado completo. Sin web ni otras plataformas. Varios monitores: la ventana principal es única; paneles flotantes en un segundo monitor en Fase 2 (confirmada, D-80). | RNF-01 | ARQ-03, ARQ-80 | — |
 | RNF-02 | **Rendimiento.** Se cumplen las cifras de la §9; el hilo de UI nunca bloquea más de 16 ms por trabajo del engine; la GPU es opcional y existe siempre alternativa en CPU con estimación de tiempo visible. | RNF-02 | ARQ-40..44, ARQ-22, ARQ-65, ARQ-68 | CAL-01..CAL-16, CAL-38, CAL-39 |
 | RNF-03 | **Confiabilidad.** Autoguardado con recuperación del 100 %, guardado atómico, copia `.bak` de una generación, ninguna operación destructiva sin Deshacer, verificación de integridad en exportaciones. | RNF-03 | ARQ-50..57 | CAL-17, CAL-18 |
 | RNF-04 | **Seguridad y privacidad.** Procesamiento 100 % local; la única conexión de red es la de la licencia, que envía solo los datos que declara `PRIVACY.md` (identificador de dispositivo incluido; D-01); sin cuentas, nube ni telemetría automática; el registro de actividad es local y auditable; permisos mínimos del SO; los modelos de IA, si existen, se instalan aparte y se desactivan por defecto. | RNF-04 | ARQ-04, ARQ-24, ARQ-76, ARQ-91 | CAL-21 |
@@ -352,7 +352,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | Exportaciones exitosas sin intervención | ≥ 98 % | PRD | `export_matrix` en CI (CAL-17) |
 | Reel de 60 s a 1080p | < 3 min | PRD | `bench_export_reel_60s` (CAL-16) |
 | Quejas de lag | < 5 % de sesiones | PRD | Informe local de frames lentos que la persona puede exportar y compartir de forma voluntaria; no hay envío automático (CAL-21) |
-| Adopción de funciones avanzadas | 30 % de usuarios activos mensuales usan Fotogramas clave, Máscaras o Corrección de color | PRD | **No medible de forma automática** sin telemetría. Se sustituye por encuesta voluntaria dentro de la app (PROPUESTA) y por conteos locales que la persona puede exportar. Ver §13 |
+| Adopción de funciones avanzadas | 30 % de usuarios activos mensuales usan Fotogramas clave, Máscaras o Corrección de color | PRD | **No medible de forma automática** sin telemetría. Se sustituye por encuesta voluntaria dentro de la app (confirmada, D-80) y por conteos locales que la persona puede exportar. Ver §13 |
 
 ### 10.2 Restricciones
 
@@ -380,7 +380,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 
 1. **Una licencia, un binario.** El mismo ejecutable contiene todas las funciones de todas las fases; no hay módulos que se activen por separado.
 2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo. El licenciamiento se puede deshabilitar por build sin cambiar el engine ni la UI: entonces no hay activación ni conexión de red y todo queda desbloqueado (D-58, 02 §4.14). La primera versión se publica así, sin licencia (D-62).
-3. **Sin marcas de agua** en las exportaciones (PROPUESTA).
+3. **Sin marcas de agua** en las exportaciones (confirmada, D-80).
 4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20, aplazada por D-62 y D-70).
 5. **Única conexión de red = licencia** (activar, validar o desactivar). `PRIVACY.md` declara el identificador de dispositivo que se envía al activar y no puede afirmar que la app no transmite datos.
 6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, tentativo 99 USD, PROPUESTA; pendiente 1 del titular, aplazado hasta que haya venta, D-70).
@@ -492,7 +492,7 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-15 | **Modo simple y modo experto separados** (PRD §4). | PRD | Divulgación progresiva en una sola interfaz (PP-2), sin dos modos. |
 | C-16 | **Nombre de la función de marca.** El PRD y el producto explorado la designan con un nombre en inglés de otro producto. | PRD | Se llama **Identidad visual** (glosario de 03). |
 | C-17 | **PDF/X y formatos de impresión.** El PRD menciona PDF/X. | PRD vs 02 | PDF RGB en MVP; CMYK en Fase 2; PDF/X en VERIFICAR (no previsto en 02). |
-| C-18 | **Varios monitores.** El PRD lo cita en RNF-01. | PRD | Ventana única; paneles flotantes como PROPUESTA de Fase 2. |
+| C-18 | **Varios monitores.** El PRD lo cita en RNF-01. | PRD | Ventana única; paneles flotantes en Fase 2 (confirmada, D-80). |
 | C-19 | **Funciones esenciales sin retener tras un plan de pago** (principio del PRD). | PRD vs D-01 | D-01 y D-12 lo sustituyen: todo de pago, modo sin licencia y una sola licencia (§11). |
 | C-20 | **Idioma del producto.** El manual fija español e inglés como idiomas prioritarios y da el eslogan inglés; el PRD no define idioma de interfaz; 03 decía «la traducción al inglés (si se hace)» y 05 FV-30 limita el instalador al español «según Q-14». | Manual vs PRD vs 03/05 | D-08: español e inglés, por defecto según el sistema y cualquier otro idioma → inglés (§7.11). 03 ya está alineada; 05 FV-30 ofrece el instalador en español e inglés (D-61). |
 | C-21 | **Plantillas por idioma.** El PRD pide una biblioteca «local y remota» filtrable por idioma. | PRD vs §6 | Solo plantillas locales (§6); cada plantilla empaquetada declara su idioma y la pestaña Plantillas filtra por él (nota de §7.3). |
