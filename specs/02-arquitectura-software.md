@@ -5,8 +5,8 @@
 | Documento | Especificación 02 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-79 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
-| Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar; lo que sigue en PROPUESTA está abierto. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
+| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-80 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar. **confirmada (D-80)** = decisión de producto o de diseño que fue PROPUESTA y el titular confirmó tal como está escrita; lo que sigue en PROPUESTA está abierto. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-149 son los contratos de los motores de la capa de aplicación (§4.17.7, §4.17.8) |
 
 Gafira es un editor de escritorio local para diseño gráfico, imagen y video. Su principio de producto, «La herramienta no debe ser más difícil que la idea que el usuario quiere comunicar», se traduce en arquitectura así: el núcleo es pequeño, predecible y rápido. Cada capacidad nueva entra por un punto de extensión y no modifica el núcleo.
@@ -1138,8 +1138,8 @@ Parámetros de los procesadores, que forman su `ParamSchema` y son los ids de `P
 | `Gain` | `volume` | % | `[0, 200]` | 100 | Sí | `audio.gain.volume` |
 | `Fade` | `duration` | s | `[0, f64::MAX]`: todo valor finito ≥ 0 | 0 | No | `audio.fade.duration` |
 | `Pan` | `pan` | Sin unidad | `[−1, 1]` | 0 | No | `audio.pan.pan` |
-| `Eq3Band` | `low`, `mid`, `high` (PROPUESTA) | dB | `[−15, 15]` | 0 (confirmada, D-71) | No (PROPUESTA) | `audio.eq3band.low`, `.mid`, `.high` (PROPUESTA) |
-| `LoudnessNormalizer` | `gain` (PROPUESTA) | dB | `[−f64::MAX, f64::MAX]` (confirmada, D-71) | 0 | No | `audio.loudness_normalizer.gain` (PROPUESTA) |
+| `Eq3Band` | `low`, `mid`, `high` (confirmada, D-80) | dB | `[−15, 15]` | 0 (confirmada, D-71) | No (confirmada, D-80) | `audio.eq3band.low`, `.mid`, `.high` (confirmada, D-80) |
+| `LoudnessNormalizer` | `gain` (confirmada, D-80) | dB | `[−f64::MAX, f64::MAX]` (confirmada, D-71) | 0 | No | `audio.loudness_normalizer.gain` (confirmada, D-80) |
 
 Aceptación: por procesador, llamando por `dyn AudioProcessor`, `params()` pasa `ParamSchema::validate_definition` y su id, rango, valor por defecto, animable y etiqueta son los de la tabla; `ProcessorChain` da un esquema vacío. `volume` 250 se recorta a 200, `pan` 2 a 1, `duration` −1 a 0, y una banda de `Eq3Band` 16 a 15 y −16 a −15 (ARQ-123); un valor en cada extremo no cambia; un id distinto de estos no cambia la salida.
 
@@ -1641,7 +1641,7 @@ pub enum FormatError {
 - Un enum de error por crate, escrito a mano y sin `thiserror` (ADR 0012) (`DocError`, `CommandError`, `FormatError`, `EffectError`, `SegError`). Excepción: un tipo que comparten varios crates puede tener su propio enum, como `BufferError` en `gafira-raster` (`ImageView`, `AlphaMask`). El enum del crate lo envuelve en una variante con `From`, y su `to_message` delega, como con `Cancelled`: `EffectError` envuelve `BufferError` y `ParamError`, y añade `size_mismatch`, `format_mismatch` y `unsupported_format`, con las claves `error.raster.<variante>`. Los formatos viajan en `Text` y los tamaños en `Count`. `anyhow` solo en los binarios y en `xtask`.
 - **Excepción de la capa 3** (ADR 0014): `gafira-ports` tiene un enum por familia de puerto, en el módulo del puerto, porque cada uno aparece en la firma de un trait: `RegistryError`, `StoreError`, `ImportError`, `ExportError`, `RenderError`, `MediaError`, `AssetError`, `RepositoryError`, `LicenseError` y `AssistError`. `PluginError` llega con `PluginHost` (Fase 3). Sus claves usan la familia como área, no el crate: `error.<familia>.<variante>`, con las familias `registry`, `store`, `import`, `export`, `render`, `media`, `asset`, `repository`, `license` y `assist` (por ejemplo `error.render.device_lost`). El resto de ADR 0012 se aplica igual: `Cancelled` delega, `to_message` no tiene brazo `_` y el texto de la biblioteca queda en `Display`. Un adaptador devuelve el enum que nombra su puerto; su enum interno, como `FormatError`, se convierte en él. Los fallos de E/S conservan `std::io::Error`, como `FormatError`, y no dan argumento a la clave. Aceptación: ARQ-102 con un fixture por variante de cada uno de los diez enums, con la clave en el área de su familia.
 - `gafira-engine` traduce los errores a `UserError { kind, message: Message, detail, actions: Vec<Message> }`. Cada enum de error implementa `ToMessage` (`gafira-doc::msg`, §14.2) y devuelve una **clave con parámetros** (por ejemplo `error.format.too_new { found, supported }`), nunca un texto ya traducido (ARQ-102). La UI la traduce en el idioma activo; los mensajes visibles siguen el tono de marca («No pudimos completar esta acción. Inténtalo de nuevo.» / «We couldn't complete this action. Try again.») y el detalle técnico va al log local.
-- El texto de `Display` es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (PROPUESTA; el extracto anterior conserva su texto original como ejemplo de estructura).
+- El texto de `Display` es **solo para el log local**, nunca se muestra en la interfaz y no se traduce. A partir de D-08 se escribe en inglés para que los registros sean iguales con cualquier idioma de interfaz (confirmada, D-80; el extracto anterior conserva su texto original como ejemplo de estructura).
 - **Degradación**:
 
 | Fallo | Comportamiento |
@@ -2130,7 +2130,7 @@ Ninguna. Q-25 la cerró D-77; Q-34 y Q-48 pasaron a tareas de `07-deuda-abierta.
 ### 13.1 Alcance y servicio externo
 
 - **Modelo** (D-01, D-12): Gafira es de pago, sin prueba gratuita y con una sola licencia. El mismo binario contiene todas las funciones. Sin licencia, la app funciona en modo sin licencia: la exportación está bloqueada, y las demás funciones bloqueadas se fijan en la spec 06 (lista pendiente de D-12). Guardar nunca depende de la licencia, ni siquiera con `Invalid` (D-55). El licenciamiento se puede deshabilitar por build (D-58): el composition root inyecta `NoLicensing` (§4.14), el estado es `NotRequired`, no hay activación ni conexión de red y todo queda desbloqueado. La primera versión se publica así (D-62): `gafira-license`, la lista de funciones bloqueadas y el precio quedan aplazados hasta que el titular decida cobrar, y ARQ-90 a ARQ-96 se aplican solo a un build con licencia habilitada.
-- **Servicio**: la activación usa el **`license-hub`** del titular, un servicio externo (Cloudflare Workers + D1; proveedor Gumroad o clave propia; de 1 a 10 dispositivos por licencia). **No se despliega con la app**, no forma parte del workspace de Gafira ni del instalador. Gafira solo contiene el cliente. La URL base, el `iss` esperado y el identificador de aplicación (`"gafira"`, PROPUESTA) se fijan en el build; Gafira se registra en el servicio como una aplicación más.
+- **Servicio**: la activación usa el **`license-hub`** del titular, un servicio externo (Cloudflare Workers + D1; proveedor Gumroad o clave propia; de 1 a 10 dispositivos por licencia). **No se despliega con la app**, no forma parte del workspace de Gafira ni del instalador. Gafira solo contiene el cliente. La URL base, el `iss` esperado y el identificador de aplicación (`"gafira"`, confirmada, D-80) se fijan en el build; Gafira se registra en el servicio como una aplicación más.
 - **Única conexión de red**: activar, validar o desactivar la licencia. Nada más sale del equipo (ARQ-91).
 
 ### 13.2 Diseño del crate
@@ -2148,7 +2148,7 @@ Ninguna. Q-25 la cerró D-77; Q-34 y Q-48 pasaron a tareas de `07-deuda-abierta.
 | `adapter` | Implementa `LicenseVerifier` (§4.14) sobre los módulos anteriores. | — |
 
 - **Clave pública fija**: la clave Ed25519 de producción es una constante del ejecutable. Nunca se descarga ni se lee del disco: aceptar la clave que publica el servidor permitiría a cualquiera que responda esa petición emitir licencias válidas. Una prueba comprueba que la constante coincide con la clave SPKI publicada.
-- **Features**: `online` y `credentials` están desactivadas por defecto en el crate y se activan en el binario `gafira`. `gafira-cli` solo lee el token guardado y verifica su estado sin red (PROPUESTA); la activación se hace desde la app.
+- **Features**: `online` y `credentials` están desactivadas por defecto en el crate y se activan en el binario `gafira`. `gafira-cli` solo lee el token guardado y verifica su estado sin red (confirmada, D-80); la activación se hace desde la app.
 - **Hilos**: las llamadas de red son bloqueantes y se ejecutan en el hilo de E/S del engine.
 
 ### 13.3 Estados de licencia
@@ -2265,7 +2265,7 @@ pub trait ToMessage { fn to_message(&self) -> Message; }
 | Linux x86_64 | Primer elemento de `LANGUAGE` (lista separada por `:`) si la configuración efectiva no es `C`/`POSIX`; si no, el primero no vacío de `LC_ALL`, `LC_MESSAGES` y `LANG` | El primero no vacío de `LC_ALL`, `LC_NUMERIC` y `LANG` | `std::env` (permitido en adaptadores; prohibido en las capas 0–2 por ARQ-02) |
 
 - `gafira-platform` devuelve las etiquetas tal como las da el SO, sin interpretarlas. Si una llamada falla o no hay dato, devuelve `None` y el resolvedor aplica el respaldo inglés.
-- Se lee al arrancar y cada vez que la persona vuelve a elegir «Sistema». Un cambio de idioma del SO con la app abierta se aplica en el siguiente arranque (PROPUESTA).
+- Se lee al arrancar y cada vez que la persona vuelve a elegir «Sistema». Un cambio de idioma del SO con la app abierta se aplica en el siguiente arranque (confirmada, D-80).
 - Solo cuenta el **primer** idioma preferido del SO: si la lista es `fr:es`, el idioma del sistema es francés y la regla da inglés, tal como dice D-08.
 
 ### 14.4 Regla de resolución (`D08LocaleResolver`)
@@ -2343,7 +2343,7 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | Dimensiones y unidades | `1080 × 1080 px` · `0,5 s` · `−14 LUFS` | `1080 × 1080 px` · `0.5 s` · `−14 LUFS` | `quantity` |
 | Código de tiempo | `00:12:04` | `00:12:04` | Igual en los dos idiomas |
 
-- **Entrada numérica**: los campos numéricos (03 DIS-20) aceptan el separador decimal del `FormatLocale` activo y, además, el punto (PROPUESTA).
+- **Entrada numérica**: los campos numéricos (03 DIS-20) aceptan el separador decimal del `FormatLocale` activo y, además, el punto (confirmada, D-80).
 - **Plantillas empaquetadas**: su índice declara `language = "es" | "en" | "neutral"`; la pestaña Plantillas las filtra por idioma (01 §7.3).
 
 ### 14.6 Respaldo y seudo-localización

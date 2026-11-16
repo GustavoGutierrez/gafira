@@ -5,8 +5,8 @@
 | Documento | Especificación 04 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-79, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
-| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78) |
+| Depende de | `00-decisiones.md` (D-01 a D-80, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
+| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78). D-80 confirma las decisiones PROPUESTA, salvo el campo `template` del manifiesto (FD-16, §15) y las fórmulas de FD-33 (D-78) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o cifra propia, confirmada por D-71) · *Aceptación* (criterios verificables) · *RF*.
 
@@ -80,7 +80,7 @@
 
 **FD-05 · Márgenes, Sangrado y Zona de seguridad** (RF-07)
 - *Propósito*: preparar piezas para impresión y para plataformas que recortan bordes.
-- *Comportamiento y reglas*: **Márgenes** por página (`Page.margins: Margins`: cuatro lados, ligados por defecto con `linked`, o independientes; 0 por defecto). **Sangrado** de 0–10 mm (`Page.bleed: Length`, el mismo en los cuatro lados; por defecto 0; 3 mm en Impresión) que se dibuja como borde exterior (`canvas.bleed`) y se incluye al exportar PDF con marcas de corte. **Zona de seguridad**: área interior (por defecto 5 % por lado, D-38; `safe_rect` recibe el porcentaje como entrada) y en video vertical zonas que cubren las interfaces de plataformas (PROPUESTA; valores VERIFICAR por plataforma). Un contenido que sobresale de la Zona de seguridad dispara el aviso «Parte del contenido queda fuera de la zona de seguridad.» (no bloquea).
+- *Comportamiento y reglas*: **Márgenes** por página (`Page.margins: Margins`: cuatro lados, ligados por defecto con `linked`, o independientes; 0 por defecto). **Sangrado** de 0–10 mm (`Page.bleed: Length`, el mismo en los cuatro lados; por defecto 0; 3 mm en Impresión) que se dibuja como borde exterior (`canvas.bleed`) y se incluye al exportar PDF con marcas de corte. **Zona de seguridad**: área interior (por defecto 5 % por lado, D-38; `safe_rect` recibe el porcentaje como entrada) y en video vertical zonas que cubren las interfaces de plataformas (confirmada, D-80; valores VERIFICAR por plataforma). Un contenido que sobresale de la Zona de seguridad dispara el aviso «Parte del contenido queda fuera de la zona de seguridad.» (no bloquea).
   - **Cálculo**: `bleed_rect` amplía el rectángulo de la página por el sangrado en los cuatro lados. `safe_rect` lo reduce un porcentaje de su ancho a izquierda y derecha, y de su alto arriba y abajo. El rectángulo de márgenes lo reduce por cada margen. El DPI que convierte mm a px es una entrada.
   - **`overflow(bounds, rect)`**: da el exceso ≥ 0 por lado e indica si la caja queda totalmente fuera. Un borde sobre el límite no sobresale. La caja está totalmente fuera si no comparte área con `rect`: `bounds.x0 ≥ rect.x1`, `bounds.x1 ≤ rect.x0`, y lo mismo en `y`. El aviso aparece si algún exceso es `> 0`.
   - **Validación**: dan error un sangrado fuera de 0–10 mm, unos márgenes que quitan algo y dejan el rectángulo sin área, y un porcentaje fuera de `[0, 50)`. Una caja de tamaño 0 con márgenes 0 es válida. La regla por eje y el redondeo están en 02 §4.17.2.
@@ -208,7 +208,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-17 · Formas y Líneas** (RF-16)
 - *Propósito*: construir composiciones con geometría simple.
-- *Comportamiento y reglas*: formas: rectángulo (radio de esquina editable), elipse, polígono (3–12 lados), estrella (3–12 puntas) y ruta libre; **Líneas** con grosor, estilo (continua, discontinua, punteada), remates y flechas. Relleno sólido, degradado lineal o radial, o sin relleno; contorno con color y grosor. Las formas son vectoriales y editables nodo a nodo (doble clic). Booleanas (unir, restar, intersectar) en Fase 2 (PROPUESTA).
+- *Comportamiento y reglas*: formas: rectángulo (radio de esquina editable), elipse, polígono (3–12 lados), estrella (3–12 puntas) y ruta libre; **Líneas** con grosor, estilo (continua, discontinua, punteada), remates y flechas. Relleno sólido, degradado lineal o radial, o sin relleno; contorno con color y grosor. Las formas son vectoriales y editables nodo a nodo (doble clic). Booleanas (unir, restar, intersectar) en Fase 2 (confirmada, D-80).
 - *UI*: Piezas → Formas, Líneas; herramientas Forma (R, O) y Línea (L).
 - *Técnica*: `ShapeNode`, `gafira-pathops` (contorno de trazo, simplificación), `gafira-geom` (kurbo).
 - *Presupuesto*: insertar < 100 ms; arrastrar a 60 fps (CAL-02).
@@ -240,7 +240,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-21 · Tablas** (RF-16)
 - *Propósito*: presentar datos tabulares dentro del diseño.
-- *Comportamiento y reglas*: tablas de 1–50 filas y 1–20 columnas; edición de celdas con texto; fila de encabezado; fila alterna; redimensionar columnas y filas arrastrando; estilos que toman colores de la Identidad. Combinar celdas en Fase 2 (PROPUESTA). Pegar desde portapapeles (texto con tabuladores) rellena celdas.
+- *Comportamiento y reglas*: tablas de 1–50 filas y 1–20 columnas; edición de celdas con texto; fila de encabezado; fila alterna; redimensionar columnas y filas arrastrando; estilos que toman colores de la Identidad. Combinar celdas en Fase 2 (confirmada, D-80). Pegar desde portapapeles (texto con tabuladores) rellena celdas.
 - *UI*: Piezas → Tablas.
 - *Técnica*: `TableNode` (02 §3.2), `gafira-text` para cada celda.
 - *Presupuesto*: edición de una celda < 50 ms (CAL-03).
@@ -268,7 +268,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-24 · Lápiz, Marcador, Resaltador y Borrador** (RF-17)
 - *Propósito*: dibujar a mano alzada con trazos vectoriales editables.
-- *Comportamiento y reglas*: pestaña **Dibujo** y herramientas flotantes: **Lápiz** (trazo fino opaco), **Marcador** (trazo grueso opaco), **Resaltador** (translúcido con mezcla «multiplicar»), **Borrador** (por defecto elimina el trazo entero que toca; con `Shift` lo divide). Selector de color (colores del documento y de la Identidad) y de grosor (1–100 px). El trazo se suaviza (Catmull-Rom → Bézier con simplificación) y se almacena como `ShapeNode`; cada trazo termina al soltar el puntero y es una entrada de historial. Soporte de lápiz con presión en Fase 2 (PROPUESTA).
+- *Comportamiento y reglas*: pestaña **Dibujo** y herramientas flotantes: **Lápiz** (trazo fino opaco), **Marcador** (trazo grueso opaco), **Resaltador** (translúcido con mezcla «multiplicar»), **Borrador** (por defecto elimina el trazo entero que toca; con `Shift` lo divide). Selector de color (colores del documento y de la Identidad) y de grosor (1–100 px). El trazo se suaviza (Catmull-Rom → Bézier con simplificación) y se almacena como `ShapeNode`; cada trazo termina al soltar el puntero y es una entrada de historial. Soporte de lápiz con presión en Fase 2 (confirmada, D-80).
 - *UI*: Panel lateral → Dibujo; herramientas P, M, E (Resaltador: Shift+H).
 - *Técnica*: `Tool` (máquina de estados, 02 §4.2), `gafira-pathops` (simplificación), `ShapeNode`.
 - *Presupuesto*: latencia de trazo < 16 ms por evento (CAL-01).
@@ -288,7 +288,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-26 · Búsqueda por etiqueta y color** (RF-18)
 - *Propósito*: encontrar archivos rápido.
-- *Comportamiento y reglas*: búsqueda por nombre, **etiqueta** (con autocompletado), **color dominante** (selector de muestra; se calculan 5 colores dominantes por imagen), tipo, tamaño, duración y licencia. Se pueden combinar filtros. La búsqueda semántica es opcional y solo local (Fase 3, PROPUESTA).
+- *Comportamiento y reglas*: búsqueda por nombre, **etiqueta** (con autocompletado), **color dominante** (selector de muestra; se calculan 5 colores dominantes por imagen), tipo, tamaño, duración y licencia. Se pueden combinar filtros. La búsqueda semántica es opcional y solo local (Fase 3, confirmada, D-80).
 - *UI*: Biblioteca → barra de búsqueda y filtros.
 - *Técnica*: `LibraryRepository` (índice `rusqlite` o `redb`, VERIFICAR; 02 §9.2), cálculo de paleta en `gafira-raster` (ARQ-122), con Lab y ΔE2000 de `gafira-color`.
 - *Presupuesto*: < 100 ms con 10 000 archivos (confirmada, D-71).
@@ -506,7 +506,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 
 **FD-44 · Curvar** (RF-25)
 - *Propósito*: texto sobre arco o curva.
-- *Comportamiento y reglas*: slider **Curvar** de −100 a 100 (0 = recto) para arcos; en Fase 2, texto sobre una forma vectorial elegida y texto vertical (PROPUESTA). El texto sigue editable; la curva afecta a la geometría de pintado, no al contenido.
+- *Comportamiento y reglas*: slider **Curvar** de −100 a 100 (0 = recto) para arcos; en Fase 2, texto sobre una forma vectorial elegida y texto vertical (confirmada, D-80). El texto sigue editable; la curva afecta a la geometría de pintado, no al contenido.
   - **Escala** (D-26): `θ = valor × 1,8°`, de modo que ±100 son ±180° de arco. Un valor positivo da un arco abierto hacia abajo (∩) y uno negativo, abierto hacia arriba (∪) (confirmada, D-71).
   - **Geometría**: `L` es el avance de la línea sin el espacio que cuelga, y `s` es la posición en ese contenido: cuenta desde su inicio y no incluye el avance de ese espacio. Vale también para el espacio final de otro nivel, aunque quede dentro de la línea (FD-41). Ese espacio no tiene lugar en el arco. Una sola línea tiene un arco de longitud `L`, así que `radio = L / |θ|` con `θ` en radianes. El arco se centra en el ancho de la caja. Cada glifo se coloca por el centro de su avance y gira según la tangente. Una línea con `L = 0` no cambia.
   - **Varias líneas** (confirmada, D-71): usan arcos concéntricos, con un solo centro y el mismo `θ`. Sean `σ` el signo de `θ` y, para las líneas con `L_i > 0`, `L_i` su avance y `b_i` su línea base, con y hacia abajo; `b_ref` es la línea base de una de ellas, y el resultado no depende de cuál. El radio de referencia es `R_ref = máx_i(L_i / |θ| + σ(b_i − b_ref))`, y cada línea tiene `R_i = R_ref − σ(b_i − b_ref)`. El centro está en `y = b_ref + σ R_ref`. Así, `R_i × |θ| ≥ L_i`: ninguna línea queda por debajo de su propio avance y todo radio es positivo. La línea que da el máximo fija el radio y tiene `R_i = L_i / |θ|`; una sola línea queda como arriba. Cada línea cubre todo `θ`, con su propio `s / L_i`. Un arco de muchas líneas puede pasar del ancho de la caja.
@@ -549,7 +549,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 **FD-48 · Fuentes: detección, sustitución y licencias** (RF-27)
 - *Propósito*: abrir proyectos sin romper el diseño cuando falta una fuente.
 - *Comportamiento y reglas*: Gafira detecta las fuentes del sistema en segundo plano (nunca en el arranque; 02 §6.7). Si falta una fuente al abrir, propone **sustitutos compatibles** (misma clase y métricas similares), conserva el layout y **recuerda la fuente original** para volver a usarla si se instala. «Sustitución masiva» cambia una fuente por otra en todo el proyecto. Fuentes del usuario: advertencia de licencia y compatibilidad al usarlas («Esta fuente no está incluida. Comprueba que su licencia permite tu uso.»); una fuente del usuario se incrusta en el proyecto según su licencia (bits `fsType` de OpenType) y según el perfil del `.gaf` (D-67); si la licencia no lo permite, se vincula por nombre y, al abrir el proyecto en un equipo que no la tiene, se avisa de la fuente que falta (D-60). Qué hace cada perfil del `.gaf` con una fuente incrustable se fija con la §17 de la spec 008.
-- *UI*: Texto → Fuentes; diálogo al abrir; Archivo → Empaquetar fuentes (PROPUESTA).
+- *UI*: Texto → Fuentes; diálogo al abrir; Archivo → Empaquetar fuentes (confirmada, D-80).
 - *Técnica*: `gafira-platform` (enumeración), `gafira-text` (métricas y clase de la fuente), `gafira-engine` (elige el sustituto), `FontCollector` (Visitor, 02 §4.1).
 - *Presupuesto*: la detección completa no bloquea el arranque (CAL-08).
 - *Aceptación*: (a) abrir un proyecto con una fuente ausente propone sustituto y no desplaza más de 2 % las cajas de texto; (b) al instalar la fuente original, se restaura sin edición; (c) las fuentes de egui por defecto no se incluyen (ARQ-62).
@@ -690,7 +690,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 **FD-59 · Historial: Deshacer y Rehacer** (RF-04)
 - *Propósito*: probar sin miedo.
-- *Comportamiento y reglas*: Deshacer y Rehacer (`Ctrl+Z`, `Ctrl+Shift+Z`) con botones visibles y tooltip «Deshacer {acción}». El historial es híbrido (instantánea `Arc<Document>` + `Command`, ADR-03) con presupuesto de 512 MB (confirmada, D-71) y compactación de entradas antiguas. Los gestos continuos se fusionan (ARQ-33). Una lista **Historial** (Edición → Historial) permite saltar a cualquier estado (PROPUESTA). El historial no se guarda en el archivo y se pierde al cerrar (las Versiones sí persisten, FD-60).
+- *Comportamiento y reglas*: Deshacer y Rehacer (`Ctrl+Z`, `Ctrl+Shift+Z`) con botones visibles y tooltip «Deshacer {acción}». El historial es híbrido (instantánea `Arc<Document>` + `Command`, ADR-03) con presupuesto de 512 MB (confirmada, D-71) y compactación de entradas antiguas. Los gestos continuos se fusionan (ARQ-33). Una lista **Historial** (Edición → Historial) permite saltar a cualquier estado (confirmada, D-80). El historial no se guarda en el archivo y se pierde al cerrar (las Versiones sí persisten, FD-60).
 - *UI*: Barra superior (↶ ↷); Edición → Historial.
 - *Técnica*: `History`, `Transaction` (`gafira-edit`), ADR-03.
 - *Presupuesto*: Deshacer/Rehacer < 16 ms p99 en 100 capas (CAL-28).

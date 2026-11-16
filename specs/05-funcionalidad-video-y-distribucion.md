@@ -5,8 +5,8 @@
 | Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-79, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
-| Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01 |
+| Depende de | `00-decisiones.md` (D-01 a D-80, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)
 
@@ -229,7 +229,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-15 · Máscaras** (RF-47)
 - *Propósito*: mostrar u ocultar zonas de un clip o capa.
-- *Comportamiento y reglas*: panel **Máscaras** del Inspector con las formas **Rectángulo**, **Elipse**, **Polígono** y **Vector** (dibujo con nodos Bézier editables) y **Texto** (el contorno de un texto como máscara). Cada máscara tiene **Suavizado** (`feather`), **Expansión**, **Opacidad** e **Invertir**; varias máscaras se combinan (**Sumar**, **Restar**, **Intersectar**; PROPUESTA). Las máscaras son **animables**: posición, escala, rotación, suavizado y opacidad con Fotogramas clave; la animación de los vértices de un Vector requiere la extensión de la §C10 (PROPUESTA). Una máscara con **Seguimiento** (FV-17) acompaña al objeto.
+- *Comportamiento y reglas*: panel **Máscaras** del Inspector con las formas **Rectángulo**, **Elipse**, **Polígono** y **Vector** (dibujo con nodos Bézier editables) y **Texto** (el contorno de un texto como máscara). Cada máscara tiene **Suavizado** (`feather`), **Expansión**, **Opacidad** e **Invertir**; varias máscaras se combinan (**Sumar**, **Restar**, **Intersectar**; confirmada, D-80). Las máscaras son **animables**: posición, escala, rotación, suavizado y opacidad con Fotogramas clave; la animación de los vértices de un Vector requiere la extensión de la §C10 (confirmada, D-80). Una máscara con **Seguimiento** (FV-17) acompaña al objeto.
 - *UI*: Inspector → Máscaras; lienzo (asas de forma y nodos).
 
 ```text
@@ -268,7 +268,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-18 · Estabilizar** (RF-49)
 - *Propósito*: reducir el temblor de la cámara.
-- *Comportamiento y reglas*: botón **Estabilizar** en Inspector → Clip. Modos **Suave** (traslación) y **Completo** (traslación, giro y escala); **Intensidad** 0–100 y opción de **Recortar automáticamente** (amplía lo mínimo para ocultar bordes) o **Rellenar bordes**. El análisis calcula la trayectoria de la cámara y la suaviza (filtro gaussiano); es no destructivo (se guardan datos de transformación y se puede desactivar). Corrección de *rolling shutter*: Fase 3 (PROPUESTA).
+- *Comportamiento y reglas*: botón **Estabilizar** en Inspector → Clip. Modos **Suave** (traslación) y **Completo** (traslación, giro y escala); **Intensidad** 0–100 y opción de **Recortar automáticamente** (amplía lo mínimo para ocultar bordes) o **Rellenar bordes**. El análisis calcula la trayectoria de la cámara y la suaviza (filtro gaussiano); es no destructivo (se guardan datos de transformación y se puede desactivar). Corrección de *rolling shutter*: Fase 3 (confirmada, D-80).
 - *UI*: Inspector → Clip → Estabilizar.
 - *Técnica*: estimación de movimiento en `gafira-raster` y aplicación como `Transform2D` por fotograma en `gafira-render`.
 - *Presupuesto*: análisis ≥ 10 fps en 1080p en gama media (confirmada, D-71).
@@ -286,7 +286,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
   5. **Saturación y tono** globales.
   - **Medidores**: **Forma de onda** (luma y RGB), **Vectorscopio**, **Histograma** y **Parada RGB** en un panel acoplable; se actualizan en vivo al mover el Cabezal o un control, calculados sobre el fotograma de vista previa a resolución reducida.
   - **Comparación antes/después**: vista dividida (vertical u horizontal, con asa arrastrable) o alternar con `\`; **Restablecer** por módulo y total.
-  - Espacio de trabajo: luz lineal f32; se asume Rec. 709/sRGB con rango limitado en video; **HDR queda fuera de alcance** (PROPUESTA).
+  - Espacio de trabajo: luz lineal f32; se asume Rec. 709/sRGB con rango limitado en video; **HDR queda fuera de alcance** (confirmada, D-80).
 
 ```text
 ┌─ Corrección de color ───────────────────────────────────┬─ Medidores ──────────────────────┐
@@ -398,7 +398,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 - *Comportamiento y reglas*:
   - **Herramienta**: WiX v5 se usa **solo en el build**; no se distribuye. Su licencia (MS-RL según 02) está en VERIFICAR antes de depender del proceso de empaquetado.
   - **Contenido**: `gafira.exe`, `gafira-cli.exe` (opcional, en el PATH como característica), `THIRD_PARTY_NOTICES.md`, licencias OFL de las fuentes y recursos propios; **CRT estático** (sin redistribuible de Visual C++).
-  - **Instalación por equipo** en `C:\Program Files\Gafira` con permisos de administrador (por usuario sin administrador: PROPUESTA). `UpgradeCode` fijo y `MajorUpgrade` para actualizar en sitio sin duplicar.
+  - **Instalación por equipo** en `C:\Program Files\Gafira` con permisos de administrador (por usuario sin administrador: confirmada, D-80). `UpgradeCode` fijo y `MajorUpgrade` para actualizar en sitio sin duplicar.
   - **Accesos directos**: Menú Inicio (siempre) y Escritorio (casilla, desactivada por defecto). Entrada en «Aplicaciones instaladas» con el icono de Gafira, versión, editor y enlaces de soporte.
   - **Asociación `.gaf`** (FV-31).
   - **Desinstalación limpia**: elimina `Program Files\Gafira`, accesos directos, claves de registro y asociaciones. Los **datos de la persona** (proyectos, ajustes, copias de recuperación, biblioteca) **no se borran** por defecto; una casilla de la desinstalación («Eliminar también mis ajustes y copias de recuperación») los elimina, sin tocar los proyectos `.gaf` guardados por la persona.
@@ -452,7 +452,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
   - **DMG** con ventana de 660×400 pt, fondo `#FAFAF7` con el logo apilado (≥ 120 px) y el alias a Aplicaciones.
   - **Firma** con certificado *Developer ID Application*, *hardened runtime* y sello de tiempo (`codesign --options runtime --timestamp`); el DMG también va firmado.
   - **Notarización** con `notarytool` y *staple* del ticket; verificación con `spctl --assess` y `stapler validate`. Requiere cuenta del programa de desarrolladores de Apple (coste y titularidad: Q-01).
-  - **Entitlements mínimos**: por defecto **ninguno** que relaje el *hardened runtime* (sin JIT ni validación de bibliotecas desactivada: `wasmi` es un intérprete, no JIT). Cuando exista la **voz en off** (Fase 2): `com.apple.security.device.audio-input` y `NSMicrophoneUsageDescription` con un texto claro en el tono de marca. Sin App Sandbox en la distribución directa (PROPUESTA; decidir si se publica en una tienda: fuera de alcance).
+  - **Entitlements mínimos**: por defecto **ninguno** que relaje el *hardened runtime* (sin JIT ni validación de bibliotecas desactivada: `wasmi` es un intérprete, no JIT). Cuando exista la **voz en off** (Fase 2): `com.apple.security.device.audio-input` y `NSMicrophoneUsageDescription` con un texto claro en el tono de marca. Sin App Sandbox en la distribución directa (confirmada, D-80; decidir si se publica en una tienda: fuera de alcance).
   - **Sin red salvo la licencia**: no existe `update-check` (D-06); como la distribución directa no usa App Sandbox, la conexión de la licencia no exige un entitlement de red adicional (VERIFICAR con `codesign -d --entitlements`).
 - *UI*: ventana del DMG; primer arranque (Gatekeeper sin avisos).
 - *Técnica*: `xtask package dmg`, `codesign`, `notarytool`, `stapler` (herramientas del SO y de Apple en el build).
@@ -493,7 +493,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 - *Propósito*: garantizar que todo contenido incluido puede venderse.
 - *Comportamiento y reglas*:
   - **Registro**: cada archivo de `assets/` tiene una entrada en `assets/LICENSES.toml` con ruta, hash BLAKE3, licencia (identificador SPDX o «Propia»), autoría, origen, si exige atribución y si fue modificado (ARQ-75). Una entrada puede añadir campos: una fuente de prueba, con `modificado` verdadero, añade repositorio, commit y comando de subconjunto; `assets/splash_screen.jpg` añade los de D-09 y su licencia es «Propia», por la cesión que recoge D-09. Sin entrada, el archivo **no se empaqueta** ni se lista en la app.
-  - **Licencias admitidas para contenido**: propia (obra creada para Gafira con cesión de derechos), CC0, MIT, Apache-2.0, BSD, ISC, Zlib. **No se admiten** licencias con atribución obligatoria no resuelta (por ejemplo, CC BY), «no comercial» ni «sin derivados» salvo decisión explícita de la persona titular (PROPUESTA).
+  - **Licencias admitidas para contenido**: propia (obra creada para Gafira con cesión de derechos), CC0, MIT, Apache-2.0, BSD, ISC, Zlib. **No se admiten** licencias con atribución obligatoria no resuelta (por ejemplo, CC BY), «no comercial» ni «sin derivados» salvo decisión explícita de la persona titular (confirmada, D-80).
   - **Fuentes**: solo **OFL-1.1** o permisivas; Inter y Manrope (marca) se embeben con su `OFL.txt` y aviso de copyright; las fuentes OFL se pueden empaquetar con el programa pero **no venderse por separado**; respetar los nombres reservados de las fuentes. Se desactivan las fuentes por defecto de egui (ARQ-62). Las fuentes del sistema no se redistribuyen.
   - **Música y sonidos**: solo propios o CC0 (el audio es el contenido de mayor riesgo; cada pista con comprobante de origen).
   - **Plantillas e ilustraciones**: propias o con licencia permisiva registrada; los textos de ejemplo y fotos de las plantillas también se registran.
@@ -546,7 +546,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 | Elemento | Necesidad | Propuesta |
 |---|---|---|
 | `Transition` | FV-06: las transiciones tienen dos entradas | **Incorporado en 02 §4.13**: trait `Transition`, `GpuTransition`, `TransitionInstance` y `TransitionRegistry` |
-| Animación de vértices de un Vector | FV-15 | `Interpolate` para rutas de igual topología (PROPUESTA, Fase 2) |
+| Animación de vértices de un Vector | FV-15 | `Interpolate` para rutas de igual topología (confirmada, D-80, Fase 2) |
 | Medios vinculados | FV-25 | **Incorporado en 02 §7.1**: `manifest.assets[...].linked { relPath, bytes, blake3 }` (D-68) y evento `LinksMissing` |
 | *Time-stretch* y mantener tono | FV-04 | **Incorporado en 02 §4.9**: `TimeStretch` (Fase 2) |
 | Puerta de ruido | FV-20 | **Incorporado en 02 §4.9**: `NoiseGate` (Fase 2) |
