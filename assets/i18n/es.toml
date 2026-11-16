@@ -168,6 +168,9 @@ x = "X"
 y = "Y"
 width = "Ancho"
 height = "Alto"
+fill = "Relleno"
+opacity = "Opacidad"
+no_fill = "Sin relleno"
 
 [bottom]
 notes = "Notas"

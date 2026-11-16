@@ -16,6 +16,8 @@ pub(crate) struct Shape {
     pub(crate) placement: Placement,
     pub(crate) geometry: ShapeGeometry,
     pub(crate) fill: Option<Color>,
+    /// The element's opacity, 0 to 1.
+    pub(crate) opacity: f32,
 }
 
 /// The visible shapes of `page`, back to front: roots in order, each node
@@ -33,6 +35,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 placement: node.base.placement,
                 geometry,
                 fill,
+                opacity: node.base.opacity,
             });
         }
         for child in &node.children {
@@ -178,6 +181,13 @@ pub(crate) fn screen_color(color: Color) -> Color32 {
     };
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     Color32::from_rgba_unmultiplied(byte(r), byte(g), byte(b), byte(a))
+}
+
+/// What a shape paints: its fill with its opacity applied, or nothing.
+pub(crate) fn paint(shape: &Shape) -> Color32 {
+    shape.fill.map_or(Color32::TRANSPARENT, |fill| {
+        screen_color(fill).gamma_multiply(shape.opacity.clamp(0.0, 1.0))
+    })
 }
 
 /// A theme colour as a document colour, for the default fill of a piece.
@@ -347,5 +357,22 @@ mod tests {
             "opposite corner stays"
         );
         assert_eq!((crushed.w, crushed.h), (1.0, 1.0));
+    }
+
+    #[test]
+    fn s23_01_the_paint_carries_fill_and_opacity() {
+        let red = document_color(Color32::from_rgb(255, 0, 0));
+        let mut shape = shapes(&page())[0];
+        assert_eq!(
+            paint(&shape),
+            Color32::TRANSPARENT,
+            "no fill, nothing painted"
+        );
+        shape.fill = Some(red);
+        assert_eq!(paint(&shape), Color32::from_rgb(255, 0, 0));
+        shape.opacity = 0.5;
+        assert_eq!(paint(&shape).a(), 128);
+        shape.opacity = 0.0;
+        assert_eq!(paint(&shape).a(), 0);
     }
 }

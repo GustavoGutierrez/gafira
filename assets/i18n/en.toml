@@ -168,6 +168,9 @@ x = "X"
 y = "Y"
 width = "Width"
 height = "Height"
+fill = "Fill"
+opacity = "Opacity"
+no_fill = "No fill"
 
 [bottom]
 notes = "Notes"
