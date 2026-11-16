@@ -129,6 +129,20 @@ jobs:
             if bad=$(grep -E "^($forbidden)" <<<"$tree"); then echo "::error::$crate: forbidden $bad" >&2; status=1; fi
           done <<<"$table"
           exit "$status"
+      - name: Layer-4 adapters do not depend on the engine (ARQ-06)
+        run: |
+          set -euo pipefail
+          # Adapters that do I/O have no domain clippy.toml and so no V5 row; ARQ-06 still holds for them:
+          # no gafira-engine, gafira-render or gafira-media in their normal or build tree (dev-dependencies are not edges).
+          status=0
+          for crate in gafira-assets gafira-format gafira-platform; do
+            tree=$(cargo tree -p "$crate" -e normal,build --target all --prefix none -f '{p}' </dev/null)
+            grep -q "^$crate v" <<<"$tree" || { echo "::error::empty cargo tree for $crate" >&2; status=1; continue; }
+            if bad=$(grep -E '^(gafira-(engine|render|media|ui)|egui|eframe|winit|wgpu) v' <<<"$tree"); then
+              echo "::error::$crate: forbidden $bad (ARQ-06)" >&2; status=1
+            fi
+          done
+          exit "$status"
       - name: Domain clippy.toml copies are in sync (V12)
         run: |
           set -euo pipefail
