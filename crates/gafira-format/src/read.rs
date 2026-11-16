@@ -144,6 +144,7 @@ pub fn read_gaf<R: Read + Seek>(
     Ok(LoadedProject {
         document,
         read_only,
+        versions: Vec::new(),
     })
 }
 

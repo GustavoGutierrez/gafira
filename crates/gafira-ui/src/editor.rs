@@ -1112,7 +1112,7 @@ pub(crate) mod tests {
         SystemProcesses,
     };
     use gafira_ports::license::NoLicensing;
-    use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
+    use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError, Version};
     use gafira_ports::settings::Settings;
     use gafira_ports::store::{ContentStore, StoreError};
     use gafira_ports::system::ReadSeek;
@@ -1131,7 +1131,7 @@ pub(crate) mod tests {
         fn load(&self, _: &Path) -> Result<LoadedProject, RepositoryError> {
             Err(RepositoryError::Io(none()))
         }
-        fn save(&self, _: &Path, _: &Document) -> Result<(), RepositoryError> {
+        fn save(&self, _: &Path, _: &Document, _: &[Version]) -> Result<(), RepositoryError> {
             Err(RepositoryError::Io(none()))
         }
     }

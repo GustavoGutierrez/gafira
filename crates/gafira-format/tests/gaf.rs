@@ -362,7 +362,7 @@ fn s19_09_the_repository_writes_a_synced_file_and_reads_it_back() {
     std::fs::create_dir_all(&dir).expect("a folder");
     let path = dir.join("poster.gaf");
     let repository = GafRepository::new(Limits::default(), std::sync::Arc::new(store()));
-    repository.save(&path, &document()).expect("saves");
+    repository.save(&path, &document(), &[]).expect("saves");
     assert_eq!(repository.load(&path).expect("loads").document, document());
     assert!(matches!(
         repository.load(&dir.join("missing.gaf")),

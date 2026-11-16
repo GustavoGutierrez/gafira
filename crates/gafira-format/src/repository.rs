@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gafira_doc::{ContentHash, Document};
-use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
+use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError, Version};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
 
@@ -72,7 +72,12 @@ impl ProjectRepository for GafRepository {
 
     /// Writes the whole file at `path` (the engine's temporary) and syncs it
     /// before returning (SP6); the rename over the target is the engine's.
-    fn save(&self, path: &Path, document: &Document) -> Result<(), RepositoryError> {
+    fn save(
+        &self,
+        path: &Path,
+        document: &Document,
+        _versions: &[Version],
+    ) -> Result<(), RepositoryError> {
         let file = File::create(path).map_err(RepositoryError::Io)?;
         let mut sink = BufWriter::new(file);
         write_gaf(&mut sink, document, self.store.as_ref())?;

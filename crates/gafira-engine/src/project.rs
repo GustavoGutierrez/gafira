@@ -371,7 +371,7 @@ impl ProjectService {
         let tmp = suffixed(path, &format!(".tmp-{n}"));
         let written = self
             .repository
-            .save(&tmp, document)
+            .save(&tmp, document, &[])
             .map_err(EngineError::from)
             .and_then(|()| self.back_up(path, n))
             .and_then(|()| self.filesystem.replace(&tmp, path).map_err(EngineError::Io));

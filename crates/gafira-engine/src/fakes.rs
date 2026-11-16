@@ -22,7 +22,7 @@ use gafira_ports::i18n::{
     FormatLocale, LanguagePreference, Locale, LocaleResolver, LocaleSource, ResolvedLocale,
 };
 use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier};
-use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
+use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError, Version};
 use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{
@@ -40,7 +40,7 @@ impl ProjectRepository for NoRepository {
         Err(RepositoryError::Io(io::Error::other("unused")))
     }
 
-    fn save(&self, _path: &Path, _document: &Document) -> Result<(), RepositoryError> {
+    fn save(&self, _: &Path, _: &Document, _: &[Version]) -> Result<(), RepositoryError> {
         Err(RepositoryError::Io(io::Error::other("unused")))
     }
 }
@@ -785,10 +785,16 @@ impl ProjectRepository for MemoryRepository {
         Ok(LoadedProject {
             document,
             read_only: self.read_only,
+            versions: Vec::new(),
         })
     }
 
-    fn save(&self, path: &Path, document: &Document) -> Result<(), RepositoryError> {
+    fn save(
+        &self,
+        path: &Path,
+        document: &Document,
+        _versions: &[Version],
+    ) -> Result<(), RepositoryError> {
         self.record(RepoCall::Save(path.to_owned()));
         let bytes = document
             .to_json()

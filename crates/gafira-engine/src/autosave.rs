@@ -125,7 +125,7 @@ impl AutosaveJob {
     /// leaves the previous one, which still names a complete slot.
     fn write(&self, tmp: &Path, slot: &Path) -> Result<(), EngineError> {
         self.filesystem.create_dir_all(&self.folder)?;
-        self.repository.save(tmp, &self.snapshot)?;
+        self.repository.save(tmp, &self.snapshot, &[])?;
         self.filesystem.replace(tmp, slot)?;
         let marker = self.folder.join(MARKER);
         let marker_tmp = self.folder.join(format!("{MARKER}.tmp"));
