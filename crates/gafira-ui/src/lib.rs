@@ -5,8 +5,9 @@
 //! (03 §7.2) and the regions of the Design editor (03 §7.1, §7.3) with the
 //! tokens of `gafira-theme` and the texts of `gafira-i18n`. Every visible text
 //! comes from the catalogs by key (ARQ-97); no colour is written in code.
-//! The engine is not wired yet: the editor shows the page of the chosen
-//! format, and the next delivery connects it through the Facade.
+//! Since spec 018 the editor runs on the engine's Facade: «Empezar a
+//! diseñar» creates the document, the canvas draws its snapshot, and undo,
+//! redo and «Añadir página» go through `EditService` (02 §5.5).
 
 #![forbid(unsafe_code)]
 
@@ -19,4 +20,4 @@ mod style;
 mod text;
 mod widgets;
 
-pub use shell::{UiConfig, run};
+pub use shell::{EngineFactory, UiConfig, run};

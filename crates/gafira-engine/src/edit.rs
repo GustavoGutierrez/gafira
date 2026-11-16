@@ -72,6 +72,18 @@ impl EditService {
         run(&self.shared, &*self.clock, command)
     }
 
+    /// Whether there is an entry to undo and one to redo, for the Edit menu
+    /// and the shortcuts; `(false, false)` with no session.
+    #[must_use]
+    pub fn can_undo_redo(&self) -> (bool, bool) {
+        self.shared
+            .lock()
+            .as_ref()
+            .map_or((false, false), |session| {
+                (session.history.can_undo(), session.history.can_redo())
+            })
+    }
+
     /// Undo the newest entry; `Some` publishes the set of the entry undone.
     pub fn undo(&mut self) -> Result<Option<CommandLabel>, EngineError> {
         let at = self.clock.monotonic();
@@ -112,9 +124,12 @@ impl EditService {
         })
     }
 
-    /// The open document, for the tests of this crate only.
-    #[cfg(test)]
-    pub(crate) fn document(&self) -> Option<Arc<gafira_doc::Document>> {
+    /// An immutable snapshot of the open document (02 §5.5: snapshots, never
+    /// a shared mutable document), or `None` with no session. The UI draws
+    /// from it and changes the document only through
+    /// [`EditService::execute`] (spec 018).
+    #[must_use]
+    pub fn document(&self) -> Option<Arc<gafira_doc::Document>> {
         self.shared
             .lock()
             .as_ref()
