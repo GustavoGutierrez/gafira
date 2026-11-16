@@ -5,9 +5,9 @@
 | Documento | Especificación 01 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-67 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-71 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
-| Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
+| Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
 ---
 
@@ -51,7 +51,7 @@ Creadores de contenido que producen piezas gráficas y videos con frecuencia y n
 
 | Problema habitual del creador | Respuesta de Gafira | Requisitos |
 |---|---|---|
-| Precio y condiciones confusos | Una sola licencia, sin prueba gratuita (D-12): todo el producto en un único plan, sin módulos ni funciones sueltas por separado (D-01, §11). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» | §11, RF-63 |
+| Precio y condiciones confusos | Una sola licencia, sin prueba gratuita (D-12): todo el producto en un único plan, sin módulos ni funciones sueltas por separado (D-01, §11). La primera versión es una descarga gratuita (D-62, D-70); el modelo de pago se aplica cuando haya venta. Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» | §11, RF-63 |
 | Retrasos, cierres y pérdida de trabajo | Motor local, autoguardado transaccional, recuperación tras fallo y Copias ligeras | RF-03, RF-53, CAL-18 |
 | Exportaciones fallidas o archivos corruptos | Validación previa, escritura atómica, reintentos y alternativa de códec | RF-33, CAL-17 |
 | Poco control profesional | Capas, Máscaras, Fotogramas clave, Corrección de color, audio avanzado y exportación técnica | RF-45..RF-54 |
@@ -96,7 +96,7 @@ Las fases siguen el PRD (§6) y la hoja de ruta técnica de 02 (§11.2). Cuando 
 
 ### 5.1 Fase final: licencia y distribución comercial
 
-La licencia queda **fuera del alcance de las primeras fases de desarrollo** y no bloquea el MVP técnico de diseño y video. Se entrega en una **fase final, «Licencia y distribución comercial»**, que reúne: el crate `gafira-license` y la integración con el `license-hub` (servicio externo ya existente, reutilizado tal cual), el modo sin licencia, los estados de licencia, la interfaz de activación, `PRIVACY.md` con el identificador de dispositivo, el acuerdo de licencia basado en el de Tracewright y la lista previa a la venta (05, Parte C). Las decisiones de D-01 y D-12 ya están fijadas (todo de pago, modo sin licencia, una sola licencia, única conexión de red = licencia); su diseño detallado se redacta al final. La primera versión se publica **sin licencia** (D-62): el composition root inyecta `NoLicensing` (D-58), todo está habilitado y no hay conexión de red; esta fase queda aplazada hasta que el titular decida cobrar. **Licencia y activación: ver spec 06 (pendiente, se redacta al final).**
+La licencia queda **fuera del alcance de las primeras fases de desarrollo** y no bloquea el MVP técnico de diseño y video. Se entrega en una **fase final, «Licencia y distribución comercial»**, que reúne: el crate `gafira-license` y la integración con el `license-hub` (servicio externo ya existente, reutilizado tal cual), el modo sin licencia, los estados de licencia, la interfaz de activación, `PRIVACY.md` con el identificador de dispositivo, el acuerdo de licencia basado en el de Tracewright y la lista previa a la venta (05, Parte C). Las decisiones de D-01 y D-12 ya están fijadas (todo de pago, modo sin licencia, una sola licencia, única conexión de red = licencia); su diseño detallado se redacta al final. La primera versión se publica **sin licencia** (D-62): el composition root inyecta `NoLicensing` (D-58), todo está habilitado y no hay conexión de red; esta fase queda aplazada hasta que el titular decida cobrar. La primera versión es una **descarga gratuita** (D-70): las licencias de terceros, las patentes, la marca y los avisos de terceros bloquean cualquier versión; la activación, el EULA de venta, el precio y el identificador de dispositivo de `PRIVACY.md` esperan a que haya venta (05, C11). **Licencia y activación: ver spec 06 (pendiente, se redacta al final).**
 
 ## 6. Fuera de alcance
 
@@ -331,7 +331,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-33 | Contraste y accesibilidad | AA en todos los pares de tokens; 0 widgets sin nombre accesible | manual y PRD | Todos | DIS-10, DIS-32 | RNF-08 |
 | CAL-34 | Coherencia vista previa y exportación | ≤ 1/255 por canal en el 99,9 % de los píxeles | 02 | CPU de referencia | ARQ-42 | RNF-10 |
 | CAL-35 | Estabilidad del hilo de UI | 0 trabajos > 16 ms fuera de diálogos del SO | 02 | Gama media | ARQ-41 | RNF-02 |
-| CAL-36 | Cambio de idioma con un proyecto abierto | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo, sin reiniciar | D-08 (cifra PROPUESTA, igual que el cambio de modo, DIS-64) | Gama media | `bench_locale_switch` (ARQ-101, DIS-75) | RF-66, RNF-13 |
+| CAL-36 | Cambio de idioma con un proyecto abierto | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo, sin reiniciar | D-08 (cifra confirmada, D-71, igual que el cambio de modo, DIS-64) | Gama media | `bench_locale_switch` (ARQ-101, DIS-75) | RF-66, RNF-13 |
 | CAL-37 | Cobertura de traducción | 100 % de claves en `es` y `en`; 0 truncados sin tooltip en las 8 pantallas en `es`, `en` y seudo-localización | D-08 | Todos | `xtask check-i18n` (ARQ-98), capturas de DIS-76 (ARQ-103) | RF-64, RNF-12 |
 | CAL-38 | Primer frame de la Pantalla de arranque desde que se lanza el proceso | < 300 ms (FIJADA) | D-09 | Gama media y macOS de referencia | `gafira --bench-startup` (`splash_first_frame_ms`, ARQ-65) | RF-67, RNF-02 |
 | CAL-39 | Duración visible de la Pantalla de arranque | ≥ 1,2 s (D-09) y ≤ el mayor entre 1,2 s y el fin de la carga necesaria para Inicio, más 1 frame; aviso de carga lenta a los 5 s (FIJADA) | D-09 | Gama media | `gafira --bench-startup` (`splash_visible_ms`) y pruebas con arranque simulado (03 DIS-82, ARQ-68) | RF-67 |
@@ -374,16 +374,16 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 
 ## 11. Modelo comercial: todo de pago con modo sin licencia
 
-**Decisiones D-01 y D-12 (00-decisiones.md).** Gafira es de pago, con **una sola licencia**. No hay prueba gratuita: sin licencia, la app funciona en **modo sin licencia** (D-12). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» y el modelo anterior de «núcleo gratuito y módulos avanzados de pago». Se eliminan el reparto núcleo/avanzado, los módulos de pago separados y los requisitos que dependían de funciones gratuitas.
+**Decisiones D-01 y D-12 (00-decisiones.md).** Gafira es de pago, con **una sola licencia**. No hay prueba gratuita: sin licencia, la app funciona en **modo sin licencia** (D-12). Esto **sustituye** el principio del PRD «sin funciones esenciales retenidas tras un plan de pago» y el modelo anterior de «núcleo gratuito y módulos avanzados de pago». Se eliminan el reparto núcleo/avanzado, los módulos de pago separados y los requisitos que dependían de funciones gratuitas. La primera versión se publica gratis y sin licencia (D-62, D-70); este modelo de pago no cambia y se aplica cuando el titular decida vender.
 
 ### 11.1 Principios
 
 1. **Una licencia, un binario.** El mismo ejecutable contiene todas las funciones de todas las fases; no hay módulos que se activen por separado.
 2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo. El licenciamiento se puede deshabilitar por build sin cambiar el engine ni la UI: entonces no hay activación ni conexión de red y todo queda desbloqueado (D-58, 02 §4.14). La primera versión se publica así, sin licencia (D-62).
 3. **Sin marcas de agua** en las exportaciones (PROPUESTA).
-4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20).
+4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20, aplazada por D-62 y D-70).
 5. **Única conexión de red = licencia** (activar, validar o desactivar). `PRIVACY.md` declara el identificador de dispositivo que se envía al activar y no puede afirmar que la app no transmite datos.
-6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, tentativo 99 USD, PROPUESTA; pendiente 1 del titular).
+6. **Transparencia.** Precio, renovación (si existe) y cancelación se muestran antes de pagar (precio por definir, tentativo 99 USD, PROPUESTA; pendiente 1 del titular, aplazado hasta que haya venta, D-70).
 
 ### 11.2 Alcance y fase
 
@@ -434,6 +434,7 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-17 | ¿Se admite importar HEVC (y HEIC, `heic-os`) mediante la API del sistema? | Cerrada: D-59 (solo importación con el decodificador del SO; sin decodificador propio y nunca salida HEVC; sin decodificador del SO, el archivo se rechaza explicando por qué). RF-19, RF-37. |
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma o un formato fijo por idioma? | Cerrada: D-64 (la región del sistema cuando su idioma coincide con el de la interfaz; si no, el formato CLDR del idioma de la interfaz; 02 §14.4). RF-64. |
 | Q-26 | ¿`gafira-cli` en inglés por defecto? ¿Instalador, paquetes y `.desktop` en los dos idiomas? | Cerrada: D-61 (la CLI escribe en inglés y solo cambia con `--lang`, ARQ-104; instalador, paquetes y `.desktop` en español e inglés según el idioma del sistema). RF-56, RF-64. |
+| Q-20 | ¿Qué puede hacer el usuario sin licencia válida? | Aplazada (D-62, D-70): la primera versión se publica gratis y sin licencia; la lista de funciones bloqueadas del modo sin licencia (D-12) se fija cuando haya venta, en la spec 06. Mientras tanto, en un build con licencia solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). RF-63. |
 
 ### 12.3 Preguntas abiertas
 
@@ -443,7 +444,6 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 |---|---|---|---|
 | Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Producto | Spec 05 |
 | Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Está en suspenso: abriría una conexión distinta de la de licencia, prohibida por D-01. | Titular | Fase 3 |
-| Q-20 | ¿Qué puede hacer el usuario sin licencia válida? D-12 sustituye la propuesta de solo lectura de 02: rige el modo sin licencia. Queda la lista de funciones bloqueadas; hasta entonces solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). | Titular | Spec 06, RF-63 |
 | Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Titular | Fase 3 (02 §14.8) |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
 | Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (02 §12.3, D-40). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45). | Titular | No bloquea la especificación |
@@ -452,7 +452,7 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 
 Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `license-hub`:
 
-1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio. **Aplazado** por D-62: la primera versión se publica sin licencia, así que no bloquea el lanzamiento.
+1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio. **Aplazado** por D-62 y D-70: la primera versión se publica gratis y sin licencia, así que no bloquea el lanzamiento.
 2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`, contrato de Tracewright con las tres adaptaciones de D-01) y el `PRIVACY.md` de Gafira, con el identificador de dispositivo, se escriben en la fase final de licencia (spec 06).
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
 4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y, opcionalmente, reservar más dominios.

@@ -5,8 +5,8 @@
 | Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-67, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
-| Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA** y **VERIFICAR** como en 01 |
+| Depende de | `00-decisiones.md` (D-01 a D-71, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)
 
@@ -74,7 +74,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 
 **FV-04 · Velocidad, Invertir y Congelar fotograma** (RF-38)
 - *Propósito*: cambiar el ritmo de un clip.
-- *Comportamiento y reglas*: **Velocidad** de 0,1× a 10× con slider y campo (por defecto 1,0×); al cambiar, la duración del clip se ajusta y el audio se remuestrea (cambia el tono; «mantener tono» con `TimeStretch` de `gafira-audio` es de Fase 2). En cámara lenta los fotogramas se repiten o se mezclan (opción). **Invertir** reproduce el clip hacia atrás (usa decodificación por grupos de imágenes y una Copia ligera intra; avisa si el clip excede 60 s, PROPUESTA). **Congelar fotograma** divide el clip en el Cabezal e inserta un fotograma estático de 3 s (editable). Los tres son metadatos del clip.
+- *Comportamiento y reglas*: **Velocidad** de 0,1× a 10× con slider y campo (por defecto 1,0×); al cambiar, la duración del clip se ajusta y el audio se remuestrea (cambia el tono; «mantener tono» con `TimeStretch` de `gafira-audio` es de Fase 2). En cámara lenta los fotogramas se repiten o se mezclan (opción). **Invertir** reproduce el clip hacia atrás (usa decodificación por grupos de imágenes y una Copia ligera intra; avisa si el clip excede 60 s, confirmada, D-71). **Congelar fotograma** divide el clip en el Cabezal e inserta un fotograma estático de 3 s (editable). Los tres son metadatos del clip.
 - *UI*: Inspector → Clip (Velocidad, Invertir, Congelar fotograma).
 - *Técnica*: `Clip.speed`, `gafira-media` (caché y Copia ligera), `gafira-audio` (remuestreo); comando `SetProperty`.
 - *Presupuesto*: aplicar < 100 ms; reproducción invertida a la fps del proyecto en el perfil de gama media con Copia ligera.
@@ -121,7 +121,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 - *Comportamiento y reglas*: la pestaña **Sonidos** es una biblioteca **local** de música (por ánimo, ritmo y duración) y de efectos, con **vista previa antes de aplicar** (clic para escuchar, doble clic para insertar en la pista de Audio en el Cabezal). Solo se incluye contenido propio o con licencia permisiva registrada en `assets/LICENSES.toml` (ARQ-75); sin licencia no se lista. El contenido va en formatos libres (Opus, FLAC o WAV). No hay descargas de catálogo. Se puede importar música propia a la Biblioteca.
 - *UI*: Panel lateral → Sonidos.
 - *Técnica*: `AssetProvider` (`kinds = [Audio]`), `gafira-assets`, decodificación en `gafira-codec-free`.
-- *Presupuesto*: la vista previa de una pista suena en < 200 ms desde el clic (PROPUESTA).
+- *Presupuesto*: la vista previa de una pista suena en < 200 ms desde el clic (confirmada, D-71).
 - *Aceptación*: (a) el 100 % del contenido de `assets/audio` tiene licencia registrada; (b) la vista previa se detiene al cambiar de pista; (c) no hay solicitudes de red.
 
 **FV-10 · Volumen, fundidos, silenciar, Separar audio, Nivelar y sincronización básica** (RF-42)
@@ -135,14 +135,14 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
   - **Voz en off** grabada desde el micrófono: Fase 2 (PROPUESTA, Q-15); requiere permiso del SO.
 - *UI*: Inspector → Clip (Volumen, Fundidos, Nivelar; D-32); clic derecho (Separar audio).
 - *Técnica*: `AudioProcessor` (ganancia, fundido, nivelación EBU R128; 02 §4.9); formas de onda precalculadas por `gafira-media`.
-- *Presupuesto*: la reproducción no asigna ni bloquea en el hilo de audio (ARQ-23); la forma de onda de un clip de 10 min se calcula en segundo plano en < 5 s (PROPUESTA).
+- *Presupuesto*: la reproducción no asigna ni bloquea en el hilo de audio (ARQ-23); la forma de onda de un clip de 10 min se calcula en segundo plano en < 5 s (confirmada, D-71).
 - *Aceptación*: (a) un fundido de 2 s lleva la ganancia de 0 a 1, o de 1 a 0, de forma continua (prueba de respuesta), y la entrada y la salida tienen duraciones independientes; (b) Nivelar lleva un audio de prueba con pico holgado a ±0,5 LU del objetivo; si el tope de pico lo impide, deja el pico real ≤ −1 dBTP e informa de que no lo alcanzó (D-21); (c) Separar audio conserva la sincronía exacta (diferencia 0 muestras); (d) el desfase fino de 1 ms se aplica con precisión de 1 muestra (02 ARQ-129); (e) en un clip de 10 s con entrada de 3 s, el asa de salida no pasa de 7 s; (f) en un clip de 10 s con entrada de 2 s y salida de 6 s, recortar a 8 s no cambia los fundidos, recortar a 6 s da 1,5 s y 4,5 s, y recortar a 0 da 0 y 0; con entrada 0 y salida 6 s, recortar a 3 s da 0 y 3 s; (g) deshacer ese recorte, en un solo paso, restaura exactamente la duración del clip y las de los dos fundidos; (h) en un clip de 10 s a 1,0× con fundidos de 2 s y 6 s, Velocidad 2,0× da un clip de 5 s con 1,25 s y 3,75 s, y volver a 1,0× deja 1,25 s y 3,75 s; (i) tras recortar a 6 s (1,5 s y 4,5 s), ampliar el clip a 10 s deja 1,5 s y 4,5 s; (j) en un solo arrastre desde 10 s, con fundidos de 2 s y 6 s, ir a 4 s y soltar en 9 s deja 2 s y 6 s, e ir a 4 s y soltar en 6 s deja 1,5 s y 4,5 s; (k) prueba de propiedad: tras Dividir o Congelar fotograma, en cada clip resultante la suma de sus fundidos es ≤ su duración; (l) un clip de 10 s con fundidos de 2 s y 6 s, dividido a los 3 s, da una parte de 3 s con entrada 2 s y salida 0, y otra de 7 s con entrada 0 y salida 6 s; dividido a 1 s, la primera parte queda con entrada 1 s y salida 0; (m) Congelar fotograma a los 3 s en ese clip da 3 s con entrada 2 s y salida 0, el fotograma estático sin fundidos, y 7 s con entrada 0 y salida 6 s; (n) dividir a los 3 s y volver a unir da las mismas muestras de audio que el clip original (diferencia 0).
 
 ## A6. Vista previa y exportación
 
 **FV-11 · Vista previa en tiempo real y scrubbing** (RF-43)
 - *Propósito*: ver y oír el resultado mientras se edita, sin esperas.
-- *Comportamiento y reglas*: reproducción a 0,5×, 1× y 2× y fotograma a fotograma (`←/→`); arrastrar el Cabezal (**scrubbing**) muestra el fotograma más cercano de la caché mientras se decodifica el exacto. El reloj maestro es el audio; el video descarta fotogramas si se retrasa más de 40 ms (la misma tolerancia que FV-12 (b) fija para el archivo exportado) y nunca bloquea el audio. Indexado de keyframes al importar, caché de fotogramas con presupuesto de RAM (1 GB o el 15 % de la RAM, el menor; PROPUESTA) y prefetch en la dirección del movimiento. Copias ligeras automáticas para material de más de 1080p o códecs costosos (FV-22). La calidad de la vista previa es `Preview` (02 §6.2); se puede elegir 100 %, 50 % o 25 % de resolución.
+- *Comportamiento y reglas*: reproducción a 0,5×, 1× y 2× y fotograma a fotograma (`←/→`); arrastrar el Cabezal (**scrubbing**) muestra el fotograma más cercano de la caché mientras se decodifica el exacto. El reloj maestro es el audio; el video descarta fotogramas si se retrasa más de 40 ms (la misma tolerancia que FV-12 (b) fija para el archivo exportado) y nunca bloquea el audio. Indexado de keyframes al importar, caché de fotogramas con presupuesto de RAM (1 GB o el 15 % de la RAM, el menor; confirmada, D-71) y prefetch en la dirección del movimiento. Copias ligeras automáticas para material de más de 1080p o códecs costosos (FV-22). La calidad de la vista previa es `Preview` (02 §6.2); se puede elegir 100 %, 50 % o 25 % de resolución.
 - *UI*: vista previa y Línea de tiempo; control de calidad bajo la vista previa.
 - *Técnica*: `gafira-media` (caché, reloj de reproducción, sincronía A/V), `MediaService::{play, pause, seek, scrub}`, `Decoder` por flujo (máx. 8 hilos, 02 §6.3).
 - *Presupuesto*: 60 s con 3 pistas sin bloquear la UI: frames de UI p99 < 16,7 ms (CAL-13); **scrubbing 1080p ≥ 24 actualizaciones/s**, búsqueda en caché < 50 ms y sin caché < 250 ms (CAL-14, FIJADA por D-03); la reproducción mantiene la fps del proyecto en gama media a 1080p.
@@ -186,7 +186,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-13 · Multicapa y Agrupar en secuencia** (RF-45)
 - *Propósito*: componer varias capas de video y reutilizar bloques completos.
-- *Comportamiento y reglas*: las pistas **Video** y **Superposiciones** se apilan (la superior se pinta encima) con **Opacidad** y **modo de mezcla** por clip. Una **capa de ajuste** (`AdjustmentNode`) aplica efectos a todas las capas inferiores dentro de su duración. **Agrupar en secuencia** (`Ctrl+Alt+G`) convierte los clips elegidos en una secuencia anidada (`ClipSource::Scene`/`Nodes`) que se ve como un solo clip, se puede abrir con doble clic, reutilizar varias veces (intros, outros, tercios inferiores) y actualizar en un solo lugar. Los cambios se propagan a todas las instancias; «Desvincular» crea una copia independiente. Hasta 4 niveles de anidación (PROPUESTA).
+- *Comportamiento y reglas*: las pistas **Video** y **Superposiciones** se apilan (la superior se pinta encima) con **Opacidad** y **modo de mezcla** por clip. Una **capa de ajuste** (`AdjustmentNode`) aplica efectos a todas las capas inferiores dentro de su duración. **Agrupar en secuencia** (`Ctrl+Alt+G`) convierte los clips elegidos en una secuencia anidada (`ClipSource::Scene`/`Nodes`) que se ve como un solo clip, se puede abrir con doble clic, reutilizar varias veces (intros, outros, tercios inferiores) y actualizar en un solo lugar. Los cambios se propagan a todas las instancias; «Desvincular» crea una copia independiente. Hasta 4 niveles de anidación (confirmada, D-71).
 - *UI*: Línea de tiempo (menú contextual → Agrupar en secuencia); Inspector → Clip (Opacidad, Mezcla).
 - *Técnica*: `Sequence`, `ClipSource`, `AdjustmentNode`, `RenderGraphBuilder` (Visitor, 02 §4.1, §6.1); caché por contenido en `gafira-render`.
 - *Presupuesto*: 3 capas de video 1080p + 1 ajuste a la fps del proyecto en GPU; en CPU con Copias ligeras. Vista previa sin bloquear la UI (CAL-13).
@@ -255,15 +255,15 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 - *Comportamiento y reglas*: efecto **Clave de color** con cuentagotas sobre el video, **Tolerancia**, **Suavizado de borde**, **Supresión de derrame** (quita el reflejo del color de fondo en el sujeto), **Contraer o expandir** el borde y **Desenfoque de borde**. Tres vistas: Resultado, **Matte** (canal alfa en escala de grises) y Original. Los parámetros son animables.
 - *UI*: Inspector → Clip → Efectos → Clave de color.
 - *Técnica*: `Effect` + `GpuEffect` (WGSL) en `gafira-raster::effects` (02 §4.4); distancia en YCbCr/Lab con umbral suave y *despill*.
-- *Presupuesto*: vista previa a 30 fps en 1080p con GPU; en CPU ≥ 15 fps con Copia ligera (PROPUESTA).
-- *Aceptación*: (a) sobre un fixture de pantalla verde, el *matte* tiene IoU ≥ 0,95 respecto a la verdad (PROPUESTA); (b) la supresión de derrame reduce el tinte verde en bordes (ΔE medido) sin afectar otros colores; (c) CPU y GPU en ≤ 2/255.
+- *Presupuesto*: vista previa a 30 fps en 1080p con GPU; en CPU ≥ 15 fps con Copia ligera (confirmada, D-71).
+- *Aceptación*: (a) sobre un fixture de pantalla verde, el *matte* tiene IoU ≥ 0,95 respecto a la verdad (confirmada, D-71); (b) la supresión de derrame reduce el tinte verde en bordes (ΔE medido) sin afectar otros colores; (c) CPU y GPU en ≤ 2/255.
 
 **FV-17 · Seguimiento (motion tracking)** (RF-49)
 - *Propósito*: pegar texto, logos o máscaras a un objeto que se mueve.
 - *Comportamiento y reglas*: herramienta **Seguimiento**: se coloca un recuadro sobre el punto o la zona (con recuadro de búsqueda) y se analiza hacia delante o hacia atrás. Modos: **Posición** (un punto), **Posición y escala** y **Posición, escala y giro** (dos puntos). El resultado son **Fotogramas clave** de posición/escala/giro que se aplican a un texto, logo, imagen o máscara destino y se pueden editar. Cuando pierde el objeto, se detiene y pide corrección manual en ese fotograma. Cancelable en ≤ 100 ms.
 - *UI*: Inspector → Clip → Seguimiento («Analizar», «Aplicar a…»).
 - *Técnica*: algoritmo propio (plantilla piramidal con refinado de subpíxel / Lucas–Kanade) en `gafira-raster`; resultado como `KeyTrack`; ejecución en el pool `Background` (02 §6.3).
-- *Presupuesto*: ≥ 10 fps de análisis en 1080p en gama media (PROPUESTA); la UI no se bloquea.
+- *Presupuesto*: ≥ 10 fps de análisis en 1080p en gama media (confirmada, D-71); la UI no se bloquea.
 - *Aceptación*: (a) en un fixture sintético con movimiento conocido, el error medio de posición < 1 px; (b) un objeto que sale de cuadro detiene el análisis con aviso; (c) el elemento seguido se mantiene sobre el objeto en el golden de 5 s.
 
 **FV-18 · Estabilizar** (RF-49)
@@ -271,8 +271,8 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 - *Comportamiento y reglas*: botón **Estabilizar** en Inspector → Clip. Modos **Suave** (traslación) y **Completo** (traslación, giro y escala); **Intensidad** 0–100 y opción de **Recortar automáticamente** (amplía lo mínimo para ocultar bordes) o **Rellenar bordes**. El análisis calcula la trayectoria de la cámara y la suaviza (filtro gaussiano); es no destructivo (se guardan datos de transformación y se puede desactivar). Corrección de *rolling shutter*: Fase 3 (PROPUESTA).
 - *UI*: Inspector → Clip → Estabilizar.
 - *Técnica*: estimación de movimiento en `gafira-raster` y aplicación como `Transform2D` por fotograma en `gafira-render`.
-- *Presupuesto*: análisis ≥ 10 fps en 1080p en gama media (PROPUESTA).
-- *Aceptación*: (a) en un fixture con temblor sintético, la desviación de la trayectoria baja ≥ 70 % (PROPUESTA); (b) «Desactivar» devuelve el clip original sin diferencia; (c) con Recortar automáticamente no quedan bordes negros en el golden.
+- *Presupuesto*: análisis ≥ 10 fps en 1080p en gama media (confirmada, D-71).
+- *Aceptación*: (a) en un fixture con temblor sintético, la desviación de la trayectoria baja ≥ 70 % (confirmada, D-71); (b) «Desactivar» devuelve el clip original sin diferencia; (c) con Recortar automáticamente no quedan bordes negros en el golden.
 
 ## B5. Corrección de color
 
@@ -302,8 +302,8 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 - *UI*: Inspector → Corrección de color; panel acoplable Medidores.
 - *Técnica*: `LutTransform` y `ColorTransform` (02 §4.10), `Effect`/`GpuEffect` de ruedas y curvas (bake a LUT 3D para GPU, `bake_lut3d`), `gafira-raster` (scopes, 02 §2.1: Fase 2).
-- *Presupuesto*: aplicar el módulo completo a 1080p en vista previa a la fps del proyecto en GPU; Medidores ≥ 15 actualizaciones/s en gama media (PROPUESTA); cambio de un control < 100 ms (CAL-05).
-- *Aceptación*: (a) con todos los módulos en su valor por defecto la salida es idéntica a la entrada; (b) una LUT identidad `.cube` no cambia la imagen (≤ 1/255); (c) el error ΔE2000 de una LUT cargada frente a la referencia < 1,0 (ARQ de `ColorTransform`, PROPUESTA); (d) la forma de onda de un degradado conocido coincide con la referencia analítica; (e) CPU y GPU coinciden en ≤ 2/255.
+- *Presupuesto*: aplicar el módulo completo a 1080p en vista previa a la fps del proyecto en GPU; Medidores ≥ 15 actualizaciones/s en gama media (confirmada, D-71); cambio de un control < 100 ms (CAL-05).
+- *Aceptación*: (a) con todos los módulos en su valor por defecto la salida es idéntica a la entrada; (b) una LUT identidad `.cube` no cambia la imagen (≤ 1/255); (c) el error ΔE2000 de una LUT cargada frente a la referencia < 1,0 (ARQ de `ColorTransform`, confirmada, D-71); (d) la forma de onda de un degradado conocido coincide con la referencia analítica; (e) CPU y GPU coinciden en ≤ 2/255.
 
 ## B6. Audio avanzado
 
@@ -332,7 +332,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 - *UI*: Mezclador; Inspector → Clip (Volumen).
 - *Técnica*: `AudioProcessor` + `ProcessorChain` (02 §4.9) en `gafira-audio` (sin asignaciones ni bloqueos, bloques de 512 muestras, parámetros por ring buffer `rtrb`); medidor EBU R128 propio; `NoiseGate`, `Compressor`, `Limiter`, `NoiseReducer` y `TimeStretch` son procesadores de `gafira-audio` de Fase 2 registrados en `AudioRegistry` (02 §4.9, §11.1).
-- *Presupuesto*: **mezcla de 16 pistas con EQ de 3 bandas < 25 % de un núcleo a 48 kHz** (CAL-15); latencia de monitorización < 20 ms (PROPUESTA).
+- *Presupuesto*: **mezcla de 16 pistas con EQ de 3 bandas < 25 % de un núcleo a 48 kHz** (CAL-15); latencia de monitorización < 20 ms (confirmada, D-71).
 - *Aceptación*: (a) `bench_mix_16` dentro del umbral; (b) la guardia de asignación no detecta asignaciones en el hilo de audio con 16 pistas activas (ARQ-23); (c) la respuesta del EQ a un barrido coincide con la curva teórica, que es la respuesta digital del diseño (02 ARQ-125), en ±0,5 dB; (d) Nivelar cumple FV-10 (b); (e) con un tono a 0 dBFS, el limitador no supera el techo en más de 0,1 dB.
 
 ## B7. Subtítulos SRT y VTT
@@ -349,10 +349,10 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-22 · Copias ligeras (proxies)** (RF-53)
 - *Propósito*: editar con fluidez material 4K y 6K en equipos modestos.
-- *Comportamiento y reglas*: se generan **automáticamente** para clips de más de 1080p o con códecs costosos (por ejemplo HEVC de 10 bits) y se pueden crear o borrar a mano (menú contextual de Medios → «Copia ligera»). Formato: MJPEG intra a 540p o 720p, almacenada en la **caché del usuario**, fuera del `.gaf`; límite de caché configurable (por defecto 10 GB, PROPUESTA) con descarte de los menos usados. Un distintivo «Copia ligera» indica cuándo se usa; **la exportación siempre usa el original** (V-3). La generación corre en segundo plano con prioridad `Background`, con progreso y cancelación. El **motor** existe en el MVP y la **gestión manual** en Fase 2 (C-11 de 01).
+- *Comportamiento y reglas*: se generan **automáticamente** para clips de más de 1080p o con códecs costosos (por ejemplo HEVC de 10 bits) y se pueden crear o borrar a mano (menú contextual de Medios → «Copia ligera»). Formato: MJPEG intra a 540p o 720p, almacenada en la **caché del usuario**, fuera del `.gaf`; límite de caché configurable (por defecto 10 GB, confirmada, D-71) con descarte de los menos usados. Un distintivo «Copia ligera» indica cuándo se usa; **la exportación siempre usa el original** (V-3). La generación corre en segundo plano con prioridad `Background`, con progreso y cancelación. El **motor** existe en el MVP y la **gestión manual** en Fase 2 (C-11 de 01).
 - *UI*: Medios; Ajustes → Rendimiento (Copias ligeras automáticas); distintivo en el clip.
 - *Técnica*: `gafira-media` (proxies, caché), `Codec` MJPEG de `gafira-codec-free`.
-- *Presupuesto*: generar a ≥ 1× el tiempo real en 1080p en gama media (PROPUESTA); con Copia ligera, scrubbing ≥ 24 actualizaciones/s en 4K (CAL-14).
+- *Presupuesto*: generar a ≥ 1× el tiempo real en 1080p en gama media (confirmada, D-71); con Copia ligera, scrubbing ≥ 24 actualizaciones/s en 4K (CAL-14).
 - *Aceptación*: (a) un proyecto con video 4K, música, voz en off, LUT, Fotogramas clave y Máscara se edita con Copias ligeras sin bloquear la UI y se exporta a 1080p con originales (criterio del PRD RF-08); (b) la exportación nunca referencia una Copia ligera (prueba de grafo); (c) borrar la caché no pierde datos del proyecto.
 
 ## B9. Cola de exportación
@@ -379,10 +379,10 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-25 · Relocalizar medios** (RF-55) — Fase 2
 - *Propósito*: reconectar medios que cambiaron de carpeta o disco.
-- *Comportamiento y reglas*: los medios se incrustan en el `.gaf` por defecto; los videos grandes (> 500 MB, PROPUESTA) pueden **vincularse** en lugar de incrustarse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`: ruta relativa a la carpeta del `.gaf`, tamaño y hash BLAKE3; sin rutas absolutas, ARQ-56). **Relocalizar medios** es una función de **Fase 2** (el campo `linked` existe desde `schema` 1, 02 §7.1). Si un vínculo falta (evento `LinksMissing`), la Línea de tiempo muestra el clip en rojo con un icono y el diálogo **Buscar archivo**; al elegir una carpeta, Gafira busca por nombre y verifica por tamaño y hash y reconecta **todos** los que coincidan. La exportación se bloquea o advierte antes de generar (RF-33).
+- *Comportamiento y reglas*: los medios se incrustan en el `.gaf` por defecto; los videos grandes (> 500 MB, confirmada, D-71) pueden **vincularse** en lugar de incrustarse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`: ruta relativa a la carpeta del `.gaf`, tamaño y hash BLAKE3; sin rutas absolutas, ARQ-56). **Relocalizar medios** es una función de **Fase 2** (el campo `linked` existe desde `schema` 1, 02 §7.1). Si un vínculo falta (evento `LinksMissing`), la Línea de tiempo muestra el clip en rojo con un icono y el diálogo **Buscar archivo**; al elegir una carpeta, Gafira busca por nombre y verifica por tamaño y hash y reconecta **todos** los que coincidan. La exportación se bloquea o advierte antes de generar (RF-33).
 - *UI*: clip con vínculo ausente; Archivo → Relocalizar medios.
 - *Técnica*: `AssetTable` con `AssetStorage::Linked`, `AssetService::relocate` (indexa la carpeta, filtra por nombre y tamaño y confirma por hash; un solo `Command` reconecta todos los coincidentes) y `ContentStore` (02 §3.2, §7.1).
-- *Presupuesto*: indexar una carpeta de 1 000 archivos < 2 s (PROPUESTA).
+- *Presupuesto*: indexar una carpeta de 1 000 archivos < 2 s (confirmada, D-71).
 - *Aceptación*: (a) mover la carpeta de medios y relocalizar reconecta el 100 % de los coincidentes; (b) un archivo con el mismo nombre pero distinto hash se rechaza con aviso; (c) el proyecto no guarda rutas absolutas.
 
 ---
@@ -407,7 +407,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
   - Versiones mínimas: Windows 10 (build mínima por definir, VERIFICAR contra los requisitos de wgpu/Media Foundation) y Windows 11.
 - *UI*: asistente del instalador (FV-40); Menú Inicio.
 - *Técnica*: `xtask package windows` (WiX v5 + `signtool`); `xtask audit-bundle` (ARQ-72).
-- *Presupuesto*: instalador ≤ 60 MB (CAL-23); instalación en < 60 s en SSD (PROPUESTA).
+- *Presupuesto*: instalador ≤ 60 MB (CAL-23); instalación en < 60 s en SSD (confirmada, D-71).
 - *Aceptación*: (a) instalar, abrir un `.gaf` con doble clic y desinstalar en una máquina limpia deja 0 archivos en `Program Files\Gafira` y 0 claves de Gafira en el registro (comprobado con diff del sistema); (b) `Get-AuthenticodeSignature` reporta firma válida en el MSI y los `.exe`; (c) actualizar de la versión n−1 a n conserva ajustes y asociaciones; (d) `audit-bundle` solo lista `gafira` y `gafira-cli` como ejecutables (ARQ-72).
 
 ## C2. Asociación del tipo de archivo `.gaf`
@@ -466,7 +466,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 - *Comportamiento y reglas*: matriz exacta: Windows Server 2022 (`x86_64-pc-windows-msvc`), Ubuntu LTS (`x86_64-unknown-linux-gnu`) y macOS 14 arm64 (`aarch64-apple-darwin`) (02 §10.1). **Por cada PR**: `fmt --check`, `clippy -D warnings`, `check-layers`, `cargo deny check licenses bans sources advisories`, pruebas, fuzz corto de los objetivos afectados y *benchmarks* de humo; build `free-only` y build por defecto. **Nocturno**: *benchmarks* completos en la máquina de referencia (*self-hosted*), fuzz largo (8 h por semana) y paquetes firmados de prueba. **Release** (por etiqueta): paquetes `dist`, firma y notarización con secretos protegidos solo en ese flujo, `audit-bundle`, SBOM, avisos de terceros, sumas de verificación SHA-256 y prueba de instalación y desinstalación en máquina limpia. La CI es un servicio de construcción, no un servicio de Gafira: la app no depende de él en ejecución.
 - *UI*: no aplica.
 - *Técnica*: `xtask` (`check-layers`, `package`, `gen-icons`, `audit-bundle`, `size`); `perf-budgets.toml` (ARQ-40).
-- *Presupuesto*: PR verde en < 45 min (PROPUESTA).
+- *Presupuesto*: PR verde en < 45 min (confirmada, D-71).
 - *Aceptación*: (a) la matriz contiene exactamente los 3 *targets* (ARQ-03); (b) un PR no se puede fusionar con CI roja (ARQ-80); (c) un release sin firma o sin `audit-bundle` verde falla.
 
 ## C6. Avisos de terceros, SBOM y auditoría de licencias
@@ -553,34 +553,34 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 | `TrackKind::Overlay` para Texto | FV-01 | Convención de interfaz; sin cambio de tipo |
 | Instalador | FV-30, FV-33, FV-34 | Soporte de `xtask package` para MSI, `.deb`, `.rpm`, `.tar.gz` y DMG (sin AppImage, D-05) |
 
-## C11. Lista de comprobación previa a vender
+## C11. Lista de comprobación previa a publicar y a vender
 
-Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica con un punto abierto de las categorías de licencias, patentes, marcas o documentos. Esta lista pertenece a la **fase final «Licencia y distribución comercial»** (01 §5.1) y no bloquea el MVP técnico.
+Cada punto tiene propietario y evidencia. La primera versión es una **descarga gratuita** (D-62, D-70). La columna «Bloquea» dice qué detiene cada punto: **toda versión**, gratuita o de pago (licencias de terceros, patentes, marca y avisos de terceros), o **venta**, que espera a que haya venta (activación, EULA de venta e identificador de dispositivo de `PRIVACY.md`; el precio también espera, 01 §11). Los puntos **sin clasificar** no los ordena D-70 y los decide el titular. La lista no bloquea el MVP técnico.
 
-| # | Categoría | Comprobación | Evidencia | Resp. |
-|---|---|---|---|---|
-| 1 | Licencias | `cargo deny check licenses bans sources advisories` verde en el build de release; 0 GPL/LGPL/AGPL/SSPL/no comerciales; 0 dependencias git | Informe de CI | Ingeniería |
-| 2 | Licencias | Verificación con `cargo-deny` de todas las licencias marcadas VERIFICAR en 02 §9.2 (vello, parley, krilla, linesweeper, cpal, rav1e, wasmi, decodificador MP3, cliente HTTP, `ring`…) y de las herramientas de build (nfpm, WiX, `cargo about`) | Tabla actualizada | Ingeniería |
-| 3 | Licencias | `cpal`/`libasound` (LGPL-2.1, enlace dinámico, no empaquetada) evaluado con asesoría legal; alternativa decidida (R-06 de 02) | Dictamen | Legal |
-| 4 | Licencias | `THIRD_PARTY_NOTICES.md` completo en el instalador y en «Acerca de» | Archivo + captura | Ingeniería |
-| 5 | Licencias | `assets/LICENSES.toml` cubre el 100 % del contenido; música y sonidos con comprobante de origen | `xtask check-licenses` | Contenido |
-| 6 | Licencias | OFL.txt de Inter y Manrope incluidos; copyright y nombres reservados respetados | Instalador | Marca |
-| 7 | Licencias | Sin ejecutables de terceros ni FFmpeg; sin pesos de ML; sin `.so` LGPL en ningún paquete | `audit-bundle` | Ingeniería |
-| 8 | Patentes | H.264/AAC solo vía API del sistema, sin encoders propios de H.264, HEVC ni AAC; dictamen sobre si cubre al distribuidor en cada mercado; revisar al caducar la última patente de H.264 en EE. UU. (29 de noviembre de 2027, VERIFICAR) | Dictamen | Legal |
-| 9 | Patentes | AV1 (patentes de AOMedia; pool de Sisvel y demanda de Dolby contra Snap, riesgo bajo pero no nulo), Opus, Vorbis, FLAC: revisión de obligaciones | Memo legal | Legal |
-| 10 | Patentes | Importar HEVC y HEIC solo con el decodificador del SO (D-59, cierra Q-17); MP3 solo importación con decodificador de licencia permisiva | Registro de decisiones | Legal |
-| 11 | Patentes | Build `free-only` verificado de punta a punta (AV1 + Opus) | CI | Ingeniería |
-| 12 | Marcas | Búsqueda de «Gafira» y «Gefira» en USPTO, TMview y WIPO Global Brand Database, con resultado registrado antes de publicar (D-04; lista de 01 §12.4) | Informe con capturas | Titular |
-| 13 | Marcas | Nombres de interfaz del glosario (aprobados en D-04) sin coincidencias con marcas ajenas | Informe | Titular |
-| 14 | Marcas | Ningún asset ni nombre de otros productos en el instalador o la documentación | Revisión de texto | Marca |
-| 15 | Firma | Certificado de firma de código de Windows, Developer ID de Apple y claves de firma de paquetes Linux disponibles y custodiados (sin claves de actualización: D-06) | Registro de claves | Producto |
-| 16 | Documentos | EULA basado en el contrato de Tracewright (`LICENSE` en inglés y `LICENCIA.md` en español, prevalece el español) con las tres adaptaciones de D-01: nombre del producto, «Sus resultados» (diseños, imágenes y videos del usuario) y permiso de uso de plantillas, fuentes y recursos incluidos | Documentos | Titular |
-| 17 | Documentos | `PRIVACY.md` de Gafira que declara el identificador de dispositivo enviado al activar; no puede copiar la frase «no transmite datos» (D-01) | Documento | Titular |
-| 18 | Licencia | Activación contra el `license-hub` (servicio externo ya existente, reutilizado tal cual) integrada y probada con `gafira-license`. Licencia y activación: ver spec 06 (pendiente, se redacta al final) | Prueba E2E de ARQ-91 | Ingeniería |
-| 19 | Calidad | Presupuestos de rendimiento y de tamaño en verde; `export_matrix` ≥ 98 %; 500 *kills* recuperados | Informe nocturno | Calidad |
-| 20 | Instalación | Instalar, abrir un `.gaf` y desinstalar en máquinas limpias de las 3 plataformas (MSI, `.deb`, `.rpm`, `.tar.gz`, DMG) | Registro de pruebas | Calidad |
-| 21 | Distribución | Sumas SHA-256 y SBOM publicados; paquetes firmados y notarizados | Release | Ingeniería |
-| 22 | Accesibilidad | Contraste AA, teclado completo y AccessKit comprobados (DIS-10, DIS-30..37) | Informe | Diseño |
+| # | Categoría | Comprobación | Evidencia | Resp. | Bloquea (D-70) |
+|---|---|---|---|---|---|
+| 1 | Licencias | `cargo deny check licenses bans sources advisories` verde en el build de release; 0 GPL/LGPL/AGPL/SSPL/no comerciales; 0 dependencias git | Informe de CI | Ingeniería | Toda versión |
+| 2 | Licencias | Verificación con `cargo-deny` de todas las licencias marcadas VERIFICAR en 02 §9.2 (vello, parley, krilla, linesweeper, cpal, rav1e, wasmi, decodificador MP3, cliente HTTP, `ring`…) y de las herramientas de build (nfpm, WiX, `cargo about`) | Tabla actualizada | Ingeniería | Toda versión |
+| 3 | Licencias | `cpal`/`libasound` (LGPL-2.1, enlace dinámico, no empaquetada) evaluado con asesoría legal; alternativa decidida (R-06 de 02) | Dictamen | Legal | Toda versión |
+| 4 | Licencias | `THIRD_PARTY_NOTICES.md` completo en el instalador y en «Acerca de» | Archivo + captura | Ingeniería | Toda versión |
+| 5 | Licencias | `assets/LICENSES.toml` cubre el 100 % del contenido; música y sonidos con comprobante de origen | `xtask check-licenses` | Contenido | Toda versión |
+| 6 | Licencias | OFL.txt de Inter y Manrope incluidos; copyright y nombres reservados respetados | Instalador | Marca | Toda versión |
+| 7 | Licencias | Sin ejecutables de terceros ni FFmpeg; sin pesos de ML; sin `.so` LGPL en ningún paquete | `audit-bundle` | Ingeniería | Toda versión |
+| 8 | Patentes | H.264/AAC solo vía API del sistema, sin encoders propios de H.264, HEVC ni AAC; dictamen sobre si cubre al distribuidor en cada mercado; revisar al caducar la última patente de H.264 en EE. UU. (29 de noviembre de 2027, VERIFICAR) | Dictamen | Legal | Toda versión |
+| 9 | Patentes | AV1 (patentes de AOMedia; pool de Sisvel y demanda de Dolby contra Snap, riesgo bajo pero no nulo), Opus, Vorbis, FLAC: revisión de obligaciones | Memo legal | Legal | Toda versión |
+| 10 | Patentes | Importar HEVC y HEIC solo con el decodificador del SO (D-59, cierra Q-17); MP3 solo importación con decodificador de licencia permisiva | Registro de decisiones | Legal | Toda versión |
+| 11 | Patentes | Build `free-only` verificado de punta a punta (AV1 + Opus) | CI | Ingeniería | Toda versión |
+| 12 | Marcas | Búsqueda de «Gafira» y «Gefira» en USPTO, TMview y WIPO Global Brand Database, con resultado registrado antes de publicar (D-04; lista de 01 §12.4) | Informe con capturas | Titular | Toda versión |
+| 13 | Marcas | Nombres de interfaz del glosario (aprobados en D-04) sin coincidencias con marcas ajenas | Informe | Titular | Toda versión |
+| 14 | Marcas | Ningún asset ni nombre de otros productos en el instalador o la documentación | Revisión de texto | Marca | Toda versión |
+| 15 | Firma | Certificado de firma de código de Windows, Developer ID de Apple y claves de firma de paquetes Linux disponibles y custodiados (sin claves de actualización: D-06) | Registro de claves | Producto | Sin clasificar |
+| 16 | Documentos | EULA basado en el contrato de Tracewright (`LICENSE` en inglés y `LICENCIA.md` en español, prevalece el español) con las tres adaptaciones de D-01: nombre del producto, «Sus resultados» (diseños, imágenes y videos del usuario) y permiso de uso de plantillas, fuentes y recursos incluidos | Documentos | Titular | Venta |
+| 17 | Documentos | `PRIVACY.md` de Gafira que declara el identificador de dispositivo enviado al activar; no puede copiar la frase «no transmite datos» (D-01) | Documento | Titular | Venta |
+| 18 | Licencia | Activación contra el `license-hub` (servicio externo ya existente, reutilizado tal cual) integrada y probada con `gafira-license`. Licencia y activación: ver spec 06 (pendiente, se redacta al final) | Prueba E2E de ARQ-91 | Ingeniería | Venta |
+| 19 | Calidad | Presupuestos de rendimiento y de tamaño en verde; `export_matrix` ≥ 98 %; 500 *kills* recuperados | Informe nocturno | Calidad | Sin clasificar |
+| 20 | Instalación | Instalar, abrir un `.gaf` y desinstalar en máquinas limpias de las 3 plataformas (MSI, `.deb`, `.rpm`, `.tar.gz`, DMG) | Registro de pruebas | Calidad | Sin clasificar |
+| 21 | Distribución | Sumas SHA-256 y SBOM publicados; paquetes firmados y notarizados | Release | Ingeniería | Sin clasificar |
+| 22 | Accesibilidad | Contraste AA, teclado completo y AccessKit comprobados (DIS-10, DIS-30..37) | Informe | Diseño | Sin clasificar |
 
 ## C12. Extensión y lotes (Fase 3)
 
@@ -589,7 +589,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 - *Comportamiento y reglas*: pestaña **Extensiones** (instalar, activar, desactivar, quitar). Un plugin es un paquete firmado con manifiesto y **capacidades declaradas** (sin red; disco solo mediante permisos que concede la persona); sus contribuciones (efectos solo CPU, importadores, exportadores, proveedores de recursos y comandos) se envuelven en adaptadores de los traits nativos. Un plugin con bucle infinito se interrumpe en ≤ 100 ms por combustible y se desactiva sin afectar al documento.
 - *UI*: Panel lateral → Extensiones; Ajustes → Extensiones.
 - *Técnica*: `PluginHost` con `wasmi` (VERIFICAR licencia; 02 §4.12), `gafira-plugin`.
-- *Presupuesto*: cargar un plugin < 200 ms (PROPUESTA).
+- *Presupuesto*: cargar un plugin < 200 ms (confirmada, D-71).
 - *Aceptación*: ARQ-24 (≤ 100 ms), ARQ-20 (el demo de extensión compila), acceso no concedido devuelve error.
 
 **FV-43 · Lotes con datos de un CSV** (RF-61) — Fase 3
@@ -597,7 +597,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 - *Comportamiento y reglas*: `gafira-cli batch plantilla.gaf --data datos.csv --format png --out carpeta/` sustituye variables de contenido (`{{nombre}}`, `{{imagen}}`) en textos e imágenes y exporta una pieza por fila; también desde la app (Archivo → Exportar por lotes). Valida columnas y recursos antes de empezar y escribe un informe por fila.
 - *UI*: Archivo → Exportar por lotes; `gafira-cli`.
 - *Técnica*: `gafira-cli` (02 §2.1), `ExportService`, `Exporter`.
-- *Presupuesto*: 100 piezas PNG de 1080p < 3 min en gama media (PROPUESTA).
+- *Presupuesto*: 100 piezas PNG de 1080p < 3 min en gama media (confirmada, D-71).
 - *Aceptación*: (a) una fila inválida se informa y no detiene el lote; (b) los resultados coinciden con la exportación manual de la misma pieza (≤ 1/255); (c) sin red.
 
 ## C13. Trazabilidad RF → función y preguntas abiertas
@@ -626,7 +626,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | Q-17 | Importar HEVC y HEIC vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; nunca salida HEVC) |
 | Q-15 | Voz en off y marcadores de compás en Fase 2 | Abierta |
 | Q-19 | Prueba gratuita | Cerrada: D-12 (no hay prueba gratuita; modo sin licencia) |
-| Q-20 | Modo sin licencia válida | Abierta: D-12 sustituye la propuesta de solo lectura; hasta que exista la lista de funciones bloqueadas (spec 06), solo la exportación está bloqueada (D-55) |
+| Q-20 | Modo sin licencia válida | Aplazada (D-62, D-70): la primera versión es gratuita y sin licencia; la lista de funciones bloqueadas (spec 06) se fija cuando haya venta. En un build con licencia, hasta entonces, solo la exportación está bloqueada (D-55) |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |
 | R-06 (02) | `cpal` y `libasound` (LGPL, dinámico) | VERIFICAR, legal |
 | R-F | Licencia de WiX v5, nfpm y de las herramientas de empaquetado | VERIFICAR |
