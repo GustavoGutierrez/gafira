@@ -30,7 +30,6 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | ID | Spec | Estado |
 | --- | --- | --- |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; pendientes E4 (necesita SP5), E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (necesita SP3); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
-| 013 | [Mutantes críticos de `gafira-text` y `gafira-raster`](013-mutant-debt-text-raster.md) | in-progress: D-66, ítems 74 y 75 de 07; solo tests |
 
 ## Done
 
@@ -39,6 +38,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 009 | [`SettingsService` del engine e idioma persistido](done/009-engine-settings-service.md) | Puerto `SettingsRepository`, `SettingsService::{start, get, set, set_language, locale}`, `LocaleChanged` al arrancar y al cambiar idioma; 13 tests nuevos, 3 mutantes a mano muertos, 2649 tests en el workspace |
 | 010 | [`LicenseService` del engine y licencia opcional](done/010-engine-license-service.md) | `LicenseService::{start, status, can_export, is_required, activate, validate, deactivate}`; licencia deshabilitable por build con `NoLicensing` → `NotRequired` (D-58); 9 tests nuevos, 4 mutantes a mano muertos, 2658 tests |
 | 011 | [`AssetService::import` del engine](done/011-engine-asset-import.md) | Comando `InsertAsset` deduplicado por hash y `AssetService::import` (sesión → archivo → store → comando, deshacer incluido); 9 tests nuevos, 4 mutantes a mano muertos, 2667 tests |
+| 013 | [Mutantes críticos de `gafira-text` y `gafira-raster`](done/013-mutant-debt-text-raster.md) | D-66, ítems 74 y 75 de 07, solo tests: de 98 críticos, 57 muertos, 34 equivalentes excluidos en `.cargo/mutants.toml` y 7 sin matar en la frontera de una tolerancia; 24 tests nuevos, 2691 tests |
 
 ### Historial del flujo anterior
 
