@@ -1646,6 +1646,7 @@ dependencies = [
  "gafira-geom",
  "gafira-io-image",
  "gafira-ports",
+ "gafira-raster",
  "gafira-render",
  "gafira-render-cpu",
  "gafira-time",

@@ -8,18 +8,19 @@ use std::time::Duration;
 use gafira_color::{Color, Rgba};
 use gafira_doc::contract::{CancelToken, NoProgress, ParamValue, ParamValues};
 use gafira_doc::{
-    Document, Dpi, ElementBase, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement,
-    ShapeGeometry, ShapeNode,
+    AssetEntry, AssetRef, AssetStorage, AssetTable, ContentHash, Document, Dpi, ElementBase,
+    ImageNode, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
 };
 use gafira_geom::{Length, Unit};
 use gafira_io_pdf::{FILE_NAME, PdfExporter, SCALE, page_points};
 use gafira_ports::common::UnixTime;
 use gafira_ports::export::{
     ExportError, ExportJob, ExportReport, ExportRequest, ExportScope, ExportSink, Exporter,
-    PageRenderers,
+    ImagePixels, PageRenderers,
 };
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, ReadSeek, WriteSeek};
+use gafira_raster::{ImageBuf, PixelBuf};
 use gafira_render::{FontBook, GraphPageRenderers};
 use gafira_render_cpu::CpuBackend;
 
@@ -128,12 +129,21 @@ fn export(
     request: &ExportRequest,
     sink: &mut MemSink,
 ) -> Result<ExportReport, ExportError> {
+    export_with(document, ImagePixels::new(), request, sink)
+}
+
+fn export_with(
+    document: &Document,
+    images: ImagePixels,
+    request: &ExportRequest,
+    sink: &mut MemSink,
+) -> Result<ExportReport, ExportError> {
     let renderers = GraphPageRenderers::new(
         Box::new(|| Box::new(CpuBackend::new())),
         Arc::new(FixedClock),
         Arc::new(FontBook::new()),
     );
-    let pages = renderers.for_document(document, Default::default());
+    let pages = renderers.for_document(document, images);
     let job = ExportJob {
         request,
         document,
@@ -199,4 +209,37 @@ fn s30_04_what_blocks_the_export_writes_nothing() {
     let mut sink = MemSink::default();
     assert!(export(&document(), &request(&[1, 9], 1.0), &mut sink).is_err());
     assert!(sink.files.is_empty());
+}
+
+// S32-06: a page with an image element exports as one PDF page of the size
+// of the page in points (its pixels are checked through the PNG path, whose
+// render is the same).
+#[test]
+fn s32_06_a_page_with_an_image_exports_as_one_pdf_page() {
+    let photo = AssetRef::new(ContentHash([7; 32]));
+    let base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 40.0, 20.0));
+    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode { asset: photo })));
+    let mut page = Arc::unwrap_or_clone(page(1, 100.0, 50.0, None));
+    page.roots.push(image.base.id);
+    page.nodes.insert(image.base.id, image);
+    let mut assets = AssetTable::new();
+    assets.insert(
+        photo,
+        AssetEntry {
+            name: "photo.png".to_owned(),
+            storage: AssetStorage::Embedded,
+        },
+    );
+    let document =
+        Document::from_parts_with_assets(3, Dpi::default(), vec![Arc::new(page)], assets)
+            .expect("the document validates");
+    let red = ImageBuf::new(2, 1, PixelBuf::Rgba8(vec![255, 0, 0, 255, 255, 0, 0, 255]))
+        .expect("an image");
+    let images = ImagePixels::from([(photo, Arc::new(red))]);
+    let mut sink = MemSink::default();
+    export_with(&document, images, &request(&[1], 2.0), &mut sink).expect("the export");
+    let bytes = sink.files[0].1.lock().unwrap().get_ref().clone();
+    let pdf = hayro_syntax::Pdf::new(bytes).expect("a reader parses the PDF");
+    let sizes: Vec<(f32, f32)> = pdf.pages().iter().map(|p| p.base_dimensions()).collect();
+    assert_eq!(sizes, [(75.0, 37.5)]);
 }
