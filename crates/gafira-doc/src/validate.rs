@@ -24,6 +24,7 @@ impl Document {
         self.check_parents()?;
         self.check_reachability()?;
         self.check_clip_sources()?;
+        self.check_image_sources()?;
         self.check_timeline()
     }
 
@@ -177,6 +178,21 @@ impl Document {
             }
             if let Some(&node) = page.nodes.keys().find(|id| !reached.contains(id)) {
                 return Err(ValidationError::Cycle { node });
+            }
+        }
+        Ok(())
+    }
+
+    /// P7: the asset each image element shows is in the asset table (spec
+    /// 029). An image is never left pointing at nothing.
+    fn check_image_sources(&self) -> Result<(), ValidationError> {
+        for page in &self.pages {
+            for (id, node) in &page.nodes {
+                if let NodeKind::Image(image) = &node.kind
+                    && self.asset(&image.asset).is_none()
+                {
+                    return Err(ValidationError::DanglingImage { node: *id });
+                }
             }
         }
         Ok(())
@@ -1202,5 +1218,35 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    // Spec 029, S29-04: an image must show an asset of the table.
+    #[test]
+    fn s29_04_an_image_without_its_asset_does_not_validate() {
+        use crate::timeline::{AssetEntry, AssetRef, AssetStorage};
+        use crate::{ContentHash, ImageNode};
+        let asset = AssetRef::new(ContentHash([7; 32]));
+        let mut page = page(1, &[]);
+        page.nodes.insert(
+            NodeId::new(2),
+            node(2, NodeKind::Image(ImageNode { asset })),
+        );
+        page.roots.push(NodeId::new(2));
+        let mut doc =
+            crate::document::test_document(3, crate::Dpi::default(), vec![Arc::new(page)]);
+        assert_eq!(
+            doc.validate(),
+            Err(ValidationError::DanglingImage {
+                node: NodeId::new(2)
+            })
+        );
+        doc.assets.insert(
+            asset,
+            AssetEntry {
+                name: "dot.png".to_owned(),
+                storage: AssetStorage::Embedded,
+            },
+        );
+        assert_eq!(doc.validate(), Ok(()));
     }
 }

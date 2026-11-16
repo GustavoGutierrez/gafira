@@ -167,7 +167,12 @@ title = "Title"
 subtitle = "Subtitle"
 body = "Write your text here"
 
+[library]
+import_image = "Import image…"
+import_failed = "We couldn't import the image."
+
 [layers]
+image = "Image"
 text = "Text"
 up = "Bring forward"
 down = "Send backward"

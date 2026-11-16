@@ -17,6 +17,7 @@ mod edit;
 mod element;
 mod error;
 mod ids;
+mod image;
 mod json;
 mod layout;
 pub mod msg;
@@ -38,6 +39,7 @@ pub use edit::{DocMut, EditToken};
 pub use element::ElementBase;
 pub use error::{NodeField, ValidationError};
 pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
+pub use image::ImageNode;
 pub use json::LoadError;
 pub use layout::{
     GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,

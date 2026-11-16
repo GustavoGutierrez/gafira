@@ -124,6 +124,28 @@ impl Document {
         Ok(doc)
     }
 
+    /// [`Document::from_parts`] with an asset table, validated with it: a
+    /// command checks new image elements against the table they will live
+    /// with (spec 029).
+    pub fn from_parts_with_assets(
+        next_id: u64,
+        dpi: Dpi,
+        pages: Vec<Arc<Page>>,
+        assets: AssetTable,
+    ) -> Result<Self, crate::ValidationError> {
+        let doc = Self {
+            schema_version: Self::SCHEMA_VERSION,
+            next_id,
+            project_id: ProjectId::NIL,
+            dpi,
+            pages,
+            sequences: Vec::new(),
+            assets,
+        };
+        doc.validate()?;
+        Ok(doc)
+    }
+
     /// Returns the current counter value and advances it; fails at `u64::MAX`
     /// leaving the counter unchanged.
     pub(crate) fn alloc_id(&mut self) -> Result<u64, IdSpaceExhausted> {

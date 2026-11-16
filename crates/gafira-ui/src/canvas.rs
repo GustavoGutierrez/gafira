@@ -23,6 +23,8 @@ pub(crate) struct Shape {
     /// The text of a text element; its box hits and moves like a rectangle
     /// (spec 027).
     pub(crate) text: Option<TextNode>,
+    /// The asset an image element shows (spec 029).
+    pub(crate) image: Option<gafira_doc::AssetRef>,
 }
 
 /// The visible shapes of `page`, back to front: roots in order, each node
@@ -34,11 +36,12 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
             return;
         }
         let drawn = match &node.kind {
-            NodeKind::Shape(ShapeNode { geometry, fill }) => Some((*geometry, *fill, None)),
-            NodeKind::Text(text) => Some((ShapeGeometry::Rect, None, Some(text.clone()))),
+            NodeKind::Shape(ShapeNode { geometry, fill }) => Some((*geometry, *fill, None, None)),
+            NodeKind::Text(text) => Some((ShapeGeometry::Rect, None, Some(text.clone()), None)),
+            NodeKind::Image(image) => Some((ShapeGeometry::Rect, None, None, Some(image.asset))),
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
-        if let Some((geometry, fill, text)) = drawn {
+        if let Some((geometry, fill, text, image)) = drawn {
             out.push(Shape {
                 page: page.id,
                 node: id,
@@ -47,6 +50,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 fill,
                 opacity: node.base.opacity,
                 text,
+                image,
             });
         }
         for child in &node.children {
@@ -91,6 +95,7 @@ pub(crate) fn layers(page: &Page) -> Vec<Layer> {
                 }) => "pieces.ellipse",
                 NodeKind::Group(_) => "layers.group",
                 NodeKind::Text(_) => "layers.text",
+                NodeKind::Image(_) => "layers.image",
                 _ => "layers.element",
             };
             Some(Layer {
@@ -260,6 +265,27 @@ pub(crate) fn new_text(page_px: Vec2, text: &str, style: &SpanStyle) -> NodeSpec
         h,
     );
     NodeSpec::new(NodeKind::Text(TextNode::plain(text, style)), placement)
+}
+
+/// A new image element of `pixels` (width, height) centred on a page of
+/// `page_px`, scaled to fit 60 % of the page and never enlarged.
+pub(crate) fn new_image(
+    page_px: Vec2,
+    pixels: (u32, u32),
+    asset: gafira_doc::AssetRef,
+) -> NodeSpec {
+    let (w, h) = (f64::from(pixels.0.max(1)), f64::from(pixels.1.max(1)));
+    let room_w = f64::from(page_px.x) * 0.6;
+    let room_h = f64::from(page_px.y) * 0.6;
+    let scale = (room_w / w).min(room_h / h).min(1.0);
+    let (w, h) = (w * scale, h * scale);
+    let placement = Placement::new(
+        (f64::from(page_px.x) - w) / 2.0,
+        (f64::from(page_px.y) - h) / 2.0,
+        w,
+        h,
+    );
+    NodeSpec::new(NodeKind::Image(gafira_doc::ImageNode { asset }), placement)
 }
 
 /// A document colour on screen (sRGB, 8 bits).
@@ -513,5 +539,22 @@ mod tests {
 
     fn spec_kind(spec: &NodeSpec) -> NodeKind {
         spec.kind.clone()
+    }
+
+    #[test]
+    fn s29_02_a_new_image_fits_the_page_keeping_its_aspect_and_never_grows() {
+        let asset = gafira_doc::AssetRef::new(gafira_doc::ContentHash([1; 32]));
+        let big = new_image(Vec2::new(1000.0, 1000.0), (4000, 2000), asset);
+        assert_eq!((big.placement.w, big.placement.h), (600.0, 300.0));
+        assert_eq!((big.placement.x, big.placement.y), (200.0, 350.0));
+        let small = new_image(Vec2::new(1000.0, 1000.0), (100, 50), asset);
+        assert_eq!(
+            (small.placement.w, small.placement.h),
+            (100.0, 50.0),
+            "never enlarged"
+        );
+        assert!(
+            matches!(small.kind, NodeKind::Image(gafira_doc::ImageNode { asset: a }) if a == asset)
+        );
     }
 }

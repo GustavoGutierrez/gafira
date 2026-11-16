@@ -56,7 +56,7 @@ fn node_bytes(node: &Node) -> usize {
             .spans()
             .map(|span| span.text.len() + span.style.font.len() + size_of::<gafira_doc::Span>())
             .sum(),
-        NodeKind::Group(_) | NodeKind::Shape(_) => 0,
+        NodeKind::Group(_) | NodeKind::Shape(_) | NodeKind::Image(_) => 0,
     };
     size_of::<Node>()
         + node.base.name.as_deref().map_or(0, str::len)

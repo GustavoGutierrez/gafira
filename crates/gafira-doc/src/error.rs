@@ -72,7 +72,7 @@ impl fmt::Display for NodeField {
 ///         | OutOfRange { .. } | EmptyExtensionTypeId { .. } | ExtensionTooDeep { .. }
 ///         | ChildrenOnLeaf { .. } | DanglingChild { .. } | MultipleParents { .. }
 ///         | RootHasParent { .. } | Orphan { .. } | Cycle { .. } | DanglingScene { .. }
-///         | DanglingAsset { .. } | TimelineLaw { .. } => {}
+///         | DanglingAsset { .. } | DanglingImage { .. } | TimelineLaw { .. } => {}
 ///     }
 /// }
 /// ```
@@ -133,6 +133,9 @@ pub enum ValidationError {
     /// P7: a `Media` or `Audio` clip names an entry the asset table does not
     /// have (P9 of the timeline design).
     DanglingAsset { clip: ClipId },
+    /// P7: an image element names an entry the asset table does not have
+    /// (spec 029).
+    DanglingImage { node: NodeId },
     /// P8: a sequence breaks a law of the timeline model (FV-01, FV-03, P11).
     TimelineLaw {
         sequence: SequenceId,
@@ -199,6 +202,9 @@ impl fmt::Display for ValidationError {
             }
             Self::DanglingAsset { clip } => {
                 write!(f, "clip {clip}: the asset it names is not in the table")
+            }
+            Self::DanglingImage { node } => {
+                write!(f, "image {node}: the asset it shows is not in the table")
             }
             Self::TimelineLaw { sequence, error } => {
                 write!(f, "sequence {sequence}: {error}")
