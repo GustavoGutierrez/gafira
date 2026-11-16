@@ -9,6 +9,7 @@ use gafira_edit::InsertPage;
 use gafira_engine::Gafira;
 use gafira_theme::Shadow;
 
+use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
@@ -57,9 +58,19 @@ impl Default for Editor {
 #[derive(Default)]
 struct Asked {
     home: bool,
+    file: Option<FileAction>,
     undo: bool,
     redo: bool,
     add_page: bool,
+}
+
+/// What the top bar shows about the session.
+struct Header<'a> {
+    can_undo: bool,
+    can_redo: bool,
+    modified: bool,
+    name: Option<String>,
+    notice: Option<&'a str>,
 }
 
 /// The pages of `document` in logical px at its dpi.
@@ -79,12 +90,29 @@ impl Editor {
         engine: &mut Gafira,
         theme: &Theme,
         texts: &Texts,
+        notice: Option<&str>,
     ) -> Go {
         let document = engine.edit().document();
         let (can_undo, can_redo) = engine.edit().can_undo_redo();
-        let modified = engine.projects().is_modified();
+        let header = Header {
+            can_undo,
+            can_redo,
+            modified: engine.projects().is_modified(),
+            name: project_name(engine.projects().path().as_deref()),
+            notice,
+        };
         let mut asked = Asked::default();
         ctx.input(|i| {
+            if i.modifiers.command && i.key_pressed(egui::Key::S) {
+                asked.file = Some(if i.modifiers.shift {
+                    FileAction::SaveAs
+                } else {
+                    FileAction::Save
+                });
+            }
+            if i.modifiers.command && i.key_pressed(egui::Key::O) {
+                asked.file = Some(FileAction::Open);
+            }
             if i.modifiers.command && i.key_pressed(egui::Key::Z) {
                 if i.modifiers.shift {
                     asked.redo = true;
@@ -96,14 +124,7 @@ impl Editor {
                 asked.redo = true;
             }
         });
-        self.bars(
-            ctx,
-            theme,
-            texts,
-            &document,
-            (can_undo, can_redo, modified),
-            &mut asked,
-        );
+        self.bars(ctx, theme, texts, &document, &header, &mut asked);
         self.rail(ctx, theme, texts);
         self.side_panel(ctx, theme, texts);
         self.inspector(ctx, theme, texts);
@@ -117,7 +138,7 @@ impl Editor {
         theme: &Theme,
         texts: &Texts,
         document: &Option<Arc<Document>>,
-        (can_undo, can_redo, modified): (bool, bool, bool),
+        header: &Header<'_>,
         asked: &mut Asked,
     ) {
         widgets::topbar(ctx, theme, "editor.topbar", |ui| {
@@ -126,8 +147,28 @@ impl Editor {
                 asked.home = true;
             }
             ui.add_space(12.0);
+            let file = RichText::new(texts.t(&gafira_doc::msg!("menu.file")))
+                .font(theme.font("ui-label"))
+                .color(theme.c("topbar.fg.muted"));
+            ui.menu_button(file, |ui| {
+                ui.set_min_width(200.0);
+                if ui.button(texts.t(&gafira_doc::msg!("file.new"))).clicked() {
+                    asked.home = true;
+                    ui.close();
+                }
+                for (key, action) in [
+                    (gafira_doc::msg!("file.open"), FileAction::Open),
+                    (gafira_doc::msg!("file.save"), FileAction::Save),
+                    (gafira_doc::msg!("file.save_as"), FileAction::SaveAs),
+                    (gafira_doc::msg!("file.save_copy"), FileAction::SaveCopy),
+                ] {
+                    if ui.button(texts.t(&key)).clicked() {
+                        asked.file = Some(action);
+                        ui.close();
+                    }
+                }
+            });
             for key in [
-                gafira_doc::msg!("menu.file"),
                 gafira_doc::msg!("menu.edit"),
                 gafira_doc::msg!("menu.view"),
                 gafira_doc::msg!("menu.size"),
@@ -136,30 +177,35 @@ impl Editor {
             }
             ui.add_space(24.0);
             ui.label(
-                RichText::new(texts.t(&gafira_doc::msg!("editor.untitled")))
-                    .font(theme.font("ui-label"))
-                    .color(theme.c("topbar.fg")),
+                RichText::new(
+                    header
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| texts.t(&gafira_doc::msg!("editor.untitled"))),
+                )
+                .font(theme.font("ui-label"))
+                .color(theme.c("topbar.fg")),
             );
             ui.add_space(16.0);
-            let undo = ui.add_enabled_ui(can_undo, |ui| {
+            let undo = ui.add_enabled_ui(header.can_undo, |ui| {
                 widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("editor.undo")), false)
             });
             asked.undo |= undo.inner.clicked();
-            let redo = ui.add_enabled_ui(can_redo, |ui| {
+            let redo = ui.add_enabled_ui(header.can_redo, |ui| {
                 widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("editor.redo")), false)
             });
             asked.redo |= redo.inner.clicked();
             ui.add_space(16.0);
-            let status = if modified {
+            let status = if header.modified {
                 gafira_doc::msg!("editor.unsaved")
             } else {
                 gafira_doc::msg!("editor.saved")
             };
-            ui.label(
-                RichText::new(texts.t(&status))
-                    .font(theme.font("caption"))
-                    .color(theme.c("topbar.fg.muted")),
-            );
+            let (text, color) = match header.notice {
+                Some(notice) => (notice.to_owned(), theme.c("primary.bg")),
+                None => (texts.t(&status), theme.c("topbar.fg.muted")),
+            };
+            ui.label(RichText::new(text).font(theme.font("caption")).color(color));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("editor.export")));
                 ui.add_space(8.0);
@@ -431,7 +477,13 @@ fn apply(engine: &mut Gafira, document: &Option<Arc<Document>>, asked: &Asked) -
     {
         eprintln!("add page: {error}");
     }
-    if asked.home { Go::Home } else { Go::Stay }
+    if asked.home {
+        Go::Home
+    } else if let Some(action) = asked.file {
+        Go::File(action)
+    } else {
+        Go::Stay
+    }
 }
 
 /// A shadow offset as egui's `i8`; the tokens hold small whole numbers.
@@ -506,10 +558,15 @@ pub(crate) mod tests {
     /// An engine over the real platform adapters, with no format and no
     /// store, as the app composes it (spec 018).
     pub(crate) fn engine() -> Gafira {
+        engine_over(Arc::new(Nothing))
+    }
+
+    /// [`engine`] with `repository` in place of the absent format.
+    pub(crate) fn engine_over(repository: Arc<dyn ProjectRepository>) -> Gafira {
         let dir = std::env::temp_dir().join(format!("gafira-ui-{}", std::process::id()));
         let clock = Arc::new(SystemClock::new());
         let ports = Ports::new(
-            Arc::new(Nothing),
+            repository,
             Arc::new(Nothing),
             SystemPorts::new(Arc::new(StdFileSystem), clock.clone(), Arc::new(RandomIds)),
             Arc::new(StderrNotifier),
@@ -600,5 +657,35 @@ pub(crate) mod tests {
             ),
             Go::Home
         ));
+    }
+
+    #[test]
+    fn s19_11_a_project_saved_as_gaf_reopens_with_its_pages_and_identity() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-gaf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let path = dir.join("poster.gaf");
+        let mut engine = engine_over(Arc::new(gafira_format::GafRepository::default()));
+        start(&mut engine, StartFormat::Print).expect("a new document");
+        let snapshot = engine.edit().document();
+        apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                add_page: true,
+                ..Asked::default()
+            },
+        );
+        let before = engine.edit().document().expect("a document");
+
+        engine.projects().save_as(&path).expect("saves");
+        assert!(!engine.projects().is_modified());
+        engine.projects().new_document().expect("another document");
+        engine.projects().open(&path).expect("reopens");
+
+        let after = engine.edit().document().expect("a document");
+        assert_eq!(*after, *before);
+        assert_eq!(engine.projects().path(), Some(path.clone()));
+        assert!(!engine.projects().is_modified());
+        std::fs::remove_dir_all(dir).expect("clean up");
     }
 }

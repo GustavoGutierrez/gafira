@@ -74,6 +74,7 @@ templates = "Explore templates"
 recent = "Recent"
 see_all = "See all"
 empty = "Your next idea starts here"
+open = "Open file"
 
 [home.format]
 social = "Social"
@@ -90,6 +91,15 @@ print = "A4"
 video_vertical = "9:16"
 video_horizontal = "16:9"
 custom = "Width × height"
+
+[file]
+new = "New"
+open = "Open…"
+save = "Save"
+save_as = "Save as…"
+save_copy = "Save a copy…"
+save_failed = "We couldn't save the project. Try again."
+open_failed = "We couldn't open the file. Check that it is a Gafira project."
 
 [nav]
 home = "Home"

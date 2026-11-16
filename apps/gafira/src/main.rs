@@ -8,39 +8,25 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gafira_doc::{ContentHash, Document};
+use gafira_doc::ContentHash;
 use gafira_engine::{
     EngineConfig, EventChannel, Gafira, Ports, Registries, SettingsPorts, SystemPorts, Waker,
 };
+use gafira_format::GafRepository;
 use gafira_i18n::D08LocaleResolver;
 use gafira_platform::{
     EnvLocale, JsonSettings, RandomIds, StdFileSystem, StderrNotifier, SystemClock,
 };
 use gafira_ports::i18n::{LanguagePreference, Locale, LocaleResolver};
 use gafira_ports::license::NoLicensing;
-use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
-
-/// The `.gaf` reader and writer arrive with `gafira-format` (spec 008,
-/// D-68); until then opening and saving say so instead of pretending.
-struct FormatPending;
 
 fn pending() -> io::Error {
     io::Error::new(
         io::ErrorKind::Unsupported,
-        "the .gaf format is not in this build yet",
+        "the content store is not in this build yet",
     )
-}
-
-impl ProjectRepository for FormatPending {
-    fn load(&self, _path: &Path) -> Result<LoadedProject, RepositoryError> {
-        Err(RepositoryError::Io(pending()))
-    }
-
-    fn save(&self, _path: &Path, _document: &Document) -> Result<(), RepositoryError> {
-        Err(RepositoryError::Io(pending()))
-    }
 }
 
 /// The content store arrives with `gafira-assets`; imports fail until then.
@@ -85,7 +71,7 @@ fn main() -> eframe::Result {
         engine: Box::new(move |waker: Arc<dyn Waker>| {
             let clock = Arc::new(SystemClock::new());
             let ports = Ports::new(
-                Arc::new(FormatPending),
+                Arc::new(GafRepository::default()),
                 Arc::new(StorePending),
                 SystemPorts::new(Arc::new(StdFileSystem), clock.clone(), Arc::new(RandomIds)),
                 Arc::new(StderrNotifier),

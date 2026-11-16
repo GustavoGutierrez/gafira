@@ -325,6 +325,17 @@ impl ProjectService {
         }
     }
 
+    /// The file the session lives in: the one `open` read or `save_as`
+    /// wrote; `None` with no session or for a document never saved. The UI
+    /// names the project with it and picks between `save` and `save_as`.
+    #[must_use]
+    pub fn path(&self) -> Option<PathBuf> {
+        self.shared
+            .lock()
+            .as_ref()
+            .and_then(|session| session.path.clone())
+    }
+
     /// Whether the session holds changes no `new_document`, `open` or `save`
     /// has accounted for: its version differs from its clean version. Undoing back
     /// to the clean content still counts as modified (conservative, P15).

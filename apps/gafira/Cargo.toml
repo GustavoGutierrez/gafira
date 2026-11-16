@@ -11,6 +11,7 @@ gafira-ui.workspace = true
 gafira-doc.workspace = true
 gafira-engine.workspace = true
 gafira-platform.workspace = true
+gafira-format.workspace = true
 gafira-i18n.workspace = true
 gafira-ports.workspace = true
 eframe.workspace = true
