@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use gafira_doc::Document;
 use gafira_ports::repository::ProjectRepository;
-use gafira_ports::system::FileSystem;
+use gafira_ports::system::{FileSystem, ProcessId};
 
 use crate::engine::EngineError;
 use crate::session::DocVersion;
@@ -37,29 +37,53 @@ pub struct AutosaveJob {
     /// The user's file the session lives in, recorded beside the slots so a
     /// recovery knows where the work belongs (spec 016).
     pub(crate) origin: Option<PathBuf>,
+    /// This process, recorded in the marker so another running instance
+    /// leaves the slots alone (spec 028).
+    pub(crate) owner: ProcessId,
     pub(crate) repository: Arc<dyn ProjectRepository>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
 }
 
-/// The file beside the slots that names the newest one and the user's file
-/// (spec 016): `latest`, two lines, written atomically after each slot.
+/// The file beside the slots that names the newest one, the process that
+/// wrote it and the user's file (specs 016 and 028): `latest`, three lines,
+/// written atomically after each slot.
 pub(crate) const MARKER: &str = "latest";
 
-/// `"<slot>\n<path>"`; the path line is empty for a document never saved or
-/// a path that is not UTF-8 (the recovery then asks for «Guardar como»).
-pub(crate) fn marker_text(slot: u8, origin: Option<&Path>) -> String {
-    let path = origin.and_then(Path::to_str).unwrap_or_default();
-    format!("{slot}\n{path}")
+/// What a marker says.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Marker {
+    /// The newest slot, `0..SLOTS`.
+    pub(crate) slot: u8,
+    /// The process whose session wrote the slots (spec 028).
+    pub(crate) owner: ProcessId,
+    /// The user's file the slots belong to, if it has one.
+    pub(crate) origin: Option<PathBuf>,
 }
 
-/// The slot and the user's file a marker names; `None` when it is not one.
-pub(crate) fn parse_marker(text: &str) -> Option<(u8, Option<PathBuf>)> {
-    let (slot, path) = text.split_once('\n').unwrap_or((text, ""));
-    let slot: u8 = slot.trim().parse().ok().filter(|n| *n < SLOTS)?;
-    let path = Some(path.trim_end_matches('\n'))
+/// `"<slot>\n<pid>\n<path>"`; the path line is empty for a document never
+/// saved or a path that is not UTF-8 (the recovery then asks for «Guardar
+/// como»).
+pub(crate) fn marker_text(slot: u8, owner: ProcessId, origin: Option<&Path>) -> String {
+    let path = origin.and_then(Path::to_str).unwrap_or_default();
+    format!("{slot}\n{}\n{path}", owner.0)
+}
+
+/// What a marker names; `None` when it is not one (a marker of spec 016,
+/// without the owner, is not one either: its slots stay on disk).
+pub(crate) fn parse_marker(text: &str) -> Option<Marker> {
+    let mut lines = text.splitn(3, '\n');
+    let slot: u8 = lines.next()?.trim().parse().ok().filter(|n| *n < SLOTS)?;
+    let owner = ProcessId(lines.next()?.trim().parse().ok()?);
+    let origin = lines
+        .next()
+        .map(|p| p.trim_end_matches('\n'))
         .filter(|p| !p.is_empty())
         .map(PathBuf::from);
-    Some((slot, path))
+    Some(Marker {
+        slot,
+        owner,
+        origin,
+    })
 }
 
 impl AutosaveJob {
@@ -105,7 +129,7 @@ impl AutosaveJob {
         self.filesystem.replace(tmp, slot)?;
         let marker = self.folder.join(MARKER);
         let marker_tmp = self.folder.join(format!("{MARKER}.tmp"));
-        let text = marker_text(self.slot, self.origin.as_deref());
+        let text = marker_text(self.slot, self.owner, self.origin.as_deref());
         let written = (|| -> std::io::Result<()> {
             let mut file = self.filesystem.create(&marker_tmp)?;
             file.write_all(text.as_bytes())?;
@@ -185,7 +209,7 @@ mod tests {
     fn job_trace(n: u8, len: usize) -> Vec<FsOp> {
         let folder = Path::new(&slot(n)).parent().expect("a folder").to_owned();
         let marker_tmp = folder.join("latest.tmp");
-        let marker = marker_text(n, Some(Path::new(TARGET)));
+        let marker = marker_text(n, FakeProcesses::PID, Some(Path::new(TARGET)));
         vec![
             FsOp::CreateDirAll(folder.clone()),
             FsOp::Create(tmp(n)),

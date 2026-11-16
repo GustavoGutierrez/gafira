@@ -17,9 +17,9 @@ use std::time::Duration;
 use gafira_doc::{Document, Dpi, Page, PageId, PageSize, ProjectId};
 use gafira_edit::{DirtySet, History};
 use gafira_ports::repository::ProjectRepository;
-use gafira_ports::system::{Clock, FileSystem, IdSource};
+use gafira_ports::system::{Clock, FileSystem, IdSource, ProcessId, ProcessProbe};
 
-use crate::autosave::{AutosaveJob, AutosaveOutcome, MARKER, SLOTS, parse_marker};
+use crate::autosave::{AutosaveJob, AutosaveOutcome, MARKER, Marker, SLOTS, parse_marker};
 use crate::engine::{EngineConfig, EngineError, Ports};
 use crate::event::{EngineEvent, RecoveryEntry};
 use crate::session::{Autosave, DocVersion, Session, Shared};
@@ -32,6 +32,8 @@ pub struct ProjectService {
     clock: Arc<dyn Clock>,
     /// Mints the identity of a new project and of a copy (D-63).
     ids: Arc<dyn IdSource>,
+    /// This process and the liveness of others (spec 028).
+    processes: Arc<dyn ProcessProbe>,
     /// How long a change waits before it is autosaved (P16).
     autosave_interval: Duration,
     /// `data_dir/recovery`: one folder per project id (P13, D-63).
@@ -51,6 +53,7 @@ impl ProjectService {
             filesystem: Arc::clone(&ports.filesystem),
             clock: Arc::clone(&ports.clock),
             ids: Arc::clone(&ports.ids),
+            processes: Arc::clone(&ports.processes),
             autosave_interval: config.autosave_interval(),
             recovery: config.data_dir().join("recovery"),
             sessions: AtomicU64::new(0),
@@ -101,8 +104,8 @@ impl ProjectService {
     /// The open session's own project is not listed. Publishes
     /// `RecoveryAvailable` when there is any.
     ///
-    /// Until the lock files of §7.2 exist, a second running instance's
-    /// slots are listed too (spec 016, notes).
+    /// A project whose marker names another process that still runs is not
+    /// listed either: it is a second instance's open session (spec 028).
     ///
     /// # Errors
     /// [`EngineError::Io`] when the recovery folder cannot be listed; a
@@ -128,8 +131,15 @@ impl ProjectService {
             if Some(project_id) == current {
                 continue;
             }
-            if let Some((_, origin)) = self.marker(project_id) {
-                entries.push(RecoveryEntry { project_id, origin });
+            if let Some(marker) = self.marker(project_id) {
+                if self.another_live(marker.owner) {
+                    // Another running instance's session (spec 028).
+                    continue;
+                }
+                entries.push(RecoveryEntry {
+                    project_id,
+                    origin: marker.origin,
+                });
             }
         }
         entries.sort_by_key(|entry| entry.project_id);
@@ -151,7 +161,11 @@ impl ProjectService {
     /// [`EngineError::NoRecovery`] when the project has no marker; the error
     /// of the oldest slot when none loads. The old session stays then.
     pub fn recover(&self, project_id: ProjectId) -> Result<(), EngineError> {
-        let (newest, origin) = self.marker(project_id).ok_or(EngineError::NoRecovery)?;
+        let Marker {
+            slot: newest,
+            origin,
+            ..
+        } = self.marker(project_id).ok_or(EngineError::NoRecovery)?;
         let folder = self.recovery.join(project_id.to_string());
         let mut last = EngineError::NoRecovery;
         for back in 0..SLOTS {
@@ -180,8 +194,13 @@ impl ProjectService {
         self.discard_slots(project_id);
     }
 
+    /// Whether `pid` is another process of this machine that still runs.
+    fn another_live(&self, pid: ProcessId) -> bool {
+        pid != self.processes.current() && self.processes.is_alive(pid)
+    }
+
     /// The marker of `project_id`'s slots, if it reads.
-    fn marker(&self, project_id: ProjectId) -> Option<(u8, Option<PathBuf>)> {
+    fn marker(&self, project_id: ProjectId) -> Option<Marker> {
         let path = self.recovery.join(project_id.to_string()).join(MARKER);
         let mut text = String::new();
         self.filesystem
@@ -438,6 +457,7 @@ impl ProjectService {
                 .join(session.history.document().project_id().to_string()),
             session_key: session.session_key.clone(),
             origin: session.path.clone(),
+            owner: self.processes.current(),
             repository: Arc::clone(&self.repository),
             filesystem: Arc::clone(&self.filesystem),
         })
@@ -1236,11 +1256,15 @@ mod tests {
     #[test]
     fn s16_02_the_marker_names_the_slot_and_the_file() {
         use crate::autosave::parse_marker;
-        let text = marker_text(2, Some(Path::new(TARGET)));
-        assert_eq!(parse_marker(&text), Some((2, Some(PathBuf::from(TARGET)))));
-        assert_eq!(parse_marker(&marker_text(0, None)), Some((0, None)));
-        for bad in ["", "3\n/x", "x\n/x", "-1"] {
-            assert_eq!(parse_marker(bad), None, "{bad:?}");
+        let owner = FakeProcesses::PID;
+        let text = marker_text(2, owner, Some(Path::new(TARGET)));
+        let marker = parse_marker(&text).expect("a marker");
+        assert_eq!(marker.slot, 2);
+        assert_eq!(marker.origin, Some(PathBuf::from(TARGET)));
+        let marker = parse_marker(&marker_text(0, owner, None)).expect("a marker");
+        assert_eq!((marker.slot, marker.origin), (0, None));
+        for bad in ["", "3\n1\n/x", "x\n1\n/x", "-1"] {
+            assert!(parse_marker(bad).is_none(), "{bad:?}");
         }
     }
 
@@ -1284,7 +1308,8 @@ mod tests {
         // A newer slot 1 that the crash cut short, named by the marker.
         fs.put(&slot_file(1), b"cut short");
         let marker = format!("/data/gafira/recovery/{}/latest", id(1));
-        fs.put(&marker, marker_text(1, Some(Path::new(TARGET))).as_bytes());
+        let text = marker_text(1, FakeProcesses::PID, Some(Path::new(TARGET)));
+        fs.put(&marker, text.as_bytes());
 
         let (mut engine, _clock) = rig_on(&fs);
         engine.projects().recover(id(1)).expect("recovers slot 0");
@@ -1331,5 +1356,79 @@ mod tests {
                 "{way}"
             );
         }
+    }
+
+    // ---- Spec 028: file locks and another instance's slots ----
+
+    use gafira_ports::system::ProcessId;
+
+    /// An engine over `fs` running as `pid`, with `alive` running besides.
+    fn instance(fs: &MemoryFs, pid: u32, alive: &[u32]) -> (Gafira, Arc<ManualClock>) {
+        let repository = Arc::new(MemoryRepository::new(fs, false));
+        let clock = Arc::new(ManualClock::at(Duration::ZERO));
+        let processes = Arc::new(FakeProcesses::new(pid, alive));
+        let engine = engine_with_processes(fs, &repository, Arc::clone(&clock) as _, processes);
+        (engine, clock)
+    }
+
+    /// [`crashed_after_an_autosave`], run by the instance `pid`, which is
+    /// returned still running.
+    fn autosaved_by(fs: &MemoryFs, pid: u32) -> Gafira {
+        let (mut engine, clock) = instance(fs, pid, &[]);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        append_page(&mut engine);
+        clock.set(Duration::from_secs(60));
+        let outcome = engine.projects().autosave_due().expect("a job").run();
+        assert!(outcome.error().is_none());
+        engine.projects().autosave_finished(outcome);
+        engine
+    }
+
+    // S28-01
+    #[test]
+    fn s28_01_the_marker_names_its_owner() {
+        use crate::autosave::parse_marker;
+        let text = marker_text(1, ProcessId(77), Some(Path::new(TARGET)));
+        let marker = parse_marker(&text).expect("a marker");
+        assert_eq!(marker.owner, ProcessId(77));
+        assert_eq!(marker.slot, 1);
+        assert_eq!(marker.origin, Some(PathBuf::from(TARGET)));
+        for bad in ["1", "1\n", "1\nx\n/x", "1\n/x"] {
+            assert!(parse_marker(bad).is_none(), "{bad:?}");
+        }
+
+        let fs = target_fs();
+        let _running = autosaved_by(&fs, 7);
+        let marker = format!("/data/gafira/recovery/{}/latest", id(1));
+        let text = String::from_utf8(fs.file(&marker).expect("a marker")).expect("text");
+        assert_eq!(
+            parse_marker(&text).expect("a marker").owner,
+            ProcessId(7),
+            "the autosave writes its own pid"
+        );
+    }
+
+    // S28-02
+    #[test]
+    fn s28_02_a_live_other_instances_slots_are_not_offered() {
+        let fs = target_fs();
+        let _running = autosaved_by(&fs, 7);
+        let (engine, _clock) = instance(&fs, 8, &[7]);
+        assert_eq!(engine.projects().recoverable().expect("a scan"), []);
+        assert_eq!(drain(&engine), [], "no RecoveryAvailable");
+    }
+
+    // S28-03
+    #[test]
+    fn s28_03_a_dead_owners_slots_are_offered_and_recovered() {
+        let fs = target_fs();
+        drop(autosaved_by(&fs, 7));
+        let (mut engine, _clock) = instance(&fs, 8, &[]);
+        let entries = engine.projects().recoverable().expect("a scan");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project_id, id(1));
+        engine.projects().recover(id(1)).expect("recovers");
+        let document = engine.edit().document().expect("a document");
+        assert_eq!(document.pages().len(), 3, "the autosaved edit");
     }
 }

@@ -812,6 +812,16 @@ pub(crate) fn engine_with_clock(
     repository: &Arc<MemoryRepository>,
     clock: Arc<dyn Clock>,
 ) -> Gafira {
+    engine_with_processes(fs, repository, clock, Arc::new(FakeProcesses::default()))
+}
+
+/// [`engine_with_clock`], running as the process `processes` says (spec 028).
+pub(crate) fn engine_with_processes(
+    fs: &MemoryFs,
+    repository: &Arc<MemoryRepository>,
+    clock: Arc<dyn Clock>,
+    processes: Arc<FakeProcesses>,
+) -> Gafira {
     let ports = Ports::new(
         Arc::clone(repository) as Arc<dyn ProjectRepository>,
         Arc::new(NoStore),
@@ -819,7 +829,7 @@ pub(crate) fn engine_with_clock(
             Arc::new(fs.clone()),
             clock,
             Arc::new(SequentialIds::default()),
-            Arc::new(FakeProcesses::default()),
+            processes,
         ),
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
