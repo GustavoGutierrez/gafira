@@ -1,5 +1,7 @@
 //! Every core command runs the six 02 §10 laws (ARQ-81).
 
+use std::sync::Arc;
+
 use gafira_color::{Color, Rgba};
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
@@ -8,7 +10,8 @@ use gafira_doc::{
 };
 use gafira_edit::{
     Applied, Command, CommandError, DirtySet, GestureId, InsertAsset, InsertNodes, InsertPage,
-    NodeSpec, Property, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction,
+    NodeSpec, Property, RemoveNodes, RemovePage, Reorder, Reparent, RestoreVersion, SetProperty,
+    Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -366,6 +369,34 @@ fn insert_asset(doc: &Document) -> BoxedStrategy<InsertAsset> {
 #[test]
 fn insert_asset_obeys_the_command_laws() {
     prop_command(insert_asset);
+}
+
+/// A version of `doc` (spec 031): now and then the same content, so the
+/// `Unchanged` path runs, otherwise a subset of its pages under a counter
+/// at or above its own.
+fn restore_version(doc: &Document) -> BoxedStrategy<RestoreVersion> {
+    let same = RestoreVersion::new(doc);
+    let pages = doc.pages().to_vec();
+    let (next_id, dpi) = (doc.next_id(), doc.dpi());
+    let subset = (prop::collection::vec(any::<bool>(), pages.len()), 0..3_u64).prop_map(
+        move |(keep, extra)| {
+            let kept = pages
+                .iter()
+                .zip(&keep)
+                .filter(|(_, keep)| **keep)
+                .map(|(page, _)| Arc::clone(page))
+                .collect();
+            let version = Document::from_parts(next_id + extra, dpi, kept)
+                .expect("a subset of valid pages is a valid document");
+            RestoreVersion::new(&version)
+        },
+    );
+    prop_oneof![1 => Just(same), 4 => subset].boxed()
+}
+
+#[test]
+fn restore_version_obeys_the_command_laws() {
+    prop_command(restore_version);
 }
 
 /// One child of a generated transaction. Every step is valid on any

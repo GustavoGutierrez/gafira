@@ -67,8 +67,18 @@ impl Content {
 #[derive(Clone, Debug)]
 pub struct RestoreVersion {
     version: Content,
-    /// What `apply` replaced, for `revert`.
-    before: Option<Content>,
+    /// What the last `apply` did, for `revert` and `touches`.
+    state: State,
+}
+
+/// What the last `apply` of a [`RestoreVersion`] did.
+#[derive(Clone, Debug)]
+enum State {
+    NotApplied,
+    /// The document already held the version's content.
+    Unchanged,
+    /// The content `apply` replaced.
+    Replaced(Content),
 }
 
 impl RestoreVersion {
@@ -77,7 +87,7 @@ impl RestoreVersion {
     pub fn new(version: &Document) -> Self {
         Self {
             version: Content::of(version),
-            before: None,
+            state: State::NotApplied,
         }
     }
 }
@@ -90,29 +100,35 @@ impl Command for RestoreVersion {
     fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
         let before = Content::of(doc.as_doc());
         if before.same_as(&self.version) {
-            self.before = None;
+            self.state = State::Unchanged;
             return Ok(Applied::Unchanged);
         }
         self.version.install(doc);
         doc.raise_next_id(self.version.next_id);
-        self.before = Some(before);
+        self.state = State::Replaced(before);
         Ok(Applied::Changed)
     }
 
+    /// Puts back what `apply` replaced; after an `Unchanged` apply there is
+    /// nothing to put back.
     fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
-        let before = self.before.take().ok_or(CommandError::NotApplied)?;
-        before.install(doc);
-        doc.restore_next_id(before.next_id);
-        Ok(())
+        match std::mem::replace(&mut self.state, State::NotApplied) {
+            State::NotApplied => Err(CommandError::NotApplied),
+            State::Unchanged => Ok(()),
+            State::Replaced(before) => {
+                before.install(doc);
+                doc.restore_next_id(before.next_id);
+                Ok(())
+            }
+        }
     }
 
     /// Every page and node of the content before and after: all of them may
-    /// have changed.
+    /// have changed. Nothing after an `Unchanged` apply.
     fn touches(&self) -> DirtySet {
-        let after = self.version.touches();
-        match &self.before {
-            Some(before) => before.touches().union(&after),
-            None => after,
+        match &self.state {
+            State::Replaced(before) => before.touches().union(&self.version.touches()),
+            State::NotApplied | State::Unchanged => DirtySet::default(),
         }
     }
 }
