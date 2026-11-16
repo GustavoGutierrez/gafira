@@ -1,6 +1,6 @@
 # 010 — `LicenseService` del engine y licencia opcional
 
-> **Estado:** in-progress — 2026-11-16 — E9 del change `gafira-engine` ([carpeta legacy](done/legacy/changes/gafira-engine/design.md)), con el interruptor de D-58.
+> **Estado:** done — 2026-11-16 — E9 del change `gafira-engine` ([carpeta legacy](legacy/changes/gafira-engine/design.md)) con el interruptor de D-58; S10-01..S10-08 cubiertos por `gafira-ports/tests/license.rs` (2 nuevos) y `gafira-engine` (`license::tests`, 6, y `project::tests::s10_08_*`); 4 mutantes a mano muertos; 2658 tests en el workspace.
 
 ## Objetivo
 
