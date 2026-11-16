@@ -10,7 +10,7 @@ cargo clippy -p <crate> --all-targets --locked -- -D warnings
 cargo test -p <crate> --locked
 ```
 
-El alcance es el crate que toca el commit. Se usa `--workspace` cuando el commit toca un crate del que dependen otros, un `Cargo.toml`, un `Cargo.lock` o `ci.yml`. La suite completa del workspace se ejecuta una vez en el HEAD de la entrega y una vez antes del pull request de `develop` a `main` (ADR 0017).
+El alcance es el crate que toca el commit. Se usa `--workspace` cuando el commit toca un crate del que dependen otros, un `Cargo.toml`, un `Cargo.lock` o `ci.yml`. La suite completa del workspace se ejecuta una vez al cerrar la spec y una vez antes del pull request de `develop` a `main` (ADR 0017).
 
 El toolchain está fijado en `1.93.1` con `rustfmt` y `clippy` en `rust-toolchain.toml`. `--locked` mantiene a `Cargo.lock` como autoridad.
 
@@ -31,7 +31,7 @@ No se debe usar `#[allow]` para silenciar lints. Los crates de dominio añaden u
 
 ## CI
 
-**Estado actual.** La CI está desactivada manualmente en GitHub por un problema de facturación, por lo que ningún workflow se ejecuta en pushes ni en pull requests. Las puertas locales son la única barrera: antes de aceptar una entrega se ejecutan en local los tres comandos anteriores, `cargo deny check` y los pasos de `policy` de `ci.yml` (ARQ-07, prohibición de `unsafe`, V5, V12, V13), los pasos bajo `bash --noprofile --norc -eo pipefail`, y se registran en la carpeta del change. Por tanto, las pruebas en Windows y macOS de la matriz no se ejercitan hoy. La descripción siguiente corresponde al archivo de workflow tal como está en el repositorio, a la espera de que el propietario lo reactive.
+**Estado actual.** La CI está desactivada manualmente en GitHub por un problema de facturación, por lo que ningún workflow se ejecuta en pushes ni en pull requests. Las puertas locales son la única barrera: antes de fusionar el trabajo en `develop` se ejecutan en local los tres comandos anteriores, `cargo deny check` y los pasos de `policy` de `ci.yml` (ARQ-07, prohibición de `unsafe`, V5, V12, V13), los pasos bajo `bash --noprofile --norc -eo pipefail`, y se registran en la sección de evidencia de la spec. Por tanto, las pruebas en Windows y macOS de la matriz no se ejercitan hoy. La descripción siguiente corresponde al archivo de workflow tal como está en el repositorio, a la espera de que el propietario lo reactive.
 
 El workflow es `.github/workflows/ci.yml`. Se ejecuta en pushes a `main`, pull requests y ejecución manual, con permiso `contents` de solo lectura y cancelación en curso para los pull requests. Las acciones de terceros se fijan con SHA de commit de 40 caracteres hexadecimales. Su tabla V5 tiene una fila por cada crate de biblioteca, incluido `gafira-testkit`.
 
@@ -57,7 +57,7 @@ El job `policy` es donde las reglas de arquitectura se vuelven ejecutables. Véa
 - Las pruebas cubren el comportamiento del contrato público, no la implementación.
 - Capas de prueba: pruebas unitarias junto al código, pruebas de integración en el directorio `tests/` de cada crate, pruebas de propiedades con `proptest` (dependencia del workspace con características por defecto desactivadas y `std` activada) pruebas compile-fail con `trybuild` y archivos golden para el formato de documento. Aún no existe una capa de extremo a extremo.
 - Todo comando del núcleo pasa por el arnés `prop_command` de seis leyes de `gafira-testkit` (véase más abajo y el capítulo de edición).
-- Código crítico, donde un mutante omitido es un fallo: validación, carga y guardado de JSON, ids y arena, transformaciones, límites de tamaño y DPI, y toda regla con invariante. No crítico: el texto de `Display` y `Error` salvo que una spec lo fije, los accesores triviales y los ayudantes de prueba.
+- La lógica crítica se construye con la prueba primero; el capítulo de metodología la enumera (modelo de documento, carga, guardado y validación de JSON, ids y arena, historial de edición, tiempo, color, geometría y transformaciones, límites de tamaño y DPI, parsing de formatos y toda regla con invariante). No crítico: el texto de `Display` y `Error` salvo que una spec lo fije, los accesores triviales y los ayudantes de prueba.
 - Las doctests compile-fail vigilan reglas de capacidad (por ejemplo, que `EditToken` no sea `Clone`). Son ayudas de regresión, no una prueba; la evidencia provisional es el paso V13 de la CI más los fixtures de `trybuild`.
 
 ### gafira-testkit
@@ -76,22 +76,13 @@ Un crate de soporte (solo dev-dependency, `publish = false`, fila V5, sin `clipp
 
 ## Pruebas de mutación
 
-`cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI. El agente `mutants` la ejecuta cuando el valor `mutation` de la línea `Flow:` pide una ejecución, y el agente `verify` falla ante un mutante omitido o con tiempo agotado en código crítico y documenta el resto. No hay objetivo de puntuación. La ejecución muta un alcance fijado por el nivel de mutación (T0 a T4, véase el [capítulo de metodología](10-methodology.md)). Por defecto (`mutation: archive`) no hay ejecución por entrega, y el change se cierra con una ejecución del crate completo (T4) de cada crate que toca, antes de archivar. `mutation: delivery` añade los niveles por entrega T2 y T3, y `mutation: off` no ejecuta `cargo-mutants`.
-
-Una segunda práctica la complementa. Cuando una prueba se escribe después del código, la entrega muestra que la prueba puede fallar aplicando a mano una mutación a la vez (por ejemplo `<` en lugar de `<=`, sin `break` temprano, compactar la entrada más reciente), ejecutando las pruebas y restaurando el código. Las mutaciones manuales se registran como una selección en el `apply-progress.md` del change, nunca como una ejecución completa. Un mutante superviviente hallado por `cargo-mutants` en código crítico devuelve la entrega a una ronda de corrección con pruebas nuevas.
+`cargo-mutants` es una herramienta opcional para desarrolladores, como `cargo-deny`; no es una puerta de la CI y no tiene objetivo de puntuación. Se usa solo para la lógica crítica (véase el [capítulo de metodología](10-methodology.md)), limitada a un crate:
 
 ```bash
-cargo mutants -p <crates> --in-diff <diff> --jobs 8 -o <scratch dir>
+cargo mutants -p <crate> --jobs 8 -o <scratch dir>
 ```
 
-Este es el comando de T2, que se usa solo con `mutation: delivery`. Los demás niveles que ejecutan `cargo-mutants` usan estas formas (`AGENTS.md`):
-
-| Nivel | Forma del comando |
-|---|---|
-| T3 | `cargo mutants -p <crate> --file <file> --jobs 8 -o <scratch dir>`, un `--file` por cada archivo fuente no de prueba cambiado; solo con `mutation: delivery` |
-| T4 | `cargo mutants -p <crate> --jobs 8 -o <scratch dir>`; la ejecución por defecto, una vez por crate tocado al cerrar el change |
-
-`--iterate` se permite en T3 solo en rondas de corrección solo de pruebas con el mismo conjunto de archivos, nunca en la ronda de cierre con PASS.
+Un mutante superviviente en lógica crítica indica una laguna de pruebas, salvo que sea equivalente y esté excluido en `.cargo/mutants.toml` (véanse las reglas siguientes). Una mutación manual es una comprobación más ligera: se cambia una línea a mano (por ejemplo `<` en lugar de `<=`, sin `break` temprano), se ejecutan las pruebas, se comprueba que una falla y se restaura el código. Así se demuestra que una prueba escrita después del código puede fallar. Los comandos y resultados de cualquiera de las dos comprobaciones se registran en la sección de evidencia de la spec.
 
 Reglas, de `AGENTS.md` y `.cargo/mutants.toml`:
 
