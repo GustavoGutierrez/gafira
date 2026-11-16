@@ -321,6 +321,8 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 
 `gafira-theme` carga y valida `assets/theme/gafira.tokens.json` (02, §8.2). Los valores de marca (grafito, coral, blanco cálido, verde agua, gris azulado, radios, escala tipográfica y unidad de 4 px) provienen del manual. Los estados, el modo oscuro, los colores semánticos, las sombras y la escala de movimiento son **PROPUESTA** derivada de la paleta y validada con el cálculo del §4.
 
+*Nota (D-82)*: el titular aprobó el modo oscuro derivado (cierra 01 C-06 y la parte de modo oscuro de PD-01); la marca PROPUESTA se queda mientras esta spec siga en backlog.
+
 ```json
 {
   "schema": 1,

@@ -99,6 +99,7 @@ mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
 - `features.required[]` y `features.optional[]`: capacidades identificadas (ej. `video.timeline.v1`).
 - `resources[]`: `id`, `kind`, `mimeType`, `byteLength`, `blake3` (si se materializó; D-68), `storage`, `path` y/o `external`, `originalFilename` opcional, `metadata`.
 - `packageCompleteness`: `complete | partial`; `missingResources[]` para recursos no empaquetados ni accesibles en exportación.
+- *Opcional* (D-81): `template { tags, pageFormat, style, color }` marca el `.gaf` como plantilla (02 §7.1); un lector que no lo conoce lo ignora.
 
 ```json
 {

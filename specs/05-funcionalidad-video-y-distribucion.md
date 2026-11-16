@@ -5,7 +5,7 @@
 | Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-80, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Depende de | `00-decisiones.md` (D-01 a D-83, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
 | Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)

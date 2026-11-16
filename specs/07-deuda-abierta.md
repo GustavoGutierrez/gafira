@@ -4,7 +4,7 @@
 |---|---|
 | Documento | Especificación 07 |
 | Estado | Vigente (no ejecutable): inventario, sin requisitos propios |
-| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/done/legacy/README.md`, ítems 133 y 134 de D-78, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
+| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/done/legacy/README.md`, ítems 133 y 134 de D-78, ítems 138 a 153 de D-83, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
 | Fuentes | `specs/done/legacy/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
 | Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran; los ítems nuevos siguen la numeración desde el 133. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
 | Copia duradera | Las listas crudas estaban en el scratchpad de una sesión, que es temporal. Este documento es la copia que queda |
@@ -18,6 +18,7 @@
 | Ítems 112 a 132 | 21: 16 abiertos, 1 solo registro (129), 3 no se corrigen porque el registro legacy es inmutable (122, 127, 128), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
 | Ítems 133 y 134 | 2 abiertos, tareas de D-78 (antes Q-34 y Q-48) |
 | Ítems 135 a 137 | 3 abiertos, spikes que 01, 02, 04 y 05 citaban sin seguimiento (R-03, R-19, CAL-07) |
+| Ítems 138 a 153 | 16 abiertos, VERIFICAR y *spikes* de 01, 02, 04 y 05 que no tenían seguimiento (D-83): 9 legales o de licencia y 7 técnicos; 139 y 145 llevan una decisión del titular pendiente |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -26,9 +27,9 @@
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
 
-## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 137)
+## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 153)
 
-La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 133 y 134 no vienen del README: son las tareas de D-78; los 135 a 137 son spikes que las specs de producto citaban sin seguimiento. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
+La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 133 y 134 no vienen del README: son las tareas de D-78; los 135 a 137 son spikes que las specs de producto citaban sin seguimiento, y los 138 a 153, los VERIFICAR y *spikes* que D-83 pide registrar, agrupados por tema (138 a 146 legales o de licencia, 147 a 153 técnicos). Lo que ya tenía ítem (133 a 137) no se repite, y un ítem cuyo tema también está en 05 §C11 cita ese punto. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
 
 ### 1.1 Abiertos
 
@@ -48,7 +49,7 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 57 | Decisión sin tomar: el texto `modificado` del splash. | El titular la decide. |
 | 58 | W5 a W9 de RS5/RS6: ambigüedades de ARQ-122 y FD-26, huecos de test y cuatro mutantes de cierre no reaplicados. | Huecos de test primero; `specifier` para W5 y W6. |
 | 59 | `GpuEffect::bind` no recibe `cx`. | `specifier` decide la firma, con test primero. |
-| 60 | Tamaño mínimo de FD-28 (b) sin fijar. | El titular lo fija; después, test primero. Ver §1.3. |
+| 60 | Tamaño mínimo de FD-28 (b) sin fijar. | El titular lo fija; después, test primero. Ver §1.3. Mientras siga abierto, 04 no está aprobado (D-83). |
 | 61 | W37 (FD-45 «Funciona con Listas» sin construir), W38 (un run vacío mueve el salto de línea) y S19. | `specifier` y test primero para W37 y W38; S19 del mismo informe. |
 | 62 | W13 sin registro TDD; unión de párrafos de `RichText` sin cubrir. | Test primero para la unión; el registro se corrige en el próximo cambio. |
 | 63 | W22 y W23 sin test en `loudness.rs`; S15 gasta memoria por frame. | Test primero para W22 y W23; S15 con suma corrida o energía por paso. |
@@ -82,11 +83,27 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 130 | ARQ-143 no tiene regla para un tile más largo que su etapa de 8 ms (W22 de CB6). | `specifier` añade la regla; test después. |
 | 131 | D10 (opción a) y la fila 106 del diseño describen `GraphPageRenderer`; el bench arma el plan a mano (S11 de CB6). | `specifier` enmienda D10 y la fila 106. |
 | 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
-| 133 | Revisión visual de las fórmulas de 04 FD-33 y del catálogo de filtros de 04 FD-34 (antes Q-34; D-40, D-78). Las pruebas fijan el valor de las fórmulas, no su aspecto. | El titular revisa las fórmulas sobre imágenes de muestra cuando exista el corte de efectos y da el catálogo de FD-34 con nombres y valores; las fórmulas aprobadas dejan de ser PROPUESTA. |
+| 133 | Revisión visual de las fórmulas de 04 FD-33 y del catálogo de filtros de 04 FD-34 (antes Q-34; D-40, D-78). Las pruebas fijan el valor de las fórmulas, no su aspecto. | El titular revisa las fórmulas sobre imágenes de muestra cuando exista el corte de efectos y da el catálogo de FD-34 con nombres y valores; las fórmulas aprobadas dejan de ser PROPUESTA. Mientras siga abierto, 04 no está aprobado (D-83). |
 | 134 | Medición de la segmentación en el hardware de referencia de D-03 con la copia de 2048 px de D-45 (antes Q-48; D-78). Lo de SG3 es indicativo (i7-12700H con carga): CAL-06 1055 ms con 1 hilo, ARQ-43 43 ms, CAL-26 de 35 a 303 MB solo del segmentador. | `bench_segment_4000` < 5 s y `bench_cancel_segment` ≤ 100 ms en la gama media de D-03, y CAL-26 medida en el proceso con 20 páginas e imágenes. Si alguna falla, decide el titular. Cierra también los ítems 53 y 55. |
 | 135 | Spike de AV1 por software ≥ 10 fps a 1080p en el hardware de D-03 (R-03 de 02 y 05). | Medición con el codificador elegido; si no llega, decide el titular entre otro preset, otro códec por defecto o el límite de resolución. |
 | 136 | Spike del primer frame de la Pantalla de arranque < 300 ms con la creación del dispositivo de eframe en los tres perfiles (R-19 de 02, D-09). | `splash_first_frame_ms` medido en Windows, macOS y Linux; si no cumple, se aplica la mitigación de R-19 (ventana propia antes del dispositivo). |
 | 137 | Viabilidad de CAL-07: aislar sujeto de 4000 px < 2 s con GPU (01 CAL-07, C-12; 04 R-04). | `bench_segment_4000` con GPU en la gama media de D-03; si no llega, el titular decide si CAL-07 baja a objetivo. |
+| 138 | Dictamen legal sobre `cpal` y la `libasound` del sistema (LGPL-2.1), enlazada de forma dinámica y nunca empaquetada (R-06 y §9.1 de 02, ARQ-79; 05 FV-33 y C11, punto 3). | Hay dictamen; si lo exige, se aplica la alternativa de R-06 (backend propio por PipeWire o PulseAudio). |
+| 139 | **Decisión del titular pendiente**: la herramienta de MSI. WiX v5 está fuera de soporte comunitario y desde v6 el uso con ingresos exige la Open Source Maintenance Fee; MS-RL no está en la allowlist y las extensiones de WiX que se incrustan en el MSI pueden arrastrarla (02 §10.1; 05 FV-30, R-F y C11, punto 2). | El titular elige entre pagar la cuota de WiX v6 o posterior y usar otra herramienta de MSI; después se comprueba la licencia de lo que entra en el MSI. Mientras siga abierta, 02 y 05 no están aprobados (D-83). |
+| 140 | Dictamen sobre si H.264/AAC solo mediante las API del sistema cubre al distribuidor en cada mercado, y fecha de caducidad de la última patente de H.264 en EE. UU. (29 de noviembre de 2027, de fuentes secundarias) (D-02; 01 Q-02; 02 §9.3 y R-01; 05 C11, punto 8). | Hay dictamen y la fecha está confirmada en una fuente primaria; se revisa al caducar. |
+| 141 | Obligaciones de patentes de AV1 (pool de Sisvel, demanda de Dolby contra Snap), Opus, Vorbis y FLAC (D-02; 02 §9.3; 05 C11, punto 9). | Hay memo legal; si el riesgo sube, decide el titular. |
+| 142 | Patentes de MP3 para la importación con `nanomp3` (D-07; 01 §12.4, punto 5; 02 §9.2 y Q-09). | Un dictamen o una fuente primaria confirma que las patentes centrales están caducadas en los mercados de publicación. |
+| 143 | Patentes de importar HEVC y HEIC solo con el decodificador del SO (D-59; 04 FD-31 y §17; 05 C11, punto 10). | Un dictamen confirma que el distribuidor no tiene obligaciones propias. |
+| 144 | Reputación de SmartScreen con un certificado Authenticode normal frente a uno de validación extendida (05 FV-30; C11, punto 15). | Se comprueba con el certificado elegido antes de publicar; si la reputación no se consolida, se valora el certificado de validación extendida que FV-30 da como opción. |
+| 145 | Marca: búsqueda de disponibilidad con abogado (incluidas AFIRA, afira y GAIRA) y de los nombres ingleses del glosario (D-04, D-77; R-17 de 02; 05 C11, puntos 12 y 13). **Decisión del titular pendiente**: el primer país de registro (01 §12.4, punto 4; pendiente 4 de 00). | Hay informe de las búsquedas y el titular elige el país. Mientras la elección siga abierta, 01 no está aprobado (D-83). |
+| 146 | Licencia y activación, para cuando haya venta (D-70): estado real del `license-hub` (R-12 de 02) y respaldo de archivo local cuando falta el llavero de Linux (R-14 de 02). | Se comprueban al redactar la spec 06; no bloquean la versión gratuita. |
+| 147 | egui y eframe en la versión elegida (02 §8): respaldo `glow` o software sin GPU (ADR-06, §8.1), propiedad de idioma en AccessKit (§8.3) y ventana raíz oculta con una secundaria sin decoraciones en las tres plataformas, también en Wayland (§8.4, R-19). | Una prueba por punto en Windows, macOS y Linux; si una falla, se aplica el respaldo de 02 o se anota el límite. El tiempo del primer frame es el ítem 136. |
+| 148 | i18n (02 §14): crate de Core Foundation de `objc2` en macOS (§14.3), categorías de plural del español en la versión de datos de CLDR usada (§14.5), estabilidad del formateador de tiempo relativo de ICU4X (§14.5) y MessageFormat 2 en ICU4X (ADR-09, §14.8). | Cada punto confirmado contra la versión fijada en `Cargo.lock`. |
+| 149 | Dependencias y compilación al implementar (02): algoritmo o crate de *time-stretch* (§4.9), nombres de crate de los encoders vetados en `deny.toml` (§9.1), `candle` como alternativa a `ort` (§9.2), `rusqlite` o `redb` para el índice de la Biblioteca (§9.2; 04 FD-26), versión de `zune-jpeg` y JPEG progresivo (ARQ-66) y ausencia de FMA en aarch64 (§3.4, ARQ-12). | Cada punto se cierra en el cambio que introduce la dependencia, con `cargo deny check` en verde; el de aarch64, con el ensamblador o la prueba golden de ARQ-12 en el *runner* `aarch64-apple-darwin`. |
+| 150 | Empaquetado y versiones mínimas (05 Parte C; 02 §10.1): build mínima de Windows 10 según wgpu y Media Foundation (FV-30), glibc de la LTS de Ubuntu más antigua en soporte (FV-33), herramienta de firma de `.deb` y `.rpm` (FV-33; 02 §10.1), dos distribuciones de referencia para el `.tar.gz` (FV-33 e) y ningún entitlement de red en macOS según `codesign -d --entitlements` (FV-34). | Cada punto fijado y comprobado al preparar el primer paquete de su plataforma (05 C11, puntos 20 y 21). |
+| 151 | Importar y exportar (04; 01): lector de referencia de QR (FD-20 a), modo de la sombra en SVG (FD-35 b), efectos de texto complejos en PDF (FD-43 b), lector de referencia del PDF con contraseña (FD-56 c) y cifrado AES-256 con biblioteca permisiva (R-A), programas de presentaciones de referencia (FD-62 a), clase legal de importar PDF (04 §17; 02 §11.2) y PDF/X (01 C-17). | Cada herramienta o modo se elige en el cambio que implementa la función; PDF/X sigue fuera de 02 hasta que una spec lo pida. |
+| 152 | Plataformas de publicación, en cada versión: medidas de Destinos (04 FD-53, R-C), zonas de seguridad del video vertical (04 FD-05) y aceptación del MP4 con AV1 y Opus (R-11 de 02; 05 FV-12). | Se comprueban contra cada plataforma vigente al preparar la versión y se actualizan `assets/sizes.toml` y las recomendaciones. |
+| 153 | Viabilidad de funciones futuras: subtítulos automáticos solo locales (01 RF-41; 05 FV-08) y algoritmo de los marcadores de compás de Fase 2 (D-72; 01 Q-15; 05 FV-10). | Un *spike* antes de la fase que las incluye; si no es viable, decide el titular. |
 
 ### 1.2 Cerrados o sin trabajo propio
 

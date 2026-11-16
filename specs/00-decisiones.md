@@ -723,3 +723,30 @@ Fecha: 16 de noviembre de 2026.
 - **Quedan fuera** y siguen abiertas: el campo `template` del manifiesto (02 §7.1, hueco abierto; 04 FD-16 y §15) y el modo oscuro derivado (01 C-06). Lo aplazado sigue aplazado: Q-20 y el precio (D-70) y Q-23 (D-74). Las fórmulas de FD-33 siguen en PROPUESTA hasta la revisión visual del ítem 133 de 07 (D-78).
 - **Marcas**: como en D-71, PROPUESTA pasa a «confirmada (D-80)», para que lo que sigue en PROPUESTA sea solo lo abierto. No cambia el contenido de ninguna decisión.
 - Amplía D-71. Aplicado a 01 (convenciones, RNF-01, §10.1, §11.1, C-18), 02 (convenciones, §4.17.5, §7.3, §13.1, §13.2, §14.3, §14.5), 04 (convenciones, FD-05, FD-17, FD-21, FD-24, FD-26, FD-44, FD-48, FD-59) y 05 (convenciones, FV-15, FV-18, FV-19, C1, C4, C7, C10).
+
+## D-81 Campo `template` del manifiesto (04 FD-16 y §15; 02 §7.1)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): un `.gaf` es una **plantilla** cuando su `manifest.json` tiene el objeto opcional `template = { "tags": [string], "pageFormat": string, "style": string, "color": "#RRGGBB" }`. `pageFormat` es el id de un formato de inicio de 03 §6.2: `social`, `presentation`, `print`, `video_vertical`, `video_horizontal` o `custom`. Un lector que no conoce el campo lo ignora.
+- **Consecuencia**: se cierran el hueco abierto de 02 §7.1 y la PROPUESTA de 04 FD-16 y §15, que D-80 dejó fuera. «Formato» es el de página, no el de archivo, y un `.gaf` sin `template` es un proyecto normal.
+- Aplicado a 02 (§7.1), 04 (convenciones, FD-16, §15) y a la spec 008 (§5).
+
+## D-82 Modo oscuro derivado aprobado (01 C-06)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la paleta oscura derivada de `assets/theme/gafira.tokens.json` (03 §3), validada por los 84 pares de contraste de la spec 014, queda **aprobada** como modo oscuro. Se puede ajustar más adelante sin reabrir 01.
+- **Consecuencia**: C-06 queda cerrada, y con ella lo que D-80 dejó fuera sobre el modo oscuro. La marca PROPUESTA del modo oscuro en 03 se queda mientras 03 siga en backlog; una nota en §3 remite a esta decisión.
+- Aplicado a 01 (C-06) y 03 (nota en §3).
+
+## D-83 Cuándo un documento de referencia está aprobado
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): un documento de referencia de producto (01, 02, 04 y 05) está **«Aprobado»** cuando no tiene ninguna decisión del titular abierta. Los puntos VERIFICAR (licencias, patentes, dictámenes legales, comprobaciones de plataforma) y los *spikes* no lo bloquean, siempre que cada uno esté registrado como tarea en `specs/07-deuda-abierta.md` o en 05 §C11. Las decisiones aplazadas (Q-20 y el precio, D-70; Q-23, D-74) tampoco lo bloquean, porque están aplazadas de forma explícita.
+- **Consecuencia**: los VERIFICAR y *spikes* de 01, 02, 04 y 05 que no tenían seguimiento pasan a 07 como ítems 138 a 153; los ítems 133 a 137 de 07 y 05 §C11 ya cubrían el resto. Al aplicarla, el 16 de noviembre de 2026, ningún documento queda aprobado, porque cada uno conserva una decisión del titular abierta:
+  - 01: el primer país de registro de la marca (§12.4, punto 4; pendiente 4 del titular, D-04; ítem 145 de 07).
+  - 02 y 05: la herramienta de MSI, entre pagar la Open Source Maintenance Fee de WiX v6 o posterior y usar otra herramienta (02 §10.1; 05 FV-30 y R-F; ítem 139 de 07).
+  - 04: el aspecto de las fórmulas de FD-33 y el catálogo de FD-34, que siguen en PROPUESTA (D-78, D-80; ítem 133 de 07), y el tamaño mínimo de FD-28 (b) (ítem 60 de 07).
+- Cuando el titular cierre la decisión que bloquea un documento, su fila `Estado` pasa a «Aprobado (D-83, fecha)»; hasta entonces se queda como está. Aplicado a 07 (ítems 138 a 153).
