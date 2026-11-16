@@ -1,0 +1,19 @@
+[package]
+name = "gafira-theme"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-doc.workspace = true
+serde_json.workspace = true
+
+# ARQ-105 reads the cmap of the embedded fonts. Dev-only: `cargo tree -e normal,build`
+# and the V5 row do not move.
+[dev-dependencies]
+skrifa.workspace = true
+
+[lints]
+workspace = true

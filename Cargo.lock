@@ -607,6 +607,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-theme"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-doc",
+ "serde_json",
+ "skrifa",
+]
+
+[[package]]
 name = "gafira-time"
 version = "0.1.0-beta.2"
 dependencies = [
