@@ -12,18 +12,18 @@
 
 ## Documentos de producto (referencia, no specs de ciclo de vida)
 
-Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas citan sus IDs y secciones.
+Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 están aprobados cuando no tienen ninguna decisión del titular abierta (D-83). Las specs nuevas citan sus IDs y secciones.
 
-| Doc | Contenido |
-| --- | --- |
-| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular |
-| [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) |
-| [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) |
-| [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` |
-| [04](04-funcionalidad-diseno-imagen-exportacion.md) | Diseño, imagen y exportación (`FD-`) |
-| [05](05-funcionalidad-video-y-distribucion.md) | Video y distribución (`FV-`) |
-| [06](backlog/06-licencia-y-activacion.md) | Licencia y activación; en `backlog/` |
-| [07](07-deuda-abierta.md) | Inventario de deuda abierta; no crea requisitos |
+| Doc | Contenido | Estado |
+| --- | --- | --- |
+| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-86) |
+| [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) | Aprobado (D-83, 2026-11-16) |
+| [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) | Aprobado (D-83, 2026-11-16) |
+| [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` | Borrador para revisión |
+| [04](04-funcionalidad-diseno-imagen-exportacion.md) | Diseño, imagen y exportación (`FD-`) | Aprobado (D-83, 2026-11-16) |
+| [05](05-funcionalidad-video-y-distribucion.md) | Video y distribución (`FV-`) | Aprobado (D-83, 2026-11-16) |
+| [06](backlog/06-licencia-y-activacion.md) | Licencia y activación; en `backlog/` | Esqueleto |
+| [07](07-deuda-abierta.md) | Inventario de deuda abierta; no crea requisitos | Vigente (no ejecutable) |
 
 ## En progreso / ejecución estable
 

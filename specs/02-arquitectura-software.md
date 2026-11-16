@@ -3,9 +3,9 @@
 | Campo | Valor |
 |---|---|
 | Documento | Especificación 02 |
-| Estado | Borrador para revisión |
+| Estado | Aprobado (D-83, 2026-11-16) |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-83 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-86 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar. **confirmada (D-80)** = decisión de producto o de diseño que fue PROPUESTA y el titular confirmó tal como está escrita; lo que sigue en PROPUESTA está abierto. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-149 son los contratos de los motores de la capa de aplicación (§4.17.7, §4.17.8) |
 
@@ -1960,7 +1960,7 @@ Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el 
 - **Pasos por PR**: `fmt --check`, `clippy -D warnings`, `check-layers`, `deny`, `check-i18n`, `check-ui-literals`, `check-glossary`, pruebas, fuzz corto y benchmarks de humo.
 - **Por la noche**: benchmarks completos en la máquina de referencia (*self-hosted*), fuzz largo, paquetes firmados y capturas golden en español, inglés y seudo-localización (§14.6).
 - **Empaquetado**:
-  - Windows: MSI con WiX v5, CRT estático y firma Authenticode. WiX se usa solo en build; su licencia es MS-RL (verificado el 2026-11-16, `LICENSE.TXT` de github.com/wixtoolset/wix). Sigue en VERIFICAR: MS-RL no está en la allowlist y las extensiones de WiX que se incrustan en el MSI pueden arrastrarla; v5 está fuera de soporte comunitario y desde v6 el uso con ingresos exige la Open Source Maintenance Fee (firegiant.com). Decide el titular: versión de WiX y cuota, u otra herramienta de MSI (05 §C1).
+  - Windows: MSI, CRT estático y firma Authenticode. El MSI **no** se hace con WiX (D-85): su licencia, MS-RL, no está en la allowlist y desde v6 el uso con ingresos exige la Open Source Maintenance Fee, de pago. Se usa una herramienta de empaquetado con licencia permisiva, solo en build (candidatas: `cargo-packager` y `msitools`/`wixl`); su licencia y la de lo que entra en el MSI se comprueban al implementar el empaquetado (ítem 139 de 07; 05 §C1).
   - Linux (solo `x86_64`, D-05): `.deb`, `.rpm` y `.tar.gz` portable. Las bibliotecas del sistema (Vulkan, X11/Wayland, ALSA/PipeWire) no se empaquetan (ARQ-79).
     - **Sin AppImage**: su *runtime* enlaza libfuse con licencia LGPL-2.1, lo que obligaría a adjuntar el texto de esa licencia y una oferta de código fuente con cada copia.
     - **Sin Flatpak** y **sin aarch64** en Linux.

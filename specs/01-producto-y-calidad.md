@@ -3,9 +3,9 @@
 | Campo | Valor |
 |---|---|
 | Documento | Especificación 01 |
-| Estado | Borrador para revisión |
+| Estado | Aprobado (D-83, 2026-11-16) |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-83 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-86 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
 | Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar; **confirmada (D-80)** = decisión de producto o de diseño que fue PROPUESTA y el titular confirmó tal como está escrita (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
@@ -452,7 +452,7 @@ Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `licen
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio. **Aplazado** por D-62 y D-70: la primera versión se publica gratis y sin licencia, así que no bloquea el lanzamiento.
 2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`, contrato de Tracewright con las tres adaptaciones de D-01) y el `PRIVACY.md` de Gafira, con el identificador de dispositivo, se escriben en la fase final de licencia (spec 06).
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
-4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y, opcionalmente, reservar más dominios.
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento (ítem 145 de 07) y, opcionalmente, reservar más dominios. La elección del primer país de registro queda **aplazada** (D-84) y no bloquea esta spec (D-83).
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: ver 00, pendiente 5, y 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. Aportar un conjunto de fotos reales con licencia para `gafira-segment` antes de publicar (D-20).
 7. Búsqueda de marca de los nombres ingleses propios del glosario (*Pieces*, *Magnet*, *Light copies*…) antes de publicar (D-77, R-17 de 02, 05 C11 punto 13).

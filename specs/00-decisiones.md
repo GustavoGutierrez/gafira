@@ -46,7 +46,7 @@ Aviso: las referencias legales de este documento son lectura técnica de fuentes
     - «Gefira» sin registro: empresas de TI en Suiza y EE. UU.
     - El titular registró gafira.com el 2026-10-24 (Cloudflare) para alojar la página de presentación del producto cuando exista la interfaz; gafira.app, .io, .co y .dev parecían libres (el titular puede reservarlos más adelante).
     - Connotación: en árabe, غافرة significa «la que perdona» (connotación religiosa).
-  - **Siguiente paso**: elegir el primer país de registro y encargar a un abogado una búsqueda de disponibilidad que incluya AFIRA, afira y GAIRA.
+  - **Siguiente paso**: ~~elegir el primer país de registro y~~ encargar a un abogado una búsqueda de disponibilidad que incluya AFIRA, afira y GAIRA. La elección del primer país de registro se aplaza (D-84).
 
 ## D-05 Linux (Q-04, Q-05)
 
@@ -521,7 +521,7 @@ Fecha: 2 de noviembre de 2026.
 1. Definir la lista de funciones bloqueadas sin licencia (D-12) y fijar el precio final (tentativo 99 USD, PROPUESTA).
 2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`) y el `PRIVACY.md` se escriben en la fase final de licencia (06).
 3. Completar la lista de seguridad del `license-hub` y desplegarlo: va a la fase final de licencia (06).
-4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y, opcionalmente, reservar gafira.app, .io, .co y .dev (gafira.com ya está registrado por el titular para la página de presentación).
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Pendientes: la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento y, opcionalmente, reservar gafira.app, .io, .co y .dev (gafira.com ya está registrado por el titular para la página de presentación). La elección del primer país de registro queda **aplazada** (D-84).
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: pasan 72 de 76; `zip`, `ureq`, `directories` y `ort` se corrigen con features o cambiando de crate, ver 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. ~~Registrar el origen, la autoría y la licencia de `assets/splash_screen.jpg` en `assets/LICENSES.toml` (D-09)~~ (**resuelto** el 24 de octubre de 2026: generada con ChatGPT Plus; los Términos de uso de OpenAI ceden al titular los derechos sobre el *Output* y permiten el uso comercial sin atribución ni regalías; se muestra como «generada con IA (OpenAI)» en Acerca de / créditos; sin garantía de unicidad ni de no infracción y probablemente sin derechos de autor exclusivos; ver D-09). D-10 cubre solo el audio de `assets/musics/`. Quedan como VERIFICAR para el titular: (a) búsqueda inversa de imagen (Google Lens, TinEye) y revisión visual de logos, textos o firmas; (b) conservar fuera del repositorio la descarga original con C2PA como prueba de procedencia; (c) ~~anotar la fecha de generación~~ (**resuelto**: la noche del 23 de octubre de 2026); (d) crear la entrada en `assets/LICENSES.toml` al introducir ese archivo (ARQ-75).
 7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
@@ -750,3 +750,29 @@ Fecha: 16 de noviembre de 2026.
   - 02 y 05: la herramienta de MSI, entre pagar la Open Source Maintenance Fee de WiX v6 o posterior y usar otra herramienta (02 §10.1; 05 FV-30 y R-F; ítem 139 de 07).
   - 04: el aspecto de las fórmulas de FD-33 y el catálogo de FD-34, que siguen en PROPUESTA (D-78, D-80; ítem 133 de 07), y el tamaño mínimo de FD-28 (b) (ítem 60 de 07).
 - Cuando el titular cierre la decisión que bloquea un documento, su fila `Estado` pasa a «Aprobado (D-83, fecha)»; hasta entonces se queda como está. Aplicado a 07 (ítems 138 a 153).
+
+## D-84 Primer país de registro de la marca, aplazado
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la elección del primer país de registro de la marca se **aplaza** («por ahora no se hace, después»). La búsqueda de disponibilidad con abogado y la de los nombres ingleses del glosario siguen como tareas (ítem 145 de 07; 05 C11, puntos 12 y 13).
+- **Consecuencia**: es una decisión aplazada de forma explícita, así que, por D-83, no bloquea 01. Con ella, 01 ya no tiene ninguna decisión del titular abierta y pasa a «Aprobado (D-83, 2026-11-16)».
+- Precisa D-04. Aplicado a 00 (D-04, pendiente 4), 01 (estado, §12.4, punto 4) y 07 (§0, ítem 145).
+
+## D-85 El MSI no se hace con WiX
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): el MSI de Windows **no** se construye con WiX. Su licencia, MS-RL, no está en la allowlist, y desde v6 el uso con ingresos exige la Open Source Maintenance Fee, que es de pago. Se usa una herramienta de empaquetado con licencia permisiva; son candidatas `cargo-packager` y `msitools` (`wixl`).
+- **Consecuencia**: la licencia de la herramienta elegida se comprueba al implementar el empaquetado de Windows; el ítem 139 de 07 deja de ser una decisión del titular y pasa a ser esa comprobación técnica. Con ella, 02 y 05 ya no tienen ninguna decisión del titular abierta y pasan a «Aprobado (D-83, 2026-11-16)».
+- Aplicado a 02 (estado, §10.1), 03 (§5.1), 05 (estado, FV-30, FV-40, C11 punto 2, R-F) y 07 (§0, ítem 139).
+
+## D-86 Tamaño mínimo de FD-28 (b) y revisión visual de FD-33 y FD-34
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular):
+  - (a) 04 FD-28 (b) toma el mínimo que ya fija ARQ-122: una imagen y su versión al 50 % son parecidas (distancia de Hamming ≤ 10) si los dos lados de la original miden ≥ 128 px y la mitad se hace por media 2×2, o ≥ 640 px y la mitad se hace por bilineal o por vecino más cercano. Por debajo de esos tamaños no hay cota.
+  - (b) El aspecto de las fórmulas de FD-33 y el catálogo de FD-34 son la tarea de revisión visual del ítem 133 de 07, que **no** bloquea 04. Las fórmulas siguen en PROPUESTA, como valores provisionales que fijan las pruebas, hasta esa revisión.
+- **Consecuencia**: el ítem 60 de 07 queda resuelto, y el 133 sigue abierto como tarea sin bloquear 04. Con ello, 04 ya no tiene ninguna decisión del titular abierta y pasa a «Aprobado (D-83, 2026-11-16)».
+- Precisa D-78 y D-83. Aplicado a 04 (estado, convenciones, FD-28, FD-33) y 07 (§0, §1.2, §1.3, ítems 60 y 133).
