@@ -644,3 +644,39 @@ Fecha: 16 de noviembre de 2026.
 - **Quedan fuera** y siguen abiertas: el aspecto de FD-33 y FD-34 (Q-34), el glosario y el microcopy en inglés (Q-25) y el modo oscuro derivado (C-06). No se tocan las cifras de 03 (en backlog) ni las de la spec 008.
 - **Marcas**: a diferencia de D-34, las cifras se reetiquetan: PROPUESTA pasa a «confirmada (D-71)», para que lo que sigue en PROPUESTA sea solo lo abierto.
 - Amplía D-34. Aplicado a 01, 02, 04 y 05.
+
+## D-72 Voz en off y marcadores de compás en Fase 2 (Q-15)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la **voz en off** grabada desde el micrófono y los **marcadores de compás** automáticos se quedan en **Fase 2**, como ya dicen 01 §5 y 05 FV-10.
+- **Consecuencia**: Q-15 queda cerrada. Las marcas PROPUESTA de esas dos funciones pasan a «confirmada (D-72)»; el algoritmo de los marcadores de compás sigue en VERIFICAR.
+- Aplicado a 01 (§5, Q-15) y 05 (FV-10, Q-15).
+
+## D-73 Sin render distribuido en la red local (Q-18)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): se **descarta** el render distribuido en la red local. Gafira no abre ninguna conexión de red salvo la de la licencia futura (D-01, ARQ-04).
+- **Consecuencia**: Q-18 queda cerrada. Ninguna fase planifica render en la red local; el texto que lo dejaba en suspenso pasa a descartado.
+- Confirma D-01. Aplicado a 01 (§5, Q-18) y 02 (§11.2, Q-18).
+
+## D-74 Sin tercer idioma por ahora (Q-23)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): no se planifica un tercer idioma; la pregunta se **aplaza** hasta después del lanzamiento. La arquitectura ya admite añadir idiomas (02 §14.8).
+- **Consecuencia**: Q-23 queda aplazada. El producto se publica en español e inglés (D-08).
+- Aplicado a 01 (§5, Q-23) y 02 (§4.16, Q-23).
+
+## D-75 Huecos SP1, SP2, SP3 y SP8 del engine (02 §5.6)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): se acepta lo que hace el código.
+  - **SP1**: `Gafira::new` solo falla con `EngineError::InvalidConfig` o con un error de un puerto (`crates/gafira-engine/src/engine.rs`). Hoy `InvalidConfig` lo devuelve `EngineConfig::new` y la construcción del engine no falla.
+  - **SP2**: los tipos de carga del bus (`SaveState`, `JobResult`, `RecoveryEntry`, `PressureLevel`, `StartupStep`) los define el crate `gafira-engine`.
+  - **SP3**: el engine construye `UserError { kind, message, detail, actions }`. `kind` es un enum cerrado; `detail` solo va al log local; `actions` son claves de mensaje. `CommandError` (`gafira-edit`) y `ValidationError` (`gafira-doc`) implementan `ToMessage` cuando llegue `E11`.
+  - **SP8**: los niveles son `PressureLevel { Normal, Critical }`, como en el código (`crates/gafira-engine/src/governor.rs`). El límite del 70 % de la VRAM lo aplica el adaptador del backend de render en GPU, no el governor del engine.
+- **Consecuencia**: SP1, SP2, SP3 y SP8 pasan a cerradas; `E11` ya no está bloqueada por SP3. SP7 sigue abierta.
+- Aplicado a 02 (§5.6) y a `specs/README.md`.
