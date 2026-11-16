@@ -5,7 +5,7 @@
 | Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-71, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Depende de | `00-decisiones.md` (D-01 a D-75, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
 | Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)
@@ -131,8 +131,8 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
   - **Fundidos** de entrada y salida, cada uno con su duración en segundos y su asa en el clip: rampa lineal de ganancia (02 ARQ-124). Las asas no se cruzan: la suma de las dos duraciones nunca supera la duración del clip, y al arrastrar un asa o escribir su duración, el valor se limita a lo que deja la otra (D-49). Recortar el clip, acortar su Duración, subir su Velocidad, Dividirlo o Congelar fotograma, si dejan un clip por debajo de la suma de sus fundidos, reducen las dos en proporción: cada una se multiplica por `duración nueva / suma` (D-49, D-51). Tras Dividir o Congelar fotograma, la primera parte conserva el fundido de entrada, la última el de salida, y en el punto de división no hay fundido; la regla de proporción se aplica después a cada parte (D-54). Alargar el clip no devuelve los fundidos reducidos; solo Deshacer los restaura (D-52). En un arrastre, la reducción se calcula desde las duraciones del inicio del gesto: con suma inicial `S` y duración actual `D`, los fundidos son los iniciales si `D ≥ S` y los iniciales por `D / S` si no (D-52). Una sola entrada de historial deshace el cambio del clip y los fundidos. Ningún redondeo deja la suma por encima del clip.
   - **Separar audio**: extrae el audio de un clip de video a su propia pista enlazada (mover juntos, desenlazar opcional).
   - **Nivelar**: lleva el clip, la pista o todo a una sonoridad objetivo con una ganancia propia, aparte del Volumen (D-31) (por defecto −14 LUFS; opciones −16 y −23 LUFS). Limita la ganancia para que el pico real quede en −1 dBTP o por debajo e informa si no alcanzó el objetivo (D-21, 02 ARQ-127).
-  - **Sincronización básica**: forma de onda visible en los clips, **desplazar** el audio con ajuste fino (± ms y por fotograma) y **marcadores** (`M`) a los que se pueden atraer los cortes con el Imán. Marcadores de compás automáticos: Fase 2 (PROPUESTA, VERIFICAR algoritmo).
-  - **Voz en off** grabada desde el micrófono: Fase 2 (PROPUESTA, Q-15); requiere permiso del SO.
+  - **Sincronización básica**: forma de onda visible en los clips, **desplazar** el audio con ajuste fino (± ms y por fotograma) y **marcadores** (`M`) a los que se pueden atraer los cortes con el Imán. Marcadores de compás automáticos: Fase 2 (confirmada, D-72; VERIFICAR algoritmo).
+  - **Voz en off** grabada desde el micrófono: Fase 2 (confirmada, D-72); requiere permiso del SO.
 - *UI*: Inspector → Clip (Volumen, Fundidos, Nivelar; D-32); clic derecho (Separar audio).
 - *Técnica*: `AudioProcessor` (ganancia, fundido, nivelación EBU R128; 02 §4.9); formas de onda precalculadas por `gafira-media`.
 - *Presupuesto*: la reproducción no asigna ni bloquea en el hilo de audio (ARQ-23); la forma de onda de un clip de 10 min se calcula en segundo plano en < 5 s (confirmada, D-71).
@@ -624,7 +624,7 @@ Cada punto tiene propietario y evidencia. La primera versión es una **descarga 
 |---|---|---|
 | Q-02, Q-03, Q-04, Q-05, Q-06, Q-09, Q-12, Q-13 | Códecs vía SO, Linux, actualizaciones, MP3, activación y AVI | Cerradas (D-01, D-02, D-05, D-06, D-07; 01 §12.2) |
 | Q-17 | Importar HEVC y HEIC vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; nunca salida HEVC) |
-| Q-15 | Voz en off y marcadores de compás en Fase 2 | Abierta |
+| Q-15 | Voz en off y marcadores de compás en Fase 2 | Cerrada: D-72 (las dos en Fase 2) |
 | Q-19 | Prueba gratuita | Cerrada: D-12 (no hay prueba gratuita; modo sin licencia) |
 | Q-20 | Modo sin licencia válida | Aplazada (D-62, D-70): la primera versión es gratuita y sin licencia; la lista de funciones bloqueadas (spec 06) se fija cuando haya venta. En un build con licencia, hasta entonces, solo la exportación está bloqueada (D-55) |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |

@@ -5,7 +5,7 @@
 | Documento | Especificación 01 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-71 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-75 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
 | Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
@@ -87,12 +87,12 @@ Las fases siguen el PRD (§6) y la hoja de ruta técnica de 02 (§11.2). Cuando 
 | Texto | Texto completo, Efectos de texto, Columnas, Ajustar al cuadro, Fijar tipografía, Curvar | Texto sobre forma vectorial y vertical | Reescritura de texto con modelo local (opcional, desactivable) |
 | Identidad | Identidad visual, Estilos, Cambiar tamaño | — | Perfiles de identidad múltiples avanzados |
 | Exportar imagen | PNG, JPEG, WebP, GIF animado, SVG, PDF RGB | PDF CMYK, PPTX (una imagen por diapositiva, sin objetos editables; `gafira-io-pptx`, D-07) | Lotes con CSV |
-| Video básico | Línea de tiempo, cortes, velocidad, Invertir, Congelar fotograma, Transiciones, escenas, texto animado, Subtítulos manuales, Sonidos, volumen y fundidos, vista previa con scrubbing, Cola de exportación básica | Voz en off (PROPUESTA), marcadores de compás (PROPUESTA) | — |
-| Video avanzado | Modelo y motor listos (02, §3.4) | Multicapa y Agrupar en secuencia, Fotogramas clave con Editor de curvas, Máscaras, Clave de color, Seguimiento, Estabilizar, Corrección de color y Medidores, Mezclador completo (con Puerta de ruido `NoiseGate` y *time-stretch* `TimeStretch`), SRT/VTT, Copias ligeras (gestión), control de códec | Optimización GPU. El render distribuido en la red local queda **en suspenso** (abriría una conexión distinta de la de licencia, D-01; Q-18) |
+| Video básico | Línea de tiempo, cortes, velocidad, Invertir, Congelar fotograma, Transiciones, escenas, texto animado, Subtítulos manuales, Sonidos, volumen y fundidos, vista previa con scrubbing, Cola de exportación básica | Voz en off (confirmada, D-72), marcadores de compás (confirmada, D-72) | — |
+| Video avanzado | Modelo y motor listos (02, §3.4) | Multicapa y Agrupar en secuencia, Fotogramas clave con Editor de curvas, Máscaras, Clave de color, Seguimiento, Estabilizar, Corrección de color y Medidores, Mezclador completo (con Puerta de ruido `NoiseGate` y *time-stretch* `TimeStretch`), SRT/VTT, Copias ligeras (gestión), control de códec | Optimización GPU. El render distribuido en la red local queda **descartado** (D-73): no se abre más conexión de red que la de licencia (D-01) |
 | Exportar video | **WebM y MP4 con AV1 + Opus por defecto**; MP4 H.264/AAC solo vía API del sistema (`gafira-codec-os`); secuencia PNG; **extracción de fotograma (PNG) y de audio (WAV)**; sin salida HEVC ni MP3 (D-02, D-07) | WebM VP9, extracción de fotograma en JPEG y de audio en FLAC u Opus, control de bitrate, fps y rango de color | — |
 | Extensiones | — | — | Plugins (`PluginHost`), automatizaciones locales |
 | Distribución | MSI (Windows), `.deb`, `.rpm` y `.tar.gz` (Linux x86_64), DMG firmado y notarizado (macOS aarch64); sin actualizador (D-05, D-06) | — | — |
-| Idioma | **Español e inglés** con catálogos completos, idioma por defecto según el sistema (D-08), selector en Ajustes → General, cambio sin reiniciar, glosario y microcopy en los dos idiomas, plantillas empaquetadas con idioma declarado (`gafira-i18n`) | — | Otros idiomas, si el titular los decide (Q-23) |
+| Idioma | **Español e inglés** con catálogos completos, idioma por defecto según el sistema (D-08), selector en Ajustes → General, cambio sin reiniciar, glosario y microcopy en los dos idiomas, plantillas empaquetadas con idioma declarado (`gafira-i18n`) | — | Sin tercer idioma planificado; se decide después del lanzamiento (Q-23, aplazada por D-74) |
 
 ### 5.1 Fase final: licencia y distribución comercial
 
@@ -435,6 +435,9 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma o un formato fijo por idioma? | Cerrada: D-64 (la región del sistema cuando su idioma coincide con el de la interfaz; si no, el formato CLDR del idioma de la interfaz; 02 §14.4). RF-64. |
 | Q-26 | ¿`gafira-cli` en inglés por defecto? ¿Instalador, paquetes y `.desktop` en los dos idiomas? | Cerrada: D-61 (la CLI escribe en inglés y solo cambia con `--lang`, ARQ-104; instalador, paquetes y `.desktop` en español e inglés según el idioma del sistema). RF-56, RF-64. |
 | Q-20 | ¿Qué puede hacer el usuario sin licencia válida? | Aplazada (D-62, D-70): la primera versión se publica gratis y sin licencia; la lista de funciones bloqueadas del modo sin licencia (D-12) se fija cuando haya venta, en la spec 06. Mientras tanto, en un build con licencia solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). RF-63. |
+| Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Cerrada: D-72 (las dos se quedan en Fase 2; el algoritmo de los marcadores de compás sigue en VERIFICAR). Spec 05, FV-10. |
+| Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? | Cerrada: D-73 (se descarta; Gafira no abre más conexión de red que la de la licencia futura, D-01, 02 ARQ-04). |
+| Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Aplazada (D-74): no se planifica un tercer idioma hasta después del lanzamiento; la arquitectura ya los admite (02 §14.8). RF-64. |
 
 ### 12.3 Preguntas abiertas
 
@@ -442,9 +445,6 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 
 | ID | Pregunta | Responsable | Bloquea |
 |---|---|---|---|
-| Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Producto | Spec 05 |
-| Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Está en suspenso: abriría una conexión distinta de la de licencia, prohibida por D-01. | Titular | Fase 3 |
-| Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Titular | Fase 3 (02 §14.8) |
 | Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
 | Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (02 §12.3, D-40). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45). | Titular | No bloquea la especificación |
 

@@ -5,7 +5,7 @@
 | Documento | Especificación 04 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-71, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
+| Depende de | `00-decisiones.md` (D-01 a D-75, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
 | Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (Q-34) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o cifra propia, confirmada por D-71) · *Aceptación* (criterios verificables) · *RF*.
