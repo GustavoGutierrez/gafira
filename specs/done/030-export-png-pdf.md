@@ -1,6 +1,6 @@
 # 030 — Exportar PNG y PDF
 
-> **Estado:** in-progress — 2026-11-16 — rama `feat/030-export-png-pdf`.
+> **Estado:** done — 2026-11-16 — S30-01..S30-07 cubiertos por `gafira-render` (`graph::tests` 3, `page::tests` 3, `fonts::tests` 1), `gafira-ports` (`tests/export.rs` 1), `gafira-io-image` (`pixels::tests` 3, `tests/png.rs` 7), `gafira-io-pdf` (`tests/pdf.rs` 3), `gafira-engine` (`export::tests` 7) y `gafira-ui` (`export::tests` 3); 7 mutantes a mano muertos; 2880 tests. Imágenes, PDF vectorial y la cola de exportación quedan fuera.
 
 ## Objetivo
 
@@ -55,3 +55,24 @@ Lógica crítica: S30-02 (transformaciones y tamaños) y la conversión de píxe
 ## Evidencia esperada
 
 Tests nuevos en `gafira-render`, `gafira-io-image`, `gafira-io-pdf`, `gafira-engine` y `gafira-ui`; gates de `AGENTS.md` («Before calling something done»), `cargo deny check licenses bans sources` y los pasos de política de `ci.yml` en verde.
+
+## Evidencia
+
+- Rojo verificado: los tests de `gafira-render` (texto y escala) no compilaban sin `FontBook`, `scaled` ni el registro del `TextNode`; los de `pixels` fallaron con la conversión vacía.
+- Mutantes a mano, todos muertos: sin la escala delante de la colocación (mueren `s30_02_the_scale_goes_in_front_of_every_placement` y `s30_02_an_export_at_twice_the_scale_doubles_the_page`); `<` en lugar de `<=` en el límite de 16 384 px (muere `s30_03_a_side_above_the_limit_is_an_error`); sin comprobar `can_export` (muere `s30_06`); sin borrar los temporales tras un fallo (muere `s30_05_a_failed_export_leaves_no_file`); todo aviso bloquea (muere `s30_05_what_is_refused_before_the_export_opens_no_file`).
+- `cargo fmt --check`: limpio.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: limpio.
+- `cargo test --workspace --locked`: 2880 tests, 0 fallos.
+- `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` y `cargo test -p gafira-testkit --features ports --locked`: en verde (paso ADR 0013 de `ci.yml`).
+- Pasos de política de `ci.yml` ejecutados en local (ARQ-07, `forbid(unsafe_code)`, V5, ARQ-06, V12, ARQ-107 x2, V13, V14, ADR 0013): todos en verde.
+- `cargo deny check licenses bans sources`: `bans ok, licenses ok, sources ok`. Dependencias nuevas: `krilla` 0.8.2 (MIT OR Apache-2.0) con solo `raster-images`, que trae `pdf-writer`, `subsetter`, `xmp-writer`, `skrifa` 0.42, `gif`, `image-webp`, `imagesize` y `color_quant` (MIT o MIT/Apache); `hayro-syntax` 0.9 (Apache-2.0 OR MIT) solo en pruebas; `png` 0.18 ya estaba.
+- `python3 tools/sync_agents.py --check`: 0.
+
+## Decisiones y límites registrados
+
+- Arista nueva `gafira-render → gafira-text` (y `gafira-pathops`, transitiva) en la fila V5 de `ci.yml`: 02 §4.6 dice que el texto llega al plan como contornos; las dos son de capa inferior.
+- `gafira-io-pdf` depende de `gafira-io-image` para `page_pixels` y `straight_srgb8` (mismo cálculo de tamaño y de píxeles); ambos son adaptadores de capa 4 sin `gafira-engine` ni `gafira-render` (paso ARQ-06 ampliado a los dos).
+- `Ports::new` toma el séptimo puerto `PageRenderers`; `EngineError` gana `ExportNotAllowed`, `UnknownFormat`, `ExportBlocked` y `Export`.
+- En calidad de exportación la `scale` de `PageRenderRequest` ya no se ignora: escala la página (el nivel sigue en cero, 02 §6.2). La vista previa no cambia.
+- La exportación es síncrona en el hilo de la UI: un PDF grande bloquea la ventana mientras se escribe. Queda para la cola de 02 §6.4.
+- El `README.md` no se tocó: su línea de estado ya no sigue a las specs.
