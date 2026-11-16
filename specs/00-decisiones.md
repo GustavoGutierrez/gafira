@@ -680,3 +680,37 @@ Fecha: 16 de noviembre de 2026.
   - **SP8**: los niveles son `PressureLevel { Normal, Critical }`, como en el código (`crates/gafira-engine/src/governor.rs`). El límite del 70 % de la VRAM lo aplica el adaptador del backend de render en GPU, no el governor del engine.
 - **Consecuencia**: SP1, SP2, SP3 y SP8 pasan a cerradas; `E11` ya no está bloqueada por SP3. SP7 sigue abierta.
 - Aplicado a 02 (§5.6) y a `specs/README.md`.
+
+## D-76 La sesión de solo lectura se puede editar en memoria (SP7, 02 §5.6)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): una sesión de solo lectura, abierta porque el archivo tiene un esquema futuro o un contenedor más nuevo o una capacidad requerida desconocida (D-68), **se puede editar en memoria**. «Guardar» se rechaza con un error de solo lectura antes de cualquier operación de archivo, y los cambios solo se conservan con «Guardar como», como hace el código (ARQ-55, 02 §7.1).
+- **Consecuencia**: SP7 queda cerrada y 02 §5.6 no tiene huecos abiertos; `E3c` deja de ser provisional por SP7.
+- Confirma ARQ-55 y precisa D-68. Aplicado a 02 (§5.6, ARQ-55), 04 (FD-63) y a `specs/README.md`.
+
+## D-77 Glosario y microcopy en inglés aprobados (Q-25)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los nombres ingleses del glosario (03 §2.8) y el microcopy en inglés (03 §12) se **aprueban** tal como están, a reserva de la búsqueda de marca de los nombres ingleses propios (R-17).
+- **Consecuencia**: Q-25 queda cerrada. La búsqueda de marca de los nombres ingleses pasa a los pendientes del titular (01 §12.4) y a la lista previa a publicar (05 C11, punto 13). Las marcas PROPUESTA de 03 §2.8 se quedan mientras 03 siga en backlog; una nota al inicio de §2.8 remite a esta decisión.
+- Aplicado a 01 (§12.3, §12.4), 02 (R-17, §12.3), 03 (nota en §2.8) y 05 (C11).
+
+## D-78 Q-34 y Q-48 pasan a tareas de la deuda abierta
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): Q-34 y Q-48 salen de las tablas de preguntas abiertas y pasan a tareas de `specs/07-deuda-abierta.md`:
+  - (a) **Ítem 133**: revisión visual de las fórmulas de FD-33 y del catálogo de filtros de FD-34 (antes Q-34).
+  - (b) **Ítem 134**: medición de la segmentación en el hardware de referencia de D-03 (antes Q-48).
+- **Consecuencia**: Q-34 y Q-48 quedan cerradas como preguntas. Las fórmulas de FD-33 siguen en PROPUESTA y las cifras de Q-48 siguen vigentes hasta que esas tareas se hagan; si una medición falla, el titular decide. El ítem 55 de 07 queda sin trabajo propio: lo recoge el 134.
+- Aplicado a 01 (§12.3), 02 (§4.17, §12.3), 04 (convenciones, FD-33, FD-34, FD-38, §18) y 07 (§0, §1.1, §1.2).
+
+## D-79 Firma, calidad, instalación, distribución y accesibilidad bloquean toda versión (05 C11)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los puntos 15 (firma de código) y 19 a 22 (calidad, instalación, distribución y accesibilidad) de 05 C11 bloquean **cualquier** versión, también la primera, gratuita. Motivo: SmartScreen (Windows) y Gatekeeper (macOS) bloquean las aplicaciones sin firmar.
+- **Consecuencia**: esos puntos pasan a «Toda versión» y C11 ya no tiene puntos sin clasificar.
+- Amplía D-70. Aplicado a 05 (C11).
