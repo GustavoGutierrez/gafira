@@ -18,13 +18,17 @@ use gafira_edit::{
 };
 use gafira_geom::{Length, Unit};
 use gafira_ports::common::UnixTime;
+use gafira_ports::i18n::{
+    FormatLocale, LanguagePreference, Locale, LocaleResolver, LocaleSource, ResolvedLocale,
+};
 use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier};
 use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
+use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, FileSystem, FileWrite, Notifier, ReadSeek};
 
 use crate::bus::EventChannel;
-use crate::engine::{EngineConfig, Gafira, Ports, Registries};
+use crate::engine::{EngineConfig, Gafira, Ports, Registries, SettingsPorts};
 use crate::event::{EngineEvent, NoopWaker};
 
 pub(crate) struct NoRepository;
@@ -129,6 +133,120 @@ impl LicenseVerifier for NoLicense {
     }
 }
 
+/// `mutex`, held; a poisoned fake is a failed test anyway.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().expect("the fake's lock")
+}
+
+/// Settings nobody stores: every load is the defaults, every save succeeds.
+pub(crate) struct NoSettings;
+
+impl SettingsRepository for NoSettings {
+    fn load(&self) -> Result<Settings, SettingsError> {
+        Ok(Settings::default())
+    }
+
+    fn save(&self, _settings: &Settings) -> Result<(), SettingsError> {
+        Ok(())
+    }
+}
+
+/// Settings kept in memory; `fail` makes every later call fail.
+#[derive(Default)]
+pub(crate) struct MemorySettings {
+    stored: Mutex<Option<Settings>>,
+    corrupt: Mutex<bool>,
+    fail_saves: Mutex<bool>,
+    saves: Mutex<usize>,
+}
+
+impl MemorySettings {
+    pub(crate) fn holding(settings: Settings) -> Self {
+        let memory = Self::default();
+        *lock(&memory.stored) = Some(settings);
+        memory
+    }
+
+    /// The next loads report a stored value that cannot be read.
+    pub(crate) fn corrupt(&self) {
+        *lock(&self.corrupt) = true;
+    }
+
+    /// The next saves fail with an I/O error.
+    pub(crate) fn fail_saves(&self) {
+        *lock(&self.fail_saves) = true;
+    }
+
+    pub(crate) fn stored(&self) -> Option<Settings> {
+        *lock(&self.stored)
+    }
+
+    pub(crate) fn saves(&self) -> usize {
+        *lock(&self.saves)
+    }
+}
+
+impl SettingsRepository for MemorySettings {
+    fn load(&self) -> Result<Settings, SettingsError> {
+        if *lock(&self.corrupt) {
+            return Err(SettingsError::Corrupt {
+                detail: "not json".to_owned(),
+            });
+        }
+        Ok(lock(&self.stored).unwrap_or_default())
+    }
+
+    fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
+        if *lock(&self.fail_saves) {
+            return Err(SettingsError::Io(io::Error::other("disk full")));
+        }
+        *lock(&self.saves) += 1;
+        *lock(&self.stored) = Some(*settings);
+        Ok(())
+    }
+}
+
+/// D-08 without a system: `Es` and `En` are manual, `System` falls back to
+/// English.
+pub(crate) struct FallbackResolver;
+
+impl LocaleResolver for FallbackResolver {
+    fn resolve(&self, pref: LanguagePreference) -> ResolvedLocale {
+        let (locale, source) = match pref {
+            LanguagePreference::Es => (Locale::Es, LocaleSource::Manual),
+            LanguagePreference::En => (Locale::En, LocaleSource::Manual),
+            LanguagePreference::System => (Locale::En, LocaleSource::Fallback),
+        };
+        ResolvedLocale {
+            locale,
+            formats: FormatLocale {
+                locale,
+                region: None,
+            },
+            source,
+        }
+    }
+}
+
+/// The settings ports of the engines that never touch settings.
+pub(crate) fn no_settings() -> SettingsPorts {
+    SettingsPorts::new(Arc::new(NoSettings), Arc::new(FallbackResolver))
+}
+
+/// An engine with a new document whose settings live in `settings`.
+pub(crate) fn engine_with_settings(settings: &Arc<MemorySettings>) -> Gafira {
+    let mut ports = six_ports();
+    ports.settings = SettingsPorts::new(
+        Arc::clone(settings) as Arc<dyn SettingsRepository>,
+        Arc::new(FallbackResolver),
+    );
+    let engine =
+        Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine");
+    engine.projects().new_document().expect("a new document");
+    assert_eq!(drain(&engine).len(), 1, "the new");
+    engine
+}
+
 pub(crate) fn config() -> EngineConfig {
     EngineConfig::new("/data/gafira").expect("a valid data directory")
 }
@@ -141,6 +259,7 @@ pub(crate) fn six_ports() -> Ports {
         Arc::new(NoClock),
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
+        no_settings(),
     )
 }
 
@@ -479,6 +598,7 @@ pub(crate) fn engine_with_clock(
         clock,
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
+        no_settings(),
     );
     Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
 }

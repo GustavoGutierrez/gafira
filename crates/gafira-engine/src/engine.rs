@@ -12,9 +12,11 @@ use std::time::Duration;
 
 use gafira_ports::common::Bytes;
 use gafira_ports::format::FormatRegistry;
+use gafira_ports::i18n::LocaleResolver;
 use gafira_ports::license::LicenseVerifier;
 use gafira_ports::media::CodecRegistry;
 use gafira_ports::repository::{ProjectRepository, RepositoryError};
+use gafira_ports::settings::{SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, FileSystem, Notifier};
 
@@ -29,6 +31,7 @@ use crate::edit::EditService;
 use crate::event::{EngineEvent, EventBus};
 use crate::project::ProjectService;
 use crate::session::Shared;
+use crate::settings::SettingsService;
 
 /// The port implementations the composition root injects (ARQ-06, 02 §5.4).
 ///
@@ -47,6 +50,28 @@ pub struct Ports {
     pub notifier: Arc<dyn Notifier>,
     /// The licence decision of 02 §4.14.
     pub license: Arc<dyn LicenseVerifier>,
+    /// Where the settings persist and how their language resolves (spec 009).
+    pub settings: SettingsPorts,
+}
+
+/// The two ports `SettingsService` needs, grouped so [`Ports::new`] stays
+/// within clippy's seven arguments (spec 009).
+pub struct SettingsPorts {
+    /// Loads and saves the user's settings (`ports::SettingsRepository`).
+    pub repository: Arc<dyn SettingsRepository>,
+    /// Maps the language preference to a locale (`gafira-i18n`, 02 §14.4).
+    pub resolver: Arc<dyn LocaleResolver>,
+}
+
+impl SettingsPorts {
+    /// The settings store and the locale resolver.
+    #[must_use]
+    pub fn new(repository: Arc<dyn SettingsRepository>, resolver: Arc<dyn LocaleResolver>) -> Self {
+        Self {
+            repository,
+            resolver,
+        }
+    }
 }
 
 impl Ports {
@@ -59,6 +84,7 @@ impl Ports {
         clock: Arc<dyn Clock>,
         notifier: Arc<dyn Notifier>,
         license: Arc<dyn LicenseVerifier>,
+        settings: SettingsPorts,
     ) -> Self {
         Self {
             repository,
@@ -67,6 +93,7 @@ impl Ports {
             clock,
             notifier,
             license,
+            settings,
         }
     }
 }
@@ -219,6 +246,8 @@ pub enum EngineError {
     NoPath,
     /// A `FileSystem` call of the engine failed (design P16).
     Io(std::io::Error),
+    /// The settings port failed (spec 009).
+    Settings(SettingsError),
 }
 
 impl fmt::Display for EngineError {
@@ -233,6 +262,7 @@ impl fmt::Display for EngineError {
             Self::ReadOnly => f.write_str("the project is read-only"),
             Self::NoPath => f.write_str("the project has no file yet"),
             Self::Io(e) => write!(f, "file system error: {e}"),
+            Self::Settings(e) => write!(f, "settings error: {e}"),
         }
     }
 }
@@ -255,6 +285,7 @@ impl ToMessage for EngineError {
             Self::ReadOnly => msg!("error.engine.read_only"),
             Self::NoPath => msg!("error.engine.no_path"),
             Self::Io(_) => msg!("error.engine.io"),
+            Self::Settings(e) => e.to_message(),
         }
     }
 }
@@ -283,6 +314,12 @@ impl From<std::io::Error> for EngineError {
     }
 }
 
+impl From<SettingsError> for EngineError {
+    fn from(e: SettingsError) -> Self {
+        Self::Settings(e)
+    }
+}
+
 impl From<ValidationError> for EngineError {
     fn from(e: ValidationError) -> Self {
         Self::InvalidDocument(e)
@@ -302,6 +339,7 @@ pub struct Gafira {
     events: Receiver<EngineEvent>,
     projects: ProjectService,
     edit: EditService,
+    settings: SettingsService,
 }
 
 impl Gafira {
@@ -322,6 +360,7 @@ impl Gafira {
         let shared = Shared::new(bus.clone());
         let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
         let projects = ProjectService::over(shared, &ports, &config);
+        let settings = SettingsService::over(&ports.settings, bus.clone());
         Ok(Self {
             ports,
             registries,
@@ -330,6 +369,7 @@ impl Gafira {
             events: events.receiver(),
             projects,
             edit,
+            settings,
         })
     }
 
@@ -343,6 +383,13 @@ impl Gafira {
     /// The edits, undo, redo and gestures (02 §5.4 line 1359).
     pub fn edit(&mut self) -> &mut EditService {
         &mut self.edit
+    }
+
+    /// The settings and the interface language (02 §5.4 line 1364, spec 009).
+    /// Nothing is loaded until [`SettingsService::start`].
+    #[must_use]
+    pub fn settings(&self) -> &SettingsService {
+        &self.settings
     }
 
     /// The configuration this engine was built with.
@@ -570,6 +617,7 @@ mod tests {
                 Arc::clone(&clock),
                 Arc::clone(&notifier),
                 Arc::clone(&license),
+                no_settings(),
             ),
             Registries::new(),
             config(),

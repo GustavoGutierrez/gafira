@@ -9,7 +9,7 @@
 //!
 //! The ports are injected, the Facade composes, and each service lives in its
 //! own module (design P9): `project` and `edit` share the session of
-//! `session`. The other services arrive in the later deliveries of
+//! `session`; `settings` (spec 009) holds the user's settings. The other services arrive in the later deliveries of
 //! `specs/done/legacy/changes/gafira-engine/design.md`.
 
 #![forbid(unsafe_code)]
@@ -24,11 +24,12 @@ mod fakes;
 mod governor;
 mod project;
 mod session;
+mod settings;
 
 pub use autosave::{AutosaveJob, AutosaveOutcome};
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use edit::EditService;
-pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries};
+pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries, SettingsPorts};
 pub use event::{EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, Waker};
 pub use governor::{
     BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,
@@ -36,3 +37,4 @@ pub use governor::{
 };
 pub use project::ProjectService;
 pub use session::DocVersion;
+pub use settings::SettingsService;
