@@ -683,7 +683,7 @@ Composición: baldosa de esquinas redondeadas `#FAFAF7` con el símbolo centrado
 | Windows | `gafira.ico` (multi-resolución) | 16, 24, 32, 48, 64, 128, 256 px | `xtask gen-icons` rasteriza el SVG por tamaño; los de 16–32 px usan una versión con trazos simplificados (más grueso) si el símbolo pierde legibilidad (PROPUESTA) |
 | macOS | `gafira.icns` | 16, 32, 64, 128, 256, 512, 1024 px (con variantes @2x) | Cuerpo de 824×824 px dentro del lienzo de 1024 px (plantilla de iconos de macOS; VERIFICAR contra la guía vigente) |
 | Linux | PNG en `hicolor` | 16, 24, 32, 48, 64, 128, 256, 512 px | + `gafira.svg` en `scalable/apps` |
-| Asociación `.gafira` | `gafira-doc.ico` / `.icns` / PNG | Los mismos | Símbolo sobre una hoja con esquina doblada; el texto «.gafira» no se rotula en el icono |
+| Asociación `.gaf` | `gafira-doc.ico` / `.icns` / PNG | Los mismos | Símbolo sobre una hoja con esquina doblada; el texto «.gaf» no se rotula en el icono |
 
 - **DIS-13**: ningún icono de aplicación se genera con herramientas externas manuales; todos salen de `xtask gen-icons` a partir de los SVG de la marca. *Aceptación*: reconstruir iconos desde cero produce archivos idénticos (hash estable) y los tamaños de la tabla existen.
 - **DIS-14**: el símbolo en la interfaz nunca mide menos de 24×24 px ni más de 48×48 px en el editor. *Aceptación*: prueba de capturas golden de la barra superior.
@@ -702,7 +702,7 @@ Composición: baldosa de esquinas redondeadas `#FAFAF7` con el símbolo centrado
         └──────────────►  INICIO  ─────────────────────────────┐
                            │  │  │                              │
         Empezar a diseñar  │  │  └─ Proyectos recientes ────────┤
-        Explorar plantillas│  └──── Abrir archivo .gafira       │
+        Explorar plantillas│  └──── Abrir archivo .gaf       │
                            ▼                                    ▼
                  ┌───────────────────┐   Nueva escena   ┌───────────────────┐
                  │ EDITOR DE DISEÑO  │◄────────────────►│  EDITOR DE VIDEO  │
@@ -1143,7 +1143,7 @@ Clic derecho o tecla de menú sobre un objeto: Copiar, Pegar, Duplicar, Eliminar
 
 | Origen | Destino | Resultado |
 |---|---|---|
-| Archivo del sistema (imagen, SVG, video, audio, `.gafira`) | Lienzo, Línea de tiempo o Biblioteca | Importa y coloca; un `.gafira` se abre en Inicio |
+| Archivo del sistema (imagen, SVG, video, audio, `.gaf`) | Lienzo, Línea de tiempo o Biblioteca | Importa y coloca; un `.gaf` se abre en Inicio |
 | Imagen | Marco | Recorta por la forma del Marco y conserva su forma al reemplazar |
 | Color de la Identidad | Elemento | Aplica la muestra enlazada (cambia con la identidad) |
 | Plantilla | Lienzo | Añade una página nueva con sus elementos editables |
@@ -1342,7 +1342,7 @@ Gafira se publica en **español e inglés**. El idioma por defecto sale del sist
 1. Sin ajustes guardados, la preferencia es `Sistema` y se resuelve con la regla de D-08 antes de pintar el primer frame (la resolución no añade tiempo medible al arranque de 02 §6.6).
 2. **No se pregunta el idioma**: Inicio aparece directamente en el idioma resuelto (principio P2: un camino claro, sin pasos previos).
 3. Si el idioma del SO no es español ni inglés, Inicio aparece en inglés y no se muestra ningún aviso; Ajustes → General indica «System · now: English».
-4. Los proyectos no guardan el idioma de la interfaz: el mismo `.gafira` se abre igual con cualquier idioma, y los nombres ya creados («Página 1») no se traducen (02 §14.2).
+4. Los proyectos no guardan el idioma de la interfaz: el mismo `.gaf` se abre igual con cualquier idioma, y los nombres ya creados («Página 1») no se traducen (02 §14.2).
 
 - **DIS-74** (primer arranque): el primer arranque nunca muestra una pregunta de idioma ni texto en un idioma distinto del resuelto. *Aceptación*: prueba E2E con perfil de ajustes vacío y SO en `es-ES`, `en-US` y `de-DE`: la primera captura de Inicio está entera en español, inglés e inglés respectivamente y no hay diálogos.
 
@@ -1353,7 +1353,7 @@ Gafira se publica en **español e inglés**. El idioma por defecto sale del sist
 | Todo el texto de la interfaz, menús, tooltips, mensajes, nombres accesibles y la Paleta de comandos | El contenido de la persona: textos, nombres de proyectos, capas, páginas, archivos y fuentes |
 | Formato de números, fechas, horas, tiempos relativos y unidades («1,2 MB» / «1.2 MB», «hace 2 h» / «2 h ago», «100 %» / «100%»; 02 §14.5) | Los atajos de teclado (DIS-77) y los códigos de tiempo (`00:12:04`) |
 | Los nombres de teclas mostrados («Supr» / «Delete») | Los nombres de formatos (PNG, MP4, AV1) y la marca «Gafira» |
-| El filtro por defecto de Plantillas (idioma de la interfaz más plantillas neutras; 01 §7.3) | El archivo `.gafira` y sus claves |
+| El filtro por defecto de Plantillas (idioma de la interfaz más plantillas neutras; 01 §7.3) | El archivo `.gaf` y sus claves |
 
 Los campos numéricos escriben y leen el separador decimal del idioma activo (coma en español, punto en inglés) y aceptan además el punto (PROPUESTA, 02 §14.5).
 

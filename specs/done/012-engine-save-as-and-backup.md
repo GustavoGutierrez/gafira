@@ -2,6 +2,8 @@
 
 > **Estado:** done — 2026-11-16 — primera parte de E4 del change `gafira-engine` ([carpeta legacy](legacy/changes/gafira-engine/design.md)), desbloqueada por D-63; S12-01..S12-09 cubiertos por `gafira-doc` (`project_id::tests` 5, `json::tests` 1) y `gafira-engine` (`project::tests` 8 nuevos, más los de `save` y autoguardado ajustados al `.bak` y a la carpeta por id); 6 mutantes a mano muertos; 2681 tests. Quedan para otra spec `recover`, `RecoveryAvailable`, bloqueos y versiones.
 
+Nota (D-67): la extensión del proyecto es `.gaf`; donde dice `.gafira` léase `.gaf`.
+
 ## Objetivo
 
 Dar a cada proyecto la identidad de D-63 (un UUID guardado en el documento) y completar las salidas de guardado de 02 §5.4 línea 1358 y §7.2: «Guardar como», «Guardar copia» y la generación `.gafira.bak` del paso 4 del guardado atómico.

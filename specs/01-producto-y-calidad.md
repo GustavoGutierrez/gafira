@@ -45,7 +45,7 @@ Creadores de contenido que producen piezas gráficas y videos con frecuencia y n
 |---|---|
 | Editores en línea basados en plantillas | Trabajo local sin conexión, proyecto portable y control profesional (capas, máscaras, curvas, color) |
 | Suites profesionales de escritorio | Una interfaz guiada (Elegir → Personalizar → Compartir) y un solo programa para diseño y video |
-| Herramientas gratuitas dispersas | Un único formato `.gafira`, una única Identidad visual y una sola cola de exportación |
+| Herramientas gratuitas dispersas | Un único formato `.gaf`, una única Identidad visual y una sola cola de exportación |
 
 ## 3. Propuesta de valor
 
@@ -58,7 +58,7 @@ Creadores de contenido que producen piezas gráficas y videos con frecuencia y n
 | Resultados homogéneos | Plantillas como punto de partida: todo es editable; Estilos e Identidad visual propios | RF-15, RF-28 |
 | Inteligencia artificial intrusiva | Aislar sujeto sin modelo (técnica clásica); IA opcional, local y desactivable, fuera del MVP | RF-22, RF-23 |
 | Interfaz confusa | Flujo guiado, Paleta de comandos (Ctrl/Cmd+K), tooltips con atajo y teclado completo | RF-13, RNF-05 |
-| Portabilidad deficiente | `.gafira` abierto y documentado, formatos estándar de entrada y salida | RF-02, RF-35 |
+| Portabilidad deficiente | `.gaf` abierto y documentado, formatos estándar de entrada y salida | RF-02, RF-35 |
 | Soporte percibido como débil | Diagnóstico integrado, registros locales exportables y reporte de errores con datos técnicos que la persona decide enviar | RNF-04, RNF-06 |
 
 ## 4. Principios de producto
@@ -80,7 +80,7 @@ Las fases siguen el PRD (§6) y la hoja de ruta técnica de 02 (§11.2). Cuando 
 | Área | MVP (diseño + video básico) | Fase 2 (control profesional) | Fase 3 (diferenciación) |
 |---|---|---|---|
 | Arranque | Pantalla de arranque (D-09, RF-67): ilustración incrustada y reemplazable, logo y eslogan sobre panel claro, barra de carga real; visible al menos 1,2 s | — | — |
-| Proyecto | `.gafira`, autoguardado, recuperación, Versiones, Historial | Relocalización de medios (RF-55) | — |
+| Proyecto | `.gaf`, autoguardado, recuperación, Versiones, Historial | Relocalización de medios (RF-55) | — |
 | Lienzo | Tamaños, unidades, páginas, Reglas, Guías, Generador de guías, Imán, Cuadrícula, Zona de seguridad, Sangrado, Zoom 5–3200 % | Distribuir con reglas avanzadas | — |
 | Plantillas y Piezas | Plantillas locales, Piezas (formas, líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones), Dibujo, Biblioteca | Plantillas de video y componentes reutilizables | Biblioteca avanzada con búsqueda semántica local (opcional) |
 | Imagen | Ajustes de imagen, Filtros, Aislar sujeto (clásico), importación PNG/JPEG/WebP/GIF/TIFF/BMP/QOI/SVG | HEIC (solo lectura, solo con el decodificador del SO; D-59), importar PDF, LUT en imagen | Segmentadores ONNX opcionales |
@@ -124,9 +124,9 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
 | RF-01 | Crear, abrir, duplicar, renombrar, archivar y eliminar proyectos desde Inicio y Archivo; proyectos recientes con miniatura. | RF-01 | MVP | ADR-04 | 03 §7.2, 04 §13 |
-| RF-02 | Un único formato abierto y documentado, `.gafira` (ZIP + `manifest.json` versionado), con migraciones por paso y archivos de esquema futuro en solo lectura. | RF-01, RNF-06 | MVP | ADR-04, ARQ-53, ARQ-55 | 04 §13 |
+| RF-02 | Un único formato abierto y documentado, `.gaf` (ZIP + `manifest.json` versionado), con migraciones por paso y archivos de esquema futuro en solo lectura. | RF-01, RNF-06 | MVP | ADR-04, ARQ-53, ARQ-55 | 04 §13 |
 | RF-03 | Autoguardado cada 5–15 s (10 por defecto), guardado atómico y Recuperación tras fallo con pérdida ≤ 15 s. | RF-01, RF-10 | MVP | ARQ-50..52 | 04 §13, 03 §7.9 |
-| RF-04 | Deshacer y Rehacer amplios, fusión de gestos, Versiones nombradas y automáticas (carpeta `versions/` del `.gafira`; una automática al guardar si la última tiene más de 30 min, las 20 más recientes; las nombradas no se borran solas). | §2.1 Historial | MVP | ADR-03, ARQ-30, ARQ-32, ARQ-33, 02 §7.1 | 04 §13 |
+| RF-04 | Deshacer y Rehacer amplios, fusión de gestos, Versiones nombradas y automáticas (carpeta `versions/` del `.gaf`; una automática al guardar si la última tiene más de 30 min, las 20 más recientes; las nombradas no se borran solas). | §2.1 Historial | MVP | ADR-03, ARQ-30, ARQ-32, ARQ-33, 02 §7.1 | 04 §13 |
 | RF-05 | Todas las funciones de edición, importación y exportación funcionan sin conexión; la única conexión de red es la de la licencia (D-01). | RF-01, RNF-03 | MVP | ARQ-04, ARQ-91 | 04, 05 |
 
 ### 7.2 Lienzo y editor de diseño (PRD RF-02)
@@ -189,7 +189,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-32 | Exportar PDF RGB (Digital e Impresión, Sangrado y marcas de corte, aplanar, orden de lectura accesible, contraseña); PDF CMYK en Fase 2. | RF-09, §2.1 | MVP / F2 | `gafira-io-pdf`, `ColorTransform` | 04 §13 |
 | RF-33 | Validación previa (fuentes, recursos, resolución, códec) y escritura atómica; registro de cada exportación. | RF-09 | MVP | §6.4 de 02, ARQ-50 | 04 §13, 05 |
 | RF-34 | Cola de exportación: básica (MVP) y con prioridades, pausa y reintentos (Fase 2). | RF-09 | MVP / F2 | §6.4 de 02, ARQ-43 | 05 §B |
-| RF-35 | Exportar el proyecto editable con sus recursos para migrar a otro equipo. | RF-09 | MVP | `.gafira` | 04 §13 |
+| RF-35 | Exportar el proyecto editable con sus recursos para migrar a otro equipo. | RF-09 | MVP | `.gaf` (perfil `portable-full`, D-67) | 04 §13 |
 
 ### 7.8 Video básico (PRD RF-07)
 
@@ -226,7 +226,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
 | RF-56 | Instaladores: MSI (Windows), `.deb`, `.rpm` y `.tar.gz` portable (solo Linux x86_64; sin AppImage, Flatpak ni aarch64; D-05), DMG firmado y notarizado (macOS aarch64). El instalador, los paquetes y el `.desktop` de Linux se ofrecen en español e inglés, según el idioma del sistema (D-61). | RNF-01 | MVP | ARQ-03, ARQ-80, ARQ-83, ARQ-84 | 05 §C |
-| RF-57 | Asociación del tipo `.gafira` con icono y apertura al hacer doble clic. | RNF-01 | MVP | — | 05 §C |
+| RF-57 | Asociación del tipo `.gaf` con icono y apertura al hacer doble clic. | RNF-01 | MVP | — | 05 §C |
 | RF-58 | Avisos de terceros (`THIRD_PARTY_NOTICES.md`), SBOM y auditoría de licencias en cada versión. | RNF-06 | MVP | ARQ-70..76 | 05 §C |
 | RF-59 | **Cancelado (D-06).** La app no comprueba versiones nuevas ni contiene actualizador; el usuario descarga cada versión desde la web. El ID se conserva porque otras specs lo citan. | RNF-01 | — | ARQ-78 | 05 §C |
 | RF-60 | Plugins con API estable (efectos, importadores, proveedores, comandos). | RNF-06 | F3 | `PluginHost`, ARQ-24 | 05 §C |
@@ -430,7 +430,7 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-16 | Aprobación del glosario de 03. | Cerrada: D-04 (aprobado sin cambios); queda la búsqueda de marca del titular (§12.4). |
 | Q-14 | ¿Idioma del producto: solo español o también inglés al lanzar? | Cerrada: D-08 (español e inglés; por defecto según el sistema, cualquier otro idioma → inglés; selector en Ajustes → General). Requisitos RF-64..RF-66, RNF-12, RNF-13; arquitectura en 02 §14; diseño en 03 §2.8 y §16. |
 | Q-19 | Mecanismo de la prueba gratuita. | Cerrada: D-12 (no hay prueba gratuita). |
-| Q-10 | ¿Se permite empaquetar fuentes del usuario dentro de `.gafira` según su licencia? ¿Cómo se informa? | Cerrada: D-60 (se incrusta según su licencia, bits `fsType`, y según el formato; si no se puede, se vincula por nombre y se avisa al abrir sin ella; qué hace cada formato se fija en la §17 de la spec 008). RF-27. |
+| Q-10 | ¿Se permite empaquetar fuentes del usuario dentro de `.gaf` según su licencia? ¿Cómo se informa? | Cerrada: D-60 (se incrusta según su licencia, bits `fsType`, y según el perfil del `.gaf`; si no se puede, se vincula por nombre y se avisa al abrir sin ella; qué hace cada perfil se fija en la §17 de la spec 008). RF-27. |
 | Q-17 | ¿Se admite importar HEVC (y HEIC, `heic-os`) mediante la API del sistema? | Cerrada: D-59 (solo importación con el decodificador del SO; sin decodificador propio y nunca salida HEVC; sin decodificador del SO, el archivo se rechaza explicando por qué). RF-19, RF-37. |
 | Q-24 | ¿Números y fechas según la región del sistema dentro del idioma o un formato fijo por idioma? | Cerrada: D-64 (la región del sistema cuando su idioma coincide con el de la interfaz; si no, el formato CLDR del idioma de la interfaz; 02 §14.4). RF-64. |
 | Q-26 | ¿`gafira-cli` en inglés por defecto? ¿Instalador, paquetes y `.desktop` en los dos idiomas? | Cerrada: D-61 (la CLI escribe en inglés y solo cambia con `--lang`, ARQ-104; instalador, paquetes y `.desktop` en español e inglés según el idioma del sistema). RF-56, RF-64. |
@@ -480,7 +480,7 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-01 | **Web frente a escritorio.** El manual describe uso en web (dominio de aplicación web y favicon). | Manual vs PRD | Gafira es **escritorio local**. Se ignoran las referencias web del manual. No hay favicon; hay icono de aplicación (03 §5.3). |
 | C-02 | **Sincronización y nube opcional**, biblioteca remota de plantillas y cifrado de sincronización. | PRD RF-01, RF-03, RNF-04 | Fuera de alcance (§6). Plantillas y recursos son locales. |
 | C-03 | **IA.** La spec técnica incluye reescritura de texto y separación del fondo con modelo; el PRD la deja opcional. | spec técnica vs PRD | IA opcional, local, desactivable y fuera del MVP (RF-23). Aislar sujeto usa técnica clásica sin modelo (RF-22) con el trait `Segmenter` para añadir modelos después. |
-| C-04 | **Formato de proyecto único.** `.designpkg` (PRD) frente a `.design` con SQLite (spec técnica). | PRD vs spec técnica | **`.gafira`**: ZIP con `manifest.json` versionado (ADR-04, RF-02). |
+| C-04 | **Formato de proyecto único.** `.designpkg` (PRD) frente a `.design` con SQLite (spec técnica). | PRD vs spec técnica | **`.gaf`**: ZIP con `manifest.json` versionado (ADR-04, RF-02). |
 | C-05 | **Tokens de marca.** El manual define coral y grafito; la spec técnica propone violeta `#8B3DFF`. | Manual vs spec técnica | Prevalecen los tokens de Gafira (spec 03 §3). El violeta se descarta. |
 | C-06 | **Modo oscuro** exigido por el PRD sin paleta en el manual. | PRD vs manual | Se **deriva** de la paleta y se valida con AA (spec 03 §3 y §4); es PROPUESTA hasta aprobación de marca. |
 | C-07 | **Códecs.** El PRD pide MP4/H.264 y WebM/VP9 en el MVP. | PRD vs 02 | D-02: salida por defecto AV1 + Opus (WebM y MP4); H.264/AAC solo vía API del sistema; sin salida HEVC. VP9 llega en Fase 2 (ADR-07). |
