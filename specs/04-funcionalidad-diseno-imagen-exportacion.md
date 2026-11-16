@@ -3,10 +3,10 @@
 | Campo | Valor |
 |---|---|
 | Documento | Especificación 04 |
-| Estado | Borrador para revisión |
+| Estado | Aprobado (D-83, 2026-11-16) |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-83, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
-| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78). D-80 confirma las decisiones PROPUESTA, salvo el campo `template` del manifiesto (FD-16, §15), que fija D-81, y las fórmulas de FD-33 (D-78) |
+| Depende de | `00-decisiones.md` (D-01 a D-86, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
+| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78; no bloquea esta spec, D-86). D-80 confirma las decisiones PROPUESTA, salvo el campo `template` del manifiesto (FD-16, §15), que fija D-81, y las fórmulas de FD-33 (D-78) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o cifra propia, confirmada por D-71) · *Aceptación* (criterios verificables) · *RF*.
 
@@ -308,7 +308,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *UI*: Biblioteca → «Duplicados».
 - *Técnica*: `blake3`; hash perceptual en `gafira-raster` (ARQ-122).
 - *Presupuesto*: hash de 12 MP < 100 ms (02 §6.7, `bench_dhash_12mp`).
-- *Aceptación*: (a) importar dos veces el mismo archivo no crea dos recursos; (b) una versión redimensionada de una imagen aparece como parecida; (c) nada se borra sin confirmar.
+- *Aceptación*: (a) importar dos veces el mismo archivo no crea dos recursos; (b) una versión al 50 % de una imagen aparece como parecida (distancia de Hamming ≤ 10) si los dos lados de la original miden ≥ 128 px y la mitad se hace por media 2×2, o ≥ 640 px y la mitad se hace por bilineal o por vecino más cercano (ARQ-122, D-86); por debajo de esos tamaños no hay cota; (c) nada se borra sin confirmar.
 
 **FD-29 · Versiones y licencias de archivos** (RF-18)
 - *Propósito*: conservar el historial de un archivo y saber con qué licencia se puede usar.
@@ -361,7 +361,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 | **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; Invertir es un interruptor (`invert`, apagado por defecto; D-46); resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
 | **Textura** | Nitidez, Claridad, Viñeta | 0–100 (viñeta −100–100) | Nitidez con máscara de bordes; la viñeta es centrada y ajustable |
 
-**Fórmulas de FD-33** (PROPUESTA; pendientes de la revisión visual del titular, ítem 133 de 07, D-78). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
+**Fórmulas de FD-33** (PROPUESTA: valores provisionales que fijan las pruebas, pendientes de la revisión visual del titular, ítem 133 de 07, D-78; esa revisión no bloquea esta spec, D-86). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
 
 Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codificado con la curva sRGB y recortado a `[0, 1]`; `k = valor / 100`; `Y = 0,2126 R + 0,7152 G + 0,0722 B`; `w(a, b, x)` es *smoothstep* de `a` a `b`.
 

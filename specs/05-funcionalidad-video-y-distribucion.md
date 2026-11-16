@@ -3,9 +3,9 @@
 | Campo | Valor |
 |---|---|
 | Documento | Especificación 05 |
-| Estado | Borrador para revisión |
+| Estado | Aprobado (D-83, 2026-11-16) |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-83, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Depende de | `00-decisiones.md` (D-01 a D-86, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
 | Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)**, **confirmada (D-80)** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)
@@ -393,10 +393,10 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 
 ## C1. Windows: instalador MSI
 
-**FV-30 · MSI con WiX v5** (RF-56)
+**FV-30 · MSI** (RF-56)
 - *Propósito*: instalar, actualizar y desinstalar Gafira con el estándar de Windows Installer.
 - *Comportamiento y reglas*:
-  - **Herramienta**: WiX v5 se usa **solo en el build**; no se distribuye. Su licencia es MS-RL (verificado el 2026-11-16, `LICENSE.TXT` de github.com/wixtoolset/wix). Sigue en VERIFICAR: MS-RL no está en la allowlist y las extensiones de WiX que se incrustan en el MSI pueden arrastrarla; v5 está fuera de soporte comunitario y desde v6 el uso con ingresos exige la Open Source Maintenance Fee (firegiant.com). Decide el titular: versión de WiX y cuota, u otra herramienta de MSI.
+  - **Herramienta**: el MSI **no** se hace con WiX (D-85): su licencia, MS-RL, no está en la allowlist y desde v6 el uso con ingresos exige la Open Source Maintenance Fee, de pago. Se usa una herramienta de empaquetado con licencia permisiva (candidatas: `cargo-packager` y `msitools`/`wixl`), **solo en el build**; no se distribuye. Su licencia y la de lo que entra en el MSI se comprueban al implementar el empaquetado (ítem 139 de 07; C11, punto 2).
   - **Contenido**: `gafira.exe`, `gafira-cli.exe` (opcional, en el PATH como característica), `THIRD_PARTY_NOTICES.md`, licencias OFL de las fuentes y recursos propios; **CRT estático** (sin redistribuible de Visual C++).
   - **Instalación por equipo** en `C:\Program Files\Gafira` con permisos de administrador (por usuario sin administrador: confirmada, D-80). `UpgradeCode` fijo y `MajorUpgrade` para actualizar en sitio sin duplicar.
   - **Accesos directos**: Menú Inicio (siempre) y Escritorio (casilla, desactivada por defecto). Entrada en «Aplicaciones instaladas» con el icono de Gafira, versión, editor y enlaces de soporte.
@@ -406,7 +406,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
   - **Idioma**: el instalador se ofrece en español e inglés, según el idioma del sistema (D-08, D-61).
   - Versiones mínimas: Windows 10 (build mínima por definir, VERIFICAR contra los requisitos de wgpu/Media Foundation) y Windows 11.
 - *UI*: asistente del instalador (FV-40); Menú Inicio.
-- *Técnica*: `xtask package windows` (WiX v5 + `signtool`); `xtask audit-bundle` (ARQ-72).
+- *Técnica*: `xtask package windows` (herramienta de MSI de D-85 + `signtool`); `xtask audit-bundle` (ARQ-72).
 - *Presupuesto*: instalador ≤ 60 MB (CAL-23); instalación en < 60 s en SSD (confirmada, D-71).
 - *Aceptación*: (a) instalar, abrir un `.gaf` con doble clic y desinstalar en una máquina limpia deja 0 archivos en `Program Files\Gafira` y 0 claves de Gafira en el registro (comprobado con diff del sistema); (b) `Get-AuthenticodeSignature` reporta firma válida en el MSI y los `.exe`; (c) actualizar de la versión n−1 a n conserva ajustes y asociaciones; (d) `audit-bundle` solo lista `gafira` y `gafira-cli` como ejecutables (ARQ-72).
 
@@ -537,7 +537,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
   - Pantalla del acuerdo de licencia con el EULA basado en el de Tracewright (ver spec 06, pendiente) y enlace a **`THIRD_PARTY_NOTICES.md`**.
   - DMG: fondo `#FAFAF7`, logo apilado y flecha hacia Aplicaciones. `.deb`, `.rpm` y `.tar.gz`: sin asistente; el primer arranque muestra la Pantalla de arranque y después Inicio.
 - *UI*: asistente del MSI; ventana del DMG.
-- *Técnica*: temas de WiX (`WixUI` personalizado) y plantilla del DMG en `xtask`.
+- *Técnica*: diálogos del MSI con la herramienta de D-85 y plantilla del DMG en `xtask`.
 - *Presupuesto*: sin impacto en el tamaño (< 1 MB de recursos gráficos).
 - *Aceptación*: (a) captura del asistente: 1 sola acción coral por pantalla (DIS-15); (b) contraste ≥ 4,5:1 en cada texto; (c) el logo mide ≥ 160 px y no está deformado ni recoloreado (DIS-70).
 
@@ -560,7 +560,7 @@ Cada punto tiene propietario y evidencia. La primera versión es una **descarga 
 | # | Categoría | Comprobación | Evidencia | Resp. | Bloquea (D-70, D-79) |
 |---|---|---|---|---|---|
 | 1 | Licencias | `cargo deny check licenses bans sources advisories` verde en el build de release; 0 GPL/LGPL/AGPL/SSPL/no comerciales; 0 dependencias git | Informe de CI | Ingeniería | Toda versión |
-| 2 | Licencias | Verificación con `cargo-deny` de todas las licencias marcadas VERIFICAR en 02 §9.2 (vello, parley, krilla, linesweeper, cpal, rav1e, wasmi, decodificador MP3, cliente HTTP, `ring`…) y de las herramientas de build (nfpm, WiX, `cargo about`) | Tabla actualizada | Ingeniería | Toda versión |
+| 2 | Licencias | Verificación con `cargo-deny` de todas las licencias marcadas VERIFICAR en 02 §9.2 (vello, parley, krilla, linesweeper, cpal, rav1e, wasmi, decodificador MP3, cliente HTTP, `ring`…) y de las herramientas de build (nfpm, la herramienta de MSI de D-85, `cargo about`) | Tabla actualizada | Ingeniería | Toda versión |
 | 3 | Licencias | `cpal`/`libasound` (LGPL-2.1, enlace dinámico, no empaquetada) evaluado con asesoría legal; alternativa decidida (R-06 de 02) | Dictamen | Legal | Toda versión |
 | 4 | Licencias | `THIRD_PARTY_NOTICES.md` completo en el instalador y en «Acerca de» | Archivo + captura | Ingeniería | Toda versión |
 | 5 | Licencias | `assets/LICENSES.toml` cubre el 100 % del contenido; música y sonidos con comprobante de origen | `xtask check-licenses` | Contenido | Toda versión |
@@ -629,4 +629,4 @@ Cada punto tiene propietario y evidencia. La primera versión es una **descarga 
 | Q-20 | Modo sin licencia válida | Aplazada (D-62, D-70): la primera versión es gratuita y sin licencia; la lista de funciones bloqueadas (spec 06) se fija cuando haya venta. En un build con licencia, hasta entonces, solo la exportación está bloqueada (D-55) |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |
 | R-06 (02) | `cpal` y `libasound` (LGPL, dinámico) | VERIFICAR, legal |
-| R-F | Licencia de WiX v5, nfpm y de las herramientas de empaquetado | nfpm (MIT), `cargo-about` (MIT OR Apache-2.0) y `cargo-cyclonedx` (Apache-2.0): verificado (2026-11-16). WiX (MS-RL y cuota OSMF desde v6): VERIFICAR, decide el titular (§C1) |
+| R-F | Licencia de la herramienta de MSI, nfpm y de las herramientas de empaquetado | nfpm (MIT), `cargo-about` (MIT OR Apache-2.0) y `cargo-cyclonedx` (Apache-2.0): verificado (2026-11-16). WiX descartado (D-85: MS-RL y cuota OSMF desde v6); la licencia de la herramienta de MSI elegida (candidatas: `cargo-packager`, `msitools`/`wixl`): VERIFICAR al implementar el empaquetado (§C1; ítem 139 de 07) |

@@ -669,7 +669,7 @@ Se respetan las reglas del manual: isotipo de tres piezas (base grafito, panel c
 | Barra superior (botón Inicio) | Símbolo `gafira-logo-symbol.svg` sobre pastilla `canvas` | 32×32 px (mínimo 24×24) | La barra superior es grafito: el símbolo va sobre una pastilla `#FAFAF7` de 40×40 px con radio `sm`, para no poner grafito sobre oscuro. |
 | Inicio | Horizontal `gafira-logo-primary.svg`; en modo oscuro `gafira-logo-dark-background.svg` | ≥ 160 px de ancho (recomendado 192) | Claro: `bg`. Oscuro: `bg` oscuro. |
 | Acerca de | Apilado `gafira-logo-stacked.svg` | ≥ 120 px de ancho (recomendado 160) | `surface`. Muestra versión, licencias de terceros y OFL de las fuentes. |
-| Instalador MSI (WiX) | Horizontal sobre `canvas`; banner de 493×58 px y fondo de diálogo de 493×312 px | Logo ≥ 160 px | `#FAFAF7`, sin degradados. |
+| Instalador MSI | Horizontal sobre `canvas`; banner de 493×58 px y fondo de diálogo de 493×312 px | Logo ≥ 160 px | `#FAFAF7`, sin degradados. |
 | Imagen de DMG | Apilado ≥ 120 px sobre `canvas` | Ventana 660×400 pt | `#FAFAF7`. |
 | Pantalla de arranque (D-09, §7.10) | Horizontal `gafira-logo-primary.svg` (isotipo y texto «Gafira»), siempre sobre el panel, **nunca sobre la imagen de fondo**; barra de carga real, sin progreso falso | 200 px de ancho visible del arte (mínimo 160) | Panel `splash.panel` (`bg` del modo claro, `#FAFAF7`) en cualquier modo, sobre la ilustración `assets/splash_screen.jpg`. |
 | Exportaciones | **Nunca** se inserta el logo de Gafira ni marca de agua | — | — |
