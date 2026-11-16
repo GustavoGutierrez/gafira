@@ -22,7 +22,9 @@ use gafira_ports::i18n::{
     FormatLocale, LanguagePreference, Locale, LocaleResolver, LocaleSource, ResolvedLocale,
 };
 use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier};
-use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError, Version};
+use gafira_ports::repository::{
+    LoadedProject, ProjectRepository, RepositoryError, Version, VersionId, VersionInfo, VersionKind,
+};
 use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{
@@ -771,21 +773,19 @@ impl ProjectRepository for MemoryRepository {
     fn load(&self, path: &Path) -> Result<LoadedProject, RepositoryError> {
         self.record(RepoCall::Load(path.to_owned()));
         let handed = self.hand_over.lock().expect("the fake's lock").take();
-        let document = match handed {
-            Some(document) => document,
+        let (document, versions) = match handed {
+            Some(document) => (document, Vec::new()),
             None => {
                 let mut bytes = Vec::new();
                 let mut file = self.fs.open(path).map_err(RepositoryError::Io)?;
                 file.read_to_end(&mut bytes).map_err(RepositoryError::Io)?;
-                Document::from_json(&bytes).map_err(|e| RepositoryError::Corrupt {
-                    detail: e.to_string(),
-                })?
+                decoded(&bytes).map_err(|detail| RepositoryError::Corrupt { detail })?
             }
         };
         Ok(LoadedProject {
             document,
             read_only: self.read_only,
-            versions: Vec::new(),
+            versions,
         })
     }
 
@@ -793,18 +793,74 @@ impl ProjectRepository for MemoryRepository {
         &self,
         path: &Path,
         document: &Document,
-        _versions: &[Version],
+        versions: &[Version],
     ) -> Result<(), RepositoryError> {
         self.record(RepoCall::Save(path.to_owned()));
-        let bytes = document
-            .to_json()
-            .map_err(|e| RepositoryError::Io(io::Error::other(e)))?;
-        let (first, second) = bytes.as_bytes().split_at(bytes.len() / 2);
+        let bytes = encoded(document, versions);
+        let (first, second) = bytes.split_at(bytes.len() / 2);
         let mut file = self.fs.create(path).map_err(RepositoryError::Io)?;
         file.write_all(first).map_err(RepositoryError::Io)?;
         file.write_all(second).map_err(RepositoryError::Io)?;
         file.sync_all().map_err(RepositoryError::Io)
     }
+}
+
+/// The bytes [`MemoryRepository`] writes: the document's canonical JSON,
+/// then, per version, a line `id\tkind\tcreated\tschema\tapp\tname` and a
+/// line with its document's JSON. Without versions, just the document's
+/// JSON, as before spec 031.
+pub(crate) fn encoded(document: &Document, versions: &[Version]) -> Vec<u8> {
+    let json = |document: &Document| document.to_json().expect("a document serialises");
+    let mut text = json(document);
+    for version in versions {
+        let info = &version.info;
+        let kind = match info.kind {
+            VersionKind::Named => "named",
+            VersionKind::Auto => "auto",
+        };
+        text.push_str(&format!(
+            "\n{}\t{kind}\t{}\t{}\t{}\t{}\n{}",
+            info.id.0,
+            info.created.0,
+            info.schema,
+            info.app,
+            info.name,
+            json(&version.document)
+        ));
+    }
+    text.into_bytes()
+}
+
+/// What [`encoded`] wrote.
+pub(crate) fn decoded(bytes: &[u8]) -> Result<(Document, Vec<Version>), String> {
+    let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+    let mut lines = text.split('\n');
+    let parse = |json: &str| Document::from_json(json.as_bytes()).map_err(|e| e.to_string());
+    let document = parse(lines.next().unwrap_or_default())?;
+    let mut versions = Vec::new();
+    while let Some(info) = lines.next() {
+        let fields: Vec<&str> = info.splitn(6, '\t').collect();
+        let [id, kind, created, schema, app, name] = fields[..] else {
+            return Err(format!("not a version line: {info:?}"));
+        };
+        let number = |field: &str| field.parse::<i64>().map_err(|e| e.to_string());
+        versions.push(Version {
+            info: VersionInfo {
+                id: VersionId(number(id)?.unsigned_abs()),
+                name: name.to_owned(),
+                kind: if kind == "named" {
+                    VersionKind::Named
+                } else {
+                    VersionKind::Auto
+                },
+                created: UnixTime(number(created)?),
+                app: app.to_owned(),
+                schema: u32::try_from(number(schema)?).map_err(|e| e.to_string())?,
+            },
+            document: Arc::new(parse(lines.next().unwrap_or_default())?),
+        });
+    }
+    Ok((document, versions))
 }
 
 /// An engine whose repository and file system are `repository` and `fs`.
@@ -845,27 +901,36 @@ pub(crate) fn engine_with_processes(
 }
 
 /// A clock the test moves: `monotonic` is the last instant set, `now` is
-/// always [`ManualClock::NOW`].
+/// [`ManualClock::NOW`] until [`ManualClock::set_now`] moves it.
 pub(crate) struct ManualClock {
     at: Mutex<Duration>,
+    wall: Mutex<UnixTime>,
 }
 
 impl ManualClock {
-    /// The wall time every `now` returns.
+    /// The wall time `now` starts at.
     pub(crate) const NOW: UnixTime = UnixTime(1_700_000_000);
 
     pub(crate) fn at(at: Duration) -> Self {
-        Self { at: Mutex::new(at) }
+        Self {
+            at: Mutex::new(at),
+            wall: Mutex::new(Self::NOW),
+        }
     }
 
     pub(crate) fn set(&self, at: Duration) {
         *self.at.lock().expect("the fake's lock") = at;
     }
+
+    /// Make `now` return `wall` (spec 031).
+    pub(crate) fn set_now(&self, wall: UnixTime) {
+        *self.wall.lock().expect("the fake's lock") = wall;
+    }
 }
 
 impl Clock for ManualClock {
     fn now(&self) -> UnixTime {
-        Self::NOW
+        *self.wall.lock().expect("the fake's lock")
     }
 
     fn monotonic(&self) -> Duration {

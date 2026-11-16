@@ -29,6 +29,7 @@ mod lock;
 mod project;
 mod session;
 mod settings;
+mod versions;
 
 pub use assets::AssetService;
 pub use autosave::{AutosaveJob, AutosaveOutcome};

@@ -5,7 +5,9 @@
 //! (`autosave_due`, `autosave_finished`, design P13). Every save keeps one
 //! `.gaf.bak` generation (02 §7.2 step 4) and every session carries the
 //! project id of D-63. A session with a file holds its `<file>.lock`
-//! (spec 028).
+//! (spec 028). A session carries the versions of its file and every save
+//! writes them; `save_version`, `list_versions` and `restore_version` are
+//! the versions of 02 §7.1 (spec 031).
 //! Every file operation goes through the injected ports; the engine opens
 //! nothing itself (P1, design P18).
 
@@ -16,8 +18,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use gafira_doc::{Document, Dpi, Page, PageId, PageSize, ProjectId};
-use gafira_edit::{DirtySet, History};
-use gafira_ports::repository::ProjectRepository;
+use gafira_edit::{DirtySet, History, RestoreVersion};
+use gafira_ports::repository::{ProjectRepository, Version, VersionId, VersionInfo};
 use gafira_ports::system::{Clock, FileSystem, IdSource, ProcessId, ProcessProbe};
 
 use crate::autosave::{AutosaveJob, AutosaveOutcome, MARKER, Marker, SLOTS, parse_marker};
@@ -25,6 +27,7 @@ use crate::engine::{EngineConfig, EngineError, Ports};
 use crate::event::{EngineEvent, RecoveryEntry};
 use crate::lock::{FileLock, lock_path, lock_text, parse_lock};
 use crate::session::{Autosave, DocVersion, Session, Shared};
+use crate::versions;
 
 /// Creates, opens and saves the session's document (02 §5.4 line 1357).
 pub struct ProjectService {
@@ -75,7 +78,7 @@ impl ProjectService {
     /// clippy's `new_ret_no_self` reserves `new` for constructors.
     pub fn new_document(&self) -> Result<(), EngineError> {
         let document = Document::from_parts(1, Dpi::DEFAULT, Vec::new())?;
-        self.install(document, None, false)
+        self.install(document, None, false, Vec::new())
     }
 
     /// [`ProjectService::new_document`] with a first page of `size`, part of
@@ -88,7 +91,7 @@ impl ProjectService {
     pub fn new_document_with(&self, size: PageSize) -> Result<(), EngineError> {
         let page = Page::new(PageId::new(1), String::new(), size);
         let document = Document::from_parts(2, Dpi::DEFAULT, vec![Arc::new(page)])?;
-        self.install(document, None, false)
+        self.install(document, None, false, Vec::new())
     }
 
     /// End the session: the document and its history go, and so do its
@@ -178,7 +181,7 @@ impl ProjectService {
                 .load(&folder.join(format!("slot-{slot}.gaf-journal")))
             {
                 Ok(loaded) => {
-                    self.install(loaded.document, origin, false)?;
+                    self.install(loaded.document, origin, false, loaded.versions)?;
                     if let Some(session) = self.shared.lock().as_mut() {
                         // Nothing the file holds: modified until saved.
                         session.clean_version = DocVersion(0);
@@ -243,7 +246,12 @@ impl ProjectService {
     /// takes `<path>.lock` and the old session's lock goes (spec 028).
     pub fn open(&self, path: &Path) -> Result<(), EngineError> {
         let loaded = self.repository.load(path)?;
-        self.install(loaded.document, Some(path.to_owned()), loaded.read_only)
+        self.install(
+            loaded.document,
+            Some(path.to_owned()),
+            loaded.read_only,
+            loaded.versions,
+        )
     }
 
     /// Write the session's document over its file, atomically (02 §7.2
@@ -257,20 +265,97 @@ impl ProjectService {
     /// the session is clean at the saved version, if it is still the session
     /// that was saved: an edit made meanwhile keeps it modified, and pending
     /// for autosave (P13). `save` never bumps the version.
+    ///
+    /// The file keeps the session's versions, plus an automatic one of the
+    /// saved document when the newest automatic one is more than 30 min old
+    /// (02 §7.1, spec 031); the session holds them once the file does.
     pub fn save(&self) -> Result<(), EngineError> {
-        let (snapshot, version, key, path) = {
+        let (snapshot, path) = self.writable(|snapshot| {
+            versions::on_save(&snapshot.versions, &snapshot.document, self.clock.now())
+        })?;
+        self.write_atomically(&path, &snapshot.document, &snapshot.versions)?;
+        self.saved(&snapshot, None);
+        Ok(())
+    }
+
+    /// Add a named version of the session's document called `name` (trimmed)
+    /// and write the file with it: Archivo → Guardar versión (02 §5.4,
+    /// §7.1; spec 031). Same refusals, order and failure rules as
+    /// [`ProjectService::save`]: on a failure the session has no new
+    /// version; on success it is clean at the saved version. No automatic
+    /// version is added.
+    ///
+    /// # Errors
+    /// As [`ProjectService::save`].
+    pub fn save_version(&self, name: &str) -> Result<(), EngineError> {
+        let (snapshot, path) = self.writable(|snapshot| {
+            versions::with_named(
+                &snapshot.versions,
+                name,
+                &snapshot.document,
+                self.clock.now(),
+            )
+        })?;
+        self.write_atomically(&path, &snapshot.document, &snapshot.versions)?;
+        self.saved(&snapshot, None);
+        Ok(())
+    }
+
+    /// The versions of the open project, oldest first; empty with no
+    /// session (spec 031).
+    #[must_use]
+    pub fn list_versions(&self) -> Vec<VersionInfo> {
+        self.shared
+            .lock()
+            .as_ref()
+            .map_or_else(Vec::new, |session| {
+                session.versions.iter().map(|v| v.info.clone()).collect()
+            })
+    }
+
+    /// Put the content of version `id` back into the document with one
+    /// [`RestoreVersion`] command: one undo entry, one `DocumentChanged`,
+    /// and the session is modified until saved (02 §7.1, spec 031). Undo
+    /// takes it back like any edit. The versions do not change.
+    ///
+    /// # Errors
+    /// [`EngineError::NoSession`], then [`EngineError::NoVersion`] when the
+    /// project has no version `id`; nothing changes then.
+    pub fn restore_version(&self, id: VersionId) -> Result<(), EngineError> {
+        let version = {
             let cell = self.shared.lock();
             let session = cell.as_ref().ok_or(EngineError::NoSession)?;
-            if session.read_only {
-                return Err(EngineError::ReadOnly);
-            }
-            let path = session.path.clone().ok_or(EngineError::NoPath)?;
-            let (snapshot, version, key) = self.snapshot_of(session);
-            (snapshot, version, key, path)
+            session
+                .versions
+                .iter()
+                .find(|v| v.info.id == id)
+                .map(|v| Arc::clone(&v.document))
+                .ok_or(EngineError::NoVersion)?
         };
-        self.write_atomically(&path, &snapshot)?;
-        self.saved(&key, version, None);
+        crate::edit::run(
+            &self.shared,
+            &*self.clock,
+            Box::new(RestoreVersion::new(&version)),
+        )?;
         Ok(())
+    }
+
+    /// The snapshot of a session that may be saved over its file, with the
+    /// versions `keep` gives, and that file; the refusals of
+    /// [`ProjectService::save`], in its order, before any port call.
+    fn writable(
+        &self,
+        keep: impl FnOnce(&Snapshot) -> Vec<Version>,
+    ) -> Result<(Snapshot, PathBuf), EngineError> {
+        let cell = self.shared.lock();
+        let session = cell.as_ref().ok_or(EngineError::NoSession)?;
+        if session.read_only {
+            return Err(EngineError::ReadOnly);
+        }
+        let path = session.path.clone().ok_or(EngineError::NoPath)?;
+        let mut snapshot = self.snapshot_of(session);
+        snapshot.versions = keep(&snapshot);
+        Ok((snapshot, path))
     }
 
     /// Write the session's document at `path` and make `path` the session's
@@ -280,57 +365,68 @@ impl ProjectService {
     /// success the session lives at `path`, may be saved over and is clean at
     /// the saved version, with the same project id (D-63). Same order and
     /// same failure rules as [`ProjectService::save`]; a failure changes
-    /// nothing in the session.
+    /// nothing in the session. The automatic-version rule of
+    /// [`ProjectService::save`] applies.
     ///
     /// # Errors
     /// [`EngineError::NoSession`] before any port call; then the first error
     /// of the repository or the file system.
     pub fn save_as(&self, path: &Path) -> Result<(), EngineError> {
-        let (snapshot, version, key) = {
+        let snapshot = {
             let cell = self.shared.lock();
             let session = cell.as_ref().ok_or(EngineError::NoSession)?;
-            self.snapshot_of(session)
+            let mut snapshot = self.snapshot_of(session);
+            snapshot.versions =
+                versions::on_save(&snapshot.versions, &snapshot.document, self.clock.now());
+            snapshot
         };
-        self.write_atomically(path, &snapshot)?;
-        self.saved(&key, version, Some(path));
+        self.write_atomically(path, &snapshot.document, &snapshot.versions)?;
+        self.saved(&snapshot, Some(path));
         Ok(())
     }
 
     /// Write a copy of the session's document at `path` under a new project
     /// id (D-63: «Guardar copia»), leaving the session as it was: its file,
-    /// its id, its read-only flag and its modified state.
+    /// its id, its read-only flag and its modified state. The copy keeps the
+    /// session's versions as they are (spec 031).
     ///
     /// # Errors
     /// [`EngineError::NoSession`] before any port call; then the first error
     /// of the repository or the file system.
     pub fn save_copy(&self, path: &Path) -> Result<(), EngineError> {
-        let snapshot = {
+        let (snapshot, kept) = {
             let cell = self.shared.lock();
             let session = cell.as_ref().ok_or(EngineError::NoSession)?;
-            Arc::clone(session.history.document())
+            (
+                Arc::clone(session.history.document()),
+                session.versions.clone(),
+            )
         };
         let copy = Document::clone(&snapshot).with_project_id(self.ids.project_id());
-        self.write_atomically(path, &copy)
+        self.write_atomically(path, &copy, &kept)
     }
 
-    /// The document, the version and the key of `session`, taken under the
-    /// caller's lock.
-    fn snapshot_of(&self, session: &Session) -> (Arc<Document>, DocVersion, String) {
-        (
-            Arc::clone(session.history.document()),
-            self.shared.version(),
-            session.session_key.clone(),
-        )
+    /// The document, the version, the key and the versions of `session`,
+    /// taken under the caller's lock.
+    fn snapshot_of(&self, session: &Session) -> Snapshot {
+        Snapshot {
+            document: Arc::clone(session.history.document()),
+            version: self.shared.version(),
+            key: session.session_key.clone(),
+            versions: session.versions.clone(),
+        }
     }
 
-    /// Account for a save of `version` of the session named `key`: clean at
-    /// that version and, for `save_as`, living at `path` and writable. A
-    /// session replaced meanwhile is left alone.
-    fn saved(&self, key: &str, version: DocVersion, path: Option<&Path>) {
+    /// Account for a save of `snapshot`: clean at its version, holding its
+    /// versions and, for `save_as`, living at `path` and writable. A session
+    /// replaced meanwhile is left alone.
+    fn saved(&self, snapshot: &Snapshot, path: Option<&Path>) {
+        let (key, version) = (snapshot.key.as_str(), snapshot.version);
         let mut cell = self.shared.lock();
         let Some(session) = cell.as_mut().filter(|s| s.session_key == key) else {
             return;
         };
+        session.versions.clone_from(&snapshot.versions);
         let moved_lock = path.map(|path| {
             session.path = Some(path.to_owned());
             session.read_only = false;
@@ -366,12 +462,17 @@ impl ProjectService {
     /// `Ok`, so a failure anywhere leaves `path` with its old bytes. The
     /// temporaries are removed on a failure, on a best-effort basis: the
     /// first error is the one the caller needs.
-    fn write_atomically(&self, path: &Path, document: &Document) -> Result<(), EngineError> {
+    fn write_atomically(
+        &self,
+        path: &Path,
+        document: &Document,
+        versions: &[Version],
+    ) -> Result<(), EngineError> {
         let n = self.temporaries.fetch_add(1, Ordering::SeqCst);
         let tmp = suffixed(path, &format!(".tmp-{n}"));
         let written = self
             .repository
-            .save(&tmp, document, &[])
+            .save(&tmp, document, versions)
             .map_err(EngineError::from)
             .and_then(|()| self.back_up(path, n))
             .and_then(|()| self.filesystem.replace(&tmp, path).map_err(EngineError::Io));
@@ -415,6 +516,7 @@ impl ProjectService {
         document: Document,
         path: Option<PathBuf>,
         read_only: bool,
+        versions: Vec<Version>,
     ) -> Result<(), EngineError> {
         // D-63: a new project, or a file written before the field, gets its
         // identity here, so every snapshot of the history carries it.
@@ -446,6 +548,7 @@ impl ProjectService {
             autosave: Autosave::default(),
             lock: None,
             locked_by,
+            versions,
         });
         drop(cell);
         // The old lock goes first, so reopening the same file keeps one.
@@ -534,6 +637,7 @@ impl ProjectService {
         session.autosave.in_flight = true;
         Some(AutosaveJob {
             snapshot: Arc::clone(session.history.document()),
+            versions: session.versions.clone(),
             version: self.shared.version(),
             slot: session.autosave.slot,
             folder: self
@@ -606,6 +710,16 @@ impl ProjectService {
             .as_ref()
             .is_some_and(|session| session.clean_version != self.shared.version())
     }
+}
+
+/// What a save writes, taken under the session lock: the document, the
+/// version it was at, the session it came from and the versions the file
+/// keeps.
+struct Snapshot {
+    document: Arc<Document>,
+    version: DocVersion,
+    key: String,
+    versions: Vec<Version>,
 }
 
 /// `path` with `suffix` appended to its last component, in the same folder.
@@ -790,9 +904,17 @@ mod tests {
     }
 
     /// The bytes a save of the open document writes.
+    /// With the versions a save keeps: before the first save of a session
+    /// and after it, the same automatic one (spec 031).
     fn new_bytes(engine: &mut Gafira) -> Vec<u8> {
         let document = engine.edit().document().expect("a session");
-        document.to_json().expect("json").into_bytes()
+        let projects = engine.projects();
+        let kept = crate::versions::on_save(
+            &projects.shared.lock().as_ref().expect("a session").versions,
+            &document,
+            projects.clock.now(),
+        );
+        encoded(&document, &kept)
     }
 
     /// [`TARGET`] opened (version 1) and one page appended (version 2), with
@@ -978,6 +1100,7 @@ mod tests {
                 autosave: Default::default(),
                 lock: None,
                 locked_by: None,
+                versions: Vec::new(),
             });
         });
         engine.projects().save().expect("a save");
@@ -1068,7 +1191,9 @@ mod tests {
 
     /// The document stored at `path`.
     fn stored(fs: &MemoryFs, path: &str) -> Document {
-        Document::from_json(&fs.file(path).expect("a file")).expect("a document")
+        decoded(&fs.file(path).expect("a file"))
+            .expect("a document")
+            .0
     }
 
     /// The project id of the session's document.
@@ -1675,5 +1800,225 @@ mod tests {
             .expect("a save as");
         assert_eq!(fs.file(LOCK), None, "the old file's lock");
         assert_eq!(fs.file(&format!("{OTHER}.lock")), Some(own_lock()));
+    }
+
+    // ---- Spec 031: versions inside the file ----
+
+    use gafira_ports::common::UnixTime;
+    use gafira_ports::repository::{VersionId, VersionKind};
+
+    /// The versions the file at `path` holds, by id and kind.
+    fn kept(fs: &MemoryFs, path: &str) -> Vec<(u64, VersionKind)> {
+        decoded(&fs.file(path).expect("a file"))
+            .expect("a project")
+            .1
+            .iter()
+            .map(|v| (v.info.id.0, v.info.kind))
+            .collect()
+    }
+
+    /// The versions of the session, by id and kind.
+    fn listed(engine: &Gafira) -> Vec<(u64, VersionKind)> {
+        engine
+            .projects()
+            .list_versions()
+            .iter()
+            .map(|info| (info.id.0, info.kind))
+            .collect()
+    }
+
+    /// [`TARGET`] opened on an engine with a manual clock.
+    fn opened_with_clock(fs: &MemoryFs) -> (Gafira, Arc<ManualClock>) {
+        let (engine, clock) = rig_on(fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        (engine, clock)
+    }
+
+    // S31-05
+    #[test]
+    fn s31_05_a_save_adds_an_automatic_version_only_every_30_minutes() {
+        let fs = target_fs();
+        let (mut engine, clock) = opened_with_clock(&fs);
+        assert_eq!(listed(&engine), []);
+        engine.projects().save().expect("a save");
+        let auto = [(1, VersionKind::Auto)];
+        assert_eq!(listed(&engine), auto, "the first save");
+        assert_eq!(kept(&fs, TARGET), auto, "and the file holds it");
+        let info = &engine.projects().list_versions()[0];
+        assert_eq!(info.created, ManualClock::NOW);
+
+        append_page(&mut engine);
+        clock.set_now(UnixTime(ManualClock::NOW.0 + 30 * 60));
+        engine.projects().save().expect("a save");
+        assert_eq!(listed(&engine), auto, "30 min is not more than 30 min");
+
+        clock.set_now(UnixTime(ManualClock::NOW.0 + 30 * 60 + 1));
+        engine
+            .projects()
+            .save_as(Path::new(OTHER))
+            .expect("a save as");
+        let two = [(1, VersionKind::Auto), (2, VersionKind::Auto)];
+        assert_eq!(listed(&engine), two, "save_as follows the rule too");
+        assert_eq!(kept(&fs, OTHER), two);
+        assert_eq!(
+            engine.projects().list_versions()[1].created,
+            UnixTime(ManualClock::NOW.0 + 30 * 60 + 1)
+        );
+    }
+
+    // S31-05
+    #[test]
+    fn s31_05_save_copy_and_autosave_add_no_version() {
+        let fs = target_fs();
+        let (mut engine, clock) = opened_with_clock(&fs);
+        engine
+            .projects()
+            .save_copy(Path::new(COPY))
+            .expect("a copy");
+        assert_eq!(kept(&fs, COPY), []);
+        append_page(&mut engine);
+        clock.set(Duration::from_secs(60));
+        let job = engine.projects().autosave_due().expect("a job");
+        engine.projects().autosave_finished(job.run());
+        assert_eq!(kept(&fs, &slot_file(0)), []);
+        assert_eq!(listed(&engine), []);
+    }
+
+    // S31-06
+    #[test]
+    fn s31_06_save_version_writes_a_named_version_and_cleans_the_session() {
+        let fs = target_fs();
+        let (mut engine, _clock) = opened_with_clock(&fs);
+        append_page(&mut engine);
+        engine
+            .projects()
+            .save_version("  Final  ")
+            .expect("a version");
+        let infos = engine.projects().list_versions();
+        assert_eq!(infos.len(), 1, "no automatic one beside it");
+        let info = &infos[0];
+        assert_eq!(info.id, VersionId(1));
+        assert_eq!(info.name, "Final");
+        assert_eq!(info.kind, VersionKind::Named);
+        assert_eq!(info.created, ManualClock::NOW);
+        assert_eq!(info.app, env!("CARGO_PKG_VERSION"));
+        assert_eq!(info.schema, Document::SCHEMA_VERSION);
+        assert_eq!(kept(&fs, TARGET), [(1, VersionKind::Named)]);
+        assert!(!engine.projects().is_modified(), "the file holds it all");
+        let (_, versions) = decoded(&fs.file(TARGET).expect("a file")).expect("a project");
+        assert_eq!(
+            *versions[0].document,
+            *engine.edit().document().expect("a session"),
+            "the version is the saved document"
+        );
+    }
+
+    // S31-06
+    #[test]
+    fn s31_06_save_version_is_refused_before_any_port_call() {
+        let (engine, _fs, repository) = engine_with_target(false);
+        assert!(matches!(
+            engine.projects().save_version("x"),
+            Err(EngineError::NoSession)
+        ));
+        engine.projects().new_document().expect("a new document");
+        assert!(matches!(
+            engine.projects().save_version("x"),
+            Err(EngineError::NoPath)
+        ));
+        assert_eq!(listed(&engine), []);
+        let (read_only, _fs, read_only_repository) = engine_with_target(true);
+        read_only
+            .projects()
+            .open(Path::new(TARGET))
+            .expect("an open");
+        read_only_repository.take_calls();
+        assert!(matches!(
+            read_only.projects().save_version("x"),
+            Err(EngineError::ReadOnly)
+        ));
+        assert_eq!(listed(&read_only), []);
+        assert_eq!(read_only_repository.take_calls(), []);
+        assert_eq!(repository.take_calls(), []);
+    }
+
+    // S31-07
+    #[test]
+    fn s31_07_versions_travel_with_the_file_its_copies_and_its_recovery() {
+        let fs = target_fs();
+        let (mut engine, clock) = opened_with_clock(&fs);
+        engine.projects().save_version("a").expect("a version");
+        engine.projects().open(Path::new(TARGET)).expect("a reopen");
+        let named = [(1, VersionKind::Named)];
+        assert_eq!(listed(&engine), named, "open reads them");
+
+        engine
+            .projects()
+            .save_copy(Path::new(COPY))
+            .expect("a copy");
+        assert_eq!(kept(&fs, COPY), named, "the copy keeps them");
+
+        engine.projects().save().expect("a save");
+        let both = [(1, VersionKind::Named), (2, VersionKind::Auto)];
+        assert_eq!(kept(&fs, TARGET), both);
+
+        append_page(&mut engine);
+        clock.set(Duration::from_secs(60));
+        let job = engine.projects().autosave_due().expect("a job");
+        engine.projects().autosave_finished(job.run());
+        assert_eq!(kept(&fs, &slot_file(0)), both, "the slot keeps them");
+        engine.projects().new_document().expect("a new document");
+        assert_eq!(listed(&engine), []);
+        engine.projects().recover(id(1)).expect("recovers");
+        assert_eq!(listed(&engine), both, "and so does a recovery");
+    }
+
+    // S31-09
+    #[test]
+    fn s31_09_restoring_a_version_is_one_change_undo_takes_back() {
+        let fs = target_fs();
+        let (mut engine, _clock) = opened_with_clock(&fs);
+        engine.projects().save_version("before").expect("a version");
+        let page = append_page(&mut engine);
+        drain(&engine);
+
+        engine
+            .projects()
+            .restore_version(VersionId(1))
+            .expect("restores");
+        let events = drain(&engine);
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert!(
+            matches!(&events[0], EngineEvent::DocumentChanged { dirty, .. }
+                if dirty.pages.contains(&page)),
+            "the page that went is repainted: {events:?}"
+        );
+        let document = engine.edit().document().expect("a session");
+        assert_eq!(document.pages(), two_page_document().pages());
+        assert_eq!(document.project_id(), id(1));
+        assert!(engine.projects().is_modified());
+        assert_eq!(listed(&engine), [(1, VersionKind::Named)], "kept");
+
+        engine.edit().undo().expect("undoes");
+        let document = engine.edit().document().expect("a session");
+        assert!(document.page(page).is_some(), "the edit is back");
+    }
+
+    // S31-09
+    #[test]
+    fn s31_09_an_unknown_version_or_no_session_is_refused() {
+        let fs = target_fs();
+        let (rig, _clock) = rig_on(&fs);
+        assert!(matches!(
+            rig.projects().restore_version(VersionId(1)),
+            Err(EngineError::NoSession)
+        ));
+        let (engine, _clock) = opened_with_clock(&fs);
+        drain(&engine);
+        assert!(matches!(
+            engine.projects().restore_version(VersionId(7)),
+            Err(EngineError::NoVersion)
+        ));
+        assert_eq!(drain(&engine), []);
     }
 }
