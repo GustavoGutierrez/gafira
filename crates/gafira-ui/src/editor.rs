@@ -15,6 +15,7 @@ use crate::format::fit_zoom;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
 use crate::text::Texts;
+use crate::versions::Versions;
 use crate::widgets;
 
 /// The tabs of the rail, in the order of 03 §2.3.
@@ -49,6 +50,8 @@ pub(crate) struct Editor {
     /// The drag in progress: its gesture (one undo entry, ARQ-33), where the
     /// element started and how far the pointer went.
     drag: Option<Drag>,
+    /// «Versiones» and «Guardar versión…» (spec 031).
+    versions: Versions,
 }
 
 struct Drag {
@@ -68,6 +71,7 @@ impl Default for Editor {
             inspector_tab: 0,
             selected: None,
             drag: None,
+            versions: Versions::default(),
         }
     }
 }
@@ -78,6 +82,9 @@ impl Default for Editor {
 struct Asked {
     home: bool,
     file: Option<FileAction>,
+    /// «Versiones» in the top bar, «Guardar versión…» in Archivo.
+    versions: bool,
+    save_version: bool,
     undo: bool,
     redo: bool,
     add_page: bool,
@@ -203,6 +210,13 @@ impl Editor {
             &mut asked,
         );
         self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
+        if asked.versions {
+            self.versions.open_list();
+        }
+        if asked.save_version {
+            self.versions.ask_name();
+        }
+        self.versions.show(ctx, engine, theme, texts);
         self.apply(engine, &document, &asked, theme)
     }
 
@@ -240,6 +254,13 @@ impl Editor {
                         asked.file = Some(action);
                         ui.close();
                     }
+                }
+                if ui
+                    .button(texts.t(&gafira_doc::msg!("file.save_version")))
+                    .clicked()
+                {
+                    asked.save_version = true;
+                    ui.close();
                 }
             });
             widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.edit")), false);
@@ -292,12 +313,13 @@ impl Editor {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("editor.export")));
                 ui.add_space(8.0);
-                widgets::on_topbar(
+                asked.versions |= widgets::on_topbar(
                     ui,
                     theme,
                     texts.t(&gafira_doc::msg!("editor.versions")),
                     false,
-                );
+                )
+                .clicked();
             });
         });
         egui::TopBottomPanel::bottom("editor.bottombar")
