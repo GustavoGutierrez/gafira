@@ -29,13 +29,13 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 
 | ID | Spec | Estado |
 | --- | --- | --- |
-| — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; pendientes E4 (necesita SP5), E6, E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1) y E8-E11 (E11 necesita SP3). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
+| — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009; pendientes E4 (necesita SP5), E6, E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8, E9 y E11 (necesita SP3). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
 
 | ID | Spec | Evidencia |
 | --- | --- | --- |
-| — | (ninguna todavía con el flujo nuevo) | — |
+| 009 | [`SettingsService` del engine e idioma persistido](done/009-engine-settings-service.md) | Puerto `SettingsRepository`, `SettingsService::{start, get, set, set_language, locale}`, `LocaleChanged` al arrancar y al cambiar idioma; 13 tests nuevos, 3 mutantes a mano muertos, 2649 tests en el workspace |
 
 ### Historial del flujo anterior
 
@@ -52,4 +52,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **009**.
+Siguiente ID libre: **010**.
