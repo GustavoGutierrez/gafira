@@ -15,6 +15,20 @@ en = "English"
 
 [export]
 done = "Tu diseño está listo para compartir"
+title = "Exportar"
+format = "Formato"
+png = "PNG · página actual"
+pdf = "PDF · todas las páginas"
+scale = "Escala"
+scale_1x = "1×"
+scale_2x = "2×"
+transparent = "Fondo transparente"
+resolution = "Resolución"
+action = "Exportar"
+failed = "No pudimos exportar tu diseño. Inténtalo de nuevo."
+not_allowed = "Activa tu licencia para exportar."
+no_pages = "No hay páginas para exportar."
+selection_unsupported = "Exportar la selección todavía no está disponible. Exporta la página."
 pages_selected = { one = "{count} página seleccionada", many = "{count} de páginas seleccionadas", other = "{count} páginas seleccionadas" }
 
 [format]

@@ -21,6 +21,7 @@ mod bus;
 mod edit;
 mod engine;
 mod event;
+mod export;
 #[cfg(test)]
 mod fakes;
 mod governor;
@@ -40,6 +41,7 @@ pub use engine::{
 pub use event::{
     EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, RecoveryEntry, Waker,
 };
+pub use export::ExportService;
 pub use governor::{
     BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,
     TileCacheTrim, Trimmable,

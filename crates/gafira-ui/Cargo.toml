@@ -27,3 +27,8 @@ workspace = true
 [dev-dependencies]
 gafira-platform.workspace = true
 gafira-format.workspace = true
+# Spec 030: the export tests compose the engine as the app does.
+gafira-render.workspace = true
+gafira-render-cpu.workspace = true
+gafira-io-image.workspace = true
+gafira-io-pdf.workspace = true

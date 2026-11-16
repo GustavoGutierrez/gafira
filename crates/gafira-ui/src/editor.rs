@@ -105,6 +105,8 @@ struct Asked {
     reorder: Option<(PageId, NodeId, usize)>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
+    /// «Exportar» was pressed (spec 030).
+    export: bool,
 }
 
 /// What the top bar shows about the session.
@@ -290,7 +292,9 @@ impl Editor {
             };
             ui.label(RichText::new(text).font(theme.font("caption")).color(color));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("editor.export")));
+                asked.export |=
+                    widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("editor.export")))
+                        .clicked();
                 ui.add_space(8.0);
                 widgets::on_topbar(
                     ui,
@@ -974,6 +978,8 @@ impl Editor {
         }
         if let Some(dark) = asked.dark {
             Go::Dark(dark)
+        } else if asked.export {
+            Go::Export(self.selected.map(|(page, _)| page))
         } else if asked.home {
             Go::Home
         } else if let Some(action) = asked.file {
@@ -1103,8 +1109,7 @@ pub(crate) mod tests {
 
     use gafira_doc::{ContentHash, Document};
     use gafira_engine::{
-        EngineConfig, EventChannel, Gafira, NoopWaker, Ports, Registries, SettingsPorts,
-        SystemPorts,
+        EngineConfig, EventChannel, Gafira, NoopWaker, Ports, SettingsPorts, SystemPorts,
     };
     use gafira_i18n::D08LocaleResolver;
     use gafira_platform::{
@@ -1173,10 +1178,11 @@ pub(crate) mod tests {
                 Arc::new(JsonSettings::at(dir.join("settings.json"))),
                 Arc::new(D08LocaleResolver::new(Arc::new(EnvLocale))),
             ),
+            crate::export::tests::pages(),
         );
         Gafira::new(
             ports,
-            Registries::new(),
+            crate::export::tests::registries(),
             EngineConfig::new(dir).expect("a data folder"),
             EventChannel::new(Arc::new(NoopWaker), clock),
         )

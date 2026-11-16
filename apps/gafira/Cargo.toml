@@ -14,6 +14,11 @@ gafira-format.workspace = true
 gafira-assets.workspace = true
 gafira-i18n.workspace = true
 gafira-ports.workspace = true
+gafira-render.workspace = true
+gafira-render-cpu.workspace = true
+gafira-theme.workspace = true
+gafira-io-image.workspace = true
+gafira-io-pdf.workspace = true
 eframe.workspace = true
 
 [lints]

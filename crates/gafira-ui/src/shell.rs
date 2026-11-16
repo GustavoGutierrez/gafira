@@ -12,6 +12,7 @@ use gafira_theme::ThemeTokens;
 
 use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
 use crate::editor::Editor;
+use crate::export;
 use crate::files::{self, FileAction, Outcome};
 use crate::format::StartFormat;
 use crate::home::Home;
@@ -63,6 +64,8 @@ pub(crate) enum Go {
     OpenRecent(PathBuf),
     /// Switch the interface to dark (`true`) or light, and remember it.
     Dark(bool),
+    /// Open «Exportar» for the page of the selection, if any (spec 030).
+    Export(Option<gafira_doc::PageId>),
 }
 
 struct Shell {
@@ -89,6 +92,8 @@ struct Shell {
     recovery_failure: Option<String>,
     /// The destination «¿Guardar los cambios?» holds back.
     leaving: Option<Leave>,
+    /// «Exportar» while its dialog is open (spec 030).
+    export: Option<export::Dialog>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -139,6 +144,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 confirm_discard: None,
                 recovery_failure: None,
                 leaving: None,
+                export: None,
             }))
         }),
     )
@@ -242,8 +248,35 @@ impl Shell {
         }
     }
 
+    /// The export dialog, then the save dialog and the export (spec 030).
+    fn export(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = self.export.as_mut() else {
+            return;
+        };
+        match export::show(ctx, &self.theme, &self.texts, dialog) {
+            export::Answer::Open => {}
+            export::Answer::Cancel => self.export = None,
+            export::Answer::Export => {
+                let dialog = *dialog;
+                self.export = None;
+                self.notice = match export::run(&mut self.engine, dialog) {
+                    Outcome::Cancelled => None,
+                    Outcome::Done => Some(self.texts.t(&gafira_doc::msg!("export.done"))),
+                    Outcome::Failed(message, detail) => {
+                        eprintln!("export: {detail}");
+                        Some(self.texts.t(&message))
+                    }
+                };
+            }
+        }
+    }
+
     /// The dialogs over the screen; `true` when one is open.
     fn dialogs(&mut self, ctx: &egui::Context) -> bool {
+        if self.export.is_some() {
+            self.export(ctx);
+            return true;
+        }
         if let Some(to) = self.leaving.clone() {
             match dialogs::leave(ctx, &self.theme, &self.texts) {
                 LeaveChoice::None => {}
@@ -389,6 +422,13 @@ impl eframe::App for Shell {
                 if let Err(error) = self.engine.settings().set(settings) {
                     eprintln!("settings: {error}");
                 }
+            }
+            Go::Export(page) => {
+                self.notice = None;
+                self.export = Some(export::Dialog {
+                    choice: export::Choice::default(),
+                    page,
+                });
             }
             Go::Editor(format) => match start(&mut self.engine, format) {
                 Ok(()) => self.screen = Screen::Editor(Editor::default()),
