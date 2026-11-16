@@ -558,6 +558,35 @@ mod tests {
         assert!(d[12] <= d[15], "premultiplied: {:?}", &d[12..]);
     }
 
+    // S13-22, ARQ-118: in 8 bits the soft edge weighs `from` by `1 - m` and `to` by `m`, in
+    // linear light. White to black, softness 1 at p = 0.5: x = 3 has m = 0.125, so the linear
+    // value is 0.875, which encodes to byte 240.
+    #[test]
+    fn arq_118_wipe_soft_edge_weighs_from_by_one_minus_the_mask_in_8_bits() {
+        let white = [255u8, 255, 255, 255].repeat(4);
+        let black = [0u8, 0, 0, 255].repeat(4);
+        let mut d = vec![0u8; 16];
+        Wipe::new()
+            .run_cpu(
+                &EffectCx::whole(1.0),
+                &params("right", 1.0),
+                0.5,
+                ImageView::new(4, 1, PixelData::Rgba8(&white)).unwrap(),
+                ImageView::new(4, 1, PixelData::Rgba8(&black)).unwrap(),
+                ImageViewMut::new(4, 1, PixelDataMut::Rgba8(&mut d)).unwrap(),
+            )
+            .unwrap();
+        let encode = |l: f64| ((1.055 * l.powf(1.0 / 2.4) - 0.055) * 255.0).round();
+        for (x, m) in [(0, 0.875), (1, 0.625), (2, 0.375), (3, 0.125)] {
+            let want = encode(1.0 - m);
+            for k in 0..3 {
+                let got = f64::from(d[4 * x + k]);
+                assert!((got - want).abs() <= 1.0, "x={x}: {got} want {want}");
+            }
+            assert_eq!(d[4 * x + 3], 255);
+        }
+    }
+
     /// Pixel values of `mask` at the given softness for one row.
     fn row(direction: &str, softness: f64, p: f32, w: u32, h: u32) -> Vec<f32> {
         mask(&params(direction, softness), p, w, h)

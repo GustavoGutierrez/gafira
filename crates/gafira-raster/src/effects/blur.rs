@@ -359,6 +359,26 @@ mod tests {
         }
     }
 
+    // S13-19, ARQ-120: the three-tap kernel is for σ below `SMALL_SIGMA` only; at σ = 0.6
+    // exactly (radius 1.2) the kernel is the sampled Gaussian, with weight on every tap.
+    #[test]
+    fn arq_120_at_small_sigma_exactly_the_kernel_is_the_sampled_gaussian() {
+        let radius = 2.0 * SMALL_SIGMA;
+        let k = half_width(radius);
+        assert_eq!(k, 2);
+        let ker = kernel(radius, k);
+        let g: Vec<f64> = (-2_i32..=2)
+            .map(|d| (-f64::from(d * d) / (2.0 * SMALL_SIGMA * SMALL_SIGMA)).exp())
+            .collect();
+        let total: f64 = g.iter().sum();
+        for (w, want) in ker.iter().zip(&g) {
+            assert!((f64::from(*w) - want / total).abs() <= 1e-6, "{ker:?}");
+        }
+        // Just below, the outer taps are 0.
+        let below = kernel(radius * (1.0 - 1e-9), k);
+        assert_eq!((below[0], below[4]), (0.0, 0.0));
+    }
+
     // ARQ-110, ARQ-120: a radius whose square underflows to 0 is the identity, never NaN.
     #[test]
     fn arq_110_a_radius_whose_square_underflows_is_the_identity() {
