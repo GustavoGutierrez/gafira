@@ -22,6 +22,7 @@ krilla.workspace = true
 # edges (ARQ-06).
 [dev-dependencies]
 gafira-color.workspace = true
+gafira-raster.workspace = true
 gafira-render.workspace = true
 gafira-render-cpu.workspace = true
 hayro-syntax.workspace = true

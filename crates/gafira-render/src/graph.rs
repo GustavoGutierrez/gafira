@@ -5,9 +5,9 @@
 //! (02 §4.1): the walk reaches every node and the builder cuts the ones that
 //! draw nothing.
 //!
-//! The graph holds no pixel in this cut: no effect, no mask and no image
-//! source reaches it yet, so ARQ-117 has nothing to check here. The first
-//! buffer arrives with the planner and the tile cache.
+//! The graph holds no pixel of its own: an image element draws the decoded
+//! pixels the caller hands over (spec 032), shared, never copied; no effect
+//! and no mask reaches it yet.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -17,10 +17,11 @@ use gafira_color::Color;
 use gafira_doc::contract::{CancelToken, Cancelled, Progress, checkpoint};
 use gafira_doc::visit::{NodeVisitor, PageView, WalkOrder, walk};
 use gafira_doc::{
-    BlendMode, ElementBase, ExtensionNode, GroupNode, Node, NodeId, Page, Placement, ShapeGeometry,
-    ShapeNode, TextAlign, TextNode,
+    AssetRef, BlendMode, ElementBase, ExtensionNode, GroupNode, ImageNode, Node, NodeId, Page,
+    Placement, ShapeGeometry, ShapeNode, TextAlign, TextNode,
 };
 use gafira_geom::Affine;
+use gafira_ports::export::ImagePixels;
 use gafira_ports::render::{ContentKey, RenderOp, RenderQuality};
 use gafira_time::Flicks;
 use kurbo::{BezPath, Ellipse, Rect, Shape};
@@ -252,6 +253,8 @@ enum RecordKind {
     Shape(ShapeNode),
     /// A text: it fills the outlines of its glyphs (spec 030).
     Text(TextNode),
+    /// An image: it draws the pixels of its asset into its box (spec 032).
+    Image(AssetRef),
 }
 
 /// Builds the render graph of a page by walking it (02 §6.1).
@@ -269,6 +272,10 @@ enum RecordKind {
 /// (02 §4.6, spec 030); without them it draws nothing. The scale of
 /// [`Self::scaled`] goes in front of the placement of every node, so a page
 /// can be drawn at a multiple of its size (FD-55).
+///
+/// An image draws the pixels of its asset from [`Self::with_images`]
+/// (spec 032); an asset the map does not hold draws nothing, which is what
+/// the preview gets, because only an export resolves the assets.
 pub struct RenderGraphBuilder<'a, P: WorkerPool> {
     page: &'a Page,
     params: GraphParams,
@@ -276,6 +283,7 @@ pub struct RenderGraphBuilder<'a, P: WorkerPool> {
     records: BTreeMap<NodeId, Record>,
     scale: f64,
     fonts: Arc<FontBook>,
+    images: Arc<ImagePixels>,
 }
 
 impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
@@ -288,6 +296,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
             records: BTreeMap::new(),
             scale: 1.0,
             fonts: Arc::new(FontBook::new()),
+            images: Arc::new(ImagePixels::new()),
         }
     }
 
@@ -305,6 +314,14 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
     #[must_use]
     pub fn with_fonts(mut self, fonts: Arc<FontBook>) -> Self {
         self.fonts = fonts;
+        self
+    }
+
+    /// The builder that draws each image with the pixels of its asset in
+    /// `images` (spec 032).
+    #[must_use]
+    pub fn with_images(mut self, images: Arc<ImagePixels>) -> Self {
+        self.images = images;
         self
     }
 
@@ -496,6 +513,62 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             opacity: record.base.opacity,
                         });
                     }
+                    RecordKind::Image(asset) => {
+                        let placement = &record.base.placement;
+                        let Some(image) = self.images.get(&asset) else {
+                            // No pixels for the asset (the preview): nothing.
+                            sub.ops.truncate(mark);
+                            continue;
+                        };
+                        if placement.w == 0.0 || placement.h == 0.0 {
+                            // A box with no area shows nothing.
+                            sub.ops.truncate(mark);
+                            continue;
+                        }
+                        // The image space maps onto the box of the node:
+                        // its pixels are stretched to the box (spec 032).
+                        let fit = Affine::scale_non_uniform(
+                            placement.w / f64::from(image.width()),
+                            placement.h / f64::from(image.height()),
+                        );
+                        let drawn = transform * fit;
+                        check_transform(&drawn)?;
+                        let key = content_key(
+                            NodeType::Image,
+                            self.params.lod,
+                            &[],
+                            &[
+                                KeyParam::Quality(self.params.quality),
+                                KeyParam::Asset(asset.as_hash().0),
+                                KeyParam::Transform(drawn.as_coeffs()),
+                                KeyParam::Opacity(record.base.opacity),
+                                KeyParam::Blend(record.base.blend),
+                            ],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Image),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        sub.ops.push(RenderOp::DrawImage {
+                            image: Arc::clone(image),
+                            transform: drawn,
+                        });
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
                     RecordKind::Group => {
                         let children = self
                             .page
@@ -619,9 +692,17 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         node.base.id
     }
 
-    // Spec 030: an image node joins here when the document has one (spec
-    // 029): a `visit_image` that records it and a branch of `subtree` that
-    // emits `RenderOp::DrawImage` with the decoded pixels.
+    fn visit_image(&mut self, node: &Node, image: &ImageNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Image(image.asset),
+            },
+        );
+        node.base.id
+    }
+
     fn visit_extension(&mut self, node: &Node, _extension: &ExtensionNode) -> NodeId {
         // The seam of ARQ-137 is open: an extension draws nothing in this cut.
         node.base.id
@@ -1314,5 +1395,141 @@ mod tests {
             fills(&text)[0].2,
             Affine::scale(2.0) * Placement::new(10.0, 20.0, 200.0, 60.0).to_transform()
         );
+    }
+
+    /// The asset of the image tests.
+    fn asset(byte: u8) -> gafira_doc::AssetRef {
+        gafira_doc::AssetRef::new(gafira_doc::ContentHash([byte; 32]))
+    }
+
+    /// An image element of `asset` in a box of 40 by 20 at (10, 30), at half
+    /// opacity, multiplied.
+    fn image_page(asset: gafira_doc::AssetRef) -> Page {
+        let mut page = new_page();
+        let mut base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 30.0, 40.0, 20.0));
+        base.opacity = 0.5;
+        base.blend = BlendMode::Multiply;
+        let kind = NodeKind::Image(gafira_doc::ImageNode { asset });
+        page.nodes
+            .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
+        page.roots = vec![NodeId::new(1)];
+        page
+    }
+
+    /// Pixels of 4 by 2 for `asset`.
+    fn pixels_of(asset: gafira_doc::AssetRef) -> Arc<ImagePixels> {
+        let image = gafira_raster::ImageBuf::new(
+            4,
+            2,
+            gafira_raster::PixelBuf::Rgba8(vec![255; 4 * 2 * 4]),
+        )
+        .expect("an image");
+        Arc::new(ImagePixels::from([(asset, Arc::new(image))]))
+    }
+
+    /// Builds the graph of the page with images and a scale.
+    fn build_image(page: &Page, scale: f64, images: Option<Arc<ImagePixels>>) -> RenderGraph {
+        let view = PageView::new(page);
+        let mut builder =
+            RenderGraphBuilder::new(&view, params(RenderQuality::Export), InlinePool).scaled(scale);
+        if let Some(images) = images {
+            builder = builder.with_images(images);
+        }
+        builder
+            .build(WalkOrder::PreOrder, &CancelToken::new(), &NoProgress)
+            .expect("the page builds")
+    }
+
+    /// The image draws of a graph: their size and their transform.
+    fn draws(graph: &RenderGraph) -> Vec<((u32, u32), Affine)> {
+        graph
+            .ops()
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::DrawImage { image, transform } => {
+                    Some(((image.width(), image.height()), *transform))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `point` mapped by `transform`, rounded to 1e-9.
+    fn mapped(transform: Affine, x: f64, y: f64) -> (f64, f64) {
+        let p = transform * kurbo::Point::new(x, y);
+        let round = |v: f64| (v * 1e9).round() / 1e9;
+        (round(p.x), round(p.y))
+    }
+
+    // S32-01: an image draws its pixels inside its layer, which carries the
+    // opacity and the blend of the node, and its corners land on the corners
+    // of its box.
+    #[test]
+    fn s32_01_an_image_draws_its_pixels_into_its_box_inside_its_layer() {
+        let page = image_page(asset(7));
+        let graph = build_image(&page, 1.0, Some(pixels_of(asset(7))));
+        assert_eq!(op_kinds(&graph), ["push", "image", "pop"]);
+        let popped = graph.ops().iter().find_map(|op| match op {
+            RenderOp::PopLayer { blend, opacity } => Some((*blend, *opacity)),
+            _ => None,
+        });
+        assert_eq!(popped, Some((BlendMode::Multiply, 0.5)));
+        let [(size, transform)] = draws(&graph)[..] else {
+            panic!("one image draw");
+        };
+        assert_eq!(size, (4, 2));
+        assert_eq!(mapped(transform, 0.0, 0.0), (10.0, 30.0));
+        assert_eq!(mapped(transform, 4.0, 0.0), (50.0, 30.0));
+        assert_eq!(mapped(transform, 4.0, 2.0), (50.0, 50.0));
+        assert_eq!(mapped(transform, 0.0, 2.0), (10.0, 50.0));
+        let node = graph
+            .nodes()
+            .iter()
+            .find(|node| node.origin() == NodeId::new(1))
+            .expect("the image is a node");
+        assert_eq!(node.kind(), GraphNodeKind::Source(SourceKind::Image));
+        assert_eq!(node.opacity(), 0.5);
+    }
+
+    // S32-01, S30-02: the export scale goes in front of the placement of an
+    // image too.
+    #[test]
+    fn s32_01_the_scale_goes_in_front_of_an_image() {
+        let graph = build_image(&image_page(asset(7)), 2.0, Some(pixels_of(asset(7))));
+        let [(_, transform)] = draws(&graph)[..] else {
+            panic!("one image draw");
+        };
+        assert_eq!(mapped(transform, 0.0, 0.0), (20.0, 60.0));
+        assert_eq!(mapped(transform, 4.0, 2.0), (100.0, 100.0));
+    }
+
+    // S32-01: an image without pixels, or with a side of zero, draws nothing;
+    // the asset keys the node.
+    #[test]
+    fn s32_01_an_image_without_pixels_draws_nothing_and_its_asset_keys_it() {
+        assert!(
+            build_image(&image_page(asset(7)), 1.0, None)
+                .ops()
+                .is_empty()
+        );
+        assert!(
+            build_image(&image_page(asset(7)), 1.0, Some(pixels_of(asset(8))))
+                .ops()
+                .is_empty()
+        );
+        let mut flat = image_page(asset(7));
+        Arc::make_mut(flat.nodes.get_mut(&NodeId::new(1)).expect("the node"))
+            .base
+            .placement
+            .h = 0.0;
+        assert!(
+            build_image(&flat, 1.0, Some(pixels_of(asset(7))))
+                .ops()
+                .is_empty()
+        );
+        let seven = build_image(&image_page(asset(7)), 1.0, Some(pixels_of(asset(7))));
+        let eight = build_image(&image_page(asset(8)), 1.0, Some(pixels_of(asset(8))));
+        assert!(seven.key_of(NodeId::new(1)).is_some());
+        assert_ne!(seven.key_of(NodeId::new(1)), eight.key_of(NodeId::new(1)));
     }
 }

@@ -9,16 +9,25 @@
 //! moved over its final name (02 §6.4, ARQ-50). A failed or cancelled export
 //! removes its temporaries and leaves no final file.
 //!
+//! Before any file, the image assets of the pages of the scope are read from
+//! the content store and decoded by the `ImageDecoder` port, once per asset,
+//! and handed to the renderer (spec 032): the render reads no file. An asset
+//! the store does not hold, or one that does not decode, fails the export
+//! there.
+//!
 //! This cut runs the export on the caller's thread, to the end; the
 //! persisted export queue, its states and its retries (02 §6.4) are later.
 
-use std::io::{self, Seek, SeekFrom, Write};
+use std::collections::BTreeSet;
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use gafira_doc::contract::{CancelToken, Progress};
+use gafira_doc::{AssetRef, Document, NodeKind, PageId};
 use gafira_ports::export::{
-    ExportJob, ExportReport, ExportRequest, ExportSink, Exporter, PageRenderers,
+    ExportError, ExportJob, ExportReport, ExportRequest, ExportScope, ExportSink, Exporter,
+    ImageDecoder, ImagePixels, PageRenderers,
 };
 use gafira_ports::format::FormatRegistry;
 use gafira_ports::store::ContentStore;
@@ -34,6 +43,7 @@ pub struct ExportService {
     license: Arc<LicenseService>,
     exporters: Vec<Arc<dyn Exporter>>,
     pages: Arc<dyn PageRenderers>,
+    images: Arc<dyn ImageDecoder>,
     store: Arc<dyn ContentStore>,
     filesystem: Arc<dyn FileSystem>,
 }
@@ -50,6 +60,7 @@ impl ExportService {
             license,
             exporters: formats.exporters().cloned().collect(),
             pages: Arc::clone(&ports.pages),
+            images: Arc::clone(&ports.images),
             store: Arc::clone(&ports.store),
             filesystem: Arc::clone(&ports.filesystem),
         }
@@ -72,8 +83,12 @@ impl ExportService {
     /// [`EngineError::UnknownFormat`] when no exporter has the format id and
     /// [`EngineError::ExportBlocked`] with the blocking findings of
     /// `validate`, all before any file is opened; [`EngineError::Export`]
-    /// when the exporter fails and [`EngineError::Io`] when a file cannot be
-    /// finished. No final file is left then.
+    /// with [`ExportError::Store`] when an image asset of the scope is not in
+    /// the store (`NotFound` names its hash) and with [`ExportError::Media`]
+    /// when it does not decode, also before any file (spec 032);
+    /// [`EngineError::Export`] when the exporter fails and
+    /// [`EngineError::Io`] when a file cannot be finished. No final file is
+    /// left then.
     pub fn export(
         &self,
         request: &ExportRequest,
@@ -103,7 +118,10 @@ impl ExportService {
         if !blocking.is_empty() {
             return Err(EngineError::ExportBlocked(blocking));
         }
-        let pages = self.pages.for_document(&document);
+        let images = self
+            .images_of(&document, &request.scope)
+            .map_err(EngineError::Export)?;
+        let pages = self.pages.for_document(&document, images);
         let job = ExportJob {
             request,
             document: &document,
@@ -121,6 +139,39 @@ impl ExportService {
                 Err(EngineError::Export(error))
             }
         }
+    }
+}
+
+impl ExportService {
+    /// The decoded pixels of every image asset of the pages of `scope`, each
+    /// asset read and decoded once (spec 032). Every image of those pages
+    /// counts, visible or not.
+    fn images_of(
+        &self,
+        document: &Document,
+        scope: &ExportScope,
+    ) -> Result<ImagePixels, ExportError> {
+        let pages: Vec<PageId> = match scope {
+            ExportScope::Pages(pages) => pages.clone(),
+            ExportScope::Nodes { page, .. } => vec![*page],
+        };
+        let assets: BTreeSet<AssetRef> = pages
+            .iter()
+            .filter_map(|page| document.page(*page))
+            .flat_map(|page| page.nodes.values())
+            .filter_map(|node| match &node.kind {
+                NodeKind::Image(image) => Some(image.asset),
+                _ => None,
+            })
+            .collect();
+        let mut images = ImagePixels::new();
+        for asset in assets {
+            let mut bytes = Vec::new();
+            self.store.open(asset.as_hash())?.read_to_end(&mut bytes)?;
+            let pixels = self.images.decode(&bytes)?;
+            images.insert(asset, Arc::new(pixels));
+        }
+        Ok(images)
     }
 }
 
@@ -253,7 +304,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use gafira_doc::contract::{CancelToken, NoProgress, ParamSchema};
-    use gafira_doc::{Document, PageId};
+    use gafira_doc::{
+        AssetEntry, AssetRef, AssetStorage, Document, ImageNode, NodeKind, PageId, Placement,
+    };
+    use gafira_edit::{InsertAsset, InsertNodes, NodeSpec};
     use gafira_geom::IRect;
     use gafira_ports::common::LegalClass;
     use gafira_ports::export::{
@@ -264,6 +318,7 @@ mod tests {
     use gafira_ports::format::{FormatDescriptor, FormatKind};
     use gafira_ports::license::{LicenseVerifier, NoLicensing};
     use gafira_ports::render::RenderError;
+    use gafira_ports::store::{ContentStore, StoreError};
     use gafira_raster::{ImageBuf, PixelBuf};
 
     use crate::engine::{EngineError, Gafira, Registries};
@@ -381,6 +436,7 @@ mod tests {
     #[derive(Default)]
     struct CountingPages {
         snapshots: Mutex<Vec<usize>>,
+        images: Mutex<Vec<gafira_ports::export::ImagePixels>>,
     }
 
     struct WhitePixel;
@@ -396,8 +452,13 @@ mod tests {
     }
 
     impl PageRenderers for CountingPages {
-        fn for_document(&self, document: &Document) -> Box<dyn PageRenderer> {
+        fn for_document(
+            &self,
+            document: &Document,
+            images: gafira_ports::export::ImagePixels,
+        ) -> Box<dyn PageRenderer> {
             self.snapshots.lock().unwrap().push(document.pages().len());
+            self.images.lock().unwrap().push(images);
             Box::new(WhitePixel)
         }
     }
@@ -608,5 +669,144 @@ mod tests {
             .map(|e| e.descriptor().id)
             .collect();
         assert_eq!(ids, ["fake"]);
+    }
+
+    /// A decoder that answers an image as wide as the bytes and one pixel
+    /// high, and counts its calls; the bytes `bad` do not decode.
+    #[derive(Default)]
+    struct WidthDecoder {
+        calls: Mutex<usize>,
+    }
+
+    impl gafira_ports::export::ImageDecoder for WidthDecoder {
+        fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, gafira_ports::media::MediaError> {
+            *self.calls.lock().unwrap() += 1;
+            if bytes == b"bad" {
+                return Err(gafira_ports::media::MediaError::Corrupt {
+                    detail: "not an image".to_owned(),
+                });
+            }
+            let width = bytes.len() as u32;
+            Ok(
+                ImageBuf::new(width, 1, PixelBuf::Rgba8(vec![255; 4 * bytes.len()]))
+                    .expect("an image"),
+            )
+        }
+    }
+
+    /// An image setup: the engine of [`setup`] over `store` and a
+    /// [`WidthDecoder`], with a page that shows `assets`, one image element
+    /// per asset, and the asset entries in the document.
+    fn image_setup(
+        store: &Arc<MemoryStore>,
+        assets: &[AssetRef],
+    ) -> (Setup, Arc<WidthDecoder>, PageId) {
+        let fs = MemoryFs::default();
+        let pages = Arc::new(CountingPages::default());
+        let decoder = Arc::new(WidthDecoder::default());
+        let exporter = FakeExporter::new(Plan::Write { files: 1 });
+        let mut ports = six_ports();
+        ports.filesystem = Arc::new(fs.clone());
+        ports.license = Arc::new(NoLicensing);
+        ports.store = Arc::clone(store) as Arc<dyn ContentStore>;
+        ports.pages = Arc::clone(&pages) as Arc<dyn PageRenderers>;
+        ports.images = Arc::clone(&decoder) as Arc<dyn gafira_ports::export::ImageDecoder>;
+        let mut registries = Registries::new();
+        registries
+            .formats
+            .register_exporter(Arc::clone(&exporter) as Arc<dyn Exporter>)
+            .expect("the fake registers");
+        let mut engine =
+            Gafira::new(ports, registries, config(), quiet_channel()).expect("an engine");
+        engine.projects().new_document().expect("a new document");
+        let page = append_page(&mut engine);
+        let mut specs = Vec::new();
+        for (at, asset) in assets.iter().enumerate() {
+            let entry = AssetEntry {
+                name: format!("photo-{at}.png"),
+                storage: AssetStorage::Embedded,
+            };
+            let _ = engine
+                .edit()
+                .execute(Box::new(InsertAsset::new(*asset, entry)));
+            specs.push(NodeSpec::new(
+                NodeKind::Image(ImageNode { asset: *asset }),
+                Placement::new(0.0, 0.0, 4.0, 4.0),
+            ));
+        }
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(page, None, 0, specs)))
+            .expect("the images go in");
+        fs.take_trace();
+        let setup = Setup {
+            engine,
+            fs,
+            pages,
+            exporter,
+        };
+        (setup, decoder, page)
+    }
+
+    /// The asset of `bytes` once `store` holds them.
+    fn stored(store: &MemoryStore, bytes: &[u8]) -> AssetRef {
+        AssetRef::new(store.put(&mut &bytes[..]).expect("the store takes it"))
+    }
+
+    // S32-03: the export hands the renderer the decoded pixels of every image
+    // asset of the scope, each asset decoded once.
+    #[test]
+    fn s32_03_the_export_resolves_and_decodes_the_images_of_the_scope() {
+        let store = Arc::new(MemoryStore::default());
+        let wide = stored(&store, b"abc");
+        let narrow = stored(&store, b"z");
+        let (setup, decoder, page) = image_setup(&store, &[wide, narrow, wide]);
+        export(&setup, &request("fake", page)).expect("the export runs");
+        let given = setup.pages.images.lock().unwrap();
+        let [images] = &given[..] else {
+            panic!("one snapshot");
+        };
+        let sizes: Vec<(AssetRef, u32)> = images
+            .iter()
+            .map(|(asset, image)| (*asset, image.width()))
+            .collect();
+        let mut expected = vec![(wide, 3), (narrow, 1)];
+        expected.sort();
+        assert_eq!(sizes, expected);
+        assert_eq!(*decoder.calls.lock().unwrap(), 2, "once per asset");
+        assert!(setup.fs.file("/out/poster.fake").is_some());
+    }
+
+    // S32-04: an image whose bytes are not in the store fails the export with
+    // the missing hash, before any file is opened or any renderer is built.
+    #[test]
+    fn s32_04_a_missing_asset_fails_before_any_file() {
+        let store = Arc::new(MemoryStore::default());
+        let missing = AssetRef::new(gafira_doc::ContentHash([9; 32]));
+        let (setup, _, page) = image_setup(&store, &[missing]);
+        match export(&setup, &request("fake", page)) {
+            Err(EngineError::Export(ExportError::Store(StoreError::NotFound { hash }))) => {
+                assert_eq!(hash, missing.as_hash());
+            }
+            other => panic!("a missing asset, got {other:?}"),
+        }
+        assert!(setup.fs.take_trace().is_empty(), "no file was opened");
+        assert!(setup.pages.snapshots.lock().unwrap().is_empty());
+        assert!(setup.exporter.rendered.lock().unwrap().is_empty());
+    }
+
+    // S32-04: an asset that does not decode fails the same way, as a media
+    // error.
+    #[test]
+    fn s32_04_an_asset_that_does_not_decode_fails_before_any_file() {
+        let store = Arc::new(MemoryStore::default());
+        let bad = stored(&store, b"bad");
+        let (setup, _, page) = image_setup(&store, &[bad]);
+        assert!(matches!(
+            export(&setup, &request("fake", page)),
+            Err(EngineError::Export(ExportError::Media(_)))
+        ));
+        assert!(setup.fs.take_trace().is_empty(), "no file was opened");
+        assert!(setup.pages.snapshots.lock().unwrap().is_empty());
     }
 }

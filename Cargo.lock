@@ -1633,6 +1633,7 @@ dependencies = [
  "gafira-render-cpu",
  "gafira-testkit",
  "gafira-time",
+ "image",
  "png 0.18.1",
 ]
 
@@ -1645,6 +1646,7 @@ dependencies = [
  "gafira-geom",
  "gafira-io-image",
  "gafira-ports",
+ "gafira-raster",
  "gafira-render",
  "gafira-render-cpu",
  "gafira-time",

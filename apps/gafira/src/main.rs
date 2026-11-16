@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use gafira_assets::FsStore;
 use gafira_engine::{
-    EngineConfig, EventChannel, Gafira, Ports, Registries, SettingsPorts, SystemPorts, Waker,
+    EngineConfig, EventChannel, ExportPorts, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
+    Waker,
 };
 use gafira_format::{GafRepository, Limits};
 use gafira_i18n::D08LocaleResolver;
@@ -107,7 +108,11 @@ fn main() -> eframe::Result {
                     Arc::new(JsonSettings::at(settings_file(&data_dir))),
                     resolver,
                 ),
-                export_pages(clock.clone()),
+                // Spec 032: the image assets an export draws decode in io-image.
+                ExportPorts::new(
+                    export_pages(clock.clone()),
+                    Arc::new(gafira_io_image::RasterDecoder::new()),
+                ),
             );
             Gafira::new(
                 ports,

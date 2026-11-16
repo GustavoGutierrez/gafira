@@ -1273,7 +1273,8 @@ pub(crate) mod tests {
 
     use gafira_doc::{ContentHash, Document};
     use gafira_engine::{
-        EngineConfig, EventChannel, Gafira, NoopWaker, Ports, SettingsPorts, SystemPorts,
+        EngineConfig, EventChannel, ExportPorts, Gafira, NoopWaker, Ports, SettingsPorts,
+        SystemPorts,
     };
     use gafira_i18n::D08LocaleResolver;
     use gafira_platform::{
@@ -1350,7 +1351,10 @@ pub(crate) mod tests {
                 Arc::new(JsonSettings::at(dir.join("settings.json"))),
                 Arc::new(D08LocaleResolver::new(Arc::new(EnvLocale))),
             ),
-            crate::export::tests::pages(),
+            ExportPorts::new(
+                crate::export::tests::pages(),
+                Arc::new(gafira_io_image::RasterDecoder::new()),
+            ),
         );
         Gafira::new(
             ports,

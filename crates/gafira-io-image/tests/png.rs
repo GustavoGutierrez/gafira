@@ -8,15 +8,16 @@ use std::time::Duration;
 use gafira_color::{Color, Rgba};
 use gafira_doc::contract::{CancelToken, NoProgress, ParamValue, ParamValues};
 use gafira_doc::{
-    Document, Dpi, ElementBase, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement,
-    ShapeGeometry, ShapeNode, SpanStyle, TextNode,
+    AssetEntry, AssetRef, AssetStorage, AssetTable, ContentHash, Document, Dpi, ElementBase,
+    ImageNode, Node, NodeId, NodeKind, Page, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
+    SpanStyle, TextNode,
 };
 use gafira_geom::{Length, Unit};
-use gafira_io_image::{MAX_SIDE, PngExporter, SCALE, TRANSPARENT, page_pixels};
+use gafira_io_image::{MAX_SIDE, PngExporter, RasterDecoder, SCALE, TRANSPARENT, page_pixels};
 use gafira_ports::common::UnixTime;
 use gafira_ports::export::{
     ExportError, ExportJob, ExportReport, ExportRequest, ExportScope, ExportSink, Exporter,
-    PageRenderers,
+    ImageDecoder, ImagePixels, PageRenderers,
 };
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{Clock, ReadSeek, WriteSeek};
@@ -152,8 +153,17 @@ fn export(
     request: &ExportRequest,
     sink: &mut MemSink,
 ) -> Result<ExportReport, ExportError> {
+    export_with(document, ImagePixels::new(), request, sink)
+}
+
+fn export_with(
+    document: &Document,
+    images: ImagePixels,
+    request: &ExportRequest,
+    sink: &mut MemSink,
+) -> Result<ExportReport, ExportError> {
     let renderers = renderers();
-    let pages = renderers.for_document(document);
+    let pages = renderers.for_document(document, images);
     let job = ExportJob {
         request,
         document,
@@ -312,4 +322,101 @@ fn s30_03_a_page_outside_the_document_is_an_error() {
     let mut sink = MemSink::default();
     assert!(export(&square_document(), &request(&[9], 1.0, false), &mut sink).is_err());
     assert!(sink.files.is_empty());
+}
+
+/// The asset of the image tests.
+const PHOTO: AssetRef = AssetRef::new(ContentHash([7; 32]));
+
+/// A page of 100×50 with an image of [`PHOTO`] in the box (10, 10, 40, 20)
+/// at `opacity`.
+fn image_document(opacity: f32) -> Document {
+    let mut base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 40.0, 20.0));
+    base.opacity = opacity;
+    let image = Arc::new(Node::new(base, NodeKind::Image(ImageNode { asset: PHOTO })));
+    let mut assets = AssetTable::new();
+    assets.insert(
+        PHOTO,
+        AssetEntry {
+            name: "photo.png".to_owned(),
+            storage: AssetStorage::Embedded,
+        },
+    );
+    Document::from_parts_with_assets(
+        3,
+        Dpi::default(),
+        vec![page(1, 100.0, 50.0, vec![image])],
+        assets,
+    )
+    .expect("the document validates")
+}
+
+/// The pixels of [`PHOTO`]: a PNG of 2×1, red then blue, through the decoder
+/// the app composes.
+fn photo() -> ImagePixels {
+    let mut source = image::RgbaImage::new(2, 1);
+    source.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
+    source.put_pixel(1, 0, image::Rgba([0, 0, 255, 255]));
+    let mut bytes = Cursor::new(Vec::new());
+    source
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .expect("the PNG encodes");
+    let pixels = RasterDecoder::new()
+        .decode(bytes.get_ref())
+        .expect("the PNG decodes");
+    ImagePixels::from([(PHOTO, Arc::new(pixels))])
+}
+
+// S32-05: the image is stretched to its box: red in its left half, blue in
+// its right half, white around it.
+#[test]
+fn s32_05_a_png_has_the_image_pixels_in_its_box() {
+    let mut sink = MemSink::default();
+    export_with(
+        &image_document(1.0),
+        photo(),
+        &request(&[1], 1.0, false),
+        &mut sink,
+    )
+    .expect("the export runs");
+    let (width, height, pixels, _) = decode(&sink.bytes(0));
+    assert_eq!((width, height), (100, 50));
+    // Bilinear sampling (ARQ-121) mixes the two texels only around the middle
+    // of the box: each half keeps its colour up to 10 px from its edge.
+    assert_eq!(pixel(&pixels, width, 12, 12), [255, 0, 0, 255]);
+    assert_eq!(pixel(&pixels, width, 18, 25), [255, 0, 0, 255]);
+    assert_eq!(pixel(&pixels, width, 42, 25), [0, 0, 255, 255]);
+    assert_eq!(pixel(&pixels, width, 48, 28), [0, 0, 255, 255]);
+    for (x, y) in [(8, 20), (52, 20), (30, 8), (30, 31), (90, 45)] {
+        assert_eq!(
+            pixel(&pixels, width, x, y),
+            [255, 255, 255, 255],
+            "({x}, {y})"
+        );
+    }
+}
+
+// S32-05: at 2× the image follows its box, and at half opacity it mixes with
+// the white page in linear light (linear 0.5 is sRGB 188).
+#[test]
+fn s32_05_the_image_takes_the_scale_and_the_opacity_of_its_element() {
+    let mut sink = MemSink::default();
+    export_with(
+        &image_document(0.5),
+        photo(),
+        &request(&[1], 2.0, false),
+        &mut sink,
+    )
+    .expect("the export runs");
+    let (width, height, pixels, _) = decode(&sink.bytes(0));
+    assert_eq!((width, height), (200, 100));
+    let near = |got: [u8; 4], want: [u8; 4]| {
+        got.iter()
+            .zip(want)
+            .all(|(g, w)| (i16::from(*g) - i16::from(w)).abs() <= 1)
+    };
+    let red = pixel(&pixels, width, 30, 40);
+    assert!(near(red, [255, 188, 188, 255]), "{red:?}");
+    let blue = pixel(&pixels, width, 90, 40);
+    assert!(near(blue, [188, 188, 255, 255]), "{blue:?}");
+    assert_eq!(pixel(&pixels, width, 110, 40), [255, 255, 255, 255]);
 }

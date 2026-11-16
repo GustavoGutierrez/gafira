@@ -59,6 +59,8 @@ pub enum NodeType {
     Extension = 3,
     /// A text element: it fills the outlines of its glyphs (spec 030).
     Text = 4,
+    /// An image element: it draws the pixels of its asset (spec 032).
+    Image = 5,
 }
 
 /// One parameter of a node, sampled at the instant of the graph (02 §6.1).
@@ -84,6 +86,8 @@ pub enum KeyParam {
     /// What a text draws: its family, size, alignment and words, in one
     /// canonical string (spec 030).
     Text(String),
+    /// The content hash of the asset an image draws (spec 032).
+    Asset([u8; 32]),
 }
 
 /// The canonical description of a node (02 §6.1).
@@ -150,6 +154,7 @@ impl KeyParam {
             Self::Opacity(_) => 5,
             Self::Blend(_) => 6,
             Self::Text(_) => 7,
+            Self::Asset(_) => 8,
         }
     }
 
@@ -183,6 +188,7 @@ impl KeyParam {
             Self::Opacity(opacity) => out.extend_from_slice(&f32_bytes(*opacity)),
             Self::Blend(blend) => out.push(blend_byte(*blend)),
             Self::Text(text) => out.extend_from_slice(text.as_bytes()),
+            Self::Asset(hash) => out.extend_from_slice(hash),
         }
     }
 }
