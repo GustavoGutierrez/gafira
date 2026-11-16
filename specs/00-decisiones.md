@@ -606,3 +606,41 @@ Fecha: 16 de noviembre de 2026.
 - **Un solo formato nativo**: «Guardar», «Guardar como» y «Guardar copia» escriben un `.gaf`; «Exportar proyecto editable con recursos» escribe un `.gaf` con el perfil `portable-full` (spec 008 §3). Donde un texto distinga un formato que vincula de otro que empaqueta, se lee como perfiles del mismo `.gaf`.
 - Precisa D-63 (las versiones no van en una carpeta aparte). Donde D-13, D-36, D-55, D-60 y D-63 dicen `.gafira`, léase `.gaf`; en D-60, «según el formato de archivo» se lee «según el perfil del `.gaf`».
 - Aplicado a 01, 02 (ADR-04, §7.1, §7.2), 04, 05 (FV-31), 03, la spec 008 (§4, §5, §17), la spec 012 (nota), el ADR 0006 (nota) y el manual técnico.
+
+## D-68 Disposición híbrida del `.gaf`
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): el contenedor conserva la base de 02 §7.1 y le suma los campos de manifiesto de la spec 008:
+  - **De 02 §7.1**: hashes de contenido BLAKE3 (ya en el código: `ContentHash`); `document.json` más un JSON por página (`pages/<id>.json`) y por secuencia (`sequences/<id>.json`), para la carga perezosa y el guardado incremental; recursos planos como `assets/<blake3>.<ext>`; versiones dentro, en `versions/`.
+  - **De 008 §5**: `profile` (`portable-full` | `linked-light` | `hybrid`), `formatVersion` (versión semántica del contenedor, empieza en `1.0.0`), `schemaVersion`, `features` (`required` y `optional`) y `packageCompleteness`.
+- **Grafía**: las claves de `manifest.json` van en **camelCase**, como en 008 (`projectId`, `formatVersion`, `schemaVersion`, `features`, `profile`, `packageCompleteness`, `generator`), y `format` vale `"gafira-project"`. El JSON del documento (`document.json`, `pages/*.json`, `sequences/*.json`) conserva el **snake_case** de `gafira-doc` (`project_id`, etc.): el código manda.
+- **Integridad**: donde 008 dice SHA-256, se lee BLAKE3.
+- **Carpetas**: `thumbs/` de 02 y `previews/pages/` de 008 son lo mismo (miniatura por página); se queda el nombre `thumbs/`, porque el código y las specs lo citan. Los **proxies nunca van en el archivo** (regla de 02): se retira la carpeta opcional `proxies/` de 008 y su opción «incluir proxies para rendimiento».
+- **Queda para la spec del formato** (`gafira-format`): la forma de la tabla de recursos (`assets` por hash de 02 frente a `resources[]` con `storage` de 008), el campo `originalPathHint` de 008 §5.1 frente a ARQ-56, dónde van la portada y las miniaturas de secuencia de 008 (`previews/cover.webp`, `previews/video/`), `masks/` y `extensions/` (solo en 02) y `metadata/provenance.json` (solo en 008).
+- Precisa D-67. Aplicado a 02 (ADR-04, §7.1, anexo A), 04 (FD-60, FD-63), 05 (FV-25) y la spec 008 (§2, §4, §5, §7.4, §8, §11).
+
+## D-69 El tiempo en disco son flicks
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): los tiempos se guardan como **enteros de flicks**, igual que en memoria (`gafira-time`, D-65). Un flick es 1/705 600 000 s y divide exactamente los fotogramas de 30000/1001 y 24000/1001 fps, así que se cumple el criterio de 008 de no acumular deriva (§15, criterio 11).
+- **Consecuencia**: se sustituyen los *ticks* y la `timebase` de 008 (GAF-ADR-08, §7) por flicks más la cadencia racional de la secuencia (`fps` = `num`/`den`). Los flicks se escriben como enteros JSON, como hace `Flicks` con serde; 2^53 flicks son unos 147 días, dentro del rango entero seguro de JSON.
+- Amplía D-65. Aplicado a la spec 008 (§2, §5, §7, §8, §12, §15).
+
+## D-70 Qué bloquea la primera versión gratuita (D-62)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la primera versión es una **descarga gratuita**. Las licencias de terceros, las patentes, la marca y los avisos de terceros bloquean **cualquier** versión, gratuita o de pago. La activación, el EULA de venta, el precio y el identificador de dispositivo de `PRIVACY.md` esperan a que haya venta.
+- **Consecuencia**: Q-20 (qué bloquea el modo sin licencia) queda **aplazada** con la licencia (D-62). El modelo de precios de D-01 y D-12 no cambia; solo se aplaza.
+- Precisa D-62. Aplicado a 01 (§3, §5.1, §11, Q-20), 02 (Q-20) y 05 (C11, Q-20).
+
+## D-71 Cifras PROPUESTA confirmadas en bloque
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): toda cifra marcada PROPUESTA en 01, 02, 04 y 05 queda **confirmada** como valor provisional que una medición puede cambiar, como en D-34.
+- **Quedan fuera** y siguen abiertas: el aspecto de FD-33 y FD-34 (Q-34), el glosario y el microcopy en inglés (Q-25) y el modo oscuro derivado (C-06). No se tocan las cifras de 03 (en backlog) ni las de la spec 008.
+- **Marcas**: a diferencia de D-34, las cifras se reetiquetan: PROPUESTA pasa a «confirmada (D-71)», para que lo que sigue en PROPUESTA sea solo lo abierto.
+- Amplía D-34. Aplicado a 01, 02, 04 y 05.
