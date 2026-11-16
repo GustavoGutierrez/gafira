@@ -27,8 +27,11 @@ use gafira_doc::contract::{CancelToken, NoProgress};
 use gafira_doc::visit::{PageView, WalkOrder};
 use gafira_doc::{Document, Page};
 use gafira_geom::{Affine, IRect};
-use gafira_ports::export::{PageRenderRequest, PageRenderer};
-use gafira_ports::render::{Deadline, RenderError, RenderOp, RenderQuality, TargetDesc};
+use gafira_ports::common::{Bytes, UnixTime};
+use gafira_ports::export::{PageRenderRequest, PageRenderer, PageRenderers};
+use gafira_ports::render::{
+    Deadline, RenderBackend, RenderError, RenderOp, RenderQuality, TargetDesc,
+};
 use gafira_ports::system::Clock;
 use gafira_raster::{BufferError, ImageBuf, PixelBuf, PixelFormat};
 use kurbo::{Rect, Shape};
@@ -262,6 +265,65 @@ impl PageRenderer for GraphPageRenderer {
             // No frame opened the surface: the render has no pixels to answer.
             None => blank(region, format),
         }
+    }
+}
+
+/// The tile cache budget of one export renderer: an export reads each tile
+/// once, so the cache only has to hold the tiles of one page.
+const EXPORT_CACHE: Bytes = Bytes(64 * 1024 * 1024);
+
+/// Builds the backend of one export renderer.
+pub type BackendFactory = Box<dyn Fn() -> Box<dyn RenderBackend> + Send + Sync>;
+
+/// The [`PageRenderers`] of the engine's exports (spec 030): one
+/// [`GraphPageRenderer`] at export quality per snapshot of the document, on a
+/// backend of its own and a cache of its own.
+///
+/// The backend comes from the composition root (P9, ARQ-06), as do the
+/// clock and the fonts.
+pub struct GraphPageRenderers {
+    backend: BackendFactory,
+    clock: Arc<dyn Clock>,
+    fonts: Arc<FontBook>,
+}
+
+impl GraphPageRenderers {
+    /// The renderers over the backends of `backend`, the clock and the fonts.
+    #[must_use]
+    pub fn new(backend: BackendFactory, clock: Arc<dyn Clock>, fonts: Arc<FontBook>) -> Self {
+        Self {
+            backend,
+            clock,
+            fonts,
+        }
+    }
+}
+
+impl PageRenderers for GraphPageRenderers {
+    fn for_document(&self, document: &Document) -> Box<dyn PageRenderer> {
+        Box::new(
+            GraphPageRenderer::new(
+                document.clone(),
+                RenderQuality::Export,
+                BackendSelector::new(None, (self.backend)()),
+                ContentTileCache::new(EXPORT_CACHE),
+                Box::new(SharedClock(Arc::clone(&self.clock))),
+            )
+            .with_fonts(Arc::clone(&self.fonts)),
+        )
+    }
+}
+
+/// A shared clock as the boxed clock a renderer owns.
+struct SharedClock(Arc<dyn Clock>);
+
+impl Clock for SharedClock {
+    fn now(&self) -> UnixTime {
+        self.0.now()
+    }
+
+    fn monotonic(&self) -> std::time::Duration {
+        self.0.monotonic()
     }
 }
 
@@ -1012,5 +1074,39 @@ mod tests {
             );
             assert!(result.is_err(), "scale {scale} is refused");
         }
+    }
+
+    // S30-05: the export renderers build an export-quality renderer over the
+    // snapshot they are given, on a backend of their own.
+    #[test]
+    fn s30_05_the_export_renderers_render_the_snapshot_at_export_quality() {
+        let document = document(&[(40, 30)]);
+        let page = document.pages()[0].id;
+        let backend = RecordingBackend::new();
+        let record = backend.record();
+        let slot = Mutex::new(Some(backend));
+        let renderers = GraphPageRenderers::new(
+            Box::new(move || {
+                let backend = slot
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take()
+                    .unwrap_or_else(RecordingBackend::new);
+                Box::new(backend) as Box<dyn RenderBackend>
+            }),
+            Arc::new(FixedClock),
+            Arc::new(FontBook::new()),
+        );
+        let pages = renderers.for_document(&document);
+        let image = pages
+            .render(
+                &request(page, IRect::new(0, 0, 40, 30), 1.0, false),
+                &CancelToken::new(),
+            )
+            .expect("the page renders");
+        assert_eq!((image.width(), image.height()), (40, 30));
+        let (targets, ran, _, _) = seen(&record);
+        assert_eq!(targets[0].format, PixelFormat::RgbaF32);
+        assert_eq!(ran[0].quality, RenderQuality::Export);
     }
 }

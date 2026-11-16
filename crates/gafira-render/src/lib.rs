@@ -30,7 +30,7 @@ pub use graph::{
     RenderGraphBuilder, SourceKind,
 };
 pub use key::{DOMAIN, KeyParam, NodeType, canonical_description, content_key};
-pub use page::{GraphPageRenderer, PAGE_BACKGROUND};
+pub use page::{BackendFactory, GraphPageRenderer, GraphPageRenderers, PAGE_BACKGROUND};
 pub use planner::{
     PageExtent, PlanError, PlannedTile, Planner, RenderPlan, TILE_SIZE, TileGrid, Viewport,
     level_for_zoom,

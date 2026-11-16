@@ -145,6 +145,17 @@ pub trait PageRenderer: Send + Sync {
     ) -> Result<ImageBuf, RenderError>;
 }
 
+/// Builds the [`PageRenderer`] of one snapshot of the document for an export
+/// (spec 030).
+///
+/// The composition root implements it over `gafira-render` and a backend, so
+/// the engine hands an [`ExportJob`] its pages without seeing either
+/// (ARQ-06).
+pub trait PageRenderers: Send + Sync {
+    /// A renderer of the pages of `document`, at export quality (02 §6.2).
+    fn for_document(&self, document: &Document) -> Box<dyn PageRenderer>;
+}
+
 /// Why an export failed.
 #[derive(Debug)]
 pub enum ExportError {
