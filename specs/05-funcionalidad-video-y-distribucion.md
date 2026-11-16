@@ -44,11 +44,11 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 | Contenedor | Códec de video | Códec de audio | Clase legal | Fase | Crate |
 |---|---|---|---|---|---|
 | MP4 / MOV | H.264 | AAC | Licenciado por el SO (`os-codecs`) | MVP (Windows y macOS; Linux solo con VA-API, D-02) | `gafira-mux` + `gafira-codec-os` |
-| MP4 / MOV | HEVC | AAC | Sin decidir (Q-17) | Fuera del MVP; la importación vía API del sistema depende de Q-17. Nunca como salida (D-02) | — |
+| MP4 / MOV | HEVC | AAC | Licenciado por el SO (D-59) | Fuera del MVP; solo importación con el decodificador del SO (macOS y Windows; en Linux, si el sistema lo ofrece); sin él, el archivo se rechaza explicando por qué. Nunca como salida (D-02, D-59) | `gafira-codec-os` |
 | MP4 / MOV | AV1 | Opus | Libre de regalías | MVP | `gafira-mux` + `gafira-codec-free` |
 | WebM / MKV | AV1 | Opus, Vorbis, FLAC | Libre de regalías | MVP | `gafira-mux` + `gafira-codec-free` |
 | WebM / MKV | VP9 | Opus, Vorbis | Libre de regalías | **Fase 2** | `gafira-codec-free` |
-| MKV | H.264 | AAC | Licenciado por el SO | MVP (igual que MP4; HEVC según Q-17) | `gafira-codec-os` |
+| MKV | H.264 | AAC | Licenciado por el SO | MVP (igual que MP4; HEVC como en MP4, D-59) | `gafira-codec-os` |
 | GIF animado | — | — | Libre | MVP (como imagen animada) | `gafira-io-image` |
 | WAV / PCM | — | PCM | Libre | MVP | `gafira-mux` |
 | FLAC, Ogg (Vorbis/Opus) | — | FLAC, Vorbis, Opus | Libre de regalías | MVP | `gafira-codec-free` |
@@ -403,7 +403,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
   - **Asociación `.gafira`** (FV-31).
   - **Desinstalación limpia**: elimina `Program Files\Gafira`, accesos directos, claves de registro y asociaciones. Los **datos de la persona** (proyectos, ajustes, copias de recuperación, biblioteca) **no se borran** por defecto; una casilla de la desinstalación («Eliminar también mis ajustes y copias de recuperación») los elimina, sin tocar los proyectos `.gafira` guardados por la persona.
   - **Firma**: Authenticode con certificado de firma de código y sello de tiempo; instalador y ejecutables firmados. La reputación en el filtro de SmartScreen puede tardar en consolidarse (VERIFICAR; certificado de validación extendida como opción).
-  - **Idioma**: español de la interfaz del instalador; inglés según Q-14.
+  - **Idioma**: el instalador se ofrece en español e inglés, según el idioma del sistema (D-08, D-61).
   - Versiones mínimas: Windows 10 (build mínima por definir, VERIFICAR contra los requisitos de wgpu/Media Foundation) y Windows 11.
 - *UI*: asistente del instalador (FV-40); Menú Inicio.
 - *Técnica*: `xtask package windows` (WiX v5 + `signtool`); `xtask audit-bundle` (ARQ-72).
@@ -432,7 +432,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 **FV-33 · Paquetes `.deb`, `.rpm` y `.tar.gz`** (RF-56)
 - *Propósito*: instalación estándar en Debian, Ubuntu, Fedora, openSUSE y derivadas, y una opción portable para el resto.
 - *Comportamiento y reglas*:
-  - **Contenido común**: `gafira` y `gafira-cli` en `/usr/bin` (en el `.tar.gz`, en `bin/`), recursos en `/usr/share/gafira`, archivo `.desktop`, iconos `hicolor` (16–512 px, 03 §5.3), MIME de `.gafira` (`gafira.xml` en `shared-mime-info`, `MimeType=application/x-gafira+zip;`), `THIRD_PARTY_NOTICES.md` y los `OFL.txt` de las fuentes.
+  - **Contenido común**: `gafira` y `gafira-cli` en `/usr/bin` (en el `.tar.gz`, en `bin/`), recursos en `/usr/share/gafira`, archivo `.desktop` con nombre y descripción en español e inglés (D-61), iconos `hicolor` (16–512 px, 03 §5.3), MIME de `.gafira` (`gafira.xml` en `shared-mime-info`, `MimeType=application/x-gafira+zip;`), `THIRD_PARTY_NOTICES.md` y los `OFL.txt` de las fuentes.
   - **`.deb`**: `gafira_<versión>_amd64.deb`, con `copyright` que recoge las licencias de terceros. **`.rpm`**: `gafira-<versión>.x86_64.rpm`. Ambos se generan con **nfpm** (herramienta solo de build; **licencia VERIFICAR** antes de depender de ella).
   - **`.tar.gz` portable**: `gafira-<versión>-linux-x86_64.tar.gz`, se descomprime y se ejecuta sin instalar; incluye un script opcional de integración con el escritorio.
   - **Dependencias del sistema** (solo bibliotecas del SO, nunca empaquetadas): por ejemplo `libc6`, `libvulkan1`, `libxkbcommon0`, `libwayland-client0`, `libasound2` (audio) y `xdg-desktop-portal` (diálogos de archivo); los nombres equivalentes en el `.rpm`. `libasound` es LGPL-2.1 y se enlaza de forma **dinámica** como dependencia del paquete, no como archivo incluido (ARQ-79, R-06 de 02, VERIFICAR con asesoría legal).
@@ -568,7 +568,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | 7 | Licencias | Sin ejecutables de terceros ni FFmpeg; sin pesos de ML; sin `.so` LGPL en ningún paquete | `audit-bundle` | Ingeniería |
 | 8 | Patentes | H.264/AAC solo vía API del sistema, sin encoders propios de H.264, HEVC ni AAC; dictamen sobre si cubre al distribuidor en cada mercado; revisar al caducar la última patente de H.264 en EE. UU. (29 de noviembre de 2027, VERIFICAR) | Dictamen | Legal |
 | 9 | Patentes | AV1 (patentes de AOMedia; pool de Sisvel y demanda de Dolby contra Snap, riesgo bajo pero no nulo), Opus, Vorbis, FLAC: revisión de obligaciones | Memo legal | Legal |
-| 10 | Patentes | Decisión tomada sobre importar HEVC y HEIC (Q-17); MP3 solo importación con decodificador de licencia permisiva | Registro de decisiones | Legal |
+| 10 | Patentes | Importar HEVC y HEIC solo con el decodificador del SO (D-59, cierra Q-17); MP3 solo importación con decodificador de licencia permisiva | Registro de decisiones | Legal |
 | 11 | Patentes | Build `free-only` verificado de punta a punta (AV1 + Opus) | CI | Ingeniería |
 | 12 | Marcas | Búsqueda de «Gafira» y «Gefira» en USPTO, TMview y WIPO Global Brand Database, con resultado registrado antes de publicar (D-04; lista de 01 §12.4) | Informe con capturas | Titular |
 | 13 | Marcas | Nombres de interfaz del glosario (aprobados en D-04) sin coincidencias con marcas ajenas | Informe | Titular |
@@ -623,7 +623,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | ID | Pregunta o riesgo | Estado |
 |---|---|---|
 | Q-02, Q-03, Q-04, Q-05, Q-06, Q-09, Q-12, Q-13 | Códecs vía SO, Linux, actualizaciones, MP3, activación y AVI | Cerradas (D-01, D-02, D-05, D-06, D-07; 01 §12.2) |
-| Q-17 | Importar HEVC y HEIC vía API del sistema | Abierta, titular y legal |
+| Q-17 | Importar HEVC y HEIC vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; nunca salida HEVC) |
 | Q-15 | Voz en off y marcadores de compás en Fase 2 | Abierta |
 | Q-19 | Prueba gratuita | Cerrada: D-12 (no hay prueba gratuita; modo sin licencia) |
 | Q-20 | Modo sin licencia válida | D-12 sustituye la propuesta de solo lectura; la lista de funciones bloqueadas se define en la spec 06 |

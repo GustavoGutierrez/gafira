@@ -337,7 +337,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 - *Comportamiento y reglas*: se importan por arrastre, pegado, Archivo → Importar o desde Biblioteca. El perfil de color embebido (ICC) se respeta y se convierte a sRGB de trabajo; EXIF de orientación se aplica. Un TIFF de varias páginas importa la primera página (con opción de elegir). Un GIF animado se importa como imagen fija o, a elección, como clip de video. Un SVG se importa como vectores editables (scripts y referencias externas se ignoran). Imágenes mayores de 16 384 px por lado se reducen con aviso (PROPUESTA).
 - *UI*: Biblioteca; Archivo → Importar; arrastrar y soltar.
 - *Técnica*: `Importer` (`FormatRegistry::resolve_import`, 02 §4.5) en `gafira-io-image` y `gafira-io-svg`; `gafira-color` (`ColorTransform`, moxcms).
-- *Formatos*: **MVP**: PNG, JPEG, WebP, GIF, TIFF, BMP, QOI, SVG. **Fase 2**: HEIC (solo lectura vía SO, feature `heic-os`, condicionada a Q-17; en Linux no se admite) y PDF (primera página o páginas elegidas; hayro, VERIFICAR). En el MVP el PRD pide JPG/PNG/WebP/SVG/HEIC/TIFF: HEIC se difiere por patentes y dependencia del SO, y su alcance depende de la pregunta abierta Q-17 (ADR-07).
+- *Formatos*: **MVP**: PNG, JPEG, WebP, GIF, TIFF, BMP, QOI, SVG. **Fase 2**: HEIC (solo lectura con el decodificador del SO, feature `heic-os`, D-59; en Linux solo si el sistema lo ofrece) y PDF (primera página o páginas elegidas; hayro, VERIFICAR). Sin decodificador del SO, el archivo HEIC se rechaza con un mensaje que explica por qué. En el MVP el PRD pide JPG/PNG/WebP/SVG/HEIC/TIFF: HEIC se difiere por patentes y dependencia del SO; Gafira no incluye decodificador propio de HEIC (D-59, ADR-07).
 - *Presupuesto*: decodificar un JPEG de 12 MP y mostrarlo < 500 ms (PROPUESTA); sin bloquear la UI (ARQ-41).
 - *Aceptación*: (a) cada formato del MVP importa un archivo de prueba y el golden coincide; (b) los fuzz targets de cada importador corren 10 min por PR sin fallos (ARQ-21); (c) un archivo corrupto muestra un error y no un cierre (ARQ-54).
 
@@ -548,7 +548,7 @@ Todo texto es un `TextNode` maquetado por `gafira-text` (shaping y bidi con las 
 
 **FD-48 · Fuentes: detección, sustitución y licencias** (RF-27)
 - *Propósito*: abrir proyectos sin romper el diseño cuando falta una fuente.
-- *Comportamiento y reglas*: Gafira detecta las fuentes del sistema en segundo plano (nunca en el arranque; 02 §6.7). Si falta una fuente al abrir, propone **sustitutos compatibles** (misma clase y métricas similares), conserva el layout y **recuerda la fuente original** para volver a usarla si se instala. «Sustitución masiva» cambia una fuente por otra en todo el proyecto. Fuentes del usuario: advertencia de licencia y compatibilidad al usarlas («Esta fuente no está incluida. Comprueba que su licencia permite tu uso.»); empaquetar fuentes en el `.gafira` solo si la licencia lo permite (Q-10, PROPUESTA).
+- *Comportamiento y reglas*: Gafira detecta las fuentes del sistema en segundo plano (nunca en el arranque; 02 §6.7). Si falta una fuente al abrir, propone **sustitutos compatibles** (misma clase y métricas similares), conserva el layout y **recuerda la fuente original** para volver a usarla si se instala. «Sustitución masiva» cambia una fuente por otra en todo el proyecto. Fuentes del usuario: advertencia de licencia y compatibilidad al usarlas («Esta fuente no está incluida. Comprueba que su licencia permite tu uso.»); una fuente del usuario se incrusta en el proyecto según su licencia (bits `fsType` de OpenType) y según el formato de archivo; si la licencia no lo permite, se vincula por nombre y, al abrir el proyecto en un equipo que no la tiene, se avisa de la fuente que falta (D-60). Qué hace cada formato con una fuente incrustable se fija con la §17 de la spec 008.
 - *UI*: Texto → Fuentes; diálogo al abrir; Archivo → Empaquetar fuentes (PROPUESTA).
 - *Técnica*: `gafira-platform` (enumeración), `gafira-text` (métricas y clase de la fuente), `gafira-engine` (elige el sustituto), `FontCollector` (Visitor, 02 §4.1).
 - *Presupuesto*: la detección completa no bloquea el arranque (CAL-08).
@@ -722,7 +722,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 **FD-63 · Guardar, abrir y proyecto portable** (RF-01, RF-02, RF-35)
 - *Propósito*: abrir, guardar y mover proyectos sin pérdida.
-- *Comportamiento y reglas*: Guardar (`Ctrl+S`), Guardar como y **Guardar copia** escriben `.gafira` de forma atómica (archivo temporal, `fsync`, renombrado; `.bak` de una generación; 02 §7.2). **Exportar proyecto editable con recursos**: genera un `.gafira` con todos los recursos incrustados y sin vínculos externos para migrar a otro equipo; opcionalmente incluye fuentes OFL (Q-10). Es un guardado, no una exportación: escribe solo el `.gafira` del usuario y sus recursos, y como Guardar, Guardar como y «Guardar copia» está disponible sin licencia y no depende de `can_export` (D-55, 02 ARQ-95). Abrir valida el esquema, ejecuta migraciones por paso y abre en solo lectura un esquema futuro. Al abrir se muestra la primera página en cuanto está lista (carga perezosa por página). Proyectos: crear, abrir, **duplicar, renombrar, archivar y eliminar** desde Inicio → Proyectos (archivar mueve a una carpeta de archivados; eliminar pide confirmación y ofrece enviar a la papelera del SO).
+- *Comportamiento y reglas*: Guardar (`Ctrl+S`), Guardar como y **Guardar copia** escriben `.gafira` de forma atómica (archivo temporal, `fsync`, renombrado; `.bak` de una generación; 02 §7.2). Cada proyecto lleva un UUID que se genera al crearlo y se guarda en el `.gafira`; la recuperación y las versiones lo usan, así que sobreviven a renombrar o mover el archivo. «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto (D-63, 02 §7.1). **Exportar proyecto editable con recursos**: genera un `.gafira` con todos los recursos incrustados y sin vínculos externos para migrar a otro equipo; incluye las fuentes del usuario que su licencia permite incrustar (D-60). Es un guardado, no una exportación: escribe solo el `.gafira` del usuario y sus recursos, y como Guardar, Guardar como y «Guardar copia» está disponible sin licencia y no depende de `can_export` (D-55, 02 ARQ-95). Abrir valida el esquema, ejecuta migraciones por paso y abre en solo lectura un esquema futuro. Al abrir se muestra la primera página en cuanto está lista (carga perezosa por página). Proyectos: crear, abrir, **duplicar, renombrar, archivar y eliminar** desde Inicio → Proyectos (archivar mueve a una carpeta de archivados; eliminar pide confirmación y ofrece enviar a la papelera del SO).
 - *UI*: Archivo; Inicio → Proyectos; Barra superior.
 - *Técnica*: `ProjectService` (`new`, `open`, `save`, `save_as`, `recover`, `close`), `ProjectRepository`, migraciones `migrate_n_to_n1` (ARQ-53).
 - *Formatos*: `.gafira` (ZIP, `manifest.json` con `format: "gafira.project"` y `schema`; ADR-04).
@@ -789,7 +789,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 |---|---|---|---|---|
 | Importar | PNG, JPEG, WebP, GIF, TIFF, BMP, QOI | MVP | `gafira-io-image` | Libre de regalías (VERIFICAR licencias de crates) |
 | Importar | SVG | MVP | `gafira-io-svg` | Libre |
-| Importar | HEIC (solo lectura, vía SO; condicionada a Q-17; sin soporte en Linux) | Fase 2 | feature `heic-os` | Licenciado por el SO |
+| Importar | HEIC (solo lectura, solo con el decodificador del SO; D-59; en Linux solo si el sistema lo ofrece) | Fase 2 | feature `heic-os` | Licenciado por el SO |
 | Importar | PDF | Fase 2 | `gafira-io-pdf` o hayro (VERIFICAR) | Libre (VERIFICAR) |
 | Importar y exportar | `.gafira` | MVP | `gafira-format` | Propio |
 | Exportar | PNG, JPEG, WebP, GIF animado | MVP | `gafira-io-image` | Libre |
@@ -803,9 +803,9 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | ID | Tema | Estado |
 |---|---|---|
 | Q-08 | Alcance y fase de PPTX | Cerrada: D-07 (Fase 2, una imagen por diapositiva; FD-62) |
-| Q-10 | Empaquetar fuentes del usuario en `.gafira` | Abierta (FD-48, FD-63) |
+| Q-10 | Empaquetar fuentes del usuario en `.gafira` | Cerrada: D-60 (según su licencia, bits `fsType`, y según el formato; FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
-| Q-17 | Importar HEIC (y HEVC) vía API del sistema | Abierta (FD-31; 01 §12.3) |
+| Q-17 | Importar HEIC (y HEVC) vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; FD-31) |
 | Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |
 | Q-35, Q-36, Q-39, Q-40, Q-41, Q-42 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33, D-34, D-41 y D-42 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
