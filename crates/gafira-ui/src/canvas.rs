@@ -80,6 +80,78 @@ pub(crate) fn moved(origin: &Placement, offset: Vec2, zoom: f32) -> Placement {
     placement
 }
 
+/// One of the eight resize handles of a selection (03 §9.1), by the edges
+/// it moves: `-1` the left or top edge, `1` the right or bottom one, `0`
+/// neither.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Handle {
+    pub(crate) x: i8,
+    pub(crate) y: i8,
+}
+
+/// The handles in drawing order: corners, then edge midpoints.
+pub(crate) const HANDLES: [Handle; 8] = [
+    Handle { x: -1, y: -1 },
+    Handle { x: 1, y: -1 },
+    Handle { x: 1, y: 1 },
+    Handle { x: -1, y: 1 },
+    Handle { x: 0, y: -1 },
+    Handle { x: 1, y: 0 },
+    Handle { x: 0, y: 1 },
+    Handle { x: -1, y: 0 },
+];
+
+/// Half the side of a handle's square, in screen px; at least the 24 px
+/// target of 03 (`size.target.min`) once the hit area is doubled.
+pub(crate) const HANDLE_HALF: f32 = 5.0;
+
+/// Where `handle` sits on the screen rectangle `rect`.
+pub(crate) fn handle_at(rect: Rect, handle: Handle) -> Pos2 {
+    let along = |min: f32, max: f32, side: i8| match side {
+        -1 => min,
+        1 => max,
+        _ => (min + max) / 2.0,
+    };
+    Pos2::new(
+        along(rect.min.x, rect.max.x, handle.x),
+        along(rect.min.y, rect.max.y, handle.y),
+    )
+}
+
+/// The handle of `rect` under `pointer`, if any (a 12 px wide hit area).
+pub(crate) fn handle_hit(rect: Rect, pointer: Pos2) -> Option<Handle> {
+    HANDLES.into_iter().find(|handle| {
+        let at = handle_at(rect, *handle);
+        (pointer.x - at.x).abs() <= HANDLE_HALF + 1.0
+            && (pointer.y - at.y).abs() <= HANDLE_HALF + 1.0
+    })
+}
+
+/// `origin` resized by dragging `handle` `offset` screen px at `zoom`. The
+/// opposite edge stays put; a side never gets smaller than 1 px.
+pub(crate) fn resized(origin: &Placement, handle: Handle, offset: Vec2, zoom: f32) -> Placement {
+    let dx = f64::from(offset.x / zoom);
+    let dy = f64::from(offset.y / zoom);
+    let mut placement = *origin;
+    let (mut left, mut right) = (origin.x, origin.x + origin.w);
+    let (mut top, mut bottom) = (origin.y, origin.y + origin.h);
+    match handle.x {
+        -1 => left = (left + dx).min(right - 1.0),
+        1 => right = (right + dx).max(left + 1.0),
+        _ => {}
+    }
+    match handle.y {
+        -1 => top = (top + dy).min(bottom - 1.0),
+        1 => bottom = (bottom + dy).max(top + 1.0),
+        _ => {}
+    }
+    placement.x = left;
+    placement.y = top;
+    placement.w = right - left;
+    placement.h = bottom - top;
+    placement
+}
+
 /// A new piece in the middle of a page of `page_px`, a third of its
 /// shorter side across.
 pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> NodeSpec {
@@ -222,5 +294,58 @@ mod tests {
         assert_eq!((spec.placement.w, spec.placement.h), (360.0, 360.0));
         assert_eq!((spec.placement.x, spec.placement.y), (780.0, 360.0));
         assert_eq!(screen_color(fill), Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn s22_01_handles_sit_on_corners_and_edge_midpoints_and_are_hit() {
+        let rect = Rect::from_min_max(Pos2::new(10.0, 20.0), Pos2::new(110.0, 70.0));
+        assert_eq!(
+            handle_at(rect, Handle { x: -1, y: -1 }),
+            Pos2::new(10.0, 20.0)
+        );
+        assert_eq!(
+            handle_at(rect, Handle { x: 1, y: 0 }),
+            Pos2::new(110.0, 45.0)
+        );
+        assert_eq!(
+            handle_at(rect, Handle { x: 0, y: 1 }),
+            Pos2::new(60.0, 70.0)
+        );
+        assert_eq!(
+            handle_hit(rect, Pos2::new(113.0, 47.0)),
+            Some(Handle { x: 1, y: 0 })
+        );
+        assert_eq!(
+            handle_hit(rect, Pos2::new(60.0, 45.0)),
+            None,
+            "the middle is not a handle"
+        );
+    }
+
+    #[test]
+    fn s22_02_resizing_keeps_the_opposite_edge_and_a_minimum_side() {
+        let origin = place(10.0, 10.0, 100.0, 50.0);
+        let bigger = resized(&origin, Handle { x: 1, y: 1 }, Vec2::new(20.0, 10.0), 2.0);
+        assert_eq!(
+            (bigger.x, bigger.y, bigger.w, bigger.h),
+            (10.0, 10.0, 110.0, 55.0)
+        );
+        let from_left = resized(&origin, Handle { x: -1, y: 0 }, Vec2::new(20.0, 99.0), 2.0);
+        assert_eq!(
+            (from_left.x, from_left.y, from_left.w, from_left.h),
+            (20.0, 10.0, 90.0, 50.0)
+        );
+        let crushed = resized(
+            &origin,
+            Handle { x: -1, y: -1 },
+            Vec2::new(1000.0, 1000.0),
+            1.0,
+        );
+        assert_eq!(
+            (crushed.x + crushed.w, crushed.y + crushed.h),
+            (110.0, 60.0),
+            "opposite corner stays"
+        );
+        assert_eq!((crushed.w, crushed.h), (1.0, 1.0));
     }
 }

@@ -53,6 +53,8 @@ struct Drag {
     gesture: Option<GestureId>,
     origin: Placement,
     offset: Vec2,
+    /// The resize handle held, or `None` for a move.
+    handle: Option<canvas::Handle>,
 }
 
 impl Default for Editor {
@@ -81,7 +83,7 @@ struct Asked {
     insert: Option<ShapeGeometry>,
     /// A new selection (`Some(None)` clears it).
     select: Option<Option<(PageId, NodeId)>>,
-    drag_begin: Option<Placement>,
+    drag_begin: Option<(Placement, Option<canvas::Handle>)>,
     drag_to: Option<Vec2>,
     drag_end: bool,
     delete: bool,
@@ -530,6 +532,7 @@ impl Editor {
                         let pointer = response.interact_pointer_pos();
                         let pressed = response.clicked() || response.drag_started();
                         let mut picked: Option<(PageId, NodeId, Placement)> = None;
+                        let mut grabbed: Option<(Placement, canvas::Handle)> = None;
                         let mut top =
                             rect.min.y + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
                         for (index, size) in sizes.iter().enumerate() {
@@ -586,12 +589,32 @@ impl Editor {
                                         }
                                     }
                                     if self.selected == Some((shape.page, shape.node)) {
+                                        let selection = theme.c("canvas.selection");
                                         painter.rect_stroke(
                                             at.expand(1.0),
                                             0.0,
-                                            Stroke::new(2.0, theme.c("canvas.selection")),
+                                            Stroke::new(2.0, selection),
                                             egui::StrokeKind::Outside,
                                         );
+                                        for handle in canvas::HANDLES {
+                                            let square = Rect::from_center_size(
+                                                canvas::handle_at(at, handle),
+                                                Vec2::splat(canvas::HANDLE_HALF * 2.0),
+                                            );
+                                            painter.rect(
+                                                square,
+                                                2.0,
+                                                theme.c("surface"),
+                                                Stroke::new(1.5, selection),
+                                                egui::StrokeKind::Inside,
+                                            );
+                                        }
+                                        if response.drag_started()
+                                            && let Some(pos) = pointer
+                                            && let Some(handle) = canvas::handle_hit(at, pos)
+                                        {
+                                            grabbed = Some((shape.placement, handle));
+                                        }
                                     }
                                 }
                                 if pressed
@@ -610,13 +633,19 @@ impl Editor {
                             }
                             top = page.max.y + PAGE_GAP;
                         }
-                        if pressed {
-                            asked.select = Some(picked.map(|(page, node, _)| (page, node)));
-                        }
-                        if response.drag_started()
-                            && let Some((_, _, placement)) = picked
-                        {
-                            asked.drag_begin = Some(placement);
+                        if let Some((placement, handle)) = grabbed {
+                            // A handle of the selection wins over whatever
+                            // lies under it.
+                            asked.drag_begin = Some((placement, Some(handle)));
+                        } else {
+                            if pressed {
+                                asked.select = Some(picked.map(|(page, node, _)| (page, node)));
+                            }
+                            if response.drag_started()
+                                && let Some((_, _, placement)) = picked
+                            {
+                                asked.drag_begin = Some((placement, None));
+                            }
                         }
                         if response.dragged() && self.drag.is_some() {
                             asked.drag_to = Some(response.drag_delta());
@@ -688,19 +717,23 @@ impl Editor {
                 }
             }
         }
-        if let Some(origin) = asked.drag_begin {
+        if let Some((origin, handle)) = asked.drag_begin {
             let gesture = engine.edit().begin_gesture().ok();
             self.drag = Some(Drag {
                 gesture,
                 origin,
                 offset: Vec2::ZERO,
+                handle,
             });
         }
         if let (Some(delta), Some(drag), Some((page, node))) =
             (asked.drag_to, self.drag.as_mut(), self.selected)
         {
             drag.offset += delta;
-            let to = canvas::moved(&drag.origin, drag.offset, self.zoom);
+            let to = match drag.handle {
+                Some(handle) => canvas::resized(&drag.origin, handle, drag.offset, self.zoom),
+                None => canvas::moved(&drag.origin, drag.offset, self.zoom),
+            };
             let command = SetProperty::new(page, vec![node], Property::Placement(to), drag.gesture);
             log("move", engine.edit().execute(Box::new(command)).map(drop));
         }
@@ -989,7 +1022,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                drag_begin: Some(origin),
+                drag_begin: Some((origin, None)),
                 ..Asked::default()
             },
             &theme,
@@ -1076,5 +1109,65 @@ pub(crate) mod tests {
         again.settings().start().expect("loads");
         assert_eq!(again.settings().get().appearance, Appearance::Dark);
         again.settings().set(Settings::default()).expect("resets");
+    }
+
+    // S22-03
+    #[test]
+    fn s22_03_dragging_a_handle_resizes_in_one_undo() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        let mut editor = Editor::default();
+        let snapshot = engine.edit().document();
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                insert: Some(ShapeGeometry::Rect),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        let origin = the_shapes(&mut engine)[0].placement;
+        editor.zoom = 1.0;
+        let corner = canvas::Handle { x: 1, y: 1 };
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                drag_begin: Some((origin, Some(corner))),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        for _ in 0..2 {
+            editor.apply(
+                &mut engine,
+                &snapshot,
+                &Asked {
+                    drag_to: Some(Vec2::new(20.0, 10.0)),
+                    ..Asked::default()
+                },
+                &theme,
+            );
+        }
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+            &theme,
+        );
+        let resized = the_shapes(&mut engine)[0].placement;
+        assert_eq!(
+            (resized.x, resized.y),
+            (origin.x, origin.y),
+            "the top-left corner stays"
+        );
+        assert_eq!((resized.w - origin.w, resized.h - origin.h), (40.0, 20.0));
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine)[0].placement, origin);
     }
 }
