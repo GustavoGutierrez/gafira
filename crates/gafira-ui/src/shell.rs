@@ -15,7 +15,7 @@ use crate::editor::Editor;
 use crate::export;
 use crate::files::{self, FileAction, Outcome};
 use crate::format::StartFormat;
-use crate::home::Home;
+use crate::home::{Home, Thumbs};
 use crate::recent::{self, RecentStore};
 use crate::splash;
 use crate::style::Theme;
@@ -95,6 +95,8 @@ struct Shell {
     leaving: Option<Leave>,
     /// «Exportar» while its dialog is open (spec 030).
     export: Option<export::Dialog>,
+    /// The textures of the thumbnails of «Recientes» (spec 033).
+    thumbs: Thumbs,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -146,6 +148,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 recovery_failure: None,
                 leaving: None,
                 export: None,
+                thumbs: Thumbs::default(),
             }))
         }),
     )
@@ -202,9 +205,18 @@ impl Shell {
         }
     }
 
-    /// Inicio with the recent projects as they are now.
+    /// Inicio with the recent projects as they are now, and the thumbnails
+    /// of the ones it shows (spec 033).
     fn home(&self) -> Screen {
-        Screen::Home(Home::new(self.recent.list()))
+        let list = self.recent.list();
+        let thumbs = recent::shown(&list)
+            .iter()
+            .filter_map(|project| {
+                let thumb = self.recent.thumbnail(&project.path)?;
+                Some((project.path.clone(), thumb))
+            })
+            .collect();
+        Screen::Home(Home::new(list, thumbs))
     }
 
     /// Put the open project in «Recientes» (spec 025).
@@ -372,7 +384,9 @@ impl eframe::App for Shell {
                     Go::Stay
                 }
             }
-            Screen::Home(home) => home.show(ctx, &self.theme, &self.texts, unix_now()),
+            Screen::Home(home) => {
+                home.show(ctx, &self.theme, &self.texts, unix_now(), &mut self.thumbs)
+            }
             Screen::Editor(editor) => editor.show(
                 ctx,
                 &mut self.engine,

@@ -26,5 +26,5 @@ mod text;
 mod versions;
 mod widgets;
 
-pub use recent::{RecentProject, RecentStore};
+pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, UiConfig, run};

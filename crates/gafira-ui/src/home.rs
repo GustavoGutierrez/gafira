@@ -1,39 +1,54 @@
 //! Inicio (03 §7.2): «¿Qué quieres crear hoy?», the formats, the main action
-//! and the recent projects.
+//! and the recent projects, with the thumbnail of each one's first page
+//! (spec 033).
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use egui::{Align, Layout, RichText, Sense, Stroke, Vec2};
 
 use crate::format::StartFormat;
-use crate::recent::{self, RecentProject};
+use crate::recent::{self, RecentProject, RecentThumbnail, ThumbCache};
 use crate::shell::Go;
 use crate::style::{DISPLAY, Theme};
 use crate::text::Texts;
 use crate::widgets;
 
 /// The state of Inicio: the format the person picked and the recent
-/// projects, read as Inicio appears.
+/// projects with their thumbnails, read as Inicio appears.
 pub(crate) struct Home {
     picked: StartFormat,
     recent: Vec<RecentProject>,
+    thumbs: BTreeMap<PathBuf, RecentThumbnail>,
 }
 
+/// The textures of the thumbnails Inicio shows; the shell keeps them from
+/// one visit of Inicio to the next (S33-07).
+pub(crate) type Thumbs = ThumbCache<egui::TextureHandle>;
+
 impl Home {
-    pub(crate) fn new(recent: Vec<RecentProject>) -> Self {
+    pub(crate) fn new(
+        recent: Vec<RecentProject>,
+        thumbs: BTreeMap<PathBuf, RecentThumbnail>,
+    ) -> Self {
         Self {
             picked: StartFormat::Social,
             recent,
+            thumbs,
         }
     }
 
     /// Inicio at `now` (seconds since the Unix epoch, for the relative
-    /// times of «Recientes»).
+    /// times of «Recientes»), with the thumbnails' textures in `textures`.
     pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,
         theme: &Theme,
         texts: &Texts,
         now: i64,
+        textures: &mut Thumbs,
     ) -> Go {
+        textures.keep_only(self.thumbs.keys().map(PathBuf::as_path));
         let mut go = Go::Stay;
         widgets::topbar(ctx, theme, "home.topbar", |ui| {
             ui.label(
@@ -132,7 +147,13 @@ impl Home {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::splat(12.0);
                         for project in shown {
-                            if recent_card(ui, theme, texts, project, now) {
+                            let picture = self.thumbs.get(&project.path).map(|thumb| {
+                                let texture = textures.get(&project.path, thumb, |thumb| {
+                                    upload(ctx, &project.path, thumb)
+                                });
+                                (texture.clone(), (thumb.width, thumb.height))
+                            });
+                            if recent_card(ui, theme, texts, project, now, picture.as_ref()) {
                                 go = Go::OpenRecent(project.path.clone());
                             }
                         }
@@ -183,15 +204,26 @@ impl Home {
     }
 }
 
-/// One recent project: a placeholder for the thumbnail (spec 025 leaves
-/// thumbnails out), its name and how long ago it was opened; `true` when
-/// clicked.
+/// The texture of the thumbnail of the project at `path`.
+fn upload(ctx: &egui::Context, path: &Path, thumb: &RecentThumbnail) -> egui::TextureHandle {
+    let size = [thumb.width as usize, thumb.height as usize];
+    ctx.load_texture(
+        format!("recent:{}", path.display()),
+        egui::ColorImage::from_rgba_unmultiplied(size, &thumb.rgba),
+        egui::TextureOptions::LINEAR,
+    )
+}
+
+/// One recent project: its thumbnail, whole and centred on the
+/// placeholder, or the placeholder alone when it has none (spec 033); its
+/// name and how long ago it was opened; `true` when clicked.
 fn recent_card(
     ui: &mut egui::Ui,
     theme: &Theme,
     texts: &Texts,
     project: &RecentProject,
     now: i64,
+    picture: Option<&(egui::TextureHandle, (u32, u32))>,
 ) -> bool {
     let frame = egui::Frame::NONE
         .fill(theme.c("bg"))
@@ -205,6 +237,15 @@ fn recent_card(
                 let (thumb, _) = ui.allocate_exact_size(Vec2::new(176.0, 110.0), Sense::hover());
                 ui.painter()
                     .rect_filled(thumb, theme.radius_md(), theme.c("surface"));
+                if let Some((texture, (width, height))) = picture {
+                    let (w, h) = recent::fit(*width, *height, (thumb.width(), thumb.height()));
+                    ui.painter().image(
+                        texture.id(),
+                        egui::Rect::from_center_size(thumb.center(), Vec2::new(w, h)),
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                }
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(&project.name)
