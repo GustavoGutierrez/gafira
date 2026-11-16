@@ -4,18 +4,19 @@
 |---|---|
 | Documento | Especificación 07 |
 | Estado | Vigente (no ejecutable): inventario, sin requisitos propios |
-| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/done/legacy/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
+| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/done/legacy/README.md`, ítems 133 y 134 de D-78, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
 | Fuentes | `specs/done/legacy/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
-| Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
+| Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran; los ítems nuevos siguen la numeración desde el 133. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
 | Copia duradera | Las listas crudas estaban en el scratchpad de una sesión, que es temporal. Este documento es la copia que queda |
 
 ## 0. Resumen
 
 | Medida | Cifra |
 |---|---|
-| Ítems 39 a 77 | 39: 27 abiertos, 2 remiten a otro ítem (70, 71), 6 cerrados o solo registro (42, 51, 54, 64, 65, 69), 4 obsoletos por ADR 0018 (39, 41, 46, 66) |
+| Ítems 39 a 77 | 39: 26 abiertos, 3 remiten a otro ítem (55, 70, 71), 6 cerrados o solo registro (42, 51, 54, 64, 65, 69), 4 obsoletos por ADR 0018 (39, 41, 46, 66) |
 | Ítems 104 a 111 | 8: 6 abiertos, 1 no se corrige porque el registro legacy es inmutable (110), 1 obsoleto por ADR 0018 (108) (archivo de `gafira-timeline`) |
 | Ítems 112 a 132 | 21: 16 abiertos, 1 solo registro (129), 3 no se corrigen porque el registro legacy es inmutable (122, 127, 128), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
+| Ítems 133 y 134 | 2 abiertos, tareas de D-78 (antes Q-34 y Q-48) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -24,9 +25,9 @@
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
 
-## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 132)
+## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 134)
 
-La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
+La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 133 y 134 no vienen del README: son las tareas de D-78. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
 
 ### 1.1 Abiertos
 
@@ -41,8 +42,7 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 49 | T4 de `gafira-audio` sin resolver (§3.2, anexo A). | El titular decide si hay ronda de arreglo; en ese caso, `specifier` y test primero por sobreviviente. |
 | 50 | T4 de `gafira-segment` completo, de `gafira-testkit` y de `layer-2-scaffold` (§3.3). | Corre el T4 de `layer-2-scaffold`; los de segment y testkit solo si el titular lo reabre. |
 | 52 | V07 marcada como fiable con IoU 0.53. | `specifier` revisa el umbral de fiabilidad, con test primero. |
-| 53 | ARQ-43 a 96.8 ms en un hilo con carga, fuera de D-03. | Se mide en hardware D-03 (ítem 55). |
-| 55 | Q-48 abierta en hardware D-03. | Se mide en D-03; va al titular solo si `bench_segment_4000` falla. |
+| 53 | ARQ-43 a 96.8 ms en un hilo con carga, fuera de D-03. | Se mide en hardware D-03 (ítem 134). |
 | 56 | Redacción desactualizada en 01 P-04 y 04 FD-38. | `specifier` actualiza la redacción. |
 | 57 | Decisión sin tomar: el texto `modificado` del splash. | El titular la decide. |
 | 58 | W5 a W9 de RS5/RS6: ambigüedades de ARQ-122 y FD-26, huecos de test y cuatro mutantes de cierre no reaplicados. | Huecos de test primero; `specifier` para W5 y W6. |
@@ -81,6 +81,8 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 130 | ARQ-143 no tiene regla para un tile más largo que su etapa de 8 ms (W22 de CB6). | `specifier` añade la regla; test después. |
 | 131 | D10 (opción a) y la fila 106 del diseño describen `GraphPageRenderer`; el bench arma el plan a mano (S11 de CB6). | `specifier` enmienda D10 y la fila 106. |
 | 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
+| 133 | Revisión visual de las fórmulas de 04 FD-33 y del catálogo de filtros de 04 FD-34 (antes Q-34; D-40, D-78). Las pruebas fijan el valor de las fórmulas, no su aspecto. | El titular revisa las fórmulas sobre imágenes de muestra cuando exista el corte de efectos y da el catálogo de FD-34 con nombres y valores; las fórmulas aprobadas dejan de ser PROPUESTA. |
+| 134 | Medición de la segmentación en el hardware de referencia de D-03 con la copia de 2048 px de D-45 (antes Q-48; D-78). Lo de SG3 es indicativo (i7-12700H con carga): CAL-06 1055 ms con 1 hilo, ARQ-43 43 ms, CAL-26 de 35 a 303 MB solo del segmentador. | `bench_segment_4000` < 5 s y `bench_cancel_segment` ≤ 100 ms en la gama media de D-03, y CAL-26 medida en el proceso con 20 páginas e imágenes. Si alguna falla, decide el titular. Cierra también los ítems 53 y 55. |
 
 ### 1.2 Cerrados o sin trabajo propio
 
@@ -89,6 +91,7 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 - **65**: registro. Aviso de tamaño de `pi-agent-sync`, ya integrado; no queda acción sobre esa entrega.
 - **70**: sin trabajo propio. Es el ítem 47.
 - **71**: sin trabajo propio. Es el ítem 42, ya resuelto.
+- **55**: sin trabajo propio. Es el ítem 134 (D-78). Texto anterior: Q-48 abierta en hardware D-03. Se cerraba cuando: se mide en D-03; va al titular solo si `bench_segment_4000` falla.
 - **129**: registro. El titular aceptó las 825 líneas de CB6 el 2026-11-07 (W20 de `gafira-render-cpu`); no queda acción.
 - **42**: resuelto el 2026-11-16. 02 está en modo sin licencia (§4.14, §13.1, §13.3); Q-19 queda cerrada por D-12 en 02 (§12.2) y en 05 (tabla de preguntas y riesgos), como en 01 (§12); R-13 de 02 queda sin efecto; D-12 en `00-decisiones.md` registra que se aplicó a 02 y 05.
 - **54**: resuelto. La regla de la banda está en ARQ-133 (D-47; 02 §4.17.6) y tiene pruebas: `arq_133_half_of_the_pixels_in_the_band_pins` y `arq_133_five_percent_of_the_band_is_a_real_colour` (`crates/gafira-segment/src/cut.rs:459`, `cut.rs:555`), y `crates/gafira-segment/tests/strays.rs` (`arq_133_a_narrow_contact_with_the_border_stays_reliable`, `arq_133_a_wide_contact_with_the_border_is_not_reliable`; `cargo test -p gafira-segment --locked arq_133` en verde el 2026-11-16).

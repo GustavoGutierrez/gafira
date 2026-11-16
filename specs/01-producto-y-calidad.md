@@ -5,7 +5,7 @@
 | Documento | Especificación 01 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-75 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-79 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
 | Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **confirmada (D-71)** = cifra que fue PROPUESTA y el titular confirmó como valor provisional que una medición puede cambiar (lo que sigue en PROPUESTA está abierto); **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
@@ -437,16 +437,13 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-20 | ¿Qué puede hacer el usuario sin licencia válida? | Aplazada (D-62, D-70): la primera versión se publica gratis y sin licencia; la lista de funciones bloqueadas del modo sin licencia (D-12) se fija cuando haya venta, en la spec 06. Mientras tanto, en un build con licencia solo la exportación está bloqueada y guardar nunca depende de la licencia (D-55). RF-63. |
 | Q-15 | ¿Se confirma la voz en off y los marcadores de compás como Fase 2? | Cerrada: D-72 (las dos se quedan en Fase 2; el algoritmo de los marcadores de compás sigue en VERIFICAR). Spec 05, FV-10. |
 | Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? | Cerrada: D-73 (se descarta; Gafira no abre más conexión de red que la de la licencia futura, D-01, 02 ARQ-04). |
+| Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios. | Cerrada: D-77 (aprobados tal como están, a reserva de la búsqueda de marca de los nombres ingleses propios, *Pieces*, *Magnet*, *Light copies*…; R-17 de 02; §12.4). RF-64. |
+| Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (D-40). | Cerrada como pregunta: D-78 (pasa a tarea, la revisión visual del ítem 133 de 07). |
 | Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? | Aplazada (D-74): no se planifica un tercer idioma hasta después del lanzamiento; la arquitectura ya los admite (02 §14.8). RF-64. |
 
 ### 12.3 Preguntas abiertas
 
-Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
-
-| ID | Pregunta | Responsable | Bloquea |
-|---|---|---|---|
-| Q-25 | Aprobación de los nombres ingleses del glosario (03 §2.8) y del microcopy inglés que no sale del manual (03 §12), y búsqueda de marca de los nombres ingleses propios (*Pieces*, *Magnet*, *Light copies*…). | Titular | RF-64, DIS-71, DIS-72 |
-| Q-34 | Aspecto de las fórmulas de 04 FD-33 y catálogo de filtros de 04 FD-34 (02 §12.3, D-40). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45). | Titular | No bloquea la especificación |
+Ninguna, ni aquí ni en 02 (§12.3). Q-25 la cerró D-77; Q-34 pasó a tarea de `07-deuda-abierta.md` (ítem 133, D-78). Q-35..Q-45 están cerradas (D-29 a D-34 y D-41 a D-45).
 
 ### 12.4 Pendientes del titular
 
@@ -458,6 +455,7 @@ Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `licen
 4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y, opcionalmente, reservar más dominios.
 5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: ver 00, pendiente 5, y 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. Aportar un conjunto de fotos reales con licencia para `gafira-segment` antes de publicar (D-20).
+7. Búsqueda de marca de los nombres ingleses propios del glosario (*Pieces*, *Magnet*, *Light copies*…) antes de publicar (D-77, R-17 de 02, 05 C11 punto 13).
 
 **Lista de comprobación de marca (D-04).** Sin abogado; registrar fecha, término, resultado y captura de cada búsqueda antes de publicar. La búsqueda preliminar del 24 de octubre de 2026 cubrió las tres bases; el resultado detallado está en D-04.
 

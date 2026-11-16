@@ -177,6 +177,8 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 
 ### 2.8 Versión inglesa del glosario (PROPUESTA, D-08)
 
+> **Nota (D-77)**: el titular aprobó estos nombres ingleses y el microcopy inglés de §12 tal como están, a reserva de la búsqueda de marca de los nombres ingleses propios (R-17 de 02). Q-25 queda cerrada; las marcas PROPUESTA se quedan mientras esta spec siga en backlog.
+
 Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalente genérico» de esas tablas sigue siendo la referencia para localizar el concepto y no es texto de interfaz. Los atajos de §2.5 no cambian con el idioma (DIS-77).
 
 #### 2.8.1 Pantallas y estructura (§2.1)

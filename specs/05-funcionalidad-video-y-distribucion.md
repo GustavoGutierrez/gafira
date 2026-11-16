@@ -5,7 +5,7 @@
 | Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-75, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Depende de | `00-decisiones.md` (D-01 a D-79, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
 | Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)
@@ -555,9 +555,9 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 
 ## C11. Lista de comprobación previa a publicar y a vender
 
-Cada punto tiene propietario y evidencia. La primera versión es una **descarga gratuita** (D-62, D-70). La columna «Bloquea» dice qué detiene cada punto: **toda versión**, gratuita o de pago (licencias de terceros, patentes, marca y avisos de terceros), o **venta**, que espera a que haya venta (activación, EULA de venta e identificador de dispositivo de `PRIVACY.md`; el precio también espera, 01 §11). Los puntos **sin clasificar** no los ordena D-70 y los decide el titular. La lista no bloquea el MVP técnico.
+Cada punto tiene propietario y evidencia. La primera versión es una **descarga gratuita** (D-62, D-70). La columna «Bloquea» dice qué detiene cada punto: **toda versión**, gratuita o de pago (licencias de terceros, patentes, marca y avisos de terceros), o **venta**, que espera a que haya venta (activación, EULA de venta e identificador de dispositivo de `PRIVACY.md`; el precio también espera, 01 §11). D-79 clasifica como **toda versión** la firma, la calidad, la instalación, la distribución y la accesibilidad (puntos 15 y 19 a 22), porque SmartScreen y Gatekeeper bloquean las aplicaciones sin firmar; no queda ningún punto sin clasificar. La lista no bloquea el MVP técnico.
 
-| # | Categoría | Comprobación | Evidencia | Resp. | Bloquea (D-70) |
+| # | Categoría | Comprobación | Evidencia | Resp. | Bloquea (D-70, D-79) |
 |---|---|---|---|---|---|
 | 1 | Licencias | `cargo deny check licenses bans sources advisories` verde en el build de release; 0 GPL/LGPL/AGPL/SSPL/no comerciales; 0 dependencias git | Informe de CI | Ingeniería | Toda versión |
 | 2 | Licencias | Verificación con `cargo-deny` de todas las licencias marcadas VERIFICAR en 02 §9.2 (vello, parley, krilla, linesweeper, cpal, rav1e, wasmi, decodificador MP3, cliente HTTP, `ring`…) y de las herramientas de build (nfpm, WiX, `cargo about`) | Tabla actualizada | Ingeniería | Toda versión |
@@ -571,16 +571,16 @@ Cada punto tiene propietario y evidencia. La primera versión es una **descarga 
 | 10 | Patentes | Importar HEVC y HEIC solo con el decodificador del SO (D-59, cierra Q-17); MP3 solo importación con decodificador de licencia permisiva | Registro de decisiones | Legal | Toda versión |
 | 11 | Patentes | Build `free-only` verificado de punta a punta (AV1 + Opus) | CI | Ingeniería | Toda versión |
 | 12 | Marcas | Búsqueda de «Gafira» y «Gefira» en USPTO, TMview y WIPO Global Brand Database, con resultado registrado antes de publicar (D-04; lista de 01 §12.4) | Informe con capturas | Titular | Toda versión |
-| 13 | Marcas | Nombres de interfaz del glosario (aprobados en D-04) sin coincidencias con marcas ajenas | Informe | Titular | Toda versión |
+| 13 | Marcas | Nombres de interfaz del glosario (los españoles aprobados en D-04, los ingleses en D-77) sin coincidencias con marcas ajenas | Informe | Titular | Toda versión |
 | 14 | Marcas | Ningún asset ni nombre de otros productos en el instalador o la documentación | Revisión de texto | Marca | Toda versión |
-| 15 | Firma | Certificado de firma de código de Windows, Developer ID de Apple y claves de firma de paquetes Linux disponibles y custodiados (sin claves de actualización: D-06) | Registro de claves | Producto | Sin clasificar |
+| 15 | Firma | Certificado de firma de código de Windows, Developer ID de Apple y claves de firma de paquetes Linux disponibles y custodiados (sin claves de actualización: D-06) | Registro de claves | Producto | Toda versión |
 | 16 | Documentos | EULA basado en el contrato de Tracewright (`LICENSE` en inglés y `LICENCIA.md` en español, prevalece el español) con las tres adaptaciones de D-01: nombre del producto, «Sus resultados» (diseños, imágenes y videos del usuario) y permiso de uso de plantillas, fuentes y recursos incluidos | Documentos | Titular | Venta |
 | 17 | Documentos | `PRIVACY.md` de Gafira que declara el identificador de dispositivo enviado al activar; no puede copiar la frase «no transmite datos» (D-01) | Documento | Titular | Venta |
 | 18 | Licencia | Activación contra el `license-hub` (servicio externo ya existente, reutilizado tal cual) integrada y probada con `gafira-license`. Licencia y activación: ver spec 06 (pendiente, se redacta al final) | Prueba E2E de ARQ-91 | Ingeniería | Venta |
-| 19 | Calidad | Presupuestos de rendimiento y de tamaño en verde; `export_matrix` ≥ 98 %; 500 *kills* recuperados | Informe nocturno | Calidad | Sin clasificar |
-| 20 | Instalación | Instalar, abrir un `.gaf` y desinstalar en máquinas limpias de las 3 plataformas (MSI, `.deb`, `.rpm`, `.tar.gz`, DMG) | Registro de pruebas | Calidad | Sin clasificar |
-| 21 | Distribución | Sumas SHA-256 y SBOM publicados; paquetes firmados y notarizados | Release | Ingeniería | Sin clasificar |
-| 22 | Accesibilidad | Contraste AA, teclado completo y AccessKit comprobados (DIS-10, DIS-30..37) | Informe | Diseño | Sin clasificar |
+| 19 | Calidad | Presupuestos de rendimiento y de tamaño en verde; `export_matrix` ≥ 98 %; 500 *kills* recuperados | Informe nocturno | Calidad | Toda versión |
+| 20 | Instalación | Instalar, abrir un `.gaf` y desinstalar en máquinas limpias de las 3 plataformas (MSI, `.deb`, `.rpm`, `.tar.gz`, DMG) | Registro de pruebas | Calidad | Toda versión |
+| 21 | Distribución | Sumas SHA-256 y SBOM publicados; paquetes firmados y notarizados | Release | Ingeniería | Toda versión |
+| 22 | Accesibilidad | Contraste AA, teclado completo y AccessKit comprobados (DIS-10, DIS-30..37) | Informe | Diseño | Toda versión |
 
 ## C12. Extensión y lotes (Fase 3)
 

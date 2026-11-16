@@ -5,8 +5,8 @@
 | Documento | Especificación 04 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-75, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
-| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (Q-34) |
+| Depende de | `00-decisiones.md` (D-01 a D-79, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
+| Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA**, **confirmada (D-71)** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 se confirmaron en bloque (D-34); D-71 confirma las demás, salvo las fórmulas de FD-33 y el catálogo de FD-34 (revisión visual pendiente: 07, ítem 133; D-78) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o cifra propia, confirmada por D-71) · *Aceptación* (criterios verificables) · *RF*.
 
@@ -361,7 +361,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 | **Color** | Tono, Saturación, Vitalidad, Invertir; edición por colores detectados (hasta 8 muestras) | Tono −180°–180°; Invertir es un interruptor (`invert`, apagado por defecto; D-46); resto −100–100 | La edición por color detectado mueve solo ese color dentro de una tolerancia ajustable |
 | **Textura** | Nitidez, Claridad, Viñeta | 0–100 (viñeta −100–100) | Nitidez con máscara de bordes; la viñeta es centrada y ajustable |
 
-**Fórmulas de FD-33** (PROPUESTA; pendientes de aprobación visual del titular, Q-34). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
+**Fórmulas de FD-33** (PROPUESTA; pendientes de la revisión visual del titular, ítem 133 de 07, D-78). Todas cumplen que el valor por defecto no cambia ningún píxel, y ninguna toca el alfa.
 
 Notación: `c` es un canal en luz lineal sin premultiplicar; `v` es `c` codificado con la curva sRGB y recortado a `[0, 1]`; `k = valor / 100`; `Y = 0,2126 R + 0,7152 G + 0,0722 B`; `w(a, b, x)` es *smoothstep* de `a` a `b`.
 
@@ -396,7 +396,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 **FD-34 · Filtros** (RF-21)
 - *Propósito*: aplicar estilos listos con vista previa.
 - *Comportamiento y reglas*: rejilla de filtros con **vista previa sobre la propia imagen** (miniaturas del elemento actual); intensidad 0–100; los filtros son presets de parámetros (`ParamValues` guardados, no código; 02 §4.4) y pueden crearse y guardarse como propios. Los radios escalan con el tamaño de la imagen (ARQ-120), de modo que una miniatura representa el resultado final. En Fase 2 se admiten LUT `.cube` como filtros.
-  - **Primer corte** (D-40): se entrega el mecanismo y un preset de prueba que no se muestra a la persona. El catálogo real, con sus nombres y valores, llega con Q-34.
+  - **Primer corte** (D-40): se entrega el mecanismo y un preset de prueba que no se muestra a la persona. El catálogo real, con sus nombres y valores, llega con la revisión visual del ítem 133 de 07 (D-78).
   - **Preset**: id estable, nombre (`MessageKey`) y lista ordenada de pares (id de efecto, `ParamValues`). Los efectos se aplican en ese orden. Un parámetro que el preset no nombra queda en su valor por defecto. El preset se valida con el `ParamSchema` de cada efecto. El formato con que se guarda un filtro propio va con el criterio (c).
   - **Intensidad** (D-40): con `i` en 0–100, extremos incluidos, un parámetro `Float` vale `d × (1 − i/100) + p × i/100`, con `d` su valor por defecto y `p` el del preset. Un `Int` usa esa fórmula, evaluada en `f64`, y redondea al entero más cercano; medio se aleja de 0. Un `Color` se interpola en luz lineal con la regla de `Color` de 02 §3.4, con `t = i/100`. `Bool` y `Choice` valen `d` con `i = 0` y `p` con `i > 0` (D-41). Una intensidad NaN, `±∞` o fuera de rango da `Err` antes de escribir en destino (ARQ-110).
   - **Miniatura**: es el mismo filtro aplicado a una copia reducida, con `scale` igual a la razón de reducción (ARQ-120).
@@ -438,7 +438,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 - *Comportamiento y reglas*: un clic sobre una imagen (Barra contextual → «Aislar sujeto») ejecuta el `ClassicSegmenter` (GrabCut con GMM y *max-flow* sobre superpíxeles SLIC; 02 §4.7). Trabaja sobre una copia reducida a 2048 px de lado largo (una imagen menor no se amplía), usa solo color en los GMM (D-45) y escala con *guided filter* al tamaño completo. Ese filtro es el refinado de bordes, el *matting* de esta función: no hay una pasada aparte (02 §4.7, ARQ-130). Muestra progreso y una **estimación de tiempo** en CPU (requisito del PRD), que calcula `gafira-engine` a partir de la fracción de progreso (02 ARQ-112); es cancelable en ≤ 100 ms. El resultado es una **máscara no destructiva** (`Mask::Alpha`) que se muestra sobre un fondo de cuadros; el píxel original no cambia y se puede quitar la máscara con Restablecer. Si hay pistas del usuario (trazo sobre el sujeto o el fondo), se usan como semillas. Sin modelos por defecto (ARQ-76).
 - *UI*: Barra contextual y Inspector → Imagen → «Aislar sujeto»; menú contextual.
 - *Técnica*: `Segmenter` (`ClassicSegmenter`, `SegHints`, `Segmentation`, `AlphaMask`; 02 ARQ-130) en `gafira-segment`, `Mask`, pool de render (`rayon`).
-- *Presupuesto*: imagen de 4000 px **< 5 s en CPU** (CAL-06); **< 2 s con GPU** (CAL-07, VERIFICAR); la UI nunca se bloquea. Falta medir estas cifras con la copia de 2048 px (02 Q-48).
+- *Presupuesto*: imagen de 4000 px **< 5 s en CPU** (CAL-06); **< 2 s con GPU** (CAL-07, VERIFICAR); la UI nunca se bloquea. Falta medir estas cifras con la copia de 2048 px en el hardware de D-03 (ítem 134 de 07, D-78).
 - *Aceptación*: (a) las 16 escenas sintéticas del conjunto fijo de `gafira-testkit` dan IoU ≥ 0,90 por escena (prueba bloqueante, D-20, 02 ARQ-132); las 12 escenas nuevas de 02 ARQ-132 solo informan de su recuento (aviso, D-45); el IoU sobre fotos reales es solo un aviso hasta que el titular aporte un conjunto con licencia; (b) `bench_segment_4000` < 5 s en el hardware de gama media; (c) cancelar devuelve el control en ≤ 100 ms y deja el documento intacto (prueba por informes de progreso, 02 ARQ-112; la cifra se mide en `bench_cancel_segment`); (d) la imagen original se puede recuperar quitando la máscara; (e) un borde en rampa da alfa graduado, como fija el criterio de 02 ARQ-130.
 
 **FD-39 · Retocar borde (Pincel Quitar y Pincel Devolver)** (RF-22)
@@ -727,7 +727,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 - *Técnica*: `ProjectService` (`new_document`, `open`, `save`, `save_as`, `recover`, `close`; 02 §5.4), `ProjectRepository`, migraciones `migrate_n_to_n1` (ARQ-53).
 - *Formatos*: `.gaf` (ZIP, `manifest.json` con `format: "gafira-project"`, `formatVersion`, `schemaVersion`, `profile`, `features` y `packageCompleteness`, en camelCase; `document.json` más un JSON por página y por secuencia; recursos `assets/<blake3>.<ext>`; ADR-04, D-68).
 - *Presupuesto*: abrir 20 páginas < 3 s (CAL-09); abrir 100 capas < 500 ms (CAL-10); guardar un proyecto de 20 páginas < 2 s (confirmada, D-71).
-- *Aceptación*: (a) la serialización es determinista (ARQ-10); (b) un proyecto copiado a otro equipo se abre idéntico sin recursos ausentes; (c) un esquema futuro abre en solo lectura con «Guardar» rechazado con error de solo lectura (ARQ-55); (d) un fallo a mitad de guardado deja el archivo anterior o el nuevo íntegros (ARQ-50); (e) con la licencia en `Unlicensed`, `Expired` o `Invalid`, Guardar, Guardar como, «Guardar copia» y «Exportar proyecto editable con recursos» escriben su `.gaf` sin aviso de licencia, y el archivo reabierto contiene la última edición (D-55, 02 ARQ-95).
+- *Aceptación*: (a) la serialización es determinista (ARQ-10); (b) un proyecto copiado a otro equipo se abre idéntico sin recursos ausentes; (c) un esquema o un contenedor futuro, o una capacidad requerida desconocida (D-68), abre en solo lectura: el documento se edita en memoria, «Guardar» se rechaza con error de solo lectura antes de tocar el archivo y los cambios solo se conservan con «Guardar como» (ARQ-55, D-76); (d) un fallo a mitad de guardado deja el archivo anterior o el nuevo íntegros (ARQ-50); (e) con la licencia en `Unlicensed`, `Expired` o `Invalid`, Guardar, Guardar como, «Guardar copia» y «Exportar proyecto editable con recursos» escriben su `.gaf` sin aviso de licencia, y el archivo reabierto contiene la última edición (D-55, 02 ARQ-95).
 
 ---
 
@@ -806,7 +806,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-10 | Empaquetar fuentes del usuario en `.gaf` | Cerrada: D-60 (según su licencia, bits `fsType`, y según el perfil del `.gaf`; FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; FD-31) |
-| Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |
+| Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Cerrada como pregunta: D-78 (pasa a tarea, la revisión visual del ítem 133 de 07) |
 | Q-35, Q-36, Q-39, Q-40, Q-41, Q-42 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33, D-34, D-41 y D-42 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
