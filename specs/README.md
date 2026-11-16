@@ -50,6 +50,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 021 | [Menú Ver: modo oscuro](done/021-view-menu-dark-mode.md) | `Settings.appearance` y Ver → Modo oscuro con los tokens de D-82, recordado entre sesiones |
 | 022 | [Tiradores de tamaño](done/022-resize-handles.md) | Ocho tiradores en la selección; redimensionar con el borde opuesto fijo en un solo deshacer |
 | 023 | [Relleno y opacidad](done/023-fill-and-opacity.md) | Selector de color, «Sin relleno» y opacidad de la forma seleccionada en el Inspector |
+| 024 | [Pestaña Capas](done/024-layers-tab.md) | Lista de elementos de la página, selección desde la lista, Subir y Bajar con deshacer |
 
 ### Historial del flujo anterior
 
@@ -66,4 +67,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **024**.
+Siguiente ID libre: **025**.
