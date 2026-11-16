@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use gafira_doc::msg::{MessageKey, ToMessage, is_valid_key};
 use gafira_ports::common::UnixTime;
-use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier, ReasonCode};
+use gafira_ports::license::{
+    LicenseError, LicenseKey, LicenseStatus, LicenseVerifier, NoLicensing, ReasonCode,
+};
 
 fn active() -> LicenseStatus {
     LicenseStatus::Active {
@@ -129,4 +131,41 @@ fn arq_20_license_verifier_is_object_safe() {
     assert_eq!(v.status(UnixTime(101)), LicenseStatus::Expired);
     v.deactivate().unwrap();
     assert_eq!(v.validate(UnixTime(0)).unwrap(), LicenseStatus::Unlicensed);
+}
+
+// Spec 010, S10-01: with licensing off nothing is required and export is open.
+#[test]
+fn s10_01_not_required_exports_and_asks_for_nothing() {
+    assert!(LicenseStatus::NotRequired.can_export());
+    assert!(!LicenseStatus::NotRequired.is_required());
+    for status in [
+        active(),
+        grace(),
+        LicenseStatus::Expired,
+        LicenseStatus::Unlicensed,
+        LicenseStatus::Invalid {
+            reason: ReasonCode::Revoked,
+        },
+    ] {
+        assert!(status.is_required(), "{status:?}");
+    }
+}
+
+// Spec 010, S10-02: `NoLicensing` is licensing switched off (D-58).
+#[test]
+fn s10_02_no_licensing_is_not_required_and_refuses_every_action() {
+    let off = NoLicensing;
+    for now in [UnixTime(0), UnixTime(i64::MAX)] {
+        assert_eq!(off.status(now), LicenseStatus::NotRequired);
+    }
+    assert_eq!(
+        off.activate(&LicenseKey::new("k"), None),
+        Err(LicenseError::Disabled)
+    );
+    assert_eq!(off.validate(UnixTime(1)), Err(LicenseError::Disabled));
+    assert_eq!(off.deactivate(), Err(LicenseError::Disabled));
+    assert_eq!(
+        LicenseError::Disabled.to_message().key,
+        MessageKey("error.license.disabled")
+    );
 }

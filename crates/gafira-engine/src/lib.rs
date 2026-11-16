@@ -9,7 +9,8 @@
 //!
 //! The ports are injected, the Facade composes, and each service lives in its
 //! own module (design P9): `project` and `edit` share the session of
-//! `session`; `settings` (spec 009) holds the user's settings. The other services arrive in the later deliveries of
+//! `session`; `settings` (spec 009) holds the user's settings and `license` (spec 010)
+//! the licence state. The other services arrive in the later deliveries of
 //! `specs/done/legacy/changes/gafira-engine/design.md`.
 
 #![forbid(unsafe_code)]
@@ -22,6 +23,7 @@ mod event;
 #[cfg(test)]
 mod fakes;
 mod governor;
+mod license;
 mod project;
 mod session;
 mod settings;
@@ -35,6 +37,7 @@ pub use governor::{
     BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,
     TileCacheTrim, Trimmable,
 };
+pub use license::LicenseService;
 pub use project::ProjectService;
 pub use session::DocVersion;
 pub use settings::SettingsService;
