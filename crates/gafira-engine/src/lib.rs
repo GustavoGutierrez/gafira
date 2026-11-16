@@ -30,6 +30,7 @@ mod lock;
 mod project;
 mod session;
 mod settings;
+mod thumbnail;
 mod versions;
 
 pub use assets::AssetService;

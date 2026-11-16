@@ -1584,6 +1584,7 @@ dependencies = [
  "gafira-geom",
  "gafira-ports",
  "gafira-raster",
+ "gafira-time",
 ]
 
 [[package]]
@@ -1594,6 +1595,8 @@ dependencies = [
  "gafira-assets",
  "gafira-doc",
  "gafira-ports",
+ "gafira-raster",
+ "image-webp",
  "serde_json",
  "zip",
 ]

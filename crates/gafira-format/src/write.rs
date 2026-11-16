@@ -4,14 +4,14 @@ use std::collections::BTreeMap;
 use std::io::{self, Seek, SeekFrom, Write};
 
 use gafira_doc::{AssetRef, AssetStorage, Document};
-use gafira_ports::repository::{RepositoryError, Version, VersionKind};
+use gafira_ports::repository::{RepositoryError, Thumbnail, Version, VersionKind};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
 use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
-use crate::{MIMETYPE, assets, manifest, versions};
+use crate::{MIMETYPE, assets, manifest, thumbs, versions};
 
 fn io(error: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> RepositoryError {
     RepositoryError::Io(std::io::Error::other(error))
@@ -103,6 +103,8 @@ fn index_entry(version: &Version, split: &Split) -> Value {
 /// `pages/<id>.json` in page order and `sequences/<id>.json`; with any
 /// version, `versions/index.json` and, per version in order, its
 /// `versions/<id>/document.json`, `pages/` and `sequences/` (spec 031);
+/// with a `thumbnail`, `thumbs/<page_id>.webp`, stored, unless it cannot
+/// be encoded: then it is left out and the write goes on (spec 033);
 /// last, one `assets/<blake3-hex>.<ext>` per embedded asset of the document
 /// or of any version, once per hash and in hash order, with the bytes
 /// `store` holds (spec 026).
@@ -114,6 +116,7 @@ pub fn write_gaf<W: Write + Seek>(
     sink: W,
     document: &Document,
     versions: &[Version],
+    thumbnail: Option<&Thumbnail>,
     store: &dyn ContentStore,
 ) -> Result<(), RepositoryError> {
     // The document names an asset first; a version adds only the ones the
@@ -159,6 +162,8 @@ pub fn write_gaf<W: Write + Seek>(
         .map(|version| Split::of(&version.document))
         .collect::<Result<Vec<_>, _>>()?;
 
+    let thumb = thumbnail.and_then(|t| thumbs::encode(t).map(|bytes| (t.page, bytes)));
+
     let mut zip = ZipWriter::new(sink);
     zip.start_file("mimetype", options(CompressionMethod::Stored))
         .map_err(io)?;
@@ -176,6 +181,11 @@ pub fn write_gaf<W: Write + Seek>(
         for (version, split) in versions.iter().zip(&splits) {
             write_parts(&mut zip, &versions::prefix(version.info.id.0), split)?;
         }
+    }
+    if let Some((page, bytes)) = thumb {
+        zip.start_file(thumbs::name(page), options(CompressionMethod::Stored))
+            .map_err(io)?;
+        zip.write_all(&bytes).map_err(RepositoryError::Io)?;
     }
     for (reference, name) in &embedded {
         let ext = name.rsplit_once('.').map_or("", |(_, ext)| ext);

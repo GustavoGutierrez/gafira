@@ -155,24 +155,36 @@ impl ExportService {
             ExportScope::Pages(pages) => pages.clone(),
             ExportScope::Nodes { page, .. } => vec![*page],
         };
-        let assets: BTreeSet<AssetRef> = pages
-            .iter()
-            .filter_map(|page| document.page(*page))
-            .flat_map(|page| page.nodes.values())
-            .filter_map(|node| match &node.kind {
-                NodeKind::Image(image) => Some(image.asset),
-                _ => None,
-            })
-            .collect();
-        let mut images = ImagePixels::new();
-        for asset in assets {
-            let mut bytes = Vec::new();
-            self.store.open(asset.as_hash())?.read_to_end(&mut bytes)?;
-            let pixels = self.images.decode(&bytes)?;
-            images.insert(asset, Arc::new(pixels));
-        }
-        Ok(images)
+        decode_images(document, &pages, &*self.store, &*self.images)
     }
+}
+
+/// The decoded pixels of every image asset of `pages`, each asset read from
+/// `store` and decoded once (spec 032); the thumbnail of a save uses it too
+/// (spec 033). Every image of those pages counts, visible or not.
+pub(crate) fn decode_images(
+    document: &Document,
+    pages: &[PageId],
+    store: &dyn ContentStore,
+    images: &dyn ImageDecoder,
+) -> Result<ImagePixels, ExportError> {
+    let assets: BTreeSet<AssetRef> = pages
+        .iter()
+        .filter_map(|page| document.page(*page))
+        .flat_map(|page| page.nodes.values())
+        .filter_map(|node| match &node.kind {
+            NodeKind::Image(image) => Some(image.asset),
+            _ => None,
+        })
+        .collect();
+    let mut decoded = ImagePixels::new();
+    for asset in assets {
+        let mut bytes = Vec::new();
+        store.open(asset.as_hash())?.read_to_end(&mut bytes)?;
+        let pixels = images.decode(&bytes)?;
+        decoded.insert(asset, Arc::new(pixels));
+    }
+    Ok(decoded)
 }
 
 /// One output in progress: its temporary, its final name and its file.

@@ -11,15 +11,15 @@ use serde_json::Value;
 use zip::ZipArchive;
 use zip::result::ZipError;
 
-use crate::{FORMAT, Limits, MIMETYPE, assets, manifest, versions};
+use crate::{FORMAT, Limits, MIMETYPE, assets, manifest, thumbs, versions};
 
-fn corrupt(detail: impl Into<String>) -> RepositoryError {
+pub(crate) fn corrupt(detail: impl Into<String>) -> RepositoryError {
     RepositoryError::Corrupt {
         detail: detail.into(),
     }
 }
 
-fn zip_error(error: ZipError) -> RepositoryError {
+pub(crate) fn zip_error(error: ZipError) -> RepositoryError {
     match error {
         ZipError::Io(e) => RepositoryError::Io(e),
         other => corrupt(other.to_string()),
@@ -90,6 +90,21 @@ pub fn read_gaf<R: Read + Seek>(
                 )));
             }
             embedded.push((index, reference));
+        }
+        if entry.name().starts_with(thumbs::FOLDER) && !entry.is_dir() {
+            if thumbs::parse(entry.name()).is_none() {
+                return Err(corrupt(format!(
+                    "malformed thumbnail name {:?}",
+                    entry.name()
+                )));
+            }
+            if size > limits.max_thumb_bytes {
+                return Err(corrupt(format!(
+                    "{} is larger than {} bytes",
+                    entry.name(),
+                    limits.max_thumb_bytes
+                )));
+            }
         }
     }
     check_mimetype(&mut zip)?;
@@ -272,7 +287,9 @@ fn asset_error(error: io::Error) -> RepositoryError {
     }
 }
 
-fn check_mimetype<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Result<(), RepositoryError> {
+pub(crate) fn check_mimetype<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+) -> Result<(), RepositoryError> {
     let mut first = zip.by_index(0).map_err(zip_error)?;
     if first.name() != "mimetype" || first.compression() != zip::CompressionMethod::Stored {
         return Err(corrupt("the first entry is not a stored mimetype"));
@@ -289,7 +306,7 @@ fn check_mimetype<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Result<(), Reposit
     Ok(())
 }
 
-fn json<R: Read + Seek>(
+pub(crate) fn json<R: Read + Seek>(
     zip: &mut ZipArchive<R>,
     name: &str,
     limits: Limits,

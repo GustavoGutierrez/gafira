@@ -1,8 +1,10 @@
 //! The pixels of a render as the straight 8-bit sRGB a file stores
-//! (02 §6.2, ARQ-117).
+//! (02 §6.2, ARQ-117): the PNG and PDF exporters (spec 030) and the
+//! thumbnails of the `.gaf` (spec 033).
 
 use gafira_color::LinearRgba;
-use gafira_raster::{ImageBuf, PixelBuf, unpremultiply_u8};
+
+use crate::{ImageBuf, PixelBuf, unpremultiply_u8};
 
 /// The pixels of `image` as straight (not premultiplied) 8-bit sRGB RGBA, row
 /// by row.
@@ -64,8 +66,6 @@ fn from_srgb8(pixel: &[u8]) -> [u8; 4] {
 
 #[cfg(test)]
 mod tests {
-    use gafira_raster::PixelBuf;
-
     use super::*;
 
     fn one(data: PixelBuf) -> ImageBuf {

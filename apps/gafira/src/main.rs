@@ -4,6 +4,7 @@
 //! ports from the adapters, the engine over them, and hands both to the
 //! shell (spec 018).
 
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ use gafira_engine::{
     EngineConfig, EventChannel, ExportPorts, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
     Waker,
 };
-use gafira_format::{GafRepository, Limits};
+use gafira_format::{GafRepository, Limits, read_thumbnail};
 use gafira_i18n::D08LocaleResolver;
 use gafira_platform::{
     EnvLocale, JsonSettings, RandomIds, RecentProjects, StdFileSystem, StderrNotifier, SystemClock,
@@ -21,6 +22,7 @@ use gafira_platform::{
 use gafira_ports::export::{Exporter, PageRenderers};
 use gafira_ports::i18n::{LanguagePreference, Locale, LocaleResolver};
 use gafira_ports::license::NoLicensing;
+use gafira_ports::repository::RepositoryError;
 use gafira_ports::store::ContentStore;
 use gafira_ports::system::Clock;
 use gafira_render::{FontBook, GraphPageRenderers};
@@ -57,6 +59,25 @@ impl gafira_ui::RecentStore for Recent {
         };
         if let Err(error) = self.file.record(project) {
             eprintln!("recent: {error}");
+        }
+    }
+
+    /// Spec 033: `thumbs/<first page>.webp` of the file, read without
+    /// opening the project.
+    fn thumbnail(&self, path: &Path) -> Option<gafira_ui::RecentThumbnail> {
+        let read = std::fs::File::open(path)
+            .map_err(RepositoryError::Io)
+            .and_then(|file| read_thumbnail(BufReader::new(file), Limits::default()));
+        match read {
+            Ok(thumb) => thumb.map(|thumb| gafira_ui::RecentThumbnail {
+                width: thumb.width,
+                height: thumb.height,
+                rgba: thumb.rgba,
+            }),
+            Err(error) => {
+                eprintln!("recent thumbnail {}: {error}", path.display());
+                None
+            }
         }
     }
 }

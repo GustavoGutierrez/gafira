@@ -14,10 +14,8 @@ use gafira_ports::export::{
 };
 use gafira_ports::format::{ByteSignature, FormatDescriptor, FormatKind};
 use gafira_ports::render::RenderError;
-use gafira_raster::BufferError;
+use gafira_raster::{BufferError, straight_srgb8};
 use gafira_time::Flicks;
-
-use crate::pixels::straight_srgb8;
 
 /// The largest side of an exported image, in pixels (D-71, FD-55).
 pub const MAX_SIDE: u32 = 16_384;

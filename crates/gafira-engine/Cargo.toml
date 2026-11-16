@@ -10,10 +10,12 @@ publish.workspace = true
 gafira-ports.workspace = true
 gafira-doc.workspace = true
 gafira-edit.workspace = true
+# Spec 033: the region and the time of the thumbnail render.
+gafira-geom.workspace = true
+gafira-time.workspace = true
 crossbeam-channel.workspace = true
 
 [dev-dependencies]
-gafira-geom.workspace = true
 gafira-raster.workspace = true
 
 [lints]

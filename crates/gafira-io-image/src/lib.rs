@@ -8,9 +8,9 @@
 #![forbid(unsafe_code)]
 
 mod decode;
-mod pixels;
 mod png_export;
 
 pub use decode::RasterDecoder;
-pub use pixels::straight_srgb8;
+/// Moved to `gafira-raster` (spec 033); kept here for the exporters.
+pub use gafira_raster::straight_srgb8;
 pub use png_export::{MAX_SIDE, PNG_FORMAT, PngExporter, SCALE, TRANSPARENT, page_pixels};

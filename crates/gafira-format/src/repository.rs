@@ -7,7 +7,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gafira_doc::{ContentHash, Document};
-use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError, Version};
+use gafira_ports::repository::{
+    LoadedProject, ProjectRepository, RepositoryError, Thumbnail, Version,
+};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::ReadSeek;
 
@@ -70,17 +72,35 @@ impl ProjectRepository for GafRepository {
         read_gaf(BufReader::new(file), self.limits, self.store.as_ref())
     }
 
-    /// Writes the whole file at `path` (the engine's temporary) and syncs it
-    /// before returning (SP6); the rename over the target is the engine's.
+    /// [`GafRepository::save_with_thumbnail`] without a thumbnail.
     fn save(
         &self,
         path: &Path,
         document: &Document,
         versions: &[Version],
     ) -> Result<(), RepositoryError> {
+        self.save_with_thumbnail(path, document, versions, None)
+    }
+
+    /// Writes the whole file at `path` (the engine's temporary), with the
+    /// thumbnail in `thumbs/` (spec 033), and syncs it before returning
+    /// (SP6); the rename over the target is the engine's.
+    fn save_with_thumbnail(
+        &self,
+        path: &Path,
+        document: &Document,
+        versions: &[Version],
+        thumbnail: Option<&Thumbnail>,
+    ) -> Result<(), RepositoryError> {
         let file = File::create(path).map_err(RepositoryError::Io)?;
         let mut sink = BufWriter::new(file);
-        write_gaf(&mut sink, document, versions, self.store.as_ref())?;
+        write_gaf(
+            &mut sink,
+            document,
+            versions,
+            thumbnail,
+            self.store.as_ref(),
+        )?;
         let file = sink
             .into_inner()
             .map_err(|e| RepositoryError::Io(e.into_error()))?;

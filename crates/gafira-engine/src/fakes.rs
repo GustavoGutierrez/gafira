@@ -29,7 +29,8 @@ use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVeri
 use gafira_ports::media::MediaError;
 use gafira_ports::render::RenderError;
 use gafira_ports::repository::{
-    LoadedProject, ProjectRepository, RepositoryError, Version, VersionId, VersionInfo, VersionKind,
+    LoadedProject, ProjectRepository, RepositoryError, Thumbnail, Version, VersionId, VersionInfo,
+    VersionKind,
 };
 use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
@@ -205,6 +206,51 @@ impl PageRenderer for ClearPixel {
 impl PageRenderers for NoPages {
     fn for_document(&self, _document: &Document, _images: ImagePixels) -> Box<dyn PageRenderer> {
         Box::new(ClearPixel)
+    }
+}
+
+/// Renderers that draw an opaque white picture of the requested region and
+/// keep every request, or fail every one (spec 033).
+#[derive(Clone, Default)]
+pub(crate) struct SizedPages {
+    pub(crate) fail: bool,
+    requests: Arc<Mutex<Vec<PageRenderRequest>>>,
+}
+
+impl SizedPages {
+    /// Renderers whose every render fails.
+    pub(crate) fn failing() -> Self {
+        Self {
+            fail: true,
+            ..Self::default()
+        }
+    }
+
+    /// The requests so far, which are then cleared.
+    pub(crate) fn take_requests(&self) -> Vec<PageRenderRequest> {
+        std::mem::take(&mut self.requests.lock().expect("the fake's lock"))
+    }
+}
+
+impl PageRenderer for SizedPages {
+    fn render(
+        &self,
+        req: &PageRenderRequest,
+        _cancel: &CancelToken,
+    ) -> Result<ImageBuf, RenderError> {
+        self.requests.lock().expect("the fake's lock").push(*req);
+        if self.fail {
+            return Err(RenderError::OutOfMemory);
+        }
+        let (width, height) = (req.region.width(), req.region.height());
+        let pixels = vec![u8::MAX; width as usize * height as usize * 4];
+        Ok(ImageBuf::new(width, height, PixelBuf::Rgba8(pixels))?)
+    }
+}
+
+impl PageRenderers for SizedPages {
+    fn for_document(&self, _document: &Document, _images: ImagePixels) -> Box<dyn PageRenderer> {
+        Box::new(self.clone())
     }
 }
 
@@ -789,6 +835,9 @@ pub(crate) struct MemoryRepository {
     read_only: bool,
     calls: Mutex<Vec<RepoCall>>,
     hand_over: Mutex<Option<Document>>,
+    /// What each `save_with_thumbnail` got: the page and the size of its
+    /// thumbnail, if any (spec 033).
+    thumbnails: Mutex<Vec<Option<(PageId, u32, u32)>>>,
 }
 
 impl MemoryRepository {
@@ -799,7 +848,14 @@ impl MemoryRepository {
             read_only,
             calls: Mutex::new(Vec::new()),
             hand_over: Mutex::new(None),
+            thumbnails: Mutex::new(Vec::new()),
         }
+    }
+
+    /// The thumbnails `save_with_thumbnail` got so far, which are then
+    /// cleared; a plain `save` adds nothing.
+    pub(crate) fn take_thumbnails(&self) -> Vec<Option<(PageId, u32, u32)>> {
+        std::mem::take(&mut self.thumbnails.lock().expect("the fake's lock"))
     }
 
     /// The calls so far, which are then cleared.
@@ -850,6 +906,20 @@ impl ProjectRepository for MemoryRepository {
         file.write_all(first).map_err(RepositoryError::Io)?;
         file.write_all(second).map_err(RepositoryError::Io)?;
         file.sync_all().map_err(RepositoryError::Io)
+    }
+
+    fn save_with_thumbnail(
+        &self,
+        path: &Path,
+        document: &Document,
+        versions: &[Version],
+        thumbnail: Option<&Thumbnail>,
+    ) -> Result<(), RepositoryError> {
+        self.thumbnails
+            .lock()
+            .expect("the fake's lock")
+            .push(thumbnail.map(|t| (t.page, t.image.width(), t.image.height())));
+        self.save(path, document, versions)
     }
 }
 
@@ -932,6 +1002,17 @@ pub(crate) fn engine_with_processes(
     clock: Arc<dyn Clock>,
     processes: Arc<FakeProcesses>,
 ) -> Gafira {
+    engine_with_pages(fs, repository, clock, processes, Arc::new(NoPages))
+}
+
+/// [`engine_with_processes`], drawing pages with `pages` (spec 033).
+pub(crate) fn engine_with_pages(
+    fs: &MemoryFs,
+    repository: &Arc<MemoryRepository>,
+    clock: Arc<dyn Clock>,
+    processes: Arc<FakeProcesses>,
+    pages: Arc<dyn PageRenderers>,
+) -> Gafira {
     let ports = Ports::new(
         Arc::clone(repository) as Arc<dyn ProjectRepository>,
         Arc::new(NoStore),
@@ -944,7 +1025,7 @@ pub(crate) fn engine_with_processes(
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
-        no_export(),
+        ExportPorts::new(pages, Arc::new(NoImages)),
     );
     Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
 }
