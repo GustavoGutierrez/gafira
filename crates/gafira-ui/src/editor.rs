@@ -89,6 +89,10 @@ struct Asked {
     delete: bool,
     /// A placement typed in the Inspector for the selected element.
     place: Option<Placement>,
+    /// A fill picked in the Inspector (`Some(None)` removes it).
+    fill: Option<Option<gafira_color::Color>>,
+    /// An opacity set in the Inspector, 0 to 1.
+    opacity: Option<f32>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
 }
@@ -485,6 +489,40 @@ impl Editor {
                 if changed {
                     asked.place = Some(placement);
                 }
+                ui.add_space(16.0);
+                ui.horizontal(|ui| {
+                    ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
+                    let mut color = shape
+                        .fill
+                        .map_or(Color32::TRANSPARENT, canvas::screen_color);
+                    if ui.color_edit_button_srgba(&mut color).changed() {
+                        asked.fill = Some(Some(canvas::document_color(color)));
+                    }
+                    if shape.fill.is_some()
+                        && ui
+                            .small_button(texts.t(&gafira_doc::msg!("inspector.no_fill")))
+                            .clicked()
+                    {
+                        asked.fill = Some(None);
+                    }
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(texts.t(&gafira_doc::msg!("inspector.opacity")));
+                    let mut percent = shape.opacity * 100.0;
+                    // The unit comes from the catalog, like every visible text (ARQ-97).
+                    let slider = egui::Slider::new(&mut percent, 0.0..=100.0)
+                        .max_decimals(0)
+                        .custom_formatter(|value, _| {
+                            texts.t(&gafira_doc::msg!(
+                                "format.percent",
+                                value = Text(format!("{value:.0}"))
+                            ))
+                        });
+                    if ui.add(slider).changed() {
+                        asked.opacity = Some(percent / 100.0);
+                    }
+                });
             });
     }
 
@@ -573,9 +611,7 @@ impl Editor {
                                 let shapes = canvas::shapes(page_doc);
                                 for shape in &shapes {
                                     let at = canvas::on_screen(page, zoom, &shape.placement);
-                                    let fill = shape
-                                        .fill
-                                        .map_or(Color32::TRANSPARENT, canvas::screen_color);
+                                    let fill = canvas::paint(shape);
                                     match shape.geometry {
                                         ShapeGeometry::Rect => {
                                             painter.rect_filled(at, 0.0, fill);
@@ -743,6 +779,17 @@ impl Editor {
         if let (Some(placement), Some((page, node))) = (asked.place, self.selected) {
             let command = SetProperty::new(page, vec![node], Property::Placement(placement), None);
             log("place", engine.edit().execute(Box::new(command)).map(drop));
+        }
+        if let (Some(fill), Some((page, node))) = (asked.fill, self.selected) {
+            let command = SetProperty::new(page, vec![node], Property::Fill(fill), None);
+            log("fill", engine.edit().execute(Box::new(command)).map(drop));
+        }
+        if let (Some(opacity), Some((page, node))) = (asked.opacity, self.selected) {
+            let command = SetProperty::new(page, vec![node], Property::Opacity(opacity), None);
+            log(
+                "opacity",
+                engine.edit().execute(Box::new(command)).map(drop),
+            );
         }
         if asked.delete
             && let Some((page, node)) = self.selected.take()
@@ -1169,5 +1216,57 @@ pub(crate) mod tests {
         assert_eq!((resized.w - origin.w, resized.h - origin.h), (40.0, 20.0));
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine)[0].placement, origin);
+    }
+
+    // S23-02
+    #[test]
+    fn s23_02_fill_and_opacity_change_through_the_engine_and_undo() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        let mut editor = Editor::default();
+        let snapshot = engine.edit().document();
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                insert: Some(ShapeGeometry::Rect),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        let blue = canvas::document_color(Color32::from_rgb(0, 0, 255));
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                fill: Some(Some(blue)),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert_eq!(the_shapes(&mut engine)[0].fill, Some(blue));
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                opacity: Some(0.25),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert_eq!(the_shapes(&mut engine)[0].opacity, 0.25);
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                fill: Some(None),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert_eq!(the_shapes(&mut engine)[0].fill, None);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine)[0].fill, Some(blue));
     }
 }
