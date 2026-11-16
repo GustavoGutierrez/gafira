@@ -1,6 +1,6 @@
 # 025 — Proyectos recientes en Inicio
 
-> **Estado:** in-progress — 2026-11-16 — rama `feat/025-recent-projects`.
+> **Estado:** done — 2026-11-16 — S25-01..S25-04 cubiertos por `gafira-platform` (`recent::tests` 7, escritos primero y vistos fallar) y `gafira-ui` (`recent::tests` 4); los tests borran sus carpetas temporales. 2819 tests.
 
 ## Objetivo
 
@@ -52,3 +52,5 @@ S25-03 y S25-04 son de interfaz y se validan con tests de `gafira-ui` sin ventan
 
 - Una ruta que no es UTF-8 no se puede escribir en JSON; esa grabación falla, se registra en el log y la lista sigue como estaba.
 - Sin miniaturas hasta que exista `thumbs/` en el `.gaf`.
+- Si una tarjeta no se puede abrir pero su archivo sigue ahí (por ejemplo, un `.gaf` dañado), el fallo va solo al log: Inicio aún no tiene línea de estado. Seguimiento para una spec futura.
+- La apertura desde Inicio y el texto de las tarjetas se comprobaron por tests sin ventana; no hay prueba automática del dibujo.
