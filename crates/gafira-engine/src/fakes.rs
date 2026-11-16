@@ -19,11 +19,14 @@ use gafira_edit::{
 };
 use gafira_geom::{Length, Unit};
 use gafira_ports::common::UnixTime;
-use gafira_ports::export::{ImagePixels, PageRenderRequest, PageRenderer, PageRenderers};
+use gafira_ports::export::{
+    ImageDecoder, ImagePixels, PageRenderRequest, PageRenderer, PageRenderers,
+};
 use gafira_ports::i18n::{
     FormatLocale, LanguagePreference, Locale, LocaleResolver, LocaleSource, ResolvedLocale,
 };
 use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier};
+use gafira_ports::media::MediaError;
 use gafira_ports::render::RenderError;
 use gafira_ports::repository::{
     LoadedProject, ProjectRepository, RepositoryError, Version, VersionId, VersionInfo, VersionKind,
@@ -36,7 +39,9 @@ use gafira_ports::system::{
 use gafira_raster::{ImageBuf, PixelBuf};
 
 use crate::bus::EventChannel;
-use crate::engine::{EngineConfig, Gafira, Ports, Registries, SettingsPorts, SystemPorts};
+use crate::engine::{
+    EngineConfig, ExportPorts, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
+};
 use crate::event::{EngineEvent, NoopWaker};
 
 pub(crate) struct NoRepository;
@@ -323,6 +328,23 @@ impl LocaleResolver for FallbackResolver {
 }
 
 /// The settings ports of the engines that never touch settings.
+/// The export ports of the tests: pages of one clear pixel and a decoder
+/// that reads nothing.
+pub(crate) fn no_export() -> ExportPorts {
+    ExportPorts::new(Arc::new(NoPages), Arc::new(NoImages))
+}
+
+/// A decoder that reads no image.
+pub(crate) struct NoImages;
+
+impl ImageDecoder for NoImages {
+    fn decode(&self, _bytes: &[u8]) -> Result<ImageBuf, MediaError> {
+        Err(MediaError::Corrupt {
+            detail: "no decoder".to_owned(),
+        })
+    }
+}
+
 pub(crate) fn no_settings() -> SettingsPorts {
     SettingsPorts::new(Arc::new(NoSettings), Arc::new(FallbackResolver))
 }
@@ -498,7 +520,7 @@ pub(crate) fn six_ports() -> Ports {
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
-        Arc::new(NoPages),
+        no_export(),
     )
 }
 
@@ -922,7 +944,7 @@ pub(crate) fn engine_with_processes(
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
-        Arc::new(NoPages),
+        no_export(),
     );
     Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
 }

@@ -37,7 +37,7 @@ pub use autosave::{AutosaveJob, AutosaveOutcome};
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use edit::EditService;
 pub use engine::{
-    EngineConfig, EngineError, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
+    EngineConfig, EngineError, ExportPorts, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
 };
 pub use event::{
     EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, RecoveryEntry, Waker,

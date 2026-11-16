@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gafira_ports::common::Bytes;
-use gafira_ports::export::{ExportError, ExportIssue, PageRenderers};
+use gafira_ports::export::{ExportError, ExportIssue, ImageDecoder, PageRenderers};
 use gafira_ports::format::FormatRegistry;
 use gafira_ports::i18n::LocaleResolver;
 use gafira_ports::license::{LicenseError, LicenseVerifier};
@@ -62,6 +62,25 @@ pub struct Ports {
     pub settings: SettingsPorts,
     /// The pages of a document snapshot for its exports (spec 030).
     pub pages: Arc<dyn PageRenderers>,
+    /// Decodes the image assets an export draws (spec 032).
+    pub images: Arc<dyn ImageDecoder>,
+}
+
+/// The two ports an export needs, grouped so [`Ports::new`] stays within
+/// clippy's seven arguments (spec 032).
+pub struct ExportPorts {
+    /// The pages of a document snapshot (spec 030).
+    pub pages: Arc<dyn PageRenderers>,
+    /// Decodes the image assets the pages draw (spec 032).
+    pub images: Arc<dyn ImageDecoder>,
+}
+
+impl ExportPorts {
+    /// The page renderers and the image decoder.
+    #[must_use]
+    pub fn new(pages: Arc<dyn PageRenderers>, images: Arc<dyn ImageDecoder>) -> Self {
+        Self { pages, images }
+    }
 }
 
 /// The two ports `SettingsService` needs, grouped so [`Ports::new`] stays
@@ -127,7 +146,7 @@ impl Ports {
         notifier: Arc<dyn Notifier>,
         license: Arc<dyn LicenseVerifier>,
         settings: SettingsPorts,
-        pages: Arc<dyn PageRenderers>,
+        export: ExportPorts,
     ) -> Self {
         Self {
             repository,
@@ -139,7 +158,8 @@ impl Ports {
             notifier,
             license,
             settings,
-            pages,
+            pages: export.pages,
+            images: export.images,
         }
     }
 }
@@ -751,7 +771,7 @@ mod tests {
                 Arc::clone(&notifier),
                 Arc::clone(&license),
                 no_settings(),
-                Arc::new(NoPages),
+                no_export(),
             ),
             Registries::new(),
             config(),
