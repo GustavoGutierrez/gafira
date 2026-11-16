@@ -1,10 +1,9 @@
 //! The window, the screens and the way between them (03 §6.1).
 
-use std::time::Duration;
-
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
 use std::sync::mpsc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gafira_engine::{AutosaveOutcome, EngineError, Gafira, RecoveryEntry, Waker};
 use gafira_ports::i18n::Locale;
@@ -16,6 +15,7 @@ use crate::editor::Editor;
 use crate::files::{self, FileAction, Outcome};
 use crate::format::StartFormat;
 use crate::home::Home;
+use crate::recent::{self, RecentStore};
 use crate::splash;
 use crate::style::Theme;
 use crate::text::Texts;
@@ -33,6 +33,8 @@ pub struct UiConfig {
     pub version: &'static str,
     /// The engine, built inside the window's creation.
     pub engine: EngineFactory,
+    /// The recent projects of Inicio (spec 025).
+    pub recent: Box<dyn RecentStore>,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -57,12 +59,15 @@ pub(crate) enum Go {
     Home,
     Editor(StartFormat),
     File(FileAction),
+    /// Open a project of «Recientes».
+    OpenRecent(PathBuf),
     /// Switch the interface to dark (`true`) or light, and remember it.
     Dark(bool),
 }
 
 struct Shell {
     engine: Gafira,
+    recent: Box<dyn RecentStore>,
     theme: Theme,
     texts: Texts,
     version: &'static str,
@@ -121,6 +126,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
             theme.apply(&cc.egui_ctx);
             Ok(Box::new(Shell {
                 engine,
+                recent: config.recent,
                 theme,
                 texts: Texts::new(config.locale.unwrap_or(resolved.locale)),
                 version: config.version,
@@ -139,10 +145,11 @@ pub fn run(config: UiConfig) -> eframe::Result {
 }
 
 /// Where the person was going when «¿Guardar los cambios?» stopped them.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Leave {
     Home,
     Open,
+    Recent(PathBuf),
 }
 
 impl Shell {
@@ -180,9 +187,39 @@ impl Shell {
     /// Leave the editor for `to`, closing the session (its slots go with it).
     fn proceed(&mut self, to: Leave) {
         self.engine.projects().close();
-        self.screen = Screen::Home(Home::default());
-        if let Leave::Open = to {
-            self.file(FileAction::Open);
+        self.screen = self.home();
+        match to {
+            Leave::Home => {}
+            Leave::Open => self.file(FileAction::Open),
+            Leave::Recent(path) => self.open_recent(&path),
+        }
+    }
+
+    /// Inicio with the recent projects as they are now.
+    fn home(&self) -> Screen {
+        Screen::Home(Home::new(self.recent.list()))
+    }
+
+    /// Put the open project in «Recientes» (spec 025).
+    fn remember(&self) {
+        if let Some(path) = self.engine.projects().path() {
+            recent::remember(self.recent.as_ref(), &path);
+        }
+    }
+
+    /// Open a project of «Recientes». When it fails, Inicio reads the list
+    /// again, so a file that went away leaves it.
+    fn open_recent(&mut self, path: &Path) {
+        self.notice = None;
+        match self.engine.projects().open(path) {
+            Ok(()) => {
+                self.remember();
+                self.screen = Screen::Editor(Editor::default());
+            }
+            Err(error) => {
+                eprintln!("open recent: {error}");
+                self.screen = self.home();
+            }
         }
     }
 
@@ -191,6 +228,9 @@ impl Shell {
         match files::run(&self.engine, action) {
             Outcome::Cancelled => {}
             Outcome::Done => {
+                if recent::records(action) {
+                    self.remember();
+                }
                 if action == FileAction::Open {
                     self.screen = Screen::Editor(Editor::default());
                 }
@@ -204,7 +244,7 @@ impl Shell {
 
     /// The dialogs over the screen; `true` when one is open.
     fn dialogs(&mut self, ctx: &egui::Context) -> bool {
-        if let Some(to) = self.leaving {
+        if let Some(to) = self.leaving.clone() {
             match dialogs::leave(ctx, &self.theme, &self.texts) {
                 LeaveChoice::None => {}
                 LeaveChoice::Cancel => self.leaving = None,
@@ -246,6 +286,7 @@ impl Shell {
                 let id = self.recovery[index].project_id;
                 match self.engine.projects().recover(id) {
                     Ok(()) => {
+                        self.remember();
                         self.recovery.clear();
                         self.screen = Screen::Editor(Editor::default());
                     }
@@ -261,6 +302,7 @@ impl Shell {
                 if let Some(origin) = &entry.origin {
                     match self.engine.projects().open(origin) {
                         Ok(()) => {
+                            self.remember();
                             self.engine.projects().discard_recovery(entry.project_id);
                             self.recovery.clear();
                             self.screen = Screen::Editor(Editor::default());
@@ -296,7 +338,7 @@ impl eframe::App for Shell {
                     Go::Stay
                 }
             }
-            Screen::Home(home) => home.show(ctx, &self.theme, &self.texts),
+            Screen::Home(home) => home.show(ctx, &self.theme, &self.texts, unix_now()),
             Screen::Editor(editor) => editor.show(
                 ctx,
                 &mut self.engine,
@@ -319,7 +361,7 @@ impl eframe::App for Shell {
             Go::Home if in_editor && modified => self.leaving = Some(Leave::Home),
             Go::Home if in_editor => self.proceed(Leave::Home),
             Go::Home => {
-                self.screen = Screen::Home(Home::default());
+                self.screen = self.home();
                 // Once, as Inicio first appears (03 §6.1).
                 if !self.scanned {
                     self.scanned = true;
@@ -331,6 +373,10 @@ impl eframe::App for Shell {
             }
             Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
             Go::File(action) => self.file(action),
+            Go::OpenRecent(path) if in_editor && modified => {
+                self.leaving = Some(Leave::Recent(path));
+            }
+            Go::OpenRecent(path) => self.open_recent(&path),
             Go::Dark(dark) => {
                 self.theme.dark = dark;
                 self.theme.apply(ctx);
@@ -356,4 +402,13 @@ impl eframe::App for Shell {
 /// «Elegir»); the page is part of the document, so undo keeps it (spec 016).
 pub(crate) fn start(engine: &mut Gafira, format: StartFormat) -> Result<(), EngineError> {
     engine.projects().new_document_with(format.page_size())
+}
+
+/// Seconds since the Unix epoch, for the relative times of Inicio.
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| i64::try_from(elapsed.as_secs()).ok())
+        .unwrap_or(0)
 }

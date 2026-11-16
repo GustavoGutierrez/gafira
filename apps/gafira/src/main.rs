@@ -15,12 +15,12 @@ use gafira_engine::{
 use gafira_format::GafRepository;
 use gafira_i18n::D08LocaleResolver;
 use gafira_platform::{
-    EnvLocale, JsonSettings, RandomIds, StdFileSystem, StderrNotifier, SystemClock,
+    EnvLocale, JsonSettings, RandomIds, RecentProjects, StdFileSystem, StderrNotifier, SystemClock,
 };
 use gafira_ports::i18n::{LanguagePreference, Locale, LocaleResolver};
 use gafira_ports::license::NoLicensing;
 use gafira_ports::store::{ContentStore, StoreError};
-use gafira_ports::system::ReadSeek;
+use gafira_ports::system::{Clock, ReadSeek};
 
 fn pending() -> io::Error {
     io::Error::new(
@@ -46,6 +46,41 @@ impl ContentStore for StorePending {
     }
 }
 
+/// «Recientes» of Inicio over `<data_dir>/recent.json` (spec 025).
+struct Recent {
+    file: RecentProjects,
+    clock: SystemClock,
+}
+
+impl gafira_ui::RecentStore for Recent {
+    fn list(&self) -> Vec<gafira_ui::RecentProject> {
+        let list = self.file.existing().unwrap_or_else(|error| {
+            eprintln!("recent: {error}");
+            let mut list = self.file.load();
+            list.retain(|project| project.path.exists());
+            list
+        });
+        list.into_iter()
+            .map(|project| gafira_ui::RecentProject {
+                path: project.path,
+                name: project.name,
+                opened_at: project.opened_at,
+            })
+            .collect()
+    }
+
+    fn record(&self, path: &Path, name: &str) {
+        let project = gafira_platform::RecentProject {
+            path: path.to_path_buf(),
+            name: name.to_owned(),
+            opened_at: self.clock.now().0,
+        };
+        if let Err(error) = self.file.record(project) {
+            eprintln!("recent: {error}");
+        }
+    }
+}
+
 /// `--lang es|en` overrides the language for this run without saving it.
 fn language_flag() -> Option<LanguagePreference> {
     let args: Vec<String> = std::env::args().collect();
@@ -68,6 +103,10 @@ fn main() -> eframe::Result {
     gafira_ui::run(gafira_ui::UiConfig {
         locale,
         version: env!("CARGO_PKG_VERSION"),
+        recent: Box::new(Recent {
+            file: RecentProjects::at(data_dir.join("recent.json")),
+            clock: SystemClock::new(),
+        }),
         engine: Box::new(move |waker: Arc<dyn Waker>| {
             let clock = Arc::new(SystemClock::new());
             let ports = Ports::new(
