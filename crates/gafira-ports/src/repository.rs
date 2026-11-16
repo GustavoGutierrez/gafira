@@ -1,17 +1,33 @@
 //! Project repositories (02 §5.3). `ProjectRepository` works on `Document`
 //! until `Project` lands (02 §3.1, S15). A project carries its versions
-//! (02 §7.1 «Versiones», D-67, spec 031).
+//! (02 §7.1 «Versiones», D-67, spec 031) and, on save, the thumbnail of
+//! its first page (02 §7.1 `thumbs/`, spec 033).
 
 use std::fmt;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
-use gafira_doc::Document;
 use gafira_doc::msg;
 use gafira_doc::msg::{Message, ToMessage};
+use gafira_doc::{Document, PageId};
+use gafira_raster::ImageBuf;
 
 use crate::common::UnixTime;
+
+/// The longest side of a thumbnail, in pixels (02 §7.1: «miniaturas de
+/// 512 px»).
+pub const THUMBNAIL_SIDE: u32 = 512;
+
+/// The picture of one page a save stores next to the document, so that
+/// Inicio shows it without opening the project (03 §7.2, spec 033).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Thumbnail {
+    /// The page it shows.
+    pub page: PageId,
+    /// Its pixels, at most [`THUMBNAIL_SIDE`] on each side.
+    pub image: ImageBuf,
+}
 
 /// Names one version inside a project file (02 §7.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -133,4 +149,23 @@ pub trait ProjectRepository: Send + Sync {
         document: &Document,
         versions: &[Version],
     ) -> Result<(), RepositoryError>;
+
+    /// [`ProjectRepository::save`], with the `thumbnail` of the first page
+    /// stored next to the document when there is one (spec 033). A
+    /// repository that keeps no thumbnails needs nothing more: by default
+    /// this is `save`, and the thumbnail is dropped.
+    ///
+    /// # Errors
+    /// As [`ProjectRepository::save`]. A thumbnail the repository cannot
+    /// store is left out; it never fails the save.
+    fn save_with_thumbnail(
+        &self,
+        path: &Path,
+        document: &Document,
+        versions: &[Version],
+        thumbnail: Option<&Thumbnail>,
+    ) -> Result<(), RepositoryError> {
+        let _ = thumbnail;
+        self.save(path, document, versions)
+    }
 }
