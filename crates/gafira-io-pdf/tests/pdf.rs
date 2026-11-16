@@ -133,7 +133,7 @@ fn export(
         Arc::new(FixedClock),
         Arc::new(FontBook::new()),
     );
-    let pages = renderers.for_document(document);
+    let pages = renderers.for_document(document, Default::default());
     let job = ExportJob {
         request,
         document,

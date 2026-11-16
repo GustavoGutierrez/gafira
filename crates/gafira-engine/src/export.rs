@@ -103,7 +103,7 @@ impl ExportService {
         if !blocking.is_empty() {
             return Err(EngineError::ExportBlocked(blocking));
         }
-        let pages = self.pages.for_document(&document);
+        let pages = self.pages.for_document(&document, Default::default());
         let job = ExportJob {
             request,
             document: &document,
@@ -396,7 +396,11 @@ mod tests {
     }
 
     impl PageRenderers for CountingPages {
-        fn for_document(&self, document: &Document) -> Box<dyn PageRenderer> {
+        fn for_document(
+            &self,
+            document: &Document,
+            _images: gafira_ports::export::ImagePixels,
+        ) -> Box<dyn PageRenderer> {
             self.snapshots.lock().unwrap().push(document.pages().len());
             Box::new(WhitePixel)
         }

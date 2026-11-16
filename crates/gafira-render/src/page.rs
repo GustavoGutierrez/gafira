@@ -28,7 +28,7 @@ use gafira_doc::visit::{PageView, WalkOrder};
 use gafira_doc::{Document, Page};
 use gafira_geom::{Affine, IRect};
 use gafira_ports::common::{Bytes, UnixTime};
-use gafira_ports::export::{PageRenderRequest, PageRenderer, PageRenderers};
+use gafira_ports::export::{ImagePixels, PageRenderRequest, PageRenderer, PageRenderers};
 use gafira_ports::render::{
     Deadline, RenderBackend, RenderError, RenderOp, RenderQuality, TargetDesc,
 };
@@ -67,6 +67,7 @@ pub struct GraphPageRenderer {
     cache: Mutex<ContentTileCache>,
     clock: Box<dyn Clock>,
     fonts: Arc<FontBook>,
+    images: Arc<ImagePixels>,
 }
 
 impl GraphPageRenderer {
@@ -85,6 +86,7 @@ impl GraphPageRenderer {
             cache: Mutex::new(cache),
             clock,
             fonts: Arc::new(FontBook::new()),
+            images: Arc::new(ImagePixels::new()),
         }
     }
 
@@ -93,6 +95,15 @@ impl GraphPageRenderer {
     #[must_use]
     pub fn with_fonts(mut self, fonts: Arc<FontBook>) -> Self {
         self.fonts = fonts;
+        self
+    }
+
+    /// The renderer that draws each image of the pages with the pixels of
+    /// its asset in `images` (spec 032); without them an image draws
+    /// nothing.
+    #[must_use]
+    pub fn with_images(mut self, images: ImagePixels) -> Self {
+        self.images = Arc::new(images);
         self
     }
 
@@ -167,6 +178,7 @@ impl GraphPageRenderer {
         RenderGraphBuilder::new(&view, params, InlinePool)
             .scaled(scale)
             .with_fonts(Arc::clone(&self.fonts))
+            .with_images(Arc::clone(&self.images))
             .build(WalkOrder::PreOrder, cancel, &NoProgress)
             .map_err(graph_error)
     }
@@ -300,7 +312,7 @@ impl GraphPageRenderers {
 }
 
 impl PageRenderers for GraphPageRenderers {
-    fn for_document(&self, document: &Document) -> Box<dyn PageRenderer> {
+    fn for_document(&self, document: &Document, images: ImagePixels) -> Box<dyn PageRenderer> {
         Box::new(
             GraphPageRenderer::new(
                 document.clone(),
@@ -309,7 +321,8 @@ impl PageRenderers for GraphPageRenderers {
                 ContentTileCache::new(EXPORT_CACHE),
                 Box::new(SharedClock(Arc::clone(&self.clock))),
             )
-            .with_fonts(Arc::clone(&self.fonts)),
+            .with_fonts(Arc::clone(&self.fonts))
+            .with_images(images),
         )
     }
 }
@@ -1097,7 +1110,7 @@ mod tests {
             Arc::new(FixedClock),
             Arc::new(FontBook::new()),
         );
-        let pages = renderers.for_document(&document);
+        let pages = renderers.for_document(&document, ImagePixels::new());
         let image = pages
             .render(
                 &request(page, IRect::new(0, 0, 40, 30), 1.0, false),

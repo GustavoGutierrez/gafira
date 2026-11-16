@@ -19,7 +19,7 @@ use gafira_edit::{
 };
 use gafira_geom::{Length, Unit};
 use gafira_ports::common::UnixTime;
-use gafira_ports::export::{PageRenderRequest, PageRenderer, PageRenderers};
+use gafira_ports::export::{ImagePixels, PageRenderRequest, PageRenderer, PageRenderers};
 use gafira_ports::i18n::{
     FormatLocale, LanguagePreference, Locale, LocaleResolver, LocaleSource, ResolvedLocale,
 };
@@ -198,7 +198,7 @@ impl PageRenderer for ClearPixel {
 }
 
 impl PageRenderers for NoPages {
-    fn for_document(&self, _document: &Document) -> Box<dyn PageRenderer> {
+    fn for_document(&self, _document: &Document, _images: ImagePixels) -> Box<dyn PageRenderer> {
         Box::new(ClearPixel)
     }
 }

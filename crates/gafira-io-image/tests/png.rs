@@ -153,7 +153,7 @@ fn export(
     sink: &mut MemSink,
 ) -> Result<ExportReport, ExportError> {
     let renderers = renderers();
-    let pages = renderers.for_document(document);
+    let pages = renderers.for_document(document, Default::default());
     let job = ExportJob {
         request,
         document,

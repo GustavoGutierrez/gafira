@@ -522,7 +522,11 @@ struct Factory {
 }
 
 impl gafira_ports::export::PageRenderers for Factory {
-    fn for_document(&self, _document: &Document) -> Box<dyn PageRenderer> {
+    fn for_document(
+        &self,
+        _document: &Document,
+        _images: gafira_ports::export::ImagePixels,
+    ) -> Box<dyn PageRenderer> {
         *self.built.lock().unwrap() += 1;
         Box::new(Pages {
             asked: Mutex::default(),
@@ -538,7 +542,7 @@ fn s30_05_page_renderers_builds_one_renderer_per_snapshot() {
         built: Mutex::new(0),
     };
     let renderers: &dyn gafira_ports::export::PageRenderers = &factory;
-    let pages = renderers.for_document(&Document::default());
+    let pages = renderers.for_document(&Document::default(), Default::default());
     let request = PageRenderRequest {
         page: PageId::new(1),
         time: Flicks::default(),

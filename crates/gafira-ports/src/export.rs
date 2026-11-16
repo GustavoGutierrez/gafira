@@ -4,13 +4,15 @@
 //! (ARQ-06): it asks for pixels through the [`PageRenderer`] of its
 //! [`ExportJob`].
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
+use std::sync::Arc;
 
 use gafira_doc::contract::{CancelToken, Cancelled, ParamSchema, ParamValues, Progress};
 use gafira_doc::msg;
 use gafira_doc::msg::{Message, ToMessage};
-use gafira_doc::{Document, NodeId, PageId};
+use gafira_doc::{AssetRef, Document, NodeId, PageId};
 use gafira_geom::IRect;
 use gafira_raster::ImageBuf;
 use gafira_time::Flicks;
@@ -145,6 +147,10 @@ pub trait PageRenderer: Send + Sync {
     ) -> Result<ImageBuf, RenderError>;
 }
 
+/// The decoded pixels of the image assets an export draws, by asset
+/// (spec 032). Each buffer is 8-bit sRGB premultiplied (ARQ-117).
+pub type ImagePixels = BTreeMap<AssetRef, Arc<ImageBuf>>;
+
 /// Builds the [`PageRenderer`] of one snapshot of the document for an export
 /// (spec 030).
 ///
@@ -152,8 +158,26 @@ pub trait PageRenderer: Send + Sync {
 /// the engine hands an [`ExportJob`] its pages without seeing either
 /// (ARQ-06).
 pub trait PageRenderers: Send + Sync {
-    /// A renderer of the pages of `document`, at export quality (02 §6.2).
-    fn for_document(&self, document: &Document) -> Box<dyn PageRenderer>;
+    /// A renderer of the pages of `document`, at export quality (02 §6.2),
+    /// that draws each image element with the pixels of its asset in
+    /// `images` (spec 032). The render reads no file: the engine resolves
+    /// and decodes the assets first.
+    fn for_document(&self, document: &Document, images: ImagePixels) -> Box<dyn PageRenderer>;
+}
+
+/// Decodes the bytes of an image asset into pixels (spec 032).
+///
+/// Decoding is file-format parsing, so it lives in an adapter
+/// (`gafira-io-image`, 02 §2.1); the engine reads the bytes from the
+/// [`ContentStore`] and hands them over.
+pub trait ImageDecoder: Send + Sync {
+    /// The pixels of the encoded image `bytes`, as 8-bit sRGB premultiplied
+    /// (ARQ-117).
+    ///
+    /// # Errors
+    /// [`MediaError::Corrupt`] when the bytes are not an image this decoder
+    /// reads.
+    fn decode(&self, bytes: &[u8]) -> Result<ImageBuf, MediaError>;
 }
 
 /// Why an export failed.
