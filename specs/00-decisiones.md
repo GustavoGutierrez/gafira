@@ -527,3 +527,12 @@ Fecha: 2 de noviembre de 2026.
 7. ~~Aprobar el nombre «Pantalla de arranque» / «Startup screen» y las cifras de D-09~~ (**aprobado** el 24 de octubre de 2026; ver D-09).
 8. D-10: ~~revisar las 9 pistas con voz detectada y volver a comprobar `underscore-05`, `-06` y `-10`~~ (**hecho**: las 9 regeneradas y comprobadas, 40/40 sin voz); queda al implementar la pestaña Sonidos convertir el audio, registrarlo en `assets/LICENSES.toml` y `THIRD_PARTY_NOTICES.md` y mostrar «MiniMax-Music3» y el aviso de contenido generado por IA.
 9. D-20: aportar un conjunto de fotos reales con licencia y máscaras de referencia para `gafira-segment` antes de publicar. Hasta entonces, el IoU sobre fotos reales es solo un aviso.
+
+## D-58 Licencia opcional por build
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): el licenciamiento se puede **habilitar o deshabilitar** sin cambiar el engine ni la UI, porque es posible que Gafira se publique sin licencia. El composition root elige qué `LicenseVerifier` inyecta: el adaptador de `gafira-license` (licencia habilitada) o `NoLicensing` de `gafira-ports` (licencia deshabilitada).
+- **Licencia deshabilitada**: el estado es `LicenseStatus::NotRequired`; `can_export` es verdadero, no hay pantalla de activación ni conexión de red, y activar, validar o desactivar devuelven `LicenseError::Disabled`.
+- **Licencia habilitada**: sigue rigiendo D-12 y D-55 sin cambios.
+- Amplía D-12. Aplicado en la spec 010; 02 §4.14 y §13.3 se actualizan cuando se promueva esa tabla.
