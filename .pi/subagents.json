@@ -2,37 +2,9 @@
   "default_model": "opencode-go/deepseek-v4.1-flash",
   "default_thinking_level": "high",
   "model_profiles": {
-    "architect": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "effort": "high"
-    },
-    "specifier": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "effort": "high"
-    },
-    "tdd-apply": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "effort": "high"
-    },
-    "verify": {
-      "model": "opencode-go/deepseek-v4.1-flash",
-      "effort": "high"
-    },
-    "explorer": {
-      "model": "opencode-go/minimax-m3.1-flash",
-      "effort": "medium"
-    },
-    "mutants": {
-      "model": "opencode-go/minimax-m3.1-flash",
-      "effort": "medium"
-    },
-    "archive": {
-      "model": "opencode-go/minimax-m3.1-flash",
-      "effort": "medium"
-    },
     "manual-writer": {
-      "model": "opencode-go/minimax-m3.1-flash",
-      "effort": "medium"
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "effort": "high"
     }
   }
 }

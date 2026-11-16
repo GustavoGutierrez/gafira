@@ -2,7 +2,7 @@
 
 > Partly superseded by [ADR 0002](0002-fast-lane.md) (2026-10-29) on: the new-crate full floor, the default tiers per delivery (now `mutation: archive`), the default verify depths (now V1/V2, V3 on owner request), and delta specs as mandatory for product-spec slices (now a Slice card). Modes, packs, tiers, depths and gates below stay valid.
 
-- Status: accepted, partly superseded by 0002 and 0004, amended by 0011
+- Status: superseded by 0018
 - Date: 2026-10-25 (proposed and accepted the same day)
 - Related: `AGENTS.md` (lite flow, testing and mutation policy), `.agents/agents/coordinator.md` (route, feedback loop), owner decisions in `docs/specs/00-decisiones.md` (none reopened), changes `workspace-scaffold`, `domain-color`, `domain-doc`, `edit-history`
 

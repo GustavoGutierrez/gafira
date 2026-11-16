@@ -1,6 +1,6 @@
 # 0002. Fast lane: spec-direct execution, mutation toggle, lighter defaults
 
-- Status: accepted, extended by 0004, amended by 0011
+- Status: superseded by 0018
 - Date: 2026-10-29 (decided by the owner)
 - Related: ADR 0001 (supersedes the parts named below), `AGENTS.md`, `.agents/agents/coordinator.md`, change `fast-lane-flow`; product spec `docs/specs/02-arquitectura-software.md`
 

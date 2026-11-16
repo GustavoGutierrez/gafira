@@ -17,7 +17,7 @@
 | `EditService`, `Session`, `SelectionService`, event bus | **Planned**: layer 3, `gafira-engine` |
 | `Selection`, `HitTester`, `Tool` | **Planned** |
 
-The crate is layer-1 domain code: no I/O, no clocks, no `unsafe`. It depends on `gafira-geom`, `gafira-color`, `gafira-doc` and, to size extension payloads, `serde_json`. Its public items are `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage` and `RemovePage`. It must not publicly re-export `EditToken` (CI V13). The sources of truth for this chapter are the code under `crates/gafira-edit/`, and the main specs `specs/capabilities/edit-commands/` and `specs/capabilities/edit-history/`. The change `edit-history` is archived.
+The crate is layer-1 domain code: no I/O, no clocks, no `unsafe`. It depends on `gafira-geom`, `gafira-color`, `gafira-doc` and, to size extension payloads, `serde_json`. Its public items are `Command`, `Applied`, `GestureId`, `MergeKey`, `DirtySet`, `CommandError`, `Transaction`, `History`, `DEFAULT_BUDGET`, `SetProperty`, `Property`, `InsertNodes`, `NodeSpec`, `RemoveNodes`, `Reorder`, `Reparent`, `InsertPage` and `RemovePage`. It must not publicly re-export `EditToken` (CI V13). The sources of truth for this chapter are the code under `crates/gafira-edit/`, and the main specs `specs/done/legacy/capabilities/edit-commands/` and `specs/done/legacy/capabilities/edit-history/`. The change `edit-history` is archived.
 
 ## The Command contract
 

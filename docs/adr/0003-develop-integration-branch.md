@@ -1,6 +1,6 @@
 # 0003. Develop integration branch, PR to main on request
 
-- Status: accepted
+- Status: accepted, amended by 0018
 - Date: 2026-10-29 (decided by the owner)
 - Related: `AGENTS.md` (delivery rules), `.agents/agents/coordinator.md` (route, integration), ADR 0001 and ADR 0002 (flow; neither fixed the integration model), skill `git-workflow-and-versioning`
 

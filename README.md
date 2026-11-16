@@ -42,32 +42,18 @@ cargo test --workspace --locked
 |---|---|
 | `crates/` | `gafira-*` library crates (hexagonal layering enforced in CI) |
 | `apps/` | Binaries (`gafira-cli`; the GUI app comes later) |
-| `specs/` | Product specs in progress (in Spanish) plus `00-decisiones.md` (owner decisions); completed ones go to `specs/archive/`, the rest waits in `specs/backlog/`, see `specs/README.md`. `specs/capabilities/` holds the main specs, `specs/changes/` active change folders, `specs/history/` closed changes |
+| `specs/` | Numbered specs (in Spanish): active in `specs/`, not started in `specs/backlog/`, closed in `specs/done/` (index and next free ID in `specs/README.md`). Product reference documents `00-..07-*.md` (`00-decisiones.md` holds the owner decisions); the earlier flow's changes, history and capabilities are in `specs/done/legacy/` |
 | `assets/` | Splash screen and other design assets (logos live in `docs/manuals/marca/assets/`) |
-| `.agents/` | Agents and skills for Claude Code; `.claude/agents` and `.claude/skills` are symlinks to it |
+| `.agents/` | Skills and the `manual-writer` agent, the single source for every runtime; `.claude/`, `.opencode/` and `.pi/` link to it (`python3 tools/sync_agents.py`) |
 
 ## Development workflow
 
-Development uses Claude Code with the repo's `coordinator` agent. From the repository root:
+The agent (Claude Code or another) implements specs directly, following `AGENTS.md` and the `gafira-specs` skill:
 
-```
-claude --agent coordinator
-```
-
-Then ask it to execute, continue, verify or archive a spec, change or delivery.
-
-The coordinator runs the lite SDD flow and delegates each step to a repo agent:
-
-```
-spec -> explorer (only for risky claims) -> tdd-apply -> verify -> mutants (whole crate, at change close) -> archive
-```
-
-- One writer at a time; each delivery is built with strict TDD and one commit per work unit.
-- A product spec in `specs/` runs directly from its requirement IDs (fast lane, `docs/adr/0002-fast-lane.md`); no proposal or delta specs.
-- `mutants` (cargo-mutants, optional dev tool) lists surviving mutants; by default once per touched crate when the change closes (`mutation: archive` in the Flow line; `delivery` and `off` are the alternatives).
-- `verify` checks the gates and every scenario; on FAIL the work goes back to `tdd-apply`.
-- The coordinator rejects `done` without evidence.
-- Each change and delivery is a short-lived branch cut from `develop`. After verify PASS the coordinator merges it into `develop`, runs the gates and pushes `develop`; the only PR is `develop` -> `main`, opened only when the owner asks or at a release-worthy point, and the owner reviews and merges it (`docs/adr/0003-develop-integration-branch.md`).
+- Specs have three-digit IDs and a status banner (`backlog`, `in-progress`, `done`); `specs/README.md` is the index.
+- TDD for critical logic (document model, serde and validation, edit commands and history, time, color, geometry and path ops, limits, format parsing); integration tests per feature for the rest; full suite and gates at spec close.
+- Work happens on a short-lived branch cut from `develop` and merges into `develop` once its gates pass; the only PR is `develop` -> `main`, opened only when the owner asks or at a release-worthy point, and the owner reviews and merges it (`docs/adr/0003-develop-integration-branch.md`, `docs/adr/0018-simple-spec-flow.md`).
+- `cargo-mutants` is an optional dev tool for critical logic.
 
 First-time setup: generate the gitignored skill registry (`.atl/skill-registry.md`):
 
@@ -75,7 +61,7 @@ First-time setup: generate the gitignored skill registry (`.atl/skill-registry.m
 .agents/skills/skill-registry/refresh.sh
 ```
 
-The full methodology (flow, TDD, delivery rules, specs layout) is in `AGENTS.md`.
+The full methodology (rules, TDD, gates, branches) is in `AGENTS.md`.
 
 ## Assets
 

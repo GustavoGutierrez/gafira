@@ -1,212 +1,199 @@
 #!/usr/bin/env python3
-"""Synchronize Gafira's Claude agent sources to OpenCode V2 adapters."""
+"""Link every agent runtime to `.agents/`, the single source of truth.
+
+    .agents/agents/<name>.md        shared agent definitions
+    .agents/skills/<name>/SKILL.md  shared skills
+
+Claude Code, OpenCode and Pi read the same files through relative symlinks:
+
+    .claude/agents   -> ../.agents/agents     .claude/skills   -> ../.agents/skills
+    .opencode/agents -> ../.agents/agents     .opencode/skills -> ../.agents/skills
+    .pi/agents       -> ../.agents/agents     .pi/skills       -> ../.agents/skills
+
+Because one file serves three runtimes, its frontmatter may use only keys that
+all of them accept (see `FRONTMATTER`); per-runtime settings such as models live
+in each runtime's own config. The script also removes the generated adapters
+that earlier versions wrote, but only when they still carry their unedited
+marker; anything else in the way is a conflict and is left alone.
+
+Usage:
+    python3 tools/sync_agents.py            # create or repair the links
+    python3 tools/sync_agents.py --check    # report drift, change nothing
+
+Exit status: 0 in sync, 1 drift found by --check, 2 invalid source or conflict.
+"""
 
 import argparse
 import hashlib
-import json
 import os
 import re
+import shutil
 import sys
-import tempfile
 from pathlib import Path
 
+SOURCE = ".agents"
+RUNTIMES = (".claude", ".opencode", ".pi")
+KINDS = ("agents", "skills")
+# Directories that only ever held generated files and are no longer used.
+LEGACY_DIRS = (Path(".pi") / "prompts",)
+# Markers of the adapters written by the retired generators.
+MARKERS = ("# agent-sync-sha256: ", "# pi-agent-sync-sha256: ")
 
-MARKER = "# agent-sync-sha256: "
-ALLOWED_TOOLS = {"Agent", "SendMessage", "Read", "Edit", "Write", "Glob", "Grep", "Bash"}
-MODELS = {"opus", "sonnet", "haiku", "inherit"}
+# The only frontmatter keys a shared agent may use, with their allowed values
+# (None means free text). Evidence for each runtime:
+# - Claude Code ignores unknown keys; `name` and `description` are required.
+# - OpenCode V2 drops a file whose `tools` is a string; it needs
+#   `mode: subagent` (without it the agent is primary) and ignores `name`,
+#   `subagent_mode` and a model alias without a provider.
+# - Pi (gentle-pi) accepts only `task` or `background` as the mode; it reads
+#   `subagent_mode` before `mode`, so `subagent_mode` shields it from OpenCode's
+#   `mode: subagent`. Its parser is line based: a folded (`>`) description
+#   reads as ">" and quotes are stripped without unescaping.
+FRONTMATTER = {
+    "name": None,
+    "description": None,
+    "mode": {"subagent"},
+    "subagent_mode": {"task", "background"},
+}
 
 
-def digest(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def link_target(kind):
+    return Path("..") / SOURCE / kind
 
 
-def parse_source(path):
+def validate_agent(path):
+    """Return a list of problems with one shared agent definition."""
     text = path.read_text(encoding="utf-8")
     match = re.fullmatch(r"---\n(.*?)\n---\n(.*)", text, re.DOTALL)
     if not match:
-        raise ValueError(f"unsupported frontmatter: {path}")
-    lines = match.group(1).splitlines()
+        return [f"{path}: missing frontmatter"]
+    problems = []
     fields = {}
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        field = re.fullmatch(r"([a-z]+): (.*)", line)
-        if not field or field[1] in fields:
-            raise ValueError(f"unsupported frontmatter: {path}: {line}")
-        key, value = field.groups()
-        index += 1
-        if value == ">":
-            parts = []
-            while index < len(lines) and lines[index].startswith("  "):
-                parts.append(lines[index].strip())
-                index += 1
-            value = " ".join(parts)
-        fields[key] = value
-    if set(fields) != {"name", "description", "model", "tools"}:
-        raise ValueError(f"unsupported fields: {path}")
-    name = fields["name"]
-    tools = [tool.strip() for tool in fields["tools"].split(",")]
-    if (not re.fullmatch(r"[a-z][a-z0-9-]*", name) or name != path.stem
-            or not fields["description"] or not match.group(2).strip()
-            or fields["model"] not in MODELS or len(tools) != len(set(tools))
-            or not set(tools) <= ALLOWED_TOOLS or not {"Read", "Bash"} <= set(tools)
-            or (name != "coordinator" and {"Agent", "SendMessage"} & set(tools))):
-        raise ValueError(f"unsupported agent definition: {path}")
-    return fields, tools, digest(text)
+    for line in match.group(1).splitlines():
+        pair = re.fullmatch(r"([a-z_]+): (.+)", line)
+        if not pair or pair.group(1) in fields:
+            problems.append(f"{path}: unsupported frontmatter line: {line!r}")
+            continue
+        fields[pair.group(1)] = pair.group(2)
+    if set(fields) != set(FRONTMATTER):
+        problems.append(f"{path}: frontmatter keys must be exactly "
+                        f"{', '.join(FRONTMATTER)}; found {', '.join(fields) or 'none'}")
+    for key, allowed in FRONTMATTER.items():
+        value = fields.get(key)
+        if value is not None and allowed is not None and value not in allowed:
+            problems.append(f"{path}: {key} must be one of {', '.join(sorted(allowed))}")
+    name = fields.get("name")
+    if name is not None and (name != path.stem or not re.fullmatch(r"[a-z][a-z0-9-]*", name)):
+        problems.append(f"{path}: name must be lowercase kebab case and match the file name")
+    description = fields.get("description")
+    if description is not None:
+        inner = description[1:-1]
+        if (len(description) < 3 or description[0] != '"' or description[-1] != '"'
+                or '"' in inner or "\\" in inner):
+            problems.append(f"{path}: description must be one double-quoted line "
+                            "with no inner quote or backslash")
+    if not match.group(2).strip():
+        problems.append(f"{path}: empty body")
+    return problems
 
 
-def rule(action, resource, effect):
-    if action == "*":
-        action = '"*"'
-    return f'  - {{action: {action}, resource: {json.dumps(resource)}, effect: {effect}}}\n'
+def validate_sources(root):
+    problems = []
+    for kind in KINDS:
+        directory = root / SOURCE / kind
+        if directory.is_symlink() or not directory.is_dir():
+            problems.append(f"missing source directory: {directory}")
+    if problems:
+        return problems
+    for path in sorted((root / SOURCE / "agents").iterdir()):
+        if path.is_symlink() or not path.is_file() or path.suffix != ".md":
+            problems.append(f"unsupported agent source: {path}")
+        else:
+            problems.extend(validate_agent(path))
+    return problems
 
 
-def render(fields, tools, source_hash, names):
-    name = fields["name"]
-    body = f'description: {json.dumps(fields["description"], ensure_ascii=False)}\n'
-    body += f'mode: {"primary" if name == "coordinator" else "subagent"}\n'
-    rules = [rule("*", "*", "deny"), rule("external_directory", "*", "ask"),
-             rule("subagent", "*", "deny")]
-    for tool, action in (("Read", "read"), ("Glob", "glob"), ("Grep", "grep")):
-        if tool in tools:
-            rules.append(rule(action, "*", "allow"))
-    if "Read" in tools:
-        for pattern in ("*.env", "*.env.*", "**/.env", "**/.env.*", "**/*.key", "**/*.pem",
-                        "**/.ssh/**", "**/.aws/credentials", "**/.config/gh/hosts.yml",
-                        "**/.credentials/**", "**/credentials.json", "**/secrets/**", "**/Library/Keychains/**"):
-            rules.append(rule("read", pattern, "deny"))
-    if "Bash" in tools:
-        rules.append(rule("shell", "*", "ask"))
-    if {"Edit", "Write"} & set(tools):
-        target = "specs/changes/*/spike.md" if name == "explorer" else "*"
-        rules.append(rule("edit", target, "allow"))
-    else:
-        rules.append(rule("edit", "*", "deny"))
-    if name == "coordinator":
-        rules.append(rule("question", "*", "allow"))
-        for child in sorted(set(names) | {"general"}):
-            if child != name:
-                rules.append(rule("subagent", child, "allow"))
-    body += "permissions: [" + ", ".join(r.strip()[2:] for r in rules) + "]\n"
-    body += "---\n\n"
-    body += f"Source revision: {source_hash}\n\n"
-    body += (f"Before doing any work, read `.agents/agents/{name}.md` and follow its entire "
-             "Markdown body as your instructions. The source frontmatter is for Claude Code; "
-             "this adapter supplies OpenCode mode and permissions.\n\n")
-    body += ("OpenCode mapping: Claude Agent means the subagent tool; SendMessage means "
-             "use the child session's result or follow-up facilities when available. "
-             "Read/Glob/Grep, Edit/Write, and Bash mean the corresponding read/search, "
-             "edit/patch, and shell tools. Use the selected or inherited model, not the "
-             "Claude model alias in the source. Select coordinator in OpenCode rather "
-             "than running the source's Claude startup command. For Write-only sources, use write, "
-             "not edit or patch. Respect source write restrictions; shell "
-             "access is not a filesystem sandbox.\n")
-    return "---\n" + MARKER + digest(body) + "\n" + body
-
-
-def managed(text):
-    prefix = "---\n" + MARKER
-    if not text.startswith(prefix):
+def generated(path):
+    """Report whether a file is an unedited adapter from a retired generator."""
+    if path.is_symlink() or not path.is_file():
         return False
-    line, sep, body = text[len(prefix):].partition("\n")
-    return bool(sep and re.fullmatch(r"[a-f0-9]{64}", line) and line == digest(body))
+    text = path.read_text(encoding="utf-8", errors="replace")
+    for marker in MARKERS:
+        prefix = "---\n" + marker
+        if text.startswith(prefix):
+            line, sep, body = text[len(prefix):].partition("\n")
+            return bool(sep) and line == hashlib.sha256(body.encode("utf-8")).hexdigest()
+    return False
 
 
-def install(dest, expected, changes, existing):
-    dest.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix=".agent-sync-", dir=dest.parent))
-    installed = []
-    preserve = False
-    try:
-        for index, name in enumerate(changes):
-            target = dest / name
-            if name in existing:
-                os.link(target, stage / f"old-{index}")
-            with (stage / f"new-{index}").open("wb") as file:
-                file.write(expected[name].encode("utf-8"))
-                file.flush()
-                os.fsync(file.fileno())
-            if name in existing:
-                os.chmod(stage / f"new-{index}", target.stat().st_mode & 0o777)
-        for index, name in enumerate(changes):
-            os.replace(stage / f"new-{index}", dest / name)
-            installed.append((index, name))
-    except OSError as error:
-        failures = []
-        for index, name in reversed(installed):
-            try:
-                if name in existing:
-                    os.replace(stage / f"old-{index}", dest / name)
-                else:
-                    (dest / name).unlink()
-            except OSError as rollback_error:
-                failures.append(f"{name}: {rollback_error}")
-        if failures:
-            preserve = True
-            raise OSError(f"{error}; rollback failed: {', '.join(failures)}; backups: {stage}") from error
-        raise
-    finally:
-        if not preserve:
-            for path in stage.iterdir():
-                path.unlink()
-            stage.rmdir()
+def removable(directory):
+    """A real directory may be replaced only if it holds nothing but adapters."""
+    return all(generated(path) for path in directory.iterdir())
+
+
+def plan(root):
+    """Return (actions, conflicts); an action is (description, callable)."""
+    actions = []
+    conflicts = []
+    for runtime in RUNTIMES:
+        base = root / runtime
+        if base.is_symlink() or (base.exists() and not base.is_dir()):
+            conflicts.append(f"not a directory: {base}")
+            continue
+        for kind in KINDS:
+            path = base / kind
+            target = link_target(kind)
+            if path.is_symlink():
+                if Path(os.readlink(path)) == target:
+                    continue
+                actions.append((f"wrong link: {path} -> {os.readlink(path)}",
+                                lambda p=path, t=target: (p.unlink(), p.symlink_to(t))))
+            elif not path.exists():
+                actions.append((f"missing link: {path}",
+                                lambda p=path, t=target: (p.parent.mkdir(exist_ok=True),
+                                                          p.symlink_to(t))))
+            elif path.is_dir() and removable(path):
+                actions.append((f"generated directory instead of link: {path}",
+                                lambda p=path, t=target: (shutil.rmtree(p), p.symlink_to(t))))
+            else:
+                conflicts.append(f"real file or directory with unmanaged content "
+                                 f"where a link belongs: {path}")
+    for legacy in LEGACY_DIRS:
+        path = root / legacy
+        if path.is_symlink() or not path.exists():
+            continue
+        if path.is_dir() and removable(path):
+            actions.append((f"obsolete generated directory: {path}",
+                            lambda p=path: shutil.rmtree(p)))
+        else:
+            conflicts.append(f"obsolete directory with unmanaged content: {path}")
+    return actions, conflicts
 
 
 def sync(root, check):
-    source = root / ".agents" / "agents"
-    dest = root / ".opencode" / "agents"
-    for path in (root / ".agents", source, root / ".opencode", dest):
-        if path.is_symlink() or (path.exists() and not path.is_dir()):
-            raise ValueError(f"unsafe directory: {path}")
-    if not source.is_dir():
-        raise ValueError(f"missing source directory: {source}")
-    agents = {}
-    for path in sorted(source.iterdir()):
-        if path.is_symlink() or not path.is_file() or path.suffix != ".md":
-            raise ValueError(f"unsupported source: {path}")
-        fields, tools, source_hash = parse_source(path)
-        agents[fields["name"]] = (fields, tools, source_hash)
-    if "coordinator" not in agents or "Agent" not in agents["coordinator"][1]:
-        raise ValueError("missing coordinator or delegation capability")
-    expected = {name + ".md": render(*agent, sorted(agents)) for name, agent in agents.items()}
-    existing = {p.name: p for p in dest.iterdir()} if dest.exists() else {}
-    conflicts = [f"unsafe destination symlink: {path}" for path in existing.values() if path.is_symlink()]
-    changes = []
-    for name, content in expected.items():
-        path = existing.get(name)
-        if path is None:
-            changes.append(name)
-        elif path.is_symlink() or not path.is_file():
-            conflicts.append(f"unsafe destination: {path}")
-        else:
-            old = path.read_text(encoding="utf-8")
-            if not managed(old):
-                conflicts.append(f"unmanaged or edited destination: {path}")
-            elif old != content:
-                changes.append(name)
-    for name, path in existing.items():
-        if name not in expected and not path.is_symlink() and path.is_file():
-            if path.read_text(encoding="utf-8", errors="replace").startswith("---\n" + MARKER):
-                conflicts.append(f"stale destination without source: {path}")
-    if conflicts:
-        raise ValueError("\n".join(conflicts))
-    for name in changes:
-        print(f"{'stale' if name in existing else 'missing'} destination: {dest / name}")
+    problems = validate_sources(root)
+    actions, conflicts = ([], []) if problems else plan(root)
+    if problems or conflicts:
+        print("\n".join(problems + conflicts), file=sys.stderr)
+        return 2
+    for description, _ in actions:
+        print(description)
     if check:
-        return 1 if changes else 0
-    if changes:
-        install(dest, expected, changes, existing)
+        return 1 if actions else 0
+    for _, apply in actions:
+        apply()
     return 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--check", action="store_true", help="report drift without writing")
     args = parser.parse_args()
     try:
         return sync(args.root, args.check)
-    except (OSError, UnicodeError, ValueError) as error:
+    except (OSError, UnicodeError) as error:
         print(error, file=sys.stderr)
         return 2
 

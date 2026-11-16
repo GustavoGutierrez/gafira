@@ -10,7 +10,7 @@
 //! The ports are injected, the Facade composes, and each service lives in its
 //! own module (design P9): `project` and `edit` share the session of
 //! `session`. The other services arrive in the later deliveries of
-//! `specs/changes/gafira-engine/design.md`.
+//! `specs/done/legacy/changes/gafira-engine/design.md`.
 
 #![forbid(unsafe_code)]
 

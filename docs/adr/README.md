@@ -1,14 +1,14 @@
 # Architecture decision records
 
-Cross-cutting technical decisions that outlive one change. Written by the `architect` agent; the owner confirms them through the coordinator.
+Cross-cutting technical decisions that outlive one spec. Written by the agent doing the work; the owner confirms them.
 
 Where a decision lives:
 
 | Kind | Location |
 |---|---|
-| Owner decisions | `specs/00-decisiones.md` (never reopened by the architect) |
+| Owner decisions | `specs/00-decisiones.md` (never reopened without the owner) |
 | Cross-cutting technical decisions | `docs/adr/NNNN-short-title.md` (this folder) |
-| Decisions scoped to one change | `specs/changes/<change>/design.md`, section "Decisions" |
+| Decisions scoped to one spec | the spec itself (`specs/NNN-*.md`); legacy changes keep theirs in `specs/done/legacy/` |
 
 ## Rules
 
@@ -21,23 +21,24 @@ Where a decision lives:
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | accepted, partly superseded by 0002 and 0004, amended by 0011 |
-| [0002](0002-fast-lane.md) | Fast lane: spec-direct execution, mutation toggle, lighter defaults | accepted, extended by 0004, amended by 0011 |
-| [0003](0003-develop-integration-branch.md) | Develop integration branch, PR to main on request | accepted |
-| [0004](0004-hand-mutant-split-and-verify-rounds.md) | Hand-mutant split and bounded verify rounds | accepted, amended by 0011 |
+| [0001](0001-flow-modes-and-packs.md) | Flow modes, request packs and graded mutation testing | superseded by 0018 |
+| [0002](0002-fast-lane.md) | Fast lane: spec-direct execution, mutation toggle, lighter defaults | superseded by 0018 |
+| [0003](0003-develop-integration-branch.md) | Develop integration branch, PR to main on request | accepted, amended by 0018 |
+| [0004](0004-hand-mutant-split-and-verify-rounds.md) | Hand-mutant split and bounded verify rounds | superseded by 0018 |
 | [0005](0005-layer-2-shared-contracts.md) | Layer-2 shared contracts live in a `gafira-doc` module | accepted |
 | [0006](0006-format-evolution-before-first-release.md) | Schema 1 stays open until a build can save, and every field is written | accepted |
 | [0007](0007-layer-2-edges-and-v5-rows.md) | Layer-2 dependency edges and V5 rows | accepted |
 | [0008](0008-persisted-data-in-doc-engine-inputs-in-engines.md) | Persisted types live in `gafira-doc`; engines own their inputs | accepted |
 | [0009](0009-node-placement-is-page-space.md) | Every node's `Placement` is in page space, group children included | accepted |
 | [0010](0010-pixel-golden-format.md) | Pixel goldens are PNG files compared on raw bytes | accepted |
-| [0011](0011-odd-lite.md) | ODD lite: outcome-first routing on top of the existing flow | accepted |
+| [0011](0011-odd-lite.md) | ODD lite: outcome-first routing on top of the existing flow | superseded by 0018 |
 | [0012](0012-engine-error-messages-and-cancellation.md) | Engine errors share one key rule and one cancelled value | accepted |
 | [0013](0013-ports-edges-and-v5-row.md) | `gafira-ports` edges, V5 row and test doubles | accepted |
 | [0014](0014-one-error-enum-per-port.md) | One error enum per port family in `gafira-ports` | accepted |
 | [0015](0015-layer-3-sibling-seams.md) | `gafira-render` and `gafira-media` are siblings that meet only through `gafira-ports` | accepted |
 | [0016](0016-layer-3-purity-through-ports.md) | Layer-3 crates take their I/O, their clock and their threads through ports | accepted |
-| [0017](0017-gate-scope-and-one-verification-artefact.md) | Gates scoped to the crate, and one verification artefact | accepted |
+| [0017](0017-gate-scope-and-one-verification-artefact.md) | Gates scoped to the crate, and one verification artefact | accepted, amended by 0018 |
+| [0018](0018-simple-spec-flow.md) | Simple spec flow: one agent, numbered specs, TDD for critical logic | accepted |
 
 ## Template
 

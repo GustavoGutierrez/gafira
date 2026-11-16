@@ -4,8 +4,8 @@
 |---|---|
 | Documento | Especificación 07 |
 | Estado | Vigente (no ejecutable): inventario, sin requisitos propios |
-| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
-| Fuentes | `specs/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
+| Alcance | Ítems 39 a 77 y 104 a 132 de `specs/done/legacy/README.md`, sobrevivientes críticos del T4 de `gafira-text` y `gafira-raster` a 4a59889, y el resto del T4 que se debe |
+| Fuentes | `specs/done/legacy/README.md` (sección «Pending follow-ups»), listas crudas de `cargo-mutants`, `AGENTS.md` (críticos y no críticos, mutantes colgantes), 02 §4.17 |
 | Convenciones | Este documento no crea IDs ni cambia requisitos o decisiones. Los números de ítem son los del README y no se renumeran. Un desajuste con el README se anota en §1.3 y no se corrige aquí. Las rutas de mutantes son relativas a `crates/<crate>/src/`, salvo en §3 y en los anexos, que parten de `crates/` |
 | Copia duradera | Las listas crudas estaban en el scratchpad de una sesión, que es temporal. Este documento es la copia que queda |
 
@@ -25,7 +25,7 @@ La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al cl
 
 ## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 132)
 
-La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/history/2026-11-07-gafira-render-cpu/`.
+La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
 
 ### 1.1 Abiertos
 
@@ -465,7 +465,7 @@ Los demás timeouts de la corrida completa fueron de carga y el re-run los atrap
 
 ### 3.2 `gafira-audio` (ítem 49)
 
-889 mutantes: 835 atrapados, 29 perdidos, 13 no viables y 12 timeouts, de los que quedan 10 tras un re-run con límite de 700 s. El informe da 25 críticos. La lista cruda no los marca y el reparto no se encuentra en `specs/history/2026-11-02-gafira-audio/`, así que el 25 no se puede reproducir línea a línea. Los candidatos a los 4 no críticos son `block.rs:96`, `chain.rs:52`, `processor.rs:27` y `processor.rs:31`, sin confirmar. Los 10 timeouts no están clasificados como colgantes.
+889 mutantes: 835 atrapados, 29 perdidos, 13 no viables y 12 timeouts, de los que quedan 10 tras un re-run con límite de 700 s. El informe da 25 críticos. La lista cruda no los marca y el reparto no se encuentra en `specs/done/legacy/history/2026-11-02-gafira-audio/`, así que el 25 no se puede reproducir línea a línea. Los candidatos a los 4 no críticos son `block.rs:96`, `chain.rs:52`, `processor.rs:27` y `processor.rs:31`, sin confirmar. Los 10 timeouts no están clasificados como colgantes.
 
 La lista cruda sobrevivió: anexo A. El código de `gafira-audio` no ha cambiado desde la corrida.
 
