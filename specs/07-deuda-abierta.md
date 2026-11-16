@@ -17,6 +17,7 @@
 | Ítems 104 a 111 | 8: 6 abiertos, 1 no se corrige porque el registro legacy es inmutable (110), 1 obsoleto por ADR 0018 (108) (archivo de `gafira-timeline`) |
 | Ítems 112 a 132 | 21: 16 abiertos, 1 solo registro (129), 3 no se corrigen porque el registro legacy es inmutable (122, 127, 128), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
 | Ítems 133 y 134 | 2 abiertos, tareas de D-78 (antes Q-34 y Q-48) |
+| Ítems 135 a 137 | 3 abiertos, spikes que 01, 02, 04 y 05 citaban sin seguimiento (R-03, R-19, CAL-07) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -25,9 +26,9 @@
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
 
-## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 134)
+## 1. Seguimientos abiertos (ítems 39 a 77 y 104 a 137)
 
-La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 133 y 134 no vienen del README: son las tareas de D-78. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
+La columna «Se cierra cuando» resume el `Start` del README. El texto completo y el motivo siguen allí. Los ítems 133 y 134 no vienen del README: son las tareas de D-78; los 135 a 137 son spikes que las specs de producto citaban sin seguimiento. Los ítems 112 a 132 vienen de `gafira-render-cpu`: sus informes (`verify-report.md`, `design.md`, `apply-progress.md`) están en `specs/done/legacy/history/2026-11-07-gafira-render-cpu/`.
 
 ### 1.1 Abiertos
 
@@ -83,6 +84,9 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
 | 133 | Revisión visual de las fórmulas de 04 FD-33 y del catálogo de filtros de 04 FD-34 (antes Q-34; D-40, D-78). Las pruebas fijan el valor de las fórmulas, no su aspecto. | El titular revisa las fórmulas sobre imágenes de muestra cuando exista el corte de efectos y da el catálogo de FD-34 con nombres y valores; las fórmulas aprobadas dejan de ser PROPUESTA. |
 | 134 | Medición de la segmentación en el hardware de referencia de D-03 con la copia de 2048 px de D-45 (antes Q-48; D-78). Lo de SG3 es indicativo (i7-12700H con carga): CAL-06 1055 ms con 1 hilo, ARQ-43 43 ms, CAL-26 de 35 a 303 MB solo del segmentador. | `bench_segment_4000` < 5 s y `bench_cancel_segment` ≤ 100 ms en la gama media de D-03, y CAL-26 medida en el proceso con 20 páginas e imágenes. Si alguna falla, decide el titular. Cierra también los ítems 53 y 55. |
+| 135 | Spike de AV1 por software ≥ 10 fps a 1080p en el hardware de D-03 (R-03 de 02 y 05). | Medición con el codificador elegido; si no llega, decide el titular entre otro preset, otro códec por defecto o el límite de resolución. |
+| 136 | Spike del primer frame de la Pantalla de arranque < 300 ms con la creación del dispositivo de eframe en los tres perfiles (R-19 de 02, D-09). | `splash_first_frame_ms` medido en Windows, macOS y Linux; si no cumple, se aplica la mitigación de R-19 (ventana propia antes del dispositivo). |
+| 137 | Viabilidad de CAL-07: aislar sujeto de 4000 px < 2 s con GPU (01 CAL-07, C-12; 04 R-04). | `bench_segment_4000` con GPU en la gama media de D-03; si no llega, el titular decide si CAL-07 baja a objetivo. |
 
 ### 1.2 Cerrados o sin trabajo propio
 
