@@ -118,6 +118,8 @@ struct Asked {
     reorder: Option<(PageId, NodeId, usize)>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
+    /// Archivo → Ajustes (spec 034).
+    settings: bool,
     /// «Exportar» was pressed (spec 030).
     export: bool,
 }
@@ -269,6 +271,14 @@ impl Editor {
                     .clicked()
                 {
                     asked.save_version = true;
+                    ui.close();
+                }
+                ui.separator();
+                if ui
+                    .button(texts.t(&gafira_doc::msg!("settings.title")))
+                    .clicked()
+                {
+                    asked.settings = true;
                     ui.close();
                 }
             });
@@ -1047,6 +1057,8 @@ impl Editor {
         }
         if let Some(dark) = asked.dark {
             Go::Dark(dark)
+        } else if asked.settings {
+            Go::Settings
         } else if asked.export {
             Go::Export(self.selected.map(|(page, _)| page))
         } else if asked.home {

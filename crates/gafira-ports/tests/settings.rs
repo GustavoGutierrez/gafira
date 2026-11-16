@@ -94,3 +94,11 @@ fn s21_01_appearance_round_trips_and_defaults_to_light() {
         Appearance::Light
     );
 }
+
+#[test]
+fn s34_01_appearance_can_follow_the_system() {
+    let system = Settings::default().with_appearance(Appearance::System);
+    let json = serde_json::to_string(&system).expect("writes");
+    assert!(json.contains(r#""appearance":"system""#), "{json}");
+    assert_eq!(read(&json).expect("reads"), system);
+}

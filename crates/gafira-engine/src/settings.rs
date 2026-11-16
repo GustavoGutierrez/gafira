@@ -73,6 +73,13 @@ impl SettingsService {
         self.lock().settings
     }
 
+    /// What `language` would resolve to now, without changing anything: the
+    /// «Sistema · ahora: …» label of Ajustes → General (03 §16.1, spec 034).
+    #[must_use]
+    pub fn preview(&self, language: LanguagePreference) -> ResolvedLocale {
+        self.resolver.resolve(language)
+    }
+
     /// The locale the language in force resolved to.
     #[must_use]
     pub fn locale(&self) -> ResolvedLocale {
@@ -326,5 +333,27 @@ mod tests {
             engine.edit().document().expect("a session").pages().len(),
             pages - 1
         );
+    }
+
+    #[test]
+    fn s34_02_preview_resolves_without_changing_or_publishing() {
+        let store = Arc::new(MemorySettings::default());
+        let engine = engine_with_settings(&store);
+        engine.settings().start().expect("the settings load");
+        drain(&engine);
+        let before = engine.settings().locale();
+
+        assert_eq!(
+            engine.settings().preview(LanguagePreference::Es).locale,
+            Locale::Es
+        );
+        assert_eq!(
+            engine.settings().preview(LanguagePreference::System).locale,
+            Locale::En
+        );
+
+        assert_eq!(engine.settings().locale(), before);
+        assert_eq!(store.saves(), 0);
+        assert!(drain(&engine).is_empty(), "a preview publishes nothing");
     }
 }

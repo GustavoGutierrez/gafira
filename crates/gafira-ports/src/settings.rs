@@ -20,8 +20,8 @@ use crate::i18n::LanguagePreference;
 pub struct Settings {
     /// The interface language: `"system"` (default), `"es"` or `"en"`.
     pub language: LanguagePreference,
-    /// Light or dark interface (D-82, spec 021): `"light"` (default) or
-    /// `"dark"`.
+    /// Light or dark interface (D-82, spec 021): `"light"` (default),
+    /// `"dark"` or `"system"` (spec 034).
     pub appearance: Appearance,
 }
 
@@ -31,6 +31,8 @@ pub struct Settings {
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
     Dark,
+    /// Follow the operating system (03 §7.8, spec 034).
+    System,
     // Last, because `serde(other)` must be: unknown text reads as light.
     #[default]
     #[serde(other)]
