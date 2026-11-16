@@ -34,6 +34,7 @@ gafira-platform = { path = "crates/gafira-platform" }
 gafira-format = { path = "crates/gafira-format" }
 gafira-assets = { path = "crates/gafira-assets" }
 gafira-i18n = { path = "crates/gafira-i18n" }
+gafira-io-image = { path = "crates/gafira-io-image" }
 blake3 = "1"
 crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }

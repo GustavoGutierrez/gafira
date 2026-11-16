@@ -1598,6 +1598,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-io-image"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-color",
+ "gafira-doc",
+ "gafira-geom",
+ "gafira-ports",
+ "gafira-raster",
+ "gafira-render",
+ "gafira-render-cpu",
+ "gafira-testkit",
+ "gafira-time",
+ "png 0.18.1",
+]
+
+[[package]]
 name = "gafira-layout"
 version = "0.1.0-beta.2"
 dependencies = [

@@ -1,0 +1,26 @@
+[package]
+name = "gafira-io-image"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-geom.workspace = true
+gafira-color.workspace = true
+gafira-raster.workspace = true
+gafira-time.workspace = true
+png.workspace = true
+
+# The pipeline tests draw real pages: the graph of gafira-render on the CPU
+# backend. Dev-only, so they are not layer edges (ARQ-06).
+[dev-dependencies]
+gafira-render.workspace = true
+gafira-render-cpu.workspace = true
+gafira-testkit.workspace = true
+
+[lints]
+workspace = true
