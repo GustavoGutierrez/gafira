@@ -14,6 +14,7 @@
 mod canvas;
 mod dialogs;
 mod editor;
+mod export;
 mod files;
 mod format;
 mod home;

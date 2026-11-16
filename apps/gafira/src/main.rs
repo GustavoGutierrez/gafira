@@ -17,10 +17,13 @@ use gafira_platform::{
     EnvLocale, JsonSettings, RandomIds, RecentProjects, StdFileSystem, StderrNotifier, SystemClock,
     SystemProcesses,
 };
+use gafira_ports::export::{Exporter, PageRenderers};
 use gafira_ports::i18n::{LanguagePreference, Locale, LocaleResolver};
 use gafira_ports::license::NoLicensing;
 use gafira_ports::store::ContentStore;
 use gafira_ports::system::Clock;
+use gafira_render::{FontBook, GraphPageRenderers};
+use gafira_render_cpu::CpuBackend;
 
 /// «Recientes» of Inicio over `<data_dir>/recent.json` (spec 025).
 struct Recent {
@@ -104,15 +107,46 @@ fn main() -> eframe::Result {
                     Arc::new(JsonSettings::at(settings_file(&data_dir))),
                     resolver,
                 ),
+                export_pages(clock.clone()),
             );
             Gafira::new(
                 ports,
-                Registries::new(),
+                registries(),
                 EngineConfig::new(data_dir)?,
                 EventChannel::new(waker, clock),
             )
         }),
     })
+}
+
+/// The pages of an export (spec 030): the render graph on the CPU backend,
+/// with the fonts the theme embeds.
+fn export_pages(clock: Arc<SystemClock>) -> Arc<dyn PageRenderers> {
+    let fonts = gafira_theme::fonts()
+        .iter()
+        .fold(FontBook::new(), |book, font| {
+            book.with(font.family, font.bytes)
+        });
+    Arc::new(GraphPageRenderers::new(
+        Box::new(|| Box::new(CpuBackend::new())),
+        clock,
+        Arc::new(fonts),
+    ))
+}
+
+/// The formats of this build: PNG and PDF export (spec 030).
+fn registries() -> Registries {
+    let mut registries = Registries::new();
+    let exporters: [Arc<dyn Exporter>; 2] = [
+        Arc::new(gafira_io_image::PngExporter::new()),
+        Arc::new(gafira_io_pdf::PdfExporter::new()),
+    ];
+    for exporter in exporters {
+        if let Err(error) = registries.formats.register_exporter(exporter) {
+            eprintln!("formats: {error}");
+        }
+    }
+    registries
 }
 
 fn settings_file(data_dir: &Path) -> PathBuf {

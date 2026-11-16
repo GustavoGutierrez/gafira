@@ -1,0 +1,30 @@
+[package]
+name = "gafira-io-pdf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+gafira-geom.workspace = true
+gafira-time.workspace = true
+# The page size in pixels and the straight sRGB pixels are the PNG exporter's.
+gafira-io-image.workspace = true
+# FD-56, 02 §9.2: krilla (MIT OR Apache-2.0). `raster-images` is the feature
+# that draws an image on a page; text shaping (`simple-text`) is left out.
+krilla.workspace = true
+
+# The pipeline tests draw real pages (gafira-render on the CPU backend) and
+# read the PDF back (hayro-syntax, Apache-2.0 OR MIT). Dev-only: not layer
+# edges (ARQ-06).
+[dev-dependencies]
+gafira-color.workspace = true
+gafira-render.workspace = true
+gafira-render-cpu.workspace = true
+hayro-syntax.workspace = true
+
+[lints]
+workspace = true

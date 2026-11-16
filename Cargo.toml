@@ -34,6 +34,8 @@ gafira-platform = { path = "crates/gafira-platform" }
 gafira-format = { path = "crates/gafira-format" }
 gafira-assets = { path = "crates/gafira-assets" }
 gafira-i18n = { path = "crates/gafira-i18n" }
+gafira-io-image = { path = "crates/gafira-io-image" }
+gafira-io-pdf = { path = "crates/gafira-io-pdf" }
 blake3 = "1"
 crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
@@ -61,6 +63,10 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "a
 zip = { version = "2", default-features = false, features = ["deflate"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# FD-56, 02 §9.2: PDF export; only the feature that draws images (no text shaping).
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
+# Reads the exported PDF back in the gafira-io-pdf tests.
+hayro-syntax = { version = "0.9", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gafira_ports::common::Bytes;
+use gafira_ports::export::{ExportError, ExportIssue, PageRenderers};
 use gafira_ports::format::FormatRegistry;
 use gafira_ports::i18n::LocaleResolver;
 use gafira_ports::license::{LicenseError, LicenseVerifier};
@@ -30,6 +31,7 @@ use crate::assets::AssetService;
 use crate::bus::EventChannel;
 use crate::edit::EditService;
 use crate::event::{EngineEvent, EventBus};
+use crate::export::ExportService;
 use crate::license::LicenseService;
 use crate::project::ProjectService;
 use crate::session::Shared;
@@ -58,6 +60,8 @@ pub struct Ports {
     pub license: Arc<dyn LicenseVerifier>,
     /// Where the settings persist and how their language resolves (spec 009).
     pub settings: SettingsPorts,
+    /// The pages of a document snapshot for its exports (spec 030).
+    pub pages: Arc<dyn PageRenderers>,
 }
 
 /// The two ports `SettingsService` needs, grouped so [`Ports::new`] stays
@@ -123,6 +127,7 @@ impl Ports {
         notifier: Arc<dyn Notifier>,
         license: Arc<dyn LicenseVerifier>,
         settings: SettingsPorts,
+        pages: Arc<dyn PageRenderers>,
     ) -> Self {
         Self {
             repository,
@@ -134,6 +139,7 @@ impl Ports {
             notifier,
             license,
             settings,
+            pages,
         }
     }
 }
@@ -292,6 +298,15 @@ pub enum EngineError {
     Settings(SettingsError),
     /// The licence port failed or refused (spec 010).
     License(LicenseError),
+    /// The licence in force does not allow exporting (02 §4.14, spec 030).
+    ExportNotAllowed,
+    /// No exporter of the registry has the format id of the request.
+    UnknownFormat,
+    /// `Exporter::validate` found what stops the export (FD-58): the
+    /// blocking findings, in its order.
+    ExportBlocked(Vec<ExportIssue>),
+    /// The exporter failed; no final file was left (spec 030).
+    Export(ExportError),
 }
 
 impl fmt::Display for EngineError {
@@ -309,6 +324,12 @@ impl fmt::Display for EngineError {
             Self::Io(e) => write!(f, "file system error: {e}"),
             Self::Settings(e) => write!(f, "settings error: {e}"),
             Self::License(e) => write!(f, "licence error: {e}"),
+            Self::ExportNotAllowed => f.write_str("the licence does not allow exporting"),
+            Self::UnknownFormat => f.write_str("no exporter for this format"),
+            Self::ExportBlocked(issues) => {
+                write!(f, "the export is blocked by {} finding(s)", issues.len())
+            }
+            Self::Export(e) => write!(f, "export failed: {e}"),
         }
     }
 }
@@ -334,6 +355,13 @@ impl ToMessage for EngineError {
             Self::Io(_) => msg!("error.engine.io"),
             Self::Settings(e) => e.to_message(),
             Self::License(e) => e.to_message(),
+            Self::ExportNotAllowed => msg!("error.export.not_allowed"),
+            Self::UnknownFormat => msg!("error.export.unknown_format"),
+            Self::ExportBlocked(issues) => issues.first().map_or_else(
+                || msg!("error.export.blocked"),
+                |issue| issue.message.clone(),
+            ),
+            Self::Export(e) => e.to_message(),
         }
     }
 }
@@ -394,8 +422,9 @@ pub struct Gafira {
     projects: ProjectService,
     edit: EditService,
     settings: SettingsService,
-    license: LicenseService,
+    license: Arc<LicenseService>,
     assets: AssetService,
+    export: ExportService,
 }
 
 impl Gafira {
@@ -416,13 +445,19 @@ impl Gafira {
         let shared = Shared::new(bus.clone());
         let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
         let assets = AssetService::over(shared.clone(), &ports);
-        let projects = ProjectService::over(shared, &ports, &config);
         let settings = SettingsService::over(&ports.settings, bus.clone());
-        let license = LicenseService::over(
+        let license = Arc::new(LicenseService::over(
             Arc::clone(&ports.license),
             Arc::clone(&ports.clock),
             bus.clone(),
+        ));
+        let export = ExportService::over(
+            shared.clone(),
+            Arc::clone(&license),
+            &registries.formats,
+            &ports,
         );
+        let projects = ProjectService::over(shared, &ports, &config);
         Ok(Self {
             ports,
             registries,
@@ -434,6 +469,7 @@ impl Gafira {
             settings,
             license,
             assets,
+            export,
         })
     }
 
@@ -468,6 +504,13 @@ impl Gafira {
     #[must_use]
     pub fn license(&self) -> &LicenseService {
         &self.license
+    }
+
+    /// Exports the open document through the format registry (02 §5.4
+    /// line 1361, spec 030).
+    #[must_use]
+    pub fn export(&self) -> &ExportService {
+        &self.export
     }
 
     /// The configuration this engine was built with.
@@ -702,6 +745,7 @@ mod tests {
                 Arc::clone(&notifier),
                 Arc::clone(&license),
                 no_settings(),
+                Arc::new(NoPages),
             ),
             Registries::new(),
             config(),

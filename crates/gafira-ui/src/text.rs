@@ -152,6 +152,21 @@ mod tests {
         "bottom.notes",
         "bottom.pages",
         "format.percent",
+        "export.done",
+        "export.title",
+        "export.format",
+        "export.png",
+        "export.pdf",
+        "export.scale",
+        "export.scale_1x",
+        "export.scale_2x",
+        "export.transparent",
+        "export.resolution",
+        "export.action",
+        "export.failed",
+        "export.not_allowed",
+        "export.no_pages",
+        "export.selection_unsupported",
     ];
 
     #[test]

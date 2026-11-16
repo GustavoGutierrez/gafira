@@ -56,6 +56,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 027 | [Texto en el lienzo](done/027-text-on-canvas.md) | `TextNode` en el documento (primer corte de 02 §3.1), `Property::TextContent`, pestaña Texto, dibujo e Inspector de texto |
 | 028 | [Bloqueos de archivo y ranuras de otra instancia](done/028-file-locks.md) | Puerto `ProcessProbe` y `SystemProcesses` (`/proc` en Linux, baliza con `File::try_lock` fuera); PID en el marcador; `.gaf.lock` atómico, solo lectura ante un dueño vivo ajeno y toma de uno muerto; 13 tests nuevos, 2572 tests |
 | 029 | [Imágenes en el lienzo](done/029-images-on-canvas.md) | `ImageNode` en el documento, «Importar imagen…» (PNG/JPEG) desde Biblioteca, dibujo desde el almacén |
+| 030 | [Exportar PNG y PDF](done/030-export-png-pdf.md) | `ExportService` con licencia, registro y escritura por `*.tmp`; `gafira-io-image` (PNG 0,5×–4×, sRGB, 16 384 px) y `gafira-io-pdf` (krilla, una imagen por página); texto como contornos y escala de exportación en `gafira-render`; diálogo «Exportar» (PNG 1×/2× o PDF); 31 tests nuevos, 2880 tests |
 
 ### Historial del flujo anterior
 

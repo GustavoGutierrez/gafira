@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use gafira_doc::contract::CancelToken;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
     ContentHash, DocMut, Document, Dpi, ElementBase, GroupNode, Node, NodeId, NodeKind, Page,
@@ -18,16 +19,19 @@ use gafira_edit::{
 };
 use gafira_geom::{Length, Unit};
 use gafira_ports::common::UnixTime;
+use gafira_ports::export::{PageRenderRequest, PageRenderer, PageRenderers};
 use gafira_ports::i18n::{
     FormatLocale, LanguagePreference, Locale, LocaleResolver, LocaleSource, ResolvedLocale,
 };
 use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVerifier};
+use gafira_ports::render::RenderError;
 use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
 use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
 use gafira_ports::system::{
     Clock, FileSystem, FileWrite, IdSource, Notifier, ProcessId, ProcessProbe, ReadSeek,
 };
+use gafira_raster::{ImageBuf, PixelBuf};
 
 use crate::bus::EventChannel;
 use crate::engine::{EngineConfig, Gafira, Ports, Registries, SettingsPorts, SystemPorts};
@@ -174,6 +178,27 @@ impl ProcessProbe for FakeProcesses {
 
 impl Notifier for NoNotifier {
     fn notify(&self, _title: &str, _body: &str) {}
+}
+
+/// Renderers nobody asks for: every page is one clear pixel (spec 030).
+pub(crate) struct NoPages;
+
+struct ClearPixel;
+
+impl PageRenderer for ClearPixel {
+    fn render(
+        &self,
+        _req: &PageRenderRequest,
+        _cancel: &CancelToken,
+    ) -> Result<ImageBuf, RenderError> {
+        Ok(ImageBuf::new(1, 1, PixelBuf::Rgba8(vec![0; 4]))?)
+    }
+}
+
+impl PageRenderers for NoPages {
+    fn for_document(&self, _document: &Document) -> Box<dyn PageRenderer> {
+        Box::new(ClearPixel)
+    }
 }
 
 pub(crate) struct NoLicense;
@@ -471,6 +496,7 @@ pub(crate) fn six_ports() -> Ports {
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
+        Arc::new(NoPages),
     )
 }
 
@@ -834,6 +860,7 @@ pub(crate) fn engine_with_processes(
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
+        Arc::new(NoPages),
     );
     Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
 }

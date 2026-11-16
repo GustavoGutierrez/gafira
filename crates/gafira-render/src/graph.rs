@@ -18,13 +18,14 @@ use gafira_doc::contract::{CancelToken, Cancelled, Progress, checkpoint};
 use gafira_doc::visit::{NodeVisitor, PageView, WalkOrder, walk};
 use gafira_doc::{
     BlendMode, ElementBase, ExtensionNode, GroupNode, Node, NodeId, Page, Placement, ShapeGeometry,
-    ShapeNode,
+    ShapeNode, TextAlign, TextNode,
 };
 use gafira_geom::Affine;
 use gafira_ports::render::{ContentKey, RenderOp, RenderQuality};
 use gafira_time::Flicks;
 use kurbo::{BezPath, Ellipse, Rect, Shape};
 
+use crate::fonts::FontBook;
 use crate::key::{KeyParam, NodeType, content_key};
 use crate::pool::WorkerPool;
 
@@ -249,6 +250,8 @@ enum RecordKind {
     Group,
     /// A shape: it fills its own outline.
     Shape(ShapeNode),
+    /// A text: it fills the outlines of its glyphs (spec 030).
+    Text(TextNode),
 }
 
 /// Builds the render graph of a page by walking it (02 §6.1).
@@ -261,11 +264,18 @@ enum RecordKind {
 /// The pool of workers belongs to the caller (ARQ-138): the builder hands it
 /// the roots of the page and takes the result back in the order of the roots,
 /// so the graph never depends on the order the roots are built in (ARQ-140).
+///
+/// A text is laid out and outlined with the fonts of [`Self::with_fonts`]
+/// (02 §4.6, spec 030); without them it draws nothing. The scale of
+/// [`Self::scaled`] goes in front of the placement of every node, so a page
+/// can be drawn at a multiple of its size (FD-55).
 pub struct RenderGraphBuilder<'a, P: WorkerPool> {
     page: &'a Page,
     params: GraphParams,
     pool: P,
     records: BTreeMap<NodeId, Record>,
+    scale: f64,
+    fonts: Arc<FontBook>,
 }
 
 impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
@@ -276,7 +286,32 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
             params,
             pool,
             records: BTreeMap::new(),
+            scale: 1.0,
+            fonts: Arc::new(FontBook::new()),
         }
+    }
+
+    /// The builder that draws the page `scale` times its size (FD-55): every
+    /// placement is scaled from the page origin. The caller checks that the
+    /// scale is finite and above zero; a scale that is not finite reaches
+    /// every transform and the build answers [`GraphError::NonFinite`].
+    #[must_use]
+    pub fn scaled(mut self, scale: f64) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    /// The builder that lays text out with `fonts` (spec 030).
+    #[must_use]
+    pub fn with_fonts(mut self, fonts: Arc<FontBook>) -> Self {
+        self.fonts = fonts;
+        self
+    }
+
+    /// The transform of a node: the scale of the build in front of its
+    /// placement (D-35: every placement is in page space).
+    fn transform_of(&self, placement: &Placement) -> Affine {
+        Affine::scale(self.scale) * placement.to_transform()
     }
 
     /// The parameters of the graph.
@@ -368,7 +403,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 // D-35: the placement of every node is in page space, also the
                 // one of the children of a group: the placement of a group does
                 // not move its children.
-                let transform = record.base.placement.to_transform();
+                let transform = self.transform_of(&record.base.placement);
                 check_transform(&transform)?;
                 check_opacity(record.base.opacity)?;
                 let mark = sub.ops.len();
@@ -392,6 +427,53 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         let node = GraphNode {
                             id: GraphNodeId(sub.nodes.len() as u32),
                             kind: GraphNodeKind::Source(SourceKind::Vector),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        sub.ops.push(RenderOp::FillPath {
+                            path: Arc::new(path),
+                            color,
+                            transform,
+                        });
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
+                    RecordKind::Text(ref text) => {
+                        let Some((path, color, canonical)) =
+                            text_path(text, &record.base.placement, &self.fonts)
+                        else {
+                            // No words, no fonts or no glyph: nothing to draw.
+                            sub.ops.truncate(mark);
+                            continue;
+                        };
+                        check_color(&color)?;
+                        let key = content_key(
+                            NodeType::Text,
+                            self.params.lod,
+                            &[],
+                            &[
+                                KeyParam::Quality(self.params.quality),
+                                KeyParam::Text(canonical),
+                                KeyParam::Fill(Some(color)),
+                                KeyParam::Transform(transform.as_coeffs()),
+                                KeyParam::Opacity(record.base.opacity),
+                                KeyParam::Blend(record.base.blend),
+                            ],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Text),
                             origin: id,
                             key,
                             inputs: Vec::new(),
@@ -449,7 +531,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 .iter()
                 .map(|input| sub.nodes[input.0 as usize].key)
                 .collect();
-            let transform = record.base.placement.to_transform();
+            let transform = self.transform_of(&record.base.placement);
             let key = self.node_key(NodeType::Group, &inputs, &record.base, transform, None);
             let node = GraphNode {
                 id: GraphNodeId(sub.nodes.len() as u32),
@@ -526,6 +608,20 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         node.base.id
     }
 
+    fn visit_text(&mut self, node: &Node, text: &TextNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Text(text.clone()),
+            },
+        );
+        node.base.id
+    }
+
+    // Spec 030: an image node joins here when the document has one (spec
+    // 029): a `visit_image` that records it and a branch of `subtree` that
+    // emits `RenderOp::DrawImage` with the decoded pixels.
     fn visit_extension(&mut self, node: &Node, _extension: &ExtensionNode) -> NodeId {
         // The seam of ARQ-137 is open: an extension draws nothing in this cut.
         node.base.id
@@ -554,6 +650,68 @@ fn shape_path(geometry: ShapeGeometry, placement: &Placement) -> BezPath {
         ShapeGeometry::Rect => rect.to_path(0.25),
         ShapeGeometry::Ellipse => Ellipse::from_rect(rect).to_path(0.25),
     }
+}
+
+/// The size range of `gafira_text::TextStyle::size_pt` (FD-41).
+const TEXT_SIZE_PT: std::ops::RangeInclusive<f64> = 1.0..=1000.0;
+
+/// The outline of a text in its own box, its colour and the canonical string
+/// of its key (spec 030), or `None` when it draws nothing.
+///
+/// The first slice of `TextNode` keeps one style per element (spec 027), so
+/// the whole text is laid out with the style of its first span. The size of
+/// the document is in px; `gafira-text` takes points in `1..=1000` and a dpi,
+/// so the size is kept in that range and the dpi carries the rest: the glyphs
+/// come out at the size in px of the document. A text that does not lay out
+/// (no font covers it, a number out of range) draws nothing.
+fn text_path(
+    text: &TextNode,
+    placement: &Placement,
+    fonts: &FontBook,
+) -> Option<(BezPath, Color, String)> {
+    let style = text.content.first_style()?;
+    let words = text.content.plain_text();
+    if words.trim().is_empty() || !style.size.is_finite() || style.size <= 0.0 {
+        return None;
+    }
+    let stack = fonts.stack(&style.font);
+    if stack.is_empty() {
+        return None;
+    }
+    let size_pt = style.size.clamp(*TEXT_SIZE_PT.start(), *TEXT_SIZE_PT.end());
+    let layout_style = gafira_text::TextStyle {
+        size_pt,
+        align: match text.align {
+            TextAlign::Left => gafira_text::TextAlign::Left,
+            TextAlign::Center => gafira_text::TextAlign::Center,
+            TextAlign::Right => gafira_text::TextAlign::Right,
+            TextAlign::Justify => gafira_text::TextAlign::Justify,
+        },
+        ..gafira_text::TextStyle::default()
+    };
+    let dpi = 72.0 * style.size / size_pt;
+    let bounds = gafira_geom::Size::new(placement.w.abs(), placement.h.abs());
+    let layout = gafira_text::layout_box(&words, &stack, &layout_style, dpi, bounds).ok()?;
+    let outlines = gafira_text::outline_text(&layout, &stack).ok()?;
+    let mut path = BezPath::new();
+    for outline in outlines {
+        path.extend(outline.path.as_bez_path().elements().iter().copied());
+    }
+    if path.elements().is_empty() {
+        return None;
+    }
+    let align = match text.align {
+        TextAlign::Left => 'l',
+        TextAlign::Center => 'c',
+        TextAlign::Right => 'r',
+        TextAlign::Justify => 'j',
+    };
+    let canonical = format!(
+        "{}\u{0}{:016x}\u{0}{align}\u{0}{words}",
+        style.font,
+        style.size.to_bits()
+    );
+    Some((path, style.color, canonical))
 }
 
 /// The check of ARQ-110: a number that is not finite is an error that names
@@ -1034,5 +1192,127 @@ mod tests {
         };
         assert_eq!(keys(1), keys(2));
         assert_eq!(keys(1), keys(4));
+    }
+
+    /// A text element of one style, in a box of 200 by 60 at (10, 20).
+    fn text_page(words: &str) -> Page {
+        let mut page = new_page();
+        let style = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 32.0,
+            color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
+        };
+        let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 200.0, 60.0));
+        let kind = NodeKind::Text(TextNode::plain(words, &style));
+        page.nodes
+            .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
+        page.roots = vec![NodeId::new(1)];
+        page
+    }
+
+    /// The fonts of the tests: the Inter subset of the testkit.
+    fn fonts() -> Arc<FontBook> {
+        Arc::new(FontBook::new().with("Inter", gafira_testkit::fonts::INTER.bytes))
+    }
+
+    /// Builds the graph of the page with fonts and a scale.
+    fn build_text(page: &Page, scale: f64, fonts: Option<Arc<FontBook>>) -> RenderGraph {
+        let view = PageView::new(page);
+        let mut builder =
+            RenderGraphBuilder::new(&view, params(RenderQuality::Export), InlinePool).scaled(scale);
+        if let Some(fonts) = fonts {
+            builder = builder.with_fonts(fonts);
+        }
+        builder
+            .build(WalkOrder::PreOrder, &CancelToken::new(), &NoProgress)
+            .expect("the page builds")
+    }
+
+    /// The fills of a graph: their path's bounding box in the node's own box,
+    /// their colour and their transform.
+    fn fills(graph: &RenderGraph) -> Vec<(Rect, Color, Affine)> {
+        graph
+            .ops()
+            .iter()
+            .filter_map(|op| match op {
+                RenderOp::FillPath {
+                    path,
+                    color,
+                    transform,
+                } => Some((path.bounding_box(), *color, *transform)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    // S30-01: a text element fills the outlines of its glyphs, in its colour,
+    // inside its box and moved by its placement.
+    #[test]
+    fn s30_01_a_text_fills_its_glyph_outlines_inside_its_box() {
+        let page = text_page("Hola");
+        let graph = build_text(&page, 1.0, Some(fonts()));
+        assert_eq!(op_kinds(&graph), ["push", "fill", "pop"]);
+        let [(bounds, color, transform)] = fills(&graph)[..] else {
+            panic!("one fill");
+        };
+        assert_eq!(color, Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)));
+        assert_eq!(
+            transform,
+            Placement::new(10.0, 20.0, 200.0, 60.0).to_transform()
+        );
+        assert!(
+            bounds.width() > 10.0 && bounds.height() > 10.0,
+            "{bounds:?}"
+        );
+        assert!(
+            bounds.x0 >= 0.0 && bounds.y0 >= 0.0 && bounds.x1 <= 200.0 && bounds.y1 <= 60.0,
+            "the glyphs stay in the box: {bounds:?}"
+        );
+        let node = graph
+            .nodes()
+            .iter()
+            .find(|node| node.origin() == NodeId::new(1))
+            .expect("the text is a node");
+        assert_eq!(node.kind(), GraphNodeKind::Source(SourceKind::Text));
+    }
+
+    // S30-01: no fonts, no words or only spaces draw nothing; other words give
+    // another key.
+    #[test]
+    fn s30_01_a_text_without_fonts_or_words_draws_nothing_and_its_words_key_it() {
+        assert!(build_text(&text_page("Hola"), 1.0, None).ops().is_empty());
+        assert!(
+            build_text(&text_page(""), 1.0, Some(fonts()))
+                .ops()
+                .is_empty()
+        );
+        assert!(
+            build_text(&text_page("   "), 1.0, Some(fonts()))
+                .ops()
+                .is_empty()
+        );
+        let hola = build_text(&text_page("Hola"), 1.0, Some(fonts()));
+        let adios = build_text(&text_page("Adiós"), 1.0, Some(fonts()));
+        assert_ne!(hola.key_of(NodeId::new(1)), adios.key_of(NodeId::new(1)));
+    }
+
+    // S30-02: the scale of an export goes in front of the placement of every
+    // node, so the key of a scaled node differs from the unscaled one.
+    #[test]
+    fn s30_02_the_scale_goes_in_front_of_every_placement() {
+        let mut page = new_page();
+        add(&mut page, 1, shape());
+        page.roots = vec![NodeId::new(1)];
+        let one = build_text(&page, 1.0, None);
+        let two = build_text(&page, 2.0, None);
+        let placement = Placement::new(0.0, 0.0, 10.0, 10.0).to_transform();
+        assert_eq!(fills(&one)[0].2, placement);
+        assert_eq!(fills(&two)[0].2, Affine::scale(2.0) * placement);
+        assert_ne!(one.key_of(NodeId::new(1)), two.key_of(NodeId::new(1)));
+        let text = build_text(&text_page("Hola"), 2.0, Some(fonts()));
+        assert_eq!(
+            fills(&text)[0].2,
+            Affine::scale(2.0) * Placement::new(10.0, 20.0, 200.0, 60.0).to_transform()
+        );
     }
 }

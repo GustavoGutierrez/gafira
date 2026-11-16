@@ -46,8 +46,8 @@ pub fn composite_key(root_keys: &[ContentKey]) -> ContentKey {
 
 /// The type of a node in the canonical description (02 §6.1).
 ///
-/// The numbers are fixed: `1` is a group, `2` a shape and `3` an extension. A
-/// kind added later takes the next free number and reuses none.
+/// The numbers are fixed: `1` is a group, `2` a shape, `3` an extension and
+/// `4` a text. A kind added later takes the next free number and reuses none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeType {
     /// A group: it arranges its children.
@@ -57,6 +57,8 @@ pub enum NodeType {
     /// An extension. The byte is reserved by §6.1; the extension itself joins
     /// the graph when the handler seam of ARQ-137 lands.
     Extension = 3,
+    /// A text element: it fills the outlines of its glyphs (spec 030).
+    Text = 4,
 }
 
 /// One parameter of a node, sampled at the instant of the graph (02 §6.1).
@@ -79,6 +81,9 @@ pub enum KeyParam {
     Opacity(f32),
     /// The blend mode of the node.
     Blend(BlendMode),
+    /// What a text draws: its family, size, alignment and words, in one
+    /// canonical string (spec 030).
+    Text(String),
 }
 
 /// The canonical description of a node (02 §6.1).
@@ -144,6 +149,7 @@ impl KeyParam {
             Self::Transform(_) => 4,
             Self::Opacity(_) => 5,
             Self::Blend(_) => 6,
+            Self::Text(_) => 7,
         }
     }
 
@@ -176,6 +182,7 @@ impl KeyParam {
             }
             Self::Opacity(opacity) => out.extend_from_slice(&f32_bytes(*opacity)),
             Self::Blend(blend) => out.push(blend_byte(*blend)),
+            Self::Text(text) => out.extend_from_slice(text.as_bytes()),
         }
     }
 }
