@@ -1,6 +1,6 @@
 # 014 — `gafira-theme`: tokens de diseño desde datos y tipografías embebidas
 
-> **Estado:** in-progress — 2026-11-16 — adaptador de capa 4 que la UI necesita; aprobado por el titular en paralelo con el engine, sin tocar `gafira-engine`, `gafira-doc` ni `gafira-edit`.
+> **Estado:** done — 2026-11-16 — S14-01..S14-12 cubiertos por `gafira-theme` (`color::tests` 3, `error::tests` 1, `fonts::tests` 1, `tokens::tests` 17, `tests/arq_105.rs` 2: 24 tests); 10 mutantes a mano en la validación y la fórmula, 9 muertos y 1 equivalente; 2718 tests en el workspace. Fuentes de producto y escala de sombras oscura pendientes del titular (ver «Riesgos»).
 
 ## Objetivo
 
@@ -58,6 +58,14 @@ Lógica crítica: carga y validación del JSON (S14-02..S14-08) y la fórmula de
 
 - Gates de `AGENTS.md` en verde, incluidos los pasos de política de CI (V5, V12, ARQ-107) y `cargo deny check`.
 - Banner a `done`, fila en `specs/README.md`.
+
+Resultado (2026-11-16, rama `feat/014-015-theme-i18n`):
+
+- `cargo fmt --check`: ok. `cargo clippy --workspace --all-targets --locked -- -D warnings`: 0 avisos. `cargo test --workspace --locked`: 2718 pasan, 0 fallan.
+- `cargo deny check licenses bans sources`: ok (sin dependencias normales nuevas; `skrifa` ya estaba en el workspace). `advisories` necesita red y queda para la CI.
+- Pasos de política de CI ejecutados en local: unsafe, V5 (con la fila nueva de `gafira-theme`), V12 y ARQ-107 en verde. V14 falla por `InsertAsset` sin prueba de propiedades en `gafira-edit/tests/prop_commands.rs`: viene de la spec 011, ya está en `develop` y esta rama no toca `gafira-edit`.
+- Rojo verificado: con `from_json` y `contrast_ratio` sustituidos por versiones vacías fallaban 18 de 22 tests; los 4 restantes cubren el parsing de hex, las claves de error y las fuentes.
+- Mutantes a mano: muertos los del mínimo de contraste, el umbral de los pares rechazados, la orientación del par rechazado, el desajuste de modos en los dos sentidos, `motion.reduced`, `schema` 0, el uso exento, el alfa de la sombra y la curva sRGB. Equivalente: detectar el ciclo por longitud de la cadena en vez de por pertenencia (también termina con `ReferenceCycle`). Dos de ellos sobrevivían al principio y llevaron a añadir sus tests.
 
 ## Riesgos y decisiones abiertas
 

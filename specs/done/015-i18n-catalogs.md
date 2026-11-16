@@ -1,6 +1,6 @@
 # 015 — `gafira-i18n`: catálogos es/en, regla de D-08 y traducción por clave
 
-> **Estado:** in-progress — 2026-11-16 — adaptador de capa 4 que la UI necesita; aprobado por el titular en paralelo con el engine, sin tocar `gafira-engine`, `gafira-doc` ni `gafira-edit`.
+> **Estado:** done — 2026-11-16 — S15-01..S15-12 cubiertos por `gafira-i18n` (`resolver::tests` 3, `catalog::tests` 5, `format::tests` 2, `translator::tests` 14, `pseudo::tests` 3: 27 tests); 9 mutantes a mano, 8 muertos y 1 equivalente; 2718 tests en el workspace. Fechas (zona horaria) y la región en `Translator::text` quedan como seguimiento (ver «No alcance» y «Riesgos»).
 
 ## Objetivo
 
@@ -56,6 +56,15 @@ Lógica crítica: la regla de D-08 (S15-01, S15-02), el parsing y la validación
 
 - Gates de `AGENTS.md`, `cargo deny check` y los pasos de política de CI en verde.
 - Banner a `done`, fila en `specs/README.md`.
+
+Resultado (2026-11-16, rama `feat/014-015-theme-i18n`):
+
+- `cargo fmt --check`: ok. `cargo clippy --workspace --all-targets --locked -- -D warnings` y `cargo clippy -p gafira-i18n --all-targets --features pseudo --locked -- -D warnings`: 0 avisos. `cargo test --workspace --locked`: 2718 pasan, 0 fallan.
+- Dependencias nuevas en `Cargo.lock`: `icu_plurals` 2.4.0, `icu_plurals_data` 2.4.0, `icu_decimal` 2.4.0, `icu_decimal_data` 2.4.0 y `fixed_decimal` 0.7.3, todas Unicode-3.0. `cargo deny check licenses bans sources`: ok; `advisories` necesita red y queda para la CI.
+- Paso nuevo de CI «gafira-i18n depends only on ports, doc and ICU4X (ARQ-107)» en verde; control negativo: añadir `gafira-color` a las dependencias lo hace fallar. V14 falla por un motivo ajeno a esta spec (ver spec 014).
+- Mutantes a mano: muertos los de la regla `es`, el filtro de región de D-64, el corte de `.codeset`/`@modificador`, la cadena de respaldo (sin inglés y con el modo `dist` invertido), el idioma de las reglas de plural, la sustitución de argumentos y la forma `many`. Equivalente: la comprobación explícita de `C`/`POSIX`, porque `icu_locale_core` ya rechaza esas etiquetas; se mantiene como guarda.
+- Rojo: las pruebas y la implementación entraron en la misma unidad de trabajo; el fallo de las pruebas ante la lógica rota se comprobó con los mutantes de arriba, no con un stub previo.
+- Redondeo: `fixed_decimal::Decimal::round` es *half-even*, el modo por defecto de ICU (`12.25` → `12.2`); se adopta y se documenta en la prueba.
 
 ## Riesgos y decisiones abiertas
 

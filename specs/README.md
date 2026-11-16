@@ -38,6 +38,8 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 009 | [`SettingsService` del engine e idioma persistido](done/009-engine-settings-service.md) | Puerto `SettingsRepository`, `SettingsService::{start, get, set, set_language, locale}`, `LocaleChanged` al arrancar y al cambiar idioma; 13 tests nuevos, 3 mutantes a mano muertos, 2649 tests en el workspace |
 | 010 | [`LicenseService` del engine y licencia opcional](done/010-engine-license-service.md) | `LicenseService::{start, status, can_export, is_required, activate, validate, deactivate}`; licencia deshabilitable por build con `NoLicensing` → `NotRequired` (D-58); 9 tests nuevos, 4 mutantes a mano muertos, 2658 tests |
 | 011 | [`AssetService::import` del engine](done/011-engine-asset-import.md) | Comando `InsertAsset` deduplicado por hash y `AssetService::import` (sesión → archivo → store → comando, deshacer incluido); 9 tests nuevos, 4 mutantes a mano muertos, 2667 tests |
+| 014 | [`gafira-theme`: tokens de diseño y tipografías](done/014-theme-tokens.md) | `assets/theme/gafira.tokens.json` (03 §3) cargado y validado (schema, referencias, modos, contraste DIS-10, pares rechazados, movimiento reducido) en tipos neutros; Inter y Manrope embebidas (subconjuntos provisionales) con prueba `cmap` de ARQ-105; 24 tests nuevos, 9 de 10 mutantes a mano muertos (1 equivalente), 2718 tests |
+| 015 | [`gafira-i18n`: catálogos es/en y regla de D-08](done/015-i18n-catalogs.md) | `assets/i18n/{es,en}.toml` compilados en build; `D08LocaleResolver` (D-08, región D-64) y `CatalogTranslator` (parámetros, plurales CLDR, respaldo de §14.6, números y cantidades con ICU4X, tiempo relativo) y `PseudoTranslator` (feature `pseudo`); fechas como interim ISO 8601 UTC; 27 tests nuevos, 8 de 9 mutantes a mano muertos (1 equivalente), 2718 tests |
 
 ### Historial del flujo anterior
 
@@ -54,4 +56,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **012**.
+Siguiente ID libre: **016** (012 y 013 los usan ramas en curso).
