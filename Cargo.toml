@@ -63,6 +63,8 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "a
 zip = { version = "2", default-features = false, features = ["deflate"] }
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Spec 033: the lossless WebP thumbnails of the `.gaf` (`thumbs/`, 02 §7.1); already in the tree through krilla.
+image-webp = "0.2"
 # FD-56, 02 §9.2: PDF export; only the feature that draws images (no text shaping).
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
 # Reads the exported PDF back in the gafira-io-pdf tests.

@@ -10,6 +10,8 @@ publish.workspace = true
 blake3.workspace = true
 gafira-doc.workspace = true
 gafira-ports.workspace = true
+gafira-raster.workspace = true
+image-webp.workspace = true
 serde_json.workspace = true
 zip.workspace = true
 

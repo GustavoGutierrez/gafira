@@ -12,7 +12,9 @@
 //! `ports::ContentStore` (spec 026); each one is checked against its hash.
 //! Versions live in `versions/`: an index and one folder per version with
 //! its own `document.json`, pages and sequences; their assets share
-//! `assets/` with the document, by hash (spec 031).
+//! `assets/` with the document, by hash (spec 031). A save may add the
+//! thumbnail of the first page as `thumbs/<page_id>.webp`, which
+//! [`read_thumbnail`] reads without the rest of the project (spec 033).
 
 #![forbid(unsafe_code)]
 
@@ -21,12 +23,14 @@ mod limits;
 mod manifest;
 mod read;
 mod repository;
+mod thumbs;
 mod versions;
 mod write;
 
 pub use limits::Limits;
 pub use read::read_gaf;
 pub use repository::GafRepository;
+pub use thumbs::{ThumbnailImage, read_thumbnail};
 pub use write::write_gaf;
 
 /// The exact text of the `mimetype` entry (02 §7.1).

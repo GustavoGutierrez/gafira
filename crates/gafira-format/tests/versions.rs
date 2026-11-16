@@ -103,7 +103,7 @@ fn project() -> (Document, Vec<Version>) {
 
 fn gaf(document: &Document, versions: &[Version]) -> Vec<u8> {
     let mut bytes = Cursor::new(Vec::new());
-    write_gaf(&mut bytes, document, versions, &store()).expect("writes");
+    write_gaf(&mut bytes, document, versions, None, &store()).expect("writes");
     bytes.into_inner()
 }
 

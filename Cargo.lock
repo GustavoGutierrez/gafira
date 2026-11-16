@@ -1594,6 +1594,8 @@ dependencies = [
  "gafira-assets",
  "gafira-doc",
  "gafira-ports",
+ "gafira-raster",
+ "image-webp",
  "serde_json",
  "zip",
 ]
