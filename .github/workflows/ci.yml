@@ -192,6 +192,25 @@ jobs:
             esac
           done
           exit "$status"
+      - name: gafira-i18n depends only on ports, doc and ICU4X (ARQ-107)
+        run: |
+          set -euo pipefail
+          # gafira-i18n compiles assets/i18n/*.toml in its build script, so it has no domain clippy.toml
+          # (which bans std::fs) and no V5 row; this step checks its own row of 02 §2.1 instead.
+          direct=$(cargo tree -p gafira-i18n -e normal --target all --depth 1 --prefix none -f '{p}' </dev/null | tail -n +2 | awk '{print $1}' | sort -u)
+          [ -n "$direct" ] || { echo "::error::empty cargo tree for gafira-i18n" >&2; exit 1; }
+          status=0
+          for dep in $direct; do
+            case "$dep" in
+              gafira-ports|gafira-doc|icu_*) ;;
+              *) echo "::error::gafira-i18n must not depend on $dep (ARQ-107)" >&2; status=1 ;;
+            esac
+          done
+          tree=$(cargo tree -p gafira-i18n -e normal,build --target all --prefix none -f '{p}' </dev/null)
+          if bad=$(grep -E '^(gafira-(engine|ui|platform)|egui|eframe|winit|wgpu) v' <<<"$tree"); then
+            echo "::error::gafira-i18n: forbidden $bad" >&2; status=1
+          fi
+          exit "$status"
       - name: EditToken only in the edit crates (V13)
         run: |
           set -euo pipefail
