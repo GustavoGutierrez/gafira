@@ -7,7 +7,8 @@
 //! project id of D-63. A session with a file holds its `<file>.lock`
 //! (spec 028). A session carries the versions of its file and every save
 //! writes them; `save_version`, `list_versions` and `restore_version` are
-//! the versions of 02 §7.1 (spec 031).
+//! the versions of 02 §7.1 (spec 031). Every save but the autosave also
+//! hands the repository the thumbnail of the first page (spec 033).
 //! Every file operation goes through the injected ports; the engine opens
 //! nothing itself (P1, design P18).
 
@@ -19,6 +20,7 @@ use std::time::Duration;
 
 use gafira_doc::{Document, Dpi, Page, PageId, PageSize, ProjectId};
 use gafira_edit::{DirtySet, History, RestoreVersion};
+use gafira_ports::export::PageRenderers;
 use gafira_ports::repository::{ProjectRepository, Version, VersionId, VersionInfo};
 use gafira_ports::system::{Clock, FileSystem, IdSource, ProcessId, ProcessProbe};
 
@@ -27,7 +29,7 @@ use crate::engine::{EngineConfig, EngineError, Ports};
 use crate::event::{EngineEvent, RecoveryEntry};
 use crate::lock::{FileLock, lock_path, lock_text, parse_lock};
 use crate::session::{Autosave, DocVersion, Session, Shared};
-use crate::versions;
+use crate::{thumbnail, versions};
 
 /// Creates, opens and saves the session's document (02 §5.4 line 1357).
 pub struct ProjectService {
@@ -35,6 +37,8 @@ pub struct ProjectService {
     repository: Arc<dyn ProjectRepository>,
     filesystem: Arc<dyn FileSystem>,
     clock: Arc<dyn Clock>,
+    /// Draws the thumbnail of the first page on every save (spec 033).
+    pages: Arc<dyn PageRenderers>,
     /// Mints the identity of a new project and of a copy (D-63).
     ids: Arc<dyn IdSource>,
     /// This process and the liveness of others (spec 028).
@@ -57,6 +61,7 @@ impl ProjectService {
             repository: Arc::clone(&ports.repository),
             filesystem: Arc::clone(&ports.filesystem),
             clock: Arc::clone(&ports.clock),
+            pages: Arc::clone(&ports.pages),
             ids: Arc::clone(&ports.ids),
             processes: Arc::clone(&ports.processes),
             autosave_interval: config.autosave_interval(),
@@ -456,7 +461,8 @@ impl ProjectService {
     }
 
     /// 02 §7.2: the repository writes and syncs `<path>.tmp-<n>` (steps 1-2,
-    /// SP6); when `path` exists its bytes go to `<path>.bak` (step 4); then
+    /// SP6), with the thumbnail of the first page when it can be drawn
+    /// (spec 033); when `path` exists its bytes go to `<path>.bak` (step 4); then
     /// the file system renames the temporary over `path` and syncs the
     /// folder (step 3). Each step runs only after the one before returned
     /// `Ok`, so a failure anywhere leaves `path` with its old bytes. The
@@ -468,11 +474,14 @@ impl ProjectService {
         document: &Document,
         versions: &[Version],
     ) -> Result<(), EngineError> {
+        // Spec 033: best effort, a page that cannot be drawn is saved
+        // without its thumbnail.
+        let thumbnail = thumbnail::first_page(document, &*self.pages);
         let n = self.temporaries.fetch_add(1, Ordering::SeqCst);
         let tmp = suffixed(path, &format!(".tmp-{n}"));
         let written = self
             .repository
-            .save(&tmp, document, versions)
+            .save_with_thumbnail(&tmp, document, versions, thumbnail.as_ref())
             .map_err(EngineError::from)
             .and_then(|()| self.back_up(path, n))
             .and_then(|()| self.filesystem.replace(&tmp, path).map_err(EngineError::Io));

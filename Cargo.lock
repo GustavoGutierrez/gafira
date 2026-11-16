@@ -1584,6 +1584,7 @@ dependencies = [
  "gafira-geom",
  "gafira-ports",
  "gafira-raster",
+ "gafira-time",
 ]
 
 [[package]]
