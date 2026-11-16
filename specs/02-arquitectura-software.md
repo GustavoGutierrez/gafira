@@ -1711,7 +1711,7 @@ pub enum FormatError {
   4. Contraste WCAG calculado con la fórmula de 03 §4 para los pares declarados en 03 §4, con mínimo 4,5:1 (texto) y 3:1 (texto grande y componentes), y rechazo de los pares prohibidos (texto blanco pequeño sobre coral, 2,80:1).
   5. `motion.reduced` presente con duraciones 0.
 - **Modo**: Claro, Oscuro o Sistema (Ajustes → Apariencia); el cambio de modo no reinicia la app.
-- **Tipografías**: Inter y Manrope (OFL-1.1) embebidas como bytes con su `OFL.txt` incluido en la distribución y en «Acerca de → Licencias». **Cobertura de los dos idiomas (D-08)**: ambas familias incluyen los subconjuntos *latin* y *latin-ext*, que contienen todos los caracteres del español y del inglés (á é í ó ú ü ñ y sus mayúsculas, ¿ ¡, « », comillas tipográficas “ ” ‘ ’, raya —, guion –, puntos suspensivos …, ×, °, %). Se considera confirmado según el juego de caracteres publicado de cada familia y se **comprueba en CI** sobre los archivos embebidos (ARQ-105), porque un subconjunto mal generado podría perder glifos. Se **desactivan las fuentes por defecto de egui/epaint** (feature `default_fonts`), porque pueden incluir fuentes con Ubuntu Font Licence (VERIFICAR) y no forman parte de la marca. Para símbolos y escrituras no latinas se usan las fuentes del sistema como alternativa por `gafira-platform` (sin redistribuirlas).
+- **Tipografías**: Inter y Manrope (OFL-1.1) embebidas como bytes con su `OFL.txt` incluido en la distribución y en «Acerca de → Licencias». **Cobertura de los dos idiomas (D-08)**: ambas familias incluyen los subconjuntos *latin* y *latin-ext*, que contienen todos los caracteres del español y del inglés (á é í ó ú ü ñ y sus mayúsculas, ¿ ¡, « », comillas tipográficas “ ” ‘ ’, raya —, guion –, puntos suspensivos …, ×, °, %). Se considera confirmado según el juego de caracteres publicado de cada familia y se **comprueba en CI** sobre los archivos embebidos (ARQ-105), porque un subconjunto mal generado podría perder glifos. Se **desactivan las fuentes por defecto de egui/epaint** (feature `default_fonts`), porque incluyen Ubuntu-Light con la Ubuntu Font Licence 1.0, que no está en la allowlist (verificado el 2026-11-16, campo `license` de `epaint_default_fonts` 0.33.3: `(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0`), y no forman parte de la marca. Para símbolos y escrituras no latinas se usan las fuentes del sistema como alternativa por `gafira-platform` (sin redistribuirlas).
 - **Logo e iconos de la app**: se generan en build con `xtask` a partir de los SVG de `docs/manuals/marca/assets`. El wordmark es vectorial y nunca se reescribe con una fuente. Se producen `.ico` multirresolución (16–256), `.icns` (16–1024) y PNG para Linux (16–512 en *hicolor*). En la UI el símbolo mide ≥ 24×24 px.
 - **Iconografía de interfaz**: propia, de trazo simple con grosor uniforme. Si se parte de Lucide (ISC) o Feather (MIT), se incluye su licencia.
 
@@ -1727,7 +1727,7 @@ pub enum FormatError {
 | ARQ-60 | Ningún color literal en `gafira-ui`. | Un lint de CI (búsqueda de `Color32::from_rgb` fuera de `theme.rs`) da 0 coincidencias. |
 | ARQ-61 | Los tokens se validan con contraste AA para el texto. | La prueba de `gafira-theme` falla si un par texto/fondo declarado tiene < 4,5:1 (< 3:1 en texto grande). |
 | ARQ-62 | Las fuentes de egui por defecto no se incluyen. | `cargo tree -e features -p gafira` no muestra `default_fonts`. Una inspección del binario no encuentra los nombres de esas fuentes. |
-| ARQ-63 | Todo el flujo Elegir → Personalizar → Compartir es operable solo con teclado. | La prueba E2E de teclado (egui_kittest, licencia sin medir: VERIFICAR) completa plantilla → editar texto → exportar PNG. |
+| ARQ-63 | Todo el flujo Elegir → Personalizar → Compartir es operable solo con teclado. | La prueba E2E de teclado (egui_kittest 0.33.3, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); no trae `epaint_default_fonts`) completa plantilla → editar texto → exportar PNG. |
 | ARQ-64 | Se respeta la reducción de movimiento. | Con la preferencia activa, la duración medida de las transiciones de la UI es 0. |
 
 ### 8.4 Pantalla de arranque (D-09)
@@ -1789,9 +1789,9 @@ El diseño visible está en 03 §7.10. Aquí se fija dónde vive, cómo se incru
 - Prohibidas: `GPL-*`, `LGPL-*`, `AGPL-*`, `SSPL`, `CC-BY-NC*`, `BUSL`, cualquier licencia no comercial y licencias desconocidas.
 - `MPL-2.0`: **denegada por defecto**. Una excepción requiere un ADR, aislamiento en un crate opcional y la publicación del código fuente de los archivos MPL modificados. Se evitan `symphonia`, `imbl`, `im` y `rpds` (alternativas en la tabla).
 - Sin dependencias git: nada de `storytold/craft-libs` ni forks sin publicar. Solo crates.io.
-- Sin binarios externos en el instalador: ni FFmpeg, ni `ffmpeg-sidecar`, ni ejecutables de terceros. Las librerías C con licencia permisiva compiladas estáticamente (por ejemplo libdav1d, BSD-2) se aceptan con VERIFICAR.
+- Sin binarios externos en el instalador: ni FFmpeg, ni `ffmpeg-sidecar`, ni ejecutables de terceros. Las librerías C con licencia permisiva compiladas estáticamente se aceptan después de leer su licencia en las fuentes; por ejemplo libdav1d, BSD-2-Clause (verificado el 2026-11-16, `COPYING` de github.com/videolan/dav1d).
 - **Bibliotecas del sistema con licencia LGPL**: solo se aceptan si son parte del SO del usuario, se enlazan de forma **dinámica** y **nunca se empaquetan** en el instalador. Caso conocido: `cpal` en Linux enlaza `libasound` (ALSA, LGPL-2.1) del sistema. Es un riesgo **VERIFICAR** con asesoría legal (R-06). Mitigación propuesta: enlace dinámico a la `libasound.so.2` del sistema (dependencia del paquete `.deb`/`.rpm`, no un archivo incluido), `xtask audit-bundle` falla si una `.so` LGPL aparece en el paquete y, como alternativa si el dictamen lo exige, un backend de audio propio por PipeWire/PulseAudio.
-- Toda dependencia nueva que llega a un binario pasa `cargo deny check licenses bans sources advisories` en CI. `cargo-deny` no comprueba la licencia de las dependencias solo de desarrollo de crates privados, como `png` en `gafira-testkit`, `proptest`, `criterion`, `trybuild` y `assert_no_alloc`: su licencia se comprueba a mano al añadirlas y se anota en §9.2. Toda dependencia se registra en `THIRD_PARTY_NOTICES.md` (generado con `cargo about`, licencia de la herramienta sin medir: VERIFICAR, que solo se usa en build). Es el **único nombre** del archivo de avisos de terceros en todas las specs y en el instalador.
+- Toda dependencia nueva que llega a un binario pasa `cargo deny check licenses bans sources advisories` en CI. `cargo-deny` no comprueba la licencia de las dependencias solo de desarrollo de crates privados, como `png` en `gafira-testkit`, `proptest`, `criterion`, `trybuild` y `assert_no_alloc`: su licencia se comprueba a mano al añadirlas y se anota en §9.2. Toda dependencia se registra en `THIRD_PARTY_NOTICES.md` (generado con `cargo about`, `cargo-about` 0.9.3 con licencia MIT OR Apache-2.0: verificado (2026-11-16, crates.io); solo se usa en build). Es el **único nombre** del archivo de avisos de terceros en todas las specs y en el instalador.
 
 ```toml
 # deny.toml (extracto)
@@ -1816,7 +1816,7 @@ allow-git = []
 
 ### 9.2 Tabla de dependencias propuestas
 
-Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implementar. «VERIFICADA» significa verificada localmente según el handoff; «VERIFICADA (`cargo-deny`)» significa medida con `cargo-deny` 0.20.2 y el `deny.toml` del repositorio (proyectos de prueba, 24 de octubre de 2026): 72 de los 76 crates marcados antes VERIFICAR pasan con sus features por defecto; `zip`, `ureq`, `directories` y `ort` no, y se corrigen en la tabla con features o con otro crate. Quedan VERIFICAR las licencias de las bibliotecas en C, que `cargo-deny` no lee.
+Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implementar. «VERIFICADA» significa verificada localmente según el handoff; «VERIFICADA (`cargo-deny`)» significa medida con `cargo-deny` 0.20.2 y el `deny.toml` del repositorio (proyectos de prueba, 24 de octubre de 2026): 72 de los 76 crates marcados antes VERIFICAR pasan con sus features por defecto; `zip`, `ureq`, `directories` y `ort` no, y se corrigen en la tabla con features o con otro crate. Las licencias de las bibliotecas en C, que `cargo-deny` no lee, se leyeron en sus fuentes el 2026-11-16 (filas de zstd, rav1d / dav1d, Opus y rusqlite); `libasound` sigue en VERIFICAR legal (R-06).
 
 | Crate | Versión orient. | Licencia | Estado | Uso | Alternativa permisiva |
 |---|---|---|---|---|---|
@@ -1846,7 +1846,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | serde, serde_json | 1.x | MIT/Apache | VERIFICADA (`cargo-deny`) | Serialización | — |
 | zip | última | MIT | VERIFICADA (`cargo-deny`). Con `default-features = false, features = ["deflate"]`: las features por defecto traen `libbz2-rs-sys` (`bzip2-1.0.6`) | Contenedor `.gaf` | rawzip / propio |
 | miniz_oxide / flate2 | última | MIT/Apache/Zlib | VERIFICADA (`cargo-deny`) | DEFLATE | — |
-| zstd | última | BSD-3-Clause (crate `zstd`); la `libzstd` en C que compila `zstd-sys` no la lee `cargo-deny`: VERIFICAR | VERIFICAR (solo la parte C) | Tiles de máscara | lz4_flex (MIT) |
+| zstd | última | BSD-3-Clause (crate `zstd`); la `libzstd` en C que compila `zstd-sys` (2.1.3+zstd.1.5.7, `BSD-3-Clause AND BSD-2-Clause`) tiene licencia doble BSD-3-Clause OR GPL-2.0 y se usa bajo BSD-3-Clause | VERIFICADA (`cargo-deny`) para los crates; parte C verificado (2026-11-16, `LICENSE` y `COPYING` de github.com/facebook/zstd y la copia incluida en `zstd-sys`) | Tiles de máscara | lz4_flex (MIT) |
 | blake3 | 1.x | CC0/Apache-2.0 | VERIFICADA (`cargo-deny`) | Hash de contenido | — |
 | thiserror | 2.x | MIT/Apache | EVITAR | Ningún crate propio la usa: los errores se escriben a mano (ADR 0012) | — |
 | tracing, tracing-subscriber | última | MIT | VERIFICADA (`cargo-deny`) | Logs y spans locales | log |
@@ -1856,8 +1856,8 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | rstar | última | MIT OR Apache-2.0 | VERIFICADA (`cargo-deny`) | Índice espacial | propio |
 | cpal | última | Apache-2.0 | VERIFICADA (`cargo-deny`) para los crates. **Riesgo**: en Linux enlaza `libasound` (LGPL-2.1) del sistema; solo enlace dinámico, nunca empaquetada (§9.1, R-06, ARQ-79) | Salida de audio | backend PipeWire/PulseAudio propio |
 | rav1e | última | BSD-2-Clause | VERIFICADA (`cargo-deny`) | Codificar AV1 | — |
-| rav1d / dav1d | última | BSD-2-Clause | VERIFICADA (`cargo-deny`) para el crate Rust; `dav1d` espera una `libdav1d` del sistema y su licencia en C no la lee `cargo-deny`: VERIFICAR | Decodificar AV1 | — |
-| Opus (crate a elegir sobre libopus) | — | BSD-3 (libopus) | VERIFICAR: el crate compila C y `cargo-deny` no lee la licencia de `libopus` | Codificar y decodificar Opus | — |
+| rav1d / dav1d | última | BSD-2-Clause | VERIFICADA (`cargo-deny`) para los crates (`rav1d` 1.1.0 BSD-2-Clause; `dav1d` 0.11.1 y `dav1d-sys` 0.8.3 MIT). `dav1d` espera una `libdav1d` del sistema o la compila con meson; libdav1d es BSD-2-Clause (verificado el 2026-11-16, `COPYING` de github.com/videolan/dav1d) | Decodificar AV1 | — |
+| Opus (crate a elegir sobre libopus) | — | BSD-3-Clause (libopus) | libopus BSD-3-Clause (verificado el 2026-11-16, `COPYING` de github.com/xiph/opus y la copia incluida en `audiopus_sys`); candidatos: `opus` 0.4.0 (MIT OR Apache-2.0) sobre `audiopus_sys` (ISC), VERIFICADA (`cargo-deny`). La elección del crate sigue abierta | Codificar y decodificar Opus | — |
 | claxon / flacenc | última | Apache-2.0 | VERIFICADA (`cargo-deny`) | FLAC | — |
 | lewton | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Decodificar Vorbis | — |
 | hound | última | Apache-2.0 | VERIFICADA (`cargo-deny`) | WAV | propio |
@@ -1870,7 +1870,7 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 | windows / objc2 | última | MIT/Apache | VERIFICADA (`cargo-deny`) | FFI de Media Foundation y VideoToolbox | — |
 | fs4 | última | MIT/Apache | VERIFICADA (`cargo-deny`) | Bloqueos de archivo | fd-lock |
 | etcetera (en lugar de `directories`) | última | MIT OR Apache-2.0 | VERIFICADA (`cargo-deny`). `directories` y `dirs` traen `option-ext` (MPL-2.0); alternativa `app_dirs2` | Rutas de datos | — |
-| rusqlite (bundled) | última | MIT (SQLite de dominio público) | VERIFICADA (`cargo-deny`) para el crate. Compila SQLite en C; `cargo-deny` no lee esa licencia: VERIFICAR | Índice de biblioteca local | redb (MIT/Apache) |
+| rusqlite (bundled) | última | MIT (SQLite de dominio público) | VERIFICADA (`cargo-deny`) para el crate (`rusqlite` 0.43.0 y `libsqlite3-sys` 0.40.0, MIT). Compila SQLite 3.54.1 en C, de dominio público (verificado el 2026-11-16, sqlite.org/copyright.html); el dominio público no es un identificador de la allowlist, pero no impone condiciones; `redb` 4.6.0 es MIT OR Apache-2.0 | Índice de biblioteca local | redb (MIT/Apache) |
 | wasmi | última | MIT/Apache-2.0 | VERIFICADA (`cargo-deny`) | Plugins (Fase 3) | — |
 | ort + ONNX Runtime | — | MIT/Apache (runtime MIT) | VERIFICADA (`cargo-deny`) solo con `default-features = false, features = ["load-dynamic","std"]` (las features por defecto traen `openssl-sys`, prohibido, y descargan binarios nativos). `ort` es una versión candidata (*release candidate*) y la biblioteca ONNX Runtime se entrega aparte (modelo opcional, fuera del instalador base) | Segmentador ML opcional (Fase 3, paquete aparte) | candle (VERIFICAR) |
 | proptest, criterion, insta | dev | MIT/Apache | VERIFICADA (`cargo-deny`) | Pruebas | — |
@@ -1889,12 +1889,12 @@ Las versiones son orientativas: se fijan en `Cargo.lock` en el momento de implem
 
 Notas de la medición de licencias (`cargo-deny` solo lee los metadatos de los crates, no las licencias de las bibliotecas en C que estos compilan):
 
-- `zstd` (`zstd-sys`), Opus y `rusqlite` con `bundled` compilan código C; sus licencias (BSD-3-Clause, BSD-3-Clause y dominio público) siguen en VERIFICAR hasta leerlas en las fuentes.
+- `zstd` (`zstd-sys`), Opus y `rusqlite` con `bundled` compilan código C; sus licencias (BSD-3-Clause, elegida de la doble BSD-3-Clause OR GPL-2.0 de zstd; BSD-3-Clause; dominio público) se leyeron en las fuentes: verificado (2026-11-16, ver las filas de §9.2).
 - `dav1d` espera una `libdav1d` del sistema. Eso choca con «sin binarios externos» (§9.1) salvo que se compile de forma estática.
 - `cpal` en Linux enlaza `libasound` (LGPL-2.1) de forma dinámica (ya recogido en R-06 y ARQ-79).
 - `ort` es una versión candidata (*release candidate*) y se usa con `load-dynamic`: la biblioteca ONNX Runtime se entrega aparte con el modelo opcional, coherente con «no entra en el instalador base».
 - No se añade CDLA-Permissive-2.0 a la allowlist: se mantiene la regla de licencias solo permisivas.
-| rust-i18n | — | MIT (VERIFICAR) | EVITAR | Fija el idioma en estado global (`set_locale`), contrario a ARQ-31 | `gafira-i18n` |
+| rust-i18n | — | MIT (verificado el 2026-11-16, crates.io, 4.2.4) | EVITAR | Fija el idioma en estado global (`set_locale`), contrario a ARQ-31 | `gafira-i18n` |
 | Encoders H.264/HEVC/AAC propios o de terceros (p. ej. openh264, x264, x265, fdk-aac) | — | Patentes y, en varios casos, GPL | PROHIBIDA | H.264/AAC solo vía SO (D-02) | AV1 + Opus |
 
 ### 9.3 Patentes de códecs (ADR-07)
@@ -1947,7 +1947,7 @@ Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el 
 | Golden de formato | Migraciones, exportadores SVG/PDF (estructura normalizada), MP4/WebM (tabla de *boxes* o elementos) | `insta` | Sin diferencias no aprobadas |
 | Fuzzing | Cada `Importer`, `Demuxer`, `Decoder` y el lector `.gaf` | `cargo fuzz` (libFuzzer) | 10 min por objetivo en PR (los afectados); 8 h por semana; 0 fallos |
 | Benchmarks | Cada cifra de §6.7 | `criterion` y `gafira-cli bench` | Se rompe CI si se supera el umbral de `perf-budgets.toml` (en la máquina de referencia nocturna) o hay una regresión > 10 % |
-| E2E | Flujos completos sin UI (Facade) y con UI (`egui_kittest`, VERIFICAR) | `cargo test --test e2e` | Flujos del MVP en verde en las 3 plataformas |
+| E2E | Flujos completos sin UI (Facade) y con UI (`egui_kittest`, MIT OR Apache-2.0, verificado (2026-11-16)) | `cargo test --test e2e` | Flujos del MVP en verde en las 3 plataformas |
 | Robustez | Kill aleatorio, inyección de fallos de E/S y GPU, límites de memoria | Arneses de testkit | §6.7 y §7 |
 | Localización | Cobertura de claves es/en, parámetros y plurales; regla de D-08; formatos por idioma; seudo-localización con capturas; texto literal en la UI | `xtask check-i18n`, `xtask check-ui-literals`, `cargo test -p gafira-i18n`, E2E con `PseudoTranslator` | 100 % de claves en los dos idiomas; 0 literales; 0 truncados sin tooltip (§14.7) |
 
@@ -1959,7 +1959,7 @@ Gafira es **propietaria y de código cerrado** (D-01). El contrato reutiliza el 
 - **Pasos por PR**: `fmt --check`, `clippy -D warnings`, `check-layers`, `deny`, `check-i18n`, `check-ui-literals`, `check-glossary`, pruebas, fuzz corto y benchmarks de humo.
 - **Por la noche**: benchmarks completos en la máquina de referencia (*self-hosted*), fuzz largo, paquetes firmados y capturas golden en español, inglés y seudo-localización (§14.6).
 - **Empaquetado**:
-  - Windows: MSI con WiX v5, CRT estático y firma Authenticode. WiX se usa solo en build; su licencia MS-RL no se distribuye (VERIFICAR).
+  - Windows: MSI con WiX v5, CRT estático y firma Authenticode. WiX se usa solo en build; su licencia es MS-RL (verificado el 2026-11-16, `LICENSE.TXT` de github.com/wixtoolset/wix). Sigue en VERIFICAR: MS-RL no está en la allowlist y las extensiones de WiX que se incrustan en el MSI pueden arrastrarla; v5 está fuera de soporte comunitario y desde v6 el uso con ingresos exige la Open Source Maintenance Fee (firegiant.com). Decide el titular: versión de WiX y cuota, u otra herramienta de MSI (05 §C1).
   - Linux (solo `x86_64`, D-05): `.deb`, `.rpm` y `.tar.gz` portable. Las bibliotecas del sistema (Vulkan, X11/Wayland, ALSA/PipeWire) no se empaquetan (ARQ-79).
     - **Sin AppImage**: su *runtime* enlaza libfuse con licencia LGPL-2.1, lo que obligaría a adjuntar el texto de esa licencia y una oferta de código fuente con cada copia.
     - **Sin Flatpak** y **sin aarch64** en Linux.
@@ -2043,7 +2043,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | R-02 | Linux sin VA-API no puede importar ni exportar H.264, que es el formato habitual de los móviles. | Patentes / funcional | Decidido en D-02: no hay alternativa de software. Mensaje claro, propuesta de AV1 + Opus para exportar y guía para transcodificar fuera de la app. |
 | R-03 | La codificación AV1 por software puede no alcanzar ≥ 10 fps a 1080p en gama media. | Rendimiento | Preset rápido de rav1e, *tiles* paralelos; benchmark temprano (*spike* en la semana 1). Si no se alcanza, la cifra del Reel solo se garantiza con el códec del SO. Como AV1 es la salida por defecto (D-02), este riesgo sube de prioridad. |
 | R-04 | Aislar sujeto en < 2 s en GPU con técnica clásica puede no ser viable. | Rendimiento | La cifra de CPU (< 5 s) es la obligatoria en el MVP; la de GPU se valida con un *spike*. |
-| R-05 | Las licencias de crates (vello, parley, krilla, linesweeper, cpal, rav1e, `nanomp3`, cliente HTTP y `ring`…) ya pasan `cargo-deny` (72 de 76 con features por defecto; los otros 4 se corrigen en §9.2), pero pueden cambiar o traer dependencias transitivas no permitidas en versiones futuras; las bibliotecas en C quedan VERIFICAR. | Licencia | `cargo-deny` en CI y alternativas listadas en §9.2. |
+| R-05 | Las licencias de crates (vello, parley, krilla, linesweeper, cpal, rav1e, `nanomp3`, cliente HTTP y `ring`…) ya pasan `cargo-deny` (72 de 76 con features por defecto; los otros 4 se corrigen en §9.2), pero pueden cambiar o traer dependencias transitivas no permitidas en versiones futuras; las licencias de las bibliotecas en C se leyeron en sus fuentes el 2026-11-16 (§9.2) y `libasound` queda en R-06. | Licencia | `cargo-deny` en CI y alternativas listadas en §9.2. |
 | R-06 | `cpal` en Linux enlaza `libasound` (LGPL-2.1), biblioteca del sistema. | Licencia | **VERIFICAR** con asesoría legal. Mitigación propuesta: enlace dinámico a la biblioteca del sistema, nunca empaquetarla (ARQ-79, §9.1). Alternativa si el dictamen lo exige: backend propio por PipeWire/PulseAudio. |
 | R-07 | Las diferencias de render GPU entre drivers rompen los golden. | Calidad | Tolerancias, lista de bloqueo de drivers y CPU como referencia de exportación. |
 | R-08 | Las tipografías, plantillas e iconos incluidos sin licencia clara invalidan la venta. | Licencia | ARQ-75. |
@@ -2384,7 +2384,7 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 
 | Criterio | A. TOML propio + ICU4X (**elegida**) | B. Fluent (`fluent-bundle`) | C. ICU4X MessageFormat 2 | D. GNU gettext | E. `rust-i18n` |
 |---|---|---|---|---|---|
-| Licencia | Unicode-3.0, ya en la allowlist (ICU4X ya entra por `icu_segmenter`); `toml` solo en build | Apache-2.0/MIT (VERIFICAR); `self_cell` es `Apache-2.0 OR GPL-2.0-only`, usable bajo Apache-2.0 (VERIFICAR) | Unicode-3.0 | LGPL/GPL: **prohibida** (§9.1) | MIT (VERIFICAR) |
+| Licencia | Unicode-3.0, ya en la allowlist (ICU4X ya entra por `icu_segmenter`); `toml` solo en build | Apache-2.0 OR MIT (`fluent-bundle` 0.16.0, `fluent-syntax` 0.12.0, `intl_pluralrules` 7.0.2, `unic-langid` 0.9.6); `self_cell` 1.3.0 es `Apache-2.0 OR GPL-2.0-only`, usable bajo Apache-2.0 (verificado el 2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio) | Unicode-3.0 | LGPL/GPL: **prohibida** (§9.1) | MIT (verificado el 2026-11-16, crates.io, `rust-i18n` 4.2.4) |
 | Plurales | CLDR (`icu_plurals`) | CLDR (`intl_pluralrules`) | CLDR | Sí | Limitados |
 | Números y fechas | `icu_decimal`, `icu_datetime` | `NUMBER()` básico; las fechas exigen ICU4X igualmente | Integrados | De libc | No |
 | Claves comprobadas antes de ejecutar | Sí (`msg!` + `check-i18n` + tablas generadas) | No (se resuelven en ejecución) | No | No | Sí (macros) |
