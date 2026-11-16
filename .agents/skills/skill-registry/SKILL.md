@@ -20,5 +20,5 @@ Tracked files name skills by NAME only. Paths live in `.atl/skill-registry.md`, 
 
 - Sources: project `.claude/skills`, `.agents/skills`, then user dirs under `$HOME` (see "Sources scanned" in the registry). Name from SKILL.md front matter; duplicates: project wins, then first source.
 - Missing registry or name: `resolve` refreshes once and retries. Still missing: report the name as unavailable. Never guess a path.
-- Subagents cannot run the Skill tool: the coordinator resolves names and passes the paths; the agent reads each `SKILL.md` before working.
+- Subagents cannot run the Skill tool: whoever launches one resolves the names and passes the paths; every agent reads each `SKILL.md` before working.
 - Never copy resolved paths into tracked files.

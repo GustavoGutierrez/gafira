@@ -1,79 +1,71 @@
-# Project agents in Claude Code and OpenCode
+# Project agents and skills
 
-`.agents/agents/` is the source of truth. Claude Code uses the existing
-`.claude/agents` symlink directly. OpenCode V2 uses generated adapters in
-`.opencode/agents/`. After changing a source, run from the project root:
+`.agents/` is the single source of truth for every agent runtime:
 
-```sh
-python3 tools/sync_agents.py
-python3 tools/sync_agents.py --check
+```
+.agents/agents/<name>.md        shared agent definitions
+.agents/skills/<name>/SKILL.md  shared skills
 ```
 
-Commit the changed adapters with the source. `--check` exits nonzero for drift
-without writing. The sync also rejects unsupported source formats, symlinks and
-unmanaged or manually edited destination collisions before applying changes.
-It reports generated destinations with no source and never deletes them: inspect
-and remove obsolete adapters yourself, then rerun. Unrelated user agents are
-left alone. Do not edit generated files; edit their sources instead. The marker
-detects accidental edits, not malicious tampering.
+Claude Code, OpenCode and Pi read the same files through relative symlinks;
+nothing is generated:
 
-Synchronization stages and flushes complete new files and keeps hard-linked
-backups before replacing any target. On a write or replace error it rolls back
-installed files; if rollback itself fails it reports the backup directory for
-manual recovery. Filesystem support for hard links is required. Do not run
-concurrent syncs or edit destinations during a sync. A process crash, power loss,
-or rollback failure can leave a mixed generation and staging files; inspect the
-reported/stale `.opencode/.agent-sync-*` directory and recover manually. This is
-not a crash-atomic multi-file transaction.
+| Runtime | Agents | Skills |
+|---|---|---|
+| Claude Code | `.claude/agents -> ../.agents/agents` | `.claude/skills -> ../.agents/skills` |
+| OpenCode | `.opencode/agents -> ../.agents/agents` | `.opencode/skills -> ../.agents/skills` |
+| Pi | `.pi/agents -> ../.agents/agents` | `.pi/skills -> ../.agents/skills` |
 
-## Use the coordinator
-
-In OpenCode's agent selector, choose `coordinator` as the primary agent, or run:
+Never edit agents or skills under `.claude/`, `.opencode/` or `.pi/`; edit
+`.agents/`. After any change in `.agents/`, run from the project root:
 
 ```sh
-opencode run --agent coordinator "Continue the current Gafira delivery"
+python3 tools/sync_agents.py          # create or repair the links
+python3 tools/sync_agents.py --check  # exit 1 on drift, 2 on an invalid source or conflict
 ```
 
-## Choose project-local models
+The script creates missing links, repairs wrong or absolute ones and removes
+the adapters older versions generated, but only while they carry their unedited
+marker. A real file or directory with other content where a link belongs is a
+conflict: it is reported and left alone. `--check` changes nothing. On Windows,
+Git needs symlink support (`core.symlinks=true` and developer mode) for these
+links to check out as links.
 
-No model is selected by this repository by default. To assign models to individual
-subagents, use `.opencode/opencode.example.jsonc` as a template for the
-project-local `.opencode/opencode.jsonc`. If that file already exists, merge the
-`agents` entries into it instead of replacing it. Uncomment the examples, replace
-their placeholders with available `provider/model` or `provider/model#variant`
-IDs, and add entries for any other project subagents as needed. Select models
-available to your project with `/models`; the variant must exist for that model.
-The sync script does not read or overwrite this configuration. Omit an agent's
-model to inherit its parent's session model.
+## Shared agent frontmatter
 
-OpenCode stores the primary session model separately: selecting `coordinator` by
-agent ID does **not** switch the session model, even if an agent model is set.
-Choose the coordinator session model with `/models`, or for one CLI run use
-`opencode run --agent coordinator --model provider/model#variant "..."`.
-The adapters do not use Claude model aliases. Each adapter instructs its agent to
-read the corresponding source body before work;
-this relies on the model following that instruction and on source read access.
-Claude-specific Agent, SendMessage and tool names are mapped to OpenCode's
-subagent, child-result and corresponding tools in the adapter.
+One file serves three runtimes, so its frontmatter is limited to keys all of
+them accept. The script rejects anything else:
 
-The coordinator can call the named project subagents and OpenCode's `general`
-agent for the existing agent-definition workflow. Adapters deny unspecified
-actions, including MCP, `execute`, `skill`, web and child delegation; only the
-coordinator may ask questions or delegate. Agents read skill files directly as
-their sources specify. Shell and external-directory access require approval;
-`verify` uses shell to write its reports. `mutants` and `verify` deny edit tools.
+```yaml
+---
+name: manual-writer              # matches the file name
+description: "One line, double quoted, no inner quote or backslash."
+mode: subagent                   # OpenCode: subagent, not primary
+subagent_mode: task              # Pi: task or background; read before `mode`
+---
+```
 
-OpenCode combines Write, Edit and patch under `edit`: explorer's edit permission
-is limited to `specs/changes/*/spike.md`, but cannot enforce Write-only
-within that path. Its experiments use shell for scratch files. Shell is **not a
-sandbox**, so path rules do not prevent shell writes. Agent permission rules
-are evaluated after global permission rules: the explicit read/other allowances
-can override global denies; use hard-deny policies for non-overridable limits.
-The adapters deny common environment/key reads, but cannot reproduce arbitrary
-user-specific global read rules. If global instructions require MCP or skills,
-these adapters deny those tools and the workflow must be adjusted explicitly.
-Actual model-driven delegation and source reading depend on the runtime; the
-sync script does not verify them. Use `/reload` if definitions are cached.
+Why: OpenCode V2 drops a file whose `tools` is a string and treats an agent
+without `mode` as primary; Pi rejects `mode: subagent` unless `subagent_mode`
+is set, and its line parser reads a folded (`>`) description as `>`; Claude
+Code ignores keys it does not know. The body names no runtime-specific tool.
+
+Per-runtime settings live in each runtime's own config, never in the shared
+file:
+
+- Models. Claude Code: the subagent inherits the session model. OpenCode:
+  `.opencode/opencode.jsonc` (template `.opencode/opencode.example.jsonc`,
+  `provider/model#variant`). Pi: `.pi/subagents.json` (see `.pi/README.md`).
+- Tools and permissions. No allowlist is set: each runtime applies its defaults
+  (Claude Code: all subagent tools; OpenCode: its default permission rules; Pi:
+  its default tools). Shell access is never a sandbox.
+
+## Agents
+
+`manual-writer` is the only project agent; it updates the technical manual when
+the owner asks. Specs are implemented by the main agent directly (`AGENTS.md`,
+ADR 0018).
 
 Tests: `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_agent*.py' -v`.
-Set `GAFIRA_TEST_OPENCODE=1` to also run the scratch-project OpenCode API test.
+Set `GAFIRA_TEST_OPENCODE=1` to also check, on a scratch copy, that OpenCode
+loads every shared agent as a subagent and applies a project model override.

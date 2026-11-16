@@ -80,7 +80,7 @@ two different copies.
 
 ## Crates gafira-time and gafira-pathops
 
-Both are pure crates with a `clippy.toml` and a V5 row. Sources: `specs/capabilities/time-model/`, `specs/capabilities/timecode/`, `specs/capabilities/path-operations/` and the crate code.
+Both are pure crates with a `clippy.toml` and a V5 row. Sources: `specs/done/legacy/capabilities/time-model/`, `specs/done/legacy/capabilities/timecode/`, `specs/done/legacy/capabilities/path-operations/` and the crate code.
 
 ### gafira-time
 

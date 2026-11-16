@@ -4,8 +4,6 @@
   // Otherwise merge these entries into the existing project config.
   // Replace placeholders with models available to you; remove // to enable.
   "agents": {
-    // "coordinator": { "model": "provider/model" },
-    // "explorer": { "model": "provider/model#variant" },
-    // "verify": { "model": "provider/model" }
+    // "manual-writer": { "model": "provider/model#variant" }
   }
 }

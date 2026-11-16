@@ -80,7 +80,7 @@ dentro de las pruebas unitarias de un crate los tipos serían dos copias distint
 
 ## Crates gafira-time y gafira-pathops
 
-Ambos son crates puros con un `clippy.toml` y una fila V5. Fuentes: `specs/capabilities/time-model/`, `specs/capabilities/timecode/`, `specs/capabilities/path-operations/` y el código de cada crate.
+Ambos son crates puros con un `clippy.toml` y una fila V5. Fuentes: `specs/done/legacy/capabilities/time-model/`, `specs/done/legacy/capabilities/timecode/`, `specs/done/legacy/capabilities/path-operations/` y el código de cada crate.
 
 ### gafira-time
 

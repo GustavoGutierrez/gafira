@@ -15,7 +15,7 @@ Self-contained guide. Paths are relative to the repository root; the manual live
 
 ## Order of work
 
-1. Read the code or spec you are documenting (crate source, `specs/capabilities/<capability>/`, `specs/`). Quote nothing from memory.
+1. Read the code or spec you are documenting (crate source, `specs/`, `specs/done/legacy/capabilities/<capability>/`). Quote nothing from memory.
 2. Write or edit the English chapter.
 3. Mirror it in `chapters-es/` with the same file name.
 4. Update both index titles if a chapter title changed.
@@ -37,12 +37,12 @@ Neutral, professional, present tense, short sentences. Say what exists and what 
 
 - Anything not in the repository today is **Planned** (Spanish **Planificado**), in bold, as a status cell, a section title (`## Planned: History`) or a sentence prefix.
 - Anything built is stated as fact or marked Implemented (**Implementado**) in status tables.
-- A change still open under `specs/changes/<name>` is Planned, and the chapter cites that change. Merged to `main` with code is Implemented.
+- A spec still active in `specs/` (or a legacy change still open under `specs/done/legacy/changes/<name>`) is Planned, and the chapter cites it. Merged to `main` with code is Implemented.
 - Never describe the spec's design as if built. When unsure, read the code; if the symbol is absent, it is Planned.
 
 ## Evidence and no invented claims
 
-- Every behavior, limit, error variant or number comes from code, tests, a delta spec requirement or a product spec. Name the source inline: crate, module or file, requirement ID (`RF-`, `RNF-`, `ARQ-`, `D-nn`, CI gate `V13`).
+- Every behavior, limit, error variant or number comes from code, tests, a spec requirement or a product spec. Name the source inline: crate, module or file, requirement ID (`RF-`, `RNF-`, `ARQ-`, `D-nn`, CI gate `V13`).
 - Verify numbers (limits, versions, counts) by grepping the code or running the command. Do not copy from older text without checking.
 - If a claim cannot be verified, omit it or mark it Planned with its source; do not guess.
 

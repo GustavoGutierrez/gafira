@@ -32,18 +32,16 @@ Workspace version: `0.1.0-beta.2`. Edition 2024, toolchain `1.93.1` pinned in `r
 |---|---|
 | `crates/` | Seventeen library crates in layers 0 to 4, including the test-support crate `gafira-testkit`; the architecture chapter holds the full inventory |
 | `apps/gafira-cli/` | Command-line binary |
-| `specs/` | Product and architecture specs; `00-decisiones.md` holds owner decisions |
+| `specs/` | Numbered specs (active, `backlog/`, `done/`; index in `specs/README.md`) and the product and architecture documents; `00-decisiones.md` holds owner decisions |
 | `docs/manuals/` | Brand manual (`marca/`) and this technical manual (`tecnico/`) |
-| `specs/capabilities/` | Main specs per capability, merged at archive time; fast-lane changes do not edit them |
-| `specs/changes/` | Active change folders, only for work that needs one; closed ones move to `specs/history/` |
-| `.odd/state.json` | The active outcomes of ODD lite (see the methodology chapter) |
-| `.agents/agents/` | Agents of the development flow (`.claude/agents` is a symlink) |
+| `specs/done/legacy/` | Record of the earlier flow: capability specs, change folders and closed changes |
+| `.agents/agents/` | The `manual-writer` agent (`.claude/agents` is a symlink) |
 | `.github/workflows/ci.yml` | CI: tests, policy checks, `cargo-deny` |
 | `deny.toml`, `.cargo/mutants.toml` | License and source policy; mutation-testing settings (the `mutants` profile is in `Cargo.toml`) |
-| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0001 modes and packs, ADR 0002 fast lane, ADR 0011 ODD lite, accepted) |
+| `docs/adr/` | Architecture decision records, including the flow decisions (ADR 0018 simple spec flow, which supersedes ADR 0001, 0002, 0004 and 0011) |
 
 ## Reading order
 
 1. Architecture and layering, to know where code may live.
 2. The crate chapters, bottom-up: geometry, color, document, edit.
-3. Tooling and methodology, before sending a change. Product specs run through the flow described in the methodology chapter (ODD lite and the fast lane).
+3. Tooling and methodology, before sending a change. Specs run through the flow in `AGENTS.md` and the `gafira-specs` skill (ADR 0018); the methodology chapter still describes the earlier flow.

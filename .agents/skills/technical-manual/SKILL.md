@@ -23,7 +23,7 @@ Any change to a public API, a layering rule, a CI gate or the process needs the 
 | Locate the chapter or section to change (numbering map, `list`, grep recipes, code-to-chapter table, EN/ES pairing) | `references/finding.md` |
 | Produce the PDFs (`check`, `build --lang`, engines, output paths, verification, failures) | `references/building-pdfs.md` |
 
-The reference files sit in this skill's folder. Subagents cannot call the Skill tool: the coordinator resolves the skill name with the `skill-registry` skill and passes the path; the agent reads the files it needs.
+The reference files sit in this skill's folder. Subagents cannot call the Skill tool: whoever launches `manual-writer` resolves the skill name with the `skill-registry` skill and passes the path; the agent reads the files it needs.
 
 ## Invariants
 

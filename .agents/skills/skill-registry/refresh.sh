@@ -67,7 +67,7 @@ refresh() {
     echo
     echo "## Contract"
     echo
-    echo "**Delegator use only.** This registry is an index, not a summary. The coordinator resolves skill names to exact \`SKILL.md\` paths here and passes them to subagents, which read the full file before work."
+    echo "**Delegator use only.** This registry is an index, not a summary. Agents resolve skill names to exact \`SKILL.md\` paths here (and pass them to any subagent) and read the full file before work."
     echo
     echo "## Skills"
     echo
