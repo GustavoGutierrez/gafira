@@ -8,6 +8,7 @@ use std::sync::mpsc;
 
 use gafira_engine::{AutosaveOutcome, EngineError, Gafira, RecoveryEntry, Waker};
 use gafira_ports::i18n::Locale;
+use gafira_ports::settings::Appearance;
 use gafira_theme::ThemeTokens;
 
 use crate::dialogs::{self, LeaveChoice, RecoveryChoice};
@@ -56,6 +57,8 @@ pub(crate) enum Go {
     Home,
     Editor(StartFormat),
     File(FileAction),
+    /// Switch the interface to dark (`true`) or light, and remember it.
+    Dark(bool),
 }
 
 struct Shell {
@@ -102,8 +105,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
         options,
         Box::new(move |cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            let theme = Theme::new(tokens);
-            theme.apply(&cc.egui_ctx);
+            let mut theme = Theme::new(tokens);
             let engine = (config.engine)(Arc::new(RepaintWaker(cc.egui_ctx.clone())))
                 .map_err(|e| e.to_string())?;
             // A store that cannot be read leaves the defaults in force and
@@ -115,6 +117,8 @@ pub fn run(config: UiConfig) -> eframe::Result {
                     engine.settings().locale()
                 }
             };
+            theme.dark = engine.settings().get().appearance == Appearance::Dark;
+            theme.apply(&cc.egui_ctx);
             Ok(Box::new(Shell {
                 engine,
                 theme,
@@ -327,6 +331,19 @@ impl eframe::App for Shell {
             }
             Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
             Go::File(action) => self.file(action),
+            Go::Dark(dark) => {
+                self.theme.dark = dark;
+                self.theme.apply(ctx);
+                let appearance = if dark {
+                    Appearance::Dark
+                } else {
+                    Appearance::Light
+                };
+                let settings = self.engine.settings().get().with_appearance(appearance);
+                if let Err(error) = self.engine.settings().set(settings) {
+                    eprintln!("settings: {error}");
+                }
+            }
             Go::Editor(format) => match start(&mut self.engine, format) {
                 Ok(()) => self.screen = Screen::Editor(Editor::default()),
                 Err(error) => eprintln!("new document: {error}"),

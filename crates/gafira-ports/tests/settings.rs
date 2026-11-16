@@ -4,7 +4,7 @@ use std::io;
 
 use gafira_doc::msg::{MessageKey, ToMessage};
 use gafira_ports::i18n::LanguagePreference;
-use gafira_ports::settings::{Settings, SettingsError};
+use gafira_ports::settings::{Appearance, Settings, SettingsError};
 
 fn read(json: &str) -> Result<Settings, serde_json::Error> {
     serde_json::from_str(json)
@@ -20,7 +20,8 @@ fn s9_01_known_languages_round_trip() {
         let json = format!(r#"{{"language":"{text}"}}"#);
         let settings = read(&json).expect("a known language reads");
         assert_eq!(settings.language, pref, "{text}");
-        assert_eq!(serde_json::to_string(&settings).expect("writes"), json);
+        let written = format!(r#"{{"language":"{text}","appearance":"light"}}"#);
+        assert_eq!(serde_json::to_string(&settings).expect("writes"), written);
     }
 }
 
@@ -71,4 +72,25 @@ fn s9_02_every_error_has_a_settings_key() {
     );
     assert_eq!(io.to_message().key, MessageKey("error.settings.io"));
     assert!(corrupt.to_string().contains("bad json"));
+}
+
+#[test]
+fn s21_01_appearance_round_trips_and_defaults_to_light() {
+    assert_eq!(Settings::default().appearance, Appearance::Light);
+    let dark = Settings::default().with_appearance(Appearance::Dark);
+    let json = serde_json::to_string(&dark).expect("writes");
+    assert_eq!(json, r#"{"language":"system","appearance":"dark"}"#);
+    assert_eq!(read(&json).expect("reads"), dark);
+    for text in ["light", "sepia", ""] {
+        let json = format!(r#"{{"appearance":"{text}"}}"#);
+        assert_eq!(
+            read(&json).expect("reads").appearance,
+            Appearance::Light,
+            "{text:?}"
+        );
+    }
+    assert_eq!(
+        read(r#"{"language":"es"}"#).expect("reads").appearance,
+        Appearance::Light
+    );
 }

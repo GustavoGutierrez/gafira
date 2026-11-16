@@ -117,6 +117,9 @@ save = "Guardar"
 discard = "No guardar"
 cancel = "Cancelar"
 
+[view]
+dark_mode = "Modo oscuro"
+
 [nav]
 home = "Inicio"
 projects = "Proyectos"

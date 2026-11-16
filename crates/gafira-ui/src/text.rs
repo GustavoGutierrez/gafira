@@ -81,6 +81,7 @@ mod tests {
         "nav.settings",
         "nav.search",
         "menu.file",
+        "view.dark_mode",
         "menu.edit",
         "menu.view",
         "menu.size",
