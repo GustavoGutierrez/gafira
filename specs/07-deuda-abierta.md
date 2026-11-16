@@ -13,9 +13,9 @@
 
 | Medida | Cifra |
 |---|---|
-| Ítems 39 a 77 | 39: 34 abiertos, 2 remiten a otro ítem (70, 71), 3 cerrados o solo registro (51, 64, 65) |
-| Ítems 104 a 111 | 8: 8 abiertos (archivo de `gafira-timeline`) |
-| Ítems 112 a 132 | 21: 20 abiertos, 1 solo registro (129) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
+| Ítems 39 a 77 | 39: 28 abiertos, 2 remiten a otro ítem (70, 71), 6 cerrados o solo registro (42, 51, 54, 64, 65, 69), 3 obsoletos por ADR 0018 (39, 41, 66) |
+| Ítems 104 a 111 | 8: 7 abiertos, 1 obsoleto por ADR 0018 (108) (archivo de `gafira-timeline`) |
+| Ítems 112 a 132 | 21: 19 abiertos, 1 solo registro (129), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
@@ -31,10 +31,7 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 
 | Ítem | Qué falta | Se cierra cuando |
 |---|---|---|
-| 39 | Una entrada heredada de un outcome cerrado se toma como activa en una rama sin fusionar (W9 de `odd-lite`). | La regla de resume de `coordinator.md` y `AGENTS.md` trata como heredada una entrada de una rama sin commit propio sobre `develop`. |
 | 40 | `prepare_dir` crea carpetas antes de comprobar la ruta resuelta. | La comprobación va antes de `create_dir_all` y un test confirma que un rechazo no deja carpetas. |
-| 41 | Timeout por el bloqueo del caché de paquetes de cargo que un re-run atrapa; «Hanging mutants» no lo nombra. | Se decide si la regla lo cubre; si no, se nombra en `AGENTS.md` y en `verify`, o se sube `--minimum-test-timeout`. |
-| 42 | 02 sigue con la prueba gratuita y el modo de solo lectura que D-12 sustituyó; Q-19 difiere entre documentos. | 02 pasa al modo sin licencia, Q-19 queda cerrada en 02 y 05 como en 01, y 02 entra en la tabla de D-12. |
 | 43 | `Display` de `Cancelled` y `ParamError` sin test. | El titular decide si la spec fija el texto: un test por `Display`, o se acepta la exclusión. |
 | 44 | Diez sobrevivientes no críticos de `gafira-testkit`. | Se resuelve con el ítem 38, y se decide test o exclusión para `axis_length` y `failure_persistence`. |
 | 45 | ARQ-102 omite 8 enums sin dueño y su «Cumplimiento» está desactualizado. | Cada enum tiene dueño en la fila de 02 y «Cumplimiento» está al día. |
@@ -45,7 +42,6 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 50 | T4 de `gafira-segment` completo, de `gafira-testkit` y de `layer-2-scaffold` (§3.3). | Corre el T4 de `layer-2-scaffold`; los de segment y testkit solo si el titular lo reabre. |
 | 52 | V07 marcada como fiable con IoU 0.53. | `specifier` revisa el umbral de fiabilidad, con test primero. |
 | 53 | ARQ-43 a 96.8 ms en un hilo con carga, fuera de D-03. | Se mide en hardware D-03 (ítem 55). |
-| 54 | Regla de banda stray fuera de ARQ-133. | `specifier` la añade a la spec, test después. Ver §1.3. |
 | 55 | Q-48 abierta en hardware D-03. | Se mide en D-03; va al titular solo si `bench_segment_4000` falla. |
 | 56 | Redacción desactualizada en 01 P-04 y 04 FD-38. | `specifier` actualiza la redacción. |
 | 57 | Decisión sin tomar: el texto `modificado` del splash. | El titular la decide. |
@@ -55,10 +51,8 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 61 | W37 (FD-45 «Funciona con Listas» sin construir), W38 (un run vacío mueve el salto de línea) y S19. | `specifier` y test primero para W37 y W38; S19 del mismo informe. |
 | 62 | W13 sin registro TDD; unión de párrafos de `RichText` sin cubrir. | Test primero para la unión; el registro se corrige en el próximo cambio. |
 | 63 | W22 y W23 sin test en `loudness.rs`; S15 gasta memoria por frame. | Test primero para W22 y W23; S15 con suma corrida o energía por paso. |
-| 66 | «S1 con filas de cuelgue de layout», sin origen en los informes leídos. | El coordinador confirma el origen antes de actuar. |
 | 67 | Avisos de SC1: `assert_no_alloc` como dependencia normal e `icu_plurals` opcional. | Candidato del informe: `--all-features` en el paso del CI. |
 | 68 | Memoria de mipmaps a 16 384 px, sin origen en los informes leídos. | El titular decide si se mide o se acota. |
-| 69 | `proptest-regressions/` de `gafira-raster` sin decidir. | Se decide borrar o versionar. Ver §1.3. |
 | 72 | Fila de diseño P7 y XP3 sin actualizar tras TX. | P7 y XP3 reflejan lo que entregó TX1; solo docs. |
 | 73 | T4 de `gafira-segment` parado por orden del titular (§3.3, anexo B). | El titular decide si se prueba el resto; los sobrevivientes, test primero. |
 | 74 | T4 de `gafira-text`: 65 críticos (§2). | El titular decide cuándo; después, `specifier` y test primero. Un T4 del crate sin críticos vivos lo confirma. |
@@ -69,14 +63,12 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 105 | AC4 no puede comprobar «dentro de su fuente» ni «dentro de la secuencia»: faltan la duración de la fuente (Q5) y la longitud guardada de la secuencia (P4) (W4 de `gafira-timeline`). | El `specifier` da a AC4 las dos cotas, o lo reduce a lo que el modelo puede sostener. |
 | 106 | FV-04 citada sin un test que la nombre; la mitad de ARQ-13 sí quedó probada por TL3 (W5 de `gafira-timeline`). | El `specifier` decide si FV-04 se prueba en el change de comandos o se retira de la tarjeta. |
 | 107 | La cláusula de deshacer de AC10 no tiene código ni test; los comandos están diferidos por Q4 (W6 de `gafira-timeline`). | Se prueba en el change de comandos, con el camino de `gafira-edit::History`. |
-| 108 | `tier: T0` en las tarjetas de TL2 y TL3, que escriben Rust crítico (S3 de `gafira-timeline`). | El `specifier` corrige la etiqueta o deja constancia de que las tarjetas archivadas no se editan. |
 | 109 | La carga no reaplica las leyes del constructor: un lado de píxel cero y un marcador negativo cargan (TL3-S1 de `gafira-timeline`). | Se decide si la carga reaplica esas dos leyes y hay test. |
 | 110 | La tabla de commits del registro lista 6 de 8, y el golden mide 2 220 bytes, no 2 221 (TL3-S2 de `gafira-timeline`). | El registro archivado queda corregido al revisarlo; no bloquea. |
 | 111 | `.expect("{name} still loads")` no interpola en `timeline_wire.rs:336` (TL3-S3 de `gafira-timeline`). | El mensaje nombra la fixture y un fallo lo confirma. |
 | 112 | AC1 de CB2 pone la mezcla y la opacidad en `PushLayer`; el puerto las pone en `PopLayer` (W1 de `gafira-render-cpu`). | `specifier` decide si el registro deja constancia o enmienda AC1; las tarjetas archivadas no se editan. |
 | 113 | AC4 de CB2 cita un error de validación de plan que el puerto no tiene; `DriverBlocked` se reutiliza (W2 de `gafira-render-cpu`). | `architect` decide si el puerto gana la variante; si no, el registro lo declara. |
 | 114 | Ningún test ejecuta `execute` después de un `trim` a mitad de frame (S1 de CB2). | Test primero: `execute` tras `trim` con el frame abierto. |
-| 115 | CB2 registra `tier: T0` para código crítico de Rust (S2 de CB2). | Se corrige la etiqueta o se deja constancia, como el ítem 108. |
 | 116 | M4 (la previa a escala 2.0) es equivalente en CB3; el muestreo de CB4 debería volverla observable y el registro de CB4 no lo confirma (W6 de CB3). | Un test de la previa a escala 2.0 con imagen, o el registro confirma que CB4 la mata. |
 | 117 | `arq_113_one_altered_byte_fails_on_this_platform` fija `differing == 1` en modo Exact (S4 de CB3). | Test primero: la aserción sigue a `current_mode()`. |
 | 118 | D9 nombra `golden::compare` y la entrega usa su propio comparador (S5 de CB3). | `architect` enmienda D9 o extiende el testkit. |
@@ -100,8 +92,16 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 - **64**: registro. El titular aceptó la ruptura de TDD de W1 en SG1; no queda acción.
 - **65**: registro. Aviso de tamaño de `pi-agent-sync`, ya integrado; no queda acción sobre esa entrega.
 - **70**: sin trabajo propio. Es el ítem 47.
-- **71**: sin trabajo propio. Es el ítem 42.
+- **71**: sin trabajo propio. Es el ítem 42, ya resuelto.
 - **129**: registro. El titular aceptó las 825 líneas de CB6 el 2026-11-07 (W20 de `gafira-render-cpu`); no queda acción.
+- **42**: resuelto el 2026-11-16. 02 está en modo sin licencia (§4.14, §13.1, §13.3); Q-19 queda cerrada por D-12 en 02 (§12.2) y en 05 (tabla de preguntas y riesgos), como en 01 (§12); R-13 de 02 queda sin efecto; D-12 en `00-decisiones.md` registra que se aplicó a 02 y 05.
+- **54**: resuelto. La regla de la banda está en ARQ-133 (D-47; 02 §4.17.6) y tiene pruebas: `arq_133_half_of_the_pixels_in_the_band_pins` y `arq_133_five_percent_of_the_band_is_a_real_colour` (`crates/gafira-segment/src/cut.rs:459`, `cut.rs:555`), y `crates/gafira-segment/tests/strays.rs` (`arq_133_a_narrow_contact_with_the_border_stays_reliable`, `arq_133_a_wide_contact_with_the_border_is_not_reliable`; `cargo test -p gafira-segment --locked arq_133` en verde el 2026-11-16).
+- **69**: resuelto. `crates/gafira-raster/proptest-regressions/` no existe en el árbol, así que no queda nada que borrar ni versionar; los archivos `*.proptest-regressions` de los demás crates están versionados (`git ls-files '*proptest-regressions'`: `gafira-anim`, `gafira-pathops`, `gafira-time`).
+- **39**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: Una entrada heredada de un outcome cerrado se toma como activa en una rama sin fusionar (W9 de `odd-lite`). Se cerraba cuando: La regla de resume de `coordinator.md` y `AGENTS.md` trata como heredada una entrada de una rama sin commit propio sobre `develop`.
+- **41**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: Timeout por el bloqueo del caché de paquetes de cargo que un re-run atrapa; «Hanging mutants» no lo nombra. Se cerraba cuando: Se decide si la regla lo cubre; si no, se nombra en `AGENTS.md` y en `verify`, o se sube `--minimum-test-timeout`.
+- **66**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: «S1 con filas de cuelgue de layout», sin origen en los informes leídos. Se cerraba cuando: El coordinador confirma el origen antes de actuar.
+- **108**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: `tier: T0` en las tarjetas de TL2 y TL3, que escriben Rust crítico (S3 de `gafira-timeline`). Se cerraba cuando: El `specifier` corrige la etiqueta o deja constancia de que las tarjetas archivadas no se editan.
+- **115**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: CB2 registra `tier: T0` para código crítico de Rust (S2 de CB2). Se cerraba cuando: Se corrige la etiqueta o se deja constancia, como el ítem 108.
 - **W15 de CB8** (contador de la curva sRGB en un frame): cerrado en CB6 por `afc55de`.
 - **W16 de CB8** (`read_rows` con el span del clip): cerrado en CB6 por `d2a2f49`; su gemelo de escritura (C3 de CB6) por `012b433`.
 - **W18 de CB8** (comparación de la vista previa en frío con ARQ-143): cerrado en CB6 por `74207ab`, la nota de diseño; el banco de vista previa está en `21707d6`.
