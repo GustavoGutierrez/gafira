@@ -159,6 +159,13 @@ shapes = "Shapes"
 rect = "Rectangle"
 ellipse = "Ellipse"
 
+[layers]
+up = "Bring forward"
+down = "Send backward"
+empty = "This page has no elements."
+group = "Group"
+element = "Element"
+
 [inspector]
 position = "Position"
 layers = "Layers"

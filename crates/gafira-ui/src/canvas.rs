@@ -49,6 +49,48 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
     out
 }
 
+/// One row of the Capas tab: a root element of the page, front first.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Layer {
+    pub(crate) node: NodeId,
+    /// The element's own name, if it has one.
+    pub(crate) name: Option<String>,
+    /// The catalog key of its kind (`pieces.rect`, `pieces.ellipse`, `layers.group`, ...).
+    pub(crate) kind: &'static str,
+    /// Its index among the roots (0 is the back).
+    pub(crate) index: usize,
+}
+
+/// The root elements of `page`, front first, as the Capas tab lists them.
+pub(crate) fn layers(page: &Page) -> Vec<Layer> {
+    page.roots
+        .iter()
+        .enumerate()
+        .rev()
+        .filter_map(|(index, id)| {
+            let node = page.node(*id)?;
+            let kind = match &node.kind {
+                NodeKind::Shape(ShapeNode {
+                    geometry: ShapeGeometry::Rect,
+                    ..
+                }) => "pieces.rect",
+                NodeKind::Shape(ShapeNode {
+                    geometry: ShapeGeometry::Ellipse,
+                    ..
+                }) => "pieces.ellipse",
+                NodeKind::Group(_) => "layers.group",
+                _ => "layers.element",
+            };
+            Some(Layer {
+                node: *id,
+                name: node.base.name.clone(),
+                kind,
+                index,
+            })
+        })
+        .collect()
+}
+
 /// The screen rectangle of `placement` on a page drawn at `page_rect` with
 /// `zoom` (rotation is not drawn yet).
 pub(crate) fn on_screen(page_rect: Rect, zoom: f32, placement: &Placement) -> Rect {
@@ -374,5 +416,22 @@ mod tests {
         assert_eq!(paint(&shape).a(), 128);
         shape.opacity = 0.0;
         assert_eq!(paint(&shape).a(), 0);
+    }
+
+    #[test]
+    fn s24_01_layers_list_the_roots_front_first_with_their_kind() {
+        let rows = layers(&page());
+        let summary: Vec<(u64, &str, usize)> = rows
+            .iter()
+            .map(|l| (l.node.get(), l.kind, l.index))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (5, "pieces.rect", 2),
+                (3, "layers.group", 1),
+                (2, "pieces.rect", 0)
+            ]
+        );
     }
 }

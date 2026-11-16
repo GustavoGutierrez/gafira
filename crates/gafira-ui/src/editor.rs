@@ -42,6 +42,8 @@ pub(crate) struct Editor {
     zoom_factor: f32,
     /// The zoom of the last frame, for the bottom bar.
     zoom: f32,
+    /// The Inspector tab on display: 0 Posición, 1 Capas, 2 Imagen.
+    inspector_tab: usize,
     /// The selected element (03 §9.1); one at a time for now.
     selected: Option<(PageId, NodeId)>,
     /// The drag in progress: its gesture (one undo entry, ARQ-33), where the
@@ -63,6 +65,7 @@ impl Default for Editor {
             tab: 0,
             zoom_factor: 1.0,
             zoom: 1.0,
+            inspector_tab: 0,
             selected: None,
             drag: None,
         }
@@ -93,6 +96,8 @@ struct Asked {
     fill: Option<Option<gafira_color::Color>>,
     /// An opacity set in the Inspector, 0 to 1.
     opacity: Option<f32>,
+    /// A root element to move to this index of its page (Capas).
+    reorder: Option<(PageId, NodeId, usize)>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
 }
@@ -184,7 +189,14 @@ impl Editor {
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         self.rail(ctx, theme, texts);
         self.side_panel(ctx, theme, texts, &mut asked);
-        self.inspector(ctx, theme, texts, selection.as_ref(), &mut asked);
+        self.inspector(
+            ctx,
+            theme,
+            texts,
+            document.as_deref(),
+            selection.as_ref(),
+            &mut asked,
+        );
         self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
         self.apply(engine, &document, &asked, theme)
     }
@@ -414,10 +426,11 @@ impl Editor {
     }
 
     fn inspector(
-        &self,
+        &mut self,
         ctx: &egui::Context,
         theme: &Theme,
         texts: &Texts,
+        document: Option<&Document>,
         selection: Option<&Shape>,
         asked: &mut Asked,
     ) {
@@ -440,20 +453,28 @@ impl Editor {
                     .iter()
                     .enumerate()
                     {
-                        let color = if index == 0 {
+                        let color = if index == self.inspector_tab {
                             theme.c("text")
                         } else {
                             theme.c("text.muted")
                         };
-                        ui.label(
+                        let tab = egui::Button::new(
                             RichText::new(texts.t(key))
                                 .font(theme.font("ui-label"))
                                 .color(color),
-                        );
-                        ui.add_space(8.0);
+                        )
+                        .frame(false);
+                        if ui.add(tab).clicked() {
+                            self.inspector_tab = index;
+                        }
+                        ui.add_space(4.0);
                     }
                 });
                 ui.add_space(24.0);
+                if self.inspector_tab == 1 {
+                    self.layers(ui, theme, texts, document, asked);
+                    return;
+                }
                 let Some(shape) = selection else {
                     ui.label(
                         RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
@@ -524,6 +545,62 @@ impl Editor {
                     }
                 });
             });
+    }
+
+    /// The Capas tab: the root elements of the selected element's page (or
+    /// the first page), front first; a click selects, Subir and Bajar move
+    /// the selected one by one step (03 §2.4).
+    fn layers(
+        &self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        document: Option<&Document>,
+        asked: &mut Asked,
+    ) {
+        let Some(document) = document else { return };
+        let page = self
+            .selected
+            .and_then(|(page, _)| document.page(page))
+            .or_else(|| document.pages().first().map(AsRef::as_ref));
+        let Some(page) = page else { return };
+        let rows = canvas::layers(page);
+        if rows.is_empty() {
+            ui.label(
+                RichText::new(texts.t(&gafira_doc::msg!("layers.empty")))
+                    .font(theme.font("body-sm"))
+                    .color(theme.c("text.muted")),
+            );
+            return;
+        }
+        let last = page.roots.len().saturating_sub(1);
+        for row in rows {
+            let selected = self.selected == Some((page.id, row.node));
+            let label = row.name.clone().unwrap_or_else(|| {
+                texts.t(&gafira_doc::msg::Message {
+                    key: gafira_doc::msg::MessageKey(row.kind),
+                    args: Vec::new(),
+                })
+            });
+            ui.horizontal(|ui| {
+                if ui.selectable_label(selected, label).clicked() {
+                    asked.select = Some(Some((page.id, row.node)));
+                }
+                if selected {
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let down =
+                            egui::Button::new(texts.t(&gafira_doc::msg!("layers.down"))).small();
+                        if ui.add_enabled(row.index > 0, down).clicked() {
+                            asked.reorder = Some((page.id, row.node, row.index - 1));
+                        }
+                        let up = egui::Button::new(texts.t(&gafira_doc::msg!("layers.up"))).small();
+                        if ui.add_enabled(row.index < last, up).clicked() {
+                            asked.reorder = Some((page.id, row.node, row.index + 1));
+                        }
+                    });
+                }
+            });
+        }
     }
 
     fn canvas(
@@ -788,6 +865,13 @@ impl Editor {
             let command = SetProperty::new(page, vec![node], Property::Opacity(opacity), None);
             log(
                 "opacity",
+                engine.edit().execute(Box::new(command)).map(drop),
+            );
+        }
+        if let Some((page, node, index)) = asked.reorder {
+            let command = gafira_edit::Reorder::new(page, node, index);
+            log(
+                "reorder",
                 engine.edit().execute(Box::new(command)).map(drop),
             );
         }
@@ -1268,5 +1352,53 @@ pub(crate) mod tests {
         assert_eq!(the_shapes(&mut engine)[0].fill, None);
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine)[0].fill, Some(blue));
+    }
+
+    // S24-02
+    #[test]
+    fn s24_02_bring_forward_reorders_through_the_engine() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        let mut editor = Editor::default();
+        for geometry in [ShapeGeometry::Rect, ShapeGeometry::Ellipse] {
+            // A fresh snapshot each time, as every frame of the window has.
+            let snapshot = engine.edit().document();
+            editor.apply(
+                &mut engine,
+                &snapshot,
+                &Asked {
+                    insert: Some(geometry),
+                    ..Asked::default()
+                },
+                &theme,
+            );
+        }
+        let page = engine.edit().document().expect("a document").pages()[0].clone();
+        let rect = page.roots[0];
+        assert_eq!(
+            canvas::layers(&page)[0].kind,
+            "pieces.ellipse",
+            "the newest is in front"
+        );
+        let snapshot = engine.edit().document();
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                reorder: Some((page.id, rect, 1)),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        let page = engine.edit().document().expect("a document").pages()[0].clone();
+        assert_eq!(
+            canvas::layers(&page)[0].node,
+            rect,
+            "the rectangle came to the front"
+        );
+        engine.edit().undo().expect("an undo");
+        let page = engine.edit().document().expect("a document").pages()[0].clone();
+        assert_eq!(page.roots[0], rect);
     }
 }

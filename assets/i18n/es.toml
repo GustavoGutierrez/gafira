@@ -159,6 +159,13 @@ shapes = "Formas"
 rect = "Rectángulo"
 ellipse = "Elipse"
 
+[layers]
+up = "Subir"
+down = "Bajar"
+empty = "Esta página no tiene elementos."
+group = "Grupo"
+element = "Elemento"
+
 [inspector]
 position = "Posición"
 layers = "Capas"
