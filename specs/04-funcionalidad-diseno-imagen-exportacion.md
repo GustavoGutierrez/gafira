@@ -5,7 +5,7 @@
 | Documento | Especificación 04 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
-| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-45, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
+| Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-45, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gaf`), 03 (nombres del glosario §2, componentes, DIS) |
 | Convenciones | `FD-nn` = ficha de función. Cada ficha indica propósito, comportamiento y reglas, entrada en la UI (nombres del glosario de 03), crates y traits (02), formatos, presupuesto de rendimiento y criterios de aceptación, con trazo a `RF-nn` (01). **PROPUESTA** y **VERIFICAR** como en 01. Las cifras PROPUESTA añadidas a FD-04, FD-07, FD-35, FD-41 y FD-44 están confirmadas en bloque (D-34) |
 
 **Formato de ficha.** Cada función se describe con: *Propósito* · *Comportamiento y reglas* · *UI* (dónde se usa) · *Técnica* (crates y traits de 02) · *Formatos* (si aplica) · *Presupuesto* (referencia a CAL de 01 o PROPUESTA) · *Aceptación* (criterios verificables) · *RF*.
@@ -194,7 +194,7 @@
 
 **FD-16 · Guardar como plantilla propia** (RF-15)
 - *Propósito*: reutilizar diseños propios.
-- *Comportamiento y reglas*: Archivo → Guardar como plantilla (o menú contextual sobre la selección) pide Nombre, Etiquetas y Estilo; guarda el diseño o la selección como un `.gafira` marcado como plantilla (`manifest.json`: campo `template` con etiquetas, formato, estilo y color; PROPUESTA) en la biblioteca local, con miniatura. Las imágenes se incrustan; los elementos de texto se marcan como reemplazables. Se pueden renombrar, editar y borrar desde la pestaña Plantillas.
+- *Comportamiento y reglas*: Archivo → Guardar como plantilla (o menú contextual sobre la selección) pide Nombre, Etiquetas y Estilo; guarda el diseño o la selección como un `.gaf` marcado como plantilla (`manifest.json`: campo `template` con etiquetas, formato, estilo y color; PROPUESTA) en la biblioteca local, con miniatura. Las imágenes se incrustan; los elementos de texto se marcan como reemplazables. Se pueden renombrar, editar y borrar desde la pestaña Plantillas.
 - *UI*: Archivo → Guardar como plantilla; menú contextual; Plantillas → «Mías».
 - *Técnica*: `gafira-format` (`ProjectRepository`), `UserLibraryProvider`.
 - *Presupuesto*: guardar < 500 ms para 20 páginas.
@@ -320,7 +320,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 
 **FD-30 · Vínculos ausentes y relocalización** (RF-18, RF-55) — Relocalizar medios es de Fase 2
 - *Propósito*: no producir resultados rotos si falta un recurso.
-- *Comportamiento y reglas*: en el MVP los recursos se incrustan en el `.gafira` (`AssetStorage::Embedded`); si uno falta o está dañado, se muestra un marcador visible y la exportación advierte antes de generar (RF-33). En **Fase 2**, con **Relocalizar medios** (Archivo → Relocalizar medios), los videos grandes pueden vincularse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`, 02 §7.1): un vínculo ausente emite el evento `LinksMissing`, se muestra como marcador y «Buscar archivo» relocaliza uno o una carpeta entera, confirmando por hash. No se guardan rutas absolutas (ARQ-56).
+- *Comportamiento y reglas*: en el MVP los recursos se incrustan en el `.gaf` (`AssetStorage::Embedded`); si uno falta o está dañado, se muestra un marcador visible y la exportación advierte antes de generar (RF-33). En **Fase 2**, con **Relocalizar medios** (Archivo → Relocalizar medios), los videos grandes pueden vincularse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`, 02 §7.1): un vínculo ausente emite el evento `LinksMissing`, se muestra como marcador y «Buscar archivo» relocaliza uno o una carpeta entera, confirmando por hash. No se guardan rutas absolutas (ARQ-56).
 - *UI*: marcador sobre el elemento; diálogo de Exportar.
 - *Técnica*: `AssetTable`, `ContentStore`, `AssetService::relocate` (02 §7.1).
 - *Presupuesto*: relocalizar una carpeta de 1 000 archivos < 2 s (PROPUESTA).
@@ -443,7 +443,7 @@ Orden de cálculo: Balance de blancos, Luz (Brillo, Contraste, Luces y Sombras, 
 
 **FD-39 · Retocar borde (Pincel Quitar y Pincel Devolver)** (RF-22)
 - *Propósito*: corregir la máscara a mano.
-- *Comportamiento y reglas*: tras Aislar sujeto aparece la barra de retoque con **Pincel Quitar** (borra de la máscara; `B`) y **Pincel Devolver** (restaura; `Shift+B`), tamaño 1–500 px (`[` y `]`), dureza 0–100 %, vista previa del resultado y **Comparar**. Cada trazo es una entrada de historial y puede deshacerse. La máscara se guarda como tiles con copia al escribir (02 §3.2) y persiste en `masks/` del `.gafira`.
+- *Comportamiento y reglas*: tras Aislar sujeto aparece la barra de retoque con **Pincel Quitar** (borra de la máscara; `B`) y **Pincel Devolver** (restaura; `Shift+B`), tamaño 1–500 px (`[` y `]`), dureza 0–100 %, vista previa del resultado y **Comparar**. Cada trazo es una entrada de historial y puede deshacerse. La máscara se guarda como tiles con copia al escribir (02 §3.2) y persiste en `masks/` del `.gaf`.
 - *UI*: barra de retoque sobre el lienzo; herramientas B y Shift+B.
 - *Técnica*: `Tool` Pincel de máscara (02 §4.2), `Command` `PaintMask`, que cambia una `TileSetRef` por otra; la copia al escribir de los tiles `Arc<Tile>` ocurre fuera del comando (ADR 0008).
 - *Presupuesto*: latencia de trazo < 16 ms (CAL-01).
@@ -700,7 +700,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 - *Propósito*: guardar hitos del trabajo y volver a ellos.
 - *Comportamiento y reglas*: Archivo → Versiones (o botón **Versiones** de la Barra superior) lista las versiones. La persona guarda **versiones nombradas** («Guardar versión…»); además Gafira crea **una versión automática** al guardar si la última automática tiene más de 30 min, y conserva las **20 más recientes** (cifras PROPUESTA en 02 §7.1). Las versiones **nombradas nunca se borran solas**; solo las borra el usuario. **Restaurar** aplica el `Command` `RestoreVersion` (deshacible); antes de restaurar se guarda una versión automática del estado actual para no perder nada. Cada versión guarda los JSON de ese momento (`document.json`, `pages/*.json`, `sequences/*.json`) y comparte los recursos por hash con `assets/` y `masks/`, por lo que ocupa poco; el recolector de recursos no borra uno que use alguna versión. Se pueden renombrar y borrar. Son distintas de los journals de autoguardado (FD-61).
 - *UI*: Barra superior → Versiones; Archivo → Versiones.
-- *Técnica*: `ProjectRepository` (`gafira-format`); almacenamiento en `versions/index.json` (`[{ id, name, kind: "named"|"auto", created, app, schema }]`) y `versions/<version_id>/` dentro del `.gafira` (02 §7.1); `Command` `RestoreVersion`.
+- *Técnica*: `ProjectRepository` (`gafira-format`); almacenamiento en `versions/index.json` (`[{ id, name, kind: "named"|"auto", created, app, schema }]`) y `versions/<version_id>/` dentro del `.gaf` (02 §7.1); `Command` `RestoreVersion`.
 - *Presupuesto*: guardar una versión < 200 ms con 20 páginas; abrir la lista < 100 ms.
 - *Aceptación*: (a) restaurar una versión y deshacer vuelve al estado previo (hash del documento); (b) 20 versiones de un proyecto de 20 páginas añaden menos de 10 MB (PROPUESTA); (c) las versiones sobreviven a abrir con una versión futura de la app (round-trip, ARQ-11).
 
@@ -722,12 +722,12 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 
 **FD-63 · Guardar, abrir y proyecto portable** (RF-01, RF-02, RF-35)
 - *Propósito*: abrir, guardar y mover proyectos sin pérdida.
-- *Comportamiento y reglas*: Guardar (`Ctrl+S`), Guardar como y **Guardar copia** escriben `.gafira` de forma atómica (archivo temporal, `fsync`, renombrado; `.bak` de una generación; 02 §7.2). Cada proyecto lleva un UUID que se genera al crearlo y se guarda en el `.gafira`; la recuperación y las versiones lo usan, así que sobreviven a renombrar o mover el archivo. «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto (D-63, 02 §7.1). **Exportar proyecto editable con recursos**: genera un `.gafira` con todos los recursos incrustados y sin vínculos externos para migrar a otro equipo; incluye las fuentes del usuario que su licencia permite incrustar (D-60). Es un guardado, no una exportación: escribe solo el `.gafira` del usuario y sus recursos, y como Guardar, Guardar como y «Guardar copia» está disponible sin licencia y no depende de `can_export` (D-55, 02 ARQ-95). Abrir valida el esquema, ejecuta migraciones por paso y abre en solo lectura un esquema futuro. Al abrir se muestra la primera página en cuanto está lista (carga perezosa por página). Proyectos: crear, abrir, **duplicar, renombrar, archivar y eliminar** desde Inicio → Proyectos (archivar mueve a una carpeta de archivados; eliminar pide confirmación y ofrece enviar a la papelera del SO).
+- *Comportamiento y reglas*: Guardar (`Ctrl+S`), Guardar como y **Guardar copia** escriben `.gaf` de forma atómica (archivo temporal, `fsync`, renombrado; `.bak` de una generación; 02 §7.2). Cada proyecto lleva un UUID que se genera al crearlo y se guarda en el `.gaf`; la recuperación lo usa, así que sobrevive a renombrar o mover el archivo. «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto (D-63, 02 §7.1). **Exportar proyecto editable con recursos**: genera un `.gaf` con el perfil `portable-full` (D-67, spec 008 §3), con todos los recursos incrustados y sin vínculos externos para migrar a otro equipo; incluye las fuentes del usuario que su licencia permite incrustar (D-60). Es un guardado, no una exportación: escribe solo el `.gaf` del usuario y sus recursos, y como Guardar, Guardar como y «Guardar copia» está disponible sin licencia y no depende de `can_export` (D-55, 02 ARQ-95). Abrir valida el esquema, ejecuta migraciones por paso y abre en solo lectura un esquema futuro. Al abrir se muestra la primera página en cuanto está lista (carga perezosa por página). Proyectos: crear, abrir, **duplicar, renombrar, archivar y eliminar** desde Inicio → Proyectos (archivar mueve a una carpeta de archivados; eliminar pide confirmación y ofrece enviar a la papelera del SO).
 - *UI*: Archivo; Inicio → Proyectos; Barra superior.
 - *Técnica*: `ProjectService` (`new`, `open`, `save`, `save_as`, `recover`, `close`), `ProjectRepository`, migraciones `migrate_n_to_n1` (ARQ-53).
-- *Formatos*: `.gafira` (ZIP, `manifest.json` con `format: "gafira.project"` y `schema`; ADR-04).
+- *Formatos*: `.gaf` (ZIP, `manifest.json` con `format: "gafira.project"` y `schema`; ADR-04).
 - *Presupuesto*: abrir 20 páginas < 3 s (CAL-09); abrir 100 capas < 500 ms (CAL-10); guardar un proyecto de 20 páginas < 2 s (PROPUESTA).
-- *Aceptación*: (a) la serialización es determinista (ARQ-10); (b) un proyecto copiado a otro equipo se abre idéntico sin recursos ausentes; (c) un esquema futuro abre en solo lectura con «Guardar» deshabilitado (ARQ-55); (d) un fallo a mitad de guardado deja el archivo anterior o el nuevo íntegros (ARQ-50); (e) con la licencia en `Unlicensed`, `Expired` o `Invalid`, Guardar, Guardar como, «Guardar copia» y «Exportar proyecto editable con recursos» escriben su `.gafira` sin aviso de licencia, y el archivo reabierto contiene la última edición (D-55, 02 ARQ-95).
+- *Aceptación*: (a) la serialización es determinista (ARQ-10); (b) un proyecto copiado a otro equipo se abre idéntico sin recursos ausentes; (c) un esquema futuro abre en solo lectura con «Guardar» deshabilitado (ARQ-55); (d) un fallo a mitad de guardado deja el archivo anterior o el nuevo íntegros (ARQ-50); (e) con la licencia en `Unlicensed`, `Expired` o `Invalid`, Guardar, Guardar como, «Guardar copia» y «Exportar proyecto editable con recursos» escriben su `.gaf` sin aviso de licencia, y el archivo reabierto contiene la última edición (D-55, 02 ARQ-95).
 
 ---
 
@@ -791,7 +791,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Importar | SVG | MVP | `gafira-io-svg` | Libre |
 | Importar | HEIC (solo lectura, solo con el decodificador del SO; D-59; en Linux solo si el sistema lo ofrece) | Fase 2 | feature `heic-os` | Licenciado por el SO |
 | Importar | PDF | Fase 2 | `gafira-io-pdf` o hayro (VERIFICAR) | Libre (VERIFICAR) |
-| Importar y exportar | `.gafira` | MVP | `gafira-format` | Propio |
+| Importar y exportar | `.gaf` | MVP | `gafira-format` | Propio |
 | Exportar | PNG, JPEG, WebP, GIF animado | MVP | `gafira-io-image` | Libre |
 | Exportar | SVG | MVP | `gafira-io-svg` | Libre |
 | Exportar | PDF RGB | MVP | `gafira-io-pdf` | Libre |
@@ -803,7 +803,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | ID | Tema | Estado |
 |---|---|---|
 | Q-08 | Alcance y fase de PPTX | Cerrada: D-07 (Fase 2, una imagen por diapositiva; FD-62) |
-| Q-10 | Empaquetar fuentes del usuario en `.gafira` | Cerrada: D-60 (según su licencia, bits `fsType`, y según el formato; FD-48, FD-63) |
+| Q-10 | Empaquetar fuentes del usuario en `.gaf` | Cerrada: D-60 (según su licencia, bits `fsType`, y según el perfil del `.gaf`; FD-48, FD-63) |
 | Q-13 | Importación de AVI | Cerrada: D-07 (Fase 2, solo códecs libres; ver 05) |
 | Q-17 | Importar HEIC (y HEVC) vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; FD-31) |
 | Q-34 | Aspecto de las fórmulas de FD-33 y catálogo de filtros de FD-34 (D-40) | Abierta, no bloquea la especificación (02 §12.3) |

@@ -349,7 +349,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-22 · Copias ligeras (proxies)** (RF-53)
 - *Propósito*: editar con fluidez material 4K y 6K en equipos modestos.
-- *Comportamiento y reglas*: se generan **automáticamente** para clips de más de 1080p o con códecs costosos (por ejemplo HEVC de 10 bits) y se pueden crear o borrar a mano (menú contextual de Medios → «Copia ligera»). Formato: MJPEG intra a 540p o 720p, almacenada en la **caché del usuario**, fuera del `.gafira`; límite de caché configurable (por defecto 10 GB, PROPUESTA) con descarte de los menos usados. Un distintivo «Copia ligera» indica cuándo se usa; **la exportación siempre usa el original** (V-3). La generación corre en segundo plano con prioridad `Background`, con progreso y cancelación. El **motor** existe en el MVP y la **gestión manual** en Fase 2 (C-11 de 01).
+- *Comportamiento y reglas*: se generan **automáticamente** para clips de más de 1080p o con códecs costosos (por ejemplo HEVC de 10 bits) y se pueden crear o borrar a mano (menú contextual de Medios → «Copia ligera»). Formato: MJPEG intra a 540p o 720p, almacenada en la **caché del usuario**, fuera del `.gaf`; límite de caché configurable (por defecto 10 GB, PROPUESTA) con descarte de los menos usados. Un distintivo «Copia ligera» indica cuándo se usa; **la exportación siempre usa el original** (V-3). La generación corre en segundo plano con prioridad `Background`, con progreso y cancelación. El **motor** existe en el MVP y la **gestión manual** en Fase 2 (C-11 de 01).
 - *UI*: Medios; Ajustes → Rendimiento (Copias ligeras automáticas); distintivo en el clip.
 - *Técnica*: `gafira-media` (proxies, caché), `Codec` MJPEG de `gafira-codec-free`.
 - *Presupuesto*: generar a ≥ 1× el tiempo real en 1080p en gama media (PROPUESTA); con Copia ligera, scrubbing ≥ 24 actualizaciones/s en 4K (CAL-14).
@@ -379,7 +379,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-25 · Relocalizar medios** (RF-55) — Fase 2
 - *Propósito*: reconectar medios que cambiaron de carpeta o disco.
-- *Comportamiento y reglas*: los medios se incrustan en el `.gafira` por defecto; los videos grandes (> 500 MB, PROPUESTA) pueden **vincularse** en lugar de incrustarse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`: ruta relativa a la carpeta del `.gafira`, tamaño y hash BLAKE3; sin rutas absolutas, ARQ-56). **Relocalizar medios** es una función de **Fase 2** (el campo `linked` existe desde `schema` 1, 02 §7.1). Si un vínculo falta (evento `LinksMissing`), la Línea de tiempo muestra el clip en rojo con un icono y el diálogo **Buscar archivo**; al elegir una carpeta, Gafira busca por nombre y verifica por tamaño y hash y reconecta **todos** los que coincidan. La exportación se bloquea o advierte antes de generar (RF-33).
+- *Comportamiento y reglas*: los medios se incrustan en el `.gaf` por defecto; los videos grandes (> 500 MB, PROPUESTA) pueden **vincularse** en lugar de incrustarse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`: ruta relativa a la carpeta del `.gaf`, tamaño y hash BLAKE3; sin rutas absolutas, ARQ-56). **Relocalizar medios** es una función de **Fase 2** (el campo `linked` existe desde `schema` 1, 02 §7.1). Si un vínculo falta (evento `LinksMissing`), la Línea de tiempo muestra el clip en rojo con un icono y el diálogo **Buscar archivo**; al elegir una carpeta, Gafira busca por nombre y verifica por tamaño y hash y reconecta **todos** los que coincidan. La exportación se bloquea o advierte antes de generar (RF-33).
 - *UI*: clip con vínculo ausente; Archivo → Relocalizar medios.
 - *Técnica*: `AssetTable` con `AssetStorage::Linked`, `AssetService::relocate` (indexa la carpeta, filtra por nombre y tamaño y confirma por hash; un solo `Command` reconecta todos los coincidentes) y `ContentStore` (02 §3.2, §7.1).
 - *Presupuesto*: indexar una carpeta de 1 000 archivos < 2 s (PROPUESTA).
@@ -400,23 +400,23 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
   - **Contenido**: `gafira.exe`, `gafira-cli.exe` (opcional, en el PATH como característica), `THIRD_PARTY_NOTICES.md`, licencias OFL de las fuentes y recursos propios; **CRT estático** (sin redistribuible de Visual C++).
   - **Instalación por equipo** en `C:\Program Files\Gafira` con permisos de administrador (por usuario sin administrador: PROPUESTA). `UpgradeCode` fijo y `MajorUpgrade` para actualizar en sitio sin duplicar.
   - **Accesos directos**: Menú Inicio (siempre) y Escritorio (casilla, desactivada por defecto). Entrada en «Aplicaciones instaladas» con el icono de Gafira, versión, editor y enlaces de soporte.
-  - **Asociación `.gafira`** (FV-31).
-  - **Desinstalación limpia**: elimina `Program Files\Gafira`, accesos directos, claves de registro y asociaciones. Los **datos de la persona** (proyectos, ajustes, copias de recuperación, biblioteca) **no se borran** por defecto; una casilla de la desinstalación («Eliminar también mis ajustes y copias de recuperación») los elimina, sin tocar los proyectos `.gafira` guardados por la persona.
+  - **Asociación `.gaf`** (FV-31).
+  - **Desinstalación limpia**: elimina `Program Files\Gafira`, accesos directos, claves de registro y asociaciones. Los **datos de la persona** (proyectos, ajustes, copias de recuperación, biblioteca) **no se borran** por defecto; una casilla de la desinstalación («Eliminar también mis ajustes y copias de recuperación») los elimina, sin tocar los proyectos `.gaf` guardados por la persona.
   - **Firma**: Authenticode con certificado de firma de código y sello de tiempo; instalador y ejecutables firmados. La reputación en el filtro de SmartScreen puede tardar en consolidarse (VERIFICAR; certificado de validación extendida como opción).
   - **Idioma**: el instalador se ofrece en español e inglés, según el idioma del sistema (D-08, D-61).
   - Versiones mínimas: Windows 10 (build mínima por definir, VERIFICAR contra los requisitos de wgpu/Media Foundation) y Windows 11.
 - *UI*: asistente del instalador (FV-40); Menú Inicio.
 - *Técnica*: `xtask package windows` (WiX v5 + `signtool`); `xtask audit-bundle` (ARQ-72).
 - *Presupuesto*: instalador ≤ 60 MB (CAL-23); instalación en < 60 s en SSD (PROPUESTA).
-- *Aceptación*: (a) instalar, abrir un `.gafira` con doble clic y desinstalar en una máquina limpia deja 0 archivos en `Program Files\Gafira` y 0 claves de Gafira en el registro (comprobado con diff del sistema); (b) `Get-AuthenticodeSignature` reporta firma válida en el MSI y los `.exe`; (c) actualizar de la versión n−1 a n conserva ajustes y asociaciones; (d) `audit-bundle` solo lista `gafira` y `gafira-cli` como ejecutables (ARQ-72).
+- *Aceptación*: (a) instalar, abrir un `.gaf` con doble clic y desinstalar en una máquina limpia deja 0 archivos en `Program Files\Gafira` y 0 claves de Gafira en el registro (comprobado con diff del sistema); (b) `Get-AuthenticodeSignature` reporta firma válida en el MSI y los `.exe`; (c) actualizar de la versión n−1 a n conserva ajustes y asociaciones; (d) `audit-bundle` solo lista `gafira` y `gafira-cli` como ejecutables (ARQ-72).
 
-## C2. Asociación del tipo de archivo `.gafira`
+## C2. Asociación del tipo de archivo `.gaf`
 
-**FV-31 · Asociación `.gafira`** (RF-57)
+**FV-31 · Asociación `.gaf`** (RF-57)
 - *Propósito*: abrir proyectos con doble clic y reconocerlos en el explorador.
 - *Comportamiento y reglas*:
-  - **Tipo MIME** `application/x-gafira+zip` (el `mimetype` del contenedor, 02 §7.1); extensión `.gafira`; **icono de documento** propio (símbolo sobre una hoja, 03 §5.3); verbo «Abrir» con `gafira "%1"` (Windows), `gafira %f` (Linux) y el manejador del paquete (macOS).
-  - Windows: `ProgId` y `Applications` registrados por el MSI. Linux: archivo `gafira.xml` de MIME en `shared-mime-info` y `MimeType=application/x-gafira+zip;` en el `.desktop`. macOS: `CFBundleDocumentTypes` y una UTI exportada (`<id-de-organización>.gafira.project`, el identificador depende de Q-01) conforme a `public.zip-archive`.
+  - **Tipo MIME** `application/vnd.gafira.project+zip` (el `mimetype` del contenedor, 02 §7.1); extensión `.gaf`; **icono de documento** propio (símbolo sobre una hoja, 03 §5.3); verbo «Abrir» con `gafira "%1"` (Windows), `gafira %f` (Linux) y el manejador del paquete (macOS).
+  - Windows: `ProgId` y `Applications` registrados por el MSI. Linux: archivo `gafira.xml` de MIME en `shared-mime-info` y `MimeType=application/vnd.gafira.project+zip;` en el `.desktop`. macOS: `CFBundleDocumentTypes` y una UTI exportada (`<id-de-organización>.gafira.project`, el identificador depende de Q-01) conforme a `public.zip-archive`.
   - La app abre el archivo recibido por argumento y, si ya hay una instancia, lo entrega a ella (bloqueo multiinstancia, ARQ-57).
 - *UI*: explorador de archivos del SO; Ajustes → General (restablecer asociación).
 - *Técnica*: `gafira-platform` (argumentos, instancia única), plantillas de empaquetado de `xtask`.
@@ -432,7 +432,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 **FV-33 · Paquetes `.deb`, `.rpm` y `.tar.gz`** (RF-56)
 - *Propósito*: instalación estándar en Debian, Ubuntu, Fedora, openSUSE y derivadas, y una opción portable para el resto.
 - *Comportamiento y reglas*:
-  - **Contenido común**: `gafira` y `gafira-cli` en `/usr/bin` (en el `.tar.gz`, en `bin/`), recursos en `/usr/share/gafira`, archivo `.desktop` con nombre y descripción en español e inglés (D-61), iconos `hicolor` (16–512 px, 03 §5.3), MIME de `.gafira` (`gafira.xml` en `shared-mime-info`, `MimeType=application/x-gafira+zip;`), `THIRD_PARTY_NOTICES.md` y los `OFL.txt` de las fuentes.
+  - **Contenido común**: `gafira` y `gafira-cli` en `/usr/bin` (en el `.tar.gz`, en `bin/`), recursos en `/usr/share/gafira`, archivo `.desktop` con nombre y descripción en español e inglés (D-61), iconos `hicolor` (16–512 px, 03 §5.3), MIME de `.gaf` (`gafira.xml` en `shared-mime-info`, `MimeType=application/vnd.gafira.project+zip;`), `THIRD_PARTY_NOTICES.md` y los `OFL.txt` de las fuentes.
   - **`.deb`**: `gafira_<versión>_amd64.deb`, con `copyright` que recoge las licencias de terceros. **`.rpm`**: `gafira-<versión>.x86_64.rpm`. Ambos se generan con **nfpm** (herramienta solo de build; **licencia VERIFICAR** antes de depender de ella).
   - **`.tar.gz` portable**: `gafira-<versión>-linux-x86_64.tar.gz`, se descomprime y se ejecuta sin instalar; incluye un script opcional de integración con el escritorio.
   - **Dependencias del sistema** (solo bibliotecas del SO, nunca empaquetadas): por ejemplo `libc6`, `libvulkan1`, `libxkbcommon0`, `libwayland-client0`, `libasound2` (audio) y `xdg-desktop-portal` (diálogos de archivo); los nombres equivalentes en el `.rpm`. `libasound` es LGPL-2.1 y se enlaza de forma **dinámica** como dependencia del paquete, no como archivo incluido (ARQ-79, R-06 de 02, VERIFICAR con asesoría legal).
@@ -441,14 +441,14 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 - *UI*: gestor de paquetes; Menú de aplicaciones.
 - *Técnica*: `xtask package linux` (nfpm para `.deb` y `.rpm`; `tar` para el portable); `xtask audit-bundle` (ARQ-72, ARQ-79, ARQ-84).
 - *Presupuesto*: ≤ 60 MB por paquete (CAL-23).
-- *Aceptación*: (a) `xtask package linux` produce exactamente `.deb`, `.rpm` y `.tar.gz` para `x86_64` y ningún otro artefacto (ARQ-84); (b) `dpkg -i` y `rpm -i` instalan y `dpkg -r`/`purge` y `rpm -e` eliminan todos los archivos del paquete; (c) `audit-bundle` no encuentra FFmpeg, ejecutables de terceros ni `libasound` u otra `.so` LGPL dentro de ningún paquete; (d) el icono y la asociación `.gafira` aparecen tras instalar; (e) el `.tar.gz` se ejecuta sin instalar en dos distribuciones de referencia (VERIFICAR cuáles); (f) el diálogo de abrir archivos funciona en X11 y Wayland.
+- *Aceptación*: (a) `xtask package linux` produce exactamente `.deb`, `.rpm` y `.tar.gz` para `x86_64` y ningún otro artefacto (ARQ-84); (b) `dpkg -i` y `rpm -i` instalan y `dpkg -r`/`purge` y `rpm -e` eliminan todos los archivos del paquete; (c) `audit-bundle` no encuentra FFmpeg, ejecutables de terceros ni `libasound` u otra `.so` LGPL dentro de ningún paquete; (d) el icono y la asociación `.gaf` aparecen tras instalar; (e) el `.tar.gz` se ejecuta sin instalar en dos distribuciones de referencia (VERIFICAR cuáles); (f) el diálogo de abrir archivos funciona en X11 y Wayland.
 
 ## C4. macOS aarch64: DMG
 
 **FV-34 · DMG, firma, notarización y entitlements** (RF-56)
 - *Propósito*: distribuir Gafira de forma que macOS la abra sin avisos de seguridad.
 - *Comportamiento y reglas*:
-  - **Paquete**: `Gafira.app` solo `aarch64`, `LSMinimumSystemVersion` 12.0, icono `.icns` (03 §5.3), tipos de documento de `.gafira`, categoría Gráficos y diseño.
+  - **Paquete**: `Gafira.app` solo `aarch64`, `LSMinimumSystemVersion` 12.0, icono `.icns` (03 §5.3), tipos de documento de `.gaf`, categoría Gráficos y diseño.
   - **DMG** con ventana de 660×400 pt, fondo `#FAFAF7` con el logo apilado (≥ 120 px) y el alias a Aplicaciones.
   - **Firma** con certificado *Developer ID Application*, *hardened runtime* y sello de tiempo (`codesign --options runtime --timestamp`); el DMG también va firmado.
   - **Notarización** con `notarytool` y *staple* del ticket; verificación con `spctl --assess` y `stapler validate`. Requiere cuenta del programa de desarrolladores de Apple (coste y titularidad: Q-01).
@@ -529,7 +529,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 │ 5 Instalando → 6 Listo                                     │
 │ Opciones: [✓] Acceso directo en el Menú Inicio             │
 │           [ ] Acceso directo en el Escritorio              │
-│           [✓] Abrir archivos .gafira con Gafira            │
+│           [✓] Abrir archivos .gaf con Gafira            │
 │ Listo: «Gafira está lista.»        [ Empezar a diseñar ]   │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -578,7 +578,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | 17 | Documentos | `PRIVACY.md` de Gafira que declara el identificador de dispositivo enviado al activar; no puede copiar la frase «no transmite datos» (D-01) | Documento | Titular |
 | 18 | Licencia | Activación contra el `license-hub` (servicio externo ya existente, reutilizado tal cual) integrada y probada con `gafira-license`. Licencia y activación: ver spec 06 (pendiente, se redacta al final) | Prueba E2E de ARQ-91 | Ingeniería |
 | 19 | Calidad | Presupuestos de rendimiento y de tamaño en verde; `export_matrix` ≥ 98 %; 500 *kills* recuperados | Informe nocturno | Calidad |
-| 20 | Instalación | Instalar, abrir un `.gafira` y desinstalar en máquinas limpias de las 3 plataformas (MSI, `.deb`, `.rpm`, `.tar.gz`, DMG) | Registro de pruebas | Calidad |
+| 20 | Instalación | Instalar, abrir un `.gaf` y desinstalar en máquinas limpias de las 3 plataformas (MSI, `.deb`, `.rpm`, `.tar.gz`, DMG) | Registro de pruebas | Calidad |
 | 21 | Distribución | Sumas SHA-256 y SBOM publicados; paquetes firmados y notarizados | Release | Ingeniería |
 | 22 | Accesibilidad | Contraste AA, teclado completo y AccessKit comprobados (DIS-10, DIS-30..37) | Informe | Diseño |
 
@@ -594,7 +594,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 
 **FV-43 · Lotes con datos de un CSV** (RF-61) — Fase 3
 - *Propósito*: generar muchas piezas a partir de un diseño y una tabla.
-- *Comportamiento y reglas*: `gafira-cli batch plantilla.gafira --data datos.csv --format png --out carpeta/` sustituye variables de contenido (`{{nombre}}`, `{{imagen}}`) en textos e imágenes y exporta una pieza por fila; también desde la app (Archivo → Exportar por lotes). Valida columnas y recursos antes de empezar y escribe un informe por fila.
+- *Comportamiento y reglas*: `gafira-cli batch plantilla.gaf --data datos.csv --format png --out carpeta/` sustituye variables de contenido (`{{nombre}}`, `{{imagen}}`) en textos e imágenes y exporta una pieza por fila; también desde la app (Archivo → Exportar por lotes). Valida columnas y recursos antes de empezar y escribe un informe por fila.
 - *UI*: Archivo → Exportar por lotes; `gafira-cli`.
 - *Técnica*: `gafira-cli` (02 §2.1), `ExportService`, `Exporter`.
 - *Presupuesto*: 100 piezas PNG de 1080p < 3 min en gama media (PROPUESTA).

@@ -4,6 +4,8 @@
 - Date: 2026-10-30
 - Related: ARQ-10, ARQ-13, ARQ-53, 02 §3.5, 02 §7.1, change `layout-core` (spike items 1 and D1)
 
+Note, 2026-11-16 (D-67): the project file extension is now `.gaf`. Where this ADR says `.gafira`, read `.gaf`; the decision is unchanged.
+
 ## Context
 
 `layout-core` adds fields to `Page`. The spike measured three facts:

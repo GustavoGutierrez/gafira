@@ -572,7 +572,7 @@ Fecha: 16 de noviembre de 2026.
 
 Fecha: 16 de noviembre de 2026.
 
-- **Decisión** (titular): cada proyecto lleva un **UUID** que se genera al crearlo y se guarda en el `.gafira` (campo nuevo de `schema` 1, que D-36 mantiene abierto). `recovery/<project_id>/` y la carpeta de versiones usan ese UUID, así que la recuperación sobrevive a renombrar o mover el archivo.
+- **Decisión** (titular): cada proyecto lleva un **UUID** que se genera al crearlo y se guarda en el `.gafira` (campo nuevo de `schema` 1, que D-36 mantiene abierto). `recovery/<project_id>/` y la carpeta de versiones usan ese UUID, así que la recuperación sobrevive a renombrar o mover el archivo. (Precisado por D-67: el archivo es un `.gaf` y las versiones viven dentro de él, no en una carpeta aparte.)
 - **Copias**: «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto.
 - Cierra SP5 (02 §5.6) y desbloquea E4. Sustituye la clave provisional de P13.
 
@@ -595,3 +595,14 @@ Fecha: 16 de noviembre de 2026.
 Fecha: 16 de noviembre de 2026.
 
 - **Decisión** (titular): los 98 mutantes críticos vivos se atacan **ahora, en paralelo** al engine, en una spec propia que solo añade tests (sin cambiar la API pública).
+
+## D-67 Extensión `.gaf` y un solo formato nativo
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la extensión del archivo de proyecto es **`.gaf`**, como la define la spec 008 (ZIP con manifiesto y JSON, tipo MIME `application/vnd.gafira.project+zip`). El nombre `.gafira` para el archivo de proyecto se retira en todas partes.
+- **Nombres derivados**: `nombre.gaf.bak` (1 generación), `nombre.gaf.lock` y las ranuras del journal de recuperación `slot-{0,1,2}.gaf-journal`.
+- **Versiones**: viven **dentro del `.gaf`** (`versions/` del contenedor, como ya dispone 02 §7.1), no en una carpeta externa. La carpeta de recuperación `datos_app/recovery/<project_id>/` sigue fuera del archivo y se nombra con el UUID.
+- **Un solo formato nativo**: «Guardar», «Guardar como» y «Guardar copia» escriben un `.gaf`; «Exportar proyecto editable con recursos» escribe un `.gaf` con el perfil `portable-full` (spec 008 §3). Donde un texto distinga un formato que vincula de otro que empaqueta, se lee como perfiles del mismo `.gaf`.
+- Precisa D-63 (las versiones no van en una carpeta aparte). Donde D-13, D-36, D-55, D-60 y D-63 dicen `.gafira`, léase `.gaf`; en D-60, «según el formato de archivo» se lee «según el perfil del `.gaf`».
+- Aplicado a 01, 02 (ADR-04, §7.1, §7.2), 04, 05 (FV-31), 03, la spec 008 (§4, §5, §17), la spec 012 (nota), el ADR 0006 (nota) y el manual técnico.

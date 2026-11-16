@@ -41,7 +41,7 @@ añade una nota de cobertura solo cuando falta parte de la responsabilidad que f
 | `gafira-media` | 3 | Implementado | Índice de keyframes, caché de fotogramas, proxies, reloj de reproducción y sincronía A/V |
 | `gafira-engine` | 3 | Planificado | `Session`, servicios Facade, bus de eventos, cola de exportación, autoguardado, gobernador de memoria |
 | `gafira-render-cpu` | 4 | Implementado | `CpuBackend`: ejecuta capas y rellenos, las imágenes, máscaras, efectos y transiciones devuelven un error |
-| `gafira-format` | 4 | Planificado | Lectura y escritura de `.gafira`, `versions/`, medios vinculados |
+| `gafira-format` | 4 | Planificado | Lectura y escritura de `.gaf`, `versions/`, medios vinculados |
 | `gafira-assets` | 4 | Planificado | Almacén direccionado por contenido e índice de biblioteca local |
 | `gafira-io-image` | 4 | Planificado | Importación y exportación PNG, JPEG, WebP y GIF |
 | `gafira-io-svg` | 4 | Planificado | Importación y exportación SVG |

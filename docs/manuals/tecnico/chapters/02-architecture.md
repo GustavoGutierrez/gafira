@@ -41,7 +41,7 @@ of its spec responsibility is still missing.
 | `gafira-media` | 3 | Implemented | Keyframe index, frame cache, proxies, playback clock and A/V sync |
 | `gafira-engine` | 3 | Planned | `Session`, Facade services, event bus, export queue, autosave, memory governor |
 | `gafira-render-cpu` | 4 | Implemented | `CpuBackend`: layers and fills execute, images, masks, effects and transitions return an error |
-| `gafira-format` | 4 | Planned | `.gafira` read and write, `versions/`, linked media |
+| `gafira-format` | 4 | Planned | `.gaf` read and write, `versions/`, linked media |
 | `gafira-assets` | 4 | Planned | Content-addressed store and local library index |
 | `gafira-io-image` | 4 | Planned | PNG, JPEG, WebP and GIF import and export |
 | `gafira-io-svg` | 4 | Planned | SVG import and export |
