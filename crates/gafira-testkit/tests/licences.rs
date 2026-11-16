@@ -58,7 +58,9 @@ fn font_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
         let path = item.path();
         let name = item.file_name();
         if path.is_dir() {
-            if name != "target" && name != ".git" {
+            // A folder with its own `.git` is another checkout (a worktree under
+            // `.claude/worktrees/`, a nested clone), not this repository.
+            if name != "target" && name != ".git" && !path.join(".git").exists() {
                 font_files(root, &path, out);
             }
         } else if path
