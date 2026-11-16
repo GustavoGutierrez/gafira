@@ -62,4 +62,4 @@ Loading returns an error and never panics, overflows the stack or returns an inv
 
 ## Planned
 
-Reading and writing `.gafira` files, atomic saves, linked media, version folders and per-step schema migrations are specified (spec 02, section 7) for `gafira-format` and are not implemented. The `gafira-cli validate` subcommand moves with it (D-13).
+Reading and writing `.gaf` files, atomic saves, linked media, versions inside the file (`versions/`) and per-step schema migrations are specified (spec 02, section 7) for `gafira-format` and are not implemented. The `gafira-cli validate` subcommand moves with it (D-13).
