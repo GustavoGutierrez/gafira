@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 04 de 05 |
+| Documento | Especificación 04 |
 | Estado | Borrador para revisión |
 | Alcance | Funciones del Editor de diseño: lienzo, posición y Capas, Plantillas, Piezas, Dibujo, Biblioteca, imagen, Aislar sujeto, texto, Identidad visual, Cambiar tamaño, Exportar, Versiones, autoguardado y recuperación |
 | Depende de | `00-decisiones.md` (D-01 a D-07 y D-14 a D-45, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; §3.1 y §3.2 para `Page` y `TextNode`, §7.1 para `.gafira`), 03 (nombres del glosario §2, componentes, DIS) |
@@ -751,7 +751,7 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 |---|---|---|
 | `Page.grid` y `Page.notes` | FD-02, FD-07 | Incorporados: `Page { grid: GridSettings, notes: String, … }` (§3.1) |
 | `TextNode` | FD-45, FD-46, FD-47 | Incorporados: `columns: TextColumns`, `autofit: Autofit`, `type_lock: TypeLock` (§3.2) |
-| `manifest.json` | FD-16 | Campo opcional `template` (etiquetas, formato, estilo, color): PROPUESTA de esta spec, aún no recogida en 02 §7.1 |
+| `manifest.json` | FD-16 | Campo opcional `template` (etiquetas, formato, estilo, color): PROPUESTA de esta spec, aún no recogida en el esquema de 02 §7.1 (registrada allí como hueco abierto) |
 | Almacén de Versiones | FD-60 | Incorporado: `versions/index.json` y `versions/<version_id>/` (§7.1) |
 | QR y Gráficos | FD-20, FD-22 | `NodeExtension` internos `gafira.qr` y `gafira.chart` registrados en el binario (ADR-02) |
 | `TextAssistant` | FD-64 | Incorporado: trait en `gafira-ports` (§4.15, Fase 3) |

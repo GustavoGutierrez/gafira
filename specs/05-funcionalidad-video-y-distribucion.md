@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 05 de 05 |
+| Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
 | Depende de | `00-decisiones.md` (D-01 a D-07, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
@@ -625,7 +625,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | Q-02, Q-03, Q-04, Q-05, Q-06, Q-09, Q-12, Q-13 | Códecs vía SO, Linux, actualizaciones, MP3, activación y AVI | Cerradas (D-01, D-02, D-05, D-06, D-07; 01 §12.2) |
 | Q-17 | Importar HEVC y HEIC vía API del sistema | Abierta, titular y legal |
 | Q-15 | Voz en off y marcadores de compás en Fase 2 | Abierta |
-| Q-19 | Prueba gratuita | Abierta; se resuelve en la spec 06 |
+| Q-19 | Prueba gratuita | Cerrada: D-12 (no hay prueba gratuita; modo sin licencia) |
 | Q-20 | Modo sin licencia válida | D-12 sustituye la propuesta de solo lectura; la lista de funciones bloqueadas se define en la spec 06 |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |
 | R-06 (02) | `cpal` y `libasound` (LGPL, dinámico) | VERIFICAR, legal |

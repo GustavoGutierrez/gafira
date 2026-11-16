@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 01 de 05 |
+| Documento | Especificación 01 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
 | Fuentes | `00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
@@ -379,7 +379,7 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 ### 11.1 Principios
 
 1. **Una licencia, un binario.** El mismo ejecutable contiene todas las funciones de todas las fases; no hay módulos que se activen por separado.
-2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo.
+2. **Modo sin licencia** (D-12). La exportación está bloqueada y algunas funciones están desactivadas. La lista de funciones bloqueadas se define en la spec 06 (pendiente 1 del titular). Hasta entonces, solo la exportación está bloqueada. Guardar nunca depende de la licencia: con `Unlicensed`, `Expired` o `Invalid` se puede editar, recuperar un journal y guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»; D-55, 02 ARQ-95). Una licencia activada lo desbloquea todo. El licenciamiento se puede deshabilitar por build sin cambiar el engine ni la UI: entonces no hay activación ni conexión de red y todo queda desbloqueado (D-58, 02 §4.14).
 3. **Sin marcas de agua** en las exportaciones (PROPUESTA).
 4. **Datos del usuario nunca retenidos.** Un proyecto del usuario siempre se puede abrir, ver y recuperar; sin licencia rige el modo sin licencia (D-12), que sustituye la propuesta de solo lectura de 02. La lista de funciones bloqueadas se define en la spec 06 (Q-20).
 5. **Única conexión de red = licencia** (activar, validar o desactivar). `PRIVACY.md` declara el identificador de dispositivo que se envía al activar y no puede afirmar que la app no transmite datos.
