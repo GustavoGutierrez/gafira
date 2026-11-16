@@ -96,6 +96,7 @@ mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
 - `formatVersion`: versión semántica del formato contenedor (inicial `1.0.0`).
 - `schemaVersion`: versión del documento (inicial `1`).
 - `projectId`, `createdAt`, `updatedAt`, `generator`.
+  - *Nota (D-63)*: `projectId` es el UUID del proyecto que se genera al crearlo y que el `.gafira` ya guarda como `project_id` (02 §7.1). El `.gaf` debe conservar ese mismo UUID, porque la recuperación y las versiones lo usan; «Guardar copia» asigna uno nuevo y «Guardar como» conserva el del proyecto. Falta decidir si importar un `.gaf` conserva su `projectId` o asigna uno nuevo.
 - `profile`: `portable-full | linked-light | hybrid`.
 - `document`: ruta y hash del documento.
 - `features.required[]` y `features.optional[]`: capacidades identificadas (ej. `video.timeline.v1`).
@@ -486,6 +487,7 @@ Las siguientes no impiden implementar v1, pero exigen ADR antes de ampliar capac
 - Perfil de exportación encriptada/firma y distribución comercial de plantillas.
 - Perfiles de color de producción y HDR.
 - Semántica avanzada para remapeo de velocidad variable y efectos temporales.
+- Qué hace cada formato con una fuente del usuario incrustable (por ejemplo, si `.gafira` la vincula y `.gaf` la empaqueta en `fonts/`). *Nota (D-60)*: la regla de licencia ya está decidida (incrustar según los bits `fsType` de OpenType; si no se permite, vincular por nombre y avisar de la fuente que falta al abrir); esta decisión solo fija el comportamiento por formato y por perfil (§3, §4).
 
 ## 18. Referencias técnicas
 
