@@ -3,7 +3,7 @@
 //! `new_document` (the `new` of §5.4), `open`, `save`, `save_as` and
 //! `save_copy` (spec 012), `is_modified` and the autosave schedule
 //! (`autosave_due`, `autosave_finished`, design P13). Every save keeps one
-//! `.gafira.bak` generation (02 §7.2 step 4) and every session carries the
+//! `.gaf.bak` generation (02 §7.2 step 4) and every session carries the
 //! project id of D-63.
 //! Every file operation goes through the injected ports; the engine opens
 //! nothing itself (P1, design P18).
@@ -373,11 +373,11 @@ mod tests {
     use crate::fakes::*;
     use crate::session::{DocVersion, Session};
 
-    const TARGET: &str = "/work/poster.gafira";
-    const TMP0: &str = "/work/poster.gafira.tmp-0";
-    const TMP1: &str = "/work/poster.gafira.tmp-1";
-    const BAK: &str = "/work/poster.gafira.bak";
-    const BAK_TMP0: &str = "/work/poster.gafira.bak.tmp-0";
+    const TARGET: &str = "/work/poster.gaf";
+    const TMP0: &str = "/work/poster.gaf.tmp-0";
+    const TMP1: &str = "/work/poster.gaf.tmp-1";
+    const BAK: &str = "/work/poster.gaf.bak";
+    const BAK_TMP0: &str = "/work/poster.gaf.bak.tmp-0";
 
     fn changed(version: u64, dirty: DirtySet) -> EngineEvent {
         EngineEvent::DocumentChanged {
@@ -490,7 +490,7 @@ mod tests {
         let (mut engine, _fs, _repository) = engine_with_target(false);
         let page = edited_new_document(&mut engine);
 
-        let error = engine.projects().open(Path::new("/work/missing.gafira"));
+        let error = engine.projects().open(Path::new("/work/missing.gaf"));
 
         assert!(
             matches!(error, Err(EngineError::Repository(RepositoryError::Io(_)))),
@@ -785,10 +785,10 @@ mod tests {
         );
     }
 
-    // ---- Spec 012: project identity, save_as, save_copy, `.gafira.bak` ----
+    // ---- Spec 012: project identity, save_as, save_copy, `.gaf.bak` ----
 
-    const OTHER: &str = "/work/other.gafira";
-    const COPY: &str = "/work/copy.gafira";
+    const OTHER: &str = "/work/other.gaf";
+    const COPY: &str = "/work/copy.gaf";
 
     fn id(n: u128) -> ProjectId {
         SequentialIds::nth(n)

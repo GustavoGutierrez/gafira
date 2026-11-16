@@ -21,8 +21,8 @@ use proxy_support::FakeFileSystem;
 /// The user cache of the test.
 const CACHE: &str = "/home/user/.cache/gafira";
 
-/// The project of the test: the `.gafira` file.
-const PROJECT: &str = "/home/user/Documents/clip.gafira";
+/// The project of the test: the `.gaf` file.
+const PROJECT: &str = "/home/user/Documents/clip.gaf";
 
 /// The hash of the content of a medium.
 fn content(seed: u8) -> ContentHash {
@@ -189,7 +189,7 @@ impl Progress for CancelAfter<'_> {
 }
 
 // ARQ-146: a generated light copy appears in the user cache, and the
-// `.gafira` holds no copy.
+// `.gaf` holds no copy.
 #[test]
 fn arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project() {
     let file_system = FakeFileSystem::with_file(PROJECT, vec![1, 2, 3]);
@@ -225,7 +225,7 @@ fn arq_146_the_copy_lands_in_the_user_cache_and_not_in_the_project() {
             .paths()
             .iter()
             .all(|held| held.starts_with(Path::new(CACHE)) || held == Path::new(PROJECT)),
-        "the `.gafira` holds no copy: {:?}",
+        "the `.gaf` holds no copy: {:?}",
         file_system.paths()
     );
     assert_eq!(

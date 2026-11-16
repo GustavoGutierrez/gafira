@@ -64,7 +64,7 @@ impl ToMessage for RepositoryError {
     }
 }
 
-/// Loads and saves projects (`.gafira`). Adapters implement it (`gafira-format`).
+/// Loads and saves projects (`.gaf`). Adapters implement it (`gafira-format`).
 pub trait ProjectRepository: Send + Sync {
     /// Reads the project at `path`.
     ///

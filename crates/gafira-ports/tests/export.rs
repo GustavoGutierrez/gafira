@@ -329,7 +329,7 @@ fn p8_duplicate_exporter_id_is_rejected_and_changes_nothing() {
     );
 }
 
-// P8: `.gafira` is both an importer and an exporter.
+// P8: `.gaf` is both an importer and an exporter.
 #[test]
 fn p8_same_id_as_importer_and_exporter_is_valid() {
     let mut reg = FormatRegistry::new();

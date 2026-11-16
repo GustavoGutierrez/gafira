@@ -2,7 +2,7 @@
 //!
 //! The index is built by scanning the packets of the container and keeping
 //! the time of the keyframes. It lives in memory: in this cut it is written
-//! neither to the `.gafira` (02 §7.1) nor to the user cache, and it is
+//! neither to the `.gaf` (02 §7.1) nor to the user cache, and it is
 //! rebuilt when the medium is opened again.
 
 use std::sync::{Arc, Mutex, PoisonError};

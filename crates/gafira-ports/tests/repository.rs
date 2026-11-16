@@ -32,7 +32,7 @@ impl ProjectRepository for Memory {
 #[test]
 fn p4_repository_is_object_safe_and_round_trips_a_document() {
     let repo: Box<dyn ProjectRepository> = Box::new(Memory(Mutex::new(None)));
-    let path = Path::new("a.gafira");
+    let path = Path::new("a.gaf");
     assert!(matches!(
         repo.load(path),
         Err(RepositoryError::Corrupt { .. })

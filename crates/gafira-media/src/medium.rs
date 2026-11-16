@@ -37,7 +37,7 @@ impl Medium {
     ///
     /// The file is read through the file system port and the container
     /// gives the demuxer. The index is built in memory and nothing is
-    /// written: no index file reaches the user cache nor the `.gafira`
+    /// written: no index file reaches the user cache nor the `.gaf`
     /// (ARQ-144, 02 §7.1).
     ///
     /// # Errors
