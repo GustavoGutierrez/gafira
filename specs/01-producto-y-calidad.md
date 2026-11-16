@@ -219,7 +219,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | RF-52 | Importar y exportar SRT y VTT. | §2.3 | F2 | `gafira-captions` | 05 §B |
 | RF-53 | Copias ligeras: generación automática y manual para material de alta resolución; la exportación usa siempre el original. | RF-08 | MVP (motor) / F2 (gestión) | §6.5 de 02 | 05 §B |
 | RF-54 | Exportación con control de códec, bitrate, fps, resolución, rango de color, audio y metadatos. | RF-08, RF-09 | F2 | `EncoderConfig` | 05 §B |
-| RF-55 | Relocalizar medios cuando cambia una carpeta (medios vinculados: `manifest.assets[...].linked {rel_path, bytes, blake3}`; evento `LinksMissing`). | RF-08 | F2 | ARQ-56, 02 §7.1 | 05 §B, 04 §7 |
+| RF-55 | Relocalizar medios cuando cambia una carpeta (medios vinculados: `manifest.assets[...].linked {relPath, bytes, blake3}`, claves del manifiesto en camelCase (D-68); evento `LinksMissing`). | RF-08 | F2 | ARQ-56, 02 §7.1 | 05 §B, 04 §7 |
 
 ### 7.10 Distribución y extensión (PRD RNF-01, RNF-06)
 

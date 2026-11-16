@@ -1570,37 +1570,43 @@ Otras cifras (FIJADAS, D-03):
 ### 7.1 Formato de proyecto `.gaf` (ADR-04)
 
 **ADR-04: un único formato `.gaf`.**
-Es un contenedor ZIP con un manifiesto JSON versionado. Sustituye a las propuestas `.designpkg` y `.design/SQLite`. Hay un solo formato nativo (D-67): «Guardar», «Guardar como» y «Guardar copia» escriben un `.gaf`, y «Exportar proyecto editable con recursos» escribe un `.gaf` con el perfil `portable-full` (spec 008 §3). La disposición del contenedor que sigue se alineará con la de la spec 008 cuando esta salga del backlog.
+Es un contenedor ZIP con un manifiesto JSON versionado. Sustituye a las propuestas `.designpkg` y `.design/SQLite`. Hay un solo formato nativo (D-67): «Guardar», «Guardar como» y «Guardar copia» escriben un `.gaf`, y «Exportar proyecto editable con recursos» escribe un `.gaf` con el perfil `portable-full` (spec 008 §3). La disposición es **híbrida** (D-68): conserva la base de esta sección (hashes BLAKE3, un JSON por página y por secuencia, recursos planos por hash y `versions/` dentro) y suma los campos de manifiesto de la spec 008 §5 (`profile`, `formatVersion`, `schemaVersion`, `features` y `packageCompleteness`). Las claves de `manifest.json` van en camelCase, como en 008; el JSON del documento (`document.json`, `pages/*.json`, `sequences/*.json`) conserva el snake_case de `gafira-doc`, porque el código manda. Los tiempos se escriben en flicks enteros, como en memoria (D-69).
 
 ```text
 proyecto.gaf (ZIP)
 ├─ mimetype                         "application/vnd.gafira.project+zip" (primera entrada, STORE, sin comprimir)
-├─ manifest.json                    { "format": "gafira.project", "schema": 1, "app": "0.1.0",
-│                                     "project_id", "created", "modified", "pages": [...ids, orden],
-│                                     "sequences": [...], "assets": { "<blake3>": {mime, bytes, name,
-│                                       "linked": {rel_path, bytes, blake3}?} },   (presente solo si el medio está vinculado)
-│                                     "versions": [...ids], "fonts_used": [...], "features_required": [] }
+├─ manifest.json                    { "format": "gafira-project", "formatVersion": "1.0.0", "schemaVersion": 1,
+│                                     "generator": {app, version}, "projectId", "createdAt", "updatedAt",
+│                                     "profile": "portable-full"|"linked-light"|"hybrid",
+│                                     "features": {required: [...], optional: [...]},
+│                                     "packageCompleteness": "complete"|"partial", "missingResources": [...],
+│                                     "pages": [...ids, orden], "sequences": [...],
+│                                     "assets": { "<blake3>": {mime, bytes, name,
+│                                       "linked": {relPath, bytes, blake3}?} },   (presente solo si el medio está vinculado)
+│                                     "versions": [...ids], "fontsUsed": [...] }
 ├─ document.json                    Project sin páginas ni secuencias (meta, estilos, identidades, tabla de assets)
 ├─ pages/<page_id>.json             una página por archivo (carga perezosa, guardado incremental)
 ├─ sequences/<seq_id>.json
 ├─ assets/<blake3-hex>.<ext>        recursos embebidos, STORE si ya están comprimidos (JPEG/PNG/MP4), DEFLATE si no
 │                                   (los medios vinculados NO tienen entrada aquí)
 ├─ masks/<blake3-hex>.tiles         máscaras pintadas: tiles con zstd (crate BSD-3-Clause; la `libzstd` en C, §9.2)
-├─ thumbs/<page_id>.webp            miniaturas de 512 px (apertura rápida y vista del explorador)
+├─ thumbs/<page_id>.webp            miniaturas de 512 px (apertura rápida y vista del explorador; `previews/pages/` de 008, D-68)
 ├─ versions/index.json              [{ id, name, kind: "named"|"auto", created, app, schema }]
 ├─ versions/<version_id>/           una versión: document.json, pages/*.json y sequences/*.json de ese momento;
 │                                   los recursos se comparten por hash con assets/ y masks/ (no se duplican)
 └─ extensions/<type_id>/...         datos opacos de extensiones (se conservan)
 ```
 
-- **Identidad del proyecto** (D-63): `project_id` es un UUID que se genera al crear el proyecto y se guarda en el manifiesto (campo de `schema` 1, que D-36 mantiene abierto). `recovery/<project_id>/` (§7.2) y `links/<project_id>.json` usan ese UUID, así que sobreviven a renombrar o mover el archivo; las versiones viven dentro del archivo, en `versions/` (D-67). «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto.
+- **Manifiesto** (D-68): `formatVersion` es la versión semántica del contenedor y del manifiesto, y empieza en `1.0.0`; `schemaVersion` es la del documento. `profile` es el perfil del archivo (spec 008 §3); «Exportar proyecto editable con recursos» escribe `portable-full` (D-67). `features.required` lista las capacidades sin las que el archivo no se puede abrir con fidelidad y `features.optional`, las que un lector puede ignorar; un lector que no conoce una capacidad requerida abre en solo lectura (ARQ-55). `packageCompleteness` vale `partial` cuando algún recurso no se pudo empaquetar, y `missingResources` lo nombra. Los hashes son BLAKE3 (`ContentHash` de `gafira-doc`), también donde 008 dice SHA-256.
+- **Pendiente para la spec del formato** (D-68): la forma de la tabla de recursos (`assets` por hash, arriba, frente a `resources[]` con `storage` de 008 §5), el campo `originalPathHint` de 008 §5.1 frente a ARQ-56, dónde van la portada y las miniaturas de secuencia de 008 (`previews/cover.webp`, `previews/video/`), si 008 adopta `masks/` y `extensions/` y esta sección `metadata/provenance.json`, y qué perfil escribe Guardar.
+- **Identidad del proyecto** (D-63): `project_id` es un UUID que se genera al crear el proyecto. Se guarda en el manifiesto como `projectId` y en `document.json` como `project_id` (D-68; campo de `schemaVersion` 1, que D-36 mantiene abierto). `recovery/<project_id>/` (§7.2) y `links/<project_id>.json` usan ese UUID, así que sobreviven a renombrar o mover el archivo; las versiones viven dentro del archivo, en `versions/` (D-67). «Guardar copia» asigna un UUID nuevo a la copia; «Guardar como» conserva el del proyecto.
 - **Versiones** (menú Archivo → Guardar versión y Versiones, 03 §2.2). Una **versión nombrada** la crea el usuario y nunca se borra de forma automática. Una **versión automática** se crea al guardar si la última automática tiene más de 30 min; se conservan las 20 más recientes y se descartan las más antiguas (cifras confirmadas, D-71). Restaurar una versión es un `Command` (`RestoreVersion`) que se puede deshacer. El recolector de recursos no borra un recurso que use alguna versión. Las versiones son distintas de los journals de autoguardado, que viven fuera del archivo (§7.2).
-- **Medios vinculados** (Fase 2, con Relocalizar medios, 01 RF-55 y 05 FV-25). Por defecto todos los medios se embeben. Los videos de más de 500 MB (confirmada, D-71, de 05) pueden vincularse: el manifiesto guarda `rel_path` relativo a la carpeta del `.gaf`, el tamaño y el hash BLAKE3 completo, nunca una ruta absoluta (ARQ-56). La última ruta absoluta conocida puede guardarse en `datos_app/links/<project_id>.json`, fuera del proyecto, solo como pista. **Relocalizar medios**: el usuario elige una carpeta; `AssetService::relocate` la indexa, busca por nombre, filtra por tamaño y confirma por hash; reconecta todos los coincidentes con un solo `Command` y rechaza con aviso los que tienen el mismo nombre y otro hash. Un vínculo ausente emite `LinksMissing`, se muestra como marcador y la exportación avisa antes de empezar. Proxies y miniaturas de un medio vinculado van a la caché del usuario. El campo `linked` existe desde `schema` 1, para que activar la función en Fase 2 no exija migración.
+- **Medios vinculados** (Fase 2, con Relocalizar medios, 01 RF-55 y 05 FV-25). Por defecto todos los medios se embeben. Los videos de más de 500 MB (confirmada, D-71, de 05) pueden vincularse: el manifiesto guarda `relPath` relativo a la carpeta del `.gaf`, el tamaño y el hash BLAKE3 completo, nunca una ruta absoluta (ARQ-56). La última ruta absoluta conocida puede guardarse en `datos_app/links/<project_id>.json`, fuera del proyecto, solo como pista. **Relocalizar medios**: el usuario elige una carpeta; `AssetService::relocate` la indexa, busca por nombre, filtra por tamaño y confirma por hash; reconecta todos los coincidentes con un solo `Command` y rechaza con aviso los que tienen el mismo nombre y otro hash. Un vínculo ausente emite `LinksMissing`, se muestra como marcador y la exportación avisa antes de empezar. Proxies y miniaturas de un medio vinculado van a la caché del usuario. El campo `linked` existe desde `schemaVersion` 1, para que activar la función en Fase 2 no exija migración.
 - **Hueco abierto: campo `template`** (04 FD-16, PROPUESTA). FD-16 marca una plantilla propia con un campo `template` del manifiesto «con etiquetas, formato, estilo y color», pero no fija los nombres de las claves, sus tipos ni si «formato» es el formato de página o el de archivo, ni cómo se distingue un `.gaf` de plantilla de uno normal. No se incorpora al esquema del manifiesto hasta que se defina.
 
-- **Migraciones por paso**: `schema` es un entero. Las funciones `migrate_n_to_n1(serde_json::Value) -> Result<Value, MigrationError>` se encadenan y cada una tiene su propio golden de entrada y salida.
-- Al abrir un archivo de un `schema` futuro: modo solo lectura con aviso y nunca se sobrescribe. El documento se puede editar en memoria; «Guardar» devuelve un error de solo lectura antes de cualquier operación de archivo, y los cambios solo se conservan con «Guardar como» (ARQ-55).
-- Los proxies, cachés y el historial **no** se guardan en el archivo. El índice de keyframes tampoco: se reconstruye al abrir el medio (§6.5).
+- **Migraciones por paso**: `schemaVersion` es un entero; `formatVersion` versiona aparte el contenedor (D-68). Las funciones `migrate_n_to_n1(serde_json::Value) -> Result<Value, MigrationError>` se encadenan y cada una tiene su propio golden de entrada y salida.
+- Al abrir un archivo de un `schemaVersion` o `formatVersion` futuro, o con una capacidad requerida desconocida: modo solo lectura con aviso y nunca se sobrescribe. El documento se puede editar en memoria; «Guardar» devuelve un error de solo lectura antes de cualquier operación de archivo, y los cambios solo se conservan con «Guardar como» (ARQ-55).
+- Los proxies, cachés y el historial **no** se guardan en el archivo; tampoco con el perfil `portable-full`, así que no hay carpeta `proxies/` ni opción para incluirlos (D-68, que retira la de 008). El índice de keyframes tampoco: se reconstruye al abrir el medio (§6.5).
 - **Fuentes del usuario** (D-60): una fuente se incrusta según su licencia (bits `fsType` de OpenType) y según el perfil del `.gaf` (spec 008 §3). Si la licencia no permite incrustarla, el proyecto la vincula por nombre y, al abrirlo en un equipo que no la tiene, avisa de la fuente que falta. Qué hace cada perfil con una fuente incrustable (por ejemplo, vincularla o empaquetarla en `assets/` con «Empaquetar fuentes») se fija con la §17 de la spec 008.
 - *Descartado*:
   - SQLite como formato de proyecto: binario opaco, más difícil de migrar y de inspeccionar, y no aporta frente a JSON por página.
@@ -2410,7 +2416,7 @@ pages_selected = { one = "{count} page selected", other = "{count} pages selecte
 | ADR-01 | Granularidad de crates por frontera de capa, feature legal, compilación y reutilización |
 | ADR-02 | `NodeKind` enum cerrado serializable + `Extension` abierta por registro |
 | ADR-03 | Historial híbrido Memento (`Arc` COW propio) + `Command` con `revert`; sin crates MPL |
-| ADR-04 | Formato único `.gaf` = ZIP + `manifest.json` versionado + JSON por página + recursos BLAKE3 + `versions/` + medios vinculados |
+| ADR-04 | Formato único `.gaf` = ZIP + `manifest.json` versionado (claves camelCase, perfiles y capacidades de la spec 008) + JSON por página y por secuencia + recursos BLAKE3 + `versions/` + medios vinculados; tiempos en flicks (D-68, D-69) |
 | ADR-05 | `panic = "unwind"` con `catch_unwind` en trabajos |
 | ADR-06 | UI con egui/eframe sobre wgpu; tokens de marca desde datos (normativos en 03 §3); sin las fuentes por defecto de egui |
 | ADR-07 | Códecs por clase legal: AV1 + Opus por defecto; H.264/AAC solo vía API del sistema; sin encoders propios con patentes; sin salida HEVC ni MP3; `encumbered-sw` sin código |

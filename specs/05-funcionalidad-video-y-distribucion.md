@@ -379,7 +379,7 @@ La Parte B no tiene una referencia visual previa: el diseño de interacción es 
 
 **FV-25 · Relocalizar medios** (RF-55) — Fase 2
 - *Propósito*: reconectar medios que cambiaron de carpeta o disco.
-- *Comportamiento y reglas*: los medios se incrustan en el `.gaf` por defecto; los videos grandes (> 500 MB, confirmada, D-71) pueden **vincularse** en lugar de incrustarse (`manifest.assets[...].linked { rel_path, bytes, blake3 }`: ruta relativa a la carpeta del `.gaf`, tamaño y hash BLAKE3; sin rutas absolutas, ARQ-56). **Relocalizar medios** es una función de **Fase 2** (el campo `linked` existe desde `schema` 1, 02 §7.1). Si un vínculo falta (evento `LinksMissing`), la Línea de tiempo muestra el clip en rojo con un icono y el diálogo **Buscar archivo**; al elegir una carpeta, Gafira busca por nombre y verifica por tamaño y hash y reconecta **todos** los que coincidan. La exportación se bloquea o advierte antes de generar (RF-33).
+- *Comportamiento y reglas*: los medios se incrustan en el `.gaf` por defecto; los videos grandes (> 500 MB, confirmada, D-71) pueden **vincularse** en lugar de incrustarse (`manifest.assets[...].linked { relPath, bytes, blake3 }`, en el camelCase del manifiesto, D-68: ruta relativa a la carpeta del `.gaf`, tamaño y hash BLAKE3; sin rutas absolutas, ARQ-56). **Relocalizar medios** es una función de **Fase 2** (el campo `linked` existe desde `schema` 1, 02 §7.1). Si un vínculo falta (evento `LinksMissing`), la Línea de tiempo muestra el clip en rojo con un icono y el diálogo **Buscar archivo**; al elegir una carpeta, Gafira busca por nombre y verifica por tamaño y hash y reconecta **todos** los que coincidan. La exportación se bloquea o advierte antes de generar (RF-33).
 - *UI*: clip con vínculo ausente; Archivo → Relocalizar medios.
 - *Técnica*: `AssetTable` con `AssetStorage::Linked`, `AssetService::relocate` (indexa la carpeta, filtra por nombre y tamaño y confirma por hash; un solo `Command` reconecta todos los coincidentes) y `ContentStore` (02 §3.2, §7.1).
 - *Presupuesto*: indexar una carpeta de 1 000 archivos < 2 s (confirmada, D-71).
@@ -547,7 +547,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 |---|---|---|
 | `Transition` | FV-06: las transiciones tienen dos entradas | **Incorporado en 02 §4.13**: trait `Transition`, `GpuTransition`, `TransitionInstance` y `TransitionRegistry` |
 | Animación de vértices de un Vector | FV-15 | `Interpolate` para rutas de igual topología (PROPUESTA, Fase 2) |
-| Medios vinculados | FV-25 | **Incorporado en 02 §7.1**: `manifest.assets[...].linked { rel_path, bytes, blake3 }` y evento `LinksMissing` |
+| Medios vinculados | FV-25 | **Incorporado en 02 §7.1**: `manifest.assets[...].linked { relPath, bytes, blake3 }` (D-68) y evento `LinksMissing` |
 | *Time-stretch* y mantener tono | FV-04 | **Incorporado en 02 §4.9**: `TimeStretch` (Fase 2) |
 | Puerta de ruido | FV-20 | **Incorporado en 02 §4.9**: `NoiseGate` (Fase 2) |
 | `TrackKind::Overlay` para Texto | FV-01 | Convención de interfaz; sin cambio de tipo |

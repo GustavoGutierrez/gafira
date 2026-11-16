@@ -1,6 +1,8 @@
 # 008 — GAF — Especificación del formato de proyecto de Gafira
 
 > **Estado:** backlog — 2026-11-16 — propuesta técnica v1.0 del titular; pendiente de las decisiones de §17 y de la orden de empezar.
+>
+> **Precisada por D-68 y D-69 (16-nov-2026):** la disposición del contenedor es la híbrida de D-68 (base de 02 §7.1 más los campos de manifiesto de §5): hashes BLAKE3 donde este texto decía SHA-256, `document.json` más un JSON por página y por secuencia, recursos planos `assets/<blake3>.<ext>`, miniaturas en `thumbs/` y sin proxies en el archivo. Los tiempos son enteros de flicks más la cadencia racional de la secuencia (D-69), no *ticks* con `timebase`. Las claves de `manifest.json` van en camelCase; las del JSON del documento, en el snake_case de `gafira-doc`.
 
 **Documento:** GAF-FORMAT-SPEC-001  
 **Estado:** Propuesta técnica para implementación (v1.0)  
@@ -37,8 +39,8 @@ El formato DEBE permitir que se abra un proyecto en otro equipo sin perder los e
 | GAF-ADR-05 | Un perfil ligero puede almacenar referencias externas con identidad, integridad y capacidad de revinculación. | Evitar ZIP de muchos GB cuando se prefiera. |
 | GAF-ADR-06 | Las rutas absolutas no son identificadores canónicos de assets. | Robustez entre OS y equipos. |
 | GAF-ADR-07 | Video/audio se conservan **sin transcodificar** por defecto; proxies no reemplazan los masters. | Calidad y eficiencia. |
-| GAF-ADR-08 | Los tiempos de edición se representan mediante enteros de ticks y una base de tiempo racional; no floats para el timeline. | Evitar deriva y facilitar 29.97/23.976 fps. |
-| GAF-ADR-09 | Todo recurso tendrá ID estable, MIME, longitud y hash SHA-256 verificados cuando corresponda. | Identidad, deduplicación e integridad. |
+| GAF-ADR-08 | Los tiempos de edición se representan como enteros de flicks (1/705 600 000 s, `gafira-time`), igual que en memoria, más la cadencia racional (`fps`) de la secuencia; no floats para el timeline (D-69). | Evitar deriva: un flick divide exactamente los fotogramas de 29.97/23.976 fps. |
+| GAF-ADR-09 | Todo recurso tendrá ID estable, MIME, longitud y hash BLAKE3 (`ContentHash`) verificados cuando corresponda (D-68). | Identidad, deduplicación e integridad. |
 | GAF-ADR-10 | Versiones de esquema, capacidades y migraciones explícitas. | Compatibilidad futura. |
 | GAF-ADR-11 | Se hace guardado seguro y validación estricta de entradas comprimidas. | Prevención de corrupción y entradas hostiles. |
 | GAF-ADR-12 | No se adjuntan exportaciones MP4/PNG/PDF automáticamente. | No inflar el proyecto con artefactos reproducibles. |
@@ -60,31 +62,23 @@ La UI DEBE mostrar, antes de guardar, tamaño estimado, número de assets vincul
 ```text
 mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
 ├── mimetype                               # texto ASCII, sin compresión
-├── manifest.json                          # tabla de contenido/recursos/capacidades
-├── document.json                          # documento editable completo
-├── assets/
-│   ├── images/<sha256>.png
-│   ├── images/<sha256>.jpg
-│   ├── video/<sha256>.mp4
-│   ├── audio/<sha256>.wav
-│   ├── vectors/<sha256>.svg
-│   └── fonts/<sha256>.woff2               # solo si licencia lo permite
-├── previews/
-│   ├── cover.webp
-│   ├── pages/<page-id>.webp
-│   └── video/<sequence-id>.jpg
-├── proxies/                                # opcional, derivados regenerables
-│   ├── video/<asset-id>.mp4
-│   └── audio/<asset-id>.waveform.bin
-├── versions/                               # versiones del proyecto, dentro del archivo (D-67, 02 §7.1)
+├── manifest.json                          # tabla de contenido/recursos/capacidades (claves camelCase)
+├── document.json                          # proyecto sin páginas ni secuencias (D-68, 02 §7.1)
+├── pages/<page-id>.json                   # una página por archivo: carga perezosa, guardado incremental
+├── sequences/<sequence-id>.json           # una secuencia por archivo
+├── assets/<blake3>.<ext>                  # recursos planos por hash BLAKE3 (imágenes, video, audio, SVG,
+│                                          #   fuentes solo si la licencia lo permite)
+├── thumbs/<page-id>.webp                  # miniaturas por página (antes previews/pages/, D-68)
+├── versions/                              # versiones del proyecto, dentro del archivo (D-67, 02 §7.1)
 │   ├── index.json                         # lista de versiones nombradas y automáticas
 │   └── <version-id>/                      # documento de ese momento; recursos compartidos por hash con assets/
 └── metadata/
-    └── provenance.json                    # opcional, sin secretos
+    └── provenance.json                    # opcional, sin secretos (pendiente de la spec del formato, D-68)
 ```
 
 - `mimetype` DEBE ser la primera entrada ZIP, sin compresión, con el texto exacto `application/vnd.gafira.project+zip` en ASCII UTF-8 sin BOM y sin salto final.
 - `manifest.json` y `document.json` son obligatorios; orden del resto de entradas no significativo.
+- Los proxies y waveforms **nunca** van en el archivo, tampoco en `portable-full`: se retira la carpeta opcional `proxies/` (D-68, regla de 02 §7.1). Las miniaturas por página van en `thumbs/`, el nombre de 02; dónde van la portada (`cover.webp`) y las miniaturas de secuencia lo fija la spec del formato, igual que `masks/` y `extensions/` de 02 §7.1 (D-68).
 - Todas las rutas internas usan `/`, codificación UTF-8, rutas relativas; NO DEBEN contener `..`, barra inicial, letras de unidad o segmentos vacíos sospechosos.
 - El lector DEBE soportar ZIP estándar con `STORE` y `DEFLATE`, y ZIP64 para archivos grandes. Métodos de compresión adicionales no son obligatorios para v1.
 - Archivos multimedia ya comprimidos (MP4, WebM, JPEG, PNG, etc.) DEBERÍAN almacenarse con `STORE` si DEFLATE no reduce su tamaño.
@@ -93,17 +87,17 @@ mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
 
 ## 5. Manifest y metadatos
 
-`manifest.json` es la tabla de recursos y la declaración de compatibilidad. Campos obligatorios:
+`manifest.json` es la tabla de recursos y la declaración de compatibilidad. Sus claves van en **camelCase** (D-68); el JSON del documento conserva el snake_case de `gafira-doc`. Campos obligatorios:
 
 - `format`: literal `gafira-project`.
 - `formatVersion`: versión semántica del formato contenedor (inicial `1.0.0`).
 - `schemaVersion`: versión del documento (inicial `1`).
 - `projectId`, `createdAt`, `updatedAt`, `generator`.
-  - *Nota (D-63)*: `projectId` es el UUID del proyecto que se genera al crearlo y que 02 §7.1 ya guarda en el manifiesto como `project_id`. Es ese mismo UUID, porque la recuperación lo usa (las versiones viven dentro del `.gaf`, D-67); «Guardar copia» asigna uno nuevo y «Guardar como» conserva el del proyecto. Falta decidir si importar un `.gaf` conserva su `projectId` o asigna uno nuevo.
+  - *Nota (D-63, D-68)*: `projectId` es el UUID del proyecto que se genera al crearlo; el manifiesto lo guarda como `projectId` y `document.json` como `project_id` (02 §7.1). Es ese mismo UUID, porque la recuperación lo usa (las versiones viven dentro del `.gaf`, D-67); «Guardar copia» asigna uno nuevo y «Guardar como» conserva el del proyecto. Falta decidir si importar un `.gaf` conserva su `projectId` o asigna uno nuevo.
 - `profile`: `portable-full | linked-light | hybrid`.
-- `document`: ruta y hash del documento.
+- `document`: ruta y hash BLAKE3 del documento.
 - `features.required[]` y `features.optional[]`: capacidades identificadas (ej. `video.timeline.v1`).
-- `resources[]`: `id`, `kind`, `mimeType`, `byteLength`, `sha256` (si se materializó), `storage`, `path` y/o `external`, `originalFilename` opcional, `metadata`.
+- `resources[]`: `id`, `kind`, `mimeType`, `byteLength`, `blake3` (si se materializó; D-68), `storage`, `path` y/o `external`, `originalFilename` opcional, `metadata`.
 - `packageCompleteness`: `complete | partial`; `missingResources[]` para recursos no empaquetados ni accesibles en exportación.
 
 ```json
@@ -118,9 +112,9 @@ mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
   "profile": "portable-full",
   "features": {
     "required": ["design.pages.v1", "video.timeline.v1", "animation.keyframes.v1"],
-    "optional": ["previews.v1"]
+    "optional": ["thumbs.v1"]
   },
-  "document": { "path": "document.json", "sha256": "<sha256-real>" },
+  "document": { "path": "document.json", "blake3": "<blake3-real>" },
   "packageCompleteness": "complete",
   "missingResources": [],
   "resources": [
@@ -129,13 +123,13 @@ mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
       "kind": "video",
       "mimeType": "video/mp4",
       "byteLength": 12345678,
-      "sha256": "<sha256-real>",
+      "blake3": "<blake3-real>",
       "storage": "embedded",
-      "path": "assets/video/<sha256-real>.mp4",
+      "path": "assets/<blake3-real>.mp4",
       "originalFilename": "clip-original.mp4",
       "metadata": {
         "width": 1920, "height": 1080,
-        "durationTicks": "900000", "timebase": { "num": 1, "den": 90000 },
+        "duration": 7056000000,
         "videoCodec": "avc1", "hasAudio": true
       }
     }
@@ -143,7 +137,7 @@ mi-proyecto.gaf                           # ZIP / ZIP64 cuando proceda
 }
 ```
 
-Los hashes ilustrativos de los ejemplos NO son válidos para un paquete real. Se calculan sobre los bytes definitivos; `document.json` no contiene el hash del manifest para evitar dependencia circular.
+Los hashes ilustrativos de los ejemplos NO son válidos para un paquete real. `duration` está en flicks (D-69). La forma final de la tabla de recursos (`resources[]` de esta sección frente a `assets` por hash de 02 §7.1) la fija la spec del formato (D-68). Se calculan sobre los bytes definitivos; `document.json` no contiene el hash del manifest para evitar dependencia circular.
 
 ### 5.1 Recursos externos
 
@@ -181,22 +175,22 @@ Para texto: contenido, spans, familias y sustituciones de tipografía, métricas
 
 El proyecto guarda las **decisiones de edición** y referencias a los masters; no guarda el render MP4 como sustituto de la timeline. Un proyecto puede tener páginas estáticas y secuencias audiovisuales. Una página/escena puede servir como composición gráfica superpuesta a un video.
 
-**Entidad `sequence`:** `id`, `name`, `width`, `height`, `pixelAspectRatio`, `fps` racional (`num`/`den`), `durationTicks`, `timebase`, `background`, `audioSampleRate`, `channels`, `tracks[]`, `markers[]`.
+**Entidad `sequence`:** `id`, `name`, `width`, `height`, `pixelAspectRatio`, `fps` racional (`num`/`den`), `duration` (flicks), `background`, `audioSampleRate`, `channels`, `tracks[]`, `markers[]`.
 
 **Entidad `track`:** `id`, `kind` (`video|audio|overlay|caption`), `name`, `enabled`, `locked`, `muted`, `solo` (cuando aplique), `order`, `items[]`. Se admiten solapes en pistas distintas y, cuando la semántica lo indique, composiciones sobre una misma pista; no inferir automáticamente qué elemento gana.
 
-**Entidad `clip`:** `id`, `assetId` o `sceneId`, `timelineStartTicks`, `timelineDurationTicks`, `sourceInTicks`, `sourceOutTicks`, `sourceTimebase`, `playbackRate` racional, `reverse` opcional, `transform`, `crop`, `opacity`, `volumeDb` y `effects[]`. `timelineDurationTicks` determina duración de la instancia en la secuencia, distinta de la duración total del medio.
+**Entidad `clip`:** `id`, `assetId` o `sceneId`, `timelineStart`, `timelineDuration`, `sourceIn`, `sourceOut` (todos en flicks), `playbackRate` racional, `reverse` opcional, `transform`, `crop`, `opacity`, `volumeDb` y `effects[]`. `timelineDuration` determina duración de la instancia en la secuencia, distinta de la duración total del medio.
 
 **Entidades adicionales:** `transition`, `keyframeTrack`, `marker`, `caption`, `audioEnvelope`, `generator` (fondo, título, color).
 
 ### 7.2 Semántica temporal precisa
 
-- Todos los tiempos en el documento se expresan como enteros **decimales serializados en string** (`"12345"`) para que JS no pierda precisión cuando exceden `Number.MAX_SAFE_INTEGER`.
-- `timebase = {"num": 1, "den": 90000}` significa 90 000 ticks/segundo (valor ilustrativo, no requisito universal). La secuencia declara su propia base temporal y cada source puede declarar otra.
-- `fps = {"num": 30000, "den": 1001}` representa aproximadamente 29,97 cuadros/segundo. El FPS controla el muestreo/render, no convierte tiempos a floats.
-- Tiempo absoluto: `segundos = ticks × timebase.num / timebase.den`; toda conversión se realiza racionalmente, con redondeo documentado en límites.
-- Intervalos de clips y marcas son semiabiertos `[start, start+duration)`; `durationTicks` es no negativo y `sourceOutTicks > sourceInTicks` salvo tipos de elemento sin fuente.
-- Para velocidad positiva constante: duración editorial = duración fuente / velocidad, tras conversión de bases temporales y reglas de redondeo. `reverse` cambia el sentido del muestreo; no invierte la posición temporal del clip.
+- Todos los tiempos en el documento se expresan como **enteros de flicks** (1/705 600 000 s), el mismo tipo `Flicks` de `gafira-time` que se usa en memoria (D-69). Se escriben como enteros JSON, como hace `Flicks` con serde: 2^53 flicks son unos 147 días, dentro del rango entero seguro de JSON, así que no hace falta serializarlos como string.
+- No hay `timebase` por secuencia ni por source: un flick divide exactamente los fotogramas de 24, 25, 30, 50 y 60 fps, de 24000/1001 y 30000/1001 fps, y las muestras de 44,1 y 48 kHz.
+- `fps = {"num": 30000, "den": 1001}` representa aproximadamente 29,97 cuadros/segundo; es la cadencia racional de la secuencia. El FPS controla el muestreo/render, no convierte tiempos a floats.
+- Tiempo absoluto: `segundos = flicks / 705 600 000`; toda conversión se realiza racionalmente, con redondeo documentado en límites.
+- Intervalos de clips y marcas son semiabiertos `[start, start+duration)`; `duration` es no negativo y `sourceOut > sourceIn` salvo tipos de elemento sin fuente.
+- Para velocidad positiva constante: duración editorial = duración fuente / velocidad, con las reglas de redondeo de `gafira-time`. `reverse` cambia el sentido del muestreo; no invierte la posición temporal del clip.
 - Video VFR puede importarse y conservarse como fuente VFR; el editor decodifica según timestamps de presentación y el render muestrea según FPS de salida. No asumir que frame index = timestamp.
 - Los keyframes se definen con dominio temporal explícito (`sequence`, `clip` o `source`), propiedad (ruta tipada) e interpolación (`hold`, `linear`, `bezier`).
 - Audio se mezcla por tiempo real de muestra; `audioSampleRate` determina la renderización, no implica recomprimir el master al abrir.
@@ -220,8 +214,8 @@ El proyecto guarda las **decisiones de edición** y referencias a los masters; n
 
 ### 7.4 Proxies, calidad y portabilidad
 
-- Master siempre autoritativo. Proxy tiene `derivedFromAssetId`, `sourceSha256`, parámetros de generación y se invalida si cambia el origen.
-- Proxies/waveforms/thumbs se excluyen por defecto del ZIP portable para controlar el tamaño, salvo opción «incluir proxies para rendimiento».
+- Master siempre autoritativo. Proxy tiene `derivedFromAssetId`, `sourceBlake3`, parámetros de generación y se invalida si cambia el origen.
+- Proxies y waveforms **nunca** van en el `.gaf`, en ningún perfil; viven en la caché del usuario (D-68, 02 §7.1). Las miniaturas por página van en `thumbs/`.
 - El paquete portátil completo **incluye master de cada clip utilizado** y audio asociado siempre que permisos/licencias lo permitan. Esto puede producir archivos grandes (GB); usar ZIP64, copia/streaming sin cargarlo todo en RAM y progreso de escritura.
 - `linked-light` y `hybrid` pueden incluir únicamente `assetId`, hash, nombre original y pistas de ubicación/revinculación.
 - Los codecs soportados dependen de navegador, SO, infraestructura y capacidades de decodificación; el formato GAF no impone un codec universal. El importador DEBE reportar cuando una fuente no puede decodificarse. Una versión proxy compatible PUEDE facilitar previsualización sin sustituir el original.
@@ -236,8 +230,7 @@ El proyecto guarda las **decisiones de edición** y referencias a los masters; n
   "width": 1080,
   "height": 1920,
   "fps": { "num": 30000, "den": 1001 },
-  "timebase": { "num": 1, "den": 90000 },
-  "durationTicks": "900000",
+  "duration": 7056000000,
   "audioSampleRate": 48000,
   "channels": 2,
   "tracks": [
@@ -250,11 +243,10 @@ El proyecto guarda las **decisiones de edición** y referencias a los masters; n
           "type": "clip",
           "id": "clip-01",
           "assetId": "asset-video-01",
-          "timelineStartTicks": "0",
-          "timelineDurationTicks": "450000",
-          "sourceInTicks": "90000",
-          "sourceOutTicks": "540000",
-          "sourceTimebase": { "num": 1, "den": 90000 },
+          "timelineStart": 0,
+          "timelineDuration": 3528000000,
+          "sourceIn": 705600000,
+          "sourceOut": 4233600000,
           "playbackRate": { "num": 1, "den": 1 },
           "reverse": false,
           "transform": { "x": 0, "y": 0, "scaleX": 1, "scaleY": 1, "rotationDeg": 0 },
@@ -272,11 +264,10 @@ El proyecto guarda las **decisiones de edición** y referencias a los masters; n
           "type": "clip",
           "id": "music-01",
           "assetId": "asset-audio-01",
-          "timelineStartTicks": "0",
-          "timelineDurationTicks": "900000",
-          "sourceInTicks": "0",
-          "sourceOutTicks": "900000",
-          "sourceTimebase": { "num": 1, "den": 90000 },
+          "timelineStart": 0,
+          "timelineDuration": 7056000000,
+          "sourceIn": 0,
+          "sourceOut": 7056000000,
           "playbackRate": { "num": 1, "den": 1 },
           "volumeDb": -6,
           "effects": [],
@@ -289,13 +280,13 @@ El proyecto guarda las **decisiones de edición** y referencias a los masters; n
 }
 ```
 
-La secuencia anterior ilustra objetos independientes y referencias. En un validador real DEBE verificarse que los recursos referenciados existan y que duración y rango fuente sean consistentes con el medio y la velocidad.
+La secuencia anterior ilustra objetos independientes y referencias. Los tiempos están en flicks (D-69): 7 056 000 000 son 10 s. Los nombres de clave son conceptuales: el `sequences/<id>.json` real usa los de `gafira-doc`, en snake_case (D-68). En un validador real DEBE verificarse que los recursos referenciados existan y que duración y rango fuente sean consistentes con el medio y la velocidad.
 
 ### 7.6 Transiciones y composición de escena
 
-Una transición tendrá `id`, `kind` (ej. `crossfade`, `dip-to-black`, `wipe`), `fromClipId`, `toClipId`, `startTicks`, `durationTicks`, `params`. Para evitar ambigüedad, su intervalo DEBE pertenecer al área de solape efectivo o a una región explícitamente definida por la transición; el render no debe inventar fotogramas ausentes. Implementaciones con modelos de transición diferentes deberían migrarlos a una representación común.
+Una transición tendrá `id`, `kind` (ej. `crossfade`, `dip-to-black`, `wipe`), `fromClipId`, `toClipId`, `start` y `duration` (flicks), `params`. Para evitar ambigüedad, su intervalo DEBE pertenecer al área de solape efectivo o a una región explícitamente definida por la transición; el render no debe inventar fotogramas ausentes. Implementaciones con modelos de transición diferentes deberían migrarlos a una representación común.
 
-Una escena gráfica se puede referenciar desde un clip `sceneId`, con `localTime` y duración, de forma que títulos/animaciones se dibujen en la misma timeline. Objetos de diseño estáticos también pueden tener `visibleFromTicks` y `visibleUntilTicks` en contextos audiovisuales.
+Una escena gráfica se puede referenciar desde un clip `sceneId`, con `localTime` y duración, de forma que títulos/animaciones se dibujen en la misma timeline. Objetos de diseño estáticos también pueden tener `visibleFrom` y `visibleUntil` (flicks) en contextos audiovisuales.
 
 ## 8. Ejemplo simplificado de `document.json`
 
@@ -337,8 +328,7 @@ Una escena gráfica se puede referenciar desde un clip `sceneId`, con `localTime
       "name": "Video promocional",
       "width": 1080, "height": 1920,
       "fps": { "num": 30, "den": 1 },
-      "timebase": { "num": 1, "den": 90000 },
-      "durationTicks": "270000",
+      "duration": 2116800000,
       "audioSampleRate": 48000,
       "channels": 2,
       "tracks": [],
@@ -349,7 +339,7 @@ Una escena gráfica se puede referenciar desde un clip `sceneId`, con `localTime
 }
 ```
 
-El ejemplo no sustituye JSON Schema formal; los componentes de implementación DEBEN compartir tipos y validadores. El manifest registra todos los `assetId` referenciados.
+El ejemplo es conceptual: con D-68, las páginas y las secuencias van en `pages/<id>.json` y `sequences/<id>.json`, no dentro de `document.json`, y las claves son las de `gafira-doc`, en snake_case; los tiempos están en flicks (D-69). El ejemplo no sustituye JSON Schema formal; los componentes de implementación DEBEN compartir tipos y validadores. El manifest registra todos los `assetId` referenciados.
 
 ## 9. Guardado, apertura y recuperación
 
@@ -404,7 +394,7 @@ El ejemplo no sustituye JSON Schema formal; los componentes de implementación D
 - Usar streaming y acceso aleatorio al directorio ZIP; evitar cargar assets de GB en memoria.
 - Imágenes/video se decodifican a demanda; cachés de RAM/IndexedDB controladas por presupuesto.
 - Proxies de video a resolución baja y waveform de audio por hash del original; reconstrucción asíncrona sin bloquear apertura.
-- Deduplicar blobs por SHA-256 y mantener referencias lógicas múltiples.
+- Deduplicar blobs por BLAKE3 (D-68) y mantener referencias lógicas múltiples.
 - No recomprimir multimedia sin ganancia y no transcodificar masters de manera automática.
 - En proyectos enormes, ofrecer modo `linked-light` y alertar sobre tamaño/coste de portabilidad.
 - Al modificar solo metadatos, permitir reusar bytes de blobs sin redecodificarlos; aunque se regenere el ZIP, no se necesita reencodificar video ni imágenes.
@@ -417,7 +407,7 @@ Los valores concretos deben ser configurables según despliegue/plataforma; como
 - Máximo inicial de 100 000 entradas; límite de nombre de ruta 512 caracteres y profundidad 16.
 - Ratio de expansión sospechoso >100:1 exige inspección/rechazo según tipo de archivo y política; nunca confiar solo en el ratio.
 - Control de tamaño total expandido y tamaño individual antes de crear buffers. Un video de varios GB puede ser legítimo y no debe descargarse entero a RAM.
-- Verificar coherencia de duración, FPS/base temporal, divisiones por cero, rangos, IDs duplicados, rutas y hashes.
+- Verificar coherencia de duración, FPS, divisiones por cero, rangos, IDs duplicados, rutas y hashes.
 
 Estas cifras son parámetros operativos de ejemplo y DEBEN ajustarse con pruebas de rendimiento, carga y seguridad.
 
@@ -464,7 +454,7 @@ Estas cifras son parámetros operativos de ejemplo y DEBEN ajustarse con pruebas
 8. El lector detecta versiones futuras/capacidades obligatorias no soportadas y evita sobrescribir o truncar información desconocida.
 9. Una edición de texto no obliga a retransmitir blobs de imágenes, video ni audio a la nube.
 10. Los medios externos restringidos por licencia no se empaquetan clandestinamente: la UI comunica las limitaciones antes de exportar.
-11. Los proyectos con `fps=30000/1001` y `fps=24000/1001` no presentan deriva acumulativa por uso de tiempo flotante.
+11. Los proyectos con `fps=30000/1001` y `fps=24000/1001` no presentan deriva acumulativa por uso de tiempo flotante (los flicks dividen esos fotogramas exactamente, D-69).
 12. Los resultados de exportación audiovisuales son independientes del documento editable, con presets reproducibles.
 
 ## 16. Casos de prueba mínimos
@@ -490,7 +480,7 @@ Las siguientes no impiden implementar v1, pero exigen ADR antes de ampliar capac
 - Perfil de exportación encriptada/firma y distribución comercial de plantillas.
 - Perfiles de color de producción y HDR.
 - Semántica avanzada para remapeo de velocidad variable y efectos temporales.
-- Qué hace cada perfil (§3) con una fuente del usuario incrustable (por ejemplo, si `linked-light` la vincula y `portable-full` la empaqueta en `fonts/`). *Nota (D-60)*: la regla de licencia ya está decidida (incrustar según los bits `fsType` de OpenType; si no se permite, vincular por nombre y avisar de la fuente que falta al abrir); esta decisión solo fija el comportamiento por perfil (§3, §4; D-67: hay un solo formato).
+- Qué hace cada perfil (§3) con una fuente del usuario incrustable (por ejemplo, si `linked-light` la vincula y `portable-full` la empaqueta en `assets/`, D-68). *Nota (D-60)*: la regla de licencia ya está decidida (incrustar según los bits `fsType` de OpenType; si no se permite, vincular por nombre y avisar de la fuente que falta al abrir); esta decisión solo fija el comportamiento por perfil (§3, §4; D-67: hay un solo formato).
 
 ## 18. Referencias técnicas
 
