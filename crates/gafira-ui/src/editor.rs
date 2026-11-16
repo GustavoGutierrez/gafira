@@ -87,6 +87,8 @@ struct Asked {
     delete: bool,
     /// A placement typed in the Inspector for the selected element.
     place: Option<Placement>,
+    /// Ver → Modo oscuro switched to this value (D-82).
+    dark: Option<bool>,
 }
 
 /// What the top bar shows about the session.
@@ -217,13 +219,22 @@ impl Editor {
                     }
                 }
             });
-            for key in [
-                gafira_doc::msg!("menu.edit"),
-                gafira_doc::msg!("menu.view"),
-                gafira_doc::msg!("menu.size"),
-            ] {
-                widgets::on_topbar(ui, theme, texts.t(&key), false);
-            }
+            widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.edit")), false);
+            let view = RichText::new(texts.t(&gafira_doc::msg!("menu.view")))
+                .font(theme.font("ui-label"))
+                .color(theme.c("topbar.fg.muted"));
+            ui.menu_button(view, |ui| {
+                ui.set_min_width(200.0);
+                let mut dark = theme.dark;
+                if ui
+                    .checkbox(&mut dark, texts.t(&gafira_doc::msg!("view.dark_mode")))
+                    .changed()
+                {
+                    asked.dark = Some(dark);
+                    ui.close();
+                }
+            });
+            widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.size")), false);
             ui.add_space(24.0);
             ui.label(
                 RichText::new(
@@ -711,7 +722,9 @@ impl Editor {
                     .map(drop),
             );
         }
-        if asked.home {
+        if let Some(dark) = asked.dark {
+            Go::Dark(dark)
+        } else if asked.home {
             Go::Home
         } else if let Some(action) = asked.file {
             Go::File(action)
@@ -756,6 +769,7 @@ pub(crate) mod tests {
     };
     use gafira_ports::license::NoLicensing;
     use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
+    use gafira_ports::settings::Settings;
     use gafira_ports::store::{ContentStore, StoreError};
     use gafira_ports::system::ReadSeek;
 
@@ -1036,5 +1050,31 @@ pub(crate) mod tests {
         assert_eq!(editor.selected, None);
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine).len(), 1, "delete is undoable");
+    }
+
+    // S21-02
+    #[test]
+    fn s21_02_dark_mode_is_asked_for_and_the_settings_keep_it() {
+        use gafira_ports::settings::Appearance;
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let snapshot = engine.edit().document();
+        assert!(matches!(
+            run(
+                &mut engine,
+                &snapshot,
+                &Asked {
+                    dark: Some(true),
+                    ..Asked::default()
+                }
+            ),
+            Go::Dark(true)
+        ));
+        let settings = engine.settings().get().with_appearance(Appearance::Dark);
+        engine.settings().set(settings).expect("saves");
+        let again = super::tests::engine();
+        again.settings().start().expect("loads");
+        assert_eq!(again.settings().get().appearance, Appearance::Dark);
+        again.settings().set(Settings::default()).expect("resets");
     }
 }

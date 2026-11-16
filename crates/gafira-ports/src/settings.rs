@@ -20,9 +20,31 @@ use crate::i18n::LanguagePreference;
 pub struct Settings {
     /// The interface language: `"system"` (default), `"es"` or `"en"`.
     pub language: LanguagePreference,
+    /// Light or dark interface (D-82, spec 021): `"light"` (default) or
+    /// `"dark"`.
+    pub appearance: Appearance,
+}
+
+/// The interface mode (03 §3, D-82). Any text other than `"dark"` reads as
+/// light, so a file from a newer build never fails to load.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    Dark,
+    // Last, because `serde(other)` must be: unknown text reads as light.
+    #[default]
+    #[serde(other)]
+    Light,
 }
 
 impl Settings {
+    /// These settings with `appearance` in place of the current one.
+    #[must_use]
+    pub const fn with_appearance(mut self, appearance: Appearance) -> Self {
+        self.appearance = appearance;
+        self
+    }
+
     /// These settings with `language` in place of the current one.
     #[must_use]
     pub const fn with_language(mut self, language: LanguagePreference) -> Self {

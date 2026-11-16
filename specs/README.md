@@ -47,6 +47,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 018 | [La UI sobre el engine y `gafira-platform`](done/018-ui-engine-platform.md) | Adaptadores reales de archivos, reloj, UUID, idioma y ajustes; la ventana crea el documento, dibuja sus páginas y deshace/rehace por el engine; 8 tests nuevos |
 | 019 | [`gafira-format` y el menú Archivo](done/019-gaf-format-and-file-menu.md) | `.gaf` con la disposición de D-68: escritura determinista, lectura como archivo hostil, solo lectura para lo futuro; Abrir, Guardar, Guardar como y Guardar copia en la ventana; 12 tests nuevos |
 | 020 | [Primeras piezas en el lienzo](done/020-canvas-first-pieces.md) | Rectángulos y elipses desde Piezas; selección, arrastre en un solo deshacer, posición y tamaño en el Inspector, borrar; 5 tests nuevos |
+| 021 | [Menú Ver: modo oscuro](done/021-view-menu-dark-mode.md) | `Settings.appearance` y Ver → Modo oscuro con los tokens de D-82, recordado entre sesiones |
 
 ### Historial del flujo anterior
 
@@ -63,4 +64,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **021**.
+Siguiente ID libre: **022**.
