@@ -3,12 +3,12 @@
 use gafira_color::{Color, Rgba};
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
-    BlendMode, DocMut, Document, Dpi, GroupNode, NodeId, NodeKind, PageId, PageSize, Placement,
-    ShapeGeometry, ShapeNode,
+    AssetEntry, AssetRef, AssetStorage, BlendMode, ContentHash, DocMut, Document, Dpi, GroupNode,
+    NodeId, NodeKind, PageId, PageSize, Placement, ShapeGeometry, ShapeNode,
 };
 use gafira_edit::{
-    Applied, Command, CommandError, DirtySet, GestureId, InsertNodes, InsertPage, NodeSpec,
-    Property, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction,
+    Applied, Command, CommandError, DirtySet, GestureId, InsertAsset, InsertNodes, InsertPage,
+    NodeSpec, Property, RemoveNodes, RemovePage, Reorder, Reparent, SetProperty, Transaction,
 };
 use gafira_geom::{Length, Unit};
 use gafira_testkit::prop_command;
@@ -344,6 +344,28 @@ fn remove_page(doc: &Document) -> BoxedStrategy<RemovePage> {
 #[test]
 fn remove_page_obeys_the_command_laws() {
     prop_command(remove_page);
+}
+
+/// A reference the document already has now and then, so the `Unchanged`
+/// path runs too, and otherwise a new one; either storage (spec 011).
+fn insert_asset(doc: &Document) -> BoxedStrategy<InsertAsset> {
+    let mut known: Vec<AssetRef> = doc.assets().keys().copied().collect();
+    known.push(AssetRef::new(ContentHash([7; 32])));
+    let reference = prop_oneof![
+        prop::sample::select(known),
+        any::<[u8; 32]>().prop_map(|bytes| AssetRef::new(ContentHash(bytes))),
+    ];
+    let storage = prop_oneof![Just(AssetStorage::Embedded), Just(AssetStorage::Linked)];
+    (reference, "[a-z]{0,8}", storage)
+        .prop_map(|(reference, name, storage)| {
+            InsertAsset::new(reference, AssetEntry { name, storage })
+        })
+        .boxed()
+}
+
+#[test]
+fn insert_asset_obeys_the_command_laws() {
+    prop_command(insert_asset);
 }
 
 /// One child of a generated transaction. Every step is valid on any
