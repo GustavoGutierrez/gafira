@@ -247,6 +247,77 @@ pub(crate) fn engine_with_settings(settings: &Arc<MemorySettings>) -> Gafira {
     engine
 }
 
+/// A verifier the test scripts: `status` returns the stored state, and each
+/// `activate`, `validate` and `deactivate` pops the next scripted outcome.
+pub(crate) struct ScriptedLicense {
+    status: Mutex<LicenseStatus>,
+    outcomes: Mutex<Vec<Result<LicenseStatus, LicenseError>>>,
+    nows: Mutex<Vec<UnixTime>>,
+}
+
+impl ScriptedLicense {
+    /// A verifier in `status`, with `outcomes` for the next network calls in
+    /// call order. A successful outcome also becomes the stored state.
+    pub(crate) fn new(
+        status: LicenseStatus,
+        outcomes: Vec<Result<LicenseStatus, LicenseError>>,
+    ) -> Self {
+        Self {
+            status: Mutex::new(status),
+            outcomes: Mutex::new(outcomes.into_iter().rev().collect()),
+            nows: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Every `now` the verifier was called with, in order.
+    pub(crate) fn nows(&self) -> Vec<UnixTime> {
+        lock(&self.nows).clone()
+    }
+
+    fn next(&self) -> Result<LicenseStatus, LicenseError> {
+        let outcome = lock(&self.outcomes)
+            .pop()
+            .expect("a scripted outcome for this call");
+        if let Ok(status) = &outcome {
+            *lock(&self.status) = status.clone();
+        }
+        outcome
+    }
+}
+
+impl LicenseVerifier for ScriptedLicense {
+    fn status(&self, now: UnixTime) -> LicenseStatus {
+        lock(&self.nows).push(now);
+        lock(&self.status).clone()
+    }
+
+    fn activate(
+        &self,
+        _key: &LicenseKey,
+        _label: Option<&str>,
+    ) -> Result<LicenseStatus, LicenseError> {
+        self.next()
+    }
+
+    fn validate(&self, now: UnixTime) -> Result<LicenseStatus, LicenseError> {
+        lock(&self.nows).push(now);
+        self.next()
+    }
+
+    fn deactivate(&self) -> Result<(), LicenseError> {
+        self.next().map(|_| ())
+    }
+}
+
+/// An engine whose licence is `license` and whose clock says `now` is
+/// [`ManualClock::NOW`]; the licence is not started.
+pub(crate) fn engine_with_license(license: Arc<dyn LicenseVerifier>) -> Gafira {
+    let mut ports = six_ports();
+    ports.license = license;
+    ports.clock = Arc::new(ManualClock::at(Duration::ZERO));
+    Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine")
+}
+
 pub(crate) fn config() -> EngineConfig {
     EngineConfig::new("/data/gafira").expect("a valid data directory")
 }

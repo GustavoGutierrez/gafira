@@ -13,7 +13,7 @@ use std::time::Duration;
 use gafira_ports::common::Bytes;
 use gafira_ports::format::FormatRegistry;
 use gafira_ports::i18n::LocaleResolver;
-use gafira_ports::license::LicenseVerifier;
+use gafira_ports::license::{LicenseError, LicenseVerifier};
 use gafira_ports::media::CodecRegistry;
 use gafira_ports::repository::{ProjectRepository, RepositoryError};
 use gafira_ports::settings::{SettingsError, SettingsRepository};
@@ -29,6 +29,7 @@ use gafira_edit::CommandError;
 use crate::bus::EventChannel;
 use crate::edit::EditService;
 use crate::event::{EngineEvent, EventBus};
+use crate::license::LicenseService;
 use crate::project::ProjectService;
 use crate::session::Shared;
 use crate::settings::SettingsService;
@@ -248,6 +249,8 @@ pub enum EngineError {
     Io(std::io::Error),
     /// The settings port failed (spec 009).
     Settings(SettingsError),
+    /// The licence port failed or refused (spec 010).
+    License(LicenseError),
 }
 
 impl fmt::Display for EngineError {
@@ -263,6 +266,7 @@ impl fmt::Display for EngineError {
             Self::NoPath => f.write_str("the project has no file yet"),
             Self::Io(e) => write!(f, "file system error: {e}"),
             Self::Settings(e) => write!(f, "settings error: {e}"),
+            Self::License(e) => write!(f, "licence error: {e}"),
         }
     }
 }
@@ -286,6 +290,7 @@ impl ToMessage for EngineError {
             Self::NoPath => msg!("error.engine.no_path"),
             Self::Io(_) => msg!("error.engine.io"),
             Self::Settings(e) => e.to_message(),
+            Self::License(e) => e.to_message(),
         }
     }
 }
@@ -311,6 +316,12 @@ impl From<CommandError> for EngineError {
 impl From<std::io::Error> for EngineError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)
+    }
+}
+
+impl From<LicenseError> for EngineError {
+    fn from(e: LicenseError) -> Self {
+        Self::License(e)
     }
 }
 
@@ -340,6 +351,7 @@ pub struct Gafira {
     projects: ProjectService,
     edit: EditService,
     settings: SettingsService,
+    license: LicenseService,
 }
 
 impl Gafira {
@@ -361,6 +373,11 @@ impl Gafira {
         let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
         let projects = ProjectService::over(shared, &ports, &config);
         let settings = SettingsService::over(&ports.settings, bus.clone());
+        let license = LicenseService::over(
+            Arc::clone(&ports.license),
+            Arc::clone(&ports.clock),
+            bus.clone(),
+        );
         Ok(Self {
             ports,
             registries,
@@ -370,6 +387,7 @@ impl Gafira {
             projects,
             edit,
             settings,
+            license,
         })
     }
 
@@ -390,6 +408,14 @@ impl Gafira {
     #[must_use]
     pub fn settings(&self) -> &SettingsService {
         &self.settings
+    }
+
+    /// The licence state and its actions (02 §5.4 line 1363, spec 010).
+    /// Whether a licence is required at all is the injected verifier's
+    /// choice (D-58).
+    #[must_use]
+    pub fn license(&self) -> &LicenseService {
+        &self.license
     }
 
     /// The configuration this engine was built with.

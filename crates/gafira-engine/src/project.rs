@@ -522,6 +522,20 @@ mod tests {
         }
     }
 
+    // Spec 010, S10-08 (D-55): an unlicensed engine saves like any other;
+    // the licence takes no part in saving.
+    #[test]
+    fn s10_08_saving_never_asks_the_licence() {
+        let (engine, _fs, _repository) = opened_and_edited(false);
+        assert_eq!(
+            engine.license().status(),
+            gafira_ports::license::LicenseStatus::Unlicensed
+        );
+        assert!(!engine.license().can_export());
+        engine.projects().save().expect("an unlicensed save");
+        assert!(!engine.projects().is_modified());
+    }
+
     // ARQ-50
     #[test]
     fn ac4_a_save_cleans_at_the_snapshot_and_a_later_edit_keeps_it_modified() {
