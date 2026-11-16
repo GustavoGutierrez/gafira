@@ -32,6 +32,7 @@ gafira-theme = { path = "crates/gafira-theme" }
 gafira-ui = { path = "crates/gafira-ui" }
 gafira-platform = { path = "crates/gafira-platform" }
 gafira-format = { path = "crates/gafira-format" }
+gafira-assets = { path = "crates/gafira-assets" }
 gafira-i18n = { path = "crates/gafira-i18n" }
 blake3 = "1"
 crossbeam-channel = "0.5"

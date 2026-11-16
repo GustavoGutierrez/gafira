@@ -1490,6 +1490,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-assets"
+version = "0.1.0-beta.2"
+dependencies = [
+ "blake3",
+ "gafira-doc",
+ "gafira-ports",
+]
+
+[[package]]
 name = "gafira-audio"
 version = "0.1.0-beta.2"
 dependencies = [
