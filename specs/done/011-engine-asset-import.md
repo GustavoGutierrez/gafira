@@ -1,6 +1,6 @@
 # 011 — `AssetService::import` del engine (recursos embebidos)
 
-> **Estado:** in-progress — 2026-11-16 — E6 del change `gafira-engine` ([carpeta legacy](done/legacy/changes/gafira-engine/design.md)), parte del MVP.
+> **Estado:** done — 2026-11-16 — E6 del change `gafira-engine` ([carpeta legacy](legacy/changes/gafira-engine/design.md)), parte del MVP; S11-01..S11-06 cubiertos por `gafira-edit` `assets::tests` (4) y `gafira-engine` `assets::tests` (5); 4 mutantes a mano muertos (uno, tras añadir el test directo de `revert`); 2667 tests. Medios vinculados, `relocate` y `LinksMissing` siguen en Fase 2.
 
 ## Objetivo
 
