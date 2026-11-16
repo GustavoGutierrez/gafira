@@ -18,6 +18,7 @@ mod pages;
 mod remove_nodes;
 mod reorder;
 mod reparent;
+mod restore;
 mod set_property;
 mod transaction;
 
@@ -31,5 +32,6 @@ pub use pages::{InsertPage, RemovePage};
 pub use remove_nodes::RemoveNodes;
 pub use reorder::Reorder;
 pub use reparent::Reparent;
+pub use restore::RestoreVersion;
 pub use set_property::{Property, SetProperty};
 pub use transaction::Transaction;

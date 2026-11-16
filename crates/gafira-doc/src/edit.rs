@@ -125,6 +125,13 @@ impl DocMut<'_> {
         self.doc.next_id = self.doc.next_id.min(value);
     }
 
+    /// Raises the id counter to `value`, the counter of content being put
+    /// back (a restored version, spec 031), so no id of that content is
+    /// handed out again. A `value` at or below the counter is ignored.
+    pub fn raise_next_id(&mut self, value: u64) {
+        self.doc.next_id = self.doc.next_id.max(value);
+    }
+
     /// Sets the document resolution (not validated here).
     pub fn set_dpi(&mut self, dpi: Dpi) {
         self.doc.dpi = dpi;
