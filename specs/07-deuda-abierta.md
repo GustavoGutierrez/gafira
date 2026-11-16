@@ -13,12 +13,13 @@
 
 | Medida | Cifra |
 |---|---|
-| Ítems 39 a 77 | 39: 28 abiertos, 2 remiten a otro ítem (70, 71), 6 cerrados o solo registro (42, 51, 54, 64, 65, 69), 3 obsoletos por ADR 0018 (39, 41, 66) |
-| Ítems 104 a 111 | 8: 7 abiertos, 1 obsoleto por ADR 0018 (108) (archivo de `gafira-timeline`) |
-| Ítems 112 a 132 | 21: 19 abiertos, 1 solo registro (129), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
+| Ítems 39 a 77 | 39: 27 abiertos, 2 remiten a otro ítem (70, 71), 6 cerrados o solo registro (42, 51, 54, 64, 65, 69), 4 obsoletos por ADR 0018 (39, 41, 46, 66) |
+| Ítems 104 a 111 | 8: 6 abiertos, 1 no se corrige porque el registro legacy es inmutable (110), 1 obsoleto por ADR 0018 (108) (archivo de `gafira-timeline`) |
+| Ítems 112 a 132 | 21: 16 abiertos, 1 solo registro (129), 3 no se corrigen porque el registro legacy es inmutable (122, 127, 128), 1 obsoleto por ADR 0018 (115) (archivo de `gafira-render-cpu`; el ítem 126 agrupa cinco tamaños) |
 | Sobrevivientes del T4 de `gafira-text` | 66: **65 críticos**, 1 no crítico |
 | Sobrevivientes del T4 de `gafira-raster` | 48: **33 críticos**, 15 no críticos |
 | Total crítico de los dos crates | **98** |
+| Tras la spec 013 (D-66) | 57 muertos (42 de text, 15 de raster), 34 equivalentes excluidos en `.cargo/mutants.toml` (18 y 16), **7 sin matar** (5 y 2; ítems 74 y 75) |
 | Mutantes colgantes confirmados | 8, no son deuda (§3.1) |
 
 La cifra 104 (65 + 39) del informe de mutantes y del README no se sostiene al clasificar la lista cruda de raster; el detalle está en §2.1.
@@ -35,7 +36,6 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 43 | `Display` de `Cancelled` y `ParamError` sin test. | El titular decide si la spec fija el texto: un test por `Display`, o se acepta la exclusión. |
 | 44 | Diez sobrevivientes no críticos de `gafira-testkit`. | Se resuelve con el ítem 38, y se decide test o exclusión para `axis_length` y `failure_persistence`. |
 | 45 | ARQ-102 omite 8 enums sin dueño y su «Cumplimiento» está desactualizado. | Cada enum tiene dueño en la fila de 02 y «Cumplimiento» está al día. |
-| 46 | El registro de Flow-change de D1 no da pack ni motivo. | El próximo cambio de flujo los registra y se decide si la plantilla los exige. |
 | 47 | Los tests de atomicidad de `contract_cancel.rs` pierden potencia en máquinas pequeñas. | El titular aprueba `loom` o acepta el test actual. |
 | 48 | El manual técnico omite `gafira-doc` como dependencia de `gafira-pathops`. | La fila y la línea 89 quedan corregidas en los dos idiomas, según el `Cargo.toml`. |
 | 49 | T4 de `gafira-audio` sin resolver (§3.2, anexo A). | El titular decide si hay ronda de arreglo; en ese caso, `specifier` y test primero por sobreviviente. |
@@ -64,7 +64,6 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 106 | FV-04 citada sin un test que la nombre; la mitad de ARQ-13 sí quedó probada por TL3 (W5 de `gafira-timeline`). | El `specifier` decide si FV-04 se prueba en el change de comandos o se retira de la tarjeta. |
 | 107 | La cláusula de deshacer de AC10 no tiene código ni test; los comandos están diferidos por Q4 (W6 de `gafira-timeline`). | Se prueba en el change de comandos, con el camino de `gafira-edit::History`. |
 | 109 | La carga no reaplica las leyes del constructor: un lado de píxel cero y un marcador negativo cargan (TL3-S1 de `gafira-timeline`). | Se decide si la carga reaplica esas dos leyes y hay test. |
-| 110 | La tabla de commits del registro lista 6 de 8, y el golden mide 2 220 bytes, no 2 221 (TL3-S2 de `gafira-timeline`). | El registro archivado queda corregido al revisarlo; no bloquea. |
 | 111 | `.expect("{name} still loads")` no interpola en `timeline_wire.rs:336` (TL3-S3 de `gafira-timeline`). | El mensaje nombra la fixture y un fallo lo confirma. |
 | 112 | AC1 de CB2 pone la mezcla y la opacidad en `PushLayer`; el puerto las pone en `PopLayer` (W1 de `gafira-render-cpu`). | `specifier` decide si el registro deja constancia o enmienda AC1; las tarjetas archivadas no se editan. |
 | 113 | AC4 de CB2 cita un error de validación de plan que el puerto no tiene; `DriverBlocked` se reutiliza (W2 de `gafira-render-cpu`). | `architect` decide si el puerto gana la variante; si no, el registro lo declara. |
@@ -75,13 +74,10 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 119 | Una página sin raíces planifica una tarea por región y ningún test lo fija (W9 de CB3b). | Test primero: página sin raíces que pinta el fondo. |
 | 120 | El golden almacenado tiene una sola raíz; no hay golden entre plataformas con varias (S6 de CB3b). | El coordinador decide si se regenera sobre una escena multi-raíz. |
 | 121 | El sentido de la rotación no queda fijado: el tablero y el fixture de 45° son invariantes al signo (S7 de CB4). | `specifier` añade un caso que lo fije; test primero. |
-| 122 | Los renglones HM1 y HM2 del registro de CB4 no reproducen (S10 de CB4). | Se corrige el registro de CB4. |
 | 123 | El buffer dibujado del tile está fuera de la contabilidad y el pico acotado no es el del frame (W10 de CB5, ronda 2). | `architect` decide la contabilidad; después test. |
 | 124 | Una ROI decreciente antes de una que dilata deja un borde sin pedir; hoy es inalcanzable (W11 de CB5, ronda 2). | `specifier` nombra o excluye la forma; test si entra. |
-| 125 | SP7: el rectángulo de `ApplyMask` en espacio de página; máscara-luego-efecto no es equivalente por tiles (W4 de CB5, ronda 2; O16). | `specifier` responde SP7 en 02 §4.6 o lo excluye. Bloquea ARQ-134. |
+| 125 | SP7 del diseño de `gafira-render-cpu` (no es el SP7 de 02 §5.6): el rectángulo de `ApplyMask` en espacio de página; máscara-luego-efecto no es equivalente por tiles (W4 de CB5, ronda 2; O16). | `specifier` responde esa petición en 02 §4.6 o la excluye. Bloquea ARQ-134. |
 | 126 | Tamaños sin decisión registrada: CB3b W8 (576 frente a 180), CB4 S9 (1228 frente a 360), CB5 S2 (1586 frente a 420), CB5b W14 (378 frente a 120) y CB8 W19 (597 frente a 160). | El coordinador acepta o rechaza cada uno. Ninguno bloquea. |
-| 127 | Dos resbalones del registro de CB5b: sitios de construcción y cifras de src (S1 de CB5b). | Se corrige al revisar el registro; no bloquea. |
-| 128 | Una cifra del registro de CB8 sin la línea «con este registro» (S2 de CB8). | Se corrige la cifra; no bloquea. |
 | 130 | ARQ-143 no tiene regla para un tile más largo que su etapa de 8 ms (W22 de CB6). | `specifier` añade la regla; test después. |
 | 131 | D10 (opción a) y la fila 106 del diseño describen `GraphPageRenderer`; el bench arma el plan a mano (S11 de CB6). | `specifier` enmienda D10 y la fila 106. |
 | 132 | El contador de W15 solo ve `quantise_srgb8` (S14 de CB6). | Test primero con un segundo punto de conteo, o se deja constancia del alcance. |
@@ -99,9 +95,14 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 - **69**: resuelto. `crates/gafira-raster/proptest-regressions/` no existe en el árbol, así que no queda nada que borrar ni versionar; los archivos `*.proptest-regressions` de los demás crates están versionados (`git ls-files '*proptest-regressions'`: `gafira-anim`, `gafira-pathops`, `gafira-time`).
 - **39**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: Una entrada heredada de un outcome cerrado se toma como activa en una rama sin fusionar (W9 de `odd-lite`). Se cerraba cuando: La regla de resume de `coordinator.md` y `AGENTS.md` trata como heredada una entrada de una rama sin commit propio sobre `develop`.
 - **41**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: Timeout por el bloqueo del caché de paquetes de cargo que un re-run atrapa; «Hanging mutants» no lo nombra. Se cerraba cuando: Se decide si la regla lo cubre; si no, se nombra en `AGENTS.md` y en `verify`, o se sube `--minimum-test-timeout`.
+- **46**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: El registro de Flow-change de D1 no da pack ni motivo. Se cerraba cuando: El próximo cambio de flujo los registra y se decide si la plantilla los exige.
 - **66**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: «S1 con filas de cuelgue de layout», sin origen en los informes leídos. Se cerraba cuando: El coordinador confirma el origen antes de actuar.
 - **108**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: `tier: T0` en las tarjetas de TL2 y TL3, que escriben Rust crítico (S3 de `gafira-timeline`). Se cerraba cuando: El `specifier` corrige la etiqueta o deja constancia de que las tarjetas archivadas no se editan.
 - **115**: obsoleto por ADR 0018 (`docs/adr/0018-simple-spec-flow.md`): solo afecta al flujo multiagente retirado. Texto original: CB2 registra `tier: T0` para código crítico de Rust (S2 de CB2). Se cerraba cuando: Se corrige la etiqueta o se deja constancia, como el ítem 108.
+- **110**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: La tabla de commits del registro lista 6 de 8, y el golden mide 2 220 bytes, no 2 221 (TL3-S2 de `gafira-timeline`). Se cerraba cuando: El registro archivado queda corregido al revisarlo; no bloquea.
+- **122**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: Los renglones HM1 y HM2 del registro de CB4 no reproducen (S10 de CB4). Se cerraba cuando: Se corrige el registro de CB4.
+- **127**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: Dos resbalones del registro de CB5b: sitios de construcción y cifras de src (S1 de CB5b). Se cerraba cuando: Se corrige al revisar el registro; no bloquea.
+- **128**: no se corrige: los registros legacy son inmutables (`specs/README.md`). Texto original: Una cifra del registro de CB8 sin la línea «con este registro» (S2 de CB8). Se cerraba cuando: Se corrige la cifra; no bloquea.
 - **W15 de CB8** (contador de la curva sRGB en un frame): cerrado en CB6 por `afc55de`.
 - **W16 de CB8** (`read_rows` con el span del clip): cerrado en CB6 por `d2a2f49`; su gemelo de escritura (C3 de CB6) por `012b433`.
 - **W18 de CB8** (comparación de la vista previa en frío con ARQ-143): cerrado en CB6 por `74207ab`, la nota de diseño; el banco de vista previa está en `21707d6`.
@@ -114,12 +115,9 @@ Comprobados contra el árbol en esta rama. El README sigue mandando hasta que el
 | Ítem | Desajuste |
 |---|---|
 | 39 | Lo que pide «incluir `develop` en la comparación» ya está en `AGENTS.md:71` y `coordinator.md:17`. Sigue faltando tratar como heredada la entrada de una rama sin commit propio. `backup/pi-agent-sync-preverify` sigue 3 commits por delante. |
-| 42 | Los números de línea de 02 han cambiado: Q-19 está en la 1860 (el ítem dice 1772) y Q-20 en la 1861 (dice 1773). |
 | 53 | Da un margen de 2.3x para 96.8 ms. Con 100 ms de límite, ese margen es el de 43 ms (la cifra de Q-48); 96.8 ms deja 1,03x. Los 818 ms del ítem no aparecen en los informes de SG3. |
-| 54 | ARQ-133 ya recoge la regla de la banda (D-47, aplicado a 02 §4.17.6, ARQ-131 y ARQ-133). El ítem parece hecho. |
 | 56 | El ítem no dice qué redacción está mal. El origen probable es SG3-W1, y P-04 ya da «9 de 12». No se pudo confirmar qué falta. |
 | 60 | El mínimo ya está en ARQ-122 desde `1b159f9` (128 px con media 2×2, 640 px con bilineal o vecino). 04 FD-28 (b) sigue sin cifra. |
-| 69 | `crates/gafira-raster/proptest-regressions/` no existe en ninguno de los dos worktrees. No queda nada que decidir salvo que exista en otra copia. |
 | 49, 50, 73 | El 50 dice que el titular saltó el T4 de segment; el 73 y la tabla de estado hablan de una corrida parcial parada. Es la segunda (§3.3). El 73 no cuenta 18 no viables: 983 + 236 + 34 + 18 = 1271. |
 | 75 y tabla de estado | Dan 39 críticos. El mismo ítem cuenta 11 `cost_hint` como no críticos, más `error.rs:40` y `view.rs:211`: 48 − 13 = 35, no 39 (§2.1). |
 
@@ -127,7 +125,7 @@ Comprobados contra el árbol en esta rama. El README sigue mandando hasta que el
 
 La spec 013 (`specs/done/013-mutant-debt-text-raster.md`) trabajó los bloques de §2.3: su tabla dice qué test mata cada mutante y por qué los demás son equivalentes o quedan sin matar.
 
-Corridas sobre 4a59889. `gafira-text` y `gafira-raster` no han cambiado desde entonces, así que las líneas valen en esta rama. Por orden del titular, no se corrigen antes de publicar (ítem 74).
+Corridas sobre 4a59889; las líneas de las listas son las de ese commit. Desde entonces la spec 013 añadió tests a los dos crates, y `gafira-raster` cambió además en `blend.rs`, `effects/shadow.rs` y `transitions/` (spec 013, «Dependencias»). D-66 sustituye la orden anterior de no corregirlos antes de publicar: se atacaron en paralelo al engine, y de los 98 críticos quedan 7 sin matar (ítems 74 y 75).
 
 Crítico según `AGENTS.md`: validación, ids, transformaciones, límites y toda regla de spec con invariante. No crítico: `Display`, accesores triviales y ayudas de test.
 
@@ -479,7 +477,7 @@ La lista cruda sobrevivió: anexo A. El código de `gafira-audio` no ha cambiado
 
 ## 4. Orden de trabajo
 
-Nada de esto arranca sin la decisión del titular de los ítems 74 y 75. Sigue valiendo un escritor a la vez: lo paralelo de abajo solo significa que los bloques no chocan en archivos, y requiere worktrees separados.
+D-66 decidió los ítems 74 y 75, y la spec 013 hizo las tandas A, B y C sobre la lista de §2.3; queda la tanda D, el T4 completo de cada crate, que la spec 013 dejó fuera de su alcance. La tabla queda como registro. Sigue valiendo un escritor a la vez: lo paralelo de abajo solo significa que los bloques no chocan en archivos, y requiere worktrees separados.
 
 | Tanda | Bloques | Por qué |
 |---|---|---|

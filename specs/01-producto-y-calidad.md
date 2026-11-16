@@ -5,7 +5,7 @@
 | Documento | Especificación 01 |
 | Estado | Borrador para revisión |
 | Alcance | Visión, público, posicionamiento, alcance por fase, requisitos funcionales (RF) y no funcionales (RNF), criterios de calidad y velocidad (CAL), métricas, restricciones, modelo de funciones, riesgos, preguntas abiertas y resolución de contradicciones |
-| Fuentes | `00-decisiones.md` (decisiones D-01 a D-09 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
+| Fuentes | `00-decisiones.md` (decisiones D-01 a D-67 del titular, prevalecen sobre el PRD y sobre cualquier texto contrario), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, `02-arquitectura-software.md` |
 | Specs relacionadas | 02 (arquitectura: `ARQ-xx`, `ADR-xx`), 03 (diseño: `DIS-xx` y glosario de interfaz), 04 (diseño, imagen y exportación), 05 (video y distribución) |
 | Convenciones | `RF-xx` requisito funcional; `RNF-xx` requisito no funcional; `CAL-xx` criterio de calidad medible; **FIJADA** = cifra fijada por el titular (D-03); **PROPUESTA** = cifra o decisión no presente en las fuentes; **VERIFICAR** = dato por confirmar antes de vender. Los nombres de interfaz son los del glosario de la spec 03 (§2) |
 
@@ -246,7 +246,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
-| RF-67 | **Pantalla de arranque.** Al iniciar, Gafira muestra brevemente una pantalla con la ilustración `assets/splash_screen.jpg` de fondo (recorte «cubrir») y, sobre un panel inferior de blanco cálido, el logo horizontal, el eslogan («Haz visibles tus ideas.» / «Bring your ideas to life.», según el idioma de D-08), la versión y una barra de carga coral que refleja el progreso real. Se cierra al terminar la carga necesaria para Inicio, con un mínimo de 1,2 s; avisa si la carga supera 5 s (PROPUESTA) y ofrece «Reintentar» si el arranque falla. Respeta reducir movimiento y no roba el foco. **La imagen es reemplazable**: se sustituye el archivo (mismo nombre, JPEG o PNG) y se recompila, sin tocar código; va incrustada en el binario y no depende de rutas del usuario. | — (decisión del titular; sin RF en el PRD) | MVP | ARQ-65..ARQ-69, ADR-10 | 03 §7.10, DIS-80..DIS-87 |
+| RF-67 | **Pantalla de arranque.** Al iniciar, Gafira muestra brevemente una pantalla con la ilustración `assets/splash_screen.jpg` de fondo (recorte «cubrir») y, sobre un panel inferior de blanco cálido, el logo horizontal, el eslogan («Haz visibles tus ideas.» / «Bring your ideas to life.», según el idioma de D-08), la versión y una barra de carga coral que refleja el progreso real. Se cierra al terminar la carga necesaria para Inicio, con un mínimo de 1,2 s; avisa si la carga supera 5 s (FIJADA, D-09) y ofrece «Reintentar» si el arranque falla. Respeta reducir movimiento y no roba el foco. **La imagen es reemplazable**: se sustituye el archivo (mismo nombre, JPEG o PNG) y se recompila, sin tocar código; va incrustada en el binario y no depende de rutas del usuario. | — (decisión del titular; sin RF en el PRD) | MVP | ARQ-65..ARQ-69, ADR-10 | 03 §7.10, DIS-80..DIS-87 |
 
 ---
 
@@ -333,8 +333,8 @@ Salvo indicación, «gama media» significa el primer perfil y «GPU» el segund
 | CAL-35 | Estabilidad del hilo de UI | 0 trabajos > 16 ms fuera de diálogos del SO | 02 | Gama media | ARQ-41 | RNF-02 |
 | CAL-36 | Cambio de idioma con un proyecto abierto | ≤ 100 ms (p99) hasta el primer frame completo en el idioma nuevo, sin reiniciar | D-08 (cifra PROPUESTA, igual que el cambio de modo, DIS-64) | Gama media | `bench_locale_switch` (ARQ-101, DIS-75) | RF-66, RNF-13 |
 | CAL-37 | Cobertura de traducción | 100 % de claves en `es` y `en`; 0 truncados sin tooltip en las 8 pantallas en `es`, `en` y seudo-localización | D-08 | Todos | `xtask check-i18n` (ARQ-98), capturas de DIS-76 (ARQ-103) | RF-64, RNF-12 |
-| CAL-38 | Primer frame de la Pantalla de arranque desde que se lanza el proceso | < 300 ms | D-09 (cifra PROPUESTA) | Gama media y macOS de referencia | `gafira --bench-startup` (`splash_first_frame_ms`, ARQ-65) | RF-67, RNF-02 |
-| CAL-39 | Duración visible de la Pantalla de arranque | ≥ 1,2 s (D-09) y ≤ el mayor entre 1,2 s y el fin de la carga necesaria para Inicio, más 1 frame; aviso de carga lenta a los 5 s (PROPUESTA) | D-09 | Gama media | `gafira --bench-startup` (`splash_visible_ms`) y pruebas con arranque simulado (03 DIS-82, ARQ-68) | RF-67 |
+| CAL-38 | Primer frame de la Pantalla de arranque desde que se lanza el proceso | < 300 ms (FIJADA) | D-09 | Gama media y macOS de referencia | `gafira --bench-startup` (`splash_first_frame_ms`, ARQ-65) | RF-67, RNF-02 |
+| CAL-39 | Duración visible de la Pantalla de arranque | ≥ 1,2 s (D-09) y ≤ el mayor entre 1,2 s y el fin de la carga necesaria para Inicio, más 1 frame; aviso de carga lenta a los 5 s (FIJADA) | D-09 | Gama media | `gafira --bench-startup` (`splash_visible_ms`) y pruebas con arranque simulado (03 DIS-82, ARQ-68) | RF-67 |
 
 - **CAL-A**: ninguna cifra de la tabla se relaja sin un cambio documentado de esta spec y una nueva decisión del titular (D-03). *Aceptación*: `perf-budgets.toml` contiene una entrada por cada CAL medible y un revisor del repositorio lo valida en cada cambio de umbral.
 
@@ -452,20 +452,20 @@ Incluye las que siguen abiertas en 02 (§12.3) y las propias de este documento.
 
 Lista de `00-decisiones.md`, con el ajuste posterior del titular sobre el `license-hub`:
 
-1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio.
-2. Adaptar `LICENSE` y `LICENCIA.md` (contrato de Tracewright con las tres adaptaciones de D-01) y escribir el `PRIVACY.md` de Gafira, con el identificador de dispositivo.
+1. Definir la lista de funciones bloqueadas sin licencia (D-12) y el precio. **Aplazado** por D-62: la primera versión se publica sin licencia, así que no bloquea el lanzamiento.
+2. `LICENSE`: **hecho** (aviso propietario mínimo en la raíz). El EULA (`LICENCIA.md`, contrato de Tracewright con las tres adaptaciones de D-01) y el `PRIVACY.md` de Gafira, con el identificador de dispositivo, se escriben en la fase final de licencia (spec 06).
 3. `license-hub`: el servicio ya está desplegado y se reutiliza tal cual; su lista de seguridad y su documentación quedan fuera de estas specs. (00-decisiones lo listaba como «completar y desplegar».)
-4. Hacer la búsqueda de marca de D-04 (lista de comprobación siguiente).
-5. Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3).
+4. Marca (D-04): la búsqueda preliminar está **hecha** (24 de octubre de 2026; riesgo bajo-medio, ver D-04). Quedan la búsqueda de disponibilidad de un abogado (incluidas AFIRA, afira y GAIRA) antes del lanzamiento, la elección del primer país de registro y, opcionalmente, reservar más dominios.
+5. ~~Verificar con `cargo-deny` las licencias marcadas VERIFICAR (incluido el decodificador MP3)~~ (**resuelto** el 24 de octubre de 2026: ver 00, pendiente 5, y 02 §9.2; las patentes de MP3 siguen en VERIFICAR).
 6. Aportar un conjunto de fotos reales con licencia para `gafira-segment` antes de publicar (D-20).
 
-**Lista de comprobación de marca (D-04).** Sin abogado; registrar fecha, término, resultado y captura de cada búsqueda antes de publicar.
+**Lista de comprobación de marca (D-04).** Sin abogado; registrar fecha, término, resultado y captura de cada búsqueda antes de publicar. La búsqueda preliminar del 24 de octubre de 2026 cubrió las tres bases; el resultado detallado está en D-04.
 
 | # | Base de datos | Términos a buscar | Resultado |
 |---|---|---|---|
-| 1 | USPTO (Estados Unidos) | «Gafira» y «Gefira» (por parecido), clases de software y de diseño | Pendiente |
-| 2 | TMview (Unión Europea y oficinas asociadas) | «Gafira» y «Gefira» | Pendiente |
-| 3 | WIPO Global Brand Database (Madrid y nacionales) | «Gafira» y «Gefira» | Pendiente |
+| 1 | USPTO (Estados Unidos) | «Gafira» y «Gefira» (por parecido), clases de software y de diseño | Hecha (preliminar, 24-oct-2026, D-04) |
+| 2 | TMview (Unión Europea y oficinas asociadas) | «Gafira» y «Gefira» | Hecha (preliminar, 24-oct-2026, D-04) |
+| 3 | WIPO Global Brand Database (Madrid y nacionales) | «Gafira» y «Gefira» | Hecha (preliminar, 24-oct-2026, D-04) |
 
 Dato previo: una búsqueda web general encontró una empresa suiza de TI llamada «Gefira», con otra ortografía.
 

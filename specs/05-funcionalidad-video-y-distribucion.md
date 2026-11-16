@@ -5,7 +5,7 @@
 | Documento | Especificación 05 |
 | Estado | Borrador para revisión |
 | Alcance | **Parte A** video básico · **Parte B** video avanzado mínimo (con diseño de interacción) · **Parte C** empaquetado y distribución |
-| Depende de | `00-decisiones.md` (D-01 a D-07, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
+| Depende de | `00-decisiones.md` (D-01 a D-67, prevalecen), 01 (RF, RNF, CAL), 02 (crates, traits, ARQ, ADR; en especial §3.4, §4.8, §4.9, §4.13, §6.4, §6.5, §7.1, §9.3, §10), 03 (glosario §2, componentes, wireframe del Editor de video §7.4) |
 | Convenciones | `FV-nn` = ficha de función de video y distribución. Cada ficha indica propósito, comportamiento y reglas, UI (nombres del glosario de 03), técnica (crates y traits de 02), presupuesto, aceptación y `RF-nn` de 01. **PROPUESTA** y **VERIFICAR** como en 01 |
 
 **Reglas generales de video** (se suman a G-1..G-6 de la spec 04)
@@ -145,7 +145,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 - *Comportamiento y reglas*: reproducción a 0,5×, 1× y 2× y fotograma a fotograma (`←/→`); arrastrar el Cabezal (**scrubbing**) muestra el fotograma más cercano de la caché mientras se decodifica el exacto. El reloj maestro es el audio; el video descarta fotogramas si se retrasa más de 40 ms (la misma tolerancia que FV-12 (b) fija para el archivo exportado) y nunca bloquea el audio. Indexado de keyframes al importar, caché de fotogramas con presupuesto de RAM (1 GB o el 15 % de la RAM, el menor; PROPUESTA) y prefetch en la dirección del movimiento. Copias ligeras automáticas para material de más de 1080p o códecs costosos (FV-22). La calidad de la vista previa es `Preview` (02 §6.2); se puede elegir 100 %, 50 % o 25 % de resolución.
 - *UI*: vista previa y Línea de tiempo; control de calidad bajo la vista previa.
 - *Técnica*: `gafira-media` (caché, reloj de reproducción, sincronía A/V), `MediaService::{play, pause, seek, scrub}`, `Decoder` por flujo (máx. 8 hilos, 02 §6.3).
-- *Presupuesto*: 60 s con 3 pistas sin bloquear la UI: frames de UI p99 < 16,7 ms (CAL-13); **scrubbing 1080p ≥ 24 actualizaciones/s**, búsqueda en caché < 50 ms y sin caché < 250 ms (CAL-14, PROPUESTA); la reproducción mantiene la fps del proyecto en gama media a 1080p.
+- *Presupuesto*: 60 s con 3 pistas sin bloquear la UI: frames de UI p99 < 16,7 ms (CAL-13); **scrubbing 1080p ≥ 24 actualizaciones/s**, búsqueda en caché < 50 ms y sin caché < 250 ms (CAL-14, FIJADA por D-03); la reproducción mantiene la fps del proyecto en gama media a 1080p.
 - *Aceptación*: (a) `bench_playback_3tracks` y `bench_scrub_1080` dentro del umbral; (b) tras 10 min de reproducción continua no se degrada la fluidez ni crece la memoria más de un 10 % (ARQ-44); (c) el audio nunca se corta al saltar fotogramas; (d) con el audio y el video desalineados 39 ms no se descarta ningún fotograma, y con 40 ms o más se descarta el fotograma que llega tarde sin que el audio se corte (02 §6.5, ARQ-147).
 
 **FV-12 · Exportar video, extracción de fotograma y de audio** (RF-44, RF-34, RF-33)
@@ -626,7 +626,7 @@ Cada punto tiene propietario y evidencia. Ninguna versión comercial se publica 
 | Q-17 | Importar HEVC y HEIC vía API del sistema | Cerrada: D-59 (solo importación con el decodificador del SO; nunca salida HEVC) |
 | Q-15 | Voz en off y marcadores de compás en Fase 2 | Abierta |
 | Q-19 | Prueba gratuita | Cerrada: D-12 (no hay prueba gratuita; modo sin licencia) |
-| Q-20 | Modo sin licencia válida | D-12 sustituye la propuesta de solo lectura; la lista de funciones bloqueadas se define en la spec 06 |
+| Q-20 | Modo sin licencia válida | Abierta: D-12 sustituye la propuesta de solo lectura; hasta que exista la lista de funciones bloqueadas (spec 06), solo la exportación está bloqueada (D-55) |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |
 | R-06 (02) | `cpal` y `libasound` (LGPL, dinámico) | VERIFICAR, legal |
 | R-F | Licencia de WiX v5, nfpm y de las herramientas de empaquetado | VERIFICAR |
