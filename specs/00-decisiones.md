@@ -536,3 +536,34 @@ Fecha: 16 de noviembre de 2026.
 - **Licencia deshabilitada**: el estado es `LicenseStatus::NotRequired`; `can_export` es verdadero, no hay pantalla de activación ni conexión de red, y activar, validar o desactivar devuelven `LicenseError::Disabled`.
 - **Licencia habilitada**: sigue rigiendo D-12 y D-55 sin cambios.
 - Amplía D-12. Aplicado en la spec 010; 02 §4.14 y §13.3 se actualizan cuando se promueva esa tabla.
+
+## D-59 Importar HEVC y HEIC por la API del sistema (Q-17)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): Gafira **importa** HEVC y HEIC solo a través del decodificador del sistema operativo (macOS y Windows; en Linux, cuando el sistema lo ofrezca). El binario no incluye un decodificador propio de HEVC ni HEIC y **nunca exporta** HEVC.
+- **Consecuencia**: precisa D-02, que prohíbe HEVC en la salida y en el código propio, no la importación por el SO. Si el SO no tiene decodificador, el archivo se rechaza con un mensaje que explica por qué.
+- Cierra Q-17. Aplicar a 01 (RF-19, RF-37), 04 (FD-31) y 05.
+
+## D-60 Fuentes del usuario dentro del proyecto (Q-10)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): una fuente del usuario se **incrusta según su licencia** (bits `fsType` de OpenType) y **según el formato de archivo**, tanto en `.gafira` como en `.gaf` (spec 008). Si la licencia no permite incrustarla, el proyecto la vincula por nombre y, al abrirlo en un equipo que no la tiene, avisa de la fuente que falta.
+- **Pendiente**: qué hace cada formato con una fuente incrustable (por ejemplo, si `.gafira` la vincula y `.gaf` la empaqueta) se fija con las decisiones de la §17 de la spec 008.
+- Cierra Q-10 en lo que toca a la regla de licencia. Aplicar a 01 (RF-27), 04 (FD-48, FD-63) y 02 §7.1.
+
+## D-61 Idioma de la CLI, el instalador y los paquetes (Q-26)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): `gafira-cli` escribe en inglés por defecto y solo cambia con `--lang` (ARQ-104), para que su salida sea estable en scripts. El instalador, los paquetes y el `.desktop` de Linux se ofrecen en **español e inglés**, según el idioma del sistema (D-08).
+- Cierra Q-26. Aplicar a 01 (RF-56, RF-64) y 05 (FV-30, que ya no dice «solo español» pero debe fijar los dos idiomas).
+
+## D-62 Primera versión sin licencia (D-12, D-58)
+
+Fecha: 16 de noviembre de 2026.
+
+- **Decisión** (titular): la primera versión se publica **sin licencia**: el composition root inyecta `NoLicensing` (D-58), todo está habilitado y no hay conexión de red.
+- **Consecuencia**: `gafira-license`, la lista de funciones bloqueadas y el precio de D-12 quedan **aplazados** hasta que el titular decida cobrar; no bloquean el lanzamiento. ARQ-90 a ARQ-96 se aplican solo a un build con licencia habilitada.
+- Precisa D-12 y D-58.
