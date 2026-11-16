@@ -29,6 +29,7 @@ gafira-media = { path = "crates/gafira-media" }
 gafira-render-cpu = { path = "crates/gafira-render-cpu" }
 gafira-engine = { path = "crates/gafira-engine" }
 gafira-theme = { path = "crates/gafira-theme" }
+gafira-i18n = { path = "crates/gafira-i18n" }
 blake3 = "1"
 crossbeam-channel = "0.5"
 kurbo = { version = "0.13", features = ["serde"] }
@@ -43,6 +44,11 @@ parley = { version = "0.12", default-features = false, features = ["std"] }
 skrifa = { version = "0.44", default-features = false, features = ["std"] }
 rayon = "1"
 assert_no_alloc = "1.1"
+# ICU4X for gafira-i18n (02 §14.8), with its compiled CLDR data; `toml` is a build dependency only.
+icu_locale_core = "2.4"
+icu_plurals = "2.4"
+icu_decimal = "2.4"
+toml = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -1,0 +1,61 @@
+# English UI catalog (D-08, 02 §14.5). Keys: `area.object[.state]`, 2 or 3
+# `snake_case` segments. A plural is a table of CLDR categories; English needs
+# `one` and `other`. `{name}` is a parameter. No logic in the catalog.
+# Both catalogs must have the same keys and parameters (checked by the build).
+
+[brand]
+slogan = "Bring your ideas to life."
+
+[settings.language]
+title = "Language"
+system = "System"
+system_now = "System · now: {language} ({tag})"
+es = "Español"
+en = "English"
+
+[export]
+done = "Your design is ready to share"
+pages_selected = { one = "{count} page selected", other = "{count} pages selected" }
+
+[format]
+percent = "{value}%"
+
+[unit]
+px = "{value}\u00A0px"
+mm = "{value}\u00A0mm"
+cm = "{value}\u00A0cm"
+in = "{value}\u00A0in"
+pt = "{value}\u00A0pt"
+seconds = "{value}\u00A0s"
+fps = "{value}\u00A0fps"
+db = "{value}\u00A0dB"
+lufs = "{value}\u00A0LUFS"
+degrees = "{value}°"
+bytes = "{value}\u00A0B"
+kilobytes = "{value}\u00A0kB"
+megabytes = "{value}\u00A0MB"
+gigabytes = "{value}\u00A0GB"
+
+[time]
+just_now = "just now"
+minutes_ago = { one = "{count} min ago", other = "{count} min ago" }
+hours_ago = { one = "{count} h ago", other = "{count} h ago" }
+days_ago = { one = "{count} day ago", other = "{count} days ago" }
+
+[error.theme]
+json = "The tokens file is not valid JSON."
+schema_too_new = "The tokens file uses version {found} and this version of Gafira reads up to {supported}."
+schema_unknown = "Version {found} of the tokens file does not exist."
+missing_token = "Token {path} is missing."
+bad_value = "Token {path} has an invalid value."
+bad_color = "Token {path} is not a #RRGGBB colour."
+unresolved_reference = "Token {path} refers to {target}, which does not exist."
+reference_cycle = "Token {path} is part of a reference cycle."
+mode_mismatch = "Token {token} is missing in the {mode} mode."
+unknown_usage = "A contrast pair in {group} has the unknown usage {usage}."
+contrast = "In {group}, {fg} on {bg} has a contrast of {ratio}:1, below {min}:1."
+rejected_pair_declared = "In {group}, {fg} on {bg} is a rejected pair."
+rejected_pair_passes = "The rejected pair {fg} on {bg} meets the text minimum."
+reduced_motion = "The reduced motion duration {name} must be 0."
+bad_shadow = "Token {path} is not a valid shadow."
+unknown_family = "The {family} font family is not included in Gafira."

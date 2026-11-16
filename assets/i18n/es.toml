@@ -1,0 +1,61 @@
+# Spanish UI catalog (D-08, 02 §14.5). Keys: `area.object[.state]`, 2 or 3
+# `snake_case` segments. A plural is a table of CLDR categories; Spanish needs
+# `one`, `many` and `other`. `{name}` is a parameter. No logic in the catalog.
+# Both catalogs must have the same keys and parameters (checked by the build).
+
+[brand]
+slogan = "Haz visibles tus ideas."
+
+[settings.language]
+title = "Idioma"
+system = "Sistema"
+system_now = "Sistema · ahora: {language} ({tag})"
+es = "Español"
+en = "English"
+
+[export]
+done = "Tu diseño está listo para compartir"
+pages_selected = { one = "{count} página seleccionada", many = "{count} de páginas seleccionadas", other = "{count} páginas seleccionadas" }
+
+[format]
+percent = "{value}\u00A0%"
+
+[unit]
+px = "{value}\u00A0px"
+mm = "{value}\u00A0mm"
+cm = "{value}\u00A0cm"
+in = "{value}\u00A0in"
+pt = "{value}\u00A0pt"
+seconds = "{value}\u00A0s"
+fps = "{value}\u00A0fps"
+db = "{value}\u00A0dB"
+lufs = "{value}\u00A0LUFS"
+degrees = "{value}°"
+bytes = "{value}\u00A0B"
+kilobytes = "{value}\u00A0kB"
+megabytes = "{value}\u00A0MB"
+gigabytes = "{value}\u00A0GB"
+
+[time]
+just_now = "ahora mismo"
+minutes_ago = { one = "hace {count} min", many = "hace {count} min", other = "hace {count} min" }
+hours_ago = { one = "hace {count} h", many = "hace {count} h", other = "hace {count} h" }
+days_ago = { one = "hace {count} día", many = "hace {count} de días", other = "hace {count} días" }
+
+[error.theme]
+json = "El archivo de tokens no es JSON válido."
+schema_too_new = "El archivo de tokens usa la versión {found} y esta versión de Gafira lee hasta la {supported}."
+schema_unknown = "La versión {found} del archivo de tokens no existe."
+missing_token = "Falta el token {path}."
+bad_value = "El token {path} tiene un valor no válido."
+bad_color = "El token {path} no es un color #RRGGBB."
+unresolved_reference = "El token {path} remite a {target}, que no existe."
+reference_cycle = "El token {path} forma un ciclo de referencias."
+mode_mismatch = "Falta el token {token} en el modo {mode}."
+unknown_usage = "Un par de contraste de {group} usa el uso desconocido {usage}."
+contrast = "En {group}, {fg} sobre {bg} tiene un contraste de {ratio}:1, por debajo de {min}:1."
+rejected_pair_declared = "En {group}, {fg} sobre {bg} es un par prohibido."
+rejected_pair_passes = "El par prohibido {fg} sobre {bg} cumple el mínimo de texto."
+reduced_motion = "La duración {name} de movimiento reducido debe ser 0."
+bad_shadow = "El token {path} no es una sombra válida."
+unknown_family = "La familia {family} no está incluida en Gafira."

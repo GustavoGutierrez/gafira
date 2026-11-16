@@ -1,0 +1,27 @@
+[package]
+name = "gafira-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# ARQ-107: only gafira-ports, gafira-doc and ICU4X crates as normal dependencies.
+[dependencies]
+gafira-ports.workspace = true
+gafira-doc.workspace = true
+icu_locale_core.workspace = true
+icu_plurals.workspace = true
+icu_decimal.workspace = true
+
+# The build script validates assets/i18n/*.toml and compiles them to static
+# tables (02 §14.5, ADR-09): no catalog parser in the binary.
+[build-dependencies]
+toml.workspace = true
+
+[features]
+# PseudoTranslator (02 §14.6, ARQ-103): development and tests only, never in `dist`.
+pseudo = []
+
+[lints]
+workspace = true
