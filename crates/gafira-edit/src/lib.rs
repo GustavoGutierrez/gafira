@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod budget;
 mod command;
 mod dirty;
@@ -20,6 +21,7 @@ mod reparent;
 mod set_property;
 mod transaction;
 
+pub use assets::InsertAsset;
 pub use command::{Applied, Command, GestureId, MergeKey};
 pub use dirty::DirtySet;
 pub use error::CommandError;
