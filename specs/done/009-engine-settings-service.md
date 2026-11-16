@@ -1,6 +1,6 @@
 # 009 — `SettingsService` del engine e idioma persistido
 
-> **Estado:** in-progress — 2026-11-16 — implementación de E10 del change `gafira-engine` ([carpeta legacy](done/legacy/changes/gafira-engine/design.md)).
+> **Estado:** done — 2026-11-16 — E10 del change `gafira-engine` ([carpeta legacy](legacy/changes/gafira-engine/design.md)); S9-01..S9-08 cubiertos por `gafira-ports/tests/settings.rs` (6) y `gafira-engine` `settings::tests` (7); 3 mutantes a mano muertos; gates del workspace en verde (2649 tests).
 
 ## Objetivo
 
