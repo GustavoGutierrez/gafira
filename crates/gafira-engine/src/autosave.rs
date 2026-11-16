@@ -44,14 +44,13 @@ impl AutosaveJob {
         self.version
     }
 
-    /// `<folder>/slot-<n>.gafira-journal`.
+    /// `<folder>/slot-<n>.gaf-journal`.
     fn slot_path(&self) -> PathBuf {
-        self.folder
-            .join(format!("slot-{}.gafira-journal", self.slot))
+        self.folder.join(format!("slot-{}.gaf-journal", self.slot))
     }
 
     /// Write the slot: create its folder, let the repository write the
-    /// snapshot to `slot-<n>.gafira-journal.tmp` in it, then replace the slot
+    /// snapshot to `slot-<n>.gaf-journal.tmp` in it, then replace the slot
     /// with that file. On a failure the temporary file is removed on a
     /// best-effort basis and the slot keeps its previous bytes.
     #[must_use]
@@ -113,7 +112,7 @@ mod tests {
     use crate::event::EngineEvent;
     use crate::fakes::*;
 
-    const TARGET: &str = "/work/poster.gafira";
+    const TARGET: &str = "/work/poster.gaf";
     const T0: Duration = Duration::from_secs(100);
     const INTERVAL: Duration = Duration::from_secs(10);
     const STEP: Duration = Duration::from_nanos(1);
@@ -127,7 +126,7 @@ mod tests {
     /// `SequentialIds` and its slots live under it (D-63, spec 012).
     fn slot_of(session: u64, n: u8) -> String {
         let id = SequentialIds::nth(u128::from(session) + 1);
-        format!("/data/gafira/recovery/{id}/slot-{n}.gafira-journal")
+        format!("/data/gafira/recovery/{id}/slot-{n}.gaf-journal")
     }
 
     /// Slot `n` of the first session, the one [`Rig::opened`] opens.

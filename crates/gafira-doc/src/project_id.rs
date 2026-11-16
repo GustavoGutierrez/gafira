@@ -1,5 +1,5 @@
 //! The project's identity (D-63, spec 012): a 128-bit UUID minted when the
-//! project is created and kept in the `.gafira`, so the recovery slots and
+//! project is created and kept in the `.gaf`, so the recovery slots and
 //! the versions folder of 02 §7.2 find their project after a rename or a move.
 //!
 //! `gafira-doc` mints nothing: the bits come from a port of the engine, so the

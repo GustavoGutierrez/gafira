@@ -185,7 +185,7 @@ pub trait Importer: Send + Sync {
 /// order.
 ///
 /// Built by value at the composition root (ARQ-31). An importer and an
-/// exporter may share an id (`.gafira` does both); an id is unique within its
+/// exporter may share an id (`.gaf` does both); an id is unique within its
 /// own list.
 #[derive(Default)]
 pub struct FormatRegistry {

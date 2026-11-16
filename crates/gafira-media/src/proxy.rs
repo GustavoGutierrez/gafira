@@ -2,7 +2,7 @@
 //!
 //! A light copy is an MJPEG intra copy at 540p or 720p of a medium that is
 //! expensive to decode (FV-22). The copies live in the user cache, outside
-//! the `.gafira` (02 §7.1), under a byte budget of ten gigabytes by default
+//! the `.gaf` (02 §7.1), under a byte budget of ten gigabytes by default
 //! that discards the least used ones, and the export never reads one
 //! (ARQ-146, FV-22 (b)).
 //!
@@ -133,7 +133,7 @@ struct Entry {
 ///
 /// The store keeps the copies in the user cache, under a byte budget, and
 /// frees the least used ones when it goes over it. It writes nothing else:
-/// the `.gafira` holds no copy (02 §7.1).
+/// the `.gaf` holds no copy (02 §7.1).
 pub struct ProxyStore {
     /// The root of the user cache: a parameter, never read from the system
     /// (ARQ-138).
@@ -271,7 +271,7 @@ impl ProxyStore {
     /// the user cache and moved to its final name only once it is complete,
     /// so a cancelled generation leaves no half-written copy and the cache
     /// stays usable (ARQ-146). Nothing is written outside the cache: the
-    /// `.gafira` holds no copy (02 §7.1).
+    /// `.gaf` holds no copy (02 §7.1).
     ///
     /// The generation is a long operation: it runs at
     /// [`Priority::Background`] (02 §6.3), checks the cancel token once per

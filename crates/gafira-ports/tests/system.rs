@@ -104,14 +104,14 @@ fn arq_50_file_system_expresses_the_atomic_save_trace() {
     let fs: Box<dyn FileSystem> = Box::new(Recording {
         trace: Arc::clone(&trace),
     });
-    save(&*fs, Path::new("p/doc.gafira"), b"hello").unwrap();
+    save(&*fs, Path::new("p/doc.gaf"), b"hello").unwrap();
     assert_eq!(
         *trace.lock().unwrap(),
         [
             "create p/doc.tmp",
             "write 5",
             "sync",
-            "replace p/doc.tmp p/doc.gafira"
+            "replace p/doc.tmp p/doc.gaf"
         ]
     );
 }
