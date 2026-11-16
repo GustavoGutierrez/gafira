@@ -2,10 +2,10 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 02 de 05 |
+| Documento | Especificación 02 |
 | Estado | Borrador para revisión |
 | Alcance | Crates, capas, traits, patrones, modelo de documento, render, persistencia, UI, dependencias y licencias, pruebas, hoja de ruta técnica |
-| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-45 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
+| Fuentes | `specs/00-decisiones.md` (decisiones D-01 a D-58 del titular, prevalecen), `docs/research/PRD.md`, `docs/research/spec_software.md`, `docs/manuals/marca/manual-gafira.md`, handoff consolidado |
 | Convenciones | `ARQ-xx` = requisito de arquitectura con criterio de aceptación. `ADR-xx` = decisión con alternativas descartadas. **FIJADA** = cifra fijada por el titular (00-decisiones, D-03). **PROPUESTA** = cifra o decisión no presente en las fuentes ni fijada todavía. **VERIFICAR** = hecho que debe confirmarse (normalmente con `cargo-deny` o asesoría legal) antes de vender |
 | Numeración ARQ | Los IDs no se renumeran porque otras specs los citan. Los huecos están **reservados**: ARQ-09, ARQ-27..ARQ-29, ARQ-34..ARQ-39, ARQ-45..ARQ-49 y ARQ-85..ARQ-89. ARQ-97..ARQ-99, antes reservados, y ARQ-100..ARQ-107 se usan para el idioma (§14, D-08); ARQ-108..ARQ-109 quedan reservados. ARQ-65..ARQ-69, antes reservados, se usan para la Pantalla de arranque (§8.4, D-09). ARQ-16..ARQ-19, antes reservados, se usan para la animación (§3.4). ARQ-110..ARQ-133 son los contratos de los motores de capa 2 (§4.17). ARQ-134..ARQ-137 son el contrato del visitante (§4.1); ARQ-138..ARQ-149 son los contratos de los motores de la capa de aplicación (§4.17.7, §4.17.8) |
 
@@ -910,12 +910,22 @@ pub enum LicenseStatus {                                   // sin `Trial`: no ha
     Expired,                                               // token vencido
     Unlicensed,                                            // nunca activada: modo sin licencia (D-12)
     Invalid { reason: ReasonCode },                        // rechazada por el servidor o token alterado
+    NotRequired,                                           // licencia deshabilitada en este build (D-58)
 }
-impl LicenseStatus { pub fn can_export(&self) -> bool { matches!(self, Self::Active{..} | Self::OfflineGrace{..}) } }
+impl LicenseStatus {
+    pub const fn can_export(&self) -> bool { matches!(self, Self::Active{..} | Self::OfflineGrace{..} | Self::NotRequired) }
+    pub const fn is_required(&self) -> bool { !matches!(self, Self::NotRequired) } // muestra o no la activación y la fila de licencia en Ajustes (D-58)
+}
+
+pub enum LicenseError { Network, Rejected(ReasonCode), Storage, Disabled } // `Disabled`: licencia deshabilitada en este build (D-58)
+
+pub struct NoLicensing;                                    // `LicenseVerifier` sin licencia (D-58): sin red ni almacenamiento
+// status → NotRequired; activate, validate y deactivate → Err(LicenseError::Disabled)
 ```
 
-- **Predicados** (D-12, D-55): la licencia no decide si se puede editar, recuperar un journal ni guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»), en ningún estado; no hay `can_save`, y `can_export` no controla «Exportar proyecto editable con recursos». `can_export` es el único predicado mientras la lista de funciones bloqueadas de D-12 siga pendiente (spec 06); cada función que esa lista bloquee tendrá el suyo. Aceptación: `can_export` es verdadero para `Active` y `OfflineGrace`, y falso para `Expired`, `Unlicensed` e `Invalid`.
+- **Predicados** (D-12, D-55): la licencia no decide si se puede editar, recuperar un journal ni guardar (Guardar (`Ctrl+S`), Guardar como, «Guardar copia», el autoguardado en el journal y «Exportar proyecto editable con recursos»), en ningún estado; no hay `can_save`, y `can_export` no controla «Exportar proyecto editable con recursos». `can_export` es el único predicado mientras la lista de funciones bloqueadas de D-12 siga pendiente (spec 06); cada función que esa lista bloquee tendrá el suyo. Aceptación: `can_export` es verdadero para `Active`, `OfflineGrace` y `NotRequired`, y falso para `Expired`, `Unlicensed` e `Invalid`; `is_required` es falso solo para `NotRequired`.
 
+- **Licencia opcional por build** (D-58): el composition root elige qué `LicenseVerifier` inyecta, sin cambiar el engine ni la UI: el adaptador de `gafira-license` (licencia habilitada; rigen D-12 y D-55) o `NoLicensing` de `gafira-ports` (licencia deshabilitada: estado `NotRequired`, exportación permitida, sin pantalla de activación ni conexión de red, y activar, validar o desactivar devuelven `LicenseError::Disabled`). Código: `crates/gafira-ports/src/license.rs`.
 - **Patrón**: Port/Adapter. `gafira-ports` define el trait y `gafira-license` lo implementa (§13). `status` es puro y recibe la hora del puerto `Clock` (ARQ-02). Los métodos de red son bloqueantes y el engine los ejecuta en el hilo de E/S, nunca en el de UI.
 - **Consumidor**: `LicenseService` en `gafira-engine` publica `EngineEvent::LicenseChanged(LicenseStatus)` y la UI muestra la pantalla de activación y el estado en Ajustes (03).
 - **Dobles de prueba**: `FakeLicenseVerifier` en `gafira-testkit`, tras la feature `ports` (§2.2), con cada estado, para que las pruebas E2E no dependan de la red.
@@ -1348,12 +1358,23 @@ El engine publica por `crossbeam_channel` (sin límite para eventos de estado, c
 | Pipeline | Render (§6), cadena de audio, exportación de video (decodificar → componer → codificar → *mux*) | Etapas con canales acotados que aplican contrapresión. |
 | Composite | `Transaction`, grupos de nodos, búsqueda federada | Tratamiento uniforme de uno o muchos. |
 
+**Firma de `SettingsRepository`** (spec 009, implementada en `crates/gafira-ports/src/settings.rs`). El puerto carga y guarda un `Settings` entero; un almacén ausente se lee como `Settings::default()`, no como error. La forma serializada está en §14.4.
+
+```rust
+pub struct Settings { pub language: LanguagePreference }   // #[non_exhaustive], #[serde(default)]
+pub enum SettingsError { Corrupt { detail: String }, Io(io::Error) } // implementa ToMessage (ARQ-102)
+pub trait SettingsRepository: Send + Sync {
+    fn load(&self) -> Result<Settings, SettingsError>;
+    fn save(&self, settings: &Settings) -> Result<(), SettingsError>;
+}
+```
+
 ### 5.4 Facade de aplicación (firma resumida)
 
 ```rust
 pub struct Gafira { /* servicios y puertos inyectados */ }
 impl Gafira {
-    pub fn new(ports: Ports, registries: Registries, cfg: EngineConfig) -> Result<Self, EngineError>;
+    pub fn new(ports: Ports, registries: Registries, cfg: EngineConfig, events: EventChannel) -> Result<Self, EngineError>; // canal creado antes por el composition root (§5.2, SP4)
     pub fn projects(&self) -> &ProjectService;   // new_document, open, save, save_as, recover, close,
                                                  // save_version, list_versions, restore_version
     pub fn edit(&mut self) -> &mut EditService;  // execute(cmd), undo, redo, begin/end_gesture
@@ -1367,6 +1388,21 @@ impl Gafira {
 ```
 
 `ProjectService` crea un documento nuevo con `new_document`, no con `new`: clippy rechaza un método `new` que no devuelve `Self` (`new_ret_no_self`) y el repositorio prohíbe `#[allow]`.
+
+### 5.6 Huecos abiertos del engine
+
+Peticiones de especificación que dejó el diseño del cambio `gafira-engine` ([sección «Needs specifier»](done/legacy/changes/gafira-engine/design.md#needs-specifier)). Siguen abiertas salvo donde se indica lo que ya aplica el código; las referencias de línea son las de 02 cuando se redactó ese diseño.
+
+| ID | Referencia | Petición | Qué bloquea |
+|---|---|---|---|
+| SP1 | §5.4 | `new` devuelve `Result<Self, EngineError>`, pero §5.4 no dice qué puede fallar al construir. **En el código**, `EngineError` lo acota a `InvalidConfig` y a los errores de los puertos (`crates/gafira-engine/src/engine.rs`); falta confirmarlo o ampliarlo. | `E1` |
+| SP2 | §5.2 | Los tipos de carga del bus (`SaveState`, `JobResult`, `RecoveryEntry`, `Level`, `StartupStep`) no pertenecen a ningún crate. Confirmar que los define el engine, como supone el diseño (P3). | `E2`, `E4`, `E5`, `E7` |
+| SP3 | ARQ-102, §7.3 | (a) `UserError { kind, message, detail, actions }`: valores de `kind`, tipo de `detail` (ARQ-102 prohíbe campos `String` visibles; §7.3 manda el detalle al log local), de dónde salen las `actions` y si lo construye el engine o la UI. (b) `CommandError` (`gafira-edit`) y `ValidationError` (`gafira-doc`) no implementan `ToMessage` y la lista de cumplimiento de ARQ-102 no los nombra; decir qué cambio los asume. | `E11`; (b) no bloquea `E3b` (P12) |
+| SP4 | §5.4 frente a §5.2 | La firma resumida `new(ports, registries, cfg)` no puede recibir el canal que §5.2 hace crear antes al composition root. **Aplicado en el código**: `Gafira::new` recibe el canal (`events: EventChannel`, `crates/gafira-engine/src/engine.rs`), y §5.4 ya lo refleja. | Nada (P11 sigue) |
+| SP5 | §7.2 | `recovery/<project_id>/` nombra un identificador de proyecto que ningún tipo lleva (`Document` no lo tiene; `Project` llega con §3.1). Decir qué es y si sobrevive a reabrir el mismo archivo. P13 usa una clave provisional. | `E4` (`recover` debe encontrar las ranuras de un proyecto) |
+| SP6 | §7.2 paso 2, ARQ-50; `ProjectRepository::save` | El contrato del puerto no decía que `save` sincroniza el archivo antes de volver, y el engine nunca tiene el escritor, así que el paso 2 solo puede ser del adaptador. Declararlo en el contrato del puerto. **Ya recogido**: 02 lo declara (§5.3 y §7.2, paso 2) y el contrato del puerto lo dice (`crates/gafira-ports/src/repository.rs:77`). | `gafira-format`; registrado en `E3c` |
+| SP7 | ARQ-55 | «Solo lectura y Guardar deshabilitado» no dice si se permiten ediciones en memoria. P18 las permite y rechaza `save`. Confirmar, o decir que se rechazan. | `E3c` (provisional) |
+| SP8 | §5.2 `MemoryPressure(Level)`, §6.7 | (a) Los niveles de `Level`; P17 usa `Normal` y `Critical`. (b) El límite de VRAM (70 % de la VRAM informada): `E5` gobierna solo los bytes del host; decir qué parte aplica el límite del dispositivo. | `E5` (provisional en (a)); (b) no bloquea |
 
 ### 5.5 Antipatrones prohibidos
 
@@ -1552,6 +1588,7 @@ proyecto.gafira (ZIP)
 
 - **Versiones** (menú Archivo → Guardar versión y Versiones, 03 §2.2). Una **versión nombrada** la crea el usuario y nunca se borra de forma automática. Una **versión automática** se crea al guardar si la última automática tiene más de 30 min; se conservan las 20 más recientes y se descartan las más antiguas (cifras PROPUESTA). Restaurar una versión es un `Command` (`RestoreVersion`) que se puede deshacer. El recolector de recursos no borra un recurso que use alguna versión. Las versiones son distintas de los journals de autoguardado, que viven fuera del archivo (§7.2).
 - **Medios vinculados** (Fase 2, con Relocalizar medios, 01 RF-55 y 05 FV-25). Por defecto todos los medios se embeben. Los videos de más de 500 MB (PROPUESTA, de 05) pueden vincularse: el manifiesto guarda `rel_path` relativo a la carpeta del `.gafira`, el tamaño y el hash BLAKE3 completo, nunca una ruta absoluta (ARQ-56). La última ruta absoluta conocida puede guardarse en `datos_app/links/<project_id>.json`, fuera del proyecto, solo como pista. **Relocalizar medios**: el usuario elige una carpeta; `AssetService::relocate` la indexa, busca por nombre, filtra por tamaño y confirma por hash; reconecta todos los coincidentes con un solo `Command` y rechaza con aviso los que tienen el mismo nombre y otro hash. Un vínculo ausente emite `LinksMissing`, se muestra como marcador y la exportación avisa antes de empezar. Proxies y miniaturas de un medio vinculado van a la caché del usuario. El campo `linked` existe desde `schema` 1, para que activar la función en Fase 2 no exija migración.
+- **Hueco abierto: campo `template`** (04 FD-16, PROPUESTA). FD-16 marca una plantilla propia con un campo `template` del manifiesto «con etiquetas, formato, estilo y color», pero no fija los nombres de las claves, sus tipos ni si «formato» es el formato de página o el de archivo, ni cómo se distingue un `.gafira` de plantilla de uno normal. No se incorpora al esquema del manifiesto hasta que se defina.
 
 - **Migraciones por paso**: `schema` es un entero. Las funciones `migrate_n_to_n1(serde_json::Value) -> Result<Value, MigrationError>` se encadenan y cada una tiene su propio golden de entrada y salida.
 - Al abrir un archivo de un `schema` futuro: modo solo lectura con aviso y nunca se sobrescribe. El documento se puede editar en memoria; «Guardar» devuelve un error de solo lectura antes de cualquier operación de archivo, y los cambios solo se conservan con «Guardar como» (ARQ-55).
@@ -2001,7 +2038,7 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 | R-10 | egui no cubre algún requisito de accesibilidad (lectores de pantalla en el lienzo). | Accesibilidad | AccessKit con árbol propio; iced como plan B (ADR-06). |
 | R-11 | El MP4 con AV1/Opus puede no aceptarse en algunas plataformas de publicación. | Compatibilidad | VERIFICAR; documentar y recomendar WebM o el códec del SO. |
 | R-12 | El `license-hub` no está listo para vender: su README indica que no está desplegado (aunque otra sección del mismo README dice lo contrario) y tiene una lista de seguridad pendiente. | Comercial / seguridad | Completar la lista de seguridad y desplegarlo antes de vender (D-01, pendiente 3 del titular). VERIFICAR el estado real. La app no depende de él para editar mientras el token sea válido. |
-| R-13 | Una prueba gratuita local se puede reiniciar o alargar manipulando el reloj o reinstalando. | Comercial | Comprobación monotónica de la fecha y registro en el llavero del SO; alternativa con prueba firmada por el servidor (Q-19). |
+| R-13 | ~~Una prueba gratuita local se puede reiniciar o alargar manipulando el reloj o reinstalando.~~ Ya no aplica: D-12 elimina la prueba gratuita (Q-19 cerrada). | Comercial | — |
 | R-14 | En Linux el llavero del SO (Secret Service por D-Bus) puede no estar disponible. | Funcional | Alternativa de archivo local con permisos restringidos y aviso (VERIFICAR); el token es verificable aunque el secreto falte, pero validar o desactivar exige el secreto. |
 | R-15 | La diferencia de longitud entre español e inglés trunca etiquetas en el Riel de pestañas, la Barra contextual o el Inspector. | Calidad / UI | Diseño para expansión (03 §16.4), seudo-localización con +30–100 % (§14.6) y capturas golden en los dos idiomas; prueba de 0 truncados sin tooltip (DIS-76). |
 | R-16 | Los datos de ICU4X o una dependencia transitiva añaden una licencia no permitida o inflan el binario por encima de 40 MB. | Licencia / distribución | Datos compilados solo para `es` y `en`; `cargo deny` y `cargo bloat` en CI; presupuesto propio de `gafira-i18n` (ARQ-106); alternativa: formateadores propios para los dos idiomas (ADR-09). |
@@ -2012,11 +2049,11 @@ opt-level = 2             # dependencias (códecs, imagen) usables en desarrollo
 
 ### 12.2 Preguntas cerradas
 
-Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-45 constan en `00-decisiones.md` (D-29 a D-34 y D-41 a D-45). Q-46 y Q-47 constan ahí como D-49 y D-50, y Q-50, Q-51 y Q-52 como D-51, D-52 y D-53. Q-53 se abrió y se cerró en el mismo día como D-54. Q-49 se cerró en la verificación de SG3 de `gafira-segment`.
+Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-01..Q-16 constan en `00-decisiones.md`; Q-19 la cierra D-12; Q-27..Q-33 se resolvieron en el cambio `anim-core` y su regla está en §3.4. Q-35..Q-45 constan en `00-decisiones.md` (D-29 a D-34 y D-41 a D-45). Q-46 y Q-47 constan ahí como D-49 y D-50, y Q-50, Q-51 y Q-52 como D-51, D-52 y D-53. Q-53 se abrió y se cerró en el mismo día como D-54. Q-49 se cerró en la verificación de SG3 de `gafira-segment`.
 
 | ID | Pregunta | Resolución |
 |---|---|---|
-| Q-01 | Licencia y modelo comercial. | D-01: propietaria, todo de pago con prueba gratuita, una sola licencia (§9.4, §13). |
+| Q-01 | Licencia y modelo comercial. | D-01: propietaria, todo de pago, una sola licencia (§9.4, §13). D-12 sustituye la prueba gratuita de D-01 por el modo sin licencia. |
 | Q-02 | ¿Basta delegar H.264/HEVC/AAC en el SO? | D-02: H.264/AAC solo vía API del sistema; HEVC sin salida; AV1 + Opus por defecto. El dictamen legal sigue pendiente (R-01). |
 | Q-03 | Linux sin VA-API e importación de H.264. | D-02: no hay decodificador de software; Gafira avisa y propone AV1. |
 | Q-04 | ¿Linux aarch64? | D-05: no; solo x86_64. |
@@ -2029,6 +2066,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-12 | Activación de los módulos avanzados (01). | D-01: activación con `gafira-license` y `license-hub` (§13). |
 | Q-13 | Importación de AVI y de AAC/M4A más allá del SO (01). | D-07: AVI en Fase 2 solo con códecs libres; D-02: AAC solo vía SO. |
 | Q-16 | Aprobación del glosario de 03 (01). | D-04: aprobado; queda la búsqueda de marca del titular. |
+| Q-19 | ¿Cómo se implementa la prueba gratuita: local desde el primer arranque o con un token de prueba firmado por el `license-hub`? | D-12: no hay prueba gratuita; sin licencia, la app funciona en modo sin licencia (§4.14, §13.3). |
 | Q-14 | Idioma del producto (01). | D-08: español e inglés; idioma por defecto según el sistema (cualquier variante de español → español; cualquier otro → inglés); selector en Ajustes → General. Arquitectura en §14 (`gafira-i18n`, ADR-09). |
 | Q-27 | ¿Cómo se interpola el alfa de `Color` (ARQ-19)? | Titular: A, alfa premultiplicado, como CSS Color 4 (§3.4, ARQ-19). |
 | Q-28 | ¿Qué hace `Transform2D::interpolate` con un extremo no descomponible (determinante 0 o coeficientes no finitos)? | Titular: B. El extremo degenerado toma la rotación y el sesgo del otro extremo y solo se interpolan traslación y escala; si los dos son degenerados, se interpolan los 6 coeficientes linealmente; un coeficiente no finito hace inválida la pista (§3.4, ARQ-18, ARQ-19). La escala del extremo degenerado se fija en Q-30. |
@@ -2063,7 +2101,6 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-10 | ¿Se permite empaquetar fuentes del usuario dentro de `.gafira` según su licencia? ¿Cómo se informa? | Legal / producto |
 | Q-17 | ¿Se admite **importar** HEVC (y HEIC) mediante la API del sistema, o queda prohibido en toda vía? D-02 prohíbe «HEVC» sin distinguir importación de exportación; esta spec lo excluye del MVP y prohíbe su salida. | Titular + legal |
 | Q-18 | ¿Se mantiene el render distribuido en la red local (Fase 3)? Abriría conexiones distintas de la de licencia, prohibidas por D-01. | Titular |
-| Q-19 | ¿Cómo se implementa la prueba gratuita: local desde el primer arranque (sin red, más fácil de alargar) o con un token de prueba firmado por el `license-hub` (exige conexión al empezar y un endpoint que el servicio no tiene, VERIFICAR)? Duración y límites: pendientes de D-01. | Titular |
 | Q-20 | ¿Qué funciones bloquea el modo sin licencia, además de la exportación? D-12 sustituye la propuesta de solo lectura; hasta que exista la lista, solo la exportación está bloqueada; guardar, incluido «Exportar proyecto editable con recursos», no depende de la licencia (D-55, ARQ-95). | Titular |
 | Q-23 | ¿Qué idiomas se añaden después de español e inglés, y cuándo? La arquitectura los admite (§14.8), pero cada uno exige catálogo completo, glosario 1:1, revisión de expansión y quizá ADR-09 revisado (Fluent si su gramática lo pide). | Titular |
 | Q-24 | ¿Los números y fechas siguen la región del sistema dentro del idioma (es-MX escribe `1,234.5`; es-ES escribe `1234,5`) o un formato fijo por idioma? Esta spec propone seguir la región cuando su idioma coincide con el de la interfaz (§14.4). | Titular |
@@ -2071,8 +2108,8 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 | Q-26 | ¿Se confirma que `gafira-cli` imprime en inglés por defecto aunque la app esté en español (ARQ-104)? ¿Y que el instalador, los paquetes y el `.desktop` de Linux se ofrecen en los dos idiomas (05 FV-30 dice solo español)? | Titular |
 | Q-34 | ¿Se aprueba el aspecto de las fórmulas de 04 FD-33? Son PROPUESTA y las pruebas fijan su valor, no su aspecto. El titular las revisará sobre imágenes de muestra cuando exista el corte de efectos, y con ellas dará el catálogo de filtros de 04 FD-34 (D-40). No bloquea la especificación. | Titular |
 | Q-48 | ¿Se cumplen CAL-06, CAL-26 y ARQ-43 en el hardware de D-03 con la copia de 2048 px de D-45? Las medidas de SG3 son indicativas, porque se tomaron en un i7-12700H con carga: CAL-06, 1055 ms con 1 hilo, margen de 4,7 veces; ARQ-43, tramo más largo de 43 ms con 1 hilo, margen de 2,3 veces; CAL-26, pico de *heap* de 35 a 303 MB de 1 a 20 hilos, que es solo la parte del segmentador. Se cierra con `bench_segment_4000` < 5 s y `bench_cancel_segment` ≤ 100 ms en la gama media de D-03, y CAL-26 medida en el proceso con 20 páginas e imágenes. Si alguna falla, el titular decide. Las cifras siguen vigentes. | Titular, tras medir |
-| Q-54 | ¿Qué ocurre con la regla de ARQ-136 cuando llegue la arista `gafira-doc → gafira-time`? §3.1 define, dentro de `gafira-doc`, `Page.duration: Option<Flicks>`, `Sequence.fps: FrameRate` y `Clip.source_in: Flicks`, y §2.1 y §2.2 mantienen hoy esa arista fuera; ADR 0007 (aceptada) dice que llega con `Page.duration`. Opciones: (a) la regla de ARQ-136 vale para este corte y, cuando la arista llegue, el dominio pasa a nombrar `Flicks` como tipo del instante, con el parámetro de tipo como costura; (b) la regla es permanente y el dominio fecha sus datos con su propia unidad entera, y `gafira-time` convierte en la frontera; (c) la fila se reescribe entera al llegar la arista. Recomendación: (a), que es lo que ya fijó ADR 0007 y lo único que no obliga a cambiar el modelo de datos de §3.1. | Titular |
-| Q-55 | ¿Dónde se declara `TransitionInstance` (§4.13)? Su campo `duration: Flicks` nombra un tipo de tiempo, y `gafira-doc` todavía no alcanza `gafira-time`. Opciones: (a) en `gafira-doc`, porque el sketch lo llama «dato del documento, en `Clip.transitions`»; entonces la arista de Q-54 lo cubre y `gafira-time` entra en toda fila V5 que contenga `gafira-doc`, como dice ADR 0007; (b) en `gafira-raster`, junto al trait `Transition`; entonces la fila V5 de `gafira-raster` necesita `gafira-time` y el dato persistido pasa a depender de un motor. Recomendación: (a), porque `TransitionInstance` es dato del documento y no una estrategia de render. | Titular |
+| Q-54 | ¿Qué ocurre con la regla de ARQ-136 cuando llegue la arista `gafira-doc → gafira-time`? §3.1 define, dentro de `gafira-doc`, `Page.duration: Option<Flicks>`, `Sequence.fps: FrameRate` y `Clip.source_in: Flicks`, y §2.1 y §2.2 mantienen hoy esa arista fuera; ADR 0007 (aceptada) dice que llega con `Page.duration`. Opciones: (a) la regla de ARQ-136 vale para este corte y, cuando la arista llegue, el dominio pasa a nombrar `Flicks` como tipo del instante, con el parámetro de tipo como costura; (b) la regla es permanente y el dominio fecha sus datos con su propia unidad entera, y `gafira-time` convierte en la frontera; (c) la fila se reescribe entera al llegar la arista. Recomendación: (a), que es lo que ya fijó ADR 0007 y lo único que no obliga a cambiar el modelo de datos de §3.1. **Propuesta de cierre: (a), ya aplicada en el código** — pendiente de confirmación del titular: la arista existe (`crates/gafira-doc/Cargo.toml` depende de `gafira-time`), `Page.duration` es `Option<Flicks>` (`crates/gafira-doc/src/page.rs:49`) y el visitante conserva el parámetro de tipo del instante como costura (`crates/gafira-doc/src/visit.rs:112`). | Titular |
+| Q-55 | ¿Dónde se declara `TransitionInstance` (§4.13)? Su campo `duration: Flicks` nombra un tipo de tiempo, y `gafira-doc` todavía no alcanza `gafira-time`. Opciones: (a) en `gafira-doc`, porque el sketch lo llama «dato del documento, en `Clip.transitions`»; entonces la arista de Q-54 lo cubre y `gafira-time` entra en toda fila V5 que contenga `gafira-doc`, como dice ADR 0007; (b) en `gafira-raster`, junto al trait `Transition`; entonces la fila V5 de `gafira-raster` necesita `gafira-time` y el dato persistido pasa a depender de un motor. Recomendación: (a), porque `TransitionInstance` es dato del documento y no una estrategia de render. **Propuesta de cierre: (a), ya aplicada en el código** — pendiente de confirmación del titular: la arista de Q-54 que cubre la opción (a) ya existe (`crates/gafira-doc/Cargo.toml`); `TransitionInstance` todavía no está declarado en ningún crate. | Titular |
 
 ---
 
@@ -2080,7 +2117,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 
 ### 13.1 Alcance y servicio externo
 
-- **Modelo** (D-01, D-12): Gafira es de pago, sin prueba gratuita y con una sola licencia. El mismo binario contiene todas las funciones. Sin licencia, la app funciona en modo sin licencia: la exportación está bloqueada, y las demás funciones bloqueadas se fijan en la spec 06 (lista pendiente de D-12). Guardar nunca depende de la licencia, ni siquiera con `Invalid` (D-55).
+- **Modelo** (D-01, D-12): Gafira es de pago, sin prueba gratuita y con una sola licencia. El mismo binario contiene todas las funciones. Sin licencia, la app funciona en modo sin licencia: la exportación está bloqueada, y las demás funciones bloqueadas se fijan en la spec 06 (lista pendiente de D-12). Guardar nunca depende de la licencia, ni siquiera con `Invalid` (D-55). El licenciamiento se puede deshabilitar por build (D-58): el composition root inyecta `NoLicensing` (§4.14), el estado es `NotRequired`, no hay activación ni conexión de red y todo queda desbloqueado.
 - **Servicio**: la activación usa el **`license-hub`** del titular, un servicio externo (Cloudflare Workers + D1; proveedor Gumroad o clave propia; de 1 a 10 dispositivos por licencia). **No se despliega con la app**, no forma parte del workspace de Gafira ni del instalador. Gafira solo contiene el cliente. La URL base, el `iss` esperado y el identificador de aplicación (`"gafira"`, PROPUESTA) se fijan en el build; Gafira se registra en el servicio como una aplicación más.
 - **Única conexión de red**: activar, validar o desactivar la licencia. Nada más sale del equipo (ARQ-91).
 
@@ -2104,7 +2141,7 @@ Resueltas por el titular. Se conservan los IDs porque otras specs los citan. Q-0
 
 ### 13.3 Estados de licencia
 
-No hay estado de prueba (D-12).
+No hay estado de prueba (D-12). `NotRequired` solo aparece con la licencia deshabilitada en el build (D-58).
 
 | `LicenseStatus` | Cuándo | Exportar (`can_export`) |
 |---|---|---|
@@ -2113,6 +2150,7 @@ No hay estado de prueba (D-12).
 | `Expired` | Token vencido | No (ARQ-95) |
 | `Unlicensed` | Nunca activada: modo sin licencia (D-12) | No (ARQ-95) |
 | `Invalid { reason }` | Rechazo explícito del servidor o token alterado | No (ARQ-95) |
+| `NotRequired` | Licencia deshabilitada en el build: el composition root inyecta `NoLicensing` (D-58) | Sí |
 
 - **Invariante**: un fallo de red **nunca** invalida un token válido. `Active` pasa a `OfflineGrace` y sigue siendo usable hasta `exp`. Solo un rechazo explícito del servidor o el vencimiento quitan el permiso.
 - **Gracia sin conexión**: la duración del token (`tokenTtlSeconds` del servicio) define cuánto tiempo puede trabajar el equipo sin conexión. Propuesta: 30 días. La app intenta validar sola como máximo una vez al día y solo cuando quedan menos de 7 días, y ofrece «Validar ahora» en Ajustes (cifras PROPUESTA).
@@ -2258,7 +2296,7 @@ pub struct FormatLocale { pub locale: Locale, pub region: Option<Region> } // en
 | Sin dato, ilegible, `C`, `POSIX`, `C.UTF-8` | English (`Fallback`) |
 
 - Con `LanguagePreference::Es` o `En` el sistema se ignora para el idioma de la interfaz (solo aporta la región de formato si coincide).
-- **Persistencia**: `SettingsRepository` guarda `"language": "system" | "es" | "en"` (por defecto `"system"`). La comparación es exacta: solo un texto desconocido, como `"ES"` o `"fr"`, se lee como `"system"`; un valor que no es texto (número, `null`, objeto) es un error de lectura. `Locale` se serializa como `"es"` y `"en"`. Aceptación: `"system"`, `"es"` y `"en"` dan sus variantes y se escriben igual; `"ES"`, `"fr"` y `""` dan `System`; `1` y `null` dan error. Ajustes muestra las opciones «Sistema», «Español» y «English» (03 §16.1).
+- **Persistencia**: `SettingsRepository` (firma en §5.3) guarda `"language": "system" | "es" | "en"` (por defecto `"system"`). La comparación es exacta: solo un texto desconocido, como `"ES"` o `"fr"`, se lee como `"system"`; un valor que no es texto (número, `null`, objeto) es un error de lectura. `Locale` se serializa como `"es"` y `"en"`. Aceptación: `"system"`, `"es"` y `"en"` dan sus variantes y se escriben igual; `"ES"`, `"fr"` y `""` dan `System`; `1` y `null` dan error. Ajustes muestra las opciones «Sistema», «Español» y «English» (03 §16.1).
 - **Formatos por región** (PROPUESTA, Q-24): con interfaz en español y formato regional `es-MX`, los números se escriben `1,234.5`; con `es-ES`, `1234,5` y `12.345,5`; con interfaz en inglés y formato regional francés, se usa el de CLDR para `en`.
 
 ### 14.5 Traducción, catálogos y formatos (`CatalogTranslator`)

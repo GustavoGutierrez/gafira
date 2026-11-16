@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Documento | Especificación 03 de 05 |
+| Documento | Especificación 03 |
 | Estado | Borrador para revisión |
 | Alcance | Sistema de diseño (tokens, contraste, modo oscuro), uso del logo en la app, navegación y pantallas (incluidas la activación y los estados de licencia, y la **Pantalla de arranque**, §7.10, D-09), componentes, interacción, accesibilidad, movimiento, microcopy, iconografía, **glosario de interfaz** en español e inglés e **idioma** (§16, D-08) |
 | Depende de | `00-decisiones.md` (D-01 a D-09, prevalecen), `02-arquitectura-software.md` (ADR-06, §8: `gafira-theme`, `gafira-ui`, ARQ-60..64; §8.4: Pantalla de arranque, ARQ-65..69, ADR-10; §4.14 y §13: licencia, ARQ-90..96; §4.16 y §14: idioma, `gafira-i18n`, ADR-09, ARQ-97..107) |

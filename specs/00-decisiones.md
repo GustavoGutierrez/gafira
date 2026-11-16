@@ -145,7 +145,7 @@ Fecha: 24 de octubre de 2026.
   - No existen duración, límites ni estado de «prueba». Los estados de licencia son, como mínimo, sin licencia y con licencia activada.
   - El modo sin licencia no exige conexión: la app sigue trabajando sin red (D-01). La conexión sigue siendo solo para activar, validar o desactivar.
   - La interfaz debe indicar qué funciones están bloqueadas y cómo activar la licencia.
-- Aplicado a 01, 03 y 06 (ver «Efecto sobre las especificaciones») cuando se promuevan.
+- Aplicado a 01, 03 y 06 (ver «Efecto sobre las especificaciones») cuando se promuevan. Aplicado a 02 (§4.14, §13, Q-19 cerrada) y 05 (Q-19 cerrada).
 
 ## D-13 `gafira-cli validate` pasa a `gafira-format`
 
@@ -535,7 +535,7 @@ Fecha: 16 de noviembre de 2026.
 - **Decisión** (titular): el licenciamiento se puede **habilitar o deshabilitar** sin cambiar el engine ni la UI, porque es posible que Gafira se publique sin licencia. El composition root elige qué `LicenseVerifier` inyecta: el adaptador de `gafira-license` (licencia habilitada) o `NoLicensing` de `gafira-ports` (licencia deshabilitada).
 - **Licencia deshabilitada**: el estado es `LicenseStatus::NotRequired`; `can_export` es verdadero, no hay pantalla de activación ni conexión de red, y activar, validar o desactivar devuelven `LicenseError::Disabled`.
 - **Licencia habilitada**: sigue rigiendo D-12 y D-55 sin cambios.
-- Amplía D-12. Aplicado en la spec 010; 02 §4.14 y §13.3 se actualizan cuando se promueva esa tabla.
+- Amplía D-12. Aplicado en la spec 010, en 02 (§4.14, §13.1, §13.3) y en 01 (§11.1).
 
 ## D-59 Importar HEVC y HEIC por la API del sistema (Q-17)
 
