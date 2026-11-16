@@ -1,6 +1,6 @@
 # 028 — Bloqueos de archivo y ranuras de otra instancia
 
-> **Estado:** in-progress — 2026-11-16 — sigue a la spec 016 (no alcance: bloqueos y la segunda instancia).
+> **Estado:** done — 2026-11-16 — sigue a la spec 016; S28-01..S28-07 cubiertos por `gafira-engine` (`project::tests` 8 nuevos, `lock::tests` 1; trazas de `save_as` ajustadas al bloqueo) y `gafira-platform` (`processes::tests` 4); 4 mutantes a mano muertos; 2572 tests. El bloqueo del SO sobre el `.lock` y «abrir una copia» quedan fuera.
 
 ## Objetivo
 
@@ -51,6 +51,23 @@ Lógica crítica (invariantes de 02 §7.2): S28-01..S28-06 en `gafira-engine` (`
 ## Evidencia esperada
 
 Tests nuevos en `gafira-engine` y `gafira-platform`; gates de `AGENTS.md` («Before calling something done») en verde.
+
+## Evidencia
+
+- Rojo verificado: `s28_02` falló con la ranura de la instancia viva listada antes de filtrar por dueño; los cinco tests de bloqueo (`s28_04` x3, `s28_05`, `s28_06`) fallaron con `locked_by_other` vacío y sin `.lock` antes de escribirlo.
+- Mutantes a mano, todos muertos: sin la comparación de `host` (muere `s28_05`), sin soltar el bloqueo anterior al reemplazar la sesión (muere `s28_04_a_new_document_or_another_file_releases_the_lock`), sin `pid != current` en `recoverable` (muere `s16_03`), sin `is_alive` (muere `s28_03`).
+- `cargo fmt --check`: limpio.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: limpio.
+- `cargo test --workspace --locked`: 2572 tests, 0 fallos.
+- `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` y `cargo test -p gafira-testkit --features ports --locked`: limpios.
+- `python3 tools/sync_agents.py --check`: 0.
+
+## Decisiones
+
+- `locked_by_other() -> Option<FileLock>` en lugar de una variante de error: abrir no falla, la sesión queda en solo lectura (ARQ-55) y la UI puede leer el dueño si lo necesita; hoy no muestra nada nuevo.
+- El marcador pasa a tres líneas (`ranura`, `pid`, `archivo`); un marcador de dos líneas de la spec 016 ya no se lee y sus ranuras quedan en disco sin ofrecerse (sin datos publicados que migrar).
+- Escribir el bloqueo es de mejor esfuerzo: si falla, el archivo se abre igual y no hay bloqueo que borrar. «Guardar como» mueve el bloqueo al archivo nuevo.
+- `SystemProcesses::new(<datos_app>/instances)`: en Linux no crea nada; fuera de Linux crea la baliza y la borra al soltarse.
 
 ## Riesgos y decisiones abiertas
 
