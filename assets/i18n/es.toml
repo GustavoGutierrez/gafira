@@ -167,7 +167,12 @@ title = "Título"
 subtitle = "Subtítulo"
 body = "Escribe aquí tu texto"
 
+[library]
+import_image = "Importar imagen…"
+import_failed = "No pudimos importar la imagen."
+
 [layers]
+image = "Imagen"
 text = "Texto"
 up = "Subir"
 down = "Bajar"

@@ -3,7 +3,7 @@
 use gafira_color::Color;
 use serde::{Deserialize, Serialize};
 
-use crate::{ElementBase, NodeId, TextNode};
+use crate::{ElementBase, ImageNode, NodeId, TextNode};
 
 /// A group: it only arranges its children and carries no data of its own.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +68,8 @@ pub enum NodeKind {
     Shape(ShapeNode),
     /// A text element (spec 027).
     Text(TextNode),
+    /// An image element (spec 029).
+    Image(ImageNode),
     /// An opaque extension node.
     Extension(ExtensionNode),
 }
@@ -114,6 +116,7 @@ mod tests {
             NodeKind::Group(GroupNode {}) => "group",
             NodeKind::Shape(_) => "shape",
             NodeKind::Text(_) => "text",
+            NodeKind::Image(_) => "image",
             NodeKind::Extension(_) => "extension",
         };
         let geometry_name = |g: ShapeGeometry| match g {

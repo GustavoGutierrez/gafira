@@ -25,5 +25,6 @@ rfd.workspace = true
 workspace = true
 
 [dev-dependencies]
+gafira-assets.workspace = true
 gafira-platform.workspace = true
 gafira-format.workspace = true

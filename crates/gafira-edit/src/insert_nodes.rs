@@ -163,9 +163,16 @@ fn validate_new(
         .map(|n| (n.base.id, Arc::new(n.clone())))
         .collect::<BTreeMap<_, _>>();
     let next = doc.next_id() + u64::try_from(nodes.len()).unwrap_or(0);
-    Document::from_parts(next, doc.dpi(), vec![Arc::new(scratch)])
-        .map(|_| ())
-        .map_err(CommandError::InvalidDocument)
+    // The asset table comes along, so a new image is checked against the
+    // assets it will live with (spec 029).
+    Document::from_parts_with_assets(
+        next,
+        doc.dpi(),
+        vec![Arc::new(scratch)],
+        doc.assets().clone(),
+    )
+    .map(|_| ())
+    .map_err(CommandError::InvalidDocument)
 }
 
 impl Command for InsertNodes {

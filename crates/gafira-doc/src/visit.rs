@@ -17,7 +17,8 @@ use gafira_geom::{Point, Rect};
 
 use crate::contract::ParamSchema;
 use crate::{
-    ElementBase, ExtensionNode, GroupNode, Node, NodeId, NodeKind, Page, ShapeNode, TextNode,
+    ElementBase, ExtensionNode, GroupNode, ImageNode, Node, NodeId, NodeKind, Page, ShapeNode,
+    TextNode,
 };
 
 /// The order a walk visits the nodes in.
@@ -180,6 +181,11 @@ pub trait NodeVisitor {
         self.visit_node(n)
     }
 
+    /// Receives an image element (spec 029).
+    fn visit_image(&mut self, n: &Node, _i: &ImageNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
     /// Receives an extension node.
     fn visit_extension(&mut self, n: &Node, _e: &ExtensionNode) -> Self::Out {
         self.visit_node(n)
@@ -252,6 +258,7 @@ fn dispatch<V: NodeVisitor>(v: &mut V, node: &Node) -> V::Out {
         NodeKind::Group(g) => v.visit_group(node, g),
         NodeKind::Shape(s) => v.visit_shape(node, s),
         NodeKind::Text(t) => v.visit_text(node, t),
+        NodeKind::Image(i) => v.visit_image(node, i),
         NodeKind::Extension(e) => v.visit_extension(node, e),
     }
 }

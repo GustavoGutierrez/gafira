@@ -46,6 +46,9 @@ pub(crate) struct Editor {
     inspector_tab: usize,
     /// The selected element (03 §9.1); one at a time for now.
     selected: Option<(PageId, NodeId)>,
+    /// The textures of the images on display, by content hash; `None`
+    /// when the bytes could not be read or decoded (a placeholder is drawn).
+    textures: std::collections::HashMap<gafira_doc::ContentHash, Option<egui::TextureHandle>>,
     /// The drag in progress: its gesture (one undo entry, ARQ-33), where the
     /// element started and how far the pointer went.
     drag: Option<Drag>,
@@ -67,6 +70,7 @@ impl Default for Editor {
             zoom: 1.0,
             inspector_tab: 0,
             selected: None,
+            textures: std::collections::HashMap::new(),
             drag: None,
         }
     }
@@ -96,6 +100,8 @@ struct Asked {
     fill: Option<Option<gafira_color::Color>>,
     /// An opacity set in the Inspector, 0 to 1.
     opacity: Option<f32>,
+    /// Biblioteca → Importar imagen… (spec 029).
+    import_image: bool,
     /// A new text element of this preset (Texto tab, spec 027).
     /// With the words it starts with, already in the interface language.
     insert_text: Option<(canvas::TextPreset, String)>,
@@ -187,6 +193,7 @@ impl Editor {
         {
             asked.delete = true;
         }
+        self.load_textures(ctx, engine, document.as_deref());
         let selection = selected_shape(document.as_deref(), self.selected);
         if selection.is_none() {
             self.selected = None;
@@ -387,6 +394,17 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                if TABS[self.tab] == "tab.library" {
+                    let import = widgets::secondary(
+                        ui,
+                        theme,
+                        texts.t(&gafira_doc::msg!("library.import_image")),
+                    );
+                    if import.clicked() {
+                        asked.import_image = true;
+                    }
+                    return;
+                }
                 if TABS[self.tab] == "tab.text" {
                     for (key, words, preset) in [
                         (
@@ -735,6 +753,30 @@ impl Editor {
                                 let shapes = canvas::shapes(page_doc);
                                 for shape in &shapes {
                                     let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    if let Some(asset) = shape.image {
+                                        let tint = Color32::WHITE
+                                            .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
+                                        match self
+                                            .textures
+                                            .get(&asset.as_hash())
+                                            .and_then(Option::as_ref)
+                                        {
+                                            Some(texture) => {
+                                                let uv = Rect::from_min_max(
+                                                    Pos2::ZERO,
+                                                    Pos2::new(1.0, 1.0),
+                                                );
+                                                painter.image(texture.id(), at, uv, tint);
+                                            }
+                                            None => {
+                                                painter.rect_filled(
+                                                    at,
+                                                    0.0,
+                                                    theme.c("surface.sunken"),
+                                                );
+                                            }
+                                        }
+                                    }
                                     if let Some(text) = &shape.text {
                                         draw_text(painter, theme, at, zoom, shape.opacity, text);
                                     }
@@ -880,6 +922,11 @@ impl Editor {
                 }
             }
         }
+        if asked.import_image
+            && let Some(document) = document
+        {
+            self.import_image(engine, document);
+        }
         if let Some((preset, words)) = &asked.insert_text
             && let Some(document) = document
         {
@@ -982,6 +1029,89 @@ impl Editor {
             Go::Stay
         }
     }
+}
+
+impl Editor {
+    /// Decode, once, the images the document shows into textures (spec
+    /// 029), reading the bytes from the content store; large images are
+    /// scaled down to 2048 px for the canvas.
+    fn load_textures(&mut self, ctx: &egui::Context, engine: &Gafira, document: Option<&Document>) {
+        let Some(document) = document else { return };
+        for page in document.pages() {
+            for shape in canvas::shapes(page) {
+                let Some(asset) = shape.image else { continue };
+                let hash = asset.as_hash();
+                if self.textures.contains_key(&hash) {
+                    continue;
+                }
+                let texture = decode(engine, hash).map(|image| {
+                    ctx.load_texture(
+                        format!("asset-{}", asset.hex()),
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    )
+                });
+                self.textures.insert(hash, texture);
+            }
+        }
+    }
+
+    /// Biblioteca → Importar imagen…: pick a file, import it through
+    /// `AssetService` (embedded, deduplicated by hash) and place it on the
+    /// selected element's page, or the first one.
+    fn import_image(&mut self, engine: &mut Gafira, document: &Document) {
+        let picked = rfd::FileDialog::new()
+            .add_filter("Imagen", &["png", "jpg", "jpeg"])
+            .pick_file();
+        let Some(path) = picked else { return };
+        let Ok(pixels) = image::image_dimensions(&path) else {
+            eprintln!("import image: {} is not a readable image", path.display());
+            return;
+        };
+        let page = self
+            .selected
+            .and_then(|(page, _)| document.page(page))
+            .or_else(|| document.pages().first().map(AsRef::as_ref));
+        let Some(page) = page else { return };
+        let Ok(size) = page.size.to_px(document.dpi()) else {
+            return;
+        };
+        let (page_id, index) = (page.id, page.roots.len());
+        match engine.assets().import(&path) {
+            Ok(asset) => {
+                let px = Vec2::new(size.width() as f32, size.height() as f32);
+                let spec = canvas::new_image(px, pixels, asset);
+                let next = engine.edit().document().map(|d| NodeId::new(d.next_id()));
+                match engine.edit().execute(Box::new(InsertNodes::new(
+                    page_id,
+                    None,
+                    index,
+                    vec![spec],
+                ))) {
+                    Ok(_) => self.selected = next.map(|node| (page_id, node)),
+                    Err(error) => eprintln!("insert image: {error}"),
+                }
+            }
+            Err(error) => eprintln!("import image: {error}"),
+        }
+    }
+}
+
+/// The bytes of `hash` from the store, decoded and scaled for the canvas.
+fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorImage> {
+    let mut bytes = Vec::new();
+    let mut source = engine.ports().store.open(hash).ok()?;
+    std::io::Read::read_to_end(&mut source, &mut bytes).ok()?;
+    let mut decoded = image::load_from_memory(&bytes).ok()?;
+    if decoded.width() > 2048 || decoded.height() > 2048 {
+        decoded = decoded.thumbnail(2048, 2048);
+    }
+    let rgba = decoded.to_rgba8();
+    let size = [rgba.width() as usize, rgba.height() as usize];
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        rgba.as_raw(),
+    ))
 }
 
 /// The Inspector fields of a text element: its words, size and colour,
@@ -1156,11 +1286,19 @@ pub(crate) mod tests {
 
     /// [`engine`] with `repository` in place of the absent format.
     pub(crate) fn engine_over(repository: Arc<dyn ProjectRepository>) -> Gafira {
+        engine_with(repository, Arc::new(Nothing))
+    }
+
+    /// [`engine_over`] with `store` as the content store.
+    pub(crate) fn engine_with(
+        repository: Arc<dyn ProjectRepository>,
+        store: Arc<dyn ContentStore>,
+    ) -> Gafira {
         let dir = std::env::temp_dir().join(format!("gafira-ui-{}", std::process::id()));
         let clock = Arc::new(SystemClock::new());
         let ports = Ports::new(
             repository,
-            Arc::new(Nothing),
+            store,
             SystemPorts::new(
                 Arc::new(StdFileSystem),
                 clock.clone(),
@@ -1665,5 +1803,45 @@ pub(crate) mod tests {
         // undo takes back the editing and leaves the inserted title.
         engine.edit().undo().expect("an undo");
         assert_eq!(text(&mut engine).content.plain_text(), "Título");
+    }
+
+    // S29-03
+    #[test]
+    fn s29_03_an_imported_image_is_placed_drawn_from_the_store_and_undone() {
+        let dir = std::env::temp_dir().join(format!("gafira-ui-image-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let png = dir.join("dot.png");
+        image::RgbaImage::from_pixel(40, 20, image::Rgba([255, 0, 0, 255]))
+            .save(&png)
+            .expect("a png");
+        let store = Arc::new(gafira_assets::FsStore::new(dir.join("store")));
+        let mut engine = engine_with(Arc::new(Nothing), store);
+        start(&mut engine, StartFormat::Social).expect("a new document");
+
+        let asset = engine.assets().import(&png).expect("imports");
+        let page = engine.edit().document().expect("a document").pages()[0].id;
+        let spec = canvas::new_image(Vec2::new(1080.0, 1080.0), (40, 20), asset);
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(page, None, 0, vec![spec])))
+            .expect("inserts");
+        let shapes = the_shapes(&mut engine);
+        assert_eq!(shapes[0].image, Some(asset));
+        assert_eq!((shapes[0].placement.w, shapes[0].placement.h), (40.0, 20.0));
+
+        let ctx = egui::Context::default();
+        let mut editor = Editor::default();
+        let document = engine.edit().document();
+        editor.load_textures(&ctx, &engine, document.as_deref());
+        let texture = editor
+            .textures
+            .get(&asset.as_hash())
+            .and_then(Option::as_ref)
+            .expect("decoded");
+        assert_eq!(texture.size(), [40, 20]);
+
+        engine.edit().undo().expect("an undo");
+        assert!(the_shapes(&mut engine).is_empty());
+        std::fs::remove_dir_all(dir).expect("clean up");
     }
 }

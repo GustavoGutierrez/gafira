@@ -1773,6 +1773,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
+ "gafira-assets",
  "gafira-color",
  "gafira-doc",
  "gafira-edit",
