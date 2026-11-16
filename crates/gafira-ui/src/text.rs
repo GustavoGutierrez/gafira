@@ -1,8 +1,10 @@
 //! The texts of the shell, by key (ARQ-97).
 
+use std::time::Duration;
+
 use gafira_doc::msg::Message;
 use gafira_i18n::CatalogTranslator;
-use gafira_ports::i18n::{Locale, Translator};
+use gafira_ports::i18n::{FormatLocale, Locale, Translator};
 
 /// The catalogs and the language in force.
 pub(crate) struct Texts {
@@ -21,6 +23,15 @@ impl Texts {
     /// The text of `message` in the language in force.
     pub(crate) fn t(&self, message: &Message) -> String {
         self.translator.text(self.locale, message).into_owned()
+    }
+
+    /// «hace 2 h»: how long ago, in the language in force (spec 025).
+    pub(crate) fn relative(&self, delta: Duration) -> String {
+        let formats = FormatLocale {
+            locale: self.locale,
+            region: None,
+        };
+        self.translator.relative(&formats, delta)
     }
 }
 
@@ -44,6 +55,10 @@ mod tests {
         "home.see_all",
         "home.empty",
         "home.open",
+        "time.just_now",
+        "time.minutes_ago",
+        "time.hours_ago",
+        "time.days_ago",
         "file.new",
         "file.open",
         "file.save",

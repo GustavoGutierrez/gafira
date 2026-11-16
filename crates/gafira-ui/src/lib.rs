@@ -17,10 +17,12 @@ mod editor;
 mod files;
 mod format;
 mod home;
+mod recent;
 mod shell;
 mod splash;
 mod style;
 mod text;
 mod widgets;
 
+pub use recent::{RecentProject, RecentStore};
 pub use shell::{EngineFactory, UiConfig, run};
