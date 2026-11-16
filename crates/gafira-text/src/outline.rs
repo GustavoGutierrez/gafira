@@ -142,4 +142,19 @@ mod tests {
             PathEl::CurveTo(point(11.0, 98.0), point(13.0, 96.0), point(15.0, 94.0))
         );
     }
+
+    // S13-05, ARQ-110: one NaN in any point of a curve makes the element non-finite, one
+    // point at a time.
+    #[test]
+    fn arq_110_a_nan_in_any_point_of_a_curve_is_not_finite() {
+        let ok = gafira_pathops::Point::new(1.0, 2.0);
+        let nan = gafira_pathops::Point::new(f64::NAN, 2.0);
+        assert!(finite(&PathEl::QuadTo(ok, ok)));
+        assert!(!finite(&PathEl::QuadTo(nan, ok)));
+        assert!(!finite(&PathEl::QuadTo(ok, nan)));
+        assert!(finite(&PathEl::CurveTo(ok, ok, ok)));
+        assert!(!finite(&PathEl::CurveTo(nan, ok, ok)));
+        assert!(!finite(&PathEl::CurveTo(ok, nan, ok)));
+        assert!(!finite(&PathEl::CurveTo(ok, ok, nan)));
+    }
 }

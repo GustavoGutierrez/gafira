@@ -55,8 +55,8 @@ La columna «Se cierra cuando» resume el `Start` del README. El texto completo 
 | 68 | Memoria de mipmaps a 16 384 px, sin origen en los informes leídos. | El titular decide si se mide o se acota. |
 | 72 | Fila de diseño P7 y XP3 sin actualizar tras TX. | P7 y XP3 reflejan lo que entregó TX1; solo docs. |
 | 73 | T4 de `gafira-segment` parado por orden del titular (§3.3, anexo B). | El titular decide si se prueba el resto; los sobrevivientes, test primero. |
-| 74 | T4 de `gafira-text`: 65 críticos (§2). | El titular decide cuándo; después, `specifier` y test primero. Un T4 del crate sin críticos vivos lo confirma. |
-| 75 | T4 de `gafira-raster`: 33 críticos (§2). | Se confirma la suposición de `cost_hint` (§2.2); después, `specifier` y test primero. Un T4 del crate sin críticos vivos lo confirma. |
+| 74 | T4 de `gafira-text`: reducido por la spec 013 (D-66). De 65 críticos, 42 muertos y 18 equivalentes excluidos en `.cargo/mutants.toml`; quedan 5 en la frontera exacta de `TIE` de `columns.rs` (`223:23` ×2, `233:65` ×2, `251:14`), sin test forzado (§2.3). | Un T4 completo del crate sin críticos vivos fuera de esos 5 lo confirma. |
+| 75 | T4 de `gafira-raster`: reducido por la spec 013 (D-66). De 33 críticos, 15 muertos y 16 equivalentes excluidos en `.cargo/mutants.toml`; quedan 2 en un empate exacto de ΔE2000 (`palette.rs:158:31`, `232:46`). `cost_hint` sigue como suposición (§2.2). | Se confirma `cost_hint` (§2.2) y un T4 completo del crate, posterior a los cambios de `blend.rs`, `effects/shadow.rs` y `transitions/`, no da críticos vivos fuera de esos 2. |
 | 76 | SG3-W8: Q-48 y la cita de §4.17 aún dan 1055 ms y 43 ms. | `specifier` pone las cifras medidas tras el arreglo. |
 | 77 | SG3-W9: el stub de test imprime un `WARNING ... 0/12` falso. | Se corrige el stub o la condición en `gate.rs`, test primero. |
 | 104 | La regla de la velocidad no absorbe el resto en el offset de origen; el registro redefine «absorbe» como «reporta» (W3 de `gafira-timeline`). | El `specifier` decide si el offset de origen absorbe el resto o si el diseño dice que lo reporta, y hay test. |
@@ -124,6 +124,8 @@ Comprobados contra el árbol en esta rama. El README sigue mandando hasta que el
 | 75 y tabla de estado | Dan 39 críticos. El mismo ítem cuenta 11 `cost_hint` como no críticos, más `error.rs:40` y `view.rs:211`: 48 − 13 = 35, no 39 (§2.1). |
 
 ## 2. Sobrevivientes críticos del T4 a 4a59889
+
+La spec 013 (`specs/done/013-mutant-debt-text-raster.md`) trabajó los bloques de §2.3: su tabla dice qué test mata cada mutante y por qué los demás son equivalentes o quedan sin matar.
 
 Corridas sobre 4a59889. `gafira-text` y `gafira-raster` no han cambiado desde entonces, así que las líneas valen en esta rama. Por orden del titular, no se corrigen antes de publicar (ítem 74).
 

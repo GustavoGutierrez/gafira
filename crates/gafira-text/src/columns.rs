@@ -254,3 +254,108 @@ impl Search<'_> {
         ends.pop();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every split of `n` lines into `count` runs (empty runs allowed), as exclusive ends.
+    fn splits(n: usize, count: usize) -> Vec<Vec<usize>> {
+        if count == 1 {
+            return vec![vec![n]];
+        }
+        let mut out = Vec::new();
+        for first in 0..=n {
+            for rest in splits(n - first, count - 1) {
+                let mut ends = vec![first];
+                ends.extend(rest.iter().map(|e| e + first));
+                out.push(ends);
+            }
+        }
+        out
+    }
+
+    /// FD-45 by exhaustive search: the smallest spread within `limit`, and among equal
+    /// spreads the larger ends. The heights are multiples of 0.5, so every sum is exact and
+    /// a tie is an exact tie.
+    fn exhaustive(heights: &[f64], count: usize, limit: f64) -> Vec<usize> {
+        let mut best: Option<(f64, Vec<usize>)> = None;
+        for ends in splits(heights.len(), count) {
+            let cols = split_heights(heights, &ends);
+            if cols.iter().any(|h| *h > limit) {
+                continue;
+            }
+            let d = cols.iter().copied().fold(f64::MIN, f64::max)
+                - cols.iter().copied().fold(f64::MAX, f64::min);
+            let better = best
+                .as_ref()
+                .is_none_or(|(bd, be)| d < *bd || (d == *bd && ends > *be));
+            if better {
+                best = Some((d, ends));
+            }
+        }
+        best.expect("the filled split fits").1
+    }
+
+    /// All the sequences of up to `len` heights drawn from `alphabet`.
+    fn sequences(alphabet: &[f64], len: usize) -> Vec<Vec<f64>> {
+        let mut all = vec![Vec::new()];
+        let mut level = vec![Vec::new()];
+        for _ in 0..len {
+            level = level
+                .iter()
+                .flat_map(|s: &Vec<f64>| {
+                    alphabet.iter().map(move |h| {
+                        let mut t = s.clone();
+                        t.push(*h);
+                        t
+                    })
+                })
+                .collect();
+            all.extend(level.iter().cloned());
+        }
+        all
+    }
+
+    // S13-01, FD-45: the balanced split is the exhaustive optimum, ties included, for every
+    // sequence of up to seven lines of three heights, two to four columns, with and without a
+    // limit.
+    #[test]
+    fn fd_45_balance_matches_an_exhaustive_search() {
+        let mut checked = 0;
+        for heights in sequences(&[1.0, 2.0, 3.5], 7) {
+            let total: f64 = heights.iter().sum();
+            for count in 2..=4 {
+                let mean = total / count as f64;
+                for limit in [f64::INFINITY, (mean + 1.0).ceil(), (mean + 3.0).ceil()] {
+                    let filled = fill(&heights, count, limit);
+                    if split_heights(&heights, &filled).iter().any(|h| *h > limit) {
+                        continue;
+                    }
+                    assert_eq!(
+                        balance(&heights, count, limit),
+                        exhaustive(&heights, count, limit),
+                        "{heights:?} in {count} within {limit}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 10_000, "{checked}");
+    }
+
+    // S13-01, FD-45: a tie on the spread goes to the larger ends, whichever split the search
+    // meets first; and a spread that is better by less than the tie tolerance is still a tie.
+    #[test]
+    fn fd_45_ties_go_to_the_larger_ends() {
+        // [1, 1] | [2] and [1] | [1, 2]... only the first has spread 0.
+        assert_eq!(balance(&[1.0, 1.0, 2.0], 2, f64::INFINITY), vec![2, 3]);
+        // Spread 1 both ways: [2] | [1, 2] and [2, 1] | [2]; the larger ends win.
+        assert_eq!(balance(&[2.0, 1.0, 2.0], 2, f64::INFINITY), vec![2, 3]);
+        // Within the tolerance: 1 + 1e-12 against 1 is a tie, so the larger ends win.
+        assert_eq!(
+            balance(&[1.0 + 1e-12, 1.0, 1.0], 2, f64::INFINITY),
+            vec![2, 3]
+        );
+    }
+}

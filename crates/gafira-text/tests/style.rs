@@ -387,6 +387,42 @@ fn fd_41_a_font_without_metrics_gives_invalid_font_with_its_position() {
     assert!(run("a", &[INTER]).is_ok());
 }
 
+/// A copy of the font with these ascent, descent (negative below the baseline) and line gap in
+/// `hhea`, `OS/2` typo and `OS/2` win, and `USE_TYPO_METRICS` off.
+fn with_metrics(font: &[u8], ascent: i16, descent: i16, gap: i16) -> Vec<u8> {
+    let os2 = table(font, b"OS/2");
+    let hhea = patched(font, b"hhea", &[(4, ascent), (6, descent), (8, gap)]);
+    patched(
+        &hhea,
+        b"OS/2",
+        &[
+            (62, be16(font, os2 + 62) & !0x80),
+            (68, ascent),
+            (70, descent),
+            (72, gap),
+            (74, ascent),
+            (76, -descent),
+        ],
+    )
+}
+
+// S13-08, "Fuente sin métricas": the natural height is ascent + descent + line gap, and only a
+// sum of 0 or less is an invalid font. Each font below has one or two of the three at 0, or an
+// ascent equal to its descent, or a gap above both, and is valid; its lines are that far apart.
+#[test]
+fn fd_41_a_font_with_some_metrics_at_0_is_valid_and_spaced_by_their_sum() {
+    let upem = 2048.0;
+    for (ascent, descent, gap) in [(800, 0, 0), (800, -800, 0), (0, -800, 0), (800, 0, 1600)] {
+        let font = with_metrics(INTER, ascent, descent, gap);
+        let b = baselines(&lay("a\nb", &[font.as_slice()], &style(0.0, 1.0), 10_000.0));
+        let expected = f64::from(ascent - descent + gap) * SIZE_PX / upem;
+        assert!(
+            (b[1] - b[0] - expected).abs() <= 0.01,
+            "{ascent} {descent} {gap}: {b:?} vs {expected}"
+        );
+    }
+}
+
 // ---- the spacing the output keeps is the spacing that breaks lines ---------------------------
 
 /// Width of the one line of `text` in a very wide box.

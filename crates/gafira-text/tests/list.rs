@@ -376,3 +376,30 @@ fn fd_41_j_the_hang_of_1_dot_at_12_pt_is_in_proportion_to_the_dpi_up_to_1_3e39()
         );
     }
 }
+
+// S13-04, ARQ-110: the bottom of an item, `top + height`, is checked. At 1e38 px a line is
+// about 1.2e38 px tall: two items stack to a finite 2.4e38, and a third one, finite on its
+// own and with a finite top, ends past f32::MAX.
+#[test]
+fn arq_110_an_item_whose_bottom_overflows_is_an_error() {
+    let huge = |n: usize| {
+        let items = vec![item("a", 1, Bullet); n];
+        layout_list(
+            &items,
+            &[INTER],
+            &TextStyle {
+                size_pt: 12.0,
+                ..style()
+            },
+            1e38 * 72.0 / 12.0,
+            Size::new(1e15, 1e15),
+        )
+    };
+    let two = huge(2).expect("two items stay finite");
+    let bottom = f64::from(two[1].top) + f64::from(two[1].layout.height);
+    assert!(bottom.is_finite() && bottom + f64::from(two[1].layout.height) > f64::from(f32::MAX));
+    assert_eq!(
+        huge(3).err(),
+        Some(TextError::NonFinite { field: "output" })
+    );
+}

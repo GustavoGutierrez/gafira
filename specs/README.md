@@ -39,6 +39,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 010 | [`LicenseService` del engine y licencia opcional](done/010-engine-license-service.md) | `LicenseService::{start, status, can_export, is_required, activate, validate, deactivate}`; licencia deshabilitable por build con `NoLicensing` → `NotRequired` (D-58); 9 tests nuevos, 4 mutantes a mano muertos, 2658 tests |
 | 011 | [`AssetService::import` del engine](done/011-engine-asset-import.md) | Comando `InsertAsset` deduplicado por hash y `AssetService::import` (sesión → archivo → store → comando, deshacer incluido); 9 tests nuevos, 4 mutantes a mano muertos, 2667 tests |
 | 012 | [Identidad del proyecto, «Guardar como», «Guardar copia» y `.gafira.bak`](done/012-engine-save-as-and-backup.md) | `ProjectId` en el documento (D-63), puerto `IdSource` y `SystemPorts`, ranuras de recuperación por id, `save_as`, `save_copy` y una generación `.bak` atómica; 14 tests nuevos, 6 mutantes a mano muertos, 2681 tests |
+| 013 | [Mutantes críticos de `gafira-text` y `gafira-raster`](done/013-mutant-debt-text-raster.md) | D-66, ítems 74 y 75 de 07, solo tests: de 98 críticos, 57 muertos, 34 equivalentes excluidos en `.cargo/mutants.toml` y 7 sin matar en la frontera de una tolerancia; 24 tests nuevos, 2691 tests |
 | 014 | [`gafira-theme`: tokens de diseño y tipografías](done/014-theme-tokens.md) | `assets/theme/gafira.tokens.json` (03 §3) cargado y validado (schema, referencias, modos, contraste DIS-10, pares rechazados, movimiento reducido) en tipos neutros; Inter y Manrope embebidas (subconjuntos provisionales) con prueba `cmap` de ARQ-105; 24 tests nuevos, 9 de 10 mutantes a mano muertos (1 equivalente), 2718 tests |
 | 015 | [`gafira-i18n`: catálogos es/en y regla de D-08](done/015-i18n-catalogs.md) | `assets/i18n/{es,en}.toml` compilados en build; `D08LocaleResolver` (D-08, región D-64) y `CatalogTranslator` (parámetros, plurales CLDR, respaldo de §14.6, números y cantidades con ICU4X, tiempo relativo) y `PseudoTranslator` (feature `pseudo`); fechas como interim ISO 8601 UTC; 27 tests nuevos, 8 de 9 mutantes a mano muertos (1 equivalente), 2718 tests |
 
@@ -57,4 +58,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **016** (la 013 está en curso).
+Siguiente ID libre: **016**.

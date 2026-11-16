@@ -616,6 +616,22 @@ mod tests {
         );
     }
 
+    // S13-15, "Imagen de tamaño 0": a size 0 on one side only also hashes to 0, in both
+    // formats.
+    #[test]
+    fn arq_122_dhash_of_an_image_with_one_side_0_is_0() {
+        for (w, h) in [(0, 3), (3, 0)] {
+            assert_eq!(
+                dhash(ImageView::new(w, h, PixelData::Rgba8(&[])).unwrap()),
+                Ok(0)
+            );
+            assert_eq!(
+                dhash(ImageView::new(w, h, PixelData::RgbaF32(&[])).unwrap()),
+                Ok(0)
+            );
+        }
+    }
+
     // ARQ-111
     #[test]
     fn arq_111_dhash_is_deterministic() {

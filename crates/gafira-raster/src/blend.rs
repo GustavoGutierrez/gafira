@@ -349,6 +349,26 @@ mod tests {
     use super::*;
     use crate::premultiply_u8;
 
+    // S13-14, ARQ-119 (W3C ClipColor): a colour whose largest channel is exactly 1 is not
+    // rescaled, bit for bit; only a channel above 1 is.
+    #[test]
+    fn arq_119_clip_color_leaves_a_maximum_of_exactly_one_alone() {
+        for c in [
+            [1.0, 0.3, 0.1],
+            [1.0, 0.5, 0.25],
+            [0.2, 1.0, 0.7],
+            [0.1, 0.2, 1.0],
+        ] {
+            assert_eq!(clip_color(c), c);
+        }
+        let above = clip_color([1.5, 0.3, 0.1]);
+        assert!((above[0] - 1.0).abs() <= 1e-12, "{above:?}");
+        assert!(
+            above[1] > 0.3 && above[2] > 0.1,
+            "pulled to the luminance: {above:?}"
+        );
+    }
+
     /// The W3C formulas, transcribed literally on straight colours and in `f64`.
     /// Kept apart from the code under test: other names, other structure.
     mod reference {
