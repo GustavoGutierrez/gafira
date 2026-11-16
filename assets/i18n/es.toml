@@ -151,11 +151,20 @@ identity = "Identidad"
 library = "Biblioteca"
 drawing = "Dibujo"
 
+[pieces]
+shapes = "Formas"
+rect = "Rectángulo"
+ellipse = "Elipse"
+
 [inspector]
 position = "Posición"
 layers = "Capas"
 image = "Imagen"
 empty = "Selecciona un elemento para ver sus propiedades."
+x = "X"
+y = "Y"
+width = "Ancho"
+height = "Alto"
 
 [bottom]
 notes = "Notas"

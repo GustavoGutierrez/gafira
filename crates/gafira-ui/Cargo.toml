@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 gafira-doc.workspace = true
 gafira-geom.workspace = true
+gafira-color.workspace = true
 gafira-edit.workspace = true
 gafira-engine.workspace = true
 gafira-ports.workspace = true

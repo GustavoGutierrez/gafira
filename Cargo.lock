@@ -1761,6 +1761,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
+ "gafira-color",
  "gafira-doc",
  "gafira-edit",
  "gafira-engine",

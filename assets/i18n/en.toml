@@ -151,11 +151,20 @@ identity = "Identity"
 library = "Library"
 drawing = "Drawing"
 
+[pieces]
+shapes = "Shapes"
+rect = "Rectangle"
+ellipse = "Ellipse"
+
 [inspector]
 position = "Position"
 layers = "Layers"
 image = "Image"
 empty = "Select an element to see its properties."
+x = "X"
+y = "Y"
+width = "Width"
+height = "Height"
 
 [bottom]
 notes = "Notes"

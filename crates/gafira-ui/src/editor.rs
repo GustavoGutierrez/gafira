@@ -4,11 +4,12 @@
 use std::sync::Arc;
 
 use egui::{Align, Align2, Color32, Layout, Pos2, Rect, RichText, Stroke, Vec2};
-use gafira_doc::Document;
-use gafira_edit::InsertPage;
+use gafira_doc::{Document, NodeId, PageId, Placement, ShapeGeometry};
+use gafira_edit::{GestureId, InsertNodes, InsertPage, Property, RemoveNodes, SetProperty};
 use gafira_engine::Gafira;
 use gafira_theme::Shadow;
 
+use crate::canvas::{self, Shape};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::shell::Go;
@@ -41,6 +42,17 @@ pub(crate) struct Editor {
     zoom_factor: f32,
     /// The zoom of the last frame, for the bottom bar.
     zoom: f32,
+    /// The selected element (03 §9.1); one at a time for now.
+    selected: Option<(PageId, NodeId)>,
+    /// The drag in progress: its gesture (one undo entry, ARQ-33), where the
+    /// element started and how far the pointer went.
+    drag: Option<Drag>,
+}
+
+struct Drag {
+    gesture: Option<GestureId>,
+    origin: Placement,
+    offset: Vec2,
 }
 
 impl Default for Editor {
@@ -49,6 +61,8 @@ impl Default for Editor {
             tab: 0,
             zoom_factor: 1.0,
             zoom: 1.0,
+            selected: None,
+            drag: None,
         }
     }
 }
@@ -62,6 +76,17 @@ struct Asked {
     undo: bool,
     redo: bool,
     add_page: bool,
+    /// A new piece of this geometry on the selected element's page, or the
+    /// first page.
+    insert: Option<ShapeGeometry>,
+    /// A new selection (`Some(None)` clears it).
+    select: Option<Option<(PageId, NodeId)>>,
+    drag_begin: Option<Placement>,
+    drag_to: Option<Vec2>,
+    drag_end: bool,
+    delete: bool,
+    /// A placement typed in the Inspector for the selected element.
+    place: Option<Placement>,
 }
 
 /// What the top bar shows about the session.
@@ -71,6 +96,19 @@ struct Header<'a> {
     modified: bool,
     name: Option<String>,
     notice: Option<&'a str>,
+}
+
+/// The selected shape, if it is still in `document` (an undo may have taken
+/// it away).
+fn selected_shape(
+    document: Option<&Document>,
+    selected: Option<(PageId, NodeId)>,
+) -> Option<Shape> {
+    let (page, node) = selected?;
+    let page = document?.page(page)?;
+    canvas::shapes(page)
+        .into_iter()
+        .find(|shape| shape.node == node)
 }
 
 /// The pages of `document` in logical px at its dpi.
@@ -124,12 +162,23 @@ impl Editor {
                 asked.redo = true;
             }
         });
+        let typing = ctx.wants_keyboard_input();
+        if !typing
+            && ctx
+                .input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+        {
+            asked.delete = true;
+        }
+        let selection = selected_shape(document.as_deref(), self.selected);
+        if selection.is_none() {
+            self.selected = None;
+        }
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         self.rail(ctx, theme, texts);
-        self.side_panel(ctx, theme, texts);
-        self.inspector(ctx, theme, texts);
-        self.canvas(ctx, theme, texts, document.as_deref());
-        apply(engine, &document, &asked)
+        self.side_panel(ctx, theme, texts, &mut asked);
+        self.inspector(ctx, theme, texts, selection.as_ref(), &mut asked);
+        self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
+        self.apply(engine, &document, &asked, theme)
     }
 
     fn bars(
@@ -293,7 +342,7 @@ impl Editor {
             });
     }
 
-    fn side_panel(&self, ctx: &egui::Context, theme: &Theme, texts: &Texts) {
+    fn side_panel(&self, ctx: &egui::Context, theme: &Theme, texts: &Texts, asked: &mut Asked) {
         egui::SidePanel::left("editor.side")
             .default_width(px(theme.tokens.size.panel_left))
             .width_range(280.0..=480.0)
@@ -304,6 +353,25 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                if TABS[self.tab] == "tab.pieces" {
+                    ui.label(
+                        RichText::new(texts.t(&gafira_doc::msg!("pieces.shapes")))
+                            .font(theme.font("ui-label"))
+                            .color(theme.c("text")),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        for (key, geometry) in [
+                            (gafira_doc::msg!("pieces.rect"), ShapeGeometry::Rect),
+                            (gafira_doc::msg!("pieces.ellipse"), ShapeGeometry::Ellipse),
+                        ] {
+                            if widgets::secondary(ui, theme, texts.t(&key)).clicked() {
+                                asked.insert = Some(geometry);
+                            }
+                        }
+                    });
+                    return;
+                }
                 let mut query = String::new();
                 ui.add(
                     egui::TextEdit::singleline(&mut query)
@@ -328,7 +396,14 @@ impl Editor {
             });
     }
 
-    fn inspector(&self, ctx: &egui::Context, theme: &Theme, texts: &Texts) {
+    fn inspector(
+        &self,
+        ctx: &egui::Context,
+        theme: &Theme,
+        texts: &Texts,
+        selection: Option<&Shape>,
+        asked: &mut Asked,
+    ) {
         egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
@@ -362,11 +437,41 @@ impl Editor {
                     }
                 });
                 ui.add_space(24.0);
-                ui.label(
-                    RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
-                        .font(theme.font("body-sm"))
-                        .color(theme.c("text.muted")),
-                );
+                let Some(shape) = selection else {
+                    ui.label(
+                        RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
+                            .font(theme.font("body-sm"))
+                            .color(theme.c("text.muted")),
+                    );
+                    return;
+                };
+                let mut placement = shape.placement;
+                let mut changed = false;
+                egui::Grid::new("inspector.position")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        for (key, value, min) in [
+                            (gafira_doc::msg!("inspector.x"), &mut placement.x, f64::MIN),
+                            (gafira_doc::msg!("inspector.y"), &mut placement.y, f64::MIN),
+                            (gafira_doc::msg!("inspector.width"), &mut placement.w, 1.0),
+                            (gafira_doc::msg!("inspector.height"), &mut placement.h, 1.0),
+                        ] {
+                            ui.label(texts.t(&key));
+                            changed |= ui
+                                .add(
+                                    egui::DragValue::new(value)
+                                        .speed(1.0)
+                                        .range(min..=f64::MAX)
+                                        .max_decimals(1),
+                                )
+                                .changed();
+                            ui.end_row();
+                        }
+                    });
+                if changed {
+                    asked.place = Some(placement);
+                }
             });
     }
 
@@ -376,6 +481,7 @@ impl Editor {
         theme: &Theme,
         texts: &Texts,
         document: Option<&Document>,
+        asked: &mut Asked,
     ) {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(theme.c("workspace")))
@@ -404,11 +510,15 @@ impl Editor {
                 egui::ScrollArea::both()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        let (rect, _) = ui.allocate_exact_size(
+                        let (rect, response) = ui.allocate_exact_size(
                             Vec2::new(width.max(area.width()), height.max(area.height())),
-                            egui::Sense::hover(),
+                            egui::Sense::click_and_drag(),
                         );
                         let painter = ui.painter();
+                        let pages = document.map(Document::pages).unwrap_or_default();
+                        let pointer = response.interact_pointer_pos();
+                        let pressed = response.clicked() || response.drag_started();
+                        let mut picked: Option<(PageId, NodeId, Placement)> = None;
                         let mut top =
                             rect.min.y + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
                         for (index, size) in sizes.iter().enumerate() {
@@ -445,44 +555,169 @@ impl Editor {
                                 theme.font("caption"),
                                 theme.c("text.secondary"),
                             );
+                            if let Some(page_doc) = pages.get(index) {
+                                let shapes = canvas::shapes(page_doc);
+                                for shape in &shapes {
+                                    let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    let fill = shape
+                                        .fill
+                                        .map_or(Color32::TRANSPARENT, canvas::screen_color);
+                                    match shape.geometry {
+                                        ShapeGeometry::Rect => {
+                                            painter.rect_filled(at, 0.0, fill);
+                                        }
+                                        ShapeGeometry::Ellipse => {
+                                            painter.add(egui::Shape::ellipse_filled(
+                                                at.center(),
+                                                at.size() / 2.0,
+                                                fill,
+                                            ));
+                                        }
+                                    }
+                                    if self.selected == Some((shape.page, shape.node)) {
+                                        painter.rect_stroke(
+                                            at.expand(1.0),
+                                            0.0,
+                                            Stroke::new(2.0, theme.c("canvas.selection")),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    }
+                                }
+                                if pressed
+                                    && let Some(at) = pointer
+                                    && page.contains(at)
+                                    && let Some(node) = canvas::hit(&shapes, page, zoom, at)
+                                {
+                                    let placement = shapes
+                                        .iter()
+                                        .find(|shape| shape.node == node)
+                                        .map(|shape| shape.placement);
+                                    if let Some(placement) = placement {
+                                        picked = Some((page_doc.id, node, placement));
+                                    }
+                                }
+                            }
                             top = page.max.y + PAGE_GAP;
+                        }
+                        if pressed {
+                            asked.select = Some(picked.map(|(page, node, _)| (page, node)));
+                        }
+                        if response.drag_started()
+                            && let Some((_, _, placement)) = picked
+                        {
+                            asked.drag_begin = Some(placement);
+                        }
+                        if response.dragged() && self.drag.is_some() {
+                            asked.drag_to = Some(response.drag_delta());
+                        }
+                        if response.drag_stopped() {
+                            asked.drag_end = true;
                         }
                     });
             });
     }
 }
 
-/// Run what the person asked, through the engine (02 §5.5: every change is
-/// a command); a refused action is logged and the view stays.
-fn apply(engine: &mut Gafira, document: &Option<Arc<Document>>, asked: &Asked) -> Go {
-    if asked.undo
-        && let Err(error) = engine.edit().undo()
-    {
-        eprintln!("undo: {error}");
-    }
-    if asked.redo
-        && let Err(error) = engine.edit().redo()
-    {
-        eprintln!("redo: {error}");
-    }
-    let last = document
-        .as_ref()
-        .and_then(|d| d.pages().last().map(|page| (d.pages().len(), page.size)));
-    if asked.add_page
-        && let Some((at, size)) = last
-        && let Err(error) =
-            engine
-                .edit()
-                .execute(Box::new(InsertPage::new(at, String::new(), size)))
-    {
-        eprintln!("add page: {error}");
-    }
-    if asked.home {
-        Go::Home
-    } else if let Some(action) = asked.file {
-        Go::File(action)
-    } else {
-        Go::Stay
+impl Editor {
+    /// Run what the person asked, through the engine (02 §5.5: every change
+    /// is a command); a refused action is logged and the view stays.
+    fn apply(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Option<Arc<Document>>,
+        asked: &Asked,
+        theme: &Theme,
+    ) -> Go {
+        let log = |what: &str, result: Result<(), gafira_engine::EngineError>| {
+            if let Err(error) = result {
+                eprintln!("{what}: {error}");
+            }
+        };
+        if asked.undo {
+            log("undo", engine.edit().undo().map(drop));
+        }
+        if asked.redo {
+            log("redo", engine.edit().redo().map(drop));
+        }
+        let last = document
+            .as_ref()
+            .and_then(|d| d.pages().last().map(|page| (d.pages().len(), page.size)));
+        if asked.add_page
+            && let Some((at, size)) = last
+        {
+            log(
+                "add page",
+                engine
+                    .edit()
+                    .execute(Box::new(InsertPage::new(at, String::new(), size)))
+                    .map(drop),
+            );
+        }
+        if let Some(select) = asked.select {
+            self.selected = select;
+        }
+        if let Some(geometry) = asked.insert
+            && let Some(document) = document
+        {
+            let page = self
+                .selected
+                .and_then(|(page, _)| document.page(page))
+                .or_else(|| document.pages().first().map(AsRef::as_ref));
+            if let Some(page) = page
+                && let Ok(size) = page.size.to_px(document.dpi())
+            {
+                let px = Vec2::new(size.width() as f32, size.height() as f32);
+                let spec =
+                    canvas::new_piece(px, geometry, canvas::document_color(theme.c("accent")));
+                let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
+                let next = NodeId::new(document.next_id());
+                match engine.edit().execute(Box::new(command)) {
+                    Ok(_) => self.selected = Some((page.id, next)),
+                    Err(error) => eprintln!("insert: {error}"),
+                }
+            }
+        }
+        if let Some(origin) = asked.drag_begin {
+            let gesture = engine.edit().begin_gesture().ok();
+            self.drag = Some(Drag {
+                gesture,
+                origin,
+                offset: Vec2::ZERO,
+            });
+        }
+        if let (Some(delta), Some(drag), Some((page, node))) =
+            (asked.drag_to, self.drag.as_mut(), self.selected)
+        {
+            drag.offset += delta;
+            let to = canvas::moved(&drag.origin, drag.offset, self.zoom);
+            let command = SetProperty::new(page, vec![node], Property::Placement(to), drag.gesture);
+            log("move", engine.edit().execute(Box::new(command)).map(drop));
+        }
+        if asked.drag_end && self.drag.take().is_some() {
+            log("end gesture", engine.edit().end_gesture());
+        }
+        if let (Some(placement), Some((page, node))) = (asked.place, self.selected) {
+            let command = SetProperty::new(page, vec![node], Property::Placement(placement), None);
+            log("place", engine.edit().execute(Box::new(command)).map(drop));
+        }
+        if asked.delete
+            && let Some((page, node)) = self.selected.take()
+        {
+            log(
+                "delete",
+                engine
+                    .edit()
+                    .execute(Box::new(RemoveNodes::new(page, vec![node])))
+                    .map(drop),
+            );
+        }
+        if asked.home {
+            Go::Home
+        } else if let Some(action) = asked.file {
+            Go::File(action)
+        } else {
+            Go::Stay
+        }
     }
 }
 
@@ -585,6 +820,15 @@ pub(crate) mod tests {
         .expect("an engine")
     }
 
+    /// One frame's [`Asked`] applied by a fresh editor.
+    fn run(engine: &mut Gafira, snapshot: &Option<Arc<Document>>, asked: &Asked) -> Go {
+        Editor::default().apply(engine, snapshot, asked, &theme())
+    }
+
+    fn theme() -> Theme {
+        Theme::new(gafira_theme::ThemeTokens::embedded().expect("tokens"))
+    }
+
     fn pages(engine: &mut Gafira) -> Vec<Vec2> {
         page_sizes(&engine.edit().document().expect("a document"))
     }
@@ -614,7 +858,7 @@ pub(crate) mod tests {
             add_page: true,
             ..Asked::default()
         };
-        assert!(matches!(apply(&mut engine, &snapshot, &add), Go::Stay));
+        assert!(matches!(run(&mut engine, &snapshot, &add), Go::Stay));
         assert_eq!(pages(&mut engine).len(), 2);
         assert_eq!(
             pages(&mut engine)[1],
@@ -624,7 +868,7 @@ pub(crate) mod tests {
         assert_eq!(engine.edit().can_undo_redo(), (true, false));
 
         let snapshot = engine.edit().document();
-        apply(
+        run(
             &mut engine,
             &snapshot,
             &Asked {
@@ -640,7 +884,7 @@ pub(crate) mod tests {
         );
 
         let snapshot = engine.edit().document();
-        apply(
+        run(
             &mut engine,
             &snapshot,
             &Asked {
@@ -651,7 +895,7 @@ pub(crate) mod tests {
         assert_eq!(pages(&mut engine).len(), 2);
         assert!(engine.projects().is_modified());
         assert!(matches!(
-            apply(
+            run(
                 &mut engine,
                 &snapshot,
                 &Asked {
@@ -671,7 +915,7 @@ pub(crate) mod tests {
         let mut engine = engine_over(Arc::new(gafira_format::GafRepository::default()));
         start(&mut engine, StartFormat::Print).expect("a new document");
         let snapshot = engine.edit().document();
-        apply(
+        run(
             &mut engine,
             &snapshot,
             &Asked {
@@ -691,5 +935,106 @@ pub(crate) mod tests {
         assert_eq!(engine.projects().path(), Some(path.clone()));
         assert!(!engine.projects().is_modified());
         std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    fn the_shapes(engine: &mut Gafira) -> Vec<Shape> {
+        let document = engine.edit().document().expect("a document");
+        canvas::shapes(&document.pages()[0])
+    }
+
+    // S20-05
+    #[test]
+    fn s20_05_a_piece_is_inserted_selected_moved_in_one_undo_and_deleted() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        let mut editor = Editor::default();
+        let snapshot = engine.edit().document();
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                insert: Some(ShapeGeometry::Ellipse),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        let shapes = the_shapes(&mut engine);
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].geometry, ShapeGeometry::Ellipse);
+        assert_eq!(
+            editor.selected,
+            Some((shapes[0].page, shapes[0].node)),
+            "the new piece is selected"
+        );
+        let origin = shapes[0].placement;
+
+        // A drag of three moves is one gesture: one undo takes it back.
+        editor.zoom = 2.0;
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                drag_begin: Some(origin),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        for _ in 0..3 {
+            editor.apply(
+                &mut engine,
+                &snapshot,
+                &Asked {
+                    drag_to: Some(Vec2::new(10.0, 4.0)),
+                    ..Asked::default()
+                },
+                &theme,
+            );
+        }
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+            &theme,
+        );
+        let moved = the_shapes(&mut engine)[0].placement;
+        assert_eq!((moved.x - origin.x, moved.y - origin.y), (15.0, 6.0));
+        engine.edit().undo().expect("an undo");
+        assert_eq!(
+            the_shapes(&mut engine)[0].placement,
+            origin,
+            "one entry for the whole drag"
+        );
+        engine.edit().redo().expect("a redo");
+
+        let mut typed = moved;
+        typed.w = 500.0;
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                place: Some(typed),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert_eq!(the_shapes(&mut engine)[0].placement.w, 500.0);
+
+        editor.apply(
+            &mut engine,
+            &snapshot,
+            &Asked {
+                delete: true,
+                ..Asked::default()
+            },
+            &theme,
+        );
+        assert!(the_shapes(&mut engine).is_empty());
+        assert_eq!(editor.selected, None);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine).len(), 1, "delete is undoable");
     }
 }
