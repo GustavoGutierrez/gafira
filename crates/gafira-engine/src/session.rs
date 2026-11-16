@@ -14,6 +14,7 @@ use std::time::Duration;
 use gafira_edit::{DirtySet, History};
 
 use crate::event::{EngineEvent, EventBus};
+use crate::lock::FileLock;
 
 /// The number of a document state an observer saw (02 §5.2 line 1317).
 ///
@@ -50,6 +51,11 @@ pub(crate) struct Session {
     pub(crate) session_key: String,
     /// Where the recovery slots of this session stand (P13).
     pub(crate) autosave: Autosave,
+    /// The lock file this session wrote and removes when it ends (spec 028).
+    pub(crate) lock: Option<PathBuf>,
+    /// Another instance's lock on the file, which made it read-only
+    /// (spec 028).
+    pub(crate) locked_by: Option<FileLock>,
 }
 
 /// The autosave state of one session (design P13); a new session starts with

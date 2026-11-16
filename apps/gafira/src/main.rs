@@ -15,6 +15,7 @@ use gafira_format::{GafRepository, Limits};
 use gafira_i18n::D08LocaleResolver;
 use gafira_platform::{
     EnvLocale, JsonSettings, RandomIds, RecentProjects, StdFileSystem, StderrNotifier, SystemClock,
+    SystemProcesses,
 };
 use gafira_ports::i18n::{LanguagePreference, Locale, LocaleResolver};
 use gafira_ports::license::NoLicensing;
@@ -90,7 +91,12 @@ fn main() -> eframe::Result {
             let ports = Ports::new(
                 Arc::new(GafRepository::new(Limits::default(), Arc::clone(&store))),
                 store,
-                SystemPorts::new(Arc::new(StdFileSystem), clock.clone(), Arc::new(RandomIds)),
+                SystemPorts::new(
+                    Arc::new(StdFileSystem),
+                    clock.clone(),
+                    Arc::new(RandomIds),
+                    Arc::new(SystemProcesses::new(data_dir.join("instances"))),
+                ),
                 Arc::new(StderrNotifier),
                 // D-62: the first version ships without a licence.
                 Arc::new(NoLicensing),

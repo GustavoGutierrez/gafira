@@ -25,6 +25,7 @@ mod event;
 mod fakes;
 mod governor;
 mod license;
+mod lock;
 mod project;
 mod session;
 mod settings;
@@ -44,6 +45,7 @@ pub use governor::{
     TileCacheTrim, Trimmable,
 };
 pub use license::LicenseService;
+pub use lock::FileLock;
 pub use project::ProjectService;
 pub use session::DocVersion;
 pub use settings::SettingsService;

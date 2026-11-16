@@ -25,7 +25,9 @@ use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVeri
 use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
 use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
-use gafira_ports::system::{Clock, FileSystem, FileWrite, IdSource, Notifier, ReadSeek};
+use gafira_ports::system::{
+    Clock, FileSystem, FileWrite, IdSource, Notifier, ProcessId, ProcessProbe, ReadSeek,
+};
 
 use crate::bus::EventChannel;
 use crate::engine::{EngineConfig, Gafira, Ports, Registries, SettingsPorts, SystemPorts};
@@ -126,6 +128,49 @@ impl IdSource for SequentialIds {
 }
 
 pub(crate) struct NoNotifier;
+
+/// A process probe the test drives: this process is [`FakeProcesses::current`]
+/// on host [`FakeProcesses::HOST`], and only the pids put in `alive` (and
+/// the current one) run (spec 028).
+pub(crate) struct FakeProcesses {
+    pub(crate) current: ProcessId,
+    alive: Mutex<BTreeSet<ProcessId>>,
+}
+
+impl FakeProcesses {
+    /// The host every fake runs on.
+    pub(crate) const HOST: &'static str = "here";
+    /// The pid of a default fake.
+    pub(crate) const PID: ProcessId = ProcessId(1000);
+
+    /// This process is `current`, and `alive` run besides it.
+    pub(crate) fn new(current: u32, alive: &[u32]) -> Self {
+        Self {
+            current: ProcessId(current),
+            alive: Mutex::new(alive.iter().copied().map(ProcessId).collect()),
+        }
+    }
+}
+
+impl Default for FakeProcesses {
+    fn default() -> Self {
+        Self::new(Self::PID.0, &[])
+    }
+}
+
+impl ProcessProbe for FakeProcesses {
+    fn current(&self) -> ProcessId {
+        self.current
+    }
+
+    fn host(&self) -> String {
+        Self::HOST.to_owned()
+    }
+
+    fn is_alive(&self, pid: ProcessId) -> bool {
+        pid == self.current || lock(&self.alive).contains(&pid)
+    }
+}
 
 impl Notifier for NoNotifier {
     fn notify(&self, _title: &str, _body: &str) {}
@@ -421,6 +466,7 @@ pub(crate) fn six_ports() -> Ports {
             Arc::new(NoFilesystem),
             Arc::new(NoClock),
             Arc::new(SequentialIds::default()),
+            Arc::new(FakeProcesses::default()),
         ),
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
@@ -766,6 +812,16 @@ pub(crate) fn engine_with_clock(
     repository: &Arc<MemoryRepository>,
     clock: Arc<dyn Clock>,
 ) -> Gafira {
+    engine_with_processes(fs, repository, clock, Arc::new(FakeProcesses::default()))
+}
+
+/// [`engine_with_clock`], running as the process `processes` says (spec 028).
+pub(crate) fn engine_with_processes(
+    fs: &MemoryFs,
+    repository: &Arc<MemoryRepository>,
+    clock: Arc<dyn Clock>,
+    processes: Arc<FakeProcesses>,
+) -> Gafira {
     let ports = Ports::new(
         Arc::clone(repository) as Arc<dyn ProjectRepository>,
         Arc::new(NoStore),
@@ -773,6 +829,7 @@ pub(crate) fn engine_with_clock(
             Arc::new(fs.clone()),
             clock,
             Arc::new(SequentialIds::default()),
+            processes,
         ),
         Arc::new(NoNotifier),
         Arc::new(NoLicense),

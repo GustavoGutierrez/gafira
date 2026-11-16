@@ -29,7 +29,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | ID | Spec | Estado |
 | --- | --- | --- |
-| — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`); pendientes de E4 las versiones dentro del `.gaf` y los bloqueos, E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
+| — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`); pendientes de E4 las versiones dentro del `.gaf` (los bloqueos los cierra la 028), E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
 
@@ -54,6 +54,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 025 | [Proyectos recientes en Inicio](done/025-recent-projects.md) | `recent.json` en la carpeta de datos (12 entradas, sin rutas repetidas, poda de archivos que ya no existen); hasta 4 tarjetas con tiempo relativo que abren el proyecto |
 | 026 | [Almacén por contenido y recursos embebidos](done/026-content-store.md) | `gafira-assets` (`FsStore`, BLAKE3, escritura atómica, sin duplicados) compuesto en `<datos_app>/store`; el `.gaf` guarda los embebidos en `assets/<hash>.<ext>` y al abrir comprueba cada hash; 12 tests nuevos |
 | 027 | [Texto en el lienzo](done/027-text-on-canvas.md) | `TextNode` en el documento (primer corte de 02 §3.1), `Property::TextContent`, pestaña Texto, dibujo e Inspector de texto |
+| 028 | [Bloqueos de archivo y ranuras de otra instancia](done/028-file-locks.md) | Puerto `ProcessProbe` y `SystemProcesses` (`/proc` en Linux, baliza con `File::try_lock` fuera); PID en el marcador; `.gaf.lock` atómico, solo lectura ante un dueño vivo ajeno y toma de uno muerto; 13 tests nuevos, 2572 tests |
 
 ### Historial del flujo anterior
 

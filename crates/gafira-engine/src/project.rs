@@ -4,7 +4,8 @@
 //! `save_copy` (spec 012), `is_modified` and the autosave schedule
 //! (`autosave_due`, `autosave_finished`, design P13). Every save keeps one
 //! `.gaf.bak` generation (02 §7.2 step 4) and every session carries the
-//! project id of D-63.
+//! project id of D-63. A session with a file holds its `<file>.lock`
+//! (spec 028).
 //! Every file operation goes through the injected ports; the engine opens
 //! nothing itself (P1, design P18).
 
@@ -17,11 +18,12 @@ use std::time::Duration;
 use gafira_doc::{Document, Dpi, Page, PageId, PageSize, ProjectId};
 use gafira_edit::{DirtySet, History};
 use gafira_ports::repository::ProjectRepository;
-use gafira_ports::system::{Clock, FileSystem, IdSource};
+use gafira_ports::system::{Clock, FileSystem, IdSource, ProcessId, ProcessProbe};
 
-use crate::autosave::{AutosaveJob, AutosaveOutcome, MARKER, SLOTS, parse_marker};
+use crate::autosave::{AutosaveJob, AutosaveOutcome, MARKER, Marker, SLOTS, parse_marker};
 use crate::engine::{EngineConfig, EngineError, Ports};
 use crate::event::{EngineEvent, RecoveryEntry};
+use crate::lock::{FileLock, lock_path, lock_text, parse_lock};
 use crate::session::{Autosave, DocVersion, Session, Shared};
 
 /// Creates, opens and saves the session's document (02 §5.4 line 1357).
@@ -32,6 +34,8 @@ pub struct ProjectService {
     clock: Arc<dyn Clock>,
     /// Mints the identity of a new project and of a copy (D-63).
     ids: Arc<dyn IdSource>,
+    /// This process and the liveness of others (spec 028).
+    processes: Arc<dyn ProcessProbe>,
     /// How long a change waits before it is autosaved (P16).
     autosave_interval: Duration,
     /// `data_dir/recovery`: one folder per project id (P13, D-63).
@@ -51,6 +55,7 @@ impl ProjectService {
             filesystem: Arc::clone(&ports.filesystem),
             clock: Arc::clone(&ports.clock),
             ids: Arc::clone(&ports.ids),
+            processes: Arc::clone(&ports.processes),
             autosave_interval: config.autosave_interval(),
             recovery: config.data_dir().join("recovery"),
             sessions: AtomicU64::new(0),
@@ -92,6 +97,7 @@ impl ProjectService {
     pub fn close(&self) {
         let ended = self.shared.lock().take();
         if let Some(session) = ended {
+            self.release_lock(session.lock.as_deref());
             self.discard_slots(session.history.document().project_id());
         }
     }
@@ -101,8 +107,8 @@ impl ProjectService {
     /// The open session's own project is not listed. Publishes
     /// `RecoveryAvailable` when there is any.
     ///
-    /// Until the lock files of §7.2 exist, a second running instance's
-    /// slots are listed too (spec 016, notes).
+    /// A project whose marker names another process that still runs is not
+    /// listed either: it is a second instance's open session (spec 028).
     ///
     /// # Errors
     /// [`EngineError::Io`] when the recovery folder cannot be listed; a
@@ -128,8 +134,15 @@ impl ProjectService {
             if Some(project_id) == current {
                 continue;
             }
-            if let Some((_, origin)) = self.marker(project_id) {
-                entries.push(RecoveryEntry { project_id, origin });
+            if let Some(marker) = self.marker(project_id) {
+                if self.another_live(marker.owner) {
+                    // Another running instance's session (spec 028).
+                    continue;
+                }
+                entries.push(RecoveryEntry {
+                    project_id,
+                    origin: marker.origin,
+                });
             }
         }
         entries.sort_by_key(|entry| entry.project_id);
@@ -151,7 +164,11 @@ impl ProjectService {
     /// [`EngineError::NoRecovery`] when the project has no marker; the error
     /// of the oldest slot when none loads. The old session stays then.
     pub fn recover(&self, project_id: ProjectId) -> Result<(), EngineError> {
-        let (newest, origin) = self.marker(project_id).ok_or(EngineError::NoRecovery)?;
+        let Marker {
+            slot: newest,
+            origin,
+            ..
+        } = self.marker(project_id).ok_or(EngineError::NoRecovery)?;
         let folder = self.recovery.join(project_id.to_string());
         let mut last = EngineError::NoRecovery;
         for back in 0..SLOTS {
@@ -180,8 +197,13 @@ impl ProjectService {
         self.discard_slots(project_id);
     }
 
+    /// Whether `pid` is another process of this machine that still runs.
+    fn another_live(&self, pid: ProcessId) -> bool {
+        pid != self.processes.current() && self.processes.is_alive(pid)
+    }
+
     /// The marker of `project_id`'s slots, if it reads.
-    fn marker(&self, project_id: ProjectId) -> Option<(u8, Option<PathBuf>)> {
+    fn marker(&self, project_id: ProjectId) -> Option<Marker> {
         let path = self.recovery.join(project_id.to_string()).join(MARKER);
         let mut text = String::new();
         self.filesystem
@@ -215,7 +237,10 @@ impl ProjectService {
     /// lists every page and node of the loaded document.
     ///
     /// A file of a newer schema opens read-only: it can be edited in memory,
-    /// and [`ProjectService::save`] refuses it (ARQ-55).
+    /// and [`ProjectService::save`] refuses it (ARQ-55). So does a file
+    /// another running instance, or another machine, holds the lock of:
+    /// [`ProjectService::locked_by_other`] names it. Otherwise the session
+    /// takes `<path>.lock` and the old session's lock goes (spec 028).
     pub fn open(&self, path: &Path) -> Result<(), EngineError> {
         let loaded = self.repository.load(path)?;
         self.install(loaded.document, Some(path.to_owned()), loaded.read_only)
@@ -306,10 +331,12 @@ impl ProjectService {
         let Some(session) = cell.as_mut().filter(|s| s.session_key == key) else {
             return;
         };
-        if let Some(path) = path {
+        let moved_lock = path.map(|path| {
             session.path = Some(path.to_owned());
             session.read_only = false;
-        }
+            session.locked_by = None;
+            session.lock.take()
+        });
         session.clean_version = version;
         let project_id = session.history.document().project_id();
         // The file holds every change up to the snapshot; one made while it
@@ -319,6 +346,12 @@ impl ProjectService {
             session.autosave.pending_since = None;
         }
         drop(cell);
+        // `save_as` moved the session to `path`: its lock moves too
+        // (spec 028).
+        if let (Some(old), Some(path)) = (moved_lock, path) {
+            self.release_lock(old.as_deref());
+            self.lock_file(key, path);
+        }
         // The file now holds everything the slots held: they would only
         // offer a stale recovery (spec 016).
         if all_saved {
@@ -392,6 +425,11 @@ impl ProjectService {
         };
         let dirty = every_page_and_node(&document);
         let history = History::new(document)?;
+        // Spec 028: another instance's live lock makes the session
+        // read-only; otherwise the file is taken below.
+        let locked_by = path.as_deref().and_then(|path| self.foreign_lock(path));
+        let read_only = read_only || locked_by.is_some();
+        let take = path.clone().filter(|_| locked_by.is_none());
         let session_key = format!(
             "{}-{}",
             self.clock.now().0,
@@ -399,15 +437,80 @@ impl ProjectService {
         );
         let mut cell = self.shared.lock();
         let clean_version = self.shared.changed(dirty);
-        *cell = Some(Session {
+        let replaced = cell.replace(Session {
             history,
             path,
             read_only,
             clean_version,
-            session_key,
+            session_key: session_key.clone(),
             autosave: Autosave::default(),
+            lock: None,
+            locked_by,
         });
+        drop(cell);
+        // The old lock goes first, so reopening the same file keeps one.
+        self.release_lock(replaced.as_ref().and_then(|old| old.lock.as_deref()));
+        if let Some(path) = take {
+            self.lock_file(&session_key, &path);
+        }
         Ok(())
+    }
+
+    /// The lock on `path` when it belongs to another process that runs,
+    /// or to any process of another machine, whose liveness cannot be
+    /// checked (spec 028). A missing or unreadable lock, or one of a dead
+    /// process of this machine, is `None`: it may be taken over.
+    fn foreign_lock(&self, path: &Path) -> Option<FileLock> {
+        let mut text = String::new();
+        self.filesystem
+            .open(&lock_path(path))
+            .ok()?
+            .read_to_string(&mut text)
+            .ok()?;
+        let lock = parse_lock(&text)?;
+        let foreign = lock.host != self.processes.host() || self.another_live(lock.pid);
+        foreign.then_some(lock)
+    }
+
+    /// Write this process's lock on `path` atomically (a temporary, synced,
+    /// then `replace`) and hand it to the session named `key`. Best effort:
+    /// a file that cannot be locked still opens, with no lock to remove.
+    fn lock_file(&self, key: &str, path: &Path) {
+        let lock = lock_path(path);
+        let tmp = suffixed(&lock, ".tmp");
+        let text = lock_text(&FileLock {
+            pid: self.processes.current(),
+            host: self.processes.host(),
+            started: self.clock.now(),
+        });
+        let written = (|| -> std::io::Result<()> {
+            let mut file = self.filesystem.create(&tmp)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+            drop(file);
+            self.filesystem.replace(&tmp, &lock)
+        })();
+        if written.is_err() {
+            let _ = self.filesystem.remove(&tmp);
+            return;
+        }
+        let mut cell = self.shared.lock();
+        match cell.as_mut().filter(|s| s.session_key == key) {
+            Some(session) => session.lock = Some(lock),
+            None => {
+                // The session ended meanwhile: its lock must not outlive it.
+                drop(cell);
+                let _ = self.filesystem.remove(&lock);
+            }
+        }
+    }
+
+    /// Remove a lock this process wrote, best effort: a lock left behind is
+    /// stale once the process ends and is taken over then.
+    fn release_lock(&self, lock: Option<&Path>) {
+        if let Some(lock) = lock {
+            let _ = self.filesystem.remove(lock);
+        }
     }
 
     /// The job that writes the session's next recovery slot, when one is due
@@ -438,6 +541,7 @@ impl ProjectService {
                 .join(session.history.document().project_id().to_string()),
             session_key: session.session_key.clone(),
             origin: session.path.clone(),
+            owner: self.processes.current(),
             repository: Arc::clone(&self.repository),
             filesystem: Arc::clone(&self.filesystem),
         })
@@ -477,6 +581,18 @@ impl ProjectService {
             .lock()
             .as_ref()
             .and_then(|session| session.path.clone())
+    }
+
+    /// Who holds the open file's lock when it is another running instance
+    /// or another machine: the session was opened read-only because of it
+    /// (spec 028, ARQ-55). `None` with no session, no file, or a lock that
+    /// is this session's own.
+    #[must_use]
+    pub fn locked_by_other(&self) -> Option<FileLock> {
+        self.shared
+            .lock()
+            .as_ref()
+            .and_then(|session| session.locked_by.clone())
     }
 
     /// Whether the session holds changes no `new_document`, `open` or `save`
@@ -860,6 +976,8 @@ mod tests {
                 clean_version,
                 session_key: "another".to_owned(),
                 autosave: Default::default(),
+                lock: None,
+                locked_by: None,
             });
         });
         engine.projects().save().expect("a save");
@@ -1018,6 +1136,8 @@ mod tests {
             .expect("a save as");
 
         let tmp = PathBuf::from(format!("{OTHER}.tmp-0"));
+        let lock = PathBuf::from(format!("{OTHER}.lock"));
+        let lock_tmp = PathBuf::from(format!("{OTHER}.lock.tmp"));
         assert_eq!(repository.take_calls(), vec![RepoCall::Save(tmp.clone())]);
         assert_eq!(
             fs.take_trace(),
@@ -1027,6 +1147,11 @@ mod tests {
                 FsOp::Write(tmp.clone(), new.len() - new.len() / 2),
                 FsOp::SyncAll(tmp.clone()),
                 FsOp::Replace(tmp, OTHER.into()),
+                // Spec 028: the session now holds the new file's lock.
+                FsOp::Create(lock_tmp.clone()),
+                FsOp::Write(lock_tmp.clone(), "1000\nhere\n0".len()),
+                FsOp::SyncAll(lock_tmp.clone()),
+                FsOp::Replace(lock_tmp, lock),
             ],
             "no backup of a file that did not exist"
         );
@@ -1124,9 +1249,24 @@ mod tests {
             .save_as(Path::new(OTHER))
             .expect("a save as");
         let operations = fs.take_trace().len();
-        assert_eq!(operations, 9, "the repository, the backup and the replace");
+        assert_eq!(
+            operations, 14,
+            "the repository, the backup and the replace, then the lock moves"
+        );
 
-        for fault in 0..operations {
+        // Spec 028: the lock is best effort; a fault while it moves keeps
+        // the save.
+        for fault in 9..operations {
+            let (engine, fs, _repository) = opened_and_edited(false);
+            fs.fail_at(&[fault]);
+            engine
+                .projects()
+                .save_as(Path::new(OTHER))
+                .expect("saved despite the lock");
+            assert!(!engine.projects().is_modified(), "fault at {fault}");
+        }
+
+        for fault in 0..9 {
             let (mut engine, fs, _repository) = opened_and_edited(false);
             fs.put(OTHER, b"older");
             fs.fail_at(&[fault]);
@@ -1236,11 +1376,15 @@ mod tests {
     #[test]
     fn s16_02_the_marker_names_the_slot_and_the_file() {
         use crate::autosave::parse_marker;
-        let text = marker_text(2, Some(Path::new(TARGET)));
-        assert_eq!(parse_marker(&text), Some((2, Some(PathBuf::from(TARGET)))));
-        assert_eq!(parse_marker(&marker_text(0, None)), Some((0, None)));
-        for bad in ["", "3\n/x", "x\n/x", "-1"] {
-            assert_eq!(parse_marker(bad), None, "{bad:?}");
+        let owner = FakeProcesses::PID;
+        let text = marker_text(2, owner, Some(Path::new(TARGET)));
+        let marker = parse_marker(&text).expect("a marker");
+        assert_eq!(marker.slot, 2);
+        assert_eq!(marker.origin, Some(PathBuf::from(TARGET)));
+        let marker = parse_marker(&marker_text(0, owner, None)).expect("a marker");
+        assert_eq!((marker.slot, marker.origin), (0, None));
+        for bad in ["", "3\n1\n/x", "x\n1\n/x", "-1"] {
+            assert!(parse_marker(bad).is_none(), "{bad:?}");
         }
     }
 
@@ -1284,7 +1428,8 @@ mod tests {
         // A newer slot 1 that the crash cut short, named by the marker.
         fs.put(&slot_file(1), b"cut short");
         let marker = format!("/data/gafira/recovery/{}/latest", id(1));
-        fs.put(&marker, marker_text(1, Some(Path::new(TARGET))).as_bytes());
+        let text = marker_text(1, FakeProcesses::PID, Some(Path::new(TARGET)));
+        fs.put(&marker, text.as_bytes());
 
         let (mut engine, _clock) = rig_on(&fs);
         engine.projects().recover(id(1)).expect("recovers slot 0");
@@ -1331,5 +1476,204 @@ mod tests {
                 "{way}"
             );
         }
+    }
+
+    // ---- Spec 028: file locks and another instance's slots ----
+
+    use gafira_ports::system::ProcessId;
+
+    /// An engine over `fs` running as `pid`, with `alive` running besides.
+    fn instance(fs: &MemoryFs, pid: u32, alive: &[u32]) -> (Gafira, Arc<ManualClock>) {
+        let repository = Arc::new(MemoryRepository::new(fs, false));
+        let clock = Arc::new(ManualClock::at(Duration::ZERO));
+        let processes = Arc::new(FakeProcesses::new(pid, alive));
+        let engine = engine_with_processes(fs, &repository, Arc::clone(&clock) as _, processes);
+        (engine, clock)
+    }
+
+    /// [`crashed_after_an_autosave`], run by the instance `pid`, which is
+    /// returned still running.
+    fn autosaved_by(fs: &MemoryFs, pid: u32) -> Gafira {
+        let (mut engine, clock) = instance(fs, pid, &[]);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        append_page(&mut engine);
+        clock.set(Duration::from_secs(60));
+        let outcome = engine.projects().autosave_due().expect("a job").run();
+        assert!(outcome.error().is_none());
+        engine.projects().autosave_finished(outcome);
+        engine
+    }
+
+    // S28-01
+    #[test]
+    fn s28_01_the_marker_names_its_owner() {
+        use crate::autosave::parse_marker;
+        let text = marker_text(1, ProcessId(77), Some(Path::new(TARGET)));
+        let marker = parse_marker(&text).expect("a marker");
+        assert_eq!(marker.owner, ProcessId(77));
+        assert_eq!(marker.slot, 1);
+        assert_eq!(marker.origin, Some(PathBuf::from(TARGET)));
+        for bad in ["1", "1\n", "1\nx\n/x", "1\n/x"] {
+            assert!(parse_marker(bad).is_none(), "{bad:?}");
+        }
+
+        let fs = target_fs();
+        let _running = autosaved_by(&fs, 7);
+        let marker = format!("/data/gafira/recovery/{}/latest", id(1));
+        let text = String::from_utf8(fs.file(&marker).expect("a marker")).expect("text");
+        assert_eq!(
+            parse_marker(&text).expect("a marker").owner,
+            ProcessId(7),
+            "the autosave writes its own pid"
+        );
+    }
+
+    // S28-02
+    #[test]
+    fn s28_02_a_live_other_instances_slots_are_not_offered() {
+        let fs = target_fs();
+        let _running = autosaved_by(&fs, 7);
+        let (engine, _clock) = instance(&fs, 8, &[7]);
+        assert_eq!(engine.projects().recoverable().expect("a scan"), []);
+        assert_eq!(drain(&engine), [], "no RecoveryAvailable");
+    }
+
+    // S28-03
+    #[test]
+    fn s28_03_a_dead_owners_slots_are_offered_and_recovered() {
+        let fs = target_fs();
+        drop(autosaved_by(&fs, 7));
+        let (mut engine, _clock) = instance(&fs, 8, &[]);
+        let entries = engine.projects().recoverable().expect("a scan");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].project_id, id(1));
+        engine.projects().recover(id(1)).expect("recovers");
+        let document = engine.edit().document().expect("a document");
+        assert_eq!(document.pages().len(), 3, "the autosaved edit");
+    }
+
+    use crate::lock::FileLock;
+
+    const LOCK: &str = "/work/poster.gaf.lock";
+    const LOCK_TMP: &str = "/work/poster.gaf.lock.tmp";
+
+    /// The text of a lock held by `pid` on `host`, started at `started`.
+    fn lock_of(pid: u32, host: &str, started: i64) -> Vec<u8> {
+        format!("{pid}\n{host}\n{started}").into_bytes()
+    }
+
+    /// The lock this test's engines write: the default fake pid and host,
+    /// at the manual clock's wall time.
+    fn own_lock() -> Vec<u8> {
+        lock_of(
+            FakeProcesses::PID.0,
+            FakeProcesses::HOST,
+            ManualClock::NOW.0,
+        )
+    }
+
+    // S28-04
+    #[test]
+    fn s28_04_open_writes_the_lock_atomically_and_close_removes_it() {
+        let fs = target_fs();
+        let (engine, _clock) = rig_on(&fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        let text = own_lock();
+        assert_eq!(
+            fs.take_trace(),
+            vec![
+                FsOp::Create(LOCK_TMP.into()),
+                FsOp::Write(LOCK_TMP.into(), text.len()),
+                FsOp::SyncAll(LOCK_TMP.into()),
+                FsOp::Replace(LOCK_TMP.into(), LOCK.into()),
+            ]
+        );
+        assert_eq!(fs.file(LOCK), Some(text));
+        assert_eq!(engine.projects().locked_by_other(), None);
+        engine.projects().close();
+        assert_eq!(fs.file(LOCK), None, "close");
+    }
+
+    // S28-04
+    #[test]
+    fn s28_04_a_new_document_or_another_file_releases_the_lock() {
+        let other_lock = format!("{OTHER}.lock");
+        let fs = target_fs();
+        fs.put(OTHER, &old_bytes());
+        let (engine, _clock) = rig_on(&fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        engine
+            .projects()
+            .open(Path::new(OTHER))
+            .expect("another open");
+        assert_eq!(fs.file(LOCK), None, "the first file's lock");
+        assert_eq!(fs.file(&other_lock), Some(own_lock()));
+        engine.projects().new_document().expect("a new document");
+        assert_eq!(fs.file(&other_lock), None, "new_document");
+
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        engine
+            .projects()
+            .open(Path::new(TARGET))
+            .expect("the same again");
+        assert_eq!(fs.file(LOCK), Some(own_lock()), "reopening keeps it");
+    }
+
+    // S28-05, ARQ-55
+    #[test]
+    fn s28_05_a_live_foreign_lock_opens_read_only_and_is_left_alone() {
+        for (host, alive) in [(FakeProcesses::HOST, &[7_u32][..]), ("there", &[][..])] {
+            let fs = target_fs();
+            let foreign = lock_of(7, host, 5);
+            fs.put(LOCK, &foreign);
+            let (mut engine, _clock) = instance(&fs, 8, alive);
+            engine.projects().open(Path::new(TARGET)).expect("an open");
+            assert_eq!(
+                engine.projects().locked_by_other(),
+                Some(FileLock {
+                    pid: ProcessId(7),
+                    host: host.to_owned(),
+                    started: gafira_ports::common::UnixTime(5),
+                }),
+                "{host}"
+            );
+            append_page(&mut engine);
+            assert!(
+                matches!(engine.projects().save(), Err(EngineError::ReadOnly)),
+                "{host}"
+            );
+            assert_eq!(fs.file(LOCK), Some(foreign.clone()), "{host}: kept");
+            engine.projects().close();
+            assert_eq!(fs.file(LOCK), Some(foreign), "{host}: not ours to remove");
+        }
+    }
+
+    // S28-06
+    #[test]
+    fn s28_06_a_stale_or_unreadable_lock_is_taken_over() {
+        for stale in [lock_of(7, FakeProcesses::HOST, 5), b"garbage".to_vec()] {
+            let fs = target_fs();
+            fs.put(LOCK, &stale);
+            let (mut engine, _clock) = instance(&fs, FakeProcesses::PID.0, &[]);
+            engine.projects().open(Path::new(TARGET)).expect("an open");
+            assert_eq!(engine.projects().locked_by_other(), None);
+            assert_eq!(fs.file(LOCK), Some(own_lock()), "taken over");
+            append_page(&mut engine);
+            engine.projects().save().expect("writable");
+        }
+    }
+
+    // S28-04, S12-05
+    #[test]
+    fn s28_04_save_as_moves_the_lock_to_the_new_file() {
+        let fs = target_fs();
+        let (engine, _clock) = rig_on(&fs);
+        engine.projects().open(Path::new(TARGET)).expect("an open");
+        engine
+            .projects()
+            .save_as(Path::new(OTHER))
+            .expect("a save as");
+        assert_eq!(fs.file(LOCK), None, "the old file's lock");
+        assert_eq!(fs.file(&format!("{OTHER}.lock")), Some(own_lock()));
     }
 }
