@@ -202,6 +202,14 @@ fn s14_05_a_token_missing_in_one_mode_is_a_mismatch() {
             missing_in: "dark".into()
         }
     );
+    let err = edited(|v| v["modes"]["dark"]["extra"] = json!("#000000")).unwrap_err();
+    assert_eq!(
+        err,
+        ThemeError::ModeMismatch {
+            token: "extra".into(),
+            missing_in: "light".into()
+        }
+    );
 }
 
 #[test]
@@ -335,6 +343,20 @@ fn s14_07_a_declared_pair_with_rejected_colours_is_rejected() {
             bg: "danger.bg".into()
         }
     );
+    // A rejection is directional: mint on warm white is rejected, the reverse is not listed.
+    let declare = |fg: &'static str, bg: &'static str| {
+        edited(move |v| {
+            v["modes"]["light"]["danger.fg"] = json!(fg);
+            v["modes"]["light"]["danger.bg"] = json!(bg);
+            v["contrast"]["pairs"]["light"][28] = json!(["danger.fg", "danger.bg", "exempt"]);
+            v["contrast"]["pairs"]["light"][29] = json!(["danger.fg", "danger.bg.hover", "exempt"]);
+        })
+    };
+    assert!(matches!(
+        declare("#3FBFA9", "#FAFAF7"),
+        Err(ThemeError::RejectedPairDeclared { .. })
+    ));
+    assert!(declare("#FAFAF7", "#3FBFA9").is_ok());
 }
 
 // S14-08
