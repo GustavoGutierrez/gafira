@@ -1633,6 +1633,7 @@ dependencies = [
  "gafira-render-cpu",
  "gafira-testkit",
  "gafira-time",
+ "image",
  "png 0.18.1",
 ]
 
