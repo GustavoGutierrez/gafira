@@ -59,3 +59,74 @@ rejected_pair_passes = "The rejected pair {fg} on {bg} meets the text minimum."
 reduced_motion = "The reduced motion duration {name} must be 0."
 bad_shadow = "Token {path} is not a valid shadow."
 unknown_family = "The {family} font family is not included in Gafira."
+
+# Shell of the desktop app (spec 017, 03 §2.8, §7).
+[app]
+name = "Gafira"
+
+[splash]
+version = "Version {version}"
+
+[home]
+question = "What do you want to create today?"
+start = "Start designing"
+templates = "Explore templates"
+recent = "Recent"
+see_all = "See all"
+empty = "Your next idea starts here"
+
+[home.format]
+social = "Social"
+presentation = "Presentation"
+print = "Print"
+video_vertical = "Vertical video"
+video_horizontal = "Horizontal video"
+custom = "Custom size"
+
+[home.size]
+social = "1080 × 1080"
+presentation = "16:9"
+print = "A4"
+video_vertical = "9:16"
+video_horizontal = "16:9"
+custom = "Width × height"
+
+[nav]
+home = "Home"
+projects = "Projects"
+templates = "Templates"
+settings = "Settings"
+search = "Search  (Ctrl+K)"
+
+[menu]
+file = "File"
+edit = "Edit"
+view = "View"
+size = "Size"
+
+[editor]
+untitled = "Untitled"
+saved = "Changes saved."
+versions = "Versions"
+export = "Export"
+page = "Page {number}"
+page_of = "{current} of {total}"
+search_templates = "Search templates"
+
+[tab]
+templates = "Templates"
+pieces = "Pieces"
+text = "Text"
+identity = "Identity"
+library = "Library"
+drawing = "Drawing"
+
+[inspector]
+position = "Position"
+layers = "Layers"
+image = "Image"
+empty = "Select an element to see its properties."
+
+[bottom]
+notes = "Notes"
+pages = "Pages"

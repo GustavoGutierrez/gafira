@@ -59,3 +59,74 @@ rejected_pair_passes = "El par prohibido {fg} sobre {bg} cumple el mínimo de te
 reduced_motion = "La duración {name} de movimiento reducido debe ser 0."
 bad_shadow = "El token {path} no es una sombra válida."
 unknown_family = "La familia {family} no está incluida en Gafira."
+
+# Shell of the desktop app (spec 017, 03 §2, §7).
+[app]
+name = "Gafira"
+
+[splash]
+version = "Versión {version}"
+
+[home]
+question = "¿Qué quieres crear hoy?"
+start = "Empezar a diseñar"
+templates = "Explorar plantillas"
+recent = "Recientes"
+see_all = "Ver todos"
+empty = "Tu próxima idea comienza aquí"
+
+[home.format]
+social = "Redes"
+presentation = "Presentación"
+print = "Impreso"
+video_vertical = "Video vertical"
+video_horizontal = "Video horizontal"
+custom = "Tamaño propio"
+
+[home.size]
+social = "1080 × 1080"
+presentation = "16:9"
+print = "A4"
+video_vertical = "9:16"
+video_horizontal = "16:9"
+custom = "Ancho × alto"
+
+[nav]
+home = "Inicio"
+projects = "Proyectos"
+templates = "Plantillas"
+settings = "Ajustes"
+search = "Buscar  (Ctrl+K)"
+
+[menu]
+file = "Archivo"
+edit = "Edición"
+view = "Ver"
+size = "Tamaño"
+
+[editor]
+untitled = "Sin título"
+saved = "Cambios guardados."
+versions = "Versiones"
+export = "Exportar"
+page = "Página {number}"
+page_of = "{current} de {total}"
+search_templates = "Buscar plantillas"
+
+[tab]
+templates = "Plantillas"
+pieces = "Piezas"
+text = "Texto"
+identity = "Identidad"
+library = "Biblioteca"
+drawing = "Dibujo"
+
+[inspector]
+position = "Posición"
+layers = "Capas"
+image = "Imagen"
+empty = "Selecciona un elemento para ver sus propiedades."
+
+[bottom]
+notes = "Notas"
+pages = "Páginas"
