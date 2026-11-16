@@ -1468,7 +1468,7 @@ name = "gafira"
 version = "0.1.0-beta.2"
 dependencies = [
  "eframe",
- "gafira-doc",
+ "gafira-assets",
  "gafira-engine",
  "gafira-format",
  "gafira-i18n",
