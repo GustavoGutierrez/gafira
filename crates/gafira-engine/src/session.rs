@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use gafira_edit::{DirtySet, History};
+use gafira_ports::repository::Version;
 
 use crate::event::{EngineEvent, EventBus};
 use crate::lock::FileLock;
@@ -56,6 +57,9 @@ pub(crate) struct Session {
     /// Another instance's lock on the file, which made it read-only
     /// (spec 028).
     pub(crate) locked_by: Option<FileLock>,
+    /// The versions the file keeps, oldest first (spec 031); every save
+    /// writes them.
+    pub(crate) versions: Vec<Version>,
 }
 
 /// The autosave state of one session (design P13); a new session starts with

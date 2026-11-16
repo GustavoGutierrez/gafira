@@ -292,6 +292,9 @@ pub enum EngineError {
     NoPath,
     /// `recover` named a project with no recovery slots (spec 016).
     NoRecovery,
+    /// `restore_version` named a version the project does not have
+    /// (spec 031).
+    NoVersion,
     /// A `FileSystem` call of the engine failed (design P16).
     Io(std::io::Error),
     /// The settings port failed (spec 009).
@@ -321,6 +324,7 @@ impl fmt::Display for EngineError {
             Self::ReadOnly => f.write_str("the project is read-only"),
             Self::NoPath => f.write_str("the project has no file yet"),
             Self::NoRecovery => f.write_str("the project has no recovery slots"),
+            Self::NoVersion => f.write_str("the project has no such version"),
             Self::Io(e) => write!(f, "file system error: {e}"),
             Self::Settings(e) => write!(f, "settings error: {e}"),
             Self::License(e) => write!(f, "licence error: {e}"),
@@ -352,6 +356,7 @@ impl ToMessage for EngineError {
             Self::ReadOnly => msg!("error.engine.read_only"),
             Self::NoPath => msg!("error.engine.no_path"),
             Self::NoRecovery => msg!("error.engine.no_recovery"),
+            Self::NoVersion => msg!("error.engine.no_version"),
             Self::Io(_) => msg!("error.engine.io"),
             Self::Settings(e) => e.to_message(),
             Self::License(e) => e.to_message(),
@@ -658,6 +663,7 @@ mod tests {
         let cases = [
             (EngineError::ReadOnly, msg!("error.engine.read_only")),
             (EngineError::NoPath, msg!("error.engine.no_path")),
+            (EngineError::NoVersion, msg!("error.engine.no_version")),
             (
                 EngineError::from(std::io::Error::other("disk full")),
                 msg!("error.engine.io"),

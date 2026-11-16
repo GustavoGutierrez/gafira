@@ -8,7 +8,8 @@ use crate::{FORMAT, FORMAT_VERSION};
 
 /// The manifest of a document with `pages`, `sequences` and `assets`
 /// (hash to entry) as its JSON holds them; `sizes` gives the bytes of each
-/// embedded asset by its hex hash.
+/// embedded asset by its hex hash; `versions` lists the ids of the
+/// versions in file order (spec 031).
 pub(crate) fn build(
     schema: u64,
     project_id: &Value,
@@ -16,6 +17,7 @@ pub(crate) fn build(
     sequences: &[Value],
     assets: &Value,
     sizes: &BTreeMap<String, u64>,
+    versions: &[Value],
 ) -> Value {
     let names: Map<String, Value> = assets
         .as_object()
@@ -51,7 +53,7 @@ pub(crate) fn build(
         "pages": pages,
         "sequences": sequences,
         "assets": names,
-        "versions": [],
+        "versions": versions,
     })
 }
 

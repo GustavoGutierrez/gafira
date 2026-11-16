@@ -23,6 +23,7 @@ mod shell;
 mod splash;
 mod style;
 mod text;
+mod versions;
 mod widgets;
 
 pub use recent::{RecentProject, RecentStore};

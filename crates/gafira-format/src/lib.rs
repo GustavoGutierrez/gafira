@@ -10,6 +10,9 @@
 //! compression ratio that only a ZIP bomb has is refused. Embedded assets
 //! travel as `assets/<blake3-hex>.<ext>` and come from, and go to, a
 //! `ports::ContentStore` (spec 026); each one is checked against its hash.
+//! Versions live in `versions/`: an index and one folder per version with
+//! its own `document.json`, pages and sequences; their assets share
+//! `assets/` with the document, by hash (spec 031).
 
 #![forbid(unsafe_code)]
 
@@ -18,6 +21,7 @@ mod limits;
 mod manifest;
 mod read;
 mod repository;
+mod versions;
 mod write;
 
 pub use limits::Limits;

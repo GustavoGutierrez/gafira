@@ -51,7 +51,8 @@ impl Waker for RepaintWaker {
 enum Screen {
     Splash,
     Home(Home),
-    Editor(Editor),
+    /// Boxed: the editor holds the canvas state and its textures.
+    Editor(Box<Editor>),
 }
 
 /// What a screen asks the shell to do after drawing.
@@ -220,7 +221,7 @@ impl Shell {
         match self.engine.projects().open(path) {
             Ok(()) => {
                 self.remember();
-                self.screen = Screen::Editor(Editor::default());
+                self.screen = Screen::Editor(Box::default());
             }
             Err(error) => {
                 eprintln!("open recent: {error}");
@@ -238,7 +239,7 @@ impl Shell {
                     self.remember();
                 }
                 if action == FileAction::Open {
-                    self.screen = Screen::Editor(Editor::default());
+                    self.screen = Screen::Editor(Box::default());
                 }
             }
             Outcome::Failed(message, detail) => {
@@ -321,7 +322,7 @@ impl Shell {
                     Ok(()) => {
                         self.remember();
                         self.recovery.clear();
-                        self.screen = Screen::Editor(Editor::default());
+                        self.screen = Screen::Editor(Box::default());
                     }
                     Err(error) => {
                         eprintln!("recover: {error}");
@@ -338,7 +339,7 @@ impl Shell {
                             self.remember();
                             self.engine.projects().discard_recovery(entry.project_id);
                             self.recovery.clear();
-                            self.screen = Screen::Editor(Editor::default());
+                            self.screen = Screen::Editor(Box::default());
                         }
                         Err(error) => {
                             eprintln!("open: {error}");
@@ -431,7 +432,7 @@ impl eframe::App for Shell {
                 });
             }
             Go::Editor(format) => match start(&mut self.engine, format) {
-                Ok(()) => self.screen = Screen::Editor(Editor::default()),
+                Ok(()) => self.screen = Screen::Editor(Box::default()),
                 Err(error) => eprintln!("new document: {error}"),
             },
         }

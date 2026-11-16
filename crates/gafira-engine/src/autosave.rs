@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gafira_doc::Document;
-use gafira_ports::repository::ProjectRepository;
+use gafira_ports::repository::{ProjectRepository, Version};
 use gafira_ports::system::{FileSystem, ProcessId};
 
 use crate::engine::EngineError;
@@ -30,6 +30,9 @@ pub(crate) const SLOTS: u8 = 3;
 /// it on its I/O thread.
 pub struct AutosaveJob {
     pub(crate) snapshot: Arc<Document>,
+    /// The versions of the session, written with the slot so a recovery
+    /// keeps them (spec 031).
+    pub(crate) versions: Vec<Version>,
     pub(crate) version: DocVersion,
     pub(crate) slot: u8,
     pub(crate) folder: PathBuf,
@@ -125,7 +128,7 @@ impl AutosaveJob {
     /// leaves the previous one, which still names a complete slot.
     fn write(&self, tmp: &Path, slot: &Path) -> Result<(), EngineError> {
         self.filesystem.create_dir_all(&self.folder)?;
-        self.repository.save(tmp, &self.snapshot)?;
+        self.repository.save(tmp, &self.snapshot, &self.versions)?;
         self.filesystem.replace(tmp, slot)?;
         let marker = self.folder.join(MARKER);
         let marker_tmp = self.folder.join(format!("{MARKER}.tmp"));

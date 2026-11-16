@@ -209,3 +209,18 @@ fn restore_next_id_never_raises_the_counter() {
     edit.restore_next_id(now);
     assert_eq!(edit.as_doc().next_id(), now);
 }
+
+// S31-08: restoring a version raises the counter past the version's ids and
+// never lowers it.
+#[test]
+fn s31_08_raise_next_id_only_moves_the_counter_up() {
+    let t = token();
+    let mut doc = Document::default();
+    let mut edit = doc.edit(&t);
+    let now = edit.as_doc().next_id();
+    edit.raise_next_id(now + 5);
+    assert_eq!(edit.as_doc().next_id(), now + 5);
+    edit.raise_next_id(now);
+    assert_eq!(edit.as_doc().next_id(), now + 5);
+    assert_eq!(edit.alloc_node_id().unwrap(), NodeId::new(now + 5));
+}
