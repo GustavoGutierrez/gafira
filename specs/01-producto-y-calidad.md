@@ -196,7 +196,7 @@ Cada RF traza al requisito del PRD (RF-nn del PRD, sección 3) y a la arquitectu
 | ID | Requisito | PRD | Fase | ARQ | Detalle |
 |---|---|---|---|---|---|
 | RF-36 | Línea de tiempo con pistas de Video, Superposiciones, Texto y Audio, zoom, marcadores y Cabezal. | RF-07 | MVP | `Sequence`, `Track`, `Clip` | 05 §A |
-| RF-37 | Importar MP4/MOV, WebM/MKV, GIF, WAV, FLAC y Ogg; MP3 **solo importación** con decodificador permisivo (VERIFICAR licencia, D-07); H.264/AAC solo vía API del sistema (D-02); AVI en Fase 2 con códecs libres (D-07); con clase legal por códec. HEVC se importa solo con el decodificador del SO y nunca se exporta (D-59); sigue fuera del MVP. | §2.2 | MVP / F2 | ADR-07, `Container`, `Codec` | 05 §A |
+| RF-37 | Importar MP4/MOV, WebM/MKV, GIF, WAV, FLAC y Ogg; MP3 **solo importación** con decodificador permisivo (`nanomp3` 0.2.0, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); D-07); H.264/AAC solo vía API del sistema (D-02); AVI en Fase 2 con códecs libres (D-07); con clase legal por códec. HEVC se importa solo con el decodificador del SO y nunca se exporta (D-59); sigue fuera del MVP. | §2.2 | MVP / F2 | ADR-07, `Container`, `Codec` | 05 §A |
 | RF-38 | Dividir, Recortar, Duplicar, reordenar, Velocidad, Invertir y Congelar fotograma, todo no destructivo. | RF-07 | MVP | `SplitClip`, `TrimClip` | 05 §A |
 | RF-39 | Nueva escena y Transiciones (Corte, Fundido, Deslizar, Zoom, Borrado, Disolvencia) en la unión de clips, con el trait `Transition` (dos entradas, `TransitionInstance` en `Clip.transitions`). | RF-07 | MVP | `Clip.transitions`, `Transition`, ARQ-25 | 05 §A |
 | RF-40 | Texto animado, títulos y tercios inferiores; presets de Movimiento y Ruta de movimiento. | RF-07 | MVP | `Animatable<T>` | 05 §A |
@@ -423,7 +423,7 @@ Resueltas por el titular en `00-decisiones.md`. Se conservan los IDs porque otra
 | Q-06 | Actualizaciones firmadas. | Cerrada: D-06 (la app no comprueba versiones). |
 | Q-07 | Hardware de referencia y cifras. | Cerrada: D-03 (cifras fijadas, §9). |
 | Q-08 | PPTX. | Cerrada: D-07 (Fase 2, una imagen por diapositiva). |
-| Q-09 | MP3 como importación. | Cerrada: D-07 (solo importación, decodificador permisivo, VERIFICAR licencia). |
+| Q-09 | MP3 como importación. | Cerrada: D-07 (solo importación, decodificador permisivo `nanomp3`, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)). |
 | Q-11 | Reparto núcleo/avanzado. | Cerrada: D-01 (no hay módulos de pago separados). |
 | Q-12 | Activación de módulos avanzados. | Cerrada: D-01 (activación con `gafira-license` y `license-hub`; detalle en la spec 06). |
 | Q-13 | Importación de AVI y de AAC/M4A. | Cerrada: D-07 (AVI en Fase 2 solo con códecs libres) y D-02 (AAC solo vía SO). |
@@ -482,7 +482,7 @@ Decisiones ya tomadas por el proyecto; no se reabren en las specs 02 a 05.
 | C-05 | **Tokens de marca.** El manual define coral y grafito; la spec técnica propone violeta `#8B3DFF`. | Manual vs spec técnica | Prevalecen los tokens de Gafira (spec 03 §3). El violeta se descarta. |
 | C-06 | **Modo oscuro** exigido por el PRD sin paleta en el manual. | PRD vs manual | Se **deriva** de la paleta y se valida con AA (spec 03 §3 y §4); es PROPUESTA hasta aprobación de marca. |
 | C-07 | **Códecs.** El PRD pide MP4/H.264 y WebM/VP9 en el MVP. | PRD vs 02 | D-02: salida por defecto AV1 + Opus (WebM y MP4); H.264/AAC solo vía API del sistema; sin salida HEVC. VP9 llega en Fase 2 (ADR-07). |
-| C-08 | **Importaciones de video y audio.** El PRD lista AVI, AAC, M4A y MP3. | PRD vs 02 | AAC y M4A vía SO (D-02); MP3 solo importación con decodificador permisivo, VERIFICAR licencia (D-07); AVI en Fase 2 solo con códecs libres (D-07). |
+| C-08 | **Importaciones de video y audio.** El PRD lista AVI, AAC, M4A y MP3. | PRD vs 02 | AAC y M4A vía SO (D-02); MP3 solo importación con decodificador permisivo `nanomp3` (MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); D-07); AVI en Fase 2 solo con códecs libres (D-07). |
 | C-09 | **Plataformas.** El PRD pide macOS 12+ y «Linux principales» sin arquitectura. | PRD vs decisión | macOS solo aarch64; Linux solo x86_64 con `.deb`, `.rpm` y `.tar.gz` (D-05). |
 | C-10 | **Cola de render.** El PRD la coloca en el MVP; 02 la hace avanzada en Fase 2. | PRD vs 02 | Cola básica (un trabajo a la vez, cancelar, reintentos transitorios) en MVP; prioridades y pausa en Fase 2 (RF-34). |
 | C-11 | **Proxies.** El PRD los pone en Fase 2; 02 los usa en el motor del MVP. | PRD vs 02 | Motor de Copias ligeras en MVP para cumplir el scrubbing 1080p; gestión manual en Fase 2 (RF-53). |

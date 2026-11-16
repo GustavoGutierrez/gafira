@@ -234,7 +234,7 @@ La pestaña **Piezas** reúne: Formas, Líneas, Marcos, Iconos, Códigos QR, Tab
 - *Propósito*: generar códigos QR sin conexión.
 - *Comportamiento y reglas*: se introduce un texto o URL; opciones: nivel de corrección (L, M, Q, H; por defecto M), color de primer plano y de fondo, margen. El código se dibuja como vectores y se regenera al editar el contenido. Advertencia si el contraste primer plano/fondo es < 3:1 («Este código puede no leerse bien.»). El contenido nunca sale del equipo.
 - *UI*: Piezas → Códigos QR.
-- *Técnica*: nodo `Extension` con `type_id = "gafira.qr"` (ADR-02, `NodeExtension` interno); generación con crate permisivo (VERIFICAR, p. ej. `qrcode`) o implementación propia.
+- *Técnica*: nodo `Extension` con `type_id = "gafira.qr"` (ADR-02, `NodeExtension` interno); generación con crate permisivo (p. ej. `qrcode` 0.14.1, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)) o implementación propia.
 - *Presupuesto*: generar < 50 ms para 300 caracteres.
 - *Aceptación*: (a) el código generado se decodifica correctamente con un lector de referencia en la prueba (VERIFICAR herramienta); (b) cambiar el nivel de corrección cambia la densidad; (c) el nodo sobrevive a abrir sin el registro (ARQ-11).
 
@@ -337,7 +337,7 @@ Todos los ajustes de esta sección se aplican como una pila no destructiva de `E
 - *Comportamiento y reglas*: se importan por arrastre, pegado, Archivo → Importar o desde Biblioteca. El perfil de color embebido (ICC) se respeta y se convierte a sRGB de trabajo; EXIF de orientación se aplica. Un TIFF de varias páginas importa la primera página (con opción de elegir). Un GIF animado se importa como imagen fija o, a elección, como clip de video. Un SVG se importa como vectores editables (scripts y referencias externas se ignoran). Imágenes mayores de 16 384 px por lado se reducen con aviso (confirmada, D-71).
 - *UI*: Biblioteca; Archivo → Importar; arrastrar y soltar.
 - *Técnica*: `Importer` (`FormatRegistry::resolve_import`, 02 §4.5) en `gafira-io-image` y `gafira-io-svg`; `gafira-color` (`ColorTransform`, moxcms).
-- *Formatos*: **MVP**: PNG, JPEG, WebP, GIF, TIFF, BMP, QOI, SVG. **Fase 2**: HEIC (solo lectura con el decodificador del SO, feature `heic-os`, D-59; en Linux solo si el sistema lo ofrece) y PDF (primera página o páginas elegidas; hayro, VERIFICAR). Sin decodificador del SO, el archivo HEIC se rechaza con un mensaje que explica por qué. En el MVP el PRD pide JPG/PNG/WebP/SVG/HEIC/TIFF: HEIC se difiere por patentes y dependencia del SO; Gafira no incluye decodificador propio de HEIC (D-59, ADR-07).
+- *Formatos*: **MVP**: PNG, JPEG, WebP, GIF, TIFF, BMP, QOI, SVG. **Fase 2**: HEIC (solo lectura con el decodificador del SO, feature `heic-os`, D-59; en Linux solo si el sistema lo ofrece) y PDF (primera página o páginas elegidas; hayro 0.9.0, Apache-2.0 OR MIT: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio)). Sin decodificador del SO, el archivo HEIC se rechaza con un mensaje que explica por qué. En el MVP el PRD pide JPG/PNG/WebP/SVG/HEIC/TIFF: HEIC se difiere por patentes y dependencia del SO; Gafira no incluye decodificador propio de HEIC (D-59, ADR-07).
 - *Presupuesto*: decodificar un JPEG de 12 MP y mostrarlo < 500 ms (confirmada, D-71); sin bloquear la UI (ARQ-41).
 - *Aceptación*: (a) cada formato del MVP importa un archivo de prueba y el golden coincide; (b) los fuzz targets de cada importador corren 10 min por PR sin fallos (ARQ-21); (c) un archivo corrupto muestra un error y no un cierre (ARQ-54).
 
@@ -667,7 +667,7 @@ La pantalla **Exportar** (03 §7.5) genera su panel de opciones desde `Exporter:
 - *Propósito*: entregar documentos para pantalla o impresión.
 - *Comportamiento y reglas*: preajustes **Digital** (imágenes a 150 ppp efectivos como máximo, compresión JPEG de calidad 85) e **Impresión** (imágenes a 300 ppp, **Sangrado** y **marcas de corte** activados). Opciones: **perfil de color RGB** (MVP) o **CMYK** (Fase 2, con perfil ICC y conversión `RGB → CMYK`); **Sangrado y marcas de corte** (FD-05); **Aplanar** (rasteriza transparencias y efectos no representables); **Incluir notas** (FD-23); **orden de lectura accesible** (PDF etiquetado, texto alternativo por imagen y orden de Capas como orden de lectura); **Proteger con contraseña** (contraseña de apertura y de permisos, cifrado AES-256; VERIFICAR soporte en la biblioteca elegida o crate permisivo). El texto se exporta como **texto seleccionable** con subconjuntos de fuente incrustados cuando la licencia de la fuente lo permite (bit de incrustación `fsType`); si no, se convierte a contornos con aviso. Varias páginas en un solo PDF. PDF/X queda en VERIFICAR (C-17 de 01).
 - *UI*: Exportar → PDF → Avanzado.
-- *Técnica*: `gafira-io-pdf` (krilla, VERIFICAR licencia; alternativa `pdf-writer`), `ColorTransform` con `IccTransform` (moxcms) para CMYK.
+- *Técnica*: `gafira-io-pdf` (krilla 0.8.2, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); alternativa `pdf-writer`, MIT OR Apache-2.0), `ColorTransform` con `IccTransform` (moxcms) para CMYK.
 - *Formatos*: PDF RGB en MVP; PDF CMYK en Fase 2.
 - *Presupuesto*: PDF de 20 páginas < 5 s (confirmada, D-71); progreso por página.
 - *Aceptación*: (a) con Sangrado de 3 mm el PDF contiene `TrimBox` y `BleedBox` correctos y marcas de corte fuera del sangrado (validación estructural); (b) el texto del PDF es seleccionable (extracción devuelve el contenido); (c) el PDF con contraseña no abre sin ella (prueba con lector de referencia, VERIFICAR); (d) el golden de estructura no cambia sin aprobación.
@@ -787,10 +787,10 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 
 | Dirección | Formato | Fase | Crate | Clase legal |
 |---|---|---|---|---|
-| Importar | PNG, JPEG, WebP, GIF, TIFF, BMP, QOI | MVP | `gafira-io-image` | Libre de regalías (VERIFICAR licencias de crates) |
+| Importar | PNG, JPEG, WebP, GIF, TIFF, BMP, QOI | MVP | `gafira-io-image` | Libre de regalías; crates MIT OR Apache-2.0 (`image` 0.25.10 con `png`, `zune-jpeg`, `image-webp`, `gif`, `tiff`, `qoi`): verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio) |
 | Importar | SVG | MVP | `gafira-io-svg` | Libre |
 | Importar | HEIC (solo lectura, solo con el decodificador del SO; D-59; en Linux solo si el sistema lo ofrece) | Fase 2 | feature `heic-os` | Licenciado por el SO |
-| Importar | PDF | Fase 2 | `gafira-io-pdf` o hayro (VERIFICAR) | Libre (VERIFICAR) |
+| Importar | PDF | Fase 2 | `gafira-io-pdf` o hayro (hayro 0.9.0, Apache-2.0 OR MIT: verificado (2026-11-16, crates.io)) | Libre (VERIFICAR) |
 | Importar y exportar | `.gaf` | MVP | `gafira-format` | Propio |
 | Exportar | PNG, JPEG, WebP, GIF animado | MVP | `gafira-io-image` | Libre |
 | Exportar | SVG | MVP | `gafira-io-svg` | Libre |
@@ -810,6 +810,6 @@ Los campos y puntos de extensión que las funciones necesitan **ya están incorp
 | Q-35, Q-36, Q-39, Q-40, Q-41, Q-42 | Decisiones de capa 2 | Cerradas: D-29, D-30, D-33, D-34, D-41 y D-42 |
 | R-04 | Aislar sujeto < 2 s con GPU | VERIFICAR (CAL-07) |
 | R-A | Cifrado AES-256 de PDF con biblioteca permisiva | VERIFICAR (FD-56) |
-| R-B | Licencia de krilla, hayro y qrcode | VERIFICAR con `cargo-deny` (02 §9.2) |
+| R-B | Licencia de krilla, hayro y qrcode | Cerrada: krilla 0.8.2, hayro 0.9.0 y qrcode 0.14.1 son MIT OR Apache-2.0 (verificado el 2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio; 02 §9.2) |
 | R-C | Medidas de Destinos por plataforma | VERIFICAR al publicar cada versión (FD-53) |
 | R-D | Calidad del reflujo al Adaptar con diseños atípicos | Mitigar con el conjunto de 20 plantillas y ajuste manual (FD-54) |

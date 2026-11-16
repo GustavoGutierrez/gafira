@@ -52,7 +52,7 @@ El Editor de video comparte el `Project` con el Editor de diseño (02 §3.1). Un
 | GIF animado | — | — | Libre | MVP (como imagen animada) | `gafira-io-image` |
 | WAV / PCM | — | PCM | Libre | MVP | `gafira-mux` |
 | FLAC, Ogg (Vorbis/Opus) | — | FLAC, Vorbis, Opus | Libre de regalías | MVP | `gafira-codec-free` |
-| MP3 | — | MP3 | Libre de patentes vigentes; **solo importación** (D-07) | MVP | decodificador permisivo, licencia VERIFICAR (02 §9.2) |
+| MP3 | — | MP3 | Libre de patentes vigentes; **solo importación** (D-07) | MVP | decodificador permisivo `nanomp3` (MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); 02 §9.2) |
 | M4A | — | AAC | Licenciado por el SO | MVP | `gafira-codec-os` |
 | AVI | MJPEG, sin comprimir | PCM | Libre de regalías; **solo importación**, sin exportación (D-07) | **Fase 2** | `gafira-mux` + `gafira-codec-free` |
 | VP8, ProRes | — | — | No previsto | — | — |
@@ -396,7 +396,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 **FV-30 · MSI con WiX v5** (RF-56)
 - *Propósito*: instalar, actualizar y desinstalar Gafira con el estándar de Windows Installer.
 - *Comportamiento y reglas*:
-  - **Herramienta**: WiX v5 se usa **solo en el build**; no se distribuye. Su licencia (MS-RL según 02) está en VERIFICAR antes de depender del proceso de empaquetado.
+  - **Herramienta**: WiX v5 se usa **solo en el build**; no se distribuye. Su licencia es MS-RL (verificado el 2026-11-16, `LICENSE.TXT` de github.com/wixtoolset/wix). Sigue en VERIFICAR: MS-RL no está en la allowlist y las extensiones de WiX que se incrustan en el MSI pueden arrastrarla; v5 está fuera de soporte comunitario y desde v6 el uso con ingresos exige la Open Source Maintenance Fee (firegiant.com). Decide el titular: versión de WiX y cuota, u otra herramienta de MSI.
   - **Contenido**: `gafira.exe`, `gafira-cli.exe` (opcional, en el PATH como característica), `THIRD_PARTY_NOTICES.md`, licencias OFL de las fuentes y recursos propios; **CRT estático** (sin redistribuible de Visual C++).
   - **Instalación por equipo** en `C:\Program Files\Gafira` con permisos de administrador (por usuario sin administrador: confirmada, D-80). `UpgradeCode` fijo y `MajorUpgrade` para actualizar en sitio sin duplicar.
   - **Accesos directos**: Menú Inicio (siempre) y Escritorio (casilla, desactivada por defecto). Entrada en «Aplicaciones instaladas» con el icono de Gafira, versión, editor y enlaces de soporte.
@@ -433,7 +433,7 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 - *Propósito*: instalación estándar en Debian, Ubuntu, Fedora, openSUSE y derivadas, y una opción portable para el resto.
 - *Comportamiento y reglas*:
   - **Contenido común**: `gafira` y `gafira-cli` en `/usr/bin` (en el `.tar.gz`, en `bin/`), recursos en `/usr/share/gafira`, archivo `.desktop` con nombre y descripción en español e inglés (D-61), iconos `hicolor` (16–512 px, 03 §5.3), MIME de `.gaf` (`gafira.xml` en `shared-mime-info`, `MimeType=application/vnd.gafira.project+zip;`), `THIRD_PARTY_NOTICES.md` y los `OFL.txt` de las fuentes.
-  - **`.deb`**: `gafira_<versión>_amd64.deb`, con `copyright` que recoge las licencias de terceros. **`.rpm`**: `gafira-<versión>.x86_64.rpm`. Ambos se generan con **nfpm** (herramienta solo de build; **licencia VERIFICAR** antes de depender de ella).
+  - **`.deb`**: `gafira_<versión>_amd64.deb`, con `copyright` que recoge las licencias de terceros. **`.rpm`**: `gafira-<versión>.x86_64.rpm`. Ambos se generan con **nfpm** (herramienta solo de build; licencia MIT: verificado (2026-11-16, `LICENSE.md` de github.com/goreleaser/nfpm)).
   - **`.tar.gz` portable**: `gafira-<versión>-linux-x86_64.tar.gz`, se descomprime y se ejecuta sin instalar; incluye un script opcional de integración con el escritorio.
   - **Dependencias del sistema** (solo bibliotecas del SO, nunca empaquetadas): por ejemplo `libc6`, `libvulkan1`, `libxkbcommon0`, `libwayland-client0`, `libasound2` (audio) y `xdg-desktop-portal` (diálogos de archivo); los nombres equivalentes en el `.rpm`. `libasound` es LGPL-2.1 y se enlaza de forma **dinámica** como dependencia del paquete, no como archivo incluido (ARQ-79, R-06 de 02, VERIFICAR con asesoría legal).
   - Se construye sobre una base con la **glibc más antigua soportada** (propuesta: la de la LTS de Ubuntu más antigua en soporte, VERIFICAR).
@@ -473,9 +473,9 @@ Plataformas únicas (ARQ-03): `x86_64-pc-windows-msvc` (Windows 10/11), `x86_64-
 
 **FV-36 · `THIRD_PARTY_NOTICES.md` y SBOM** (RF-58)
 - *Propósito*: cumplir las obligaciones de atribución y poder demostrar qué contiene cada versión.
-- *Comportamiento y reglas*: en cada release se genera **`THIRD_PARTY_NOTICES.md`** (único nombre del archivo de avisos en todas las specs y en el instalador; la lista de dependencias de Rust con nombre, versión, licencia y texto completo, y las licencias OFL de las fuentes y de los assets que lo exijan); se incluye en el instalador y se muestra en **Ajustes → Acerca de → Licencias**. Se produce además un **inventario de software (SBOM)** en formato CycloneDX o SPDX (VERIFICAR herramienta y licencia, solo de build), por plataforma y por conjunto de *features*, firmado y adjunto a la versión; el SBOM del build `free-only` se publica por separado. La herramienta de generación es de uso solo en build (02 §9.1).
+- *Comportamiento y reglas*: en cada release se genera **`THIRD_PARTY_NOTICES.md`** (único nombre del archivo de avisos en todas las specs y en el instalador; la lista de dependencias de Rust con nombre, versión, licencia y texto completo, y las licencias OFL de las fuentes y de los assets que lo exijan); se incluye en el instalador y se muestra en **Ajustes → Acerca de → Licencias**. Se produce además un **inventario de software (SBOM)** en formato CycloneDX o SPDX (herramienta candidata `cargo-cyclonedx` 0.5.10, Apache-2.0: verificado (2026-11-16, crates.io); solo de build), por plataforma y por conjunto de *features*, firmado y adjunto a la versión; el SBOM del build `free-only` se publica por separado. La herramienta de generación es de uso solo en build (02 §9.1).
 - *UI*: Ajustes → Acerca de → Licencias.
-- *Técnica*: `cargo about` o equivalente (VERIFICAR licencia), `xtask audit-bundle`; ARQ-73.
+- *Técnica*: `cargo about` o equivalente (`cargo-about` 0.9.3, MIT OR Apache-2.0: verificado (2026-11-16, crates.io)), `xtask audit-bundle`; ARQ-73.
 - *Presupuesto*: generación < 2 min en CI.
 - *Aceptación*: (a) el archivo de avisos contiene el 100 % de las dependencias resueltas por `cargo metadata` para ese build; (b) el instalador incluye el archivo y «Acerca de» lo muestra; (c) el SBOM se valida contra el esquema del formato elegido.
 
@@ -588,7 +588,7 @@ Cada punto tiene propietario y evidencia. La primera versión es una **descarga 
 - *Propósito*: ampliar Gafira sin tocar el núcleo.
 - *Comportamiento y reglas*: pestaña **Extensiones** (instalar, activar, desactivar, quitar). Un plugin es un paquete firmado con manifiesto y **capacidades declaradas** (sin red; disco solo mediante permisos que concede la persona); sus contribuciones (efectos solo CPU, importadores, exportadores, proveedores de recursos y comandos) se envuelven en adaptadores de los traits nativos. Un plugin con bucle infinito se interrumpe en ≤ 100 ms por combustible y se desactiva sin afectar al documento.
 - *UI*: Panel lateral → Extensiones; Ajustes → Extensiones.
-- *Técnica*: `PluginHost` con `wasmi` (VERIFICAR licencia; 02 §4.12), `gafira-plugin`.
+- *Técnica*: `PluginHost` con `wasmi` (2.0.0, MIT OR Apache-2.0: verificado (2026-11-16, crates.io y `cargo-deny` 0.20.2 con el `deny.toml` del repositorio); 02 §4.12), `gafira-plugin`.
 - *Presupuesto*: cargar un plugin < 200 ms (confirmada, D-71).
 - *Aceptación*: ARQ-24 (≤ 100 ms), ARQ-20 (el demo de extensión compila), acceso no concedido devuelve error.
 
@@ -629,4 +629,4 @@ Cada punto tiene propietario y evidencia. La primera versión es una **descarga 
 | Q-20 | Modo sin licencia válida | Aplazada (D-62, D-70): la primera versión es gratuita y sin licencia; la lista de funciones bloqueadas (spec 06) se fija cuando haya venta. En un build con licencia, hasta entonces, solo la exportación está bloqueada (D-55) |
 | R-03 (02) | AV1 por software ≥ 10 fps a 1080p (ahora es la salida por defecto) | *Spike* en la semana 1 |
 | R-06 (02) | `cpal` y `libasound` (LGPL, dinámico) | VERIFICAR, legal |
-| R-F | Licencia de WiX v5, nfpm y de las herramientas de empaquetado | VERIFICAR |
+| R-F | Licencia de WiX v5, nfpm y de las herramientas de empaquetado | nfpm (MIT), `cargo-about` (MIT OR Apache-2.0) y `cargo-cyclonedx` (Apache-2.0): verificado (2026-11-16). WiX (MS-RL y cuota OSMF desde v6): VERIFICAR, decide el titular (§C1) |
