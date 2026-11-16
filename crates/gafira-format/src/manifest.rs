@@ -1,17 +1,21 @@
 //! `manifest.json` (02 §7.1, 008 §5, D-68): camelCase keys.
 
+use std::collections::BTreeMap;
+
 use serde_json::{Map, Value, json};
 
 use crate::{FORMAT, FORMAT_VERSION};
 
 /// The manifest of a document with `pages`, `sequences` and `assets`
-/// (hash to entry) as its JSON holds them.
+/// (hash to entry) as its JSON holds them; `sizes` gives the bytes of each
+/// embedded asset by its hex hash.
 pub(crate) fn build(
     schema: u64,
     project_id: &Value,
     pages: &[Value],
     sequences: &[Value],
     assets: &Value,
+    sizes: &BTreeMap<String, u64>,
 ) -> Value {
     let names: Map<String, Value> = assets
         .as_object()
@@ -19,10 +23,15 @@ pub(crate) fn build(
             table
                 .iter()
                 .map(|(hash, entry)| {
-                    (
-                        hash.clone(),
-                        json!({ "name": entry.get("name").cloned().unwrap_or(Value::Null) }),
-                    )
+                    let mut item = Map::new();
+                    item.insert(
+                        "name".to_owned(),
+                        entry.get("name").cloned().unwrap_or(Value::Null),
+                    );
+                    if let Some(bytes) = sizes.get(hash) {
+                        item.insert("bytes".to_owned(), Value::from(*bytes));
+                    }
+                    (hash.clone(), Value::Object(item))
                 })
                 .collect()
         })

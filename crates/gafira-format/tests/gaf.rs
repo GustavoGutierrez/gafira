@@ -1,18 +1,64 @@
 //! Spec 019: the `.gaf` container of D-68.
 
-use std::io::{Cursor, Read, Write};
+use std::collections::BTreeMap;
+use std::io::{self, Cursor, Read, Write};
+use std::sync::Mutex;
 
-use gafira_doc::{Document, ProjectId};
+use gafira_doc::{AssetRef, ContentHash, Document, ProjectId};
 use gafira_format::{FORMAT_VERSION, GafRepository, Limits, MIMETYPE, read_gaf, write_gaf};
 use gafira_ports::repository::{ProjectRepository, RepositoryError};
+use gafira_ports::store::{ContentStore, StoreError};
+use gafira_ports::system::ReadSeek;
 use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+/// Contents kept in memory, for the tests that need no disk.
+#[derive(Default)]
+struct MemoryStore(Mutex<BTreeMap<ContentHash, Vec<u8>>>);
+
+impl ContentStore for MemoryStore {
+    fn put(&self, src: &mut dyn io::Read) -> Result<ContentHash, StoreError> {
+        let mut bytes = Vec::new();
+        src.read_to_end(&mut bytes).map_err(StoreError::Io)?;
+        let hash = ContentHash(*blake3::hash(&bytes).as_bytes());
+        self.0.lock().expect("a lock").insert(hash, bytes);
+        Ok(hash)
+    }
+
+    fn open(&self, hash: ContentHash) -> Result<Box<dyn ReadSeek + Send>, StoreError> {
+        let bytes = self.0.lock().expect("a lock").get(&hash).cloned();
+        let bytes = bytes.ok_or(StoreError::NotFound { hash })?;
+        Ok(Box::new(Cursor::new(bytes)))
+    }
+
+    fn contains(&self, hash: ContentHash) -> Result<bool, StoreError> {
+        Ok(self.0.lock().expect("a lock").contains_key(&hash))
+    }
+}
+
+/// The bytes of the embedded `clip.mp4` of the golden.
+const CLIP: &[u8] = b"not really an mp4";
+
+fn clip_hex() -> String {
+    AssetRef::new(ContentHash(*blake3::hash(CLIP).as_bytes())).hex()
+}
+
+/// A store with the embedded clip in it.
+fn store() -> MemoryStore {
+    let store = MemoryStore::default();
+    store.put(&mut &CLIP[..]).expect("puts");
+    store
+}
+
 /// The timeline golden: a page, a sequence and two assets, which covers
-/// every part of the layout.
+/// every part of the layout. Its embedded clip is renamed to the hash of
+/// [`CLIP`].
 fn document() -> Document {
-    let text = include_str!("../../gafira-doc/tests/golden/timeline.json");
+    let text = include_str!("../../gafira-doc/tests/golden/timeline.json").replace(
+        "abababababababababababababababababababababababababababababababab",
+        &clip_hex(),
+    );
     Document::from_json(text.as_bytes())
         .expect("the golden loads")
         .with_project_id(ProjectId::from_u128(0xfeed))
@@ -20,7 +66,7 @@ fn document() -> Document {
 
 fn gaf(document: &Document) -> Vec<u8> {
     let mut bytes = Cursor::new(Vec::new());
-    write_gaf(&mut bytes, document).expect("writes");
+    write_gaf(&mut bytes, document, &store()).expect("writes");
     bytes.into_inner()
 }
 
@@ -40,7 +86,11 @@ fn entry(bytes: &[u8], name: &str) -> Value {
 }
 
 fn read(bytes: Vec<u8>) -> Result<gafira_ports::repository::LoadedProject, RepositoryError> {
-    read_gaf(Cursor::new(bytes), Limits::default())
+    read_gaf(
+        Cursor::new(bytes),
+        Limits::default(),
+        &MemoryStore::default(),
+    )
 }
 
 /// A ZIP built entry by entry, for the hostile cases.
@@ -102,7 +152,8 @@ fn s19_01_the_layout_is_the_one_of_d68() {
             "manifest.json",
             "document.json",
             "pages/1.json",
-            "sequences/3.json"
+            "sequences/3.json",
+            format!("assets/{}.mp4", clip_hex()).as_str(),
         ]
     );
     let mut zip = ZipArchive::new(Cursor::new(&bytes)).expect("a zip");
@@ -310,7 +361,7 @@ fn s19_09_the_repository_writes_a_synced_file_and_reads_it_back() {
     let dir = std::env::temp_dir().join(format!("gafira-format-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a folder");
     let path = dir.join("poster.gaf");
-    let repository = GafRepository::default();
+    let repository = GafRepository::new(Limits::default(), std::sync::Arc::new(store()));
     repository.save(&path, &document()).expect("saves");
     assert_eq!(repository.load(&path).expect("loads").document, document());
     assert!(matches!(

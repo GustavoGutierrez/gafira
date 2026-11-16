@@ -1,14 +1,16 @@
 //! Reading a `.gaf`, treating it as hostile (008 §11).
 
-use std::io::{Read, Seek};
+use std::collections::BTreeSet;
+use std::io::{self, Read, Seek};
 
-use gafira_doc::Document;
+use gafira_doc::{AssetRef, AssetStorage, ContentHash, Document};
 use gafira_ports::repository::{LoadedProject, RepositoryError};
+use gafira_ports::store::{ContentStore, StoreError};
 use serde_json::Value;
 use zip::ZipArchive;
 use zip::result::ZipError;
 
-use crate::{FORMAT, Limits, MIMETYPE, manifest};
+use crate::{FORMAT, Limits, MIMETYPE, assets, manifest};
 
 fn corrupt(detail: impl Into<String>) -> RepositoryError {
     RepositoryError::Corrupt {
@@ -38,6 +40,10 @@ pub(crate) fn safe_name(name: &str) -> bool {
 
 /// Read the `.gaf` in `source` with `limits`.
 ///
+/// Every embedded asset is checked against the hash its entry name carries
+/// and then put into `store`; a mismatch, or an embedded asset of the table
+/// without its entry, is corrupt (spec 026).
+///
 /// A file of a newer container major, or one that requires a capability
 /// this build does not know, loads read-only (ARQ-55). A newer document
 /// schema cannot be represented and is [`RepositoryError::TooNew`].
@@ -48,6 +54,7 @@ pub(crate) fn safe_name(name: &str) -> bool {
 pub fn read_gaf<R: Read + Seek>(
     source: R,
     limits: Limits,
+    store: &dyn ContentStore,
 ) -> Result<LoadedProject, RepositoryError> {
     let mut zip = ZipArchive::new(source).map_err(zip_error)?;
     if zip.len() > limits.max_entries {
@@ -57,6 +64,7 @@ pub fn read_gaf<R: Read + Seek>(
             limits.max_entries
         )));
     }
+    let mut embedded: Vec<(usize, AssetRef)> = Vec::new();
     for index in 0..zip.len() {
         let entry = zip.by_index_raw(index).map_err(zip_error)?;
         if !safe_name(entry.name()) {
@@ -69,6 +77,18 @@ pub fn read_gaf<R: Read + Seek>(
                 entry.name(),
                 size / packed
             )));
+        }
+        if entry.name().starts_with(assets::FOLDER) && !entry.is_dir() {
+            let reference = assets::parse(entry.name())
+                .ok_or_else(|| corrupt(format!("malformed asset name {:?}", entry.name())))?;
+            if size > limits.max_asset_bytes {
+                return Err(corrupt(format!(
+                    "{} is larger than {} bytes",
+                    entry.name(),
+                    limits.max_asset_bytes
+                )));
+            }
+            embedded.push((index, reference));
         }
     }
     check_mimetype(&mut zip)?;
@@ -109,10 +129,65 @@ pub fn read_gaf<R: Read + Seek>(
     root.insert("sequences".to_owned(), Value::Array(sequences));
     let bytes = serde_json::to_vec(&document).map_err(|e| corrupt(e.to_string()))?;
     let document = Document::from_json(&bytes).map_err(|e| corrupt(e.to_string()))?;
+
+    let present: BTreeSet<AssetRef> = embedded.iter().map(|(_, r)| *r).collect();
+    if let Some((missing, _)) = document
+        .assets()
+        .iter()
+        .find(|(r, e)| e.storage == AssetStorage::Embedded && !present.contains(r))
+    {
+        return Err(corrupt(format!("embedded asset {missing} has no entry")));
+    }
+    for (index, reference) in embedded {
+        import(&mut zip, index, reference, limits, store)?;
+    }
     Ok(LoadedProject {
         document,
         read_only,
     })
+}
+
+/// Checks the asset at `index` against its hash, then puts it into `store`.
+/// Its bytes are read twice so that a mismatch never reaches the store.
+fn import<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+    index: usize,
+    reference: AssetRef,
+    limits: Limits,
+    store: &dyn ContentStore,
+) -> Result<(), RepositoryError> {
+    let mismatch = || {
+        corrupt(format!(
+            "the bytes of asset {reference} do not match its hash"
+        ))
+    };
+    let mut hasher = blake3::Hasher::new();
+    let entry = zip.by_index(index).map_err(zip_error)?;
+    let read =
+        io::copy(&mut entry.take(limits.max_asset_bytes + 1), &mut hasher).map_err(asset_error)?;
+    if read > limits.max_asset_bytes
+        || ContentHash(*hasher.finalize().as_bytes()) != reference.as_hash()
+    {
+        return Err(mismatch());
+    }
+    let mut entry = zip.by_index(index).map_err(zip_error)?;
+    let stored = store.put(&mut entry).map_err(|e| match e {
+        StoreError::Io(e) => RepositoryError::Io(e),
+        StoreError::NotFound { .. } => mismatch(),
+    })?;
+    if stored != reference.as_hash() {
+        return Err(mismatch());
+    }
+    Ok(())
+}
+
+/// A failed read of a ZIP entry: a bad checksum or a broken stream is the
+/// file's fault, anything else the disk's.
+fn asset_error(error: io::Error) -> RepositoryError {
+    match error.kind() {
+        io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof => corrupt(error.to_string()),
+        _ => RepositoryError::Io(error),
+    }
 }
 
 fn check_mimetype<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Result<(), RepositoryError> {
