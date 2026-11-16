@@ -22,7 +22,8 @@ fn size() -> PageSize {
 /// The canonical bytes of a document whose only page has no duration: what a
 /// document written before the edge carries (ARQ-10, ADR 0006 rule 1).
 const DOC_WITHOUT_DURATION: &str = concat!(
-    r#"{"schema_version":1,"next_id":2,"dpi":96,"pages":[{"id":1,"name":"P","#,
+    r#"{"schema_version":1,"next_id":2,"project_id":"00000000-0000-0000-0000-000000000000","#,
+    r#""dpi":96,"pages":[{"id":1,"name":"P","#,
     r#""size":{"width":{"value":100.0,"unit":"px"},"height":{"value":200.0,"unit":"px"}},"#,
     r#""bleed":{"value":0.0,"unit":"mm"},"margins":{"top":{"value":0.0,"unit":"px"},"#,
     r#""right":{"value":0.0,"unit":"px"},"bottom":{"value":0.0,"unit":"px"},"#,
@@ -36,7 +37,8 @@ const DOC_WITHOUT_DURATION: &str = concat!(
 /// 5 s `*` 705 600 000 flicks per second (V-2). The field sits after the grid
 /// and before `locked`, which is where §3.1 puts it.
 const DOC_WITH_DURATION: &str = concat!(
-    r#"{"schema_version":1,"next_id":2,"dpi":96,"pages":[{"id":1,"name":"P","#,
+    r#"{"schema_version":1,"next_id":2,"project_id":"00000000-0000-0000-0000-000000000000","#,
+    r#""dpi":96,"pages":[{"id":1,"name":"P","#,
     r#""size":{"width":{"value":100.0,"unit":"px"},"height":{"value":200.0,"unit":"px"}},"#,
     r#""bleed":{"value":0.0,"unit":"mm"},"margins":{"top":{"value":0.0,"unit":"px"},"#,
     r#""right":{"value":0.0,"unit":"px"},"bottom":{"value":0.0,"unit":"px"},"#,

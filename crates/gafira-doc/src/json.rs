@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::timeline::{AssetTable, Sequence};
-use crate::{Document, Dpi, Page, ValidationError};
+use crate::{Document, Dpi, Page, ProjectId, ValidationError};
 
 /// Why a document could not be read.
 #[derive(Debug)]
@@ -47,6 +47,8 @@ pub(crate) struct DocumentWire {
     schema_version: u32,
     next_id: u64,
     #[serde(default)]
+    project_id: ProjectId,
+    #[serde(default)]
     dpi: Dpi,
     pages: Vec<Arc<Page>>,
     #[serde(default)]
@@ -62,6 +64,7 @@ impl TryFrom<DocumentWire> for Document {
         let doc = Document {
             schema_version: w.schema_version,
             next_id: w.next_id,
+            project_id: w.project_id,
             dpi: w.dpi,
             pages: w.pages,
             sequences: w.sequences,
@@ -94,9 +97,10 @@ impl Serialize for Document {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut out = serializer.serialize_struct("Document", 6)?;
+        let mut out = serializer.serialize_struct("Document", 7)?;
         out.serialize_field("schema_version", &self.schema_version)?;
         out.serialize_field("next_id", &self.next_id)?;
+        out.serialize_field("project_id", &self.project_id)?;
         out.serialize_field("dpi", &self.dpi)?;
         out.serialize_field("pages", &self.pages)?;
         out.serialize_field("sequences", &self.sequences)?;
@@ -159,6 +163,27 @@ mod tests {
         node(id, NodeKind::Group(GroupNode {}))
     }
 
+    // Spec 012, S12-02: the identity is always written, in the header, and a
+    // document written before the field loads with the nil id (ADR 0006).
+    #[test]
+    fn s12_02_project_id_is_written_in_the_header_and_defaults_to_nil() {
+        let id = crate::ProjectId::from_u128(0x0123_abcd_4567_89ef_0a1b_2c3d_4e5f_6789);
+        let d = test_document(3, Dpi::new(96), Vec::new()).with_project_id(id);
+        let json = d.to_json().unwrap();
+        assert!(json.starts_with(concat!(
+            r#"{"schema_version":1,"next_id":3,"#,
+            r#""project_id":"0123abcd-4567-89ef-0a1b-2c3d4e5f6789","dpi":96,"#
+        )));
+        let back = Document::from_json(json.as_bytes()).unwrap();
+        assert_eq!(back.project_id(), id);
+        assert_eq!(back, d);
+
+        let old = Document::from_json(br#"{"schema_version":1,"next_id":3,"pages":[]}"#).unwrap();
+        assert!(old.project_id().is_nil());
+        let bad = br#"{"schema_version":1,"next_id":3,"project_id":"x","pages":[]}"#;
+        assert!(matches!(Document::from_json(bad), Err(LoadError::Json(_))));
+    }
+
     #[test]
     fn minimal_document_has_exact_bytes() {
         let p = Page::new(PageId::new(1), "P".to_string(), px(100.0, 200.0));
@@ -166,7 +191,9 @@ mod tests {
         assert_eq!(
             d.to_json().unwrap(),
             concat!(
-                r#"{"schema_version":1,"next_id":3,"dpi":96,"pages":[{"id":1,"name":"P","#,
+                r#"{"schema_version":1,"next_id":3,"#,
+                r#""project_id":"00000000-0000-0000-0000-000000000000","#,
+                r#""dpi":96,"pages":[{"id":1,"name":"P","#,
                 r#""size":{"width":{"value":100.0,"unit":"px"},"height":{"value":200.0,"unit":"px"}},"#,
                 r#""bleed":{"value":0.0,"unit":"mm"},"margins":{"top":{"value":0.0,"unit":"px"},"#,
                 r#""right":{"value":0.0,"unit":"px"},"bottom":{"value":0.0,"unit":"px"},"#,

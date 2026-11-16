@@ -100,6 +100,7 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "timeline/sequence.rs",
     "timeline/track.rs",
     "placement.rs",
+    "project_id.rs",
     "validate.rs",
     "visit.rs",
 ];
