@@ -44,4 +44,4 @@ Versión del workspace: `0.1.0-beta.2`. Edición 2024, toolchain `1.93.1` fijado
 
 1. Arquitectura y capas, para saber dónde puede vivir cada código.
 2. Los capítulos de crates, de abajo hacia arriba: geometría, color, documento, edición.
-3. Herramientas y metodología, antes de enviar un cambio. Las specs se ejecutan por el flujo de `AGENTS.md` y el skill `gafira-specs` (ADR 0018); el capítulo de metodología todavía describe el flujo anterior.
+3. Herramientas y metodología, antes de enviar un cambio. Las specs se ejecutan por el flujo de `AGENTS.md` y el skill `gafira-specs` (ADR 0018), que describe el capítulo de metodología.

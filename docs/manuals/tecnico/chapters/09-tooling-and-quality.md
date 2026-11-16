@@ -10,7 +10,7 @@ cargo clippy -p <crate> --all-targets --locked -- -D warnings
 cargo test -p <crate> --locked
 ```
 
-The scope is the crate the commit touches. Use `--workspace` when the commit touches a crate that others depend on, a `Cargo.toml`, a `Cargo.lock` or `ci.yml`. The full workspace suite runs once at the delivery HEAD and once before the `develop` -> `main` pull request (ADR 0017).
+The scope is the crate the commit touches. Use `--workspace` when the commit touches a crate that others depend on, a `Cargo.toml`, a `Cargo.lock` or `ci.yml`. The full workspace suite runs once at spec close and once before the `develop` -> `main` pull request (ADR 0017).
 
 The toolchain is pinned to `1.93.1` with `rustfmt` and `clippy` in `rust-toolchain.toml`. `--locked` keeps `Cargo.lock` authoritative.
 
@@ -31,7 +31,7 @@ Defined in the root `Cargo.toml` and inherited by each crate with `[lints] works
 
 ## CI
 
-**Current status.** CI is disabled manually on GitHub because of a billing problem, so no workflow runs on pushes or pull requests. The local gates are the only barrier: before a delivery is accepted, the three commands above, `cargo deny check` and the `policy` steps of `ci.yml` (ARQ-07, forbid `unsafe`, V5, V12, V13) are run locally, the steps under `bash --noprofile --norc -eo pipefail`, and recorded in the change folder. The Windows and macOS legs of the matrix are therefore not exercised today. The description below is of the workflow file as it stands in the repository, to be re-enabled by the owner.
+**Current status.** CI is disabled manually on GitHub because of a billing problem, so no workflow runs on pushes or pull requests. The local gates are the only barrier: before work merges into `develop`, the three commands above, `cargo deny check` and the `policy` steps of `ci.yml` (ARQ-07, forbid `unsafe`, V5, V12, V13) are run locally, the steps under `bash --noprofile --norc -eo pipefail`, and recorded in the spec's evidence section. The Windows and macOS legs of the matrix are therefore not exercised today. The description below is of the workflow file as it stands in the repository, to be re-enabled by the owner.
 
 The workflow is `.github/workflows/ci.yml`. It runs on pushes to `main`, pull requests and manual dispatch, with read-only `contents` permission and cancel-in-progress for pull requests. Third-party actions are pinned to 40-hex commit SHAs. Its V5 table has a row for each library crate, `gafira-testkit` included.
 
@@ -57,7 +57,7 @@ The `policy` job is where architecture rules become executable. See the architec
 - Tests cover the behavior of the public contract, not the implementation.
 - Test layers: unit tests next to the code, integration tests in each crate's `tests/` directory, property tests with `proptest` (a workspace dependency with default features off and `std` on), compile-fail tests with `trybuild`, and golden files for the document format. No end-to-end layer exists yet.
 - Every core command runs the six-law `prop_command` harness of `gafira-testkit` (see below and the edit chapter).
-- Critical code, for which a missed mutant is a failure: validation, JSON load and save, ids and the arena, transforms, size and DPI limits, and any rule with an invariant. Non-critical: `Display` and `Error` text unless a spec fixes it, trivial accessors and test helpers.
+- Critical logic is built test-first; the methodology chapter lists it (document model, JSON load and save and validation, ids and the arena, edit history, time, color, geometry and transforms, size and DPI limits, format parsing, and any rule with an invariant). Non-critical: `Display` and `Error` text unless a spec fixes it, trivial accessors and test helpers.
 - Compile-fail doctests guard capability rules (for example that `EditToken` is not `Clone`). They are regression aids, not proof; the interim evidence is CI step V13 plus the `trybuild` fixtures.
 
 ### gafira-testkit
@@ -76,22 +76,13 @@ Use it from integration tests (`tests/`) only, where each crate has one copy of 
 
 ## Mutation testing
 
-`cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate. The `mutants` agent runs it when the `mutation` value of the `Flow:` line asks for a run, and the `verify` agent fails on a missed or timed-out mutant in critical code and documents the rest. There is no score target. The run mutates a scope set by the mutation tier (T0 to T4, see the [methodology chapter](10-methodology.md)). By default (`mutation: archive`) there is no per-delivery run, and the change closes with one whole-crate run (T4) of every crate it touched, before archive. `mutation: delivery` adds the per-delivery tiers T2 and T3, and `mutation: off` runs no `cargo-mutants`.
-
-A second practice complements it. When a test is written after the code, the delivery shows that the test can fail by applying one hand mutation at a time (for example `<` for `<=`, no early `break`, compacting the newest entry), running the tests and restoring the code. Hand mutations are recorded as a selection in the change's `apply-progress.md`, never as a complete run. A surviving mutant found by `cargo-mutants` in critical code sends the delivery back for a fix round with new tests.
+`cargo-mutants` is an optional developer tool, like `cargo-deny`; it is not a CI gate and has no score target. It is used only for critical logic (see the [methodology chapter](10-methodology.md)), scoped to one crate:
 
 ```bash
-cargo mutants -p <crates> --in-diff <diff> --jobs 8 -o <scratch dir>
+cargo mutants -p <crate> --jobs 8 -o <scratch dir>
 ```
 
-This is the T2 command, used only with `mutation: delivery`. The other tiers that run `cargo-mutants` use these shapes (`AGENTS.md`):
-
-| Tier | Command shape |
-|---|---|
-| T3 | `cargo mutants -p <crate> --file <file> --jobs 8 -o <scratch dir>`, one `--file` per changed non-test source file; only with `mutation: delivery` |
-| T4 | `cargo mutants -p <crate> --jobs 8 -o <scratch dir>`; the default run, once per touched crate at change close |
-
-`--iterate` is allowed on T3 only for test-only fix rounds with the same file set, never on the closing PASS round.
+A surviving mutant in critical logic means a test gap, unless it is equivalent and excluded in `.cargo/mutants.toml` (see the rules below). A hand mutation is a lighter check: change one line by hand (for example `<` for `<=`, no early `break`), run the tests, see one fail and restore the code. It shows that a test written after the code can fail. The commands and results of either check go in the spec's evidence section.
 
 Rules, from `AGENTS.md` and `.cargo/mutants.toml`:
 

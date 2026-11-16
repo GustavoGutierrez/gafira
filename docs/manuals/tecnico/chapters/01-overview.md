@@ -44,4 +44,4 @@ Workspace version: `0.1.0-beta.2`. Edition 2024, toolchain `1.93.1` pinned in `r
 
 1. Architecture and layering, to know where code may live.
 2. The crate chapters, bottom-up: geometry, color, document, edit.
-3. Tooling and methodology, before sending a change. Specs run through the flow in `AGENTS.md` and the `gafira-specs` skill (ADR 0018); the methodology chapter still describes the earlier flow.
+3. Tooling and methodology, before sending a change. Specs run through the flow in `AGENTS.md` and the `gafira-specs` skill (ADR 0018), which the methodology chapter describes.
