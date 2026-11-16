@@ -629,3 +629,22 @@ fn fd_44_the_trailing_white_space_of_a_line_is_flagged_in_either_direction() {
         assert_eq!(got, flagged, "{text:?}");
     }
 }
+
+// S13-09, ARQ-116: the glyphs of a cluster start one after the other. Inter has no combining
+// acute, so `x` + U+0301 is one cluster of the `x` and a `.notdef` that the font does not
+// position: the second glyph starts at the advance of the `x` alone.
+#[test]
+fn arq_116_each_glyph_of_a_cluster_starts_after_the_ones_before_it() {
+    let x = lay("x").lines[0].clusters[0].advance;
+    assert!(x > 0.0);
+    let layout = lay("x\u{301}");
+    let c = &layout.lines[0].clusters[0];
+    assert_eq!(c.glyphs.len(), 2, "{:?}", c.glyphs);
+    assert_eq!(c.glyph_offsets[0], (0.0, 0.0));
+    assert!(
+        (c.glyph_offsets[1].0 - x).abs() <= 0.01,
+        "{:?}",
+        c.glyph_offsets
+    );
+    assert!(c.advance > x);
+}

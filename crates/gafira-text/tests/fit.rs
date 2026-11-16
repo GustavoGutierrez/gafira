@@ -759,3 +759,62 @@ fn arq_110_a_size_whose_layout_is_not_finite_is_too_big_and_the_minimum_is_an_er
         Some(TextError::NonFinite { field: "output" })
     );
 }
+
+/// The runs fitted at a fixed size: the largest run at 20 pt, the others in proportion.
+fn fixed(runs: &[FitRun<'_>], fonts: &[&[u8]], letter_spacing: f64) -> FitResult {
+    fit_box(
+        runs,
+        fonts,
+        &TextStyle {
+            letter_spacing,
+            ..style(TextAlign::Left)
+        },
+        DPI,
+        Size::new(10_000.0, 10_000.0),
+        &range(20.0, 20.0),
+    )
+    .expect("valid input")
+}
+
+// S13-07, FD-41 (e): runs of several sizes with no letter spacing keep the optional
+// ligatures, as a single size does.
+#[test]
+fn fd_41_e_runs_with_no_spacing_keep_the_optional_ligatures() {
+    let runs = [
+        FitRun {
+            text: "fi",
+            size_pt: 20.0,
+        },
+        FitRun {
+            text: "x",
+            size_pt: 10.0,
+        },
+    ];
+    let out = fixed(&runs, &[fonts::MANROPE.bytes], 0.0);
+    let clusters = &out.layout.lines[0].clusters;
+    assert_eq!(clusters[0].glyphs.len(), 1, "one ligature glyph");
+    assert!(
+        clusters[1].glyphs.is_empty(),
+        "the `i` continues the ligature"
+    );
+}
+
+// S13-06, FD-41 (e): the letter spacing of a run is its own also in a later paragraph: the
+// last cluster of a line drops the spacing of its own run, not of the run before it. The second
+// paragraph is laid out as the same runs alone.
+#[test]
+fn fd_41_e_a_run_in_a_later_paragraph_keeps_its_own_spacing() {
+    let run = |text, size_pt| FitRun { text, size_pt };
+    let both = fixed(
+        &[run("ab\n", 20.0), run("cd", 20.0), run("ef", 10.0)],
+        &[INTER],
+        100.0,
+    );
+    let alone = fixed(&[run("cd", 20.0), run("ef", 10.0)], &[INTER], 100.0);
+    let (second, first) = (&both.layout.lines[1], &alone.layout.lines[0]);
+    assert_eq!(second.clusters.len(), first.clusters.len());
+    for (a, b) in second.clusters.iter().zip(&first.clusters) {
+        assert!((a.advance - b.advance).abs() <= 0.01, "{a:?} {b:?}");
+        assert!((a.x - b.x).abs() <= 0.01, "{a:?} {b:?}");
+    }
+}

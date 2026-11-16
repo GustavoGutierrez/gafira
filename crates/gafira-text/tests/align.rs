@@ -391,3 +391,64 @@ fn fd_41_a_space_of_the_other_level_in_a_right_to_left_paragraph_does_not_hang_w
 fn line_end(line: &Line) -> usize {
     line.clusters.iter().map(|c| c.range.end).max().unwrap_or(0)
 }
+
+// S13-10, FD-41: in a wrapped right-to-left paragraph the space that hangs sits at the left of
+// each line but the last, so the content does not start at x = 0; `Center` and `Right` still
+// place the content (without that space) in the middle and at the right edge of the box. Lines
+// of one letter are the case where the content is narrowest next to the space.
+#[test]
+fn fd_41_a_wrapped_right_to_left_paragraph_centres_and_right_aligns_its_content() {
+    let stack = [ARABIC, INTER];
+    let letters = "\u{628} \u{628} \u{628}";
+    let mut hung = 0;
+    for (text, widths) in [
+        (ARABIC_PARAGRAPH, [60, 80, 100, 120]),
+        (letters, [16, 18, 20, 22]),
+    ] {
+        for step in widths {
+            let width = f64::from(step);
+            let left = lay_with(text, &stack, 12.0, TextAlign::Left, width, 0.0);
+            let center = lay_with(text, &stack, 12.0, TextAlign::Center, width, 0.0);
+            let right = lay_with(text, &stack, 12.0, TextAlign::Right, width, 0.0);
+            assert!(left.lines.len() >= 2, "w={width}");
+            for ((l, c), r) in left.lines.iter().zip(&center.lines).zip(&right.lines) {
+                hung += usize::from(l.clusters.iter().any(|k| k.trailing));
+                let (ll, lr) = edges(text, l);
+                let content = lr - ll;
+                let (cl, cr) = edges(text, c);
+                assert!(
+                    (cl - (width - content) / 2.0).abs() <= 0.01,
+                    "w={width}: {cl}"
+                );
+                assert!(
+                    (cr - (width + content) / 2.0).abs() <= 0.01,
+                    "w={width}: {cr}"
+                );
+                let (rl, rr) = edges(text, r);
+                assert!((rr - width).abs() <= 0.01, "w={width}: {rr}");
+                assert!((rl - (width - content)).abs() <= 0.01, "w={width}: {rl}");
+            }
+        }
+    }
+    assert!(hung > 0, "no line has a space that hangs");
+}
+
+// S13-11, FD-41 (i): a stretched line stays contiguous: each cluster ends where the next one
+// starts, the stretched spaces included, and the advances add up to the advance of the line.
+#[test]
+fn fd_41_i_a_justified_line_keeps_its_clusters_contiguous() {
+    let layout = lay(PARAGRAPH, TextAlign::Justify, WIDTH);
+    let (_, rest) = layout.lines.split_last().expect("lines");
+    for line in rest {
+        for pair in line.clusters.windows(2) {
+            let end = f64::from(pair[0].x) + f64::from(pair[0].advance);
+            assert!(
+                (end - f64::from(pair[1].x)).abs() <= 0.01,
+                "{end} {}",
+                pair[1].x
+            );
+        }
+        let sum: f64 = line.clusters.iter().map(|c| f64::from(c.advance)).sum();
+        assert!((sum - f64::from(line.advance)).abs() <= 0.01, "{sum}");
+    }
+}

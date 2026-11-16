@@ -4,8 +4,8 @@
 use gafira_geom::Size;
 use gafira_testkit::fonts;
 use gafira_text::{
-    Arc, CurvedLine, Line, TextAlign, TextError, TextLayout, TextStyle, curve_layout, layout_box,
-    layout_curved,
+    Arc, Cluster, CurvedLine, Line, TextAlign, TextError, TextLayout, TextStyle, curve_layout,
+    layout_box, layout_curved,
 };
 
 const INTER: &[u8] = fonts::INTER.bytes;
@@ -654,4 +654,77 @@ fn fd_44_d_a_space_inside_the_line_that_hangs_leaves_no_gap_in_the_arc() {
     }
     let hang = &a[0].clusters[space];
     assert!(hang.x.is_finite() && hang.y.is_finite() && hang.rotation.is_finite());
+}
+
+/// A line by hand: one cluster of `advance` at `x` on `baseline`.
+fn hand_line(baseline: f32, x: f32, advance: f32) -> Line {
+    Line {
+        baseline,
+        advance,
+        height: 10.0,
+        clusters: vec![Cluster {
+            range: 0..1,
+            x,
+            advance,
+            ..Cluster::default()
+        }],
+    }
+}
+
+fn hand_layout(lines: Vec<Line>) -> TextLayout {
+    TextLayout {
+        height: 10.0,
+        lines,
+        overflow: false,
+    }
+}
+
+// S13-02, FD-44 (e): the first line with content sets the reference baseline, not an empty
+// line before it, and no line at all is not the reference either. With the content far from
+// the top, a reference at 0 loses `L / |theta|` to rounding (1e20 + 32 == 1e20), so only the
+// right reference gives the radius of a lone line, `L / |theta|`.
+#[test]
+fn fd_44_e_the_reference_baseline_is_the_first_line_with_content() {
+    let far = 1e20_f32;
+    let empty = Line {
+        baseline: 0.0,
+        ..Line::default()
+    };
+    for lines in [
+        vec![hand_line(far, 0.0, 100.0)],
+        vec![empty, hand_line(far, 0.0, 100.0)],
+    ] {
+        let out = curve(&hand_layout(lines), 100.0, 100.0);
+        let arc = out.last().expect("a line").arc.expect("arc");
+        assert!(
+            (arc.radius - 100.0 / PI).abs() <= 1e-9,
+            "radius {}",
+            arc.radius
+        );
+    }
+}
+
+// S13-03, ARQ-110: each non-finite coordinate of a cluster is an error on its own. With bend
+// 0 every line is straight: `x` comes from the cluster's `x` and `y` from the baseline, so a
+// NaN in one reaches exactly one coordinate.
+#[test]
+fn arq_110_a_single_non_finite_coordinate_of_a_cluster_is_an_error() {
+    let output = Err(TextError::NonFinite { field: "output" });
+    for (baseline, x) in [(f32::NAN, 0.0), (0.0, f32::NAN), (f32::INFINITY, 0.0)] {
+        let layout = hand_layout(vec![hand_line(baseline, x, 10.0)]);
+        assert_eq!(curve_layout(&layout, 100.0, 0.0), output, "{baseline} {x}");
+    }
+}
+
+// S13-03, ARQ-110: a straight line with a bad cluster is an error even though its arc (none)
+// is fine, next to a curved line whose arc and clusters are finite.
+#[test]
+fn arq_110_a_bad_cluster_on_a_straight_line_is_an_error_beside_a_good_arc() {
+    let mut bad = hand_line(20.0, f32::NAN, 0.0);
+    bad.clusters[0].advance = 0.0;
+    let layout = hand_layout(vec![hand_line(10.0, 0.0, 10.0), bad]);
+    assert_eq!(
+        curve_layout(&layout, 100.0, 50.0),
+        Err(TextError::NonFinite { field: "output" })
+    );
 }
