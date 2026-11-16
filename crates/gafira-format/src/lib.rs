@@ -7,10 +7,13 @@
 //! JSON per page and per sequence in the snake_case of `gafira-doc`. Times are
 //! flicks (D-69), hashes BLAKE3 (`ContentHash`). Reading treats the file as
 //! hostile (008 §11): every entry name is checked, sizes are capped and a
-//! compression ratio that only a ZIP bomb has is refused.
+//! compression ratio that only a ZIP bomb has is refused. Embedded assets
+//! travel as `assets/<blake3-hex>.<ext>` and come from, and go to, a
+//! `ports::ContentStore` (spec 026); each one is checked against its hash.
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod limits;
 mod manifest;
 mod read;

@@ -7,6 +7,8 @@ pub struct Limits {
     pub max_entries: usize,
     /// Largest uncompressed JSON entry, in bytes.
     pub max_json_bytes: u64,
+    /// Largest uncompressed embedded asset, in bytes.
+    pub max_asset_bytes: u64,
     /// Largest ratio of uncompressed to compressed bytes for an entry over
     /// 1 MiB; a higher one is a ZIP bomb.
     pub max_ratio: u64,
@@ -17,6 +19,7 @@ impl Default for Limits {
         Self {
             max_entries: 100_000,
             max_json_bytes: 256 * 1024 * 1024,
+            max_asset_bytes: 64 * 1024 * 1024 * 1024,
             max_ratio: 200,
         }
     }
