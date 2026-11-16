@@ -32,7 +32,7 @@ pub struct AutosaveJob {
     pub(crate) version: DocVersion,
     pub(crate) slot: u8,
     pub(crate) folder: PathBuf,
-    pub(crate) project_key: String,
+    pub(crate) session_key: String,
     pub(crate) repository: Arc<dyn ProjectRepository>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
 }
@@ -66,7 +66,7 @@ impl AutosaveJob {
             let _ = self.filesystem.remove(&tmp);
         }
         AutosaveOutcome {
-            project_key: self.project_key,
+            session_key: self.session_key,
             result,
         }
     }
@@ -85,7 +85,7 @@ impl AutosaveJob {
 /// `ProjectService::autosave_finished`.
 #[derive(Debug)]
 pub struct AutosaveOutcome {
-    pub(crate) project_key: String,
+    pub(crate) session_key: String,
     pub(crate) result: Result<(), EngineError>,
 }
 
@@ -122,11 +122,12 @@ mod tests {
         Duration::from_secs(s)
     }
 
-    /// Slot `n` of the `session`-th session of an engine: the project key is
-    /// `<now seconds>-<session counter>` (P13).
+    /// Slot `n` of the `session`-th session of an engine (from 0): the
+    /// fixture carries no project id, so each session mints the next one of
+    /// `SequentialIds` and its slots live under it (D-63, spec 012).
     fn slot_of(session: u64, n: u8) -> String {
-        let now = ManualClock::NOW.0;
-        format!("/data/gafira/recovery/{now}-{session}/slot-{n}.gafira-journal")
+        let id = SequentialIds::nth(u128::from(session) + 1);
+        format!("/data/gafira/recovery/{id}/slot-{n}.gafira-journal")
     }
 
     /// Slot `n` of the first session, the one [`Rig::opened`] opens.

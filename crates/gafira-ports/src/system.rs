@@ -4,6 +4,8 @@ use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use gafira_doc::ProjectId;
+
 use crate::common::UnixTime;
 
 /// A readable, seekable source. Every `Read + Seek` type is one.
@@ -78,6 +80,14 @@ pub trait Clock: Send + Sync {
 
     /// Time since an arbitrary fixed start; never goes back.
     fn monotonic(&self) -> Duration;
+}
+
+/// Mints project identities (D-63, spec 012), so the engine needs no
+/// randomness of its own (ARQ-02). The platform adapter returns a random
+/// RFC 9562 version-4 UUID; it never returns [`ProjectId::NIL`].
+pub trait IdSource: Send + Sync {
+    /// A fresh identity, distinct from every earlier one.
+    fn project_id(&self) -> ProjectId;
 }
 
 /// Shows a message outside the app, best effort. The text is already

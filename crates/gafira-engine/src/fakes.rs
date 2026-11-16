@@ -11,7 +11,7 @@ use std::time::Duration;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
     ContentHash, DocMut, Document, Dpi, ElementBase, GroupNode, Node, NodeId, NodeKind, Page,
-    PageId, PageSize, Placement,
+    PageId, PageSize, Placement, ProjectId,
 };
 use gafira_edit::{
     Applied, Command, CommandError, DirtySet, GestureId, History, InsertPage, Property, SetProperty,
@@ -25,10 +25,10 @@ use gafira_ports::license::{LicenseError, LicenseKey, LicenseStatus, LicenseVeri
 use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
 use gafira_ports::settings::{Settings, SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
-use gafira_ports::system::{Clock, FileSystem, FileWrite, Notifier, ReadSeek};
+use gafira_ports::system::{Clock, FileSystem, FileWrite, IdSource, Notifier, ReadSeek};
 
 use crate::bus::EventChannel;
-use crate::engine::{EngineConfig, Gafira, Ports, Registries, SettingsPorts};
+use crate::engine::{EngineConfig, Gafira, Ports, Registries, SettingsPorts, SystemPorts};
 use crate::event::{EngineEvent, NoopWaker};
 
 pub(crate) struct NoRepository;
@@ -100,6 +100,28 @@ impl Clock for NoClock {
 
     fn monotonic(&self) -> Duration {
         Duration::ZERO
+    }
+}
+
+/// Mints `1, 2, 3, ...` as project ids, so a test can name the id a session
+/// or a copy receives (spec 012).
+#[derive(Default)]
+pub(crate) struct SequentialIds {
+    minted: Mutex<u128>,
+}
+
+impl SequentialIds {
+    /// The `n`-th id this source mints, counting from 1.
+    pub(crate) fn nth(n: u128) -> ProjectId {
+        ProjectId::from_u128(n)
+    }
+}
+
+impl IdSource for SequentialIds {
+    fn project_id(&self) -> ProjectId {
+        let mut minted = lock(&self.minted);
+        *minted += 1;
+        ProjectId::from_u128(*minted)
     }
 }
 
@@ -395,8 +417,11 @@ pub(crate) fn six_ports() -> Ports {
     Ports::new(
         Arc::new(NoRepository),
         Arc::new(NoStore),
-        Arc::new(NoFilesystem),
-        Arc::new(NoClock),
+        SystemPorts::new(
+            Arc::new(NoFilesystem),
+            Arc::new(NoClock),
+            Arc::new(SequentialIds::default()),
+        ),
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
@@ -734,8 +759,11 @@ pub(crate) fn engine_with_clock(
     let ports = Ports::new(
         Arc::clone(repository) as Arc<dyn ProjectRepository>,
         Arc::new(NoStore),
-        Arc::new(fs.clone()),
-        clock,
+        SystemPorts::new(
+            Arc::new(fs.clone()),
+            clock,
+            Arc::new(SequentialIds::default()),
+        ),
         Arc::new(NoNotifier),
         Arc::new(NoLicense),
         no_settings(),
