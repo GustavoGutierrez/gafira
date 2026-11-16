@@ -1,6 +1,6 @@
 # 032 — Imágenes en la exportación PNG y PDF
 
-> **Estado:** in-progress — 2026-11-16 — rama `feat/032-export-images`.
+> **Estado:** done — 2026-11-16 — S32-01..S32-06 cubiertos por `gafira-render` (`graph::tests` 3), `gafira-io-image` (`tests/decode.rs` 3, `tests/png.rs` 2), `gafira-io-pdf` (`tests/pdf.rs` 1) y `gafira-engine` (`export::tests` 3); 7 mutantes a mano muertos; 2929 tests. Recorte, ajustes, otros formatos y la caché de imágenes decodificadas quedan fuera.
 
 ## Objetivo
 
@@ -56,6 +56,26 @@ Lógica crítica (transformaciones): S32-01 en `graph::tests`, debe fallar prime
 ## Evidencia esperada
 
 Tests nuevos en `gafira-render`, `gafira-io-image`, `gafira-io-pdf` y `gafira-engine`; gates de `AGENTS.md` («Before calling something done»), `cargo deny check licenses bans sources` y los pasos de política de `ci.yml` en verde.
+
+## Evidencia
+
+- Rojo verificado: los tests de `graph` no compilaban sin `ImagePixels` ni `with_images`; los de `export` del engine fallaron sin la resolución (mapa vacío, exportación con éxito ante un recurso ausente o que no decodifica).
+- Mutantes a mano, todos muertos: la colocación sin la escala de exportación delante (muere `s32_01_the_scale_goes_in_front_of_an_image`); un lado de la caja cambiado por el otro (mueren `s32_01_an_image_draws_its_pixels_into_its_box_inside_its_layer` y el de la escala); sin el recurso en la clave y sin comprobar el alto 0 (muere `s32_01_an_image_without_pixels_draws_nothing_and_its_asset_keys_it`); sin quitar recursos repetidos (muere `s32_03`); un recurso ausente o que no decodifica que se salta (mueren los dos `s32_04`).
+- `cargo fmt --check`: limpio.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: limpio.
+- `cargo test --workspace --locked`: 2929 tests, 0 fallos.
+- `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` y `cargo test -p gafira-testkit --features ports --locked`: en verde.
+- Pasos de política de `ci.yml` ejecutados en local (ARQ-07, `forbid(unsafe_code)`, V5, ARQ-06, V12, ARQ-107 x2, V13, V14, ADR 0013): todos en verde; la tabla V5 no cambió.
+- `cargo deny check licenses bans sources`: `bans ok, licenses ok, sources ok`. Sin crates nuevos: `image` 0.25 ya estaba en el workspace (`gafira-ui`); `gafira-io-image` lo toma como dependencia normal y `gafira-io-pdf` gana `gafira-raster` solo en pruebas.
+- `python3 tools/sync_agents.py --check`: 0.
+
+## Decisiones y límites registrados
+
+- El motor resuelve y decodifica; el render solo dibuja lo que recibe (ARQ-06, 02 §2.1). `PageRenderers::for_document` gana el mapa `ImagePixels`; `Ports::new` toma `ExportPorts { pages, images }`.
+- Un recurso ausente usa el error existente `StoreError::NotFound` (mensaje `error.store.not_found` con el hash) dentro de `ExportError::Store`; no hay variante nueva en `EngineError`.
+- Se resuelven todas las imágenes de las páginas del alcance, también las ocultas: una oculta sin bytes también bloquea la exportación.
+- La imagen se estira a la caja (sin conservar proporción): la caja ya la fija la colocación (spec 029). El muestreo es el bilineal del backend CPU.
+- El `README.md` no se tocó: su línea de estado ya no sigue a las specs.
 
 ## Riesgos y decisiones abiertas
 
