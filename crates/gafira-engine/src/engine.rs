@@ -26,6 +26,7 @@ use gafira_doc::msg;
 use gafira_doc::msg::{Message, ToMessage};
 use gafira_edit::CommandError;
 
+use crate::assets::AssetService;
 use crate::bus::EventChannel;
 use crate::edit::EditService;
 use crate::event::{EngineEvent, EventBus};
@@ -352,6 +353,7 @@ pub struct Gafira {
     edit: EditService,
     settings: SettingsService,
     license: LicenseService,
+    assets: AssetService,
 }
 
 impl Gafira {
@@ -371,6 +373,7 @@ impl Gafira {
         let bus = events.bus();
         let shared = Shared::new(bus.clone());
         let edit = EditService::new(shared.clone(), Arc::clone(&ports.clock));
+        let assets = AssetService::over(shared.clone(), &ports);
         let projects = ProjectService::over(shared, &ports, &config);
         let settings = SettingsService::over(&ports.settings, bus.clone());
         let license = LicenseService::over(
@@ -388,6 +391,7 @@ impl Gafira {
             edit,
             settings,
             license,
+            assets,
         })
     }
 
@@ -408,6 +412,12 @@ impl Gafira {
     #[must_use]
     pub fn settings(&self) -> &SettingsService {
         &self.settings
+    }
+
+    /// Imports files into the open document (02 §5.4 line 1360, spec 011).
+    #[must_use]
+    pub fn assets(&self) -> &AssetService {
+        &self.assets
     }
 
     /// The licence state and its actions (02 §5.4 line 1363, spec 010).

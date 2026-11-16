@@ -17,6 +17,26 @@ use gafira_ports::system::Clock;
 use crate::engine::EngineError;
 use crate::session::{Session, Shared};
 
+/// Apply `command` to the open session at `clock`'s monotonic time, bump and
+/// publish when it changed the document. The one path every service that
+/// edits takes (`EditService`, `AssetService`), so each change is one undo
+/// entry and one `DocumentChanged` (ARQ-30, design P15).
+pub(crate) fn run(
+    shared: &Shared,
+    clock: &dyn Clock,
+    command: Box<dyn Command>,
+) -> Result<Applied, EngineError> {
+    let at = clock.monotonic();
+    let mut cell = shared.lock();
+    let session = cell.as_mut().ok_or(EngineError::NoSession)?;
+    let applied = session.history.execute(command, at)?;
+    if applied == Applied::Changed {
+        let dirty = session.history.newest_touches().unwrap_or_default();
+        EditService::bumped(session, shared, dirty, at);
+    }
+    Ok(applied)
+}
+
 /// Runs the user's edits against the open document (02 §5.4 line 1359).
 pub struct EditService {
     shared: Shared,
@@ -49,15 +69,7 @@ impl EditService {
     /// Apply `command` at the clock's monotonic time (§5.1). `Changed`, merged
     /// into the newest entry or not, publishes the newest entry's set.
     pub fn execute(&mut self, command: Box<dyn Command>) -> Result<Applied, EngineError> {
-        let at = self.clock.monotonic();
-        self.with_session(|session, shared| {
-            let applied = session.history.execute(command, at)?;
-            if applied == Applied::Changed {
-                let dirty = session.history.newest_touches().unwrap_or_default();
-                Self::bumped(session, shared, dirty, at);
-            }
-            Ok(applied)
-        })
+        run(&self.shared, &*self.clock, command)
     }
 
     /// Undo the newest entry; `Some` publishes the set of the entry undone.

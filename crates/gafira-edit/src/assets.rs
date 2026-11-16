@@ -129,6 +129,17 @@ mod tests {
     }
 
     #[test]
+    fn s11_01_revert_removes_what_apply_inserted() {
+        let token = gafira_doc::EditToken::__new_for_gafira_edit_only();
+        let mut document = Document::default();
+        let mut insert = InsertAsset::new(reference(1), entry("a.png"));
+        let mut doc = document.edit(&token);
+        assert_eq!(insert.apply(&mut doc).expect("applies"), Applied::Changed);
+        insert.revert(&mut doc).expect("reverts");
+        assert!(document.assets().is_empty());
+    }
+
+    #[test]
     fn s11_01_revert_before_apply_is_refused() {
         let token = gafira_doc::EditToken::__new_for_gafira_edit_only();
         let mut document = Document::default();
