@@ -18,9 +18,11 @@ egui.workspace = true
 eframe.workspace = true
 egui_extras.workspace = true
 image.workspace = true
+rfd.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 gafira-platform.workspace = true
+gafira-format.workspace = true

@@ -74,6 +74,7 @@ templates = "Explorar plantillas"
 recent = "Recientes"
 see_all = "Ver todos"
 empty = "Tu próxima idea comienza aquí"
+open = "Abrir archivo"
 
 [home.format]
 social = "Redes"
@@ -90,6 +91,15 @@ print = "A4"
 video_vertical = "9:16"
 video_horizontal = "16:9"
 custom = "Ancho × alto"
+
+[file]
+new = "Nuevo"
+open = "Abrir…"
+save = "Guardar"
+save_as = "Guardar como…"
+save_copy = "Guardar copia…"
+save_failed = "No pudimos guardar el proyecto. Inténtalo de nuevo."
+open_failed = "No pudimos abrir el archivo. Comprueba que es un proyecto de Gafira."
 
 [nav]
 home = "Inicio"

@@ -44,6 +44,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`. Las specs nuevas 
 | 015 | [`gafira-i18n`: catálogos es/en y regla de D-08](done/015-i18n-catalogs.md) | `assets/i18n/{es,en}.toml` compilados en build; `D08LocaleResolver` (D-08, región D-64) y `CatalogTranslator` (parámetros, plurales CLDR, respaldo de §14.6, números y cantidades con ICU4X, tiempo relativo) y `PseudoTranslator` (feature `pseudo`); fechas como interim ISO 8601 UTC; 27 tests nuevos, 8 de 9 mutantes a mano muertos (1 equivalente), 2718 tests |
 | 017 | [Primer shell de escritorio](done/017-ui-desktop-shell.md) | `gafira-ui` (egui/eframe) y `apps/gafira`: Pantalla de arranque, Inicio y regiones del Editor de diseño con tokens y catálogos reales; 12 tests; la app abre en Linux |
 | 018 | [La UI sobre el engine y `gafira-platform`](done/018-ui-engine-platform.md) | Adaptadores reales de archivos, reloj, UUID, idioma y ajustes; la ventana crea el documento, dibuja sus páginas y deshace/rehace por el engine; 8 tests nuevos |
+| 019 | [`gafira-format` y el menú Archivo](done/019-gaf-format-and-file-menu.md) | `.gaf` con la disposición de D-68: escritura determinista, lectura como archivo hostil, solo lectura para lo futuro; Abrir, Guardar, Guardar como y Guardar copia en la ventana; 12 tests nuevos |
 
 ### Historial del flujo anterior
 
@@ -60,4 +61,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **019** (la 016, segunda parte de E4, está reservada).
+Siguiente ID libre: **020** (la 016, segunda parte de E4, está reservada).

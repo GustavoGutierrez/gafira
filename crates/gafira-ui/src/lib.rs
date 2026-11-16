@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod editor;
+mod files;
 mod format;
 mod home;
 mod shell;

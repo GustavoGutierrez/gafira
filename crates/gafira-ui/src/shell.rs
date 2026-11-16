@@ -10,6 +10,7 @@ use gafira_ports::i18n::Locale;
 use gafira_theme::ThemeTokens;
 
 use crate::editor::Editor;
+use crate::files::{self, FileAction, Outcome};
 use crate::format::StartFormat;
 use crate::home::Home;
 use crate::splash;
@@ -52,6 +53,7 @@ pub(crate) enum Go {
     Stay,
     Home,
     Editor(StartFormat),
+    File(FileAction),
 }
 
 struct Shell {
@@ -62,6 +64,9 @@ struct Shell {
     screen: Screen,
     /// How long the Startup screen has been up, in seconds.
     elapsed: f32,
+    /// The last failure, shown in the editor's status line until the next
+    /// action.
+    notice: Option<String>,
 }
 
 /// Open the main window and run until it closes (03 §7.1: minimum
@@ -103,6 +108,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 version: config.version,
                 screen: Screen::Splash,
                 elapsed: 0.0,
+                notice: None,
             }))
         }),
     )
@@ -126,7 +132,13 @@ impl eframe::App for Shell {
                 }
             }
             Screen::Home(home) => home.show(ctx, &self.theme, &self.texts),
-            Screen::Editor(editor) => editor.show(ctx, &mut self.engine, &self.theme, &self.texts),
+            Screen::Editor(editor) => editor.show(
+                ctx,
+                &mut self.engine,
+                &self.theme,
+                &self.texts,
+                self.notice.as_deref(),
+            ),
         };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request
@@ -136,6 +148,21 @@ impl eframe::App for Shell {
         match go {
             Go::Stay => {}
             Go::Home => self.screen = Screen::Home(Home::default()),
+            Go::File(action) => {
+                self.notice = None;
+                match files::run(&self.engine, action) {
+                    Outcome::Cancelled => {}
+                    Outcome::Done => {
+                        if action == FileAction::Open {
+                            self.screen = Screen::Editor(Editor::default());
+                        }
+                    }
+                    Outcome::Failed(message, detail) => {
+                        eprintln!("{action:?}: {detail}");
+                        self.notice = Some(self.texts.t(&message));
+                    }
+                }
+            }
             Go::Editor(format) => match start(&mut self.engine, format) {
                 Ok(()) => self.screen = Screen::Editor(Editor::default()),
                 Err(error) => eprintln!("new document: {error}"),

@@ -88,6 +88,12 @@ impl Home {
                     }
                     ui.add_space(12.0);
                     widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("home.templates")));
+                    ui.add_space(12.0);
+                    if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("home.open")))
+                        .clicked()
+                    {
+                        go = Go::File(crate::files::FileAction::Open);
+                    }
                 });
                 ui.add_space(40.0);
                 ui.horizontal(|ui| {
@@ -113,6 +119,9 @@ impl Home {
             });
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N)) {
             go = Go::Editor(self.picked);
+        }
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
+            go = Go::File(crate::files::FileAction::Open);
         }
         go
     }
