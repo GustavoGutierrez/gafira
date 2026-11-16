@@ -112,6 +112,10 @@ export = "Exportar"
 page = "Página {number}"
 page_of = "{current} de {total}"
 search_templates = "Buscar plantillas"
+unsaved = "Cambios sin guardar"
+undo = "Deshacer"
+redo = "Rehacer"
+add_page = "Añadir página"
 
 [tab]
 templates = "Plantillas"

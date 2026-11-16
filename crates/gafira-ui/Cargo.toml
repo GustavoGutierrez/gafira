@@ -8,6 +8,9 @@ publish.workspace = true
 
 [dependencies]
 gafira-doc.workspace = true
+gafira-geom.workspace = true
+gafira-edit.workspace = true
+gafira-engine.workspace = true
 gafira-ports.workspace = true
 gafira-theme.workspace = true
 gafira-i18n.workspace = true
@@ -18,3 +21,6 @@ image.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+gafira-platform.workspace = true

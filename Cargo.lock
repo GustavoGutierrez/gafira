@@ -1382,7 +1382,10 @@ name = "gafira"
 version = "0.1.0-beta.2"
 dependencies = [
  "eframe",
+ "gafira-doc",
+ "gafira-engine",
  "gafira-i18n",
+ "gafira-platform",
  "gafira-ports",
  "gafira-ui",
 ]
@@ -1521,6 +1524,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gafira-platform"
+version = "0.1.0-beta.2"
+dependencies = [
+ "gafira-doc",
+ "gafira-ports",
+ "getrandom 0.3.4",
+ "serde_json",
+]
+
+[[package]]
 name = "gafira-ports"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1652,7 +1665,11 @@ dependencies = [
  "egui",
  "egui_extras",
  "gafira-doc",
+ "gafira-edit",
+ "gafira-engine",
+ "gafira-geom",
  "gafira-i18n",
+ "gafira-platform",
  "gafira-ports",
  "gafira-theme",
  "image",

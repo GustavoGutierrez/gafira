@@ -112,6 +112,10 @@ export = "Export"
 page = "Page {number}"
 page_of = "{current} of {total}"
 search_templates = "Search templates"
+unsaved = "Unsaved changes"
+undo = "Undo"
+redo = "Redo"
+add_page = "Add page"
 
 [tab]
 templates = "Templates"

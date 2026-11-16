@@ -1,6 +1,8 @@
 //! The formats of Inicio (03 §6.2, §7.2) and how a page fits the canvas.
 
+use gafira_doc::PageSize;
 use gafira_doc::msg::Message;
+use gafira_geom::{Length, Unit};
 
 /// A starting format of «¿Qué quieres crear hoy?».
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,14 +47,21 @@ impl StartFormat {
         }
     }
 
-    /// The page in logical px at 96 dpi: A4 is 210 × 297 mm; a custom size
-    /// starts square until Cambiar tamaño exists (03 §7.6).
-    pub(crate) fn page_px(self) -> (f32, f32) {
+    /// The size of the first page: A4 in millimetres, the rest in pixels; a
+    /// custom size starts square until Cambiar tamaño exists (03 §7.6).
+    pub(crate) fn page_size(self) -> PageSize {
+        let px = |w, h| PageSize {
+            width: Length::new(w, Unit::Px),
+            height: Length::new(h, Unit::Px),
+        };
         match self {
-            Self::Social | Self::Custom => (1080.0, 1080.0),
-            Self::Presentation | Self::VideoHorizontal => (1920.0, 1080.0),
-            Self::Print => (793.7, 1122.5),
-            Self::VideoVertical => (1080.0, 1920.0),
+            Self::Social | Self::Custom => px(1080.0, 1080.0),
+            Self::Presentation | Self::VideoHorizontal => px(1920.0, 1080.0),
+            Self::Print => PageSize {
+                width: Length::new(210.0, Unit::Mm),
+                height: Length::new(297.0, Unit::Mm),
+            },
+            Self::VideoVertical => px(1080.0, 1920.0),
         }
     }
 }
@@ -71,15 +80,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn s17_04_every_format_has_a_positive_page_with_its_aspect() {
+    fn s17_04_every_format_has_a_valid_page_with_its_aspect() {
+        let dpi = gafira_doc::Dpi::DEFAULT;
+        let aspect = |format: StartFormat| {
+            let size = format.page_size().to_px(dpi).expect("converts");
+            size.height() / size.width()
+        };
         for format in StartFormat::ALL {
-            let (w, h) = format.page_px();
-            assert!(w > 0.0 && h > 0.0, "{format:?}");
+            assert!(format.page_size().check(dpi).is_ok(), "{format:?}");
         }
-        let (w, h) = StartFormat::VideoVertical.page_px();
-        assert!((h / w - 16.0 / 9.0).abs() < 1e-3);
-        let (w, h) = StartFormat::Print.page_px();
-        assert!((h / w - 297.0 / 210.0).abs() < 1e-3);
+        assert!((aspect(StartFormat::VideoVertical) - 16.0 / 9.0).abs() < 1e-9);
+        assert!((aspect(StartFormat::Print) - 297.0 / 210.0).abs() < 1e-9);
     }
 
     #[test]

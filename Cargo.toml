@@ -30,6 +30,7 @@ gafira-render-cpu = { path = "crates/gafira-render-cpu" }
 gafira-engine = { path = "crates/gafira-engine" }
 gafira-theme = { path = "crates/gafira-theme" }
 gafira-ui = { path = "crates/gafira-ui" }
+gafira-platform = { path = "crates/gafira-platform" }
 gafira-i18n = { path = "crates/gafira-i18n" }
 blake3 = "1"
 crossbeam-channel = "0.5"
@@ -53,6 +54,7 @@ toml = "1"
 
 eframe = { version = "0.33", default-features = false, features = ["glow", "x11", "wayland", "accesskit"] }
 egui = { version = "0.33", default-features = false }
+getrandom = "0.3"
 egui_extras = { version = "0.33", default-features = false, features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
