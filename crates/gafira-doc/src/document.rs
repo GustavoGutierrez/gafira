@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::collections::BTreeMap;
 
 use crate::timeline::{AssetEntry, AssetRef, AssetTable, Sequence};
-use crate::{Dpi, IdSpaceExhausted, Page, PageId};
+use crate::{Dpi, IdSpaceExhausted, Page, PageId, ProjectId};
 
 /// A whole document: a version, one id counter, a DPI, ordered pages, the
 /// timelines and the asset table their clips name (02 §3.1).
@@ -19,6 +19,8 @@ use crate::{Dpi, IdSpaceExhausted, Page, PageId};
 pub struct Document {
     pub(crate) schema_version: u32,
     pub(crate) next_id: u64,
+    /// The project's identity (D-63); nil until the engine assigns one.
+    pub(crate) project_id: ProjectId,
     pub(crate) dpi: Dpi,
     pub(crate) pages: Vec<Arc<Page>>,
     /// The timelines of the document, in creation order (02 §3.1).
@@ -78,6 +80,21 @@ impl Document {
         self.dpi
     }
 
+    /// The project's identity (D-63); [`ProjectId::NIL`] until one is set.
+    #[must_use]
+    pub fn project_id(&self) -> ProjectId {
+        self.project_id
+    }
+
+    /// The same document under the identity `id` (D-63): the engine sets it
+    /// on a new project, on a file written before the field, and on the
+    /// document «Guardar copia» writes. No edit changes it.
+    #[must_use]
+    pub fn with_project_id(mut self, id: ProjectId) -> Self {
+        self.project_id = id;
+        self
+    }
+
     /// The pages, in page order.
     pub fn pages(&self) -> &[Arc<Page>] {
         &self.pages
@@ -97,6 +114,7 @@ impl Document {
         let doc = Self {
             schema_version: Self::SCHEMA_VERSION,
             next_id,
+            project_id: ProjectId::NIL,
             dpi,
             pages,
             sequences: Vec::new(),
@@ -120,6 +138,7 @@ impl Default for Document {
         Self {
             schema_version: Self::SCHEMA_VERSION,
             next_id: 1,
+            project_id: ProjectId::NIL,
             dpi: Dpi::default(),
             pages: Vec::new(),
             sequences: Vec::new(),
@@ -134,6 +153,7 @@ pub(crate) fn test_document(next_id: u64, dpi: Dpi, pages: Vec<Arc<Page>>) -> Do
     Document {
         schema_version: Document::SCHEMA_VERSION,
         next_id,
+        project_id: ProjectId::NIL,
         dpi,
         pages,
         sequences: Vec::new(),

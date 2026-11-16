@@ -18,7 +18,7 @@ use gafira_ports::media::CodecRegistry;
 use gafira_ports::repository::{ProjectRepository, RepositoryError};
 use gafira_ports::settings::{SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
-use gafira_ports::system::{Clock, FileSystem, Notifier};
+use gafira_ports::system::{Clock, FileSystem, IdSource, Notifier};
 
 use crossbeam_channel::Receiver;
 use gafira_doc::ValidationError;
@@ -48,6 +48,8 @@ pub struct Ports {
     pub filesystem: Arc<dyn FileSystem>,
     /// Wall and monotonic time (ARQ-138, ARQ-93).
     pub clock: Arc<dyn Clock>,
+    /// Mints project identities (D-63, spec 012).
+    pub ids: Arc<dyn IdSource>,
     /// Best-effort out-of-app notices (02 §6.4).
     pub notifier: Arc<dyn Notifier>,
     /// The licence decision of 02 §4.14.
@@ -63,6 +65,33 @@ pub struct SettingsPorts {
     pub repository: Arc<dyn SettingsRepository>,
     /// Maps the language preference to a locale (`gafira-i18n`, 02 §14.4).
     pub resolver: Arc<dyn LocaleResolver>,
+}
+
+/// The platform ports every file operation needs, grouped so [`Ports::new`]
+/// stays within clippy's seven arguments (spec 012).
+pub struct SystemPorts {
+    /// Every file operation (ARQ-50).
+    pub filesystem: Arc<dyn FileSystem>,
+    /// Wall and monotonic time (ARQ-138, ARQ-93).
+    pub clock: Arc<dyn Clock>,
+    /// Mints project identities (D-63).
+    pub ids: Arc<dyn IdSource>,
+}
+
+impl SystemPorts {
+    /// The file system, the clock and the identity source.
+    #[must_use]
+    pub fn new(
+        filesystem: Arc<dyn FileSystem>,
+        clock: Arc<dyn Clock>,
+        ids: Arc<dyn IdSource>,
+    ) -> Self {
+        Self {
+            filesystem,
+            clock,
+            ids,
+        }
+    }
 }
 
 impl SettingsPorts {
@@ -82,8 +111,7 @@ impl Ports {
     pub fn new(
         repository: Arc<dyn ProjectRepository>,
         store: Arc<dyn ContentStore>,
-        filesystem: Arc<dyn FileSystem>,
-        clock: Arc<dyn Clock>,
+        system: SystemPorts,
         notifier: Arc<dyn Notifier>,
         license: Arc<dyn LicenseVerifier>,
         settings: SettingsPorts,
@@ -91,8 +119,9 @@ impl Ports {
         Self {
             repository,
             store,
-            filesystem,
-            clock,
+            filesystem: system.filesystem,
+            clock: system.clock,
+            ids: system.ids,
             notifier,
             license,
             settings,
@@ -642,6 +671,7 @@ mod tests {
         let store: Arc<dyn ContentStore> = Arc::new(NoStore);
         let filesystem: Arc<dyn FileSystem> = Arc::new(NoFilesystem);
         let clock: Arc<dyn Clock> = Arc::new(NoClock);
+        let ids: Arc<dyn IdSource> = Arc::new(SequentialIds::default());
         let notifier: Arc<dyn Notifier> = Arc::new(NoNotifier);
         let license: Arc<dyn LicenseVerifier> = Arc::new(NoLicense);
 
@@ -649,8 +679,11 @@ mod tests {
             Ports::new(
                 Arc::clone(&repository),
                 Arc::clone(&store),
-                Arc::clone(&filesystem),
-                Arc::clone(&clock),
+                SystemPorts::new(
+                    Arc::clone(&filesystem),
+                    Arc::clone(&clock),
+                    Arc::clone(&ids),
+                ),
                 Arc::clone(&notifier),
                 Arc::clone(&license),
                 no_settings(),
@@ -666,6 +699,7 @@ mod tests {
         assert!(Arc::ptr_eq(&ports.store, &store));
         assert!(Arc::ptr_eq(&ports.filesystem, &filesystem));
         assert!(Arc::ptr_eq(&ports.clock, &clock));
+        assert!(Arc::ptr_eq(&ports.ids, &ids));
         assert!(Arc::ptr_eq(&ports.notifier, &notifier));
         assert!(Arc::ptr_eq(&ports.license, &license));
 

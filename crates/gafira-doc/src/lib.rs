@@ -24,6 +24,7 @@ mod node;
 mod page;
 mod page_size;
 mod placement;
+mod project_id;
 pub mod timeline;
 mod validate;
 pub mod visit;
@@ -47,6 +48,7 @@ pub use node::{
 pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};
 pub use placement::{Flip, Placement};
+pub use project_id::{ProjectId, ProjectIdError};
 pub use timeline::{
     AssetEntry, AssetRef, AssetStorage, AssetTable, Clip, ClipSource, Marker, PixelSize, Sequence,
     Speed, TimelineError, Track, TrackKind,

@@ -33,7 +33,9 @@ pub use assets::AssetService;
 pub use autosave::{AutosaveJob, AutosaveOutcome};
 pub use bus::{ChannelSink, EventChannel, JOB_PROGRESS_WINDOW};
 pub use edit::EditService;
-pub use engine::{EngineConfig, EngineError, Gafira, Ports, Registries, SettingsPorts};
+pub use engine::{
+    EngineConfig, EngineError, Gafira, Ports, Registries, SettingsPorts, SystemPorts,
+};
 pub use event::{EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, Waker};
 pub use governor::{
     BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,

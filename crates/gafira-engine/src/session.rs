@@ -47,7 +47,7 @@ pub(crate) struct Session {
     pub(crate) clean_version: DocVersion,
     /// Names this session among every session of the engine, so a save that
     /// finishes after the session was replaced touches nothing (P13, P18).
-    pub(crate) project_key: String,
+    pub(crate) session_key: String,
     /// Where the recovery slots of this session stand (P13).
     pub(crate) autosave: Autosave,
 }
