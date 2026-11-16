@@ -34,6 +34,7 @@ use gafira_raster::{BufferError, ImageBuf, PixelBuf, PixelFormat};
 use kurbo::{Rect, Shape};
 
 use crate::cache::ContentTileCache;
+use crate::fonts::FontBook;
 use crate::frame::{BackendSelector, Degradation, FrameLoop, FrameRequest};
 use crate::graph::{GraphError, GraphParams, RenderGraph, RenderGraphBuilder};
 use crate::planner::{PageExtent, PlanError, Planner, TileGrid, Viewport};
@@ -62,6 +63,7 @@ pub struct GraphPageRenderer {
     frame: Mutex<FrameLoop>,
     cache: Mutex<ContentTileCache>,
     clock: Box<dyn Clock>,
+    fonts: Arc<FontBook>,
 }
 
 impl GraphPageRenderer {
@@ -79,7 +81,16 @@ impl GraphPageRenderer {
             frame: Mutex::new(FrameLoop::new(selector)),
             cache: Mutex::new(cache),
             clock,
+            fonts: Arc::new(FontBook::new()),
         }
+    }
+
+    /// The renderer that lays the text of the pages out with `fonts`
+    /// (spec 030); without them a text draws nothing.
+    #[must_use]
+    pub fn with_fonts(mut self, fonts: Arc<FontBook>) -> Self {
+        self.fonts = fonts;
+        self
     }
 
     /// The quality this renderer answers (02 §6.2).
@@ -111,19 +122,33 @@ impl GraphPageRenderer {
         zoom_of(self.quality, scale)
     }
 
-    /// The size of the page in whole pixels.
+    /// The scale the page is drawn at (FD-55, spec 030): the export draws
+    /// the page `scale` times its size; the preview draws it at its size and
+    /// reads the scale as the zoom of its level (02 §6.2).
+    ///
+    /// # Errors
+    /// An export scale that is not finite or not above zero.
+    fn page_scale(&self, scale: f32) -> Result<f64, RenderError> {
+        match self.quality {
+            RenderQuality::Preview => Ok(1.0),
+            RenderQuality::Export if scale.is_finite() && scale > 0.0 => Ok(f64::from(scale)),
+            RenderQuality::Export => Err(non_finite("scale")),
+        }
+    }
+
+    /// The size of the page in whole pixels, `scale` times its size.
     ///
     /// The document validation keeps every side inside `1..=16384` px, so the
     /// failure of the unit math is not reachable for a document that was
     /// validated; it still answers an error instead of panicking.
-    fn extent(&self, page: &Page) -> Result<PageExtent, RenderError> {
+    fn extent(&self, page: &Page, scale: f64) -> Result<PageExtent, RenderError> {
         let px = page
             .size
             .to_px(self.document.dpi())
             .map_err(|_| non_finite("page.size"))?;
         Ok(PageExtent {
-            width: side_px(px.width()),
-            height: side_px(px.height()),
+            width: side_px(px.width() * scale),
+            height: side_px(px.height() * scale),
         })
     }
 
@@ -132,10 +157,13 @@ impl GraphPageRenderer {
         &self,
         page: &Page,
         params: GraphParams,
+        scale: f64,
         cancel: &CancelToken,
     ) -> Result<RenderGraph, RenderError> {
         let view = PageView::new(page);
         RenderGraphBuilder::new(&view, params, InlinePool)
+            .scaled(scale)
+            .with_fonts(Arc::clone(&self.fonts))
             .build(WalkOrder::PreOrder, cancel, &NoProgress)
             .map_err(graph_error)
     }
@@ -171,7 +199,10 @@ impl PageRenderer for GraphPageRenderer {
             return blank(request.region, format);
         };
 
-        let extent = self.extent(page)?;
+        // S30-02: an export at `scale` reads the page `scale` times its size;
+        // the region of the request is in those pixels.
+        let scale = self.page_scale(request.scale)?;
+        let extent = self.extent(page, scale)?;
         let zoom = self.zoom(request.scale);
         // ARQ-42: the graph and the plan must resolve the same level; the level
         // is part of the content key of a node (02 §6.1).
@@ -183,6 +214,7 @@ impl PageRenderer for GraphPageRenderer {
                 lod: level,
                 t: request.time,
             },
+            scale,
             cancel,
         )?;
         let viewport = Viewport {
@@ -930,6 +962,55 @@ mod tests {
                 painted,
                 "transparent={transparent} paints the background: {painted}"
             );
+        }
+    }
+
+    // S30-02: an export at 2× reads a page of 100×50 as 200×100: the surface,
+    // the page extent and the background double, and the shapes are scaled.
+    #[test]
+    fn s30_02_an_export_at_twice_the_scale_doubles_the_page() {
+        let document = document(&[(100, 50)]);
+        let page = document.pages()[0].id;
+        let (renderer, record) = renderer(document, RenderQuality::Export, RecordingBackend::new());
+        let image = renderer
+            .render(
+                &request(page, IRect::new(0, 0, 200, 100), 2.0, false),
+                &CancelToken::new(),
+            )
+            .expect("the scaled render");
+        assert_eq!((image.width(), image.height()), (200, 100));
+        let (targets, ran, _, _) = seen(&record);
+        assert_eq!((targets[0].width, targets[0].height), (200, 100));
+        assert_eq!(targets[0].page, (200, 100));
+        let fills: Vec<Affine> = ran[0].ops[0]
+            .iter()
+            .filter_map(|op| match op {
+                OpShape::FillPath { transform, .. } => Some(*transform),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            fills,
+            [
+                Affine::IDENTITY,
+                Affine::scale(2.0) * Placement::new(0.0, 0.0, 10.0, 10.0).to_transform()
+            ],
+            "the background, then the shape at twice its size"
+        );
+    }
+
+    // S30-02: a scale that is not finite or not above zero is an error.
+    #[test]
+    fn s30_02_a_scale_that_is_not_finite_or_positive_is_an_error() {
+        let document = document(&[(100, 50)]);
+        let page = document.pages()[0].id;
+        let (renderer, _) = renderer(document, RenderQuality::Export, RecordingBackend::new());
+        for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let result = renderer.render(
+                &request(page, IRect::new(0, 0, 10, 10), scale, false),
+                &CancelToken::new(),
+            );
+            assert!(result.is_err(), "scale {scale} is refused");
         }
     }
 }

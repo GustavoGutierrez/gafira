@@ -1681,6 +1681,7 @@ dependencies = [
  "gafira-ports",
  "gafira-raster",
  "gafira-testkit",
+ "gafira-text",
  "gafira-time",
  "kurbo 0.13.1",
  "proptest",
