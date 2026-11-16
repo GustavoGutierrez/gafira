@@ -51,6 +51,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 022 | [Tiradores de tamaño](done/022-resize-handles.md) | Ocho tiradores en la selección; redimensionar con el borde opuesto fijo en un solo deshacer |
 | 023 | [Relleno y opacidad](done/023-fill-and-opacity.md) | Selector de color, «Sin relleno» y opacidad de la forma seleccionada en el Inspector |
 | 024 | [Pestaña Capas](done/024-layers-tab.md) | Lista de elementos de la página, selección desde la lista, Subir y Bajar con deshacer |
+| 027 | [Texto en el lienzo](done/027-text-on-canvas.md) | `TextNode` en el documento (primer corte de 02 §3.1), `Property::TextContent`, pestaña Texto, dibujo e Inspector de texto |
 
 ### Historial del flujo anterior
 

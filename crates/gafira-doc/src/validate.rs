@@ -265,6 +265,19 @@ fn unit_interval(v: f64) -> bool {
     (0.0..=1.0).contains(&v)
 }
 
+fn font_size(v: f64) -> bool {
+    v > 0.0 && v <= crate::TextNode::MAX_SIZE
+}
+
+/// The four channels of a colour.
+fn channels(color: Color) -> [f32; 4] {
+    match color {
+        Color::Srgb(c) => [c.r, c.g, c.b, c.a],
+        Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
+        Color::DisplayP3(c) => [c.r, c.g, c.b, c.a],
+    }
+}
+
 /// The numeric fields of a node, in reporting order, with their range rule.
 fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
     let p = &node.base.placement;
@@ -284,15 +297,21 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
     if let NodeKind::Shape(shape) = &node.kind
         && let Some(fill) = shape.fill
     {
-        let [r, g, b, a] = match fill {
-            Color::Srgb(c) => [c.r, c.g, c.b, c.a],
-            Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
-            Color::DisplayP3(c) => [c.r, c.g, c.b, c.a],
-        };
+        let [r, g, b, a] = channels(fill);
         for channel in [r, g, b] {
             out.push((NodeField::FillChannel, f64::from(channel), any));
         }
         out.push((NodeField::FillAlpha, f64::from(a), unit_interval));
+    }
+    if let NodeKind::Text(text) = &node.kind {
+        for span in text.content.spans() {
+            out.push((NodeField::FontSize, span.style.size, font_size));
+            let [r, g, b, a] = channels(span.style.color);
+            for channel in [r, g, b] {
+                out.push((NodeField::TextColorChannel, f64::from(channel), any));
+            }
+            out.push((NodeField::TextColorAlpha, f64::from(a), unit_interval));
+        }
     }
     out
 }
@@ -1143,5 +1162,45 @@ mod tests {
         d.pages[0] = Arc::new(p);
         d.next_id = 2 + DEPTH;
         assert_eq!(d.validate(), Ok(()));
+    }
+
+    // Spec 027, S27-02: a span's size must be in (0, MAX_SIZE] and its colour
+    // finite with alpha in [0, 1].
+    #[test]
+    fn s27_02_text_spans_are_validated() {
+        use crate::{NodeField, SpanStyle, TextNode};
+        use gafira_color::Rgba;
+        let style = |size: f64, a: f32| SpanStyle {
+            font: "Inter".to_owned(),
+            size,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a)),
+        };
+        let check = |size: f64, a: f32| {
+            let mut page = page(1, &[]);
+            let n = node(2, NodeKind::Text(TextNode::plain("Hola", &style(size, a))));
+            page.nodes.insert(NodeId::new(2), n);
+            page.roots.push(NodeId::new(2));
+            crate::document::test_document(3, crate::Dpi::default(), vec![Arc::new(page)])
+                .validate()
+        };
+        assert_eq!(check(32.0, 1.0), Ok(()));
+        assert_eq!(check(TextNode::MAX_SIZE, 1.0), Ok(()));
+        for (size, a, field) in [
+            (0.0, 1.0, NodeField::FontSize),
+            (TextNode::MAX_SIZE + 1.0, 1.0, NodeField::FontSize),
+            (32.0, 1.5, NodeField::TextColorAlpha),
+        ] {
+            assert!(
+                matches!(check(size, a), Err(ValidationError::OutOfRange { field: f, .. }) if f == field),
+                "{size} {a}"
+            );
+        }
+        assert!(matches!(
+            check(f64::NAN, 1.0),
+            Err(ValidationError::NonFinite {
+                field: NodeField::FontSize,
+                ..
+            })
+        ));
     }
 }

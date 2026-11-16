@@ -16,7 +16,9 @@ use std::collections::BTreeSet;
 use gafira_geom::{Point, Rect};
 
 use crate::contract::ParamSchema;
-use crate::{ElementBase, ExtensionNode, GroupNode, Node, NodeId, NodeKind, Page, ShapeNode};
+use crate::{
+    ElementBase, ExtensionNode, GroupNode, Node, NodeId, NodeKind, Page, ShapeNode, TextNode,
+};
 
 /// The order a walk visits the nodes in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +175,11 @@ pub trait NodeVisitor {
         self.visit_node(n)
     }
 
+    /// Receives a text element (spec 027).
+    fn visit_text(&mut self, n: &Node, _t: &TextNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
     /// Receives an extension node.
     fn visit_extension(&mut self, n: &Node, _e: &ExtensionNode) -> Self::Out {
         self.visit_node(n)
@@ -244,6 +251,7 @@ fn dispatch<V: NodeVisitor>(v: &mut V, node: &Node) -> V::Out {
     match &node.kind {
         NodeKind::Group(g) => v.visit_group(node, g),
         NodeKind::Shape(s) => v.visit_shape(node, s),
+        NodeKind::Text(t) => v.visit_text(node, t),
         NodeKind::Extension(e) => v.visit_extension(node, e),
     }
 }

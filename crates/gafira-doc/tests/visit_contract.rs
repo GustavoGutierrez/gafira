@@ -101,6 +101,7 @@ const DOMAIN_SOURCES: &[(&str, &str)] = domain_sources![
     "timeline/track.rs",
     "placement.rs",
     "project_id.rs",
+    "text.rs",
     "validate.rs",
     "visit.rs",
 ];
@@ -289,6 +290,7 @@ fn arq_134_the_trait_declares_one_method_per_node_kind() {
             "visit_node",
             "visit_group",
             "visit_shape",
+            "visit_text",
             "visit_extension"
         ],
         "the trait declares {methods:?}"
@@ -307,7 +309,7 @@ fn arq_134_the_dispatch_has_no_catch_all_arm() {
     );
     assert_eq!(
         dispatch.matches("NodeKind::").count(),
-        3,
+        4,
         "one arm per NodeKind variant:\n{dispatch}"
     );
     for variant in ["Group", "Shape", "Extension"] {

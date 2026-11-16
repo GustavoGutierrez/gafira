@@ -51,6 +51,11 @@ fn page_bytes(page: &Page, newer: Option<&Page>) -> usize {
 fn node_bytes(node: &Node) -> usize {
     let heap = match &node.kind {
         NodeKind::Extension(ext) => ext.type_id.len() + value_bytes(&ext.payload),
+        NodeKind::Text(text) => text
+            .content
+            .spans()
+            .map(|span| span.text.len() + span.style.font.len() + size_of::<gafira_doc::Span>())
+            .sum(),
         NodeKind::Group(_) | NodeKind::Shape(_) => 0,
     };
     size_of::<Node>()

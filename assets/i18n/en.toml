@@ -159,7 +159,16 @@ shapes = "Shapes"
 rect = "Rectangle"
 ellipse = "Ellipse"
 
+[text]
+add_title = "Add a title"
+add_subtitle = "Add a subtitle"
+add_body = "Add body text"
+title = "Title"
+subtitle = "Subtitle"
+body = "Write your text here"
+
 [layers]
+text = "Text"
 up = "Bring forward"
 down = "Send backward"
 empty = "This page has no elements."
@@ -178,6 +187,9 @@ height = "Height"
 fill = "Fill"
 opacity = "Opacity"
 no_fill = "No fill"
+text = "Text"
+font_size = "Size"
+text_color = "Colour"
 
 [bottom]
 notes = "Notes"
