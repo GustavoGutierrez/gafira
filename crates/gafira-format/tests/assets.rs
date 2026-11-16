@@ -87,7 +87,7 @@ fn filled(root: &Root) -> (FsStore, Document, ContentHash, ContentHash) {
 
 fn gaf(document: &Document, store: &dyn ContentStore) -> Vec<u8> {
     let mut bytes = Cursor::new(Vec::new());
-    write_gaf(&mut bytes, document, store).expect("writes");
+    write_gaf(&mut bytes, document, &[], store).expect("writes");
     bytes.into_inner()
 }
 
@@ -252,7 +252,7 @@ fn s26_10_saving_without_the_bytes_in_the_store_fails() {
     let empty = Root::new("absent-empty");
     let mut sink = Cursor::new(Vec::new());
     assert!(matches!(
-        write_gaf(&mut sink, &document, &empty.store()),
+        write_gaf(&mut sink, &document, &[], &empty.store()),
         Err(RepositoryError::Io(_))
     ));
 }

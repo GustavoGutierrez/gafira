@@ -66,7 +66,7 @@ fn document() -> Document {
 
 fn gaf(document: &Document) -> Vec<u8> {
     let mut bytes = Cursor::new(Vec::new());
-    write_gaf(&mut bytes, document, &store()).expect("writes");
+    write_gaf(&mut bytes, document, &[], &store()).expect("writes");
     bytes.into_inner()
 }
 

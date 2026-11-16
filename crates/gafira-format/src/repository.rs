@@ -76,11 +76,11 @@ impl ProjectRepository for GafRepository {
         &self,
         path: &Path,
         document: &Document,
-        _versions: &[Version],
+        versions: &[Version],
     ) -> Result<(), RepositoryError> {
         let file = File::create(path).map_err(RepositoryError::Io)?;
         let mut sink = BufWriter::new(file);
-        write_gaf(&mut sink, document, self.store.as_ref())?;
+        write_gaf(&mut sink, document, versions, self.store.as_ref())?;
         let file = sink
             .into_inner()
             .map_err(|e| RepositoryError::Io(e.into_error()))?;

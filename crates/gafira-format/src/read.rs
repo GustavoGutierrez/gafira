@@ -2,15 +2,16 @@
 
 use std::collections::BTreeSet;
 use std::io::{self, Read, Seek};
+use std::sync::Arc;
 
 use gafira_doc::{AssetRef, AssetStorage, ContentHash, Document};
-use gafira_ports::repository::{LoadedProject, RepositoryError};
+use gafira_ports::repository::{LoadedProject, RepositoryError, Version};
 use gafira_ports::store::{ContentStore, StoreError};
 use serde_json::Value;
 use zip::ZipArchive;
 use zip::result::ZipError;
 
-use crate::{FORMAT, Limits, MIMETYPE, assets, manifest};
+use crate::{FORMAT, Limits, MIMETYPE, assets, manifest, versions};
 
 fn corrupt(detail: impl Into<String>) -> RepositoryError {
     RepositoryError::Corrupt {
@@ -114,29 +115,28 @@ pub fn read_gaf<R: Read + Seek>(
     }
     let read_only = major > 1 || !manifest::unknown_required(&manifest).is_empty();
 
-    let mut document = json(&mut zip, "document.json", limits)?;
-    let root = document
-        .as_object_mut()
-        .ok_or_else(|| corrupt("document.json is not an object"))?;
-    if root.get("project_id") != manifest.get("projectId") {
-        return Err(corrupt(
-            "the manifest and the document name different projects",
-        ));
-    }
-    let pages = parts(&mut zip, &manifest, "pages", limits)?;
-    let sequences = parts(&mut zip, &manifest, "sequences", limits)?;
-    root.insert("pages".to_owned(), Value::Array(pages));
-    root.insert("sequences".to_owned(), Value::Array(sequences));
-    let bytes = serde_json::to_vec(&document).map_err(|e| corrupt(e.to_string()))?;
-    let document = Document::from_json(&bytes).map_err(|e| corrupt(e.to_string()))?;
+    let document = assemble(&mut zip, "", &manifest, limits, |root| {
+        if root.get("project_id") == manifest.get("projectId") {
+            Ok(())
+        } else {
+            Err(corrupt(
+                "the manifest and the document name different projects",
+            ))
+        }
+    })?;
+    let versions = read_versions(&mut zip, &manifest, limits)?;
 
     let present: BTreeSet<AssetRef> = embedded.iter().map(|(_, r)| *r).collect();
-    if let Some((missing, _)) = document
-        .assets()
-        .iter()
-        .find(|(r, e)| e.storage == AssetStorage::Embedded && !present.contains(r))
-    {
-        return Err(corrupt(format!("embedded asset {missing} has no entry")));
+    let documents =
+        std::iter::once(&document).chain(versions.iter().map(|version| version.document.as_ref()));
+    for doc in documents {
+        if let Some((missing, _)) = doc
+            .assets()
+            .iter()
+            .find(|(r, e)| e.storage == AssetStorage::Embedded && !present.contains(r))
+        {
+            return Err(corrupt(format!("embedded asset {missing} has no entry")));
+        }
     }
     for (index, reference) in embedded {
         import(&mut zip, index, reference, limits, store)?;
@@ -144,8 +144,89 @@ pub fn read_gaf<R: Read + Seek>(
     Ok(LoadedProject {
         document,
         read_only,
-        versions: Vec::new(),
+        versions,
     })
+}
+
+/// The document under `prefix`: `<prefix>document.json`, which `check`
+/// sees first, with the pages and the sequences `listed` names by id, in
+/// its order, validated as a whole.
+fn assemble<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+    prefix: &str,
+    listed: &Value,
+    limits: Limits,
+    check: impl FnOnce(&serde_json::Map<String, Value>) -> Result<(), RepositoryError>,
+) -> Result<Document, RepositoryError> {
+    let name = format!("{prefix}document.json");
+    let mut document = json(zip, &name, limits)?;
+    let root = document
+        .as_object_mut()
+        .ok_or_else(|| corrupt(format!("{name} is not an object")))?;
+    check(root)?;
+    let pages = parts(zip, listed, prefix, "pages", limits)?;
+    let sequences = parts(zip, listed, prefix, "sequences", limits)?;
+    root.insert("pages".to_owned(), Value::Array(pages));
+    root.insert("sequences".to_owned(), Value::Array(sequences));
+    let bytes = serde_json::to_vec(&document).map_err(|e| corrupt(e.to_string()))?;
+    Document::from_json(&bytes).map_err(|e| corrupt(format!("{name}: {e}")))
+}
+
+/// The versions the manifest lists, in its order (spec 031): each one must
+/// have its entry in `versions/index.json`, at the same place and with a
+/// distinct id, and its folder must hold a valid document of the schema the
+/// entry names. A manifest without `versions` has none.
+fn read_versions<R: Read + Seek>(
+    zip: &mut ZipArchive<R>,
+    manifest: &Value,
+    limits: Limits,
+) -> Result<Vec<Version>, RepositoryError> {
+    let ids = match manifest.get("versions") {
+        None => return Ok(Vec::new()),
+        Some(list) => list
+            .as_array()
+            .ok_or_else(|| corrupt("the manifest's versions is not a list"))?
+            .iter()
+            .map(|id| {
+                id.as_u64()
+                    .ok_or_else(|| corrupt("a version id is not a number"))
+            })
+            .collect::<Result<Vec<u64>, _>>()?,
+    };
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let distinct: BTreeSet<u64> = ids.iter().copied().collect();
+    if distinct.len() != ids.len() {
+        return Err(corrupt("the manifest lists a version twice"));
+    }
+    let index = json(zip, versions::INDEX, limits)?;
+    let entries = index
+        .as_array()
+        .ok_or_else(|| corrupt("the version index is not a list"))?;
+    if entries.len() != ids.len() {
+        return Err(corrupt(
+            "the version index and the manifest list different versions",
+        ));
+    }
+    let mut found = Vec::with_capacity(ids.len());
+    for (value, id) in entries.iter().zip(ids) {
+        let entry = versions::parse_entry(value, id).map_err(corrupt)?;
+        let listed = serde_json::json!({ "pages": entry.pages, "sequences": entry.sequences });
+        let document = assemble(zip, &versions::prefix(id), &listed, limits, |_| Ok(()))?;
+        if document.schema_version() != entry.info.schema {
+            return Err(corrupt(format!(
+                "version {id} names schema {} but holds {}",
+                entry.info.schema,
+                document.schema_version()
+            )));
+        }
+        found.push(Version {
+            info: entry.info,
+            document: Arc::new(document),
+        });
+    }
+    Ok(found)
 }
 
 /// Checks the asset at `index` against its hash, then puts it into `store`.
@@ -231,25 +312,28 @@ fn json<R: Read + Seek>(
     serde_json::from_slice(&bytes).map_err(|e| corrupt(format!("{name}: {e}")))
 }
 
-/// The pages or the sequences the manifest lists, in its order.
+/// The pages or the sequences `listed` names (the manifest, or a version's
+/// index entry), in its order, from under `prefix`.
 fn parts<R: Read + Seek>(
     zip: &mut ZipArchive<R>,
-    manifest: &Value,
+    listed: &Value,
+    prefix: &str,
     folder: &str,
     limits: Limits,
 ) -> Result<Vec<Value>, RepositoryError> {
-    let ids = manifest
+    let ids = listed
         .get(folder)
         .and_then(Value::as_array)
-        .ok_or_else(|| corrupt(format!("the manifest lists no {folder}")))?;
+        .ok_or_else(|| corrupt(format!("{prefix}: no {folder} are listed")))?;
     ids.iter()
         .map(|id| {
             let id = id
                 .as_u64()
                 .ok_or_else(|| corrupt(format!("a {folder} id is not a number")))?;
-            let item = json(zip, &format!("{folder}/{id}.json"), limits)?;
+            let name = format!("{prefix}{folder}/{id}.json");
+            let item = json(zip, &name, limits)?;
             if item.get("id").and_then(Value::as_u64) != Some(id) {
-                return Err(corrupt(format!("{folder}/{id}.json holds another id")));
+                return Err(corrupt(format!("{name} holds another id")));
             }
             Ok(item)
         })
