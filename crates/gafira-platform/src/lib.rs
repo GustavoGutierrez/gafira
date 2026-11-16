@@ -1,6 +1,6 @@
 //! Layer-4 adapter `gafira-platform` (02 §2.1, spec 018): the operating
 //! system behind the ports the engine needs to run in the desktop app —
-//! files, time, project identities, the system language, notices, the
+//! files, time, project identities, processes, the system language, notices, the
 //! settings file and the app's data folder.
 
 #![forbid(unsafe_code)]
@@ -18,6 +18,7 @@ mod fs;
 mod ids;
 mod locale;
 mod notify;
+mod processes;
 mod settings;
 
 pub use clock::SystemClock;
@@ -26,4 +27,5 @@ pub use fs::StdFileSystem;
 pub use ids::RandomIds;
 pub use locale::EnvLocale;
 pub use notify::StderrNotifier;
+pub use processes::SystemProcesses;
 pub use settings::JsonSettings;

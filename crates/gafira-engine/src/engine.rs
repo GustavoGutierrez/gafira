@@ -18,7 +18,7 @@ use gafira_ports::media::CodecRegistry;
 use gafira_ports::repository::{ProjectRepository, RepositoryError};
 use gafira_ports::settings::{SettingsError, SettingsRepository};
 use gafira_ports::store::{ContentStore, StoreError};
-use gafira_ports::system::{Clock, FileSystem, IdSource, Notifier};
+use gafira_ports::system::{Clock, FileSystem, IdSource, Notifier, ProcessProbe};
 
 use crossbeam_channel::Receiver;
 use gafira_doc::ValidationError;
@@ -50,6 +50,8 @@ pub struct Ports {
     pub clock: Arc<dyn Clock>,
     /// Mints project identities (D-63, spec 012).
     pub ids: Arc<dyn IdSource>,
+    /// This process and the liveness of others (spec 028).
+    pub processes: Arc<dyn ProcessProbe>,
     /// Best-effort out-of-app notices (02 §6.4).
     pub notifier: Arc<dyn Notifier>,
     /// The licence decision of 02 §4.14.
@@ -76,20 +78,26 @@ pub struct SystemPorts {
     pub clock: Arc<dyn Clock>,
     /// Mints project identities (D-63).
     pub ids: Arc<dyn IdSource>,
+    /// This process and the liveness of others, for file locks and the
+    /// recovery slots of another instance (spec 028).
+    pub processes: Arc<dyn ProcessProbe>,
 }
 
 impl SystemPorts {
-    /// The file system, the clock and the identity source.
+    /// The file system, the clock, the identity source and the process
+    /// probe.
     #[must_use]
     pub fn new(
         filesystem: Arc<dyn FileSystem>,
         clock: Arc<dyn Clock>,
         ids: Arc<dyn IdSource>,
+        processes: Arc<dyn ProcessProbe>,
     ) -> Self {
         Self {
             filesystem,
             clock,
             ids,
+            processes,
         }
     }
 }
@@ -122,6 +130,7 @@ impl Ports {
             filesystem: system.filesystem,
             clock: system.clock,
             ids: system.ids,
+            processes: system.processes,
             notifier,
             license,
             settings,
@@ -676,6 +685,7 @@ mod tests {
         let filesystem: Arc<dyn FileSystem> = Arc::new(NoFilesystem);
         let clock: Arc<dyn Clock> = Arc::new(NoClock);
         let ids: Arc<dyn IdSource> = Arc::new(SequentialIds::default());
+        let processes: Arc<dyn ProcessProbe> = Arc::new(FakeProcesses::default());
         let notifier: Arc<dyn Notifier> = Arc::new(NoNotifier);
         let license: Arc<dyn LicenseVerifier> = Arc::new(NoLicense);
 
@@ -687,6 +697,7 @@ mod tests {
                     Arc::clone(&filesystem),
                     Arc::clone(&clock),
                     Arc::clone(&ids),
+                    Arc::clone(&processes),
                 ),
                 Arc::clone(&notifier),
                 Arc::clone(&license),
@@ -704,6 +715,7 @@ mod tests {
         assert!(Arc::ptr_eq(&ports.filesystem, &filesystem));
         assert!(Arc::ptr_eq(&ports.clock, &clock));
         assert!(Arc::ptr_eq(&ports.ids, &ids));
+        assert!(Arc::ptr_eq(&ports.processes, &processes));
         assert!(Arc::ptr_eq(&ports.notifier, &notifier));
         assert!(Arc::ptr_eq(&ports.license, &license));
 

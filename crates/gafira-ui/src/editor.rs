@@ -930,6 +930,7 @@ pub(crate) mod tests {
     use gafira_i18n::D08LocaleResolver;
     use gafira_platform::{
         EnvLocale, JsonSettings, RandomIds, StdFileSystem, StderrNotifier, SystemClock,
+        SystemProcesses,
     };
     use gafira_ports::license::NoLicensing;
     use gafira_ports::repository::{LoadedProject, ProjectRepository, RepositoryError};
@@ -981,7 +982,12 @@ pub(crate) mod tests {
         let ports = Ports::new(
             repository,
             Arc::new(Nothing),
-            SystemPorts::new(Arc::new(StdFileSystem), clock.clone(), Arc::new(RandomIds)),
+            SystemPorts::new(
+                Arc::new(StdFileSystem),
+                clock.clone(),
+                Arc::new(RandomIds),
+                Arc::new(SystemProcesses::new(dir.join("instances"))),
+            ),
             Arc::new(StderrNotifier),
             Arc::new(NoLicensing),
             SettingsPorts::new(
