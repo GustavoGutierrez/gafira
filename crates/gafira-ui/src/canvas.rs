@@ -171,9 +171,12 @@ pub(crate) const HANDLES: [Handle; 8] = [
     Handle { x: -1, y: 0 },
 ];
 
-/// Half the side of a handle's square, in screen px; at least the 24 px
-/// target of 03 (`size.target.min`) once the hit area is doubled.
+/// Half the side of a handle's drawn square, in screen px.
 pub(crate) const HANDLE_HALF: f32 = 5.0;
+
+/// Half the side of a handle's hit area, in screen px: the 24 px target of
+/// 03 (`size.target.min`), wider than the square that is drawn.
+pub(crate) const HANDLE_REACH: f32 = 12.0;
 
 /// Where `handle` sits on the screen rectangle `rect`.
 pub(crate) fn handle_at(rect: Rect, handle: Handle) -> Pos2 {
@@ -188,13 +191,18 @@ pub(crate) fn handle_at(rect: Rect, handle: Handle) -> Pos2 {
     )
 }
 
-/// The handle of `rect` under `pointer`, if any (a 12 px wide hit area).
+/// The handle of `rect` under `pointer`, if any: the nearest one whose
+/// 24 px hit area holds it, so close handles of a small element never
+/// shadow each other.
 pub(crate) fn handle_hit(rect: Rect, pointer: Pos2) -> Option<Handle> {
-    HANDLES.into_iter().find(|handle| {
-        let at = handle_at(rect, *handle);
-        (pointer.x - at.x).abs() <= HANDLE_HALF + 1.0
-            && (pointer.y - at.y).abs() <= HANDLE_HALF + 1.0
-    })
+    HANDLES
+        .into_iter()
+        .map(|handle| (handle, handle_at(rect, handle)))
+        .filter(|(_, at)| {
+            (pointer.x - at.x).abs() <= HANDLE_REACH && (pointer.y - at.y).abs() <= HANDLE_REACH
+        })
+        .min_by(|(_, a), (_, b)| a.distance_sq(pointer).total_cmp(&b.distance_sq(pointer)))
+        .map(|(handle, _)| handle)
 }
 
 /// `origin` resized by dragging `handle` `offset` screen px at `zoom`. The
@@ -475,6 +483,33 @@ mod tests {
         assert_eq!((spec.placement.w, spec.placement.h), (360.0, 360.0));
         assert_eq!((spec.placement.x, spec.placement.y), (780.0, 360.0));
         assert_eq!(screen_color(fill), Color32::from_rgb(255, 0, 0));
+    }
+
+    // The hit area is the 24 px target of 03, wider than the drawn square,
+    // and the nearest handle wins on a small element.
+    #[test]
+    fn handles_are_hit_within_24_px_and_the_nearest_wins() {
+        let rect = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(300.0, 200.0));
+        assert_eq!(
+            handle_hit(rect, Pos2::new(311.0, 89.0)),
+            Some(Handle { x: 1, y: -1 }),
+            "11 px off the corner still grabs it"
+        );
+        assert_eq!(
+            handle_hit(rect, Pos2::new(313.0, 100.0)),
+            None,
+            "13 px is outside"
+        );
+        let small = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(116.0, 116.0));
+        assert_eq!(
+            handle_hit(small, Pos2::new(115.0, 115.0)),
+            Some(Handle { x: 1, y: 1 }),
+            "the corner nearest the pointer, not the first in the list"
+        );
+        assert_eq!(
+            handle_hit(small, Pos2::new(108.0, 99.0)),
+            Some(Handle { x: 0, y: -1 })
+        );
     }
 
     #[test]

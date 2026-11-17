@@ -930,7 +930,14 @@ impl Editor {
                         );
                         let painter = ui.painter();
                         let pages = document.map(Document::pages).unwrap_or_default();
-                        let pointer = response.interact_pointer_pos();
+                        // A drag starts only once the pointer has moved a few
+                        // px; what it grabbed is decided where it was pressed.
+                        let pointer = if response.drag_started() {
+                            ui.input(|input| input.pointer.press_origin())
+                                .or_else(|| response.interact_pointer_pos())
+                        } else {
+                            response.interact_pointer_pos()
+                        };
                         let pressed = response.clicked() || response.drag_started();
                         let mut picked: Option<(PageId, NodeId, Placement)> = None;
                         let mut grabbed: Option<(Placement, canvas::Handle)> = None;
