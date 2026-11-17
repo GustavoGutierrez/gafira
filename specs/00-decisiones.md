@@ -776,3 +776,11 @@ Fecha: 16 de noviembre de 2026.
   - (b) El aspecto de las fórmulas de FD-33 y el catálogo de FD-34 son la tarea de revisión visual del ítem 133 de 07, que **no** bloquea 04. Las fórmulas siguen en PROPUESTA, como valores provisionales que fijan las pruebas, hasta esa revisión.
 - **Consecuencia**: el ítem 60 de 07 queda resuelto, y el 133 sigue abierto como tarea sin bloquear 04. Con ello, 04 ya no tiene ninguna decisión del titular abierta y pasa a «Aprobado (D-83, 2026-11-16)».
 - Precisa D-78 y D-83. Aplicado a 04 (estado, convenciones, FD-28, FD-33) y 07 (§0, §1.2, §1.3, ítems 60 y 133).
+
+## D-87 Colección de iconos: Phosphor
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): la colección de iconos de partida es **Phosphor** (licencia MIT), no Lucide ni Feather. Se usa el peso «Regular»: 1,5 px de trazo a 24 px, con terminaciones y uniones redondeadas. Para los estados activos, que 03 §13 rellena, se usa el peso «Fill». Los iconos que falten se dibujan en la misma rejilla.
+- **Consecuencia**: cierra PD-07 de 03. La licencia de la versión adoptada se comprueba al importarla, y cada icono va a `assets/LICENSES.toml` con su aviso en `THIRD_PARTY_NOTICES.md` (ARQ-75). Los SVG se convierten en geometría en tiempo de compilación; no se usan fuentes de iconos.
+- Precisa 03 §13 («Origen»). Aplicado a 03 (§13 y PD-07).

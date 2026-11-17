@@ -1244,7 +1244,7 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 ## 13. Iconografía
 
 - **Estilo**: trazo simple de grosor uniforme sobre rejilla de 24 px (trazo de 1,75 px a 24 px; 1,5 px a 16 px y 20 px, PROPUESTA), terminaciones y uniones redondeadas, esquinas moderadas, relleno solo para estados activos. Solo `text`/`topbar.fg` (los iconos no llevan color propio salvo estados semánticos). Si el significado es ambiguo, el icono lleva etiqueta o tooltip.
-- **Origen**: propio (dibujado en la rejilla) o, si se parte de una colección, **Lucide (ISC)** o **Feather (MIT)** con su aviso en `THIRD_PARTY_NOTICES.md` (VERIFICAR la licencia vigente de cada versión antes de adoptarla). Cada icono se registra en `assets/LICENSES.toml` (ARQ-75). Los SVG se convierten en geometría de trazo en tiempo de compilación; no se usan fuentes de iconos.
+- **Origen** (D-87): **Phosphor (MIT)**, peso «Regular» y «Fill» para los estados activos; los que falten se dibujan propios en la misma rejilla. Su aviso va en `THIRD_PARTY_NOTICES.md` (comprobar la licencia de la versión adoptada al importarla). Cada icono se registra en `assets/LICENSES.toml` (ARQ-75). Los SVG se convierten en geometría de trazo en tiempo de compilación; no se usan fuentes de iconos.
 - **Lista de iconos necesarios** (≈ 110):
 
 | Grupo | Iconos |
@@ -1293,7 +1293,7 @@ Tono de Gafira: frases breves de acción en segunda persona, verbos como crear, 
 | PD-04 | Icono de aplicación con baldosa `#FAFAF7` y símbolo al 62 % | PROPUESTA |
 | PD-05 | Ventana mínima 1280×720 y breakpoints de paneles | PROPUESTA |
 | PD-06 | Nombres del glosario (§2) | **Aprobados** (00-decisiones, D-04); queda la búsqueda de «Gafira» y «Gefira» en USPTO, TMview y WIPO, a cargo del titular (spec 05, Parte C) |
-| PD-07 | Colección de iconos (propia, Lucide ISC o Feather MIT) | VERIFICAR licencia y decidir |
+| PD-07 | Colección de iconos | Decidido: Phosphor MIT (D-87) |
 | PD-08 | Atajos fuera de los universales (Ctrl+Alt+N, Ctrl+T, etc.) | VERIFICAR contra conflictos del SO |
 | PD-09 | Variantes monocromas del logo (`mono-navy`, `mono-white`, `symbol-dark`) | Por crear; no existen en el repositorio |
 | PD-10 | Pantallas y estados de la licencia (activación, prueba, solo lectura) | Diferido: se diseñan en la spec 06 (pendiente, se redacta al final); propuesta previa de 02: Q-19 y Q-20 |
