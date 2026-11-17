@@ -201,6 +201,7 @@ undo = "Undo"
 redo = "Redo"
 add_page = "Add page"
 delete = "Delete"
+select_all = "Select all"
 
 [zoom]
 in = "Zoom in"
@@ -264,6 +265,7 @@ corner_radius = "Corner radius"
 text = "Text"
 font_size = "Size"
 text_color = "Colour"
+count = { one = "{count} element", other = "{count} elements" }
 
 [bottom]
 notes = "Notes"

@@ -142,6 +142,39 @@ pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -
     })
 }
 
+/// The shapes whose screen box touches `marquee`, back to front (spec 040).
+/// An ellipse counts by its box, like a resize handle sits on it.
+pub(crate) fn in_marquee(
+    shapes: &[Shape],
+    page_rect: Rect,
+    zoom: f32,
+    marquee: Rect,
+) -> Vec<NodeId> {
+    shapes
+        .iter()
+        .filter(|shape| on_screen(page_rect, zoom, &shape.placement).intersects(marquee))
+        .map(|shape| shape.node)
+        .collect()
+}
+
+/// The roots of `page` the canvas draws, back to front: what Ctrl+A selects
+/// (spec 040). Groups draw nothing and are not selectable yet.
+pub(crate) fn roots(page: &Page) -> Vec<NodeId> {
+    let drawn: std::collections::BTreeSet<NodeId> =
+        shapes(page).into_iter().map(|shape| shape.node).collect();
+    page.roots
+        .iter()
+        .copied()
+        .filter(|id| drawn.contains(id))
+        .collect()
+}
+
+/// The smallest box that holds every box of `rects`: the box drawn around
+/// a multi-selection (spec 040). `None` for no box.
+pub(crate) fn bounds(rects: impl IntoIterator<Item = Rect>) -> Option<Rect> {
+    rects.into_iter().reduce(|all, rect| all.union(rect))
+}
+
 /// `origin` moved by `offset` screen px at `zoom`, in page space.
 pub(crate) fn moved(origin: &Placement, offset: Vec2, zoom: f32) -> Placement {
     let mut placement = *origin;
@@ -697,5 +730,70 @@ mod tests {
         assert!(
             matches!(small.kind, NodeKind::Image(gafira_doc::ImageNode { asset: a }) if a == asset)
         );
+    }
+
+    // S40-02: the marquee selects what its box touches, back to front,
+    // dragged in any direction; an ellipse counts by its box.
+    #[test]
+    fn s40_02_the_marquee_selects_the_shapes_it_touches() {
+        let shapes = shapes(&page());
+        let page_rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::splat(200.0));
+        let at = |x: f32, y: f32| Pos2::new(100.0 + x * 2.0, 100.0 + y * 2.0);
+        let ids = |from: Pos2, to: Pos2| -> Vec<u64> {
+            in_marquee(&shapes, page_rect, 2.0, Rect::from_two_pos(from, to))
+                .iter()
+                .map(|node| node.get())
+                .collect()
+        };
+        assert_eq!(ids(at(0.0, 0.0), at(20.0, 20.0)), [2]);
+        assert_eq!(ids(at(45.0, 45.0), at(30.0, 30.0)), [2, 4], "drawn up-left");
+        assert_eq!(ids(at(62.0, 0.0), at(99.0, 30.0)), [] as [u64; 0]);
+        assert_eq!(
+            ids(at(78.0, 78.0), at(99.0, 99.0)),
+            [4],
+            "the corner of the ellipse's box"
+        );
+        assert_eq!(
+            ids(at(0.0, 0.0), at(99.0, 99.0)),
+            [2, 4],
+            "hidden stays out"
+        );
+    }
+
+    // S40-02: Ctrl+A takes the drawn roots of the page: no group, nothing
+    // hidden, back to front.
+    #[test]
+    fn s40_02_select_all_takes_the_drawn_roots() {
+        let mut page = page();
+        assert_eq!(roots(&page), [NodeId::new(2)]);
+        let size = page.size;
+        let mut two = ShapeNode::new(ShapeGeometry::Ellipse);
+        two.fill = None;
+        page.nodes.insert(
+            NodeId::new(6),
+            Arc::new(Node::new(
+                ElementBase::new(NodeId::new(6), place(0.0, 0.0, 5.0, 5.0)),
+                NodeKind::Shape(two),
+            )),
+        );
+        page.roots.insert(0, NodeId::new(6));
+        assert_eq!(roots(&page), [NodeId::new(6), NodeId::new(2)]);
+        assert!(roots(&Page::new(PageId::new(7), String::new(), size)).is_empty());
+    }
+
+    // S40-03: the box of a multi-selection holds every selected box.
+    #[test]
+    fn s40_03_the_selection_box_is_the_union_of_its_boxes() {
+        let a = Rect::from_min_max(Pos2::new(10.0, 20.0), Pos2::new(30.0, 40.0));
+        let b = Rect::from_min_max(Pos2::new(-5.0, 25.0), Pos2::new(15.0, 60.0));
+        assert_eq!(
+            bounds([a, b]),
+            Some(Rect::from_min_max(
+                Pos2::new(-5.0, 20.0),
+                Pos2::new(30.0, 60.0)
+            ))
+        );
+        assert_eq!(bounds([a]), Some(a));
+        assert_eq!(bounds([]), None);
     }
 }
