@@ -174,6 +174,25 @@ mod tests {
         );
     }
 
+    // S38-03: the outline and the radius live inside the node record, so a
+    // stroked shape costs what a plain one does.
+    #[test]
+    fn s38_03_an_outline_adds_no_heap_to_the_estimate() {
+        use gafira_color::{Color, Rgba};
+        use gafira_doc::{ShapeGeometry, ShapeNode, ShapeStroke};
+        let bare = ShapeNode::new(ShapeGeometry::Rect);
+        let mut stroked = bare;
+        stroked.stroke = Some(ShapeStroke::new(
+            Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            4.0,
+        ));
+        stroked.corner_radius = 8.0;
+        let newer = Document::default();
+        let cost = |shape| unshared_bytes(&document(1, None, Some(NodeKind::Shape(shape))), &newer);
+        assert_eq!(cost(stroked), cost(bare));
+        assert_eq!(cost(bare), unshared_bytes(&plain(1), &newer));
+    }
+
     #[test]
     fn strings_and_payloads_count_their_heap_length() {
         let base = plain(1);

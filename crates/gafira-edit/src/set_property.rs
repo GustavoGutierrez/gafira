@@ -6,8 +6,8 @@ use gafira_color::Color;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
     BlendMode, DocMut, Document, Dpi, GridSettings, GuideSet, Margins, Node, NodeId, NodeKind,
-    Page, PageId, PageSize, Placement, RichText, ShapeGeometry, TextNode, ValidationError,
-    check_bleed,
+    Page, PageId, PageSize, Placement, RichText, ShapeGeometry, ShapeStroke, TextNode,
+    ValidationError, check_bleed,
 };
 use gafira_geom::Length;
 
@@ -15,7 +15,8 @@ use crate::{Applied, Command, CommandError, DirtySet, GestureId, MergeKey};
 
 /// A property value of a node, tagged with the property it belongs to.
 ///
-/// `Fill` and `Geometry` only apply to `Shape` nodes. The `Page` variants,
+/// `Fill`, `Geometry`, `Stroke` and `CornerRadius` only apply to `Shape`
+/// nodes. The `Page` variants,
 /// `Bleed`, `Margins`, `Guides` and `Grid` target a page and `Dpi` the
 /// document; build those commands with
 /// [`SetProperty::page`] and [`SetProperty::document`].
@@ -29,6 +30,10 @@ pub enum Property {
     Locked(bool),
     Fill(Option<Color>),
     Geometry(ShapeGeometry),
+    /// The outline of a shape; `None` removes it (spec 038).
+    Stroke(Option<ShapeStroke>),
+    /// The corner radius of a shape, in px (spec 038).
+    CornerRadius(f64),
     /// The rich text of a text element (spec 027).
     TextContent(RichText),
     PageName(String),
@@ -58,6 +63,8 @@ impl Property {
             Self::Locked(_) => "set_property.locked",
             Self::Fill(_) => "set_property.fill",
             Self::Geometry(_) => "set_property.geometry",
+            Self::Stroke(_) => "set_property.stroke",
+            Self::CornerRadius(_) => "set_property.corner_radius",
             Self::TextContent(_) => "set_property.text_content",
             Self::PageName(_) => "set_property.page_name",
             Self::PageSize(_) => "set_property.page_size",
@@ -87,6 +94,13 @@ impl Property {
             ),
             Self::Opacity(o) => ("opacity", unit(f64::from(*o))),
             Self::Fill(Some(c)) => ("fill", c.is_finite() && unit(f64::from(c.alpha()))),
+            Self::Stroke(Some(stroke)) => (
+                "stroke",
+                stroke.color.is_finite()
+                    && unit(f64::from(stroke.color.alpha()))
+                    && (0.0..=ShapeStroke::MAX_WIDTH).contains(&stroke.width),
+            ),
+            Self::CornerRadius(r) => ("corner_radius", r.is_finite() && *r >= 0.0),
             Self::TextContent(text) => (
                 "text_content",
                 text.spans().all(|span| {
@@ -120,6 +134,8 @@ impl Property {
             (Self::Locked(_), _) => Self::Locked(base.locked),
             (Self::Fill(_), NodeKind::Shape(s)) => Self::Fill(s.fill),
             (Self::Geometry(_), NodeKind::Shape(s)) => Self::Geometry(s.geometry),
+            (Self::Stroke(_), NodeKind::Shape(s)) => Self::Stroke(s.stroke),
+            (Self::CornerRadius(_), NodeKind::Shape(s)) => Self::CornerRadius(s.corner_radius),
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
             _ => return None,
         })
@@ -137,6 +153,8 @@ impl Property {
             (Self::Locked(v), _) => base.locked = *v,
             (Self::Fill(v), NodeKind::Shape(s)) => s.fill = *v,
             (Self::Geometry(v), NodeKind::Shape(s)) => s.geometry = *v,
+            (Self::Stroke(v), NodeKind::Shape(s)) => s.stroke = *v,
+            (Self::CornerRadius(v), NodeKind::Shape(s)) => s.corner_radius = *v,
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
             _ => {}
         }
@@ -488,7 +506,9 @@ mod tests {
     use std::sync::Arc;
 
     use gafira_color::Rgba;
-    use gafira_doc::{Document, EditToken, ElementBase, GroupNode, Page, PageSize, ShapeNode};
+    use gafira_doc::{
+        Document, EditToken, ElementBase, GroupNode, Page, PageSize, ShapeNode, ShapeStroke,
+    };
     use gafira_geom::{Length, Unit};
 
     use crate::Transaction;
@@ -850,6 +870,102 @@ mod tests {
             assert!(!node(&doc, A).base.visible && !node(&doc, B).base.visible);
             revert(&mut command, &mut doc).unwrap();
             assert_eq!(doc, seed);
+        }
+    }
+
+    fn outline(width: f64) -> Option<ShapeStroke> {
+        Some(ShapeStroke::new(
+            Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
+            width,
+        ))
+    }
+
+    // S38-03: the outline and the corner radius are set, undone and merged
+    // like any other shape property.
+    #[test]
+    fn s38_03_outline_and_radius_are_set_and_reverted() {
+        let original = fixture();
+        let mut doc = original.clone();
+        let shape = |doc: &Document| match node(doc, A).kind {
+            NodeKind::Shape(s) => s,
+            _ => panic!("not a shape"),
+        };
+        let mut stroke = set(&[A], Property::Stroke(outline(4.0)));
+        assert_eq!(apply(&mut stroke, &mut doc), Ok(Applied::Changed));
+        assert_eq!(shape(&doc).stroke, outline(4.0));
+        let mut radius = set(&[A], Property::CornerRadius(8.0));
+        assert_eq!(apply(&mut radius, &mut doc), Ok(Applied::Changed));
+        assert_eq!(shape(&doc).corner_radius, 8.0);
+        assert_eq!(doc.validate(), Ok(()));
+        let mut same = set(&[A], Property::CornerRadius(8.0));
+        assert_eq!(apply(&mut same, &mut doc), Ok(Applied::Unchanged));
+        let mut none = set(&[A], Property::Stroke(None));
+        assert_eq!(apply(&mut none, &mut doc), Ok(Applied::Changed));
+        assert_eq!(shape(&doc).stroke, None);
+        revert(&mut none, &mut doc).unwrap();
+        assert_eq!(shape(&doc).stroke, outline(4.0));
+        revert(&mut radius, &mut doc).unwrap();
+        revert(&mut stroke, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        // On a node that is not a shape they fail and change nothing.
+        for value in [Property::Stroke(outline(1.0)), Property::CornerRadius(1.0)] {
+            let mut on_group = set(&[GROUP], value);
+            assert!(apply(&mut on_group, &mut doc).is_err());
+            assert_eq!(doc, original);
+        }
+        let kinds = [
+            (Property::Stroke(None), "set_property.stroke"),
+            (Property::CornerRadius(0.0), "set_property.corner_radius"),
+        ];
+        for (value, kind) in kinds {
+            assert_eq!(set(&[A], value).merge_key().map(|k| k.kind), Some(kind));
+        }
+    }
+
+    // S38-03: a value `validate()` would refuse is refused before it lands.
+    #[test]
+    fn s38_03_invalid_outline_and_radius_fail_and_change_nothing() {
+        let colour = |a: f32| Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a));
+        let rows = [
+            (Property::Stroke(outline(-0.5)), "stroke"),
+            (
+                Property::Stroke(outline(ShapeStroke::MAX_WIDTH + 0.5)),
+                "stroke",
+            ),
+            (Property::Stroke(outline(f64::NAN)), "stroke"),
+            (
+                Property::Stroke(Some(ShapeStroke::new(colour(1.5), 1.0))),
+                "stroke",
+            ),
+            (
+                Property::Stroke(Some(ShapeStroke::new(colour(f32::NAN), 1.0))),
+                "stroke",
+            ),
+            (Property::CornerRadius(-1e-9), "corner_radius"),
+            (Property::CornerRadius(f64::INFINITY), "corner_radius"),
+            (Property::CornerRadius(f64::NAN), "corner_radius"),
+        ];
+        for (value, what) in rows {
+            let mut doc = fixture();
+            let before = doc.clone();
+            let mut command = set(&[A], value);
+            assert_eq!(
+                apply(&mut command, &mut doc),
+                Err(CommandError::InvalidValue(what))
+            );
+            assert_eq!(doc, before);
+        }
+        for value in [
+            Property::Stroke(outline(0.0)),
+            Property::Stroke(outline(ShapeStroke::MAX_WIDTH)),
+            Property::Stroke(Some(ShapeStroke::new(colour(0.0), 1.0))),
+            Property::CornerRadius(0.0),
+            Property::CornerRadius(1e9),
+        ] {
+            let mut doc = fixture();
+            let mut command = set(&[A], value);
+            assert!(apply(&mut command, &mut doc).is_ok());
+            assert_eq!(doc.validate(), Ok(()));
         }
     }
 
