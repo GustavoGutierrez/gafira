@@ -13,8 +13,10 @@ use gafira_edit::{
     Command, GestureId, InsertNodes, InsertPage, Property, RemoveNodes, SetProperty, Transaction,
 };
 use gafira_engine::Gafira;
+use gafira_layout::{AlignAction, DistributeAxis};
 use gafira_theme::Shadow;
 
+use crate::arrange::{self, Order};
 use crate::canvas::{self, Shape};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
@@ -55,6 +57,129 @@ const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key
 const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
 const FLIP_H: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::H);
 const FLIP_V: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::V);
+/// Alinear and Orden de apilado (03 §9.2 «Capas», spec 042).
+const ALIGN_LEFT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::L);
+const ALIGN_CENTER: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::C);
+const ALIGN_RIGHT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::R);
+const FORWARD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::CloseBracket);
+const BACKWARD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::OpenBracket);
+const FRONT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::CloseBracket);
+const BACK: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::OpenBracket);
+
+/// The six Align actions with their catalog key, icon and shortcut, in the
+/// order of FD-11; only left, centre and right have one (03 §9.2).
+const ALIGNS: [(AlignAction, &str, Icon, Option<KeyboardShortcut>); 6] = [
+    (
+        AlignAction::Left,
+        "arrange.align_left",
+        Icon::AlignLeft,
+        Some(ALIGN_LEFT),
+    ),
+    (
+        AlignAction::Center,
+        "arrange.align_center",
+        Icon::AlignCenter,
+        Some(ALIGN_CENTER),
+    ),
+    (
+        AlignAction::Right,
+        "arrange.align_right",
+        Icon::AlignRight,
+        Some(ALIGN_RIGHT),
+    ),
+    (AlignAction::Top, "arrange.align_top", Icon::AlignTop, None),
+    (
+        AlignAction::Middle,
+        "arrange.align_middle",
+        Icon::AlignMiddle,
+        None,
+    ),
+    (
+        AlignAction::Bottom,
+        "arrange.align_bottom",
+        Icon::AlignBottom,
+        None,
+    ),
+];
+
+/// The two Distribute actions (FD-11); they have no shortcut in 03 §9.2.
+const DISTRIBUTES: [(DistributeAxis, &str, Icon); 2] = [
+    (
+        DistributeAxis::Horizontal,
+        "arrange.distribute_horizontal",
+        Icon::DistributeHorizontal,
+    ),
+    (
+        DistributeAxis::Vertical,
+        "arrange.distribute_vertical",
+        Icon::DistributeVertical,
+    ),
+];
+
+/// The four layer-order actions (FD-12) in the order of 03 §9.2.
+const ORDERS: [(Order, &str, Icon, KeyboardShortcut); 4] = [
+    (
+        Order::Forward,
+        "arrange.forward",
+        Icon::BringForward,
+        FORWARD,
+    ),
+    (
+        Order::Backward,
+        "arrange.backward",
+        Icon::SendBackward,
+        BACKWARD,
+    ),
+    (Order::Front, "arrange.front", Icon::BringToFront, FRONT),
+    (Order::Back, "arrange.back", Icon::SendToBack, BACK),
+];
+
+/// The text of a catalog key without parameters.
+fn plain(texts: &Texts, key: &'static str) -> String {
+    texts.t(&gafira_doc::msg::Message {
+        key: MessageKey(key),
+        args: Vec::new(),
+    })
+}
+
+/// What the arrange actions can do with the selection this frame (spec
+/// 042): align with one element or more, distribute with three or more,
+/// and each order action only when it would change the layers (FD-12).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct CanArrange {
+    align: bool,
+    distribute: bool,
+    /// By the index of [`ORDERS`].
+    order: [bool; 4],
+}
+
+impl CanArrange {
+    fn of(document: Option<&Document>, selected: &Selection) -> Self {
+        let Some(page) = selected.page().and_then(|page| document?.page(page)) else {
+            return Self::default();
+        };
+        let nodes = selected.nodes();
+        Self {
+            align: !nodes.is_empty(),
+            distribute: nodes.len() >= 3,
+            order: ORDERS
+                .map(|(order, ..)| arrange::reordered(&page.roots, nodes, order) != page.roots),
+        }
+    }
+}
+
+/// A shortcut as the platform writes it, with the key as its symbol: egui
+/// names `]` «CloseBracket» and `=` «Equals» (spec 042).
+fn keys_text(ctx: &egui::Context, keys: &KeyboardShortcut) -> String {
+    let key = keys.logical_key;
+    ctx.format_shortcut(keys)
+        .replace(key.name(), key.symbol_or_name())
+}
 
 /// «Deshacer · Ctrl+Z»: an action and its shortcut as the platform writes it
 /// (03 §8.1, Tooltip).
@@ -62,7 +187,7 @@ fn with_keys(ctx: &egui::Context, texts: &Texts, action: String, keys: KeyboardS
     texts.t(&gafira_doc::msg!(
         "tooltip.shortcut",
         action = Text(action),
-        keys = Text(ctx.format_shortcut(&keys))
+        keys = Text(keys_text(ctx, &keys))
     ))
 }
 
@@ -90,6 +215,8 @@ pub(crate) struct Editor {
     font_atlas: Option<[usize; 2]>,
     /// «Versiones» and «Guardar versión…» (spec 031).
     versions: Versions,
+    /// What Align, Distribute and Orden can do this frame (spec 042).
+    can: CanArrange,
 }
 
 struct Drag {
@@ -138,6 +265,7 @@ impl Default for Editor {
             marquee: None,
             versions: Versions::default(),
             font_atlas: None,
+            can: CanArrange::default(),
         }
     }
 }
@@ -174,6 +302,12 @@ struct Asked {
     turn: Option<f64>,
     /// Flip every selected element about its centre (Mayús+H, Mayús+V).
     flip: Option<Axis>,
+    /// Align the selection, or one element to its page (spec 042).
+    align: Option<AlignAction>,
+    /// Spread the selection with equal gaps (spec 042).
+    distribute: Option<DistributeAxis>,
+    /// Move the selection in the layer order (spec 042).
+    order: Option<Order>,
     drag_end: bool,
     delete: bool,
     /// A placement typed in the Inspector for the selected element.
@@ -372,6 +506,37 @@ impl Editor {
                 if i.modifiers.command && i.key_pressed(egui::Key::A) {
                     asked.select_all = true;
                 }
+                // Ctrl+Alt+L/C/R align (03 §9.2); a platform shortcut on
+                // the same keys wins before it reaches the window.
+                if i.modifiers
+                    .matches_exact(Modifiers::COMMAND.plus(Modifiers::ALT))
+                {
+                    for (key, action) in [
+                        (egui::Key::L, AlignAction::Left),
+                        (egui::Key::C, AlignAction::Center),
+                        (egui::Key::R, AlignAction::Right),
+                    ] {
+                        if i.key_pressed(key) {
+                            asked.align = Some(action);
+                        }
+                    }
+                }
+                // Ctrl+] and Ctrl+[ one step, with Shift to the front or the
+                // back. Shift+] reads as `}` on many layouts, so both count;
+                // Alt is not looked at, because the brackets need AltGr
+                // (Ctrl+Alt on Windows) on layouts such as Spanish.
+                let close = i.key_pressed(egui::Key::CloseBracket)
+                    || i.key_pressed(egui::Key::CloseCurlyBracket);
+                let open = i.key_pressed(egui::Key::OpenBracket)
+                    || i.key_pressed(egui::Key::OpenCurlyBracket);
+                if i.modifiers.command {
+                    let shift = i.modifiers.shift;
+                    if close {
+                        asked.order = Some(if shift { Order::Front } else { Order::Forward });
+                    } else if open {
+                        asked.order = Some(if shift { Order::Back } else { Order::Backward });
+                    }
+                }
                 if i.modifiers.matches_exact(Modifiers::SHIFT) {
                     if i.key_pressed(egui::Key::H) {
                         asked.flip = Some(Axis::Horizontal);
@@ -384,6 +549,7 @@ impl Editor {
         }
         self.load_textures(ctx, engine, document.as_deref());
         let selection = self.prune(document.as_deref());
+        self.can = CanArrange::of(document.as_deref(), &self.selected);
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         if let Some(ask) = asked.zoom {
             self.view = ask.apply(self.zoom);
@@ -418,6 +584,7 @@ impl Editor {
         header: &Header<'_>,
         asked: &mut Asked,
     ) {
+        let can = self.can;
         widgets::topbar(ctx, theme, "editor.topbar", |ui| {
             if IconButton::new(Icon::Home, texts.t(&gafira_doc::msg!("nav.home")))
                 .on(Surface::Topbar)
@@ -469,13 +636,13 @@ impl Editor {
             ui.menu_button(edit, |ui| {
                 ui.set_min_width(200.0);
                 let undo = egui::Button::new(texts.t(&gafira_doc::msg!("editor.undo")))
-                    .shortcut_text(ui.ctx().format_shortcut(&UNDO));
+                    .shortcut_text(keys_text(ui.ctx(), &UNDO));
                 if ui.add_enabled(header.can_undo, undo).clicked() {
                     asked.undo = true;
                     ui.close();
                 }
                 let redo = egui::Button::new(texts.t(&gafira_doc::msg!("editor.redo")))
-                    .shortcut_text(ui.ctx().format_shortcut(&REDO));
+                    .shortcut_text(keys_text(ui.ctx(), &REDO));
                 if ui.add_enabled(header.can_redo, redo).clicked() {
                     asked.redo = true;
                     ui.close();
@@ -487,7 +654,7 @@ impl Editor {
                     ui.close();
                 }
                 let all = egui::Button::new(texts.t(&gafira_doc::msg!("editor.select_all")))
-                    .shortcut_text(ui.ctx().format_shortcut(&SELECT_ALL));
+                    .shortcut_text(keys_text(ui.ctx(), &SELECT_ALL));
                 if ui.add_enabled(document.is_some(), all).clicked() {
                     asked.select_all = true;
                     ui.close();
@@ -518,13 +685,15 @@ impl Editor {
                         FLIP_V,
                     ),
                 ] {
-                    let flip = egui::Button::new(texts.t(&key))
-                        .shortcut_text(ui.ctx().format_shortcut(&keys));
+                    let flip =
+                        egui::Button::new(texts.t(&key)).shortcut_text(keys_text(ui.ctx(), &keys));
                     if ui.add_enabled(some, flip).clicked() {
                         asked.flip = Some(axis);
                         ui.close();
                     }
                 }
+                ui.separator();
+                arrange_menu(ui, texts, can, asked);
             });
             let view = RichText::new(texts.t(&gafira_doc::msg!("menu.view")))
                 .font(theme.font("ui-label"))
@@ -863,6 +1032,7 @@ impl Editor {
         selection: &[Shape],
         asked: &mut Asked,
     ) {
+        let can = self.can;
         egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
@@ -915,7 +1085,7 @@ impl Editor {
                     }
                     [shape] => shape,
                     many => {
-                        many_fields(ui, theme, texts, many, asked);
+                        many_fields(ui, theme, texts, many, can, asked);
                         return;
                     }
                 };
@@ -964,6 +1134,8 @@ impl Editor {
                 }
                 ui.add_space(8.0);
                 turn_buttons(ui, theme, texts, asked);
+                ui.add_space(16.0);
+                arrange_buttons(ui, theme, texts, can, asked);
                 ui.add_space(16.0);
                 if shape.text.is_none() {
                     fill_field(ui, texts, shape, asked);
@@ -1534,6 +1706,9 @@ impl Editor {
         {
             self.reshape(engine, page, asked.turn, asked.flip);
         }
+        if let Some(page) = self.selected.page() {
+            self.arrange(engine, page, asked);
+        }
         if let (Some(placement), Some((page, node))) = (asked.place, self.selected.single()) {
             let command = SetProperty::new(page, vec![node], Property::Placement(placement), None);
             log("place", engine.edit().execute(Box::new(command)).map(drop));
@@ -1603,9 +1778,7 @@ impl Editor {
     /// merges with the next one.
     fn reshape(&self, engine: &mut Gafira, page: PageId, turn: Option<f64>, flip: Option<Axis>) {
         let now = engine.edit().document();
-        let shapes = selected_shapes(now.as_deref(), &self.selected);
-        let gesture = engine.edit().begin_gesture().ok();
-        let commands = shapes
+        let placements = selected_shapes(now.as_deref(), &self.selected)
             .iter()
             .map(|shape| {
                 let mut to = shape.placement;
@@ -1615,20 +1788,54 @@ impl Editor {
                 if let Some(axis) = flip {
                     to = rotation::flipped(&to, axis);
                 }
-                let command =
-                    SetProperty::new(page, vec![shape.node], Property::Placement(to), gesture);
-                Box::new(command) as Box<dyn Command>
+                (shape.node, to)
             })
             .collect();
-        if let Some(command) = batch(commands)
-            && let Err(error) = engine.edit().execute(command)
+        place_in_one_step(engine, page, placements, "turn or flip");
+    }
+
+    /// Align, distribute or move in the layer order the selection of
+    /// `page`, each action one undo step (spec 042).
+    fn arrange(&self, engine: &mut Gafira, page: PageId, asked: &Asked) {
+        let now = engine.edit().document();
+        let Some(document) = now.as_deref() else {
+            return;
+        };
+        let Some(current) = document.page(page) else {
+            return;
+        };
+        let nodes = self.selected.nodes();
+        if let Some(action) = asked.align
+            && let Ok(size) = current.size.to_px(document.dpi())
         {
-            eprintln!("turn or flip: {error}");
+            let moves = arrange::aligned(current, (size.width(), size.height()), nodes, action);
+            place_in_one_step(engine, page, moves, "align");
         }
-        if gesture.is_some()
-            && let Err(error) = engine.edit().end_gesture()
-        {
-            eprintln!("end gesture: {error}");
+        if let Some(axis) = asked.distribute {
+            let moves = arrange::distributed(current, nodes, axis);
+            place_in_one_step(engine, page, moves, "distribute");
+        }
+        if let Some(order) = asked.order {
+            let to = arrange::reordered(&current.roots, nodes, order);
+            let mut commands: Vec<Box<dyn Command>> = arrange::steps(&current.roots, &to)
+                .into_iter()
+                .map(|(node, index)| {
+                    Box::new(gafira_edit::Reorder::new(page, node, index)) as Box<dyn Command>
+                })
+                .collect();
+            // Several steps are one Transaction: one undo step.
+            let command: Option<Box<dyn Command>> = match commands.len() {
+                0 | 1 => commands.pop(),
+                _ => Some(Box::new(Transaction::new(
+                    MessageKey("edit.reorder"),
+                    commands,
+                ))),
+            };
+            if let Some(command) = command
+                && let Err(error) = engine.edit().execute(command)
+            {
+                eprintln!("order: {error}");
+            }
         }
     }
 
@@ -1700,6 +1907,38 @@ impl Editor {
 }
 
 /// The bytes of `hash` from the store, decoded and scaled for the canvas.
+/// `placements` of `page` as one undo step: their `SetProperty` commands
+/// share a gesture of their own, so the step never merges with the next
+/// action (specs 041, 042). Nothing to place is no step.
+fn place_in_one_step(
+    engine: &mut Gafira,
+    page: PageId,
+    placements: Vec<(NodeId, Placement)>,
+    what: &str,
+) {
+    if placements.is_empty() {
+        return;
+    }
+    let gesture = engine.edit().begin_gesture().ok();
+    let commands = placements
+        .into_iter()
+        .map(|(node, to)| {
+            let command = SetProperty::new(page, vec![node], Property::Placement(to), gesture);
+            Box::new(command) as Box<dyn Command>
+        })
+        .collect();
+    if let Some(command) = batch(commands)
+        && let Err(error) = engine.edit().execute(command)
+    {
+        eprintln!("{what}: {error}");
+    }
+    if gesture.is_some()
+        && let Err(error) = engine.edit().end_gesture()
+    {
+        eprintln!("end gesture: {error}");
+    }
+}
+
 fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorImage> {
     let mut bytes = Vec::new();
     let mut source = engine.ports().store.open(hash).ok()?;
@@ -1768,6 +2007,7 @@ fn many_fields(
     theme: &Theme,
     texts: &Texts,
     shapes: &[Shape],
+    can: CanArrange,
     asked: &mut Asked,
 ) {
     let Some(primary) = shapes.last() else { return };
@@ -1781,6 +2021,8 @@ fn many_fields(
     );
     ui.add_space(16.0);
     turn_buttons(ui, theme, texts, asked);
+    ui.add_space(16.0);
+    arrange_buttons(ui, theme, texts, can, asked);
     ui.add_space(16.0);
     if shapes
         .iter()
@@ -1847,6 +2089,131 @@ fn turn_buttons(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Ask
                 .clicked()
             {
                 asked.flip = Some(axis);
+            }
+        }
+    });
+}
+
+/// The name of an arrange action and, when it has one, its shortcut.
+fn arrange_tooltip(
+    ctx: &egui::Context,
+    texts: &Texts,
+    key: &'static str,
+    keys: Option<KeyboardShortcut>,
+) -> String {
+    let name = plain(texts, key);
+    match keys {
+        Some(keys) => with_keys(ctx, texts, name, keys),
+        None => name,
+    }
+}
+
+/// The tooltip of a Distribute action: while it is off, why.
+fn distribute_tooltip(texts: &Texts, key: &'static str, enabled: bool) -> String {
+    let name = plain(texts, key);
+    if enabled {
+        name
+    } else {
+        texts.t(&gafira_doc::msg!(
+            "arrange.needs_three",
+            action = Text(name)
+        ))
+    }
+}
+
+/// «Alinear» (six actions and the two of Distribute) and «Orden» (four
+/// actions) in the Posición tab (03 §2.4, §7.3 wireframe; spec 042).
+fn arrange_buttons(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    can: CanArrange,
+    asked: &mut Asked,
+) {
+    let heading = |ui: &mut egui::Ui, key| {
+        ui.label(
+            RichText::new(plain(texts, key))
+                .font(theme.font("ui-label"))
+                .color(theme.c("text")),
+        );
+    };
+    heading(ui, "arrange.align");
+    ui.horizontal_wrapped(|ui| {
+        for (action, key, icon, keys) in ALIGNS {
+            let tooltip = arrange_tooltip(ui.ctx(), texts, key, keys);
+            let button = ui.add_enabled_ui(can.align, |ui| {
+                IconButton::new(icon, plain(texts, key))
+                    .small()
+                    .tooltip(tooltip)
+                    .show(ui, theme)
+            });
+            if button.inner.clicked() {
+                asked.align = Some(action);
+            }
+        }
+        for (axis, key, icon) in DISTRIBUTES {
+            let tooltip = distribute_tooltip(texts, key, can.distribute);
+            let button = ui.add_enabled_ui(can.distribute, |ui| {
+                IconButton::new(icon, plain(texts, key))
+                    .small()
+                    .tooltip(tooltip)
+                    .show(ui, theme)
+            });
+            if button.inner.clicked() {
+                asked.distribute = Some(axis);
+            }
+        }
+    });
+    ui.add_space(8.0);
+    heading(ui, "arrange.order");
+    ui.horizontal(|ui| {
+        for (index, (order, key, icon, keys)) in ORDERS.into_iter().enumerate() {
+            let tooltip = arrange_tooltip(ui.ctx(), texts, key, Some(keys));
+            let button = ui.add_enabled_ui(can.order[index], |ui| {
+                IconButton::new(icon, plain(texts, key))
+                    .small()
+                    .tooltip(tooltip)
+                    .show(ui, theme)
+            });
+            if button.inner.clicked() {
+                asked.order = Some(order);
+            }
+        }
+    });
+}
+
+/// Edición → Organizar: Align, Distribute and the layer order, with their
+/// shortcuts; an action that cannot act now is off (FD-12).
+fn arrange_menu(ui: &mut egui::Ui, texts: &Texts, can: CanArrange, asked: &mut Asked) {
+    ui.menu_button(plain(texts, "arrange.menu"), |ui| {
+        ui.set_min_width(220.0);
+        for (action, key, _, keys) in ALIGNS {
+            let mut item = egui::Button::new(plain(texts, key));
+            if let Some(keys) = keys {
+                item = item.shortcut_text(keys_text(ui.ctx(), &keys));
+            }
+            if ui.add_enabled(can.align, item).clicked() {
+                asked.align = Some(action);
+                ui.close();
+            }
+        }
+        ui.separator();
+        for (axis, key, _) in DISTRIBUTES {
+            let item = ui
+                .add_enabled(can.distribute, egui::Button::new(plain(texts, key)))
+                .on_disabled_hover_text(distribute_tooltip(texts, key, false));
+            if item.clicked() {
+                asked.distribute = Some(axis);
+                ui.close();
+            }
+        }
+        ui.separator();
+        for (index, (order, key, _, keys)) in ORDERS.into_iter().enumerate() {
+            let item =
+                egui::Button::new(plain(texts, key)).shortcut_text(keys_text(ui.ctx(), &keys));
+            if ui.add_enabled(can.order[index], item).clicked() {
+                asked.order = Some(order);
+                ui.close();
             }
         }
     });
@@ -3395,5 +3762,307 @@ pub(crate) mod tests {
         assert!(shapes.iter().all(|s| s.placement.flip.y));
         assert!(shapes.iter().all(|s| s.placement.rotation_deg == 270.0));
         assert!(shapes.iter().any(|s| s.node == ellipse));
+    }
+
+    /// [`two_pieces`] and a third rectangle 200 px down and 100 px right of
+    /// the first one, with all three selected.
+    fn three_pieces(engine: &mut Gafira, editor: &mut Editor) -> (PageId, [NodeId; 3]) {
+        let (page, rect, ellipse) = two_pieces(engine, editor);
+        ask(
+            engine,
+            editor,
+            Asked {
+                insert: Some(ShapeGeometry::Rect),
+                ..Asked::default()
+            },
+        );
+        let third = the_shapes(engine)[2].clone();
+        let mut aside = third.placement;
+        aside.x += 100.0;
+        aside.y += 200.0;
+        ask(
+            engine,
+            editor,
+            Asked {
+                place: Some(aside),
+                ..Asked::default()
+            },
+        );
+        let nodes = [rect, ellipse, third.node];
+        editor.selected = Selection::of(page, nodes);
+        (page, nodes)
+    }
+
+    /// The roots of the first page, back first.
+    fn roots_now(engine: &mut Gafira) -> Vec<NodeId> {
+        engine.edit().document().expect("a document").pages()[0]
+            .roots
+            .clone()
+    }
+
+    // S42-11: Align moves the whole selection in one undo step, two aligns
+    // in a row are two steps, and one element aligns to its page.
+    #[test]
+    fn s42_11_align_is_one_undo_step_per_action() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, nodes) = three_pieces(&mut engine, &mut editor);
+        let before = the_shapes(&mut engine);
+        let left = before
+            .iter()
+            .map(|s| s.placement.x)
+            .fold(f64::INFINITY, f64::min);
+        let depth = undo_depth(&mut engine);
+        let align = |action| Asked {
+            align: Some(action),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, align(AlignAction::Left));
+        let after = the_shapes(&mut engine);
+        for (shape, origin) in after.iter().zip(&before) {
+            assert_eq!(shape.placement.x, left, "{:?}", shape.node);
+            assert_eq!(shape.placement.y, origin.placement.y);
+        }
+        ask(&mut engine, &mut editor, align(AlignAction::Bottom));
+        assert_eq!(undo_depth(&mut engine), depth + 2, "two actions, two steps");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine), after, "the bottom align undone");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(
+            the_shapes(&mut engine),
+            before,
+            "one undo restores all three"
+        );
+
+        // Alone, the ellipse goes to the right edge of the 1080 px page.
+        editor.selected = Selection::one(page, nodes[1]);
+        ask(&mut engine, &mut editor, align(AlignAction::Right));
+        let ellipse = the_shapes(&mut engine)[1].placement;
+        assert_eq!(ellipse.x + ellipse.w, 1080.0);
+        // Already there: nothing to do adds no step.
+        let depth = undo_depth(&mut engine);
+        ask(&mut engine, &mut editor, align(AlignAction::Right));
+        assert_eq!(undo_depth(&mut engine), depth);
+    }
+
+    // S42-12: Distribute spreads three elements with equal gaps in one undo
+    // step.
+    #[test]
+    fn s42_12_distribute_is_one_undo_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (_, _) = three_pieces(&mut engine, &mut editor);
+        let before = the_shapes(&mut engine);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                distribute: Some(DistributeAxis::Horizontal),
+                ..Asked::default()
+            },
+        );
+        let mut boxes: Vec<Placement> = the_shapes(&mut engine)
+            .iter()
+            .map(|s| s.placement)
+            .collect();
+        boxes.sort_by(|a, b| a.x.total_cmp(&b.x));
+        let gaps: Vec<f64> = boxes
+            .windows(2)
+            .map(|w| w[1].x - (w[0].x + w[0].w))
+            .collect();
+        assert!((gaps[0] - gaps[1]).abs() < 0.01, "{gaps:?}");
+        assert_ne!(the_shapes(&mut engine), before, "the middle one moved");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine), before);
+    }
+
+    // S42-13: the layer order moves the whole selection in one undo step
+    // and keeps its relative order.
+    #[test]
+    fn s42_13_layer_order_is_one_undo_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, c]) = three_pieces(&mut engine, &mut editor);
+        assert_eq!(roots_now(&mut engine), [a, b, c]);
+        let depth = undo_depth(&mut engine);
+        let order = |order| Asked {
+            order: Some(order),
+            ..Asked::default()
+        };
+        editor.selected = Selection::of(page, [b, a]);
+        ask(&mut engine, &mut editor, order(Order::Front));
+        assert_eq!(roots_now(&mut engine), [c, a, b], "a stays below b");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(roots_now(&mut engine), [a, b, c]);
+        editor.selected = Selection::of(page, [c, b]);
+        ask(&mut engine, &mut editor, order(Order::Back));
+        assert_eq!(roots_now(&mut engine), [b, c, a], "b stays below c");
+        assert_eq!(undo_depth(&mut engine), depth + 1, "two moves, one step");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(
+            roots_now(&mut engine),
+            [a, b, c],
+            "one undo takes both back"
+        );
+
+        editor.selected = Selection::of(page, [a, c]);
+        ask(&mut engine, &mut editor, order(Order::Backward));
+        assert_eq!(roots_now(&mut engine), [a, c, b]);
+        ask(&mut engine, &mut editor, order(Order::Back));
+        assert_eq!(roots_now(&mut engine), [a, c, b], "already at the back");
+        ask(&mut engine, &mut editor, order(Order::Forward));
+        assert_eq!(roots_now(&mut engine), [b, a, c]);
+        assert_eq!(undo_depth(&mut engine), depth + 2, "no step for no change");
+    }
+
+    // S42-14: Ctrl+Alt+L/C/R align, Ctrl+] and Ctrl+[ move one step, with
+    // Shift to the front or the back; without Ctrl they do nothing.
+    #[test]
+    fn s42_14_shortcuts_align_and_order() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, c]) = three_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let command_alt = Modifiers::COMMAND.plus(Modifiers::ALT);
+        let command_shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        let right = |s: &Shape| s.placement.x + s.placement.w;
+        let rightmost = the_shapes(&mut engine)
+            .iter()
+            .map(right)
+            .fold(f64::NEG_INFINITY, f64::max);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::R), command_alt);
+        assert!(
+            the_shapes(&mut engine)
+                .iter()
+                .all(|s| right(s) == rightmost)
+        );
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::C), command_alt);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::L), command_alt);
+        let shapes = the_shapes(&mut engine);
+        assert!(
+            shapes
+                .iter()
+                .all(|s| s.placement.x == shapes[0].placement.x)
+        );
+
+        editor.selected = Selection::one(page, a);
+        let key = |editor: &mut Editor, engine: &mut Gafira, key, modifiers| {
+            frame_with(&ctx, editor, engine, Some(key), modifiers);
+            roots_now(engine)
+        };
+        assert_eq!(
+            key(
+                &mut editor,
+                &mut engine,
+                Key::CloseBracket,
+                Modifiers::COMMAND
+            ),
+            [b, a, c]
+        );
+        assert_eq!(
+            key(&mut editor, &mut engine, Key::CloseBracket, command_shift),
+            [b, c, a]
+        );
+        assert_eq!(
+            key(
+                &mut editor,
+                &mut engine,
+                Key::OpenBracket,
+                Modifiers::COMMAND
+            ),
+            [b, a, c]
+        );
+        assert_eq!(
+            key(&mut editor, &mut engine, Key::OpenBracket, command_shift),
+            [a, b, c]
+        );
+        // Shift+] reads as `}` on many layouts.
+        assert_eq!(
+            key(
+                &mut editor,
+                &mut engine,
+                Key::CloseCurlyBracket,
+                command_shift
+            ),
+            [b, c, a]
+        );
+        // With AltGr (Ctrl+Alt on Windows) for the bracket, as on Spanish
+        // layouts.
+        assert_eq!(
+            key(&mut editor, &mut engine, Key::OpenBracket, command_alt),
+            [b, a, c]
+        );
+        assert_eq!(
+            key(
+                &mut editor,
+                &mut engine,
+                Key::CloseBracket,
+                Modifiers::COMMAND
+            ),
+            [b, c, a]
+        );
+        assert_eq!(
+            key(&mut editor, &mut engine, Key::OpenBracket, Modifiers::NONE),
+            [b, c, a],
+            "[ alone is not an order action"
+        );
+        assert_eq!(
+            key(&mut editor, &mut engine, Key::L, Modifiers::COMMAND),
+            [b, c, a]
+        );
+    }
+
+    // S42-15: what the arrange actions can do: align with one or more,
+    // distribute with three or more, and only the order actions that would
+    // change the layers (FD-12).
+    #[test]
+    fn s42_15_arrange_actions_are_off_when_they_cannot_act() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, c]) = three_pieces(&mut engine, &mut editor);
+        let document = engine.edit().document();
+        let can = |selected: Selection| CanArrange::of(document.as_deref(), &selected);
+        assert_eq!(can(Selection::default()), CanArrange::default());
+        let all = can(Selection::of(page, [a, b, c]));
+        assert!(all.align && all.distribute);
+        assert_eq!(all.order, [false; 4], "all of them: no order changes");
+        let top = can(Selection::one(page, c));
+        assert!(top.align && !top.distribute);
+        // ORDERS: forward, backward, front, back.
+        assert_eq!(top.order, [false, true, false, true]);
+        let bottom = can(Selection::of(page, [a, b]));
+        assert_eq!(bottom.order, [true, false, true, false]);
+        assert!(!bottom.distribute);
+        assert_eq!(can(Selection::one(page, b)).order, [true; 4]);
+    }
+
+    // S42-16: frames draw the arrange buttons for one and for several
+    // elements, and their tooltips name the shortcut.
+    #[test]
+    fn s42_16_frames_draw_the_arrange_buttons() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, ..]) = three_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        editor.selected = Selection::one(page, a);
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(the_shapes(&mut engine).len(), 3);
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let tip = arrange_tooltip(&ctx, &texts, "arrange.front", Some(FRONT));
+        assert!(tip.starts_with("Al frente · "), "{tip}");
+        assert!(tip.ends_with(']') && !tip.contains("Bracket"), "{tip}");
+        assert_eq!(
+            arrange_tooltip(&ctx, &texts, "arrange.align_top", None),
+            "Alinear arriba"
+        );
+        assert_eq!(
+            distribute_tooltip(&texts, "arrange.distribute_vertical", false),
+            "Distribuir verticalmente: selecciona tres elementos o más"
+        );
     }
 }

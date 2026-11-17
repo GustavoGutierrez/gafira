@@ -53,11 +53,21 @@ pub(crate) enum Icon {
     RotateRight,
     FlipHorizontal,
     FlipVertical,
+    AlignLeft,
+    AlignCenter,
+    AlignRight,
+    AlignTop,
+    AlignMiddle,
+    AlignBottom,
+    DistributeHorizontal,
+    DistributeVertical,
+    BringToFront,
+    SendToBack,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 23] = [
+    pub(crate) const ALL: [Self; 33] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -81,6 +91,16 @@ impl Icon {
         Self::RotateRight,
         Self::FlipHorizontal,
         Self::FlipVertical,
+        Self::AlignLeft,
+        Self::AlignCenter,
+        Self::AlignRight,
+        Self::AlignTop,
+        Self::AlignMiddle,
+        Self::AlignBottom,
+        Self::DistributeHorizontal,
+        Self::DistributeVertical,
+        Self::BringToFront,
+        Self::SendToBack,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -109,6 +129,16 @@ impl Icon {
             Self::RotateRight => "arrow-clockwise",
             Self::FlipHorizontal => "flip-horizontal",
             Self::FlipVertical => "flip-vertical",
+            Self::AlignLeft => "align-left",
+            Self::AlignCenter => "align-center-horizontal",
+            Self::AlignRight => "align-right",
+            Self::AlignTop => "align-top",
+            Self::AlignMiddle => "align-center-vertical",
+            Self::AlignBottom => "align-bottom",
+            Self::DistributeHorizontal => "columns",
+            Self::DistributeVertical => "rows",
+            Self::BringToFront => "arrow-line-up",
+            Self::SendToBack => "arrow-line-down",
         }
     }
 
