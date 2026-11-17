@@ -19,7 +19,27 @@ pub enum ShapeGeometry {
     Ellipse,
 }
 
-/// A filled geometric shape (no stroke yet).
+/// The outline drawn along the edge of a shape, centred on it (spec 038,
+/// FD-17): half of the width falls inside the box and half outside.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShapeStroke {
+    /// The colour of the outline.
+    pub color: Color,
+    /// The width, in document px, `0..=MAX_WIDTH`; 0 draws nothing.
+    pub width: f64,
+}
+
+impl ShapeStroke {
+    /// The widest outline a document holds, in px.
+    pub const MAX_WIDTH: f64 = 1000.0;
+
+    /// An outline of `color` and `width`.
+    pub const fn new(color: Color, width: f64) -> Self {
+        Self { color, width }
+    }
+}
+
+/// A geometric shape with an optional fill and outline.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShapeNode {
     /// The outline.
@@ -27,14 +47,34 @@ pub struct ShapeNode {
     /// The fill color; `None` draws nothing.
     #[serde(default)]
     pub fill: Option<Color>,
+    /// The outline drawn along the edge; `None` draws none (spec 038).
+    ///
+    /// Written only when set, so a shape without one keeps the bytes it had
+    /// before spec 038, and a shape saved then loads with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<ShapeStroke>,
+    /// The corner radius of a rectangle in px, `>= 0` (spec 038, FD-17).
+    ///
+    /// A radius above half the shorter side is drawn at that half (FD-36 a);
+    /// the stored value is kept. An ellipse ignores it. Written only when it
+    /// is not `+0.0`.
+    #[serde(default, skip_serializing_if = "is_positive_zero")]
+    pub corner_radius: f64,
+}
+
+/// Whether `value` is `+0.0`, the default radius.
+fn is_positive_zero(value: &f64) -> bool {
+    value.to_bits() == 0
 }
 
 impl ShapeNode {
-    /// A shape without a fill.
+    /// A shape without a fill, an outline or rounded corners.
     pub const fn new(geometry: ShapeGeometry) -> Self {
         Self {
             geometry,
             fill: None,
+            stroke: None,
+            corner_radius: 0.0,
         }
     }
 }
@@ -221,6 +261,65 @@ mod tests {
         for n in [group, bare, e] {
             assert_eq!(serde_json::from_str::<Node>(&node_json(&n)).unwrap(), n);
         }
+    }
+
+    // S38-01: an outline and a corner radius are written only when set, so a
+    // shape without them keeps its earlier bytes, and they round-trip.
+    #[test]
+    fn s38_01_outline_and_radius_are_additive_on_the_wire() {
+        let kind = |n: &Node| serde_json::to_value(n).unwrap()["kind"].to_string();
+        let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+        shape.stroke = Some(ShapeStroke::new(
+            Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
+            2.5,
+        ));
+        shape.corner_radius = 12.0;
+        let n = Node::new(base(1), NodeKind::Shape(shape));
+        assert_eq!(
+            kind(&n),
+            r#"{"corner_radius":12.0,"fill":null,"geometry":"rect","stroke":{"color":{"a":1.0,"b":1.0,"g":0.0,"r":0.0,"space":"srgb"},"width":2.5},"type":"shape"}"#
+        );
+        assert_eq!(serde_json::from_str::<Node>(&node_json(&n)).unwrap(), n);
+        // A negative zero radius is a set value and survives.
+        shape.corner_radius = -0.0;
+        shape.stroke = None;
+        let n = Node::new(base(1), NodeKind::Shape(shape));
+        let back: Node = serde_json::from_str(&node_json(&n)).unwrap();
+        let NodeKind::Shape(back) = back.kind else {
+            panic!("not a shape")
+        };
+        assert!(back.corner_radius.is_sign_negative());
+        // Only a positive zero is left out.
+        let plain = Node::new(
+            base(1),
+            NodeKind::Shape(ShapeNode::new(ShapeGeometry::Rect)),
+        );
+        assert!(!node_json(&plain).contains("corner_radius"));
+        assert!(!node_json(&plain).contains("stroke"));
+    }
+
+    // S38-01: a shape saved before spec 038 loads with no outline and radius 0.
+    #[test]
+    fn s38_01_an_old_shape_loads_with_the_defaults() {
+        let n = parse_kind(r#"{"type":"shape","geometry":"rect","fill":null}"#).unwrap();
+        let NodeKind::Shape(shape) = n.kind else {
+            panic!("not a shape")
+        };
+        assert_eq!(shape.stroke, None);
+        assert_eq!(shape.corner_radius.to_bits(), 0f64.to_bits());
+        assert_eq!(shape, ShapeNode::new(ShapeGeometry::Rect));
+        for bad in [
+            r#"{"type":"shape","geometry":"rect","stroke":{"width":1}}"#,
+            r#"{"type":"shape","geometry":"rect","stroke":{"color":{"space":"srgb","r":0,"g":0,"b":0,"a":1}}}"#,
+            r#"{"type":"shape","geometry":"rect","corner_radius":"big"}"#,
+        ] {
+            assert!(parse_kind(bad).is_err(), "{bad}");
+        }
+        let null = parse_kind(r#"{"type":"shape","geometry":"rect","stroke":null}"#).unwrap();
+        assert!(matches!(
+            null.kind,
+            NodeKind::Shape(ShapeNode { stroke: None, .. })
+        ));
     }
 
     fn parse_kind(kind: &str) -> Result<Node, serde_json::Error> {

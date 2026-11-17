@@ -288,6 +288,8 @@ fn shape(
         NodeKind::Shape(ShapeNode {
             geometry,
             fill: Some(fill),
+            stroke: None,
+            corner_radius: 0.0,
         }),
     )
 }

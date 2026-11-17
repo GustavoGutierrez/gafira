@@ -387,6 +387,8 @@ fn build_node(id: NodeId, spec: &NodeSpec) -> Node {
         KindSpec::Shape(geometry, fill) => NodeKind::Shape(ShapeNode {
             geometry: *geometry,
             fill: *fill,
+            stroke: None,
+            corner_radius: 0.0,
         }),
         KindSpec::Extension(type_id, schema_version, payload) => {
             NodeKind::Extension(ExtensionNode {
@@ -738,6 +740,8 @@ pub fn corrupt(mut doc: Document, kind: Corruption, pick: usize) -> Corrupted {
                 let kind = NodeKind::Shape(ShapeNode {
                     geometry: ShapeGeometry::Rect,
                     fill: Some(fill),
+                    stroke: None,
+                    corner_radius: 0.0,
                 });
                 let node = fresh(&mut edit, kind);
                 add_root(&mut edit, page, node);

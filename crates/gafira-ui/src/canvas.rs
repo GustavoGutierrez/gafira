@@ -36,7 +36,9 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
             return;
         }
         let drawn = match &node.kind {
-            NodeKind::Shape(ShapeNode { geometry, fill }) => Some((*geometry, *fill, None, None)),
+            NodeKind::Shape(ShapeNode { geometry, fill, .. }) => {
+                Some((*geometry, *fill, None, None))
+            }
             NodeKind::Text(text) => Some((ShapeGeometry::Rect, None, Some(text.clone()), None)),
             NodeKind::Image(image) => Some((ShapeGeometry::Rect, None, None, Some(image.asset))),
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
@@ -228,6 +230,8 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
         NodeKind::Shape(ShapeNode {
             geometry,
             fill: Some(fill),
+            stroke: None,
+            corner_radius: 0.0,
         }),
         placement,
     )
@@ -341,6 +345,8 @@ mod tests {
                 NodeKind::Shape(ShapeNode {
                     geometry,
                     fill: None,
+                    stroke: None,
+                    corner_radius: 0.0,
                 }),
             ))
         };

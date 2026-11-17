@@ -281,6 +281,10 @@ fn unit_interval(v: f64) -> bool {
     (0.0..=1.0).contains(&v)
 }
 
+fn stroke_width(v: f64) -> bool {
+    (0.0..=crate::ShapeStroke::MAX_WIDTH).contains(&v)
+}
+
 fn font_size(v: f64) -> bool {
     v > 0.0 && v <= crate::TextNode::MAX_SIZE
 }
@@ -318,6 +322,17 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
             out.push((NodeField::FillChannel, f64::from(channel), any));
         }
         out.push((NodeField::FillAlpha, f64::from(a), unit_interval));
+    }
+    if let NodeKind::Shape(shape) = &node.kind {
+        if let Some(stroke) = shape.stroke {
+            let [r, g, b, a] = channels(stroke.color);
+            for channel in [r, g, b] {
+                out.push((NodeField::StrokeChannel, f64::from(channel), any));
+            }
+            out.push((NodeField::StrokeAlpha, f64::from(a), unit_interval));
+            out.push((NodeField::StrokeWidth, stroke.width, stroke_width));
+        }
+        out.push((NodeField::CornerRadius, shape.corner_radius, non_negative));
     }
     if let NodeKind::Text(text) = &node.kind {
         for span in text.content.spans() {
@@ -393,7 +408,7 @@ mod tests {
     use crate::document::test_document;
     use crate::{
         Axis, Document, Dpi, ElementBase, ExtensionNode, GroupNode, Node, NodeId, NodeKind, Page,
-        PageId, PageSize, PageSizeError, Placement, ShapeGeometry, ShapeNode,
+        PageId, PageSize, PageSizeError, Placement, ShapeGeometry, ShapeNode, ShapeStroke,
     };
 
     type Edit = fn(&mut Document);
@@ -860,6 +875,112 @@ mod tests {
             node_mut(&mut d, 2, |n| set(n, *value));
             assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
         }
+    }
+
+    fn stroked(color: Color, width: f64, radius: f64) -> NodeKind {
+        let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+        shape.stroke = Some(ShapeStroke::new(color, width));
+        shape.corner_radius = radius;
+        NodeKind::Shape(shape)
+    }
+
+    // S38-02: the outline and the corner radius are validated like the fill.
+    #[test]
+    fn s38_02_outline_and_corner_radius_rows() {
+        type Set = fn(&mut Node, f64);
+        let black = |a: f32| Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a));
+        let rows: Vec<(Set, f64, String)> = vec![
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                0.0,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                ShapeStroke::MAX_WIDTH,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                ShapeStroke::MAX_WIDTH + 0.5,
+                range(2, "StrokeWidth", ShapeStroke::MAX_WIDTH + 0.5),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                -0.5,
+                range(2, "StrokeWidth", -0.5),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), v, 0.0),
+                f64::NAN,
+                non_finite(2, "StrokeWidth"),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(v as f32, 0.0, 0.0, 1.0)), 1.0, 0.0),
+                f64::NAN,
+                non_finite(2, "StrokeChannel"),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(v as f32, 0.0, 0.0, 1.0)), 1.0, 0.0),
+                -0.5,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, v as f32)), 1.0, 0.0),
+                1.5,
+                range(2, "StrokeAlpha", 1.5),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, v as f32)), 1.0, 0.0),
+                f64::INFINITY,
+                non_finite(2, "StrokeAlpha"),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                0.0,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                1e9,
+                "Ok(())".into(),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                -1e-9,
+                range(2, "CornerRadius", -1e-9),
+            ),
+            (
+                |n, v| n.kind = stroked(Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)), 1.0, v),
+                f64::INFINITY,
+                non_finite(2, "CornerRadius"),
+            ),
+        ];
+        for (i, (set, value, want)) in rows.iter().enumerate() {
+            let mut d = base();
+            node_mut(&mut d, 2, |n| set(n, *value));
+            assert_eq!(format!("{:?}", d.validate()), *want, "row {i}");
+        }
+        // A radius with no outline is checked too.
+        let mut d = base();
+        node_mut(&mut d, 2, |n| {
+            let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+            shape.corner_radius = -1.0;
+            n.kind = NodeKind::Shape(shape);
+        });
+        assert_eq!(
+            format!("{:?}", d.validate()),
+            range(2, "CornerRadius", -1.0)
+        );
+        // The fill is reported before the outline.
+        let mut d = base();
+        node_mut(&mut d, 2, |n| {
+            let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+            shape.fill = Some(black(2.0));
+            shape.stroke = Some(ShapeStroke::new(black(3.0), 1.0));
+            n.kind = NodeKind::Shape(shape);
+        });
+        assert_eq!(format!("{:?}", d.validate()), range(2, "FillAlpha", 2.0));
     }
 
     #[test]
