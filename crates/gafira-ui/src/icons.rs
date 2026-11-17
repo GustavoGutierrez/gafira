@@ -49,11 +49,15 @@ pub(crate) enum Icon {
     ZoomOut,
     ZoomIn,
     Expand,
+    RotateLeft,
+    RotateRight,
+    FlipHorizontal,
+    FlipVertical,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 19] = [
+    pub(crate) const ALL: [Self; 23] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -73,6 +77,10 @@ impl Icon {
         Self::ZoomOut,
         Self::ZoomIn,
         Self::Expand,
+        Self::RotateLeft,
+        Self::RotateRight,
+        Self::FlipHorizontal,
+        Self::FlipVertical,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -97,6 +105,10 @@ impl Icon {
             Self::ZoomOut => "minus",
             Self::ZoomIn => "plus",
             Self::Expand => "caret-down",
+            Self::RotateLeft => "arrow-counter-clockwise",
+            Self::RotateRight => "arrow-clockwise",
+            Self::FlipHorizontal => "flip-horizontal",
+            Self::FlipVertical => "flip-vertical",
         }
     }
 
