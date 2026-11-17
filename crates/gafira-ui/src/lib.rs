@@ -18,6 +18,7 @@ mod export;
 mod files;
 mod format;
 mod home;
+mod icons;
 mod recent;
 mod saving;
 mod settings;
@@ -27,6 +28,7 @@ mod style;
 mod text;
 mod versions;
 mod widgets;
+mod zoom;
 
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, UiConfig, run};

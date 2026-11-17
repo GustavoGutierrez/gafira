@@ -151,6 +151,7 @@ mod tests {
         "text",
         "text.secondary",
         "text.muted",
+        "text.disabled",
         "primary.bg",
         "primary.bg.hover",
         "primary.fg",

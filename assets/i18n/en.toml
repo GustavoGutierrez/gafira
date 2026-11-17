@@ -183,6 +183,16 @@ unsaved = "Unsaved changes"
 undo = "Undo"
 redo = "Redo"
 add_page = "Add page"
+delete = "Delete"
+
+[zoom]
+in = "Zoom in"
+out = "Zoom out"
+fit = "Fit"
+menu = "Zoom"
+
+[tooltip]
+shortcut = "{action} · {keys}"
 
 [tab]
 templates = "Templates"

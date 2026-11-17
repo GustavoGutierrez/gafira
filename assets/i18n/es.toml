@@ -183,6 +183,16 @@ unsaved = "Cambios sin guardar"
 undo = "Deshacer"
 redo = "Rehacer"
 add_page = "Añadir página"
+delete = "Eliminar"
+
+[zoom]
+in = "Acercar"
+out = "Alejar"
+fit = "Ajustar"
+menu = "Zoom"
+
+[tooltip]
+shortcut = "{action} · {keys}"
 
 [tab]
 templates = "Plantillas"
