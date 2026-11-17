@@ -1,6 +1,6 @@
 # 037 — Iconos Phosphor y botones de icono del editor de diseño
 
-> **Estado:** in-progress — 2026-11-17 — iconos, botones de icono, menú Edición y zoom en curso.
+> **Estado:** done — 2026-11-17 — S37-01..S37-07 cubiertos por `gafira-ui` (`icons`, `widgets`, `zoom`, `editor`; 22 tests nuevos); 2993 tests.
 
 ## Objetivo
 
@@ -73,7 +73,13 @@ Lógica crítica (geometría y límites): S37-01, S37-03 y S37-06. Sus tests se 
   - `zoom::tests` (S37-06, S37-07): 4.
   - `editor::tests::s37_07_*`: 1.
 - Comprobación visual: el render ASCII a 32 px de «house», «shapes-fill» y «clock-counter-clockwise» sale con los huecos y la orientación correctos.
-- Gates: pendientes del cierre.
+- Gates:
+  - `cargo fmt --check`: ok.
+  - `cargo clippy --workspace --all-targets --locked -- -D warnings`: ok.
+  - `cargo test --workspace --locked`: 2993 tests en 229 grupos, todos ok.
+  - `python3 tools/sync_agents.py --check`: ok.
+- `cargo deny check`: bans, licenses y sources ok. Advisories falla por avisos anteriores a esta spec (`ttf-parser` RUSTSEC-2026-0192, `zbus_names` RUSTSEC-2026-0371, `zip` RUSTSEC-2026-0367). El único cambio de `Cargo.lock` es la arista de desarrollo hacia `blake3`, que ya estaba en el árbol.
+- Pendiente manual: revisar el editor en la ventana real (Linux, Windows y macOS) a escala 1× y 2×.
 
 ## Riesgos y decisiones abiertas
 
