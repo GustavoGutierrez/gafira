@@ -20,6 +20,7 @@ mod format;
 mod home;
 mod icons;
 mod recent;
+mod rotation;
 mod saving;
 mod selection;
 mod settings;

@@ -15,6 +15,7 @@ gafira-engine.workspace = true
 gafira-ports.workspace = true
 gafira-theme.workspace = true
 gafira-i18n.workspace = true
+gafira-layout.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_extras.workspace = true
@@ -27,6 +28,7 @@ workspace = true
 [dev-dependencies]
 # Spec 037: the licence test checks the BLAKE3 hash of each vendored icon.
 blake3.workspace = true
+proptest.workspace = true
 gafira-assets.workspace = true
 gafira-platform.workspace = true
 gafira-format.workspace = true
