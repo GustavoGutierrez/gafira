@@ -207,6 +207,13 @@ rotate_left = "Girar 90° a la izquierda"
 rotate_right = "Girar 90° a la derecha"
 flip_horizontal = "Voltear horizontalmente"
 flip_vertical = "Voltear verticalmente"
+cut = "Cortar"
+copy = "Copiar"
+paste = "Pegar"
+duplicate = "Duplicar"
+copy_name = "{name} copia"
+group = "Agrupar"
+ungroup = "Desagrupar"
 
 [arrange]
 menu = "Organizar"
@@ -268,6 +275,8 @@ down = "Bajar"
 empty = "Esta página no tiene elementos."
 group = "Grupo"
 element = "Elemento"
+open = "Abrir grupo"
+close = "Cerrar grupo"
 
 [inspector]
 position = "Posición"
