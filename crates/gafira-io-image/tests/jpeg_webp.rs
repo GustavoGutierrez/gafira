@@ -96,6 +96,8 @@ fn square_document(fill: Color) -> Document {
         NodeKind::Shape(ShapeNode {
             geometry: ShapeGeometry::Rect,
             fill: Some(fill),
+            stroke: None,
+            corner_radius: 0.0,
         }),
     ));
     let mut page = Page::new(
