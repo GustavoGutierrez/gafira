@@ -28,13 +28,16 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use gafira_doc::contract::{CancelToken, Progress};
 use gafira_doc::{AssetRef, Document, NodeKind, PageId};
+use gafira_geom::IRect;
 use gafira_ports::export::{
     ExportError, ExportJob, ExportReport, ExportRequest, ExportScope, ExportSink, Exporter,
-    ImageDecoder, ImagePixels, PageRenderers,
+    ImageDecoder, ImagePixels, PageRenderRequest, PageRenderers,
 };
 use gafira_ports::format::FormatRegistry;
 use gafira_ports::store::ContentStore;
 use gafira_ports::system::{FileSystem, FileWrite, WriteSeek};
+use gafira_raster::straight_srgb8;
+use gafira_time::Flicks;
 
 use crate::engine::{EngineError, Ports};
 use crate::license::LicenseService;
@@ -144,6 +147,75 @@ impl ExportService {
             filesystem: Arc::clone(&self.filesystem),
         })
     }
+}
+
+impl ExportService {
+    /// A small picture of `page` of the open document for the export
+    /// dialog (spec 039, 03 §7.5), drawn by the `PageRenderers` of the
+    /// exports on the page background or transparent. Its long side is at
+    /// most [`THUMBNAIL_SIDE`](gafira_ports::repository::THUMBNAIL_SIDE)
+    /// pixels and a small page is not enlarged. Its images come from the
+    /// store like an export's; one that cannot be read is left out of the
+    /// picture, and the export itself reports it.
+    ///
+    /// # Errors
+    /// [`EngineError::NoSession`] with no open document;
+    /// [`EngineError::Export`] when the document has no such page, its size
+    /// has no pixels or the render fails.
+    pub fn preview(&self, page: PageId, transparent: bool) -> Result<PagePreview, EngineError> {
+        let document = self
+            .shared
+            .lock()
+            .as_ref()
+            .map(|session| Arc::clone(session.history.document()))
+            .ok_or(EngineError::NoSession)?;
+        let invalid = |detail: &str| {
+            EngineError::Export(ExportError::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                detail,
+            )))
+        };
+        let target = document
+            .page(page)
+            .ok_or_else(|| invalid("the page is not in the document"))?;
+        let px = target
+            .size
+            .to_px(document.dpi())
+            .map_err(|_| invalid("the page size is not finite"))?;
+        let (width, height, scale) = crate::thumbnail::size(px.width(), px.height())
+            .ok_or_else(|| invalid("the page has no pixels"))?;
+        let images =
+            decode_images(&document, &[page], &*self.store, &*self.images).unwrap_or_default();
+        let image = self
+            .pages
+            .for_document(&document, images)
+            .render(
+                &PageRenderRequest {
+                    page,
+                    time: Flicks::default(),
+                    scale: scale as f32,
+                    region: IRect::new(0, 0, width as i32, height as i32),
+                    transparent,
+                },
+                &CancelToken::new(),
+            )
+            .map_err(|error| EngineError::Export(error.into()))?;
+        let rgba = straight_srgb8(&image).ok_or_else(|| invalid("the render is a mask"))?;
+        Ok(PagePreview {
+            width: image.width(),
+            height: image.height(),
+            rgba,
+        })
+    }
+}
+
+/// The picture of [`ExportService::preview`]: straight 8-bit sRGB RGBA,
+/// row by row.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PagePreview {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
 }
 
 /// An export that passed every check of [`ExportService::prepare`] and owns
@@ -1050,5 +1122,103 @@ mod tests {
         ));
         assert_eq!(fs.file("/out/poster.fake"), None);
         assert_eq!(fs.file("/out/poster.fake.tmp"), None);
+    }
+
+    /// Renderers that record each request and answer a buffer of its
+    /// region: clear when the background is transparent, white otherwise.
+    #[derive(Default)]
+    struct RecordingPages {
+        requests: Arc<Mutex<Vec<PageRenderRequest>>>,
+    }
+
+    struct Recorder(Arc<Mutex<Vec<PageRenderRequest>>>);
+
+    impl PageRenderer for Recorder {
+        fn render(
+            &self,
+            req: &PageRenderRequest,
+            _cancel: &CancelToken,
+        ) -> Result<ImageBuf, RenderError> {
+            self.0.lock().unwrap().push(*req);
+            let (width, height) = (req.region.width(), req.region.height());
+            let value = if req.transparent { 0 } else { 255 };
+            Ok(ImageBuf::new(
+                width,
+                height,
+                PixelBuf::Rgba8(vec![value; (width * height * 4) as usize]),
+            )?)
+        }
+    }
+
+    impl PageRenderers for RecordingPages {
+        fn for_document(
+            &self,
+            _document: &Document,
+            _images: gafira_ports::export::ImagePixels,
+        ) -> Box<dyn PageRenderer> {
+            Box::new(Recorder(Arc::clone(&self.requests)))
+        }
+    }
+
+    /// An engine over `pages` with a new document and one page of
+    /// `width` × `height` px.
+    fn preview_engine(pages: Arc<RecordingPages>, width: f64, height: f64) -> (Gafira, PageId) {
+        let mut ports = six_ports();
+        ports.pages = pages;
+        let mut engine =
+            Gafira::new(ports, Registries::new(), config(), quiet_channel()).expect("an engine");
+        engine.projects().new_document().expect("a document");
+        let size = gafira_doc::PageSize {
+            width: gafira_geom::Length::new(width, gafira_geom::Unit::Px),
+            height: gafira_geom::Length::new(height, gafira_geom::Unit::Px),
+        };
+        let len = engine.edit().document().expect("a session").pages().len();
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::InsertPage::new(
+                len,
+                "P".to_owned(),
+                size,
+            )))
+            .expect("the page is added");
+        let page = engine.edit().document().expect("a session").pages()[len].id;
+        (engine, page)
+    }
+
+    // S39-05: the preview draws the page with its long side at 512 px, the
+    // proportion kept, in straight 8-bit RGBA, on the background asked for.
+    #[test]
+    fn s39_05_the_preview_draws_the_page_at_512_px_on_its_long_side() {
+        let pages = Arc::new(RecordingPages::default());
+        let (engine, page) = preview_engine(Arc::clone(&pages), 2048.0, 1024.0);
+        let preview = engine.export().preview(page, true).expect("a preview");
+        assert_eq!((preview.width, preview.height), (512, 256));
+        assert_eq!(preview.rgba.len(), 512 * 256 * 4);
+        assert!(preview.rgba.iter().all(|byte| *byte == 0), "clear");
+        let opaque = engine.export().preview(page, false).expect("a preview");
+        assert!(opaque.rgba.iter().all(|byte| *byte == 255), "white");
+        let requests = pages.requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].page, page);
+        assert_eq!(requests[0].region, IRect::new(0, 0, 512, 256));
+        assert!((requests[0].scale - 0.25).abs() < 1e-6);
+        assert!(requests[0].transparent);
+        assert!(!requests[1].transparent);
+    }
+
+    // S39-05: a small page is not enlarged; no document or a page the
+    // document does not hold is an error.
+    #[test]
+    fn s39_05_a_small_page_keeps_its_size_and_a_missing_page_is_an_error() {
+        let pages = Arc::new(RecordingPages::default());
+        let (engine, page) = preview_engine(Arc::clone(&pages), 100.0, 300.0);
+        let preview = engine.export().preview(page, false).expect("a preview");
+        assert_eq!((preview.width, preview.height), (100, 300));
+        assert!(engine.export().preview(PageId::new(999), false).is_err());
+        engine.projects().close();
+        assert!(matches!(
+            engine.export().preview(page, false),
+            Err(EngineError::NoSession)
+        ));
     }
 }

@@ -43,7 +43,7 @@ pub use engine::{
 pub use event::{
     EngineEvent, EventBus, EventSink, JobId, NoopSink, NoopWaker, RecoveryEntry, Waker,
 };
-pub use export::{ExportService, PreparedExport};
+pub use export::{ExportService, PagePreview, PreparedExport};
 pub use governor::{
     BackendTrim, CacheKind, GovernorOutcome, MAX_TRIM_PASSES, MemoryGovernor, PressureLevel,
     TileCacheTrim, Trimmable,

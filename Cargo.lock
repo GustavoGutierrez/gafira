@@ -1637,6 +1637,7 @@ dependencies = [
  "gafira-testkit",
  "gafira-time",
  "image",
+ "image-webp",
  "png 0.18.1",
 ]
 
