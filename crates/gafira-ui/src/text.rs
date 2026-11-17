@@ -198,6 +198,10 @@ mod tests {
         "export.not_allowed",
         "export.no_pages",
         "export.selection_unsupported",
+        "export.running",
+        "export.cancel",
+        "export.cancelled",
+        "export.busy",
     ];
 
     #[test]
