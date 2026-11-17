@@ -11,8 +11,10 @@
 use gafira_doc::{NodeId, Page, Placement};
 use gafira_layout::{AlignAction, DistributeAxis, DistributeMode, Item, Offset, Rect};
 
-/// The four layer-order actions of FD-12, over the roots of a page (index
-/// 0 is the back).
+use crate::group;
+
+/// The four layer-order actions of FD-12, over one sibling list of a page
+/// (index 0 is the back): the roots, or the children of a group (spec 043).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Order {
     /// «Al frente»: the selection on top of everything.
@@ -43,17 +45,27 @@ fn items(page: &Page, nodes: &[NodeId]) -> Option<Vec<Item>> {
 }
 
 /// The placements that change when `offsets` move `nodes`; a node that
-/// stays is left out.
+/// stays is left out. A group moves with every node below it (spec 043).
 fn shifted(page: &Page, nodes: &[NodeId], offsets: &[Offset]) -> Vec<(NodeId, Placement)> {
     nodes
         .iter()
         .zip(offsets)
         .filter(|(_, offset)| offset.dx != 0.0 || offset.dy != 0.0)
-        .filter_map(|(id, offset)| {
-            let mut placement = page.node(*id)?.base.placement;
+        .flat_map(|(id, offset)| {
+            if group::is_group(page, *id) {
+                let change = group::Change::Move {
+                    dx: offset.dx,
+                    dy: offset.dy,
+                };
+                return group::changed(page, *id, change);
+            }
+            let Some(node) = page.node(*id) else {
+                return Vec::new();
+            };
+            let mut placement = node.base.placement;
             placement.x += offset.dx;
             placement.y += offset.dy;
-            Some((*id, placement))
+            vec![(*id, placement)]
         })
         .collect()
 }
@@ -273,6 +285,37 @@ mod tests {
     }
 
     // S42-02: one element aligns to the page.
+    // S43-12: aligning a group moves it with every node below it, by its
+    // box around them.
+    #[test]
+    fn s43_12_a_group_aligns_with_its_children() {
+        let mut page = page(
+            &[
+                place(100.0, 50.0, 40.0, 30.0),
+                place(300.0, 200.0, 60.0, 20.0),
+                place(500.0, 400.0, 10.0, 10.0),
+            ],
+            &[],
+        );
+        let mut group = Node::new(
+            ElementBase::new(n(4), place(0.0, 0.0, 1.0, 1.0)),
+            NodeKind::Group(gafira_doc::GroupNode {}),
+        );
+        group.children = vec![n(2), n(3)];
+        page.nodes.insert(n(4), Arc::new(group));
+        page.roots = vec![n(1), n(4)];
+        let moves = aligned(&page, SIZE, &[n(1), n(4)], AlignAction::Left);
+        let moved: Vec<NodeId> = moves.iter().map(|(id, _)| *id).collect();
+        assert_eq!(moved, [n(4), n(2), n(3)]);
+        for id in [n(2), n(3)] {
+            let from = page.node(id).expect("a node").base.placement;
+            let to = moves.iter().find(|(m, _)| *m == id).expect("moved").1;
+            assert!(close(to.x - from.x, -200.0), "{id:?}");
+            assert_eq!(to.y, from.y);
+        }
+        assert!(close(box_after(&page, &moves, n(4)).x0, 100.0));
+    }
+
     #[test]
     fn s42_02_one_element_aligns_to_the_page() {
         let page = page(&[place(100.0, 50.0, 40.0, 30.0)], &[]);

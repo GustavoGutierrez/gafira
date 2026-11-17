@@ -69,6 +69,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 040 | [Selección múltiple](done/040-multi-selection.md) | `Selection` (nodos de una página, el último es el principal); clic, Mayús+clic, marco (Mayús suma), Esc y Ctrl+A en el lienzo; Ctrl/Mayús+clic en Capas; caja envolvente; mover en un solo deshacer con `Transaction` que se fusiona por gesto (`gafira-edit`) y eliminar con un `RemoveNodes`; Inspector con «N elementos», relleno y opacidad para todos; poda tras deshacer; 22 tests nuevos, 13 mutantes a mano muertos, 3048 tests |
 | 041 | [Girar y voltear](done/041-rotate-and-flip.md) | El modelo ya tenía `rotation_deg` y `flip` (sin cambio de formato); el lienzo dibuja, toca y redimensiona en ejes locales lo girado y volteado (formas, imágenes, texto); asa de giro con Mayús a 15°; «Giro» y botones en el Inspector; Edición → Girar 90° y Voltear (Mayús+H, Mayús+V) sobre toda la selección en un paso; giros normalizados a `[0, 360)`; 26 tests nuevos, 21 mutantes a mano muertos, 3074 tests |
 | 042 | [Alinear, distribuir y orden de apilado](done/042-align-distribute-and-order.md) | Alinear (6) a la caja de la selección o, con uno, a la página; Distribuir (2) con espacio igual; Traer adelante, Enviar atrás, Al frente y Al fondo conservando el orden relativo; cajas alineadas de lo girado (D-28), bloqueados según D-17 y D-29; un paso de deshacer por acción; fila en el Inspector, Edición → Organizar, Ctrl+Alt+L/C/R y Ctrl+] / Ctrl+[ (con Mayús, al frente y al fondo); 10 iconos Phosphor; 16 tests nuevos, 18 mutantes a mano muertos, 3090 tests |
+| 043 | [Agrupar, duplicar, copiar y pegar](done/043-group-duplicate-and-clipboard.md) | Agrupar (Ctrl+G) y Desagrupar (Ctrl+Mayús+G) sin mover nada y conservando el orden (D-35); doble clic entra en un grupo y Esc sale; mover, redimensionar, girar, voltear, alinear, ordenar y eliminar un grupo con todo lo que tiene; Capas en árbol; Ctrl+A y el marco con grupos; Duplicar (Ctrl+D, +10 px, «{nombre} copia»); Cortar, Copiar y Pegar con un portapapeles de la sesión que lleva las entradas de assets y texto plano al del sistema; Ctrl+Alt+C vuelve a alinear en la ventana; sin cambio de formato; un paso de deshacer por acción; 27 tests nuevos, 30 mutantes a mano muertos, 3117 tests |
 
 ### Historial del flujo anterior
 
@@ -85,4 +86,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **043**.
+Siguiente ID libre: **044**.

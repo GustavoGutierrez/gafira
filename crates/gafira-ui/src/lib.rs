@@ -13,11 +13,13 @@
 
 mod arrange;
 mod canvas;
+mod clipboard;
 mod dialogs;
 mod editor;
 mod export;
 mod files;
 mod format;
+mod group;
 mod home;
 mod icons;
 mod recent;

@@ -112,6 +112,9 @@ struct Shell {
     autosave: Option<mpsc::Receiver<AutosaveOutcome>>,
     /// Whether the recovery scan already ran.
     scanned: bool,
+    /// What Copiar or Cortar took last, for the whole session: a paste
+    /// reaches the next project too (spec 043).
+    clipboard: Option<std::sync::Arc<crate::clipboard::Clip>>,
     /// The projects a previous run left slots for (03 §7.9).
     recovery: Vec<RecoveryEntry>,
     /// The entry whose «Descartar» waits for confirmation.
@@ -186,6 +189,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 autosave: None,
                 scanned: false,
                 recovery: Vec::new(),
+                clipboard: None,
                 confirm_discard: None,
                 recovery_failure: None,
                 leaving: None,
@@ -655,6 +659,7 @@ impl eframe::App for Shell {
                 &self.theme,
                 &self.texts,
                 self.notice.as_deref(),
+                &mut self.clipboard,
             ),
         };
         let blocked = self.dialogs(ctx);

@@ -28,6 +28,13 @@ pub(crate) struct Shape {
     pub(crate) corner_radius: f64,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
+    /// The opacity of the groups above it, multiplied (spec 043); the
+    /// canvas fades the element by both. 1 for a root.
+    pub(crate) inherited: f32,
+    /// A group's box standing in for the group (spec 043): the editor lists
+    /// a selected group as one, with its box as the placement. The canvas
+    /// never draws one.
+    pub(crate) group: bool,
     /// The text of a text element; its box hits and moves like a rectangle
     /// (spec 027).
     pub(crate) text: Option<TextNode>,
@@ -36,11 +43,14 @@ pub(crate) struct Shape {
 }
 
 /// The visible shapes of `page`, back to front: roots in order, each node
-/// before its children (02 §3.1). Groups draw nothing themselves.
+/// before its children (02 §3.1). Groups draw nothing themselves; their
+/// opacity fades what is below them (spec 043).
 pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
-    fn visit(page: &Page, id: NodeId, out: &mut Vec<Shape>) {
+    fn visit(page: &Page, id: NodeId, inherited: f32, depth: usize, out: &mut Vec<Shape>) {
         let Some(node) = page.node(id) else { return };
-        if !node.base.visible {
+        // Deeper than any valid document, so a broken tree cannot recurse
+        // for ever.
+        if !node.base.visible || depth > 4096 {
             return;
         }
         let rect = ShapeNode::new(ShapeGeometry::Rect);
@@ -60,22 +70,34 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 stroke: shape.stroke,
                 corner_radius: shape.corner_radius,
                 opacity: node.base.opacity,
+                inherited,
+                group: false,
                 text,
                 image,
             });
         }
+        let below = inherited * node.base.opacity.clamp(0.0, 1.0);
         for child in &node.children {
-            visit(page, *child, out);
+            visit(page, *child, below, depth + 1, out);
         }
     }
     let mut out = Vec::new();
     for root in &page.roots {
-        visit(page, *root, &mut out);
+        visit(page, *root, 1.0, 0, &mut out);
     }
     out
 }
 
-/// One row of the Capas tab: a root element of the page, front first.
+impl Shape {
+    /// How opaque the canvas draws it: its own opacity by the one of the
+    /// groups above it, 0 to 1.
+    pub(crate) fn alpha(&self) -> f32 {
+        self.opacity.clamp(0.0, 1.0) * self.inherited.clamp(0.0, 1.0)
+    }
+}
+
+/// One row of the Capas tab: an element of the page, front first, the
+/// children of an open group below it (spec 043).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Layer {
     pub(crate) node: NodeId,
@@ -83,40 +105,96 @@ pub(crate) struct Layer {
     pub(crate) name: Option<String>,
     /// The catalog key of its kind (`pieces.rect`, `pieces.ellipse`, `layers.group`, ...).
     pub(crate) kind: &'static str,
-    /// Its index among the roots (0 is the back).
+    /// Its index among its siblings (0 is the back).
     pub(crate) index: usize,
+    /// How many siblings it has, itself included.
+    pub(crate) siblings: usize,
+    /// How many groups it is in: 0 for a root.
+    pub(crate) depth: usize,
+    /// The group it is in, `None` for a root.
+    pub(crate) parent: Option<NodeId>,
+    /// A group with children: the row opens and closes.
+    pub(crate) opens: bool,
 }
 
-/// The root elements of `page`, front first, as the Capas tab lists them.
-pub(crate) fn layers(page: &Page) -> Vec<Layer> {
-    page.roots
-        .iter()
-        .enumerate()
-        .rev()
-        .filter_map(|(index, id)| {
-            let node = page.node(*id)?;
-            let kind = match &node.kind {
-                NodeKind::Shape(ShapeNode {
-                    geometry: ShapeGeometry::Rect,
-                    ..
-                }) => "pieces.rect",
-                NodeKind::Shape(ShapeNode {
-                    geometry: ShapeGeometry::Ellipse,
-                    ..
-                }) => "pieces.ellipse",
-                NodeKind::Group(_) => "layers.group",
-                NodeKind::Text(_) => "layers.text",
-                NodeKind::Image(_) => "layers.image",
-                _ => "layers.element",
+/// The elements of `page`, front first, as the Capas tab lists them: the
+/// roots, and below each group in `open` its children, one step in.
+pub(crate) fn layers(page: &Page, open: &std::collections::BTreeSet<NodeId>) -> Vec<Layer> {
+    struct Walk<'a> {
+        page: &'a Page,
+        open: &'a std::collections::BTreeSet<NodeId>,
+        seen: std::collections::BTreeSet<NodeId>,
+        out: Vec<Layer>,
+    }
+    fn list(walk: &mut Walk<'_>, parent: Option<NodeId>, ids: &[NodeId], depth: usize) {
+        for (index, id) in ids.iter().enumerate().rev() {
+            let Some(node) = walk.page.node(*id) else {
+                continue;
             };
-            Some(Layer {
-                node: *id,
-                name: node.base.name.clone(),
-                kind,
-                index,
-            })
-        })
-        .collect()
+            // Deeper than any valid document, so a broken tree cannot
+            // recurse for ever.
+            if depth > 4096 || !walk.seen.insert(*id) {
+                continue;
+            }
+            let opens = matches!(node.kind, NodeKind::Group(_)) && !node.children.is_empty();
+            let row = layer(walk.page, *id, index, ids.len(), depth, parent, opens);
+            walk.out.push(row);
+            if opens && walk.open.contains(id) {
+                list(walk, Some(*id), &node.children, depth + 1);
+            }
+        }
+    }
+    let mut walk = Walk {
+        page,
+        open,
+        seen: std::collections::BTreeSet::new(),
+        out: Vec::new(),
+    };
+    list(&mut walk, None, &page.roots, 0);
+    walk.out
+}
+
+/// The row of `id`.
+fn layer(
+    page: &Page,
+    id: NodeId,
+    index: usize,
+    siblings: usize,
+    depth: usize,
+    parent: Option<NodeId>,
+    opens: bool,
+) -> Layer {
+    let node = page.node(id);
+    let kind = node.map_or("layers.element", |node| kind_key(&node.kind));
+    Layer {
+        node: id,
+        name: node.and_then(|node| node.base.name.clone()),
+        kind,
+        index,
+        siblings,
+        depth,
+        parent,
+        opens,
+    }
+}
+
+/// The catalog key that names a kind of element: `pieces.rect`,
+/// `layers.group`, ...
+pub(crate) fn kind_key(kind: &NodeKind) -> &'static str {
+    match kind {
+        NodeKind::Shape(ShapeNode {
+            geometry: ShapeGeometry::Rect,
+            ..
+        }) => "pieces.rect",
+        NodeKind::Shape(ShapeNode {
+            geometry: ShapeGeometry::Ellipse,
+            ..
+        }) => "pieces.ellipse",
+        NodeKind::Group(_) => "layers.group",
+        NodeKind::Text(_) => "layers.text",
+        NodeKind::Image(_) => "layers.image",
+        _ => "layers.element",
+    }
 }
 
 /// The screen rectangle of `placement` on a page drawn at `page_rect` with
@@ -163,18 +241,6 @@ pub(crate) fn in_marquee(
         .iter()
         .filter(|shape| rotation::screen_box(page_rect, zoom, &shape.placement).intersects(marquee))
         .map(|shape| shape.node)
-        .collect()
-}
-
-/// The roots of `page` the canvas draws, back to front: what Ctrl+A selects
-/// (spec 040). Groups draw nothing and are not selectable yet.
-pub(crate) fn roots(page: &Page) -> Vec<NodeId> {
-    let drawn: std::collections::BTreeSet<NodeId> =
-        shapes(page).into_iter().map(|shape| shape.node).collect();
-    page.roots
-        .iter()
-        .copied()
-        .filter(|id| drawn.contains(id))
         .collect()
 }
 
@@ -424,7 +490,7 @@ pub(crate) fn screen_color(color: Color) -> Color32 {
 /// What a shape paints: its fill with its opacity applied, or nothing.
 pub(crate) fn paint(shape: &Shape) -> Color32 {
     shape.fill.map_or(Color32::TRANSPARENT, |fill| {
-        screen_color(fill).gamma_multiply(shape.opacity.clamp(0.0, 1.0))
+        screen_color(fill).gamma_multiply(shape.alpha())
     })
 }
 
@@ -438,7 +504,7 @@ pub(crate) const NEW_OUTLINE_WIDTH: f64 = 2.0;
 /// draws them (FD-36 a). egui keeps corner radii in whole screen px up to
 /// 255, so a larger one is drawn at 255.
 pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
-    let opacity = shape.opacity.clamp(0.0, 1.0);
+    let opacity = shape.alpha();
     let stroke =
         shape
             .stroke
@@ -517,7 +583,7 @@ fn outline(geometry: ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize
 /// outlined like [`painted`] (centred outline scaled by `zoom`, the radius
 /// at most half the shorter side).
 pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egui::Shape {
-    let opacity = shape.opacity.clamp(0.0, 1.0);
+    let opacity = shape.alpha();
     let stroke =
         shape
             .stroke
@@ -854,7 +920,7 @@ mod tests {
 
     #[test]
     fn s24_01_layers_list_the_roots_front_first_with_their_kind() {
-        let rows = layers(&page());
+        let rows = layers(&page(), &std::collections::BTreeSet::new());
         let summary: Vec<(u64, &str, usize)> = rows
             .iter()
             .map(|l| (l.node.get(), l.kind, l.index))
@@ -867,6 +933,62 @@ mod tests {
                 (2, "pieces.rect", 0)
             ]
         );
+    }
+
+    // S43-11: an open group lists its children below it, one step in, front
+    // first, with their index among their siblings; a closed one does not.
+    #[test]
+    fn s43_11_layers_open_a_group_to_list_its_children() {
+        let page = page();
+        let open: std::collections::BTreeSet<NodeId> = [NodeId::new(3)].into_iter().collect();
+        let rows = layers(&page, &open);
+        let summary: Vec<(u64, usize, usize, Option<u64>, bool)> = rows
+            .iter()
+            .map(|l| {
+                (
+                    l.node.get(),
+                    l.depth,
+                    l.index,
+                    l.parent.map(NodeId::get),
+                    l.opens,
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (5, 0, 2, None, false),
+                (3, 0, 1, None, true),
+                (4, 1, 0, Some(3), false),
+                (2, 0, 0, None, false),
+            ]
+        );
+        assert_eq!(rows[2].siblings, 1);
+        assert_eq!(rows[0].siblings, 3);
+        let closed = layers(&page, &std::collections::BTreeSet::new());
+        assert_eq!(closed.len(), 3);
+    }
+
+    // S43-11: a group's opacity fades what is below it on the canvas; the
+    // element keeps its own opacity for the Inspector.
+    #[test]
+    fn s43_11_a_group_fades_its_children() {
+        let mut page = page();
+        let mut group = page.node(NodeId::new(3)).expect("the group").clone();
+        group.base.opacity = 0.5;
+        page.nodes.insert(NodeId::new(3), Arc::new(group));
+        let all = shapes(&page);
+        let ellipse = all
+            .iter()
+            .find(|s| s.node == NodeId::new(4))
+            .expect("drawn");
+        assert_eq!(ellipse.opacity, 1.0);
+        assert_eq!(ellipse.alpha(), 0.5);
+        let rect = all
+            .iter()
+            .find(|s| s.node == NodeId::new(2))
+            .expect("drawn");
+        assert_eq!(rect.alpha(), 1.0);
     }
 
     #[test]
@@ -891,7 +1013,10 @@ mod tests {
             text.text.as_ref().map(|t| t.content.plain_text()),
             Some("Hola".to_owned())
         );
-        assert_eq!(layers(&page)[0].kind, "layers.text");
+        assert_eq!(
+            layers(&page, &std::collections::BTreeSet::new())[0].kind,
+            "layers.text"
+        );
         let page_rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(1000.0));
         assert_eq!(
             hit(&all, page_rect, 1.0, Pos2::new(500.0, 500.0)),
@@ -948,12 +1073,14 @@ mod tests {
         );
     }
 
-    // S40-02: Ctrl+A takes the drawn roots of the page: no group, nothing
-    // hidden, back to front.
+    // S40-02, S43-04: Ctrl+A takes the drawn roots of the page, back to
+    // front, nothing hidden; since spec 043 a group with something drawn
+    // below it counts.
     #[test]
-    fn s40_02_select_all_takes_the_drawn_roots() {
+    fn s43_04_select_all_takes_the_drawn_roots_and_groups() {
+        let roots = |page: &Page| crate::group::items(page, None);
         let mut page = page();
-        assert_eq!(roots(&page), [NodeId::new(2)]);
+        assert_eq!(roots(&page), [NodeId::new(2), NodeId::new(3)]);
         let size = page.size;
         let mut two = ShapeNode::new(ShapeGeometry::Ellipse);
         two.fill = None;
@@ -965,7 +1092,10 @@ mod tests {
             )),
         );
         page.roots.insert(0, NodeId::new(6));
-        assert_eq!(roots(&page), [NodeId::new(6), NodeId::new(2)]);
+        assert_eq!(
+            roots(&page),
+            [NodeId::new(6), NodeId::new(2), NodeId::new(3)]
+        );
         assert!(roots(&Page::new(PageId::new(7), String::new(), size)).is_empty());
     }
 

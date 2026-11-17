@@ -1,6 +1,7 @@
 //! The regions of the Design editor (03 §7.1, §7.3): top bar, tab rail, side
 //! panel, canvas with the page, inspector and bottom bar.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use egui::{
@@ -18,8 +19,10 @@ use gafira_theme::Shadow;
 
 use crate::arrange::{self, Order};
 use crate::canvas::{self, Shape};
+use crate::clipboard::{self, Clip};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
+use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
 use crate::rotation::{self, Axis};
 use crate::selection::Selection;
@@ -57,6 +60,15 @@ const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key
 const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
 const FLIP_H: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::H);
 const FLIP_V: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::V);
+/// Cortar, Copiar, Pegar, Duplicar, Agrupar and Desagrupar (03 §9.2, spec
+/// 043).
+const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::X);
+const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
+const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
+const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
+const GROUP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
+const UNGROUP: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::G);
 /// Alinear and Orden de apilado (03 §9.2 «Capas», spec 042).
 const ALIGN_LEFT: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::L);
@@ -149,13 +161,17 @@ fn plain(texts: &Texts, key: &'static str) -> String {
 
 /// What the arrange actions can do with the selection this frame (spec
 /// 042): align with one element or more, distribute with three or more,
-/// and each order action only when it would change the layers (FD-12).
+/// and each order action only when it would change the layers (FD-12),
+/// among the siblings the selection shares (spec 043). Group with one
+/// element or more and ungroup when a group is selected (spec 043).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct CanArrange {
     align: bool,
     distribute: bool,
     /// By the index of [`ORDERS`].
     order: [bool; 4],
+    group: bool,
+    ungroup: bool,
 }
 
 impl CanArrange {
@@ -164,11 +180,19 @@ impl CanArrange {
             return Self::default();
         };
         let nodes = selected.nodes();
+        let siblings = group::siblings(page, nodes);
         Self {
             align: !nodes.is_empty(),
             distribute: nodes.len() >= 3,
-            order: ORDERS
-                .map(|(order, ..)| arrange::reordered(&page.roots, nodes, order) != page.roots),
+            order: ORDERS.map(|(order, ..)| {
+                siblings
+                    .as_ref()
+                    .is_some_and(|(_, list)| arrange::reordered(list, nodes, order) != *list)
+            }),
+            group: !nodes.is_empty(),
+            ungroup: nodes
+                .iter()
+                .any(|id| group::ungroup_plan(page, *id).is_some()),
         }
     }
 }
@@ -217,14 +241,28 @@ pub(crate) struct Editor {
     versions: Versions,
     /// What Align, Distribute and Orden can do this frame (spec 042).
     can: CanArrange,
+    /// The group entered with a double click, and its page: a click picks
+    /// among its children (03 §9.1, spec 043). `None` picks among the
+    /// roots.
+    scope: Option<(PageId, NodeId)>,
+    /// The groups open in Capas (spec 043).
+    open: BTreeSet<NodeId>,
+    /// What Copiar or Cortar took (spec 043). The shell keeps it between
+    /// projects of the session.
+    clip: Option<Arc<Clip>>,
+    /// A copy waits for its plain text on the system clipboard.
+    copied: bool,
 }
 
 struct Drag {
     gesture: Option<GestureId>,
     /// The page of the selection.
     page: PageId,
-    /// Each selected element and where it started.
+    /// Each selected element and where it started; a group by its box.
     origins: Vec<(NodeId, Placement)>,
+    /// The document when the drag began: a group moves every node below
+    /// it from where it was then (spec 043).
+    start: Option<Arc<Document>>,
     offset: Vec2,
     /// The handle held, or `None` for a move. Only a single selection
     /// resizes or turns.
@@ -266,6 +304,10 @@ impl Default for Editor {
             versions: Versions::default(),
             font_atlas: None,
             can: CanArrange::default(),
+            scope: None,
+            open: BTreeSet::new(),
+            clip: None,
+            copied: false,
         }
     }
 }
@@ -308,6 +350,23 @@ struct Asked {
     distribute: Option<DistributeAxis>,
     /// Move the selection in the layer order (spec 042).
     order: Option<Order>,
+    /// Agrupar and Desagrupar the selection (spec 043).
+    group: bool,
+    ungroup: bool,
+    /// Duplicar the selection (spec 043), with the names its copies take:
+    /// «Logo» and «Logo copia» (FD-13).
+    duplicate: bool,
+    copy_names: Vec<(String, String)>,
+    /// Copiar, Cortar and Pegar (spec 043).
+    copy: bool,
+    cut: bool,
+    paste: bool,
+    /// Enter a group or leave one: the new scope of the canvas (spec 043).
+    scope: Option<Option<(PageId, NodeId)>>,
+    /// Esc inside a group: select the group and leave it (spec 043).
+    leave: bool,
+    /// Open or close a group's row in Capas (spec 043).
+    toggle_open: Option<NodeId>,
     drag_end: bool,
     delete: bool,
     /// A placement typed in the Inspector for the selected element.
@@ -349,31 +408,76 @@ struct Header<'a> {
 }
 
 /// The selected shapes still in `document`, in selection order (an undo may
-/// have taken some away).
+/// have taken some away). A selected group is listed by its box (spec
+/// 043).
 fn selected_shapes(document: Option<&Document>, selected: &Selection) -> Vec<Shape> {
     let Some(page) = selected.page().and_then(|page| document?.page(page)) else {
         return Vec::new();
     };
+    chosen(page, selected)
+}
+
+/// The selected shapes of `page`, in selection order; a group by its box.
+fn chosen(page: &Page, selected: &Selection) -> Vec<Shape> {
+    if selected.page() != Some(page.id) {
+        return Vec::new();
+    }
     let shapes = canvas::shapes(page);
     selected
         .nodes()
         .iter()
-        .filter_map(|node| shapes.iter().find(|shape| shape.node == *node).cloned())
+        .filter_map(|node| {
+            shapes
+                .iter()
+                .find(|shape| shape.node == *node)
+                .cloned()
+                .or_else(|| group_shape(page, *node))
+        })
         .collect()
+}
+
+/// A drawn group as a shape: its box around its children, upright, with
+/// the group's opacity (spec 043). `None` for anything else.
+fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
+    if !group::is_group(page, node) || !group::draws(page, node) {
+        return None;
+    }
+    let placement = group::item_box(page, node)?;
+    Some(Shape {
+        page: page.id,
+        node,
+        placement,
+        geometry: ShapeGeometry::Rect,
+        fill: None,
+        stroke: None,
+        corner_radius: 0.0,
+        opacity: page.node(node)?.base.opacity,
+        inherited: 1.0,
+        group: true,
+        text: None,
+        image: None,
+    })
 }
 
 /// The selection a finished marquee makes (spec 040): the shapes it touches
 /// on the page where it started, or else on the first page it touches.
-/// With Shift they join `current`; without, they replace it.
+/// With Shift they join `current`; without, they replace it. `pick` turns
+/// a touched shape into what is selected: itself, or the group that holds
+/// it in the scope of the canvas (spec 043).
 fn marquee_selection(
     current: &Selection,
     marquee: Marquee,
     laid: &[(PageId, Rect, Vec<Shape>)],
     zoom: f32,
+    pick: impl Fn(PageId, NodeId) -> Option<NodeId>,
 ) -> Selection {
     let rect = Rect::from_two_pos(marquee.from, marquee.to);
     let touched = |(id, page, shapes): &(PageId, Rect, Vec<Shape>)| {
-        (*id, canvas::in_marquee(shapes, *page, zoom, rect))
+        let picked = canvas::in_marquee(shapes, *page, zoom, rect)
+            .into_iter()
+            .filter_map(|leaf| pick(*id, leaf))
+            .collect::<Vec<_>>();
+        (*id, picked)
     };
     let on = laid
         .iter()
@@ -428,15 +532,57 @@ impl Editor {
 
     /// Drops from the selection what `document` no longer draws (an undo
     /// may have taken it away) and returns the shapes that stay, in
-    /// selection order (spec 040).
+    /// selection order (spec 040). The scope goes when its group does
+    /// (spec 043).
     fn prune(&mut self, document: Option<&Document>) -> Vec<Shape> {
         let shapes = selected_shapes(document, &self.selected);
         self.selected
             .retain(|node| shapes.iter().any(|shape| shape.node == node));
+        self.scope = self.scope.filter(|(page, node)| {
+            document
+                .and_then(|d| d.page(*page))
+                .is_some_and(|page| group::is_group(page, *node))
+        });
         shapes
     }
 
+    /// The group entered on `page`, if any.
+    fn scope_on(&self, page: PageId) -> Option<NodeId> {
+        self.scope
+            .filter(|(entered, _)| *entered == page)
+            .map(|(_, node)| node)
+    }
+
     pub(crate) fn show(
+        &mut self,
+        ctx: &egui::Context,
+        engine: &mut Gafira,
+        theme: &Theme,
+        texts: &Texts,
+        notice: Option<&str>,
+        clipboard: &mut Option<Arc<Clip>>,
+    ) -> Go {
+        // The clipboard of the session lives in the shell, so a paste
+        // reaches the next project too (spec 043). It is shared, so handing
+        // it over every frame copies nothing.
+        if clipboard.is_some() {
+            self.clip.clone_from(clipboard);
+        }
+        let go = self.frame(ctx, engine, theme, texts, notice);
+        if std::mem::take(&mut self.copied)
+            && let Some(clip) = self.clip.as_mut()
+        {
+            let clip = Arc::make_mut(clip);
+            clip.text =
+                clipboard::plain_text(&clip.specs, |kind| plain(texts, canvas::kind_key(kind)));
+            ctx.copy_text(clip.text.clone());
+        }
+        clipboard.clone_from(&self.clip);
+        go
+    }
+
+    /// One frame of the editor: draw, then run what was asked.
+    fn frame(
         &mut self,
         ctx: &egui::Context,
         engine: &mut Gafira,
@@ -500,11 +646,58 @@ impl Editor {
                 if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
                     asked.delete = true;
                 }
+                // Esc leaves the group entered, selecting it; outside one it
+                // empties the selection (03 §9.1, spec 043).
                 if i.key_pressed(egui::Key::Escape) {
-                    asked.select = Some(Selection::default());
+                    if self.scope.is_some() {
+                        asked.leave = true;
+                    } else {
+                        asked.select = Some(Selection::default());
+                    }
                 }
                 if i.modifiers.command && i.key_pressed(egui::Key::A) {
                     asked.select_all = true;
+                }
+                // Ctrl+G groups and Ctrl+Shift+G ungroups; Ctrl+D duplicates
+                // (03 §9.2, spec 043).
+                if i.key_pressed(egui::Key::G) {
+                    if i.modifiers.matches_exact(Modifiers::COMMAND) {
+                        asked.group = true;
+                    } else if i
+                        .modifiers
+                        .matches_exact(Modifiers::COMMAND.plus(Modifiers::SHIFT))
+                    {
+                        asked.ungroup = true;
+                    }
+                }
+                if i.modifiers.matches_exact(Modifiers::COMMAND) && i.key_pressed(egui::Key::D) {
+                    asked.duplicate = true;
+                }
+                // The window turns Ctrl+C, Ctrl+X and Ctrl+V into clipboard
+                // events, also with Alt held, so Ctrl+Alt+C arrives as a
+                // copy and aligns to the centre here (spec 042). A paste
+                // carries the system clipboard: it pastes the clip only when
+                // that text is the one the copy put there; other text is not
+                // pasted (spec 043).
+                if i.modifiers.matches_exact(Modifiers::COMMAND) {
+                    asked.copy |= i.key_pressed(egui::Key::C);
+                    asked.cut |= i.key_pressed(egui::Key::X);
+                    asked.paste |= i.key_pressed(egui::Key::V);
+                }
+                for event in &i.events {
+                    match event {
+                        egui::Event::Copy if i.modifiers.alt => {
+                            asked.align = Some(AlignAction::Center);
+                        }
+                        egui::Event::Copy => asked.copy = true,
+                        egui::Event::Cut => asked.cut = true,
+                        egui::Event::Paste(text)
+                            if self.clip.as_ref().is_some_and(|clip| clip.text == *text) =>
+                        {
+                            asked.paste = true;
+                        }
+                        _ => {}
+                    }
                 }
                 // Ctrl+Alt+L/C/R align (03 §9.2); a platform shortcut on
                 // the same keys wins before it reaches the window.
@@ -549,6 +742,21 @@ impl Editor {
         }
         self.load_textures(ctx, engine, document.as_deref());
         let selection = self.prune(document.as_deref());
+        if asked.duplicate {
+            // «Logo copia» (FD-13), in the language of the interface.
+            asked.copy_names = selection
+                .iter()
+                .filter_map(|shape| {
+                    let page = document.as_deref()?.page(shape.page)?;
+                    let name = page.node(shape.node)?.base.name.clone()?;
+                    let copy = texts.t(&gafira_doc::msg!(
+                        "editor.copy_name",
+                        name = Text(name.clone())
+                    ));
+                    Some((name, copy))
+                })
+                .collect();
+        }
         self.can = CanArrange::of(document.as_deref(), &self.selected);
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         if let Some(ask) = asked.zoom {
@@ -648,6 +856,22 @@ impl Editor {
                     ui.close();
                 }
                 ui.separator();
+                // Cortar, Copiar, Pegar and Duplicar (03 §9.2, spec 043).
+                let some = !self.selected.is_empty();
+                let paste = self.clip.is_some() && document.is_some();
+                for (key, keys, enabled, flag) in [
+                    ("editor.cut", CUT, some, &mut asked.cut),
+                    ("editor.copy", COPY, some, &mut asked.copy),
+                    ("editor.paste", PASTE, paste, &mut asked.paste),
+                    ("editor.duplicate", DUPLICATE, some, &mut asked.duplicate),
+                ] {
+                    let item = egui::Button::new(plain(texts, key))
+                        .shortcut_text(keys_text(ui.ctx(), &keys));
+                    if ui.add_enabled(enabled, item).clicked() {
+                        *flag = true;
+                        ui.close();
+                    }
+                }
                 let delete = egui::Button::new(texts.t(&gafira_doc::msg!("editor.delete")));
                 if ui.add_enabled(!self.selected.is_empty(), delete).clicked() {
                     asked.delete = true;
@@ -693,6 +917,18 @@ impl Editor {
                     }
                 }
                 ui.separator();
+                // Agrupar and Desagrupar (03 §9.2 «Capas», spec 043).
+                for (key, keys, enabled, flag) in [
+                    ("editor.group", GROUP, can.group, &mut asked.group),
+                    ("editor.ungroup", UNGROUP, can.ungroup, &mut asked.ungroup),
+                ] {
+                    let item = egui::Button::new(plain(texts, key))
+                        .shortcut_text(keys_text(ui.ctx(), &keys));
+                    if ui.add_enabled(enabled, item).clicked() {
+                        *flag = true;
+                        ui.close();
+                    }
+                }
                 arrange_menu(ui, texts, can, asked);
             });
             let view = RichText::new(texts.t(&gafira_doc::msg!("menu.view")))
@@ -1093,6 +1329,14 @@ impl Editor {
                     text_fields(ui, theme, texts, text, asked);
                     ui.add_space(16.0);
                 }
+                if shape.group {
+                    ui.label(
+                        RichText::new(plain(texts, "layers.group"))
+                            .font(theme.font("ui-label"))
+                            .color(theme.c("text")),
+                    );
+                    ui.add_space(8.0);
+                }
                 let mut placement = shape.placement;
                 let mut changed = false;
                 egui::Grid::new("inspector.position")
@@ -1116,7 +1360,12 @@ impl Editor {
                                 .changed();
                             ui.end_row();
                         }
-                        // «Giro», in degrees within one turn (spec 041).
+                        // «Giro», in degrees within one turn (spec 041). A
+                        // group has no turn of its own: its box is upright
+                        // around its children (spec 043).
+                        if shape.group {
+                            return;
+                        }
                         ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
                         let mut degrees = rotation::normalized(placement.rotation_deg);
                         let field = egui::DragValue::new(&mut degrees)
@@ -1137,10 +1386,10 @@ impl Editor {
                 ui.add_space(16.0);
                 arrange_buttons(ui, theme, texts, can, asked);
                 ui.add_space(16.0);
-                if shape.text.is_none() {
+                if shape.text.is_none() && !shape.group {
                     fill_field(ui, texts, shape, asked);
                 }
-                if shape.text.is_none() && shape.image.is_none() {
+                if shape.text.is_none() && shape.image.is_none() && !shape.group {
                     ui.add_space(8.0);
                     outline_fields(ui, texts, shape, asked);
                 }
@@ -1164,7 +1413,7 @@ impl Editor {
         let Some(page) = self.current_page(document) else {
             return;
         };
-        let rows = canvas::layers(page);
+        let rows = canvas::layers(page, &self.open);
         if rows.is_empty() {
             ui.label(
                 RichText::new(texts.t(&gafira_doc::msg!("layers.empty")))
@@ -1173,8 +1422,8 @@ impl Editor {
             );
             return;
         }
-        let last = page.roots.len().saturating_sub(1);
         for row in rows {
+            let last = row.siblings.saturating_sub(1);
             let selected = self.selected.contains(page.id, row.node);
             let label = row.name.clone().unwrap_or_else(|| {
                 texts.t(&gafira_doc::msg::Message {
@@ -1183,6 +1432,21 @@ impl Editor {
                 })
             });
             ui.horizontal(|ui| {
+                // A group's children sit one step in, below it (spec 043).
+                ui.add_space(16.0 * row.depth as f32);
+                let (_, opener) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
+                if row.opens {
+                    let open = self.open.contains(&row.node);
+                    egui::collapsing_header::paint_default_icon(
+                        ui,
+                        if open { 1.0 } else { 0.0 },
+                        &opener,
+                    );
+                    let tip = plain(texts, if open { "layers.close" } else { "layers.open" });
+                    if opener.on_hover_text(tip).clicked() {
+                        asked.toggle_open = Some(row.node);
+                    }
+                }
                 if ui.selectable_label(selected, label).clicked() {
                     // Ctrl/Cmd or Shift + click toggles the row (spec 040).
                     let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
@@ -1193,6 +1457,8 @@ impl Editor {
                     } else {
                         Selection::one(page.id, row.node)
                     });
+                    // A child of a group enters that group on the canvas.
+                    asked.scope = Some(row.parent.map(|group| (page.id, group)));
                 }
                 // Subir, Bajar and the row's Eliminar act on one element.
                 if selected && self.selected.len() == 1 {
@@ -1378,9 +1644,16 @@ impl Editor {
                                     } else {
                                         painter.add(canvas::painted_turned(shape, turn, zoom));
                                     }
-                                    if !self.selected.contains(shape.page, shape.node) {
-                                        continue;
-                                    }
+                                }
+                                // The selection, on top of what is drawn: each
+                                // selected element by its own box, a group by
+                                // the box around its children (spec 043).
+                                let chosen = chosen(page_doc, &self.selected);
+                                for shape in &chosen {
+                                    let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                    let upright = rotation::upright(&shape.placement);
+                                    let outline = rotation::corners(turn, &shape.placement);
                                     if upright {
                                         painter.rect_stroke(
                                             at.expand(1.0),
@@ -1452,9 +1725,8 @@ impl Editor {
                                     && self.selected.page() == Some(page_doc.id)
                                 {
                                     // The box around a multi-selection (spec 040).
-                                    let boxes = shapes
+                                    let boxes = chosen
                                         .iter()
-                                        .filter(|s| self.selected.contains(s.page, s.node))
                                         .map(|s| rotation::screen_box(page, zoom, &s.placement));
                                     if let Some(all) = canvas::bounds(boxes) {
                                         painter.rect_stroke(
@@ -1465,12 +1737,22 @@ impl Editor {
                                         );
                                     }
                                 }
+                                // A click picks the child of the entered group
+                                // that holds the drawn element; a double click
+                                // on a group enters it (03 §9.1, spec 043).
                                 if pressed
                                     && let Some(at) = pointer
                                     && page.contains(at)
-                                    && let Some(node) = canvas::hit(&shapes, page, zoom, at)
+                                    && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
+                                    && let Some((node, scope)) = group::click(
+                                        page_doc,
+                                        leaf,
+                                        self.scope_on(page_doc.id),
+                                        response.double_clicked(),
+                                    )
                                 {
                                     picked = Some((page_doc.id, node));
+                                    asked.scope = Some(scope.map(|group| (page_doc.id, group)));
                                 }
                                 laid.push((page_doc.id, page, shapes));
                             }
@@ -1478,8 +1760,9 @@ impl Editor {
                         }
                         if let Some(handle) = grabbed {
                             // A handle of the selection wins over whatever
-                            // lies under it.
+                            // lies under it, and keeps the scope.
                             asked.drag_begin = Some(Some(handle));
+                            asked.scope = None;
                         } else if response.clicked() {
                             // Click selects one; Shift+click toggles it.
                             let mut next = self.selected.clone();
@@ -1487,7 +1770,11 @@ impl Editor {
                                 (Some((page, node)), true) => next.toggle(page, node),
                                 (Some((page, node)), false) => next = Selection::one(page, node),
                                 (None, true) => {}
-                                (None, false) => next.clear(),
+                                // Empty canvas also leaves a group entered.
+                                (None, false) => {
+                                    next.clear();
+                                    asked.scope = Some(None);
+                                }
                             }
                             asked.select = Some(next);
                         } else if response.drag_started() {
@@ -1541,11 +1828,18 @@ impl Editor {
                         if response.drag_stopped() {
                             match self.marquee.take() {
                                 Some(marquee) => {
+                                    // What it touches counts by the child of
+                                    // the scope that holds it (spec 043).
+                                    let pick = |page: PageId, leaf: NodeId| {
+                                        let on = pages.iter().find(|p| p.id == page)?;
+                                        group::pick(on, leaf, self.scope_on(page))
+                                    };
                                     asked.select = Some(marquee_selection(
                                         &self.selected,
                                         marquee,
                                         &laid,
                                         zoom,
+                                        pick,
                                     ));
                                 }
                                 None => asked.drag_end = true,
@@ -1594,11 +1888,35 @@ impl Editor {
         if let Some(select) = &asked.select {
             self.selected = select.clone();
         }
+        if let Some(scope) = asked.scope {
+            self.scope = scope;
+        }
+        // Esc inside a group selects it and leaves it for its parent (spec
+        // 043).
+        if asked.leave
+            && let Some((page, entered)) = self.scope
+        {
+            let parent = document
+                .as_ref()
+                .and_then(|d| d.page(page))
+                .and_then(|p| group::parents(p).get(&entered).copied())
+                .flatten();
+            self.scope = parent.map(|group| (page, group));
+            self.selected = Selection::one(page, entered);
+        }
+        if let Some(node) = asked.toggle_open
+            && !self.open.remove(&node)
+        {
+            self.open.insert(node);
+        }
+        // Ctrl+A selects what the scope draws: the roots, or the children
+        // of the group entered (spec 043).
         if asked.select_all
             && let Some(document) = engine.edit().document()
             && let Some(page) = self.current_page(&document)
         {
-            self.selected = Selection::of(page.id, canvas::roots(page));
+            let scope = self.scope_on(page.id);
+            self.selected = Selection::of(page.id, group::items(page, scope));
         }
         if let Some(geometry) = asked.insert
             && let Some(document) = document
@@ -1664,18 +1982,21 @@ impl Editor {
                 page,
                 hold: hold.filter(|_| origins.len() == 1),
                 origins,
+                start: now,
                 offset: Vec2::ZERO,
             });
         }
         if let (Some(delta), Some(drag)) = (asked.drag_to, self.drag.as_mut()) {
             drag.offset += delta;
             let zoom = self.zoom;
+            let start = drag.start.as_ref().and_then(|d| d.page(drag.page));
             // One placement per element; several are one Transaction, so the
-            // drag stays one undo step (spec 040).
+            // drag stays one undo step (spec 040). A group writes every node
+            // below it, from where they were when the drag began (spec 043).
             let commands = drag
                 .origins
                 .iter()
-                .map(|(node, origin)| {
+                .flat_map(|(node, origin)| {
                     let to = match drag.hold {
                         Some(Hold::Resize(handle)) => {
                             canvas::resized(origin, handle, drag.offset, zoom)
@@ -1685,13 +2006,21 @@ impl Editor {
                         }
                         None => canvas::moved(origin, drag.offset, zoom),
                     };
-                    let command = SetProperty::new(
-                        drag.page,
-                        vec![*node],
-                        Property::Placement(to),
-                        drag.gesture,
-                    );
-                    Box::new(command) as Box<dyn Command>
+                    let placements = match start.filter(|page| group::is_group(page, *node)) {
+                        Some(page) => {
+                            group::changed(page, *node, group_change(origin, &to, drag.hold))
+                        }
+                        None => vec![(*node, to)],
+                    };
+                    placements.into_iter().map(|(node, to)| {
+                        let command = SetProperty::new(
+                            drag.page,
+                            vec![node],
+                            Property::Placement(to),
+                            drag.gesture,
+                        );
+                        Box::new(command) as Box<dyn Command>
+                    })
                 })
                 .collect();
             if let Some(command) = batch(commands) {
@@ -1710,9 +2039,32 @@ impl Editor {
             self.arrange(engine, page, asked);
         }
         if let (Some(placement), Some((page, node))) = (asked.place, self.selected.single()) {
-            let command = SetProperty::new(page, vec![node], Property::Placement(placement), None);
-            log("place", engine.edit().execute(Box::new(command)).map(drop));
+            let now = engine.edit().document();
+            match now
+                .as_deref()
+                .and_then(|d| d.page(page))
+                .filter(|p| group::is_group(p, node))
+            {
+                // A group's box typed in the Inspector reframes every node
+                // below it, in one step (spec 043).
+                Some(current) => {
+                    if let Some(from) = group::item_box(current, node) {
+                        let to = Change::Frame {
+                            from,
+                            to: placement,
+                        };
+                        let moves = group::changed(current, node, to);
+                        place_in_one_step(engine, page, moves, "place group");
+                    }
+                }
+                None => {
+                    let command =
+                        SetProperty::new(page, vec![node], Property::Placement(placement), None);
+                    log("place", engine.edit().execute(Box::new(command)).map(drop));
+                }
+            }
         }
+        self.structure(engine, asked);
         // Fill, outline, radius and opacity go to every selected element in
         // one SetProperty, so a change is one undo step (spec 040).
         let all = self.selected.nodes().to_vec();
@@ -1778,20 +2130,108 @@ impl Editor {
     /// merges with the next one.
     fn reshape(&self, engine: &mut Gafira, page: PageId, turn: Option<f64>, flip: Option<Axis>) {
         let now = engine.edit().document();
+        let current = now.as_deref().and_then(|d| d.page(page));
         let placements = selected_shapes(now.as_deref(), &self.selected)
             .iter()
-            .map(|shape| {
-                let mut to = shape.placement;
-                if let Some(degrees) = turn {
-                    to = rotation::turned_by(&to, degrees);
+            .flat_map(|shape| match current.filter(|_| shape.group) {
+                // A group turns and flips about the centre of its box, with
+                // every node below it (spec 043).
+                Some(current) => group_reshaped(current, shape.node, turn, flip),
+                None => {
+                    let mut to = shape.placement;
+                    if let Some(degrees) = turn {
+                        to = rotation::turned_by(&to, degrees);
+                    }
+                    if let Some(axis) = flip {
+                        to = rotation::flipped(&to, axis);
+                    }
+                    vec![(shape.node, to)]
                 }
-                if let Some(axis) = flip {
-                    to = rotation::flipped(&to, axis);
-                }
-                (shape.node, to)
             })
             .collect();
         place_in_one_step(engine, page, placements, "turn or flip");
+    }
+
+    /// Agrupar, Desagrupar, Duplicar, Copiar, Cortar and Pegar (spec 043),
+    /// each one undo step; what they make is selected afterwards.
+    fn structure(&mut self, engine: &mut Gafira, asked: &Asked) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let page = self.selected.page().and_then(|page| document.page(page));
+        let nodes = self.selected.nodes().to_vec();
+        let next = document.next_id();
+        let run = |engine: &mut Gafira, what: &str, command: Box<dyn Command>| {
+            let done = engine.edit().execute(command);
+            if let Err(error) = &done {
+                eprintln!("{what}: {error}");
+            }
+            done.is_ok()
+        };
+        if let Some(page) = page {
+            if asked.group
+                && let Some((command, made)) = group::group_command(page, &nodes, next)
+                && run(engine, "group", command)
+            {
+                self.selected = Selection::one(page.id, made);
+            } else if asked.ungroup
+                && let Some((command, freed)) = group::ungroup_command(page, &nodes)
+                && run(engine, "ungroup", command)
+            {
+                // The freed children, and what was selected and was not a
+                // group.
+                let kept = nodes
+                    .iter()
+                    .copied()
+                    .filter(|id| !group::is_group(page, *id));
+                self.selected = Selection::of(page.id, kept.chain(freed));
+            } else if asked.duplicate {
+                let rename = |name: &str| {
+                    asked
+                        .copy_names
+                        .iter()
+                        .find(|(from, _)| from == name)
+                        .map_or_else(|| name.to_owned(), |(_, to)| to.clone())
+                };
+                if let Some((command, copies)) =
+                    clipboard::duplicate_command(page, &nodes, next, rename)
+                    && run(engine, "duplicate", command)
+                {
+                    self.selected = Selection::of(page.id, copies);
+                }
+            }
+            if (asked.copy || asked.cut)
+                && let Some(clip) = clipboard::copy(&document, page.id, &nodes)
+            {
+                self.clip = Some(Arc::new(clip));
+                self.copied = true;
+                if asked.cut
+                    && run(
+                        engine,
+                        "cut",
+                        Box::new(RemoveNodes::new(page.id, nodes.clone())),
+                    )
+                {
+                    self.selected.clear();
+                }
+            }
+        }
+        // Pegar goes on top of the page of the selection, or the first
+        // page; inside the group entered when there is one.
+        if asked.paste
+            && let Some(clip) = &self.clip
+            && let Some(target) = self.current_page(&document)
+        {
+            let parent = self.scope_on(target.id);
+            if let Some((command, pasted)) =
+                clipboard::paste_command(&document, target.id, parent, clip)
+            {
+                let target = target.id;
+                if run(engine, "paste", command) {
+                    self.selected = Selection::of(target, pasted);
+                }
+            }
+        }
     }
 
     /// Align, distribute or move in the layer order the selection of
@@ -1904,6 +2344,63 @@ impl Editor {
             Err(error) => eprintln!("import image: {error}"),
         }
     }
+}
+
+/// What a drag of a group does to every node below it (spec 043): the
+/// move, resize or turn that took its box from `origin` to `to`.
+fn group_change(origin: &Placement, to: &Placement, hold: Option<Hold>) -> Change {
+    match hold {
+        Some(Hold::Resize(_)) => Change::Frame {
+            from: *origin,
+            to: *to,
+        },
+        Some(Hold::Rotate { .. }) => Change::Turn {
+            center: gafira_geom::Point::new(origin.x + origin.w / 2.0, origin.y + origin.h / 2.0),
+            degrees: to.rotation_deg - origin.rotation_deg,
+        },
+        None => Change::Move {
+            dx: to.x - origin.x,
+            dy: to.y - origin.y,
+        },
+    }
+}
+
+/// A group of `page` turned by `turn` degrees and then flipped along
+/// `flip`, each about the centre of its box then (spec 043): every node
+/// below it, parents first.
+fn group_reshaped(
+    page: &Page,
+    node: NodeId,
+    turn: Option<f64>,
+    flip: Option<Axis>,
+) -> Vec<(NodeId, Placement)> {
+    let centre = |page: &Page| {
+        group::item_box(page, node)
+            .map(|b| gafira_geom::Point::new(b.x + b.w / 2.0, b.y + b.h / 2.0))
+    };
+    let mut now = page.clone();
+    let mut out = Vec::new();
+    for change in [
+        turn.and_then(|degrees| {
+            Some(Change::Turn {
+                center: centre(&now)?,
+                degrees,
+            })
+        }),
+        flip.and_then(|axis| {
+            Some(Change::Flip {
+                center: centre(&now)?,
+                axis,
+            })
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        out = group::changed(&now, node, change);
+        now = group::with_placements(&now, &out);
+    }
+    out
 }
 
 /// The bytes of `hash` from the store, decoded and scaled for the canvas.
@@ -2026,7 +2523,7 @@ fn many_fields(
     ui.add_space(16.0);
     if shapes
         .iter()
-        .all(|shape| shape.text.is_none() && shape.image.is_none())
+        .all(|shape| shape.text.is_none() && shape.image.is_none() && !shape.group)
     {
         fill_field(ui, texts, primary, asked);
         ui.add_space(8.0);
@@ -2971,7 +3468,7 @@ pub(crate) mod tests {
         let page = engine.edit().document().expect("a document").pages()[0].clone();
         let rect = page.roots[0];
         assert_eq!(
-            canvas::layers(&page)[0].kind,
+            canvas::layers(&page, &BTreeSet::new())[0].kind,
             "pieces.ellipse",
             "the newest is in front"
         );
@@ -2987,7 +3484,7 @@ pub(crate) mod tests {
         );
         let page = engine.edit().document().expect("a document").pages()[0].clone();
         assert_eq!(
-            canvas::layers(&page)[0].node,
+            canvas::layers(&page, &BTreeSet::new())[0].node,
             rect,
             "the rectangle came to the front"
         );
@@ -3146,7 +3643,7 @@ pub(crate) mod tests {
         }
         let (theme, texts) = (theme(), Texts::new(gafira_ports::i18n::Locale::Es));
         let _ = ctx.run(input, |ctx| {
-            editor.show(ctx, engine, &theme, &texts, None);
+            editor.show(ctx, engine, &theme, &texts, None, &mut None);
         });
     }
 
@@ -3414,7 +3911,7 @@ pub(crate) mod tests {
 
         let inside = marquee(rect_at.min - Vec2::splat(5.0), rect_at.center(), false);
         assert_eq!(
-            marquee_selection(&current, inside, &laid, 1.0),
+            marquee_selection(&current, inside, &laid, 1.0, |_, leaf| Some(leaf)),
             Selection::one(page, rect)
         );
         let added = Marquee {
@@ -3422,23 +3919,23 @@ pub(crate) mod tests {
             ..inside
         };
         assert_eq!(
-            marquee_selection(&current, added, &laid, 1.0),
+            marquee_selection(&current, added, &laid, 1.0, |_, leaf| Some(leaf)),
             Selection::of(page, [ellipse, rect])
         );
         // Started above the pages, it still selects on the page it touches.
         let from_outside = marquee(Pos2::new(rect_at.min.x, -40.0), rect_at.center(), false);
         assert_eq!(
-            marquee_selection(&current, from_outside, &laid, 1.0),
+            marquee_selection(&current, from_outside, &laid, 1.0, |_, leaf| Some(leaf)),
             Selection::one(page, rect)
         );
         let empty = marquee(Pos2::new(5.0, 1210.0), Pos2::new(50.0, 1250.0), false);
         assert_eq!(
-            marquee_selection(&current, empty, &laid, 1.0),
+            marquee_selection(&current, empty, &laid, 1.0, |_, leaf| Some(leaf)),
             Selection::default()
         );
         let empty_added = Marquee { add: true, ..empty };
         assert_eq!(
-            marquee_selection(&current, empty_added, &laid, 1.0),
+            marquee_selection(&current, empty_added, &laid, 1.0, |_, leaf| Some(leaf)),
             current
         );
     }
@@ -4063,6 +4560,384 @@ pub(crate) mod tests {
         assert_eq!(
             distribute_tooltip(&texts, "arrange.distribute_vertical", false),
             "Distribuir verticalmente: selecciona tres elementos o más"
+        );
+    }
+
+    /// A frame with `events` and `modifiers` held, and the session's
+    /// clipboard; what the frame asked the platform for.
+    fn frame_events(
+        ctx: &egui::Context,
+        editor: &mut Editor,
+        engine: &mut Gafira,
+        events: Vec<egui::Event>,
+        modifiers: Modifiers,
+        clip: &mut Option<Arc<Clip>>,
+    ) -> egui::PlatformOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0))),
+            modifiers,
+            events,
+            ..Default::default()
+        };
+        let (theme, texts) = (theme(), Texts::new(gafira_ports::i18n::Locale::Es));
+        ctx.run(input, |ctx| {
+            editor.show(ctx, engine, &theme, &texts, None, clip);
+        })
+        .platform_output
+    }
+
+    fn placements(engine: &mut Gafira, nodes: &[NodeId]) -> Vec<Placement> {
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        nodes
+            .iter()
+            .map(|id| page.node(*id).expect("a node").base.placement)
+            .collect()
+    }
+
+    // S43-13: Ctrl+G groups the selection above its frontmost element and
+    // selects the group; Ctrl+Shift+G gives the children back, selected;
+    // nothing moves and each is one undo step.
+    #[test]
+    fn s43_13_ctrl_g_groups_and_ctrl_shift_g_ungroups() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, c]) = three_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::of(page, [b, a]);
+        let before = placements(&mut engine, &[a, b, c]);
+        let depth = undo_depth(&mut engine);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut editor, &mut engine, Some(Key::G));
+        let roots = roots_now(&mut engine);
+        assert_eq!(roots.len(), 2);
+        let group = roots[0];
+        assert_eq!(roots[1], c, "the group sits where b was, below c");
+        assert_eq!(editor.selected, Selection::one(page, group));
+        assert_eq!(placements(&mut engine, &[a, b, c]), before);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.selected, Selection::one(page, group), "kept");
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::G),
+            Modifiers::COMMAND.plus(Modifiers::SHIFT),
+        );
+        assert_eq!(roots_now(&mut engine), [a, b, c]);
+        assert_eq!(editor.selected, Selection::of(page, [a, b]));
+        assert_eq!(placements(&mut engine, &[a, b, c]), before);
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(roots_now(&mut engine), [group, c]);
+    }
+
+    /// `three_pieces` with the first two grouped and the group selected.
+    fn grouped(engine: &mut Gafira, editor: &mut Editor) -> (PageId, NodeId, [NodeId; 3]) {
+        let (page, [a, b, c]) = three_pieces(engine, editor);
+        editor.selected = Selection::of(page, [a, b]);
+        ask(
+            engine,
+            editor,
+            Asked {
+                group: true,
+                ..Asked::default()
+            },
+        );
+        let group = editor.selected.single().expect("the group").1;
+        (page, group, [a, b, c])
+    }
+
+    // S43-14: a selected group drags, turns, aligns and deletes as one,
+    // with every element in it, one undo step each.
+    #[test]
+    fn s43_14_a_selected_group_moves_turns_and_deletes_as_one() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, group, [a, b, c]) = grouped(&mut engine, &mut editor);
+        let before = placements(&mut engine, &[a, b, c]);
+        let depth = undo_depth(&mut engine);
+        editor.zoom = 2.0;
+        let step = Asked {
+            drag_to: Some(Vec2::new(10.0, 4.0)),
+            ..Asked::default()
+        };
+        gesture(
+            &mut engine,
+            &mut editor,
+            vec![
+                Asked {
+                    drag_begin: Some(None),
+                    ..Asked::default()
+                },
+                step,
+                Asked {
+                    drag_to: Some(Vec2::new(10.0, 4.0)),
+                    ..Asked::default()
+                },
+                Asked {
+                    drag_end: true,
+                    ..Asked::default()
+                },
+            ],
+        );
+        let moved = placements(&mut engine, &[a, b, c]);
+        for i in 0..2 {
+            assert_eq!(moved[i].x - before[i].x, 10.0, "{i}");
+            assert_eq!(moved[i].y - before[i].y, 4.0);
+        }
+        assert_eq!(moved[2], before[2], "c is not in the group");
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step for the drag");
+        // A turn goes about the group's centre, to each child.
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                turn: Some(90.0),
+                ..Asked::default()
+            },
+        );
+        let turned = placements(&mut engine, &[a, b]);
+        assert!(turned.iter().all(|p| p.rotation_deg == 90.0), "{turned:?}");
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                delete: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(roots_now(&mut engine), [c]);
+        assert_eq!(the_shapes(&mut engine).len(), 1);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(roots_now(&mut engine), [group, c]);
+        assert_eq!(the_shapes(&mut engine).len(), 3);
+        // The Inspector's box of the group reframes its children.
+        editor.selected = Selection::one(page, group);
+        let document = engine.edit().document();
+        let shape = selected_shapes(document.as_deref(), &editor.selected);
+        assert!(shape[0].group);
+        let mut wide = shape[0].placement;
+        wide.w *= 2.0;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                place: Some(wide),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document();
+        let now = selected_shapes(document.as_deref(), &editor.selected);
+        assert!((now[0].placement.w - wide.w).abs() < 1e-6, "{:?}", now[0]);
+    }
+
+    // S43-15: Ctrl+D duplicates the selection with new ids, moved by the
+    // copy offset and selected, in one undo step.
+    #[test]
+    fn s43_15_ctrl_d_duplicates_offset_and_selected() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, _, c]) = three_pieces(&mut engine, &mut editor);
+        let name = SetProperty::new(page, vec![a], Property::Name(Some("Logo".into())), None);
+        engine.edit().execute(Box::new(name)).expect("a name");
+        editor.selected = Selection::of(page, [a, c]);
+        let depth = undo_depth(&mut engine);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut editor, &mut engine, Some(Key::D));
+        assert_eq!(the_shapes(&mut engine).len(), 5);
+        let copies = editor.selected.nodes().to_vec();
+        assert_eq!(copies.len(), 2);
+        assert!(!copies.contains(&a) && !copies.contains(&c));
+        let from = placements(&mut engine, &[a, c]);
+        let to = placements(&mut engine, &copies);
+        for (copy, origin) in to.iter().zip(&from) {
+            assert_eq!((copy.x - origin.x, copy.y - origin.y), (10.0, 10.0));
+        }
+        let document = engine.edit().document().expect("a document");
+        let named = document.pages()[0].node(copies[0]).expect("the copy");
+        assert_eq!(named.base.name.as_deref(), Some("Logo copia"));
+        assert_eq!(roots_now(&mut engine).last(), copies.last(), "on top of c");
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S43-16: Ctrl+C puts the selection in the clipboard and its plain text
+    // on the system clipboard; the paste of that text pastes it moved off
+    // its original, other text pastes nothing, Pegar in the menu pastes
+    // too, and Ctrl+X cuts in one undo step.
+    #[test]
+    fn s43_16_copy_cut_and_paste_through_the_clipboard() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, ..]) = three_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::one(page, a);
+        let ctx = egui::Context::default();
+        let mut session = None;
+        let out = frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Copy],
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        let copied = out.commands.iter().find_map(|c| match c {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(copied.as_deref(), Some("Rectángulo"));
+        assert_eq!(
+            session.as_ref().map(|c| c.text.as_str()),
+            Some("Rectángulo")
+        );
+        let depth = undo_depth(&mut engine);
+        let paste = |text: &str| vec![egui::Event::Paste(text.to_owned())];
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            paste("otra cosa"),
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert_eq!(the_shapes(&mut engine).len(), 3, "other text is not pasted");
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            paste("Rectángulo"),
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert_eq!(the_shapes(&mut engine).len(), 4);
+        let pasted = editor.selected.single().expect("the paste").1;
+        let [origin, copy] = placements(&mut engine, &[a, pasted])[..] else {
+            panic!("two placements")
+        };
+        assert_eq!((copy.x - origin.x, copy.y - origin.y), (10.0, 10.0));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                paste: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(the_shapes(&mut engine).len(), 5, "Edición → Pegar");
+        let last = editor.selected.single().expect("the paste").1;
+        assert_eq!(placements(&mut engine, &[last])[0].x - origin.x, 20.0);
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Cut],
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert_eq!(the_shapes(&mut engine).len(), 4);
+        assert!(editor.selected.is_empty());
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine).len(), 5, "one undo brings it back");
+        // The clipboard of the session reaches another project.
+        let mut other = engine_with_new_document();
+        let mut fresh = Editor::default();
+        frame_events(
+            &ctx,
+            &mut fresh,
+            &mut other,
+            paste("Rectángulo"),
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert_eq!(the_shapes(&mut other).len(), 1);
+    }
+
+    fn engine_with_new_document() -> Gafira {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        engine
+    }
+
+    // S43-17: Esc inside a group selects the group and leaves it; Ctrl+A in
+    // a group selects its children; Ctrl+Alt+C, which the window turns
+    // into a copy, still aligns to the centre (spec 042).
+    #[test]
+    fn s43_17_escape_leaves_the_group_and_ctrl_alt_c_aligns() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, group, [a, b, c]) = grouped(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        editor.scope = Some((page, group));
+        editor.selected = Selection::one(page, a);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::A));
+        assert_eq!(editor.selected, Selection::of(page, [a, b]));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Escape),
+            Modifiers::NONE,
+        );
+        assert_eq!(editor.selected, Selection::one(page, group));
+        assert_eq!(editor.scope, None);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Escape),
+            Modifiers::NONE,
+        );
+        assert!(editor.selected.is_empty());
+        editor.selected = Selection::of(page, [group, c]);
+        let before = placements(&mut engine, &[a, b, c]);
+        let mut session = None;
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Copy],
+            Modifiers::COMMAND.plus(Modifiers::ALT),
+            &mut session,
+        );
+        assert_eq!(session, None, "not a copy");
+        assert_ne!(placements(&mut engine, &[a, b, c]), before, "it aligned");
+        let document = engine.edit().document();
+        let boxes = selected_shapes(document.as_deref(), &editor.selected);
+        let centre = |p: &Placement| p.x + p.w / 2.0;
+        assert!(
+            (centre(&boxes[0].placement) - centre(&boxes[1].placement)).abs() < 1e-6,
+            "the group and c share their centre: {boxes:?}"
+        );
+    }
+
+    // S43-18: Agrupar needs a selection and Desagrupar a group; the order
+    // actions work among the children of a group.
+    #[test]
+    fn s43_18_group_actions_are_off_when_they_cannot_act() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, group, [a, b, c]) = grouped(&mut engine, &mut editor);
+        let document = engine.edit().document();
+        let can = |selected: Selection| CanArrange::of(document.as_deref(), &selected);
+        assert_eq!(can(Selection::default()), CanArrange::default());
+        let one = can(Selection::one(page, c));
+        assert!(one.group && !one.ungroup);
+        assert!(can(Selection::of(page, [group, c])).ungroup);
+        // Inside the group: a is at the back of its two siblings.
+        assert_eq!(
+            can(Selection::one(page, a)).order,
+            [true, false, true, false]
+        );
+        assert_eq!(
+            can(Selection::one(page, b)).order,
+            [false, true, false, true]
+        );
+        assert_eq!(
+            can(Selection::of(page, [a, c])).order,
+            [false; 4],
+            "two lists"
         );
     }
 }

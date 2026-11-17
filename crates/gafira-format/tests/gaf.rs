@@ -432,3 +432,49 @@ fn s41_19_a_turned_flipped_element_round_trips_through_the_gaf() {
     assert_eq!(placement["rotation_deg"], json!(0.0));
     assert_eq!(placement["flip"], json!({ "x": false, "y": false }));
 }
+
+// S43-19: groups, nested and with a turned child, round-trip through the
+// `.gaf` with their children lists, in schema version 1: the format has
+// had `group` nodes since spec 019, so spec 043 needs no new version.
+#[test]
+fn s43_19_nested_groups_round_trip_through_the_gaf() {
+    let mut json: Value = serde_json::from_str(&document().to_json().expect("json")).expect("json");
+    let rect = |id: u64, x: f64, rotation: f64| {
+        json!({
+            "base": {"id": id, "placement": {"x": x, "y": 10.0, "w": 40.0, "h": 20.0,
+                "rotation_deg": rotation}},
+            "kind": {"type": "shape", "geometry": "rect", "fill": null},
+        })
+    };
+    let group = |id: u64, children: &[u64]| {
+        json!({
+            "base": {"id": id, "name": "Grupo", "opacity": 0.5,
+                "placement": {"x": 0.0, "y": 0.0, "w": 100.0, "h": 40.0}},
+            "kind": {"type": "group"},
+            "children": children,
+        })
+    };
+    json["next_id"] = json!(30);
+    let page = &mut json["pages"][0];
+    page["roots"] = json!([2]);
+    page["nodes"] = json!([
+        group(2, &[20, 21]),
+        rect(20, 0.0, 0.0),
+        group(21, &[22]),
+        rect(22, 60.0, 45.0),
+    ]);
+    let grouped = Document::from_json(&serde_json::to_vec(&json).expect("bytes"))
+        .expect("the grouped document loads");
+    let loaded = read(gaf(&grouped)).expect("reads");
+    assert_eq!(loaded.document, grouped);
+    assert_eq!(loaded.document.schema_version(), 1);
+    let page = &loaded.document.pages()[0];
+    let ids = |id: u64| -> Vec<u64> {
+        let node = page.node(gafira_doc::NodeId::new(id)).expect("a node");
+        node.children.iter().map(|c| c.get()).collect()
+    };
+    assert_eq!(ids(2), [20, 21]);
+    assert_eq!(ids(21), [22]);
+    let turned = page.node(gafira_doc::NodeId::new(22)).expect("a node");
+    assert_eq!(turned.base.placement.rotation_deg, 45.0);
+}
