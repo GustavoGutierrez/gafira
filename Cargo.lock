@@ -1847,12 +1847,14 @@ dependencies = [
  "gafira-i18n",
  "gafira-io-image",
  "gafira-io-pdf",
+ "gafira-layout",
  "gafira-platform",
  "gafira-ports",
  "gafira-render",
  "gafira-render-cpu",
  "gafira-theme",
  "image",
+ "proptest",
  "rfd",
 ]
 

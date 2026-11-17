@@ -19,6 +19,7 @@ use crate::canvas::{self, Shape};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::icons::{self, Icon, Weight};
+use crate::rotation::{self, Axis};
 use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
@@ -52,6 +53,8 @@ const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key:
 const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
 const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
 const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
+const FLIP_H: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::H);
+const FLIP_V: KeyboardShortcut = KeyboardShortcut::new(Modifiers::SHIFT, Key::V);
 
 /// «Deshacer · Ctrl+Z»: an action and its shortcut as the platform writes it
 /// (03 §8.1, Tooltip).
@@ -83,6 +86,8 @@ pub(crate) struct Editor {
     drag: Option<Drag>,
     /// The marquee being drawn from empty canvas (spec 040).
     marquee: Option<Marquee>,
+    /// The font atlas size the last turned text was mapped with.
+    font_atlas: Option<[usize; 2]>,
     /// «Versiones» and «Guardar versión…» (spec 031).
     versions: Versions,
 }
@@ -94,9 +99,21 @@ struct Drag {
     /// Each selected element and where it started.
     origins: Vec<(NodeId, Placement)>,
     offset: Vec2,
-    /// The resize handle held, or `None` for a move. Only a single
-    /// selection resizes.
-    handle: Option<canvas::Handle>,
+    /// The handle held, or `None` for a move. Only a single selection
+    /// resizes or turns.
+    hold: Option<Hold>,
+}
+
+/// A handle held on a single selection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Hold {
+    Resize(canvas::Handle),
+    /// The rotate handle (spec 041): the element's centre and where the
+    /// pointer was pressed, in screen px.
+    Rotate {
+        center: Pos2,
+        from: Pos2,
+    },
 }
 
 /// A marquee on the canvas, in screen px: where the drag started, where the
@@ -120,6 +137,7 @@ impl Default for Editor {
             drag: None,
             marquee: None,
             versions: Versions::default(),
+            font_atlas: None,
         }
     }
 }
@@ -145,9 +163,17 @@ struct Asked {
     select: Option<Selection>,
     /// Ctrl+A or Edición → Seleccionar todo (spec 040).
     select_all: bool,
-    /// A drag of the selection begins: a move, or a resize by this handle.
-    drag_begin: Option<Option<canvas::Handle>>,
+    /// A drag of the selection begins: a move, or a resize or a turn by
+    /// this handle.
+    drag_begin: Option<Option<Hold>>,
     drag_to: Option<Vec2>,
+    /// Shift is held during the drag: a turn snaps to 15° (FD-06).
+    snap: bool,
+    /// Turn every selected element by these degrees about its centre
+    /// (Edición, Inspector; spec 041).
+    turn: Option<f64>,
+    /// Flip every selected element about its centre (Mayús+H, Mayús+V).
+    flip: Option<Axis>,
     drag_end: bool,
     delete: bool,
     /// A placement typed in the Inspector for the selected element.
@@ -327,6 +353,13 @@ impl Editor {
                 }
             }
         });
+        // A turned text maps its glyphs with the atlas size of the last
+        // frame; if the atlas grew after that, draw once more (spec 041).
+        if let Some(used) = self.font_atlas.take()
+            && ctx.fonts(|f| f.font_image_size()) != used
+        {
+            ctx.request_repaint();
+        }
         let typing = ctx.wants_keyboard_input();
         if !typing {
             ctx.input(|i| {
@@ -338,6 +371,14 @@ impl Editor {
                 }
                 if i.modifiers.command && i.key_pressed(egui::Key::A) {
                     asked.select_all = true;
+                }
+                if i.modifiers.matches_exact(Modifiers::SHIFT) {
+                    if i.key_pressed(egui::Key::H) {
+                        asked.flip = Some(Axis::Horizontal);
+                    }
+                    if i.key_pressed(egui::Key::V) {
+                        asked.flip = Some(Axis::Vertical);
+                    }
                 }
             });
         }
@@ -450,6 +491,39 @@ impl Editor {
                 if ui.add_enabled(document.is_some(), all).clicked() {
                     asked.select_all = true;
                     ui.close();
+                }
+                ui.separator();
+                let some = !self.selected.is_empty();
+                for (key, turn) in [
+                    (gafira_doc::msg!("editor.rotate_left"), -90.0),
+                    (gafira_doc::msg!("editor.rotate_right"), 90.0),
+                ] {
+                    if ui
+                        .add_enabled(some, egui::Button::new(texts.t(&key)))
+                        .clicked()
+                    {
+                        asked.turn = Some(turn);
+                        ui.close();
+                    }
+                }
+                for (key, axis, keys) in [
+                    (
+                        gafira_doc::msg!("editor.flip_horizontal"),
+                        Axis::Horizontal,
+                        FLIP_H,
+                    ),
+                    (
+                        gafira_doc::msg!("editor.flip_vertical"),
+                        Axis::Vertical,
+                        FLIP_V,
+                    ),
+                ] {
+                    let flip = egui::Button::new(texts.t(&key))
+                        .shortcut_text(ui.ctx().format_shortcut(&keys));
+                    if ui.add_enabled(some, flip).clicked() {
+                        asked.flip = Some(axis);
+                        ui.close();
+                    }
                 }
             });
             let view = RichText::new(texts.t(&gafira_doc::msg!("menu.view")))
@@ -872,10 +946,24 @@ impl Editor {
                                 .changed();
                             ui.end_row();
                         }
+                        // «Giro», in degrees within one turn (spec 041).
+                        ui.label(texts.t(&gafira_doc::msg!("inspector.rotation")));
+                        let mut degrees = rotation::normalized(placement.rotation_deg);
+                        let field = egui::DragValue::new(&mut degrees)
+                            .speed(1.0)
+                            .max_decimals(1)
+                            .custom_formatter(|value, _| degrees_text(texts, value));
+                        if ui.add(field).changed() {
+                            placement.rotation_deg = rotation::normalized(degrees);
+                            changed = true;
+                        }
+                        ui.end_row();
                     });
                 if changed {
                     asked.place = Some(placement);
                 }
+                ui.add_space(8.0);
+                turn_buttons(ui, theme, texts, asked);
                 ui.add_space(16.0);
                 if shape.text.is_none() {
                     fill_field(ui, texts, shape, asked);
@@ -1025,7 +1113,7 @@ impl Editor {
                             ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
                         let single = self.selected.single();
                         let mut picked: Option<(PageId, NodeId)> = None;
-                        let mut grabbed: Option<canvas::Handle> = None;
+                        let mut grabbed: Option<Hold> = None;
                         // Each page's id, screen box and shapes, for the marquee.
                         let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
                         let selection = theme.c("canvas.selection");
@@ -1069,6 +1157,12 @@ impl Editor {
                                 let shapes = canvas::shapes(page_doc);
                                 for shape in &shapes {
                                     let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    // Where the local box lands on the screen,
+                                    // turned and flipped as the render draws it
+                                    // (spec 041).
+                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                    let upright = rotation::upright(&shape.placement);
+                                    let outline = rotation::corners(turn, &shape.placement);
                                     if let Some(asset) = shape.image {
                                         let tint = Color32::WHITE
                                             .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
@@ -1078,39 +1172,79 @@ impl Editor {
                                             .and_then(Option::as_ref)
                                         {
                                             Some(texture) => {
-                                                let uv = Rect::from_min_max(
-                                                    Pos2::ZERO,
-                                                    Pos2::new(1.0, 1.0),
-                                                );
-                                                painter.image(texture.id(), at, uv, tint);
+                                                painter.add(canvas::image_mesh(
+                                                    texture.id(),
+                                                    turn,
+                                                    &shape.placement,
+                                                    tint,
+                                                ));
                                             }
                                             None => {
-                                                painter.rect_filled(
-                                                    at,
-                                                    0.0,
+                                                painter.add(egui::Shape::convex_polygon(
+                                                    outline.to_vec(),
                                                     theme.c("surface.sunken"),
-                                                );
+                                                    Stroke::NONE,
+                                                ));
                                             }
                                         }
                                     }
                                     if let Some(text) = &shape.text {
-                                        draw_text(painter, theme, at, zoom, shape.opacity, text);
+                                        let laid =
+                                            lay_text(painter, theme, at, zoom, shape.opacity, text);
+                                        if upright {
+                                            for (pos, galley, color) in laid {
+                                                painter.galley(pos, galley, color);
+                                            }
+                                        } else {
+                                            let atlas = ctx.fonts(|f| f.font_image_size());
+                                            self.font_atlas = Some(atlas);
+                                            painter.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                        }
                                     }
-                                    painter.add(canvas::painted(shape, at, zoom));
+                                    if upright {
+                                        painter.add(canvas::painted(shape, at, zoom));
+                                    } else {
+                                        painter.add(canvas::painted_turned(shape, turn, zoom));
+                                    }
                                     if !self.selected.contains(shape.page, shape.node) {
                                         continue;
                                     }
-                                    painter.rect_stroke(
-                                        at.expand(1.0),
-                                        0.0,
-                                        Stroke::new(2.0, selection),
-                                        egui::StrokeKind::Outside,
-                                    );
-                                    // Only a single selection resizes.
+                                    if upright {
+                                        painter.rect_stroke(
+                                            at.expand(1.0),
+                                            0.0,
+                                            Stroke::new(2.0, selection),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    } else {
+                                        painter.add(egui::Shape::closed_line(
+                                            outline.to_vec(),
+                                            Stroke::new(2.0, selection),
+                                        ));
+                                    }
+                                    // Only a single selection resizes or turns.
                                     if single == Some((shape.page, shape.node)) {
+                                        let knob = rotation::rotate_handle(turn, &shape.placement);
+                                        let top = canvas::handle_point(
+                                            turn,
+                                            &shape.placement,
+                                            canvas::Handle { x: 0, y: -1 },
+                                        );
+                                        painter
+                                            .line_segment([top, knob], Stroke::new(1.0, selection));
+                                        painter.circle(
+                                            knob,
+                                            canvas::HANDLE_HALF,
+                                            theme.c("surface"),
+                                            Stroke::new(1.5, selection),
+                                        );
                                         for handle in canvas::HANDLES {
                                             let square = Rect::from_center_size(
-                                                canvas::handle_at(at, handle),
+                                                canvas::handle_point(
+                                                    turn,
+                                                    &shape.placement,
+                                                    handle,
+                                                ),
                                                 Vec2::splat(canvas::HANDLE_HALF * 2.0),
                                             );
                                             painter.rect(
@@ -1123,9 +1257,22 @@ impl Editor {
                                         }
                                         if response.drag_started()
                                             && let Some(pos) = pointer
-                                            && let Some(handle) = canvas::handle_hit(at, pos)
+                                            && let Some(grip) =
+                                                canvas::grip_hit(turn, &shape.placement, pos)
                                         {
-                                            grabbed = Some(handle);
+                                            grabbed = Some(match grip {
+                                                canvas::Grip::Resize(handle) => {
+                                                    Hold::Resize(handle)
+                                                }
+                                                canvas::Grip::Rotate => Hold::Rotate {
+                                                    center: rotation::screen(
+                                                        turn,
+                                                        shape.placement.w / 2.0,
+                                                        shape.placement.h / 2.0,
+                                                    ),
+                                                    from: pos,
+                                                },
+                                            });
                                         }
                                     }
                                 }
@@ -1136,7 +1283,7 @@ impl Editor {
                                     let boxes = shapes
                                         .iter()
                                         .filter(|s| self.selected.contains(s.page, s.node))
-                                        .map(|s| canvas::on_screen(page, zoom, &s.placement));
+                                        .map(|s| rotation::screen_box(page, zoom, &s.placement));
                                     if let Some(all) = canvas::bounds(boxes) {
                                         painter.rect_stroke(
                                             all.expand(4.0),
@@ -1207,6 +1354,7 @@ impl Editor {
                                 }
                             } else if self.drag.is_some() {
                                 asked.drag_to = Some(response.drag_delta());
+                                asked.snap = shift;
                             }
                         }
                         if let Some(marquee) = self.marquee {
@@ -1329,7 +1477,7 @@ impl Editor {
                 SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
             log("text", engine.edit().execute(Box::new(command)).map(drop));
         }
-        if let Some(handle) = asked.drag_begin
+        if let Some(hold) = asked.drag_begin
             && let Some(page) = self.selected.page()
         {
             // Where every selected element starts, from the newest document.
@@ -1342,7 +1490,7 @@ impl Editor {
             self.drag = Some(Drag {
                 gesture,
                 page,
-                handle: handle.filter(|_| origins.len() == 1),
+                hold: hold.filter(|_| origins.len() == 1),
                 origins,
                 offset: Vec2::ZERO,
             });
@@ -1356,8 +1504,13 @@ impl Editor {
                 .origins
                 .iter()
                 .map(|(node, origin)| {
-                    let to = match drag.handle {
-                        Some(handle) => canvas::resized(origin, handle, drag.offset, zoom),
+                    let to = match drag.hold {
+                        Some(Hold::Resize(handle)) => {
+                            canvas::resized(origin, handle, drag.offset, zoom)
+                        }
+                        Some(Hold::Rotate { center, from }) => {
+                            rotation::rotated(origin, center, from, from + drag.offset, asked.snap)
+                        }
                         None => canvas::moved(origin, drag.offset, zoom),
                     };
                     let command = SetProperty::new(
@@ -1375,6 +1528,11 @@ impl Editor {
         }
         if asked.drag_end && self.drag.take().is_some() {
             log("end gesture", engine.edit().end_gesture());
+        }
+        if (asked.turn.is_some() || asked.flip.is_some())
+            && let Some(page) = self.selected.page()
+        {
+            self.reshape(engine, page, asked.turn, asked.flip);
         }
         if let (Some(placement), Some((page, node))) = (asked.place, self.selected.single()) {
             let command = SetProperty::new(page, vec![node], Property::Placement(placement), None);
@@ -1439,6 +1597,41 @@ impl Editor {
 }
 
 impl Editor {
+    /// Turn by `turn` degrees and then flip along `flip` every selected
+    /// element, each about its own centre (spec 041). The commands share a
+    /// gesture of their own, so the action is one undo step and never
+    /// merges with the next one.
+    fn reshape(&self, engine: &mut Gafira, page: PageId, turn: Option<f64>, flip: Option<Axis>) {
+        let now = engine.edit().document();
+        let shapes = selected_shapes(now.as_deref(), &self.selected);
+        let gesture = engine.edit().begin_gesture().ok();
+        let commands = shapes
+            .iter()
+            .map(|shape| {
+                let mut to = shape.placement;
+                if let Some(degrees) = turn {
+                    to = rotation::turned_by(&to, degrees);
+                }
+                if let Some(axis) = flip {
+                    to = rotation::flipped(&to, axis);
+                }
+                let command =
+                    SetProperty::new(page, vec![shape.node], Property::Placement(to), gesture);
+                Box::new(command) as Box<dyn Command>
+            })
+            .collect();
+        if let Some(command) = batch(commands)
+            && let Err(error) = engine.edit().execute(command)
+        {
+            eprintln!("turn or flip: {error}");
+        }
+        if gesture.is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("end gesture: {error}");
+        }
+    }
+
     /// Decode, once, the images the document shows into textures (spec
     /// 029), reading the bytes from the content store; large images are
     /// scaled down to 2048 px for the canvas.
@@ -1587,6 +1780,8 @@ fn many_fields(
         .color(theme.c("text")),
     );
     ui.add_space(16.0);
+    turn_buttons(ui, theme, texts, asked);
+    ui.add_space(16.0);
     if shapes
         .iter()
         .all(|shape| shape.text.is_none() && shape.image.is_none())
@@ -1595,6 +1790,66 @@ fn many_fields(
         ui.add_space(8.0);
     }
     opacity_field(ui, texts, primary, asked);
+}
+
+/// `value` degrees as the catalog writes them («45°»).
+fn degrees_text(texts: &Texts, value: f64) -> String {
+    texts.t(&gafira_doc::msg!(
+        "unit.deg",
+        value = Text(format!("{value:.1}"))
+    ))
+}
+
+/// Girar 90° a la izquierda y a la derecha, Voltear horizontalmente y
+/// verticalmente: icon buttons for the whole selection (spec 041).
+fn turn_buttons(ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+    ui.horizontal(|ui| {
+        for (icon, key, turn) in [
+            (
+                Icon::RotateLeft,
+                gafira_doc::msg!("editor.rotate_left"),
+                -90.0,
+            ),
+            (
+                Icon::RotateRight,
+                gafira_doc::msg!("editor.rotate_right"),
+                90.0,
+            ),
+        ] {
+            if IconButton::new(icon, texts.t(&key))
+                .small()
+                .show(ui, theme)
+                .clicked()
+            {
+                asked.turn = Some(turn);
+            }
+        }
+        for (icon, key, axis, keys) in [
+            (
+                Icon::FlipHorizontal,
+                gafira_doc::msg!("editor.flip_horizontal"),
+                Axis::Horizontal,
+                FLIP_H,
+            ),
+            (
+                Icon::FlipVertical,
+                gafira_doc::msg!("editor.flip_vertical"),
+                Axis::Vertical,
+                FLIP_V,
+            ),
+        ] {
+            let name = texts.t(&key);
+            let tooltip = with_keys(ui.ctx(), texts, name.clone(), keys);
+            if IconButton::new(icon, name)
+                .small()
+                .tooltip(tooltip)
+                .show(ui, theme)
+                .clicked()
+            {
+                asked.flip = Some(axis);
+            }
+        }
+    });
 }
 
 fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
@@ -1702,18 +1957,20 @@ fn text_fields(
     });
 }
 
-/// Draw a text element in its box: one galley per paragraph, wrapped to the
-/// box width, aligned, stacked downwards. The canvas draws with egui; the
+/// Lay out a text element in its upright screen box `at`: one galley per
+/// paragraph, wrapped to the box width, aligned, stacked downwards, each
+/// with where it goes and its colour. The canvas draws with egui; the
 /// document renderer (`gafira-text`) takes over when the canvas renders
 /// through `gafira-render`.
-fn draw_text(
+fn lay_text(
     painter: &egui::Painter,
     theme: &Theme,
     at: Rect,
     zoom: f32,
     opacity: f32,
     text: &gafira_doc::TextNode,
-) {
+) -> Vec<(Pos2, Arc<egui::Galley>, Color32)> {
+    let mut laid = Vec::new();
     let mut y = at.min.y;
     for paragraph in &text.content.paragraphs {
         let Some(style) = paragraph.spans.first().map(|span| &span.style) else {
@@ -1743,9 +2000,53 @@ fn draw_text(
             gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => at.min.x,
         };
         let height = galley.size().y.max(size);
-        painter.galley(Pos2::new(x, y), galley, color);
+        laid.push((Pos2::new(x, y), galley, color));
         y += height;
     }
+    laid
+}
+
+/// The text `laid` out in the upright box `at`, as one mesh mapped by
+/// `turn` (spec 041): each glyph vertex goes back to the local box (`at`
+/// at `zoom`) and out through the element's transform, so the text turns
+/// and mirrors with its box. The glyph coordinates of a galley are in
+/// texels of the font atlas of `atlas` size.
+fn text_mesh(
+    laid: &[(Pos2, Arc<egui::Galley>, Color32)],
+    at: Rect,
+    zoom: f32,
+    turn: gafira_geom::Affine,
+    atlas: [usize; 2],
+) -> egui::Mesh {
+    let mut mesh = egui::Mesh::default();
+    let texel = Vec2::new(1.0 / atlas[0].max(1) as f32, 1.0 / atlas[1].max(1) as f32);
+    for (pos, galley, fallback) in laid {
+        for row in &galley.rows {
+            let start = mesh.vertices.len() as u32;
+            let origin = *pos + row.pos.to_vec2();
+            mesh.indices
+                .extend(row.visuals.mesh.indices.iter().map(|index| index + start));
+            mesh.vertices
+                .extend(row.visuals.mesh.vertices.iter().map(|vertex| {
+                    let upright = origin + vertex.pos.to_vec2() - at.min;
+                    let color = if vertex.color == Color32::PLACEHOLDER {
+                        *fallback
+                    } else {
+                        vertex.color
+                    };
+                    egui::epaint::Vertex {
+                        pos: rotation::screen(
+                            turn,
+                            f64::from(upright.x / zoom),
+                            f64::from(upright.y / zoom),
+                        ),
+                        uv: Pos2::new(vertex.uv.x * texel.x, vertex.uv.y * texel.y),
+                        color,
+                    }
+                }));
+        }
+    }
+    mesh
 }
 
 /// A shadow offset as egui's `i8`; the tokens hold small whole numbers.
@@ -2134,7 +2435,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                drag_begin: Some(Some(corner)),
+                drag_begin: Some(Some(Hold::Resize(corner))),
                 ..Asked::default()
             },
             &theme,
@@ -2451,18 +2752,29 @@ pub(crate) mod tests {
     /// One frame of the whole editor in a 1440 × 900 window, with Ctrl/Cmd
     /// and `key` pressed when given.
     fn frame(ctx: &egui::Context, editor: &mut Editor, engine: &mut Gafira, key: Option<Key>) {
+        frame_with(ctx, editor, engine, key, Modifiers::COMMAND);
+    }
+
+    /// [`frame`] with `modifiers` held instead of Ctrl/Cmd.
+    fn frame_with(
+        ctx: &egui::Context,
+        editor: &mut Editor,
+        engine: &mut Gafira,
+        key: Option<Key>,
+        modifiers: Modifiers,
+    ) {
         let mut input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0))),
             ..Default::default()
         };
         if let Some(key) = key {
-            input.modifiers = Modifiers::COMMAND;
+            input.modifiers = modifiers;
             input.events.push(egui::Event::Key {
                 key,
                 physical_key: None,
                 pressed: true,
                 repeat: false,
-                modifiers: Modifiers::COMMAND,
+                modifiers,
             });
         }
         let (theme, texts) = (theme(), Texts::new(gafira_ports::i18n::Locale::Es));
@@ -2571,7 +2883,7 @@ pub(crate) mod tests {
         let corner = canvas::Handle { x: 1, y: 1 };
         for asked in [
             Asked {
-                drag_begin: Some(Some(corner)),
+                drag_begin: Some(Some(Hold::Resize(corner))),
                 ..Asked::default()
             },
             Asked {
@@ -2777,5 +3089,311 @@ pub(crate) mod tests {
         assert_eq!(editor.selected.len(), 2, "kept across frames");
         frame(&ctx, &mut editor, &mut engine, Some(Key::Escape));
         assert_eq!(editor.selected, Selection::default());
+    }
+
+    /// `asked` one after the other through `editor`.
+    fn gesture(engine: &mut Gafira, editor: &mut Editor, steps: Vec<Asked>) {
+        for asked in steps {
+            ask(engine, editor, asked);
+        }
+    }
+
+    // S41-15: a drag of the rotate handle turns the element about its
+    // centre in one undo step; Shift snaps to 15°.
+    #[test]
+    fn s41_15_the_rotate_handle_turns_in_one_undo_and_shift_snaps() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::one(page, rect);
+        let before = the_shapes(&mut engine)[0].placement;
+        let depth = undo_depth(&mut engine);
+        let center = Pos2::new(100.0, 100.0);
+        let hold = Hold::Rotate {
+            center,
+            from: Pos2::new(100.0, 0.0),
+        };
+        // From straight up to straight right in three steps: a quarter turn.
+        let mut steps = vec![Asked {
+            drag_begin: Some(Some(hold)),
+            ..Asked::default()
+        }];
+        for delta in [
+            Vec2::new(40.0, 20.0),
+            Vec2::new(40.0, 40.0),
+            Vec2::new(20.0, 40.0),
+        ] {
+            steps.push(Asked {
+                drag_to: Some(delta),
+                ..Asked::default()
+            });
+        }
+        steps.push(Asked {
+            drag_end: true,
+            ..Asked::default()
+        });
+        gesture(&mut engine, &mut editor, steps);
+        let turned = the_shapes(&mut engine)[0].placement;
+        assert!((turned.rotation_deg - 90.0).abs() < 1e-9, "{turned:?}");
+        assert_eq!(
+            (turned.x, turned.y, turned.w, turned.h),
+            (before.x, before.y, before.w, before.h),
+            "turned about its centre"
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one entry for the turn");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine)[0].placement, before);
+
+        // With Shift a 35° drag snaps to 30°.
+        let a = (35.0f32 - 90.0).to_radians();
+        let to = Pos2::new(100.0 + 100.0 * a.cos(), 100.0 + 100.0 * a.sin());
+        gesture(
+            &mut engine,
+            &mut editor,
+            vec![
+                Asked {
+                    drag_begin: Some(Some(hold)),
+                    ..Asked::default()
+                },
+                Asked {
+                    drag_to: Some(to - Pos2::new(100.0, 0.0)),
+                    snap: true,
+                    ..Asked::default()
+                },
+                Asked {
+                    drag_end: true,
+                    ..Asked::default()
+                },
+            ],
+        );
+        assert_eq!(the_shapes(&mut engine)[0].placement.rotation_deg, 30.0);
+    }
+
+    // S41-16: Edición's turns and flips go to the whole selection, each
+    // element about its own centre, one undo step per action; two actions
+    // in a row are two steps.
+    #[test]
+    fn s41_16_turn_and_flip_apply_to_the_selection_one_undo_each() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::of(page, [rect, ellipse]);
+        let before = the_shapes(&mut engine);
+        let depth = undo_depth(&mut engine);
+        let turn = |degrees| Asked {
+            turn: Some(degrees),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, turn(90.0));
+        ask(&mut engine, &mut editor, turn(90.0));
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                flip: Some(Axis::Horizontal),
+                ..Asked::default()
+            },
+        );
+        let after = the_shapes(&mut engine);
+        for (shape, origin) in after.iter().zip(&before) {
+            let (p, o) = (shape.placement, origin.placement);
+            assert_eq!(
+                (p.x, p.y, p.w, p.h),
+                (o.x, o.y, o.w, o.h),
+                "{:?}",
+                shape.node
+            );
+            // 180° flipped horizontally is 180° again, mirrored.
+            assert_eq!(p.rotation_deg, 180.0);
+            assert!(p.flip.x && !p.flip.y);
+        }
+        assert_eq!(
+            undo_depth(&mut engine),
+            depth + 3,
+            "three actions, three steps"
+        );
+        engine.edit().undo().expect("an undo");
+        for shape in the_shapes(&mut engine) {
+            assert_eq!(shape.placement.rotation_deg, 180.0);
+            assert!(!shape.placement.flip.x, "the flip undone on both");
+        }
+        ask(&mut engine, &mut editor, turn(-90.0));
+        assert!(
+            the_shapes(&mut engine)
+                .iter()
+                .all(|s| s.placement.rotation_deg == 90.0)
+        );
+    }
+
+    // S41-17: Mayús+H and Mayús+V flip the selection; with Ctrl they do not.
+    #[test]
+    fn s41_17_shift_h_and_shift_v_flip_the_selection() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::one(page, rect);
+        let ctx = egui::Context::default();
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::H),
+            Modifiers::SHIFT,
+        );
+        assert!(the_shapes(&mut engine)[0].placement.flip.x);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::V),
+            Modifiers::SHIFT,
+        );
+        assert!(the_shapes(&mut engine)[0].placement.flip.y);
+        let command_shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), command_shift);
+        assert!(
+            the_shapes(&mut engine)[0].placement.flip.x,
+            "Ctrl+Mayús+H is not a flip"
+        );
+        let ellipse = the_shapes(&mut engine)[1].placement;
+        assert!(!ellipse.flip.x && !ellipse.flip.y, "only the selection");
+    }
+
+    // S41-18: resizing a turned element by its handle works in its own axes
+    // in one undo step.
+    #[test]
+    fn s41_18_a_turned_element_resizes_in_its_own_axes_in_one_undo() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::one(page, rect);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                turn: Some(90.0),
+                ..Asked::default()
+            },
+        );
+        let before = the_shapes(&mut engine)[0].placement;
+        let depth = undo_depth(&mut engine);
+        editor.zoom = 1.0;
+        // The local right edge faces down after a quarter turn.
+        let right = canvas::Handle { x: 1, y: 0 };
+        let mut steps = vec![Asked {
+            drag_begin: Some(Some(Hold::Resize(right))),
+            ..Asked::default()
+        }];
+        for _ in 0..2 {
+            steps.push(Asked {
+                drag_to: Some(Vec2::new(0.0, 10.0)),
+                ..Asked::default()
+            });
+        }
+        steps.push(Asked {
+            drag_end: true,
+            ..Asked::default()
+        });
+        gesture(&mut engine, &mut editor, steps);
+        let after = the_shapes(&mut engine)[0].placement;
+        assert!((after.w - before.w - 20.0).abs() < 1e-9, "{after:?}");
+        assert_eq!(after.h, before.h);
+        assert_eq!(after.rotation_deg, 90.0);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S41-14: a flipped text mirrors its glyphs about the box centre, with
+    // the texture coordinates of the font atlas in [0, 1].
+    #[test]
+    fn s41_14_a_flipped_text_mirrors_its_glyphs() {
+        let ctx = egui::Context::default();
+        let theme = theme();
+        theme.apply(&ctx);
+        // The first pass loads the fonts.
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let style = gafira_doc::SpanStyle {
+            font: theme.tokens.typography.ui.clone(),
+            size: 20.0,
+            color: canvas::document_color(Color32::BLACK),
+        };
+        let text = gafira_doc::TextNode::plain("Hola", &style);
+        let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));
+        let upright = Placement::new(100.0, 100.0, 200.0, 50.0);
+        let mut mirrored = upright;
+        mirrored.flip.x = true;
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0))),
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            let at = canvas::on_screen(page, 1.0, &upright);
+            let laid = lay_text(&painter, &theme, at, 1.0, 1.0, &text);
+            let atlas = ctx.fonts(|f| f.font_image_size());
+            let plain = text_mesh(
+                &laid,
+                at,
+                1.0,
+                rotation::to_screen(page, 1.0, &upright),
+                atlas,
+            );
+            let flipped = text_mesh(
+                &laid,
+                at,
+                1.0,
+                rotation::to_screen(page, 1.0, &mirrored),
+                atlas,
+            );
+            assert!(!plain.vertices.is_empty());
+            assert_eq!(plain.indices, flipped.indices);
+            for (a, b) in plain.vertices.iter().zip(&flipped.vertices) {
+                assert!((a.pos.x - (400.0 - b.pos.x)).abs() < 1e-3, "{a:?} {b:?}");
+                assert!((a.pos.y - b.pos.y).abs() < 1e-3);
+                assert_eq!(a.uv, b.uv);
+                assert!((0.0..=1.0).contains(&a.uv.x) && (0.0..=1.0).contains(&a.uv.y));
+            }
+            // Upright, the mesh is where the galleys are drawn.
+            let (pos, galley, _) = &laid[0];
+            let first = galley.rows[0].visuals.mesh.vertices[0].pos;
+            let want = *pos + galley.rows[0].pos.to_vec2() + first.to_vec2();
+            assert!((plain.vertices[0].pos - want).length() < 1e-3);
+        });
+    }
+
+    // S41: a frame draws turned and flipped shapes, text and a missing
+    // image with their handles without failing.
+    #[test]
+    fn s41_a_frame_draws_turned_elements() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Title, "Hola".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let all: Vec<NodeId> = the_shapes(&mut engine).iter().map(|s| s.node).collect();
+        editor.selected = Selection::of(page, all);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                turn: Some(90.0),
+                flip: Some(Axis::Vertical),
+                ..Asked::default()
+            },
+        );
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        frame(&ctx, &mut editor, &mut engine, None);
+        editor.selected = Selection::one(page, rect);
+        frame(&ctx, &mut editor, &mut engine, None);
+        let shapes = the_shapes(&mut engine);
+        assert!(shapes.iter().all(|s| s.placement.flip.y));
+        assert!(shapes.iter().all(|s| s.placement.rotation_deg == 270.0));
+        assert!(shapes.iter().any(|s| s.node == ellipse));
     }
 }

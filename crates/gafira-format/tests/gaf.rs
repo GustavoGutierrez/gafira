@@ -397,3 +397,38 @@ fn s38_01_an_outlined_rounded_shape_round_trips_through_the_gaf() {
     assert_eq!(kind["stroke"]["width"], json!(3.5));
     assert_eq!(kind["corner_radius"], json!(9.0));
 }
+
+// S41-19: the rotation and both flips of an element survive the `.gaf`;
+// a placement without them loads unturned and unflipped.
+#[test]
+fn s41_19_a_turned_flipped_element_round_trips_through_the_gaf() {
+    let text = document().to_json().expect("json");
+    let mut json: Value = serde_json::from_str(&text).expect("json");
+    let placement = &mut json["pages"][0]["nodes"][0]["base"]["placement"];
+    placement["rotation_deg"] = json!(292.5);
+    placement["flip"] = json!({ "x": true, "y": true });
+    let turned = Document::from_json(&serde_json::to_vec(&json).expect("bytes"))
+        .expect("the turned document loads");
+    let loaded = read(gaf(&turned)).expect("reads");
+    assert_eq!(loaded.document, turned);
+    let back: Value =
+        serde_json::from_str(&loaded.document.to_json().expect("json")).expect("json");
+    let placement = &back["pages"][0]["nodes"][0]["base"]["placement"];
+    assert_eq!(placement["rotation_deg"], json!(292.5));
+    assert_eq!(placement["flip"], json!({ "x": true, "y": true }));
+
+    let mut plain: Value = serde_json::from_str(&text).expect("json");
+    let placement = plain["pages"][0]["nodes"][0]["base"]["placement"]
+        .as_object_mut()
+        .expect("an object");
+    placement.remove("rotation_deg");
+    placement.remove("flip");
+    let old = Document::from_json(&serde_json::to_vec(&plain).expect("bytes"))
+        .expect("a placement without them loads");
+    let loaded = read(gaf(&old)).expect("reads");
+    let back: Value =
+        serde_json::from_str(&loaded.document.to_json().expect("json")).expect("json");
+    let placement = &back["pages"][0]["nodes"][0]["base"]["placement"];
+    assert_eq!(placement["rotation_deg"], json!(0.0));
+    assert_eq!(placement["flip"], json!({ "x": false, "y": false }));
+}

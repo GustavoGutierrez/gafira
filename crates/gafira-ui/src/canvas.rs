@@ -10,6 +10,9 @@ use gafira_doc::{
     TextNode,
 };
 use gafira_edit::NodeSpec;
+use gafira_geom::{Affine, Point};
+
+use crate::rotation;
 
 /// A drawable shape of a page.
 #[derive(Clone, Debug, PartialEq)]
@@ -117,7 +120,8 @@ pub(crate) fn layers(page: &Page) -> Vec<Layer> {
 }
 
 /// The screen rectangle of `placement` on a page drawn at `page_rect` with
-/// `zoom` (rotation is not drawn yet).
+/// `zoom`, before its rotation, shear and flip: where an upright element is
+/// drawn, and the box a turned one is laid out in before it is turned.
 pub(crate) fn on_screen(page_rect: Rect, zoom: f32, placement: &Placement) -> Rect {
     Rect::from_min_size(
         page_rect.min + Vec2::new(placement.x as f32, placement.y as f32) * zoom,
@@ -126,16 +130,20 @@ pub(crate) fn on_screen(page_rect: Rect, zoom: f32, placement: &Placement) -> Re
 }
 
 /// The topmost shape under `pointer`; an ellipse is hit only inside its
-/// outline.
+/// outline. The pointer is taken back to each shape's local box, so a
+/// turned or flipped shape is hit where it is drawn (spec 041).
 pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -> Option<NodeId> {
     shapes.iter().rev().find_map(|shape| {
-        let rect = on_screen(page_rect, zoom, &shape.placement);
+        let (w, h) = (shape.placement.w, shape.placement.h);
+        let transform = rotation::to_screen(page_rect, zoom, &shape.placement);
+        let local = rotation::local(transform, pointer)?;
         let inside = match shape.geometry {
-            ShapeGeometry::Rect => rect.contains(pointer),
+            ShapeGeometry::Rect => (0.0..=w).contains(&local.x) && (0.0..=h).contains(&local.y),
             ShapeGeometry::Ellipse => {
-                let r = rect.size() / 2.0;
-                let d = pointer - rect.center();
-                r.x > 0.0 && r.y > 0.0 && (d.x / r.x).powi(2) + (d.y / r.y).powi(2) <= 1.0
+                let (rx, ry) = (w / 2.0, h / 2.0);
+                rx > 0.0
+                    && ry > 0.0
+                    && ((local.x - rx) / rx).powi(2) + ((local.y - ry) / ry).powi(2) <= 1.0
             }
         };
         inside.then_some(shape.node)
@@ -143,7 +151,8 @@ pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -
 }
 
 /// The shapes whose screen box touches `marquee`, back to front (spec 040).
-/// An ellipse counts by its box, like a resize handle sits on it.
+/// An ellipse counts by its box, like a resize handle sits on it, and a
+/// turned shape by the axis-aligned box of its turned box (D-28, spec 041).
 pub(crate) fn in_marquee(
     shapes: &[Shape],
     page_rect: Rect,
@@ -152,7 +161,7 @@ pub(crate) fn in_marquee(
 ) -> Vec<NodeId> {
     shapes
         .iter()
-        .filter(|shape| on_screen(page_rect, zoom, &shape.placement).intersects(marquee))
+        .filter(|shape| rotation::screen_box(page_rect, zoom, &shape.placement).intersects(marquee))
         .map(|shape| shape.node)
         .collect()
 }
@@ -224,25 +233,56 @@ pub(crate) fn handle_at(rect: Rect, handle: Handle) -> Pos2 {
     )
 }
 
-/// The handle of `rect` under `pointer`, if any: the nearest one whose
-/// 24 px hit area holds it, so close handles of a small element never
-/// shadow each other.
-pub(crate) fn handle_hit(rect: Rect, pointer: Pos2) -> Option<Handle> {
+/// What the pointer holds on a single selection (spec 041): a resize
+/// handle or the rotate handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Grip {
+    Resize(Handle),
+    Rotate,
+}
+
+/// Where `handle` of `placement` sits on the screen, on its turned box.
+pub(crate) fn handle_point(transform: Affine, placement: &Placement, handle: Handle) -> Pos2 {
+    let local = Rect::from_min_size(
+        Pos2::ZERO,
+        Vec2::new(placement.w as f32, placement.h as f32),
+    );
+    let at = handle_at(local, handle);
+    rotation::screen(transform, f64::from(at.x), f64::from(at.y))
+}
+
+/// The grip of `placement` under `pointer`, if any: the nearest of the
+/// eight handles and the rotate handle whose 24 px hit area holds it.
+pub(crate) fn grip_hit(transform: Affine, placement: &Placement, pointer: Pos2) -> Option<Grip> {
     HANDLES
         .into_iter()
-        .map(|handle| (handle, handle_at(rect, handle)))
+        .map(|handle| {
+            (
+                Grip::Resize(handle),
+                handle_point(transform, placement, handle),
+            )
+        })
+        .chain([(Grip::Rotate, rotation::rotate_handle(transform, placement))])
         .filter(|(_, at)| {
             (pointer.x - at.x).abs() <= HANDLE_REACH && (pointer.y - at.y).abs() <= HANDLE_REACH
         })
         .min_by(|(_, a), (_, b)| a.distance_sq(pointer).total_cmp(&b.distance_sq(pointer)))
-        .map(|(handle, _)| handle)
+        .map(|(grip, _)| grip)
 }
 
 /// `origin` resized by dragging `handle` `offset` screen px at `zoom`. The
 /// opposite edge stays put; a side never gets smaller than 1 px.
+///
+/// A turned, sheared or flipped element resizes in its own axes (spec
+/// 041): the offset is taken into the local box, the box grows there, and
+/// the new placement keeps the rotation and puts the opposite edge back
+/// where it was on the page.
 pub(crate) fn resized(origin: &Placement, handle: Handle, offset: Vec2, zoom: f32) -> Placement {
     let dx = f64::from(offset.x / zoom);
     let dy = f64::from(offset.y / zoom);
+    if !rotation::upright(origin) {
+        return resized_turned(origin, handle, dx, dy);
+    }
     let mut placement = *origin;
     let (mut left, mut right) = (origin.x, origin.x + origin.w);
     let (mut top, mut bottom) = (origin.y, origin.y + origin.h);
@@ -260,6 +300,39 @@ pub(crate) fn resized(origin: &Placement, handle: Handle, offset: Vec2, zoom: f3
     placement.y = top;
     placement.w = right - left;
     placement.h = bottom - top;
+    placement
+}
+
+/// [`resized`] for an element that is not upright, with the page offset
+/// `(dx, dy)`.
+fn resized_turned(origin: &Placement, handle: Handle, dx: f64, dy: f64) -> Placement {
+    let transform = origin.to_transform();
+    let [a, b, c, d, ..] = transform.as_coeffs();
+    let linear = Affine::new([a, b, c, d, 0.0, 0.0]);
+    if !linear.determinant().is_finite() || linear.determinant().abs() < 1e-12 {
+        return *origin;
+    }
+    let delta = linear.inverse() * Point::new(dx, dy);
+    let (mut left, mut right) = (0.0, origin.w);
+    let (mut top, mut bottom) = (0.0, origin.h);
+    match handle.x {
+        -1 => left = delta.x.min(right - 1.0),
+        1 => right = (right + delta.x).max(left + 1.0),
+        _ => {}
+    }
+    match handle.y {
+        -1 => top = delta.y.min(bottom - 1.0),
+        1 => bottom = (bottom + delta.y).max(top + 1.0),
+        _ => {}
+    }
+    // The centre of the new local box, on the page; the turn is about it,
+    // so every point of that box stays where the old transform put it.
+    let center = transform * Point::new((left + right) / 2.0, (top + bottom) / 2.0);
+    let mut placement = *origin;
+    placement.w = right - left;
+    placement.h = bottom - top;
+    placement.x = center.x - placement.w / 2.0;
+    placement.y = center.y - placement.h / 2.0;
     placement
 }
 
@@ -400,6 +473,105 @@ pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
     }
 }
 
+/// The outline of a shape of `w` × `h` local px with corners rounded by
+/// `radius` (a rectangle) or as an ellipse, clockwise from the top. Each
+/// quarter of a curve gets `segments` steps.
+fn outline(geometry: ShapeGeometry, w: f64, h: f64, radius: f64, segments: usize) -> Vec<Point> {
+    let quarter = std::f64::consts::FRAC_PI_2;
+    // Each corner: its arc centre, its radii and the angle where it starts.
+    let (corners, rx, ry) = match geometry {
+        ShapeGeometry::Ellipse => {
+            let (rx, ry) = (w / 2.0, h / 2.0);
+            ([(rx, ry); 4], rx, ry)
+        }
+        ShapeGeometry::Rect => {
+            let r = radius.max(0.0).min(w.min(h).max(0.0) / 2.0);
+            if r == 0.0 {
+                return vec![
+                    Point::new(0.0, 0.0),
+                    Point::new(w, 0.0),
+                    Point::new(w, h),
+                    Point::new(0.0, h),
+                ];
+            }
+            ([(w - r, r), (w - r, h - r), (r, h - r), (r, r)], r, r)
+        }
+    };
+    let starts = [-quarter, 0.0, quarter, 2.0 * quarter];
+    let mut points = Vec::with_capacity(4 * (segments + 1));
+    for ((cx, cy), start) in corners.into_iter().zip(starts) {
+        for step in 0..=segments {
+            let a = start + quarter * step as f64 / segments as f64;
+            points.push(Point::new(cx + rx * a.cos(), cy + ry * a.sin()));
+        }
+    }
+    points.dedup_by(|a, b| (a.x - b.x).abs() < 1e-12 && (a.y - b.y).abs() < 1e-12);
+    if points.len() > 1 && points.first() == points.last() {
+        points.pop();
+    }
+    points
+}
+
+/// What the canvas paints for a turned, sheared or flipped `shape` (spec
+/// 041): a convex polygon on its outline mapped by `transform`, filled and
+/// outlined like [`painted`] (centred outline scaled by `zoom`, the radius
+/// at most half the shorter side).
+pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egui::Shape {
+    let opacity = shape.opacity.clamp(0.0, 1.0);
+    let stroke =
+        shape
+            .stroke
+            .filter(|stroke| stroke.width > 0.0)
+            .map_or(egui::Stroke::NONE, |stroke| {
+                egui::Stroke::new(
+                    stroke.width as f32 * zoom,
+                    screen_color(stroke.color).gamma_multiply(opacity),
+                )
+            });
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    let curve = match shape.geometry {
+        ShapeGeometry::Rect => shape.corner_radius,
+        ShapeGeometry::Ellipse => w.max(h) / 2.0,
+    };
+    // About one step per 2 screen px of the curve, from 4 to 64.
+    let segments = ((curve * f64::from(zoom)).abs() / 2.0)
+        .ceil()
+        .clamp(4.0, 64.0) as usize;
+    let points = outline(shape.geometry, w, h, shape.corner_radius, segments)
+        .into_iter()
+        .map(|p| rotation::screen(transform, p.x, p.y))
+        .collect();
+    egui::Shape::convex_polygon(points, paint(shape), stroke)
+}
+
+/// An image on its box mapped by `transform`: one textured quad whose
+/// texture corners follow the local box, so a flip mirrors the picture
+/// (spec 041).
+pub(crate) fn image_mesh(
+    texture: egui::TextureId,
+    transform: Affine,
+    placement: &Placement,
+    tint: Color32,
+) -> egui::Mesh {
+    let mut mesh = egui::Mesh::with_texture(texture);
+    let uvs = [
+        Pos2::new(0.0, 0.0),
+        Pos2::new(1.0, 0.0),
+        Pos2::new(1.0, 1.0),
+        Pos2::new(0.0, 1.0),
+    ];
+    for (pos, uv) in rotation::corners(transform, placement).into_iter().zip(uvs) {
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos,
+            uv,
+            color: tint,
+        });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    mesh
+}
+
 /// A theme colour as a document colour, for the default fill of a piece.
 pub(crate) fn document_color(color: Color32) -> Color {
     let channel = |v: u8| f32::from(v) / 255.0;
@@ -422,6 +594,22 @@ mod tests {
 
     fn place(x: f64, y: f64, w: f64, h: f64) -> Placement {
         Placement::new(x, y, w, h)
+    }
+
+    /// The resize handle of the upright screen box `rect` under `pointer`:
+    /// [`grip_hit`] on a page at the origin at zoom 1.
+    fn handle_hit(rect: Rect, pointer: Pos2) -> Option<Handle> {
+        let p = place(
+            f64::from(rect.min.x),
+            f64::from(rect.min.y),
+            f64::from(rect.width()),
+            f64::from(rect.height()),
+        );
+        let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0));
+        match grip_hit(rotation::to_screen(page, 1.0, &p), &p, pointer)? {
+            Grip::Resize(handle) => Some(handle),
+            Grip::Rotate => None,
+        }
     }
 
     fn page() -> Page {
@@ -795,5 +983,220 @@ mod tests {
         );
         assert_eq!(bounds([a]), Some(a));
         assert_eq!(bounds([]), None);
+    }
+}
+
+#[cfg(test)]
+mod s41_tests {
+    use std::sync::Arc;
+
+    use gafira_doc::{ElementBase, Node, PageSize};
+    use gafira_geom::{Length, Point, Unit};
+
+    use super::*;
+    use crate::rotation;
+
+    /// A page of 100 px with one rectangle and one ellipse, both 40 × 10
+    /// centred on (50, 50) and turned by `rotation`.
+    fn turned_page(rotation: f64) -> Page {
+        let size = PageSize {
+            width: Length::new(100.0, Unit::Px),
+            height: Length::new(100.0, Unit::Px),
+        };
+        let mut page = Page::new(PageId::new(1), String::new(), size);
+        for (id, geometry) in [(2, ShapeGeometry::Rect), (3, ShapeGeometry::Ellipse)] {
+            let mut at = Placement::new(30.0, 45.0, 40.0, 10.0);
+            at.rotation_deg = rotation;
+            let base = ElementBase::new(NodeId::new(id), at);
+            page.nodes.insert(
+                NodeId::new(id),
+                Arc::new(Node::new(base, NodeKind::Shape(ShapeNode::new(geometry)))),
+            );
+        }
+        page
+    }
+
+    fn only(page: &Page, id: u64) -> Vec<Shape> {
+        let mut page = page.clone();
+        page.roots = vec![NodeId::new(id)];
+        shapes(&page)
+    }
+
+    // S41-10: a click hits the turned shape, not its unturned box.
+    #[test]
+    fn s41_10_hit_testing_follows_the_rotation() {
+        let page = turned_page(90.0);
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let rect = only(&page, 2);
+        // Turned 90°, the 40 × 10 bar stands from y 30 to 70 at x 45..55.
+        assert_eq!(
+            hit(&rect, screen, 1.0, Pos2::new(50.0, 33.0)),
+            Some(NodeId::new(2))
+        );
+        assert_eq!(
+            hit(&rect, screen, 1.0, Pos2::new(33.0, 50.0)),
+            None,
+            "the old box"
+        );
+        let ellipse = only(&page, 3);
+        assert_eq!(
+            hit(&ellipse, screen, 1.0, Pos2::new(50.0, 35.0)),
+            Some(NodeId::new(3))
+        );
+        assert_eq!(hit(&ellipse, screen, 1.0, Pos2::new(35.0, 50.0)), None);
+        assert_eq!(
+            hit(&ellipse, screen, 1.0, Pos2::new(54.0, 31.0)),
+            None,
+            "outside the turned curve"
+        );
+    }
+
+    // S41-10: the marquee counts a turned shape by its axis-aligned box
+    // (D-28).
+    #[test]
+    fn s41_10_the_marquee_uses_the_turned_box() {
+        let page = turned_page(90.0);
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let rect = only(&page, 2);
+        let pick = |a: Pos2, b: Pos2| in_marquee(&rect, screen, 1.0, Rect::from_two_pos(a, b));
+        assert_eq!(
+            pick(Pos2::new(48.0, 25.0), Pos2::new(52.0, 32.0)),
+            [NodeId::new(2)]
+        );
+        assert!(pick(Pos2::new(30.0, 48.0), Pos2::new(40.0, 52.0)).is_empty());
+    }
+
+    // S41-11: the handles sit on the turned box and the rotate handle is
+    // one of the grips; the nearest grip wins.
+    #[test]
+    fn s41_11_the_grips_follow_the_turned_box() {
+        let mut p = Placement::new(30.0, 45.0, 40.0, 10.0);
+        p.rotation_deg = 90.0;
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let t = rotation::to_screen(screen, 1.0, &p);
+        // The local right edge faces down after a quarter turn clockwise.
+        let right = Handle { x: 1, y: 0 };
+        let at = handle_point(t, &p, right);
+        assert!((at - Pos2::new(50.0, 70.0)).length() < 1e-3, "{at:?}");
+        assert_eq!(
+            grip_hit(t, &p, Pos2::new(51.0, 71.0)),
+            Some(Grip::Resize(right))
+        );
+        // The top edge faces right: the rotate handle is 24 px past x = 55.
+        assert_eq!(grip_hit(t, &p, Pos2::new(79.0, 50.0)), Some(Grip::Rotate));
+        assert_eq!(
+            grip_hit(t, &p, Pos2::new(57.0, 50.0)),
+            Some(Grip::Resize(Handle { x: 0, y: -1 })),
+            "the top-middle handle is nearer"
+        );
+        assert_eq!(
+            grip_hit(t, &p, Pos2::new(50.0, 90.0)),
+            None,
+            "past the ends"
+        );
+    }
+
+    // S41-12: resizing a turned element works in its own axes and keeps the
+    // opposite edge where it was on the page.
+    #[test]
+    fn s41_12_resizing_a_turned_element_keeps_the_opposite_edge() {
+        let mut origin = Placement::new(30.0, 45.0, 40.0, 10.0);
+        origin.rotation_deg = 90.0;
+        // The local right edge faces down: dragging it 20 screen px down at
+        // zoom 2 makes the element 10 px longer.
+        let to = resized(&origin, Handle { x: 1, y: 0 }, Vec2::new(3.0, 20.0), 2.0);
+        assert!(
+            (to.w - 50.0).abs() < 1e-9 && (to.h - 10.0).abs() < 1e-9,
+            "{to:?}"
+        );
+        assert_eq!(to.rotation_deg, 90.0);
+        let left = |p: &Placement| p.to_transform() * Point::new(0.0, p.h / 2.0);
+        let (a, b) = (left(&origin), left(&to));
+        assert!(
+            (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9,
+            "{a:?} {b:?}"
+        );
+        // A flipped element resizes in its local axes too: its local right
+        // edge is on the left of the screen.
+        let mut mirrored = Placement::new(0.0, 0.0, 40.0, 10.0);
+        mirrored.flip.x = true;
+        let wider = resized(&mirrored, Handle { x: 1, y: 0 }, Vec2::new(-10.0, 0.0), 1.0);
+        assert_eq!((wider.x, wider.w), (-10.0, 50.0));
+        // The 1 px floor holds in local axes.
+        let crushed = resized(&origin, Handle { x: 1, y: 0 }, Vec2::new(0.0, -1000.0), 1.0);
+        assert!((crushed.w - 1.0).abs() < 1e-9);
+    }
+
+    // S41-13: a turned shape paints as a polygon on its turned outline, with
+    // the outline scaled by the zoom.
+    #[test]
+    fn s41_13_a_turned_shape_paints_its_turned_outline() {
+        let page = turned_page(90.0);
+        let mut shape = only(&page, 2).remove(0);
+        shape.fill = Some(document_color(Color32::from_rgb(255, 0, 0)));
+        shape.stroke = Some(ShapeStroke::new(document_color(Color32::BLACK), 2.0));
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let t = rotation::to_screen(screen, 2.0, &shape.placement);
+        let egui::Shape::Path(path) = painted_turned(&shape, t, 2.0) else {
+            panic!("a path")
+        };
+        assert!(path.closed);
+        assert_eq!(path.fill, Color32::from_rgb(255, 0, 0));
+        assert_eq!(path.stroke.width, 4.0);
+        let want = rotation::corners(t, &shape.placement);
+        assert_eq!(path.points.len(), 4);
+        for (got, want) in path.points.iter().zip(want) {
+            assert!((*got - want).length() < 1e-3, "{got:?} {want:?}");
+        }
+        // An ellipse's points lie on its turned curve.
+        let ellipse = only(&page, 3).remove(0);
+        let egui::Shape::Path(curve) = painted_turned(&ellipse, t, 2.0) else {
+            panic!("a path")
+        };
+        assert!(curve.points.len() >= 16);
+        for point in &curve.points {
+            let local = rotation::local(t, *point).expect("invertible");
+            let (u, v) = ((local.x - 20.0) / 20.0, (local.y - 5.0) / 5.0);
+            assert!((u * u + v * v - 1.0).abs() < 1e-3, "{local:?}");
+        }
+        // Rounded corners leave the corner itself out.
+        shape.corner_radius = 4.0;
+        let egui::Shape::Path(round) = painted_turned(&shape, t, 2.0) else {
+            panic!("a path")
+        };
+        assert!(round.points.len() > 8);
+        assert!(round.points.iter().all(|p| (*p - want[0]).length() > 0.5));
+    }
+
+    // S41-14: an image is a quad on the turned box whose texture follows the
+    // flip.
+    #[test]
+    fn s41_14_an_image_mesh_follows_rotation_and_flip() {
+        let mut p = Placement::new(0.0, 0.0, 40.0, 20.0);
+        p.flip.x = true;
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let t = rotation::to_screen(screen, 1.0, &p);
+        let mesh = image_mesh(egui::TextureId::default(), t, &p, Color32::WHITE);
+        assert_eq!(mesh.indices.len(), 6);
+        let origin = mesh
+            .vertices
+            .iter()
+            .find(|v| v.uv == Pos2::ZERO)
+            .expect("the texture's top-left");
+        assert!(
+            (origin.pos - Pos2::new(40.0, 0.0)).length() < 1e-3,
+            "mirrored to the right"
+        );
+        p.flip.x = false;
+        p.rotation_deg = 90.0;
+        let t = rotation::to_screen(screen, 1.0, &p);
+        let mesh = image_mesh(egui::TextureId::default(), t, &p, Color32::WHITE);
+        let origin = mesh.vertices.iter().find(|v| v.uv == Pos2::ZERO).unwrap();
+        // Centre (20, 10); the local top-left (-20, -10) turns to (30, -10).
+        assert!(
+            (origin.pos - Pos2::new(30.0, -10.0)).length() < 1e-3,
+            "{:?}",
+            origin.pos
+        );
     }
 }
