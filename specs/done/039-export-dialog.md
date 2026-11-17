@@ -1,6 +1,6 @@
 # 039 — Un diálogo «Exportar» más completo
 
-> **Estado:** in-progress — 2026-11-17 — JPG y WebP, fondo transparente, rango de páginas, vista previa y «Mostrar en carpeta».
+> **Estado:** done — 2026-11-17 — S39-01..S39-08 cubiertos por `gafira-io-image` (`jpeg_export::tests` 2, `tests/jpeg_webp.rs` 5), `gafira-engine` (`export::tests` s39, 2), `gafira-platform` (`reveal::tests` 1) y `gafira-ui` (`export::tests` s39, 8); 7 mutantes a mano muertos; 2988 tests.
 
 ## Objetivo
 
@@ -57,9 +57,33 @@ No alcance:
 
 Lógica crítica (deben fallar primero): la componenda sobre blanco del JPG (S39-01), el análisis del rango (S39-03), la construcción de la petición desde el esquema (S39-04) y el tamaño de la vista previa (S39-05). S39-02, S39-07 y S39-08, con tests de integración.
 
-## Evidencia esperada
+## Evidencia
 
-Tests nuevos en `gafira-io-image`, `gafira-engine`, `gafira-platform` y `gafira-ui`; gates de `AGENTS.md` («Before calling something done») y los pasos de política de `ci.yml` en verde; mutantes a mano anotados abajo.
+- Rojo verificado: `tests/jpeg_webp.rs` no compilaba sin `JpegExporter`, `WebpExporter` ni `QUALITY`; los dos tests de la componenda fallaron con la función vacía; los de `preview` no compilaban sin el método. En `gafira-ui` los tests del rango y de la petición se escribieron en el mismo paso que el código; su capacidad de fallar se comprobó con los mutantes de abajo.
+- Mutantes a mano, todos muertos:
+  - sin el término del blanco en la componenda (muere `s39_01_pixels_are_composed_over_white`);
+  - la calidad del JPEG fija en 90 (muere `s39_01_the_jpeg_quality_is_checked_and_used`);
+  - la vista previa siempre opaca (muere `s39_05_the_preview_draws_the_page_at_512_px_on_its_long_side`);
+  - sin rechazar un rango invertido (muere `s39_03_a_wrong_range_is_refused_with_its_reason`);
+  - la petición envía todo valor del diálogo, también los que el esquema no tiene (muere `s39_04_the_options_come_from_the_schema_of_the_format`);
+  - al cambiar de formato no se vuelve a los valores por defecto (muere el mismo test);
+  - las páginas no siguen al formato de varias páginas (mueren `s39_04_the_pages_follow_the_format_until_they_are_chosen` y el de opciones).
+- `cargo fmt --check`: limpio.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: limpio.
+- `cargo test --workspace --locked`: 2988 tests, 0 fallos.
+- `cargo clippy -p gafira-testkit --all-targets --features ports --locked -- -D warnings` y `cargo test -p gafira-testkit --features ports --locked`: en verde.
+- Pasos de política de `ci.yml` en local (ARQ-07, `forbid(unsafe_code)`, V5, ARQ-06, V12, ARQ-107 ×2, V13, V14): todos en verde.
+- `cargo deny check licenses bans sources`: `bans ok, licenses ok, sources ok`. Sin crates nuevos en el árbol: `gafira-io-image` usa ahora `image-webp` (MIT OR Apache-2.0) y `gafira-engine` pasa `gafira-raster` de dev a normal (arista ya permitida en su fila V5).
+- `python3 tools/sync_agents.py --check`: 0.
+- Prueba manual pendiente del titular: abrir el diálogo en la app, ver la vista previa y pulsar «Mostrar en carpeta» en los tres sistemas.
+
+## Decisiones y límites registrados
+
+- Los tres exportadores de imagen comparten un bucle (`raster.rs` de `gafira-io-image`): un archivo por página con el nombre `page.<ext>` o `page-<n>.<ext>`, y el engine los numera junto a la ruta elegida (FD-57 (c)).
+- El JPEG pide el render sobre el fondo de la página y compone lo que queda translúcido sobre blanco; ignora `transparent` aunque llegue.
+- El shell no depende de `gafira-platform`: `UiConfig.show_in_folder` (`ShowInFolder`) lo da la raíz de composición. `xdg-open`, `explorer` y `open` vienen con el sistema operativo; no son binarios que Gafira instale.
+- La vista previa se dibuja en el hilo de la ventana a 512 px y se guarda como textura mientras no cambien la página ni el fondo.
+- Los textos `export.png` y `export.pdf` pasan a ser solo «PNG» y «PDF»: la página ya no va en el nombre del formato.
 
 ## Riesgos y decisiones abiertas
 
