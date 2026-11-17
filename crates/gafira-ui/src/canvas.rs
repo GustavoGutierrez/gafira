@@ -6,7 +6,8 @@
 use egui::{Color32, Pos2, Rect, Vec2};
 use gafira_color::{Color, ColorSpaceId, Rgba};
 use gafira_doc::{
-    NodeId, NodeKind, Page, PageId, Placement, ShapeGeometry, ShapeNode, SpanStyle, TextNode,
+    NodeId, NodeKind, Page, PageId, Placement, ShapeGeometry, ShapeNode, ShapeStroke, SpanStyle,
+    TextNode,
 };
 use gafira_edit::NodeSpec;
 
@@ -18,6 +19,10 @@ pub(crate) struct Shape {
     pub(crate) placement: Placement,
     pub(crate) geometry: ShapeGeometry,
     pub(crate) fill: Option<Color>,
+    /// The outline of a shape (spec 038); `None` for other elements.
+    pub(crate) stroke: Option<ShapeStroke>,
+    /// The stored corner radius of a shape, in px; 0 for other elements.
+    pub(crate) corner_radius: f64,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
     /// The text of a text element; its box hits and moves like a rectangle
@@ -35,19 +40,22 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
         if !node.base.visible {
             return;
         }
+        let rect = ShapeNode::new(ShapeGeometry::Rect);
         let drawn = match &node.kind {
-            NodeKind::Shape(ShapeNode { geometry, fill }) => Some((*geometry, *fill, None, None)),
-            NodeKind::Text(text) => Some((ShapeGeometry::Rect, None, Some(text.clone()), None)),
-            NodeKind::Image(image) => Some((ShapeGeometry::Rect, None, None, Some(image.asset))),
+            NodeKind::Shape(shape) => Some((*shape, None, None)),
+            NodeKind::Text(text) => Some((rect, Some(text.clone()), None)),
+            NodeKind::Image(image) => Some((rect, None, Some(image.asset))),
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
-        if let Some((geometry, fill, text, image)) = drawn {
+        if let Some((shape, text, image)) = drawn {
             out.push(Shape {
                 page: page.id,
                 node: id,
                 placement: node.base.placement,
-                geometry,
-                fill,
+                geometry: shape.geometry,
+                fill: shape.fill,
+                stroke: shape.stroke,
+                corner_radius: shape.corner_radius,
                 opacity: node.base.opacity,
                 text,
                 image,
@@ -228,6 +236,8 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
         NodeKind::Shape(ShapeNode {
             geometry,
             fill: Some(fill),
+            stroke: None,
+            corner_radius: 0.0,
         }),
         placement,
     )
@@ -304,6 +314,51 @@ pub(crate) fn paint(shape: &Shape) -> Color32 {
     })
 }
 
+/// The width, in px, of an outline the Inspector adds to a shape that had
+/// none.
+pub(crate) const NEW_OUTLINE_WIDTH: f64 = 2.0;
+
+/// What the canvas paints for `shape` in its screen box `at` at `zoom`: the
+/// fill, the outline centred on the edge (spec 038) and, for a rectangle,
+/// the corners rounded at most to half the shorter side, as the render
+/// draws them (FD-36 a). egui keeps corner radii in whole screen px up to
+/// 255, so a larger one is drawn at 255.
+pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
+    let opacity = shape.opacity.clamp(0.0, 1.0);
+    let stroke =
+        shape
+            .stroke
+            .filter(|stroke| stroke.width > 0.0)
+            .map_or(egui::Stroke::NONE, |stroke| {
+                egui::Stroke::new(
+                    stroke.width as f32 * zoom,
+                    screen_color(stroke.color).gamma_multiply(opacity),
+                )
+            });
+    match shape.geometry {
+        ShapeGeometry::Rect => {
+            let half = f64::from(at.width().min(at.height()).max(0.0)) / 2.0;
+            let radius = (shape.corner_radius.max(0.0) * f64::from(zoom))
+                .min(half)
+                .min(255.0)
+                .round() as u8;
+            egui::Shape::Rect(egui::epaint::RectShape::new(
+                at,
+                egui::CornerRadius::same(radius),
+                paint(shape),
+                stroke,
+                egui::StrokeKind::Middle,
+            ))
+        }
+        ShapeGeometry::Ellipse => egui::Shape::Ellipse(egui::epaint::EllipseShape {
+            center: at.center(),
+            radius: at.size() / 2.0,
+            fill: paint(shape),
+            stroke,
+        }),
+    }
+}
+
 /// A theme colour as a document colour, for the default fill of a piece.
 pub(crate) fn document_color(color: Color32) -> Color {
     let channel = |v: u8| f32::from(v) / 255.0;
@@ -341,6 +396,8 @@ mod tests {
                 NodeKind::Shape(ShapeNode {
                     geometry,
                     fill: None,
+                    stroke: None,
+                    corner_radius: 0.0,
                 }),
             ))
         };
@@ -488,6 +545,55 @@ mod tests {
         assert_eq!(paint(&shape).a(), 128);
         shape.opacity = 0.0;
         assert_eq!(paint(&shape).a(), 0);
+    }
+
+    // S38-07: the canvas paints the outline centred on the edge, scaled by
+    // the zoom and faded by the opacity, and the radius as the render does:
+    // at most half the shorter side.
+    #[test]
+    fn s38_07_the_canvas_paints_the_outline_and_the_rounded_corners() {
+        let blue = document_color(Color32::from_rgb(0, 0, 255));
+        let mut shape = shapes(&page())[0].clone();
+        assert_eq!(shape.stroke, None);
+        assert_eq!(shape.corner_radius, 0.0);
+        let at = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(100.0, 40.0));
+        let egui::Shape::Rect(plain) = painted(&shape, at, 2.0) else {
+            panic!("a rectangle")
+        };
+        assert_eq!(plain.stroke, egui::Stroke::NONE);
+        assert_eq!(plain.corner_radius, egui::CornerRadius::ZERO);
+        shape.stroke = Some(gafira_doc::ShapeStroke::new(blue, 3.0));
+        shape.corner_radius = 8.0;
+        shape.opacity = 0.5;
+        let egui::Shape::Rect(outlined) = painted(&shape, at, 2.0) else {
+            panic!("a rectangle")
+        };
+        assert_eq!(outlined.rect, at);
+        assert_eq!(outlined.stroke.width, 6.0);
+        assert_eq!(outlined.stroke.color.a(), 128);
+        assert_eq!(outlined.stroke_kind, egui::StrokeKind::Middle);
+        // 8 px at zoom 2 is 16 screen px, under half the short side (20).
+        assert_eq!(outlined.corner_radius, egui::CornerRadius::same(16));
+        shape.corner_radius = 1e9;
+        let egui::Shape::Rect(capped) = painted(&shape, at, 2.0) else {
+            panic!("a rectangle")
+        };
+        assert_eq!(capped.corner_radius, egui::CornerRadius::same(20));
+        // A zero width paints no outline.
+        shape.stroke = Some(gafira_doc::ShapeStroke::new(blue, 0.0));
+        let egui::Shape::Rect(zero) = painted(&shape, at, 2.0) else {
+            panic!("a rectangle")
+        };
+        assert_eq!(zero.stroke.width, 0.0);
+        // An ellipse carries the outline and ignores the radius.
+        shape.geometry = ShapeGeometry::Ellipse;
+        shape.stroke = Some(gafira_doc::ShapeStroke::new(blue, 3.0));
+        let egui::Shape::Ellipse(ellipse) = painted(&shape, at, 1.0) else {
+            panic!("an ellipse")
+        };
+        assert_eq!(ellipse.center, at.center());
+        assert_eq!(ellipse.radius, Vec2::new(50.0, 20.0));
+        assert_eq!(ellipse.stroke.width, 3.0);
     }
 
     #[test]

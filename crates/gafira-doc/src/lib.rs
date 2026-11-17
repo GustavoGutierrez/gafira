@@ -47,6 +47,7 @@ pub use layout::{
 };
 pub use node::{
     ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, ShapeGeometry, ShapeNode,
+    ShapeStroke,
 };
 pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};

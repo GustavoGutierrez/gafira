@@ -27,6 +27,14 @@ pub enum NodeField {
     FillChannel,
     /// The alpha channel of a shape fill.
     FillAlpha,
+    /// A red, green or blue channel of a shape outline (spec 038).
+    StrokeChannel,
+    /// The alpha channel of a shape outline.
+    StrokeAlpha,
+    /// The width of a shape outline.
+    StrokeWidth,
+    /// The corner radius of a shape.
+    CornerRadius,
     /// The font size of a text span (spec 027).
     FontSize,
     /// A red, green or blue channel of a text span colour.
@@ -47,6 +55,10 @@ impl fmt::Display for NodeField {
             Self::Opacity => "opacity",
             Self::FillChannel => "fill channel",
             Self::FillAlpha => "fill alpha",
+            Self::StrokeChannel => "stroke channel",
+            Self::StrokeAlpha => "stroke alpha",
+            Self::StrokeWidth => "stroke width",
+            Self::CornerRadius => "corner radius",
             Self::FontSize => "font size",
             Self::TextColorChannel => "text color channel",
             Self::TextColorAlpha => "text color alpha",
@@ -346,6 +358,10 @@ mod tests {
             (Opacity, "opacity"),
             (FillChannel, "fill channel"),
             (FillAlpha, "fill alpha"),
+            (StrokeChannel, "stroke channel"),
+            (StrokeAlpha, "stroke alpha"),
+            (StrokeWidth, "stroke width"),
+            (CornerRadius, "corner radius"),
             (FontSize, "font size"),
             (TextColorChannel, "text color channel"),
             (TextColorAlpha, "text color alpha"),

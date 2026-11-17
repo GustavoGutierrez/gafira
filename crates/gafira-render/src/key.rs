@@ -88,6 +88,12 @@ pub enum KeyParam {
     Text(String),
     /// The content hash of the asset an image draws (spec 032).
     Asset([u8; 32]),
+    /// The outline of a shape that draws one: its colour and width
+    /// (spec 038).
+    Stroke(Color, f64),
+    /// The corner radius a rectangle is drawn with, after the limit of
+    /// FD-36 (a) (spec 038).
+    CornerRadius(f64),
 }
 
 /// The canonical description of a node (02 §6.1).
@@ -155,6 +161,8 @@ impl KeyParam {
             Self::Blend(_) => 6,
             Self::Text(_) => 7,
             Self::Asset(_) => 8,
+            Self::Stroke(..) => 9,
+            Self::CornerRadius(_) => 10,
         }
     }
 
@@ -189,6 +197,14 @@ impl KeyParam {
             Self::Blend(blend) => out.push(blend_byte(*blend)),
             Self::Text(text) => out.extend_from_slice(text.as_bytes()),
             Self::Asset(hash) => out.extend_from_slice(hash),
+            Self::Stroke(color, width) => {
+                out.push(space_byte(color.space()));
+                for channel in channels(*color) {
+                    out.extend_from_slice(&f32_bytes(channel));
+                }
+                out.extend_from_slice(&f64_bytes(*width));
+            }
+            Self::CornerRadius(radius) => out.extend_from_slice(&f64_bytes(*radius)),
         }
     }
 }
@@ -299,6 +315,12 @@ mod tests {
             KeyParam::Transform([0.0; 6]),
             KeyParam::Opacity(0.0),
             KeyParam::Blend(BlendMode::Normal),
+            // Spec 038: two kinds whose value can be all zero bytes.
+            KeyParam::CornerRadius(0.0),
+            KeyParam::Stroke(
+                Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 0.0)),
+                0.0,
+            ),
         ];
         let keys: Vec<ContentKey> = parameters
             .iter()

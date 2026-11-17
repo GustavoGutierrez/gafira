@@ -470,6 +470,8 @@ mod tests {
         let kind = NodeKind::Shape(ShapeNode {
             geometry: ShapeGeometry::Rect,
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
+            stroke: None,
+            corner_radius: 0.0,
         });
         page.nodes.insert(node, Arc::new(Node::new(base, kind)));
         page.roots = vec![node];

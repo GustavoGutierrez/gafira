@@ -1738,6 +1738,7 @@ dependencies = [
  "gafira-color",
  "gafira-doc",
  "gafira-geom",
+ "gafira-pathops",
  "gafira-ports",
  "gafira-raster",
  "gafira-testkit",

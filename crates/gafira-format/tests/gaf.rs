@@ -370,3 +370,30 @@ fn s19_09_the_repository_writes_a_synced_file_and_reads_it_back() {
     ));
     std::fs::remove_dir_all(dir).expect("clean up");
 }
+
+// S38-01: the outline and the corner radius of a shape survive the `.gaf`;
+// the golden without them still loads and round-trips (S19-03).
+#[test]
+fn s38_01_an_outlined_rounded_shape_round_trips_through_the_gaf() {
+    let text = document().to_json().expect("json");
+    let mut json: Value = serde_json::from_str(&text).expect("json");
+    json["pages"][0]["nodes"][0]["kind"] = json!({
+        "type": "shape",
+        "geometry": "rect",
+        "fill": null,
+        "stroke": {
+            "color": { "space": "srgb", "r": 0.0, "g": 0.0, "b": 1.0, "a": 1.0 },
+            "width": 3.5
+        },
+        "corner_radius": 9.0,
+    });
+    let outlined = Document::from_json(&serde_json::to_vec(&json).expect("bytes"))
+        .expect("the outlined document loads");
+    let loaded = read(gaf(&outlined)).expect("reads");
+    assert_eq!(loaded.document, outlined);
+    let back: Value =
+        serde_json::from_str(&loaded.document.to_json().expect("json")).expect("json");
+    let kind = &back["pages"][0]["nodes"][0]["kind"];
+    assert_eq!(kind["stroke"]["width"], json!(3.5));
+    assert_eq!(kind["corner_radius"], json!(9.0));
+}
