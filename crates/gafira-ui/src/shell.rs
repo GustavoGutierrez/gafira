@@ -144,6 +144,9 @@ pub fn run(config: UiConfig) -> eframe::Result {
         options,
         Box::new(move |cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            // Ctrl+= / Ctrl+- / Ctrl+0 zoom the canvas (03 §9.2, spec 037),
+            // not the whole interface.
+            cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
             let mut theme = Theme::new(tokens);
             let engine = (config.engine)(Arc::new(RepaintWaker(cc.egui_ctx.clone())))
                 .map_err(|e| e.to_string())?;

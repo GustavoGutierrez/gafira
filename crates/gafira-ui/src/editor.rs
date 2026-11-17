@@ -3,7 +3,10 @@
 
 use std::sync::Arc;
 
-use egui::{Align, Align2, Color32, Layout, Pos2, Rect, RichText, Stroke, Vec2};
+use egui::{
+    Align, Align2, Color32, Key, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, RichText, Stroke,
+    Vec2,
+};
 use gafira_doc::{Document, NodeId, PageId, Placement, ShapeGeometry};
 use gafira_edit::{GestureId, InsertNodes, InsertPage, Property, RemoveNodes, SetProperty};
 use gafira_engine::Gafira;
@@ -12,20 +15,22 @@ use gafira_theme::Shadow;
 use crate::canvas::{self, Shape};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
+use crate::icons::{self, Icon, Weight};
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
 use crate::text::Texts;
 use crate::versions::Versions;
-use crate::widgets;
+use crate::widgets::{self, IconButton, Surface};
+use crate::zoom::{self, Zoom, ZoomAsk};
 
-/// The tabs of the rail, in the order of 03 §2.3.
-const TABS: [&str; 6] = [
-    "tab.templates",
-    "tab.pieces",
-    "tab.text",
-    "tab.identity",
-    "tab.library",
-    "tab.drawing",
+/// The tabs of the rail, in the order of 03 §2.3, with their icons.
+const TABS: [(&str, Icon); 6] = [
+    ("tab.templates", Icon::Templates),
+    ("tab.pieces", Icon::Pieces),
+    ("tab.text", Icon::Text),
+    ("tab.identity", Icon::Identity),
+    ("tab.library", Icon::Library),
+    ("tab.drawing", Icon::Drawing),
 ];
 
 /// The margin around the page on the canvas, in logical px.
@@ -35,12 +40,30 @@ const CANVAS_MARGIN: f32 = 48.0;
 /// pages stack vertically).
 const PAGE_GAP: f32 = 56.0;
 
+/// The shortcuts of 03 §9.2 that tooltips and the Edición menu show.
+const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
+const REDO: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z);
+const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals);
+const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
+const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
+
+/// «Deshacer · Ctrl+Z»: an action and its shortcut as the platform writes it
+/// (03 §8.1, Tooltip).
+fn with_keys(ctx: &egui::Context, texts: &Texts, action: String, keys: KeyboardShortcut) -> String {
+    texts.t(&gafira_doc::msg!(
+        "tooltip.shortcut",
+        action = Text(action),
+        keys = Text(ctx.format_shortcut(&keys))
+    ))
+}
+
 /// The editor's view state; the document lives in the engine and is read
 /// from a snapshot every frame (02 §5.5).
 pub(crate) struct Editor {
     tab: usize,
-    /// A factor over the fitting zoom, changed with Ctrl + wheel.
-    zoom_factor: f32,
+    /// How the zoom is chosen: «Ajustar» or a fixed scale (spec 037).
+    view: Zoom,
     /// The zoom of the last frame, for the bottom bar.
     zoom: f32,
     /// The Inspector tab on display: 0 Posición, 1 Capas, 2 Imagen.
@@ -69,7 +92,7 @@ impl Default for Editor {
     fn default() -> Self {
         Self {
             tab: 0,
-            zoom_factor: 1.0,
+            view: Zoom::Fit,
             zoom: 1.0,
             inspector_tab: 0,
             selected: None,
@@ -124,6 +147,8 @@ struct Asked {
     settings: bool,
     /// «Exportar» was pressed (spec 030).
     export: bool,
+    /// A zoom button, menu item or shortcut (spec 037).
+    zoom: Option<ZoomAsk>,
 }
 
 /// What the top bar shows about the session.
@@ -198,6 +223,17 @@ impl Editor {
             if i.modifiers.command && i.key_pressed(egui::Key::Y) {
                 asked.redo = true;
             }
+            for key in [
+                egui::Key::Equals,
+                egui::Key::Plus,
+                egui::Key::Minus,
+                egui::Key::Num0,
+                egui::Key::Num1,
+            ] {
+                if i.key_pressed(key) {
+                    asked.zoom = ZoomAsk::from_shortcut(i.modifiers.command, key).or(asked.zoom);
+                }
+            }
         });
         let typing = ctx.wants_keyboard_input();
         if !typing
@@ -212,6 +248,9 @@ impl Editor {
             self.selected = None;
         }
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
+        if let Some(ask) = asked.zoom {
+            self.view = ask.apply(self.zoom);
+        }
         self.rail(ctx, theme, texts);
         self.side_panel(ctx, theme, texts, &mut asked);
         self.inspector(
@@ -243,7 +282,10 @@ impl Editor {
         asked: &mut Asked,
     ) {
         widgets::topbar(ctx, theme, "editor.topbar", |ui| {
-            if widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("nav.home")), true).clicked()
+            if IconButton::new(Icon::Home, texts.t(&gafira_doc::msg!("nav.home")))
+                .on(Surface::Topbar)
+                .show(ui, theme)
+                .clicked()
             {
                 asked.home = true;
             }
@@ -284,7 +326,30 @@ impl Editor {
                     ui.close();
                 }
             });
-            widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("menu.edit")), false);
+            let edit = RichText::new(texts.t(&gafira_doc::msg!("menu.edit")))
+                .font(theme.font("ui-label"))
+                .color(theme.c("topbar.fg.muted"));
+            ui.menu_button(edit, |ui| {
+                ui.set_min_width(200.0);
+                let undo = egui::Button::new(texts.t(&gafira_doc::msg!("editor.undo")))
+                    .shortcut_text(ui.ctx().format_shortcut(&UNDO));
+                if ui.add_enabled(header.can_undo, undo).clicked() {
+                    asked.undo = true;
+                    ui.close();
+                }
+                let redo = egui::Button::new(texts.t(&gafira_doc::msg!("editor.redo")))
+                    .shortcut_text(ui.ctx().format_shortcut(&REDO));
+                if ui.add_enabled(header.can_redo, redo).clicked() {
+                    asked.redo = true;
+                    ui.close();
+                }
+                ui.separator();
+                let delete = egui::Button::new(texts.t(&gafira_doc::msg!("editor.delete")));
+                if ui.add_enabled(self.selected.is_some(), delete).clicked() {
+                    asked.delete = true;
+                    ui.close();
+                }
+            });
             let view = RichText::new(texts.t(&gafira_doc::msg!("menu.view")))
                 .font(theme.font("ui-label"))
                 .color(theme.c("topbar.fg.muted"));
@@ -312,14 +377,32 @@ impl Editor {
                 .color(theme.c("topbar.fg")),
             );
             ui.add_space(16.0);
-            let undo = ui.add_enabled_ui(header.can_undo, |ui| {
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("editor.undo")), false)
-            });
-            asked.undo |= undo.inner.clicked();
-            let redo = ui.add_enabled_ui(header.can_redo, |ui| {
-                widgets::on_topbar(ui, theme, texts.t(&gafira_doc::msg!("editor.redo")), false)
-            });
-            asked.redo |= redo.inner.clicked();
+            for (icon, key, shortcut, enabled, flag) in [
+                (
+                    Icon::Undo,
+                    gafira_doc::msg!("editor.undo"),
+                    UNDO,
+                    header.can_undo,
+                    &mut asked.undo,
+                ),
+                (
+                    Icon::Redo,
+                    gafira_doc::msg!("editor.redo"),
+                    REDO,
+                    header.can_redo,
+                    &mut asked.redo,
+                ),
+            ] {
+                let name = texts.t(&key);
+                let tooltip = with_keys(ui.ctx(), texts, name.clone(), shortcut);
+                let button = ui.add_enabled_ui(enabled, |ui| {
+                    IconButton::new(icon, name)
+                        .on(Surface::Topbar)
+                        .tooltip(tooltip)
+                        .show(ui, theme)
+                });
+                *flag |= button.inner.clicked();
+            }
             ui.add_space(16.0);
             let status = if header.modified {
                 gafira_doc::msg!("editor.unsaved")
@@ -332,15 +415,19 @@ impl Editor {
             };
             ui.label(RichText::new(text).font(theme.font("caption")).color(color));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                asked.export |=
-                    widgets::primary(ui, theme, texts.t(&gafira_doc::msg!("editor.export")))
-                        .clicked();
-                ui.add_space(8.0);
-                asked.versions |= widgets::on_topbar(
+                asked.export |= widgets::primary_icon(
                     ui,
                     theme,
+                    Icon::Export,
+                    texts.t(&gafira_doc::msg!("editor.export")),
+                )
+                .clicked();
+                ui.add_space(8.0);
+                asked.versions |= widgets::on_topbar_icon(
+                    ui,
+                    theme,
+                    Icon::Versions,
                     texts.t(&gafira_doc::msg!("editor.versions")),
-                    false,
                 )
                 .clicked();
             });
@@ -370,13 +457,96 @@ impl Editor {
                             total = Count(pages as u64)
                         )));
                         ui.add_space(16.0);
-                        ui.label(texts.t(&gafira_doc::msg!(
-                            "format.percent",
-                            value = Text(format!("{:.0}", self.zoom * 100.0))
-                        )));
+                        asked.zoom = self.zoom_controls(ui, theme, texts).or(asked.zoom);
                     });
                 });
             });
+    }
+
+    /// Alejar, Acercar and the zoom menu (Ajustar, 50, 100, 200 %) of the
+    /// bottom bar (03 §7.3), laid out right to left.
+    fn zoom_controls(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts) -> Option<ZoomAsk> {
+        let mut ask = None;
+        let percent = |scale: f32| {
+            texts.t(&gafira_doc::msg!(
+                "format.percent",
+                value = Text(format!("{:.0}", scale * 100.0))
+            ))
+        };
+        let caret = icons::image(
+            ui.ctx(),
+            Icon::Expand,
+            Weight::Regular,
+            px(theme.tokens.size.icon.sm),
+            theme.c("text"),
+        );
+        let label = RichText::new(percent(self.zoom)).font(theme.font("ui-label"));
+        let menu = ui.menu_button((label, caret), |ui| {
+            ui.set_min_width(120.0);
+            let fit = ui.selectable_label(
+                self.view == Zoom::Fit,
+                texts.t(&gafira_doc::msg!("zoom.fit")),
+            );
+            if fit
+                .on_hover_text(with_keys(
+                    ui.ctx(),
+                    texts,
+                    texts.t(&gafira_doc::msg!("zoom.fit")),
+                    ZOOM_FIT,
+                ))
+                .clicked()
+            {
+                ask = Some(ZoomAsk::Fit);
+                ui.close();
+            }
+            for scale in zoom::PRESETS {
+                if ui
+                    .selectable_label(self.view == Zoom::Fixed(scale), percent(scale))
+                    .clicked()
+                {
+                    ask = Some(ZoomAsk::To(scale));
+                    ui.close();
+                }
+            }
+        });
+        // Named «Zoom», with the scale on display as its value.
+        let name = texts.t(&gafira_doc::msg!("zoom.menu"));
+        let value = percent(self.zoom);
+        menu.response.widget_info(|| egui::WidgetInfo {
+            current_text_value: Some(value.clone()),
+            ..egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &name)
+        });
+        for (icon, key, shortcut, step) in [
+            (
+                Icon::ZoomIn,
+                gafira_doc::msg!("zoom.in"),
+                ZOOM_IN,
+                ZoomAsk::In,
+            ),
+            (
+                Icon::ZoomOut,
+                gafira_doc::msg!("zoom.out"),
+                ZOOM_OUT,
+                ZoomAsk::Out,
+            ),
+        ] {
+            let name = texts.t(&key);
+            let tooltip = with_keys(ui.ctx(), texts, name.clone(), shortcut);
+            let limit = match step {
+                ZoomAsk::In => self.zoom < zoom::MAX,
+                _ => self.zoom > zoom::MIN,
+            };
+            let button = ui.add_enabled_ui(limit, |ui| {
+                IconButton::new(icon, name)
+                    .tooltip(tooltip)
+                    .small()
+                    .show(ui, theme)
+            });
+            if button.inner.clicked() {
+                ask = Some(step);
+            }
+        }
+        ask
     }
 
     fn rail(&mut self, ctx: &egui::Context, theme: &Theme, texts: &Texts) {
@@ -386,34 +556,12 @@ impl Editor {
             .frame(egui::Frame::NONE.fill(theme.c("topbar.bg")))
             .show(ctx, |ui| {
                 ui.add_space(8.0);
-                for (index, key) in TABS.iter().enumerate() {
-                    let active = index == self.tab;
-                    let (rect, response) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(), 56.0),
-                        egui::Sense::click(),
-                    );
-                    if response.hovered() {
-                        ui.painter().rect_filled(rect, 0.0, theme.c("topbar.hover"));
-                    }
-                    if active {
-                        let bar = Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height()));
-                        ui.painter().rect_filled(bar, 0.0, theme.c("primary.bg"));
-                    }
-                    let color = if active {
-                        theme.c("topbar.fg")
-                    } else {
-                        theme.c("topbar.fg.muted")
-                    };
-                    ui.painter().text(
-                        rect.center(),
-                        Align2::CENTER_CENTER,
-                        texts.t(&gafira_doc::msg::Message {
-                            key: gafira_doc::msg::MessageKey(key),
-                            args: Vec::new(),
-                        }),
-                        theme.font("caption"),
-                        color,
-                    );
+                for (index, (key, icon)) in TABS.iter().enumerate() {
+                    let label = texts.t(&gafira_doc::msg::Message {
+                        key: gafira_doc::msg::MessageKey(key),
+                        args: Vec::new(),
+                    });
+                    let response = widgets::rail_tab(ui, theme, *icon, &label, index == self.tab);
                     if response.clicked() {
                         self.tab = index;
                     }
@@ -432,7 +580,7 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
-                if TABS[self.tab] == "tab.library" {
+                if TABS[self.tab].0 == "tab.library" {
                     let import = widgets::secondary(
                         ui,
                         theme,
@@ -443,7 +591,7 @@ impl Editor {
                     }
                     return;
                 }
-                if TABS[self.tab] == "tab.text" {
+                if TABS[self.tab].0 == "tab.text" {
                     for (key, words, preset) in [
                         (
                             gafira_doc::msg!("text.add_title"),
@@ -479,7 +627,7 @@ impl Editor {
                     }
                     return;
                 }
-                if TABS[self.tab] == "tab.pieces" {
+                if TABS[self.tab].0 == "tab.pieces" {
                     ui.label(
                         RichText::new(texts.t(&gafira_doc::msg!("pieces.shapes")))
                             .font(theme.font("ui-label"))
@@ -487,11 +635,19 @@ impl Editor {
                     );
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        for (key, geometry) in [
-                            (gafira_doc::msg!("pieces.rect"), ShapeGeometry::Rect),
-                            (gafira_doc::msg!("pieces.ellipse"), ShapeGeometry::Ellipse),
+                        for (key, icon, geometry) in [
+                            (
+                                gafira_doc::msg!("pieces.rect"),
+                                Icon::Rect,
+                                ShapeGeometry::Rect,
+                            ),
+                            (
+                                gafira_doc::msg!("pieces.ellipse"),
+                                Icon::Ellipse,
+                                ShapeGeometry::Ellipse,
+                            ),
                         ] {
-                            if widgets::secondary(ui, theme, texts.t(&key)).clicked() {
+                            if widgets::secondary_icon(ui, theme, icon, texts.t(&key)).clicked() {
                                 asked.insert = Some(geometry);
                             }
                         }
@@ -691,13 +847,33 @@ impl Editor {
                 }
                 if selected {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let down =
-                            egui::Button::new(texts.t(&gafira_doc::msg!("layers.down"))).small();
-                        if ui.add_enabled(row.index > 0, down).clicked() {
+                        let delete = IconButton::new(
+                            Icon::Delete,
+                            texts.t(&gafira_doc::msg!("editor.delete")),
+                        )
+                        .small()
+                        .show(ui, theme);
+                        asked.delete |= delete.clicked();
+                        let down = ui.add_enabled_ui(row.index > 0, |ui| {
+                            IconButton::new(
+                                Icon::SendBackward,
+                                texts.t(&gafira_doc::msg!("layers.down")),
+                            )
+                            .small()
+                            .show(ui, theme)
+                        });
+                        if down.inner.clicked() {
                             asked.reorder = Some((page.id, row.node, row.index - 1));
                         }
-                        let up = egui::Button::new(texts.t(&gafira_doc::msg!("layers.up"))).small();
-                        if ui.add_enabled(row.index < last, up).clicked() {
+                        let up = ui.add_enabled_ui(row.index < last, |ui| {
+                            IconButton::new(
+                                Icon::BringForward,
+                                texts.t(&gafira_doc::msg!("layers.up")),
+                            )
+                            .small()
+                            .show(ui, theme)
+                        });
+                        if up.inner.clicked() {
                             asked.reorder = Some((page.id, row.node, row.index + 1));
                         }
                     });
@@ -721,18 +897,17 @@ impl Editor {
                 let (scroll, command) =
                     ui.input(|i| (i.smooth_scroll_delta.y, i.modifiers.command));
                 if command && scroll != 0.0 && ui.rect_contains_pointer(area) {
-                    self.zoom_factor = (self.zoom_factor * (1.0 + scroll / 400.0)).clamp(0.1, 32.0);
+                    self.view = Zoom::Fixed(zoom::wheel(self.zoom, scroll));
                 }
                 let sizes = document.map(page_sizes).unwrap_or_default();
                 let Some(first) = sizes.first().copied() else {
                     return;
                 };
-                self.zoom = (fit_zoom(
+                self.zoom = self.view.resolve(fit_zoom(
                     (first.x, first.y),
                     (area.width(), area.height()),
                     CANVAS_MARGIN,
-                ) * self.zoom_factor)
-                    .clamp(0.05, 32.0);
+                ));
                 let zoom = self.zoom;
                 let width =
                     sizes.iter().map(|s| s.x).fold(0.0, f32::max) * zoom + 2.0 * CANVAS_MARGIN;
@@ -1891,5 +2066,55 @@ pub(crate) mod tests {
         engine.edit().undo().expect("an undo");
         assert!(the_shapes(&mut engine).is_empty());
         std::fs::remove_dir_all(dir).expect("clean up");
+    }
+
+    /// One frame of the whole editor in a 1440 × 900 window, with Ctrl/Cmd
+    /// and `key` pressed when given.
+    fn frame(ctx: &egui::Context, editor: &mut Editor, engine: &mut Gafira, key: Option<Key>) {
+        let mut input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0))),
+            ..Default::default()
+        };
+        if let Some(key) = key {
+            input.modifiers = Modifiers::COMMAND;
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::COMMAND,
+            });
+        }
+        let (theme, texts) = (theme(), Texts::new(gafira_ports::i18n::Locale::Es));
+        let _ = ctx.run(input, |ctx| {
+            editor.show(ctx, engine, &theme, &texts, None);
+        });
+    }
+
+    // S37-07: the shortcuts of 03 §9.2 move the canvas zoom.
+    #[test]
+    fn s37_07_ctrl_1_ctrl_equals_ctrl_minus_and_ctrl_0_drive_the_canvas_zoom() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let ctx = egui::Context::default();
+        let mut editor = Editor::default();
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.view, Zoom::Fit);
+        let fit = editor.zoom;
+        assert!(
+            fit > 0.05 && fit < 1.0,
+            "a 1080 px page fits below 100 %: {fit}"
+        );
+
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num1));
+        assert_eq!(editor.view, Zoom::Fixed(1.0));
+        assert_eq!(editor.zoom, 1.0);
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Equals));
+        assert_eq!(editor.view, Zoom::Fixed(1.25));
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Minus));
+        assert_eq!(editor.view, Zoom::Fixed(1.0));
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Num0));
+        assert_eq!(editor.view, Zoom::Fit);
+        assert_eq!(editor.zoom, fit);
     }
 }

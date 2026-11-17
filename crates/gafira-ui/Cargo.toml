@@ -25,6 +25,8 @@ rfd.workspace = true
 workspace = true
 
 [dev-dependencies]
+# Spec 037: the licence test checks the BLAKE3 hash of each vendored icon.
+blake3.workspace = true
 gafira-assets.workspace = true
 gafira-platform.workspace = true
 gafira-format.workspace = true
