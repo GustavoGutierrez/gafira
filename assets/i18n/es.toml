@@ -136,6 +136,8 @@ save_copy = "Guardar copia…"
 save_version = "Guardar versión…"
 save_failed = "No pudimos guardar el proyecto. Inténtalo de nuevo."
 open_failed = "No pudimos abrir el archivo. Comprueba que es un proyecto de Gafira."
+saving = "Guardando…"
+busy = "Ya se está guardando el proyecto. Espera a que termine."
 
 [recovery]
 title = "Encontramos trabajo sin guardar"

@@ -50,6 +50,6 @@ pub use governor::{
 };
 pub use license::LicenseService;
 pub use lock::FileLock;
-pub use project::ProjectService;
+pub use project::{ProjectService, SaveJob, SaveOutcome, SaveRequest};
 pub use session::DocVersion;
 pub use settings::SettingsService;

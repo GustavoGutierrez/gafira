@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use gafira_engine::{AutosaveOutcome, EngineError, Gafira, RecoveryEntry, Waker};
+use gafira_engine::{AutosaveOutcome, EngineError, Gafira, RecoveryEntry, SaveRequest, Waker};
 use gafira_ports::i18n::LanguagePreference;
 use gafira_ports::i18n::Locale;
 use gafira_ports::settings::Appearance;
@@ -20,6 +20,7 @@ use crate::files::{self, FileAction, Outcome};
 use crate::format::StartFormat;
 use crate::home::{Home, Thumbs};
 use crate::recent::{self, RecentStore};
+use crate::saving::{self, Ended, Saving};
 use crate::splash;
 use crate::style::Theme;
 use crate::text::Texts;
@@ -72,6 +73,18 @@ pub(crate) enum Go {
     Settings,
     /// Open «Exportar» for the page of the selection, if any (spec 030).
     Export(Option<gafira_doc::PageId>),
+    /// Save a named version (spec 031), on its thread (spec 036).
+    SaveVersion(String),
+}
+
+/// What to do once a save on its thread succeeded (spec 036).
+struct AfterSave {
+    /// Put the project in «Recientes» (not for a copy).
+    remember: bool,
+    /// Where «¿Guardar los cambios?» was going.
+    then: Option<Leave>,
+    /// The notice of a failure.
+    failed: gafira_doc::msg::Message,
 }
 
 struct Shell {
@@ -104,6 +117,10 @@ struct Shell {
     export: Option<export::Dialog>,
     /// The export running on its thread (spec 035).
     exporting: Option<export::Running>,
+    /// The save running on its thread and what follows it (spec 036).
+    saving: Option<(Saving, AfterSave)>,
+    /// Repaints the window from the threads of a save.
+    waker: egui::Context,
     /// The textures of the thumbnails of «Recientes» (spec 033).
     thumbs: Thumbs,
 }
@@ -160,6 +177,8 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 leaving: None,
                 export: None,
                 exporting: None,
+                saving: None,
+                waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
             }))
         }),
@@ -212,7 +231,7 @@ impl Shell {
         self.screen = self.home();
         match to {
             Leave::Home => {}
-            Leave::Open => self.file(FileAction::Open),
+            Leave::Open => self.file(FileAction::Open, None),
             Leave::Recent(path) => self.open_recent(&path),
         }
     }
@@ -254,21 +273,114 @@ impl Shell {
         }
     }
 
-    fn file(&mut self, action: FileAction) {
+    /// Run `action` of the Archivo menu; a save goes to its thread and
+    /// `then` follows it once it succeeded.
+    fn file(&mut self, action: FileAction, then: Option<Leave>) {
         self.notice = None;
-        match files::run(&self.engine, action) {
-            Outcome::Cancelled => {}
-            Outcome::Done => {
-                if recent::records(action) {
-                    self.remember();
-                }
-                if action == FileAction::Open {
-                    self.screen = Screen::Editor(Box::default());
-                }
+        if action != FileAction::Open && self.saving.is_some() {
+            self.notice = Some(self.texts.t(&gafira_doc::msg!("file.busy")));
+            return;
+        }
+        match files::plan(&self.engine, action) {
+            files::Plan::Cancelled | files::Plan::Opened(Outcome::Cancelled) => {}
+            files::Plan::Opened(Outcome::Done) => {
+                self.remember();
+                self.screen = Screen::Editor(Box::default());
             }
-            Outcome::Failed(message, detail) => {
+            files::Plan::Opened(Outcome::Failed(message, detail)) => {
                 eprintln!("{action:?}: {detail}");
                 self.notice = Some(self.texts.t(&message));
+            }
+            files::Plan::Save(request) => self.start_save(
+                request,
+                AfterSave {
+                    remember: recent::records(action),
+                    then,
+                    failed: gafira_doc::msg!("file.save_failed"),
+                },
+            ),
+        }
+    }
+
+    /// «Guardar versión» with `name`; a project never saved asks for its
+    /// file first, because a version lives inside the file (spec 031).
+    fn save_version(&mut self, name: String) {
+        self.notice = None;
+        if self.saving.is_some() {
+            self.notice = Some(self.texts.t(&gafira_doc::msg!("file.busy")));
+            return;
+        }
+        let at = if self.engine.projects().path().is_some() {
+            None
+        } else {
+            let Some(path) = files::pick_new(&self.engine) else {
+                return;
+            };
+            Some(path)
+        };
+        self.start_save(
+            SaveRequest::Version { name, at },
+            AfterSave {
+                remember: true,
+                then: None,
+                failed: gafira_doc::msg!("versions.save_failed"),
+            },
+        );
+    }
+
+    /// Check `request` with the engine and run it on its thread.
+    fn start_save(&mut self, request: SaveRequest, after: AfterSave) {
+        match self.engine.projects().prepare_save(request) {
+            Ok(job) => {
+                let waker = self.waker.clone();
+                let saving = saving::spawn(job, Arc::new(move || waker.request_repaint()));
+                self.saving = Some((saving, after));
+            }
+            Err(error) => {
+                eprintln!("save: {error}");
+                self.notice = Some(self.texts.t(&after.failed));
+            }
+        }
+    }
+
+    /// The save on its thread (spec 036): its card while it runs; when it
+    /// ends the engine accounts for it, and what waited for it follows.
+    fn pump_save(&mut self, ctx: &egui::Context) {
+        let Some((running, _)) = self.saving.as_mut() else {
+            return;
+        };
+        let Some(ended) = running.poll() else {
+            saving::card(ctx, &self.theme, &self.texts);
+            return;
+        };
+        if let Some((_, after)) = self.saving.take() {
+            self.save_ended(ended, after);
+        }
+        ctx.request_repaint();
+    }
+
+    /// Account for a save that ended, then do what waited for it.
+    fn save_ended(&mut self, ended: Ended, after: AfterSave) {
+        let result = match ended {
+            Ended::Ran(outcome) => self
+                .engine
+                .projects()
+                .save_finished(outcome)
+                .map_err(|error| error.to_string()),
+            Ended::Lost => Err("the save thread stopped without an answer".to_owned()),
+        };
+        match result {
+            Ok(()) => {
+                if after.remember {
+                    self.remember();
+                }
+                if let Some(to) = after.then {
+                    self.proceed(to);
+                }
+            }
+            Err(detail) => {
+                eprintln!("save: {detail}");
+                self.notice = Some(self.texts.t(&after.failed));
             }
         }
     }
@@ -343,10 +455,8 @@ impl Shell {
                 }
                 LeaveChoice::Save => {
                     self.leaving = None;
-                    self.file(FileAction::Save);
-                    if !self.engine.projects().is_modified() {
-                        self.proceed(to);
-                    }
+                    // The way on follows the save, once it succeeded.
+                    self.file(FileAction::Save, Some(to));
                 }
             }
             return true;
@@ -459,6 +569,18 @@ impl eframe::App for Shell {
         if let Some(running) = self.exporting.take() {
             running.stop();
         }
+        // A save is never cut short: wait for it, and let the engine account
+        // for it (its lock and its recovery slots).
+        if let Some((running, after)) = self.saving.take() {
+            let ended = running.wait();
+            self.save_ended(
+                ended,
+                AfterSave {
+                    then: None,
+                    ..after
+                },
+            );
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -495,6 +617,7 @@ impl eframe::App for Shell {
         };
         let blocked = self.dialogs(ctx);
         self.pump_export(ctx);
+        self.pump_save(ctx);
         let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request
@@ -519,7 +642,8 @@ impl eframe::App for Shell {
                 }
             }
             Go::File(FileAction::Open) if in_editor && modified => self.leaving = Some(Leave::Open),
-            Go::File(action) => self.file(action),
+            Go::File(action) => self.file(action, None),
+            Go::SaveVersion(name) => self.save_version(name),
             Go::OpenRecent(path) if in_editor && modified => {
                 self.leaving = Some(Leave::Recent(path));
             }

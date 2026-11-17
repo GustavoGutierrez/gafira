@@ -65,6 +65,8 @@ mod tests {
         "file.save_as",
         "file.save_copy",
         "file.save_version",
+        "file.saving",
+        "file.busy",
         "versions.title",
         "versions.name_title",
         "versions.name_hint",

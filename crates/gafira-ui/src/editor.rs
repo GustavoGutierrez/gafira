@@ -89,6 +89,8 @@ struct Asked {
     /// «Versiones» in the top bar, «Guardar versión…» in Archivo.
     versions: bool,
     save_version: bool,
+    /// The name of a version to save, from «Guardar versión» (spec 036).
+    version: Option<String>,
     undo: bool,
     redo: bool,
     add_page: bool,
@@ -227,7 +229,7 @@ impl Editor {
         if asked.save_version {
             self.versions.ask_name();
         }
-        self.versions.show(ctx, engine, theme, texts);
+        asked.version = self.versions.show(ctx, engine, theme, texts);
         self.apply(engine, &document, &asked, theme)
     }
 
@@ -1059,6 +1061,8 @@ impl Editor {
             Go::Dark(dark)
         } else if asked.settings {
             Go::Settings
+        } else if let Some(name) = &asked.version {
+            Go::SaveVersion(name.clone())
         } else if asked.export {
             Go::Export(self.selected.map(|(page, _)| page))
         } else if asked.home {
