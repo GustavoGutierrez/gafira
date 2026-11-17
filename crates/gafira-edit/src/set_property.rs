@@ -977,4 +977,196 @@ mod tests {
         assert!(matches!(result, Err(CommandError::InvalidValue(_))));
         assert_eq!(doc, original);
     }
+
+    /// One drag frame of a multi-selection: `A` to `a` and `B` to `b`
+    /// (spec 040).
+    fn moves(a: f64, b: f64, gesture: Option<GestureId>) -> Box<dyn Command> {
+        two(
+            Property::Placement(at(a)),
+            Property::Placement(at(b)),
+            gesture,
+        )
+    }
+
+    /// A transaction that sets `first` on `A` and `second` on `B`.
+    fn two(first: Property, second: Property, gesture: Option<GestureId>) -> Box<dyn Command> {
+        Box::new(Transaction::new(
+            MessageKey("edit.set_property"),
+            vec![
+                Box::new(SetProperty::new(PAGE, vec![A], first, gesture)),
+                Box::new(SetProperty::new(PAGE, vec![B], second, gesture)),
+            ],
+        ))
+    }
+
+    fn at_ms(ms: u64) -> std::time::Duration {
+        std::time::Duration::from_millis(ms)
+    }
+
+    // S40-04: the frames of a multi-selection drag are one history entry.
+    #[test]
+    fn s40_04_a_gesture_of_move_transactions_is_one_entry_that_undoes_to_the_start() {
+        let original = fixture();
+        let mut history = crate::History::new(original.clone()).expect("valid");
+        let gesture = history.begin_gesture();
+        for step in 1..=3u64 {
+            let d = step as f64;
+            // Far apart in time: only the gesture can merge them.
+            let applied = history.execute(moves(d, 10.0 + d, Some(gesture)), at_ms(step * 1000));
+            assert_eq!(applied, Ok(Applied::Changed));
+        }
+        history.end_gesture();
+        assert_eq!(history.len(), 1, "one entry for the whole drag");
+        let doc = Arc::clone(history.document());
+        assert_eq!(node(&doc, A).base.placement, at(3.0));
+        assert_eq!(node(&doc, B).base.placement, at(13.0));
+        assert_eq!(
+            history.newest_touches().expect("an entry").nodes,
+            [A, B].into_iter().collect()
+        );
+        history.undo().expect("an undo");
+        assert_eq!(**history.document(), original);
+        history.redo().expect("a redo");
+        assert_eq!(node(history.document(), B).base.placement, at(13.0));
+    }
+
+    // S40-04: the merged transaction also reverts and re-applies by itself,
+    // as a compacted entry does.
+    #[test]
+    fn s40_04_a_merged_transaction_reverts_to_the_first_before_and_applies_the_last_after() {
+        let original = fixture();
+        let mut doc = original.clone();
+        let gesture = Some(GestureId(7));
+        let token = EditToken::__new_for_gafira_edit_only();
+        let mut first = moves(1.0, 2.0, gesture);
+        assert_eq!(first.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        let mut second = moves(5.0, 6.0, gesture);
+        assert_eq!(second.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        assert!(first.merge(second).is_ok());
+        first.revert(&mut doc.edit(&token)).unwrap();
+        assert_eq!(doc, original);
+        assert_eq!(first.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        assert_eq!(node(&doc, A).base.placement, at(5.0));
+        assert_eq!(node(&doc, B).base.placement, at(6.0));
+    }
+
+    // S40-04: the key of a transaction is its children's page, nodes and
+    // gesture; a child without a key, or children of different pages or
+    // gestures, leave it without one.
+    #[test]
+    fn s40_04_a_transaction_key_joins_its_children_or_is_none() {
+        let gesture = Some(GestureId(1));
+        let key = moves(1.0, 2.0, gesture).merge_key().expect("a key");
+        assert_eq!(key.kind, "transaction");
+        assert_eq!(key.page, Some(PAGE));
+        assert_eq!(key.nodes, [A, B]);
+        assert_eq!(key.gesture, gesture);
+
+        let empty = Transaction::new(MessageKey("t"), Vec::new());
+        assert_eq!(empty.merge_key(), None);
+        let keyless = Transaction::new(
+            MessageKey("t"),
+            vec![
+                Box::new(set(&[A], Property::Opacity(0.5))),
+                Box::new(crate::RemoveNodes::new(PAGE, vec![B])),
+            ],
+        );
+        assert_eq!(keyless.merge_key(), None);
+        let gestures = Transaction::new(
+            MessageKey("t"),
+            vec![
+                Box::new(SetProperty::new(
+                    PAGE,
+                    vec![A],
+                    Property::Opacity(0.5),
+                    gesture,
+                )),
+                Box::new(SetProperty::new(
+                    PAGE,
+                    vec![B],
+                    Property::Opacity(0.5),
+                    None,
+                )),
+            ],
+        );
+        assert_eq!(gestures.merge_key(), None);
+        let pages = Transaction::new(
+            MessageKey("t"),
+            vec![
+                Box::new(SetProperty::new(
+                    PAGE,
+                    vec![A],
+                    Property::Opacity(0.5),
+                    gesture,
+                )),
+                Box::new(SetProperty::new(
+                    PageId::new(9),
+                    vec![B],
+                    Property::Opacity(0.5),
+                    gesture,
+                )),
+            ],
+        );
+        assert_eq!(pages.merge_key(), None);
+    }
+
+    // S40-04: a transaction only absorbs one whose children pair up with
+    // equal keys; anything else comes back untouched and nothing merged.
+    #[test]
+    fn s40_04_a_transaction_hands_back_what_does_not_pair_up() {
+        let gesture = Some(GestureId(1));
+        let mut first = moves(1.0, 2.0, gesture);
+        let only_a: Box<dyn Command> = Box::new(Transaction::new(
+            MessageKey("edit.set_property"),
+            vec![Box::new(SetProperty::new(
+                PAGE,
+                vec![A],
+                Property::Placement(at(4.0)),
+                gesture,
+            ))],
+        ));
+        let swapped: Box<dyn Command> = Box::new(Transaction::new(
+            MessageKey("edit.set_property"),
+            vec![
+                Box::new(SetProperty::new(
+                    PAGE,
+                    vec![B],
+                    Property::Placement(at(4.0)),
+                    gesture,
+                )),
+                Box::new(SetProperty::new(
+                    PAGE,
+                    vec![A],
+                    Property::Placement(at(4.0)),
+                    gesture,
+                )),
+            ],
+        ));
+        let others: Vec<Box<dyn Command>> = vec![
+            moves(1.0, 2.0, Some(GestureId(2))),
+            only_a,
+            swapped,
+            two(
+                Property::Placement(at(4.0)),
+                Property::Opacity(0.5),
+                gesture,
+            ),
+            Box::new(SetProperty::new(
+                PAGE,
+                vec![A],
+                Property::Placement(at(4.0)),
+                gesture,
+            )),
+        ];
+        for other in others {
+            let before: *const dyn Command = &*other;
+            let back = first.merge(other).expect_err("does not pair up");
+            assert!(std::ptr::addr_eq(before, &*back));
+        }
+        let mut doc = fixture();
+        let token = EditToken::__new_for_gafira_edit_only();
+        assert_eq!(first.apply(&mut doc.edit(&token)), Ok(Applied::Changed));
+        assert_eq!(node(&doc, A).base.placement, at(1.0), "nothing merged");
+        assert_eq!(node(&doc, B).base.placement, at(2.0));
+    }
 }
