@@ -66,6 +66,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 037 | [Iconos Phosphor y botones de icono del editor](done/037-phosphor-icons.md) | Phosphor 2.1.1 (MIT, D-87): 25 SVG vendidos y registrados (ARQ-75), convertidos en contornos por `build.rs` y rasterizados con antialias y el color de un token; botón de icono y pestaña del riel con nombre accesible; iconos en la barra superior, el riel, Piezas y Capas; menú Edición; zoom 5-3200 % con Alejar, Acercar, menú (Ajustar, 50, 100, 200 %) y Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+1; 22 tests nuevos, 2993 tests |
 | 038 | [Contorno y radio de esquina de las formas](done/038-shape-outline-and-corner-radius.md) | `ShapeStroke` (color y grosor 0–1000 px, centrado) y `corner_radius` en `ShapeNode`, opcionales y aditivos (un documento anterior carga sin contorno y con radio 0); `Property::{Stroke, CornerRadius}`; el render rellena el contorno de `gafira-pathops` y redondea hasta la mitad del lado corto (FD-36 a); «Contorno» y «Radio de esquina» en el Inspector y en el lienzo; 16 tests nuevos, 12 mutantes a mano muertos, 2987 tests |
 | 039 | [Un diálogo «Exportar» más completo](done/039-export-dialog.md) | `JpegExporter` (calidad 1–100, sobre blanco) y `WebpExporter` (sin pérdida) en `gafira-io-image`; `ExportService::preview`; `show_in_folder` en `gafira-platform`; diálogo con PNG/JPG/WebP/PDF y opciones desde `options_schema`, páginas todas/actual/rango, vista previa, tamaño en px y «Mostrar en carpeta»; 18 tests nuevos, 7 mutantes a mano muertos, 2988 tests |
+| 040 | [Selección múltiple](done/040-multi-selection.md) | `Selection` (nodos de una página, el último es el principal); clic, Mayús+clic, marco (Mayús suma), Esc y Ctrl+A en el lienzo; Ctrl/Mayús+clic en Capas; caja envolvente; mover en un solo deshacer con `Transaction` que se fusiona por gesto (`gafira-edit`) y eliminar con un `RemoveNodes`; Inspector con «N elementos», relleno y opacidad para todos; poda tras deshacer; 22 tests nuevos, 13 mutantes a mano muertos, 3048 tests |
 
 ### Historial del flujo anterior
 
@@ -82,4 +83,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **040**.
+Siguiente ID libre: **041**.
