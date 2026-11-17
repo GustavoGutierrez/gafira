@@ -108,6 +108,8 @@ fn main() -> eframe::Result {
             file: RecentProjects::at(data_dir.join("recent.json")),
             clock: SystemClock::new(),
         }),
+        // Spec 039: «Mostrar en carpeta» opens the system file manager.
+        show_in_folder: Box::new(gafira_platform::show_in_folder),
         engine: Box::new(move |waker: Arc<dyn Waker>| {
             let clock = Arc::new(SystemClock::new());
             // Spec 026: imported and opened assets live in the content store,
@@ -160,11 +162,14 @@ fn export_pages(clock: Arc<SystemClock>) -> Arc<dyn PageRenderers> {
     ))
 }
 
-/// The formats of this build: PNG and PDF export (spec 030).
+/// The formats of this build: PNG and PDF export (spec 030), JPEG and
+/// WebP (spec 039), in the order the export dialog lists them.
 fn registries() -> Registries {
     let mut registries = Registries::new();
-    let exporters: [Arc<dyn Exporter>; 2] = [
+    let exporters: [Arc<dyn Exporter>; 4] = [
         Arc::new(gafira_io_image::PngExporter::new()),
+        Arc::new(gafira_io_image::JpegExporter::new()),
+        Arc::new(gafira_io_image::WebpExporter::new()),
         Arc::new(gafira_io_pdf::PdfExporter::new()),
     ];
     for exporter in exporters {

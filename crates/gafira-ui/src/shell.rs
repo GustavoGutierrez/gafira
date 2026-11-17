@@ -29,6 +29,11 @@ use crate::text::Texts;
 /// it when an event arrives (02 §5.2).
 pub type EngineFactory = Box<dyn FnOnce(Arc<dyn Waker>) -> Result<Gafira, EngineError>>;
 
+/// «Mostrar en carpeta» (spec 039): opens the system file manager on the
+/// folder of a file, without waiting for it. The composition root gives it
+/// from `gafira-platform`.
+pub type ShowInFolder = Box<dyn Fn(&Path) -> std::io::Result<()>>;
+
 /// What the composition root hands the shell.
 pub struct UiConfig {
     /// The interface language, resolved by the D-08 rule. `None` takes the
@@ -40,6 +45,8 @@ pub struct UiConfig {
     pub engine: EngineFactory,
     /// The recent projects of Inicio (spec 025).
     pub recent: Box<dyn RecentStore>,
+    /// «Mostrar en carpeta» after an export (spec 039).
+    pub show_in_folder: ShowInFolder,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -117,6 +124,10 @@ struct Shell {
     export: Option<export::Dialog>,
     /// The export running on its thread (spec 035).
     exporting: Option<export::Running>,
+    /// The first file of the last export that ended well, while its card
+    /// offers «Mostrar en carpeta» (spec 039).
+    exported: Option<PathBuf>,
+    show_in_folder: ShowInFolder,
     /// The save running on its thread and what follows it (spec 036).
     saving: Option<(Saving, AfterSave)>,
     /// Repaints the window from the threads of a save.
@@ -177,6 +188,8 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 leaving: None,
                 export: None,
                 exporting: None,
+                exported: None,
+                show_in_folder: config.show_in_folder,
                 saving: None,
                 waker: cc.egui_ctx.clone(),
                 thumbs: Thumbs::default(),
@@ -390,20 +403,22 @@ impl Shell {
         let Some(dialog) = self.export.as_mut() else {
             return;
         };
-        match export::show(ctx, &self.theme, &self.texts, dialog) {
+        match export::show(ctx, &self.theme, &self.texts, &mut self.engine, dialog) {
             export::Answer::Open => {}
             export::Answer::Cancel => self.export = None,
             export::Answer::Export => {
-                let dialog = *dialog;
-                self.export = None;
+                let Some(dialog) = self.export.take() else {
+                    return;
+                };
                 if self.exporting.is_some() {
                     self.notice = Some(self.texts.t(&gafira_doc::msg!("export.busy")));
                     return;
                 }
-                match export::start(&mut self.engine, dialog, ctx) {
+                match export::start(&mut self.engine, &dialog, ctx) {
                     export::Start::Cancelled => {}
                     export::Start::Running(running) => {
                         self.notice = None;
+                        self.exported = None;
                         self.exporting = Some(running);
                     }
                     export::Start::Failed(message, detail) => {
@@ -416,16 +431,22 @@ impl Shell {
     }
 
     /// The export on its thread (spec 035): its card while it runs, and the
-    /// notice when it ends.
+    /// notice when it ends; one that ended well leaves its card with
+    /// «Mostrar en carpeta» (spec 039).
     fn pump_export(&mut self, ctx: &egui::Context) {
         let Some(running) = self.exporting.as_mut() else {
+            self.pump_exported(ctx);
             return;
         };
         if let Some(outcome) = running.poll() {
+            let path = running.path().to_path_buf();
             self.exporting = None;
             self.notice = match outcome {
                 Outcome::Cancelled => Some(self.texts.t(&gafira_doc::msg!("export.cancelled"))),
-                Outcome::Done => Some(self.texts.t(&gafira_doc::msg!("export.done"))),
+                Outcome::Done => {
+                    self.exported = Some(path);
+                    None
+                }
                 Outcome::Failed(message, detail) => {
                     eprintln!("export: {detail}");
                     Some(self.texts.t(&message))
@@ -436,6 +457,24 @@ impl Shell {
         }
         if export::progress(ctx, &self.theme, &self.texts, running.fraction()) {
             running.cancel();
+        }
+    }
+
+    /// The card of the export that ended well, until it is closed.
+    fn pump_exported(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.exported.as_ref() else {
+            return;
+        };
+        match export::finished(ctx, &self.theme, &self.texts) {
+            export::Finished::Open => {}
+            export::Finished::Close => self.exported = None,
+            export::Finished::ShowInFolder => {
+                if let Err(error) = (self.show_in_folder)(path) {
+                    eprintln!("show in folder {}: {error}", path.display());
+                    self.notice = Some(self.texts.t(&gafira_doc::msg!("export.folder_failed")));
+                }
+                self.exported = None;
+            }
         }
     }
 
@@ -664,10 +703,7 @@ impl eframe::App for Shell {
             }
             Go::Export(page) => {
                 self.notice = None;
-                self.export = Some(export::Dialog {
-                    choice: export::Choice::default(),
-                    page,
-                });
+                self.export = Some(export::Dialog::new(export::formats(&self.engine), page));
             }
             Go::Editor(format) => match start(&mut self.engine, format) {
                 Ok(()) => self.screen = Screen::Editor(Box::default()),

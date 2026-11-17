@@ -204,6 +204,23 @@ mod tests {
         "export.cancel",
         "export.cancelled",
         "export.busy",
+        "export.jpeg",
+        "export.webp",
+        "export.quality",
+        "export.scale_3x",
+        "export.scale_4x",
+        "export.pages",
+        "export.pages_all",
+        "export.pages_current",
+        "export.pages_range",
+        "export.range_hint",
+        "export.range_invalid",
+        "export.preview",
+        "export.pixels",
+        "export.files",
+        "export.show_in_folder",
+        "export.close",
+        "export.folder_failed",
     ];
 
     #[test]

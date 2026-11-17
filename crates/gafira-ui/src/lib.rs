@@ -29,4 +29,4 @@ mod versions;
 mod widgets;
 
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};
-pub use shell::{EngineFactory, UiConfig, run};
+pub use shell::{EngineFactory, ShowInFolder, UiConfig, run};
