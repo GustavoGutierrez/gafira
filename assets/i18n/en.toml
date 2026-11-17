@@ -136,6 +136,8 @@ save_copy = "Save a copy…"
 save_version = "Save version…"
 save_failed = "We couldn't save the project. Try again."
 open_failed = "We couldn't open the file. Check that it is a Gafira project."
+saving = "Saving…"
+busy = "The project is already being saved. Wait for it to finish."
 
 [recovery]
 title = "We found unsaved work"

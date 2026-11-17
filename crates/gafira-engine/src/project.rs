@@ -271,7 +271,7 @@ impl ProjectService {
     /// Refused with [`EngineError::NoSession`], then [`EngineError::ReadOnly`]
     /// (ARQ-55), then [`EngineError::NoPath`], all before any port call. The
     /// document and its version are taken under the lock; with the lock
-    /// released, [`ProjectService::write_atomically`] writes it. On a failure
+    /// released, the [`SaveJob`] writes it. On a failure
     /// the first error is returned and the session stays modified. On success
     /// the session is clean at the saved version, if it is still the session
     /// that was saved: an edit made meanwhile keeps it modified, and pending
@@ -281,12 +281,127 @@ impl ProjectService {
     /// saved document when the newest automatic one is more than 30 min old
     /// (02 §7.1, spec 031); the session holds them once the file does.
     pub fn save(&self) -> Result<(), EngineError> {
-        let (snapshot, path) = self.writable(|snapshot| {
-            versions::on_save(&snapshot.versions, &snapshot.document, self.clock.now())
-        })?;
-        self.write_atomically(&path, &snapshot.document, &snapshot.versions)?;
-        self.saved(&snapshot, None);
+        self.save_finished(self.prepare_save(SaveRequest::Save)?.run())
+    }
+
+    /// Take everything a save of `request` needs, with its refusals, and
+    /// write nothing (spec 035, 036): the returned [`SaveJob`] is
+    /// `Send + 'static`, the host runs it on its own thread, and hands its
+    /// outcome to [`ProjectService::save_finished`]. The session goes on
+    /// meanwhile: an edit made while the job runs keeps it modified.
+    ///
+    /// The refusals and the versions the file keeps are those of
+    /// [`ProjectService::save`], [`ProjectService::save_as`],
+    /// [`ProjectService::save_copy`] and [`ProjectService::save_version`].
+    /// [`SaveRequest::Version`] with a path is «Guardar como» of a project
+    /// never saved, with the named version and no automatic one.
+    ///
+    /// # Errors
+    /// [`EngineError::NoSession`], [`EngineError::ReadOnly`] and
+    /// [`EngineError::NoPath`] as those methods say, before any port call.
+    pub fn prepare_save(&self, request: SaveRequest) -> Result<SaveJob, EngineError> {
+        let now = self.clock.now();
+        let (document, versions, path, account) = match request {
+            SaveRequest::Save => {
+                let (snapshot, path) = self.writable(|snapshot| {
+                    versions::on_save(&snapshot.versions, &snapshot.document, now)
+                })?;
+                Self::job_parts(snapshot, path, None)
+            }
+            SaveRequest::Version { name, at: None } => {
+                let (snapshot, path) = self.writable(|snapshot| {
+                    versions::with_named(&snapshot.versions, &name, &snapshot.document, now)
+                })?;
+                Self::job_parts(snapshot, path, None)
+            }
+            SaveRequest::Version {
+                name,
+                at: Some(path),
+            } => {
+                let snapshot = self.moved(|snapshot| {
+                    versions::with_named(&snapshot.versions, &name, &snapshot.document, now)
+                })?;
+                Self::job_parts(snapshot, path.clone(), Some(path))
+            }
+            SaveRequest::SaveAs(path) => {
+                let snapshot = self.moved(|snapshot| {
+                    versions::on_save(&snapshot.versions, &snapshot.document, now)
+                })?;
+                Self::job_parts(snapshot, path.clone(), Some(path))
+            }
+            SaveRequest::SaveCopy(path) => {
+                let (document, kept) = {
+                    let cell = self.shared.lock();
+                    let session = cell.as_ref().ok_or(EngineError::NoSession)?;
+                    (
+                        Arc::clone(session.history.document()),
+                        session.versions.clone(),
+                    )
+                };
+                let copy = Document::clone(&document).with_project_id(self.ids.project_id());
+                (Arc::new(copy), kept, path, None)
+            }
+        };
+        Ok(SaveJob {
+            writer: self.writer(),
+            temporary: self.temporaries.fetch_add(1, Ordering::SeqCst),
+            document,
+            versions,
+            path,
+            account,
+        })
+    }
+
+    /// Account for a [`SaveJob`] that ran: on success the session is clean
+    /// at the saved version, holds its versions and, after «Guardar como»,
+    /// lives at its new file with the lock moved; a session replaced or
+    /// closed meanwhile is left alone. A copy changes nothing.
+    ///
+    /// # Errors
+    /// The first error of the repository or the file system; the session
+    /// stays as it was then.
+    pub fn save_finished(&self, outcome: SaveOutcome) -> Result<(), EngineError> {
+        outcome.result?;
+        if let Some((snapshot, path)) = outcome.account {
+            self.saved(&snapshot, path.as_deref());
+        }
         Ok(())
+    }
+
+    /// The parts of a job that writes `snapshot` at `path` and accounts for
+    /// it; `moved_to` is the new file of «Guardar como».
+    fn job_parts(
+        snapshot: Snapshot,
+        path: PathBuf,
+        moved_to: Option<PathBuf>,
+    ) -> (Arc<Document>, Vec<Version>, PathBuf, Account) {
+        (
+            Arc::clone(&snapshot.document),
+            snapshot.versions.clone(),
+            path,
+            Some((snapshot, moved_to)),
+        )
+    }
+
+    /// The snapshot of the session for «Guardar como», with the versions
+    /// `keep` gives; any session may be saved elsewhere (ARQ-55).
+    fn moved(&self, keep: impl FnOnce(&Snapshot) -> Vec<Version>) -> Result<Snapshot, EngineError> {
+        let cell = self.shared.lock();
+        let session = cell.as_ref().ok_or(EngineError::NoSession)?;
+        let mut snapshot = self.snapshot_of(session);
+        snapshot.versions = keep(&snapshot);
+        Ok(snapshot)
+    }
+
+    /// What writes a file, owned, for a job on another thread.
+    fn writer(&self) -> Writer {
+        Writer {
+            repository: Arc::clone(&self.repository),
+            filesystem: Arc::clone(&self.filesystem),
+            pages: Arc::clone(&self.pages),
+            store: Arc::clone(&self.store),
+            images: Arc::clone(&self.images),
+        }
     }
 
     /// Add a named version of the session's document called `name` (trimmed)
@@ -299,17 +414,11 @@ impl ProjectService {
     /// # Errors
     /// As [`ProjectService::save`].
     pub fn save_version(&self, name: &str) -> Result<(), EngineError> {
-        let (snapshot, path) = self.writable(|snapshot| {
-            versions::with_named(
-                &snapshot.versions,
-                name,
-                &snapshot.document,
-                self.clock.now(),
-            )
-        })?;
-        self.write_atomically(&path, &snapshot.document, &snapshot.versions)?;
-        self.saved(&snapshot, None);
-        Ok(())
+        let request = SaveRequest::Version {
+            name: name.to_owned(),
+            at: None,
+        };
+        self.save_finished(self.prepare_save(request)?.run())
     }
 
     /// The versions of the open project, oldest first; empty with no
@@ -383,17 +492,10 @@ impl ProjectService {
     /// [`EngineError::NoSession`] before any port call; then the first error
     /// of the repository or the file system.
     pub fn save_as(&self, path: &Path) -> Result<(), EngineError> {
-        let snapshot = {
-            let cell = self.shared.lock();
-            let session = cell.as_ref().ok_or(EngineError::NoSession)?;
-            let mut snapshot = self.snapshot_of(session);
-            snapshot.versions =
-                versions::on_save(&snapshot.versions, &snapshot.document, self.clock.now());
-            snapshot
-        };
-        self.write_atomically(path, &snapshot.document, &snapshot.versions)?;
-        self.saved(&snapshot, Some(path));
-        Ok(())
+        self.save_finished(
+            self.prepare_save(SaveRequest::SaveAs(path.to_owned()))?
+                .run(),
+        )
     }
 
     /// Write a copy of the session's document at `path` under a new project
@@ -405,16 +507,10 @@ impl ProjectService {
     /// [`EngineError::NoSession`] before any port call; then the first error
     /// of the repository or the file system.
     pub fn save_copy(&self, path: &Path) -> Result<(), EngineError> {
-        let (snapshot, kept) = {
-            let cell = self.shared.lock();
-            let session = cell.as_ref().ok_or(EngineError::NoSession)?;
-            (
-                Arc::clone(session.history.document()),
-                session.versions.clone(),
-            )
-        };
-        let copy = Document::clone(&snapshot).with_project_id(self.ids.project_id());
-        self.write_atomically(path, &copy, &kept)
+        self.save_finished(
+            self.prepare_save(SaveRequest::SaveCopy(path.to_owned()))?
+                .run(),
+        )
     }
 
     /// The document, the version, the key and the versions of `session`,
@@ -464,75 +560,6 @@ impl ProjectService {
         if all_saved {
             self.discard_slots(project_id);
         }
-    }
-
-    /// 02 §7.2: the repository writes and syncs `<path>.tmp-<n>` (steps 1-2,
-    /// SP6), with the thumbnail of the first page when it can be drawn
-    /// (spec 033); when `path` exists its bytes go to `<path>.bak` (step 4); then
-    /// the file system renames the temporary over `path` and syncs the
-    /// folder (step 3). Each step runs only after the one before returned
-    /// `Ok`, so a failure anywhere leaves `path` with its old bytes. The
-    /// temporaries are removed on a failure, on a best-effort basis: the
-    /// first error is the one the caller needs.
-    fn write_atomically(
-        &self,
-        path: &Path,
-        document: &Document,
-        versions: &[Version],
-    ) -> Result<(), EngineError> {
-        // Spec 033: best effort, a page that cannot be drawn is saved
-        // without its thumbnail.
-        // Its images come from the store like an export's (spec 032); a
-        // missing or broken image only costs the thumbnail its pixels.
-        let first: Vec<_> = document
-            .pages()
-            .first()
-            .map(|page| page.id)
-            .into_iter()
-            .collect();
-        let images = crate::export::decode_images(document, &first, &*self.store, &*self.images)
-            .unwrap_or_default();
-        let thumbnail = thumbnail::first_page(document, &*self.pages, images);
-        let n = self.temporaries.fetch_add(1, Ordering::SeqCst);
-        let tmp = suffixed(path, &format!(".tmp-{n}"));
-        let written = self
-            .repository
-            .save_with_thumbnail(&tmp, document, versions, thumbnail.as_ref())
-            .map_err(EngineError::from)
-            .and_then(|()| self.back_up(path, n))
-            .and_then(|()| self.filesystem.replace(&tmp, path).map_err(EngineError::Io));
-        if written.is_err() {
-            let _ = self.filesystem.remove(&tmp);
-        }
-        written
-    }
-
-    /// Keep one generation of `path` as `<path>.bak` (02 §7.2 step 4): its
-    /// bytes are copied to `<path>.bak.tmp-<n>`, synced, and renamed over the
-    /// backup, so a failure never leaves a half backup either. Nothing to do
-    /// when `path` does not exist yet.
-    fn back_up(&self, path: &Path, n: u64) -> Result<(), EngineError> {
-        if !self.filesystem.exists(path)? {
-            return Ok(());
-        }
-        let backup = suffixed(path, ".bak");
-        let tmp = suffixed(&backup, &format!(".tmp-{n}"));
-        let copied = self
-            .copy(path, &tmp)
-            .and_then(|()| self.filesystem.replace(&tmp, &backup));
-        if copied.is_err() {
-            let _ = self.filesystem.remove(&tmp);
-        }
-        copied.map_err(EngineError::Io)
-    }
-
-    /// The bytes of `from` into a new, synced `to`.
-    fn copy(&self, from: &Path, to: &Path) -> std::io::Result<()> {
-        let mut bytes = Vec::new();
-        self.filesystem.open(from)?.read_to_end(&mut bytes)?;
-        let mut file = self.filesystem.create(to)?;
-        file.write_all(&bytes)?;
-        file.sync_all()
     }
 
     /// Validate `document` into a history, then swap the session for it.
@@ -745,6 +772,173 @@ struct Snapshot {
     version: DocVersion,
     key: String,
     versions: Vec<Version>,
+}
+
+/// What a save asks for (spec 036).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SaveRequest {
+    /// «Guardar» over the session's file.
+    Save,
+    /// «Guardar como» at a new file, which becomes the session's.
+    SaveAs(PathBuf),
+    /// «Guardar copia» at a file, under a new project id.
+    SaveCopy(PathBuf),
+    /// «Guardar versión…» with this name; `at` is the file of a project
+    /// never saved, chosen first.
+    Version {
+        /// The name of the version, trimmed by the engine.
+        name: String,
+        /// The new file, for a project with none yet.
+        at: Option<PathBuf>,
+    },
+}
+
+/// The snapshot a save accounts for and the new file of «Guardar como».
+type Account = Option<(Snapshot, Option<PathBuf>)>;
+
+/// A checked save that owns what it writes: `Send + 'static`, so the host
+/// runs it off the window thread (spec 036).
+pub struct SaveJob {
+    writer: Writer,
+    temporary: u64,
+    document: Arc<Document>,
+    versions: Vec<Version>,
+    path: PathBuf,
+    account: Account,
+}
+
+impl std::fmt::Debug for SaveJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SaveJob")
+            .field("path", &self.path)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SaveJob {
+    /// The file the job writes.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Write the file atomically, with its thumbnail and its `.bak` (02
+    /// §7.2). Its outcome goes back to [`ProjectService::save_finished`].
+    #[must_use]
+    pub fn run(self) -> SaveOutcome {
+        let result = self.writer.write_atomically(
+            &self.path,
+            &self.document,
+            &self.versions,
+            self.temporary,
+        );
+        SaveOutcome {
+            result,
+            account: self.account,
+        }
+    }
+}
+
+/// How a [`SaveJob`] ended, for [`ProjectService::save_finished`].
+pub struct SaveOutcome {
+    result: Result<(), EngineError>,
+    account: Account,
+}
+
+impl std::fmt::Debug for SaveOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SaveOutcome")
+            .field("result", &self.result)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SaveOutcome {
+    /// The error of the write, if it failed.
+    #[must_use]
+    pub fn error(&self) -> Option<&EngineError> {
+        self.result.as_ref().err()
+    }
+}
+
+/// The ports that write a project file (02 §7.2), owned by a [`SaveJob`].
+struct Writer {
+    repository: Arc<dyn ProjectRepository>,
+    filesystem: Arc<dyn FileSystem>,
+    pages: Arc<dyn PageRenderers>,
+    store: Arc<dyn gafira_ports::store::ContentStore>,
+    images: Arc<dyn gafira_ports::export::ImageDecoder>,
+}
+
+impl Writer {
+    /// 02 §7.2: the repository writes and syncs `<path>.tmp-<n>` (steps 1-2,
+    /// SP6), with the thumbnail of the first page when it can be drawn
+    /// (spec 033); when `path` exists its bytes go to `<path>.bak` (step 4); then
+    /// the file system renames the temporary over `path` and syncs the
+    /// folder (step 3). Each step runs only after the one before returned
+    /// `Ok`, so a failure anywhere leaves `path` with its old bytes. The
+    /// temporaries are removed on a failure, on a best-effort basis: the
+    /// first error is the one the caller needs.
+    fn write_atomically(
+        &self,
+        path: &Path,
+        document: &Document,
+        versions: &[Version],
+        n: u64,
+    ) -> Result<(), EngineError> {
+        // Spec 033: best effort, a page that cannot be drawn is saved
+        // without its thumbnail.
+        // Its images come from the store like an export's (spec 032); a
+        // missing or broken image only costs the thumbnail its pixels.
+        let first: Vec<_> = document
+            .pages()
+            .first()
+            .map(|page| page.id)
+            .into_iter()
+            .collect();
+        let images = crate::export::decode_images(document, &first, &*self.store, &*self.images)
+            .unwrap_or_default();
+        let thumbnail = thumbnail::first_page(document, &*self.pages, images);
+        let tmp = suffixed(path, &format!(".tmp-{n}"));
+        let written = self
+            .repository
+            .save_with_thumbnail(&tmp, document, versions, thumbnail.as_ref())
+            .map_err(EngineError::from)
+            .and_then(|()| self.back_up(path, n))
+            .and_then(|()| self.filesystem.replace(&tmp, path).map_err(EngineError::Io));
+        if written.is_err() {
+            let _ = self.filesystem.remove(&tmp);
+        }
+        written
+    }
+
+    /// Keep one generation of `path` as `<path>.bak` (02 §7.2 step 4): its
+    /// bytes are copied to `<path>.bak.tmp-<n>`, synced, and renamed over the
+    /// backup, so a failure never leaves a half backup either. Nothing to do
+    /// when `path` does not exist yet.
+    fn back_up(&self, path: &Path, n: u64) -> Result<(), EngineError> {
+        if !self.filesystem.exists(path)? {
+            return Ok(());
+        }
+        let backup = suffixed(path, ".bak");
+        let tmp = suffixed(&backup, &format!(".tmp-{n}"));
+        let copied = self
+            .copy(path, &tmp)
+            .and_then(|()| self.filesystem.replace(&tmp, &backup));
+        if copied.is_err() {
+            let _ = self.filesystem.remove(&tmp);
+        }
+        copied.map_err(EngineError::Io)
+    }
+
+    /// The bytes of `from` into a new, synced `to`.
+    fn copy(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        let mut bytes = Vec::new();
+        self.filesystem.open(from)?.read_to_end(&mut bytes)?;
+        let mut file = self.filesystem.create(to)?;
+        file.write_all(&bytes)?;
+        file.sync_all()
+    }
 }
 
 /// `path` with `suffix` appended to its last component, in the same folder.
@@ -2045,5 +2239,117 @@ mod tests {
             Err(EngineError::NoVersion)
         ));
         assert_eq!(drain(&engine), []);
+    }
+
+    // S36-01: `prepare_save` writes nothing, refuses like `save` and gives a
+    // job that can go to another thread.
+    #[test]
+    fn s36_01_prepare_save_writes_nothing_and_the_job_is_send() {
+        fn send_static<T: Send + 'static>(_: &T) {}
+        let (engine, fs, repository) = opened_and_edited(false);
+        let job = engine
+            .projects()
+            .prepare_save(super::SaveRequest::Save)
+            .expect("prepares");
+        send_static(&job);
+        assert_eq!(job.path(), Path::new(TARGET));
+        assert!(fs.take_trace().is_empty(), "nothing written yet");
+        assert!(repository.take_calls().is_empty());
+        assert!(engine.projects().is_modified(), "not saved yet");
+        engine
+            .projects()
+            .save_finished(job.run())
+            .expect("the job saves");
+        assert!(!engine.projects().is_modified());
+
+        let (read_only, fs, _) = opened_and_edited(true);
+        assert!(matches!(
+            read_only.projects().prepare_save(super::SaveRequest::Save),
+            Err(EngineError::ReadOnly)
+        ));
+        assert!(fs.take_trace().is_empty());
+    }
+
+    // S36-02: the job writes the document as it was when it was prepared;
+    // an edit made while it runs keeps the session modified.
+    #[test]
+    fn s36_02_an_edit_while_the_job_runs_stays_modified() {
+        let (mut engine, fs, _repository) = opened_and_edited(false);
+        let prepared = new_bytes(&mut engine);
+        let job = engine
+            .projects()
+            .prepare_save(super::SaveRequest::Save)
+            .expect("prepares");
+        append_page(&mut engine);
+        let outcome = job.run();
+        assert!(outcome.error().is_none());
+        engine
+            .projects()
+            .save_finished(outcome)
+            .expect("the job saves");
+        assert_eq!(fs.file(TARGET), Some(prepared), "the prepared snapshot");
+        assert!(
+            engine.projects().is_modified(),
+            "the later edit is not saved"
+        );
+    }
+
+    // S36-03: a job that fails hands back its error and the session stays
+    // modified, at its file.
+    #[test]
+    fn s36_03_a_failed_job_keeps_the_session_modified() {
+        let (engine, fs, _repository) = opened_and_edited(false);
+        let job = engine
+            .projects()
+            .prepare_save(super::SaveRequest::Save)
+            .expect("prepares");
+        fs.fail_at(&[3]);
+        let outcome = job.run();
+        assert!(outcome.error().is_some());
+        assert!(engine.projects().save_finished(outcome).is_err());
+        assert!(engine.projects().is_modified());
+        assert_eq!(fs.file(TARGET), Some(old_bytes()), "the old bytes");
+        assert_eq!(engine.projects().path().as_deref(), Some(Path::new(TARGET)));
+    }
+
+    // S36-04: a named version of a project never saved goes to the file
+    // chosen first, which becomes the session's, with no automatic version.
+    #[test]
+    fn s36_04_a_version_of_a_new_project_saves_it_at_its_new_file() {
+        let fs = target_fs();
+        let (mut engine, _clock) = rig_on(&fs);
+        edited_new_document(&mut engine);
+        let job = engine
+            .projects()
+            .prepare_save(super::SaveRequest::Version {
+                name: " Primera ".to_owned(),
+                at: Some(PathBuf::from(OTHER)),
+            })
+            .expect("prepares");
+        engine
+            .projects()
+            .save_finished(job.run())
+            .expect("the job saves");
+        assert_eq!(engine.projects().path().as_deref(), Some(Path::new(OTHER)));
+        assert!(!engine.projects().is_modified());
+        assert_eq!(kept(&fs, OTHER), [(1, VersionKind::Named)]);
+        assert_eq!(engine.projects().list_versions()[0].name, "Primera");
+    }
+
+    // S36-05: a copy run as a job leaves the session as it was.
+    #[test]
+    fn s36_05_a_copy_job_leaves_the_session() {
+        let (engine, fs, _repository) = opened_and_edited(false);
+        let job = engine
+            .projects()
+            .prepare_save(super::SaveRequest::SaveCopy(PathBuf::from(OTHER)))
+            .expect("prepares");
+        engine
+            .projects()
+            .save_finished(job.run())
+            .expect("the copy is written");
+        assert!(fs.file(OTHER).is_some());
+        assert!(engine.projects().is_modified());
+        assert_eq!(engine.projects().path().as_deref(), Some(Path::new(TARGET)));
     }
 }

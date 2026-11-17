@@ -8,7 +8,6 @@ use egui::RichText;
 use gafira_engine::Gafira;
 use gafira_ports::repository::{VersionId, VersionInfo, VersionKind};
 
-use crate::files::{self, FileAction, Outcome};
 use crate::recent;
 use crate::style::Theme;
 use crate::text::Texts;
@@ -55,13 +54,6 @@ pub(crate) fn rows(infos: &[VersionInfo], now: i64, texts: &Texts) -> Vec<Row> {
         .collect()
 }
 
-/// What came of «Guardar» in the name dialog.
-enum Saved {
-    Done,
-    Cancelled,
-    Failed(String),
-}
-
 impl Versions {
     /// Open the list (the top bar's «Versiones»).
     pub(crate) fn open_list(&mut self) {
@@ -75,30 +67,36 @@ impl Versions {
         self.failure = None;
     }
 
-    /// Draw the open dialog, if any, and run what the person chose.
+    /// Draw the open dialog, if any, and run what the person chose; the
+    /// name of the version to save when they pressed «Guardar» (the shell
+    /// saves it, spec 036).
     pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,
         engine: &Gafira,
         theme: &Theme,
         texts: &Texts,
-    ) {
+    ) -> Option<String> {
         if let Some(name) = self.naming.take() {
-            self.naming = self.name_dialog(ctx, engine, theme, texts, name);
-        } else if self.list {
+            let (naming, save) = self.name_dialog(ctx, theme, texts, name);
+            self.naming = naming;
+            return save;
+        }
+        if self.list {
             self.list_dialog(ctx, engine, theme, texts);
         }
+        None
     }
 
-    /// The name dialog; `None` once it closes.
+    /// The name dialog: the name while it stays open, and the name to save
+    /// when the person pressed «Guardar».
     fn name_dialog(
         &mut self,
         ctx: &egui::Context,
-        engine: &Gafira,
         theme: &Theme,
         texts: &Texts,
         mut name: String,
-    ) -> Option<String> {
+    ) -> (Option<String>, Option<String>) {
         let mut save = false;
         let mut cancel = false;
         let response = egui::Modal::new(egui::Id::new("versions.name")).show(ctx, |ui| {
@@ -133,20 +131,14 @@ impl Versions {
             });
         });
         if cancel || response.should_close() {
-            return None;
+            return (None, None);
         }
         if !save {
-            return Some(name);
+            return (Some(name), None);
         }
-        match save_named(engine, &name) {
-            Saved::Done => None,
-            Saved::Cancelled => Some(name),
-            Saved::Failed(detail) => {
-                eprintln!("save version: {detail}");
-                self.failure = Some(texts.t(&gafira_doc::msg!("versions.save_failed")));
-                Some(name)
-            }
-        }
+        // The shell saves it on its thread (spec 036); a failure is its
+        // notice.
+        (None, Some(name))
     }
 
     /// The list of versions, newest first, with «Restaurar» on each.
@@ -214,22 +206,6 @@ impl Versions {
             self.list = false;
             self.failure = None;
         }
-    }
-}
-
-/// Save a named version; a project never saved asks for its file first
-/// («Guardar como»), because a version lives inside the file.
-fn save_named(engine: &Gafira, name: &str) -> Saved {
-    if engine.projects().path().is_none() {
-        match files::run(engine, FileAction::SaveAs) {
-            Outcome::Done => {}
-            Outcome::Cancelled => return Saved::Cancelled,
-            Outcome::Failed(_, detail) => return Saved::Failed(detail),
-        }
-    }
-    match engine.projects().save_version(name) {
-        Ok(()) => Saved::Done,
-        Err(error) => Saved::Failed(error.to_string()),
     }
 }
 

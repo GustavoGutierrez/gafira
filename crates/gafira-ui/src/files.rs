@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use gafira_doc::msg::Message;
-use gafira_engine::Gafira;
+use gafira_engine::{Gafira, SaveRequest};
 
 /// What the Archivo menu, Inicio or a shortcut asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,43 +50,47 @@ fn dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Gafira", &["gaf"])
 }
 
-/// Run `action`: the dialog first when it needs a path, then the engine.
-pub(crate) fn run(engine: &Gafira, action: FileAction) -> Outcome {
-    let failed_save = || gafira_doc::msg!("file.save_failed");
+/// What an action of the Archivo menu comes to once its dialog closed.
+pub(crate) enum Plan {
+    /// «Abrir» ran here (or its dialog was cancelled).
+    Opened(Outcome),
+    /// A save to run on its thread (spec 036).
+    Save(SaveRequest),
+    /// The save dialog was cancelled.
+    Cancelled,
+}
+
+/// The new file of a project, from the system save dialog: the session's
+/// folder and name are proposed.
+pub(crate) fn pick_new(engine: &Gafira) -> Option<PathBuf> {
+    let start = engine.projects().path();
+    let mut picker = dialog();
+    if let Some(folder) = start.as_deref().and_then(Path::parent) {
+        picker = picker.set_directory(folder);
+    }
+    if let Some(name) = project_name(start.as_deref()) {
+        picker = picker.set_file_name(format!("{name}.gaf"));
+    }
+    picker.save_file().map(with_gaf)
+}
+
+/// `action`: the dialog first when it needs a path, then «Abrir» here or
+/// the save to run.
+pub(crate) fn plan(engine: &Gafira, action: FileAction) -> Plan {
     match action {
-        FileAction::Open => match dialog().pick_file() {
+        FileAction::Open => Plan::Opened(match dialog().pick_file() {
             None => Outcome::Cancelled,
             Some(path) => match engine.projects().open(&path) {
                 Ok(()) => Outcome::Done,
                 Err(e) => Outcome::Failed(gafira_doc::msg!("file.open_failed"), e.to_string()),
             },
+        }),
+        FileAction::Save if engine.projects().path().is_some() => Plan::Save(SaveRequest::Save),
+        FileAction::Save | FileAction::SaveAs | FileAction::SaveCopy => match pick_new(engine) {
+            None => Plan::Cancelled,
+            Some(path) if action == FileAction::SaveCopy => Plan::Save(SaveRequest::SaveCopy(path)),
+            Some(path) => Plan::Save(SaveRequest::SaveAs(path)),
         },
-        FileAction::Save if engine.projects().path().is_some() => match engine.projects().save() {
-            Ok(()) => Outcome::Done,
-            Err(e) => Outcome::Failed(failed_save(), e.to_string()),
-        },
-        FileAction::Save | FileAction::SaveAs | FileAction::SaveCopy => {
-            let start = engine.projects().path();
-            let mut picker = dialog();
-            if let Some(folder) = start.as_deref().and_then(Path::parent) {
-                picker = picker.set_directory(folder);
-            }
-            if let Some(name) = project_name(start.as_deref()) {
-                picker = picker.set_file_name(format!("{name}.gaf"));
-            }
-            let Some(path) = picker.save_file().map(with_gaf) else {
-                return Outcome::Cancelled;
-            };
-            let result = if action == FileAction::SaveCopy {
-                engine.projects().save_copy(&path)
-            } else {
-                engine.projects().save_as(&path)
-            };
-            match result {
-                Ok(()) => Outcome::Done,
-                Err(e) => Outcome::Failed(failed_save(), e.to_string()),
-            }
-        }
     }
 }
 
