@@ -6,13 +6,16 @@
 //! options built from `Exporter::options_schema`) are a later cut.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, mpsc};
+use std::thread::JoinHandle;
 
 use egui::RichText;
-use gafira_doc::contract::{CancelToken, NoProgress, ParamValue, ParamValues};
+use gafira_doc::contract::{CancelToken, ParamValue, ParamValues, Progress};
 use gafira_doc::msg::ToMessage;
 use gafira_doc::{Document, PageId};
-use gafira_engine::{EngineError, Gafira};
-use gafira_ports::export::{ExportRequest, ExportScope};
+use gafira_engine::{EngineError, Gafira, PreparedExport};
+use gafira_ports::export::{ExportError, ExportRequest, ExportScope};
 
 use crate::files::{Outcome, project_name};
 use crate::style::Theme;
@@ -110,7 +113,8 @@ pub(crate) fn with_extension(path: PathBuf, choice: Choice) -> PathBuf {
     }
 }
 
-/// Export the open document as `dialog` says, to `path`.
+/// Export the open document as `dialog` says, to `path`, on this thread.
+#[cfg(test)]
 pub(crate) fn export_to(
     engine: &mut Gafira,
     dialog: Dialog,
@@ -120,12 +124,153 @@ pub(crate) fn export_to(
     let request = request(dialog.choice, &document, dialog.page).ok_or(EngineError::NoSession)?;
     engine
         .export()
-        .export(&request, path, &NoProgress, &CancelToken::new())
+        .export(
+            &request,
+            path,
+            &gafira_doc::contract::NoProgress,
+            &CancelToken::new(),
+        )
         .map(drop)
 }
 
-/// The system save dialog, then the export.
-pub(crate) fn run(engine: &mut Gafira, dialog: Dialog) -> Outcome {
+/// The progress of the export thread, read by the window each frame; every
+/// report wakes the window (spec 035).
+pub(crate) struct Fraction {
+    bits: AtomicU32,
+    wake: Box<dyn Fn() + Send + Sync>,
+}
+
+impl Fraction {
+    fn new(wake: Box<dyn Fn() + Send + Sync>) -> Self {
+        Self {
+            bits: AtomicU32::new(0.0_f32.to_bits()),
+            wake,
+        }
+    }
+
+    /// The last fraction reported, in `[0, 1]`.
+    pub(crate) fn get(&self) -> f32 {
+        f32::from_bits(self.bits.load(Ordering::Relaxed))
+    }
+}
+
+impl Progress for Fraction {
+    fn report(&self, fraction: f32) {
+        let fraction = if fraction.is_finite() {
+            fraction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.bits.store(fraction.to_bits(), Ordering::Relaxed);
+        (self.wake)();
+    }
+}
+
+/// An export running on its thread (spec 035): the window keeps drawing and
+/// answering while it runs.
+pub(crate) struct Running {
+    receiver: mpsc::Receiver<Result<(), EngineError>>,
+    progress: Arc<Fraction>,
+    cancel: CancelToken,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Running {
+    /// The fraction done, in `[0, 1]`.
+    pub(crate) fn fraction(&self) -> f32 {
+        self.progress.get()
+    }
+
+    /// Ask the export to stop; it ends as [`Outcome::Cancelled`] and leaves
+    /// no file.
+    pub(crate) fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
+    /// How the export ended, once it did. A thread that stopped without an
+    /// answer (a panic in a renderer or an exporter) is a failure, never a
+    /// crash of the window.
+    pub(crate) fn poll(&mut self) -> Option<Outcome> {
+        let result = match self.receiver.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.join();
+                return Some(Outcome::Failed(
+                    gafira_doc::msg!("export.failed"),
+                    "the export thread stopped without an answer".to_owned(),
+                ));
+            }
+        };
+        self.join();
+        Some(match result {
+            Ok(()) => Outcome::Done,
+            Err(EngineError::Export(ExportError::Cancelled(_))) => Outcome::Cancelled,
+            Err(error) => Outcome::Failed(failure(&error), error.to_string()),
+        })
+    }
+
+    /// Cancel and wait for the thread: the window is closing.
+    pub(crate) fn stop(mut self) {
+        self.cancel();
+        self.join();
+    }
+
+    fn join(&mut self) {
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Run `job` on a new thread; `wake` is called on every progress report and
+/// when it ends.
+pub(crate) fn spawn(job: PreparedExport, wake: Arc<dyn Fn() + Send + Sync>) -> Running {
+    let (sender, receiver) = mpsc::channel();
+    let tick = Arc::clone(&wake);
+    let progress = Arc::new(Fraction::new(Box::new(move || tick())));
+    let cancel = CancelToken::new();
+    let thread = {
+        let progress = Arc::clone(&progress);
+        let cancel = cancel.clone();
+        std::thread::Builder::new()
+            .name("gafira-export".to_owned())
+            .spawn(move || {
+                let result = job.run(progress.as_ref(), &cancel).map(drop);
+                let _ = sender.send(result);
+                wake();
+            })
+    };
+    match thread {
+        Ok(thread) => Running {
+            receiver,
+            progress,
+            cancel,
+            thread: Some(thread),
+        },
+        // No thread: the receiver reads as disconnected, a failure.
+        Err(_) => Running {
+            receiver,
+            progress,
+            cancel,
+            thread: None,
+        },
+    }
+}
+
+/// How starting an export went.
+pub(crate) enum Start {
+    /// The person closed the save dialog.
+    Cancelled,
+    /// The export runs on its thread.
+    Running(Running),
+    /// It was refused before it ran: the message and the detail for the log.
+    Failed(gafira_doc::msg::Message, String),
+}
+
+/// The system save dialog, the checks of the engine and the export on its
+/// thread (spec 035).
+pub(crate) fn start(engine: &mut Gafira, dialog: Dialog, ctx: &egui::Context) -> Start {
     let ext = dialog.choice.extension();
     let start = engine.projects().path();
     let mut picker = rfd::FileDialog::new().add_filter(ext.to_ascii_uppercase(), &[ext]);
@@ -138,12 +283,52 @@ pub(crate) fn run(engine: &mut Gafira, dialog: Dialog) -> Outcome {
         .save_file()
         .map(|path| with_extension(path, dialog.choice))
     else {
-        return Outcome::Cancelled;
+        return Start::Cancelled;
     };
-    match export_to(engine, dialog, &path) {
-        Ok(()) => Outcome::Done,
-        Err(error) => Outcome::Failed(failure(&error), error.to_string()),
+    match prepare(engine, dialog, path) {
+        Ok(job) => {
+            let waker = ctx.clone();
+            Start::Running(spawn(job, Arc::new(move || waker.request_repaint())))
+        }
+        Err(error) => Start::Failed(failure(&error), error.to_string()),
     }
+}
+
+/// The checked export of the open document as `dialog` says, to `path`.
+pub(crate) fn prepare(
+    engine: &mut Gafira,
+    dialog: Dialog,
+    path: PathBuf,
+) -> Result<PreparedExport, EngineError> {
+    let document = engine.edit().document().ok_or(EngineError::NoSession)?;
+    let request = request(dialog.choice, &document, dialog.page).ok_or(EngineError::NoSession)?;
+    engine.export().prepare(request, path)
+}
+
+/// The card of a running export, over the bottom right of the window and
+/// never modal: the progress and «Cancelar» (03 §8.1). `true` when the
+/// person pressed «Cancelar».
+pub(crate) fn progress(ctx: &egui::Context, theme: &Theme, texts: &Texts, fraction: f32) -> bool {
+    let mut cancel = false;
+    egui::Area::new(egui::Id::new("export-progress"))
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-16.0, -48.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(280.0);
+                ui.label(
+                    RichText::new(texts.t(&gafira_doc::msg!("export.running")))
+                        .font(theme.font("ui-label")),
+                );
+                ui.add(egui::ProgressBar::new(fraction).show_percentage());
+                if widgets::secondary(ui, theme, texts.t(&gafira_doc::msg!("export.cancel")))
+                    .clicked()
+                {
+                    cancel = true;
+                }
+            });
+        });
+    cancel
 }
 
 /// What the status line says when an export fails.
@@ -360,5 +545,130 @@ pub(crate) mod tests {
             failure(&EngineError::UnknownFormat),
             gafira_doc::msg!("export.failed")
         );
+    }
+
+    /// Wait, without a window, for `running` to end.
+    fn finish(running: &mut Running) -> Outcome {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            if let Some(outcome) = running.poll() {
+                return outcome;
+            }
+            assert!(std::time::Instant::now() < deadline, "the export ends");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    // S35-04: the export runs on its own thread: `spawn` returns at once,
+    // the progress reaches 1 and the PDF appears; the window is woken.
+    #[test]
+    fn s35_04_the_export_runs_off_the_window_thread() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a document");
+        let dir = std::env::temp_dir().join(format!("gafira-ui-bg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let pdf = dir.join("cartel.pdf");
+        let job = prepare(
+            &mut engine,
+            Dialog {
+                choice: Choice::Pdf,
+                page: None,
+            },
+            pdf.clone(),
+        )
+        .expect("prepares");
+        let woken = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = Arc::clone(&woken);
+        let window = std::thread::current().id();
+        let mut running = spawn(
+            job,
+            Arc::new(move || {
+                assert_ne!(std::thread::current().id(), window, "not the window thread");
+                count.fetch_add(1, Ordering::Relaxed);
+            }),
+        );
+        let outcome = finish(&mut running);
+        let bytes = std::fs::read(&pdf);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(matches!(outcome, Outcome::Done));
+        assert!(bytes.expect("the PDF").starts_with(b"%PDF-"));
+        assert!((running.fraction() - 1.0).abs() < f32::EPSILON);
+        assert!(
+            woken.load(Ordering::Relaxed) >= 2,
+            "progress and the end wake it"
+        );
+    }
+
+    // S35-05: «Cancelar» ends the export as cancelled and leaves no file.
+    #[test]
+    fn s35_05_a_cancelled_export_ends_cancelled_without_a_file() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a document");
+        let dir = std::env::temp_dir().join(format!("gafira-ui-cancel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let pdf = dir.join("cartel.pdf");
+        let job = prepare(
+            &mut engine,
+            Dialog {
+                choice: Choice::Pdf,
+                page: None,
+            },
+            pdf.clone(),
+        )
+        .expect("prepares");
+        // Cancelled before the thread looks: deterministic.
+        let gate = Arc::new(std::sync::Barrier::new(2));
+        let wait = Arc::clone(&gate);
+        let first = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let mut running = spawn(
+            job,
+            Arc::new(move || {
+                if first.swap(false, Ordering::Relaxed) {
+                    wait.wait();
+                }
+            }),
+        );
+        running.cancel();
+        gate.wait();
+        let outcome = finish(&mut running);
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
+            .unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(matches!(outcome, Outcome::Cancelled), "cancelled");
+        assert!(left.is_empty(), "no file: {left:?}");
+    }
+
+    // S35-06: a thread that dies without an answer is a failure the window
+    // shows, never a crash of the window.
+    #[test]
+    fn s35_06_a_thread_that_panics_is_a_failure() {
+        let (sender, receiver) = mpsc::channel::<Result<(), EngineError>>();
+        let thread = std::thread::spawn(move || {
+            let _keep = sender;
+            panic!("a renderer bug");
+        });
+        let mut running = Running {
+            receiver,
+            progress: Arc::new(Fraction::new(Box::new(|| {}))),
+            cancel: CancelToken::new(),
+            thread: Some(thread),
+        };
+        match finish(&mut running) {
+            Outcome::Failed(message, _) => assert_eq!(message, gafira_doc::msg!("export.failed")),
+            _ => panic!("a failure"),
+        }
+    }
+
+    // S35-04: the progress is kept in [0, 1].
+    #[test]
+    fn s35_04_the_fraction_stays_in_range() {
+        let fraction = Fraction::new(Box::new(|| {}));
+        fraction.report(f32::NAN);
+        assert_eq!(fraction.get(), 0.0);
+        fraction.report(1.5);
+        assert_eq!(fraction.get(), 1.0);
+        fraction.report(0.25);
+        assert_eq!(fraction.get(), 0.25);
     }
 }

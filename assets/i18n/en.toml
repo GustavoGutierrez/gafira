@@ -46,6 +46,10 @@ failed = "We couldn't export your design. Please try again."
 not_allowed = "Activate your licence to export."
 no_pages = "There are no pages to export."
 selection_unsupported = "Exporting the selection is not available yet. Export the page."
+running = "Exporting…"
+cancel = "Cancel"
+cancelled = "Export cancelled."
+busy = "An export is already running. Wait for it to finish."
 pages_selected = { one = "{count} page selected", other = "{count} pages selected" }
 
 [format]

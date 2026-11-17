@@ -15,8 +15,11 @@
 //! the store does not hold, or one that does not decode, fails the export
 //! there.
 //!
-//! This cut runs the export on the caller's thread, to the end; the
-//! persisted export queue, its states and its retries (02 §6.4) are later.
+//! `prepare` does every check on the caller's thread and returns a
+//! `PreparedExport` that owns a snapshot of the document and the ports; the
+//! host runs it on another thread, with progress and cancellation (spec
+//! 035). The persisted export queue, its states and its retries (02 §6.4)
+//! are later.
 
 use std::collections::BTreeSet;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -71,24 +74,16 @@ impl ExportService {
         self.exporters.iter()
     }
 
-    /// Export the open document as `request` says, to `to`.
+    /// Export the open document as `request` says, to `to`, on the
+    /// caller's thread: [`prepare`](Self::prepare), then
+    /// [`PreparedExport::run`].
     ///
     /// The first file the exporter writes goes to `to`; a second one to `to`
     /// with `-2` before its extension, and so on (FD-57 (c)). The files
     /// appear only when the whole export succeeded.
     ///
     /// # Errors
-    /// [`EngineError::ExportNotAllowed`] when the licence forbids it,
-    /// [`EngineError::NoSession`] with no open document,
-    /// [`EngineError::UnknownFormat`] when no exporter has the format id and
-    /// [`EngineError::ExportBlocked`] with the blocking findings of
-    /// `validate`, all before any file is opened; [`EngineError::Export`]
-    /// with [`ExportError::Store`] when an image asset of the scope is not in
-    /// the store (`NotFound` names its hash) and with [`ExportError::Media`]
-    /// when it does not decode, also before any file (spec 032);
-    /// [`EngineError::Export`] when the exporter fails and
-    /// [`EngineError::Io`] when a file cannot be finished. No final file is
-    /// left then.
+    /// Those of [`prepare`](Self::prepare) and of [`PreparedExport::run`].
     pub fn export(
         &self,
         request: &ExportRequest,
@@ -96,6 +91,26 @@ impl ExportService {
         progress: &dyn Progress,
         cancel: &CancelToken,
     ) -> Result<ExportReport, EngineError> {
+        self.prepare(request.clone(), to.to_path_buf())?
+            .run(progress, cancel)
+    }
+
+    /// Check an export of the open document and take everything it needs,
+    /// without rendering or opening any file (spec 035). The result owns a
+    /// snapshot of the document and the ports, so it runs on any thread
+    /// while the person keeps editing; their edits do not reach it.
+    ///
+    /// # Errors
+    /// [`EngineError::ExportNotAllowed`] when the licence forbids it,
+    /// [`EngineError::NoSession`] with no open document,
+    /// [`EngineError::UnknownFormat`] when no exporter has the format id and
+    /// [`EngineError::ExportBlocked`] with the blocking findings of
+    /// `validate`. Nothing is rendered and no file is opened.
+    pub fn prepare(
+        &self,
+        request: ExportRequest,
+        to: PathBuf,
+    ) -> Result<PreparedExport, EngineError> {
         if !self.license.can_export() {
             return Err(EngineError::ExportNotAllowed);
         }
@@ -111,25 +126,93 @@ impl ExportService {
             .find(|exporter| exporter.descriptor().id == request.format_id)
             .ok_or(EngineError::UnknownFormat)?;
         let blocking: Vec<_> = exporter
-            .validate(request)
+            .validate(&request)
             .into_iter()
             .filter(|issue| issue.blocks())
             .collect();
         if !blocking.is_empty() {
             return Err(EngineError::ExportBlocked(blocking));
         }
-        let images = self
-            .images_of(&document, &request.scope)
-            .map_err(EngineError::Export)?;
-        let pages = self.pages.for_document(&document, images);
-        let job = ExportJob {
+        Ok(PreparedExport {
+            exporter: Arc::clone(exporter),
             request,
-            document: &document,
-            store: &*self.store,
-            pages: pages.as_ref(),
+            to,
+            document,
+            pages: Arc::clone(&self.pages),
+            images: Arc::clone(&self.images),
+            store: Arc::clone(&self.store),
+            filesystem: Arc::clone(&self.filesystem),
+        })
+    }
+}
+
+/// An export that passed every check of [`ExportService::prepare`] and owns
+/// what it needs: it is `Send + 'static`, so the host runs it off the window
+/// thread (spec 035, 02 §6.4).
+pub struct PreparedExport {
+    request: ExportRequest,
+    to: PathBuf,
+    document: Arc<Document>,
+    exporter: Arc<dyn Exporter>,
+    pages: Arc<dyn PageRenderers>,
+    images: Arc<dyn ImageDecoder>,
+    store: Arc<dyn ContentStore>,
+    filesystem: Arc<dyn FileSystem>,
+}
+
+impl std::fmt::Debug for PreparedExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedExport")
+            .field("format", &self.request.format_id)
+            .field("to", &self.to)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PreparedExport {
+    /// The file the export writes first.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.to
+    }
+
+    /// Decode the images of the scope, render and write the files through
+    /// their temporaries. `cancel` is looked at before the images, between
+    /// them and by the exporter; a cancelled export leaves no file.
+    ///
+    /// # Errors
+    /// [`EngineError::Export`] with [`ExportError::Store`] when an image
+    /// asset of the scope is not in the store (`NotFound` names its hash)
+    /// and with [`ExportError::Media`] when it does not decode, before any
+    /// file (spec 032); [`EngineError::Export`] with
+    /// [`ExportError::Cancelled`] when `cancel` fires; [`EngineError::Export`]
+    /// when the exporter fails and [`EngineError::Io`] when a file cannot be
+    /// finished. No final file is left then.
+    pub fn run(
+        self,
+        progress: &dyn Progress,
+        cancel: &CancelToken,
+    ) -> Result<ExportReport, EngineError> {
+        let pages: Vec<PageId> = match &self.request.scope {
+            ExportScope::Pages(pages) => pages.clone(),
+            ExportScope::Nodes { page, .. } => vec![*page],
         };
-        let mut sink = FileSink::new(&*self.filesystem, to);
-        match exporter.export(&job, &mut sink, progress, cancel) {
+        let images =
+            decode_images_until(&self.document, &pages, &*self.store, &*self.images, cancel)
+                .map_err(EngineError::Export)?;
+        let renderer = self.pages.for_document(&self.document, images);
+        let job = ExportJob {
+            request: &self.request,
+            document: &self.document,
+            store: &*self.store,
+            pages: renderer.as_ref(),
+        };
+        let mut sink = FileSink::new(&*self.filesystem, &self.to);
+        let outcome = self
+            .exporter
+            .export(&job, &mut sink, progress, cancel)
+            .and_then(|report| cancel.check().map(|()| report).map_err(Into::into));
+        match outcome {
             Ok(report) => {
                 sink.commit()?;
                 Ok(report)
@@ -142,23 +225,6 @@ impl ExportService {
     }
 }
 
-impl ExportService {
-    /// The decoded pixels of every image asset of the pages of `scope`, each
-    /// asset read and decoded once (spec 032). Every image of those pages
-    /// counts, visible or not.
-    fn images_of(
-        &self,
-        document: &Document,
-        scope: &ExportScope,
-    ) -> Result<ImagePixels, ExportError> {
-        let pages: Vec<PageId> = match scope {
-            ExportScope::Pages(pages) => pages.clone(),
-            ExportScope::Nodes { page, .. } => vec![*page],
-        };
-        decode_images(document, &pages, &*self.store, &*self.images)
-    }
-}
-
 /// The decoded pixels of every image asset of `pages`, each asset read from
 /// `store` and decoded once (spec 032); the thumbnail of a save uses it too
 /// (spec 033). Every image of those pages counts, visible or not.
@@ -168,6 +234,18 @@ pub(crate) fn decode_images(
     store: &dyn ContentStore,
     images: &dyn ImageDecoder,
 ) -> Result<ImagePixels, ExportError> {
+    decode_images_until(document, pages, store, images, &CancelToken::new())
+}
+
+/// [`decode_images`], looking at `cancel` before each asset (spec 035).
+fn decode_images_until(
+    document: &Document,
+    pages: &[PageId],
+    store: &dyn ContentStore,
+    images: &dyn ImageDecoder,
+    cancel: &CancelToken,
+) -> Result<ImagePixels, ExportError> {
+    cancel.check()?;
     let assets: BTreeSet<AssetRef> = pages
         .iter()
         .filter_map(|page| document.page(*page))
@@ -179,6 +257,7 @@ pub(crate) fn decode_images(
         .collect();
     let mut decoded = ImagePixels::new();
     for asset in assets {
+        cancel.check()?;
         let mut bytes = Vec::new();
         store.open(asset.as_hash())?.read_to_end(&mut bytes)?;
         let pixels = images.decode(&bytes)?;
@@ -820,5 +899,156 @@ mod tests {
         ));
         assert!(setup.fs.take_trace().is_empty(), "no file was opened");
         assert!(setup.pages.snapshots.lock().unwrap().is_empty());
+    }
+
+    // S35-01: `prepare` checks and refuses like `export`, before any render
+    // or file, and what it returns can go to another thread.
+    #[test]
+    fn s35_01_prepare_checks_first_and_the_job_is_send() {
+        fn send_static<T: Send + 'static>(_: &T) {}
+        let mut setup = setup(Plan::Write { files: 1 }, Arc::new(NoLicensing), true);
+        let page = first_page(&mut setup.engine);
+        setup.fs.take_trace();
+        let job = setup
+            .engine
+            .export()
+            .prepare(request("fake", page), path("/out/poster.fake"))
+            .expect("prepares");
+        send_static(&job);
+        assert_eq!(job.path(), Path::new("/out/poster.fake"));
+        assert!(setup.fs.take_trace().is_empty(), "no file yet");
+        assert!(
+            setup.pages.snapshots.lock().unwrap().is_empty(),
+            "no render yet"
+        );
+
+        let refused = self::setup(Plan::Write { files: 1 }, Arc::new(NoLicense), true);
+        assert!(matches!(
+            refused
+                .engine
+                .export()
+                .prepare(request("fake", page), path("/out/poster.fake")),
+            Err(EngineError::ExportNotAllowed)
+        ));
+        assert!(matches!(
+            setup
+                .engine
+                .export()
+                .prepare(request("tiff", page), path("/out/poster.fake")),
+            Err(EngineError::UnknownFormat)
+        ));
+    }
+
+    // S35-02: the job runs over the document as it was when it was
+    // prepared; later edits do not reach it. The host runs it on its own
+    // thread (S35-01: `Send + 'static`; the engine spawns none, ARQ-02).
+    #[test]
+    fn s35_02_the_job_runs_over_its_snapshot() {
+        let mut setup = setup(Plan::Write { files: 1 }, Arc::new(NoLicensing), true);
+        let page = first_page(&mut setup.engine);
+        let job = setup
+            .engine
+            .export()
+            .prepare(request("fake", page), path("/out/poster.fake"))
+            .expect("prepares");
+        append_page(&mut setup.engine);
+        let report = job
+            .run(&NoProgress, &CancelToken::new())
+            .expect("the export runs");
+        assert_eq!(report.files.len(), 1);
+        assert_eq!(
+            setup.fs.file("/out/poster.fake").as_deref(),
+            Some(&b"PNG!"[..])
+        );
+        assert_eq!(
+            *setup.pages.snapshots.lock().unwrap(),
+            [1],
+            "the snapshot of prepare"
+        );
+    }
+
+    // S35-03: a cancelled job renders nothing and leaves no file, final or
+    // temporary.
+    #[test]
+    fn s35_03_a_cancelled_job_leaves_no_file() {
+        let mut setup = setup(Plan::Write { files: 1 }, Arc::new(NoLicensing), true);
+        let page = first_page(&mut setup.engine);
+        let job = setup
+            .engine
+            .export()
+            .prepare(request("fake", page), path("/out/poster.fake"))
+            .expect("prepares");
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        assert!(matches!(
+            job.run(&NoProgress, &cancel),
+            Err(EngineError::Export(ExportError::Cancelled(_)))
+        ));
+        assert!(setup.pages.snapshots.lock().unwrap().is_empty());
+        assert_eq!(setup.fs.file("/out/poster.fake"), None);
+        assert_eq!(setup.fs.file("/out/poster.fake.tmp"), None);
+    }
+
+    /// An exporter that cancels its own token once it wrote, as a person
+    /// pressing «Cancelar» at the last moment.
+    struct CancelAfterWrite;
+
+    impl Exporter for CancelAfterWrite {
+        fn descriptor(&self) -> &FormatDescriptor {
+            &FAKE
+        }
+
+        fn capabilities(&self) -> ExportCaps {
+            ExportCaps::default()
+        }
+
+        fn options_schema(&self) -> &ParamSchema {
+            static SCHEMA: std::sync::OnceLock<ParamSchema> = std::sync::OnceLock::new();
+            SCHEMA.get_or_init(ParamSchema::default)
+        }
+
+        fn validate(&self, _req: &ExportRequest) -> Vec<ExportIssue> {
+            Vec::new()
+        }
+
+        fn export(
+            &self,
+            _job: &ExportJob<'_>,
+            sink: &mut dyn ExportSink,
+            _progress: &dyn gafira_doc::contract::Progress,
+            cancel: &CancelToken,
+        ) -> Result<ExportReport, ExportError> {
+            sink.create("out.fake")?.write_all(b"PNG!")?;
+            cancel.cancel();
+            Ok(ExportReport::default())
+        }
+    }
+
+    // S35-03: a cancel that arrives after the exporter wrote still leaves no
+    // file: nothing is moved over the final name.
+    #[test]
+    fn s35_03_a_cancel_after_the_write_moves_nothing() {
+        let fs = MemoryFs::default();
+        let mut ports = six_ports();
+        ports.filesystem = Arc::new(fs.clone());
+        ports.license = Arc::new(NoLicensing);
+        let mut registries = Registries::new();
+        registries
+            .formats
+            .register_exporter(Arc::new(CancelAfterWrite) as Arc<dyn Exporter>)
+            .expect("registers");
+        let mut engine = Gafira::new(ports, registries, config(), quiet_channel()).expect("engine");
+        engine.projects().new_document().expect("a document");
+        let page = first_page(&mut engine);
+        let job = engine
+            .export()
+            .prepare(request("fake", page), path("/out/poster.fake"))
+            .expect("prepares");
+        assert!(matches!(
+            job.run(&NoProgress, &CancelToken::new()),
+            Err(EngineError::Export(ExportError::Cancelled(_)))
+        ));
+        assert_eq!(fs.file("/out/poster.fake"), None);
+        assert_eq!(fs.file("/out/poster.fake.tmp"), None);
     }
 }

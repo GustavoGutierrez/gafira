@@ -102,6 +102,8 @@ struct Shell {
     leaving: Option<Leave>,
     /// «Exportar» while its dialog is open (spec 030).
     export: Option<export::Dialog>,
+    /// The export running on its thread (spec 035).
+    exporting: Option<export::Running>,
     /// The textures of the thumbnails of «Recientes» (spec 033).
     thumbs: Thumbs,
 }
@@ -157,6 +159,7 @@ pub fn run(config: UiConfig) -> eframe::Result {
                 recovery_failure: None,
                 leaving: None,
                 export: None,
+                exporting: None,
                 thumbs: Thumbs::default(),
             }))
         }),
@@ -281,15 +284,46 @@ impl Shell {
             export::Answer::Export => {
                 let dialog = *dialog;
                 self.export = None;
-                self.notice = match export::run(&mut self.engine, dialog) {
-                    Outcome::Cancelled => None,
-                    Outcome::Done => Some(self.texts.t(&gafira_doc::msg!("export.done"))),
-                    Outcome::Failed(message, detail) => {
-                        eprintln!("export: {detail}");
-                        Some(self.texts.t(&message))
+                if self.exporting.is_some() {
+                    self.notice = Some(self.texts.t(&gafira_doc::msg!("export.busy")));
+                    return;
+                }
+                match export::start(&mut self.engine, dialog, ctx) {
+                    export::Start::Cancelled => {}
+                    export::Start::Running(running) => {
+                        self.notice = None;
+                        self.exporting = Some(running);
                     }
-                };
+                    export::Start::Failed(message, detail) => {
+                        eprintln!("export: {detail}");
+                        self.notice = Some(self.texts.t(&message));
+                    }
+                }
             }
+        }
+    }
+
+    /// The export on its thread (spec 035): its card while it runs, and the
+    /// notice when it ends.
+    fn pump_export(&mut self, ctx: &egui::Context) {
+        let Some(running) = self.exporting.as_mut() else {
+            return;
+        };
+        if let Some(outcome) = running.poll() {
+            self.exporting = None;
+            self.notice = match outcome {
+                Outcome::Cancelled => Some(self.texts.t(&gafira_doc::msg!("export.cancelled"))),
+                Outcome::Done => Some(self.texts.t(&gafira_doc::msg!("export.done"))),
+                Outcome::Failed(message, detail) => {
+                    eprintln!("export: {detail}");
+                    Some(self.texts.t(&message))
+                }
+            };
+            ctx.request_repaint();
+            return;
+        }
+        if export::progress(ctx, &self.theme, &self.texts, running.fraction()) {
+            running.cancel();
         }
     }
 
@@ -420,6 +454,13 @@ impl Shell {
 }
 
 impl eframe::App for Shell {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // A closing window stops its export: no temporary is left behind.
+        if let Some(running) = self.exporting.take() {
+            running.stop();
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // The window reads the document from snapshots each frame; the events
         // only wake it (02 §5.2), so the queue is drained and dropped.
@@ -453,6 +494,7 @@ impl eframe::App for Shell {
             ),
         };
         let blocked = self.dialogs(ctx);
+        self.pump_export(ctx);
         let go = if blocked { Go::Stay } else { go };
         if !matches!(go, Go::Stay) {
             // The new screen draws on the next frame; without this request

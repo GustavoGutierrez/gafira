@@ -61,6 +61,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 032 | [Imágenes en la exportación PNG y PDF](done/032-export-images.md) | El engine lee y decodifica (puerto `ImageDecoder`, `RasterDecoder` PNG/JPEG en `gafira-io-image`) las imágenes del alcance antes de abrir archivos; un recurso ausente es `StoreError::NotFound`; el grafo emite `DrawImage` en la caja con la opacidad del elemento; 12 tests nuevos, 7 mutantes a mano muertos, 2929 tests |
 | 033 | [Miniaturas de los recientes](done/033-thumbnails.md) | `thumbs/<page_id>.webp` (WebP sin pérdida, 512 px en el lado largo) en cada guardado salvo el autoguardado, dibujada con `PageRenderers`; un dibujo fallido guarda sin miniatura; `read_thumbnail` la lee sin abrir el proyecto, como archivo hostil; las tarjetas de «Recientes» la muestran con una caché de texturas; 23 tests nuevos, 8 mutantes a mano muertos, 2940 tests |
 | 034 | [Pantalla de Ajustes](done/034-settings-screen.md) | General (idioma al momento), Apariencia (Claro, Oscuro, Sistema), Privacidad y Acerca de; desde Inicio y Archivo |
+| 035 | [Exportar en segundo plano](done/035-background-export.md) | `ExportService::prepare` (comprobaciones sin dibujar ni abrir archivos) y `PreparedExport::run` (`Send + 'static`, cancelable); la app exporta en un hilo con tarjeta de progreso y «Cancelar»; un pánico del hilo es un error, no un cierre; 8 tests nuevos, 2 mutantes a mano muertos, 2964 tests |
 
 ### Historial del flujo anterior
 
@@ -77,4 +78,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **035**.
+Siguiente ID libre: **036**.
