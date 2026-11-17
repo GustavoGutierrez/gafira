@@ -16,6 +16,8 @@ gafira-time.workspace = true
 gafira-anim.workspace = true
 # 02 §4.6: the text reaches the plan as outlines, laid out and drawn by gafira-text.
 gafira-text.workspace = true
+# Spec 038: the outline of a shape is the stroke outline of gafira-pathops, filled.
+gafira-pathops.workspace = true
 blake3.workspace = true
 kurbo.workspace = true
 

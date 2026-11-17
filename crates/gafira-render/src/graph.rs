@@ -21,10 +21,11 @@ use gafira_doc::{
     Placement, ShapeGeometry, ShapeNode, TextAlign, TextNode,
 };
 use gafira_geom::Affine;
+use gafira_pathops::{Cap, FillRule, Join, StrokeStyle};
 use gafira_ports::export::ImagePixels;
 use gafira_ports::render::{ContentKey, RenderOp, RenderQuality};
 use gafira_time::Flicks;
-use kurbo::{BezPath, Ellipse, Rect, Shape};
+use kurbo::{BezPath, Ellipse, Rect, RoundedRect, Shape};
 
 use crate::fonts::FontBook;
 use crate::key::{KeyParam, NodeType, content_key};
@@ -427,19 +428,17 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 sub.ops.push(RenderOp::PushLayer);
                 match record.kind {
                     RecordKind::Shape(shape) => {
-                        let Some(color) = shape.fill else {
-                            // A shape without a fill draws nothing.
+                        let Some(drawn) = DrawnShape::of(&shape, &record.base.placement)? else {
+                            // A shape without a fill or an outline draws nothing.
                             sub.ops.truncate(mark);
                             continue;
                         };
-                        check_color(&color)?;
-                        let path = shape_path(shape.geometry, &record.base.placement);
                         let key = self.node_key(
                             NodeType::Shape,
                             &[],
                             &record.base,
                             transform,
-                            Some((shape.geometry, color)),
+                            &drawn.key_params(shape.geometry),
                         );
                         let node = GraphNode {
                             id: GraphNodeId(sub.nodes.len() as u32),
@@ -456,11 +455,13 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         if let Some(frame) = stack.last_mut() {
                             frame.inputs.push(node_id);
                         }
-                        sub.ops.push(RenderOp::FillPath {
-                            path: Arc::new(path),
-                            color,
-                            transform,
-                        });
+                        for (path, color) in drawn.layers() {
+                            sub.ops.push(RenderOp::FillPath {
+                                path: Arc::new(path),
+                                color,
+                                transform,
+                            });
+                        }
                         sub.ops.push(RenderOp::PopLayer {
                             blend: record.base.blend,
                             opacity: record.base.opacity,
@@ -474,7 +475,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                             sub.ops.truncate(mark);
                             continue;
                         };
-                        check_color(&color)?;
+                        check_color(&color, "fill")?;
                         let key = content_key(
                             NodeType::Text,
                             self.params.lod,
@@ -605,7 +606,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 .map(|input| sub.nodes[input.0 as usize].key)
                 .collect();
             let transform = self.transform_of(&record.base.placement);
-            let key = self.node_key(NodeType::Group, &inputs, &record.base, transform, None);
+            let key = self.node_key(NodeType::Group, &inputs, &record.base, transform, &[]);
             let node = GraphNode {
                 id: GraphNodeId(sub.nodes.len() as u32),
                 kind: GraphNodeKind::Composite,
@@ -636,18 +637,15 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
         inputs: &[ContentKey],
         base: &ElementBase,
         transform: Affine,
-        shape: Option<(ShapeGeometry, Color)>,
+        shape: &[KeyParam],
     ) -> ContentKey {
-        let mut params = vec![
-            KeyParam::Quality(self.params.quality),
+        let mut params = vec![KeyParam::Quality(self.params.quality)];
+        params.extend_from_slice(shape);
+        params.extend([
             KeyParam::Transform(transform.as_coeffs()),
             KeyParam::Opacity(base.opacity),
             KeyParam::Blend(base.blend),
-        ];
-        if let Some((geometry, color)) = shape {
-            params.insert(1, KeyParam::Geometry(geometry));
-            params.insert(2, KeyParam::Fill(Some(color)));
-        }
+        ]);
         content_key(node_type, self.params.lod, inputs, &params)
     }
 }
@@ -724,13 +722,110 @@ struct SubGraph {
     ops: Vec<RenderOp>,
 }
 
-/// The outline of a shape, in its own box.
-fn shape_path(geometry: ShapeGeometry, placement: &Placement) -> BezPath {
-    let rect = Rect::new(0.0, 0.0, placement.w, placement.h).abs();
-    match geometry {
-        ShapeGeometry::Rect => rect.to_path(0.25),
-        ShapeGeometry::Ellipse => Ellipse::from_rect(rect).to_path(0.25),
+/// The flattening tolerance of shape outlines, in px of the node's box.
+const SHAPE_TOLERANCE: f64 = 0.25;
+
+/// What a shape draws, in its own box: its fill and its outline (spec 038).
+struct DrawnShape {
+    fill: Option<(BezPath, Color)>,
+    stroke: Option<(BezPath, Color, f64)>,
+    /// The radius the rectangle is drawn with; 0 for an ellipse.
+    radius: f64,
+}
+
+impl DrawnShape {
+    /// What `shape` draws in the box of `placement`, `None` when it draws
+    /// nothing; a number that is not finite is an error (ARQ-110).
+    fn of(shape: &ShapeNode, placement: &Placement) -> Result<Option<Self>, GraphError> {
+        if let Some(color) = &shape.fill {
+            check_color(color, "fill")?;
+        }
+        if let Some(stroke) = &shape.stroke {
+            check_color(&stroke.color, "stroke")?;
+            if !stroke.width.is_finite() {
+                return Err(GraphError::NonFinite { field: "stroke" });
+            }
+        }
+        if !shape.corner_radius.is_finite() {
+            return Err(GraphError::NonFinite {
+                field: "corner_radius",
+            });
+        }
+        let rect = Rect::new(0.0, 0.0, placement.w, placement.h).abs();
+        let radius = match shape.geometry {
+            ShapeGeometry::Rect => drawn_radius(shape.corner_radius, rect),
+            ShapeGeometry::Ellipse => 0.0,
+        };
+        let outline = shape_path(shape.geometry, rect, radius);
+        let stroke = shape
+            .stroke
+            .filter(|stroke| stroke.width > 0.0)
+            .and_then(|stroke| {
+                stroke_path(&outline, stroke.width).map(|path| (path, stroke.color, stroke.width))
+            });
+        let fill = shape.fill.map(|color| (outline, color));
+        Ok((fill.is_some() || stroke.is_some()).then_some(Self {
+            fill,
+            stroke,
+            radius,
+        }))
     }
+
+    /// The parameters of the content key that this shape draws. A shape with
+    /// only a fill and square corners gives the parameters it had before
+    /// spec 038, so its key does not move.
+    fn key_params(&self, geometry: ShapeGeometry) -> Vec<KeyParam> {
+        let mut params = vec![
+            KeyParam::Geometry(geometry),
+            KeyParam::Fill(self.fill.as_ref().map(|(_, color)| *color)),
+        ];
+        if let Some((_, color, width)) = &self.stroke {
+            params.push(KeyParam::Stroke(*color, *width));
+        }
+        if self.radius > 0.0 {
+            params.push(KeyParam::CornerRadius(self.radius));
+        }
+        params
+    }
+
+    /// The paths to fill, back to front: the fill, then the outline over it.
+    fn layers(self) -> impl Iterator<Item = (BezPath, Color)> {
+        self.fill
+            .into_iter()
+            .chain(self.stroke.map(|(path, color, _)| (path, color)))
+    }
+}
+
+/// The radius a rectangle is drawn with: the stored one, limited to half
+/// its shorter side so the corners never overlap (FD-36 a).
+fn drawn_radius(radius: f64, rect: Rect) -> f64 {
+    radius.clamp(0.0, rect.width().min(rect.height()) / 2.0)
+}
+
+/// The outline of a shape, in its own box.
+fn shape_path(geometry: ShapeGeometry, rect: Rect, radius: f64) -> BezPath {
+    match geometry {
+        ShapeGeometry::Rect if radius > 0.0 => {
+            RoundedRect::from_rect(rect, radius).to_path(SHAPE_TOLERANCE)
+        }
+        ShapeGeometry::Rect => rect.to_path(SHAPE_TOLERANCE),
+        ShapeGeometry::Ellipse => Ellipse::from_rect(rect).to_path(SHAPE_TOLERANCE),
+    }
+}
+
+/// The area an outline of `width` covers along `outline`, centred on it,
+/// with mitred corners; `None` when `gafira-pathops` refuses the path (a
+/// coordinate beyond its limit), so the shape keeps its fill.
+fn stroke_path(outline: &BezPath, width: f64) -> Option<BezPath> {
+    let style = StrokeStyle {
+        width,
+        cap: Cap::Butt,
+        join: Join::Miter,
+    };
+    gafira_pathops::Path::new(outline.clone(), FillRule::NonZero)
+        .stroke_outline(&style, SHAPE_TOLERANCE)
+        .ok()
+        .map(|path| path.as_bez_path().clone())
 }
 
 /// The size range of `gafira_text::TextStyle::size_pt` (FD-41).
@@ -814,8 +909,8 @@ fn check_opacity(opacity: f32) -> Result<(), GraphError> {
     }
 }
 
-/// The check of ARQ-110 for the fill of a shape.
-fn check_color(color: &Color) -> Result<(), GraphError> {
+/// The check of ARQ-110 for a colour; `field` names it.
+fn check_color(color: &Color, field: &'static str) -> Result<(), GraphError> {
     let channels = match color {
         Color::Srgb(c) => [c.r, c.g, c.b, c.a],
         Color::LinearSrgb(c) => [c.r, c.g, c.b, c.a],
@@ -824,7 +919,7 @@ fn check_color(color: &Color) -> Result<(), GraphError> {
     if channels.iter().all(|c| c.is_finite()) {
         Ok(())
     } else {
-        Err(GraphError::NonFinite { field: "fill" })
+        Err(GraphError::NonFinite { field })
     }
 }
 
@@ -1533,5 +1628,220 @@ mod tests {
         let eight = build_image(&image_page(asset(8)), 1.0, Some(pixels_of(asset(8))));
         assert!(seven.key_of(NodeId::new(1)).is_some());
         assert_ne!(seven.key_of(NodeId::new(1)), eight.key_of(NodeId::new(1)));
+    }
+
+    const RED: Color = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
+    const BLUE: Color = Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0));
+
+    /// A page with one shape of `kind` in the box `(10, 20, 40, 20)`.
+    fn outlined_page(shape: ShapeNode) -> Page {
+        let mut page = new_page();
+        let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 40.0, 20.0));
+        page.nodes.insert(
+            NodeId::new(1),
+            Arc::new(Node::new(base, NodeKind::Shape(shape))),
+        );
+        page.roots = vec![NodeId::new(1)];
+        page
+    }
+
+    fn outlined(
+        geometry: ShapeGeometry,
+        fill: Option<Color>,
+        width: f64,
+        radius: f64,
+    ) -> ShapeNode {
+        let mut shape = ShapeNode::new(geometry);
+        shape.fill = fill;
+        shape.stroke = Some(gafira_doc::ShapeStroke::new(BLUE, width));
+        shape.corner_radius = radius;
+        shape
+    }
+
+    fn close(a: Rect, b: Rect) -> bool {
+        (a.x0 - b.x0).abs() < 1e-6
+            && (a.y0 - b.y0).abs() < 1e-6
+            && (a.x1 - b.x1).abs() < 1e-6
+            && (a.y1 - b.y1).abs() < 1e-6
+    }
+
+    // S38-04: the outline is filled over the fill, in its colour, centred on
+    // the edge: half its width falls outside the box.
+    #[test]
+    fn s38_04_the_outline_is_drawn_over_the_fill_centred_on_the_edge() {
+        let graph = build(
+            &outlined_page(outlined(ShapeGeometry::Rect, Some(RED), 4.0, 0.0)),
+            WalkOrder::PreOrder,
+        );
+        assert_eq!(op_kinds(&graph), ["push", "fill", "fill", "pop"]);
+        let fills = fills(&graph);
+        assert_eq!(fills[0].1, RED);
+        assert!(close(fills[0].0, Rect::new(0.0, 0.0, 40.0, 20.0)));
+        assert_eq!(fills[1].1, BLUE);
+        assert!(
+            close(fills[1].0, Rect::new(-2.0, -2.0, 42.0, 22.0)),
+            "{:?}",
+            fills[1].0
+        );
+        assert_eq!(fills[1].2, fills[0].2);
+        // The outline is a ring: the middle of the box is not covered.
+        let RenderOp::FillPath { path, .. } = &graph.ops()[2] else {
+            panic!("the outline")
+        };
+        assert_eq!(path.winding(kurbo::Point::new(20.0, 10.0)), 0);
+        assert_ne!(path.winding(kurbo::Point::new(0.5, 10.0)), 0);
+        assert_ne!(path.winding(kurbo::Point::new(-1.5, 10.0)), 0);
+    }
+
+    // S38-04: an outline alone draws; a zero width or no outline and no fill
+    // draws nothing.
+    #[test]
+    fn s38_04_an_outline_without_a_fill_draws_and_a_zero_width_does_not() {
+        let alone = build(
+            &outlined_page(outlined(ShapeGeometry::Ellipse, None, 2.0, 0.0)),
+            WalkOrder::PreOrder,
+        );
+        assert_eq!(op_kinds(&alone), ["push", "fill", "pop"]);
+        assert_eq!(fills(&alone)[0].1, BLUE);
+        assert!(close(fills(&alone)[0].0, Rect::new(-1.0, -1.0, 41.0, 21.0)));
+        let zero = build(
+            &outlined_page(outlined(ShapeGeometry::Rect, None, 0.0, 0.0)),
+            WalkOrder::PreOrder,
+        );
+        assert!(zero.ops().is_empty());
+        assert!(zero.key_of(NodeId::new(1)).is_none());
+        let filled = build(
+            &outlined_page(outlined(ShapeGeometry::Rect, Some(RED), 0.0, 0.0)),
+            WalkOrder::PreOrder,
+        );
+        assert_eq!(op_kinds(&filled), ["push", "fill", "pop"]);
+    }
+
+    // S38-05: the corner radius rounds a rectangle, limited to half its
+    // shorter side (FD-36 a); an ellipse ignores it.
+    #[test]
+    fn s38_05_the_corner_radius_rounds_the_rectangle_up_to_half_the_short_side() {
+        let path_of = |shape: ShapeNode| {
+            let graph = build(&outlined_page(shape), WalkOrder::PreOrder);
+            let RenderOp::FillPath { path, .. } = &graph.ops()[1] else {
+                panic!("the fill")
+            };
+            (**path).clone()
+        };
+        let fill_only = |geometry, radius| {
+            let mut shape = ShapeNode::new(geometry);
+            shape.fill = Some(RED);
+            shape.corner_radius = radius;
+            shape
+        };
+        let corner = kurbo::Point::new(0.5, 0.5);
+        let square = path_of(fill_only(ShapeGeometry::Rect, 0.0));
+        assert_ne!(square.winding(corner), 0);
+        let round = path_of(fill_only(ShapeGeometry::Rect, 6.0));
+        assert_eq!(round.winding(corner), 0);
+        assert_ne!(round.winding(kurbo::Point::new(6.0, 0.5)), 0);
+        assert!(close(round.bounding_box(), Rect::new(0.0, 0.0, 40.0, 20.0)));
+        // Above half the short side (10) it is drawn at 10, never deformed.
+        let huge = path_of(fill_only(ShapeGeometry::Rect, 1e9));
+        let half = path_of(fill_only(ShapeGeometry::Rect, 10.0));
+        assert_eq!(huge, half);
+        assert!(close(huge.bounding_box(), Rect::new(0.0, 0.0, 40.0, 20.0)));
+        // The flat top between the two corners is still there.
+        assert_ne!(huge.winding(kurbo::Point::new(20.0, 0.5)), 0);
+        assert_eq!(huge.winding(kurbo::Point::new(1.0, 1.0)), 0);
+        let ellipse = path_of(fill_only(ShapeGeometry::Ellipse, 6.0));
+        assert_eq!(ellipse, path_of(fill_only(ShapeGeometry::Ellipse, 0.0)));
+        // The outline follows the rounded corner.
+        let graph = build(
+            &outlined_page(outlined(ShapeGeometry::Rect, Some(RED), 2.0, 6.0)),
+            WalkOrder::PreOrder,
+        );
+        let RenderOp::FillPath { path, .. } = &graph.ops()[2] else {
+            panic!("the outline")
+        };
+        assert_eq!(path.winding(kurbo::Point::new(-0.5, -0.5)), 0);
+        assert_ne!(path.winding(kurbo::Point::new(-0.5, 10.0)), 0);
+    }
+
+    // S38-06: the outline and the drawn radius enter the content key; a shape
+    // without them keeps the key it had before spec 038.
+    #[test]
+    fn s38_06_the_outline_and_the_radius_key_the_shape() {
+        let key = |shape: ShapeNode| {
+            build(&outlined_page(shape), WalkOrder::PreOrder).key_of(NodeId::new(1))
+        };
+        let mut plain = ShapeNode::new(ShapeGeometry::Rect);
+        plain.fill = Some(RED);
+        let placement = Placement::new(10.0, 20.0, 40.0, 20.0);
+        let before = content_key(
+            NodeType::Shape,
+            0,
+            &[],
+            &[
+                KeyParam::Quality(RenderQuality::Preview),
+                KeyParam::Geometry(ShapeGeometry::Rect),
+                KeyParam::Fill(Some(RED)),
+                KeyParam::Transform(placement.to_transform().as_coeffs()),
+                KeyParam::Opacity(1.0),
+                KeyParam::Blend(BlendMode::Normal),
+            ],
+        );
+        assert_eq!(key(plain), Some(before));
+        let thin = key(outlined(ShapeGeometry::Rect, Some(RED), 1.0, 0.0));
+        let thick = key(outlined(ShapeGeometry::Rect, Some(RED), 2.0, 0.0));
+        assert_ne!(thin, Some(before));
+        assert_ne!(thin, thick);
+        let mut green = outlined(ShapeGeometry::Rect, Some(RED), 1.0, 0.0);
+        green.stroke = Some(gafira_doc::ShapeStroke::new(
+            Color::Srgb(Rgba::new(0.0, 1.0, 0.0, 1.0)),
+            1.0,
+        ));
+        assert_ne!(key(green), thin);
+        let mut round = plain;
+        round.corner_radius = 4.0;
+        assert_ne!(key(round), Some(before));
+        // Radii drawn the same give the same key.
+        round.corner_radius = 10.0;
+        let mut rounder = plain;
+        rounder.corner_radius = 500.0;
+        assert_eq!(key(round), key(rounder));
+        // A zero-width outline draws nothing and keys nothing.
+        assert_eq!(
+            key(outlined(ShapeGeometry::Rect, Some(RED), 0.0, 0.0)),
+            Some(before)
+        );
+    }
+
+    // ARQ-110: a non-finite outline width or radius is an error naming it.
+    #[test]
+    fn s38_04_a_non_finite_outline_or_radius_is_an_error() {
+        let fail = |shape: ShapeNode| {
+            build_with(
+                &outlined_page(shape),
+                WalkOrder::PreOrder,
+                RenderQuality::Preview,
+                InlinePool,
+            )
+            .err()
+        };
+        assert_eq!(
+            fail(outlined(ShapeGeometry::Rect, None, f64::NAN, 0.0)),
+            Some(GraphError::NonFinite { field: "stroke" })
+        );
+        let mut colour = outlined(ShapeGeometry::Rect, None, 1.0, 0.0);
+        colour.stroke = Some(gafira_doc::ShapeStroke::new(
+            Color::Srgb(Rgba::new(f32::NAN, 0.0, 0.0, 1.0)),
+            1.0,
+        ));
+        assert_eq!(
+            fail(colour),
+            Some(GraphError::NonFinite { field: "stroke" })
+        );
+        assert_eq!(
+            fail(outlined(ShapeGeometry::Rect, Some(RED), 1.0, f64::INFINITY)),
+            Some(GraphError::NonFinite {
+                field: "corner_radius"
+            })
+        );
     }
 }
