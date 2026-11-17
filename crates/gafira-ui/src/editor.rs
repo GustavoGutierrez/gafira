@@ -7,8 +7,11 @@ use egui::{
     Align, Align2, Color32, Key, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, RichText, Stroke,
     Vec2,
 };
-use gafira_doc::{Document, NodeId, PageId, Placement, ShapeGeometry};
-use gafira_edit::{GestureId, InsertNodes, InsertPage, Property, RemoveNodes, SetProperty};
+use gafira_doc::msg::MessageKey;
+use gafira_doc::{Document, NodeId, Page, PageId, Placement, ShapeGeometry};
+use gafira_edit::{
+    Command, GestureId, InsertNodes, InsertPage, Property, RemoveNodes, SetProperty, Transaction,
+};
 use gafira_engine::Gafira;
 use gafira_theme::Shadow;
 
@@ -16,6 +19,7 @@ use crate::canvas::{self, Shape};
 use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::icons::{self, Icon, Weight};
+use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
 use crate::text::Texts;
@@ -47,6 +51,7 @@ const REDO: KeyboardShortcut =
 const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Equals);
 const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
 const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
+const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
 
 /// «Deshacer · Ctrl+Z»: an action and its shortcut as the platform writes it
 /// (03 §8.1, Tooltip).
@@ -68,24 +73,39 @@ pub(crate) struct Editor {
     zoom: f32,
     /// The Inspector tab on display: 0 Posición, 1 Capas, 2 Imagen.
     inspector_tab: usize,
-    /// The selected element (03 §9.1); one at a time for now.
-    selected: Option<(PageId, NodeId)>,
+    /// The selected elements, all of one page (03 §9.1, spec 040).
+    selected: Selection,
     /// The textures of the images on display, by content hash; `None`
     /// when the bytes could not be read or decoded (a placeholder is drawn).
     textures: std::collections::HashMap<gafira_doc::ContentHash, Option<egui::TextureHandle>>,
     /// The drag in progress: its gesture (one undo entry, ARQ-33), where the
-    /// element started and how far the pointer went.
+    /// selected elements started and how far the pointer went.
     drag: Option<Drag>,
+    /// The marquee being drawn from empty canvas (spec 040).
+    marquee: Option<Marquee>,
     /// «Versiones» and «Guardar versión…» (spec 031).
     versions: Versions,
 }
 
 struct Drag {
     gesture: Option<GestureId>,
-    origin: Placement,
+    /// The page of the selection.
+    page: PageId,
+    /// Each selected element and where it started.
+    origins: Vec<(NodeId, Placement)>,
     offset: Vec2,
-    /// The resize handle held, or `None` for a move.
+    /// The resize handle held, or `None` for a move. Only a single
+    /// selection resizes.
     handle: Option<canvas::Handle>,
+}
+
+/// A marquee on the canvas, in screen px: where the drag started, where the
+/// pointer is, and whether Shift adds to the selection (spec 040).
+#[derive(Clone, Copy, Debug)]
+struct Marquee {
+    from: Pos2,
+    to: Pos2,
+    add: bool,
 }
 
 impl Default for Editor {
@@ -95,9 +115,10 @@ impl Default for Editor {
             view: Zoom::Fit,
             zoom: 1.0,
             inspector_tab: 0,
-            selected: None,
+            selected: Selection::default(),
             textures: std::collections::HashMap::new(),
             drag: None,
+            marquee: None,
             versions: Versions::default(),
         }
     }
@@ -120,9 +141,12 @@ struct Asked {
     /// A new piece of this geometry on the selected element's page, or the
     /// first page.
     insert: Option<ShapeGeometry>,
-    /// A new selection (`Some(None)` clears it).
-    select: Option<Option<(PageId, NodeId)>>,
-    drag_begin: Option<(Placement, Option<canvas::Handle>)>,
+    /// A new selection (an empty one clears it, Esc).
+    select: Option<Selection>,
+    /// Ctrl+A or Edición → Seleccionar todo (spec 040).
+    select_all: bool,
+    /// A drag of the selection begins: a move, or a resize by this handle.
+    drag_begin: Option<Option<canvas::Handle>>,
     drag_to: Option<Vec2>,
     drag_end: bool,
     delete: bool,
@@ -164,17 +188,63 @@ struct Header<'a> {
     notice: Option<&'a str>,
 }
 
-/// The selected shape, if it is still in `document` (an undo may have taken
-/// it away).
-fn selected_shape(
-    document: Option<&Document>,
-    selected: Option<(PageId, NodeId)>,
-) -> Option<Shape> {
-    let (page, node) = selected?;
-    let page = document?.page(page)?;
-    canvas::shapes(page)
-        .into_iter()
-        .find(|shape| shape.node == node)
+/// The selected shapes still in `document`, in selection order (an undo may
+/// have taken some away).
+fn selected_shapes(document: Option<&Document>, selected: &Selection) -> Vec<Shape> {
+    let Some(page) = selected.page().and_then(|page| document?.page(page)) else {
+        return Vec::new();
+    };
+    let shapes = canvas::shapes(page);
+    selected
+        .nodes()
+        .iter()
+        .filter_map(|node| shapes.iter().find(|shape| shape.node == *node).cloned())
+        .collect()
+}
+
+/// The selection a finished marquee makes (spec 040): the shapes it touches
+/// on the page where it started, or else on the first page it touches.
+/// With Shift they join `current`; without, they replace it.
+fn marquee_selection(
+    current: &Selection,
+    marquee: Marquee,
+    laid: &[(PageId, Rect, Vec<Shape>)],
+    zoom: f32,
+) -> Selection {
+    let rect = Rect::from_two_pos(marquee.from, marquee.to);
+    let touched = |(id, page, shapes): &(PageId, Rect, Vec<Shape>)| {
+        (*id, canvas::in_marquee(shapes, *page, zoom, rect))
+    };
+    let on = laid
+        .iter()
+        .find(|(_, page, _)| page.contains(marquee.from))
+        .map(touched)
+        .or_else(|| {
+            laid.iter()
+                .map(touched)
+                .find(|(_, nodes)| !nodes.is_empty())
+        });
+    let mut next = if marquee.add {
+        current.clone()
+    } else {
+        Selection::default()
+    };
+    if let Some((page, nodes)) = on {
+        next.add(page, nodes);
+    }
+    next
+}
+
+/// One step for many commands: the command itself when there is one, a
+/// `Transaction` that merges by gesture when there are more (spec 040).
+fn batch(mut commands: Vec<Box<dyn Command>>) -> Option<Box<dyn Command>> {
+    match commands.len() {
+        0 | 1 => commands.pop(),
+        _ => Some(Box::new(Transaction::new(
+            MessageKey("edit.set_property"),
+            commands,
+        ))),
+    }
 }
 
 /// The pages of `document` in logical px at its dpi.
@@ -188,6 +258,24 @@ fn page_sizes(document: &Document) -> Vec<Vec2> {
 }
 
 impl Editor {
+    /// The page of the selection, or the first page.
+    fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
+        self.selected
+            .page()
+            .and_then(|page| document.page(page))
+            .or_else(|| document.pages().first().map(AsRef::as_ref))
+    }
+
+    /// Drops from the selection what `document` no longer draws (an undo
+    /// may have taken it away) and returns the shapes that stay, in
+    /// selection order (spec 040).
+    fn prune(&mut self, document: Option<&Document>) -> Vec<Shape> {
+        let shapes = selected_shapes(document, &self.selected);
+        self.selected
+            .retain(|node| shapes.iter().any(|shape| shape.node == node));
+        shapes
+    }
+
     pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,
@@ -240,17 +328,21 @@ impl Editor {
             }
         });
         let typing = ctx.wants_keyboard_input();
-        if !typing
-            && ctx
-                .input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
-        {
-            asked.delete = true;
+        if !typing {
+            ctx.input(|i| {
+                if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
+                    asked.delete = true;
+                }
+                if i.key_pressed(egui::Key::Escape) {
+                    asked.select = Some(Selection::default());
+                }
+                if i.modifiers.command && i.key_pressed(egui::Key::A) {
+                    asked.select_all = true;
+                }
+            });
         }
         self.load_textures(ctx, engine, document.as_deref());
-        let selection = selected_shape(document.as_deref(), self.selected);
-        if selection.is_none() {
-            self.selected = None;
-        }
+        let selection = self.prune(document.as_deref());
         self.bars(ctx, theme, texts, &document, &header, &mut asked);
         if let Some(ask) = asked.zoom {
             self.view = ask.apply(self.zoom);
@@ -262,7 +354,7 @@ impl Editor {
             theme,
             texts,
             document.as_deref(),
-            selection.as_ref(),
+            &selection,
             &mut asked,
         );
         self.canvas(ctx, theme, texts, document.as_deref(), &mut asked);
@@ -349,8 +441,14 @@ impl Editor {
                 }
                 ui.separator();
                 let delete = egui::Button::new(texts.t(&gafira_doc::msg!("editor.delete")));
-                if ui.add_enabled(self.selected.is_some(), delete).clicked() {
+                if ui.add_enabled(!self.selected.is_empty(), delete).clicked() {
                     asked.delete = true;
+                    ui.close();
+                }
+                let all = egui::Button::new(texts.t(&gafira_doc::msg!("editor.select_all")))
+                    .shortcut_text(ui.ctx().format_shortcut(&SELECT_ALL));
+                if ui.add_enabled(document.is_some(), all).clicked() {
+                    asked.select_all = true;
                     ui.close();
                 }
             });
@@ -688,7 +786,7 @@ impl Editor {
         theme: &Theme,
         texts: &Texts,
         document: Option<&Document>,
-        selection: Option<&Shape>,
+        selection: &[Shape],
         asked: &mut Asked,
     ) {
         egui::SidePanel::right("editor.inspector")
@@ -732,13 +830,20 @@ impl Editor {
                     self.layers(ui, theme, texts, document, asked);
                     return;
                 }
-                let Some(shape) = selection else {
-                    ui.label(
-                        RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
-                            .font(theme.font("body-sm"))
-                            .color(theme.c("text.muted")),
-                    );
-                    return;
+                let shape = match selection {
+                    [] => {
+                        ui.label(
+                            RichText::new(texts.t(&gafira_doc::msg!("inspector.empty")))
+                                .font(theme.font("body-sm"))
+                                .color(theme.c("text.muted")),
+                        );
+                        return;
+                    }
+                    [shape] => shape,
+                    many => {
+                        many_fields(ui, theme, texts, many, asked);
+                        return;
+                    }
                 };
                 if let Some(text) = &shape.text {
                     text_fields(ui, theme, texts, text, asked);
@@ -773,44 +878,14 @@ impl Editor {
                 }
                 ui.add_space(16.0);
                 if shape.text.is_none() {
-                    ui.horizontal(|ui| {
-                        ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
-                        let mut color = shape
-                            .fill
-                            .map_or(Color32::TRANSPARENT, canvas::screen_color);
-                        if ui.color_edit_button_srgba(&mut color).changed() {
-                            asked.fill = Some(Some(canvas::document_color(color)));
-                        }
-                        if shape.fill.is_some()
-                            && ui
-                                .small_button(texts.t(&gafira_doc::msg!("inspector.no_fill")))
-                                .clicked()
-                        {
-                            asked.fill = Some(None);
-                        }
-                    });
+                    fill_field(ui, texts, shape, asked);
                 }
                 if shape.text.is_none() && shape.image.is_none() {
                     ui.add_space(8.0);
                     outline_fields(ui, texts, shape, asked);
                 }
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.label(texts.t(&gafira_doc::msg!("inspector.opacity")));
-                    let mut percent = shape.opacity * 100.0;
-                    // The unit comes from the catalog, like every visible text (ARQ-97).
-                    let slider = egui::Slider::new(&mut percent, 0.0..=100.0)
-                        .max_decimals(0)
-                        .custom_formatter(|value, _| {
-                            texts.t(&gafira_doc::msg!(
-                                "format.percent",
-                                value = Text(format!("{value:.0}"))
-                            ))
-                        });
-                    if ui.add(slider).changed() {
-                        asked.opacity = Some(percent / 100.0);
-                    }
-                });
+                opacity_field(ui, texts, shape, asked);
             });
     }
 
@@ -826,11 +901,9 @@ impl Editor {
         asked: &mut Asked,
     ) {
         let Some(document) = document else { return };
-        let page = self
-            .selected
-            .and_then(|(page, _)| document.page(page))
-            .or_else(|| document.pages().first().map(AsRef::as_ref));
-        let Some(page) = page else { return };
+        let Some(page) = self.current_page(document) else {
+            return;
+        };
         let rows = canvas::layers(page);
         if rows.is_empty() {
             ui.label(
@@ -842,7 +915,7 @@ impl Editor {
         }
         let last = page.roots.len().saturating_sub(1);
         for row in rows {
-            let selected = self.selected == Some((page.id, row.node));
+            let selected = self.selected.contains(page.id, row.node);
             let label = row.name.clone().unwrap_or_else(|| {
                 texts.t(&gafira_doc::msg::Message {
                     key: gafira_doc::msg::MessageKey(row.kind),
@@ -851,9 +924,18 @@ impl Editor {
             });
             ui.horizontal(|ui| {
                 if ui.selectable_label(selected, label).clicked() {
-                    asked.select = Some(Some((page.id, row.node)));
+                    // Ctrl/Cmd or Shift + click toggles the row (spec 040).
+                    let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+                    asked.select = Some(if toggle {
+                        let mut next = self.selected.clone();
+                        next.toggle(page.id, row.node);
+                        next
+                    } else {
+                        Selection::one(page.id, row.node)
+                    });
                 }
-                if selected {
+                // Subir, Bajar and the row's Eliminar act on one element.
+                if selected && self.selected.len() == 1 {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let delete = IconButton::new(
                             Icon::Delete,
@@ -932,8 +1014,14 @@ impl Editor {
                         let pages = document.map(Document::pages).unwrap_or_default();
                         let pointer = response.interact_pointer_pos();
                         let pressed = response.clicked() || response.drag_started();
-                        let mut picked: Option<(PageId, NodeId, Placement)> = None;
-                        let mut grabbed: Option<(Placement, canvas::Handle)> = None;
+                        let (shift, press) =
+                            ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
+                        let single = self.selected.single();
+                        let mut picked: Option<(PageId, NodeId)> = None;
+                        let mut grabbed: Option<canvas::Handle> = None;
+                        // Each page's id, screen box and shapes, for the marquee.
+                        let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
+                        let selection = theme.c("canvas.selection");
                         let mut top =
                             rect.min.y + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
                         for (index, size) in sizes.iter().enumerate() {
@@ -1002,14 +1090,17 @@ impl Editor {
                                         draw_text(painter, theme, at, zoom, shape.opacity, text);
                                     }
                                     painter.add(canvas::painted(shape, at, zoom));
-                                    if self.selected == Some((shape.page, shape.node)) {
-                                        let selection = theme.c("canvas.selection");
-                                        painter.rect_stroke(
-                                            at.expand(1.0),
-                                            0.0,
-                                            Stroke::new(2.0, selection),
-                                            egui::StrokeKind::Outside,
-                                        );
+                                    if !self.selected.contains(shape.page, shape.node) {
+                                        continue;
+                                    }
+                                    painter.rect_stroke(
+                                        at.expand(1.0),
+                                        0.0,
+                                        Stroke::new(2.0, selection),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                    // Only a single selection resizes.
+                                    if single == Some((shape.page, shape.node)) {
                                         for handle in canvas::HANDLES {
                                             let square = Rect::from_center_size(
                                                 canvas::handle_at(at, handle),
@@ -1027,8 +1118,25 @@ impl Editor {
                                             && let Some(pos) = pointer
                                             && let Some(handle) = canvas::handle_hit(at, pos)
                                         {
-                                            grabbed = Some((shape.placement, handle));
+                                            grabbed = Some(handle);
                                         }
+                                    }
+                                }
+                                if self.selected.len() > 1
+                                    && self.selected.page() == Some(page_doc.id)
+                                {
+                                    // The box around a multi-selection (spec 040).
+                                    let boxes = shapes
+                                        .iter()
+                                        .filter(|s| self.selected.contains(s.page, s.node))
+                                        .map(|s| canvas::on_screen(page, zoom, &s.placement));
+                                    if let Some(all) = canvas::bounds(boxes) {
+                                        painter.rect_stroke(
+                                            all.expand(4.0),
+                                            0.0,
+                                            Stroke::new(1.0, selection),
+                                            egui::StrokeKind::Outside,
+                                        );
                                     }
                                 }
                                 if pressed
@@ -1036,36 +1144,85 @@ impl Editor {
                                     && page.contains(at)
                                     && let Some(node) = canvas::hit(&shapes, page, zoom, at)
                                 {
-                                    let placement = shapes
-                                        .iter()
-                                        .find(|shape| shape.node == node)
-                                        .map(|shape| shape.placement);
-                                    if let Some(placement) = placement {
-                                        picked = Some((page_doc.id, node, placement));
-                                    }
+                                    picked = Some((page_doc.id, node));
                                 }
+                                laid.push((page_doc.id, page, shapes));
                             }
                             top = page.max.y + PAGE_GAP;
                         }
-                        if let Some((placement, handle)) = grabbed {
+                        if let Some(handle) = grabbed {
                             // A handle of the selection wins over whatever
                             // lies under it.
-                            asked.drag_begin = Some((placement, Some(handle)));
-                        } else {
-                            if pressed {
-                                asked.select = Some(picked.map(|(page, node, _)| (page, node)));
+                            asked.drag_begin = Some(Some(handle));
+                        } else if response.clicked() {
+                            // Click selects one; Shift+click toggles it.
+                            let mut next = self.selected.clone();
+                            match (picked, shift) {
+                                (Some((page, node)), true) => next.toggle(page, node),
+                                (Some((page, node)), false) => next = Selection::one(page, node),
+                                (None, true) => {}
+                                (None, false) => next.clear(),
                             }
-                            if response.drag_started()
-                                && let Some((_, _, placement)) = picked
-                            {
-                                asked.drag_begin = Some((placement, None));
+                            asked.select = Some(next);
+                        } else if response.drag_started() {
+                            match picked {
+                                // A drag on a selected element moves the
+                                // whole selection; on another one it selects
+                                // it first (Shift adds it).
+                                Some((page, node)) => {
+                                    if !self.selected.contains(page, node) {
+                                        let mut next = self.selected.clone();
+                                        if shift {
+                                            next.add(page, [node]);
+                                        } else {
+                                            next = Selection::one(page, node);
+                                        }
+                                        asked.select = Some(next);
+                                    }
+                                    asked.drag_begin = Some(None);
+                                }
+                                // On empty canvas it draws a marquee.
+                                None => {
+                                    if let Some(from) = press.or(pointer) {
+                                        self.marquee = Some(Marquee {
+                                            from,
+                                            to: pointer.unwrap_or(from),
+                                            add: shift,
+                                        });
+                                    }
+                                }
                             }
                         }
-                        if response.dragged() && self.drag.is_some() {
-                            asked.drag_to = Some(response.drag_delta());
+                        if response.dragged() {
+                            if let Some(marquee) = self.marquee.as_mut() {
+                                if let Some(to) = pointer {
+                                    marquee.to = to;
+                                }
+                            } else if self.drag.is_some() {
+                                asked.drag_to = Some(response.drag_delta());
+                            }
+                        }
+                        if let Some(marquee) = self.marquee {
+                            painter.rect(
+                                Rect::from_two_pos(marquee.from, marquee.to),
+                                0.0,
+                                theme.c("selection.bg").gamma_multiply(0.5),
+                                Stroke::new(1.0, selection),
+                                egui::StrokeKind::Inside,
+                            );
                         }
                         if response.drag_stopped() {
-                            asked.drag_end = true;
+                            match self.marquee.take() {
+                                Some(marquee) => {
+                                    asked.select = Some(marquee_selection(
+                                        &self.selected,
+                                        marquee,
+                                        &laid,
+                                        zoom,
+                                    ));
+                                }
+                                None => asked.drag_end = true,
+                            }
                         }
                     });
             });
@@ -1107,28 +1264,27 @@ impl Editor {
                     .map(drop),
             );
         }
-        if let Some(select) = asked.select {
-            self.selected = select;
+        if let Some(select) = &asked.select {
+            self.selected = select.clone();
+        }
+        if asked.select_all
+            && let Some(document) = engine.edit().document()
+            && let Some(page) = self.current_page(&document)
+        {
+            self.selected = Selection::of(page.id, canvas::roots(page));
         }
         if let Some(geometry) = asked.insert
             && let Some(document) = document
+            && let Some(page) = self.current_page(document)
+            && let Ok(size) = page.size.to_px(document.dpi())
         {
-            let page = self
-                .selected
-                .and_then(|(page, _)| document.page(page))
-                .or_else(|| document.pages().first().map(AsRef::as_ref));
-            if let Some(page) = page
-                && let Ok(size) = page.size.to_px(document.dpi())
-            {
-                let px = Vec2::new(size.width() as f32, size.height() as f32);
-                let spec =
-                    canvas::new_piece(px, geometry, canvas::document_color(theme.c("accent")));
-                let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
-                let next = NodeId::new(document.next_id());
-                match engine.edit().execute(Box::new(command)) {
-                    Ok(_) => self.selected = Some((page.id, next)),
-                    Err(error) => eprintln!("insert: {error}"),
-                }
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let spec = canvas::new_piece(px, geometry, canvas::document_color(theme.c("accent")));
+            let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => self.selected = Selection::one(page.id, next),
+                Err(error) => eprintln!("insert: {error}"),
             }
         }
         if asked.import_image
@@ -1138,91 +1294,104 @@ impl Editor {
         }
         if let Some((preset, words)) = &asked.insert_text
             && let Some(document) = document
+            && let Some(page) = self.current_page(document)
+            && let Ok(size) = page.size.to_px(document.dpi())
         {
-            let page = self
-                .selected
-                .and_then(|(page, _)| document.page(page))
-                .or_else(|| document.pages().first().map(AsRef::as_ref));
-            if let Some(page) = page
-                && let Ok(size) = page.size.to_px(document.dpi())
-            {
-                let (font_size, display) = preset.size_and_display();
-                let tokens = &theme.tokens;
-                let style = gafira_doc::SpanStyle {
-                    font: if display {
-                        tokens.typography.display.clone()
-                    } else {
-                        tokens.typography.ui.clone()
-                    },
-                    size: font_size,
-                    color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
-                };
-                let px = Vec2::new(size.width() as f32, size.height() as f32);
-                let spec = canvas::new_text(px, words, &style);
-                let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
-                let next = NodeId::new(document.next_id());
-                match engine.edit().execute(Box::new(command)) {
-                    Ok(_) => self.selected = Some((page.id, next)),
-                    Err(error) => eprintln!("insert text: {error}"),
-                }
+            let (font_size, display) = preset.size_and_display();
+            let tokens = &theme.tokens;
+            let style = gafira_doc::SpanStyle {
+                font: if display {
+                    tokens.typography.display.clone()
+                } else {
+                    tokens.typography.ui.clone()
+                },
+                size: font_size,
+                color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
+            };
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let spec = canvas::new_text(px, words, &style);
+            let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => self.selected = Selection::one(page.id, next),
+                Err(error) => eprintln!("insert text: {error}"),
             }
         }
-        if let (Some(text), Some((page, node))) = (&asked.text, self.selected) {
+        if let (Some(text), Some((page, node))) = (&asked.text, self.selected.single()) {
             let command =
                 SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
             log("text", engine.edit().execute(Box::new(command)).map(drop));
         }
-        if let Some((origin, handle)) = asked.drag_begin {
+        if let Some(handle) = asked.drag_begin
+            && let Some(page) = self.selected.page()
+        {
+            // Where every selected element starts, from the newest document.
+            let now = engine.edit().document();
+            let origins = selected_shapes(now.as_deref(), &self.selected)
+                .into_iter()
+                .map(|shape| (shape.node, shape.placement))
+                .collect::<Vec<_>>();
             let gesture = engine.edit().begin_gesture().ok();
             self.drag = Some(Drag {
                 gesture,
-                origin,
+                page,
+                handle: handle.filter(|_| origins.len() == 1),
+                origins,
                 offset: Vec2::ZERO,
-                handle,
             });
         }
-        if let (Some(delta), Some(drag), Some((page, node))) =
-            (asked.drag_to, self.drag.as_mut(), self.selected)
-        {
+        if let (Some(delta), Some(drag)) = (asked.drag_to, self.drag.as_mut()) {
             drag.offset += delta;
-            let to = match drag.handle {
-                Some(handle) => canvas::resized(&drag.origin, handle, drag.offset, self.zoom),
-                None => canvas::moved(&drag.origin, drag.offset, self.zoom),
-            };
-            let command = SetProperty::new(page, vec![node], Property::Placement(to), drag.gesture);
-            log("move", engine.edit().execute(Box::new(command)).map(drop));
+            let zoom = self.zoom;
+            // One placement per element; several are one Transaction, so the
+            // drag stays one undo step (spec 040).
+            let commands = drag
+                .origins
+                .iter()
+                .map(|(node, origin)| {
+                    let to = match drag.handle {
+                        Some(handle) => canvas::resized(origin, handle, drag.offset, zoom),
+                        None => canvas::moved(origin, drag.offset, zoom),
+                    };
+                    let command = SetProperty::new(
+                        drag.page,
+                        vec![*node],
+                        Property::Placement(to),
+                        drag.gesture,
+                    );
+                    Box::new(command) as Box<dyn Command>
+                })
+                .collect();
+            if let Some(command) = batch(commands) {
+                log("move", engine.edit().execute(command).map(drop));
+            }
         }
         if asked.drag_end && self.drag.take().is_some() {
             log("end gesture", engine.edit().end_gesture());
         }
-        if let (Some(placement), Some((page, node))) = (asked.place, self.selected) {
+        if let (Some(placement), Some((page, node))) = (asked.place, self.selected.single()) {
             let command = SetProperty::new(page, vec![node], Property::Placement(placement), None);
             log("place", engine.edit().execute(Box::new(command)).map(drop));
         }
-        if let (Some(fill), Some((page, node))) = (asked.fill, self.selected) {
-            let command = SetProperty::new(page, vec![node], Property::Fill(fill), None);
-            log("fill", engine.edit().execute(Box::new(command)).map(drop));
-        }
-        if let (Some(stroke), Some((page, node))) = (asked.stroke, self.selected) {
-            let command = SetProperty::new(page, vec![node], Property::Stroke(stroke), None);
-            log(
-                "outline",
-                engine.edit().execute(Box::new(command)).map(drop),
-            );
-        }
-        if let (Some(radius), Some((page, node))) = (asked.corner_radius, self.selected) {
-            let command = SetProperty::new(page, vec![node], Property::CornerRadius(radius), None);
-            log(
-                "corner radius",
-                engine.edit().execute(Box::new(command)).map(drop),
-            );
-        }
-        if let (Some(opacity), Some((page, node))) = (asked.opacity, self.selected) {
-            let command = SetProperty::new(page, vec![node], Property::Opacity(opacity), None);
-            log(
-                "opacity",
-                engine.edit().execute(Box::new(command)).map(drop),
-            );
+        // Fill, outline, radius and opacity go to every selected element in
+        // one SetProperty, so a change is one undo step (spec 040).
+        let all = self.selected.nodes().to_vec();
+        if let Some(page) = self.selected.page() {
+            let values = [
+                ("fill", asked.fill.map(Property::Fill)),
+                ("outline", asked.stroke.map(Property::Stroke)),
+                (
+                    "corner radius",
+                    asked.corner_radius.map(Property::CornerRadius),
+                ),
+                ("opacity", asked.opacity.map(Property::Opacity)),
+            ];
+            for (what, value) in values {
+                if let Some(value) = value {
+                    let command = SetProperty::new(page, all.clone(), value, None);
+                    log(what, engine.edit().execute(Box::new(command)).map(drop));
+                }
+            }
         }
         if let Some((page, node, index)) = asked.reorder {
             let command = gafira_edit::Reorder::new(page, node, index);
@@ -1231,14 +1400,16 @@ impl Editor {
                 engine.edit().execute(Box::new(command)).map(drop),
             );
         }
+        // Every selected element goes in one RemoveNodes: one undo step.
         if asked.delete
-            && let Some((page, node)) = self.selected.take()
+            && let Some(page) = self.selected.page()
         {
+            self.selected.clear();
             log(
                 "delete",
                 engine
                     .edit()
-                    .execute(Box::new(RemoveNodes::new(page, vec![node])))
+                    .execute(Box::new(RemoveNodes::new(page, all)))
                     .map(drop),
             );
         }
@@ -1249,7 +1420,7 @@ impl Editor {
         } else if let Some(name) = &asked.version {
             Go::SaveVersion(name.clone())
         } else if asked.export {
-            Go::Export(self.selected.map(|(page, _)| page))
+            Go::Export(self.selected.page())
         } else if asked.home {
             Go::Home
         } else if let Some(action) = asked.file {
@@ -1297,11 +1468,9 @@ impl Editor {
             eprintln!("import image: {} is not a readable image", path.display());
             return;
         };
-        let page = self
-            .selected
-            .and_then(|(page, _)| document.page(page))
-            .or_else(|| document.pages().first().map(AsRef::as_ref));
-        let Some(page) = page else { return };
+        let Some(page) = self.current_page(document) else {
+            return;
+        };
         let Ok(size) = page.size.to_px(document.dpi()) else {
             return;
         };
@@ -1317,7 +1486,11 @@ impl Editor {
                     index,
                     vec![spec],
                 ))) {
-                    Ok(_) => self.selected = next.map(|node| (page_id, node)),
+                    Ok(_) => {
+                        if let Some(node) = next {
+                            self.selected = Selection::one(page_id, node);
+                        }
+                    }
                     Err(error) => eprintln!("insert image: {error}"),
                 }
             }
@@ -1346,6 +1519,77 @@ fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorI
 /// The Inspector fields of a shape's outline (colour, «Sin contorno»,
 /// width) and, for a rectangle, its corner radius (spec 038). Each change
 /// is one command, so one undo step.
+/// «Relleno»: a colour picker showing `shape`'s fill and «Sin relleno».
+fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+    ui.horizontal(|ui| {
+        ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
+        let mut color = shape
+            .fill
+            .map_or(Color32::TRANSPARENT, canvas::screen_color);
+        if ui.color_edit_button_srgba(&mut color).changed() {
+            asked.fill = Some(Some(canvas::document_color(color)));
+        }
+        if shape.fill.is_some()
+            && ui
+                .small_button(texts.t(&gafira_doc::msg!("inspector.no_fill")))
+                .clicked()
+        {
+            asked.fill = Some(None);
+        }
+    });
+}
+
+/// «Opacidad»: a slider showing `shape`'s opacity in percent.
+fn opacity_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+    ui.horizontal(|ui| {
+        ui.label(texts.t(&gafira_doc::msg!("inspector.opacity")));
+        let mut percent = shape.opacity * 100.0;
+        // The unit comes from the catalog, like every visible text (ARQ-97).
+        let slider = egui::Slider::new(&mut percent, 0.0..=100.0)
+            .max_decimals(0)
+            .custom_formatter(|value, _| {
+                texts.t(&gafira_doc::msg!(
+                    "format.percent",
+                    value = Text(format!("{value:.0}"))
+                ))
+            });
+        if ui.add(slider).changed() {
+            asked.opacity = Some(percent / 100.0);
+        }
+    });
+}
+
+/// The Inspector of a multi-selection (spec 040): how many elements, then
+/// the fields they all have, showing the primary's value and set on all of
+/// them in one step: the fill when every one is a shape, and the opacity.
+/// Position, size, outline, radius and text stay with a single selection.
+fn many_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    shapes: &[Shape],
+    asked: &mut Asked,
+) {
+    let Some(primary) = shapes.last() else { return };
+    ui.label(
+        RichText::new(texts.t(&gafira_doc::msg!(
+            "inspector.count",
+            count = Count(shapes.len() as u64)
+        )))
+        .font(theme.font("ui-label"))
+        .color(theme.c("text")),
+    );
+    ui.add_space(16.0);
+    if shapes
+        .iter()
+        .all(|shape| shape.text.is_none() && shape.image.is_none())
+    {
+        fill_field(ui, texts, primary, asked);
+        ui.add_space(8.0);
+    }
+    opacity_field(ui, texts, primary, asked);
+}
+
 fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
     let px = |value: f64| {
         texts.t(&gafira_doc::msg!(
@@ -1759,7 +2003,7 @@ pub(crate) mod tests {
         assert_eq!(shapes[0].geometry, ShapeGeometry::Ellipse);
         assert_eq!(
             editor.selected,
-            Some((shapes[0].page, shapes[0].node)),
+            Selection::one(shapes[0].page, shapes[0].node),
             "the new piece is selected"
         );
         let origin = shapes[0].placement;
@@ -1770,7 +2014,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                drag_begin: Some((origin, None)),
+                drag_begin: Some(None),
                 ..Asked::default()
             },
             &theme,
@@ -1828,7 +2072,7 @@ pub(crate) mod tests {
             &theme,
         );
         assert!(the_shapes(&mut engine).is_empty());
-        assert_eq!(editor.selected, None);
+        assert_eq!(editor.selected, Selection::default());
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine).len(), 1, "delete is undoable");
     }
@@ -1883,7 +2127,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                drag_begin: Some((origin, Some(corner))),
+                drag_begin: Some(Some(corner)),
                 ..Asked::default()
             },
             &theme,
@@ -2099,7 +2343,7 @@ pub(crate) mod tests {
             "a title uses the display family"
         );
         assert_eq!(style.size, 72.0);
-        assert!(editor.selected.is_some(), "the new text is selected");
+        assert!(!editor.selected.is_empty(), "the new text is selected");
 
         let edited = gafira_doc::RichText::plain("Hola\nmundo", &style);
         editor.apply(
@@ -2245,5 +2489,286 @@ pub(crate) mod tests {
         frame(&ctx, &mut editor, &mut engine, Some(Key::Num0));
         assert_eq!(editor.view, Zoom::Fit);
         assert_eq!(editor.zoom, fit);
+    }
+
+    /// A Social document with a rectangle and an ellipse, the ellipse moved
+    /// 400 px right of the rectangle; `editor` has the ellipse selected.
+    fn two_pieces(engine: &mut Gafira, editor: &mut Editor) -> (PageId, NodeId, NodeId) {
+        start(engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        for geometry in [ShapeGeometry::Rect, ShapeGeometry::Ellipse] {
+            let snapshot = engine.edit().document();
+            editor.apply(
+                engine,
+                &snapshot,
+                &Asked {
+                    insert: Some(geometry),
+                    ..Asked::default()
+                },
+                &theme,
+            );
+        }
+        let shapes = the_shapes(engine);
+        let mut aside = shapes[1].placement;
+        aside.x += 400.0;
+        let snapshot = engine.edit().document();
+        editor.apply(
+            engine,
+            &snapshot,
+            &Asked {
+                place: Some(aside),
+                ..Asked::default()
+            },
+            &theme,
+        );
+        (shapes[0].page, shapes[0].node, shapes[1].node)
+    }
+
+    /// `asked` applied by `editor` over the newest document.
+    fn ask(engine: &mut Gafira, editor: &mut Editor, asked: Asked) -> Go {
+        let snapshot = engine.edit().document();
+        editor.apply(engine, &snapshot, &asked, &theme())
+    }
+
+    /// How many entries the history can undo.
+    fn undo_depth(engine: &mut Gafira) -> usize {
+        let mut depth = 0;
+        while engine.edit().can_undo_redo().0 {
+            engine.edit().undo().expect("an undo");
+            depth += 1;
+        }
+        for _ in 0..depth {
+            engine.edit().redo().expect("a redo");
+        }
+        depth
+    }
+
+    // S40-05: a drag of two selected elements moves both in one undo step.
+    #[test]
+    fn s40_05_a_drag_of_a_multi_selection_moves_all_in_one_undo() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        let before = the_shapes(&mut engine);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                select: Some(Selection::of(page, [rect, ellipse])),
+                ..Asked::default()
+            },
+        );
+        editor.zoom = 2.0;
+        // A handle held with two selected moves instead of resizing.
+        let corner = canvas::Handle { x: 1, y: 1 };
+        for asked in [
+            Asked {
+                drag_begin: Some(Some(corner)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(10.0, 4.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(10.0, 4.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(10.0, 4.0)),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let after = the_shapes(&mut engine);
+        for (moved, origin) in after.iter().zip(&before) {
+            assert_eq!(
+                (moved.placement.x - origin.placement.x),
+                15.0,
+                "{:?}",
+                moved.node
+            );
+            assert_eq!(moved.placement.y - origin.placement.y, 6.0);
+            assert_eq!(
+                (moved.placement.w, moved.placement.h),
+                (origin.placement.w, origin.placement.h),
+                "moved, not resized"
+            );
+        }
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one entry for the drag");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine), before, "one undo takes both back");
+    }
+
+    // S40-06: Delete removes every selected element in one undo step.
+    #[test]
+    fn s40_06_delete_removes_the_whole_selection_in_one_undo() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert: Some(ShapeGeometry::Rect),
+                ..Asked::default()
+            },
+        );
+        let kept = the_shapes(&mut engine)[2].node;
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                select: Some(Selection::of(page, [rect, ellipse])),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                delete: true,
+                ..Asked::default()
+            },
+        );
+        let left: Vec<NodeId> = the_shapes(&mut engine).iter().map(|s| s.node).collect();
+        assert_eq!(left, [kept]);
+        assert!(editor.selected.is_empty());
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(
+            the_shapes(&mut engine).len(),
+            3,
+            "one undo brings both back"
+        );
+    }
+
+    // S40-07: an undo that takes selected elements away prunes them.
+    #[test]
+    fn s40_07_an_undo_prunes_what_it_took_away() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        editor.selected = Selection::of(page, [rect, ellipse]);
+        // Undo the move aside, then the ellipse's insert.
+        engine.edit().undo().expect("an undo");
+        engine.edit().undo().expect("an undo");
+        let kept = editor.prune(engine.edit().document().as_deref());
+        assert_eq!(editor.selected, Selection::one(page, rect));
+        assert_eq!(kept.iter().map(|s| s.node).collect::<Vec<_>>(), [rect]);
+        engine.edit().undo().expect("an undo");
+        assert!(editor.prune(engine.edit().document().as_deref()).is_empty());
+        assert_eq!(editor.selected, Selection::default());
+    }
+
+    // S40-08: fill and opacity from the Inspector go to every selected
+    // element, one undo step each.
+    #[test]
+    fn s40_08_fill_and_opacity_apply_to_the_whole_selection_in_one_undo() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                select: Some(Selection::of(page, [rect, ellipse])),
+                ..Asked::default()
+            },
+        );
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                fill: Some(None),
+                opacity: Some(0.5),
+                ..Asked::default()
+            },
+        );
+        for shape in the_shapes(&mut engine) {
+            assert_eq!(shape.fill, None);
+            assert_eq!(shape.opacity, 0.5);
+        }
+        assert_eq!(undo_depth(&mut engine), depth + 2, "fill, then opacity");
+        engine.edit().undo().expect("an undo");
+        for shape in the_shapes(&mut engine) {
+            assert_eq!(shape.opacity, 1.0, "one undo restores both");
+            assert!(shape.fill.is_none());
+        }
+        engine.edit().undo().expect("an undo");
+        assert!(the_shapes(&mut engine).iter().all(|s| s.fill.is_some()));
+    }
+
+    // S40-02: a marquee takes the shapes on the page where it started (or
+    // the first page it touches); Shift adds them; touching nothing clears
+    // without Shift and keeps the selection with it.
+    #[test]
+    fn s40_02_a_marquee_selects_on_one_page_and_shift_adds() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        let shapes = the_shapes(&mut engine);
+        let first = Rect::from_min_size(Pos2::ZERO, Vec2::splat(1080.0));
+        let second = Rect::from_min_size(Pos2::new(0.0, 1200.0), Vec2::splat(1080.0));
+        let laid = vec![
+            (page, first, shapes.clone()),
+            (PageId::new(999), second, Vec::new()),
+        ];
+        let rect_at = canvas::on_screen(first, 1.0, &shapes[0].placement);
+        let marquee = |from: Pos2, to: Pos2, add: bool| Marquee { from, to, add };
+        let current = Selection::one(page, ellipse);
+
+        let inside = marquee(rect_at.min - Vec2::splat(5.0), rect_at.center(), false);
+        assert_eq!(
+            marquee_selection(&current, inside, &laid, 1.0),
+            Selection::one(page, rect)
+        );
+        let added = Marquee {
+            add: true,
+            ..inside
+        };
+        assert_eq!(
+            marquee_selection(&current, added, &laid, 1.0),
+            Selection::of(page, [ellipse, rect])
+        );
+        // Started above the pages, it still selects on the page it touches.
+        let from_outside = marquee(Pos2::new(rect_at.min.x, -40.0), rect_at.center(), false);
+        assert_eq!(
+            marquee_selection(&current, from_outside, &laid, 1.0),
+            Selection::one(page, rect)
+        );
+        let empty = marquee(Pos2::new(5.0, 1210.0), Pos2::new(50.0, 1250.0), false);
+        assert_eq!(
+            marquee_selection(&current, empty, &laid, 1.0),
+            Selection::default()
+        );
+        let empty_added = Marquee { add: true, ..empty };
+        assert_eq!(
+            marquee_selection(&current, empty_added, &laid, 1.0),
+            current
+        );
+    }
+
+    // S40-09: Ctrl+A selects the drawn roots of the page and Esc clears.
+    #[test]
+    fn s40_09_ctrl_a_selects_everything_and_escape_clears() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut editor, &mut engine, Some(Key::A));
+        assert_eq!(editor.selected, Selection::of(page, [rect, ellipse]));
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(editor.selected.len(), 2, "kept across frames");
+        frame(&ctx, &mut editor, &mut engine, Some(Key::Escape));
+        assert_eq!(editor.selected, Selection::default());
     }
 }

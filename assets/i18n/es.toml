@@ -201,6 +201,7 @@ undo = "Deshacer"
 redo = "Rehacer"
 add_page = "Añadir página"
 delete = "Eliminar"
+select_all = "Seleccionar todo"
 
 [zoom]
 in = "Acercar"
@@ -264,6 +265,7 @@ corner_radius = "Radio de esquina"
 text = "Texto"
 font_size = "Tamaño"
 text_color = "Color"
+count = { one = "{count} elemento", many = "{count} de elementos", other = "{count} elementos" }
 
 [bottom]
 notes = "Notas"

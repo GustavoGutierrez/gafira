@@ -21,6 +21,7 @@ mod home;
 mod icons;
 mod recent;
 mod saving;
+mod selection;
 mod settings;
 mod shell;
 mod splash;
