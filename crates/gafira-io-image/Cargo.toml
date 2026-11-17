@@ -16,6 +16,8 @@ gafira-time.workspace = true
 png.workspace = true
 # Spec 032, ARQ-66: decoding the PNG and JPEG assets an export draws.
 image.workspace = true
+# Spec 039, FD-55: the lossless WebP export; already in the tree (spec 033).
+image-webp.workspace = true
 
 # The pipeline tests draw real pages: the graph of gafira-render on the CPU
 # backend. Dev-only, so they are not layer edges (ARQ-06).
