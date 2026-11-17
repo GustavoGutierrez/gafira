@@ -63,6 +63,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 034 | [Pantalla de Ajustes](done/034-settings-screen.md) | General (idioma al momento), Apariencia (Claro, Oscuro, Sistema), Privacidad y Acerca de; desde Inicio y Archivo |
 | 035 | [Exportar en segundo plano](done/035-background-export.md) | `ExportService::prepare` (comprobaciones sin dibujar ni abrir archivos) y `PreparedExport::run` (`Send + 'static`, cancelable); la app exporta en un hilo con tarjeta de progreso y «Cancelar»; un pánico del hilo es un error, no un cierre; 8 tests nuevos, 2 mutantes a mano muertos, 2964 tests |
 | 036 | [Guardar en segundo plano](done/036-background-save.md) | `ProjectService::prepare_save(SaveRequest)` → `SaveJob::run` (`Send + 'static`) → `save_finished`; la app guarda en un hilo con tarjeta «Guardando…»; «¿Guardar los cambios?» sigue solo tras un guardado correcto; al cerrar se espera al guardado; 7 tests nuevos, 2971 tests |
+| 038 | [Contorno y radio de esquina de las formas](done/038-shape-outline-and-corner-radius.md) | `ShapeStroke` (color y grosor 0–1000 px, centrado) y `corner_radius` en `ShapeNode`, opcionales y aditivos (un documento anterior carga sin contorno y con radio 0); `Property::{Stroke, CornerRadius}`; el render rellena el contorno de `gafira-pathops` y redondea hasta la mitad del lado corto (FD-36 a); «Contorno» y «Radio de esquina» en el Inspector y en el lienzo; 16 tests nuevos, 12 mutantes a mano muertos, 2987 tests |
 
 ### Historial del flujo anterior
 
