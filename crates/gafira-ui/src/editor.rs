@@ -109,6 +109,10 @@ struct Asked {
     fill: Option<Option<gafira_color::Color>>,
     /// An opacity set in the Inspector, 0 to 1.
     opacity: Option<f32>,
+    /// An outline set in the Inspector (`Some(None)` removes it, spec 038).
+    stroke: Option<Option<gafira_doc::ShapeStroke>>,
+    /// A corner radius set in the Inspector, in px (spec 038).
+    corner_radius: Option<f64>,
     /// Biblioteca → Importar imagen… (spec 029).
     import_image: bool,
     /// A new text element of this preset (Texto tab, spec 027).
@@ -630,6 +634,10 @@ impl Editor {
                         }
                     });
                 }
+                if shape.text.is_none() && shape.image.is_none() {
+                    ui.add_space(8.0);
+                    outline_fields(ui, texts, shape, asked);
+                }
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.label(texts.t(&gafira_doc::msg!("inspector.opacity")));
@@ -818,19 +826,7 @@ impl Editor {
                                     if let Some(text) = &shape.text {
                                         draw_text(painter, theme, at, zoom, shape.opacity, text);
                                     }
-                                    let fill = canvas::paint(shape);
-                                    match shape.geometry {
-                                        ShapeGeometry::Rect => {
-                                            painter.rect_filled(at, 0.0, fill);
-                                        }
-                                        ShapeGeometry::Ellipse => {
-                                            painter.add(egui::Shape::ellipse_filled(
-                                                at.center(),
-                                                at.size() / 2.0,
-                                                fill,
-                                            ));
-                                        }
-                                    }
+                                    painter.add(canvas::painted(shape, at, zoom));
                                     if self.selected == Some((shape.page, shape.node)) {
                                         let selection = theme.c("canvas.selection");
                                         painter.rect_stroke(
@@ -1032,6 +1028,20 @@ impl Editor {
             let command = SetProperty::new(page, vec![node], Property::Fill(fill), None);
             log("fill", engine.edit().execute(Box::new(command)).map(drop));
         }
+        if let (Some(stroke), Some((page, node))) = (asked.stroke, self.selected) {
+            let command = SetProperty::new(page, vec![node], Property::Stroke(stroke), None);
+            log(
+                "outline",
+                engine.edit().execute(Box::new(command)).map(drop),
+            );
+        }
+        if let (Some(radius), Some((page, node))) = (asked.corner_radius, self.selected) {
+            let command = SetProperty::new(page, vec![node], Property::CornerRadius(radius), None);
+            log(
+                "corner radius",
+                engine.edit().execute(Box::new(command)).map(drop),
+            );
+        }
         if let (Some(opacity), Some((page, node))) = (asked.opacity, self.selected) {
             let command = SetProperty::new(page, vec![node], Property::Opacity(opacity), None);
             log(
@@ -1156,6 +1166,67 @@ fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorI
         size,
         rgba.as_raw(),
     ))
+}
+
+/// The Inspector fields of a shape's outline (colour, «Sin contorno»,
+/// width) and, for a rectangle, its corner radius (spec 038). Each change
+/// is one command, so one undo step.
+fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+    let px = |value: f64| {
+        texts.t(&gafira_doc::msg!(
+            "unit.px",
+            value = Text(format!("{value:.1}"))
+        ))
+    };
+    ui.horizontal(|ui| {
+        ui.label(texts.t(&gafira_doc::msg!("inspector.outline")));
+        let mut color = shape.stroke.map_or(Color32::TRANSPARENT, |stroke| {
+            canvas::screen_color(stroke.color)
+        });
+        if ui.color_edit_button_srgba(&mut color).changed() {
+            let width = shape
+                .stroke
+                .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
+            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(
+                canvas::document_color(color),
+                width,
+            )));
+        }
+        if shape.stroke.is_some()
+            && ui
+                .small_button(texts.t(&gafira_doc::msg!("inspector.no_outline")))
+                .clicked()
+        {
+            asked.stroke = Some(None);
+        }
+    });
+    if let Some(stroke) = shape.stroke {
+        ui.horizontal(|ui| {
+            ui.label(texts.t(&gafira_doc::msg!("inspector.outline_width")));
+            let mut width = stroke.width;
+            let field = egui::DragValue::new(&mut width)
+                .speed(0.5)
+                .range(0.0..=gafira_doc::ShapeStroke::MAX_WIDTH)
+                .custom_formatter(|value, _| px(value));
+            if ui.add(field).changed() {
+                asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(stroke.color, width)));
+            }
+        });
+    }
+    if shape.geometry == ShapeGeometry::Rect {
+        ui.horizontal(|ui| {
+            ui.label(texts.t(&gafira_doc::msg!("inspector.corner_radius")));
+            let half = shape.placement.w.min(shape.placement.h).max(0.0) / 2.0;
+            let mut radius = shape.corner_radius.min(half);
+            let field = egui::DragValue::new(&mut radius)
+                .speed(0.5)
+                .range(0.0..=half)
+                .custom_formatter(|value, _| px(value));
+            if ui.add(field).changed() {
+                asked.corner_radius = Some(radius);
+            }
+        });
+    }
 }
 
 /// The Inspector fields of a text element: its words, size and colour,
@@ -1723,6 +1794,64 @@ pub(crate) mod tests {
         assert_eq!(the_shapes(&mut engine)[0].fill, None);
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine)[0].fill, Some(blue));
+    }
+
+    // S38-08: the outline and the corner radius change through the engine,
+    // one undo step each.
+    #[test]
+    fn s38_08_outline_and_corner_radius_change_through_the_engine_and_undo() {
+        let mut engine = engine();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let theme = theme();
+        let mut editor = Editor::default();
+        let snapshot = engine.edit().document();
+        let ask = |editor: &mut Editor, engine: &mut Gafira, asked: Asked| {
+            editor.apply(engine, &snapshot, &asked, &theme);
+        };
+        ask(
+            &mut editor,
+            &mut engine,
+            Asked {
+                insert: Some(ShapeGeometry::Rect),
+                ..Asked::default()
+            },
+        );
+        let blue = canvas::document_color(Color32::from_rgb(0, 0, 255));
+        let outline = Some(gafira_doc::ShapeStroke::new(blue, 3.0));
+        ask(
+            &mut editor,
+            &mut engine,
+            Asked {
+                stroke: Some(outline),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(the_shapes(&mut engine)[0].stroke, outline);
+        ask(
+            &mut editor,
+            &mut engine,
+            Asked {
+                corner_radius: Some(12.0),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(the_shapes(&mut engine)[0].corner_radius, 12.0);
+        ask(
+            &mut editor,
+            &mut engine,
+            Asked {
+                stroke: Some(None),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(the_shapes(&mut engine)[0].stroke, None);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine)[0].stroke, outline);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine)[0].corner_radius, 0.0);
+        assert_eq!(the_shapes(&mut engine)[0].stroke, outline);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(the_shapes(&mut engine)[0].stroke, None);
     }
 
     // S24-02
