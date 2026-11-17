@@ -318,3 +318,69 @@ fn s39_02_a_transparent_webp_is_clear_where_there_is_no_content() {
     assert_eq!(pixel(&pixels, width, 5, 5)[3], 0);
     assert!(WebpExporter::new().capabilities().transparency);
 }
+
+/// A page of 100×50 with a red bar of 40×8 centred on (50, 25), turned a
+/// quarter turn clockwise: it stands from y 5 to 45 at x 46..54.
+fn standing_bar() -> Document {
+    let mut at = Placement::new(30.0, 21.0, 40.0, 8.0);
+    at.rotation_deg = 90.0;
+    let bar = Arc::new(Node::new(
+        ElementBase::new(NodeId::new(2), at),
+        NodeKind::Shape(ShapeNode {
+            geometry: ShapeGeometry::Rect,
+            fill: Some(RED),
+            stroke: None,
+            corner_radius: 0.0,
+        }),
+    ));
+    let mut page = Page::new(
+        PageId::new(1),
+        "P".to_owned(),
+        PageSize {
+            width: Length::new(100.0, Unit::Px),
+            height: Length::new(50.0, Unit::Px),
+        },
+    );
+    page.roots.push(bar.base.id);
+    page.nodes.insert(bar.base.id, bar);
+    Document::from_parts(3, Dpi::default(), vec![Arc::new(page)]).expect("the document validates")
+}
+
+// S41-20: the JPG and the WebP draw a turned element where the canvas
+// shows it (spec 041).
+#[test]
+fn s41_20_jpeg_and_webp_draw_a_turned_element() {
+    let red = [255, 0, 0, 255];
+    let white = [255, 255, 255, 255];
+    let mut sink = MemSink::default();
+    export(
+        &JpegExporter::new(),
+        &standing_bar(),
+        &request("jpeg", &[]),
+        &mut sink,
+    )
+    .expect("the export runs");
+    let (width, _, pixels) = decode(&sink.bytes(0));
+    assert!(
+        near(pixel(&pixels, width, 50, 8), red, 8),
+        "the top of the bar"
+    );
+    let low = pixel(&pixels, width, 50, 36);
+    assert!(near(low, red, 8), "{low:?}");
+    assert!(
+        near(pixel(&pixels, width, 34, 25), white, 4),
+        "its unturned box"
+    );
+    let mut sink = MemSink::default();
+    export(
+        &WebpExporter::new(),
+        &standing_bar(),
+        &request("webp", &[]),
+        &mut sink,
+    )
+    .expect("the export runs");
+    let (width, _, pixels, _) = decode_webp(&sink.bytes(0));
+    assert_eq!(pixel(&pixels, width, 50, 8), red);
+    assert_eq!(pixel(&pixels, width, 34, 25)[3], 255, "opaque white page");
+    assert_eq!(pixel(&pixels, width, 34, 25), white);
+}

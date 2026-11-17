@@ -422,3 +422,57 @@ fn s32_05_the_image_takes_the_scale_and_the_opacity_of_its_element() {
     assert!(near(blue, [188, 188, 255, 255]), "{blue:?}");
     assert_eq!(pixel(&pixels, width, 110, 40), [255, 255, 255, 255]);
 }
+
+/// The PNG of [`image_document`] with its image turned by `rotation` and
+/// mirrored left to right when `flip`.
+fn turned_png(rotation: f64, flip: bool) -> (u32, Vec<u8>) {
+    let mut document = image_document(1.0);
+    let mut page = document.page(PageId::new(1)).expect("the page").clone();
+    let mut node = (**page.nodes.get(&NodeId::new(2)).expect("the image")).clone();
+    node.base.placement.rotation_deg = rotation;
+    node.base.placement.flip.x = flip;
+    page.nodes.insert(NodeId::new(2), Arc::new(node));
+    document = Document::from_parts_with_assets(
+        3,
+        Dpi::default(),
+        vec![Arc::new(page)],
+        document.assets().clone(),
+    )
+    .expect("the document validates");
+    let mut sink = MemSink::default();
+    export_with(&document, photo(), &request(&[1], 1.0, false), &mut sink)
+        .expect("the export runs");
+    let (width, _, pixels, _) = decode(&sink.bytes(0));
+    (width, pixels)
+}
+
+// S41-20: the export draws an element turned about its centre and mirrored
+// in its box, the transform the canvas shows (spec 041).
+#[test]
+fn s41_20_a_png_draws_the_image_turned_and_flipped() {
+    const RED: [u8; 4] = [255, 0, 0, 255];
+    const BLUE: [u8; 4] = [0, 0, 255, 255];
+    const WHITE: [u8; 4] = [255, 255, 255, 255];
+    let (width, flipped) = turned_png(0.0, true);
+    assert_eq!(
+        pixel(&flipped, width, 12, 12),
+        BLUE,
+        "mirrored: blue on the left"
+    );
+    assert_eq!(pixel(&flipped, width, 48, 28), RED);
+    // A quarter turn clockwise about (30, 20): the box stands from y 0 to
+    // 40 at x 20..40, its left half (red) on top.
+    let (width, turned) = turned_png(90.0, false);
+    assert_eq!(pixel(&turned, width, 30, 4), RED, "the left half on top");
+    assert_eq!(pixel(&turned, width, 30, 36), BLUE);
+    assert_eq!(
+        pixel(&turned, width, 12, 20),
+        WHITE,
+        "the unturned box is empty"
+    );
+    assert_eq!(pixel(&turned, width, 30, 45), WHITE);
+    // Turned and flipped, the right half (blue) is on top.
+    let (width, both) = turned_png(90.0, true);
+    assert_eq!(pixel(&both, width, 30, 4), BLUE);
+    assert_eq!(pixel(&both, width, 30, 36), RED);
+}
