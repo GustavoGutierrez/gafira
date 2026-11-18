@@ -449,6 +449,16 @@ struct Asked {
     zoom: Option<ZoomAsk>,
 }
 
+impl Asked {
+    /// The keys held during a drag (D-90): Shift frees a corner or snaps
+    /// a turn, Alt resizes from the centre and Ctrl lets the magnet go.
+    fn hold_keys(&mut self, keys: resize::DragKeys) {
+        self.snap = keys.shift;
+        self.centre = keys.centre;
+        self.free = keys.free;
+    }
+}
+
 /// What the top bar shows about the session.
 struct Header<'a> {
     can_undo: bool,
@@ -2026,10 +2036,7 @@ impl Editor {
                                 // Only the state of the keys counts (D-90):
                                 // Shift frees a corner, Alt resizes from the
                                 // centre and Ctrl lets the magnet go.
-                                let keys = resize::drag_keys(ui.input(|i| i.modifiers));
-                                asked.snap = keys.shift;
-                                asked.centre = keys.centre;
-                                asked.free = keys.free;
+                                asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
                             }
                         }
                         if let Some(marquee) = self.marquee {
@@ -6026,6 +6033,12 @@ pub(crate) mod tests {
             let to = placements(engine, &[rect])[0];
             (to.x, to.y, to.w, to.h)
         };
+        // The keys reach the drag as the canvas reads them.
+        let mut asked = Asked::default();
+        asked.hold_keys(resize::drag_keys(Modifiers::ALT.plus(Modifiers::SHIFT)));
+        assert_eq!((asked.snap, asked.centre, asked.free), (true, true, false));
+        asked.hold_keys(resize::drag_keys(Modifiers::COMMAND));
+        assert_eq!((asked.snap, asked.centre, asked.free), (false, false, true));
         let alt = resize::drag_keys(Modifiers::ALT);
         let at = drag(&mut engine, &mut editor, corner, Vec2::new(30.0, 5.0), alt);
         assert_eq!(at, (330.0, 330.0, 420.0, 420.0), "kept, from the centre");
