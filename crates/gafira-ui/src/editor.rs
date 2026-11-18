@@ -880,10 +880,7 @@ impl Editor {
                 asked.home = true;
             }
             ui.add_space(12.0);
-            let file = RichText::new(texts.t(&gafira_doc::msg!("menu.file")))
-                .font(theme.font("ui-label"))
-                .color(theme.c("topbar.fg.muted"));
-            ui.menu_button(file, |ui| {
+            widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.file")), |ui| {
                 ui.set_min_width(200.0);
                 if ui.button(texts.t(&gafira_doc::msg!("file.new"))).clicked() {
                     asked.home = true;
@@ -916,10 +913,7 @@ impl Editor {
                     ui.close();
                 }
             });
-            let edit = RichText::new(texts.t(&gafira_doc::msg!("menu.edit")))
-                .font(theme.font("ui-label"))
-                .color(theme.c("topbar.fg.muted"));
-            ui.menu_button(edit, |ui| {
+            widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.edit")), |ui| {
                 ui.set_min_width(200.0);
                 let undo = egui::Button::new(texts.t(&gafira_doc::msg!("editor.undo")))
                     .shortcut_text(keys_text(ui.ctx(), &UNDO));
@@ -1009,10 +1003,7 @@ impl Editor {
                 }
                 arrange_menu(ui, texts, can, asked);
             });
-            let view = RichText::new(texts.t(&gafira_doc::msg!("menu.view")))
-                .font(theme.font("ui-label"))
-                .color(theme.c("topbar.fg.muted"));
-            ui.menu_button(view, |ui| {
+            widgets::topbar_menu(ui, theme, texts.t(&gafira_doc::msg!("menu.view")), |ui| {
                 ui.set_min_width(200.0);
                 // Reglas, Guías and Imán (03 §2.2, spec 044).
                 let now = self.shown;

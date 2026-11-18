@@ -284,6 +284,66 @@ fn focus_ring(painter: &egui::Painter, theme: &Theme, rect: Rect) {
     );
 }
 
+/// A menu of the graphite top bar (Archivo, Edición, Ver): no fill at rest
+/// and `topbar.hover` when pointed at or open, with the `topbar.*` text, in
+/// both themes. egui's own menu button takes the panel colours of the
+/// light theme, a light chip under light text on the graphite bar. The
+/// menu itself opens with the window's style.
+pub(crate) fn topbar_menu(
+    ui: &mut Ui,
+    theme: &Theme,
+    text: String,
+    add: impl FnOnce(&mut Ui),
+) -> Response {
+    ui.scope(|ui| {
+        topbar_menu_visuals(ui.visuals_mut(), theme);
+        let label = RichText::new(text).font(theme.font("ui-label"));
+        ui.menu_button(label, |ui| {
+            *ui.style_mut() = (*ui.ctx().style()).clone();
+            add(ui);
+        })
+        .response
+    })
+    .inner
+}
+
+/// The widget colours of [`topbar_menu`]'s button.
+fn topbar_menu_visuals(visuals: &mut egui::Visuals, theme: &Theme) {
+    // The window's text colour would win over the states' own colours.
+    visuals.override_text_color = None;
+    let widgets = &mut visuals.widgets;
+    let rest = &mut widgets.inactive;
+    rest.weak_bg_fill = egui::Color32::TRANSPARENT;
+    rest.bg_fill = egui::Color32::TRANSPARENT;
+    rest.bg_stroke = Stroke::NONE;
+    rest.fg_stroke.color = theme.c("topbar.fg.muted");
+    for state in [&mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        state.weak_bg_fill = theme.c("topbar.hover");
+        state.bg_fill = theme.c("topbar.hover");
+        state.bg_stroke = Stroke::NONE;
+        state.fg_stroke.color = theme.c("topbar.fg");
+        state.expansion = 0.0;
+    }
+}
+
+/// The pointing hand over anything that is only clicked (buttons, menus,
+/// tabs, rows), like the tool rail: run once at the end of every pass.
+/// Widgets that are also dragged (the canvas, fields, sliders) and any
+/// cursor a widget already chose (resize arrows, grab) are left alone.
+pub(crate) fn pointing_hand(ctx: &egui::Context) {
+    if ctx.output(|o| o.cursor_icon) != egui::CursorIcon::Default {
+        return;
+    }
+    let hovered = ctx.interaction_snapshot(|s| s.hovered.clone());
+    let clickable = hovered.into_iter().any(|id| {
+        ctx.read_response(id)
+            .is_some_and(|r| r.enabled() && r.sense.senses_click() && !r.sense.senses_drag())
+    });
+    if clickable {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+}
+
 /// The graphite top bar of every screen (03 §7.1: 48 px).
 pub(crate) fn topbar(ctx: &egui::Context, theme: &Theme, id: &str, add: impl FnOnce(&mut Ui)) {
     egui::TopBottomPanel::top(id.to_owned())
@@ -361,5 +421,91 @@ mod tests {
         };
         assert_eq!(toggled("Piezas"), Some(Toggled::True));
         assert_eq!(toggled("Texto"), Some(Toggled::False));
+    }
+}
+
+#[cfg(test)]
+mod topbar_menu_tests {
+    use super::*;
+
+    // The menus of the graphite bar never draw a light chip under their
+    // light text: no fill at rest, `topbar.hover` when pointed at or open,
+    // and `topbar.*` text, in the light theme as in the dark one.
+    #[test]
+    fn topbar_menus_take_the_bar_colours_in_both_themes() {
+        let tokens = gafira_theme::ThemeTokens::embedded().expect("tokens");
+        for dark in [false, true] {
+            let mut theme = Theme::new(tokens.clone());
+            theme.dark = dark;
+            let mut visuals = if dark {
+                egui::Visuals::dark()
+            } else {
+                egui::Visuals::light()
+            };
+            topbar_menu_visuals(&mut visuals, &theme);
+            let w = &visuals.widgets;
+            assert_eq!(w.inactive.weak_bg_fill, egui::Color32::TRANSPARENT);
+            assert_eq!(w.inactive.fg_stroke.color, theme.c("topbar.fg.muted"));
+            assert_eq!(visuals.override_text_color, None);
+            for state in [&w.hovered, &w.active, &w.open] {
+                assert_eq!(state.weak_bg_fill, theme.c("topbar.hover"));
+                assert_eq!(state.fg_stroke.color, theme.c("topbar.fg"));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod pointing_hand_tests {
+    use super::*;
+
+    fn cursor_over(widget: impl Fn(&mut Ui)) -> egui::CursorIcon {
+        let ctx = egui::Context::default();
+        let mut cursor = egui::CursorIcon::Default;
+        for _ in 0..3 {
+            let mut input = egui::RawInput::default();
+            input
+                .events
+                .push(egui::Event::PointerMoved(egui::pos2(20.0, 15.0)));
+            let output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| widget(ui));
+                pointing_hand(ctx);
+            });
+            cursor = output.platform_output.cursor_icon;
+        }
+        cursor
+    }
+
+    // A button shows the hand; a widget that is also dragged keeps its own
+    // cursor, and so does a cursor some widget already set.
+    #[test]
+    fn buttons_show_the_hand_and_dragged_widgets_do_not() {
+        assert_eq!(
+            cursor_over(|ui| {
+                ui.add_sized([200.0, 100.0], Button::new("Abrir"));
+            }),
+            egui::CursorIcon::PointingHand
+        );
+        assert_eq!(
+            cursor_over(|ui| {
+                ui.allocate_exact_size(Vec2::new(200.0, 100.0), Sense::click_and_drag());
+            }),
+            egui::CursorIcon::Default
+        );
+        assert_eq!(
+            cursor_over(|ui| {
+                ui.add_sized([200.0, 100.0], Button::new("Abrir"))
+                    .on_hover_cursor(egui::CursorIcon::ResizeNwSe);
+            }),
+            egui::CursorIcon::ResizeNwSe
+        );
+        assert_eq!(
+            cursor_over(|ui| {
+                ui.add_enabled_ui(false, |ui| {
+                    ui.add_sized([200.0, 100.0], Button::new("Abrir"));
+                });
+            }),
+            egui::CursorIcon::Default
+        );
     }
 }

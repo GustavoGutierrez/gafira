@@ -158,6 +158,11 @@ pub fn run(config: UiConfig) -> eframe::Result {
         options,
         Box::new(move |cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            // The pointing hand over every button, menu and tab (03 §8.1).
+            cc.egui_ctx.on_end_pass(
+                "pointing-hand",
+                Arc::new(|ctx: &egui::Context| crate::widgets::pointing_hand(ctx)),
+            );
             // Ctrl+= / Ctrl+- / Ctrl+0 zoom the canvas (03 §9.2, spec 037),
             // not the whole interface.
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
