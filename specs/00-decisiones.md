@@ -792,3 +792,11 @@ Fecha: 17 de noviembre de 2026.
 - **Decisión** (titular): los atajos de Alinear dejan `Ctrl+Alt+L/C/R`, porque `Ctrl+Alt+L` bloquea la sesión en algunos escritorios Linux. Pasan a `Alt` con una letra, y las seis acciones tienen atajo: `Alt+A` izquierda, `Alt+H` centro horizontal, `Alt+D` derecha, `Alt+W` arriba, `Alt+V` medio vertical y `Alt+S` abajo.
 - **Consecuencia**: cuentan solo con `Alt` exacto. AltGr no los dispara: en Windows llega como `Ctrl+Alt` y en Linux no llega como `Alt`, así que los caracteres que el teclado español escribe con AltGr no alinean. No chocan con los atajos de 03 §9.2 (`Shift+H` y `Shift+V` voltean; `W` del Editor de video no lleva modificador). `Ctrl+Alt+C` vuelve a ser una copia, como la convierte la ventana. Se aplica en la spec 044.
 - Precisa 03 §9.2 y 04 FD-11. Aplicado a 03 (§9.2) y 04 (FD-11).
+
+## D-89 Las esquinas conservan la proporción
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): al redimensionar, los cuatro tiradores de esquina conservan la proporción del elemento por defecto, con la esquina opuesta fija; mantener `Shift` mientras se arrastra la libera. Los tiradores de lado siguen cambiando una sola dimensión. Vale para formas, imágenes, cajas de texto y grupos, y para lo girado en sus propios ejes.
+- **Consecuencia**: invierte lo que decía 03 §9.1 («`Shift` conserva la proporción»). El Imán engancha el borde que manda y el otro lado sigue la proporción. El tamaño mínimo (1 px) y arrastrar más allá de la esquina opuesta no rompen la proporción. Se aplica en la spec 045.
+- Precisa 03 §9.1. Aplicado a 03 (§9.1 y §9.2).
