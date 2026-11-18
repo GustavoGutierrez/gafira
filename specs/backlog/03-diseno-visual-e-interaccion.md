@@ -1091,7 +1091,7 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 ### 9.1 Selección y manipulación directa
 
 - **Seleccionar**: clic; `Shift+clic` suma; arrastrar en vacío traza un marco de selección; `Ctrl/Cmd+A` selecciona todo; doble clic entra en un grupo o en un texto; `Esc` sale. La selección responde en < 16 ms (cifra de la spec técnica).
-- **Mover**: arrastre a 60 fps con 100 capas (cifra de la spec técnica); `Imán` atrae a guías, bordes de página, centros, márgenes y cuadrícula (umbral 6 px de pantalla, PROPUESTA) y muestra la distancia a los vecinos; `Alt` desactiva el Imán durante el arrastre.
+- **Mover**: arrastre a 60 fps con 100 capas (cifra de la spec técnica); `Imán` atrae a guías, bordes de página, centros, márgenes y cuadrícula (umbral 6 px de pantalla, PROPUESTA) y muestra la distancia a los vecinos; `Alt` desactiva el Imán durante el arrastre. Las flechas mueven 1 px (10 con `Shift`), y las pulsaciones a menos de 500 ms unas de otras son un solo paso de deshacer (02 §4.3; spec 044).
 - **Redimensionar y girar**: 8 asas y asa de giro; `Shift` conserva la proporción, `Alt` redimensiona desde el centro, `Shift` al girar ajusta a 15°. La caja de selección indica cuánto sobresale de la página (02, §3.2, `layout::overflow`).
 - **Recortar**: doble clic sobre una imagen o tecla `C` entra en el modo de recorte con asas visibles.
 - **Duplicar**: `Alt+arrastrar` o `Ctrl/Cmd+D`.
