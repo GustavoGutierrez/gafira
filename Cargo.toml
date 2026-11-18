@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*"]
+members = ["crates/*", "apps/*", "xtask"]
 
 [workspace.package]
 version = "0.1.0-beta.2"
@@ -67,6 +67,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 image-webp = "0.2"
 # FD-56, 02 §9.2: PDF export; only the feature that draws images (no text shaping).
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images"] }
+# Spec 046: `xtask gen-icons` rasterizes the brand SVGs (DIS-13); already in the tree through egui_extras.
+resvg = { version = "0.45", default-features = false }
 # Reads the exported PDF back in the gafira-io-pdf tests.
 hayro-syntax = { version = "0.9", default-features = false, features = ["std"] }
 
