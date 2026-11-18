@@ -36,6 +36,22 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
+## Icons and Linux install
+
+The application and `.gaf` icons are generated from the brand SVGs (`specs/done/046-application-icon.md`):
+
+```
+cargo xtask gen-icons            # writes assets/app-icon/hicolor/
+cargo xtask gen-icons --check    # fails if a tracked icon is stale
+```
+
+Per-user install on Linux (builds nothing; `--uninstall` removes it):
+
+```
+cargo build --release --locked -p gafira
+packaging/linux/install.sh [path/to/gafira]
+```
+
 ## Repository layout
 
 | Path | Content |
@@ -44,6 +60,8 @@ cargo test --workspace --locked
 | `apps/` | Binaries (`gafira-cli`; the GUI app comes later) |
 | `specs/` | Numbered specs (in Spanish): active in `specs/`, not started in `specs/backlog/`, closed in `specs/done/` (index and next free ID in `specs/README.md`). Product reference documents `00-..07-*.md` (`00-decisiones.md` holds the owner decisions); the earlier flow's changes, history and capabilities are in `specs/done/legacy/` |
 | `assets/` | Splash screen, design tokens (`theme/gafira.tokens.json`, loaded by `gafira-theme`), UI catalogs (`i18n/es.toml`, `i18n/en.toml`, compiled into `gafira-i18n`), fonts and other design assets (logos live in `docs/manuals/marca/assets/`) |
+| `xtask/` | Repository tasks (`cargo xtask gen-icons`) |
+| `packaging/` | Desktop integration (`linux/`: desktop entry, `.gaf` MIME type, `install.sh`) |
 | `.agents/` | Skills and the `manual-writer` agent, the single source for every runtime; `.claude/`, `.opencode/` and `.pi/` link to it (`python3 tools/sync_agents.py`) |
 
 ## Development workflow
