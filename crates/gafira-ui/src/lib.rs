@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+mod app_icon;
 mod arrange;
 mod canvas;
 mod clipboard;

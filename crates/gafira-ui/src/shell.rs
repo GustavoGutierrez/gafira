@@ -10,6 +10,7 @@ use gafira_ports::i18n::LanguagePreference;
 use gafira_ports::i18n::Locale;
 use gafira_ports::settings::Appearance;
 
+use crate::app_icon;
 use crate::settings::{self, Change, SettingsView};
 use gafira_theme::ThemeTokens;
 
@@ -146,11 +147,17 @@ struct Shell {
 /// When the window or its graphics context cannot be created.
 pub fn run(config: UiConfig) -> eframe::Result {
     let tokens = ThemeTokens::embedded().map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("Gafira")
+        .with_app_id(app_icon::APP_ID)
+        .with_inner_size([1440.0, 900.0])
+        .with_min_inner_size([1280.0, 720.0]);
+    // Spec 046: an icon that cannot be decoded leaves the system's default.
+    if let Some(icon) = app_icon::window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Gafira")
-            .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([1280.0, 720.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(
