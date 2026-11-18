@@ -478,3 +478,30 @@ fn s43_19_nested_groups_round_trip_through_the_gaf() {
     let turned = page.node(gafira_doc::NodeId::new(22)).expect("a node");
     assert_eq!(turned.base.placement.rotation_deg, 45.0);
 }
+
+// S44-18: page guides, in px and in mm, locked or not, round-trip through
+// the `.gaf` unrounded and in their order, in schema version 1: `Page.guides`
+// is part of the format since spec 019, so spec 044 needs no new version.
+#[test]
+fn s44_18_page_guides_round_trip_through_the_gaf() {
+    let mut json: Value = serde_json::from_str(&document().to_json().expect("json")).expect("json");
+    json["pages"][0]["guides"] = json!([
+        {"axis": "vertical", "position": {"value": 333.333_333_333, "unit": "px"}},
+        {"axis": "horizontal", "position": {"value": 12.5, "unit": "mm"}, "locked": true},
+        {"axis": "vertical", "position": {"value": -40.0, "unit": "px"}},
+    ]);
+    let guided = Document::from_json(&serde_json::to_vec(&json).expect("bytes"))
+        .expect("the document with guides loads");
+    let loaded = read(gaf(&guided)).expect("reads");
+    assert_eq!(loaded.document, guided);
+    assert_eq!(loaded.document.schema_version(), 1);
+    assert_eq!(
+        serde_json::to_value(&loaded.document.pages()[0].guides).expect("json"),
+        json!([
+            {"axis": "vertical", "position": {"value": 333.333_333_333, "unit": "px"},
+                "locked": false},
+            {"axis": "horizontal", "position": {"value": 12.5, "unit": "mm"}, "locked": true},
+            {"axis": "vertical", "position": {"value": -40.0, "unit": "px"}, "locked": false},
+        ])
+    );
+}

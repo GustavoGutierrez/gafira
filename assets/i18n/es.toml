@@ -175,6 +175,9 @@ cancel = "Cancelar"
 
 [view]
 dark_mode = "Modo oscuro"
+rulers = "Reglas"
+guides = "Guías"
+magnet = "Imán"
 
 [nav]
 home = "Inicio"

@@ -23,6 +23,49 @@ pub struct Settings {
     /// Light or dark interface (D-82, spec 021): `"light"` (default),
     /// `"dark"` or `"system"` (spec 034).
     pub appearance: Appearance,
+    /// Ver → Reglas, Guías and Imán (spec 044). Written only when one of
+    /// them is off, so a file with the defaults reads and writes as before.
+    #[serde(skip_serializing_if = "ViewSettings::is_default")]
+    pub view: ViewSettings,
+}
+
+/// What the canvas shows and whether the magnet attracts (03 §2.2 «Ver»,
+/// FD-03, FD-06; spec 044). All on by default: the magnet is on by default
+/// (FD-06, D-28). A missing key reads as on.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ViewSettings {
+    /// The rulers along the top and the left of the canvas.
+    pub rulers: bool,
+    /// The page guides are drawn and attract the magnet.
+    pub guides: bool,
+    /// The magnet (Imán) snaps moves and resizes.
+    pub magnet: bool,
+}
+
+impl Default for ViewSettings {
+    fn default() -> Self {
+        Self::new(true, true, true)
+    }
+}
+
+impl ViewSettings {
+    /// Rulers, guides and magnet on or off.
+    #[must_use]
+    pub const fn new(rulers: bool, guides: bool, magnet: bool) -> Self {
+        Self {
+            rulers,
+            guides,
+            magnet,
+        }
+    }
+
+    /// Whether every switch has its default value.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// The interface mode (03 §3, D-82). Any text other than `"dark"` reads as
@@ -44,6 +87,13 @@ impl Settings {
     #[must_use]
     pub const fn with_appearance(mut self, appearance: Appearance) -> Self {
         self.appearance = appearance;
+        self
+    }
+
+    /// These settings with `view` in place of the current one (spec 044).
+    #[must_use]
+    pub const fn with_view(mut self, view: ViewSettings) -> Self {
+        self.view = view;
         self
     }
 

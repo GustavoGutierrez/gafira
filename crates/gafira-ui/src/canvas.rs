@@ -336,6 +336,9 @@ pub(crate) fn grip_hit(transform: Affine, placement: &Placement, pointer: Pos2) 
         .map(|(grip, _)| grip)
 }
 
+/// The smallest side a resize leaves, in px of page.
+pub(crate) const MIN_SIDE: f64 = 1.0;
+
 /// `origin` resized by dragging `handle` `offset` screen px at `zoom`. The
 /// opposite edge stays put; a side never gets smaller than 1 px.
 ///

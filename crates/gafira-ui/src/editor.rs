@@ -9,12 +9,13 @@ use egui::{
     Vec2,
 };
 use gafira_doc::msg::MessageKey;
-use gafira_doc::{Document, NodeId, Page, PageId, Placement, ShapeGeometry};
+use gafira_doc::{Document, GuideAxis, GuideSet, NodeId, Page, PageId, Placement, ShapeGeometry};
 use gafira_edit::{
     Command, GestureId, InsertNodes, InsertPage, Property, RemoveNodes, SetProperty, Transaction,
 };
 use gafira_engine::Gafira;
 use gafira_layout::{AlignAction, DistributeAxis};
+use gafira_ports::settings::ViewSettings;
 use gafira_theme::Shadow;
 
 use crate::arrange::{self, Order};
@@ -24,7 +25,10 @@ use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
+use crate::magnet::{self, Snap};
+use crate::resize;
 use crate::rotation::{self, Axis};
+use crate::ruler;
 use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
@@ -69,13 +73,21 @@ const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Ke
 const GROUP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
 const UNGROUP: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::G);
-/// Alinear and Orden de apilado (03 §9.2 «Capas», spec 042).
-const ALIGN_LEFT: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::L);
-const ALIGN_CENTER: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::C);
-const ALIGN_RIGHT: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::R);
+/// Alinear (03 §9.2 «Capas», D-88): Alt with one letter, never Ctrl+Alt,
+/// which locks the screen on some Linux desktops and is AltGr on Windows.
+const ALIGN_LEFT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::A);
+const ALIGN_CENTER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::H);
+const ALIGN_RIGHT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::D);
+const ALIGN_TOP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::W);
+const ALIGN_MIDDLE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::V);
+const ALIGN_BOTTOM: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::S);
+/// Ver → Reglas, Guías and Imán (03 §9.2, FD-03, FD-06; spec 044).
+const RULERS: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::R);
+const GUIDES: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Semicolon);
+const MAGNET: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Quote);
+/// Orden de apilado (03 §9.2 «Capas», spec 042).
 const FORWARD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::CloseBracket);
 const BACKWARD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::OpenBracket);
 const FRONT: KeyboardShortcut =
@@ -84,7 +96,7 @@ const BACK: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::OpenBracket);
 
 /// The six Align actions with their catalog key, icon and shortcut, in the
-/// order of FD-11; only left, centre and right have one (03 §9.2).
+/// order of FD-11 (03 §9.2, D-88).
 const ALIGNS: [(AlignAction, &str, Icon, Option<KeyboardShortcut>); 6] = [
     (
         AlignAction::Left,
@@ -104,18 +116,23 @@ const ALIGNS: [(AlignAction, &str, Icon, Option<KeyboardShortcut>); 6] = [
         Icon::AlignRight,
         Some(ALIGN_RIGHT),
     ),
-    (AlignAction::Top, "arrange.align_top", Icon::AlignTop, None),
+    (
+        AlignAction::Top,
+        "arrange.align_top",
+        Icon::AlignTop,
+        Some(ALIGN_TOP),
+    ),
     (
         AlignAction::Middle,
         "arrange.align_middle",
         Icon::AlignMiddle,
-        None,
+        Some(ALIGN_MIDDLE),
     ),
     (
         AlignAction::Bottom,
         "arrange.align_bottom",
         Icon::AlignBottom,
-        None,
+        Some(ALIGN_BOTTOM),
     ),
 ];
 
@@ -252,6 +269,24 @@ pub(crate) struct Editor {
     clip: Option<Arc<Clip>>,
     /// A copy waits for its plain text on the system clipboard.
     copied: bool,
+    /// Ver → Reglas, Guías and Imán (spec 044), read from the settings on
+    /// the first frame.
+    shown: ViewSettings,
+    shown_loaded: bool,
+    /// A guide being dragged from a ruler or along the page (spec 044).
+    guide_drag: Option<GuideDrag>,
+    /// What the magnet snapped to in the drag in progress, for the smart
+    /// guides (spec 044).
+    snapped: Option<(PageId, Snap)>,
+}
+
+/// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
+/// (`index` is `None`) or one of the page's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct GuideDrag {
+    page: PageId,
+    axis: GuideAxis,
+    index: Option<usize>,
 }
 
 struct Drag {
@@ -308,6 +343,10 @@ impl Default for Editor {
             open: BTreeSet::new(),
             clip: None,
             copied: false,
+            shown: ViewSettings::default(),
+            shown_loaded: false,
+            guide_drag: None,
+            snapped: None,
         }
     }
 }
@@ -339,6 +378,14 @@ struct Asked {
     drag_to: Option<Vec2>,
     /// Shift is held during the drag: a turn snaps to 15° (FD-06).
     snap: bool,
+    /// Alt is held during the drag: the magnet lets go (FD-06, 03 §9.1).
+    free: bool,
+    /// An arrow moved the selection by this much, in px of page (03 §9.2).
+    nudge: Option<(f64, f64)>,
+    /// Ver → Reglas, Guías or Imán switched (spec 044).
+    shown: Option<ViewSettings>,
+    /// A guide created, moved or deleted: the page's new guide set.
+    guides: Option<(PageId, GuideSet)>,
     /// Turn every selected element by these degrees about its centre
     /// (Edición, Inspector; spec 041).
     turn: Option<f64>,
@@ -599,6 +646,10 @@ impl Editor {
             name: project_name(engine.projects().path().as_deref()),
             notice,
         };
+        if !self.shown_loaded {
+            self.shown = engine.settings().get().view;
+            self.shown_loaded = true;
+        }
         let mut asked = Asked::default();
         ctx.input(|i| {
             if i.modifiers.command && i.key_pressed(egui::Key::S) {
@@ -674,11 +725,9 @@ impl Editor {
                     asked.duplicate = true;
                 }
                 // The window turns Ctrl+C, Ctrl+X and Ctrl+V into clipboard
-                // events, also with Alt held, so Ctrl+Alt+C arrives as a
-                // copy and aligns to the centre here (spec 042). A paste
-                // carries the system clipboard: it pastes the clip only when
-                // that text is the one the copy put there; other text is not
-                // pasted (spec 043).
+                // events. A paste carries the system clipboard: it pastes the
+                // clip only when that text is the one the copy put there;
+                // other text is not pasted (spec 043).
                 if i.modifiers.matches_exact(Modifiers::COMMAND) {
                     asked.copy |= i.key_pressed(egui::Key::C);
                     asked.cut |= i.key_pressed(egui::Key::X);
@@ -686,9 +735,6 @@ impl Editor {
                 }
                 for event in &i.events {
                     match event {
-                        egui::Event::Copy if i.modifiers.alt => {
-                            asked.align = Some(AlignAction::Center);
-                        }
                         egui::Event::Copy => asked.copy = true,
                         egui::Event::Cut => asked.cut = true,
                         egui::Event::Paste(text)
@@ -699,17 +745,14 @@ impl Editor {
                         _ => {}
                     }
                 }
-                // Ctrl+Alt+L/C/R align (03 §9.2); a platform shortcut on
-                // the same keys wins before it reaches the window.
-                if i.modifiers
-                    .matches_exact(Modifiers::COMMAND.plus(Modifiers::ALT))
-                {
-                    for (key, action) in [
-                        (egui::Key::L, AlignAction::Left),
-                        (egui::Key::C, AlignAction::Center),
-                        (egui::Key::R, AlignAction::Right),
-                    ] {
-                        if i.key_pressed(key) {
+                // Alt+A/H/D and Alt+W/V/S align (03 §9.2, D-88). Only Alt
+                // exactly: AltGr is Ctrl+Alt on Windows and no Alt on Linux,
+                // so a character typed with AltGr never aligns.
+                if i.modifiers.matches_exact(Modifiers::ALT) {
+                    for (action, _, _, keys) in ALIGNS {
+                        if let Some(keys) = keys
+                            && i.key_pressed(keys.logical_key)
+                        {
                             asked.align = Some(action);
                         }
                     }
@@ -729,6 +772,41 @@ impl Editor {
                     } else if open {
                         asked.order = Some(if shift { Order::Back } else { Order::Backward });
                     }
+                }
+                // Arrows nudge 1 px, with Shift 10 px (03 §9.2); a held key
+                // repeats, and the steps within 500 ms are one undo step
+                // (02 §4.3).
+                if i.modifiers.matches_exact(Modifiers::NONE)
+                    || i.modifiers.matches_exact(Modifiers::SHIFT)
+                {
+                    for key in [
+                        egui::Key::ArrowLeft,
+                        egui::Key::ArrowRight,
+                        egui::Key::ArrowUp,
+                        egui::Key::ArrowDown,
+                    ] {
+                        if i.key_pressed(key)
+                            && let Some((dx, dy)) = magnet::nudge(key, i.modifiers.shift)
+                        {
+                            let (x, y) = asked.nudge.unwrap_or_default();
+                            asked.nudge = Some((x + dx, y + dy));
+                        }
+                    }
+                }
+                // Ctrl+Shift+R rulers, Ctrl+; guides (Shift may be needed to
+                // type `;`), Ctrl+Shift+' magnet (03 §9.2, FD-03, FD-06).
+                let mut view = self.shown;
+                if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::R) {
+                    view.rulers = !view.rulers;
+                }
+                if i.modifiers.command && !i.modifiers.alt && i.key_pressed(egui::Key::Semicolon) {
+                    view.guides = !view.guides;
+                }
+                if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Quote) {
+                    view.magnet = !view.magnet;
+                }
+                if view != self.shown {
+                    asked.shown = Some(view);
                 }
                 if i.modifiers.matches_exact(Modifiers::SHIFT) {
                     if i.key_pressed(egui::Key::H) {
@@ -936,6 +1014,36 @@ impl Editor {
                 .color(theme.c("topbar.fg.muted"));
             ui.menu_button(view, |ui| {
                 ui.set_min_width(200.0);
+                // Reglas, Guías and Imán (03 §2.2, spec 044).
+                let now = self.shown;
+                for (key, keys, on, flip) in [
+                    (
+                        "view.rulers",
+                        RULERS,
+                        now.rulers,
+                        ViewSettings::new(!now.rulers, now.guides, now.magnet),
+                    ),
+                    (
+                        "view.guides",
+                        GUIDES,
+                        now.guides,
+                        ViewSettings::new(now.rulers, !now.guides, now.magnet),
+                    ),
+                    (
+                        "view.magnet",
+                        MAGNET,
+                        now.magnet,
+                        ViewSettings::new(now.rulers, now.guides, !now.magnet),
+                    ),
+                ] {
+                    let item = egui::Button::selectable(on, plain(texts, key))
+                        .shortcut_text(keys_text(ui.ctx(), &keys));
+                    if ui.add(item).clicked() {
+                        asked.shown = Some(flip);
+                        ui.close();
+                    }
+                }
+                ui.separator();
                 let mut dark = theme.dark;
                 if ui
                     .checkbox(&mut dark, texts.t(&gafira_doc::msg!("view.dark_mode")))
@@ -1039,6 +1147,21 @@ impl Editor {
                         )));
                         ui.add_space(16.0);
                         asked.zoom = self.zoom_controls(ui, theme, texts).or(asked.zoom);
+                        ui.add_space(8.0);
+                        // Imán on or off (03 §2.6, FD-06, spec 044).
+                        let name = plain(texts, "view.magnet");
+                        let tooltip = with_keys(ui.ctx(), texts, name.clone(), MAGNET);
+                        let now = self.shown;
+                        if IconButton::new(Icon::Magnet, name)
+                            .active(now.magnet)
+                            .tooltip(tooltip)
+                            .small()
+                            .show(ui, theme)
+                            .clicked()
+                        {
+                            asked.shown =
+                                Some(ViewSettings::new(now.rulers, now.guides, !now.magnet));
+                        }
                     });
                 });
             });
@@ -1525,6 +1648,14 @@ impl Editor {
                     CANVAS_MARGIN,
                 ));
                 let zoom = self.zoom;
+                let dpi = document.map_or(96.0, |d| f64::from(d.dpi().get()));
+                // Each page's id and screen box, for the rulers and the
+                // guides (spec 044).
+                let mut page_rects: Vec<(PageId, Rect)> = Vec::new();
+                let mut guide_hit: Option<GuideDrag> = None;
+                // The cursor of the handle under the pointer or held (spec
+                // 045); it wins over a guide's.
+                let mut grip_cursor: Option<egui::CursorIcon> = None;
                 let width =
                     sizes.iter().map(|s| s.x).fold(0.0, f32::max) * zoom + 2.0 * CANVAS_MARGIN;
                 let height: f32 =
@@ -1700,6 +1831,43 @@ impl Editor {
                                                 egui::StrokeKind::Inside,
                                             );
                                         }
+                                        // The same hit test as the grab: the
+                                        // nearest handle within 24 px.
+                                        grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
+                                            Some(Some(Hold::Resize(handle))) => {
+                                                Some(resize::cursor(turn, handle))
+                                            }
+                                            Some(Some(Hold::Rotate { .. })) => {
+                                                Some(egui::CursorIcon::Grabbing)
+                                            }
+                                            Some(None) => grip_cursor,
+                                            None => response
+                                                .hover_pos()
+                                                .and_then(|at| {
+                                                    canvas::grip_hit(turn, &shape.placement, at)
+                                                })
+                                                .map(|grip| match grip {
+                                                    canvas::Grip::Resize(handle) => {
+                                                        resize::cursor(turn, handle)
+                                                    }
+                                                    canvas::Grip::Rotate => egui::CursorIcon::Grab,
+                                                })
+                                                .or(grip_cursor),
+                                        };
+                                        if let Some(drag) = &self.drag
+                                            && let Some(Hold::Resize(handle)) = drag.hold
+                                            && let Some((_, from)) = drag.origins.first()
+                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                        {
+                                            size_label(
+                                                painter,
+                                                theme,
+                                                at,
+                                                resize::outward(turn, handle),
+                                                area,
+                                                (from, &shape.placement),
+                                            );
+                                        }
                                         if response.drag_started()
                                             && let Some(pos) = pointer
                                             && let Some(grip) =
@@ -1754,15 +1922,53 @@ impl Editor {
                                     picked = Some((page_doc.id, node));
                                     asked.scope = Some(scope.map(|group| (page_doc.id, group)));
                                 }
+                                // Page guides, and the smart guides of the
+                                // magnet while it holds (FD-03, FD-06).
+                                if self.shown.guides {
+                                    draw_guides(painter, theme, page_doc, dpi, page, rect, zoom);
+                                }
+                                if let Some((_, snap)) =
+                                    self.snapped.filter(|(on, _)| *on == page_doc.id)
+                                {
+                                    draw_snap(painter, theme, &snap, page, zoom);
+                                }
+                                if self.shown.guides
+                                    && response.drag_started()
+                                    && let Some(at) = pointer
+                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
+                                {
+                                    guide_hit = Some(GuideDrag {
+                                        page: page_doc.id,
+                                        axis: page_doc.guides.0[index].axis,
+                                        index: Some(index),
+                                    });
+                                }
+                                if self.shown.guides
+                                    && self.guide_drag.is_none()
+                                    && grip_cursor.is_none()
+                                    && let Some(at) = response.hover_pos()
+                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
+                                {
+                                    ui.ctx().set_cursor_icon(guide_cursor(
+                                        page_doc.guides.0[index].axis,
+                                    ));
+                                }
+                                page_rects.push((page_doc.id, page));
                                 laid.push((page_doc.id, page, shapes));
                             }
                             top = page.max.y + PAGE_GAP;
+                        }
+                        if let Some(icon) = grip_cursor {
+                            ui.ctx().set_cursor_icon(icon);
                         }
                         if let Some(handle) = grabbed {
                             // A handle of the selection wins over whatever
                             // lies under it, and keeps the scope.
                             asked.drag_begin = Some(Some(handle));
                             asked.scope = None;
+                        } else if let Some(held) = guide_hit {
+                            // Then a guide, over the elements (spec 044).
+                            self.guide_drag = Some(held);
                         } else if response.clicked() {
                             // Click selects one; Shift+click toggles it.
                             let mut next = self.selected.clone();
@@ -1814,6 +2020,7 @@ impl Editor {
                             } else if self.drag.is_some() {
                                 asked.drag_to = Some(response.drag_delta());
                                 asked.snap = shift;
+                                asked.free = ui.input(|i| i.modifiers.alt);
                             }
                         }
                         if let Some(marquee) = self.marquee {
@@ -1846,7 +2053,112 @@ impl Editor {
                             }
                         }
                     });
+                self.rulers_and_guides(ui, theme, area, document, &page_rects, asked);
             });
+    }
+
+    /// The rulers along the top and the left of the canvas, a guide dragged
+    /// out of them or along the page, and where it is dropped (FD-03, spec
+    /// 044): on the page it is placed, back on its ruler it is deleted.
+    fn rulers_and_guides(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        area: Rect,
+        document: Option<&Document>,
+        page_rects: &[(PageId, Rect)],
+        asked: &mut Asked,
+    ) {
+        let zoom = self.zoom;
+        // The rulers measure from the corner of the page of the
+        // selection, or the first page.
+        let current = document
+            .and_then(|d| self.current_page(d))
+            .and_then(|page| page_rects.iter().find(|(id, _)| *id == page.id))
+            .or(page_rects.first())
+            .copied();
+        if self.shown.rulers
+            && let Some((page, origin)) = current
+        {
+            for axis in [GuideAxis::Horizontal, GuideAxis::Vertical] {
+                let strip = ruler::strip(axis, area);
+                draw_ruler(ui.painter(), theme, axis, strip, origin, zoom);
+                let response = ui.interact(
+                    strip,
+                    ui.id().with(("ruler", axis == GuideAxis::Horizontal)),
+                    egui::Sense::drag(),
+                );
+                if response.hovered() || response.dragged() {
+                    ui.ctx().set_cursor_icon(guide_cursor(axis));
+                }
+                if response.drag_started() {
+                    self.guide_drag = Some(GuideDrag {
+                        page,
+                        axis,
+                        index: None,
+                    });
+                }
+            }
+            let corner = Rect::from_min_size(area.min, Vec2::splat(ruler::RULER));
+            ui.painter().rect_filled(corner, 0.0, theme.c("surface"));
+        }
+        let Some(held) = self.guide_drag else {
+            return;
+        };
+        let (at, released) = ui.input(|i| (i.pointer.latest_pos(), !i.pointer.primary_down()));
+        let Some(at) = at else {
+            return;
+        };
+        ui.ctx().set_cursor_icon(guide_cursor(held.axis));
+        // A new guide goes to the page of the row it is dropped on.
+        let page = match held.index {
+            Some(_) => Some(held.page),
+            None => ruler::page_at(page_rects, at.y),
+        };
+        let rect = page.and_then(|id| page_rects.iter().find(|(p, _)| *p == id));
+        let on_ruler = ruler::strip(held.axis, area).contains(at);
+        if !on_ruler && let Some((_, rect)) = rect {
+            let px = ruler::page_coordinate(held.axis, *rect, zoom, at);
+            let line = Stroke::new(1.0, theme.c("canvas.guide"));
+            let offset = px as f32 * zoom;
+            let points = match held.axis {
+                GuideAxis::Vertical => [
+                    Pos2::new(rect.min.x + offset, rect.min.y),
+                    Pos2::new(rect.min.x + offset, rect.max.y),
+                ],
+                GuideAxis::Horizontal => [
+                    Pos2::new(area.min.x, rect.min.y + offset),
+                    Pos2::new(area.max.x, rect.min.y + offset),
+                ],
+            };
+            ui.painter().line_segment(points, line);
+        }
+        if !released {
+            return;
+        }
+        self.guide_drag = None;
+        let Some((id, rect)) = rect.copied() else {
+            return;
+        };
+        let Some(current) = document.and_then(|d| d.page(id)) else {
+            return;
+        };
+        let px = ruler::page_coordinate(held.axis, rect, zoom, at);
+        let next = match (held.index, on_ruler) {
+            // Back on its ruler: a new guide is not made, a page guide goes.
+            (None, true) => return,
+            (Some(index), true) => ruler::removed(&current.guides, index),
+            (Some(index), false) => ruler::moved(&current.guides, index, px),
+            (None, false) => ruler::added(&current.guides, held.axis, px),
+        };
+        asked.guides = Some((id, next));
+        if !self.shown.guides {
+            asked.shown = Some(ViewSettings::new(
+                self.shown.rulers,
+                true,
+                self.shown.magnet,
+            ));
+        }
     }
 }
 
@@ -1990,6 +2302,32 @@ impl Editor {
             drag.offset += delta;
             let zoom = self.zoom;
             let start = drag.start.as_ref().and_then(|d| d.page(drag.page));
+            // The magnet (FD-06, spec 044): the box of what moves, or the
+            // edges a handle drags, go to the nearest target; Alt lets go.
+            let moving: Vec<NodeId> = drag.origins.iter().map(|(node, _)| *node).collect();
+            let size = drag
+                .start
+                .as_ref()
+                .and_then(|d| Some((start?.size.to_px(d.dpi()).ok()?, d.dpi())));
+            let field = start.zip(size).map(|(page, (size, dpi))| magnet::Field {
+                page,
+                width: size.width(),
+                height: size.height(),
+                dpi: f64::from(dpi.get()),
+                zoom: f64::from(zoom),
+                guides: self.shown.guides,
+                active: self.shown.magnet && !asked.free,
+                moving: &moving,
+            });
+            let mut snap = Snap::default();
+            if drag.hold.is_none()
+                && let Some(field) = &field
+                && let Some(from) = start.and_then(|page| magnet::selection_box(page, &moving))
+            {
+                let dx = f64::from(drag.offset.x / zoom);
+                let dy = f64::from(drag.offset.y / zoom);
+                snap = magnet::snap_box(field, from + gafira_geom::Vec2::new(dx, dy));
+            }
             // One placement per element; several are one Transaction, so the
             // drag stays one undo step (spec 040). A group writes every node
             // below it, from where they were when the drag began (spec 043).
@@ -1999,12 +2337,32 @@ impl Editor {
                 .flat_map(|(node, origin)| {
                     let to = match drag.hold {
                         Some(Hold::Resize(handle)) => {
-                            canvas::resized(origin, handle, drag.offset, zoom)
+                            // A corner keeps the proportions; Shift frees
+                            // them (D-89, spec 045).
+                            let keep = !asked.snap && resize::is_corner(handle);
+                            let to = resize::resized(origin, handle, drag.offset, zoom, keep);
+                            match &field {
+                                Some(field) => {
+                                    let (to, edges) = if keep {
+                                        magnet::snap_resize_kept(field, origin, handle, to)
+                                    } else {
+                                        magnet::snap_resize(field, origin, handle, to)
+                                    };
+                                    snap = edges;
+                                    to
+                                }
+                                None => to,
+                            }
                         }
                         Some(Hold::Rotate { center, from }) => {
                             rotation::rotated(origin, center, from, from + drag.offset, asked.snap)
                         }
-                        None => canvas::moved(origin, drag.offset, zoom),
+                        None => {
+                            let mut to = canvas::moved(origin, drag.offset, zoom);
+                            to.x += snap.dx;
+                            to.y += snap.dy;
+                            to
+                        }
                     };
                     let placements = match start.filter(|page| group::is_group(page, *node)) {
                         Some(page) => {
@@ -2026,9 +2384,36 @@ impl Editor {
             if let Some(command) = batch(commands) {
                 log("move", engine.edit().execute(command).map(drop));
             }
+            self.snapped = (snap.x.is_some() || snap.y.is_some()).then_some((drag.page, snap));
+        }
+        if asked.drag_end {
+            self.snapped = None;
         }
         if asked.drag_end && self.drag.take().is_some() {
             log("end gesture", engine.edit().end_gesture());
+        }
+        if let Some((dx, dy)) = asked.nudge
+            && let Some(page) = self.selected.page()
+            && self.drag.is_none()
+        {
+            self.nudge(engine, page, dx, dy);
+        }
+        if let Some((page, guides)) = &asked.guides {
+            // A gesture of its own: one undo step that never merges with
+            // the next guide (FD-03).
+            let gesture = engine.edit().begin_gesture().ok();
+            let command = SetProperty::page(*page, Property::Guides(guides.clone()), gesture);
+            log("guides", engine.edit().execute(Box::new(command)).map(drop));
+            if gesture.is_some() {
+                log("end gesture", engine.edit().end_gesture());
+            }
+        }
+        if let Some(view) = asked.shown {
+            self.shown = view;
+            let settings = engine.settings().get().with_view(view);
+            if let Err(error) = engine.settings().set(settings) {
+                eprintln!("settings: {error}");
+            }
         }
         if (asked.turn.is_some() || asked.flip.is_some())
             && let Some(page) = self.selected.page()
@@ -2150,6 +2535,39 @@ impl Editor {
             })
             .collect();
         place_in_one_step(engine, page, placements, "turn or flip");
+    }
+
+    /// Move every selected element by `(dx, dy)` px of page (03 §9.2), a
+    /// group with everything below it. The commands carry no gesture, so
+    /// the nudges of a held or quickly repeated arrow, less than 500 ms
+    /// apart, are one undo step (02 §4.3, ARQ-33).
+    fn nudge(&self, engine: &mut Gafira, page: PageId, dx: f64, dy: f64) {
+        let now = engine.edit().document();
+        let Some(current) = now.as_deref().and_then(|d| d.page(page)) else {
+            return;
+        };
+        let commands = selected_shapes(now.as_deref(), &self.selected)
+            .iter()
+            .flat_map(|shape| {
+                let moves = if shape.group {
+                    group::changed(current, shape.node, Change::Move { dx, dy })
+                } else {
+                    let mut to = shape.placement;
+                    to.x += dx;
+                    to.y += dy;
+                    vec![(shape.node, to)]
+                };
+                moves.into_iter().map(|(node, to)| {
+                    let command = SetProperty::new(page, vec![node], Property::Placement(to), None);
+                    Box::new(command) as Box<dyn Command>
+                })
+            })
+            .collect();
+        if let Some(command) = batch(commands)
+            && let Err(error) = engine.edit().execute(command)
+        {
+            eprintln!("nudge: {error}");
+        }
     }
 
     /// Agrupar, Desagrupar, Duplicar, Copiar, Cortar and Pegar (spec 043),
@@ -2404,6 +2822,172 @@ fn group_reshaped(
 }
 
 /// The bytes of `hash` from the store, decoded and scaled for the canvas.
+/// The live size of a resize next to the pointer, outside the element
+/// and inside `view` (spec 045): «320 × 180» and, in the secondary
+/// colour, how much each side changed. `sizes` is where the element
+/// started and where it is now.
+fn size_label(
+    painter: &egui::Painter,
+    theme: &Theme,
+    pointer: Pos2,
+    outward: Vec2,
+    view: Rect,
+    sizes: (&Placement, &Placement),
+) {
+    let (from, now) = sizes;
+    let font = theme.font("caption");
+    let size = painter.layout_no_wrap(
+        resize::size_text(now.w, now.h),
+        font.clone(),
+        theme.c("text"),
+    );
+    let delta = painter.layout_no_wrap(
+        resize::delta_text(now.w - from.w, now.h - from.h),
+        font,
+        theme.c("text.secondary"),
+    );
+    let pad = Vec2::new(8.0, 4.0);
+    let gap = 8.0;
+    let inner = Vec2::new(
+        size.size().x + gap + delta.size().x,
+        size.size().y.max(delta.size().y),
+    );
+    let rect = resize::label_rect(pointer, outward, inner + pad * 2.0, view);
+    painter.rect(
+        rect,
+        theme.radius_sm(),
+        theme.c("surface.raised"),
+        Stroke::new(1.0, theme.c("border")),
+        egui::StrokeKind::Inside,
+    );
+    let at = rect.min + pad;
+    let size_width = size.size().x;
+    painter.galley(at, size, theme.c("text"));
+    painter.galley(
+        at + Vec2::new(size_width + gap, 0.0),
+        delta,
+        theme.c("text.secondary"),
+    );
+}
+
+/// The cursor over a guide or a ruler: it moves across its line.
+fn guide_cursor(axis: GuideAxis) -> egui::CursorIcon {
+    match axis {
+        GuideAxis::Vertical => egui::CursorIcon::ResizeHorizontal,
+        GuideAxis::Horizontal => egui::CursorIcon::ResizeVertical,
+    }
+}
+
+/// A line of the canvas state, in `color` over a halo of the canvas
+/// background so it shows on any content (DIS-12).
+fn halo_line(painter: &egui::Painter, theme: &Theme, points: [Pos2; 2], color: Color32) {
+    painter.line_segment(points, Stroke::new(3.0, theme.c("canvas.selection.halo")));
+    painter.line_segment(points, Stroke::new(1.0, color));
+}
+
+/// The guides of `page_doc` on the page drawn at `page`: a vertical one
+/// along the page, a horizontal one across the canvas row `row` (FD-03).
+fn draw_guides(
+    painter: &egui::Painter,
+    theme: &Theme,
+    page_doc: &Page,
+    dpi: f64,
+    page: Rect,
+    row: Rect,
+    zoom: f32,
+) {
+    let color = theme.c("canvas.guide");
+    for guide in &page_doc.guides.0 {
+        let Some(px) = ruler::guide_px(guide, dpi) else {
+            continue;
+        };
+        let at = px as f32 * zoom;
+        let points = match guide.axis {
+            GuideAxis::Vertical => [
+                Pos2::new(page.min.x + at, page.min.y),
+                Pos2::new(page.min.x + at, page.max.y),
+            ],
+            GuideAxis::Horizontal => [
+                Pos2::new(row.min.x, page.min.y + at),
+                Pos2::new(row.max.x, page.min.y + at),
+            ],
+        };
+        halo_line(painter, theme, points, color);
+    }
+}
+
+/// The smart guides of the magnet (FD-06): a dashed line across the page
+/// where each axis snapped.
+fn draw_snap(painter: &egui::Painter, theme: &Theme, snap: &Snap, page: Rect, zoom: f32) {
+    let stroke = Stroke::new(1.0, theme.c("canvas.guide"));
+    let halo = Stroke::new(3.0, theme.c("canvas.selection.halo"));
+    let mut lines = Vec::new();
+    if let Some(x) = snap.x {
+        let x = page.min.x + x as f32 * zoom;
+        lines.push([Pos2::new(x, page.min.y), Pos2::new(x, page.max.y)]);
+    }
+    if let Some(y) = snap.y {
+        let y = page.min.y + y as f32 * zoom;
+        lines.push([Pos2::new(page.min.x, y), Pos2::new(page.max.x, y)]);
+    }
+    for line in lines {
+        painter.line_segment(line, halo);
+        painter.extend(egui::Shape::dashed_line(&line, stroke, 4.0, 3.0));
+    }
+}
+
+/// A ruler on `strip`, numbered in px of page from the page's corner at
+/// `origin` (FD-03).
+fn draw_ruler(
+    painter: &egui::Painter,
+    theme: &Theme,
+    axis: GuideAxis,
+    strip: Rect,
+    origin: Rect,
+    zoom: f32,
+) {
+    painter.rect_filled(strip, 0.0, theme.c("surface"));
+    let border = Stroke::new(1.0, theme.c("border"));
+    let font = theme.font("caption");
+    let color = theme.c("text.secondary");
+    match axis {
+        GuideAxis::Horizontal => {
+            painter.line_segment([strip.left_bottom(), strip.right_bottom()], border);
+            let from = strip.min.x + ruler::RULER;
+            for (x, value) in ruler::ticks(origin.min.x, zoom, from, strip.max.x) {
+                painter.line_segment(
+                    [Pos2::new(x, strip.max.y - 6.0), Pos2::new(x, strip.max.y)],
+                    border,
+                );
+                painter.text(
+                    Pos2::new(x + 2.0, strip.min.y + 2.0),
+                    Align2::LEFT_TOP,
+                    value.to_string(),
+                    font.clone(),
+                    color,
+                );
+            }
+        }
+        GuideAxis::Vertical => {
+            painter.line_segment([strip.right_top(), strip.right_bottom()], border);
+            let from = strip.min.y + ruler::RULER;
+            for (y, value) in ruler::ticks(origin.min.y, zoom, from, strip.max.y) {
+                painter.line_segment(
+                    [Pos2::new(strip.max.x - 6.0, y), Pos2::new(strip.max.x, y)],
+                    border,
+                );
+                painter.text(
+                    Pos2::new(strip.min.x + 2.0, y + 2.0),
+                    Align2::LEFT_TOP,
+                    value.to_string(),
+                    font.clone(),
+                    color,
+                );
+            }
+        }
+    }
+}
+
 /// `placements` of `page` as one undo step: their `SetProperty` commands
 /// share a gesture of their own, so the step never merges with the next
 /// action (specs 041, 042). Nothing to place is no step.
@@ -3330,7 +3914,9 @@ pub(crate) mod tests {
             (origin.x, origin.y),
             "the top-left corner stays"
         );
-        assert_eq!((resized.w - origin.w, resized.h - origin.h), (40.0, 20.0));
+        // The corner keeps the square's proportions (D-89, spec 045): the
+        // wider drag drives.
+        assert_eq!((resized.w - origin.w, resized.h - origin.h), (40.0, 40.0));
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine)[0].placement, origin);
     }
@@ -4415,8 +5001,9 @@ pub(crate) mod tests {
         assert_eq!(undo_depth(&mut engine), depth + 2, "no step for no change");
     }
 
-    // S42-14: Ctrl+Alt+L/C/R align, Ctrl+] and Ctrl+[ move one step, with
-    // Shift to the front or the back; without Ctrl they do nothing.
+    // S42-14: Alt+D/H/A align (D-88 replaced Ctrl+Alt+R/C/L, S44-01),
+    // Ctrl+] and Ctrl+[ move one step, with Shift to the front or the back;
+    // without Ctrl they do nothing.
     #[test]
     fn s42_14_shortcuts_align_and_order() {
         let mut engine = engine();
@@ -4430,14 +5017,14 @@ pub(crate) mod tests {
             .iter()
             .map(right)
             .fold(f64::NEG_INFINITY, f64::max);
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::R), command_alt);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::D), Modifiers::ALT);
         assert!(
             the_shapes(&mut engine)
                 .iter()
                 .all(|s| right(s) == rightmost)
         );
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::C), command_alt);
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::L), command_alt);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), Modifiers::ALT);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::A), Modifiers::ALT);
         let shapes = the_shapes(&mut engine);
         assert!(
             shapes
@@ -4556,6 +5143,11 @@ pub(crate) mod tests {
         assert_eq!(
             arrange_tooltip(&ctx, &texts, "arrange.align_top", None),
             "Alinear arriba"
+        );
+        // S44-01: every Align action names its Alt shortcut (D-88).
+        assert_eq!(
+            arrange_tooltip(&ctx, &texts, "arrange.align_top", Some(ALIGN_TOP)),
+            format!("Alinear arriba · {}", ctx.format_shortcut(&ALIGN_TOP)),
         );
         assert_eq!(
             distribute_tooltip(&texts, "arrange.distribute_vertical", false),
@@ -4861,10 +5453,10 @@ pub(crate) mod tests {
     }
 
     // S43-17: Esc inside a group selects the group and leaves it; Ctrl+A in
-    // a group selects its children; Ctrl+Alt+C, which the window turns
-    // into a copy, still aligns to the centre (spec 042).
+    // a group selects its children; Alt+H aligns to the centre (D-88
+    // replaced Ctrl+Alt+C, which the window turns into a copy).
     #[test]
-    fn s43_17_escape_leaves_the_group_and_ctrl_alt_c_aligns() {
+    fn s43_17_escape_leaves_the_group_and_alt_h_aligns() {
         let mut engine = engine();
         let mut editor = Editor::default();
         let (page, group, [a, b, c]) = grouped(&mut engine, &mut editor);
@@ -4892,16 +5484,7 @@ pub(crate) mod tests {
         assert!(editor.selected.is_empty());
         editor.selected = Selection::of(page, [group, c]);
         let before = placements(&mut engine, &[a, b, c]);
-        let mut session = None;
-        frame_events(
-            &ctx,
-            &mut editor,
-            &mut engine,
-            vec![egui::Event::Copy],
-            Modifiers::COMMAND.plus(Modifiers::ALT),
-            &mut session,
-        );
-        assert_eq!(session, None, "not a copy");
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), Modifiers::ALT);
         assert_ne!(placements(&mut engine, &[a, b, c]), before, "it aligned");
         let document = engine.edit().document();
         let boxes = selected_shapes(document.as_deref(), &editor.selected);
@@ -4939,5 +5522,441 @@ pub(crate) mod tests {
             [false; 4],
             "two lists"
         );
+    }
+
+    // S44-01: Alt+W, Alt+V and Alt+S align to the top, middle and bottom
+    // (D-88). Ctrl+Alt with any Align letter (AltGr on Windows) and the old
+    // Ctrl+Alt+L/C/R do not align, and a copy with Alt held is a copy.
+    #[test]
+    fn s44_01_alt_letters_align_and_ctrl_alt_does_not() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, nodes) = three_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let before = placements(&mut engine, &nodes);
+        let top = before.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let low = before.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        let command_alt = Modifiers::COMMAND.plus(Modifiers::ALT);
+        for key in [
+            Key::A,
+            Key::H,
+            Key::D,
+            Key::W,
+            Key::V,
+            Key::L,
+            Key::C,
+            Key::R,
+        ] {
+            frame_with(&ctx, &mut editor, &mut engine, Some(key), command_alt);
+        }
+        assert_eq!(
+            placements(&mut engine, &nodes),
+            before,
+            "Ctrl+Alt never aligns"
+        );
+        editor.selected = Selection::of(page, nodes);
+        let ys = |engine: &mut Gafira| {
+            placements(engine, &nodes)
+                .iter()
+                .map(|p| p.y)
+                .collect::<Vec<_>>()
+        };
+        for (key, y) in [
+            (Key::W, top),
+            (Key::S, low),
+            (Key::V, f64::midpoint(top, low)),
+        ] {
+            frame_with(&ctx, &mut editor, &mut engine, Some(key), Modifiers::ALT);
+            assert!(
+                ys(&mut engine).iter().all(|at| (at - y).abs() < 1e-9),
+                "{key:?}"
+            );
+            engine.edit().undo().expect("undoes");
+            assert_eq!(placements(&mut engine, &nodes), before);
+        }
+        let mut session = None;
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Copy],
+            command_alt,
+            &mut session,
+        );
+        assert!(session.is_some(), "a copy");
+        assert_eq!(placements(&mut engine, &nodes), before, "no align");
+    }
+
+    /// A drag of the selection by `offset` screen px, with Alt held or not.
+    fn drag_by(
+        engine: &mut Gafira,
+        editor: &mut Editor,
+        hold: Option<Hold>,
+        offset: Vec2,
+        free: bool,
+    ) {
+        gesture(
+            engine,
+            editor,
+            vec![
+                Asked {
+                    drag_begin: Some(hold),
+                    ..Asked::default()
+                },
+                Asked {
+                    drag_to: Some(offset),
+                    free,
+                    ..Asked::default()
+                },
+            ],
+        );
+    }
+
+    fn drag_end(engine: &mut Gafira, editor: &mut Editor) {
+        ask(
+            engine,
+            editor,
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        );
+    }
+
+    // S44-13: a move snaps the box to the page centre within 6 screen px,
+    // draws the smart guide while it holds, is one undo step, and lets go
+    // with Alt or beyond the threshold.
+    #[test]
+    fn s44_13_a_drag_snaps_to_the_page_centre_and_alt_lets_go() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.selected = Selection::one(page, rect);
+        let origin = placements(&mut engine, &[rect])[0];
+        assert_eq!(origin.x + origin.w / 2.0, 540.0, "centred on the page");
+        let depth = undo_depth(&mut engine);
+        drag_by(&mut engine, &mut editor, None, Vec2::new(3.0, 0.0), false);
+        assert_eq!(
+            placements(&mut engine, &[rect])[0].x,
+            origin.x,
+            "back on the centre"
+        );
+        let (on, snap) = editor.snapped.expect("a smart guide");
+        assert_eq!((on, snap.x), (page, Some(540.0)));
+        drag_end(&mut engine, &mut editor);
+        assert_eq!(editor.snapped, None);
+        assert_eq!(
+            undo_depth(&mut engine),
+            depth,
+            "a move back to where it was"
+        );
+        drag_by(&mut engine, &mut editor, None, Vec2::new(3.0, 0.0), true);
+        assert_eq!(placements(&mut engine, &[rect])[0].x, origin.x + 3.0, "Alt");
+        assert_eq!(editor.snapped, None);
+        drag_end(&mut engine, &mut editor);
+        drag_by(&mut engine, &mut editor, None, Vec2::new(7.0, 0.0), false);
+        assert_eq!(
+            placements(&mut engine, &[rect])[0].x,
+            origin.x + 10.0,
+            "10 px off"
+        );
+        drag_end(&mut engine, &mut editor);
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        editor.shown.magnet = false;
+        drag_by(&mut engine, &mut editor, None, Vec2::new(-7.0, 0.0), false);
+        assert_eq!(
+            placements(&mut engine, &[rect])[0].x,
+            origin.x + 3.0,
+            "Imán off"
+        );
+        drag_end(&mut engine, &mut editor);
+    }
+
+    // S44-14: a resize snaps the dragged edge to another element's edge
+    // and keeps the opposite one; at 200 % the threshold is 3 px of page.
+    #[test]
+    fn s44_14_a_resize_snaps_the_dragged_edge() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        let target = placements(&mut engine, &[ellipse])[0].x;
+        editor.selected = Selection::one(page, rect);
+        let origin = placements(&mut engine, &[rect])[0];
+        let right = canvas::Handle { x: 1, y: 0 };
+        editor.zoom = 2.0;
+        let gap = target - (origin.x + origin.w);
+        // 3 px of page short of the ellipse: 6 screen px at 200 %.
+        let offset = Vec2::new(((gap - 3.0) * 2.0) as f32, 0.0);
+        drag_by(
+            &mut engine,
+            &mut editor,
+            Some(Hold::Resize(right)),
+            offset,
+            false,
+        );
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!(to.x, origin.x, "the left edge stays");
+        assert_eq!(to.x + to.w, target, "the right edge on the ellipse");
+        assert_eq!((to.y, to.h), (origin.y, origin.h));
+        drag_end(&mut engine, &mut editor);
+        engine.edit().undo().expect("an undo");
+        let offset = Vec2::new(((gap - 3.5) * 2.0) as f32, 0.0);
+        drag_by(
+            &mut engine,
+            &mut editor,
+            Some(Hold::Resize(right)),
+            offset,
+            false,
+        );
+        let to = placements(&mut engine, &[rect])[0];
+        assert!(
+            (to.x + to.w - (target - 3.5)).abs() < 1e-3,
+            "3.5 px is too far"
+        );
+        drag_end(&mut engine, &mut editor);
+    }
+
+    // S44-15: arrows nudge 1 px and Shift+arrows 10 px; the presses less
+    // than 500 ms apart are one undo step (02 §4.3); with Ctrl or Alt they
+    // do not nudge; a group nudges with its children.
+    #[test]
+    fn s44_15_arrows_nudge_and_merge_into_one_undo_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, group, [a, b, c]) = grouped(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        editor.selected = Selection::of(page, [group, c]);
+        let before = placements(&mut engine, &[a, b, c]);
+        let depth = undo_depth(&mut engine);
+        for _ in 0..3 {
+            frame_with(
+                &ctx,
+                &mut editor,
+                &mut engine,
+                Some(Key::ArrowRight),
+                Modifiers::NONE,
+            );
+        }
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowDown),
+            Modifiers::SHIFT,
+        );
+        let after = placements(&mut engine, &[a, b, c]);
+        for (from, to) in before.iter().zip(&after) {
+            assert_eq!((to.x - from.x, to.y - from.y), (3.0, 10.0));
+        }
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        for modifiers in [Modifiers::COMMAND, Modifiers::ALT] {
+            frame_with(
+                &ctx,
+                &mut editor,
+                &mut engine,
+                Some(Key::ArrowLeft),
+                modifiers,
+            );
+        }
+        assert_eq!(placements(&mut engine, &[a, b, c]), after);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(placements(&mut engine, &[a, b, c]), before);
+        editor.selected.clear();
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowLeft),
+            Modifiers::NONE,
+        );
+        assert_eq!(
+            placements(&mut engine, &[a, b, c]),
+            before,
+            "nothing selected"
+        );
+    }
+
+    // S44-16: a guide created, moved or deleted is one undo step each,
+    // never merged with the next.
+    #[test]
+    fn s44_16_guide_changes_are_one_undo_step_each() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let guides_now = |engine: &mut Gafira| {
+            engine.edit().document().expect("a document").pages()[0]
+                .guides
+                .clone()
+        };
+        let depth = undo_depth(&mut engine);
+        let one = ruler::added(&GuideSet::default(), GuideAxis::Vertical, 100.0);
+        let moved = ruler::moved(&one, 0, 250.0);
+        for set in [one.clone(), moved.clone()] {
+            ask(
+                &mut engine,
+                &mut editor,
+                Asked {
+                    guides: Some((page, set)),
+                    ..Asked::default()
+                },
+            );
+        }
+        assert_eq!(guides_now(&mut engine), moved);
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(guides_now(&mut engine), one);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(guides_now(&mut engine), GuideSet::default());
+    }
+
+    // S44-17: Ctrl+Shift+R, Ctrl+; and Ctrl+Shift+' switch the rulers, the
+    // guides and the magnet, and the settings keep them.
+    #[test]
+    fn s44_17_view_shortcuts_switch_and_persist() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        frame(&ctx, &mut editor, &mut engine, None);
+        editor.shown = ViewSettings::default();
+        let command_shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::R), command_shift);
+        assert_eq!(editor.shown, ViewSettings::new(false, true, true));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Semicolon),
+            Modifiers::COMMAND,
+        );
+        assert_eq!(editor.shown, ViewSettings::new(false, false, true));
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::Quote),
+            command_shift,
+        );
+        assert_eq!(editor.shown, ViewSettings::new(false, false, false));
+        assert_eq!(engine.settings().get().view, editor.shown, "persisted");
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::R),
+            Modifiers::COMMAND,
+        );
+        assert!(!editor.shown.rulers, "Ctrl+R alone is not Reglas");
+        let reset = engine.settings().get().with_view(ViewSettings::default());
+        engine.settings().set(reset).expect("resets");
+    }
+
+    // S44-19: frames draw the rulers, the guides and a smart guide, and a
+    // guide hidden or shown changes nothing in the document.
+    #[test]
+    fn s44_19_frames_draw_rulers_guides_and_smart_guides() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let set = ruler::added(&GuideSet::default(), GuideAxis::Horizontal, 300.0);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                guides: Some((page, ruler::added(&set, GuideAxis::Vertical, 200.0))),
+                ..Asked::default()
+            },
+        );
+        editor.selected = Selection::one(page, rect);
+        editor.snapped = Some((
+            page,
+            Snap {
+                x: Some(540.0),
+                y: Some(300.0),
+                ..Snap::default()
+            },
+        ));
+        frame(&ctx, &mut editor, &mut engine, None);
+        editor.shown.rulers = true;
+        editor.shown.guides = true;
+        frame(&ctx, &mut editor, &mut engine, None);
+        editor.shown.guides = false;
+        frame(&ctx, &mut editor, &mut engine, None);
+        assert_eq!(
+            engine.edit().document().expect("a document").pages()[0]
+                .guides
+                .0
+                .len(),
+            2
+        );
+    }
+
+    // S45-09: a corner keeps the proportions in one undo step, Shift frees
+    // them, the magnet snaps the driving edge and the other follows; while
+    // the handle is held the frame shows its resize cursor and the size
+    // label.
+    #[test]
+    fn s45_09_a_corner_keeps_the_proportions_through_the_editor() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.selected = Selection::one(page, rect);
+        let origin = placements(&mut engine, &[rect])[0];
+        let corner = Some(Hold::Resize(canvas::Handle { x: 1, y: 1 }));
+        let depth = undo_depth(&mut engine);
+        let drag = |engine: &mut Gafira, editor: &mut Editor, offset: Vec2, shift: bool| {
+            gesture(
+                engine,
+                editor,
+                vec![
+                    Asked {
+                        drag_begin: Some(corner),
+                        ..Asked::default()
+                    },
+                    Asked {
+                        drag_to: Some(offset),
+                        snap: shift,
+                        ..Asked::default()
+                    },
+                ],
+            );
+        };
+        drag(&mut engine, &mut editor, Vec2::new(30.0, 5.0), false);
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!((to.x, to.y, to.w, to.h), (origin.x, origin.y, 390.0, 390.0));
+        // The frame while the handle is held.
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut session = None;
+        let output = frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![],
+            Modifiers::NONE,
+            &mut session,
+        );
+        assert_eq!(output.cursor_icon, egui::CursorIcon::ResizeNwSe);
+        // The frame fits the zoom to its window; the drags below are at 100 %.
+        editor.zoom = 1.0;
+        drag_end(&mut engine, &mut editor);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("an undo");
+        drag(&mut engine, &mut editor, Vec2::new(30.0, 15.0), true);
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!((to.w, to.h), (390.0, 375.0), "Shift frees them");
+        drag_end(&mut engine, &mut editor);
+        engine.edit().undo().expect("an undo");
+        // 3 px short of the ellipse: the right edge snaps and the height
+        // follows.
+        drag(&mut engine, &mut editor, Vec2::new(37.0, 0.0), false);
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!((to.x, to.y, to.w, to.h), (origin.x, origin.y, 400.0, 400.0));
+        assert_eq!(editor.snapped.and_then(|(_, s)| s.x), Some(760.0));
+        drag_end(&mut engine, &mut editor);
     }
 }

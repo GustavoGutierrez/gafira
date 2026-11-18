@@ -145,7 +145,7 @@
 
 **FD-11 · Alinear y distribuir** (RF-10)
 - *Propósito*: ordenar elementos en un solo gesto.
-- *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la caja de la selección (dos o más); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (el modo es una entrada; por defecto, espacio igual). Los elementos bloqueados no se mueven. Atajos: `Ctrl+Alt+L/C/R`.
+- *Comportamiento y reglas*: seis acciones de **Alinear** (izquierda, centro, derecha, arriba, medio, abajo) respecto de la página (un elemento) o de la caja de la selección (dos o más); **distribuir** horizontal y vertical con espacio igual entre elementos o entre centros (el modo es una entrada; por defecto, espacio igual). Los elementos bloqueados no se mueven. Atajos (D-88): `Alt+A/H/D` (izquierda, centro, derecha) y `Alt+W/V/S` (arriba, medio, abajo).
   - **Cajas**: rectángulos alineados a los ejes en coordenadas de página; un nodo girado usa su caja alineada a los ejes (D-28).
   - **Alinear con bloqueados**: la caja de la selección incluye los elementos bloqueados (D-29). Alinear no cambia el otro eje.
   - **Distribuir** (D-17, D-28): solo cuentan los elementos libres. Se ordenan por su posición en el eje: borde inicial con espacio igual y centro con centros; un empate conserva el orden de entrada. El primero y el último no se mueven. Con menos de 3 libres no hace nada. Un elemento libre puede quedar sobre uno bloqueado.

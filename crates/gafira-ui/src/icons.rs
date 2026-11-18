@@ -63,11 +63,12 @@ pub(crate) enum Icon {
     DistributeVertical,
     BringToFront,
     SendToBack,
+    Magnet,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 33] = [
+    pub(crate) const ALL: [Self; 34] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -101,6 +102,7 @@ impl Icon {
         Self::DistributeVertical,
         Self::BringToFront,
         Self::SendToBack,
+        Self::Magnet,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -139,6 +141,7 @@ impl Icon {
             Self::DistributeVertical => "rows",
             Self::BringToFront => "arrow-line-up",
             Self::SendToBack => "arrow-line-down",
+            Self::Magnet => "magnet",
         }
     }
 
