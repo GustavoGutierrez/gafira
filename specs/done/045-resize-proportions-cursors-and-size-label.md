@@ -31,7 +31,7 @@ Alcance:
 
 No alcance:
 
-- `Alt` para redimensionar desde el centro (03 §9.1): sigue sin hacerse y hoy `Alt` suelta el Imán (044); el titular decide si `Alt` hace las dos cosas;
+- `Alt` para redimensionar desde el centro (03 §9.1): sigue sin hacerse y hoy `Alt` suelta el Imán (044); el titular decide si `Alt` hace las dos cosas; *nota posterior: lo decidió D-90 y lo hace la spec 047 (`Alt` desde el centro, `Ctrl`/`Cmd` suelta el Imán)*;
 - bloqueo de proporción por elemento en el Inspector (FD-10 «candado») y escribir Ancho/Alto con proporción;
 - voltear el elemento al pasar la esquina opuesta;
 - distancias junto a la etiqueta.
@@ -93,7 +93,7 @@ Casos que fallaron primero:
 
 ## Riesgos y decisiones abiertas
 
-- `Alt` para redimensionar desde el centro (03 §9.1) choca con `Alt` para soltar el Imán (FD-06, 044); queda para que el titular decida.
+- `Alt` para redimensionar desde el centro (03 §9.1) choca con `Alt` para soltar el Imán (FD-06, 044); queda para que el titular decida. *Nota posterior: cerrado por D-90 (spec 047).*
 - El aspecto de los cursores `ResizeNeSw`/`ResizeNwSe` depende del tema de cursores del sistema (en algunos temas de Linux faltan y se ven como la flecha normal).
 - El cursor de giro es `Grab`/`Grabbing`: no hay uno de girar en el sistema. Un cursor dibujado sería otra spec.
 - En un elemento girado con sesgo la etiqueta sigue la dirección del tirador en pantalla; con sesgos extremos puede tocar el elemento.

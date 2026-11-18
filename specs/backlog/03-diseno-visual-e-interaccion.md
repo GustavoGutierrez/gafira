@@ -1091,8 +1091,8 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 ### 9.1 Selección y manipulación directa
 
 - **Seleccionar**: clic; `Shift+clic` suma; arrastrar en vacío traza un marco de selección; `Ctrl/Cmd+A` selecciona todo; doble clic entra en un grupo o en un texto; `Esc` sale. La selección responde en < 16 ms (cifra de la spec técnica).
-- **Mover**: arrastre a 60 fps con 100 capas (cifra de la spec técnica); `Imán` atrae a guías, bordes de página, centros, márgenes y cuadrícula (umbral 6 px de pantalla, PROPUESTA) y muestra la distancia a los vecinos; `Alt` desactiva el Imán durante el arrastre. Las flechas mueven 1 px (10 con `Shift`), y las pulsaciones a menos de 500 ms unas de otras son un solo paso de deshacer (02 §4.3; spec 044).
-- **Redimensionar y girar**: 8 asas y asa de giro; las esquinas conservan la proporción y `Shift` la libera; los lados cambian una dimensión (D-89); `Alt` redimensiona desde el centro, `Shift` al girar ajusta a 15°. Cada asa muestra su cursor de doble flecha (diagonal en las esquinas, horizontal o vertical en los lados, según su dirección en pantalla) y, mientras se redimensiona, una etiqueta junto al puntero da el ancho × alto en px y su cambio (spec 045). La caja de selección indica cuánto sobresale de la página (02, §3.2, `layout::overflow`).
+- **Mover**: arrastre a 60 fps con 100 capas (cifra de la spec técnica); `Imán` atrae a guías, bordes de página, centros, márgenes y cuadrícula (umbral 6 px de pantalla, PROPUESTA) y muestra la distancia a los vecinos; `Ctrl/Cmd` desactiva el Imán al mover o redimensionar (D-90). Las flechas mueven 1 px (10 con `Shift`), y las pulsaciones a menos de 500 ms unas de otras son un solo paso de deshacer (02 §4.3; spec 044).
+- **Redimensionar y girar**: 8 asas y asa de giro; las esquinas conservan la proporción y `Shift` la libera; los lados cambian una dimensión (D-89); `Alt` redimensiona desde el centro, con el centro fijo y los lados opuestos simétricos, y se combina con la proporción (`Alt+Shift`, libre desde el centro; D-90, spec 047); `Shift` al girar ajusta a 15°. Cada asa muestra su cursor de doble flecha (diagonal en las esquinas, horizontal o vertical en los lados, según su dirección en pantalla) y, mientras se redimensiona, una etiqueta junto al puntero da el ancho × alto en px y su cambio (spec 045). La caja de selección indica cuánto sobresale de la página (02, §3.2, `layout::overflow`).
 - **Recortar**: doble clic sobre una imagen o tecla `C` entra en el modo de recorte con asas visibles.
 - **Duplicar**: `Alt+arrastrar` o `Ctrl/Cmd+D`.
 - **Todo es deshacer/rehacer**: botones ↶ y ↷ en la Barra superior con tooltip «Deshacer {acción}» (etiqueta `Command::label`, 02 §4.3); deshacer tarda < 16 ms (ARQ-32).
@@ -1108,7 +1108,7 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 | Edición | Deshacer · Rehacer | Ctrl+Z · Ctrl+Shift+Z (Windows/Linux también Ctrl+Y) |
 | Edición | Cortar · Copiar · Pegar · Pegar sin formato | Ctrl+X · Ctrl+C · Ctrl+V · Ctrl+Shift+V |
 | Edición | Duplicar · Eliminar · Seleccionar todo · Buscar y reemplazar | Ctrl+D · Supr/Retroceso · Ctrl+A · Ctrl+F |
-| Edición | Mover 1 px · 10 px · Girar 15° · Redimensionar sin proporción (D-89) | Flechas · Shift+flechas · Shift+giro · Shift+esquina |
+| Edición | Mover 1 px · 10 px · Girar 15° · Redimensionar sin proporción (D-89) · Redimensionar desde el centro · Soltar el Imán al arrastrar (D-90) | Flechas · Shift+flechas · Shift+giro · Shift+esquina · Alt+asa · Ctrl/Cmd mantenido |
 | Capas | Agrupar · Desagrupar | Ctrl+G · Ctrl+Shift+G |
 | Capas | Traer adelante · Enviar atrás · Al frente · Al fondo | Ctrl+] · Ctrl+[ · Ctrl+Shift+] · Ctrl+Shift+[ |
 | Capas | Bloquear · Ocultar | Ctrl+Shift+L · Ctrl+Shift+H |

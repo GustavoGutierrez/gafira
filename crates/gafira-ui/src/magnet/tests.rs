@@ -124,7 +124,7 @@ fn s44_05_the_threshold_is_the_same_on_screen_at_any_zoom() {
     assert_eq!(at(0.5, 312.5).x, None);
 }
 
-// S44-06: the magnet off (or Alt held) and hidden guides attract nothing;
+// S44-06: the magnet off (or Ctrl held, D-90) and hidden guides attract nothing;
 // a hidden guide leaves the other targets.
 #[test]
 fn s44_06_off_snaps_nothing_and_hidden_guides_do_not_attract() {

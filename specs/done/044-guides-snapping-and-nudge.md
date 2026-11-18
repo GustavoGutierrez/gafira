@@ -22,7 +22,7 @@ Alcance:
   - mover: la caja de todo lo que se mueve (la unión de cajas alineadas) se engancha por sus bordes y su centro, y el desplazamiento se suma a cada elemento (un grupo, con lo que tiene);
   - redimensionar: solo los bordes que arrastra el tirador se enganchan; el opuesto no se mueve; un enganche que dejaría un lado por debajo de 1 px no se aplica. Un elemento girado no se engancha al redimensionar: cambia de tamaño en sus ejes (041), que no son los de la página;
   - girar: sigue el ajuste a 15° con `Shift` de la 041;
-  - **`Alt` mantenido suelta el Imán** durante el arrastre (03 §9.1, FD-06 b);
+  - **`Alt` mantenido suelta el Imán** durante el arrastre (03 §9.1, FD-06 b); *nota posterior: desde D-90 (spec 047) lo suelta `Ctrl`/`Cmd` y `Alt` redimensiona desde el centro*;
   - mientras engancha, una guía inteligente discontinua cruza la página en cada eje enganchado, con el token `canvas.guide` sobre un halo `canvas.selection.halo` (DIS-12); desaparece al soltar;
   - Imán activable en Ver → Imán, con `Ctrl+Shift+'` (03 §9.2) y con un botón con el icono `magnet` en la Barra inferior, encendido sobre `selection.bg` (par verificado `text`/`selection.bg`).
 - Reglas y Guías (FD-03):
@@ -123,7 +123,7 @@ Casos que fallaron primero:
 
 ## Riesgos y decisiones abiertas
 
-- `Alt` al pulsar el ratón mueve la ventana en algunos escritorios Linux (Xfce, Cinnamon, KDE; GNOME usa Super): si se mantiene antes de pulsar, el sistema gana. Pulsado ya durante el arrastre, suelta el Imán como pide 03.
+- `Alt` al pulsar el ratón mueve la ventana en algunos escritorios Linux (Xfce, Cinnamon, KDE; GNOME usa Super): si se mantiene antes de pulsar, el sistema gana. Pulsado ya durante el arrastre, suelta el Imán como pide 03. *Nota posterior: D-90 (spec 047) pasa soltar el Imán a `Ctrl`/`Cmd`.*
 - `Ctrl+Shift+'`: en el teclado español `Shift+'` escribe `?`, así que este atajo de 03 §9.2 no llega en ese teclado; Ver → Imán y el botón de la Barra inferior sí. VERIFICAR qué atajo prefiere el titular para teclados sin `'` sin modificador.
 - La guía inteligente cruza la página entera y no muestra distancias (03 §9.1 lo pide; queda para otra spec).
 - Una guía movida o creada se escribe en px aunque la original estuviera en mm (FD-03 guarda «la unidad en que se escribió»; arrastrar no escribe una unidad).

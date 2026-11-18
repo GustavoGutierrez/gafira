@@ -67,7 +67,7 @@ pub struct SnapInput<'a> {
     pub guides_visible: bool,
     /// The grid of the page.
     pub grid: &'a GridSettings,
-    /// Whether the magnet is on (and `Alt` is not held).
+    /// Whether the magnet is on (and `Ctrl`/`Cmd` is not held, D-90).
     pub active: bool,
     /// Screen px per page unit.
     pub zoom: f64,
