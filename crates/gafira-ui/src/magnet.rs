@@ -47,7 +47,7 @@ pub(crate) struct Field<'a> {
     pub(crate) zoom: f64,
     /// Ver → Guías: hidden guides do not attract (FD-06).
     pub(crate) guides: bool,
-    /// The magnet is on and Alt is not held (FD-06).
+    /// The magnet is on and Ctrl (Cmd on macOS) is not held (FD-06, D-90).
     pub(crate) active: bool,
     /// What moves: it does not attract itself (FD-06 «Quién no atrae»).
     pub(crate) moving: &'a [NodeId],
@@ -207,6 +207,81 @@ pub(crate) fn snap_resize_kept(
         }
     };
     (to, shown)
+}
+
+/// `resized` (what a handle made of `origin` from its centre, D-90) with
+/// the dragged edges snapped and the opposite ones mirrored about the
+/// centre. Free, each dragged edge snaps on its axis and a snap that,
+/// mirrored, would leave a side under 1 px is dropped. With `keep` (a
+/// corner that keeps the proportions) only the edge nearer its target
+/// snaps, `x` on a tie, and the other side follows the proportions of
+/// `origin` from the centre. Only an upright element snaps (spec 041).
+pub(crate) fn snap_resize_centred(
+    field: &Field<'_>,
+    origin: &Placement,
+    handle: Handle,
+    resized: Placement,
+    keep: bool,
+) -> (Placement, Snap) {
+    let none = (resized, Snap::default());
+    if !rotation::upright(origin) {
+        return none;
+    }
+    let edge = |side: i8, lo: f64, size: f64| match side {
+        -1 => Some(lo),
+        1 => Some(lo + size),
+        _ => None,
+    };
+    let snap = snap_edges(
+        field,
+        edge(handle.x, resized.x, resized.w),
+        edge(handle.y, resized.y, resized.h),
+    );
+    // A dragged edge moving `d` makes its side `2d` longer on the side the
+    // handle points to, as both edges move.
+    let grown = |size: f64, side: i8, d: f64| size + 2.0 * f64::from(side) * d;
+    if keep && crate::resize::is_corner(handle) && origin.w > 0.0 && origin.h > 0.0 {
+        let by_x = match (snap.x, snap.y) {
+            (Some(_), Some(_)) => snap.dx.abs() <= snap.dy.abs(),
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => return none,
+        };
+        let scale = if by_x {
+            grown(resized.w, handle.x, snap.dx) / origin.w
+        } else {
+            grown(resized.h, handle.y, snap.dy) / origin.h
+        };
+        let Some(to) = crate::resize::scaled_centred(origin, scale) else {
+            return none;
+        };
+        let shown = if by_x {
+            Snap {
+                dx: snap.dx,
+                x: snap.x,
+                ..Snap::default()
+            }
+        } else {
+            Snap {
+                dy: snap.dy,
+                y: snap.y,
+                ..Snap::default()
+            }
+        };
+        return (to, shown);
+    }
+    let mut kept = snap;
+    let mut w = resized.w;
+    let mut h = resized.h;
+    match grown(resized.w, handle.x, snap.dx) {
+        size if snap.x.is_some() && size >= canvas::MIN_SIDE => w = size,
+        _ => (kept.dx, kept.x) = (0.0, None),
+    }
+    match grown(resized.h, handle.y, snap.dy) {
+        size if snap.y.is_some() && size >= canvas::MIN_SIDE => h = size,
+        _ => (kept.dy, kept.y) = (0.0, None),
+    }
+    (crate::resize::centred(&resized, w, h), kept)
 }
 
 /// How far an arrow key moves the selection, in px of page; Shift moves

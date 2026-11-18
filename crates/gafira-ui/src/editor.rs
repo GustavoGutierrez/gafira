@@ -378,8 +378,12 @@ struct Asked {
     drag_to: Option<Vec2>,
     /// Shift is held during the drag: a turn snaps to 15° (FD-06).
     snap: bool,
-    /// Alt is held during the drag: the magnet lets go (FD-06, 03 §9.1).
+    /// Ctrl (Cmd on macOS) is held during the drag: the magnet lets go
+    /// (FD-06, D-90).
     free: bool,
+    /// Alt is held during the drag: a resize goes from the centre (03
+    /// §9.1, D-90).
+    centre: bool,
     /// An arrow moved the selection by this much, in px of page (03 §9.2).
     nudge: Option<(f64, f64)>,
     /// Ver → Reglas, Guías or Imán switched (spec 044).
@@ -2019,8 +2023,13 @@ impl Editor {
                                 }
                             } else if self.drag.is_some() {
                                 asked.drag_to = Some(response.drag_delta());
-                                asked.snap = shift;
-                                asked.free = ui.input(|i| i.modifiers.alt);
+                                // Only the state of the keys counts (D-90):
+                                // Shift frees a corner, Alt resizes from the
+                                // centre and Ctrl lets the magnet go.
+                                let keys = resize::drag_keys(ui.input(|i| i.modifiers));
+                                asked.snap = keys.shift;
+                                asked.centre = keys.centre;
+                                asked.free = keys.free;
                             }
                         }
                         if let Some(marquee) = self.marquee {
@@ -2303,7 +2312,8 @@ impl Editor {
             let zoom = self.zoom;
             let start = drag.start.as_ref().and_then(|d| d.page(drag.page));
             // The magnet (FD-06, spec 044): the box of what moves, or the
-            // edges a handle drags, go to the nearest target; Alt lets go.
+            // edges a handle drags, go to the nearest target; Ctrl lets go
+            // (D-90).
             let moving: Vec<NodeId> = drag.origins.iter().map(|(node, _)| *node).collect();
             let size = drag
                 .start
@@ -2338,15 +2348,26 @@ impl Editor {
                     let to = match drag.hold {
                         Some(Hold::Resize(handle)) => {
                             // A corner keeps the proportions; Shift frees
-                            // them (D-89, spec 045).
+                            // them (D-89, spec 045). Alt resizes from the
+                            // centre (D-90, spec 047).
                             let keep = !asked.snap && resize::is_corner(handle);
-                            let to = resize::resized(origin, handle, drag.offset, zoom, keep);
+                            let to = if asked.centre {
+                                resize::resized_centred(origin, handle, drag.offset, zoom, keep)
+                            } else {
+                                resize::resized(origin, handle, drag.offset, zoom, keep)
+                            };
                             match &field {
                                 Some(field) => {
-                                    let (to, edges) = if keep {
-                                        magnet::snap_resize_kept(field, origin, handle, to)
-                                    } else {
-                                        magnet::snap_resize(field, origin, handle, to)
+                                    let (to, edges) = match (asked.centre, keep) {
+                                        (true, _) => magnet::snap_resize_centred(
+                                            field, origin, handle, to, keep,
+                                        ),
+                                        (false, true) => {
+                                            magnet::snap_resize_kept(field, origin, handle, to)
+                                        }
+                                        (false, false) => {
+                                            magnet::snap_resize(field, origin, handle, to)
+                                        }
                                     };
                                     snap = edges;
                                     to
@@ -5587,7 +5608,8 @@ pub(crate) mod tests {
         assert_eq!(placements(&mut engine, &nodes), before, "no align");
     }
 
-    /// A drag of the selection by `offset` screen px, with Alt held or not.
+    /// A drag of the selection by `offset` screen px, with Ctrl held (the
+    /// magnet lets go, D-90) or not.
     fn drag_by(
         engine: &mut Gafira,
         editor: &mut Editor,
@@ -5625,9 +5647,9 @@ pub(crate) mod tests {
 
     // S44-13: a move snaps the box to the page centre within 6 screen px,
     // draws the smart guide while it holds, is one undo step, and lets go
-    // with Alt or beyond the threshold.
+    // with Ctrl (Alt until D-90) or beyond the threshold.
     #[test]
-    fn s44_13_a_drag_snaps_to_the_page_centre_and_alt_lets_go() {
+    fn s44_13_a_drag_snaps_to_the_page_centre_and_ctrl_lets_go() {
         let mut engine = engine();
         let mut editor = Editor::default();
         let (page, rect, _) = two_pieces(&mut engine, &mut editor);
@@ -5652,7 +5674,11 @@ pub(crate) mod tests {
             "a move back to where it was"
         );
         drag_by(&mut engine, &mut editor, None, Vec2::new(3.0, 0.0), true);
-        assert_eq!(placements(&mut engine, &[rect])[0].x, origin.x + 3.0, "Alt");
+        assert_eq!(
+            placements(&mut engine, &[rect])[0].x,
+            origin.x + 3.0,
+            "Ctrl"
+        );
         assert_eq!(editor.snapped, None);
         drag_end(&mut engine, &mut editor);
         drag_by(&mut engine, &mut editor, None, Vec2::new(7.0, 0.0), false);
@@ -5957,6 +5983,139 @@ pub(crate) mod tests {
         let to = placements(&mut engine, &[rect])[0];
         assert_eq!((to.x, to.y, to.w, to.h), (origin.x, origin.y, 400.0, 400.0));
         assert_eq!(editor.snapped.and_then(|(_, s)| s.x), Some(760.0));
+        drag_end(&mut engine, &mut editor);
+    }
+
+    // S47-07: Alt resizes from the centre and Ctrl lets the magnet go,
+    // through the editor (D-90); Ctrl held mid-drag fires nothing else.
+    #[test]
+    fn s47_07_alt_resizes_from_the_centre_and_ctrl_frees_the_magnet() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.selected = Selection::one(page, rect);
+        let origin = placements(&mut engine, &[rect])[0];
+        assert_eq!((origin.x, origin.y, origin.w), (360.0, 360.0, 360.0));
+        let corner = canvas::Handle { x: 1, y: 1 };
+        let right = canvas::Handle { x: 1, y: 0 };
+        let depth = undo_depth(&mut engine);
+        // One drag of `handle` by `offset` with these keys, then the box.
+        let drag = |engine: &mut Gafira,
+                    editor: &mut Editor,
+                    handle: canvas::Handle,
+                    offset: Vec2,
+                    keys: resize::DragKeys| {
+            gesture(
+                engine,
+                editor,
+                vec![
+                    Asked {
+                        drag_begin: Some(Some(Hold::Resize(handle))),
+                        ..Asked::default()
+                    },
+                    Asked {
+                        drag_to: Some(offset),
+                        snap: keys.shift,
+                        centre: keys.centre,
+                        free: keys.free,
+                        ..Asked::default()
+                    },
+                ],
+            );
+            let to = placements(engine, &[rect])[0];
+            (to.x, to.y, to.w, to.h)
+        };
+        let alt = resize::drag_keys(Modifiers::ALT);
+        let at = drag(&mut engine, &mut editor, corner, Vec2::new(30.0, 5.0), alt);
+        assert_eq!(at, (330.0, 330.0, 420.0, 420.0), "kept, from the centre");
+        // The frame while the handle is held, with Ctrl down and no key:
+        // no copy, no edit, and the drag goes on.
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut session = None;
+        let before = placements(&mut engine, &[rect]);
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![],
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert!(session.is_none(), "no copy");
+        assert!(editor.drag.is_some(), "still dragging");
+        assert_eq!(placements(&mut engine, &[rect]), before, "no edit");
+        editor.zoom = 1.0;
+        drag_end(&mut engine, &mut editor);
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one undo step");
+        engine.edit().undo().expect("an undo");
+        let alt_shift = resize::drag_keys(Modifiers::ALT.plus(Modifiers::SHIFT));
+        let at = drag(
+            &mut engine,
+            &mut editor,
+            corner,
+            Vec2::new(30.0, 15.0),
+            alt_shift,
+        );
+        assert_eq!(at, (330.0, 345.0, 420.0, 390.0), "free, from the centre");
+        drag_end(&mut engine, &mut editor);
+        engine.edit().undo().expect("an undo");
+        // The right edge 3 px short of the ellipse (760) snaps; the left
+        // one mirrors it.
+        let at = drag(&mut engine, &mut editor, right, Vec2::new(37.0, 0.0), alt);
+        assert_eq!(at, (320.0, 360.0, 440.0, 360.0));
+        assert_eq!(editor.snapped.and_then(|(_, s)| s.x), Some(760.0));
+        drag_end(&mut engine, &mut editor);
+        engine.edit().undo().expect("an undo");
+        let alt_ctrl = resize::drag_keys(Modifiers::ALT.plus(Modifiers::COMMAND));
+        let at = drag(
+            &mut engine,
+            &mut editor,
+            right,
+            Vec2::new(37.0, 0.0),
+            alt_ctrl,
+        );
+        assert_eq!(at, (323.0, 360.0, 434.0, 360.0), "Alt+Ctrl: no magnet");
+        assert_eq!(editor.snapped, None);
+        drag_end(&mut engine, &mut editor);
+        engine.edit().undo().expect("an undo");
+        let ctrl = resize::drag_keys(Modifiers::COMMAND);
+        let at = drag(&mut engine, &mut editor, right, Vec2::new(37.0, 0.0), ctrl);
+        assert_eq!(at, (360.0, 360.0, 397.0, 360.0), "Ctrl: no magnet");
+        drag_end(&mut engine, &mut editor);
+        // A group grows from the centre of its box.
+        let mut engine = self::engine();
+        let mut editor = Editor::default();
+        let (page, group, _) = grouped(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.selected = Selection::one(page, group);
+        let frame = |engine: &mut Gafira, editor: &Editor| {
+            let document = engine.edit().document();
+            selected_shapes(document.as_deref(), &editor.selected)[0].placement
+        };
+        let from = frame(&mut engine, &editor);
+        let both = resize::drag_keys(Modifiers::ALT.plus(Modifiers::COMMAND));
+        gesture(
+            &mut engine,
+            &mut editor,
+            vec![
+                Asked {
+                    drag_begin: Some(Some(Hold::Resize(right))),
+                    ..Asked::default()
+                },
+                Asked {
+                    drag_to: Some(Vec2::new(20.0, 0.0)),
+                    centre: both.centre,
+                    free: both.free,
+                    ..Asked::default()
+                },
+            ],
+        );
+        let to = frame(&mut engine, &editor);
+        assert!((to.w - from.w - 40.0).abs() < 1e-6, "{from:?} {to:?}");
+        assert!((to.x + to.w / 2.0 - from.x - from.w / 2.0).abs() < 1e-6);
+        assert!((to.h - from.h).abs() < 1e-6);
         drag_end(&mut engine, &mut editor);
     }
 }

@@ -252,6 +252,71 @@ fn s45_08_a_kept_corner_snaps_the_driving_edge_and_derives_the_other() {
     );
 }
 
+// S47-05: from the centre the dragged edge snaps and the opposite one
+// mirrors it about the centre; a kept corner snaps the driving edge and
+// derives the other side from the centre (D-90).
+#[test]
+fn s47_05_from_the_centre_the_snap_is_mirrored() {
+    let origin = place(100.0, 100.0, 200.0, 100.0);
+    let page = page(&[
+        origin,
+        place(320.0, 500.0, 50.0, 50.0),
+        place(700.0, 297.0, 10.0, 100.0),
+        place(150.0, 600.0, 100.0, 10.0),
+    ]);
+    let moving = [n(1)];
+    let f = field(&page, 1.0, &moving);
+    // A box about the centre (200, 150) of `origin`.
+    let about = |w: f64, h: f64| Placement::new(200.0 - w / 2.0, 150.0 - h / 2.0, w, h);
+    let right = Handle { x: 1, y: 0 };
+    // The right edge at 322, 2 px from the other element's left edge.
+    let (to, snap) = snap_resize_centred(&f, &origin, right, about(244.0, 100.0), false);
+    assert_eq!(boxed(&to), (80.0, 100.0, 240.0, 100.0));
+    assert_eq!((snap.x, snap.y), (Some(320.0), None));
+    // The left edge at 3, 3 px from the page edge: the right one mirrors.
+    let left = Handle { x: -1, y: 0 };
+    let (to, snap) = snap_resize_centred(&f, &origin, left, about(394.0, 100.0), false);
+    assert_eq!(boxed(&to), (0.0, 100.0, 400.0, 100.0));
+    assert_eq!(snap.x, Some(0.0));
+    // A kept corner: the right edge 2 px from the page centre (500) and
+    // the bottom 4 px from the top of another (297): the right one drives.
+    let corner = Handle { x: 1, y: 1 };
+    let (to, snap) = snap_resize_centred(&f, &origin, corner, about(604.0, 302.0), true);
+    assert_eq!(boxed(&to), (-100.0, 0.0, 600.0, 300.0));
+    assert_eq!((snap.x, snap.y), (Some(500.0), None));
+    // A free corner snaps each dragged edge and mirrors each.
+    let (to, snap) = snap_resize_centred(&f, &origin, corner, about(604.0, 298.0), false);
+    assert_eq!(boxed(&to), (-100.0, 3.0, 600.0, 294.0));
+    assert_eq!((snap.x, snap.y), (Some(500.0), Some(297.0)));
+    // A snap that, mirrored, would leave a side under 1 px is dropped: the
+    // right edge at 201 would go 1 px left to the centre (200) of another.
+    let thin = about(2.0, 100.0);
+    assert_eq!(
+        snap_resize_centred(&f, &origin, right, thin, false),
+        (thin, Snap::default())
+    );
+    // Nothing near, the magnet off, or a turned element: as it was.
+    let far = about(260.0, 100.0);
+    assert_eq!(
+        snap_resize_centred(&f, &origin, right, far, false),
+        (far, Snap::default())
+    );
+    let mut off = f;
+    off.active = false;
+    let near = about(244.0, 100.0);
+    assert_eq!(
+        snap_resize_centred(&off, &origin, right, near, false).0,
+        near
+    );
+    let mut turned = origin;
+    turned.rotation_deg = 30.0;
+    assert_eq!(snap_resize_centred(&f, &turned, right, near, false).0, near);
+    assert_eq!(
+        snap_resize_centred(&f, &turned, corner, about(604.0, 302.0), true).0,
+        about(604.0, 302.0)
+    );
+}
+
 fn boxed(p: &Placement) -> (f64, f64, f64, f64) {
     (p.x, p.y, p.w, p.h)
 }

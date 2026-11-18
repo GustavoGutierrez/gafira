@@ -1,9 +1,9 @@
-//! Resizing with the handles (03 §9.1, D-89; spec 045): the corners keep
-//! the element's proportions unless Shift frees them, the cursor each
-//! handle shows, and the live size label. Pure functions, so they are
-//! tested without a window.
+//! Resizing with the handles (03 §9.1, D-89, D-90; specs 045, 047): the
+//! corners keep the element's proportions unless Shift frees them, Alt
+//! resizes from the centre, the cursor each handle shows, and the live
+//! size label. Pure functions, so they are tested without a window.
 
-use egui::{CursorIcon, Pos2, Rect, Vec2};
+use egui::{CursorIcon, Modifiers, Pos2, Rect, Vec2};
 use gafira_doc::Placement;
 use gafira_geom::{Affine, Point};
 
@@ -30,22 +30,109 @@ pub(crate) fn resized(
     if !keep || !is_corner(handle) || origin.w <= 0.0 || origin.h <= 0.0 {
         return canvas::resized(origin, handle, offset, zoom);
     }
-    let page = Point::new(f64::from(offset.x / zoom), f64::from(offset.y / zoom));
-    // The drag in the element's own axes: the page's for an upright one.
-    let local = if rotation::upright(origin) {
-        page
-    } else {
-        let [a, b, c, d, ..] = origin.to_transform().as_coeffs();
-        let linear = Affine::new([a, b, c, d, 0.0, 0.0]);
-        if !linear.determinant().is_finite() || linear.determinant().abs() < 1e-12 {
-            return *origin;
-        }
-        linear.inverse() * page
+    let Some(local) = local_drag(origin, offset, zoom) else {
+        return *origin;
     };
     let wide = (origin.w + f64::from(handle.x) * local.x) / origin.w;
     let tall = (origin.h + f64::from(handle.y) * local.y) / origin.h;
     let least = (canvas::MIN_SIDE / origin.w).max(canvas::MIN_SIDE / origin.h);
     scaled(origin, handle, wide.max(tall).max(least)).unwrap_or(*origin)
+}
+
+/// What the keys held during a drag of the selection do (D-89, D-90).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct DragKeys {
+    /// Shift: a corner frees its proportions, a turn snaps to 15°.
+    pub(crate) shift: bool,
+    /// Alt: a resize goes from the centre.
+    pub(crate) centre: bool,
+    /// Ctrl (Cmd on macOS): the magnet lets go.
+    pub(crate) free: bool,
+}
+
+/// The [`DragKeys`] of `modifiers`: only the state of the keys counts,
+/// so a held Ctrl fires no shortcut. `command` is Ctrl, or Cmd on macOS.
+pub(crate) fn drag_keys(modifiers: Modifiers) -> DragKeys {
+    DragKeys {
+        shift: modifiers.shift,
+        centre: modifiers.alt,
+        free: modifiers.command,
+    }
+}
+
+/// `origin` resized from its centre by dragging `handle` `offset` screen
+/// px at `zoom` (D-90): the centre stays on the page and the opposite side
+/// moves as much the other way. With `keep`, a corner keeps the
+/// proportions, the side that grows more driving, as [`resized`] does.
+/// No side goes under 1 px: past the centre the box stays at the smallest
+/// size about the centre, it does not flip. A turned element resizes in
+/// its own axes (spec 041).
+pub(crate) fn resized_centred(
+    origin: &Placement,
+    handle: Handle,
+    offset: Vec2,
+    zoom: f32,
+    keep: bool,
+) -> Placement {
+    let Some(local) = local_drag(origin, offset, zoom) else {
+        return *origin;
+    };
+    // Both sides move, so a side changes twice the drag.
+    let grow_w = 2.0 * f64::from(handle.x) * local.x;
+    let grow_h = 2.0 * f64::from(handle.y) * local.y;
+    if keep && is_corner(handle) && origin.w > 0.0 && origin.h > 0.0 {
+        let wide = (origin.w + grow_w) / origin.w;
+        let tall = (origin.h + grow_h) / origin.h;
+        let least = (canvas::MIN_SIDE / origin.w).max(canvas::MIN_SIDE / origin.h);
+        return scaled_centred(origin, wide.max(tall).max(least)).unwrap_or(*origin);
+    }
+    let w = match handle.x {
+        0 => origin.w,
+        _ => (origin.w + grow_w).max(canvas::MIN_SIDE),
+    };
+    let h = match handle.y {
+        0 => origin.h,
+        _ => (origin.h + grow_h).max(canvas::MIN_SIDE),
+    };
+    centred(origin, w, h)
+}
+
+/// `origin` scaled by `scale` about its centre; `None` if a side would go
+/// under 1 px.
+pub(crate) fn scaled_centred(origin: &Placement, scale: f64) -> Option<Placement> {
+    let (w, h) = (origin.w * scale, origin.h * scale);
+    if !(w.is_finite() && h.is_finite()) || w < canvas::MIN_SIDE || h < canvas::MIN_SIDE {
+        return None;
+    }
+    Some(centred(origin, w, h))
+}
+
+/// `origin` with a `w` × `h` box about the same centre. The placement
+/// turns, shears and flips about the centre of its box, so this keeps the
+/// centre on the page for a turned element too.
+pub(crate) fn centred(origin: &Placement, w: f64, h: f64) -> Placement {
+    let mut to = *origin;
+    to.x = origin.x + (origin.w - w) / 2.0;
+    to.y = origin.y + (origin.h - h) / 2.0;
+    to.w = w;
+    to.h = h;
+    to
+}
+
+/// The drag `offset` (screen px at `zoom`) in the element's own axes: the
+/// page's for an upright one; `None` for a transform that cannot be
+/// undone.
+fn local_drag(origin: &Placement, offset: Vec2, zoom: f32) -> Option<Point> {
+    let page = Point::new(f64::from(offset.x / zoom), f64::from(offset.y / zoom));
+    if rotation::upright(origin) {
+        return Some(page);
+    }
+    let [a, b, c, d, ..] = origin.to_transform().as_coeffs();
+    let linear = Affine::new([a, b, c, d, 0.0, 0.0]);
+    if !linear.determinant().is_finite() || linear.determinant().abs() < 1e-12 {
+        return None;
+    }
+    Some(linear.inverse() * page)
 }
 
 /// Whether `handle` is a corner: the ones that keep the proportions.
