@@ -102,3 +102,25 @@ fn s34_01_appearance_can_follow_the_system() {
     assert!(json.contains(r#""appearance":"system""#), "{json}");
     assert_eq!(read(&json).expect("reads"), system);
 }
+
+// S44-12: rulers, guides and magnet persist, are on by default and leave
+// the file as before while they are (spec 044).
+#[test]
+fn s44_12_view_switches_round_trip_and_default_to_on() {
+    use gafira_ports::settings::ViewSettings;
+    let view = Settings::default().view;
+    assert!(view.rulers && view.guides && view.magnet);
+    assert_eq!(read(r#"{"language":"es"}"#).expect("reads").view, view);
+    let off = Settings::default().with_view(ViewSettings::new(true, false, false));
+    let json = serde_json::to_string(&off).expect("writes");
+    assert_eq!(
+        json,
+        r#"{"language":"system","appearance":"light","view":{"rulers":true,"guides":false,"magnet":false}}"#
+    );
+    assert_eq!(read(&json).expect("reads"), off);
+    let partial = read(r#"{"view":{"magnet":false}}"#).expect("reads").view;
+    assert!(
+        partial.rulers && partial.guides && !partial.magnet,
+        "a missing switch reads as on"
+    );
+}
