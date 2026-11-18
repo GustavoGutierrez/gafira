@@ -124,6 +124,8 @@ pub(crate) struct IconButton {
     tooltip: Option<String>,
     surface: Surface,
     small: bool,
+    /// A switch that is on (Imán, spec 044): drawn on `selection.bg`.
+    active: Option<bool>,
 }
 
 impl IconButton {
@@ -135,7 +137,14 @@ impl IconButton {
             tooltip: None,
             surface: Surface::Panel,
             small: false,
+            active: None,
         }
+    }
+
+    /// A switch, on or off; its accessible state says which.
+    pub(crate) fn active(mut self, on: bool) -> Self {
+        self.active = Some(on);
+        self
     }
 
     pub(crate) fn on(mut self, surface: Surface) -> Self {
@@ -183,6 +192,8 @@ impl IconButton {
             Some(pressed)
         } else if response.hovered() {
             Some(hover)
+        } else if self.active == Some(true) {
+            Some(theme.c("selection.bg"))
         } else {
             None
         };
@@ -202,7 +213,13 @@ impl IconButton {
             color,
         );
         let name = self.name;
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, &name));
+        match self.active {
+            Some(on) => response
+                .widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, on, &name)),
+            None => {
+                response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, &name))
+            }
+        }
         let tooltip = self.tooltip.unwrap_or_else(|| name.clone());
         response
             .on_hover_text(tooltip.clone())
