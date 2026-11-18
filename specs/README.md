@@ -16,7 +16,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | Doc | Contenido | Estado |
 | --- | --- | --- |
-| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-89) |
+| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-90) |
 | [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) | Aprobado (D-83, 2026-11-16) |
 | [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) | Aprobado (D-83, 2026-11-16) |
 | [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` | Borrador para revisión |
@@ -72,6 +72,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 043 | [Agrupar, duplicar, copiar y pegar](done/043-group-duplicate-and-clipboard.md) | Agrupar (Ctrl+G) y Desagrupar (Ctrl+Mayús+G) sin mover nada y conservando el orden (D-35); doble clic entra en un grupo y Esc sale; mover, redimensionar, girar, voltear, alinear, ordenar y eliminar un grupo con todo lo que tiene; Capas en árbol; Ctrl+A y el marco con grupos; Duplicar (Ctrl+D, +10 px, «{nombre} copia»); Cortar, Copiar y Pegar con un portapapeles de la sesión que lleva las entradas de assets y texto plano al del sistema; Ctrl+Alt+C vuelve a alinear en la ventana; sin cambio de formato; un paso de deshacer por acción; 27 tests nuevos, 30 mutantes a mano muertos, 3117 tests |
 | 044 | [Guías, Imán y mover con flechas](done/044-guides-snapping-and-nudge.md) | Alinear con Alt+A/H/D y Alt+W/V/S (D-88, AltGr no alinea); Imán al mover y redimensionar con umbral de 6 px de pantalla a página, elementos (cajas alineadas, D-28) y guías, Alt lo suelta, guía inteligente; Reglas y Guías por página (crear desde la regla, mover, borrar soltando en la regla, un paso de deshacer cada una, ya en el `.gaf`); Ver → Reglas, Guías e Imán recordados en `Settings.view`, botón Imán con icono Phosphor; flechas 1 px y Mayús 10 px, fusionadas en 500 ms; 23 tests nuevos, 23 mutantes a mano muertos, 3140 tests |
 | 045 | [Proporción, cursores y tamaño al redimensionar](done/045-resize-proportions-cursors-and-size-label.md) | Las esquinas conservan la proporción y Mayús la libera (D-89), también giradas en sus ejes, con mínimo de 1 px y sin romperla al pasar la esquina opuesta; el Imán engancha el borde que manda; cursor de doble flecha por sector de 45° en cada asa (Grab/Grabbing en el giro), con la misma prueba de toque que el agarre; etiqueta «320 × 180» con su cambio junto al puntero, fuera del elemento y dentro de la vista; 9 tests nuevos, 19 mutantes a mano muertos, 3149 tests |
+| 047 | [Alt redimensiona desde el centro, Ctrl suelta el Imán](done/047-alt-centre-resize-and-ctrl-magnet.md) | `Alt` en un tirador redimensiona desde el centro, simétrico y en los ejes del elemento girado y de los grupos (D-90); las esquinas conservan la proporción y Mayús la libera; mínimo de 1 px sin voltear al pasar el centro; el Imán engancha el borde arrastrado y refleja el opuesto; `Ctrl`/`Cmd` suelta el Imán al mover y redimensionar, en lugar de `Alt`; la etiqueta de tamaño se mantiene; 7 tests nuevos, 24 mutantes a mano muertos, 3156 tests |
 
 ### Historial del flujo anterior
 
@@ -88,4 +89,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **046**.
+Siguiente ID libre: **048**.
