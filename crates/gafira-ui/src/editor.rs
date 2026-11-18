@@ -26,6 +26,7 @@ use crate::format::fit_zoom;
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
 use crate::magnet::{self, Snap};
+use crate::resize;
 use crate::rotation::{self, Axis};
 use crate::ruler;
 use crate::selection::Selection;
@@ -1652,6 +1653,9 @@ impl Editor {
                 // guides (spec 044).
                 let mut page_rects: Vec<(PageId, Rect)> = Vec::new();
                 let mut guide_hit: Option<GuideDrag> = None;
+                // The cursor of the handle under the pointer or held (spec
+                // 045); it wins over a guide's.
+                let mut grip_cursor: Option<egui::CursorIcon> = None;
                 let width =
                     sizes.iter().map(|s| s.x).fold(0.0, f32::max) * zoom + 2.0 * CANVAS_MARGIN;
                 let height: f32 =
@@ -1827,6 +1831,43 @@ impl Editor {
                                                 egui::StrokeKind::Inside,
                                             );
                                         }
+                                        // The same hit test as the grab: the
+                                        // nearest handle within 24 px.
+                                        grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
+                                            Some(Some(Hold::Resize(handle))) => {
+                                                Some(resize::cursor(turn, handle))
+                                            }
+                                            Some(Some(Hold::Rotate { .. })) => {
+                                                Some(egui::CursorIcon::Grabbing)
+                                            }
+                                            Some(None) => grip_cursor,
+                                            None => response
+                                                .hover_pos()
+                                                .and_then(|at| {
+                                                    canvas::grip_hit(turn, &shape.placement, at)
+                                                })
+                                                .map(|grip| match grip {
+                                                    canvas::Grip::Resize(handle) => {
+                                                        resize::cursor(turn, handle)
+                                                    }
+                                                    canvas::Grip::Rotate => egui::CursorIcon::Grab,
+                                                })
+                                                .or(grip_cursor),
+                                        };
+                                        if let Some(drag) = &self.drag
+                                            && let Some(Hold::Resize(handle)) = drag.hold
+                                            && let Some((_, from)) = drag.origins.first()
+                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                        {
+                                            size_label(
+                                                painter,
+                                                theme,
+                                                at,
+                                                resize::outward(turn, handle),
+                                                area,
+                                                (from, &shape.placement),
+                                            );
+                                        }
                                         if response.drag_started()
                                             && let Some(pos) = pointer
                                             && let Some(grip) =
@@ -1904,6 +1945,7 @@ impl Editor {
                                 }
                                 if self.shown.guides
                                     && self.guide_drag.is_none()
+                                    && grip_cursor.is_none()
                                     && let Some(at) = response.hover_pos()
                                     && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
                                 {
@@ -1915,6 +1957,9 @@ impl Editor {
                                 laid.push((page_doc.id, page, shapes));
                             }
                             top = page.max.y + PAGE_GAP;
+                        }
+                        if let Some(icon) = grip_cursor {
+                            ui.ctx().set_cursor_icon(icon);
                         }
                         if let Some(handle) = grabbed {
                             // A handle of the selection wins over whatever
@@ -2292,11 +2337,17 @@ impl Editor {
                 .flat_map(|(node, origin)| {
                     let to = match drag.hold {
                         Some(Hold::Resize(handle)) => {
-                            let to = canvas::resized(origin, handle, drag.offset, zoom);
+                            // A corner keeps the proportions; Shift frees
+                            // them (D-89, spec 045).
+                            let keep = !asked.snap && resize::is_corner(handle);
+                            let to = resize::resized(origin, handle, drag.offset, zoom, keep);
                             match &field {
                                 Some(field) => {
-                                    let (to, edges) =
-                                        magnet::snap_resize(field, origin, handle, to);
+                                    let (to, edges) = if keep {
+                                        magnet::snap_resize_kept(field, origin, handle, to)
+                                    } else {
+                                        magnet::snap_resize(field, origin, handle, to)
+                                    };
                                     snap = edges;
                                     to
                                 }
@@ -2771,6 +2822,54 @@ fn group_reshaped(
 }
 
 /// The bytes of `hash` from the store, decoded and scaled for the canvas.
+/// The live size of a resize next to the pointer, outside the element
+/// and inside `view` (spec 045): «320 × 180» and, in the secondary
+/// colour, how much each side changed. `sizes` is where the element
+/// started and where it is now.
+fn size_label(
+    painter: &egui::Painter,
+    theme: &Theme,
+    pointer: Pos2,
+    outward: Vec2,
+    view: Rect,
+    sizes: (&Placement, &Placement),
+) {
+    let (from, now) = sizes;
+    let font = theme.font("caption");
+    let size = painter.layout_no_wrap(
+        resize::size_text(now.w, now.h),
+        font.clone(),
+        theme.c("text"),
+    );
+    let delta = painter.layout_no_wrap(
+        resize::delta_text(now.w - from.w, now.h - from.h),
+        font,
+        theme.c("text.secondary"),
+    );
+    let pad = Vec2::new(8.0, 4.0);
+    let gap = 8.0;
+    let inner = Vec2::new(
+        size.size().x + gap + delta.size().x,
+        size.size().y.max(delta.size().y),
+    );
+    let rect = resize::label_rect(pointer, outward, inner + pad * 2.0, view);
+    painter.rect(
+        rect,
+        theme.radius_sm(),
+        theme.c("surface.raised"),
+        Stroke::new(1.0, theme.c("border")),
+        egui::StrokeKind::Inside,
+    );
+    let at = rect.min + pad;
+    let size_width = size.size().x;
+    painter.galley(at, size, theme.c("text"));
+    painter.galley(
+        at + Vec2::new(size_width + gap, 0.0),
+        delta,
+        theme.c("text.secondary"),
+    );
+}
+
 /// The cursor over a guide or a ruler: it moves across its line.
 fn guide_cursor(axis: GuideAxis) -> egui::CursorIcon {
     match axis {
@@ -3815,7 +3914,9 @@ pub(crate) mod tests {
             (origin.x, origin.y),
             "the top-left corner stays"
         );
-        assert_eq!((resized.w - origin.w, resized.h - origin.h), (40.0, 20.0));
+        // The corner keeps the square's proportions (D-89, spec 045): the
+        // wider drag drives.
+        assert_eq!((resized.w - origin.w, resized.h - origin.h), (40.0, 40.0));
         engine.edit().undo().expect("an undo");
         assert_eq!(the_shapes(&mut engine)[0].placement, origin);
     }
@@ -5791,5 +5892,71 @@ pub(crate) mod tests {
                 .len(),
             2
         );
+    }
+
+    // S45-09: a corner keeps the proportions in one undo step, Shift frees
+    // them, the magnet snaps the driving edge and the other follows; while
+    // the handle is held the frame shows its resize cursor and the size
+    // label.
+    #[test]
+    fn s45_09_a_corner_keeps_the_proportions_through_the_editor() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        editor.zoom = 1.0;
+        editor.selected = Selection::one(page, rect);
+        let origin = placements(&mut engine, &[rect])[0];
+        let corner = Some(Hold::Resize(canvas::Handle { x: 1, y: 1 }));
+        let depth = undo_depth(&mut engine);
+        let drag = |engine: &mut Gafira, editor: &mut Editor, offset: Vec2, shift: bool| {
+            gesture(
+                engine,
+                editor,
+                vec![
+                    Asked {
+                        drag_begin: Some(corner),
+                        ..Asked::default()
+                    },
+                    Asked {
+                        drag_to: Some(offset),
+                        snap: shift,
+                        ..Asked::default()
+                    },
+                ],
+            );
+        };
+        drag(&mut engine, &mut editor, Vec2::new(30.0, 5.0), false);
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!((to.x, to.y, to.w, to.h), (origin.x, origin.y, 390.0, 390.0));
+        // The frame while the handle is held.
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let mut session = None;
+        let output = frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![],
+            Modifiers::NONE,
+            &mut session,
+        );
+        assert_eq!(output.cursor_icon, egui::CursorIcon::ResizeNwSe);
+        // The frame fits the zoom to its window; the drags below are at 100 %.
+        editor.zoom = 1.0;
+        drag_end(&mut engine, &mut editor);
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        engine.edit().undo().expect("an undo");
+        drag(&mut engine, &mut editor, Vec2::new(30.0, 15.0), true);
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!((to.w, to.h), (390.0, 375.0), "Shift frees them");
+        drag_end(&mut engine, &mut editor);
+        engine.edit().undo().expect("an undo");
+        // 3 px short of the ellipse: the right edge snaps and the height
+        // follows.
+        drag(&mut engine, &mut editor, Vec2::new(37.0, 0.0), false);
+        let to = placements(&mut engine, &[rect])[0];
+        assert_eq!((to.x, to.y, to.w, to.h), (origin.x, origin.y, 400.0, 400.0));
+        assert_eq!(editor.snapped.and_then(|(_, s)| s.x), Some(760.0));
+        drag_end(&mut engine, &mut editor);
     }
 }

@@ -205,3 +205,53 @@ fn s44_02_arrows_nudge_one_or_ten_px() {
     assert_eq!(nudge(Key::ArrowDown, true), Some((0.0, 10.0)));
     assert_eq!(nudge(Key::A, false), None);
 }
+
+// S45-08: a corner that keeps the proportions snaps one edge, the nearer
+// target, and the other side follows the ratio from the fixed corner
+// (spec 045).
+#[test]
+fn s45_08_a_kept_corner_snaps_the_driving_edge_and_derives_the_other() {
+    let origin = place(100.0, 100.0, 200.0, 100.0);
+    let page = page(&[origin, place(700.0, 297.0, 10.0, 100.0)]);
+    let moving = [n(1)];
+    let f = field(&page, 1.0, &moving);
+    let corner = Handle { x: 1, y: 1 };
+    let kept = |w: f64| Placement::new(100.0, 100.0, w, w / 2.0);
+    // The right edge is 2 px from the page centre (500), the bottom 4 px
+    // from the other element's top (297): the right edge drives.
+    let (to, snap) = snap_resize_kept(&f, &origin, corner, kept(402.0));
+    assert_eq!(boxed(&to), (100.0, 100.0, 400.0, 200.0));
+    assert_eq!((snap.x, snap.y), (Some(500.0), None));
+    // Both are near: the bottom (1 px from 297) beats the right (4 px).
+    let (to, snap) = snap_resize_kept(&f, &origin, corner, kept(396.0));
+    assert_eq!(boxed(&to), (100.0, 100.0, 394.0, 197.0));
+    assert_eq!((snap.x, snap.y), (None, Some(297.0)));
+    // The top-left corner: the left edge to the page edge, the bottom-right
+    // corner fixed.
+    let top_left = Handle { x: -1, y: -1 };
+    let near = Placement::new(4.0, 52.0, 296.0, 148.0);
+    let (to, _) = snap_resize_kept(&f, &origin, top_left, near);
+    assert_eq!(boxed(&to), (0.0, 50.0, 300.0, 150.0));
+    // Nothing near, the magnet off, or a turned element: as it was.
+    let far = kept(330.0);
+    assert_eq!(
+        snap_resize_kept(&f, &origin, corner, far),
+        (far, Snap::default())
+    );
+    let mut off = f;
+    off.active = false;
+    assert_eq!(
+        snap_resize_kept(&off, &origin, corner, kept(394.0)).0,
+        kept(394.0)
+    );
+    let mut turned = origin;
+    turned.rotation_deg = 30.0;
+    assert_eq!(
+        snap_resize_kept(&f, &turned, corner, kept(394.0)).0,
+        kept(394.0)
+    );
+}
+
+fn boxed(p: &Placement) -> (f64, f64, f64, f64) {
+    (p.x, p.y, p.w, p.h)
+}

@@ -158,6 +158,57 @@ pub(crate) fn snap_resize(
     (to, kept)
 }
 
+/// `kept` (what a corner that keeps the proportions made of `origin`,
+/// spec 045) with one dragged edge snapped: the one nearer its target, x
+/// on a tie. The other side follows the proportions of `origin` from the
+/// fixed corner, so the ratio holds. Only an upright element snaps.
+pub(crate) fn snap_resize_kept(
+    field: &Field<'_>,
+    origin: &Placement,
+    handle: Handle,
+    kept: Placement,
+) -> (Placement, Snap) {
+    let none = (kept, Snap::default());
+    if !rotation::upright(origin) || origin.w <= 0.0 || origin.h <= 0.0 {
+        return none;
+    }
+    let edge = |side: i8, lo: f64, size: f64| if side == 1 { lo + size } else { lo };
+    let snap = snap_edges(
+        field,
+        Some(edge(handle.x, kept.x, kept.w)),
+        Some(edge(handle.y, kept.y, kept.h)),
+    );
+    // The driving edge: the one that snapped, the nearer if both did.
+    let by_x = match (snap.x, snap.y) {
+        (Some(_), Some(_)) => snap.dx.abs() <= snap.dy.abs(),
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => return none,
+    };
+    let scale = if by_x {
+        (kept.w + f64::from(handle.x) * snap.dx) / origin.w
+    } else {
+        (kept.h + f64::from(handle.y) * snap.dy) / origin.h
+    };
+    let Some(to) = crate::resize::scaled(origin, handle, scale) else {
+        return none;
+    };
+    let shown = if by_x {
+        Snap {
+            dx: snap.dx,
+            x: snap.x,
+            ..Snap::default()
+        }
+    } else {
+        Snap {
+            dy: snap.dy,
+            y: snap.y,
+            ..Snap::default()
+        }
+    };
+    (to, shown)
+}
+
 /// How far an arrow key moves the selection, in px of page; Shift moves
 /// [`NUDGE_SHIFT`]. Any other key is `None`.
 pub(crate) fn nudge(key: Key, shift: bool) -> Option<(f64, f64)> {

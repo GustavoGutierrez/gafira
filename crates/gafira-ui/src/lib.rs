@@ -24,6 +24,7 @@ mod home;
 mod icons;
 mod magnet;
 mod recent;
+mod resize;
 mod rotation;
 mod ruler;
 mod saving;
