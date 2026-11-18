@@ -1,0 +1,3 @@
+# `cargo xtask <task>` runs the repository tasks of `xtask/` (spec 046).
+[alias]
+xtask = "run --locked --package xtask --"

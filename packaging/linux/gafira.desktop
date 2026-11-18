@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Gafira
+GenericName=Design editor
+GenericName[es]=Editor de diseño
+Comment=Bring your ideas to life.
+Comment[es]=Haz visibles tus ideas.
+Exec=gafira
+Icon=gafira
+Terminal=false
+Categories=Graphics;
+Keywords=design;image;editor;
+Keywords[es]=diseño;imagen;editor;
+StartupWMClass=gafira
+StartupNotify=true
