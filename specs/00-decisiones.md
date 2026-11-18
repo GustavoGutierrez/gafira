@@ -800,3 +800,11 @@ Fecha: 17 de noviembre de 2026.
 - **Decisión** (titular): al redimensionar, los cuatro tiradores de esquina conservan la proporción del elemento por defecto, con la esquina opuesta fija; mantener `Shift` mientras se arrastra la libera. Los tiradores de lado siguen cambiando una sola dimensión. Vale para formas, imágenes, cajas de texto y grupos, y para lo girado en sus propios ejes.
 - **Consecuencia**: invierte lo que decía 03 §9.1 («`Shift` conserva la proporción»). El Imán engancha el borde que manda y el otro lado sigue la proporción. El tamaño mínimo (1 px) y arrastrar más allá de la esquina opuesta no rompen la proporción. Se aplica en la spec 045.
 - Precisa 03 §9.1. Aplicado a 03 (§9.1 y §9.2).
+
+## D-90 Alt redimensiona desde el centro; Ctrl suelta el Imán
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): mantener `Alt` mientras se arrastra un tirador redimensiona desde el centro: el centro se queda fijo y los lados opuestos se mueven a la vez y lo mismo. Se combina con D-89: una esquina conserva la proporción por defecto, desde el centro; `Shift` la libera; `Alt+Shift` es libre y desde el centro. Un lado con `Alt` cambia esa dimensión simétrica. Vale para lo girado en sus propios ejes y para los grupos. Mantener `Ctrl` (`Cmd` en macOS) mientras se mueve o se redimensiona suelta el Imán; `Alt` ya no lo hace.
+- **Consecuencia**: resuelve el choque que dejó abierto la 045 (`Alt` desde el centro y `Alt` sin Imán) y saca el Imán de una tecla que algunos escritorios Linux usan para mover la ventana. El tamaño mínimo (1 px) se mantiene: más allá del centro el elemento se queda en el mínimo centrado, sin voltearse. El Imán engancha el borde arrastrado y refleja el opuesto. Durante el arrastre solo cuenta el estado de `Ctrl`: no dispara atajos ni copia. Se aplica en la spec 047.
+- Precisa 03 §9.1 y 04 FD-06. Aplicado a 03 (§9.1) y 04 (FD-06).

@@ -173,3 +173,138 @@ fn s45_07_the_size_label_sits_outside_and_flips_at_the_view_edge() {
     );
     assert_eq!(at(10.0, 10.0, Vec2::new(-1.0, -1.0)), Pos2::new(26.0, 26.0));
 }
+
+/// The page centre of `p`.
+fn centre(p: &Placement) -> (f64, f64) {
+    (p.x + p.w / 2.0, p.y + p.h / 2.0)
+}
+
+// S47-01: with Alt a resize goes from the centre: the opposite side moves
+// as much the other way, so the side changes twice the drag (D-90).
+#[test]
+fn s47_01_from_the_centre_the_opposite_side_mirrors() {
+    let o = origin();
+    let at =
+        |handle, x: f32, y: f32| boxed(&resized_centred(&o, handle, Vec2::new(x, y), 1.0, false));
+    assert_eq!(at(h(1, 0), 20.0, 7.0), (80.0, 100.0, 240.0, 100.0));
+    assert_eq!(at(h(-1, 0), -20.0, 7.0), (80.0, 100.0, 240.0, 100.0));
+    assert_eq!(at(h(0, 1), 7.0, 10.0), (100.0, 90.0, 200.0, 120.0));
+    assert_eq!(at(h(0, -1), 7.0, -10.0), (100.0, 90.0, 200.0, 120.0));
+    assert_eq!(at(h(1, 1), 20.0, 10.0), (80.0, 90.0, 240.0, 120.0));
+    assert_eq!(at(h(-1, -1), -20.0, -10.0), (80.0, 90.0, 240.0, 120.0));
+    // An edge with the proportions asked for still changes one side.
+    let edge = resized_centred(&o, h(1, 0), Vec2::new(20.0, 0.0), 1.0, true);
+    assert_eq!(boxed(&edge), (80.0, 100.0, 240.0, 100.0));
+    // At 200 % the same drag is twice the screen px.
+    let zoomed = resized_centred(&o, h(1, 1), Vec2::new(40.0, 20.0), 2.0, false);
+    assert_eq!(boxed(&zoomed), (80.0, 90.0, 240.0, 120.0));
+    assert_eq!(centre(&zoomed), centre(&o));
+}
+
+// S47-02: a corner from the centre keeps the proportions by default; the
+// side that grows more drives.
+#[test]
+fn s47_02_a_corner_from_the_centre_keeps_the_proportions() {
+    let o = origin();
+    let at =
+        |handle, x: f32, y: f32| boxed(&resized_centred(&o, handle, Vec2::new(x, y), 1.0, true));
+    assert_eq!(at(h(1, 1), 50.0, 5.0), (50.0, 75.0, 300.0, 150.0));
+    assert_eq!(at(h(-1, -1), -50.0, -5.0), (50.0, 75.0, 300.0, 150.0));
+    assert_eq!(at(h(1, -1), 0.0, -25.0), (50.0, 75.0, 300.0, 150.0));
+    assert_eq!(at(h(-1, 1), 0.0, 25.0), (50.0, 75.0, 300.0, 150.0));
+    assert_eq!(at(h(1, 1), 0.0, 0.0), boxed(&o), "no drag");
+}
+
+// S47-03: past the centre nothing flips: the side stops at 1 px about the
+// centre, and a kept corner at the smallest box of its proportions.
+#[test]
+fn s47_03_past_the_centre_it_stops_at_the_minimum() {
+    let o = origin();
+    let edge = resized_centred(&o, h(1, 0), Vec2::new(-150.0, 0.0), 1.0, false);
+    assert_eq!(boxed(&edge), (199.5, 100.0, 1.0, 100.0));
+    assert_eq!(edge.flip, o.flip, "no flip");
+    let kept = resized_centred(&o, h(1, 1), Vec2::new(-300.0, -300.0), 1.0, true);
+    assert_eq!(boxed(&kept), (199.0, 149.5, 2.0, 1.0));
+    let free = resized_centred(&o, h(1, 1), Vec2::new(-300.0, -300.0), 1.0, false);
+    assert_eq!(boxed(&free), (199.5, 149.5, 1.0, 1.0));
+    let left = resized_centred(&o, h(-1, 0), Vec2::new(500.0, 0.0), 1.0, false);
+    assert_eq!(boxed(&left), (199.5, 100.0, 1.0, 100.0));
+    assert_eq!(
+        scaled_centred(&o, 0.5).map(|p| boxed(&p)),
+        Some((150.0, 125.0, 100.0, 50.0))
+    );
+    assert_eq!(
+        scaled_centred(&o, 2.0).map(|p| boxed(&p)),
+        Some((0.0, 50.0, 400.0, 200.0))
+    );
+    assert_eq!(scaled_centred(&o, 0.004), None, "under 1 px");
+}
+
+// S47-04: a turned element resizes from its centre in its own axes: the
+// centre stays on the page and the turn is kept.
+#[test]
+fn s47_04_a_turned_element_resizes_from_its_centre_in_its_axes() {
+    let mut o = origin();
+    o.rotation_deg = 90.0;
+    let page_centre = |p: &Placement| p.to_transform() * Point::new(p.w / 2.0, p.h / 2.0);
+    // Local x points down the page at 90°: a page drag of (0, 50) is +50 on
+    // the local right edge, so w grows by 100.
+    let edge = resized_centred(&o, h(1, 0), Vec2::new(0.0, 50.0), 1.0, false);
+    assert!((edge.w - 300.0).abs() < 1e-9 && edge.h == 100.0, "{edge:?}");
+    assert_eq!(edge.rotation_deg, 90.0);
+    assert!((page_centre(&edge) - page_centre(&o)).hypot() < 1e-9);
+    let kept = resized_centred(&o, h(1, 1), Vec2::new(0.0, 50.0), 1.0, true);
+    assert!(
+        (kept.w - 300.0).abs() < 1e-9 && (kept.h - 150.0).abs() < 1e-9,
+        "{kept:?}"
+    );
+    assert!((page_centre(&kept) - page_centre(&o)).hypot() < 1e-9);
+    // Along the local y axis (page −x at 90°) the height grows instead.
+    let down = resized_centred(&o, h(0, 1), Vec2::new(-10.0, 0.0), 1.0, false);
+    assert!(
+        (down.h - 120.0).abs() < 1e-9 && (down.w - 200.0).abs() < 1e-9,
+        "{down:?}"
+    );
+    assert!((page_centre(&down) - page_centre(&o)).hypot() < 1e-9);
+}
+
+// S47-06: Alt resizes from the centre, Ctrl (Cmd on macOS: egui's
+// `command`) lets the magnet go, Shift frees a corner (D-90).
+#[test]
+fn s47_06_the_keys_of_a_drag() {
+    let keys = |shift, centre, free| DragKeys {
+        shift,
+        centre,
+        free,
+    };
+    assert_eq!(drag_keys(Modifiers::NONE), keys(false, false, false));
+    assert_eq!(drag_keys(Modifiers::ALT), keys(false, true, false));
+    assert_eq!(drag_keys(Modifiers::COMMAND), keys(false, false, true));
+    assert_eq!(drag_keys(Modifiers::SHIFT), keys(true, false, false));
+    let ctrl = Modifiers {
+        ctrl: true,
+        command: true,
+        ..Modifiers::NONE
+    };
+    assert_eq!(drag_keys(ctrl), keys(false, false, true), "Ctrl");
+    assert_eq!(
+        drag_keys(ctrl.plus(Modifiers::ALT)),
+        keys(false, true, true),
+        "Alt+Ctrl"
+    );
+    assert_eq!(
+        drag_keys(ctrl.plus(Modifiers::ALT).plus(Modifiers::SHIFT)),
+        keys(true, true, true)
+    );
+    let mac_cmd = Modifiers {
+        mac_cmd: true,
+        command: true,
+        ..Modifiers::NONE
+    };
+    assert_eq!(drag_keys(mac_cmd), keys(false, false, true), "Cmd");
+    let mac_ctrl = Modifiers {
+        ctrl: true,
+        ..Modifiers::NONE
+    };
+    assert_eq!(drag_keys(mac_ctrl), keys(false, false, false), "macOS Ctrl");
+}
