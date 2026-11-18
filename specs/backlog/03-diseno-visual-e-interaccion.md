@@ -1111,7 +1111,8 @@ Estados comunes: **reposo, hover, foco, pressed, disabled, error, success, selec
 | Edición | Mover 1 px · 10 px · Girar 15° | Flechas · Shift+flechas · Shift+giro |
 | Capas | Agrupar · Desagrupar | Ctrl+G · Ctrl+Shift+G |
 | Capas | Traer adelante · Enviar atrás · Al frente · Al fondo | Ctrl+] · Ctrl+[ · Ctrl+Shift+] · Ctrl+Shift+[ |
-| Capas | Bloquear · Ocultar · Alinear a la izquierda / centro / derecha | Ctrl+Shift+L · Ctrl+Shift+H · Ctrl+Alt+L / C / R |
+| Capas | Bloquear · Ocultar | Ctrl+Shift+L · Ctrl+Shift+H |
+| Capas | Alinear a la izquierda / centro / derecha · arriba / medio / abajo (D-88) | Alt+A / H / D · Alt+W / V / S |
 | Ver | Acercar · Alejar · Ajustar a la ventana · 100 % | Ctrl+= · Ctrl+- · Ctrl+0 · Ctrl+1 |
 | Ver | Reglas · Guías · Cuadrícula · Imán | Ctrl+Shift+R · Ctrl+; · Ctrl+' · Ctrl+Shift+' |
 | Ver | Modo claro/oscuro · Panel lateral · Inspector | Ctrl+Shift+D · Ctrl+\ · Ctrl+Shift+\ |

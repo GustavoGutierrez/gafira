@@ -784,3 +784,11 @@ Fecha: 17 de noviembre de 2026.
 - **Decisión** (titular): la colección de iconos de partida es **Phosphor** (licencia MIT), no Lucide ni Feather. Se usa el peso «Regular»: 1,5 px de trazo a 24 px, con terminaciones y uniones redondeadas. Para los estados activos, que 03 §13 rellena, se usa el peso «Fill». Los iconos que falten se dibujan en la misma rejilla.
 - **Consecuencia**: cierra PD-07 de 03. La licencia de la versión adoptada se comprueba al importarla, y cada icono va a `assets/LICENSES.toml` con su aviso en `THIRD_PARTY_NOTICES.md` (ARQ-75). Los SVG se convierten en geometría en tiempo de compilación; no se usan fuentes de iconos.
 - Precisa 03 §13 («Origen»). Aplicado a 03 (§13 y PD-07).
+
+## D-88 Atajos de Alinear con Alt
+
+Fecha: 17 de noviembre de 2026.
+
+- **Decisión** (titular): los atajos de Alinear dejan `Ctrl+Alt+L/C/R`, porque `Ctrl+Alt+L` bloquea la sesión en algunos escritorios Linux. Pasan a `Alt` con una letra, y las seis acciones tienen atajo: `Alt+A` izquierda, `Alt+H` centro horizontal, `Alt+D` derecha, `Alt+W` arriba, `Alt+V` medio vertical y `Alt+S` abajo.
+- **Consecuencia**: cuentan solo con `Alt` exacto. AltGr no los dispara: en Windows llega como `Ctrl+Alt` y en Linux no llega como `Alt`, así que los caracteres que el teclado español escribe con AltGr no alinean. No chocan con los atajos de 03 §9.2 (`Shift+H` y `Shift+V` voltean; `W` del Editor de video no lleva modificador). `Ctrl+Alt+C` vuelve a ser una copia, como la convierte la ventana. Se aplica en la spec 044.
+- Precisa 03 §9.2 y 04 FD-11. Aplicado a 03 (§9.2) y 04 (FD-11).

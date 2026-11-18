@@ -69,13 +69,15 @@ const DUPLICATE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Ke
 const GROUP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
 const UNGROUP: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::G);
-/// Alinear and Orden de apilado (03 §9.2 «Capas», spec 042).
-const ALIGN_LEFT: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::L);
-const ALIGN_CENTER: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::C);
-const ALIGN_RIGHT: KeyboardShortcut =
-    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::R);
+/// Alinear (03 §9.2 «Capas», D-88): Alt with one letter, never Ctrl+Alt,
+/// which locks the screen on some Linux desktops and is AltGr on Windows.
+const ALIGN_LEFT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::A);
+const ALIGN_CENTER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::H);
+const ALIGN_RIGHT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::D);
+const ALIGN_TOP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::W);
+const ALIGN_MIDDLE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::V);
+const ALIGN_BOTTOM: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::S);
+/// Orden de apilado (03 §9.2 «Capas», spec 042).
 const FORWARD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::CloseBracket);
 const BACKWARD: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::OpenBracket);
 const FRONT: KeyboardShortcut =
@@ -84,7 +86,7 @@ const BACK: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::OpenBracket);
 
 /// The six Align actions with their catalog key, icon and shortcut, in the
-/// order of FD-11; only left, centre and right have one (03 §9.2).
+/// order of FD-11 (03 §9.2, D-88).
 const ALIGNS: [(AlignAction, &str, Icon, Option<KeyboardShortcut>); 6] = [
     (
         AlignAction::Left,
@@ -104,18 +106,23 @@ const ALIGNS: [(AlignAction, &str, Icon, Option<KeyboardShortcut>); 6] = [
         Icon::AlignRight,
         Some(ALIGN_RIGHT),
     ),
-    (AlignAction::Top, "arrange.align_top", Icon::AlignTop, None),
+    (
+        AlignAction::Top,
+        "arrange.align_top",
+        Icon::AlignTop,
+        Some(ALIGN_TOP),
+    ),
     (
         AlignAction::Middle,
         "arrange.align_middle",
         Icon::AlignMiddle,
-        None,
+        Some(ALIGN_MIDDLE),
     ),
     (
         AlignAction::Bottom,
         "arrange.align_bottom",
         Icon::AlignBottom,
-        None,
+        Some(ALIGN_BOTTOM),
     ),
 ];
 
@@ -674,11 +681,9 @@ impl Editor {
                     asked.duplicate = true;
                 }
                 // The window turns Ctrl+C, Ctrl+X and Ctrl+V into clipboard
-                // events, also with Alt held, so Ctrl+Alt+C arrives as a
-                // copy and aligns to the centre here (spec 042). A paste
-                // carries the system clipboard: it pastes the clip only when
-                // that text is the one the copy put there; other text is not
-                // pasted (spec 043).
+                // events. A paste carries the system clipboard: it pastes the
+                // clip only when that text is the one the copy put there;
+                // other text is not pasted (spec 043).
                 if i.modifiers.matches_exact(Modifiers::COMMAND) {
                     asked.copy |= i.key_pressed(egui::Key::C);
                     asked.cut |= i.key_pressed(egui::Key::X);
@@ -686,9 +691,6 @@ impl Editor {
                 }
                 for event in &i.events {
                     match event {
-                        egui::Event::Copy if i.modifiers.alt => {
-                            asked.align = Some(AlignAction::Center);
-                        }
                         egui::Event::Copy => asked.copy = true,
                         egui::Event::Cut => asked.cut = true,
                         egui::Event::Paste(text)
@@ -699,17 +701,14 @@ impl Editor {
                         _ => {}
                     }
                 }
-                // Ctrl+Alt+L/C/R align (03 §9.2); a platform shortcut on
-                // the same keys wins before it reaches the window.
-                if i.modifiers
-                    .matches_exact(Modifiers::COMMAND.plus(Modifiers::ALT))
-                {
-                    for (key, action) in [
-                        (egui::Key::L, AlignAction::Left),
-                        (egui::Key::C, AlignAction::Center),
-                        (egui::Key::R, AlignAction::Right),
-                    ] {
-                        if i.key_pressed(key) {
+                // Alt+A/H/D and Alt+W/V/S align (03 §9.2, D-88). Only Alt
+                // exactly: AltGr is Ctrl+Alt on Windows and no Alt on Linux,
+                // so a character typed with AltGr never aligns.
+                if i.modifiers.matches_exact(Modifiers::ALT) {
+                    for (action, _, _, keys) in ALIGNS {
+                        if let Some(keys) = keys
+                            && i.key_pressed(keys.logical_key)
+                        {
                             asked.align = Some(action);
                         }
                     }
@@ -4415,8 +4414,9 @@ pub(crate) mod tests {
         assert_eq!(undo_depth(&mut engine), depth + 2, "no step for no change");
     }
 
-    // S42-14: Ctrl+Alt+L/C/R align, Ctrl+] and Ctrl+[ move one step, with
-    // Shift to the front or the back; without Ctrl they do nothing.
+    // S42-14: Alt+D/H/A align (D-88 replaced Ctrl+Alt+R/C/L, S44-01),
+    // Ctrl+] and Ctrl+[ move one step, with Shift to the front or the back;
+    // without Ctrl they do nothing.
     #[test]
     fn s42_14_shortcuts_align_and_order() {
         let mut engine = engine();
@@ -4430,14 +4430,14 @@ pub(crate) mod tests {
             .iter()
             .map(right)
             .fold(f64::NEG_INFINITY, f64::max);
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::R), command_alt);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::D), Modifiers::ALT);
         assert!(
             the_shapes(&mut engine)
                 .iter()
                 .all(|s| right(s) == rightmost)
         );
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::C), command_alt);
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::L), command_alt);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), Modifiers::ALT);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::A), Modifiers::ALT);
         let shapes = the_shapes(&mut engine);
         assert!(
             shapes
@@ -4556,6 +4556,11 @@ pub(crate) mod tests {
         assert_eq!(
             arrange_tooltip(&ctx, &texts, "arrange.align_top", None),
             "Alinear arriba"
+        );
+        // S44-01: every Align action names its Alt shortcut (D-88).
+        assert_eq!(
+            arrange_tooltip(&ctx, &texts, "arrange.align_top", Some(ALIGN_TOP)),
+            format!("Alinear arriba · {}", ctx.format_shortcut(&ALIGN_TOP)),
         );
         assert_eq!(
             distribute_tooltip(&texts, "arrange.distribute_vertical", false),
@@ -4861,10 +4866,10 @@ pub(crate) mod tests {
     }
 
     // S43-17: Esc inside a group selects the group and leaves it; Ctrl+A in
-    // a group selects its children; Ctrl+Alt+C, which the window turns
-    // into a copy, still aligns to the centre (spec 042).
+    // a group selects its children; Alt+H aligns to the centre (D-88
+    // replaced Ctrl+Alt+C, which the window turns into a copy).
     #[test]
-    fn s43_17_escape_leaves_the_group_and_ctrl_alt_c_aligns() {
+    fn s43_17_escape_leaves_the_group_and_alt_h_aligns() {
         let mut engine = engine();
         let mut editor = Editor::default();
         let (page, group, [a, b, c]) = grouped(&mut engine, &mut editor);
@@ -4892,16 +4897,7 @@ pub(crate) mod tests {
         assert!(editor.selected.is_empty());
         editor.selected = Selection::of(page, [group, c]);
         let before = placements(&mut engine, &[a, b, c]);
-        let mut session = None;
-        frame_events(
-            &ctx,
-            &mut editor,
-            &mut engine,
-            vec![egui::Event::Copy],
-            Modifiers::COMMAND.plus(Modifiers::ALT),
-            &mut session,
-        );
-        assert_eq!(session, None, "not a copy");
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), Modifiers::ALT);
         assert_ne!(placements(&mut engine, &[a, b, c]), before, "it aligned");
         let document = engine.edit().document();
         let boxes = selected_shapes(document.as_deref(), &editor.selected);
@@ -4939,5 +4935,68 @@ pub(crate) mod tests {
             [false; 4],
             "two lists"
         );
+    }
+
+    // S44-01: Alt+W, Alt+V and Alt+S align to the top, middle and bottom
+    // (D-88). Ctrl+Alt with any Align letter (AltGr on Windows) and the old
+    // Ctrl+Alt+L/C/R do not align, and a copy with Alt held is a copy.
+    #[test]
+    fn s44_01_alt_letters_align_and_ctrl_alt_does_not() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, nodes) = three_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let before = placements(&mut engine, &nodes);
+        let top = before.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+        let low = before.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+        let command_alt = Modifiers::COMMAND.plus(Modifiers::ALT);
+        for key in [
+            Key::A,
+            Key::H,
+            Key::D,
+            Key::W,
+            Key::V,
+            Key::L,
+            Key::C,
+            Key::R,
+        ] {
+            frame_with(&ctx, &mut editor, &mut engine, Some(key), command_alt);
+        }
+        assert_eq!(
+            placements(&mut engine, &nodes),
+            before,
+            "Ctrl+Alt never aligns"
+        );
+        editor.selected = Selection::of(page, nodes);
+        let ys = |engine: &mut Gafira| {
+            placements(engine, &nodes)
+                .iter()
+                .map(|p| p.y)
+                .collect::<Vec<_>>()
+        };
+        for (key, y) in [
+            (Key::W, top),
+            (Key::S, low),
+            (Key::V, f64::midpoint(top, low)),
+        ] {
+            frame_with(&ctx, &mut editor, &mut engine, Some(key), Modifiers::ALT);
+            assert!(
+                ys(&mut engine).iter().all(|at| (at - y).abs() < 1e-9),
+                "{key:?}"
+            );
+            engine.edit().undo().expect("undoes");
+            assert_eq!(placements(&mut engine, &nodes), before);
+        }
+        let mut session = None;
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Copy],
+            command_alt,
+            &mut session,
+        );
+        assert!(session.is_some(), "a copy");
+        assert_eq!(placements(&mut engine, &nodes), before, "no align");
     }
 }
