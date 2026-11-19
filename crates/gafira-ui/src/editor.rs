@@ -284,6 +284,9 @@ pub(crate) struct Editor {
     renaming: Option<(NodeId, String, bool)>,
     /// The row of Capas being dragged to a new place (spec 048).
     row_drag: Option<NodeId>,
+    /// The page clicked last, drawn with a border; `None` after a click
+    /// outside every page (spec 050).
+    active: Option<PageId>,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -355,6 +358,7 @@ impl Default for Editor {
             snapped: None,
             renaming: None,
             row_drag: None,
+            active: None,
         }
     }
 }
@@ -604,10 +608,9 @@ fn page_sizes(document: &Document) -> Vec<Vec2> {
 impl Editor {
     /// The page of the selection, or the first page.
     fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
-        self.selected
-            .page()
-            .and_then(|page| document.page(page))
-            .or_else(|| document.pages().first().map(AsRef::as_ref))
+        let ids: Vec<PageId> = document.pages().iter().map(|page| page.id).collect();
+        let id = current_page_id(&ids, self.selected.page(), self.active)?;
+        document.page(id)
     }
 
     /// Drops from the selection what `document` no longer draws (an undo
@@ -1975,6 +1978,17 @@ impl Editor {
                                 // The page colour belongs to the document (white
                                 // by default, 03 §7.1), not to the theme.
                                 painter.rect_filled(page, 0.0, Color32::WHITE);
+                                // The active page is ringed (S50-02).
+                                if self.active.is_some()
+                                    && self.active == pages.get(index).map(|p| p.id)
+                                {
+                                    painter.rect_stroke(
+                                        page,
+                                        0.0,
+                                        Stroke::new(2.0, selection),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
                                 painter.text(
                                     Pos2::new(page.min.x, page.min.y - 8.0),
                                     Align2::LEFT_BOTTOM,
@@ -2244,6 +2258,17 @@ impl Editor {
                             }
                             if let Some(icon) = grip_cursor {
                                 ui.ctx().set_cursor_icon(icon);
+                            }
+                            // A press on a page makes it the active one;
+                            // outside every page none is. A handle or a
+                            // guide keeps it (S50-01).
+                            if (response.clicked() || response.drag_started())
+                                && grabbed.is_none()
+                                && guide_hit.is_none()
+                                && let Some(at) = pointer
+                            {
+                                self.active =
+                                    active_after(&page_rects, at, picked.map(|(page, _)| page));
                             }
                             if let Some(handle) = grabbed {
                                 // A handle of the selection wins over whatever
@@ -3357,6 +3382,31 @@ fn bar_separator(ui: &mut egui::Ui, theme: &Theme) {
         Stroke::new(1.0, theme.c("border")),
     );
     ui.add_space(8.0);
+}
+
+/// The page a press on the canvas leaves active (S50-01): the page of
+/// the element it picked, else the page under `at`, else none (the
+/// workspace around the pages).
+fn active_after(pages: &[(PageId, Rect)], at: Pos2, picked: Option<PageId>) -> Option<PageId> {
+    picked.or_else(|| {
+        pages
+            .iter()
+            .find(|(_, rect)| rect.contains(at))
+            .map(|(page, _)| *page)
+    })
+}
+
+/// The page the editor works on (S50-03): the selection's, else the active
+/// one, else the first; a page that is gone does not count.
+fn current_page_id(
+    pages: &[PageId],
+    selected: Option<PageId>,
+    active: Option<PageId>,
+) -> Option<PageId> {
+    let known = |id: Option<PageId>| id.filter(|id| pages.contains(id));
+    known(selected)
+        .or_else(|| known(active))
+        .or_else(|| pages.first().copied())
 }
 
 /// The number «n de N» shows (S49-05): the place of `current` among
@@ -5619,6 +5669,62 @@ pub(crate) mod tests {
                 (base.visible, base.locked, base.name.clone())
             })
             .collect()
+    }
+
+    // S50-01: a press on an element activates its page, on a page's
+    // background that page, outside every page none.
+    #[test]
+    fn s50_01_active_after_a_click() {
+        let (one, two) = (PageId::new(1), PageId::new(2));
+        let pages = [
+            (
+                one,
+                Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::splat(400.0)),
+            ),
+            (
+                two,
+                Rect::from_min_size(Pos2::new(100.0, 500.0), Vec2::splat(400.0)),
+            ),
+        ];
+        assert_eq!(
+            active_after(&pages, Pos2::new(300.0, 600.0), None),
+            Some(two)
+        );
+        assert_eq!(
+            active_after(&pages, Pos2::new(300.0, 100.0), None),
+            Some(one)
+        );
+        assert_eq!(active_after(&pages, Pos2::new(20.0, 100.0), None), None);
+        assert_eq!(
+            active_after(&pages, Pos2::new(300.0, 470.0), None),
+            None,
+            "the gap"
+        );
+        assert_eq!(
+            active_after(&pages, Pos2::new(20.0, 100.0), Some(two)),
+            Some(two),
+            "the picked element's page wins"
+        );
+    }
+
+    // S50-03: the selection's page, else the active one, else the first;
+    // a page that is gone does not count.
+    #[test]
+    fn s50_03_current_page() {
+        let pages = [PageId::new(1), PageId::new(2), PageId::new(3)];
+        let (one, two, three) = (pages[0], pages[1], pages[2]);
+        assert_eq!(current_page_id(&pages, Some(three), Some(two)), Some(three));
+        assert_eq!(current_page_id(&pages, None, Some(two)), Some(two));
+        assert_eq!(current_page_id(&pages, None, None), Some(one));
+        assert_eq!(
+            current_page_id(&pages, None, Some(PageId::new(9))),
+            Some(one)
+        );
+        assert_eq!(
+            current_page_id(&pages, Some(PageId::new(9)), Some(two)),
+            Some(two)
+        );
+        assert_eq!(current_page_id(&[], None, Some(two)), None);
     }
 
     // S49-05: «n de N» counts from the page of the selection.
