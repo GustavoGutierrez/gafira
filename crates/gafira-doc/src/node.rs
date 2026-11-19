@@ -10,13 +10,75 @@ use crate::{ElementBase, ImageNode, NodeId, TextNode};
 pub struct GroupNode {}
 
 /// The outline of a shape, drawn inside the placement box.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Rect` and `Ellipse` are written as the strings `"rect"` and
+/// `"ellipse"`; a path as `{"path": {"commands": [...]}}` (D-95), so a
+/// document without paths writes the bytes it wrote before spec 054.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShapeGeometry {
     /// A rectangle filling the box.
     Rect,
     /// An ellipse inscribed in the box.
     Ellipse,
+    /// A vector path in the unit box, scaled to the placement (spec 054).
+    Path(ShapePath),
+}
+
+/// A vector path in the unit box: `(0, 0)` is the top-left corner of the
+/// placement and `(1, 1)` the bottom-right one (spec 054, D-95). Its
+/// interior follows the non-zero rule.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ShapePath {
+    /// The drawing orders, in order; the first one is a `MoveTo`.
+    pub commands: Vec<PathCommand>,
+}
+
+impl ShapePath {
+    /// The most orders a path holds.
+    pub const MAX_COMMANDS: usize = 4096;
+    /// The least and greatest coordinate a point may take: the path may
+    /// leave the unit box by one box in each direction.
+    pub const MIN_COORDINATE: f64 = -1.0;
+    pub const MAX_COORDINATE: f64 = 2.0;
+
+    /// A path of these orders.
+    pub fn new(commands: Vec<PathCommand>) -> Self {
+        Self { commands }
+    }
+
+    /// Every coordinate of every point, x then y, in order.
+    pub fn coordinates(&self) -> impl Iterator<Item = f64> + '_ {
+        self.commands.iter().flat_map(PathCommand::points).flatten()
+    }
+}
+
+/// One order of a [`ShapePath`], with its points in the unit box.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathCommand {
+    /// Start a new subpath at the point.
+    MoveTo([f64; 2]),
+    /// A straight line to the point.
+    LineTo([f64; 2]),
+    /// A quadratic curve through a control point to the point.
+    QuadTo([f64; 2], [f64; 2]),
+    /// A cubic curve through two control points to the point.
+    CubicTo([f64; 2], [f64; 2], [f64; 2]),
+    /// Close the subpath back to where it started.
+    Close,
+}
+
+impl PathCommand {
+    /// The points of the order, in order.
+    pub fn points(&self) -> Vec<[f64; 2]> {
+        match *self {
+            Self::MoveTo(p) | Self::LineTo(p) => vec![p],
+            Self::QuadTo(c, p) => vec![c, p],
+            Self::CubicTo(c1, c2, p) => vec![c1, c2, p],
+            Self::Close => Vec::new(),
+        }
+    }
 }
 
 /// The outline drawn along the edge of a shape, centred on it (spec 038,
@@ -40,7 +102,7 @@ impl ShapeStroke {
 }
 
 /// A geometric shape with an optional fill and outline.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShapeNode {
     /// The outline.
     pub geometry: ShapeGeometry,
@@ -162,6 +224,7 @@ mod tests {
         let geometry_name = |g: ShapeGeometry| match g {
             ShapeGeometry::Rect => "rect",
             ShapeGeometry::Ellipse => "ellipse",
+            ShapeGeometry::Path(_) => "path",
         };
         assert_eq!(kind_name(&NodeKind::Group(GroupNode {})), "group");
         assert_eq!(
@@ -274,7 +337,7 @@ mod tests {
             2.5,
         ));
         shape.corner_radius = 12.0;
-        let n = Node::new(base(1), NodeKind::Shape(shape));
+        let n = Node::new(base(1), NodeKind::Shape(shape.clone()));
         assert_eq!(
             kind(&n),
             r#"{"corner_radius":12.0,"fill":null,"geometry":"rect","stroke":{"color":{"a":1.0,"b":1.0,"g":0.0,"r":0.0,"space":"srgb"},"width":2.5},"type":"shape"}"#

@@ -37,7 +37,7 @@ pub use document::Document;
 pub use dpi::Dpi;
 pub use edit::{DocMut, EditToken};
 pub use element::ElementBase;
-pub use error::{NodeField, ValidationError};
+pub use error::{NodeField, PathProblem, ValidationError};
 pub use ids::{ClipId, IdSpaceExhausted, MarkerId, NodeId, PageId, SequenceId, TrackId};
 pub use image::ImageNode;
 pub use json::LoadError;
@@ -46,8 +46,8 @@ pub use layout::{
     check_bleed,
 };
 pub use node::{
-    ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, ShapeGeometry, ShapeNode,
-    ShapeStroke,
+    ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, PathCommand, ShapeGeometry,
+    ShapeNode, ShapePath, ShapeStroke,
 };
 pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};

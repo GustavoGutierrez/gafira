@@ -133,7 +133,7 @@ impl Property {
             (Self::Visible(_), _) => Self::Visible(base.visible),
             (Self::Locked(_), _) => Self::Locked(base.locked),
             (Self::Fill(_), NodeKind::Shape(s)) => Self::Fill(s.fill),
-            (Self::Geometry(_), NodeKind::Shape(s)) => Self::Geometry(s.geometry),
+            (Self::Geometry(_), NodeKind::Shape(s)) => Self::Geometry(s.geometry.clone()),
             (Self::Stroke(_), NodeKind::Shape(s)) => Self::Stroke(s.stroke),
             (Self::CornerRadius(_), NodeKind::Shape(s)) => Self::CornerRadius(s.corner_radius),
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
@@ -152,7 +152,7 @@ impl Property {
             (Self::Visible(v), _) => base.visible = *v,
             (Self::Locked(v), _) => base.locked = *v,
             (Self::Fill(v), NodeKind::Shape(s)) => s.fill = *v,
-            (Self::Geometry(v), NodeKind::Shape(s)) => s.geometry = *v,
+            (Self::Geometry(v), NodeKind::Shape(s)) => s.geometry = v.clone(),
             (Self::Stroke(v), NodeKind::Shape(s)) => s.stroke = *v,
             (Self::CornerRadius(v), NodeKind::Shape(s)) => s.corner_radius = *v,
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
@@ -886,8 +886,8 @@ mod tests {
     fn s38_03_outline_and_radius_are_set_and_reverted() {
         let original = fixture();
         let mut doc = original.clone();
-        let shape = |doc: &Document| match node(doc, A).kind {
-            NodeKind::Shape(s) => s,
+        let shape = |doc: &Document| match &node(doc, A).kind {
+            NodeKind::Shape(s) => s.clone(),
             _ => panic!("not a shape"),
         };
         let mut stroke = set(&[A], Property::Stroke(outline(4.0)));

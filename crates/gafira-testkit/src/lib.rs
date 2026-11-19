@@ -385,7 +385,7 @@ fn build_node(id: NodeId, spec: &NodeSpec) -> Node {
     let kind = match &spec.kind {
         KindSpec::Group => NodeKind::Group(GroupNode {}),
         KindSpec::Shape(geometry, fill) => NodeKind::Shape(ShapeNode {
-            geometry: *geometry,
+            geometry: geometry.clone(),
             fill: *fill,
             stroke: None,
             corner_radius: 0.0,

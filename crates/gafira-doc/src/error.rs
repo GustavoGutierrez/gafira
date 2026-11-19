@@ -6,6 +6,27 @@ use crate::node::MAX_EXTENSION_DEPTH;
 use crate::timeline::TimelineError;
 use crate::{ClipId, Document, Dpi, NodeId, PageId, PageLayoutError, PageSizeError, SequenceId};
 
+/// What is wrong with a shape path (spec 054).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathProblem {
+    /// It has no order.
+    Empty,
+    /// Its first order is not a `MoveTo`.
+    NoStart,
+    /// It has more than `ShapePath::MAX_COMMANDS` orders.
+    TooLong { len: usize },
+}
+
+impl fmt::Display for PathProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("the path has no order"),
+            Self::NoStart => f.write_str("the path does not start with move_to"),
+            Self::TooLong { len } => write!(f, "the path has {len} orders, more than allowed"),
+        }
+    }
+}
+
 /// A numeric field of a node, named in value errors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
@@ -41,6 +62,8 @@ pub enum NodeField {
     TextColorChannel,
     /// The alpha channel of a text span colour.
     TextColorAlpha,
+    /// A coordinate of a point of a shape path (spec 054).
+    PathCoordinate,
 }
 
 impl fmt::Display for NodeField {
@@ -58,6 +81,7 @@ impl fmt::Display for NodeField {
             Self::StrokeChannel => "stroke channel",
             Self::StrokeAlpha => "stroke alpha",
             Self::StrokeWidth => "stroke width",
+            Self::PathCoordinate => "path coordinate",
             Self::CornerRadius => "corner radius",
             Self::FontSize => "font size",
             Self::TextColorChannel => "text color channel",
@@ -128,6 +152,8 @@ pub enum ValidationError {
     EmptyExtensionTypeId { node: NodeId },
     /// P4: an extension payload nests deeper than `MAX_EXTENSION_DEPTH`.
     ExtensionTooDeep { node: NodeId, depth: usize },
+    /// P4: a shape path is not well formed (spec 054).
+    InvalidPath { node: NodeId, problem: PathProblem },
     /// P4: a shape or extension lists children.
     ChildrenOnLeaf { node: NodeId },
     /// P4: a child id is not in the parent's arena.
@@ -194,6 +220,7 @@ impl fmt::Display for ValidationError {
                 f,
                 "node {node}: extension payload is {depth} levels deep, the limit is {MAX_EXTENSION_DEPTH}"
             ),
+            Self::InvalidPath { node, problem } => write!(f, "node {node}: {problem}"),
             Self::ChildrenOnLeaf { node } => {
                 write!(f, "node {node}: only groups can have children")
             }

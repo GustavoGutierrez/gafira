@@ -285,6 +285,25 @@ fn stroke_width(v: f64) -> bool {
     (0.0..=crate::ShapeStroke::MAX_WIDTH).contains(&v)
 }
 
+fn path_coordinate(v: f64) -> bool {
+    (crate::ShapePath::MIN_COORDINATE..=crate::ShapePath::MAX_COORDINATE).contains(&v)
+}
+
+/// What is wrong with the orders of a shape path, if anything (spec 054).
+fn path_problem(path: &crate::ShapePath) -> Option<crate::PathProblem> {
+    use crate::{PathCommand, PathProblem};
+    match path.commands.first() {
+        None => Some(PathProblem::Empty),
+        Some(PathCommand::MoveTo(_)) if path.commands.len() > crate::ShapePath::MAX_COMMANDS => {
+            Some(PathProblem::TooLong {
+                len: path.commands.len(),
+            })
+        }
+        Some(PathCommand::MoveTo(_)) => None,
+        Some(_) => Some(PathProblem::NoStart),
+    }
+}
+
 fn font_size(v: f64) -> bool {
     v > 0.0 && v <= crate::TextNode::MAX_SIZE
 }
@@ -333,6 +352,11 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
             out.push((NodeField::StrokeWidth, stroke.width, stroke_width));
         }
         out.push((NodeField::CornerRadius, shape.corner_radius, non_negative));
+        if let crate::ShapeGeometry::Path(path) = &shape.geometry {
+            for v in path.coordinates() {
+                out.push((NodeField::PathCoordinate, v, path_coordinate));
+            }
+        }
     }
     if let NodeKind::Text(text) = &node.kind {
         for span in text.content.spans() {
@@ -360,6 +384,12 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
             field,
             value,
         });
+    }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let crate::ShapeGeometry::Path(path) = &shape.geometry
+        && let Some(problem) = path_problem(path)
+    {
+        return Err(ValidationError::InvalidPath { node: id, problem });
     }
     if let NodeKind::Extension(ext) = &node.kind {
         if ext.type_id.is_empty() {
