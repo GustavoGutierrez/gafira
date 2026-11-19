@@ -64,11 +64,17 @@ pub(crate) enum Icon {
     BringToFront,
     SendToBack,
     Magnet,
+    /// Ocultar and Mostrar in Capas (spec 048).
+    Visible,
+    Hidden,
+    /// Bloquear and Desbloquear in Capas (spec 048).
+    Locked,
+    Unlocked,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 34] = [
+    pub(crate) const ALL: [Self; 38] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -103,6 +109,10 @@ impl Icon {
         Self::BringToFront,
         Self::SendToBack,
         Self::Magnet,
+        Self::Visible,
+        Self::Hidden,
+        Self::Locked,
+        Self::Unlocked,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -142,6 +152,10 @@ impl Icon {
             Self::BringToFront => "arrow-line-up",
             Self::SendToBack => "arrow-line-down",
             Self::Magnet => "magnet",
+            Self::Visible => "eye",
+            Self::Hidden => "eye-slash",
+            Self::Locked => "lock-simple",
+            Self::Unlocked => "lock-simple-open",
         }
     }
 
