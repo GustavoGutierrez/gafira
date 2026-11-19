@@ -5438,8 +5438,24 @@ fn gradient_fields(
     ui.label(label("inspector.gradient_colors"));
     ui.horizontal_wrapped(|ui| {
         for (index, stop) in gradient.stops.iter().enumerate() {
-            let mut rgba = canvas::picker_rgba(Some(stop.color));
-            let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
+            // Each colour keeps its own picker id, so adding or removing
+            // one does not move another's picker.
+            let response = ui
+                .push_id(("gradient_stop", index), |ui| {
+                    let pending = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<usize>(gradient_pending_id()));
+                    if pending == Some(index) {
+                        egui::Popup::open_id(ui.ctx(), ui.auto_id_with("popup"));
+                        ui.ctx()
+                            .data_mut(|d| d.remove::<usize>(gradient_pending_id()));
+                    }
+                    let mut rgba = canvas::picker_rgba(Some(stop.color));
+                    let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
+                    (response, rgba)
+                })
+                .inner;
+            let (response, rgba) = response;
             if response.changed() {
                 asked.gradient = Some(Some(crate::gradients::with_color(
                     gradient,
@@ -5463,6 +5479,9 @@ fn gradient_fields(
                 .on_hover_text(label("inspector.gradient_add"))
                 .clicked()
         {
+            let added = more.stops.len() - 1;
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(gradient_pending_id(), added));
             asked.gradient = Some(Some(more));
         }
     });
@@ -5494,6 +5513,11 @@ fn gradient_fields(
             }
         }
     });
+}
+
+/// The colour «+» added, whose picker opens when it is drawn (spec 063).
+fn gradient_pending_id() -> egui::Id {
+    egui::Id::new("gafira.gradient.open_stop")
 }
 
 /// The catalog keys of the styles of `gradients::STYLES`, in order.
@@ -6264,6 +6288,44 @@ pub(crate) mod tests {
 
     fn pages(engine: &mut Gafira) -> Vec<Vec2> {
         page_sizes(&engine.edit().document().expect("a document"))
+    }
+
+    // S63-04: «+» asks for the picker of the colour it adds; the next frame
+    // that draws that colour opens it, once.
+    #[test]
+    fn s63_04_the_added_colour_opens_its_picker() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let stop = |offset| GradientStop {
+            offset,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(1.0, 0.0, 0.0, 1.0)),
+        };
+        let gradient = Gradient {
+            kind: GradientKind::Radial,
+            stops: vec![stop(0.0), stop(0.5), stop(1.0)],
+        };
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let draw = |ctx: &egui::Context| {
+            let mut asked = Asked::default();
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    gradient_fields(ui, &texts, &gradient, &mut asked);
+                });
+            });
+        };
+        draw(&ctx);
+        assert!(!egui::Popup::is_any_open(&ctx));
+        ctx.data_mut(|d| d.insert_temp(gradient_pending_id(), 2usize));
+        draw(&ctx);
+        assert!(
+            egui::Popup::is_any_open(&ctx),
+            "the picker of the new colour"
+        );
+        assert_eq!(
+            ctx.data(|d| d.get_temp::<usize>(gradient_pending_id())),
+            None
+        );
     }
 
     #[test]
