@@ -2281,7 +2281,7 @@ impl Editor {
                     let _ = engine.edit().end_gesture();
                     return;
                 };
-                Box::new(InsertPage::new(at + 1, String::new(), pages[at].size))
+                new_page(&document, at + 1, pages[at].size)
             }
         };
         // A new page takes the next id of the document.
@@ -2840,7 +2840,21 @@ impl Editor {
                                 // Page guides, and the smart guides of the
                                 // magnet while it holds (FD-03, FD-06).
                                 if self.shown.guides {
-                                    draw_guides(painter, theme, page_doc, dpi, page, rect, zoom);
+                                    // The guide being dragged is drawn where
+                                    // it goes, not where it was (S60-03).
+                                    let held = self
+                                        .guide_drag
+                                        .filter(|g| g.page == page_doc.id)
+                                        .and_then(|g| g.index);
+                                    draw_guides(
+                                        painter,
+                                        theme,
+                                        page_doc,
+                                        dpi,
+                                        (page, rect),
+                                        zoom,
+                                        held,
+                                    );
                                 }
                                 if let Some((_, snap)) =
                                     self.snapped.filter(|(on, _)| *on == page_doc.id)
@@ -3317,12 +3331,13 @@ impl Editor {
             .and_then(|d| d.pages().last().map(|page| (d.pages().len(), page.size)));
         if asked.add_page
             && let Some((at, size)) = last
+            && let Some(document) = document
         {
             log(
                 "add page",
                 engine
                     .edit()
-                    .execute(Box::new(InsertPage::new(at, String::new(), size)))
+                    .execute(new_page(document, at, size))
                     .map(drop),
             );
         }
@@ -3584,10 +3599,26 @@ impl Editor {
             self.nudge(engine, page, dx, dy);
         }
         if let Some((page, guides)) = &asked.guides {
-            // A gesture of its own: one undo step that never merges with
-            // the next guide (FD-03).
+            // The guides are the same on every page (D-99): the new set
+            // goes to all of them, in a gesture of its own, one undo step
+            // that never merges with the next guide (FD-03).
             let gesture = engine.edit().begin_gesture().ok();
-            let command = SetProperty::page(*page, Property::Guides(guides.clone()), gesture);
+            let pages: Vec<PageId> = engine
+                .edit()
+                .document()
+                .map(|d| d.pages().iter().map(|p| p.id).collect())
+                .unwrap_or_else(|| vec![*page]);
+            let commands: Vec<Box<dyn Command>> = pages
+                .into_iter()
+                .map(|id| {
+                    Box::new(SetProperty::page(
+                        id,
+                        Property::Guides(guides.clone()),
+                        gesture,
+                    )) as Box<dyn Command>
+                })
+                .collect();
+            let command = Transaction::new(MessageKey("edit.guides"), commands);
             log("guides", engine.edit().execute(Box::new(command)).map(drop));
             if gesture.is_some() {
                 log("end gesture", engine.edit().end_gesture());
@@ -4085,12 +4116,15 @@ fn draw_guides(
     theme: &Theme,
     page_doc: &Page,
     dpi: f64,
-    page: Rect,
-    row: Rect,
+    (page, row): (Rect, Rect),
     zoom: f32,
+    held: Option<usize>,
 ) {
     let color = theme.c("canvas.guide");
-    for guide in &page_doc.guides.0 {
+    for (index, guide) in page_doc.guides.0.iter().enumerate() {
+        if held == Some(index) {
+            continue;
+        }
         let Some(px) = ruler::guide_px(guide, dpi) else {
             continue;
         };
@@ -4293,6 +4327,31 @@ fn drop_outside(engine: &mut Gafira, drag: &Drag, moved: &[NodeId]) {
         eprintln!("drop: {error}");
         if let Err(error) = engine.edit().redo() {
             eprintln!("drop: {error}");
+        }
+    }
+}
+
+/// An empty page of `size` at `at` of `document`, born with the guides of
+/// the first page (D-99), in one undo step.
+fn new_page(document: &Document, at: usize, size: gafira_doc::PageSize) -> Box<dyn Command> {
+    let insert = Box::new(InsertPage::new(at, String::new(), size));
+    let guides = document
+        .pages()
+        .first()
+        .map(|page| page.guides.clone())
+        .filter(|guides| !guides.0.is_empty());
+    match guides {
+        None => insert,
+        Some(guides) => {
+            // The new page takes the next id of the document.
+            let id = PageId::new(document.next_id());
+            Box::new(Transaction::new(
+                MessageKey("edit.insert_page"),
+                vec![
+                    insert,
+                    Box::new(SetProperty::page(id, Property::Guides(guides), None)),
+                ],
+            ))
         }
     }
 }
@@ -6976,6 +7035,78 @@ pub(crate) mod tests {
         act(&mut engine, &mut editor, PageAction::Delete(copy));
         assert_eq!(ids(&mut engine), [first, second]);
         assert_eq!(undo_depth(&mut engine), depth + 7, "one step each");
+    }
+
+    // S60-01, S60-02: a guide made on one page is on every page, in one
+    // undo step; a page added later is born with them.
+    #[test]
+    fn s60_01_guides_are_shared() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                add_page: true,
+                ..Asked::default()
+            },
+        );
+        let pages = |engine: &mut Gafira| {
+            engine
+                .edit()
+                .document()
+                .expect("a document")
+                .pages()
+                .to_vec()
+        };
+        let first = pages(&mut engine)[0].id;
+        let guides = GuideSet(vec![gafira_doc::Guide {
+            axis: GuideAxis::Vertical,
+            position: gafira_geom::Length::new(120.0, gafira_geom::Unit::Px),
+            locked: false,
+        }]);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                guides: Some((first, guides.clone())),
+                ..Asked::default()
+            },
+        );
+        assert!(
+            pages(&mut engine).iter().all(|p| p.guides == guides),
+            "on every page"
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                add_page: true,
+                ..Asked::default()
+            },
+        );
+        assert_eq!(
+            pages(&mut engine)[2].guides,
+            guides,
+            "a new page takes them"
+        );
+        let last = pages(&mut engine)[2].id;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                page_action: Some(PageAction::AddAfter(last)),
+                ..Asked::default()
+            },
+        );
+        assert_eq!(pages(&mut engine)[3].guides, guides, "also from the header");
+        engine.edit().undo().expect("an undo");
+        engine.edit().undo().expect("an undo");
+        engine.edit().undo().expect("an undo");
+        assert!(pages(&mut engine).iter().all(|p| p.guides.0.is_empty()));
     }
 
     // S50-01: a press on an element activates its page, on a page's
