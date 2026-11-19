@@ -408,6 +408,10 @@ delete = "Eliminar página"
 add = "Añadir página"
 
 [fonts]
+gafira = "Fuentes de Gafira"
+system = "Fuentes del sistema"
+looking = "Buscando las fuentes del sistema…"
+none = "Ninguna fuente coincide"
 title = "Fuente"
 close = "Cerrar"
 search = "Buscar fuentes"

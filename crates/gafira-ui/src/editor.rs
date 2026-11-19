@@ -34,6 +34,7 @@ use crate::ruler;
 use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
+use crate::system_fonts;
 use crate::text::Texts;
 use crate::transfer;
 use crate::versions::Versions;
@@ -312,6 +313,8 @@ pub(crate) struct Editor {
     font_panel: bool,
     selection_font: Option<(String, bool, bool)>,
     document_fonts: Vec<String>,
+    /// The families of the system already installed in egui.
+    loaded_fonts: std::cell::RefCell<BTreeSet<String>>,
 }
 
 /// What the drag of a line end shows (spec 058): the shapes near it, whose
@@ -421,6 +424,7 @@ impl Default for Editor {
             font_panel: false,
             selection_font: None,
             document_fonts: Vec::new(),
+            loaded_fonts: std::cell::RefCell::default(),
         }
     }
 }
@@ -1648,6 +1652,7 @@ impl Editor {
             Some((style.font.clone(), style.bold, style.italic))
         });
         self.document_fonts = document.map(document_fonts).unwrap_or_default();
+        self.load_system_fonts(ctx);
         egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
@@ -2584,10 +2589,12 @@ impl Editor {
         }
     }
 
-    /// The Fuente panel (spec 062): a search box, the families of the
-    /// document, then every family of the library with a sample in its
-    /// face and, opened, its faces; the current one is ticked. A click
-    /// gives the selected text that family or face.
+    /// The Fuente panel (spec 062): a search box, then the families of the
+    /// document, the fonts of Gafira (each in its own face, with a sample
+    /// and, opened, its faces) and the fonts of the system (by name). The
+    /// list is one column of rows of the same height, and only the rows in
+    /// view are drawn, however many fonts the system has. A click gives the
+    /// selected text that family or face.
     fn fonts_panel(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
         let current = self.selection_font.clone();
         ui.horizontal(|ui| {
@@ -2597,11 +2604,7 @@ impl Editor {
                     .color(theme.c("text")),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui
-                    .button(plain(texts, "fonts.close"))
-                    .on_hover_text(plain(texts, "fonts.close"))
-                    .clicked()
-                {
+                if ui.button(plain(texts, "fonts.close")).clicked() {
                     asked.font_panel = Some(false);
                 }
             });
@@ -2618,103 +2621,155 @@ impl Editor {
         ui.data_mut(|d| d.insert_temp(search_id, search.clone()));
         let open_id = ui.id().with("fonts.open");
         let mut open: BTreeSet<String> = ui.data_mut(|d| d.get_temp(open_id).unwrap_or_default());
-        let needle = search.trim().to_lowercase();
-        let all = gafira_theme::library_families();
-        let shown = |family: &&str| needle.is_empty() || family.to_lowercase().contains(&needle);
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            let used: Vec<&str> = all
-                .iter()
-                .copied()
-                .filter(|f| self.document_fonts.iter().any(|d| d == f))
-                .filter(shown)
-                .collect();
-            for (title, families) in [
-                ("fonts.document", used),
-                ("fonts.all", all.iter().copied().filter(shown).collect()),
-            ] {
-                if families.is_empty() {
-                    continue;
-                }
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new(plain(texts, title))
-                        .font(theme.font("ui-label"))
-                        .color(theme.c("text")),
-                );
-                ui.add_space(4.0);
-                for family in families {
-                    let faces: Vec<(bool, bool)> = gafira_theme::library()
-                        .iter()
-                        .filter(|f| f.family == family)
-                        .map(|f| (f.bold, f.italic))
-                        .collect();
-                    let is_open = open.contains(family);
-                    let face =
-                        library_family(ui.ctx(), &gafira_theme::face_key(family, false, false));
-                    let row = font_row(
-                        ui,
-                        theme,
-                        FontRow {
-                            indent: 0.0,
-                            chevron: (faces.len() > 1).then_some(is_open),
-                            name: family.to_owned(),
-                            face: face.clone(),
-                            sample: true,
-                            ticked: current.as_ref().is_some_and(|c| c.0 == family),
-                        },
-                    );
-                    match row {
-                        Some(RowClick::Chevron) => {
-                            if is_open {
-                                open.remove(family);
-                            } else {
-                                open.insert(family.to_owned());
-                            }
-                        }
-                        Some(RowClick::Row) => {
-                            let (bold, italic) = current
-                                .as_ref()
-                                .filter(|c| c.0 == family)
-                                .map_or((false, false), |c| (c.1, c.2));
-                            asked.font = Some((family.to_owned(), bold, italic));
-                        }
-                        None => {}
+        let system = system_fonts::catalogue();
+        let rows = font_rows(&search, &self.document_fonts, &open, &system);
+        ui.add_space(8.0);
+        egui::ScrollArea::vertical().show_rows(ui, FONT_ROW_HEIGHT, rows.len(), |ui, range| {
+            for row in &rows[range] {
+                match row {
+                    PanelRow::Title(key) => {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), FONT_ROW_HEIGHT),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().text(
+                            Pos2::new(rect.min.x + 4.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            plain(texts, key),
+                            theme.font("ui-label"),
+                            theme.c("text"),
+                        );
                     }
-                    if is_open {
-                        for (bold, italic) in faces {
-                            let key = match (bold, italic) {
-                                (false, false) => "fonts.regular",
-                                (true, false) => "fonts.bold",
-                                (false, true) => "fonts.italic",
-                                (true, true) => "fonts.bold_italic",
-                            };
-                            let face = library_family(
-                                ui.ctx(),
-                                &gafira_theme::face_key(family, bold, italic),
-                            );
-                            let row = font_row(
-                                ui,
-                                theme,
-                                FontRow {
-                                    indent: 28.0,
-                                    chevron: None,
-                                    name: plain(texts, key),
-                                    face,
-                                    sample: false,
-                                    ticked: current.as_ref().is_some_and(|c| {
-                                        c.0 == family && c.1 == bold && c.2 == italic
-                                    }),
-                                },
-                            );
-                            if row.is_some() {
-                                asked.font = Some((family.to_owned(), bold, italic));
+                    PanelRow::Family {
+                        family,
+                        faces,
+                        system,
+                    } => {
+                        let is_open = open.contains(family);
+                        let face = if *system {
+                            egui::FontFamily::Proportional
+                        } else {
+                            library_family(ui.ctx(), &gafira_theme::face_key(family, false, false))
+                        };
+                        let clicked = font_row(
+                            ui,
+                            theme,
+                            FontRow {
+                                indent: 0.0,
+                                chevron: (faces.len() > 1).then_some(is_open),
+                                name: family.clone(),
+                                face,
+                                sample: !*system,
+                                ticked: current.as_ref().is_some_and(|c| &c.0 == family),
+                            },
+                        );
+                        match clicked {
+                            Some(RowClick::Chevron) => {
+                                if is_open {
+                                    open.remove(family);
+                                } else {
+                                    open.insert(family.clone());
+                                }
                             }
+                            Some(RowClick::Row) => {
+                                let (bold, italic) = current
+                                    .as_ref()
+                                    .filter(|c| &c.0 == family)
+                                    .map_or((false, false), |c| (c.1, c.2));
+                                asked.font = Some((family.clone(), bold, italic));
+                            }
+                            None => {}
                         }
+                    }
+                    PanelRow::Face {
+                        family,
+                        bold,
+                        italic,
+                        system,
+                    } => {
+                        let key = match (bold, italic) {
+                            (false, false) => "fonts.regular",
+                            (true, false) => "fonts.bold",
+                            (false, true) => "fonts.italic",
+                            (true, true) => "fonts.bold_italic",
+                        };
+                        let face = if *system {
+                            egui::FontFamily::Proportional
+                        } else {
+                            library_family(
+                                ui.ctx(),
+                                &gafira_theme::face_key(family, *bold, *italic),
+                            )
+                        };
+                        let clicked = font_row(
+                            ui,
+                            theme,
+                            FontRow {
+                                indent: 28.0,
+                                chevron: None,
+                                name: plain(texts, key),
+                                face,
+                                sample: false,
+                                ticked: current.as_ref().is_some_and(|c| {
+                                    &c.0 == family && c.1 == *bold && c.2 == *italic
+                                }),
+                            },
+                        );
+                        if clicked.is_some() {
+                            asked.font = Some((family.clone(), *bold, *italic));
+                        }
+                    }
+                    PanelRow::Note(key) => {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), FONT_ROW_HEIGHT),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().text(
+                            Pos2::new(rect.min.x + 8.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            plain(texts, key),
+                            theme.font("body-sm"),
+                            theme.c("text.secondary"),
+                        );
                     }
                 }
             }
         });
         ui.data_mut(|d| d.insert_temp(open_id, open));
+    }
+
+    /// The faces of the system families the document uses, installed in
+    /// egui the first time they are needed (spec 062): the canvas then draws
+    /// those texts in their own face. A family of Gafira is already there.
+    fn load_system_fonts(&self, ctx: &egui::Context) {
+        let system = system_fonts::catalogue();
+        if !system.ready() {
+            return;
+        }
+        let mut loaded = self.loaded_fonts.borrow_mut();
+        for family in &self.document_fonts {
+            if loaded.contains(family) {
+                continue;
+            }
+            loaded.insert(family.clone());
+            if gafira_theme::library().iter().any(|f| f.family == family) {
+                continue;
+            }
+            for face in system.faces().iter().filter(|f| &f.family == family) {
+                let Ok(bytes) = std::fs::read(&face.path) else {
+                    continue;
+                };
+                let key = gafira_theme::face_key(&face.family, face.bold, face.italic);
+                ctx.add_font(egui::epaint::text::FontInsert::new(
+                    &key,
+                    egui::FontData::from_owned(bytes),
+                    vec![egui::epaint::text::InsertFontFamily {
+                        family: egui::FontFamily::Name(key.clone().into()),
+                        priority: egui::epaint::text::FontPriority::Highest,
+                    }],
+                ));
+            }
+        }
     }
 
     /// Writing on the canvas and the alignment of a shape's text (spec
@@ -4985,6 +5040,119 @@ fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyl
     }
 }
 
+/// The height of every row of the Fuente panel, so only the rows in view
+/// are laid out (spec 062).
+const FONT_ROW_HEIGHT: f32 = 32.0;
+
+/// One row of the Fuente panel.
+#[derive(Clone, Debug, PartialEq)]
+enum PanelRow {
+    /// The title of a section, by catalog key.
+    Title(&'static str),
+    /// A family, with the faces it has and whether it is of the system.
+    Family {
+        family: String,
+        faces: Vec<(bool, bool)>,
+        system: bool,
+    },
+    /// A face of an open family.
+    Face {
+        family: String,
+        bold: bool,
+        italic: bool,
+        system: bool,
+    },
+    /// A line of text under a section, by catalog key.
+    Note(&'static str),
+}
+
+/// The rows of the Fuente panel for `search` (S62-06): the families of the
+/// document, then those of Gafira, then those of the system (or a note while
+/// they are being looked for), each section with its title; the faces of the
+/// open families after them. A family of the system with the name of one of
+/// Gafira is left out.
+fn font_rows(
+    search: &str,
+    document: &[String],
+    open: &BTreeSet<String>,
+    system: &system_fonts::SystemFonts,
+) -> Vec<PanelRow> {
+    let needle = search.trim().to_lowercase();
+    let shown = |family: &str| needle.is_empty() || family.to_lowercase().contains(&needle);
+    let library = gafira_theme::library_families();
+    let faces = system.faces();
+    let faces_of = |family: &str| -> (Vec<(bool, bool)>, bool) {
+        let gafira: Vec<(bool, bool)> = gafira_theme::library()
+            .iter()
+            .filter(|f| f.family == family)
+            .map(|f| (f.bold, f.italic))
+            .collect();
+        if gafira.is_empty() {
+            let mut own: Vec<(bool, bool)> = faces
+                .iter()
+                .filter(|f| f.family == family)
+                .map(|f| (f.bold, f.italic))
+                .collect();
+            own.sort();
+            (own, true)
+        } else {
+            (gafira, false)
+        }
+    };
+    let mut rows = Vec::new();
+    let section = |rows: &mut Vec<PanelRow>, families: Vec<String>| {
+        for family in families {
+            let (family_faces, is_system) = faces_of(&family);
+            let is_open = open.contains(&family);
+            rows.push(PanelRow::Family {
+                family: family.clone(),
+                faces: family_faces.clone(),
+                system: is_system,
+            });
+            if is_open && family_faces.len() > 1 {
+                for (bold, italic) in family_faces {
+                    rows.push(PanelRow::Face {
+                        family: family.clone(),
+                        bold,
+                        italic,
+                        system: is_system,
+                    });
+                }
+            }
+        }
+    };
+    let used: Vec<String> = document.iter().filter(|f| shown(f)).cloned().collect();
+    if !used.is_empty() {
+        rows.push(PanelRow::Title("fonts.document"));
+        section(&mut rows, used);
+    }
+    rows.push(PanelRow::Title("fonts.gafira"));
+    let gafira: Vec<String> = library
+        .iter()
+        .filter(|f| shown(f))
+        .map(|f| (*f).to_owned())
+        .collect();
+    if gafira.is_empty() {
+        rows.push(PanelRow::Note("fonts.none"));
+    }
+    section(&mut rows, gafira);
+    rows.push(PanelRow::Title("fonts.system"));
+    if !system.ready() {
+        rows.push(PanelRow::Note("fonts.looking"));
+        return rows;
+    }
+    let own: Vec<String> = system
+        .families(&library)
+        .into_iter()
+        .filter(|f| shown(f))
+        .collect();
+    if own.is_empty() {
+        rows.push(PanelRow::Note("fonts.none"));
+    }
+    section(&mut rows, own);
+    rows
+}
+
 /// What a row of the Fuente panel shows: its indent, its chevron (`Some`
 /// open or closed when it has faces to show), its name in its face, a
 /// sample after it and the tick of the current font.
@@ -5718,6 +5886,23 @@ fn text_family(
     if let Some((bold, italic)) = gafira_theme::nearest_face(
         |b, i| {
             library
+                .iter()
+                .any(|f| f.family == style.font && f.bold == b && f.italic == i)
+        },
+        style.bold,
+        style.italic,
+    ) {
+        let face = library_family(ctx, &gafira_theme::face_key(&style.font, bold, italic));
+        if face != egui::FontFamily::Proportional {
+            return face;
+        }
+    }
+    // A family of the system, once its faces are installed (spec 062).
+    let system = system_fonts::catalogue();
+    let faces = system.faces();
+    if let Some((bold, italic)) = gafira_theme::nearest_face(
+        |b, i| {
+            faces
                 .iter()
                 .any(|f| f.family == style.font && f.bold == b && f.italic == i)
         },
@@ -8088,6 +8273,63 @@ pub(crate) mod tests {
         }
         let after = placements(&mut engine, &[node])[0].h;
         assert!(after > before * 2.0, "{before} -> {after}");
+    }
+
+    // S62-06: the Fuente panel lists the document's families, then those of
+    // Gafira, then those of the system (a note while they are looked for),
+    // each under its title; an open family shows its faces; the search
+    // keeps the families whose name holds it; a system family named like
+    // one of Gafira is left out.
+    #[test]
+    fn s62_06_font_rows() {
+        let system = system_fonts::SystemFonts::new();
+        let none = BTreeSet::new();
+        let rows = font_rows("", &[], &none, &system);
+        assert_eq!(rows[0], PanelRow::Title("fonts.gafira"));
+        assert!(rows.contains(&PanelRow::Title("fonts.system")));
+        assert_eq!(rows.last(), Some(&PanelRow::Note("fonts.looking")));
+        system.set(vec![
+            system_fonts::SystemFont {
+                family: "Ubuntu".to_owned(),
+                bold: false,
+                italic: false,
+                path: "/f/u.ttf".into(),
+            },
+            system_fonts::SystemFont {
+                family: "Roboto".to_owned(),
+                bold: false,
+                italic: false,
+                path: "/f/r.ttf".into(),
+            },
+        ]);
+        let rows = font_rows("", &["Lato".to_owned()], &none, &system);
+        assert_eq!(rows[0], PanelRow::Title("fonts.document"));
+        assert!(
+            matches!(&rows[1], PanelRow::Family { family, system: false, .. } if family == "Lato")
+        );
+        let systems: Vec<&PanelRow> = rows
+            .iter()
+            .filter(|r| matches!(r, PanelRow::Family { system: true, .. }))
+            .collect();
+        assert_eq!(systems.len(), 1, "Roboto is one of Gafira");
+        let open: BTreeSet<String> = ["Lato".to_owned()].into();
+        let rows = font_rows("lat", &[], &open, &system);
+        assert_eq!(
+            rows.iter()
+                .filter(|r| matches!(r, PanelRow::Face { .. }))
+                .count(),
+            4,
+            "the four faces of Lato"
+        );
+        assert!(
+            rows.iter()
+                .all(|r| !matches!(r, PanelRow::Family { family, .. } if family == "Ubuntu"))
+        );
+        assert_eq!(
+            rows.last(),
+            Some(&PanelRow::Note("fonts.none")),
+            "no system font matches"
+        );
     }
 
     // S62-04: a font picked in the Fuente panel goes to every span of the

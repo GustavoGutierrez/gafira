@@ -48,6 +48,9 @@ pub struct UiConfig {
     pub recent: Box<dyn RecentStore>,
     /// «Mostrar en carpeta» after an export (spec 039).
     pub show_in_folder: ShowInFolder,
+    /// The fonts installed on the system, filled in the background (spec
+    /// 062).
+    pub system_fonts: crate::SystemFonts,
 }
 
 /// Wakes egui when the engine publishes, so the window repaints.
@@ -146,6 +149,7 @@ struct Shell {
 /// # Errors
 /// When the window or its graphics context cannot be created.
 pub fn run(config: UiConfig) -> eframe::Result {
+    crate::system_fonts::install(config.system_fonts.clone());
     let tokens = ThemeTokens::embedded().map_err(|e| eframe::Error::AppCreation(Box::new(e)))?;
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Gafira")

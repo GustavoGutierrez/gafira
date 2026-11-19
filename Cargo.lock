@@ -1701,6 +1701,7 @@ dependencies = [
  "getrandom 0.3.4",
  "serde",
  "serde_json",
+ "skrifa 0.44.0",
 ]
 
 [[package]]

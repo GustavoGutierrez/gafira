@@ -101,6 +101,24 @@ fn main() -> eframe::Result {
         gafira_platform::data_dir().unwrap_or_else(|| std::env::temp_dir().join("gafira"));
     let resolver = Arc::new(D08LocaleResolver::new(Arc::new(EnvLocale)));
     let locale: Option<Locale> = language_flag().map(|pref| resolver.resolve(pref).locale);
+    // Spec 062: the fonts installed on the system, looked for in the
+    // background so the window opens at once; the export reads a face of
+    // theirs only when a text uses it.
+    let system_fonts = gafira_ui::SystemFonts::new();
+    let scanning = system_fonts.clone();
+    std::thread::spawn(move || {
+        let faces = gafira_platform::system_fonts()
+            .into_iter()
+            .map(|face| gafira_ui::SystemFont {
+                family: face.family,
+                bold: face.bold,
+                italic: face.italic,
+                path: face.path,
+            })
+            .collect();
+        scanning.set(faces);
+    });
+    let for_export = system_fonts.clone();
     gafira_ui::run(gafira_ui::UiConfig {
         locale,
         version: env!("CARGO_PKG_VERSION"),
@@ -110,6 +128,7 @@ fn main() -> eframe::Result {
         }),
         // Spec 039: «Mostrar en carpeta» opens the system file manager.
         show_in_folder: Box::new(gafira_platform::show_in_folder),
+        system_fonts,
         engine: Box::new(move |waker: Arc<dyn Waker>| {
             let clock = Arc::new(SystemClock::new());
             // Spec 026: imported and opened assets live in the content store,
@@ -133,7 +152,7 @@ fn main() -> eframe::Result {
                 ),
                 // Spec 032: the image assets an export draws decode in io-image.
                 ExportPorts::new(
-                    export_pages(clock.clone()),
+                    export_pages(clock.clone(), for_export.clone()),
                     Arc::new(gafira_io_image::RasterDecoder::new()),
                 ),
             );
@@ -149,7 +168,7 @@ fn main() -> eframe::Result {
 
 /// The pages of an export (spec 030): the render graph on the CPU backend,
 /// with the fonts the theme embeds.
-fn export_pages(clock: Arc<SystemClock>) -> Arc<dyn PageRenderers> {
+fn export_pages(clock: Arc<SystemClock>, system: gafira_ui::SystemFonts) -> Arc<dyn PageRenderers> {
     // The interface fonts, then every face of the library under its name
     // (spec 062): a face of the library replaces the interface subset of
     // the same family.
@@ -164,6 +183,11 @@ fn export_pages(clock: Arc<SystemClock>) -> Arc<dyn PageRenderers> {
             face.bytes,
         )
     });
+    // A face of the system is read the first time a text asks for it.
+    let fonts = fonts.with_loader(Arc::new(move |key: &str| {
+        let bytes = std::fs::read(system.path(key)?).ok()?;
+        Some(Arc::from(bytes))
+    }));
     Arc::new(GraphPageRenderers::new(
         Box::new(|| Box::new(CpuBackend::new())),
         clock,

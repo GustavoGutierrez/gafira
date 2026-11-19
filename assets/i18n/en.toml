@@ -408,6 +408,10 @@ delete = "Delete page"
 add = "Add page"
 
 [fonts]
+gafira = "Gafira fonts"
+system = "System fonts"
+looking = "Looking for the system fonts…"
+none = "No font matches"
 title = "Font"
 close = "Close"
 search = "Search fonts"

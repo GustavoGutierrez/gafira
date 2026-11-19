@@ -1092,7 +1092,8 @@ fn laid_text(
         return None;
     }
     let face = fonts.face(&style.font, style.bold, style.italic);
-    let stack = fonts.stack(&face);
+    let owned = fonts.stack(&face);
+    let stack: Vec<&[u8]> = owned.iter().map(AsRef::as_ref).collect();
     if stack.is_empty() {
         return None;
     }

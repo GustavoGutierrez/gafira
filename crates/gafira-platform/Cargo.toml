@@ -12,6 +12,8 @@ gafira-ports.workspace = true
 getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Spec 062: the names and faces of the fonts installed on the system.
+skrifa.workspace = true
 
 [lints]
 workspace = true

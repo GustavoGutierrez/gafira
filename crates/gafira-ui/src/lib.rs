@@ -37,6 +37,7 @@ mod shapes;
 mod shell;
 mod splash;
 mod style;
+mod system_fonts;
 mod text;
 mod transfer;
 mod versions;
@@ -45,3 +46,4 @@ mod zoom;
 
 pub use recent::{RecentProject, RecentStore, RecentThumbnail};
 pub use shell::{EngineFactory, ShowInFolder, UiConfig, run};
+pub use system_fonts::{SystemFont, SystemFonts};
