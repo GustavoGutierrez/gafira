@@ -290,14 +290,6 @@ pub(crate) struct Editor {
     /// The page whose title is being written in its header, the words so
     /// far and whether the field took the keyboard (spec 056).
     renaming_page: Option<(PageId, String, bool)>,
-    /// A zoom by the wheel or a pinch: the page, the page point under the
-    /// pointer (in px of page) and the pointer, to scroll it back under
-    /// the pointer once the new zoom is laid out (spec 059).
-    zoom_anchor: Option<(PageId, Vec2, Pos2)>,
-    /// The scroll offset of the canvas in the last frame, and one to set
-    /// in the next (spec 059).
-    scroll_offset: Vec2,
-    pending_scroll: Option<Vec2>,
     /// Each page's id and screen box in the last frame drawn: where a shape
     /// dragged from the panel lands (spec 052).
     page_rects: Vec<(PageId, Rect)>,
@@ -393,9 +385,6 @@ impl Default for Editor {
             row_drag: None,
             active: None,
             renaming_page: None,
-            zoom_anchor: None,
-            scroll_offset: Vec2::ZERO,
-            pending_scroll: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
             editing: None,
@@ -2594,18 +2583,35 @@ impl Editor {
                 // a zoom factor and leaves the scroll alone); the page point
                 // under the pointer stays under it (spec 059, FD-08).
                 let (factor, hover) = ui.input(|i| (i.zoom_delta(), i.pointer.hover_pos()));
+                let sizes = document.map(page_sizes).unwrap_or_default();
+                // The scroll offset that keeps the page point under the
+                // pointer under it, set in this very frame so nothing jumps.
+                let mut anchored: Option<Vec2> = None;
                 if factor != 1.0
                     && let Some(at) = hover
                     && area.contains(at)
                 {
+                    let next = zoom::by_factor(self.zoom, factor);
+                    let ids: Vec<PageId> = document
+                        .map(|d| d.pages().iter().map(|p| p.id).collect())
+                        .unwrap_or_default();
                     if let Some(page) = ruler::page_at(&self.page_rects, at.y)
                         && let Some((_, rect)) = self.page_rects.iter().find(|(id, _)| *id == page)
+                        && let Some(index) = ids.iter().position(|id| *id == page)
                     {
-                        self.zoom_anchor = Some((page, (at - rect.min) / self.zoom, at));
+                        let point = (at - rect.min) / self.zoom;
+                        let origin = zoom::page_origin(
+                            &sizes,
+                            index,
+                            next,
+                            area.size(),
+                            (CANVAS_MARGIN, PAGE_GAP),
+                        );
+                        let offset = origin + point * next - (at - area.min);
+                        anchored = Some(offset.max(Vec2::ZERO));
                     }
-                    self.view = Zoom::Fixed(zoom::by_factor(self.zoom, factor));
+                    self.view = Zoom::Fixed(next);
                 }
-                let sizes = document.map(page_sizes).unwrap_or_default();
                 let Some(first) = sizes.first().copied() else {
                     return;
                 };
@@ -2629,10 +2635,10 @@ impl Editor {
                     sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>() + CANVAS_MARGIN;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
                     let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
-                    if let Some(offset) = self.pending_scroll.take() {
+                    if let Some(offset) = anchored {
                         scroll = scroll.scroll_offset(offset);
                     }
-                    let shown = scroll.show(ui, |ui| {
+                    scroll.show(ui, |ui| {
                         let (rect, response) = ui.allocate_exact_size(
                             Vec2::new(width.max(area.width()), height.max(area.height())),
                             egui::Sense::click_and_drag(),
@@ -2656,13 +2662,16 @@ impl Editor {
                         // Each page's id, screen box and shapes, for the marquee.
                         let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
                         let selection = theme.c("canvas.selection");
-                        let mut top =
-                            rect.min.y + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
                         for (index, size) in sizes.iter().enumerate() {
-                            let page = Rect::from_min_size(
-                                Pos2::new(rect.center().x - size.x * zoom / 2.0, top),
-                                *size * zoom,
+                            // Where the zoom expects it (spec 059).
+                            let origin = zoom::page_origin(
+                                &sizes,
+                                index,
+                                zoom,
+                                area.size(),
+                                (CANVAS_MARGIN, PAGE_GAP),
                             );
+                            let page = Rect::from_min_size(rect.min + origin, *size * zoom);
                             if let Some(Shadow::Drop {
                                 x,
                                 y,
@@ -2862,7 +2871,6 @@ impl Editor {
                                 page_rects.push((page_doc.id, page));
                                 laid.push((page_doc.id, page, shapes));
                             }
-                            top = page.max.y + PAGE_GAP;
                         }
                         // The selection, over every page and the gaps
                         // between them (D-92, S51-02).
@@ -3164,18 +3172,7 @@ impl Editor {
                             }
                         }
                     });
-                    self.scroll_offset = shown.state.offset;
                 });
-                // After a zoom, scroll so the page point that was under the
-                // pointer is under it again (S59-02).
-                if let Some((page, at, pointer)) = self.zoom_anchor.take()
-                    && let Some((_, rect)) = page_rects.iter().find(|(id, _)| *id == page)
-                {
-                    let landed = rect.min + at * self.zoom;
-                    self.pending_scroll =
-                        Some(zoom::anchored_offset(self.scroll_offset, landed, pointer));
-                    ui.ctx().request_repaint();
-                }
                 self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
                 self.page_rects = page_rects;
             });

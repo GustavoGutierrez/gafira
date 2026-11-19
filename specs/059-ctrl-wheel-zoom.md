@@ -8,7 +8,7 @@ Que Ctrl + rueda del ratón (Cmd en macOS) acerque y aleje el lienzo, y que el p
 
 ## Alcance / no alcance
 
-Alcance (`gafira-ui`): leer el gesto de zoom de egui (`zoom_delta`, que da Ctrl + rueda y el pellizco del touchpad) en lugar del desplazamiento de la rueda, que egui pone a cero con Ctrl; multiplicar el zoom por ese factor dentro de 5–3200 %; y corregir el desplazamiento del lienzo en el frame siguiente para que el punto de página bajo el puntero vuelva a quedar bajo él.
+Alcance (`gafira-ui`): leer el gesto de zoom de egui (`zoom_delta`, que da Ctrl + rueda y el pellizco del touchpad) en lugar del desplazamiento de la rueda, que egui pone a cero con Ctrl; multiplicar el zoom por ese factor dentro de 5–3200 %; y fijar en el mismo frame el desplazamiento del lienzo que deja bajo el puntero el punto de página que estaba bajo él, con la misma disposición de páginas (`zoom::page_origin`) que usa el dibujo. Una primera versión corregía el desplazamiento un frame después y temblaba (lo vio el titular); se cambió.
 
 No alcance: el zoom de los botones, el menú y los atajos (siguen centrados como hoy).
 
@@ -21,7 +21,7 @@ No alcance: el zoom de los botones, el menú y los atajos (siguen centrados como
 
 ## TDD
 
-1. `s59_01_zoom_by_factor` y `s59_02_anchored_offset` (`gafira-ui`).
+1. `s59_01_zoom_by_factor` y `s59_02_page_origin` (`gafira-ui`).
 
 ## Evidencia esperada
 
