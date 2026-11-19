@@ -649,6 +649,40 @@ mod tests {
         }
     }
 
+    // S63-04: a gradient is set on a shape and taken back in one step; one
+    // that is not well formed is refused and changes nothing.
+    #[test]
+    fn s63_04_the_gradient_is_set_and_removed() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let stop = |offset, r| GradientStop {
+            offset,
+            color: Color::Srgb(Rgba::new(r, 0.0, 0.0, 1.0)),
+        };
+        let gradient = Gradient {
+            kind: GradientKind::Radial,
+            stops: vec![stop(0.0, 1.0), stop(1.0, 0.0)],
+        };
+        let original = fixture();
+        let mut doc = original.clone();
+        let mut command = set(&[A], Property::Gradient(Some(gradient.clone())));
+        assert_eq!(apply(&mut command, &mut doc), Ok(Applied::Changed));
+        let NodeKind::Shape(shape) = &node(&doc, A).kind else {
+            panic!("a shape")
+        };
+        assert_eq!(shape.gradient.as_ref(), Some(&gradient));
+        let mut solid = set(&[A], Property::Gradient(None));
+        assert_eq!(apply(&mut solid, &mut doc), Ok(Applied::Changed));
+        assert_eq!(doc, original, "«Color sólido» takes it off");
+        revert(&mut solid, &mut doc).unwrap();
+        revert(&mut command, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut broken = gradient;
+        broken.stops.truncate(1);
+        let mut refused = set(&[A], Property::Gradient(Some(broken)));
+        assert!(apply(&mut refused, &mut doc).is_err());
+        assert_eq!(doc, original);
+    }
+
     #[test]
     fn the_same_value_is_unchanged_and_shares_the_page() {
         let original = fixture();

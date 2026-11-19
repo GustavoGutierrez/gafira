@@ -26,6 +26,8 @@ pub(crate) struct Shape {
     pub(crate) stroke: Option<ShapeStroke>,
     /// The stored corner radius of a shape, in px; 0 for other elements.
     pub(crate) corner_radius: f64,
+    /// The gradient that fills a shape instead of `fill` (spec 063).
+    pub(crate) gradient: Option<gafira_doc::Gradient>,
     /// The element's opacity, 0 to 1.
     pub(crate) opacity: f32,
     /// The opacity of the groups above it, multiplied (spec 043); the
@@ -86,6 +88,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 fill: shape.fill,
                 stroke: shape.stroke,
                 corner_radius: shape.corner_radius,
+                gradient: shape.gradient,
                 opacity: node.base.opacity,
                 inherited,
                 group: false,
@@ -754,8 +757,11 @@ pub(crate) fn painted(shape: &Shape, at: Rect, zoom: f32) -> egui::Shape {
                     screen_color(stroke.color).gamma_multiply(opacity),
                 )
             });
+    if textured(shape) {
+        // Drawn from a texture (specs 054 and 063): see `path_image`.
+        return egui::Shape::Noop;
+    }
     match &shape.geometry {
-        // A path is drawn from a texture (spec 054): see `path_image`.
         ShapeGeometry::Path(_) => egui::Shape::Noop,
         ShapeGeometry::Rect => {
             let half = f64::from(at.width().min(at.height()).max(0.0)) / 2.0;
@@ -836,8 +842,11 @@ pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egu
                 )
             });
     let (w, h) = (shape.placement.w, shape.placement.h);
+    if textured(shape) {
+        // Drawn from a texture (specs 054 and 063): see `path_image`.
+        return egui::Shape::Noop;
+    }
     let curve = match shape.geometry {
-        // A path is drawn from a texture (spec 054): see `path_image`.
         ShapeGeometry::Path(_) => return egui::Shape::Noop,
         ShapeGeometry::Rect => shape.corner_radius,
         ShapeGeometry::Ellipse => w.max(h) / 2.0,
@@ -894,9 +903,9 @@ pub(crate) fn path_cover(shape: &Shape, zoom: f32) -> Placement {
 /// px so neither is cut. `None` for a shape that is not a path or has no
 /// size.
 pub(crate) fn path_image(shape: &Shape, zoom: f32) -> Option<(egui::ColorImage, Placement)> {
-    let ShapeGeometry::Path(path) = &shape.geometry else {
+    if !textured(shape) {
         return None;
-    };
+    }
     let (w, h) = (shape.placement.w, shape.placement.h);
     let zoom = f64::from(zoom);
     if !(w > 0.0 && h > 0.0 && zoom.is_finite() && zoom > 0.0) {
@@ -916,7 +925,7 @@ pub(crate) fn path_image(shape: &Shape, zoom: f32) -> Option<(egui::ColorImage, 
             ((p.y + margin) * scale) as f32,
         )
     };
-    for el in crate::shapes::bez(path, w, h).elements() {
+    for el in outline_of(shape).elements() {
         match *el {
             kurbo::PathEl::MoveTo(p) => {
                 let (x, y) = at(p);
@@ -944,7 +953,22 @@ pub(crate) fn path_image(shape: &Shape, zoom: f32) -> Option<(egui::ColorImage, 
         paint.anti_alias = true;
         paint
     };
-    if let Some(fill) = shape.fill {
+    if let Some(gradient) = &shape.gradient {
+        if let Some(shader) = gradient_shader(gradient, (w, h), (margin, scale)) {
+            let paint = tiny_skia::Paint {
+                shader,
+                anti_alias: true,
+                ..tiny_skia::Paint::default()
+            };
+            pixmap.fill_path(
+                &outline,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
+        }
+    } else if let Some(fill) = shape.fill {
         pixmap.fill_path(
             &outline,
             &paint(screen_color(fill)),
@@ -972,6 +996,89 @@ pub(crate) fn path_image(shape: &Shape, zoom: f32) -> Option<(egui::ColorImage, 
     let image =
         egui::ColorImage::from_rgba_premultiplied([pw as usize, ph as usize], pixmap.data());
     Some((image, covered))
+}
+
+/// True when the canvas draws `shape` from a texture: a path (spec 054) or
+/// a shape filled with a gradient (spec 063).
+pub(crate) fn textured(shape: &Shape) -> bool {
+    shape.line.is_none()
+        && shape.text.is_none()
+        && shape.image.is_none()
+        && !shape.group
+        && (matches!(shape.geometry, ShapeGeometry::Path(_)) || shape.gradient.is_some())
+}
+
+/// The outline of a shape in its local box, as the render draws it: the
+/// path, the ellipse, or the rectangle with its corners rounded at most to
+/// half the shorter side (FD-36 a).
+fn outline_of(shape: &Shape) -> kurbo::BezPath {
+    use kurbo::Shape as _;
+    let (w, h) = (shape.placement.w, shape.placement.h);
+    match &shape.geometry {
+        ShapeGeometry::Path(path) => crate::shapes::bez(path, w, h),
+        ShapeGeometry::Ellipse => {
+            kurbo::Ellipse::from_rect(kurbo::Rect::new(0.0, 0.0, w, h)).to_path(0.1)
+        }
+        ShapeGeometry::Rect => {
+            let r = shape.corner_radius.max(0.0).min(w.min(h) / 2.0);
+            kurbo::RoundedRect::new(0.0, 0.0, w, h, r).to_path(0.1)
+        }
+    }
+}
+
+/// The tiny-skia shader of `gradient` in a `w` × `h` box drawn at `scale`
+/// with `margin` page px around it: the same ends as
+/// `gafira_doc::Gradient::position` (spec 063).
+fn gradient_shader(
+    gradient: &gafira_doc::Gradient,
+    (w, h): (f64, f64),
+    (margin, scale): (f64, f64),
+) -> Option<tiny_skia::Shader<'static>> {
+    let stops = gradient
+        .stops
+        .iter()
+        .enumerate()
+        .map(|(index, stop)| {
+            let c = gradient.stop_rgba(index);
+            let color = tiny_skia::Color::from_rgba(
+                c.r.clamp(0.0, 1.0),
+                c.g.clamp(0.0, 1.0),
+                c.b.clamp(0.0, 1.0),
+                c.a.clamp(0.0, 1.0),
+            )
+            .unwrap_or(tiny_skia::Color::TRANSPARENT);
+            tiny_skia::GradientStop::new(stop.offset, color)
+        })
+        .collect();
+    let at = |x: f64, y: f64| {
+        tiny_skia::Point::from_xy(((x + margin) * scale) as f32, ((y + margin) * scale) as f32)
+    };
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    match gradient.kind {
+        gafira_doc::GradientKind::Linear { angle_deg } => {
+            let (sin, cos) = angle_deg.to_radians().sin_cos();
+            let half = (cx * cos).abs() + (cy * sin).abs();
+            tiny_skia::LinearGradient::new(
+                at(cx - cos * half, cy - sin * half),
+                at(cx + cos * half, cy + sin * half),
+                stops,
+                tiny_skia::SpreadMode::Pad,
+                tiny_skia::Transform::identity(),
+            )
+        }
+        gafira_doc::GradientKind::Radial => {
+            let centre = at(cx, cy);
+            tiny_skia::RadialGradient::new(
+                centre,
+                0.0,
+                centre,
+                (cx.hypot(cy) * scale) as f32,
+                stops,
+                tiny_skia::SpreadMode::Pad,
+                tiny_skia::Transform::identity(),
+            )
+        }
+    }
 }
 
 /// An image on its box mapped by `transform`: one textured quad whose
@@ -1622,6 +1729,7 @@ mod s41_tests {
             fill: node.fill,
             stroke: None,
             corner_radius: 0.0,
+            gradient: None,
             opacity: 1.0,
             inherited: 1.0,
             group: false,
@@ -1648,6 +1756,71 @@ mod s41_tests {
         let mut flat = shapes[0].clone();
         flat.placement.h = 0.0;
         assert!(path_image(&flat, 1.0).is_none());
+    }
+
+    // S63-03: a shape with a gradient is drawn from a texture filled with
+    // it, red on the left of a left-to-right gradient and blue on the
+    // right, inside the rounded corners only.
+    #[test]
+    fn s63_03_a_gradient_shape_draws_from_a_texture() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let mut shape = shapes(&{
+            let mut page = Page::new(
+                PageId::new(1),
+                String::new(),
+                gafira_doc::PageSize {
+                    width: gafira_geom::Length::new(400.0, gafira_geom::Unit::Px),
+                    height: gafira_geom::Length::new(400.0, gafira_geom::Unit::Px),
+                },
+            );
+            let mut node = ShapeNode::new(ShapeGeometry::Rect);
+            node.corner_radius = 20.0;
+            node.gradient = Some(Gradient {
+                kind: GradientKind::Linear { angle_deg: 0.0 },
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0)),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
+                    },
+                ],
+            });
+            let base =
+                gafira_doc::ElementBase::new(NodeId::new(2), Placement::new(0.0, 0.0, 100.0, 50.0));
+            page.nodes.insert(
+                NodeId::new(2),
+                std::sync::Arc::new(gafira_doc::Node::new(base, NodeKind::Shape(node))),
+            );
+            page.roots = vec![NodeId::new(2)];
+            page
+        })
+        .remove(0);
+        assert!(textured(&shape));
+        let (image, _) = path_image(&shape, 1.0).expect("a texture");
+        let at = |x: usize, y: usize| image.pixels[(y + 1) * 102 + x + 1];
+        assert!(
+            at(2, 25).r() > 200 && at(2, 25).b() < 50,
+            "red on the left: {:?}",
+            at(2, 25)
+        );
+        assert!(
+            at(97, 25).b() > 200 && at(97, 25).r() < 50,
+            "blue on the right"
+        );
+        assert_eq!(at(1, 1).a(), 0, "outside the rounded corner");
+        assert_eq!(
+            painted(
+                &shape,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 50.0)),
+                1.0
+            ),
+            egui::Shape::Noop
+        );
+        shape.gradient = None;
+        assert!(!textured(&shape));
     }
 
     // S61-02: a box that grows down with its text takes the text's height;

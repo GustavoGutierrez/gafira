@@ -502,6 +502,9 @@ struct Asked {
     place: Option<Placement>,
     /// A fill picked in the Inspector (`Some(None)` removes it).
     fill: Option<Option<gafira_color::Color>>,
+    /// A gradient set in the Inspector (`Some(None)` goes back to the
+    /// solid colour, spec 063).
+    gradient: Option<Option<gafira_doc::Gradient>>,
     /// An opacity set in the Inspector, 0 to 1.
     opacity: Option<f32>,
     /// An outline set in the Inspector (`Some(None)` removes it, spec 038).
@@ -645,6 +648,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         fill: None,
         stroke: None,
         corner_radius: 0.0,
+        gradient: None,
         opacity: page.node(node)?.base.opacity,
         inherited: 1.0,
         group: true,
@@ -2137,6 +2141,7 @@ impl Editor {
                     fill: Some(canvas::document_color(color)),
                     stroke: None,
                     corner_radius: 0.0,
+                    gradient: None,
                     opacity: f32::from(color.a()) / 255.0,
                     inherited: 1.0,
                     group: false,
@@ -3287,7 +3292,7 @@ impl Editor {
                                     }
                                     // A path is drawn from its texture, in
                                     // its own axes (spec 054).
-                                    if let ShapeGeometry::Path(_) = &shape.geometry {
+                                    if canvas::textured(shape) {
                                         let cover = canvas::path_cover(shape, zoom);
                                         let key = path_key(shape, zoom);
                                         if let Some(texture) = self.path_texture(ctx, key, || {
@@ -4329,6 +4334,7 @@ impl Editor {
         if let Some(page) = self.selected.page() {
             let values = [
                 ("fill", asked.fill.map(Property::Fill)),
+                ("gradient", asked.gradient.clone().map(Property::Gradient)),
                 ("outline", asked.stroke.map(Property::Stroke)),
                 (
                     "corner radius",
@@ -4961,8 +4967,15 @@ fn path_key(shape: &Shape, zoom: f32) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     format!(
-        "{:?}{:?}{:?}{}{}{}",
-        shape.geometry, shape.fill, shape.stroke, shape.placement.w, shape.placement.h, zoom
+        "{:?}{:?}{:?}{:?}{}{}{}{}",
+        shape.geometry,
+        shape.fill,
+        shape.stroke,
+        shape.gradient,
+        shape.corner_radius,
+        shape.placement.w,
+        shape.placement.h,
+        zoom
     )
     .hash(&mut hasher);
     hasher.finish()
@@ -5358,7 +5371,33 @@ fn decode(engine: &Gafira, hash: gafira_doc::ContentHash) -> Option<egui::ColorI
 /// width) and, for a rectangle, its corner radius (spec 038). Each change
 /// is one command, so one undo step.
 /// «Relleno»: a colour picker showing `shape`'s fill and «Sin relleno».
+/// A shape, not an image, also has «Color sólido» and «Degradado» (spec
+/// 063).
 fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked) {
+    if shape.image.is_none() {
+        ui.horizontal(|ui| {
+            let solid = shape.gradient.is_none();
+            let label = |key| plain(texts, key);
+            if ui
+                .selectable_label(solid, label("inspector.solid"))
+                .clicked()
+                && !solid
+            {
+                asked.gradient = Some(None);
+            }
+            if ui
+                .selectable_label(!solid, label("inspector.gradient"))
+                .clicked()
+                && solid
+            {
+                asked.gradient = Some(Some(crate::gradients::start(shape.fill)));
+            }
+        });
+        if let Some(gradient) = &shape.gradient {
+            gradient_fields(ui, texts, gradient, asked);
+            return;
+        }
+    }
     ui.horizontal(|ui| {
         ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
         let mut color = shape
@@ -5375,6 +5414,120 @@ fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked
             asked.fill = Some(None);
         }
     });
+}
+
+/// «Degradado» (spec 063): a picker per colour (a right click removes one
+/// while more than two are left), «+» for one more, and the styles, each
+/// drawn as a swatch of the gradient in it.
+fn gradient_fields(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    gradient: &gafira_doc::Gradient,
+    asked: &mut Asked,
+) {
+    let label = |key| plain(texts, key);
+    ui.label(label("inspector.gradient_colors"));
+    ui.horizontal_wrapped(|ui| {
+        for (index, stop) in gradient.stops.iter().enumerate() {
+            let mut color = canvas::screen_color(stop.color);
+            let response = ui.color_edit_button_srgba(&mut color);
+            if response.changed() {
+                asked.gradient = Some(Some(crate::gradients::with_color(
+                    gradient,
+                    index,
+                    canvas::document_color(color),
+                )));
+            }
+            if gradient.stops.len() > gafira_doc::Gradient::MIN_STOPS {
+                response.context_menu(|ui| {
+                    if ui.button(label("inspector.gradient_remove")).clicked() {
+                        asked.gradient =
+                            crate::gradients::with_stop_removed(gradient, index).map(Some);
+                        ui.close();
+                    }
+                });
+            }
+        }
+        if let Some(more) = crate::gradients::with_stop_added(gradient)
+            && ui
+                .button("+")
+                .on_hover_text(label("inspector.gradient_add"))
+                .clicked()
+        {
+            asked.gradient = Some(Some(more));
+        }
+    });
+    ui.label(label("inspector.gradient_style"));
+    ui.horizontal_wrapped(|ui| {
+        for (kind, key) in crate::gradients::STYLES
+            .into_iter()
+            .zip(GRADIENT_STYLE_KEYS)
+        {
+            let styled = gafira_doc::Gradient {
+                kind,
+                stops: gradient.stops.clone(),
+            };
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(36.0, 28.0), egui::Sense::click());
+            ui.painter().add(gradient_swatch(&styled, rect));
+            let stroke = if kind == gradient.kind {
+                egui::Stroke::new(2.0, ui.visuals().selection.stroke.color)
+            } else {
+                ui.visuals().widgets.noninteractive.bg_stroke
+            };
+            ui.painter()
+                .rect_stroke(rect, 4.0, stroke, egui::StrokeKind::Outside);
+            let response = response
+                .on_hover_text(label(key))
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if response.clicked() && kind != gradient.kind {
+                asked.gradient = Some(Some(styled));
+            }
+        }
+    });
+}
+
+/// The catalog keys of the styles of `gradients::STYLES`, in order.
+const GRADIENT_STYLE_KEYS: [&str; 7] = [
+    "inspector.gradient_left_right",
+    "inspector.gradient_right_left",
+    "inspector.gradient_top_bottom",
+    "inspector.gradient_bottom_top",
+    "inspector.gradient_diagonal_down",
+    "inspector.gradient_diagonal_up",
+    "inspector.gradient_radial",
+];
+
+/// `gradient` painted over `rect`: a grid of 12 × 12 cells whose corners
+/// take the gradient's colour there, blended across each cell.
+fn gradient_swatch(gradient: &gafira_doc::Gradient, rect: Rect) -> egui::Shape {
+    const CELLS: u32 = 12;
+    let mut mesh = egui::Mesh::default();
+    let (w, h) = (f64::from(rect.width()), f64::from(rect.height()));
+    for j in 0..=CELLS {
+        for i in 0..=CELLS {
+            let (u, v) = (
+                f64::from(i) / f64::from(CELLS),
+                f64::from(j) / f64::from(CELLS),
+            );
+            let color = canvas::screen_color(gafira_color::Color::Srgb(gradient.color_at(
+                u * w,
+                v * h,
+                w,
+                h,
+            )));
+            mesh.colored_vertex(rect.min + Vec2::new((u * w) as f32, (v * h) as f32), color);
+        }
+    }
+    let row = CELLS + 1;
+    for j in 0..CELLS {
+        for i in 0..CELLS {
+            let a = j * row + i;
+            mesh.add_triangle(a, a + 1, a + row);
+            mesh.add_triangle(a + 1, a + row + 1, a + row);
+        }
+    }
+    egui::Shape::mesh(mesh)
 }
 
 /// «Opacidad»: a slider showing `shape`'s opacity in percent.

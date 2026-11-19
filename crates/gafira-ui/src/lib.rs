@@ -20,6 +20,7 @@ mod editor;
 mod export;
 mod files;
 mod format;
+mod gradients;
 mod group;
 mod home;
 mod icons;

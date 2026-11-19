@@ -38,6 +38,12 @@ No alcance: degradado en contornos, en textos o en el fondo de la página; mover
 
 Tests en verde, gates y prueba del titular.
 
+## Avance
+
+- Hecho: modelo y validación, propiedad de edición, `RenderOp::FillGradient` y su pintor en el backend CPU, el grafo y la clave, el lienzo (textura con el shader de tiny-skia, también para rectángulos con esquinas y elipses) y el Inspector con «Color sólido» / «Degradado», colores (clic derecho quita uno), «+» y siete estilos: izquierda a derecha, derecha a izquierda, arriba abajo, abajo arriba, dos diagonales y circular.
+- Lapso de TDD: el pintor del backend CPU y la propiedad de edición se escribieron antes que sus tests; se compensó con mutantes a mano (sin el inverso de la transformación, con `x` fija y sin la validación), que los tests detectan.
+- Falta: la prueba del titular.
+
 ## Riesgos y decisiones abiertas
 
 - Una versión anterior de Gafira no abre un `.gaf` con degradados (D-101).
