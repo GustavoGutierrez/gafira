@@ -35,6 +35,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 056 | [Cabecera de página](056-page-header.md) | in-progress: título editable, subir, bajar, ocultar, bloquear, duplicar, eliminar y añadir página (FD-02) |
 | 057 | [«Identidad» pasa a llamarse «Marca»](057-brand-name.md) | in-progress: pestaña y glosario (D-97) |
 | 058 | [Líneas que se conectan a las formas](058-connected-lines.md) | in-progress: `NodeKind::Line` con puntas y conexiones a cinco puntos de las formas (D-98) |
+| 059 | [Zoom con Ctrl + rueda, centrado en el puntero](059-ctrl-wheel-zoom.md) | in-progress: `zoom_delta` de egui y desplazamiento corregido (FD-08) |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -101,4 +102,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **059**.
+Siguiente ID libre: **060**.
