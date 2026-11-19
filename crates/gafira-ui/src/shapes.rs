@@ -8,12 +8,19 @@
 //! the unit box. The aspect it had before scaling is the one a new shape
 //! takes on the page.
 
-use gafira_doc::{PathCommand, ShapeGeometry, ShapePath};
+use gafira_doc::{LineCap, PathCommand, ShapeGeometry, ShapePath};
 use kurbo::{Affine, BezPath, Circle, Ellipse, PathEl, Point, RoundedRect, Shape};
 
 /// A shape of the Formas panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Piece {
+    /// The lines (spec 058): circles at both ends, hollow diamonds, filled
+    /// diamonds, no caps, and a square start with an arrow end.
+    LineCircles,
+    LineDiamonds,
+    LineDiamondsFilled,
+    LinePlain,
+    LineArrow,
     Square,
     RoundedSquare,
     Circle,
@@ -62,7 +69,12 @@ pub(crate) enum Piece {
 impl Piece {
     /// Every shape, in the order of the panel.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 43] = [
+    pub(crate) const ALL: [Self; 48] = [
+        Self::LineCircles,
+        Self::LineDiamonds,
+        Self::LineDiamondsFilled,
+        Self::LinePlain,
+        Self::LineArrow,
         Self::Square,
         Self::RoundedSquare,
         Self::Circle,
@@ -117,6 +129,19 @@ impl Piece {
         }
     }
 
+    /// The caps of a line, start then end; `None` for a shape that is not
+    /// a line (spec 058).
+    pub(crate) fn line_caps(self) -> Option<(LineCap, LineCap)> {
+        Some(match self {
+            Self::LineCircles => (LineCap::Circle, LineCap::Circle),
+            Self::LineDiamonds => (LineCap::Diamond, LineCap::Diamond),
+            Self::LineDiamondsFilled => (LineCap::DiamondFilled, LineCap::DiamondFilled),
+            Self::LinePlain => (LineCap::None, LineCap::None),
+            Self::LineArrow => (LineCap::Square, LineCap::Arrow),
+            _ => return None,
+        })
+    }
+
     /// Its width over its height: the box a new shape takes.
     pub(crate) fn aspect(self) -> f64 {
         built(self).map_or(1.0, |(_, aspect)| aspect)
@@ -133,6 +158,11 @@ impl Piece {
     /// The catalog key of its name.
     pub(crate) fn key(self) -> &'static str {
         match self {
+            Self::LineCircles => "pieces.line_circles",
+            Self::LineDiamonds => "pieces.line_diamonds",
+            Self::LineDiamondsFilled => "pieces.line_diamonds_filled",
+            Self::LinePlain => "pieces.line_plain",
+            Self::LineArrow => "pieces.line_arrow",
             Self::Square => "pieces.square",
             Self::RoundedSquare => "pieces.rounded_square",
             Self::Circle => "pieces.circle",
@@ -183,6 +213,16 @@ impl Piece {
 /// The sections of the Formas panel, in the order of the reference (spec
 /// 054), each with the catalog key of its title and its shapes.
 pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[
+    (
+        "pieces.lines",
+        &[
+            Piece::LineCircles,
+            Piece::LineDiamonds,
+            Piece::LineDiamondsFilled,
+            Piece::LinePlain,
+            Piece::LineArrow,
+        ],
+    ),
     (
         "pieces.basic",
         &[
@@ -258,6 +298,11 @@ pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[
 pub(crate) fn built(piece: Piece) -> Option<(ShapePath, f64)> {
     let path = match piece {
         Piece::Square | Piece::RoundedSquare | Piece::Circle => return None,
+        Piece::LineCircles
+        | Piece::LineDiamonds
+        | Piece::LineDiamondsFilled
+        | Piece::LinePlain
+        | Piece::LineArrow => return None,
         Piece::Triangle => poly(&[(0.5, 0.0), (1.0, 1.0), (0.0, 1.0)]),
         Piece::RightTriangle => poly(&[(0.0, 0.0), (1.0, 1.0), (0.0, 1.0)]),
         Piece::Pentagon => poly(&regular(5, -90.0)),
@@ -580,7 +625,8 @@ mod tests {
             let geometry = piece.geometry();
             let ShapeGeometry::Path(path) = geometry else {
                 assert!(
-                    matches!(piece, Piece::Square | Piece::RoundedSquare | Piece::Circle),
+                    matches!(piece, Piece::Square | Piece::RoundedSquare | Piece::Circle)
+                        || piece.line_caps().is_some(),
                     "{piece:?} draws a path"
                 );
                 continue;
@@ -605,8 +651,9 @@ mod tests {
         }
         let titles: Vec<&str> = PIECE_SECTIONS.iter().map(|(title, _)| *title).collect();
         assert_eq!(
-            titles[..4],
+            titles[..5],
             [
+                "pieces.lines",
                 "pieces.basic",
                 "pieces.polygons",
                 "pieces.stars",

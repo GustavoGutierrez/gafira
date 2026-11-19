@@ -25,6 +25,7 @@ use crate::format::fit_zoom;
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
 use crate::layers::{self, Flag};
+use crate::lines;
 use crate::magnet::{self, Snap};
 use crate::resize;
 use crate::rotation::{self, Axis};
@@ -298,6 +299,19 @@ pub(crate) struct Editor {
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
     /// The text being written on the canvas (spec 055).
     editing: Option<Editing>,
+    /// What the drag of a line end shows (spec 058).
+    line_view: Option<LineView>,
+}
+
+/// What the drag of a line end shows (spec 058): the shapes near it, whose
+/// five points are drawn; the one it sticks to, whose outline is lit; and
+/// both ends in page px, for the length and angle beside the pointer.
+struct LineView {
+    page: PageId,
+    near: Vec<NodeId>,
+    stuck: Option<NodeId>,
+    end: gafira_geom::Point,
+    other: gafira_geom::Point,
 }
 
 /// A text being written on the canvas (spec 055): whose it is, the words so
@@ -348,6 +362,8 @@ enum Hold {
         center: Pos2,
         from: Pos2,
     },
+    /// One end of a line (spec 058): 0 the start, 1 the end.
+    LineEnd(usize),
 }
 
 /// A marquee on the canvas, in screen px: where the drag started, where the
@@ -388,6 +404,7 @@ impl Default for Editor {
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
             editing: None,
+            line_view: None,
         }
     }
 }
@@ -603,6 +620,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         image: None,
         locked: crate::layers::locked(page, node),
         inner: None,
+        line: None,
     })
 }
 
@@ -1672,10 +1690,14 @@ impl Editor {
                 ui.add_space(16.0);
                 arrange_buttons(ui, theme, texts, can, asked);
                 ui.add_space(16.0);
-                if shape.text.is_none() && !shape.group {
+                if shape.text.is_none() && !shape.group && shape.line.is_none() {
                     fill_field(ui, texts, shape, asked);
                 }
-                if shape.text.is_none() && shape.image.is_none() && !shape.group {
+                if shape.text.is_none()
+                    && shape.image.is_none()
+                    && !shape.group
+                    && shape.line.is_none()
+                {
                     ui.add_space(8.0);
                     outline_fields(ui, texts, shape, asked);
                     shape_text_fields(ui, theme, texts, shape, asked);
@@ -1949,6 +1971,24 @@ impl Editor {
         rect: Rect,
         color: Color32,
     ) {
+        // A line: across the tile with its caps (spec 058).
+        if let Some((start, end)) = piece.line_caps() {
+            let line = gafira_doc::LineNode {
+                start: gafira_doc::LineEnd::new([0.0, 0.5], start),
+                end: gafira_doc::LineEnd::new([1.0, 0.5], end),
+                color: canvas::document_color(color),
+                width: 2.0,
+            };
+            let y = rect.center().y;
+            painter.extend(canvas::line_shapes(
+                &line,
+                Pos2::new(rect.min.x + 2.0, y),
+                Pos2::new(rect.max.x - 2.0, y),
+                1.0,
+                color,
+            ));
+            return;
+        }
         let aspect = piece.aspect() as f32;
         let side = rect.width().min(rect.height());
         let size = if aspect >= 1.0 {
@@ -1986,6 +2026,7 @@ impl Editor {
                     image: None,
                     locked: false,
                     inner: None,
+                    line: None,
                 };
                 let cover = canvas::path_cover(&shape, 1.0);
                 let key = path_key(&shape, 1.0);
@@ -2061,6 +2102,80 @@ impl Editor {
             Rect::from_center_size(at, Vec2::splat(side)),
             color,
         );
+    }
+
+    /// The end of a line follows the pointer (spec 058): near a shape it
+    /// sticks to one of its five points or, else, to the nearest point of
+    /// its outline, unless Ctrl lets the magnet go. The line and its box
+    /// change together, one undo step for the whole drag.
+    fn drag_line_end(&mut self, engine: &mut Gafira, delta: Vec2, free: bool) {
+        let zoom = f64::from(self.zoom);
+        let Some(drag) = self.drag.as_mut() else {
+            return;
+        };
+        drag.offset += delta;
+        let Some(Hold::LineEnd(which)) = drag.hold else {
+            return;
+        };
+        let Some((node, origin)) = drag.origins.first().copied() else {
+            return;
+        };
+        let Some(start) = drag.start.as_ref().and_then(|d| d.page(drag.page)) else {
+            return;
+        };
+        let Some(gafira_doc::NodeKind::Line(line)) = start.node(node).map(|n| &n.kind) else {
+            return;
+        };
+        let Some(now) = engine.edit().document() else {
+            return;
+        };
+        let Some(page) = now.page(drag.page) else {
+            return;
+        };
+        let from = line.ends(start, &origin)[which.min(1)];
+        let p = from
+            + gafira_geom::Vec2::new(
+                f64::from(drag.offset.x) / zoom,
+                f64::from(drag.offset.y) / zoom,
+            );
+        let stuck = (!free)
+            .then(|| lines::stick(page, p, lines::SNAP_PX / zoom, node))
+            .flatten();
+        let point = stuck.map_or(p, |s| s.point);
+        let attach = stuck.map(|s| gafira_doc::Attachment {
+            node: s.node,
+            at: s.at,
+        });
+        let (next, placement) = lines::with_end(line, &origin, page, which, point, attach);
+        let ends = next.ends(page, &placement);
+        let commands: Vec<Box<dyn Command>> = vec![
+            Box::new(SetProperty::new(
+                drag.page,
+                vec![node],
+                Property::Placement(placement),
+                drag.gesture,
+            )),
+            Box::new(SetProperty::new(
+                drag.page,
+                vec![node],
+                Property::Line(next),
+                drag.gesture,
+            )),
+        ];
+        match engine.edit().execute(Box::new(Transaction::new(
+            MessageKey("edit.line"),
+            commands,
+        ))) {
+            Ok(applied) => drag.moved |= applied == gafira_edit::Applied::Changed,
+            Err(error) => eprintln!("line: {error}"),
+        }
+        self.line_view = Some(LineView {
+            page: drag.page,
+            near: lines::near(page, p, lines::REACH_PX / zoom, node),
+            stuck: stuck.map(|s| s.node),
+            end: ends[which.min(1)],
+            other: ends[1 - which.min(1)],
+        });
     }
 
     /// Move `nodes` from one page to the other after a drag (spec 051), as
@@ -2786,6 +2901,16 @@ impl Editor {
                                             ));
                                         }
                                     }
+                                    // A line: its stroke and caps between its
+                                    // resolved ends (spec 058).
+                                    if let Some((line, ends)) = &shape.line {
+                                        let [a, b] =
+                                            ends.map(|p| canvas::point_on_screen(page, zoom, p));
+                                        let color = canvas::screen_color(line.color)
+                                            .gamma_multiply(shape.alpha());
+                                        clip.extend(canvas::line_shapes(line, a, b, zoom, color));
+                                        continue;
+                                    }
                                     if upright {
                                         clip.add(canvas::painted(shape, at, zoom));
                                     } else {
@@ -2898,6 +3023,35 @@ impl Editor {
                             // the box around its children (spec 043).
                             let chosen = chosen(page_doc, &self.selected);
                             for shape in &chosen {
+                                // A line shows its two ends, which can be
+                                // dragged (spec 058).
+                                if let Some((_, ends)) = &shape.line {
+                                    let [a, b] =
+                                        ends.map(|p| canvas::point_on_screen(page, zoom, p));
+                                    painter.line_segment([a, b], Stroke::new(1.0, selection));
+                                    if single == Some((shape.page, shape.node)) && !shape.locked {
+                                        for (which, at) in [a, b].into_iter().enumerate() {
+                                            painter.circle(
+                                                at,
+                                                canvas::HANDLE_HALF,
+                                                theme.c("surface"),
+                                                Stroke::new(1.5, selection),
+                                            );
+                                            let near = |p: Option<Pos2>| {
+                                                p.is_some_and(|p| {
+                                                    p.distance(at) <= canvas::HANDLE_HALF * 2.5
+                                                })
+                                            };
+                                            if response.drag_started() && near(pointer) {
+                                                grabbed = Some(Hold::LineEnd(which));
+                                            }
+                                            if near(response.hover_pos()) {
+                                                grip_cursor = Some(egui::CursorIcon::Grab);
+                                            }
+                                        }
+                                    }
+                                    continue;
+                                }
                                 let at = canvas::on_screen(page, zoom, &shape.placement);
                                 let turn = rotation::to_screen(page, zoom, &shape.placement);
                                 let upright = rotation::upright(&shape.placement);
@@ -2950,7 +3104,7 @@ impl Editor {
                                         Some(Some(Hold::Resize(handle))) => {
                                             Some(resize::cursor(turn, handle))
                                         }
-                                        Some(Some(Hold::Rotate { .. })) => {
+                                        Some(Some(Hold::Rotate { .. } | Hold::LineEnd(_))) => {
                                             Some(egui::CursorIcon::Grabbing)
                                         }
                                         Some(None) => grip_cursor,
@@ -3052,6 +3206,56 @@ impl Editor {
                         {
                             picked = Some((id, node));
                             asked.scope = Some(scope.map(|group| (id, group)));
+                        }
+                        // While a line end is dragged: the five points of
+                        // the shapes near it, the outline of the one it
+                        // sticks to, and its length and angle (spec 058).
+                        if let Some(view) = &self.line_view
+                            && let Some((_, rect)) =
+                                page_rects.iter().find(|(id, _)| *id == view.page)
+                            && let Some(page_doc) = pages.iter().find(|p| p.id == view.page)
+                        {
+                            let to_screen = |p| canvas::point_on_screen(*rect, zoom, p);
+                            if let Some(node) = view.stuck {
+                                for ring in lines::outline(page_doc, node) {
+                                    let points: Vec<Pos2> =
+                                        ring.into_iter().map(to_screen).collect();
+                                    painter.add(egui::Shape::closed_line(
+                                        points,
+                                        Stroke::new(1.5, selection),
+                                    ));
+                                }
+                            }
+                            for node in &view.near {
+                                for anchor in gafira_doc::Anchor::ALL {
+                                    if let Some(p) = gafira_doc::LineNode::anchor_point(
+                                        page_doc,
+                                        *node,
+                                        anchor.unit(),
+                                    ) {
+                                        painter.circle(
+                                            to_screen(p),
+                                            4.0,
+                                            theme.c("surface"),
+                                            Stroke::new(1.0, theme.c("text.secondary")),
+                                        );
+                                    }
+                                }
+                            }
+                            let end = to_screen(view.end);
+                            painter.circle_filled(end, 4.0, selection);
+                            let (length, angle) = lines::length_and_angle(view.other, view.end);
+                            let label = format!("l: {length:.0} {angle:.0}°");
+                            let galley = painter.layout_no_wrap(
+                                label,
+                                theme.font("caption"),
+                                theme.c("topbar.fg"),
+                            );
+                            let at = end + Vec2::new(14.0, 14.0);
+                            let back =
+                                Rect::from_min_size(at, galley.size()).expand2(Vec2::new(6.0, 3.0));
+                            painter.rect_filled(back, 4.0, theme.c("topbar.bg"));
+                            painter.galley(at, galley, theme.c("topbar.fg"));
                         }
                         // The field of a text being written on the
                         // canvas, over its element (spec 055).
@@ -3473,7 +3677,16 @@ impl Editor {
                 });
             }
         }
-        if let (Some(delta), Some(drag)) = (asked.drag_to, self.drag.as_mut()) {
+        // The end of a line is dragged on its own (spec 058).
+        let line_end = matches!(
+            self.drag.as_ref().and_then(|d| d.hold),
+            Some(Hold::LineEnd(_))
+        );
+        if line_end && let Some(delta) = asked.drag_to {
+            self.drag_line_end(engine, delta, asked.free);
+        }
+        if let (Some(delta), Some(drag)) = (asked.drag_to.filter(|_| !line_end), self.drag.as_mut())
+        {
             drag.offset += delta;
             let zoom = self.zoom;
             let start = drag.start.as_ref().and_then(|d| d.page(drag.page));
@@ -3544,6 +3757,8 @@ impl Editor {
                         Some(Hold::Rotate { center, from }) => {
                             rotation::rotated(origin, center, from, from + drag.offset, asked.snap)
                         }
+                        // Handled by `drag_line_end`.
+                        Some(Hold::LineEnd(_)) => *origin,
                         None => {
                             let mut to = canvas::moved(origin, drag.offset, zoom);
                             to.x += snap.dx;
@@ -3578,6 +3793,7 @@ impl Editor {
         }
         if asked.drag_end {
             self.snapped = None;
+            self.line_view = None;
         }
         if asked.drag_end
             && let Some(drag) = self.drag.take()
@@ -4000,7 +4216,8 @@ fn group_change(origin: &Placement, to: &Placement, hold: Option<Hold>) -> Chang
             center: gafira_geom::Point::new(origin.x + origin.w / 2.0, origin.y + origin.h / 2.0),
             degrees: to.rotation_deg - origin.rotation_deg,
         },
-        None => Change::Move {
+        // A line end never drags a group; a move keeps it where it is.
+        None | Some(Hold::LineEnd(_)) => Change::Move {
             dx: to.x - origin.x,
             dy: to.y - origin.y,
         },
@@ -7107,6 +7324,88 @@ pub(crate) mod tests {
         engine.edit().undo().expect("an undo");
         engine.edit().undo().expect("an undo");
         assert!(pages(&mut engine).iter().all(|p| p.guides.0.is_empty()));
+    }
+
+    // S58-04: dragging the end of a line near the right point of a shape
+    // connects it there, in one undo step; moving the shape then moves the
+    // end with it.
+    #[test]
+    fn s58_04_a_dropped_end_connects() {
+        use gafira_doc::{Anchor, Attachment, LineCap, LineEnd, LineNode};
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let target = placements(&mut engine, &[rect])[0];
+        let line = LineNode {
+            start: LineEnd::new([0.0, 0.0], LineCap::None),
+            end: LineEnd::new([1.0, 0.0], LineCap::Arrow),
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            width: 4.0,
+        };
+        let id = NodeId::new(engine.edit().document().expect("a document").next_id());
+        engine
+            .edit()
+            .execute(Box::new(InsertNodes::new(
+                page,
+                None,
+                2,
+                vec![gafira_edit::NodeSpec::new(
+                    gafira_doc::NodeKind::Line(line),
+                    Placement::new(10.0, 10.0, 50.0, 0.0),
+                )],
+            )))
+            .expect("a line");
+        editor.selected = Selection::one(page, id);
+        let depth = undo_depth(&mut engine);
+        // The end is at (60, 10); the right point of the shape is at
+        // (x + w, y + h / 2). Drop the end 5 px short of it.
+        let right = Vec2::new(
+            (target.x + target.w - 60.0 - 5.0) as f32,
+            (target.y + target.h / 2.0 - 10.0) as f32,
+        ) * editor.zoom;
+        for asked in [
+            Asked {
+                drag_begin: Some(Some(Hold::LineEnd(1))),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(right),
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let end = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("a document");
+            let page = &document.pages()[0];
+            let node = page.node(id).expect("the line");
+            let gafira_doc::NodeKind::Line(line) = &node.kind else {
+                panic!("a line")
+            };
+            (line.end.attached, line.ends(page, &node.base.placement)[1])
+        };
+        let (attached, at) = end(&mut engine);
+        assert_eq!(attached, Some(Attachment::anchor(rect, Anchor::Right)));
+        assert!((at.x - (target.x + target.w)).abs() < 1e-6);
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        editor.selected = Selection::one(page, rect);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                nudge: Some((30.0, 0.0)),
+                ..Asked::default()
+            },
+        );
+        let (_, moved) = end(&mut engine);
+        assert!(
+            (moved.x - (target.x + target.w + 30.0)).abs() < 1e-6,
+            "the end follows"
+        );
     }
 
     // S50-01: a press on an element activates its page, on a page's

@@ -256,6 +256,12 @@ library = "Biblioteca"
 drawing = "Dibujo"
 
 [pieces]
+lines = "Líneas"
+line_circles = "Línea con círculos"
+line_diamonds = "Línea con rombos"
+line_diamonds_filled = "Línea con rombos rellenos"
+line_plain = "Línea"
+line_arrow = "Flecha"
 rect = "Rectángulo"
 ellipse = "Elipse"
 basic = "Formas básicas"
@@ -328,6 +334,7 @@ import_image = "Importar imagen…"
 import_failed = "No pudimos importar la imagen."
 
 [layers]
+line = "Línea"
 image = "Imagen"
 text = "Texto"
 up = "Subir"

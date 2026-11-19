@@ -256,6 +256,12 @@ library = "Library"
 drawing = "Drawing"
 
 [pieces]
+lines = "Lines"
+line_circles = "Line with circles"
+line_diamonds = "Line with diamonds"
+line_diamonds_filled = "Line with filled diamonds"
+line_plain = "Line"
+line_arrow = "Arrow line"
 rect = "Rectangle"
 ellipse = "Ellipse"
 basic = "Basic shapes"
@@ -328,6 +334,7 @@ import_image = "Import image…"
 import_failed = "We couldn't import the image."
 
 [layers]
+line = "Line"
 image = "Image"
 text = "Text"
 up = "Bring forward"

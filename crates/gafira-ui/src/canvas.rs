@@ -40,6 +40,9 @@ pub(crate) struct Shape {
     pub(crate) text: Option<TextNode>,
     /// The text inside a shape (spec 055); `None` for other elements.
     pub(crate) inner: Option<gafira_doc::ShapeText>,
+    /// A line and its two ends in page px (spec 058); `None` for other
+    /// elements.
+    pub(crate) line: Option<(gafira_doc::LineNode, [gafira_geom::Point; 2])>,
     /// The asset an image element shows (spec 029).
     pub(crate) image: Option<gafira_doc::AssetRef>,
     /// Locked itself or below a locked group (D-91): drawn, but a click or
@@ -70,7 +73,8 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
             NodeKind::Shape(shape) => Some((shape.clone(), None, None)),
             NodeKind::Text(text) => Some((rect.clone(), Some(text.clone()), None)),
             NodeKind::Image(image) => Some((rect.clone(), None, Some(image.asset))),
-            NodeKind::Group(_) | NodeKind::Extension(_) | NodeKind::Line(_) => None,
+            NodeKind::Line(_) => Some((rect.clone(), None, None)),
+            NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
             let inner_text = shape.text.clone();
@@ -89,6 +93,12 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 image,
                 locked,
                 inner: inner_text,
+                line: match &node.kind {
+                    NodeKind::Line(line) => {
+                        Some((line.clone(), line.ends(page, &node.base.placement)))
+                    }
+                    _ => None,
+                },
             });
         }
         let below = inherited * node.base.opacity.clamp(0.0, 1.0);
@@ -209,6 +219,7 @@ pub(crate) fn kind_key(kind: &NodeKind) -> &'static str {
         NodeKind::Group(_) => "layers.group",
         NodeKind::Text(_) => "layers.text",
         NodeKind::Image(_) => "layers.image",
+        NodeKind::Line(_) => "layers.line",
         _ => "layers.element",
     }
 }
@@ -229,6 +240,20 @@ pub(crate) fn on_screen(page_rect: Rect, zoom: f32, placement: &Placement) -> Re
 pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -> Option<NodeId> {
     // What is locked is not picked: the click goes through it (D-91).
     shapes.iter().rev().filter(|s| !s.locked).find_map(|shape| {
+        // A line takes a click within half its width, or 5 screen px, of
+        // its segment (spec 058).
+        if let Some((line, ends)) = &shape.line {
+            let [a, b] = ends.map(|p| point_on_screen(page_rect, zoom, p));
+            let q = crate::lines::nearest_on_segment(
+                gafira_geom::Point::new(f64::from(pointer.x), f64::from(pointer.y)),
+                gafira_geom::Point::new(f64::from(a.x), f64::from(a.y)),
+                gafira_geom::Point::new(f64::from(b.x), f64::from(b.y)),
+            );
+            let d =
+                (q - gafira_geom::Point::new(f64::from(pointer.x), f64::from(pointer.y))).hypot();
+            let reach = (line.width * f64::from(zoom) / 2.0).max(5.0);
+            return (d <= reach).then_some(shape.node);
+        }
         let (w, h) = (shape.placement.w, shape.placement.h);
         let transform = rotation::to_screen(page_rect, zoom, &shape.placement);
         let local = rotation::local(transform, pointer)?;
@@ -262,9 +287,99 @@ pub(crate) fn in_marquee(
     shapes
         .iter()
         .filter(|shape| !shape.locked)
-        .filter(|shape| rotation::screen_box(page_rect, zoom, &shape.placement).intersects(marquee))
+        .filter(|shape| screen_box_of(shape, page_rect, zoom).intersects(marquee))
         .map(|shape| shape.node)
         .collect()
+}
+
+/// Where page point `p` (page px) is drawn on a page at `page_rect`.
+pub(crate) fn point_on_screen(page_rect: Rect, zoom: f32, p: gafira_geom::Point) -> Pos2 {
+    page_rect.min + Vec2::new(p.x as f32, p.y as f32) * zoom
+}
+
+/// The upright screen box of a shape: the one around its turned box, or
+/// around the two ends of a line (spec 058).
+pub(crate) fn screen_box_of(shape: &Shape, page_rect: Rect, zoom: f32) -> Rect {
+    match &shape.line {
+        Some((_, [a, b])) => Rect::from_two_pos(
+            point_on_screen(page_rect, zoom, *a),
+            point_on_screen(page_rect, zoom, *b),
+        ),
+        None => rotation::screen_box(page_rect, zoom, &shape.placement),
+    }
+}
+
+/// What the canvas draws for `line` from `a` to `b` (screen px) at `zoom`
+/// (spec 058): its stroke, cut back where a hollow cap sits, and its caps,
+/// as the render draws them.
+pub(crate) fn line_shapes(
+    line: &gafira_doc::LineNode,
+    a: Pos2,
+    b: Pos2,
+    zoom: f32,
+    color: Color32,
+) -> Vec<egui::Shape> {
+    use gafira_doc::LineCap;
+    let width = line.width as f32 * zoom;
+    let length = a.distance(b);
+    if width <= 0.0 || length <= f32::EPSILON {
+        return Vec::new();
+    }
+    let stroke = egui::Stroke::new(width, color);
+    let dir = (b - a) / length;
+    let size = (line.width as f32 * 2.5).max(5.0) * zoom;
+    let reach = |cap: LineCap| match cap {
+        LineCap::None | LineCap::Arrow => 0.0,
+        _ => size,
+    };
+    let (ra, rb) = (reach(line.start.cap), reach(line.end.cap));
+    let mut out = Vec::new();
+    if ra + rb < length {
+        out.push(egui::Shape::line_segment(
+            [a + dir * ra, b - dir * rb],
+            stroke,
+        ));
+    }
+    for (at, cap, out_dir) in [(a, line.start.cap, -dir), (b, line.end.cap, dir)] {
+        let normal = Vec2::new(-out_dir.y, out_dir.x);
+        let centre = at - out_dir * size;
+        match cap {
+            LineCap::None => {}
+            LineCap::Arrow => {
+                let back = at - out_dir * size * 1.6;
+                out.push(egui::Shape::line(
+                    vec![back + normal * size, at, back - normal * size],
+                    stroke,
+                ));
+            }
+            LineCap::Circle => {
+                out.push(egui::Shape::circle_stroke(centre, size, stroke));
+            }
+            LineCap::Diamond | LineCap::DiamondFilled => {
+                let points = vec![
+                    at,
+                    centre + normal * size,
+                    centre - out_dir * size,
+                    centre - normal * size,
+                ];
+                let fill = if cap == LineCap::DiamondFilled {
+                    color
+                } else {
+                    Color32::TRANSPARENT
+                };
+                out.push(egui::Shape::convex_polygon(points, fill, stroke));
+            }
+            LineCap::Square => {
+                let half = size * 0.8;
+                let points = [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
+                    .into_iter()
+                    .map(|(u, v)| centre + out_dir * (half * u) + normal * (half * v))
+                    .collect();
+                out.push(egui::Shape::closed_line(points, stroke));
+            }
+        }
+    }
+    out
 }
 
 /// The smallest box that holds every box of `rects`: the box drawn around
@@ -432,6 +547,24 @@ pub(crate) use crate::shapes::{PIECE_SECTIONS, Piece};
 
 /// `piece` as `new_piece` makes it, with its corner radius.
 pub(crate) fn new_shape(page_px: Vec2, piece: Piece, fill: Color) -> NodeSpec {
+    // A line: across a third of the shorter side, in the middle, dark
+    // (spec 058).
+    if let Some((start, end)) = piece.line_caps() {
+        let side = f64::from(page_px.x.min(page_px.y)) / 3.0;
+        let line = gafira_doc::LineNode {
+            start: gafira_doc::LineEnd::new([0.0, 0.5], start),
+            end: gafira_doc::LineEnd::new([1.0, 0.5], end),
+            color: Color::Srgb(Rgba::new(0.1, 0.1, 0.1, 1.0)),
+            width: 4.0,
+        };
+        let placement = Placement::new(
+            (f64::from(page_px.x) - side) / 2.0,
+            f64::from(page_px.y) / 2.0,
+            side,
+            0.0,
+        );
+        return NodeSpec::new(NodeKind::Line(line), placement);
+    }
     let mut spec = new_piece(page_px, piece.geometry(), fill);
     // A shape wider than high keeps the side as its width, and the other
     // way round (spec 054), still in the middle of the page.
@@ -1370,11 +1503,38 @@ mod s41_tests {
         );
     }
 
+    // S58-05: «Líneas» comes first with its five lines, and a line from
+    // the panel is a line element across the middle of the page.
+    #[test]
+    fn s58_05_the_lines_come_first() {
+        let (title, pieces) = PIECE_SECTIONS[0];
+        assert_eq!(title, "pieces.lines");
+        assert_eq!(pieces.len(), 5);
+        assert!(pieces.iter().all(|p| p.line_caps().is_some()));
+        let fill = default_fill();
+        let spec = new_shape(Vec2::new(900.0, 600.0), Piece::LineArrow, fill);
+        let NodeKind::Line(line) = &spec.kind else {
+            panic!("a line");
+        };
+        assert_eq!(
+            (line.start.cap, line.end.cap),
+            (gafira_doc::LineCap::Square, gafira_doc::LineCap::Arrow)
+        );
+        assert_eq!(spec.placement, Placement::new(350.0, 300.0, 200.0, 0.0));
+        let dropped = piece_at(
+            Vec2::new(900.0, 600.0),
+            Piece::LinePlain,
+            fill,
+            (100.0, 50.0),
+        );
+        assert_eq!(dropped.placement, Placement::new(0.0, 50.0, 200.0, 0.0));
+    }
+
     // S53-02: the panel lists «Formas básicas» with its three shapes in
     // order, and no section is empty.
     #[test]
     fn s53_02_sections() {
-        let (title, pieces) = PIECE_SECTIONS[0];
+        let (title, pieces) = PIECE_SECTIONS[1];
         assert_eq!(title, "pieces.basic");
         assert_eq!(
             pieces[..3],
@@ -1436,6 +1596,7 @@ mod s41_tests {
             image: None,
             locked: false,
             inner: None,
+            line: None,
         };
         let (image, covered) = path_image(&shape, 1.0).expect("a texture");
         // One screen px of margin on each side.

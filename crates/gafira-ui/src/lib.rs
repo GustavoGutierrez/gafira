@@ -24,6 +24,7 @@ mod group;
 mod home;
 mod icons;
 mod layers;
+mod lines;
 mod magnet;
 mod recent;
 mod resize;
