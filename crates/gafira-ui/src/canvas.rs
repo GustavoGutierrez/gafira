@@ -602,6 +602,7 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
             stroke: None,
             corner_radius: 0.0,
             text: None,
+            gradient: None,
         }),
         placement,
     )
@@ -1063,6 +1064,7 @@ mod tests {
                     stroke: None,
                     corner_radius: 0.0,
                     text: None,
+                    gradient: None,
                 }),
             ))
         };

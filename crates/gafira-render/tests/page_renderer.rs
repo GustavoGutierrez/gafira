@@ -67,6 +67,7 @@ fn page() -> Page {
             stroke: None,
             corner_radius: 0.0,
             text: None,
+            gradient: None,
         }),
     );
     let group = Node::new(

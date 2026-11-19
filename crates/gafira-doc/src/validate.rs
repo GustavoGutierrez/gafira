@@ -413,6 +413,11 @@ fn check_node(page: &Page, node: &Node) -> Result<(), ValidationError> {
     {
         return Err(ValidationError::InvalidPath { node: id, problem });
     }
+    if let NodeKind::Shape(shape) = &node.kind
+        && let Some(problem) = shape.gradient.as_ref().and_then(crate::Gradient::problem)
+    {
+        return Err(ValidationError::InvalidGradient { node: id, problem });
+    }
     if let NodeKind::Extension(ext) = &node.kind {
         if ext.type_id.is_empty() {
             return Err(ValidationError::EmptyExtensionTypeId { node: id });

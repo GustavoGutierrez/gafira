@@ -154,6 +154,11 @@ pub enum ValidationError {
     ExtensionTooDeep { node: NodeId, depth: usize },
     /// P4: a shape path is not well formed (spec 054).
     InvalidPath { node: NodeId, problem: PathProblem },
+    /// P4: a gradient fill is not well formed (spec 063).
+    InvalidGradient {
+        node: NodeId,
+        problem: crate::GradientProblem,
+    },
     /// P4: a shape or extension lists children.
     ChildrenOnLeaf { node: NodeId },
     /// P4: a child id is not in the parent's arena.
@@ -221,6 +226,9 @@ impl fmt::Display for ValidationError {
                 "node {node}: extension payload is {depth} levels deep, the limit is {MAX_EXTENSION_DEPTH}"
             ),
             Self::InvalidPath { node, problem } => write!(f, "node {node}: {problem}"),
+            Self::InvalidGradient { node, problem } => {
+                write!(f, "node {node}: the gradient is not valid ({problem:?})")
+            }
             Self::ChildrenOnLeaf { node } => {
                 write!(f, "node {node}: only groups can have children")
             }

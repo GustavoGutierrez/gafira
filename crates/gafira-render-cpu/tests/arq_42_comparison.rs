@@ -291,6 +291,7 @@ fn shape(
             stroke: None,
             corner_radius: 0.0,
             text: None,
+            gradient: None,
         }),
     )
 }

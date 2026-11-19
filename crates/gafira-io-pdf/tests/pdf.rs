@@ -101,6 +101,7 @@ fn page(id: u64, width: f64, height: f64, square: Option<u64>) -> Arc<Page> {
             stroke: None,
             corner_radius: 0.0,
             text: None,
+            gradient: None,
         });
         page.nodes.insert(id, Arc::new(Node::new(base, kind)));
         page.roots.push(id);

@@ -643,6 +643,7 @@ mod tests {
             stroke: None,
             corner_radius: 0.0,
             text: None,
+            gradient: None,
         });
         page.nodes
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));

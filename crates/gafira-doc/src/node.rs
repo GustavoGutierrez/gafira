@@ -165,6 +165,10 @@ pub struct ShapeNode {
     /// before spec 055.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<ShapeText>,
+    /// A gradient that fills the shape instead of `fill` (spec 063, D-101).
+    /// Written only when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<crate::Gradient>,
 }
 
 /// Whether `value` is `+0.0`, the default radius.
@@ -181,6 +185,7 @@ impl ShapeNode {
             stroke: None,
             corner_radius: 0.0,
             text: None,
+            gradient: None,
         }
     }
 }
