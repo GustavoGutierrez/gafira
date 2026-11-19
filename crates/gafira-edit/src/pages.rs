@@ -1,4 +1,5 @@
-//! `InsertPage` and `RemovePage`: pages in and out of the page list (Q4).
+//! `InsertPage` and `RemovePage`: pages in and out of the page list (Q4);
+//! `ReorderPage` and `DuplicatePage` (spec 056, FD-02).
 
 use std::sync::Arc;
 
@@ -156,6 +157,175 @@ impl Command for RemovePage {
         dirty.pages.insert(self.page);
         if let Some((_, page)) = &self.record {
             dirty.nodes.extend(page.nodes.keys().copied());
+        }
+        dirty
+    }
+}
+
+/// Moves one page to another index of the page list (FD-02).
+#[derive(Clone, Debug)]
+pub struct ReorderPage {
+    page: PageId,
+    index: usize,
+    record: Option<usize>,
+}
+
+impl ReorderPage {
+    /// Moves `page` so it ends at `index` (`0..len`).
+    pub fn new(page: PageId, index: usize) -> Self {
+        Self {
+            page,
+            index,
+            record: None,
+        }
+    }
+}
+
+impl Command for ReorderPage {
+    fn label(&self) -> CommandLabel {
+        MessageKey("edit.reorder_page")
+    }
+
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        let pages = doc.as_doc().pages();
+        let len = pages.len();
+        let from = pages
+            .iter()
+            .position(|p| p.id == self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        if self.index >= len {
+            return Err(CommandError::IndexOutOfRange {
+                index: self.index,
+                len,
+            });
+        }
+        self.record = Some(from);
+        if from == self.index {
+            return Ok(Applied::Unchanged);
+        }
+        let page = doc.pages_mut().remove(from);
+        doc.pages_mut().insert(self.index, page);
+        Ok(Applied::Changed)
+    }
+
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+        let from = self.record.ok_or(CommandError::NotApplied)?;
+        let at = doc
+            .as_doc()
+            .pages()
+            .iter()
+            .position(|p| p.id == self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        let page = doc.pages_mut().remove(at);
+        doc.pages_mut().insert(from, page);
+        Ok(())
+    }
+
+    fn touches(&self) -> DirtySet {
+        let mut dirty = DirtySet::default();
+        dirty.pages.insert(self.page);
+        dirty
+    }
+}
+
+/// Puts a copy of one page right after it, with new ids for the page and
+/// every node (FD-02, ARQ-13).
+///
+/// The ids are allocated by `apply` and given back by `revert`, so a redo
+/// gets the same ids and rebuilds an identical document.
+#[derive(Clone, Debug)]
+pub struct DuplicatePage {
+    page: PageId,
+    record: Option<Inserted>,
+}
+
+impl DuplicatePage {
+    /// Copies `page` to the index after it.
+    pub fn new(page: PageId) -> Self {
+        Self { page, record: None }
+    }
+
+    /// The id the copy got, once applied.
+    pub fn copy(&self) -> Option<PageId> {
+        self.record.as_ref().map(|record| record.page.id)
+    }
+}
+
+impl Command for DuplicatePage {
+    fn label(&self) -> CommandLabel {
+        MessageKey("edit.duplicate_page")
+    }
+
+    fn apply(&mut self, doc: &mut DocMut<'_>) -> Result<Applied, CommandError> {
+        let view = doc.as_doc();
+        let at = view
+            .pages()
+            .iter()
+            .position(|p| p.id == self.page)
+            .ok_or(CommandError::MissingPage(self.page))?;
+        let source = Arc::clone(&view.pages()[at]);
+        let counter = view.next_id();
+        let id = doc
+            .alloc_page_id()
+            .map_err(|_| CommandError::IdSpaceExhausted)?;
+        // Every node gets a new id, in the order of the old ones, so a redo
+        // gives the same ids.
+        let mut ids = std::collections::BTreeMap::new();
+        for old in source.nodes.keys() {
+            let new = doc
+                .alloc_node_id()
+                .map_err(|_| CommandError::IdSpaceExhausted)?;
+            ids.insert(*old, new);
+        }
+        let map = |old: &gafira_doc::NodeId| ids.get(old).copied().unwrap_or(*old);
+        let mut copy = (*source).clone();
+        copy.id = id;
+        copy.roots = source.roots.iter().map(map).collect();
+        copy.nodes = source
+            .nodes
+            .iter()
+            .map(|(old, node)| {
+                let mut node = (**node).clone();
+                node.base.id = map(old);
+                node.children = node.children.iter().map(map).collect();
+                (map(old), Arc::new(node))
+            })
+            .collect();
+        let page = Arc::new(copy);
+        doc.pages_mut().insert(at + 1, Arc::clone(&page));
+        self.record = Some(Inserted { counter, page });
+        Ok(Applied::Changed)
+    }
+
+    fn revert(&mut self, doc: &mut DocMut<'_>) -> Result<(), CommandError> {
+        let record = self.record.as_ref().ok_or(CommandError::NotApplied)?;
+        let id = record.page.id;
+        let at = doc
+            .as_doc()
+            .pages()
+            .iter()
+            .position(|p| p.id == id)
+            .ok_or(CommandError::MissingPage(id))?;
+        if *doc.as_doc().pages()[at] != *record.page {
+            return Err(CommandError::InvalidValue("the copied page was changed"));
+        }
+        // Restoring the counter must not hand out an id a later command took.
+        let taken = 1 + record.page.nodes.len() as u64;
+        if doc.as_doc().next_id().checked_sub(taken) != Some(record.counter) {
+            return Err(CommandError::InvalidValue(
+                "ids were allocated after the page was copied",
+            ));
+        }
+        doc.pages_mut().remove(at);
+        doc.restore_next_id(record.counter);
+        Ok(())
+    }
+
+    fn touches(&self) -> DirtySet {
+        let mut dirty = DirtySet::default();
+        dirty.pages.insert(self.page);
+        if let Some(record) = &self.record {
+            dirty.pages.insert(record.page.id);
         }
         dirty
     }
