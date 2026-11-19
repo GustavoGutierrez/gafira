@@ -70,11 +70,14 @@ pub(crate) enum Icon {
     /// Bloquear and Desbloquear in Capas (spec 048).
     Locked,
     Unlocked,
+    /// Notas and Páginas in the bottom bar (spec 049).
+    Notes,
+    Pages,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 38] = [
+    pub(crate) const ALL: [Self; 40] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -113,6 +116,8 @@ impl Icon {
         Self::Hidden,
         Self::Locked,
         Self::Unlocked,
+        Self::Notes,
+        Self::Pages,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -156,6 +161,8 @@ impl Icon {
             Self::Hidden => "eye-slash",
             Self::Locked => "lock-simple",
             Self::Unlocked => "lock-simple-open",
+            Self::Notes => "note-pencil",
+            Self::Pages => "squares-four",
         }
     }
 

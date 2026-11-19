@@ -154,6 +154,53 @@ pub(crate) fn ticks(origin: f32, zoom: f32, from: f32, to: f32) -> Vec<(f32, i64
         .collect()
 }
 
+/// The least space between two minor ticks of a ruler, in screen px.
+const MINOR_SPACING: f64 = 5.0;
+
+/// The minor ticks of a ruler between `from` and `to` (screen px), with
+/// the page's corner at `origin` (S49-02): each numbered step split in 10,
+/// 5 or 2, the most that keeps [`MINOR_SPACING`] between ticks. Each one
+/// with whether it is the middle of its step (drawn longer). None falls on
+/// a numbered tick.
+pub(crate) fn minor_ticks(origin: f32, zoom: f32, from: f32, to: f32) -> Vec<(f32, bool)> {
+    let zoom = f64::from(zoom);
+    if !(zoom.is_finite() && zoom > 0.0) {
+        return Vec::new();
+    }
+    let major = step(zoom);
+    let Some(parts) = [10_i64, 5, 2]
+        .into_iter()
+        .find(|n| major / *n as f64 * zoom >= MINOR_SPACING)
+    else {
+        return Vec::new();
+    };
+    let minor = major / parts as f64;
+    let value = |screen: f32| f64::from(screen - origin) / zoom;
+    let first = (value(from) / minor).ceil() as i64;
+    let last = (value(to) / minor).floor() as i64;
+    (first..=last)
+        .filter(|k| k.rem_euclid(parts) != 0)
+        .map(|k| {
+            let at = k as f64 * minor;
+            let middle = parts % 2 == 0 && k.rem_euclid(parts) == parts / 2;
+            (origin + (at * zoom) as f32, middle)
+        })
+        .collect()
+}
+
+/// The extent of `boxes` along a ruler (S49-04): from the least to the
+/// greatest x for the top ruler, y for the left one. `None` with no box.
+pub(crate) fn band(boxes: &[Rect], axis: GuideAxis) -> Option<(f32, f32)> {
+    let range = |r: &Rect| match axis {
+        GuideAxis::Horizontal => (r.min.x, r.max.x),
+        GuideAxis::Vertical => (r.min.y, r.max.y),
+    };
+    boxes
+        .iter()
+        .map(range)
+        .reduce(|(a0, a1), (b0, b1)| (a0.min(b0), a1.max(b1)))
+}
+
 /// A guide of `axis` at `px`, written in px.
 fn guide(axis: GuideAxis, px: f64, locked: bool) -> Guide {
     Guide {

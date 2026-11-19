@@ -153,3 +153,46 @@ fn s44_11_ruler_ticks() {
     // Zoom 4: 16 page px, so 20.
     assert_eq!(ticks(0.0, 4.0, 0.0, 100.0), vec![(0.0, 0), (80.0, 20)]);
 }
+
+// S49-02: at 100 % the 100 px step splits in ten 10 px ticks; at 5 % the
+// 2000 px step splits in 200 px ones; none falls on a numbered tick and
+// none is nearer than 5 screen px to the next.
+#[test]
+fn s49_02_minor_ticks() {
+    let minor = minor_ticks(0.0, 1.0, 0.0, 200.0);
+    let at: Vec<f32> = minor.iter().map(|(x, _)| *x).collect();
+    let expected: Vec<f32> = (1..20)
+        .filter(|k| k % 10 != 0)
+        .map(|k| k as f32 * 10.0)
+        .collect();
+    assert_eq!(at, expected);
+    let middles: Vec<f32> = minor.iter().filter(|(_, m)| *m).map(|(x, _)| *x).collect();
+    assert_eq!(middles, [50.0, 150.0]);
+    let far = minor_ticks(0.0, 0.05, 0.0, 100.0);
+    let at: Vec<f32> = far.iter().map(|(x, _)| *x).collect();
+    assert_eq!(at, [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0]);
+    for zoom in [0.05, 0.1, 0.33, 1.0, 2.7, 10.0, 32.0] {
+        let major: Vec<f32> = ticks(13.0, zoom, 0.0, 2000.0).iter().map(|t| t.0).collect();
+        let minor = minor_ticks(13.0, zoom, 0.0, 2000.0);
+        assert!(!minor.is_empty(), "zoom {zoom}");
+        for (x, _) in &minor {
+            assert!(major.iter().all(|m| (m - x).abs() > 0.5), "zoom {zoom}");
+        }
+        for pair in minor.windows(2) {
+            assert!(pair[1].0 - pair[0].0 >= 4.99, "zoom {zoom}");
+        }
+    }
+    assert!(minor_ticks(0.0, 0.0, 0.0, 100.0).is_empty());
+}
+
+// S49-04: the band of the selection spans its boxes on each axis.
+#[test]
+fn s49_04_selection_band() {
+    let boxes = [
+        Rect::from_min_max(Pos2::new(10.0, 40.0), Pos2::new(30.0, 60.0)),
+        Rect::from_min_max(Pos2::new(50.0, 5.0), Pos2::new(70.0, 20.0)),
+    ];
+    assert_eq!(band(&boxes, GuideAxis::Horizontal), Some((10.0, 70.0)));
+    assert_eq!(band(&boxes, GuideAxis::Vertical), Some((5.0, 60.0)));
+    assert_eq!(band(&[], GuideAxis::Vertical), None);
+}

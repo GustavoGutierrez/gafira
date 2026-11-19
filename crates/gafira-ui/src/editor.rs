@@ -1175,24 +1175,40 @@ impl Editor {
                     .inner_margin(egui::Margin::symmetric(12, 0)),
             )
             .show(ctx, |ui| {
+                // 03 §7.3: Notas on the left; on the right the magnet, the
+                // zoom, Páginas with «n de N», and Añadir página (spec 049).
+                let label = |text: String| RichText::new(text).font(theme.font("ui-label"));
                 ui.horizontal_centered(|ui| {
-                    ui.label(texts.t(&gafira_doc::msg!("bottom.notes")));
+                    // Notas is not a function yet (FD-02): shown, muted.
+                    bar_icon(ui, theme, Icon::Notes, theme.c("text.disabled"));
+                    ui.label(
+                        label(texts.t(&gafira_doc::msg!("bottom.notes")))
+                            .color(theme.c("text.disabled")),
+                    );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let pages = document.as_ref().map_or(0, |d| d.pages().len());
+                        let ids: Vec<PageId> = document
+                            .as_ref()
+                            .map(|d| d.pages().iter().map(|page| page.id).collect())
+                            .unwrap_or_default();
+                        let current = document
+                            .as_deref()
+                            .and_then(|d| self.current_page(d))
+                            .map(|page| page.id);
                         asked.add_page |= ui
-                            .button(texts.t(&gafira_doc::msg!("editor.add_page")))
+                            .button(label(texts.t(&gafira_doc::msg!("editor.add_page"))))
                             .clicked();
-                        ui.add_space(16.0);
-                        ui.label(texts.t(&gafira_doc::msg!("bottom.pages")));
-                        ui.add_space(16.0);
-                        ui.label(texts.t(&gafira_doc::msg!(
+                        bar_separator(ui, theme);
+                        ui.label(label(texts.t(&gafira_doc::msg!(
                             "editor.page_of",
-                            current = Count(u64::from(pages > 0)),
-                            total = Count(pages as u64)
-                        )));
-                        ui.add_space(16.0);
-                        asked.zoom = self.zoom_controls(ui, theme, texts).or(asked.zoom);
+                            current = Count(page_number(&ids, current) as u64),
+                            total = Count(ids.len() as u64)
+                        ))));
                         ui.add_space(8.0);
+                        ui.label(label(texts.t(&gafira_doc::msg!("bottom.pages"))));
+                        bar_icon(ui, theme, Icon::Pages, theme.c("text"));
+                        bar_separator(ui, theme);
+                        asked.zoom = self.zoom_controls(ui, theme, texts).or(asked.zoom);
+                        bar_separator(ui, theme);
                         // Imán on or off (03 §2.6, FD-06, spec 044).
                         let name = plain(texts, "view.magnet");
                         let tooltip = with_keys(ui.ctx(), texts, name.clone(), MAGNET);
@@ -1265,6 +1281,7 @@ impl Editor {
             current_text_value: Some(value.clone()),
             ..egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &name)
         });
+        // Right to left: Acercar, the slider, Alejar (03 §7.3, FD-08).
         for (icon, key, shortcut, step) in [
             (
                 Icon::ZoomIn,
@@ -1279,6 +1296,22 @@ impl Editor {
                 ZoomAsk::Out,
             ),
         ] {
+            if step == ZoomAsk::Out {
+                // 5 to 3200 %, logarithmic, so each doubling is as long.
+                let mut value = self.zoom;
+                ui.spacing_mut().slider_width = 120.0;
+                let slider = ui.add(
+                    egui::Slider::new(&mut value, zoom::MIN..=zoom::MAX)
+                        .logarithmic(true)
+                        .show_value(false),
+                );
+                slider.widget_info(|| {
+                    egui::WidgetInfo::slider(true, f64::from(value), name.as_str())
+                });
+                if slider.changed() {
+                    ask = Some(ZoomAsk::To(value));
+                }
+            }
             let name = texts.t(&key);
             let tooltip = with_keys(ui.ctx(), texts, name.clone(), shortcut);
             let limit = match step {
@@ -1854,7 +1887,14 @@ impl Editor {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(theme.c("workspace")))
             .show(ctx, |ui| {
-                let area = ui.max_rect();
+                let full = ui.max_rect();
+                // The rulers sit outside the canvas, along its top and its
+                // left (S49-01): the canvas starts after them.
+                let area = if self.shown.rulers {
+                    Rect::from_min_max(full.min + Vec2::splat(ruler::RULER), full.max)
+                } else {
+                    full
+                };
                 let (scroll, command) =
                     ui.input(|i| (i.smooth_scroll_delta.y, i.modifiers.command));
                 if command && scroll != 0.0 && ui.rect_contains_pointer(area) {
@@ -1882,403 +1922,427 @@ impl Editor {
                     sizes.iter().map(|s| s.x).fold(0.0, f32::max) * zoom + 2.0 * CANVAS_MARGIN;
                 let height: f32 =
                     sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>() + CANVAS_MARGIN;
-                egui::ScrollArea::both()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let (rect, response) = ui.allocate_exact_size(
-                            Vec2::new(width.max(area.width()), height.max(area.height())),
-                            egui::Sense::click_and_drag(),
-                        );
-                        let painter = ui.painter();
-                        let pages = document.map(Document::pages).unwrap_or_default();
-                        // A drag starts only once the pointer has moved a few
-                        // px; what it grabbed is decided where it was pressed.
-                        let pointer = if response.drag_started() {
-                            ui.input(|input| input.pointer.press_origin())
-                                .or_else(|| response.interact_pointer_pos())
-                        } else {
-                            response.interact_pointer_pos()
-                        };
-                        let pressed = response.clicked() || response.drag_started();
-                        let (shift, press) =
-                            ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
-                        let single = self.selected.single();
-                        let mut picked: Option<(PageId, NodeId)> = None;
-                        let mut grabbed: Option<Hold> = None;
-                        // Each page's id, screen box and shapes, for the marquee.
-                        let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
-                        let selection = theme.c("canvas.selection");
-                        let mut top =
-                            rect.min.y + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
-                        for (index, size) in sizes.iter().enumerate() {
-                            let page = Rect::from_min_size(
-                                Pos2::new(rect.center().x - size.x * zoom / 2.0, top),
-                                *size * zoom,
+                ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+                    egui::ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            let (rect, response) = ui.allocate_exact_size(
+                                Vec2::new(width.max(area.width()), height.max(area.height())),
+                                egui::Sense::click_and_drag(),
                             );
-                            if let Some(Shadow::Drop {
-                                x,
-                                y,
-                                blur,
-                                color,
-                                alpha,
-                            }) = theme.tokens.shadow.get(&1).copied()
-                            {
-                                let shadow = egui::epaint::Shadow {
-                                    offset: [to_i8(x), to_i8(y)],
-                                    blur: to_u8(blur),
-                                    spread: 0,
-                                    color: color32(color).gamma_multiply(alpha),
-                                };
-                                painter.add(shadow.as_shape(page, 0.0));
-                            }
-                            // The page colour belongs to the document (white
-                            // by default, 03 §7.1), not to the theme.
-                            painter.rect_filled(page, 0.0, Color32::WHITE);
-                            painter.text(
-                                Pos2::new(page.min.x, page.min.y - 8.0),
-                                Align2::LEFT_BOTTOM,
-                                texts.t(&gafira_doc::msg!(
-                                    "editor.page",
-                                    number = Count(index as u64 + 1)
-                                )),
-                                theme.font("caption"),
-                                theme.c("text.secondary"),
-                            );
-                            if let Some(page_doc) = pages.get(index) {
-                                let shapes = canvas::shapes(page_doc);
-                                for shape in &shapes {
-                                    let at = canvas::on_screen(page, zoom, &shape.placement);
-                                    // Where the local box lands on the screen,
-                                    // turned and flipped as the render draws it
-                                    // (spec 041).
-                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
-                                    let upright = rotation::upright(&shape.placement);
-                                    let outline = rotation::corners(turn, &shape.placement);
-                                    if let Some(asset) = shape.image {
-                                        let tint = Color32::WHITE
-                                            .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
-                                        match self
-                                            .textures
-                                            .get(&asset.as_hash())
-                                            .and_then(Option::as_ref)
-                                        {
-                                            Some(texture) => {
-                                                painter.add(canvas::image_mesh(
-                                                    texture.id(),
-                                                    turn,
-                                                    &shape.placement,
-                                                    tint,
-                                                ));
-                                            }
-                                            None => {
-                                                painter.add(egui::Shape::convex_polygon(
-                                                    outline.to_vec(),
-                                                    theme.c("surface.sunken"),
-                                                    Stroke::NONE,
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    if let Some(text) = &shape.text {
-                                        let laid =
-                                            lay_text(painter, theme, at, zoom, shape.opacity, text);
-                                        if upright {
-                                            for (pos, galley, color) in laid {
-                                                painter.galley(pos, galley, color);
-                                            }
-                                        } else {
-                                            let atlas = ctx.fonts(|f| f.font_image_size());
-                                            self.font_atlas = Some(atlas);
-                                            painter.add(text_mesh(&laid, at, zoom, turn, atlas));
-                                        }
-                                    }
-                                    if upright {
-                                        painter.add(canvas::painted(shape, at, zoom));
-                                    } else {
-                                        painter.add(canvas::painted_turned(shape, turn, zoom));
-                                    }
+                            let painter = ui.painter();
+                            let pages = document.map(Document::pages).unwrap_or_default();
+                            // A drag starts only once the pointer has moved a few
+                            // px; what it grabbed is decided where it was pressed.
+                            let pointer = if response.drag_started() {
+                                ui.input(|input| input.pointer.press_origin())
+                                    .or_else(|| response.interact_pointer_pos())
+                            } else {
+                                response.interact_pointer_pos()
+                            };
+                            let pressed = response.clicked() || response.drag_started();
+                            let (shift, press) =
+                                ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
+                            let single = self.selected.single();
+                            let mut picked: Option<(PageId, NodeId)> = None;
+                            let mut grabbed: Option<Hold> = None;
+                            // Each page's id, screen box and shapes, for the marquee.
+                            let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
+                            let selection = theme.c("canvas.selection");
+                            let mut top = rect.min.y
+                                + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
+                            for (index, size) in sizes.iter().enumerate() {
+                                let page = Rect::from_min_size(
+                                    Pos2::new(rect.center().x - size.x * zoom / 2.0, top),
+                                    *size * zoom,
+                                );
+                                if let Some(Shadow::Drop {
+                                    x,
+                                    y,
+                                    blur,
+                                    color,
+                                    alpha,
+                                }) = theme.tokens.shadow.get(&1).copied()
+                                {
+                                    let shadow = egui::epaint::Shadow {
+                                        offset: [to_i8(x), to_i8(y)],
+                                        blur: to_u8(blur),
+                                        spread: 0,
+                                        color: color32(color).gamma_multiply(alpha),
+                                    };
+                                    painter.add(shadow.as_shape(page, 0.0));
                                 }
-                                // The selection, on top of what is drawn: each
-                                // selected element by its own box, a group by
-                                // the box around its children (spec 043).
-                                let chosen = chosen(page_doc, &self.selected);
-                                for shape in &chosen {
-                                    let at = canvas::on_screen(page, zoom, &shape.placement);
-                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
-                                    let upright = rotation::upright(&shape.placement);
-                                    let outline = rotation::corners(turn, &shape.placement);
-                                    if upright {
-                                        painter.rect_stroke(
-                                            at.expand(1.0),
-                                            0.0,
-                                            Stroke::new(2.0, selection),
-                                            egui::StrokeKind::Outside,
-                                        );
-                                    } else {
-                                        painter.add(egui::Shape::closed_line(
-                                            outline.to_vec(),
-                                            Stroke::new(2.0, selection),
-                                        ));
-                                    }
-                                    // Only a single, free selection resizes or
-                                    // turns by hand (D-91).
-                                    if single == Some((shape.page, shape.node)) && !shape.locked {
-                                        let knob = rotation::rotate_handle(turn, &shape.placement);
-                                        let top = canvas::handle_point(
-                                            turn,
-                                            &shape.placement,
-                                            canvas::Handle { x: 0, y: -1 },
-                                        );
-                                        painter
-                                            .line_segment([top, knob], Stroke::new(1.0, selection));
-                                        painter.circle(
-                                            knob,
-                                            canvas::HANDLE_HALF,
-                                            theme.c("surface"),
-                                            Stroke::new(1.5, selection),
-                                        );
-                                        for handle in canvas::HANDLES {
-                                            let square = Rect::from_center_size(
-                                                canvas::handle_point(
-                                                    turn,
-                                                    &shape.placement,
-                                                    handle,
-                                                ),
-                                                Vec2::splat(canvas::HANDLE_HALF * 2.0),
-                                            );
-                                            painter.rect(
-                                                square,
-                                                2.0,
-                                                theme.c("surface"),
-                                                Stroke::new(1.5, selection),
-                                                egui::StrokeKind::Inside,
-                                            );
+                                // The page colour belongs to the document (white
+                                // by default, 03 §7.1), not to the theme.
+                                painter.rect_filled(page, 0.0, Color32::WHITE);
+                                painter.text(
+                                    Pos2::new(page.min.x, page.min.y - 8.0),
+                                    Align2::LEFT_BOTTOM,
+                                    texts.t(&gafira_doc::msg!(
+                                        "editor.page",
+                                        number = Count(index as u64 + 1)
+                                    )),
+                                    theme.font("caption"),
+                                    theme.c("text.secondary"),
+                                );
+                                if let Some(page_doc) = pages.get(index) {
+                                    let shapes = canvas::shapes(page_doc);
+                                    for shape in &shapes {
+                                        let at = canvas::on_screen(page, zoom, &shape.placement);
+                                        // Where the local box lands on the screen,
+                                        // turned and flipped as the render draws it
+                                        // (spec 041).
+                                        let turn =
+                                            rotation::to_screen(page, zoom, &shape.placement);
+                                        let upright = rotation::upright(&shape.placement);
+                                        let outline = rotation::corners(turn, &shape.placement);
+                                        if let Some(asset) = shape.image {
+                                            let tint = Color32::WHITE
+                                                .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
+                                            match self
+                                                .textures
+                                                .get(&asset.as_hash())
+                                                .and_then(Option::as_ref)
+                                            {
+                                                Some(texture) => {
+                                                    painter.add(canvas::image_mesh(
+                                                        texture.id(),
+                                                        turn,
+                                                        &shape.placement,
+                                                        tint,
+                                                    ));
+                                                }
+                                                None => {
+                                                    painter.add(egui::Shape::convex_polygon(
+                                                        outline.to_vec(),
+                                                        theme.c("surface.sunken"),
+                                                        Stroke::NONE,
+                                                    ));
+                                                }
+                                            }
                                         }
-                                        // The same hit test as the grab: the
-                                        // nearest handle within 24 px.
-                                        grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
-                                            Some(Some(Hold::Resize(handle))) => {
-                                                Some(resize::cursor(turn, handle))
-                                            }
-                                            Some(Some(Hold::Rotate { .. })) => {
-                                                Some(egui::CursorIcon::Grabbing)
-                                            }
-                                            Some(None) => grip_cursor,
-                                            None => response
-                                                .hover_pos()
-                                                .and_then(|at| {
-                                                    canvas::grip_hit(turn, &shape.placement, at)
-                                                })
-                                                .map(|grip| match grip {
-                                                    canvas::Grip::Resize(handle) => {
-                                                        resize::cursor(turn, handle)
-                                                    }
-                                                    canvas::Grip::Rotate => egui::CursorIcon::Grab,
-                                                })
-                                                .or(grip_cursor),
-                                        };
-                                        if let Some(drag) = &self.drag
-                                            && let Some(Hold::Resize(handle)) = drag.hold
-                                            && let Some((_, from)) = drag.origins.first()
-                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
-                                        {
-                                            size_label(
+                                        if let Some(text) = &shape.text {
+                                            let laid = lay_text(
                                                 painter,
                                                 theme,
                                                 at,
-                                                resize::outward(turn, handle),
-                                                area,
-                                                (from, &shape.placement),
+                                                zoom,
+                                                shape.opacity,
+                                                text,
+                                            );
+                                            if upright {
+                                                for (pos, galley, color) in laid {
+                                                    painter.galley(pos, galley, color);
+                                                }
+                                            } else {
+                                                let atlas = ctx.fonts(|f| f.font_image_size());
+                                                self.font_atlas = Some(atlas);
+                                                painter
+                                                    .add(text_mesh(&laid, at, zoom, turn, atlas));
+                                            }
+                                        }
+                                        if upright {
+                                            painter.add(canvas::painted(shape, at, zoom));
+                                        } else {
+                                            painter.add(canvas::painted_turned(shape, turn, zoom));
+                                        }
+                                    }
+                                    // The selection, on top of what is drawn: each
+                                    // selected element by its own box, a group by
+                                    // the box around its children (spec 043).
+                                    let chosen = chosen(page_doc, &self.selected);
+                                    for shape in &chosen {
+                                        let at = canvas::on_screen(page, zoom, &shape.placement);
+                                        let turn =
+                                            rotation::to_screen(page, zoom, &shape.placement);
+                                        let upright = rotation::upright(&shape.placement);
+                                        let outline = rotation::corners(turn, &shape.placement);
+                                        if upright {
+                                            painter.rect_stroke(
+                                                at.expand(1.0),
+                                                0.0,
+                                                Stroke::new(2.0, selection),
+                                                egui::StrokeKind::Outside,
+                                            );
+                                        } else {
+                                            painter.add(egui::Shape::closed_line(
+                                                outline.to_vec(),
+                                                Stroke::new(2.0, selection),
+                                            ));
+                                        }
+                                        // Only a single, free selection resizes or
+                                        // turns by hand (D-91).
+                                        if single == Some((shape.page, shape.node)) && !shape.locked
+                                        {
+                                            let knob =
+                                                rotation::rotate_handle(turn, &shape.placement);
+                                            let top = canvas::handle_point(
+                                                turn,
+                                                &shape.placement,
+                                                canvas::Handle { x: 0, y: -1 },
+                                            );
+                                            painter.line_segment(
+                                                [top, knob],
+                                                Stroke::new(1.0, selection),
+                                            );
+                                            painter.circle(
+                                                knob,
+                                                canvas::HANDLE_HALF,
+                                                theme.c("surface"),
+                                                Stroke::new(1.5, selection),
+                                            );
+                                            for handle in canvas::HANDLES {
+                                                let square = Rect::from_center_size(
+                                                    canvas::handle_point(
+                                                        turn,
+                                                        &shape.placement,
+                                                        handle,
+                                                    ),
+                                                    Vec2::splat(canvas::HANDLE_HALF * 2.0),
+                                                );
+                                                painter.rect(
+                                                    square,
+                                                    2.0,
+                                                    theme.c("surface"),
+                                                    Stroke::new(1.5, selection),
+                                                    egui::StrokeKind::Inside,
+                                                );
+                                            }
+                                            // The same hit test as the grab: the
+                                            // nearest handle within 24 px.
+                                            grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
+                                                Some(Some(Hold::Resize(handle))) => {
+                                                    Some(resize::cursor(turn, handle))
+                                                }
+                                                Some(Some(Hold::Rotate { .. })) => {
+                                                    Some(egui::CursorIcon::Grabbing)
+                                                }
+                                                Some(None) => grip_cursor,
+                                                None => response
+                                                    .hover_pos()
+                                                    .and_then(|at| {
+                                                        canvas::grip_hit(turn, &shape.placement, at)
+                                                    })
+                                                    .map(|grip| match grip {
+                                                        canvas::Grip::Resize(handle) => {
+                                                            resize::cursor(turn, handle)
+                                                        }
+                                                        canvas::Grip::Rotate => {
+                                                            egui::CursorIcon::Grab
+                                                        }
+                                                    })
+                                                    .or(grip_cursor),
+                                            };
+                                            if let Some(drag) = &self.drag
+                                                && let Some(Hold::Resize(handle)) = drag.hold
+                                                && let Some((_, from)) = drag.origins.first()
+                                                && let Some(at) =
+                                                    ui.input(|i| i.pointer.latest_pos())
+                                            {
+                                                size_label(
+                                                    painter,
+                                                    theme,
+                                                    at,
+                                                    resize::outward(turn, handle),
+                                                    area,
+                                                    (from, &shape.placement),
+                                                );
+                                            }
+                                            if response.drag_started()
+                                                && let Some(pos) = pointer
+                                                && let Some(grip) =
+                                                    canvas::grip_hit(turn, &shape.placement, pos)
+                                            {
+                                                grabbed = Some(match grip {
+                                                    canvas::Grip::Resize(handle) => {
+                                                        Hold::Resize(handle)
+                                                    }
+                                                    canvas::Grip::Rotate => Hold::Rotate {
+                                                        center: rotation::screen(
+                                                            turn,
+                                                            shape.placement.w / 2.0,
+                                                            shape.placement.h / 2.0,
+                                                        ),
+                                                        from: pos,
+                                                    },
+                                                });
+                                            }
+                                        }
+                                    }
+                                    if self.selected.len() > 1
+                                        && self.selected.page() == Some(page_doc.id)
+                                    {
+                                        // The box around a multi-selection (spec 040).
+                                        let boxes = chosen.iter().map(|s| {
+                                            rotation::screen_box(page, zoom, &s.placement)
+                                        });
+                                        if let Some(all) = canvas::bounds(boxes) {
+                                            painter.rect_stroke(
+                                                all.expand(4.0),
+                                                0.0,
+                                                Stroke::new(1.0, selection),
+                                                egui::StrokeKind::Outside,
                                             );
                                         }
-                                        if response.drag_started()
-                                            && let Some(pos) = pointer
-                                            && let Some(grip) =
-                                                canvas::grip_hit(turn, &shape.placement, pos)
-                                        {
-                                            grabbed = Some(match grip {
-                                                canvas::Grip::Resize(handle) => {
-                                                    Hold::Resize(handle)
-                                                }
-                                                canvas::Grip::Rotate => Hold::Rotate {
-                                                    center: rotation::screen(
-                                                        turn,
-                                                        shape.placement.w / 2.0,
-                                                        shape.placement.h / 2.0,
-                                                    ),
-                                                    from: pos,
-                                                },
+                                    }
+                                    // A click picks the child of the entered group
+                                    // that holds the drawn element; a double click
+                                    // on a group enters it (03 §9.1, spec 043).
+                                    if pressed
+                                        && let Some(at) = pointer
+                                        && page.contains(at)
+                                        && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
+                                        && let Some((node, scope)) = group::click(
+                                            page_doc,
+                                            leaf,
+                                            self.scope_on(page_doc.id),
+                                            response.double_clicked(),
+                                        )
+                                    {
+                                        picked = Some((page_doc.id, node));
+                                        asked.scope = Some(scope.map(|group| (page_doc.id, group)));
+                                    }
+                                    // Page guides, and the smart guides of the
+                                    // magnet while it holds (FD-03, FD-06).
+                                    if self.shown.guides {
+                                        draw_guides(
+                                            painter, theme, page_doc, dpi, page, rect, zoom,
+                                        );
+                                    }
+                                    if let Some((_, snap)) =
+                                        self.snapped.filter(|(on, _)| *on == page_doc.id)
+                                    {
+                                        draw_snap(painter, theme, &snap, page, zoom);
+                                    }
+                                    if self.shown.guides
+                                        && response.drag_started()
+                                        && let Some(at) = pointer
+                                        && let Some(index) =
+                                            ruler::hit(page_doc, dpi, page, zoom, at)
+                                    {
+                                        guide_hit = Some(GuideDrag {
+                                            page: page_doc.id,
+                                            axis: page_doc.guides.0[index].axis,
+                                            index: Some(index),
+                                        });
+                                    }
+                                    if self.shown.guides
+                                        && self.guide_drag.is_none()
+                                        && grip_cursor.is_none()
+                                        && let Some(at) = response.hover_pos()
+                                        && let Some(index) =
+                                            ruler::hit(page_doc, dpi, page, zoom, at)
+                                    {
+                                        ui.ctx().set_cursor_icon(guide_cursor(
+                                            page_doc.guides.0[index].axis,
+                                        ));
+                                    }
+                                    page_rects.push((page_doc.id, page));
+                                    laid.push((page_doc.id, page, shapes));
+                                }
+                                top = page.max.y + PAGE_GAP;
+                            }
+                            if let Some(icon) = grip_cursor {
+                                ui.ctx().set_cursor_icon(icon);
+                            }
+                            if let Some(handle) = grabbed {
+                                // A handle of the selection wins over whatever
+                                // lies under it, and keeps the scope.
+                                asked.drag_begin = Some(Some(handle));
+                                asked.scope = None;
+                            } else if let Some(held) = guide_hit {
+                                // Then a guide, over the elements (spec 044).
+                                self.guide_drag = Some(held);
+                            } else if response.clicked() {
+                                // Click selects one; Shift+click toggles it.
+                                let mut next = self.selected.clone();
+                                match (picked, shift) {
+                                    (Some((page, node)), true) => next.toggle(page, node),
+                                    (Some((page, node)), false) => {
+                                        next = Selection::one(page, node)
+                                    }
+                                    (None, true) => {}
+                                    // Empty canvas also leaves a group entered.
+                                    (None, false) => {
+                                        next.clear();
+                                        asked.scope = Some(None);
+                                    }
+                                }
+                                asked.select = Some(next);
+                            } else if response.drag_started() {
+                                match picked {
+                                    // A drag on a selected element moves the
+                                    // whole selection; on another one it selects
+                                    // it first (Shift adds it).
+                                    Some((page, node)) => {
+                                        if !self.selected.contains(page, node) {
+                                            let mut next = self.selected.clone();
+                                            if shift {
+                                                next.add(page, [node]);
+                                            } else {
+                                                next = Selection::one(page, node);
+                                            }
+                                            asked.select = Some(next);
+                                        }
+                                        asked.drag_begin = Some(None);
+                                    }
+                                    // On empty canvas it draws a marquee.
+                                    None => {
+                                        if let Some(from) = press.or(pointer) {
+                                            self.marquee = Some(Marquee {
+                                                from,
+                                                to: pointer.unwrap_or(from),
+                                                add: shift,
                                             });
                                         }
                                     }
                                 }
-                                if self.selected.len() > 1
-                                    && self.selected.page() == Some(page_doc.id)
-                                {
-                                    // The box around a multi-selection (spec 040).
-                                    let boxes = chosen
-                                        .iter()
-                                        .map(|s| rotation::screen_box(page, zoom, &s.placement));
-                                    if let Some(all) = canvas::bounds(boxes) {
-                                        painter.rect_stroke(
-                                            all.expand(4.0),
-                                            0.0,
-                                            Stroke::new(1.0, selection),
-                                            egui::StrokeKind::Outside,
-                                        );
+                            }
+                            if response.dragged() {
+                                if let Some(marquee) = self.marquee.as_mut() {
+                                    if let Some(to) = pointer {
+                                        marquee.to = to;
                                     }
-                                }
-                                // A click picks the child of the entered group
-                                // that holds the drawn element; a double click
-                                // on a group enters it (03 §9.1, spec 043).
-                                if pressed
-                                    && let Some(at) = pointer
-                                    && page.contains(at)
-                                    && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
-                                    && let Some((node, scope)) = group::click(
-                                        page_doc,
-                                        leaf,
-                                        self.scope_on(page_doc.id),
-                                        response.double_clicked(),
-                                    )
-                                {
-                                    picked = Some((page_doc.id, node));
-                                    asked.scope = Some(scope.map(|group| (page_doc.id, group)));
-                                }
-                                // Page guides, and the smart guides of the
-                                // magnet while it holds (FD-03, FD-06).
-                                if self.shown.guides {
-                                    draw_guides(painter, theme, page_doc, dpi, page, rect, zoom);
-                                }
-                                if let Some((_, snap)) =
-                                    self.snapped.filter(|(on, _)| *on == page_doc.id)
-                                {
-                                    draw_snap(painter, theme, &snap, page, zoom);
-                                }
-                                if self.shown.guides
-                                    && response.drag_started()
-                                    && let Some(at) = pointer
-                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
-                                {
-                                    guide_hit = Some(GuideDrag {
-                                        page: page_doc.id,
-                                        axis: page_doc.guides.0[index].axis,
-                                        index: Some(index),
-                                    });
-                                }
-                                if self.shown.guides
-                                    && self.guide_drag.is_none()
-                                    && grip_cursor.is_none()
-                                    && let Some(at) = response.hover_pos()
-                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
-                                {
-                                    ui.ctx().set_cursor_icon(guide_cursor(
-                                        page_doc.guides.0[index].axis,
-                                    ));
-                                }
-                                page_rects.push((page_doc.id, page));
-                                laid.push((page_doc.id, page, shapes));
-                            }
-                            top = page.max.y + PAGE_GAP;
-                        }
-                        if let Some(icon) = grip_cursor {
-                            ui.ctx().set_cursor_icon(icon);
-                        }
-                        if let Some(handle) = grabbed {
-                            // A handle of the selection wins over whatever
-                            // lies under it, and keeps the scope.
-                            asked.drag_begin = Some(Some(handle));
-                            asked.scope = None;
-                        } else if let Some(held) = guide_hit {
-                            // Then a guide, over the elements (spec 044).
-                            self.guide_drag = Some(held);
-                        } else if response.clicked() {
-                            // Click selects one; Shift+click toggles it.
-                            let mut next = self.selected.clone();
-                            match (picked, shift) {
-                                (Some((page, node)), true) => next.toggle(page, node),
-                                (Some((page, node)), false) => next = Selection::one(page, node),
-                                (None, true) => {}
-                                // Empty canvas also leaves a group entered.
-                                (None, false) => {
-                                    next.clear();
-                                    asked.scope = Some(None);
+                                } else if self.drag.is_some() {
+                                    asked.drag_to = Some(response.drag_delta());
+                                    // Only the state of the keys counts (D-90):
+                                    // Shift frees a corner, Alt resizes from the
+                                    // centre and Ctrl lets the magnet go.
+                                    asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
                                 }
                             }
-                            asked.select = Some(next);
-                        } else if response.drag_started() {
-                            match picked {
-                                // A drag on a selected element moves the
-                                // whole selection; on another one it selects
-                                // it first (Shift adds it).
-                                Some((page, node)) => {
-                                    if !self.selected.contains(page, node) {
-                                        let mut next = self.selected.clone();
-                                        if shift {
-                                            next.add(page, [node]);
-                                        } else {
-                                            next = Selection::one(page, node);
-                                        }
-                                        asked.select = Some(next);
+                            if let Some(marquee) = self.marquee {
+                                painter.rect(
+                                    Rect::from_two_pos(marquee.from, marquee.to),
+                                    0.0,
+                                    theme.c("selection.bg").gamma_multiply(0.5),
+                                    Stroke::new(1.0, selection),
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+                            if response.drag_stopped() {
+                                match self.marquee.take() {
+                                    Some(marquee) => {
+                                        // What it touches counts by the child of
+                                        // the scope that holds it (spec 043).
+                                        let pick = |page: PageId, leaf: NodeId| {
+                                            let on = pages.iter().find(|p| p.id == page)?;
+                                            group::pick(on, leaf, self.scope_on(page))
+                                        };
+                                        asked.select = Some(marquee_selection(
+                                            &self.selected,
+                                            marquee,
+                                            &laid,
+                                            zoom,
+                                            pick,
+                                        ));
                                     }
-                                    asked.drag_begin = Some(None);
-                                }
-                                // On empty canvas it draws a marquee.
-                                None => {
-                                    if let Some(from) = press.or(pointer) {
-                                        self.marquee = Some(Marquee {
-                                            from,
-                                            to: pointer.unwrap_or(from),
-                                            add: shift,
-                                        });
-                                    }
+                                    None => asked.drag_end = true,
                                 }
                             }
-                        }
-                        if response.dragged() {
-                            if let Some(marquee) = self.marquee.as_mut() {
-                                if let Some(to) = pointer {
-                                    marquee.to = to;
-                                }
-                            } else if self.drag.is_some() {
-                                asked.drag_to = Some(response.drag_delta());
-                                // Only the state of the keys counts (D-90):
-                                // Shift frees a corner, Alt resizes from the
-                                // centre and Ctrl lets the magnet go.
-                                asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
-                            }
-                        }
-                        if let Some(marquee) = self.marquee {
-                            painter.rect(
-                                Rect::from_two_pos(marquee.from, marquee.to),
-                                0.0,
-                                theme.c("selection.bg").gamma_multiply(0.5),
-                                Stroke::new(1.0, selection),
-                                egui::StrokeKind::Inside,
-                            );
-                        }
-                        if response.drag_stopped() {
-                            match self.marquee.take() {
-                                Some(marquee) => {
-                                    // What it touches counts by the child of
-                                    // the scope that holds it (spec 043).
-                                    let pick = |page: PageId, leaf: NodeId| {
-                                        let on = pages.iter().find(|p| p.id == page)?;
-                                        group::pick(on, leaf, self.scope_on(page))
-                                    };
-                                    asked.select = Some(marquee_selection(
-                                        &self.selected,
-                                        marquee,
-                                        &laid,
-                                        zoom,
-                                        pick,
-                                    ));
-                                }
-                                None => asked.drag_end = true,
-                            }
-                        }
-                    });
-                self.rulers_and_guides(ui, theme, area, document, &page_rects, asked);
+                        });
+                });
+                self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
             });
     }
 
@@ -2305,9 +2369,17 @@ impl Editor {
         if self.shown.rulers
             && let Some((page, origin)) = current
         {
+            // The selection's boxes on screen, marked on both rulers
+            // (S49-04).
+            let boxes: Vec<Rect> = selected_shapes(document, &self.selected)
+                .iter()
+                .filter(|shape| shape.page == page)
+                .map(|shape| rotation::screen_box(origin, zoom, &shape.placement))
+                .collect();
             for axis in [GuideAxis::Horizontal, GuideAxis::Vertical] {
                 let strip = ruler::strip(axis, area);
-                draw_ruler(ui.painter(), theme, axis, strip, origin, zoom);
+                let band = ruler::band(&boxes, axis);
+                draw_ruler(ui.painter(), theme, axis, strip, (origin, zoom), band);
                 let response = ui.interact(
                     strip,
                     ui.id().with(("ruler", axis == GuideAxis::Horizontal)),
@@ -3186,56 +3258,116 @@ fn draw_snap(painter: &egui::Painter, theme: &Theme, snap: &Snap, page: Rect, zo
     }
 }
 
-/// A ruler on `strip`, numbered in px of page from the page's corner at
-/// `origin` (FD-03).
+/// A ruler along `axis` in `strip` (FD-03, spec 049): numbered ticks
+/// across the whole ruler with their value beside them, minor ticks from
+/// its inner edge (the middle one longer), and the selection's extent
+/// `band` shaded. The left ruler turns its numbers to read bottom to top.
 fn draw_ruler(
     painter: &egui::Painter,
     theme: &Theme,
     axis: GuideAxis,
     strip: Rect,
-    origin: Rect,
-    zoom: f32,
+    (origin, zoom): (Rect, f32),
+    band: Option<(f32, f32)>,
 ) {
     painter.rect_filled(strip, 0.0, theme.c("surface"));
     let border = Stroke::new(1.0, theme.c("border"));
-    let font = theme.font("caption");
+    let mut font = theme.font("caption");
+    // Smaller than any text token: it only has to fit the 20 px ruler.
+    font.size = 10.0;
     let color = theme.c("text.secondary");
-    match axis {
-        GuideAxis::Horizontal => {
-            painter.line_segment([strip.left_bottom(), strip.right_bottom()], border);
-            let from = strip.min.x + ruler::RULER;
-            for (x, value) in ruler::ticks(origin.min.x, zoom, from, strip.max.x) {
-                painter.line_segment(
-                    [Pos2::new(x, strip.max.y - 6.0), Pos2::new(x, strip.max.y)],
-                    border,
-                );
-                painter.text(
-                    Pos2::new(x + 2.0, strip.min.y + 2.0),
-                    Align2::LEFT_TOP,
-                    value.to_string(),
-                    font.clone(),
-                    color,
-                );
-            }
+    let size = ruler::RULER;
+    let horizontal = axis == GuideAxis::Horizontal;
+    // The corner belongs to neither ruler.
+    let (from, to) = if horizontal {
+        (strip.min.x + size, strip.max.x)
+    } else {
+        (strip.min.y + size, strip.max.y)
+    };
+    let along = |a: f32, b: f32| {
+        if horizontal {
+            Rect::from_min_max(Pos2::new(a, strip.min.y), Pos2::new(b, strip.max.y))
+        } else {
+            Rect::from_min_max(Pos2::new(strip.min.x, a), Pos2::new(strip.max.x, b))
         }
-        GuideAxis::Vertical => {
-            painter.line_segment([strip.right_top(), strip.right_bottom()], border);
-            let from = strip.min.y + ruler::RULER;
-            for (y, value) in ruler::ticks(origin.min.y, zoom, from, strip.max.y) {
-                painter.line_segment(
-                    [Pos2::new(strip.max.x - 6.0, y), Pos2::new(strip.max.x, y)],
-                    border,
-                );
-                painter.text(
-                    Pos2::new(strip.min.x + 2.0, y + 2.0),
-                    Align2::LEFT_TOP,
-                    value.to_string(),
-                    font.clone(),
-                    color,
-                );
-            }
+    };
+    let painter = painter.with_clip_rect(along(from, to));
+    if let Some((a, b)) = band {
+        painter.rect_filled(along(a, b), 0.0, theme.c("selection.bg"));
+    }
+    let origin_at = if horizontal {
+        origin.min.x
+    } else {
+        origin.min.y
+    };
+    // A tick across `length` of the ruler, from its inner edge.
+    let tick = |at: f32, length: f32| {
+        let points = if horizontal {
+            [
+                Pos2::new(at, strip.max.y - length),
+                Pos2::new(at, strip.max.y),
+            ]
+        } else {
+            [
+                Pos2::new(strip.max.x - length, at),
+                Pos2::new(strip.max.x, at),
+            ]
+        };
+        painter.line_segment(points, border);
+    };
+    for (at, middle) in ruler::minor_ticks(origin_at, zoom, from, to) {
+        tick(at, if middle { size / 2.0 } else { size / 4.0 });
+    }
+    for (at, value) in ruler::ticks(origin_at, zoom, from, to) {
+        tick(at, size);
+        let galley = painter.layout_no_wrap(value.to_string(), font.clone(), color);
+        if horizontal {
+            painter.galley(Pos2::new(at + 3.0, strip.min.y + 1.0), galley, color);
+        } else {
+            // Turned a quarter left about its corner: it runs up from just
+            // above the tick, its height across the ruler.
+            let text =
+                egui::epaint::TextShape::new(Pos2::new(strip.min.x + 1.0, at - 3.0), galley, color)
+                    .with_angle(-std::f32::consts::FRAC_PI_2);
+            painter.add(text);
         }
     }
+    let edge = if horizontal {
+        [strip.left_bottom(), strip.right_bottom()]
+    } else {
+        [strip.right_top(), strip.right_bottom()]
+    };
+    painter.with_clip_rect(strip).line_segment(edge, border);
+}
+
+/// A 16 px icon of the bottom bar in `color`, not a button.
+fn bar_icon(ui: &mut egui::Ui, theme: &Theme, icon: Icon, color: Color32) {
+    let side = px(theme.tokens.size.icon.sm);
+    let image = icons::image(ui.ctx(), icon, Weight::Regular, side, color);
+    ui.add(image);
+}
+
+/// A thin upright line between groups of the bottom bar.
+fn bar_separator(ui: &mut egui::Ui, theme: &Theme) {
+    ui.add_space(8.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 20.0), egui::Sense::hover());
+    ui.painter().vline(
+        rect.center().x,
+        rect.y_range(),
+        Stroke::new(1.0, theme.c("border")),
+    );
+    ui.add_space(8.0);
+}
+
+/// The number «n de N» shows (S49-05): the place of `current` among
+/// `pages`, from 1; 1 when it is not one of them, 0 with no page.
+fn page_number(pages: &[PageId], current: Option<PageId>) -> usize {
+    if pages.is_empty() {
+        return 0;
+    }
+    current
+        .and_then(|id| pages.iter().position(|page| *page == id))
+        .map_or(1, |index| index + 1)
 }
 
 /// `placements` of `page` as one undo step: their `SetProperty` commands
@@ -5487,6 +5619,17 @@ pub(crate) mod tests {
                 (base.visible, base.locked, base.name.clone())
             })
             .collect()
+    }
+
+    // S49-05: «n de N» counts from the page of the selection.
+    #[test]
+    fn s49_05_page_number() {
+        let pages = [PageId::new(7), PageId::new(3), PageId::new(9)];
+        assert_eq!(page_number(&pages, Some(PageId::new(9))), 3);
+        assert_eq!(page_number(&pages, Some(PageId::new(7))), 1);
+        assert_eq!(page_number(&pages, None), 1);
+        assert_eq!(page_number(&pages, Some(PageId::new(1))), 1);
+        assert_eq!(page_number(&[], None), 0);
     }
 
     // S48-01, S48-02: the eye hides and the lock locks one element, each
