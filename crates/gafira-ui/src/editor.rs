@@ -1706,7 +1706,7 @@ impl Editor {
                 };
                 if let Some(text) = &shape.text {
                     font_button(ui, theme, texts, text.content.first_style(), asked);
-                    text_fields(ui, theme, texts, text, asked);
+                    text_fields(ui, texts, text, asked);
                     ui.add_space(16.0);
                 }
                 if shape.group {
@@ -2612,6 +2612,7 @@ impl Editor {
         ui.add(
             egui::TextEdit::singleline(&mut search)
                 .hint_text(plain(texts, "fonts.search"))
+                .margin(Vec2::new(10.0, 8.0))
                 .desired_width(f32::INFINITY),
         );
         ui.data_mut(|d| d.insert_temp(search_id, search.clone()));
@@ -2648,59 +2649,37 @@ impl Editor {
                         .map(|f| (f.bold, f.italic))
                         .collect();
                     let is_open = open.contains(family);
-                    ui.horizontal(|ui| {
-                        if faces.len() > 1 {
-                            // Painted, not a glyph: the interface font has
-                            // no arrows.
-                            let (_, opener) =
-                                ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
-                            egui::collapsing_header::paint_default_icon(
-                                ui,
-                                if is_open { 1.0 } else { 0.0 },
-                                &opener,
-                            );
-                            if opener
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                if is_open {
-                                    open.remove(family);
-                                } else {
-                                    open.insert(family.to_owned());
-                                }
+                    let face =
+                        library_family(ui.ctx(), &gafira_theme::face_key(family, false, false));
+                    let row = font_row(
+                        ui,
+                        theme,
+                        FontRow {
+                            indent: 0.0,
+                            chevron: (faces.len() > 1).then_some(is_open),
+                            name: family.to_owned(),
+                            face: face.clone(),
+                            sample: true,
+                            ticked: current.as_ref().is_some_and(|c| c.0 == family),
+                        },
+                    );
+                    match row {
+                        Some(RowClick::Chevron) => {
+                            if is_open {
+                                open.remove(family);
+                            } else {
+                                open.insert(family.to_owned());
                             }
-                        } else {
-                            ui.add_space(16.0 + ui.spacing().item_spacing.x);
                         }
-                        let face =
-                            library_family(ui.ctx(), &gafira_theme::face_key(family, false, false));
-                        let name = ui.add(
-                            egui::Label::new(
-                                RichText::new(family)
-                                    .font(egui::FontId::new(16.0, face.clone()))
-                                    .color(theme.c("text")),
-                            )
-                            .sense(egui::Sense::click()),
-                        );
-                        ui.label(
-                            RichText::new("AaBbCc")
-                                .font(egui::FontId::new(14.0, face))
-                                .color(theme.c("text.secondary")),
-                        );
-                        if current.as_ref().is_some_and(|c| c.0 == family) {
-                            paint_check(ui, theme.c("text"));
-                        }
-                        if name
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
+                        Some(RowClick::Row) => {
                             let (bold, italic) = current
                                 .as_ref()
                                 .filter(|c| c.0 == family)
                                 .map_or((false, false), |c| (c.1, c.2));
                             asked.font = Some((family.to_owned(), bold, italic));
                         }
-                    });
+                        None => {}
+                    }
                     if is_open {
                         for (bold, italic) in faces {
                             let key = match (bold, italic) {
@@ -2713,29 +2692,23 @@ impl Editor {
                                 ui.ctx(),
                                 &gafira_theme::face_key(family, bold, italic),
                             );
-                            ui.horizontal(|ui| {
-                                ui.add_space(36.0);
-                                let row = ui.add(
-                                    egui::Label::new(
-                                        RichText::new(plain(texts, key))
-                                            .font(egui::FontId::new(15.0, face))
-                                            .color(theme.c("text")),
-                                    )
-                                    .sense(egui::Sense::click()),
-                                );
-                                if current
-                                    .as_ref()
-                                    .is_some_and(|c| c.0 == family && c.1 == bold && c.2 == italic)
-                                {
-                                    paint_check(ui, theme.c("text"));
-                                }
-                                if row
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .clicked()
-                                {
-                                    asked.font = Some((family.to_owned(), bold, italic));
-                                }
-                            });
+                            let row = font_row(
+                                ui,
+                                theme,
+                                FontRow {
+                                    indent: 28.0,
+                                    chevron: None,
+                                    name: plain(texts, key),
+                                    face,
+                                    sample: false,
+                                    ticked: current.as_ref().is_some_and(|c| {
+                                        c.0 == family && c.1 == bold && c.2 == italic
+                                    }),
+                                },
+                            );
+                            if row.is_some() {
+                                asked.font = Some((family.to_owned(), bold, italic));
+                            }
                         }
                     }
                 }
@@ -4058,6 +4031,8 @@ impl Editor {
             let command =
                 SetProperty::new(page, vec![node], Property::TextContent(text.clone()), None);
             log("text", engine.edit().execute(Box::new(command)).map(drop));
+            // A new size or colour may change the height of the words.
+            self.fit_pending = Some((page, node));
         }
         if let Some(hold) = asked.drag_begin
             && let Some(page) = self.selected.page()
@@ -4327,6 +4302,8 @@ impl Editor {
         }
         if let Some((family, bold, italic)) = &asked.font {
             self.apply_font(engine, (family, *bold, *italic));
+            // Another face may change the height of the words (spec 061).
+            self.fit_pending = self.selected.single();
         }
         if let Some(action) = &asked.page_action {
             self.page_action(engine, action);
@@ -5008,12 +4985,100 @@ fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyl
     }
 }
 
-/// A tick of 14 px drawn with lines: the current font in the Fuente panel
-/// (the interface font has no tick glyph).
-fn paint_check(ui: &mut egui::Ui, color: Color32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
+/// What a row of the Fuente panel shows: its indent, its chevron (`Some`
+/// open or closed when it has faces to show), its name in its face, a
+/// sample after it and the tick of the current font.
+struct FontRow {
+    indent: f32,
+    chevron: Option<bool>,
+    name: String,
+    face: egui::FontFamily,
+    sample: bool,
+    ticked: bool,
+}
+
+/// Where a row of the Fuente panel was clicked.
+enum RowClick {
+    Chevron,
+    Row,
+}
+
+/// A row of the Fuente panel across the whole width: its background lights
+/// up under the pointer, which turns into a hand; a click on the chevron
+/// opens or closes it, anywhere else picks the font.
+fn font_row(ui: &mut egui::Ui, theme: &Theme, row: FontRow) -> Option<RowClick> {
+    let height = 32.0;
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), height),
+        egui::Sense::click(),
+    );
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let painter = ui.painter();
+    if response.hovered() {
+        painter.rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
+    }
+    let mut x = rect.min.x + 8.0 + row.indent;
+    let chevron = Rect::from_min_size(Pos2::new(x, rect.center().y - 8.0), Vec2::splat(16.0));
+    if let Some(open) = row.chevron {
+        paint_chevron(painter, chevron, open, theme.c("text"));
+    }
+    x += 24.0;
+    let name = painter.layout_no_wrap(
+        row.name,
+        egui::FontId::new(15.0, row.face.clone()),
+        theme.c("text"),
+    );
+    let width = name.size().x;
+    painter.galley(
+        Pos2::new(x, rect.center().y - name.size().y / 2.0),
+        name,
+        theme.c("text"),
+    );
+    if row.sample {
+        let sample = painter.layout_no_wrap(
+            "AaBbCc".to_owned(),
+            egui::FontId::new(13.0, row.face),
+            theme.c("text.secondary"),
+        );
+        let at = Pos2::new(x + width + 8.0, rect.center().y - sample.size().y / 2.0);
+        painter.galley(at, sample, theme.c("text.secondary"));
+    }
+    if row.ticked {
+        let tick = Rect::from_center_size(
+            Pos2::new(rect.max.x - 16.0, rect.center().y),
+            Vec2::splat(14.0),
+        );
+        paint_tick(painter, tick, theme.c("text"));
+    }
+    if !response.clicked() {
+        return None;
+    }
+    let on_chevron = row.chevron.is_some()
+        && response
+            .interact_pointer_pos()
+            .is_some_and(|at| chevron.expand(6.0).contains(at));
+    Some(if on_chevron {
+        RowClick::Chevron
+    } else {
+        RowClick::Row
+    })
+}
+
+/// A thin chevron in `rect`: pointing right when closed, down when open.
+fn paint_chevron(painter: &egui::Painter, rect: Rect, open: bool, color: Color32) {
     let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * rect.width();
-    ui.painter().add(egui::Shape::line(
+    let points = if open {
+        vec![at(0.25, 0.4), at(0.5, 0.65), at(0.75, 0.4)]
+    } else {
+        vec![at(0.4, 0.25), at(0.65, 0.5), at(0.4, 0.75)]
+    };
+    painter.add(egui::Shape::line(points, Stroke::new(1.5, color)));
+}
+
+/// A tick in `rect` drawn with lines.
+fn paint_tick(painter: &egui::Painter, rect: Rect, color: Color32) {
+    let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * rect.width();
+    painter.add(egui::Shape::line(
         vec![at(0.15, 0.55), at(0.4, 0.8), at(0.85, 0.25)],
         Stroke::new(2.0, color),
     ));
@@ -5029,7 +5094,9 @@ fn font_button(
     asked: &mut Asked,
 ) {
     let Some(style) = style else { return };
-    ui.horizontal(|ui| {
+    // One row, centred down, so the label and the button line up.
+    let row = Vec2::new(ui.available_width(), 28.0);
+    ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
         ui.label(texts.t(&gafira_doc::msg!("fonts.title")));
         let face = text_family(ui.ctx(), theme, style);
         let button = ui.button(RichText::new(&style.font).font(egui::FontId::new(14.0, face)));
@@ -5500,27 +5567,13 @@ fn shape_text_fields(
 
 /// The Inspector fields of a text element: its words, size and colour,
 /// applied to every span (one style per element for now, spec 027).
-fn text_fields(
-    ui: &mut egui::Ui,
-    theme: &Theme,
-    texts: &Texts,
-    text: &gafira_doc::TextNode,
-    asked: &mut Asked,
-) {
+fn text_fields(ui: &mut egui::Ui, texts: &Texts, text: &gafira_doc::TextNode, asked: &mut Asked) {
     let Some(style) = text.content.first_style().cloned() else {
         return;
     };
-    ui.label(
-        RichText::new(texts.t(&gafira_doc::msg!("inspector.text"))).font(theme.font("ui-label")),
-    );
-    let mut words = text.content.plain_text();
-    let edit = egui::TextEdit::multiline(&mut words)
-        .desired_rows(3)
-        .desired_width(f32::INFINITY);
-    if ui.add(edit).changed() {
-        asked.text = Some(gafira_doc::RichText::plain(&words, &style));
-    }
-    ui.add_space(8.0);
+    // The words are written on the canvas (spec 055), so the Inspector only
+    // keeps their size and colour.
+    let words = text.content.plain_text();
     let mut size = style.size;
     let mut color = canvas::screen_color(style.color);
     ui.horizontal(|ui| {
@@ -5647,6 +5700,10 @@ fn lay_inner(
 /// to the bottom of its last line, at `zoom`.
 fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32) -> Option<f64> {
     let (pos, galley, _) = laid.last()?;
+    // Before the fonts are ready a galley has no size: no measure yet.
+    if galley.size().y <= 0.0 {
+        return None;
+    }
     Some(f64::from((pos.y + galley.size().y - at.min.y) / zoom))
 }
 
@@ -7987,6 +8044,50 @@ pub(crate) mod tests {
         let p = placements(&mut engine, &[node])[0];
         assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 200.0));
         assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S61-02: a text whose letters grow takes the height of its words once
+    // the canvas has drawn it.
+    #[test]
+    fn s61_02_a_bigger_size_fits_the_box() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Body, "Hola".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (_, node) = editor.selected.single().expect("the text");
+        let before = placements(&mut engine, &[node])[0].h;
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) =
+            &document.pages()[0].node(node).expect("a node").kind
+        else {
+            panic!("a text");
+        };
+        let mut style = text.content.first_style().expect("a style").clone();
+        style.size *= 4.0;
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                text: Some(gafira_doc::RichText::plain("Hola", &style)),
+                ..Asked::default()
+            },
+        );
+        // The window installs the theme fonts; so does this test, so the
+        // canvas can lay the words out.
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        for _ in 0..3 {
+            frame_with(&ctx, &mut editor, &mut engine, None, Modifiers::NONE);
+        }
+        let after = placements(&mut engine, &[node])[0].h;
+        assert!(after > before * 2.0, "{before} -> {after}");
     }
 
     // S62-04: a font picked in the Fuente panel goes to every span of the
