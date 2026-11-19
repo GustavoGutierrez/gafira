@@ -6878,13 +6878,37 @@ pub(crate) mod tests {
         let mut engine = engine();
         let mut editor = Editor::default();
         let (page, rect, _) = two_pieces(&mut engine, &mut editor);
-        ask(&mut engine, &mut editor, Asked { begin_edit: Some((page, rect)), ..Asked::default() });
-        ask(&mut engine, &mut editor, Asked { edit_text: Some("Hola".to_owned()), ..Asked::default() });
-        ask(&mut engine, &mut editor, Asked { end_edit: true, ..Asked::default() });
         ask(
             &mut engine,
             &mut editor,
-            Asked { page_action: Some(PageAction::Duplicate(page)), ..Asked::default() },
+            Asked {
+                begin_edit: Some((page, rect)),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                edit_text: Some("Hola".to_owned()),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                end_edit: true,
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                page_action: Some(PageAction::Duplicate(page)),
+                ..Asked::default()
+            },
         );
         let document = engine.edit().document().expect("a document");
         let (source, copy) = (&document.pages()[0], &document.pages()[1]);

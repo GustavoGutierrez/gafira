@@ -186,6 +186,11 @@ pub trait NodeVisitor {
         self.visit_node(n)
     }
 
+    /// Receives a line (spec 058).
+    fn visit_line(&mut self, n: &Node, _l: &crate::LineNode) -> Self::Out {
+        self.visit_node(n)
+    }
+
     /// Receives an extension node.
     fn visit_extension(&mut self, n: &Node, _e: &ExtensionNode) -> Self::Out {
         self.visit_node(n)
@@ -259,6 +264,7 @@ fn dispatch<V: NodeVisitor>(v: &mut V, node: &Node) -> V::Out {
         NodeKind::Shape(s) => v.visit_shape(node, s),
         NodeKind::Text(t) => v.visit_text(node, t),
         NodeKind::Image(i) => v.visit_image(node, i),
+        NodeKind::Line(l) => v.visit_line(node, l),
         NodeKind::Extension(e) => v.visit_extension(node, e),
     }
 }

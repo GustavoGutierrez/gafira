@@ -989,6 +989,9 @@ mod guards {
                                 seen.insert("group with children");
                             }
                         }
+                        NodeKind::Line(_) => {
+                            seen.insert("line");
+                        }
                         NodeKind::Extension(e) => {
                             seen.insert("extension");
                             note_text(&mut seen, &e.type_id);

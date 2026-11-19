@@ -73,7 +73,7 @@ fn node_bytes(node: &Node) -> usize {
                 .as_ref()
                 .map_or(0, |text| rich_bytes(&text.content))
         }
-        NodeKind::Group(_) | NodeKind::Image(_) => 0,
+        NodeKind::Group(_) | NodeKind::Image(_) | NodeKind::Line(_) => 0,
     };
     size_of::<Node>()
         + node.base.name.as_deref().map_or(0, str::len)

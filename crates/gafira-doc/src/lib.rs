@@ -20,6 +20,7 @@ mod ids;
 mod image;
 mod json;
 mod layout;
+mod line;
 pub mod msg;
 mod node;
 mod page;
@@ -45,6 +46,7 @@ pub use layout::{
     GridSettings, GridStyle, Guide, GuideAxis, GuideSet, Margins, PageField, PageLayoutError,
     check_bleed,
 };
+pub use line::{Anchor, Attachment, LineCap, LineEnd, LineNode};
 pub use node::{
     ExtensionNode, GroupNode, MAX_EXTENSION_DEPTH, Node, NodeKind, PathCommand, ShapeGeometry,
     ShapeNode, ShapePath, ShapeStroke, ShapeText, VerticalAlign,

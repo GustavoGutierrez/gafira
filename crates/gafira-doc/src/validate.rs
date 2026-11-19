@@ -358,6 +358,18 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
             }
         }
     }
+    // A line: its colour, its width and its points in the box (spec 058).
+    if let NodeKind::Line(line) = &node.kind {
+        let [r, g, b, a] = channels(line.color);
+        for channel in [r, g, b] {
+            out.push((NodeField::StrokeChannel, f64::from(channel), any));
+        }
+        out.push((NodeField::StrokeAlpha, f64::from(a), unit_interval));
+        out.push((NodeField::StrokeWidth, line.width, stroke_width));
+        for v in line.start.at.into_iter().chain(line.end.at) {
+            out.push((NodeField::PathCoordinate, v, path_coordinate));
+        }
+    }
     // The words of a text element or of a shape's text (spec 055).
     let content = match &node.kind {
         NodeKind::Text(text) => Some(&text.content),

@@ -70,7 +70,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
             NodeKind::Shape(shape) => Some((shape.clone(), None, None)),
             NodeKind::Text(text) => Some((rect.clone(), Some(text.clone()), None)),
             NodeKind::Image(image) => Some((rect.clone(), None, Some(image.asset))),
-            NodeKind::Group(_) | NodeKind::Extension(_) => None,
+            NodeKind::Group(_) | NodeKind::Extension(_) | NodeKind::Line(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
             let inner_text = shape.text.clone();

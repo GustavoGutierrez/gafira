@@ -216,6 +216,8 @@ pub enum NodeKind {
     Text(TextNode),
     /// An image element (spec 029).
     Image(ImageNode),
+    /// A line between two ends, which may stick to shapes (spec 058).
+    Line(crate::LineNode),
     /// An opaque extension node.
     Extension(ExtensionNode),
 }
@@ -263,6 +265,7 @@ mod tests {
             NodeKind::Shape(_) => "shape",
             NodeKind::Text(_) => "text",
             NodeKind::Image(_) => "image",
+            NodeKind::Line(_) => "line",
             NodeKind::Extension(_) => "extension",
         };
         let geometry_name = |g: ShapeGeometry| match g {
