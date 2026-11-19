@@ -38,6 +38,8 @@ pub(crate) struct Shape {
     /// The text of a text element; its box hits and moves like a rectangle
     /// (spec 027).
     pub(crate) text: Option<TextNode>,
+    /// The text inside a shape (spec 055); `None` for other elements.
+    pub(crate) inner: Option<gafira_doc::ShapeText>,
     /// The asset an image element shows (spec 029).
     pub(crate) image: Option<gafira_doc::AssetRef>,
     /// Locked itself or below a locked group (D-91): drawn, but a click or
@@ -71,6 +73,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
             NodeKind::Group(_) | NodeKind::Extension(_) => None,
         };
         if let Some((shape, text, image)) = drawn {
+            let inner_text = shape.text.clone();
             out.push(Shape {
                 page: page.id,
                 node: id,
@@ -85,6 +88,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 text,
                 image,
                 locked,
+                inner: inner_text,
             });
         }
         let below = inherited * node.base.opacity.clamp(0.0, 1.0);
@@ -463,6 +467,7 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
             fill: Some(fill),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
         }),
         placement,
     )
@@ -684,6 +689,24 @@ pub(crate) fn painted_turned(shape: &Shape, transform: Affine, zoom: f32) -> egu
     egui::Shape::convex_polygon(points, paint(shape), stroke)
 }
 
+/// The box the text of a shape is laid out in (spec 055): the shape's box
+/// less a tenth of its shorter side on each side, as the render lays it.
+pub(crate) fn text_box(at: Rect) -> Rect {
+    let pad = at.width().min(at.height()) / 10.0;
+    at.shrink(pad)
+}
+
+/// Where the first line of a text `text_h` high starts in `inner`, down
+/// the box by `valign` (spec 055).
+pub(crate) fn text_top(inner: Rect, text_h: f32, valign: gafira_doc::VerticalAlign) -> f32 {
+    let share = match valign {
+        gafira_doc::VerticalAlign::Top => 0.0,
+        gafira_doc::VerticalAlign::Middle => 0.5,
+        gafira_doc::VerticalAlign::Bottom => 1.0,
+    };
+    inner.min.y + (inner.height() - text_h) * share
+}
+
 /// The longest side, in px, of the texture a path shape is drawn from.
 const PATH_TEXTURE_MAX: f64 = 2048.0;
 
@@ -876,6 +899,7 @@ mod tests {
                     fill: None,
                     stroke: None,
                     corner_radius: 0.0,
+                    text: None,
                 }),
             ))
         };
@@ -1359,6 +1383,29 @@ mod s41_tests {
         assert!(PIECE_SECTIONS.iter().all(|(_, pieces)| !pieces.is_empty()));
     }
 
+    // S55-04: the text of a shape is laid out in its box less a tenth of
+    // its shorter side, and starts at the top, the middle or the bottom.
+    #[test]
+    fn s55_04_text_offset() {
+        use gafira_doc::VerticalAlign;
+        let inner = text_box(Rect::from_min_size(
+            Pos2::new(10.0, 20.0),
+            Vec2::new(200.0, 100.0),
+        ));
+        assert_eq!(
+            inner,
+            Rect::from_min_max(Pos2::new(20.0, 30.0), Pos2::new(200.0, 110.0))
+        );
+        assert_eq!(text_top(inner, 20.0, VerticalAlign::Top), 30.0);
+        assert_eq!(text_top(inner, 20.0, VerticalAlign::Middle), 60.0);
+        assert_eq!(text_top(inner, 20.0, VerticalAlign::Bottom), 90.0);
+        assert_eq!(
+            text_top(inner, 200.0, VerticalAlign::Middle),
+            -30.0,
+            "taller than the box"
+        );
+    }
+
     // S54-04: a path shape is drawn from a texture that fills its inside
     // and leaves the rest of its box clear; a click inside the path takes
     // it and one in the box but outside the path does not.
@@ -1387,6 +1434,7 @@ mod s41_tests {
             text: None,
             image: None,
             locked: false,
+            inner: None,
         };
         let (image, covered) = path_image(&shape, 1.0).expect("a texture");
         // One screen px of margin on each side.

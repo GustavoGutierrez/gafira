@@ -341,6 +341,13 @@ lock = "Bloquear"
 unlock = "Desbloquear"
 
 [inspector]
+shape_text = "Texto en la forma"
+text_left = "Alinear el texto a la izquierda"
+text_center = "Centrar el texto"
+text_right = "Alinear el texto a la derecha"
+text_top = "Texto arriba"
+text_middle = "Texto al medio"
+text_bottom = "Texto abajo"
 position = "Posición"
 layers = "Capas"
 image = "Imagen"

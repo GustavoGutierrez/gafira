@@ -294,6 +294,19 @@ pub(crate) struct Editor {
     /// The textures path shapes are drawn from, on the canvas and in the
     /// Formas panel, by what they show (spec 054).
     path_textures: std::cell::RefCell<std::collections::BTreeMap<u64, egui::TextureHandle>>,
+    /// The text being written on the canvas (spec 055).
+    editing: Option<Editing>,
+}
+
+/// A text being written on the canvas (spec 055): whose it is, the words so
+/// far and the gesture that makes the whole edit one undo step.
+struct Editing {
+    page: PageId,
+    node: NodeId,
+    words: String,
+    gesture: Option<GestureId>,
+    /// The field took the keyboard on its first frame.
+    focused: bool,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -371,6 +384,7 @@ impl Default for Editor {
             active: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
+            editing: None,
         }
     }
 }
@@ -479,6 +493,17 @@ struct Asked {
     /// A shape dragged from the panel and dropped on a page, at this point
     /// in px of page (spec 052).
     drop_piece: Option<(canvas::Piece, PageId, (f64, f64))>,
+    /// A double click on a text or a shape: write on it (spec 055).
+    begin_edit: Option<(PageId, NodeId)>,
+    /// The words written so far on the canvas.
+    edit_text: Option<String>,
+    /// The writing on the canvas ends: Esc or a click elsewhere.
+    end_edit: bool,
+    /// The alignment of the selected shape's text, across and down.
+    shape_align: Option<(
+        Option<gafira_doc::TextAlign>,
+        Option<gafira_doc::VerticalAlign>,
+    )>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -558,6 +583,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         text: None,
         image: None,
         locked: crate::layers::locked(page, node),
+        inner: None,
     })
 }
 
@@ -1633,6 +1659,7 @@ impl Editor {
                 if shape.text.is_none() && shape.image.is_none() && !shape.group {
                     ui.add_space(8.0);
                     outline_fields(ui, texts, shape, asked);
+                    shape_text_fields(ui, theme, texts, shape, asked);
                 }
                 ui.add_space(8.0);
                 opacity_field(ui, texts, shape, asked);
@@ -1939,6 +1966,7 @@ impl Editor {
                     text: None,
                     image: None,
                     locked: false,
+                    inner: None,
                 };
                 let cover = canvas::path_cover(&shape, 1.0);
                 let key = path_key(&shape, 1.0);
@@ -2053,6 +2081,208 @@ impl Editor {
         }
     }
 
+    /// Writing on the canvas and the alignment of a shape's text (spec
+    /// 055). A whole edit is one undo step: every change carries the
+    /// gesture opened when it began.
+    fn text_editing(&mut self, engine: &mut Gafira, asked: &Asked, theme: &Theme) {
+        let ink = canvas::document_color(crate::style::color32(theme.tokens.brand.ink));
+        let default = gafira_doc::SpanStyle {
+            font: theme.tokens.typography.ui.clone(),
+            size: 24.0,
+            color: ink,
+        };
+        if let Some((page, node)) = asked.begin_edit {
+            if self.editing.take().is_some_and(|e| e.gesture.is_some()) {
+                let _ = engine.edit().end_gesture();
+            }
+            let Some(document) = engine.edit().document() else {
+                return;
+            };
+            let words = match document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .map(|n| &n.kind)
+            {
+                Some(gafira_doc::NodeKind::Text(text)) => text.content.plain_text(),
+                Some(gafira_doc::NodeKind::Shape(shape)) => shape
+                    .text
+                    .as_ref()
+                    .map(|text| text.content.plain_text())
+                    .unwrap_or_default(),
+                _ => return,
+            };
+            let gesture = engine.edit().begin_gesture().ok();
+            self.editing = Some(Editing {
+                page,
+                node,
+                words,
+                gesture,
+                focused: false,
+            });
+            self.selected = Selection::one(page, node);
+        }
+        if let Some(words) = &asked.edit_text
+            && let Some(editing) = self.editing.as_mut()
+            && let Some(document) = engine.edit().document()
+            && let Some(node) = document
+                .page(editing.page)
+                .and_then(|p| p.node(editing.node))
+        {
+            editing.words.clone_from(words);
+            let property = match &node.kind {
+                gafira_doc::NodeKind::Text(text) => {
+                    let style = text.content.first_style().cloned().unwrap_or(default);
+                    Some(Property::TextContent(gafira_doc::RichText::plain(
+                        words, &style,
+                    )))
+                }
+                gafira_doc::NodeKind::Shape(shape) => {
+                    // An empty shape keeps no text (S55-04).
+                    Some(Property::ShapeText((!words.is_empty()).then(|| {
+                        let old = shape.text.as_ref();
+                        let style = old
+                            .and_then(|text| text.content.first_style().cloned())
+                            .unwrap_or(default);
+                        let mut text = gafira_doc::ShapeText::plain(words, &style);
+                        if let Some(old) = old {
+                            text.align = old.align;
+                            text.valign = old.valign;
+                        }
+                        text
+                    })))
+                }
+                _ => None,
+            };
+            if let Some(property) = property {
+                let command =
+                    SetProperty::new(editing.page, vec![editing.node], property, editing.gesture);
+                if let Err(error) = engine.edit().execute(Box::new(command)) {
+                    eprintln!("write: {error}");
+                }
+            }
+        }
+        if asked.end_edit
+            && let Some(editing) = self.editing.take()
+            && editing.gesture.is_some()
+            && let Err(error) = engine.edit().end_gesture()
+        {
+            eprintln!("write: {error}");
+        }
+        if let Some((align, valign)) = asked.shape_align
+            && let Some((page, node)) = self.selected.single()
+            && let Some(document) = engine.edit().document()
+            && let Some(gafira_doc::NodeKind::Shape(shape)) = document
+                .page(page)
+                .and_then(|p| p.node(node))
+                .map(|n| &n.kind)
+            && let Some(mut text) = shape.text.clone()
+        {
+            text.align = align.unwrap_or(text.align);
+            text.valign = valign.unwrap_or(text.valign);
+            let gesture = engine.edit().begin_gesture().ok();
+            let command =
+                SetProperty::new(page, vec![node], Property::ShapeText(Some(text)), gesture);
+            if let Err(error) = engine.edit().execute(Box::new(command)) {
+                eprintln!("align text: {error}");
+            }
+            if gesture.is_some() {
+                let _ = engine.edit().end_gesture();
+            }
+        }
+    }
+
+    /// The field of the text being written on the canvas (spec 055): over
+    /// the element's box (a shape's box less its margin), in its size,
+    /// colour and alignment, without a frame, so the words seem to be
+    /// written in place. Each change asks to store the words; losing the
+    /// keyboard (Esc or a click elsewhere) ends the edit.
+    fn edit_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        pages: &[Arc<Page>],
+        page_rects: &[(PageId, Rect)],
+        zoom: f32,
+        asked: &mut Asked,
+    ) {
+        let Some(editing) = self.editing.as_mut() else {
+            return;
+        };
+        let Some((page, rect)) = pages.iter().find(|p| p.id == editing.page).zip(
+            page_rects
+                .iter()
+                .find(|(id, _)| *id == editing.page)
+                .map(|r| r.1),
+        ) else {
+            return;
+        };
+        let Some(node) = page.node(editing.node) else {
+            asked.end_edit = true;
+            return;
+        };
+        let at = rotation::screen_box(rect, zoom, &node.base.placement);
+        let (field_rect, style, align, valign) = match &node.kind {
+            gafira_doc::NodeKind::Text(text) => {
+                (at, text.content.first_style().cloned(), text.align, None)
+            }
+            gafira_doc::NodeKind::Shape(shape) => (
+                canvas::text_box(at),
+                shape
+                    .text
+                    .as_ref()
+                    .and_then(|t| t.content.first_style().cloned()),
+                shape
+                    .text
+                    .as_ref()
+                    .map_or(gafira_doc::TextAlign::Center, |t| t.align),
+                Some(
+                    shape
+                        .text
+                        .as_ref()
+                        .map_or(gafira_doc::VerticalAlign::Middle, |t| t.valign),
+                ),
+            ),
+            _ => {
+                asked.end_edit = true;
+                return;
+            }
+        };
+        let size = style.as_ref().map_or(24.0, |s| s.size) as f32 * zoom;
+        let color = style.as_ref().map_or_else(
+            || crate::style::color32(theme.tokens.brand.ink),
+            |s| canvas::screen_color(s.color),
+        );
+        let family = text_family(theme, style.as_ref().map_or("", |s| s.font.as_str()));
+        let halign = match align {
+            gafira_doc::TextAlign::Center => Align::Center,
+            gafira_doc::TextAlign::Right => Align::RIGHT,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => Align::LEFT,
+        };
+        let vertical = match valign {
+            Some(gafira_doc::VerticalAlign::Top) | None => Align::TOP,
+            Some(gafira_doc::VerticalAlign::Middle) => Align::Center,
+            Some(gafira_doc::VerticalAlign::Bottom) => Align::BOTTOM,
+        };
+        let field = egui::TextEdit::multiline(&mut editing.words)
+            .frame(false)
+            .background_color(Color32::TRANSPARENT)
+            .font(egui::FontId::new(size.max(1.0), family))
+            .text_color(color)
+            .horizontal_align(halign)
+            .vertical_align(vertical)
+            .desired_width(field_rect.width());
+        let response = ui.put(field_rect, field);
+        if !editing.focused {
+            response.request_focus();
+            editing.focused = true;
+        } else if response.lost_focus() {
+            asked.end_edit = true;
+        }
+        if response.changed() {
+            asked.edit_text = Some(editing.words.clone());
+        }
+    }
+
     /// Ocultar, Bloquear, a new name and Alt+↑/↓ from Capas and the
     /// shortcuts (spec 048), each one undo step.
     fn layer_changes(&self, engine: &mut Gafira, asked: &Asked) {
@@ -2156,7 +2386,7 @@ impl Editor {
                                 Vec2::new(width.max(area.width()), height.max(area.height())),
                                 egui::Sense::click_and_drag(),
                             );
-                            let painter = ui.painter();
+                            let painter = &ui.painter().clone();
                             let pages = document.map(Document::pages).unwrap_or_default();
                             // A drag starts only once the pointer has moved a few
                             // px; what it grabbed is decided where it was pressed.
@@ -2261,7 +2491,12 @@ impl Editor {
                                                 }
                                             }
                                         }
-                                        if let Some(text) = &shape.text {
+                                        let edited = self
+                                            .editing
+                                            .as_ref()
+                                            .is_some_and(|e| e.node == shape.node);
+                                        if let Some(text) = shape.text.as_ref().filter(|_| !edited)
+                                        {
                                             let laid = lay_text(
                                                 &clip,
                                                 theme,
@@ -2304,6 +2539,29 @@ impl Editor {
                                         } else {
                                             clip.add(canvas::painted_turned(shape, turn, zoom));
                                         }
+                                        // The text inside a shape, over it
+                                        // (spec 055).
+                                        if let Some(inner) =
+                                            shape.inner.as_ref().filter(|_| !edited)
+                                        {
+                                            let laid = lay_inner(
+                                                &clip,
+                                                theme,
+                                                at,
+                                                zoom,
+                                                shape.alpha(),
+                                                inner,
+                                            );
+                                            if upright {
+                                                for (pos, galley, color) in laid {
+                                                    clip.galley(pos, galley, color);
+                                                }
+                                            } else {
+                                                let atlas = ctx.fonts(|f| f.font_image_size());
+                                                self.font_atlas = Some(atlas);
+                                                clip.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                            }
+                                        }
                                     }
                                     // A click picks the child of the entered group
                                     // that holds the drawn element; a double click
@@ -2321,6 +2579,19 @@ impl Editor {
                                     {
                                         picked = Some((page_doc.id, node));
                                         asked.scope = Some(scope.map(|group| (page_doc.id, group)));
+                                        // A double click on a text or a shape
+                                        // writes on it (spec 055).
+                                        if response.double_clicked()
+                                            && page_doc.node(node).is_some_and(|n| {
+                                                matches!(
+                                                    n.kind,
+                                                    gafira_doc::NodeKind::Text(_)
+                                                        | gafira_doc::NodeKind::Shape(_)
+                                                )
+                                            })
+                                        {
+                                            asked.begin_edit = Some((page_doc.id, node));
+                                        }
                                     }
                                     // Page guides, and the smart guides of the
                                     // magnet while it holds (FD-03, FD-06).
@@ -2537,6 +2808,9 @@ impl Editor {
                                 picked = Some((id, node));
                                 asked.scope = Some(scope.map(|group| (id, group)));
                             }
+                            // The field of a text being written on the
+                            // canvas, over its element (spec 055).
+                            self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
                             if let Some(icon) = grip_cursor {
                                 ui.ctx().set_cursor_icon(icon);
                             }
@@ -3160,6 +3434,7 @@ impl Editor {
             );
         }
         self.layer_changes(engine, asked);
+        self.text_editing(engine, asked, theme);
         // Every selected element goes in one RemoveNodes: one undo step.
         if asked.delete
             && let Some(page) = self.selected.page()
@@ -4171,6 +4446,63 @@ fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut A
     }
 }
 
+/// The alignment of the text inside a shape (S55-05): across and down,
+/// shown once the shape has text.
+fn shape_text_fields(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    shape: &Shape,
+    asked: &mut Asked,
+) {
+    let Some(text) = &shape.inner else {
+        return;
+    };
+    use gafira_doc::{TextAlign, VerticalAlign};
+    ui.label(texts.t(&gafira_doc::msg!("inspector.shape_text")));
+    ui.horizontal(|ui| {
+        for (icon, key, align) in [
+            (Icon::AlignLeft, "inspector.text_left", TextAlign::Left),
+            (
+                Icon::AlignCenter,
+                "inspector.text_center",
+                TextAlign::Center,
+            ),
+            (Icon::AlignRight, "inspector.text_right", TextAlign::Right),
+        ] {
+            let button = IconButton::new(icon, plain(texts, key))
+                .active(text.align == align)
+                .small()
+                .show(ui, theme);
+            if button.clicked() {
+                asked.shape_align = Some((Some(align), None));
+            }
+        }
+        ui.add_space(8.0);
+        for (icon, key, valign) in [
+            (Icon::AlignTop, "inspector.text_top", VerticalAlign::Top),
+            (
+                Icon::AlignMiddle,
+                "inspector.text_middle",
+                VerticalAlign::Middle,
+            ),
+            (
+                Icon::AlignBottom,
+                "inspector.text_bottom",
+                VerticalAlign::Bottom,
+            ),
+        ] {
+            let button = IconButton::new(icon, plain(texts, key))
+                .active(text.valign == valign)
+                .small()
+                .show(ui, theme);
+            if button.clicked() {
+                asked.shape_align = Some((None, Some(valign)));
+            }
+        }
+    });
+}
+
 /// The Inspector fields of a text element: its words, size and colour,
 /// applied to every span (one style per element for now, spec 027).
 fn text_fields(
@@ -4265,6 +4597,68 @@ fn lay_text(
         y += height;
     }
     laid
+}
+
+/// The text of a shape laid out in the upright box `at` (spec 055): in
+/// the box less its margin, each line aligned across, the whole block
+/// placed down by its vertical alignment.
+fn lay_inner(
+    painter: &egui::Painter,
+    theme: &Theme,
+    at: Rect,
+    zoom: f32,
+    opacity: f32,
+    text: &gafira_doc::ShapeText,
+) -> Vec<(Pos2, Arc<egui::Galley>, Color32)> {
+    let inner = canvas::text_box(at);
+    let mut laid = Vec::new();
+    let mut y = 0.0;
+    for paragraph in &text.content.paragraphs {
+        let Some(style) = paragraph.spans.first().map(|span| &span.style) else {
+            continue;
+        };
+        let words: String = paragraph
+            .spans
+            .iter()
+            .map(|span| span.text.as_str())
+            .collect();
+        let size = (style.size as f32 * zoom).max(1.0);
+        let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
+        let mut job = egui::text::LayoutJob::simple(
+            words,
+            egui::FontId::new(size, text_family(theme, &style.font)),
+            color,
+            inner.width().max(1.0),
+        );
+        job.halign = match text.align {
+            gafira_doc::TextAlign::Center => Align::Center,
+            gafira_doc::TextAlign::Right => Align::RIGHT,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => Align::LEFT,
+        };
+        let galley = painter.layout_job(job);
+        let x = match text.align {
+            gafira_doc::TextAlign::Center => inner.center().x,
+            gafira_doc::TextAlign::Right => inner.max.x,
+            gafira_doc::TextAlign::Left | gafira_doc::TextAlign::Justify => inner.min.x,
+        };
+        let height = galley.size().y.max(size);
+        laid.push((Pos2::new(x, y), galley, color));
+        y += height;
+    }
+    let top = canvas::text_top(inner, y, text.valign);
+    for (pos, _, _) in &mut laid {
+        pos.y += top;
+    }
+    laid
+}
+
+/// The egui family of a document font: the display face or the UI one.
+fn text_family(theme: &Theme, font: &str) -> egui::FontFamily {
+    if font == theme.tokens.typography.display {
+        egui::FontFamily::Name(crate::style::DISPLAY.into())
+    } else {
+        egui::FontFamily::Proportional
+    }
 }
 
 /// The text `laid` out in the upright box `at`, as one mesh mapped by
@@ -6175,6 +6569,70 @@ pub(crate) mod tests {
         assert_eq!(editor.selected.single(), Some((page, dropped.base.id)));
         assert_eq!(editor.active, Some(page));
         assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S55-04: writing on a shape on the canvas stores its words as the
+    // shape's text, the whole edit in one undo step; emptying it leaves
+    // the shape without text; a text element takes its words too.
+    #[test]
+    fn s55_04_editing_writes_one_undo_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        let inner = |engine: &mut Gafira| {
+            let document = engine.edit().document().expect("a document");
+            match &document.pages()[0].node(rect).expect("the shape").kind {
+                gafira_doc::NodeKind::Shape(shape) => shape.text.clone(),
+                _ => panic!("a shape"),
+            }
+        };
+        let depth = undo_depth(&mut engine);
+        let write = |engine: &mut Gafira, editor: &mut Editor, words: &[&str]| {
+            ask(
+                engine,
+                editor,
+                Asked {
+                    begin_edit: Some((page, rect)),
+                    ..Asked::default()
+                },
+            );
+            for words in words {
+                ask(
+                    engine,
+                    editor,
+                    Asked {
+                        edit_text: Some((*words).to_owned()),
+                        ..Asked::default()
+                    },
+                );
+            }
+            ask(
+                engine,
+                editor,
+                Asked {
+                    end_edit: true,
+                    ..Asked::default()
+                },
+            );
+        };
+        write(&mut engine, &mut editor, &["Ho", "Hola", "Hola mundo"]);
+        let text = inner(&mut engine).expect("a text");
+        assert_eq!(text.content.plain_text(), "Hola mundo");
+        assert_eq!(
+            (text.align, text.valign),
+            (
+                gafira_doc::TextAlign::Center,
+                gafira_doc::VerticalAlign::Middle
+            )
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        assert!(editor.editing.is_none());
+        write(&mut engine, &mut editor, &["Hola", ""]);
+        assert_eq!(inner(&mut engine), None, "emptied");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(inner(&mut engine), Some(text));
+        engine.edit().undo().expect("an undo");
+        assert_eq!(inner(&mut engine), None);
     }
 
     // S50-01: a press on an element activates its page, on a page's

@@ -341,6 +341,13 @@ lock = "Lock"
 unlock = "Unlock"
 
 [inspector]
+shape_text = "Text in the shape"
+text_left = "Align text left"
+text_center = "Centre text"
+text_right = "Align text right"
+text_top = "Text at the top"
+text_middle = "Text in the middle"
+text_bottom = "Text at the bottom"
 position = "Position"
 layers = "Layers"
 image = "Image"
