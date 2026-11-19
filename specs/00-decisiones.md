@@ -832,3 +832,11 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): al soltar un arrastre de movimiento, un elemento cuya caja no comparte área con su página (ni la toca por dentro) se elimina, para que no quede contenido oculto que ocupe espacio. Mover y eliminar son un solo paso de deshacer. Soltarlo sobre otra página lo pasa a esa página (D-92).
 - **Consecuencia**: sustituye el «los elementos totalmente fuera se listan en Capas con un icono de aviso» de FD-09 para lo que se suelta fuera; un documento que ya traiga elementos totalmente fuera los conserva hasta que se muevan. Se aplica en la spec 051.
 - Precisa 04 FD-09. Aplicado a 04 (FD-09).
+
+## D-94 «Piezas» pasa a llamarse «Formas»
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): la pestaña del riel y la biblioteca de elementos que el glosario llama «Piezas» se llama «Formas» («Shapes» en inglés).
+- **Consecuencia**: cambia el nombre normativo de D-04 en el glosario de 03 (§2.1 y §2.8). Las demás menciones a «Piezas» en 03 y 04 se leen como «Formas»; se actualizan cuando se edite cada sección. Se aplica en la spec 052.
+- Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
