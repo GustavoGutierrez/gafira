@@ -5437,40 +5437,9 @@ fn gradient_fields(
     let label = |key| plain(texts, key);
     ui.label(label("inspector.gradient_colors"));
     ui.horizontal_wrapped(|ui| {
-        for (index, stop) in gradient.stops.iter().enumerate() {
-            // Each colour keeps its own picker id, so adding or removing
-            // one does not move another's picker.
-            let response = ui
-                .push_id(("gradient_stop", index), |ui| {
-                    let pending = ui
-                        .ctx()
-                        .data(|d| d.get_temp::<usize>(gradient_pending_id()));
-                    if pending == Some(index) {
-                        egui::Popup::open_id(ui.ctx(), ui.auto_id_with("popup"));
-                        ui.ctx()
-                            .data_mut(|d| d.remove::<usize>(gradient_pending_id()));
-                    }
-                    let mut rgba = canvas::picker_rgba(Some(stop.color));
-                    let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
-                    (response, rgba)
-                })
-                .inner;
-            let (response, rgba) = response;
-            if response.changed() {
-                asked.gradient = Some(Some(crate::gradients::with_color(
-                    gradient,
-                    index,
-                    canvas::picked_color(Some(stop.color), rgba),
-                )));
-            }
-            if gradient.stops.len() > gafira_doc::Gradient::MIN_STOPS {
-                response.context_menu(|ui| {
-                    if ui.button(label("inspector.gradient_remove")).clicked() {
-                        asked.gradient =
-                            crate::gradients::with_stop_removed(gradient, index).map(Some);
-                        ui.close();
-                    }
-                });
+        for index in 0..gradient.stops.len() {
+            if let Some(changed) = gradient_stop_button(ui, texts, gradient, index) {
+                asked.gradient = Some(changed);
             }
         }
         if let Some(more) = crate::gradients::with_stop_added(gradient)
@@ -5513,6 +5482,59 @@ fn gradient_fields(
             }
         }
     });
+}
+
+/// The button of colour `index` of `gradient` (spec 063): a click opens
+/// its picker, and while more than two colours are left a right click
+/// offers «Quitar este color». What it changed this frame: the gradient
+/// with the colour picked, or without the colour (`None` never happens
+/// for a gradient of two or more).
+fn gradient_stop_button(
+    ui: &mut egui::Ui,
+    texts: &Texts,
+    gradient: &gafira_doc::Gradient,
+    index: usize,
+) -> Option<Option<gafira_doc::Gradient>> {
+    let stop = gradient.stops.get(index)?;
+    let mut changed = None;
+    // Each colour keeps its own picker id, so adding or removing one does
+    // not move another's picker.
+    ui.push_id(("gradient_stop", index), |ui| {
+        if ui
+            .ctx()
+            .data(|d| d.get_temp::<usize>(gradient_pending_id()))
+            == Some(index)
+        {
+            egui::Popup::open_id(ui.ctx(), ui.auto_id_with("popup"));
+            ui.ctx()
+                .data_mut(|d| d.remove::<usize>(gradient_pending_id()));
+        }
+        let mut rgba = canvas::picker_rgba(Some(stop.color));
+        let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
+        if response.changed() {
+            changed = Some(Some(crate::gradients::with_color(
+                gradient,
+                index,
+                canvas::picked_color(Some(stop.color), rgba),
+            )));
+        }
+        if gradient.stops.len() > gafira_doc::Gradient::MIN_STOPS {
+            // Its own id: egui's default for a menu is the picker's, and a
+            // left click on the button would close the picker it opens.
+            egui::Popup::context_menu(&response)
+                .id(response.id.with("remove_colour"))
+                .show(|ui| {
+                    if ui
+                        .button(plain(texts, "inspector.gradient_remove"))
+                        .clicked()
+                    {
+                        changed = Some(crate::gradients::with_stop_removed(gradient, index));
+                        ui.close();
+                    }
+                });
+        }
+    });
+    changed
 }
 
 /// The colour «+» added, whose picker opens when it is drawn (spec 063).
@@ -6288,6 +6310,51 @@ pub(crate) mod tests {
 
     fn pages(engine: &mut Gafira) -> Vec<Vec2> {
         page_sizes(&engine.edit().document().expect("a document"))
+    }
+
+    // S63-04: a click on a colour of a gradient of three opens its picker
+    // (the menu of its right click used the picker's id and closed it).
+    #[test]
+    fn s63_04_a_click_opens_the_picker_of_a_third_colour() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let stop = |offset| GradientStop {
+            offset,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(1.0, 0.0, 0.0, 1.0)),
+        };
+        let gradient = Gradient {
+            kind: GradientKind::Radial,
+            stops: vec![stop(0.0), stop(0.5), stop(1.0)],
+        };
+        let ctx = egui::Context::default();
+        theme().apply(&ctx);
+        let texts = Texts::new(gafira_ports::i18n::Locale::Es);
+        let at = std::cell::Cell::new(Pos2::ZERO);
+        let draw = |events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                events,
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = gradient_stop_button(ui, &texts, &gradient, 2);
+                    let last = ui.min_rect();
+                    at.set(last.min + Vec2::new(8.0, 8.0));
+                });
+            });
+        };
+        draw(Vec::new());
+        let pos = at.get();
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        draw(vec![egui::Event::PointerMoved(pos)]);
+        draw(vec![button(true)]);
+        draw(vec![button(false)]);
+        draw(Vec::new());
+        assert!(egui::Popup::is_any_open(&ctx), "the picker is open");
     }
 
     // S63-04: «+» asks for the picker of the colour it adds; the next frame
