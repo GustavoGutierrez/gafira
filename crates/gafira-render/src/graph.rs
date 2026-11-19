@@ -1091,7 +1091,8 @@ fn laid_text(
     if words.trim().is_empty() || !style.size.is_finite() || style.size <= 0.0 {
         return None;
     }
-    let stack = fonts.stack(&style.font);
+    let face = fonts.face(&style.font, style.bold, style.italic);
+    let stack = fonts.stack(&face);
     if stack.is_empty() {
         return None;
     }
@@ -1107,7 +1108,15 @@ fn laid_text(
         ..gafira_text::TextStyle::default()
     };
     let dpi = 72.0 * style.size / size_pt;
-    let layout = gafira_text::layout_box(&words, &stack, &layout_style, dpi, bounds).ok()?;
+    let layout = gafira_text::layout_box_face(
+        &words,
+        &stack,
+        &layout_style,
+        (style.bold, style.italic),
+        dpi,
+        bounds,
+    )
+    .ok()?;
     let outlines = gafira_text::outline_text(&layout, &stack).ok()?;
     let mut path = BezPath::new();
     for outline in outlines {
@@ -1124,7 +1133,7 @@ fn laid_text(
     };
     let canonical = format!(
         "{}\u{0}{:016x}\u{0}{align}\u{0}{words}",
-        style.font,
+        face,
         style.size.to_bits()
     );
     Some((path, style.color, canonical, f64::from(layout.height)))
@@ -1776,6 +1785,58 @@ mod tests {
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
         page.roots = vec![NodeId::new(1)];
         page
+    }
+
+    // S62-03: a bold text is drawn with the bold face of its family; a
+    // family without that face falls back to its regular one.
+    #[test]
+    fn s62_03_bold_uses_the_bold_face() {
+        let fonts = Arc::new(
+            FontBook::new()
+                .with(
+                    "Open Sans",
+                    include_bytes!("../../../assets/fonts/library/opensans/OpenSans-Regular.ttf")
+                        .as_slice(),
+                )
+                .with(
+                    "Open Sans Bold",
+                    include_bytes!("../../../assets/fonts/library/opensans/OpenSans-Bold.ttf")
+                        .as_slice(),
+                )
+                .with(
+                    "Anton",
+                    include_bytes!("../../../assets/fonts/library/anton/Anton-Regular.ttf")
+                        .as_slice(),
+                ),
+        );
+        let outline = |family: &str, bold: bool| {
+            let mut page = text_page("Hola");
+            let mut node = page.node(NodeId::new(1)).expect("the text").clone();
+            if let NodeKind::Text(text) = &mut node.kind {
+                for span in text
+                    .content
+                    .paragraphs
+                    .iter_mut()
+                    .flat_map(|p| p.spans.iter_mut())
+                {
+                    span.style.font = family.to_owned();
+                    span.style.bold = bold;
+                }
+            }
+            page.nodes.insert(NodeId::new(1), Arc::new(node));
+            let graph = build_text(&page, 1.0, Some(fonts.clone()));
+            fills(&graph)[0].0
+        };
+        assert_ne!(
+            outline("Open Sans", true),
+            outline("Open Sans", false),
+            "the bold face"
+        );
+        assert_eq!(
+            outline("Anton", true),
+            outline("Anton", false),
+            "no bold Anton: the regular"
+        );
     }
 
     /// The fonts of the tests: the Inter subset of the testkit.

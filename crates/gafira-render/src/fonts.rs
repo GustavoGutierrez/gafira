@@ -41,6 +41,28 @@ impl FontBook {
         self.faces.is_empty()
     }
 
+    /// True when the book holds a file under `family`.
+    #[must_use]
+    pub fn contains(&self, family: &str) -> bool {
+        self.faces.iter().any(|(name, _)| name == family)
+    }
+
+    /// The name of the face for `family` in `bold` and `italic` (spec 062):
+    /// the face asked for when the book holds it, else the nearest one of
+    /// the family, else the family name itself (the book then falls back).
+    #[must_use]
+    pub fn face(&self, family: &str, bold: bool, italic: bool) -> String {
+        gafira_doc::nearest_face(
+            |b, i| self.contains(&gafira_doc::face_key(family, b, i)),
+            bold,
+            italic,
+        )
+        .map_or_else(
+            || family.to_owned(),
+            |(b, i)| gafira_doc::face_key(family, b, i),
+        )
+    }
+
     /// The font stack for `family`: its file first, then the others in the
     /// order they were added. Empty when the book is.
     #[must_use]

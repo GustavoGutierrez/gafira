@@ -25,6 +25,37 @@ pub struct SpanStyle {
     pub italic: bool,
 }
 
+/// The name a face is registered under for the render and the canvas (spec 062):
+/// the family, then «Bold», «Italic» or «Bold Italic».
+#[must_use]
+pub fn face_key(family: &str, bold: bool, italic: bool) -> String {
+    match (bold, italic) {
+        (false, false) => family.to_owned(),
+        (true, false) => format!("{family} Bold"),
+        (false, true) => format!("{family} Italic"),
+        (true, true) => format!("{family} Bold Italic"),
+    }
+}
+
+/// The face to use for `family` with `bold` and `italic` when `has` tells
+/// which faces exist: the one asked for, else without italic, else without
+/// bold, else the regular one. `None` when the family has no face at all.
+#[must_use]
+pub fn nearest_face(
+    has: impl Fn(bool, bool) -> bool,
+    bold: bool,
+    italic: bool,
+) -> Option<(bool, bool)> {
+    [
+        (bold, italic),
+        (bold, false),
+        (false, italic),
+        (false, false),
+    ]
+    .into_iter()
+    .find(|(b, i)| has(*b, *i))
+}
+
 /// A run of text with one style.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Span {

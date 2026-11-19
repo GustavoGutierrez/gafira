@@ -55,7 +55,9 @@ pub use page::Page;
 pub use page_size::{Axis, PageSize, PageSizeError};
 pub use placement::{Flip, Placement};
 pub use project_id::{ProjectId, ProjectIdError};
-pub use text::{Paragraph, RichText, Span, SpanStyle, TextAlign, TextNode, TextSizing};
+pub use text::{
+    Paragraph, RichText, Span, SpanStyle, TextAlign, TextNode, TextSizing, face_key, nearest_face,
+};
 pub use timeline::{
     AssetEntry, AssetRef, AssetStorage, AssetTable, Clip, ClipSource, Marker, PixelSize, Sequence,
     Speed, TimelineError, Track, TrackKind,
