@@ -1,4 +1,4 @@
-//! The font library (spec 062, D-100): twelve OFL families, each in its
+//! The font library (spec 062, D-100): twenty-five free families, each in its
 //! regular face and, when the family has them, bold, italic and bold
 //! italic, compiled into the binary. Their licences and origins are in
 //! `assets/LICENSES.toml`.
@@ -14,7 +14,7 @@ pub struct LibraryFace {
     pub bytes: &'static [u8],
 }
 
-const FACES: [LibraryFace; 40] = [
+const FACES: [LibraryFace; 62] = [
     LibraryFace {
         family: "Open Sans",
         bold: false,
@@ -299,6 +299,180 @@ const FACES: [LibraryFace; 40] = [
         path: "assets/fonts/library/pacifico/Pacifico-Regular.ttf",
         bytes: include_bytes!("../../../assets/fonts/library/pacifico/Pacifico-Regular.ttf"),
     },
+    LibraryFace {
+        family: "Arimo",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/arimo/Arimo-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/arimo/Arimo-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Arimo",
+        bold: true,
+        italic: false,
+        path: "assets/fonts/library/arimo/Arimo-Bold.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/arimo/Arimo-Bold.ttf"),
+    },
+    LibraryFace {
+        family: "Arimo",
+        bold: false,
+        italic: true,
+        path: "assets/fonts/library/arimo/Arimo-Italic.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/arimo/Arimo-Italic.ttf"),
+    },
+    LibraryFace {
+        family: "Arimo",
+        bold: true,
+        italic: true,
+        path: "assets/fonts/library/arimo/Arimo-BoldItalic.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/arimo/Arimo-BoldItalic.ttf"),
+    },
+    LibraryFace {
+        family: "League Spartan",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/leaguespartan/LeagueSpartan-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/leaguespartan/LeagueSpartan-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "League Spartan",
+        bold: true,
+        italic: false,
+        path: "assets/fonts/library/leaguespartan/LeagueSpartan-Bold.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/leaguespartan/LeagueSpartan-Bold.ttf"),
+    },
+    LibraryFace {
+        family: "Archivo Black",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/archivoblack/ArchivoBlack-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/archivoblack/ArchivoBlack-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Questrial",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/questrial/Questrial-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/questrial/Questrial-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Bebas Neue",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/bebasneue/BebasNeue-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/bebasneue/BebasNeue-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Alice",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/alice/Alice-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/alice/Alice-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Bree Serif",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/breeserif/BreeSerif-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/breeserif/BreeSerif-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Shrikhand",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/shrikhand/Shrikhand-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/shrikhand/Shrikhand-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Chau Philomene One",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/chauphilomeneone/ChauPhilomeneOne-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/chauphilomeneone/ChauPhilomeneOne-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Chau Philomene One",
+        bold: false,
+        italic: true,
+        path: "assets/fonts/library/chauphilomeneone/ChauPhilomeneOne-Italic.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/chauphilomeneone/ChauPhilomeneOne-Italic.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Belleza",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/belleza/Belleza-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/belleza/Belleza-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "Cormorant Garamond",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/cormorantgaramond/CormorantGaramond-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/cormorantgaramond/CormorantGaramond-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Cormorant Garamond",
+        bold: true,
+        italic: false,
+        path: "assets/fonts/library/cormorantgaramond/CormorantGaramond-Bold.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/cormorantgaramond/CormorantGaramond-Bold.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Cormorant Garamond",
+        bold: false,
+        italic: true,
+        path: "assets/fonts/library/cormorantgaramond/CormorantGaramond-Italic.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/cormorantgaramond/CormorantGaramond-Italic.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Cormorant Garamond",
+        bold: true,
+        italic: true,
+        path: "assets/fonts/library/cormorantgaramond/CormorantGaramond-BoldItalic.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/cormorantgaramond/CormorantGaramond-BoldItalic.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "Chewy",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/chewy/Chewy-Regular.ttf",
+        bytes: include_bytes!("../../../assets/fonts/library/chewy/Chewy-Regular.ttf"),
+    },
+    LibraryFace {
+        family: "DM Serif Display",
+        bold: false,
+        italic: false,
+        path: "assets/fonts/library/dmserifdisplay/DMSerifDisplay-Regular.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/dmserifdisplay/DMSerifDisplay-Regular.ttf"
+        ),
+    },
+    LibraryFace {
+        family: "DM Serif Display",
+        bold: false,
+        italic: true,
+        path: "assets/fonts/library/dmserifdisplay/DMSerifDisplay-Italic.ttf",
+        bytes: include_bytes!(
+            "../../../assets/fonts/library/dmserifdisplay/DMSerifDisplay-Italic.ttf"
+        ),
+    },
 ];
 
 /// Every face of the library, family by family, regular first.
@@ -330,7 +504,7 @@ mod tests {
     #[test]
     fn s62_02_library_faces() {
         let families = library_families();
-        assert_eq!(families.len(), 12);
+        assert_eq!(families.len(), 25);
         assert_eq!(families[0], "Open Sans");
         for family in &families {
             assert!(
@@ -340,7 +514,7 @@ mod tests {
                 "{family}"
             );
         }
-        assert_eq!(library().len(), 40, "every face of the library");
+        assert_eq!(library().len(), 62, "every face of the library");
         assert_eq!(face_key("Lato", false, false), "Lato");
         assert_eq!(face_key("Lato", true, false), "Lato Bold");
         assert_eq!(face_key("Lato", false, true), "Lato Italic");
