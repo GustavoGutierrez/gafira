@@ -31,3 +31,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Font library (spec 062)
+
+Twelve families from [google/fonts](https://github.com/google/fonts), commit `cc5661d43cd4f9aad5567033a8e15ca28dc35c86`, each under the SIL Open Font License 1.1, whose text ships next to its files in `assets/fonts/library/<family>/OFL.txt`: Open Sans, Montserrat, Poppins, DM Sans, Roboto, Lato, Inter, Manrope, EB Garamond, Source Serif 4, Anton and Pacifico. The static files of the variable families are instances at weights 400 and 700 (fontTools); the others are unmodified. `assets/LICENSES.toml` records the origin, authorship and hash of every file.
+
