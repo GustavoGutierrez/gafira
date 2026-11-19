@@ -6871,6 +6871,32 @@ pub(crate) mod tests {
         assert_eq!(inner(&mut engine), None);
     }
 
+    // S56-02: «Duplicar» in the header copies the page with everything on
+    // it: same number of elements, same kinds, same places.
+    #[test]
+    fn s56_02_duplicate_copies_the_content() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        ask(&mut engine, &mut editor, Asked { begin_edit: Some((page, rect)), ..Asked::default() });
+        ask(&mut engine, &mut editor, Asked { edit_text: Some("Hola".to_owned()), ..Asked::default() });
+        ask(&mut engine, &mut editor, Asked { end_edit: true, ..Asked::default() });
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked { page_action: Some(PageAction::Duplicate(page)), ..Asked::default() },
+        );
+        let document = engine.edit().document().expect("a document");
+        let (source, copy) = (&document.pages()[0], &document.pages()[1]);
+        assert_eq!(copy.nodes.len(), source.nodes.len());
+        assert_eq!(copy.roots.len(), source.roots.len());
+        for (a, b) in source.roots.iter().zip(&copy.roots) {
+            let (a, b) = (source.node(*a).unwrap(), copy.node(*b).unwrap());
+            assert_eq!(a.base.placement, b.base.placement);
+            assert_eq!(a.kind, b.kind);
+        }
+    }
+
     // S56-03: each action of a page header is one undo step: add a page
     // after, duplicate, move, hide, lock, rename and delete.
     #[test]
