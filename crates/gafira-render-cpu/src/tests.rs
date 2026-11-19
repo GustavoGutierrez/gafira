@@ -1939,3 +1939,49 @@ fn arq_111_a_layered_plan_is_deterministic_and_the_pool_does_not_reach_the_pixel
         "the buffers the pool holds do not change the result"
     );
 }
+
+// S63-03: a gradient fills its path with the colour of each pixel's place
+// in the shape's box: red at the start of a left-to-right gradient, blue at
+// its end, and the box is taken through the op's transform.
+#[test]
+fn s63_03_a_gradient_fills_its_shape() {
+    use gafira_doc::{Gradient, GradientKind, GradientStop};
+    let gradient = Gradient {
+        kind: GradientKind::Linear { angle_deg: 0.0 },
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: srgb(1.0, 0.0, 0.0, 1.0),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: srgb(0.0, 0.0, 1.0, 1.0),
+            },
+        ],
+    };
+    let scene = plan(vec![task(
+        1,
+        IRect::new(0, 0, 64, 64),
+        vec![RenderOp::FillGradient {
+            path: Arc::new(rect_path(0.0, 0.0, 25.0, 10.0)),
+            gradient: Arc::new(gradient),
+            size: (25.0, 10.0),
+            // The 25 × 10 box drawn twice as large, 50 × 20.
+            transform: Affine::scale(2.0),
+        }],
+    )]);
+    let surface = run(
+        target(64, 64, (0, 0), (64, 64), PixelFormat::RgbaF32),
+        &scene,
+    );
+    let [r, _, b, a] = channels(&surface, 1, 10);
+    assert!(
+        r > 0.9 && b < 0.1 && a > 0.99,
+        "red at the start: {r} {b} {a}"
+    );
+    let [r, _, b, _] = channels(&surface, 48, 10);
+    assert!(b > 0.9 && r < 0.1, "blue at the end: {r} {b}");
+    let [r, _, b, _] = channels(&surface, 25, 10);
+    assert!(r > 0.1 && b > 0.1, "a mix in the middle: {r} {b}");
+    assert!(is_clear(&surface, 55, 10), "outside the box");
+}

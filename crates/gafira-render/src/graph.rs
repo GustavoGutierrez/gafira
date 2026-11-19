@@ -459,13 +459,7 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                         if let Some(frame) = stack.last_mut() {
                             frame.inputs.push(node_id);
                         }
-                        for (path, color) in drawn.layers() {
-                            sub.ops.push(RenderOp::FillPath {
-                                path: Arc::new(path),
-                                color,
-                                transform,
-                            });
-                        }
+                        sub.ops.extend(drawn.ops(transform));
                         sub.ops.push(RenderOp::PopLayer {
                             blend: record.base.blend,
                             opacity: record.base.opacity,
@@ -808,6 +802,9 @@ struct DrawnShape {
     /// The text inside the shape, over the fill and the outline, with the
     /// canonical string of its key (spec 055).
     text: Option<(BezPath, Color, String)>,
+    /// The gradient that fills the outline instead of the colour, laid in
+    /// the shape's box (spec 063).
+    gradient: Option<(gafira_doc::Gradient, (f64, f64))>,
     /// The radius the rectangle is drawn with; 0 for an ellipse.
     radius: f64,
 }
@@ -846,7 +843,18 @@ impl DrawnShape {
             .and_then(|stroke| {
                 stroke_path(&outline, stroke.width).map(|path| (path, stroke.color, stroke.width))
             });
-        let fill = shape.fill.map(|color| (outline, color));
+        // A gradient fills the outline in the colour's place (spec 063).
+        let gradient = shape
+            .gradient
+            .clone()
+            .map(|gradient| (gradient, (rect.width(), rect.height())));
+        let fill = match &gradient {
+            Some(_) => Some((
+                outline,
+                Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 0.0)),
+            )),
+            None => shape.fill.map(|color| (outline, color)),
+        };
         let text = match &shape.text {
             Some(text) => shape_text_path(text, rect, fonts)
                 .map(|(path, color, canonical)| {
@@ -860,6 +868,7 @@ impl DrawnShape {
                 fill,
                 stroke,
                 text,
+                gradient,
                 radius,
             }),
         )
@@ -873,6 +882,10 @@ impl DrawnShape {
             KeyParam::Geometry(geometry.clone()),
             KeyParam::Fill(self.fill.as_ref().map(|(_, color)| *color)),
         ];
+        if let Some((gradient, _)) = &self.gradient {
+            // Every number of the gradient, in a canonical string.
+            params.push(KeyParam::Text(format!("gradient {gradient:?}")));
+        }
         if let Some((_, color, width)) = &self.stroke {
             params.push(KeyParam::Stroke(*color, *width));
         }
@@ -886,12 +899,38 @@ impl DrawnShape {
         params
     }
 
-    /// The paths to fill, back to front: the fill, then the outline over it.
-    fn layers(self) -> impl Iterator<Item = (BezPath, Color)> {
-        self.fill
+    /// The operations of the shape in the frame of `transform`, back to
+    /// front: the fill (a gradient when it has one), the outline, the text.
+    fn ops(self, transform: Affine) -> Vec<RenderOp> {
+        let mut out = Vec::new();
+        if let Some((path, color)) = self.fill {
+            out.push(match self.gradient {
+                Some((gradient, size)) => RenderOp::FillGradient {
+                    path: Arc::new(path),
+                    gradient: Arc::new(gradient),
+                    size,
+                    transform,
+                },
+                None => RenderOp::FillPath {
+                    path: Arc::new(path),
+                    color,
+                    transform,
+                },
+            });
+        }
+        for (path, color) in self
+            .stroke
+            .map(|(path, color, _)| (path, color))
             .into_iter()
-            .chain(self.stroke.map(|(path, color, _)| (path, color)))
             .chain(self.text.map(|(path, color, _)| (path, color)))
+        {
+            out.push(RenderOp::FillPath {
+                path: Arc::new(path),
+                color,
+                transform,
+            });
+        }
+        out
     }
 }
 
@@ -1297,6 +1336,7 @@ mod tests {
             RenderOp::PushLayer => "push",
             RenderOp::PopLayer { .. } => "pop",
             RenderOp::FillPath { .. } => "fill",
+            RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
             RenderOp::ApplyMask { .. } => "mask",
             RenderOp::ApplyEffect { .. } => "effect",
@@ -1787,6 +1827,46 @@ mod tests {
             .insert(NodeId::new(1), Arc::new(Node::new(base, kind)));
         page.roots = vec![NodeId::new(1)];
         page
+    }
+
+    // S63-03: a shape with a gradient emits its fill as a gradient in its
+    // box, and another gradient keys it apart.
+    #[test]
+    fn s63_03_a_gradient_shape_emits_a_gradient_fill() {
+        use gafira_doc::{Gradient, GradientKind, GradientStop};
+        let page_with = |angle: f64| {
+            let mut page = new_page();
+            let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+            shape.gradient = Some(Gradient {
+                kind: GradientKind::Linear { angle_deg: angle },
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: RED,
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
+                    },
+                ],
+            });
+            let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 80.0, 40.0));
+            page.nodes.insert(
+                NodeId::new(1),
+                Arc::new(Node::new(base, NodeKind::Shape(shape))),
+            );
+            page.roots = vec![NodeId::new(1)];
+            page
+        };
+        let graph = build(&page_with(0.0), WalkOrder::PreOrder);
+        assert_eq!(op_kinds(&graph), ["push", "gradient", "pop"]);
+        let size = graph.ops().iter().find_map(|op| match op {
+            RenderOp::FillGradient { size, .. } => Some(*size),
+            _ => None,
+        });
+        assert_eq!(size, Some((80.0, 40.0)));
+        let key = |angle| build(&page_with(angle), WalkOrder::PreOrder).key_of(NodeId::new(1));
+        assert_ne!(key(0.0), key(90.0));
     }
 
     // S62-03: a bold text is drawn with the bold face of its family; a

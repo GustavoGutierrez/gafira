@@ -249,6 +249,8 @@ fn arq_06_render_op_is_closed() {
             RenderOp::PushLayer => "push_layer",
             RenderOp::PopLayer { .. } => "pop_layer",
             RenderOp::FillPath { .. } => "fill_path",
+            // Spec 063: added on purpose, with every backend handling it.
+            RenderOp::FillGradient { .. } => "fill_gradient",
             RenderOp::DrawImage { .. } => "draw_image",
             RenderOp::ApplyMask { .. } => "apply_mask",
             RenderOp::ApplyEffect { .. } => "apply_effect",

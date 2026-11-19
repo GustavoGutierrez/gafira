@@ -369,6 +369,17 @@ fn copy_op(op: &RenderOp) -> RenderOp {
             color: *color,
             transform: *transform,
         },
+        RenderOp::FillGradient {
+            path,
+            gradient,
+            size,
+            transform,
+        } => RenderOp::FillGradient {
+            path: Arc::clone(path),
+            gradient: Arc::clone(gradient),
+            size: *size,
+            transform: *transform,
+        },
         RenderOp::DrawImage { image, transform } => RenderOp::DrawImage {
             image: Arc::clone(image),
             transform: *transform,
@@ -576,6 +587,7 @@ mod tests {
             RenderOp::PushLayer => "push",
             RenderOp::PopLayer { .. } => "pop",
             RenderOp::FillPath { .. } => "fill",
+            RenderOp::FillGradient { .. } => "gradient",
             RenderOp::DrawImage { .. } => "image",
             RenderOp::ApplyMask { .. } => "mask",
             RenderOp::ApplyEffect { .. } => "effect",

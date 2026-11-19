@@ -72,6 +72,14 @@ pub enum RenderOp {
         color: Color,
         transform: Affine,
     },
+    /// A path filled with a gradient laid in a box of `size` (w, h), the
+    /// local box `transform` maps to the page (spec 063).
+    FillGradient {
+        path: Arc<BezPath>,
+        gradient: Arc<gafira_doc::Gradient>,
+        size: (f64, f64),
+        transform: Affine,
+    },
     DrawImage {
         image: Arc<ImageBuf>,
         transform: Affine,

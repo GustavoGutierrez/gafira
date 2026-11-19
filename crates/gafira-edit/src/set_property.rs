@@ -41,6 +41,9 @@ pub enum Property {
     /// A whole line: its ends, caps, connections, colour and width (spec
     /// 058).
     Line(gafira_doc::LineNode),
+    /// The gradient fill of a shape; `None` fills it with its colour again
+    /// (spec 063).
+    Gradient(Option<gafira_doc::Gradient>),
     PageName(String),
     PageSize(PageSize),
     PageLocked(bool),
@@ -72,6 +75,7 @@ impl Property {
             Self::CornerRadius(_) => "set_property.corner_radius",
             Self::ShapeText(_) => "set_property.shape_text",
             Self::Line(_) => "set_property.line",
+            Self::Gradient(_) => "set_property.gradient",
             Self::TextContent(_) => "set_property.text_content",
             Self::PageName(_) => "set_property.page_name",
             Self::PageSize(_) => "set_property.page_size",
@@ -110,6 +114,7 @@ impl Property {
             Self::CornerRadius(r) => ("corner_radius", r.is_finite() && *r >= 0.0),
             Self::TextContent(text) => ("text_content", spans_valid(text)),
             Self::ShapeText(Some(text)) => ("shape_text", spans_valid(&text.content)),
+            Self::Gradient(Some(gradient)) => ("gradient", gradient.problem().is_none()),
             Self::Line(line) => (
                 "line",
                 line.color.is_finite()
@@ -149,6 +154,7 @@ impl Property {
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
             (Self::ShapeText(_), NodeKind::Shape(s)) => Self::ShapeText(s.text.clone()),
             (Self::Line(_), NodeKind::Line(l)) => Self::Line(l.clone()),
+            (Self::Gradient(_), NodeKind::Shape(s)) => Self::Gradient(s.gradient.clone()),
             _ => return None,
         })
     }
@@ -170,6 +176,7 @@ impl Property {
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
             (Self::ShapeText(v), NodeKind::Shape(s)) => s.text.clone_from(v),
             (Self::Line(v), NodeKind::Line(l)) => l.clone_from(v),
+            (Self::Gradient(v), NodeKind::Shape(s)) => s.gradient.clone_from(v),
             _ => {}
         }
     }
