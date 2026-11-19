@@ -43,7 +43,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Editor de video | Pantalla | Editor con timeline |
 | Exportar | Diálogo y pantalla | Exportación |
 | Cambiar tamaño | Panel | Redimensionar lienzo |
-| Identidad visual | Pantalla/pestaña | Guía de estilo de marca |
+| Marca (antes Identidad visual, D-97) | Pantalla/pestaña | Guía de estilo de marca |
 | Ajustes | Pantalla | Preferencias |
 | Recuperación tras fallo | Diálogo al arrancar | Restaurar sesión |
 | Paleta de comandos | Superposición (Ctrl/Cmd+K) | Búsqueda de acciones |
@@ -79,7 +79,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Plantillas | Diseño y Video | Búsqueda, plantillas empaquetadas y propias | Templates |
 | Formas (antes Piezas, D-94) | Diseño y Video | Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements / shapes library |
 | Texto | Diseño y Video | Estilos de texto, combinaciones, Efectos de texto | Text |
-| Identidad | Diseño y Video | Colores, Tipografías, Logos y Estilos de la Identidad visual activa | Brand panel |
+| Marca (antes Identidad, D-97) | Diseño y Video | Colores, Tipografías, Logos y Estilos de la Marca activa | Brand panel |
 | Biblioteca | Diseño y Video | Archivos propios: imágenes, video, audio, diseños, Colecciones | Uploads / media library |
 | Dibujo | Diseño | Lápiz, Marcador, Resaltador, Borrador, color y grosor | Draw |
 | Proyectos | Diseño y Video | Proyectos recientes y Colecciones de proyectos | Projects |
@@ -191,7 +191,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Editor de video | Video editor |
 | Exportar | Export |
 | Cambiar tamaño | Resize |
-| Identidad visual | Visual identity |
+| Marca (D-97) | Brand |
 | Ajustes | Settings |
 | Recuperación tras fallo | Crash recovery |
 | Paleta de comandos | Command palette |
@@ -227,7 +227,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Plantillas | Templates | Search, bundled and own templates |
 | Formas (D-94) | Shapes | Shapes, Lines, Frames, Icons, QR codes, Tables, Charts, Illustrations |
 | Texto | Text | Text styles, pairings, Text effects |
-| Identidad | Identity | Colors, Fonts, Logos and Styles of the active Visual identity |
+| Marca (D-97) | Brand | Colors, Fonts, Logos and Styles of the active Brand |
 | Biblioteca | Library | Own files: images, video, audio, designs, Collections |
 | Dibujo | Drawing | Pencil, Marker, Highlighter, Eraser, color and thickness |
 | Proyectos | Projects | Recent projects and project Collections |

@@ -854,3 +854,11 @@ Fecha: 19 de noviembre de 2026.
 
 - **Decisión** (titular, con una captura de referencia): toda forma puede llevar un texto dentro o quedar vacía; el texto se alinea a la izquierda, al centro o a la derecha y arriba, al medio o abajo (por defecto, centrado y al medio). Todo texto, el de un elemento de texto y el de una forma, se escribe directamente en el lienzo con un doble clic, sin ir al panel. La negrita y la cursiva vienen en una spec posterior.
 - **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.text`, escrito solo cuando existe): una forma sin texto conserva sus bytes; una versión anterior de Gafira no abre un archivo con texto en una forma. Se aplica en la spec 055.
+
+## D-97 «Identidad» pasa a llamarse «Marca»
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): la pestaña del riel y el concepto que el glosario llama «Identidad» e «Identidad visual» se llaman «Marca» («Brand» en inglés), un nombre más reconocible.
+- **Consecuencia**: cambia los nombres normativos de D-04 en el glosario de 03 (§2.1 y §2.8). Las claves internas y los ids de requisitos no cambian; las demás menciones se leen como «Marca» y se actualizan al editar cada sección. Se aplica en la spec 057.
+- Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
