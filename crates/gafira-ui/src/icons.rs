@@ -41,8 +41,6 @@ pub(crate) enum Icon {
     Identity,
     Library,
     Drawing,
-    Rect,
-    Ellipse,
     BringForward,
     SendBackward,
     Delete,
@@ -77,7 +75,7 @@ pub(crate) enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 40] = [
+    pub(crate) const ALL: [Self; 38] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -89,8 +87,6 @@ impl Icon {
         Self::Identity,
         Self::Library,
         Self::Drawing,
-        Self::Rect,
-        Self::Ellipse,
         Self::BringForward,
         Self::SendBackward,
         Self::Delete,
@@ -134,8 +130,6 @@ impl Icon {
             Self::Identity => "palette",
             Self::Library => "images",
             Self::Drawing => "pencil-simple",
-            Self::Rect => "square",
-            Self::Ellipse => "circle",
             Self::BringForward => "arrow-up",
             Self::SendBackward => "arrow-down",
             Self::Delete => "trash",
@@ -452,9 +446,22 @@ mod tests {
 
     #[test]
     fn s37_03_a_square_outline_is_hollow_and_its_stroke_is_solid() {
-        // Phosphor «square»: a 16-unit stroke around 32..224.
+        // A 16-unit stroke around 32..224, as Phosphor draws one: the
+        // outer square one way round, the inner one the other.
+        let outer: &[[i16; 2]] = &[
+            [2_400, 2_400],
+            [23_200, 2_400],
+            [23_200, 23_200],
+            [2_400, 23_200],
+        ];
+        let inner: &[[i16; 2]] = &[
+            [4_000, 4_000],
+            [4_000, 21_600],
+            [21_600, 21_600],
+            [21_600, 4_000],
+        ];
         let side = 64;
-        let alpha = coverage(Icon::Rect.geometry(Weight::Regular), side);
+        let alpha = coverage(&[outer, inner], side);
         let at = |x: usize, y: usize| alpha[y * side + x];
         assert!(at(32, 32) < 0.01, "the centre is empty: {}", at(32, 32));
         assert!(at(9, 32) > 0.99, "the stroke is covered: {}", at(9, 32));

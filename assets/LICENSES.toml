@@ -411,18 +411,6 @@ upstream = "https://github.com/phosphor-icons/core"
 version = "2.1.1"
 source_file = "assets/regular/caret-down.svg"
 
-[[asset]]
-path = "assets/icons/phosphor/regular/circle.svg"
-hash = "0bd5fd2ec210cb56c8b05cf2cba50593d1d7662274b0c6f9c721a0e4161e1fde"
-license = "MIT"
-"autoría" = "Copyright (c) 2023 Phosphor Icons"
-origin = "npm @phosphor-icons/core 2.1.1, assets/regular/circle.svg (https://github.com/phosphor-icons/core)"
-"exige atribución" = "true"
-modificado = "false"
-license_file = "assets/icons/phosphor/LICENSE"
-upstream = "https://github.com/phosphor-icons/core"
-version = "2.1.1"
-source_file = "assets/regular/circle.svg"
 
 [[asset]]
 path = "assets/icons/phosphor/regular/clock-counter-clockwise.svg"
@@ -606,18 +594,6 @@ upstream = "https://github.com/phosphor-icons/core"
 version = "2.1.1"
 source_file = "assets/regular/shapes.svg"
 
-[[asset]]
-path = "assets/icons/phosphor/regular/square.svg"
-hash = "209dd6581d8154cca6f290c0d533fa71e9785c4d5c26b5d8c90c520edd3bbf94"
-license = "MIT"
-"autoría" = "Copyright (c) 2023 Phosphor Icons"
-origin = "npm @phosphor-icons/core 2.1.1, assets/regular/square.svg (https://github.com/phosphor-icons/core)"
-"exige atribución" = "true"
-modificado = "false"
-license_file = "assets/icons/phosphor/LICENSE"
-upstream = "https://github.com/phosphor-icons/core"
-version = "2.1.1"
-source_file = "assets/regular/square.svg"
 
 [[asset]]
 path = "assets/icons/phosphor/regular/text-t.svg"

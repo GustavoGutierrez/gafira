@@ -254,7 +254,10 @@ library = "Biblioteca"
 drawing = "Dibujo"
 
 [pieces]
-shapes = "Formas básicas"
+basic = "Formas básicas"
+square = "Cuadrado"
+rounded_square = "Cuadrado redondeado"
+circle = "Círculo"
 rect = "Rectángulo"
 ellipse = "Elipse"
 

@@ -387,7 +387,7 @@ struct Asked {
     add_page: bool,
     /// A new piece of this geometry on the selected element's page, or the
     /// first page.
-    insert: Option<ShapeGeometry>,
+    insert: Option<canvas::Piece>,
     /// A new selection (an empty one clears it, Esc).
     select: Option<Selection>,
     /// Ctrl+A or Edición → Seleccionar todo (spec 040).
@@ -474,7 +474,7 @@ struct Asked {
     transfer: Option<(PageId, PageId, (f64, f64))>,
     /// A shape dragged from the panel and dropped on a page, at this point
     /// in px of page (spec 052).
-    drop_piece: Option<(ShapeGeometry, PageId, (f64, f64))>,
+    drop_piece: Option<(canvas::Piece, PageId, (f64, f64))>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -1427,46 +1427,43 @@ impl Editor {
                     return;
                 }
                 if TABS[self.tab].0 == "tab.pieces" {
-                    ui.label(
-                        RichText::new(texts.t(&gafira_doc::msg!("pieces.shapes")))
-                            .font(theme.font("ui-label"))
-                            .color(theme.c("text")),
-                    );
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        for (key, icon, geometry) in [
-                            (
-                                gafira_doc::msg!("pieces.rect"),
-                                Icon::Rect,
-                                ShapeGeometry::Rect,
-                            ),
-                            (
-                                gafira_doc::msg!("pieces.ellipse"),
-                                Icon::Ellipse,
-                                ShapeGeometry::Ellipse,
-                            ),
-                        ] {
-                            // A click adds it to the middle of the page; a
-                            // drag carries it to where it is dropped (S52).
-                            let button = widgets::secondary_icon(ui, theme, icon, texts.t(&key))
-                                .interact(egui::Sense::click_and_drag());
-                            if button.clicked() {
-                                asked.insert = Some(geometry);
-                            }
-                            let at = ui.input(|i| i.pointer.latest_pos());
-                            if button.dragged()
-                                && let Some(at) = at
-                            {
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                                self.piece_ghost(ui.ctx(), theme, geometry, at);
-                            }
-                            if button.drag_stopped()
-                                && let Some(at) = at
-                                && let Some((page, point)) =
-                                    canvas::drop_point(&self.page_rects, self.zoom, at)
-                            {
-                                asked.drop_piece = Some((geometry, page, point));
-                            }
+                    // The shapes by section, each a tile that draws it
+                    // (spec 053): a click adds it to the middle of the
+                    // page, a drag carries it to where it is dropped
+                    // (spec 052).
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for (title, pieces) in canvas::PIECE_SECTIONS {
+                            ui.label(
+                                RichText::new(plain(texts, title))
+                                    .font(theme.font("ui-label"))
+                                    .color(theme.c("text")),
+                            );
+                            ui.add_space(8.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::splat(4.0);
+                                for piece in *pieces {
+                                    let tile =
+                                        piece_tile(ui, theme, *piece, plain(texts, piece.key()));
+                                    if tile.clicked() {
+                                        asked.insert = Some(*piece);
+                                    }
+                                    let at = ui.input(|i| i.pointer.latest_pos());
+                                    if tile.dragged()
+                                        && let Some(at) = at
+                                    {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                        self.piece_ghost(ui.ctx(), theme, *piece, at);
+                                    }
+                                    if tile.drag_stopped()
+                                        && let Some(at) = at
+                                        && let Some((page, point)) =
+                                            canvas::drop_point(&self.page_rects, self.zoom, at)
+                                    {
+                                        asked.drop_piece = Some((*piece, page, point));
+                                    }
+                                }
+                            });
+                            ui.add_space(16.0);
                         }
                     });
                     return;
@@ -1865,7 +1862,7 @@ impl Editor {
     /// The shape being dragged from the panel, half transparent under the
     /// pointer, over everything, with the size it will take on the page
     /// under it (or the first page) at the zoom on display (S52-04).
-    fn piece_ghost(&self, ctx: &egui::Context, theme: &Theme, geometry: ShapeGeometry, at: Pos2) {
+    fn piece_ghost(&self, ctx: &egui::Context, theme: &Theme, piece: canvas::Piece, at: Pos2) {
         let Some((_, page)) = self
             .page_rects
             .iter()
@@ -1880,14 +1877,12 @@ impl Editor {
             egui::Order::Tooltip,
             egui::Id::new("editor.piece_ghost"),
         ));
-        match geometry {
-            ShapeGeometry::Rect => {
-                painter.rect_filled(Rect::from_center_size(at, Vec2::splat(side)), 0.0, color);
-            }
-            ShapeGeometry::Ellipse => {
-                painter.circle_filled(at, side / 2.0, color);
-            }
-        }
+        paint_piece(
+            &painter,
+            piece,
+            Rect::from_center_size(at, Vec2::splat(side)),
+            color,
+        );
     }
 
     /// Move `nodes` from one page to the other after a drag (spec 051), as
@@ -2711,13 +2706,13 @@ impl Editor {
             let scope = self.scope_on(page.id);
             self.selected = Selection::of(page.id, group::items(page, scope));
         }
-        if let Some(geometry) = asked.insert
+        if let Some(piece) = asked.insert
             && let Some(document) = document
             && let Some(page) = self.current_page(document)
             && let Ok(size) = page.size.to_px(document.dpi())
         {
             let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let spec = canvas::new_piece(px, geometry, canvas::document_color(theme.c("accent")));
+            let spec = canvas::new_shape(px, piece, canvas::document_color(theme.c("accent")));
             let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
             let next = NodeId::new(document.next_id());
             match engine.edit().execute(Box::new(command)) {
@@ -2727,14 +2722,14 @@ impl Editor {
         }
         // A shape dropped from the panel lands centred where it was
         // dropped, selected, its page active (S52-03).
-        if let Some((geometry, page, point)) = asked.drop_piece
+        if let Some((piece, page, point)) = asked.drop_piece
             && let Some(document) = document
             && let Some(on) = document.page(page)
             && let Ok(size) = on.size.to_px(document.dpi())
         {
             let px = Vec2::new(size.width() as f32, size.height() as f32);
             let fill = canvas::document_color(theme.c("accent"));
-            let spec = canvas::piece_at(px, geometry, fill, point);
+            let spec = canvas::piece_at(px, piece, fill, point);
             let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
             let next = NodeId::new(document.next_id());
             match engine.edit().execute(Box::new(command)) {
@@ -3603,6 +3598,40 @@ fn current_page_id(
         .or_else(|| pages.first().copied())
 }
 
+/// `piece` filling `rect` in `color`: what a tile of the Formas panel
+/// and the drag preview draw (spec 053).
+fn paint_piece(painter: &egui::Painter, piece: canvas::Piece, rect: Rect, color: Color32) {
+    match piece.geometry() {
+        ShapeGeometry::Rect => {
+            let radius = piece.corner_radius(f64::from(rect.width())) as f32;
+            painter.rect_filled(rect, radius, color);
+        }
+        ShapeGeometry::Ellipse => {
+            painter.circle_filled(rect.center(), rect.width().min(rect.height()) / 2.0, color);
+        }
+    }
+}
+
+/// A 56 px tile of the Formas panel that draws `piece` (S53-03), named
+/// `name` for assistive technology and in its tooltip; it can be clicked
+/// and dragged.
+fn piece_tile(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    piece: canvas::Piece,
+    name: String,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::click_and_drag());
+    if response.hovered() || response.dragged() {
+        ui.painter()
+            .rect_filled(rect, theme.radius_md(), theme.c("secondary.bg"));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+    paint_piece(ui.painter(), piece, rect.shrink(6.0), theme.c("text"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
+    response.on_hover_text(name)
+}
+
 /// What a move dropped wholly outside its page is deleted (S51-07,
 /// D-93), in one undo step with the move: the drag is undone and one
 /// command sets where it left everything and removes what is gone.
@@ -4404,7 +4433,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                insert: Some(ShapeGeometry::Ellipse),
+                insert: Some(canvas::Piece::Circle),
                 ..Asked::default()
             },
             &theme,
@@ -4526,7 +4555,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
             &theme,
@@ -4588,7 +4617,7 @@ pub(crate) mod tests {
             &mut engine,
             &snapshot,
             &Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
             &theme,
@@ -4644,7 +4673,7 @@ pub(crate) mod tests {
             &mut editor,
             &mut engine,
             Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
         );
@@ -4700,7 +4729,7 @@ pub(crate) mod tests {
                 &mut engine,
                 &snapshot,
                 &Asked {
-                    insert: Some(geometry),
+                    insert: Some(canvas::Piece::from(geometry)),
                     ..Asked::default()
                 },
                 &theme,
@@ -4926,7 +4955,7 @@ pub(crate) mod tests {
                 engine,
                 &snapshot,
                 &Asked {
-                    insert: Some(geometry),
+                    insert: Some(canvas::Piece::from(geometry)),
                     ..Asked::default()
                 },
                 &theme,
@@ -5040,7 +5069,7 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
         );
@@ -5512,7 +5541,7 @@ pub(crate) mod tests {
             engine,
             editor,
             Asked {
-                insert: Some(ShapeGeometry::Rect),
+                insert: Some(canvas::Piece::Square),
                 ..Asked::default()
             },
         );
@@ -5997,7 +6026,7 @@ pub(crate) mod tests {
             &mut engine,
             &mut editor,
             Asked {
-                drop_piece: Some((ShapeGeometry::Ellipse, page, (100.0, 120.0))),
+                drop_piece: Some((canvas::Piece::Circle, page, (100.0, 120.0))),
                 ..Asked::default()
             },
         );

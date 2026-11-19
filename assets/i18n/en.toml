@@ -254,7 +254,10 @@ library = "Library"
 drawing = "Drawing"
 
 [pieces]
-shapes = "Basic shapes"
+basic = "Basic shapes"
+square = "Square"
+rounded_square = "Rounded square"
+circle = "Circle"
 rect = "Rectangle"
 ellipse = "Ellipse"
 

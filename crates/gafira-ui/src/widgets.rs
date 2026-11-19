@@ -68,23 +68,6 @@ pub(crate) fn primary_icon(ui: &mut Ui, theme: &Theme, icon: Icon, text: String)
     ui.add(button)
 }
 
-/// A secondary action with an icon before its label (Piezas, 03 §13: an
-/// icon whose meaning may be ambiguous carries a label).
-pub(crate) fn secondary_icon(ui: &mut Ui, theme: &Theme, icon: Icon, text: String) -> Response {
-    let color = theme.c("secondary.fg");
-    let image = icons::image(ui.ctx(), icon, Weight::Regular, icon_size(theme), color);
-    let button = Button::image_and_text(
-        image,
-        RichText::new(text)
-            .font(theme.font("ui-label"))
-            .color(color),
-    )
-    .fill(theme.c("secondary.bg"))
-    .corner_radius(theme.radius_md())
-    .min_size(Vec2::new(0.0, px(theme.tokens.size.control.lg)));
-    ui.add(button)
-}
-
 /// A flat button with an icon and a label on the graphite top bar
 /// («Versiones», 03 §7.3).
 pub(crate) fn on_topbar_icon(ui: &mut Ui, theme: &Theme, icon: Icon, text: String) -> Response {

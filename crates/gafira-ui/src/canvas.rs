@@ -418,6 +418,68 @@ fn resized_turned(origin: &Placement, handle: Handle, dx: f64, dy: f64) -> Place
     placement
 }
 
+/// A shape of the Formas panel (spec 053): what a tile draws and what a
+/// click or a drop adds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Piece {
+    Square,
+    RoundedSquare,
+    Circle,
+}
+
+impl Piece {
+    /// Its geometry in the document.
+    pub(crate) fn geometry(self) -> ShapeGeometry {
+        match self {
+            Self::Square | Self::RoundedSquare => ShapeGeometry::Rect,
+            Self::Circle => ShapeGeometry::Ellipse,
+        }
+    }
+
+    /// Its corner radius for a side of `side` px (S53-01).
+    pub(crate) fn corner_radius(self, side: f64) -> f64 {
+        match self {
+            Self::RoundedSquare => side / 8.0,
+            Self::Square | Self::Circle => 0.0,
+        }
+    }
+
+    /// The catalog key of its name.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Square => "pieces.square",
+            Self::RoundedSquare => "pieces.rounded_square",
+            Self::Circle => "pieces.circle",
+        }
+    }
+}
+
+impl From<ShapeGeometry> for Piece {
+    fn from(geometry: ShapeGeometry) -> Self {
+        match geometry {
+            ShapeGeometry::Rect => Self::Square,
+            ShapeGeometry::Ellipse => Self::Circle,
+        }
+    }
+}
+
+/// The sections of the Formas panel, in order, each with the catalog key
+/// of its title and its shapes (S53-02). Only the shapes the document can
+/// draw are listed; a section without shapes is left out.
+pub(crate) const PIECE_SECTIONS: &[(&str, &[Piece])] = &[(
+    "pieces.basic",
+    &[Piece::Square, Piece::RoundedSquare, Piece::Circle],
+)];
+
+/// `piece` as `new_piece` makes it, with its corner radius.
+pub(crate) fn new_shape(page_px: Vec2, piece: Piece, fill: Color) -> NodeSpec {
+    let mut spec = new_piece(page_px, piece.geometry(), fill);
+    if let NodeKind::Shape(shape) = &mut spec.kind {
+        shape.corner_radius = piece.corner_radius(spec.placement.w);
+    }
+    spec
+}
+
 /// A new piece in the middle of a page of `page_px`, a third of its
 /// shorter side across.
 pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> NodeSpec {
@@ -441,13 +503,8 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
 
 /// The piece `new_piece` makes on a page of `page_px`, centred on `at`
 /// in px of page instead of the page's middle (S52-03).
-pub(crate) fn piece_at(
-    page_px: Vec2,
-    geometry: ShapeGeometry,
-    fill: Color,
-    at: (f64, f64),
-) -> NodeSpec {
-    let mut spec = new_piece(page_px, geometry, fill);
+pub(crate) fn piece_at(page_px: Vec2, piece: Piece, fill: Color, at: (f64, f64)) -> NodeSpec {
+    let mut spec = new_shape(page_px, piece, fill);
     spec.placement.x = at.0 - spec.placement.w / 2.0;
     spec.placement.y = at.1 - spec.placement.h / 2.0;
     spec
@@ -1172,6 +1229,45 @@ mod s41_tests {
     use super::*;
     use crate::rotation;
 
+    // S53-01: square, rounded square and circle: their geometry, their
+    // corner radius (an eighth of the side for the rounded one) and the
+    // size of a new piece.
+    #[test]
+    fn s53_01_basic_pieces() {
+        let fill = Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let page = Vec2::new(900.0, 600.0);
+        let cases = [
+            (Piece::Square, ShapeGeometry::Rect, 0.0),
+            (Piece::RoundedSquare, ShapeGeometry::Rect, 25.0),
+            (Piece::Circle, ShapeGeometry::Ellipse, 0.0),
+        ];
+        for (piece, geometry, radius) in cases {
+            let spec = new_shape(page, piece, fill);
+            assert_eq!((spec.placement.w, spec.placement.h), (200.0, 200.0));
+            let NodeKind::Shape(shape) = spec.kind else {
+                panic!("a shape");
+            };
+            assert_eq!(shape.geometry, geometry, "{piece:?}");
+            assert_eq!(shape.corner_radius, radius, "{piece:?}");
+        }
+        assert_eq!(Piece::from(ShapeGeometry::Rect), Piece::Square);
+        assert_eq!(Piece::from(ShapeGeometry::Ellipse), Piece::Circle);
+    }
+
+    // S53-02: the panel lists «Formas básicas» with its three shapes in
+    // order, and no section is empty.
+    #[test]
+    fn s53_02_sections() {
+        assert_eq!(
+            PIECE_SECTIONS[0],
+            (
+                "pieces.basic",
+                &[Piece::Square, Piece::RoundedSquare, Piece::Circle][..]
+            )
+        );
+        assert!(PIECE_SECTIONS.iter().all(|(_, pieces)| !pieces.is_empty()));
+    }
+
     // S52-02: a shape dropped on a page lands on the point under the
     // pointer, in px of page; in the gap between pages, nowhere.
     #[test]
@@ -1205,7 +1301,7 @@ mod s41_tests {
     fn s52_03_piece_at() {
         let fill = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
         let page = Vec2::new(900.0, 600.0);
-        let spec = piece_at(page, ShapeGeometry::Ellipse, fill, (100.0, 50.0));
+        let spec = piece_at(page, Piece::Circle, fill, (100.0, 50.0));
         assert_eq!(spec.placement, Placement::new(0.0, -50.0, 200.0, 200.0));
         assert!(matches!(
             spec.kind,
