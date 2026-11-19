@@ -5400,11 +5400,8 @@ fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked
     }
     ui.horizontal(|ui| {
         ui.label(texts.t(&gafira_doc::msg!("inspector.fill")));
-        let mut color = shape
-            .fill
-            .map_or(Color32::TRANSPARENT, canvas::screen_color);
-        if ui.color_edit_button_srgba(&mut color).changed() {
-            asked.fill = Some(Some(canvas::document_color(color)));
+        if let Some(color) = color_button(ui, shape.fill) {
+            asked.fill = Some(Some(color));
         }
         if shape.fill.is_some()
             && ui
@@ -5414,6 +5411,18 @@ fn fill_field(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut Asked
             asked.fill = Some(None);
         }
     });
+}
+
+/// A colour picker with its transparency (spec 063) showing `color`; the
+/// colour picked this frame, if any.
+fn color_button(
+    ui: &mut egui::Ui,
+    color: Option<gafira_color::Color>,
+) -> Option<gafira_color::Color> {
+    let mut rgba = canvas::picker_rgba(color);
+    ui.color_edit_button_srgba_unmultiplied(&mut rgba)
+        .changed()
+        .then(|| canvas::picked_color(color, rgba))
 }
 
 /// «Degradado» (spec 063): a picker per colour (a right click removes one
@@ -5429,13 +5438,13 @@ fn gradient_fields(
     ui.label(label("inspector.gradient_colors"));
     ui.horizontal_wrapped(|ui| {
         for (index, stop) in gradient.stops.iter().enumerate() {
-            let mut color = canvas::screen_color(stop.color);
-            let response = ui.color_edit_button_srgba(&mut color);
+            let mut rgba = canvas::picker_rgba(Some(stop.color));
+            let response = ui.color_edit_button_srgba_unmultiplied(&mut rgba);
             if response.changed() {
                 asked.gradient = Some(Some(crate::gradients::with_color(
                     gradient,
                     index,
-                    canvas::document_color(color),
+                    canvas::picked_color(Some(stop.color), rgba),
                 )));
             }
             if gradient.stops.len() > gafira_doc::Gradient::MIN_STOPS {
@@ -5780,17 +5789,11 @@ fn outline_fields(ui: &mut egui::Ui, texts: &Texts, shape: &Shape, asked: &mut A
     };
     ui.horizontal(|ui| {
         ui.label(texts.t(&gafira_doc::msg!("inspector.outline")));
-        let mut color = shape.stroke.map_or(Color32::TRANSPARENT, |stroke| {
-            canvas::screen_color(stroke.color)
-        });
-        if ui.color_edit_button_srgba(&mut color).changed() {
+        if let Some(color) = color_button(ui, shape.stroke.map(|stroke| stroke.color)) {
             let width = shape
                 .stroke
                 .map_or(canvas::NEW_OUTLINE_WIDTH, |stroke| stroke.width);
-            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(
-                canvas::document_color(color),
-                width,
-            )));
+            asked.stroke = Some(Some(gafira_doc::ShapeStroke::new(color, width)));
         }
         if shape.stroke.is_some()
             && ui
@@ -5896,7 +5899,7 @@ fn text_fields(ui: &mut egui::Ui, texts: &Texts, text: &gafira_doc::TextNode, as
     // keeps their size and colour.
     let words = text.content.plain_text();
     let mut size = style.size;
-    let mut color = canvas::screen_color(style.color);
+    let mut color = style.color;
     ui.horizontal(|ui| {
         ui.label(texts.t(&gafira_doc::msg!("inspector.font_size")));
         let size_changed = ui
@@ -5907,11 +5910,15 @@ fn text_fields(ui: &mut egui::Ui, texts: &Texts, text: &gafira_doc::TextNode, as
             )
             .changed();
         ui.label(texts.t(&gafira_doc::msg!("inspector.text_color")));
-        let color_changed = ui.color_edit_button_srgba(&mut color).changed();
+        let picked = color_button(ui, Some(color));
+        let color_changed = picked.is_some();
+        if let Some(picked) = picked {
+            color = picked;
+        }
         if size_changed || color_changed {
             let restyled = gafira_doc::SpanStyle {
                 size,
-                color: canvas::document_color(color),
+                color,
                 ..style.clone()
             };
             asked.text = Some(gafira_doc::RichText::plain(&words, &restyled));

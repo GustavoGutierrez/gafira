@@ -1126,6 +1126,35 @@ pub(crate) fn document_color(color: Color32) -> Color {
     ))
 }
 
+/// The colour a picker shows for `color`: unmultiplied sRGB bytes; no
+/// colour shows as transparent.
+pub(crate) fn picker_rgba(color: Option<Color>) -> [u8; 4] {
+    let Some(Color::Srgb(Rgba { r, g, b, a })) = color.map(|c| c.convert(ColorSpaceId::Srgb))
+    else {
+        return [0, 0, 0, 0];
+    };
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    [byte(r), byte(g), byte(b), byte(a)]
+}
+
+/// The colour picked as `rgba` (unmultiplied sRGB bytes) over `before`
+/// (spec 063): its transparency is kept, so a colour can fade out; picked
+/// over no colour, a transparent pick is made opaque, or it would not show.
+pub(crate) fn picked_color(before: Option<Color>, rgba: [u8; 4]) -> Color {
+    let channel = |v: u8| f32::from(v) / 255.0;
+    let alpha = if before.is_none() && rgba[3] == 0 {
+        1.0
+    } else {
+        channel(rgba[3])
+    };
+    Color::Srgb(Rgba::new(
+        channel(rgba[0]),
+        channel(rgba[1]),
+        channel(rgba[2]),
+        alpha,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1756,6 +1785,24 @@ mod s41_tests {
         let mut flat = shapes[0].clone();
         flat.placement.h = 0.0;
         assert!(path_image(&flat, 1.0).is_none());
+    }
+
+    // S63-05: the picker keeps the transparency picked, so a gradient can
+    // run to transparent; over no colour, a transparent pick is opaque.
+    #[test]
+    fn s63_05_the_picker_keeps_the_alpha() {
+        let half = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 0.5));
+        assert_eq!(picker_rgba(Some(half)), [255, 0, 0, 128]);
+        assert_eq!(picker_rgba(None), [0, 0, 0, 0]);
+        let red = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
+        let clear = picked_color(Some(red), [255, 0, 0, 0]);
+        assert_eq!(clear, Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 0.0)));
+        let faded = picked_color(Some(red), [0, 0, 255, 51]);
+        assert_eq!(faded, Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 0.2)));
+        assert_eq!(
+            picked_color(None, [0, 0, 255, 0]),
+            Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0))
+        );
     }
 
     // S63-03: a shape with a gradient is drawn from a texture filled with

@@ -26,6 +26,7 @@ No alcance: degradado en contornos, en textos o en el fondo de la página; mover
 | S63-01 | Modelo (D-101). | Una forma con degradado se guarda y se carga igual; una sin él escribe el mismo JSON que antes; menos de 2 o más de 16 paradas, posiciones fuera de orden o de 0–1, o un valor no finito dan error. |
 | S63-02 | Color en un punto. | Lineal a 0°: rojo a la izquierda, azul a la derecha, la mezcla en el medio; a 90°, de arriba a abajo; a 180°, al revés que a 0°; circular: el primer color en el centro, el último en las esquinas. |
 | S63-03 | Render. | Una forma con degradado exporta los colores de sus extremos donde corresponden. |
+| S63-05 | Transparencia (pedido del titular). | El selector de color conserva la transparencia elegida, así que un degradado puede ir de un color a transparente; elegido sobre «sin color», un color transparente queda opaco. Vale para relleno, colores del degradado, contorno y color del texto. |
 | S63-04 | Inspector. | Elegir un estilo o un color pone el degradado en un paso de deshacer; «Color sólido» lo quita. |
 
 ## TDD
