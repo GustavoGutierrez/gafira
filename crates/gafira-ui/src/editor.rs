@@ -5,7 +5,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use egui::{
-    Align, Color32, Key, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, RichText, Stroke, Vec2,
+    Align, Align2, Color32, Key, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, RichText, Stroke,
+    Vec2,
 };
 use gafira_doc::msg::MessageKey;
 use gafira_doc::{Document, GuideAxis, GuideSet, NodeId, Page, PageId, Placement, ShapeGeometry};
@@ -301,6 +302,10 @@ pub(crate) struct Editor {
     editing: Option<Editing>,
     /// What the drag of a line end shows (spec 058).
     line_view: Option<LineView>,
+    /// A text whose box takes the height of its words once drawn (a paste,
+    /// spec 061), and the height measured when a text is drawn.
+    fit_pending: Option<(PageId, NodeId)>,
+    text_measure: Option<(PageId, NodeId, f64)>,
 }
 
 /// What the drag of a line end shows (spec 058): the shapes near it, whose
@@ -405,6 +410,8 @@ impl Default for Editor {
             path_textures: std::cell::RefCell::default(),
             editing: None,
             line_view: None,
+            fit_pending: None,
+            text_measure: None,
         }
     }
 }
@@ -526,6 +533,13 @@ struct Asked {
     )>,
     /// An action of a page header (spec 056).
     page_action: Option<PageAction>,
+    /// Text pasted from outside Gafira: a new text box (spec 061).
+    paste_text: Option<String>,
+    /// A text of the Texto panel dropped on a page at this point in px of
+    /// page (spec 061).
+    drop_text: Option<(canvas::TextPreset, String, PageId, (f64, f64))>,
+    /// The height of the words written on the canvas, in px of page.
+    edit_height: Option<f64>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -858,6 +872,11 @@ impl Editor {
                             if self.clip.as_ref().is_some_and(|clip| clip.text == *text) =>
                         {
                             asked.paste = true;
+                        }
+                        // Text from anywhere else becomes a text box (spec
+                        // 061).
+                        egui::Event::Paste(text) if !text.trim().is_empty() => {
+                            asked.paste_text = Some(text.clone());
                         }
                         _ => {}
                     }
@@ -1484,10 +1503,38 @@ impl Editor {
                         } else {
                             egui::FontId::proportional(size as f32 * 0.5)
                         };
-                        let button = egui::Button::new(RichText::new(texts.t(&key)).font(font))
-                            .min_size(Vec2::new(ui.available_width(), 48.0));
-                        if ui.add(button).clicked() {
+                        let button =
+                            egui::Button::new(RichText::new(texts.t(&key)).font(font.clone()))
+                                .min_size(Vec2::new(ui.available_width(), 48.0));
+                        // A click adds it to the middle of the page; a drag
+                        // carries it to where it is dropped (spec 061).
+                        let button = ui.add(button).interact(egui::Sense::click_and_drag());
+                        if button.clicked() {
                             asked.insert_text = Some((preset, texts.t(&words)));
+                        }
+                        let at = ui.input(|i| i.pointer.latest_pos());
+                        if button.dragged()
+                            && let Some(at) = at
+                        {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                            let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                egui::Order::Tooltip,
+                                egui::Id::new("editor.text_ghost"),
+                            ));
+                            painter.text(
+                                at,
+                                Align2::CENTER_CENTER,
+                                texts.t(&key),
+                                font.clone(),
+                                theme.c("text").gamma_multiply(0.5),
+                            );
+                        }
+                        if button.drag_stopped()
+                            && let Some(at) = at
+                            && let Some((page, point)) =
+                                canvas::drop_point(&self.page_rects, self.zoom, at)
+                        {
+                            asked.drop_text = Some((preset, texts.t(&words), page, point));
                         }
                         ui.add_space(8.0);
                     }
@@ -1933,6 +1980,40 @@ impl Editor {
             asked.scope = Some(row.parent.map(|group| (page, group)));
         }
         Some(name)
+    }
+
+    /// A text of `preset` with `words` on `page`, centred on `at` (px of
+    /// page) or in the middle, selected, one undo step (specs 027, 061).
+    fn add_text(
+        &mut self,
+        engine: &mut Gafira,
+        document: &Document,
+        theme: &Theme,
+        (preset, words): (canvas::TextPreset, &str),
+        (page, at): (PageId, Option<(f64, f64)>),
+    ) -> Option<(PageId, NodeId)> {
+        let on = document.page(page)?;
+        let size = on.size.to_px(document.dpi()).ok()?;
+        let style = text_style(theme, preset);
+        let px = Vec2::new(size.width() as f32, size.height() as f32);
+        let spec = match at {
+            Some(at) => canvas::text_at(px, words, &style, at),
+            None => canvas::new_text(px, words, &style),
+        };
+        let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+        let next = NodeId::new(document.next_id());
+        match engine.edit().execute(Box::new(command)) {
+            Ok(_) => {
+                self.selected = Selection::one(page, next);
+                self.active = Some(page);
+                self.scope = None;
+                Some((page, next))
+            }
+            Err(error) => {
+                eprintln!("insert text: {error}");
+                None
+            }
+        }
     }
 
     /// The texture `key` names, made by `make` the first time; `None` when
@@ -2475,9 +2556,33 @@ impl Editor {
             let property = match &node.kind {
                 gafira_doc::NodeKind::Text(text) => {
                     let style = text.content.first_style().cloned().unwrap_or(default);
-                    Some(Property::TextContent(gafira_doc::RichText::plain(
-                        words, &style,
-                    )))
+                    // The words and the height of the box in one command,
+                    // so the whole edit stays one undo step (spec 061).
+                    let fitted = asked
+                        .edit_height
+                        .and_then(|h| canvas::text_fit(text.sizing, &node.base.placement, h))
+                        .unwrap_or(node.base.placement);
+                    let commands: Vec<Box<dyn Command>> = vec![
+                        Box::new(SetProperty::new(
+                            editing.page,
+                            vec![editing.node],
+                            Property::TextContent(gafira_doc::RichText::plain(words, &style)),
+                            editing.gesture,
+                        )),
+                        Box::new(SetProperty::new(
+                            editing.page,
+                            vec![editing.node],
+                            Property::Placement(fitted),
+                            editing.gesture,
+                        )),
+                    ];
+                    if let Err(error) = engine.edit().execute(Box::new(Transaction::new(
+                        MessageKey("edit.write"),
+                        commands,
+                    ))) {
+                        eprintln!("write: {error}");
+                    }
+                    None
                 }
                 gafira_doc::NodeKind::Shape(shape) => {
                     // An empty shape keeps no text (S55-04).
@@ -2614,7 +2719,16 @@ impl Editor {
             .horizontal_align(halign)
             .vertical_align(vertical)
             .desired_width(field_rect.width());
-        let response = ui.put(field_rect, field);
+        let mut height = None;
+        let response = ui.put(field_rect, |ui: &mut egui::Ui| {
+            let output = field.show(ui);
+            height = Some(output.galley.size().y);
+            output.response
+        });
+        // The height of the words, for a text box that grows with them.
+        if let (Some(height), gafira_doc::NodeKind::Text(_)) = (height, &node.kind) {
+            asked.edit_height = Some(f64::from(height / zoom));
+        }
         if !editing.focused {
             response.request_focus();
             editing.focused = true;
@@ -2875,6 +2989,21 @@ impl Editor {
                                     if let Some(text) = shape.text.as_ref().filter(|_| !edited) {
                                         let laid =
                                             lay_text(&clip, theme, at, zoom, shape.opacity, text);
+                                        // The height of the words, for a box that
+                                        // grows with them (spec 061): a paste, or
+                                        // a box being resized.
+                                        let resized = self.drag.as_ref().is_some_and(|d| {
+                                            matches!(d.hold, Some(Hold::Resize(_)))
+                                                && d.origins.first().map(|o| o.0)
+                                                    == Some(shape.node)
+                                        });
+                                        if (resized
+                                            || self.fit_pending == Some((page_doc.id, shape.node)))
+                                            && let Some(height) = laid_height(&laid, at, zoom)
+                                        {
+                                            self.text_measure =
+                                                Some((page_doc.id, shape.node, height));
+                                        }
                                         if upright {
                                             for (pos, galley, color) in laid {
                                                 clip.galley(pos, galley, color);
@@ -3621,26 +3750,65 @@ impl Editor {
         if let Some((preset, words)) = &asked.insert_text
             && let Some(document) = document
             && let Some(page) = self.current_page(document)
-            && let Ok(size) = page.size.to_px(document.dpi())
         {
-            let (font_size, display) = preset.size_and_display();
-            let tokens = &theme.tokens;
-            let style = gafira_doc::SpanStyle {
-                font: if display {
-                    tokens.typography.display.clone()
-                } else {
-                    tokens.typography.ui.clone()
-                },
-                size: font_size,
-                color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
-            };
-            let px = Vec2::new(size.width() as f32, size.height() as f32);
-            let spec = canvas::new_text(px, words, &style);
-            let command = InsertNodes::new(page.id, None, page.roots.len(), vec![spec]);
-            let next = NodeId::new(document.next_id());
-            match engine.edit().execute(Box::new(command)) {
-                Ok(_) => self.selected = Selection::one(page.id, next),
-                Err(error) => eprintln!("insert text: {error}"),
+            let page = page.id;
+            self.add_text(engine, document, theme, (*preset, words), (page, None));
+        }
+        // Text pasted from outside: a body text box on the current page,
+        // fitted to its words once drawn (spec 061).
+        if let Some(words) = &asked.paste_text
+            && let Some(document) = document
+            && let Some(page) = self.current_page(document).map(|p| p.id)
+            && let Some(added) = self.add_text(
+                engine,
+                document,
+                theme,
+                (canvas::TextPreset::Body, words),
+                (page, None),
+            )
+        {
+            self.fit_pending = Some(added);
+        }
+        if let Some((preset, words, page, point)) = &asked.drop_text
+            && let Some(document) = document
+        {
+            self.add_text(
+                engine,
+                document,
+                theme,
+                (*preset, words),
+                (*page, Some(*point)),
+            );
+        }
+        // A box that grows with its words takes their height: in the
+        // resize being dragged, or alone after a paste (spec 061).
+        if let Some((page, node, laid)) = self.text_measure.take()
+            && let Some(document) = engine.edit().document()
+            && let Some(found) = document.page(page).and_then(|p| p.node(node))
+            && let gafira_doc::NodeKind::Text(text) = &found.kind
+        {
+            let dragged = self
+                .drag
+                .as_ref()
+                .filter(|d| d.origins.first().map(|o| o.0) == Some(node))
+                .map(|d| d.gesture);
+            if let Some(fitted) = canvas::text_fit(text.sizing, &found.base.placement, laid) {
+                let gesture = match dragged {
+                    Some(gesture) => gesture,
+                    None => engine.edit().begin_gesture().ok(),
+                };
+                let command =
+                    SetProperty::new(page, vec![node], Property::Placement(fitted), gesture);
+                log(
+                    "fit text",
+                    engine.edit().execute(Box::new(command)).map(drop),
+                );
+                if dragged.is_none() && gesture.is_some() {
+                    log("end gesture", engine.edit().end_gesture());
+                }
+            }
+            if dragged.is_none() {
+                self.fit_pending = None;
             }
         }
         if let (Some(text), Some((page, node))) = (&asked.text, self.selected.single()) {
@@ -4573,6 +4741,22 @@ fn new_page(document: &Document, at: usize, size: gafira_doc::PageSize) -> Box<d
     }
 }
 
+/// The style of a new text of `preset`: its size, the display or the UI
+/// face, in the ink of the brand (spec 027).
+fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyle {
+    let (size, display) = preset.size_and_display();
+    let tokens = &theme.tokens;
+    gafira_doc::SpanStyle {
+        font: if display {
+            tokens.typography.display.clone()
+        } else {
+            tokens.typography.ui.clone()
+        },
+        size,
+        color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
+    }
+}
+
 /// The number «n de N» shows (S49-05): the place of `current` among
 /// `pages`, from 1; 1 when it is not one of them, 0 with no page.
 fn page_number(pages: &[PageId], current: Option<PageId>) -> usize {
@@ -5158,6 +5342,13 @@ fn lay_inner(
         pos.y += top;
     }
     laid
+}
+
+/// The height of `laid` text in px of page: from the top of its box `at`
+/// to the bottom of its last line, at `zoom`.
+fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32) -> Option<f64> {
+    let (pos, galley, _) = laid.last()?;
+    Some(f64::from((pos.y + galley.size().y - at.min.y) / zoom))
 }
 
 /// The egui family of a document font: the display face or the UI one.
@@ -7408,6 +7599,64 @@ pub(crate) mod tests {
         );
     }
 
+    // S61-01: text from outside Gafira pasted on the canvas becomes a body
+    // text box with those words on the current page, selected; the next
+    // frame fits its height to them.
+    #[test]
+    fn s61_01_foreign_text_pastes_a_text_box() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let mut session = None;
+        let before = the_shapes(&mut engine).len();
+        frame_events(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            vec![egui::Event::Paste("Hola desde otra app".to_owned())],
+            Modifiers::COMMAND,
+            &mut session,
+        );
+        assert_eq!(the_shapes(&mut engine).len(), before + 1);
+        let (on, node) = editor.selected.single().expect("the text");
+        assert_eq!(on, page);
+        let document = engine.edit().document().expect("a document");
+        let gafira_doc::NodeKind::Text(text) =
+            &document.pages()[0].node(node).expect("a node").kind
+        else {
+            panic!("a text");
+        };
+        assert_eq!(text.content.plain_text(), "Hola desde otra app");
+    }
+
+    // S61-03: a text dropped from the Texto panel lands centred where it
+    // was dropped, selected, in one undo step.
+    #[test]
+    fn s61_03_a_dropped_text_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                drop_text: Some((
+                    canvas::TextPreset::Title,
+                    "Título".to_owned(),
+                    page,
+                    (300.0, 200.0),
+                )),
+                ..Asked::default()
+            },
+        );
+        let (_, node) = editor.selected.single().expect("the text");
+        let p = placements(&mut engine, &[node])[0];
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 200.0));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
     // S50-01: a press on an element activates its page, on a page's
     // background that page, outside every page none.
     #[test]
@@ -7761,15 +8010,6 @@ pub(crate) mod tests {
         );
         let depth = undo_depth(&mut engine);
         let paste = |text: &str| vec![egui::Event::Paste(text.to_owned())];
-        frame_events(
-            &ctx,
-            &mut editor,
-            &mut engine,
-            paste("otra cosa"),
-            Modifiers::COMMAND,
-            &mut session,
-        );
-        assert_eq!(the_shapes(&mut engine).len(), 3, "other text is not pasted");
         frame_events(
             &ctx,
             &mut editor,

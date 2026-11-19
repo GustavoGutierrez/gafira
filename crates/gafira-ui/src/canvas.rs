@@ -666,6 +666,35 @@ pub(crate) fn new_text(page_px: Vec2, text: &str, style: &SpanStyle) -> NodeSpec
     NodeSpec::new(NodeKind::Text(TextNode::plain(text, style)), placement)
 }
 
+/// The box a text of `sizing` placed at `placement` takes when its text,
+/// laid out at its width, is `laid` px of page high (S61-02): its height
+/// becomes that of the text when it grows down with it. `None` when nothing
+/// changes, by half a px or less.
+pub(crate) fn text_fit(
+    sizing: gafira_doc::TextSizing,
+    placement: &Placement,
+    laid: f64,
+) -> Option<Placement> {
+    if sizing != gafira_doc::TextSizing::AutoHeight
+        || !laid.is_finite()
+        || (placement.h - laid).abs() <= 0.5
+    {
+        return None;
+    }
+    let mut fitted = *placement;
+    fitted.h = laid.max(1.0);
+    Some(fitted)
+}
+
+/// A new text element of `text` in `style` centred on `at` of a page of
+/// `page_px`, as `new_text` makes it in the middle (S61-03).
+pub(crate) fn text_at(page_px: Vec2, text: &str, style: &SpanStyle, at: (f64, f64)) -> NodeSpec {
+    let mut spec = new_text(page_px, text, style);
+    spec.placement.x = at.0 - spec.placement.w / 2.0;
+    spec.placement.y = at.1 - spec.placement.h / 2.0;
+    spec
+}
+
 /// A new image element of `pixels` (width, height) centred on a page of
 /// `page_px`, scaled to fit 60 % of the page and never enlarged.
 pub(crate) fn new_image(
@@ -1615,6 +1644,38 @@ mod s41_tests {
         let mut flat = shapes[0].clone();
         flat.placement.h = 0.0;
         assert!(path_image(&flat, 1.0).is_none());
+    }
+
+    // S61-02: a box that grows down with its text takes the text's height;
+    // a fixed box does not; half a px or less changes nothing.
+    #[test]
+    fn s61_02_text_fit() {
+        use gafira_doc::TextSizing;
+        let at = Placement::new(10.0, 20.0, 300.0, 40.0);
+        let grown = text_fit(TextSizing::AutoHeight, &at, 96.0).expect("it grows");
+        assert_eq!(grown, Placement::new(10.0, 20.0, 300.0, 96.0));
+        assert_eq!(
+            text_fit(TextSizing::AutoHeight, &at, 20.0).map(|p| p.h),
+            Some(20.0),
+            "and shrinks"
+        );
+        assert_eq!(text_fit(TextSizing::AutoHeight, &at, 40.4), None);
+        assert_eq!(text_fit(TextSizing::Fixed, &at, 96.0), None);
+        assert_eq!(text_fit(TextSizing::AutoHeight, &at, f64::NAN), None);
+    }
+
+    // S61-03: a dropped text is centred on the point where it was dropped.
+    #[test]
+    fn s61_03_text_at() {
+        let style = SpanStyle {
+            font: "Inter".to_owned(),
+            size: 20.0,
+            color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        };
+        let spec = text_at(Vec2::new(1000.0, 800.0), "Hola", &style, (300.0, 100.0));
+        let p = spec.placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 100.0));
+        assert_eq!((p.w, p.h), (600.0, 28.0), "the size of a new text");
     }
 
     // S52-02: a shape dropped on a page lands on the point under the
