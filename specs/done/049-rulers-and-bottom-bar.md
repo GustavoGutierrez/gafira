@@ -1,6 +1,6 @@
 # 049 — Reglas fuera del lienzo y Barra inferior
 
-> **Estado:** in-progress — 2026-11-19 — pedida por el titular con una captura de referencia.
+> **Estado:** done — 2026-11-19 — S49-01..S49-05 cubiertos por `gafira-ui` (`ruler::tests` s49, 2; `editor::tests` s49, 1) y revisados por el titular en la app; 3180 tests.
 
 ## Objetivo
 
@@ -43,9 +43,26 @@ Casos que deben fallar primero:
 2. `s49_04_selection_band`: la banda de varias cajas es la unión de sus extensiones en cada eje; sin cajas es `None`.
 3. `s49_05_page_number`: la página de la selección da su índice + 1. Sin selección, 1. Sin páginas, 0.
 
-## Evidencia esperada
+## Evidencia
 
-Tests en verde, gates de `AGENTS.md`, captura o prueba manual del titular.
+TDD: `minor_ticks`, `band` y `page_number` se escribieron vacíos (sin marcas, `None` y 0). Los 3 tests fallaron por sus aserciones y pasaron con la implementación.
+
+Implementación (`gafira-ui`):
+
+- `ruler::{minor_ticks, band}`: 10, 5 o 2 divisiones por paso, al menos 5 px de pantalla entre marcas. En la práctica siempre son 10, porque el paso mide 64–160 px en pantalla.
+- El lienzo va en un `UiBuilder` con el área sin la franja de las reglas. Las reglas se dibujan en la franja exterior.
+- `draw_ruler`: marcas mayores de lado a lado con el número al lado (10 px), menores a un cuarto y la del medio a la mitad, banda `selection.bg` de la selección, números girados −90° en la vertical, todo recortado fuera de la esquina.
+- Barra inferior: Notas atenuada con `note-pencil`; a la derecha Imán, Alejar, slider logarítmico 5–3200 % (nombre accesible «Zoom»), Acercar, menú del porcentaje, `squares-four` Páginas, «n de N» y «Añadir página», con separadores de 1 px en `border`.
+- `page_number` corrige «n de N», que antes siempre decía 1.
+- Iconos Phosphor 2.1.1 `note-pencil` y `squares-four`, sin modificar, del tarball comprobado (sha256 `313332be…baadd`), con su BLAKE3 en `assets/LICENSES.toml`.
+
+Comandos:
+
+- `cargo fmt --check`: ok.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: sin avisos.
+- `cargo test --workspace --locked --no-fail-fast`: 3180 passed, 0 failed.
+- `python3 tools/sync_agents.py --check`: 0.
+- Prueba manual: el titular abrió la app en Linux y aprobó reglas y barra (2026-11-19).
 
 ## Riesgos y decisiones abiertas
 
