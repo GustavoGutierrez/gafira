@@ -234,6 +234,8 @@ fn s30_01_a_text_paints_inside_its_box_and_nowhere_else() {
         font: "Inter".to_owned(),
         size: 24.0,
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        bold: false,
+        italic: false,
     };
     let text = node(
         2,

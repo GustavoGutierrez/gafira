@@ -2514,6 +2514,8 @@ impl Editor {
             font: theme.tokens.typography.ui.clone(),
             size: 24.0,
             color: ink,
+            bold: false,
+            italic: false,
         };
         if let Some((page, node)) = asked.begin_edit {
             if self.editing.take().is_some_and(|e| e.gesture.is_some()) {
@@ -4754,6 +4756,8 @@ fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyl
         },
         size,
         color: canvas::document_color(crate::style::color32(tokens.brand.ink)),
+        bold: false,
+        italic: false,
     }
 }
 
@@ -6679,6 +6683,8 @@ pub(crate) mod tests {
             font: theme.tokens.typography.ui.clone(),
             size: 20.0,
             color: canvas::document_color(Color32::BLACK),
+            bold: false,
+            italic: false,
         };
         let text = gafira_doc::TextNode::plain("Hola", &style);
         let page = Rect::from_min_size(Pos2::ZERO, Vec2::splat(400.0));

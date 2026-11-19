@@ -1363,6 +1363,8 @@ mod tests {
             font: "Inter".to_owned(),
             size,
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, a)),
+            bold: false,
+            italic: false,
         };
         let check = |size: f64, a: f32| {
             let mut page = page(1, &[]);

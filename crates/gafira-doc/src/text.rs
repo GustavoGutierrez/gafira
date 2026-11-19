@@ -7,7 +7,8 @@
 use gafira_color::Color;
 use serde::{Deserialize, Serialize};
 
-/// The style of a span: font family, size in px and colour.
+/// The style of a span: font family, size in px, colour, and its bold and
+/// italic faces (spec 062).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SpanStyle {
     /// The font family name, for example `"Inter"`.
@@ -16,6 +17,12 @@ pub struct SpanStyle {
     pub size: f64,
     /// The text colour.
     pub color: Color,
+    /// The bold face of the family (spec 062). Written only when set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bold: bool,
+    /// The italic face of the family (spec 062). Written only when set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub italic: bool,
 }
 
 /// A run of text with one style.
@@ -140,6 +147,8 @@ mod tests {
             font: "Inter".to_owned(),
             size: 32.0,
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
         }
     }
 

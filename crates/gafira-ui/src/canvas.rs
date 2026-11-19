@@ -1367,6 +1367,8 @@ mod tests {
             font: "Inter".to_owned(),
             size: 40.0,
             color: document_color(Color32::BLACK),
+            bold: false,
+            italic: false,
         };
         let spec = new_text(Vec2::new(1000.0, 1000.0), "Hola", &style);
         assert_eq!((spec.placement.w, spec.placement.h), (600.0, 56.0));
@@ -1671,6 +1673,8 @@ mod s41_tests {
             font: "Inter".to_owned(),
             size: 20.0,
             color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+            bold: false,
+            italic: false,
         };
         let spec = text_at(Vec2::new(1000.0, 800.0), "Hola", &style, (300.0, 100.0));
         let p = spec.placement;

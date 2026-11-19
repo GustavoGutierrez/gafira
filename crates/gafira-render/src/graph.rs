@@ -1707,6 +1707,8 @@ mod tests {
             font: "Inter".to_owned(),
             size: 20.0,
             color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
+            bold: false,
+            italic: false,
         };
         let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
         shape.fill = Some(RED);
@@ -1765,6 +1767,8 @@ mod tests {
             font: "Inter".to_owned(),
             size: 32.0,
             color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
+            bold: false,
+            italic: false,
         };
         let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 200.0, 60.0));
         let kind = NodeKind::Text(TextNode::plain(words, &style));

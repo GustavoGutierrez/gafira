@@ -18,6 +18,8 @@ fn style(size: f64) -> SpanStyle {
         font: "Inter".to_owned(),
         size,
         color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        bold: false,
+        italic: false,
     }
 }
 
