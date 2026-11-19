@@ -869,3 +869,11 @@ Fecha: 19 de noviembre de 2026.
 
 - **Decisión** (titular, con capturas de referencia): una línea es un tipo nuevo de elemento con dos extremos, una punta por extremo, color y grosor. Cada extremo puede quedar conectado a una forma en uno de cinco puntos (arriba, derecha, abajo, izquierda y centro); su posición se calcula desde la forma al dibujar y al exportar, así que la línea la sigue sin despegarse. Al arrastrar un extremo cerca de una forma se ven sus puntos y el extremo se engancha como un imán. Se descartó guardar la línea como un trazado con puntas (obliga a reescribir cada línea al mover una forma).
 - **Consecuencia**: cambio aditivo del esquema 1 (`NodeKind::Line`); una versión anterior de Gafira no abre un archivo con líneas. Una conexión a una forma borrada no invalida el documento: el extremo vuelve a su punto guardado. Se aplica en la spec 058.
+
+## D-99 Las guías son comunes a todas las páginas
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): las guías no son de cada página sino del documento: una guía creada, movida o borrada en una página aparece, se mueve o se borra en todas, en las mismas posiciones.
+- **Consecuencia**: sustituye «Las guías son por página» de FD-03. Sin cambio de formato: cada página sigue guardando `Page.guides` y la interfaz las mantiene iguales en todas (un cambio se escribe en todas en un paso de deshacer; una página nueva nace con las de la primera). Se aplica en la spec 060.
+- Precisa 04 FD-03. Aplicado a 04 (FD-03).
