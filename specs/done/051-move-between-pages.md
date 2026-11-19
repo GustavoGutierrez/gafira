@@ -1,0 +1,57 @@
+# 051 — Mover elementos entre páginas
+
+> **Estado:** done — 2026-11-19 — S51-01..S51-07 cubiertos por `gafira-ui` (`transfer::tests` s51, 5; `editor::tests` s51, 2); D-92 y D-93; prueba del titular en la app; 3192 tests.
+
+## Objetivo
+
+Que un elemento se arrastre de una página a otra y quede en la página donde se suelta. Que lo que sobresale de una página se vea recortado a ella, con el marco de selección completo por encima de todo y tomable también fuera de la página (D-92).
+
+## Alcance / no alcance
+
+Alcance (`gafira-ui`):
+
+- Cada página dibuja sus elementos recortados a su rectángulo (D-92).
+- La selección (marco, tiradores y asa de giro) se dibuja después de todas las páginas, por encima de ellas y de los espacios entre ellas.
+- Un clic o un arrastre dentro de la caja de un elemento seleccionado lo toma, aunque el punto esté fuera de su página.
+- Soltar un arrastre de movimiento con el puntero sobre otra página pasa los elementos movidos a esa página, en la misma posición de pantalla, encima de sus elementos. El movimiento y el traspaso son un solo paso de deshacer. Los elementos quedan seleccionados en la nueva página, que pasa a ser la activa (spec 050).
+- Soltar fuera de toda página, o sobre la misma página, solo mueve.
+
+No alcance: arrastrar a otra página desde Capas, un aviso de contenido fuera de la página (FD-09), y la exportación (ya recorta a la página).
+
+## Dependencias
+
+Specs 040, 043 (subárboles, `spec_of`, `top_ids`), 044 y 050. D-92.
+
+## Requisitos
+
+| ID | Requisito | Criterio de aceptación |
+| --- | --- | --- |
+| S51-01 | Recorte (D-92). | Lo dibujado de una página no sale de su rectángulo. |
+| S51-02 | Selección encima. | El marco y los tiradores de la selección se dibujan después de todas las páginas. |
+| S51-03 | Tomar fuera de la página. | Un clic en la parte de la caja de un elemento seleccionado que queda fuera de su página lo mantiene seleccionado, y un arrastre lo mueve. |
+| S51-04 | Destino al soltar. | Sobre otra página, esa página; sobre la propia o fuera de toda página, ninguna. |
+| S51-06 | Tomar en el espacio entre páginas. | Un clic fuera de toda página, sobre la parte recortada de un elemento, lo toma aunque no esté seleccionado; dentro de una página decide la prueba de esa página. |
+| S51-07 | Soltar fuera de la página (D-93). | Un elemento movido cuya caja no comparte área con su página se elimina al soltar, en un paso de deshacer con el movimiento; uno que conserva algo dentro, no. |
+| S51-05 | Traspaso. | Los subárboles seleccionados salen de la página de origen y entran como raíces encima de los de la de destino, con su posición trasladada por la diferencia entre las esquinas de las páginas, y con los mismos datos. Un solo paso de deshacer, y deshacer devuelve el documento al de antes del arrastre. |
+
+## TDD
+
+1. `s51_04_drop_target`: los casos de S51-04 con dos páginas apiladas.
+3. `s51_06_outside_hit`: en el espacio entre páginas se toma la parte recortada de un elemento; dentro de una página, nada.
+4. `s51_07_left_behind` y `s51_07_drop_command`: lo que queda totalmente fuera (tocar el borde es fuera; un grupo, entero y una vez) y el comando de un paso que fija las posiciones y elimina.
+2. `s51_05_transfer`: un rectángulo y un grupo con dos hijos pasan de la página 1 a la 2. Las posiciones se trasladan, el orden se conserva, los ids nuevos son los que da `top_ids` y la página 1 queda sin ellos. Deshacer los devuelve.
+
+## Evidencia
+
+- TDD: `drop_target`, `transfer_command`, `outside_hit`, `left_behind` y `drop_command` se escribieron vacíos; sus tests fallaron por sus aserciones (el primer rojo de `s51_05` fue un error del fixture, ids de página que chocaban con los de nodo, corregido antes de implementar) y pasaron con la implementación.
+- `transfer.rs`: destino al soltar, traspaso en un `Transaction` (`RemoveNodes` + `InsertNodes` con ids nuevos), toque fuera de las páginas y borrado de lo que queda fuera. El traspaso y el borrado deshacen el arrastre y aplican un solo comando, así que son un paso de deshacer con el movimiento (`Drag.moved` evita deshacer algo ajeno).
+- Lienzo: cada página dibuja sus elementos con un pintor recortado a ella; la selección se dibuja en una pasada después de todas las páginas; un clic dentro de la caja de un seleccionado lo toma también fuera de su página.
+- Gates de `AGENTS.md` en verde (3192 passed); el titular lo probó en Linux.
+
+## Limitaciones
+
+- Lo que un documento ya traiga totalmente fuera de su página se conserva hasta que se mueva (D-93).
+
+## Riesgos y decisiones abiertas
+
+- Los elementos traspasados reciben ids nuevos (`InsertNodes`), como al cortar y pegar.

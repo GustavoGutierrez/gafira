@@ -816,3 +816,27 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo: el clic pasa a lo que está debajo, y el marco y `Ctrl/Cmd+A` lo saltan. Se selecciona solo desde Capas. Seleccionado así, no muestra tiradores ni asa de giro y no se mueve con arrastre ni con flechas; girar, voltear, alinear (D-29) y eliminar desde los menús siguen actuando sobre él.
 - **Consecuencia**: un fondo bloqueado deja de tapar los clics sobre la página. Se aplica en la spec 048.
 - Precisa 04 FD-13. Aplicado a 04 (FD-13).
+
+## D-92 Lo que sobresale de una página se recorta en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura de referencia): el lienzo dibuja cada elemento recortado a su página; la parte que sobresale no se ve. El marco de selección, sus tiradores y su asa de giro se dibujan completos por encima de todas las páginas, y se pueden tomar también fuera de la página. Arrastrar un elemento y soltarlo sobre otra página lo pasa a esa página.
+- **Consecuencia**: sustituye en el lienzo el «se atenúa» de FD-09; el documento sigue guardando la geometría completa y la exportación sigue recortando a la página. Se aplica en la spec 051.
+- Precisa 04 FD-09. Aplicado a 04 (FD-09).
+
+## D-93 Lo que se suelta fuera de su página se elimina
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): al soltar un arrastre de movimiento, un elemento cuya caja no comparte área con su página (ni la toca por dentro) se elimina, para que no quede contenido oculto que ocupe espacio. Mover y eliminar son un solo paso de deshacer. Soltarlo sobre otra página lo pasa a esa página (D-92).
+- **Consecuencia**: sustituye el «los elementos totalmente fuera se listan en Capas con un icono de aviso» de FD-09 para lo que se suelta fuera; un documento que ya traiga elementos totalmente fuera los conserva hasta que se muevan. Se aplica en la spec 051.
+- Precisa 04 FD-09. Aplicado a 04 (FD-09).
+
+## D-94 «Piezas» pasa a llamarse «Formas»
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): la pestaña del riel y la biblioteca de elementos que el glosario llama «Piezas» se llama «Formas» («Shapes» en inglés).
+- **Consecuencia**: cambia el nombre normativo de D-04 en el glosario de 03 (§2.1 y §2.8). Las demás menciones a «Piezas» en 03 y 04 se leen como «Formas»; se actualizan cuando se edite cada sección. Se aplica en la spec 052.
+- Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).

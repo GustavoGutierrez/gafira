@@ -125,7 +125,7 @@
 
 **FD-09 · Recorte visual de elementos fuera de la página** (RF-12)
 - *Propósito*: permitir trabajar con elementos que sobresalen sin perderlos.
-- *Comportamiento y reglas*: el contenido fuera del área de la página no se pinta en la exportación (salvo el área de Sangrado en el PDF de Impresión) y se atenúa en el lienzo; reaparece al moverlo dentro. Es no destructivo: los nodos conservan su geometría. La caja de selección muestra una etiqueta con cuánto sobresale («+24 px a la derecha»). Los elementos totalmente fuera se listan en Capas con un icono de aviso.
+- *Comportamiento y reglas*: el contenido fuera del área de la página no se pinta en la exportación (salvo el área de Sangrado en el PDF de Impresión) y se recorta en el lienzo, con el marco de selección completo por encima (D-92); reaparece al moverlo dentro. Es no destructivo: los nodos conservan su geometría. La caja de selección muestra una etiqueta con cuánto sobresale («+24 px a la derecha»). Un elemento que se suelta totalmente fuera de su página se elimina, en un paso de deshacer con el movimiento (D-93); los que un documento ya traiga totalmente fuera se listan en Capas con un icono de aviso.
 - *UI*: lienzo, Capas.
 - *Técnica*: recorte al renderizar por `RenderGraph`; `layout::overflow(bounds, page)` (02 §3.2).
 - *Presupuesto*: sin coste medible (CAL-02).

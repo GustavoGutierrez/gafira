@@ -34,6 +34,7 @@ use crate::selection::Selection;
 use crate::shell::Go;
 use crate::style::{Theme, color32, px};
 use crate::text::Texts;
+use crate::transfer;
 use crate::versions::Versions;
 use crate::widgets::{self, IconButton, Surface};
 use crate::zoom::{self, Zoom, ZoomAsk};
@@ -284,6 +285,12 @@ pub(crate) struct Editor {
     renaming: Option<(NodeId, String, bool)>,
     /// The row of Capas being dragged to a new place (spec 048).
     row_drag: Option<NodeId>,
+    /// The page clicked last, drawn with a border; `None` after a click
+    /// outside every page (spec 050).
+    active: Option<PageId>,
+    /// Each page's id and screen box in the last frame drawn: where a shape
+    /// dragged from the panel lands (spec 052).
+    page_rects: Vec<(PageId, Rect)>,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -304,6 +311,9 @@ struct Drag {
     /// The document when the drag began: a group moves every node below
     /// it from where it was then (spec 043).
     start: Option<Arc<Document>>,
+    /// Whether a move of the drag changed the document: one undo step to
+    /// fold into a transfer (spec 051).
+    moved: bool,
     offset: Vec2,
     /// The handle held, or `None` for a move. Only a single selection
     /// resizes or turns.
@@ -355,6 +365,8 @@ impl Default for Editor {
             snapped: None,
             renaming: None,
             row_drag: None,
+            active: None,
+            page_rects: Vec::new(),
         }
     }
 }
@@ -457,6 +469,12 @@ struct Asked {
     /// Alt+↑ (1) or Alt+↓ (-1): the selected element one step in the
     /// stacking order (S48-06).
     step: Option<isize>,
+    /// A move dropped on another page: from, to and the shift in page px
+    /// from one page's corner to the other's (spec 051).
+    transfer: Option<(PageId, PageId, (f64, f64))>,
+    /// A shape dragged from the panel and dropped on a page, at this point
+    /// in px of page (spec 052).
+    drop_piece: Option<(ShapeGeometry, PageId, (f64, f64))>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -604,10 +622,9 @@ fn page_sizes(document: &Document) -> Vec<Vec2> {
 impl Editor {
     /// The page of the selection, or the first page.
     fn current_page<'a>(&self, document: &'a Document) -> Option<&'a Page> {
-        self.selected
-            .page()
-            .and_then(|page| document.page(page))
-            .or_else(|| document.pages().first().map(AsRef::as_ref))
+        let ids: Vec<PageId> = document.pages().iter().map(|page| page.id).collect();
+        let id = current_page_id(&ids, self.selected.page(), self.active)?;
+        document.page(id)
     }
 
     /// Drops from the selection what `document` no longer draws (an undo
@@ -1429,8 +1446,26 @@ impl Editor {
                                 ShapeGeometry::Ellipse,
                             ),
                         ] {
-                            if widgets::secondary_icon(ui, theme, icon, texts.t(&key)).clicked() {
+                            // A click adds it to the middle of the page; a
+                            // drag carries it to where it is dropped (S52).
+                            let button = widgets::secondary_icon(ui, theme, icon, texts.t(&key))
+                                .interact(egui::Sense::click_and_drag());
+                            if button.clicked() {
                                 asked.insert = Some(geometry);
+                            }
+                            let at = ui.input(|i| i.pointer.latest_pos());
+                            if button.dragged()
+                                && let Some(at) = at
+                            {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                self.piece_ghost(ui.ctx(), theme, geometry, at);
+                            }
+                            if button.drag_stopped()
+                                && let Some(at) = at
+                                && let Some((page, point)) =
+                                    canvas::drop_point(&self.page_rects, self.zoom, at)
+                            {
+                                asked.drop_piece = Some((geometry, page, point));
                             }
                         }
                     });
@@ -1827,6 +1862,71 @@ impl Editor {
         Some(name)
     }
 
+    /// The shape being dragged from the panel, half transparent under the
+    /// pointer, over everything, with the size it will take on the page
+    /// under it (or the first page) at the zoom on display (S52-04).
+    fn piece_ghost(&self, ctx: &egui::Context, theme: &Theme, geometry: ShapeGeometry, at: Pos2) {
+        let Some((_, page)) = self
+            .page_rects
+            .iter()
+            .find(|(_, rect)| rect.contains(at))
+            .or(self.page_rects.first())
+        else {
+            return;
+        };
+        let side = page.width().min(page.height()) / 3.0;
+        let color = theme.c("accent").gamma_multiply(0.5);
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Tooltip,
+            egui::Id::new("editor.piece_ghost"),
+        ));
+        match geometry {
+            ShapeGeometry::Rect => {
+                painter.rect_filled(Rect::from_center_size(at, Vec2::splat(side)), 0.0, color);
+            }
+            ShapeGeometry::Ellipse => {
+                painter.circle_filled(at, side / 2.0, color);
+            }
+        }
+    }
+
+    /// Move `nodes` from one page to the other after a drag (spec 051), as
+    /// one undo step with the drag: the drag is undone and the transfer,
+    /// built from where the drag left them, takes its place. They stay
+    /// selected on the new page, which becomes the active one.
+    fn transfer(
+        &mut self,
+        engine: &mut Gafira,
+        (from, to): (PageId, PageId),
+        nodes: &[NodeId],
+        shift: (f64, f64),
+    ) {
+        let Some(now) = engine.edit().document() else {
+            return;
+        };
+        let Some((command, ids)) = transfer::transfer_command(&now, from, nodes, to, shift) else {
+            return;
+        };
+        if let Err(error) = engine.edit().undo() {
+            eprintln!("transfer: {error}");
+            return;
+        }
+        match engine.edit().execute(command) {
+            Ok(_) => {
+                self.selected = Selection::of(to, ids);
+                self.active = Some(to);
+                self.scope = None;
+            }
+            Err(error) => {
+                eprintln!("transfer: {error}");
+                // Put the drag back as it was.
+                if let Err(error) = engine.edit().redo() {
+                    eprintln!("transfer: {error}");
+                }
+            }
+        }
+    }
+
     /// Ocultar, Bloquear, a new name and Alt+↑/↓ from Capas and the
     /// shortcuts (spec 048), each one undo step.
     fn layer_changes(&self, engine: &mut Gafira, asked: &Asked) {
@@ -1975,6 +2075,17 @@ impl Editor {
                                 // The page colour belongs to the document (white
                                 // by default, 03 §7.1), not to the theme.
                                 painter.rect_filled(page, 0.0, Color32::WHITE);
+                                // The active page is ringed (S50-02).
+                                if self.active.is_some()
+                                    && self.active == pages.get(index).map(|p| p.id)
+                                {
+                                    painter.rect_stroke(
+                                        page,
+                                        0.0,
+                                        Stroke::new(2.0, selection),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
                                 painter.text(
                                     Pos2::new(page.min.x, page.min.y - 8.0),
                                     Align2::LEFT_BOTTOM,
@@ -1987,6 +2098,9 @@ impl Editor {
                                 );
                                 if let Some(page_doc) = pages.get(index) {
                                     let shapes = canvas::shapes(page_doc);
+                                    // Each page draws its elements cut to it (D-92).
+                                    let clip =
+                                        painter.with_clip_rect(page.intersect(painter.clip_rect()));
                                     for shape in &shapes {
                                         let at = canvas::on_screen(page, zoom, &shape.placement);
                                         // Where the local box lands on the screen,
@@ -2005,7 +2119,7 @@ impl Editor {
                                                 .and_then(Option::as_ref)
                                             {
                                                 Some(texture) => {
-                                                    painter.add(canvas::image_mesh(
+                                                    clip.add(canvas::image_mesh(
                                                         texture.id(),
                                                         turn,
                                                         &shape.placement,
@@ -2013,7 +2127,7 @@ impl Editor {
                                                     ));
                                                 }
                                                 None => {
-                                                    painter.add(egui::Shape::convex_polygon(
+                                                    clip.add(egui::Shape::convex_polygon(
                                                         outline.to_vec(),
                                                         theme.c("surface.sunken"),
                                                         Stroke::NONE,
@@ -2023,7 +2137,7 @@ impl Editor {
                                         }
                                         if let Some(text) = &shape.text {
                                             let laid = lay_text(
-                                                painter,
+                                                &clip,
                                                 theme,
                                                 at,
                                                 zoom,
@@ -2032,157 +2146,18 @@ impl Editor {
                                             );
                                             if upright {
                                                 for (pos, galley, color) in laid {
-                                                    painter.galley(pos, galley, color);
+                                                    clip.galley(pos, galley, color);
                                                 }
                                             } else {
                                                 let atlas = ctx.fonts(|f| f.font_image_size());
                                                 self.font_atlas = Some(atlas);
-                                                painter
-                                                    .add(text_mesh(&laid, at, zoom, turn, atlas));
+                                                clip.add(text_mesh(&laid, at, zoom, turn, atlas));
                                             }
                                         }
                                         if upright {
-                                            painter.add(canvas::painted(shape, at, zoom));
+                                            clip.add(canvas::painted(shape, at, zoom));
                                         } else {
-                                            painter.add(canvas::painted_turned(shape, turn, zoom));
-                                        }
-                                    }
-                                    // The selection, on top of what is drawn: each
-                                    // selected element by its own box, a group by
-                                    // the box around its children (spec 043).
-                                    let chosen = chosen(page_doc, &self.selected);
-                                    for shape in &chosen {
-                                        let at = canvas::on_screen(page, zoom, &shape.placement);
-                                        let turn =
-                                            rotation::to_screen(page, zoom, &shape.placement);
-                                        let upright = rotation::upright(&shape.placement);
-                                        let outline = rotation::corners(turn, &shape.placement);
-                                        if upright {
-                                            painter.rect_stroke(
-                                                at.expand(1.0),
-                                                0.0,
-                                                Stroke::new(2.0, selection),
-                                                egui::StrokeKind::Outside,
-                                            );
-                                        } else {
-                                            painter.add(egui::Shape::closed_line(
-                                                outline.to_vec(),
-                                                Stroke::new(2.0, selection),
-                                            ));
-                                        }
-                                        // Only a single, free selection resizes or
-                                        // turns by hand (D-91).
-                                        if single == Some((shape.page, shape.node)) && !shape.locked
-                                        {
-                                            let knob =
-                                                rotation::rotate_handle(turn, &shape.placement);
-                                            let top = canvas::handle_point(
-                                                turn,
-                                                &shape.placement,
-                                                canvas::Handle { x: 0, y: -1 },
-                                            );
-                                            painter.line_segment(
-                                                [top, knob],
-                                                Stroke::new(1.0, selection),
-                                            );
-                                            painter.circle(
-                                                knob,
-                                                canvas::HANDLE_HALF,
-                                                theme.c("surface"),
-                                                Stroke::new(1.5, selection),
-                                            );
-                                            for handle in canvas::HANDLES {
-                                                let square = Rect::from_center_size(
-                                                    canvas::handle_point(
-                                                        turn,
-                                                        &shape.placement,
-                                                        handle,
-                                                    ),
-                                                    Vec2::splat(canvas::HANDLE_HALF * 2.0),
-                                                );
-                                                painter.rect(
-                                                    square,
-                                                    2.0,
-                                                    theme.c("surface"),
-                                                    Stroke::new(1.5, selection),
-                                                    egui::StrokeKind::Inside,
-                                                );
-                                            }
-                                            // The same hit test as the grab: the
-                                            // nearest handle within 24 px.
-                                            grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
-                                                Some(Some(Hold::Resize(handle))) => {
-                                                    Some(resize::cursor(turn, handle))
-                                                }
-                                                Some(Some(Hold::Rotate { .. })) => {
-                                                    Some(egui::CursorIcon::Grabbing)
-                                                }
-                                                Some(None) => grip_cursor,
-                                                None => response
-                                                    .hover_pos()
-                                                    .and_then(|at| {
-                                                        canvas::grip_hit(turn, &shape.placement, at)
-                                                    })
-                                                    .map(|grip| match grip {
-                                                        canvas::Grip::Resize(handle) => {
-                                                            resize::cursor(turn, handle)
-                                                        }
-                                                        canvas::Grip::Rotate => {
-                                                            egui::CursorIcon::Grab
-                                                        }
-                                                    })
-                                                    .or(grip_cursor),
-                                            };
-                                            if let Some(drag) = &self.drag
-                                                && let Some(Hold::Resize(handle)) = drag.hold
-                                                && let Some((_, from)) = drag.origins.first()
-                                                && let Some(at) =
-                                                    ui.input(|i| i.pointer.latest_pos())
-                                            {
-                                                size_label(
-                                                    painter,
-                                                    theme,
-                                                    at,
-                                                    resize::outward(turn, handle),
-                                                    area,
-                                                    (from, &shape.placement),
-                                                );
-                                            }
-                                            if response.drag_started()
-                                                && let Some(pos) = pointer
-                                                && let Some(grip) =
-                                                    canvas::grip_hit(turn, &shape.placement, pos)
-                                            {
-                                                grabbed = Some(match grip {
-                                                    canvas::Grip::Resize(handle) => {
-                                                        Hold::Resize(handle)
-                                                    }
-                                                    canvas::Grip::Rotate => Hold::Rotate {
-                                                        center: rotation::screen(
-                                                            turn,
-                                                            shape.placement.w / 2.0,
-                                                            shape.placement.h / 2.0,
-                                                        ),
-                                                        from: pos,
-                                                    },
-                                                });
-                                            }
-                                        }
-                                    }
-                                    if self.selected.len() > 1
-                                        && self.selected.page() == Some(page_doc.id)
-                                    {
-                                        // The box around a multi-selection (spec 040).
-                                        let boxes = chosen.iter().map(|s| {
-                                            rotation::screen_box(page, zoom, &s.placement)
-                                        });
-                                        if let Some(all) = canvas::bounds(boxes) {
-                                            painter.rect_stroke(
-                                                all.expand(4.0),
-                                                0.0,
-                                                Stroke::new(1.0, selection),
-                                                egui::StrokeKind::Outside,
-                                            );
+                                            clip.add(canvas::painted_turned(shape, turn, zoom));
                                         }
                                     }
                                     // A click picks the child of the entered group
@@ -2242,8 +2217,194 @@ impl Editor {
                                 }
                                 top = page.max.y + PAGE_GAP;
                             }
+                            // The selection, over every page and the gaps
+                            // between them (D-92, S51-02).
+                            for (id, page) in page_rects.clone() {
+                                let Some(page_doc) = pages.iter().find(|p| p.id == id) else {
+                                    continue;
+                                };
+                                let page_doc: &Page = page_doc;
+                                // The selection, on top of what is drawn: each
+                                // selected element by its own box, a group by
+                                // the box around its children (spec 043).
+                                let chosen = chosen(page_doc, &self.selected);
+                                for shape in &chosen {
+                                    let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                    let upright = rotation::upright(&shape.placement);
+                                    let outline = rotation::corners(turn, &shape.placement);
+                                    if upright {
+                                        painter.rect_stroke(
+                                            at.expand(1.0),
+                                            0.0,
+                                            Stroke::new(2.0, selection),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    } else {
+                                        painter.add(egui::Shape::closed_line(
+                                            outline.to_vec(),
+                                            Stroke::new(2.0, selection),
+                                        ));
+                                    }
+                                    // Only a single, free selection resizes or
+                                    // turns by hand (D-91).
+                                    if single == Some((shape.page, shape.node)) && !shape.locked {
+                                        let knob = rotation::rotate_handle(turn, &shape.placement);
+                                        let top = canvas::handle_point(
+                                            turn,
+                                            &shape.placement,
+                                            canvas::Handle { x: 0, y: -1 },
+                                        );
+                                        painter
+                                            .line_segment([top, knob], Stroke::new(1.0, selection));
+                                        painter.circle(
+                                            knob,
+                                            canvas::HANDLE_HALF,
+                                            theme.c("surface"),
+                                            Stroke::new(1.5, selection),
+                                        );
+                                        for handle in canvas::HANDLES {
+                                            let square = Rect::from_center_size(
+                                                canvas::handle_point(
+                                                    turn,
+                                                    &shape.placement,
+                                                    handle,
+                                                ),
+                                                Vec2::splat(canvas::HANDLE_HALF * 2.0),
+                                            );
+                                            painter.rect(
+                                                square,
+                                                2.0,
+                                                theme.c("surface"),
+                                                Stroke::new(1.5, selection),
+                                                egui::StrokeKind::Inside,
+                                            );
+                                        }
+                                        // The same hit test as the grab: the
+                                        // nearest handle within 24 px.
+                                        grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
+                                            Some(Some(Hold::Resize(handle))) => {
+                                                Some(resize::cursor(turn, handle))
+                                            }
+                                            Some(Some(Hold::Rotate { .. })) => {
+                                                Some(egui::CursorIcon::Grabbing)
+                                            }
+                                            Some(None) => grip_cursor,
+                                            None => response
+                                                .hover_pos()
+                                                .and_then(|at| {
+                                                    canvas::grip_hit(turn, &shape.placement, at)
+                                                })
+                                                .map(|grip| match grip {
+                                                    canvas::Grip::Resize(handle) => {
+                                                        resize::cursor(turn, handle)
+                                                    }
+                                                    canvas::Grip::Rotate => egui::CursorIcon::Grab,
+                                                })
+                                                .or(grip_cursor),
+                                        };
+                                        if let Some(drag) = &self.drag
+                                            && let Some(Hold::Resize(handle)) = drag.hold
+                                            && let Some((_, from)) = drag.origins.first()
+                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                        {
+                                            size_label(
+                                                painter,
+                                                theme,
+                                                at,
+                                                resize::outward(turn, handle),
+                                                area,
+                                                (from, &shape.placement),
+                                            );
+                                        }
+                                        if response.drag_started()
+                                            && let Some(pos) = pointer
+                                            && let Some(grip) =
+                                                canvas::grip_hit(turn, &shape.placement, pos)
+                                        {
+                                            grabbed = Some(match grip {
+                                                canvas::Grip::Resize(handle) => {
+                                                    Hold::Resize(handle)
+                                                }
+                                                canvas::Grip::Rotate => Hold::Rotate {
+                                                    center: rotation::screen(
+                                                        turn,
+                                                        shape.placement.w / 2.0,
+                                                        shape.placement.h / 2.0,
+                                                    ),
+                                                    from: pos,
+                                                },
+                                            });
+                                        }
+                                    }
+                                }
+                                if self.selected.len() > 1
+                                    && self.selected.page() == Some(page_doc.id)
+                                {
+                                    // The box around a multi-selection (spec 040).
+                                    let boxes = chosen
+                                        .iter()
+                                        .map(|s| rotation::screen_box(page, zoom, &s.placement));
+                                    if let Some(all) = canvas::bounds(boxes) {
+                                        painter.rect_stroke(
+                                            all.expand(4.0),
+                                            0.0,
+                                            Stroke::new(1.0, selection),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    }
+                                }
+                                // A press inside the box of a selected element
+                                // takes it, also where it leaves its page
+                                // (S51-03).
+                                if pressed
+                                    && !response.double_clicked()
+                                    && let Some(at) = pointer
+                                {
+                                    let boxes: Vec<Shape> = chosen
+                                        .iter()
+                                        .cloned()
+                                        .map(|mut shape| {
+                                            shape.geometry = ShapeGeometry::Rect;
+                                            shape.locked = false;
+                                            shape
+                                        })
+                                        .collect();
+                                    if let Some(node) = canvas::hit(&boxes, page, zoom, at) {
+                                        picked = Some((id, node));
+                                    }
+                                }
+                            }
+                            // Outside every page, the cut-away part of an
+                            // element is still taken (S51-06).
+                            if pressed
+                                && picked.is_none()
+                                && let Some(at) = pointer
+                                && let Some((id, leaf)) = transfer::outside_hit(&laid, zoom, at)
+                                && let Some(page_doc) = pages.iter().find(|p| p.id == id)
+                                && let Some((node, scope)) = group::click(
+                                    page_doc,
+                                    leaf,
+                                    self.scope_on(id),
+                                    response.double_clicked(),
+                                )
+                            {
+                                picked = Some((id, node));
+                                asked.scope = Some(scope.map(|group| (id, group)));
+                            }
                             if let Some(icon) = grip_cursor {
                                 ui.ctx().set_cursor_icon(icon);
+                            }
+                            // A press on a page makes it the active one;
+                            // outside every page none is. A handle or a
+                            // guide keeps it (S50-01).
+                            if (response.clicked() || response.drag_started())
+                                && grabbed.is_none()
+                                && guide_hit.is_none()
+                                && let Some(at) = pointer
+                            {
+                                self.active =
+                                    active_after(&page_rects, at, picked.map(|(page, _)| page));
                             }
                             if let Some(handle) = grabbed {
                                 // A handle of the selection wins over whatever
@@ -2337,12 +2498,35 @@ impl Editor {
                                             pick,
                                         ));
                                     }
-                                    None => asked.drag_end = true,
+                                    None => {
+                                        asked.drag_end = true;
+                                        // A move dropped on another page goes
+                                        // there (S51-04).
+                                        let rect_of = |id: PageId| {
+                                            page_rects.iter().find(|(p, _)| *p == id).map(|r| r.1)
+                                        };
+                                        if let Some(drag) = &self.drag
+                                            && drag.hold.is_none()
+                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                            && let Some(to) =
+                                                transfer::drop_target(&page_rects, drag.page, at)
+                                            && let (Some(a), Some(b)) =
+                                                (rect_of(drag.page), rect_of(to))
+                                        {
+                                            let shift = (a.min - b.min) / zoom;
+                                            asked.transfer = Some((
+                                                drag.page,
+                                                to,
+                                                (f64::from(shift.x), f64::from(shift.y)),
+                                            ));
+                                        }
+                                    }
                                 }
                             }
                         });
                 });
                 self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
+                self.page_rects = page_rects;
             });
     }
 
@@ -2541,6 +2725,27 @@ impl Editor {
                 Err(error) => eprintln!("insert: {error}"),
             }
         }
+        // A shape dropped from the panel lands centred where it was
+        // dropped, selected, its page active (S52-03).
+        if let Some((geometry, page, point)) = asked.drop_piece
+            && let Some(document) = document
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+        {
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let fill = canvas::document_color(theme.c("accent"));
+            let spec = canvas::piece_at(px, geometry, fill, point);
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page, next);
+                    self.active = Some(page);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("drop shape: {error}"),
+            }
+        }
         if asked.import_image
             && let Some(document) = document
         {
@@ -2601,6 +2806,7 @@ impl Editor {
                     origins,
                     start: now,
                     offset: Vec2::ZERO,
+                    moved: false,
                 });
             }
         }
@@ -2700,15 +2906,28 @@ impl Editor {
                 })
                 .collect();
             if let Some(command) = batch(commands) {
-                log("move", engine.edit().execute(command).map(drop));
+                match engine.edit().execute(command) {
+                    Ok(applied) => drag.moved |= applied == gafira_edit::Applied::Changed,
+                    Err(error) => eprintln!("move: {error}"),
+                }
             }
             self.snapped = (snap.x.is_some() || snap.y.is_some()).then_some((drag.page, snap));
         }
         if asked.drag_end {
             self.snapped = None;
         }
-        if asked.drag_end && self.drag.take().is_some() {
+        if asked.drag_end
+            && let Some(drag) = self.drag.take()
+        {
             log("end gesture", engine.edit().end_gesture());
+            let moved: Vec<NodeId> = drag.origins.iter().map(|(node, _)| *node).collect();
+            if let Some((from, to, shift)) = asked.transfer
+                && drag.moved
+            {
+                self.transfer(engine, (from, to), &moved, shift);
+            } else if drag.moved && drag.hold.is_none() {
+                drop_outside(engine, &drag, &moved);
+            }
         }
         if let Some((dx, dy)) = asked.nudge
             && let Some(page) = self.selected.page()
@@ -3357,6 +3576,60 @@ fn bar_separator(ui: &mut egui::Ui, theme: &Theme) {
         Stroke::new(1.0, theme.c("border")),
     );
     ui.add_space(8.0);
+}
+
+/// The page a press on the canvas leaves active (S50-01): the page of
+/// the element it picked, else the page under `at`, else none (the
+/// workspace around the pages).
+fn active_after(pages: &[(PageId, Rect)], at: Pos2, picked: Option<PageId>) -> Option<PageId> {
+    picked.or_else(|| {
+        pages
+            .iter()
+            .find(|(_, rect)| rect.contains(at))
+            .map(|(page, _)| *page)
+    })
+}
+
+/// The page the editor works on (S50-03): the selection's, else the active
+/// one, else the first; a page that is gone does not count.
+fn current_page_id(
+    pages: &[PageId],
+    selected: Option<PageId>,
+    active: Option<PageId>,
+) -> Option<PageId> {
+    let known = |id: Option<PageId>| id.filter(|id| pages.contains(id));
+    known(selected)
+        .or_else(|| known(active))
+        .or_else(|| pages.first().copied())
+}
+
+/// What a move dropped wholly outside its page is deleted (S51-07,
+/// D-93), in one undo step with the move: the drag is undone and one
+/// command sets where it left everything and removes what is gone.
+fn drop_outside(engine: &mut Gafira, drag: &Drag, moved: &[NodeId]) {
+    let Some(now) = engine.edit().document() else {
+        return;
+    };
+    let gone = transfer::left_behind(&now, drag.page, moved);
+    let (Some(before), Some(after)) = (
+        drag.start.as_ref().and_then(|d| d.page(drag.page)),
+        now.page(drag.page),
+    ) else {
+        return;
+    };
+    let Some(command) = transfer::drop_command(before, after, &gone) else {
+        return;
+    };
+    if let Err(error) = engine.edit().undo() {
+        eprintln!("drop: {error}");
+        return;
+    }
+    if let Err(error) = engine.edit().execute(command) {
+        eprintln!("drop: {error}");
+        if let Err(error) = engine.edit().redo() {
+            eprintln!("drop: {error}");
+        }
+    }
 }
 
 /// The number «n de N» shows (S49-05): the place of `current` among
@@ -5619,6 +5892,181 @@ pub(crate) mod tests {
                 (base.visible, base.locked, base.name.clone())
             })
             .collect()
+    }
+
+    // S51-05: a move dropped on another page takes the element there, in
+    // one undo step with the move; it stays selected on its new page,
+    // which becomes the active one.
+    #[test]
+    fn s51_05_a_drop_on_another_page_moves_the_element_there() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (one, rect, _) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                add_page: true,
+                ..Asked::default()
+            },
+        );
+        let two = engine.edit().document().expect("a document").pages()[1].id;
+        let before = engine.edit().document().expect("a document");
+        let depth = undo_depth(&mut engine);
+        let from = placements(&mut engine, &[rect])[0];
+        editor.selected = Selection::one(one, rect);
+        for asked in [
+            Asked {
+                drag_begin: Some(None),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(0.0, 900.0)),
+                free: true,
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                transfer: Some((one, two, (0.0, -1100.0))),
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let document = engine.edit().document().expect("a document");
+        let (first, second) = (&document.pages()[0], &document.pages()[1]);
+        assert!(first.node(rect).is_none(), "it left page 1");
+        assert_eq!(second.roots.len(), 1);
+        let moved = second.node(second.roots[0]).expect("on page 2");
+        assert_eq!(moved.base.placement.x, from.x);
+        assert_eq!(
+            moved.base.placement.y,
+            from.y + 900.0 / editor.zoom as f64 - 1100.0
+        );
+        assert_eq!(editor.selected.page(), Some(two));
+        assert_eq!(editor.active, Some(two));
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(engine.edit().document().expect("a document"), before);
+    }
+
+    // S51-07 (D-93): a move dropped wholly outside the page deletes the
+    // element, in one undo step with the move.
+    #[test]
+    fn s51_07_a_drop_outside_the_page_deletes_the_element() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        let before = engine.edit().document().expect("a document");
+        let depth = undo_depth(&mut engine);
+        editor.selected = Selection::one(page, rect);
+        for asked in [
+            Asked {
+                drag_begin: Some(None),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(-5000.0, 0.0)),
+                free: true,
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let document = engine.edit().document().expect("a document");
+        assert!(document.pages()[0].node(rect).is_none(), "deleted");
+        assert!(document.pages()[0].node(ellipse).is_some());
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(engine.edit().document().expect("a document"), before);
+    }
+
+    // S52-03: a shape dropped from the panel lands on its page, centred
+    // where it was dropped, selected, its page active, in one undo step.
+    #[test]
+    fn s52_03_a_dropped_shape_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                drop_piece: Some((ShapeGeometry::Ellipse, page, (100.0, 120.0))),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        let dropped = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the shape");
+        let p = dropped.base.placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (100.0, 120.0));
+        assert_eq!(editor.selected.single(), Some((page, dropped.base.id)));
+        assert_eq!(editor.active, Some(page));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S50-01: a press on an element activates its page, on a page's
+    // background that page, outside every page none.
+    #[test]
+    fn s50_01_active_after_a_click() {
+        let (one, two) = (PageId::new(1), PageId::new(2));
+        let pages = [
+            (
+                one,
+                Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::splat(400.0)),
+            ),
+            (
+                two,
+                Rect::from_min_size(Pos2::new(100.0, 500.0), Vec2::splat(400.0)),
+            ),
+        ];
+        assert_eq!(
+            active_after(&pages, Pos2::new(300.0, 600.0), None),
+            Some(two)
+        );
+        assert_eq!(
+            active_after(&pages, Pos2::new(300.0, 100.0), None),
+            Some(one)
+        );
+        assert_eq!(active_after(&pages, Pos2::new(20.0, 100.0), None), None);
+        assert_eq!(
+            active_after(&pages, Pos2::new(300.0, 470.0), None),
+            None,
+            "the gap"
+        );
+        assert_eq!(
+            active_after(&pages, Pos2::new(20.0, 100.0), Some(two)),
+            Some(two),
+            "the picked element's page wins"
+        );
+    }
+
+    // S50-03: the selection's page, else the active one, else the first;
+    // a page that is gone does not count.
+    #[test]
+    fn s50_03_current_page() {
+        let pages = [PageId::new(1), PageId::new(2), PageId::new(3)];
+        let (one, two, three) = (pages[0], pages[1], pages[2]);
+        assert_eq!(current_page_id(&pages, Some(three), Some(two)), Some(three));
+        assert_eq!(current_page_id(&pages, None, Some(two)), Some(two));
+        assert_eq!(current_page_id(&pages, None, None), Some(one));
+        assert_eq!(
+            current_page_id(&pages, None, Some(PageId::new(9))),
+            Some(one)
+        );
+        assert_eq!(
+            current_page_id(&pages, Some(PageId::new(9)), Some(two)),
+            Some(two)
+        );
+        assert_eq!(current_page_id(&[], None, Some(two)), None);
     }
 
     // S49-05: «n de N» counts from the page of the selection.

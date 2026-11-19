@@ -77,7 +77,7 @@ Este glosario es **normativo**. Define el nombre propio de cada pestaña, menú,
 | Nombre en Gafira | Pantalla | Qué contiene | Equivalente genérico |
 |---|---|---|---|
 | Plantillas | Diseño y Video | Búsqueda, plantillas empaquetadas y propias | Templates |
-| Piezas | Diseño y Video | Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements / shapes library |
+| Formas (antes Piezas, D-94) | Diseño y Video | Formas, Líneas, Marcos, Iconos, Códigos QR, Tablas, Gráficos, Ilustraciones | Elements / shapes library |
 | Texto | Diseño y Video | Estilos de texto, combinaciones, Efectos de texto | Text |
 | Identidad | Diseño y Video | Colores, Tipografías, Logos y Estilos de la Identidad visual activa | Brand panel |
 | Biblioteca | Diseño y Video | Archivos propios: imágenes, video, audio, diseños, Colecciones | Uploads / media library |
@@ -225,7 +225,7 @@ Correspondencia 1:1 con §2.1–§2.6, en el mismo orden. La columna «Equivalen
 | Nombre en Gafira (es, aprobado) | Nombre en inglés (PROPUESTA) | Contenido en inglés (PROPUESTA) |
 |---|---|---|
 | Plantillas | Templates | Search, bundled and own templates |
-| Piezas | Pieces | Shapes, Lines, Frames, Icons, QR codes, Tables, Charts, Illustrations |
+| Formas (D-94) | Shapes | Shapes, Lines, Frames, Icons, QR codes, Tables, Charts, Illustrations |
 | Texto | Text | Text styles, pairings, Text effects |
 | Identidad | Identity | Colors, Fonts, Logos and Styles of the active Visual identity |
 | Biblioteca | Library | Own files: images, video, audio, designs, Collections |
