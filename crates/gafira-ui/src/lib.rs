@@ -36,6 +36,7 @@ mod shell;
 mod splash;
 mod style;
 mod text;
+mod transfer;
 mod versions;
 mod widgets;
 mod zoom;
