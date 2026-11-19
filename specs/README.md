@@ -16,7 +16,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | Doc | Contenido | Estado |
 | --- | --- | --- |
-| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-100) |
+| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-101) |
 | [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) | Aprobado (D-83, 2026-11-16) |
 | [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) | Aprobado (D-83, 2026-11-16) |
 | [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` | Borrador para revisión |
@@ -39,6 +39,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 060 | [Guías comunes a todas las páginas](060-shared-guides.md) | in-progress: una guía vale para todas las páginas (D-99); arrastre sin la guía en su origen |
 | 061 | [Pegar texto, alto automático y arrastrar textos](061-paste-text-and-auto-height.md) | in-progress: Ctrl+V de texto ajeno crea una caja; las cajas crecen con su texto; textos del panel con arrastre |
 | 062 | [Biblioteca de fuentes y panel «Fuente»](062-font-library.md) | in-progress: doce familias OFL con negrita y cursiva; panel para cambiar la fuente de un texto (D-100) |
+| 063 | [Relleno de color sólido o degradado](063-gradient-fills.md) | in-progress: degradados lineales y circulares en las formas (D-101) |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -105,4 +106,4 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
 
-Siguiente ID libre: **063**.
+Siguiente ID libre: **064**.

@@ -884,3 +884,10 @@ Fecha: 19 de noviembre de 2026.
 
 - **Decisión** (titular): Gafira incrusta una selección curada de familias de licencia libre (SIL OFL) con normal, negrita, cursiva y negrita cursiva donde existan, y un texto puede cambiar de fuente desde un panel «Fuente». Se descartaron una selección mínima y las fuentes del sistema (un diseño abierto en otro equipo cambiaría de fuente).
 - **Consecuencia**: el estilo de un tramo gana `bold` e `italic` (cambio aditivo del esquema 1: un texto sin ellos conserva sus bytes; una versión anterior no abre un archivo que los use). Playfair Display y Merriweather se cambian por EB Garamond y Source Serif 4 por sus nombres reservados. La app crece unos 12 MB. Se aplica en la spec 062.
+
+## D-101 El relleno de una forma puede ser un degradado
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): el relleno de una forma es un color sólido o un degradado de dos o más colores, lineal en cualquier dirección o circular, elegido en el Inspector con las pestañas «Color sólido» y «Degradado».
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.gradient`, que rellena en lugar de `fill` cuando existe): una forma sin degradado conserva sus bytes; una versión anterior no abre un archivo con degradados. El contrato del render gana `RenderOp::FillGradient`. Se aplica en la spec 063.
