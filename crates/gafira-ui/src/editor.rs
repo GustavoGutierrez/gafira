@@ -290,6 +290,14 @@ pub(crate) struct Editor {
     /// The page whose title is being written in its header, the words so
     /// far and whether the field took the keyboard (spec 056).
     renaming_page: Option<(PageId, String, bool)>,
+    /// A zoom by the wheel or a pinch: the page, the page point under the
+    /// pointer (in px of page) and the pointer, to scroll it back under
+    /// the pointer once the new zoom is laid out (spec 059).
+    zoom_anchor: Option<(PageId, Vec2, Pos2)>,
+    /// The scroll offset of the canvas in the last frame, and one to set
+    /// in the next (spec 059).
+    scroll_offset: Vec2,
+    pending_scroll: Option<Vec2>,
     /// Each page's id and screen box in the last frame drawn: where a shape
     /// dragged from the panel lands (spec 052).
     page_rects: Vec<(PageId, Rect)>,
@@ -385,6 +393,9 @@ impl Default for Editor {
             row_drag: None,
             active: None,
             renaming_page: None,
+            zoom_anchor: None,
+            scroll_offset: Vec2::ZERO,
+            pending_scroll: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
             editing: None,
@@ -2579,10 +2590,20 @@ impl Editor {
                 } else {
                     full
                 };
-                let (scroll, command) =
-                    ui.input(|i| (i.smooth_scroll_delta.y, i.modifiers.command));
-                if command && scroll != 0.0 && ui.rect_contains_pointer(area) {
-                    self.view = Zoom::Fixed(zoom::wheel(self.zoom, scroll));
+                // Ctrl (Cmd) + wheel and a pinch zoom (egui turns them into
+                // a zoom factor and leaves the scroll alone); the page point
+                // under the pointer stays under it (spec 059, FD-08).
+                let (factor, hover) = ui.input(|i| (i.zoom_delta(), i.pointer.hover_pos()));
+                if factor != 1.0
+                    && let Some(at) = hover
+                    && area.contains(at)
+                {
+                    if let Some(page) = ruler::page_at(&self.page_rects, at.y)
+                        && let Some((_, rect)) = self.page_rects.iter().find(|(id, _)| *id == page)
+                    {
+                        self.zoom_anchor = Some((page, (at - rect.min) / self.zoom, at));
+                    }
+                    self.view = Zoom::Fixed(zoom::by_factor(self.zoom, factor));
                 }
                 let sizes = document.map(page_sizes).unwrap_or_default();
                 let Some(first) = sizes.first().copied() else {
@@ -2607,576 +2628,554 @@ impl Editor {
                 let height: f32 =
                     sizes.iter().map(|s| s.y * zoom + PAGE_GAP).sum::<f32>() + CANVAS_MARGIN;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
-                    egui::ScrollArea::both()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            let (rect, response) = ui.allocate_exact_size(
-                                Vec2::new(width.max(area.width()), height.max(area.height())),
-                                egui::Sense::click_and_drag(),
+                    let mut scroll = egui::ScrollArea::both().auto_shrink([false, false]);
+                    if let Some(offset) = self.pending_scroll.take() {
+                        scroll = scroll.scroll_offset(offset);
+                    }
+                    let shown = scroll.show(ui, |ui| {
+                        let (rect, response) = ui.allocate_exact_size(
+                            Vec2::new(width.max(area.width()), height.max(area.height())),
+                            egui::Sense::click_and_drag(),
+                        );
+                        let painter = &ui.painter().clone();
+                        let pages = document.map(Document::pages).unwrap_or_default();
+                        // A drag starts only once the pointer has moved a few
+                        // px; what it grabbed is decided where it was pressed.
+                        let pointer = if response.drag_started() {
+                            ui.input(|input| input.pointer.press_origin())
+                                .or_else(|| response.interact_pointer_pos())
+                        } else {
+                            response.interact_pointer_pos()
+                        };
+                        let pressed = response.clicked() || response.drag_started();
+                        let (shift, press) =
+                            ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
+                        let single = self.selected.single();
+                        let mut picked: Option<(PageId, NodeId)> = None;
+                        let mut grabbed: Option<Hold> = None;
+                        // Each page's id, screen box and shapes, for the marquee.
+                        let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
+                        let selection = theme.c("canvas.selection");
+                        let mut top =
+                            rect.min.y + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
+                        for (index, size) in sizes.iter().enumerate() {
+                            let page = Rect::from_min_size(
+                                Pos2::new(rect.center().x - size.x * zoom / 2.0, top),
+                                *size * zoom,
                             );
-                            let painter = &ui.painter().clone();
-                            let pages = document.map(Document::pages).unwrap_or_default();
-                            // A drag starts only once the pointer has moved a few
-                            // px; what it grabbed is decided where it was pressed.
-                            let pointer = if response.drag_started() {
-                                ui.input(|input| input.pointer.press_origin())
-                                    .or_else(|| response.interact_pointer_pos())
-                            } else {
-                                response.interact_pointer_pos()
-                            };
-                            let pressed = response.clicked() || response.drag_started();
-                            let (shift, press) =
-                                ui.input(|i| (i.modifiers.shift, i.pointer.press_origin()));
-                            let single = self.selected.single();
-                            let mut picked: Option<(PageId, NodeId)> = None;
-                            let mut grabbed: Option<Hold> = None;
-                            // Each page's id, screen box and shapes, for the marquee.
-                            let mut laid: Vec<(PageId, Rect, Vec<Shape>)> = Vec::new();
-                            let selection = theme.c("canvas.selection");
-                            let mut top = rect.min.y
-                                + CANVAS_MARGIN.max((area.height() - height).max(0.0) / 2.0);
-                            for (index, size) in sizes.iter().enumerate() {
-                                let page = Rect::from_min_size(
-                                    Pos2::new(rect.center().x - size.x * zoom / 2.0, top),
-                                    *size * zoom,
+                            if let Some(Shadow::Drop {
+                                x,
+                                y,
+                                blur,
+                                color,
+                                alpha,
+                            }) = theme.tokens.shadow.get(&1).copied()
+                            {
+                                let shadow = egui::epaint::Shadow {
+                                    offset: [to_i8(x), to_i8(y)],
+                                    blur: to_u8(blur),
+                                    spread: 0,
+                                    color: color32(color).gamma_multiply(alpha),
+                                };
+                                painter.add(shadow.as_shape(page, 0.0));
+                            }
+                            // The page colour belongs to the document (white
+                            // by default, 03 §7.1), not to the theme.
+                            painter.rect_filled(page, 0.0, Color32::WHITE);
+                            // The active page is ringed (S50-02).
+                            if self.active.is_some()
+                                && self.active == pages.get(index).map(|p| p.id)
+                            {
+                                painter.rect_stroke(
+                                    page,
+                                    0.0,
+                                    Stroke::new(2.0, selection),
+                                    egui::StrokeKind::Outside,
                                 );
-                                if let Some(Shadow::Drop {
-                                    x,
-                                    y,
-                                    blur,
-                                    color,
-                                    alpha,
-                                }) = theme.tokens.shadow.get(&1).copied()
-                                {
-                                    let shadow = egui::epaint::Shadow {
-                                        offset: [to_i8(x), to_i8(y)],
-                                        blur: to_u8(blur),
-                                        spread: 0,
-                                        color: color32(color).gamma_multiply(alpha),
-                                    };
-                                    painter.add(shadow.as_shape(page, 0.0));
+                            }
+                            // The header over the page (spec 056).
+                            if let Some(page_doc) = pages.get(index) {
+                                let header = Rect::from_min_max(
+                                    Pos2::new(page.min.x, page.min.y - 36.0),
+                                    Pos2::new(page.max.x, page.min.y - 4.0),
+                                );
+                                self.page_header(
+                                    ui,
+                                    theme,
+                                    texts,
+                                    header,
+                                    (page_doc, index, pages.len()),
+                                    asked,
+                                );
+                            }
+                            if let Some(page_doc) = pages.get(index) {
+                                let shapes = canvas::shapes(page_doc);
+                                // Each page draws its elements cut to it (D-92).
+                                let clip =
+                                    painter.with_clip_rect(page.intersect(painter.clip_rect()));
+                                for shape in &shapes {
+                                    let at = canvas::on_screen(page, zoom, &shape.placement);
+                                    // Where the local box lands on the screen,
+                                    // turned and flipped as the render draws it
+                                    // (spec 041).
+                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                    let upright = rotation::upright(&shape.placement);
+                                    let outline = rotation::corners(turn, &shape.placement);
+                                    if let Some(asset) = shape.image {
+                                        let tint = Color32::WHITE
+                                            .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
+                                        match self
+                                            .textures
+                                            .get(&asset.as_hash())
+                                            .and_then(Option::as_ref)
+                                        {
+                                            Some(texture) => {
+                                                clip.add(canvas::image_mesh(
+                                                    texture.id(),
+                                                    turn,
+                                                    &shape.placement,
+                                                    tint,
+                                                ));
+                                            }
+                                            None => {
+                                                clip.add(egui::Shape::convex_polygon(
+                                                    outline.to_vec(),
+                                                    theme.c("surface.sunken"),
+                                                    Stroke::NONE,
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    let edited =
+                                        self.editing.as_ref().is_some_and(|e| e.node == shape.node);
+                                    if let Some(text) = shape.text.as_ref().filter(|_| !edited) {
+                                        let laid =
+                                            lay_text(&clip, theme, at, zoom, shape.opacity, text);
+                                        if upright {
+                                            for (pos, galley, color) in laid {
+                                                clip.galley(pos, galley, color);
+                                            }
+                                        } else {
+                                            let atlas = ctx.fonts(|f| f.font_image_size());
+                                            self.font_atlas = Some(atlas);
+                                            clip.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                        }
+                                    }
+                                    // A path is drawn from its texture, in
+                                    // its own axes (spec 054).
+                                    if let ShapeGeometry::Path(_) = &shape.geometry {
+                                        let cover = canvas::path_cover(shape, zoom);
+                                        let key = path_key(shape, zoom);
+                                        if let Some(texture) = self.path_texture(ctx, key, || {
+                                            canvas::path_image(shape, zoom).map(|(image, _)| image)
+                                        }) {
+                                            clip.add(canvas::image_mesh(
+                                                texture,
+                                                rotation::to_screen(page, zoom, &cover),
+                                                &cover,
+                                                Color32::WHITE.gamma_multiply(shape.alpha()),
+                                            ));
+                                        }
+                                    }
+                                    if upright {
+                                        clip.add(canvas::painted(shape, at, zoom));
+                                    } else {
+                                        clip.add(canvas::painted_turned(shape, turn, zoom));
+                                    }
+                                    // The text inside a shape, over it
+                                    // (spec 055).
+                                    if let Some(inner) = shape.inner.as_ref().filter(|_| !edited) {
+                                        let laid =
+                                            lay_inner(&clip, theme, at, zoom, shape.alpha(), inner);
+                                        if upright {
+                                            for (pos, galley, color) in laid {
+                                                clip.galley(pos, galley, color);
+                                            }
+                                        } else {
+                                            let atlas = ctx.fonts(|f| f.font_image_size());
+                                            self.font_atlas = Some(atlas);
+                                            clip.add(text_mesh(&laid, at, zoom, turn, atlas));
+                                        }
+                                    }
                                 }
-                                // The page colour belongs to the document (white
-                                // by default, 03 §7.1), not to the theme.
-                                painter.rect_filled(page, 0.0, Color32::WHITE);
-                                // The active page is ringed (S50-02).
-                                if self.active.is_some()
-                                    && self.active == pages.get(index).map(|p| p.id)
+                                // A click picks the child of the entered group
+                                // that holds the drawn element; a double click
+                                // on a group enters it (03 §9.1, spec 043).
+                                if pressed
+                                    && let Some(at) = pointer
+                                    && page.contains(at)
+                                    && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
+                                    && let Some((node, scope)) = group::click(
+                                        page_doc,
+                                        leaf,
+                                        self.scope_on(page_doc.id),
+                                        response.double_clicked(),
+                                    )
                                 {
+                                    picked = Some((page_doc.id, node));
+                                    asked.scope = Some(scope.map(|group| (page_doc.id, group)));
+                                    // A double click on a text or a shape
+                                    // writes on it (spec 055).
+                                    if response.double_clicked()
+                                        && page_doc.node(node).is_some_and(|n| {
+                                            matches!(
+                                                n.kind,
+                                                gafira_doc::NodeKind::Text(_)
+                                                    | gafira_doc::NodeKind::Shape(_)
+                                            )
+                                        })
+                                    {
+                                        asked.begin_edit = Some((page_doc.id, node));
+                                    }
+                                }
+                                // Page guides, and the smart guides of the
+                                // magnet while it holds (FD-03, FD-06).
+                                if self.shown.guides {
+                                    draw_guides(painter, theme, page_doc, dpi, page, rect, zoom);
+                                }
+                                if let Some((_, snap)) =
+                                    self.snapped.filter(|(on, _)| *on == page_doc.id)
+                                {
+                                    draw_snap(painter, theme, &snap, page, zoom);
+                                }
+                                if self.shown.guides
+                                    && response.drag_started()
+                                    && let Some(at) = pointer
+                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
+                                {
+                                    guide_hit = Some(GuideDrag {
+                                        page: page_doc.id,
+                                        axis: page_doc.guides.0[index].axis,
+                                        index: Some(index),
+                                    });
+                                }
+                                if self.shown.guides
+                                    && self.guide_drag.is_none()
+                                    && grip_cursor.is_none()
+                                    && let Some(at) = response.hover_pos()
+                                    && let Some(index) = ruler::hit(page_doc, dpi, page, zoom, at)
+                                {
+                                    ui.ctx().set_cursor_icon(guide_cursor(
+                                        page_doc.guides.0[index].axis,
+                                    ));
+                                }
+                                page_rects.push((page_doc.id, page));
+                                laid.push((page_doc.id, page, shapes));
+                            }
+                            top = page.max.y + PAGE_GAP;
+                        }
+                        // The selection, over every page and the gaps
+                        // between them (D-92, S51-02).
+                        for (id, page) in page_rects.clone() {
+                            let Some(page_doc) = pages.iter().find(|p| p.id == id) else {
+                                continue;
+                            };
+                            let page_doc: &Page = page_doc;
+                            // The selection, on top of what is drawn: each
+                            // selected element by its own box, a group by
+                            // the box around its children (spec 043).
+                            let chosen = chosen(page_doc, &self.selected);
+                            for shape in &chosen {
+                                let at = canvas::on_screen(page, zoom, &shape.placement);
+                                let turn = rotation::to_screen(page, zoom, &shape.placement);
+                                let upright = rotation::upright(&shape.placement);
+                                let outline = rotation::corners(turn, &shape.placement);
+                                if upright {
                                     painter.rect_stroke(
-                                        page,
+                                        at.expand(1.0),
                                         0.0,
                                         Stroke::new(2.0, selection),
                                         egui::StrokeKind::Outside,
                                     );
+                                } else {
+                                    painter.add(egui::Shape::closed_line(
+                                        outline.to_vec(),
+                                        Stroke::new(2.0, selection),
+                                    ));
                                 }
-                                // The header over the page (spec 056).
-                                if let Some(page_doc) = pages.get(index) {
-                                    let header = Rect::from_min_max(
-                                        Pos2::new(page.min.x, page.min.y - 36.0),
-                                        Pos2::new(page.max.x, page.min.y - 4.0),
+                                // Only a single, free selection resizes or
+                                // turns by hand (D-91).
+                                if single == Some((shape.page, shape.node)) && !shape.locked {
+                                    let knob = rotation::rotate_handle(turn, &shape.placement);
+                                    let top = canvas::handle_point(
+                                        turn,
+                                        &shape.placement,
+                                        canvas::Handle { x: 0, y: -1 },
                                     );
-                                    self.page_header(
-                                        ui,
-                                        theme,
-                                        texts,
-                                        header,
-                                        (page_doc, index, pages.len()),
-                                        asked,
+                                    painter.line_segment([top, knob], Stroke::new(1.0, selection));
+                                    painter.circle(
+                                        knob,
+                                        canvas::HANDLE_HALF,
+                                        theme.c("surface"),
+                                        Stroke::new(1.5, selection),
                                     );
-                                }
-                                if let Some(page_doc) = pages.get(index) {
-                                    let shapes = canvas::shapes(page_doc);
-                                    // Each page draws its elements cut to it (D-92).
-                                    let clip =
-                                        painter.with_clip_rect(page.intersect(painter.clip_rect()));
-                                    for shape in &shapes {
-                                        let at = canvas::on_screen(page, zoom, &shape.placement);
-                                        // Where the local box lands on the screen,
-                                        // turned and flipped as the render draws it
-                                        // (spec 041).
-                                        let turn =
-                                            rotation::to_screen(page, zoom, &shape.placement);
-                                        let upright = rotation::upright(&shape.placement);
-                                        let outline = rotation::corners(turn, &shape.placement);
-                                        if let Some(asset) = shape.image {
-                                            let tint = Color32::WHITE
-                                                .gamma_multiply(shape.opacity.clamp(0.0, 1.0));
-                                            match self
-                                                .textures
-                                                .get(&asset.as_hash())
-                                                .and_then(Option::as_ref)
-                                            {
-                                                Some(texture) => {
-                                                    clip.add(canvas::image_mesh(
-                                                        texture.id(),
-                                                        turn,
-                                                        &shape.placement,
-                                                        tint,
-                                                    ));
-                                                }
-                                                None => {
-                                                    clip.add(egui::Shape::convex_polygon(
-                                                        outline.to_vec(),
-                                                        theme.c("surface.sunken"),
-                                                        Stroke::NONE,
-                                                    ));
-                                                }
-                                            }
-                                        }
-                                        let edited = self
-                                            .editing
-                                            .as_ref()
-                                            .is_some_and(|e| e.node == shape.node);
-                                        if let Some(text) = shape.text.as_ref().filter(|_| !edited)
-                                        {
-                                            let laid = lay_text(
-                                                &clip,
-                                                theme,
-                                                at,
-                                                zoom,
-                                                shape.opacity,
-                                                text,
-                                            );
-                                            if upright {
-                                                for (pos, galley, color) in laid {
-                                                    clip.galley(pos, galley, color);
-                                                }
-                                            } else {
-                                                let atlas = ctx.fonts(|f| f.font_image_size());
-                                                self.font_atlas = Some(atlas);
-                                                clip.add(text_mesh(&laid, at, zoom, turn, atlas));
-                                            }
-                                        }
-                                        // A path is drawn from its texture, in
-                                        // its own axes (spec 054).
-                                        if let ShapeGeometry::Path(_) = &shape.geometry {
-                                            let cover = canvas::path_cover(shape, zoom);
-                                            let key = path_key(shape, zoom);
-                                            if let Some(texture) =
-                                                self.path_texture(ctx, key, || {
-                                                    canvas::path_image(shape, zoom)
-                                                        .map(|(image, _)| image)
-                                                })
-                                            {
-                                                clip.add(canvas::image_mesh(
-                                                    texture,
-                                                    rotation::to_screen(page, zoom, &cover),
-                                                    &cover,
-                                                    Color32::WHITE.gamma_multiply(shape.alpha()),
-                                                ));
-                                            }
-                                        }
-                                        if upright {
-                                            clip.add(canvas::painted(shape, at, zoom));
-                                        } else {
-                                            clip.add(canvas::painted_turned(shape, turn, zoom));
-                                        }
-                                        // The text inside a shape, over it
-                                        // (spec 055).
-                                        if let Some(inner) =
-                                            shape.inner.as_ref().filter(|_| !edited)
-                                        {
-                                            let laid = lay_inner(
-                                                &clip,
-                                                theme,
-                                                at,
-                                                zoom,
-                                                shape.alpha(),
-                                                inner,
-                                            );
-                                            if upright {
-                                                for (pos, galley, color) in laid {
-                                                    clip.galley(pos, galley, color);
-                                                }
-                                            } else {
-                                                let atlas = ctx.fonts(|f| f.font_image_size());
-                                                self.font_atlas = Some(atlas);
-                                                clip.add(text_mesh(&laid, at, zoom, turn, atlas));
-                                            }
-                                        }
-                                    }
-                                    // A click picks the child of the entered group
-                                    // that holds the drawn element; a double click
-                                    // on a group enters it (03 §9.1, spec 043).
-                                    if pressed
-                                        && let Some(at) = pointer
-                                        && page.contains(at)
-                                        && let Some(leaf) = canvas::hit(&shapes, page, zoom, at)
-                                        && let Some((node, scope)) = group::click(
-                                            page_doc,
-                                            leaf,
-                                            self.scope_on(page_doc.id),
-                                            response.double_clicked(),
-                                        )
-                                    {
-                                        picked = Some((page_doc.id, node));
-                                        asked.scope = Some(scope.map(|group| (page_doc.id, group)));
-                                        // A double click on a text or a shape
-                                        // writes on it (spec 055).
-                                        if response.double_clicked()
-                                            && page_doc.node(node).is_some_and(|n| {
-                                                matches!(
-                                                    n.kind,
-                                                    gafira_doc::NodeKind::Text(_)
-                                                        | gafira_doc::NodeKind::Shape(_)
-                                                )
-                                            })
-                                        {
-                                            asked.begin_edit = Some((page_doc.id, node));
-                                        }
-                                    }
-                                    // Page guides, and the smart guides of the
-                                    // magnet while it holds (FD-03, FD-06).
-                                    if self.shown.guides {
-                                        draw_guides(
-                                            painter, theme, page_doc, dpi, page, rect, zoom,
+                                    for handle in canvas::HANDLES {
+                                        let square = Rect::from_center_size(
+                                            canvas::handle_point(turn, &shape.placement, handle),
+                                            Vec2::splat(canvas::HANDLE_HALF * 2.0),
                                         );
-                                    }
-                                    if let Some((_, snap)) =
-                                        self.snapped.filter(|(on, _)| *on == page_doc.id)
-                                    {
-                                        draw_snap(painter, theme, &snap, page, zoom);
-                                    }
-                                    if self.shown.guides
-                                        && response.drag_started()
-                                        && let Some(at) = pointer
-                                        && let Some(index) =
-                                            ruler::hit(page_doc, dpi, page, zoom, at)
-                                    {
-                                        guide_hit = Some(GuideDrag {
-                                            page: page_doc.id,
-                                            axis: page_doc.guides.0[index].axis,
-                                            index: Some(index),
-                                        });
-                                    }
-                                    if self.shown.guides
-                                        && self.guide_drag.is_none()
-                                        && grip_cursor.is_none()
-                                        && let Some(at) = response.hover_pos()
-                                        && let Some(index) =
-                                            ruler::hit(page_doc, dpi, page, zoom, at)
-                                    {
-                                        ui.ctx().set_cursor_icon(guide_cursor(
-                                            page_doc.guides.0[index].axis,
-                                        ));
-                                    }
-                                    page_rects.push((page_doc.id, page));
-                                    laid.push((page_doc.id, page, shapes));
-                                }
-                                top = page.max.y + PAGE_GAP;
-                            }
-                            // The selection, over every page and the gaps
-                            // between them (D-92, S51-02).
-                            for (id, page) in page_rects.clone() {
-                                let Some(page_doc) = pages.iter().find(|p| p.id == id) else {
-                                    continue;
-                                };
-                                let page_doc: &Page = page_doc;
-                                // The selection, on top of what is drawn: each
-                                // selected element by its own box, a group by
-                                // the box around its children (spec 043).
-                                let chosen = chosen(page_doc, &self.selected);
-                                for shape in &chosen {
-                                    let at = canvas::on_screen(page, zoom, &shape.placement);
-                                    let turn = rotation::to_screen(page, zoom, &shape.placement);
-                                    let upright = rotation::upright(&shape.placement);
-                                    let outline = rotation::corners(turn, &shape.placement);
-                                    if upright {
-                                        painter.rect_stroke(
-                                            at.expand(1.0),
-                                            0.0,
-                                            Stroke::new(2.0, selection),
-                                            egui::StrokeKind::Outside,
-                                        );
-                                    } else {
-                                        painter.add(egui::Shape::closed_line(
-                                            outline.to_vec(),
-                                            Stroke::new(2.0, selection),
-                                        ));
-                                    }
-                                    // Only a single, free selection resizes or
-                                    // turns by hand (D-91).
-                                    if single == Some((shape.page, shape.node)) && !shape.locked {
-                                        let knob = rotation::rotate_handle(turn, &shape.placement);
-                                        let top = canvas::handle_point(
-                                            turn,
-                                            &shape.placement,
-                                            canvas::Handle { x: 0, y: -1 },
-                                        );
-                                        painter
-                                            .line_segment([top, knob], Stroke::new(1.0, selection));
-                                        painter.circle(
-                                            knob,
-                                            canvas::HANDLE_HALF,
+                                        painter.rect(
+                                            square,
+                                            2.0,
                                             theme.c("surface"),
                                             Stroke::new(1.5, selection),
+                                            egui::StrokeKind::Inside,
                                         );
-                                        for handle in canvas::HANDLES {
-                                            let square = Rect::from_center_size(
-                                                canvas::handle_point(
-                                                    turn,
-                                                    &shape.placement,
-                                                    handle,
-                                                ),
-                                                Vec2::splat(canvas::HANDLE_HALF * 2.0),
-                                            );
-                                            painter.rect(
-                                                square,
-                                                2.0,
-                                                theme.c("surface"),
-                                                Stroke::new(1.5, selection),
-                                                egui::StrokeKind::Inside,
-                                            );
+                                    }
+                                    // The same hit test as the grab: the
+                                    // nearest handle within 24 px.
+                                    grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
+                                        Some(Some(Hold::Resize(handle))) => {
+                                            Some(resize::cursor(turn, handle))
                                         }
-                                        // The same hit test as the grab: the
-                                        // nearest handle within 24 px.
-                                        grip_cursor = match self.drag.as_ref().map(|d| d.hold) {
-                                            Some(Some(Hold::Resize(handle))) => {
-                                                Some(resize::cursor(turn, handle))
-                                            }
-                                            Some(Some(Hold::Rotate { .. })) => {
-                                                Some(egui::CursorIcon::Grabbing)
-                                            }
-                                            Some(None) => grip_cursor,
-                                            None => response
-                                                .hover_pos()
-                                                .and_then(|at| {
-                                                    canvas::grip_hit(turn, &shape.placement, at)
-                                                })
-                                                .map(|grip| match grip {
-                                                    canvas::Grip::Resize(handle) => {
-                                                        resize::cursor(turn, handle)
-                                                    }
-                                                    canvas::Grip::Rotate => egui::CursorIcon::Grab,
-                                                })
-                                                .or(grip_cursor),
-                                        };
-                                        if let Some(drag) = &self.drag
-                                            && let Some(Hold::Resize(handle)) = drag.hold
-                                            && let Some((_, from)) = drag.origins.first()
-                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
-                                        {
-                                            size_label(
-                                                painter,
-                                                theme,
-                                                at,
-                                                resize::outward(turn, handle),
-                                                area,
-                                                (from, &shape.placement),
-                                            );
+                                        Some(Some(Hold::Rotate { .. })) => {
+                                            Some(egui::CursorIcon::Grabbing)
                                         }
-                                        if response.drag_started()
-                                            && let Some(pos) = pointer
-                                            && let Some(grip) =
-                                                canvas::grip_hit(turn, &shape.placement, pos)
-                                        {
-                                            grabbed = Some(match grip {
+                                        Some(None) => grip_cursor,
+                                        None => response
+                                            .hover_pos()
+                                            .and_then(|at| {
+                                                canvas::grip_hit(turn, &shape.placement, at)
+                                            })
+                                            .map(|grip| match grip {
                                                 canvas::Grip::Resize(handle) => {
-                                                    Hold::Resize(handle)
+                                                    resize::cursor(turn, handle)
                                                 }
-                                                canvas::Grip::Rotate => Hold::Rotate {
-                                                    center: rotation::screen(
-                                                        turn,
-                                                        shape.placement.w / 2.0,
-                                                        shape.placement.h / 2.0,
-                                                    ),
-                                                    from: pos,
-                                                },
-                                            });
-                                        }
-                                    }
-                                }
-                                if self.selected.len() > 1
-                                    && self.selected.page() == Some(page_doc.id)
-                                {
-                                    // The box around a multi-selection (spec 040).
-                                    let boxes = chosen
-                                        .iter()
-                                        .map(|s| rotation::screen_box(page, zoom, &s.placement));
-                                    if let Some(all) = canvas::bounds(boxes) {
-                                        painter.rect_stroke(
-                                            all.expand(4.0),
-                                            0.0,
-                                            Stroke::new(1.0, selection),
-                                            egui::StrokeKind::Outside,
+                                                canvas::Grip::Rotate => egui::CursorIcon::Grab,
+                                            })
+                                            .or(grip_cursor),
+                                    };
+                                    if let Some(drag) = &self.drag
+                                        && let Some(Hold::Resize(handle)) = drag.hold
+                                        && let Some((_, from)) = drag.origins.first()
+                                        && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                    {
+                                        size_label(
+                                            painter,
+                                            theme,
+                                            at,
+                                            resize::outward(turn, handle),
+                                            area,
+                                            (from, &shape.placement),
                                         );
                                     }
-                                }
-                                // A press inside the box of a selected element
-                                // takes it, also where it leaves its page
-                                // (S51-03).
-                                if pressed
-                                    && !response.double_clicked()
-                                    && let Some(at) = pointer
-                                {
-                                    let boxes: Vec<Shape> = chosen
-                                        .iter()
-                                        .cloned()
-                                        .map(|mut shape| {
-                                            shape.geometry = ShapeGeometry::Rect;
-                                            shape.locked = false;
-                                            shape
-                                        })
-                                        .collect();
-                                    if let Some(node) = canvas::hit(&boxes, page, zoom, at) {
-                                        picked = Some((id, node));
+                                    if response.drag_started()
+                                        && let Some(pos) = pointer
+                                        && let Some(grip) =
+                                            canvas::grip_hit(turn, &shape.placement, pos)
+                                    {
+                                        grabbed = Some(match grip {
+                                            canvas::Grip::Resize(handle) => Hold::Resize(handle),
+                                            canvas::Grip::Rotate => Hold::Rotate {
+                                                center: rotation::screen(
+                                                    turn,
+                                                    shape.placement.w / 2.0,
+                                                    shape.placement.h / 2.0,
+                                                ),
+                                                from: pos,
+                                            },
+                                        });
                                     }
                                 }
                             }
-                            // Outside every page, the cut-away part of an
-                            // element is still taken (S51-06).
+                            if self.selected.len() > 1 && self.selected.page() == Some(page_doc.id)
+                            {
+                                // The box around a multi-selection (spec 040).
+                                let boxes = chosen
+                                    .iter()
+                                    .map(|s| rotation::screen_box(page, zoom, &s.placement));
+                                if let Some(all) = canvas::bounds(boxes) {
+                                    painter.rect_stroke(
+                                        all.expand(4.0),
+                                        0.0,
+                                        Stroke::new(1.0, selection),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                            }
+                            // A press inside the box of a selected element
+                            // takes it, also where it leaves its page
+                            // (S51-03).
                             if pressed
-                                && picked.is_none()
-                                && let Some(at) = pointer
-                                && let Some((id, leaf)) = transfer::outside_hit(&laid, zoom, at)
-                                && let Some(page_doc) = pages.iter().find(|p| p.id == id)
-                                && let Some((node, scope)) = group::click(
-                                    page_doc,
-                                    leaf,
-                                    self.scope_on(id),
-                                    response.double_clicked(),
-                                )
-                            {
-                                picked = Some((id, node));
-                                asked.scope = Some(scope.map(|group| (id, group)));
-                            }
-                            // The field of a text being written on the
-                            // canvas, over its element (spec 055).
-                            self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
-                            if let Some(icon) = grip_cursor {
-                                ui.ctx().set_cursor_icon(icon);
-                            }
-                            // A press on a page makes it the active one;
-                            // outside every page none is. A handle or a
-                            // guide keeps it (S50-01).
-                            if (response.clicked() || response.drag_started())
-                                && grabbed.is_none()
-                                && guide_hit.is_none()
+                                && !response.double_clicked()
                                 && let Some(at) = pointer
                             {
-                                self.active =
-                                    active_after(&page_rects, at, picked.map(|(page, _)| page));
-                            }
-                            if let Some(handle) = grabbed {
-                                // A handle of the selection wins over whatever
-                                // lies under it, and keeps the scope.
-                                asked.drag_begin = Some(Some(handle));
-                                asked.scope = None;
-                            } else if let Some(held) = guide_hit {
-                                // Then a guide, over the elements (spec 044).
-                                self.guide_drag = Some(held);
-                            } else if response.clicked() {
-                                // Click selects one; Shift+click toggles it.
-                                let mut next = self.selected.clone();
-                                match (picked, shift) {
-                                    (Some((page, node)), true) => next.toggle(page, node),
-                                    (Some((page, node)), false) => {
-                                        next = Selection::one(page, node)
-                                    }
-                                    (None, true) => {}
-                                    // Empty canvas also leaves a group entered.
-                                    (None, false) => {
-                                        next.clear();
-                                        asked.scope = Some(None);
-                                    }
+                                let boxes: Vec<Shape> = chosen
+                                    .iter()
+                                    .cloned()
+                                    .map(|mut shape| {
+                                        shape.geometry = ShapeGeometry::Rect;
+                                        shape.locked = false;
+                                        shape
+                                    })
+                                    .collect();
+                                if let Some(node) = canvas::hit(&boxes, page, zoom, at) {
+                                    picked = Some((id, node));
                                 }
-                                asked.select = Some(next);
-                            } else if response.drag_started() {
-                                match picked {
-                                    // A drag on a selected element moves the
-                                    // whole selection; on another one it selects
-                                    // it first (Shift adds it).
-                                    Some((page, node)) => {
-                                        if !self.selected.contains(page, node) {
-                                            let mut next = self.selected.clone();
-                                            if shift {
-                                                next.add(page, [node]);
-                                            } else {
-                                                next = Selection::one(page, node);
-                                            }
-                                            asked.select = Some(next);
+                            }
+                        }
+                        // Outside every page, the cut-away part of an
+                        // element is still taken (S51-06).
+                        if pressed
+                            && picked.is_none()
+                            && let Some(at) = pointer
+                            && let Some((id, leaf)) = transfer::outside_hit(&laid, zoom, at)
+                            && let Some(page_doc) = pages.iter().find(|p| p.id == id)
+                            && let Some((node, scope)) = group::click(
+                                page_doc,
+                                leaf,
+                                self.scope_on(id),
+                                response.double_clicked(),
+                            )
+                        {
+                            picked = Some((id, node));
+                            asked.scope = Some(scope.map(|group| (id, group)));
+                        }
+                        // The field of a text being written on the
+                        // canvas, over its element (spec 055).
+                        self.edit_field(ui, theme, pages, &page_rects, zoom, asked);
+                        if let Some(icon) = grip_cursor {
+                            ui.ctx().set_cursor_icon(icon);
+                        }
+                        // A press on a page makes it the active one;
+                        // outside every page none is. A handle or a
+                        // guide keeps it (S50-01).
+                        if (response.clicked() || response.drag_started())
+                            && grabbed.is_none()
+                            && guide_hit.is_none()
+                            && let Some(at) = pointer
+                        {
+                            self.active =
+                                active_after(&page_rects, at, picked.map(|(page, _)| page));
+                        }
+                        if let Some(handle) = grabbed {
+                            // A handle of the selection wins over whatever
+                            // lies under it, and keeps the scope.
+                            asked.drag_begin = Some(Some(handle));
+                            asked.scope = None;
+                        } else if let Some(held) = guide_hit {
+                            // Then a guide, over the elements (spec 044).
+                            self.guide_drag = Some(held);
+                        } else if response.clicked() {
+                            // Click selects one; Shift+click toggles it.
+                            let mut next = self.selected.clone();
+                            match (picked, shift) {
+                                (Some((page, node)), true) => next.toggle(page, node),
+                                (Some((page, node)), false) => next = Selection::one(page, node),
+                                (None, true) => {}
+                                // Empty canvas also leaves a group entered.
+                                (None, false) => {
+                                    next.clear();
+                                    asked.scope = Some(None);
+                                }
+                            }
+                            asked.select = Some(next);
+                        } else if response.drag_started() {
+                            match picked {
+                                // A drag on a selected element moves the
+                                // whole selection; on another one it selects
+                                // it first (Shift adds it).
+                                Some((page, node)) => {
+                                    if !self.selected.contains(page, node) {
+                                        let mut next = self.selected.clone();
+                                        if shift {
+                                            next.add(page, [node]);
+                                        } else {
+                                            next = Selection::one(page, node);
                                         }
-                                        asked.drag_begin = Some(None);
+                                        asked.select = Some(next);
                                     }
-                                    // On empty canvas it draws a marquee.
-                                    None => {
-                                        if let Some(from) = press.or(pointer) {
-                                            self.marquee = Some(Marquee {
-                                                from,
-                                                to: pointer.unwrap_or(from),
-                                                add: shift,
-                                            });
-                                        }
+                                    asked.drag_begin = Some(None);
+                                }
+                                // On empty canvas it draws a marquee.
+                                None => {
+                                    if let Some(from) = press.or(pointer) {
+                                        self.marquee = Some(Marquee {
+                                            from,
+                                            to: pointer.unwrap_or(from),
+                                            add: shift,
+                                        });
                                     }
                                 }
                             }
-                            if response.dragged() {
-                                if let Some(marquee) = self.marquee.as_mut() {
-                                    if let Some(to) = pointer {
-                                        marquee.to = to;
-                                    }
-                                } else if self.drag.is_some() {
-                                    asked.drag_to = Some(response.drag_delta());
-                                    // Only the state of the keys counts (D-90):
-                                    // Shift frees a corner, Alt resizes from the
-                                    // centre and Ctrl lets the magnet go.
-                                    asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
+                        }
+                        if response.dragged() {
+                            if let Some(marquee) = self.marquee.as_mut() {
+                                if let Some(to) = pointer {
+                                    marquee.to = to;
                                 }
+                            } else if self.drag.is_some() {
+                                asked.drag_to = Some(response.drag_delta());
+                                // Only the state of the keys counts (D-90):
+                                // Shift frees a corner, Alt resizes from the
+                                // centre and Ctrl lets the magnet go.
+                                asked.hold_keys(resize::drag_keys(ui.input(|i| i.modifiers)));
                             }
-                            if let Some(marquee) = self.marquee {
-                                painter.rect(
-                                    Rect::from_two_pos(marquee.from, marquee.to),
-                                    0.0,
-                                    theme.c("selection.bg").gamma_multiply(0.5),
-                                    Stroke::new(1.0, selection),
-                                    egui::StrokeKind::Inside,
-                                );
-                            }
-                            if response.drag_stopped() {
-                                match self.marquee.take() {
-                                    Some(marquee) => {
-                                        // What it touches counts by the child of
-                                        // the scope that holds it (spec 043).
-                                        let pick = |page: PageId, leaf: NodeId| {
-                                            let on = pages.iter().find(|p| p.id == page)?;
-                                            group::pick(on, leaf, self.scope_on(page))
-                                        };
-                                        asked.select = Some(marquee_selection(
-                                            &self.selected,
-                                            marquee,
-                                            &laid,
-                                            zoom,
-                                            pick,
+                        }
+                        if let Some(marquee) = self.marquee {
+                            painter.rect(
+                                Rect::from_two_pos(marquee.from, marquee.to),
+                                0.0,
+                                theme.c("selection.bg").gamma_multiply(0.5),
+                                Stroke::new(1.0, selection),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        if response.drag_stopped() {
+                            match self.marquee.take() {
+                                Some(marquee) => {
+                                    // What it touches counts by the child of
+                                    // the scope that holds it (spec 043).
+                                    let pick = |page: PageId, leaf: NodeId| {
+                                        let on = pages.iter().find(|p| p.id == page)?;
+                                        group::pick(on, leaf, self.scope_on(page))
+                                    };
+                                    asked.select = Some(marquee_selection(
+                                        &self.selected,
+                                        marquee,
+                                        &laid,
+                                        zoom,
+                                        pick,
+                                    ));
+                                }
+                                None => {
+                                    asked.drag_end = true;
+                                    // A move dropped on another page goes
+                                    // there (S51-04).
+                                    let rect_of = |id: PageId| {
+                                        page_rects.iter().find(|(p, _)| *p == id).map(|r| r.1)
+                                    };
+                                    if let Some(drag) = &self.drag
+                                        && drag.hold.is_none()
+                                        && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+                                        && let Some(to) =
+                                            transfer::drop_target(&page_rects, drag.page, at)
+                                        && let (Some(a), Some(b)) =
+                                            (rect_of(drag.page), rect_of(to))
+                                    {
+                                        let shift = (a.min - b.min) / zoom;
+                                        asked.transfer = Some((
+                                            drag.page,
+                                            to,
+                                            (f64::from(shift.x), f64::from(shift.y)),
                                         ));
                                     }
-                                    None => {
-                                        asked.drag_end = true;
-                                        // A move dropped on another page goes
-                                        // there (S51-04).
-                                        let rect_of = |id: PageId| {
-                                            page_rects.iter().find(|(p, _)| *p == id).map(|r| r.1)
-                                        };
-                                        if let Some(drag) = &self.drag
-                                            && drag.hold.is_none()
-                                            && let Some(at) = ui.input(|i| i.pointer.latest_pos())
-                                            && let Some(to) =
-                                                transfer::drop_target(&page_rects, drag.page, at)
-                                            && let (Some(a), Some(b)) =
-                                                (rect_of(drag.page), rect_of(to))
-                                        {
-                                            let shift = (a.min - b.min) / zoom;
-                                            asked.transfer = Some((
-                                                drag.page,
-                                                to,
-                                                (f64::from(shift.x), f64::from(shift.y)),
-                                            ));
-                                        }
-                                    }
                                 }
                             }
-                        });
+                        }
+                    });
+                    self.scroll_offset = shown.state.offset;
                 });
+                // After a zoom, scroll so the page point that was under the
+                // pointer is under it again (S59-02).
+                if let Some((page, at, pointer)) = self.zoom_anchor.take()
+                    && let Some((_, rect)) = page_rects.iter().find(|(id, _)| *id == page)
+                {
+                    let landed = rect.min + at * self.zoom;
+                    self.pending_scroll =
+                        Some(zoom::anchored_offset(self.scroll_offset, landed, pointer));
+                    ui.ctx().request_repaint();
+                }
                 self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
                 self.page_rects = page_rects;
             });

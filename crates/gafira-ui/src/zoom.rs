@@ -103,14 +103,49 @@ pub(crate) fn step_out(current: f32) -> f32 {
         .unwrap_or(MIN)
 }
 
-/// The scale after a Ctrl + wheel of `scroll` points: smooth, never past the limits.
-pub(crate) fn wheel(current: f32, scroll: f32) -> f32 {
-    clamp(current * (scroll / 400.0).exp())
+/// The zoom after a pinch or Ctrl + wheel of `factor` (S59-01): the
+/// current one times it, within the limits.
+pub(crate) fn by_factor(current: f32, factor: f32) -> f32 {
+    clamp(current * factor)
+}
+
+/// The scroll offset that puts back under `pointer` the page point that
+/// was under it, now drawn at `landed` with the offset `offset` (S59-02).
+pub(crate) fn anchored_offset(
+    offset: egui::Vec2,
+    landed: egui::Pos2,
+    pointer: egui::Pos2,
+) -> egui::Vec2 {
+    offset + (landed - pointer)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // S59-01: a pinch or Ctrl + wheel multiplies the zoom, within 5-3200 %.
+    #[test]
+    fn s59_01_zoom_by_factor() {
+        assert_eq!(by_factor(1.0, 1.1), 1.1);
+        assert_eq!(by_factor(2.0, 0.5), 1.0);
+        assert_eq!(by_factor(MAX, 2.0), MAX);
+        assert_eq!(by_factor(MIN, 0.5), MIN);
+    }
+
+    // S59-02: the page point drawn at `landed` goes back under the pointer:
+    // the offset moves by the difference.
+    #[test]
+    fn s59_02_anchored_offset() {
+        let offset = egui::Vec2::new(100.0, 40.0);
+        let moved = anchored_offset(
+            offset,
+            egui::Pos2::new(530.0, 300.0),
+            egui::Pos2::new(500.0, 320.0),
+        );
+        assert_eq!(moved, egui::Vec2::new(130.0, 20.0));
+        let pointer = egui::Pos2::new(10.0, 10.0);
+        assert_eq!(anchored_offset(offset, pointer, pointer), offset);
+    }
 
     #[test]
     fn s37_06_steps_go_to_the_next_stop_and_stop_at_the_limits() {
@@ -147,9 +182,9 @@ mod tests {
             }
         }
         assert_eq!(clamp(f32::NAN), 1.0);
-        assert_eq!(wheel(1.0, 1.0e6), MAX);
-        assert_eq!(wheel(1.0, -1.0e6), MIN);
-        assert!(wheel(1.0, 40.0) > 1.0 && wheel(1.0, -40.0) < 1.0);
+        assert_eq!(by_factor(1.0, 1.0e6), MAX);
+        assert_eq!(by_factor(1.0, 1.0e-6), MIN);
+        assert!(by_factor(1.0, 1.1) > 1.0 && by_factor(1.0, 0.9) < 1.0);
     }
 
     #[test]
