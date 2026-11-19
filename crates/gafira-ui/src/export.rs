@@ -241,6 +241,11 @@ pub(crate) fn scope(dialog: &Dialog, document: &Document) -> Result<Vec<PageId>,
             .filter_map(|index| document.pages().get(index).map(|page| page.id))
             .collect(),
     };
+    // A hidden page is not exported (FD-02 b); a range still counts it.
+    let pages: Vec<PageId> = pages
+        .into_iter()
+        .filter(|id| document.page(*id).is_some_and(|page| !page.hidden))
+        .collect();
     if pages.is_empty() {
         return Err(Refusal::Nothing);
     }
@@ -1054,6 +1059,38 @@ pub(crate) mod tests {
             Err(Refusal::Range(RangeError::OutOfRange)),
             "a page past the last one cannot export"
         );
+    }
+
+    // S56-04 (FD-02 b): a hidden page is left out of «Todas» and of a
+    // range, which still counts it; hidden alone, nothing is exported.
+    #[test]
+    fn s56_04_hidden_pages_are_not_exported() {
+        let mut engine = document_engine(4);
+        let ids: Vec<PageId> = engine
+            .edit()
+            .document()
+            .expect("a snapshot")
+            .pages()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        engine
+            .edit()
+            .execute(Box::new(gafira_edit::SetProperty::page(
+                ids[1],
+                gafira_edit::Property::PageHidden(true),
+                None,
+            )))
+            .expect("hidden");
+        let document = engine.edit().document().expect("a snapshot");
+        let mut dialog = dialog_on(&engine, "png", Some(ids[1]));
+        dialog.choose_pages(Pages::All);
+        assert_eq!(scope(&dialog, &document), Ok(vec![ids[0], ids[2], ids[3]]));
+        dialog.choose_pages(Pages::Range);
+        dialog.range = "1-3".to_owned();
+        assert_eq!(scope(&dialog, &document), Ok(vec![ids[0], ids[2]]));
+        dialog.choose_pages(Pages::Current);
+        assert_eq!(scope(&dialog, &document), Err(Refusal::Nothing));
     }
 
     // S39-04: the options of the schema reach the request, and those the

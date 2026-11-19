@@ -12,8 +12,9 @@ use crate::group;
 /// Whether `id` is locked on `page`: itself, or a group above it (D-91).
 /// A locked element is not picked on the canvas and does not move.
 pub(crate) fn locked(page: &Page, id: NodeId) -> bool {
+    // A locked page locks everything on it (spec 056).
     let own = |id: NodeId| page.node(id).is_some_and(|node| node.base.locked);
-    own(id) || ancestors(page, id).into_iter().any(own)
+    page.locked || own(id) || ancestors(page, id).into_iter().any(own)
 }
 
 /// Whether `id` is hidden on `page`: itself, or a group above it. Its
@@ -204,6 +205,22 @@ mod tests {
         assert_eq!(canvas::in_marquee(&shapes, at(&page), 1.0, all), [n(2)]);
         assert_eq!(group::items(&page, None), [n(2)]);
         assert!(group::items(&page, Some(n(9))).is_empty());
+    }
+
+    // S56-05: on a locked page every element is locked: not picked, not
+    // in Ctrl+A, not moved.
+    #[test]
+    fn s56_05_a_locked_page_locks_its_elements() {
+        let mut page = page();
+        page.locked = true;
+        assert!(locked(&page, n(2)) && locked(&page, n(3)));
+        assert!(movable(&page, &[n(1), n(2)]).is_empty());
+        let shapes = canvas::shapes(&page);
+        assert_eq!(
+            canvas::hit(&shapes, at(&page), 1.0, egui::Pos2::new(50.0, 50.0)),
+            None
+        );
+        assert!(group::items(&page, None).is_empty());
     }
 
     // S48-04 (D-91): a selection that mixes locked and free elements only

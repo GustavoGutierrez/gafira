@@ -143,6 +143,9 @@ fn pickable(page: &Page, id: NodeId) -> bool {
 /// front: its children with something visible and free below them. What
 /// Ctrl+A selects; nothing inside a hidden or locked scope (D-91).
 pub(crate) fn items(page: &Page, scope: Option<NodeId>) -> Vec<NodeId> {
+    if page.locked {
+        return Vec::new();
+    }
     let list = match scope {
         None => &page.roots,
         Some(group) if crate::layers::locked(page, group) => return Vec::new(),

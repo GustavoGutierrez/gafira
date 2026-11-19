@@ -71,11 +71,15 @@ pub(crate) enum Icon {
     /// Notas and Páginas in the bottom bar (spec 049).
     Notes,
     Pages,
+    /// The page header (spec 056): Subir, Duplicar and Añadir página.
+    PageUp,
+    PageCopy,
+    PageAdd,
 }
 
 impl Icon {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 38] = [
+    pub(crate) const ALL: [Self; 41] = [
         Self::Home,
         Self::Undo,
         Self::Redo,
@@ -114,6 +118,9 @@ impl Icon {
         Self::Unlocked,
         Self::Notes,
         Self::Pages,
+        Self::PageUp,
+        Self::PageCopy,
+        Self::PageAdd,
     ];
 
     /// The Phosphor name of the icon (its file without weight suffix).
@@ -157,6 +164,9 @@ impl Icon {
             Self::Unlocked => "lock-simple-open",
             Self::Notes => "note-pencil",
             Self::Pages => "squares-four",
+            Self::PageUp => "caret-up",
+            Self::PageCopy => "copy",
+            Self::PageAdd => "file-plus",
         }
     }
 

@@ -98,7 +98,8 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
     }
     let mut out = Vec::new();
     for root in &page.roots {
-        visit(page, *root, (1.0, false), 0, &mut out);
+        // A locked page locks everything on it (spec 056).
+        visit(page, *root, (1.0, page.locked), 0, &mut out);
     }
     out
 }

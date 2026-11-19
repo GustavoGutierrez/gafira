@@ -193,6 +193,8 @@ view = "Ver"
 size = "Tamaño"
 
 [editor]
+page_hidden = "Página oculta"
+page_title_hint = "Agregar título de página"
 untitled = "Sin título"
 saved = "Cambios guardados."
 versions = "Versiones"
@@ -386,3 +388,14 @@ when = "{date} · {ago}"
 empty = "Todavía no hay versiones. Guarda una desde el menú Archivo."
 save_failed = "No pudimos guardar la versión. Inténtalo de nuevo."
 restore_failed = "No pudimos restaurar la versión. Inténtalo de nuevo."
+
+[page]
+up = "Subir página"
+down = "Bajar página"
+hide = "Ocultar página"
+show = "Mostrar página"
+lock = "Bloquear página"
+unlock = "Desbloquear página"
+duplicate = "Duplicar página"
+delete = "Eliminar página"
+add = "Añadir página"

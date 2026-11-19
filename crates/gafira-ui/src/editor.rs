@@ -5,8 +5,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use egui::{
-    Align, Align2, Color32, Key, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, RichText, Stroke,
-    Vec2,
+    Align, Color32, Key, KeyboardShortcut, Layout, Modifiers, Pos2, Rect, RichText, Stroke, Vec2,
 };
 use gafira_doc::msg::MessageKey;
 use gafira_doc::{Document, GuideAxis, GuideSet, NodeId, Page, PageId, Placement, ShapeGeometry};
@@ -288,6 +287,9 @@ pub(crate) struct Editor {
     /// The page clicked last, drawn with a border; `None` after a click
     /// outside every page (spec 050).
     active: Option<PageId>,
+    /// The page whose title is being written in its header, the words so
+    /// far and whether the field took the keyboard (spec 056).
+    renaming_page: Option<(PageId, String, bool)>,
     /// Each page's id and screen box in the last frame drawn: where a shape
     /// dragged from the panel lands (spec 052).
     page_rects: Vec<(PageId, Rect)>,
@@ -382,6 +384,7 @@ impl Default for Editor {
             renaming: None,
             row_drag: None,
             active: None,
+            renaming_page: None,
             page_rects: Vec::new(),
             path_textures: std::cell::RefCell::default(),
             editing: None,
@@ -504,6 +507,8 @@ struct Asked {
         Option<gafira_doc::TextAlign>,
         Option<gafira_doc::VerticalAlign>,
     )>,
+    /// An action of a page header (spec 056).
+    page_action: Option<PageAction>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -522,6 +527,20 @@ impl Asked {
         self.centre = keys.centre;
         self.free = keys.free;
     }
+}
+
+/// What a page header asks for (spec 056, FD-02).
+#[derive(Clone, Debug, PartialEq)]
+enum PageAction {
+    /// One place towards the front (`-1`) or the back (`1`).
+    Move(PageId, isize),
+    Hide(PageId, bool),
+    Lock(PageId, bool),
+    Duplicate(PageId),
+    Delete(PageId),
+    /// An empty page of the same size right after it.
+    AddAfter(PageId),
+    Rename(PageId, String),
 }
 
 /// What the top bar shows about the session.
@@ -2081,6 +2100,215 @@ impl Editor {
         }
     }
 
+    /// The header over a page (spec 056, FD-02): «Página N» («Página
+    /// oculta» when hidden), a dash and its title, written in place on a
+    /// click, or «Agregar título de página»; on the right, Subir, Bajar,
+    /// Ocultar, Bloquear, Duplicar, Eliminar and Añadir página.
+    fn page_header(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        texts: &Texts,
+        rect: Rect,
+        (page, index, count): (&Page, usize, usize),
+        asked: &mut Asked,
+    ) {
+        let mut row = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        let ui = &mut row;
+        let font = theme.font("ui-label");
+        let number = if page.hidden {
+            plain(texts, "editor.page_hidden")
+        } else {
+            texts.t(&gafira_doc::msg!(
+                "editor.page",
+                number = Count(index as u64 + 1)
+            ))
+        };
+        ui.label(
+            RichText::new(number)
+                .font(font.clone())
+                .color(theme.c("text")),
+        );
+        ui.label(
+            RichText::new(" - ")
+                .font(font.clone())
+                .color(theme.c("text.secondary")),
+        );
+        let renaming = self
+            .renaming_page
+            .as_mut()
+            .filter(|(id, _, _)| *id == page.id);
+        if let Some((_, words, focused)) = renaming {
+            let field = ui.add(
+                egui::TextEdit::singleline(words)
+                    .font(font.clone())
+                    .desired_width(220.0)
+                    .hint_text(plain(texts, "editor.page_title_hint")),
+            );
+            if !*focused {
+                field.request_focus();
+                *focused = true;
+            } else if field.lost_focus() {
+                // Enter or a click elsewhere keeps it; Esc does not.
+                if !ui.input(|i| i.key_pressed(Key::Escape)) && words.trim() != page.name {
+                    asked.page_action = Some(PageAction::Rename(page.id, words.clone()));
+                }
+                self.renaming_page = None;
+            }
+        } else {
+            let empty = page.name.is_empty();
+            let (words, color) = if empty {
+                (
+                    plain(texts, "editor.page_title_hint"),
+                    theme.c("text.secondary"),
+                )
+            } else {
+                (page.name.clone(), theme.c("text"))
+            };
+            let title = ui
+                .add(
+                    egui::Label::new(RichText::new(words).font(font).color(color))
+                        .sense(egui::Sense::click()),
+                )
+                .on_hover_cursor(egui::CursorIcon::Text);
+            if empty {
+                // A dotted line under the hint, like a field to fill.
+                let y = title.rect.bottom() + 1.0;
+                ui.painter().extend(egui::Shape::dashed_line(
+                    &[
+                        Pos2::new(title.rect.left(), y),
+                        Pos2::new(title.rect.right(), y),
+                    ],
+                    Stroke::new(1.0, theme.c("text.secondary")),
+                    3.0,
+                    2.0,
+                ));
+            }
+            if title.clicked() {
+                self.renaming_page = Some((page.id, page.name.clone(), false));
+            }
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let button = |ui: &mut egui::Ui, icon, key: &'static str, enabled: bool| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    IconButton::new(icon, plain(texts, key))
+                        .small()
+                        .show(ui, theme)
+                })
+                .inner
+                .clicked()
+            };
+            let id = page.id;
+            if button(ui, Icon::PageAdd, "page.add", true) {
+                asked.page_action = Some(PageAction::AddAfter(id));
+            }
+            if button(ui, Icon::Delete, "page.delete", count > 1) {
+                asked.page_action = Some(PageAction::Delete(id));
+            }
+            if button(ui, Icon::PageCopy, "page.duplicate", true) {
+                asked.page_action = Some(PageAction::Duplicate(id));
+            }
+            let (icon, key) = if page.locked {
+                (Icon::Locked, "page.unlock")
+            } else {
+                (Icon::Unlocked, "page.lock")
+            };
+            if button(ui, icon, key, true) {
+                asked.page_action = Some(PageAction::Lock(id, !page.locked));
+            }
+            let (icon, key) = if page.hidden {
+                (Icon::Hidden, "page.show")
+            } else {
+                (Icon::Visible, "page.hide")
+            };
+            if button(ui, icon, key, true) {
+                asked.page_action = Some(PageAction::Hide(id, !page.hidden));
+            }
+            if button(ui, Icon::Expand, "page.down", index + 1 < count) {
+                asked.page_action = Some(PageAction::Move(id, 1));
+            }
+            if button(ui, Icon::PageUp, "page.up", index > 0) {
+                asked.page_action = Some(PageAction::Move(id, -1));
+            }
+        });
+    }
+
+    /// An action of a page header (spec 056), one undo step each: every
+    /// command has a gesture of its own, so two quick ones never merge.
+    fn page_action(&mut self, engine: &mut Gafira, action: &PageAction) {
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let pages = document.pages();
+        let index_of = |id: PageId| pages.iter().position(|p| p.id == id);
+        let gesture = engine.edit().begin_gesture().ok();
+        let command: Box<dyn Command> = match action {
+            PageAction::Move(page, step) => {
+                let Some(to) = index_of(*page)
+                    .and_then(|at| at.checked_add_signed(*step))
+                    .filter(|to| *to < pages.len())
+                else {
+                    let _ = engine.edit().end_gesture();
+                    return;
+                };
+                Box::new(gafira_edit::ReorderPage::new(*page, to))
+            }
+            PageAction::Hide(page, on) => {
+                Box::new(SetProperty::page(*page, Property::PageHidden(*on), gesture))
+            }
+            PageAction::Lock(page, on) => {
+                Box::new(SetProperty::page(*page, Property::PageLocked(*on), gesture))
+            }
+            PageAction::Rename(page, name) => Box::new(SetProperty::page(
+                *page,
+                Property::PageName(name.trim().to_owned()),
+                gesture,
+            )),
+            PageAction::Duplicate(page) => Box::new(gafira_edit::DuplicatePage::new(*page)),
+            PageAction::Delete(page) => {
+                if pages.len() < 2 {
+                    let _ = engine.edit().end_gesture();
+                    return;
+                }
+                Box::new(gafira_edit::RemovePage::new(*page))
+            }
+            PageAction::AddAfter(page) => {
+                let Some(at) = index_of(*page) else {
+                    let _ = engine.edit().end_gesture();
+                    return;
+                };
+                Box::new(InsertPage::new(at + 1, String::new(), pages[at].size))
+            }
+        };
+        // A new page takes the next id of the document.
+        let next = PageId::new(document.next_id());
+        match engine.edit().execute(command) {
+            Ok(_) => match action {
+                PageAction::Duplicate(_) | PageAction::AddAfter(_) => {
+                    self.active = Some(next);
+                    self.selected = Selection::default();
+                    self.scope = None;
+                }
+                PageAction::Delete(page) => {
+                    if self.selected.page() == Some(*page) {
+                        self.selected = Selection::default();
+                    }
+                    if self.active == Some(*page) {
+                        self.active = None;
+                    }
+                    self.scope = None;
+                }
+                _ => {}
+            },
+            Err(error) => eprintln!("page: {error}"),
+        }
+        let _ = engine.edit().end_gesture();
+    }
+
     /// Writing on the canvas and the alignment of a shape's text (spec
     /// 055). A whole edit is one undo step: every change carries the
     /// gesture opened when it began.
@@ -2442,16 +2670,21 @@ impl Editor {
                                         egui::StrokeKind::Outside,
                                     );
                                 }
-                                painter.text(
-                                    Pos2::new(page.min.x, page.min.y - 8.0),
-                                    Align2::LEFT_BOTTOM,
-                                    texts.t(&gafira_doc::msg!(
-                                        "editor.page",
-                                        number = Count(index as u64 + 1)
-                                    )),
-                                    theme.font("caption"),
-                                    theme.c("text.secondary"),
-                                );
+                                // The header over the page (spec 056).
+                                if let Some(page_doc) = pages.get(index) {
+                                    let header = Rect::from_min_max(
+                                        Pos2::new(page.min.x, page.min.y - 36.0),
+                                        Pos2::new(page.max.x, page.min.y - 4.0),
+                                    );
+                                    self.page_header(
+                                        ui,
+                                        theme,
+                                        texts,
+                                        header,
+                                        (page_doc, index, pages.len()),
+                                        asked,
+                                    );
+                                }
                                 if let Some(page_doc) = pages.get(index) {
                                     let shapes = canvas::shapes(page_doc);
                                     // Each page draws its elements cut to it (D-92).
@@ -3435,6 +3668,9 @@ impl Editor {
         }
         self.layer_changes(engine, asked);
         self.text_editing(engine, asked, theme);
+        if let Some(action) = &asked.page_action {
+            self.page_action(engine, action);
+        }
         // Every selected element goes in one RemoveNodes: one undo step.
         if asked.delete
             && let Some(page) = self.selected.page()
@@ -6633,6 +6869,67 @@ pub(crate) mod tests {
         assert_eq!(inner(&mut engine), Some(text));
         engine.edit().undo().expect("an undo");
         assert_eq!(inner(&mut engine), None);
+    }
+
+    // S56-03: each action of a page header is one undo step: add a page
+    // after, duplicate, move, hide, lock, rename and delete.
+    #[test]
+    fn s56_03_page_header_actions() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        start(&mut engine, StartFormat::Social).expect("a new document");
+        let ids = |engine: &mut Gafira| -> Vec<PageId> {
+            engine
+                .edit()
+                .document()
+                .expect("a document")
+                .pages()
+                .iter()
+                .map(|p| p.id)
+                .collect()
+        };
+        let act = |engine: &mut Gafira, editor: &mut Editor, action| {
+            ask(
+                engine,
+                editor,
+                Asked {
+                    page_action: Some(action),
+                    ..Asked::default()
+                },
+            );
+        };
+        let first = ids(&mut engine)[0];
+        let depth = undo_depth(&mut engine);
+        act(&mut engine, &mut editor, PageAction::AddAfter(first));
+        let second = ids(&mut engine)[1];
+        assert_eq!(ids(&mut engine).len(), 2);
+        assert_eq!(editor.active, Some(second));
+        act(&mut engine, &mut editor, PageAction::Duplicate(first));
+        let copy = ids(&mut engine)[1];
+        assert_eq!(ids(&mut engine), [first, copy, second]);
+        assert_eq!(editor.active, Some(copy));
+        act(&mut engine, &mut editor, PageAction::Move(first, 1));
+        assert_eq!(ids(&mut engine), [copy, first, second]);
+        act(&mut engine, &mut editor, PageAction::Move(copy, -1));
+        assert_eq!(
+            ids(&mut engine),
+            [copy, first, second],
+            "the first stays first"
+        );
+        act(&mut engine, &mut editor, PageAction::Hide(second, true));
+        act(&mut engine, &mut editor, PageAction::Lock(second, true));
+        act(
+            &mut engine,
+            &mut editor,
+            PageAction::Rename(second, "  Contraportada ".to_owned()),
+        );
+        let document = engine.edit().document().expect("a document");
+        let page = document.page(second).expect("the page");
+        assert!(page.hidden && page.locked);
+        assert_eq!(page.name, "Contraportada");
+        act(&mut engine, &mut editor, PageAction::Delete(copy));
+        assert_eq!(ids(&mut engine), [first, second]);
+        assert_eq!(undo_depth(&mut engine), depth + 7, "one step each");
     }
 
     // S50-01: a press on an element activates its page, on a page's

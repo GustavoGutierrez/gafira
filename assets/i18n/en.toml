@@ -193,6 +193,8 @@ view = "View"
 size = "Size"
 
 [editor]
+page_hidden = "Hidden page"
+page_title_hint = "Add page title"
 untitled = "Untitled"
 saved = "Changes saved."
 versions = "Versions"
@@ -386,3 +388,14 @@ when = "{date} · {ago}"
 empty = "No versions yet. Save one from the File menu."
 save_failed = "We couldn't save the version. Try again."
 restore_failed = "We couldn't restore the version. Try again."
+
+[page]
+up = "Move page up"
+down = "Move page down"
+hide = "Hide page"
+show = "Show page"
+lock = "Lock page"
+unlock = "Unlock page"
+duplicate = "Duplicate page"
+delete = "Delete page"
+add = "Add page"
