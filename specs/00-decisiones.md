@@ -847,3 +847,10 @@ Fecha: 19 de noviembre de 2026.
 
 - **Decisión** (titular): los polígonos, estrellas, flechas, nubes, corazones y demás formas de la biblioteca se guardan como una geometría nueva de trazado vectorial (`ShapeGeometry::Path`), que se rellena, se contornea, se escala y se gira como un rectángulo o una elipse. Se descartaron las formas paramétricas (solo cubren polígonos y estrellas) y las imágenes SVG (no se les puede cambiar color ni contorno).
 - **Consecuencia**: cambio aditivo del esquema 1 del documento: los `.gaf` existentes se abren igual y un documento sin trazados escribe el mismo JSON, pero una versión anterior de Gafira no abre un archivo que use trazados. Se aplica en la spec 054.
+
+## D-96 Las formas pueden llevar texto, y el texto se escribe en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con una captura de referencia): toda forma puede llevar un texto dentro o quedar vacía; el texto se alinea a la izquierda, al centro o a la derecha y arriba, al medio o abajo (por defecto, centrado y al medio). Todo texto, el de un elemento de texto y el de una forma, se escribe directamente en el lienzo con un doble clic, sin ir al panel. La negrita y la cursiva vienen en una spec posterior.
+- **Consecuencia**: cambio aditivo del esquema 1 (`ShapeNode.text`, escrito solo cuando existe): una forma sin texto conserva sus bytes; una versión anterior de Gafira no abre un archivo con texto en una forma. Se aplica en la spec 055.
