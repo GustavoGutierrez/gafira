@@ -29,9 +29,6 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | ID | Spec | Estado |
 | --- | --- | --- |
-| 050 | [Borde de la página activa](050-active-page-border.md) | in-progress: un clic activa la página y la bordea; fuera de las páginas se quita |
-| 051 | [Mover elementos entre páginas](051-move-between-pages.md) | in-progress: arrastrar y soltar en otra página; recorte a la página y selección encima (D-92); soltar fuera elimina (D-93) |
-| 052 | [Formas: el nombre y arrastrar desde el panel](052-shapes-drag-from-panel.md) | in-progress: «Piezas» pasa a «Formas» (D-94); arrastrar una forma al lienzo con vista previa |
 | — | `gafira-engine` (change del flujo anterior, [carpeta](done/legacy/changes/gafira-engine/)) | in-progress: crate de capa 3 de 02; E1, E2, E3a-E3d y E5 verificadas e integradas en `develop`; E10 cerrada por la spec 009, E9 por la 010 y E6 (importación embebida) por la 011; E4 por la 012 (identidad, «Guardar como», «Guardar copia», `.bak`) y la 016 (recuperación, `close`), y la cierran la 028 (bloqueos) y la 031 (versiones dentro del `.gaf`); pendientes E6 Fase 2 (vínculos y `relocate`), E7 (necesita E2-W7 y decidir cómo llega al governor, E5-S1), E8 y E11 (ya no la bloquea SP3, cerrado por D-75); los huecos SP1-SP8 están en [02 §5.6](02-arquitectura-software.md#56-huecos-abiertos-del-engine) y están todos cerrados (SP7 por D-76). Al retomarlo, abrir una spec con ID nuevo que cite esa carpeta |
 
 ## Done
@@ -79,6 +76,9 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 047 | [Alt redimensiona desde el centro, Ctrl suelta el Imán](done/047-alt-centre-resize-and-ctrl-magnet.md) | `Alt` en un tirador redimensiona desde el centro, simétrico y en los ejes del elemento girado y de los grupos (D-90); las esquinas conservan la proporción y Mayús la libera; mínimo de 1 px sin voltear al pasar el centro; el Imán engancha el borde arrastrado y refleja el opuesto; `Ctrl`/`Cmd` suelta el Imán al mover y redimensionar, en lugar de `Alt`; la etiqueta de tamaño se mantiene; 7 tests nuevos, 24 mutantes a mano muertos, 3156 tests |
 | 048 | [Bloquear, ocultar, renombrar y arrastrar en Capas](done/048-layers-lock-hide-rename.md) | Ojo y candado por fila en Capas, renombrar con doble clic, arrastrar entre hermanas con línea de inserción y `Alt+↑/↓`; `Ctrl+Mayús+H`/`L` en un paso; lo bloqueado no se elige en el lienzo, ni con marco ni con Ctrl+A, y no se mueve (D-91); filas atenuadas; 4 iconos Phosphor; 12 tests nuevos, 3177 tests |
 | 049 | [Reglas fuera del lienzo y Barra inferior](done/049-rulers-and-bottom-bar.md) | Reglas en una franja exterior que no tapa el lienzo, con marcas menores, números verticales girados y la banda de la selección; Barra inferior de 03 §7.3 con Notas, Imán, slider de zoom logarítmico 5–3200 %, Páginas y «n de N» con la página real (antes siempre 1); 2 iconos Phosphor; 3 tests nuevos, 3180 tests |
+| 050 | [Borde de la página activa](done/050-active-page-border.md) | Un clic en una página la activa y la bordea con 2 px `canvas.selection`; fuera de las páginas se quita; la página actual es la de la selección, si no la activa, si no la primera; 2 tests nuevos |
+| 051 | [Mover elementos entre páginas](done/051-move-between-pages.md) | Soltar un arrastre sobre otra página pasa los elementos a ella en un paso de deshacer; cada página recorta lo suyo y la selección va encima (D-92); se toma también en el espacio entre páginas; lo que se suelta totalmente fuera se elimina (D-93); 7 tests nuevos |
+| 052 | [Formas: el nombre y arrastrar desde el panel](done/052-shapes-drag-from-panel.md) | «Piezas» pasa a «Formas» (D-94); arrastrar una forma del panel con vista previa semitransparente y soltarla centrada donde se suelta; 3 tests nuevos, 3192 tests |
 
 ### Historial del flujo anterior
 

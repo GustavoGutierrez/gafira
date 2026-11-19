@@ -1,6 +1,6 @@
 # 051 — Mover elementos entre páginas
 
-> **Estado:** in-progress — 2026-11-19 — pedida por el titular con una captura de referencia; D-92 y D-93.
+> **Estado:** done — 2026-11-19 — S51-01..S51-07 cubiertos por `gafira-ui` (`transfer::tests` s51, 5; `editor::tests` s51, 2); D-92 y D-93; prueba del titular en la app; 3192 tests.
 
 ## Objetivo
 
@@ -41,9 +41,16 @@ Specs 040, 043 (subárboles, `spec_of`, `top_ids`), 044 y 050. D-92.
 4. `s51_07_left_behind` y `s51_07_drop_command`: lo que queda totalmente fuera (tocar el borde es fuera; un grupo, entero y una vez) y el comando de un paso que fija las posiciones y elimina.
 2. `s51_05_transfer`: un rectángulo y un grupo con dos hijos pasan de la página 1 a la 2. Las posiciones se trasladan, el orden se conserva, los ids nuevos son los que da `top_ids` y la página 1 queda sin ellos. Deshacer los devuelve.
 
-## Evidencia esperada
+## Evidencia
 
-Tests en verde, gates de `AGENTS.md` y prueba del titular en la app.
+- TDD: `drop_target`, `transfer_command`, `outside_hit`, `left_behind` y `drop_command` se escribieron vacíos; sus tests fallaron por sus aserciones (el primer rojo de `s51_05` fue un error del fixture, ids de página que chocaban con los de nodo, corregido antes de implementar) y pasaron con la implementación.
+- `transfer.rs`: destino al soltar, traspaso en un `Transaction` (`RemoveNodes` + `InsertNodes` con ids nuevos), toque fuera de las páginas y borrado de lo que queda fuera. El traspaso y el borrado deshacen el arrastre y aplican un solo comando, así que son un paso de deshacer con el movimiento (`Drag.moved` evita deshacer algo ajeno).
+- Lienzo: cada página dibuja sus elementos con un pintor recortado a ella; la selección se dibuja en una pasada después de todas las páginas; un clic dentro de la caja de un seleccionado lo toma también fuera de su página.
+- Gates de `AGENTS.md` en verde (3192 passed); el titular lo probó en Linux.
+
+## Limitaciones
+
+- Lo que un documento ya traiga totalmente fuera de su página se conserva hasta que se mueva (D-93).
 
 ## Riesgos y decisiones abiertas
 

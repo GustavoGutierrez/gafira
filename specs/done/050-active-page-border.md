@@ -1,6 +1,6 @@
 # 050 — Borde de la página activa
 
-> **Estado:** in-progress — 2026-11-19 — pedida por el titular.
+> **Estado:** done — 2026-11-19 — S50-01..S50-03 cubiertos por `gafira-ui` (`editor::tests` s50, 2); prueba del titular en la app; 3192 tests.
 
 ## Objetivo
 
@@ -25,9 +25,11 @@ No alcance: la cabecera de página con sus acciones (FD-02), activar con el tecl
 1. `s50_01_active_after_a_click`: los casos de S50-01 con dos páginas apiladas.
 2. `s50_03_current_page`: los casos de S50-03.
 
-## Evidencia esperada
+## Evidencia
 
-Tests en verde, gates de `AGENTS.md` y prueba del titular en la app.
+- TDD: `active_after` y `current_page_id` se escribieron vacíos (`None`); los 2 tests fallaron por sus aserciones y pasaron con la implementación.
+- `Editor.active`, puesto en cada clic o inicio de arrastre que no toma un tirador ni una guía; borde de 2 px `canvas.selection` por fuera de la página activa; `current_page` usa `current_page_id` (selección, activa, primera).
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` y `cargo test --workspace --locked --no-fail-fast` (3192 passed) en verde; el titular lo probó en Linux.
 
 ## Riesgos y decisiones abiertas
 

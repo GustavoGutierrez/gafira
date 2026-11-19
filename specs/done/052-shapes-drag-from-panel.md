@@ -1,6 +1,6 @@
 # 052 — Formas: el nombre y arrastrar desde el panel
 
-> **Estado:** in-progress — 2026-11-19 — pedida por el titular con capturas de referencia; D-94.
+> **Estado:** done — 2026-11-19 — S52-01..S52-04 cubiertos por `gafira-ui` (`canvas` s52, 2; `editor::tests` s52, 1); D-94; prueba del titular en la app; 3192 tests.
 
 ## Objetivo
 
@@ -37,9 +37,12 @@ Specs 020 (`new_piece`), 049 y 050. D-94.
 
 Integración: `s52_03_a_dropped_shape_lands_where_it_was_dropped`.
 
-## Evidencia esperada
+## Evidencia
 
-Tests en verde, gates de `AGENTS.md` y prueba del titular en la app.
+- TDD: `drop_point` (vacío) y `piece_at` (sin centrar) fallaron por sus aserciones y pasaron con la implementación.
+- Botón de forma con `click_and_drag`: clic añade al centro; arrastre pinta la vista previa en la capa `Tooltip` (acento al 50 %, tamaño de un tercio del lado corto de la página bajo el puntero) y al soltar pide `drop_piece`; `Editor.page_rects` guarda las cajas de las páginas del último frame.
+- Catálogos: `tab.pieces` = «Formas»/«Shapes», `pieces.shapes` = «Formas básicas»/«Basic shapes»; glosario de 03 actualizado (D-94).
+- Gates de `AGENTS.md` en verde (3192 passed); el titular lo probó en Linux.
 
 ## Riesgos y decisiones abiertas
 
