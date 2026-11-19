@@ -16,7 +16,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 
 | Doc | Contenido | Estado |
 | --- | --- | --- |
-| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-90) |
+| [00](00-decisiones.md) | Decisiones del titular (`D-nn`); prevalecen sobre 01-07 y no se reabren sin el titular | Vigente (D-01 a D-91) |
 | [01](01-producto-y-calidad.md) | Producto, calidad y criterios de aceptación (`RF-`, `RNF-`, `CAL-`) | Aprobado (D-83, 2026-11-16) |
 | [02](02-arquitectura-software.md) | Arquitectura de software por capas y crates (`ARQ-`) | Aprobado (D-83, 2026-11-16) |
 | [03](backlog/03-diseno-visual-e-interaccion.md) | Diseño visual e interacción (`DIS-`); en `backlog/` | Borrador para revisión |
@@ -89,5 +89,6 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | ID | Spec | Motivo |
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
+| 048 | [Bloquear, ocultar, renombrar y arrastrar en Capas](backlog/048-layers-lock-hide-rename.md) | Lista para empezar (S48-04 confirmada por D-91); pendiente de la orden de empezar |
 
-Siguiente ID libre: **048**.
+Siguiente ID libre: **049**.

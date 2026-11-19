@@ -166,7 +166,7 @@
 
 **FD-13 · Agrupar, bloquear, ocultar y Duplicar** (RF-10)
 - *Propósito*: tratar varios elementos como uno y evitar cambios accidentales.
-- *Comportamiento y reglas*: **Agrupar** (`Ctrl+G`) crea un `GroupNode`; Desagrupar (`Ctrl+Shift+G`). Los hijos conservan su posición en espacio de página y la caja del grupo es la unión de la de sus hijos (02 §3.2, D-35). El Inspector no ofrece sesgo en grupos. Bloquear y Ocultar afectan a la selección y se ven en Capas. **Duplicar** (`Ctrl/Cmd+D` o `Alt+arrastrar`) crea una copia desplazada y con nombre «{nombre} copia». Los elementos de la Identidad visual pueden bloquearse como grupo (RF-29).
+- *Comportamiento y reglas*: **Agrupar** (`Ctrl+G`) crea un `GroupNode`; Desagrupar (`Ctrl+Shift+G`). Los hijos conservan su posición en espacio de página y la caja del grupo es la unión de la de sus hijos (02 §3.2, D-35). El Inspector no ofrece sesgo en grupos. Bloquear y Ocultar afectan a la selección y se ven en Capas. Un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo ni con el marco ni con `Ctrl/Cmd+A`; se selecciona desde Capas, sin tiradores (D-91). **Duplicar** (`Ctrl/Cmd+D` o `Alt+arrastrar`) crea una copia desplazada y con nombre «{nombre} copia». Los elementos de la Identidad visual pueden bloquearse como grupo (RF-29).
 - *UI*: Barra contextual, menú contextual, Capas.
 - *Técnica*: `GroupNode`, `InsertNodes`, `Reparent` en `gafira-edit`.
 - *Presupuesto*: < 100 ms con 100 elementos.

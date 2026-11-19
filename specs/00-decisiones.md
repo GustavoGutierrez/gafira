@@ -808,3 +808,11 @@ Fecha: 17 de noviembre de 2026.
 - **Decisión** (titular): mantener `Alt` mientras se arrastra un tirador redimensiona desde el centro: el centro se queda fijo y los lados opuestos se mueven a la vez y lo mismo. Se combina con D-89: una esquina conserva la proporción por defecto, desde el centro; `Shift` la libera; `Alt+Shift` es libre y desde el centro. Un lado con `Alt` cambia esa dimensión simétrica. Vale para lo girado en sus propios ejes y para los grupos. Mantener `Ctrl` (`Cmd` en macOS) mientras se mueve o se redimensiona suelta el Imán; `Alt` ya no lo hace.
 - **Consecuencia**: resuelve el choque que dejó abierto la 045 (`Alt` desde el centro y `Alt` sin Imán) y saca el Imán de una tecla que algunos escritorios Linux usan para mover la ventana. El tamaño mínimo (1 px) se mantiene: más allá del centro el elemento se queda en el mínimo centrado, sin voltearse. El Imán engancha el borde arrastrado y refleja el opuesto. Durante el arrastre solo cuenta el estado de `Ctrl`: no dispara atajos ni copia. Se aplica en la spec 047.
 - Precisa 03 §9.1 y 04 FD-06. Aplicado a 03 (§9.1) y 04 (FD-06).
+
+## D-91 Lo bloqueado no se elige en el lienzo
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): un elemento bloqueado, o bajo un grupo bloqueado, no se elige en el lienzo: el clic pasa a lo que está debajo, y el marco y `Ctrl/Cmd+A` lo saltan. Se selecciona solo desde Capas. Seleccionado así, no muestra tiradores ni asa de giro y no se mueve con arrastre ni con flechas; girar, voltear, alinear (D-29) y eliminar desde los menús siguen actuando sobre él.
+- **Consecuencia**: un fondo bloqueado deja de tapar los clics sobre la página. Se aplica en la spec 048.
+- Precisa 04 FD-13. Aplicado a 04 (FD-13).
