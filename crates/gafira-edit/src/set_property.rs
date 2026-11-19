@@ -38,6 +38,9 @@ pub enum Property {
     TextContent(RichText),
     /// The text inside a shape; `None` leaves it empty (spec 055).
     ShapeText(Option<ShapeText>),
+    /// A whole line: its ends, caps, connections, colour and width (spec
+    /// 058).
+    Line(gafira_doc::LineNode),
     PageName(String),
     PageSize(PageSize),
     PageLocked(bool),
@@ -68,6 +71,7 @@ impl Property {
             Self::Stroke(_) => "set_property.stroke",
             Self::CornerRadius(_) => "set_property.corner_radius",
             Self::ShapeText(_) => "set_property.shape_text",
+            Self::Line(_) => "set_property.line",
             Self::TextContent(_) => "set_property.text_content",
             Self::PageName(_) => "set_property.page_name",
             Self::PageSize(_) => "set_property.page_size",
@@ -106,6 +110,18 @@ impl Property {
             Self::CornerRadius(r) => ("corner_radius", r.is_finite() && *r >= 0.0),
             Self::TextContent(text) => ("text_content", spans_valid(text)),
             Self::ShapeText(Some(text)) => ("shape_text", spans_valid(&text.content)),
+            Self::Line(line) => (
+                "line",
+                line.color.is_finite()
+                    && unit(f64::from(line.color.alpha()))
+                    && (0.0..=gafira_doc::LineNode::MAX_WIDTH).contains(&line.width)
+                    && line
+                        .start
+                        .at
+                        .into_iter()
+                        .chain(line.end.at)
+                        .all(|v| (-1.0..=2.0).contains(&v)),
+            ),
             _ => return Ok(()),
         };
         if ok {
@@ -132,6 +148,7 @@ impl Property {
             (Self::CornerRadius(_), NodeKind::Shape(s)) => Self::CornerRadius(s.corner_radius),
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
             (Self::ShapeText(_), NodeKind::Shape(s)) => Self::ShapeText(s.text.clone()),
+            (Self::Line(_), NodeKind::Line(l)) => Self::Line(l.clone()),
             _ => return None,
         })
     }
@@ -152,6 +169,7 @@ impl Property {
             (Self::CornerRadius(v), NodeKind::Shape(s)) => s.corner_radius = *v,
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
             (Self::ShapeText(v), NodeKind::Shape(s)) => s.text.clone_from(v),
+            (Self::Line(v), NodeKind::Line(l)) => l.clone_from(v),
             _ => {}
         }
     }
@@ -887,6 +905,34 @@ mod tests {
             Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
             width,
         ))
+    }
+
+    // S58-01: a whole line is set and reverted; a width out of range is
+    // refused; on a node that is not a line it fails.
+    #[test]
+    fn s58_01_a_line_is_set_and_reverted() {
+        use gafira_doc::{LineCap, LineEnd, LineNode};
+        let token = EditToken::__new_for_gafira_edit_only();
+        let mut doc = fixture();
+        let black = gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0));
+        let line = |width: f64| LineNode {
+            start: LineEnd::new([0.0, 0.0], LineCap::None),
+            end: LineEnd::new([1.0, 1.0], LineCap::Arrow),
+            color: black,
+            width,
+        };
+        doc.edit(&token).node_mut(PAGE, B).expect("a node").kind = NodeKind::Line(line(2.0));
+        let original = doc.clone();
+        let mut thick = set(&[B], Property::Line(line(6.0)));
+        assert_eq!(apply(&mut thick, &mut doc), Ok(Applied::Changed));
+        assert!(matches!(&node(&doc, B).kind, NodeKind::Line(l) if l.width == 6.0));
+        revert(&mut thick, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut wide = set(&[B], Property::Line(line(1001.0)));
+        assert!(apply(&mut wide, &mut doc).is_err());
+        let mut on_group = set(&[GROUP], Property::Line(line(1.0)));
+        assert!(apply(&mut on_group, &mut doc).is_err());
+        assert_eq!(doc, original);
     }
 
     // S55-02: the text of a shape is set, changed and taken away in one

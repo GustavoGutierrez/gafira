@@ -256,6 +256,8 @@ enum RecordKind {
     Text(TextNode),
     /// An image: it draws the pixels of its asset into its box (spec 032).
     Image(AssetRef),
+    /// A line: a stroke between its resolved ends, with its caps (spec 058).
+    Line(gafira_doc::LineNode),
 }
 
 /// Builds the render graph of a page by walking it (02 §6.1).
@@ -462,6 +464,67 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                                 path: Arc::new(path),
                                 color,
                                 transform,
+                            });
+                        }
+                        sub.ops.push(RenderOp::PopLayer {
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        });
+                    }
+                    RecordKind::Line(ref line) => {
+                        check_color(&line.color, "line")?;
+                        if !line.width.is_finite() {
+                            return Err(GraphError::NonFinite { field: "line" });
+                        }
+                        // The ends are in page px, so the line is drawn with
+                        // the scale of the graph alone (spec 058).
+                        let ends = line.ends(self.page, &record.base.placement);
+                        let layers = line_layers(line, ends);
+                        if layers.is_empty() {
+                            sub.ops.truncate(mark);
+                            continue;
+                        }
+                        let line_transform = Affine::scale(self.scale);
+                        let canonical = format!(
+                            "{:?}{:?}{:?}{:016x}",
+                            ends,
+                            line.start.cap,
+                            line.end.cap,
+                            line.width.to_bits()
+                        );
+                        let key = content_key(
+                            NodeType::Shape,
+                            self.params.lod,
+                            &[],
+                            &[
+                                KeyParam::Quality(self.params.quality),
+                                KeyParam::Text(canonical),
+                                KeyParam::Fill(Some(line.color)),
+                                KeyParam::Transform(line_transform.as_coeffs()),
+                                KeyParam::Opacity(record.base.opacity),
+                                KeyParam::Blend(record.base.blend),
+                            ],
+                        );
+                        let node = GraphNode {
+                            id: GraphNodeId(sub.nodes.len() as u32),
+                            kind: GraphNodeKind::Source(SourceKind::Vector),
+                            origin: id,
+                            key,
+                            inputs: Vec::new(),
+                            transform: line_transform,
+                            blend: record.base.blend,
+                            opacity: record.base.opacity,
+                        };
+                        let node_id = node.id;
+                        sub.nodes.push(node);
+                        if let Some(frame) = stack.last_mut() {
+                            frame.inputs.push(node_id);
+                        }
+                        for path in layers {
+                            sub.ops.push(RenderOp::FillPath {
+                                path: Arc::new(path),
+                                color: line.color,
+                                transform: line_transform,
                             });
                         }
                         sub.ops.push(RenderOp::PopLayer {
@@ -692,6 +755,17 @@ impl<P: WorkerPool> NodeVisitor for RenderGraphBuilder<'_, P> {
         node.base.id
     }
 
+    fn visit_line(&mut self, node: &Node, line: &gafira_doc::LineNode) -> NodeId {
+        self.records.insert(
+            node.base.id,
+            Record {
+                base: node.base.clone(),
+                kind: RecordKind::Line(line.clone()),
+            },
+        );
+        node.base.id
+    }
+
     fn visit_image(&mut self, node: &Node, image: &ImageNode) -> NodeId {
         self.records.insert(
             node.base.id,
@@ -873,6 +947,87 @@ fn stroke_path(outline: &BezPath, width: f64) -> Option<BezPath> {
         .stroke_outline(&style, SHAPE_TOLERANCE)
         .ok()
         .map(|path| path.as_bez_path().clone())
+}
+
+/// The areas a line covers (spec 058), in page px: its stroke between its
+/// ends, cut back where a hollow cap sits, and each cap. Every area is
+/// filled on its own, so their windings never cancel. Nothing for a line of
+/// width 0 or with both ends on one point.
+fn line_layers(line: &gafira_doc::LineNode, [a, b]: [kurbo::Point; 2]) -> Vec<BezPath> {
+    use gafira_doc::LineCap;
+    let width = line.width;
+    let length = (b - a).hypot();
+    if width <= 0.0 || length <= f64::EPSILON {
+        return Vec::new();
+    }
+    let dir = (b - a) / length;
+    let size = (width * 2.5).max(5.0);
+    // How far a cap reaches back along the line from its end.
+    let reach = |cap: LineCap| match cap {
+        LineCap::None | LineCap::Arrow => 0.0,
+        LineCap::Circle | LineCap::Diamond | LineCap::DiamondFilled | LineCap::Square => size,
+    };
+    let (ra, rb) = (reach(line.start.cap), reach(line.end.cap));
+    let mut out = Vec::new();
+    let stroke = |path: &BezPath| stroke_path(path, width);
+    if ra + rb < length {
+        let mut body = BezPath::new();
+        body.move_to(a + dir * ra);
+        body.line_to(b - dir * rb);
+        out.extend(stroke(&body));
+    }
+    for (at, cap, out_dir) in [(a, line.start.cap, -dir), (b, line.end.cap, dir)] {
+        let normal = kurbo::Vec2::new(-out_dir.y, out_dir.x);
+        match cap {
+            LineCap::None => {}
+            LineCap::Arrow => {
+                let back = at - out_dir * size * 1.6;
+                let mut arrow = BezPath::new();
+                arrow.move_to(back + normal * size);
+                arrow.line_to(at);
+                arrow.line_to(back - normal * size);
+                out.extend(stroke(&arrow));
+            }
+            LineCap::Circle => {
+                let centre = at - out_dir * size;
+                out.extend(stroke(
+                    &kurbo::Circle::new(centre, size).to_path(SHAPE_TOLERANCE),
+                ));
+            }
+            LineCap::Diamond | LineCap::DiamondFilled => {
+                let centre = at - out_dir * size;
+                let mut diamond = BezPath::new();
+                diamond.move_to(at);
+                diamond.line_to(centre + normal * size);
+                diamond.line_to(centre - out_dir * size);
+                diamond.line_to(centre - normal * size);
+                diamond.close_path();
+                if cap == LineCap::DiamondFilled {
+                    out.push(diamond.clone());
+                }
+                out.extend(stroke(&diamond));
+            }
+            LineCap::Square => {
+                let centre = at - out_dir * size;
+                let half = size * 0.8;
+                let mut square = BezPath::new();
+                for (i, (u, v)) in [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let p = centre + out_dir * (half * u) + normal * (half * v);
+                    if i == 0 {
+                        square.move_to(p);
+                    } else {
+                        square.line_to(p);
+                    }
+                }
+                square.close_path();
+                out.extend(stroke(&square));
+            }
+        }
+    }
+    out
 }
 
 /// The size range of `gafira_text::TextStyle::size_pt` (FD-41).
@@ -1490,6 +1645,58 @@ mod tests {
         };
         assert_eq!(keys(1), keys(2));
         assert_eq!(keys(1), keys(4));
+    }
+
+    // S58-03: a line is drawn between its resolved ends: connected to the
+    // right point of a shape, its stroke reaches that point, and moving the
+    // shape moves the drawn line with it.
+    #[test]
+    fn s58_03_a_connected_line_follows_its_shape() {
+        use gafira_doc::{Anchor, Attachment, LineCap, LineEnd, LineNode};
+        let page_with = |shape_x: f64| {
+            let mut page = new_page();
+            let mut shape = ShapeNode::new(ShapeGeometry::Rect);
+            shape.fill = Some(RED);
+            let base =
+                ElementBase::new(NodeId::new(1), Placement::new(shape_x, 100.0, 100.0, 50.0));
+            page.nodes.insert(
+                NodeId::new(1),
+                Arc::new(Node::new(base, NodeKind::Shape(shape))),
+            );
+            let mut end = LineEnd::new([1.0, 1.0], LineCap::None);
+            end.attached = Some(Attachment::anchor(NodeId::new(1), Anchor::Left));
+            let line = LineNode {
+                start: LineEnd::new([0.0, 0.0], LineCap::None),
+                end,
+                color: Color::Srgb(Rgba::new(0.0, 0.0, 0.0, 1.0)),
+                width: 4.0,
+            };
+            let base = ElementBase::new(NodeId::new(2), Placement::new(10.0, 10.0, 20.0, 20.0));
+            page.nodes.insert(
+                NodeId::new(2),
+                Arc::new(Node::new(base, NodeKind::Line(line))),
+            );
+            page.roots = vec![NodeId::new(1), NodeId::new(2)];
+            page
+        };
+        let line_box = |shape_x: f64| {
+            let graph = build(&page_with(shape_x), WalkOrder::PreOrder);
+            let all = fills(&graph);
+            assert_eq!(all.len(), 2, "the shape, then the line");
+            all[1].0
+        };
+        let near = line_box(200.0);
+        // From (10, 10) to the left point of the shape, (200, 125).
+        assert!(
+            (near.x0 - 10.0).abs() < 3.0 && (near.y0 - 10.0).abs() < 3.0,
+            "{near:?}"
+        );
+        assert!(
+            (near.x1 - 200.0).abs() < 3.0 && (near.y1 - 125.0).abs() < 3.0,
+            "{near:?}"
+        );
+        let far = line_box(300.0);
+        assert!((far.x1 - 300.0).abs() < 3.0, "the line follows: {far:?}");
     }
 
     /// A filled ellipse of 200 by 100 at (10, 20) with `words` inside it,
