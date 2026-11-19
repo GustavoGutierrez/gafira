@@ -48,21 +48,31 @@ fn page_bytes(page: &Page, newer: Option<&Page>) -> usize {
     record + nodes
 }
 
+/// The heap bytes of the words and fonts of `text`.
+fn rich_bytes(text: &gafira_doc::RichText) -> usize {
+    text.spans()
+        .map(|span| span.text.len() + span.style.font.len() + size_of::<gafira_doc::Span>())
+        .sum()
+}
+
 fn node_bytes(node: &Node) -> usize {
     let heap = match &node.kind {
         NodeKind::Extension(ext) => ext.type_id.len() + value_bytes(&ext.payload),
-        NodeKind::Text(text) => text
-            .content
-            .spans()
-            .map(|span| span.text.len() + span.style.font.len() + size_of::<gafira_doc::Span>())
-            .sum(),
-        // A path keeps its orders on the heap (spec 054).
-        NodeKind::Shape(shape) => match &shape.geometry {
-            gafira_doc::ShapeGeometry::Path(path) => {
-                path.commands.len() * size_of::<gafira_doc::PathCommand>()
-            }
-            _ => 0,
-        },
+        NodeKind::Text(text) => rich_bytes(&text.content),
+        // A path keeps its orders on the heap (spec 054), and a shape's
+        // text its words (spec 055).
+        NodeKind::Shape(shape) => {
+            let path = match &shape.geometry {
+                gafira_doc::ShapeGeometry::Path(path) => {
+                    path.commands.len() * size_of::<gafira_doc::PathCommand>()
+                }
+                _ => 0,
+            };
+            path + shape
+                .text
+                .as_ref()
+                .map_or(0, |text| rich_bytes(&text.content))
+        }
         NodeKind::Group(_) | NodeKind::Image(_) => 0,
     };
     size_of::<Node>()

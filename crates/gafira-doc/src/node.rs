@@ -3,7 +3,7 @@
 use gafira_color::Color;
 use serde::{Deserialize, Serialize};
 
-use crate::{ElementBase, ImageNode, NodeId, TextNode};
+use crate::{ElementBase, ImageNode, NodeId, RichText, TextAlign, TextNode};
 
 /// A group: it only arranges its children and carries no data of its own.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +101,43 @@ impl ShapeStroke {
     }
 }
 
+/// Where the lines of a shape's text sit in its box, top to bottom.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalAlign {
+    Top,
+    #[default]
+    Middle,
+    Bottom,
+}
+
+/// The text inside a shape (spec 055, D-96): its words and styles, and how
+/// it aligns across and down the shape's box.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShapeText {
+    pub content: RichText,
+    #[serde(default = "centred")]
+    pub align: TextAlign,
+    #[serde(default)]
+    pub valign: VerticalAlign,
+}
+
+fn centred() -> TextAlign {
+    TextAlign::Center
+}
+
+impl ShapeText {
+    /// `text` in one style, centred across and down.
+    #[must_use]
+    pub fn plain(text: &str, style: &crate::SpanStyle) -> Self {
+        Self {
+            content: RichText::plain(text, style),
+            align: TextAlign::Center,
+            valign: VerticalAlign::Middle,
+        }
+    }
+}
+
 /// A geometric shape with an optional fill and outline.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShapeNode {
@@ -122,6 +159,12 @@ pub struct ShapeNode {
     /// is not `+0.0`.
     #[serde(default, skip_serializing_if = "is_positive_zero")]
     pub corner_radius: f64,
+    /// The text written inside the shape, if any (spec 055, D-96).
+    ///
+    /// Written only when set, so a shape without one keeps the bytes it had
+    /// before spec 055.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<ShapeText>,
 }
 
 /// Whether `value` is `+0.0`, the default radius.
@@ -130,13 +173,14 @@ fn is_positive_zero(value: &f64) -> bool {
 }
 
 impl ShapeNode {
-    /// A shape without a fill, an outline or rounded corners.
+    /// A shape without a fill, an outline, rounded corners or text.
     pub const fn new(geometry: ShapeGeometry) -> Self {
         Self {
             geometry,
             fill: None,
             stroke: None,
             corner_radius: 0.0,
+            text: None,
         }
     }
 }

@@ -100,6 +100,7 @@ fn page(id: u64, width: f64, height: f64, square: Option<u64>) -> Arc<Page> {
             fill: Some(Color::Srgb(Rgba::new(0.0, 0.5, 1.0, 0.5))),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
         });
         page.nodes.insert(id, Arc::new(Node::new(base, kind)));
         page.roots.push(id);

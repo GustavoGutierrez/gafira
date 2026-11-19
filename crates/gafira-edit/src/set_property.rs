@@ -6,7 +6,7 @@ use gafira_color::Color;
 use gafira_doc::msg::{CommandLabel, MessageKey};
 use gafira_doc::{
     BlendMode, DocMut, Document, Dpi, GridSettings, GuideSet, Margins, Node, NodeId, NodeKind,
-    Page, PageId, PageSize, Placement, RichText, ShapeGeometry, ShapeStroke, TextNode,
+    Page, PageId, PageSize, Placement, RichText, ShapeGeometry, ShapeStroke, ShapeText, TextNode,
     ValidationError, check_bleed,
 };
 use gafira_geom::Length;
@@ -36,6 +36,8 @@ pub enum Property {
     CornerRadius(f64),
     /// The rich text of a text element (spec 027).
     TextContent(RichText),
+    /// The text inside a shape; `None` leaves it empty (spec 055).
+    ShapeText(Option<ShapeText>),
     PageName(String),
     PageSize(PageSize),
     PageLocked(bool),
@@ -65,6 +67,7 @@ impl Property {
             Self::Geometry(_) => "set_property.geometry",
             Self::Stroke(_) => "set_property.stroke",
             Self::CornerRadius(_) => "set_property.corner_radius",
+            Self::ShapeText(_) => "set_property.shape_text",
             Self::TextContent(_) => "set_property.text_content",
             Self::PageName(_) => "set_property.page_name",
             Self::PageSize(_) => "set_property.page_size",
@@ -101,17 +104,8 @@ impl Property {
                     && (0.0..=ShapeStroke::MAX_WIDTH).contains(&stroke.width),
             ),
             Self::CornerRadius(r) => ("corner_radius", r.is_finite() && *r >= 0.0),
-            Self::TextContent(text) => (
-                "text_content",
-                text.spans().all(|span| {
-                    let size = span.style.size;
-                    size.is_finite()
-                        && size > 0.0
-                        && size <= TextNode::MAX_SIZE
-                        && span.style.color.is_finite()
-                        && unit(f64::from(span.style.color.alpha()))
-                }),
-            ),
+            Self::TextContent(text) => ("text_content", spans_valid(text)),
+            Self::ShapeText(Some(text)) => ("shape_text", spans_valid(&text.content)),
             _ => return Ok(()),
         };
         if ok {
@@ -137,6 +131,7 @@ impl Property {
             (Self::Stroke(_), NodeKind::Shape(s)) => Self::Stroke(s.stroke),
             (Self::CornerRadius(_), NodeKind::Shape(s)) => Self::CornerRadius(s.corner_radius),
             (Self::TextContent(_), NodeKind::Text(t)) => Self::TextContent(t.content.clone()),
+            (Self::ShapeText(_), NodeKind::Shape(s)) => Self::ShapeText(s.text.clone()),
             _ => return None,
         })
     }
@@ -156,9 +151,23 @@ impl Property {
             (Self::Stroke(v), NodeKind::Shape(s)) => s.stroke = *v,
             (Self::CornerRadius(v), NodeKind::Shape(s)) => s.corner_radius = *v,
             (Self::TextContent(v), NodeKind::Text(t)) => t.content.clone_from(v),
+            (Self::ShapeText(v), NodeKind::Shape(s)) => s.text.clone_from(v),
             _ => {}
         }
     }
+}
+
+/// Whether every span of `text` has a size and a colour a document holds.
+fn spans_valid(text: &RichText) -> bool {
+    let unit = |v: f64| (0.0..=1.0).contains(&v);
+    text.spans().all(|span| {
+        let size = span.style.size;
+        size.is_finite()
+            && size > 0.0
+            && size <= TextNode::MAX_SIZE
+            && span.style.color.is_finite()
+            && unit(f64::from(span.style.color.alpha()))
+    })
 }
 
 /// What a property is set on.
@@ -878,6 +887,41 @@ mod tests {
             Color::Srgb(Rgba::new(0.0, 0.0, 1.0, 1.0)),
             width,
         ))
+    }
+
+    // S55-02: the text of a shape is set, changed and taken away in one
+    // step each, reverted exactly, and refused on a node that is not a
+    // shape.
+    #[test]
+    fn s55_02_shape_text_is_set_and_reverted() {
+        let original = fixture();
+        let mut doc = original.clone();
+        let text = |doc: &Document| match &node(doc, A).kind {
+            NodeKind::Shape(s) => s.text.clone(),
+            _ => panic!("not a shape"),
+        };
+        let style = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 24.0,
+            color: gafira_color::Color::Srgb(gafira_color::Rgba::new(0.0, 0.0, 0.0, 1.0)),
+        };
+        let hola = ShapeText::plain("Hola", &style);
+        let mut set_it = set(&[A], Property::ShapeText(Some(hola.clone())));
+        assert_eq!(apply(&mut set_it, &mut doc), Ok(Applied::Changed));
+        assert_eq!(text(&doc), Some(hola.clone()));
+        assert_eq!(doc.validate(), Ok(()));
+        let mut same = set(&[A], Property::ShapeText(Some(hola.clone())));
+        assert_eq!(apply(&mut same, &mut doc), Ok(Applied::Unchanged));
+        let mut empty = set(&[A], Property::ShapeText(None));
+        assert_eq!(apply(&mut empty, &mut doc), Ok(Applied::Changed));
+        assert_eq!(text(&doc), None);
+        revert(&mut empty, &mut doc).unwrap();
+        assert_eq!(text(&doc), Some(hola.clone()));
+        revert(&mut set_it, &mut doc).unwrap();
+        assert_eq!(doc, original);
+        let mut on_group = set(&[GROUP], Property::ShapeText(Some(hola)));
+        assert!(apply(&mut on_group, &mut doc).is_err());
+        assert_eq!(doc, original);
     }
 
     // S38-03: the outline and the corner radius are set, undone and merged

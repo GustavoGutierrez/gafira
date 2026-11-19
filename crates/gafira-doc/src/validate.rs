@@ -358,8 +358,14 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
             }
         }
     }
-    if let NodeKind::Text(text) = &node.kind {
-        for span in text.content.spans() {
+    // The words of a text element or of a shape's text (spec 055).
+    let content = match &node.kind {
+        NodeKind::Text(text) => Some(&text.content),
+        NodeKind::Shape(shape) => shape.text.as_ref().map(|text| &text.content),
+        _ => None,
+    };
+    if let Some(content) = content {
+        for span in content.spans() {
             out.push((NodeField::FontSize, span.style.size, font_size));
             let [r, g, b, a] = channels(span.style.color);
             for channel in [r, g, b] {

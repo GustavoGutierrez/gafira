@@ -428,7 +428,9 @@ impl<'a, P: WorkerPool> RenderGraphBuilder<'a, P> {
                 sub.ops.push(RenderOp::PushLayer);
                 match record.kind {
                     RecordKind::Shape(ref shape) => {
-                        let Some(drawn) = DrawnShape::of(shape, &record.base.placement)? else {
+                        let Some(drawn) =
+                            DrawnShape::of(shape, &record.base.placement, &self.fonts)?
+                        else {
                             // A shape without a fill or an outline draws nothing.
                             sub.ops.truncate(mark);
                             continue;
@@ -729,6 +731,9 @@ const SHAPE_TOLERANCE: f64 = 0.25;
 struct DrawnShape {
     fill: Option<(BezPath, Color)>,
     stroke: Option<(BezPath, Color, f64)>,
+    /// The text inside the shape, over the fill and the outline, with the
+    /// canonical string of its key (spec 055).
+    text: Option<(BezPath, Color, String)>,
     /// The radius the rectangle is drawn with; 0 for an ellipse.
     radius: f64,
 }
@@ -736,7 +741,11 @@ struct DrawnShape {
 impl DrawnShape {
     /// What `shape` draws in the box of `placement`, `None` when it draws
     /// nothing; a number that is not finite is an error (ARQ-110).
-    fn of(shape: &ShapeNode, placement: &Placement) -> Result<Option<Self>, GraphError> {
+    fn of(
+        shape: &ShapeNode,
+        placement: &Placement,
+        fonts: &FontBook,
+    ) -> Result<Option<Self>, GraphError> {
         if let Some(color) = &shape.fill {
             check_color(color, "fill")?;
         }
@@ -764,11 +773,22 @@ impl DrawnShape {
                 stroke_path(&outline, stroke.width).map(|path| (path, stroke.color, stroke.width))
             });
         let fill = shape.fill.map(|color| (outline, color));
-        Ok((fill.is_some() || stroke.is_some()).then_some(Self {
-            fill,
-            stroke,
-            radius,
-        }))
+        let text = match &shape.text {
+            Some(text) => shape_text_path(text, rect, fonts)
+                .map(|(path, color, canonical)| {
+                    check_color(&color, "fill").map(|()| (path, color, canonical))
+                })
+                .transpose()?,
+            None => None,
+        };
+        Ok(
+            (fill.is_some() || stroke.is_some() || text.is_some()).then_some(Self {
+                fill,
+                stroke,
+                text,
+                radius,
+            }),
+        )
     }
 
     /// The parameters of the content key that this shape draws. A shape with
@@ -785,6 +805,10 @@ impl DrawnShape {
         if self.radius > 0.0 {
             params.push(KeyParam::CornerRadius(self.radius));
         }
+        if let Some((_, color, canonical)) = &self.text {
+            params.push(KeyParam::Text(canonical.clone()));
+            params.push(KeyParam::Fill(Some(*color)));
+        }
         params
     }
 
@@ -793,6 +817,7 @@ impl DrawnShape {
         self.fill
             .into_iter()
             .chain(self.stroke.map(|(path, color, _)| (path, color)))
+            .chain(self.text.map(|(path, color, _)| (path, color)))
     }
 }
 
@@ -867,8 +892,47 @@ fn text_path(
     placement: &Placement,
     fonts: &FontBook,
 ) -> Option<(BezPath, Color, String)> {
-    let style = text.content.first_style()?;
-    let words = text.content.plain_text();
+    let bounds = gafira_geom::Size::new(placement.w.abs(), placement.h.abs());
+    laid_text(&text.content, text.align, bounds, fonts)
+        .map(|(path, color, canonical, _)| (path, color, canonical))
+}
+
+/// The text of a shape (spec 055) in the shape's box `rect`: laid out in
+/// the box less a tenth of its shorter side on each side, aligned across by
+/// its `align` and down by its `valign`. With its colour and the canonical
+/// string of its key, which names the vertical alignment too.
+fn shape_text_path(
+    text: &gafira_doc::ShapeText,
+    rect: Rect,
+    fonts: &FontBook,
+) -> Option<(BezPath, Color, String)> {
+    let pad = rect.width().min(rect.height()) / 10.0;
+    let inner = gafira_geom::Size::new(
+        (rect.width() - 2.0 * pad).max(1.0),
+        (rect.height() - 2.0 * pad).max(1.0),
+    );
+    let (mut path, color, canonical, height) = laid_text(&text.content, text.align, inner, fonts)?;
+    let (share, name) = match text.valign {
+        gafira_doc::VerticalAlign::Top => (0.0, 't'),
+        gafira_doc::VerticalAlign::Middle => (0.5, 'm'),
+        gafira_doc::VerticalAlign::Bottom => (1.0, 'b'),
+    };
+    let dy = rect.y0 + pad + (inner.height() - height) * share;
+    path.apply_affine(Affine::translate((rect.x0 + pad, dy)));
+    Some((path, color, format!("{canonical}\u{0}{name}")))
+}
+
+/// `content` laid out in a box of `bounds` with `align`: its outline from
+/// the box's top-left corner, its colour, the canonical string of its key
+/// and the height of its lines; `None` when it draws nothing.
+fn laid_text(
+    content: &gafira_doc::RichText,
+    align: TextAlign,
+    bounds: gafira_geom::Size,
+    fonts: &FontBook,
+) -> Option<(BezPath, Color, String, f64)> {
+    let style = content.first_style()?;
+    let words = content.plain_text();
     if words.trim().is_empty() || !style.size.is_finite() || style.size <= 0.0 {
         return None;
     }
@@ -879,7 +943,7 @@ fn text_path(
     let size_pt = style.size.clamp(*TEXT_SIZE_PT.start(), *TEXT_SIZE_PT.end());
     let layout_style = gafira_text::TextStyle {
         size_pt,
-        align: match text.align {
+        align: match align {
             TextAlign::Left => gafira_text::TextAlign::Left,
             TextAlign::Center => gafira_text::TextAlign::Center,
             TextAlign::Right => gafira_text::TextAlign::Right,
@@ -888,7 +952,6 @@ fn text_path(
         ..gafira_text::TextStyle::default()
     };
     let dpi = 72.0 * style.size / size_pt;
-    let bounds = gafira_geom::Size::new(placement.w.abs(), placement.h.abs());
     let layout = gafira_text::layout_box(&words, &stack, &layout_style, dpi, bounds).ok()?;
     let outlines = gafira_text::outline_text(&layout, &stack).ok()?;
     let mut path = BezPath::new();
@@ -898,7 +961,7 @@ fn text_path(
     if path.elements().is_empty() {
         return None;
     }
-    let align = match text.align {
+    let align = match align {
         TextAlign::Left => 'l',
         TextAlign::Center => 'c',
         TextAlign::Right => 'r',
@@ -909,7 +972,7 @@ fn text_path(
         style.font,
         style.size.to_bits()
     );
-    Some((path, style.color, canonical))
+    Some((path, style.color, canonical, f64::from(layout.height)))
 }
 
 /// The check of ARQ-110: a number that is not finite is an error that names
@@ -1029,6 +1092,7 @@ mod tests {
             fill: Some(Color::Srgb(Rgba::new(0.2, 0.4, 0.6, 1.0))),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
         })
     }
 
@@ -1426,6 +1490,65 @@ mod tests {
         };
         assert_eq!(keys(1), keys(2));
         assert_eq!(keys(1), keys(4));
+    }
+
+    /// A filled ellipse of 200 by 100 at (10, 20) with `words` inside it,
+    /// aligned down the box by `valign` (spec 055).
+    fn shape_text_page(words: &str, valign: gafira_doc::VerticalAlign) -> Page {
+        let mut page = new_page();
+        let style = gafira_doc::SpanStyle {
+            font: "Inter".to_owned(),
+            size: 20.0,
+            color: Color::Srgb(Rgba::new(0.1, 0.2, 0.3, 1.0)),
+        };
+        let mut shape = ShapeNode::new(ShapeGeometry::Ellipse);
+        shape.fill = Some(RED);
+        let mut text = gafira_doc::ShapeText::plain(words, &style);
+        text.valign = valign;
+        shape.text = Some(text);
+        let base = ElementBase::new(NodeId::new(1), Placement::new(10.0, 20.0, 200.0, 100.0));
+        page.nodes.insert(
+            NodeId::new(1),
+            Arc::new(Node::new(base, NodeKind::Shape(shape))),
+        );
+        page.roots = vec![NodeId::new(1)];
+        page
+    }
+
+    // S55-03: the text of a shape is drawn over its fill, inside the box
+    // less a tenth of its shorter side; top, middle and bottom place it
+    // there; another text keys the shape apart.
+    #[test]
+    fn s55_03_shape_text_sits_where_it_is_aligned() {
+        use gafira_doc::VerticalAlign;
+        let text_box = |valign| {
+            let graph = build_text(&shape_text_page("Hola", valign), 1.0, Some(fonts()));
+            let all = fills(&graph);
+            assert_eq!(all.len(), 2, "the fill, then the text");
+            assert_eq!(all[0].1, RED);
+            all[1].0
+        };
+        let (top, middle, bottom) = (
+            text_box(VerticalAlign::Top),
+            text_box(VerticalAlign::Middle),
+            text_box(VerticalAlign::Bottom),
+        );
+        let pad = 10.0;
+        for b in [top, middle, bottom] {
+            assert!(b.x0 >= pad && b.x1 <= 200.0 - pad, "{b:?}");
+            assert!(b.y0 >= pad - 1.0 && b.y1 <= 100.0 - pad + 1.0, "{b:?}");
+        }
+        assert!(top.y0 < middle.y0 && middle.y0 < bottom.y0);
+        assert!((middle.center().x - 100.0).abs() < 2.0, "centred across");
+        let key = |words| {
+            build_text(
+                &shape_text_page(words, VerticalAlign::Middle),
+                1.0,
+                Some(fonts()),
+            )
+            .key_of(NodeId::new(1))
+        };
+        assert_ne!(key("Hola"), key("Adiós"));
     }
 
     /// A text element of one style, in a box of 200 by 60 at (10, 20).

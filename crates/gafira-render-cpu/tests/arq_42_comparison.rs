@@ -290,6 +290,7 @@ fn shape(
             fill: Some(fill),
             stroke: None,
             corner_radius: 0.0,
+            text: None,
         }),
     )
 }
