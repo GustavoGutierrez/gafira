@@ -877,3 +877,10 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): las guías no son de cada página sino del documento: una guía creada, movida o borrada en una página aparece, se mueve o se borra en todas, en las mismas posiciones.
 - **Consecuencia**: sustituye «Las guías son por página» de FD-03. Sin cambio de formato: cada página sigue guardando `Page.guides` y la interfaz las mantiene iguales en todas (un cambio se escribe en todas en un paso de deshacer; una página nueva nace con las de la primera). Se aplica en la spec 060.
 - Precisa 04 FD-03. Aplicado a 04 (FD-03).
+
+## D-100 Biblioteca de fuentes incrustadas, con negrita y cursiva
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): Gafira incrusta una selección curada de familias de licencia libre (SIL OFL) con normal, negrita, cursiva y negrita cursiva donde existan, y un texto puede cambiar de fuente desde un panel «Fuente». Se descartaron una selección mínima y las fuentes del sistema (un diseño abierto en otro equipo cambiaría de fuente).
+- **Consecuencia**: el estilo de un tramo gana `bold` e `italic` (cambio aditivo del esquema 1: un texto sin ellos conserva sus bytes; una versión anterior no abre un archivo que los use). Playfair Display y Merriweather se cambian por EB Garamond y Source Serif 4 por sus nombres reservados. La app crece unos 12 MB. Se aplica en la spec 062.
