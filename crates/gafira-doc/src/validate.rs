@@ -366,7 +366,11 @@ fn numbers(node: &Node) -> Vec<(NodeField, f64, Rule)> {
         }
         out.push((NodeField::StrokeAlpha, f64::from(a), unit_interval));
         out.push((NodeField::StrokeWidth, line.width, stroke_width));
-        for v in line.start.at.into_iter().chain(line.end.at) {
+        let attached = [line.start.attached, line.end.attached]
+            .into_iter()
+            .flatten()
+            .flat_map(|a| a.at);
+        for v in line.start.at.into_iter().chain(line.end.at).chain(attached) {
             out.push((NodeField::PathCoordinate, v, path_coordinate));
         }
     }

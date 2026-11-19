@@ -25,7 +25,8 @@ pub enum LineCap {
     Square,
 }
 
-/// One of the five points of a shape a line end connects to.
+/// One of the five points of a shape the magnet of a line end prefers
+/// (spec 058); an end can also stick to any point of the outline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Anchor {
@@ -46,25 +47,37 @@ impl Anchor {
         Self::Center,
     ];
 
-    /// Where the point lies in a box of `w` by `h`, from its top-left corner.
+    /// Where the point lies in the unit box of a shape.
     #[must_use]
-    pub fn local(self, w: f64, h: f64) -> Point {
-        let (x, y) = match self {
-            Self::Top => (0.5, 0.0),
-            Self::Right => (1.0, 0.5),
-            Self::Bottom => (0.5, 1.0),
-            Self::Left => (0.0, 0.5),
-            Self::Center => (0.5, 0.5),
-        };
-        Point::new(x * w, y * h)
+    pub fn unit(self) -> [f64; 2] {
+        match self {
+            Self::Top => [0.5, 0.0],
+            Self::Right => [1.0, 0.5],
+            Self::Bottom => [0.5, 1.0],
+            Self::Left => [0.0, 0.5],
+            Self::Center => [0.5, 0.5],
+        }
     }
 }
 
-/// The shape and the point a line end sticks to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// The shape and the point a line end sticks to: any point of its outline
+/// or one of its five points, in the unit box of the shape, so it moves,
+/// turns and scales with it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Attachment {
     pub node: NodeId,
-    pub anchor: Anchor,
+    pub at: [f64; 2],
+}
+
+impl Attachment {
+    /// Stuck to one of the five points of `node`.
+    #[must_use]
+    pub fn anchor(node: NodeId, anchor: Anchor) -> Self {
+        Self {
+            node,
+            at: anchor.unit(),
+        }
+    }
 }
 
 /// One end of a line.
@@ -106,17 +119,17 @@ impl LineNode {
     /// The widest line a document holds, in px.
     pub const MAX_WIDTH: f64 = 1000.0;
 
-    /// Where the point `anchor` of `node` lies on `page`, in page px: its
-    /// place in the node's box, turned and flipped with it. `None` when the
-    /// node is not on the page or is itself a line.
+    /// Where the point `at` of the unit box of `node` lies on `page`, in
+    /// page px: turned and flipped with the node. `None` when the node is
+    /// not on the page or is itself a line.
     #[must_use]
-    pub fn anchor_point(page: &Page, node: NodeId, anchor: Anchor) -> Option<Point> {
+    pub fn anchor_point(page: &Page, node: NodeId, at: [f64; 2]) -> Option<Point> {
         let target = page.node(node)?;
         if matches!(target.kind, crate::NodeKind::Line(_)) {
             return None;
         }
-        let at = &target.base.placement;
-        Some(at.to_transform() * anchor.local(at.w, at.h))
+        let p = &target.base.placement;
+        Some(p.to_transform() * Point::new(at[0] * p.w, at[1] * p.h))
     }
 
     /// Both ends in page px for a line placed at `placement` on `page`:
@@ -126,7 +139,7 @@ impl LineNode {
         let transform = placement.to_transform();
         [self.start, self.end].map(|end| {
             end.attached
-                .and_then(|a| Self::anchor_point(page, a.node, a.anchor))
+                .and_then(|a| Self::anchor_point(page, a.node, a.at))
                 .unwrap_or_else(|| {
                     let [x, y] = end.at;
                     transform * Point::new(x * placement.w, y * placement.h)

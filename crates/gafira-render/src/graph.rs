@@ -1664,10 +1664,7 @@ mod tests {
                 Arc::new(Node::new(base, NodeKind::Shape(shape))),
             );
             let mut end = LineEnd::new([1.0, 1.0], LineCap::None);
-            end.attached = Some(Attachment {
-                node: NodeId::new(1),
-                anchor: Anchor::Left,
-            });
+            end.attached = Some(Attachment::anchor(NodeId::new(1), Anchor::Left));
             let line = LineNode {
                 start: LineEnd::new([0.0, 0.0], LineCap::None),
                 end,

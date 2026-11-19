@@ -64,10 +64,7 @@ fn near(a: Point, b: Point) -> bool {
 // end writes no `attached` key.
 #[test]
 fn s58_01_line_round_trips() {
-    let attached = Attachment {
-        node: SHAPE,
-        anchor: Anchor::Left,
-    };
+    let attached = Attachment::anchor(SHAPE, Anchor::Left);
     let doc = document(page(0.0, line(3.0, Some(attached)))).expect("valid");
     let json = doc.to_json().expect("json");
     assert!(
@@ -75,7 +72,7 @@ fn s58_01_line_round_trips() {
         "{json}"
     );
     assert!(json.contains(r#""cap":"arrow""#), "{json}");
-    assert!(json.contains(r#""anchor":"left""#), "{json}");
+    assert!(json.contains(r#""at":[0.0,0.5]"#), "{json}");
     assert_eq!(json.matches(r#""attached""#).count(), 1, "{json}");
     assert_eq!(Document::from_json(json.as_bytes()).expect("loads"), doc);
 }
@@ -98,10 +95,7 @@ fn s58_01_line_validation() {
             field: NodeField::StrokeWidth
         }
     );
-    let gone = Attachment {
-        node: NodeId::new(99),
-        anchor: Anchor::Top,
-    };
+    let gone = Attachment::anchor(NodeId::new(99), Anchor::Top);
     assert!(document(page(0.0, line(1.0, Some(gone)))).is_ok());
 }
 
@@ -124,38 +118,30 @@ fn s58_02_line_ends() {
         (Anchor::Center, Point::new(200.0, 100.0)),
     ];
     for (anchor, at) in points {
-        let connected = line(
-            1.0,
-            Some(Attachment {
-                node: SHAPE,
-                anchor,
-            }),
-        );
+        let connected = line(1.0, Some(Attachment::anchor(SHAPE, anchor)));
         let ends = connected.ends(&page(0.0, connected.clone()), &box_);
         assert!(near(ends[1], at), "{anchor:?}: {:?}", ends[1]);
         assert!(near(ends[0], Point::new(10.0, 10.0)));
     }
     // Turned a quarter, the right point of the shape is below its centre.
-    let right = line(
-        1.0,
-        Some(Attachment {
-            node: SHAPE,
-            anchor: Anchor::Right,
-        }),
-    );
+    let right = line(1.0, Some(Attachment::anchor(SHAPE, Anchor::Right)));
     let ends = right.ends(&page(90.0, right.clone()), &box_);
     assert!(near(ends[1], Point::new(200.0, 200.0)), "{:?}", ends[1]);
-    let gone = line(
-        1.0,
-        Some(Attachment {
-            node: NodeId::new(99),
-            anchor: Anchor::Top,
-        }),
-    );
+    let gone = line(1.0, Some(Attachment::anchor(NodeId::new(99), Anchor::Top)));
     assert_eq!(gone.ends(&loose, &box_)[1], Point::new(60.0, 40.0));
     assert_eq!(
-        LineNode::anchor_point(&loose, LINE, Anchor::Top),
+        LineNode::anchor_point(&loose, LINE, Anchor::Top.unit()),
         None,
         "not to a line"
     );
+    // Any point of the outline: a quarter along the top edge.
+    let quarter = line(
+        1.0,
+        Some(Attachment {
+            node: SHAPE,
+            at: [0.25, 0.0],
+        }),
+    );
+    let ends = quarter.ends(&page(0.0, quarter.clone()), &box_);
+    assert!(near(ends[1], Point::new(150.0, 50.0)), "{:?}", ends[1]);
 }
