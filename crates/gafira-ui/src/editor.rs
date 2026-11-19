@@ -2650,8 +2650,19 @@ impl Editor {
                     let is_open = open.contains(family);
                     ui.horizontal(|ui| {
                         if faces.len() > 1 {
-                            let arrow = if is_open { "▾" } else { "▸" };
-                            if ui.small_button(arrow).clicked() {
+                            // Painted, not a glyph: the interface font has
+                            // no arrows.
+                            let (_, opener) =
+                                ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
+                            egui::collapsing_header::paint_default_icon(
+                                ui,
+                                if is_open { 1.0 } else { 0.0 },
+                                &opener,
+                            );
+                            if opener
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
                                 if is_open {
                                     open.remove(family);
                                 } else {
@@ -2659,7 +2670,7 @@ impl Editor {
                                 }
                             }
                         } else {
-                            ui.add_space(22.0);
+                            ui.add_space(16.0 + ui.spacing().item_spacing.x);
                         }
                         let face =
                             library_family(ui.ctx(), &gafira_theme::face_key(family, false, false));
@@ -2677,7 +2688,7 @@ impl Editor {
                                 .color(theme.c("text.secondary")),
                         );
                         if current.as_ref().is_some_and(|c| c.0 == family) {
-                            ui.label(RichText::new("✓").color(theme.c("text")));
+                            paint_check(ui, theme.c("text"));
                         }
                         if name
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -2716,7 +2727,7 @@ impl Editor {
                                     .as_ref()
                                     .is_some_and(|c| c.0 == family && c.1 == bold && c.2 == italic)
                                 {
-                                    ui.label(RichText::new("✓").color(theme.c("text")));
+                                    paint_check(ui, theme.c("text"));
                                 }
                                 if row
                                     .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -4995,6 +5006,17 @@ fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyl
         bold: false,
         italic: false,
     }
+}
+
+/// A tick of 14 px drawn with lines: the current font in the Fuente panel
+/// (the interface font has no tick glyph).
+fn paint_check(ui: &mut egui::Ui, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
+    let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * rect.width();
+    ui.painter().add(egui::Shape::line(
+        vec![at(0.15, 0.55), at(0.4, 0.8), at(0.85, 0.25)],
+        Stroke::new(2.0, color),
+    ));
 }
 
 /// The button of the Inspector that opens the Fuente panel (spec 062),
