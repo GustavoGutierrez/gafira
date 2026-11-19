@@ -862,3 +862,10 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): la pestaña del riel y el concepto que el glosario llama «Identidad» e «Identidad visual» se llaman «Marca» («Brand» en inglés), un nombre más reconocible.
 - **Consecuencia**: cambia los nombres normativos de D-04 en el glosario de 03 (§2.1 y §2.8). Las claves internas y los ids de requisitos no cambian; las demás menciones se leen como «Marca» y se actualizan al editar cada sección. Se aplica en la spec 057.
 - Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
+
+## D-98 Las líneas son un elemento propio que se conecta a las formas
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular, con capturas de referencia): una línea es un tipo nuevo de elemento con dos extremos, una punta por extremo, color y grosor. Cada extremo puede quedar conectado a una forma en uno de cinco puntos (arriba, derecha, abajo, izquierda y centro); su posición se calcula desde la forma al dibujar y al exportar, así que la línea la sigue sin despegarse. Al arrastrar un extremo cerca de una forma se ven sus puntos y el extremo se engancha como un imán. Se descartó guardar la línea como un trazado con puntas (obliga a reescribir cada línea al mover una forma).
+- **Consecuencia**: cambio aditivo del esquema 1 (`NodeKind::Line`); una versión anterior de Gafira no abre un archivo con líneas. Una conexión a una forma borrada no invalida el documento: el extremo vuelve a su punto guardado. Se aplica en la spec 058.
