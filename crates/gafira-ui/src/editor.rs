@@ -2322,6 +2322,23 @@ impl Editor {
                                     }
                                 }
                             }
+                            // Outside every page, the cut-away part of an
+                            // element is still taken (S51-06).
+                            if pressed
+                                && picked.is_none()
+                                && let Some(at) = pointer
+                                && let Some((id, leaf)) = transfer::outside_hit(&laid, zoom, at)
+                                && let Some(page_doc) = pages.iter().find(|p| p.id == id)
+                                && let Some((node, scope)) = group::click(
+                                    page_doc,
+                                    leaf,
+                                    self.scope_on(id),
+                                    response.double_clicked(),
+                                )
+                            {
+                                picked = Some((id, node));
+                                asked.scope = Some(scope.map(|group| (id, group)));
+                            }
                             if let Some(icon) = grip_cursor {
                                 ui.ctx().set_cursor_icon(icon);
                             }
@@ -2828,11 +2845,13 @@ impl Editor {
             && let Some(drag) = self.drag.take()
         {
             log("end gesture", engine.edit().end_gesture());
+            let moved: Vec<NodeId> = drag.origins.iter().map(|(node, _)| *node).collect();
             if let Some((from, to, shift)) = asked.transfer
                 && drag.moved
             {
-                let moved: Vec<NodeId> = drag.origins.iter().map(|(node, _)| *node).collect();
                 self.transfer(engine, (from, to), &moved, shift);
+            } else if drag.moved && drag.hold.is_none() {
+                drop_outside(engine, &drag, &moved);
             }
         }
         if let Some((dx, dy)) = asked.nudge
@@ -3507,6 +3526,35 @@ fn current_page_id(
     known(selected)
         .or_else(|| known(active))
         .or_else(|| pages.first().copied())
+}
+
+/// What a move dropped wholly outside its page is deleted (S51-07,
+/// D-93), in one undo step with the move: the drag is undone and one
+/// command sets where it left everything and removes what is gone.
+fn drop_outside(engine: &mut Gafira, drag: &Drag, moved: &[NodeId]) {
+    let Some(now) = engine.edit().document() else {
+        return;
+    };
+    let gone = transfer::left_behind(&now, drag.page, moved);
+    let (Some(before), Some(after)) = (
+        drag.start.as_ref().and_then(|d| d.page(drag.page)),
+        now.page(drag.page),
+    ) else {
+        return;
+    };
+    let Some(command) = transfer::drop_command(before, after, &gone) else {
+        return;
+    };
+    if let Err(error) = engine.edit().undo() {
+        eprintln!("drop: {error}");
+        return;
+    }
+    if let Err(error) = engine.edit().execute(command) {
+        eprintln!("drop: {error}");
+        if let Err(error) = engine.edit().redo() {
+            eprintln!("drop: {error}");
+        }
+    }
 }
 
 /// The number «n de N» shows (S49-05): the place of `current` among
@@ -5822,6 +5870,41 @@ pub(crate) mod tests {
         );
         assert_eq!(editor.selected.page(), Some(two));
         assert_eq!(editor.active, Some(two));
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(engine.edit().document().expect("a document"), before);
+    }
+
+    // S51-07 (D-93): a move dropped wholly outside the page deletes the
+    // element, in one undo step with the move.
+    #[test]
+    fn s51_07_a_drop_outside_the_page_deletes_the_element() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, ellipse) = two_pieces(&mut engine, &mut editor);
+        let before = engine.edit().document().expect("a document");
+        let depth = undo_depth(&mut engine);
+        editor.selected = Selection::one(page, rect);
+        for asked in [
+            Asked {
+                drag_begin: Some(None),
+                ..Asked::default()
+            },
+            Asked {
+                drag_to: Some(Vec2::new(-5000.0, 0.0)),
+                free: true,
+                ..Asked::default()
+            },
+            Asked {
+                drag_end: true,
+                ..Asked::default()
+            },
+        ] {
+            ask(&mut engine, &mut editor, asked);
+        }
+        let document = engine.edit().document().expect("a document");
+        assert!(document.pages()[0].node(rect).is_none(), "deleted");
+        assert!(document.pages()[0].node(ellipse).is_some());
         assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
         engine.edit().undo().expect("an undo");
         assert_eq!(engine.edit().document().expect("a document"), before);

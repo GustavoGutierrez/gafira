@@ -824,3 +824,11 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular, con una captura de referencia): el lienzo dibuja cada elemento recortado a su página; la parte que sobresale no se ve. El marco de selección, sus tiradores y su asa de giro se dibujan completos por encima de todas las páginas, y se pueden tomar también fuera de la página. Arrastrar un elemento y soltarlo sobre otra página lo pasa a esa página.
 - **Consecuencia**: sustituye en el lienzo el «se atenúa» de FD-09; el documento sigue guardando la geometría completa y la exportación sigue recortando a la página. Se aplica en la spec 051.
 - Precisa 04 FD-09. Aplicado a 04 (FD-09).
+
+## D-93 Lo que se suelta fuera de su página se elimina
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): al soltar un arrastre de movimiento, un elemento cuya caja no comparte área con su página (ni la toca por dentro) se elimina, para que no quede contenido oculto que ocupe espacio. Mover y eliminar son un solo paso de deshacer. Soltarlo sobre otra página lo pasa a esa página (D-92).
+- **Consecuencia**: sustituye el «los elementos totalmente fuera se listan en Capas con un icono de aviso» de FD-09 para lo que se suelta fuera; un documento que ya traiga elementos totalmente fuera los conserva hasta que se muevan. Se aplica en la spec 051.
+- Precisa 04 FD-09. Aplicado a 04 (FD-09).

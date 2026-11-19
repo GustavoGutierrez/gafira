@@ -5,9 +5,12 @@
 
 use egui::{Pos2, Rect};
 use gafira_doc::msg::MessageKey;
-use gafira_doc::{Document, NodeId, PageId};
-use gafira_edit::{Command, InsertNodes, NodeSpec, RemoveNodes, Transaction};
+use gafira_doc::{Document, NodeId, Page, PageId};
+use gafira_edit::{
+    Command, InsertNodes, NodeSpec, Property, RemoveNodes, SetProperty, Transaction,
+};
 
+use crate::canvas::{self, Shape};
 use crate::{clipboard, group};
 
 /// The page a move dropped at `at` goes to (S51-04): the page under the
@@ -18,6 +21,82 @@ pub(crate) fn drop_target(pages: &[(PageId, Rect)], from: PageId, at: Pos2) -> O
         .find(|(_, rect)| rect.contains(at))
         .map(|(page, _)| *page)
         .filter(|page| *page != from)
+}
+
+/// The drawn element under `at` when it lies outside every page (S51-06):
+/// the gap between pages or the workspace around them, where the part of
+/// an element that leaves its page is cut away (D-92) but can still be
+/// taken. `laid` holds each page's id, screen box and shapes; a later page
+/// is tried first. `None` inside a page: that page's own hit test decides.
+pub(crate) fn outside_hit(
+    laid: &[(PageId, Rect, Vec<Shape>)],
+    zoom: f32,
+    at: Pos2,
+) -> Option<(PageId, NodeId)> {
+    if laid.iter().any(|(_, page, _)| page.contains(at)) {
+        return None;
+    }
+    laid.iter()
+        .rev()
+        .find_map(|(id, page, shapes)| canvas::hit(shapes, *page, zoom, at).map(|leaf| (*id, leaf)))
+}
+
+/// The elements of `nodes` (each subtree once) that a drop left wholly
+/// outside `page` of `document` (S51-07, D-93): their box shares no area
+/// with the page. They are deleted with the move.
+pub(crate) fn left_behind(document: &Document, page: PageId, nodes: &[NodeId]) -> Vec<NodeId> {
+    let Some(on) = document.page(page) else {
+        return Vec::new();
+    };
+    let Ok(size) = on.size.to_px(document.dpi()) else {
+        return Vec::new();
+    };
+    let sheet = gafira_layout::Rect::new(0.0, 0.0, size.width(), size.height());
+    clipboard::tops(on, nodes)
+        .into_iter()
+        .filter(|id| {
+            gafira_layout::node_bounds(on, *id)
+                .and_then(|bounds| gafira_layout::overflow(bounds, sheet))
+                .is_ok_and(|overflow| overflow.fully_outside)
+        })
+        .collect()
+}
+
+/// The one-step command a drop that deletes `gone` stands for (S51-07):
+/// every placement that differs between `before` and `after` (the page
+/// when the drag began and where it ended), then `gone` removed. `None`
+/// when nothing is gone.
+pub(crate) fn drop_command(
+    before: &Page,
+    after: &Page,
+    gone: &[NodeId],
+) -> Option<Box<dyn Command>> {
+    if gone.is_empty() {
+        return None;
+    }
+    let mut commands: Vec<Box<dyn Command>> = after
+        .nodes
+        .iter()
+        .filter(|(id, node)| {
+            before
+                .node(**id)
+                .is_some_and(|old| old.base.placement != node.base.placement)
+        })
+        .map(|(id, node)| {
+            let set = SetProperty::new(
+                after.id,
+                vec![*id],
+                Property::Placement(node.base.placement),
+                None,
+            );
+            Box::new(set) as Box<dyn Command>
+        })
+        .collect();
+    commands.push(Box::new(RemoveNodes::new(after.id, gone.to_vec())));
+    Some(Box::new(Transaction::new(
+        MessageKey("edit.delete"),
+        commands,
+    )))
 }
 
 /// The one-step command that moves `nodes` of page `from` to the top of
@@ -151,6 +230,100 @@ mod tests {
             None,
             "outside"
         );
+    }
+
+    // S51-06: in the gap between pages, the part of an element that left
+    // its page is taken; inside a page, this hit test gives nothing.
+    #[test]
+    fn s51_06_outside_hit() {
+        let doc = document();
+        let one = doc.page(ONE).expect("page 1");
+        let two = doc.page(TWO).expect("page 2");
+        // Page 1 at (100, 50), 400 × 300 at zoom 1: rectangle 5 runs from
+        // y 300 to 400, so its bottom half lies in the gap below the page.
+        let laid = [
+            (
+                ONE,
+                Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(400.0, 300.0)),
+                canvas::shapes(one),
+            ),
+            (
+                TWO,
+                Rect::from_min_size(Pos2::new(100.0, 400.0), Vec2::new(400.0, 300.0)),
+                canvas::shapes(two),
+            ),
+        ];
+        assert_eq!(
+            outside_hit(&laid, 1.0, Pos2::new(350.0, 375.0)),
+            Some((ONE, n(5)))
+        );
+        assert_eq!(
+            outside_hit(&laid, 1.0, Pos2::new(150.0, 375.0)),
+            None,
+            "nothing there"
+        );
+        assert_eq!(
+            outside_hit(&laid, 1.0, Pos2::new(350.0, 320.0)),
+            None,
+            "inside page 1"
+        );
+    }
+
+    // S51-07 (D-93): a drop that leaves an element wholly outside its page
+    // deletes it; one that keeps any part of it on the page does not; a
+    // box that only touches the page's edge is outside.
+    #[test]
+    fn s51_07_left_behind() {
+        let mut doc = document();
+        assert!(left_behind(&doc, ONE, &[n(1), n(4), n(5)]).is_empty());
+        let mut one = doc.page(ONE).expect("page 1").clone();
+        let mut set = |id: u64, x: f64, y: f64| {
+            let mut node = one.node(n(id)).expect("a node").clone();
+            node.base.placement.x = x;
+            node.base.placement.y = y;
+            one.nodes.insert(n(id), Arc::new(node));
+        };
+        set(1, -50.0, 10.0);
+        set(5, 200.0, 300.0);
+        set(2, 500.0, 500.0);
+        set(3, 600.0, 500.0);
+        doc = Document::from_parts(
+            100,
+            Dpi::new(96),
+            vec![
+                Arc::new(one),
+                Arc::new(doc.page(TWO).expect("page 2").clone()),
+            ],
+        )
+        .expect("a valid document");
+        assert_eq!(
+            left_behind(&doc, ONE, &[n(5), n(1), n(4), n(2)]),
+            [n(1), n(4), n(5)],
+            "touching the edge is outside; a group goes whole, once"
+        );
+    }
+
+    // S51-07: the drop command sets where the drag left every moved node
+    // and removes what is gone, in one undo step.
+    #[test]
+    fn s51_07_drop_command() {
+        let doc = document();
+        let before = doc.page(ONE).expect("page 1").clone();
+        let mut after = before.clone();
+        for (id, x) in [(1_u64, 20.0), (5, 900.0)] {
+            let mut node = after.node(n(id)).expect("a node").clone();
+            node.base.placement.x = x;
+            after.nodes.insert(n(id), Arc::new(node));
+        }
+        assert!(drop_command(&before, &after, &[]).is_none());
+        let command = drop_command(&before, &after, &[n(5)]).expect("a command");
+        let mut history = History::new(doc.clone()).expect("a history");
+        history.execute(command, Duration::ZERO).expect("it drops");
+        let page = history.document().page(ONE).expect("page 1").clone();
+        assert_eq!(page.roots, [n(1), n(4)]);
+        assert_eq!(page.node(n(1)).expect("kept").base.placement.x, 20.0);
+        history.undo().expect("an undo");
+        assert_eq!(**history.document(), doc);
     }
 
     // S51-05: rectangle 5 and group 4 (with its children) leave page 1 and

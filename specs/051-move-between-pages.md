@@ -1,6 +1,6 @@
 # 051 — Mover elementos entre páginas
 
-> **Estado:** in-progress — 2026-11-19 — pedida por el titular con una captura de referencia; D-92.
+> **Estado:** in-progress — 2026-11-19 — pedida por el titular con una captura de referencia; D-92 y D-93.
 
 ## Objetivo
 
@@ -30,11 +30,15 @@ Specs 040, 043 (subárboles, `spec_of`, `top_ids`), 044 y 050. D-92.
 | S51-02 | Selección encima. | El marco y los tiradores de la selección se dibujan después de todas las páginas. |
 | S51-03 | Tomar fuera de la página. | Un clic en la parte de la caja de un elemento seleccionado que queda fuera de su página lo mantiene seleccionado, y un arrastre lo mueve. |
 | S51-04 | Destino al soltar. | Sobre otra página, esa página; sobre la propia o fuera de toda página, ninguna. |
+| S51-06 | Tomar en el espacio entre páginas. | Un clic fuera de toda página, sobre la parte recortada de un elemento, lo toma aunque no esté seleccionado; dentro de una página decide la prueba de esa página. |
+| S51-07 | Soltar fuera de la página (D-93). | Un elemento movido cuya caja no comparte área con su página se elimina al soltar, en un paso de deshacer con el movimiento; uno que conserva algo dentro, no. |
 | S51-05 | Traspaso. | Los subárboles seleccionados salen de la página de origen y entran como raíces encima de los de la de destino, con su posición trasladada por la diferencia entre las esquinas de las páginas, y con los mismos datos. Un solo paso de deshacer, y deshacer devuelve el documento al de antes del arrastre. |
 
 ## TDD
 
 1. `s51_04_drop_target`: los casos de S51-04 con dos páginas apiladas.
+3. `s51_06_outside_hit`: en el espacio entre páginas se toma la parte recortada de un elemento; dentro de una página, nada.
+4. `s51_07_left_behind` y `s51_07_drop_command`: lo que queda totalmente fuera (tocar el borde es fuera; un grupo, entero y una vez) y el comando de un paso que fija las posiciones y elimina.
 2. `s51_05_transfer`: un rectángulo y un grupo con dos hijos pasan de la página 1 a la 2. Las posiciones se trasladan, el orden se conserva, los ids nuevos son los que da `top_ids` y la página 1 queda sin ellos. Deshacer los devuelve.
 
 ## Evidencia esperada
