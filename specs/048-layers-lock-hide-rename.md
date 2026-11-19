@@ -1,6 +1,6 @@
 # 048 — Bloquear, ocultar, renombrar y arrastrar en Capas
 
-> **Estado:** backlog — 2026-11-19 — Definition of Ready completa; S48-04 confirmada por D-91; pendiente de la orden de empezar.
+> **Estado:** in-progress — 2026-11-19 — empezada; S48-04 por D-91.
 
 ## Objetivo
 
