@@ -247,14 +247,14 @@ shortcut = "{action} · {keys}"
 
 [tab]
 templates = "Templates"
-pieces = "Pieces"
+pieces = "Shapes"
 text = "Text"
 identity = "Identity"
 library = "Library"
 drawing = "Drawing"
 
 [pieces]
-shapes = "Shapes"
+shapes = "Basic shapes"
 rect = "Rectangle"
 ellipse = "Ellipse"
 

@@ -439,6 +439,36 @@ pub(crate) fn new_piece(page_px: Vec2, geometry: ShapeGeometry, fill: Color) -> 
     )
 }
 
+/// The piece `new_piece` makes on a page of `page_px`, centred on `at`
+/// in px of page instead of the page's middle (S52-03).
+pub(crate) fn piece_at(
+    page_px: Vec2,
+    geometry: ShapeGeometry,
+    fill: Color,
+    at: (f64, f64),
+) -> NodeSpec {
+    let mut spec = new_piece(page_px, geometry, fill);
+    spec.placement.x = at.0 - spec.placement.w / 2.0;
+    spec.placement.y = at.1 - spec.placement.h / 2.0;
+    spec
+}
+
+/// Where a shape dragged from the panel lands (S52-02): the page under
+/// `pointer` and the point there in px of page, with the pages drawn at
+/// their screen boxes with `zoom`. `None` outside every page.
+pub(crate) fn drop_point(
+    pages: &[(PageId, Rect)],
+    zoom: f32,
+    pointer: Pos2,
+) -> Option<(PageId, (f64, f64))> {
+    if !(zoom.is_finite() && zoom > 0.0) {
+        return None;
+    }
+    let (page, rect) = pages.iter().find(|(_, rect)| rect.contains(pointer))?;
+    let at = (pointer - rect.min) / zoom;
+    Some((*page, (f64::from(at.x), f64::from(at.y))))
+}
+
 /// The three text presets of the Texto tab (03 §2.3): a title, a subtitle
 /// and body text, by font size in px.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1141,6 +1171,50 @@ mod s41_tests {
 
     use super::*;
     use crate::rotation;
+
+    // S52-02: a shape dropped on a page lands on the point under the
+    // pointer, in px of page; in the gap between pages, nowhere.
+    #[test]
+    fn s52_02_drop_point() {
+        let (one, two) = (PageId::new(1), PageId::new(2));
+        let pages = [
+            (
+                one,
+                Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(500.0, 400.0)),
+            ),
+            (
+                two,
+                Rect::from_min_size(Pos2::new(100.0, 500.0), Vec2::new(500.0, 400.0)),
+            ),
+        ];
+        assert_eq!(
+            drop_point(&pages, 0.5, Pos2::new(150.0, 100.0)),
+            Some((one, (100.0, 100.0)))
+        );
+        assert_eq!(
+            drop_point(&pages, 0.5, Pos2::new(600.0, 900.0)),
+            Some((two, (1000.0, 800.0)))
+        );
+        assert_eq!(drop_point(&pages, 0.5, Pos2::new(300.0, 475.0)), None);
+        assert_eq!(drop_point(&pages, 0.5, Pos2::new(20.0, 100.0)), None);
+    }
+
+    // S52-03: the dropped shape has the size of a new piece, centred on the
+    // point where it was dropped.
+    #[test]
+    fn s52_03_piece_at() {
+        let fill = Color::Srgb(Rgba::new(1.0, 0.0, 0.0, 1.0));
+        let page = Vec2::new(900.0, 600.0);
+        let spec = piece_at(page, ShapeGeometry::Ellipse, fill, (100.0, 50.0));
+        assert_eq!(spec.placement, Placement::new(0.0, -50.0, 200.0, 200.0));
+        assert!(matches!(
+            spec.kind,
+            NodeKind::Shape(ShapeNode {
+                geometry: ShapeGeometry::Ellipse,
+                ..
+            })
+        ));
+    }
 
     /// A page of 100 px with one rectangle and one ellipse, both 40 × 10
     /// centred on (50, 50) and turned by `rotation`.

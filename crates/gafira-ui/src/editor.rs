@@ -288,6 +288,9 @@ pub(crate) struct Editor {
     /// The page clicked last, drawn with a border; `None` after a click
     /// outside every page (spec 050).
     active: Option<PageId>,
+    /// Each page's id and screen box in the last frame drawn: where a shape
+    /// dragged from the panel lands (spec 052).
+    page_rects: Vec<(PageId, Rect)>,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -363,6 +366,7 @@ impl Default for Editor {
             renaming: None,
             row_drag: None,
             active: None,
+            page_rects: Vec::new(),
         }
     }
 }
@@ -468,6 +472,9 @@ struct Asked {
     /// A move dropped on another page: from, to and the shift in page px
     /// from one page's corner to the other's (spec 051).
     transfer: Option<(PageId, PageId, (f64, f64))>,
+    /// A shape dragged from the panel and dropped on a page, at this point
+    /// in px of page (spec 052).
+    drop_piece: Option<(ShapeGeometry, PageId, (f64, f64))>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -1439,8 +1446,26 @@ impl Editor {
                                 ShapeGeometry::Ellipse,
                             ),
                         ] {
-                            if widgets::secondary_icon(ui, theme, icon, texts.t(&key)).clicked() {
+                            // A click adds it to the middle of the page; a
+                            // drag carries it to where it is dropped (S52).
+                            let button = widgets::secondary_icon(ui, theme, icon, texts.t(&key))
+                                .interact(egui::Sense::click_and_drag());
+                            if button.clicked() {
                                 asked.insert = Some(geometry);
+                            }
+                            let at = ui.input(|i| i.pointer.latest_pos());
+                            if button.dragged()
+                                && let Some(at) = at
+                            {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                self.piece_ghost(ui.ctx(), theme, geometry, at);
+                            }
+                            if button.drag_stopped()
+                                && let Some(at) = at
+                                && let Some((page, point)) =
+                                    canvas::drop_point(&self.page_rects, self.zoom, at)
+                            {
+                                asked.drop_piece = Some((geometry, page, point));
                             }
                         }
                     });
@@ -1835,6 +1860,34 @@ impl Editor {
             asked.scope = Some(row.parent.map(|group| (page, group)));
         }
         Some(name)
+    }
+
+    /// The shape being dragged from the panel, half transparent under the
+    /// pointer, over everything, with the size it will take on the page
+    /// under it (or the first page) at the zoom on display (S52-04).
+    fn piece_ghost(&self, ctx: &egui::Context, theme: &Theme, geometry: ShapeGeometry, at: Pos2) {
+        let Some((_, page)) = self
+            .page_rects
+            .iter()
+            .find(|(_, rect)| rect.contains(at))
+            .or(self.page_rects.first())
+        else {
+            return;
+        };
+        let side = page.width().min(page.height()) / 3.0;
+        let color = theme.c("accent").gamma_multiply(0.5);
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Tooltip,
+            egui::Id::new("editor.piece_ghost"),
+        ));
+        match geometry {
+            ShapeGeometry::Rect => {
+                painter.rect_filled(Rect::from_center_size(at, Vec2::splat(side)), 0.0, color);
+            }
+            ShapeGeometry::Ellipse => {
+                painter.circle_filled(at, side / 2.0, color);
+            }
+        }
     }
 
     /// Move `nodes` from one page to the other after a drag (spec 051), as
@@ -2473,6 +2526,7 @@ impl Editor {
                         });
                 });
                 self.rulers_and_guides(ui, theme, full, document, &page_rects, asked);
+                self.page_rects = page_rects;
             });
     }
 
@@ -2669,6 +2723,27 @@ impl Editor {
             match engine.edit().execute(Box::new(command)) {
                 Ok(_) => self.selected = Selection::one(page.id, next),
                 Err(error) => eprintln!("insert: {error}"),
+            }
+        }
+        // A shape dropped from the panel lands centred where it was
+        // dropped, selected, its page active (S52-03).
+        if let Some((geometry, page, point)) = asked.drop_piece
+            && let Some(document) = document
+            && let Some(on) = document.page(page)
+            && let Ok(size) = on.size.to_px(document.dpi())
+        {
+            let px = Vec2::new(size.width() as f32, size.height() as f32);
+            let fill = canvas::document_color(theme.c("accent"));
+            let spec = canvas::piece_at(px, geometry, fill, point);
+            let command = InsertNodes::new(page, None, on.roots.len(), vec![spec]);
+            let next = NodeId::new(document.next_id());
+            match engine.edit().execute(Box::new(command)) {
+                Ok(_) => {
+                    self.selected = Selection::one(page, next);
+                    self.active = Some(page);
+                    self.scope = None;
+                }
+                Err(error) => eprintln!("drop shape: {error}"),
             }
         }
         if asked.import_image
@@ -5908,6 +5983,34 @@ pub(crate) mod tests {
         assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
         engine.edit().undo().expect("an undo");
         assert_eq!(engine.edit().document().expect("a document"), before);
+    }
+
+    // S52-03: a shape dropped from the panel lands on its page, centred
+    // where it was dropped, selected, its page active, in one undo step.
+    #[test]
+    fn s52_03_a_dropped_shape_lands_where_it_was_dropped() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, _, _) = two_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                drop_piece: Some((ShapeGeometry::Ellipse, page, (100.0, 120.0))),
+                ..Asked::default()
+            },
+        );
+        let document = engine.edit().document().expect("a document");
+        let on = &document.pages()[0];
+        let dropped = on
+            .node(*on.roots.last().expect("a root"))
+            .expect("the shape");
+        let p = dropped.base.placement;
+        assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (100.0, 120.0));
+        assert_eq!(editor.selected.single(), Some((page, dropped.base.id)));
+        assert_eq!(editor.active, Some(page));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
     }
 
     // S50-01: a press on an element activates its page, on a page's
