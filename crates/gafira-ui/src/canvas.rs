@@ -40,13 +40,22 @@ pub(crate) struct Shape {
     pub(crate) text: Option<TextNode>,
     /// The asset an image element shows (spec 029).
     pub(crate) image: Option<gafira_doc::AssetRef>,
+    /// Locked itself or below a locked group (D-91): drawn, but a click or
+    /// a marquee goes through it.
+    pub(crate) locked: bool,
 }
 
 /// The visible shapes of `page`, back to front: roots in order, each node
 /// before its children (02 §3.1). Groups draw nothing themselves; their
 /// opacity fades what is below them (spec 043).
 pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
-    fn visit(page: &Page, id: NodeId, inherited: f32, depth: usize, out: &mut Vec<Shape>) {
+    fn visit(
+        page: &Page,
+        id: NodeId,
+        (inherited, held): (f32, bool),
+        depth: usize,
+        out: &mut Vec<Shape>,
+    ) {
         let Some(node) = page.node(id) else { return };
         // Deeper than any valid document, so a broken tree cannot recurse
         // for ever.
@@ -54,6 +63,7 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
             return;
         }
         let rect = ShapeNode::new(ShapeGeometry::Rect);
+        let locked = held || node.base.locked;
         let drawn = match &node.kind {
             NodeKind::Shape(shape) => Some((*shape, None, None)),
             NodeKind::Text(text) => Some((rect, Some(text.clone()), None)),
@@ -74,16 +84,17 @@ pub(crate) fn shapes(page: &Page) -> Vec<Shape> {
                 group: false,
                 text,
                 image,
+                locked,
             });
         }
         let below = inherited * node.base.opacity.clamp(0.0, 1.0);
         for child in &node.children {
-            visit(page, *child, below, depth + 1, out);
+            visit(page, *child, (below, locked), depth + 1, out);
         }
     }
     let mut out = Vec::new();
     for root in &page.roots {
-        visit(page, *root, 1.0, 0, &mut out);
+        visit(page, *root, (1.0, false), 0, &mut out);
     }
     out
 }
@@ -211,7 +222,8 @@ pub(crate) fn on_screen(page_rect: Rect, zoom: f32, placement: &Placement) -> Re
 /// outline. The pointer is taken back to each shape's local box, so a
 /// turned or flipped shape is hit where it is drawn (spec 041).
 pub(crate) fn hit(shapes: &[Shape], page_rect: Rect, zoom: f32, pointer: Pos2) -> Option<NodeId> {
-    shapes.iter().rev().find_map(|shape| {
+    // What is locked is not picked: the click goes through it (D-91).
+    shapes.iter().rev().filter(|s| !s.locked).find_map(|shape| {
         let (w, h) = (shape.placement.w, shape.placement.h);
         let transform = rotation::to_screen(page_rect, zoom, &shape.placement);
         let local = rotation::local(transform, pointer)?;
@@ -239,6 +251,7 @@ pub(crate) fn in_marquee(
 ) -> Vec<NodeId> {
     shapes
         .iter()
+        .filter(|shape| !shape.locked)
         .filter(|shape| rotation::screen_box(page_rect, zoom, &shape.placement).intersects(marquee))
         .map(|shape| shape.node)
         .collect()

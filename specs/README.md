@@ -74,6 +74,7 @@ Conservan su nombre de dos dígitos y su propia fila `Estado`; 01, 02, 04 y 05 e
 | 045 | [Proporción, cursores y tamaño al redimensionar](done/045-resize-proportions-cursors-and-size-label.md) | Las esquinas conservan la proporción y Mayús la libera (D-89), también giradas en sus ejes, con mínimo de 1 px y sin romperla al pasar la esquina opuesta; el Imán engancha el borde que manda; cursor de doble flecha por sector de 45° en cada asa (Grab/Grabbing en el giro), con la misma prueba de toque que el agarre; etiqueta «320 × 180» con su cambio junto al puntero, fuera del elemento y dentro de la vista; 9 tests nuevos, 19 mutantes a mano muertos, 3149 tests |
 | 046 | [Icono de la aplicación e instalación en Linux](done/046-application-icon.md) | `cargo xtask gen-icons` (nuevo crate `xtask`, resvg) compone la baldosa `#FAFAF7` con el símbolo al 62 % y rasteriza 16–512 px más el icono `.gaf`, en `assets/app-icon/hicolor/`, con `--check` y prueba de bytes idénticos (DIS-13); icono y `app_id` de la ventana; `packaging/linux/` con `gafira.desktop`, el tipo MIME `.gaf` e `install.sh` por usuario con `--uninstall`; 7 tests nuevos |
 | 047 | [Alt redimensiona desde el centro, Ctrl suelta el Imán](done/047-alt-centre-resize-and-ctrl-magnet.md) | `Alt` en un tirador redimensiona desde el centro, simétrico y en los ejes del elemento girado y de los grupos (D-90); las esquinas conservan la proporción y Mayús la libera; mínimo de 1 px sin voltear al pasar el centro; el Imán engancha el borde arrastrado y refleja el opuesto; `Ctrl`/`Cmd` suelta el Imán al mover y redimensionar, en lugar de `Alt`; la etiqueta de tamaño se mantiene; 7 tests nuevos, 24 mutantes a mano muertos, 3156 tests |
+| 048 | [Bloquear, ocultar, renombrar y arrastrar en Capas](done/048-layers-lock-hide-rename.md) | Ojo y candado por fila en Capas, renombrar con doble clic, arrastrar entre hermanas con línea de inserción y `Alt+↑/↓`; `Ctrl+Mayús+H`/`L` en un paso; lo bloqueado no se elige en el lienzo, ni con marco ni con Ctrl+A, y no se mueve (D-91); filas atenuadas; 4 iconos Phosphor; 12 tests nuevos, 3177 tests |
 
 ### Historial del flujo anterior
 
@@ -89,6 +90,5 @@ Antes del 2026-11-16 el trabajo seguía un flujo multiagente (ADR 0001, 0002, 00
 | ID | Spec | Motivo |
 | --- | --- | --- |
 | 008 | [Formato de proyecto GAF v1](backlog/008-gaf-format-v1.md) | Propuesta técnica del titular; pendiente de las decisiones de §17 y de la orden de empezar |
-| 048 | [Bloquear, ocultar, renombrar y arrastrar en Capas](backlog/048-layers-lock-hide-rename.md) | Lista para empezar (S48-04 confirmada por D-91); pendiente de la orden de empezar |
 
 Siguiente ID libre: **049**.

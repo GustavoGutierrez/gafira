@@ -25,6 +25,7 @@ use crate::files::{FileAction, project_name};
 use crate::format::fit_zoom;
 use crate::group::{self, Change};
 use crate::icons::{self, Icon, Weight};
+use crate::layers::{self, Flag};
 use crate::magnet::{self, Snap};
 use crate::resize;
 use crate::rotation::{self, Axis};
@@ -278,6 +279,11 @@ pub(crate) struct Editor {
     /// What the magnet snapped to in the drag in progress, for the smart
     /// guides (spec 044).
     snapped: Option<(PageId, Snap)>,
+    /// The row of Capas being renamed (spec 048): its node, the text typed
+    /// so far and whether the field already took the keyboard.
+    renaming: Option<(NodeId, String, bool)>,
+    /// The row of Capas being dragged to a new place (spec 048).
+    row_drag: Option<NodeId>,
 }
 
 /// A guide held by the pointer (FD-03, spec 044): a new one from a ruler
@@ -347,6 +353,8 @@ impl Default for Editor {
             shown_loaded: false,
             guide_drag: None,
             snapped: None,
+            renaming: None,
+            row_drag: None,
         }
     }
 }
@@ -437,8 +445,18 @@ struct Asked {
     insert_text: Option<(canvas::TextPreset, String)>,
     /// New rich text for the selected text element (Inspector).
     text: Option<gafira_doc::RichText>,
-    /// A root element to move to this index of its page (Capas).
+    /// An element to move to this index among its siblings (Capas).
     reorder: Option<(PageId, NodeId, usize)>,
+    /// Ocultar or Bloquear from a row of Capas: these nodes of the page
+    /// become hidden or locked (`true`) or visible or free (spec 048).
+    flag: Option<(PageId, Vec<NodeId>, Flag, bool)>,
+    /// Ctrl+Shift+H or Ctrl+Shift+L on the selection (S48-03).
+    toggle: Option<Flag>,
+    /// A name typed in Capas (S48-05).
+    rename: Option<(PageId, NodeId, Option<String>)>,
+    /// Alt+↑ (1) or Alt+↓ (-1): the selected element one step in the
+    /// stacking order (S48-06).
+    step: Option<isize>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -517,6 +535,7 @@ fn group_shape(page: &Page, node: NodeId) -> Option<Shape> {
         group: true,
         text: None,
         image: None,
+        locked: crate::layers::locked(page, node),
     })
 }
 
@@ -821,6 +840,27 @@ impl Editor {
                 }
                 if view != self.shown {
                     asked.shown = Some(view);
+                }
+                // Ctrl+Shift+H hides and Ctrl+Shift+L locks the selection;
+                // Alt+↑/↓ moves it one step in the stacking order (03 §11,
+                // spec 048).
+                if i.modifiers
+                    .matches_exact(Modifiers::COMMAND.plus(Modifiers::SHIFT))
+                {
+                    if i.key_pressed(egui::Key::H) {
+                        asked.toggle = Some(Flag::Hidden);
+                    }
+                    if i.key_pressed(egui::Key::L) {
+                        asked.toggle = Some(Flag::Locked);
+                    }
+                }
+                if i.modifiers.matches_exact(Modifiers::ALT) {
+                    if i.key_pressed(egui::Key::ArrowUp) {
+                        asked.step = Some(1);
+                    }
+                    if i.key_pressed(egui::Key::ArrowDown) {
+                        asked.step = Some(-1);
+                    }
                 }
                 if i.modifiers.matches_exact(Modifiers::SHIFT) {
                     if i.key_pressed(egui::Key::H) {
@@ -1526,11 +1566,13 @@ impl Editor {
             });
     }
 
-    /// The Capas tab: the root elements of the selected element's page (or
-    /// the first page), front first; a click selects, Subir and Bajar move
-    /// the selected one by one step (03 §2.4).
+    /// The Capas tab (03 §2.4): the elements of the selected element's page
+    /// (or the first page), front first. A click selects, a double click
+    /// renames and a drag moves the row among its siblings; the eye hides
+    /// and the lock locks (spec 048); Subir, Bajar and Eliminar act on the
+    /// one selected element.
     fn layers(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         theme: &Theme,
         texts: &Texts,
@@ -1550,16 +1592,29 @@ impl Editor {
             );
             return;
         }
+        let dragged = self
+            .row_drag
+            .and_then(|node| rows.iter().find(|row| row.node == node).cloned());
+        // The rows of the dragged row's siblings, front first, for the
+        // insertion line.
+        let mut sibling_rows: Vec<Rect> = Vec::new();
+        let mut released = false;
         for row in rows {
+            let Some(node) = page.node(row.node) else {
+                continue;
+            };
             let last = row.siblings.saturating_sub(1);
             let selected = self.selected.contains(page.id, row.node);
+            // A hidden or locked row, or one inside a hidden or locked
+            // group, is dimmed (03 «Lista con arrastre»).
+            let dim = layers::locked(page, row.node) || layers::hidden(page, row.node);
             let label = row.name.clone().unwrap_or_else(|| {
                 texts.t(&gafira_doc::msg::Message {
                     key: gafira_doc::msg::MessageKey(row.kind),
                     args: Vec::new(),
                 })
             });
-            ui.horizontal(|ui| {
+            let line = ui.horizontal(|ui| {
                 // A group's children sit one step in, below it (spec 043).
                 ui.add_space(16.0 * row.depth as f32);
                 let (_, opener) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
@@ -1575,22 +1630,35 @@ impl Editor {
                         asked.toggle_open = Some(row.node);
                     }
                 }
-                if ui.selectable_label(selected, label).clicked() {
-                    // Ctrl/Cmd or Shift + click toggles the row (spec 040).
-                    let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
-                    asked.select = Some(if toggle {
-                        let mut next = self.selected.clone();
-                        next.toggle(page.id, row.node);
-                        next
+                // The eye and the lock, on the right of every row; Subir,
+                // Bajar and Eliminar before them on the selected one.
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let lock = node.base.locked;
+                    let (icon, key) = if lock {
+                        (Icon::Locked, "layers.unlock")
                     } else {
-                        Selection::one(page.id, row.node)
-                    });
-                    // A child of a group enters that group on the canvas.
-                    asked.scope = Some(row.parent.map(|group| (page.id, group)));
-                }
-                // Subir, Bajar and the row's Eliminar act on one element.
-                if selected && self.selected.len() == 1 {
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        (Icon::Unlocked, "layers.lock")
+                    };
+                    let button = IconButton::new(icon, plain(texts, key))
+                        .active(lock)
+                        .small()
+                        .show(ui, theme);
+                    if button.clicked() {
+                        asked.flag = Some((page.id, vec![row.node], Flag::Locked, !lock));
+                    }
+                    let shown = node.base.visible;
+                    let (icon, key) = if shown {
+                        (Icon::Visible, "layers.hide")
+                    } else {
+                        (Icon::Hidden, "layers.show")
+                    };
+                    let button = IconButton::new(icon, plain(texts, key))
+                        .small()
+                        .show(ui, theme);
+                    if button.clicked() {
+                        asked.flag = Some((page.id, vec![row.node], Flag::Hidden, shown));
+                    }
+                    if selected && self.selected.len() == 1 {
                         let delete = IconButton::new(
                             Icon::Delete,
                             texts.t(&gafira_doc::msg!("editor.delete")),
@@ -1620,9 +1688,158 @@ impl Editor {
                         if up.inner.clicked() {
                             asked.reorder = Some((page.id, row.node, row.index + 1));
                         }
-                    });
-                }
+                    }
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        self.layer_name(ui, theme, page.id, &row, (label, selected, dim), asked)
+                    })
+                    .inner
+                })
+                .inner
             });
+            if let Some(name) = line.inner {
+                if name.drag_started() {
+                    self.row_drag = Some(row.node);
+                }
+                released |= self.row_drag == Some(row.node) && name.drag_stopped();
+            }
+            if dragged
+                .as_ref()
+                .is_some_and(|d| d.parent == row.parent && d.depth == row.depth)
+            {
+                sibling_rows.push(line.response.rect);
+            }
+        }
+        // The insertion line while a row is dragged; dropping it reorders
+        // it among its siblings in one step (S48-06).
+        let Some(row) = dragged else {
+            self.row_drag = None;
+            return;
+        };
+        let Some(at) = ui.input(|i| i.pointer.latest_pos()) else {
+            return;
+        };
+        let gap = sibling_rows.iter().filter(|r| r.center().y < at.y).count();
+        let y = match sibling_rows.get(gap) {
+            Some(below) => below.top(),
+            None => sibling_rows.last().map_or(at.y, |r| r.bottom()),
+        };
+        if !released {
+            let x = ui.min_rect().x_range();
+            ui.painter()
+                .hline(x, y, Stroke::new(2.0, theme.c("primary.bg")));
+            return;
+        }
+        self.row_drag = None;
+        if let Some(index) = layers::dropped(row.index, row.siblings, gap) {
+            asked.reorder = Some((page.id, row.node, index));
+        }
+    }
+
+    /// The name of a row of Capas: a label that selects on a click, starts
+    /// a rename on a double click and can be dragged; or, while renamed,
+    /// the field (S48-05). With the label's response.
+    fn layer_name(
+        &mut self,
+        ui: &mut egui::Ui,
+        theme: &Theme,
+        page: PageId,
+        row: &canvas::Layer,
+        (label, selected, dim): (String, bool, bool),
+        asked: &mut Asked,
+    ) -> Option<egui::Response> {
+        if let Some((node, text, focused)) = self.renaming.as_mut()
+            && *node == row.node
+        {
+            let field = ui.add(
+                egui::TextEdit::singleline(text)
+                    .font(theme.font("body-sm"))
+                    .desired_width(f32::INFINITY),
+            );
+            if !*focused {
+                field.request_focus();
+                *focused = true;
+            } else if field.lost_focus() {
+                // Enter or a click elsewhere keeps it; Esc does not.
+                if !ui.input(|i| i.key_pressed(Key::Escape))
+                    && let Some(name) = layers::renamed(row.name.as_deref(), text)
+                {
+                    asked.rename = Some((page, row.node, name));
+                }
+                self.renaming = None;
+            }
+            return None;
+        }
+        let mut text = RichText::new(label.clone());
+        if dim {
+            text = text.color(theme.c("text.muted"));
+        }
+        let name = ui
+            .selectable_label(selected, text)
+            .interact(egui::Sense::click_and_drag());
+        if name.double_clicked() {
+            self.renaming = Some((row.node, row.name.clone().unwrap_or(label), false));
+        } else if name.clicked() {
+            // Ctrl/Cmd or Shift + click toggles the row (spec 040).
+            let toggle = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+            asked.select = Some(if toggle {
+                let mut next = self.selected.clone();
+                next.toggle(page, row.node);
+                next
+            } else {
+                Selection::one(page, row.node)
+            });
+            // A child of a group enters that group on the canvas.
+            asked.scope = Some(row.parent.map(|group| (page, group)));
+        }
+        Some(name)
+    }
+
+    /// Ocultar, Bloquear, a new name and Alt+↑/↓ from Capas and the
+    /// shortcuts (spec 048), each one undo step.
+    fn layer_changes(&self, engine: &mut Gafira, asked: &Asked) {
+        let log = |what: &str, result: Result<(), gafira_engine::EngineError>| {
+            if let Err(error) = result {
+                eprintln!("{what}: {error}");
+            }
+        };
+        let mut flag = asked.flag.clone();
+        if let Some(which) = asked.toggle
+            && let Some(document) = engine.edit().document()
+            && let Some(page) = self.selected.page().and_then(|id| document.page(id))
+            && let Some(on) = layers::toggled(page, self.selected.nodes(), which)
+        {
+            flag = Some((page.id, self.selected.nodes().to_vec(), which, on));
+        }
+        if let Some((page, nodes, which, on)) = flag {
+            let property = match which {
+                Flag::Hidden => Property::Visible(!on),
+                Flag::Locked => Property::Locked(on),
+            };
+            // Its own gesture: never merged with an earlier change (one
+            // undo step per click or shortcut).
+            let gesture = engine.edit().begin_gesture().ok();
+            let command = SetProperty::new(page, nodes, property, gesture);
+            log("layers", engine.edit().execute(Box::new(command)).map(drop));
+        }
+        if let Some((page, node, name)) = asked.rename.clone() {
+            let gesture = engine.edit().begin_gesture().ok();
+            let command = SetProperty::new(page, vec![node], Property::Name(name), gesture);
+            log("rename", engine.edit().execute(Box::new(command)).map(drop));
+        }
+        if let Some(step) = asked.step
+            && let Some((page, node)) = self.selected.single()
+            && let Some(document) = engine.edit().document()
+            && let Some(on) = document.page(page)
+            && let Some((_, list)) = group::siblings(on, &[node])
+            && let Some(index) = list.iter().position(|id| *id == node)
+            && let Some(to) = index.checked_add_signed(step)
+            && to < list.len()
+        {
+            let command = gafira_edit::Reorder::new(page, node, to);
+            log(
+                "reorder",
+                engine.edit().execute(Box::new(command)).map(drop),
+            );
         }
     }
 
@@ -1803,8 +2020,9 @@ impl Editor {
                                             Stroke::new(2.0, selection),
                                         ));
                                     }
-                                    // Only a single selection resizes or turns.
-                                    if single == Some((shape.page, shape.node)) {
+                                    // Only a single, free selection resizes or
+                                    // turns by hand (D-91).
+                                    if single == Some((shape.page, shape.node)) && !shape.locked {
                                         let knob = rotation::rotate_handle(turn, &shape.placement);
                                         let top = canvas::handle_point(
                                             turn,
@@ -2289,21 +2507,30 @@ impl Editor {
         if let Some(hold) = asked.drag_begin
             && let Some(page) = self.selected.page()
         {
-            // Where every selected element starts, from the newest document.
+            // Where every selected element starts, from the newest document;
+            // what is locked stays where it is (D-91).
             let now = engine.edit().document();
+            let free = now
+                .as_deref()
+                .and_then(|document| document.page(page))
+                .map(|on| layers::movable(on, self.selected.nodes()))
+                .unwrap_or_default();
             let origins = selected_shapes(now.as_deref(), &self.selected)
                 .into_iter()
+                .filter(|shape| free.contains(&shape.node))
                 .map(|shape| (shape.node, shape.placement))
                 .collect::<Vec<_>>();
-            let gesture = engine.edit().begin_gesture().ok();
-            self.drag = Some(Drag {
-                gesture,
-                page,
-                hold: hold.filter(|_| origins.len() == 1),
-                origins,
-                start: now,
-                offset: Vec2::ZERO,
-            });
+            if !origins.is_empty() {
+                let gesture = engine.edit().begin_gesture().ok();
+                self.drag = Some(Drag {
+                    gesture,
+                    page,
+                    hold: hold.filter(|_| origins.len() == 1),
+                    origins,
+                    start: now,
+                    offset: Vec2::ZERO,
+                });
+            }
         }
         if let (Some(delta), Some(drag)) = (asked.drag_to, self.drag.as_mut()) {
             drag.offset += delta;
@@ -2496,6 +2723,7 @@ impl Editor {
                 engine.edit().execute(Box::new(command)).map(drop),
             );
         }
+        self.layer_changes(engine, asked);
         // Every selected element goes in one RemoveNodes: one undo step.
         if asked.delete
             && let Some(page) = self.selected.page()
@@ -2565,8 +2793,11 @@ impl Editor {
         let Some(current) = now.as_deref().and_then(|d| d.page(page)) else {
             return;
         };
+        // What is locked does not move (D-91).
+        let free = layers::movable(current, self.selected.nodes());
         let commands = selected_shapes(now.as_deref(), &self.selected)
             .iter()
+            .filter(|shape| free.contains(&shape.node))
             .flat_map(|shape| {
                 let moves = if shape.group {
                     group::changed(current, shape.node, Change::Move { dx, dy })
@@ -4719,13 +4950,15 @@ pub(crate) mod tests {
         );
         assert!(the_shapes(&mut engine)[0].placement.flip.y);
         let command_shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
-        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), command_shift);
-        assert!(
-            the_shapes(&mut engine)[0].placement.flip.x,
-            "Ctrl+Mayús+H is not a flip"
-        );
         let ellipse = the_shapes(&mut engine)[1].placement;
         assert!(!ellipse.flip.x && !ellipse.flip.y, "only the selection");
+        // Since spec 048 Ctrl+Mayús+H hides the selection; it still does
+        // not flip it.
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), command_shift);
+        assert!(
+            placements(&mut engine, &[rect])[0].flip.x,
+            "Ctrl+Mayús+H is not a flip"
+        );
     }
 
     // S41-18: resizing a turned element by its handle works in its own axes
@@ -5244,6 +5477,144 @@ pub(crate) mod tests {
     }
 
     /// `three_pieces` with the first two grouped and the group selected.
+    fn bases(engine: &mut Gafira, nodes: &[NodeId]) -> Vec<(bool, bool, Option<String>)> {
+        let document = engine.edit().document().expect("a document");
+        let page = &document.pages()[0];
+        nodes
+            .iter()
+            .map(|id| {
+                let base = &page.node(*id).expect("a node").base;
+                (base.visible, base.locked, base.name.clone())
+            })
+            .collect()
+    }
+
+    // S48-01, S48-02: the eye hides and the lock locks one element, each
+    // one undo step; a hidden element leaves the selection.
+    #[test]
+    fn s48_01_the_eye_and_the_lock_are_one_undo_step_each() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, _]) = three_pieces(&mut engine, &mut editor);
+        let depth = undo_depth(&mut engine);
+        let flag = |nodes: Vec<NodeId>, which, on| Asked {
+            flag: Some((page, nodes, which, on)),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, flag(vec![a], Flag::Locked, true));
+        assert_eq!(bases(&mut engine, &[a])[0], (true, true, None));
+        assert_eq!(undo_depth(&mut engine), depth + 1);
+        editor.selected = Selection::of(page, [a, b]);
+        ask(&mut engine, &mut editor, flag(vec![b], Flag::Hidden, true));
+        assert_eq!(bases(&mut engine, &[b])[0], (false, false, None));
+        assert_eq!(undo_depth(&mut engine), depth + 2);
+        let document = engine.edit().document();
+        assert_eq!(editor.prune(document.as_deref()).len(), 1, "b left it");
+        engine.edit().undo().expect("an undo");
+        assert_eq!(bases(&mut engine, &[b])[0], (true, false, None));
+    }
+
+    // S48-03, S48-04: Ctrl+Shift+L locks a mixed selection in one step and
+    // again frees it; the arrows do not move what is locked; Ctrl+Shift+H
+    // hides it all.
+    #[test]
+    fn s48_03_the_shortcuts_lock_and_hide_the_selection() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, c]) = three_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let lock = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                flag: Some((page, vec![a], Flag::Locked, true)),
+                ..Asked::default()
+            },
+        );
+        editor.selected = Selection::of(page, [a, b]);
+        let depth = undo_depth(&mut engine);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::L), lock);
+        assert_eq!(bases(&mut engine, &[a, b]), vec![(true, true, None); 2]);
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        editor.selected = Selection::of(page, [a, b, c]);
+        let before = placements(&mut engine, &[a, b, c]);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowRight),
+            Modifiers::NONE,
+        );
+        let after = placements(&mut engine, &[a, b, c]);
+        assert_eq!((after[0], after[1]), (before[0], before[1]), "locked stay");
+        assert_eq!(after[2].x, before[2].x + 1.0, "the free one moves");
+        editor.selected = Selection::of(page, [a, b]);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::L), lock);
+        assert_eq!(bases(&mut engine, &[a, b]), vec![(true, false, None); 2]);
+        frame_with(&ctx, &mut editor, &mut engine, Some(Key::H), lock);
+        assert_eq!(bases(&mut engine, &[a, b]), vec![(false, false, None); 2]);
+    }
+
+    // S48-05: a typed name is stored trimmed in one undo step; an empty
+    // one goes back to the name by kind.
+    #[test]
+    fn s48_05_a_rename_is_one_undo_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, _, _]) = three_pieces(&mut engine, &mut editor);
+        let rename = |name: Option<&str>| Asked {
+            rename: Some((page, a, name.map(str::to_owned))),
+            ..Asked::default()
+        };
+        ask(&mut engine, &mut editor, rename(Some("Fondo")));
+        assert_eq!(bases(&mut engine, &[a])[0].2.as_deref(), Some("Fondo"));
+        ask(&mut engine, &mut editor, rename(None));
+        assert_eq!(bases(&mut engine, &[a])[0].2, None);
+        engine.edit().undo().expect("an undo");
+        assert_eq!(bases(&mut engine, &[a])[0].2.as_deref(), Some("Fondo"));
+    }
+
+    // S48-06: Alt+↑ brings the selected element one step forward and
+    // Alt+↓ sends it one back; at the end of the list nothing happens.
+    #[test]
+    fn s48_06_alt_arrows_reorder_one_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, [a, b, c]) = three_pieces(&mut engine, &mut editor);
+        let ctx = egui::Context::default();
+        let roots = |engine: &mut Gafira| {
+            engine.edit().document().expect("a document").pages()[0]
+                .roots
+                .clone()
+        };
+        assert_eq!(roots(&mut engine), [a, b, c]);
+        editor.selected = Selection::one(page, a);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowUp),
+            Modifiers::ALT,
+        );
+        assert_eq!(roots(&mut engine), [b, a, c]);
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowDown),
+            Modifiers::ALT,
+        );
+        frame_with(
+            &ctx,
+            &mut editor,
+            &mut engine,
+            Some(Key::ArrowDown),
+            Modifiers::ALT,
+        );
+        assert_eq!(roots(&mut engine), [a, b, c], "the back stays the back");
+    }
+
     fn grouped(engine: &mut Gafira, editor: &mut Editor) -> (PageId, NodeId, [NodeId; 3]) {
         let (page, [a, b, c]) = three_pieces(engine, editor);
         editor.selected = Selection::of(page, [a, b]);
