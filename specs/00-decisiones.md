@@ -840,3 +840,10 @@ Fecha: 19 de noviembre de 2026.
 - **Decisión** (titular): la pestaña del riel y la biblioteca de elementos que el glosario llama «Piezas» se llama «Formas» («Shapes» en inglés).
 - **Consecuencia**: cambia el nombre normativo de D-04 en el glosario de 03 (§2.1 y §2.8). Las demás menciones a «Piezas» en 03 y 04 se leen como «Formas»; se actualizan cuando se edite cada sección. Se aplica en la spec 052.
 - Precisa D-04 y 03 §2.1, §2.8. Aplicado a 03 (glosario).
+
+## D-95 Las formas nuevas son trazados vectoriales en el documento
+
+Fecha: 19 de noviembre de 2026.
+
+- **Decisión** (titular): los polígonos, estrellas, flechas, nubes, corazones y demás formas de la biblioteca se guardan como una geometría nueva de trazado vectorial (`ShapeGeometry::Path`), que se rellena, se contornea, se escala y se gira como un rectángulo o una elipse. Se descartaron las formas paramétricas (solo cubren polígonos y estrellas) y las imágenes SVG (no se les puede cambiar color ni contorno).
+- **Consecuencia**: cambio aditivo del esquema 1 del documento: los `.gaf` existentes se abren igual y un documento sin trazados escribe el mismo JSON, pero una versión anterior de Gafira no abre un archivo que use trazados. Se aplica en la spec 054.
