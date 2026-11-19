@@ -116,7 +116,16 @@ fn fonts(tokens: &ThemeTokens) -> FontDefinitions {
             FontData::from_static(font.bytes).into(),
         );
     }
+    // The font library (spec 062): every face under its name, falling back
+    // to the interface face for what it lacks.
     let ui = tokens.typography.ui.clone();
+    for face in gafira_theme::library() {
+        let key = gafira_theme::face_key(face.family, face.bold, face.italic);
+        defs.font_data
+            .insert(key.clone(), FontData::from_static(face.bytes).into());
+        defs.families
+            .insert(FontFamily::Name(key.clone().into()), vec![key, ui.clone()]);
+    }
     let display = tokens.typography.display.clone();
     defs.families
         .insert(FontFamily::Proportional, vec![ui.clone()]);

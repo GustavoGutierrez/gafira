@@ -150,11 +150,20 @@ fn main() -> eframe::Result {
 /// The pages of an export (spec 030): the render graph on the CPU backend,
 /// with the fonts the theme embeds.
 fn export_pages(clock: Arc<SystemClock>) -> Arc<dyn PageRenderers> {
+    // The interface fonts, then every face of the library under its name
+    // (spec 062): a face of the library replaces the interface subset of
+    // the same family.
     let fonts = gafira_theme::fonts()
         .iter()
         .fold(FontBook::new(), |book, font| {
             book.with(font.family, font.bytes)
         });
+    let fonts = gafira_theme::library().iter().fold(fonts, |book, face| {
+        book.with(
+            &gafira_theme::face_key(face.family, face.bold, face.italic),
+            face.bytes,
+        )
+    });
     Arc::new(GraphPageRenderers::new(
         Box::new(|| Box::new(CpuBackend::new())),
         clock,

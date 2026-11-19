@@ -306,6 +306,12 @@ pub(crate) struct Editor {
     /// spec 061), and the height measured when a text is drawn.
     fit_pending: Option<(PageId, NodeId)>,
     text_measure: Option<(PageId, NodeId, f64)>,
+    /// The Fuente panel takes the side panel (spec 062), with the font of
+    /// the selected text and the families the document uses, as the
+    /// Inspector last saw them.
+    font_panel: bool,
+    selection_font: Option<(String, bool, bool)>,
+    document_fonts: Vec<String>,
 }
 
 /// What the drag of a line end shows (spec 058): the shapes near it, whose
@@ -412,6 +418,9 @@ impl Default for Editor {
             line_view: None,
             fit_pending: None,
             text_measure: None,
+            font_panel: false,
+            selection_font: None,
+            document_fonts: Vec::new(),
         }
     }
 }
@@ -540,6 +549,11 @@ struct Asked {
     drop_text: Option<(canvas::TextPreset, String, PageId, (f64, f64))>,
     /// The height of the words written on the canvas, in px of page.
     edit_height: Option<f64>,
+    /// A font for the selected text or shape text: family, bold, italic
+    /// (spec 062).
+    font: Option<(String, bool, bool)>,
+    /// Open (true) or close the Fuente panel.
+    font_panel: Option<bool>,
     /// Ver → Modo oscuro switched to this value (D-82).
     dark: Option<bool>,
     /// Archivo → Ajustes (spec 034).
@@ -1465,6 +1479,10 @@ impl Editor {
                     .inner_margin(egui::Margin::same(16)),
             )
             .show(ctx, |ui| {
+                if self.font_panel {
+                    self.fonts_panel(ui, theme, texts, asked);
+                    return;
+                }
                 if TABS[self.tab].0 == "tab.library" {
                     let import = widgets::secondary(
                         ui,
@@ -1620,6 +1638,16 @@ impl Editor {
         asked: &mut Asked,
     ) {
         let can = self.can;
+        // What the Fuente panel shows as current and as the document's.
+        self.selection_font = selection.first().and_then(|shape| {
+            let style = shape
+                .text
+                .as_ref()
+                .and_then(|t| t.content.first_style())
+                .or_else(|| shape.inner.as_ref().and_then(|t| t.content.first_style()))?;
+            Some((style.font.clone(), style.bold, style.italic))
+        });
+        self.document_fonts = document.map(document_fonts).unwrap_or_default();
         egui::SidePanel::right("editor.inspector")
             .exact_width(px(theme.tokens.size.panel_right))
             .resizable(false)
@@ -1677,6 +1705,7 @@ impl Editor {
                     }
                 };
                 if let Some(text) = &shape.text {
+                    font_button(ui, theme, texts, text.content.first_style(), asked);
                     text_fields(ui, theme, texts, text, asked);
                     ui.add_space(16.0);
                 }
@@ -1748,6 +1777,9 @@ impl Editor {
                     ui.add_space(8.0);
                     outline_fields(ui, texts, shape, asked);
                     shape_text_fields(ui, theme, texts, shape, asked);
+                    if let Some(inner) = &shape.inner {
+                        font_button(ui, theme, texts, inner.content.first_style(), asked);
+                    }
                 }
                 ui.add_space(8.0);
                 opacity_field(ui, texts, shape, asked);
@@ -2505,6 +2537,202 @@ impl Editor {
         let _ = engine.edit().end_gesture();
     }
 
+    /// `family` in `bold` and `italic` for every span of the selected text,
+    /// or of the text of the selected shape, one undo step (spec 062).
+    fn apply_font(&self, engine: &mut Gafira, (family, bold, italic): (&str, bool, bool)) {
+        let Some((page, node)) = self.selected.single() else {
+            return;
+        };
+        let Some(document) = engine.edit().document() else {
+            return;
+        };
+        let Some(found) = document.page(page).and_then(|p| p.node(node)) else {
+            return;
+        };
+        let restyle = |content: &gafira_doc::RichText| {
+            let mut content = content.clone();
+            for span in content
+                .paragraphs
+                .iter_mut()
+                .flat_map(|p| p.spans.iter_mut())
+            {
+                span.style.font = family.to_owned();
+                span.style.bold = bold;
+                span.style.italic = italic;
+            }
+            content
+        };
+        let property = match &found.kind {
+            gafira_doc::NodeKind::Text(text) => Property::TextContent(restyle(&text.content)),
+            gafira_doc::NodeKind::Shape(shape) => match &shape.text {
+                Some(text) => {
+                    let mut text = text.clone();
+                    text.content = restyle(&text.content);
+                    Property::ShapeText(Some(text))
+                }
+                None => return,
+            },
+            _ => return,
+        };
+        let gesture = engine.edit().begin_gesture().ok();
+        let command = SetProperty::new(page, vec![node], property, gesture);
+        if let Err(error) = engine.edit().execute(Box::new(command)) {
+            eprintln!("font: {error}");
+        }
+        if gesture.is_some() {
+            let _ = engine.edit().end_gesture();
+        }
+    }
+
+    /// The Fuente panel (spec 062): a search box, the families of the
+    /// document, then every family of the library with a sample in its
+    /// face and, opened, its faces; the current one is ticked. A click
+    /// gives the selected text that family or face.
+    fn fonts_panel(&self, ui: &mut egui::Ui, theme: &Theme, texts: &Texts, asked: &mut Asked) {
+        let current = self.selection_font.clone();
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(plain(texts, "fonts.title"))
+                    .font(theme.font("ui-label"))
+                    .color(theme.c("text")),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .button(plain(texts, "fonts.close"))
+                    .on_hover_text(plain(texts, "fonts.close"))
+                    .clicked()
+                {
+                    asked.font_panel = Some(false);
+                }
+            });
+        });
+        ui.add_space(8.0);
+        let search_id = ui.id().with("fonts.search");
+        let mut search: String = ui.data_mut(|d| d.get_temp(search_id).unwrap_or_default());
+        ui.add(
+            egui::TextEdit::singleline(&mut search)
+                .hint_text(plain(texts, "fonts.search"))
+                .desired_width(f32::INFINITY),
+        );
+        ui.data_mut(|d| d.insert_temp(search_id, search.clone()));
+        let open_id = ui.id().with("fonts.open");
+        let mut open: BTreeSet<String> = ui.data_mut(|d| d.get_temp(open_id).unwrap_or_default());
+        let needle = search.trim().to_lowercase();
+        let all = gafira_theme::library_families();
+        let shown = |family: &&str| needle.is_empty() || family.to_lowercase().contains(&needle);
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let used: Vec<&str> = all
+                .iter()
+                .copied()
+                .filter(|f| self.document_fonts.iter().any(|d| d == f))
+                .filter(shown)
+                .collect();
+            for (title, families) in [
+                ("fonts.document", used),
+                ("fonts.all", all.iter().copied().filter(shown).collect()),
+            ] {
+                if families.is_empty() {
+                    continue;
+                }
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new(plain(texts, title))
+                        .font(theme.font("ui-label"))
+                        .color(theme.c("text")),
+                );
+                ui.add_space(4.0);
+                for family in families {
+                    let faces: Vec<(bool, bool)> = gafira_theme::library()
+                        .iter()
+                        .filter(|f| f.family == family)
+                        .map(|f| (f.bold, f.italic))
+                        .collect();
+                    let is_open = open.contains(family);
+                    ui.horizontal(|ui| {
+                        if faces.len() > 1 {
+                            let arrow = if is_open { "▾" } else { "▸" };
+                            if ui.small_button(arrow).clicked() {
+                                if is_open {
+                                    open.remove(family);
+                                } else {
+                                    open.insert(family.to_owned());
+                                }
+                            }
+                        } else {
+                            ui.add_space(22.0);
+                        }
+                        let face =
+                            library_family(ui.ctx(), &gafira_theme::face_key(family, false, false));
+                        let name = ui.add(
+                            egui::Label::new(
+                                RichText::new(family)
+                                    .font(egui::FontId::new(16.0, face.clone()))
+                                    .color(theme.c("text")),
+                            )
+                            .sense(egui::Sense::click()),
+                        );
+                        ui.label(
+                            RichText::new("AaBbCc")
+                                .font(egui::FontId::new(14.0, face))
+                                .color(theme.c("text.secondary")),
+                        );
+                        if current.as_ref().is_some_and(|c| c.0 == family) {
+                            ui.label(RichText::new("✓").color(theme.c("text")));
+                        }
+                        if name
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            let (bold, italic) = current
+                                .as_ref()
+                                .filter(|c| c.0 == family)
+                                .map_or((false, false), |c| (c.1, c.2));
+                            asked.font = Some((family.to_owned(), bold, italic));
+                        }
+                    });
+                    if is_open {
+                        for (bold, italic) in faces {
+                            let key = match (bold, italic) {
+                                (false, false) => "fonts.regular",
+                                (true, false) => "fonts.bold",
+                                (false, true) => "fonts.italic",
+                                (true, true) => "fonts.bold_italic",
+                            };
+                            let face = library_family(
+                                ui.ctx(),
+                                &gafira_theme::face_key(family, bold, italic),
+                            );
+                            ui.horizontal(|ui| {
+                                ui.add_space(36.0);
+                                let row = ui.add(
+                                    egui::Label::new(
+                                        RichText::new(plain(texts, key))
+                                            .font(egui::FontId::new(15.0, face))
+                                            .color(theme.c("text")),
+                                    )
+                                    .sense(egui::Sense::click()),
+                                );
+                                if current
+                                    .as_ref()
+                                    .is_some_and(|c| c.0 == family && c.1 == bold && c.2 == italic)
+                                {
+                                    ui.label(RichText::new("✓").color(theme.c("text")));
+                                }
+                                if row
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .clicked()
+                                {
+                                    asked.font = Some((family.to_owned(), bold, italic));
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        });
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+    }
+
     /// Writing on the canvas and the alignment of a shape's text (spec
     /// 055). A whole edit is one undo step: every change carries the
     /// gesture opened when it began.
@@ -2702,7 +2930,9 @@ impl Editor {
             || crate::style::color32(theme.tokens.brand.ink),
             |s| canvas::screen_color(s.color),
         );
-        let family = text_family(theme, style.as_ref().map_or("", |s| s.font.as_str()));
+        let family = style.as_ref().map_or(egui::FontFamily::Proportional, |s| {
+            text_family(ui.ctx(), theme, s)
+        });
         let halign = match align {
             gafira_doc::TextAlign::Center => Align::Center,
             gafira_doc::TextAlign::Right => Align::RIGHT,
@@ -4081,6 +4311,12 @@ impl Editor {
         }
         self.layer_changes(engine, asked);
         self.text_editing(engine, asked, theme);
+        if let Some(open) = asked.font_panel {
+            self.font_panel = open;
+        }
+        if let Some((family, bold, italic)) = &asked.font {
+            self.apply_font(engine, (family, *bold, *italic));
+        }
         if let Some(action) = &asked.page_action {
             self.page_action(engine, action);
         }
@@ -4761,6 +4997,47 @@ fn text_style(theme: &Theme, preset: canvas::TextPreset) -> gafira_doc::SpanStyl
     }
 }
 
+/// The button of the Inspector that opens the Fuente panel (spec 062),
+/// named after the font of `style`.
+fn font_button(
+    ui: &mut egui::Ui,
+    theme: &Theme,
+    texts: &Texts,
+    style: Option<&gafira_doc::SpanStyle>,
+    asked: &mut Asked,
+) {
+    let Some(style) = style else { return };
+    ui.horizontal(|ui| {
+        ui.label(texts.t(&gafira_doc::msg!("fonts.title")));
+        let face = text_family(ui.ctx(), theme, style);
+        let button = ui.button(RichText::new(&style.font).font(egui::FontId::new(14.0, face)));
+        if button.clicked() {
+            asked.font_panel = Some(true);
+        }
+    });
+    ui.add_space(8.0);
+}
+
+/// The font families the texts of `document` use, each once, in order.
+fn document_fonts(document: &Document) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for page in document.pages() {
+        for node in page.nodes.values() {
+            let content = match &node.kind {
+                gafira_doc::NodeKind::Text(text) => Some(&text.content),
+                gafira_doc::NodeKind::Shape(shape) => shape.text.as_ref().map(|t| &t.content),
+                _ => None,
+            };
+            for span in content.into_iter().flat_map(gafira_doc::RichText::spans) {
+                if !out.contains(&span.style.font) {
+                    out.push(span.style.font.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The number «n de N» shows (S49-05): the place of `current` among
 /// `pages`, from 1; 1 when it is not one of them, 0 with no page.
 fn page_number(pages: &[PageId], current: Option<PageId>) -> usize {
@@ -5270,11 +5547,7 @@ fn lay_text(
             .iter()
             .map(|span| span.text.as_str())
             .collect();
-        let family = if style.font == theme.tokens.typography.display {
-            egui::FontFamily::Name(crate::style::DISPLAY.into())
-        } else {
-            egui::FontFamily::Proportional
-        };
+        let family = text_family(painter.ctx(), theme, style);
         let size = (style.size as f32 * zoom).max(1.0);
         let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
         let galley = painter.layout(
@@ -5322,7 +5595,7 @@ fn lay_inner(
         let color = canvas::screen_color(style.color).gamma_multiply(opacity.clamp(0.0, 1.0));
         let mut job = egui::text::LayoutJob::simple(
             words,
-            egui::FontId::new(size, text_family(theme, &style.font)),
+            egui::FontId::new(size, text_family(painter.ctx(), theme, style)),
             color,
             inner.width().max(1.0),
         );
@@ -5356,9 +5629,40 @@ fn laid_height(laid: &[(Pos2, Arc<egui::Galley>, Color32)], at: Rect, zoom: f32)
 }
 
 /// The egui family of a document font: the display face or the UI one.
-fn text_family(theme: &Theme, font: &str) -> egui::FontFamily {
-    if font == theme.tokens.typography.display {
+fn text_family(
+    ctx: &egui::Context,
+    theme: &Theme,
+    style: &gafira_doc::SpanStyle,
+) -> egui::FontFamily {
+    // A family of the library: its face, or the nearest one (spec 062).
+    let library = gafira_theme::library();
+    if let Some((bold, italic)) = gafira_theme::nearest_face(
+        |b, i| {
+            library
+                .iter()
+                .any(|f| f.family == style.font && f.bold == b && f.italic == i)
+        },
+        style.bold,
+        style.italic,
+    ) {
+        let face = library_family(ctx, &gafira_theme::face_key(&style.font, bold, italic));
+        if face != egui::FontFamily::Proportional {
+            return face;
+        }
+    }
+    if style.font == theme.tokens.typography.display {
         egui::FontFamily::Name(crate::style::DISPLAY.into())
+    } else {
+        egui::FontFamily::Proportional
+    }
+}
+
+/// The egui family a face of the library is installed under, or the
+/// interface family when this context did not install it (a test).
+fn library_family(ctx: &egui::Context, key: &str) -> egui::FontFamily {
+    let family = egui::FontFamily::Name(key.into());
+    if ctx.fonts(|f| f.definitions().families.contains_key(&family)) {
+        family
     } else {
         egui::FontFamily::Proportional
     }
@@ -7661,6 +7965,88 @@ pub(crate) mod tests {
         let p = placements(&mut engine, &[node])[0];
         assert_eq!((p.x + p.w / 2.0, p.y + p.h / 2.0), (300.0, 200.0));
         assert_eq!(undo_depth(&mut engine), depth + 1);
+    }
+
+    // S62-04: a font picked in the Fuente panel goes to every span of the
+    // selected text, or of the text of the selected shape, in one undo step.
+    #[test]
+    fn s62_04_the_font_changes_in_one_step() {
+        let mut engine = engine();
+        let mut editor = Editor::default();
+        let (page, rect, _) = two_pieces(&mut engine, &mut editor);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                insert_text: Some((canvas::TextPreset::Body, "Hola\nmundo".to_owned())),
+                ..Asked::default()
+            },
+        );
+        let (_, text) = editor.selected.single().expect("the text");
+        let spans = |engine: &mut Gafira, node: NodeId| -> Vec<gafira_doc::SpanStyle> {
+            let document = engine.edit().document().expect("a document");
+            let content = match &document.pages()[0].node(node).expect("a node").kind {
+                gafira_doc::NodeKind::Text(t) => t.content.clone(),
+                gafira_doc::NodeKind::Shape(s) => s.text.clone().expect("a text").content,
+                _ => panic!("no text"),
+            };
+            content.spans().map(|span| span.style.clone()).collect()
+        };
+        let depth = undo_depth(&mut engine);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                font: Some(("Lato".to_owned(), true, false)),
+                ..Asked::default()
+            },
+        );
+        let styles = spans(&mut engine, text);
+        assert_eq!(styles.len(), 2);
+        assert!(
+            styles
+                .iter()
+                .all(|s| s.font == "Lato" && s.bold && !s.italic)
+        );
+        assert_eq!(undo_depth(&mut engine), depth + 1, "one step");
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                begin_edit: Some((page, rect)),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                edit_text: Some("Forma".to_owned()),
+                ..Asked::default()
+            },
+        );
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                end_edit: true,
+                ..Asked::default()
+            },
+        );
+        editor.selected = Selection::one(page, rect);
+        ask(
+            &mut engine,
+            &mut editor,
+            Asked {
+                font: Some(("Pacifico".to_owned(), false, true)),
+                ..Asked::default()
+            },
+        );
+        assert!(
+            spans(&mut engine, rect)
+                .iter()
+                .all(|s| s.font == "Pacifico" && s.italic)
+        );
     }
 
     // S50-01: a press on an element activates its page, on a page's
